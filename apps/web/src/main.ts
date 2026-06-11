@@ -6,6 +6,7 @@ import "./style.css";
 const gameServerUrl =
   import.meta.env.VITE_GAME_SERVER_URL ??
   (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : "ws://localhost:2567");
+const healthUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/health";
 
 class MenuScene extends Phaser.Scene {
   constructor() {
@@ -173,6 +174,10 @@ class GameScene extends Phaser.Scene {
 
   private async connect() {
     try {
+      this.statusText?.setText("Sunucu kontrol ediliyor...");
+      await this.checkServerHealth();
+
+      this.statusText?.setText("Odaya baglaniyor...");
       const client = new Client(gameServerUrl);
       this.room = await client.joinOrCreate("match", {
         playerName: this.getPlayerName(),
@@ -190,7 +195,18 @@ class GameScene extends Phaser.Scene {
       this.startPingLoop();
     } catch (error) {
       console.error(error);
-      this.statusText?.setText("Sunucuya baglanilamadi.");
+      this.statusText?.setText(this.formatConnectionError(error));
+    }
+  }
+
+  private async checkServerHealth() {
+    const response = await fetch(healthUrl, {
+      cache: "no-store",
+      mode: "cors"
+    });
+
+    if (!response.ok) {
+      throw new Error(`Health ${response.status}`);
     }
   }
 
@@ -219,6 +235,17 @@ class GameScene extends Phaser.Scene {
     const ping = Math.max(0, Math.round(performance.now() - sentAt));
     this.pingText?.setText(`${ping} ms`);
     this.pingText?.setColor(ping < 90 ? "#22c55e" : ping < 160 ? "#facc15" : "#fb7185");
+  }
+
+  private formatConnectionError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const shortMessage = message.length > 42 ? `${message.slice(0, 39)}...` : message;
+
+    if (message.startsWith("Health")) {
+      return `HTTP hata: ${shortMessage}`;
+    }
+
+    return `Oda/WebSocket hatasi: ${shortMessage}`;
   }
 
   private getPlayerName() {
