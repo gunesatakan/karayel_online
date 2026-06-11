@@ -1,0 +1,22 @@
+{
+  "name": "karayel-online",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @karayel/web",
+    "dev:web": "npm run dev --workspace @karayel/web",
+    "dev:server": "npm run dev --workspace @karayel/server",
+    "build": "npm run build --workspaces",
+    "build:web": "npm run build --workspace @karayel/web",
+    "build:server": "npm run build --workspace @karayel/server",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
