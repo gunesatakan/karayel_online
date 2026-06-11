@@ -51,8 +51,8 @@ export class MatchRoom extends Room<MatchState> {
       player.vy = this.clampDirection(message.y);
     });
 
-    this.onMessage("ping", (client, message: PingMessage) => {
-      client.send("pong", {
+    this.onMessage("latency:ping", (client, message: PingMessage) => {
+      client.send("latency:pong", {
         sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now()
       });
     });

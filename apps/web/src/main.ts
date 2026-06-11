@@ -184,7 +184,7 @@ class GameScene extends Phaser.Scene {
       this.room.onMessage("snapshot", (players: PlayerSnapshot[]) => {
         this.renderPlayers(players);
       });
-      this.room.onMessage("pong", (message: { sentAt?: number }) => {
+      this.room.onMessage("latency:pong", (message: { sentAt?: number }) => {
         this.updatePing(message.sentAt);
       });
       this.startPingLoop();
@@ -208,7 +208,7 @@ class GameScene extends Phaser.Scene {
   }
 
   private sendPing() {
-    this.room?.send("ping", { sentAt: performance.now() });
+    this.room?.send("latency:ping", { sentAt: performance.now() });
   }
 
   private updatePing(sentAt: unknown) {

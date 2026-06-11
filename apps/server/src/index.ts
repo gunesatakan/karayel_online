@@ -9,7 +9,11 @@ const app = express();
 
 app.use(cors());
 app.get("/health", (_request, response) => {
-  response.json({ ok: true, service: "karayel-server" });
+  response.json({
+    ok: true,
+    service: "karayel-server",
+    features: ["fixed-portrait-world", "latency-ping"]
+  });
 });
 
 const httpServer = createServer(app);
