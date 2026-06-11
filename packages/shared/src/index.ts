@@ -13,6 +13,8 @@ export type PlayerSnapshot = {
   characterId: string;
   x: number;
   y: number;
+  hp: number;
+  maxHp: number;
   goldSpent: number;
   upgrades: {
     damage: number;
@@ -23,7 +25,7 @@ export type PlayerSnapshot = {
 
 export type EnemySnapshot = {
   id: string;
-  type: "grunt" | "brute" | "runner";
+  type: "grunt" | "brute" | "runner" | "shooter";
   x: number;
   y: number;
   hp: number;
@@ -32,7 +34,8 @@ export type EnemySnapshot = {
 
 export type ProjectileSnapshot = {
   id: string;
-  kind: "arrow" | "bolt" | "orb" | "light" | "chain";
+  kind: "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy";
+  source: "player" | "enemy";
   x: number;
   y: number;
 };
@@ -63,13 +66,14 @@ export type CharacterDefinition = {
   damage: number;
   fireIntervalMs: number;
   projectileSpeed: number;
-  abilities: string[];
+  passive: string;
+  skills: string[];
 };
 
 export const characters: CharacterDefinition[] = [
   {
     id: "warrior",
-    displayName: "Savasci",
+    displayName: "Atakan",
     role: "Dengeli",
     summary: "Standart atis hizi ve guvenilir hasar.",
     maxHp: 100,
@@ -77,11 +81,12 @@ export const characters: CharacterDefinition[] = [
     damage: 14,
     fireIntervalMs: 650,
     projectileSpeed: 320,
-    abilities: ["Dengeli Atis"]
+    passive: "Dengeli savas ritmi.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   },
   {
     id: "archer",
-    displayName: "Okcu",
+    displayName: "Melis",
     role: "Hizli",
     summary: "Hizli atis, dusuk hasar, coklu hedef.",
     maxHp: 85,
@@ -89,11 +94,12 @@ export const characters: CharacterDefinition[] = [
     damage: 7,
     fireIntervalMs: 320,
     projectileSpeed: 420,
-    abilities: ["Cift Ok"]
+    passive: "Hizli refleks.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   },
   {
     id: "mage",
-    displayName: "Buyucu",
+    displayName: "Baransel",
     role: "AOE",
     summary: "Yavas ama alan hasari yuksek.",
     maxHp: 75,
@@ -101,11 +107,12 @@ export const characters: CharacterDefinition[] = [
     damage: 24,
     fireIntervalMs: 1100,
     projectileSpeed: 250,
-    abilities: ["Patlayan Orb"]
+    passive: "Alan enerjisi biriktirir.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   },
   {
     id: "healer",
-    displayName: "Sifaci",
+    displayName: "Ülkü",
     role: "Destek",
     summary: "Takim canini yenileyen destek sinifi.",
     maxHp: 90,
@@ -113,11 +120,12 @@ export const characters: CharacterDefinition[] = [
     damage: 8,
     fireIntervalMs: 720,
     projectileSpeed: 330,
-    abilities: ["Takim Sifasi"]
+    passive: "Takim direncini artirir.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   },
   {
     id: "tank",
-    displayName: "Koruyucu",
+    displayName: "Ömer",
     role: "Tank",
     summary: "Yavaslatma ve yuksek dayanma odakli.",
     maxHp: 130,
@@ -125,7 +133,8 @@ export const characters: CharacterDefinition[] = [
     damage: 10,
     fireIntervalMs: 800,
     projectileSpeed: 280,
-    abilities: ["Yavaslatan Zincir"]
+    passive: "Aldigi hasari azaltir.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   }
 ];
 

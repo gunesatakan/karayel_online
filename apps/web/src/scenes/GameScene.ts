@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { Client, Room } from "colyseus.js";
 import {
   BATTLE_TOP,
+  characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
   SHOP_TOP,
@@ -12,7 +13,7 @@ import {
   type ProjectileSnapshot,
   type UpgradeId
 } from "@karayel/shared";
-import { gameServerUrl, getPlayerName, healthUrl } from "../config";
+import { gameServerUrl, healthUrl } from "../config";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -21,8 +22,12 @@ type GameSceneData = {
 type RenderPlayer = {
   sprite: Phaser.Physics.Arcade.Sprite;
   label: Phaser.GameObjects.Text;
+  hpBack: Phaser.GameObjects.Rectangle;
+  hpFill: Phaser.GameObjects.Rectangle;
   targetX: number;
   targetY: number;
+  hp: number;
+  maxHp: number;
 };
 
 export class GameScene extends Phaser.Scene {
@@ -169,7 +174,7 @@ export class GameScene extends Phaser.Scene {
 
       const client = new Client(gameServerUrl);
       this.room = await client.joinOrCreate("match", {
-        playerName: getPlayerName(),
+        playerName: this.getSelectedCharacterName(),
         characterId: this.selectedCharacterId
       });
       this.localSessionId = this.room.sessionId;
@@ -210,6 +215,8 @@ export class GameScene extends Phaser.Scene {
       if (!activeIds.has(id)) {
         player.sprite.destroy();
         player.label.destroy();
+        player.hpBack.destroy();
+        player.hpFill.destroy();
         this.players.delete(id);
       }
     }
@@ -225,14 +232,18 @@ export class GameScene extends Phaser.Scene {
           fontFamily: "Arial",
           fontSize: "12px"
         }).setOrigin(0.5).setDepth(11);
-        rendered = { sprite, label, targetX: player.x, targetY: player.y };
+        const hpBack = this.add.rectangle(player.x, player.y - 24, 34, 4, 0x450a0a, 0.9).setDepth(11);
+        const hpFill = this.add.rectangle(player.x - 17, player.y - 24, 34, 4, 0x22c55e, 1).setOrigin(0, 0.5).setDepth(12);
+        rendered = { sprite, label, hpBack, hpFill, targetX: player.x, targetY: player.y, hp: player.hp, maxHp: player.maxHp };
         this.players.set(player.id, rendered);
       }
 
       rendered.targetX = player.x;
       rendered.targetY = player.y;
+      rendered.hp = player.hp;
+      rendered.maxHp = player.maxHp;
       rendered.sprite.setTexture(texture);
-      rendered.sprite.setAlpha(player.id === this.localSessionId ? 1 : 0.86);
+      rendered.sprite.setAlpha(player.hp <= 0 ? 0.35 : player.id === this.localSessionId ? 1 : 0.86);
     }
   }
 
@@ -243,6 +254,9 @@ export class GameScene extends Phaser.Scene {
       player.sprite.x = Phaser.Math.Linear(player.sprite.x, player.targetX, alpha);
       player.sprite.y = Phaser.Math.Linear(player.sprite.y, player.targetY, alpha);
       player.label.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 34));
+      player.hpBack.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 24));
+      player.hpFill.setPosition(Math.round(player.sprite.x - 17), Math.round(player.sprite.y - 24));
+      player.hpFill.width = 34 * Phaser.Math.Clamp(player.hp / Math.max(1, player.maxHp), 0, 1);
     }
   }
 
@@ -296,7 +310,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const projectile of projectiles) {
       let sprite = this.projectiles.get(projectile.id);
-      const texture = `projectile-${projectile.kind}`;
+      const texture = projectile.source === "enemy" ? "projectile-enemy" : `projectile-${projectile.kind}`;
 
       if (!sprite) {
         sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
@@ -355,5 +369,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     return `Oda/WebSocket hatasi: ${shortMessage}`;
+  }
+
+  private getSelectedCharacterName() {
+    return characters.find((character) => character.id === this.selectedCharacterId)?.displayName ?? "Atakan";
   }
 }

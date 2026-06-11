@@ -12,6 +12,7 @@ const PLAYER_MAX_Y = SHOP_TOP - PLAYER_RADIUS;
 const PLAYER_SPEED = 220;
 
 type ClassStats = {
+  maxHp: number;
   damage: number;
   fireIntervalMs: number;
   projectileSpeed: number;
@@ -22,11 +23,11 @@ type ClassStats = {
 };
 
 const classStats: Record<CharacterId, ClassStats> = {
-  warrior: { damage: 14, fireIntervalMs: 650, projectileSpeed: 320, projectileKind: "bolt", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  archer: { damage: 7, fireIntervalMs: 320, projectileSpeed: 420, projectileKind: "arrow", multiShot: 2, aoeRadius: 0, slowMs: 0 },
-  mage: { damage: 24, fireIntervalMs: 1100, projectileSpeed: 250, projectileKind: "orb", multiShot: 1, aoeRadius: 48, slowMs: 0 },
-  healer: { damage: 8, fireIntervalMs: 720, projectileSpeed: 330, projectileKind: "light", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  tank: { damage: 10, fireIntervalMs: 800, projectileSpeed: 280, projectileKind: "chain", multiShot: 1, aoeRadius: 0, slowMs: 1200 }
+  warrior: { maxHp: 100, damage: 14, fireIntervalMs: 650, projectileSpeed: 320, projectileKind: "bolt", multiShot: 1, aoeRadius: 0, slowMs: 0 },
+  archer: { maxHp: 85, damage: 7, fireIntervalMs: 320, projectileSpeed: 420, projectileKind: "arrow", multiShot: 2, aoeRadius: 0, slowMs: 0 },
+  mage: { maxHp: 75, damage: 24, fireIntervalMs: 1100, projectileSpeed: 250, projectileKind: "orb", multiShot: 1, aoeRadius: 48, slowMs: 0 },
+  healer: { maxHp: 90, damage: 8, fireIntervalMs: 720, projectileSpeed: 330, projectileKind: "light", multiShot: 1, aoeRadius: 0, slowMs: 0 },
+  tank: { maxHp: 130, damage: 10, fireIntervalMs: 800, projectileSpeed: 280, projectileKind: "chain", multiShot: 1, aoeRadius: 0, slowMs: 1200 }
 };
 
 const upgradeCosts: Record<UpgradeId, number> = {
@@ -41,6 +42,8 @@ class Player extends Schema {
   @type("string") characterId: CharacterId = "warrior";
   @type("number") x = GAME_WORLD_WIDTH / 2;
   @type("number") y = 570;
+  @type("number") hp = 100;
+  @type("number") maxHp = 100;
   @type("number") vx = 0;
   @type("number") vy = 0;
   @type("number") damageLevel = 0;
@@ -74,7 +77,7 @@ type BuyUpgradeMessage = {
 
 type EnemyModel = {
   id: string;
-  type: "grunt" | "brute" | "runner";
+  type: "grunt" | "brute" | "runner" | "shooter";
   x: number;
   y: number;
   hp: number;
@@ -82,12 +85,15 @@ type EnemyModel = {
   speed: number;
   reward: number;
   slowUntil: number;
+  stopY: number;
+  fireCooldownMs: number;
 };
 
 type ProjectileModel = {
   id: string;
   ownerId: string;
-  kind: "arrow" | "bolt" | "orb" | "light" | "chain";
+  kind: "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy";
+  source: "player" | "enemy";
   x: number;
   y: number;
   vx: number;
@@ -146,6 +152,8 @@ export class MatchRoom extends Room<MatchState> {
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
     player.characterId = this.getCharacterId(options.characterId);
+    player.maxHp = classStats[player.characterId].maxHp;
+    player.hp = player.maxHp;
     player.x = GAME_WORLD_WIDTH / 2 + (Math.random() - 0.5) * 120;
     player.y = 560 + Math.random() * 56;
 
@@ -163,6 +171,7 @@ export class MatchRoom extends Room<MatchState> {
     this.updateSpawning(deltaTime);
     this.updateAutoFire(deltaTime);
     this.updateProjectiles(seconds);
+    this.updateEnemyFire(deltaTime);
     this.updateEnemies(seconds);
     this.broadcast("snapshot", this.getSnapshot());
   }
@@ -204,10 +213,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private spawnEnemy() {
     const roll = Math.random();
-    const type: EnemyModel["type"] = roll > 0.82 ? "brute" : roll > 0.62 ? "runner" : "grunt";
+    const isRangedWave = this.wave % 3 === 0;
+    const type: EnemyModel["type"] = isRangedWave || roll > 0.86 ? "shooter" : roll > 0.68 ? "brute" : roll > 0.48 ? "runner" : "grunt";
     const waveScale = 1 + this.wave * 0.12;
-    const maxHp = Math.round((type === "brute" ? 56 : type === "runner" ? 22 : 34) * waveScale);
-    const speed = (type === "runner" ? 68 : type === "brute" ? 34 : 46) + this.wave * 2.2;
+    const maxHp = Math.round((type === "brute" ? 56 : type === "runner" ? 22 : type === "shooter" ? 30 : 34) * waveScale);
+    const speed = (type === "runner" ? 68 : type === "brute" ? 34 : type === "shooter" ? 38 : 46) + this.wave * 2.2;
 
     const id = `e${this.nextEnemyId++}`;
 
@@ -219,17 +229,19 @@ export class MatchRoom extends Room<MatchState> {
       hp: maxHp,
       maxHp,
       speed,
-      reward: type === "brute" ? 12 : type === "runner" ? 7 : 9,
-      slowUntil: 0
+      reward: type === "brute" ? 12 : type === "runner" ? 7 : type === "shooter" ? 10 : 9,
+      slowUntil: 0,
+      stopY: isRangedWave || type === "shooter" ? 150 + Math.random() * 130 : SHOP_TOP,
+      fireCooldownMs: 700 + Math.random() * 900
     });
   }
 
   private updateAutoFire(deltaTime: number) {
-    if (this.enemies.size === 0) {
-      return;
-    }
-
     for (const [playerId, player] of this.state.players.entries()) {
+      if (player.hp <= 0) {
+        continue;
+      }
+
       player.fireCooldownMs -= deltaTime;
       if (player.fireCooldownMs > 0) {
         continue;
@@ -237,45 +249,32 @@ export class MatchRoom extends Room<MatchState> {
 
       const stats = classStats[this.getCharacterId(player.characterId)];
       const fireInterval = Math.max(140, stats.fireIntervalMs * (1 - player.fireRateLevel * 0.08));
-      const targets = this.findTargets(player.x, player.y, stats.multiShot);
-      if (targets.length === 0) {
-        continue;
-      }
-
-      for (const target of targets) {
-        this.spawnProjectile(playerId, player, target, stats);
-      }
+      this.spawnPlayerProjectiles(playerId, player, stats);
 
       player.fireCooldownMs = fireInterval;
     }
   }
 
-  private findTargets(x: number, y: number, count: number) {
-    return Array.from(this.enemies.values())
-      .filter((enemy) => enemy.y < SHOP_TOP - 20)
-      .sort((a, b) => PhaserDistanceSq(x, y, a.x, a.y) - PhaserDistanceSq(x, y, b.x, b.y))
-      .slice(0, count);
-  }
-
-  private spawnProjectile(ownerId: string, player: Player, target: EnemyModel, stats: ClassStats) {
-    const dx = target.x - player.x;
-    const dy = target.y - player.y;
-    const length = Math.max(1, Math.hypot(dx, dy));
+  private spawnPlayerProjectiles(ownerId: string, player: Player, stats: ClassStats) {
     const speed = stats.projectileSpeed + player.projectileSpeedLevel * 32;
-    const id = `p${this.nextProjectileId++}`;
+    const offsets = stats.multiShot > 1 ? [-8, 8] : [0];
 
-    this.projectiles.set(id, {
-      id,
-      ownerId,
-      kind: stats.projectileKind,
-      x: player.x,
-      y: player.y - 18,
-      vx: (dx / length) * speed,
-      vy: (dy / length) * speed,
-      damage: stats.damage + player.damageLevel * 4,
-      aoeRadius: stats.aoeRadius,
-      slowMs: stats.slowMs
-    });
+    for (const offset of offsets) {
+      const id = `p${this.nextProjectileId++}`;
+      this.projectiles.set(id, {
+        id,
+        ownerId,
+        kind: stats.projectileKind,
+        source: "player",
+        x: player.x + offset,
+        y: player.y - 20,
+        vx: offset * 2.2,
+        vy: -speed,
+        damage: stats.damage + player.damageLevel * 4,
+        aoeRadius: stats.aoeRadius,
+        slowMs: stats.slowMs
+      });
+    }
   }
 
   private updateProjectiles(seconds: number) {
@@ -288,26 +287,78 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const hit = this.findProjectileHit(projectile);
+      const hit = projectile.source === "player" ? this.findEnemyHit(projectile) : this.findPlayerHit(projectile);
       if (!hit) {
         continue;
       }
 
-      if (projectile.aoeRadius > 0) {
-        for (const enemy of this.enemies.values()) {
-          if (PhaserDistanceSq(hit.x, hit.y, enemy.x, enemy.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, projectile.damage * 0.8, projectile.slowMs);
+      if (projectile.source === "player") {
+        const enemyHit = hit as EnemyModel;
+        if (projectile.aoeRadius > 0) {
+          for (const enemy of this.enemies.values()) {
+            if (PhaserDistanceSq(enemyHit.x, enemyHit.y, enemy.x, enemy.y) <= projectile.aoeRadius * projectile.aoeRadius) {
+              this.damageEnemy(enemy, projectile.damage * 0.8, projectile.slowMs);
+            }
           }
+        } else {
+          this.damageEnemy(enemyHit, projectile.damage, projectile.slowMs);
         }
       } else {
-        this.damageEnemy(hit, projectile.damage, projectile.slowMs);
+        this.damagePlayer(hit as Player, projectile.damage);
       }
 
       this.projectiles.delete(id);
     }
   }
 
-  private findProjectileHit(projectile: ProjectileModel) {
+  private updateEnemyFire(deltaTime: number) {
+    if (this.state.players.size === 0) {
+      return;
+    }
+
+    for (const enemy of this.enemies.values()) {
+      if (enemy.type !== "shooter" && this.wave % 3 !== 0) {
+        continue;
+      }
+
+      enemy.fireCooldownMs -= deltaTime;
+      if (enemy.fireCooldownMs > 0 || enemy.y < enemy.stopY - 12) {
+        continue;
+      }
+
+      this.spawnEnemyProjectile(enemy);
+      enemy.fireCooldownMs = 1300 + Math.random() * 900;
+    }
+  }
+
+  private spawnEnemyProjectile(enemy: EnemyModel) {
+    const target = this.findClosestLivingPlayer(enemy.x, enemy.y);
+    if (!target) {
+      return;
+    }
+
+    const dx = target.x - enemy.x;
+    const dy = target.y - enemy.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const speed = 185 + this.wave * 4;
+    const id = `p${this.nextProjectileId++}`;
+
+    this.projectiles.set(id, {
+      id,
+      ownerId: enemy.id,
+      kind: "enemy",
+      source: "enemy",
+      x: enemy.x,
+      y: enemy.y + 18,
+      vx: (dx / length) * speed,
+      vy: (dy / length) * speed,
+      damage: enemy.type === "brute" ? 14 : 9,
+      aoeRadius: 0,
+      slowMs: 0
+    });
+  }
+
+  private findEnemyHit(projectile: ProjectileModel) {
     for (const enemy of this.enemies.values()) {
       if (PhaserDistanceSq(projectile.x, projectile.y, enemy.x, enemy.y) < 20 * 20) {
         return enemy;
@@ -315,6 +366,22 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return undefined;
+  }
+
+  private findPlayerHit(projectile: ProjectileModel) {
+    for (const player of this.state.players.values()) {
+      if (player.hp > 0 && PhaserDistanceSq(projectile.x, projectile.y, player.x, player.y) < 20 * 20) {
+        return player;
+      }
+    }
+
+    return undefined;
+  }
+
+  private findClosestLivingPlayer(x: number, y: number) {
+    return Array.from(this.state.players.values())
+      .filter((player) => player.hp > 0)
+      .sort((a, b) => PhaserDistanceSq(x, y, a.x, a.y) - PhaserDistanceSq(x, y, b.x, b.y))[0];
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number) {
@@ -333,13 +400,38 @@ export class MatchRoom extends Room<MatchState> {
   private updateEnemies(seconds: number) {
     for (const [id, enemy] of this.enemies) {
       const isSlowed = enemy.slowUntil > Date.now();
-      enemy.y += enemy.speed * (isSlowed ? 0.45 : 1) * seconds;
+      if (enemy.y < enemy.stopY) {
+        enemy.y += enemy.speed * (isSlowed ? 0.45 : 1) * seconds;
+      }
+
+      const contactedPlayer = this.findEnemyContact(enemy);
+      if (contactedPlayer) {
+        this.damagePlayer(contactedPlayer, enemy.type === "brute" ? 18 : 11);
+        this.enemies.delete(id);
+        continue;
+      }
 
       if (enemy.y >= SHOP_TOP - 10) {
         this.enemies.delete(id);
         this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 9));
       }
     }
+  }
+
+  private findEnemyContact(enemy: EnemyModel) {
+    for (const player of this.state.players.values()) {
+      if (player.hp > 0 && PhaserDistanceSq(enemy.x, enemy.y, player.x, player.y) < 30 * 30) {
+        return player;
+      }
+    }
+
+    return undefined;
+  }
+
+  private damagePlayer(player: Player, damage: number) {
+    const reduction = player.characterId === "tank" ? 0.75 : 1;
+    player.hp = Math.max(0, player.hp - damage * reduction);
+    this.teamHealth = Math.max(0, this.teamHealth - Math.max(1, Math.round(damage * 0.2)));
   }
 
   private buyUpgrade(player: Player, upgradeId: UpgradeId) {
@@ -351,6 +443,9 @@ export class MatchRoom extends Room<MatchState> {
     if (upgradeId === "heal") {
       this.teamGold -= cost;
       this.teamHealth = Math.min(this.maxTeamHealth, this.teamHealth + 28);
+      for (const teammate of this.state.players.values()) {
+        teammate.hp = Math.min(teammate.maxHp, teammate.hp + 22);
+      }
       return;
     }
 
@@ -374,6 +469,8 @@ export class MatchRoom extends Room<MatchState> {
         characterId: player.characterId,
         x: player.x,
         y: player.y,
+        hp: player.hp,
+        maxHp: player.maxHp,
         goldSpent: player.goldSpent,
         upgrades: {
           damage: player.damageLevel,
@@ -392,6 +489,7 @@ export class MatchRoom extends Room<MatchState> {
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
         kind: projectile.kind,
+        source: projectile.source,
         x: projectile.x,
         y: projectile.y
       })),
