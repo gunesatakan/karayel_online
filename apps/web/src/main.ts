@@ -93,7 +93,9 @@ class GameScene extends Phaser.Scene {
   private playerShapes = new Map<string, Phaser.GameObjects.Arc>();
   private playerLabels = new Map<string, Phaser.GameObjects.Text>();
   private statusText?: Phaser.GameObjects.Text;
+  private pingText?: Phaser.GameObjects.Text;
   private pointerTarget?: Phaser.Math.Vector2;
+  private pingTimer?: Phaser.Time.TimerEvent;
   private lastMoveSentAt = 0;
 
   constructor() {
@@ -115,6 +117,12 @@ class GameScene extends Phaser.Scene {
       fontFamily: "Arial",
       fontSize: "14px"
     });
+    this.pingText = this.add.text(GAME_WORLD_WIDTH - 20, 18, "Ping: --", {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "13px",
+      fontStyle: "bold"
+    }).setOrigin(1, 0);
 
     this.input.on("pointerdown", this.updatePointerTarget, this);
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
@@ -176,10 +184,41 @@ class GameScene extends Phaser.Scene {
       this.room.onMessage("snapshot", (players: PlayerSnapshot[]) => {
         this.renderPlayers(players);
       });
+      this.room.onMessage("pong", (message: { sentAt?: number }) => {
+        this.updatePing(message.sentAt);
+      });
+      this.startPingLoop();
     } catch (error) {
       console.error(error);
       this.statusText?.setText("Sunucuya baglanilamadi.");
     }
+  }
+
+  private startPingLoop() {
+    this.pingTimer?.remove(false);
+    this.sendPing();
+    this.pingTimer = this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => this.sendPing()
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.pingTimer?.remove(false);
+    });
+  }
+
+  private sendPing() {
+    this.room?.send("ping", { sentAt: performance.now() });
+  }
+
+  private updatePing(sentAt: unknown) {
+    if (typeof sentAt !== "number") {
+      return;
+    }
+
+    const ping = Math.max(0, Math.round(performance.now() - sentAt));
+    this.pingText?.setText(`${ping} ms`);
+    this.pingText?.setColor(ping < 90 ? "#22c55e" : ping < 160 ? "#facc15" : "#fb7185");
   }
 
   private getPlayerName() {

@@ -29,6 +29,10 @@ type MoveMessage = {
   y?: number;
 };
 
+type PingMessage = {
+  sentAt?: number;
+};
+
 export class MatchRoom extends Room<MatchState> {
   maxClients = 5;
   private readonly speed = 220;
@@ -45,6 +49,12 @@ export class MatchRoom extends Room<MatchState> {
 
       player.vx = this.clampDirection(message.x);
       player.vy = this.clampDirection(message.y);
+    });
+
+    this.onMessage("ping", (client, message: PingMessage) => {
+      client.send("pong", {
+        sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now()
+      });
     });
   }
 
