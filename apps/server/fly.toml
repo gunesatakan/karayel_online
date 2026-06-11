@@ -2,7 +2,7 @@ app = "karayel-online-server"
 primary_region = "fra"
 
 [build]
-  dockerfile = "apps/server/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "2567"
