@@ -1,15 +1,19 @@
 import Phaser from "phaser";
 import { Client, Room } from "colyseus.js";
 import {
-  BATTLE_TOP,
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  MAP_PATH,
+  PATH_WIDTH,
+  towerCatalog,
+  type CharacterDefinition,
   type CharacterId,
   type EnemySnapshot,
   type GameSnapshot,
-  type PlayerSnapshot,
-  type ProjectileSnapshot
+  type ProjectileSnapshot,
+  type TowerDefinition,
+  type TowerSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 
@@ -17,149 +21,210 @@ type GameSceneData = {
   characterId?: CharacterId;
 };
 
-type RenderPlayer = {
-  sprite: Phaser.Physics.Arcade.Sprite;
+type RenderTower = {
+  base: Phaser.GameObjects.Arc;
   label: Phaser.GameObjects.Text;
-  hpBack: Phaser.GameObjects.Rectangle;
-  hpFill: Phaser.GameObjects.Rectangle;
-  targetX: number;
-  targetY: number;
-  hp: number;
-  maxHp: number;
+  level: Phaser.GameObjects.Text;
+  range: Phaser.GameObjects.Arc;
 };
 
 export class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
-  private selectedCharacterId: CharacterId = "warrior";
-  private players = new Map<string, RenderPlayer>();
+  private selectedCharacterId: CharacterId = "zeynep";
+  private selectedCharacter: CharacterDefinition = characters[0];
+  private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
+  private selectedPlacedTowerId?: string;
   private enemies = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
   private statusText?: Phaser.GameObjects.Text;
+  private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
-  private joystickKnob?: Phaser.GameObjects.Arc;
-  private joystickVector = new Phaser.Math.Vector2(0, 0);
-  private joystickPointerId?: number;
+  private hintText?: Phaser.GameObjects.Text;
+  private ultimateButton?: Phaser.GameObjects.Rectangle;
+  private ultimateText?: Phaser.GameObjects.Text;
+  private upgradeButton?: Phaser.GameObjects.Rectangle;
+  private upgradeText?: Phaser.GameObjects.Text;
   private pingTimer?: Phaser.Time.TimerEvent;
   private pingSamples: number[] = [];
-  private lastMoveSentAt = 0;
-  private readonly joystickCenter = new Phaser.Math.Vector2(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT - 78);
-  private readonly joystickRadius = 62;
+  private latestSnapshot?: GameSnapshot;
+  private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
+  private readonly trayTop = 708;
 
   constructor() {
     super("game");
   }
 
   init(data: GameSceneData) {
-    this.selectedCharacterId = data.characterId ?? "warrior";
+    this.selectedCharacterId = data.characterId ?? "zeynep";
+    this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
+    this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
   }
 
   create() {
     this.cameras.main.setBackgroundColor("#0f172a");
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x111827);
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, BATTLE_TOP / 2, GAME_WORLD_WIDTH, BATTLE_TOP, 0x0f172a, 0.86);
-    this.add.text(18, 16, "Karayel Online", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "22px",
-      fontStyle: "bold"
-    });
-    this.statusText = this.add.text(18, 48, "Sunucu kontrol ediliyor...", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "13px"
-    });
-    this.pingText = this.add.text(GAME_WORLD_WIDTH - 18, 18, "Ping: --", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "13px",
-      fontStyle: "bold"
-    }).setOrigin(1, 0);
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x101827);
+    this.drawMap();
+    this.createHeader();
+    this.createTowerTray();
+    this.createActionButtons();
 
-    this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt", maxSize: 80 });
-    this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-bolt", maxSize: 120 });
-    this.createJoystick();
+    this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt", maxSize: 100 });
+    this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 180 });
 
+    this.input.on("pointerup", this.handleMapPointer, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
     });
 
     void this.connect();
   }
 
-  update(time: number, delta: number) {
-    this.smoothPlayers(delta);
+  private drawMap() {
+    const graphics = this.add.graphics().setDepth(1);
+    graphics.lineStyle(PATH_WIDTH + 18, 0x0b1220, 1);
+    this.strokePath(graphics);
+    graphics.lineStyle(PATH_WIDTH, 0x334155, 1);
+    this.strokePath(graphics);
+    graphics.lineStyle(2, 0x94a3b8, 0.5);
+    this.strokePath(graphics);
 
-    if (!this.room || time - this.lastMoveSentAt < 50) {
+    this.add.circle(MAP_PATH[0].x, MAP_PATH[0].y, 16, 0x22c55e, 0.9).setDepth(2);
+    const end = MAP_PATH[MAP_PATH.length - 1];
+    this.add.circle(end.x, end.y, 16, 0xfb7185, 0.9).setDepth(2);
+  }
+
+  private strokePath(graphics: Phaser.GameObjects.Graphics) {
+    graphics.beginPath();
+    graphics.moveTo(MAP_PATH[0].x, MAP_PATH[0].y);
+    for (const point of MAP_PATH.slice(1)) {
+      graphics.lineTo(point.x, point.y);
+    }
+    graphics.strokePath();
+  }
+
+  private createHeader() {
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, 40, GAME_WORLD_WIDTH, 80, 0x0f172a, 0.92).setDepth(20);
+    this.add.text(16, 12, "Karayel TD", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "22px",
+      fontStyle: "bold"
+    }).setDepth(21);
+    this.statusText = this.add.text(16, 42, "Sunucu kontrol ediliyor...", {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "12px"
+    }).setDepth(21);
+    this.topStatsText = this.add.text(16, 60, "Gold 0  Can 100  Wave 1", {
+      color: "#facc15",
+      fontFamily: "Arial",
+      fontSize: "12px",
+      fontStyle: "bold"
+    }).setDepth(21);
+    this.pingText = this.add.text(GAME_WORLD_WIDTH - 16, 16, "-- ms", {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "13px",
+      fontStyle: "bold"
+    }).setOrigin(1, 0).setDepth(21);
+  }
+
+  private createTowerTray() {
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, this.trayTop + 68, GAME_WORLD_WIDTH, 136, 0x020617, 0.94)
+      .setStrokeStyle(1, 0x334155, 0.9)
+      .setDepth(25);
+
+    this.hintText = this.add.text(14, this.trayTop + 8, `${this.selectedCharacter.displayName}: kule sec, yola degmeyen yere dokun`, {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "11px"
+    }).setDepth(26);
+
+    this.selectedCharacter.towers.forEach((tower, index) => {
+      const col = index % 3;
+      const row = Math.floor(index / 3);
+      const x = 14 + col * 122;
+      const y = this.trayTop + 28 + row * 45;
+      const button = this.add.rectangle(x, y, 112, 38, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(26);
+      this.add.text(x + 8, y + 6, tower.name, {
+        color: "#f8fafc",
+        fontFamily: "Arial",
+        fontSize: "10px",
+        fontStyle: "bold"
+      }).setDepth(27);
+      this.add.text(x + 8, y + 22, `${tower.cost}g`, {
+        color: "#facc15",
+        fontFamily: "Arial",
+        fontSize: "10px"
+      }).setDepth(27);
+      button.on("pointerup", () => {
+        this.selectedTowerDefinition = tower;
+        this.selectedPlacedTowerId = undefined;
+        this.updateSelectionUi();
+      });
+      this.towerButtons.set(tower.id, button);
+    });
+  }
+
+  private createActionButtons() {
+    this.ultimateButton = this.add.rectangle(86, 672, 140, 34, 0x7c3aed, 0.92)
+      .setStrokeStyle(1, 0xc4b5fd, 0.7)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(25);
+    this.ultimateText = this.add.text(86, 672, "Ulti 0%", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "12px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(26);
+    this.ultimateButton.on("pointerup", () => this.room?.send("useUltimate", {}));
+
+    this.upgradeButton = this.add.rectangle(282, 672, 156, 34, 0x1e293b, 0.92)
+      .setStrokeStyle(1, 0x94a3b8, 0.6)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(25);
+    this.upgradeText = this.add.text(282, 672, "Kule sec", {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "12px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(26);
+    this.upgradeButton.on("pointerup", () => {
+      if (this.selectedPlacedTowerId) {
+        this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
+      }
+    });
+  }
+
+  private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (!this.room || pointer.worldY >= this.trayTop - 8 || pointer.worldY <= 84) {
       return;
     }
 
-    this.room.send("move", { x: this.joystickVector.x, y: this.joystickVector.y });
-    this.lastMoveSentAt = time;
-  }
-
-  private createJoystick() {
-    this.add.circle(this.joystickCenter.x, this.joystickCenter.y, this.joystickRadius, 0x334155, 0.42)
-      .setStrokeStyle(2, 0x94a3b8, 0.35)
-      .setDepth(30);
-    this.joystickKnob = this.add.circle(this.joystickCenter.x, this.joystickCenter.y, 26, 0x22c55e, 0.92)
-      .setStrokeStyle(2, 0xf8fafc, 0.45)
-      .setDepth(31);
-
-    this.input.on("pointerdown", this.handleJoystickDown, this);
-    this.input.on("pointermove", this.handleJoystickMove, this);
-    this.input.on("pointerup", this.handleJoystickUp, this);
-    this.input.on("pointerupoutside", this.handleJoystickUp, this);
-  }
-
-  private handleJoystickDown(pointer: Phaser.Input.Pointer) {
-    if (this.joystickPointerId !== undefined) {
+    const tower = this.findTowerAt(pointer.worldX, pointer.worldY);
+    if (tower) {
+      this.selectedPlacedTowerId = tower.id;
+      this.updateSelectionUi();
       return;
     }
 
-    const position = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
-    if (position.distance(this.joystickCenter) > this.joystickRadius + 46) {
-      return;
-    }
-
-    this.joystickPointerId = pointer.id;
-    this.updateJoystick(position);
-  }
-
-  private handleJoystickMove(pointer: Phaser.Input.Pointer) {
-    if (pointer.id !== this.joystickPointerId) {
-      return;
-    }
-
-    this.updateJoystick(new Phaser.Math.Vector2(pointer.worldX, pointer.worldY));
-  }
-
-  private handleJoystickUp(pointer: Phaser.Input.Pointer) {
-    if (pointer.id !== this.joystickPointerId) {
-      return;
-    }
-
-    this.joystickPointerId = undefined;
-    this.joystickVector.set(0, 0);
-    this.joystickKnob?.setPosition(this.joystickCenter.x, this.joystickCenter.y);
-    this.room?.send("move", { x: 0, y: 0 });
-  }
-
-  private updateJoystick(position: Phaser.Math.Vector2) {
-    const offset = position.clone().subtract(this.joystickCenter);
-    const distance = Math.min(offset.length(), this.joystickRadius);
-
-    if (offset.lengthSq() > 0) {
-      offset.normalize();
-    }
-
-    this.joystickVector.set(offset.x, offset.y);
-    this.joystickKnob?.setPosition(
-      this.joystickCenter.x + offset.x * distance,
-      this.joystickCenter.y + offset.y * distance
-    );
+    this.selectedPlacedTowerId = undefined;
+    this.updateSelectionUi();
+    this.room.send("placeTower", {
+      definitionId: this.selectedTowerDefinition.id,
+      x: pointer.worldX,
+      y: pointer.worldY
+    });
   }
 
   private async connect() {
@@ -169,7 +234,7 @@ export class GameScene extends Phaser.Scene {
 
       const client = new Client(gameServerUrl);
       this.room = await client.joinOrCreate("match", {
-        playerName: this.getSelectedCharacterName(),
+        playerName: this.selectedCharacter.displayName,
         characterId: this.selectedCharacterId
       });
       this.localSessionId = this.room.sessionId;
@@ -196,62 +261,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderSnapshot(snapshot: GameSnapshot) {
-    this.renderPlayers(snapshot.players);
+    this.latestSnapshot = snapshot;
     this.renderEnemies(snapshot.enemies);
+    this.renderTowers(snapshot.towers);
     this.renderProjectiles(snapshot.projectiles);
+    this.renderHud(snapshot);
     this.game.events.emit("game:snapshot", snapshot);
   }
 
-  private renderPlayers(players: PlayerSnapshot[]) {
-    const activeIds = new Set(players.map((player) => player.id));
-
-    for (const [id, player] of this.players) {
-      if (!activeIds.has(id)) {
-        player.sprite.destroy();
-        player.label.destroy();
-        player.hpBack.destroy();
-        player.hpFill.destroy();
-        this.players.delete(id);
-      }
-    }
-
-    for (const player of players) {
-      let rendered = this.players.get(player.id);
-      const texture = `player-${player.characterId}`;
-
-      if (!rendered) {
-        const sprite = this.physics.add.sprite(player.x, player.y, texture).setDepth(10);
-        const label = this.add.text(player.x, player.y - 34, player.name, {
-          color: "#f8fafc",
-          fontFamily: "Arial",
-          fontSize: "12px"
-        }).setOrigin(0.5).setDepth(11);
-        const hpBack = this.add.rectangle(player.x, player.y - 23, 28, 3, 0x450a0a, 0.9).setDepth(11);
-        const hpFill = this.add.rectangle(player.x - 14, player.y - 23, 28, 3, 0x22c55e, 1).setOrigin(0, 0.5).setDepth(12);
-        rendered = { sprite, label, hpBack, hpFill, targetX: player.x, targetY: player.y, hp: player.hp, maxHp: player.maxHp };
-        this.players.set(player.id, rendered);
-      }
-
-      rendered.targetX = player.x;
-      rendered.targetY = player.y;
-      rendered.hp = player.hp;
-      rendered.maxHp = player.maxHp;
-      rendered.sprite.setTexture(texture);
-      rendered.sprite.setAlpha(player.hp <= 0 ? 0.35 : player.id === this.localSessionId ? 1 : 0.86);
-    }
-  }
-
-  private smoothPlayers(delta: number) {
-    const alpha = Math.min(1, delta / 85);
-
-    for (const player of this.players.values()) {
-      player.sprite.x = Phaser.Math.Linear(player.sprite.x, player.targetX, alpha);
-      player.sprite.y = Phaser.Math.Linear(player.sprite.y, player.targetY, alpha);
-      player.label.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 34));
-      player.hpBack.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 23));
-      player.hpFill.setPosition(Math.round(player.sprite.x - 14), Math.round(player.sprite.y - 23));
-      player.hpFill.width = 28 * Phaser.Math.Clamp(player.hp / Math.max(1, player.maxHp), 0, 1);
-    }
+  private renderHud(snapshot: GameSnapshot) {
+    this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}`);
+    const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
+    const charge = player?.ultimateCharge ?? 0;
+    this.ultimateText?.setText(`Ulti ${charge}%`);
+    this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
+    this.updateSelectionUi();
   }
 
   private renderEnemies(enemies: EnemySnapshot[]) {
@@ -276,7 +300,7 @@ export class GameScene extends Phaser.Scene {
         if (!sprite) {
           continue;
         }
-        sprite.setActive(true).setVisible(true).setDepth(6);
+        sprite.setActive(true).setVisible(true).setDepth(8);
         if (sprite.body) {
           sprite.body.enable = true;
         }
@@ -285,7 +309,54 @@ export class GameScene extends Phaser.Scene {
 
       sprite.setTexture(texture);
       sprite.setPosition(enemy.x, enemy.y);
-      sprite.setAlpha(0.72 + 0.28 * (enemy.hp / enemy.maxHp));
+      sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+    }
+  }
+
+  private renderTowers(towers: TowerSnapshot[]) {
+    const activeIds = new Set(towers.map((tower) => tower.id));
+    this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
+
+    for (const [id, tower] of this.towers) {
+      if (!activeIds.has(id)) {
+        tower.base.destroy();
+        tower.label.destroy();
+        tower.level.destroy();
+        tower.range.destroy();
+        this.towers.delete(id);
+      }
+    }
+
+    for (const tower of towers) {
+      let rendered = this.towers.get(tower.id);
+      if (!rendered) {
+        const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.08)
+          .setStrokeStyle(1, tower.color, 0.26)
+          .setVisible(false)
+          .setDepth(5);
+        const base = this.add.circle(tower.x, tower.y, 15, tower.color, 1)
+          .setStrokeStyle(2, 0xf8fafc, tower.ownerId === this.localSessionId ? 0.7 : 0.25)
+          .setDepth(12);
+        const label = this.add.text(tower.x, tower.y - 26, tower.name, {
+          color: "#f8fafc",
+          fontFamily: "Arial",
+          fontSize: "9px"
+        }).setOrigin(0.5).setDepth(13);
+        const level = this.add.text(tower.x, tower.y + 1, `${tower.level}`, {
+          color: "#020617",
+          fontFamily: "Arial",
+          fontSize: "12px",
+          fontStyle: "bold"
+        }).setOrigin(0.5).setDepth(13);
+        rendered = { base, label, level, range };
+        this.towers.set(tower.id, rendered);
+      }
+
+      rendered.base.setPosition(tower.x, tower.y).setFillStyle(tower.color, 1);
+      rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
+      rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
+      rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
+      rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
     }
   }
 
@@ -304,14 +375,14 @@ export class GameScene extends Phaser.Scene {
 
     for (const projectile of projectiles) {
       let sprite = this.projectiles.get(projectile.id);
-      const texture = projectile.source === "enemy" ? "projectile-enemy" : `projectile-${projectile.kind}`;
+      const texture = `projectile-${projectile.kind}`;
 
       if (!sprite) {
         sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
         if (!sprite) {
           continue;
         }
-        sprite.setActive(true).setVisible(true).setDepth(8);
+        sprite.setActive(true).setVisible(true).setDepth(11);
         if (sprite.body) {
           sprite.body.enable = true;
         }
@@ -321,6 +392,33 @@ export class GameScene extends Phaser.Scene {
       sprite.setTexture(texture);
       sprite.setPosition(projectile.x, projectile.y);
     }
+  }
+
+  private findTowerAt(x: number, y: number) {
+    return Array.from(this.towerSnapshots.values()).find((tower) => Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) <= 24 * 24);
+  }
+
+  private updateSelectionUi() {
+    for (const [id, button] of this.towerButtons) {
+      const selected = id === this.selectedTowerDefinition.id && !this.selectedPlacedTowerId;
+      button.setFillStyle(selected ? 0x334155 : 0x1e293b, 1);
+      button.setStrokeStyle(1, this.selectedCharacter.towers.find((tower) => tower.id === id)?.color ?? 0x94a3b8, selected ? 1 : 0.45);
+    }
+
+    const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    if (!selectedTower) {
+      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | yola degmeyen yere dokun`);
+      this.upgradeText?.setText("Kule sec");
+      this.upgradeButton?.setAlpha(0.6);
+      return;
+    }
+
+    const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
+    const cost = definition ? Math.round(definition.upgradeCost * selectedTower.level * 1.35) : 0;
+    const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 5;
+    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${Math.round(selectedTower.range)}`);
+    this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
+    this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
   }
 
   private startPingLoop() {
@@ -359,9 +457,5 @@ export class GameScene extends Phaser.Scene {
     }
 
     return `Oda/WebSocket hatasi: ${shortMessage}`;
-  }
-
-  private getSelectedCharacterName() {
-    return characters.find((character) => character.id === this.selectedCharacterId)?.displayName ?? "Atakan";
   }
 }

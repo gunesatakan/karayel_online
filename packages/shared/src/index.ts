@@ -1,41 +1,65 @@
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
+export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
+export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
 
 export const GAME_WORLD_WIDTH = 390;
 export const GAME_WORLD_HEIGHT = 844;
 export const BATTLE_TOP = 86;
 export const SHOP_TOP = 650;
 export const SHOP_HEIGHT = GAME_WORLD_HEIGHT - SHOP_TOP;
+export const PATH_WIDTH = 54;
+
+export const MAP_PATH = [
+  { x: 34, y: 104 },
+  { x: 326, y: 104 },
+  { x: 326, y: 244 },
+  { x: 82, y: 244 },
+  { x: 82, y: 392 },
+  { x: 318, y: 392 },
+  { x: 318, y: 540 },
+  { x: 72, y: 540 },
+  { x: 72, y: 694 },
+  { x: 356, y: 694 },
+  { x: 356, y: 812 }
+] as const;
 
 export type PlayerSnapshot = {
   id: string;
   name: string;
-  characterId: string;
-  x: number;
-  y: number;
-  hp: number;
-  maxHp: number;
+  characterId: CharacterId;
   goldSpent: number;
-  upgrades: {
-    damage: number;
-    fireRate: number;
-    projectileSpeed: number;
-  };
+  towersBuilt: number;
+  ultimateCharge: number;
 };
 
 export type EnemySnapshot = {
   id: string;
-  type: "grunt" | "brute" | "runner" | "shooter";
+  type: EnemyType;
   x: number;
   y: number;
   hp: number;
   maxHp: number;
 };
 
+export type TowerSnapshot = {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  characterId: CharacterId;
+  definitionId: string;
+  name: string;
+  x: number;
+  y: number;
+  level: number;
+  range: number;
+  color: number;
+};
+
 export type ProjectileSnapshot = {
   id: string;
-  kind: "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy";
-  source: "player" | "enemy";
+  kind: ProjectileKind;
+  source: "tower" | "enemy";
   x: number;
   y: number;
 };
@@ -52,8 +76,25 @@ export type TeamSnapshot = {
 export type GameSnapshot = {
   players: PlayerSnapshot[];
   enemies: EnemySnapshot[];
+  towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   team: TeamSnapshot;
+};
+
+export type TowerDefinition = {
+  id: string;
+  characterId: CharacterId;
+  name: string;
+  role: string;
+  cost: number;
+  upgradeCost: number;
+  range: number;
+  damage: number;
+  fireIntervalMs: number;
+  projectileSpeed: number;
+  aoeRadius: number;
+  slowMs: number;
+  color: number;
 };
 
 export type CharacterDefinition = {
@@ -67,7 +108,103 @@ export type CharacterDefinition = {
   fireIntervalMs: number;
   projectileSpeed: number;
   passive: string;
+  ultimate: string;
+  towers: TowerDefinition[];
   skills: string[];
+};
+
+const makeTowers = (
+  characterId: CharacterId,
+  color: number,
+  names: Array<[string, string]>,
+  base: { cost: number; range: number; damage: number; fireIntervalMs: number; projectileSpeed: number; aoeRadius?: number; slowMs?: number }
+): TowerDefinition[] => names.map(([name, role], index) => ({
+  id: `${characterId}-${index + 1}`,
+  characterId,
+  name,
+  role,
+  cost: base.cost + index * 18,
+  upgradeCost: Math.round((base.cost + index * 18) * 0.72),
+  range: base.range + index * 5,
+  damage: base.damage + index * 3,
+  fireIntervalMs: Math.max(160, base.fireIntervalMs - index * 28),
+  projectileSpeed: base.projectileSpeed + index * 18,
+  aoeRadius: base.aoeRadius ?? 0,
+  slowMs: base.slowMs ?? 0,
+  color
+}));
+
+const zeynepTowers = makeTowers("zeynep", 0xec4899, [
+  ["Kurucu Isik", "Cok hizli tek hedef"],
+  ["Pembe Firtina", "Seri hasar"],
+  ["Taht Muhru", "Alan hasari"],
+  ["Zirve Oku", "Uzun menzil"],
+  ["Emir Kulesi", "Yavaslatma"],
+  ["Zeynep Nexus", "En ust seviye hasar"]
+], { cost: 55, range: 118, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 });
+
+const atakanTowers = makeTowers("warrior", 0x22c55e, [
+  ["Ciliz Tas", "Ucuz baslangic"],
+  ["Titrek Ok", "Dusuk hasar"],
+  ["Yorgun Kule", "Yavas atis"],
+  ["Ufak Kivilcim", "Kisa menzil"],
+  ["Son Care", "Ekonomik savunma"],
+  ["Atakan Bariyeri", "Zayif destek"]
+], { cost: 24, range: 82, damage: 4, fireIntervalMs: 1180, projectileSpeed: 220 });
+
+const melisTowers = makeTowers("archer", 0x38bdf8, [
+  ["Cifte Ok", "Hizli atis"],
+  ["Seri Yay", "Coklu hedef"],
+  ["Ruzgar Oku", "Hizli mermi"],
+  ["Keskin Hat", "Dengeli hasar"],
+  ["Avci Gozu", "Uzun menzil"],
+  ["Melis Salvosu", "Cok hizli kule"]
+], { cost: 38, range: 108, damage: 8, fireIntervalMs: 430, projectileSpeed: 430 });
+
+const baranselTowers = makeTowers("mage", 0xa78bfa, [
+  ["Mor Patlama", "Alan hasari"],
+  ["Rift Tas", "Buyu hasari"],
+  ["Kozmik Halka", "Genis alan"],
+  ["Enerji Topu", "Yavas ama sert"],
+  ["Mana Kirilimi", "Zincir hasar"],
+  ["Baransel Meteoru", "Yuksek AOE"]
+], { cost: 48, range: 98, damage: 20, fireIntervalMs: 900, projectileSpeed: 280, aoeRadius: 42 });
+
+const ulkuTowers = makeTowers("healer", 0xf9a8d4, [
+  ["Sifa Nuru", "Destek hasari"],
+  ["Pembe Kalkan", "Guvenli savunma"],
+  ["Takim Isigi", "Dengeli destek"],
+  ["Can Dalgasi", "Alan kontrolu"],
+  ["Koruma Cemberi", "Yavaslatma"],
+  ["Ulku Umudu", "Takim odakli kule"]
+], { cost: 36, range: 102, damage: 9, fireIntervalMs: 690, projectileSpeed: 330, slowMs: 120 });
+
+const omerTowers = makeTowers("tank", 0xfacc15, [
+  ["Agir Zincir", "Yavaslatma"],
+  ["Sari Duvar", "Savunma"],
+  ["Kilit Kule", "Kontrol"],
+  ["Capa Atisi", "Yuksek yavaslatma"],
+  ["Kalkan Topu", "Dayanikli savunma"],
+  ["Omer Hisari", "En guclu kontrol"]
+], { cost: 42, range: 94, damage: 10, fireIntervalMs: 780, projectileSpeed: 280, slowMs: 720 });
+
+const onurTowers = makeTowers("onur", 0x14b8a6, [
+  ["Avci Nisan", "Tek hedef"],
+  ["Net Vurus", "Kritik hasar"],
+  ["Sessiz Ok", "Uzun menzil"],
+  ["Odak Hatti", "Sert vurus"],
+  ["Iz Surucu", "Hedef takibi"],
+  ["Onur Keskinligi", "Elit tek hedef"]
+], { cost: 44, range: 124, damage: 18, fireIntervalMs: 620, projectileSpeed: 390 });
+
+export const towerCatalog: Record<CharacterId, TowerDefinition[]> = {
+  zeynep: zeynepTowers,
+  warrior: atakanTowers,
+  archer: melisTowers,
+  mage: baranselTowers,
+  healer: ulkuTowers,
+  tank: omerTowers,
+  onur: onurTowers
 };
 
 export const characters: CharacterDefinition[] = [
@@ -81,8 +218,10 @@ export const characters: CharacterDefinition[] = [
     damage: 34,
     fireIntervalMs: 240,
     projectileSpeed: 520,
-    passive: "Kurucu ustunlugu.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Kurucu ustunlugu: Takimin kuleleri daha hizli tepki verir.",
+    ultimate: "Kurucu Fermani: Ekrandaki tum dusmanlara buyuk hasar verir.",
+    towers: zeynepTowers,
+    skills: zeynepTowers.map((tower) => tower.name)
   },
   {
     id: "warrior",
@@ -94,8 +233,10 @@ export const characters: CharacterDefinition[] = [
     damage: 4,
     fireIntervalMs: 1150,
     projectileSpeed: 220,
-    passive: "Hayatta kalmaya calisir.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Inat: Cok az da olsa ucuz kule kurar.",
+    ultimate: "Panik Savunmasi: Kisa sureli zayif bir alan hasari.",
+    towers: atakanTowers,
+    skills: atakanTowers.map((tower) => tower.name)
   },
   {
     id: "archer",
@@ -107,8 +248,10 @@ export const characters: CharacterDefinition[] = [
     damage: 7,
     fireIntervalMs: 320,
     projectileSpeed: 420,
-    passive: "Hizli refleks.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Hizli refleks: Kuleleri daha sik ates eder.",
+    ultimate: "Ok Yagmuru: Yol uzerindeki dusmanlara seri hasar.",
+    towers: melisTowers,
+    skills: melisTowers.map((tower) => tower.name)
   },
   {
     id: "mage",
@@ -120,47 +263,55 @@ export const characters: CharacterDefinition[] = [
     damage: 24,
     fireIntervalMs: 1100,
     projectileSpeed: 250,
-    passive: "Alan enerjisi biriktirir.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Alan enerjisi: AOE kuleleri daha genis vurur.",
+    ultimate: "Meteor: En kalabalik bolgeye patlama indirir.",
+    towers: baranselTowers,
+    skills: baranselTowers.map((tower) => tower.name)
   },
   {
     id: "healer",
     displayName: "Ülkü",
     role: "Destek",
-    summary: "Takim canini yenileyen destek sinifi.",
+    summary: "Takim canini ve savunma ritmini destekleyen sinif.",
     maxHp: 90,
     speed: 1,
     damage: 8,
     fireIntervalMs: 720,
     projectileSpeed: 330,
-    passive: "Takim direncini artirir.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Takim direnci: Ana can havuzu daha guvenli kalir.",
+    ultimate: "Can Dalgasi: Takim canini yeniler ve dusmanlari yavaslatir.",
+    towers: ulkuTowers,
+    skills: ulkuTowers.map((tower) => tower.name)
   },
   {
     id: "tank",
     displayName: "Ömer",
     role: "Tank",
-    summary: "Yavaslatma ve yuksek dayanma odakli.",
+    summary: "Yavaslatma ve yol kontrolu odakli.",
     maxHp: 130,
     speed: 0.86,
     damage: 10,
     fireIntervalMs: 800,
     projectileSpeed: 280,
-    passive: "Aldigi hasari azaltir.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Agir baski: Yavaslatma kuleleri daha uzun surer.",
+    ultimate: "Kilit Alan: Dusmanlari kisa sure yavaslatir.",
+    towers: omerTowers,
+    skills: omerTowers.map((tower) => tower.name)
   },
   {
     id: "onur",
     displayName: "Onur",
     role: "Avci",
-    summary: "Guvenilir hasar ve dengeli hareket kabiliyeti.",
+    summary: "Guvenilir tek hedef hasari ve uzun menzil.",
     maxHp: 110,
     speed: 1.04,
     damage: 16,
     fireIntervalMs: 560,
     projectileSpeed: 360,
-    passive: "Hedef takibi.",
-    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+    passive: "Hedef takibi: Kuleleri ilerideki dusmanlari onceliklendirir.",
+    ultimate: "Keskin Emir: En guclu dusmana agir hasar.",
+    towers: onurTowers,
+    skills: onurTowers.map((tower) => tower.name)
   }
 ];
 

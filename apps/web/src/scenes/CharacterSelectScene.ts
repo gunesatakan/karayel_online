@@ -78,18 +78,26 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontSize: "13px",
       wordWrap: { width: 330 }
     }));
-    this.detailObjects.push(this.add.text(28, y + 126, `Pasif: ${this.selectedCharacter.passive}`, {
+    this.detailObjects.push(this.add.text(28, y + 112, `Pasif: ${this.selectedCharacter.passive}`, {
       color: "#86efac",
       fontFamily: "Arial",
-      fontSize: "13px",
+      fontSize: "12px",
+      wordWrap: { width: 330 }
+    }));
+    this.detailObjects.push(this.add.text(28, y + 148, `Ulti: ${this.selectedCharacter.ultimate}`, {
+      color: "#c4b5fd",
+      fontFamily: "Arial",
+      fontSize: "12px",
       wordWrap: { width: 330 }
     }));
 
-    this.selectedCharacter.skills.forEach((skill, index) => {
-      this.detailObjects.push(this.add.text(32, y + 170 + index * 26, `${index + 1}. ${skill}`, {
+    this.selectedCharacter.towers.forEach((tower, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      this.detailObjects.push(this.add.text(32 + col * 166, y + 202 + row * 24, `${index + 1}. ${tower.name}`, {
         color: "#e2e8f0",
         fontFamily: "Arial",
-        fontSize: "13px"
+        fontSize: "11px"
       }));
     });
 

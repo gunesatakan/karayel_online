@@ -1,58 +1,29 @@
 import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
-import type { CharacterId, GameSnapshot, UpgradeId } from "@karayel/shared";
+import {
+  GAME_WORLD_HEIGHT,
+  GAME_WORLD_WIDTH,
+  MAP_PATH,
+  PATH_WIDTH,
+  towerCatalog,
+  type CharacterId,
+  type EnemyType,
+  type GameSnapshot,
+  type ProjectileKind,
+  type TowerDefinition
+} from "@karayel/shared";
 
-const GAME_WORLD_WIDTH = 390;
-const GAME_WORLD_HEIGHT = 844;
-const BATTLE_TOP = 86;
-const PLAYER_RADIUS = 13;
-const PLAYER_MIN_Y = BATTLE_TOP + PLAYER_RADIUS;
-const PLAYER_MAX_Y = GAME_WORLD_HEIGHT - PLAYER_RADIUS;
-const PLAYER_SPEED = 220;
-
-type ClassStats = {
-  maxHp: number;
-  speedMultiplier: number;
-  damage: number;
-  fireIntervalMs: number;
-  projectileSpeed: number;
-  projectileKind: "arrow" | "bolt" | "orb" | "light" | "chain";
-  multiShot: number;
-  aoeRadius: number;
-  slowMs: number;
-};
-
-const classStats: Record<CharacterId, ClassStats> = {
-  zeynep: { maxHp: 160, speedMultiplier: 1.35, damage: 34, fireIntervalMs: 240, projectileSpeed: 520, projectileKind: "light", multiShot: 3, aoeRadius: 34, slowMs: 450 },
-  warrior: { maxHp: 55, speedMultiplier: 0.72, damage: 4, fireIntervalMs: 1150, projectileSpeed: 220, projectileKind: "bolt", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  archer: { maxHp: 85, speedMultiplier: 1.12, damage: 7, fireIntervalMs: 320, projectileSpeed: 420, projectileKind: "arrow", multiShot: 2, aoeRadius: 0, slowMs: 0 },
-  mage: { maxHp: 75, speedMultiplier: 0.92, damage: 24, fireIntervalMs: 1100, projectileSpeed: 250, projectileKind: "orb", multiShot: 1, aoeRadius: 48, slowMs: 0 },
-  healer: { maxHp: 90, speedMultiplier: 1, damage: 8, fireIntervalMs: 720, projectileSpeed: 330, projectileKind: "light", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  tank: { maxHp: 130, speedMultiplier: 0.86, damage: 10, fireIntervalMs: 800, projectileSpeed: 280, projectileKind: "chain", multiShot: 1, aoeRadius: 0, slowMs: 1200 },
-  onur: { maxHp: 110, speedMultiplier: 1.04, damage: 16, fireIntervalMs: 560, projectileSpeed: 360, projectileKind: "arrow", multiShot: 1, aoeRadius: 0, slowMs: 0 }
-};
-
-const upgradeCosts: Record<UpgradeId, number> = {
-  damage: 35,
-  fireRate: 40,
-  projectileSpeed: 30,
-  heal: 45
-};
+const TEAM_START_GOLD = 240;
+const MAX_TEAM_HEALTH = 100;
+const TOWER_MIN_DISTANCE = 34;
+const BUILD_MARGIN = 18;
 
 class Player extends Schema {
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
-  @type("number") x = GAME_WORLD_WIDTH / 2;
-  @type("number") y = 570;
-  @type("number") hp = 100;
-  @type("number") maxHp = 100;
-  @type("number") vx = 0;
-  @type("number") vy = 0;
-  @type("number") damageLevel = 0;
-  @type("number") fireRateLevel = 0;
-  @type("number") projectileSpeedLevel = 0;
   @type("number") goldSpent = 0;
-  fireCooldownMs = 0;
+  @type("number") towersBuilt = 0;
+  @type("number") ultimateCharge = 0;
 }
 
 class MatchState extends Schema {
@@ -64,38 +35,50 @@ type JoinOptions = {
   characterId?: CharacterId;
 };
 
-type MoveMessage = {
+type PlaceTowerMessage = {
+  definitionId?: string;
   x?: number;
   y?: number;
+};
+
+type UpgradeTowerMessage = {
+  towerId?: string;
 };
 
 type PingMessage = {
   sentAt?: number;
 };
 
-type BuyUpgradeMessage = {
-  upgradeId?: UpgradeId;
-};
-
 type EnemyModel = {
   id: string;
-  type: "grunt" | "brute" | "runner" | "shooter";
+  type: EnemyType;
   x: number;
   y: number;
   hp: number;
   maxHp: number;
   speed: number;
   reward: number;
+  pathDistance: number;
   slowUntil: number;
-  stopY: number;
-  fireCooldownMs: number;
+};
+
+type TowerModel = {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  characterId: CharacterId;
+  definition: TowerDefinition;
+  x: number;
+  y: number;
+  level: number;
+  cooldownMs: number;
 };
 
 type ProjectileModel = {
   id: string;
-  ownerId: string;
-  kind: "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy";
-  source: "player" | "enemy";
+  kind: ProjectileKind;
+  source: "tower";
+  targetId: string;
   x: number;
   y: number;
   vx: number;
@@ -105,42 +88,45 @@ type ProjectileModel = {
   slowMs: number;
 };
 
+const pathSegments = MAP_PATH.slice(0, -1).map((point, index) => {
+  const next = MAP_PATH[index + 1];
+  const length = Math.hypot(next.x - point.x, next.y - point.y);
+
+  return { from: point, to: next, length };
+});
+
+const totalPathLength = pathSegments.reduce((total, segment) => total + segment.length, 0);
+
 export class MatchRoom extends Room<MatchState> {
-  maxClients = 5;
+  maxClients = 7;
   private enemies = new Map<string, EnemyModel>();
+  private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private nextEnemyId = 1;
+  private nextTowerId = 1;
   private nextProjectileId = 1;
-  private teamHealth = 100;
-  private readonly maxTeamHealth = 100;
-  private teamGold = 0;
+  private teamHealth = MAX_TEAM_HEALTH;
+  private teamGold = TEAM_START_GOLD;
   private wave = 1;
   private kills = 0;
   private waveSpawned = 0;
-  private waveTarget = 8;
-  private spawnCooldownMs = 800;
+  private waveTarget = 10;
+  private spawnCooldownMs = 500;
 
   onCreate() {
     this.setState(new MatchState());
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
-    this.onMessage("move", (client, message: MoveMessage) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player) {
-        return;
-      }
-
-      player.vx = this.clampDirection(message.x);
-      player.vy = this.clampDirection(message.y);
+    this.onMessage("placeTower", (client, message: PlaceTowerMessage) => {
+      this.placeTower(client, message);
     });
 
-    this.onMessage("buyUpgrade", (client, message: BuyUpgradeMessage) => {
-      const player = this.state.players.get(client.sessionId);
-      if (!player || !message.upgradeId) {
-        return;
-      }
+    this.onMessage("upgradeTower", (client, message: UpgradeTowerMessage) => {
+      this.upgradeTower(client, message);
+    });
 
-      this.buyUpgrade(player, message.upgradeId);
+    this.onMessage("useUltimate", (client) => {
+      this.useUltimate(client);
     });
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
@@ -154,10 +140,6 @@ export class MatchRoom extends Room<MatchState> {
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
     player.characterId = this.getCharacterId(options.characterId);
-    player.maxHp = classStats[player.characterId].maxHp;
-    player.hp = player.maxHp;
-    player.x = GAME_WORLD_WIDTH / 2 + (Math.random() - 0.5) * 120;
-    player.y = GAME_WORLD_HEIGHT - 190 + Math.random() * 56;
 
     this.state.players.set(client.sessionId, player);
   }
@@ -169,22 +151,12 @@ export class MatchRoom extends Room<MatchState> {
   private update(deltaTime: number) {
     const seconds = deltaTime / 1000;
 
-    this.updatePlayers(seconds);
     this.updateSpawning(deltaTime);
-    this.updateAutoFire(deltaTime);
+    this.updateTowers(deltaTime);
     this.updateProjectiles(seconds);
-    this.updateEnemyFire(deltaTime);
     this.updateEnemies(seconds);
+    this.chargeUltimates(seconds);
     this.broadcast("snapshot", this.getSnapshot());
-  }
-
-  private updatePlayers(seconds: number) {
-    for (const player of this.state.players.values()) {
-      const stats = classStats[this.getCharacterId(player.characterId)];
-      const speed = PLAYER_SPEED * stats.speedMultiplier;
-      player.x = this.clamp(player.x + player.vx * speed * seconds, PLAYER_RADIUS, GAME_WORLD_WIDTH - PLAYER_RADIUS);
-      player.y = this.clamp(player.y + player.vy * speed * seconds, PLAYER_MIN_Y, PLAYER_MAX_Y);
-    }
   }
 
   private updateSpawning(deltaTime: number) {
@@ -195,8 +167,9 @@ export class MatchRoom extends Room<MatchState> {
     if (this.waveSpawned >= this.waveTarget && this.enemies.size === 0) {
       this.wave += 1;
       this.waveSpawned = 0;
-      this.waveTarget = 8 + this.wave * 3;
-      this.spawnCooldownMs = 900;
+      this.waveTarget = 10 + this.wave * 3;
+      this.spawnCooldownMs = 950;
+      this.teamGold += 20 + this.wave * 3;
     }
 
     if (this.waveSpawned >= this.waveTarget) {
@@ -210,73 +183,69 @@ export class MatchRoom extends Room<MatchState> {
 
     this.spawnEnemy();
     this.waveSpawned += 1;
-    this.spawnCooldownMs = Math.max(360, 1050 - this.wave * 45);
+    this.spawnCooldownMs = Math.max(310, 980 - this.wave * 34);
   }
 
   private spawnEnemy() {
     const roll = Math.random();
-    const isRangedWave = this.wave % 3 === 0;
-    const type: EnemyModel["type"] = isRangedWave || roll > 0.86 ? "shooter" : roll > 0.68 ? "brute" : roll > 0.48 ? "runner" : "grunt";
-    const waveScale = 1 + this.wave * 0.12;
-    const maxHp = Math.round((type === "brute" ? 56 : type === "runner" ? 22 : type === "shooter" ? 30 : 34) * waveScale);
-    const speed = (type === "runner" ? 68 : type === "brute" ? 34 : type === "shooter" ? 38 : 46) + this.wave * 2.2;
-
+    const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
+    const waveScale = 1 + this.wave * 0.14;
+    const maxHp = Math.round((type === "brute" ? 76 : type === "runner" ? 30 : type === "shooter" ? 42 : 46) * waveScale);
+    const speed = (type === "runner" ? 78 : type === "brute" ? 34 : type === "shooter" ? 44 : 50) + this.wave * 2.4;
+    const start = MAP_PATH[0];
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
       id,
       type,
-      x: 28 + Math.random() * (GAME_WORLD_WIDTH - 56),
-      y: BATTLE_TOP - 24,
+      x: start.x,
+      y: start.y,
       hp: maxHp,
       maxHp,
       speed,
-      reward: type === "brute" ? 12 : type === "runner" ? 7 : type === "shooter" ? 10 : 9,
-      slowUntil: 0,
-      stopY: isRangedWave || type === "shooter" ? 150 + Math.random() * 130 : GAME_WORLD_HEIGHT - 12,
-      fireCooldownMs: 700 + Math.random() * 900
+      reward: type === "brute" ? 18 : type === "runner" ? 11 : type === "shooter" ? 14 : 12,
+      pathDistance: 0,
+      slowUntil: 0
     });
   }
 
-  private updateAutoFire(deltaTime: number) {
-    for (const [playerId, player] of this.state.players.entries()) {
-      if (player.hp <= 0) {
+  private updateTowers(deltaTime: number) {
+    for (const tower of this.towers.values()) {
+      tower.cooldownMs -= deltaTime;
+      if (tower.cooldownMs > 0) {
         continue;
       }
 
-      player.fireCooldownMs -= deltaTime;
-      if (player.fireCooldownMs > 0) {
+      const target = this.findTowerTarget(tower);
+      if (!target) {
         continue;
       }
 
-      const stats = classStats[this.getCharacterId(player.characterId)];
-      const fireInterval = Math.max(140, stats.fireIntervalMs * (1 - player.fireRateLevel * 0.08));
-      this.spawnPlayerProjectiles(playerId, player, stats);
-
-      player.fireCooldownMs = fireInterval;
+      this.spawnTowerProjectile(tower, target);
+      tower.cooldownMs = this.getTowerFireInterval(tower);
     }
   }
 
-  private spawnPlayerProjectiles(ownerId: string, player: Player, stats: ClassStats) {
-    const speed = stats.projectileSpeed + player.projectileSpeedLevel * 32;
-    const offsets = stats.multiShot === 3 ? [-10, 0, 10] : stats.multiShot > 1 ? [-8, 8] : [0];
+  private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const speed = tower.definition.projectileSpeed + tower.level * 22;
+    const id = `p${this.nextProjectileId++}`;
 
-    for (const offset of offsets) {
-      const id = `p${this.nextProjectileId++}`;
-      this.projectiles.set(id, {
-        id,
-        ownerId,
-        kind: stats.projectileKind,
-        source: "player",
-        x: player.x + offset,
-        y: player.y - 16,
-        vx: offset * 2.2,
-        vy: -speed,
-        damage: stats.damage + player.damageLevel * 4,
-        aoeRadius: stats.aoeRadius,
-        slowMs: stats.slowMs
-      });
-    }
+    this.projectiles.set(id, {
+      id,
+      kind: "tower",
+      source: "tower",
+      targetId: target.id,
+      x: tower.x,
+      y: tower.y,
+      vx: (dx / length) * speed,
+      vy: (dy / length) * speed,
+      damage: tower.definition.damage * (1 + (tower.level - 1) * 0.42),
+      aoeRadius: tower.definition.aoeRadius + (tower.level - 1) * 5,
+      slowMs: tower.definition.slowMs + (tower.level - 1) * 90
+    });
   }
 
   private updateProjectiles(seconds: number) {
@@ -284,183 +253,218 @@ export class MatchRoom extends Room<MatchState> {
       projectile.x += projectile.vx * seconds;
       projectile.y += projectile.vy * seconds;
 
-      if (projectile.x < -24 || projectile.x > GAME_WORLD_WIDTH + 24 || projectile.y < BATTLE_TOP - 48 || projectile.y > GAME_WORLD_HEIGHT + 24) {
+      const target = this.enemies.get(projectile.targetId);
+      if (!target) {
         this.projectiles.delete(id);
         continue;
       }
 
-      const hit = projectile.source === "player" ? this.findEnemyHit(projectile) : this.findPlayerHit(projectile);
-      if (!hit) {
+      if (
+        projectile.x < -30 ||
+        projectile.x > GAME_WORLD_WIDTH + 30 ||
+        projectile.y < -30 ||
+        projectile.y > GAME_WORLD_HEIGHT + 30
+      ) {
+        this.projectiles.delete(id);
         continue;
       }
 
-      if (projectile.source === "player") {
-        const enemyHit = hit as EnemyModel;
-        if (projectile.aoeRadius > 0) {
-          for (const enemy of this.enemies.values()) {
-            if (PhaserDistanceSq(enemyHit.x, enemyHit.y, enemy.x, enemy.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-              this.damageEnemy(enemy, projectile.damage * 0.8, projectile.slowMs);
-            }
+      if (distanceSq(projectile.x, projectile.y, target.x, target.y) > 14 * 14) {
+        continue;
+      }
+
+      if (projectile.aoeRadius > 0) {
+        for (const enemy of this.enemies.values()) {
+          if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
+            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs);
           }
-        } else {
-          this.damageEnemy(enemyHit, projectile.damage, projectile.slowMs);
         }
       } else {
-        this.damagePlayer(hit as Player, projectile.damage);
+        this.damageEnemy(target, projectile.damage, projectile.slowMs);
       }
 
       this.projectiles.delete(id);
     }
   }
 
-  private updateEnemyFire(deltaTime: number) {
-    if (this.state.players.size === 0) {
-      return;
-    }
-
-    for (const enemy of this.enemies.values()) {
-      if (enemy.type !== "shooter" && this.wave % 3 !== 0) {
-        continue;
-      }
-
-      enemy.fireCooldownMs -= deltaTime;
-      if (enemy.fireCooldownMs > 0 || enemy.y < enemy.stopY - 12) {
-        continue;
-      }
-
-      this.spawnEnemyProjectile(enemy);
-      enemy.fireCooldownMs = 1300 + Math.random() * 900;
-    }
-  }
-
-  private spawnEnemyProjectile(enemy: EnemyModel) {
-    const target = this.findClosestLivingPlayer(enemy.x, enemy.y);
-    if (!target) {
-      return;
-    }
-
-    const dx = target.x - enemy.x;
-    const dy = target.y - enemy.y;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const speed = 185 + this.wave * 4;
-    const id = `p${this.nextProjectileId++}`;
-
-    this.projectiles.set(id, {
-      id,
-      ownerId: enemy.id,
-      kind: "enemy",
-      source: "enemy",
-      x: enemy.x,
-      y: enemy.y + 18,
-      vx: (dx / length) * speed,
-      vy: (dy / length) * speed,
-      damage: enemy.type === "brute" ? 14 : 9,
-      aoeRadius: 0,
-      slowMs: 0
-    });
-  }
-
-  private findEnemyHit(projectile: ProjectileModel) {
-    for (const enemy of this.enemies.values()) {
-      if (PhaserDistanceSq(projectile.x, projectile.y, enemy.x, enemy.y) < 16 * 16) {
-        return enemy;
-      }
-    }
-
-    return undefined;
-  }
-
-  private findPlayerHit(projectile: ProjectileModel) {
-    for (const player of this.state.players.values()) {
-      if (player.hp > 0 && PhaserDistanceSq(projectile.x, projectile.y, player.x, player.y) < 16 * 16) {
-        return player;
-      }
-    }
-
-    return undefined;
-  }
-
-  private findClosestLivingPlayer(x: number, y: number) {
-    return Array.from(this.state.players.values())
-      .filter((player) => player.hp > 0)
-      .sort((a, b) => PhaserDistanceSq(x, y, a.x, a.y) - PhaserDistanceSq(x, y, b.x, b.y))[0];
-  }
-
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number) {
-    enemy.hp -= damage;
-    if (slowMs > 0) {
-      enemy.slowUntil = Date.now() + slowMs;
-    }
-
-    if (enemy.hp <= 0) {
-      this.enemies.delete(enemy.id);
-      this.teamGold += enemy.reward;
-      this.kills += 1;
-    }
-  }
-
   private updateEnemies(seconds: number) {
     for (const [id, enemy] of this.enemies) {
       const isSlowed = enemy.slowUntil > Date.now();
-      if (enemy.y < enemy.stopY) {
-        enemy.y += enemy.speed * (isSlowed ? 0.45 : 1) * seconds;
-      }
+      enemy.pathDistance += enemy.speed * (isSlowed ? 0.48 : 1) * seconds;
 
-      const contactedPlayer = this.findEnemyContact(enemy);
-      if (contactedPlayer) {
-        this.damagePlayer(contactedPlayer, enemy.type === "brute" ? 18 : 11);
+      if (enemy.pathDistance >= totalPathLength) {
         this.enemies.delete(id);
+        this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
         continue;
       }
 
-      if (enemy.y >= GAME_WORLD_HEIGHT - 10) {
-        this.enemies.delete(id);
-        this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 9));
-      }
+      const point = getPointAlongPath(enemy.pathDistance);
+      enemy.x = point.x;
+      enemy.y = point.y;
     }
   }
 
-  private findEnemyContact(enemy: EnemyModel) {
-    for (const player of this.state.players.values()) {
-      if (player.hp > 0 && PhaserDistanceSq(enemy.x, enemy.y, player.x, player.y) < 23 * 23) {
-        return player;
-      }
+  private placeTower(client: Client, message: PlaceTowerMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || typeof message.x !== "number" || typeof message.y !== "number" || !message.definitionId) {
+      return;
     }
 
-    return undefined;
+    const definition = this.findTowerDefinition(player.characterId, message.definitionId);
+    if (!definition || this.teamGold < definition.cost || !this.canPlaceTower(message.x, message.y)) {
+      return;
+    }
+
+    const tower: TowerModel = {
+      id: `t${this.nextTowerId++}`,
+      ownerId: client.sessionId,
+      ownerName: player.name,
+      characterId: player.characterId,
+      definition,
+      x: this.clamp(message.x, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
+      y: this.clamp(message.y, BUILD_MARGIN, GAME_WORLD_HEIGHT - BUILD_MARGIN),
+      level: 1,
+      cooldownMs: 150
+    };
+
+    this.towers.set(tower.id, tower);
+    this.teamGold -= definition.cost;
+    player.goldSpent += definition.cost;
+    player.towersBuilt += 1;
   }
 
-  private damagePlayer(player: Player, damage: number) {
-    const reduction = player.characterId === "tank" ? 0.75 : 1;
-    player.hp = Math.max(0, player.hp - damage * reduction);
-    this.teamHealth = Math.max(0, this.teamHealth - Math.max(1, Math.round(damage * 0.2)));
-  }
+  private upgradeTower(client: Client, message: UpgradeTowerMessage) {
+    if (!message.towerId) {
+      return;
+    }
 
-  private buyUpgrade(player: Player, upgradeId: UpgradeId) {
-    const cost = upgradeCosts[upgradeId];
+    const player = this.state.players.get(client.sessionId);
+    const tower = this.towers.get(message.towerId);
+    if (!player || !tower || tower.ownerId !== client.sessionId || tower.level >= 5) {
+      return;
+    }
+
+    const cost = Math.round(tower.definition.upgradeCost * tower.level * 1.35);
     if (this.teamGold < cost) {
       return;
     }
 
-    if (upgradeId === "heal") {
-      this.teamGold -= cost;
-      this.teamHealth = Math.min(this.maxTeamHealth, this.teamHealth + 28);
-      for (const teammate of this.state.players.values()) {
-        teammate.hp = Math.min(teammate.maxHp, teammate.hp + 22);
+    this.teamGold -= cost;
+    player.goldSpent += cost;
+    tower.level += 1;
+  }
+
+  private useUltimate(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.ultimateCharge < 100) {
+      return;
+    }
+
+    player.ultimateCharge = 0;
+
+    if (player.characterId === "zeynep") {
+      for (const enemy of this.enemies.values()) {
+        this.damageEnemy(enemy, 120, 700);
       }
       return;
     }
 
-    if (upgradeId === "damage") {
-      player.damageLevel += 1;
-    } else if (upgradeId === "fireRate") {
-      player.fireRateLevel += 1;
-    } else if (upgradeId === "projectileSpeed") {
-      player.projectileSpeedLevel += 1;
+    if (player.characterId === "mage") {
+      for (const enemy of this.enemies.values()) {
+        this.damageEnemy(enemy, 85, 0);
+      }
+      return;
     }
 
-    player.goldSpent += cost;
-    this.teamGold -= cost;
+    if (player.characterId === "healer") {
+      this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 28);
+      for (const enemy of this.enemies.values()) {
+        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + 1800);
+      }
+      return;
+    }
+
+    if (player.characterId === "tank") {
+      for (const enemy of this.enemies.values()) {
+        this.damageEnemy(enemy, 35, 3200);
+      }
+      return;
+    }
+
+    if (player.characterId === "onur") {
+      const enemy = Array.from(this.enemies.values()).sort((a, b) => b.hp - a.hp)[0];
+      if (enemy) {
+        this.damageEnemy(enemy, 220, 0);
+      }
+      return;
+    }
+
+    if (player.characterId === "archer") {
+      for (const enemy of Array.from(this.enemies.values()).sort((a, b) => b.pathDistance - a.pathDistance).slice(0, 6)) {
+        this.damageEnemy(enemy, 70, 0);
+      }
+      return;
+    }
+
+    for (const enemy of this.enemies.values()) {
+      this.damageEnemy(enemy, 25, 0);
+    }
+  }
+
+  private canPlaceTower(x: number, y: number) {
+    if (
+      x < BUILD_MARGIN ||
+      x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
+      y < BUILD_MARGIN ||
+      y > GAME_WORLD_HEIGHT - BUILD_MARGIN ||
+      this.distanceToPath(x, y) < PATH_WIDTH / 2 + 16
+    ) {
+      return false;
+    }
+
+    for (const tower of this.towers.values()) {
+      if (distanceSq(x, y, tower.x, tower.y) < TOWER_MIN_DISTANCE * TOWER_MIN_DISTANCE) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private findTowerTarget(tower: TowerModel) {
+    const range = this.getTowerRange(tower);
+
+    return Array.from(this.enemies.values())
+      .filter((enemy) => distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range)
+      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  }
+
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number) {
+    if (!this.enemies.has(enemy.id)) {
+      return;
+    }
+
+    enemy.hp -= damage;
+    if (slowMs > 0) {
+      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + slowMs);
+    }
+
+    if (enemy.hp > 0) {
+      return;
+    }
+
+    this.enemies.delete(enemy.id);
+    this.teamGold += enemy.reward;
+    this.kills += 1;
+    for (const player of this.state.players.values()) {
+      player.ultimateCharge = Math.min(100, player.ultimateCharge + 7);
+    }
+  }
+
+  private chargeUltimates(seconds: number) {
+    for (const player of this.state.players.values()) {
+      player.ultimateCharge = Math.min(100, player.ultimateCharge + seconds * 1.4);
+    }
   }
 
   private getSnapshot(): GameSnapshot {
@@ -469,16 +473,9 @@ export class MatchRoom extends Room<MatchState> {
         id,
         name: player.name,
         characterId: player.characterId,
-        x: player.x,
-        y: player.y,
-        hp: player.hp,
-        maxHp: player.maxHp,
         goldSpent: player.goldSpent,
-        upgrades: {
-          damage: player.damageLevel,
-          fireRate: player.fireRateLevel,
-          projectileSpeed: player.projectileSpeedLevel
-        }
+        towersBuilt: player.towersBuilt,
+        ultimateCharge: Math.round(player.ultimateCharge)
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
@@ -487,6 +484,19 @@ export class MatchRoom extends Room<MatchState> {
         y: enemy.y,
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp
+      })),
+      towers: Array.from(this.towers.values()).map((tower) => ({
+        id: tower.id,
+        ownerId: tower.ownerId,
+        ownerName: tower.ownerName,
+        characterId: tower.characterId,
+        definitionId: tower.definition.id,
+        name: tower.definition.name,
+        x: tower.x,
+        y: tower.y,
+        level: tower.level,
+        range: this.getTowerRange(tower),
+        color: tower.definition.color
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
@@ -497,7 +507,7 @@ export class MatchRoom extends Room<MatchState> {
       })),
       team: {
         health: this.teamHealth,
-        maxHealth: this.maxTeamHealth,
+        maxHealth: MAX_TEAM_HEALTH,
         gold: this.teamGold,
         wave: this.wave,
         enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size,
@@ -506,12 +516,20 @@ export class MatchRoom extends Room<MatchState> {
     };
   }
 
-  private clampDirection(value: unknown) {
-    if (typeof value !== "number" || Number.isNaN(value)) {
-      return 0;
-    }
+  private findTowerDefinition(characterId: CharacterId, definitionId: string) {
+    return towerCatalog[characterId].find((definition) => definition.id === definitionId);
+  }
 
-    return this.clamp(value, -1, 1);
+  private getTowerRange(tower: TowerModel) {
+    return tower.definition.range + (tower.level - 1) * 11;
+  }
+
+  private getTowerFireInterval(tower: TowerModel) {
+    return Math.max(120, tower.definition.fireIntervalMs * (1 - (tower.level - 1) * 0.1));
+  }
+
+  private distanceToPath(x: number, y: number) {
+    return Math.min(...pathSegments.map((segment) => distanceToSegment(x, y, segment.from.x, segment.from.y, segment.to.x, segment.to.y)));
   }
 
   private getCharacterId(value: unknown): CharacterId {
@@ -527,8 +545,38 @@ export class MatchRoom extends Room<MatchState> {
   }
 }
 
-function PhaserDistanceSq(ax: number, ay: number, bx: number, by: number) {
+function getPointAlongPath(distance: number) {
+  let remaining = distance;
+
+  for (const segment of pathSegments) {
+    if (remaining <= segment.length) {
+      const ratio = remaining / segment.length;
+      return {
+        x: segment.from.x + (segment.to.x - segment.from.x) * ratio,
+        y: segment.from.y + (segment.to.y - segment.from.y) * ratio
+      };
+    }
+
+    remaining -= segment.length;
+  }
+
+  const end = MAP_PATH[MAP_PATH.length - 1];
+  return { x: end.x, y: end.y };
+}
+
+function distanceSq(ax: number, ay: number, bx: number, by: number) {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
+}
+
+function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
+  const x = ax + t * dx;
+  const y = ay + t * dy;
+
+  return Math.hypot(px - x, py - y);
 }
