@@ -1,33 +1,110 @@
 import Phaser from "phaser";
 import { Client, Room } from "colyseus.js";
-import type { PlayerSnapshot } from "@karayel/shared";
+import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH, type PlayerSnapshot } from "@karayel/shared";
 import "./style.css";
 
 const gameServerUrl =
   import.meta.env.VITE_GAME_SERVER_URL ??
   (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : "ws://localhost:2567");
 
-class MainScene extends Phaser.Scene {
+class MenuScene extends Phaser.Scene {
+  constructor() {
+    super("menu");
+  }
+
+  create() {
+    this.cameras.main.setBackgroundColor("#0f172a");
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x111827);
+    this.add.circle(72, 84, 34, 0x22c55e, 0.95);
+    this.add.circle(318, 190, 52, 0x38bdf8, 0.2);
+    this.add.circle(54, 640, 78, 0x22c55e, 0.08);
+
+    this.add.text(28, 132, "Karayel", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "46px",
+      fontStyle: "bold"
+    });
+    this.add.text(30, 184, "Online", {
+      color: "#38bdf8",
+      fontFamily: "Arial",
+      fontSize: "42px",
+      fontStyle: "bold"
+    });
+
+    this.add.text(30, 268, "Oyuncu", {
+      color: "#94a3b8",
+      fontFamily: "Arial",
+      fontSize: "14px"
+    });
+    this.add.text(30, 292, this.getPlayerName(), {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "22px",
+      fontStyle: "bold"
+    });
+
+    this.createButton(30, 560, "Oyuna Basla", () => {
+      this.scene.start("game");
+    });
+
+    this.add.text(GAME_WORLD_WIDTH / 2, 790, "karayelonline.vercel.app", {
+      color: "#64748b",
+      fontFamily: "Arial",
+      fontSize: "12px"
+    }).setOrigin(0.5);
+  }
+
+  private createButton(x: number, y: number, label: string, onClick: () => void) {
+    const button = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 60, 58, 0x22c55e, 1)
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add.text(x + (GAME_WORLD_WIDTH - 60) / 2, y + 29, label, {
+      color: "#052e16",
+      fontFamily: "Arial",
+      fontSize: "20px",
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+
+    button.on("pointerdown", () => button.setFillStyle(0x16a34a));
+    button.on("pointerout", () => button.setFillStyle(0x22c55e));
+    button.on("pointerup", () => {
+      button.setFillStyle(0x22c55e);
+      onClick();
+    });
+    text.setInteractive({ useHandCursor: true }).on("pointerup", onClick);
+  }
+
+  private getPlayerName() {
+    const savedName = window.localStorage.getItem("karayel_player_name");
+    if (savedName) {
+      return savedName;
+    }
+
+    const generatedName = `Oyuncu ${Math.floor(Math.random() * 900 + 100)}`;
+    window.localStorage.setItem("karayel_player_name", generatedName);
+    return generatedName;
+  }
+}
+
+class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
   private playerShapes = new Map<string, Phaser.GameObjects.Arc>();
   private playerLabels = new Map<string, Phaser.GameObjects.Text>();
-  private background?: Phaser.GameObjects.Rectangle;
-  private titleText?: Phaser.GameObjects.Text;
   private statusText?: Phaser.GameObjects.Text;
   private pointerTarget?: Phaser.Math.Vector2;
   private lastMoveSentAt = 0;
 
   constructor() {
-    super("main");
+    super("game");
   }
 
   create() {
-    const { width, height } = this.scale;
-
     this.cameras.main.setBackgroundColor("#0f172a");
-    this.background = this.add.rectangle(width / 2, height / 2, width, height, 0x111827);
-    this.titleText = this.add.text(20, 18, "Karayel Online", {
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x111827);
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, 76, GAME_WORLD_WIDTH, 112, 0x0f172a, 0.82);
+    this.add.text(20, 18, "Karayel Online", {
       color: "#f8fafc",
       fontFamily: "Arial",
       fontSize: "24px",
@@ -49,9 +126,6 @@ class MainScene extends Phaser.Scene {
       this.pointerTarget = undefined;
       this.sendMove(0, 0);
     });
-
-    this.scale.on("resize", this.resizeScene, this);
-    this.resizeScene({ width, height });
 
     void this.connect();
   }
@@ -83,14 +157,10 @@ class MainScene extends Phaser.Scene {
   }
 
   private updatePointerTarget(pointer: Phaser.Input.Pointer) {
-    this.pointerTarget = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
-  }
-
-  private resizeScene(gameSize: { width: number; height: number }) {
-    this.background?.setPosition(gameSize.width / 2, gameSize.height / 2);
-    this.background?.setSize(gameSize.width, gameSize.height);
-    this.titleText?.setPosition(20, 18);
-    this.statusText?.setPosition(20, 52);
+    this.pointerTarget = new Phaser.Math.Vector2(
+      Phaser.Math.Clamp(pointer.worldX, 0, GAME_WORLD_WIDTH),
+      Phaser.Math.Clamp(pointer.worldY, 0, GAME_WORLD_HEIGHT)
+    );
   }
 
   private async connect() {
@@ -164,36 +234,20 @@ class MainScene extends Phaser.Scene {
   }
 }
 
-const game = new Phaser.Game({
+new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: getViewportSize().width,
-  height: getViewportSize().height,
-  scene: MainScene,
+  width: GAME_WORLD_WIDTH,
+  height: GAME_WORLD_HEIGHT,
+  scene: [MenuScene, GameScene],
   scale: {
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
   input: {
     activePointers: 3
   }
 });
-
-function getViewportSize() {
-  return {
-    width: Math.round(window.visualViewport?.width ?? window.innerWidth),
-    height: Math.round(window.visualViewport?.height ?? window.innerHeight)
-  };
-}
-
-function resizeGameToViewport() {
-  const { width, height } = getViewportSize();
-  game.scale.resize(width, height);
-}
-
-window.visualViewport?.addEventListener("resize", resizeGameToViewport);
-window.addEventListener("resize", resizeGameToViewport);
-window.addEventListener("orientationchange", () => window.setTimeout(resizeGameToViewport, 250));
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {

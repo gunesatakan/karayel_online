@@ -2,6 +2,10 @@ import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import type { PlayerSnapshot } from "@karayel/shared";
 
+const GAME_WORLD_WIDTH = 390;
+const GAME_WORLD_HEIGHT = 844;
+const PLAYER_RADIUS = 18;
+
 class Player extends Schema {
   @type("string") name = "";
   @type("string") characterId = "karayel";
@@ -48,8 +52,8 @@ export class MatchRoom extends Room<MatchState> {
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
     player.characterId = options.characterId?.slice(0, 32) || "karayel";
-    player.x = 160 + Math.random() * 320;
-    player.y = 160 + Math.random() * 320;
+    player.x = 80 + Math.random() * (GAME_WORLD_WIDTH - 160);
+    player.y = 180 + Math.random() * (GAME_WORLD_HEIGHT - 320);
 
     this.state.players.set(client.sessionId, player);
   }
@@ -62,8 +66,8 @@ export class MatchRoom extends Room<MatchState> {
     const seconds = deltaTime / 1000;
 
     for (const player of this.state.players.values()) {
-      player.x = this.clamp(player.x + player.vx * this.speed * seconds, 24, 1200);
-      player.y = this.clamp(player.y + player.vy * this.speed * seconds, 80, 800);
+      player.x = this.clamp(player.x + player.vx * this.speed * seconds, PLAYER_RADIUS, GAME_WORLD_WIDTH - PLAYER_RADIUS);
+      player.y = this.clamp(player.y + player.vy * this.speed * seconds, 96, GAME_WORLD_HEIGHT - PLAYER_RADIUS);
     }
 
     this.broadcast("snapshot", this.getSnapshot());

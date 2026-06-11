@@ -1,5 +1,8 @@
 export type CharacterId = "karayel";
 
+export const GAME_WORLD_WIDTH = 390;
+export const GAME_WORLD_HEIGHT = 844;
+
 export type PlayerSnapshot = {
   id: string;
   name: string;
