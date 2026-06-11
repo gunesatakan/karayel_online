@@ -1,4 +1,4 @@
-export type CharacterId = "warrior" | "archer" | "mage" | "healer" | "tank";
+export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 
 export const GAME_WORLD_WIDTH = 390;
@@ -72,16 +72,29 @@ export type CharacterDefinition = {
 
 export const characters: CharacterDefinition[] = [
   {
+    id: "zeynep",
+    displayName: "Zeynep",
+    role: "Kurucu",
+    summary: "Tum karakterlerin, Atakan dahil, kurucusu. En guclu, en cevik ve en yuksek hasara sahip karakter.",
+    maxHp: 160,
+    speed: 1.35,
+    damage: 34,
+    fireIntervalMs: 240,
+    projectileSpeed: 520,
+    passive: "Kurucu ustunlugu.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+  },
+  {
     id: "warrior",
     displayName: "Atakan",
-    role: "Dengeli",
-    summary: "Standart atis hizi ve guvenilir hasar.",
-    maxHp: 100,
-    speed: 1,
-    damage: 14,
-    fireIntervalMs: 650,
-    projectileSpeed: 320,
-    passive: "Dengeli savas ritmi.",
+    role: "Ciliz",
+    summary: "En yavas, en gucsuz ve en kirilgan karakter.",
+    maxHp: 55,
+    speed: 0.72,
+    damage: 4,
+    fireIntervalMs: 1150,
+    projectileSpeed: 220,
+    passive: "Hayatta kalmaya calisir.",
     skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   },
   {
@@ -134,6 +147,19 @@ export const characters: CharacterDefinition[] = [
     fireIntervalMs: 800,
     projectileSpeed: 280,
     passive: "Aldigi hasari azaltir.",
+    skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
+  },
+  {
+    id: "onur",
+    displayName: "Onur",
+    role: "Avci",
+    summary: "Guvenilir hasar ve dengeli hareket kabiliyeti.",
+    maxHp: 110,
+    speed: 1.04,
+    damage: 16,
+    fireIntervalMs: 560,
+    projectileSpeed: 360,
+    passive: "Hedef takibi.",
     skills: ["Beceri 1", "Beceri 2", "Beceri 3", "Beceri 4"]
   }
 ];

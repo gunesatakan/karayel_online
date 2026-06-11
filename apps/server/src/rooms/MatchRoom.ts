@@ -12,6 +12,7 @@ const PLAYER_SPEED = 220;
 
 type ClassStats = {
   maxHp: number;
+  speedMultiplier: number;
   damage: number;
   fireIntervalMs: number;
   projectileSpeed: number;
@@ -22,11 +23,13 @@ type ClassStats = {
 };
 
 const classStats: Record<CharacterId, ClassStats> = {
-  warrior: { maxHp: 100, damage: 14, fireIntervalMs: 650, projectileSpeed: 320, projectileKind: "bolt", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  archer: { maxHp: 85, damage: 7, fireIntervalMs: 320, projectileSpeed: 420, projectileKind: "arrow", multiShot: 2, aoeRadius: 0, slowMs: 0 },
-  mage: { maxHp: 75, damage: 24, fireIntervalMs: 1100, projectileSpeed: 250, projectileKind: "orb", multiShot: 1, aoeRadius: 48, slowMs: 0 },
-  healer: { maxHp: 90, damage: 8, fireIntervalMs: 720, projectileSpeed: 330, projectileKind: "light", multiShot: 1, aoeRadius: 0, slowMs: 0 },
-  tank: { maxHp: 130, damage: 10, fireIntervalMs: 800, projectileSpeed: 280, projectileKind: "chain", multiShot: 1, aoeRadius: 0, slowMs: 1200 }
+  zeynep: { maxHp: 160, speedMultiplier: 1.35, damage: 34, fireIntervalMs: 240, projectileSpeed: 520, projectileKind: "light", multiShot: 3, aoeRadius: 34, slowMs: 450 },
+  warrior: { maxHp: 55, speedMultiplier: 0.72, damage: 4, fireIntervalMs: 1150, projectileSpeed: 220, projectileKind: "bolt", multiShot: 1, aoeRadius: 0, slowMs: 0 },
+  archer: { maxHp: 85, speedMultiplier: 1.12, damage: 7, fireIntervalMs: 320, projectileSpeed: 420, projectileKind: "arrow", multiShot: 2, aoeRadius: 0, slowMs: 0 },
+  mage: { maxHp: 75, speedMultiplier: 0.92, damage: 24, fireIntervalMs: 1100, projectileSpeed: 250, projectileKind: "orb", multiShot: 1, aoeRadius: 48, slowMs: 0 },
+  healer: { maxHp: 90, speedMultiplier: 1, damage: 8, fireIntervalMs: 720, projectileSpeed: 330, projectileKind: "light", multiShot: 1, aoeRadius: 0, slowMs: 0 },
+  tank: { maxHp: 130, speedMultiplier: 0.86, damage: 10, fireIntervalMs: 800, projectileSpeed: 280, projectileKind: "chain", multiShot: 1, aoeRadius: 0, slowMs: 1200 },
+  onur: { maxHp: 110, speedMultiplier: 1.04, damage: 16, fireIntervalMs: 560, projectileSpeed: 360, projectileKind: "arrow", multiShot: 1, aoeRadius: 0, slowMs: 0 }
 };
 
 const upgradeCosts: Record<UpgradeId, number> = {
@@ -178,7 +181,7 @@ export class MatchRoom extends Room<MatchState> {
   private updatePlayers(seconds: number) {
     for (const player of this.state.players.values()) {
       const stats = classStats[this.getCharacterId(player.characterId)];
-      const speed = PLAYER_SPEED * (stats === classStats.tank ? 0.92 : 1);
+      const speed = PLAYER_SPEED * stats.speedMultiplier;
       player.x = this.clamp(player.x + player.vx * speed * seconds, PLAYER_RADIUS, GAME_WORLD_WIDTH - PLAYER_RADIUS);
       player.y = this.clamp(player.y + player.vy * speed * seconds, PLAYER_MIN_Y, PLAYER_MAX_Y);
     }
@@ -256,7 +259,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private spawnPlayerProjectiles(ownerId: string, player: Player, stats: ClassStats) {
     const speed = stats.projectileSpeed + player.projectileSpeedLevel * 32;
-    const offsets = stats.multiShot > 1 ? [-8, 8] : [0];
+    const offsets = stats.multiShot === 3 ? [-10, 0, 10] : stats.multiShot > 1 ? [-8, 8] : [0];
 
     for (const offset of offsets) {
       const id = `p${this.nextProjectileId++}`;
@@ -512,7 +515,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getCharacterId(value: unknown): CharacterId {
-    if (value === "archer" || value === "mage" || value === "healer" || value === "tank" || value === "warrior") {
+    if (value === "zeynep" || value === "archer" || value === "mage" || value === "healer" || value === "tank" || value === "onur" || value === "warrior") {
       return value;
     }
 

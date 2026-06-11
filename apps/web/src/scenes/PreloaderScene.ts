@@ -6,11 +6,13 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   create() {
+    this.createCircleTexture("player-zeynep", 0xec4899, 15);
     this.createCircleTexture("player-warrior", 0x22c55e, 13);
     this.createCircleTexture("player-archer", 0x38bdf8, 13);
     this.createCircleTexture("player-mage", 0xa78bfa, 13);
     this.createCircleTexture("player-healer", 0xf9a8d4, 13);
     this.createCircleTexture("player-tank", 0xfacc15, 15);
+    this.createCircleTexture("player-onur", 0x14b8a6, 14);
     this.createCircleTexture("enemy-grunt", 0xef4444, 11);
     this.createCircleTexture("enemy-brute", 0xb91c1c, 15);
     this.createCircleTexture("enemy-runner", 0xfb923c, 9);

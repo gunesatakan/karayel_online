@@ -21,25 +21,25 @@ export class CharacterSelectScene extends Phaser.Scene {
     });
 
     characters.forEach((character, index) => {
-      this.createCharacterCard(character, 20, 72 + index * 60);
+      this.createCharacterCard(character, 20, 64 + index * 46);
     });
 
     this.renderDetail();
   }
 
   private createCharacterCard(character: CharacterDefinition, x: number, y: number) {
-    const card = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 40, 48, 0x1e293b, 1)
+    const card = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 40, 40, 0x1e293b, 1)
       .setOrigin(0, 0)
       .setInteractive({ useHandCursor: true });
     this.cardObjects.set(character.id, card);
-    this.add.circle(x + 26, y + 24, 15, this.getClassColor(character.id));
-    this.add.text(x + 52, y + 8, character.displayName, {
+    this.add.circle(x + 24, y + 20, 13, this.getClassColor(character.id));
+    this.add.text(x + 48, y + 6, character.displayName, {
       color: "#f8fafc",
       fontFamily: "Arial",
       fontSize: "16px",
       fontStyle: "bold"
     });
-    this.add.text(x + 52, y + 28, character.role, {
+    this.add.text(x + 48, y + 25, character.role, {
       color: "#94a3b8",
       fontFamily: "Arial",
       fontSize: "11px"
@@ -116,11 +116,13 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private getClassColor(characterId: CharacterId) {
     return {
+      zeynep: 0xec4899,
       warrior: 0x22c55e,
       archer: 0x38bdf8,
       mage: 0xa78bfa,
       healer: 0xf9a8d4,
-      tank: 0xfacc15
+      tank: 0xfacc15,
+      onur: 0x14b8a6
     }[characterId];
   }
 }
