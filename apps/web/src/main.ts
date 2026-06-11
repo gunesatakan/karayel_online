@@ -5,7 +5,7 @@ import "./style.css";
 
 const gameServerUrl =
   import.meta.env.VITE_GAME_SERVER_URL ??
-  (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : "ws://localhost:2567");
+  (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : `ws://${window.location.hostname}:2567`);
 const healthUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/health";
 
 class MenuScene extends Phaser.Scene {
