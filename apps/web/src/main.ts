@@ -3,7 +3,9 @@ import { Client, Room } from "colyseus.js";
 import type { PlayerSnapshot } from "@karayel/shared";
 import "./style.css";
 
-const gameServerUrl = import.meta.env.VITE_GAME_SERVER_URL ?? "ws://localhost:2567";
+const gameServerUrl =
+  import.meta.env.VITE_GAME_SERVER_URL ??
+  (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : "ws://localhost:2567");
 
 class MainScene extends Phaser.Scene {
   private room?: Room;
