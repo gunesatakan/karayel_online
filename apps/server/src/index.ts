@@ -12,7 +12,8 @@ app.get("/health", (_request, response) => {
   response.json({
     ok: true,
     service: "karayel-server",
-    features: ["fixed-portrait-world", "latency-ping"]
+    version: "tower-defense-core",
+    features: ["tower-defense-path", "tower-placement", "tower-upgrades", "latency-ping"]
   });
 });
 
