@@ -1,4 +1,4 @@
-app = "karayel-online-server"
+app = "karayel-online"
 primary_region = "fra"
 
 [build]

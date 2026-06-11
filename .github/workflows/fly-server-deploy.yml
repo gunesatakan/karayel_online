@@ -9,6 +9,8 @@ on:
       - "packages/shared/**"
       - "package.json"
       - "package-lock.json"
+      - "Dockerfile"
+      - "tsconfig.base.json"
       - ".github/workflows/fly-server-deploy.yml"
 
 jobs:
