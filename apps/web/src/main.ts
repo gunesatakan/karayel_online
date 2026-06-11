@@ -95,10 +95,15 @@ class GameScene extends Phaser.Scene {
   private playerLabels = new Map<string, Phaser.GameObjects.Text>();
   private statusText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
-  private pointerTarget?: Phaser.Math.Vector2;
+  private joystickBase?: Phaser.GameObjects.Arc;
+  private joystickKnob?: Phaser.GameObjects.Arc;
+  private joystickVector = new Phaser.Math.Vector2(0, 0);
+  private joystickPointerId?: number;
   private pingTimer?: Phaser.Time.TimerEvent;
   private pingSamples: number[] = [];
   private lastMoveSentAt = 0;
+  private readonly joystickCenter = new Phaser.Math.Vector2(92, GAME_WORLD_HEIGHT - 112);
+  private readonly joystickRadius = 54;
 
   constructor() {
     super("game");
@@ -126,50 +131,79 @@ class GameScene extends Phaser.Scene {
       fontStyle: "bold"
     }).setOrigin(1, 0);
 
-    this.input.on("pointerdown", this.updatePointerTarget, this);
-    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      if (pointer.isDown) {
-        this.updatePointerTarget(pointer);
-      }
-    });
-    this.input.on("pointerup", () => {
-      this.pointerTarget = undefined;
-      this.sendMove(0, 0);
-    });
+    this.createJoystick();
 
     void this.connect();
   }
 
   update(time: number) {
-    if (!this.pointerTarget || !this.room || time - this.lastMoveSentAt < 50) {
+    if (!this.room || time - this.lastMoveSentAt < 50) {
       return;
     }
 
-    const localShape = this.playerShapes.get(this.localSessionId);
-    if (!localShape) {
-      return;
-    }
-
-    const direction = new Phaser.Math.Vector2(
-      this.pointerTarget.x - localShape.x,
-      this.pointerTarget.y - localShape.y
-    );
-
-    if (direction.lengthSq() < 36) {
-      this.sendMove(0, 0);
-      this.lastMoveSentAt = time;
-      return;
-    }
-
-    direction.normalize();
-    this.sendMove(direction.x, direction.y);
+    this.sendMove(this.joystickVector.x, this.joystickVector.y);
     this.lastMoveSentAt = time;
   }
 
-  private updatePointerTarget(pointer: Phaser.Input.Pointer) {
-    this.pointerTarget = new Phaser.Math.Vector2(
-      Phaser.Math.Clamp(pointer.worldX, 0, GAME_WORLD_WIDTH),
-      Phaser.Math.Clamp(pointer.worldY, 0, GAME_WORLD_HEIGHT)
+  private createJoystick() {
+    this.joystickBase = this.add.circle(this.joystickCenter.x, this.joystickCenter.y, this.joystickRadius, 0x334155, 0.45)
+      .setStrokeStyle(2, 0x94a3b8, 0.35)
+      .setDepth(20);
+    this.joystickKnob = this.add.circle(this.joystickCenter.x, this.joystickCenter.y, 22, 0x22c55e, 0.9)
+      .setStrokeStyle(2, 0xf8fafc, 0.45)
+      .setDepth(21);
+
+    this.input.on("pointerdown", this.handleJoystickDown, this);
+    this.input.on("pointermove", this.handleJoystickMove, this);
+    this.input.on("pointerup", this.handleJoystickUp, this);
+    this.input.on("pointerupoutside", this.handleJoystickUp, this);
+  }
+
+  private handleJoystickDown(pointer: Phaser.Input.Pointer) {
+    if (this.joystickPointerId !== undefined) {
+      return;
+    }
+
+    const position = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
+    if (position.distance(this.joystickCenter) > this.joystickRadius + 34) {
+      return;
+    }
+
+    this.joystickPointerId = pointer.id;
+    this.updateJoystick(position);
+  }
+
+  private handleJoystickMove(pointer: Phaser.Input.Pointer) {
+    if (pointer.id !== this.joystickPointerId) {
+      return;
+    }
+
+    this.updateJoystick(new Phaser.Math.Vector2(pointer.worldX, pointer.worldY));
+  }
+
+  private handleJoystickUp(pointer: Phaser.Input.Pointer) {
+    if (pointer.id !== this.joystickPointerId) {
+      return;
+    }
+
+    this.joystickPointerId = undefined;
+    this.joystickVector.set(0, 0);
+    this.joystickKnob?.setPosition(this.joystickCenter.x, this.joystickCenter.y);
+    this.sendMove(0, 0);
+  }
+
+  private updateJoystick(position: Phaser.Math.Vector2) {
+    const offset = position.clone().subtract(this.joystickCenter);
+    const distance = Math.min(offset.length(), this.joystickRadius);
+
+    if (offset.lengthSq() > 0) {
+      offset.normalize();
+    }
+
+    this.joystickVector.set(offset.x, offset.y);
+    this.joystickKnob?.setPosition(
+      this.joystickCenter.x + offset.x * distance,
+      this.joystickCenter.y + offset.y * distance
     );
   }
 
