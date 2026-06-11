@@ -17,7 +17,6 @@ class MainScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private pointerTarget?: Phaser.Math.Vector2;
   private lastMoveSentAt = 0;
-  private hasRequestedFullscreen = false;
 
   constructor() {
     super("main");
@@ -41,7 +40,6 @@ class MainScene extends Phaser.Scene {
     });
 
     this.input.on("pointerdown", this.updatePointerTarget, this);
-    this.input.on("pointerdown", this.requestFullscreenOnce, this);
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       if (pointer.isDown) {
         this.updatePointerTarget(pointer);
@@ -93,17 +91,6 @@ class MainScene extends Phaser.Scene {
     this.background?.setSize(gameSize.width, gameSize.height);
     this.titleText?.setPosition(20, 18);
     this.statusText?.setPosition(20, 52);
-  }
-
-  private requestFullscreenOnce() {
-    if (this.hasRequestedFullscreen || document.fullscreenElement) {
-      return;
-    }
-
-    this.hasRequestedFullscreen = true;
-    void document.documentElement.requestFullscreen?.().catch(() => {
-      // Some mobile browsers only allow fullscreen for installed PWAs.
-    });
   }
 
   private async connect() {
@@ -213,3 +200,21 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
     void navigator.serviceWorker.register("/sw.js");
   });
 }
+
+let hasRequestedFullscreen = false;
+
+function requestGameFullscreen() {
+  if (hasRequestedFullscreen || document.fullscreenElement) {
+    return;
+  }
+
+  const target = document.querySelector<HTMLElement>("#game") ?? document.documentElement;
+
+  hasRequestedFullscreen = true;
+  void target.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {
+    hasRequestedFullscreen = false;
+  });
+}
+
+document.addEventListener("pointerup", requestGameFullscreen, { passive: true });
+document.addEventListener("touchend", requestGameFullscreen, { passive: true });
