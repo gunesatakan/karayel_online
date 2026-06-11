@@ -5,13 +5,11 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
-  SHOP_TOP,
   type CharacterId,
   type EnemySnapshot,
   type GameSnapshot,
   type PlayerSnapshot,
-  type ProjectileSnapshot,
-  type UpgradeId
+  type ProjectileSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 
@@ -47,8 +45,8 @@ export class GameScene extends Phaser.Scene {
   private pingTimer?: Phaser.Time.TimerEvent;
   private pingSamples: number[] = [];
   private lastMoveSentAt = 0;
-  private readonly joystickCenter = new Phaser.Math.Vector2(82, SHOP_TOP - 64);
-  private readonly joystickRadius = 48;
+  private readonly joystickCenter = new Phaser.Math.Vector2(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT - 78);
+  private readonly joystickRadius = 62;
 
   constructor() {
     super("game");
@@ -62,7 +60,6 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#0f172a");
     this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x111827);
     this.add.rectangle(GAME_WORLD_WIDTH / 2, BATTLE_TOP / 2, GAME_WORLD_WIDTH, BATTLE_TOP, 0x0f172a, 0.86);
-    this.add.line(0, SHOP_TOP, 0, 0, GAME_WORLD_WIDTH, 0, 0x475569, 0.55).setOrigin(0, 0);
     this.add.text(18, 16, "Karayel Online", {
       color: "#f8fafc",
       fontFamily: "Arial",
@@ -85,9 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-bolt", maxSize: 120 });
     this.createJoystick();
 
-    this.game.events.on("shop:buy", this.buyUpgrade, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.game.events.off("shop:buy", this.buyUpgrade, this);
       this.pingTimer?.remove(false);
     });
 
@@ -109,7 +104,7 @@ export class GameScene extends Phaser.Scene {
     this.add.circle(this.joystickCenter.x, this.joystickCenter.y, this.joystickRadius, 0x334155, 0.42)
       .setStrokeStyle(2, 0x94a3b8, 0.35)
       .setDepth(30);
-    this.joystickKnob = this.add.circle(this.joystickCenter.x, this.joystickCenter.y, 20, 0x22c55e, 0.92)
+    this.joystickKnob = this.add.circle(this.joystickCenter.x, this.joystickCenter.y, 26, 0x22c55e, 0.92)
       .setStrokeStyle(2, 0xf8fafc, 0.45)
       .setDepth(31);
 
@@ -125,7 +120,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const position = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
-    if (position.distance(this.joystickCenter) > this.joystickRadius + 34) {
+    if (position.distance(this.joystickCenter) > this.joystickRadius + 46) {
       return;
     }
 
@@ -180,7 +175,6 @@ export class GameScene extends Phaser.Scene {
       this.localSessionId = this.room.sessionId;
       this.statusText?.setText(`Oda: ${this.room.roomId}`);
 
-      this.scene.launch("shop-ui");
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.renderSnapshot(snapshot));
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.startPingLoop();
@@ -232,8 +226,8 @@ export class GameScene extends Phaser.Scene {
           fontFamily: "Arial",
           fontSize: "12px"
         }).setOrigin(0.5).setDepth(11);
-        const hpBack = this.add.rectangle(player.x, player.y - 24, 34, 4, 0x450a0a, 0.9).setDepth(11);
-        const hpFill = this.add.rectangle(player.x - 17, player.y - 24, 34, 4, 0x22c55e, 1).setOrigin(0, 0.5).setDepth(12);
+        const hpBack = this.add.rectangle(player.x, player.y - 23, 28, 3, 0x450a0a, 0.9).setDepth(11);
+        const hpFill = this.add.rectangle(player.x - 14, player.y - 23, 28, 3, 0x22c55e, 1).setOrigin(0, 0.5).setDepth(12);
         rendered = { sprite, label, hpBack, hpFill, targetX: player.x, targetY: player.y, hp: player.hp, maxHp: player.maxHp };
         this.players.set(player.id, rendered);
       }
@@ -254,9 +248,9 @@ export class GameScene extends Phaser.Scene {
       player.sprite.x = Phaser.Math.Linear(player.sprite.x, player.targetX, alpha);
       player.sprite.y = Phaser.Math.Linear(player.sprite.y, player.targetY, alpha);
       player.label.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 34));
-      player.hpBack.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 24));
-      player.hpFill.setPosition(Math.round(player.sprite.x - 17), Math.round(player.sprite.y - 24));
-      player.hpFill.width = 34 * Phaser.Math.Clamp(player.hp / Math.max(1, player.maxHp), 0, 1);
+      player.hpBack.setPosition(Math.round(player.sprite.x), Math.round(player.sprite.y - 23));
+      player.hpFill.setPosition(Math.round(player.sprite.x - 14), Math.round(player.sprite.y - 23));
+      player.hpFill.width = 28 * Phaser.Math.Clamp(player.hp / Math.max(1, player.maxHp), 0, 1);
     }
   }
 
@@ -327,10 +321,6 @@ export class GameScene extends Phaser.Scene {
       sprite.setTexture(texture);
       sprite.setPosition(projectile.x, projectile.y);
     }
-  }
-
-  private buyUpgrade(upgradeId: UpgradeId) {
-    this.room?.send("buyUpgrade", { upgradeId });
   }
 
   private startPingLoop() {

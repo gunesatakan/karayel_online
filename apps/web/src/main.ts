@@ -5,7 +5,6 @@ import { PreloaderScene } from "./scenes/PreloaderScene";
 import { MainMenuScene } from "./scenes/MainMenuScene";
 import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
-import { ShopUIScene } from "./scenes/ShopUIScene";
 import "./style.css";
 
 new Phaser.Game({
@@ -13,7 +12,7 @@ new Phaser.Game({
   parent: "game",
   width: GAME_WORLD_WIDTH,
   height: GAME_WORLD_HEIGHT,
-  scene: [BootScene, PreloaderScene, MainMenuScene, CharacterSelectScene, GameScene, ShopUIScene],
+  scene: [BootScene, PreloaderScene, MainMenuScene, CharacterSelectScene, GameScene],
   physics: {
     default: "arcade",
     arcade: {

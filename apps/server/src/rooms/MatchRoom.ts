@@ -5,10 +5,9 @@ import type { CharacterId, GameSnapshot, UpgradeId } from "@karayel/shared";
 const GAME_WORLD_WIDTH = 390;
 const GAME_WORLD_HEIGHT = 844;
 const BATTLE_TOP = 86;
-const SHOP_TOP = 650;
-const PLAYER_RADIUS = 18;
-const PLAYER_MIN_Y = 500;
-const PLAYER_MAX_Y = SHOP_TOP - PLAYER_RADIUS;
+const PLAYER_RADIUS = 13;
+const PLAYER_MIN_Y = BATTLE_TOP + PLAYER_RADIUS;
+const PLAYER_MAX_Y = GAME_WORLD_HEIGHT - PLAYER_RADIUS;
 const PLAYER_SPEED = 220;
 
 type ClassStats = {
@@ -155,7 +154,7 @@ export class MatchRoom extends Room<MatchState> {
     player.maxHp = classStats[player.characterId].maxHp;
     player.hp = player.maxHp;
     player.x = GAME_WORLD_WIDTH / 2 + (Math.random() - 0.5) * 120;
-    player.y = 560 + Math.random() * 56;
+    player.y = GAME_WORLD_HEIGHT - 190 + Math.random() * 56;
 
     this.state.players.set(client.sessionId, player);
   }
@@ -231,7 +230,7 @@ export class MatchRoom extends Room<MatchState> {
       speed,
       reward: type === "brute" ? 12 : type === "runner" ? 7 : type === "shooter" ? 10 : 9,
       slowUntil: 0,
-      stopY: isRangedWave || type === "shooter" ? 150 + Math.random() * 130 : SHOP_TOP,
+      stopY: isRangedWave || type === "shooter" ? 150 + Math.random() * 130 : GAME_WORLD_HEIGHT - 12,
       fireCooldownMs: 700 + Math.random() * 900
     });
   }
@@ -267,7 +266,7 @@ export class MatchRoom extends Room<MatchState> {
         kind: stats.projectileKind,
         source: "player",
         x: player.x + offset,
-        y: player.y - 20,
+        y: player.y - 16,
         vx: offset * 2.2,
         vy: -speed,
         damage: stats.damage + player.damageLevel * 4,
@@ -282,7 +281,7 @@ export class MatchRoom extends Room<MatchState> {
       projectile.x += projectile.vx * seconds;
       projectile.y += projectile.vy * seconds;
 
-      if (projectile.x < -24 || projectile.x > GAME_WORLD_WIDTH + 24 || projectile.y < BATTLE_TOP - 48 || projectile.y > SHOP_TOP + 24) {
+      if (projectile.x < -24 || projectile.x > GAME_WORLD_WIDTH + 24 || projectile.y < BATTLE_TOP - 48 || projectile.y > GAME_WORLD_HEIGHT + 24) {
         this.projectiles.delete(id);
         continue;
       }
@@ -360,7 +359,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private findEnemyHit(projectile: ProjectileModel) {
     for (const enemy of this.enemies.values()) {
-      if (PhaserDistanceSq(projectile.x, projectile.y, enemy.x, enemy.y) < 20 * 20) {
+      if (PhaserDistanceSq(projectile.x, projectile.y, enemy.x, enemy.y) < 16 * 16) {
         return enemy;
       }
     }
@@ -370,7 +369,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private findPlayerHit(projectile: ProjectileModel) {
     for (const player of this.state.players.values()) {
-      if (player.hp > 0 && PhaserDistanceSq(projectile.x, projectile.y, player.x, player.y) < 20 * 20) {
+      if (player.hp > 0 && PhaserDistanceSq(projectile.x, projectile.y, player.x, player.y) < 16 * 16) {
         return player;
       }
     }
@@ -411,7 +410,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (enemy.y >= SHOP_TOP - 10) {
+      if (enemy.y >= GAME_WORLD_HEIGHT - 10) {
         this.enemies.delete(id);
         this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 9));
       }
@@ -420,7 +419,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private findEnemyContact(enemy: EnemyModel) {
     for (const player of this.state.players.values()) {
-      if (player.hp > 0 && PhaserDistanceSq(enemy.x, enemy.y, player.x, player.y) < 30 * 30) {
+      if (player.hp > 0 && PhaserDistanceSq(enemy.x, enemy.y, player.x, player.y) < 23 * 23) {
         return player;
       }
     }
