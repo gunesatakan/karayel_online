@@ -36,6 +36,8 @@ type PingMessage = {
 export class MatchRoom extends Room<MatchState> {
   maxClients = 5;
   private readonly speed = 220;
+  private snapshotElapsedMs = 0;
+  private readonly snapshotIntervalMs = 50;
 
   onCreate() {
     this.setState(new MatchState());
@@ -80,7 +82,11 @@ export class MatchRoom extends Room<MatchState> {
       player.y = this.clamp(player.y + player.vy * this.speed * seconds, 96, GAME_WORLD_HEIGHT - PLAYER_RADIUS);
     }
 
-    this.broadcast("snapshot", this.getSnapshot());
+    this.snapshotElapsedMs += deltaTime;
+    if (this.snapshotElapsedMs >= this.snapshotIntervalMs) {
+      this.snapshotElapsedMs = 0;
+      this.broadcast("snapshot", this.getSnapshot());
+    }
   }
 
   private getSnapshot(): PlayerSnapshot[] {

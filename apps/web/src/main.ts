@@ -97,6 +97,7 @@ class GameScene extends Phaser.Scene {
   private pingText?: Phaser.GameObjects.Text;
   private pointerTarget?: Phaser.Math.Vector2;
   private pingTimer?: Phaser.Time.TimerEvent;
+  private pingSamples: number[] = [];
   private lastMoveSentAt = 0;
 
   constructor() {
@@ -233,8 +234,15 @@ class GameScene extends Phaser.Scene {
     }
 
     const ping = Math.max(0, Math.round(performance.now() - sentAt));
-    this.pingText?.setText(`${ping} ms`);
-    this.pingText?.setColor(ping < 90 ? "#22c55e" : ping < 160 ? "#facc15" : "#fb7185");
+    this.pingSamples.push(ping);
+    this.pingSamples = this.pingSamples.slice(-5);
+
+    const averagePing = Math.round(
+      this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length
+    );
+
+    this.pingText?.setText(`${averagePing} ms`);
+    this.pingText?.setColor(averagePing < 90 ? "#22c55e" : averagePing < 160 ? "#facc15" : "#fb7185");
   }
 
   private formatConnectionError(error: unknown) {
