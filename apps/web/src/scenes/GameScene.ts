@@ -743,13 +743,7 @@ export class GameScene extends Phaser.Scene {
       return 0x94a3b8;
     }
     if (tower.definitionId === "warrior-6") {
-      const bonusLevel = tower.waveBonusLevel ?? 0;
-      if (bonusLevel >= 3) {
-        return 0x1e3a8a;
-      }
-      if (bonusLevel === 2) {
-        return 0x1d4ed8;
-      }
+      return 0xffffff;
     }
     return 0xffffff;
   }
@@ -767,7 +761,7 @@ export class GameScene extends Phaser.Scene {
       const radius = 11.5 + waveIndex * 1.6;
       const segments = 10 + waveIndex * 2;
       const offset = phase * Math.PI * 2 + waveIndex * 0.85;
-      graphics.lineStyle(waveIndex % 2 === 0 ? 1.5 : 1, waveIndex % 2 === 0 ? 0x67e8f9 : 0xfef08a, bonusLevel >= 5 ? 0.78 : 0.58);
+      graphics.lineStyle(waveIndex % 2 === 0 ? 1.5 : 1, 0xffffff, bonusLevel >= 5 ? 0.86 : 0.66);
       graphics.beginPath();
       for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
         const angle = offset + (pointIndex / segments) * Math.PI * 2;

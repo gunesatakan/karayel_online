@@ -52,13 +52,14 @@ export class PreloaderScene extends Phaser.Scene {
     const center = size / 2;
     const palette = getVisualPalette(tower);
 
-    graphics.fillStyle(0x020617, 0.82);
+    const isUcube = tower.id === "warrior-6";
+    graphics.fillStyle(isUcube ? 0x000000 : 0x020617, isUcube ? 1 : 0.82);
     graphics.fillCircle(center, center, 24);
-    graphics.lineStyle(2, palette.glow, 0.26);
+    graphics.lineStyle(2, isUcube ? 0x38bdf8 : palette.glow, isUcube ? 0.34 : 0.26);
     graphics.strokeCircle(center, center, 24);
     graphics.lineStyle(2, palette.main, 0.92);
     graphics.strokeCircle(center, center, 18);
-    graphics.fillStyle(palette.dark, 0.95);
+    graphics.fillStyle(isUcube ? 0x000000 : palette.dark, isUcube ? 1 : 0.95);
     graphics.fillCircle(center, center, 15);
 
     if (tower.id === "warrior-1") {
@@ -178,16 +179,16 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   private drawUnstableCore(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
-    graphics.lineStyle(3, palette.main, 1);
+    graphics.lineStyle(3, 0x38bdf8, 1);
     graphics.strokeCircle(center, center, 11);
-    graphics.lineStyle(2, palette.accent, 0.95);
+    graphics.lineStyle(2, 0x7dd3fc, 0.95);
     graphics.beginPath();
     graphics.moveTo(center - 13, center + 8);
     graphics.lineTo(center - 4, center - 3);
     graphics.lineTo(center + 1, center + 4);
     graphics.lineTo(center + 12, center - 10);
     graphics.strokePath();
-    graphics.fillStyle(palette.glow, 1);
+    graphics.fillStyle(0xbfdbfe, 1);
     graphics.fillCircle(center, center, 4);
   }
 

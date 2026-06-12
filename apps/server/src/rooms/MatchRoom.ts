@@ -738,13 +738,29 @@ export class MatchRoom extends Room<MatchState> {
     for (const [id, projectile] of this.projectiles) {
       const previousX = projectile.x;
       const previousY = projectile.y;
-      projectile.x += projectile.vx * seconds;
-      projectile.y += projectile.vy * seconds;
 
       const target = this.enemies.get(projectile.targetId);
       if (!target) {
         this.projectiles.delete(id);
         continue;
+      }
+
+      const dx = target.x - projectile.x;
+      const dy = target.y - projectile.y;
+      const distance = Math.max(1, Math.hypot(dx, dy));
+      const speed = Math.max(1, Math.hypot(projectile.vx, projectile.vy));
+      const travel = speed * seconds;
+      const hitRadius = getEnemyCollisionRadius(target) + 4;
+
+      projectile.vx = (dx / distance) * speed;
+      projectile.vy = (dy / distance) * speed;
+
+      if (distance <= travel + hitRadius) {
+        projectile.x = target.x;
+        projectile.y = target.y;
+      } else {
+        projectile.x += projectile.vx * seconds;
+        projectile.y += projectile.vy * seconds;
       }
 
       if (
@@ -757,7 +773,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (!didProjectileHitTarget(projectile, target, previousX, previousY)) {
+      if (distance > travel + hitRadius && !didProjectileHitTarget(projectile, target, previousX, previousY)) {
         continue;
       }
 
