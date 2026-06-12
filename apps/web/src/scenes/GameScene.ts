@@ -39,6 +39,11 @@ type RenderMover = {
   durationMs: number;
 };
 
+type BufferedSnapshot = {
+  snapshot: GameSnapshot;
+  receivedAt: number;
+};
+
 export class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
@@ -75,7 +80,9 @@ export class GameScene extends Phaser.Scene {
   private lastShopEventAt = 0;
   private lastSnapshotAt = 0;
   private snapshotStepMs = 90;
+  private snapshotBuffer: BufferedSnapshot[] = [];
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
+  private readonly playbackDelayMs = 500;
   private readonly controlTop = 606;
   private readonly trayTop = 708;
 
@@ -111,6 +118,7 @@ export class GameScene extends Phaser.Scene {
 
   update() {
     const now = performance.now();
+    this.renderDueSnapshots(now);
     this.animateNetworkMovers(this.enemies, now);
   }
 
@@ -295,7 +303,7 @@ export class GameScene extends Phaser.Scene {
       this.localSessionId = this.room.sessionId;
       this.statusText?.setText(`Oda: ${this.room.roomId}`);
 
-      this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.renderSnapshot(snapshot));
+      this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.startPingLoop();
     } catch (error) {
@@ -312,6 +320,30 @@ export class GameScene extends Phaser.Scene {
 
     if (!response.ok) {
       throw new Error(`Health ${response.status}`);
+    }
+  }
+
+  private queueSnapshot(snapshot: GameSnapshot) {
+    this.snapshotBuffer.push({
+      snapshot,
+      receivedAt: performance.now()
+    });
+
+    if (this.snapshotBuffer.length > 120) {
+      this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
+    }
+  }
+
+  private renderDueSnapshots(now: number) {
+    const renderBefore = now - this.playbackDelayMs;
+    let dueSnapshot: BufferedSnapshot | undefined;
+
+    while (this.snapshotBuffer.length > 0 && this.snapshotBuffer[0].receivedAt <= renderBefore) {
+      dueSnapshot = this.snapshotBuffer.shift();
+    }
+
+    if (dueSnapshot) {
+      this.renderSnapshot(dueSnapshot.snapshot);
     }
   }
 
@@ -633,7 +665,7 @@ export class GameScene extends Phaser.Scene {
     const entityText = `E ${snapshot.enemies.length} T ${snapshot.towers.length} P ${snapshot.projectiles.length}`;
     const serverText = `Srv ${serverPerf.tickMs}/${serverPerf.tickMaxMs}ms ${serverPerf.snapshotHz}hz`;
     const clientText = `Cli ${roundClientMetric(averageRenderMs)}ms ${fps}fps ${roundClientMetric(averageKb)}kb`;
-    const opsText = `Ops tgt ${serverPerf.ops.targetChecks} aoe ${serverPerf.ops.aoeChecks} ch ${serverPerf.ops.chainChecks}`;
+    const opsText = `Buf ${this.playbackDelayMs}ms q${this.snapshotBuffer.length} tgt ${serverPerf.ops.targetChecks}`;
 
     this.perfText?.setText(`${serverText}\n${clientText}\n${entityText} ${opsText}`);
     this.perfText?.setColor(fps >= 50 && serverPerf.tickMs < 8 ? "#86efac" : fps >= 35 && serverPerf.tickMs < 14 ? "#fde047" : "#fb7185");
