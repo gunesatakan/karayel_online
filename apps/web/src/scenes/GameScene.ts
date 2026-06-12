@@ -44,6 +44,7 @@ export class GameScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
+  private perfText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
@@ -53,6 +54,9 @@ export class GameScene extends Phaser.Scene {
   private skillTexts: Phaser.GameObjects.Text[] = [];
   private pingTimer?: Phaser.Time.TimerEvent;
   private pingSamples: number[] = [];
+  private renderMsSamples: number[] = [];
+  private inboundKbSamples: number[] = [];
+  private snapshotCount = 0;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private readonly controlTop = 606;
   private readonly trayTop = 708;
@@ -134,6 +138,13 @@ export class GameScene extends Phaser.Scene {
       fontFamily: "Arial",
       fontSize: "13px",
       fontStyle: "bold"
+    }).setOrigin(1, 0).setDepth(21);
+    this.perfText = this.add.text(GAME_WORLD_WIDTH - 16, 34, "PERF bekleniyor", {
+      color: "#94a3b8",
+      fontFamily: "Arial",
+      fontSize: "9px",
+      align: "right",
+      lineSpacing: 1
     }).setOrigin(1, 0).setDepth(21);
   }
 
@@ -282,11 +293,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderSnapshot(snapshot: GameSnapshot) {
+    const renderStart = performance.now();
     this.renderEnemies(snapshot.enemies);
     this.renderTowers(snapshot.towers);
     this.renderProjectiles(snapshot.projectiles);
     this.renderHud(snapshot);
     this.game.events.emit("game:snapshot", snapshot);
+    const renderMs = performance.now() - renderStart;
+    this.recordClientPerf(snapshot, renderMs);
   }
 
   private renderHud(snapshot: GameSnapshot) {
@@ -480,6 +494,39 @@ export class GameScene extends Phaser.Scene {
     this.pingText?.setColor(averagePing < 90 ? "#22c55e" : averagePing < 160 ? "#facc15" : "#fb7185");
   }
 
+  private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
+    this.snapshotCount += 1;
+    this.renderMsSamples.push(renderMs);
+    this.renderMsSamples = this.renderMsSamples.slice(-30);
+
+    if (this.snapshotCount % 10 === 0) {
+      const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
+      this.inboundKbSamples.push(bytes / 1024);
+      this.inboundKbSamples = this.inboundKbSamples.slice(-12);
+    }
+
+    this.updatePerfOverlay(snapshot);
+  }
+
+  private updatePerfOverlay(snapshot: GameSnapshot) {
+    const serverPerf = snapshot.perf;
+    if (!serverPerf) {
+      this.perfText?.setText("PERF: server verisi yok");
+      return;
+    }
+
+    const averageRenderMs = average(this.renderMsSamples);
+    const averageKb = average(this.inboundKbSamples);
+    const fps = Math.round(this.game.loop.actualFps);
+    const entityText = `E ${snapshot.enemies.length} T ${snapshot.towers.length} P ${snapshot.projectiles.length}`;
+    const serverText = `Srv ${serverPerf.tickMs}/${serverPerf.tickMaxMs}ms ${serverPerf.snapshotHz}hz`;
+    const clientText = `Cli ${roundClientMetric(averageRenderMs)}ms ${fps}fps ${roundClientMetric(averageKb)}kb`;
+    const opsText = `Ops tgt ${serverPerf.ops.targetChecks} aoe ${serverPerf.ops.aoeChecks} ch ${serverPerf.ops.chainChecks}`;
+
+    this.perfText?.setText(`${serverText}\n${clientText}\n${entityText} ${opsText}`);
+    this.perfText?.setColor(fps >= 50 && serverPerf.tickMs < 8 ? "#86efac" : fps >= 35 && serverPerf.tickMs < 14 ? "#fde047" : "#fb7185");
+  }
+
   private formatConnectionError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     const shortMessage = message.length > 42 ? `${message.slice(0, 39)}...` : message;
@@ -490,4 +537,16 @@ export class GameScene extends Phaser.Scene {
 
     return `Oda/WebSocket hatasi: ${shortMessage}`;
   }
+}
+
+function average(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function roundClientMetric(value: number) {
+  return Math.round(value * 10) / 10;
 }

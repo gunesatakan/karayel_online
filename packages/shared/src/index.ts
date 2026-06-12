@@ -74,12 +74,36 @@ export type TeamSnapshot = {
   kills: number;
 };
 
+export type ServerPerfSnapshot = {
+  tickMs: number;
+  tickMaxMs: number;
+  snapshotBytes: number;
+  snapshotHz: number;
+  sections: {
+    spawnMs: number;
+    towersMs: number;
+    projectilesMs: number;
+    enemiesMs: number;
+    cooldownsMs: number;
+    ultimatesMs: number;
+    snapshotMs: number;
+  };
+  ops: {
+    targetSearches: number;
+    targetChecks: number;
+    aoeChecks: number;
+    chainChecks: number;
+    damageEvents: number;
+  };
+};
+
 export type GameSnapshot = {
   players: PlayerSnapshot[];
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   team: TeamSnapshot;
+  perf?: ServerPerfSnapshot;
 };
 
 export { characters, towerCatalog } from "./characters/index.js";

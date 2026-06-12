@@ -1,5 +1,6 @@
 import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
+import { performance } from "node:perf_hooks";
 import {
   characters,
   GAME_WORLD_HEIGHT,
@@ -11,6 +12,7 @@ import {
   type EnemyType,
   type GameSnapshot,
   type ProjectileKind,
+  type ServerPerfSnapshot,
   type TowerDefinition
 } from "@karayel/shared";
 
@@ -104,6 +106,26 @@ type ProjectileModel = {
   slowMs: number;
 };
 
+type ServerPerfCounters = {
+  targetSearches: number;
+  targetChecks: number;
+  aoeChecks: number;
+  chainChecks: number;
+  damageEvents: number;
+};
+
+type ServerPerfFrame = ServerPerfCounters & {
+  tickMs: number;
+  spawnMs: number;
+  towersMs: number;
+  projectilesMs: number;
+  enemiesMs: number;
+  cooldownsMs: number;
+  ultimatesMs: number;
+  snapshotMs: number;
+  snapshotBytes: number;
+};
+
 const pathSegments = MAP_PATH.slice(0, -1).map((point, index) => {
   const next = MAP_PATH[index + 1];
   const length = Math.hypot(next.x - point.x, next.y - point.y);
@@ -131,6 +153,30 @@ export class MatchRoom extends Room<MatchState> {
   private projectileGuidanceUntil = 0;
   private silentModeUntil = 0;
   private damageHasteUntil = 0;
+  private perfCounters: ServerPerfCounters = this.createPerfCounters();
+  private perfFrames: ServerPerfFrame[] = [];
+  private latestPerfSnapshot: ServerPerfSnapshot = {
+    tickMs: 0,
+    tickMaxMs: 0,
+    snapshotBytes: 0,
+    snapshotHz: 0,
+    sections: {
+      spawnMs: 0,
+      towersMs: 0,
+      projectilesMs: 0,
+      enemiesMs: 0,
+      cooldownsMs: 0,
+      ultimatesMs: 0,
+      snapshotMs: 0
+    },
+    ops: {
+      targetSearches: 0,
+      targetChecks: 0,
+      aoeChecks: 0,
+      chainChecks: 0,
+      damageEvents: 0
+    }
+  };
 
   onCreate() {
     this.setState(new MatchState());
@@ -173,14 +219,59 @@ export class MatchRoom extends Room<MatchState> {
 
   private update(deltaTime: number) {
     const seconds = deltaTime / 1000;
+    const frameStart = performance.now();
+    const timings = {
+      spawnMs: 0,
+      towersMs: 0,
+      projectilesMs: 0,
+      enemiesMs: 0,
+      cooldownsMs: 0,
+      ultimatesMs: 0,
+      snapshotMs: 0
+    };
 
+    this.perfCounters = this.createPerfCounters();
+
+    let sectionStart = performance.now();
     this.updateSpawning(deltaTime);
+    timings.spawnMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
     this.updateTowers(deltaTime);
+    timings.towersMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
     this.updateProjectiles(seconds);
+    timings.projectilesMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
     this.updateEnemies(seconds);
+    timings.enemiesMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
     this.updateSkillCooldowns(deltaTime);
+    timings.cooldownsMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
     this.chargeUltimates(seconds);
-    this.broadcast("snapshot", this.getSnapshot());
+    timings.ultimatesMs = performance.now() - sectionStart;
+
+    sectionStart = performance.now();
+    const snapshot = this.getSnapshot();
+    timings.snapshotMs = performance.now() - sectionStart;
+    snapshot.perf = this.latestPerfSnapshot;
+    const snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+    const tickMs = performance.now() - frameStart;
+
+    this.recordPerfFrame({
+      ...this.perfCounters,
+      ...timings,
+      tickMs,
+      snapshotBytes
+    });
+
+    snapshot.perf = this.latestPerfSnapshot;
+    this.broadcast("snapshot", snapshot);
   }
 
   private updateSpawning(deltaTime: number) {
@@ -323,6 +414,7 @@ export class MatchRoom extends Room<MatchState> {
 
       if (projectile.aoeRadius > 0) {
         for (const enemy of this.enemies.values()) {
+          this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
             this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
           }
@@ -577,8 +669,12 @@ export class MatchRoom extends Room<MatchState> {
 
   private findTowerTarget(tower: TowerModel) {
     const range = this.projectileGuidanceUntil > Date.now() && tower.definition.hitType === "projectile" ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
+    this.perfCounters.targetSearches += 1;
     const candidates = Array.from(this.enemies.values())
-      .filter((enemy) => distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range);
+      .filter((enemy) => {
+        this.perfCounters.targetChecks += 1;
+        return distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
+      });
 
     if (tower.definition.id === "warrior-4") {
       return candidates.sort((a, b) => Number(b.type === "brute") - Number(a.type === "brute") || b.pathDistance - a.pathDistance)[0];
@@ -597,6 +693,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    this.perfCounters.damageEvents += 1;
     const now = Date.now();
     const trackingBonus = enemy.trackingUntil > now && sourceDefinitionId !== "warrior-1" ? 1.2 : 1;
     enemy.hp -= damage * trackingBonus;
@@ -785,6 +882,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
 
     for (const enemy of this.enemies.values()) {
+      this.perfCounters.aoeChecks += 1;
       if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range) {
         enemy.slowUntil = Math.max(enemy.slowUntil, now + slowMs);
       }
@@ -820,7 +918,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.waveBonusLevel >= 1) {
       const chainedEnemies = Array.from(this.enemies.values())
-        .filter((enemy) => enemy.id !== target.id && enemy.pathDistance < target.pathDistance)
+        .filter((enemy) => {
+          this.perfCounters.chainChecks += 1;
+          return enemy.id !== target.id && enemy.pathDistance < target.pathDistance;
+        })
         .sort((a, b) => b.pathDistance - a.pathDistance)
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
@@ -862,6 +963,49 @@ export class MatchRoom extends Room<MatchState> {
   private clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
   }
+
+  private createPerfCounters(): ServerPerfCounters {
+    return {
+      targetSearches: 0,
+      targetChecks: 0,
+      aoeChecks: 0,
+      chainChecks: 0,
+      damageEvents: 0
+    };
+  }
+
+  private recordPerfFrame(frame: ServerPerfFrame) {
+    this.perfFrames.push(frame);
+    this.perfFrames = this.perfFrames.slice(-60);
+
+    const sampleCount = Math.max(1, this.perfFrames.length);
+    const average = (key: keyof ServerPerfFrame) => this.perfFrames.reduce((total, sample) => total + sample[key], 0) / sampleCount;
+    const maxTickMs = this.perfFrames.reduce((max, sample) => Math.max(max, sample.tickMs), 0);
+    const snapshotHz = frame.tickMs > 0 ? 1000 / frame.tickMs : 0;
+
+    this.latestPerfSnapshot = {
+      tickMs: roundMetric(average("tickMs")),
+      tickMaxMs: roundMetric(maxTickMs),
+      snapshotBytes: Math.round(average("snapshotBytes")),
+      snapshotHz: roundMetric(snapshotHz),
+      sections: {
+        spawnMs: roundMetric(average("spawnMs")),
+        towersMs: roundMetric(average("towersMs")),
+        projectilesMs: roundMetric(average("projectilesMs")),
+        enemiesMs: roundMetric(average("enemiesMs")),
+        cooldownsMs: roundMetric(average("cooldownsMs")),
+        ultimatesMs: roundMetric(average("ultimatesMs")),
+        snapshotMs: roundMetric(average("snapshotMs"))
+      },
+      ops: {
+        targetSearches: Math.round(average("targetSearches")),
+        targetChecks: Math.round(average("targetChecks")),
+        aoeChecks: Math.round(average("aoeChecks")),
+        chainChecks: Math.round(average("chainChecks")),
+        damageEvents: Math.round(average("damageEvents"))
+      }
+    };
+  }
 }
 
 function getPointAlongPath(distance: number) {
@@ -898,4 +1042,8 @@ function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: n
   const y = ay + t * dy;
 
   return Math.hypot(px - x, py - y);
+}
+
+function roundMetric(value: number) {
+  return Math.round(value * 10) / 10;
 }
