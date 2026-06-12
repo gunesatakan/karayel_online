@@ -48,7 +48,7 @@ export class GameScene extends Phaser.Scene {
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
-  private projectiles = new Map<string, RenderMover>();
+  private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
@@ -112,7 +112,6 @@ export class GameScene extends Phaser.Scene {
   update() {
     const now = performance.now();
     this.animateNetworkMovers(this.enemies, now);
-    this.animateNetworkMovers(this.projectiles, now);
   }
 
   private drawMap() {
@@ -445,22 +444,22 @@ export class GameScene extends Phaser.Scene {
   private renderProjectiles(projectiles: ProjectileSnapshot[]) {
     const activeIds = new Set(projectiles.map((projectile) => projectile.id));
 
-    for (const [id, mover] of this.projectiles) {
+    for (const [id, sprite] of this.projectiles) {
       if (!activeIds.has(id)) {
-        this.projectileGroup?.killAndHide(mover.sprite);
-        if (mover.sprite.body) {
-          mover.sprite.body.enable = false;
+        this.projectileGroup?.killAndHide(sprite);
+        if (sprite.body) {
+          sprite.body.enable = false;
         }
         this.projectiles.delete(id);
       }
     }
 
     for (const projectile of projectiles) {
-      let mover = this.projectiles.get(projectile.id);
+      let sprite = this.projectiles.get(projectile.id);
       const texture = `projectile-${projectile.kind}`;
 
-      if (!mover) {
-        const sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!sprite) {
+        sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
         if (!sprite) {
           continue;
         }
@@ -468,14 +467,13 @@ export class GameScene extends Phaser.Scene {
         if (sprite.body) {
           sprite.body.enable = false;
         }
-        mover = this.createMover(sprite, projectile.x, projectile.y);
-        this.projectiles.set(projectile.id, mover);
+        this.projectiles.set(projectile.id, sprite);
       }
 
-      if (mover.sprite.texture.key !== texture) {
-        mover.sprite.setTexture(texture);
+      if (sprite.texture.key !== texture) {
+        sprite.setTexture(texture);
       }
-      this.setMoverTarget(mover, projectile.x, projectile.y);
+      sprite.setPosition(projectile.x, projectile.y);
     }
   }
 
