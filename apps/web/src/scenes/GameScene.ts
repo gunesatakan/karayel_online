@@ -75,6 +75,7 @@ export class GameScene extends Phaser.Scene {
   private killStreakTimes: number[] = [];
   private nextKillStreakAnnouncementAt = 0;
   private killStreakSounds: HTMLAudioElement[] = [];
+  private backgroundMusic?: HTMLAudioElement;
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -128,15 +129,17 @@ export class GameScene extends Phaser.Scene {
     this.createActionButtons();
     this.beamGraphics = this.add.graphics().setDepth(10);
     this.createKillStreakAudio();
+    this.createBackgroundMusic();
 
     this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt" });
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.input.on("pointerup", this.handleMapPointer, this);
-    this.input.once("pointerdown", () => this.unlockKillStreakAudio());
+    this.input.once("pointerdown", () => this.unlockGameAudio());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
+      this.backgroundMusic?.pause();
     });
 
     void this.connect();
@@ -257,7 +260,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private unlockKillStreakAudio() {
+  private createBackgroundMusic() {
+    this.backgroundMusic = new Audio("/audio/background-theme.mp3");
+    this.backgroundMusic.preload = "auto";
+    this.backgroundMusic.loop = true;
+    this.backgroundMusic.volume = 0.34;
+  }
+
+  private unlockGameAudio() {
     for (const audio of this.killStreakSounds) {
       const originalVolume = audio.volume;
       audio.muted = true;
@@ -273,6 +283,10 @@ export class GameScene extends Phaser.Scene {
           audio.volume = originalVolume;
         });
     }
+
+    void this.backgroundMusic?.play().catch(() => {
+      // Mobile browsers can still delay playback until a stronger user gesture.
+    });
   }
 
   private createActionButtons() {
