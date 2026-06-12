@@ -389,6 +389,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateProjectiles(seconds: number) {
     for (const [id, projectile] of this.projectiles) {
+      const previousX = projectile.x;
+      const previousY = projectile.y;
       projectile.x += projectile.vx * seconds;
       projectile.y += projectile.vy * seconds;
 
@@ -408,7 +410,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (distanceSq(projectile.x, projectile.y, target.x, target.y) > 14 * 14) {
+      if (!didProjectileHitTarget(projectile, target, previousX, previousY)) {
         continue;
       }
 
@@ -1031,6 +1033,31 @@ function distanceSq(ax: number, ay: number, bx: number, by: number) {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
+}
+
+function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel, previousX: number, previousY: number) {
+  const hitRadius = target.type === "brute" ? 19 : target.type === "runner" ? 13 : 15;
+  const segmentDistanceSq = distanceToSegmentSq(target.x, target.y, previousX, previousY, projectile.x, projectile.y);
+  if (segmentDistanceSq <= hitRadius * hitRadius) {
+    return true;
+  }
+
+  const previousDistanceSq = distanceSq(previousX, previousY, target.x, target.y);
+  const currentDistanceSq = distanceSq(projectile.x, projectile.y, target.x, target.y);
+  const traveledSq = distanceSq(previousX, previousY, projectile.x, projectile.y);
+
+  return currentDistanceSq > previousDistanceSq && previousDistanceSq <= traveledSq + hitRadius * hitRadius;
+}
+
+function distanceToSegmentSq(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
+  const x = ax + t * dx;
+  const y = ay + t * dy;
+
+  return distanceSq(px, py, x, y);
 }
 
 function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
