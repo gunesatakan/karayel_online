@@ -116,7 +116,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.createDetailItemGrid(character);
     this.createDetailPanel(character);
 
-    this.createButton(34, 774, GAME_WORLD_WIDTH - 68, 42, "BU OPERATORLE BASLA", color, () => {
+    this.createButton(34, 794, GAME_WORLD_WIDTH - 68, 38, "BU OPERATORLE BASLA", color, () => {
       this.scene.start("game", { characterId: character.id });
     });
 
@@ -214,20 +214,20 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private createDetailPanel(character: CharacterDefinition) {
     const color = this.getClassColor(character.id);
-    const panel = this.add.rectangle(24, 604, GAME_WORLD_WIDTH - 48, 142, 0x020617, 0.94)
+    const panel = this.add.rectangle(24, 568, GAME_WORLD_WIDTH - 48, 206, 0x020617, 0.94)
       .setOrigin(0, 0)
       .setStrokeStyle(1, color, 0.72);
-    this.detailTitle = this.add.text(42, 622, "", {
+    this.detailTitle = this.add.text(42, 586, "", {
       color: "#f8fafc",
       fontFamily: "Arial",
-      fontSize: "15px",
+      fontSize: "14px",
       fontStyle: "bold"
     });
-    this.detailText = this.add.text(42, 650, "", {
+    this.detailText = this.add.text(42, 612, "", {
       color: "#cbd5e1",
       fontFamily: "Arial",
-      fontSize: "11px",
-      lineSpacing: 3,
+      fontSize: "10px",
+      lineSpacing: 1,
       wordWrap: { width: GAME_WORLD_WIDTH - 84 }
     });
     this.viewObjects.push(panel, this.detailTitle, this.detailText);
@@ -240,21 +240,47 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private skillToItem(skill: SkillDefinition): DetailItem {
+    const detailByName: Record<string, string> = {
+      Yonlendirme: "Etki: 1.0sn boyunca projectile vuruslu kuleler hedef alani menzil siniri yokmus gibi tarar. Ham hasari degistirmez; DPS artisi menzil disinda kalan hedeflere ek uptime kazandigi icin olusur.",
+      Refactor: "Etki: Secili turret'i cezasiz tasima/rota degisimi icin kullanilir. Hasar formulu degistirmez; altin kaybi olmadan konum optimizasyonu saglar.",
+      "Sessiz Mod": "Etki: 5.0sn tum kuleler durur, ardindan damage sinifli kuleler 5.0sn boyunca 3x saldiri hizi alir. Net kazanc sonraki 5sn'deki baz DPS'in yaklasik 3 kati; onceki 5sn hasarsizdir."
+    };
+
     return {
       title: skill.name,
       subtitle: `Beceri ${Math.round(skill.cooldownMs / 1000)}s`,
-      description: skill.description,
+      description: [
+        skill.description,
+        `Bekleme: ${(skill.cooldownMs / 1000).toFixed(1)}sn`,
+        detailByName[skill.name] ?? "Etki: Karaktere ozel aktif beceri. Sayisal etkiler karakter modulu icinde netlestikce burada guncellenecek."
+      ].join("\n"),
       color: 0x7dd3fc
     };
   }
 
   private towerToItem(tower: TowerDefinition): DetailItem {
+    const level10Damage = tower.damage * (1 + (10 - 1) * 0.42);
+    const level10Interval = Math.max(tower.id === "warrior-5" ? 50 : 80, tower.fireIntervalMs * (1 - (10 - 1) * 0.1));
+    const dps = this.formatDps(tower.damage, tower.fireIntervalMs);
+    const level10Dps = this.formatDps(level10Damage, level10Interval);
     const parts = [
       tower.description ?? tower.role,
       `Sinif: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vurus: ${tower.hitType ?? "impact"}`,
-      `Maliyet ${tower.cost}g | Upgrade ${tower.upgradeCost}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
-      `Hasar ${tower.damage} | Hız ${tower.fireIntervalMs}ms | AOE ${tower.aoeRadius}`
+      `Maliyet ${tower.cost}g | Upgrade: round(${tower.upgradeCost} * L * 1.35)g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
+      `L1: Hasar ${tower.damage} / ${tower.fireIntervalMs}ms => DPS ${dps}${tower.aoeRadius > 0 ? ` | AOE r${tower.aoeRadius}` : ""}${tower.slowMs > 0 ? ` | Slow ${tower.slowMs}ms` : ""}`,
+      `L10 baz: Hasar ${level10Damage.toFixed(1)} / ${Math.round(level10Interval)}ms => DPS ${level10Dps}`,
+      `Mermi hizi ${tower.projectileSpeed} | Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
     ];
+
+    if (tower.id === "warrior-2") {
+      parts.push("Sunucu link: Kendi atisi yok. Bagli kule menzilinden cikan hedefe global top atar. Hasar = 28 + SunucuLv*8 + BagliLv*4, AOE = 16 + SunucuLv*3, CD = max(520, 1100 - SunucuLv*80)ms.");
+    }
+    if (tower.id === "warrior-5") {
+      parts.push("Overdrive: Takipte hedefi oldururse 2.0sn path boyunca sweep lazer acar; tick 50ms, hasar 1.2x, isin cizgisine temas eden tum dusmanlara vurur.");
+    }
+    if (tower.id === "warrior-6") {
+      parts.push("Dalga: L2/L3 koyu mavi; L4 elektrik+stack15; L5 yogun elektrik+HPx2; L6 hararetsiz. Chain: arkadaki 2 hedefe ana hasarin %42'si.");
+    }
 
     return {
       title: tower.name,
@@ -262,6 +288,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       description: parts.join("\n"),
       color: tower.color
     };
+  }
+
+  private formatDps(damage: number, intervalMs: number) {
+    if (damage <= 0 || intervalMs <= 0) {
+      return "0.0";
+    }
+    return (damage / (intervalMs / 1000)).toFixed(1);
   }
 
   private drawBackdrop(title: string, subtitle: string) {

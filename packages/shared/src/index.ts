@@ -60,6 +60,7 @@ export type TowerSnapshot = {
   hp?: number;
   maxHp?: number;
   status?: string;
+  waveBonusLevel?: number;
   linkedTowerIds?: string[];
 };
 

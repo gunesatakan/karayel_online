@@ -24,6 +24,7 @@ type GameSceneData = {
 };
 
 type RenderTower = {
+  effect: Phaser.GameObjects.Graphics;
   halo: Phaser.GameObjects.Arc;
   base: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
@@ -649,6 +650,7 @@ export class GameScene extends Phaser.Scene {
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
         tower.halo.destroy();
+        tower.effect.destroy();
         tower.base.destroy();
         tower.label.destroy();
         tower.level.destroy();
@@ -664,6 +666,7 @@ export class GameScene extends Phaser.Scene {
         const halo = this.add.circle(tower.x, tower.y, 19, 0xffffff, 0)
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
+        const effect = this.add.graphics().setDepth(11);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
@@ -689,12 +692,12 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { halo, base, label, level, range, status, key: "" };
+        rendered = { effect, halo, base, label, level, range, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${texture}`;
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
@@ -709,11 +712,62 @@ export class GameScene extends Phaser.Scene {
         rendered.key = key;
       }
       rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
-      rendered.base.setTint(tower.status === "Overdrive" ? 0xfff1a8 : tower.status === "Hararet" || tower.status === "Tukenmis" ? 0x94a3b8 : 0xffffff);
+      rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
+      this.renderUcubeWaveEffect(rendered.effect, tower);
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
+    }
+  }
+
+  private getTowerTint(tower: TowerSnapshot) {
+    if (tower.status === "Overdrive") {
+      return 0xfff1a8;
+    }
+    if (tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return 0x94a3b8;
+    }
+    if (tower.definitionId === "warrior-6") {
+      const bonusLevel = tower.waveBonusLevel ?? 0;
+      if (bonusLevel >= 3) {
+        return 0x1e3a8a;
+      }
+      if (bonusLevel === 2) {
+        return 0x1d4ed8;
+      }
+    }
+    return 0xffffff;
+  }
+
+  private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    graphics.clear();
+    const bonusLevel = tower.waveBonusLevel ?? 0;
+    if (tower.definitionId !== "warrior-6" || bonusLevel < 4 || tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return;
+    }
+
+    const waveCount = bonusLevel >= 5 ? 4 : 2;
+    const phase = (Date.now() % 900) / 900;
+    for (let waveIndex = 0; waveIndex < waveCount; waveIndex += 1) {
+      const radius = 11.5 + waveIndex * 1.6;
+      const segments = 10 + waveIndex * 2;
+      const offset = phase * Math.PI * 2 + waveIndex * 0.85;
+      graphics.lineStyle(waveIndex % 2 === 0 ? 1.5 : 1, waveIndex % 2 === 0 ? 0x67e8f9 : 0xfef08a, bonusLevel >= 5 ? 0.78 : 0.58);
+      graphics.beginPath();
+      for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
+        const angle = offset + (pointIndex / segments) * Math.PI * 2;
+        const jag = pointIndex % 2 === 0 ? 2.2 : -1.5;
+        const clampedRadius = Phaser.Math.Clamp(radius + jag, 8, 18);
+        const x = tower.x + Math.cos(angle) * clampedRadius;
+        const y = tower.y + Math.sin(angle) * clampedRadius;
+        if (pointIndex === 0) {
+          graphics.moveTo(x, y);
+        } else {
+          graphics.lineTo(x, y);
+        }
+      }
+      graphics.strokePath();
     }
   }
 
@@ -844,10 +898,57 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
+      } else if (beam.definitionId === "warrior-6") {
+        this.drawChainLightning(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
     }
+  }
+
+  private drawChainLightning(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+    const points: Array<{ x: number; y: number }> = [];
+    const segments = 7;
+
+    for (let index = 0; index <= segments; index += 1) {
+      const t = index / segments;
+      const hash = Math.sin((beam.id.length + index * 13) * 19.73) * 43758.5453;
+      const offset = index === 0 || index === segments ? 0 : (hash - Math.floor(hash) - 0.5) * 13;
+      points.push({
+        x: beam.x1 + dx * t + nx * offset,
+        y: beam.y1 + dy * t + ny * offset
+      });
+    }
+
+    const strokeJagged = (width: number, strokeColor: number, alpha: number) => {
+      this.beamGraphics?.lineStyle(width, strokeColor, alpha);
+      this.beamGraphics?.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) {
+          this.beamGraphics?.moveTo(point.x, point.y);
+        } else {
+          this.beamGraphics?.lineTo(point.x, point.y);
+        }
+      });
+      this.beamGraphics?.strokePath();
+    };
+
+    strokeJagged(beam.width + 10, color, 0.16);
+    strokeJagged(beam.width + 4, 0x38bdf8, 0.5);
+    strokeJagged(Math.max(2, beam.width - 1), 0xfef08a, 0.95);
+    this.beamGraphics.fillStyle(0x67e8f9, 0.72);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5);
+    this.beamGraphics.fillStyle(0xfef08a, 0.9);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
   }
 
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
@@ -872,19 +973,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const scanX = beam.scanX ?? beam.x2;
-    const scanY = beam.scanY ?? beam.y2;
-
     this.beamGraphics.lineStyle(beam.width + 14, color, 0.14);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     this.beamGraphics.lineStyle(beam.width + 6, color, 0.46);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), 0xfffbeb, 0.98);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(2, 0xfffbeb, 0.74);
-    this.beamGraphics.strokeCircle(scanX, scanY, 11);
-    this.beamGraphics.lineStyle(1, color, 0.58);
-    this.beamGraphics.strokeCircle(scanX, scanY, 17);
     this.beamGraphics.lineStyle(1, color, 0.65);
     this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
     this.beamGraphics.fillStyle(0xfffbeb, 1);
