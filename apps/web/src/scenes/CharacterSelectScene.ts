@@ -91,26 +91,34 @@ export class CharacterSelectScene extends Phaser.Scene {
       wordWrap: { width: 330 }
     }));
 
-    this.selectedCharacter.towers.forEach((tower, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      this.detailObjects.push(this.add.text(32 + col * 166, y + 202 + row * 24, `${index + 1}. ${tower.name}`, {
-        color: "#e2e8f0",
+    this.selectedCharacter.skills.forEach((skill, index) => {
+      this.detailObjects.push(this.add.text(32, y + 190 + index * 17, `${index + 1}. ${skill.name}`, {
+        color: "#dbeafe",
         fontFamily: "Arial",
         fontSize: "11px"
       }));
     });
 
-    this.detailObjects.push(this.add.text(28, y + 286, `HP ${this.selectedCharacter.maxHp}  DMG ${this.selectedCharacter.damage}  ATK ${this.selectedCharacter.fireIntervalMs}ms`, {
+    this.selectedCharacter.towers.forEach((tower, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      this.detailObjects.push(this.add.text(32 + col * 166, y + 246 + row * 18, `${index + 1}. ${tower.name}`, {
+        color: "#e2e8f0",
+        fontFamily: "Arial",
+        fontSize: "10px"
+      }));
+    });
+
+    this.detailObjects.push(this.add.text(28, y + 304, `HP ${this.selectedCharacter.maxHp}  DMG ${this.selectedCharacter.damage}  ATK ${this.selectedCharacter.fireIntervalMs}ms`, {
       color: "#facc15",
       fontFamily: "Arial",
       fontSize: "12px"
     }));
 
-    const button = this.add.rectangle(40, y + 316, GAME_WORLD_WIDTH - 80, 42, 0x22c55e, 1)
+    const button = this.add.rectangle(40, y + 326, GAME_WORLD_WIDTH - 80, 38, 0x22c55e, 1)
       .setOrigin(0, 0)
       .setInteractive({ useHandCursor: true });
-    const label = this.add.text(GAME_WORLD_WIDTH / 2, y + 337, "Bu Karakterle Basla", {
+    const label = this.add.text(GAME_WORLD_WIDTH / 2, y + 345, "Bu Karakterle Basla", {
       color: "#052e16",
       fontFamily: "Arial",
       fontSize: "15px",

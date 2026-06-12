@@ -1,6 +1,7 @@
 import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import {
+  characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
   MAP_PATH,
@@ -24,6 +25,9 @@ class Player extends Schema {
   @type("number") goldSpent = 0;
   @type("number") towersBuilt = 0;
   @type("number") ultimateCharge = 0;
+  @type("number") skill1CooldownMs = 0;
+  @type("number") skill2CooldownMs = 0;
+  @type("number") skill3CooldownMs = 0;
 }
 
 class MatchState extends Schema {
@@ -43,6 +47,10 @@ type PlaceTowerMessage = {
 
 type UpgradeTowerMessage = {
   towerId?: string;
+};
+
+type UseSkillMessage = {
+  slot?: number;
 };
 
 type PingMessage = {
@@ -125,6 +133,10 @@ export class MatchRoom extends Room<MatchState> {
       this.upgradeTower(client, message);
     });
 
+    this.onMessage("useSkill", (client, message: UseSkillMessage) => {
+      this.useSkill(client, message);
+    });
+
     this.onMessage("useUltimate", (client) => {
       this.useUltimate(client);
     });
@@ -155,6 +167,7 @@ export class MatchRoom extends Room<MatchState> {
     this.updateTowers(deltaTime);
     this.updateProjectiles(seconds);
     this.updateEnemies(seconds);
+    this.updateSkillCooldowns(deltaTime);
     this.chargeUltimates(seconds);
     this.broadcast("snapshot", this.getSnapshot());
   }
@@ -354,6 +367,74 @@ export class MatchRoom extends Room<MatchState> {
     tower.level += 1;
   }
 
+  private useSkill(client: Client, message: UseSkillMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const slot = typeof message.slot === "number" ? Math.floor(message.slot) : -1;
+    if (!player || slot < 0 || slot > 2 || this.getSkillCooldown(player, slot) > 0) {
+      return;
+    }
+
+    const skill = characters.find((character) => character.id === player.characterId)?.skills[slot];
+    if (!skill) {
+      return;
+    }
+
+    this.setSkillCooldown(player, slot, skill.cooldownMs);
+
+    if (slot === 0) {
+      this.teamGold += player.characterId === "warrior" ? 12 : player.characterId === "zeynep" ? 35 : 22;
+      return;
+    }
+
+    if (slot === 1) {
+      this.useSecondSkill(player.characterId);
+      return;
+    }
+
+    this.useThirdSkill(player.characterId);
+  }
+
+  private useSecondSkill(characterId: CharacterId) {
+    if (characterId === "zeynep") {
+      this.damageAllEnemies(70, 700);
+    } else if (characterId === "archer") {
+      this.damageFrontEnemies(5, 55, 0);
+    } else if (characterId === "mage") {
+      this.damageAllEnemies(50, 0);
+    } else if (characterId === "healer") {
+      this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 14);
+      this.slowAllEnemies(1300);
+    } else if (characterId === "tank") {
+      this.damageAllEnemies(28, 2100);
+    } else if (characterId === "onur") {
+      this.damageStrongestEnemy(120, 0);
+    } else {
+      this.damageAllEnemies(15, 0);
+    }
+  }
+
+  private useThirdSkill(characterId: CharacterId) {
+    if (characterId === "zeynep") {
+      this.teamGold += 25;
+      this.damageAllEnemies(95, 900);
+    } else if (characterId === "archer") {
+      this.damageFrontEnemies(8, 70, 0);
+    } else if (characterId === "mage") {
+      this.damageAllEnemies(82, 0);
+    } else if (characterId === "healer") {
+      this.teamGold += 20;
+      this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 25);
+      this.slowAllEnemies(1600);
+    } else if (characterId === "tank") {
+      this.damageAllEnemies(45, 3200);
+    } else if (characterId === "onur") {
+      this.damageStrongestEnemy(180, 0);
+    } else {
+      this.teamGold += 25;
+      this.damageAllEnemies(20, 0);
+    }
+  }
+
   private useUltimate(client: Client) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.ultimateCharge < 100) {
@@ -461,6 +542,39 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private damageAllEnemies(damage: number, slowMs: number) {
+    for (const enemy of Array.from(this.enemies.values())) {
+      this.damageEnemy(enemy, damage, slowMs);
+    }
+  }
+
+  private damageFrontEnemies(count: number, damage: number, slowMs: number) {
+    for (const enemy of Array.from(this.enemies.values()).sort((a, b) => b.pathDistance - a.pathDistance).slice(0, count)) {
+      this.damageEnemy(enemy, damage, slowMs);
+    }
+  }
+
+  private damageStrongestEnemy(damage: number, slowMs: number) {
+    const enemy = Array.from(this.enemies.values()).sort((a, b) => b.hp - a.hp)[0];
+    if (enemy) {
+      this.damageEnemy(enemy, damage, slowMs);
+    }
+  }
+
+  private slowAllEnemies(slowMs: number) {
+    for (const enemy of this.enemies.values()) {
+      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + slowMs);
+    }
+  }
+
+  private updateSkillCooldowns(deltaTime: number) {
+    for (const player of this.state.players.values()) {
+      player.skill1CooldownMs = Math.max(0, player.skill1CooldownMs - deltaTime);
+      player.skill2CooldownMs = Math.max(0, player.skill2CooldownMs - deltaTime);
+      player.skill3CooldownMs = Math.max(0, player.skill3CooldownMs - deltaTime);
+    }
+  }
+
   private chargeUltimates(seconds: number) {
     for (const player of this.state.players.values()) {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + seconds * 1.4);
@@ -475,7 +589,12 @@ export class MatchRoom extends Room<MatchState> {
         characterId: player.characterId,
         goldSpent: player.goldSpent,
         towersBuilt: player.towersBuilt,
-        ultimateCharge: Math.round(player.ultimateCharge)
+        ultimateCharge: Math.round(player.ultimateCharge),
+        skillCooldowns: [
+          Math.ceil(player.skill1CooldownMs / 1000),
+          Math.ceil(player.skill2CooldownMs / 1000),
+          Math.ceil(player.skill3CooldownMs / 1000)
+        ]
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
@@ -526,6 +645,20 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerFireInterval(tower: TowerModel) {
     return Math.max(120, tower.definition.fireIntervalMs * (1 - (tower.level - 1) * 0.1));
+  }
+
+  private getSkillCooldown(player: Player, slot: number) {
+    return slot === 0 ? player.skill1CooldownMs : slot === 1 ? player.skill2CooldownMs : player.skill3CooldownMs;
+  }
+
+  private setSkillCooldown(player: Player, slot: number, cooldownMs: number) {
+    if (slot === 0) {
+      player.skill1CooldownMs = cooldownMs;
+    } else if (slot === 1) {
+      player.skill2CooldownMs = cooldownMs;
+    } else {
+      player.skill3CooldownMs = cooldownMs;
+    }
   }
 
   private distanceToPath(x: number, y: number) {

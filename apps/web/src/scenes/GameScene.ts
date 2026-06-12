@@ -49,10 +49,12 @@ export class GameScene extends Phaser.Scene {
   private ultimateText?: Phaser.GameObjects.Text;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
+  private skillButtons: Phaser.GameObjects.Rectangle[] = [];
+  private skillTexts: Phaser.GameObjects.Text[] = [];
   private pingTimer?: Phaser.Time.TimerEvent;
   private pingSamples: number[] = [];
-  private latestSnapshot?: GameSnapshot;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
+  private readonly controlTop = 606;
   private readonly trayTop = 708;
 
   constructor() {
@@ -177,6 +179,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createActionButtons() {
+    this.selectedCharacter.skills.forEach((skill, index) => {
+      const x = 70 + index * 125;
+      const button = this.add.rectangle(x, 626, 112, 34, 0x1e293b, 0.94)
+        .setStrokeStyle(1, 0x60a5fa, 0.55)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(25);
+      const label = this.add.text(x, 626, skill.name, {
+        color: "#dbeafe",
+        fontFamily: "Arial",
+        fontSize: "10px",
+        fontStyle: "bold",
+        align: "center",
+        wordWrap: { width: 102 }
+      }).setOrigin(0.5).setDepth(26);
+      button.on("pointerup", () => this.room?.send("useSkill", { slot: index }));
+      this.skillButtons.push(button);
+      this.skillTexts.push(label);
+    });
+
     this.ultimateButton = this.add.rectangle(86, 672, 140, 34, 0x7c3aed, 0.92)
       .setStrokeStyle(1, 0xc4b5fd, 0.7)
       .setInteractive({ useHandCursor: true })
@@ -207,7 +228,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
-    if (!this.room || pointer.worldY >= this.trayTop - 8 || pointer.worldY <= 84) {
+    if (!this.room || pointer.worldY >= this.controlTop || pointer.worldY <= 84) {
       return;
     }
 
@@ -261,7 +282,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderSnapshot(snapshot: GameSnapshot) {
-    this.latestSnapshot = snapshot;
     this.renderEnemies(snapshot.enemies);
     this.renderTowers(snapshot.towers);
     this.renderProjectiles(snapshot.projectiles);
@@ -275,6 +295,7 @@ export class GameScene extends Phaser.Scene {
     const charge = player?.ultimateCharge ?? 0;
     this.ultimateText?.setText(`Ulti ${charge}%`);
     this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
+    this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0]);
     this.updateSelectionUi();
   }
 
@@ -330,8 +351,8 @@ export class GameScene extends Phaser.Scene {
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       if (!rendered) {
-        const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.08)
-          .setStrokeStyle(1, tower.color, 0.26)
+        const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
+          .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
           .setDepth(5);
         const base = this.add.circle(tower.x, tower.y, 15, tower.color, 1)
@@ -353,6 +374,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       rendered.base.setPosition(tower.x, tower.y).setFillStyle(tower.color, 1);
+      rendered.base.setStrokeStyle(2, tower.id === this.selectedPlacedTowerId ? 0xffffff : 0xf8fafc, tower.id === this.selectedPlacedTowerId ? 1 : tower.ownerId === this.localSessionId ? 0.7 : 0.25);
       rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
       rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
       rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
@@ -419,6 +441,16 @@ export class GameScene extends Phaser.Scene {
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${Math.round(selectedTower.range)}`);
     this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
+  }
+
+  private updateSkillButtons(cooldowns: number[]) {
+    this.selectedCharacter.skills.forEach((skill, index) => {
+      const cooldown = cooldowns[index] ?? 0;
+      this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : skill.name);
+      this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : "#dbeafe");
+      this.skillButtons[index]?.setFillStyle(cooldown > 0 ? 0x0f172a : 0x1e293b, cooldown > 0 ? 0.72 : 0.94);
+      this.skillButtons[index]?.setStrokeStyle(1, cooldown > 0 ? 0x475569 : 0x60a5fa, cooldown > 0 ? 0.45 : 0.75);
+    });
   }
 
   private startPingLoop() {

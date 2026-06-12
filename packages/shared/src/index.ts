@@ -31,6 +31,7 @@ export type PlayerSnapshot = {
   goldSpent: number;
   towersBuilt: number;
   ultimateCharge: number;
+  skillCooldowns: number[];
 };
 
 export type EnemySnapshot = {
@@ -97,6 +98,13 @@ export type TowerDefinition = {
   color: number;
 };
 
+export type SkillDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  cooldownMs: number;
+};
+
 export type CharacterDefinition = {
   id: CharacterId;
   displayName: string;
@@ -110,7 +118,7 @@ export type CharacterDefinition = {
   passive: string;
   ultimate: string;
   towers: TowerDefinition[];
-  skills: string[];
+  skills: SkillDefinition[];
 };
 
 const makeTowers = (
@@ -133,6 +141,14 @@ const makeTowers = (
   slowMs: base.slowMs ?? 0,
   color
 }));
+
+const makeSkills = (characterId: CharacterId, names: Array<[string, string, number]>): SkillDefinition[] =>
+  names.map(([name, description, cooldownMs], index) => ({
+    id: `${characterId}-skill-${index + 1}`,
+    name,
+    description,
+    cooldownMs
+  }));
 
 const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Kurucu Isik", "Cok hizli tek hedef"],
@@ -207,6 +223,48 @@ export const towerCatalog: Record<CharacterId, TowerDefinition[]> = {
   onur: onurTowers
 };
 
+const zeynepSkills = makeSkills("zeynep", [
+  ["Kurucu Emri", "Takima altin kazandirir.", 12000],
+  ["Taht Isigi", "Tum dusmanlara hasar ve kisa yavaslatma verir.", 18000],
+  ["Mutlak Ustunluk", "Guclu alan hasari ve ek altin saglar.", 26000]
+]);
+
+const atakanSkills = makeSkills("warrior", [
+  ["Ufak Destek", "Az miktarda altin kazandirir.", 14000],
+  ["Ciliz Sarsinti", "Dusmanlara zayif alan hasari verir.", 20000],
+  ["Son Gayret", "Altin ve ufak alan hasari saglar.", 28000]
+]);
+
+const melisSkills = makeSkills("archer", [
+  ["Hizli Hazirlik", "Takima altin kazandirir.", 12000],
+  ["Ok Serisi", "Yolda ondeki dusmanlari vurur.", 17000],
+  ["Keskin Yaylim", "Daha fazla ondeki dusmana hasar verir.", 25000]
+]);
+
+const baranselSkills = makeSkills("mage", [
+  ["Mana Toplama", "Takima altin kazandirir.", 13000],
+  ["Mor Patlama", "Tum dusmanlara alan hasari verir.", 19000],
+  ["Meteor Hazirligi", "Guclu global buyu hasari verir.", 28000]
+]);
+
+const ulkuSkills = makeSkills("healer", [
+  ["Moral", "Takima altin kazandirir.", 12000],
+  ["Sifa Dalgasi", "Takim canini artirir ve dusmanlari yavaslatir.", 20000],
+  ["Koruma Ritmi", "Can ve altin destegi saglar.", 28000]
+]);
+
+const omerSkills = makeSkills("tank", [
+  ["Savunma Duzeni", "Takima altin kazandirir.", 13000],
+  ["Agir Kilit", "Dusmanlari yavaslatir ve hasar verir.", 21000],
+  ["Hisar Darbesi", "Guclu yavaslatma ve alan hasari verir.", 30000]
+]);
+
+const onurSkills = makeSkills("onur", [
+  ["Iz Surme", "Takima altin kazandirir.", 12000],
+  ["Net Hedef", "En guclu dusmana agir hasar verir.", 18000],
+  ["Keskin Bitiris", "En guclu dusmana cok agir hasar verir.", 27000]
+]);
+
 export const characters: CharacterDefinition[] = [
   {
     id: "zeynep",
@@ -221,7 +279,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Kurucu ustunlugu: Takimin kuleleri daha hizli tepki verir.",
     ultimate: "Kurucu Fermani: Ekrandaki tum dusmanlara buyuk hasar verir.",
     towers: zeynepTowers,
-    skills: zeynepTowers.map((tower) => tower.name)
+    skills: zeynepSkills
   },
   {
     id: "warrior",
@@ -236,7 +294,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Inat: Cok az da olsa ucuz kule kurar.",
     ultimate: "Panik Savunmasi: Kisa sureli zayif bir alan hasari.",
     towers: atakanTowers,
-    skills: atakanTowers.map((tower) => tower.name)
+    skills: atakanSkills
   },
   {
     id: "archer",
@@ -251,7 +309,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Hizli refleks: Kuleleri daha sik ates eder.",
     ultimate: "Ok Yagmuru: Yol uzerindeki dusmanlara seri hasar.",
     towers: melisTowers,
-    skills: melisTowers.map((tower) => tower.name)
+    skills: melisSkills
   },
   {
     id: "mage",
@@ -266,7 +324,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Alan enerjisi: AOE kuleleri daha genis vurur.",
     ultimate: "Meteor: En kalabalik bolgeye patlama indirir.",
     towers: baranselTowers,
-    skills: baranselTowers.map((tower) => tower.name)
+    skills: baranselSkills
   },
   {
     id: "healer",
@@ -281,7 +339,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Takim direnci: Ana can havuzu daha guvenli kalir.",
     ultimate: "Can Dalgasi: Takim canini yeniler ve dusmanlari yavaslatir.",
     towers: ulkuTowers,
-    skills: ulkuTowers.map((tower) => tower.name)
+    skills: ulkuSkills
   },
   {
     id: "tank",
@@ -296,7 +354,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Agir baski: Yavaslatma kuleleri daha uzun surer.",
     ultimate: "Kilit Alan: Dusmanlari kisa sure yavaslatir.",
     towers: omerTowers,
-    skills: omerTowers.map((tower) => tower.name)
+    skills: omerSkills
   },
   {
     id: "onur",
@@ -311,7 +369,7 @@ export const characters: CharacterDefinition[] = [
     passive: "Hedef takibi: Kuleleri ilerideki dusmanlari onceliklendirir.",
     ultimate: "Keskin Emir: En guclu dusmana agir hasar.",
     towers: onurTowers,
-    skills: onurTowers.map((tower) => tower.name)
+    skills: onurSkills
   }
 ];
 
