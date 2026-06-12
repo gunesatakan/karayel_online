@@ -108,7 +108,7 @@ export class GameScene extends Phaser.Scene {
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private readonly playbackDelayMs = 500;
   private readonly killStreakWindowMs = 5000;
-  private readonly killStreakThreshold = 5;
+  private readonly killStreakThreshold = 10;
   private readonly controlTop = 606;
   private readonly trayTop = 708;
 
