@@ -20,6 +20,7 @@ import {
 
 const TEAM_START_GOLD = 240;
 const MAX_TEAM_HEALTH = 100;
+const MAX_TOWER_LEVEL = 10;
 const TOWER_MIN_DISTANCE = 34;
 const BUILD_MARGIN = 18;
 
@@ -697,7 +698,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const player = this.state.players.get(client.sessionId);
     const tower = this.towers.get(message.towerId);
-    if (!player || !tower || tower.ownerId !== client.sessionId || tower.level >= 5) {
+    if (!player || !tower || tower.ownerId !== client.sessionId || tower.level >= MAX_TOWER_LEVEL) {
       return;
     }
 

@@ -24,6 +24,8 @@ type GameSceneData = {
 };
 
 type RenderTower = {
+  haloGlow: Phaser.GameObjects.Arc;
+  halo: Phaser.GameObjects.Arc;
   base: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
@@ -517,6 +519,8 @@ export class GameScene extends Phaser.Scene {
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
+        tower.haloGlow.destroy();
+        tower.halo.destroy();
         tower.base.destroy();
         tower.label.destroy();
         tower.level.destroy();
@@ -529,6 +533,12 @@ export class GameScene extends Phaser.Scene {
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       if (!rendered) {
+        const haloGlow = this.add.circle(tower.x, tower.y, 27, 0xffffff, 0)
+          .setStrokeStyle(5, 0xffffff, 0)
+          .setDepth(10);
+        const halo = this.add.circle(tower.x, tower.y, 22, 0xffffff, 0)
+          .setStrokeStyle(3, 0xffffff, 0.8)
+          .setDepth(11);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
@@ -554,13 +564,23 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { base, label, level, range, status, key: "" };
+        rendered = { haloGlow, halo, base, label, level, range, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
       const texture = `tower-${tower.definitionId}`;
       const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${texture}`;
       if (rendered.key !== key) {
+        const haloStyle = getTowerLevelHalo(tower.level);
+        rendered.haloGlow.setPosition(tower.x, tower.y);
+        rendered.halo.setPosition(tower.x, tower.y);
+        rendered.halo.setRadius(haloStyle.radius);
+        rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
+        rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
+        rendered.haloGlow.setRadius(haloStyle.glowRadius);
+        rendered.haloGlow.setFillStyle(haloStyle.color, haloStyle.glowFillAlpha);
+        rendered.haloGlow.setStrokeStyle(haloStyle.glowStrokeWidth, haloStyle.color, haloStyle.glowStrokeAlpha);
+        rendered.haloGlow.setVisible(haloStyle.glowing);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
@@ -571,6 +591,8 @@ export class GameScene extends Phaser.Scene {
       rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
       rendered.base.setTint(tower.status === "Overdrive" ? 0xfff1a8 : tower.status === "Hararet" || tower.status === "Tukenmis" ? 0x94a3b8 : 0xffffff);
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
+      rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
+      rendered.haloGlow.setVisible(tower.level >= 6 && tower.status !== "Tukenmis" && tower.status !== "Hararet");
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
     }
@@ -777,7 +799,7 @@ export class GameScene extends Phaser.Scene {
 
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? Math.round(definition.upgradeCost * selectedTower.level * 1.35) : 0;
-    const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 5;
+    const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
@@ -890,4 +912,35 @@ function average(values: number[]) {
 
 function roundClientMetric(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function getTowerLevelHalo(level: number) {
+  const normalizedLevel = Phaser.Math.Clamp(Math.round(level), 1, 10);
+  const palette = [
+    0x22c55e,
+    0x3b82f6,
+    0xa855f7,
+    0xeab308,
+    0xef4444,
+    0x39ff88,
+    0x38bdf8,
+    0xd946ef,
+    0xfde047,
+    0xff3131
+  ];
+  const glowing = normalizedLevel >= 6;
+  const color = palette[normalizedLevel - 1];
+
+  return {
+    color,
+    glowing,
+    radius: glowing ? 24 : 22,
+    fillAlpha: glowing ? 0.12 : 0.03,
+    strokeAlpha: glowing ? 1 : 0.78,
+    strokeWidth: glowing ? 4 : 3,
+    glowRadius: glowing ? 31 : 25,
+    glowFillAlpha: glowing ? 0.13 : 0,
+    glowStrokeAlpha: glowing ? 0.48 : 0,
+    glowStrokeWidth: glowing ? 7 : 0
+  };
 }
