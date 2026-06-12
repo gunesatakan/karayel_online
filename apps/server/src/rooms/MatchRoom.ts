@@ -9,6 +9,7 @@ import {
   PATH_WIDTH,
   towerCatalog,
   type CharacterId,
+  type DamageEventSnapshot,
   type EnemyType,
   type BeamSnapshot,
   type GameSnapshot,
@@ -126,6 +127,10 @@ type BeamModel = BeamSnapshot & {
   ttlMs: number;
 };
 
+type DamageEventModel = DamageEventSnapshot & {
+  ttlMs: number;
+};
+
 type ServerPerfCounters = {
   targetSearches: number;
   targetChecks: number;
@@ -161,9 +166,11 @@ export class MatchRoom extends Room<MatchState> {
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private beams = new Map<string, BeamModel>();
+  private damageEvents = new Map<string, DamageEventModel>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
+  private nextDamageEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
   private teamGold = TEAM_START_GOLD;
   private wave = 1;
@@ -270,6 +277,7 @@ export class MatchRoom extends Room<MatchState> {
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
     this.updateBeams(deltaTime);
+    this.updateDamageEvents(deltaTime);
     timings.projectilesMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -455,6 +463,15 @@ export class MatchRoom extends Room<MatchState> {
       beam.ttlMs -= deltaTime;
       if (beam.ttlMs <= 0) {
         this.beams.delete(id);
+      }
+    }
+  }
+
+  private updateDamageEvents(deltaTime: number) {
+    for (const [id, event] of this.damageEvents) {
+      event.ttlMs -= deltaTime;
+      if (event.ttlMs <= 0) {
+        this.damageEvents.delete(id);
       }
     }
   }
@@ -995,7 +1012,9 @@ export class MatchRoom extends Room<MatchState> {
     this.perfCounters.damageEvents += 1;
     const now = Date.now();
     const trackingBonus = enemy.trackingUntil > now && sourceDefinitionId !== "warrior-1" ? 1.2 : 1;
-    enemy.hp -= damage * trackingBonus;
+    const effectiveDamage = damage * trackingBonus;
+    enemy.hp -= effectiveDamage;
+    this.addDamageEvent(enemy, effectiveDamage);
     if (sourceDefinitionId === "warrior-1") {
       enemy.trackingUntil = Math.max(enemy.trackingUntil, now + 6500);
     }
@@ -1014,6 +1033,28 @@ export class MatchRoom extends Room<MatchState> {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + 7);
     }
     return true;
+  }
+
+  private addDamageEvent(enemy: EnemyModel, amount: number) {
+    if (amount <= 0) {
+      return;
+    }
+
+    const id = `d${this.nextDamageEventId++}`;
+    this.damageEvents.set(id, {
+      id,
+      x: enemy.x + (Math.random() - 0.5) * 14,
+      y: enemy.y - 16 + (Math.random() - 0.5) * 8,
+      amount: Math.max(1, Math.round(amount)),
+      ttlMs: 900
+    });
+
+    if (this.damageEvents.size > 120) {
+      const oldestId = this.damageEvents.keys().next().value;
+      if (oldestId) {
+        this.damageEvents.delete(oldestId);
+      }
+    }
   }
 
   private damageAllEnemies(damage: number, slowMs: number) {
@@ -1113,6 +1154,12 @@ export class MatchRoom extends Room<MatchState> {
         width: beam.width,
         color: beam.color,
         overdrive: beam.overdrive
+      })),
+      damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
+        id: event.id,
+        x: event.x,
+        y: event.y,
+        amount: event.amount
       })),
       team: {
         health: this.teamHealth,

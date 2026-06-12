@@ -9,6 +9,7 @@ import {
   towerCatalog,
   type CharacterDefinition,
   type CharacterId,
+  type DamageEventSnapshot,
   type EnemySnapshot,
   type BeamSnapshot,
   type GameSnapshot,
@@ -65,6 +66,8 @@ export class GameScene extends Phaser.Scene {
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
+  private seenDamageEventIds: string[] = [];
+  private seenDamageEventSet = new Set<string>();
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -444,6 +447,7 @@ export class GameScene extends Phaser.Scene {
     this.renderTowers(snapshot.towers);
     this.renderBeams(snapshot.beams);
     this.renderProjectiles(snapshot.projectiles);
+    this.renderDamageEvents(snapshot.damageEvents);
     this.renderHud(snapshot);
     if (now - this.lastShopEventAt > 250) {
       this.game.events.emit("game:snapshot", snapshot);
@@ -607,6 +611,43 @@ export class GameScene extends Phaser.Scene {
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
+    }
+  }
+
+  private renderDamageEvents(events: DamageEventSnapshot[]) {
+    for (const event of events) {
+      if (this.seenDamageEventSet.has(event.id)) {
+        continue;
+      }
+
+      this.seenDamageEventSet.add(event.id);
+      this.seenDamageEventIds.push(event.id);
+      if (this.seenDamageEventIds.length > 240) {
+        const oldestId = this.seenDamageEventIds.shift();
+        if (oldestId) {
+          this.seenDamageEventSet.delete(oldestId);
+        }
+      }
+
+      const text = this.add.text(event.x, event.y, `-${event.amount}`, {
+        color: "#ef4444",
+        fontFamily: "Arial",
+        fontSize: event.amount >= 100 ? "15px" : "13px",
+        fontStyle: "bold",
+        stroke: "#450a0a",
+        strokeThickness: 3
+      }).setOrigin(0.5).setDepth(30);
+
+      this.tweens.add({
+        targets: text,
+        y: event.y - 28,
+        x: event.x + Phaser.Math.Between(-8, 8),
+        alpha: 0,
+        scale: event.amount >= 100 ? 1.28 : 1.12,
+        duration: 720,
+        ease: "Cubic.easeOut",
+        onComplete: () => text.destroy()
+      });
     }
   }
 

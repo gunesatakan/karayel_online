@@ -82,6 +82,13 @@ export type BeamSnapshot = {
   overdrive?: boolean;
 };
 
+export type DamageEventSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+  amount: number;
+};
+
 export type TeamSnapshot = {
   health: number;
   maxHealth: number;
@@ -120,6 +127,7 @@ export type GameSnapshot = {
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   beams: BeamSnapshot[];
+  damageEvents: DamageEventSnapshot[];
   team: TeamSnapshot;
   perf?: ServerPerfSnapshot;
 };
