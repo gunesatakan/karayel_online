@@ -23,6 +23,15 @@ const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const TOWER_MIN_DISTANCE = 34;
 const BUILD_MARGIN = 18;
+const BASE_WAVE_ENEMY_COUNT = 10;
+const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
+const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
+const DEBUG_LASER_SWEEP_SPEED = 130;
+const DEBUG_LASER_MIN_SWEEP_MS = 250;
+const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
+const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
+const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
+const DEBUG_LASER_OVERHEAT_MS = 5000;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -103,12 +112,23 @@ type TowerModel = {
   offlineUntil: number;
   debugOverdriveUntil: number;
   debugSweepStartedAt: number;
+  debugSweepDurationMs: number;
+  debugSweepLastUpdatedAt: number;
+  debugSweepCurrentDistance: number;
+  debugSweepLastAngle: number;
   debugSweepStartDistance: number;
   debugSweepEndDistance: number;
+  debugOverdriveHeatLastAt: number;
+  debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
   waveBonusLevel: number;
   linkedTowerIds: string[];
   rangeMemoryEnemyIds: string[];
+};
+
+type DebugOverdriveHeatSegment = {
+  startedAt: number;
+  endedAt: number;
 };
 
 type ProjectileModel = {
@@ -180,7 +200,7 @@ export class MatchRoom extends Room<MatchState> {
   private wave = 1;
   private kills = 0;
   private waveSpawned = 0;
-  private waveTarget = 10;
+  private waveTarget = getWaveEnemyCount(1);
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
   private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
@@ -323,7 +343,7 @@ export class MatchRoom extends Room<MatchState> {
       this.advanceWaveGrowth();
       this.wave += 1;
       this.waveSpawned = 0;
-      this.waveTarget = 10 + this.wave * 3;
+      this.waveTarget = getWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
       this.teamGold += 20 + this.wave * 3;
     }
@@ -345,7 +365,7 @@ export class MatchRoom extends Room<MatchState> {
   private spawnEnemy() {
     const roll = Math.random();
     const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
-    const waveScale = 1 + this.wave * 0.14;
+    const waveScale = getWaveHpMultiplier(this.wave);
     const maxHp = Math.round((type === "brute" ? 76 : type === "runner" ? 30 : type === "shooter" ? 42 : 46) * waveScale);
     const speed = (type === "runner" ? 78 : type === "brute" ? 34 : type === "shooter" ? 44 : 50) + this.wave * 2.4;
     const start = MAP_PATH[0];
@@ -392,6 +412,13 @@ export class MatchRoom extends Room<MatchState> {
 
       if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
         tower.debugSweepStartedAt = 0;
+        tower.debugSweepDurationMs = 0;
+        tower.debugSweepLastUpdatedAt = 0;
+        tower.debugOverdriveHeatLastAt = 0;
+      }
+
+      if (tower.definition.id === "warrior-2") {
+        continue;
       }
 
       if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
@@ -496,10 +523,15 @@ export class MatchRoom extends Room<MatchState> {
     const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id);
 
     if (wasTracked && killed) {
-      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 2000);
       tower.debugSweepStartedAt = now;
       tower.debugSweepStartDistance = target.pathDistance;
       tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance);
+      tower.debugSweepCurrentDistance = tower.debugSweepStartDistance;
+      tower.debugSweepLastUpdatedAt = now;
+      tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepStartDistance);
+      tower.debugOverdriveHeatLastAt = now;
+      tower.debugSweepDurationMs = this.getDebugLaserSweepDuration(tower, tower.debugSweepStartDistance, tower.debugSweepEndDistance);
+      tower.debugOverdriveUntil = now + tower.debugSweepDurationMs;
       this.updateDebugLaserSweep(tower);
       return;
     }
@@ -507,7 +539,7 @@ export class MatchRoom extends Room<MatchState> {
     this.setBeam(tower, target.x, target.y, false);
   }
 
-  private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean) {
+  private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number) {
     this.beams.set(`beam-${tower.id}`, {
       id: `beam-${tower.id}`,
       definitionId: tower.definition.id,
@@ -515,6 +547,8 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2,
       y2,
+      scanX,
+      scanY,
       width: overdrive ? 8 : 4,
       color: overdrive ? 0xfbbf24 : 0xfb7185,
       overdrive,
@@ -524,22 +558,50 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateDebugLaserSweep(tower: TowerModel) {
     const now = Date.now();
+    if (this.updateDebugLaserOverdriveHeat(tower, now)) {
+      return;
+    }
+
     if (tower.debugSweepStartedAt <= 0) {
       tower.debugSweepStartedAt = now;
     }
 
-    const sweepDurationMs = 2000;
-    const progress = this.clamp((now - tower.debugSweepStartedAt) / sweepDurationMs, 0, 1);
-    const currentDistance = tower.debugSweepStartDistance + (tower.debugSweepEndDistance - tower.debugSweepStartDistance) * progress;
+    if (tower.debugSweepLastUpdatedAt <= 0) {
+      tower.debugSweepLastUpdatedAt = now;
+      tower.debugSweepCurrentDistance = tower.debugSweepStartDistance;
+      tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepCurrentDistance);
+    }
+
+    if (tower.debugSweepDurationMs <= 0) {
+      tower.debugSweepDurationMs = this.getDebugLaserSweepDuration(tower, tower.debugSweepStartDistance, tower.debugSweepEndDistance);
+    }
+
+    const elapsedSeconds = Math.max(0, now - tower.debugSweepLastUpdatedAt) / 1000;
+    const direction = Math.sign(tower.debugSweepEndDistance - tower.debugSweepStartDistance) || -1;
+    const nextDistanceByPathSpeed = direction < 0
+      ? Math.max(tower.debugSweepEndDistance, tower.debugSweepCurrentDistance - DEBUG_LASER_SWEEP_SPEED * elapsedSeconds)
+      : Math.min(tower.debugSweepEndDistance, tower.debugSweepCurrentDistance + DEBUG_LASER_SWEEP_SPEED * elapsedSeconds);
+    const currentDistance = this.limitDebugLaserSweepByAngle(tower, nextDistanceByPathSpeed, elapsedSeconds);
     const sweepPoint = getPointAlongPath(currentDistance);
     const end = getRayToWorldEdge(tower.x, tower.y, sweepPoint.x, sweepPoint.y);
+    const finishedSweep = Math.abs(currentDistance - tower.debugSweepEndDistance) < 0.5;
 
-    this.setBeam(tower, end.x, end.y, true);
+    tower.debugSweepCurrentDistance = currentDistance;
+    tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, currentDistance);
+    tower.debugSweepLastUpdatedAt = now;
+    if (!finishedSweep) {
+      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 250);
+    }
+
+    this.setBeam(tower, end.x, end.y, true, sweepPoint.x, sweepPoint.y);
     if (tower.cooldownMs > 0) {
+      if (finishedSweep) {
+        tower.debugOverdriveUntil = now;
+      }
       return;
     }
 
-    const damage = this.getTowerDamage(tower) * 0.66;
+    const damage = this.getTowerDamage(tower);
     for (const enemy of Array.from(this.enemies.values())) {
       if (enemy.pathDistance > tower.debugSweepStartDistance + 18 || enemy.pathDistance < tower.debugSweepEndDistance - 70) {
         continue;
@@ -549,6 +611,88 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     tower.cooldownMs = 50;
+    if (finishedSweep) {
+      tower.debugOverdriveUntil = now;
+    }
+  }
+
+  private limitDebugLaserSweepByAngle(tower: TowerModel, targetDistance: number, elapsedSeconds: number) {
+    const maxAngleStep = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
+    if (maxAngleStep <= 0) {
+      return tower.debugSweepCurrentDistance;
+    }
+
+    const targetAngle = getAngleToPathDistance(tower.x, tower.y, targetDistance);
+    if (getShortestAngleDistance(tower.debugSweepLastAngle, targetAngle) <= maxAngleStep) {
+      return targetDistance;
+    }
+
+    let low = tower.debugSweepCurrentDistance;
+    let high = targetDistance;
+    for (let i = 0; i < 12; i += 1) {
+      const mid = (low + high) / 2;
+      const midAngle = getAngleToPathDistance(tower.x, tower.y, mid);
+      if (getShortestAngleDistance(tower.debugSweepLastAngle, midAngle) <= maxAngleStep) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+
+    return low;
+  }
+
+  private updateDebugLaserOverdriveHeat(tower: TowerModel, now: number) {
+    if (tower.debugOverdriveHeatLastAt <= 0 || tower.debugOverdriveHeatLastAt > now) {
+      tower.debugOverdriveHeatLastAt = now;
+      this.pruneDebugLaserHeatSegments(tower, now);
+      return false;
+    }
+
+    if (now > tower.debugOverdriveHeatLastAt) {
+      this.addDebugLaserHeatSegment(tower, tower.debugOverdriveHeatLastAt, now);
+      tower.debugOverdriveHeatLastAt = now;
+    }
+
+    this.pruneDebugLaserHeatSegments(tower, now);
+    const heatMs = tower.debugOverdriveHeatSegments.reduce((total, segment) => total + Math.max(0, segment.endedAt - segment.startedAt), 0);
+    if (heatMs <= DEBUG_LASER_HEAT_LIMIT_MS) {
+      return false;
+    }
+
+    this.triggerDebugLaserOverheat(tower);
+    return true;
+  }
+
+  private addDebugLaserHeatSegment(tower: TowerModel, startedAt: number, endedAt: number) {
+    const previous = tower.debugOverdriveHeatSegments[tower.debugOverdriveHeatSegments.length - 1];
+    if (previous && startedAt - previous.endedAt <= 80) {
+      previous.endedAt = Math.max(previous.endedAt, endedAt);
+      return;
+    }
+
+    tower.debugOverdriveHeatSegments.push({ startedAt, endedAt });
+  }
+
+  private pruneDebugLaserHeatSegments(tower: TowerModel, now: number) {
+    const windowStart = now - DEBUG_LASER_HEAT_WINDOW_MS;
+    tower.debugOverdriveHeatSegments = tower.debugOverdriveHeatSegments
+      .filter((segment) => segment.endedAt > windowStart)
+      .map((segment) => ({
+        startedAt: Math.max(segment.startedAt, windowStart),
+        endedAt: segment.endedAt
+      }));
+  }
+
+  private triggerDebugLaserOverheat(tower: TowerModel) {
+    tower.overheatMs = Math.max(tower.overheatMs, DEBUG_LASER_OVERHEAT_MS);
+    tower.debugOverdriveUntil = 0;
+    tower.debugSweepStartedAt = 0;
+    tower.debugSweepDurationMs = 0;
+    tower.debugSweepLastUpdatedAt = 0;
+    tower.debugOverdriveHeatLastAt = 0;
+    tower.debugOverdriveHeatSegments = [];
+    this.beams.delete(`beam-${tower.id}`);
   }
 
   private getRearMostEnemyDistance(startDistance: number) {
@@ -557,6 +701,12 @@ export class MatchRoom extends Room<MatchState> {
       .sort((a, b) => a.pathDistance - b.pathDistance);
 
     return behindEnemies[0]?.pathDistance ?? Math.max(0, startDistance - 260);
+  }
+
+  private getDebugLaserSweepDuration(tower: TowerModel, startDistance: number, endDistance: number) {
+    const distance = Math.abs(startDistance - endDistance);
+    const angleDurationMs = (getCumulativeDebugSweepAngle(tower.x, tower.y, startDistance, endDistance) / DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND) * 1000;
+    return Math.max(DEBUG_LASER_MIN_SWEEP_MS, (distance / DEBUG_LASER_SWEEP_SPEED) * 1000, angleDurationMs);
   }
 
   private updateServerLinks() {
@@ -691,8 +841,14 @@ export class MatchRoom extends Room<MatchState> {
       offlineUntil: 0,
       debugOverdriveUntil: 0,
       debugSweepStartedAt: 0,
+      debugSweepDurationMs: 0,
+      debugSweepLastUpdatedAt: 0,
+      debugSweepCurrentDistance: 0,
+      debugSweepLastAngle: 0,
       debugSweepStartDistance: 0,
       debugSweepEndDistance: 0,
+      debugOverdriveHeatLastAt: 0,
+      debugOverdriveHeatSegments: [],
       linkBurstCooldownMs: 0,
       waveBonusLevel: 0,
       linkedTowerIds: [],
@@ -1134,7 +1290,8 @@ export class MatchRoom extends Room<MatchState> {
         x: enemy.x,
         y: enemy.y,
         hp: Math.max(0, enemy.hp),
-        maxHp: enemy.maxHp
+        maxHp: enemy.maxHp,
+        isTracked: enemy.trackingUntil > Date.now()
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -1168,6 +1325,8 @@ export class MatchRoom extends Room<MatchState> {
         y1: beam.y1,
         x2: beam.x2,
         y2: beam.y2,
+        scanX: beam.scanX,
+        scanY: beam.scanY,
         width: beam.width,
         color: beam.color,
         overdrive: beam.overdrive
@@ -1194,6 +1353,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerRange(tower: TowerModel) {
+    if (tower.definition.id === "warrior-2") {
+      return GAME_WORLD_HEIGHT;
+    }
+
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
       return (tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier;
@@ -1449,6 +1612,48 @@ function getPointAlongPath(distance: number) {
 
   const end = MAP_PATH[MAP_PATH.length - 1];
   return { x: end.x, y: end.y };
+}
+
+function getWaveEnemyCount(wave: number) {
+  return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
+}
+
+function getWaveHpMultiplier(wave: number) {
+  return ENEMY_HP_WAVE_MULTIPLIER ** Math.max(0, wave - 1);
+}
+
+function degreesToRadians(degrees: number) {
+  return (degrees * Math.PI) / 180;
+}
+
+function getAngleToPathDistance(x: number, y: number, pathDistance: number) {
+  const point = getPointAlongPath(pathDistance);
+  return Math.atan2(point.y - y, point.x - x);
+}
+
+function getShortestAngleDistance(angleA: number, angleB: number) {
+  return Math.abs(Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA)));
+}
+
+function getCumulativeDebugSweepAngle(x: number, y: number, startDistance: number, endDistance: number) {
+  const distance = Math.abs(startDistance - endDistance);
+  if (distance <= 0) {
+    return 0;
+  }
+
+  const direction = Math.sign(endDistance - startDistance) || -1;
+  const sampleCount = Math.max(1, Math.ceil(distance / 18));
+  let totalAngle = 0;
+  let previousAngle = getAngleToPathDistance(x, y, startDistance);
+
+  for (let index = 1; index <= sampleCount; index += 1) {
+    const nextDistance = startDistance + direction * distance * (index / sampleCount);
+    const nextAngle = getAngleToPathDistance(x, y, nextDistance);
+    totalAngle += getShortestAngleDistance(previousAngle, nextAngle);
+    previousAngle = nextAngle;
+  }
+
+  return totalAngle;
 }
 
 function distanceSq(ax: number, ay: number, bx: number, by: number) {

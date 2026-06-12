@@ -41,6 +41,7 @@ export type EnemySnapshot = {
   y: number;
   hp: number;
   maxHp: number;
+  isTracked?: boolean;
 };
 
 export type TowerSnapshot = {
@@ -77,6 +78,8 @@ export type BeamSnapshot = {
   y1: number;
   x2: number;
   y2: number;
+  scanX?: number;
+  scanY?: number;
   width: number;
   color: number;
   overdrive?: boolean;
