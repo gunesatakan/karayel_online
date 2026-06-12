@@ -1542,7 +1542,9 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "warrior-4") {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
-        target.fearUntil = Math.max(target.fearUntil, Date.now() + STATUS_EFFECTS.fear.durationMs);
+        if (tower.level >= 3) {
+          target.fearUntil = Math.max(target.fearUntil, Date.now() + STATUS_EFFECTS.fear.durationMs);
+        }
       }
       return;
     }

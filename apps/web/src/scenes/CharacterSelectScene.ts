@@ -277,7 +277,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
     }
     if (tower.id === "warrior-4") {
-      parts.push("Korku: Ayni hedefe 3. vurus sonrasi hedef 3sn boyunca path uzerinde geri kacar. Ayni hedefe her ek vurus korku suresini tazeler.");
+      parts.push("Korku: Lv3'ten sonra ayni hedefe 3. vurus hedefi 3sn boyunca path uzerinde geri kacirir. Ayni hedefe her ek vurus korku suresini tazeler.");
     }
     if (tower.id === "warrior-5") {
       parts.push("Overdrive: Takipte hedefi oldururse 2.0sn path boyunca sweep lazer acar; tick 50ms, hasar 1.2x, isin cizgisine temas eden tum dusmanlara vurur.");
