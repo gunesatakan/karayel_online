@@ -1,133 +1,355 @@
 import Phaser from "phaser";
-import { characters, GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH, type CharacterDefinition, type CharacterId } from "@karayel/shared";
+import {
+  characters,
+  GAME_WORLD_HEIGHT,
+  GAME_WORLD_WIDTH,
+  type CharacterDefinition,
+  type CharacterId,
+  type SkillDefinition,
+  type TowerDefinition
+} from "@karayel/shared";
+
+type DetailItem = {
+  title: string;
+  subtitle: string;
+  description: string;
+  color: number;
+};
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedCharacter: CharacterDefinition = characters[0];
-  private detailObjects: Phaser.GameObjects.GameObject[] = [];
-  private cardObjects = new Map<CharacterId, Phaser.GameObjects.Rectangle>();
+  private viewObjects: Phaser.GameObjects.GameObject[] = [];
+  private detailText?: Phaser.GameObjects.Text;
+  private detailTitle?: Phaser.GameObjects.Text;
 
   constructor() {
     super("character-select");
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#0f172a");
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x111827);
-    this.add.text(24, 22, "Karakter Sec", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "28px",
-      fontStyle: "bold"
-    });
+    this.cameras.main.setBackgroundColor("#050711");
+    this.renderArchive();
+  }
+
+  private renderArchive() {
+    this.clearView();
+    this.drawBackdrop("OPERATOR SECIMI", "Mistisizm frekansini savunma mimarisine bagla.");
+    this.createBackButton(22, 24, "ANA", () => this.scene.start("main-menu"));
 
     characters.forEach((character, index) => {
-      this.createCharacterCard(character, 20, 64 + index * 46);
+      const y = 118 + index * 76;
+      this.createCharacterArchiveCard(character, 22, y, index);
     });
-
-    this.renderDetail();
   }
 
-  private createCharacterCard(character: CharacterDefinition, x: number, y: number) {
-    const card = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 40, 40, 0x1e293b, 1)
+  private createCharacterArchiveCard(character: CharacterDefinition, x: number, y: number, index: number) {
+    const color = this.getClassColor(character.id);
+    const panel = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 44, 62, 0x0b1020, 0.92)
       .setOrigin(0, 0)
+      .setStrokeStyle(1, color, index === 0 ? 0.95 : 0.45)
       .setInteractive({ useHandCursor: true });
-    this.cardObjects.set(character.id, card);
-    this.add.circle(x + 24, y + 20, 13, this.getClassColor(character.id));
-    this.add.text(x + 48, y + 6, character.displayName, {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "16px",
-      fontStyle: "bold"
-    });
-    this.add.text(x + 48, y + 25, character.role, {
-      color: "#94a3b8",
-      fontFamily: "Arial",
-      fontSize: "11px"
-    });
-
-    card.on("pointerup", () => {
-      this.selectedCharacter = character;
-      this.renderDetail();
-    });
-  }
-
-  private renderDetail() {
-    for (const object of this.detailObjects) {
-      object.destroy();
-    }
-    this.detailObjects = [];
-
-    for (const [id, card] of this.cardObjects) {
-      card.setFillStyle(id === this.selectedCharacter.id ? 0x334155 : 0x1e293b);
-    }
-
-    const y = 398;
-    this.detailObjects.push(this.add.rectangle(20, y, GAME_WORLD_WIDTH - 40, 374, 0x020617, 0.96)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x334155, 1));
-    this.detailObjects.push(this.add.circle(52, y + 44, 20, this.getClassColor(this.selectedCharacter.id)));
-    this.detailObjects.push(this.add.text(84, y + 24, `${this.selectedCharacter.displayName} - ${this.selectedCharacter.role}`, {
-      color: "#f8fafc",
+    const chevron = this.add.text(GAME_WORLD_WIDTH - 48, y + 31, ">", {
+      color: "#e0f2fe",
       fontFamily: "Arial",
       fontSize: "18px",
       fontStyle: "bold"
+    }).setOrigin(0.5);
+    this.drawHex(x + 32, y + 31, 20, color, 0.22, color, 0.92);
+    this.viewObjects.push(panel, chevron);
+
+    this.viewObjects.push(this.add.text(x + 66, y + 10, character.displayName, {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "19px",
+      fontStyle: "bold"
     }));
-    this.detailObjects.push(this.add.text(28, y + 78, this.selectedCharacter.summary, {
+    this.viewObjects.push(this.add.text(x + 66, y + 35, character.role, {
+      color: "#94a3b8",
+      fontFamily: "Arial",
+      fontSize: "11px"
+    }));
+    this.viewObjects.push(this.add.text(x + 220, y + 36, `DMG ${character.damage}  SPD ${character.speed}`, {
+      color: "#7dd3fc",
+      fontFamily: "Arial",
+      fontSize: "10px"
+    }));
+
+    panel.on("pointerover", () => {
+      panel.setFillStyle(0x111827, 0.98);
+      panel.setStrokeStyle(1, color, 1);
+      chevron.setColor("#fde68a");
+    });
+    panel.on("pointerout", () => {
+      panel.setFillStyle(0x0b1020, 0.92);
+      panel.setStrokeStyle(1, color, index === 0 ? 0.95 : 0.45);
+      chevron.setColor("#e0f2fe");
+    });
+    panel.on("pointerup", () => {
+      this.selectedCharacter = character;
+      this.renderCharacterDetail(character);
+    });
+  }
+
+  private renderCharacterDetail(character: CharacterDefinition) {
+    this.clearView();
+    const color = this.getClassColor(character.id);
+    this.drawBackdrop(character.displayName.toUpperCase(), character.role);
+    this.createBackButton(22, 24, "GERI", () => this.renderArchive());
+
+    this.drawHex(GAME_WORLD_WIDTH / 2, 126, 46, color, 0.22, color, 1);
+    this.drawHex(GAME_WORLD_WIDTH / 2, 126, 28, 0xf8fafc, 0.04, 0xfde68a, 0.72);
+    this.viewObjects.push(this.add.text(GAME_WORLD_WIDTH / 2, 116, character.displayName.slice(0, 2).toUpperCase(), {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "22px",
+      fontStyle: "bold"
+    }).setOrigin(0.5));
+    this.viewObjects.push(this.add.text(28, 178, character.summary, {
       color: "#cbd5e1",
       fontFamily: "Arial",
-      fontSize: "13px",
-      wordWrap: { width: 330 }
-    }));
-    this.detailObjects.push(this.add.text(28, y + 112, `Pasif: ${this.selectedCharacter.passive}`, {
-      color: "#86efac",
-      fontFamily: "Arial",
       fontSize: "12px",
-      wordWrap: { width: 330 }
-    }));
-    this.detailObjects.push(this.add.text(28, y + 148, `Ulti: ${this.selectedCharacter.ultimate}`, {
-      color: "#c4b5fd",
-      fontFamily: "Arial",
-      fontSize: "12px",
-      wordWrap: { width: 330 }
+      lineSpacing: 2,
+      wordWrap: { width: GAME_WORLD_WIDTH - 56 }
     }));
 
-    this.selectedCharacter.skills.forEach((skill, index) => {
-      this.detailObjects.push(this.add.text(32, y + 190 + index * 17, `${index + 1}. ${skill.name}`, {
-        color: "#dbeafe",
-        fontFamily: "Arial",
-        fontSize: "11px"
-      }));
+    this.createStatStrip(character, 214);
+    this.createDetailItemGrid(character);
+    this.createDetailPanel(character);
+
+    this.createButton(34, 774, GAME_WORLD_WIDTH - 68, 42, "BU OPERATORLE BASLA", color, () => {
+      this.scene.start("game", { characterId: character.id });
     });
 
-    this.selectedCharacter.towers.forEach((tower, index) => {
+    this.setDetail({
+      title: "Operator Kimligi",
+      subtitle: character.role,
+      description: `${character.summary}\n\nPasif: ${character.passive}\n\nUlti: ${character.ultimate}`,
+      color
+    });
+  }
+
+  private createStatStrip(character: CharacterDefinition, y: number) {
+    const stats = [
+      ["HP", character.maxHp],
+      ["DMG", character.damage],
+      ["ATK", `${character.fireIntervalMs}ms`],
+      ["VEL", character.projectileSpeed]
+    ];
+    stats.forEach(([label, value], index) => {
+      const x = 24 + index * 86;
+      const panel = this.add.rectangle(x, y, 76, 44, 0x020617, 0.82)
+        .setOrigin(0, 0)
+        .setStrokeStyle(1, 0x334155, 0.9);
+      this.viewObjects.push(panel);
+      this.viewObjects.push(this.add.text(x + 10, y + 8, String(label), {
+        color: "#94a3b8",
+        fontFamily: "Arial",
+        fontSize: "9px",
+        fontStyle: "bold"
+      }));
+      this.viewObjects.push(this.add.text(x + 10, y + 23, String(value), {
+        color: "#f8fafc",
+        fontFamily: "Arial",
+        fontSize: "13px",
+        fontStyle: "bold"
+      }));
+    });
+  }
+
+  private createDetailItemGrid(character: CharacterDefinition) {
+    const items: DetailItem[] = [
+      {
+        title: "Pasif",
+        subtitle: "Sabit etki",
+        description: character.passive,
+        color: 0x86efac
+      },
+      {
+        title: "Ulti",
+        subtitle: "Kirik esik",
+        description: character.ultimate,
+        color: 0xc4b5fd
+      },
+      ...character.skills.map((skill) => this.skillToItem(skill)),
+      ...character.towers.map((tower) => this.towerToItem(tower))
+    ];
+
+    items.forEach((item, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      this.detailObjects.push(this.add.text(32 + col * 166, y + 246 + row * 18, `${index + 1}. ${tower.name}`, {
-        color: "#e2e8f0",
-        fontFamily: "Arial",
-        fontSize: "10px"
-      }));
+      this.createDetailTile(24 + col * 173, 282 + row * 46, 164, 38, item);
     });
+  }
 
-    this.detailObjects.push(this.add.text(28, y + 304, `HP ${this.selectedCharacter.maxHp}  DMG ${this.selectedCharacter.damage}  ATK ${this.selectedCharacter.fireIntervalMs}ms`, {
-      color: "#facc15",
-      fontFamily: "Arial",
-      fontSize: "12px"
-    }));
-
-    const button = this.add.rectangle(40, y + 326, GAME_WORLD_WIDTH - 80, 38, 0x22c55e, 1)
+  private createDetailTile(x: number, y: number, width: number, height: number, item: DetailItem) {
+    const tile = this.add.rectangle(x, y, width, height, 0x0b1020, 0.88)
       .setOrigin(0, 0)
+      .setStrokeStyle(1, item.color, 0.48)
       .setInteractive({ useHandCursor: true });
-    const label = this.add.text(GAME_WORLD_WIDTH / 2, y + 345, "Bu Karakterle Basla", {
-      color: "#052e16",
+    const title = this.add.text(x + 10, y + 6, item.title, {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      fontStyle: "bold"
+    });
+    const subtitle = this.add.text(x + 10, y + 22, item.subtitle, {
+      color: "#94a3b8",
+      fontFamily: "Arial",
+      fontSize: "8px"
+    });
+    this.viewObjects.push(tile, title, subtitle);
+
+    const activate = () => {
+      tile.setFillStyle(0x111827, 0.98);
+      tile.setStrokeStyle(1, item.color, 1);
+      this.setDetail(item);
+    };
+    tile.on("pointerover", activate);
+    tile.on("pointerdown", activate);
+    tile.on("pointerout", () => {
+      tile.setFillStyle(0x0b1020, 0.88);
+      tile.setStrokeStyle(1, item.color, 0.48);
+    });
+  }
+
+  private createDetailPanel(character: CharacterDefinition) {
+    const color = this.getClassColor(character.id);
+    const panel = this.add.rectangle(24, 604, GAME_WORLD_WIDTH - 48, 142, 0x020617, 0.94)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, color, 0.72);
+    this.detailTitle = this.add.text(42, 622, "", {
+      color: "#f8fafc",
       fontFamily: "Arial",
       fontSize: "15px",
       fontStyle: "bold"
-    }).setOrigin(0.5);
-    button.on("pointerup", () => {
-      this.scene.start("game", { characterId: this.selectedCharacter.id });
     });
-    this.detailObjects.push(button, label);
+    this.detailText = this.add.text(42, 650, "", {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      lineSpacing: 3,
+      wordWrap: { width: GAME_WORLD_WIDTH - 84 }
+    });
+    this.viewObjects.push(panel, this.detailTitle, this.detailText);
+  }
+
+  private setDetail(item: DetailItem) {
+    this.detailTitle?.setText(`${item.title} | ${item.subtitle}`);
+    this.detailTitle?.setColor(`#${item.color.toString(16).padStart(6, "0")}`);
+    this.detailText?.setText(item.description);
+  }
+
+  private skillToItem(skill: SkillDefinition): DetailItem {
+    return {
+      title: skill.name,
+      subtitle: `Beceri ${Math.round(skill.cooldownMs / 1000)}s`,
+      description: skill.description,
+      color: 0x7dd3fc
+    };
+  }
+
+  private towerToItem(tower: TowerDefinition): DetailItem {
+    const parts = [
+      tower.description ?? tower.role,
+      `Sinif: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vurus: ${tower.hitType ?? "impact"}`,
+      `Maliyet ${tower.cost}g | Upgrade ${tower.upgradeCost}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
+      `Hasar ${tower.damage} | Hız ${tower.fireIntervalMs}ms | AOE ${tower.aoeRadius}`
+    ];
+
+    return {
+      title: tower.name,
+      subtitle: tower.role,
+      description: parts.join("\n"),
+      color: tower.color
+    };
+  }
+
+  private drawBackdrop(title: string, subtitle: string) {
+    const base = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x050711, 1);
+    const header = this.add.rectangle(GAME_WORLD_WIDTH / 2, 94, GAME_WORLD_WIDTH, 188, 0x0f172a, 0.78);
+    const graphics = this.add.graphics();
+    for (let y = 86; y < GAME_WORLD_HEIGHT; y += 42) {
+      graphics.lineStyle(1, 0x38bdf8, y % 84 === 0 ? 0.18 : 0.08);
+      graphics.lineBetween(18, y, GAME_WORLD_WIDTH - 18, y + 14);
+    }
+    for (let index = 0; index < 7; index += 1) {
+      const x = 32 + index * 54;
+      graphics.lineStyle(1, index % 2 === 0 ? 0xa78bfa : 0xfde68a, 0.14);
+      graphics.lineBetween(x, 86, GAME_WORLD_WIDTH - x / 2, 748);
+    }
+    this.viewObjects.push(base, header, graphics);
+    this.viewObjects.push(this.add.text(88, 34, title, {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: title.length > 12 ? "22px" : "26px",
+      fontStyle: "bold"
+    }));
+    this.viewObjects.push(this.add.text(88, 66, subtitle, {
+      color: "#c4b5fd",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      wordWrap: { width: GAME_WORLD_WIDTH - 112 }
+    }));
+  }
+
+  private createBackButton(x: number, y: number, label: string, onClick: () => void) {
+    const button = this.add.rectangle(x, y, 52, 38, 0x0b1020, 0.94)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x7dd3fc, 0.8)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add.text(x + 26, y + 19, label, {
+      color: "#e0f2fe",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+    button.on("pointerover", () => button.setFillStyle(0x0e7490, 0.96));
+    button.on("pointerout", () => button.setFillStyle(0x0b1020, 0.94));
+    button.on("pointerup", onClick);
+    this.viewObjects.push(button, text);
+  }
+
+  private createButton(x: number, y: number, width: number, height: number, label: string, color: number, onClick: () => void) {
+    const button = this.add.rectangle(x, y, width, height, 0x082f49, 0.96)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, color, 1)
+      .setInteractive({ useHandCursor: true });
+    const text = this.add.text(x + width / 2, y + height / 2, label, {
+      color: "#ecfeff",
+      fontFamily: "Arial",
+      fontSize: "13px",
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+    button.on("pointerover", () => button.setFillStyle(0x0e7490, 1));
+    button.on("pointerout", () => button.setFillStyle(0x082f49, 0.96));
+    button.on("pointerup", onClick);
+    this.viewObjects.push(button, text);
+  }
+
+  private drawHex(x: number, y: number, radius: number, fill: number, fillAlpha: number, stroke: number, strokeAlpha: number) {
+    const hex = [
+      new Phaser.Geom.Point(x + radius, y),
+      new Phaser.Geom.Point(x + radius / 2, y + radius * 0.86),
+      new Phaser.Geom.Point(x - radius / 2, y + radius * 0.86),
+      new Phaser.Geom.Point(x - radius, y),
+      new Phaser.Geom.Point(x - radius / 2, y - radius * 0.86),
+      new Phaser.Geom.Point(x + radius / 2, y - radius * 0.86)
+    ];
+    const graphics = this.add.graphics();
+    graphics.fillStyle(fill, fillAlpha);
+    graphics.fillPoints(hex, true);
+    graphics.lineStyle(1, stroke, strokeAlpha);
+    graphics.strokePoints(hex, true);
+    this.viewObjects.push(graphics);
+  }
+
+  private clearView() {
+    for (const object of this.viewObjects) {
+      object.destroy();
+    }
+    this.viewObjects = [];
+    this.detailText = undefined;
+    this.detailTitle = undefined;
   }
 
   private getClassColor(characterId: CharacterId) {
