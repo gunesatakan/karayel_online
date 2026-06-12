@@ -104,6 +104,7 @@ type TowerModel = {
   debugOverdriveUntil: number;
   debugSweepStartedAt: number;
   debugSweepCenterAngle: number;
+  debugSweepAnchorDistance: number;
   linkBurstCooldownMs: number;
   waveBonusLevel: number;
   linkedTowerIds: string[];
@@ -497,7 +498,9 @@ export class MatchRoom extends Room<MatchState> {
     if (wasTracked && killed) {
       tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 2000);
       tower.debugSweepStartedAt = now;
-      tower.debugSweepCenterAngle = Math.atan2(target.y - tower.y, target.x - tower.x);
+      tower.debugSweepAnchorDistance = Math.max(0, target.pathDistance - 130);
+      const sweepCenter = getPointAlongPath(tower.debugSweepAnchorDistance);
+      tower.debugSweepCenterAngle = Math.atan2(sweepCenter.y - tower.y, sweepCenter.x - tower.x);
       this.updateDebugLaserSweep(tower);
       return;
     }
@@ -527,7 +530,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const sweepDurationMs = 2000;
-    const sweepArc = Math.PI * 0.7;
+    const sweepArc = Math.PI * 0.42;
     const progress = this.clamp((now - tower.debugSweepStartedAt) / sweepDurationMs, 0, 1);
     const angle = tower.debugSweepCenterAngle - sweepArc / 2 + sweepArc * progress;
     const end = getRayByAngleToWorldEdge(tower.x, tower.y, angle);
@@ -539,11 +542,14 @@ export class MatchRoom extends Room<MatchState> {
 
     const damage = this.getTowerDamage(tower) * 0.66;
     for (const enemy of Array.from(this.enemies.values())) {
+      if (enemy.pathDistance > tower.debugSweepAnchorDistance + 95) {
+        continue;
+      }
       if (distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, end.x, end.y) <= 17 * 17) {
         this.damageEnemy(enemy, damage, 0, tower.definition.id);
       }
     }
-    tower.cooldownMs = this.getTowerFireInterval(tower);
+    tower.cooldownMs = 50;
   }
 
   private updateServerLinks() {
@@ -679,6 +685,7 @@ export class MatchRoom extends Room<MatchState> {
       debugOverdriveUntil: 0,
       debugSweepStartedAt: 0,
       debugSweepCenterAngle: -Math.PI / 2,
+      debugSweepAnchorDistance: 0,
       linkBurstCooldownMs: 0,
       waveBonusLevel: 0,
       linkedTowerIds: [],
@@ -1197,8 +1204,9 @@ export class MatchRoom extends Room<MatchState> {
     const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
+    const minimumInterval = tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now() ? 50 : 80;
 
-    return Math.max(80, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
