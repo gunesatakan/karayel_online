@@ -36,17 +36,16 @@ type RenderTower = {
 type RenderMover = {
   sprite: Phaser.Physics.Arcade.Sprite;
   marker?: Phaser.GameObjects.Text;
-  fromX: number;
-  fromY: number;
-  targetX: number;
-  targetY: number;
-  startedAt: number;
-  durationMs: number;
 };
 
 type BufferedSnapshot = {
   snapshot: GameSnapshot;
   receivedAt: number;
+};
+
+type PlaybackFrame = {
+  snapshot: GameSnapshot;
+  alpha: number;
 };
 
 type PendingAction =
@@ -70,6 +69,11 @@ export class GameScene extends Phaser.Scene {
   private projectileGroup?: Phaser.Physics.Arcade.Group;
   private seenDamageEventIds: string[] = [];
   private seenDamageEventSet = new Set<string>();
+  private seenKillEventIds: string[] = [];
+  private seenKillEventSet = new Set<string>();
+  private killStreakTimes: number[] = [];
+  private nextKillStreakAnnouncementAt = 0;
+  private killStreakSounds: HTMLAudioElement[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -91,12 +95,16 @@ export class GameScene extends Phaser.Scene {
   private lastSelectionKey = "";
   private lastPerfOverlayAt = 0;
   private lastShopEventAt = 0;
-  private lastSnapshotAt = 0;
-  private snapshotStepMs = 90;
+  private lastRenderedSnapshotServerTime = 0;
+  private serverTimeAnchor?: BufferedSnapshot;
+  private droppedSnapshotCount = 0;
+  private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private readonly playbackDelayMs = 500;
+  private readonly killStreakWindowMs = 5000;
+  private readonly killStreakThreshold = 5;
   private readonly controlTop = 606;
   private readonly trayTop = 708;
 
@@ -118,11 +126,13 @@ export class GameScene extends Phaser.Scene {
     this.createTowerTray();
     this.createActionButtons();
     this.beamGraphics = this.add.graphics().setDepth(10);
+    this.createKillStreakAudio();
 
-    this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt", maxSize: 100 });
-    this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 180 });
+    this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt" });
+    this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.input.on("pointerup", this.handleMapPointer, this);
+    this.input.once("pointerdown", () => this.unlockKillStreakAudio());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
@@ -133,8 +143,7 @@ export class GameScene extends Phaser.Scene {
 
   update() {
     const now = performance.now();
-    this.renderDueSnapshots(now);
-    this.animateNetworkMovers(this.enemies, now);
+    this.renderPlaybackFrame(now);
   }
 
   private drawMap() {
@@ -233,6 +242,36 @@ export class GameScene extends Phaser.Scene {
       });
       this.towerButtons.set(tower.id, button);
     });
+  }
+
+  private createKillStreakAudio() {
+    this.killStreakSounds = [
+      new Audio("/audio/kill-streak-deep.mp3"),
+      new Audio("/audio/kill-streak-emotive.mp3")
+    ];
+
+    for (const audio of this.killStreakSounds) {
+      audio.preload = "auto";
+      audio.volume = 0.82;
+    }
+  }
+
+  private unlockKillStreakAudio() {
+    for (const audio of this.killStreakSounds) {
+      const originalVolume = audio.volume;
+      audio.muted = true;
+      audio.play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = false;
+          audio.volume = originalVolume;
+        })
+        .catch(() => {
+          audio.muted = false;
+          audio.volume = originalVolume;
+        });
+    }
   }
 
   private createActionButtons() {
@@ -414,42 +453,120 @@ export class GameScene extends Phaser.Scene {
   }
 
   private queueSnapshot(snapshot: GameSnapshot) {
-    this.snapshotBuffer.push({
+    const bufferedSnapshot = {
       snapshot,
       receivedAt: performance.now()
-    });
+    };
+    this.snapshotBuffer.push(bufferedSnapshot);
+    this.snapshotBuffer.sort((a, b) => a.snapshot.serverTime - b.snapshot.serverTime);
+    if (!this.serverTimeAnchor || snapshot.serverTime >= this.serverTimeAnchor.snapshot.serverTime) {
+      this.serverTimeAnchor = bufferedSnapshot;
+    }
 
     if (this.snapshotBuffer.length > 120) {
+      this.droppedSnapshotCount += this.snapshotBuffer.length - 120;
       this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
     }
   }
 
-  private renderDueSnapshots(now: number) {
-    const renderBefore = now - this.playbackDelayMs;
-    let dueSnapshot: BufferedSnapshot | undefined;
-
-    while (this.snapshotBuffer.length > 0 && this.snapshotBuffer[0].receivedAt <= renderBefore) {
-      dueSnapshot = this.snapshotBuffer.shift();
+  private renderPlaybackFrame(now: number) {
+    const frame = this.getPlaybackFrame(now);
+    if (!frame) {
+      return;
     }
 
-    if (dueSnapshot) {
-      this.renderSnapshot(dueSnapshot.snapshot);
+    this.renderEnemies(frame.snapshot.enemies);
+    this.lastPlaybackAlpha = frame.alpha;
+
+    if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
+      this.renderSnapshotPayload(frame.snapshot);
+      this.lastRenderedSnapshotServerTime = frame.snapshot.serverTime;
     }
   }
 
-  private renderSnapshot(snapshot: GameSnapshot) {
+  private getPlaybackFrame(now: number): PlaybackFrame | undefined {
+    if (this.snapshotBuffer.length === 0 || !this.serverTimeAnchor) {
+      return undefined;
+    }
+
+    const targetServerTime = this.serverTimeAnchor.snapshot.serverTime + (now - this.serverTimeAnchor.receivedAt) - this.playbackDelayMs;
+    this.pruneSnapshotBuffer(targetServerTime);
+
+    let previous = this.snapshotBuffer[0];
+    let next = this.snapshotBuffer[this.snapshotBuffer.length - 1];
+    for (let index = 0; index < this.snapshotBuffer.length; index += 1) {
+      const candidate = this.snapshotBuffer[index];
+      if (candidate.snapshot.serverTime <= targetServerTime) {
+        previous = candidate;
+      }
+      if (candidate.snapshot.serverTime >= targetServerTime) {
+        next = candidate;
+        break;
+      }
+    }
+
+    if (!previous || !next) {
+      const fallback = previous ?? next;
+      return fallback ? { snapshot: fallback.snapshot, alpha: 0 } : undefined;
+    }
+
+    if (previous.snapshot.serverTime === next.snapshot.serverTime) {
+      return { snapshot: previous.snapshot, alpha: 0 };
+    }
+
+    const alpha = Phaser.Math.Clamp(
+      (targetServerTime - previous.snapshot.serverTime) / (next.snapshot.serverTime - previous.snapshot.serverTime),
+      0,
+      1
+    );
+
+    return {
+      snapshot: this.interpolateSnapshot(previous.snapshot, next.snapshot, alpha),
+      alpha
+    };
+  }
+
+  private pruneSnapshotBuffer(targetServerTime: number) {
+    const keepAfter = targetServerTime - 1200;
+    while (this.snapshotBuffer.length > 2 && this.snapshotBuffer[1].snapshot.serverTime < keepAfter) {
+      this.snapshotBuffer.shift();
+      this.droppedSnapshotCount += 1;
+    }
+  }
+
+  private interpolateSnapshot(previous: GameSnapshot, next: GameSnapshot, alpha: number): GameSnapshot {
+    const previousEnemies = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]));
+    const enemies = next.enemies.map((enemy) => {
+      const oldEnemy = previousEnemies.get(enemy.id);
+      const pathDistance = oldEnemy
+        ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
+        : enemy.pathDistance;
+      const point = getPointAlongPath(pathDistance);
+
+      return {
+        ...enemy,
+        x: point.x,
+        y: point.y,
+        pathDistance,
+        hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp
+      };
+    });
+
+    return {
+      ...next,
+      enemies
+    };
+  }
+
+  private renderSnapshotPayload(snapshot: GameSnapshot) {
     const renderStart = performance.now();
     const now = performance.now();
-    if (this.lastSnapshotAt > 0) {
-      this.snapshotStepMs = Phaser.Math.Clamp((now - this.lastSnapshotAt) * 1.15, 65, 140);
-    }
-    this.lastSnapshotAt = now;
 
-    this.renderEnemies(snapshot.enemies);
     this.renderTowers(snapshot.towers);
     this.renderBeams(snapshot.beams);
     this.renderProjectiles(snapshot.projectiles);
     this.renderDamageEvents(snapshot.damageEvents);
+    this.renderKillEvents(snapshot);
     this.renderHud(snapshot);
     if (now - this.lastShopEventAt > 250) {
       this.game.events.emit("game:snapshot", snapshot);
@@ -494,9 +611,10 @@ export class GameScene extends Phaser.Scene {
       const texture = `enemy-${enemy.type}`;
 
       if (!mover) {
-        const sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
+        let sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
         if (!sprite) {
-          continue;
+          sprite = this.physics.add.sprite(enemy.x, enemy.y, texture);
+          this.enemyGroup?.add(sprite);
         }
         sprite.setActive(true).setVisible(true).setDepth(8);
         if (sprite.body) {
@@ -517,8 +635,9 @@ export class GameScene extends Phaser.Scene {
       if (mover.sprite.texture.key !== texture) {
         mover.sprite.setTexture(texture);
       }
-      this.setMoverTarget(mover, enemy.x, enemy.y);
+      mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+      mover.marker?.setPosition(enemy.x, enemy.y - 22);
       mover.marker?.setVisible(Boolean(enemy.isTracked));
     }
   }
@@ -673,6 +792,48 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private renderKillEvents(snapshot: GameSnapshot) {
+    for (const event of snapshot.killEvents) {
+      if (this.seenKillEventSet.has(event.id)) {
+        continue;
+      }
+
+      this.seenKillEventSet.add(event.id);
+      this.seenKillEventIds.push(event.id);
+      if (this.seenKillEventIds.length > 240) {
+        const oldestId = this.seenKillEventIds.shift();
+        if (oldestId) {
+          this.seenKillEventSet.delete(oldestId);
+        }
+      }
+
+      if (event.ownerId !== this.localSessionId) {
+        continue;
+      }
+
+      this.killStreakTimes.push(event.serverTime);
+      this.killStreakTimes = this.killStreakTimes.filter((time) => event.serverTime - time <= this.killStreakWindowMs);
+
+      if (this.killStreakTimes.length >= this.killStreakThreshold && event.serverTime >= this.nextKillStreakAnnouncementAt) {
+        this.nextKillStreakAnnouncementAt = event.serverTime + this.killStreakWindowMs;
+        this.playKillStreakAnnouncement();
+      }
+    }
+  }
+
+  private playKillStreakAnnouncement() {
+    if (this.killStreakSounds.length === 0) {
+      return;
+    }
+
+    const audio = Phaser.Utils.Array.GetRandom(this.killStreakSounds);
+    audio.pause();
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Mobile browsers may block audio until the first real touch; the next streak can retry.
+    });
+  }
+
   private renderBeams(beams: BeamSnapshot[]) {
     this.beamGraphics?.clear();
     if (!this.beamGraphics) {
@@ -735,48 +896,8 @@ export class GameScene extends Phaser.Scene {
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
     sprite.setPosition(x, y);
     return {
-      sprite,
-      fromX: x,
-      fromY: y,
-      targetX: x,
-      targetY: y,
-      startedAt: performance.now(),
-      durationMs: this.snapshotStepMs
+      sprite
     };
-  }
-
-  private setMoverTarget(mover: RenderMover, x: number, y: number) {
-    const distanceSq = Phaser.Math.Distance.Squared(mover.sprite.x, mover.sprite.y, x, y);
-    if (distanceSq > 190 * 190) {
-      mover.sprite.setPosition(x, y);
-      mover.marker?.setPosition(x, y - 22);
-      mover.fromX = x;
-      mover.fromY = y;
-      mover.targetX = x;
-      mover.targetY = y;
-      mover.startedAt = performance.now();
-      mover.durationMs = this.snapshotStepMs;
-      return;
-    }
-
-    mover.fromX = mover.sprite.x;
-    mover.fromY = mover.sprite.y;
-    mover.targetX = x;
-    mover.targetY = y;
-    mover.startedAt = performance.now();
-    mover.durationMs = this.snapshotStepMs;
-  }
-
-  private animateNetworkMovers(movers: Map<string, RenderMover>, now: number) {
-    for (const mover of movers.values()) {
-      const progress = Phaser.Math.Clamp((now - mover.startedAt) / mover.durationMs, 0, 1);
-      const eased = progress * progress * (3 - 2 * progress);
-      mover.sprite.setPosition(
-        Phaser.Math.Linear(mover.fromX, mover.targetX, eased),
-        Phaser.Math.Linear(mover.fromY, mover.targetY, eased)
-      );
-      mover.marker?.setPosition(mover.sprite.x, mover.sprite.y - 22);
-    }
   }
 
   private findTowerAt(x: number, y: number) {
@@ -894,7 +1015,7 @@ export class GameScene extends Phaser.Scene {
     const entityText = `E ${snapshot.enemies.length} T ${snapshot.towers.length} P ${snapshot.projectiles.length} B ${snapshot.beams.length}`;
     const serverText = `Srv ${serverPerf.tickMs}/${serverPerf.tickMaxMs}ms ${serverPerf.snapshotHz}hz`;
     const clientText = `Cli ${roundClientMetric(averageRenderMs)}ms ${fps}fps ${roundClientMetric(averageKb)}kb`;
-    const opsText = `Buf ${this.playbackDelayMs}ms q${this.snapshotBuffer.length} tgt ${serverPerf.ops.targetChecks}`;
+    const opsText = `Buf ${this.playbackDelayMs}ms q${this.snapshotBuffer.length} a${this.lastPlaybackAlpha.toFixed(2)} d${this.droppedSnapshotCount} tgt ${serverPerf.ops.targetChecks}`;
 
     this.perfText?.setText(`${serverText}\n${clientText}\n${entityText} ${opsText}`);
     this.perfText?.setColor(fps >= 50 && serverPerf.tickMs < 8 ? "#86efac" : fps >= 35 && serverPerf.tickMs < 14 ? "#fde047" : "#fb7185");
@@ -922,6 +1043,28 @@ function average(values: number[]) {
 
 function roundClientMetric(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function getPointAlongPath(distance: number) {
+  let remaining = distance;
+
+  for (let index = 0; index < MAP_PATH.length - 1; index += 1) {
+    const from = MAP_PATH[index];
+    const to = MAP_PATH[index + 1];
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+
+    if (remaining <= length) {
+      const ratio = length === 0 ? 0 : remaining / length;
+      return {
+        x: from.x + (to.x - from.x) * ratio,
+        y: from.y + (to.y - from.y) * ratio
+      };
+    }
+
+    remaining -= length;
+  }
+
+  return MAP_PATH[MAP_PATH.length - 1];
 }
 
 function getTowerLevelHalo(level: number) {

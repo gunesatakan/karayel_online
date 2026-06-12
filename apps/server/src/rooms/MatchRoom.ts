@@ -13,6 +13,7 @@ import {
   type EnemyType,
   type BeamSnapshot,
   type GameSnapshot,
+  type KillEventSnapshot,
   type ProjectileKind,
   type ServerPerfSnapshot,
   type TowerDefinition
@@ -26,8 +27,7 @@ const BUILD_MARGIN = 18;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
-const DEBUG_LASER_SWEEP_SPEED = 130;
-const DEBUG_LASER_MIN_SWEEP_MS = 250;
+const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
@@ -112,12 +112,10 @@ type TowerModel = {
   offlineUntil: number;
   debugOverdriveUntil: number;
   debugSweepStartedAt: number;
-  debugSweepDurationMs: number;
-  debugSweepLastUpdatedAt: number;
-  debugSweepCurrentDistance: number;
-  debugSweepLastAngle: number;
   debugSweepStartDistance: number;
   debugSweepEndDistance: number;
+  debugSweepStartAngle: number;
+  debugSweepEndAngle: number;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
@@ -152,6 +150,10 @@ type BeamModel = BeamSnapshot & {
 };
 
 type DamageEventModel = DamageEventSnapshot & {
+  ttlMs: number;
+};
+
+type KillEventModel = KillEventSnapshot & {
   ttlMs: number;
 };
 
@@ -191,10 +193,12 @@ export class MatchRoom extends Room<MatchState> {
   private projectiles = new Map<string, ProjectileModel>();
   private beams = new Map<string, BeamModel>();
   private damageEvents = new Map<string, DamageEventModel>();
+  private killEvents = new Map<string, KillEventModel>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
   private nextDamageEventId = 1;
+  private nextKillEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
   private teamGold = TEAM_START_GOLD;
   private wave = 1;
@@ -412,8 +416,6 @@ export class MatchRoom extends Room<MatchState> {
 
       if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
         tower.debugSweepStartedAt = 0;
-        tower.debugSweepDurationMs = 0;
-        tower.debugSweepLastUpdatedAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
       }
 
@@ -514,24 +516,29 @@ export class MatchRoom extends Room<MatchState> {
         this.damageEvents.delete(id);
       }
     }
+
+    for (const [id, event] of this.killEvents) {
+      event.ttlMs -= deltaTime;
+      if (event.ttlMs <= 0) {
+        this.killEvents.delete(id);
+      }
+    }
   }
 
   private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
     const wasTracked = target.trackingUntil > now;
-    const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id);
+    const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id, tower.ownerId);
 
     if (wasTracked && killed) {
       tower.debugSweepStartedAt = now;
       tower.debugSweepStartDistance = target.pathDistance;
       tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance);
-      tower.debugSweepCurrentDistance = tower.debugSweepStartDistance;
-      tower.debugSweepLastUpdatedAt = now;
-      tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepStartDistance);
+      tower.debugSweepStartAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepStartDistance);
+      tower.debugSweepEndAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepEndDistance);
       tower.debugOverdriveHeatLastAt = now;
-      tower.debugSweepDurationMs = this.getDebugLaserSweepDuration(tower, tower.debugSweepStartDistance, tower.debugSweepEndDistance);
-      tower.debugOverdriveUntil = now + tower.debugSweepDurationMs;
+      tower.debugOverdriveUntil = now + DEBUG_LASER_OVERDRIVE_DURATION_MS;
       this.updateDebugLaserSweep(tower);
       return;
     }
@@ -566,34 +573,13 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepStartedAt = now;
     }
 
-    if (tower.debugSweepLastUpdatedAt <= 0) {
-      tower.debugSweepLastUpdatedAt = now;
-      tower.debugSweepCurrentDistance = tower.debugSweepStartDistance;
-      tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepCurrentDistance);
-    }
+    const elapsedSeconds = this.clamp((now - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
+    const currentAngle = getDebugLaserSweepAngle(tower.debugSweepStartAngle, tower.debugSweepEndAngle, elapsedSeconds);
+    const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle);
+    const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, 190);
+    const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
 
-    if (tower.debugSweepDurationMs <= 0) {
-      tower.debugSweepDurationMs = this.getDebugLaserSweepDuration(tower, tower.debugSweepStartDistance, tower.debugSweepEndDistance);
-    }
-
-    const elapsedSeconds = Math.max(0, now - tower.debugSweepLastUpdatedAt) / 1000;
-    const direction = Math.sign(tower.debugSweepEndDistance - tower.debugSweepStartDistance) || -1;
-    const nextDistanceByPathSpeed = direction < 0
-      ? Math.max(tower.debugSweepEndDistance, tower.debugSweepCurrentDistance - DEBUG_LASER_SWEEP_SPEED * elapsedSeconds)
-      : Math.min(tower.debugSweepEndDistance, tower.debugSweepCurrentDistance + DEBUG_LASER_SWEEP_SPEED * elapsedSeconds);
-    const currentDistance = this.limitDebugLaserSweepByAngle(tower, nextDistanceByPathSpeed, elapsedSeconds);
-    const sweepPoint = getPointAlongPath(currentDistance);
-    const end = getRayToWorldEdge(tower.x, tower.y, sweepPoint.x, sweepPoint.y);
-    const finishedSweep = Math.abs(currentDistance - tower.debugSweepEndDistance) < 0.5;
-
-    tower.debugSweepCurrentDistance = currentDistance;
-    tower.debugSweepLastAngle = getAngleToPathDistance(tower.x, tower.y, currentDistance);
-    tower.debugSweepLastUpdatedAt = now;
-    if (!finishedSweep) {
-      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 250);
-    }
-
-    this.setBeam(tower, end.x, end.y, true, sweepPoint.x, sweepPoint.y);
+    this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
     if (tower.cooldownMs > 0) {
       if (finishedSweep) {
         tower.debugOverdriveUntil = now;
@@ -607,39 +593,13 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       if (distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, end.x, end.y) <= 17 * 17) {
-        this.damageEnemy(enemy, damage, 0, tower.definition.id);
+        this.damageEnemy(enemy, damage, 0, tower.definition.id, tower.ownerId);
       }
     }
     tower.cooldownMs = 50;
     if (finishedSweep) {
       tower.debugOverdriveUntil = now;
     }
-  }
-
-  private limitDebugLaserSweepByAngle(tower: TowerModel, targetDistance: number, elapsedSeconds: number) {
-    const maxAngleStep = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
-    if (maxAngleStep <= 0) {
-      return tower.debugSweepCurrentDistance;
-    }
-
-    const targetAngle = getAngleToPathDistance(tower.x, tower.y, targetDistance);
-    if (getShortestAngleDistance(tower.debugSweepLastAngle, targetAngle) <= maxAngleStep) {
-      return targetDistance;
-    }
-
-    let low = tower.debugSweepCurrentDistance;
-    let high = targetDistance;
-    for (let i = 0; i < 12; i += 1) {
-      const mid = (low + high) / 2;
-      const midAngle = getAngleToPathDistance(tower.x, tower.y, mid);
-      if (getShortestAngleDistance(tower.debugSweepLastAngle, midAngle) <= maxAngleStep) {
-        low = mid;
-      } else {
-        high = mid;
-      }
-    }
-
-    return low;
   }
 
   private updateDebugLaserOverdriveHeat(tower: TowerModel, now: number) {
@@ -688,8 +648,6 @@ export class MatchRoom extends Room<MatchState> {
     tower.overheatMs = Math.max(tower.overheatMs, DEBUG_LASER_OVERHEAT_MS);
     tower.debugOverdriveUntil = 0;
     tower.debugSweepStartedAt = 0;
-    tower.debugSweepDurationMs = 0;
-    tower.debugSweepLastUpdatedAt = 0;
     tower.debugOverdriveHeatLastAt = 0;
     tower.debugOverdriveHeatSegments = [];
     this.beams.delete(`beam-${tower.id}`);
@@ -702,13 +660,6 @@ export class MatchRoom extends Room<MatchState> {
 
     return behindEnemies[0]?.pathDistance ?? Math.max(0, startDistance - 260);
   }
-
-  private getDebugLaserSweepDuration(tower: TowerModel, startDistance: number, endDistance: number) {
-    const distance = Math.abs(startDistance - endDistance);
-    const angleDurationMs = (getCumulativeDebugSweepAngle(tower.x, tower.y, startDistance, endDistance) / DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND) * 1000;
-    return Math.max(DEBUG_LASER_MIN_SWEEP_MS, (distance / DEBUG_LASER_SWEEP_SPEED) * 1000, angleDurationMs);
-  }
-
   private updateServerLinks() {
     const now = Date.now();
 
@@ -778,15 +729,16 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      const projectileOwnerId = this.towers.get(projectile.towerId)?.ownerId ?? "";
       if (projectile.aoeRadius > 0) {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
+            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId, projectileOwnerId);
           }
         }
       } else {
-        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId);
+        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId, projectileOwnerId);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -841,12 +793,10 @@ export class MatchRoom extends Room<MatchState> {
       offlineUntil: 0,
       debugOverdriveUntil: 0,
       debugSweepStartedAt: 0,
-      debugSweepDurationMs: 0,
-      debugSweepLastUpdatedAt: 0,
-      debugSweepCurrentDistance: 0,
-      debugSweepLastAngle: 0,
       debugSweepStartDistance: 0,
       debugSweepEndDistance: 0,
+      debugSweepStartAngle: 0,
+      debugSweepEndAngle: 0,
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],
       linkBurstCooldownMs: 0,
@@ -960,29 +910,29 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (slot === 1) {
-      this.useSecondSkill(player.characterId);
+      this.useSecondSkill(player.characterId, client.sessionId);
       return;
     }
 
-    this.useThirdSkill(player.characterId);
+    this.useThirdSkill(player.characterId, client.sessionId);
   }
 
-  private useSecondSkill(characterId: CharacterId) {
+  private useSecondSkill(characterId: CharacterId, ownerId: string) {
     if (characterId === "zeynep") {
-      this.damageAllEnemies(70, 700);
+      this.damageAllEnemies(70, 700, ownerId);
     } else if (characterId === "archer") {
-      this.damageFrontEnemies(5, 55, 0);
+      this.damageFrontEnemies(5, 55, 0, ownerId);
     } else if (characterId === "mage") {
-      this.damageAllEnemies(50, 0);
+      this.damageAllEnemies(50, 0, ownerId);
     } else if (characterId === "healer") {
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 14);
       this.slowAllEnemies(1300);
     } else if (characterId === "tank") {
-      this.damageAllEnemies(28, 2100);
+      this.damageAllEnemies(28, 2100, ownerId);
     } else if (characterId === "onur") {
-      this.damageStrongestEnemy(120, 0);
+      this.damageStrongestEnemy(120, 0, ownerId);
     } else {
-      this.damageAllEnemies(15, 0);
+      this.damageAllEnemies(15, 0, ownerId);
     }
   }
 
@@ -1008,25 +958,25 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private useThirdSkill(characterId: CharacterId) {
+  private useThirdSkill(characterId: CharacterId, ownerId: string) {
     if (characterId === "zeynep") {
       this.teamGold += 25;
-      this.damageAllEnemies(95, 900);
+      this.damageAllEnemies(95, 900, ownerId);
     } else if (characterId === "archer") {
-      this.damageFrontEnemies(8, 70, 0);
+      this.damageFrontEnemies(8, 70, 0, ownerId);
     } else if (characterId === "mage") {
-      this.damageAllEnemies(82, 0);
+      this.damageAllEnemies(82, 0, ownerId);
     } else if (characterId === "healer") {
       this.teamGold += 20;
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 25);
       this.slowAllEnemies(1600);
     } else if (characterId === "tank") {
-      this.damageAllEnemies(45, 3200);
+      this.damageAllEnemies(45, 3200, ownerId);
     } else if (characterId === "onur") {
-      this.damageStrongestEnemy(180, 0);
+      this.damageStrongestEnemy(180, 0, ownerId);
     } else {
       this.teamGold += 25;
-      this.damageAllEnemies(20, 0);
+      this.damageAllEnemies(20, 0, ownerId);
     }
   }
 
@@ -1040,14 +990,14 @@ export class MatchRoom extends Room<MatchState> {
 
     if (player.characterId === "zeynep") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 120, 700);
+        this.damageEnemy(enemy, 120, 700, "ultimate", client.sessionId);
       }
       return;
     }
 
     if (player.characterId === "mage") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 85, 0);
+        this.damageEnemy(enemy, 85, 0, "ultimate", client.sessionId);
       }
       return;
     }
@@ -1062,7 +1012,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (player.characterId === "tank") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 35, 3200);
+        this.damageEnemy(enemy, 35, 3200, "ultimate", client.sessionId);
       }
       return;
     }
@@ -1070,14 +1020,14 @@ export class MatchRoom extends Room<MatchState> {
     if (player.characterId === "onur") {
       const enemy = Array.from(this.enemies.values()).sort((a, b) => b.hp - a.hp)[0];
       if (enemy) {
-        this.damageEnemy(enemy, 220, 0);
+        this.damageEnemy(enemy, 220, 0, "ultimate", client.sessionId);
       }
       return;
     }
 
     if (player.characterId === "archer") {
       for (const enemy of Array.from(this.enemies.values()).sort((a, b) => b.pathDistance - a.pathDistance).slice(0, 6)) {
-        this.damageEnemy(enemy, 70, 0);
+        this.damageEnemy(enemy, 70, 0, "ultimate", client.sessionId);
       }
       return;
     }
@@ -1088,7 +1038,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     for (const enemy of this.enemies.values()) {
-      this.damageEnemy(enemy, 25, 0);
+      this.damageEnemy(enemy, 25, 0, "ultimate", client.sessionId);
     }
   }
 
@@ -1114,7 +1064,7 @@ export class MatchRoom extends Room<MatchState> {
           .sort((a, b) => b.pathDistance - a.pathDistance)[0];
 
       if (target) {
-        this.damageEnemy(target, 48 + tower.level * 10, 0, "warrior-ultimate-drone");
+        this.damageEnemy(target, 48 + tower.level * 10, 0, "warrior-ultimate-drone", client.sessionId);
       }
     }
 
@@ -1177,7 +1127,7 @@ export class MatchRoom extends Room<MatchState> {
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "") {
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "") {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
@@ -1202,10 +1152,32 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.delete(enemy.id);
     this.teamGold += enemy.reward;
     this.kills += 1;
+    if (sourceOwnerId) {
+      this.addKillEvent(sourceOwnerId, enemy.id);
+    }
     for (const player of this.state.players.values()) {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + 7);
     }
     return true;
+  }
+
+  private addKillEvent(ownerId: string, enemyId: string) {
+    const now = Date.now();
+    const id = `k${this.nextKillEventId++}`;
+    this.killEvents.set(id, {
+      id,
+      ownerId,
+      enemyId,
+      serverTime: now,
+      ttlMs: 2200
+    });
+
+    if (this.killEvents.size > 80) {
+      const oldestId = this.killEvents.keys().next().value;
+      if (oldestId) {
+        this.killEvents.delete(oldestId);
+      }
+    }
   }
 
   private addDamageEvent(enemy: EnemyModel, amount: number) {
@@ -1230,22 +1202,22 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private damageAllEnemies(damage: number, slowMs: number) {
+  private damageAllEnemies(damage: number, slowMs: number, ownerId = "") {
     for (const enemy of Array.from(this.enemies.values())) {
-      this.damageEnemy(enemy, damage, slowMs);
+      this.damageEnemy(enemy, damage, slowMs, "skill", ownerId);
     }
   }
 
-  private damageFrontEnemies(count: number, damage: number, slowMs: number) {
+  private damageFrontEnemies(count: number, damage: number, slowMs: number, ownerId = "") {
     for (const enemy of Array.from(this.enemies.values()).sort((a, b) => b.pathDistance - a.pathDistance).slice(0, count)) {
-      this.damageEnemy(enemy, damage, slowMs);
+      this.damageEnemy(enemy, damage, slowMs, "skill", ownerId);
     }
   }
 
-  private damageStrongestEnemy(damage: number, slowMs: number) {
+  private damageStrongestEnemy(damage: number, slowMs: number, ownerId = "") {
     const enemy = Array.from(this.enemies.values()).sort((a, b) => b.hp - a.hp)[0];
     if (enemy) {
-      this.damageEnemy(enemy, damage, slowMs);
+      this.damageEnemy(enemy, damage, slowMs, "skill", ownerId);
     }
   }
 
@@ -1270,7 +1242,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getSnapshot(): GameSnapshot {
+    const now = Date.now();
     return {
+      serverTime: now,
       players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,
         name: player.name,
@@ -1291,7 +1265,8 @@ export class MatchRoom extends Room<MatchState> {
         y: enemy.y,
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
-        isTracked: enemy.trackingUntil > Date.now()
+        pathDistance: enemy.pathDistance,
+        isTracked: enemy.trackingUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -1336,6 +1311,12 @@ export class MatchRoom extends Room<MatchState> {
         x: event.x,
         y: event.y,
         amount: event.amount
+      })),
+      killEvents: Array.from(this.killEvents.values()).map((event) => ({
+        id: event.id,
+        ownerId: event.ownerId,
+        enemyId: event.enemyId,
+        serverTime: event.serverTime
       })),
       team: {
         health: this.teamHealth,
@@ -1512,7 +1493,7 @@ export class MatchRoom extends Room<MatchState> {
         .sort((a, b) => b.pathDistance - a.pathDistance)
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
-        this.damageEnemy(enemy, projectile.damage * 0.42, 0, projectile.definitionId);
+        this.damageEnemy(enemy, projectile.damage * 0.42, 0, projectile.definitionId, tower.ownerId);
       }
     }
 
@@ -1635,25 +1616,15 @@ function getShortestAngleDistance(angleA: number, angleB: number) {
   return Math.abs(Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA)));
 }
 
-function getCumulativeDebugSweepAngle(x: number, y: number, startDistance: number, endDistance: number) {
-  const distance = Math.abs(startDistance - endDistance);
-  if (distance <= 0) {
-    return 0;
-  }
+function getSignedShortestAngleDelta(angleA: number, angleB: number) {
+  return Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA));
+}
 
-  const direction = Math.sign(endDistance - startDistance) || -1;
-  const sampleCount = Math.max(1, Math.ceil(distance / 18));
-  let totalAngle = 0;
-  let previousAngle = getAngleToPathDistance(x, y, startDistance);
-
-  for (let index = 1; index <= sampleCount; index += 1) {
-    const nextDistance = startDistance + direction * distance * (index / sampleCount);
-    const nextAngle = getAngleToPathDistance(x, y, nextDistance);
-    totalAngle += getShortestAngleDistance(previousAngle, nextAngle);
-    previousAngle = nextAngle;
-  }
-
-  return totalAngle;
+function getDebugLaserSweepAngle(startAngle: number, endAngle: number, elapsedSeconds: number) {
+  const targetDelta = getSignedShortestAngleDelta(startAngle, endAngle);
+  const maxDelta = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
+  const appliedDelta = Math.sign(targetDelta) * Math.min(Math.abs(targetDelta), maxDelta);
+  return startAngle + appliedDelta;
 }
 
 function distanceSq(ax: number, ay: number, bx: number, by: number) {
@@ -1683,6 +1654,17 @@ function getRayToWorldEdge(x1: number, y1: number, x2: number, y2: number) {
   const nx = dx / length;
   const ny = dy / length;
   return getRayDirectionToWorldEdge(x1, y1, nx, ny);
+}
+
+function getRayAngleToWorldEdge(x1: number, y1: number, angle: number) {
+  return getRayDirectionToWorldEdge(x1, y1, Math.cos(angle), Math.sin(angle));
+}
+
+function getPointOnRay(x1: number, y1: number, angle: number, distance: number) {
+  return {
+    x: x1 + Math.cos(angle) * distance,
+    y: y1 + Math.sin(angle) * distance
+  };
 }
 
 function getRayDirectionToWorldEdge(x1: number, y1: number, nx: number, ny: number) {

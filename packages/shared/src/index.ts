@@ -41,6 +41,7 @@ export type EnemySnapshot = {
   y: number;
   hp: number;
   maxHp: number;
+  pathDistance: number;
   isTracked?: boolean;
 };
 
@@ -92,6 +93,13 @@ export type DamageEventSnapshot = {
   amount: number;
 };
 
+export type KillEventSnapshot = {
+  id: string;
+  ownerId: string;
+  enemyId: string;
+  serverTime: number;
+};
+
 export type TeamSnapshot = {
   health: number;
   maxHealth: number;
@@ -125,12 +133,14 @@ export type ServerPerfSnapshot = {
 };
 
 export type GameSnapshot = {
+  serverTime: number;
   players: PlayerSnapshot[];
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   beams: BeamSnapshot[];
   damageEvents: DamageEventSnapshot[];
+  killEvents: KillEventSnapshot[];
   team: TeamSnapshot;
   perf?: ServerPerfSnapshot;
 };
