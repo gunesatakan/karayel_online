@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { towerCatalog, type TowerDefinition } from "@karayel/shared";
 
 export class PreloaderScene extends Phaser.Scene {
   constructor() {
@@ -24,6 +25,7 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("projectile-chain", 0xfef08a, 5);
     this.createCircleTexture("projectile-enemy", 0xfb7185, 4);
     this.createCircleTexture("projectile-tower", 0xf8fafc, 4);
+    this.createProceduralTowerTextures();
     this.scene.start("main-menu");
   }
 
@@ -34,4 +36,194 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.generateTexture(key, radius * 2, radius * 2);
     graphics.destroy();
   }
+
+  private createProceduralTowerTextures() {
+    for (const towers of Object.values(towerCatalog)) {
+      for (const tower of towers) {
+        this.createTowerTexture(tower);
+        this.createProjectileTexture(tower);
+      }
+    }
+  }
+
+  private createTowerTexture(tower: TowerDefinition) {
+    const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+    const size = 52;
+    const center = size / 2;
+    const palette = getVisualPalette(tower);
+
+    graphics.fillStyle(0x020617, 0.82);
+    graphics.fillCircle(center, center, 24);
+    graphics.lineStyle(2, palette.glow, 0.26);
+    graphics.strokeCircle(center, center, 24);
+    graphics.lineStyle(2, palette.main, 0.92);
+    graphics.strokeCircle(center, center, 18);
+    graphics.fillStyle(palette.dark, 0.95);
+    graphics.fillCircle(center, center, 15);
+
+    if (tower.id === "warrior-1") {
+      this.drawCrosshair(graphics, center, palette);
+    } else if (tower.id === "warrior-2") {
+      this.drawServerRack(graphics, center, palette);
+    } else if (tower.id === "warrior-3") {
+      this.drawIsolationField(graphics, center, palette);
+    } else if (tower.id === "warrior-4") {
+      this.drawObsessionLens(graphics, center, palette);
+    } else if (tower.id === "warrior-5") {
+      this.drawDebugPrism(graphics, center, palette);
+    } else if (tower.id === "warrior-6") {
+      this.drawUnstableCore(graphics, center, palette);
+    } else {
+      this.drawGenericTowerGlyph(graphics, center, tower, palette);
+    }
+
+    graphics.generateTexture(`tower-${tower.id}`, size, size);
+    graphics.destroy();
+  }
+
+  private createProjectileTexture(tower: TowerDefinition) {
+    const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+    const palette = getVisualPalette(tower);
+    const size = tower.hitType === "focus" ? 34 : tower.hitType === "impact" ? 24 : 20;
+    const center = size / 2;
+
+    graphics.fillStyle(palette.glow, 0.18);
+    graphics.fillCircle(center, center, center - 1);
+    graphics.fillStyle(palette.main, 0.96);
+
+    if (tower.hitType === "projectile") {
+      graphics.beginPath();
+      graphics.moveTo(size - 2, center);
+      graphics.lineTo(4, center - 5);
+      graphics.lineTo(7, center);
+      graphics.lineTo(4, center + 5);
+      graphics.closePath();
+      graphics.fillPath();
+    } else if (tower.hitType === "impact") {
+      graphics.fillCircle(center, center, 6);
+      graphics.lineStyle(2, palette.accent, 0.9);
+      graphics.strokeCircle(center, center, 9);
+    } else if (tower.hitType === "focus") {
+      graphics.fillRect(3, center - 2, size - 6, 4);
+      graphics.lineStyle(1, palette.accent, 0.95);
+      graphics.strokeRect(2, center - 4, size - 4, 8);
+    } else if (tower.hitType === "aura") {
+      graphics.lineStyle(3, palette.main, 0.9);
+      graphics.strokeCircle(center, center, 7);
+    } else {
+      graphics.fillCircle(center, center, 5);
+    }
+
+    graphics.generateTexture(`projectile-${tower.id}`, size, size);
+    graphics.destroy();
+  }
+
+  private drawCrosshair(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(3, palette.main, 1);
+    graphics.strokeCircle(center, center, 9);
+    graphics.lineBetween(center - 14, center, center - 5, center);
+    graphics.lineBetween(center + 5, center, center + 14, center);
+    graphics.lineBetween(center, center - 14, center, center - 5);
+    graphics.lineBetween(center, center + 5, center, center + 14);
+    graphics.fillStyle(palette.accent, 1);
+    graphics.fillCircle(center, center, 3);
+  }
+
+  private drawServerRack(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.fillStyle(palette.main, 0.95);
+    graphics.fillRoundedRect(center - 11, center - 13, 22, 26, 4);
+    graphics.fillStyle(0x020617, 0.9);
+    for (let row = 0; row < 3; row += 1) {
+      graphics.fillRoundedRect(center - 7, center - 9 + row * 8, 14, 4, 2);
+      graphics.fillStyle(palette.accent, 1);
+      graphics.fillCircle(center + 5, center - 7 + row * 8, 1.8);
+      graphics.fillStyle(0x020617, 0.9);
+    }
+  }
+
+  private drawIsolationField(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(3, palette.main, 0.95);
+    graphics.strokeCircle(center, center, 12);
+    graphics.lineStyle(2, palette.accent, 0.8);
+    graphics.beginPath();
+    graphics.moveTo(center, center - 14);
+    graphics.lineTo(center + 11, center - 3);
+    graphics.lineTo(center + 7, center + 13);
+    graphics.lineTo(center - 7, center + 13);
+    graphics.lineTo(center - 11, center - 3);
+    graphics.closePath();
+    graphics.strokePath();
+  }
+
+  private drawObsessionLens(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(3, palette.main, 1);
+    graphics.strokeEllipse(center, center, 28, 17);
+    graphics.fillStyle(palette.accent, 1);
+    graphics.fillCircle(center, center, 6);
+    graphics.lineStyle(2, palette.glow, 0.85);
+    graphics.strokeCircle(center, center, 11);
+  }
+
+  private drawDebugPrism(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.fillStyle(palette.main, 0.95);
+    graphics.beginPath();
+    graphics.moveTo(center, center - 15);
+    graphics.lineTo(center + 14, center + 9);
+    graphics.lineTo(center - 14, center + 9);
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.lineStyle(2, palette.accent, 0.95);
+    graphics.lineBetween(center - 15, center, center + 15, center);
+    graphics.lineBetween(center, center - 15, center, center + 12);
+  }
+
+  private drawUnstableCore(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(3, palette.main, 1);
+    graphics.strokeCircle(center, center, 11);
+    graphics.lineStyle(2, palette.accent, 0.95);
+    graphics.beginPath();
+    graphics.moveTo(center - 13, center + 8);
+    graphics.lineTo(center - 4, center - 3);
+    graphics.lineTo(center + 1, center + 4);
+    graphics.lineTo(center + 12, center - 10);
+    graphics.strokePath();
+    graphics.fillStyle(palette.glow, 1);
+    graphics.fillCircle(center, center, 4);
+  }
+
+  private drawGenericTowerGlyph(graphics: Phaser.GameObjects.Graphics, center: number, tower: TowerDefinition, palette: VisualPalette) {
+    graphics.fillStyle(palette.main, 1);
+    if (tower.classType === "control") {
+      graphics.fillTriangle(center, center - 13, center + 12, center + 10, center - 12, center + 10);
+    } else if (tower.classType === "support") {
+      graphics.fillRoundedRect(center - 12, center - 12, 24, 24, 6);
+    } else {
+      graphics.fillCircle(center, center, 10);
+    }
+    graphics.lineStyle(2, palette.accent, 0.9);
+    graphics.strokeCircle(center, center, 14);
+  }
+}
+
+type VisualPalette = {
+  main: number;
+  accent: number;
+  glow: number;
+  dark: number;
+};
+
+function getVisualPalette(tower: TowerDefinition): VisualPalette {
+  if (tower.damageType === "electric") {
+    return { main: 0x38bdf8, accent: 0xfef08a, glow: 0x67e8f9, dark: 0x0e7490 };
+  }
+  if (tower.damageType === "psychic") {
+    return { main: 0xc084fc, accent: 0xf0abfc, glow: 0xe879f9, dark: 0x6b21a8 };
+  }
+  if (tower.damageType === "fire") {
+    return { main: 0xfb7185, accent: 0xfbbf24, glow: 0xf97316, dark: 0x9f1239 };
+  }
+  if (tower.damageType === "none" || tower.classType === "control") {
+    return { main: 0x94a3b8, accent: 0xa7f3d0, glow: 0x99f6e4, dark: 0x334155 };
+  }
+  return { main: tower.color, accent: 0xf8fafc, glow: 0x86efac, dark: 0x166534 };
 }

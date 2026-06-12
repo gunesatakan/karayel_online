@@ -22,10 +22,11 @@ type GameSceneData = {
 };
 
 type RenderTower = {
-  base: Phaser.GameObjects.Arc;
+  base: Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
+  status: Phaser.GameObjects.Text;
   key: string;
 };
 
@@ -512,6 +513,7 @@ export class GameScene extends Phaser.Scene {
         tower.label.destroy();
         tower.level.destroy();
         tower.range.destroy();
+        tower.status.destroy();
         this.towers.delete(id);
       }
     }
@@ -523,8 +525,9 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
           .setDepth(5);
-        const base = this.add.circle(tower.x, tower.y, 15, tower.color, 1)
-          .setStrokeStyle(2, 0xf8fafc, tower.ownerId === this.localSessionId ? 0.7 : 0.25)
+        const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
+          .setDisplaySize(38, 38)
+          .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
         const label = this.add.text(tower.x, tower.y - 26, tower.name, {
           color: "#f8fafc",
@@ -537,19 +540,30 @@ export class GameScene extends Phaser.Scene {
           fontSize: "12px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { base, label, level, range, key: "" };
+        const status = this.add.text(tower.x, tower.y + 23, "", {
+          color: "#fde68a",
+          fontFamily: "Arial",
+          fontSize: "8px",
+          fontStyle: "bold"
+        }).setOrigin(0.5).setDepth(13);
+        rendered = { base, label, level, range, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}`;
+      const texture = `tower-${tower.definitionId}`;
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${texture}`;
       if (rendered.key !== key) {
-        rendered.base.setPosition(tower.x, tower.y).setFillStyle(tower.color, 1);
+        rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
+        rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
         rendered.key = key;
       }
-      rendered.base.setStrokeStyle(2, tower.id === this.selectedPlacedTowerId ? 0xffffff : 0xf8fafc, tower.id === this.selectedPlacedTowerId ? 1 : tower.ownerId === this.localSessionId ? 0.7 : 0.25);
+      rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
+      rendered.base.setTint(tower.status === "Overdrive" ? 0xfff1a8 : tower.status === "Hararet" || tower.status === "Tukenmis" ? 0x94a3b8 : 0xffffff);
+      rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
+      rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
     }
   }
@@ -569,7 +583,9 @@ export class GameScene extends Phaser.Scene {
 
     for (const projectile of projectiles) {
       let sprite = this.projectiles.get(projectile.id);
-      const texture = `projectile-${projectile.kind}`;
+      const texture = projectile.definitionId && this.textures.exists(`projectile-${projectile.definitionId}`)
+        ? `projectile-${projectile.definitionId}`
+        : `projectile-${projectile.kind}`;
 
       if (!sprite) {
         sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;

@@ -65,6 +65,7 @@ export type ProjectileSnapshot = {
   id: string;
   kind: ProjectileKind;
   source: "tower" | "enemy";
+  definitionId?: string;
   x: number;
   y: number;
 };
