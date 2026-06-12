@@ -53,10 +53,18 @@ type UpgradeTowerMessage = {
 
 type UseSkillMessage = {
   slot?: number;
+  x?: number;
+  y?: number;
+  towerId?: string;
 };
 
 type PingMessage = {
   sentAt?: number;
+};
+
+type LinkServerMessage = {
+  serverTowerId?: string;
+  targetTowerId?: string;
 };
 
 type EnemyModel = {
@@ -81,13 +89,20 @@ type TowerModel = {
   definition: TowerDefinition;
   x: number;
   y: number;
+  hp: number;
+  maxHp: number;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
   focusStacks: number;
   activeMs: number;
   overheatMs: number;
+  offlineUntil: number;
+  debugOverdriveUntil: number;
+  linkBurstCooldownMs: number;
   waveBonusLevel: number;
+  linkedTowerIds: string[];
+  rangeMemoryEnemyIds: string[];
 };
 
 type ProjectileModel = {
@@ -151,6 +166,8 @@ export class MatchRoom extends Room<MatchState> {
   private waveTarget = 10;
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
+  private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
+  private projectileGuidanceY = GAME_WORLD_HEIGHT / 2;
   private silentModeUntil = 0;
   private damageHasteUntil = 0;
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
@@ -196,6 +213,10 @@ export class MatchRoom extends Room<MatchState> {
 
     this.onMessage("useUltimate", (client) => {
       this.useUltimate(client);
+    });
+
+    this.onMessage("linkServer", (client, message: LinkServerMessage) => {
+      this.linkServerTower(client, message);
     });
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
@@ -333,12 +354,17 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      if (tower.offlineUntil > now) {
+        continue;
+      }
+
       if (tower.overheatMs > 0) {
         tower.overheatMs = Math.max(0, tower.overheatMs - deltaTime);
         continue;
       }
 
       tower.cooldownMs -= deltaTime;
+      tower.linkBurstCooldownMs = Math.max(0, tower.linkBurstCooldownMs - deltaTime);
 
       if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
         this.applyIsolationAura(tower);
@@ -359,6 +385,8 @@ export class MatchRoom extends Room<MatchState> {
       this.spawnTowerProjectile(tower, target);
       tower.cooldownMs = this.getTowerFireInterval(tower);
     }
+
+    this.updateServerLinks();
   }
 
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
@@ -385,6 +413,71 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: tower.definition.aoeRadius + (tower.level - 1) * 5,
       slowMs: tower.definition.slowMs + (tower.level - 1) * 90
     });
+  }
+
+  private spawnSpecialProjectile(sourceTower: TowerModel, definitionId: string, target: EnemyModel, damage: number, speed: number, aoeRadius: number, slowMs: number) {
+    const dx = target.x - sourceTower.x;
+    const dy = target.y - sourceTower.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const id = `p${this.nextProjectileId++}`;
+
+    this.projectiles.set(id, {
+      id,
+      towerId: sourceTower.id,
+      definitionId,
+      kind: "tower",
+      source: "tower",
+      targetId: target.id,
+      x: sourceTower.x,
+      y: sourceTower.y,
+      vx: (dx / length) * speed,
+      vy: (dy / length) * speed,
+      damage,
+      aoeRadius,
+      slowMs
+    });
+  }
+
+  private updateServerLinks() {
+    const now = Date.now();
+
+    for (const serverTower of this.towers.values()) {
+      if (serverTower.definition.id !== "warrior-2" || serverTower.offlineUntil > now || serverTower.overheatMs > 0) {
+        continue;
+      }
+
+      serverTower.linkedTowerIds = serverTower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));
+
+      for (const linkedTowerId of serverTower.linkedTowerIds) {
+        const linkedTower = this.towers.get(linkedTowerId);
+        if (!linkedTower || linkedTower.offlineUntil > now || linkedTower.overheatMs > 0) {
+          continue;
+        }
+
+        const linkedRange = this.getTowerRange(linkedTower);
+        const currentEnemyIds = Array.from(this.enemies.values())
+          .filter((enemy) => distanceSq(linkedTower.x, linkedTower.y, enemy.x, enemy.y) <= linkedRange * linkedRange)
+          .map((enemy) => enemy.id);
+        const previousEnemyIds = linkedTower.rangeMemoryEnemyIds;
+        linkedTower.rangeMemoryEnemyIds = currentEnemyIds;
+
+        if (linkedTower.linkBurstCooldownMs > 0) {
+          continue;
+        }
+
+        const escapedEnemy = previousEnemyIds
+          .map((enemyId) => this.enemies.get(enemyId))
+          .find((enemy) => enemy && !currentEnemyIds.includes(enemy.id));
+
+        if (!escapedEnemy) {
+          continue;
+        }
+
+        const damage = 28 + serverTower.level * 8 + linkedTower.level * 4;
+        this.spawnSpecialProjectile(linkedTower, "warrior-2", escapedEnemy, damage, 460, 16 + serverTower.level * 3, 0);
+        linkedTower.linkBurstCooldownMs = Math.max(520, 1100 - serverTower.level * 80);
+      }
+    }
   }
 
   private updateProjectiles(seconds: number) {
@@ -418,11 +511,15 @@ export class MatchRoom extends Room<MatchState> {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
+            const wasTracked = enemy.trackingUntil > Date.now();
+            const killed = this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
+            this.handleDebugLaserKill(projectile, wasTracked, killed);
           }
         }
       } else {
-        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId);
+        const wasTracked = target.trackingUntil > Date.now();
+        const killed = this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId);
+        this.handleDebugLaserKill(projectile, wasTracked, killed);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -466,13 +563,20 @@ export class MatchRoom extends Room<MatchState> {
       definition,
       x: this.clamp(message.x, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
       y: this.clamp(message.y, BUILD_MARGIN, GAME_WORLD_HEIGHT - BUILD_MARGIN),
+      hp: 100,
+      maxHp: 100,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
       focusStacks: 0,
       activeMs: 0,
       overheatMs: 0,
-      waveBonusLevel: 0
+      offlineUntil: 0,
+      debugOverdriveUntil: 0,
+      linkBurstCooldownMs: 0,
+      waveBonusLevel: 0,
+      linkedTowerIds: [],
+      rangeMemoryEnemyIds: []
     };
 
     this.towers.set(tower.id, tower);
@@ -502,6 +606,56 @@ export class MatchRoom extends Room<MatchState> {
     tower.level += 1;
   }
 
+  private refactorTower(client: Client, message: UseSkillMessage) {
+    if (!message.towerId || typeof message.x !== "number" || typeof message.y !== "number") {
+      return false;
+    }
+
+    const tower = this.towers.get(message.towerId);
+    const x = this.clamp(message.x, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN);
+    const y = this.clamp(message.y, BUILD_MARGIN, GAME_WORLD_HEIGHT - BUILD_MARGIN);
+    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.id)) {
+      return false;
+    }
+
+    tower.x = x;
+    tower.y = y;
+    tower.cooldownMs = Math.min(tower.cooldownMs, 150);
+    tower.rangeMemoryEnemyIds = [];
+    return true;
+  }
+
+  private linkServerTower(client: Client, message: LinkServerMessage) {
+    if (!message.serverTowerId || !message.targetTowerId || message.serverTowerId === message.targetTowerId) {
+      return;
+    }
+
+    const serverTower = this.towers.get(message.serverTowerId);
+    const targetTower = this.towers.get(message.targetTowerId);
+    if (
+      !serverTower ||
+      !targetTower ||
+      serverTower.ownerId !== client.sessionId ||
+      targetTower.ownerId !== client.sessionId ||
+      serverTower.definition.id !== "warrior-2" ||
+      targetTower.definition.id === "warrior-2"
+    ) {
+      return;
+    }
+
+    const existingIndex = serverTower.linkedTowerIds.indexOf(targetTower.id);
+    if (existingIndex >= 0) {
+      serverTower.linkedTowerIds.splice(existingIndex, 1);
+      return;
+    }
+
+    if (serverTower.linkedTowerIds.length >= 2) {
+      serverTower.linkedTowerIds.shift();
+    }
+    serverTower.linkedTowerIds.push(targetTower.id);
+    targetTower.rangeMemoryEnemyIds = [];
+  }
+
   private useSkill(client: Client, message: UseSkillMessage) {
     const player = this.state.players.get(client.sessionId);
     const slot = typeof message.slot === "number" ? Math.floor(message.slot) : -1;
@@ -517,7 +671,10 @@ export class MatchRoom extends Room<MatchState> {
     this.setSkillCooldown(player, slot, skill.cooldownMs);
 
     if (player.characterId === "warrior") {
-      this.useAtakanSkill(slot);
+      const didUseSkill = this.useAtakanSkill(client, slot, message);
+      if (!didUseSkill) {
+        this.setSkillCooldown(player, slot, 0);
+      }
       return;
     }
 
@@ -553,21 +710,26 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private useAtakanSkill(slot: number) {
+  private useAtakanSkill(client: Client, slot: number, message: UseSkillMessage) {
     const now = Date.now();
 
     if (slot === 0) {
+      if (typeof message.x !== "number" || typeof message.y !== "number") {
+        return false;
+      }
       this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + 1000);
-      return;
+      this.projectileGuidanceX = this.clamp(message.x, 0, GAME_WORLD_WIDTH);
+      this.projectileGuidanceY = this.clamp(message.y, 0, GAME_WORLD_HEIGHT);
+      return true;
     }
 
     if (slot === 1) {
-      this.teamGold += 45;
-      return;
+      return this.refactorTower(client, message);
     }
 
     this.silentModeUntil = Math.max(this.silentModeUntil, now + 5000);
     this.damageHasteUntil = Math.max(this.damageHasteUntil, now + 10000);
+    return true;
   }
 
   private useThirdSkill(characterId: CharacterId) {
@@ -644,12 +806,48 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (player.characterId === "warrior") {
+      this.useAtakanUltimate(client);
+      return;
+    }
+
     for (const enemy of this.enemies.values()) {
       this.damageEnemy(enemy, 25, 0);
     }
   }
 
-  private canPlaceTower(x: number, y: number) {
+  private useAtakanUltimate(client: Client) {
+    const now = Date.now();
+    const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
+
+    for (const tower of ownTowers) {
+      const criticalTower = ownTowers
+        .filter((candidate) => candidate.hp / candidate.maxHp < 0.2 && distanceSq(candidate.x, candidate.y, tower.x, tower.y) <= 140 * 140)
+        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+
+      if (criticalTower) {
+        criticalTower.hp = Math.max(criticalTower.hp, criticalTower.maxHp * 0.5);
+        continue;
+      }
+
+      const target = Array.from(this.enemies.values())
+        .filter((enemy) => enemy.trackingUntil > now && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 220 * 220)
+        .sort((a, b) => b.pathDistance - a.pathDistance)[0] ??
+        Array.from(this.enemies.values())
+          .filter((enemy) => distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 180 * 180)
+          .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+
+      if (target) {
+        this.damageEnemy(target, 48 + tower.level * 10, 0, "warrior-ultimate-drone");
+      }
+    }
+
+    for (const tower of ownTowers) {
+      tower.offlineUntil = Math.max(tower.offlineUntil, now + 5000);
+    }
+  }
+
+  private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
     if (
       x < BUILD_MARGIN ||
       x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
@@ -661,6 +859,9 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     for (const tower of this.towers.values()) {
+      if (tower.id === ignoreTowerId) {
+        continue;
+      }
       if (distanceSq(x, y, tower.x, tower.y) < TOWER_MIN_DISTANCE * TOWER_MIN_DISTANCE) {
         return false;
       }
@@ -670,7 +871,18 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findTowerTarget(tower: TowerModel) {
-    const range = this.projectileGuidanceUntil > Date.now() && tower.definition.hitType === "projectile" ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
+    const now = Date.now();
+    const isGuidedProjectile = this.projectileGuidanceUntil > now && tower.definition.hitType === "projectile";
+    if (isGuidedProjectile) {
+      const guidedTarget = Array.from(this.enemies.values())
+        .filter((enemy) => distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= 78 * 78)
+        .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+      if (guidedTarget) {
+        return guidedTarget;
+      }
+    }
+
+    const range = isGuidedProjectile ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
     const candidates = Array.from(this.enemies.values())
       .filter((enemy) => {
@@ -683,7 +895,6 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-5") {
-      const now = Date.now();
       return candidates.sort((a, b) => Number(b.trackingUntil > now) - Number(a.trackingUntil > now) || b.pathDistance - a.pathDistance)[0];
     }
 
@@ -692,7 +903,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "") {
     if (!this.enemies.has(enemy.id)) {
-      return;
+      return false;
     }
 
     this.perfCounters.damageEvents += 1;
@@ -707,7 +918,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (enemy.hp > 0) {
-      return;
+      return false;
     }
 
     this.enemies.delete(enemy.id);
@@ -716,6 +927,7 @@ export class MatchRoom extends Room<MatchState> {
     for (const player of this.state.players.values()) {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + 7);
     }
+    return true;
   }
 
   private damageAllEnemies(damage: number, slowMs: number) {
@@ -791,7 +1003,11 @@ export class MatchRoom extends Room<MatchState> {
         y: tower.y,
         level: tower.level,
         range: this.getTowerRange(tower),
-        color: tower.definition.color
+        color: tower.definition.color,
+        hp: Math.round(tower.hp),
+        maxHp: Math.round(tower.maxHp),
+        status: this.getTowerStatus(tower),
+        linkedTowerIds: [...tower.linkedTowerIds]
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
@@ -816,26 +1032,36 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerRange(tower: TowerModel) {
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
-      return tower.definition.range * 2 + (tower.level - 1) * 11;
+      return (tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier;
     }
 
-    return tower.definition.range + (tower.level - 1) * 11;
+    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
+      return GAME_WORLD_HEIGHT;
+    }
+
+    return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier;
   }
 
   private getTowerFireInterval(tower: TowerModel) {
     const levelMultiplier = 1 - (tower.level - 1) * 0.1;
     const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
 
-    return Math.max(80, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier);
+    return Math.max(80, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
-    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42);
+    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower);
 
     if (tower.definition.id === "warrior-4") {
       damage *= 1 + tower.focusStacks * 0.2;
+    }
+
+    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
+      damage *= 1.2;
     }
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
@@ -843,6 +1069,30 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return damage;
+  }
+
+  private getTowerStatus(tower: TowerModel) {
+    const now = Date.now();
+    if (tower.offlineUntil > now) {
+      return "Tukenmis";
+    }
+    if (tower.overheatMs > 0) {
+      return "Hararet";
+    }
+    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+      return "Overdrive";
+    }
+    if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
+      return `Link ${tower.linkedTowerIds.length}/2`;
+    }
+    if (tower.characterId === "warrior" && this.getAtakanPassiveMultiplier(tower) > 1) {
+      return "Pasif";
+    }
+    return "";
+  }
+
+  private getAtakanPassiveMultiplier(tower: TowerModel) {
+    return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower) ? 1.12 : 1;
   }
 
   private updateUcubeRhythm(tower: TowerModel, target: EnemyModel | undefined, deltaTime: number) {
@@ -894,7 +1144,12 @@ export class MatchRoom extends Room<MatchState> {
   private advanceWaveGrowth() {
     for (const tower of this.towers.values()) {
       if (tower.definition.id === "warrior-6") {
+        const previousLevel = tower.waveBonusLevel;
         tower.waveBonusLevel = Math.min(6, tower.waveBonusLevel + 1);
+        if (previousLevel < 5 && tower.waveBonusLevel >= 5) {
+          tower.maxHp *= 2;
+          tower.hp = tower.maxHp;
+        }
       }
     }
   }
@@ -914,7 +1169,22 @@ export class MatchRoom extends Room<MatchState> {
 
   private applyPostHitEffects(projectile: ProjectileModel, target: EnemyModel) {
     const tower = this.towers.get(projectile.towerId);
-    if (!tower || tower.definition.id !== "warrior-6") {
+    if (!tower) {
+      return;
+    }
+
+    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
+      const sweepTargets = Array.from(this.enemies.values())
+        .filter((enemy) => enemy.id !== target.id && enemy.pathDistance < target.pathDistance && target.pathDistance - enemy.pathDistance <= 210)
+        .sort((a, b) => b.pathDistance - a.pathDistance)
+        .slice(0, 5);
+      for (const enemy of sweepTargets) {
+        this.damageEnemy(enemy, projectile.damage * 0.55, 0, projectile.definitionId);
+      }
+      return;
+    }
+
+    if (tower.definition.id !== "warrior-6") {
       return;
     }
 
@@ -933,6 +1203,17 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.waveBonusLevel >= 2 && this.enemies.has(target.id)) {
       target.pathDistance = Math.max(0, target.pathDistance - 18);
+    }
+  }
+
+  private handleDebugLaserKill(projectile: ProjectileModel, wasTracked: boolean, killed: boolean) {
+    if (projectile.definitionId !== "warrior-5" || !wasTracked || !killed) {
+      return;
+    }
+
+    const tower = this.towers.get(projectile.towerId);
+    if (tower) {
+      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, Date.now() + 2000);
     }
   }
 

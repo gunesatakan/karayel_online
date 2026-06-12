@@ -44,6 +44,11 @@ type BufferedSnapshot = {
   receivedAt: number;
 };
 
+type PendingAction =
+  | { type: "guidance" }
+  | { type: "refactor"; towerId: string }
+  | undefined;
+
 export class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
@@ -81,6 +86,7 @@ export class GameScene extends Phaser.Scene {
   private lastSnapshotAt = 0;
   private snapshotStepMs = 90;
   private snapshotBuffer: BufferedSnapshot[] = [];
+  private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private readonly playbackDelayMs = 500;
   private readonly controlTop = 606;
@@ -235,7 +241,7 @@ export class GameScene extends Phaser.Scene {
         align: "center",
         wordWrap: { width: 102 }
       }).setOrigin(0.5).setDepth(26);
-      button.on("pointerup", () => this.room?.send("useSkill", { slot: index }));
+      button.on("pointerup", () => this.handleSkillButton(index));
       this.skillButtons.push(button);
       this.skillTexts.push(label);
     });
@@ -274,8 +280,30 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.pendingAction?.type === "guidance") {
+      this.room.send("useSkill", { slot: 0, x: pointer.worldX, y: pointer.worldY });
+      this.pendingAction = undefined;
+      this.hintText?.setText("Yonlendirme alani gonderildi");
+      return;
+    }
+
+    if (this.pendingAction?.type === "refactor") {
+      this.room.send("useSkill", {
+        slot: 1,
+        towerId: this.pendingAction.towerId,
+        x: pointer.worldX,
+        y: pointer.worldY
+      });
+      this.pendingAction = undefined;
+      this.hintText?.setText("Refactor istegi gonderildi");
+      return;
+    }
+
     const tower = this.findTowerAt(pointer.worldX, pointer.worldY);
     if (tower) {
+      if (this.tryLinkServerTower(tower)) {
+        return;
+      }
       this.selectedPlacedTowerId = tower.id;
       this.updateSelectionUi();
       return;
@@ -288,6 +316,59 @@ export class GameScene extends Phaser.Scene {
       x: pointer.worldX,
       y: pointer.worldY
     });
+  }
+
+  private handleSkillButton(index: number) {
+    if (!this.room) {
+      return;
+    }
+
+    if (this.selectedCharacterId !== "warrior") {
+      this.room.send("useSkill", { slot: index });
+      return;
+    }
+
+    if (index === 0) {
+      this.pendingAction = { type: "guidance" };
+      this.hintText?.setText("Yonlendirme: hedef alana dokun");
+      return;
+    }
+
+    if (index === 1) {
+      if (!this.selectedPlacedTowerId) {
+        this.hintText?.setText("Refactor icin once kendi kuleni sec");
+        return;
+      }
+      this.pendingAction = { type: "refactor", towerId: this.selectedPlacedTowerId };
+      this.hintText?.setText("Refactor: yeni konuma dokun");
+      return;
+    }
+
+    this.room.send("useSkill", { slot: index });
+  }
+
+  private tryLinkServerTower(targetTower: TowerSnapshot) {
+    if (!this.room || !this.selectedPlacedTowerId || targetTower.id === this.selectedPlacedTowerId) {
+      return false;
+    }
+
+    const selectedTower = this.towerSnapshots.get(this.selectedPlacedTowerId);
+    if (
+      !selectedTower ||
+      selectedTower.ownerId !== this.localSessionId ||
+      targetTower.ownerId !== this.localSessionId ||
+      selectedTower.definitionId !== "warrior-2" ||
+      targetTower.definitionId === "warrior-2"
+    ) {
+      return false;
+    }
+
+    this.room.send("linkServer", {
+      serverTowerId: selectedTower.id,
+      targetTowerId: targetTower.id
+    });
+    this.hintText?.setText(`${selectedTower.name}: ${targetTower.name} link istegi gonderildi`);
+    return true;
   }
 
   private async connect() {
@@ -561,7 +642,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.linkedTowerIds?.join(",")}`
       : `new|${this.selectedTowerDefinition.id}`;
     if (this.lastSelectionKey === selectionKey) {
       return;
@@ -584,7 +665,10 @@ export class GameScene extends Phaser.Scene {
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? Math.round(definition.upgradeCost * selectedTower.level * 1.35) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 5;
-    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${Math.round(selectedTower.range)}`);
+    const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
+    const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";
+    const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
+    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${Math.round(selectedTower.range)}${hpText}${status}${linkHint}`);
     this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
   }

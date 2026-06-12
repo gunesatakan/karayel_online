@@ -55,6 +55,10 @@ export type TowerSnapshot = {
   level: number;
   range: number;
   color: number;
+  hp?: number;
+  maxHp?: number;
+  status?: string;
+  linkedTowerIds?: string[];
 };
 
 export type ProjectileSnapshot = {
