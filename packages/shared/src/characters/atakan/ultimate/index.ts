@@ -1,1 +1,1 @@
-export const atakanUltimate = "Panik Savunmasi: Kisa sureli zayif bir alan hasari.";
+export const atakanUltimate = "Tam Otomasyon: Kuleler mini-drone uretir. Drone'lar yakinindaki kritik kuleleri tamir eder veya Takipte dusmanlara kamikaze saldirir. Sure bitince kisa bir tukenmislik olur.";

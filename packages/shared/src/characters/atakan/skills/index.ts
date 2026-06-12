@@ -1,7 +1,7 @@
 import { makeSkills } from "../../common/factory.js";
 
 export const atakanSkills = makeSkills("warrior", [
-  ["Ufak Destek", "Az miktarda altin kazandirir.", 14000],
-  ["Ciliz Sarsinti", "Dusmanlara zayif alan hasari verir.", 20000],
-  ["Son Gayret", "Altin ve ufak alan hasari saglar.", 28000]
+  ["Yonlendirme", "Haritada bir alan isaretler; 1 saniye boyunca mermi vuruslu kuleler menzil sinirina takilmadan o alandaki dusmanlara saldirir.", 16000],
+  ["Refactor", "Bir turret'i cezasiz sekilde baska yere tasima veya upgrade yolunu degistirme altyapisi.", 24000],
+  ["Sessiz Mod", "Tum kuleler 5 saniye susar; ardindan hasar sinifli kulelerin saldiri hizi 5 saniyeligine 3 katina cikar.", 32000]
 ]);

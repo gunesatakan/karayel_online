@@ -5,6 +5,11 @@ export type TowerDefinition = {
   characterId: CharacterId;
   name: string;
   role: string;
+  description?: string;
+  classType?: "damage" | "support" | "control" | "hybrid";
+  damageType?: "physical" | "electric" | "psychic" | "fire" | "none";
+  hitType?: "projectile" | "impact" | "focus" | "aura";
+  mechanics?: string[];
   cost: number;
   upgradeCost: number;
   range: number;
@@ -27,6 +32,7 @@ export type CharacterDefinition = {
   id: CharacterId;
   displayName: string;
   role: string;
+  theme?: string;
   summary: string;
   maxHp: number;
   speed: number;
