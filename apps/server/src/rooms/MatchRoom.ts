@@ -7,6 +7,8 @@ import {
   GAME_WORLD_WIDTH,
   MAP_PATH,
   PATH_WIDTH,
+  STATUS_EFFECTS,
+  getTowerUpgradeCost,
   towerCatalog,
   type CharacterId,
   type DamageEventSnapshot,
@@ -91,6 +93,7 @@ type EnemyModel = {
   reward: number;
   pathDistance: number;
   slowUntil: number;
+  fearUntil: number;
   trackingUntil: number;
 };
 
@@ -387,6 +390,7 @@ export class MatchRoom extends Room<MatchState> {
       reward: type === "brute" ? 18 : type === "runner" ? 11 : type === "shooter" ? 14 : 12,
       pathDistance: 0,
       slowUntil: 0,
+      fearUntil: 0,
       trackingUntil: 0
     });
   }
@@ -727,8 +731,8 @@ export class MatchRoom extends Room<MatchState> {
           continue;
         }
 
-        const damage = 28 + serverTower.level * 8 + linkedTower.level * 4;
-        this.spawnSpecialProjectile(linkedTower, "warrior-2", escapedEnemy, damage, 460, 16 + serverTower.level * 3, 0);
+        const damage = 95 + serverTower.level * 32 + linkedTower.level * 12;
+        this.spawnSpecialProjectile(serverTower, "warrior-2", escapedEnemy, damage, 520, 24 + serverTower.level * 5, 0);
         linkedTower.linkBurstCooldownMs = Math.max(520, 1100 - serverTower.level * 80);
       }
     }
@@ -795,9 +799,16 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateEnemies(seconds: number) {
+    const now = Date.now();
     for (const [id, enemy] of this.enemies) {
-      const isSlowed = enemy.slowUntil > Date.now();
-      enemy.pathDistance += enemy.speed * (isSlowed ? 0.48 : 1) * seconds;
+      const isFeared = enemy.fearUntil > now;
+      const isSlowed = enemy.slowUntil > now;
+      const speedMultiplier = isSlowed ? 0.48 : 1;
+      if (isFeared) {
+        enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
+      } else {
+        enemy.pathDistance += enemy.speed * speedMultiplier * seconds;
+      }
 
       if (enemy.pathDistance >= totalPathLength) {
         this.enemies.delete(id);
@@ -869,7 +880,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const cost = Math.round(tower.definition.upgradeCost * tower.level * 1.35);
+    const cost = getTowerUpgradeCost(tower.definition.upgradeCost, tower.level);
     if (this.teamGold < cost) {
       return;
     }
@@ -1145,8 +1156,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private findTowerTarget(tower: TowerModel) {
     const now = Date.now();
-    const isGuidedProjectile = this.projectileGuidanceUntil > now && tower.definition.hitType === "projectile";
-    if (isGuidedProjectile) {
+    const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
+    if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
         .filter((enemy) => distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= 78 * 78)
         .sort((a, b) => b.pathDistance - a.pathDistance)[0];
@@ -1155,7 +1166,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    const range = isGuidedProjectile ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
+    const range = isGuidedHit ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
     const candidates = Array.from(this.enemies.values())
       .filter((enemy) => {
@@ -1313,7 +1324,8 @@ export class MatchRoom extends Room<MatchState> {
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
         pathDistance: enemy.pathDistance,
-        isTracked: enemy.trackingUntil > now
+        isTracked: enemy.trackingUntil > now,
+        isFeared: enemy.fearUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -1525,6 +1537,13 @@ export class MatchRoom extends Room<MatchState> {
   private applyPostHitEffects(projectile: ProjectileModel, target: EnemyModel) {
     const tower = this.towers.get(projectile.towerId);
     if (!tower) {
+      return;
+    }
+
+    if (tower.definition.id === "warrior-4") {
+      if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
+        target.fearUntil = Math.max(target.fearUntil, Date.now() + STATUS_EFFECTS.fear.durationMs);
+      }
       return;
     }
 

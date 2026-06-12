@@ -6,6 +6,7 @@ import {
   GAME_WORLD_WIDTH,
   MAP_PATH,
   PATH_WIDTH,
+  getTowerUpgradeCost,
   towerCatalog,
   type CharacterDefinition,
   type CharacterId,
@@ -75,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   private killStreakTimes: number[] = [];
   private nextKillStreakAnnouncementAt = 0;
   private killStreakSounds: HTMLAudioElement[] = [];
+  private rampageContainer?: Phaser.GameObjects.Container;
   private backgroundMusic?: HTMLAudioElement;
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
@@ -139,6 +141,7 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
+      this.rampageContainer?.destroy(true);
       this.backgroundMusic?.pause();
     });
 
@@ -653,7 +656,10 @@ export class GameScene extends Phaser.Scene {
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
-      mover.marker?.setVisible(Boolean(enemy.isTracked));
+      mover.marker?.setText(enemy.isFeared ? "KORKU" : "T");
+      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : "#fde047");
+      mover.marker?.setFontSize(enemy.isFeared ? 9 : 12);
+      mover.marker?.setVisible(Boolean(enemy.isFeared || enemy.isTracked));
     }
   }
 
@@ -855,6 +861,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderKillEvents(snapshot: GameSnapshot) {
+    const localPlayer = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
+
     for (const event of snapshot.killEvents) {
       if (this.seenKillEventSet.has(event.id)) {
         continue;
@@ -879,6 +887,7 @@ export class GameScene extends Phaser.Scene {
       if (this.killStreakTimes.length >= this.killStreakThreshold && event.serverTime >= this.nextKillStreakAnnouncementAt) {
         this.nextKillStreakAnnouncementAt = event.serverTime + this.killStreakWindowMs;
         this.playKillStreakAnnouncement();
+        this.showRampageAnnouncement(localPlayer);
       }
     }
   }
@@ -893,6 +902,101 @@ export class GameScene extends Phaser.Scene {
     audio.currentTime = 0;
     void audio.play().catch(() => {
       // Mobile browsers may block audio until the first real touch; the next streak can retry.
+    });
+  }
+
+  private showRampageAnnouncement(player?: GameSnapshot["players"][number]) {
+    this.rampageContainer?.destroy(true);
+
+    const characterName = characters.find((character) => character.id === player?.characterId)?.displayName ?? this.selectedCharacter.displayName;
+    const message = `${characterName}! RAMPAGE!`;
+    const fontSize = message.length > 17 ? "27px" : "31px";
+    const container = this.add.container(GAME_WORLD_WIDTH / 2, -76).setDepth(80).setAlpha(0);
+    const plate = this.add.graphics();
+
+    plate.fillStyle(0x050505, 0.92);
+    plate.fillPoints([
+      new Phaser.Geom.Point(-184, -28),
+      new Phaser.Geom.Point(166, -34),
+      new Phaser.Geom.Point(186, -5),
+      new Phaser.Geom.Point(162, 31),
+      new Phaser.Geom.Point(-172, 26),
+      new Phaser.Geom.Point(-190, -8)
+    ], true);
+    plate.lineStyle(3, 0xef4444, 0.95);
+    plate.strokePoints([
+      new Phaser.Geom.Point(-184, -28),
+      new Phaser.Geom.Point(166, -34),
+      new Phaser.Geom.Point(186, -5),
+      new Phaser.Geom.Point(162, 31),
+      new Phaser.Geom.Point(-172, 26),
+      new Phaser.Geom.Point(-190, -8)
+    ], true);
+    plate.lineStyle(2, 0x22d3ee, 0.9);
+    plate.lineBetween(-160, 22, -92, -26);
+    plate.lineBetween(110, -30, 176, 18);
+    plate.lineStyle(2, 0xfacc15, 0.9);
+    plate.lineBetween(-176, -5, -134, 26);
+    plate.lineBetween(64, 28, 126, -30);
+
+    const baseStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "Impact, Arial Black, Arial",
+      fontSize,
+      fontStyle: "bold",
+      color: "#fff7ed",
+      stroke: "#0a0a0a",
+      strokeThickness: 8
+    };
+    const cyanGhost = this.add.text(4, 3, message, {
+      ...baseStyle,
+      color: "#22d3ee",
+      stroke: "#111827",
+      strokeThickness: 5
+    }).setOrigin(0.5).setAngle(-3).setAlpha(0.72);
+    const redGhost = this.add.text(-4, -2, message, {
+      ...baseStyle,
+      color: "#ef4444",
+      stroke: "#450a0a",
+      strokeThickness: 5
+    }).setOrigin(0.5).setAngle(2).setAlpha(0.78);
+    const mainText = this.add.text(0, 0, message, {
+      ...baseStyle,
+      color: "#fff7ed",
+      stroke: "#7f1d1d",
+      strokeThickness: 7
+    }).setOrigin(0.5).setAngle(-1);
+
+    container.add([plate, cyanGhost, redGhost, mainText]);
+    this.rampageContainer = container;
+
+    this.tweens.add({
+      targets: container,
+      y: 86,
+      alpha: 1,
+      duration: 240,
+      ease: "Back.easeOut"
+    });
+    this.tweens.add({
+      targets: container,
+      angle: { from: -1.8, to: 1.8 },
+      duration: 80,
+      yoyo: true,
+      repeat: 9,
+      ease: "Sine.easeInOut"
+    });
+    this.tweens.add({
+      targets: container,
+      y: 56,
+      alpha: 0,
+      delay: 2500,
+      duration: 500,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        container.destroy(true);
+        if (this.rampageContainer === container) {
+          this.rampageContainer = undefined;
+        }
+      }
     });
   }
 
@@ -1030,7 +1134,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
-    const cost = definition ? Math.round(definition.upgradeCost * selectedTower.level * 1.35) : 0;
+    const cost = definition ? getTowerUpgradeCost(definition.upgradeCost, selectedTower.level) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";

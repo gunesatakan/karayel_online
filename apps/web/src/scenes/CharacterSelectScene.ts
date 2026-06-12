@@ -3,6 +3,7 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  getTowerUpgradeCost,
   type CharacterDefinition,
   type CharacterId,
   type SkillDefinition,
@@ -241,7 +242,7 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private skillToItem(skill: SkillDefinition): DetailItem {
     const detailByName: Record<string, string> = {
-      Yonlendirme: "Etki: 1.0sn boyunca projectile vuruslu kuleler hedef alani menzil siniri yokmus gibi tarar. Ham hasari degistirmez; DPS artisi menzil disinda kalan hedeflere ek uptime kazandigi icin olusur.",
+      Yonlendirme: "Etki: 1.0sn boyunca projectile ve impact vuruslu kuleler hedef alani menzil siniri yokmus gibi tarar. Ham hasari degistirmez; DPS artisi menzil disinda kalan hedeflere ek uptime kazandigi icin olusur.",
       Refactor: "Etki: Secili turret'i cezasiz tasima/rota degisimi icin kullanilir. Hasar formulu degistirmez; altin kaybi olmadan konum optimizasyonu saglar.",
       "Sessiz Mod": "Etki: 5.0sn tum kuleler durur, ardindan damage sinifli kuleler 5.0sn boyunca 3x saldiri hizi alir. Net kazanc sonraki 5sn'deki baz DPS'in yaklasik 3 kati; onceki 5sn hasarsizdir."
     };
@@ -266,14 +267,17 @@ export class CharacterSelectScene extends Phaser.Scene {
     const parts = [
       tower.description ?? tower.role,
       `Sinif: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vurus: ${tower.hitType ?? "impact"}`,
-      `Maliyet ${tower.cost}g | Upgrade: round(${tower.upgradeCost} * L * 1.35)g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
+      `Maliyet ${tower.cost}g | Upgrade L2/L3/L4: ${getTowerUpgradeCost(tower.upgradeCost, 1)}/${getTowerUpgradeCost(tower.upgradeCost, 2)}/${getTowerUpgradeCost(tower.upgradeCost, 3)}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
       `L1: Hasar ${tower.damage} / ${tower.fireIntervalMs}ms => DPS ${dps}${tower.aoeRadius > 0 ? ` | AOE r${tower.aoeRadius}` : ""}${tower.slowMs > 0 ? ` | Slow ${tower.slowMs}ms` : ""}`,
       `L10 baz: Hasar ${level10Damage.toFixed(1)} / ${Math.round(level10Interval)}ms => DPS ${level10Dps}`,
       `Mermi hizi ${tower.projectileSpeed} | Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
     ];
 
     if (tower.id === "warrior-2") {
-      parts.push("Sunucu link: Kendi atisi yok. Bagli kule menzilinden cikan hedefe global top atar. Hasar = 28 + SunucuLv*8 + BagliLv*4, AOE = 16 + SunucuLv*3, CD = max(520, 1100 - SunucuLv*80)ms.");
+      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
+    }
+    if (tower.id === "warrior-4") {
+      parts.push("Korku: Ayni hedefe 3. vurus sonrasi hedef 3sn boyunca path uzerinde geri kacar. Ayni hedefe her ek vurus korku suresini tazeler.");
     }
     if (tower.id === "warrior-5") {
       parts.push("Overdrive: Takipte hedefi oldururse 2.0sn path boyunca sweep lazer acar; tick 50ms, hasar 1.2x, isin cizgisine temas eden tum dusmanlara vurur.");

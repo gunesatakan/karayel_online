@@ -43,6 +43,7 @@ export type EnemySnapshot = {
   maxHp: number;
   pathDistance: number;
   isTracked?: boolean;
+  isFeared?: boolean;
 };
 
 export type TowerSnapshot = {
@@ -148,6 +149,7 @@ export type GameSnapshot = {
 
 export { characters, towerCatalog } from "./characters/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
+export { STATUS_EFFECTS } from "./statuses/index.js";
 
 export const upgradeCosts: Record<UpgradeId, number> = {
   damage: 35,
@@ -155,3 +157,14 @@ export const upgradeCosts: Record<UpgradeId, number> = {
   projectileSpeed: 30,
   heal: 45
 };
+
+export function getTowerUpgradeCost(baseUpgradeCost: number, currentLevel: number) {
+  const targetLevel = currentLevel + 1;
+  const discount =
+    targetLevel === 2 ? 0.5 :
+      targetLevel === 3 ? 0.7 :
+        targetLevel === 4 ? 0.85 :
+          1;
+
+  return Math.round(baseUpgradeCost * currentLevel * 1.35 * discount);
+}
