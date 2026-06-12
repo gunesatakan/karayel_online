@@ -101,6 +101,8 @@ type TowerModel = {
   overheatMs: number;
   offlineUntil: number;
   debugOverdriveUntil: number;
+  debugSweepStartedAt: number;
+  debugSweepCenterAngle: number;
   linkBurstCooldownMs: number;
   waveBonusLevel: number;
   linkedTowerIds: string[];
@@ -381,6 +383,15 @@ export class MatchRoom extends Room<MatchState> {
       tower.cooldownMs -= deltaTime;
       tower.linkBurstCooldownMs = Math.max(0, tower.linkBurstCooldownMs - deltaTime);
 
+      if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+        this.updateDebugLaserSweep(tower);
+        continue;
+      }
+
+      if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
+        tower.debugSweepStartedAt = 0;
+      }
+
       if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
         this.applyIsolationAura(tower);
         tower.cooldownMs = Math.max(tower.cooldownMs, 220);
@@ -481,17 +492,12 @@ export class MatchRoom extends Room<MatchState> {
     const baseDamage = this.getTowerDamage(tower);
     const wasTracked = target.trackingUntil > now;
     const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id);
-    let isOverdrive = tower.debugOverdriveUntil > now;
 
     if (wasTracked && killed) {
       tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 2000);
-      isOverdrive = true;
-    }
-
-    if (isOverdrive) {
-      const end = getRayToWorldEdge(tower.x, tower.y, target.x, target.y);
-      this.applyDebugLaserOverdrive(tower, target, end.x, end.y, baseDamage);
-      this.setBeam(tower, end.x, end.y, true);
+      tower.debugSweepStartedAt = now;
+      tower.debugSweepCenterAngle = Math.atan2(target.y - tower.y, target.x - tower.x);
+      this.updateDebugLaserSweep(tower);
       return;
     }
 
@@ -513,32 +519,30 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private applyDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, beamEndX: number, beamEndY: number, baseDamage: number) {
-    const directionX = beamEndX - tower.x;
-    const directionY = beamEndY - tower.y;
-    const directionLength = Math.max(1, Math.hypot(directionX, directionY));
-    const normalizedX = directionX / directionLength;
-    const normalizedY = directionY / directionLength;
+  private updateDebugLaserSweep(tower: TowerModel) {
+    const now = Date.now();
+    if (tower.debugSweepStartedAt <= 0) {
+      tower.debugSweepStartedAt = now;
+    }
 
+    const sweepDurationMs = 2000;
+    const sweepArc = Math.PI * 0.7;
+    const progress = this.clamp((now - tower.debugSweepStartedAt) / sweepDurationMs, 0, 1);
+    const angle = tower.debugSweepCenterAngle - sweepArc / 2 + sweepArc * progress;
+    const end = getRayByAngleToWorldEdge(tower.x, tower.y, angle);
+
+    this.setBeam(tower, end.x, end.y, true);
+    if (tower.cooldownMs > 0) {
+      return;
+    }
+
+    const damage = this.getTowerDamage(tower) * 0.66;
     for (const enemy of Array.from(this.enemies.values())) {
-      if (enemy.id === target.id) {
-        continue;
-      }
-
-      const lineDistanceSq = distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, beamEndX, beamEndY);
-      if (lineDistanceSq <= 18 * 18) {
-        this.damageEnemy(enemy, baseDamage * 0.55, 0, tower.definition.id);
-        continue;
-      }
-
-      const behindX = enemy.x - target.x;
-      const behindY = enemy.y - target.y;
-      const backwardDistance = -(behindX * normalizedX + behindY * normalizedY);
-      const sideDistance = Math.abs(behindX * normalizedY - behindY * normalizedX);
-      if (backwardDistance > 0 && backwardDistance <= 220 && sideDistance <= 28 + backwardDistance * 0.36) {
-        this.damageEnemy(enemy, baseDamage * 0.42, 0, tower.definition.id);
+      if (distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, end.x, end.y) <= 17 * 17) {
+        this.damageEnemy(enemy, damage, 0, tower.definition.id);
       }
     }
+    tower.cooldownMs = this.getTowerFireInterval(tower);
   }
 
   private updateServerLinks() {
@@ -614,15 +618,11 @@ export class MatchRoom extends Room<MatchState> {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            const wasTracked = enemy.trackingUntil > Date.now();
-            const killed = this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
-            this.handleDebugLaserKill(projectile, wasTracked, killed);
+            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId);
           }
         }
       } else {
-        const wasTracked = target.trackingUntil > Date.now();
-        const killed = this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId);
-        this.handleDebugLaserKill(projectile, wasTracked, killed);
+        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -676,6 +676,8 @@ export class MatchRoom extends Room<MatchState> {
       overheatMs: 0,
       offlineUntil: 0,
       debugOverdriveUntil: 0,
+      debugSweepStartedAt: 0,
+      debugSweepCenterAngle: -Math.PI / 2,
       linkBurstCooldownMs: 0,
       waveBonusLevel: 0,
       linkedTowerIds: [],
@@ -1318,17 +1320,6 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
-      const sweepTargets = Array.from(this.enemies.values())
-        .filter((enemy) => enemy.id !== target.id && enemy.pathDistance < target.pathDistance && target.pathDistance - enemy.pathDistance <= 210)
-        .sort((a, b) => b.pathDistance - a.pathDistance)
-        .slice(0, 5);
-      for (const enemy of sweepTargets) {
-        this.damageEnemy(enemy, projectile.damage * 0.55, 0, projectile.definitionId);
-      }
-      return;
-    }
-
     if (tower.definition.id !== "warrior-6") {
       return;
     }
@@ -1348,17 +1339,6 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.waveBonusLevel >= 2 && this.enemies.has(target.id)) {
       target.pathDistance = Math.max(0, target.pathDistance - 18);
-    }
-  }
-
-  private handleDebugLaserKill(projectile: ProjectileModel, wasTracked: boolean, killed: boolean) {
-    if (projectile.definitionId !== "warrior-5" || !wasTracked || !killed) {
-      return;
-    }
-
-    const tower = this.towers.get(projectile.towerId);
-    if (tower) {
-      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, Date.now() + 2000);
     }
   }
 
@@ -1481,6 +1461,14 @@ function getRayToWorldEdge(x1: number, y1: number, x2: number, y2: number) {
   const length = Math.max(1, Math.hypot(dx, dy));
   const nx = dx / length;
   const ny = dy / length;
+  return getRayDirectionToWorldEdge(x1, y1, nx, ny);
+}
+
+function getRayByAngleToWorldEdge(x: number, y: number, angle: number) {
+  return getRayDirectionToWorldEdge(x, y, Math.cos(angle), Math.sin(angle));
+}
+
+function getRayDirectionToWorldEdge(x1: number, y1: number, nx: number, ny: number) {
   const candidates: number[] = [];
 
   if (nx > 0) {

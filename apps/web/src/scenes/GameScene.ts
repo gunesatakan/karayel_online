@@ -689,31 +689,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = dx / length;
-    const ny = dy / length;
-    const coneBaseX = beam.x2 - nx * 170;
-    const coneBaseY = beam.y2 - ny * 170;
-    const coneSide = 62;
-
-    this.beamGraphics.fillStyle(color, 0.1);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x2, beam.y2);
-    this.beamGraphics.lineTo(coneBaseX + -ny * coneSide, coneBaseY + nx * coneSide);
-    this.beamGraphics.lineTo(coneBaseX + ny * coneSide, coneBaseY + -nx * coneSide);
-    this.beamGraphics.closePath();
-    this.beamGraphics.fillPath();
-
     this.beamGraphics.lineStyle(beam.width + 14, color, 0.14);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     this.beamGraphics.lineStyle(beam.width + 6, color, 0.46);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), 0xfffbeb, 0.98);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(1, color, 0.65);
+    this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
     this.beamGraphics.fillStyle(0xfffbeb, 1);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
+    this.beamGraphics.fillStyle(color, 0.58);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
   }
 
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
