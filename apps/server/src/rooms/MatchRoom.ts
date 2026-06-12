@@ -114,8 +114,6 @@ type TowerModel = {
   debugSweepStartedAt: number;
   debugSweepStartDistance: number;
   debugSweepEndDistance: number;
-  debugSweepStartAngle: number;
-  debugSweepEndAngle: number;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
@@ -535,8 +533,6 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepStartedAt = now;
       tower.debugSweepStartDistance = target.pathDistance;
       tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance);
-      tower.debugSweepStartAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepStartDistance);
-      tower.debugSweepEndAngle = getAngleToPathDistance(tower.x, tower.y, tower.debugSweepEndDistance);
       tower.debugOverdriveHeatLastAt = now;
       tower.debugOverdriveUntil = now + DEBUG_LASER_OVERDRIVE_DURATION_MS;
       this.updateDebugLaserSweep(tower);
@@ -574,7 +570,13 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const elapsedSeconds = this.clamp((now - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
-    const currentAngle = getDebugLaserSweepAngle(tower.debugSweepStartAngle, tower.debugSweepEndAngle, elapsedSeconds);
+    const currentAngle = getDebugLaserPathSweepAngle(
+      tower.x,
+      tower.y,
+      tower.debugSweepStartDistance,
+      tower.debugSweepEndDistance,
+      elapsedSeconds
+    );
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle);
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, 190);
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
@@ -795,8 +797,6 @@ export class MatchRoom extends Room<MatchState> {
       debugSweepStartedAt: 0,
       debugSweepStartDistance: 0,
       debugSweepEndDistance: 0,
-      debugSweepStartAngle: 0,
-      debugSweepEndAngle: 0,
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],
       linkBurstCooldownMs: 0,
@@ -1612,19 +1612,40 @@ function getAngleToPathDistance(x: number, y: number, pathDistance: number) {
   return Math.atan2(point.y - y, point.x - x);
 }
 
-function getShortestAngleDistance(angleA: number, angleB: number) {
-  return Math.abs(Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA)));
-}
-
 function getSignedShortestAngleDelta(angleA: number, angleB: number) {
   return Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA));
 }
 
-function getDebugLaserSweepAngle(startAngle: number, endAngle: number, elapsedSeconds: number) {
-  const targetDelta = getSignedShortestAngleDelta(startAngle, endAngle);
-  const maxDelta = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
-  const appliedDelta = Math.sign(targetDelta) * Math.min(Math.abs(targetDelta), maxDelta);
-  return startAngle + appliedDelta;
+function getDebugLaserPathSweepAngle(x: number, y: number, startDistance: number, endDistance: number, elapsedSeconds: number) {
+  let remainingAngle = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
+  const totalDistance = Math.abs(startDistance - endDistance);
+  if (totalDistance <= 0 || remainingAngle <= 0) {
+    return getAngleToPathDistance(x, y, startDistance);
+  }
+
+  const direction = Math.sign(endDistance - startDistance) || -1;
+  const sampleStep = 8;
+  let previousAngle = getAngleToPathDistance(x, y, startDistance);
+
+  for (let distanceOffset = sampleStep; distanceOffset <= totalDistance + sampleStep; distanceOffset += sampleStep) {
+    const pathDistance = startDistance + direction * Math.min(distanceOffset, totalDistance);
+    const nextAngle = getAngleToPathDistance(x, y, pathDistance);
+    const angleDelta = getSignedShortestAngleDelta(previousAngle, nextAngle);
+    const angleStep = Math.abs(angleDelta);
+
+    if (remainingAngle <= angleStep) {
+      return previousAngle + Math.sign(angleDelta) * remainingAngle;
+    }
+
+    remainingAngle -= angleStep;
+    previousAngle += angleDelta;
+
+    if (distanceOffset >= totalDistance) {
+      break;
+    }
+  }
+
+  return previousAngle;
 }
 
 function distanceSq(ax: number, ay: number, bx: number, by: number) {
