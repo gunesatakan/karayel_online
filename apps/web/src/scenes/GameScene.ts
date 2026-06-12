@@ -26,6 +26,17 @@ type RenderTower = {
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
+  key: string;
+};
+
+type RenderMover = {
+  sprite: Phaser.Physics.Arcade.Sprite;
+  fromX: number;
+  fromY: number;
+  targetX: number;
+  targetY: number;
+  startedAt: number;
+  durationMs: number;
 };
 
 export class GameScene extends Phaser.Scene {
@@ -35,9 +46,9 @@ export class GameScene extends Phaser.Scene {
   private selectedCharacter: CharacterDefinition = characters[0];
   private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
   private selectedPlacedTowerId?: string;
-  private enemies = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
-  private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private projectiles = new Map<string, RenderMover>();
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
@@ -57,6 +68,13 @@ export class GameScene extends Phaser.Scene {
   private renderMsSamples: number[] = [];
   private inboundKbSamples: number[] = [];
   private snapshotCount = 0;
+  private lastHudKey = "";
+  private lastSkillKey = "";
+  private lastSelectionKey = "";
+  private lastPerfOverlayAt = 0;
+  private lastShopEventAt = 0;
+  private lastSnapshotAt = 0;
+  private snapshotStepMs = 90;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private readonly controlTop = 606;
   private readonly trayTop = 708;
@@ -89,6 +107,12 @@ export class GameScene extends Phaser.Scene {
     });
 
     void this.connect();
+  }
+
+  update() {
+    const now = performance.now();
+    this.animateNetworkMovers(this.enemies, now);
+    this.animateNetworkMovers(this.projectiles, now);
   }
 
   private drawMap() {
@@ -294,21 +318,36 @@ export class GameScene extends Phaser.Scene {
 
   private renderSnapshot(snapshot: GameSnapshot) {
     const renderStart = performance.now();
+    const now = performance.now();
+    if (this.lastSnapshotAt > 0) {
+      this.snapshotStepMs = Phaser.Math.Clamp((now - this.lastSnapshotAt) * 1.15, 65, 140);
+    }
+    this.lastSnapshotAt = now;
+
     this.renderEnemies(snapshot.enemies);
     this.renderTowers(snapshot.towers);
     this.renderProjectiles(snapshot.projectiles);
     this.renderHud(snapshot);
-    this.game.events.emit("game:snapshot", snapshot);
+    if (now - this.lastShopEventAt > 250) {
+      this.game.events.emit("game:snapshot", snapshot);
+      this.lastShopEventAt = now;
+    }
     const renderMs = performance.now() - renderStart;
     this.recordClientPerf(snapshot, renderMs);
   }
 
   private renderHud(snapshot: GameSnapshot) {
-    this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}`);
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
     const charge = player?.ultimateCharge ?? 0;
-    this.ultimateText?.setText(`Ulti ${charge}%`);
-    this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
+
+    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}`;
+    if (this.lastHudKey !== hudKey) {
+      this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}`);
+      this.ultimateText?.setText(`Ulti ${charge}%`);
+      this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
+      this.lastHudKey = hudKey;
+    }
+
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0]);
     this.updateSelectionUi();
   }
@@ -316,35 +355,38 @@ export class GameScene extends Phaser.Scene {
   private renderEnemies(enemies: EnemySnapshot[]) {
     const activeIds = new Set(enemies.map((enemy) => enemy.id));
 
-    for (const [id, sprite] of this.enemies) {
+    for (const [id, mover] of this.enemies) {
       if (!activeIds.has(id)) {
-        this.enemyGroup?.killAndHide(sprite);
-        if (sprite.body) {
-          sprite.body.enable = false;
+        this.enemyGroup?.killAndHide(mover.sprite);
+        if (mover.sprite.body) {
+          mover.sprite.body.enable = false;
         }
         this.enemies.delete(id);
       }
     }
 
     for (const enemy of enemies) {
-      let sprite = this.enemies.get(enemy.id);
+      let mover = this.enemies.get(enemy.id);
       const texture = `enemy-${enemy.type}`;
 
-      if (!sprite) {
-        sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!mover) {
+        const sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
         if (!sprite) {
           continue;
         }
         sprite.setActive(true).setVisible(true).setDepth(8);
         if (sprite.body) {
-          sprite.body.enable = true;
+          sprite.body.enable = false;
         }
-        this.enemies.set(enemy.id, sprite);
+        mover = this.createMover(sprite, enemy.x, enemy.y);
+        this.enemies.set(enemy.id, mover);
       }
 
-      sprite.setTexture(texture);
-      sprite.setPosition(enemy.x, enemy.y);
-      sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+      if (mover.sprite.texture.key !== texture) {
+        mover.sprite.setTexture(texture);
+      }
+      this.setMoverTarget(mover, enemy.x, enemy.y);
+      mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
     }
   }
 
@@ -383,15 +425,19 @@ export class GameScene extends Phaser.Scene {
           fontSize: "12px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { base, label, level, range };
+        rendered = { base, label, level, range, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
-      rendered.base.setPosition(tower.x, tower.y).setFillStyle(tower.color, 1);
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}`;
+      if (rendered.key !== key) {
+        rendered.base.setPosition(tower.x, tower.y).setFillStyle(tower.color, 1);
+        rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
+        rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
+        rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
+        rendered.key = key;
+      }
       rendered.base.setStrokeStyle(2, tower.id === this.selectedPlacedTowerId ? 0xffffff : 0xf8fafc, tower.id === this.selectedPlacedTowerId ? 1 : tower.ownerId === this.localSessionId ? 0.7 : 0.25);
-      rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
-      rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
-      rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
     }
   }
@@ -399,34 +445,82 @@ export class GameScene extends Phaser.Scene {
   private renderProjectiles(projectiles: ProjectileSnapshot[]) {
     const activeIds = new Set(projectiles.map((projectile) => projectile.id));
 
-    for (const [id, sprite] of this.projectiles) {
+    for (const [id, mover] of this.projectiles) {
       if (!activeIds.has(id)) {
-        this.projectileGroup?.killAndHide(sprite);
-        if (sprite.body) {
-          sprite.body.enable = false;
+        this.projectileGroup?.killAndHide(mover.sprite);
+        if (mover.sprite.body) {
+          mover.sprite.body.enable = false;
         }
         this.projectiles.delete(id);
       }
     }
 
     for (const projectile of projectiles) {
-      let sprite = this.projectiles.get(projectile.id);
+      let mover = this.projectiles.get(projectile.id);
       const texture = `projectile-${projectile.kind}`;
 
-      if (!sprite) {
-        sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
+      if (!mover) {
+        const sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
         if (!sprite) {
           continue;
         }
         sprite.setActive(true).setVisible(true).setDepth(11);
         if (sprite.body) {
-          sprite.body.enable = true;
+          sprite.body.enable = false;
         }
-        this.projectiles.set(projectile.id, sprite);
+        mover = this.createMover(sprite, projectile.x, projectile.y);
+        this.projectiles.set(projectile.id, mover);
       }
 
-      sprite.setTexture(texture);
-      sprite.setPosition(projectile.x, projectile.y);
+      if (mover.sprite.texture.key !== texture) {
+        mover.sprite.setTexture(texture);
+      }
+      this.setMoverTarget(mover, projectile.x, projectile.y);
+    }
+  }
+
+  private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
+    sprite.setPosition(x, y);
+    return {
+      sprite,
+      fromX: x,
+      fromY: y,
+      targetX: x,
+      targetY: y,
+      startedAt: performance.now(),
+      durationMs: this.snapshotStepMs
+    };
+  }
+
+  private setMoverTarget(mover: RenderMover, x: number, y: number) {
+    const distanceSq = Phaser.Math.Distance.Squared(mover.sprite.x, mover.sprite.y, x, y);
+    if (distanceSq > 190 * 190) {
+      mover.sprite.setPosition(x, y);
+      mover.fromX = x;
+      mover.fromY = y;
+      mover.targetX = x;
+      mover.targetY = y;
+      mover.startedAt = performance.now();
+      mover.durationMs = this.snapshotStepMs;
+      return;
+    }
+
+    mover.fromX = mover.sprite.x;
+    mover.fromY = mover.sprite.y;
+    mover.targetX = x;
+    mover.targetY = y;
+    mover.startedAt = performance.now();
+    mover.durationMs = this.snapshotStepMs;
+  }
+
+  private animateNetworkMovers(movers: Map<string, RenderMover>, now: number) {
+    for (const mover of movers.values()) {
+      const progress = Phaser.Math.Clamp((now - mover.startedAt) / mover.durationMs, 0, 1);
+      const eased = progress * progress * (3 - 2 * progress);
+      mover.sprite.setPosition(
+        Phaser.Math.Linear(mover.fromX, mover.targetX, eased),
+        Phaser.Math.Linear(mover.fromY, mover.targetY, eased)
+      );
     }
   }
 
@@ -435,13 +529,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateSelectionUi() {
+    const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    const selectionKey = selectedTower
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}`
+      : `new|${this.selectedTowerDefinition.id}`;
+    if (this.lastSelectionKey === selectionKey) {
+      return;
+    }
+    this.lastSelectionKey = selectionKey;
+
     for (const [id, button] of this.towerButtons) {
       const selected = id === this.selectedTowerDefinition.id && !this.selectedPlacedTowerId;
       button.setFillStyle(selected ? 0x334155 : 0x1e293b, 1);
       button.setStrokeStyle(1, this.selectedCharacter.towers.find((tower) => tower.id === id)?.color ?? 0x94a3b8, selected ? 1 : 0.45);
     }
 
-    const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     if (!selectedTower) {
       this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | yola degmeyen yere dokun`);
       this.upgradeText?.setText("Kule sec");
@@ -458,6 +560,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateSkillButtons(cooldowns: number[]) {
+    const skillKey = cooldowns.join("|");
+    if (this.lastSkillKey === skillKey) {
+      return;
+    }
+    this.lastSkillKey = skillKey;
+
     this.selectedCharacter.skills.forEach((skill, index) => {
       const cooldown = cooldowns[index] ?? 0;
       this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : skill.name);
@@ -490,8 +598,9 @@ export class GameScene extends Phaser.Scene {
     this.pingSamples.push(ping);
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);
-    this.pingText?.setText(`${averagePing} ms`);
-    this.pingText?.setColor(averagePing < 90 ? "#22c55e" : averagePing < 160 ? "#facc15" : "#fb7185");
+    const jitter = Math.max(...this.pingSamples) - Math.min(...this.pingSamples);
+    this.pingText?.setText(`${averagePing} ms ±${jitter}`);
+    this.pingText?.setColor(averagePing < 90 && jitter < 35 ? "#22c55e" : averagePing < 180 && jitter < 80 ? "#facc15" : "#fb7185");
   }
 
   private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
@@ -499,9 +608,8 @@ export class GameScene extends Phaser.Scene {
     this.renderMsSamples.push(renderMs);
     this.renderMsSamples = this.renderMsSamples.slice(-30);
 
-    if (this.snapshotCount % 10 === 0) {
-      const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).length;
-      this.inboundKbSamples.push(bytes / 1024);
+    if (this.snapshotCount % 10 === 0 && snapshot.perf) {
+      this.inboundKbSamples.push(snapshot.perf.snapshotBytes / 1024);
       this.inboundKbSamples = this.inboundKbSamples.slice(-12);
     }
 
@@ -509,6 +617,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePerfOverlay(snapshot: GameSnapshot) {
+    const now = performance.now();
+    if (now - this.lastPerfOverlayAt < 250) {
+      return;
+    }
+    this.lastPerfOverlayAt = now;
+
     const serverPerf = snapshot.perf;
     if (!serverPerf) {
       this.perfText?.setText("PERF: server verisi yok");
