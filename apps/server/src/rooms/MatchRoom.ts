@@ -10,6 +10,7 @@ import {
   towerCatalog,
   type CharacterId,
   type EnemyType,
+  type BeamSnapshot,
   type GameSnapshot,
   type ProjectileKind,
   type ServerPerfSnapshot,
@@ -121,6 +122,10 @@ type ProjectileModel = {
   slowMs: number;
 };
 
+type BeamModel = BeamSnapshot & {
+  ttlMs: number;
+};
+
 type ServerPerfCounters = {
   targetSearches: number;
   targetChecks: number;
@@ -155,6 +160,7 @@ export class MatchRoom extends Room<MatchState> {
   private enemies = new Map<string, EnemyModel>();
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
+  private beams = new Map<string, BeamModel>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
@@ -263,6 +269,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
+    this.updateBeams(deltaTime);
     timings.projectilesMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -392,6 +399,11 @@ export class MatchRoom extends Room<MatchState> {
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
     this.prepareTowerShot(tower, target);
 
+    if (tower.definition.id === "warrior-5") {
+      this.fireDebugLaser(tower, target);
+      return;
+    }
+
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -436,6 +448,80 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius,
       slowMs
     });
+  }
+
+  private updateBeams(deltaTime: number) {
+    for (const [id, beam] of this.beams) {
+      beam.ttlMs -= deltaTime;
+      if (beam.ttlMs <= 0) {
+        this.beams.delete(id);
+      }
+    }
+  }
+
+  private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
+    const now = Date.now();
+    const baseDamage = this.getTowerDamage(tower);
+    const wasTracked = target.trackingUntil > now;
+    const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id);
+    let isOverdrive = tower.debugOverdriveUntil > now;
+
+    if (wasTracked && killed) {
+      tower.debugOverdriveUntil = Math.max(tower.debugOverdriveUntil, now + 2000);
+      isOverdrive = true;
+    }
+
+    if (isOverdrive) {
+      const end = getRayToWorldEdge(tower.x, tower.y, target.x, target.y);
+      this.applyDebugLaserOverdrive(tower, target, end.x, end.y, baseDamage);
+      this.setBeam(tower, end.x, end.y, true);
+      return;
+    }
+
+    this.setBeam(tower, target.x, target.y, false);
+  }
+
+  private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean) {
+    this.beams.set(`beam-${tower.id}`, {
+      id: `beam-${tower.id}`,
+      definitionId: tower.definition.id,
+      x1: tower.x,
+      y1: tower.y,
+      x2,
+      y2,
+      width: overdrive ? 8 : 4,
+      color: overdrive ? 0xfbbf24 : 0xfb7185,
+      overdrive,
+      ttlMs: overdrive ? 180 : 140
+    });
+  }
+
+  private applyDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, beamEndX: number, beamEndY: number, baseDamage: number) {
+    const directionX = beamEndX - tower.x;
+    const directionY = beamEndY - tower.y;
+    const directionLength = Math.max(1, Math.hypot(directionX, directionY));
+    const normalizedX = directionX / directionLength;
+    const normalizedY = directionY / directionLength;
+
+    for (const enemy of Array.from(this.enemies.values())) {
+      if (enemy.id === target.id) {
+        continue;
+      }
+
+      const lineDistanceSq = distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, beamEndX, beamEndY);
+      if (lineDistanceSq <= 18 * 18) {
+        this.damageEnemy(enemy, baseDamage * 0.55, 0, tower.definition.id);
+        continue;
+      }
+
+      const behindX = enemy.x - target.x;
+      const behindY = enemy.y - target.y;
+      const backwardDistance = -(behindX * normalizedX + behindY * normalizedY);
+      const sideDistance = Math.abs(behindX * normalizedY - behindY * normalizedX);
+      if (backwardDistance > 0 && backwardDistance <= 220 && sideDistance <= 28 + backwardDistance * 0.36) {
+        this.damageEnemy(enemy, baseDamage * 0.42, 0, tower.definition.id);
+      }
+    }
   }
 
   private updateServerLinks() {
@@ -1017,6 +1103,17 @@ export class MatchRoom extends Room<MatchState> {
         x: projectile.x,
         y: projectile.y
       })),
+      beams: Array.from(this.beams.values()).map((beam) => ({
+        id: beam.id,
+        definitionId: beam.definitionId,
+        x1: beam.x1,
+        y1: beam.y1,
+        x2: beam.x2,
+        y2: beam.y2,
+        width: beam.width,
+        color: beam.color,
+        overdrive: beam.overdrive
+      })),
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,
@@ -1329,6 +1426,33 @@ function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel,
   const traveledSq = distanceSq(previousX, previousY, projectile.x, projectile.y);
 
   return currentDistanceSq > previousDistanceSq && previousDistanceSq <= traveledSq + hitRadius * hitRadius;
+}
+
+function getRayToWorldEdge(x1: number, y1: number, x2: number, y2: number) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const nx = dx / length;
+  const ny = dy / length;
+  const candidates: number[] = [];
+
+  if (nx > 0) {
+    candidates.push((GAME_WORLD_WIDTH - x1) / nx);
+  } else if (nx < 0) {
+    candidates.push((0 - x1) / nx);
+  }
+
+  if (ny > 0) {
+    candidates.push((GAME_WORLD_HEIGHT - y1) / ny);
+  } else if (ny < 0) {
+    candidates.push((0 - y1) / ny);
+  }
+
+  const distance = Math.max(1, Math.min(...candidates.filter((candidate) => candidate > 0)));
+  return {
+    x: x1 + nx * distance,
+    y: y1 + ny * distance
+  };
 }
 
 function distanceToSegmentSq(px: number, py: number, ax: number, ay: number, bx: number, by: number) {

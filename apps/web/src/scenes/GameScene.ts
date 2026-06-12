@@ -10,6 +10,7 @@ import {
   type CharacterDefinition,
   type CharacterId,
   type EnemySnapshot,
+  type BeamSnapshot,
   type GameSnapshot,
   type ProjectileSnapshot,
   type TowerDefinition,
@@ -60,6 +61,7 @@ export class GameScene extends Phaser.Scene {
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private beamGraphics?: Phaser.GameObjects.Graphics;
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
@@ -110,6 +112,7 @@ export class GameScene extends Phaser.Scene {
     this.createHeader();
     this.createTowerTray();
     this.createActionButtons();
+    this.beamGraphics = this.add.graphics().setDepth(10);
 
     this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt", maxSize: 100 });
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 180 });
@@ -439,6 +442,7 @@ export class GameScene extends Phaser.Scene {
 
     this.renderEnemies(snapshot.enemies);
     this.renderTowers(snapshot.towers);
+    this.renderBeams(snapshot.beams);
     this.renderProjectiles(snapshot.projectiles);
     this.renderHud(snapshot);
     if (now - this.lastShopEventAt > 250) {
@@ -606,6 +610,71 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private renderBeams(beams: BeamSnapshot[]) {
+    this.beamGraphics?.clear();
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    for (const beam of beams) {
+      const color = beam.color ?? 0xfb7185;
+      if (beam.overdrive) {
+        this.drawOverdriveBeam(beam, color);
+      } else {
+        this.drawLaserConnection(beam, color);
+      }
+    }
+  }
+
+  private drawLaserConnection(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    this.beamGraphics.lineStyle(beam.width + 8, color, 0.12);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 3, color, 0.34);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(Math.max(2, beam.width), 0xfef2f2, 0.92);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0xfef2f2, 0.95);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
+    this.beamGraphics.fillStyle(color, 0.22);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
+  }
+
+  private drawOverdriveBeam(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const nx = dx / length;
+    const ny = dy / length;
+    const coneBaseX = beam.x2 - nx * 170;
+    const coneBaseY = beam.y2 - ny * 170;
+    const coneSide = 62;
+
+    this.beamGraphics.fillStyle(color, 0.1);
+    this.beamGraphics.beginPath();
+    this.beamGraphics.moveTo(beam.x2, beam.y2);
+    this.beamGraphics.lineTo(coneBaseX + -ny * coneSide, coneBaseY + nx * coneSide);
+    this.beamGraphics.lineTo(coneBaseX + ny * coneSide, coneBaseY + -nx * coneSide);
+    this.beamGraphics.closePath();
+    this.beamGraphics.fillPath();
+
+    this.beamGraphics.lineStyle(beam.width + 14, color, 0.14);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 6, color, 0.46);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), 0xfffbeb, 0.98);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0xfffbeb, 1);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
+  }
+
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
     sprite.setPosition(x, y);
     return {
@@ -762,7 +831,7 @@ export class GameScene extends Phaser.Scene {
     const averageRenderMs = average(this.renderMsSamples);
     const averageKb = average(this.inboundKbSamples);
     const fps = Math.round(this.game.loop.actualFps);
-    const entityText = `E ${snapshot.enemies.length} T ${snapshot.towers.length} P ${snapshot.projectiles.length}`;
+    const entityText = `E ${snapshot.enemies.length} T ${snapshot.towers.length} P ${snapshot.projectiles.length} B ${snapshot.beams.length}`;
     const serverText = `Srv ${serverPerf.tickMs}/${serverPerf.tickMaxMs}ms ${serverPerf.snapshotHz}hz`;
     const clientText = `Cli ${roundClientMetric(averageRenderMs)}ms ${fps}fps ${roundClientMetric(averageKb)}kb`;
     const opsText = `Buf ${this.playbackDelayMs}ms q${this.snapshotBuffer.length} tgt ${serverPerf.ops.targetChecks}`;

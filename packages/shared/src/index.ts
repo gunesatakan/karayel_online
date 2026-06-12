@@ -70,6 +70,18 @@ export type ProjectileSnapshot = {
   y: number;
 };
 
+export type BeamSnapshot = {
+  id: string;
+  definitionId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  color: number;
+  overdrive?: boolean;
+};
+
 export type TeamSnapshot = {
   health: number;
   maxHealth: number;
@@ -107,6 +119,7 @@ export type GameSnapshot = {
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
+  beams: BeamSnapshot[];
   team: TeamSnapshot;
   perf?: ServerPerfSnapshot;
 };
