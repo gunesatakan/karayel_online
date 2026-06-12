@@ -533,10 +533,10 @@ export class GameScene extends Phaser.Scene {
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       if (!rendered) {
-        const haloGlow = this.add.circle(tower.x, tower.y, 27, 0xffffff, 0)
+        const haloGlow = this.add.circle(tower.x, tower.y, 22, 0xffffff, 0)
           .setStrokeStyle(5, 0xffffff, 0)
           .setDepth(10);
-        const halo = this.add.circle(tower.x, tower.y, 22, 0xffffff, 0)
+        const halo = this.add.circle(tower.x, tower.y, 19, 0xffffff, 0)
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
@@ -934,13 +934,13 @@ function getTowerLevelHalo(level: number) {
   return {
     color,
     glowing,
-    radius: glowing ? 24 : 22,
-    fillAlpha: glowing ? 0.12 : 0.03,
+    radius: 19,
+    fillAlpha: glowing ? 0.08 : 0.02,
     strokeAlpha: glowing ? 1 : 0.78,
-    strokeWidth: glowing ? 4 : 3,
-    glowRadius: glowing ? 31 : 25,
-    glowFillAlpha: glowing ? 0.13 : 0,
-    glowStrokeAlpha: glowing ? 0.48 : 0,
-    glowStrokeWidth: glowing ? 7 : 0
+    strokeWidth: glowing ? 3 : 2,
+    glowRadius: 22,
+    glowFillAlpha: glowing ? 0.08 : 0,
+    glowStrokeAlpha: glowing ? 0.3 : 0,
+    glowStrokeWidth: glowing ? 4 : 0
   };
 }
