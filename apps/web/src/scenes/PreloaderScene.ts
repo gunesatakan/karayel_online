@@ -25,6 +25,8 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("projectile-chain", 0xfef08a, 5);
     this.createCircleTexture("projectile-enemy", 0xfb7185, 4);
     this.createCircleTexture("projectile-tower", 0xf8fafc, 4);
+    this.createDroneTexture("drone-attack", 0xfb7185, 0xfacc15);
+    this.createDroneTexture("drone-repair", 0x22d3ee, 0x86efac);
     this.createProceduralTowerTextures();
     window.dispatchEvent(new CustomEvent("karayel:phaser-ready"));
   }
@@ -34,6 +36,23 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.fillStyle(color, 1);
     graphics.fillCircle(radius, radius, radius);
     graphics.generateTexture(key, radius * 2, radius * 2);
+    graphics.destroy();
+  }
+
+  private createDroneTexture(key: string, color: number, accent: number) {
+    const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+    const size = 22;
+    const center = size / 2;
+    graphics.fillStyle(color, 0.2);
+    graphics.fillCircle(center, center, 10);
+    graphics.fillStyle(color, 0.95);
+    graphics.fillTriangle(center, 2, size - 3, center, center, size - 3);
+    graphics.fillTriangle(center, 2, center, size - 3, 3, center);
+    graphics.lineStyle(2, accent, 0.95);
+    graphics.strokeCircle(center, center, 6);
+    graphics.fillStyle(accent, 1);
+    graphics.fillCircle(center, center, 2.2);
+    graphics.generateTexture(key, size, size);
     graphics.destroy();
   }
 

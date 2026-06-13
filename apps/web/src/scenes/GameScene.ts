@@ -18,6 +18,7 @@ import {
   type CharacterDefinition,
   type CharacterId,
   type DamageEventSnapshot,
+  type DroneSnapshot,
   type EditableMapData,
   type EnemySnapshot,
   type BeamSnapshot,
@@ -79,6 +80,7 @@ export class GameScene extends Phaser.Scene {
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -656,6 +658,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.renderEnemies(frame.snapshot.enemies);
+    this.renderDrones(frame.snapshot.drones ?? []);
     this.lastPlaybackAlpha = frame.alpha;
 
     if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
@@ -732,9 +735,20 @@ export class GameScene extends Phaser.Scene {
       };
     });
 
+    const previousDrones = new Map((previous.drones ?? []).map((drone) => [drone.id, drone]));
+    const drones = (next.drones ?? []).map((drone) => {
+      const oldDrone = previousDrones.get(drone.id);
+      return {
+        ...drone,
+        x: oldDrone ? Phaser.Math.Linear(oldDrone.x, drone.x, alpha) : drone.x,
+        y: oldDrone ? Phaser.Math.Linear(oldDrone.y, drone.y, alpha) : drone.y
+      };
+    });
+
     return {
       ...next,
-      enemies
+      enemies,
+      drones
     };
   }
 
@@ -1059,6 +1073,45 @@ export class GameScene extends Phaser.Scene {
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
+    }
+  }
+
+  private renderDrones(drones: DroneSnapshot[]) {
+    const activeIds = new Set(drones.map((drone) => drone.id));
+
+    for (const [id, sprite] of this.drones) {
+      if (!activeIds.has(id)) {
+        this.projectileGroup?.killAndHide(sprite);
+        if (sprite.body) {
+          sprite.body.enable = false;
+        }
+        this.drones.delete(id);
+      }
+    }
+
+    const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
+    for (const drone of drones) {
+      const texture = drone.mode === "repair" ? "drone-repair" : "drone-attack";
+      let sprite = this.drones.get(drone.id);
+      if (!sprite) {
+        sprite = this.projectileGroup?.get(drone.x, drone.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
+        if (!sprite) {
+          sprite = this.physics.add.sprite(drone.x, drone.y, texture);
+          this.projectileGroup?.add(sprite);
+        }
+        sprite.setActive(true).setVisible(true).setDepth(15);
+        if (sprite.body) {
+          sprite.body.enable = false;
+        }
+        this.drones.set(drone.id, sprite);
+      }
+
+      if (sprite.texture.key !== texture) {
+        sprite.setTexture(texture);
+      }
+      sprite.setPosition(drone.x, drone.y);
+      sprite.setScale(drone.mode === "attack" ? 1.15 * pulse : 1.05 * pulse);
+      sprite.setAlpha(drone.mode === "attack" ? 0.96 : 0.9);
     }
   }
 

@@ -1,1 +1,1 @@
-export const atakanUltimate = "Tam Otomasyon: Kuleler mini-drone uretir. Drone'lar yakinindaki kritik kuleleri tamir eder veya Takipte dusmanlara kamikaze saldirir. Sure bitince kisa bir tukenmislik olur.";
+export const atakanUltimate = "Tam Otomasyon: Her Atakan kulesinden mini-drone cikar. Nexus cani 30'un altindaysa drone'lar nexus'a gidip 1 can yeniler; degilse en yakin dusmana kamikaze saldirisiyle 200 hasar verir. Sonunda kuleler kisa sure Tukenmis olur.";

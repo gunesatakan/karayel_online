@@ -23,6 +23,7 @@ import {
   towerCatalog,
   type CharacterId,
   type DamageEventSnapshot,
+  type DroneSnapshot,
   type EnemyType,
   type EditableMapData,
   type BeamSnapshot,
@@ -164,6 +165,14 @@ type ProjectileModel = {
   slowMs: number;
 };
 
+type DroneModel = DroneSnapshot & {
+  ownerId: string;
+  targetId?: string;
+  vx: number;
+  vy: number;
+  ttlMs: number;
+};
+
 type BeamModel = BeamSnapshot & {
   ttlMs: number;
 };
@@ -216,12 +225,14 @@ export class MatchRoom extends Room<MatchState> {
   private enemies = new Map<string, EnemyModel>();
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
+  private drones = new Map<string, DroneModel>();
   private beams = new Map<string, BeamModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
+  private nextDroneId = 1;
   private nextBeamId = 1;
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
@@ -339,6 +350,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
+    this.updateDrones(deltaTime, seconds);
     this.updateBeams(deltaTime);
     this.updateDamageEvents(deltaTime);
     timings.projectilesMs = performance.now() - sectionStart;
@@ -840,6 +852,62 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private updateDrones(deltaTime: number, seconds: number) {
+    const nexusX = GAME_WORLD_WIDTH / 2;
+    const nexusY = GAME_WORLD_HEIGHT - 26;
+
+    for (const [id, drone] of this.drones) {
+      drone.ttlMs -= deltaTime;
+
+      if (drone.mode === "attack") {
+        let target = drone.targetId ? this.enemies.get(drone.targetId) : undefined;
+        if (!target) {
+          target = this.findNearestEnemy(drone.x, drone.y);
+          drone.targetId = target?.id;
+          if (!target) {
+            this.drones.delete(id);
+            continue;
+          }
+        }
+
+        const dx = target.x - drone.x;
+        const dy = target.y - drone.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const speed = 520;
+        drone.vx = (dx / length) * speed;
+        drone.vy = (dy / length) * speed;
+        drone.x += drone.vx * seconds;
+        drone.y += drone.vy * seconds;
+
+        if (distanceSq(drone.x, drone.y, target.x, target.y) <= 18 * 18) {
+          this.damageEnemy(target, 200, 0, "warrior-ultimate-drone", drone.ownerId);
+          this.drones.delete(id);
+        }
+        if (drone.ttlMs <= 0) {
+          this.drones.delete(id);
+        }
+        continue;
+      }
+
+      const dx = nexusX - drone.x;
+      const dy = nexusY - drone.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const speed = 360;
+      drone.vx = (dx / length) * speed;
+      drone.vy = (dy / length) * speed;
+      drone.x += drone.vx * seconds;
+      drone.y += drone.vy * seconds;
+
+      if (distanceSq(drone.x, drone.y, nexusX, nexusY) <= 18 * 18) {
+        this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 1);
+        this.drones.delete(id);
+      }
+      if (drone.ttlMs <= 0) {
+        this.drones.delete(id);
+      }
+    }
+  }
+
   private updateEnemies(seconds: number) {
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
@@ -1151,34 +1219,49 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useAtakanUltimate(client: Client) {
-    const now = Date.now();
     const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
+    const shouldRepairNexus = this.teamHealth < 30;
 
     for (const tower of ownTowers) {
-      const criticalTower = ownTowers
-        .filter((candidate) => candidate.hp / candidate.maxHp < 0.2 && distanceSq(candidate.x, candidate.y, tower.x, tower.y) <= 140 * 140)
-        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-
-      if (criticalTower) {
-        criticalTower.hp = Math.max(criticalTower.hp, criticalTower.maxHp * 0.5);
-        continue;
-      }
-
-      const target = Array.from(this.enemies.values())
-        .filter((enemy) => enemy.trackingUntil > now && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 220 * 220)
-        .sort((a, b) => b.pathDistance - a.pathDistance)[0] ??
-        Array.from(this.enemies.values())
-          .filter((enemy) => distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 180 * 180)
-          .sort((a, b) => b.pathDistance - a.pathDistance)[0];
-
-      if (target) {
-        this.damageEnemy(target, 48 + tower.level * 10, 0, "warrior-ultimate-drone", client.sessionId);
-      }
+      this.spawnAtakanDrone(tower, shouldRepairNexus);
     }
 
+    const now = Date.now();
     for (const tower of ownTowers) {
       tower.offlineUntil = Math.max(tower.offlineUntil, now + 5000);
     }
+  }
+
+  private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean) {
+    const target = repairNexus ? undefined : this.findNearestEnemy(tower.x, tower.y);
+    if (!repairNexus && !target) {
+      return;
+    }
+
+    const targetX = repairNexus ? GAME_WORLD_WIDTH / 2 : target?.x ?? tower.x;
+    const targetY = repairNexus ? GAME_WORLD_HEIGHT - 26 : target?.y ?? tower.y;
+    const speed = repairNexus ? 360 : 520;
+    const dx = targetX - tower.x;
+    const dy = targetY - tower.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+
+    const id = `d${this.nextDroneId++}`;
+    this.drones.set(id, {
+      id,
+      ownerId: tower.ownerId,
+      targetId: target?.id,
+      mode: repairNexus ? "repair" : "attack",
+      x: tower.x,
+      y: tower.y,
+      vx: (dx / length) * speed,
+      vy: (dy / length) * speed,
+      ttlMs: repairNexus ? 3200 : 2400
+    });
+  }
+
+  private findNearestEnemy(x: number, y: number) {
+    return Array.from(this.enemies.values())
+      .sort((a, b) => distanceSq(x, y, a.x, a.y) - distanceSq(x, y, b.x, b.y))[0];
   }
 
   private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
@@ -1429,6 +1512,12 @@ export class MatchRoom extends Room<MatchState> {
         definitionId: projectile.definitionId,
         x: projectile.x,
         y: projectile.y
+      })),
+      drones: Array.from(this.drones.values()).map((drone) => ({
+        id: drone.id,
+        mode: drone.mode,
+        x: drone.x,
+        y: drone.y
       })),
       beams: Array.from(this.beams.values()).map((beam) => ({
         id: beam.id,

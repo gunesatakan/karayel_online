@@ -81,6 +81,13 @@ export type ProjectileSnapshot = {
   y: number;
 };
 
+export type DroneSnapshot = {
+  id: string;
+  mode: "attack" | "repair";
+  x: number;
+  y: number;
+};
+
 export type BeamSnapshot = {
   id: string;
   definitionId: string;
@@ -148,6 +155,7 @@ export type GameSnapshot = {
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
+  drones: DroneSnapshot[];
   beams: BeamSnapshot[];
   damageEvents: DamageEventSnapshot[];
   killEvents: KillEventSnapshot[];

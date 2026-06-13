@@ -78,7 +78,7 @@ Takipci, Atakan'in takim hasarini acan temel kulesidir. Dengeli tek hedef hasari
 - Takipte olan dusmanlar, Takipci haricindeki kaynaklardan `x1.2` hasar alir.
 - Takipci kendi isaretinden bonus hasar almaz.
 - Debug Lazer, normal hedef seciminde Takipte dusmanlara oncelik verir.
-- Atakan ultisindeki drone'lar da yakinda Takipte hedef varsa onlari onceliklendirir.
+- Atakan ultisindeki drone'lar, nexus kritik degilse en yakin dusmana kamikaze saldirisi yapar.
 
 ### 2. Sunucu
 
@@ -345,27 +345,34 @@ Atakan'in ultisi, kulelerinden mini-drone cikarma fikrine dayanir.
 **Kullanim sarti:** Ulti charge 100 olmalidir.  
 **Kullanimdan sonra:** Ulti charge 0'a iner.
 
-Her Atakan kulesi kendi cevresindeki duruma gore karar verir:
+Her Atakan kulesi ulti basildiginda bir mini-drone uretir. Drone'lar gercek oyun nesnesi olarak haritada hareket eder.
 
-1. Yakinda kritik durumda kule varsa onarir.
-2. Kritik kule yoksa dusmana saldirir.
+Karar once nexus canina gore verilir:
+
+1. Nexus cani 30'un altindaysa drone'lar nexus'a dogru ilerler.
+2. Nexus cani 30 veya ustundeyse drone'lar dusmana saldirir.
 
 **Onarim davranisi:**
 
-- Drone, 140 birim icinde cani %20'nin altinda olan Atakan kulesi arar.
-- En kritik kuleyi secer.
-- O kuleyi en az %50 cana kadar tamir eder.
+- Drone nexus'a ulasinca takim canini 1 artirir.
+- Her drone ayri ayri 1 can yeniler.
+- Takim cani maksimum can degerini asamaz.
 
 **Saldiri davranisi:**
 
-- Once 220 birim icindeki Takipte dusmanlari arar.
-- Bulamazsa 180 birim icindeki herhangi bir dusmani hedefler.
-- En ondeki hedefe oncelik verir.
+- Drone, kendisine en yakin mevcut dusmani hedefler.
+- Hedefe dogru ilerler ve temas ettiginde kamikaze saldirisi yapar.
 - Drone hasari:
 
 ```txt
-Hasar = 48 + KuleSeviyesi * 10
+Hasar = 200
 ```
+
+**Gorsel davranis:**
+
+- Saldiri drone'u kirmizi/altin renkte gorunur.
+- Nexus onarim drone'u cyan/yesil renkte gorunur.
+- Drone'lar hedeflerine dogru hareket eder; anlik hasar veya anlik heal olarak uygulanmaz.
 
 **Tukenmislik:**
 
@@ -618,7 +625,8 @@ Dalga bonuslari:
 - Kaynak: Takipci.
 - Sure: 6.5 saniye.
 - Etki: Takipci haricindeki hasar kaynaklarindan %20 daha fazla hasar.
-- Debug Lazer ve Atakan drone'lari hedef seciminde Takipte dusmanlari onceliklendirir.
+- Debug Lazer hedef seciminde Takipte dusmanlari onceliklendirir.
+- Atakan drone'lari mevcut uygulamada Takipte onceligi kullanmaz; nexus kritik degilse kendilerine en yakin dusmana saldirir.
 
 ### Korku
 
