@@ -205,7 +205,9 @@ export const upgradeCosts: Record<UpgradeId, number> = {
   heal: 45
 };
 
-export function getTowerUpgradeCost(baseUpgradeCost: number, currentLevel: number) {
+const TOWER_UPGRADE_COST_RATIO = 0.72;
+
+export function getTowerUpgradeCost(towerCost: number, currentLevel: number) {
   const targetLevel = currentLevel + 1;
   const discount =
     targetLevel === 2 ? 0.5 :
@@ -213,5 +215,5 @@ export function getTowerUpgradeCost(baseUpgradeCost: number, currentLevel: numbe
         targetLevel === 4 ? 0.85 :
           1;
 
-  return Math.round(baseUpgradeCost * currentLevel * 1.35 * discount * 0.5);
+  return Math.round(towerCost * TOWER_UPGRADE_COST_RATIO * currentLevel * 1.35 * discount * 0.5);
 }

@@ -1033,7 +1033,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const cost = getTowerUpgradeCost(tower.definition.upgradeCost, tower.level);
+    const cost = getTowerUpgradeCost(tower.definition.cost, tower.level);
     if (this.teamGold < cost) {
       return;
     }

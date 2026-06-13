@@ -392,7 +392,7 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   const parts = [
     tower.description ?? tower.role,
     `Sınıf: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vuruş: ${tower.hitType ?? "impact"}`,
-    `Maliyet: ${tower.cost}g | L2/L3/L4: ${getTowerUpgradeCost(tower.upgradeCost, 1)}/${getTowerUpgradeCost(tower.upgradeCost, 2)}/${getTowerUpgradeCost(tower.upgradeCost, 3)}g`,
+    `Maliyet: ${tower.cost}g | L2/L3/L4: ${getTowerUpgradeCost(tower.cost, 1)}/${getTowerUpgradeCost(tower.cost, 2)}/${getTowerUpgradeCost(tower.cost, 3)}g`,
     `Menzil: ${tower.id === "warrior-2" ? "Global" : tower.range} | Mermi Hızı: ${tower.projectileSpeed}`,
     `L1 DPS: ${l1Dps} | L10 Baz DPS: ${l10Dps}`,
     `Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`

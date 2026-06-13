@@ -63,7 +63,7 @@ Takipci, Atakan'in takim hasarini acan temel kulesidir. Dengeli tek hedef hasari
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 42 altin |
-| Upgrade maliyeti | 32 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 112 |
 | Hasar | 12 |
 | Atis araligi | 720 ms |
@@ -92,7 +92,7 @@ Sunucu, kendi basina normal atis yapan bir kule gibi davranmaz. Iki kuleye bagla
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 74 altin |
-| Upgrade maliyeti | 54 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | Global |
 | Temel hasar | 0 |
 | Atis araligi | 980 ms |
@@ -152,7 +152,7 @@ Izolasyon Kulesi hasar vermek icin degil, dusman temposunu bozmak icin kullanili
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 58 altin |
-| Upgrade maliyeti | 42 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 104 |
 | Hasar | 0 |
 | Atis araligi | 620 ms |
@@ -189,7 +189,7 @@ Obsesyon Kulesi ayni hedefe odaklandikca guclenir. Tank dusmanlara oncelik verir
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 82 altin |
-| Upgrade maliyeti | 60 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 118 |
 | Hasar | 18 |
 | Atis araligi | 760 ms |
@@ -221,7 +221,7 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 108 altin |
-| Upgrade maliyeti | 78 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 134 |
 | Hasar | 5 |
 | Atis araligi | Lv1 0.20 sn, Lv5 0.16 sn, Lv10 0.12 sn |
@@ -264,7 +264,7 @@ Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kules
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 160 altin |
-| Upgrade maliyeti | 115 baz |
+| Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 118 |
 | Hasar | 9 |
 | Atis araligi | 940 ms |
@@ -397,8 +397,10 @@ Upgrade maliyeti ortak formulle hesaplanir:
 
 ```txt
 hedef seviye = mevcut seviye + 1
-maliyet = round(baseUpgradeCost * mevcutSeviye * 1.35 * indirim * 0.5)
+maliyet = round(satinAlimMaliyeti * 0.72 * mevcutSeviye * 1.35 * indirim * 0.5)
 ```
+
+Bu nedenle ayni hedef level icin daha pahali kulelerin upgrade ucreti her zaman daha ucuz kulelerden yuksektir.
 
 Indirimler:
 
@@ -470,15 +472,15 @@ Tablo notlari:
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 12.0 | 720 ms | 112 | 16.7 | 11 |
-| 2 | 17.0 | 648 ms | 123 | 26.3 | 30 |
-| 3 | 22.1 | 576 ms | 134 | 38.3 | 55 |
-| 4 | 27.1 | 504 ms | 145 | 53.8 | 86 |
-| 5 | 32.2 | 432 ms | 156 | 74.4 | 108 |
-| 6 | 37.2 | 360 ms | 167 | 103.3 | 130 |
-| 7 | 42.2 | 288 ms | 178 | 146.7 | 151 |
-| 8 | 47.3 | 216 ms | 189 | 218.9 | 173 |
-| 9 | 52.3 | 144 ms | 200 | 363.3 | 194 |
+| 1 | 12.0 | 720 ms | 112 | 16.7 | 10 |
+| 2 | 17.0 | 648 ms | 123 | 26.3 | 29 |
+| 3 | 22.1 | 576 ms | 134 | 38.3 | 52 |
+| 4 | 27.1 | 504 ms | 145 | 53.8 | 82 |
+| 5 | 32.2 | 432 ms | 156 | 74.4 | 102 |
+| 6 | 37.2 | 360 ms | 167 | 103.3 | 122 |
+| 7 | 42.2 | 288 ms | 178 | 146.7 | 143 |
+| 8 | 47.3 | 216 ms | 189 | 218.9 | 163 |
+| 9 | 52.3 | 144 ms | 200 | 363.3 | 184 |
 | 10 | 57.4 | 80 ms | 211 | 717.0 | - |
 
 Takipci'nin isaret mekanigi level esiklerine gore stacklenir:
@@ -497,14 +499,14 @@ Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır.
 | Lv | Baz hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 0.0 | 980 ms | Global | 0.0 | 18 |
-| 2 | 0.0 | 882 ms | Global | 0.0 | 51 |
-| 3 | 0.0 | 784 ms | Global | 0.0 | 93 |
-| 4 | 0.0 | 686 ms | Global | 0.0 | 146 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 182 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 219 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 255 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 292 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 328 |
+| 2 | 0.0 | 882 ms | Global | 0.0 | 50 |
+| 3 | 0.0 | 784 ms | Global | 0.0 | 92 |
+| 4 | 0.0 | 686 ms | Global | 0.0 | 144 |
+| 5 | 0.0 | 588 ms | Global | 0.0 | 180 |
+| 6 | 0.0 | 490 ms | Global | 0.0 | 216 |
+| 7 | 0.0 | 392 ms | Global | 0.0 | 252 |
+| 8 | 0.0 | 294 ms | Global | 0.0 | 288 |
+| 9 | 0.0 | 196 ms | Global | 0.0 | 324 |
 | 10 | 0.0 | 98 ms | Global | 0.0 | - |
 
 Elektrik topu level etkisi:
@@ -542,14 +544,14 @@ Uzun baglanti bufflari:
 | Lv | Hasar | Atis araligi | Menzil | Normal slow | Izole aura slow | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|---:|
 | 1 | 0.0 | 620 ms | 104 | 850 ms | 1500 ms | 14 |
-| 2 | 0.0 | 558 ms | 115 | 940 ms | 1620 ms | 40 |
+| 2 | 0.0 | 558 ms | 115 | 940 ms | 1620 ms | 39 |
 | 3 | 0.0 | 496 ms | 126 | 1030 ms | 1740 ms | 72 |
 | 4 | 0.0 | 434 ms | 137 | 1120 ms | 1860 ms | 113 |
-| 5 | 0.0 | 372 ms | 148 | 1210 ms | 1980 ms | 142 |
-| 6 | 0.0 | 310 ms | 159 | 1300 ms | 2100 ms | 170 |
-| 7 | 0.0 | 248 ms | 170 | 1390 ms | 2220 ms | 198 |
-| 8 | 0.0 | 186 ms | 181 | 1480 ms | 2340 ms | 227 |
-| 9 | 0.0 | 124 ms | 192 | 1570 ms | 2460 ms | 255 |
+| 5 | 0.0 | 372 ms | 148 | 1210 ms | 1980 ms | 141 |
+| 6 | 0.0 | 310 ms | 159 | 1300 ms | 2100 ms | 169 |
+| 7 | 0.0 | 248 ms | 170 | 1390 ms | 2220 ms | 197 |
+| 8 | 0.0 | 186 ms | 181 | 1480 ms | 2340 ms | 226 |
+| 9 | 0.0 | 124 ms | 192 | 1570 ms | 2460 ms | 254 |
 | 10 | 0.0 | 80 ms | 203 | 1660 ms | 2580 ms | - |
 
 ### Obsesyon Kulesi - Level Statlari
@@ -557,14 +559,14 @@ Uzun baglanti bufflari:
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 18.0 | 760 ms (0.95 sn) | 118 | 18.9 | 20 |
-| 2 | 31.3 | 760 ms (0.95 sn) | 129 | 33.0 | 57 |
-| 3 | 52.0 | 760 ms (0.95 sn) | 140 | 54.7 | 103 |
-| 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 162 |
-| 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 203 |
-| 6 | 405.5 | 760 ms (0.95 sn) | 173 | 426.8 | 243 |
-| 7 | 666.9 | 760 ms (0.95 sn) | 184 | 702.0 | 284 |
-| 8 | 758.6 | 760 ms (0.95 sn) | 195 | 798.6 | 324 |
-| 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 365 |
+| 2 | 31.3 | 760 ms (0.95 sn) | 129 | 33.0 | 56 |
+| 3 | 52.0 | 760 ms (0.95 sn) | 140 | 54.7 | 102 |
+| 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 159 |
+| 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 199 |
+| 6 | 405.5 | 760 ms (0.95 sn) | 173 | 426.8 | 239 |
+| 7 | 666.9 | 760 ms (0.95 sn) | 184 | 702.0 | 279 |
+| 8 | 758.6 | 760 ms (0.95 sn) | 195 | 798.6 | 319 |
+| 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 359 |
 | 10 | 949.8 | 760 ms (0.95 sn) | 217 | 999.8 | - |
 
 Obsesyon stackleri bu tablonun uzerine eklenir:
@@ -580,14 +582,14 @@ Korku etkisi level 3 ve sonrasinda acilir.
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 6.7 | 160 ms (0.20 sn) | 134 | 33.3 | 26 |
-| 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 74 |
+| 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 73 |
 | 3 | 17.4 | 144 ms (0.18 sn) | 156 | 96.6 | 134 |
-| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 211 |
-| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 263 |
-| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 316 |
-| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 369 |
-| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 421 |
-| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 474 |
+| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 210 |
+| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 262 |
+| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 315 |
+| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 367 |
+| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 420 |
+| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 472 |
 | 10 | 62.2 | 96 ms (0.12 sn) | 233 | 518.6 | - |
 
 Overdrive sirasinda:
@@ -619,11 +621,11 @@ Overdrive efektif DPS:
 | 2 | 5.7 | 940 ms (1.18 sn) | 129 | 4.8 | 109 |
 | 3 | 7.0 | 940 ms (1.18 sn) | 140 | 6.0 | 198 |
 | 4 | 9.9 | 940 ms (1.18 sn) | 151 | 8.4 | 311 |
-| 5 | 14.1 | 940 ms (1.18 sn) | 162 | 12.0 | 388 |
-| 6 | 23.4 | 940 ms (1.18 sn) | 173 | 19.9 | 466 |
-| 7 | 19.0 | 940 ms (1.18 sn) | 184 | 16.2 | 543 |
-| 8 | 29.6 | 940 ms (1.18 sn) | 195 | 25.1 | 621 |
-| 9 | 125.6 | 940 ms (1.18 sn) | 206 | 106.9 | 699 |
+| 5 | 14.1 | 940 ms (1.18 sn) | 162 | 12.0 | 389 |
+| 6 | 23.4 | 940 ms (1.18 sn) | 173 | 19.9 | 467 |
+| 7 | 19.0 | 940 ms (1.18 sn) | 184 | 16.2 | 544 |
+| 8 | 29.6 | 940 ms (1.18 sn) | 195 | 25.1 | 622 |
+| 9 | 125.6 | 940 ms (1.18 sn) | 206 | 106.9 | 700 |
 | 10 | 451.7 | 940 ms (1.18 sn) | 217 | 384.4 | - |
 
 Ucube aktif stackleri bu tablodaki atis araligini ayrica dusurur:

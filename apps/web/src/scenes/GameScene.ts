@@ -1479,7 +1479,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
-    const cost = definition ? getTowerUpgradeCost(definition.upgradeCost, selectedTower.level) : 0;
+    const cost = definition ? getTowerUpgradeCost(definition.cost, selectedTower.level) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";
