@@ -43,7 +43,7 @@ type RenderTower = {
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
-  isolation: Phaser.GameObjects.Arc;
+  isolation: Phaser.GameObjects.Graphics;
   status: Phaser.GameObjects.Text;
   key: string;
 };
@@ -890,8 +890,7 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
           .setDepth(5);
-        const isolation = this.add.circle(tower.x, tower.y, 76, 0xf97316, 0.08)
-          .setStrokeStyle(2, 0xf97316, 0.82)
+        const isolation = this.add.graphics()
           .setVisible(false)
           .setDepth(6);
         const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
@@ -932,7 +931,7 @@ export class GameScene extends Phaser.Scene {
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
         rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
-        rendered.isolation.setPosition(tower.x, tower.y).setRadius(76);
+        this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
       }
       rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
@@ -957,6 +956,22 @@ export class GameScene extends Phaser.Scene {
       return 0xffffff;
     }
     return 0xffffff;
+  }
+
+  private drawIsolationGrid(graphics: Phaser.GameObjects.Graphics, x: number, y: number) {
+    const halfSize = TOWER_GRID_SIZE * 1.5;
+    const left = x - halfSize;
+    const top = y - halfSize;
+    graphics.clear();
+    graphics.fillStyle(0xf97316, 0.08);
+    graphics.fillRect(left, top, TOWER_GRID_SIZE * 3, TOWER_GRID_SIZE * 3);
+    graphics.lineStyle(2, 0xf97316, 0.82);
+    graphics.strokeRect(left, top, TOWER_GRID_SIZE * 3, TOWER_GRID_SIZE * 3);
+    graphics.lineStyle(1, 0xfbbf24, 0.48);
+    for (let index = 1; index < 3; index += 1) {
+      graphics.lineBetween(left + index * TOWER_GRID_SIZE, top, left + index * TOWER_GRID_SIZE, top + TOWER_GRID_SIZE * 3);
+      graphics.lineBetween(left, top + index * TOWER_GRID_SIZE, left + TOWER_GRID_SIZE * 3, top + index * TOWER_GRID_SIZE);
+    }
   }
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {

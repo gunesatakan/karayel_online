@@ -161,13 +161,21 @@ Izolasyon Kulesi hasar vermek icin degil, dusman temposunu bozmak icin kullanili
 **Izolasyon mekanigi:**
 
 - Menzilindeki dusmanlari yavaslatir.
-- Etrafinda 76 birim icinde baska kule yoksa izole sayilir.
+- Kendi karesi ve etrafindaki 1 karelik 3x3 alanda baska kule yoksa izole sayilir.
+- Bu alan secili Izolasyon Kulesi uzerinde kare grid overlay olarak gorunur.
 - Izole haldeyken atis yapmak yerine aura gibi calisir.
-- Izole aura yavaslatmasi:
+- Izole aura, dusman alanin icindeyken anlik hiz carpani uygular. Dusman alandan ciktigi anda aura slow'u biter.
+- Izole aura hiz carpani:
 
 ```txt
-Yavaslatma = temel slow + 650 + (kule seviyesi - 1) * 120 ms
+Hiz carpani = max(0.25, 0.48 - (kule seviyesi - 1) * 0.026)
 ```
+
+| Level | Aura hiz carpani |
+|---:|---:|
+| 1 | 0.48x |
+| 5 | 0.376x |
+| 10 | 0.25x |
 
 ### 4. Obsesyon Kulesi
 

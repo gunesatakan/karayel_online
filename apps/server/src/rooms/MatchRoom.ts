@@ -48,6 +48,7 @@ const BUILD_MARGIN = 18;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
+const GAME_SPEED_MULTIPLIER = 0.8;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
@@ -121,6 +122,7 @@ type EnemyModel = {
   reward: number;
   pathDistance: number;
   slowUntil: number;
+  auraSlowMultiplier: number;
   fearUntil: number;
   trackingStackUntil: [number, number, number];
   pathId: number;
@@ -340,7 +342,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private update(deltaTime: number) {
-    const seconds = deltaTime / 1000;
+    const gameDeltaTime = deltaTime * GAME_SPEED_MULTIPLIER;
+    const seconds = gameDeltaTime / 1000;
     const frameStart = performance.now();
     const timings = {
       spawnMs: 0,
@@ -355,19 +358,20 @@ export class MatchRoom extends Room<MatchState> {
     this.perfCounters = this.createPerfCounters();
 
     let sectionStart = performance.now();
-    this.updateSpawning(deltaTime);
+    this.updateSpawning(gameDeltaTime);
     this.refreshServerLinkWaveAgeCache();
     timings.spawnMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
-    this.updateTowers(deltaTime);
+    this.resetAuraSlows();
+    this.updateTowers(gameDeltaTime);
     timings.towersMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
-    this.updateDrones(deltaTime, seconds);
-    this.updateBeams(deltaTime);
-    this.updateDamageEvents(deltaTime);
+    this.updateDrones(gameDeltaTime, seconds);
+    this.updateBeams(gameDeltaTime);
+    this.updateDamageEvents(gameDeltaTime);
     timings.projectilesMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -375,7 +379,7 @@ export class MatchRoom extends Room<MatchState> {
     timings.enemiesMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
-    this.updateSkillCooldowns(deltaTime);
+    this.updateSkillCooldowns(gameDeltaTime);
     timings.cooldownsMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -460,6 +464,7 @@ export class MatchRoom extends Room<MatchState> {
       reward: definition.reward,
       pathDistance: 0,
       slowUntil: 0,
+      auraSlowMultiplier: 1,
       fearUntil: 0,
       trackingStackUntil: [0, 0, 0],
       pathId
@@ -618,7 +623,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance);
       tower.debugSweepLastDamageAt = 0;
       tower.debugOverdriveHeatLastAt = now;
-      tower.debugOverdriveUntil = now + DEBUG_LASER_OVERDRIVE_DURATION_MS;
+      tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
       this.updateDebugLaserSweep(tower);
       return;
     }
@@ -946,7 +951,7 @@ export class MatchRoom extends Room<MatchState> {
 
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
-      const speedMultiplier = isSlowed ? 0.48 : 1;
+      const speedMultiplier = Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier);
       if (isFeared) {
         enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
       } else {
@@ -1152,7 +1157,7 @@ export class MatchRoom extends Room<MatchState> {
       if (typeof message.x !== "number" || typeof message.y !== "number") {
         return false;
       }
-      this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + 1000);
+      this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + scaleGameDuration(1000));
       this.projectileGuidanceX = this.clamp(message.x, 0, GAME_WORLD_WIDTH);
       this.projectileGuidanceY = this.clamp(message.y, 0, GAME_WORLD_HEIGHT);
       return true;
@@ -1162,8 +1167,8 @@ export class MatchRoom extends Room<MatchState> {
       return this.refactorTower(client, message);
     }
 
-    this.silentModeUntil = Math.max(this.silentModeUntil, now + 5000);
-    this.damageHasteUntil = Math.max(this.damageHasteUntil, now + 10000);
+    this.silentModeUntil = Math.max(this.silentModeUntil, now + scaleGameDuration(5000));
+    this.damageHasteUntil = Math.max(this.damageHasteUntil, now + scaleGameDuration(10000));
     return true;
   }
 
@@ -1215,7 +1220,7 @@ export class MatchRoom extends Room<MatchState> {
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 28);
       for (const enemy of this.enemies.values()) {
         const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
-        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + duration);
+        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + scaleGameDuration(duration));
       }
       return;
     }
@@ -1262,7 +1267,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const now = Date.now();
     for (const tower of ownTowers) {
-      tower.offlineUntil = Math.max(tower.offlineUntil, now + 5000);
+      tower.offlineUntil = Math.max(tower.offlineUntil, now + scaleGameDuration(5000));
     }
   }
 
@@ -1393,11 +1398,11 @@ export class MatchRoom extends Room<MatchState> {
     this.addDamageEvent(enemy, result.shieldDamage + hpDamage);
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
-      this.applyTrackingStacks(enemy, now + duration, this.getTrackingStackLimit(sourceTowerLevel));
+      this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
     }
     if (slowMs > 0) {
       const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-      enemy.slowUntil = Math.max(enemy.slowUntil, now + duration);
+      enemy.slowUntil = Math.max(enemy.slowUntil, now + scaleGameDuration(duration));
     }
 
     if (enemy.hp > 0) {
@@ -1507,7 +1512,7 @@ export class MatchRoom extends Room<MatchState> {
   private slowAllEnemies(slowMs: number) {
     for (const enemy of this.enemies.values()) {
       const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + duration);
+      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + scaleGameDuration(duration));
     }
   }
 
@@ -1767,8 +1772,14 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isTowerIsolated(tower: TowerModel) {
+    const towerCell = worldToGrid(tower.x, tower.y);
     for (const other of this.towers.values()) {
-      if (other.id !== tower.id && distanceSq(tower.x, tower.y, other.x, other.y) <= 76 * 76) {
+      if (other.id === tower.id) {
+        continue;
+      }
+
+      const otherCell = worldToGrid(other.x, other.y);
+      if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) {
         return false;
       }
     }
@@ -1778,15 +1789,21 @@ export class MatchRoom extends Room<MatchState> {
 
   private applyIsolationAura(tower: TowerModel) {
     const range = this.getTowerRange(tower);
-    const slowMs = tower.definition.slowMs + 650 + (tower.level - 1) * 120;
-    const now = Date.now();
+    const speedMultiplier = getIsolationAuraSpeedMultiplier(tower.level);
 
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
       if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range) {
-        const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-        enemy.slowUntil = Math.max(enemy.slowUntil, now + duration);
+        const resistance = enemy.statusResistances.slow ?? 0;
+        const resistedMultiplier = 1 - (1 - speedMultiplier) * Math.max(0, 1 - resistance);
+        enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
       }
+    }
+  }
+
+  private resetAuraSlows() {
+    for (const enemy of this.enemies.values()) {
+      enemy.auraSlowMultiplier = 1;
     }
   }
 
@@ -1835,7 +1852,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
         if (tower.level >= 3) {
           const duration = applyStatusResistance(STATUS_EFFECTS.fear.durationMs, target.statusResistances.fear);
-          target.fearUntil = Math.max(target.fearUntil, Date.now() + duration);
+          target.fearUntil = Math.max(target.fearUntil, Date.now() + scaleGameDuration(duration));
         }
       }
       return;
@@ -2025,6 +2042,14 @@ function getWaveEnemyCount(wave: number) {
 
 function getWaveHpMultiplier(wave: number) {
   return ENEMY_HP_WAVE_MULTIPLIER ** Math.max(0, wave - 1);
+}
+
+function getIsolationAuraSpeedMultiplier(level: number) {
+  return Math.max(0.25, 0.48 - (level - 1) * 0.026);
+}
+
+function scaleGameDuration(durationMs: number) {
+  return durationMs / GAME_SPEED_MULTIPLIER;
 }
 
 function degreesToRadians(degrees: number) {
