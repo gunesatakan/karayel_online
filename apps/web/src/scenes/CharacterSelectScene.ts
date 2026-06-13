@@ -343,13 +343,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
     }
     if (tower.id === "warrior-4") {
-      parts.push("Denge: Lv6 yaklasik 427 DPS, Lv10 yaklasik 1000 DPS. Korku: Lv3'ten sonra ayni hedefe 3. vurus hedefi 3sn boyunca path uzerinde geri kacirir.");
+      parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Lv6 yaklasik 427 DPS, Lv10 yaklasik 1000 DPS.");
     }
     if (tower.id === "warrior-5") {
       parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
     }
     if (tower.id === "warrior-6") {
-      parts.push("Denge: Lv8 dahil Lazer ve Obsesyonun belirgin altinda kalir; Lv9'da acilir, Lv10+6dalga+15stack+2chain yaklasik 2114 DPS'e cikar.");
+      parts.push("Denge: Impact/carpma oldugu icin level ile baz saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Aktif stack ritmi ayrica calisir. Lv10+6dalga+15stack+2chain yaklasik 2114 DPS.");
     }
 
     return {
@@ -548,6 +548,10 @@ function getTowerLevelDamage(tower: TowerDefinition, level: number) {
     damage *= getUcubeGrowthDamageMultiplier(level);
   }
 
+  if (tower.hitType === "impact") {
+    damage *= getImpactLevelDamageCompensation(tower, level);
+  }
+
   return damage;
 }
 
@@ -556,8 +560,18 @@ function getTowerLevelInterval(tower: TowerDefinition, level: number) {
     return getDebugLaserFireInterval(level, false);
   }
 
+  if (tower.hitType === "impact") {
+    return tower.fireIntervalMs;
+  }
+
   const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
   return Math.max(80, tower.fireIntervalMs * levelMultiplier);
+}
+
+function getImpactLevelDamageCompensation(tower: TowerDefinition, level: number) {
+  const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
+  const previousInterval = Math.max(80, tower.fireIntervalMs * levelMultiplier);
+  return tower.fireIntervalMs / Math.max(1, previousInterval);
 }
 
 function getDebugLaserDamageMultiplier(level: number) {

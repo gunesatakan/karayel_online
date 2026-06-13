@@ -1666,6 +1666,10 @@ export class MatchRoom extends Room<MatchState> {
       return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * passiveMultiplier;
     }
 
+    if (tower.definition.hitType === "impact") {
+      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    }
+
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
@@ -1702,7 +1706,21 @@ export class MatchRoom extends Room<MatchState> {
       damage *= getUcubeLateDamageMultiplier(tower.level);
     }
 
+    if (tower.definition.hitType === "impact") {
+      damage *= this.getImpactFireRateDamageCompensation(tower);
+    }
+
     return damage;
+  }
+
+  private getImpactFireRateDamageCompensation(tower: TowerModel) {
+    const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
+    const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
+    const previousLevelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
+    const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    return currentInterval / Math.max(1, previousInterval);
   }
 
   private getServerLinkWaveAge(tower: TowerModel) {

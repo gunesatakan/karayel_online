@@ -257,7 +257,7 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 **Rol:** Gec oyun hasari  
 **Sinif:** Hasar  
 **Hasar turu:** Elektrik  
-**Vurus turu:** Mermi
+**Vurus turu:** Carpma
 
 Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kulesidir.
 
@@ -431,22 +431,18 @@ Ozel kule denge carpimlari:
 
 ### Atis hizi artisi
 
-Genel atis araligi seviye ile azalir:
+Genel olarak `projectile/mermi` kulelerin atis araligi seviye ile azalir:
 
 ```txt
 Atis araligi = temelAtisAraligi * (1 - (seviye - 1) * 0.1)
 ```
 
+`impact/carpma` kulelerde level kaynakli saldiri hizi artisi yoktur. Bu kulelerde atis araligi level 1'de neyse level 10'da da ayni kalir; eski DPS egri korunacak sekilde level gucu vurus hasarina tasinir.
+
 Minimum atis araligi:
 
 - Normal kuleler: 80 ms
 - Debug Lazer overdrive: normal lazer araliginin yarisi
-
-Obsesyon, midgame kule kimligini korumak icin genel hiz artisindan daha sert olceklenir:
-
-```txt
-Obsesyon atis araligi = temelAtisAraligi * (1 - (seviye - 1) * 0.17)
-```
 
 ### Menzil artisi
 
@@ -560,16 +556,16 @@ Uzun baglanti bufflari:
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 18.0 | 760 ms | 118 | 23.7 | 20 |
-| 2 | 25.6 | 684 ms | 129 | 37.4 | 57 |
-| 3 | 33.1 | 608 ms | 140 | 54.5 | 103 |
-| 4 | 40.7 | 532 ms | 151 | 76.5 | 162 |
-| 5 | 48.2 | 456 ms | 162 | 105.8 | 203 |
-| 6 | 55.8 | 380 ms | 173 | 146.8 | 243 |
-| 7 | 63.4 | 304 ms | 184 | 208.4 | 284 |
-| 8 | 70.9 | 228 ms | 195 | 311.1 | 324 |
-| 9 | 78.5 | 152 ms | 206 | 516.3 | 365 |
-| 10 | 86.0 | 80 ms | 217 | 1075.5 | - |
+| 1 | 18.0 | 760 ms (0.95 sn) | 118 | 18.9 | 20 |
+| 2 | 31.3 | 760 ms (0.95 sn) | 129 | 33.0 | 57 |
+| 3 | 52.0 | 760 ms (0.95 sn) | 140 | 54.7 | 103 |
+| 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 162 |
+| 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 203 |
+| 6 | 405.5 | 760 ms (0.95 sn) | 173 | 426.8 | 243 |
+| 7 | 666.9 | 760 ms (0.95 sn) | 184 | 702.0 | 284 |
+| 8 | 758.6 | 760 ms (0.95 sn) | 195 | 798.6 | 324 |
+| 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 365 |
+| 10 | 949.8 | 760 ms (0.95 sn) | 217 | 999.8 | - |
 
 Obsesyon stackleri bu tablonun uzerine eklenir:
 
@@ -619,16 +615,16 @@ Overdrive efektif DPS:
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 4.0 | 940 ms | 118 | 3.4 | 39 |
-| 2 | 5.1 | 846 ms | 129 | 4.8 | 109 |
-| 3 | 5.6 | 752 ms | 140 | 6.0 | 198 |
-| 4 | 6.9 | 658 ms | 151 | 8.4 | 311 |
-| 5 | 8.4 | 564 ms | 162 | 12.0 | 388 |
-| 6 | 11.7 | 470 ms | 173 | 19.9 | 466 |
-| 7 | 7.6 | 376 ms | 184 | 16.2 | 543 |
-| 8 | 8.9 | 282 ms | 195 | 25.1 | 621 |
-| 9 | 25.1 | 188 ms | 206 | 106.9 | 699 |
-| 10 | 45.2 | 94 ms | 217 | 384.4 | - |
+| 1 | 4.0 | 940 ms (1.18 sn) | 118 | 3.4 | 39 |
+| 2 | 5.7 | 940 ms (1.18 sn) | 129 | 4.8 | 109 |
+| 3 | 7.0 | 940 ms (1.18 sn) | 140 | 6.0 | 198 |
+| 4 | 9.9 | 940 ms (1.18 sn) | 151 | 8.4 | 311 |
+| 5 | 14.1 | 940 ms (1.18 sn) | 162 | 12.0 | 388 |
+| 6 | 23.4 | 940 ms (1.18 sn) | 173 | 19.9 | 466 |
+| 7 | 19.0 | 940 ms (1.18 sn) | 184 | 16.2 | 543 |
+| 8 | 29.6 | 940 ms (1.18 sn) | 195 | 25.1 | 621 |
+| 9 | 125.6 | 940 ms (1.18 sn) | 206 | 106.9 | 699 |
+| 10 | 451.7 | 940 ms (1.18 sn) | 217 | 384.4 | - |
 
 Ucube aktif stackleri bu tablodaki atis araligini ayrica dusurur:
 

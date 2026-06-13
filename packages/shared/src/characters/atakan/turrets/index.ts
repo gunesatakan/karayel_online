@@ -111,7 +111,7 @@ export const atakanTowers: TowerDefinition[] = [
     description: "Cok pahali ve zayif baslar. Her dalga sonunda otomatik gelisir. Araliksiz calistikca saldiri hizi stack kazanir, bos kalirsa sifirlanir, erken oyunda hararet yapabilir.",
     classType: "damage",
     damageType: "electric",
-    hitType: "projectile",
+    hitType: "impact",
     mechanics: ["wave-growth", "attack-speed-stack", "overheat", "anti-air-ready"],
     cost: 160,
     upgradeCost: 115,
