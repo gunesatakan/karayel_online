@@ -167,25 +167,52 @@ export class GameScene extends Phaser.Scene {
 
   private drawMap() {
     const graphics = this.add.graphics().setDepth(1);
-    graphics.lineStyle(PATH_WIDTH + 18, 0x0b1220, 1);
-    this.strokePath(graphics);
-    graphics.lineStyle(PATH_WIDTH, 0x334155, 1);
-    this.strokePath(graphics);
-    graphics.lineStyle(2, 0x94a3b8, 0.5);
-    this.strokePath(graphics);
+    const cellSize = TOWER_GRID_SIZE;
+    const tileColumns = Math.floor(GAME_WORLD_WIDTH / cellSize);
+    const tileRows = Math.floor((GAME_WORLD_HEIGHT - TOWER_BUILD_TOP) / cellSize);
 
-    this.add.circle(MAP_PATH[0].x, MAP_PATH[0].y, 16, 0x22c55e, 0.9).setDepth(2);
+    graphics.fillStyle(0x07111f, 1);
+    graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT - TOWER_BUILD_TOP);
+
+    for (let row = 0; row < tileRows; row += 1) {
+      for (let col = 0; col < tileColumns; col += 1) {
+        const x = col * cellSize;
+        const y = TOWER_BUILD_TOP + row * cellSize;
+        const centerX = x + cellSize / 2;
+        const centerY = y + cellSize / 2;
+        const isPath = this.isPathTile(centerX, centerY);
+        const isBuildArea = centerY <= TOWER_BUILD_BOTTOM;
+
+        graphics.fillStyle(isPath ? 0x334155 : isBuildArea ? 0x101827 : 0x07111f, 1);
+        graphics.fillRect(x, y, cellSize, cellSize);
+        graphics.lineStyle(1, isPath ? 0x64748b : isBuildArea ? 0x1e293b : 0x0f172a, isPath ? 0.72 : 0.55);
+        graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+      }
+    }
+
+    graphics.lineStyle(2, 0x0f172a, 0.92);
+    graphics.strokeRect(0, TOWER_BUILD_TOP, tileColumns * cellSize, tileRows * cellSize);
+
+    const startTile = this.getMapTileCenter(MAP_PATH[0].x, MAP_PATH[0].y);
+    this.add.rectangle(startTile.x, startTile.y, cellSize, cellSize, 0x22c55e, 0.9)
+      .setStrokeStyle(2, 0xbbf7d0, 0.78)
+      .setDepth(2);
     const end = MAP_PATH[MAP_PATH.length - 1];
-    this.add.circle(end.x, end.y, 16, 0xfb7185, 0.9).setDepth(2);
+    const endTile = this.getMapTileCenter(end.x, end.y);
+    this.add.rectangle(endTile.x, endTile.y, cellSize, cellSize, 0xfb7185, 0.9)
+      .setStrokeStyle(2, 0xfecaca, 0.78)
+      .setDepth(2);
   }
 
-  private strokePath(graphics: Phaser.GameObjects.Graphics) {
-    graphics.beginPath();
-    graphics.moveTo(MAP_PATH[0].x, MAP_PATH[0].y);
-    for (const point of MAP_PATH.slice(1)) {
-      graphics.lineTo(point.x, point.y);
-    }
-    graphics.strokePath();
+  private isPathTile(x: number, y: number) {
+    return this.distanceToPath(x, y) < PATH_WIDTH / 2 + TOWER_GRID_SIZE / 2;
+  }
+
+  private getMapTileCenter(x: number, y: number) {
+    return {
+      x: Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_GRID_SIZE / 2,
+      y: Math.floor((y - TOWER_BUILD_TOP) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_BUILD_TOP + TOWER_GRID_SIZE / 2
+    };
   }
 
   private createPlacementGrid() {
