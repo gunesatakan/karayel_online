@@ -340,7 +340,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     ];
 
     if (tower.id === "warrior-2") {
-      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
+      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms. Uzun link bufflari Sunucu leveliyle buyur: 5T impact +%12-30, 10T her hit max HP +%0.19-1.0.");
     }
     if (tower.id === "warrior-4") {
       parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 425 DPS, Lv7 yaklasik 600 DPS, Lv8 yaklasik 750 DPS, Lv10 yaklasik 1000 DPS.");

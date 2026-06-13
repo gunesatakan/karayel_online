@@ -1734,8 +1734,8 @@ export class MatchRoom extends Room<MatchState> {
       damage *= getUcubeGrowthDamageMultiplier(tower.level);
     }
 
-    if (tower.definition.hitType === "impact" && this.getServerLinkWaveAge(tower) >= 5) {
-      damage *= 1.2;
+    if (tower.definition.hitType === "impact") {
+      damage *= this.getServerLinkedImpactDamageMultiplier(tower);
     }
 
     if (tower.definition.id === "warrior-4") {
@@ -1792,7 +1792,34 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getServerLinkedMaxHealthDamageRatio(tower: TowerModel) {
-    return this.getServerLinkWaveAge(tower) >= 10 ? 0.01 : 0;
+    const serverLevel = this.getStrongestServerLinkLevel(tower, 10);
+    return serverLevel > 0 ? getServerLinkMaxHealthDamageRatio(serverLevel) : 0;
+  }
+
+  private getServerLinkedImpactDamageMultiplier(tower: TowerModel) {
+    const serverLevel = this.getStrongestServerLinkLevel(tower, 5);
+    return serverLevel > 0 ? 1 + getServerLinkImpactDamageBonus(serverLevel) : 1;
+  }
+
+  private getStrongestServerLinkLevel(tower: TowerModel, minimumAge: number) {
+    let bestLevel = 0;
+    for (const serverTower of this.towers.values()) {
+      if (serverTower.definition.id !== "warrior-2" || serverTower.ownerId !== tower.ownerId) {
+        continue;
+      }
+
+      if (!serverTower.linkedTowerIds.includes(tower.id)) {
+        continue;
+      }
+
+      if ((serverTower.linkedTowerWaveAges[tower.id] ?? 0) < minimumAge) {
+        continue;
+      }
+
+      bestLevel = Math.max(bestLevel, serverTower.level);
+    }
+
+    return bestLevel;
   }
 
   private getTowerStatus(tower: TowerModel) {
@@ -2156,6 +2183,16 @@ function getUcubeGrowthDamageMultiplier(level: number) {
 
 function getUcubeWaveBonusLevel(completedWaves: number) {
   return UCUBE_WAVE_BONUS_THRESHOLDS.filter((threshold) => completedWaves >= threshold).length;
+}
+
+function getServerLinkImpactDamageBonus(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 0.1 + clampedLevel * 0.02;
+}
+
+function getServerLinkMaxHealthDamageRatio(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 0.001 + clampedLevel * 0.0009;
 }
 
 function getUcubeLateDamageMultiplier(level: number) {

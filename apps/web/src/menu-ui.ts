@@ -398,7 +398,7 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     `Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
   ];
   if (tower.id === "warrior-2") {
-    parts.push("Uzun link buff: Ayni kuleye 5 dalga bagli kalirsa impact/carpma vuruslu bagli kule +%20 hasar alir. 10 dalga bagli kalirsa bagli kulenin her vurusuna hedef max HP'sinin %1'i kadar ek hasar eklenir.");
+    parts.push("Uzun link buff: Ayni kuleye 5 dalga bagli kalirsa impact/carpma vuruslu bagli kule Sunucu leveline gore +%12-30 hasar alir. 10 dalga bagli kalirsa bagli kulenin her vurusuna Sunucu leveline gore hedef max HP'sinin %0.19-1.0'i kadar ek hasar eklenir.");
   }
   if (tower.id === "warrior-4") {
     parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 425 DPS, Lv7 yaklasik 600 DPS, Lv8 yaklasik 750 DPS, Lv10 yaklasik 1000 DPS.");
