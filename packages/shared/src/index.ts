@@ -47,6 +47,7 @@ export type EnemySnapshot = {
   hp: number;
   maxHp: number;
   pathDistance: number;
+  pathId?: number;
   isTracked?: boolean;
   isFeared?: boolean;
 };
@@ -163,7 +164,9 @@ export {
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
   findPathToNearestNexus,
+  buildRuntimePaths,
   getMapPoints,
+  getPointAlongRuntimePath,
   getTile,
   gridToWorld,
   isWalkableTile,
@@ -174,6 +177,7 @@ export {
   type EditableMapData,
   type GridPoint,
   type MapTileKind,
+  type RuntimePath,
   type WorldPoint
 } from "./map.js";
 

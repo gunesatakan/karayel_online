@@ -7,7 +7,9 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  buildRuntimePaths,
   createDefaultEditableMap,
+  getPointAlongRuntimePath,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -21,6 +23,7 @@ import {
   type BeamSnapshot,
   type GameSnapshot,
   type ProjectileSnapshot,
+  type RuntimePath,
   type TowerDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
@@ -71,6 +74,7 @@ export class GameScene extends Phaser.Scene {
   private selectedCharacter: CharacterDefinition = characters[0];
   private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
   private selectedMapData: EditableMapData = createDefaultEditableMap();
+  private activeRenderPaths: RuntimePath[] = buildRuntimePaths(this.selectedMapData);
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
@@ -138,6 +142,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
+    this.activeRenderPaths = buildRuntimePaths(this.selectedMapData);
   }
 
   create() {
@@ -716,11 +721,12 @@ export class GameScene extends Phaser.Scene {
       const pathDistance = oldEnemy
         ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
         : enemy.pathDistance;
+      const pathPoint = getPointAlongRuntimePath(this.activeRenderPaths[enemy.pathId ?? oldEnemy?.pathId ?? 0], pathDistance);
 
       return {
         ...enemy,
-        x: oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x,
-        y: oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y,
+        x: pathPoint.x,
+        y: pathPoint.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp
       };
@@ -763,6 +769,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.selectedMapData = map;
+    this.activeRenderPaths = buildRuntimePaths(map);
     this.renderedMapKey = mapKey;
     this.drawMap();
   }

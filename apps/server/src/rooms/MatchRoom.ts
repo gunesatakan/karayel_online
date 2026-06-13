@@ -239,6 +239,7 @@ export class MatchRoom extends Room<MatchState> {
   private damageHasteUntil = 0;
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
+  private serverLinkWaveAgeCache = new Map<string, number>();
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
   private latestPerfSnapshot: ServerPerfSnapshot = {
@@ -329,6 +330,7 @@ export class MatchRoom extends Room<MatchState> {
 
     let sectionStart = performance.now();
     this.updateSpawning(deltaTime);
+    this.refreshServerLinkWaveAgeCache();
     timings.spawnMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -1397,6 +1399,7 @@ export class MatchRoom extends Room<MatchState> {
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
         pathDistance: enemy.pathDistance,
+        pathId: enemy.pathId,
         isTracked: enemy.trackingUntil > now,
         isFeared: enemy.fearUntil > now
       })),
@@ -1517,14 +1520,27 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getServerLinkWaveAge(tower: TowerModel) {
-    let maxAge = 0;
+    return this.serverLinkWaveAgeCache.get(tower.id) ?? 0;
+  }
+
+  private refreshServerLinkWaveAgeCache() {
+    this.serverLinkWaveAgeCache.clear();
     for (const serverTower of this.towers.values()) {
-      if (serverTower.definition.id !== "warrior-2" || serverTower.ownerId !== tower.ownerId || !serverTower.linkedTowerIds.includes(tower.id)) {
+      if (serverTower.definition.id !== "warrior-2") {
         continue;
       }
-      maxAge = Math.max(maxAge, serverTower.linkedTowerWaveAges[tower.id] ?? 0);
+
+      for (const linkedTowerId of serverTower.linkedTowerIds) {
+        const linkedTower = this.towers.get(linkedTowerId);
+        if (!linkedTower || linkedTower.ownerId !== serverTower.ownerId) {
+          continue;
+        }
+
+        const previousAge = this.serverLinkWaveAgeCache.get(linkedTowerId) ?? 0;
+        const nextAge = Math.max(previousAge, serverTower.linkedTowerWaveAges[linkedTowerId] ?? 0);
+        this.serverLinkWaveAgeCache.set(linkedTowerId, nextAge);
+      }
     }
-    return maxAge;
   }
 
   private getServerLinkedMaxHealthDamageRatio(tower: TowerModel) {

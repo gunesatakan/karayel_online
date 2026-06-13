@@ -17,6 +17,12 @@ export type WorldPoint = {
   y: number;
 };
 
+export type RuntimePath = {
+  points: WorldPoint[];
+  segments: Array<{ from: WorldPoint; to: WorldPoint; length: number }>;
+  totalLength: number;
+};
+
 const GAME_WIDTH = 390;
 const GAME_HEIGHT = 844;
 const GRID_TOP = 86;
@@ -188,6 +194,61 @@ export function findPathToNearestNexus(map: EditableMapData, spawn: GridPoint): 
 
 export function pathToWorldPoints(path: GridPoint[]): WorldPoint[] {
   return path.map((point) => gridToWorld(point.col, point.row));
+}
+
+export function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
+  const spawns = getMapPoints(map, "spawn");
+  const paths = spawns
+    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn)))
+    .filter((points) => points.length >= 2)
+    .map(createRuntimePath);
+
+  if (paths.length > 0) {
+    return paths;
+  }
+
+  const fallbackMap = createDefaultEditableMap();
+  const fallbackSpawn = getMapPoints(fallbackMap, "spawn")[0];
+  const fallbackPoints = fallbackSpawn ? pathToWorldPoints(findPathToNearestNexus(fallbackMap, fallbackSpawn)) : [];
+  return [createRuntimePath(fallbackPoints)];
+}
+
+export function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: number): WorldPoint {
+  if (!path || path.points.length === 0) {
+    return gridToWorld(0, 0);
+  }
+
+  let remaining = distance;
+  for (const segment of path.segments) {
+    if (remaining <= segment.length) {
+      const ratio = segment.length <= 0 ? 0 : remaining / segment.length;
+      return {
+        x: segment.from.x + (segment.to.x - segment.from.x) * ratio,
+        y: segment.from.y + (segment.to.y - segment.from.y) * ratio
+      };
+    }
+    remaining -= segment.length;
+  }
+
+  return path.points[path.points.length - 1];
+}
+
+function createRuntimePath(points: WorldPoint[]): RuntimePath {
+  const safePoints = points.length >= 2 ? points : [gridToWorld(0, 0), gridToWorld(0, 0)];
+  const segments = safePoints.slice(0, -1).map((point, index) => {
+    const next = safePoints[index + 1];
+    return {
+      from: point,
+      to: next,
+      length: Math.hypot(next.x - point.x, next.y - point.y)
+    };
+  });
+
+  return {
+    points: safePoints,
+    segments,
+    totalLength: segments.reduce((total, segment) => total + segment.length, 0)
+  };
 }
 
 function getNeighbors(map: EditableMapData, point: GridPoint) {
