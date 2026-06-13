@@ -343,7 +343,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
     }
     if (tower.id === "warrior-4") {
-      parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Lv6 yaklasik 427 DPS, Lv10 yaklasik 1000 DPS.");
+      parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 300 DPS, Lv7 yaklasik 426 DPS, Lv8 yaklasik 650 DPS, Lv10 yaklasik 1000 DPS.");
     }
     if (tower.id === "warrior-5") {
       parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
@@ -537,7 +537,7 @@ function getTowerLevelDamage(tower: TowerDefinition, level: number) {
   let damage = tower.damage * (1 + (level - 1) * 0.42);
 
   if (tower.id === "warrior-4") {
-    damage *= 1 + (level - 1) * 0.018;
+    damage *= getObsessionDamageMultiplier(level);
   }
 
   if (tower.id === "warrior-5") {
@@ -572,6 +572,11 @@ function getImpactLevelDamageCompensation(tower: TowerDefinition, level: number)
   const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
   const previousInterval = Math.max(80, tower.fireIntervalMs * levelMultiplier);
   return tower.fireIntervalMs / Math.max(1, previousInterval);
+}
+
+function getObsessionDamageMultiplier(level: number) {
+  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 0.766129, 0.672348, 0.916526, 1.144, 1.162];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
 
 function getDebugLaserDamageMultiplier(level: number) {
