@@ -501,23 +501,23 @@ Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır.
 
 | Lv | Baz hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 0.0 | 980 ms | Global | 0.0 | 24 |
-| 2 | 0.0 | 882 ms | Global | 0.0 | 59 |
-| 3 | 0.0 | 784 ms | Global | 0.0 | 93 |
-| 4 | 0.0 | 686 ms | Global | 0.0 | 128 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 162 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 197 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 231 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 266 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 300 |
+| 1 | 0.0 | 980 ms | Global | 0.0 | 20 |
+| 2 | 0.0 | 882 ms | Global | 0.0 | 30 |
+| 3 | 0.0 | 784 ms | Global | 0.0 | 40 |
+| 4 | 0.0 | 686 ms | Global | 0.0 | 50 |
+| 5 | 0.0 | 588 ms | Global | 0.0 | 60 |
+| 6 | 0.0 | 490 ms | Global | 0.0 | 70 |
+| 7 | 0.0 | 392 ms | Global | 0.0 | 80 |
+| 8 | 0.0 | 294 ms | Global | 0.0 | 90 |
+| 9 | 0.0 | 196 ms | Global | 0.0 | 100 |
 | 10 | 0.0 | 98 ms | Global | 0.0 | - |
 
 Sunucu upgrade maliyeti ozel bir yumusak artis egrisi kullanir:
 
 ```txt
-Maliyet = round(24 + (MevcutLevel - 1) * ((300 - 24) / 8))
-Lv1->2: 24g
-Lv9->10: 300g
+Maliyet = round(20 + (MevcutLevel - 1) * ((100 - 20) / 8))
+Lv1->2: 20g
+Lv9->10: 100g
 ```
 
 Elektrik topu level etkisi:
