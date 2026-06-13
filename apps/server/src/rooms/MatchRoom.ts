@@ -632,6 +632,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number) {
+    const ttlMs = overdrive ? Math.max(180, this.getTowerFireInterval(tower) + 90) : Math.max(260, this.getTowerFireInterval(tower) + 90);
     this.beams.set(`beam-${tower.id}`, {
       id: `beam-${tower.id}`,
       definitionId: tower.definition.id,
@@ -644,7 +645,7 @@ export class MatchRoom extends Room<MatchState> {
       width: overdrive ? 8 : 4,
       color: overdrive ? 0xfbbf24 : 0xfb7185,
       overdrive,
-      ttlMs: overdrive ? 180 : 140
+      ttlMs
     });
   }
 
