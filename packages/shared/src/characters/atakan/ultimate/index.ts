@@ -1,1 +1,1 @@
-export const atakanUltimate = "Tam Otomasyon: Her Atakan kulesinden mini-drone cikar. Nexus cani 30'un altindaysa drone'lar nexus'a gidip 1 can yeniler; degilse en yakin dusmana kamikaze saldirisiyle 200 hasar verir. Sonunda kuleler kisa sure Tukenmis olur.";
+export const atakanUltimate = "Tam Otomasyon: Her Atakan kulesinden gorunur mini-drone cikar. Nexus cani 30'un altindaysa drone'lar nexus'a yavasca gidip 1 can yeniler; degilse en yakin dusmana yavasca ilerleyip kamikaze saldirisiyla 1500 hasar verir. Sonunda kuleler 3 saniye Tukenmis olur.";

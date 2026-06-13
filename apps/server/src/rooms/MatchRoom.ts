@@ -57,6 +57,10 @@ const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
 const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14];
+const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
+const ATAKAN_DRONE_ATTACK_DAMAGE = 1500;
+const ATAKAN_DRONE_ATTACK_SPEED = 180;
+const ATAKAN_DRONE_REPAIR_SPEED = 150;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -913,14 +917,14 @@ export class MatchRoom extends Room<MatchState> {
         const dx = target.x - drone.x;
         const dy = target.y - drone.y;
         const length = Math.max(1, Math.hypot(dx, dy));
-        const speed = 520;
+        const speed = ATAKAN_DRONE_ATTACK_SPEED;
         drone.vx = (dx / length) * speed;
         drone.vy = (dy / length) * speed;
         drone.x += drone.vx * seconds;
         drone.y += drone.vy * seconds;
 
         if (distanceSq(drone.x, drone.y, target.x, target.y) <= 18 * 18) {
-          this.damageEnemy(target, 200, 0, "warrior-ultimate-drone", drone.ownerId);
+          this.damageEnemy(target, ATAKAN_DRONE_ATTACK_DAMAGE, 0, "warrior-ultimate-drone", drone.ownerId);
           this.drones.delete(id);
         }
         if (drone.ttlMs <= 0) {
@@ -932,7 +936,7 @@ export class MatchRoom extends Room<MatchState> {
       const dx = nexusX - drone.x;
       const dy = nexusY - drone.y;
       const length = Math.max(1, Math.hypot(dx, dy));
-      const speed = 360;
+      const speed = ATAKAN_DRONE_REPAIR_SPEED;
       drone.vx = (dx / length) * speed;
       drone.vy = (dy / length) * speed;
       drone.x += drone.vx * seconds;
@@ -1276,7 +1280,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const now = Date.now();
     for (const tower of ownTowers) {
-      tower.offlineUntil = Math.max(tower.offlineUntil, now + scaleGameDuration(5000));
+      tower.offlineUntil = Math.max(tower.offlineUntil, now + ATAKAN_ULTIMATE_EXHAUSTION_MS);
     }
   }
 
@@ -1288,7 +1292,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const targetX = repairNexus ? GAME_WORLD_WIDTH / 2 : target?.x ?? tower.x;
     const targetY = repairNexus ? GAME_WORLD_HEIGHT - 26 : target?.y ?? tower.y;
-    const speed = repairNexus ? 360 : 520;
+    const speed = repairNexus ? ATAKAN_DRONE_REPAIR_SPEED : ATAKAN_DRONE_ATTACK_SPEED;
     const dx = targetX - tower.x;
     const dy = targetY - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -1303,7 +1307,7 @@ export class MatchRoom extends Room<MatchState> {
       y: tower.y,
       vx: (dx / length) * speed,
       vy: (dy / length) * speed,
-      ttlMs: repairNexus ? 3200 : 2400
+      ttlMs: repairNexus ? 6500 : 8500
     });
   }
 

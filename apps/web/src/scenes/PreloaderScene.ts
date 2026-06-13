@@ -41,17 +41,17 @@ export class PreloaderScene extends Phaser.Scene {
 
   private createDroneTexture(key: string, color: number, accent: number) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
-    const size = 22;
+    const size = 30;
     const center = size / 2;
-    graphics.fillStyle(color, 0.2);
-    graphics.fillCircle(center, center, 10);
+    graphics.fillStyle(color, 0.18);
+    graphics.fillCircle(center, center, 14);
     graphics.fillStyle(color, 0.95);
-    graphics.fillTriangle(center, 2, size - 3, center, center, size - 3);
-    graphics.fillTriangle(center, 2, center, size - 3, 3, center);
-    graphics.lineStyle(2, accent, 0.95);
-    graphics.strokeCircle(center, center, 6);
+    graphics.fillTriangle(center, 3, size - 4, center, center, size - 4);
+    graphics.fillTriangle(center, 3, center, size - 4, 4, center);
+    graphics.lineStyle(3, accent, 0.95);
+    graphics.strokeCircle(center, center, 8);
     graphics.fillStyle(accent, 1);
-    graphics.fillCircle(center, center, 2.2);
+    graphics.fillCircle(center, center, 3);
     graphics.generateTexture(key, size, size);
     graphics.destroy();
   }

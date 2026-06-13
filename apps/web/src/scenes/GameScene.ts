@@ -1123,10 +1123,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const [id, sprite] of this.drones) {
       if (!activeIds.has(id)) {
-        this.projectileGroup?.killAndHide(sprite);
-        if (sprite.body) {
-          sprite.body.enable = false;
-        }
+        sprite.destroy();
         this.drones.delete(id);
       }
     }
@@ -1136,12 +1133,8 @@ export class GameScene extends Phaser.Scene {
       const texture = drone.mode === "repair" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
       if (!sprite) {
-        sprite = this.projectileGroup?.get(drone.x, drone.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
-        if (!sprite) {
-          sprite = this.physics.add.sprite(drone.x, drone.y, texture);
-          this.projectileGroup?.add(sprite);
-        }
-        sprite.setActive(true).setVisible(true).setDepth(15);
+        sprite = this.physics.add.sprite(drone.x, drone.y, texture);
+        sprite.setActive(true).setVisible(true).setDepth(42);
         if (sprite.body) {
           sprite.body.enable = false;
         }
@@ -1151,9 +1144,14 @@ export class GameScene extends Phaser.Scene {
       if (sprite.texture.key !== texture) {
         sprite.setTexture(texture);
       }
+      const angle = Phaser.Math.Angle.Between(sprite.x, sprite.y, drone.x, drone.y);
+      if (Number.isFinite(angle)) {
+        sprite.setRotation(angle);
+      }
       sprite.setPosition(drone.x, drone.y);
-      sprite.setScale(drone.mode === "attack" ? 1.15 * pulse : 1.05 * pulse);
-      sprite.setAlpha(drone.mode === "attack" ? 0.96 : 0.9);
+      sprite.setScale(drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
+      sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
+      sprite.setBlendMode(Phaser.BlendModes.ADD);
     }
   }
 

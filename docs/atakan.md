@@ -374,18 +374,18 @@ Karar once nexus canina gore verilir:
 - Drone hasari:
 
 ```txt
-Hasar = 200
+Hasar = 1500
 ```
 
 **Gorsel davranis:**
 
 - Saldiri drone'u kirmizi/altin renkte gorunur.
 - Nexus onarim drone'u cyan/yesil renkte gorunur.
-- Drone'lar hedeflerine dogru hareket eder; anlik hasar veya anlik heal olarak uygulanmaz.
+- Drone'lar hedeflerine dogru yavasca hareket eder; anlik hasar veya anlik heal olarak uygulanmaz.
 
 **Tukenmislik:**
 
-- Ulti bittikten sonra Atakan'in tum kuleleri 5 saniyeligine kapanir.
+- Ulti bittikten sonra Atakan'in tum kuleleri 3 saniyeligine kapanir.
 - Bu durum oyun icinde `Tukenmis` status'u olarak gorunur.
 
 ## Level ve Upgrade Formulleri
@@ -698,7 +698,7 @@ Bu tabloya gore:
 ### Tukenmis
 
 - Kaynak: Tam Otomasyon ultisi.
-- Etki: Atakan kuleleri 5 saniyeligine kapanir.
+- Etki: Atakan kuleleri 3 saniyeligine kapanir.
 
 ## Tasarim Notu
 
