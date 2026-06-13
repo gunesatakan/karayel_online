@@ -130,7 +130,7 @@ Bag suresi, Sunucu ile ayni kule arasinda link kopmadan gecen dalga sayisiyla ol
 | Bagli kalinan dalga | Buff |
 |---:|---|
 | 5 dalga | Bagli kule `impact/carpma` vurus tipindeyse hasari Sunucu leveline gore artar: `+%12` - `+%30`. |
-| 10 dalga | Bagli kulenin her vurusuna Sunucu leveline gore hedefin maksimum caninin `%0.19` - `%1.0` kadari ek hasar olarak eklenir. |
+| 10 dalga | Bagli kulenin her vurusuna Sunucu leveline gore hedefin maksimum caninin `%0.5` - `%1.5` kadari ek hasar olarak eklenir. |
 
 Notlar:
 
@@ -138,7 +138,7 @@ Notlar:
 - Debug Lazer `focus` vurus tipinde oldugu icin 5 dalga buff'indan etkilenmez.
 - 10 dalga buff'i vurus tipinden bagimsizdir. Bu nedenle Debug Lazer gibi sik tick atan kulelerde cok degerlidir; tick araligi dustukce saniye basina uygulanan max HP hasari da artar.
 - 5 dalga impact buff formulu: `bonus = 0.10 + SunucuLevel * 0.02`. Lv1 `+%12`, Lv5 `+%20`, Lv10 `+%30`.
-- 10 dalga max HP buff formulu: `oran = 0.001 + SunucuLevel * 0.0009`. Lv1 `%0.19`, Lv5 `%0.55`, Lv10 `%1.0`.
+- 10 dalga max HP buff formulu: `oran = 0.005 + ((SunucuLevel - 1) / 9) * 0.01`. Lv1 `%0.5`, Lv5 `%0.94`, Lv10 `%1.5`.
 - Link koparsa veya Sunucu baska kuleye baglanirken eski link slot'tan duserse bag sayaci sifirlanir.
 - 5 ve 10 dalga esigine ulasan bagli kulelerin sprite icinde Matrix benzeri kod akisi efekti gorunur. Efekt sprite'in icinde kalir, boylece kulenin tipi ayirt edilmeye devam eder.
 
@@ -540,7 +540,7 @@ Uzun baglanti bufflari:
 | Bagli kalinan dalga | Bagli kuleye etkisi |
 |---:|---|
 | 5 | Bagli kule `impact/carpma` vurus tipindeyse hasar Sunucu leveline gore `x1.12` - `x1.30` olur. |
-| 10 | Bagli kulenin her hasar uygulamasina Sunucu leveline gore hedef max HP'sinin `%0.19` - `%1.0` kadari eklenir. |
+| 10 | Bagli kulenin her hasar uygulamasina Sunucu leveline gore hedef max HP'sinin `%0.5` - `%1.5` kadari eklenir. |
 
 ### Izolasyon Kulesi - Level Statlari
 

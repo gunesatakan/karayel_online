@@ -2192,7 +2192,7 @@ function getServerLinkImpactDamageBonus(level: number) {
 
 function getServerLinkMaxHealthDamageRatio(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 0.001 + clampedLevel * 0.0009;
+  return 0.005 + ((clampedLevel - 1) / 9) * 0.01;
 }
 
 function getUcubeLateDamageMultiplier(level: number) {
