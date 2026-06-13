@@ -46,6 +46,7 @@ export type EnemySnapshot = {
   maxHp: number;
   pathDistance: number;
   isTracked?: boolean;
+  trackingStacks?: number;
   isFeared?: boolean;
 };
 
@@ -170,4 +171,13 @@ export function getTowerUpgradeCost(baseUpgradeCost: number, currentLevel: numbe
           1;
 
   return Math.round(baseUpgradeCost * currentLevel * 1.35 * discount);
+}
+
+export function getTowerRepairCost(level: number, missingHp: number, maxHp: number) {
+  if (missingHp <= 0 || maxHp <= 0) {
+    return 0;
+  }
+
+  const missingRatio = Math.min(1, missingHp / maxHp);
+  return Math.max(6, Math.round((14 + level * level * 4) * missingRatio));
 }

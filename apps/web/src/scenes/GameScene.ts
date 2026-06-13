@@ -9,6 +9,7 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  getTowerRepairCost,
   getTowerUpgradeCost,
   towerCatalog,
   type CharacterDefinition,
@@ -34,6 +35,7 @@ type RenderTower = {
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
+  health: Phaser.GameObjects.Graphics;
   isolation: Phaser.GameObjects.Arc;
   status: Phaser.GameObjects.Text;
   key: string;
@@ -93,6 +95,8 @@ export class GameScene extends Phaser.Scene {
   private ultimateText?: Phaser.GameObjects.Text;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
+  private repairButton?: Phaser.GameObjects.Rectangle;
+  private repairText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
   private skillTexts: Phaser.GameObjects.Text[] = [];
   private pingTimer?: Phaser.Time.TimerEvent;
@@ -454,19 +458,35 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(26);
     this.ultimateButton.on("pointerup", () => this.room?.send("useUltimate", {}));
 
-    this.upgradeButton = this.add.rectangle(282, 672, 156, 34, 0x1e293b, 0.92)
+    this.upgradeButton = this.add.rectangle(246, 672, 82, 34, 0x1e293b, 0.92)
       .setStrokeStyle(1, 0x94a3b8, 0.6)
       .setInteractive({ useHandCursor: true })
       .setDepth(25);
-    this.upgradeText = this.add.text(282, 672, "Kule sec", {
+    this.upgradeText = this.add.text(246, 672, "Kule sec", {
       color: "#cbd5e1",
       fontFamily: "Arial",
-      fontSize: "12px",
+      fontSize: "10px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(26);
     this.upgradeButton.on("pointerup", () => {
       if (this.selectedPlacedTowerId) {
         this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
+      }
+    });
+
+    this.repairButton = this.add.rectangle(336, 672, 82, 34, 0x1e293b, 0.92)
+      .setStrokeStyle(1, 0x34d399, 0.58)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(25);
+    this.repairText = this.add.text(336, 672, "Repair", {
+      color: "#bbf7d0",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(26);
+    this.repairButton.on("pointerup", () => {
+      if (this.selectedPlacedTowerId) {
+        this.room?.send("repairTower", { towerId: this.selectedPlacedTowerId });
       }
     });
   }
@@ -784,8 +804,9 @@ export class GameScene extends Phaser.Scene {
       }
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+      const trackingLabel = enemy.trackingStacks && enemy.trackingStacks > 1 ? `T${enemy.trackingStacks}` : "T";
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
-      mover.marker?.setText(enemy.isFeared ? "KORKU" : "T");
+      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingLabel);
       mover.marker?.setColor(enemy.isFeared ? "#c084fc" : "#fde047");
       mover.marker?.setFontSize(enemy.isFeared ? 9 : 12);
       mover.marker?.setVisible(Boolean(enemy.isFeared || enemy.isTracked));
@@ -804,6 +825,7 @@ export class GameScene extends Phaser.Scene {
         tower.label.destroy();
         tower.level.destroy();
         tower.range.destroy();
+        tower.health.destroy();
         tower.isolation.destroy();
         tower.status.destroy();
         this.towers.delete(id);
@@ -816,6 +838,7 @@ export class GameScene extends Phaser.Scene {
         const halo = this.add.circle(tower.x, tower.y, 19, 0xffffff, 0)
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
+        const health = this.add.graphics().setDepth(12);
         const effect = this.add.graphics().setDepth(11);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7)
@@ -846,7 +869,7 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, halo, base, label, level, range, isolation, status, key: "" };
+        rendered = { effect, halo, base, label, level, range, health, isolation, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -857,7 +880,7 @@ export class GameScene extends Phaser.Scene {
         rendered.halo.setPosition(tower.x, tower.y);
         rendered.halo.setRadius(haloStyle.radius);
         rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
-        rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
+        rendered.halo.setStrokeStyle(1, haloStyle.color, 0.18);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
@@ -866,6 +889,7 @@ export class GameScene extends Phaser.Scene {
         rendered.isolation.setPosition(tower.x, tower.y).setRadius(76);
         rendered.key = key;
       }
+      this.renderTowerHealthRing(rendered.health, tower);
       rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
@@ -875,6 +899,28 @@ export class GameScene extends Phaser.Scene {
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
     }
+  }
+
+  private renderTowerHealthRing(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    graphics.clear();
+    const haloStyle = getTowerLevelHalo(tower.level);
+    const hpRatio = Phaser.Math.Clamp((tower.hp ?? tower.maxHp ?? 1) / Math.max(1, tower.maxHp ?? 1), 0, 1);
+    const radius = haloStyle.radius;
+    const startAngle = Math.PI / 2;
+    const endAngle = startAngle - Math.PI * 2 * hpRatio;
+
+    graphics.lineStyle(haloStyle.strokeWidth + 1, 0x020617, 0.72);
+    graphics.strokeCircle(tower.x, tower.y, radius);
+    graphics.lineStyle(haloStyle.strokeWidth, haloStyle.color, hpRatio <= 0 ? 0.14 : haloStyle.strokeAlpha);
+    if (hpRatio <= 0.01) {
+      graphics.beginPath();
+      graphics.arc(tower.x, tower.y, radius, startAngle - 0.01, startAngle, true);
+      graphics.strokePath();
+      return;
+    }
+    graphics.beginPath();
+    graphics.arc(tower.x, tower.y, radius, startAngle, endAngle, true);
+    graphics.strokePath();
   }
 
   private getTowerTint(tower: TowerSnapshot) {
@@ -1146,12 +1192,54 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
+      } else if (beam.definitionId === "warrior-ultimate-drone" || beam.definitionId === "warrior-ultimate-drone-repair") {
+        this.drawDroneTrail(beam);
+      } else if (beam.definitionId === "enemy-shot") {
+        this.drawEnemyTowerShot(beam);
       } else if (beam.definitionId === "warrior-6") {
         this.drawChainLightning(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
     }
+  }
+
+  private drawDroneTrail(beam: BeamSnapshot) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const repair = beam.definitionId === "warrior-ultimate-drone-repair";
+    const color = repair ? 0x34d399 : 0xfacc15;
+    const core = repair ? 0xd1fae5 : 0x22d3ee;
+    this.beamGraphics.lineStyle(beam.width + 10, color, 0.14);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 3, core, 0.72);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(core, 0.95);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, repair ? 7 : 5);
+    this.beamGraphics.fillStyle(color, 0.45);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 9);
+    if (repair) {
+      this.beamGraphics.lineStyle(2, 0xbbf7d0, 0.95);
+      this.beamGraphics.lineBetween(beam.x2 - 6, beam.y2, beam.x2 + 6, beam.y2);
+      this.beamGraphics.lineBetween(beam.x2, beam.y2 - 6, beam.x2, beam.y2 + 6);
+    }
+  }
+
+  private drawEnemyTowerShot(beam: BeamSnapshot) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    this.beamGraphics.lineStyle(beam.width + 7, 0xef4444, 0.16);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 2, 0xfb7185, 0.64);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(2, 0xffedd5, 0.9);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0xef4444, 0.72);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 6);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {
@@ -1276,12 +1364,17 @@ export class GameScene extends Phaser.Scene {
       this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
+      this.repairText?.setText("Repair");
+      this.repairButton?.setAlpha(0.45);
       return;
     }
 
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? getTowerUpgradeCost(definition.upgradeCost, selectedTower.level) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
+    const missingHp = Math.max(0, (selectedTower.maxHp ?? 0) - (selectedTower.hp ?? 0));
+    const repairCost = getTowerRepairCost(selectedTower.level, missingHp, selectedTower.maxHp ?? 0);
+    const canRepair = selectedTower.ownerId === this.localSessionId && repairCost > 0;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
@@ -1289,6 +1382,8 @@ export class GameScene extends Phaser.Scene {
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${status}${linkHint}`);
     this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
+    this.repairText?.setText(canRepair ? `Repair ${repairCost}g` : "Full HP");
+    this.repairButton?.setAlpha(canRepair ? 1 : 0.45);
   }
 
   private updateSkillButtons(cooldowns: number[]) {

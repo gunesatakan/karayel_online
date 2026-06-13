@@ -11,6 +11,7 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  getTowerRepairCost,
   getTowerUpgradeCost,
   towerCatalog,
   type CharacterId,
@@ -38,6 +39,10 @@ const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
+const TRACKING_MARK_DURATION_MS = 6500;
+const TRACKING_STACK_DAMAGE_BONUS = 0.2;
+const SHOOTER_TOWER_ATTACK_RANGE = 168;
+const SHOOTER_TOWER_ATTACK_COOLDOWN_MS = 1650;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -66,6 +71,10 @@ type PlaceTowerMessage = {
 };
 
 type UpgradeTowerMessage = {
+  towerId?: string;
+};
+
+type RepairTowerMessage = {
   towerId?: string;
 };
 
@@ -98,6 +107,8 @@ type EnemyModel = {
   slowUntil: number;
   fearUntil: number;
   trackingUntil: number;
+  trackingStackUntil: [number, number, number];
+  towerAttackCooldownMs: number;
 };
 
 type TowerModel = {
@@ -255,6 +266,10 @@ export class MatchRoom extends Room<MatchState> {
       this.upgradeTower(client, message);
     });
 
+    this.onMessage("repairTower", (client, message: RepairTowerMessage) => {
+      this.repairTower(client, message);
+    });
+
     this.onMessage("useSkill", (client, message: UseSkillMessage) => {
       this.useSkill(client, message);
     });
@@ -317,6 +332,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateEnemies(seconds);
+    this.updateEnemyTowerAttacks(deltaTime);
     timings.enemiesMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -394,7 +410,9 @@ export class MatchRoom extends Room<MatchState> {
       pathDistance: 0,
       slowUntil: 0,
       fearUntil: 0,
-      trackingUntil: 0
+      trackingUntil: 0,
+      trackingStackUntil: [0, 0, 0],
+      towerAttackCooldownMs: Math.random() * 700
     });
   }
 
@@ -537,7 +555,7 @@ export class MatchRoom extends Room<MatchState> {
   private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
-    const wasTracked = target.trackingUntil > now;
+    const wasTracked = getTrackingStackCount(target, now) > 0;
     const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id, tower.ownerId);
 
     if (wasTracked && killed) {
@@ -568,6 +586,21 @@ export class MatchRoom extends Room<MatchState> {
       color: overdrive ? 0xfbbf24 : 0xfb7185,
       overdrive,
       ttlMs: overdrive ? 180 : 140
+    });
+  }
+
+  private setInstantBeam(id: string, x1: number, y1: number, x2: number, y2: number, definitionId: string, color: number, width: number, ttlMs: number) {
+    this.beams.set(id, {
+      id,
+      definitionId,
+      x1,
+      y1,
+      x2,
+      y2,
+      width,
+      color,
+      overdrive: false,
+      ttlMs
     });
   }
 
@@ -784,16 +817,18 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const projectileOwnerId = this.towers.get(projectile.towerId)?.ownerId ?? "";
+      const sourceTower = this.towers.get(projectile.towerId);
+      const projectileOwnerId = sourceTower?.ownerId ?? "";
+      const sourceTowerLevel = sourceTower?.level ?? 1;
       if (projectile.aoeRadius > 0) {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId, projectileOwnerId);
+            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId, projectileOwnerId, sourceTowerLevel);
           }
         }
       } else {
-        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId, projectileOwnerId);
+        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId, projectileOwnerId, sourceTowerLevel);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -822,6 +857,45 @@ export class MatchRoom extends Room<MatchState> {
       const point = getPointAlongPath(enemy.pathDistance);
       enemy.x = point.x;
       enemy.y = point.y;
+    }
+  }
+
+  private updateEnemyTowerAttacks(deltaTime: number) {
+    for (const enemy of this.enemies.values()) {
+      if (enemy.type !== "shooter") {
+        continue;
+      }
+
+      enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - deltaTime);
+      if (enemy.towerAttackCooldownMs > 0) {
+        continue;
+      }
+
+      const targetTower = Array.from(this.towers.values())
+        .filter((tower) => tower.offlineUntil <= Date.now() && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= SHOOTER_TOWER_ATTACK_RANGE * SHOOTER_TOWER_ATTACK_RANGE)
+        .sort((a, b) => distanceSq(enemy.x, enemy.y, a.x, a.y) - distanceSq(enemy.x, enemy.y, b.x, b.y))[0];
+      if (!targetTower) {
+        enemy.towerAttackCooldownMs = 420;
+        continue;
+      }
+
+      const damage = 7 + this.wave * 1.6;
+      this.damageTower(targetTower, damage);
+      this.setInstantBeam(`enemy-shot-${enemy.id}-${this.nextBeamId++}`, enemy.x, enemy.y, targetTower.x, targetTower.y, "enemy-shot", 0xfb7185, 4, 180);
+      enemy.towerAttackCooldownMs = SHOOTER_TOWER_ATTACK_COOLDOWN_MS;
+    }
+  }
+
+  private damageTower(tower: TowerModel, damage: number) {
+    tower.hp = Math.max(0, tower.hp - damage);
+    if (tower.hp > 0) {
+      return;
+    }
+
+    this.towers.delete(tower.id);
+    for (const other of this.towers.values()) {
+      other.linkedTowerIds = other.linkedTowerIds.filter((towerId) => towerId !== tower.id);
+      other.rangeMemoryEnemyIds = [];
     }
   }
 
@@ -892,6 +966,27 @@ export class MatchRoom extends Room<MatchState> {
     this.teamGold -= cost;
     player.goldSpent += cost;
     tower.level += 1;
+  }
+
+  private repairTower(client: Client, message: RepairTowerMessage) {
+    if (!message.towerId) {
+      return;
+    }
+
+    const player = this.state.players.get(client.sessionId);
+    const tower = this.towers.get(message.towerId);
+    if (!player || !tower || tower.ownerId !== client.sessionId || tower.hp >= tower.maxHp) {
+      return;
+    }
+
+    const cost = getTowerRepairCost(tower.level, tower.maxHp - tower.hp, tower.maxHp);
+    if (cost <= 0 || this.teamGold < cost) {
+      return;
+    }
+
+    this.teamGold -= cost;
+    player.goldSpent += cost;
+    tower.hp = tower.maxHp;
   }
 
   private refactorTower(client: Client, message: UseSkillMessage) {
@@ -1114,11 +1209,12 @@ export class MatchRoom extends Room<MatchState> {
 
       if (criticalTower) {
         criticalTower.hp = Math.max(criticalTower.hp, criticalTower.maxHp * 0.5);
+        this.setInstantBeam(`drone-repair-${tower.id}-${this.nextBeamId++}`, tower.x, tower.y, criticalTower.x, criticalTower.y, "warrior-ultimate-drone-repair", 0x34d399, 5, 520);
         continue;
       }
 
       const target = Array.from(this.enemies.values())
-        .filter((enemy) => enemy.trackingUntil > now && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 220 * 220)
+        .filter((enemy) => getTrackingStackCount(enemy, now) > 0 && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 220 * 220)
         .sort((a, b) => b.pathDistance - a.pathDistance)[0] ??
         Array.from(this.enemies.values())
           .filter((enemy) => distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= 180 * 180)
@@ -1126,6 +1222,7 @@ export class MatchRoom extends Room<MatchState> {
 
       if (target) {
         this.damageEnemy(target, 48 + tower.level * 10, 0, "warrior-ultimate-drone", client.sessionId);
+        this.setInstantBeam(`drone-strike-${tower.id}-${this.nextBeamId++}`, tower.x, tower.y, target.x, target.y, "warrior-ultimate-drone", 0xfacc15, 5, 520);
       }
     }
 
@@ -1193,25 +1290,26 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-5") {
-      return candidates.sort((a, b) => Number(b.trackingUntil > now) - Number(a.trackingUntil > now) || b.pathDistance - a.pathDistance)[0];
+      return candidates.sort((a, b) => getTrackingStackCount(b, now) - getTrackingStackCount(a, now) || b.pathDistance - a.pathDistance)[0];
     }
 
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "") {
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", sourceTowerLevel = 1) {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
 
     this.perfCounters.damageEvents += 1;
     const now = Date.now();
-    const trackingBonus = enemy.trackingUntil > now && sourceDefinitionId !== "warrior-1" ? 1.2 : 1;
+    const trackingStacks = getTrackingStackCount(enemy, now);
+    const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * TRACKING_STACK_DAMAGE_BONUS : 1;
     const effectiveDamage = damage * trackingBonus;
     enemy.hp -= effectiveDamage;
     this.addDamageEvent(enemy, effectiveDamage);
     if (sourceDefinitionId === "warrior-1") {
-      enemy.trackingUntil = Math.max(enemy.trackingUntil, now + 6500);
+      applyTrackingStacks(enemy, sourceTowerLevel, now);
     }
     if (slowMs > 0) {
       enemy.slowUntil = Math.max(enemy.slowUntil, now + slowMs);
@@ -1338,7 +1436,8 @@ export class MatchRoom extends Room<MatchState> {
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
         pathDistance: enemy.pathDistance,
-        isTracked: enemy.trackingUntil > now,
+        isTracked: getTrackingStackCount(enemy, now) > 0,
+        trackingStacks: getTrackingStackCount(enemy, now),
         isFeared: enemy.fearUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
@@ -1754,6 +1853,29 @@ function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel,
 
 function getEnemyCollisionRadius(enemy: EnemyModel) {
   return enemy.type === "brute" ? 19 : enemy.type === "runner" ? 13 : 15;
+}
+
+function getTrackingStackCount(enemy: EnemyModel, now: number) {
+  return enemy.trackingStackUntil.filter((expiresAt) => expiresAt > now).length;
+}
+
+function getMaxTrackingStacksForTowerLevel(level: number) {
+  if (level >= 10) {
+    return 3;
+  }
+  if (level >= 5) {
+    return 2;
+  }
+  return 1;
+}
+
+function applyTrackingStacks(enemy: EnemyModel, towerLevel: number, now: number) {
+  const maxStacks = getMaxTrackingStacksForTowerLevel(towerLevel);
+  const expiresAt = now + TRACKING_MARK_DURATION_MS;
+  for (let index = 0; index < maxStacks; index += 1) {
+    enemy.trackingStackUntil[index] = Math.max(enemy.trackingStackUntil[index], expiresAt);
+  }
+  enemy.trackingUntil = Math.max(...enemy.trackingStackUntil);
 }
 
 function didDebugLaserSweepHitEnemy(

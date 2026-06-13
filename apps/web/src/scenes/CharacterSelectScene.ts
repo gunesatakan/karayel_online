@@ -276,6 +276,9 @@ export class CharacterSelectScene extends Phaser.Scene {
     if (tower.id === "warrior-2") {
       parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
     }
+    if (tower.id === "warrior-1") {
+      parts.push("Takip stack: Lv1-4 en fazla 1 stack, Lv5-9 en fazla 2 stack, Lv10 en fazla 3 stack uygular/yeniler. Her stack Takipci disi hasari +%20 artirir; yetmeyen level ust stack suresini yenileyemez.");
+    }
     if (tower.id === "warrior-4") {
       parts.push("Korku: Lv3'ten sonra ayni hedefe 3. vurus hedefi 3sn boyunca path uzerinde geri kacirir. Ayni hedefe her ek vurus korku suresini tazeler.");
     }
