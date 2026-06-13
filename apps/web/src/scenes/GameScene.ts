@@ -861,7 +861,7 @@ export class GameScene extends Phaser.Scene {
         const halo = this.add.circle(tower.x, tower.y, 19, 0xffffff, 0)
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
-        const effect = this.add.graphics().setDepth(11);
+        const effect = this.add.graphics().setDepth(12.4);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
@@ -896,7 +896,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${texture}`;
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
@@ -915,7 +915,7 @@ export class GameScene extends Phaser.Scene {
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
-      this.renderUcubeWaveEffect(rendered.effect, tower);
+      this.renderTowerSpriteEffects(rendered.effect, tower);
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
@@ -935,8 +935,59 @@ export class GameScene extends Phaser.Scene {
     return 0xffffff;
   }
 
-  private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+  private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderServerLinkCodeEffect(graphics, tower);
+    this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderServerLinkCodeEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    const linkAge = tower.serverLinkWaveAge ?? 0;
+    if (linkAge < 5 || tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return;
+    }
+
+    const isMaxHealthTier = linkAge >= 10;
+    const phase = (Date.now() % 1200) / 1200;
+    const columns = isMaxHealthTier ? 5 : 4;
+    const rows = isMaxHealthTier ? 5 : 4;
+    const primary = isMaxHealthTier ? 0xd8b4fe : 0x22d3ee;
+    const secondary = isMaxHealthTier ? 0xfacc15 : 0x22c55e;
+    const alpha = isMaxHealthTier ? 0.86 : 0.62;
+    const radiusLimit = 15.5;
+
+    graphics.fillStyle(0x020617, isMaxHealthTier ? 0.22 : 0.16);
+    graphics.fillCircle(tower.x, tower.y, radiusLimit);
+
+    for (let column = 0; column < columns; column += 1) {
+      const x = tower.x - 11 + column * (22 / Math.max(1, columns - 1));
+      const columnOffset = (phase * rows + column * 0.7) % rows;
+      for (let row = 0; row < rows; row += 1) {
+        const y = tower.y - 12 + ((row + columnOffset) % rows) * 6;
+        if (Phaser.Math.Distance.Between(tower.x, tower.y, x, y) > radiusLimit) {
+          continue;
+        }
+        const isAccent = (row + column + Math.floor(phase * 10)) % 3 === 0;
+        const color = isAccent ? secondary : primary;
+        const glyphAlpha = alpha * (isAccent ? 1 : 0.7);
+        graphics.fillStyle(color, glyphAlpha);
+        graphics.fillRect(x - 1, y - 2, 2, 4);
+      }
+    }
+
+    graphics.lineStyle(isMaxHealthTier ? 1.6 : 1.1, primary, isMaxHealthTier ? 0.8 : 0.52);
+    graphics.strokeCircle(tower.x, tower.y, radiusLimit);
+    if (isMaxHealthTier) {
+      graphics.lineStyle(1, secondary, 0.7);
+      graphics.beginPath();
+      graphics.moveTo(tower.x - 10, tower.y + 8);
+      graphics.lineTo(tower.x - 2, tower.y + 12);
+      graphics.lineTo(tower.x + 10, tower.y - 8);
+      graphics.strokePath();
+    }
+  }
+
+  private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     const bonusLevel = tower.waveBonusLevel ?? 0;
     if (tower.definitionId !== "warrior-6" || bonusLevel < 4 || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;

@@ -67,6 +67,7 @@ export type TowerSnapshot = {
   maxHp?: number;
   status?: string;
   waveBonusLevel?: number;
+  serverLinkWaveAge?: number;
   linkedTowerIds?: string[];
 };
 

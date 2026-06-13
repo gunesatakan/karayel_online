@@ -385,20 +385,25 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   const level10Interval = Math.max(tower.id === "warrior-5" ? 50 : 80, tower.fireIntervalMs * (1 - (10 - 1) * 0.1));
   const l1Dps = formatDps(tower.damage, tower.fireIntervalMs);
   const l10Dps = formatDps(level10Damage, level10Interval);
+  const parts = [
+    tower.description ?? tower.role,
+    `Sınıf: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vuruş: ${tower.hitType ?? "impact"}`,
+    `Maliyet: ${tower.cost}g | L2/L3/L4: ${getTowerUpgradeCost(tower.upgradeCost, 1)}/${getTowerUpgradeCost(tower.upgradeCost, 2)}/${getTowerUpgradeCost(tower.upgradeCost, 3)}g`,
+    `Menzil: ${tower.id === "warrior-2" ? "Global" : tower.range} | Mermi Hızı: ${tower.projectileSpeed}`,
+    `L1 DPS: ${l1Dps} | L10 Baz DPS: ${l10Dps}`,
+    `Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
+  ];
+  if (tower.id === "warrior-2") {
+    parts.push("Uzun link buff: Ayni kuleye 5 dalga bagli kalirsa impact/carpma vuruslu bagli kule +%20 hasar alir. 10 dalga bagli kalirsa bagli kulenin her vurusuna hedef max HP'sinin %1'i kadar ek hasar eklenir.");
+  }
+
   return {
     key: `tower-${tower.id}`,
     title: tower.name,
     label: tower.role,
     type: "tower",
     color: colorNumberToHex(tower.color),
-    body: [
-      tower.description ?? tower.role,
-      `Sınıf: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vuruş: ${tower.hitType ?? "impact"}`,
-      `Maliyet: ${tower.cost}g | L2/L3/L4: ${getTowerUpgradeCost(tower.upgradeCost, 1)}/${getTowerUpgradeCost(tower.upgradeCost, 2)}/${getTowerUpgradeCost(tower.upgradeCost, 3)}g`,
-      `Menzil: ${tower.id === "warrior-2" ? "Global" : tower.range} | Mermi Hızı: ${tower.projectileSpeed}`,
-      `L1 DPS: ${l1Dps} | L10 Baz DPS: ${l10Dps}`,
-      `Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
-    ].join("\n")
+    body: parts.join("\n")
   };
 }
 

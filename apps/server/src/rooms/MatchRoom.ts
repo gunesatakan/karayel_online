@@ -138,6 +138,7 @@ type TowerModel = {
   linkBurstCooldownMs: number;
   waveBonusLevel: number;
   linkedTowerIds: string[];
+  linkedTowerWaveAges: Record<string, number>;
   rangeMemoryEnemyIds: string[];
 };
 
@@ -158,6 +159,7 @@ type ProjectileModel = {
   vx: number;
   vy: number;
   damage: number;
+  maxHealthDamageRatio: number;
   aoeRadius: number;
   slowMs: number;
 };
@@ -508,6 +510,7 @@ export class MatchRoom extends Room<MatchState> {
       vx: (dx / length) * speed,
       vy: (dy / length) * speed,
       damage: this.getTowerDamage(tower),
+      maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: tower.definition.aoeRadius + (tower.level - 1) * 5,
       slowMs: tower.definition.slowMs + (tower.level - 1) * 90
     });
@@ -531,6 +534,7 @@ export class MatchRoom extends Room<MatchState> {
       vx: (dx / length) * speed,
       vy: (dy / length) * speed,
       damage,
+      maxHealthDamageRatio: 0,
       aoeRadius,
       slowMs
     });
@@ -565,7 +569,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
     const wasTracked = target.trackingUntil > now;
-    const killed = this.damageEnemy(target, baseDamage, tower.definition.slowMs, tower.definition.id, tower.ownerId);
+    const killed = this.damageEnemyFromTower(tower, target, baseDamage, tower.definition.slowMs);
 
     if (wasTracked && killed) {
       tower.debugSweepStartedAt = now;
@@ -657,7 +661,7 @@ export class MatchRoom extends Room<MatchState> {
 
     for (const enemy of Array.from(this.enemies.values())) {
       if (didDebugLaserSweepHitEnemy(tower, enemy, previousAngle, currentAngle, end.x, end.y)) {
-        this.damageEnemy(enemy, damage, 0, tower.definition.id, tower.ownerId);
+        this.damageEnemyFromTower(tower, enemy, damage, 0);
       }
     }
     tower.cooldownMs = 50;
@@ -734,7 +738,13 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      serverTower.linkedTowerIds = serverTower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));
+      serverTower.linkedTowerIds = serverTower.linkedTowerIds.filter((towerId) => {
+        const exists = this.towers.has(towerId);
+        if (!exists) {
+          delete serverTower.linkedTowerWaveAges[towerId];
+        }
+        return exists;
+      });
 
       for (const linkedTowerId of serverTower.linkedTowerIds) {
         const linkedTower = this.towers.get(linkedTowerId);
@@ -816,11 +826,11 @@ export class MatchRoom extends Room<MatchState> {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, projectile.damage * 0.82, projectile.slowMs, projectile.definitionId, projectileOwnerId);
+            this.damageEnemy(enemy, this.getProjectileDamage(projectile, enemy, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId);
           }
         }
       } else {
-        this.damageEnemy(target, projectile.damage, projectile.slowMs, projectile.definitionId, projectileOwnerId);
+        this.damageEnemy(target, this.getProjectileDamage(projectile, target), projectile.slowMs, projectile.definitionId, projectileOwnerId);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -893,6 +903,7 @@ export class MatchRoom extends Room<MatchState> {
       linkBurstCooldownMs: 0,
       waveBonusLevel: 0,
       linkedTowerIds: [],
+      linkedTowerWaveAges: {},
       rangeMemoryEnemyIds: []
     };
 
@@ -962,13 +973,18 @@ export class MatchRoom extends Room<MatchState> {
     const existingIndex = serverTower.linkedTowerIds.indexOf(targetTower.id);
     if (existingIndex >= 0) {
       serverTower.linkedTowerIds.splice(existingIndex, 1);
+      delete serverTower.linkedTowerWaveAges[targetTower.id];
       return;
     }
 
     if (serverTower.linkedTowerIds.length >= 2) {
-      serverTower.linkedTowerIds.shift();
+      const removedTowerId = serverTower.linkedTowerIds.shift();
+      if (removedTowerId) {
+        delete serverTower.linkedTowerWaveAges[removedTowerId];
+      }
     }
     serverTower.linkedTowerIds.push(targetTower.id);
+    serverTower.linkedTowerWaveAges[targetTower.id] = serverTower.linkedTowerWaveAges[targetTower.id] ?? 0;
     targetTower.rangeMemoryEnemyIds = [];
   }
 
@@ -1266,6 +1282,15 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
+  private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
+    const bonusDamage = enemy.maxHp * this.getServerLinkedMaxHealthDamageRatio(tower);
+    return this.damageEnemy(enemy, damage + bonusDamage, slowMs, tower.definition.id, tower.ownerId);
+  }
+
+  private getProjectileDamage(projectile: ProjectileModel, enemy: EnemyModel, damageMultiplier = 1) {
+    return projectile.damage * damageMultiplier + enemy.maxHp * projectile.maxHealthDamageRatio;
+  }
+
   private addKillEvent(ownerId: string, enemyId: string) {
     const now = Date.now();
     const id = `k${this.nextKillEventId++}`;
@@ -1391,6 +1416,7 @@ export class MatchRoom extends Room<MatchState> {
         maxHp: Math.round(tower.maxHp),
         status: this.getTowerStatus(tower),
         waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
+        serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds]
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
@@ -1471,6 +1497,10 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerDamage(tower: TowerModel) {
     let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower);
 
+    if (tower.definition.hitType === "impact" && this.getServerLinkWaveAge(tower) >= 5) {
+      damage *= 1.2;
+    }
+
     if (tower.definition.id === "warrior-4") {
       damage *= 1 + tower.focusStacks * 0.2;
     }
@@ -1486,6 +1516,21 @@ export class MatchRoom extends Room<MatchState> {
     return damage;
   }
 
+  private getServerLinkWaveAge(tower: TowerModel) {
+    let maxAge = 0;
+    for (const serverTower of this.towers.values()) {
+      if (serverTower.definition.id !== "warrior-2" || serverTower.ownerId !== tower.ownerId || !serverTower.linkedTowerIds.includes(tower.id)) {
+        continue;
+      }
+      maxAge = Math.max(maxAge, serverTower.linkedTowerWaveAges[tower.id] ?? 0);
+    }
+    return maxAge;
+  }
+
+  private getServerLinkedMaxHealthDamageRatio(tower: TowerModel) {
+    return this.getServerLinkWaveAge(tower) >= 10 ? 0.01 : 0;
+  }
+
   private getTowerStatus(tower: TowerModel) {
     const now = Date.now();
     if (tower.offlineUntil > now) {
@@ -1498,7 +1543,15 @@ export class MatchRoom extends Room<MatchState> {
       return "Overdrive";
     }
     if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
-      return `Link ${tower.linkedTowerIds.length}/2`;
+      const maxAge = Math.max(...tower.linkedTowerIds.map((towerId) => tower.linkedTowerWaveAges[towerId] ?? 0));
+      return `Link ${tower.linkedTowerIds.length}/2 ${maxAge}T`;
+    }
+    const serverLinkAge = this.getServerLinkWaveAge(tower);
+    if (serverLinkAge >= 10) {
+      return "Sunucu 10T";
+    }
+    if (serverLinkAge >= 5) {
+      return "Sunucu 5T";
     }
     if (tower.characterId === "warrior" && this.getAtakanPassiveMultiplier(tower) > 1) {
       return "Pasif";
@@ -1558,6 +1611,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private advanceWaveGrowth() {
     for (const tower of this.towers.values()) {
+      if (tower.definition.id === "warrior-2") {
+        tower.linkedTowerIds = tower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));
+        for (const linkedTowerId of tower.linkedTowerIds) {
+          tower.linkedTowerWaveAges[linkedTowerId] = (tower.linkedTowerWaveAges[linkedTowerId] ?? 0) + 1;
+        }
+      }
+    }
+
+    for (const tower of this.towers.values()) {
       if (tower.definition.id === "warrior-6") {
         const previousLevel = tower.waveBonusLevel;
         tower.waveBonusLevel = Math.min(6, tower.waveBonusLevel + 1);
@@ -1611,7 +1673,7 @@ export class MatchRoom extends Room<MatchState> {
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, projectile.damage * 0.42, 0, projectile.definitionId, tower.ownerId);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, enemy, 0.42), 0, projectile.definitionId, tower.ownerId);
       }
     }
 
