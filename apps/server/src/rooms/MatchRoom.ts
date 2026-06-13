@@ -2121,7 +2121,7 @@ function getIsolationAuraSpeedMultiplier(level: number) {
 }
 
 function getObsessionDamageMultiplier(level: number) {
-  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 0.766129, 0.672348, 0.916526, 1.144, 1.162];
+  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 0.766129, 0.710227, 0.916526, 1.144, 1.162];
   return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
 

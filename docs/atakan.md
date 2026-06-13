@@ -425,7 +425,7 @@ Ozel kule denge carpimlari:
 
 | Kule | Ek hasar carpani |
 |---|---|
-| Obsesyon | Level bazli denge egrisi: Lv6 `300 DPS`, Lv7 `426 DPS`, Lv8 `650 DPS`, Lv10 `1000 DPS` hedefler |
+| Obsesyon | Level bazli denge egrisi: Lv6 `300 DPS`, Lv7 `450 DPS`, Lv8 `650 DPS`, Lv10 `1000 DPS` hedefler |
 | Debug Lazer | DPS'i koruyan level bazli tick hasari: Lv1 `x1.3333`, Lv5 `x2.432`, Lv10 `x2.604` |
 | Debug Lazer overdrive | DPS'i koruyan level bazli tick hasari: Lv1 `x1.92`, Lv5 `x2.3347`, Lv10 `x2.4998` |
 | Ucube | Level bazli gec acilan egri: Lv1 `x0.45`, Lv3 `x0.34`, Lv6 `x0.42`, Lv8 `x0.25`, Lv10 `x1.05` |
@@ -564,7 +564,7 @@ Uzun baglanti bufflari:
 | 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 210 |
 | 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 262 |
 | 6 | 285.0 | 760 ms (0.95 sn) | 173 | 300.0 | 315 |
-| 7 | 404.7 | 760 ms (0.95 sn) | 184 | 426.0 | 367 |
+| 7 | 427.5 | 760 ms (0.95 sn) | 184 | 450.0 | 367 |
 | 8 | 617.5 | 760 ms (0.95 sn) | 195 | 650.0 | 420 |
 | 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 472 |
 | 10 | 949.8 | 760 ms (0.95 sn) | 217 | 999.8 | - |
@@ -658,7 +658,7 @@ Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek 
 | 4 | 92.1 | 149.6 | 301.6 | 28.8 | 55.3 |
 | 5 | 170.1 | 203.7 | 391.1 | 41.1 | 80.5 |
 | 6 | 300.0 | 255.8 | 491.0 | 68.4 | 136.8 |
-| 7 | 426.0 | 313.3 | 601.5 | 88.7 | 216.5 |
+| 7 | 450.0 | 313.3 | 601.5 | 88.7 | 216.5 |
 | 8 | 650.0 | 376.3 | 722.4 | 129.3 | 349.2 |
 | 9 | 897.8 | 444.7 | 853.9 | 421.9 | 1206.7 |
 | 10 | 999.8 | 518.6 | 995.8 | 704.7 | 2114.0 |
@@ -666,7 +666,7 @@ Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek 
 Bu tabloya gore:
 
 - Debug Lazer early oyunda onde kalir; Lv3'te yaklasik `97 DPS`.
-- Obsesyon midgame'de daha yumusak sivrilir; Lv6'da yaklasik `300 DPS`, Lv7'de `426 DPS`, Lv8'de `650 DPS`, Lv10'da yaklasik `1000 DPS`.
+- Obsesyon midgame'de daha yumusak sivrilir; Lv6'da yaklasik `300 DPS`, Lv7'de `450 DPS`, Lv8'de `650 DPS`, Lv10'da yaklasik `1000 DPS`.
 - Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 6 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
 
 ## Durum Etkileri ve Etiketler
