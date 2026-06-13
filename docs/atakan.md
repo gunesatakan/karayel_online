@@ -593,13 +593,15 @@ Korku etkisi level 3 ve sonrasinda acilir.
 | 1 | 6.7 | 160 ms (0.20 sn) | 134 | 33.3 | 20 |
 | 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 56 |
 | 3 | 17.4 | 144 ms (0.18 sn) | 156 | 96.6 | 102 |
-| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 159 |
-| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 199 |
-| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 239 |
-| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 279 |
-| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 319 |
-| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 359 |
+| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 300 |
+| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 350 |
+| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 400 |
+| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 450 |
+| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 500 |
+| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 900 |
 | 10 | 62.2 | 96 ms (0.12 sn) | 233 | 518.6 | - |
+
+Debug Lazer'in Lv5 ve Lv10 esiklerinde aldigi atis araligi gucu nedeniyle Lv5 sonrasi upgrade maliyeti ozel tablodan gelir. Lv2-Lv4 maliyetleri genel kule formuluyle ayni kalir.
 
 Overdrive sirasinda:
 

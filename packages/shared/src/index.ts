@@ -213,6 +213,9 @@ export function getTowerUpgradeCost(towerCost: number, currentLevel: number, tow
   if (towerId === "warrior-2") {
     return getServerTowerUpgradeCost(currentLevel);
   }
+  if (towerId === "warrior-5") {
+    return getDebugLaserUpgradeCost(towerCost, currentLevel);
+  }
 
   return getDefaultTowerUpgradeCost(towerCost, currentLevel);
 }
@@ -234,4 +237,17 @@ function getServerTowerUpgradeCost(currentLevel: number) {
   }
 
   return Math.round(20 + (currentLevel - 1) * ((200 - 20) / 8));
+}
+
+function getDebugLaserUpgradeCost(towerCost: number, currentLevel: number) {
+  const lateCosts: Record<number, number> = {
+    4: 300,
+    5: 350,
+    6: 400,
+    7: 450,
+    8: 500,
+    9: 900
+  };
+
+  return lateCosts[currentLevel] ?? getDefaultTowerUpgradeCost(towerCost, currentLevel);
 }
