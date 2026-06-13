@@ -102,6 +102,9 @@ export class GameScene extends Phaser.Scene {
   private pingText?: Phaser.GameObjects.Text;
   private perfText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
+  private towerTrayItems: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
+  private selectedTowerStatsText?: Phaser.GameObjects.Text;
+  private selectedTowerStatsHelpText?: Phaser.GameObjects.Text;
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
@@ -271,13 +274,13 @@ export class GameScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true })
         .setDepth(26);
       this.input.setDraggable(button);
-      this.add.text(x + 8, y + 6, tower.name, {
+      const nameText = this.add.text(x + 8, y + 6, tower.name, {
         color: "#f8fafc",
         fontFamily: "Arial",
         fontSize: "10px",
         fontStyle: "bold"
       }).setDepth(27);
-      this.add.text(x + 8, y + 22, `${tower.cost}g`, {
+      const costText = this.add.text(x + 8, y + 22, `${tower.cost}g`, {
         color: "#facc15",
         fontFamily: "Arial",
         fontSize: "10px"
@@ -291,7 +294,22 @@ export class GameScene extends Phaser.Scene {
       button.on("drag", (pointer: Phaser.Input.Pointer) => this.updateTowerDrag(pointer));
       button.on("dragend", (pointer: Phaser.Input.Pointer) => this.finishTowerDrag(pointer));
       this.towerButtons.set(tower.id, button);
+      this.towerTrayItems.push(button, nameText, costText);
     });
+
+    this.selectedTowerStatsText = this.add.text(16, this.trayTop + 30, "", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "13px",
+      fontStyle: "bold",
+      lineSpacing: 7,
+      wordWrap: { width: GAME_WORLD_WIDTH - 32 }
+    }).setDepth(27).setVisible(false);
+    this.selectedTowerStatsHelpText = this.add.text(16, this.trayTop + 106, "Haritaya dokun: dukkan alanina don", {
+      color: "#94a3b8",
+      fontFamily: "Arial",
+      fontSize: "10px"
+    }).setDepth(27).setVisible(false);
   }
 
   private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
@@ -1442,10 +1460,26 @@ export class GameScene extends Phaser.Scene {
     return Array.from(this.towerSnapshots.values()).find((tower) => Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) <= 24 * 24);
   }
 
+  private setTowerTrayShopVisible(visible: boolean) {
+    for (const item of this.towerTrayItems) {
+      item.setVisible(visible);
+      if (item instanceof Phaser.GameObjects.Rectangle) {
+        if (visible) {
+          item.setInteractive({ useHandCursor: true });
+          this.input.setDraggable(item);
+        } else {
+          item.disableInteractive();
+        }
+      }
+    }
+    this.selectedTowerStatsText?.setVisible(!visible);
+    this.selectedTowerStatsHelpText?.setVisible(!visible);
+  }
+
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.linkedTowerIds?.join(",")}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}`
       : `new|${this.selectedTowerDefinition.id}`;
     if (this.lastSelectionKey === selectionKey) {
       return;
@@ -1460,12 +1494,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!selectedTower) {
+      this.setTowerTrayShopVisible(true);
       this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
       return;
     }
 
+    this.setTowerTrayShopVisible(false);
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? getTowerUpgradeCost(definition.cost, selectedTower.level, definition.id) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
@@ -1474,6 +1510,11 @@ export class GameScene extends Phaser.Scene {
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${status}${linkHint}`);
+    this.selectedTowerStatsText?.setText([
+      `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
+      `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+      canUpgrade ? `Sonraki upgrade: ${cost}g` : "Sonraki upgrade: maksimum level"
+    ].join("\n"));
     this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
   }
