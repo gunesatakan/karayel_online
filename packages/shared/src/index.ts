@@ -1,3 +1,5 @@
+import type { EditableMapData } from "./map.js";
+
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
@@ -139,6 +141,7 @@ export type ServerPerfSnapshot = {
 
 export type GameSnapshot = {
   serverTime: number;
+  map?: EditableMapData;
   players: PlayerSnapshot[];
   enemies: EnemySnapshot[];
   towers: TowerSnapshot[];
@@ -153,6 +156,25 @@ export type GameSnapshot = {
 export { characters, towerCatalog } from "./characters/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export { STATUS_EFFECTS } from "./statuses/index.js";
+export {
+  MAP_GRID_COLS,
+  MAP_GRID_ROWS,
+  MAP_STORAGE_KEY,
+  createDefaultEditableMap,
+  findPathToNearestNexus,
+  getMapPoints,
+  getTile,
+  gridToWorld,
+  isWalkableTile,
+  normalizeMapData,
+  pathToWorldPoints,
+  setTile,
+  worldToGrid,
+  type EditableMapData,
+  type GridPoint,
+  type MapTileKind,
+  type WorldPoint
+} from "./map.js";
 
 export const upgradeCosts: Record<UpgradeId, number> = {
   damage: 35,

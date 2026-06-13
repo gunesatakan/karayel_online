@@ -1,15 +1,22 @@
 import type Phaser from "phaser";
 import {
   characters,
+  MAP_STORAGE_KEY,
+  createDefaultEditableMap,
   getTowerUpgradeCost,
+  getTile,
+  normalizeMapData,
+  setTile,
   type CharacterDefinition,
   type CharacterId,
+  type EditableMapData,
+  type MapTileKind,
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
 import { getPlayerName } from "./config";
 
-type ViewName = "home" | "archive" | "detail";
+type ViewName = "home" | "archive" | "detail" | "map";
 type DetailItem = {
   key: string;
   title: string;
@@ -38,10 +45,12 @@ export function setupMenuUi(game: Phaser.Game) {
 
   let selectedCharacter = characters[0];
   let selectedDetail = getDetailItems(selectedCharacter)[0];
+  let selectedMap = loadStoredMap();
+  let selectedMapTool: MapTileKind = "road";
   let phaserReady = false;
 
   const render = (view: ViewName) => {
-    root.innerHTML = renderShell(view, selectedCharacter, selectedDetail);
+    root.innerHTML = renderShell(view, selectedCharacter, selectedDetail, selectedMap, selectedMapTool);
     bindUi(view);
   };
 
@@ -52,7 +61,7 @@ export function setupMenuUi(game: Phaser.Game) {
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");
     game.scene.stop("preloader");
-    game.scene.start("game", { characterId: selectedCharacter.id });
+    game.scene.start("game", { characterId: selectedCharacter.id, mapData: selectedMap });
   };
 
   const bindUi = (view: ViewName) => {
@@ -86,6 +95,50 @@ export function setupMenuUi(game: Phaser.Game) {
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
       button.addEventListener("click", startGame);
     });
+
+    root.querySelectorAll<HTMLElement>("[data-map-tool]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedMapTool = button.dataset.mapTool as MapTileKind;
+        render("map");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-map-cell]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const col = Number(button.dataset.col);
+        const row = Number(button.dataset.row);
+        if (Number.isNaN(col) || Number.isNaN(row)) {
+          return;
+        }
+        const nextMap = normalizeMapData(selectedMap);
+        if (selectedMapTool === "spawn") {
+          replaceTileKind(nextMap, "spawn", "road");
+        }
+        if (selectedMapTool === "nexus") {
+          replaceTileKind(nextMap, "nexus", "road");
+        }
+        setTile(nextMap, col, row, selectedMapTool);
+        selectedMap = nextMap;
+        saveStoredMap(selectedMap);
+        render("map");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-map-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.mapAction;
+        if (action === "reset") {
+          selectedMap = createDefaultEditableMap();
+          saveStoredMap(selectedMap);
+        }
+        if (action === "clear") {
+          selectedMap = createDefaultEditableMap();
+          selectedMap.tiles = selectedMap.tiles.map(() => "tower");
+          saveStoredMap(selectedMap);
+        }
+        render("map");
+      });
+    });
   };
 
   gameRoot.classList.add("game-root--hidden");
@@ -97,7 +150,7 @@ export function setupMenuUi(game: Phaser.Game) {
   render("home");
 }
 
-function renderShell(view: ViewName, selectedCharacter: CharacterDefinition, selectedDetail: DetailItem) {
+function renderShell(view: ViewName, selectedCharacter: CharacterDefinition, selectedDetail: DetailItem, selectedMap = loadStoredMap(), selectedMapTool: MapTileKind = "road") {
   return `
     <main class="menu-shell" data-screen="${view}">
       <div class="menu-backdrop" aria-hidden="true">
@@ -110,6 +163,7 @@ function renderShell(view: ViewName, selectedCharacter: CharacterDefinition, sel
         ${view === "home" ? renderHome(selectedCharacter) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
+        ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool) : ""}
       </section>
     </main>
   `;
@@ -150,6 +204,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
 
       <footer class="home-actions">
         <button class="command command--primary" data-view="archive">Operatör Arşivi</button>
+        <button class="command command--ghost" data-view="map">Harita Tasarla</button>
         <button class="command command--ghost" data-start-game>Başlat</button>
       </footer>
 
@@ -159,6 +214,56 @@ function renderHome(selectedCharacter: CharacterDefinition) {
       </aside>
     </div>
   `;
+}
+
+function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind) {
+  const counts = getMapCounts(map);
+  return `
+    <div class="map-screen">
+      <header class="screen-topbar detail-topbar">
+        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <div>
+          <p class="eyebrow">Map Forge</p>
+          <h1>Harita Tasarla</h1>
+        </div>
+        <button class="command command--small" data-start-game>Başlat</button>
+      </header>
+
+      <section class="map-tools" aria-label="Harita araçları">
+        ${renderTool("road", "Yol", selectedTool)}
+        ${renderTool("tower", "Kule", selectedTool)}
+        ${renderTool("spawn", "Spawn", selectedTool)}
+        ${renderTool("nexus", "Nexus", selectedTool)}
+        ${renderTool("empty", "Boş", selectedTool)}
+      </section>
+
+      <section class="map-editor-card">
+        <div class="map-grid" style="--cols: ${map.cols}; --rows: ${map.rows}">
+          ${map.tiles.map((tile, index) => {
+            const col = index % map.cols;
+            const row = Math.floor(index / map.cols);
+            return `<button class="map-cell map-cell--${tile}" data-map-cell data-col="${col}" data-row="${row}" aria-label="${col},${row} ${tile}"></button>`;
+          }).join("")}
+        </div>
+      </section>
+
+      <section class="map-summary">
+        <span>Spawn <strong>${counts.spawn}</strong></span>
+        <span>Nexus <strong>${counts.nexus}</strong></span>
+        <span>Yol <strong>${counts.road}</strong></span>
+        <span>Kule <strong>${counts.tower}</strong></span>
+      </section>
+
+      <footer class="map-actions">
+        <button class="command command--ghost" data-map-action="reset">Varsayılan</button>
+        <button class="command command--ghost" data-map-action="clear">Temizle</button>
+      </footer>
+    </div>
+  `;
+}
+
+function renderTool(tool: MapTileKind, label: string, selectedTool: MapTileKind) {
+  return `<button class="map-tool map-tool--${tool} ${selectedTool === tool ? "is-active" : ""}" data-map-tool="${tool}">${label}</button>`;
 }
 
 function renderArchive(selectedCharacter: CharacterDefinition) {
@@ -319,6 +424,33 @@ function initials(name: string) {
 
 function colorNumberToHex(color: number) {
   return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+function loadStoredMap() {
+  try {
+    const rawMap = localStorage.getItem(MAP_STORAGE_KEY);
+    return rawMap ? normalizeMapData(JSON.parse(rawMap)) : createDefaultEditableMap();
+  } catch {
+    return createDefaultEditableMap();
+  }
+}
+
+function saveStoredMap(map: EditableMapData) {
+  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(normalizeMapData(map)));
+}
+
+function replaceTileKind(map: EditableMapData, from: MapTileKind, to: MapTileKind) {
+  map.tiles = map.tiles.map((tile) => tile === from ? to : tile);
+}
+
+function getMapCounts(map: EditableMapData) {
+  return {
+    spawn: map.tiles.filter((tile) => tile === "spawn").length,
+    nexus: map.tiles.filter((tile) => tile === "nexus").length,
+    road: map.tiles.filter((tile) => tile === "road").length,
+    tower: map.tiles.filter((tile) => tile === "tower").length,
+    empty: map.tiles.filter((tile) => tile === "empty").length
+  };
 }
 
 function escapeHtml(value: string | number) {

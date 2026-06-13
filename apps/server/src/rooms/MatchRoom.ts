@@ -11,11 +11,20 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  createDefaultEditableMap,
+  findPathToNearestNexus,
+  getMapPoints,
+  getTile,
+  gridToWorld,
+  normalizeMapData,
+  pathToWorldPoints,
+  worldToGrid,
   getTowerUpgradeCost,
   towerCatalog,
   type CharacterId,
   type DamageEventSnapshot,
   type EnemyType,
+  type EditableMapData,
   type BeamSnapshot,
   type GameSnapshot,
   type KillEventSnapshot,
@@ -57,6 +66,7 @@ class MatchState extends Schema {
 type JoinOptions = {
   playerName?: string;
   characterId?: CharacterId;
+  mapData?: EditableMapData;
 };
 
 type PlaceTowerMessage = {
@@ -98,6 +108,7 @@ type EnemyModel = {
   slowUntil: number;
   fearUntil: number;
   trackingUntil: number;
+  pathId: number;
 };
 
 type TowerModel = {
@@ -192,6 +203,12 @@ const pathSegments = MAP_PATH.slice(0, -1).map((point, index) => {
 
 const totalPathLength = pathSegments.reduce((total, segment) => total + segment.length, 0);
 
+type RuntimePath = {
+  points: Array<{ x: number; y: number }>;
+  segments: Array<{ from: { x: number; y: number }; to: { x: number; y: number }; length: number }>;
+  totalLength: number;
+};
+
 export class MatchRoom extends Room<MatchState> {
   maxClients = 7;
   private enemies = new Map<string, EnemyModel>();
@@ -218,6 +235,8 @@ export class MatchRoom extends Room<MatchState> {
   private projectileGuidanceY = GAME_WORLD_HEIGHT / 2;
   private silentModeUntil = 0;
   private damageHasteUntil = 0;
+  private activeMap: EditableMapData = createDefaultEditableMap();
+  private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
   private latestPerfSnapshot: ServerPerfSnapshot = {
@@ -275,6 +294,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   onJoin(client: Client, options: JoinOptions) {
+    if (this.state.players.size === 0) {
+      this.activeMap = normalizeMapData(options.mapData);
+      this.activePaths = buildRuntimePaths(this.activeMap);
+    }
+
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
     player.characterId = this.getCharacterId(options.characterId);
@@ -379,7 +403,9 @@ export class MatchRoom extends Room<MatchState> {
     const waveScale = getWaveHpMultiplier(this.wave);
     const maxHp = Math.round((type === "brute" ? 76 : type === "runner" ? 30 : type === "shooter" ? 42 : 46) * waveScale);
     const speed = (type === "runner" ? 78 : type === "brute" ? 34 : type === "shooter" ? 44 : 50) + this.wave * 2.4;
-    const start = MAP_PATH[0];
+    const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
+    const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
+    const start = path.points[0] ?? gridToWorld(0, 0);
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -394,7 +420,8 @@ export class MatchRoom extends Room<MatchState> {
       pathDistance: 0,
       slowUntil: 0,
       fearUntil: 0,
-      trackingUntil: 0
+      trackingUntil: 0,
+      pathId
     });
   }
 
@@ -813,13 +840,15 @@ export class MatchRoom extends Room<MatchState> {
         enemy.pathDistance += enemy.speed * speedMultiplier * seconds;
       }
 
-      if (enemy.pathDistance >= totalPathLength) {
+      const path = this.activePaths[enemy.pathId] ?? this.activePaths[0];
+      const pathLength = path?.totalLength ?? totalPathLength;
+      if (enemy.pathDistance >= pathLength) {
         this.enemies.delete(id);
         this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
         continue;
       }
 
-      const point = getPointAlongPath(enemy.pathDistance);
+      const point = getPointAlongRuntimePath(path, enemy.pathDistance);
       enemy.x = point.x;
       enemy.y = point.y;
     }
@@ -1140,9 +1169,13 @@ export class MatchRoom extends Room<MatchState> {
       x < BUILD_MARGIN ||
       x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
       y < Math.max(BUILD_MARGIN, TOWER_BUILD_TOP + halfCell) ||
-      y > Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell) ||
-      this.distanceToPath(x, y) < PATH_WIDTH / 2 + 16
+      y > Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell)
     ) {
+      return false;
+    }
+
+    const gridPoint = worldToGrid(x, y);
+    if (getTile(this.activeMap, gridPoint.col, gridPoint.row) !== "tower") {
       return false;
     }
 
@@ -1317,6 +1350,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     return {
       serverTime: now,
+      map: this.activeMap,
       players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,
         name: player.name,
@@ -1677,6 +1711,68 @@ function getPointAlongPath(distance: number) {
 
   const end = MAP_PATH[MAP_PATH.length - 1];
   return { x: end.x, y: end.y };
+}
+
+function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
+  const spawns = getMapPoints(map, "spawn");
+  const paths = spawns
+    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn)))
+    .filter((points) => points.length >= 2)
+    .map((points) => {
+      const segments = points.slice(0, -1).map((point, index) => {
+        const next = points[index + 1];
+        return {
+          from: point,
+          to: next,
+          length: Math.hypot(next.x - point.x, next.y - point.y)
+        };
+      });
+
+      return {
+        points,
+        segments,
+        totalLength: segments.reduce((total, segment) => total + segment.length, 0)
+      };
+    });
+
+  if (paths.length > 0) {
+    return paths;
+  }
+
+  const fallbackPoints = pathToWorldPoints(findPathToNearestNexus(createDefaultEditableMap(), getMapPoints(createDefaultEditableMap(), "spawn")[0]));
+  const fallbackSegments = fallbackPoints.slice(0, -1).map((point, index) => {
+    const next = fallbackPoints[index + 1];
+    return {
+      from: point,
+      to: next,
+      length: Math.hypot(next.x - point.x, next.y - point.y)
+    };
+  });
+  return [{
+    points: fallbackPoints,
+    segments: fallbackSegments,
+    totalLength: fallbackSegments.reduce((total, segment) => total + segment.length, 0)
+  }];
+}
+
+function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: number) {
+  if (!path) {
+    return getPointAlongPath(distance);
+  }
+
+  let remaining = distance;
+  for (const segment of path.segments) {
+    if (remaining <= segment.length) {
+      const ratio = segment.length <= 0 ? 0 : remaining / segment.length;
+      return {
+        x: segment.from.x + (segment.to.x - segment.from.x) * ratio,
+        y: segment.from.y + (segment.to.y - segment.from.y) * ratio
+      };
+    }
+    remaining -= segment.length;
+  }
+
+  return path.points[path.points.length - 1] ?? getPointAlongPath(distance);
 }
 
 function getWaveEnemyCount(wave: number) {

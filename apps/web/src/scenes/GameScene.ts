@@ -4,16 +4,19 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
-  MAP_PATH,
-  PATH_WIDTH,
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  createDefaultEditableMap,
   getTowerUpgradeCost,
+  getTile,
+  normalizeMapData,
+  worldToGrid,
   towerCatalog,
   type CharacterDefinition,
   type CharacterId,
   type DamageEventSnapshot,
+  type EditableMapData,
   type EnemySnapshot,
   type BeamSnapshot,
   type GameSnapshot,
@@ -26,6 +29,7 @@ import { configureHiDpiCamera } from "../rendering";
 
 type GameSceneData = {
   characterId?: CharacterId;
+  mapData?: EditableMapData;
 };
 
 type RenderTower = {
@@ -66,10 +70,13 @@ export class GameScene extends Phaser.Scene {
   private selectedCharacterId: CharacterId = "zeynep";
   private selectedCharacter: CharacterDefinition = characters[0];
   private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
+  private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private mapGraphics?: Phaser.GameObjects.Graphics;
+  private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
@@ -130,6 +137,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacterId = data.characterId ?? "zeynep";
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
+    this.selectedMapData = normalizeMapData(data.mapData);
   }
 
   create() {
@@ -168,7 +176,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawMap() {
-    const graphics = this.add.graphics().setDepth(1);
+    const graphics = this.mapGraphics ?? this.add.graphics().setDepth(1);
+    this.mapGraphics = graphics;
+    graphics.clear();
+    this.renderedMapKey = this.selectedMapData.tiles.join("");
     const cellSize = TOWER_GRID_SIZE;
     const tileColumns = Math.floor(GAME_WORLD_WIDTH / cellSize);
     const tileRows = Math.floor((GAME_WORLD_HEIGHT - TOWER_BUILD_TOP) / cellSize);
@@ -180,12 +191,17 @@ export class GameScene extends Phaser.Scene {
       for (let col = 0; col < tileColumns; col += 1) {
         const x = col * cellSize;
         const y = TOWER_BUILD_TOP + row * cellSize;
-        const centerX = x + cellSize / 2;
-        const centerY = y + cellSize / 2;
-        const isPath = this.isPathTile(centerX, centerY);
-        const isBuildArea = centerY <= TOWER_BUILD_BOTTOM;
+        const tile = getTile(this.selectedMapData, col, row);
+        const isPath = tile === "road" || tile === "spawn" || tile === "nexus";
+        const isBuildArea = tile === "tower";
+        const fill =
+          tile === "spawn" ? 0x14532d :
+            tile === "nexus" ? 0x7f1d1d :
+              isPath ? 0x334155 :
+                isBuildArea ? 0x101827 :
+                  0x07111f;
 
-        graphics.fillStyle(isPath ? 0x334155 : isBuildArea ? 0x101827 : 0x07111f, 1);
+        graphics.fillStyle(fill, 1);
         graphics.fillRect(x, y, cellSize, cellSize);
         graphics.lineStyle(1, isPath ? 0x64748b : isBuildArea ? 0x1e293b : 0x0f172a, isPath ? 0.72 : 0.55);
         graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
@@ -194,27 +210,6 @@ export class GameScene extends Phaser.Scene {
 
     graphics.lineStyle(2, 0x0f172a, 0.92);
     graphics.strokeRect(0, TOWER_BUILD_TOP, tileColumns * cellSize, tileRows * cellSize);
-
-    const startTile = this.getMapTileCenter(MAP_PATH[0].x, MAP_PATH[0].y);
-    this.add.rectangle(startTile.x, startTile.y, cellSize, cellSize, 0x22c55e, 0.9)
-      .setStrokeStyle(2, 0xbbf7d0, 0.78)
-      .setDepth(2);
-    const end = MAP_PATH[MAP_PATH.length - 1];
-    const endTile = this.getMapTileCenter(end.x, end.y);
-    this.add.rectangle(endTile.x, endTile.y, cellSize, cellSize, 0xfb7185, 0.9)
-      .setStrokeStyle(2, 0xfecaca, 0.78)
-      .setDepth(2);
-  }
-
-  private isPathTile(x: number, y: number) {
-    return this.distanceToPath(x, y) < PATH_WIDTH / 2 + TOWER_GRID_SIZE / 2;
-  }
-
-  private getMapTileCenter(x: number, y: number) {
-    return {
-      x: Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_GRID_SIZE / 2,
-      y: Math.floor((y - TOWER_BUILD_TOP) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_BUILD_TOP + TOWER_GRID_SIZE / 2
-    };
   }
 
   private createPlacementGrid() {
@@ -392,9 +387,13 @@ export class GameScene extends Phaser.Scene {
       x < margin ||
       x > GAME_WORLD_WIDTH - margin ||
       y < TOWER_BUILD_TOP + TOWER_GRID_SIZE / 2 ||
-      y > TOWER_BUILD_BOTTOM - TOWER_GRID_SIZE / 2 ||
-      this.distanceToPath(x, y) < PATH_WIDTH / 2 + 16
+      y > TOWER_BUILD_BOTTOM - TOWER_GRID_SIZE / 2
     ) {
+      return false;
+    }
+
+    const gridPoint = worldToGrid(x, y);
+    if (getTile(this.selectedMapData, gridPoint.col, gridPoint.row) !== "tower") {
       return false;
     }
 
@@ -602,7 +601,8 @@ export class GameScene extends Phaser.Scene {
       const client = new Client(gameServerUrl);
       this.room = await client.joinOrCreate("match", {
         playerName: this.selectedCharacter.displayName,
-        characterId: this.selectedCharacterId
+        characterId: this.selectedCharacterId,
+        mapData: this.selectedMapData
       });
       this.localSessionId = this.room.sessionId;
       this.statusText?.setText(`Oda: ${this.room.roomId}`);
@@ -716,12 +716,11 @@ export class GameScene extends Phaser.Scene {
       const pathDistance = oldEnemy
         ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
         : enemy.pathDistance;
-      const point = getPointAlongPath(pathDistance);
 
       return {
         ...enemy,
-        x: point.x,
-        y: point.y,
+        x: oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x,
+        y: oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp
       };
@@ -737,6 +736,7 @@ export class GameScene extends Phaser.Scene {
     const renderStart = performance.now();
     const now = performance.now();
 
+    this.syncMapFromSnapshot(snapshot);
     this.renderTowers(snapshot.towers);
     this.renderBeams(snapshot.beams);
     this.renderProjectiles(snapshot.projectiles);
@@ -749,6 +749,22 @@ export class GameScene extends Phaser.Scene {
     }
     const renderMs = performance.now() - renderStart;
     this.recordClientPerf(snapshot, renderMs);
+  }
+
+  private syncMapFromSnapshot(snapshot: GameSnapshot) {
+    if (!snapshot.map) {
+      return;
+    }
+
+    const map = normalizeMapData(snapshot.map);
+    const mapKey = map.tiles.join("");
+    if (mapKey === this.renderedMapKey) {
+      return;
+    }
+
+    this.selectedMapData = map;
+    this.renderedMapKey = mapKey;
+    this.drawMap();
   }
 
   private renderHud(snapshot: GameSnapshot) {
@@ -1275,16 +1291,6 @@ export class GameScene extends Phaser.Scene {
     return Array.from(this.towerSnapshots.values()).find((tower) => Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) <= 24 * 24);
   }
 
-  private distanceToPath(x: number, y: number) {
-    let closest = Number.POSITIVE_INFINITY;
-    for (let index = 0; index < MAP_PATH.length - 1; index += 1) {
-      const from = MAP_PATH[index];
-      const to = MAP_PATH[index + 1];
-      closest = Math.min(closest, distanceToSegment(x, y, from.x, from.y, to.x, to.y));
-    }
-    return closest;
-  }
-
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
@@ -1424,39 +1430,6 @@ function average(values: number[]) {
 
 function roundClientMetric(value: number) {
   return Math.round(value * 10) / 10;
-}
-
-function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lengthSq = dx * dx + dy * dy;
-  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
-  const x = ax + t * dx;
-  const y = ay + t * dy;
-
-  return Math.hypot(px - x, py - y);
-}
-
-function getPointAlongPath(distance: number) {
-  let remaining = distance;
-
-  for (let index = 0; index < MAP_PATH.length - 1; index += 1) {
-    const from = MAP_PATH[index];
-    const to = MAP_PATH[index + 1];
-    const length = Math.hypot(to.x - from.x, to.y - from.y);
-
-    if (remaining <= length) {
-      const ratio = length === 0 ? 0 : remaining / length;
-      return {
-        x: from.x + (to.x - from.x) * ratio,
-        y: from.y + (to.y - from.y) * ratio
-      };
-    }
-
-    remaining -= length;
-  }
-
-  return MAP_PATH[MAP_PATH.length - 1];
 }
 
 function getTowerLevelHalo(level: number) {
