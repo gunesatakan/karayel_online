@@ -209,23 +209,15 @@ export const upgradeCosts: Record<UpgradeId, number> = {
 
 const TOWER_UPGRADE_COST_RATIO = 0.72;
 
-const SERVER_TOWER_UPGRADE_COSTS: Record<number, number> = {
-  1: 18,
-  2: 50,
-  3: 92,
-  4: 144,
-  5: 450,
-  6: 760,
-  7: 1150,
-  8: 1650,
-  9: 2300
-};
-
 export function getTowerUpgradeCost(towerCost: number, currentLevel: number, towerId?: string) {
   if (towerId === "warrior-2") {
-    return SERVER_TOWER_UPGRADE_COSTS[currentLevel] ?? 0;
+    return getServerTowerUpgradeCost(currentLevel);
   }
 
+  return getDefaultTowerUpgradeCost(towerCost, currentLevel);
+}
+
+function getDefaultTowerUpgradeCost(towerCost: number, currentLevel: number) {
   const targetLevel = currentLevel + 1;
   const discount =
     targetLevel === 2 ? 0.5 :
@@ -234,4 +226,12 @@ export function getTowerUpgradeCost(towerCost: number, currentLevel: number, tow
           1;
 
   return Math.round(towerCost * TOWER_UPGRADE_COST_RATIO * currentLevel * 1.35 * discount * 0.5);
+}
+
+function getServerTowerUpgradeCost(currentLevel: number) {
+  if (currentLevel < 1 || currentLevel >= 10) {
+    return 0;
+  }
+
+  return Math.round(24 + (currentLevel - 1) * ((300 - 24) / 8));
 }
