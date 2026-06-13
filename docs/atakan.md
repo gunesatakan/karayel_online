@@ -105,10 +105,10 @@ Sunucu, kendi basina normal atis yapan bir kule gibi davranmaz. Iki kuleye bagla
 - Bagli kulelerin menziline girip sonra menzilden cikan dusman tespit edilir.
 - Elektrik topunu bagli kule degil, Sunucu gonderir.
 - Sunucu ayni kuleye uzun sure bagli kalirsa o kuleye ek buff verir.
-- Mevcut hasar formulu:
+- Mevcut hasar egrisi:
 
 ```txt
-Hasar = 95 + SunucuSeviyesi * 32 + BagliKuleSeviyesi * 12
+Lv1-10 = 160 / 240 / 330 / 420 / 500 / 1000 / 1500 / 2000 / 3000 / 4000
 ```
 
 - AOE formulu:
@@ -505,35 +505,33 @@ Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır.
 | 2 | 0.0 | 882 ms | Global | 0.0 | 50 |
 | 3 | 0.0 | 784 ms | Global | 0.0 | 92 |
 | 4 | 0.0 | 686 ms | Global | 0.0 | 144 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 180 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 216 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 252 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 288 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 324 |
+| 5 | 0.0 | 588 ms | Global | 0.0 | 450 |
+| 6 | 0.0 | 490 ms | Global | 0.0 | 760 |
+| 7 | 0.0 | 392 ms | Global | 0.0 | 1150 |
+| 8 | 0.0 | 294 ms | Global | 0.0 | 1650 |
+| 9 | 0.0 | 196 ms | Global | 0.0 | 2300 |
 | 10 | 0.0 | 98 ms | Global | 0.0 | - |
 
 Elektrik topu level etkisi:
 
 ```txt
-Hasar = 95 + SunucuSeviyesi * 32 + BagliKuleSeviyesi * 12
+Hasar = Sunucu level tablosundan okunur.
 AOE = 24 + SunucuSeviyesi * 5
 Cooldown = max(520, 1100 - SunucuSeviyesi * 80) ms
 ```
 
-Bagli kule level 1 varsayimiyla:
-
 | Sunucu Lv | Elektrik hasari | AOE | Link cooldown |
 |---:|---:|---:|---:|
-| 1 | 139 | 29 | 1020 ms |
-| 2 | 171 | 34 | 940 ms |
-| 3 | 203 | 39 | 860 ms |
-| 4 | 235 | 44 | 780 ms |
-| 5 | 267 | 49 | 700 ms |
-| 6 | 299 | 54 | 620 ms |
-| 7 | 331 | 59 | 540 ms |
-| 8 | 363 | 64 | 520 ms |
-| 9 | 395 | 69 | 520 ms |
-| 10 | 427 | 74 | 520 ms |
+| 1 | 160 | 29 | 1020 ms |
+| 2 | 240 | 34 | 940 ms |
+| 3 | 330 | 39 | 860 ms |
+| 4 | 420 | 44 | 780 ms |
+| 5 | 500 | 49 | 700 ms |
+| 6 | 1000 | 54 | 620 ms |
+| 7 | 1500 | 59 | 540 ms |
+| 8 | 2000 | 64 | 520 ms |
+| 9 | 3000 | 69 | 520 ms |
+| 10 | 4000 | 74 | 520 ms |
 
 Uzun baglanti bufflari:
 

@@ -333,14 +333,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     const parts = [
       tower.description ?? tower.role,
       `Sinif: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vurus: ${tower.hitType ?? "impact"}`,
-      `Maliyet ${tower.cost}g | Upgrade L2/L3/L4: ${getTowerUpgradeCost(tower.cost, 1)}/${getTowerUpgradeCost(tower.cost, 2)}/${getTowerUpgradeCost(tower.cost, 3)}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
+      `Maliyet ${tower.cost}g | Upgrade L2/L3/L4: ${getTowerUpgradeCost(tower.cost, 1, tower.id)}/${getTowerUpgradeCost(tower.cost, 2, tower.id)}/${getTowerUpgradeCost(tower.cost, 3, tower.id)}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
       `L1: Hasar ${level1Damage.toFixed(1)} / ${Math.round(level1Interval)}ms => DPS ${dps}${tower.aoeRadius > 0 ? ` | AOE r${tower.aoeRadius}` : ""}${tower.slowMs > 0 ? ` | Slow ${tower.slowMs}ms` : ""}`,
       `L10 baz: Hasar ${level10Damage.toFixed(1)} / ${Math.round(level10Interval)}ms => DPS ${level10Dps}`,
       `Mermi hizi ${tower.projectileSpeed} | Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
     ];
 
     if (tower.id === "warrior-2") {
-      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms. Uzun link bufflari Sunucu leveliyle buyur: 5T impact +%12-30, 10T her hit max HP +%0.5-1.5.");
+      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar Lv1-10: 160/240/330/420/500/1000/1500/2000/3000/4000. AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms. Uzun link bufflari Sunucu leveliyle buyur: 5T impact +%12-30, 10T her hit max HP +%0.5-1.5.");
     }
     if (tower.id === "warrior-4") {
       parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 425 DPS, Lv7 yaklasik 600 DPS, Lv8 yaklasik 750 DPS, Lv10 yaklasik 1000 DPS.");

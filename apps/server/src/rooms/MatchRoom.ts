@@ -827,7 +827,7 @@ export class MatchRoom extends Room<MatchState> {
           continue;
         }
 
-        const damage = 95 + serverTower.level * 32 + linkedTower.level * 12;
+        const damage = getServerLinkBurstDamage(serverTower.level);
         this.spawnSpecialProjectile(serverTower, "warrior-2", escapedEnemy, damage, 520, 24 + serverTower.level * 5, 0);
         linkedTower.linkBurstCooldownMs = Math.max(520, 1100 - serverTower.level * 80);
       }
@@ -1045,7 +1045,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const cost = getTowerUpgradeCost(tower.definition.cost, tower.level);
+    const cost = getTowerUpgradeCost(tower.definition.cost, tower.level, tower.definition.id);
     if (this.teamGold < cost) {
       return;
     }
@@ -2188,6 +2188,11 @@ function getUcubeWaveBonusLevel(completedWaves: number) {
 function getServerLinkImpactDamageBonus(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.1 + clampedLevel * 0.02;
+}
+
+function getServerLinkBurstDamage(level: number) {
+  const damageByLevel = [160, 240, 330, 420, 500, 1000, 1500, 2000, 3000, 4000];
+  return damageByLevel[Math.min(Math.max(level, 1), 10) - 1] ?? 160;
 }
 
 function getServerLinkMaxHealthDamageRatio(level: number) {
