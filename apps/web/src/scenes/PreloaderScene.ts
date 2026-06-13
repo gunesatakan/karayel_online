@@ -26,7 +26,7 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("projectile-enemy", 0xfb7185, 4);
     this.createCircleTexture("projectile-tower", 0xf8fafc, 4);
     this.createProceduralTowerTextures();
-    this.scene.start("main-menu");
+    window.dispatchEvent(new CustomEvent("karayel:phaser-ready"));
   }
 
   private createCircleTexture(key: string, color: number, radius: number) {

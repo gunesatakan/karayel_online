@@ -1,13 +1,12 @@
 import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { PreloaderScene } from "./scenes/PreloaderScene";
-import { MainMenuScene } from "./scenes/MainMenuScene";
-import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
+import { setupMenuUi } from "./menu-ui";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./rendering";
 import "./style.css";
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   width: CANVAS_WIDTH,
@@ -18,7 +17,7 @@ new Phaser.Game({
     pixelArt: false,
     roundPixels: false
   },
-  scene: [BootScene, PreloaderScene, MainMenuScene, CharacterSelectScene, GameScene],
+  scene: [BootScene, PreloaderScene, GameScene],
   physics: {
     default: "arcade",
     arcade: {
@@ -34,6 +33,8 @@ new Phaser.Game({
   }
 });
 
+setupMenuUi(game);
+
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js");
@@ -47,7 +48,7 @@ function requestGameFullscreen() {
     return;
   }
 
-  const target = document.querySelector<HTMLElement>("#game") ?? document.documentElement;
+  const target = document.documentElement;
 
   hasRequestedFullscreen = true;
   void target.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {
