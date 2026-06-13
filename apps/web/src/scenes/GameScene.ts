@@ -6,6 +6,9 @@ import {
   GAME_WORLD_WIDTH,
   MAP_PATH,
   PATH_WIDTH,
+  TOWER_BUILD_BOTTOM,
+  TOWER_BUILD_TOP,
+  TOWER_GRID_SIZE,
   getTowerUpgradeCost,
   towerCatalog,
   type CharacterDefinition,
@@ -31,6 +34,7 @@ type RenderTower = {
   label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
+  isolation: Phaser.GameObjects.Arc;
   status: Phaser.GameObjects.Text;
   key: string;
 };
@@ -69,6 +73,8 @@ export class GameScene extends Phaser.Scene {
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
+  private placementGrid?: Phaser.GameObjects.Graphics;
+  private placementGhost?: Phaser.GameObjects.Image;
   private seenDamageEventIds: string[] = [];
   private seenDamageEventSet = new Set<string>();
   private seenKillEventIds: string[] = [];
@@ -94,6 +100,7 @@ export class GameScene extends Phaser.Scene {
   private renderMsSamples: number[] = [];
   private inboundKbSamples: number[] = [];
   private snapshotCount = 0;
+  private currentTeamGold = 0;
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
@@ -106,6 +113,8 @@ export class GameScene extends Phaser.Scene {
   private snapshotBuffer: BufferedSnapshot[] = [];
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
+  private draggedTowerDefinition?: TowerDefinition;
+  private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
   private readonly killStreakWindowMs = 5000;
   private readonly killStreakThreshold = 10;
@@ -126,6 +135,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#0f172a");
     this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x101827);
     this.drawMap();
+    this.createPlacementGrid();
     this.createHeader();
     this.createTowerTray();
     this.createActionButtons();
@@ -141,6 +151,8 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
+      this.placementGrid?.destroy();
+      this.placementGhost?.destroy();
       this.rampageContainer?.destroy(true);
       this.backgroundMusic?.pause();
     });
@@ -174,6 +186,10 @@ export class GameScene extends Phaser.Scene {
       graphics.lineTo(point.x, point.y);
     }
     graphics.strokePath();
+  }
+
+  private createPlacementGrid() {
+    this.placementGrid = this.add.graphics().setDepth(24).setVisible(false);
   }
 
   private createHeader() {
@@ -215,7 +231,7 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x334155, 0.9)
       .setDepth(25);
 
-    this.hintText = this.add.text(14, this.trayTop + 8, `${this.selectedCharacter.displayName}: kule sec, yola degmeyen yere dokun`, {
+    this.hintText = this.add.text(14, this.trayTop + 8, `${this.selectedCharacter.displayName}: kuleyi haritaya surukle`, {
       color: "#cbd5e1",
       fontFamily: "Arial",
       fontSize: "11px"
@@ -231,6 +247,7 @@ export class GameScene extends Phaser.Scene {
         .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
         .setInteractive({ useHandCursor: true })
         .setDepth(26);
+      this.input.setDraggable(button);
       this.add.text(x + 8, y + 6, tower.name, {
         color: "#f8fafc",
         fontFamily: "Arial",
@@ -242,13 +259,126 @@ export class GameScene extends Phaser.Scene {
         fontFamily: "Arial",
         fontSize: "10px"
       }).setDepth(27);
-      button.on("pointerup", () => {
+      button.on("pointerdown", () => {
         this.selectedTowerDefinition = tower;
         this.selectedPlacedTowerId = undefined;
         this.updateSelectionUi();
       });
+      button.on("dragstart", (pointer: Phaser.Input.Pointer) => this.startTowerDrag(tower, pointer));
+      button.on("drag", (pointer: Phaser.Input.Pointer) => this.updateTowerDrag(pointer));
+      button.on("dragend", (pointer: Phaser.Input.Pointer) => this.finishTowerDrag(pointer));
       this.towerButtons.set(tower.id, button);
     });
+  }
+
+  private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
+    this.draggedTowerDefinition = tower;
+    this.selectedTowerDefinition = tower;
+    this.selectedPlacedTowerId = undefined;
+    this.placementGrid?.setVisible(true);
+    this.placementGhost?.destroy();
+    this.placementGhost = this.add.image(pointer.worldX, pointer.worldY, `tower-${tower.id}`)
+      .setDisplaySize(38, 38)
+      .setAlpha(0.78)
+      .setDepth(28);
+    this.updateTowerDrag(pointer);
+    this.updateSelectionUi();
+  }
+
+  private updateTowerDrag(pointer: Phaser.Input.Pointer) {
+    if (!this.draggedTowerDefinition) {
+      return;
+    }
+
+    const cell = this.snapToTowerGrid(pointer.worldX, pointer.worldY);
+    const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
+    this.placementGhost?.setPosition(cell.x, cell.y).setTint(canPlace ? 0x86efac : 0xf87171);
+    this.drawPlacementGrid(cell.x, cell.y, canPlace);
+  }
+
+  private finishTowerDrag(pointer: Phaser.Input.Pointer) {
+    const tower = this.draggedTowerDefinition;
+    if (!tower) {
+      return;
+    }
+
+    const cell = this.snapToTowerGrid(pointer.worldX, pointer.worldY);
+    const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
+    if (this.room && canPlace) {
+      this.room.send("placeTower", {
+        definitionId: tower.id,
+        x: cell.x,
+        y: cell.y
+      });
+      this.hintText?.setText(`${tower.name} yerlestirme istegi gonderildi`);
+    } else {
+      this.hintText?.setText("Bu kareye kule yerlestirilemez");
+    }
+
+    this.draggedTowerDefinition = undefined;
+    this.ignoreMapPointerUntil = performance.now() + 180;
+    this.placementGrid?.clear().setVisible(false);
+    this.placementGhost?.destroy();
+    this.placementGhost = undefined;
+    this.updateSelectionUi();
+  }
+
+  private drawPlacementGrid(highlightX: number, highlightY: number, canPlace: boolean) {
+    const grid = this.placementGrid;
+    if (!grid) {
+      return;
+    }
+
+    grid.clear();
+    grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.28);
+    grid.fillRect(highlightX - TOWER_GRID_SIZE / 2, highlightY - TOWER_GRID_SIZE / 2, TOWER_GRID_SIZE, TOWER_GRID_SIZE);
+    grid.lineStyle(1, canPlace ? 0x86efac : 0xfca5a5, 0.92);
+    grid.strokeRect(highlightX - TOWER_GRID_SIZE / 2, highlightY - TOWER_GRID_SIZE / 2, TOWER_GRID_SIZE, TOWER_GRID_SIZE);
+
+    grid.lineStyle(1, 0xe2e8f0, 0.16);
+    for (let x = 0; x <= GAME_WORLD_WIDTH; x += TOWER_GRID_SIZE) {
+      grid.lineBetween(x, TOWER_BUILD_TOP, x, TOWER_BUILD_BOTTOM);
+    }
+    for (let y = TOWER_BUILD_TOP; y <= TOWER_BUILD_BOTTOM; y += TOWER_GRID_SIZE) {
+      grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
+    }
+  }
+
+  private snapToTowerGrid(x: number, y: number) {
+    const halfCell = TOWER_GRID_SIZE / 2;
+    const margin = halfCell + 1;
+    return {
+      x: Phaser.Math.Clamp(Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + halfCell, margin, GAME_WORLD_WIDTH - margin),
+      y: Phaser.Math.Clamp(Math.floor((y - TOWER_BUILD_TOP) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_BUILD_TOP + halfCell, TOWER_BUILD_TOP + halfCell, TOWER_BUILD_BOTTOM - halfCell)
+    };
+  }
+
+  private canPlaceTowerPreview(x: number, y: number, ignoreTowerId = "") {
+    if (this.draggedTowerDefinition && this.currentTeamGold < this.draggedTowerDefinition.cost) {
+      return false;
+    }
+
+    const margin = TOWER_GRID_SIZE / 2 + 1;
+    if (
+      x < margin ||
+      x > GAME_WORLD_WIDTH - margin ||
+      y < TOWER_BUILD_TOP + TOWER_GRID_SIZE / 2 ||
+      y > TOWER_BUILD_BOTTOM - TOWER_GRID_SIZE / 2 ||
+      this.distanceToPath(x, y) < PATH_WIDTH / 2 + 16
+    ) {
+      return false;
+    }
+
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.id === ignoreTowerId) {
+        continue;
+      }
+      if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < TOWER_GRID_SIZE * TOWER_GRID_SIZE) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private createKillStreakAudio() {
@@ -342,6 +472,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (this.draggedTowerDefinition || performance.now() < this.ignoreMapPointerUntil) {
+      return;
+    }
     if (!this.room || pointer.worldY >= this.controlTop || pointer.worldY <= 84) {
       return;
     }
@@ -377,11 +510,6 @@ export class GameScene extends Phaser.Scene {
 
     this.selectedPlacedTowerId = undefined;
     this.updateSelectionUi();
-    this.room.send("placeTower", {
-      definitionId: this.selectedTowerDefinition.id,
-      x: pointer.worldX,
-      y: pointer.worldY
-    });
   }
 
   private handleSkillButton(index: number) {
@@ -597,6 +725,7 @@ export class GameScene extends Phaser.Scene {
   private renderHud(snapshot: GameSnapshot) {
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
     const charge = player?.ultimateCharge ?? 0;
+    this.currentTeamGold = snapshot.team.gold;
 
     const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}`;
     if (this.lastHudKey !== hudKey) {
@@ -675,6 +804,7 @@ export class GameScene extends Phaser.Scene {
         tower.label.destroy();
         tower.level.destroy();
         tower.range.destroy();
+        tower.isolation.destroy();
         tower.status.destroy();
         this.towers.delete(id);
       }
@@ -691,6 +821,10 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
           .setDepth(5);
+        const isolation = this.add.circle(tower.x, tower.y, 76, 0xf97316, 0.08)
+          .setStrokeStyle(2, 0xf97316, 0.82)
+          .setVisible(false)
+          .setDepth(6);
         const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
           .setDisplaySize(38, 38)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
@@ -712,7 +846,7 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, halo, base, label, level, range, status, key: "" };
+        rendered = { effect, halo, base, label, level, range, isolation, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -729,6 +863,7 @@ export class GameScene extends Phaser.Scene {
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
         rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
+        rendered.isolation.setPosition(tower.x, tower.y).setRadius(76);
         rendered.key = key;
       }
       rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
@@ -738,6 +873,7 @@ export class GameScene extends Phaser.Scene {
       this.renderUcubeWaveEffect(rendered.effect, tower);
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
+      rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
     }
   }
 
@@ -1110,6 +1246,16 @@ export class GameScene extends Phaser.Scene {
     return Array.from(this.towerSnapshots.values()).find((tower) => Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) <= 24 * 24);
   }
 
+  private distanceToPath(x: number, y: number) {
+    let closest = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < MAP_PATH.length - 1; index += 1) {
+      const from = MAP_PATH[index];
+      const to = MAP_PATH[index + 1];
+      closest = Math.min(closest, distanceToSegment(x, y, from.x, from.y, to.x, to.y));
+    }
+    return closest;
+  }
+
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
@@ -1127,7 +1273,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!selectedTower) {
-      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | yola degmeyen yere dokun`);
+      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
       return;
@@ -1249,6 +1395,17 @@ function average(values: number[]) {
 
 function roundClientMetric(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq));
+  const x = ax + t * dx;
+  const y = ay + t * dy;
+
+  return Math.hypot(px - x, py - y);
 }
 
 function getPointAlongPath(distance: number) {

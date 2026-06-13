@@ -8,6 +8,9 @@ import {
   MAP_PATH,
   PATH_WIDTH,
   STATUS_EFFECTS,
+  TOWER_BUILD_BOTTOM,
+  TOWER_BUILD_TOP,
+  TOWER_GRID_SIZE,
   getTowerUpgradeCost,
   towerCatalog,
   type CharacterId,
@@ -829,7 +832,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
-    if (!definition || this.teamGold < definition.cost || !this.canPlaceTower(message.x, message.y)) {
+    const placement = this.snapToTowerGrid(message.x, message.y);
+    if (!definition || this.teamGold < definition.cost || !this.canPlaceTower(placement.x, placement.y)) {
       return;
     }
 
@@ -839,8 +843,8 @@ export class MatchRoom extends Room<MatchState> {
       ownerName: player.name,
       characterId: player.characterId,
       definition,
-      x: this.clamp(message.x, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
-      y: this.clamp(message.y, BUILD_MARGIN, GAME_WORLD_HEIGHT - BUILD_MARGIN),
+      x: placement.x,
+      y: placement.y,
       hp: 100,
       maxHp: 100,
       level: 1,
@@ -896,8 +900,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const tower = this.towers.get(message.towerId);
-    const x = this.clamp(message.x, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN);
-    const y = this.clamp(message.y, BUILD_MARGIN, GAME_WORLD_HEIGHT - BUILD_MARGIN);
+    const { x, y } = this.snapToTowerGrid(message.x, message.y);
     if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.id)) {
       return false;
     }
@@ -1132,11 +1135,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
+    const halfCell = TOWER_GRID_SIZE / 2;
     if (
       x < BUILD_MARGIN ||
       x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
-      y < BUILD_MARGIN ||
-      y > GAME_WORLD_HEIGHT - BUILD_MARGIN ||
+      y < Math.max(BUILD_MARGIN, TOWER_BUILD_TOP + halfCell) ||
+      y > Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell) ||
       this.distanceToPath(x, y) < PATH_WIDTH / 2 + 16
     ) {
       return false;
@@ -1152,6 +1156,16 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return true;
+  }
+
+  private snapToTowerGrid(x: number, y: number) {
+    const halfCell = TOWER_GRID_SIZE / 2;
+    const top = Math.max(BUILD_MARGIN, TOWER_BUILD_TOP);
+    const bottom = Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell);
+    return {
+      x: this.clamp(Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + halfCell, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
+      y: this.clamp(Math.floor((y - top) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + top + halfCell, top + halfCell, bottom)
+    };
   }
 
   private findTowerTarget(tower: TowerModel) {

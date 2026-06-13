@@ -9,6 +9,9 @@ export const BATTLE_TOP = 86;
 export const SHOP_TOP = 650;
 export const SHOP_HEIGHT = GAME_WORLD_HEIGHT - SHOP_TOP;
 export const PATH_WIDTH = 54;
+export const TOWER_GRID_SIZE = 34;
+export const TOWER_BUILD_TOP = BATTLE_TOP;
+export const TOWER_BUILD_BOTTOM = 606;
 
 export const MAP_PATH = [
   { x: 34, y: 104 },
