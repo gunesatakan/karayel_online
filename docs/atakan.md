@@ -188,7 +188,7 @@ Obsesyon Kulesi ayni hedefe odaklandikca guclenir. Tank dusmanlara oncelik verir
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 82 altin |
+| Maliyet | 108 altin |
 | Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 118 |
 | Hasar | 18 |
@@ -220,7 +220,7 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 108 altin |
+| Maliyet | 82 altin |
 | Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 134 |
 | Hasar | 5 |
@@ -558,15 +558,15 @@ Uzun baglanti bufflari:
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 18.0 | 760 ms (0.95 sn) | 118 | 18.9 | 20 |
-| 2 | 31.3 | 760 ms (0.95 sn) | 129 | 33.0 | 56 |
-| 3 | 52.0 | 760 ms (0.95 sn) | 140 | 54.7 | 102 |
-| 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 159 |
-| 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 199 |
-| 6 | 405.5 | 760 ms (0.95 sn) | 173 | 426.8 | 239 |
-| 7 | 666.9 | 760 ms (0.95 sn) | 184 | 702.0 | 279 |
-| 8 | 758.6 | 760 ms (0.95 sn) | 195 | 798.6 | 319 |
-| 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 359 |
+| 1 | 18.0 | 760 ms (0.95 sn) | 118 | 18.9 | 26 |
+| 2 | 31.3 | 760 ms (0.95 sn) | 129 | 33.0 | 73 |
+| 3 | 52.0 | 760 ms (0.95 sn) | 140 | 54.7 | 134 |
+| 4 | 87.5 | 760 ms (0.95 sn) | 151 | 92.1 | 210 |
+| 5 | 161.6 | 760 ms (0.95 sn) | 162 | 170.1 | 262 |
+| 6 | 405.5 | 760 ms (0.95 sn) | 173 | 426.8 | 315 |
+| 7 | 666.9 | 760 ms (0.95 sn) | 184 | 702.0 | 367 |
+| 8 | 758.6 | 760 ms (0.95 sn) | 195 | 798.6 | 420 |
+| 9 | 852.9 | 760 ms (0.95 sn) | 206 | 897.8 | 472 |
 | 10 | 949.8 | 760 ms (0.95 sn) | 217 | 999.8 | - |
 
 Obsesyon stackleri bu tablonun uzerine eklenir:
@@ -581,15 +581,15 @@ Korku etkisi level 3 ve sonrasinda acilir.
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 6.7 | 160 ms (0.20 sn) | 134 | 33.3 | 26 |
-| 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 73 |
-| 3 | 17.4 | 144 ms (0.18 sn) | 156 | 96.6 | 134 |
-| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 210 |
-| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 262 |
-| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 315 |
-| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 367 |
-| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 420 |
-| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 472 |
+| 1 | 6.7 | 160 ms (0.20 sn) | 134 | 33.3 | 20 |
+| 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 56 |
+| 3 | 17.4 | 144 ms (0.18 sn) | 156 | 96.6 | 102 |
+| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 159 |
+| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 199 |
+| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 239 |
+| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 279 |
+| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 319 |
+| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 359 |
 | 10 | 62.2 | 96 ms (0.12 sn) | 233 | 518.6 | - |
 
 Overdrive sirasinda:
