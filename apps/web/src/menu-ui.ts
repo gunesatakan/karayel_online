@@ -26,6 +26,8 @@ type DetailItem = {
   body: string;
 };
 
+const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
+
 const classColor: Record<CharacterId, string> = {
   zeynep: "#ec4899",
   warrior: "#22c55e",
@@ -381,9 +383,11 @@ function skillToDetail(skill: SkillDefinition): DetailItem {
 }
 
 function towerToDetail(tower: TowerDefinition): DetailItem {
-  const level10Damage = tower.damage * (1 + (10 - 1) * 0.42);
-  const level10Interval = Math.max(tower.id === "warrior-5" ? 50 : 80, tower.fireIntervalMs * (1 - (10 - 1) * 0.1));
-  const l1Dps = formatDps(tower.damage, tower.fireIntervalMs);
+  const level1Damage = getTowerLevelDamage(tower, 1);
+  const level1Interval = getTowerLevelInterval(tower, 1);
+  const level10Damage = getTowerLevelDamage(tower, 10);
+  const level10Interval = getTowerLevelInterval(tower, 10);
+  const l1Dps = formatDps(level1Damage, level1Interval);
   const l10Dps = formatDps(level10Damage, level10Interval);
   const parts = [
     tower.description ?? tower.role,
@@ -395,6 +399,15 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   ];
   if (tower.id === "warrior-2") {
     parts.push("Uzun link buff: Ayni kuleye 5 dalga bagli kalirsa impact/carpma vuruslu bagli kule +%20 hasar alir. 10 dalga bagli kalirsa bagli kulenin her vurusuna hedef max HP'sinin %1'i kadar ek hasar eklenir.");
+  }
+  if (tower.id === "warrior-4") {
+    parts.push("Denge: Lv6 yaklasik 427 DPS, Lv10 yaklasik 1000 DPS. Lv3+ korku acar; ayni hedefe 3. vurus hedefi 3sn geri kacirir.");
+  }
+  if (tower.id === "warrior-5") {
+    parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
+  }
+  if (tower.id === "warrior-6") {
+    parts.push("Denge: Lv8 dahil Lazer ve Obsesyonun belirgin altinda kalir; Lv9'da acilir, Lv10+6dalga+15stack+2chain yaklasik 2114 DPS'e cikar.");
   }
 
   return {
@@ -415,7 +428,53 @@ function formatDps(damage: number, intervalMs: number) {
   if (damage <= 0 || intervalMs <= 0) {
     return "0.0";
   }
-  return (damage / (intervalMs / 1000)).toFixed(1);
+  return ((damage / (intervalMs / 1000)) * REAL_DPS_GAME_SPEED_MULTIPLIER).toFixed(1);
+}
+
+function getTowerLevelDamage(tower: TowerDefinition, level: number) {
+  let damage = tower.damage * (1 + (level - 1) * 0.42);
+
+  if (tower.id === "warrior-4") {
+    damage *= 1 + (level - 1) * 0.018;
+  }
+
+  if (tower.id === "warrior-5") {
+    damage *= getDebugLaserDamageMultiplier(level);
+  }
+
+  if (tower.id === "warrior-6") {
+    damage *= getUcubeGrowthDamageMultiplier(level);
+  }
+
+  return damage;
+}
+
+function getTowerLevelInterval(tower: TowerDefinition, level: number) {
+  if (tower.id === "warrior-5") {
+    return getDebugLaserFireInterval(level, false);
+  }
+
+  const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
+  return Math.max(80, tower.fireIntervalMs * levelMultiplier);
+}
+
+function getDebugLaserDamageMultiplier(level: number) {
+  const multipliers = [1.3333, 1.5904, 1.89, 2.2505, 2.432, 2.508, 2.5632, 2.5976, 2.6112, 2.604];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getDebugLaserFireInterval(level: number, overdrive: boolean) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  const normalRealMs = clampedLevel <= 5
+    ? 200 - (clampedLevel - 1) * 10
+    : 160 - (clampedLevel - 5) * 8;
+  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
+  return realMs * REAL_DPS_GAME_SPEED_MULTIPLIER;
+}
+
+function getUcubeGrowthDamageMultiplier(level: number) {
+  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
 
 function initials(name: string) {

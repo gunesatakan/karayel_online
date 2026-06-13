@@ -224,8 +224,8 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 | Upgrade maliyeti | 78 baz |
 | Menzil | 134 |
 | Hasar | 5 |
-| Atis araligi | 120 ms |
-| Overdrive tick araligi | 50 ms |
+| Atis araligi | Lv1 0.20 sn, Lv5 0.16 sn, Lv10 0.12 sn |
+| Overdrive tick araligi | Lv1 0.10 sn, Lv5 0.08 sn, Lv10 0.06 sn |
 | Mermi hizi | 620 |
 | AOE radius | 10 |
 
@@ -242,8 +242,8 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 - Lazerin sweep donus hizi 30 derece/saniye ile sinirlidir.
 - Overdrive sirasinda:
   - Menzil harita sonuna kadar uzar.
-  - Tick araligi 50 ms olur.
-  - Hasar `x1.2` olur.
+  - Tick araligi normal lazer araliginin yarisidir.
+  - Tick hasari, DPS onceki dengeye yakin kalacak sekilde level bazli ayarlanir.
   - Lazer cizgisine temas eden dusmanlar hasar alir.
 
 **Hararet:**
@@ -291,7 +291,7 @@ Atis araligi carpani = max(0.35, 1 - stack * 0.055)
 
 | Dalga bonus seviyesi | Etki |
 |---:|---|
-| 1 | Elektrik arkadaki 2 hedefe seker. Seken hasar ana hasarin %42'sidir. |
+| 1 | Elektrik arkadaki 2 hedefe seker. Seken hasar, kule leveline gore ana hasarin %42'sinden %100'une kadar buyur. |
 | 2 | Vuruslar hedefi path uzerinde 18 birim geri iter. |
 | 3 | Hasar %20 artar. |
 | 4 | Max stack 10'dan 15'e cikar. |
@@ -397,7 +397,7 @@ Upgrade maliyeti ortak formulle hesaplanir:
 
 ```txt
 hedef seviye = mevcut seviye + 1
-maliyet = round(baseUpgradeCost * mevcutSeviye * 1.35 * indirim)
+maliyet = round(baseUpgradeCost * mevcutSeviye * 1.35 * indirim * 0.5)
 ```
 
 Indirimler:
@@ -419,6 +419,16 @@ Hasar = temelHasar * (1 + (seviye - 1) * 0.42)
 
 Pasif, Obsesyon stackleri, Debug Lazer overdrive ve Ucube dalga bonuslari bu degerin uzerine ek carpim olarak uygulanabilir.
 
+Ozel kule denge carpimlari:
+
+| Kule | Ek hasar carpani |
+|---|---|
+| Obsesyon | `1 + (seviye - 1) * 0.018` |
+| Debug Lazer | DPS'i koruyan level bazli tick hasari: Lv1 `x1.3333`, Lv5 `x2.432`, Lv10 `x2.604` |
+| Debug Lazer overdrive | DPS'i koruyan level bazli tick hasari: Lv1 `x1.92`, Lv5 `x2.3347`, Lv10 `x2.4998` |
+| Ucube | Level bazli gec acilan egri: Lv1 `x0.45`, Lv3 `x0.34`, Lv6 `x0.42`, Lv8 `x0.25`, Lv10 `x1.05` |
+| Ucube dalga 6+ | Lv7 `x1.6`, Lv8 `x1.5`, Lv9 `x1.4`, Lv10 `x1.3` gec oyun carpani |
+
 ### Atis hizi artisi
 
 Genel atis araligi seviye ile azalir:
@@ -430,7 +440,13 @@ Atis araligi = temelAtisAraligi * (1 - (seviye - 1) * 0.1)
 Minimum atis araligi:
 
 - Normal kuleler: 80 ms
-- Debug Lazer overdrive: 50 ms
+- Debug Lazer overdrive: normal lazer araliginin yarisi
+
+Obsesyon, midgame kule kimligini korumak icin genel hiz artisindan daha sert olceklenir:
+
+```txt
+Obsesyon atis araligi = temelAtisAraligi * (1 - (seviye - 1) * 0.17)
+```
 
 ### Menzil artisi
 
@@ -458,15 +474,15 @@ Tablo notlari:
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 12.0 | 720 ms | 112 | 16.7 | 22 |
-| 2 | 17.0 | 648 ms | 123 | 26.3 | 60 |
-| 3 | 22.1 | 576 ms | 134 | 38.3 | 110 |
-| 4 | 27.1 | 504 ms | 145 | 53.8 | 173 |
-| 5 | 32.2 | 432 ms | 156 | 74.4 | 216 |
-| 6 | 37.2 | 360 ms | 167 | 103.3 | 259 |
-| 7 | 42.2 | 288 ms | 178 | 146.7 | 302 |
-| 8 | 47.3 | 216 ms | 189 | 218.9 | 346 |
-| 9 | 52.3 | 144 ms | 200 | 363.3 | 389 |
+| 1 | 12.0 | 720 ms | 112 | 16.7 | 11 |
+| 2 | 17.0 | 648 ms | 123 | 26.3 | 30 |
+| 3 | 22.1 | 576 ms | 134 | 38.3 | 55 |
+| 4 | 27.1 | 504 ms | 145 | 53.8 | 86 |
+| 5 | 32.2 | 432 ms | 156 | 74.4 | 108 |
+| 6 | 37.2 | 360 ms | 167 | 103.3 | 130 |
+| 7 | 42.2 | 288 ms | 178 | 146.7 | 151 |
+| 8 | 47.3 | 216 ms | 189 | 218.9 | 173 |
+| 9 | 52.3 | 144 ms | 200 | 363.3 | 194 |
 | 10 | 57.4 | 80 ms | 211 | 717.0 | - |
 
 Takipci'nin isaret mekanigi level esiklerine gore stacklenir:
@@ -484,15 +500,15 @@ Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır.
 
 | Lv | Baz hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 0.0 | 980 ms | Global | 0.0 | 36 |
-| 2 | 0.0 | 882 ms | Global | 0.0 | 102 |
-| 3 | 0.0 | 784 ms | Global | 0.0 | 186 |
-| 4 | 0.0 | 686 ms | Global | 0.0 | 292 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 365 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 437 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 510 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 583 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 656 |
+| 1 | 0.0 | 980 ms | Global | 0.0 | 18 |
+| 2 | 0.0 | 882 ms | Global | 0.0 | 51 |
+| 3 | 0.0 | 784 ms | Global | 0.0 | 93 |
+| 4 | 0.0 | 686 ms | Global | 0.0 | 146 |
+| 5 | 0.0 | 588 ms | Global | 0.0 | 182 |
+| 6 | 0.0 | 490 ms | Global | 0.0 | 219 |
+| 7 | 0.0 | 392 ms | Global | 0.0 | 255 |
+| 8 | 0.0 | 294 ms | Global | 0.0 | 292 |
+| 9 | 0.0 | 196 ms | Global | 0.0 | 328 |
 | 10 | 0.0 | 98 ms | Global | 0.0 | - |
 
 Elektrik topu level etkisi:
@@ -529,30 +545,30 @@ Uzun baglanti bufflari:
 
 | Lv | Hasar | Atis araligi | Menzil | Normal slow | Izole aura slow | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 | 0.0 | 620 ms | 104 | 850 ms | 1500 ms | 28 |
-| 2 | 0.0 | 558 ms | 115 | 940 ms | 1620 ms | 79 |
-| 3 | 0.0 | 496 ms | 126 | 1030 ms | 1740 ms | 145 |
-| 4 | 0.0 | 434 ms | 137 | 1120 ms | 1860 ms | 227 |
-| 5 | 0.0 | 372 ms | 148 | 1210 ms | 1980 ms | 284 |
-| 6 | 0.0 | 310 ms | 159 | 1300 ms | 2100 ms | 340 |
-| 7 | 0.0 | 248 ms | 170 | 1390 ms | 2220 ms | 397 |
-| 8 | 0.0 | 186 ms | 181 | 1480 ms | 2340 ms | 454 |
-| 9 | 0.0 | 124 ms | 192 | 1570 ms | 2460 ms | 510 |
+| 1 | 0.0 | 620 ms | 104 | 850 ms | 1500 ms | 14 |
+| 2 | 0.0 | 558 ms | 115 | 940 ms | 1620 ms | 40 |
+| 3 | 0.0 | 496 ms | 126 | 1030 ms | 1740 ms | 72 |
+| 4 | 0.0 | 434 ms | 137 | 1120 ms | 1860 ms | 113 |
+| 5 | 0.0 | 372 ms | 148 | 1210 ms | 1980 ms | 142 |
+| 6 | 0.0 | 310 ms | 159 | 1300 ms | 2100 ms | 170 |
+| 7 | 0.0 | 248 ms | 170 | 1390 ms | 2220 ms | 198 |
+| 8 | 0.0 | 186 ms | 181 | 1480 ms | 2340 ms | 227 |
+| 9 | 0.0 | 124 ms | 192 | 1570 ms | 2460 ms | 255 |
 | 10 | 0.0 | 80 ms | 203 | 1660 ms | 2580 ms | - |
 
 ### Obsesyon Kulesi - Level Statlari
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 18.0 | 760 ms | 118 | 23.7 | 41 |
-| 2 | 25.6 | 684 ms | 129 | 37.4 | 113 |
-| 3 | 33.1 | 608 ms | 140 | 54.5 | 207 |
-| 4 | 40.7 | 532 ms | 151 | 76.5 | 324 |
-| 5 | 48.2 | 456 ms | 162 | 105.8 | 405 |
-| 6 | 55.8 | 380 ms | 173 | 146.8 | 486 |
-| 7 | 63.4 | 304 ms | 184 | 208.4 | 567 |
-| 8 | 70.9 | 228 ms | 195 | 311.1 | 648 |
-| 9 | 78.5 | 152 ms | 206 | 516.3 | 729 |
+| 1 | 18.0 | 760 ms | 118 | 23.7 | 20 |
+| 2 | 25.6 | 684 ms | 129 | 37.4 | 57 |
+| 3 | 33.1 | 608 ms | 140 | 54.5 | 103 |
+| 4 | 40.7 | 532 ms | 151 | 76.5 | 162 |
+| 5 | 48.2 | 456 ms | 162 | 105.8 | 203 |
+| 6 | 55.8 | 380 ms | 173 | 146.8 | 243 |
+| 7 | 63.4 | 304 ms | 184 | 208.4 | 284 |
+| 8 | 70.9 | 228 ms | 195 | 311.1 | 324 |
+| 9 | 78.5 | 152 ms | 206 | 516.3 | 365 |
 | 10 | 86.0 | 80 ms | 217 | 1075.5 | - |
 
 Obsesyon stackleri bu tablonun uzerine eklenir:
@@ -567,52 +583,52 @@ Korku etkisi level 3 ve sonrasinda acilir.
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 5.0 | 120 ms | 134 | 41.7 | 53 |
-| 2 | 7.1 | 108 ms | 145 | 65.7 | 147 |
-| 3 | 9.2 | 96 ms | 156 | 95.8 | 269 |
-| 4 | 11.3 | 84 ms | 167 | 134.5 | 421 |
-| 5 | 13.4 | 80 ms | 178 | 167.5 | 527 |
-| 6 | 15.5 | 80 ms | 189 | 193.8 | 632 |
-| 7 | 17.6 | 80 ms | 200 | 220.0 | 737 |
-| 8 | 19.7 | 80 ms | 211 | 246.3 | 842 |
-| 9 | 21.8 | 80 ms | 222 | 272.5 | 948 |
-| 10 | 23.9 | 80 ms | 233 | 298.8 | - |
+| 1 | 6.7 | 160 ms (0.20 sn) | 134 | 33.3 | 26 |
+| 2 | 11.3 | 152 ms (0.19 sn) | 145 | 59.4 | 74 |
+| 3 | 17.4 | 144 ms (0.18 sn) | 156 | 96.6 | 134 |
+| 4 | 25.4 | 136 ms (0.17 sn) | 167 | 149.6 | 211 |
+| 5 | 32.6 | 128 ms (0.16 sn) | 178 | 203.7 | 263 |
+| 6 | 38.9 | 122 ms (0.15 sn) | 189 | 255.8 | 316 |
+| 7 | 45.1 | 115 ms (0.14 sn) | 200 | 313.3 | 369 |
+| 8 | 51.2 | 109 ms (0.14 sn) | 211 | 376.3 | 421 |
+| 9 | 56.9 | 102 ms (0.13 sn) | 222 | 444.7 | 474 |
+| 10 | 62.2 | 96 ms (0.12 sn) | 233 | 518.6 | - |
 
 Overdrive sirasinda:
 
-- Hasar `x1.2` olur.
-- Atis araligi 50 ms olur.
+- Tick araligi normal lazer araliginin yarisidir.
+- Tick hasari, DPS onceki dengeye yakin kalacak sekilde level bazli ayarlanir.
 - Menzil harita sonuna kadar uzar.
 
 Overdrive efektif DPS:
 
-| Lv | Overdrive tick hasari | Overdrive DPS |
-|---:|---:|---:|
-| 1 | 6.0 | 120.0 |
-| 2 | 8.5 | 170.4 |
-| 3 | 11.0 | 220.8 |
-| 4 | 13.5 | 271.2 |
-| 5 | 16.1 | 321.6 |
-| 6 | 18.6 | 372.0 |
-| 7 | 21.1 | 422.4 |
-| 8 | 23.6 | 472.8 |
-| 9 | 26.2 | 523.2 |
-| 10 | 28.7 | 573.6 |
+| Lv | Overdrive tick hasari | Overdrive araligi | Overdrive DPS |
+|---:|---:|---:|---:|
+| 1 | 9.6 | 0.10 sn | 96.0 |
+| 2 | 14.6 | 0.10 sn | 154.0 |
+| 3 | 20.0 | 0.09 sn | 222.6 |
+| 4 | 25.6 | 0.09 sn | 301.6 |
+| 5 | 31.3 | 0.08 sn | 391.1 |
+| 6 | 37.3 | 0.08 sn | 491.0 |
+| 7 | 43.3 | 0.07 sn | 601.5 |
+| 8 | 49.1 | 0.07 sn | 722.4 |
+| 9 | 54.6 | 0.06 sn | 853.9 |
+| 10 | 59.7 | 0.06 sn | 995.8 |
 
 ### Ucube - Level Statlari
 
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 9.0 | 940 ms | 118 | 9.6 | 78 |
-| 2 | 12.8 | 846 ms | 129 | 15.1 | 217 |
-| 3 | 16.6 | 752 ms | 140 | 22.0 | 396 |
-| 4 | 20.3 | 658 ms | 151 | 30.9 | 621 |
-| 5 | 24.1 | 564 ms | 162 | 42.8 | 776 |
-| 6 | 27.9 | 470 ms | 173 | 59.4 | 932 |
-| 7 | 31.7 | 376 ms | 184 | 84.3 | 1087 |
-| 8 | 35.5 | 282 ms | 195 | 125.7 | 1242 |
-| 9 | 39.2 | 188 ms | 206 | 208.7 | 1397 |
-| 10 | 43.0 | 94 ms | 217 | 457.7 | - |
+| 1 | 4.0 | 940 ms | 118 | 3.4 | 39 |
+| 2 | 5.1 | 846 ms | 129 | 4.8 | 109 |
+| 3 | 5.6 | 752 ms | 140 | 6.0 | 198 |
+| 4 | 6.9 | 658 ms | 151 | 8.4 | 311 |
+| 5 | 8.4 | 564 ms | 162 | 12.0 | 388 |
+| 6 | 11.7 | 470 ms | 173 | 19.9 | 466 |
+| 7 | 7.6 | 376 ms | 184 | 16.2 | 543 |
+| 8 | 8.9 | 282 ms | 195 | 25.1 | 621 |
+| 9 | 25.1 | 188 ms | 206 | 106.9 | 699 |
+| 10 | 45.2 | 94 ms | 217 | 384.4 | - |
 
 Ucube aktif stackleri bu tablodaki atis araligini ayrica dusurur:
 
@@ -623,12 +639,35 @@ Efektif atis araligi = level atis araligi * stack carpani
 
 Dalga bonuslari:
 
-- Bonus 1: Elektrik arkadaki 2 hedefe seker, seken hasar ana hasarin %42'si.
+- Bonus 1: Elektrik arkadaki 2 hedefe seker. Chain hasar carpani level ile artar: Lv1-3 `%42`, Lv4 `%46`, Lv5 `%48`, Lv6 `%50`, Lv7 `%72`, Lv8 `%85`, Lv9 `%93`, Lv10 `%100`.
 - Bonus 2: Hedefi 18 path birimi geri iter.
 - Bonus 3: Hasar %20 artar.
 - Bonus 4: Max stack 15 olur.
 - Bonus 5: Menzil 2 katina cikar.
 - Bonus 6: Hararet yapmaz.
+
+## Guncel Denge Hedefleri
+
+Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek saniye DPS olarak hesaplanir.
+
+| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`6 dalga`, `15 stack`) | Ucube toplam DPS (`6 dalga`, `15 stack`, `2 chain`) |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 18.9 | 33.3 | 96.0 | 11.8 | 21.7 |
+| 2 | 33.0 | 59.4 | 154.0 | 16.6 | 30.5 |
+| 3 | 54.7 | 96.6 | 222.6 | 20.5 | 37.8 |
+| 4 | 92.1 | 149.6 | 301.6 | 28.8 | 55.3 |
+| 5 | 170.1 | 203.7 | 391.1 | 41.1 | 80.5 |
+| 6 | 426.8 | 255.8 | 491.0 | 68.4 | 136.8 |
+| 7 | 702.0 | 313.3 | 601.5 | 88.7 | 216.5 |
+| 8 | 798.6 | 376.3 | 722.4 | 129.3 | 349.2 |
+| 9 | 897.8 | 444.7 | 853.9 | 421.9 | 1206.7 |
+| 10 | 999.8 | 518.6 | 995.8 | 704.7 | 2114.0 |
+
+Bu tabloya gore:
+
+- Debug Lazer early oyunda onde kalir; Lv3'te yaklasik `97 DPS`.
+- Obsesyon midgame'de sivrilir; Lv6'da yaklasik `427 DPS`, Lv10'da yaklasik `1000 DPS`.
+- Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 6 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
 
 ## Durum Etkileri ve Etiketler
 

@@ -710,7 +710,7 @@ export class MatchRoom extends Room<MatchState> {
         this.damageEnemyFromTower(tower, enemy, damage, 0);
       }
     }
-    tower.cooldownMs = 50;
+    tower.cooldownMs = this.getTowerFireInterval(tower);
     tower.debugSweepLastDamageAt = now;
     if (finishedSweep) {
       tower.debugOverdriveUntil = now;
@@ -1657,17 +1657,33 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
-    const levelMultiplier = 1 - (tower.level - 1) * 0.1;
     const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
-    const minimumInterval = tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now() ? 50 : 80;
 
+    if (tower.definition.id === "warrior-5") {
+      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * passiveMultiplier;
+    }
+
+    const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
+    const minimumInterval = 80;
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
     let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower);
+
+    if (tower.definition.id === "warrior-4") {
+      damage *= getObsessionDamageMultiplier(tower.level);
+    }
+
+    if (tower.definition.id === "warrior-5") {
+      damage *= getDebugLaserDamageMultiplier(tower.level, tower.debugOverdriveUntil > Date.now());
+    }
+
+    if (tower.definition.id === "warrior-6") {
+      damage *= getUcubeGrowthDamageMultiplier(tower.level);
+    }
 
     if (tower.definition.hitType === "impact" && this.getServerLinkWaveAge(tower) >= 5) {
       damage *= 1.2;
@@ -1677,12 +1693,12 @@ export class MatchRoom extends Room<MatchState> {
       damage *= 1 + tower.focusStacks * 0.2;
     }
 
-    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
+    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
       damage *= 1.2;
     }
 
-    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
-      damage *= 1.2;
+    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 6) {
+      damage *= getUcubeLateDamageMultiplier(tower.level);
     }
 
     return damage;
@@ -1872,7 +1888,7 @@ export class MatchRoom extends Room<MatchState> {
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.42), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level);
       }
     }
 
@@ -2046,6 +2062,51 @@ function getWaveHpMultiplier(wave: number) {
 
 function getIsolationAuraSpeedMultiplier(level: number) {
   return Math.max(0.25, 0.48 - (level - 1) * 0.026);
+}
+
+function getObsessionDamageMultiplier(level: number) {
+  return 1 + (level - 1) * 0.018;
+}
+
+function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
+  const normalMultipliers = [1.3333, 1.5904, 1.89, 2.2505, 2.432, 2.508, 2.5632, 2.5976, 2.6112, 2.604];
+  const overdriveMultipliers = [1.92, 2.0611, 2.1773, 2.2685, 2.3347, 2.4077, 2.4607, 2.4937, 2.5068, 2.4998];
+  const multipliers = overdrive ? overdriveMultipliers : normalMultipliers;
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getDebugLaserFireInterval(level: number, overdrive: boolean) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  const normalRealMs = clampedLevel <= 5
+    ? 200 - (clampedLevel - 1) * 10
+    : 160 - (clampedLevel - 5) * 8;
+  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
+  return realMs * GAME_SPEED_MULTIPLIER;
+}
+
+function getUcubeGrowthDamageMultiplier(level: number) {
+  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getUcubeLateDamageMultiplier(level: number) {
+  if (level >= 10) return 1.3;
+  if (level >= 9) return 1.4;
+  if (level >= 8) return 1.5;
+  if (level >= 7) return 1.6;
+  return 1;
+}
+
+function getUcubeChainDamageMultiplier(tower: TowerModel) {
+  if (tower.waveBonusLevel < 1) return 0;
+  if (tower.level >= 10) return 1;
+  if (tower.level >= 9) return 0.93;
+  if (tower.level >= 8) return 0.85;
+  if (tower.level >= 7) return 0.72;
+  if (tower.level >= 6) return 0.5;
+  if (tower.level >= 5) return 0.48;
+  if (tower.level >= 4) return 0.46;
+  return 0.42;
 }
 
 function scaleGameDuration(durationMs: number) {

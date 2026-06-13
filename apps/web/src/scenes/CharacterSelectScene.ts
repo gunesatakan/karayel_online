@@ -19,6 +19,8 @@ type DetailItem = {
   type: "passive" | "ultimate" | "skill" | "tower";
 };
 
+const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
+
 const palette = {
   void: 0x05060a,
   abyss: 0x0a1020,
@@ -322,15 +324,17 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private towerToItem(tower: TowerDefinition): DetailItem {
-    const level10Damage = tower.damage * (1 + (10 - 1) * 0.42);
-    const level10Interval = Math.max(tower.id === "warrior-5" ? 50 : 80, tower.fireIntervalMs * (1 - (10 - 1) * 0.1));
-    const dps = this.formatDps(tower.damage, tower.fireIntervalMs);
+    const level1Damage = getTowerLevelDamage(tower, 1);
+    const level1Interval = getTowerLevelInterval(tower, 1);
+    const level10Damage = getTowerLevelDamage(tower, 10);
+    const level10Interval = getTowerLevelInterval(tower, 10);
+    const dps = this.formatDps(level1Damage, level1Interval);
     const level10Dps = this.formatDps(level10Damage, level10Interval);
     const parts = [
       tower.description ?? tower.role,
       `Sinif: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vurus: ${tower.hitType ?? "impact"}`,
       `Maliyet ${tower.cost}g | Upgrade L2/L3/L4: ${getTowerUpgradeCost(tower.upgradeCost, 1)}/${getTowerUpgradeCost(tower.upgradeCost, 2)}/${getTowerUpgradeCost(tower.upgradeCost, 3)}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
-      `L1: Hasar ${tower.damage} / ${tower.fireIntervalMs}ms => DPS ${dps}${tower.aoeRadius > 0 ? ` | AOE r${tower.aoeRadius}` : ""}${tower.slowMs > 0 ? ` | Slow ${tower.slowMs}ms` : ""}`,
+      `L1: Hasar ${level1Damage.toFixed(1)} / ${Math.round(level1Interval)}ms => DPS ${dps}${tower.aoeRadius > 0 ? ` | AOE r${tower.aoeRadius}` : ""}${tower.slowMs > 0 ? ` | Slow ${tower.slowMs}ms` : ""}`,
       `L10 baz: Hasar ${level10Damage.toFixed(1)} / ${Math.round(level10Interval)}ms => DPS ${level10Dps}`,
       `Mermi hizi ${tower.projectileSpeed} | Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
     ];
@@ -339,13 +343,13 @@ export class CharacterSelectScene extends Phaser.Scene {
       parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar = 95 + SunucuLv*32 + BagliLv*12, AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms.");
     }
     if (tower.id === "warrior-4") {
-      parts.push("Korku: Lv3'ten sonra ayni hedefe 3. vurus hedefi 3sn boyunca path uzerinde geri kacirir. Ayni hedefe her ek vurus korku suresini tazeler.");
+      parts.push("Denge: Lv6 yaklasik 427 DPS, Lv10 yaklasik 1000 DPS. Korku: Lv3'ten sonra ayni hedefe 3. vurus hedefi 3sn boyunca path uzerinde geri kacirir.");
     }
     if (tower.id === "warrior-5") {
-      parts.push("Overdrive: Takipte hedefi oldururse 2.0sn path boyunca sweep lazer acar; tick 50ms, hasar 1.2x, isin cizgisine temas eden tum dusmanlara vurur.");
+      parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
     }
     if (tower.id === "warrior-6") {
-      parts.push("Dalga: L2/L3 koyu mavi; L4 elektrik+stack15; L5 yogun elektrik+HPx2; L6 hararetsiz. Chain: arkadaki 2 hedefe ana hasarin %42'si.");
+      parts.push("Denge: Lv8 dahil Lazer ve Obsesyonun belirgin altinda kalir; Lv9'da acilir, Lv10+6dalga+15stack+2chain yaklasik 2114 DPS'e cikar.");
     }
 
     return {
@@ -361,7 +365,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     if (damage <= 0 || intervalMs <= 0) {
       return "0.0";
     }
-    return (damage / (intervalMs / 1000)).toFixed(1);
+    return ((damage / (intervalMs / 1000)) * REAL_DPS_GAME_SPEED_MULTIPLIER).toFixed(1);
   }
 
   private drawBackdrop(title: string, subtitle: string) {
@@ -527,4 +531,50 @@ export class CharacterSelectScene extends Phaser.Scene {
       onur: 0x14b8a6
     }[characterId];
   }
+}
+
+function getTowerLevelDamage(tower: TowerDefinition, level: number) {
+  let damage = tower.damage * (1 + (level - 1) * 0.42);
+
+  if (tower.id === "warrior-4") {
+    damage *= 1 + (level - 1) * 0.018;
+  }
+
+  if (tower.id === "warrior-5") {
+    damage *= getDebugLaserDamageMultiplier(level);
+  }
+
+  if (tower.id === "warrior-6") {
+    damage *= getUcubeGrowthDamageMultiplier(level);
+  }
+
+  return damage;
+}
+
+function getTowerLevelInterval(tower: TowerDefinition, level: number) {
+  if (tower.id === "warrior-5") {
+    return getDebugLaserFireInterval(level, false);
+  }
+
+  const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
+  return Math.max(80, tower.fireIntervalMs * levelMultiplier);
+}
+
+function getDebugLaserDamageMultiplier(level: number) {
+  const multipliers = [1.3333, 1.5904, 1.89, 2.2505, 2.432, 2.508, 2.5632, 2.5976, 2.6112, 2.604];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getDebugLaserFireInterval(level: number, overdrive: boolean) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  const normalRealMs = clampedLevel <= 5
+    ? 200 - (clampedLevel - 1) * 10
+    : 160 - (clampedLevel - 5) * 8;
+  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
+  return realMs * REAL_DPS_GAME_SPEED_MULTIPLIER;
+}
+
+function getUcubeGrowthDamageMultiplier(level: number) {
+  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
+  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }

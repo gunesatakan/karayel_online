@@ -213,5 +213,5 @@ export function getTowerUpgradeCost(baseUpgradeCost: number, currentLevel: numbe
         targetLevel === 4 ? 0.85 :
           1;
 
-  return Math.round(baseUpgradeCost * currentLevel * 1.35 * discount);
+  return Math.round(baseUpgradeCost * currentLevel * 1.35 * discount * 0.5);
 }

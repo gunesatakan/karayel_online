@@ -97,7 +97,7 @@ export const atakanTowers: TowerDefinition[] = [
     upgradeCost: 78,
     range: 134,
     damage: 5,
-    fireIntervalMs: 120,
+    fireIntervalMs: 160,
     projectileSpeed: 620,
     aoeRadius: 10,
     slowMs: 0,

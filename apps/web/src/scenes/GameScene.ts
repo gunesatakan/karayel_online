@@ -977,7 +977,42 @@ export class GameScene extends Phaser.Scene {
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
     this.renderServerLinkCodeEffect(graphics, tower);
+    this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderDebugLaserLevelPrism(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.definitionId !== "warrior-5" || tower.level < 5 || tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return;
+    }
+
+    const isMaxTier = tower.level >= 10;
+    const color = isMaxTier ? 0xffffff : 0xfacc15;
+    const glow = isMaxTier ? 0xbae6fd : 0xfbbf24;
+    const phase = (Date.now() % 900) / 900;
+    const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.12;
+
+    graphics.fillStyle(color, isMaxTier ? 0.9 : 0.82);
+    graphics.beginPath();
+    graphics.moveTo(tower.x, tower.y - 11);
+    graphics.lineTo(tower.x + 10, tower.y + 7);
+    graphics.lineTo(tower.x - 10, tower.y + 7);
+    graphics.closePath();
+    graphics.fillPath();
+
+    graphics.lineStyle(isMaxTier ? 2 : 1.5, glow, pulse);
+    graphics.beginPath();
+    graphics.moveTo(tower.x, tower.y - 13);
+    graphics.lineTo(tower.x + 12, tower.y + 8);
+    graphics.lineTo(tower.x - 12, tower.y + 8);
+    graphics.closePath();
+    graphics.strokePath();
+
+    if (isMaxTier) {
+      graphics.lineStyle(1, 0xffffff, 0.65);
+      graphics.lineBetween(tower.x - 7, tower.y, tower.x + 7, tower.y);
+      graphics.lineBetween(tower.x, tower.y - 8, tower.x, tower.y + 6);
+    }
   }
 
   private renderServerLinkCodeEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
