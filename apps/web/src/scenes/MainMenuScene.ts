@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { characters, GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH } from "@karayel/shared";
 import { getPlayerName } from "../config";
+import { configureHiDpiCamera } from "../rendering";
 
 const palette = {
   void: 0x05060a,
@@ -28,6 +29,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   create() {
+    configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#05060a");
     this.drawBackground();
     this.drawHero();

@@ -1,17 +1,23 @@
 import Phaser from "phaser";
-import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH } from "@karayel/shared";
 import { BootScene } from "./scenes/BootScene";
 import { PreloaderScene } from "./scenes/PreloaderScene";
 import { MainMenuScene } from "./scenes/MainMenuScene";
 import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
+import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./rendering";
 import "./style.css";
 
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: GAME_WORLD_WIDTH,
-  height: GAME_WORLD_HEIGHT,
+  width: CANVAS_WIDTH,
+  height: CANVAS_HEIGHT,
+  render: {
+    antialias: true,
+    antialiasGL: true,
+    pixelArt: false,
+    roundPixels: false
+  },
   scene: [BootScene, PreloaderScene, MainMenuScene, CharacterSelectScene, GameScene],
   physics: {
     default: "arcade",

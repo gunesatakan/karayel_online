@@ -22,6 +22,7 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
+import { configureHiDpiCamera } from "../rendering";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -132,6 +133,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#0f172a");
     this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x101827);
     this.drawMap();

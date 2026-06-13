@@ -9,6 +9,7 @@ import {
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
+import { configureHiDpiCamera } from "../rendering";
 
 type DetailItem = {
   title: string;
@@ -47,6 +48,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   create() {
+    configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#05060a");
     this.renderArchive();
   }
