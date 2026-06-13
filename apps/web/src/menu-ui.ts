@@ -407,7 +407,7 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
   }
   if (tower.id === "warrior-6") {
-    parts.push("Denge: Impact/carpma oldugu icin level ile baz saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Aktif stack ritmi ayrica calisir. Lv10+6dalga+15stack+2chain yaklasik 2114 DPS.");
+    parts.push("Denge: Impact/carpma oldugu icin level ile baz saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Dalga bonuslari 2/4/6/8/10/14 tamamlanan dalgada acilir. Lv10+14dalga+15stack+2chain yaklasik 2114 DPS.");
   }
 
   return {

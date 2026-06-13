@@ -56,6 +56,7 @@ const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
+const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14];
 
 class Player extends Schema {
   @type("string") name = "";
@@ -155,6 +156,7 @@ type TowerModel = {
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
   waveBonusLevel: number;
+  waveBonusProgress: number;
   linkedTowerIds: string[];
   linkedTowerWaveAges: Record<string, number>;
   rangeMemoryEnemyIds: string[];
@@ -1014,6 +1016,7 @@ export class MatchRoom extends Room<MatchState> {
       debugOverdriveHeatSegments: [],
       linkBurstCooldownMs: 0,
       waveBonusLevel: 0,
+      waveBonusProgress: 0,
       linkedTowerIds: [],
       linkedTowerWaveAges: {},
       rangeMemoryEnemyIds: [],
@@ -1892,7 +1895,8 @@ export class MatchRoom extends Room<MatchState> {
     for (const tower of this.towers.values()) {
       if (tower.definition.id === "warrior-6") {
         const previousLevel = tower.waveBonusLevel;
-        tower.waveBonusLevel = Math.min(6, tower.waveBonusLevel + 1);
+        tower.waveBonusProgress += 1;
+        tower.waveBonusLevel = getUcubeWaveBonusLevel(tower.waveBonusProgress);
         if (previousLevel < 5 && tower.waveBonusLevel >= 5) {
           tower.maxHp *= 2;
           tower.hp = tower.maxHp;
@@ -2144,6 +2148,10 @@ function getDebugLaserFireInterval(level: number, overdrive: boolean) {
 function getUcubeGrowthDamageMultiplier(level: number) {
   const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
   return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getUcubeWaveBonusLevel(completedWaves: number) {
+  return UCUBE_WAVE_BONUS_THRESHOLDS.filter((threshold) => completedWaves >= threshold).length;
 }
 
 function getUcubeLateDamageMultiplier(level: number) {

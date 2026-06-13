@@ -108,7 +108,7 @@ export const atakanTowers: TowerDefinition[] = [
     characterId: "warrior",
     name: "Ucube",
     role: "Gec oyun hasari",
-    description: "Cok pahali ve zayif baslar. Her dalga sonunda otomatik gelisir. Araliksiz calistikca saldiri hizi stack kazanir, bos kalirsa sifirlanir, erken oyunda hararet yapabilir.",
+    description: "Cok pahali ve zayif baslar. Sahadayken tamamlanan dalgalarla 2 dalgada bir otomatik gelisir; son bonusu 14. dalgada acilir. Araliksiz calistikca saldiri hizi stack kazanir, bos kalirsa sifirlanir, erken oyunda hararet yapabilir.",
     classType: "damage",
     damageType: "electric",
     hitType: "impact",

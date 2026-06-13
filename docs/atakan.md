@@ -286,17 +286,18 @@ Atis araligi carpani = max(0.35, 1 - stack * 0.055)
 - 20 saniye araliksiz calisirsa hararet yapar.
 - Hararet suresi 10 saniyedir.
 - Dalga gelisimiyle hararet tamamen kalkabilir.
+- Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir: bonus 1/2/3/4/5 icin 2/4/6/8/10 dalga, bonus 6 icin 14 dalga gerekir.
 
 **Dalga sonu gelisimleri:**
 
-| Dalga bonus seviyesi | Etki |
-|---:|---|
-| 1 | Elektrik arkadaki 2 hedefe seker. Seken hasar, kule leveline gore ana hasarin %42'sinden %100'une kadar buyur. |
-| 2 | Vuruslar hedefi path uzerinde 18 birim geri iter. |
-| 3 | Hasar %20 artar. |
-| 4 | Max stack 10'dan 15'e cikar. |
-| 5 | Menzil 2 katina cikar, cani 2 katina cikar. |
-| 6 | Hararet yapmaz. |
+| Dalga bonus seviyesi | Gerekli tamamlanan dalga | Etki |
+|---:|---:|---|
+| 1 | 2 | Elektrik arkadaki 2 hedefe seker. Seken hasar, kule leveline gore ana hasarin %42'sinden %100'une kadar buyur. |
+| 2 | 4 | Vuruslar hedefi path uzerinde 18 birim geri iter. |
+| 3 | 6 | Hasar %20 artar. |
+| 4 | 8 | Max stack 10'dan 15'e cikar. |
+| 5 | 10 | Menzil 2 katina cikar, cani 2 katina cikar. |
+| 6 | 14 | Hararet yapmaz. |
 
 ## Beceriler
 
@@ -637,20 +638,20 @@ Stack carpani = max(0.35, 1 - stack * 0.055)
 Efektif atis araligi = level atis araligi * stack carpani
 ```
 
-Dalga bonuslari:
+Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir:
 
-- Bonus 1: Elektrik arkadaki 2 hedefe seker. Chain hasar carpani level ile artar: Lv1-3 `%42`, Lv4 `%46`, Lv5 `%48`, Lv6 `%50`, Lv7 `%72`, Lv8 `%85`, Lv9 `%93`, Lv10 `%100`.
-- Bonus 2: Hedefi 18 path birimi geri iter.
-- Bonus 3: Hasar %20 artar.
-- Bonus 4: Max stack 15 olur.
-- Bonus 5: Menzil 2 katina cikar.
-- Bonus 6: Hararet yapmaz.
+- Bonus 1, 2 tamamlanan dalgada: Elektrik arkadaki 2 hedefe seker. Chain hasar carpani level ile artar: Lv1-3 `%42`, Lv4 `%46`, Lv5 `%48`, Lv6 `%50`, Lv7 `%72`, Lv8 `%85`, Lv9 `%93`, Lv10 `%100`.
+- Bonus 2, 4 tamamlanan dalgada: Hedefi 18 path birimi geri iter.
+- Bonus 3, 6 tamamlanan dalgada: Hasar %20 artar.
+- Bonus 4, 8 tamamlanan dalgada: Max stack 15 olur.
+- Bonus 5, 10 tamamlanan dalgada: Menzil 2 katina cikar.
+- Bonus 6, 14 tamamlanan dalgada: Hararet yapmaz.
 
 ## Guncel Denge Hedefleri
 
 Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek saniye DPS olarak hesaplanir.
 
-| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`6 dalga`, `15 stack`) | Ucube toplam DPS (`6 dalga`, `15 stack`, `2 chain`) |
+| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`14 dalga`, `15 stack`) | Ucube toplam DPS (`14 dalga`, `15 stack`, `2 chain`) |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 18.9 | 33.3 | 96.0 | 11.8 | 21.7 |
 | 2 | 33.0 | 59.4 | 154.0 | 16.6 | 30.5 |
@@ -667,7 +668,7 @@ Bu tabloya gore:
 
 - Debug Lazer early oyunda onde kalir; Lv3'te yaklasik `97 DPS`.
 - Obsesyon midgame'de daha sert sivrilir; Lv6'da yaklasik `425 DPS`, Lv7'de `600 DPS`, Lv8'de `750 DPS`, Lv10'da yaklasik `1000 DPS`.
-- Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 6 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
+- Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 14 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
 
 ## Durum Etkileri ve Etiketler
 
