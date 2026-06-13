@@ -40,7 +40,6 @@ type RenderTower = {
   effect: Phaser.GameObjects.Graphics;
   halo: Phaser.GameObjects.Arc;
   base: Phaser.GameObjects.Image;
-  label: Phaser.GameObjects.Text;
   level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
@@ -870,7 +869,6 @@ export class GameScene extends Phaser.Scene {
         tower.halo.destroy();
         tower.effect.destroy();
         tower.base.destroy();
-        tower.label.destroy();
         tower.level.destroy();
         tower.range.destroy();
         tower.isolation.destroy();
@@ -897,11 +895,6 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(38, 38)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        const label = this.add.text(tower.x, tower.y - 26, tower.name, {
-          color: "#f8fafc",
-          fontFamily: "Arial",
-          fontSize: "9px"
-        }).setOrigin(0.5).setDepth(13);
         const level = this.add.text(tower.x, tower.y + 1, `${tower.level}`, {
           color: "#020617",
           fontFamily: "Arial",
@@ -914,7 +907,7 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, halo, base, label, level, range, isolation, status, key: "" };
+        rendered = { effect, halo, base, level, range, isolation, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -927,7 +920,6 @@ export class GameScene extends Phaser.Scene {
         rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
         rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
-        rendered.label.setPosition(tower.x, tower.y - 26).setText(tower.name);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
         rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
