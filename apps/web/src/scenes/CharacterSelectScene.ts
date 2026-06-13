@@ -15,75 +15,108 @@ type DetailItem = {
   subtitle: string;
   description: string;
   color: number;
+  type: "passive" | "ultimate" | "skill" | "tower";
 };
+
+const palette = {
+  void: 0x05060a,
+  abyss: 0x0a1020,
+  slate: 0x151a2e,
+  amethyst: 0x2a164a,
+  violet: 0x7c3aed,
+  cyan: 0x22d3ee,
+  soul: 0x34d399,
+  gold: 0xfacc15,
+  crimson: 0xdc2626,
+  bone: 0xe7e5df
+};
+
+const titleFont = "Cinzel, Georgia, serif";
+const uiFont = "Rajdhani, Exo 2, Arial, sans-serif";
+const numberFont = "Orbitron, Share Tech Mono, monospace";
 
 export class CharacterSelectScene extends Phaser.Scene {
   private selectedCharacter: CharacterDefinition = characters[0];
   private viewObjects: Phaser.GameObjects.GameObject[] = [];
   private detailText?: Phaser.GameObjects.Text;
   private detailTitle?: Phaser.GameObjects.Text;
+  private detailType?: Phaser.GameObjects.Text;
 
   constructor() {
     super("character-select");
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#050711");
+    this.cameras.main.setBackgroundColor("#05060a");
     this.renderArchive();
   }
 
   private renderArchive() {
     this.clearView();
-    this.drawBackdrop("OPERATOR SECIMI", "Mistisizm frekansini savunma mimarisine bagla.");
+    this.drawBackdrop("OPERATOR ARSIVI", "Rituel shard icin savunma mimarini sec.");
     this.createBackButton(22, 24, "ANA", () => this.scene.start("main-menu"));
 
+    this.addToView(this.add.text(86, 34, "OPERATOR ARSIVI", {
+      color: "#e7e5df",
+      fontFamily: titleFont,
+      fontSize: "23px",
+      fontStyle: "bold"
+    }));
+    this.addToView(this.add.text(88, 64, "Quantum mistisizm savunma kayitlari", {
+      color: "#22d3ee",
+      fontFamily: uiFont,
+      fontSize: "11px",
+      fontStyle: "bold"
+    }));
+
     characters.forEach((character, index) => {
-      const y = 118 + index * 76;
+      const y = 112 + index * 82;
       this.createCharacterArchiveCard(character, 22, y, index);
     });
   }
 
   private createCharacterArchiveCard(character: CharacterDefinition, x: number, y: number, index: number) {
     const color = this.getClassColor(character.id);
-    const panel = this.add.rectangle(x, y, GAME_WORLD_WIDTH - 44, 62, 0x0b1020, 0.92)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, color, index === 0 ? 0.95 : 0.45)
-      .setInteractive({ useHandCursor: true });
-    const chevron = this.add.text(GAME_WORLD_WIDTH - 48, y + 31, ">", {
-      color: "#e0f2fe",
-      fontFamily: "Arial",
-      fontSize: "18px",
-      fontStyle: "bold"
-    }).setOrigin(0.5);
-    this.drawHex(x + 32, y + 31, 20, color, 0.22, color, 0.92);
-    this.viewObjects.push(panel, chevron);
+    const width = GAME_WORLD_WIDTH - 44;
+    const panel = this.drawCutPanel(x, y, width, 70, index === 0 ? palette.amethyst : palette.abyss, 0.9, color, index === 0 ? 0.9 : 0.48, 10)
+      .setInteractive(new Phaser.Geom.Rectangle(x, y, width, 70), Phaser.Geom.Rectangle.Contains);
 
-    this.viewObjects.push(this.add.text(x + 66, y + 10, character.displayName, {
+    const portrait = this.add.graphics();
+    this.drawOperatorSigil(portrait, x + 37, y + 35, 23, color, index === 0 ? 0.34 : 0.22);
+    this.addToView(portrait);
+
+    this.addToView(this.add.text(x + 72, y + 10, character.displayName.toUpperCase(), {
       color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "19px",
+      fontFamily: titleFont,
+      fontSize: "17px",
       fontStyle: "bold"
     }));
-    this.viewObjects.push(this.add.text(x + 66, y + 35, character.role, {
-      color: "#94a3b8",
-      fontFamily: "Arial",
+    this.addToView(this.add.text(x + 72, y + 34, character.role, {
+      color: "#cbd5e1",
+      fontFamily: uiFont,
       fontSize: "11px"
     }));
-    this.viewObjects.push(this.add.text(x + 220, y + 36, `DMG ${character.damage}  SPD ${character.speed}`, {
-      color: "#7dd3fc",
-      fontFamily: "Arial",
-      fontSize: "10px"
+    this.addToView(this.add.text(x + 72, y + 52, `HP ${character.maxHp}  DMG ${character.damage}  ATK ${character.fireIntervalMs}ms`, {
+      color: "#facc15",
+      fontFamily: numberFont,
+      fontSize: "9px"
     }));
 
+    const shard = this.add.text(x + width - 16, y + 35, ">", {
+      color: "#bae6fd",
+      fontFamily: numberFont,
+      fontSize: "20px",
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+    this.addToView(shard);
+
     panel.on("pointerover", () => {
-      panel.setFillStyle(0x111827, 0.98);
-      panel.setStrokeStyle(1, color, 1);
-      chevron.setColor("#fde68a");
+      panel.setAlpha(1);
+      shard.setColor("#facc15");
     });
     panel.on("pointerout", () => {
-      panel.setFillStyle(0x0b1020, 0.92);
-      panel.setStrokeStyle(1, color, index === 0 ? 0.95 : 0.45);
-      chevron.setColor("#e0f2fe");
+      panel.setAlpha(0.96);
+      shard.setColor("#bae6fd");
     });
     panel.on("pointerup", () => {
       this.selectedCharacter = character;
@@ -95,29 +128,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.clearView();
     const color = this.getClassColor(character.id);
     this.drawBackdrop(character.displayName.toUpperCase(), character.role);
-    this.createBackButton(22, 24, "GERI", () => this.renderArchive());
+    this.createBackButton(18, 22, "GERI", () => this.renderArchive());
 
-    this.drawHex(GAME_WORLD_WIDTH / 2, 126, 46, color, 0.22, color, 1);
-    this.drawHex(GAME_WORLD_WIDTH / 2, 126, 28, 0xf8fafc, 0.04, 0xfde68a, 0.72);
-    this.viewObjects.push(this.add.text(GAME_WORLD_WIDTH / 2, 116, character.displayName.slice(0, 2).toUpperCase(), {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "22px",
-      fontStyle: "bold"
-    }).setOrigin(0.5));
-    this.viewObjects.push(this.add.text(28, 178, character.summary, {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "12px",
-      lineSpacing: 2,
-      wordWrap: { width: GAME_WORLD_WIDTH - 56 }
-    }));
-
-    this.createStatStrip(character, 214);
+    this.drawCharacterHeader(character, color);
+    this.createStatStrip(character, 196);
     this.createDetailItemGrid(character);
     this.createDetailPanel(character);
 
-    this.createButton(34, 794, GAME_WORLD_WIDTH - 68, 38, "BU OPERATORLE BASLA", color, () => {
+    this.createButton(30, 794, GAME_WORLD_WIDTH - 60, 38, "BU OPERATORLE SAVASMAYA BASLA", color, () => {
       this.scene.start("game", { characterId: character.id });
     });
 
@@ -125,32 +143,61 @@ export class CharacterSelectScene extends Phaser.Scene {
       title: "Operator Kimligi",
       subtitle: character.role,
       description: `${character.summary}\n\nPasif: ${character.passive}\n\nUlti: ${character.ultimate}`,
-      color
+      color,
+      type: "passive"
     });
+  }
+
+  private drawCharacterHeader(character: CharacterDefinition, color: number) {
+    const x = 24;
+    const y = 92;
+    const width = GAME_WORLD_WIDTH - 48;
+    this.drawCutPanel(x, y, width, 88, palette.abyss, 0.86, color, 0.72, 12);
+    const portrait = this.add.graphics();
+    this.drawOperatorSigil(portrait, x + 49, y + 44, 34, color, 0.28);
+    this.addToView(portrait);
+
+    this.addToView(this.add.text(x + 96, y + 12, character.displayName.toUpperCase(), {
+      color: "#e7e5df",
+      fontFamily: titleFont,
+      fontSize: "22px",
+      fontStyle: "bold"
+    }));
+    this.addToView(this.add.text(x + 98, y + 40, character.role, {
+      color: "#22d3ee",
+      fontFamily: uiFont,
+      fontSize: "11px",
+      fontStyle: "bold"
+    }));
+    this.addToView(this.add.text(x + 98, y + 58, character.summary, {
+      color: "#cbd5e1",
+      fontFamily: uiFont,
+      fontSize: "10px",
+      lineSpacing: 1,
+      wordWrap: { width: width - 116 }
+    }));
   }
 
   private createStatStrip(character: CharacterDefinition, y: number) {
     const stats = [
-      ["HP", character.maxHp],
-      ["DMG", character.damage],
-      ["ATK", `${character.fireIntervalMs}ms`],
-      ["VEL", character.projectileSpeed]
-    ];
-    stats.forEach(([label, value], index) => {
+      ["HP", character.maxHp, palette.soul],
+      ["DMG", character.damage, palette.crimson],
+      ["ATK", `${character.fireIntervalMs}`, palette.gold],
+      ["VEL", character.projectileSpeed, palette.cyan]
+    ] as const;
+
+    stats.forEach(([label, value, color], index) => {
       const x = 24 + index * 86;
-      const panel = this.add.rectangle(x, y, 76, 44, 0x020617, 0.82)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, 0x334155, 0.9);
-      this.viewObjects.push(panel);
-      this.viewObjects.push(this.add.text(x + 10, y + 8, String(label), {
+      this.drawCutPanel(x, y, 76, 42, palette.slate, 0.82, color, 0.52, 8);
+      this.addToView(this.add.text(x + 9, y + 7, label, {
         color: "#94a3b8",
-        fontFamily: "Arial",
+        fontFamily: uiFont,
         fontSize: "9px",
         fontStyle: "bold"
       }));
-      this.viewObjects.push(this.add.text(x + 10, y + 23, String(value), {
+      this.addToView(this.add.text(x + 9, y + 21, String(value), {
         color: "#f8fafc",
-        fontFamily: "Arial",
+        fontFamily: numberFont,
         fontSize: "13px",
         fontStyle: "bold"
       }));
@@ -161,15 +208,17 @@ export class CharacterSelectScene extends Phaser.Scene {
     const items: DetailItem[] = [
       {
         title: "Pasif",
-        subtitle: "Sabit etki",
+        subtitle: "sabit rituel",
         description: character.passive,
-        color: 0x86efac
+        color: palette.soul,
+        type: "passive"
       },
       {
         title: "Ulti",
-        subtitle: "Kirik esik",
+        subtitle: "kritik protokol",
         description: character.ultimate,
-        color: 0xc4b5fd
+        color: palette.gold,
+        type: "ultimate"
       },
       ...character.skills.map((skill) => this.skillToItem(skill)),
       ...character.towers.map((tower) => this.towerToItem(tower))
@@ -178,64 +227,74 @@ export class CharacterSelectScene extends Phaser.Scene {
     items.forEach((item, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      this.createDetailTile(24 + col * 173, 282 + row * 46, 164, 38, item);
+      this.createDetailTile(24 + col * 173, 254 + row * 42, 164, 34, item);
     });
   }
 
   private createDetailTile(x: number, y: number, width: number, height: number, item: DetailItem) {
-    const tile = this.add.rectangle(x, y, width, height, 0x0b1020, 0.88)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, item.color, 0.48)
-      .setInteractive({ useHandCursor: true });
-    const title = this.add.text(x + 10, y + 6, item.title, {
+    const tile = this.drawCutPanel(x, y, width, height, palette.abyss, 0.86, item.color, 0.42, 7)
+      .setInteractive(new Phaser.Geom.Rectangle(x, y, width, height), Phaser.Geom.Rectangle.Contains);
+    const icon = this.add.graphics();
+    this.drawItemGlyph(icon, x + 15, y + 17, item);
+    this.addToView(icon);
+    const title = this.add.text(x + 30, y + 5, item.title, {
       color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "11px",
+      fontFamily: uiFont,
+      fontSize: "10px",
       fontStyle: "bold"
     });
-    const subtitle = this.add.text(x + 10, y + 22, item.subtitle, {
+    const subtitle = this.add.text(x + 30, y + 19, item.subtitle, {
       color: "#94a3b8",
-      fontFamily: "Arial",
+      fontFamily: uiFont,
       fontSize: "8px"
     });
-    this.viewObjects.push(tile, title, subtitle);
+    this.addToView(title, subtitle);
 
     const activate = () => {
-      tile.setFillStyle(0x111827, 0.98);
-      tile.setStrokeStyle(1, item.color, 1);
+      tile.setAlpha(1);
+      title.setColor("#ffffff");
       this.setDetail(item);
     };
     tile.on("pointerover", activate);
     tile.on("pointerdown", activate);
     tile.on("pointerout", () => {
-      tile.setFillStyle(0x0b1020, 0.88);
-      tile.setStrokeStyle(1, item.color, 0.48);
+      tile.setAlpha(0.92);
+      title.setColor("#f8fafc");
     });
   }
 
   private createDetailPanel(character: CharacterDefinition) {
     const color = this.getClassColor(character.id);
-    const panel = this.add.rectangle(24, 568, GAME_WORLD_WIDTH - 48, 206, 0x020617, 0.94)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, color, 0.72);
-    this.detailTitle = this.add.text(42, 586, "", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "14px",
+    const x = 24;
+    const y = 560;
+    const width = GAME_WORLD_WIDTH - 48;
+    this.drawCutPanel(x, y, width, 214, palette.void, 0.94, color, 0.7, 12);
+    this.detailType = this.add.text(x + 18, y + 14, "", {
+      color: "#94a3b8",
+      fontFamily: numberFont,
+      fontSize: "9px",
       fontStyle: "bold"
     });
-    this.detailText = this.add.text(42, 612, "", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "10px",
-      lineSpacing: 1,
-      wordWrap: { width: GAME_WORLD_WIDTH - 84 }
+    this.detailTitle = this.add.text(x + 18, y + 31, "", {
+      color: "#f8fafc",
+      fontFamily: titleFont,
+      fontSize: "15px",
+      fontStyle: "bold"
     });
-    this.viewObjects.push(panel, this.detailTitle, this.detailText);
+    this.detailText = this.add.text(x + 18, y + 58, "", {
+      color: "#cbd5e1",
+      fontFamily: uiFont,
+      fontSize: "10px",
+      lineSpacing: 2,
+      wordWrap: { width: width - 36 }
+    });
+    this.addToView(this.detailType, this.detailTitle, this.detailText);
   }
 
   private setDetail(item: DetailItem) {
-    this.detailTitle?.setText(`${item.title} | ${item.subtitle}`);
+    this.detailType?.setText(`${item.type.toUpperCase()} / ${item.subtitle.toUpperCase()}`);
+    this.detailType?.setColor(`#${item.color.toString(16).padStart(6, "0")}`);
+    this.detailTitle?.setText(item.title);
     this.detailTitle?.setColor(`#${item.color.toString(16).padStart(6, "0")}`);
     this.detailText?.setText(item.description);
   }
@@ -249,13 +308,14 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     return {
       title: skill.name,
-      subtitle: `Beceri ${Math.round(skill.cooldownMs / 1000)}s`,
+      subtitle: `${Math.round(skill.cooldownMs / 1000)}s cooldown`,
       description: [
         skill.description,
         `Bekleme: ${(skill.cooldownMs / 1000).toFixed(1)}sn`,
         detailByName[skill.name] ?? "Etki: Karaktere ozel aktif beceri. Sayisal etkiler karakter modulu icinde netlestikce burada guncellenecek."
       ].join("\n"),
-      color: 0x7dd3fc
+      color: palette.cyan,
+      type: "skill"
     };
   }
 
@@ -290,7 +350,8 @@ export class CharacterSelectScene extends Phaser.Scene {
       title: tower.name,
       subtitle: tower.role,
       description: parts.join("\n"),
-      color: tower.color
+      color: tower.color,
+      type: "tower"
     };
   }
 
@@ -302,82 +363,145 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private drawBackdrop(title: string, subtitle: string) {
-    const base = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x050711, 1);
-    const header = this.add.rectangle(GAME_WORLD_WIDTH / 2, 94, GAME_WORLD_WIDTH, 188, 0x0f172a, 0.78);
+    const base = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, palette.void, 1);
+    const top = this.add.rectangle(GAME_WORLD_WIDTH / 2, 90, GAME_WORLD_WIDTH, 180, palette.abyss, 0.86);
+    const lower = this.add.rectangle(GAME_WORLD_WIDTH / 2, 522, GAME_WORLD_WIDTH, 640, palette.slate, 0.34);
     const graphics = this.add.graphics();
-    for (let y = 86; y < GAME_WORLD_HEIGHT; y += 42) {
-      graphics.lineStyle(1, 0x38bdf8, y % 84 === 0 ? 0.18 : 0.08);
-      graphics.lineBetween(18, y, GAME_WORLD_WIDTH - 18, y + 14);
+    for (let y = 86; y < GAME_WORLD_HEIGHT; y += 38) {
+      graphics.lineStyle(1, y % 76 === 0 ? palette.cyan : palette.violet, y % 76 === 0 ? 0.14 : 0.065);
+      graphics.lineBetween(18, y, GAME_WORLD_WIDTH - 18, y + 12);
     }
-    for (let index = 0; index < 7; index += 1) {
-      const x = 32 + index * 54;
-      graphics.lineStyle(1, index % 2 === 0 ? 0xa78bfa : 0xfde68a, 0.14);
-      graphics.lineBetween(x, 86, GAME_WORLD_WIDTH - x / 2, 748);
+    for (let index = 0; index < 8; index += 1) {
+      const x = 24 + index * 50;
+      graphics.lineStyle(1, index % 2 === 0 ? palette.gold : palette.cyan, 0.075);
+      graphics.lineBetween(x, 92, GAME_WORLD_WIDTH - x / 2, 770);
     }
-    this.viewObjects.push(base, header, graphics);
-    this.viewObjects.push(this.add.text(88, 34, title, {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: title.length > 12 ? "22px" : "26px",
-      fontStyle: "bold"
-    }));
-    this.viewObjects.push(this.add.text(88, 66, subtitle, {
-      color: "#c4b5fd",
-      fontFamily: "Arial",
-      fontSize: "11px",
-      wordWrap: { width: GAME_WORLD_WIDTH - 112 }
-    }));
+    this.drawSigil(graphics, GAME_WORLD_WIDTH - 42, 72, 32, palette.violet, palette.cyan, palette.gold);
+    this.addToView(base, top, lower, graphics);
+    if (title) {
+      this.addToView(this.add.text(88, 36, title, {
+        color: "#e7e5df",
+        fontFamily: titleFont,
+        fontSize: title.length > 12 ? "21px" : "24px",
+        fontStyle: "bold"
+      }));
+      this.addToView(this.add.text(90, 65, subtitle, {
+        color: "#c4b5fd",
+        fontFamily: uiFont,
+        fontSize: "11px",
+        wordWrap: { width: GAME_WORLD_WIDTH - 126 }
+      }));
+    }
   }
 
   private createBackButton(x: number, y: number, label: string, onClick: () => void) {
-    const button = this.add.rectangle(x, y, 52, 38, 0x0b1020, 0.94)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x7dd3fc, 0.8)
-      .setInteractive({ useHandCursor: true });
-    const text = this.add.text(x + 26, y + 19, label, {
+    const button = this.drawCutPanel(x, y, 54, 38, palette.abyss, 0.94, palette.cyan, 0.72, 8)
+      .setInteractive(new Phaser.Geom.Rectangle(x, y, 54, 38), Phaser.Geom.Rectangle.Contains);
+    const text = this.add.text(x + 27, y + 19, label, {
       color: "#e0f2fe",
-      fontFamily: "Arial",
+      fontFamily: uiFont,
       fontSize: "10px",
       fontStyle: "bold"
     }).setOrigin(0.5);
-    button.on("pointerover", () => button.setFillStyle(0x0e7490, 0.96));
-    button.on("pointerout", () => button.setFillStyle(0x0b1020, 0.94));
+    this.addToView(text);
+    button.on("pointerover", () => text.setColor("#facc15"));
+    button.on("pointerout", () => text.setColor("#e0f2fe"));
     button.on("pointerup", onClick);
-    this.viewObjects.push(button, text);
   }
 
   private createButton(x: number, y: number, width: number, height: number, label: string, color: number, onClick: () => void) {
-    const button = this.add.rectangle(x, y, width, height, 0x082f49, 0.96)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, color, 1)
-      .setInteractive({ useHandCursor: true });
+    const button = this.drawCutPanel(x, y, width, height, palette.amethyst, 0.96, color, 1, 10)
+      .setInteractive(new Phaser.Geom.Rectangle(x, y, width, height), Phaser.Geom.Rectangle.Contains);
     const text = this.add.text(x + width / 2, y + height / 2, label, {
-      color: "#ecfeff",
-      fontFamily: "Arial",
-      fontSize: "13px",
+      color: "#fff7ed",
+      fontFamily: uiFont,
+      fontSize: "12px",
       fontStyle: "bold"
     }).setOrigin(0.5);
-    button.on("pointerover", () => button.setFillStyle(0x0e7490, 1));
-    button.on("pointerout", () => button.setFillStyle(0x082f49, 0.96));
+    this.addToView(text);
+    button.on("pointerover", () => text.setColor("#ffffff"));
+    button.on("pointerout", () => text.setColor("#fff7ed"));
     button.on("pointerup", onClick);
-    this.viewObjects.push(button, text);
   }
 
-  private drawHex(x: number, y: number, radius: number, fill: number, fillAlpha: number, stroke: number, strokeAlpha: number) {
-    const hex = [
-      new Phaser.Geom.Point(x + radius, y),
-      new Phaser.Geom.Point(x + radius / 2, y + radius * 0.86),
-      new Phaser.Geom.Point(x - radius / 2, y + radius * 0.86),
-      new Phaser.Geom.Point(x - radius, y),
-      new Phaser.Geom.Point(x - radius / 2, y - radius * 0.86),
-      new Phaser.Geom.Point(x + radius / 2, y - radius * 0.86)
-    ];
+  private drawCutPanel(x: number, y: number, width: number, height: number, fill: number, alpha: number, stroke: number, strokeAlpha: number, cut: number) {
     const graphics = this.add.graphics();
-    graphics.fillStyle(fill, fillAlpha);
-    graphics.fillPoints(hex, true);
+    const points = [
+      new Phaser.Geom.Point(x + cut, y),
+      new Phaser.Geom.Point(x + width, y),
+      new Phaser.Geom.Point(x + width, y + height - cut),
+      new Phaser.Geom.Point(x + width - cut, y + height),
+      new Phaser.Geom.Point(x, y + height),
+      new Phaser.Geom.Point(x, y + cut)
+    ];
+    graphics.fillStyle(fill, alpha);
+    graphics.fillPoints(points, true);
     graphics.lineStyle(1, stroke, strokeAlpha);
-    graphics.strokePoints(hex, true);
-    this.viewObjects.push(graphics);
+    graphics.strokePoints(points, true);
+    graphics.lineStyle(1, palette.bone, 0.1);
+    graphics.lineBetween(x + 12, y + height - 7, x + width - 24, y + height - 7);
+    this.addToView(graphics);
+    return graphics;
+  }
+
+  private drawOperatorSigil(graphics: Phaser.GameObjects.Graphics, x: number, y: number, radius: number, color: number, alpha: number) {
+    this.drawSigil(graphics, x, y, radius, color, palette.cyan, palette.gold, alpha);
+    graphics.fillStyle(color, 0.62);
+    graphics.fillCircle(x, y, radius * 0.32);
+    graphics.fillStyle(palette.bone, 0.96);
+    graphics.fillCircle(x, y, radius * 0.12);
+  }
+
+  private drawItemGlyph(graphics: Phaser.GameObjects.Graphics, x: number, y: number, item: DetailItem) {
+    graphics.lineStyle(1, item.color, 0.9);
+    if (item.type === "tower") {
+      graphics.strokeRect(x - 6, y - 6, 12, 12);
+      graphics.lineBetween(x - 9, y, x + 9, y);
+      graphics.lineBetween(x, y - 9, x, y + 9);
+    } else if (item.type === "skill") {
+      graphics.strokeCircle(x, y, 8);
+      graphics.lineBetween(x - 6, y + 5, x + 6, y - 5);
+    } else if (item.type === "ultimate") {
+      graphics.strokeCircle(x, y, 9);
+      graphics.strokeCircle(x, y, 4);
+      graphics.fillStyle(item.color, 0.85);
+      graphics.fillCircle(x, y, 2);
+    } else {
+      graphics.beginPath();
+      graphics.moveTo(x, y - 9);
+      graphics.lineTo(x + 8, y + 6);
+      graphics.lineTo(x - 8, y + 6);
+      graphics.closePath();
+      graphics.strokePath();
+    }
+  }
+
+  private drawSigil(graphics: Phaser.GameObjects.Graphics, x: number, y: number, radius: number, primary: number, secondary: number, accent: number, alpha = 0.28) {
+    graphics.lineStyle(1, primary, alpha);
+    graphics.strokeCircle(x, y, radius);
+    graphics.strokeCircle(x, y, radius * 0.58);
+    for (let index = 0; index < 10; index += 1) {
+      const angle = (Math.PI * 2 * index) / 10;
+      graphics.lineStyle(1, index % 3 === 0 ? accent : secondary, alpha * 0.7);
+      graphics.lineBetween(x, y, x + Math.cos(angle) * radius, y + Math.sin(angle) * radius);
+    }
+  }
+
+  private drawDiamond(graphics: Phaser.GameObjects.Graphics, x: number, y: number, radius: number, fill: number, fillAlpha: number, stroke: number, strokeAlpha: number) {
+    const points = [
+      new Phaser.Geom.Point(x, y - radius),
+      new Phaser.Geom.Point(x + radius, y),
+      new Phaser.Geom.Point(x, y + radius),
+      new Phaser.Geom.Point(x - radius, y)
+    ];
+    graphics.fillStyle(fill, fillAlpha);
+    graphics.fillPoints(points, true);
+    graphics.lineStyle(1, stroke, strokeAlpha);
+    graphics.strokePoints(points, true);
+  }
+
+  private addToView(...objects: Phaser.GameObjects.GameObject[]) {
+    this.viewObjects.push(...objects);
   }
 
   private clearView() {
@@ -387,6 +511,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.viewObjects = [];
     this.detailText = undefined;
     this.detailTitle = undefined;
+    this.detailType = undefined;
   }
 
   private getClassColor(characterId: CharacterId) {
