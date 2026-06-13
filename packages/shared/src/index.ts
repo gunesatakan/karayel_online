@@ -1,9 +1,12 @@
 import type { EditableMapData } from "./map.js";
+import type { MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
 export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
+export type { DamageType, HitType, MovementKind, StatusEffectId } from "./combat.js";
+export { applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, getEnemyCombatDefinition } from "./combat.js";
 
 export const GAME_WORLD_WIDTH = 390;
 export const GAME_WORLD_HEIGHT = 844;
@@ -46,9 +49,15 @@ export type EnemySnapshot = {
   y: number;
   hp: number;
   maxHp: number;
+  armor: number;
+  healthRegenPerSecond: number;
+  shield: number;
+  maxShield: number;
+  movementKind: MovementKind;
   pathDistance: number;
   pathId?: number;
   isTracked?: boolean;
+  trackingStacks?: number;
   isFeared?: boolean;
 };
 

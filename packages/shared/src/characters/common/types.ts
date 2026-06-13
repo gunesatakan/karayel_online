@@ -1,4 +1,5 @@
 import type { CharacterId } from "../../index.js";
+import type { DamageType, HitType } from "../../combat.js";
 
 export type TowerDefinition = {
   id: string;
@@ -7,8 +8,8 @@ export type TowerDefinition = {
   role: string;
   description?: string;
   classType?: "damage" | "support" | "control" | "hybrid";
-  damageType?: "physical" | "electric" | "psychic" | "fire" | "none";
-  hitType?: "projectile" | "impact" | "focus" | "aura";
+  damageType?: DamageType;
+  hitType?: HitType;
   mechanics?: string[];
   cost: number;
   upgradeCost: number;

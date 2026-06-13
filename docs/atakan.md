@@ -461,10 +461,14 @@ Tablo notlari:
 | 9 | 52.3 | 144 ms | 200 | 363.3 | 389 |
 | 10 | 57.4 | 80 ms | 211 | 717.0 | - |
 
-Takipci'nin isaret mekanigi levelden bagimsizdir:
+Takipci'nin isaret mekanigi level esiklerine gore stacklenir:
 
 - Takipte suresi: 6.5 saniye.
-- Takipte hasar artisi: Takipci haricindeki kaynaklardan %20 fazla hasar.
+- Lv1-4: En fazla 1 stack uygular. Takipci haricindeki kaynaklar hedefe x1.2 hasar verir.
+- Lv5-9: En fazla 2 stack uygular. Takipci haricindeki kaynaklar hedefe x1.4 hasar verir.
+- Lv10: En fazla 3 stack uygular. Takipci haricindeki kaynaklar hedefe x1.6 hasar verir.
+- Dusuk level Takipci, daha yuksek stacklerin suresini yenileyemez. Ornegin Lv4 Takipci 2. stacki, Lv9 Takipci 3. stacki uzatamaz.
+- Gorsel isaret: 1 stack sari `T`, 2 stack cyan `T2`, 3 stack mor `T3`.
 
 ### Sunucu - Level Statlari
 
@@ -624,7 +628,8 @@ Dalga bonuslari:
 
 - Kaynak: Takipci.
 - Sure: 6.5 saniye.
-- Etki: Takipci haricindeki hasar kaynaklarindan %20 daha fazla hasar.
+- Etki: Stack basina Takipci haricindeki hasar kaynaklarindan %20 daha fazla hasar.
+- Stack limitleri: Lv1-4 en fazla 1, Lv5-9 en fazla 2, Lv10 en fazla 3.
 - Debug Lazer hedef seciminde Takipte dusmanlari onceliklendirir.
 - Atakan drone'lari mevcut uygulamada Takipte onceligi kullanmaz; nexus kritik degilse kendilerine en yakin dusmana saldirir.
 

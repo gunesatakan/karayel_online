@@ -12,7 +12,10 @@ import {
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
   createDefaultEditableMap,
+  applyStatusResistance,
+  calculateDamageTaken,
   findPathToNearestNexus,
+  getEnemyCombatDefinition,
   getMapPoints,
   getTile,
   gridToWorld,
@@ -23,9 +26,12 @@ import {
   towerCatalog,
   type CharacterId,
   type DamageEventSnapshot,
+  type DamageType,
   type DroneSnapshot,
   type EnemyType,
   type EditableMapData,
+  type MovementKind,
+  type StatusEffectId,
   type BeamSnapshot,
   type GameSnapshot,
   type KillEventSnapshot,
@@ -103,12 +109,20 @@ type EnemyModel = {
   y: number;
   hp: number;
   maxHp: number;
+  armor: number;
+  healthRegenPerSecond: number;
+  shield: number;
+  maxShield: number;
+  movementKind: MovementKind;
+  damageResistances: Partial<Record<DamageType, number>>;
+  statusResistances: Partial<Record<StatusEffectId, number>>;
+  abilities: string[];
   speed: number;
   reward: number;
   pathDistance: number;
   slowUntil: number;
   fearUntil: number;
-  trackingUntil: number;
+  trackingStackUntil: [number, number, number];
   pathId: number;
 };
 
@@ -153,6 +167,7 @@ type ProjectileModel = {
   towerId: string;
   definitionId: string;
   kind: ProjectileKind;
+  damageType: DamageType;
   source: "tower";
   targetId: string;
   x: number;
@@ -416,9 +431,11 @@ export class MatchRoom extends Room<MatchState> {
   private spawnEnemy() {
     const roll = Math.random();
     const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
+    const definition = getEnemyCombatDefinition(type);
     const waveScale = getWaveHpMultiplier(this.wave);
-    const maxHp = Math.round((type === "brute" ? 76 : type === "runner" ? 30 : type === "shooter" ? 42 : 46) * waveScale);
-    const speed = (type === "runner" ? 78 : type === "brute" ? 34 : type === "shooter" ? 44 : 50) + this.wave * 2.4;
+    const maxHp = Math.round(definition.maxHp * waveScale);
+    const maxShield = Math.round(definition.shield * waveScale);
+    const speed = definition.speed + this.wave * 2.4;
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
     const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
     const start = path.points[0] ?? gridToWorld(0, 0);
@@ -431,12 +448,20 @@ export class MatchRoom extends Room<MatchState> {
       y: start.y,
       hp: maxHp,
       maxHp,
+      armor: definition.armor,
+      healthRegenPerSecond: definition.healthRegenPerSecond,
+      shield: maxShield,
+      maxShield,
+      movementKind: definition.movementKind,
+      damageResistances: { ...definition.damageResistances },
+      statusResistances: { ...definition.statusResistances },
+      abilities: [...(definition.abilities ?? [])],
       speed,
-      reward: type === "brute" ? 18 : type === "runner" ? 11 : type === "shooter" ? 14 : 12,
+      reward: definition.reward,
       pathDistance: 0,
       slowUntil: 0,
       fearUntil: 0,
-      trackingUntil: 0,
+      trackingStackUntil: [0, 0, 0],
       pathId
     });
   }
@@ -517,6 +542,7 @@ export class MatchRoom extends Room<MatchState> {
       towerId: tower.id,
       definitionId: tower.definition.id,
       kind: "tower",
+      damageType: tower.definition.damageType ?? "physical",
       source: "tower",
       targetId: target.id,
       x: tower.x,
@@ -541,6 +567,7 @@ export class MatchRoom extends Room<MatchState> {
       towerId: sourceTower.id,
       definitionId,
       kind: "tower",
+      damageType: sourceTower.definition.damageType ?? "electric",
       source: "tower",
       targetId: target.id,
       x: sourceTower.x,
@@ -582,7 +609,7 @@ export class MatchRoom extends Room<MatchState> {
   private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
-    const wasTracked = target.trackingUntil > now;
+    const wasTracked = this.getTrackingStackCount(target, now) > 0;
     const killed = this.damageEnemyFromTower(tower, target, baseDamage, tower.definition.slowMs);
 
     if (wasTracked && killed) {
@@ -835,16 +862,18 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const projectileOwnerId = this.towers.get(projectile.towerId)?.ownerId ?? "";
+      const projectileTower = this.towers.get(projectile.towerId);
+      const projectileOwnerId = projectileTower?.ownerId ?? "";
+      const projectileTowerLevel = projectileTower?.level ?? 1;
       if (projectile.aoeRadius > 0) {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, this.getProjectileDamage(projectile, enemy, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId);
+            this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel);
           }
         }
       } else {
-        this.damageEnemy(target, this.getProjectileDamage(projectile, target), projectile.slowMs, projectile.definitionId, projectileOwnerId);
+        this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -911,6 +940,10 @@ export class MatchRoom extends Room<MatchState> {
   private updateEnemies(seconds: number) {
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
+      if (enemy.healthRegenPerSecond > 0 && enemy.hp > 0) {
+        enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.healthRegenPerSecond * seconds);
+      }
+
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
       const speedMultiplier = isSlowed ? 0.48 : 1;
@@ -1181,7 +1214,8 @@ export class MatchRoom extends Room<MatchState> {
     if (player.characterId === "healer") {
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 28);
       for (const enemy of this.enemies.values()) {
-        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + 1800);
+        const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
+        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + duration);
       }
       return;
     }
@@ -1327,28 +1361,43 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-5") {
-      return candidates.sort((a, b) => Number(b.trackingUntil > now) - Number(a.trackingUntil > now) || b.pathDistance - a.pathDistance)[0];
+      return candidates.sort((a, b) => this.getTrackingStackCount(b, now) - this.getTrackingStackCount(a, now) || b.pathDistance - a.pathDistance)[0];
     }
 
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "") {
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1) {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
 
     this.perfCounters.damageEvents += 1;
     const now = Date.now();
-    const trackingBonus = enemy.trackingUntil > now && sourceDefinitionId !== "warrior-1" ? 1.2 : 1;
-    const effectiveDamage = damage * trackingBonus;
-    enemy.hp -= effectiveDamage;
-    this.addDamageEvent(enemy, effectiveDamage);
+    const trackingStacks = this.getTrackingStackCount(enemy, now);
+    const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * 0.2 : 1;
+    const result = calculateDamageTaken(
+      { amount: damage * trackingBonus, damageType },
+      {
+        armor: enemy.armor,
+        shield: enemy.shield,
+        damageResistances: enemy.damageResistances
+      }
+    );
+    enemy.shield = result.remainingShield;
+    let hpDamage = result.hpDamage;
+    if (maxHealthDamageRatio > 0 && enemy.shield <= 0) {
+      hpDamage += enemy.maxHp * maxHealthDamageRatio;
+    }
+    enemy.hp -= hpDamage;
+    this.addDamageEvent(enemy, result.shieldDamage + hpDamage);
     if (sourceDefinitionId === "warrior-1") {
-      enemy.trackingUntil = Math.max(enemy.trackingUntil, now + 6500);
+      const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
+      this.applyTrackingStacks(enemy, now + duration, this.getTrackingStackLimit(sourceTowerLevel));
     }
     if (slowMs > 0) {
-      enemy.slowUntil = Math.max(enemy.slowUntil, now + slowMs);
+      const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
+      enemy.slowUntil = Math.max(enemy.slowUntil, now + duration);
     }
 
     if (enemy.hp > 0) {
@@ -1368,12 +1417,31 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
-    const bonusDamage = enemy.maxHp * this.getServerLinkedMaxHealthDamageRatio(tower);
-    return this.damageEnemy(enemy, damage + bonusDamage, slowMs, tower.definition.id, tower.ownerId);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, tower.definition.damageType ?? "physical", this.getServerLinkedMaxHealthDamageRatio(tower), tower.level);
   }
 
-  private getProjectileDamage(projectile: ProjectileModel, enemy: EnemyModel, damageMultiplier = 1) {
-    return projectile.damage * damageMultiplier + enemy.maxHp * projectile.maxHealthDamageRatio;
+  private getTrackingStackCount(enemy: EnemyModel, now = Date.now()) {
+    return enemy.trackingStackUntil.filter((until) => until > now).length;
+  }
+
+  private applyTrackingStacks(enemy: EnemyModel, expiresAt: number, stackLimit: number) {
+    for (let index = 0; index < stackLimit; index += 1) {
+      enemy.trackingStackUntil[index] = Math.max(enemy.trackingStackUntil[index], expiresAt);
+    }
+  }
+
+  private getTrackingStackLimit(towerLevel: number) {
+    if (towerLevel >= 10) {
+      return 3;
+    }
+    if (towerLevel >= 5) {
+      return 2;
+    }
+    return 1;
+  }
+
+  private getProjectileDamage(projectile: ProjectileModel, damageMultiplier = 1) {
+    return projectile.damage * damageMultiplier;
   }
 
   private addKillEvent(ownerId: string, enemyId: string) {
@@ -1438,7 +1506,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private slowAllEnemies(slowMs: number) {
     for (const enemy of this.enemies.values()) {
-      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + slowMs);
+      const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
+      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + duration);
     }
   }
 
@@ -1481,9 +1550,15 @@ export class MatchRoom extends Room<MatchState> {
         y: enemy.y,
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
+        armor: enemy.armor,
+        healthRegenPerSecond: enemy.healthRegenPerSecond,
+        shield: Math.max(0, enemy.shield),
+        maxShield: enemy.maxShield,
+        movementKind: enemy.movementKind,
         pathDistance: enemy.pathDistance,
         pathId: enemy.pathId,
-        isTracked: enemy.trackingUntil > now,
+        trackingStacks: this.getTrackingStackCount(enemy, now),
+        isTracked: this.getTrackingStackCount(enemy, now) > 0,
         isFeared: enemy.fearUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
@@ -1709,7 +1784,8 @@ export class MatchRoom extends Room<MatchState> {
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
       if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range) {
-        enemy.slowUntil = Math.max(enemy.slowUntil, now + slowMs);
+        const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
+        enemy.slowUntil = Math.max(enemy.slowUntil, now + duration);
       }
     }
   }
@@ -1758,7 +1834,8 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "warrior-4") {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
         if (tower.level >= 3) {
-          target.fearUntil = Math.max(target.fearUntil, Date.now() + STATUS_EFFECTS.fear.durationMs);
+          const duration = applyStatusResistance(STATUS_EFFECTS.fear.durationMs, target.statusResistances.fear);
+          target.fearUntil = Math.max(target.fearUntil, Date.now() + duration);
         }
       }
       return;
@@ -1778,7 +1855,7 @@ export class MatchRoom extends Room<MatchState> {
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, enemy, 0.42), 0, projectile.definitionId, tower.ownerId);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.42), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level);
       }
     }
 

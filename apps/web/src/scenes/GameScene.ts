@@ -731,7 +731,8 @@ export class GameScene extends Phaser.Scene {
         x: pathPoint.x,
         y: pathPoint.y,
         pathDistance,
-        hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp
+        hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp,
+        shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield
       };
     });
 
@@ -850,11 +851,13 @@ export class GameScene extends Phaser.Scene {
       }
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+      mover.sprite.setTint(enemy.shield > 0 ? 0xbfdbfe : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
-      mover.marker?.setText(enemy.isFeared ? "KORKU" : "T");
-      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : "#fde047");
+      const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
+      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : "T");
+      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : getTrackingMarkerColor(trackingStacks));
       mover.marker?.setFontSize(enemy.isFeared ? 9 : 12);
-      mover.marker?.setVisible(Boolean(enemy.isFeared || enemy.isTracked));
+      mover.marker?.setVisible(Boolean(enemy.isFeared || trackingStacks > 0));
     }
   }
 
@@ -1567,4 +1570,14 @@ function getTowerLevelHalo(level: number) {
     strokeAlpha: glowing ? 1 : 0.78,
     strokeWidth: glowing ? 3 : 2
   };
+}
+
+function getTrackingMarkerColor(stacks: number) {
+  if (stacks >= 3) {
+    return "#d8b4fe";
+  }
+  if (stacks >= 2) {
+    return "#67e8f9";
+  }
+  return "#fde047";
 }
