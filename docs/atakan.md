@@ -130,7 +130,7 @@ Bag suresi, Sunucu ile ayni kule arasinda link kopmadan gecen dalga sayisiyla ol
 | Bagli kalinan dalga | Buff |
 |---:|---|
 | 5 dalga | Bagli kule `impact/carpma` vurus tipindeyse hasari Sunucu leveline gore artar: `+%12` - `+%30`. |
-| 10 dalga | Bagli kulenin her vurusuna Sunucu leveline gore hedefin maksimum caninin `%0.5` - `%1.5` kadari ek hasar olarak eklenir. |
+| 10 dalga | Bagli kulenin her vurusuna Sunucu leveline gore hedefin maksimum caninin `%0.1` - `%0.5` kadari ek hasar olarak eklenir. |
 
 Notlar:
 
@@ -138,7 +138,7 @@ Notlar:
 - Debug Lazer `focus` vurus tipinde oldugu icin 5 dalga buff'indan etkilenmez.
 - 10 dalga buff'i vurus tipinden bagimsizdir. Bu nedenle Debug Lazer gibi sik tick atan kulelerde cok degerlidir; tick araligi dustukce saniye basina uygulanan max HP hasari da artar.
 - 5 dalga impact buff formulu: `bonus = 0.10 + SunucuLevel * 0.02`. Lv1 `+%12`, Lv5 `+%20`, Lv10 `+%30`.
-- 10 dalga max HP buff formulu: `oran = 0.005 + ((SunucuLevel - 1) / 9) * 0.01`. Lv1 `%0.5`, Lv5 `%0.94`, Lv10 `%1.5`.
+- 10 dalga max HP buff formulu: `oran = 0.001 + ((SunucuLevel - 1) / 9) * 0.004`. Lv1 `%0.1`, Lv5 `%0.28`, Lv10 `%0.5`.
 - Link koparsa veya Sunucu baska kuleye baglanirken eski link slot'tan duserse bag sayaci sifirlanir.
 - 5 ve 10 dalga esigine ulasan bagli kulelerin sprite icinde Matrix benzeri kod akisi efekti gorunur. Efekt sprite'in icinde kalir, boylece kulenin tipi ayirt edilmeye devam eder.
 
@@ -502,22 +502,22 @@ Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır.
 | Lv | Baz hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 0.0 | 980 ms | Global | 0.0 | 20 |
-| 2 | 0.0 | 882 ms | Global | 0.0 | 30 |
-| 3 | 0.0 | 784 ms | Global | 0.0 | 40 |
-| 4 | 0.0 | 686 ms | Global | 0.0 | 50 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 60 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 70 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 80 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 90 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 100 |
+| 2 | 0.0 | 882 ms | Global | 0.0 | 43 |
+| 3 | 0.0 | 784 ms | Global | 0.0 | 65 |
+| 4 | 0.0 | 686 ms | Global | 0.0 | 88 |
+| 5 | 0.0 | 588 ms | Global | 0.0 | 110 |
+| 6 | 0.0 | 490 ms | Global | 0.0 | 133 |
+| 7 | 0.0 | 392 ms | Global | 0.0 | 155 |
+| 8 | 0.0 | 294 ms | Global | 0.0 | 178 |
+| 9 | 0.0 | 196 ms | Global | 0.0 | 200 |
 | 10 | 0.0 | 98 ms | Global | 0.0 | - |
 
 Sunucu upgrade maliyeti ozel bir yumusak artis egrisi kullanir:
 
 ```txt
-Maliyet = round(20 + (MevcutLevel - 1) * ((100 - 20) / 8))
+Maliyet = round(20 + (MevcutLevel - 1) * ((200 - 20) / 8))
 Lv1->2: 20g
-Lv9->10: 100g
+Lv9->10: 200g
 ```
 
 Elektrik topu level etkisi:
@@ -546,7 +546,7 @@ Uzun baglanti bufflari:
 | Bagli kalinan dalga | Bagli kuleye etkisi |
 |---:|---|
 | 5 | Bagli kule `impact/carpma` vurus tipindeyse hasar Sunucu leveline gore `x1.12` - `x1.30` olur. |
-| 10 | Bagli kulenin her hasar uygulamasina Sunucu leveline gore hedef max HP'sinin `%0.5` - `%1.5` kadari eklenir. |
+| 10 | Bagli kulenin her hasar uygulamasina Sunucu leveline gore hedef max HP'sinin `%0.1` - `%0.5` kadari eklenir. |
 
 ### Izolasyon Kulesi - Level Statlari
 

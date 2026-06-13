@@ -233,5 +233,5 @@ function getServerTowerUpgradeCost(currentLevel: number) {
     return 0;
   }
 
-  return Math.round(20 + (currentLevel - 1) * ((100 - 20) / 8));
+  return Math.round(20 + (currentLevel - 1) * ((200 - 20) / 8));
 }
