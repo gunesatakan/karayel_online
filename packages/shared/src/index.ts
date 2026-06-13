@@ -76,6 +76,8 @@ export type TowerSnapshot = {
   hp?: number;
   maxHp?: number;
   status?: string;
+  damageDealt?: number;
+  currentDps?: number;
   waveBonusLevel?: number;
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];

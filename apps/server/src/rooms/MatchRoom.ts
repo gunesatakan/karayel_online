@@ -55,6 +55,7 @@ const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
+const TOWER_DPS_WINDOW_MS = 5000;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -157,6 +158,8 @@ type TowerModel = {
   linkedTowerIds: string[];
   linkedTowerWaveAges: Record<string, number>;
   rangeMemoryEnemyIds: string[];
+  damageDealt: number;
+  damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
 
 type DebugOverdriveHeatSegment = {
@@ -875,11 +878,11 @@ export class MatchRoom extends Room<MatchState> {
         for (const enemy of this.enemies.values()) {
           this.perfCounters.aoeChecks += 1;
           if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel);
+            this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
           }
         }
       } else {
-        this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel);
+        this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
       }
       this.applyPostHitEffects(projectile, target);
 
@@ -1013,7 +1016,9 @@ export class MatchRoom extends Room<MatchState> {
       waveBonusLevel: 0,
       linkedTowerIds: [],
       linkedTowerWaveAges: {},
-      rangeMemoryEnemyIds: []
+      rangeMemoryEnemyIds: [],
+      damageDealt: 0,
+      damageWindow: []
     };
 
     this.towers.set(tower.id, tower);
@@ -1373,7 +1378,7 @@ export class MatchRoom extends Room<MatchState> {
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1) {
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
@@ -1395,8 +1400,10 @@ export class MatchRoom extends Room<MatchState> {
     if (maxHealthDamageRatio > 0 && enemy.shield <= 0) {
       hpDamage += enemy.maxHp * maxHealthDamageRatio;
     }
+    const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
     this.addDamageEvent(enemy, result.shieldDamage + hpDamage);
+    this.recordTowerDamage(sourceTowerId, dealtAmount, now);
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
@@ -1423,7 +1430,35 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, tower.definition.damageType ?? "physical", this.getServerLinkedMaxHealthDamageRatio(tower), tower.level);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, tower.definition.damageType ?? "physical", this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
+  }
+
+  private recordTowerDamage(towerId: string, amount: number, now = Date.now()) {
+    if (!towerId || amount <= 0) {
+      return;
+    }
+
+    const tower = this.towers.get(towerId);
+    if (!tower) {
+      return;
+    }
+
+    tower.damageDealt += amount;
+    tower.damageWindow.push({ dealtAt: now, amount });
+    this.pruneTowerDamageWindow(tower, now);
+  }
+
+  private getTowerCurrentDps(tower: TowerModel, now = Date.now()) {
+    this.pruneTowerDamageWindow(tower, now);
+    const damage = tower.damageWindow.reduce((total, sample) => total + sample.amount, 0);
+    return damage / (TOWER_DPS_WINDOW_MS / 1000);
+  }
+
+  private pruneTowerDamageWindow(tower: TowerModel, now = Date.now()) {
+    const keepAfter = now - TOWER_DPS_WINDOW_MS;
+    while (tower.damageWindow.length > 0 && tower.damageWindow[0].dealtAt < keepAfter) {
+      tower.damageWindow.shift();
+    }
   }
 
   private getTrackingStackCount(enemy: EnemyModel, now = Date.now()) {
@@ -1582,6 +1617,8 @@ export class MatchRoom extends Room<MatchState> {
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
         status: this.getTowerStatus(tower),
+        damageDealt: Math.round(tower.damageDealt),
+        currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
         waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds]
@@ -1907,7 +1944,7 @@ export class MatchRoom extends Room<MatchState> {
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id);
       }
     }
 

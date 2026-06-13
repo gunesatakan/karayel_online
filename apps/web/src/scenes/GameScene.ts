@@ -247,13 +247,6 @@ export class GameScene extends Phaser.Scene {
       fontSize: "13px",
       fontStyle: "bold"
     }).setOrigin(1, 0).setDepth(21);
-    this.perfText = this.add.text(GAME_WORLD_WIDTH - 16, 34, "PERF bekleniyor", {
-      color: "#94a3b8",
-      fontFamily: "Arial",
-      fontSize: "9px",
-      align: "right",
-      lineSpacing: 1
-    }).setOrigin(1, 0).setDepth(21);
   }
 
   private createTowerTray() {
@@ -876,6 +869,10 @@ export class GameScene extends Phaser.Scene {
         this.towers.delete(id);
       }
     }
+    if (this.selectedPlacedTowerId && !activeIds.has(this.selectedPlacedTowerId)) {
+      this.selectedPlacedTowerId = undefined;
+      this.updateSelectionUi();
+    }
 
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
@@ -1456,6 +1453,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.lastSelectionKey = selectionKey;
+    this.game.events.emit("tower:selected", selectedTower?.id);
 
     for (const [id, button] of this.towerButtons) {
       const selected = id === this.selectedTowerDefinition.id && !this.selectedPlacedTowerId;
@@ -1540,6 +1538,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePerfOverlay(snapshot: GameSnapshot) {
+    if (!this.perfText) {
+      return;
+    }
+
     const now = performance.now();
     if (now - this.lastPerfOverlayAt < 250) {
       return;
