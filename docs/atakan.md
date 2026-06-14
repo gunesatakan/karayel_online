@@ -267,7 +267,7 @@ Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kules
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 160 altin |
+| Maliyet | 240 altin |
 | Upgrade maliyeti | Satın alım maliyetine orantılı |
 | Menzil | 118 |
 | Hasar | 9 |
