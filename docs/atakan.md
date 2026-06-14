@@ -209,7 +209,8 @@ Obsesyon Kulesi ayni hedefe odaklandikca guclenir. Tank dusmanlara oncelik verir
 - Korku etkisi kule seviye 3 ve sonrasinda acilir.
 - Ayni hedefe 3. vurustan sonra hedefe `Korku` uygulanir.
 - Lv3-6 arasinda korku suresi 1.5 saniyedir.
-- Lv7 ve sonrasinda korku suresi 3 saniyeye cikar.
+- Lv7-9 arasinda korku suresi 3 saniyeye cikar.
+- Lv10'da korku suresi 4 saniye olur.
 - Korkan dusman sure boyunca yol uzerinde geri kacar.
 - Ayni hedefe ek vuruslar korku suresini tazeleyebilir.
 
@@ -700,7 +701,7 @@ Bu tabloya gore:
 
 - Kaynak: Obsesyon Kulesi, seviye 3+.
 - Kosul: Ayni hedefe 3. vurus.
-- Sure: Lv3-6 `1.5 saniye`, Lv7+ `3 saniye`.
+- Sure: Lv3-6 `1.5 saniye`, Lv7-9 `3 saniye`, Lv10 `4 saniye`.
 - Etki: Dusman path uzerinde geri kacar.
 
 ### Hararet

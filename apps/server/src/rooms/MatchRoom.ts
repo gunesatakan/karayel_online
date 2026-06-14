@@ -2205,6 +2205,10 @@ function getObsessionDamageMultiplier(level: number) {
 }
 
 function getObsessionFearDurationMs(level: number) {
+  if (level >= 10) {
+    return 4000;
+  }
+
   return level >= 7 ? STATUS_EFFECTS.fear.durationMs : 1500;
 }
 
