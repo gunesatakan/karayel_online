@@ -196,6 +196,7 @@ Obsesyon Kulesi ayni hedefe odaklandikca guclenir. Tank dusmanlara oncelik verir
 | Hasar | 18 |
 | Atis araligi | 760 ms |
 | Mermi hizi | 330 |
+| Ucan hedef | Vurabilir |
 
 **Odak mekanigi:**
 
@@ -274,6 +275,7 @@ Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kules
 | Hasar | 9 |
 | Atis araligi | 940 ms |
 | Mermi hizi | 370 |
+| Ucan hedef | Vurabilir |
 
 **Calisma ritmi:**
 

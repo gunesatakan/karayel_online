@@ -445,6 +445,9 @@ export class MatchRoom extends Room<MatchState> {
     const roll = Math.random();
     const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
     const definition = getEnemyCombatDefinition(type);
+    const isFlyingWave = this.wave === 5 || this.wave === 10;
+    const isMixedFlightWave = this.wave === 15 || this.wave === 20;
+    const isFlyingEnemy = isFlyingWave || (isMixedFlightWave && this.waveSpawned % 2 === 0);
     const waveScale = getWaveHpMultiplier(this.wave);
     const maxHp = Math.round(definition.maxHp * waveScale);
     const maxShield = Math.round(definition.shield * waveScale);
@@ -465,10 +468,10 @@ export class MatchRoom extends Room<MatchState> {
       healthRegenPerSecond: definition.healthRegenPerSecond,
       shield: maxShield,
       maxShield,
-      movementKind: definition.movementKind,
+      movementKind: isFlyingEnemy ? "air" : definition.movementKind,
       damageResistances: { ...definition.damageResistances },
       statusResistances: { ...definition.statusResistances },
-      abilities: [...(definition.abilities ?? [])],
+      abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
       reward: definition.reward,
       pathDistance: 0,
@@ -810,7 +813,7 @@ export class MatchRoom extends Room<MatchState> {
 
         const linkedRange = this.getTowerRange(linkedTower);
         const currentEnemyIds = Array.from(this.enemies.values())
-          .filter((enemy) => distanceSq(linkedTower.x, linkedTower.y, enemy.x, enemy.y) <= linkedRange * linkedRange)
+          .filter((enemy) => enemy.movementKind !== "air" && distanceSq(linkedTower.x, linkedTower.y, enemy.x, enemy.y) <= linkedRange * linkedRange)
           .map((enemy) => enemy.id);
         const previousEnemyIds = linkedTower.rangeMemoryEnemyIds;
         linkedTower.rangeMemoryEnemyIds = currentEnemyIds;
@@ -976,6 +979,23 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const path = this.activePaths[enemy.pathId] ?? this.activePaths[0];
+      if (enemy.movementKind === "air") {
+        const pathPoints = path?.points ?? [];
+        const start = pathPoints[0] ?? gridToWorld(0, 0);
+        const end = pathPoints[pathPoints.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+        const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
+        if (enemy.pathDistance >= flightLength) {
+          this.enemies.delete(id);
+          this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          continue;
+        }
+
+        const progress = Math.min(1, enemy.pathDistance / flightLength);
+        enemy.x = start.x + (end.x - start.x) * progress;
+        enemy.y = start.y + (end.y - start.y) * progress;
+        continue;
+      }
+
       const pathLength = path?.totalLength ?? totalPathLength;
       if (enemy.pathDistance >= pathLength) {
         this.enemies.delete(id);
@@ -1366,7 +1386,7 @@ export class MatchRoom extends Room<MatchState> {
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
     if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
-        .filter((enemy) => distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= 78 * 78)
+        .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= 78 * 78)
         .sort((a, b) => b.pathDistance - a.pathDistance)[0];
       if (guidedTarget) {
         return guidedTarget;
@@ -1378,7 +1398,7 @@ export class MatchRoom extends Room<MatchState> {
     const candidates = Array.from(this.enemies.values())
       .filter((enemy) => {
         this.perfCounters.targetChecks += 1;
-        return distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
+        return this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
       });
 
     if (tower.definition.id === "warrior-4") {
@@ -1390,6 +1410,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  }
+
+  private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
+    if (enemy.movementKind !== "air") {
+      return true;
+    }
+
+    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6";
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {

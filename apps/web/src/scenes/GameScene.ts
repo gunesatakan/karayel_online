@@ -861,13 +861,14 @@ export class GameScene extends Phaser.Scene {
       }
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
-      mover.sprite.setTint(enemy.shield > 0 ? 0xbfdbfe : 0xffffff);
+      mover.sprite.setTint(enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
-      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : "T");
-      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : getTrackingMarkerColor(trackingStacks));
-      mover.marker?.setFontSize(enemy.isFeared ? 9 : 12);
-      mover.marker?.setVisible(Boolean(enemy.isFeared || trackingStacks > 0));
+      const hasCombatMarker = Boolean(enemy.isFeared || trackingStacks > 0);
+      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : "AIR");
+      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isFeared ? 9 : hasCombatMarker ? 12 : 8);
+      mover.marker?.setVisible(Boolean(hasCombatMarker || enemy.movementKind === "air"));
     }
   }
 

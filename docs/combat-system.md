@@ -13,7 +13,7 @@ Her dusman artik yalnizca HP ve hizdan olusmaz. Temel alanlar:
 | Can yenileme | Saniye basina yenilenen HP. Maksimum HP'yi gecmez. |
 | Hareket hizi | Yol uzerinde saniye basina ilerleme degeri. |
 | Kalkan | HP'den once hasar yiyen ek bariyer. |
-| Hareket tipi | `ground` veya `air`. Su an sistemde tutulur; kule hedefleme kurallari sonraki adimda buna baglanabilir. |
+| Hareket tipi | `ground` veya `air`. `ground` dusmanlar yolu izler, `air` dusmanlar spawn noktasindan nexusa direkt ucar. |
 | Hasar direncleri | Hasar turu bazinda gelen hasari azaltir veya zayiflik olarak artirir. |
 | Durum direncleri | Slow, fear, tracking gibi etkilerin suresini azaltir. |
 | Beceriler | Dusmanin ozel davranis etiketleri. |
@@ -92,3 +92,14 @@ Uygulama sirasi:
 | Shooter | 42 | 10 | 0.18 | 10 | 44 | ground | Kalkanli, psychic hasara direncli, ranged-shot etiketi tasir. |
 
 HP ve kalkan dalga HP carpaniyla buyur. Zirh, direncler ve hareket tipi dusman kimligi olarak sabit kalir.
+
+## Ucan Dalga Kurallari
+
+| Dalga | Kural |
+|---:|---|
+| 5 | Tum dusmanlar `air` gelir. |
+| 10 | Tum dusmanlar `air` gelir. |
+| 15 | Kara ve ucan dusmanlar karisik gelir. |
+| 20 | Kara ve ucan dusmanlar karisik gelir. |
+
+Ucan dusmanlar secilen spawn noktasindan ayni path'in nexus bitis noktasina dogru en kisa cizgide ilerler; yol karelerini takip etmezler. Su an Atakan tarafinda sadece Obsesyon Kulesi ve Ucube ucan hedefleri vurabilir. Takipci, Sunucu, Izolasyon ve Debug Lazer ucan hedef secmez.
