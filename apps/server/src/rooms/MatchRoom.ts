@@ -486,8 +486,9 @@ export class MatchRoom extends Room<MatchState> {
     const definition = getEnemyCombatDefinition(type);
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
-    const maxHp = Math.round(definition.maxHp * waveScale);
-    const maxShield = Math.round(definition.shield * waveScale);
+    const airHealthMultiplier = isFlyingEnemy ? 0.5 : 1;
+    const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier));
+    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
     const speed = definition.speed + this.wave * 2.4;
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
     const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];

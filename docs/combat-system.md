@@ -102,4 +102,4 @@ HP ve kalkan dalga HP carpaniyla buyur. Zirh, direncler ve hareket tipi dusman k
 | 15 | Kara ve ucan dusmanlar karisik gelir. |
 | 20 | Kara ve ucan dusmanlar karisik gelir. |
 
-Ucan dusmanlar secilen spawn noktasindan ayni path'in nexus bitis noktasina dogru en kisa cizgide ilerler; yol karelerini takip etmezler. Tamamen ucan dalgalarda toplam dusman sayisi normal dalga sayisinin yarisi kadardir. Karisik dalgalarda her 4 spawn'dan 1'i ucan dusman olur. Su an Atakan tarafinda sadece Obsesyon Kulesi ve Ucube ucan hedefleri vurabilir. Takipci, Sunucu, Izolasyon ve Debug Lazer ucan hedef secmez.
+Ucan dusmanlar secilen spawn noktasindan ayni path'in nexus bitis noktasina dogru en kisa cizgide ilerler; yol karelerini takip etmezler. Ucan dusmanlar ayni dusman tipinin kara versiyonuna gore %50 HP ve %50 kalkanla gelir. Tamamen ucan dalgalarda toplam dusman sayisi normal dalga sayisinin yarisi kadardir. Karisik dalgalarda her 4 spawn'dan 1'i ucan dusman olur. Su an Atakan tarafinda sadece Obsesyon Kulesi ve Ucube ucan hedefleri vurabilir. Takipci, Sunucu, Izolasyon ve Debug Lazer ucan hedef secmez.
