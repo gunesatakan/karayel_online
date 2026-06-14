@@ -78,7 +78,7 @@ Takipci, Atakan'in takim hasarini acan temel kulesidir. Dengeli tek hedef hasari
 - Takipte olan dusmanlar, Takipci haricindeki kaynaklardan `x1.2` hasar alir.
 - Takipci kendi isaretinden bonus hasar almaz.
 - Debug Lazer, normal hedef seciminde Takipte dusmanlara oncelik verir.
-- Atakan ultisindeki drone'lar, nexus kritik degilse en yakin dusmana kamikaze saldirisi yapar.
+- Atakan ultisindeki drone'lar, oyuncunun sectigi moda gore dusmana kamikaze saldirisi yapar veya nexusu tamir eder.
 
 ### 2. Sunucu
 
@@ -362,18 +362,19 @@ Atakan'in ultisi, kulelerinden mini-drone cikarma fikrine dayanir.
 
 **Kullanim sarti:** Ulti charge 100 olmalidir.  
 **Kullanimdan sonra:** Ulti charge 0'a iner.
+**Dolum hizi:** Atakan ultisi normal ulti dolum hizinin ucte biriyle dolar; kill'den gelen ulti puani da ucte bire iner.
 
 Her Atakan kulesi ulti basildiginda bir mini-drone uretir. Drone'lar gercek oyun nesnesi olarak haritada hareket eder.
 
-Karar once nexus canina gore verilir:
+Kullanici ultiye bastiginda modu kendisi secer:
 
-1. Nexus cani 30'un altindaysa drone'lar nexus'a dogru ilerler.
-2. Nexus cani 30 veya ustundeyse drone'lar dusmana saldirir.
+1. `Saldiri`: Drone'lar dusmana gider.
+2. `Tamir`: Drone'lar nexusa gider.
 
 **Onarim davranisi:**
 
-- Drone nexus'a ulasinca takim canini 1 artirir.
-- Her drone ayri ayri 1 can yeniler.
+- Drone nexus'a ulasinca takim canini 3 artirir.
+- Her drone ayri ayri 3 can yeniler.
 - Takim cani maksimum can degerini asamaz.
 
 **Saldiri davranisi:**
@@ -383,7 +384,7 @@ Karar once nexus canina gore verilir:
 - Drone hasari:
 
 ```txt
-Hasar = 1500
+Hasar = mevcut dalga ^ 3
 ```
 
 **Gorsel davranis:**
@@ -700,7 +701,7 @@ Bu tabloya gore:
 - Etki: Stack basina Takipci haricindeki hasar kaynaklarindan %20 daha fazla hasar.
 - Stack limitleri: Lv1-4 en fazla 1, Lv5-9 en fazla 2, Lv10 en fazla 3.
 - Debug Lazer hedef seciminde Takipte dusmanlari onceliklendirir.
-- Atakan drone'lari mevcut uygulamada Takipte onceligi kullanmaz; nexus kritik degilse kendilerine en yakin dusmana saldirir.
+- Atakan saldiri drone'lari Takipte onceligi kullanmaz; kendilerine en yakin dusmana saldirir.
 
 ### Korku
 

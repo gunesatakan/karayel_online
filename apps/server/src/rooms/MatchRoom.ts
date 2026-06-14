@@ -59,9 +59,10 @@ const TOWER_DPS_WINDOW_MS = 5000;
 const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14, 16];
 const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
-const ATAKAN_DRONE_ATTACK_DAMAGE = 1500;
+const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
 const ATAKAN_DRONE_REPAIR_SPEED = 150;
+const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -99,6 +100,10 @@ type UseSkillMessage = {
   x?: number;
   y?: number;
   towerId?: string;
+};
+
+type UseUltimateMessage = {
+  mode?: "attack" | "repair";
 };
 
 type PingMessage = {
@@ -197,6 +202,8 @@ type DroneModel = DroneSnapshot & {
   targetId?: string;
   vx: number;
   vy: number;
+  damage: number;
+  repairAmount: number;
   ttlMs: number;
 };
 
@@ -319,8 +326,8 @@ export class MatchRoom extends Room<MatchState> {
       this.useSkill(client, message);
     });
 
-    this.onMessage("useUltimate", (client) => {
-      this.useUltimate(client);
+    this.onMessage("useUltimate", (client, message: UseUltimateMessage) => {
+      this.useUltimate(client, message);
     });
 
     this.onMessage("linkServer", (client, message: LinkServerMessage) => {
@@ -935,7 +942,7 @@ export class MatchRoom extends Room<MatchState> {
         drone.y += drone.vy * seconds;
 
         if (distanceSq(drone.x, drone.y, target.x, target.y) <= 18 * 18) {
-          this.damageEnemy(target, ATAKAN_DRONE_ATTACK_DAMAGE, 0, "warrior-ultimate-drone", drone.ownerId);
+          this.damageEnemy(target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
           this.drones.delete(id);
         }
         if (drone.ttlMs <= 0) {
@@ -954,7 +961,7 @@ export class MatchRoom extends Room<MatchState> {
       drone.y += drone.vy * seconds;
 
       if (distanceSq(drone.x, drone.y, nexusX, nexusY) <= 18 * 18) {
-        this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 1);
+        this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + drone.repairAmount);
         this.drones.delete(id);
       }
       if (drone.ttlMs <= 0) {
@@ -1235,7 +1242,7 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private useUltimate(client: Client) {
+  private useUltimate(client: Client, message: UseUltimateMessage = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || player.ultimateCharge < 100) {
       return;
@@ -1289,7 +1296,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "warrior") {
-      this.useAtakanUltimate(client);
+      this.useAtakanUltimate(client, message.mode === "repair" ? "repair" : "attack");
       return;
     }
 
@@ -1298,12 +1305,13 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private useAtakanUltimate(client: Client) {
+  private useAtakanUltimate(client: Client, mode: "attack" | "repair") {
     const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
-    const shouldRepairNexus = this.teamHealth < 30;
+    const repairNexus = mode === "repair";
+    const droneDamage = this.getAtakanDroneDamage();
 
     for (const tower of ownTowers) {
-      this.spawnAtakanDrone(tower, shouldRepairNexus);
+      this.spawnAtakanDrone(tower, repairNexus, droneDamage);
     }
 
     const now = Date.now();
@@ -1312,7 +1320,7 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean) {
+  private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number) {
     const target = repairNexus ? undefined : this.findNearestEnemy(tower.x, tower.y);
     if (!repairNexus && !target) {
       return;
@@ -1335,8 +1343,14 @@ export class MatchRoom extends Room<MatchState> {
       y: tower.y,
       vx: (dx / length) * speed,
       vy: (dy / length) * speed,
+      damage,
+      repairAmount: ATAKAN_DRONE_REPAIR_AMOUNT,
       ttlMs: repairNexus ? 6500 : 8500
     });
+  }
+
+  private getAtakanDroneDamage() {
+    return Math.max(1, Math.round(this.wave ** 3));
   }
 
   private findNearestEnemy(x: number, y: number) {
@@ -1467,7 +1481,7 @@ export class MatchRoom extends Room<MatchState> {
       this.addKillEvent(sourceOwnerId, enemy.id);
     }
     for (const player of this.state.players.values()) {
-      player.ultimateCharge = Math.min(100, player.ultimateCharge + 7);
+      player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7));
     }
     return true;
   }
@@ -1605,8 +1619,12 @@ export class MatchRoom extends Room<MatchState> {
 
   private chargeUltimates(seconds: number) {
     for (const player of this.state.players.values()) {
-      player.ultimateCharge = Math.min(100, player.ultimateCharge + seconds * 1.4);
+      player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, seconds * 1.4));
     }
+  }
+
+  private getUltimateChargeGain(player: Player, amount: number) {
+    return player.characterId === "warrior" ? amount * ATAKAN_ULTIMATE_CHARGE_MULTIPLIER : amount;
   }
 
   private getSnapshot(): GameSnapshot {

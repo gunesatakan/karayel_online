@@ -107,6 +107,7 @@ export class GameScene extends Phaser.Scene {
   private selectedTowerStatsHelpText?: Phaser.GameObjects.Text;
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
+  private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
@@ -117,6 +118,7 @@ export class GameScene extends Phaser.Scene {
   private inboundKbSamples: number[] = [];
   private snapshotCount = 0;
   private currentTeamGold = 0;
+  private currentUltimateCharge = 0;
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
@@ -173,6 +175,7 @@ export class GameScene extends Phaser.Scene {
       this.placementGrid?.destroy();
       this.placementGhost?.destroy();
       this.rampageContainer?.destroy(true);
+      this.hideUltimateChoices();
       this.backgroundMusic?.pause();
     });
 
@@ -497,7 +500,7 @@ export class GameScene extends Phaser.Scene {
       fontSize: "12px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(26);
-    this.ultimateButton.on("pointerup", () => this.room?.send("useUltimate", {}));
+    this.ultimateButton.on("pointerup", () => this.handleUltimateButton());
 
     this.upgradeButton = this.add.rectangle(282, 672, 156, 34, 0x1e293b, 0.92)
       .setStrokeStyle(1, 0x94a3b8, 0.6)
@@ -516,6 +519,66 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private handleUltimateButton() {
+    if (!this.room) {
+      return;
+    }
+
+    if (this.currentUltimateCharge < 100) {
+      this.hideUltimateChoices();
+      this.hintText?.setText("Ulti henuz hazir degil");
+      return;
+    }
+
+    if (this.selectedCharacterId !== "warrior") {
+      this.room.send("useUltimate", {});
+      return;
+    }
+
+    if (this.ultimateChoiceItems.length > 0) {
+      this.hideUltimateChoices();
+      return;
+    }
+
+    this.showUltimateChoices();
+  }
+
+  private showUltimateChoices() {
+    this.hideUltimateChoices();
+    this.ultimateChoiceItems.push(
+      ...this.createUltimateChoiceButton(86, "Saldiri", 0xef4444, () => {
+        this.room?.send("useUltimate", { mode: "attack" });
+        this.hideUltimateChoices();
+      }),
+      ...this.createUltimateChoiceButton(282, "Tamir", 0x14b8a6, () => {
+        this.room?.send("useUltimate", { mode: "repair" });
+        this.hideUltimateChoices();
+      })
+    );
+  }
+
+  private createUltimateChoiceButton(x: number, label: string, color: number, onSelect: () => void) {
+    const button = this.add.rectangle(x, 672, x < 160 ? 140 : 156, 34, color, 0.96)
+      .setStrokeStyle(2, 0xf8fafc, 0.8)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(60);
+    const text = this.add.text(x, 672, label, {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "12px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(61);
+    button.on("pointerup", onSelect);
+    return [button, text];
+  }
+
+  private hideUltimateChoices() {
+    for (const item of this.ultimateChoiceItems) {
+      item.destroy();
+    }
+    this.ultimateChoiceItems = [];
+  }
+
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
     if (this.draggedTowerDefinition || performance.now() < this.ignoreMapPointerUntil) {
       return;
@@ -523,6 +586,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.room || pointer.worldY >= this.controlTop || pointer.worldY <= 84) {
       return;
     }
+    this.hideUltimateChoices();
 
     if (this.pendingAction?.type === "guidance") {
       this.room.send("useSkill", { slot: 0, x: pointer.worldX, y: pointer.worldY });
@@ -803,6 +867,10 @@ export class GameScene extends Phaser.Scene {
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
     const charge = player?.ultimateCharge ?? 0;
     this.currentTeamGold = snapshot.team.gold;
+    this.currentUltimateCharge = charge;
+    if (charge < 100 && this.ultimateChoiceItems.length > 0) {
+      this.hideUltimateChoices();
+    }
 
     const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}`;
     if (this.lastHudKey !== hudKey) {
