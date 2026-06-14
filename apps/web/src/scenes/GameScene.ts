@@ -81,6 +81,13 @@ type KillStreakRule = {
   chaos: number;
 };
 
+type KillStreakLock = {
+  unlockAt: number;
+  wave: number;
+};
+
+const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "legendary",
@@ -154,7 +161,7 @@ export class GameScene extends Phaser.Scene {
   private seenKillEventIds: string[] = [];
   private seenKillEventSet = new Set<string>();
   private killStreakTimes: number[] = [];
-  private nextKillStreakAnnouncementAt = new Map<KillStreakTier, number>();
+  private killStreakLocks = new Map<KillStreakTier, KillStreakLock>();
   private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
     granted: [],
     unstoppable: [],
@@ -1373,11 +1380,14 @@ export class GameScene extends Phaser.Scene {
       this.killStreakTimes.push(event.serverTime);
       this.killStreakTimes = this.killStreakTimes.filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
 
-      const streakRule = this.getTriggeredKillStreakRule(event.serverTime);
+      const streakRule = this.getTriggeredKillStreakRule(event.serverTime, snapshot.team.wave);
       if (streakRule) {
         for (const rule of KILL_STREAK_RULES) {
           if (rule.kills <= streakRule.kills) {
-            this.nextKillStreakAnnouncementAt.set(rule.tier, event.serverTime + rule.windowMs);
+            this.killStreakLocks.set(rule.tier, {
+              unlockAt: event.serverTime + KILL_STREAK_RETRIGGER_LOCK_MS,
+              wave: snapshot.team.wave
+            });
           }
         }
         this.playKillStreakAnnouncement(streakRule);
@@ -1386,10 +1396,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private getTriggeredKillStreakRule(serverTime: number) {
+  private getTriggeredKillStreakRule(serverTime: number, wave: number) {
     return KILL_STREAK_RULES.find((rule) => {
-      const nextAllowedAt = this.nextKillStreakAnnouncementAt.get(rule.tier) ?? 0;
-      if (serverTime < nextAllowedAt) {
+      const lock = this.killStreakLocks.get(rule.tier);
+      if (lock && lock.wave === wave && serverTime < lock.unlockAt) {
         return false;
       }
 
