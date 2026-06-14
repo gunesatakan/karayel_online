@@ -340,7 +340,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     ];
 
     if (tower.id === "warrior-2") {
-      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar Lv1-10: 160/240/330/420/500/1000/1500/2000/3000/4000. AOE = 24 + SunucuLv*5, CD = max(520, 1100 - SunucuLv*80)ms. Uzun link bufflari Sunucu leveliyle buyur: 5T impact +%12-30, 10T her hit max HP +%0.1-0.5.");
+      parts.push("Sunucu link: Elektrik topunu Sunucu atar. Bagli kule menzilinden cikan hedefe global top yollar. Hasar Lv1-10: 160/240/330/420/500/1000/1500/2000/3000/4000. AOE = (24 + SunucuLv*5) / 4, CD = max(520, 1100 - SunucuLv*80)ms. Uzun link bufflari Sunucu leveliyle buyur: 5T impact +%12-30, 10T her hit max HP +%0.1-0.5.");
     }
     if (tower.id === "warrior-4") {
       parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 425 DPS, Lv7 yaklasik 600 DPS, Lv8 yaklasik 750 DPS, Lv10 yaklasik 1000 DPS.");
@@ -560,6 +560,10 @@ function getTowerLevelInterval(tower: TowerDefinition, level: number) {
     return getDebugLaserFireInterval(level, false);
   }
 
+  if (tower.id === "warrior-1") {
+    return getTrackerFireInterval(level);
+  }
+
   if (tower.hitType === "impact") {
     return tower.fireIntervalMs;
   }
@@ -591,6 +595,11 @@ function getDebugLaserFireInterval(level: number, overdrive: boolean) {
     : 160 - (clampedLevel - 5) * 8;
   const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
   return realMs * REAL_DPS_GAME_SPEED_MULTIPLIER;
+}
+
+function getTrackerFireInterval(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
 }
 
 function getUcubeGrowthDamageMultiplier(level: number) {

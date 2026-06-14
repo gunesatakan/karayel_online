@@ -114,7 +114,7 @@ Lv1-10 = 160 / 240 / 330 / 420 / 500 / 1000 / 1500 / 2000 / 3000 / 4000
 - AOE formulu:
 
 ```txt
-AOE = 24 + SunucuSeviyesi * 5
+AOE = (24 + SunucuSeviyesi * 5) / 4
 ```
 
 - Bekleme suresi:
@@ -447,6 +447,7 @@ Atis araligi = temelAtisAraligi * (1 - (seviye - 1) * 0.1)
 Minimum atis araligi:
 
 - Normal kuleler: 80 ms
+- Takipci ozel egri kullanir; Lv10'da 333 ms olur.
 - Debug Lazer overdrive: normal lazer araliginin yarisi
 
 ### Menzil artisi
@@ -476,15 +477,15 @@ Tablo notlari:
 | Lv | Hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 12.0 | 720 ms | 112 | 16.7 | 10 |
-| 2 | 17.0 | 648 ms | 123 | 26.3 | 29 |
-| 3 | 22.1 | 576 ms | 134 | 38.3 | 52 |
-| 4 | 27.1 | 504 ms | 145 | 53.8 | 82 |
-| 5 | 32.2 | 432 ms | 156 | 74.4 | 102 |
-| 6 | 37.2 | 360 ms | 167 | 103.3 | 122 |
-| 7 | 42.2 | 288 ms | 178 | 146.7 | 143 |
-| 8 | 47.3 | 216 ms | 189 | 218.9 | 163 |
-| 9 | 52.3 | 144 ms | 200 | 363.3 | 184 |
-| 10 | 57.4 | 80 ms | 211 | 717.0 | - |
+| 2 | 17.0 | 677 ms | 123 | 25.2 | 29 |
+| 3 | 22.1 | 634 ms | 134 | 34.8 | 52 |
+| 4 | 27.1 | 591 ms | 145 | 45.9 | 82 |
+| 5 | 32.2 | 548 ms | 156 | 58.7 | 102 |
+| 6 | 37.2 | 505 ms | 167 | 73.7 | 122 |
+| 7 | 42.2 | 462 ms | 178 | 91.4 | 143 |
+| 8 | 47.3 | 419 ms | 189 | 112.8 | 163 |
+| 9 | 52.3 | 376 ms | 200 | 139.1 | 184 |
+| 10 | 57.4 | 333 ms | 211 | 172.3 | - |
 
 Takipci'nin isaret mekanigi level esiklerine gore stacklenir:
 
@@ -524,22 +525,22 @@ Elektrik topu level etkisi:
 
 ```txt
 Hasar = Sunucu level tablosundan okunur.
-AOE = 24 + SunucuSeviyesi * 5
+AOE = (24 + SunucuSeviyesi * 5) / 4
 Cooldown = max(520, 1100 - SunucuSeviyesi * 80) ms
 ```
 
 | Sunucu Lv | Elektrik hasari | AOE | Link cooldown |
 |---:|---:|---:|---:|
-| 1 | 160 | 29 | 1020 ms |
-| 2 | 240 | 34 | 940 ms |
-| 3 | 330 | 39 | 860 ms |
-| 4 | 420 | 44 | 780 ms |
-| 5 | 500 | 49 | 700 ms |
-| 6 | 1000 | 54 | 620 ms |
-| 7 | 1500 | 59 | 540 ms |
-| 8 | 2000 | 64 | 520 ms |
-| 9 | 3000 | 69 | 520 ms |
-| 10 | 4000 | 74 | 520 ms |
+| 1 | 160 | 7.3 | 1020 ms |
+| 2 | 240 | 8.5 | 940 ms |
+| 3 | 330 | 9.8 | 860 ms |
+| 4 | 420 | 11.0 | 780 ms |
+| 5 | 500 | 12.3 | 700 ms |
+| 6 | 1000 | 13.5 | 620 ms |
+| 7 | 1500 | 14.8 | 540 ms |
+| 8 | 2000 | 16.0 | 520 ms |
+| 9 | 3000 | 17.3 | 520 ms |
+| 10 | 4000 | 18.5 | 520 ms |
 
 Uzun baglanti bufflari:
 

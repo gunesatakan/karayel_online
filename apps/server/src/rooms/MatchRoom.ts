@@ -821,14 +821,21 @@ export class MatchRoom extends Room<MatchState> {
 
         const escapedEnemy = previousEnemyIds
           .map((enemyId) => this.enemies.get(enemyId))
-          .find((enemy) => enemy && !currentEnemyIds.includes(enemy.id));
+          .find((enemy) => {
+            if (!enemy || currentEnemyIds.includes(enemy.id)) {
+              return false;
+            }
+
+            const linkedPath = this.activePaths[enemy.pathId] ?? this.activePaths[0];
+            return enemy.pathDistance > getClosestPathDistance(linkedPath, linkedTower.x, linkedTower.y);
+          });
 
         if (!escapedEnemy) {
           continue;
         }
 
         const damage = getServerLinkBurstDamage(serverTower.level);
-        this.spawnSpecialProjectile(serverTower, "warrior-2", escapedEnemy, damage, 520, 24 + serverTower.level * 5, 0);
+        this.spawnSpecialProjectile(serverTower, "warrior-2", escapedEnemy, damage, 520, getServerLinkBurstRadius(serverTower.level), 0);
         linkedTower.linkBurstCooldownMs = Math.max(520, 1100 - serverTower.level * 80);
       }
     }
@@ -1714,6 +1721,10 @@ export class MatchRoom extends Room<MatchState> {
       return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * passiveMultiplier);
     }
 
+    if (tower.definition.id === "warrior-1") {
+      return getTrackerFireInterval(tower.level) * hasteMultiplier * passiveMultiplier;
+    }
+
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
@@ -2143,6 +2154,35 @@ function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: numbe
   return path.points[path.points.length - 1] ?? getPointAlongPath(distance);
 }
 
+function getClosestPathDistance(path: RuntimePath | undefined, x: number, y: number) {
+  if (!path || path.segments.length === 0) {
+    return 0;
+  }
+
+  let traversed = 0;
+  let bestDistance = 0;
+  let bestDistanceSq = Number.POSITIVE_INFINITY;
+
+  for (const segment of path.segments) {
+    const dx = segment.to.x - segment.from.x;
+    const dy = segment.to.y - segment.from.y;
+    const lengthSq = Math.max(1, dx * dx + dy * dy);
+    const t = Math.max(0, Math.min(1, ((x - segment.from.x) * dx + (y - segment.from.y) * dy) / lengthSq));
+    const closestX = segment.from.x + dx * t;
+    const closestY = segment.from.y + dy * t;
+    const candidateDistanceSq = distanceSq(x, y, closestX, closestY);
+
+    if (candidateDistanceSq < bestDistanceSq) {
+      bestDistanceSq = candidateDistanceSq;
+      bestDistance = traversed + segment.length * t;
+    }
+
+    traversed += segment.length;
+  }
+
+  return bestDistance;
+}
+
 function getWaveEnemyCount(wave: number) {
   return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
 }
@@ -2195,9 +2235,18 @@ function getServerLinkBurstDamage(level: number) {
   return damageByLevel[Math.min(Math.max(level, 1), 10) - 1] ?? 160;
 }
 
+function getServerLinkBurstRadius(level: number) {
+  return (24 + Math.min(Math.max(level, 1), 10) * 5) / 4;
+}
+
 function getServerLinkMaxHealthDamageRatio(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.001 + ((clampedLevel - 1) / 9) * 0.004;
+}
+
+function getTrackerFireInterval(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
 }
 
 function getUcubeLateDamageMultiplier(level: number) {

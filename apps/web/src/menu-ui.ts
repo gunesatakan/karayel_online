@@ -458,6 +458,10 @@ function getTowerLevelInterval(tower: TowerDefinition, level: number) {
     return getDebugLaserFireInterval(level, false);
   }
 
+  if (tower.id === "warrior-1") {
+    return getTrackerFireInterval(level);
+  }
+
   if (tower.hitType === "impact") {
     return tower.fireIntervalMs;
   }
@@ -489,6 +493,11 @@ function getDebugLaserFireInterval(level: number, overdrive: boolean) {
     : 160 - (clampedLevel - 5) * 8;
   const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
   return realMs * REAL_DPS_GAME_SPEED_MULTIPLIER;
+}
+
+function getTrackerFireInterval(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
 }
 
 function getUcubeGrowthDamageMultiplier(level: number) {
