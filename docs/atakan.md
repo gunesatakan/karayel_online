@@ -2,7 +2,7 @@
 
 ## Kisa Ozet
 
-Atakan, aile hekimligi, SaaS projeleri ve kendi halinde uretkenlik temasina sahip moduler bir strateji karakteridir.
+Atakan, adaptif savunma, kule sinerjisi ve kontrollu kaos uzerine kurulu moduler bir strateji karakteridir.
 
 Ham gucu en yuksek karakter degildir. Asil gucu, kulelerini dogru konumlandirmaktan, yalniz calisan kulelerden verim almaktan, isaretleme ve baglanti mekanikleriyle takim hasarini buyutmekten gelir.
 
@@ -15,12 +15,7 @@ Atakan oyuncusu oyunu "tek tek kule koyup beklemek" yerine, kuleler arasindaki i
 | Karakter ID | `warrior` |
 | Ad | Atakan |
 | Rol | Moduler Stratejist |
-| Tema | Aile hekimi, SaaS projeleri, kendi halinde uretkenlik |
-| Maksimum Can | 90 |
-| Hareket Hizi | 0.92 |
-| Temel Hasar | 12 |
-| Temel Atis Araligi | 760 ms |
-| Mermi Hizi | 330 |
+| Tema | Adaptif savunma, kule sinerjisi, kontrollu kaos |
 
 ## Oynanis Felsefesi
 

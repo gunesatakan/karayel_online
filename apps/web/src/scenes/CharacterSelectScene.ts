@@ -100,11 +100,6 @@ export class CharacterSelectScene extends Phaser.Scene {
       fontFamily: uiFont,
       fontSize: "11px"
     }));
-    this.addToView(this.add.text(x + 72, y + 52, `HP ${character.maxHp}  DMG ${character.damage}  ATK ${character.fireIntervalMs}ms`, {
-      color: "#facc15",
-      fontFamily: numberFont,
-      fontSize: "9px"
-    }));
 
     const shard = this.add.text(x + width - 16, y + 35, ">", {
       color: "#bae6fd",
@@ -135,7 +130,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.createBackButton(18, 22, "GERI", () => this.renderArchive());
 
     this.drawCharacterHeader(character, color);
-    this.createStatStrip(character, 196);
     this.createDetailItemGrid(character);
     this.createDetailPanel(character);
 
@@ -182,32 +176,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     }));
   }
 
-  private createStatStrip(character: CharacterDefinition, y: number) {
-    const stats = [
-      ["HP", character.maxHp, palette.soul],
-      ["DMG", character.damage, palette.crimson],
-      ["ATK", `${character.fireIntervalMs}`, palette.gold],
-      ["VEL", character.projectileSpeed, palette.cyan]
-    ] as const;
-
-    stats.forEach(([label, value, color], index) => {
-      const x = 24 + index * 86;
-      this.drawCutPanel(x, y, 76, 42, palette.slate, 0.82, color, 0.52, 8);
-      this.addToView(this.add.text(x + 9, y + 7, label, {
-        color: "#94a3b8",
-        fontFamily: uiFont,
-        fontSize: "9px",
-        fontStyle: "bold"
-      }));
-      this.addToView(this.add.text(x + 9, y + 21, String(value), {
-        color: "#f8fafc",
-        fontFamily: numberFont,
-        fontSize: "13px",
-        fontStyle: "bold"
-      }));
-    });
-  }
-
   private createDetailItemGrid(character: CharacterDefinition) {
     const items: DetailItem[] = [
       {
@@ -231,7 +199,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     items.forEach((item, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      this.createDetailTile(24 + col * 173, 254 + row * 42, 164, 34, item);
+      this.createDetailTile(24 + col * 173, 204 + row * 42, 164, 34, item);
     });
   }
 

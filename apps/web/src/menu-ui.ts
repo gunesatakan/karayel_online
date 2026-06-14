@@ -189,11 +189,6 @@ function renderHome(selectedCharacter: CharacterDefinition) {
           <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
           <p>${escapeHtml(selectedCharacter.role)}</p>
         </div>
-        <div class="operator-stats">
-          ${stat("HP", selectedCharacter.maxHp)}
-          ${stat("DMG", selectedCharacter.damage)}
-          ${stat("ATK", selectedCharacter.fireIntervalMs)}
-        </div>
       </section>
 
       <section class="quick-roster" aria-label="Operatörler">
@@ -287,7 +282,6 @@ function renderArchive(selectedCharacter: CharacterDefinition) {
               <strong>${escapeHtml(character.displayName)}</strong>
               <small>${escapeHtml(character.role)}</small>
             </span>
-            <span class="archive-card__stats">${character.damage} DMG / ${character.fireIntervalMs} ATK</span>
           </button>
         `).join("")}
       </section>
@@ -321,13 +315,6 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
           <strong>${escapeHtml(character.role)}</strong>
           <p>${escapeHtml(character.summary)}</p>
         </div>
-      </section>
-
-      <section class="stat-grid">
-        ${stat("HP", character.maxHp)}
-        ${stat("DMG", character.damage)}
-        ${stat("ATK", `${character.fireIntervalMs}ms`)}
-        ${stat("VEL", character.projectileSpeed)}
       </section>
 
       <section class="loadout-grid">
@@ -418,10 +405,6 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     color: colorNumberToHex(tower.color),
     body: parts.join("\n")
   };
-}
-
-function stat(label: string, value: string | number) {
-  return `<span class="stat"><small>${label}</small><strong>${value}</strong></span>`;
 }
 
 function formatDps(damage: number, intervalMs: number) {

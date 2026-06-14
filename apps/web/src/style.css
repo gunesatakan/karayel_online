@@ -262,45 +262,6 @@ canvas {
   line-height: 1.35;
 }
 
-.operator-stats,
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-column: 1 / -1;
-  gap: 8px;
-}
-
-.stat-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 12px;
-}
-
-.stat {
-  display: block;
-  min-width: 0;
-  padding: 9px 8px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(5, 6, 10, 0.58);
-}
-
-.stat small,
-.stat strong {
-  display: block;
-}
-
-.stat small {
-  color: #94a3b8;
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.stat strong {
-  color: #f8fafc;
-  font-family: "Share Tech Mono", monospace;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
 .quick-roster {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -462,15 +423,9 @@ canvas {
   text-transform: uppercase;
 }
 
-.archive-card__body small,
-.archive-card__stats {
+.archive-card__body small {
   color: #94a3b8;
   font-size: 10px;
-}
-
-.archive-card__stats {
-  text-align: right;
-  max-width: 76px;
 }
 
 .selected-dossier {
