@@ -57,6 +57,7 @@ const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
 const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14, 16];
+const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
 const ATAKAN_DRONE_ATTACK_DAMAGE = 1500;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
@@ -1737,7 +1738,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
-    const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
+    const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
 
@@ -1801,7 +1802,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
-    const stackMultiplier = tower.definition.id === "warrior-6" ? Math.max(0.35, 1 - tower.focusStacks * 0.055) : 1;
+    const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
     const previousLevelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
@@ -2263,6 +2264,10 @@ function getUcubeGrowthDamageMultiplier(level: number) {
 
 function getUcubeWaveBonusLevel(completedWaves: number) {
   return UCUBE_WAVE_BONUS_THRESHOLDS.filter((threshold) => completedWaves >= threshold).length;
+}
+
+function getUcubeStackIntervalMultiplier(stacks: number) {
+  return 1 - stacks * UCUBE_STACK_INTERVAL_REDUCTION;
 }
 
 function getServerLinkImpactDamageBonus(level: number) {

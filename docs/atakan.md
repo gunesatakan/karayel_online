@@ -285,11 +285,12 @@ Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kules
 - Stack etkisi:
 
 ```txt
-Atis araligi carpani = max(0.35, 1 - stack * 0.055)
+Atis araligi carpani = 1 - stack * 0.04539
 ```
 
 - Normal max stack 10'dur.
 - Dalga gelisimiyle max stack 15'e cikabilir.
+- 15 stackte atis araligi 300 ms olur.
 - 20 saniye araliksiz calisirsa hararet yapar.
 - Hararet suresi 10 saniyedir.
 - Dalga gelisimiyle hararet tamamen kalkabilir.
@@ -651,9 +652,11 @@ Bu tablo Ucube'nin baz DPS'ini gosterir. Ucube'nin asil gec oyun gucu, dalga bon
 Ucube aktif stackleri bu tablodaki atis araligini ayrica dusurur:
 
 ```txt
-Stack carpani = max(0.35, 1 - stack * 0.055)
+Stack carpani = 1 - stack * 0.04539
 Efektif atis araligi = level atis araligi * stack carpani
 ```
+
+Lv10 Ucube icin 15 stackte efektif atis araligi 300 ms olur.
 
 Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir:
 
