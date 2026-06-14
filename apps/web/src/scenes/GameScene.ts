@@ -872,15 +872,16 @@ export class GameScene extends Phaser.Scene {
     const previousEnemies = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]));
     const enemies = next.enemies.map((enemy) => {
       const oldEnemy = previousEnemies.get(enemy.id);
+      const isAir = enemy.movementKind === "air" || oldEnemy?.movementKind === "air";
       const pathDistance = oldEnemy
         ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
         : enemy.pathDistance;
-      const pathPoint = getPointAlongRuntimePath(this.activeRenderPaths[enemy.pathId ?? oldEnemy?.pathId ?? 0], pathDistance);
+      const pathPoint = isAir ? undefined : getPointAlongRuntimePath(this.activeRenderPaths[enemy.pathId ?? oldEnemy?.pathId ?? 0], pathDistance);
 
       return {
         ...enemy,
-        x: pathPoint.x,
-        y: pathPoint.y,
+        x: isAir ? oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x : pathPoint?.x ?? enemy.x,
+        y: isAir ? oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y : pathPoint?.y ?? enemy.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp,
         shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield
@@ -1005,7 +1006,9 @@ export class GameScene extends Phaser.Scene {
         mover.sprite.setTexture(texture);
       }
       mover.sprite.setPosition(enemy.x, enemy.y);
-      mover.sprite.setAlpha(0.68 + 0.32 * (enemy.hp / enemy.maxHp));
+      mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
+      mover.sprite.setScale(enemy.movementKind === "air" ? 1.28 : 1);
+      mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       mover.sprite.setTint(enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
