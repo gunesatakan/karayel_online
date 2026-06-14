@@ -694,6 +694,19 @@ Bu tabloya gore:
 
 ## Durum Etkileri ve Etiketler
 
+### Kill Streak Bufflari
+
+Kill streak anonslari sadece ses/gorsel degildir; streak'i yapan oyuncunun mevcut tum turretlerine 3 saniyelik buff verir.
+
+| Streak | Esik | Turret buff'i |
+|---|---|---|
+| Granted | 2 saniyede 5 kill | Tum turretlerde +%10 hasar |
+| Unstoppable | 5 saniyede 10 kill | Tum turretlerde +%20 hasar |
+| Rampage | 8 saniyede 16 kill | Tum turretlerde +%20 hasar ve odaklanma haric +%20 saldiri hizi |
+| Legendary | 11 saniyede 22 kill | Tum turretlerde +%20 hasar, odaklanma haric +%20 saldiri hizi, tum dusmanlara 2 saniye Korku |
+
+Her streak tetiklendikten sonra ayni dalgada 60 saniye tekrar tetiklenemez. Dalga degisirse bu kilit acilir. Daha yuksek bir streak tetiklenirse alttaki streakler de ayni dalgada kilitlenir.
+
 ### Takipte
 
 - Kaynak: Takipci.

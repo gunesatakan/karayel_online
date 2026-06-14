@@ -63,6 +63,8 @@ const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
 const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
+const KILL_STREAK_BUFF_DURATION_MS = 3000;
+const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -105,6 +107,29 @@ type UseSkillMessage = {
 type UseUltimateMessage = {
   mode?: "attack" | "repair";
 };
+
+type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
+
+type KillStreakRule = {
+  tier: KillStreakTier;
+  windowMs: number;
+  kills: number;
+  damageMultiplier: number;
+  hasteMultiplier: number;
+  fearAllMs: number;
+};
+
+type KillStreakLock = {
+  unlockAt: number;
+  wave: number;
+};
+
+const KILL_STREAK_RULES: KillStreakRule[] = [
+  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 2000 },
+  { tier: "rampage", windowMs: 8000, kills: 16, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
+  { tier: "unstoppable", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
+  { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
+];
 
 type PingMessage = {
   sentAt?: number;
@@ -170,6 +195,10 @@ type TowerModel = {
   linkedTowerIds: string[];
   linkedTowerWaveAges: Record<string, number>;
   rangeMemoryEnemyIds: string[];
+  streakDamageUntil: number;
+  streakDamageMultiplier: number;
+  streakHasteUntil: number;
+  streakHasteMultiplier: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -263,6 +292,8 @@ export class MatchRoom extends Room<MatchState> {
   private beams = new Map<string, BeamModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
+  private playerKillStreakTimes = new Map<string, number[]>();
+  private playerKillStreakLocks = new Map<string, Map<KillStreakTier, KillStreakLock>>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
@@ -1059,6 +1090,10 @@ export class MatchRoom extends Room<MatchState> {
       linkedTowerIds: [],
       linkedTowerWaveAges: {},
       rangeMemoryEnemyIds: [],
+      streakDamageUntil: 0,
+      streakDamageMultiplier: 1,
+      streakHasteUntil: 0,
+      streakHasteMultiplier: 1,
       damageDealt: 0,
       damageWindow: []
     };
@@ -1559,6 +1594,83 @@ export class MatchRoom extends Room<MatchState> {
         this.killEvents.delete(oldestId);
       }
     }
+
+    this.recordPlayerKillStreak(ownerId, now);
+  }
+
+  private recordPlayerKillStreak(ownerId: string, serverTime: number) {
+    const killTimes = [...(this.playerKillStreakTimes.get(ownerId) ?? []), serverTime]
+      .filter((time) => serverTime - time <= Math.max(...KILL_STREAK_RULES.map((rule) => rule.windowMs)));
+    this.playerKillStreakTimes.set(ownerId, killTimes);
+
+    const rule = this.getTriggeredKillStreakRule(ownerId, serverTime, killTimes);
+    if (!rule) {
+      return;
+    }
+
+    const locks = this.getPlayerKillStreakLocks(ownerId);
+    for (const candidate of KILL_STREAK_RULES) {
+      if (candidate.kills <= rule.kills) {
+        locks.set(candidate.tier, {
+          unlockAt: serverTime + KILL_STREAK_RETRIGGER_LOCK_MS,
+          wave: this.wave
+        });
+      }
+    }
+
+    this.applyKillStreakBuff(ownerId, rule, serverTime);
+  }
+
+  private getTriggeredKillStreakRule(ownerId: string, serverTime: number, killTimes: number[]) {
+    const locks = this.getPlayerKillStreakLocks(ownerId);
+    return KILL_STREAK_RULES.find((rule) => {
+      const lock = locks.get(rule.tier);
+      if (lock && lock.wave === this.wave && serverTime < lock.unlockAt) {
+        return false;
+      }
+
+      return killTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
+    });
+  }
+
+  private getPlayerKillStreakLocks(ownerId: string) {
+    let locks = this.playerKillStreakLocks.get(ownerId);
+    if (!locks) {
+      locks = new Map<KillStreakTier, KillStreakLock>();
+      this.playerKillStreakLocks.set(ownerId, locks);
+    }
+    return locks;
+  }
+
+  private applyKillStreakBuff(ownerId: string, rule: KillStreakRule, serverTime: number) {
+    const buffUntil = serverTime + scaleGameDuration(KILL_STREAK_BUFF_DURATION_MS);
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== ownerId) {
+        continue;
+      }
+
+      if (tower.streakDamageUntil <= serverTime || rule.damageMultiplier >= tower.streakDamageMultiplier) {
+        tower.streakDamageUntil = buffUntil;
+        tower.streakDamageMultiplier = rule.damageMultiplier;
+      } else {
+        tower.streakDamageUntil = Math.max(tower.streakDamageUntil, buffUntil);
+      }
+      if (rule.hasteMultiplier > 1 && tower.definition.hitType !== "focus") {
+        if (tower.streakHasteUntil <= serverTime || rule.hasteMultiplier >= tower.streakHasteMultiplier) {
+          tower.streakHasteUntil = buffUntil;
+          tower.streakHasteMultiplier = rule.hasteMultiplier;
+        } else {
+          tower.streakHasteUntil = Math.max(tower.streakHasteUntil, buffUntil);
+        }
+      }
+    }
+
+    if (rule.fearAllMs > 0) {
+      for (const enemy of this.enemies.values()) {
+        const duration = applyStatusResistance(rule.fearAllMs, enemy.statusResistances.fear);
+        enemy.fearUntil = Math.max(enemy.fearUntil, serverTime + scaleGameDuration(duration));
+      }
+    }
   }
 
   private addDamageEvent(enemy: EnemyModel, amount: number) {
@@ -1756,8 +1868,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
+    const now = Date.now();
     const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
-    const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
 
     if (tower.definition.id === "warrior-5") {
@@ -1765,20 +1879,21 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.hitType === "impact") {
-      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * passiveMultiplier);
+      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
 
     if (tower.definition.id === "warrior-1") {
-      return getTrackerFireInterval(tower.level) * hasteMultiplier * passiveMultiplier;
+      return getTrackerFireInterval(tower.level) * hasteMultiplier * streakHasteMultiplier * passiveMultiplier;
     }
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * streakHasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
-    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower);
+    const now = Date.now();
+    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now);
 
     if (tower.definition.id === "warrior-4") {
       damage *= getObsessionDamageMultiplier(tower.level);
@@ -1817,6 +1932,18 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return damage;
+  }
+
+  private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
+    return tower.streakDamageUntil > now ? tower.streakDamageMultiplier : 1;
+  }
+
+  private getTowerStreakFireIntervalMultiplier(tower: TowerModel, now: number) {
+    if (tower.definition.hitType === "focus" || tower.streakHasteUntil <= now) {
+      return 1;
+    }
+
+    return 1 / tower.streakHasteMultiplier;
   }
 
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
@@ -1894,6 +2021,11 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       return "Overdrive";
+    }
+    if (tower.streakDamageUntil > now || tower.streakHasteUntil > now) {
+      const damageBonus = tower.streakDamageUntil > now ? Math.round((tower.streakDamageMultiplier - 1) * 100) : 0;
+      const hasteBonus = tower.streakHasteUntil > now ? Math.round((tower.streakHasteMultiplier - 1) * 100) : 0;
+      return hasteBonus > 0 ? `Streak +${damageBonus}%/+${hasteBonus}%` : `Streak +${damageBonus}%`;
     }
     if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
       const maxAge = Math.max(...tower.linkedTowerIds.map((towerId) => tower.linkedTowerWaveAges[towerId] ?? 0));
