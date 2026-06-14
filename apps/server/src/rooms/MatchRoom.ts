@@ -1973,7 +1973,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "warrior-4") {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
         if (tower.level >= 3) {
-          const duration = applyStatusResistance(STATUS_EFFECTS.fear.durationMs, target.statusResistances.fear);
+          const duration = applyStatusResistance(getObsessionFearDurationMs(tower.level), target.statusResistances.fear);
           target.fearUntil = Math.max(target.fearUntil, Date.now() + scaleGameDuration(duration));
         }
       }
@@ -2202,6 +2202,10 @@ function getIsolationAuraSpeedMultiplier(level: number) {
 function getObsessionDamageMultiplier(level: number) {
   const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 1.085349, 0.94697, 1.05753, 1.144, 1.162];
   return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+}
+
+function getObsessionFearDurationMs(level: number) {
+  return level >= 7 ? STATUS_EFFECTS.fear.durationMs : 1500;
 }
 
 function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
