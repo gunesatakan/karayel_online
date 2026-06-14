@@ -67,6 +67,67 @@ type PendingAction =
   | { type: "refactor"; towerId: string }
   | undefined;
 
+type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
+
+type KillStreakRule = {
+  tier: KillStreakTier;
+  label: string;
+  windowMs: number;
+  kills: number;
+  primary: number;
+  secondary: number;
+  accent: number;
+  fill: number;
+  chaos: number;
+};
+
+const KILL_STREAK_RULES: KillStreakRule[] = [
+  {
+    tier: "legendary",
+    label: "LEGENDARY",
+    windowMs: 11000,
+    kills: 22,
+    primary: 0xfacc15,
+    secondary: 0xff2d55,
+    accent: 0xf8fafc,
+    fill: 0x13070a,
+    chaos: 4
+  },
+  {
+    tier: "rampage",
+    label: "RAMPAGE",
+    windowMs: 8000,
+    kills: 16,
+    primary: 0xef4444,
+    secondary: 0x22d3ee,
+    accent: 0xfacc15,
+    fill: 0x050505,
+    chaos: 3
+  },
+  {
+    tier: "unstoppable",
+    label: "UNSTOPPABLE",
+    windowMs: 5000,
+    kills: 10,
+    primary: 0x8b5cf6,
+    secondary: 0x38bdf8,
+    accent: 0xfb7185,
+    fill: 0x111027,
+    chaos: 2
+  },
+  {
+    tier: "granted",
+    label: "GRANTED",
+    windowMs: 2000,
+    kills: 5,
+    primary: 0x22c55e,
+    secondary: 0xa7f3d0,
+    accent: 0xf8fafc,
+    fill: 0x052e16,
+    chaos: 1
+  }
+];
+
 export class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
@@ -93,8 +154,13 @@ export class GameScene extends Phaser.Scene {
   private seenKillEventIds: string[] = [];
   private seenKillEventSet = new Set<string>();
   private killStreakTimes: number[] = [];
-  private nextKillStreakAnnouncementAt = 0;
-  private killStreakSounds: HTMLAudioElement[] = [];
+  private nextKillStreakAnnouncementAt = new Map<KillStreakTier, number>();
+  private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
+    granted: [],
+    unstoppable: [],
+    rampage: [],
+    legendary: []
+  };
   private rampageContainer?: Phaser.GameObjects.Container;
   private backgroundMusic?: HTMLAudioElement;
   private statusText?: Phaser.GameObjects.Text;
@@ -134,8 +200,7 @@ export class GameScene extends Phaser.Scene {
   private draggedTowerDefinition?: TowerDefinition;
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
-  private readonly killStreakWindowMs = 5000;
-  private readonly killStreakThreshold = 10;
+  private readonly killStreakMaxWindowMs = 11000;
   private readonly controlTop = 606;
   private readonly trayTop = 708;
 
@@ -430,12 +495,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createKillStreakAudio() {
-    this.killStreakSounds = [
-      new Audio("/audio/kill-streak-deep.mp3"),
-      new Audio("/audio/kill-streak-emotive.mp3")
-    ];
+    this.killStreakSounds = {
+      granted: [new Audio("/audio/streak-granted.mp3")],
+      unstoppable: [new Audio("/audio/streak-unstopable.mp3")],
+      rampage: [
+        new Audio("/audio/kill-streak-deep.mp3"),
+        new Audio("/audio/kill-streak-emotive.mp3")
+      ],
+      legendary: [new Audio("/audio/streak-legendary.mp3")]
+    };
 
-    for (const audio of this.killStreakSounds) {
+    for (const audio of Object.values(this.killStreakSounds).flat()) {
       audio.preload = "auto";
       audio.volume = 0.82;
     }
@@ -449,7 +519,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private unlockGameAudio() {
-    for (const audio of this.killStreakSounds) {
+    for (const audio of Object.values(this.killStreakSounds).flat()) {
       const originalVolume = audio.volume;
       audio.muted = true;
       audio.play()
@@ -1301,22 +1371,39 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.killStreakTimes.push(event.serverTime);
-      this.killStreakTimes = this.killStreakTimes.filter((time) => event.serverTime - time <= this.killStreakWindowMs);
+      this.killStreakTimes = this.killStreakTimes.filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
 
-      if (this.killStreakTimes.length >= this.killStreakThreshold && event.serverTime >= this.nextKillStreakAnnouncementAt) {
-        this.nextKillStreakAnnouncementAt = event.serverTime + this.killStreakWindowMs;
-        this.playKillStreakAnnouncement();
-        this.showRampageAnnouncement(localPlayer);
+      const streakRule = this.getTriggeredKillStreakRule(event.serverTime);
+      if (streakRule) {
+        for (const rule of KILL_STREAK_RULES) {
+          if (rule.kills <= streakRule.kills) {
+            this.nextKillStreakAnnouncementAt.set(rule.tier, event.serverTime + rule.windowMs);
+          }
+        }
+        this.playKillStreakAnnouncement(streakRule);
+        this.showKillStreakAnnouncement(localPlayer, streakRule);
       }
     }
   }
 
-  private playKillStreakAnnouncement() {
-    if (this.killStreakSounds.length === 0) {
+  private getTriggeredKillStreakRule(serverTime: number) {
+    return KILL_STREAK_RULES.find((rule) => {
+      const nextAllowedAt = this.nextKillStreakAnnouncementAt.get(rule.tier) ?? 0;
+      if (serverTime < nextAllowedAt) {
+        return false;
+      }
+
+      return this.killStreakTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
+    });
+  }
+
+  private playKillStreakAnnouncement(rule: KillStreakRule) {
+    const sounds = this.killStreakSounds[rule.tier];
+    if (sounds.length === 0) {
       return;
     }
 
-    const audio = Phaser.Utils.Array.GetRandom(this.killStreakSounds);
+    const audio = Phaser.Utils.Array.GetRandom(sounds);
     audio.pause();
     audio.currentTime = 0;
     void audio.play().catch(() => {
@@ -1324,39 +1411,52 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private showRampageAnnouncement(player?: GameSnapshot["players"][number]) {
+  private showKillStreakAnnouncement(player: GameSnapshot["players"][number] | undefined, rule: KillStreakRule) {
     this.rampageContainer?.destroy(true);
 
     const characterName = characters.find((character) => character.id === player?.characterId)?.displayName ?? this.selectedCharacter.displayName;
-    const message = `${characterName}! RAMPAGE!`;
-    const fontSize = message.length > 17 ? "27px" : "31px";
-    const container = this.add.container(GAME_WORLD_WIDTH / 2, -76).setDepth(80).setAlpha(0);
+    const message = `${characterName}! ${rule.label}!`;
+    const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "27px" : "31px";
+    const container = this.add.container(GAME_WORLD_WIDTH / 2, -78).setDepth(80).setAlpha(0);
     const plate = this.add.graphics();
+    const width = rule.chaos >= 4 ? 214 : rule.chaos >= 2 ? 196 : 178;
+    const height = rule.chaos >= 4 ? 38 : 32;
 
-    plate.fillStyle(0x050505, 0.92);
+    plate.fillStyle(rule.fill, 0.92);
     plate.fillPoints([
-      new Phaser.Geom.Point(-184, -28),
-      new Phaser.Geom.Point(166, -34),
-      new Phaser.Geom.Point(186, -5),
-      new Phaser.Geom.Point(162, 31),
-      new Phaser.Geom.Point(-172, 26),
-      new Phaser.Geom.Point(-190, -8)
+      new Phaser.Geom.Point(-width, -height + 4),
+      new Phaser.Geom.Point(width - 18, -height - 4 - rule.chaos * 2),
+      new Phaser.Geom.Point(width + 8, -5),
+      new Phaser.Geom.Point(width - 22, height),
+      new Phaser.Geom.Point(-width + 12, height - 6),
+      new Phaser.Geom.Point(-width - 8, -8)
     ], true);
-    plate.lineStyle(3, 0xef4444, 0.95);
+    plate.lineStyle(2 + rule.chaos, rule.primary, 0.95);
     plate.strokePoints([
-      new Phaser.Geom.Point(-184, -28),
-      new Phaser.Geom.Point(166, -34),
-      new Phaser.Geom.Point(186, -5),
-      new Phaser.Geom.Point(162, 31),
-      new Phaser.Geom.Point(-172, 26),
-      new Phaser.Geom.Point(-190, -8)
+      new Phaser.Geom.Point(-width, -height + 4),
+      new Phaser.Geom.Point(width - 18, -height - 4 - rule.chaos * 2),
+      new Phaser.Geom.Point(width + 8, -5),
+      new Phaser.Geom.Point(width - 22, height),
+      new Phaser.Geom.Point(-width + 12, height - 6),
+      new Phaser.Geom.Point(-width - 8, -8)
     ], true);
-    plate.lineStyle(2, 0x22d3ee, 0.9);
-    plate.lineBetween(-160, 22, -92, -26);
-    plate.lineBetween(110, -30, 176, 18);
-    plate.lineStyle(2, 0xfacc15, 0.9);
-    plate.lineBetween(-176, -5, -134, 26);
-    plate.lineBetween(64, 28, 126, -30);
+    plate.lineStyle(2, rule.secondary, 0.9);
+    plate.lineBetween(-width + 30, height - 8, -width + 98, -height + 8);
+    plate.lineBetween(width - 86, -height, width - 10, height - 10);
+    plate.lineStyle(2, rule.accent, 0.9);
+    plate.lineBetween(-width + 8, -5, -width + 56, height - 6);
+    plate.lineBetween(44, height - 4, 108 + rule.chaos * 6, -height + 4);
+    if (rule.chaos >= 3) {
+      plate.lineStyle(2, rule.primary, 0.75);
+      plate.lineBetween(-44, -height - 8, -12, height + 8);
+      plate.lineBetween(136, -height - 6, 178, height + 4);
+    }
+    if (rule.chaos >= 4) {
+      plate.lineStyle(2, 0xffffff, 0.85);
+      plate.lineBetween(-196, -height - 10, -148, height + 12);
+      plate.lineBetween(2, -height - 12, 52, height + 12);
+      plate.lineBetween(172, -height - 8, 214, height + 8);
+    }
 
     const baseStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "Impact, Arial Black, Arial",
@@ -1366,24 +1466,24 @@ export class GameScene extends Phaser.Scene {
       stroke: "#0a0a0a",
       strokeThickness: 8
     };
-    const cyanGhost = this.add.text(4, 3, message, {
+    const cyanGhost = this.add.text(4 + rule.chaos, 3, message, {
       ...baseStyle,
-      color: "#22d3ee",
+      color: toCssColor(rule.secondary),
       stroke: "#111827",
       strokeThickness: 5
-    }).setOrigin(0.5).setAngle(-3).setAlpha(0.72);
-    const redGhost = this.add.text(-4, -2, message, {
+    }).setOrigin(0.5).setAngle(-2 - rule.chaos * 0.45).setAlpha(0.68 + rule.chaos * 0.04);
+    const redGhost = this.add.text(-4 - rule.chaos, -2, message, {
       ...baseStyle,
-      color: "#ef4444",
+      color: toCssColor(rule.primary),
       stroke: "#450a0a",
       strokeThickness: 5
-    }).setOrigin(0.5).setAngle(2).setAlpha(0.78);
+    }).setOrigin(0.5).setAngle(1.5 + rule.chaos * 0.5).setAlpha(0.74 + rule.chaos * 0.04);
     const mainText = this.add.text(0, 0, message, {
       ...baseStyle,
       color: "#fff7ed",
-      stroke: "#7f1d1d",
+      stroke: toCssColor(rule.fill),
       strokeThickness: 7
-    }).setOrigin(0.5).setAngle(-1);
+    }).setOrigin(0.5).setAngle(rule.chaos >= 4 ? -2 : -1);
 
     container.add([plate, cyanGhost, redGhost, mainText]);
     this.rampageContainer = container;
@@ -1392,22 +1492,43 @@ export class GameScene extends Phaser.Scene {
       targets: container,
       y: 86,
       alpha: 1,
-      duration: 240,
+      duration: Math.max(150, 260 - rule.chaos * 22),
       ease: "Back.easeOut"
     });
     this.tweens.add({
       targets: container,
-      angle: { from: -1.8, to: 1.8 },
-      duration: 80,
+      angle: { from: -1.5 - rule.chaos * 0.8, to: 1.5 + rule.chaos * 0.8 },
+      duration: Math.max(42, 92 - rule.chaos * 10),
       yoyo: true,
-      repeat: 9,
+      repeat: 5 + rule.chaos * 4,
       ease: "Sine.easeInOut"
     });
+    if (rule.chaos >= 2) {
+      this.tweens.add({
+        targets: [cyanGhost, redGhost],
+        x: `+=${rule.chaos * 3}`,
+        yoyo: true,
+        repeat: 8 + rule.chaos * 3,
+        duration: 45,
+        ease: "Stepped"
+      });
+    }
+    if (rule.chaos >= 4) {
+      this.tweens.add({
+        targets: mainText,
+        scaleX: { from: 1.05, to: 1.16 },
+        scaleY: { from: 0.92, to: 1.08 },
+        yoyo: true,
+        repeat: 14,
+        duration: 58,
+        ease: "Sine.easeInOut"
+      });
+    }
     this.tweens.add({
       targets: container,
       y: 56,
       alpha: 0,
-      delay: 2500,
+      delay: 2100 + rule.chaos * 260,
       duration: 500,
       ease: "Cubic.easeIn",
       onComplete: () => {
@@ -1732,4 +1853,8 @@ function getTrackingMarkerColor(stacks: number) {
     return "#67e8f9";
   }
   return "#fde047";
+}
+
+function toCssColor(color: number) {
+  return `#${color.toString(16).padStart(6, "0")}`;
 }
