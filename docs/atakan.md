@@ -288,7 +288,7 @@ Atis araligi carpani = max(0.35, 1 - stack * 0.055)
 - 20 saniye araliksiz calisirsa hararet yapar.
 - Hararet suresi 10 saniyedir.
 - Dalga gelisimiyle hararet tamamen kalkabilir.
-- Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir: bonus 1/2/3/4/5 icin 2/4/6/8/10 dalga, bonus 6 icin 14 dalga gerekir.
+- Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir: bonus 1/2/3/4/5 icin 2/4/6/8/10 dalga, bonus 6 icin 14 dalga, bonus 7 icin 16 dalga gerekir.
 
 **Dalga sonu gelisimleri:**
 
@@ -300,6 +300,7 @@ Atis araligi carpani = max(0.35, 1 - stack * 0.055)
 | 4 | 8 | Max stack 10'dan 15'e cikar. |
 | 5 | 10 | Menzil 2 katina cikar, cani 2 katina cikar. |
 | 6 | 14 | Hararet yapmaz. |
+| 7 | 16 | Hasar %100 artar. |
 
 ## Beceriler
 
@@ -657,6 +658,7 @@ Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir:
 - Bonus 4, 8 tamamlanan dalgada: Max stack 15 olur.
 - Bonus 5, 10 tamamlanan dalgada: Menzil 2 katina cikar.
 - Bonus 6, 14 tamamlanan dalgada: Hararet yapmaz.
+- Bonus 7, 16 tamamlanan dalgada: Hasar %100 artar.
 
 ## Guncel Denge Hedefleri
 

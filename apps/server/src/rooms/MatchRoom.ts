@@ -56,7 +56,7 @@ const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
-const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14];
+const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14, 16];
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
 const ATAKAN_DRONE_ATTACK_DAMAGE = 1500;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
@@ -1759,6 +1759,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 6) {
       damage *= getUcubeLateDamageMultiplier(tower.level);
+    }
+
+    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 7) {
+      damage *= 2;
     }
 
     if (tower.definition.hitType === "impact") {
