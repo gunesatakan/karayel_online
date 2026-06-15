@@ -2192,6 +2192,10 @@ export class MatchRoom extends Room<MatchState> {
       return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
     }
 
+    if (tower.definition.id === "zeynep-1") {
+      return getZeynepHizaFireInterval(tower.level) * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
+    }
+
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
@@ -2211,6 +2215,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "warrior-6") {
       damage *= getUcubeGrowthDamageMultiplier(tower.level);
+    }
+
+    if (tower.definition.id === "zeynep-1") {
+      damage *= getZeynepHizaDamageCompensation(tower.level);
     }
 
     if (tower.definition.hitType === "impact") {
@@ -2841,6 +2849,18 @@ function getZeynepCommandProfile(commandType: ZeynepCommandType, tier: ZeynepCom
 function getTrackerFireInterval(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
+}
+
+function getZeynepHizaFireInterval(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 500 - ((clampedLevel - 1) / 9) * 300;
+}
+
+function getZeynepHizaDamageCompensation(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  const oldInterval = Math.max(80, 330 * (1 - (clampedLevel - 1) * 0.1));
+  const newInterval = getZeynepHizaFireInterval(clampedLevel);
+  return newInterval / oldInterval;
 }
 
 function getUcubeLateDamageMultiplier(level: number) {
