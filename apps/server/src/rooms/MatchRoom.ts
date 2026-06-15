@@ -73,6 +73,7 @@ const ZEYNEP_MAX_REPUTATION = 100;
 const ZEYNEP_SMALL_COMMAND_COST = 10;
 const ZEYNEP_MEDIUM_COMMAND_COST = 40;
 const ZEYNEP_BIG_COMMAND_COST = 80;
+const ZEYNEP_REPUTATION_GAIN_MULTIPLIER = 1 / 3;
 const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
 const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
@@ -147,7 +148,7 @@ type KillStreakLock = {
 };
 
 const KILL_STREAK_RULES: KillStreakRule[] = [
-  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 2000 },
+  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 3000 },
   { tier: "rampage", windowMs: 8000, kills: 16, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
   { tier: "unstoppable", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
   { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
@@ -1847,7 +1848,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private awardZeynepReputation(player: Player, enemyType: EnemyType) {
-    const gain = enemyType === "brute" ? 4 : enemyType === "shooter" ? 3 : 2;
+    const baseGain = enemyType === "brute" ? 4 : enemyType === "shooter" ? 3 : 2;
+    const gain = baseGain * ZEYNEP_REPUTATION_GAIN_MULTIPLIER;
     player.reputation = Math.min(ZEYNEP_MAX_REPUTATION, player.reputation + gain);
   }
 
@@ -2055,7 +2057,7 @@ export class MatchRoom extends Room<MatchState> {
           Math.ceil(player.skill2CooldownMs / 1000),
           Math.ceil(player.skill3CooldownMs / 1000)
         ],
-        reputation: player.characterId === "zeynep" ? Math.round(player.reputation) : undefined,
+        reputation: player.characterId === "zeynep" ? Math.floor(player.reputation + 0.0001) : undefined,
         authorityChain: player.characterId === "zeynep" ? player.authorityChain : undefined,
         authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined
       })),
