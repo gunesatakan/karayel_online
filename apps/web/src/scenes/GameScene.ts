@@ -1936,10 +1936,8 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
+      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-3-burn") {
-        this.drawSynthesisLightImpact(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
         this.drawSynthesisBurnTrail(beam, color);
       } else if (beam.definitionId === "warrior-6") {
@@ -2020,25 +2018,6 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
     this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
-  }
-
-  private drawSynthesisLightImpact(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 260) / 520, 0, 1);
-    const pulse = 0.88 + Math.sin(Date.now() / 48) * 0.12;
-    this.beamGraphics.lineStyle(5, color, 0.54 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(2, 0xe0f2fe, 0.86 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {

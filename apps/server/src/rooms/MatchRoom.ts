@@ -1001,20 +1001,6 @@ export class MatchRoom extends Room<MatchState> {
     this.damageEnemyFromTowerAs(tower, target, damage, 0, "light");
     this.addZeynepBurnLine(tower, tower.x, tower.y, target.x, target.y, damage * 0.42);
 
-    const id = `zeynep-burn-${tower.id}-${this.nextBeamId++}`;
-    this.beams.set(id, {
-      id,
-      definitionId: "zeynep-3-burn",
-      x1: tower.x,
-      y1: tower.y,
-      x2: target.x,
-      y2: target.y,
-      width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2.35,
-      color: 0x22d3ee,
-      overdrive: false,
-      ttlMs: 520
-    });
-
     const trailId = `zeynep-burn-trail-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(trailId, {
       id: trailId,
@@ -1027,6 +1013,20 @@ export class MatchRoom extends Room<MatchState> {
       color: 0x7c2d12,
       overdrive: false,
       ttlMs: scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS)
+    });
+
+    const id = `zeynep-burn-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(id, {
+      id,
+      definitionId: "zeynep-3-burn",
+      x1: tower.x,
+      y1: tower.y,
+      x2: target.x,
+      y2: target.y,
+      width: ZEYNEP_SHOWCASE_BEAM_RADIUS * 2,
+      color: 0x22d3ee,
+      overdrive: false,
+      ttlMs: 260
     });
   }
 
