@@ -241,6 +241,8 @@ type ProjectileModel = {
   maxHealthDamageRatio: number;
   aoeRadius: number;
   slowMs: number;
+  pierceLimit: number;
+  piercedEnemyIds: string[];
 };
 
 type DroneModel = DroneSnapshot & {
@@ -634,7 +636,9 @@ export class MatchRoom extends Room<MatchState> {
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: tower.definition.aoeRadius + (tower.level - 1) * 5,
-      slowMs: tower.definition.slowMs + (tower.level - 1) * 90
+      slowMs: tower.definition.slowMs + (tower.level - 1) * 90,
+      pierceLimit: tower.definition.id === "zeynep-1" ? 2 : 1,
+      piercedEnemyIds: []
     });
   }
 
@@ -659,7 +663,9 @@ export class MatchRoom extends Room<MatchState> {
       damage,
       maxHealthDamageRatio: 0,
       aoeRadius,
-      slowMs
+      slowMs,
+      pierceLimit: 1,
+      piercedEnemyIds: []
     });
   }
 
@@ -919,6 +925,25 @@ export class MatchRoom extends Room<MatchState> {
       const previousX = projectile.x;
       const previousY = projectile.y;
 
+      if (projectile.piercedEnemyIds.length > 0 && projectile.piercedEnemyIds.length < projectile.pierceLimit) {
+        projectile.x += projectile.vx * seconds;
+        projectile.y += projectile.vy * seconds;
+
+        if (this.isProjectileOutOfBounds(projectile)) {
+          this.projectiles.delete(id);
+          continue;
+        }
+
+        const pierceTarget = this.findPierceLineTarget(projectile, previousX, previousY);
+        if (!pierceTarget) {
+          continue;
+        }
+
+        this.applyProjectileHit(projectile, pierceTarget);
+        this.projectiles.delete(id);
+        continue;
+      }
+
       const target = this.enemies.get(projectile.targetId);
       if (!target) {
         this.projectiles.delete(id);
@@ -943,12 +968,7 @@ export class MatchRoom extends Room<MatchState> {
         projectile.y += projectile.vy * seconds;
       }
 
-      if (
-        projectile.x < -30 ||
-        projectile.x > GAME_WORLD_WIDTH + 30 ||
-        projectile.y < -30 ||
-        projectile.y > GAME_WORLD_HEIGHT + 30
-      ) {
+      if (this.isProjectileOutOfBounds(projectile)) {
         this.projectiles.delete(id);
         continue;
       }
@@ -957,23 +977,64 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const projectileTower = this.towers.get(projectile.towerId);
-      const projectileOwnerId = projectileTower?.ownerId ?? "";
-      const projectileTowerLevel = projectileTower?.level ?? 1;
-      if (projectile.aoeRadius > 0) {
-        for (const enemy of this.enemies.values()) {
-          this.perfCounters.aoeChecks += 1;
-          if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-            this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
-          }
-        }
-      } else {
-        this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
-      }
-      this.applyPostHitEffects(projectile, target);
+      projectile.x = target.x;
+      projectile.y = target.y;
+      this.applyProjectileHit(projectile, target);
+      projectile.piercedEnemyIds.push(target.id);
 
-      this.projectiles.delete(id);
+      if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
+        this.projectiles.delete(id);
+      }
     }
+  }
+
+  private isProjectileOutOfBounds(projectile: ProjectileModel) {
+    return (
+      projectile.x < -30 ||
+      projectile.x > GAME_WORLD_WIDTH + 30 ||
+      projectile.y < -30 ||
+      projectile.y > GAME_WORLD_HEIGHT + 30
+    );
+  }
+
+  private findPierceLineTarget(projectile: ProjectileModel, previousX: number, previousY: number) {
+    let bestTarget: EnemyModel | undefined;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    for (const enemy of this.enemies.values()) {
+      if (projectile.piercedEnemyIds.includes(enemy.id)) {
+        continue;
+      }
+
+      const hitRadius = getEnemyCollisionRadius(enemy) + 4;
+      if (distanceToSegmentSq(enemy.x, enemy.y, previousX, previousY, projectile.x, projectile.y) > hitRadius * hitRadius) {
+        continue;
+      }
+
+      const segmentDistanceSq = distanceSq(previousX, previousY, enemy.x, enemy.y);
+      if (segmentDistanceSq < bestDistanceSq) {
+        bestTarget = enemy;
+        bestDistanceSq = segmentDistanceSq;
+      }
+    }
+
+    return bestTarget;
+  }
+
+  private applyProjectileHit(projectile: ProjectileModel, target: EnemyModel) {
+    const projectileTower = this.towers.get(projectile.towerId);
+    const projectileOwnerId = projectileTower?.ownerId ?? "";
+    const projectileTowerLevel = projectileTower?.level ?? 1;
+    if (projectile.aoeRadius > 0) {
+      for (const enemy of this.enemies.values()) {
+        this.perfCounters.aoeChecks += 1;
+        if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
+          this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+        }
+      }
+    } else {
+      this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+    }
+    this.applyPostHitEffects(projectile, target);
   }
 
   private updateDrones(deltaTime: number, seconds: number) {
