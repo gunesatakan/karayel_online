@@ -67,6 +67,8 @@ const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+const PROJECTILE_GUIDANCE_RADIUS = 78;
+const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -1445,7 +1447,7 @@ export class MatchRoom extends Room<MatchState> {
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
     if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
-        .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= 78 * 78)
+        .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && this.isEnemyInProjectileGuidance(enemy, now))
         .sort((a, b) => b.pathDistance - a.pathDistance)[0];
       if (guidedTarget) {
         return guidedTarget;
@@ -1488,8 +1490,9 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const trackingStacks = this.getTrackingStackCount(enemy, now);
     const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * 0.2 : 1;
+    const guidanceBonus = this.isEnemyInProjectileGuidance(enemy, now) ? PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER : 1;
     const result = calculateDamageTaken(
-      { amount: damage * trackingBonus, damageType },
+      { amount: damage * trackingBonus * guidanceBonus, damageType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
@@ -1560,6 +1563,10 @@ export class MatchRoom extends Room<MatchState> {
     while (tower.damageWindow.length > 0 && tower.damageWindow[0].dealtAt < keepAfter) {
       tower.damageWindow.shift();
     }
+  }
+
+  private isEnemyInProjectileGuidance(enemy: EnemyModel, now = Date.now()) {
+    return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= PROJECTILE_GUIDANCE_RADIUS * PROJECTILE_GUIDANCE_RADIUS;
   }
 
   private getTrackingStackCount(enemy: EnemyModel, now = Date.now()) {

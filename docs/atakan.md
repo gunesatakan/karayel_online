@@ -312,15 +312,16 @@ Atakan'in 3 aktif becerisi vardir.
 **Cooldown:** 16 saniye  
 **Sure:** 1 saniye
 
-Haritada bir alan isaretlenir. Bu sure boyunca mermi ve carpma vuruslu kuleler menzil sinirina takilmadan o alandaki dusmanlara saldirabilir.
+Oyuncu haritada basili tutup surukleyerek bir alan secer. Bu sure boyunca mermi ve carpma vuruslu kuleler menzil sinirina takilmadan o alandaki dusmanlara saldirabilir; alandaki dusmanlar ayni sure boyunca %30 fazla hasar alir.
 
 **Mevcut uygulama:**
 
-- Alan koordinati oyuncudan gelir.
+- Alan koordinati oyuncunun basili tutup surukledigi hedef noktadan gelir.
 - Etki suresi 1000 ms.
 - Etki yari capi yaklasik 78 birimdir.
 - `projectile` ve `impact` vurus tipli kuleleri etkiler.
-- Ham hasari degistirmez; kulelerin menzil disi hedeflere de uptime kazanmasini saglar.
+- Alandaki dusmanlar tum hasar kaynaklarindan `x1.3` hasar alir.
+- Kulelerin menzil disi hedeflere de uptime kazanmasini saglar.
 
 ### 2. Refactor
 

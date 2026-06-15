@@ -88,6 +88,7 @@ type KillStreakLock = {
 };
 
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+const GUIDANCE_RADIUS = 78;
 
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
@@ -157,6 +158,8 @@ export class GameScene extends Phaser.Scene {
   private projectileGroup?: Phaser.Physics.Arcade.Group;
   private placementGrid?: Phaser.GameObjects.Graphics;
   private placementGhost?: Phaser.GameObjects.Image;
+  private guidancePreview?: Phaser.GameObjects.Graphics;
+  private isGuidanceDragging = false;
   private seenDamageEventIds: string[] = [];
   private seenDamageEventSet = new Set<string>();
   private seenKillEventIds: string[] = [];
@@ -240,13 +243,18 @@ export class GameScene extends Phaser.Scene {
     this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt" });
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
+    this.input.on("pointerdown", this.handleMapPointerDown, this);
+    this.input.on("pointermove", this.handleMapPointerMove, this);
     this.input.on("pointerup", this.handleMapPointer, this);
     this.input.once("pointerdown", () => this.unlockGameAudio());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off("pointerdown", this.handleMapPointerDown, this);
+      this.input.off("pointermove", this.handleMapPointerMove, this);
       this.input.off("pointerup", this.handleMapPointer, this);
       this.pingTimer?.remove(false);
       this.placementGrid?.destroy();
       this.placementGhost?.destroy();
+      this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
       this.hideUltimateChoices();
       this.backgroundMusic?.pause();
@@ -657,24 +665,52 @@ export class GameScene extends Phaser.Scene {
     this.ultimateChoiceItems = [];
   }
 
+  private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
+    if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
+      return;
+    }
+
+    this.isGuidanceDragging = true;
+    this.hideUltimateChoices();
+    this.drawGuidancePreview(pointer.worldX, pointer.worldY);
+    this.hintText?.setText("Yonlendirme: alani surukle, birakinca uygula");
+  }
+
+  private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
+    if (!this.isGuidanceDragging) {
+      return;
+    }
+
+    const point = this.getClampedGuidancePoint(pointer);
+    this.drawGuidancePreview(point.x, point.y);
+  }
+
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (this.isGuidanceDragging) {
+      const point = this.getClampedGuidancePoint(pointer);
+      this.room?.send("useSkill", { slot: 0, x: point.x, y: point.y });
+      this.isGuidanceDragging = false;
+      this.pendingAction = undefined;
+      this.clearGuidancePreview();
+      this.hintText?.setText("Yonlendirme alani gonderildi");
+      return;
+    }
+
     if (this.draggedTowerDefinition || performance.now() < this.ignoreMapPointerUntil) {
       return;
     }
-    if (!this.room || pointer.worldY >= this.controlTop || pointer.worldY <= 84) {
+    if (!this.isBattlePointer(pointer)) {
       return;
     }
     this.hideUltimateChoices();
 
     if (this.pendingAction?.type === "guidance") {
-      this.room.send("useSkill", { slot: 0, x: pointer.worldX, y: pointer.worldY });
-      this.pendingAction = undefined;
-      this.hintText?.setText("Yonlendirme alani gonderildi");
+      this.hintText?.setText("Yonlendirme icin haritada basili tutup surukle");
       return;
     }
 
     if (this.pendingAction?.type === "refactor") {
-      this.room.send("useSkill", {
+      this.room?.send("useSkill", {
         slot: 1,
         towerId: this.pendingAction.towerId,
         x: pointer.worldX,
@@ -711,7 +747,7 @@ export class GameScene extends Phaser.Scene {
 
     if (index === 0) {
       this.pendingAction = { type: "guidance" };
-      this.hintText?.setText("Yonlendirme: hedef alana dokun");
+      this.hintText?.setText("Yonlendirme: haritada basili tutup alani surukle");
       return;
     }
 
@@ -923,6 +959,36 @@ export class GameScene extends Phaser.Scene {
     }
     const renderMs = performance.now() - renderStart;
     this.recordClientPerf(snapshot, renderMs);
+  }
+
+  private isBattlePointer(pointer: Phaser.Input.Pointer) {
+    return Boolean(this.room) && !this.draggedTowerDefinition && pointer.worldY < this.controlTop && pointer.worldY > 84;
+  }
+
+  private getClampedGuidancePoint(pointer: Phaser.Input.Pointer) {
+    return {
+      x: Phaser.Math.Clamp(pointer.worldX, GUIDANCE_RADIUS, GAME_WORLD_WIDTH - GUIDANCE_RADIUS),
+      y: Phaser.Math.Clamp(pointer.worldY, 84 + GUIDANCE_RADIUS, this.controlTop - GUIDANCE_RADIUS)
+    };
+  }
+
+  private drawGuidancePreview(x: number, y: number) {
+    const preview = this.guidancePreview ?? this.add.graphics().setDepth(55);
+    this.guidancePreview = preview;
+    preview.clear();
+    preview.fillStyle(0x38bdf8, 0.16);
+    preview.fillCircle(x, y, GUIDANCE_RADIUS);
+    preview.lineStyle(2, 0x7dd3fc, 0.86);
+    preview.strokeCircle(x, y, GUIDANCE_RADIUS);
+    preview.lineStyle(2, 0xfacc15, 0.82);
+    preview.lineBetween(x - 14, y, x + 14, y);
+    preview.lineBetween(x, y - 14, x, y + 14);
+    preview.fillStyle(0xfacc15, 0.95);
+    preview.fillCircle(x, y, 4);
+  }
+
+  private clearGuidancePreview() {
+    this.guidancePreview?.clear();
   }
 
   private syncMapFromSnapshot(snapshot: GameSnapshot) {

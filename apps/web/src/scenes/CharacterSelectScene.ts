@@ -273,7 +273,7 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private skillToItem(skill: SkillDefinition): DetailItem {
     const detailByName: Record<string, string> = {
-      Yonlendirme: "Etki: 1.0sn boyunca projectile ve impact vuruslu kuleler hedef alani menzil siniri yokmus gibi tarar. Ham hasari degistirmez; DPS artisi menzil disinda kalan hedeflere ek uptime kazandigi icin olusur.",
+      Yonlendirme: "Etki: Basili tutup surukleyerek alan secilir. 1.0sn boyunca projectile ve impact vuruslu kuleler hedef alani menzil siniri yokmus gibi tarar; alandaki dusmanlar %30 fazla hasar alir.",
       Refactor: "Etki: Secili turret'i cezasiz tasima/rota degisimi icin kullanilir. Hasar formulu degistirmez; altin kaybi olmadan konum optimizasyonu saglar.",
       "Sessiz Mod": "Etki: 5.0sn tum kuleler durur, ardindan damage sinifli kuleler 5.0sn boyunca 3x saldiri hizi alir. Net kazanc sonraki 5sn'deki baz DPS'in yaklasik 3 kati; onceki 5sn hasarsizdir."
     };
