@@ -4,7 +4,7 @@ import type { TowerDefinition } from "../../common/types.js";
 export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Hiza Emri", "Fiziksel mermi. Ilk dusmani deler, ayni dogrultuda ikinci dusmana kadar ilerler"],
   ["Gosteri Kulesi", "Uzun aralikli isik gosterisi. En cok dusmani kesecek dogru parcasina ani isik patlamasi vurur"],
-  ["Taht Muhru", "Alan hasari"],
+  ["Taht Muhru", "Bagli iki kuleyi sentezleyen karma vurus kulesi"],
   ["Zirve Oku", "Uzun menzil"],
   ["Emir Kulesi", "Yavaslatma"],
   ["Zeynep Nexus", "En ust seviye hasar"]
@@ -25,6 +25,22 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         aoeRadius: 0,
         slowMs: 0,
         color: 0xf9a8d4
+      };
+    }
+
+    if (tower.id === "zeynep-3") {
+      return {
+        ...tower,
+        role: "Sentez baglantisi",
+        description: "Kendi hasar veya vurus tipi yoktur. Iki Hiza Emri baglanirsa iki fiziksel delici mermi yollar. Iki Gosteri Kulesi baglanirsa isik carpmalariyla yanan alan olusturur. Bir Hiza Emri ve bir Gosteri Kulesi baglanirsa fiziksel/isik karisimi, harita kenarindan seken delici bir isin yollar.",
+        classType: "hybrid",
+        damageType: "none",
+        hitType: "aura",
+        mechanics: ["zeynep-synthesis-link", "mixed-damage", "mirror-beam"],
+        fireIntervalMs: 2350,
+        aoeRadius: 0,
+        slowMs: 0,
+        color: 0xf0abfc
       };
     }
 

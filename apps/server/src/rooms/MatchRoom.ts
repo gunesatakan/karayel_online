@@ -80,6 +80,10 @@ const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
 const ZEYNEP_SHOWCASE_BASE_LENGTH = 190;
 const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
+const ZEYNEP_SYNTHESIS_BEAM_RADIUS = 10;
+const ZEYNEP_SYNTHESIS_BURN_RADIUS = 34;
+const ZEYNEP_SYNTHESIS_BURN_DURATION_MS = 3000;
+const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 1000;
 const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.08;
 const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.16;
 const ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER = 0.94;
@@ -268,6 +272,19 @@ type BeamModel = BeamSnapshot & {
   ttlMs: number;
 };
 
+type BurnZoneModel = {
+  id: string;
+  ownerId: string;
+  towerId: string;
+  x: number;
+  y: number;
+  radius: number;
+  damage: number;
+  damageType: DamageType;
+  expiresAt: number;
+  nextTickAt: number;
+};
+
 type DamageEventModel = DamageEventSnapshot & {
   ttlMs: number;
 };
@@ -313,6 +330,13 @@ type RuntimePath = {
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type ZeynepCommandType = "haste" | "range" | "slow";
+type ZeynepSynthesisMode = "dual-projectile" | "mirror-beam" | "burn-impact";
+type ZeynepSynthesisComposition = {
+  mode?: ZeynepSynthesisMode;
+  hizaCount: number;
+  showcaseCount: number;
+  linkedTowers: TowerModel[];
+};
 
 export class MatchRoom extends Room<MatchState> {
   maxClients = 7;
@@ -321,6 +345,7 @@ export class MatchRoom extends Room<MatchState> {
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
   private beams = new Map<string, BeamModel>();
+  private burnZones = new Map<string, BurnZoneModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
   private playerKillStreakTimes = new Map<string, number[]>();
@@ -330,6 +355,7 @@ export class MatchRoom extends Room<MatchState> {
   private nextProjectileId = 1;
   private nextDroneId = 1;
   private nextBeamId = 1;
+  private nextBurnZoneId = 1;
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
@@ -454,6 +480,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
+    this.updateBurnZones();
     this.updateDrones(gameDeltaTime, seconds);
     this.updateBeams(gameDeltaTime);
     this.updateDamageEvents(gameDeltaTime);
@@ -627,6 +654,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-2") {
       this.fireZeynepShowcaseBeam(tower);
+      return;
+    }
+
+    if (tower.definition.id === "zeynep-3") {
+      this.fireZeynepSynthesis(tower, target);
       return;
     }
 
@@ -821,6 +853,186 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return best;
+  }
+
+  private getZeynepSynthesisComposition(tower: TowerModel): ZeynepSynthesisComposition {
+    const linkedTowers = tower.linkedTowerIds
+      .map((towerId) => this.towers.get(towerId))
+      .filter((linkedTower): linkedTower is TowerModel => Boolean(
+        linkedTower &&
+        linkedTower.ownerId === tower.ownerId &&
+        (linkedTower.definition.id === "zeynep-1" || linkedTower.definition.id === "zeynep-2")
+      ))
+      .slice(0, 2);
+    const hizaCount = linkedTowers.filter((linkedTower) => linkedTower.definition.id === "zeynep-1").length;
+    const showcaseCount = linkedTowers.filter((linkedTower) => linkedTower.definition.id === "zeynep-2").length;
+    const mode = linkedTowers.length < 2
+      ? undefined
+      : hizaCount === 2
+        ? "dual-projectile"
+        : showcaseCount === 2
+          ? "burn-impact"
+          : "mirror-beam";
+
+    return { mode, hizaCount, showcaseCount, linkedTowers };
+  }
+
+  private fireZeynepSynthesis(tower: TowerModel, target: EnemyModel) {
+    const composition = this.getZeynepSynthesisComposition(tower);
+    if (!composition.mode) {
+      return;
+    }
+
+    if (composition.mode === "dual-projectile") {
+      this.fireZeynepSynthesisDualProjectiles(tower);
+      return;
+    }
+
+    if (composition.mode === "burn-impact") {
+      this.fireZeynepSynthesisBurnImpact(tower, target);
+      return;
+    }
+
+    this.fireZeynepSynthesisMirrorBeam(tower, target);
+  }
+
+  private fireZeynepSynthesisDualProjectiles(tower: TowerModel) {
+    const targets = Array.from(this.enemies.values())
+      .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= this.getTowerRange(tower) * this.getTowerRange(tower))
+      .sort((a, b) => b.pathDistance - a.pathDistance)
+      .slice(0, 2);
+    const damage = this.getTowerDamage(tower);
+    const speed = Math.max(1, tower.definition.projectileSpeed + tower.level * 22);
+
+    for (const target of targets) {
+      this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", 2);
+    }
+  }
+
+  private fireZeynepSynthesisBurnImpact(tower: TowerModel, target: EnemyModel) {
+    const damage = this.getTowerDamage(tower);
+    this.damageEnemyFromTowerAs(tower, target, damage, 0, "light");
+    this.addZeynepBurnZone(tower, target.x, target.y, damage * 0.42);
+
+    const id = `zeynep-burn-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(id, {
+      id,
+      definitionId: "zeynep-3-burn",
+      x1: tower.x,
+      y1: tower.y,
+      x2: target.x,
+      y2: target.y,
+      width: ZEYNEP_SYNTHESIS_BURN_RADIUS,
+      color: 0xf9a8d4,
+      overdrive: false,
+      ttlMs: 520
+    });
+  }
+
+  private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
+    const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y);
+    const hitEnemies = new Map<string, EnemyModel>();
+    for (const segment of segments) {
+      for (const enemy of this.enemies.values()) {
+        this.perfCounters.aoeChecks += 1;
+        if (!this.canTowerTargetEnemy(tower, enemy)) {
+          continue;
+        }
+
+        const hitRadius = ZEYNEP_SYNTHESIS_BEAM_RADIUS + getEnemyCollisionRadius(enemy);
+        if (distanceToSegmentSq(enemy.x, enemy.y, segment.x1, segment.y1, segment.x2, segment.y2) <= hitRadius * hitRadius) {
+          hitEnemies.set(enemy.id, enemy);
+        }
+      }
+    }
+
+    const damage = this.getTowerDamage(tower);
+    for (const enemy of hitEnemies.values()) {
+      this.damageEnemyFromTowerAs(tower, enemy, damage * 0.5, 0, "physical", 0);
+      this.damageEnemyFromTowerAs(tower, enemy, damage * 0.5, 0, "light", 0);
+    }
+
+    segments.forEach((segment, index) => {
+      const id = `zeynep-mirror-${tower.id}-${this.nextBeamId++}-${index}`;
+      this.beams.set(id, {
+        id,
+        definitionId: "zeynep-3",
+        x1: segment.x1,
+        y1: segment.y1,
+        x2: segment.x2,
+        y2: segment.y2,
+        width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2,
+        color: index === 0 ? 0xe879f9 : 0xfdf2f8,
+        overdrive: false,
+        ttlMs: 360
+      });
+    });
+  }
+
+  private spawnZeynepSynthesisProjectile(tower: TowerModel, target: EnemyModel, damage: number, speed: number, damageType: DamageType, pierceLimit: number) {
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const id = `p${this.nextProjectileId++}`;
+
+    this.projectiles.set(id, {
+      id,
+      towerId: tower.id,
+      definitionId: tower.definition.id,
+      kind: "tower",
+      damageType,
+      source: "tower",
+      targetId: target.id,
+      x: tower.x,
+      y: tower.y,
+      vx: (dx / length) * speed,
+      vy: (dy / length) * speed,
+      damage,
+      maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
+      aoeRadius: 0,
+      slowMs: 0,
+      pierceLimit,
+      piercedEnemyIds: []
+    });
+  }
+
+  private addZeynepBurnZone(tower: TowerModel, x: number, y: number, damage: number) {
+    const now = Date.now();
+    const id = `burn-${this.nextBurnZoneId++}`;
+    this.burnZones.set(id, {
+      id,
+      ownerId: tower.ownerId,
+      towerId: tower.id,
+      x,
+      y,
+      radius: ZEYNEP_SYNTHESIS_BURN_RADIUS,
+      damage,
+      damageType: "light",
+      expiresAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS),
+      nextTickAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS)
+    });
+  }
+
+  private updateBurnZones() {
+    const now = Date.now();
+    for (const [id, zone] of this.burnZones) {
+      if (now >= zone.expiresAt) {
+        this.burnZones.delete(id);
+        continue;
+      }
+
+      if (now < zone.nextTickAt) {
+        continue;
+      }
+
+      zone.nextTickAt += scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS);
+      for (const enemy of this.enemies.values()) {
+        this.perfCounters.aoeChecks += 1;
+        if (distanceSq(zone.x, zone.y, enemy.x, enemy.y) <= zone.radius * zone.radius) {
+          this.damageEnemy(enemy, zone.damage, 0, "zeynep-3-burn", zone.ownerId, zone.damageType, 0, 1, zone.towerId);
+        }
+      }
+    }
   }
 
   private updateDebugLaserSweep(tower: TowerModel) {
@@ -1324,8 +1536,7 @@ export class MatchRoom extends Room<MatchState> {
       !serverTower ||
       !targetTower ||
       serverTower.ownerId !== client.sessionId ||
-      serverTower.definition.id !== "warrior-2" ||
-      targetTower.definition.id === "warrior-2"
+      !this.canLinkTower(client.sessionId, serverTower, targetTower)
     ) {
       return;
     }
@@ -1346,6 +1557,18 @@ export class MatchRoom extends Room<MatchState> {
     serverTower.linkedTowerIds.push(targetTower.id);
     serverTower.linkedTowerWaveAges[targetTower.id] = serverTower.linkedTowerWaveAges[targetTower.id] ?? 0;
     targetTower.rangeMemoryEnemyIds = [];
+  }
+
+  private canLinkTower(ownerId: string, sourceTower: TowerModel, targetTower: TowerModel) {
+    if (sourceTower.definition.id === "warrior-2") {
+      return targetTower.definition.id !== "warrior-2";
+    }
+
+    if (sourceTower.definition.id === "zeynep-3") {
+      return targetTower.ownerId === ownerId && targetTower.characterId === "zeynep" && (targetTower.definition.id === "zeynep-1" || targetTower.definition.id === "zeynep-2");
+    }
+
+    return false;
   }
 
   private useSkill(client: Client, message: UseSkillMessage) {
@@ -1718,6 +1941,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private findTowerTarget(tower: TowerModel) {
     const now = Date.now();
+    if (tower.definition.id === "zeynep-3" && !this.getZeynepSynthesisComposition(tower).mode) {
+      return undefined;
+    }
+
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
     if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
@@ -1752,7 +1979,12 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return tower.definition.id === "warrior-1" || tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-1" || tower.definition.id === "zeynep-2";
+    return tower.definition.id === "warrior-1" ||
+      tower.definition.id === "warrior-4" ||
+      tower.definition.id === "warrior-6" ||
+      tower.definition.id === "zeynep-1" ||
+      tower.definition.id === "zeynep-2" ||
+      (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
@@ -1813,6 +2045,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
     return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, tower.definition.damageType ?? "physical", this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
+  }
+
+  private damageEnemyFromTowerAs(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number, damageType: DamageType, maxHealthDamageRatio?: number) {
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
   }
 
   private recordTowerDamage(towerId: string, amount: number, now = Date.now()) {
@@ -2193,6 +2429,12 @@ export class MatchRoom extends Room<MatchState> {
       return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier;
     }
 
+    if (tower.definition.id === "zeynep-3") {
+      const composition = this.getZeynepSynthesisComposition(tower);
+      const baseInterval = composition.mode === "dual-projectile" ? getZeynepHizaFireInterval(tower.level) : tower.definition.fireIntervalMs;
+      return Math.max(80, baseInterval * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
+    }
+
     if (tower.definition.hitType === "impact") {
       return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
@@ -2354,6 +2596,19 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
       const maxAge = Math.max(...tower.linkedTowerIds.map((towerId) => tower.linkedTowerWaveAges[towerId] ?? 0));
       return `Link ${tower.linkedTowerIds.length}/2 ${maxAge}T`;
+    }
+    if (tower.definition.id === "zeynep-3") {
+      const composition = this.getZeynepSynthesisComposition(tower);
+      if (composition.mode === "dual-projectile") {
+        return "Sentez 1+1";
+      }
+      if (composition.mode === "burn-impact") {
+        return "Sentez 2+2";
+      }
+      if (composition.mode === "mirror-beam") {
+        return "Sentez 1+2";
+      }
+      return `Sentez ${composition.linkedTowers.length}/2`;
     }
     const serverLinkAge = this.getServerLinkWaveAge(tower);
     if (serverLinkAge >= 10) {
@@ -3074,6 +3329,51 @@ function getRayToWorldEdge(x1: number, y1: number, x2: number, y2: number) {
 
 function getRayAngleToWorldEdge(x1: number, y1: number, angle: number) {
   return getRayDirectionToWorldEdge(x1, y1, Math.cos(angle), Math.sin(angle));
+}
+
+function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY: number) {
+  const dx = targetX - x1;
+  const dy = targetY - y1;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const nx = dx / length;
+  const ny = dy / length;
+  const firstHit = getRayBoundaryHit(x1, y1, nx, ny);
+  const reflectedX = firstHit.axis === "x" ? -nx : nx;
+  const reflectedY = firstHit.axis === "y" ? -ny : ny;
+  const secondStartX = firstHit.x + reflectedX * 0.01;
+  const secondStartY = firstHit.y + reflectedY * 0.01;
+  const secondHit = getRayBoundaryHit(secondStartX, secondStartY, reflectedX, reflectedY);
+
+  return [
+    { x1, y1, x2: firstHit.x, y2: firstHit.y },
+    { x1: firstHit.x, y1: firstHit.y, x2: secondHit.x, y2: secondHit.y }
+  ];
+}
+
+function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number) {
+  const candidates: Array<{ t: number; axis: "x" | "y" }> = [];
+
+  if (nx > 0) {
+    candidates.push({ t: (GAME_WORLD_WIDTH - x1) / nx, axis: "x" });
+  } else if (nx < 0) {
+    candidates.push({ t: (0 - x1) / nx, axis: "x" });
+  }
+
+  if (ny > 0) {
+    candidates.push({ t: (GAME_WORLD_HEIGHT - y1) / ny, axis: "y" });
+  } else if (ny < 0) {
+    candidates.push({ t: (0 - y1) / ny, axis: "y" });
+  }
+
+  const hit = candidates
+    .filter((candidate) => candidate.t > 0.0001)
+    .sort((a, b) => a.t - b.t)[0] ?? { t: 1, axis: "x" as const };
+
+  return {
+    x: Math.min(GAME_WORLD_WIDTH, Math.max(0, x1 + nx * hit.t)),
+    y: Math.min(GAME_WORLD_HEIGHT, Math.max(0, y1 + ny * hit.t)),
+    axis: hit.axis
+  };
 }
 
 function getPointOnRay(x1: number, y1: number, angle: number, distance: number) {

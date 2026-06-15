@@ -1002,8 +1002,7 @@ export class GameScene extends Phaser.Scene {
     if (
       !selectedTower ||
       selectedTower.ownerId !== this.localSessionId ||
-      selectedTower.definitionId !== "warrior-2" ||
-      targetTower.definitionId === "warrior-2"
+      !this.canSelectedTowerLinkToTarget(selectedTower, targetTower)
     ) {
       return false;
     }
@@ -1014,6 +1013,20 @@ export class GameScene extends Phaser.Scene {
     });
     this.hintText?.setText(`${selectedTower.name}: ${targetTower.name} link istegi gonderildi`);
     return true;
+  }
+
+  private canSelectedTowerLinkToTarget(selectedTower: TowerSnapshot, targetTower: TowerSnapshot) {
+    if (selectedTower.definitionId === "warrior-2") {
+      return targetTower.definitionId !== "warrior-2";
+    }
+
+    if (selectedTower.definitionId === "zeynep-3") {
+      return targetTower.ownerId === this.localSessionId &&
+        targetTower.characterId === "zeynep" &&
+        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2");
+    }
+
+    return false;
   }
 
   private async connect() {
@@ -1414,7 +1427,7 @@ export class GameScene extends Phaser.Scene {
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const isLinkedToSelectedServer = Boolean(
-      selectedTower?.definitionId === "warrior-2" &&
+      (selectedTower?.definitionId === "warrior-2" || selectedTower?.definitionId === "zeynep-3") &&
       selectedTower.linkedTowerIds?.includes(tower.id)
     );
 
@@ -1427,8 +1440,8 @@ export class GameScene extends Phaser.Scene {
     highlight
       .setVisible(true)
       .setRadius(27 + pulse * 3)
-      .setFillStyle(0x22d3ee, 0.12 + pulse * 0.12)
-      .setStrokeStyle(3, 0xfacc15, 0.72 + pulse * 0.22);
+      .setFillStyle(selectedTower?.definitionId === "zeynep-3" ? 0xf0abfc : 0x22d3ee, 0.12 + pulse * 0.12)
+      .setStrokeStyle(3, selectedTower?.definitionId === "zeynep-3" ? 0xfdf2f8 : 0xfacc15, 0.72 + pulse * 0.22);
   }
 
   private getTowerTint(tower: TowerSnapshot) {
@@ -1926,8 +1939,10 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-2") {
+      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3") {
         this.drawShowcaseBeam(beam, color);
+      } else if (beam.definitionId === "zeynep-3-burn") {
+        this.drawSynthesisBurnImpact(beam, color);
       } else if (beam.definitionId === "warrior-6") {
         this.drawChainLightning(beam, color);
       } else {
@@ -2006,6 +2021,26 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
     this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
+  }
+
+  private drawSynthesisBurnImpact(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 260) / 520, 0, 1);
+    const pulse = 0.88 + Math.sin(Date.now() / 48) * 0.12;
+    this.beamGraphics.lineStyle(3, color, 0.42 * life);
+    this.beamGraphics.beginPath();
+    this.beamGraphics.moveTo(beam.x1, beam.y1);
+    this.beamGraphics.lineTo(beam.x2, beam.y2);
+    this.beamGraphics.strokePath();
+    this.beamGraphics.fillStyle(0xf9a8d4, 0.12 * pulse * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width);
+    this.beamGraphics.lineStyle(2, 0xfdf2f8, 0.54 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, beam.width * (0.72 + pulse * 0.1));
+    this.beamGraphics.fillStyle(0xffffff, 0.58 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 5 + pulse * 2);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {
@@ -2146,7 +2181,11 @@ export class GameScene extends Phaser.Scene {
     const cost = definition ? getTowerUpgradeCost(definition.cost, selectedTower.level, definition.id) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
-    const linkHint = selectedTower.definitionId === "warrior-2" ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun` : "";
+    const linkHint = selectedTower.definitionId === "warrior-2"
+      ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun`
+      : selectedTower.definitionId === "zeynep-3"
+        ? ` | Sentez ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin Zeynep 1/2'ye dokun`
+        : "";
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${status}${linkHint}`);
