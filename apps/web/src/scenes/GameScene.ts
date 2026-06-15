@@ -87,6 +87,17 @@ type KillStreakLock = {
   wave: number;
 };
 
+type KillStreakVisualTheme = {
+  style: "brutal" | "command" | "precision" | "arcane" | "sanctuary" | "bulwark" | "storm";
+  primary: number;
+  secondary: number;
+  accent: number;
+  fill: number;
+  textColor: string;
+  strokeColor: string;
+  motif: string;
+};
+
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const GUIDANCE_RADIUS = 78;
 
@@ -1800,15 +1811,22 @@ export class GameScene extends Phaser.Scene {
   private showKillStreakAnnouncement(player: GameSnapshot["players"][number] | undefined, rule: KillStreakRule) {
     this.rampageContainer?.destroy(true);
 
-    const characterName = characters.find((character) => character.id === player?.characterId)?.displayName ?? this.selectedCharacter.displayName;
+    const characterId = player?.characterId ?? this.selectedCharacterId;
+    const characterName = characters.find((character) => character.id === characterId)?.displayName ?? this.selectedCharacter.displayName;
     const message = `${characterName}! ${rule.label}!`;
+    const theme = getKillStreakVisualTheme(characterId, rule);
+    if (theme.style === "command") {
+      this.showCommandKillStreakAnnouncement(message, rule, theme);
+      return;
+    }
+
     const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "27px" : "31px";
     const container = this.add.container(GAME_WORLD_WIDTH / 2, -78).setDepth(80).setAlpha(0);
     const plate = this.add.graphics();
     const width = rule.chaos >= 4 ? 214 : rule.chaos >= 2 ? 196 : 178;
     const height = rule.chaos >= 4 ? 38 : 32;
 
-    plate.fillStyle(rule.fill, 0.92);
+    plate.fillStyle(theme.fill, 0.92);
     plate.fillPoints([
       new Phaser.Geom.Point(-width, -height + 4),
       new Phaser.Geom.Point(width - 18, -height - 4 - rule.chaos * 2),
@@ -1817,7 +1835,7 @@ export class GameScene extends Phaser.Scene {
       new Phaser.Geom.Point(-width + 12, height - 6),
       new Phaser.Geom.Point(-width - 8, -8)
     ], true);
-    plate.lineStyle(2 + rule.chaos, rule.primary, 0.95);
+    plate.lineStyle(2 + rule.chaos, theme.primary, 0.95);
     plate.strokePoints([
       new Phaser.Geom.Point(-width, -height + 4),
       new Phaser.Geom.Point(width - 18, -height - 4 - rule.chaos * 2),
@@ -1826,14 +1844,14 @@ export class GameScene extends Phaser.Scene {
       new Phaser.Geom.Point(-width + 12, height - 6),
       new Phaser.Geom.Point(-width - 8, -8)
     ], true);
-    plate.lineStyle(2, rule.secondary, 0.9);
+    plate.lineStyle(2, theme.secondary, 0.9);
     plate.lineBetween(-width + 30, height - 8, -width + 98, -height + 8);
     plate.lineBetween(width - 86, -height, width - 10, height - 10);
-    plate.lineStyle(2, rule.accent, 0.9);
+    plate.lineStyle(2, theme.accent, 0.9);
     plate.lineBetween(-width + 8, -5, -width + 56, height - 6);
     plate.lineBetween(44, height - 4, 108 + rule.chaos * 6, -height + 4);
     if (rule.chaos >= 3) {
-      plate.lineStyle(2, rule.primary, 0.75);
+      plate.lineStyle(2, theme.primary, 0.75);
       plate.lineBetween(-44, -height - 8, -12, height + 8);
       plate.lineBetween(136, -height - 6, 178, height + 4);
     }
@@ -1848,30 +1866,37 @@ export class GameScene extends Phaser.Scene {
       fontFamily: "Impact, Arial Black, Arial",
       fontSize,
       fontStyle: "bold",
-      color: "#fff7ed",
-      stroke: "#0a0a0a",
+      color: theme.textColor,
+      stroke: theme.strokeColor,
       strokeThickness: 8
     };
     const cyanGhost = this.add.text(4 + rule.chaos, 3, message, {
       ...baseStyle,
-      color: toCssColor(rule.secondary),
+      color: toCssColor(theme.secondary),
       stroke: "#111827",
       strokeThickness: 5
     }).setOrigin(0.5).setAngle(-2 - rule.chaos * 0.45).setAlpha(0.68 + rule.chaos * 0.04);
     const redGhost = this.add.text(-4 - rule.chaos, -2, message, {
       ...baseStyle,
-      color: toCssColor(rule.primary),
+      color: toCssColor(theme.primary),
       stroke: "#450a0a",
       strokeThickness: 5
     }).setOrigin(0.5).setAngle(1.5 + rule.chaos * 0.5).setAlpha(0.74 + rule.chaos * 0.04);
     const mainText = this.add.text(0, 0, message, {
       ...baseStyle,
-      color: "#fff7ed",
-      stroke: toCssColor(rule.fill),
+      color: theme.textColor,
+      stroke: toCssColor(theme.fill),
       strokeThickness: 7
     }).setOrigin(0.5).setAngle(rule.chaos >= 4 ? -2 : -1);
+    const motifText = this.add.text(-width + 28, -height + 8, theme.motif, {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "11px",
+      color: toCssColor(theme.accent),
+      stroke: "#020617",
+      strokeThickness: 3
+    }).setOrigin(0, 0.5).setAlpha(0.78);
 
-    container.add([plate, cyanGhost, redGhost, mainText]);
+    container.add([plate, cyanGhost, redGhost, mainText, motifText]);
     this.rampageContainer = container;
 
     this.tweens.add({
@@ -1916,6 +1941,112 @@ export class GameScene extends Phaser.Scene {
       alpha: 0,
       delay: 2100 + rule.chaos * 260,
       duration: 500,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        container.destroy(true);
+        if (this.rampageContainer === container) {
+          this.rampageContainer = undefined;
+        }
+      }
+    });
+  }
+
+  private showCommandKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
+    const fontSize = message.length > 21 ? "23px" : message.length > 17 ? "26px" : "30px";
+    const container = this.add.container(GAME_WORLD_WIDTH / 2, -84).setDepth(82).setAlpha(0);
+    const plate = this.add.graphics();
+    const width = rule.chaos >= 4 ? 220 : 202;
+    const height = rule.chaos >= 4 ? 44 : 38;
+    const glowAlpha = 0.18 + rule.chaos * 0.035;
+
+    plate.fillStyle(theme.fill, 0.88);
+    plate.fillPoints([
+      new Phaser.Geom.Point(-width, 0),
+      new Phaser.Geom.Point(-width + 34, -height),
+      new Phaser.Geom.Point(width - 34, -height),
+      new Phaser.Geom.Point(width, 0),
+      new Phaser.Geom.Point(width - 34, height),
+      new Phaser.Geom.Point(-width + 34, height)
+    ], true);
+    plate.lineStyle(5, theme.primary, 0.42);
+    plate.strokeRoundedRect(-width - 8, -height - 8, width * 2 + 16, height * 2 + 16, 10);
+    plate.lineStyle(2 + rule.chaos, theme.secondary, 0.92);
+    plate.strokePoints([
+      new Phaser.Geom.Point(-width, 0),
+      new Phaser.Geom.Point(-width + 34, -height),
+      new Phaser.Geom.Point(width - 34, -height),
+      new Phaser.Geom.Point(width, 0),
+      new Phaser.Geom.Point(width - 34, height),
+      new Phaser.Geom.Point(-width + 34, height)
+    ], true);
+    plate.lineStyle(1, theme.accent, 0.78);
+    for (let index = -2; index <= 2; index += 1) {
+      plate.lineBetween(index * 42, -height - 16, index * 42, height + 16);
+      plate.lineBetween(-width + 18, index * 12, width - 18, index * 12);
+    }
+    plate.lineStyle(2, theme.primary, 0.74);
+    plate.strokeCircle(-width + 42, 0, 18 + rule.chaos * 2);
+    plate.strokeCircle(width - 42, 0, 18 + rule.chaos * 2);
+    plate.fillStyle(theme.secondary, glowAlpha);
+    plate.fillCircle(-width + 42, 0, 30 + rule.chaos * 3);
+    plate.fillCircle(width - 42, 0, 30 + rule.chaos * 3);
+
+    const commandText = this.add.text(0, -25, theme.motif, {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "10px",
+      color: toCssColor(theme.accent),
+      stroke: "#020617",
+      strokeThickness: 3
+    }).setOrigin(0.5).setAlpha(0.9);
+    const mainText = this.add.text(0, 3, message, {
+      fontFamily: "Arial Black, Arial",
+      fontSize,
+      fontStyle: "bold",
+      color: theme.textColor,
+      stroke: theme.strokeColor,
+      strokeThickness: 7
+    }).setOrigin(0.5);
+    const lightText = this.add.text(0, 4, message, {
+      fontFamily: "Arial Black, Arial",
+      fontSize,
+      fontStyle: "bold",
+      color: toCssColor(theme.secondary),
+      stroke: "#0f172a",
+      strokeThickness: 4
+    }).setOrigin(0.5).setAlpha(0.38);
+
+    container.add([plate, lightText, mainText, commandText]);
+    this.rampageContainer = container;
+    this.tweens.add({
+      targets: container,
+      y: 86,
+      alpha: 1,
+      duration: 260,
+      ease: "Back.easeOut"
+    });
+    this.tweens.add({
+      targets: plate,
+      alpha: { from: 0.72, to: 1 },
+      yoyo: true,
+      repeat: 7 + rule.chaos * 3,
+      duration: 82,
+      ease: "Sine.easeInOut"
+    });
+    this.tweens.add({
+      targets: lightText,
+      x: { from: -3 - rule.chaos, to: 3 + rule.chaos },
+      alpha: { from: 0.18, to: 0.62 },
+      yoyo: true,
+      repeat: 8 + rule.chaos * 3,
+      duration: 54,
+      ease: "Sine.easeInOut"
+    });
+    this.tweens.add({
+      targets: container,
+      y: 58,
+      alpha: 0,
+      delay: 2300 + rule.chaos * 260,
+      duration: 520,
       ease: "Cubic.easeIn",
       onComplete: () => {
         container.destroy(true);
@@ -2352,6 +2483,83 @@ function getZeynepCommandButtonState(authorityChain: number) {
 
 function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+}
+
+function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule): KillStreakVisualTheme {
+  type CharacterKillStreakTheme = Omit<KillStreakVisualTheme, "primary" | "secondary" | "accent" | "fill"> & {
+    colors: readonly [number, number, number, number];
+  };
+
+  const atakanTheme: CharacterKillStreakTheme = {
+    style: "brutal" as const,
+    textColor: "#fff7ed",
+    strokeColor: "#0a0a0a",
+    motif: rule.chaos >= 4 ? "FULL SEND / NO BRAKES" : rule.chaos >= 3 ? "PRESSURE SPIKE" : "CLEAN EXECUTE",
+    colors: [rule.primary, rule.secondary, rule.accent, rule.fill] as const
+  };
+
+  if (characterId === "zeynep") {
+    const tiers: Record<KillStreakTier, readonly [number, number, number, number, string]> = {
+      granted: [0x7dd3fc, 0xf0abfc, 0xfacc15, 0x160a2d, "COMMAND GRANTED"],
+      unstoppable: [0x38bdf8, 0xe879f9, 0xfde047, 0x14052c, "TEMPO CONTROL / RANGE UP"],
+      rampage: [0x22d3ee, 0xffffff, 0xf0abfc, 0x10031f, "FIELD DIRECTIVE / OVERRIDE"],
+      legendary: [0xfdf2f8, 0x67e8f9, 0xfacc15, 0x0f0324, "GLOBAL COMMAND / EXECUTE"]
+    };
+    const [primary, secondary, accent, fill, motif] = tiers[rule.tier];
+    return {
+      style: "command",
+      primary,
+      secondary,
+      accent,
+      fill,
+      textColor: "#fdfbff",
+      strokeColor: "#111827",
+      motif
+    };
+  }
+
+  const themes: Record<Exclude<CharacterId, "zeynep">, CharacterKillStreakTheme> = {
+    warrior: atakanTheme,
+    archer: {
+      style: "precision",
+      textColor: "#ecfeff",
+      strokeColor: "#082f49",
+      motif: rule.chaos >= 4 ? "PERFECT VECTOR" : "MULTI-SHOT LOCK",
+      colors: [0x22d3ee, 0xa7f3d0, 0xfef08a, 0x062b35] as const
+    },
+    mage: {
+      style: "arcane",
+      textColor: "#faf5ff",
+      strokeColor: "#2e1065",
+      motif: rule.chaos >= 4 ? "ASTRAL COLLAPSE" : "ARCANE SURGE",
+      colors: [0xa855f7, 0xf0abfc, 0x67e8f9, 0x1f1238] as const
+    },
+    healer: {
+      style: "sanctuary",
+      textColor: "#f0fdf4",
+      strokeColor: "#064e3b",
+      motif: rule.chaos >= 4 ? "DIVINE BREAKPOINT" : "SANCTUARY PULSE",
+      colors: [0x34d399, 0xfde68a, 0xbbf7d0, 0x052e2b] as const
+    },
+    tank: {
+      style: "bulwark",
+      textColor: "#f8fafc",
+      strokeColor: "#1e293b",
+      motif: rule.chaos >= 4 ? "UNBROKEN WALL" : "BULWARK BREAK",
+      colors: [0x94a3b8, 0xf97316, 0xfacc15, 0x111827] as const
+    },
+    onur: {
+      style: "storm",
+      textColor: "#eff6ff",
+      strokeColor: "#172554",
+      motif: rule.chaos >= 4 ? "STORM ASCENDANT" : "STORM CLAIM",
+      colors: [0x60a5fa, 0x818cf8, 0xf0abfc, 0x0b122c] as const
+    }
+  };
+
+  const theme = themes[characterId] ?? atakanTheme;
+  const [primary, secondary, accent, fill] = theme.colors;
+  return { ...theme, primary, secondary, accent, fill };
 }
 
 function readStoredVolume(key: string, fallback: number) {
