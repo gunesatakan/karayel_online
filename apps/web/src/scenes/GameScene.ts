@@ -999,34 +999,48 @@ export class GameScene extends Phaser.Scene {
     }
 
     const selectedTower = this.towerSnapshots.get(this.selectedPlacedTowerId);
-    if (
-      !selectedTower ||
-      selectedTower.ownerId !== this.localSessionId ||
-      !this.canSelectedTowerLinkToTarget(selectedTower, targetTower)
-    ) {
+    if (!selectedTower || selectedTower.ownerId !== this.localSessionId) {
+      return false;
+    }
+
+    const linkRequest = this.getLinkRequest(selectedTower, targetTower);
+    if (!linkRequest) {
       return false;
     }
 
     this.room.send("linkServer", {
-      serverTowerId: selectedTower.id,
-      targetTowerId: targetTower.id
+      serverTowerId: linkRequest.serverTowerId,
+      targetTowerId: linkRequest.targetTowerId
     });
-    this.hintText?.setText(`${selectedTower.name}: ${targetTower.name} link istegi gonderildi`);
+    this.hintText?.setText(`${linkRequest.sourceName}: ${linkRequest.targetName} link istegi gonderildi`);
     return true;
   }
 
-  private canSelectedTowerLinkToTarget(selectedTower: TowerSnapshot, targetTower: TowerSnapshot) {
+  private getLinkRequest(selectedTower: TowerSnapshot, targetTower: TowerSnapshot) {
     if (selectedTower.definitionId === "warrior-2") {
-      return targetTower.definitionId !== "warrior-2";
+      return targetTower.definitionId !== "warrior-2"
+        ? { serverTowerId: selectedTower.id, targetTowerId: targetTower.id, sourceName: selectedTower.name, targetName: targetTower.name }
+        : undefined;
     }
 
     if (selectedTower.definitionId === "zeynep-3") {
       return targetTower.ownerId === this.localSessionId &&
         targetTower.characterId === "zeynep" &&
-        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2" || targetTower.definitionId === "zeynep-3");
+        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2" || targetTower.definitionId === "zeynep-3")
+        ? { serverTowerId: selectedTower.id, targetTowerId: targetTower.id, sourceName: selectedTower.name, targetName: targetTower.name }
+        : undefined;
     }
 
-    return false;
+    if (
+      targetTower.ownerId === this.localSessionId &&
+      targetTower.definitionId === "zeynep-3" &&
+      selectedTower.characterId === "zeynep" &&
+      (selectedTower.definitionId === "zeynep-1" || selectedTower.definitionId === "zeynep-2" || selectedTower.definitionId === "zeynep-3")
+    ) {
+      return { serverTowerId: targetTower.id, targetTowerId: selectedTower.id, sourceName: targetTower.name, targetName: selectedTower.name };
+    }
+
+    return undefined;
   }
 
   private async connect() {

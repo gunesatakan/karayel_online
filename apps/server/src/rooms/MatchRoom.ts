@@ -1612,8 +1612,18 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const serverTower = this.towers.get(message.serverTowerId);
-    const targetTower = this.towers.get(message.targetTowerId);
+    let serverTower = this.towers.get(message.serverTowerId);
+    let targetTower = this.towers.get(message.targetTowerId);
+    if (
+      serverTower &&
+      targetTower &&
+      serverTower.definition.id !== "warrior-2" &&
+      serverTower.definition.id !== "zeynep-3" &&
+      targetTower.definition.id === "zeynep-3"
+    ) {
+      [serverTower, targetTower] = [targetTower, serverTower];
+    }
+
     if (
       !serverTower ||
       !targetTower ||
@@ -2030,14 +2040,6 @@ export class MatchRoom extends Room<MatchState> {
       if (!composition.mode) {
         return undefined;
       }
-
-      this.perfCounters.targetSearches += 1;
-      return Array.from(this.enemies.values())
-        .filter((enemy) => {
-          this.perfCounters.targetChecks += 1;
-          return this.canTowerTargetEnemy(tower, enemy) && this.isEnemyInZeynepSynthesisCoverage(tower, enemy, composition);
-        })
-        .sort((a, b) => b.pathDistance - a.pathDistance)[0];
     }
 
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
@@ -2067,26 +2069,6 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
-  }
-
-  private isEnemyInZeynepSynthesisCoverage(tower: TowerModel, enemy: EnemyModel, composition: ZeynepSynthesisComposition) {
-    const ownRange = tower.definition.range + (tower.level - 1) * 11;
-    if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= ownRange * ownRange) {
-      return true;
-    }
-
-    const coverageTowers = composition.copySourceTower
-      ? [composition.copySourceTower]
-      : composition.linkedTowers.filter((linkedTower) => linkedTower.definition.id === "zeynep-1" || linkedTower.definition.id === "zeynep-2");
-
-    return coverageTowers.some((linkedTower) => {
-      if (!this.canTowerTargetEnemy(linkedTower, enemy)) {
-        return false;
-      }
-
-      const range = this.getTowerRange(linkedTower);
-      return distanceSq(linkedTower.x, linkedTower.y, enemy.x, enemy.y) <= range * range;
-    });
   }
 
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
