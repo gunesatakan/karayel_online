@@ -1,1 +1,1 @@
-export const zeynepPassive = "Otorite Zinciri: Zeynep kendi oldurdugu dusmanlardan Itibar toplar. Zincir tamamladikca Zincir Kalitesi artar. Yan yana tam 2 veya 3 Zeynep kulesi dizilim buff'i alir; 4+ kulelik kalabalikta buff bozulur.";
+export const zeynepPassive = "Otorite Zinciri: Zeynep kendi oldurdugu dusmanlardan Itibar toplar. Zincir tamamladikca Zincir Kalitesi artar. Tam 2'li kule bagi veya ucgen kuran 3'lu kule bagi dizilim buff'i alir; buff seviyesi bagdaki en dusuk kule level'idir.";

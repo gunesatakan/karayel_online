@@ -538,7 +538,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBackgroundMusic() {
-    this.backgroundMusic = new Audio("/audio/background-theme.mp3");
+    this.backgroundMusic = new Audio(getBackgroundMusicPath(this.selectedCharacterId));
     this.backgroundMusic.preload = "auto";
     this.backgroundMusic.loop = true;
     this.backgroundMusic.volume = 0.34;
@@ -1228,7 +1228,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}`;
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
@@ -1322,14 +1322,6 @@ export class GameScene extends Phaser.Scene {
     const pulse = 0.7 + Math.sin(phase * Math.PI * 2) * 0.18;
     const primary = formationSize === 3 ? 0xfdf2f8 : 0xf9a8d4;
     const secondary = formationSize === 3 ? 0xdb2777 : 0x0ea5e9;
-    const radius = formationSize === 3 ? 25 : 22;
-
-    graphics.fillStyle(secondary, formationSize === 3 ? 0.13 : 0.1);
-    graphics.fillCircle(tower.x, tower.y, radius + 3 * pulse);
-    graphics.lineStyle(2, primary, 0.62 + pulse * 0.2);
-    graphics.strokeCircle(tower.x, tower.y, radius);
-    graphics.lineStyle(1, secondary, 0.42 + pulse * 0.18);
-    graphics.strokeCircle(tower.x, tower.y, radius + 5);
 
     const neighbors = Array.from(this.towerSnapshots.values()).filter((candidate) => (
       candidate.id > tower.id &&
@@ -1347,7 +1339,7 @@ export class GameScene extends Phaser.Scene {
       const midX = (tower.x + neighbor.x) / 2;
       const midY = (tower.y + neighbor.y) / 2;
       graphics.fillStyle(primary, 0.82);
-      graphics.fillCircle(midX, midY, formationSize === 3 ? 4 : 3);
+      graphics.fillCircle(midX, midY, formationSize === 3 ? 3 : 2.5);
     }
   }
 
@@ -2161,10 +2153,14 @@ function getZeynepCommandButtonState(authorityChain: number) {
   return { cost: 10, label: authorityChain >= 2 ? "Zincir Sec" : "Sec" };
 }
 
+function getBackgroundMusicPath(characterId: CharacterId) {
+  return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+}
+
 function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot) {
-  const sameColumn = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(Math.abs(towerA.y - towerB.y) - TOWER_GRID_SIZE) < 2;
-  const sameRow = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(Math.abs(towerA.x - towerB.x) - TOWER_GRID_SIZE) < 2;
-  return sameColumn || sameRow;
+  const dx = Math.abs(towerA.x - towerB.x);
+  const dy = Math.abs(towerA.y - towerB.y);
+  return dx <= TOWER_GRID_SIZE + 2 && dy <= TOWER_GRID_SIZE + 2 && dx + dy > 2;
 }
 
 function roundClientMetric(value: number) {

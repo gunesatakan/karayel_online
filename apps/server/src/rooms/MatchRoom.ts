@@ -223,6 +223,7 @@ type TowerModel = {
   streakHasteUntil: number;
   streakHasteMultiplier: number;
   zeynepFormationSize: number;
+  zeynepFormationLevel: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -1261,6 +1262,7 @@ export class MatchRoom extends Room<MatchState> {
       streakHasteUntil: 0,
       streakHasteMultiplier: 1,
       zeynepFormationSize: 0,
+      zeynepFormationLevel: 0,
       damageDealt: 0,
       damageWindow: []
     };
@@ -1632,6 +1634,7 @@ export class MatchRoom extends Room<MatchState> {
     const towers = Array.from(this.towers.values()).filter((tower) => tower.characterId === "zeynep");
     for (const tower of towers) {
       tower.zeynepFormationSize = 0;
+      tower.zeynepFormationLevel = 0;
     }
 
     const visited = new Set<string>();
@@ -1664,9 +1667,12 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
 
-      const formationSize = group.length === 2 || group.length === 3 ? group.length : 0;
+      const isValidFormation = group.length === 2 || (group.length === 3 && isCompleteZeynepFormation(group));
+      const formationSize = isValidFormation ? group.length : 0;
+      const formationLevel = isValidFormation ? Math.min(...group.map((member) => member.level)) : 0;
       for (const member of group) {
         member.zeynepFormationSize = formationSize;
+        member.zeynepFormationLevel = formationLevel;
       }
     }
   }
@@ -2091,7 +2097,8 @@ export class MatchRoom extends Room<MatchState> {
         waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds],
-        zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined
+        zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
+        zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
@@ -2354,10 +2361,10 @@ export class MatchRoom extends Room<MatchState> {
       return "Sunucu 5T";
     }
     if (tower.zeynepFormationSize === 3) {
-      return "Dizilim 3";
+      return `Dizilim 3 Lv.${tower.zeynepFormationLevel}`;
     }
     if (tower.zeynepFormationSize === 2) {
-      return "Dizilim 2";
+      return `Dizilim 2 Lv.${tower.zeynepFormationLevel}`;
     }
     if (tower.characterId === "warrior" && this.getAtakanPassiveMultiplier(tower) > 1) {
       return "Pasif";
@@ -2888,29 +2895,48 @@ function getZeynepShowcaseBeamLength(level: number) {
 }
 
 function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel) {
-  const sameColumn = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(towerA.y - towerB.y - TOWER_GRID_SIZE) < 2;
-  const sameColumnReverse = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(towerB.y - towerA.y - TOWER_GRID_SIZE) < 2;
-  const sameRow = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(towerA.x - towerB.x - TOWER_GRID_SIZE) < 2;
-  const sameRowReverse = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(towerB.x - towerA.x - TOWER_GRID_SIZE) < 2;
-  return sameColumn || sameColumnReverse || sameRow || sameRowReverse;
+  const dx = Math.abs(towerA.x - towerB.x);
+  const dy = Math.abs(towerA.y - towerB.y);
+  return dx <= TOWER_GRID_SIZE + 2 && dy <= TOWER_GRID_SIZE + 2 && dx + dy > 2;
+}
+
+function isCompleteZeynepFormation(group: TowerModel[]) {
+  for (let firstIndex = 0; firstIndex < group.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < group.length; secondIndex += 1) {
+      if (!areZeynepFormationNeighbors(group[firstIndex], group[secondIndex])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function getZeynepFormationLevelRatio(tower: TowerModel) {
+  if (tower.zeynepFormationLevel <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(tower.zeynepFormationLevel, 1), 10) / 10;
 }
 
 function getZeynepFormationDamageMultiplier(tower: TowerModel) {
+  const levelRatio = getZeynepFormationLevelRatio(tower);
   if (tower.zeynepFormationSize === 3) {
-    return ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER;
+    return 1 + (ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER - 1) * levelRatio;
   }
   if (tower.zeynepFormationSize === 2) {
-    return ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER;
+    return 1 + (ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER - 1) * levelRatio;
   }
   return 1;
 }
 
 function getZeynepFormationFireIntervalMultiplier(tower: TowerModel) {
+  const levelRatio = getZeynepFormationLevelRatio(tower);
   if (tower.zeynepFormationSize === 3) {
-    return ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER;
+    return 1 - (1 - ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER) * levelRatio;
   }
   if (tower.zeynepFormationSize === 2) {
-    return ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER;
+    return 1 - (1 - ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER) * levelRatio;
   }
   return 1;
 }

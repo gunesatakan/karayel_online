@@ -85,6 +85,7 @@ export type TowerSnapshot = {
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];
   zeynepFormationSize?: number;
+  zeynepFormationLevel?: number;
 };
 
 export type ProjectileSnapshot = {
