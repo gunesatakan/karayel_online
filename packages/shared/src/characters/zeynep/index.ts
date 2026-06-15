@@ -7,8 +7,8 @@ import { zeynepUltimate } from "./ultimate/index.js";
 export const zeynepCharacter: CharacterDefinition = {
   id: "zeynep",
   displayName: "Zeynep",
-  role: "Kurucu",
-  summary: "Tum karakterlerin, Atakan dahil, kurucusu. En guclu, en cevik ve en yuksek hasara sahip karakter.",
+  role: "Saha Lideri",
+  summary: "Savunma hattini komutlarla yoneten lider. Kendi kill'lerinden Itibar toplar, kucuk emirlerle zincir kurar ve dogru anda guclu takim buff'lari basar.",
   maxHp: 160,
   speed: 1.35,
   damage: 34,

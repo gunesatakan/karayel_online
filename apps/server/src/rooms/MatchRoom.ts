@@ -69,6 +69,11 @@ const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
+const ZEYNEP_MAX_REPUTATION = 100;
+const ZEYNEP_SMALL_COMMAND_COST = 10;
+const ZEYNEP_MEDIUM_COMMAND_COST = 40;
+const ZEYNEP_BIG_COMMAND_COST = 80;
+const ZEYNEP_CHAIN_WINDOW_MS = 8000;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -79,6 +84,9 @@ class Player extends Schema {
   @type("number") skill1CooldownMs = 0;
   @type("number") skill2CooldownMs = 0;
   @type("number") skill3CooldownMs = 0;
+  @type("number") reputation = 0;
+  @type("number") authorityChain = 0;
+  @type("number") authorityChainUntil = 0;
 }
 
 class MatchState extends Schema {
@@ -288,6 +296,9 @@ type RuntimePath = {
   totalLength: number;
 };
 
+type ZeynepCommandTier = "small" | "medium" | "big";
+type ZeynepCommandType = "haste" | "range" | "slow";
+
 export class MatchRoom extends Room<MatchState> {
   maxClients = 7;
   private enemies = new Map<string, EnemyModel>();
@@ -318,6 +329,12 @@ export class MatchRoom extends Room<MatchState> {
   private projectileGuidanceY = GAME_WORLD_HEIGHT / 2;
   private silentModeUntil = 0;
   private damageHasteUntil = 0;
+  private zeynepHasteUntil = 0;
+  private zeynepHasteMultiplier = 1;
+  private zeynepRangeUntil = 0;
+  private zeynepRangeMultiplier = 1;
+  private zeynepSlowUntil = 0;
+  private zeynepSlowMultiplier = 1;
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private serverLinkWaveAgeCache = new Map<string, number>();
@@ -1020,7 +1037,8 @@ export class MatchRoom extends Room<MatchState> {
 
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
-      const speedMultiplier = Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier);
+      const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
+      const speedMultiplier = Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, zeynepSlowMultiplier);
       if (isFeared) {
         enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
       } else {
@@ -1165,7 +1183,6 @@ export class MatchRoom extends Room<MatchState> {
       !serverTower ||
       !targetTower ||
       serverTower.ownerId !== client.sessionId ||
-      targetTower.ownerId !== client.sessionId ||
       serverTower.definition.id !== "warrior-2" ||
       targetTower.definition.id === "warrior-2"
     ) {
@@ -1212,8 +1229,16 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (player.characterId === "zeynep") {
+      const didUseCommand = this.useZeynepCommand(player, slot);
+      if (!didUseCommand) {
+        this.setSkillCooldown(player, slot, 0);
+      }
+      return;
+    }
+
     if (slot === 0) {
-      this.teamGold += player.characterId === "zeynep" ? 35 : 22;
+      this.teamGold += 22;
       return;
     }
 
@@ -1226,9 +1251,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useSecondSkill(characterId: CharacterId, ownerId: string) {
-    if (characterId === "zeynep") {
-      this.damageAllEnemies(70, 700, ownerId);
-    } else if (characterId === "archer") {
+    if (characterId === "archer") {
       this.damageFrontEnemies(5, 55, 0, ownerId);
     } else if (characterId === "mage") {
       this.damageAllEnemies(50, 0, ownerId);
@@ -1266,11 +1289,89 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
+  private useZeynepCommand(player: Player, slot: number) {
+    const now = Date.now();
+    if (player.authorityChainUntil <= now) {
+      player.authorityChain = 0;
+    }
+
+    const commandType = getZeynepCommandType(slot);
+    const isFinisher = player.authorityChain >= 2;
+    const tier = isFinisher ? this.getZeynepFinisherTier(player.reputation) : "small";
+    const cost = getZeynepCommandCost(tier);
+    if (player.reputation < cost) {
+      return false;
+    }
+
+    player.reputation = Math.max(0, player.reputation - cost);
+    this.applyZeynepCommand(commandType, tier, isFinisher, now);
+
+    if (isFinisher) {
+      player.authorityChain = 0;
+      player.authorityChainUntil = 0;
+    } else {
+      player.authorityChain = Math.min(2, player.authorityChain + 1);
+      player.authorityChainUntil = now + ZEYNEP_CHAIN_WINDOW_MS;
+    }
+
+    return true;
+  }
+
+  private getZeynepFinisherTier(reputation: number): ZeynepCommandTier {
+    if (reputation >= ZEYNEP_BIG_COMMAND_COST) {
+      return "big";
+    }
+    if (reputation >= ZEYNEP_MEDIUM_COMMAND_COST) {
+      return "medium";
+    }
+    return "small";
+  }
+
+  private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, now: number) {
+    const profile = getZeynepCommandProfile(commandType, tier, chained);
+    if (commandType === "haste") {
+      this.applyZeynepHaste(profile.durationMs, profile.multiplier, now);
+      return;
+    }
+    if (commandType === "range") {
+      this.applyZeynepRange(profile.durationMs, profile.multiplier, now);
+      return;
+    }
+    this.applyZeynepSlow(profile.durationMs, profile.multiplier, now);
+  }
+
+  private applyZeynepHaste(durationMs: number, multiplier: number, now: number) {
+    const until = now + scaleGameDuration(durationMs);
+    if (this.zeynepHasteUntil <= now || multiplier >= this.zeynepHasteMultiplier) {
+      this.zeynepHasteUntil = until;
+      this.zeynepHasteMultiplier = multiplier;
+    } else {
+      this.zeynepHasteUntil = Math.max(this.zeynepHasteUntil, until);
+    }
+  }
+
+  private applyZeynepRange(durationMs: number, multiplier: number, now: number) {
+    const until = now + scaleGameDuration(durationMs);
+    if (this.zeynepRangeUntil <= now || multiplier >= this.zeynepRangeMultiplier) {
+      this.zeynepRangeUntil = until;
+      this.zeynepRangeMultiplier = multiplier;
+    } else {
+      this.zeynepRangeUntil = Math.max(this.zeynepRangeUntil, until);
+    }
+  }
+
+  private applyZeynepSlow(durationMs: number, multiplier: number, now: number) {
+    const until = now + scaleGameDuration(durationMs);
+    if (this.zeynepSlowUntil <= now || multiplier <= this.zeynepSlowMultiplier) {
+      this.zeynepSlowUntil = until;
+      this.zeynepSlowMultiplier = multiplier;
+    } else {
+      this.zeynepSlowUntil = Math.max(this.zeynepSlowUntil, until);
+    }
+  }
+
   private useThirdSkill(characterId: CharacterId, ownerId: string) {
-    if (characterId === "zeynep") {
-      this.teamGold += 25;
-      this.damageAllEnemies(95, 900, ownerId);
-    } else if (characterId === "archer") {
+    if (characterId === "archer") {
       this.damageFrontEnemies(8, 70, 0, ownerId);
     } else if (characterId === "mage") {
       this.damageAllEnemies(82, 0, ownerId);
@@ -1525,6 +1626,10 @@ export class MatchRoom extends Room<MatchState> {
     this.teamGold += enemy.reward;
     this.kills += 1;
     if (sourceOwnerId) {
+      const player = this.state.players.get(sourceOwnerId);
+      if (player?.characterId === "zeynep") {
+        this.awardZeynepReputation(player, enemy.type);
+      }
       this.addKillEvent(sourceOwnerId, enemy.id);
     }
     for (const player of this.state.players.values()) {
@@ -1567,6 +1672,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private isEnemyInProjectileGuidance(enemy: EnemyModel, now = Date.now()) {
     return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= PROJECTILE_GUIDANCE_RADIUS * PROJECTILE_GUIDANCE_RADIUS;
+  }
+
+  private awardZeynepReputation(player: Player, enemyType: EnemyType) {
+    const gain = enemyType === "brute" ? 4 : enemyType === "shooter" ? 3 : 2;
+    player.reputation = Math.min(ZEYNEP_MAX_REPUTATION, player.reputation + gain);
   }
 
   private getTrackingStackCount(enemy: EnemyModel, now = Date.now()) {
@@ -1771,7 +1881,9 @@ export class MatchRoom extends Room<MatchState> {
           Math.ceil(player.skill1CooldownMs / 1000),
           Math.ceil(player.skill2CooldownMs / 1000),
           Math.ceil(player.skill3CooldownMs / 1000)
-        ]
+        ],
+        reputation: player.characterId === "zeynep" ? Math.round(player.reputation) : undefined,
+        authorityChain: player.characterId === "zeynep" ? (player.authorityChainUntil > now ? player.authorityChain : 0) : undefined
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
@@ -1871,40 +1983,43 @@ export class MatchRoom extends Room<MatchState> {
       return GAME_WORLD_HEIGHT;
     }
 
+    const now = Date.now();
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
+    const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
-      return (tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier;
+      return (tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
     }
 
-    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) {
+    if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       return GAME_WORLD_HEIGHT;
     }
 
-    return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier;
+    return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
   }
 
   private getTowerFireInterval(tower: TowerModel) {
     const now = Date.now();
     const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
 
     if (tower.definition.id === "warrior-5") {
-      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * passiveMultiplier;
+      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier;
     }
 
     if (tower.definition.hitType === "impact") {
-      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * streakHasteMultiplier * passiveMultiplier);
+      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
 
     if (tower.definition.id === "warrior-1") {
-      return getTrackerFireInterval(tower.level) * hasteMultiplier * streakHasteMultiplier * passiveMultiplier;
+      return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier;
     }
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * streakHasteMultiplier * passiveMultiplier);
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
@@ -1965,10 +2080,11 @@ export class MatchRoom extends Room<MatchState> {
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
     const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
+    const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
     const previousLevelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
-    const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * hasteMultiplier * passiveMultiplier);
-    const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * passiveMultiplier);
+    const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
+    const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
     return currentInterval / Math.max(1, previousInterval);
   }
 
@@ -1985,7 +2101,7 @@ export class MatchRoom extends Room<MatchState> {
 
       for (const linkedTowerId of serverTower.linkedTowerIds) {
         const linkedTower = this.towers.get(linkedTowerId);
-        if (!linkedTower || linkedTower.ownerId !== serverTower.ownerId) {
+        if (!linkedTower) {
           continue;
         }
 
@@ -2009,7 +2125,7 @@ export class MatchRoom extends Room<MatchState> {
   private getStrongestServerLinkLevel(tower: TowerModel, minimumAge: number) {
     let bestLevel = 0;
     for (const serverTower of this.towers.values()) {
-      if (serverTower.definition.id !== "warrior-2" || serverTower.ownerId !== tower.ownerId) {
+      if (serverTower.definition.id !== "warrior-2") {
         continue;
       }
 
@@ -2478,6 +2594,46 @@ function getServerLinkBurstRadius(level: number) {
 function getServerLinkMaxHealthDamageRatio(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.001 + ((clampedLevel - 1) / 9) * 0.004;
+}
+
+function getZeynepCommandType(slot: number): ZeynepCommandType {
+  if (slot === 0) {
+    return "haste";
+  }
+  if (slot === 1) {
+    return "range";
+  }
+  return "slow";
+}
+
+function getZeynepCommandCost(tier: ZeynepCommandTier) {
+  if (tier === "big") {
+    return ZEYNEP_BIG_COMMAND_COST;
+  }
+  if (tier === "medium") {
+    return ZEYNEP_MEDIUM_COMMAND_COST;
+  }
+  return ZEYNEP_SMALL_COMMAND_COST;
+}
+
+function getZeynepCommandProfile(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean) {
+  if (commandType === "slow") {
+    if (tier === "big") {
+      return { durationMs: chained ? 7000 : 6000, multiplier: chained ? 0.52 : 0.62 };
+    }
+    if (tier === "medium") {
+      return { durationMs: chained ? 4500 : 4000, multiplier: chained ? 0.72 : 0.78 };
+    }
+    return { durationMs: chained ? 2500 : 2000, multiplier: chained ? 0.84 : 0.88 };
+  }
+
+  if (tier === "big") {
+    return { durationMs: 8000, multiplier: chained ? 1.45 : 1.32 };
+  }
+  if (tier === "medium") {
+    return { durationMs: 6000, multiplier: chained ? 1.24 : 1.18 };
+  }
+  return { durationMs: 3000, multiplier: chained ? 1.12 : 1.08 };
 }
 
 function getTrackerFireInterval(level: number) {

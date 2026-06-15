@@ -1,1 +1,1 @@
-export const zeynepPassive = "Kurucu ustunlugu: Takimin kuleleri daha hizli tepki verir.";
+export const zeynepPassive = "Otorite Zinciri: Zeynep kendi oldurdugu dusmanlardan Itibar toplar. Komutlari Itibar harcar; ilk iki komut kucuk hazirlik emridir, ucuncu komut kalan Itibar'a gore kucuk/orta/buyuk zincirli emre donusur.";

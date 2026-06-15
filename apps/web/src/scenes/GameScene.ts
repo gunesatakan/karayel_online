@@ -773,7 +773,6 @@ export class GameScene extends Phaser.Scene {
     if (
       !selectedTower ||
       selectedTower.ownerId !== this.localSessionId ||
-      targetTower.ownerId !== this.localSessionId ||
       selectedTower.definitionId !== "warrior-2" ||
       targetTower.definitionId === "warrior-2"
     ) {
@@ -1017,15 +1016,18 @@ export class GameScene extends Phaser.Scene {
       this.hideUltimateChoices();
     }
 
-    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}`;
+    const reputation = player?.reputation ?? 0;
+    const authorityChain = player?.authorityChain ?? 0;
+    const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2` : "";
+    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}`);
+      this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
     }
 
-    this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0]);
+    this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);
     this.updateSelectionUi();
   }
 
@@ -1816,8 +1818,10 @@ export class GameScene extends Phaser.Scene {
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
   }
 
-  private updateSkillButtons(cooldowns: number[]) {
-    const skillKey = cooldowns.join("|");
+  private updateSkillButtons(cooldowns: number[], player?: GameSnapshot["players"][number]) {
+    const reputation = player?.reputation ?? 0;
+    const authorityChain = player?.authorityChain ?? 0;
+    const skillKey = `${cooldowns.join("|")}|${reputation}|${authorityChain}`;
     if (this.lastSkillKey === skillKey) {
       return;
     }
@@ -1825,10 +1829,14 @@ export class GameScene extends Phaser.Scene {
 
     this.selectedCharacter.skills.forEach((skill, index) => {
       const cooldown = cooldowns[index] ?? 0;
-      this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : skill.name);
-      this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : "#dbeafe");
-      this.skillButtons[index]?.setFillStyle(cooldown > 0 ? 0x0f172a : 0x1e293b, cooldown > 0 ? 0.72 : 0.94);
-      this.skillButtons[index]?.setStrokeStyle(1, cooldown > 0 ? 0x475569 : 0x60a5fa, cooldown > 0 ? 0.45 : 0.75);
+      const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(reputation, authorityChain) : undefined;
+      const canUseCommand = !zeynepCommand || reputation >= zeynepCommand.cost;
+      const readyLabel = zeynepCommand ? `${skill.name}\n${zeynepCommand.cost}I ${zeynepCommand.tierLabel}` : skill.name;
+      const isDisabled = cooldown > 0 || !canUseCommand;
+      this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : readyLabel);
+      this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : canUseCommand ? "#dbeafe" : "#64748b");
+      this.skillButtons[index]?.setFillStyle(isDisabled ? 0x0f172a : 0x1e293b, isDisabled ? 0.72 : 0.94);
+      this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });
   }
 
@@ -1920,6 +1928,19 @@ function average(values: number[]) {
   }
 
   return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function getZeynepCommandButtonState(reputation: number, authorityChain: number) {
+  if (authorityChain >= 2) {
+    if (reputation >= 80) {
+      return { cost: 80, tierLabel: "B" };
+    }
+    if (reputation >= 40) {
+      return { cost: 40, tierLabel: "O" };
+    }
+  }
+
+  return { cost: 10, tierLabel: "K" };
 }
 
 function roundClientMetric(value: number) {

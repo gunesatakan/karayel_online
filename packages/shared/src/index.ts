@@ -40,6 +40,8 @@ export type PlayerSnapshot = {
   towersBuilt: number;
   ultimateCharge: number;
   skillCooldowns: number[];
+  reputation?: number;
+  authorityChain?: number;
 };
 
 export type EnemySnapshot = {

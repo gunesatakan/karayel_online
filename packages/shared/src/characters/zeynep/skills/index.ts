@@ -1,7 +1,7 @@
 import { makeSkills } from "../../common/factory.js";
 
 export const zeynepSkills = makeSkills("zeynep", [
-  ["Kurucu Emri", "Takima altin kazandirir.", 12000],
-  ["Taht Isigi", "Tum dusmanlara hasar ve kisa yavaslatma verir.", 18000],
-  ["Mutlak Ustunluk", "Guclu alan hasari ve ek altin saglar.", 26000]
+  ["Hizlanin", "Itibar harcayan komut. Takim kulelerine saldiri hizi verir; zincirin ucuncu komutuysa etki kucuk, orta veya buyuk seviyeye guclenir.", 900],
+  ["Alani Tutun", "Itibar harcayan komut. Takim kulelerine menzil verir; zincirin ucuncu komutuysa etki kucuk, orta veya buyuk seviyeye guclenir.", 900],
+  ["Yavaslatin", "Itibar harcayan komut. Dusmanlara global slow uygular; zincirin ucuncu komutuysa etki kucuk, orta veya buyuk seviyeye guclenir.", 900]
 ]);
