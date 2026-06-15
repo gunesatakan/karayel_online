@@ -90,6 +90,8 @@ type KillStreakLock = {
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const GUIDANCE_RADIUS = 78;
 
+type ZeynepCommandTier = "small" | "medium" | "big";
+
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "legendary",
@@ -185,6 +187,8 @@ export class GameScene extends Phaser.Scene {
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
+  private zeynepTierChoiceItems: Phaser.GameObjects.GameObject[] = [];
+  private pendingZeynepCommandSlot?: number;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
@@ -196,6 +200,7 @@ export class GameScene extends Phaser.Scene {
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
+  private localPlayerSnapshot?: GameSnapshot["players"][number];
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
@@ -257,6 +262,7 @@ export class GameScene extends Phaser.Scene {
       this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
       this.hideUltimateChoices();
+      this.hideZeynepTierChoices();
       this.backgroundMusic?.pause();
     });
 
@@ -665,6 +671,51 @@ export class GameScene extends Phaser.Scene {
     this.ultimateChoiceItems = [];
   }
 
+  private showZeynepTierChoices(slot: number, reputation: number) {
+    this.hideZeynepTierChoices();
+    this.pendingZeynepCommandSlot = slot;
+    const x = 70 + slot * 125;
+    this.zeynepTierChoiceItems.push(
+      ...this.createZeynepTierChoiceButton(x - 42, "Dusuk", "small", 10, reputation, 0x475569),
+      ...this.createZeynepTierChoiceButton(x, "Orta", "medium", 40, reputation, 0x0ea5e9),
+      ...this.createZeynepTierChoiceButton(x + 42, "Yuksek", "big", 80, reputation, 0xdb2777)
+    );
+  }
+
+  private createZeynepTierChoiceButton(x: number, label: string, tier: ZeynepCommandTier, cost: number, reputation: number, color: number) {
+    const canUse = reputation >= cost;
+    const button = this.add.rectangle(x, 584, 40, 30, canUse ? color : 0x0f172a, canUse ? 0.96 : 0.68)
+      .setStrokeStyle(1, canUse ? 0xf8fafc : 0x475569, canUse ? 0.78 : 0.5)
+      .setDepth(60);
+    const text = this.add.text(x, 584, `${label}\n${cost}I`, {
+      color: canUse ? "#f8fafc" : "#64748b",
+      fontFamily: "Arial",
+      fontSize: "9px",
+      fontStyle: "bold",
+      align: "center"
+    }).setOrigin(0.5).setDepth(61);
+
+    if (canUse) {
+      button.setInteractive({ useHandCursor: true });
+      button.on("pointerup", () => {
+        if (this.pendingZeynepCommandSlot !== undefined) {
+          this.room?.send("useSkill", { slot: this.pendingZeynepCommandSlot, commandTier: tier });
+        }
+        this.hideZeynepTierChoices();
+      });
+    }
+
+    return [button, text];
+  }
+
+  private hideZeynepTierChoices() {
+    for (const item of this.zeynepTierChoiceItems) {
+      item.destroy();
+    }
+    this.zeynepTierChoiceItems = [];
+    this.pendingZeynepCommandSlot = undefined;
+  }
+
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
       return;
@@ -740,12 +791,28 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selectedCharacterId === "zeynep") {
+      const reputation = this.localPlayerSnapshot?.reputation ?? 0;
+      const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
+      if (authorityChain >= 2) {
+        this.showZeynepTierChoices(index, reputation);
+        this.hintText?.setText("Finisher gucunu sec: dusuk, orta veya yuksek");
+        return;
+      }
+
+      this.hideZeynepTierChoices();
+      this.room.send("useSkill", { slot: index });
+      return;
+    }
+
     if (this.selectedCharacterId !== "warrior") {
+      this.hideZeynepTierChoices();
       this.room.send("useSkill", { slot: index });
       return;
     }
 
     if (index === 0) {
+      this.hideZeynepTierChoices();
       this.pendingAction = { type: "guidance" };
       this.hintText?.setText("Yonlendirme: haritada basili tutup alani surukle");
       return;
@@ -761,6 +828,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.hideZeynepTierChoices();
     this.room.send("useSkill", { slot: index });
   }
 
@@ -1009,6 +1077,7 @@ export class GameScene extends Phaser.Scene {
 
   private renderHud(snapshot: GameSnapshot) {
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
+    this.localPlayerSnapshot = player;
     const charge = player?.ultimateCharge ?? 0;
     this.currentTeamGold = snapshot.team.gold;
     this.currentUltimateCharge = charge;
@@ -1019,6 +1088,9 @@ export class GameScene extends Phaser.Scene {
     const reputation = player?.reputation ?? 0;
     const authorityChain = player?.authorityChain ?? 0;
     const authorityQuality = player?.authorityQuality ?? 0;
+    if (player?.characterId !== "zeynep" || authorityChain < 2) {
+      this.hideZeynepTierChoices();
+    }
     const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
     const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}`;
     if (this.lastHudKey !== hudKey) {
@@ -1675,21 +1747,67 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const pulse = 0.72 + Math.sin(Date.now() / 45) * 0.18;
-    this.beamGraphics.lineStyle(beam.width + 26, color, 0.1 * pulse);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(beam.width + 14, 0xf0abfc, 0.24 * pulse);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(beam.width + 5, 0xfdf2f8, 0.72 * pulse);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(4, beam.width * 0.22), 0xffffff, 0.98);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(0xffffff, 0.92);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 7);
-    this.beamGraphics.fillStyle(color, 0.32);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 22);
-    this.beamGraphics.fillStyle(0xfdf2f8, 0.78);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 6);
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const pulse = 0.78 + Math.sin(Date.now() / 38) * 0.12;
+
+    const fillBeamBand = (width: number, bandColor: number, alpha: number, inset = 0) => {
+      const startX = beam.x1 + ux * inset;
+      const startY = beam.y1 + uy * inset;
+      const endX = beam.x2 - ux * inset;
+      const endY = beam.y2 - uy * inset;
+      const halfStart = width * 0.34;
+      const halfMid = width * 0.5;
+      const halfEnd = width * 0.28;
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2;
+
+      this.beamGraphics?.fillStyle(bandColor, alpha * pulse);
+      this.beamGraphics?.fillPoints([
+        new Phaser.Geom.Point(startX + nx * halfStart, startY + ny * halfStart),
+        new Phaser.Geom.Point(midX + nx * halfMid, midY + ny * halfMid),
+        new Phaser.Geom.Point(endX + nx * halfEnd, endY + ny * halfEnd),
+        new Phaser.Geom.Point(endX - nx * halfEnd, endY - ny * halfEnd),
+        new Phaser.Geom.Point(midX - nx * halfMid, midY - ny * halfMid),
+        new Phaser.Geom.Point(startX - nx * halfStart, startY - ny * halfStart)
+      ], true);
+      this.beamGraphics?.fillCircle(startX, startY, halfStart);
+      this.beamGraphics?.fillCircle(endX, endY, halfEnd);
+    };
+
+    fillBeamBand(beam.width + 24, color, 0.1);
+    fillBeamBand(beam.width + 12, 0xf0abfc, 0.22, 2);
+    fillBeamBand(Math.max(8, beam.width * 0.7), 0xfdf2f8, 0.62, 4);
+    fillBeamBand(Math.max(6, beam.width * 0.46), 0xffffff, 0.82, 7);
+
+    for (let index = 0; index < 5; index += 1) {
+      const t = (index + 1) / 6;
+      const hash = Math.sin((beam.id.length + index * 17) * 23.91) * 43758.5453;
+      const side = index % 2 === 0 ? 1 : -1;
+      const centerX = beam.x1 + dx * t;
+      const centerY = beam.y1 + dy * t;
+      const sparkLength = 9 + (hash - Math.floor(hash)) * 10;
+      const sparkOffset = side * (beam.width * 0.65 + 4);
+      this.beamGraphics.lineStyle(2, 0xffffff, 0.38 * pulse);
+      this.beamGraphics.lineBetween(
+        centerX + nx * sparkOffset,
+        centerY + ny * sparkOffset,
+        centerX + nx * (sparkOffset + side * sparkLength) + ux * 4,
+        centerY + ny * (sparkOffset + side * sparkLength) + uy * 4
+      );
+    }
+
+    this.beamGraphics.fillStyle(0xffffff, 0.82 * pulse);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5);
+    this.beamGraphics.fillStyle(color, 0.2 * pulse);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 17);
+    this.beamGraphics.fillStyle(0xfdf2f8, 0.52 * pulse);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {
@@ -1856,7 +1974,7 @@ export class GameScene extends Phaser.Scene {
       const cooldown = cooldowns[index] ?? 0;
       const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(reputation, authorityChain) : undefined;
       const canUseCommand = !zeynepCommand || reputation >= zeynepCommand.cost;
-      const readyLabel = zeynepCommand ? `${skill.name}\n${zeynepCommand.cost}I ${zeynepCommand.tierLabel}` : skill.name;
+      const readyLabel = zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : skill.name;
       const isDisabled = cooldown > 0 || !canUseCommand;
       this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : readyLabel);
       this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : canUseCommand ? "#dbeafe" : "#64748b");
@@ -1957,15 +2075,10 @@ function average(values: number[]) {
 
 function getZeynepCommandButtonState(reputation: number, authorityChain: number) {
   if (authorityChain >= 2) {
-    if (reputation >= 80) {
-      return { cost: 80, tierLabel: "B" };
-    }
-    if (reputation >= 40) {
-      return { cost: 40, tierLabel: "O" };
-    }
+    return { cost: 10, label: "Sec" };
   }
 
-  return { cost: 10, tierLabel: "K" };
+  return { cost: 10, label: "10I K" };
 }
 
 function roundClientMetric(value: number) {

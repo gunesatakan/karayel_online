@@ -79,7 +79,7 @@ const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
 const ZEYNEP_SHOWCASE_BASE_LENGTH = 190;
 const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
-const ZEYNEP_SHOWCASE_BEAM_RADIUS = 18;
+const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -121,6 +121,7 @@ type UseSkillMessage = {
   x?: number;
   y?: number;
   towerId?: string;
+  commandTier?: ZeynepCommandTier;
 };
 
 type UseUltimateMessage = {
@@ -1362,7 +1363,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "zeynep") {
-      const didUseCommand = this.useZeynepCommand(player, slot);
+      const didUseCommand = this.useZeynepCommand(player, slot, message);
       if (!didUseCommand) {
         this.setSkillCooldown(player, slot, 0);
       }
@@ -1421,7 +1422,7 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private useZeynepCommand(player: Player, slot: number) {
+  private useZeynepCommand(player: Player, slot: number, message: UseSkillMessage) {
     const now = Date.now();
     if (player.authorityChainUntil <= now) {
       player.authorityChain = 0;
@@ -1429,7 +1430,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const commandType = getZeynepCommandType(slot);
     const isFinisher = player.authorityChain >= 2;
-    const tier = isFinisher ? this.getZeynepFinisherTier(player.reputation) : "small";
+    const tier = isFinisher ? getRequestedZeynepCommandTier(message.commandTier) : "small";
     const cost = getZeynepCommandCost(tier);
     if (player.reputation < cost) {
       return false;
@@ -1448,16 +1449,6 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return true;
-  }
-
-  private getZeynepFinisherTier(reputation: number): ZeynepCommandTier {
-    if (reputation >= ZEYNEP_BIG_COMMAND_COST) {
-      return "big";
-    }
-    if (reputation >= ZEYNEP_MEDIUM_COMMAND_COST) {
-      return "medium";
-    }
-    return "small";
   }
 
   private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number, now: number) {
@@ -2742,6 +2733,13 @@ function getZeynepCommandType(slot: number): ZeynepCommandType {
     return "range";
   }
   return "slow";
+}
+
+function getRequestedZeynepCommandTier(tier: unknown): ZeynepCommandTier {
+  if (tier === "medium" || tier === "big") {
+    return tier;
+  }
+  return "small";
 }
 
 function getZeynepCommandCost(tier: ZeynepCommandTier) {
