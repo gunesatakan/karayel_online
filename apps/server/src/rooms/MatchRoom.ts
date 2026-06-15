@@ -523,7 +523,7 @@ export class MatchRoom extends Room<MatchState> {
     const definition = getEnemyCombatDefinition(type);
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
-    const airHealthMultiplier = isFlyingEnemy ? 0.5 : 1;
+    const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
     const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier));
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
     const speed = definition.speed + this.wave * 2.4;
@@ -2710,7 +2710,7 @@ function getClosestPathDistance(path: RuntimePath | undefined, x: number, y: num
 
 function getWaveEnemyCount(wave: number) {
   const count = Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
-  return isPureFlyingWave(wave) ? Math.max(1, Math.ceil(count * 0.5)) : count;
+  return count;
 }
 
 function getWaveHpMultiplier(wave: number) {
@@ -2718,7 +2718,7 @@ function getWaveHpMultiplier(wave: number) {
 }
 
 function shouldSpawnFlyingEnemy(wave: number, waveSpawned: number) {
-  return isPureFlyingWave(wave) || (isMixedFlyingWave(wave) && waveSpawned % 4 === 0);
+  return isPureFlyingWave(wave) || (isMixedFlyingWave(wave) && waveSpawned % 2 === 0);
 }
 
 function isPureFlyingWave(wave: number) {
