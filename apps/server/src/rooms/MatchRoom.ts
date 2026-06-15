@@ -5,6 +5,8 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  MAP_GRID_COLS,
+  MAP_GRID_ROWS,
   MAP_PATH,
   PATH_WIDTH,
   STATUS_EFFECTS,
@@ -493,7 +495,7 @@ export class MatchRoom extends Room<MatchState> {
     const speed = definition.speed + this.wave * 2.4;
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
     const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
-    const start = path.points[0] ?? gridToWorld(0, 0);
+    const start = isFlyingEnemy ? getAirSpawnPoint(path) : path.points[0] ?? gridToWorld(0, 0);
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -1026,7 +1028,7 @@ export class MatchRoom extends Room<MatchState> {
       const path = this.activePaths[enemy.pathId] ?? this.activePaths[0];
       if (enemy.movementKind === "air") {
         const pathPoints = path?.points ?? [];
-        const start = pathPoints[0] ?? gridToWorld(0, 0);
+        const start = getAirSpawnPoint(path);
         const end = pathPoints[pathPoints.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
         const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
         if (enemy.pathDistance >= flightLength) {
@@ -2342,6 +2344,18 @@ function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: numbe
   }
 
   return path.points[path.points.length - 1] ?? getPointAlongPath(distance);
+}
+
+function getAirSpawnPoint(path: RuntimePath | undefined) {
+  const nexus = path?.points[path.points.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+  const corners = [
+    gridToWorld(0, 0),
+    gridToWorld(MAP_GRID_COLS - 1, 0),
+    gridToWorld(0, MAP_GRID_ROWS - 1),
+    gridToWorld(MAP_GRID_COLS - 1, MAP_GRID_ROWS - 1)
+  ];
+
+  return corners.sort((a, b) => distanceSq(b.x, b.y, nexus.x, nexus.y) - distanceSq(a.x, a.y, nexus.x, nexus.y))[0] ?? gridToWorld(0, 0);
 }
 
 function getClosestPathDistance(path: RuntimePath | undefined, x: number, y: number) {

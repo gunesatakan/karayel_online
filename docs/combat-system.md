@@ -13,7 +13,7 @@ Her dusman artik yalnizca HP ve hizdan olusmaz. Temel alanlar:
 | Can yenileme | Saniye basina yenilenen HP. Maksimum HP'yi gecmez. |
 | Hareket hizi | Yol uzerinde saniye basina ilerleme degeri. |
 | Kalkan | HP'den once hasar yiyen ek bariyer. |
-| Hareket tipi | `ground` veya `air`. `ground` dusmanlar yolu izler, `air` dusmanlar spawn noktasindan nexusa direkt ucar. |
+| Hareket tipi | `ground` veya `air`. `ground` dusmanlar yolu izler, `air` dusmanlar nexus koordinatina en uzak harita kosesinden nexusa direkt ucar. |
 | Hasar direncleri | Hasar turu bazinda gelen hasari azaltir veya zayiflik olarak artirir. |
 | Durum direncleri | Slow, fear, tracking gibi etkilerin suresini azaltir. |
 | Beceriler | Dusmanin ozel davranis etiketleri. |
@@ -102,4 +102,4 @@ HP ve kalkan dalga HP carpaniyla buyur. Zirh, direncler ve hareket tipi dusman k
 | 15 | Kara ve ucan dusmanlar karisik gelir. |
 | 20 | Kara ve ucan dusmanlar karisik gelir. |
 
-Ucan dusmanlar secilen spawn noktasindan ayni path'in nexus bitis noktasina dogru en kisa cizgide ilerler; yol karelerini takip etmezler. Ucan dusmanlar ayni dusman tipinin kara versiyonuna gore %50 HP ve %50 kalkanla gelir. Tamamen ucan dalgalarda toplam dusman sayisi normal dalga sayisinin yarisi kadardir. Karisik dalgalarda her 4 spawn'dan 1'i ucan dusman olur. Su an Atakan tarafinda sadece Obsesyon Kulesi ve Ucube ucan hedefleri vurabilir. Takipci, Sunucu, Izolasyon ve Debug Lazer ucan hedef secmez.
+Ucan dusmanlar path spawn noktasindan dogmaz. Hedef nexus koordinatina en uzak harita kosesinden baslar ve nexus'a dogru en kisa cizgide ilerler; yol karelerini takip etmezler. Ucan dusmanlar ayni dusman tipinin kara versiyonuna gore %50 HP ve %50 kalkanla gelir. Tamamen ucan dalgalarda toplam dusman sayisi normal dalga sayisinin yarisi kadardir. Karisik dalgalarda her 4 spawn'dan 1'i ucan dusman olur. Su an Atakan tarafinda sadece Obsesyon Kulesi ve Ucube ucan hedefleri vurabilir. Takipci, Sunucu, Izolasyon ve Debug Lazer ucan hedef secmez.
