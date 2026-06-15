@@ -82,8 +82,11 @@ const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
 const ZEYNEP_SYNTHESIS_BEAM_RADIUS = 10;
 const ZEYNEP_SYNTHESIS_BURN_RADIUS = 34;
+const ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS = 16;
 const ZEYNEP_SYNTHESIS_BURN_DURATION_MS = 3000;
 const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 1000;
+const ZEYNEP_SYNTHESIS_RAY_SPEED = 620;
+const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
 const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.08;
 const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.16;
 const ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER = 0.94;
@@ -272,12 +275,36 @@ type BeamModel = BeamSnapshot & {
   ttlMs: number;
 };
 
+type RaySegment = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  length: number;
+};
+
+type ZeynepRayModel = {
+  id: string;
+  towerId: string;
+  ownerId: string;
+  segments: RaySegment[];
+  segmentIndex: number;
+  distanceOnSegment: number;
+  x: number;
+  y: number;
+  speed: number;
+  damage: number;
+  hitEnemyIds: string[];
+};
+
 type BurnZoneModel = {
   id: string;
   ownerId: string;
   towerId: string;
-  x: number;
-  y: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
   radius: number;
   damage: number;
   damageType: DamageType;
@@ -347,6 +374,7 @@ export class MatchRoom extends Room<MatchState> {
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
   private beams = new Map<string, BeamModel>();
+  private zeynepRays = new Map<string, ZeynepRayModel>();
   private burnZones = new Map<string, BurnZoneModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
@@ -357,6 +385,7 @@ export class MatchRoom extends Room<MatchState> {
   private nextProjectileId = 1;
   private nextDroneId = 1;
   private nextBeamId = 1;
+  private nextZeynepRayId = 1;
   private nextBurnZoneId = 1;
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
@@ -482,6 +511,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
+    this.updateZeynepRays(seconds);
     this.updateBurnZones();
     this.updateDrones(gameDeltaTime, seconds);
     this.updateBeams(gameDeltaTime);
@@ -969,7 +999,7 @@ export class MatchRoom extends Room<MatchState> {
   private fireZeynepSynthesisBurnImpact(tower: TowerModel, target: EnemyModel) {
     const damage = this.getTowerDamage(tower);
     this.damageEnemyFromTowerAs(tower, target, damage, 0, "light");
-    this.addZeynepBurnZone(tower, target.x, target.y, damage * 0.42);
+    this.addZeynepBurnLine(tower, tower.x, tower.y, target.x, target.y, damage * 0.42);
 
     const id = `zeynep-burn-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(id, {
@@ -979,50 +1009,127 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2: target.x,
       y2: target.y,
-      width: ZEYNEP_SYNTHESIS_BURN_RADIUS,
-      color: 0xf9a8d4,
+      width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2.35,
+      color: 0x22d3ee,
       overdrive: false,
       ttlMs: 520
+    });
+
+    const trailId = `zeynep-burn-trail-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(trailId, {
+      id: trailId,
+      definitionId: "zeynep-3-burn-trail",
+      x1: tower.x,
+      y1: tower.y,
+      x2: target.x,
+      y2: target.y,
+      width: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2,
+      color: 0x7c2d12,
+      overdrive: false,
+      ttlMs: scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS)
     });
   }
 
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
     const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y);
-    const hitEnemies = new Map<string, EnemyModel>();
-    for (const segment of segments) {
-      for (const enemy of this.enemies.values()) {
-        this.perfCounters.aoeChecks += 1;
-        if (!this.canTowerTargetEnemy(tower, enemy)) {
-          continue;
+    const firstSegment = segments[0];
+    const id = `zr${this.nextZeynepRayId++}`;
+    this.zeynepRays.set(id, {
+      id,
+      towerId: tower.id,
+      ownerId: tower.ownerId,
+      segments,
+      segmentIndex: 0,
+      distanceOnSegment: 0,
+      x: firstSegment.x1,
+      y: firstSegment.y1,
+      speed: ZEYNEP_SYNTHESIS_RAY_SPEED,
+      damage: this.getTowerDamage(tower),
+      hitEnemyIds: []
+    });
+  }
+
+  private updateZeynepRays(seconds: number) {
+    for (const [id, ray] of this.zeynepRays) {
+      let remainingDistance = ray.speed * seconds;
+      let deleteRay = false;
+
+      while (remainingDistance > 0 && !deleteRay) {
+        const segment = ray.segments[ray.segmentIndex];
+        if (!segment) {
+          deleteRay = true;
+          break;
         }
 
-        const hitRadius = ZEYNEP_SYNTHESIS_BEAM_RADIUS + getEnemyCollisionRadius(enemy);
-        if (distanceToSegmentSq(enemy.x, enemy.y, segment.x1, segment.y1, segment.x2, segment.y2) <= hitRadius * hitRadius) {
-          hitEnemies.set(enemy.id, enemy);
+        const previousX = ray.x;
+        const previousY = ray.y;
+        const distanceLeftOnSegment = segment.length - ray.distanceOnSegment;
+        const step = Math.min(remainingDistance, distanceLeftOnSegment);
+        ray.distanceOnSegment += step;
+        remainingDistance -= step;
+
+        const ratio = segment.length <= 0 ? 1 : Math.min(1, ray.distanceOnSegment / segment.length);
+        ray.x = segment.x1 + (segment.x2 - segment.x1) * ratio;
+        ray.y = segment.y1 + (segment.y2 - segment.y1) * ratio;
+
+        this.damageEnemiesAlongZeynepRay(ray, previousX, previousY, ray.x, ray.y);
+        this.setZeynepRayBeam(ray, segment);
+
+        if (ray.distanceOnSegment >= segment.length - 0.001) {
+          ray.segmentIndex += 1;
+          ray.distanceOnSegment = 0;
+          if (ray.segmentIndex >= ray.segments.length) {
+            deleteRay = true;
+          } else {
+            const nextSegment = ray.segments[ray.segmentIndex];
+            ray.x = nextSegment.x1;
+            ray.y = nextSegment.y1;
+          }
         }
       }
+
+      if (deleteRay) {
+        this.zeynepRays.delete(id);
+      }
+    }
+  }
+
+  private damageEnemiesAlongZeynepRay(ray: ZeynepRayModel, x1: number, y1: number, x2: number, y2: number) {
+    const tower = this.towers.get(ray.towerId);
+    if (!tower) {
+      return;
     }
 
-    const damage = this.getTowerDamage(tower);
-    for (const enemy of hitEnemies.values()) {
-      this.damageEnemyFromTowerAs(tower, enemy, damage * 0.5, 0, "physical", 0);
-      this.damageEnemyFromTowerAs(tower, enemy, damage * 0.5, 0, "light", 0);
-    }
+    for (const enemy of this.enemies.values()) {
+      this.perfCounters.aoeChecks += 1;
+      if (ray.hitEnemyIds.includes(enemy.id) || !this.canTowerTargetEnemy(tower, enemy)) {
+        continue;
+      }
 
-    segments.forEach((segment, index) => {
-      const id = `zeynep-mirror-${tower.id}-${this.nextBeamId++}-${index}`;
-      this.beams.set(id, {
-        id,
-        definitionId: "zeynep-3",
-        x1: segment.x1,
-        y1: segment.y1,
-        x2: segment.x2,
-        y2: segment.y2,
-        width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2,
-        color: index === 0 ? 0xe879f9 : 0xfdf2f8,
-        overdrive: false,
-        ttlMs: 360
-      });
+      const hitRadius = ZEYNEP_SYNTHESIS_BEAM_RADIUS + getEnemyCollisionRadius(enemy);
+      if (distanceToSegmentSq(enemy.x, enemy.y, x1, y1, x2, y2) > hitRadius * hitRadius) {
+        continue;
+      }
+
+      ray.hitEnemyIds.push(enemy.id);
+      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5, 0, "physical", 0);
+      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5, 0, "light", 0);
+    }
+  }
+
+  private setZeynepRayBeam(ray: ZeynepRayModel, segment: RaySegment) {
+    const id = `zeynep-ray-${ray.id}`;
+    this.beams.set(id, {
+      id,
+      definitionId: "zeynep-3-ray",
+      x1: segment.x1,
+      y1: segment.y1,
+      x2: ray.x,
+      y2: ray.y,
+      width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2,
+      color: ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
+      overdrive: false,
+      ttlMs: ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS
     });
   }
 
@@ -1053,16 +1160,18 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private addZeynepBurnZone(tower: TowerModel, x: number, y: number, damage: number) {
+  private addZeynepBurnLine(tower: TowerModel, x1: number, y1: number, x2: number, y2: number, damage: number) {
     const now = Date.now();
     const id = `burn-${this.nextBurnZoneId++}`;
     this.burnZones.set(id, {
       id,
       ownerId: tower.ownerId,
       towerId: tower.id,
-      x,
-      y,
-      radius: ZEYNEP_SYNTHESIS_BURN_RADIUS,
+      x1,
+      y1,
+      x2,
+      y2,
+      radius: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS,
       damage,
       damageType: "light",
       expiresAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS),
@@ -1085,7 +1194,8 @@ export class MatchRoom extends Room<MatchState> {
       zone.nextTickAt += scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS);
       for (const enemy of this.enemies.values()) {
         this.perfCounters.aoeChecks += 1;
-        if (distanceSq(zone.x, zone.y, enemy.x, enemy.y) <= zone.radius * zone.radius) {
+        const hitRadius = zone.radius + getEnemyCollisionRadius(enemy);
+        if (distanceToSegmentSq(enemy.x, enemy.y, zone.x1, zone.y1, zone.x2, zone.y2) <= hitRadius * hitRadius) {
           this.damageEnemy(enemy, zone.damage, 0, "zeynep-3-burn", zone.ownerId, zone.damageType, 0, 1, zone.towerId);
         }
       }
@@ -3422,9 +3532,19 @@ function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY:
   const secondHit = getRayBoundaryHit(secondStartX, secondStartY, reflectedX, reflectedY);
 
   return [
-    { x1, y1, x2: firstHit.x, y2: firstHit.y },
-    { x1: firstHit.x, y1: firstHit.y, x2: secondHit.x, y2: secondHit.y }
+    makeRaySegment(x1, y1, firstHit.x, firstHit.y),
+    makeRaySegment(firstHit.x, firstHit.y, secondHit.x, secondHit.y)
   ];
+}
+
+function makeRaySegment(x1: number, y1: number, x2: number, y2: number): RaySegment {
+  return {
+    x1,
+    y1,
+    x2,
+    y2,
+    length: Math.hypot(x2 - x1, y2 - y1)
+  };
 }
 
 function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number) {
