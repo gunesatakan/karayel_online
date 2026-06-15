@@ -73,13 +73,16 @@ const ZEYNEP_MAX_REPUTATION = 100;
 const ZEYNEP_SMALL_COMMAND_COST = 10;
 const ZEYNEP_MEDIUM_COMMAND_COST = 40;
 const ZEYNEP_BIG_COMMAND_COST = 80;
-const ZEYNEP_CHAIN_WINDOW_MS = 8000;
 const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
 const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
 const ZEYNEP_SHOWCASE_BASE_LENGTH = 190;
 const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
+const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.08;
+const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.16;
+const ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER = 0.94;
+const ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER = 0.88;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -92,7 +95,6 @@ class Player extends Schema {
   @type("number") skill3CooldownMs = 0;
   @type("number") reputation = 0;
   @type("number") authorityChain = 0;
-  @type("number") authorityChainUntil = 0;
   @type("number") authorityQuality = 0;
 }
 
@@ -220,6 +222,7 @@ type TowerModel = {
   streakDamageMultiplier: number;
   streakHasteUntil: number;
   streakHasteMultiplier: number;
+  zeynepFormationSize: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -555,6 +558,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateTowers(deltaTime: number) {
     const now = Date.now();
+    this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
       if (this.silentModeUntil > now) {
         continue;
@@ -1256,6 +1260,7 @@ export class MatchRoom extends Room<MatchState> {
       streakDamageMultiplier: 1,
       streakHasteUntil: 0,
       streakHasteMultiplier: 1,
+      zeynepFormationSize: 0,
       damageDealt: 0,
       damageWindow: []
     };
@@ -1424,13 +1429,9 @@ export class MatchRoom extends Room<MatchState> {
 
   private useZeynepCommand(player: Player, slot: number, message: UseSkillMessage) {
     const now = Date.now();
-    if (player.authorityChainUntil <= now) {
-      player.authorityChain = 0;
-    }
-
     const commandType = getZeynepCommandType(slot);
     const isFinisher = player.authorityChain >= 2;
-    const tier = isFinisher ? getRequestedZeynepCommandTier(message.commandTier) : "small";
+    const tier = getRequestedZeynepCommandTier(message.commandTier);
     const cost = getZeynepCommandCost(tier);
     if (player.reputation < cost) {
       return false;
@@ -1442,10 +1443,8 @@ export class MatchRoom extends Room<MatchState> {
     if (isFinisher) {
       player.authorityQuality = Math.min(ZEYNEP_MAX_AUTHORITY_QUALITY, player.authorityQuality + 1);
       player.authorityChain = 0;
-      player.authorityChainUntil = 0;
     } else {
       player.authorityChain = Math.min(2, player.authorityChain + 1);
-      player.authorityChainUntil = now + ZEYNEP_CHAIN_WINDOW_MS;
     }
 
     return true;
@@ -1629,6 +1628,49 @@ export class MatchRoom extends Room<MatchState> {
       .sort((a, b) => distanceSq(x, y, a.x, a.y) - distanceSq(x, y, b.x, b.y))[0];
   }
 
+  private refreshZeynepFormations() {
+    const towers = Array.from(this.towers.values()).filter((tower) => tower.characterId === "zeynep");
+    for (const tower of towers) {
+      tower.zeynepFormationSize = 0;
+    }
+
+    const visited = new Set<string>();
+    for (const tower of towers) {
+      if (visited.has(tower.id)) {
+        continue;
+      }
+
+      const group: TowerModel[] = [];
+      const queue = [tower];
+      visited.add(tower.id);
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current) {
+          continue;
+        }
+
+        group.push(current);
+        for (const candidate of towers) {
+          if (visited.has(candidate.id) || candidate.ownerId !== current.ownerId) {
+            continue;
+          }
+          if (!areZeynepFormationNeighbors(current, candidate)) {
+            continue;
+          }
+
+          visited.add(candidate.id);
+          queue.push(candidate);
+        }
+      }
+
+      const formationSize = group.length === 2 || group.length === 3 ? group.length : 0;
+      for (const member of group) {
+        member.zeynepFormationSize = formationSize;
+      }
+    }
+  }
+
   private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
     const halfCell = TOWER_GRID_SIZE / 2;
     if (
@@ -1703,7 +1745,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-2";
+    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-1" || tower.definition.id === "zeynep-2";
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
@@ -1991,6 +2033,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getSnapshot(): GameSnapshot {
     const now = Date.now();
+    this.refreshZeynepFormations();
     return {
       serverTime: now,
       map: this.activeMap,
@@ -2007,7 +2050,7 @@ export class MatchRoom extends Room<MatchState> {
           Math.ceil(player.skill3CooldownMs / 1000)
         ],
         reputation: player.characterId === "zeynep" ? Math.round(player.reputation) : undefined,
-        authorityChain: player.characterId === "zeynep" ? (player.authorityChainUntil > now ? player.authorityChain : 0) : undefined,
+        authorityChain: player.characterId === "zeynep" ? player.authorityChain : undefined,
         authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
@@ -2047,7 +2090,8 @@ export class MatchRoom extends Room<MatchState> {
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
         waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
-        linkedTowerIds: [...tower.linkedTowerIds]
+        linkedTowerIds: [...tower.linkedTowerIds],
+        zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
@@ -2132,28 +2176,29 @@ export class MatchRoom extends Room<MatchState> {
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
+    const zeynepFormationMultiplier = getZeynepFormationFireIntervalMultiplier(tower);
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
 
     if (tower.definition.id === "warrior-5") {
-      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier;
+      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier;
     }
 
     if (tower.definition.hitType === "impact") {
-      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier);
+      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
 
     if (tower.definition.id === "warrior-1") {
-      return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier;
+      return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
     }
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * streakHasteMultiplier * passiveMultiplier);
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
   }
 
   private getTowerDamage(tower: TowerModel) {
     const now = Date.now();
-    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now);
+    let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now) * getZeynepFormationDamageMultiplier(tower);
 
     if (tower.definition.id === "warrior-4") {
       damage *= getObsessionDamageMultiplier(tower.level);
@@ -2298,6 +2343,12 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (serverLinkAge >= 5) {
       return "Sunucu 5T";
+    }
+    if (tower.zeynepFormationSize === 3) {
+      return "Dizilim 3";
+    }
+    if (tower.zeynepFormationSize === 2) {
+      return "Dizilim 2";
     }
     if (tower.characterId === "warrior" && this.getAtakanPassiveMultiplier(tower) > 1) {
       return "Pasif";
@@ -2813,6 +2864,34 @@ function getUcubeChainDamageMultiplier(tower: TowerModel) {
 
 function getZeynepShowcaseBeamLength(level: number) {
   return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
+}
+
+function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel) {
+  const sameColumn = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(towerA.y - towerB.y - TOWER_GRID_SIZE) < 2;
+  const sameColumnReverse = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(towerB.y - towerA.y - TOWER_GRID_SIZE) < 2;
+  const sameRow = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(towerA.x - towerB.x - TOWER_GRID_SIZE) < 2;
+  const sameRowReverse = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(towerB.x - towerA.x - TOWER_GRID_SIZE) < 2;
+  return sameColumn || sameColumnReverse || sameRow || sameRowReverse;
+}
+
+function getZeynepFormationDamageMultiplier(tower: TowerModel) {
+  if (tower.zeynepFormationSize === 3) {
+    return ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER;
+  }
+  if (tower.zeynepFormationSize === 2) {
+    return ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER;
+  }
+  return 1;
+}
+
+function getZeynepFormationFireIntervalMultiplier(tower: TowerModel) {
+  if (tower.zeynepFormationSize === 3) {
+    return ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER;
+  }
+  if (tower.zeynepFormationSize === 2) {
+    return ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER;
+  }
+  return 1;
 }
 
 function scaleGameDuration(durationMs: number) {

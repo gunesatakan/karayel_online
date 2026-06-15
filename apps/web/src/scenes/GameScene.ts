@@ -189,6 +189,8 @@ export class GameScene extends Phaser.Scene {
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private zeynepTierChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private pendingZeynepCommandSlot?: number;
+  private zeynepChainText?: Phaser.GameObjects.Text;
+  private zeynepChainEffect?: Phaser.GameObjects.Graphics;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
@@ -261,6 +263,8 @@ export class GameScene extends Phaser.Scene {
       this.placementGhost?.destroy();
       this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
+      this.zeynepChainEffect?.destroy();
+      this.zeynepChainText?.destroy();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
       this.backgroundMusic?.pause();
@@ -582,6 +586,14 @@ export class GameScene extends Phaser.Scene {
       this.skillTexts.push(label);
     });
 
+    this.zeynepChainEffect = this.add.graphics().setDepth(58).setVisible(false);
+    this.zeynepChainText = this.add.text(GAME_WORLD_WIDTH / 2, 596, "", {
+      color: "#f9a8d4",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(59).setVisible(false);
+
     this.ultimateButton = this.add.rectangle(86, 672, 140, 34, 0x7c3aed, 0.92)
       .setStrokeStyle(1, 0xc4b5fd, 0.7)
       .setInteractive({ useHandCursor: true })
@@ -793,15 +805,8 @@ export class GameScene extends Phaser.Scene {
 
     if (this.selectedCharacterId === "zeynep") {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
-      const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
-      if (authorityChain >= 2) {
-        this.showZeynepTierChoices(index, reputation);
-        this.hintText?.setText("Finisher gucunu sec: dusuk, orta veya yuksek");
-        return;
-      }
-
-      this.hideZeynepTierChoices();
-      this.room.send("useSkill", { slot: index });
+      this.showZeynepTierChoices(index, reputation);
+      this.hintText?.setText("Komut gucunu sec: dusuk, orta veya yuksek");
       return;
     }
 
@@ -1088,7 +1093,7 @@ export class GameScene extends Phaser.Scene {
     const reputation = player?.reputation ?? 0;
     const authorityChain = player?.authorityChain ?? 0;
     const authorityQuality = player?.authorityQuality ?? 0;
-    if (player?.characterId !== "zeynep" || authorityChain < 2) {
+    if (player?.characterId !== "zeynep") {
       this.hideZeynepTierChoices();
     }
     const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
@@ -1223,7 +1228,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${texture}`;
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
@@ -1301,9 +1306,49 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderZeynepFormationEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderZeynepFormationEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    const formationSize = tower.zeynepFormationSize ?? 0;
+    if (tower.characterId !== "zeynep" || formationSize < 2 || tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return;
+    }
+
+    const phase = (Date.now() % 1000) / 1000;
+    const pulse = 0.7 + Math.sin(phase * Math.PI * 2) * 0.18;
+    const primary = formationSize === 3 ? 0xfdf2f8 : 0xf9a8d4;
+    const secondary = formationSize === 3 ? 0xdb2777 : 0x0ea5e9;
+    const radius = formationSize === 3 ? 25 : 22;
+
+    graphics.fillStyle(secondary, formationSize === 3 ? 0.13 : 0.1);
+    graphics.fillCircle(tower.x, tower.y, radius + 3 * pulse);
+    graphics.lineStyle(2, primary, 0.62 + pulse * 0.2);
+    graphics.strokeCircle(tower.x, tower.y, radius);
+    graphics.lineStyle(1, secondary, 0.42 + pulse * 0.18);
+    graphics.strokeCircle(tower.x, tower.y, radius + 5);
+
+    const neighbors = Array.from(this.towerSnapshots.values()).filter((candidate) => (
+      candidate.id > tower.id &&
+      candidate.ownerId === tower.ownerId &&
+      candidate.characterId === "zeynep" &&
+      (candidate.zeynepFormationSize ?? 0) === formationSize &&
+      areFormationNeighbors(tower, candidate)
+    ));
+
+    for (const neighbor of neighbors) {
+      graphics.lineStyle(4, secondary, 0.16 + pulse * 0.08);
+      graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
+      graphics.lineStyle(2, primary, 0.5 + pulse * 0.18);
+      graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
+      const midX = (tower.x + neighbor.x) / 2;
+      const midY = (tower.y + neighbor.y) / 2;
+      graphics.fillStyle(primary, 0.82);
+      graphics.fillCircle(midX, midY, formationSize === 3 ? 4 : 3);
+    }
   }
 
   private renderDebugLaserLevelPrism(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -1970,9 +2015,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.lastSkillKey = skillKey;
 
+    this.updateZeynepChainPanel(player?.characterId === "zeynep", authorityChain);
+
     this.selectedCharacter.skills.forEach((skill, index) => {
       const cooldown = cooldowns[index] ?? 0;
-      const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(reputation, authorityChain) : undefined;
+      const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
       const canUseCommand = !zeynepCommand || reputation >= zeynepCommand.cost;
       const readyLabel = zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : skill.name;
       const isDisabled = cooldown > 0 || !canUseCommand;
@@ -1981,6 +2028,39 @@ export class GameScene extends Phaser.Scene {
       this.skillButtons[index]?.setFillStyle(isDisabled ? 0x0f172a : 0x1e293b, isDisabled ? 0.72 : 0.94);
       this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });
+  }
+
+  private updateZeynepChainPanel(isZeynep: boolean, authorityChain: number) {
+    this.zeynepChainEffect?.clear();
+    this.zeynepChainEffect?.setVisible(false);
+    this.zeynepChainText?.setVisible(false);
+
+    if (!isZeynep) {
+      return;
+    }
+
+    this.zeynepChainText?.setText(`Zincir ${authorityChain}/2`);
+    this.zeynepChainText?.setColor(authorityChain >= 2 ? "#fdf2f8" : "#f9a8d4");
+    this.zeynepChainText?.setVisible(true);
+
+    if (authorityChain < 2 || !this.zeynepChainEffect) {
+      return;
+    }
+
+    const graphics = this.zeynepChainEffect;
+    graphics.setVisible(true);
+    graphics.lineStyle(2, 0xfdf2f8, 0.86);
+    for (const [index] of this.selectedCharacter.skills.entries()) {
+      const x = 70 + index * 125;
+      const y = 626;
+      graphics.strokeRoundedRect(x - 59, y - 20, 118, 40, 6);
+      for (let link = 0; link < 4; link += 1) {
+        const linkX = x - 42 + link * 28;
+        graphics.lineStyle(2, link % 2 === 0 ? 0xf9a8d4 : 0xfdf2f8, 0.78);
+        graphics.strokeEllipse(linkX, y - 24, 19, 8);
+        graphics.strokeEllipse(linkX + 11, y - 24, 19, 8);
+      }
+    }
   }
 
   private startPingLoop() {
@@ -2073,12 +2153,14 @@ function average(values: number[]) {
   return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
-function getZeynepCommandButtonState(reputation: number, authorityChain: number) {
-  if (authorityChain >= 2) {
-    return { cost: 10, label: "Sec" };
-  }
+function getZeynepCommandButtonState(authorityChain: number) {
+  return { cost: 10, label: authorityChain >= 2 ? "Zincir Sec" : "Sec" };
+}
 
-  return { cost: 10, label: "10I K" };
+function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot) {
+  const sameColumn = Math.abs(towerA.x - towerB.x) < 2 && Math.abs(Math.abs(towerA.y - towerB.y) - TOWER_GRID_SIZE) < 2;
+  const sameRow = Math.abs(towerA.y - towerB.y) < 2 && Math.abs(Math.abs(towerA.x - towerB.x) - TOWER_GRID_SIZE) < 2;
+  return sameColumn || sameRow;
 }
 
 function roundClientMetric(value: number) {
