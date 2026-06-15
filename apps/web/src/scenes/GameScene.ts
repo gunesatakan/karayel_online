@@ -2039,12 +2039,6 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.moveTo(beam.x1, beam.y1);
     this.beamGraphics.lineTo(beam.x2, beam.y2);
     this.beamGraphics.strokePath();
-    this.beamGraphics.fillStyle(color, 0.22 * pulse * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.86);
-    this.beamGraphics.lineStyle(2, 0xe0f2fe, 0.66 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, beam.width * (0.58 + pulse * 0.08));
-    this.beamGraphics.fillStyle(0xffffff, 0.72 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4 + pulse * 2);
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {
