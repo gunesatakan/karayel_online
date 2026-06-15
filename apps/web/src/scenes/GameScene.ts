@@ -1799,16 +1799,20 @@ export class GameScene extends Phaser.Scene {
     const uy = dy / length;
     const nx = -uy;
     const ny = ux;
-    const pulse = 0.78 + Math.sin(Date.now() / 38) * 0.12;
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 130) / 260, 0, 1);
+    const flash = Phaser.Math.Clamp((life - 0.22) / 0.78, 0, 1);
+    const afterglow = Phaser.Math.Clamp(life / 0.82, 0, 1);
+    const pulse = 0.9 + Math.sin(Date.now() / 34) * 0.08;
 
     const fillBeamBand = (width: number, bandColor: number, alpha: number, inset = 0) => {
       const startX = beam.x1 + ux * inset;
       const startY = beam.y1 + uy * inset;
       const endX = beam.x2 - ux * inset;
       const endY = beam.y2 - uy * inset;
-      const halfStart = width * 0.34;
+      const clampedWidth = Math.min(width, beam.width);
+      const halfStart = clampedWidth * 0.42;
       const halfMid = width * 0.5;
-      const halfEnd = width * 0.28;
+      const halfEnd = clampedWidth * 0.42;
       const midX = (startX + endX) / 2;
       const midY = (startY + endY) / 2;
 
@@ -1825,34 +1829,34 @@ export class GameScene extends Phaser.Scene {
       this.beamGraphics?.fillCircle(endX, endY, halfEnd);
     };
 
-    fillBeamBand(beam.width + 24, color, 0.1);
-    fillBeamBand(beam.width + 12, 0xf0abfc, 0.22, 2);
-    fillBeamBand(Math.max(8, beam.width * 0.7), 0xfdf2f8, 0.62, 4);
-    fillBeamBand(Math.max(6, beam.width * 0.46), 0xffffff, 0.82, 7);
+    fillBeamBand(beam.width, color, 0.2 * afterglow);
+    fillBeamBand(beam.width * 0.74, 0xf0abfc, 0.36 * afterglow, 2);
+    fillBeamBand(beam.width * 0.48, 0xfdf2f8, 0.62 * flash + 0.18 * afterglow, 5);
+    fillBeamBand(beam.width * 0.24, 0xffffff, 0.96 * flash, 8);
 
-    for (let index = 0; index < 5; index += 1) {
-      const t = (index + 1) / 6;
+    for (let index = 0; index < 7; index += 1) {
+      const t = (index + 1) / 8;
       const hash = Math.sin((beam.id.length + index * 17) * 23.91) * 43758.5453;
+      const normalizedHash = hash - Math.floor(hash);
       const side = index % 2 === 0 ? 1 : -1;
       const centerX = beam.x1 + dx * t;
       const centerY = beam.y1 + dy * t;
-      const sparkLength = 9 + (hash - Math.floor(hash)) * 10;
-      const sparkOffset = side * (beam.width * 0.65 + 4);
-      this.beamGraphics.lineStyle(2, 0xffffff, 0.38 * pulse);
-      this.beamGraphics.lineBetween(
-        centerX + nx * sparkOffset,
-        centerY + ny * sparkOffset,
-        centerX + nx * (sparkOffset + side * sparkLength) + ux * 4,
-        centerY + ny * (sparkOffset + side * sparkLength) + uy * 4
-      );
+      const halfHeight = beam.width * (0.18 + normalizedHash * 0.18);
+      const halfLength = 3 + normalizedHash * 7;
+      const offset = side * Math.min(beam.width * 0.28, beam.width * (0.12 + normalizedHash * 0.16));
+      this.beamGraphics.fillStyle(index % 3 === 0 ? 0xffffff : 0xfdf2f8, 0.5 * flash);
+      this.beamGraphics.fillPoints([
+        new Phaser.Geom.Point(centerX - ux * halfLength + nx * offset, centerY - uy * halfLength + ny * offset),
+        new Phaser.Geom.Point(centerX + nx * (offset + side * halfHeight), centerY + ny * (offset + side * halfHeight)),
+        new Phaser.Geom.Point(centerX + ux * halfLength + nx * offset, centerY + uy * halfLength + ny * offset),
+        new Phaser.Geom.Point(centerX + nx * (offset - side * halfHeight * 0.55), centerY + ny * (offset - side * halfHeight * 0.55))
+      ], true);
     }
 
-    this.beamGraphics.fillStyle(0xffffff, 0.82 * pulse);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5);
-    this.beamGraphics.fillStyle(color, 0.2 * pulse);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 17);
-    this.beamGraphics.fillStyle(0xfdf2f8, 0.52 * pulse);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
+    this.beamGraphics.fillStyle(0xffffff, 0.88 * flash);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
+    this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {

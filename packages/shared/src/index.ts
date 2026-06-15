@@ -115,6 +115,7 @@ export type BeamSnapshot = {
   width: number;
   color: number;
   overdrive?: boolean;
+  ttlMs?: number;
 };
 
 export type DamageEventSnapshot = {

@@ -2118,7 +2118,8 @@ export class MatchRoom extends Room<MatchState> {
         scanY: beam.scanY,
         width: beam.width,
         color: beam.color,
-        overdrive: beam.overdrive
+        overdrive: beam.overdrive,
+        ttlMs: Math.max(0, Math.round(beam.ttlMs))
       })),
       damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
         id: event.id,
