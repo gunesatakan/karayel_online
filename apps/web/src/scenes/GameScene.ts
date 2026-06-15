@@ -1660,12 +1660,36 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
+      } else if (beam.definitionId === "zeynep-2") {
+        this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "warrior-6") {
         this.drawChainLightning(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
     }
+  }
+
+  private drawShowcaseBeam(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const pulse = 0.72 + Math.sin(Date.now() / 45) * 0.18;
+    this.beamGraphics.lineStyle(beam.width + 26, color, 0.1 * pulse);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 14, 0xf0abfc, 0.24 * pulse);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(beam.width + 5, 0xfdf2f8, 0.72 * pulse);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(Math.max(4, beam.width * 0.22), 0xffffff, 0.98);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0xffffff, 0.92);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 7);
+    this.beamGraphics.fillStyle(color, 0.32);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 22);
+    this.beamGraphics.fillStyle(0xfdf2f8, 0.78);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 6);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {

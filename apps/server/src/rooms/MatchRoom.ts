@@ -77,6 +77,9 @@ const ZEYNEP_CHAIN_WINDOW_MS = 8000;
 const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
 const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
+const ZEYNEP_SHOWCASE_BASE_LENGTH = 190;
+const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
+const ZEYNEP_SHOWCASE_BEAM_RADIUS = 18;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -615,6 +618,11 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (tower.definition.id === "zeynep-2") {
+      this.fireZeynepShowcaseBeam(tower);
+      return;
+    }
+
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -747,6 +755,65 @@ export class MatchRoom extends Room<MatchState> {
       overdrive: false,
       ttlMs: 190
     });
+  }
+
+  private fireZeynepShowcaseBeam(tower: TowerModel) {
+    const result = this.findBestZeynepShowcaseLine(tower);
+    if (!result) {
+      return;
+    }
+
+    const damage = this.getTowerDamage(tower);
+    for (const enemy of result.targets) {
+      this.damageEnemyFromTower(tower, enemy, damage, 0);
+    }
+
+    const id = `showcase-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(id, {
+      id,
+      definitionId: tower.definition.id,
+      x1: tower.x,
+      y1: tower.y,
+      x2: result.endX,
+      y2: result.endY,
+      width: ZEYNEP_SHOWCASE_BEAM_RADIUS * 2,
+      color: tower.definition.color,
+      overdrive: false,
+      ttlMs: 260
+    });
+  }
+
+  private findBestZeynepShowcaseLine(tower: TowerModel) {
+    const enemies = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    if (enemies.length === 0) {
+      return undefined;
+    }
+
+    const length = this.getTowerRange(tower);
+    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number } | undefined;
+
+    for (const enemy of enemies) {
+      const dx = enemy.x - tower.x;
+      const dy = enemy.y - tower.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= 1) {
+        continue;
+      }
+
+      const endX = tower.x + (dx / distance) * length;
+      const endY = tower.y + (dy / distance) * length;
+      const targets = enemies.filter((candidate) => {
+        const hitRadius = ZEYNEP_SHOWCASE_BEAM_RADIUS + getEnemyCollisionRadius(candidate);
+        const projection = getSegmentProjection(candidate.x, candidate.y, tower.x, tower.y, endX, endY);
+        return projection >= 0 && projection <= 1 && distanceToSegmentSq(candidate.x, candidate.y, tower.x, tower.y, endX, endY) <= hitRadius * hitRadius;
+      });
+      const score = targets.length * 100000 + targets.reduce((total, target) => total + target.pathDistance, 0);
+      if (!best || score > best.score) {
+        best = { endX, endY, targets, score };
+      }
+    }
+
+    return best;
   }
 
   private updateDebugLaserSweep(tower: TowerModel) {
@@ -1339,7 +1406,7 @@ export class MatchRoom extends Room<MatchState> {
       if (typeof message.x !== "number" || typeof message.y !== "number") {
         return false;
       }
-      this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + scaleGameDuration(1000));
+      this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + scaleGameDuration(3000));
       this.projectileGuidanceX = this.clamp(message.x, 0, GAME_WORLD_WIDTH);
       this.projectileGuidanceY = this.clamp(message.y, 0, GAME_WORLD_HEIGHT);
       return true;
@@ -1645,7 +1712,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6";
+    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-2";
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
@@ -2059,6 +2126,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       return GAME_WORLD_HEIGHT;
+    }
+
+    if (tower.definition.id === "zeynep-2") {
+      return getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier;
     }
 
     return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
@@ -2742,6 +2813,10 @@ function getUcubeChainDamageMultiplier(tower: TowerModel) {
   return 0.42;
 }
 
+function getZeynepShowcaseBeamLength(level: number) {
+  return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
+}
+
 function scaleGameDuration(durationMs: number) {
   return durationMs / GAME_SPEED_MULTIPLIER;
 }
@@ -2795,6 +2870,17 @@ function distanceSq(ax: number, ay: number, bx: number, by: number) {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
+}
+
+function getSegmentProjection(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq <= 0) {
+    return 0;
+  }
+
+  return ((px - ax) * dx + (py - ay) * dy) / lengthSq;
 }
 
 function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel, previousX: number, previousY: number) {
