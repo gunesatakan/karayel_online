@@ -91,6 +91,7 @@ const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const GUIDANCE_RADIUS = 78;
 
 type ZeynepCommandTier = "small" | "medium" | "big";
+type AudioVolumeChannel = "music" | "voice";
 
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
@@ -138,6 +139,10 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
     chaos: 1
   }
 ];
+const MUSIC_VOLUME_STORAGE_KEY = "karayel.musicVolume";
+const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
+const DEFAULT_MUSIC_VOLUME = 0.34;
+const DEFAULT_VOICE_VOLUME = 0.82;
 
 export class GameScene extends Phaser.Scene {
   private room?: Room;
@@ -176,6 +181,10 @@ export class GameScene extends Phaser.Scene {
   };
   private rampageContainer?: Phaser.GameObjects.Container;
   private backgroundMusic?: HTMLAudioElement;
+  private musicVolume = readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
+  private voiceVolume = readStoredVolume(VOICE_VOLUME_STORAGE_KEY, DEFAULT_VOICE_VOLUME);
+  private audioSettingsOpen = false;
+  private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -241,6 +250,7 @@ export class GameScene extends Phaser.Scene {
     this.drawMap();
     this.createPlacementGrid();
     this.createHeader();
+    this.createAudioSettingsButton();
     this.createTowerTray();
     this.createActionButtons();
     this.beamGraphics = this.add.graphics().setDepth(10);
@@ -265,6 +275,7 @@ export class GameScene extends Phaser.Scene {
       this.rampageContainer?.destroy(true);
       this.zeynepChainEffect?.destroy();
       this.zeynepChainText?.destroy();
+      this.hideAudioSettingsPanel();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
       this.backgroundMusic?.pause();
@@ -344,6 +355,151 @@ export class GameScene extends Phaser.Scene {
       fontSize: "13px",
       fontStyle: "bold"
     }).setOrigin(1, 0).setDepth(21);
+  }
+
+  private createAudioSettingsButton() {
+    const x = GAME_WORLD_WIDTH - 48;
+    const y = 52;
+    const button = this.add.rectangle(x, y, 58, 24, 0x1e293b, 0.96)
+      .setStrokeStyle(1, 0x94a3b8, 0.62)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(62);
+    const label = this.add.text(x, y, "Ses", {
+      color: "#e2e8f0",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(63).setInteractive({ useHandCursor: true });
+    const toggle = () => {
+      this.ignoreMapPointerUntil = performance.now() + 180;
+      this.toggleAudioSettingsPanel();
+    };
+    button.on("pointerup", toggle);
+    label.on("pointerup", toggle);
+  }
+
+  private toggleAudioSettingsPanel() {
+    if (this.audioSettingsOpen) {
+      this.hideAudioSettingsPanel();
+      return;
+    }
+
+    this.showAudioSettingsPanel();
+  }
+
+  private showAudioSettingsPanel() {
+    this.hideAudioSettingsPanel();
+    this.audioSettingsOpen = true;
+
+    const panelX = GAME_WORLD_WIDTH - 174;
+    const panelY = 82;
+    const background = this.add.rectangle(panelX, panelY, 160, 104, 0x020617, 0.96)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x64748b, 0.72)
+      .setInteractive({ useHandCursor: false })
+      .setDepth(78);
+    background.on("pointerdown", () => {
+      this.ignoreMapPointerUntil = performance.now() + 180;
+    });
+    background.on("pointerup", () => {
+      this.ignoreMapPointerUntil = performance.now() + 180;
+    });
+    const title = this.add.text(panelX + 12, panelY + 8, "Ses ayarlari", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "11px",
+      fontStyle: "bold"
+    }).setDepth(79);
+
+    this.audioSettingsItems.push(
+      background,
+      title,
+      ...this.createAudioVolumeSlider(panelX + 12, panelY + 34, "Muzik", "music"),
+      ...this.createAudioVolumeSlider(panelX + 12, panelY + 70, "Seslendirme", "voice")
+    );
+  }
+
+  private hideAudioSettingsPanel() {
+    for (const item of this.audioSettingsItems) {
+      item.destroy();
+    }
+    this.audioSettingsItems = [];
+    this.audioSettingsOpen = false;
+  }
+
+  private createAudioVolumeSlider(x: number, y: number, label: string, channel: AudioVolumeChannel) {
+    const trackWidth = 96;
+    const value = this.getAudioVolume(channel);
+    const labelText = this.add.text(x, y, label, {
+      color: "#cbd5e1",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold"
+    }).setDepth(79);
+    const valueText = this.add.text(x + 136, y, formatVolumePercent(value), {
+      color: "#facc15",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold"
+    }).setOrigin(1, 0).setDepth(79);
+    const track = this.add.rectangle(x, y + 20, trackWidth, 7, 0x334155, 1)
+      .setOrigin(0, 0.5)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(79);
+    const fill = this.add.rectangle(x, y + 20, trackWidth * value, 7, channel === "music" ? 0x38bdf8 : 0xf472b6, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(80);
+    const thumb = this.add.circle(x + trackWidth * value, y + 20, 7, 0xf8fafc, 1)
+      .setStrokeStyle(2, channel === "music" ? 0x38bdf8 : 0xf472b6, 1)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(81);
+
+    const update = (pointer: Phaser.Input.Pointer) => {
+      this.ignoreMapPointerUntil = performance.now() + 180;
+      const nextValue = Phaser.Math.Clamp((pointer.worldX - x) / trackWidth, 0, 1);
+      this.setAudioVolume(channel, nextValue);
+      fill.width = trackWidth * nextValue;
+      thumb.setX(x + trackWidth * nextValue);
+      valueText.setText(formatVolumePercent(nextValue));
+    };
+    const handleMove = (pointer: Phaser.Input.Pointer) => {
+      if (pointer.isDown) {
+        update(pointer);
+      }
+    };
+
+    track.on("pointerdown", update);
+    track.on("pointermove", handleMove);
+    thumb.on("pointerdown", update);
+    thumb.on("pointermove", handleMove);
+
+    return [labelText, valueText, track, fill, thumb];
+  }
+
+  private getAudioVolume(channel: AudioVolumeChannel) {
+    return channel === "music" ? this.musicVolume : this.voiceVolume;
+  }
+
+  private setAudioVolume(channel: AudioVolumeChannel, value: number) {
+    const volume = Phaser.Math.Clamp(value, 0, 1);
+    if (channel === "music") {
+      this.musicVolume = volume;
+      writeStoredVolume(MUSIC_VOLUME_STORAGE_KEY, volume);
+    } else {
+      this.voiceVolume = volume;
+      writeStoredVolume(VOICE_VOLUME_STORAGE_KEY, volume);
+    }
+    this.applyAudioVolumes();
+  }
+
+  private applyAudioVolumes() {
+    if (this.backgroundMusic) {
+      this.backgroundMusic.volume = this.musicVolume;
+    }
+
+    for (const audio of Object.values(this.killStreakSounds).flat()) {
+      audio.volume = this.voiceVolume;
+    }
   }
 
   private createTowerTray() {
@@ -533,7 +689,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       audio.preload = "auto";
-      audio.volume = 0.82;
+      audio.volume = this.voiceVolume;
     }
   }
 
@@ -541,7 +697,7 @@ export class GameScene extends Phaser.Scene {
     this.backgroundMusic = new Audio(getBackgroundMusicPath(this.selectedCharacterId));
     this.backgroundMusic.preload = "auto";
     this.backgroundMusic.loop = true;
-    this.backgroundMusic.volume = 0.34;
+    this.backgroundMusic.volume = this.musicVolume;
   }
 
   private unlockGameAudio() {
@@ -1625,6 +1781,7 @@ export class GameScene extends Phaser.Scene {
     const audio = Phaser.Utils.Array.GetRandom(sounds);
     audio.pause();
     audio.currentTime = 0;
+    audio.volume = this.voiceVolume;
     void audio.play().catch(() => {
       // Mobile browsers may block audio until the first real touch; the next streak can retry.
     });
@@ -2155,6 +2312,37 @@ function getZeynepCommandButtonState(authorityChain: number) {
 
 function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+}
+
+function readStoredVolume(key: string, fallback: number) {
+  const fallbackVolume = Phaser.Math.Clamp(fallback, 0, 1);
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    if (storedValue === null) {
+      return fallbackVolume;
+    }
+
+    const parsedValue = Number(storedValue);
+    if (!Number.isFinite(parsedValue)) {
+      return fallbackVolume;
+    }
+
+    return Phaser.Math.Clamp(parsedValue, 0, 1);
+  } catch {
+    return fallbackVolume;
+  }
+}
+
+function writeStoredVolume(key: string, value: number) {
+  try {
+    window.localStorage.setItem(key, String(Phaser.Math.Clamp(value, 0, 1)));
+  } catch {
+    // Storage can be unavailable in private browser contexts.
+  }
+}
+
+function formatVolumePercent(value: number) {
+  return `${Math.round(Phaser.Math.Clamp(value, 0, 1) * 100)}%`;
 }
 
 function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot) {
