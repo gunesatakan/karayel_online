@@ -1023,23 +1023,6 @@ export class GameScene extends Phaser.Scene {
         : undefined;
     }
 
-    if (selectedTower.definitionId === "zeynep-3") {
-      return targetTower.ownerId === this.localSessionId &&
-        targetTower.characterId === "zeynep" &&
-        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2" || targetTower.definitionId === "zeynep-3")
-        ? { serverTowerId: selectedTower.id, targetTowerId: targetTower.id, sourceName: selectedTower.name, targetName: targetTower.name }
-        : undefined;
-    }
-
-    if (
-      targetTower.ownerId === this.localSessionId &&
-      targetTower.definitionId === "zeynep-3" &&
-      selectedTower.characterId === "zeynep" &&
-      (selectedTower.definitionId === "zeynep-1" || selectedTower.definitionId === "zeynep-2" || selectedTower.definitionId === "zeynep-3")
-    ) {
-      return { serverTowerId: targetTower.id, targetTowerId: selectedTower.id, sourceName: targetTower.name, targetName: selectedTower.name };
-    }
-
     return undefined;
   }
 
@@ -1441,7 +1424,7 @@ export class GameScene extends Phaser.Scene {
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const isLinkedToSelectedServer = Boolean(
-      (selectedTower?.definitionId === "warrior-2" || selectedTower?.definitionId === "zeynep-3") &&
+      selectedTower?.definitionId === "warrior-2" &&
       selectedTower.linkedTowerIds?.includes(tower.id)
     );
 
@@ -1454,8 +1437,8 @@ export class GameScene extends Phaser.Scene {
     highlight
       .setVisible(true)
       .setRadius(27 + pulse * 3)
-      .setFillStyle(selectedTower?.definitionId === "zeynep-3" ? 0xf0abfc : 0x22d3ee, 0.12 + pulse * 0.12)
-      .setStrokeStyle(3, selectedTower?.definitionId === "zeynep-3" ? 0xfdf2f8 : 0xfacc15, 0.72 + pulse * 0.22);
+      .setFillStyle(0x22d3ee, 0.12 + pulse * 0.12)
+      .setStrokeStyle(3, 0xfacc15, 0.72 + pulse * 0.22);
   }
 
   private getTowerTint(tower: TowerSnapshot) {
@@ -2198,7 +2181,7 @@ export class GameScene extends Phaser.Scene {
     const linkHint = selectedTower.definitionId === "warrior-2"
       ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun`
       : selectedTower.definitionId === "zeynep-3"
-        ? ` | Sentez ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin Zeynep 1/2/3'e dokun`
+        ? " | Sentez icin 3'lu ucgen dizilim kur"
         : "";
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;

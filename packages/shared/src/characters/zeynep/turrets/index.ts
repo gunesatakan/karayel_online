@@ -32,7 +32,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       return {
         ...tower,
         role: "Sentez baglantisi",
-        description: "Kendi hasar veya vurus tipi yoktur. Iki Hiza Emri baglanirsa iki fiziksel delici mermi yollar. Iki Gosteri Kulesi baglanirsa isik carpmalariyla yanan alan olusturur. Bir Hiza Emri ve bir Gosteri Kulesi baglanirsa fiziksel/isik karisimi, harita kenarindan seken delici bir isin yollar. Iki Taht Muhru tek bir Hiza Emri veya Gosteri Kulesi ile baglanirsa onu pahali ve verimsiz bir kopya gibi taklit eder.",
+        description: "Kendi hasar veya vurus tipi yoktur. Gecerli 3'lu ucgen dizilimde iki Hiza Emri ile durursa iki fiziksel delici mermi yollar. Iki Gosteri Kulesi ile durursa isik carpmalariyla yanan alan olusturur. Bir Hiza Emri ve bir Gosteri Kulesi ile durursa fiziksel/isik karisimi, harita kenarindan seken delici bir isin yollar. Iki Taht Muhru tek bir Hiza Emri veya Gosteri Kulesi ile ucgen kurarsa onu pahali ve verimsiz bir kopya gibi taklit eder.",
         classType: "hybrid",
         damageType: "none",
         hitType: "impact",

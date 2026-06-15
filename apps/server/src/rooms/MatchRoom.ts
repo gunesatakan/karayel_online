@@ -862,56 +862,32 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getZeynepSynthesisComposition(tower: TowerModel): ZeynepSynthesisComposition {
-    const synthesisGroup = this.getZeynepSynthesisGroup(tower);
-    const groupLinkedBaseTowers = new Map<string, TowerModel>();
-    for (const synthesisTower of synthesisGroup) {
-      for (const linkedTowerId of synthesisTower.linkedTowerIds) {
-        const linkedTower = this.towers.get(linkedTowerId);
-        if (
-          linkedTower &&
-          linkedTower.ownerId === tower.ownerId &&
-          (linkedTower.definition.id === "zeynep-1" || linkedTower.definition.id === "zeynep-2")
-        ) {
-          groupLinkedBaseTowers.set(linkedTower.id, linkedTower);
-        }
-      }
+    const formationGroup = this.getZeynepFormationGroup(tower);
+    if (formationGroup.length !== 3 || !isCompleteZeynepFormation(formationGroup)) {
+      return { hizaCount: 0, showcaseCount: 0, linkedTowers: [], synthesisTowerCount: formationGroup.filter((member) => member.definition.id === "zeynep-3").length };
     }
 
-    const groupBaseTowers = Array.from(groupLinkedBaseTowers.values());
-    if (synthesisGroup.length === 2 && groupBaseTowers.length === 1) {
-      const copySourceTower = groupBaseTowers[0];
-      return {
-        mode: copySourceTower.definition.id === "zeynep-1" ? "copy-projectile" : "copy-showcase",
-        hizaCount: copySourceTower.definition.id === "zeynep-1" ? 1 : 0,
-        showcaseCount: copySourceTower.definition.id === "zeynep-2" ? 1 : 0,
-        linkedTowers: [...synthesisGroup.filter((member) => member.id !== tower.id), copySourceTower],
-        synthesisTowerCount: synthesisGroup.length,
-        copySourceTower
-      };
-    }
-
-    const linkedTowers = tower.linkedTowerIds
-      .map((towerId) => this.towers.get(towerId))
-      .filter((linkedTower): linkedTower is TowerModel => Boolean(
-        linkedTower &&
-        linkedTower.ownerId === tower.ownerId &&
-        (linkedTower.definition.id === "zeynep-1" || linkedTower.definition.id === "zeynep-2")
-      ))
-      .slice(0, 2);
-    const hizaCount = linkedTowers.filter((linkedTower) => linkedTower.definition.id === "zeynep-1").length;
-    const showcaseCount = linkedTowers.filter((linkedTower) => linkedTower.definition.id === "zeynep-2").length;
-    const mode = linkedTowers.length < 2
-      ? undefined
+    const linkedTowers = formationGroup.filter((member) => member.id !== tower.id);
+    const hizaCount = formationGroup.filter((member) => member.definition.id === "zeynep-1").length;
+    const showcaseCount = formationGroup.filter((member) => member.definition.id === "zeynep-2").length;
+    const synthesisTowerCount = formationGroup.filter((member) => member.definition.id === "zeynep-3").length;
+    const copySourceTower = synthesisTowerCount === 2
+      ? formationGroup.find((member) => member.definition.id === "zeynep-1" || member.definition.id === "zeynep-2")
+      : undefined;
+    const mode = synthesisTowerCount === 2 && copySourceTower
+      ? copySourceTower.definition.id === "zeynep-1" ? "copy-projectile" : "copy-showcase"
       : hizaCount === 2
         ? "dual-projectile"
         : showcaseCount === 2
           ? "burn-impact"
-          : "mirror-beam";
+          : hizaCount === 1 && showcaseCount === 1
+            ? "mirror-beam"
+            : undefined;
 
-    return { mode, hizaCount, showcaseCount, linkedTowers, synthesisTowerCount: synthesisGroup.length };
+    return { mode, hizaCount, showcaseCount, linkedTowers, synthesisTowerCount, copySourceTower };
   }
 
-  private getZeynepSynthesisGroup(tower: TowerModel) {
+  private getZeynepFormationGroup(tower: TowerModel) {
     const group = new Map<string, TowerModel>([[tower.id, tower]]);
     const queue = [tower];
 
@@ -925,13 +901,12 @@ export class MatchRoom extends Room<MatchState> {
         if (
           group.has(candidate.id) ||
           candidate.ownerId !== tower.ownerId ||
-          candidate.definition.id !== "zeynep-3"
+          candidate.characterId !== "zeynep"
         ) {
           continue;
         }
 
-        const connected = current.linkedTowerIds.includes(candidate.id) || candidate.linkedTowerIds.includes(current.id);
-        if (!connected) {
+        if (!areZeynepFormationNeighbors(current, candidate)) {
           continue;
         }
 
@@ -1612,23 +1587,14 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    let serverTower = this.towers.get(message.serverTowerId);
-    let targetTower = this.towers.get(message.targetTowerId);
-    if (
-      serverTower &&
-      targetTower &&
-      serverTower.definition.id !== "warrior-2" &&
-      serverTower.definition.id !== "zeynep-3" &&
-      targetTower.definition.id === "zeynep-3"
-    ) {
-      [serverTower, targetTower] = [targetTower, serverTower];
-    }
+    const serverTower = this.towers.get(message.serverTowerId);
+    const targetTower = this.towers.get(message.targetTowerId);
 
     if (
       !serverTower ||
       !targetTower ||
       serverTower.ownerId !== client.sessionId ||
-      !this.canLinkTower(client.sessionId, serverTower, targetTower)
+      !this.canLinkTower(serverTower, targetTower)
     ) {
       return;
     }
@@ -1651,15 +1617,9 @@ export class MatchRoom extends Room<MatchState> {
     targetTower.rangeMemoryEnemyIds = [];
   }
 
-  private canLinkTower(ownerId: string, sourceTower: TowerModel, targetTower: TowerModel) {
+  private canLinkTower(sourceTower: TowerModel, targetTower: TowerModel) {
     if (sourceTower.definition.id === "warrior-2") {
       return targetTower.definition.id !== "warrior-2";
-    }
-
-    if (sourceTower.definition.id === "zeynep-3") {
-      return targetTower.ownerId === ownerId &&
-        targetTower.characterId === "zeynep" &&
-        (targetTower.definition.id === "zeynep-1" || targetTower.definition.id === "zeynep-2" || targetTower.definition.id === "zeynep-3");
     }
 
     return false;
@@ -2725,7 +2685,7 @@ export class MatchRoom extends Room<MatchState> {
       if (composition.mode === "copy-showcase") {
         return "Kopya 2";
       }
-      return `Sentez ${composition.linkedTowers.length}/2`;
+      return "Ucgen bekliyor";
     }
     const serverLinkAge = this.getServerLinkWaveAge(tower);
     if (serverLinkAge >= 10) {
