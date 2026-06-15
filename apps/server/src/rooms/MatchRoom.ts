@@ -330,12 +330,14 @@ type RuntimePath = {
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type ZeynepCommandType = "haste" | "range" | "slow";
-type ZeynepSynthesisMode = "dual-projectile" | "mirror-beam" | "burn-impact";
+type ZeynepSynthesisMode = "dual-projectile" | "mirror-beam" | "burn-impact" | "copy-projectile" | "copy-showcase";
 type ZeynepSynthesisComposition = {
   mode?: ZeynepSynthesisMode;
   hizaCount: number;
   showcaseCount: number;
   linkedTowers: TowerModel[];
+  synthesisTowerCount: number;
+  copySourceTower?: TowerModel;
 };
 
 export class MatchRoom extends Room<MatchState> {
@@ -796,21 +798,25 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private fireZeynepShowcaseBeam(tower: TowerModel) {
+  private fireZeynepShowcaseBeam(tower: TowerModel, damageOverride?: number, definitionIdOverride?: string, damageTypeOverride?: DamageType) {
     const result = this.findBestZeynepShowcaseLine(tower);
     if (!result) {
       return;
     }
 
-    const damage = this.getTowerDamage(tower);
+    const damage = damageOverride ?? this.getTowerDamage(tower);
     for (const enemy of result.targets) {
-      this.damageEnemyFromTower(tower, enemy, damage, 0);
+      if (damageTypeOverride) {
+        this.damageEnemyFromTowerAs(tower, enemy, damage, 0, damageTypeOverride);
+      } else {
+        this.damageEnemyFromTower(tower, enemy, damage, 0);
+      }
     }
 
     const id = `showcase-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(id, {
       id,
-      definitionId: tower.definition.id,
+      definitionId: definitionIdOverride ?? tower.definition.id,
       x1: tower.x,
       y1: tower.y,
       x2: result.endX,
@@ -856,6 +862,34 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getZeynepSynthesisComposition(tower: TowerModel): ZeynepSynthesisComposition {
+    const synthesisGroup = this.getZeynepSynthesisGroup(tower);
+    const groupLinkedBaseTowers = new Map<string, TowerModel>();
+    for (const synthesisTower of synthesisGroup) {
+      for (const linkedTowerId of synthesisTower.linkedTowerIds) {
+        const linkedTower = this.towers.get(linkedTowerId);
+        if (
+          linkedTower &&
+          linkedTower.ownerId === tower.ownerId &&
+          (linkedTower.definition.id === "zeynep-1" || linkedTower.definition.id === "zeynep-2")
+        ) {
+          groupLinkedBaseTowers.set(linkedTower.id, linkedTower);
+        }
+      }
+    }
+
+    const groupBaseTowers = Array.from(groupLinkedBaseTowers.values());
+    if (synthesisGroup.length === 2 && groupBaseTowers.length === 1) {
+      const copySourceTower = groupBaseTowers[0];
+      return {
+        mode: copySourceTower.definition.id === "zeynep-1" ? "copy-projectile" : "copy-showcase",
+        hizaCount: copySourceTower.definition.id === "zeynep-1" ? 1 : 0,
+        showcaseCount: copySourceTower.definition.id === "zeynep-2" ? 1 : 0,
+        linkedTowers: [...synthesisGroup.filter((member) => member.id !== tower.id), copySourceTower],
+        synthesisTowerCount: synthesisGroup.length,
+        copySourceTower
+      };
+    }
+
     const linkedTowers = tower.linkedTowerIds
       .map((towerId) => this.towers.get(towerId))
       .filter((linkedTower): linkedTower is TowerModel => Boolean(
@@ -874,7 +908,39 @@ export class MatchRoom extends Room<MatchState> {
           ? "burn-impact"
           : "mirror-beam";
 
-    return { mode, hizaCount, showcaseCount, linkedTowers };
+    return { mode, hizaCount, showcaseCount, linkedTowers, synthesisTowerCount: synthesisGroup.length };
+  }
+
+  private getZeynepSynthesisGroup(tower: TowerModel) {
+    const group = new Map<string, TowerModel>([[tower.id, tower]]);
+    const queue = [tower];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        continue;
+      }
+
+      for (const candidate of this.towers.values()) {
+        if (
+          group.has(candidate.id) ||
+          candidate.ownerId !== tower.ownerId ||
+          candidate.definition.id !== "zeynep-3"
+        ) {
+          continue;
+        }
+
+        const connected = current.linkedTowerIds.includes(candidate.id) || candidate.linkedTowerIds.includes(current.id);
+        if (!connected) {
+          continue;
+        }
+
+        group.set(candidate.id, candidate);
+        queue.push(candidate);
+      }
+    }
+
+    return Array.from(group.values());
   }
 
   private fireZeynepSynthesis(tower: TowerModel, target: EnemyModel) {
@@ -893,7 +959,23 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (composition.mode === "copy-projectile" && composition.copySourceTower) {
+      this.fireZeynepSynthesisCopiedProjectile(tower, target, composition.copySourceTower);
+      return;
+    }
+
+    if (composition.mode === "copy-showcase" && composition.copySourceTower) {
+      this.fireZeynepShowcaseBeam(tower, this.getTowerDamage(composition.copySourceTower), "zeynep-2", "light");
+      return;
+    }
+
     this.fireZeynepSynthesisMirrorBeam(tower, target);
+  }
+
+  private fireZeynepSynthesisCopiedProjectile(tower: TowerModel, target: EnemyModel, copySourceTower: TowerModel) {
+    const damage = this.getTowerDamage(copySourceTower);
+    const speed = copySourceTower.definition.projectileSpeed + copySourceTower.level * 22;
+    this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", 2, "zeynep-1");
   }
 
   private fireZeynepSynthesisDualProjectiles(tower: TowerModel) {
@@ -969,7 +1051,7 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private spawnZeynepSynthesisProjectile(tower: TowerModel, target: EnemyModel, damage: number, speed: number, damageType: DamageType, pierceLimit: number) {
+  private spawnZeynepSynthesisProjectile(tower: TowerModel, target: EnemyModel, damage: number, speed: number, damageType: DamageType, pierceLimit: number, definitionId = tower.definition.id) {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -978,7 +1060,7 @@ export class MatchRoom extends Room<MatchState> {
     this.projectiles.set(id, {
       id,
       towerId: tower.id,
-      definitionId: tower.definition.id,
+      definitionId,
       kind: "tower",
       damageType,
       source: "tower",
@@ -1565,7 +1647,9 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (sourceTower.definition.id === "zeynep-3") {
-      return targetTower.ownerId === ownerId && targetTower.characterId === "zeynep" && (targetTower.definition.id === "zeynep-1" || targetTower.definition.id === "zeynep-2");
+      return targetTower.ownerId === ownerId &&
+        targetTower.characterId === "zeynep" &&
+        (targetTower.definition.id === "zeynep-1" || targetTower.definition.id === "zeynep-2" || targetTower.definition.id === "zeynep-3");
     }
 
     return false;
@@ -2413,6 +2497,16 @@ export class MatchRoom extends Room<MatchState> {
       return getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier;
     }
 
+    if (tower.definition.id === "zeynep-3") {
+      const composition = this.getZeynepSynthesisComposition(tower);
+      if (composition.copySourceTower?.definition.id === "zeynep-2") {
+        return getZeynepShowcaseBeamLength(composition.copySourceTower.level) * passiveMultiplier * zeynepRangeMultiplier;
+      }
+      if (composition.copySourceTower?.definition.id === "zeynep-1") {
+        return (composition.copySourceTower.definition.range + (composition.copySourceTower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
+      }
+    }
+
     return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
   }
 
@@ -2431,7 +2525,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
-      const baseInterval = composition.mode === "dual-projectile" ? getZeynepHizaFireInterval(tower.level) : tower.definition.fireIntervalMs;
+      const baseInterval = composition.mode === "dual-projectile" || composition.mode === "copy-projectile"
+        ? getZeynepHizaFireInterval(composition.copySourceTower?.level ?? tower.level)
+        : composition.mode === "copy-showcase"
+          ? composition.copySourceTower?.definition.fireIntervalMs ?? tower.definition.fireIntervalMs
+          : tower.definition.fireIntervalMs;
       return Math.max(80, baseInterval * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
 
@@ -2607,6 +2705,12 @@ export class MatchRoom extends Room<MatchState> {
       }
       if (composition.mode === "mirror-beam") {
         return "Sentez 1+2";
+      }
+      if (composition.mode === "copy-projectile") {
+        return "Kopya 1";
+      }
+      if (composition.mode === "copy-showcase") {
+        return "Kopya 2";
       }
       return `Sentez ${composition.linkedTowers.length}/2`;
     }

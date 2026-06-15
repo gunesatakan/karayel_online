@@ -1023,7 +1023,7 @@ export class GameScene extends Phaser.Scene {
     if (selectedTower.definitionId === "zeynep-3") {
       return targetTower.ownerId === this.localSessionId &&
         targetTower.characterId === "zeynep" &&
-        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2");
+        (targetTower.definitionId === "zeynep-1" || targetTower.definitionId === "zeynep-2" || targetTower.definitionId === "zeynep-3");
     }
 
     return false;
@@ -2184,7 +2184,7 @@ export class GameScene extends Phaser.Scene {
     const linkHint = selectedTower.definitionId === "warrior-2"
       ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun`
       : selectedTower.definitionId === "zeynep-3"
-        ? ` | Sentez ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin Zeynep 1/2'ye dokun`
+        ? ` | Sentez ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin Zeynep 1/2/3'e dokun`
         : "";
     const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
