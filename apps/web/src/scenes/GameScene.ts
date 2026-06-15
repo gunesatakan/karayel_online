@@ -38,6 +38,7 @@ type GameSceneData = {
 
 type RenderTower = {
   effect: Phaser.GameObjects.Graphics;
+  linkHighlight: Phaser.GameObjects.Arc;
   halo: Phaser.GameObjects.Arc;
   base: Phaser.GameObjects.Image;
   level: Phaser.GameObjects.Text;
@@ -1028,6 +1029,7 @@ export class GameScene extends Phaser.Scene {
       if (!activeIds.has(id)) {
         tower.halo.destroy();
         tower.effect.destroy();
+        tower.linkHighlight.destroy();
         tower.base.destroy();
         tower.level.destroy();
         tower.range.destroy();
@@ -1048,6 +1050,10 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
         const effect = this.add.graphics().setDepth(12.4);
+        const linkHighlight = this.add.circle(tower.x, tower.y, 27, 0x22d3ee, 0.16)
+          .setStrokeStyle(3, 0xfacc15, 0.92)
+          .setVisible(false)
+          .setDepth(14);
         const range = this.add.circle(tower.x, tower.y, tower.range, tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
@@ -1071,7 +1077,7 @@ export class GameScene extends Phaser.Scene {
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, halo, base, level, range, isolation, status, key: "" };
+        rendered = { effect, linkHighlight, halo, base, level, range, isolation, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -1083,6 +1089,7 @@ export class GameScene extends Phaser.Scene {
         rendered.halo.setRadius(haloStyle.radius);
         rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
         rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
+        rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
         rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
@@ -1098,7 +1105,28 @@ export class GameScene extends Phaser.Scene {
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
+      this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }
+  }
+
+  private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {
+    const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    const isLinkedToSelectedServer = Boolean(
+      selectedTower?.definitionId === "warrior-2" &&
+      selectedTower.linkedTowerIds?.includes(tower.id)
+    );
+
+    if (!isLinkedToSelectedServer) {
+      highlight.setVisible(false);
+      return;
+    }
+
+    const pulse = 0.5 + Math.sin(performance.now() / 140) * 0.18;
+    highlight
+      .setVisible(true)
+      .setRadius(27 + pulse * 3)
+      .setFillStyle(0x22d3ee, 0.12 + pulse * 0.12)
+      .setStrokeStyle(3, 0xfacc15, 0.72 + pulse * 0.22);
   }
 
   private getTowerTint(tower: TowerSnapshot) {

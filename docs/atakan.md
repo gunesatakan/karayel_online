@@ -340,23 +340,23 @@ Secili kuleyi cezasiz sekilde baska bir uygun kareye tasir.
 
 **Cooldown:** 32 saniye  
 **Susma suresi:** 5 saniye  
-**Hizlanma penceresi:** 10 saniyeye kadar server tarafinda aktif tutulur
+**Hizlanma penceresi:** Beceri kullanildigi andan itibaren 10 saniyeye kadar server tarafinda aktif tutulur; ilk 5 saniye kuleler sustugu icin pratikte kalan 5 saniye hizlanma olarak oynanir.
 
 Tum kuleler kisa sure susar. Ardindan hasar sinifli kuleler cok hizli calisir.
 
 **Mevcut uygulama:**
 
 - `silentModeUntil`: 5 saniye.
-- `damageHasteUntil`: 10 saniye.
+- `damageHasteUntil`: beceri baslangicindan itibaren 10 saniye.
 - Hasar sinifli kulelerin atis araligi `1/3` carpani alir.
-- Yani hasar kuleleri bu pencerede yaklasik 3 kat daha sik ates eder.
+- Yani susma bittikten sonra kalan pencerede hasar kuleleri yaklasik 3 kat daha sik ates eder.
 
 ## Ulti: Tam Otomasyon
 
 Atakan'in ultisi, kulelerinden mini-drone cikarma fikrine dayanir.
 
 **Kullanim sarti:** Ulti charge 100 olmalidir.  
-**Kullanimdan sonra:** Ulti charge 0'a iner.
+**Kullanimdan sonra:** Ulti charge hemen 0'a iner.
 **Dolum hizi:** Atakan ultisi normal ulti dolum hizinin ucte biriyle dolar; kill'den gelen ulti puani da ucte bire iner.
 
 Her Atakan kulesi ulti basildiginda bir mini-drone uretir. Drone'lar gercek oyun nesnesi olarak haritada hareket eder.
@@ -375,6 +375,7 @@ Kullanici ultiye bastiginda modu kendisi secer:
 **Saldiri davranisi:**
 
 - Drone, kendisine en yakin mevcut dusmani hedefler.
+- Kule ulti aninda yakin hedef bulamazsa o kuleden saldiri drone'u cikmaz; buna ragmen ulti enerjisi harcanmis olur.
 - Hedefe dogru ilerler ve temas ettiginde kamikaze saldirisi yapar.
 - Drone hasari:
 
@@ -390,7 +391,7 @@ Hasar = mevcut dalga ^ 3
 
 **Tukenmislik:**
 
-- Ulti bittikten sonra Atakan'in tum kuleleri 3 saniyeligine kapanir.
+- Drone'lar cikarildiktan hemen sonra Atakan'in tum kuleleri 3 saniyeligine kapanir.
 - Bu durum oyun icinde `Tukenmis` status'u olarak gorunur.
 
 ## Level ve Upgrade Formulleri
@@ -643,7 +644,7 @@ Overdrive efektif DPS:
 | 9 | 125.6 | 940 ms (1.18 sn) | 206 | 106.9 | 700 |
 | 10 | 451.7 | 940 ms (1.18 sn) | 217 | 384.4 | - |
 
-Bu tablo Ucube'nin baz DPS'ini gosterir. Ucube'nin asil gec oyun gucu, dalga bonuslari, 15 aktif stack ve 2 chain dahil edildiginde ortaya cikar. Bu nedenle Lv10 baz tabloda `384.4 DPS` gorunurken, tam gec oyun kosulunda toplam DPS `2114.0` seviyesine cikar.
+Bu tablo Ucube'nin baz DPS'ini gosterir. Ucube'nin asil gec oyun gucu, 16 tamamlanan dalga bonuslari, 15 aktif stack ve 2 chain dahil edildiginde ortaya cikar. Bu nedenle Lv10 baz tabloda `384.4 DPS` gorunurken, tam gec oyun kosulunda toplam DPS `2114.0` seviyesine cikar.
 
 Ucube aktif stackleri bu tablodaki atis araligini ayrica dusurur:
 
@@ -668,7 +669,7 @@ Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir:
 
 Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek saniye DPS olarak hesaplanir.
 
-| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`14 dalga`, `15 stack`) | Ucube toplam DPS (`14 dalga`, `15 stack`, `2 chain`) |
+| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`16 dalga`, `15 stack`) | Ucube toplam DPS (`16 dalga`, `15 stack`, `2 chain`) |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 18.9 | 33.3 | 96.0 | 11.8 | 21.7 |
 | 2 | 33.0 | 59.4 | 154.0 | 16.6 | 30.5 |
@@ -685,7 +686,7 @@ Bu tabloya gore:
 
 - Debug Lazer early oyunda onde kalir; Lv3'te yaklasik `97 DPS`.
 - Obsesyon midgame'de daha sert sivrilir; Lv6'da yaklasik `425 DPS`, Lv7'de `600 DPS`, Lv8'de `750 DPS`, Lv10'da yaklasik `1000 DPS`.
-- Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 14 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
+- Ucube Lv8 dahil hem Obsesyonun hem de Debug Lazerin belirgin altinda kalir, Lv9'da acilir, Lv10 + 16 dalga + 15 stack + 2 chain durumunda `2000 DPS` ustune cikar.
 
 ## Durum Etkileri ve Etiketler
 
