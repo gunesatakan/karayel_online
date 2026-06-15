@@ -85,7 +85,8 @@ const ZEYNEP_SYNTHESIS_BURN_RADIUS = 34;
 const ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS = 16;
 const ZEYNEP_SYNTHESIS_BURN_DURATION_MS = 3000;
 const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 1000;
-const ZEYNEP_SYNTHESIS_RAY_SPEED = 620;
+const ZEYNEP_SYNTHESIS_RAY_SPEED = 930;
+const ZEYNEP_SYNTHESIS_RAY_LENGTH = 92;
 const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
 const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.08;
 const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.16;
@@ -1046,20 +1047,26 @@ export class MatchRoom extends Room<MatchState> {
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
     const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y);
     const firstSegment = segments[0];
+    const initialDistance = Math.min(ZEYNEP_SYNTHESIS_RAY_LENGTH, firstSegment.length);
+    const initialHead = getPointOnRaySegments(segments, initialDistance);
     const id = `zr${this.nextZeynepRayId++}`;
-    this.zeynepRays.set(id, {
+    const ray: ZeynepRayModel = {
       id,
       towerId: tower.id,
       ownerId: tower.ownerId,
       segments,
       segmentIndex: 0,
-      distanceOnSegment: 0,
-      x: firstSegment.x1,
-      y: firstSegment.y1,
+      distanceOnSegment: initialDistance,
+      x: initialHead.x,
+      y: initialHead.y,
       speed: ZEYNEP_SYNTHESIS_RAY_SPEED,
       damage: this.getTowerDamage(tower),
       hitEnemyIds: []
-    });
+    };
+    this.zeynepRays.set(id, ray);
+    const visibleSegment = this.getZeynepRayVisibleSegment(ray);
+    this.damageEnemiesAlongZeynepRay(ray, visibleSegment.x1, visibleSegment.y1, visibleSegment.x2, visibleSegment.y2);
+    this.setZeynepRayBeam(ray, visibleSegment);
   }
 
   private updateZeynepRays(seconds: number) {
@@ -1074,8 +1081,6 @@ export class MatchRoom extends Room<MatchState> {
           break;
         }
 
-        const previousX = ray.x;
-        const previousY = ray.y;
         const distanceLeftOnSegment = segment.length - ray.distanceOnSegment;
         const step = Math.min(remainingDistance, distanceLeftOnSegment);
         ray.distanceOnSegment += step;
@@ -1085,8 +1090,9 @@ export class MatchRoom extends Room<MatchState> {
         ray.x = segment.x1 + (segment.x2 - segment.x1) * ratio;
         ray.y = segment.y1 + (segment.y2 - segment.y1) * ratio;
 
-        this.damageEnemiesAlongZeynepRay(ray, previousX, previousY, ray.x, ray.y);
-        this.setZeynepRayBeam(ray, segment);
+        const visibleSegment = this.getZeynepRayVisibleSegment(ray);
+        this.damageEnemiesAlongZeynepRay(ray, visibleSegment.x1, visibleSegment.y1, visibleSegment.x2, visibleSegment.y2);
+        this.setZeynepRayBeam(ray, visibleSegment);
 
         if (ray.distanceOnSegment >= segment.length - 0.001) {
           ray.segmentIndex += 1;
@@ -1105,6 +1111,17 @@ export class MatchRoom extends Room<MatchState> {
         this.zeynepRays.delete(id);
       }
     }
+  }
+
+  private getZeynepRayVisibleSegment(ray: ZeynepRayModel) {
+    const headDistance = getRayAbsoluteDistance(ray.segments, ray.segmentIndex, ray.distanceOnSegment);
+    const tail = getPointOnRaySegments(ray.segments, Math.max(0, headDistance - ZEYNEP_SYNTHESIS_RAY_LENGTH));
+    return {
+      x1: tail.x,
+      y1: tail.y,
+      x2: ray.x,
+      y2: ray.y
+    };
   }
 
   private damageEnemiesAlongZeynepRay(ray: ZeynepRayModel, x1: number, y1: number, x2: number, y2: number) {
@@ -1130,15 +1147,15 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private setZeynepRayBeam(ray: ZeynepRayModel, segment: RaySegment) {
+  private setZeynepRayBeam(ray: ZeynepRayModel, segment: { x1: number; y1: number; x2: number; y2: number }) {
     const id = `zeynep-ray-${ray.id}`;
     this.beams.set(id, {
       id,
       definitionId: "zeynep-3-ray",
       x1: segment.x1,
       y1: segment.y1,
-      x2: ray.x,
-      y2: ray.y,
+      x2: segment.x2,
+      y2: segment.y2,
       width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2,
       color: ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
       overdrive: false,
@@ -3560,6 +3577,31 @@ function makeRaySegment(x1: number, y1: number, x2: number, y2: number): RaySegm
     y2,
     length: Math.hypot(x2 - x1, y2 - y1)
   };
+}
+
+function getRayAbsoluteDistance(segments: RaySegment[], segmentIndex: number, distanceOnSegment: number) {
+  let distance = distanceOnSegment;
+  for (let index = 0; index < segmentIndex; index += 1) {
+    distance += segments[index]?.length ?? 0;
+  }
+  return distance;
+}
+
+function getPointOnRaySegments(segments: RaySegment[], distance: number) {
+  let remaining = Math.max(0, distance);
+  for (const segment of segments) {
+    if (remaining <= segment.length) {
+      const ratio = segment.length <= 0 ? 1 : remaining / segment.length;
+      return {
+        x: segment.x1 + (segment.x2 - segment.x1) * ratio,
+        y: segment.y1 + (segment.y2 - segment.y1) * ratio
+      };
+    }
+    remaining -= segment.length;
+  }
+
+  const last = segments[segments.length - 1];
+  return last ? { x: last.x2, y: last.y2 } : { x: 0, y: 0 };
 }
 
 function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number) {
