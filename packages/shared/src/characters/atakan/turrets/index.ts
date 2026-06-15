@@ -12,7 +12,7 @@ export const atakanTowers: TowerDefinition[] = [
     classType: "damage",
     damageType: "physical",
     hitType: "projectile",
-    mechanics: ["mark:tracking", "team-damage-amp"],
+    mechanics: ["mark:tracking", "team-damage-amp", "anti-air-ready"],
     cost: 42,
     upgradeCost: 32,
     range: 112,

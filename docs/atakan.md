@@ -65,6 +65,7 @@ Takipci, Atakan'in takim hasarini acan temel kulesidir. Dengeli tek hedef hasari
 | Mermi hizi | 340 |
 | AOE | Yok |
 | Yavaslatma | Yok |
+| Ucan hedef | Vurabilir |
 
 **Takipte mekanigi:**
 

@@ -1752,7 +1752,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-1" || tower.definition.id === "zeynep-2";
+    return tower.definition.id === "warrior-1" || tower.definition.id === "warrior-4" || tower.definition.id === "warrior-6" || tower.definition.id === "zeynep-1" || tower.definition.id === "zeynep-2";
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
