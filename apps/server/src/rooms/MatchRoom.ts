@@ -1103,6 +1103,7 @@ export class MatchRoom extends Room<MatchState> {
             const nextSegment = ray.segments[ray.segmentIndex];
             ray.x = nextSegment.x1;
             ray.y = nextSegment.y1;
+            ray.hitEnemyIds = [];
           }
         }
       }
