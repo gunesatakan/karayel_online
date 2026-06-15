@@ -42,6 +42,7 @@ export type PlayerSnapshot = {
   skillCooldowns: number[];
   reputation?: number;
   authorityChain?: number;
+  authorityQuality?: number;
 };
 
 export type EnemySnapshot = {

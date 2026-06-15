@@ -8,7 +8,7 @@ export const zeynepCharacter: CharacterDefinition = {
   id: "zeynep",
   displayName: "Zeynep",
   role: "Saha Lideri",
-  summary: "Savunma hattini komutlarla yoneten lider. Kendi kill'lerinden Itibar toplar, kucuk emirlerle zincir kurar ve dogru anda guclu takim buff'lari basar.",
+  summary: "Savunma hattini komutlarla yoneten lider. Kendi kill'lerinden Itibar toplar, zincir tamamladikca Zincir Kalitesi artar ve gec oyunda finisher buff'lari buyur.",
   maxHp: 160,
   speed: 1.35,
   damage: 34,

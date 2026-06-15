@@ -1,1 +1,1 @@
-export const zeynepPassive = "Otorite Zinciri: Zeynep kendi oldurdugu dusmanlardan Itibar toplar. Komutlari Itibar harcar; ilk iki komut kucuk hazirlik emridir, ucuncu komut kalan Itibar'a gore kucuk/orta/buyuk zincirli emre donusur.";
+export const zeynepPassive = "Otorite Zinciri: Zeynep kendi oldurdugu dusmanlardan Itibar toplar. Uc komutluk zincir tamamladikca Zincir Kalitesi artar; sonraki zincir finisher buff'lari daha guclu ve daha uzun olur.";

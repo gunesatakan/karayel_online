@@ -74,6 +74,9 @@ const ZEYNEP_SMALL_COMMAND_COST = 10;
 const ZEYNEP_MEDIUM_COMMAND_COST = 40;
 const ZEYNEP_BIG_COMMAND_COST = 80;
 const ZEYNEP_CHAIN_WINDOW_MS = 8000;
+const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
+const ZEYNEP_QUALITY_POWER_STEP = 0.035;
+const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -87,6 +90,7 @@ class Player extends Schema {
   @type("number") reputation = 0;
   @type("number") authorityChain = 0;
   @type("number") authorityChainUntil = 0;
+  @type("number") authorityQuality = 0;
 }
 
 class MatchState extends Schema {
@@ -1304,9 +1308,10 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     player.reputation = Math.max(0, player.reputation - cost);
-    this.applyZeynepCommand(commandType, tier, isFinisher, now);
+    this.applyZeynepCommand(commandType, tier, isFinisher, player.authorityQuality, now);
 
     if (isFinisher) {
+      player.authorityQuality = Math.min(ZEYNEP_MAX_AUTHORITY_QUALITY, player.authorityQuality + 1);
       player.authorityChain = 0;
       player.authorityChainUntil = 0;
     } else {
@@ -1327,8 +1332,8 @@ export class MatchRoom extends Room<MatchState> {
     return "small";
   }
 
-  private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, now: number) {
-    const profile = getZeynepCommandProfile(commandType, tier, chained);
+  private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number, now: number) {
+    const profile = getZeynepCommandProfile(commandType, tier, chained, authorityQuality);
     if (commandType === "haste") {
       this.applyZeynepHaste(profile.durationMs, profile.multiplier, now);
       return;
@@ -1883,7 +1888,8 @@ export class MatchRoom extends Room<MatchState> {
           Math.ceil(player.skill3CooldownMs / 1000)
         ],
         reputation: player.characterId === "zeynep" ? Math.round(player.reputation) : undefined,
-        authorityChain: player.characterId === "zeynep" ? (player.authorityChainUntil > now ? player.authorityChain : 0) : undefined
+        authorityChain: player.characterId === "zeynep" ? (player.authorityChainUntil > now ? player.authorityChain : 0) : undefined,
+        authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
@@ -2616,24 +2622,38 @@ function getZeynepCommandCost(tier: ZeynepCommandTier) {
   return ZEYNEP_SMALL_COMMAND_COST;
 }
 
-function getZeynepCommandProfile(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean) {
+function getZeynepCommandProfile(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number) {
+  const quality = chained ? Math.min(Math.max(authorityQuality, 0), ZEYNEP_MAX_AUTHORITY_QUALITY) : 0;
+  const powerMultiplier = 1 + quality * ZEYNEP_QUALITY_POWER_STEP;
+  const durationMultiplier = 1 + quality * ZEYNEP_QUALITY_DURATION_STEP;
+
+  const scaleProfile = (durationMs: number, multiplier: number) => {
+    const scaledDurationMs = Math.round(durationMs * durationMultiplier);
+    if (commandType === "slow") {
+      const potency = 1 - multiplier;
+      return { durationMs: scaledDurationMs, multiplier: Math.max(0.4, 1 - potency * powerMultiplier) };
+    }
+
+    return { durationMs: scaledDurationMs, multiplier: 1 + (multiplier - 1) * powerMultiplier };
+  };
+
   if (commandType === "slow") {
     if (tier === "big") {
-      return { durationMs: chained ? 7000 : 6000, multiplier: chained ? 0.52 : 0.62 };
+      return scaleProfile(chained ? 7000 : 6000, chained ? 0.52 : 0.62);
     }
     if (tier === "medium") {
-      return { durationMs: chained ? 4500 : 4000, multiplier: chained ? 0.72 : 0.78 };
+      return scaleProfile(chained ? 4500 : 4000, chained ? 0.72 : 0.78);
     }
-    return { durationMs: chained ? 2500 : 2000, multiplier: chained ? 0.84 : 0.88 };
+    return scaleProfile(chained ? 2500 : 2000, chained ? 0.84 : 0.88);
   }
 
   if (tier === "big") {
-    return { durationMs: 8000, multiplier: chained ? 1.45 : 1.32 };
+    return scaleProfile(8000, chained ? 1.45 : 1.32);
   }
   if (tier === "medium") {
-    return { durationMs: 6000, multiplier: chained ? 1.24 : 1.18 };
+    return scaleProfile(6000, chained ? 1.24 : 1.18);
   }
-  return { durationMs: 3000, multiplier: chained ? 1.12 : 1.08 };
+  return scaleProfile(3000, chained ? 1.12 : 1.08);
 }
 
 function getTrackerFireInterval(level: number) {

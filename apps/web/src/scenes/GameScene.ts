@@ -1018,8 +1018,9 @@ export class GameScene extends Phaser.Scene {
 
     const reputation = player?.reputation ?? 0;
     const authorityChain = player?.authorityChain ?? 0;
-    const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2` : "";
-    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}`;
+    const authorityQuality = player?.authorityQuality ?? 0;
+    const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
+    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}`;
     if (this.lastHudKey !== hudKey) {
       this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
