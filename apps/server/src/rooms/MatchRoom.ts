@@ -273,6 +273,7 @@ type DroneModel = DroneSnapshot & {
 
 type BeamModel = BeamSnapshot & {
   ttlMs: number;
+  delayMs?: number;
 };
 
 type RaySegment = {
@@ -750,6 +751,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateBeams(deltaTime: number) {
     for (const [id, beam] of this.beams) {
+      if (beam.delayMs && beam.delayMs > 0) {
+        beam.delayMs = Math.max(0, beam.delayMs - deltaTime);
+        continue;
+      }
+
       beam.ttlMs -= deltaTime;
       if (beam.ttlMs <= 0) {
         this.beams.delete(id);
@@ -997,9 +1003,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisBurnImpact(tower: TowerModel, target: EnemyModel) {
+    const result = this.findBestZeynepShowcaseLine(tower);
+    const endX = result?.endX ?? target.x;
+    const endY = result?.endY ?? target.y;
+    const targets = result?.targets ?? [target];
     const damage = this.getTowerDamage(tower);
-    this.damageEnemyFromTowerAs(tower, target, damage, 0, "light");
-    this.addZeynepBurnLine(tower, tower.x, tower.y, target.x, target.y, damage * 0.42);
+    for (const enemy of targets) {
+      this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light");
+    }
+    this.addZeynepBurnLine(tower, tower.x, tower.y, endX, endY, damage * 0.42);
 
     const trailId = `zeynep-burn-trail-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(trailId, {
@@ -1007,12 +1019,13 @@ export class MatchRoom extends Room<MatchState> {
       definitionId: "zeynep-3-burn-trail",
       x1: tower.x,
       y1: tower.y,
-      x2: target.x,
-      y2: target.y,
+      x2: endX,
+      y2: endY,
       width: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2,
       color: 0x7c2d12,
       overdrive: false,
-      ttlMs: scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS)
+      ttlMs: scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS),
+      delayMs: scaleGameDuration(500)
     });
 
     const id = `zeynep-burn-${tower.id}-${this.nextBeamId++}`;
@@ -1021,8 +1034,8 @@ export class MatchRoom extends Room<MatchState> {
       definitionId: "zeynep-3-burn",
       x1: tower.x,
       y1: tower.y,
-      x2: target.x,
-      y2: target.y,
+      x2: endX,
+      y2: endY,
       width: ZEYNEP_SHOWCASE_BEAM_RADIUS * 2,
       color: 0x22d3ee,
       overdrive: false,
@@ -2519,20 +2532,22 @@ export class MatchRoom extends Room<MatchState> {
         x: drone.x,
         y: drone.y
       })),
-      beams: Array.from(this.beams.values()).map((beam) => ({
-        id: beam.id,
-        definitionId: beam.definitionId,
-        x1: beam.x1,
-        y1: beam.y1,
-        x2: beam.x2,
-        y2: beam.y2,
-        scanX: beam.scanX,
-        scanY: beam.scanY,
-        width: beam.width,
-        color: beam.color,
-        overdrive: beam.overdrive,
-        ttlMs: Math.max(0, Math.round(beam.ttlMs))
-      })),
+      beams: Array.from(this.beams.values())
+        .filter((beam) => !beam.delayMs || beam.delayMs <= 0)
+        .map((beam) => ({
+          id: beam.id,
+          definitionId: beam.definitionId,
+          x1: beam.x1,
+          y1: beam.y1,
+          x2: beam.x2,
+          y2: beam.y2,
+          scanX: beam.scanX,
+          scanY: beam.scanY,
+          width: beam.width,
+          color: beam.color,
+          overdrive: beam.overdrive,
+          ttlMs: Math.max(0, Math.round(beam.ttlMs))
+        })),
       damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
         id: event.id,
         x: event.x,
