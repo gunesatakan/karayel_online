@@ -680,7 +680,8 @@ export class GameScene extends Phaser.Scene {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < TOWER_GRID_SIZE * TOWER_GRID_SIZE) {
+      const minDistance = TOWER_GRID_SIZE - 1;
+      if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < minDistance * minDistance) {
         return false;
       }
     }
@@ -2053,9 +2054,6 @@ export class GameScene extends Phaser.Scene {
       });
     };
 
-    drawGraffitiHand(-92, 1);
-    drawGraffitiHand(92, -1);
-
     plate.lineStyle(5 + rule.chaos, theme.primary, 0.16);
     plate.beginPath();
     plate.moveTo(-width - 28, height + 8);
@@ -2111,6 +2109,9 @@ export class GameScene extends Phaser.Scene {
       plate.lineBetween(4, -height - 22, 54, height + 18);
       plate.lineBetween(156, -height - 16, 210, height + 14);
     }
+
+    drawGraffitiHand(-92, 1);
+    drawGraffitiHand(92, -1);
 
     const commandText = this.add.text(0, -height - 8, theme.motif, {
       fontFamily: "Arial Black, Arial",
