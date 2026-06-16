@@ -183,8 +183,8 @@ export class GameScene extends Phaser.Scene {
   private seenDamageEventSet = new Set<string>();
   private seenKillEventIds: string[] = [];
   private seenKillEventSet = new Set<string>();
-  private killStreakTimes: number[] = [];
-  private killStreakLocks = new Map<KillStreakTier, KillStreakLock>();
+  private killStreakTimesByOwner = new Map<string, number[]>();
+  private killStreakLocksByOwner = new Map<string, Map<KillStreakTier, KillStreakLock>>();
   private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
     granted: [],
     unstoppable: [],
@@ -1824,8 +1824,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderKillEvents(snapshot: GameSnapshot) {
-    const localPlayer = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
-
     for (const event of snapshot.killEvents) {
       if (this.seenKillEventSet.has(event.id)) {
         continue;
@@ -1840,38 +1838,54 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      if (event.ownerId !== this.localSessionId) {
+      if (!event.ownerId) {
         continue;
       }
 
-      this.killStreakTimes.push(event.serverTime);
-      this.killStreakTimes = this.killStreakTimes.filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
+      const ownerKillTimes = [
+        ...(this.killStreakTimesByOwner.get(event.ownerId) ?? []),
+        event.serverTime
+      ].filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
+      this.killStreakTimesByOwner.set(event.ownerId, ownerKillTimes);
 
-      const streakRule = this.getTriggeredKillStreakRule(event.serverTime, snapshot.team.wave);
+      const streakRule = this.getTriggeredKillStreakRule(event.ownerId, event.serverTime, snapshot.team.wave);
       if (streakRule) {
+        const ownerLocks = this.getKillStreakLocks(event.ownerId);
         for (const rule of KILL_STREAK_RULES) {
           if (rule.kills <= streakRule.kills) {
-            this.killStreakLocks.set(rule.tier, {
+            ownerLocks.set(rule.tier, {
               unlockAt: event.serverTime + KILL_STREAK_RETRIGGER_LOCK_MS,
               wave: snapshot.team.wave
             });
           }
         }
+        const ownerPlayer = snapshot.players.find((candidate) => candidate.id === event.ownerId);
         this.playKillStreakAnnouncement(streakRule);
-        this.showKillStreakAnnouncement(localPlayer, streakRule);
+        this.showKillStreakAnnouncement(ownerPlayer, streakRule);
       }
     }
   }
 
-  private getTriggeredKillStreakRule(serverTime: number, wave: number) {
+  private getTriggeredKillStreakRule(ownerId: string, serverTime: number, wave: number) {
+    const ownerKillTimes = this.killStreakTimesByOwner.get(ownerId) ?? [];
+    const ownerLocks = this.getKillStreakLocks(ownerId);
     return KILL_STREAK_RULES.find((rule) => {
-      const lock = this.killStreakLocks.get(rule.tier);
+      const lock = ownerLocks.get(rule.tier);
       if (lock && lock.wave === wave && serverTime < lock.unlockAt) {
         return false;
       }
 
-      return this.killStreakTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
+      return ownerKillTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
     });
+  }
+
+  private getKillStreakLocks(ownerId: string) {
+    let locks = this.killStreakLocksByOwner.get(ownerId);
+    if (!locks) {
+      locks = new Map<KillStreakTier, KillStreakLock>();
+      this.killStreakLocksByOwner.set(ownerId, locks);
+    }
+    return locks;
   }
 
   private playKillStreakAnnouncement(rule: KillStreakRule) {
