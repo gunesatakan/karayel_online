@@ -1,4 +1,4 @@
-import type { EditableMapData } from "./map.js";
+import type { EditableMapData, MapScale } from "./map.js";
 import type { MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
@@ -43,6 +43,34 @@ export type PlayerSnapshot = {
   reputation?: number;
   authorityChain?: number;
   authorityQuality?: number;
+};
+
+export type LobbyPlayerSnapshot = {
+  id: string;
+  name: string;
+  characterId: CharacterId;
+  ready: boolean;
+  isHost: boolean;
+};
+
+export type LobbyStateSnapshot = {
+  roomId: string;
+  roomName: string;
+  hostId: string;
+  mapScale: MapScale;
+  started: boolean;
+  players: LobbyPlayerSnapshot[];
+  maxPlayers: number;
+};
+
+export type RoomListingSnapshot = {
+  roomId: string;
+  roomName: string;
+  hostName: string;
+  playerCount: number;
+  maxPlayers: number;
+  mapScale: MapScale;
+  started: boolean;
 };
 
 export type EnemySnapshot = {
@@ -200,7 +228,12 @@ export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,
   MAP_STORAGE_KEY,
+  DEFAULT_MAP_SCALE,
+  MAX_MAP_SCALE,
   createDefaultEditableMap,
+  getMapGridSize,
+  getMapMetrics,
+  getMapScale,
   findPathToNearestNexus,
   buildRuntimePaths,
   getMapPoints,
@@ -210,10 +243,12 @@ export {
   isWalkableTile,
   normalizeMapData,
   pathToWorldPoints,
+  scaleEditableMap,
   setTile,
   worldToGrid,
   type EditableMapData,
   type GridPoint,
+  type MapScale,
   type MapTileKind,
   type RuntimePath,
   type WorldPoint

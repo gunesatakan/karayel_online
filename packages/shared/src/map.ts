@@ -2,10 +2,13 @@ export type MapTileKind = "empty" | "road" | "tower" | "spawn" | "nexus";
 
 export type EditableMapData = {
   version: 1;
+  scale: MapScale;
   cols: number;
   rows: number;
   tiles: MapTileKind[];
 };
+
+export type MapScale = 1 | 2;
 
 export type GridPoint = {
   col: number;
@@ -27,6 +30,8 @@ const GAME_WIDTH = 390;
 const GAME_HEIGHT = 844;
 const GRID_TOP = 86;
 const GRID_SIZE = 34;
+export const DEFAULT_MAP_SCALE: MapScale = 1;
+export const MAX_MAP_SCALE: MapScale = 2;
 const DEFAULT_PATH = [
   { x: 34, y: 104 },
   { x: 326, y: 104 },
@@ -45,57 +50,119 @@ export const MAP_GRID_COLS = Math.floor(GAME_WIDTH / GRID_SIZE);
 export const MAP_GRID_ROWS = Math.floor((GAME_HEIGHT - GRID_TOP) / GRID_SIZE);
 export const MAP_STORAGE_KEY = "karayel:custom-map:v1";
 
-export function createEmptyMap(): EditableMapData {
+export function getMapScale(mapOrScale: EditableMapData | number | undefined): MapScale {
+  if (typeof mapOrScale === "number") {
+    return normalizeMapScale(mapOrScale);
+  }
+
+  return normalizeMapScale(mapOrScale?.scale);
+}
+
+export function getMapGridSize(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
+  return GRID_SIZE / getMapScale(mapOrScale);
+}
+
+export function getMapMetrics(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
+  const scale = getMapScale(mapOrScale);
+  const gridSize = getMapGridSize(scale);
   return {
-    version: 1,
-    cols: MAP_GRID_COLS,
-    rows: MAP_GRID_ROWS,
-    tiles: Array.from({ length: MAP_GRID_COLS * MAP_GRID_ROWS }, () => "tower" as MapTileKind)
+    scale,
+    gridSize,
+    cols: Math.floor(GAME_WIDTH / gridSize),
+    rows: Math.floor((GAME_HEIGHT - GRID_TOP) / gridSize)
   };
 }
 
-export function createDefaultEditableMap(): EditableMapData {
-  const map = createEmptyMap();
+export function createEmptyMap(scale: MapScale = DEFAULT_MAP_SCALE): EditableMapData {
+  const metrics = getMapMetrics(scale);
+  return {
+    version: 1,
+    scale: metrics.scale,
+    cols: metrics.cols,
+    rows: metrics.rows,
+    tiles: Array.from({ length: metrics.cols * metrics.rows }, () => "tower" as MapTileKind)
+  };
+}
+
+export function createDefaultEditableMap(scale: MapScale = DEFAULT_MAP_SCALE): EditableMapData {
+  const map = createEmptyMap(scale);
+  const { gridSize } = getMapMetrics(map);
 
   for (let row = 0; row < map.rows; row += 1) {
     for (let col = 0; col < map.cols; col += 1) {
-      const point = gridToWorld(col, row);
-      if (distanceToDefaultPath(point.x, point.y) <= GRID_SIZE * 0.82) {
+      const point = gridToWorld(col, row, map);
+      if (distanceToDefaultPath(point.x, point.y) <= gridSize * 0.82) {
         setTile(map, col, row, "road");
       }
     }
   }
 
-  const start = worldToGrid(DEFAULT_PATH[0].x, DEFAULT_PATH[0].y);
-  const end = worldToGrid(DEFAULT_PATH[DEFAULT_PATH.length - 1].x, DEFAULT_PATH[DEFAULT_PATH.length - 1].y);
+  const start = worldToGrid(DEFAULT_PATH[0].x, DEFAULT_PATH[0].y, map);
+  const end = worldToGrid(DEFAULT_PATH[DEFAULT_PATH.length - 1].x, DEFAULT_PATH[DEFAULT_PATH.length - 1].y, map);
   setTile(map, start.col, start.row, "spawn");
   setTile(map, end.col, end.row, "nexus");
   return map;
 }
 
-export function normalizeMapData(map: unknown): EditableMapData {
+export function normalizeMapData(map: unknown, fallbackScale: MapScale = DEFAULT_MAP_SCALE): EditableMapData {
   if (!map || typeof map !== "object") {
-    return createDefaultEditableMap();
+    return createDefaultEditableMap(fallbackScale);
   }
 
   const candidate = map as Partial<EditableMapData>;
+  const scale = normalizeMapScale(candidate.scale ?? fallbackScale);
+  const metrics = getMapMetrics(scale);
   if (
     candidate.version !== 1 ||
-    candidate.cols !== MAP_GRID_COLS ||
-    candidate.rows !== MAP_GRID_ROWS ||
+    candidate.cols !== metrics.cols ||
+    candidate.rows !== metrics.rows ||
     !Array.isArray(candidate.tiles) ||
-    candidate.tiles.length !== MAP_GRID_COLS * MAP_GRID_ROWS
+    candidate.tiles.length !== metrics.cols * metrics.rows
   ) {
-    return createDefaultEditableMap();
+    return createDefaultEditableMap(scale);
   }
 
   const validKinds = new Set<MapTileKind>(["empty", "road", "tower", "spawn", "nexus"]);
   return {
     version: 1,
-    cols: MAP_GRID_COLS,
-    rows: MAP_GRID_ROWS,
+    scale,
+    cols: metrics.cols,
+    rows: metrics.rows,
     tiles: candidate.tiles.map((tile) => validKinds.has(tile as MapTileKind) ? tile as MapTileKind : "tower")
   };
+}
+
+export function scaleEditableMap(map: EditableMapData, targetScale: MapScale): EditableMapData {
+  const source = normalizeMapData(map);
+  if (source.scale === targetScale) {
+    return source;
+  }
+
+  const scaleRatio = targetScale / source.scale;
+  const scaledMap = createEmptyMap(targetScale);
+
+  for (let row = 0; row < scaledMap.rows; row += 1) {
+    for (let col = 0; col < scaledMap.cols; col += 1) {
+      const sourceCol = Math.min(source.cols - 1, Math.floor(col / scaleRatio));
+      const sourceRow = Math.min(source.rows - 1, Math.floor(row / scaleRatio));
+      const sourceTile = getTile(source, sourceCol, sourceRow);
+      setTile(scaledMap, col, row, sourceTile === "spawn" || sourceTile === "nexus" ? "road" : sourceTile);
+    }
+  }
+
+  for (const spawn of getMapPoints(source, "spawn")) {
+    const targetCol = Math.min(scaledMap.cols - 1, Math.floor(spawn.col * scaleRatio + scaleRatio / 2));
+    const targetRow = Math.min(scaledMap.rows - 1, Math.floor(spawn.row * scaleRatio + scaleRatio / 2));
+    setTile(scaledMap, targetCol, targetRow, "spawn");
+  }
+
+  for (const nexus of getMapPoints(source, "nexus")) {
+    const targetCol = Math.min(scaledMap.cols - 1, Math.floor(nexus.col * scaleRatio + scaleRatio / 2));
+    const targetRow = Math.min(scaledMap.rows - 1, Math.floor(nexus.row * scaleRatio + scaleRatio / 2));
+    setTile(scaledMap, targetCol, targetRow, "nexus");
+  }
+
+  return scaledMap;
 }
 
 export function getTile(map: EditableMapData, col: number, row: number) {
@@ -116,17 +183,19 @@ export function isInsideMap(map: EditableMapData, col: number, row: number) {
   return col >= 0 && col < map.cols && row >= 0 && row < map.rows;
 }
 
-export function worldToGrid(x: number, y: number): GridPoint {
+export function worldToGrid(x: number, y: number, mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE): GridPoint {
+  const metrics = getMapMetrics(mapOrScale);
   return {
-    col: Math.max(0, Math.min(MAP_GRID_COLS - 1, Math.floor(x / GRID_SIZE))),
-    row: Math.max(0, Math.min(MAP_GRID_ROWS - 1, Math.floor((y - GRID_TOP) / GRID_SIZE)))
+    col: Math.max(0, Math.min(metrics.cols - 1, Math.floor(x / metrics.gridSize))),
+    row: Math.max(0, Math.min(metrics.rows - 1, Math.floor((y - GRID_TOP) / metrics.gridSize)))
   };
 }
 
-export function gridToWorld(col: number, row: number): WorldPoint {
+export function gridToWorld(col: number, row: number, mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE): WorldPoint {
+  const gridSize = getMapGridSize(mapOrScale);
   return {
-    x: col * GRID_SIZE + GRID_SIZE / 2,
-    y: GRID_TOP + row * GRID_SIZE + GRID_SIZE / 2
+    x: col * gridSize + gridSize / 2,
+    y: GRID_TOP + row * gridSize + gridSize / 2
   };
 }
 
@@ -192,14 +261,14 @@ export function findPathToNearestNexus(map: EditableMapData, spawn: GridPoint): 
   return path.reverse();
 }
 
-export function pathToWorldPoints(path: GridPoint[]): WorldPoint[] {
-  return path.map((point) => gridToWorld(point.col, point.row));
+export function pathToWorldPoints(path: GridPoint[], mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE): WorldPoint[] {
+  return path.map((point) => gridToWorld(point.col, point.row, mapOrScale));
 }
 
 export function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
   const spawns = getMapPoints(map, "spawn");
   const paths = spawns
-    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn)))
+    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn), map))
     .filter((points) => points.length >= 2)
     .map(createRuntimePath);
 
@@ -207,9 +276,9 @@ export function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
     return paths;
   }
 
-  const fallbackMap = createDefaultEditableMap();
+  const fallbackMap = createDefaultEditableMap(getMapScale(map));
   const fallbackSpawn = getMapPoints(fallbackMap, "spawn")[0];
-  const fallbackPoints = fallbackSpawn ? pathToWorldPoints(findPathToNearestNexus(fallbackMap, fallbackSpawn)) : [];
+  const fallbackPoints = fallbackSpawn ? pathToWorldPoints(findPathToNearestNexus(fallbackMap, fallbackSpawn), fallbackMap) : [];
   return [createRuntimePath(fallbackPoints)];
 }
 
@@ -284,4 +353,8 @@ function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: n
 
   const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSq));
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function normalizeMapScale(scale: unknown): MapScale {
+  return scale === 2 ? 2 : 1;
 }

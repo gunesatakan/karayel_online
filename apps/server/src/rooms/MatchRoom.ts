@@ -3,10 +3,9 @@ import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
 import {
   characters,
+  DEFAULT_MAP_SCALE,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
-  MAP_GRID_COLS,
-  MAP_GRID_ROWS,
   MAP_PATH,
   PATH_WIDTH,
   STATUS_EFFECTS,
@@ -17,12 +16,16 @@ import {
   applyStatusResistance,
   calculateDamageTaken,
   findPathToNearestNexus,
+  getMapMetrics,
+  getMapScale,
   getEnemyCombatDefinition,
   getMapPoints,
+  getMapGridSize,
   getTile,
   gridToWorld,
   normalizeMapData,
   pathToWorldPoints,
+  scaleEditableMap,
   worldToGrid,
   getTowerUpgradeCost,
   towerCatalog,
@@ -37,7 +40,10 @@ import {
   type BeamSnapshot,
   type GameSnapshot,
   type KillEventSnapshot,
+  type LobbyStateSnapshot,
+  type MapScale,
   type ProjectileKind,
+  type RoomListingSnapshot,
   type ServerPerfSnapshot,
   type TowerDefinition
 } from "@karayel/shared";
@@ -96,6 +102,7 @@ const ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER = 0.88;
 class Player extends Schema {
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
+  @type("boolean") ready = false;
   @type("number") goldSpent = 0;
   @type("number") towersBuilt = 0;
   @type("number") ultimateCharge = 0;
@@ -114,6 +121,8 @@ class MatchState extends Schema {
 type JoinOptions = {
   playerName?: string;
   characterId?: CharacterId;
+  roomName?: string;
+  mapScale?: MapScale;
   mapData?: EditableMapData;
 };
 
@@ -370,6 +379,15 @@ type ZeynepSynthesisComposition = {
 };
 
 export class MatchRoom extends Room<MatchState> {
+  static publicRooms = new Map<string, MatchRoom>();
+
+  static listPublicRooms(): RoomListingSnapshot[] {
+    return Array.from(MatchRoom.publicRooms.values())
+      .map((room) => room.toRoomListing())
+      .filter((room) => !room.started && room.playerCount > 0)
+      .sort((left, right) => left.roomName.localeCompare(right.roomName, "tr"));
+  }
+
   maxClients = 7;
   private enemies = new Map<string, EnemyModel>();
   private towers = new Map<string, TowerModel>();
@@ -414,6 +432,10 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowTier: ZeynepCommandTier = "small";
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
+  private lobbyRoomName = "Yeni Oda";
+  private mapScale: MapScale = DEFAULT_MAP_SCALE;
+  private hostSessionId = "";
+  private gameStarted = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
@@ -440,27 +462,59 @@ export class MatchRoom extends Room<MatchState> {
     }
   };
 
-  onCreate() {
+  onCreate(options: JoinOptions = {}) {
     this.setState(new MatchState());
+    this.lobbyRoomName = this.getRoomName(options.roomName);
+    this.mapScale = this.getMapScaleChoice(options.mapScale);
+    const baseMap = normalizeMapData(options.mapData);
+    this.activeMap = scaleEditableMap(baseMap, this.mapScale);
+    this.activePaths = buildRuntimePaths(this.activeMap);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
+    this.onMessage("lobby:setCharacter", (client, message: { characterId?: CharacterId }) => {
+      this.setLobbyCharacter(client, message.characterId);
+    });
+
+    this.onMessage("lobby:setReady", (client, message: { ready?: boolean }) => {
+      this.setLobbyReady(client, message.ready);
+    });
+
+    this.onMessage("lobby:start", (client) => {
+      this.startLobbyMatch(client);
+    });
+
     this.onMessage("placeTower", (client, message: PlaceTowerMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
       this.placeTower(client, message);
     });
 
     this.onMessage("upgradeTower", (client, message: UpgradeTowerMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
       this.upgradeTower(client, message);
     });
 
     this.onMessage("useSkill", (client, message: UseSkillMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
       this.useSkill(client, message);
     });
 
     this.onMessage("useUltimate", (client, message: UseUltimateMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
       this.useUltimate(client, message);
     });
 
     this.onMessage("linkServer", (client, message: LinkServerMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
       this.linkServerTower(client, message);
     });
 
@@ -469,26 +523,154 @@ export class MatchRoom extends Room<MatchState> {
         sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now()
       });
     });
+
+    this.syncRoomRegistry();
   }
 
   onJoin(client: Client, options: JoinOptions) {
-    if (this.state.players.size === 0) {
-      this.activeMap = normalizeMapData(options.mapData);
-      this.activePaths = buildRuntimePaths(this.activeMap);
+    if (this.gameStarted) {
+      throw new Error("Bu oda oyunu baslatti.");
     }
 
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
-    player.characterId = this.getCharacterId(options.characterId);
+    player.characterId = this.getAvailableCharacterId(options.characterId);
+    player.ready = false;
 
     this.state.players.set(client.sessionId, player);
+    if (!this.hostSessionId) {
+      this.hostSessionId = client.sessionId;
+    }
+
+    this.sendLobbyState(client);
+    this.broadcastLobbyState();
   }
 
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
+    if (this.hostSessionId === client.sessionId) {
+      this.hostSessionId = this.state.players.keys().next().value ?? "";
+    }
+    this.broadcastLobbyState();
+  }
+
+  onDispose() {
+    MatchRoom.publicRooms.delete(this.roomId);
+  }
+
+  private setLobbyCharacter(client: Client, requestedCharacterId: CharacterId | undefined) {
+    const player = this.state.players.get(client.sessionId);
+    const characterId = this.getCharacterId(requestedCharacterId);
+    if (!player) {
+      return;
+    }
+
+    const takenByOtherPlayer = Array.from(this.state.players.entries()).some(([sessionId, candidate]) => {
+      return sessionId !== client.sessionId && candidate.characterId === characterId;
+    });
+    if (takenByOtherPlayer) {
+      client.send("lobby:error", { message: "Bu karakter zaten secildi." });
+      return;
+    }
+
+    player.characterId = characterId;
+    player.ready = false;
+    this.broadcastLobbyState();
+  }
+
+  private setLobbyReady(client: Client, ready: boolean | undefined) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) {
+      return;
+    }
+
+    player.ready = Boolean(ready);
+    this.broadcastLobbyState();
+  }
+
+  private startLobbyMatch(client: Client) {
+    if (client.sessionId !== this.hostSessionId) {
+      client.send("lobby:error", { message: "Sadece oda kurucusu baslatabilir." });
+      return;
+    }
+
+    if (!this.canStartLobbyMatch()) {
+      client.send("lobby:error", { message: "Baslatmak icin herkes hazir olmali." });
+      return;
+    }
+
+    this.gameStarted = true;
+    this.lock();
+    this.syncRoomRegistry();
+    this.broadcastLobbyState();
+    this.broadcast("lobby:started", {
+      roomId: this.roomId
+    });
+  }
+
+  private canStartLobbyMatch() {
+    return this.state.players.size > 0 && Array.from(this.state.players.values()).every((player) => player.ready);
+  }
+
+  private sendLobbyState(client: Client) {
+    client.send("lobby:state", this.getLobbyState());
+  }
+
+  private broadcastLobbyState() {
+    this.broadcast("lobby:state", this.getLobbyState());
+    this.syncRoomRegistry();
+  }
+
+  private getLobbyState(): LobbyStateSnapshot {
+    return {
+      roomId: this.roomId,
+      roomName: this.lobbyRoomName,
+      hostId: this.hostSessionId,
+      mapScale: this.mapScale,
+      started: this.gameStarted,
+      maxPlayers: this.maxClients,
+      players: Array.from(this.state.players.entries()).map(([id, player]) => ({
+        id,
+        name: player.name,
+        characterId: player.characterId,
+        ready: player.ready,
+        isHost: id === this.hostSessionId
+      }))
+    };
+  }
+
+  private toRoomListing(): RoomListingSnapshot {
+    const hostName = this.state.players.get(this.hostSessionId)?.name ?? "Kurucu";
+    return {
+      roomId: this.roomId,
+      roomName: this.lobbyRoomName,
+      hostName,
+      playerCount: this.state.players.size,
+      maxPlayers: this.maxClients,
+      mapScale: this.mapScale,
+      started: this.gameStarted
+    };
+  }
+
+  private syncRoomRegistry() {
+    if (!this.roomId) {
+      return;
+    }
+
+    if (this.gameStarted || this.state.players.size === 0) {
+      MatchRoom.publicRooms.delete(this.roomId);
+      return;
+    }
+
+    MatchRoom.publicRooms.set(this.roomId, this);
   }
 
   private update(deltaTime: number) {
+    if (!this.gameStarted) {
+      this.syncRoomRegistry();
+      return;
+    }
+
     const gameDeltaTime = deltaTime * GAME_SPEED_MULTIPLIER;
     const seconds = gameDeltaTime / 1000;
     const frameStart = performance.now();
@@ -593,7 +775,7 @@ export class MatchRoom extends Room<MatchState> {
     const speed = definition.speed + this.wave * 2.4;
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
     const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
-    const start = isFlyingEnemy ? getAirSpawnPoint(path) : path.points[0] ?? gridToWorld(0, 0);
+    const start = isFlyingEnemy ? getAirSpawnPoint(path, this.activeMap) : path.points[0] ?? gridToWorld(0, 0, this.activeMap);
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -2123,7 +2305,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
-    const halfCell = TOWER_GRID_SIZE / 2;
+    const gridSize = getMapGridSize(this.activeMap);
+    const halfCell = gridSize / 2;
     if (
       x < BUILD_MARGIN ||
       x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
@@ -2133,16 +2316,17 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    const gridPoint = worldToGrid(x, y);
+    const gridPoint = worldToGrid(x, y, this.activeMap);
     if (getTile(this.activeMap, gridPoint.col, gridPoint.row) !== "tower") {
       return false;
     }
 
+    const minDistance = gridSize - 1;
     for (const tower of this.towers.values()) {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      if (distanceSq(x, y, tower.x, tower.y) < TOWER_MIN_DISTANCE * TOWER_MIN_DISTANCE) {
+      if (distanceSq(x, y, tower.x, tower.y) < minDistance * minDistance) {
         return false;
       }
     }
@@ -2151,12 +2335,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private snapToTowerGrid(x: number, y: number) {
-    const halfCell = TOWER_GRID_SIZE / 2;
+    const gridSize = getMapGridSize(this.activeMap);
+    const halfCell = gridSize / 2;
     const top = Math.max(BUILD_MARGIN, TOWER_BUILD_TOP);
     const bottom = Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell);
     return {
-      x: this.clamp(Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + halfCell, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
-      y: this.clamp(Math.floor((y - top) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + top + halfCell, top + halfCell, bottom)
+      x: this.clamp(Math.floor(x / gridSize) * gridSize + halfCell, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
+      y: this.clamp(Math.floor((y - top) / gridSize) * gridSize + top + halfCell, top + halfCell, bottom)
     };
   }
 
@@ -2931,13 +3116,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isTowerIsolated(tower: TowerModel) {
-    const towerCell = worldToGrid(tower.x, tower.y);
+    const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
     for (const other of this.towers.values()) {
       if (other.id === tower.id) {
         continue;
       }
 
-      const otherCell = worldToGrid(other.x, other.y);
+      const otherCell = worldToGrid(other.x, other.y, this.activeMap);
       if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) {
         return false;
       }
@@ -3067,6 +3252,25 @@ export class MatchRoom extends Room<MatchState> {
     return "warrior";
   }
 
+  private getAvailableCharacterId(requestedCharacterId: unknown) {
+    const requested = this.getCharacterId(requestedCharacterId);
+    const taken = new Set(Array.from(this.state.players.values()).map((player) => player.characterId));
+    if (!taken.has(requested)) {
+      return requested;
+    }
+
+    return characters.find((character) => !taken.has(character.id))?.id ?? requested;
+  }
+
+  private getRoomName(value: unknown) {
+    const roomName = typeof value === "string" ? value.trim().slice(0, 24) : "";
+    return roomName || "Yeni Oda";
+  }
+
+  private getMapScaleChoice(value: unknown): MapScale {
+    return getMapScale(typeof value === "number" ? value : DEFAULT_MAP_SCALE);
+  }
+
   private clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
   }
@@ -3137,7 +3341,7 @@ function getPointAlongPath(distance: number) {
 function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
   const spawns = getMapPoints(map, "spawn");
   const paths = spawns
-    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn)))
+    .map((spawn) => pathToWorldPoints(findPathToNearestNexus(map, spawn), map))
     .filter((points) => points.length >= 2)
     .map((points) => {
       const segments = points.slice(0, -1).map((point, index) => {
@@ -3160,7 +3364,8 @@ function buildRuntimePaths(map: EditableMapData): RuntimePath[] {
     return paths;
   }
 
-  const fallbackPoints = pathToWorldPoints(findPathToNearestNexus(createDefaultEditableMap(), getMapPoints(createDefaultEditableMap(), "spawn")[0]));
+  const fallbackMap = createDefaultEditableMap(getMapScale(map));
+  const fallbackPoints = pathToWorldPoints(findPathToNearestNexus(fallbackMap, getMapPoints(fallbackMap, "spawn")[0]), fallbackMap);
   const fallbackSegments = fallbackPoints.slice(0, -1).map((point, index) => {
     const next = fallbackPoints[index + 1];
     return {
@@ -3196,16 +3401,17 @@ function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: numbe
   return path.points[path.points.length - 1] ?? getPointAlongPath(distance);
 }
 
-function getAirSpawnPoint(path: RuntimePath | undefined) {
+function getAirSpawnPoint(path: RuntimePath | undefined, map: EditableMapData = createDefaultEditableMap()) {
   const nexus = path?.points[path.points.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+  const metrics = getMapMetrics(map);
   const corners = [
-    gridToWorld(0, 0),
-    gridToWorld(MAP_GRID_COLS - 1, 0),
-    gridToWorld(0, MAP_GRID_ROWS - 1),
-    gridToWorld(MAP_GRID_COLS - 1, MAP_GRID_ROWS - 1)
+    gridToWorld(0, 0, map),
+    gridToWorld(metrics.cols - 1, 0, map),
+    gridToWorld(0, metrics.rows - 1, map),
+    gridToWorld(metrics.cols - 1, metrics.rows - 1, map)
   ];
 
-  return corners.sort((a, b) => distanceSq(b.x, b.y, nexus.x, nexus.y) - distanceSq(a.x, a.y, nexus.x, nexus.y))[0] ?? gridToWorld(0, 0);
+  return corners.sort((a, b) => distanceSq(b.x, b.y, nexus.x, nexus.y) - distanceSq(a.x, a.y, nexus.x, nexus.y))[0] ?? gridToWorld(0, 0, map);
 }
 
 function getClosestPathDistance(path: RuntimePath | undefined, x: number, y: number) {

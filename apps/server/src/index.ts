@@ -17,6 +17,12 @@ app.get("/health", (_request, response) => {
   });
 });
 
+app.get("/rooms", (_request, response) => {
+  response.json({
+    rooms: MatchRoom.listPublicRooms()
+  });
+});
+
 const httpServer = createServer(app);
 const gameServer = new Server({
   server: httpServer

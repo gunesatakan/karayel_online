@@ -3,6 +3,7 @@ export const gameServerUrl =
   (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : `ws://${window.location.hostname}:2567`);
 
 export const healthUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/health";
+export const roomsUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/rooms";
 
 export function getPlayerName() {
   const savedName = window.localStorage.getItem("karayel_player_name");

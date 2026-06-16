@@ -1,22 +1,29 @@
+import { Room } from "colyseus.js";
 import type Phaser from "phaser";
 import {
   characters,
+  MAX_MAP_SCALE,
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
+  scaleEditableMap,
   setTile,
   type CharacterDefinition,
-  type CharacterId,
+   type CharacterId,
   type EditableMapData,
+  type LobbyStateSnapshot,
+  type MapScale,
   type MapTileKind,
+  type RoomListingSnapshot,
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
-import { getPlayerName } from "./config";
+import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
+import { getSharedClient, setActiveLobbyRoom } from "./online-session";
 
-type ViewName = "home" | "archive" | "detail" | "map";
+type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby";
 type DetailItem = {
   key: string;
   title: string;
@@ -25,6 +32,8 @@ type DetailItem = {
   color: string;
   body: string;
 };
+
+type OnlineTab = "create" | "join";
 
 const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
 
@@ -49,26 +58,133 @@ export function setupMenuUi(game: Phaser.Game) {
   let selectedDetail = getDetailItems(selectedCharacter)[0];
   let selectedMap = loadStoredMap();
   let selectedMapTool: MapTileKind = "road";
+  let selectedMapScale: MapScale = 1;
+  let onlineTab: OnlineTab = "create";
+  let roomListings: RoomListingSnapshot[] = [];
+  let currentLobbyRoom: Room | undefined;
+  let currentLobbyState: LobbyStateSnapshot | undefined;
+  let lobbyError = "";
   let phaserReady = false;
 
   const render = (view: ViewName) => {
-    root.innerHTML = renderShell(view, selectedCharacter, selectedDetail, selectedMap, selectedMapTool);
+    root.innerHTML = renderShell(
+      view,
+      selectedCharacter,
+      selectedDetail,
+      selectedMap,
+      selectedMapTool,
+      onlineTab,
+      roomListings,
+      currentLobbyState,
+      currentLobbyRoom?.sessionId,
+      selectedMapScale,
+      lobbyError
+    );
     bindUi(view);
   };
 
-  const startGame = () => {
+  const startGame = (mode: "solo" | "online" = "solo") => {
     if (!phaserReady) {
       return;
     }
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");
     game.scene.stop("preloader");
-    game.scene.start("game", { characterId: selectedCharacter.id, mapData: selectedMap });
+    game.scene.start("game", {
+      characterId: selectedCharacter.id,
+      mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap
+    });
+  };
+
+  const bindLobbyRoom = (room: Room) => {
+    currentLobbyRoom = room;
+    setActiveLobbyRoom(room);
+    lobbyError = "";
+    room.onMessage("lobby:state", (state: LobbyStateSnapshot) => {
+      currentLobbyState = state;
+      const localPlayer = state.players.find((player) => player.id === room.sessionId);
+      if (localPlayer) {
+        const character = characters.find((candidate) => candidate.id === localPlayer.characterId);
+        if (character) {
+          selectedCharacter = character;
+          selectedDetail = getDetailItems(character)[0];
+        }
+      }
+      render("lobby");
+    });
+    room.onMessage("lobby:error", (payload: { message?: string }) => {
+      lobbyError = payload.message ?? "Oda islemi basarisiz.";
+      render("lobby");
+    });
+    room.onMessage("lobby:started", () => {
+      startGame("online");
+    });
+  };
+
+  const refreshRoomListings = async () => {
+    try {
+      const response = await fetch(roomsUrl, {
+        cache: "no-store",
+        mode: "cors"
+      });
+      const payload = await response.json() as { rooms?: RoomListingSnapshot[] };
+      roomListings = payload.rooms ?? [];
+    } catch {
+      roomListings = [];
+      lobbyError = "Odalar alinamadi.";
+    } finally {
+      if (!currentLobbyRoom) {
+        render("online");
+      }
+    }
+  };
+
+  const createRoom = async () => {
+    try {
+      lobbyError = "";
+      const roomNameInput = root.querySelector<HTMLInputElement>("[data-room-name-input]");
+      const roomName = roomNameInput?.value.trim() || `${selectedCharacter.displayName} Odasi`;
+      const client = getSharedClient(gameServerUrl);
+      const room = await client.create("match", {
+        playerName: getPlayerName(),
+        characterId: selectedCharacter.id,
+        roomName,
+        mapScale: selectedMapScale,
+        mapData: selectedMap
+      });
+      bindLobbyRoom(room);
+      render("lobby");
+    } catch (error) {
+      lobbyError = formatUiError(error, "Oda kurulurken hata olustu.");
+      render("online");
+    }
+  };
+
+  const joinRoom = async (roomId: string) => {
+    try {
+      lobbyError = "";
+      const client = getSharedClient(gameServerUrl);
+      const room = await client.joinById(roomId, {
+        playerName: getPlayerName(),
+        characterId: selectedCharacter.id
+      });
+      bindLobbyRoom(room);
+      render("lobby");
+    } catch (error) {
+      lobbyError = formatUiError(error, "Odaya katilinamadi.");
+      render("online");
+    }
   };
 
   const bindUi = (view: ViewName) => {
     root.querySelectorAll<HTMLElement>("[data-view]").forEach((button) => {
-      button.addEventListener("click", () => render(button.dataset.view as ViewName));
+      button.addEventListener("click", () => {
+        const nextView = button.dataset.view as ViewName;
+        if (nextView === "online") {
+          void refreshRoomListings();
+        }
+        render(nextView);
+      });
     });
 
     root.querySelectorAll<HTMLElement>("[data-character-id]").forEach((button) => {
@@ -95,7 +211,7 @@ export function setupMenuUi(game: Phaser.Game) {
     });
 
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
-      button.addEventListener("click", startGame);
+      button.addEventListener("click", () => startGame("solo"));
     });
 
     root.querySelectorAll<HTMLElement>("[data-map-tool]").forEach((button) => {
@@ -141,6 +257,65 @@ export function setupMenuUi(game: Phaser.Game) {
         render("map");
       });
     });
+
+    root.querySelectorAll<HTMLElement>("[data-online-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        onlineTab = (button.dataset.onlineTab as OnlineTab) || "create";
+        if (onlineTab === "join") {
+          void refreshRoomListings();
+        }
+        render("online");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-map-scale]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedMapScale = Number(button.dataset.mapScale) === MAX_MAP_SCALE ? MAX_MAP_SCALE : 1;
+        render("online");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-create-room]").forEach((button) => {
+      button.addEventListener("click", () => {
+        void createRoom();
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-refresh-rooms]").forEach((button) => {
+      button.addEventListener("click", () => {
+        void refreshRoomListings();
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-room-join-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const roomId = button.dataset.roomJoinId;
+        if (!roomId) {
+          return;
+        }
+        void joinRoom(roomId);
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-lobby-character]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const characterId = button.dataset.lobbyCharacter as CharacterId | undefined;
+        currentLobbyRoom?.send("lobby:setCharacter", { characterId });
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-lobby-ready]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const localPlayer = currentLobbyState?.players.find((player) => player.id === currentLobbyRoom?.sessionId);
+        currentLobbyRoom?.send("lobby:setReady", { ready: !localPlayer?.ready });
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-lobby-start]").forEach((button) => {
+      button.addEventListener("click", () => {
+        currentLobbyRoom?.send("lobby:start");
+      });
+    });
   };
 
   gameRoot.classList.add("game-root--hidden");
@@ -152,7 +327,19 @@ export function setupMenuUi(game: Phaser.Game) {
   render("home");
 }
 
-function renderShell(view: ViewName, selectedCharacter: CharacterDefinition, selectedDetail: DetailItem, selectedMap = loadStoredMap(), selectedMapTool: MapTileKind = "road") {
+function renderShell(
+  view: ViewName,
+  selectedCharacter: CharacterDefinition,
+  selectedDetail: DetailItem,
+  selectedMap = loadStoredMap(),
+  selectedMapTool: MapTileKind = "road",
+  onlineTab: OnlineTab = "create",
+  roomListings: RoomListingSnapshot[] = [],
+  lobbyState?: LobbyStateSnapshot,
+  lobbySessionId?: string,
+  selectedMapScale: MapScale = 1,
+  lobbyError = ""
+) {
   return `
     <main class="menu-shell" data-screen="${view}">
       <div class="menu-backdrop" aria-hidden="true">
@@ -166,6 +353,8 @@ function renderShell(view: ViewName, selectedCharacter: CharacterDefinition, sel
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool) : ""}
+        ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError) : ""}
+        ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
       </section>
     </main>
   `;
@@ -201,6 +390,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
 
       <footer class="home-actions">
         <button class="command command--primary" data-view="archive">Operatör Arşivi</button>
+        <button class="command command--ghost" data-view="online">Online</button>
         <button class="command command--ghost" data-view="map">Harita Tasarla</button>
         <button class="command command--ghost" data-start-game>Başlat</button>
       </footer>
@@ -209,6 +399,154 @@ function renderHome(selectedCharacter: CharacterDefinition) {
         <span>${escapeHtml(getPlayerName())}</span>
         <strong>Frankfurt Shard</strong>
       </aside>
+    </div>
+  `;
+}
+
+function renderOnline(
+  selectedCharacter: CharacterDefinition,
+  onlineTab: OnlineTab,
+  roomListings: RoomListingSnapshot[],
+  selectedMapScale: MapScale,
+  lobbyError: string
+) {
+  return `
+    <div class="archive-screen online-screen">
+      <header class="screen-topbar">
+        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <div>
+          <p class="eyebrow">Online Nexus</p>
+          <h1>Oda Sistemi</h1>
+        </div>
+        <span class="status-pill">${escapeHtml(selectedCharacter.displayName)}</span>
+      </header>
+
+      <section class="online-tabs" aria-label="Online sekmeleri">
+        <button class="command ${onlineTab === "create" ? "command--primary" : "command--ghost"}" data-online-tab="create">Oda Kur</button>
+        <button class="command ${onlineTab === "join" ? "command--primary" : "command--ghost"}" data-online-tab="join">Odaya Katıl</button>
+      </section>
+
+      ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
+
+      ${onlineTab === "create" ? `
+        <section class="selected-dossier online-card" style="--accent: ${classColor[selectedCharacter.id]}">
+          <p class="kicker">Kurulum</p>
+          <h2>Yeni Oda</h2>
+          <label class="field-stack">
+            <span>Oda adı</span>
+            <input class="text-field" data-room-name-input value="${escapeHtml(`${selectedCharacter.displayName} Odasi`)}" maxlength="24" />
+          </label>
+          <div class="scale-picker">
+            <span>Harita Ölçeği</span>
+            <div class="scale-picker__buttons">
+              <button class="scale-chip ${selectedMapScale === 1 ? "is-active" : ""}" data-map-scale="1">1x</button>
+              <button class="scale-chip ${selectedMapScale === 2 ? "is-active" : ""}" data-map-scale="2">2x</button>
+            </div>
+          </div>
+          <p class="online-note">2x seçildiğinde aynı ekrana iki kat kule karesi sığar; kuleler ve build alanları küçülür.</p>
+          <button class="command command--primary" data-create-room>Odayı Kur</button>
+        </section>
+      ` : `
+        <section class="archive-list online-room-list">
+          <div class="online-list-head">
+            <p class="kicker">Açık Odalar</p>
+            <button class="command command--ghost command--small" data-refresh-rooms>Yenile</button>
+          </div>
+          ${roomListings.length > 0 ? roomListings.map((room) => `
+            <button class="archive-card room-card" data-room-join-id="${room.roomId}" style="--accent: #22d3ee">
+              <span class="archive-card__mark">${room.mapScale}x</span>
+              <span class="archive-card__body">
+                <strong>${escapeHtml(room.roomName)}</strong>
+                <small>${escapeHtml(room.hostName)} · ${room.playerCount}/${room.maxPlayers} oyuncu</small>
+              </span>
+            </button>
+          `).join("") : `
+            <div class="selected-dossier online-card">
+              <p class="kicker">Bekleme</p>
+              <h2>Şu an açık oda yok</h2>
+              <p>Bir oda kurulduğunda bu listede görünecek.</p>
+            </div>
+          `}
+        </section>
+      `}
+    </div>
+  `;
+}
+
+function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyStateSnapshot, lobbySessionId = "", lobbyError = "") {
+  if (!lobbyState) {
+    return `
+      <div class="archive-screen online-screen">
+        <header class="screen-topbar">
+          <button class="icon-command" data-view="online" aria-label="Online">‹</button>
+          <div>
+            <p class="eyebrow">Lobby</p>
+            <h1>Oda bekleniyor</h1>
+          </div>
+        </header>
+      </div>
+    `;
+  }
+
+  const localPlayer = lobbyState.players.find((player) => player.id === lobbySessionId) ?? lobbyState.players[0];
+  const localIsHost = lobbyState.hostId === localPlayer?.id;
+  const everyoneReady = lobbyState.players.length > 0 && lobbyState.players.every((player) => player.ready);
+
+  return `
+    <div class="detail-screen lobby-screen" style="--accent: ${classColor[selectedCharacter.id]}">
+      <header class="screen-topbar detail-topbar">
+        <button class="icon-command" data-view="online" aria-label="Online">‹</button>
+        <div>
+          <p class="eyebrow">Room Lobby</p>
+          <h1>${escapeHtml(lobbyState.roomName)}</h1>
+        </div>
+        <span class="status-pill">${lobbyState.mapScale}x Grid</span>
+      </header>
+
+      ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
+
+      <section class="selected-dossier online-card" style="--accent: ${classColor[selectedCharacter.id]}">
+        <p class="kicker">Oyuncular</p>
+        <h2>${lobbyState.players.length}/${lobbyState.maxPlayers} hazır bekliyor</h2>
+        <div class="lobby-player-list">
+          ${lobbyState.players.map((player) => `
+            <div class="lobby-player-row ${player.ready ? "is-ready" : ""}">
+              <strong>${escapeHtml(player.name)}</strong>
+              <span>${escapeHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}</span>
+              <small>${player.isHost ? "Kurucu" : player.ready ? "Hazir" : "Bekliyor"}</small>
+            </div>
+          `).join("")}
+        </div>
+      </section>
+
+      <section class="loadout-grid lobby-roster-grid">
+        ${characters.map((character) => {
+          const owner = lobbyState.players.find((player) => player.characterId === character.id);
+          return `
+            <button
+              class="loadout-chip ${selectedCharacter.id === character.id ? "is-active" : ""} ${owner ? "is-locked" : ""}"
+              data-lobby-character="${character.id}"
+              style="--item: ${classColor[character.id]}"
+            >
+              <span>${owner ? escapeHtml(owner.name) : "Bos"}</span>
+              <strong>${escapeHtml(character.displayName)}</strong>
+            </button>
+          `;
+        }).join("")}
+      </section>
+
+      <footer class="home-actions lobby-actions">
+        <button class="command ${localPlayer?.ready ? "command--primary" : "command--ghost"}" data-lobby-ready>
+          ${localPlayer?.ready ? "Hazırım" : "Hazır Değilim"}
+        </button>
+        ${localIsHost ? `
+          <button class="command ${everyoneReady ? "command--primary" : "command--ghost"}" data-lobby-start>
+            Oyunu Başlat
+          </button>
+        ` : `
+          <span class="online-note">Kurucu herkes hazır olduğunda oyunu başlatır.</span>
+        `}
+      </footer>
     </div>
   `;
 }
@@ -535,4 +873,12 @@ function escapeHtml(value: string | number) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function formatUiError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallback;
 }

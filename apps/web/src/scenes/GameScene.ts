@@ -6,9 +6,9 @@ import {
   GAME_WORLD_WIDTH,
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
-  TOWER_GRID_SIZE,
   buildRuntimePaths,
   createDefaultEditableMap,
+  getMapGridSize as getSharedMapGridSize,
   getPointAlongRuntimePath,
   getTowerUpgradeCost,
   getTile,
@@ -29,6 +29,7 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
+import { clearActiveLobbyRoom, getActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera } from "../rendering";
 
 type GameSceneData = {
@@ -255,6 +256,10 @@ export class GameScene extends Phaser.Scene {
     this.activeRenderPaths = buildRuntimePaths(this.selectedMapData);
   }
 
+  private getMapCellSize() {
+    return getSharedMapGridSize(this.selectedMapData);
+  }
+
   create() {
     configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#0f172a");
@@ -306,9 +311,9 @@ export class GameScene extends Phaser.Scene {
     this.mapGraphics = graphics;
     graphics.clear();
     this.renderedMapKey = this.selectedMapData.tiles.join("");
-    const cellSize = TOWER_GRID_SIZE;
-    const tileColumns = Math.floor(GAME_WORLD_WIDTH / cellSize);
-    const tileRows = Math.floor((GAME_WORLD_HEIGHT - TOWER_BUILD_TOP) / cellSize);
+    const cellSize = this.getMapCellSize();
+    const tileColumns = this.selectedMapData.cols;
+    const tileRows = this.selectedMapData.rows;
 
     graphics.fillStyle(0x07111f, 1);
     graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT - TOWER_BUILD_TOP);
@@ -633,27 +638,29 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const cellSize = this.getMapCellSize();
     grid.clear();
     grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.28);
-    grid.fillRect(highlightX - TOWER_GRID_SIZE / 2, highlightY - TOWER_GRID_SIZE / 2, TOWER_GRID_SIZE, TOWER_GRID_SIZE);
+    grid.fillRect(highlightX - cellSize / 2, highlightY - cellSize / 2, cellSize, cellSize);
     grid.lineStyle(1, canPlace ? 0x86efac : 0xfca5a5, 0.92);
-    grid.strokeRect(highlightX - TOWER_GRID_SIZE / 2, highlightY - TOWER_GRID_SIZE / 2, TOWER_GRID_SIZE, TOWER_GRID_SIZE);
+    grid.strokeRect(highlightX - cellSize / 2, highlightY - cellSize / 2, cellSize, cellSize);
 
     grid.lineStyle(1, 0xe2e8f0, 0.16);
-    for (let x = 0; x <= GAME_WORLD_WIDTH; x += TOWER_GRID_SIZE) {
+    for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
       grid.lineBetween(x, TOWER_BUILD_TOP, x, TOWER_BUILD_BOTTOM);
     }
-    for (let y = TOWER_BUILD_TOP; y <= TOWER_BUILD_BOTTOM; y += TOWER_GRID_SIZE) {
+    for (let y = TOWER_BUILD_TOP; y <= TOWER_BUILD_BOTTOM; y += cellSize) {
       grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
     }
   }
 
   private snapToTowerGrid(x: number, y: number) {
-    const halfCell = TOWER_GRID_SIZE / 2;
+    const cellSize = this.getMapCellSize();
+    const halfCell = cellSize / 2;
     const margin = halfCell + 1;
     return {
-      x: Phaser.Math.Clamp(Math.floor(x / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + halfCell, margin, GAME_WORLD_WIDTH - margin),
-      y: Phaser.Math.Clamp(Math.floor((y - TOWER_BUILD_TOP) / TOWER_GRID_SIZE) * TOWER_GRID_SIZE + TOWER_BUILD_TOP + halfCell, TOWER_BUILD_TOP + halfCell, TOWER_BUILD_BOTTOM - halfCell)
+      x: Phaser.Math.Clamp(Math.floor(x / cellSize) * cellSize + halfCell, margin, GAME_WORLD_WIDTH - margin),
+      y: Phaser.Math.Clamp(Math.floor((y - TOWER_BUILD_TOP) / cellSize) * cellSize + TOWER_BUILD_TOP + halfCell, TOWER_BUILD_TOP + halfCell, TOWER_BUILD_BOTTOM - halfCell)
     };
   }
 
@@ -662,17 +669,18 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
-    const margin = TOWER_GRID_SIZE / 2 + 1;
+    const cellSize = this.getMapCellSize();
+    const margin = cellSize / 2 + 1;
     if (
       x < margin ||
       x > GAME_WORLD_WIDTH - margin ||
-      y < TOWER_BUILD_TOP + TOWER_GRID_SIZE / 2 ||
-      y > TOWER_BUILD_BOTTOM - TOWER_GRID_SIZE / 2
+      y < TOWER_BUILD_TOP + cellSize / 2 ||
+      y > TOWER_BUILD_BOTTOM - cellSize / 2
     ) {
       return false;
     }
 
-    const gridPoint = worldToGrid(x, y);
+    const gridPoint = worldToGrid(x, y, this.selectedMapData);
     if (getTile(this.selectedMapData, gridPoint.col, gridPoint.row) !== "tower") {
       return false;
     }
@@ -681,7 +689,7 @@ export class GameScene extends Phaser.Scene {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      const minDistance = TOWER_GRID_SIZE - 1;
+      const minDistance = cellSize - 1;
       if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < minDistance * minDistance) {
         return false;
       }
@@ -1045,17 +1053,23 @@ export class GameScene extends Phaser.Scene {
       await this.checkServerHealth();
       this.statusText?.setText("Odaya baglaniyor...");
 
-      const client = new Client(gameServerUrl);
-      this.room = await client.joinOrCreate("match", {
-        playerName: this.selectedCharacter.displayName,
-        characterId: this.selectedCharacterId,
-        mapData: this.selectedMapData
-      });
+      const existingRoom = getActiveLobbyRoom();
+      if (existingRoom) {
+        this.room = existingRoom;
+      } else {
+        const client = new Client(gameServerUrl);
+        this.room = await client.joinOrCreate("match", {
+          playerName: this.selectedCharacter.displayName,
+          characterId: this.selectedCharacterId,
+          mapData: this.selectedMapData
+        });
+      }
       this.localSessionId = this.room.sessionId;
       this.statusText?.setText(`Oda: ${this.room.roomId}`);
 
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
+      this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
       this.startPingLoop();
     } catch (error) {
       console.error(error);
@@ -1356,6 +1370,12 @@ export class GameScene extends Phaser.Scene {
   private renderTowers(towers: TowerSnapshot[]) {
     const activeIds = new Set(towers.map((tower) => tower.id));
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
+    const cellSize = this.getMapCellSize();
+    const spriteSize = Math.max(20, cellSize * 1.12);
+    const baseScale = spriteSize / 52;
+    const haloRadius = Math.max(10, cellSize * 0.56);
+    const linkRadius = Math.max(14, cellSize * 0.8);
+    const statusOffset = Math.max(14, cellSize * 0.66);
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
@@ -1378,11 +1398,11 @@ export class GameScene extends Phaser.Scene {
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       if (!rendered) {
-        const halo = this.add.circle(tower.x, tower.y, 19, 0xffffff, 0)
+        const halo = this.add.circle(tower.x, tower.y, haloRadius, 0xffffff, 0)
           .setStrokeStyle(3, 0xffffff, 0.8)
           .setDepth(11);
         const effect = this.add.graphics().setDepth(12.4);
-        const linkHighlight = this.add.circle(tower.x, tower.y, 27, 0x22d3ee, 0.16)
+        const linkHighlight = this.add.circle(tower.x, tower.y, linkRadius, 0x22d3ee, 0.16)
           .setStrokeStyle(3, 0xfacc15, 0.92)
           .setVisible(false)
           .setDepth(14);
@@ -1394,7 +1414,7 @@ export class GameScene extends Phaser.Scene {
           .setVisible(false)
           .setDepth(6);
         const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
-          .setDisplaySize(38, 38)
+          .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
         const level = this.add.text(tower.x, tower.y + 1, `${tower.level}`, {
@@ -1403,7 +1423,7 @@ export class GameScene extends Phaser.Scene {
           fontSize: "12px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        const status = this.add.text(tower.x, tower.y + 23, "", {
+        const status = this.add.text(tower.x, tower.y + statusOffset, "", {
           color: "#fde68a",
           fontFamily: "Arial",
           fontSize: "8px",
@@ -1418,18 +1438,18 @@ export class GameScene extends Phaser.Scene {
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
-        rendered.halo.setRadius(haloStyle.radius);
+        rendered.halo.setRadius(Math.max(haloRadius, cellSize * 0.5));
         rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
         rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
-        rendered.status.setPosition(tower.x, tower.y + 23).setText(tower.status ?? "");
+        rendered.status.setPosition(tower.x, tower.y + statusOffset).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
       }
-      rendered.base.setScale(tower.id === this.selectedPlacedTowerId ? 0.86 : 0.73);
+      rendered.base.setScale((tower.id === this.selectedPlacedTowerId ? 1.18 : 1) * baseScale);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
@@ -1454,9 +1474,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     const pulse = 0.5 + Math.sin(performance.now() / 140) * 0.18;
+    const cellSize = this.getMapCellSize();
     highlight
       .setVisible(true)
-      .setRadius(27 + pulse * 3)
+      .setRadius(Math.max(14, cellSize * 0.8) + pulse * Math.max(2, cellSize * 0.08))
       .setFillStyle(0x22d3ee, 0.12 + pulse * 0.12)
       .setStrokeStyle(3, 0xfacc15, 0.72 + pulse * 0.22);
   }
@@ -1475,18 +1496,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawIsolationGrid(graphics: Phaser.GameObjects.Graphics, x: number, y: number) {
-    const halfSize = TOWER_GRID_SIZE * 1.5;
+    const cellSize = this.getMapCellSize();
+    const halfSize = cellSize * 1.5;
     const left = x - halfSize;
     const top = y - halfSize;
     graphics.clear();
     graphics.fillStyle(0xf97316, 0.08);
-    graphics.fillRect(left, top, TOWER_GRID_SIZE * 3, TOWER_GRID_SIZE * 3);
+    graphics.fillRect(left, top, cellSize * 3, cellSize * 3);
     graphics.lineStyle(2, 0xf97316, 0.82);
-    graphics.strokeRect(left, top, TOWER_GRID_SIZE * 3, TOWER_GRID_SIZE * 3);
+    graphics.strokeRect(left, top, cellSize * 3, cellSize * 3);
     graphics.lineStyle(1, 0xfbbf24, 0.48);
     for (let index = 1; index < 3; index += 1) {
-      graphics.lineBetween(left + index * TOWER_GRID_SIZE, top, left + index * TOWER_GRID_SIZE, top + TOWER_GRID_SIZE * 3);
-      graphics.lineBetween(left, top + index * TOWER_GRID_SIZE, left + TOWER_GRID_SIZE * 3, top + index * TOWER_GRID_SIZE);
+      graphics.lineBetween(left + index * cellSize, top, left + index * cellSize, top + cellSize * 3);
+      graphics.lineBetween(left, top + index * cellSize, left + cellSize * 3, top + index * cellSize);
     }
   }
 
@@ -1563,7 +1585,7 @@ export class GameScene extends Phaser.Scene {
       candidate.ownerId === tower.ownerId &&
       candidate.characterId === "zeynep" &&
       (candidate.zeynepFormationSize ?? 0) === formationSize &&
-      areFormationNeighbors(tower, candidate)
+      areFormationNeighbors(tower, candidate, this.getMapCellSize())
     ));
 
     for (const neighbor of neighbors) {
@@ -2820,10 +2842,10 @@ function formatVolumePercent(value: number) {
   return `${Math.round(Phaser.Math.Clamp(value, 0, 1) * 100)}%`;
 }
 
-function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot) {
+function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot, cellSize: number) {
   const dx = Math.abs(towerA.x - towerB.x);
   const dy = Math.abs(towerA.y - towerB.y);
-  return dx <= TOWER_GRID_SIZE + 2 && dy <= TOWER_GRID_SIZE + 2 && dx + dy > 2;
+  return dx <= cellSize + 2 && dy <= cellSize + 2 && dx + dy > 2;
 }
 
 function roundClientMetric(value: number) {

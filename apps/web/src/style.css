@@ -617,6 +617,157 @@ canvas {
   margin-top: 12px;
 }
 
+.online-screen,
+.lobby-screen {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.online-screen::-webkit-scrollbar,
+.lobby-screen::-webkit-scrollbar {
+  width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(34, 211, 238, 0.36);
+  color: #c4f1ff;
+  background: rgba(10, 16, 32, 0.84);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+.online-tabs,
+.scale-picker__buttons,
+.online-list-head,
+.lobby-player-list {
+  display: grid;
+  gap: 10px;
+}
+
+.online-tabs {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 14px;
+}
+
+.online-card {
+  display: grid;
+  gap: 12px;
+}
+
+.field-stack,
+.scale-picker {
+  display: grid;
+  gap: 7px;
+}
+
+.field-stack span,
+.scale-picker span,
+.online-note,
+.online-error {
+  font-size: 12px;
+}
+
+.text-field {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.84);
+  outline: none;
+}
+
+.scale-picker__buttons {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scale-chip {
+  min-height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  color: #cbd5e1;
+  background: rgba(10, 16, 32, 0.82);
+  font-weight: 800;
+}
+
+.scale-chip.is-active {
+  border-color: #facc15;
+  color: #fff7ed;
+  box-shadow: 0 0 22px rgba(250, 204, 21, 0.15);
+}
+
+.online-note {
+  margin: 0;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.online-error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fecaca;
+  background: rgba(69, 10, 10, 0.3);
+}
+
+.online-room-list {
+  gap: 12px;
+}
+
+.online-list-head {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.room-card {
+  min-height: 72px;
+}
+
+.lobby-player-list {
+  gap: 8px;
+}
+
+.lobby-player-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.lobby-player-row strong,
+.lobby-player-row span,
+.lobby-player-row small {
+  display: block;
+}
+
+.lobby-player-row span,
+.lobby-player-row small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.lobby-player-row.is-ready {
+  border-color: rgba(34, 197, 94, 0.34);
+  box-shadow: inset 3px 0 0 #22c55e;
+}
+
+.lobby-roster-grid .loadout-chip.is-locked {
+  opacity: 0.7;
+}
+
+.lobby-actions {
+  margin-top: 18px;
+}
+
 @media (min-width: 700px) {
   .menu-stage {
     box-shadow: 0 0 0 1px rgba(231, 229, 223, 0.08), 0 0 120px rgba(0, 0, 0, 0.58);
