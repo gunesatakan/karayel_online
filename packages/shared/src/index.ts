@@ -280,6 +280,19 @@ export function getTowerUpgradeCost(towerCost: number, currentLevel: number, tow
   return getDefaultTowerUpgradeCost(towerCost, currentLevel);
 }
 
+export function getTowerTotalInvestedGold(towerCost: number, currentLevel: number, towerId?: string) {
+  const safeLevel = Math.min(Math.max(Math.round(currentLevel), 1), 10);
+  let total = towerCost;
+  for (let level = 1; level < safeLevel; level += 1) {
+    total += getTowerUpgradeCost(towerCost, level, towerId);
+  }
+  return total;
+}
+
+export function getTowerSellRefund(towerCost: number, currentLevel: number, towerId?: string) {
+  return Math.floor(getTowerTotalInvestedGold(towerCost, currentLevel, towerId) / 2);
+}
+
 function getDefaultTowerUpgradeCost(towerCost: number, currentLevel: number) {
   const targetLevel = currentLevel + 1;
   const discount =
@@ -320,8 +333,7 @@ function getZeynepSynthesisAmplifierUpgradeCost(currentLevel: number) {
   const costs: Record<number, number> = {
     1: 300,
     2: 200,
-    3: 180,
-    4: 160
+    3: 100
   };
 
   if (currentLevel < 1 || currentLevel >= 10) {

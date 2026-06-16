@@ -54,7 +54,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         damageType: "none",
         hitType: "aura",
         mechanics: ["passive-synthesis-upgrade", "stacking-combo-buff"],
-        cost: 500,
+        cost: 400,
         upgradeCost: 300,
         range: 0,
         damage: 0,

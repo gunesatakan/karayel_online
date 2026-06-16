@@ -22,6 +22,7 @@ import {
   getMapPoints,
   getMapGridSize,
   getTile,
+  getTowerSellRefund,
   gridToWorld,
   normalizeMapData,
   pathToWorldPoints,
@@ -134,6 +135,10 @@ type PlaceTowerMessage = {
 };
 
 type UpgradeTowerMessage = {
+  towerId?: string;
+};
+
+type SellTowerMessage = {
   towerId?: string;
 };
 
@@ -498,6 +503,13 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.upgradeTower(client, message);
+    });
+
+    this.onMessage("sellTower", (client, message: SellTowerMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
+      this.sellTower(client, message);
     });
 
     this.onMessage("useSkill", (client, message: UseSkillMessage) => {
@@ -1918,6 +1930,36 @@ export class MatchRoom extends Room<MatchState> {
     this.teamGold -= cost;
     player.goldSpent += cost;
     tower.level += 1;
+  }
+
+  private sellTower(client: Client, message: SellTowerMessage) {
+    if (!message.towerId) {
+      return;
+    }
+
+    const player = this.state.players.get(client.sessionId);
+    const tower = this.towers.get(message.towerId);
+    if (!player || !tower || tower.ownerId !== client.sessionId) {
+      return;
+    }
+
+    const refund = getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id);
+    this.teamGold += refund;
+    player.goldSpent = Math.max(0, player.goldSpent - refund);
+    player.towersBuilt = Math.max(0, player.towersBuilt - 1);
+    this.removeTowerReferences(tower.id);
+    this.towers.delete(tower.id);
+  }
+
+  private removeTowerReferences(towerId: string) {
+    for (const tower of this.towers.values()) {
+      tower.linkedTowerIds = tower.linkedTowerIds.filter((linkedTowerId) => linkedTowerId !== towerId);
+      delete tower.linkedTowerWaveAges[towerId];
+      tower.rangeMemoryEnemyIds = tower.rangeMemoryEnemyIds.filter((enemyId) => enemyId !== towerId);
+      if (tower.focusTargetId === towerId) {
+        tower.focusTargetId = "";
+      }
+    }
   }
 
   private refactorTower(client: Client, message: UseSkillMessage) {

@@ -10,6 +10,7 @@ import {
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
   getPointAlongRuntimePath,
+  getTowerSellRefund,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -214,6 +215,8 @@ export class GameScene extends Phaser.Scene {
   private zeynepChainEffect?: Phaser.GameObjects.Graphics;
   private upgradeButton?: Phaser.GameObjects.Rectangle;
   private upgradeText?: Phaser.GameObjects.Text;
+  private sellButton?: Phaser.GameObjects.Rectangle;
+  private sellText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
   private skillTexts: Phaser.GameObjects.Text[] = [];
   private pingTimer?: Phaser.Time.TimerEvent;
@@ -784,19 +787,38 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(26);
     this.ultimateButton.on("pointerup", () => this.handleUltimateButton());
 
-    this.upgradeButton = this.add.rectangle(282, 672, 156, 34, 0x1e293b, 0.92)
+    this.upgradeButton = this.add.rectangle(244, 672, 108, 34, 0x1e293b, 0.92)
       .setStrokeStyle(1, 0x94a3b8, 0.6)
       .setInteractive({ useHandCursor: true })
       .setDepth(25);
-    this.upgradeText = this.add.text(282, 672, "Kule sec", {
+    this.upgradeText = this.add.text(244, 672, "Kule sec", {
       color: "#cbd5e1",
       fontFamily: "Arial",
-      fontSize: "12px",
+      fontSize: "10px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(26);
     this.upgradeButton.on("pointerup", () => {
       if (this.selectedPlacedTowerId) {
         this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
+      }
+    });
+
+    this.sellButton = this.add.rectangle(342, 672, 78, 34, 0x450a0a, 0.88)
+      .setStrokeStyle(1, 0xfca5a5, 0.55)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(25);
+    this.sellText = this.add.text(342, 672, "Sat", {
+      color: "#fecaca",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold",
+      align: "center"
+    }).setOrigin(0.5).setDepth(26);
+    this.sellButton.on("pointerup", () => {
+      if (this.selectedPlacedTowerId) {
+        this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
+        this.selectedPlacedTowerId = undefined;
+        this.updateSelectionUi();
       }
     });
   }
@@ -2569,13 +2591,17 @@ export class GameScene extends Phaser.Scene {
       this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
+      this.sellText?.setText("Sat");
+      this.sellButton?.setAlpha(0.42);
       return;
     }
 
     this.setTowerTrayShopVisible(false);
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? getTowerUpgradeCost(definition.cost, selectedTower.level, definition.id) : 0;
+    const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower.level, definition.id) : 0;
     const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
+    const canSell = selectedTower.ownerId === this.localSessionId;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2"
       ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun`
@@ -2588,10 +2614,13 @@ export class GameScene extends Phaser.Scene {
     this.selectedTowerStatsText?.setText([
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
-      canUpgrade ? `Sonraki upgrade: ${cost}g` : "Sonraki upgrade: maksimum level"
+      canUpgrade ? `Sonraki upgrade: ${cost}g` : "Sonraki upgrade: maksimum level",
+      canSell ? `Satis iadesi: ${sellRefund}g` : "Satis: sadece sahibi"
     ].join("\n"));
     this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
+    this.sellText?.setText(canSell ? `Sat ${sellRefund}g` : "Satilamaz");
+    this.sellButton?.setAlpha(canSell ? 1 : 0.42);
   }
 
   private updateSkillButtons(cooldowns: number[], player?: GameSnapshot["players"][number]) {
