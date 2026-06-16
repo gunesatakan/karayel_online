@@ -2178,7 +2178,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const handsImage = this.add.image(0, -70, "zeynep-puppet-hands")
-      .setDisplaySize(390, 168)
+      .setDisplaySize(390, 195)
       .setAlpha(0.92)
       .setBlendMode(Phaser.BlendModes.NORMAL);
 
