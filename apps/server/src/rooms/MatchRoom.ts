@@ -58,7 +58,7 @@ const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
-const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 14, 16];
+const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 12, 15, 17];
 const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
 const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
@@ -2921,7 +2921,7 @@ export class MatchRoom extends Room<MatchState> {
 
     tower.activeMs += deltaTime;
     tower.focusTargetId = target.id;
-    tower.focusStacks = Math.min(tower.waveBonusLevel >= 4 ? 15 : 10, Math.floor(tower.activeMs / 1000));
+    tower.focusStacks = Math.min(tower.waveBonusLevel >= 8 ? 20 : tower.waveBonusLevel >= 4 ? 15 : 10, Math.floor(tower.activeMs / 1000));
 
     if (tower.waveBonusLevel < 6 && tower.activeMs >= 20000) {
       tower.overheatMs = 10000;
