@@ -244,6 +244,7 @@ export class GameScene extends Phaser.Scene {
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
   private readonly killStreakMaxWindowMs = 11000;
+  private readonly dragPreviewOffsetY = 64;
   private readonly controlTop = 606;
   private readonly trayTop = 708;
 
@@ -589,8 +590,10 @@ export class GameScene extends Phaser.Scene {
     this.selectedPlacedTowerId = undefined;
     this.placementGrid?.setVisible(true);
     this.placementGhost?.destroy();
-    this.placementGhost = this.add.image(pointer.worldX, pointer.worldY, `tower-${tower.id}`)
-      .setDisplaySize(38, 38)
+    const previewPoint = this.getTowerDragPreviewPoint(pointer);
+    const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
+    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
+      .setDisplaySize(previewSize, previewSize)
       .setAlpha(0.78)
       .setDepth(28);
     this.updateTowerDrag(pointer);
@@ -602,7 +605,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const cell = this.snapToTowerGrid(pointer.worldX, pointer.worldY);
+    const previewPoint = this.getTowerDragPreviewPoint(pointer);
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     this.placementGhost?.setPosition(cell.x, cell.y).setTint(canPlace ? 0x86efac : 0xf87171);
     this.drawPlacementGrid(cell.x, cell.y, canPlace);
@@ -614,7 +618,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const cell = this.snapToTowerGrid(pointer.worldX, pointer.worldY);
+    const previewPoint = this.getTowerDragPreviewPoint(pointer);
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
       this.room.send("placeTower", {
@@ -633,6 +638,13 @@ export class GameScene extends Phaser.Scene {
     this.placementGhost?.destroy();
     this.placementGhost = undefined;
     this.updateSelectionUi();
+  }
+
+  private getTowerDragPreviewPoint(pointer: Phaser.Input.Pointer) {
+    return {
+      x: pointer.worldX,
+      y: pointer.worldY - this.dragPreviewOffsetY
+    };
   }
 
   private drawPlacementGrid(highlightX: number, highlightY: number, canPlace: boolean) {
