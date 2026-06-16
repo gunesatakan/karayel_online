@@ -1952,101 +1952,177 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showCommandKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
-    const fontSize = message.length > 21 ? "23px" : message.length > 17 ? "26px" : "30px";
-    const container = this.add.container(GAME_WORLD_WIDTH / 2, -84).setDepth(82).setAlpha(0);
+    const fontSize = message.length > 21 ? "25px" : message.length > 17 ? "29px" : "33px";
+    const container = this.add.container(GAME_WORLD_WIDTH / 2, -104).setDepth(84).setAlpha(0);
     const plate = this.add.graphics();
-    const width = rule.chaos >= 4 ? 220 : 202;
-    const height = rule.chaos >= 4 ? 44 : 38;
-    const glowAlpha = 0.18 + rule.chaos * 0.035;
+    const width = rule.chaos >= 4 ? 232 : 214;
+    const height = rule.chaos >= 4 ? 48 : 42;
+    const topY = -height - 56;
 
-    plate.fillStyle(theme.fill, 0.88);
-    plate.fillPoints([
-      new Phaser.Geom.Point(-width, 0),
-      new Phaser.Geom.Point(-width + 34, -height),
-      new Phaser.Geom.Point(width - 34, -height),
-      new Phaser.Geom.Point(width, 0),
-      new Phaser.Geom.Point(width - 34, height),
-      new Phaser.Geom.Point(-width + 34, height)
-    ], true);
-    plate.lineStyle(5, theme.primary, 0.42);
-    plate.strokeRoundedRect(-width - 8, -height - 8, width * 2 + 16, height * 2 + 16, 10);
-    plate.lineStyle(2 + rule.chaos, theme.secondary, 0.92);
-    plate.strokePoints([
-      new Phaser.Geom.Point(-width, 0),
-      new Phaser.Geom.Point(-width + 34, -height),
-      new Phaser.Geom.Point(width - 34, -height),
-      new Phaser.Geom.Point(width, 0),
-      new Phaser.Geom.Point(width - 34, height),
-      new Phaser.Geom.Point(-width + 34, height)
-    ], true);
-    plate.lineStyle(1, theme.accent, 0.78);
-    for (let index = -2; index <= 2; index += 1) {
-      plate.lineBetween(index * 42, -height - 16, index * 42, height + 16);
-      plate.lineBetween(-width + 18, index * 12, width - 18, index * 12);
+    plate.lineStyle(2, theme.accent, 0.8);
+    for (let index = 0; index < 10; index += 1) {
+      const x = -138 + index * 30 + (index % 2 === 0 ? -5 : 5);
+      const tipY = topY + (index % 3) * 5;
+      const stringEndX = -width + 42 + index * ((width * 2 - 84) / 9);
+      const stringEndY = -height + 8 + (index % 2) * 8;
+      plate.lineStyle(1, index % 2 === 0 ? theme.secondary : theme.primary, 0.5);
+      plate.lineBetween(x, tipY + 24, stringEndX, stringEndY);
+      plate.fillStyle(theme.fill, 0.8);
+      plate.fillRoundedRect(x - 6, tipY, 12, 30 + (index % 2) * 8, 6);
+      plate.lineStyle(2, theme.secondary, 0.95);
+      plate.strokeRoundedRect(x - 6, tipY, 12, 30 + (index % 2) * 8, 6);
+      plate.fillStyle(index % 2 === 0 ? theme.primary : theme.accent, 0.9);
+      plate.fillCircle(x, tipY + 31 + (index % 2) * 8, 4 + rule.chaos * 0.4);
     }
-    plate.lineStyle(2, theme.primary, 0.74);
-    plate.strokeCircle(-width + 42, 0, 18 + rule.chaos * 2);
-    plate.strokeCircle(width - 42, 0, 18 + rule.chaos * 2);
-    plate.fillStyle(theme.secondary, glowAlpha);
-    plate.fillCircle(-width + 42, 0, 30 + rule.chaos * 3);
-    plate.fillCircle(width - 42, 0, 30 + rule.chaos * 3);
 
-    const commandText = this.add.text(0, -25, theme.motif, {
+    plate.lineStyle(5 + rule.chaos, theme.primary, 0.16);
+    plate.beginPath();
+    plate.moveTo(-width - 28, height + 8);
+    plate.lineTo(width + 34, -height - 18);
+    plate.strokePath();
+    plate.lineStyle(4 + rule.chaos, theme.secondary, 0.18);
+    plate.beginPath();
+    plate.moveTo(-width - 18, -height - 18);
+    plate.lineTo(width + 26, height + 10);
+    plate.strokePath();
+    plate.lineStyle(3, theme.accent, 0.5);
+    plate.lineBetween(-width + 12, -height - 12, -width + 82, height + 16);
+    plate.lineBetween(width - 118, -height - 14, width - 24, height + 18);
+    plate.lineBetween(-48, -height - 18, 42, height + 20);
+
+    plate.fillStyle(theme.fill, 0.92);
+    plate.fillPoints([
+      new Phaser.Geom.Point(-width - 12, -height + 4),
+      new Phaser.Geom.Point(-width + 28, -height - 18 - rule.chaos),
+      new Phaser.Geom.Point(-52, -height - 8),
+      new Phaser.Geom.Point(-24, -height - 22),
+      new Phaser.Geom.Point(width - 16, -height - 12),
+      new Phaser.Geom.Point(width + 18, -8),
+      new Phaser.Geom.Point(width - 18, height + 10),
+      new Phaser.Geom.Point(76, height + 2),
+      new Phaser.Geom.Point(44, height + 18),
+      new Phaser.Geom.Point(-width + 20, height + 6),
+      new Phaser.Geom.Point(-width - 18, -6)
+    ], true);
+    plate.lineStyle(3 + rule.chaos, theme.secondary, 0.96);
+    plate.strokePoints([
+      new Phaser.Geom.Point(-width - 12, -height + 4),
+      new Phaser.Geom.Point(-width + 28, -height - 18 - rule.chaos),
+      new Phaser.Geom.Point(-52, -height - 8),
+      new Phaser.Geom.Point(-24, -height - 22),
+      new Phaser.Geom.Point(width - 16, -height - 12),
+      new Phaser.Geom.Point(width + 18, -8),
+      new Phaser.Geom.Point(width - 18, height + 10),
+      new Phaser.Geom.Point(76, height + 2),
+      new Phaser.Geom.Point(44, height + 18),
+      new Phaser.Geom.Point(-width + 20, height + 6),
+      new Phaser.Geom.Point(-width - 18, -6)
+    ], true);
+    plate.lineStyle(2, theme.primary, 0.9);
+    plate.lineBetween(-width + 24, height - 4, -width + 112, -height + 6);
+    plate.lineBetween(width - 120, -height - 4, width - 26, height - 12);
+    plate.lineStyle(2, theme.accent, 0.88);
+    plate.lineBetween(-18, height + 14, 72 + rule.chaos * 10, -height - 16);
+    plate.lineBetween(-width + 8, -8, -width + 64, height + 8);
+    if (rule.chaos >= 3) {
+      plate.lineStyle(2, 0xffffff, 0.78);
+      plate.lineBetween(-168, -height - 20, -128, height + 18);
+      plate.lineBetween(4, -height - 22, 54, height + 18);
+      plate.lineBetween(156, -height - 16, 210, height + 14);
+    }
+
+    const commandText = this.add.text(0, -height - 8, theme.motif, {
       fontFamily: "Arial Black, Arial",
       fontSize: "10px",
       color: toCssColor(theme.accent),
       stroke: "#020617",
       strokeThickness: 3
-    }).setOrigin(0.5).setAlpha(0.9);
-    const mainText = this.add.text(0, 3, message, {
-      fontFamily: "Arial Black, Arial",
+    }).setOrigin(0.5).setAlpha(0.95).setAngle(-1);
+    const baseStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "Impact, Arial Black, Arial",
       fontSize,
       fontStyle: "bold",
       color: theme.textColor,
       stroke: theme.strokeColor,
-      strokeThickness: 7
-    }).setOrigin(0.5);
-    const lightText = this.add.text(0, 4, message, {
-      fontFamily: "Arial Black, Arial",
-      fontSize,
-      fontStyle: "bold",
+      strokeThickness: 8
+    };
+    const cyanGhost = this.add.text(6 + rule.chaos, 5, message, {
+      ...baseStyle,
       color: toCssColor(theme.secondary),
-      stroke: "#0f172a",
-      strokeThickness: 4
-    }).setOrigin(0.5).setAlpha(0.38);
+      stroke: "#082f49",
+      strokeThickness: 5
+    }).setOrigin(0.5).setAngle(-3 - rule.chaos * 0.5).setAlpha(0.8);
+    const pinkGhost = this.add.text(-5 - rule.chaos, -4, message, {
+      ...baseStyle,
+      color: toCssColor(theme.primary),
+      stroke: "#4a044e",
+      strokeThickness: 5
+    }).setOrigin(0.5).setAngle(2 + rule.chaos * 0.45).setAlpha(0.72);
+    const mainText = this.add.text(0, 0, message, {
+      ...baseStyle,
+      color: theme.textColor,
+      stroke: toCssColor(theme.fill),
+      strokeThickness: 7
+    }).setOrigin(0.5).setAngle(rule.chaos >= 4 ? -2.5 : -1.5);
+    const crownText = this.add.text(0, topY + 18, "|||||  CONTROL  |||||", {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "10px",
+      color: toCssColor(theme.secondary),
+      stroke: "#020617",
+      strokeThickness: 3
+    }).setOrigin(0.5).setAlpha(0.72);
 
-    container.add([plate, lightText, mainText, commandText]);
+    container.add([plate, cyanGhost, pinkGhost, mainText, commandText, crownText]);
     this.rampageContainer = container;
     this.tweens.add({
       targets: container,
-      y: 86,
+      y: 104,
       alpha: 1,
-      duration: 260,
+      duration: Math.max(150, 250 - rule.chaos * 18),
       ease: "Back.easeOut"
     });
     this.tweens.add({
-      targets: plate,
-      alpha: { from: 0.72, to: 1 },
+      targets: container,
+      angle: { from: -1.8 - rule.chaos * 0.6, to: 1.8 + rule.chaos * 0.6 },
       yoyo: true,
-      repeat: 7 + rule.chaos * 3,
-      duration: 82,
+      repeat: 6 + rule.chaos * 4,
+      duration: Math.max(44, 86 - rule.chaos * 8),
       ease: "Sine.easeInOut"
     });
     this.tweens.add({
-      targets: lightText,
-      x: { from: -3 - rule.chaos, to: 3 + rule.chaos },
-      alpha: { from: 0.18, to: 0.62 },
+      targets: [cyanGhost, pinkGhost],
+      x: `+=${rule.chaos * 4}`,
       yoyo: true,
-      repeat: 8 + rule.chaos * 3,
-      duration: 54,
+      repeat: 10 + rule.chaos * 4,
+      duration: 42,
+      ease: "Stepped"
+    });
+    this.tweens.add({
+      targets: crownText,
+      y: `+=${4 + rule.chaos}`,
+      alpha: { from: 0.42, to: 0.92 },
+      yoyo: true,
+      repeat: 9 + rule.chaos * 3,
+      duration: 72,
       ease: "Sine.easeInOut"
     });
+    if (rule.chaos >= 4) {
+      this.tweens.add({
+        targets: mainText,
+        scaleX: { from: 1.04, to: 1.17 },
+        scaleY: { from: 0.92, to: 1.1 },
+        yoyo: true,
+        repeat: 14,
+        duration: 56,
+        ease: "Sine.easeInOut"
+      });
+    }
     this.tweens.add({
       targets: container,
-      y: 58,
+      y: 70,
       alpha: 0,
-      delay: 2300 + rule.chaos * 260,
-      duration: 520,
+      delay: 2200 + rule.chaos * 280,
+      duration: 500,
       ease: "Cubic.easeIn",
       onComplete: () => {
         container.destroy(true);
