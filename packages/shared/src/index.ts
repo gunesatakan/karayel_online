@@ -266,12 +266,12 @@ function getServerTowerUpgradeCost(currentLevel: number) {
 
 function getDebugLaserUpgradeCost(towerCost: number, currentLevel: number) {
   const lateCosts: Record<number, number> = {
-    4: 150,
-    5: 210,
-    6: 270,
-    7: 330,
-    8: 390,
-    9: 450
+    4: 113,
+    5: 158,
+    6: 203,
+    7: 248,
+    8: 293,
+    9: 338
   };
 
   return lateCosts[currentLevel] ?? getDefaultTowerUpgradeCost(towerCost, currentLevel);
