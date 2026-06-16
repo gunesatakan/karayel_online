@@ -235,6 +235,9 @@ export function getTowerUpgradeCost(towerCost: number, currentLevel: number, tow
   if (towerId === "warrior-5") {
     return getDebugLaserUpgradeCost(towerCost, currentLevel);
   }
+  if (towerId === "warrior-6") {
+    return getUcubeUpgradeCost(towerCost, currentLevel);
+  }
   if (towerId === "zeynep-7") {
     return getZeynepSynthesisAmplifierUpgradeCost(currentLevel);
   }
@@ -263,15 +266,19 @@ function getServerTowerUpgradeCost(currentLevel: number) {
 
 function getDebugLaserUpgradeCost(towerCost: number, currentLevel: number) {
   const lateCosts: Record<number, number> = {
-    4: 300,
-    5: 350,
-    6: 400,
-    7: 450,
-    8: 500,
-    9: 900
+    4: 150,
+    5: 210,
+    6: 270,
+    7: 330,
+    8: 390,
+    9: 450
   };
 
   return lateCosts[currentLevel] ?? getDefaultTowerUpgradeCost(towerCost, currentLevel);
+}
+
+function getUcubeUpgradeCost(towerCost: number, currentLevel: number) {
+  return Math.round(getDefaultTowerUpgradeCost(towerCost, currentLevel) * 0.6);
 }
 
 function getZeynepSynthesisAmplifierUpgradeCost(currentLevel: number) {

@@ -3269,10 +3269,16 @@ function getObsessionDamageMultiplier(level: number) {
 
 function getObsessionFearDurationMs(level: number) {
   if (level >= 10) {
-    return 4000;
+    return 6000;
+  }
+  if (level >= 7) {
+    return 4500;
+  }
+  if (level >= 5) {
+    return 3000;
   }
 
-  return level >= 7 ? STATUS_EFFECTS.fear.durationMs : 1500;
+  return 1500;
 }
 
 function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
