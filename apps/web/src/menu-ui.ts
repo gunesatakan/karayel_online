@@ -58,7 +58,8 @@ export function setupMenuUi(game: Phaser.Game) {
   let selectedDetail = getDetailItems(selectedCharacter)[0];
   let selectedMap = loadStoredMap();
   let selectedMapTool: MapTileKind = "road";
-  let selectedMapScale: MapScale = 1;
+  let selectedMapScale: MapScale = selectedMap.scale;
+  let mapSaveStatus = "Kayitli harita hazir";
   let onlineTab: OnlineTab = "create";
   let roomListings: RoomListingSnapshot[] = [];
   let currentLobbyRoom: Room | undefined;
@@ -78,6 +79,7 @@ export function setupMenuUi(game: Phaser.Game) {
       currentLobbyState,
       currentLobbyRoom?.sessionId,
       selectedMapScale,
+      mapSaveStatus,
       lobbyError
     );
     bindUi(view);
@@ -237,7 +239,7 @@ export function setupMenuUi(game: Phaser.Game) {
         }
         setTile(nextMap, col, row, selectedMapTool);
         selectedMap = nextMap;
-        saveStoredMap(selectedMap);
+        mapSaveStatus = "Kaydedilmemis degisiklik var";
         render("map");
       });
     });
@@ -246,13 +248,32 @@ export function setupMenuUi(game: Phaser.Game) {
       button.addEventListener("click", () => {
         const action = button.dataset.mapAction;
         if (action === "reset") {
-          selectedMap = createDefaultEditableMap();
-          saveStoredMap(selectedMap);
+          selectedMap = createDefaultEditableMap(selectedMap.scale);
+          selectedMapScale = selectedMap.scale;
+          mapSaveStatus = "Varsayilan harita yuklendi";
         }
         if (action === "clear") {
-          selectedMap = createDefaultEditableMap();
+          selectedMap = createDefaultEditableMap(selectedMap.scale);
           selectedMap.tiles = selectedMap.tiles.map(() => "tower");
+          selectedMapScale = selectedMap.scale;
+          mapSaveStatus = "Bos harita hazir";
+        }
+        if (action === "save") {
           saveStoredMap(selectedMap);
+          selectedMapScale = selectedMap.scale;
+          mapSaveStatus = `${selectedMap.scale}x harita kaydedildi`;
+        }
+        render("map");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-map-editor-scale]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const nextScale: MapScale = Number(button.dataset.mapEditorScale) === MAX_MAP_SCALE ? MAX_MAP_SCALE : 1;
+        if (selectedMap.scale !== nextScale) {
+          selectedMap = scaleEditableMap(selectedMap, nextScale);
+          selectedMapScale = nextScale;
+          mapSaveStatus = `${nextScale}x olcege cevrildi`;
         }
         render("map");
       });
@@ -338,6 +359,7 @@ function renderShell(
   lobbyState?: LobbyStateSnapshot,
   lobbySessionId?: string,
   selectedMapScale: MapScale = 1,
+  mapSaveStatus = "",
   lobbyError = ""
 ) {
   return `
@@ -352,7 +374,7 @@ function renderShell(
         ${view === "home" ? renderHome(selectedCharacter) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
-        ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool) : ""}
+        ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus) : ""}
         ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError) : ""}
         ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
       </section>
@@ -551,7 +573,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
   `;
 }
 
-function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind) {
+function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind, saveStatus: string) {
   const counts = getMapCounts(map);
   return `
     <div class="map-screen">
@@ -563,6 +585,17 @@ function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind) {
         </div>
         <button class="command command--small" data-start-game>Başlat</button>
       </header>
+
+      <section class="map-scale-panel">
+        <div>
+          <p class="kicker">Olcek</p>
+          <strong>${map.scale}x Harita</strong>
+        </div>
+        <div class="scale-picker__buttons">
+          <button class="scale-chip ${map.scale === 1 ? "is-active" : ""}" data-map-editor-scale="1">1x</button>
+          <button class="scale-chip ${map.scale === 2 ? "is-active" : ""}" data-map-editor-scale="2">2x</button>
+        </div>
+      </section>
 
       <section class="map-tools" aria-label="Harita araçları">
         ${renderTool("road", "Yol", selectedTool)}
@@ -589,7 +622,10 @@ function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind) {
         <span>Kule <strong>${counts.tower}</strong></span>
       </section>
 
+      <p class="map-save-status">${escapeHtml(saveStatus)}</p>
+
       <footer class="map-actions">
+        <button class="command command--primary" data-map-action="save">Kaydet</button>
         <button class="command command--ghost" data-map-action="reset">Varsayılan</button>
         <button class="command command--ghost" data-map-action="clear">Temizle</button>
       </footer>

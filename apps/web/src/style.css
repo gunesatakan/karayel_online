@@ -515,6 +515,26 @@ canvas {
   padding-bottom: 18px;
 }
 
+.map-scale-panel {
+  display: grid;
+  grid-template-columns: 1fr 154px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: rgba(10, 16, 32, 0.72);
+}
+
+.map-scale-panel strong {
+  display: block;
+  margin-top: 2px;
+  color: #f8fafc;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
 .map-tools {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -610,9 +630,18 @@ canvas {
   font-size: 14px;
 }
 
+.map-save-status {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .map-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 10px;
   margin-top: 12px;
 }
