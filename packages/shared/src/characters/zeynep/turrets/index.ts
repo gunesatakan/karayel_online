@@ -7,7 +7,8 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Taht Muhru", "Bagli iki kuleyi sentezleyen karma vurus kulesi"],
   ["Zirve Oku", "Uzun menzil"],
   ["Emir Kulesi", "Yavaslatma"],
-  ["Zeynep Nexus", "En ust seviye hasar"]
+  ["Zeynep Nexus", "En ust seviye hasar"],
+  ["Saray Arsivi", "Pahali pasif kule. Gelistirildikce Taht Muhru sentez kombinasyonlarini stackli bicimde guclendirir"]
 ], { cost: 55, range: 118, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 }).map((tower): TowerDefinition => {
   if (tower.id !== "zeynep-1") {
     if (tower.id === "zeynep-2") {
@@ -41,6 +42,27 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         aoeRadius: 0,
         slowMs: 0,
         color: 0xf0abfc
+      };
+    }
+
+    if (tower.id === "zeynep-7") {
+      return {
+        ...tower,
+        role: "Sentez guclendirici",
+        description: "Ates etmez. Her kopyasi ve level esigi Taht Muhru kombinasyonlarini stackli guclendirir: L2 1-1 delme +1, L3 2-2 yanik +1sn, L6 1-2 isin +1 sekme. 3 ve 4. kule kombinasyonlari henuz aktif degildir.",
+        classType: "support",
+        damageType: "none",
+        hitType: "aura",
+        mechanics: ["passive-synthesis-upgrade", "stacking-combo-buff"],
+        cost: 500,
+        upgradeCost: 300,
+        range: 0,
+        damage: 0,
+        fireIntervalMs: 999999,
+        projectileSpeed: 0,
+        aoeRadius: 0,
+        slowMs: 0,
+        color: 0xfacc15
       };
     }
 

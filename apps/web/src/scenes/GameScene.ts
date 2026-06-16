@@ -525,11 +525,11 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(26);
 
     this.selectedCharacter.towers.forEach((tower, index) => {
-      const col = index % 3;
-      const row = Math.floor(index / 3);
-      const x = 14 + col * 122;
+      const col = index % 4;
+      const row = Math.floor(index / 4);
+      const x = 10 + col * 94;
       const y = this.trayTop + 28 + row * 45;
-      const button = this.add.rectangle(x, y, 112, 38, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
+      const button = this.add.rectangle(x, y, 88, 38, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
         .setOrigin(0, 0)
         .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
         .setInteractive({ useHandCursor: true })
@@ -538,8 +538,9 @@ export class GameScene extends Phaser.Scene {
       const nameText = this.add.text(x + 8, y + 6, tower.name, {
         color: "#f8fafc",
         fontFamily: "Arial",
-        fontSize: "10px",
-        fontStyle: "bold"
+        fontSize: "9px",
+        fontStyle: "bold",
+        wordWrap: { width: 74 }
       }).setDepth(27);
       const costText = this.add.text(x + 8, y + 22, `${tower.cost}g`, {
         color: "#facc15",

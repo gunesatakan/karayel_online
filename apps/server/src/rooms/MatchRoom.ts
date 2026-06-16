@@ -655,6 +655,10 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      if (tower.definition.id === "zeynep-7") {
+        continue;
+      }
+
       if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
         this.applyIsolationAura(tower);
         tower.cooldownMs = Math.max(tower.cooldownMs, 220);
@@ -938,7 +942,8 @@ export class MatchRoom extends Room<MatchState> {
         if (
           group.has(candidate.id) ||
           candidate.ownerId !== tower.ownerId ||
-          candidate.characterId !== "zeynep"
+          candidate.characterId !== "zeynep" ||
+          candidate.definition.id === "zeynep-7"
         ) {
           continue;
         }
@@ -997,9 +1002,10 @@ export class MatchRoom extends Room<MatchState> {
       .slice(0, 2);
     const damage = this.getTowerDamage(tower);
     const speed = Math.max(1, tower.definition.projectileSpeed + tower.level * 22);
+    const pierceLimit = 2 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-1");
 
     for (const target of targets) {
-      this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", 2);
+      this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", pierceLimit);
     }
   }
 
@@ -1009,10 +1015,11 @@ export class MatchRoom extends Room<MatchState> {
     const endY = result?.endY ?? target.y;
     const targets = result?.targets ?? [target];
     const damage = this.getTowerDamage(tower);
+    const burnDurationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "2-2") * 1000;
     for (const enemy of targets) {
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light");
     }
-    this.addZeynepBurnLine(tower, tower.x, tower.y, endX, endY, damage * 0.42);
+    this.addZeynepBurnLine(tower, tower.x, tower.y, endX, endY, damage * 0.42, burnDurationMs);
 
     const trailId = `zeynep-burn-trail-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(trailId, {
@@ -1025,7 +1032,7 @@ export class MatchRoom extends Room<MatchState> {
       width: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2,
       color: 0x7c2d12,
       overdrive: false,
-      ttlMs: scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS),
+      ttlMs: scaleGameDuration(burnDurationMs),
       delayMs: scaleGameDuration(500)
     });
 
@@ -1045,7 +1052,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
-    const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y);
+    const bounces = 1 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-2");
+    const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces);
     const firstSegment = segments[0];
     const initialDistance = Math.min(ZEYNEP_SYNTHESIS_RAY_LENGTH, firstSegment.length);
     const initialHead = getPointOnRaySegments(segments, initialDistance);
@@ -1191,7 +1199,7 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private addZeynepBurnLine(tower: TowerModel, x1: number, y1: number, x2: number, y2: number, damage: number) {
+  private addZeynepBurnLine(tower: TowerModel, x1: number, y1: number, x2: number, y2: number, damage: number, durationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS) {
     const now = Date.now();
     const id = `burn-${this.nextBurnZoneId++}`;
     this.burnZones.set(id, {
@@ -1205,9 +1213,20 @@ export class MatchRoom extends Room<MatchState> {
       radius: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS,
       damage,
       damageType: "light",
-      expiresAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_DURATION_MS),
+      expiresAt: now + scaleGameDuration(durationMs),
       nextTickAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS)
     });
+  }
+
+  private getZeynepSynthesisAmplifierBonus(ownerId: string, combo: "1-1" | "2-2" | "1-2") {
+    const requiredLevel = combo === "1-1" ? 2 : combo === "2-2" ? 3 : 6;
+    let bonus = 0;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId === ownerId && tower.definition.id === "zeynep-7" && tower.level >= requiredLevel) {
+        bonus += 1;
+      }
+    }
+    return bonus;
   }
 
   private updateBurnZones() {
@@ -2050,12 +2069,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private refreshZeynepFormations() {
-    const towers = Array.from(this.towers.values()).filter((tower) => tower.characterId === "zeynep");
-    for (const tower of towers) {
+    const allZeynepTowers = Array.from(this.towers.values()).filter((tower) => tower.characterId === "zeynep");
+    for (const tower of allZeynepTowers) {
       tower.zeynepFormationSize = 0;
       tower.zeynepFormationLevel = 0;
     }
 
+    const towers = allZeynepTowers.filter((tower) => tower.definition.id !== "zeynep-7");
     const visited = new Set<string>();
     for (const tower of towers) {
       if (visited.has(tower.id)) {
@@ -3551,23 +3571,27 @@ function getRayAngleToWorldEdge(x1: number, y1: number, angle: number) {
   return getRayDirectionToWorldEdge(x1, y1, Math.cos(angle), Math.sin(angle));
 }
 
-function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY: number) {
+function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY: number, bounces = 1) {
   const dx = targetX - x1;
   const dy = targetY - y1;
   const length = Math.max(1, Math.hypot(dx, dy));
-  const nx = dx / length;
-  const ny = dy / length;
-  const firstHit = getRayBoundaryHit(x1, y1, nx, ny);
-  const reflectedX = firstHit.axis === "x" ? -nx : nx;
-  const reflectedY = firstHit.axis === "y" ? -ny : ny;
-  const secondStartX = firstHit.x + reflectedX * 0.01;
-  const secondStartY = firstHit.y + reflectedY * 0.01;
-  const secondHit = getRayBoundaryHit(secondStartX, secondStartY, reflectedX, reflectedY);
+  let nx = dx / length;
+  let ny = dy / length;
+  let startX = x1;
+  let startY = y1;
+  const segments: RaySegment[] = [];
+  const segmentCount = Math.max(1, Math.min(12, Math.round(bounces) + 1));
 
-  return [
-    makeRaySegment(x1, y1, firstHit.x, firstHit.y),
-    makeRaySegment(firstHit.x, firstHit.y, secondHit.x, secondHit.y)
-  ];
+  for (let index = 0; index < segmentCount; index += 1) {
+    const hit = getRayBoundaryHit(startX, startY, nx, ny);
+    segments.push(makeRaySegment(startX, startY, hit.x, hit.y));
+    nx = hit.axis === "x" ? -nx : nx;
+    ny = hit.axis === "y" ? -ny : ny;
+    startX = hit.x + nx * 0.01;
+    startY = hit.y + ny * 0.01;
+  }
+
+  return segments;
 }
 
 function makeRaySegment(x1: number, y1: number, x2: number, y2: number): RaySegment {
