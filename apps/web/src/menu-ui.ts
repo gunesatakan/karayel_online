@@ -11,7 +11,7 @@ import {
   scaleEditableMap,
   setTile,
   type CharacterDefinition,
-   type CharacterId,
+  type CharacterId,
   type EditableMapData,
   type LobbyStateSnapshot,
   type MapScale,
@@ -34,8 +34,15 @@ type DetailItem = {
 };
 
 type OnlineTab = "create" | "join";
+type SavedMapRecord = {
+  id: string;
+  name: string;
+  map: EditableMapData;
+  savedAt: number;
+};
 
 const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
+const MAP_RECORDS_STORAGE_KEY = "karayel:custom-maps:v2";
 
 const classColor: Record<CharacterId, string> = {
   zeynep: "#ec4899",
@@ -56,10 +63,13 @@ export function setupMenuUi(game: Phaser.Game) {
 
   let selectedCharacter = characters[0];
   let selectedDetail = getDetailItems(selectedCharacter)[0];
-  let selectedMap = loadStoredMap();
+  let savedMaps = loadSavedMapRecords();
+  let activeSavedMapId = savedMaps[0]?.id ?? "";
+  let selectedMapName = savedMaps[0]?.name ?? "Harita 1";
+  let selectedMap = savedMaps[0]?.map ?? loadStoredMap();
   let selectedMapTool: MapTileKind = "road";
   let selectedMapScale: MapScale = selectedMap.scale;
-  let mapSaveStatus = "Kayitli harita hazir";
+  let mapSaveStatus = savedMaps.length > 0 ? `"${selectedMapName}" yuklendi` : "Kayitli harita hazir";
   let onlineTab: OnlineTab = "create";
   let roomListings: RoomListingSnapshot[] = [];
   let currentLobbyRoom: Room | undefined;
@@ -80,6 +90,9 @@ export function setupMenuUi(game: Phaser.Game) {
       currentLobbyRoom?.sessionId,
       selectedMapScale,
       mapSaveStatus,
+      savedMaps,
+      activeSavedMapId,
+      selectedMapName,
       lobbyError
     );
     bindUi(view);
@@ -244,13 +257,36 @@ export function setupMenuUi(game: Phaser.Game) {
       });
     });
 
+    root.querySelectorAll<HTMLElement>("[data-load-map-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const record = savedMaps.find((candidate) => candidate.id === button.dataset.loadMapId);
+        if (!record) {
+          return;
+        }
+        activeSavedMapId = record.id;
+        selectedMapName = record.name;
+        selectedMap = normalizeMapData(record.map);
+        selectedMapScale = selectedMap.scale;
+        mapSaveStatus = `"${selectedMapName}" secildi`;
+        render("map");
+      });
+    });
+
     root.querySelectorAll<HTMLElement>("[data-map-action]").forEach((button) => {
       button.addEventListener("click", () => {
         const action = button.dataset.mapAction;
+        const nameInput = root.querySelector<HTMLInputElement>("[data-map-name-input]");
+        selectedMapName = nameInput?.value.trim().slice(0, 28) || selectedMapName || `Harita ${savedMaps.length + 1}`;
+        if (action === "new") {
+          selectedMap = createDefaultEditableMap(selectedMapScale);
+          activeSavedMapId = "";
+          selectedMapName = `Harita ${savedMaps.length + 1}`;
+          mapSaveStatus = "Yeni harita taslagi hazir";
+        }
         if (action === "reset") {
           selectedMap = createDefaultEditableMap(selectedMap.scale);
           selectedMapScale = selectedMap.scale;
-          mapSaveStatus = "Varsayilan harita yuklendi";
+          mapSaveStatus = "Varsayilan harita taslagi hazir";
         }
         if (action === "clear") {
           selectedMap = createDefaultEditableMap(selectedMap.scale);
@@ -259,9 +295,13 @@ export function setupMenuUi(game: Phaser.Game) {
           mapSaveStatus = "Bos harita hazir";
         }
         if (action === "save") {
-          saveStoredMap(selectedMap);
+          const saved = saveStoredMap(selectedMap, selectedMapName, activeSavedMapId);
+          savedMaps = loadSavedMapRecords();
+          activeSavedMapId = saved.id;
+          selectedMapName = saved.name;
+          selectedMap = saved.map;
           selectedMapScale = selectedMap.scale;
-          mapSaveStatus = `${selectedMap.scale}x harita kaydedildi`;
+          mapSaveStatus = `"${selectedMapName}" kaydedildi`;
         }
         render("map");
       });
@@ -360,6 +400,9 @@ function renderShell(
   lobbySessionId?: string,
   selectedMapScale: MapScale = 1,
   mapSaveStatus = "",
+  savedMaps: SavedMapRecord[] = [],
+  activeSavedMapId = "",
+  selectedMapName = "Harita 1",
   lobbyError = ""
 ) {
   return `
@@ -374,7 +417,7 @@ function renderShell(
         ${view === "home" ? renderHome(selectedCharacter) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
-        ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus) : ""}
+        ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus, savedMaps, activeSavedMapId, selectedMapName) : ""}
         ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError) : ""}
         ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
       </section>
@@ -573,7 +616,14 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
   `;
 }
 
-function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind, saveStatus: string) {
+function renderMapEditor(
+  map: EditableMapData,
+  selectedTool: MapTileKind,
+  saveStatus: string,
+  savedMaps: SavedMapRecord[],
+  activeSavedMapId: string,
+  selectedMapName: string
+) {
   const counts = getMapCounts(map);
   return `
     <div class="map-screen">
@@ -594,6 +644,33 @@ function renderMapEditor(map: EditableMapData, selectedTool: MapTileKind, saveSt
         <div class="scale-picker__buttons">
           <button class="scale-chip ${map.scale === 1 ? "is-active" : ""}" data-map-editor-scale="1">1x</button>
           <button class="scale-chip ${map.scale === 2 ? "is-active" : ""}" data-map-editor-scale="2">2x</button>
+        </div>
+      </section>
+
+      <section class="map-records">
+        <div class="map-records__head">
+          <div>
+            <p class="kicker">Kayıtlar</p>
+            <strong>${savedMaps.length} harita</strong>
+          </div>
+          <button class="command command--ghost command--small" data-map-action="new">Yeni</button>
+        </div>
+        <label class="map-name-row">
+          <span>Harita Adı</span>
+          <input class="text-field" data-map-name-input value="${escapeHtml(selectedMapName)}" maxlength="28" />
+        </label>
+        <div class="map-record-list">
+          ${savedMaps.length > 0 ? savedMaps.map((record) => `
+            <button class="map-record ${record.id === activeSavedMapId ? "is-active" : ""}" data-load-map-id="${escapeHtml(record.id)}">
+              <span>${escapeHtml(record.name)}</span>
+              <small>${record.map.scale}x · ${record.map.cols}x${record.map.rows}</small>
+            </button>
+          `).join("") : `
+            <div class="map-record map-record--empty">
+              <span>Kayit yok</span>
+              <small>Kaydet ile ilk haritani olustur</small>
+            </div>
+          `}
         </div>
       </section>
 
@@ -884,8 +961,73 @@ function loadStoredMap() {
   }
 }
 
-function saveStoredMap(map: EditableMapData) {
-  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(normalizeMapData(map)));
+function loadSavedMapRecords(): SavedMapRecord[] {
+  try {
+    const rawRecords = localStorage.getItem(MAP_RECORDS_STORAGE_KEY);
+    if (rawRecords) {
+      const parsed = JSON.parse(rawRecords);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map(normalizeSavedMapRecord)
+          .filter((record): record is SavedMapRecord => Boolean(record))
+          .sort((left, right) => right.savedAt - left.savedAt);
+      }
+    }
+
+    const rawLegacyMap = localStorage.getItem(MAP_STORAGE_KEY);
+    if (rawLegacyMap) {
+      return [createSavedMapRecord(normalizeMapData(JSON.parse(rawLegacyMap)), "Kayitli Harita", "legacy-map")];
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
+}
+
+function saveStoredMap(map: EditableMapData, name: string, existingId = "") {
+  const normalizedMap = normalizeMapData(map);
+  const recordName = name.trim().slice(0, 28) || "Harita";
+  const recordId = existingId || createMapRecordId();
+  const record = createSavedMapRecord(normalizedMap, recordName, recordId);
+  const records = loadSavedMapRecords().filter((candidate) => candidate.id !== recordId);
+  records.unshift(record);
+  localStorage.setItem(MAP_RECORDS_STORAGE_KEY, JSON.stringify(records));
+  localStorage.setItem(MAP_STORAGE_KEY, JSON.stringify(normalizedMap));
+  return record;
+}
+
+function createSavedMapRecord(map: EditableMapData, name: string, id = createMapRecordId()): SavedMapRecord {
+  return {
+    id,
+    name: name.trim().slice(0, 28) || "Harita",
+    map: normalizeMapData(map),
+    savedAt: Date.now()
+  };
+}
+
+function normalizeSavedMapRecord(value: unknown): SavedMapRecord | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as Partial<SavedMapRecord>;
+  try {
+    return {
+      id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : createMapRecordId(),
+      name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim().slice(0, 28) : "Harita",
+      map: normalizeMapData(candidate.map),
+      savedAt: typeof candidate.savedAt === "number" ? candidate.savedAt : 0
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function createMapRecordId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `map-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function replaceTileKind(map: EditableMapData, from: MapTileKind, to: MapTileKind) {

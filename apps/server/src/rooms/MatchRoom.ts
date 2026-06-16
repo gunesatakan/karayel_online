@@ -74,6 +74,7 @@ const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+const ENEMY_REWARD_MULTIPLIER = 1.1;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 const ZEYNEP_MAX_REPUTATION = 100;
@@ -472,9 +473,9 @@ export class MatchRoom extends Room<MatchState> {
   onCreate(options: JoinOptions = {}) {
     this.setState(new MatchState());
     this.lobbyRoomName = this.getRoomName(options.roomName);
-    this.mapScale = this.getMapScaleChoice(options.mapScale);
     this.autoStartOnFirstJoin = options.autoStart === true;
     const baseMap = normalizeMapData(options.mapData);
+    this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
@@ -688,6 +689,18 @@ export class MatchRoom extends Room<MatchState> {
     MatchRoom.publicRooms.set(this.roomId, this);
   }
 
+  private getMapWorldScale() {
+    return getMapGridSize(this.activeMap) / TOWER_GRID_SIZE;
+  }
+
+  private scaleWorldDistance(value: number) {
+    return value * this.getMapWorldScale();
+  }
+
+  private scaleWorldSpeed(value: number) {
+    return value * this.getMapWorldScale();
+  }
+
   private update(deltaTime: number) {
     if (!this.gameStarted) {
       this.syncRoomRegistry();
@@ -795,7 +808,7 @@ export class MatchRoom extends Room<MatchState> {
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
     const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier));
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
-    const speed = definition.speed + this.wave * 2.4;
+    const speed = this.scaleWorldSpeed(definition.speed + this.wave * 2.4);
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
     const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
     const start = isFlyingEnemy ? getAirSpawnPoint(path, this.activeMap) : path.points[0] ?? gridToWorld(0, 0, this.activeMap);
@@ -911,7 +924,7 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
-    const speed = tower.definition.projectileSpeed + tower.level * 22;
+    const speed = this.scaleWorldSpeed(tower.definition.projectileSpeed + tower.level * 22);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -928,7 +941,7 @@ export class MatchRoom extends Room<MatchState> {
       vy: (dy / length) * speed,
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
-      aoeRadius: tower.definition.aoeRadius + (tower.level - 1) * 5,
+      aoeRadius: this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 5),
       slowMs: tower.definition.slowMs + (tower.level - 1) * 90,
       pierceLimit: tower.definition.id === "zeynep-1" ? 2 : 1,
       piercedEnemyIds: []
@@ -939,6 +952,7 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - sourceTower.x;
     const dy = target.y - sourceTower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
+    const scaledSpeed = this.scaleWorldSpeed(speed);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -951,11 +965,11 @@ export class MatchRoom extends Room<MatchState> {
       targetId: target.id,
       x: sourceTower.x,
       y: sourceTower.y,
-      vx: (dx / length) * speed,
-      vy: (dy / length) * speed,
+      vx: (dx / length) * scaledSpeed,
+      vy: (dy / length) * scaledSpeed,
       damage,
       maxHealthDamageRatio: 0,
-      aoeRadius,
+      aoeRadius: this.scaleWorldDistance(aoeRadius),
       slowMs,
       pierceLimit: 1,
       piercedEnemyIds: []
@@ -1070,7 +1084,7 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2: result.endX,
       y2: result.endY,
-      width: ZEYNEP_SHOWCASE_BEAM_RADIUS * 2,
+      width: this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS * 2),
       color: tower.definition.color,
       overdrive: false,
       ttlMs: 260
@@ -1097,7 +1111,7 @@ export class MatchRoom extends Room<MatchState> {
       const endX = tower.x + (dx / distance) * length;
       const endY = tower.y + (dy / distance) * length;
       const targets = enemies.filter((candidate) => {
-        const hitRadius = ZEYNEP_SHOWCASE_BEAM_RADIUS + getEnemyCollisionRadius(candidate);
+        const hitRadius = this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS) + getEnemyCollisionRadius(candidate);
         const projection = getSegmentProjection(candidate.x, candidate.y, tower.x, tower.y, endX, endY);
         return projection >= 0 && projection <= 1 && distanceToSegmentSq(candidate.x, candidate.y, tower.x, tower.y, endX, endY) <= hitRadius * hitRadius;
       });
@@ -1237,7 +1251,7 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2: endX,
       y2: endY,
-      width: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2,
+      width: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2),
       color: 0x7c2d12,
       overdrive: false,
       ttlMs: scaleGameDuration(burnDurationMs),
@@ -1252,7 +1266,7 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2: endX,
       y2: endY,
-      width: ZEYNEP_SHOWCASE_BEAM_RADIUS * 2,
+      width: this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS * 2),
       color: 0x22d3ee,
       overdrive: false,
       ttlMs: 260
@@ -1263,7 +1277,7 @@ export class MatchRoom extends Room<MatchState> {
     const bounces = 1 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-2");
     const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces);
     const firstSegment = segments[0];
-    const initialDistance = Math.min(ZEYNEP_SYNTHESIS_RAY_LENGTH, firstSegment.length);
+    const initialDistance = Math.min(this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH), firstSegment.length);
     const initialHead = getPointOnRaySegments(segments, initialDistance);
     const id = `zr${this.nextZeynepRayId++}`;
     const ray: ZeynepRayModel = {
@@ -1275,7 +1289,7 @@ export class MatchRoom extends Room<MatchState> {
       distanceOnSegment: initialDistance,
       x: initialHead.x,
       y: initialHead.y,
-      speed: ZEYNEP_SYNTHESIS_RAY_SPEED,
+      speed: this.scaleWorldSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED),
       damage: this.getTowerDamage(tower),
       hitEnemyIds: []
     };
@@ -1332,7 +1346,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getZeynepRayVisibleSegment(ray: ZeynepRayModel) {
     const headDistance = getRayAbsoluteDistance(ray.segments, ray.segmentIndex, ray.distanceOnSegment);
-    const tail = getPointOnRaySegments(ray.segments, Math.max(0, headDistance - ZEYNEP_SYNTHESIS_RAY_LENGTH));
+    const tail = getPointOnRaySegments(ray.segments, Math.max(0, headDistance - this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH)));
     return {
       x1: tail.x,
       y1: tail.y,
@@ -1353,7 +1367,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const hitRadius = ZEYNEP_SYNTHESIS_BEAM_RADIUS + getEnemyCollisionRadius(enemy);
+      const hitRadius = this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS) + getEnemyCollisionRadius(enemy);
       if (distanceToSegmentSq(enemy.x, enemy.y, x1, y1, x2, y2) > hitRadius * hitRadius) {
         continue;
       }
@@ -1373,7 +1387,7 @@ export class MatchRoom extends Room<MatchState> {
       y1: segment.y1,
       x2: segment.x2,
       y2: segment.y2,
-      width: ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2,
+      width: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2),
       color: ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
       overdrive: false,
       ttlMs: ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS
@@ -1396,8 +1410,8 @@ export class MatchRoom extends Room<MatchState> {
       targetId: target.id,
       x: tower.x,
       y: tower.y,
-      vx: (dx / length) * speed,
-      vy: (dy / length) * speed,
+      vx: (dx / length) * this.scaleWorldSpeed(speed),
+      vy: (dy / length) * this.scaleWorldSpeed(speed),
       damage,
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: 0,
@@ -1418,7 +1432,7 @@ export class MatchRoom extends Room<MatchState> {
       y1,
       x2,
       y2,
-      radius: ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS,
+      radius: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS),
       damage,
       damageType: "light",
       expiresAt: now + scaleGameDuration(durationMs),
@@ -1481,7 +1495,7 @@ export class MatchRoom extends Room<MatchState> {
       elapsedSeconds
     );
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle);
-    const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, 190);
+    const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
 
     this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
@@ -1505,7 +1519,7 @@ export class MatchRoom extends Room<MatchState> {
     );
 
     for (const enemy of Array.from(this.enemies.values())) {
-      if (didDebugLaserSweepHitEnemy(tower, enemy, previousAngle, currentAngle, end.x, end.y)) {
+      if (didDebugLaserSweepHitEnemy(tower, enemy, previousAngle, currentAngle, end.x, end.y, this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS))) {
         this.damageEnemyFromTower(tower, enemy, damage, 0);
       }
     }
@@ -1574,7 +1588,7 @@ export class MatchRoom extends Room<MatchState> {
       .filter((enemy) => enemy.pathId === pathId && enemy.pathDistance < startDistance)
       .sort((a, b) => a.pathDistance - b.pathDistance);
 
-    return behindEnemies[0]?.pathDistance ?? Math.max(0, startDistance - 260);
+    return behindEnemies[0]?.pathDistance ?? Math.max(0, startDistance - this.scaleWorldDistance(260));
   }
   private updateServerLinks() {
     const now = Date.now();
@@ -1769,13 +1783,14 @@ export class MatchRoom extends Room<MatchState> {
         const dx = target.x - drone.x;
         const dy = target.y - drone.y;
         const length = Math.max(1, Math.hypot(dx, dy));
-        const speed = ATAKAN_DRONE_ATTACK_SPEED;
+        const speed = this.scaleWorldSpeed(ATAKAN_DRONE_ATTACK_SPEED);
         drone.vx = (dx / length) * speed;
         drone.vy = (dy / length) * speed;
         drone.x += drone.vx * seconds;
         drone.y += drone.vy * seconds;
 
-        if (distanceSq(drone.x, drone.y, target.x, target.y) <= 18 * 18) {
+        const hitRadius = this.scaleWorldDistance(18);
+        if (distanceSq(drone.x, drone.y, target.x, target.y) <= hitRadius * hitRadius) {
           this.damageEnemy(target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
           this.drones.delete(id);
         }
@@ -1788,13 +1803,14 @@ export class MatchRoom extends Room<MatchState> {
       const dx = nexusX - drone.x;
       const dy = nexusY - drone.y;
       const length = Math.max(1, Math.hypot(dx, dy));
-      const speed = ATAKAN_DRONE_REPAIR_SPEED;
+      const speed = this.scaleWorldSpeed(ATAKAN_DRONE_REPAIR_SPEED);
       drone.vx = (dx / length) * speed;
       drone.vy = (dy / length) * speed;
       drone.x += drone.vx * seconds;
       drone.y += drone.vy * seconds;
 
-      if (distanceSq(drone.x, drone.y, nexusX, nexusY) <= 18 * 18) {
+      const repairRadius = this.scaleWorldDistance(18);
+      if (distanceSq(drone.x, drone.y, nexusX, nexusY) <= repairRadius * repairRadius) {
         this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + drone.repairAmount);
         this.drones.delete(id);
       }
@@ -2279,7 +2295,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const targetX = repairNexus ? GAME_WORLD_WIDTH / 2 : target?.x ?? tower.x;
     const targetY = repairNexus ? GAME_WORLD_HEIGHT - 26 : target?.y ?? tower.y;
-    const speed = repairNexus ? ATAKAN_DRONE_REPAIR_SPEED : ATAKAN_DRONE_ATTACK_SPEED;
+    const speed = this.scaleWorldSpeed(repairNexus ? ATAKAN_DRONE_REPAIR_SPEED : ATAKAN_DRONE_ATTACK_SPEED);
     const dx = targetX - tower.x;
     const dy = targetY - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
@@ -2490,7 +2506,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.enemies.delete(enemy.id);
-    this.teamGold += enemy.reward;
+    this.teamGold += Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
     this.kills += 1;
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
@@ -2542,7 +2558,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isEnemyInProjectileGuidance(enemy: EnemyModel, now = Date.now()) {
-    return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= PROJECTILE_GUIDANCE_RADIUS * PROJECTILE_GUIDANCE_RADIUS;
+    const radius = this.scaleWorldDistance(PROJECTILE_GUIDANCE_RADIUS);
+    return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= radius * radius;
   }
 
   private awardZeynepReputation(player: Player, enemyType: EnemyType) {
@@ -2894,7 +2911,7 @@ export class MatchRoom extends Room<MatchState> {
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
-      return (tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
+      return this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
@@ -2902,20 +2919,20 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "zeynep-2") {
-      return getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier;
+      return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier);
     }
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
       if (composition.copySourceTower?.definition.id === "zeynep-2") {
-        return getZeynepShowcaseBeamLength(composition.copySourceTower.level) * passiveMultiplier * zeynepRangeMultiplier;
+        return this.scaleWorldDistance(getZeynepShowcaseBeamLength(composition.copySourceTower.level) * passiveMultiplier * zeynepRangeMultiplier);
       }
       if (composition.copySourceTower?.definition.id === "zeynep-1") {
-        return (composition.copySourceTower.definition.range + (composition.copySourceTower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
+        return this.scaleWorldDistance((composition.copySourceTower.definition.range + (composition.copySourceTower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
       }
     }
 
-    return (tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier;
+    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
   }
 
   private getTowerFireInterval(tower: TowerModel) {
@@ -3275,7 +3292,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.waveBonusLevel >= 2 && this.enemies.has(target.id)) {
-      target.pathDistance = Math.max(0, target.pathDistance - 18);
+      target.pathDistance = Math.max(0, target.pathDistance - this.scaleWorldDistance(18));
     }
   }
 
@@ -3827,9 +3844,10 @@ function didDebugLaserSweepHitEnemy(
   previousAngle: number,
   currentAngle: number,
   endX: number,
-  endY: number
+  endY: number,
+  beamRadius: number
 ) {
-  const hitRadius = DEBUG_LASER_OVERDRIVE_BEAM_RADIUS + getEnemyCollisionRadius(enemy);
+  const hitRadius = beamRadius + getEnemyCollisionRadius(enemy);
   if (distanceToSegmentSq(enemy.x, enemy.y, tower.x, tower.y, endX, endY) <= hitRadius * hitRadius) {
     return true;
   }

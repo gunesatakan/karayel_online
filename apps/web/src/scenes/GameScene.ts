@@ -6,6 +6,7 @@ import {
   GAME_WORLD_WIDTH,
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
+  TOWER_GRID_SIZE,
   buildRuntimePaths,
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
@@ -262,6 +263,10 @@ export class GameScene extends Phaser.Scene {
 
   private getMapCellSize() {
     return getSharedMapGridSize(this.selectedMapData);
+  }
+
+  private scaleWorldDistance(value: number) {
+    return value * (this.getMapCellSize() / TOWER_GRID_SIZE);
   }
 
   create() {
@@ -1269,20 +1274,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getClampedGuidancePoint(pointer: Phaser.Input.Pointer) {
+    const radius = this.scaleWorldDistance(GUIDANCE_RADIUS);
     return {
-      x: Phaser.Math.Clamp(pointer.worldX, GUIDANCE_RADIUS, GAME_WORLD_WIDTH - GUIDANCE_RADIUS),
-      y: Phaser.Math.Clamp(pointer.worldY, 84 + GUIDANCE_RADIUS, this.controlTop - GUIDANCE_RADIUS)
+      x: Phaser.Math.Clamp(pointer.worldX, radius, GAME_WORLD_WIDTH - radius),
+      y: Phaser.Math.Clamp(pointer.worldY, 84 + radius, this.controlTop - radius)
     };
   }
 
   private drawGuidancePreview(x: number, y: number) {
+    const radius = this.scaleWorldDistance(GUIDANCE_RADIUS);
     const preview = this.guidancePreview ?? this.add.graphics().setDepth(55);
     this.guidancePreview = preview;
     preview.clear();
     preview.fillStyle(0x38bdf8, 0.16);
-    preview.fillCircle(x, y, GUIDANCE_RADIUS);
+    preview.fillCircle(x, y, radius);
     preview.lineStyle(2, 0x7dd3fc, 0.86);
-    preview.strokeCircle(x, y, GUIDANCE_RADIUS);
+    preview.strokeCircle(x, y, radius);
     preview.lineStyle(2, 0xfacc15, 0.82);
     preview.lineBetween(x - 14, y, x + 14, y);
     preview.lineBetween(x, y - 14, x, y + 14);

@@ -535,6 +535,89 @@ canvas {
   text-transform: uppercase;
 }
 
+.map-records {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(244, 114, 182, 0.26);
+  background: rgba(5, 6, 10, 0.68);
+}
+
+.map-records__head,
+.map-name-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.map-records__head strong {
+  display: block;
+  margin-top: 2px;
+  color: #f8fafc;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.map-name-row {
+  grid-template-columns: 78px 1fr;
+  margin-top: 10px;
+}
+
+.map-name-row span {
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.map-record-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.map-record {
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.84);
+  text-align: left;
+}
+
+.map-record.is-active {
+  border-color: #facc15;
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.18);
+}
+
+.map-record span,
+.map-record small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-record span {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.map-record small {
+  margin-top: 3px;
+  color: #94a3b8;
+  font-family: "Share Tech Mono", monospace;
+  font-size: 9px;
+}
+
+.map-record--empty {
+  grid-column: 1 / -1;
+  pointer-events: none;
+}
+
 .map-tools {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
