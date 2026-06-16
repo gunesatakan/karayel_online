@@ -405,10 +405,13 @@ export class MatchRoom extends Room<MatchState> {
   private damageHasteUntil = 0;
   private zeynepHasteUntil = 0;
   private zeynepHasteMultiplier = 1;
+  private zeynepHasteTier: ZeynepCommandTier = "small";
   private zeynepRangeUntil = 0;
   private zeynepRangeMultiplier = 1;
+  private zeynepRangeTier: ZeynepCommandTier = "small";
   private zeynepSlowUntil = 0;
   private zeynepSlowMultiplier = 1;
+  private zeynepSlowTier: ZeynepCommandTier = "small";
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private serverLinkWaveAgeCache = new Map<string, number>();
@@ -1893,41 +1896,44 @@ export class MatchRoom extends Room<MatchState> {
   private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number, now: number) {
     const profile = getZeynepCommandProfile(commandType, tier, chained, authorityQuality);
     if (commandType === "haste") {
-      this.applyZeynepHaste(profile.durationMs, profile.multiplier, now);
+      this.applyZeynepHaste(profile.durationMs, profile.multiplier, tier, now);
       return;
     }
     if (commandType === "range") {
-      this.applyZeynepRange(profile.durationMs, profile.multiplier, now);
+      this.applyZeynepRange(profile.durationMs, profile.multiplier, tier, now);
       return;
     }
-    this.applyZeynepSlow(profile.durationMs, profile.multiplier, now);
+    this.applyZeynepSlow(profile.durationMs, profile.multiplier, tier, now);
   }
 
-  private applyZeynepHaste(durationMs: number, multiplier: number, now: number) {
+  private applyZeynepHaste(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepHasteUntil <= now || multiplier >= this.zeynepHasteMultiplier) {
       this.zeynepHasteUntil = until;
       this.zeynepHasteMultiplier = multiplier;
+      this.zeynepHasteTier = tier;
     } else {
       this.zeynepHasteUntil = Math.max(this.zeynepHasteUntil, until);
     }
   }
 
-  private applyZeynepRange(durationMs: number, multiplier: number, now: number) {
+  private applyZeynepRange(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepRangeUntil <= now || multiplier >= this.zeynepRangeMultiplier) {
       this.zeynepRangeUntil = until;
       this.zeynepRangeMultiplier = multiplier;
+      this.zeynepRangeTier = tier;
     } else {
       this.zeynepRangeUntil = Math.max(this.zeynepRangeUntil, until);
     }
   }
 
-  private applyZeynepSlow(durationMs: number, multiplier: number, now: number) {
+  private applyZeynepSlow(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepSlowUntil <= now || multiplier <= this.zeynepSlowMultiplier) {
       this.zeynepSlowUntil = until;
       this.zeynepSlowMultiplier = multiplier;
+      this.zeynepSlowTier = tier;
     } else {
       this.zeynepSlowUntil = Math.max(this.zeynepSlowUntil, until);
     }
@@ -2598,6 +2604,7 @@ export class MatchRoom extends Room<MatchState> {
         enemyId: event.enemyId,
         serverTime: event.serverTime
       })),
+      zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,
@@ -2607,6 +2614,33 @@ export class MatchRoom extends Room<MatchState> {
         kills: this.kills
       }
     };
+  }
+
+  private getZeynepCommandEffectsSnapshot(now: number) {
+    const commands: GameSnapshot["zeynepCommands"] = {};
+    if (this.zeynepHasteUntil > now) {
+      commands.haste = {
+        tier: this.zeynepHasteTier,
+        multiplier: roundMetric(this.zeynepHasteMultiplier),
+        remainingMs: Math.max(0, Math.round(this.zeynepHasteUntil - now))
+      };
+    }
+    if (this.zeynepRangeUntil > now) {
+      commands.range = {
+        tier: this.zeynepRangeTier,
+        multiplier: roundMetric(this.zeynepRangeMultiplier),
+        remainingMs: Math.max(0, Math.round(this.zeynepRangeUntil - now))
+      };
+    }
+    if (this.zeynepSlowUntil > now) {
+      commands.slow = {
+        tier: this.zeynepSlowTier,
+        multiplier: roundMetric(this.zeynepSlowMultiplier),
+        remainingMs: Math.max(0, Math.round(this.zeynepSlowUntil - now))
+      };
+    }
+
+    return commands.haste || commands.range || commands.slow ? commands : undefined;
   }
 
   private findTowerDefinition(characterId: CharacterId, definitionId: string) {

@@ -133,6 +133,14 @@ export type KillEventSnapshot = {
   serverTime: number;
 };
 
+export type ZeynepCommandTier = "small" | "medium" | "big";
+
+export type ZeynepCommandEffectSnapshot = {
+  tier: ZeynepCommandTier;
+  multiplier: number;
+  remainingMs: number;
+};
+
 export type TeamSnapshot = {
   health: number;
   maxHealth: number;
@@ -176,6 +184,11 @@ export type GameSnapshot = {
   beams: BeamSnapshot[];
   damageEvents: DamageEventSnapshot[];
   killEvents: KillEventSnapshot[];
+  zeynepCommands?: {
+    haste?: ZeynepCommandEffectSnapshot;
+    range?: ZeynepCommandEffectSnapshot;
+    slow?: ZeynepCommandEffectSnapshot;
+  };
   team: TeamSnapshot;
   perf?: ServerPerfSnapshot;
 };

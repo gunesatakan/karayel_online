@@ -223,6 +223,7 @@ export class GameScene extends Phaser.Scene {
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
+  private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
@@ -1096,6 +1097,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.zeynepCommandEffects = frame.snapshot.zeynepCommands;
     this.renderEnemies(frame.snapshot.enemies);
     this.renderDrones(frame.snapshot.drones ?? []);
     this.lastPlaybackAlpha = frame.alpha;
@@ -1197,6 +1199,7 @@ export class GameScene extends Phaser.Scene {
     const renderStart = performance.now();
     const now = performance.now();
 
+    this.zeynepCommandEffects = snapshot.zeynepCommands;
     this.syncMapFromSnapshot(snapshot);
     this.renderTowers(snapshot.towers);
     this.renderBeams(snapshot.beams);
@@ -1290,6 +1293,8 @@ export class GameScene extends Phaser.Scene {
 
   private renderEnemies(enemies: EnemySnapshot[]) {
     const activeIds = new Set(enemies.map((enemy) => enemy.id));
+    const slowCommand = this.zeynepCommandEffects?.slow;
+    const slowTierLevel = slowCommand ? getZeynepCommandTierLevel(slowCommand.tier) : 0;
 
     for (const [id, mover] of this.enemies) {
       if (!activeIds.has(id)) {
@@ -1333,16 +1338,18 @@ export class GameScene extends Phaser.Scene {
       }
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
-      mover.sprite.setScale(enemy.movementKind === "air" ? 1.28 : 1);
+      const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
+      mover.sprite.setScale((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse);
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
-      mover.sprite.setTint(enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
+      mover.sprite.setTint(slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const hasCombatMarker = Boolean(enemy.isFeared || trackingStacks > 0);
-      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : "AIR");
-      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isFeared ? 9 : hasCombatMarker ? 12 : 8);
-      mover.marker?.setVisible(Boolean(hasCombatMarker || enemy.movementKind === "air"));
+      const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
+      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
     }
   }
 
@@ -1485,10 +1492,59 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderZeynepCommandTowerEffect(graphics, tower);
     this.renderZeynepFormationEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderZeynepCommandTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.status === "Hararet" || tower.status === "Tukenmis") {
+      return;
+    }
+
+    const commands = this.zeynepCommandEffects;
+    if (!commands?.haste && !commands?.range) {
+      return;
+    }
+
+    const phase = (performance.now() % 1000) / 1000;
+    const drawCommandRing = (type: "haste" | "range", effect: NonNullable<GameSnapshot["zeynepCommands"]>["haste"], radiusOffset: number) => {
+      if (!effect) {
+        return;
+      }
+
+      const tierLevel = getZeynepCommandTierLevel(effect.tier);
+      const palette = getZeynepCommandPalette(type, tierLevel);
+      const radius = 18 + radiusOffset + tierLevel * 0.5;
+      const pulse = 0.7 + Math.sin((phase + radiusOffset * 0.07) * Math.PI * 2) * 0.22;
+      graphics.lineStyle(1.5 + tierLevel * 0.35, palette.primary, 0.32 + pulse * 0.28);
+      graphics.strokeCircle(tower.x, tower.y, radius);
+      graphics.lineStyle(1, palette.secondary, 0.35 + pulse * 0.22);
+      graphics.strokeCircle(tower.x, tower.y, radius + 2.2);
+
+      const marks = tierLevel + 2;
+      for (let index = 0; index < marks; index += 1) {
+        const angle = phase * Math.PI * 2 * (type === "haste" ? 1.7 : -0.65) + index * (Math.PI * 2 / marks);
+        const inner = radius - 2;
+        const outer = radius + 4;
+        const x1 = tower.x + Math.cos(angle) * inner;
+        const y1 = tower.y + Math.sin(angle) * inner;
+        const x2 = tower.x + Math.cos(angle + (type === "haste" ? 0.18 : 0.04)) * outer;
+        const y2 = tower.y + Math.sin(angle + (type === "haste" ? 0.18 : 0.04)) * outer;
+        graphics.lineStyle(type === "haste" ? 2 : 1.5, index % 2 === 0 ? palette.accent : palette.primary, 0.72);
+        graphics.lineBetween(x1, y1, x2, y2);
+      }
+
+      if (type === "range") {
+        graphics.fillStyle(palette.primary, 0.08 + tierLevel * 0.025);
+        graphics.fillCircle(tower.x, tower.y, radius + 2.8);
+      }
+    };
+
+    drawCommandRing("range", commands.range, 0);
+    drawCommandRing("haste", commands.haste, commands.range ? 3 : 0);
   }
 
   private renderZeynepFormationEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -2795,6 +2851,52 @@ function getTrackingMarkerColor(stacks: number) {
     return "#67e8f9";
   }
   return "#fde047";
+}
+
+function getZeynepCommandTierLevel(tier: "small" | "medium" | "big") {
+  if (tier === "big") {
+    return 3;
+  }
+  if (tier === "medium") {
+    return 2;
+  }
+  return 1;
+}
+
+function getZeynepCommandPalette(type: "haste" | "range", tierLevel: number) {
+  if (type === "haste") {
+    return tierLevel >= 3
+      ? { primary: 0xfacc15, secondary: 0xfb7185, accent: 0xffffff }
+      : tierLevel >= 2
+        ? { primary: 0xf59e0b, secondary: 0xfef08a, accent: 0xfb7185 }
+        : { primary: 0xfde047, secondary: 0x38bdf8, accent: 0xf97316 };
+  }
+
+  return tierLevel >= 3
+    ? { primary: 0x67e8f9, secondary: 0xf0abfc, accent: 0xffffff }
+    : tierLevel >= 2
+      ? { primary: 0x38bdf8, secondary: 0xa78bfa, accent: 0xfdf2f8 }
+      : { primary: 0x0ea5e9, secondary: 0x7dd3fc, accent: 0xf9a8d4 };
+}
+
+function getZeynepSlowTint(tierLevel: number) {
+  if (tierLevel >= 3) {
+    return 0xd8b4fe;
+  }
+  if (tierLevel >= 2) {
+    return 0x93c5fd;
+  }
+  return 0x7dd3fc;
+}
+
+function getZeynepSlowTextColor(tierLevel: number) {
+  if (tierLevel >= 3) {
+    return "#f0abfc";
+  }
+  if (tierLevel >= 2) {
+    return "#93c5fd";
+  }
+  return "#67e8f9";
 }
 
 function toCssColor(color: number) {
