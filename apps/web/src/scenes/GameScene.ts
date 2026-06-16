@@ -1058,10 +1058,11 @@ export class GameScene extends Phaser.Scene {
         this.room = existingRoom;
       } else {
         const client = new Client(gameServerUrl);
-        this.room = await client.joinOrCreate("match", {
+        this.room = await client.create("match", {
           playerName: this.selectedCharacter.displayName,
           characterId: this.selectedCharacterId,
-          mapData: this.selectedMapData
+          mapData: this.selectedMapData,
+          autoStart: true
         });
       }
       this.localSessionId = this.room.sessionId;

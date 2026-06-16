@@ -124,6 +124,7 @@ type JoinOptions = {
   roomName?: string;
   mapScale?: MapScale;
   mapData?: EditableMapData;
+  autoStart?: boolean;
 };
 
 type PlaceTowerMessage = {
@@ -436,6 +437,7 @@ export class MatchRoom extends Room<MatchState> {
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
   private hostSessionId = "";
   private gameStarted = false;
+  private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
@@ -466,6 +468,7 @@ export class MatchRoom extends Room<MatchState> {
     this.setState(new MatchState());
     this.lobbyRoomName = this.getRoomName(options.roomName);
     this.mapScale = this.getMapScaleChoice(options.mapScale);
+    this.autoStartOnFirstJoin = options.autoStart === true;
     const baseMap = normalizeMapData(options.mapData);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
@@ -540,6 +543,14 @@ export class MatchRoom extends Room<MatchState> {
     this.state.players.set(client.sessionId, player);
     if (!this.hostSessionId) {
       this.hostSessionId = client.sessionId;
+    }
+
+    if (this.autoStartOnFirstJoin && this.state.players.size === 1) {
+      player.ready = true;
+      this.gameStarted = true;
+      this.lock();
+      this.syncRoomRegistry();
+      return;
     }
 
     this.sendLobbyState(client);
