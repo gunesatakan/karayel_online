@@ -6,6 +6,10 @@ export class PreloaderScene extends Phaser.Scene {
     super("preloader");
   }
 
+  preload() {
+    this.load.image("zeynep-puppet-hands", "/images/zeynep-puppet-hands.png");
+  }
+
   create() {
     this.createCircleTexture("player-zeynep", 0xec4899, 15);
     this.createCircleTexture("player-warrior", 0x22c55e, 13);

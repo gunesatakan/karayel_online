@@ -2177,8 +2177,10 @@ export class GameScene extends Phaser.Scene {
       plate.lineBetween(156, -height - 16, 210, height + 14);
     }
 
-    drawGraffitiHand(-92, 1);
-    drawGraffitiHand(92, -1);
+    const handsImage = this.add.image(0, -70, "zeynep-puppet-hands")
+      .setDisplaySize(390, 168)
+      .setAlpha(0.92)
+      .setBlendMode(Phaser.BlendModes.NORMAL);
 
     const commandText = this.add.text(0, -height - 8, theme.motif, {
       fontFamily: "Arial Black, Arial",
@@ -2221,7 +2223,7 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 3
     }).setOrigin(0.5).setAlpha(0.72);
 
-    container.add([plate, cyanGhost, pinkGhost, mainText, commandText, crownText]);
+    container.add([plate, handsImage, cyanGhost, pinkGhost, mainText, commandText, crownText]);
     this.rampageContainer = container;
     this.tweens.add({
       targets: container,
