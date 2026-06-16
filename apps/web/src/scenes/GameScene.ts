@@ -2055,9 +2055,9 @@ export class GameScene extends Phaser.Scene {
 
     const drawGraffitiFinger = (baseX: number, baseY: number, mirror: 1 | -1, length: number, width: number, curl: number, color: number, index: number) => {
       const root = new Phaser.Geom.Point(baseX, baseY);
-      const first = new Phaser.Geom.Point(baseX + mirror * curl * 0.32, baseY + length * 0.34);
-      const second = new Phaser.Geom.Point(baseX + mirror * curl * 0.78, baseY + length * 0.66);
-      const tip = new Phaser.Geom.Point(baseX + mirror * curl, baseY + length);
+      const first = new Phaser.Geom.Point(baseX + mirror * curl * 0.22, baseY + length * 0.3);
+      const second = new Phaser.Geom.Point(baseX + mirror * curl * 0.62, baseY + length * 0.62);
+      const tip = new Phaser.Geom.Point(baseX + mirror * curl * 1.18, baseY + length * 0.9);
       const fillColor = index % 2 === 0 ? 0x180f24 : 0x211329;
       const shadowColor = index % 2 === 0 ? theme.secondary : theme.primary;
 
@@ -2081,36 +2081,36 @@ export class GameScene extends Phaser.Scene {
 
     const drawGraffitiHand = (centerX: number, mirror: 1 | -1) => {
       const palmY = topY - 18;
-      const palmWidth = 136;
+      const palmWidth = 96;
       const palmPoints = [
-        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.55, palmY + 18),
-        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.35, palmY - 12),
-        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.44, palmY - 10),
-        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.58, palmY + 19),
-        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.38, palmY + 37),
-        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.46, palmY + 34)
+        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.54, palmY + 18),
+        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.32, palmY - 10),
+        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.4, palmY - 8),
+        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.54, palmY + 18),
+        new Phaser.Geom.Point(centerX + mirror * palmWidth * 0.3, palmY + 31),
+        new Phaser.Geom.Point(centerX - mirror * palmWidth * 0.42, palmY + 31)
       ];
       plate.fillStyle(0x030712, 0.82);
       plate.fillPoints(palmPoints, true);
       plate.fillStyle(0x120b1d, 0.86);
-      plate.fillEllipse(centerX, palmY + 20, palmWidth * 0.82, 44);
+      plate.fillEllipse(centerX, palmY + 18, palmWidth * 0.72, 34);
       plate.lineStyle(3, theme.primary, 0.5);
       plate.strokePoints(palmPoints, true);
       plate.lineStyle(1.6, theme.secondary, 0.48);
-      plate.lineBetween(centerX - mirror * 42, palmY + 16, centerX + mirror * 42, palmY + 13);
-      plate.lineBetween(centerX - mirror * 34, palmY + 28, centerX + mirror * 32, palmY + 24);
+      plate.lineBetween(centerX - mirror * 31, palmY + 13, centerX + mirror * 31, palmY + 11);
+      plate.lineBetween(centerX - mirror * 25, palmY + 24, centerX + mirror * 23, palmY + 21);
 
       const fingers = [
-        { offset: -50, length: 54, width: 14, curl: -8 },
-        { offset: -24, length: 78, width: 16, curl: -4 },
-        { offset: 2, length: 84, width: 17, curl: 1 },
-        { offset: 29, length: 76, width: 15, curl: 6 },
-        { offset: 54, length: 56, width: 13, curl: 12 }
+        { offset: -36, length: 58, width: 13, curl: -18, rootY: 34 },
+        { offset: -17, length: 86, width: 15, curl: -12, rootY: 27 },
+        { offset: 2, length: 94, width: 16, curl: 0, rootY: 24 },
+        { offset: 21, length: 84, width: 14, curl: 12, rootY: 27 },
+        { offset: 39, length: 60, width: 12, curl: 18, rootY: 34 }
       ];
       fingers.forEach((finger, index) => {
         drawGraffitiFinger(
           centerX + mirror * finger.offset,
-          palmY + 29 + (index === 0 || index === 4 ? 2 : 0),
+          palmY + finger.rootY,
           mirror,
           finger.length + rule.chaos * 1.6,
           finger.width,
