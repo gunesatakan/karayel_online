@@ -386,6 +386,7 @@ type ZeynepSynthesisComposition = {
 };
 
 export class MatchRoom extends Room<MatchState> {
+  static rooms = new Map<string, MatchRoom>();
   static publicRooms = new Map<string, MatchRoom>();
 
   static listPublicRooms(): RoomListingSnapshot[] {
@@ -394,6 +395,23 @@ export class MatchRoom extends Room<MatchState> {
       .map((room) => room.toRoomListing())
       .filter((room) => room.playerCount > 0 || room.started)
       .sort((left, right) => left.roomName.localeCompare(right.roomName, "tr"));
+  }
+
+  static async prepareSingleRoomSlot(nextRoomId: string) {
+    for (const room of MatchRoom.rooms.values()) {
+      if (room.roomId === nextRoomId) {
+        continue;
+      }
+
+      if (room.getConnectedPlayerCount() > 0) {
+        throw new Error("Zaten aktif bir oda var.");
+      }
+    }
+
+    const emptyRooms = Array.from(MatchRoom.rooms.values()).filter((room) => {
+      return room.roomId !== nextRoomId && room.getConnectedPlayerCount() === 0;
+    });
+    await Promise.all(emptyRooms.map((room) => room.disconnect()));
   }
 
   maxClients = 7;
@@ -471,7 +489,10 @@ export class MatchRoom extends Room<MatchState> {
     }
   };
 
-  onCreate(options: JoinOptions = {}) {
+  async onCreate(options: JoinOptions = {}) {
+    await MatchRoom.prepareSingleRoomSlot(this.roomId);
+    MatchRoom.rooms.set(this.roomId, this);
+
     this.setState(new MatchState());
     this.lobbyRoomName = this.getRoomName(options.roomName);
     this.autoStartOnFirstJoin = options.autoStart === true;
@@ -644,6 +665,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   onDispose() {
+    MatchRoom.rooms.delete(this.roomId);
     MatchRoom.publicRooms.delete(this.roomId);
   }
 

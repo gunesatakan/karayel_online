@@ -75,6 +75,7 @@ export function setupMenuUi(game: Phaser.Game) {
   let currentLobbyRoom: Room | undefined;
   let currentLobbyState: LobbyStateSnapshot | undefined;
   let lobbyError = "";
+  let onlineGameStarting = false;
   let phaserReady = false;
 
   const render = (view: ViewName) => {
@@ -99,9 +100,10 @@ export function setupMenuUi(game: Phaser.Game) {
   };
 
   const startGame = (mode: "solo" | "online" = "solo") => {
-    if (!phaserReady) {
+    if (!phaserReady || onlineGameStarting) {
       return;
     }
+    onlineGameStarting = true;
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");
     game.scene.stop("preloader");
