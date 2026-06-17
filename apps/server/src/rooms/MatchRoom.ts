@@ -2633,7 +2633,6 @@ export class MatchRoom extends Room<MatchState> {
     }
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
-    this.addDamageEvent(enemy, result.shieldDamage + hpDamage);
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);

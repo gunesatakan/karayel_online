@@ -1265,7 +1265,6 @@ export class GameScene extends Phaser.Scene {
     this.renderTowers(snapshot.towers);
     this.renderBeams(snapshot.beams);
     this.renderProjectiles(snapshot.projectiles);
-    this.renderDamageEvents(snapshot.damageEvents);
     this.renderKillEvents(snapshot);
     this.renderHud(snapshot);
     if (now - this.lastShopEventAt > 250) {
