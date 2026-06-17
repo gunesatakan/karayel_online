@@ -1598,6 +1598,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     const phase = (performance.now() % 1000) / 1000;
+    const cellSize = this.getMapCellSize();
+    const spriteRadius = Math.max(20, cellSize * 1.12) / 2;
+    const lineScale = spriteRadius / 26;
     const drawCommandRing = (type: "haste" | "range", effect: NonNullable<GameSnapshot["zeynepCommands"]>["haste"], radiusOffset: number) => {
       if (!effect) {
         return;
@@ -1605,29 +1608,30 @@ export class GameScene extends Phaser.Scene {
 
       const tierLevel = getZeynepCommandTierLevel(effect.tier);
       const palette = getZeynepCommandPalette(type, tierLevel);
-      const radius = 18 + radiusOffset + tierLevel * 0.5;
+      const scaledOffset = radiusOffset * lineScale;
+      const radius = spriteRadius + 1.5 * lineScale + scaledOffset + tierLevel * 0.5 * lineScale;
       const pulse = 0.7 + Math.sin((phase + radiusOffset * 0.07) * Math.PI * 2) * 0.22;
-      graphics.lineStyle(1.5 + tierLevel * 0.35, palette.primary, 0.32 + pulse * 0.28);
+      graphics.lineStyle((1.5 + tierLevel * 0.35) * lineScale, palette.primary, 0.32 + pulse * 0.28);
       graphics.strokeCircle(tower.x, tower.y, radius);
-      graphics.lineStyle(1, palette.secondary, 0.35 + pulse * 0.22);
-      graphics.strokeCircle(tower.x, tower.y, radius + 2.2);
+      graphics.lineStyle(Math.max(0.7, lineScale), palette.secondary, 0.35 + pulse * 0.22);
+      graphics.strokeCircle(tower.x, tower.y, radius + 2.2 * lineScale);
 
       const marks = tierLevel + 2;
       for (let index = 0; index < marks; index += 1) {
         const angle = phase * Math.PI * 2 * (type === "haste" ? 1.7 : -0.65) + index * (Math.PI * 2 / marks);
-        const inner = radius - 2;
-        const outer = radius + 4;
+        const inner = radius - 2 * lineScale;
+        const outer = radius + 4 * lineScale;
         const x1 = tower.x + Math.cos(angle) * inner;
         const y1 = tower.y + Math.sin(angle) * inner;
         const x2 = tower.x + Math.cos(angle + (type === "haste" ? 0.18 : 0.04)) * outer;
         const y2 = tower.y + Math.sin(angle + (type === "haste" ? 0.18 : 0.04)) * outer;
-        graphics.lineStyle(type === "haste" ? 2 : 1.5, index % 2 === 0 ? palette.accent : palette.primary, 0.72);
+        graphics.lineStyle((type === "haste" ? 2 : 1.5) * lineScale, index % 2 === 0 ? palette.accent : palette.primary, 0.72);
         graphics.lineBetween(x1, y1, x2, y2);
       }
 
       if (type === "range") {
         graphics.fillStyle(palette.primary, 0.08 + tierLevel * 0.025);
-        graphics.fillCircle(tower.x, tower.y, radius + 2.8);
+        graphics.fillCircle(tower.x, tower.y, radius + 2.8 * lineScale);
       }
     };
 
@@ -1654,14 +1658,15 @@ export class GameScene extends Phaser.Scene {
     ));
 
     for (const neighbor of neighbors) {
-      graphics.lineStyle(4, secondary, 0.16 + pulse * 0.08);
+      const lineScale = Math.max(0.55, this.getMapCellSize() / TOWER_GRID_SIZE);
+      graphics.lineStyle(4 * lineScale, secondary, 0.16 + pulse * 0.08);
       graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
-      graphics.lineStyle(2, primary, 0.5 + pulse * 0.18);
+      graphics.lineStyle(2 * lineScale, primary, 0.5 + pulse * 0.18);
       graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
       const midX = (tower.x + neighbor.x) / 2;
       const midY = (tower.y + neighbor.y) / 2;
       graphics.fillStyle(primary, 0.82);
-      graphics.fillCircle(midX, midY, formationSize === 3 ? 3 : 2.5);
+      graphics.fillCircle(midX, midY, (formationSize === 3 ? 3 : 2.5) * lineScale);
     }
   }
 
@@ -1675,27 +1680,28 @@ export class GameScene extends Phaser.Scene {
     const glow = isMaxTier ? 0xbae6fd : 0xfbbf24;
     const phase = (Date.now() % 900) / 900;
     const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.12;
+    const prismScale = Math.max(20, this.getMapCellSize() * 1.12) / 52;
 
     graphics.fillStyle(color, isMaxTier ? 0.9 : 0.82);
     graphics.beginPath();
-    graphics.moveTo(tower.x, tower.y - 11);
-    graphics.lineTo(tower.x + 10, tower.y + 7);
-    graphics.lineTo(tower.x - 10, tower.y + 7);
+    graphics.moveTo(tower.x, tower.y - 11 * prismScale);
+    graphics.lineTo(tower.x + 10 * prismScale, tower.y + 7 * prismScale);
+    graphics.lineTo(tower.x - 10 * prismScale, tower.y + 7 * prismScale);
     graphics.closePath();
     graphics.fillPath();
 
-    graphics.lineStyle(isMaxTier ? 2 : 1.5, glow, pulse);
+    graphics.lineStyle((isMaxTier ? 2 : 1.5) * prismScale, glow, pulse);
     graphics.beginPath();
-    graphics.moveTo(tower.x, tower.y - 13);
-    graphics.lineTo(tower.x + 12, tower.y + 8);
-    graphics.lineTo(tower.x - 12, tower.y + 8);
+    graphics.moveTo(tower.x, tower.y - 13 * prismScale);
+    graphics.lineTo(tower.x + 12 * prismScale, tower.y + 8 * prismScale);
+    graphics.lineTo(tower.x - 12 * prismScale, tower.y + 8 * prismScale);
     graphics.closePath();
     graphics.strokePath();
 
     if (isMaxTier) {
-      graphics.lineStyle(1, 0xffffff, 0.65);
-      graphics.lineBetween(tower.x - 7, tower.y, tower.x + 7, tower.y);
-      graphics.lineBetween(tower.x, tower.y - 8, tower.x, tower.y + 6);
+      graphics.lineStyle(Math.max(0.7, prismScale), 0xffffff, 0.65);
+      graphics.lineBetween(tower.x - 7 * prismScale, tower.y, tower.x + 7 * prismScale, tower.y);
+      graphics.lineBetween(tower.x, tower.y - 8 * prismScale, tower.x, tower.y + 6 * prismScale);
     }
   }
 
