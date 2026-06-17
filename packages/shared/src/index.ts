@@ -203,6 +203,7 @@ export type ServerPerfSnapshot = {
 
 export type GameSnapshot = {
   serverTime: number;
+  hostId: string;
   map?: EditableMapData;
   players: PlayerSnapshot[];
   enemies: EnemySnapshot[];

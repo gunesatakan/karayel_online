@@ -2751,6 +2751,7 @@ export class MatchRoom extends Room<MatchState> {
     this.refreshZeynepFormations();
     return {
       serverTime: now,
+      hostId: this.hostSessionId,
       map: this.activeMap,
       players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,

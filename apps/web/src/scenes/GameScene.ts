@@ -196,6 +196,8 @@ export class GameScene extends Phaser.Scene {
   };
   private rampageContainer?: Phaser.GameObjects.Container;
   private backgroundMusic?: HTMLAudioElement;
+  private backgroundMusicPath = "";
+  private gameAudioUnlocked = false;
   private musicVolume = readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
   private voiceVolume = readStoredVolume(VOICE_VOLUME_STORAGE_KEY, DEFAULT_VOICE_VOLUME);
   private audioSettingsOpen = false;
@@ -732,13 +734,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBackgroundMusic() {
-    this.backgroundMusic = new Audio(getBackgroundMusicPath(this.selectedCharacterId));
+    this.backgroundMusicPath = getBackgroundMusicPath(this.selectedCharacterId);
+    this.backgroundMusic = new Audio(this.backgroundMusicPath);
     this.backgroundMusic.preload = "auto";
     this.backgroundMusic.loop = true;
     this.backgroundMusic.volume = this.musicVolume;
   }
 
   private unlockGameAudio() {
+    this.gameAudioUnlocked = true;
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       const originalVolume = audio.volume;
       audio.muted = true;
@@ -1249,6 +1253,7 @@ export class GameScene extends Phaser.Scene {
     const renderStart = performance.now();
     const now = performance.now();
 
+    this.syncBackgroundMusic(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
     this.syncMapFromSnapshot(snapshot);
     this.renderTowers(snapshot.towers);
@@ -1263,6 +1268,28 @@ export class GameScene extends Phaser.Scene {
     }
     const renderMs = performance.now() - renderStart;
     this.recordClientPerf(snapshot, renderMs);
+  }
+
+  private syncBackgroundMusic(snapshot: GameSnapshot) {
+    const hostPlayer = snapshot.players.find((player) => player.id === snapshot.hostId) ?? snapshot.players[0];
+    const nextPath = getBackgroundMusicPath(hostPlayer?.characterId ?? this.selectedCharacterId);
+    if (nextPath === this.backgroundMusicPath) {
+      return;
+    }
+
+    const shouldResume = this.gameAudioUnlocked && this.backgroundMusic ? !this.backgroundMusic.paused : false;
+    this.backgroundMusic?.pause();
+    this.backgroundMusicPath = nextPath;
+    this.backgroundMusic = new Audio(nextPath);
+    this.backgroundMusic.preload = "auto";
+    this.backgroundMusic.loop = true;
+    this.backgroundMusic.volume = this.musicVolume;
+
+    if (shouldResume) {
+      void this.backgroundMusic.play().catch(() => {
+        // Mobile browsers can still delay playback until the next touch.
+      });
+    }
   }
 
   private isBattlePointer(pointer: Phaser.Input.Pointer) {
