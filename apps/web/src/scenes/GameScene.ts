@@ -202,10 +202,13 @@ export class GameScene extends Phaser.Scene {
   private voiceVolume = readStoredVolume(VOICE_VOLUME_STORAGE_KEY, DEFAULT_VOICE_VOLUME);
   private audioSettingsOpen = false;
   private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
+  private perfPopupOpen = false;
+  private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
   private perfText?: Phaser.GameObjects.Text;
+  private perfInfoText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
   private towerTrayItems: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
   private selectedTowerStatsText?: Phaser.GameObjects.Text;
@@ -227,6 +230,7 @@ export class GameScene extends Phaser.Scene {
   private pingSamples: number[] = [];
   private renderMsSamples: number[] = [];
   private inboundKbSamples: number[] = [];
+  private clientPerfSectionSamples = new Map<string, number[]>();
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
@@ -242,6 +246,7 @@ export class GameScene extends Phaser.Scene {
   private droppedSnapshotCount = 0;
   private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
+  private latestPerfSnapshot?: GameSnapshot;
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private draggedTowerDefinition?: TowerDefinition;
@@ -311,6 +316,7 @@ export class GameScene extends Phaser.Scene {
       this.zeynepChainEffect?.destroy();
       this.zeynepChainText?.destroy();
       this.hideAudioSettingsPanel();
+      this.hidePerfPopup();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
       this.backgroundMusic?.pause();
@@ -384,12 +390,99 @@ export class GameScene extends Phaser.Scene {
       fontSize: "12px",
       fontStyle: "bold"
     }).setDepth(21);
-    this.pingText = this.add.text(GAME_WORLD_WIDTH - 16, 16, "-- ms", {
+    this.pingText = this.add.text(GAME_WORLD_WIDTH - 42, 16, "-- ms", {
       color: "#cbd5e1",
       fontFamily: "Arial",
       fontSize: "13px",
       fontStyle: "bold"
     }).setOrigin(1, 0).setDepth(21);
+    this.createPerfInfoButton();
+  }
+
+  private createPerfInfoButton() {
+    const x = GAME_WORLD_WIDTH - 18;
+    const y = 22;
+    const button = this.add.circle(x, y, 10, 0x1e293b, 0.96)
+      .setStrokeStyle(1.4, 0x38bdf8, 0.78)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(62);
+    const label = this.add.text(x, y - 1, "i", {
+      color: "#e0f2fe",
+      fontFamily: "Arial",
+      fontSize: "13px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(63).setInteractive({ useHandCursor: true });
+    const toggle = () => {
+      this.ignoreMapPointerUntil = performance.now() + 220;
+      this.togglePerfPopup();
+    };
+    button.on("pointerup", toggle);
+    label.on("pointerup", toggle);
+  }
+
+  private togglePerfPopup() {
+    if (this.perfPopupOpen) {
+      this.hidePerfPopup();
+      return;
+    }
+
+    this.showPerfPopup();
+  }
+
+  private showPerfPopup() {
+    this.hidePerfPopup();
+    this.perfPopupOpen = true;
+
+    const panelX = 24;
+    const panelY = 108;
+    const panelWidth = GAME_WORLD_WIDTH - 48;
+    const panelHeight = 434;
+    const background = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x020617, 0.96)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1.4, 0x38bdf8, 0.72)
+      .setInteractive({ useHandCursor: false })
+      .setDepth(86);
+    background.on("pointerdown", () => {
+      this.ignoreMapPointerUntil = performance.now() + 220;
+    });
+    background.on("pointerup", () => {
+      this.ignoreMapPointerUntil = performance.now() + 220;
+    });
+
+    const title = this.add.text(panelX + 14, panelY + 12, "Performans Profili", {
+      color: "#f8fafc",
+      fontFamily: "Arial",
+      fontSize: "15px",
+      fontStyle: "bold"
+    }).setDepth(87);
+    const close = this.add.text(panelX + panelWidth - 18, panelY + 12, "x", {
+      color: "#bae6fd",
+      fontFamily: "Arial",
+      fontSize: "16px",
+      fontStyle: "bold"
+    }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true }).setDepth(88);
+    close.on("pointerup", () => {
+      this.ignoreMapPointerUntil = performance.now() + 220;
+      this.hidePerfPopup();
+    });
+
+    this.perfInfoText = this.add.text(panelX + 14, panelY + 42, this.getPerfPopupText(), {
+      color: "#cbd5e1",
+      fontFamily: "monospace",
+      fontSize: "10px",
+      lineSpacing: 4
+    }).setDepth(87);
+
+    this.perfPopupItems.push(background, title, close, this.perfInfoText);
+  }
+
+  private hidePerfPopup() {
+    for (const item of this.perfPopupItems) {
+      item.destroy();
+    }
+    this.perfPopupItems = [];
+    this.perfInfoText = undefined;
+    this.perfPopupOpen = false;
   }
 
   private createAudioSettingsButton() {
@@ -1152,20 +1245,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderPlaybackFrame(now: number) {
+    const frameStart = performance.now();
     const frame = this.getPlaybackFrame(now);
     if (!frame) {
       return;
     }
 
     this.zeynepCommandEffects = frame.snapshot.zeynepCommands;
+    let sectionStart = performance.now();
     this.renderEnemies(frame.snapshot.enemies);
+    this.recordClientPerfSection("enemies", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
+    this.recordClientPerfSection("drones", performance.now() - sectionStart);
     this.lastPlaybackAlpha = frame.alpha;
 
     if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
       this.renderSnapshotPayload(frame.snapshot);
       this.lastRenderedSnapshotServerTime = frame.snapshot.serverTime;
     }
+    this.recordClientPerfSection("frame", performance.now() - frameStart);
   }
 
   private getPlaybackFrame(now: number): PlaybackFrame | undefined {
@@ -1261,14 +1360,28 @@ export class GameScene extends Phaser.Scene {
 
     this.syncBackgroundMusic(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
+    let sectionStart = performance.now();
     this.syncMapFromSnapshot(snapshot);
+    this.recordClientPerfSection("map", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderTowers(snapshot.towers);
+    this.recordClientPerfSection("towers", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderBeams(snapshot.beams);
+    this.recordClientPerfSection("beams", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderProjectiles(snapshot.projectiles);
+    this.recordClientPerfSection("projectiles", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderKillEvents(snapshot);
+    this.recordClientPerfSection("events", performance.now() - sectionStart);
+    sectionStart = performance.now();
     this.renderHud(snapshot);
+    this.recordClientPerfSection("hud", performance.now() - sectionStart);
     if (now - this.lastShopEventAt > 250) {
+      sectionStart = performance.now();
       this.game.events.emit("game:snapshot", snapshot, this.localSessionId);
+      this.recordClientPerfSection("shop", performance.now() - sectionStart);
       this.lastShopEventAt = now;
     }
     const renderMs = performance.now() - renderStart;
@@ -2786,6 +2899,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
+    this.latestPerfSnapshot = snapshot;
     this.snapshotCount += 1;
     this.renderMsSamples.push(renderMs);
     this.renderMsSamples = this.renderMsSamples.slice(-30);
@@ -2796,6 +2910,81 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.updatePerfOverlay(snapshot);
+    this.updatePerfPopupText();
+  }
+
+  private recordClientPerfSection(section: string, ms: number) {
+    const samples = this.clientPerfSectionSamples.get(section) ?? [];
+    samples.push(ms);
+    if (samples.length > 45) {
+      samples.splice(0, samples.length - 45);
+    }
+    this.clientPerfSectionSamples.set(section, samples);
+  }
+
+  private getClientPerfAverage(section: string) {
+    return average(this.clientPerfSectionSamples.get(section) ?? []);
+  }
+
+  private updatePerfPopupText() {
+    if (!this.perfPopupOpen || !this.perfInfoText) {
+      return;
+    }
+
+    this.perfInfoText.setText(this.getPerfPopupText());
+  }
+
+  private getPerfPopupText() {
+    const snapshot = this.latestPerfSnapshot;
+    const serverPerf = snapshot?.perf;
+    const fps = Math.round(this.game.loop.actualFps);
+    const averageRenderMs = average(this.renderMsSamples);
+    const averageKb = average(this.inboundKbSamples);
+    const entities = snapshot
+      ? `Entity: E ${snapshot.enemies.length} | T ${snapshot.towers.length} | P ${snapshot.projectiles.length} | B ${snapshot.beams.length} | D ${snapshot.drones?.length ?? 0}`
+      : "Entity: veri bekleniyor";
+    const clientLines = [
+      "CLIENT",
+      `FPS             ${fps}`,
+      `Frame avg       ${roundClientMetric(this.getClientPerfAverage("frame"))} ms`,
+      `Snapshot render ${roundClientMetric(averageRenderMs)} ms`,
+      `Enemies         ${roundClientMetric(this.getClientPerfAverage("enemies"))} ms`,
+      `Towers          ${roundClientMetric(this.getClientPerfAverage("towers"))} ms`,
+      `Beams           ${roundClientMetric(this.getClientPerfAverage("beams"))} ms`,
+      `Projectiles     ${roundClientMetric(this.getClientPerfAverage("projectiles"))} ms`,
+      `Drones          ${roundClientMetric(this.getClientPerfAverage("drones"))} ms`,
+      `HUD             ${roundClientMetric(this.getClientPerfAverage("hud"))} ms`,
+      `Events          ${roundClientMetric(this.getClientPerfAverage("events"))} ms`,
+      `Shop sync       ${roundClientMetric(this.getClientPerfAverage("shop"))} ms`,
+      `Inbound avg     ${roundClientMetric(averageKb)} KB`,
+      `Buffer          q${this.snapshotBuffer.length} / alpha ${this.lastPlaybackAlpha.toFixed(2)} / drop ${this.droppedSnapshotCount}`
+    ];
+    const serverLines = serverPerf ? [
+      "SERVER",
+      `Tick avg/max    ${roundClientMetric(serverPerf.tickMs)} / ${roundClientMetric(serverPerf.tickMaxMs)} ms`,
+      `Snapshot Hz     ${roundClientMetric(serverPerf.snapshotHz)}`,
+      `Snapshot bytes  ${(serverPerf.snapshotBytes / 1024).toFixed(1)} KB`,
+      `Spawn           ${roundClientMetric(serverPerf.sections.spawnMs)} ms`,
+      `Towers          ${roundClientMetric(serverPerf.sections.towersMs)} ms`,
+      `Projectiles     ${roundClientMetric(serverPerf.sections.projectilesMs)} ms`,
+      `Enemies         ${roundClientMetric(serverPerf.sections.enemiesMs)} ms`,
+      `Snapshot build  ${roundClientMetric(serverPerf.sections.snapshotMs)} ms`,
+      `Target checks   ${serverPerf.ops.targetChecks}`,
+      `AOE checks      ${serverPerf.ops.aoeChecks}`,
+      `Chain checks    ${serverPerf.ops.chainChecks}`,
+      `Damage events   ${serverPerf.ops.damageEvents}`
+    ] : [
+      "SERVER",
+      "Veri bekleniyor"
+    ];
+
+    return [
+      entities,
+      "",
+      ...clientLines,
+      "",
+      ...serverLines
+    ].join("\n");
   }
 
   private updatePerfOverlay(snapshot: GameSnapshot) {
