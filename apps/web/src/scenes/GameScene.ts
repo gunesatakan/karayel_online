@@ -67,6 +67,11 @@ type PlaybackFrame = {
   alpha: number;
 };
 
+type ClientPerfSample = {
+  at: number;
+  ms: number;
+};
+
 type PendingAction =
   | { type: "guidance" }
   | { type: "refactor"; towerId: string }
@@ -230,7 +235,7 @@ export class GameScene extends Phaser.Scene {
   private pingSamples: number[] = [];
   private renderMsSamples: number[] = [];
   private inboundKbSamples: number[] = [];
-  private clientPerfSectionSamples = new Map<string, number[]>();
+  private clientPerfSectionSamples = new Map<string, ClientPerfSample[]>();
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
@@ -434,9 +439,9 @@ export class GameScene extends Phaser.Scene {
     this.perfPopupOpen = true;
 
     const panelX = 24;
-    const panelY = 108;
+    const panelY = 92;
     const panelWidth = GAME_WORLD_WIDTH - 48;
-    const panelHeight = 434;
+    const panelHeight = 690;
     const background = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x020617, 0.96)
       .setOrigin(0, 0)
       .setStrokeStyle(1.4, 0x38bdf8, 0.72)
@@ -469,8 +474,8 @@ export class GameScene extends Phaser.Scene {
     this.perfInfoText = this.add.text(panelX + 14, panelY + 42, this.getPerfPopupText(), {
       color: "#cbd5e1",
       fontFamily: "monospace",
-      fontSize: "10px",
-      lineSpacing: 4
+      fontSize: "9px",
+      lineSpacing: 2
     }).setDepth(87);
 
     this.perfPopupItems.push(background, title, close, this.perfInfoText);
@@ -1228,6 +1233,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private queueSnapshot(snapshot: GameSnapshot) {
+    const receiveStart = performance.now();
     const bufferedSnapshot = {
       snapshot,
       receivedAt: performance.now()
@@ -1242,6 +1248,7 @@ export class GameScene extends Phaser.Scene {
       this.droppedSnapshotCount += this.snapshotBuffer.length - 120;
       this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
     }
+    this.recordClientPerfSection("snapshotRecv", performance.now() - receiveStart);
   }
 
   private renderPlaybackFrame(now: number) {
@@ -2915,15 +2922,35 @@ export class GameScene extends Phaser.Scene {
 
   private recordClientPerfSection(section: string, ms: number) {
     const samples = this.clientPerfSectionSamples.get(section) ?? [];
-    samples.push(ms);
-    if (samples.length > 45) {
-      samples.splice(0, samples.length - 45);
+    const now = performance.now();
+    samples.push({ at: now, ms });
+    const keepAfter = now - 10000;
+    while (samples.length > 0 && samples[0].at < keepAfter) {
+      samples.shift();
+    }
+    if (samples.length > 240) {
+      samples.splice(0, samples.length - 240);
     }
     this.clientPerfSectionSamples.set(section, samples);
   }
 
   private getClientPerfAverage(section: string) {
-    return average(this.clientPerfSectionSamples.get(section) ?? []);
+    return average((this.clientPerfSectionSamples.get(section) ?? []).map((sample) => sample.ms));
+  }
+
+  private getClientPerfMax(section: string) {
+    return maxValue((this.clientPerfSectionSamples.get(section) ?? []).map((sample) => sample.ms));
+  }
+
+  private getWorstClientPerfSection() {
+    const sections = ["frame", "towers", "beams", "projectiles", "enemies", "drones", "hud", "events", "shop", "map", "snapshotRecv"];
+    return sections
+      .map((section) => ({
+        section,
+        averageMs: this.getClientPerfAverage(section),
+        maxMs: this.getClientPerfMax(section)
+      }))
+      .sort((left, right) => right.maxMs - left.maxMs)[0];
   }
 
   private updatePerfPopupText() {
@@ -2932,6 +2959,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.perfInfoText.setText(this.getPerfPopupText());
+    this.perfInfoText.setColor(this.getPerfDiagnosis().color);
   }
 
   private getPerfPopupText() {
@@ -2940,14 +2968,28 @@ export class GameScene extends Phaser.Scene {
     const fps = Math.round(this.game.loop.actualFps);
     const averageRenderMs = average(this.renderMsSamples);
     const averageKb = average(this.inboundKbSamples);
+    const diagnosis = this.getPerfDiagnosis();
+    const worstClient = this.getWorstClientPerfSection();
+    const memoryInfo = getBrowserMemoryInfo();
+    const canvas = this.game.canvas;
     const entities = snapshot
       ? `Entity: E ${snapshot.enemies.length} | T ${snapshot.towers.length} | P ${snapshot.projectiles.length} | B ${snapshot.beams.length} | D ${snapshot.drones?.length ?? 0}`
       : "Entity: veri bekleniyor";
+    const deviceLines = [
+      "DEVICE",
+      `DPR             ${window.devicePixelRatio.toFixed(2)}`,
+      `Canvas px       ${canvas.width} x ${canvas.height}`,
+      `CSS px          ${canvas.clientWidth} x ${canvas.clientHeight}`,
+      `Memory          ${memoryInfo}`
+    ];
     const clientLines = [
       "CLIENT",
       `FPS             ${fps}`,
       `Frame avg       ${roundClientMetric(this.getClientPerfAverage("frame"))} ms`,
+      `Frame max10s    ${roundClientMetric(this.getClientPerfMax("frame"))} ms`,
+      `Worst max10s    ${formatPerfSectionName(worstClient?.section)} ${roundClientMetric(worstClient?.maxMs ?? 0)} ms`,
       `Snapshot render ${roundClientMetric(averageRenderMs)} ms`,
+      `Snapshot recv   ${roundClientMetric(this.getClientPerfAverage("snapshotRecv"))} ms`,
       `Enemies         ${roundClientMetric(this.getClientPerfAverage("enemies"))} ms`,
       `Towers          ${roundClientMetric(this.getClientPerfAverage("towers"))} ms`,
       `Beams           ${roundClientMetric(this.getClientPerfAverage("beams"))} ms`,
@@ -2979,12 +3021,80 @@ export class GameScene extends Phaser.Scene {
     ];
 
     return [
+      `STATUS: ${diagnosis.level}`,
+      `BOTTLENECK: ${diagnosis.reason}`,
+      "",
       entities,
+      "",
+      ...deviceLines,
       "",
       ...clientLines,
       "",
       ...serverLines
     ].join("\n");
+  }
+
+  private getPerfDiagnosis() {
+    const snapshot = this.latestPerfSnapshot;
+    const serverPerf = snapshot?.perf;
+    const fps = Math.round(this.game.loop.actualFps);
+    const frameMax = this.getClientPerfMax("frame");
+    const worstClient = this.getWorstClientPerfSection();
+    const averageKb = average(this.inboundKbSamples);
+
+    if (serverPerf && (serverPerf.tickMs >= 18 || serverPerf.tickMaxMs >= 32)) {
+      const serverSections = [
+        ["towers", serverPerf.sections.towersMs],
+        ["projectiles", serverPerf.sections.projectilesMs],
+        ["enemies", serverPerf.sections.enemiesMs],
+        ["snapshot", serverPerf.sections.snapshotMs],
+        ["spawn", serverPerf.sections.spawnMs]
+      ] as const;
+      const worstServer = [...serverSections].sort((left, right) => right[1] - left[1])[0];
+      return {
+        level: "KIRMIZI",
+        color: "#fb7185",
+        reason: `server ${worstServer[0]} (${roundClientMetric(worstServer[1])}ms)`
+      };
+    }
+
+    if (fps < 35 || frameMax > 34) {
+      return {
+        level: "KIRMIZI",
+        color: "#fb7185",
+        reason: `client ${formatPerfSectionName(worstClient?.section)} (${roundClientMetric(worstClient?.maxMs ?? 0)}ms max)`
+      };
+    }
+
+    if (averageKb > 80 || (serverPerf?.snapshotBytes ?? 0) > 90000) {
+      return {
+        level: "SARI",
+        color: "#fde047",
+        reason: `snapshot/network (${roundClientMetric(averageKb)}KB avg)`
+      };
+    }
+
+    if (serverPerf && (serverPerf.ops.targetChecks > 3500 || serverPerf.ops.aoeChecks > 1200 || serverPerf.ops.chainChecks > 900)) {
+      return {
+        level: "SARI",
+        color: "#fde047",
+        reason: `logic checks t${serverPerf.ops.targetChecks}/a${serverPerf.ops.aoeChecks}/c${serverPerf.ops.chainChecks}`
+      };
+    }
+
+    if (fps < 50 || frameMax > 22 || (serverPerf?.tickMs ?? 0) > 10) {
+      return {
+        level: "SARI",
+        color: "#fde047",
+        reason: `borderline ${formatPerfSectionName(worstClient?.section)}`
+      };
+    }
+
+    return {
+      level: "YESIL",
+      color: "#86efac",
+      reason: "kritik darbogaz yok"
+    };
   }
 
   private updatePerfOverlay(snapshot: GameSnapshot) {
@@ -3034,6 +3144,49 @@ function average(values: number[]) {
   }
 
   return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function maxValue(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...values);
+}
+
+function formatPerfSectionName(section: string | undefined) {
+  if (!section) {
+    return "unknown";
+  }
+
+  const labels: Record<string, string> = {
+    frame: "frame",
+    towers: "towers",
+    beams: "beams",
+    projectiles: "projectiles",
+    enemies: "enemies",
+    drones: "drones",
+    hud: "hud",
+    events: "events",
+    shop: "shop",
+    map: "map",
+    snapshotRecv: "snapshot recv"
+  };
+  return labels[section] ?? section;
+}
+
+function getBrowserMemoryInfo() {
+  const memory = (performance as Performance & {
+    memory?: {
+      usedJSHeapSize?: number;
+      jsHeapSizeLimit?: number;
+    };
+  }).memory;
+  if (!memory?.usedJSHeapSize || !memory.jsHeapSizeLimit) {
+    return "destek yok";
+  }
+
+  return `${(memory.usedJSHeapSize / 1024 / 1024).toFixed(1)} / ${(memory.jsHeapSizeLimit / 1024 / 1024).toFixed(0)} MB`;
 }
 
 function getZeynepCommandButtonState(authorityChain: number) {
