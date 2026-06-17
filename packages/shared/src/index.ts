@@ -36,6 +36,7 @@ export type PlayerSnapshot = {
   id: string;
   name: string;
   characterId: CharacterId;
+  gold: number;
   goldSpent: number;
   towersBuilt: number;
   ultimateCharge: number;
@@ -51,6 +52,7 @@ export type LobbyPlayerSnapshot = {
   characterId: CharacterId;
   ready: boolean;
   isHost: boolean;
+  connected: boolean;
 };
 
 export type LobbyStateSnapshot = {

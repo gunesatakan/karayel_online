@@ -1263,7 +1263,7 @@ export class GameScene extends Phaser.Scene {
     this.renderKillEvents(snapshot);
     this.renderHud(snapshot);
     if (now - this.lastShopEventAt > 250) {
-      this.game.events.emit("game:snapshot", snapshot);
+      this.game.events.emit("game:snapshot", snapshot, this.localSessionId);
       this.lastShopEventAt = now;
     }
     const renderMs = performance.now() - renderStart;
@@ -1345,7 +1345,8 @@ export class GameScene extends Phaser.Scene {
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
     this.localPlayerSnapshot = player;
     const charge = player?.ultimateCharge ?? 0;
-    this.currentTeamGold = snapshot.team.gold;
+    const gold = player?.gold ?? 0;
+    this.currentTeamGold = gold;
     this.currentUltimateCharge = charge;
     if (charge < 100 && this.ultimateChoiceItems.length > 0) {
       this.hideUltimateChoices();
@@ -1358,9 +1359,9 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
     }
     const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
-    const hudKey = `${snapshot.team.gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}`;
+    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${snapshot.team.gold}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
+      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;

@@ -136,7 +136,7 @@ export class ShopUIScene extends Phaser.Scene {
     }
   }
 
-  private updateSnapshot(snapshot: GameSnapshot) {
+  private updateSnapshot(snapshot: GameSnapshot, localSessionId = "") {
     const selectedTower = this.selectedTowerId ? snapshot.towers.find((tower) => tower.id === this.selectedTowerId) : undefined;
     this.shopContainer?.setVisible(!selectedTower);
     this.towerPanel?.setVisible(Boolean(selectedTower));
@@ -147,12 +147,13 @@ export class ShopUIScene extends Phaser.Scene {
       return;
     }
 
-    this.goldText?.setText(`Gold: ${snapshot.team.gold}`);
+    const gold = snapshot.players.find((player) => player.id === localSessionId)?.gold ?? snapshot.players[0]?.gold ?? snapshot.team.gold;
+    this.goldText?.setText(`Gold: ${Math.floor(gold)}`);
     this.healthText?.setText(`Can: ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}`);
     this.waveText?.setText(`Wave ${snapshot.team.wave}`);
 
     for (const [id, button] of this.buttons) {
-      button.setAlpha(snapshot.team.gold >= upgradeCosts[id] ? 1 : 0.48);
+      button.setAlpha(gold >= upgradeCosts[id] ? 1 : 0.48);
     }
   }
 }

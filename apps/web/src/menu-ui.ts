@@ -125,6 +125,10 @@ export function setupMenuUi(game: Phaser.Game) {
           selectedDetail = getDetailItems(character)[0];
         }
       }
+      if (state.started) {
+        startGame("online");
+        return;
+      }
       render("lobby");
     });
     room.onMessage("lobby:error", (payload: { message?: string }) => {
@@ -522,7 +526,7 @@ function renderOnline(
               <span class="archive-card__mark">${room.mapScale}x</span>
               <span class="archive-card__body">
                 <strong>${escapeHtml(room.roomName)}</strong>
-                <small>${escapeHtml(room.hostName)} · ${room.playerCount}/${room.maxPlayers} oyuncu</small>
+                <small>${escapeHtml(room.hostName)} · ${room.playerCount}/${room.maxPlayers} oyuncu · ${room.started ? "Devam ediyor" : "Lobi"}</small>
               </span>
             </button>
           `).join("") : `

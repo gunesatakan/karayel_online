@@ -103,6 +103,8 @@ class Player extends Schema {
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
+  @type("boolean") connected = true;
+  @type("number") gold = TEAM_START_GOLD;
   @type("number") goldSpent = 0;
   @type("number") towersBuilt = 0;
   @type("number") ultimateCharge = 0;
@@ -388,12 +390,14 @@ export class MatchRoom extends Room<MatchState> {
 
   static listPublicRooms(): RoomListingSnapshot[] {
     return Array.from(MatchRoom.publicRooms.values())
+      .filter((room) => room.hasJoinableSeat())
       .map((room) => room.toRoomListing())
-      .filter((room) => !room.started && room.playerCount > 0)
+      .filter((room) => room.playerCount > 0 || room.started)
       .sort((left, right) => left.roomName.localeCompare(right.roomName, "tr"));
   }
 
   maxClients = 7;
+  autoDispose = false;
   private enemies = new Map<string, EnemyModel>();
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
@@ -415,7 +419,6 @@ export class MatchRoom extends Room<MatchState> {
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
-  private teamGold = TEAM_START_GOLD;
   private wave = 1;
   private kills = 0;
   private waveSpawned = 0;
@@ -544,13 +547,16 @@ export class MatchRoom extends Room<MatchState> {
 
   onJoin(client: Client, options: JoinOptions) {
     if (this.gameStarted) {
-      throw new Error("Bu oda oyunu baslatti.");
+      this.joinStartedMatch(client, options);
+      return;
     }
 
     const player = new Player();
     player.name = options.playerName?.slice(0, 20) || "Oyuncu";
     player.characterId = this.getAvailableCharacterId(options.characterId);
     player.ready = false;
+    player.connected = true;
+    player.gold = TEAM_START_GOLD;
 
     this.state.players.set(client.sessionId, player);
     if (!this.hostSessionId) {
@@ -560,7 +566,6 @@ export class MatchRoom extends Room<MatchState> {
     if (this.autoStartOnFirstJoin && this.state.players.size === 1) {
       player.ready = true;
       this.gameStarted = true;
-      this.lock();
       this.syncRoomRegistry();
       return;
     }
@@ -570,11 +575,72 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   onLeave(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (this.gameStarted && player) {
+      player.connected = false;
+      this.broadcastLobbyState();
+      return;
+    }
+
     this.state.players.delete(client.sessionId);
     if (this.hostSessionId === client.sessionId) {
       this.hostSessionId = this.state.players.keys().next().value ?? "";
     }
     this.broadcastLobbyState();
+  }
+
+  private joinStartedMatch(client: Client, options: JoinOptions) {
+    const disconnectedEntry = Array.from(this.state.players.entries()).find(([, player]) => !player.connected);
+    if (disconnectedEntry) {
+      const [previousSessionId, player] = disconnectedEntry;
+      this.transferPlayerSession(previousSessionId, client.sessionId, player, options.playerName);
+      this.sendLobbyState(client);
+      client.send("lobby:started", { roomId: this.roomId });
+      this.syncRoomRegistry();
+      return;
+    }
+
+    if (this.state.players.size >= this.maxClients) {
+      throw new Error("Oda dolu.");
+    }
+
+    const player = new Player();
+    player.name = options.playerName?.slice(0, 20) || "Oyuncu";
+    player.characterId = this.getAvailableCharacterId(options.characterId);
+    player.ready = true;
+    player.connected = true;
+    player.gold = TEAM_START_GOLD;
+    this.state.players.set(client.sessionId, player);
+    this.sendLobbyState(client);
+    client.send("lobby:started", { roomId: this.roomId });
+    this.syncRoomRegistry();
+  }
+
+  private transferPlayerSession(previousSessionId: string, nextSessionId: string, player: Player, playerName?: string) {
+    this.state.players.delete(previousSessionId);
+    player.connected = true;
+    player.name = playerName?.slice(0, 20) || player.name;
+    this.state.players.set(nextSessionId, player);
+
+    if (this.hostSessionId === previousSessionId) {
+      this.hostSessionId = nextSessionId;
+    }
+
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId === previousSessionId) {
+        tower.ownerId = nextSessionId;
+        tower.ownerName = player.name;
+      }
+    }
+
+    for (const drone of this.drones.values()) {
+      if (drone.ownerId === previousSessionId) {
+        drone.ownerId = nextSessionId;
+      }
+    }
+
+    this.transferMapKey(this.playerKillStreakTimes, previousSessionId, nextSessionId);
+    this.transferMapKey(this.playerKillStreakLocks, previousSessionId, nextSessionId);
   }
 
   onDispose() {
@@ -623,7 +689,6 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.gameStarted = true;
-    this.lock();
     this.syncRoomRegistry();
     this.broadcastLobbyState();
     this.broadcast("lobby:started", {
@@ -657,7 +722,8 @@ export class MatchRoom extends Room<MatchState> {
         name: player.name,
         characterId: player.characterId,
         ready: player.ready,
-        isHost: id === this.hostSessionId
+        isHost: id === this.hostSessionId,
+        connected: player.connected
       }))
     };
   }
@@ -668,7 +734,7 @@ export class MatchRoom extends Room<MatchState> {
       roomId: this.roomId,
       roomName: this.lobbyRoomName,
       hostName,
-      playerCount: this.state.players.size,
+      playerCount: this.getConnectedPlayerCount(),
       maxPlayers: this.maxClients,
       mapScale: this.mapScale,
       started: this.gameStarted
@@ -680,12 +746,38 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    if (this.gameStarted || this.state.players.size === 0) {
+    if (this.state.players.size === 0 || !this.hasJoinableSeat()) {
       MatchRoom.publicRooms.delete(this.roomId);
       return;
     }
 
     MatchRoom.publicRooms.set(this.roomId, this);
+  }
+
+  private getConnectedPlayerCount() {
+    return Array.from(this.state.players.values()).filter((player) => player.connected).length;
+  }
+
+  private hasJoinableSeat() {
+    if (this.state.players.size === 0) {
+      return false;
+    }
+
+    if (!this.gameStarted) {
+      return this.state.players.size < this.maxClients;
+    }
+
+    return this.state.players.size < this.maxClients || Array.from(this.state.players.values()).some((player) => !player.connected);
+  }
+
+  private transferMapKey<T>(map: Map<string, T>, previousKey: string, nextKey: string) {
+    const value = map.get(previousKey);
+    if (value === undefined) {
+      return;
+    }
+
+    map.delete(previousKey);
+    map.set(nextKey, value);
   }
 
   private getMapWorldScale() {
@@ -702,6 +794,30 @@ export class MatchRoom extends Room<MatchState> {
 
   private getScaledWaveEnemyCount(wave: number) {
     return Math.round(getWaveEnemyCount(wave) * this.mapScale);
+  }
+
+  private awardGoldToPlayers(amount: number) {
+    const gold = Math.max(0, Math.round(amount));
+    if (gold <= 0) {
+      return;
+    }
+
+    for (const player of this.state.players.values()) {
+      player.gold += gold;
+    }
+  }
+
+  private awardEnemyGold(enemy: EnemyModel) {
+    const players = Array.from(this.state.players.values());
+    if (players.length === 0) {
+      return;
+    }
+
+    const totalReward = Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
+    const share = Math.max(1, Math.round(totalReward / players.length));
+    for (const player of players) {
+      player.gold += share;
+    }
   }
 
   private update(deltaTime: number) {
@@ -785,7 +901,7 @@ export class MatchRoom extends Room<MatchState> {
       this.waveSpawned = 0;
       this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
-      this.teamGold += 20 + this.wave * 3;
+      this.awardGoldToPlayers(20 + this.wave * 3);
     }
 
     if (this.waveSpawned >= this.waveTarget) {
@@ -1877,7 +1993,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
     const placement = this.snapToTowerGrid(message.x, message.y);
-    if (!definition || this.teamGold < definition.cost || !this.canPlaceTower(placement.x, placement.y)) {
+    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y)) {
       return;
     }
 
@@ -1923,7 +2039,7 @@ export class MatchRoom extends Room<MatchState> {
     };
 
     this.towers.set(tower.id, tower);
-    this.teamGold -= definition.cost;
+    player.gold -= definition.cost;
     player.goldSpent += definition.cost;
     player.towersBuilt += 1;
   }
@@ -1940,11 +2056,11 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const cost = getTowerUpgradeCost(tower.definition.cost, tower.level, tower.definition.id);
-    if (this.teamGold < cost) {
+    if (player.gold < cost) {
       return;
     }
 
-    this.teamGold -= cost;
+    player.gold -= cost;
     player.goldSpent += cost;
     tower.level += 1;
   }
@@ -1961,7 +2077,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const refund = getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id);
-    this.teamGold += refund;
+    player.gold += refund;
     player.goldSpent = Math.max(0, player.goldSpent - refund);
     player.towersBuilt = Math.max(0, player.towersBuilt - 1);
     this.removeTowerReferences(tower.id);
@@ -2071,7 +2187,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (slot === 0) {
-      this.teamGold += 22;
+      player.gold += 22;
       return;
     }
 
@@ -2197,7 +2313,10 @@ export class MatchRoom extends Room<MatchState> {
     } else if (characterId === "mage") {
       this.damageAllEnemies(82, 0, ownerId);
     } else if (characterId === "healer") {
-      this.teamGold += 20;
+      const player = this.state.players.get(ownerId);
+      if (player) {
+        player.gold += 20;
+      }
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 25);
       this.slowAllEnemies(1600);
     } else if (characterId === "tank") {
@@ -2205,7 +2324,10 @@ export class MatchRoom extends Room<MatchState> {
     } else if (characterId === "onur") {
       this.damageStrongestEnemy(180, 0, ownerId);
     } else {
-      this.teamGold += 25;
+      const player = this.state.players.get(ownerId);
+      if (player) {
+        player.gold += 25;
+      }
       this.damageAllEnemies(20, 0, ownerId);
     }
   }
@@ -2505,7 +2627,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.enemies.delete(enemy.id);
-    this.teamGold += Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
+    this.awardEnemyGold(enemy);
     this.kills += 1;
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
@@ -2764,6 +2886,7 @@ export class MatchRoom extends Room<MatchState> {
         id,
         name: player.name,
         characterId: player.characterId,
+        gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         towersBuilt: player.towersBuilt,
         ultimateCharge: Math.round(player.ultimateCharge),
@@ -2863,7 +2986,7 @@ export class MatchRoom extends Room<MatchState> {
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,
-        gold: this.teamGold,
+        gold: Math.floor(Array.from(this.state.players.values()).reduce((total, player) => total + player.gold, 0)),
         wave: this.wave,
         enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size,
         kills: this.kills
