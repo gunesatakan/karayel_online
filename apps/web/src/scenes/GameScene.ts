@@ -1647,7 +1647,6 @@ export class GameScene extends Phaser.Scene {
 
     const neighbors = Array.from(this.towerSnapshots.values()).filter((candidate) => (
       candidate.id > tower.id &&
-      candidate.ownerId === tower.ownerId &&
       candidate.characterId === "zeynep" &&
       (candidate.zeynepFormationSize ?? 0) === formationSize &&
       areFormationNeighbors(tower, candidate, this.getMapCellSize())

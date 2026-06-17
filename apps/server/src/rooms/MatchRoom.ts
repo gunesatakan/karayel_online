@@ -1124,7 +1124,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getZeynepSynthesisComposition(tower: TowerModel): ZeynepSynthesisComposition {
     const formationGroup = this.getZeynepFormationGroup(tower);
-    if (formationGroup.length !== 3 || !isCompleteZeynepFormation(formationGroup)) {
+    if (!isValidZeynepFormationGroup(formationGroup, getMapGridSize(this.activeMap)) || formationGroup.length !== 3) {
       return { hizaCount: 0, showcaseCount: 0, linkedTowers: [], synthesisTowerCount: formationGroup.filter((member) => member.definition.id === "zeynep-3").length };
     }
 
@@ -1151,6 +1151,7 @@ export class MatchRoom extends Room<MatchState> {
   private getZeynepFormationGroup(tower: TowerModel) {
     const group = new Map<string, TowerModel>([[tower.id, tower]]);
     const queue = [tower];
+    const gridSize = getMapGridSize(this.activeMap);
 
     while (queue.length > 0) {
       const current = queue.shift();
@@ -1160,15 +1161,12 @@ export class MatchRoom extends Room<MatchState> {
 
       for (const candidate of this.towers.values()) {
         if (
-          group.has(candidate.id) ||
-          candidate.ownerId !== tower.ownerId ||
-          candidate.characterId !== "zeynep" ||
-          candidate.definition.id === "zeynep-7"
+          group.has(candidate.id)
         ) {
           continue;
         }
 
-        if (!areZeynepFormationNeighbors(current, candidate)) {
+        if (!areZeynepFormationNeighbors(current, candidate, gridSize)) {
           continue;
         }
 
@@ -2330,7 +2328,8 @@ export class MatchRoom extends Room<MatchState> {
       tower.zeynepFormationLevel = 0;
     }
 
-    const towers = allZeynepTowers.filter((tower) => tower.definition.id !== "zeynep-7");
+    const towers = Array.from(this.towers.values());
+    const gridSize = getMapGridSize(this.activeMap);
     const visited = new Set<string>();
     for (const tower of towers) {
       if (visited.has(tower.id)) {
@@ -2349,10 +2348,10 @@ export class MatchRoom extends Room<MatchState> {
 
         group.push(current);
         for (const candidate of towers) {
-          if (visited.has(candidate.id) || candidate.ownerId !== current.ownerId) {
+          if (visited.has(candidate.id)) {
             continue;
           }
-          if (!areZeynepFormationNeighbors(current, candidate)) {
+          if (!areZeynepFormationNeighbors(current, candidate, gridSize)) {
             continue;
           }
 
@@ -2361,10 +2360,13 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
 
-      const isValidFormation = group.length === 2 || (group.length === 3 && isCompleteZeynepFormation(group));
+      const isValidFormation = isValidZeynepFormationGroup(group, gridSize);
       const formationSize = isValidFormation ? group.length : 0;
       const formationLevel = isValidFormation ? Math.min(...group.map((member) => member.level)) : 0;
       for (const member of group) {
+        if (member.characterId !== "zeynep" || member.definition.id === "zeynep-7") {
+          continue;
+        }
         member.zeynepFormationSize = formationSize;
         member.zeynepFormationLevel = formationLevel;
       }
@@ -3700,21 +3702,29 @@ function getZeynepShowcaseBeamLength(level: number) {
   return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
 }
 
-function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel) {
+function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel, gridSize: number) {
   const dx = Math.abs(towerA.x - towerB.x);
   const dy = Math.abs(towerA.y - towerB.y);
-  return dx <= TOWER_GRID_SIZE + 2 && dy <= TOWER_GRID_SIZE + 2 && dx + dy > 2;
+  return dx <= gridSize + 2 && dy <= gridSize + 2 && dx + dy > 2;
 }
 
-function isCompleteZeynepFormation(group: TowerModel[]) {
+function isCompleteZeynepFormation(group: TowerModel[], gridSize: number) {
   for (let firstIndex = 0; firstIndex < group.length; firstIndex += 1) {
     for (let secondIndex = firstIndex + 1; secondIndex < group.length; secondIndex += 1) {
-      if (!areZeynepFormationNeighbors(group[firstIndex], group[secondIndex])) {
+      if (!areZeynepFormationNeighbors(group[firstIndex], group[secondIndex], gridSize)) {
         return false;
       }
     }
   }
   return true;
+}
+
+function isValidZeynepFormationGroup(group: TowerModel[], gridSize: number) {
+  if (!group.every((member) => member.characterId === "zeynep" && member.definition.id !== "zeynep-7")) {
+    return false;
+  }
+
+  return group.length === 2 || (group.length === 3 && isCompleteZeynepFormation(group, gridSize));
 }
 
 function getZeynepFormationLevelRatio(tower: TowerModel) {
