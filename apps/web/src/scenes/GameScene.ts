@@ -113,6 +113,7 @@ const GUIDANCE_RADIUS = 78;
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type AudioVolumeChannel = "music" | "voice";
+type TowerOrientation = NonNullable<TowerSnapshot["orientation"]>;
 
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
@@ -219,6 +220,9 @@ export class GameScene extends Phaser.Scene {
   private towerTrayItems: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
   private selectedTowerStatsText?: Phaser.GameObjects.Text;
   private selectedTowerStatsHelpText?: Phaser.GameObjects.Text;
+  private abartiOrientation: TowerOrientation = "horizontal";
+  private abartiOrientationButton?: Phaser.GameObjects.Rectangle;
+  private abartiOrientationText?: Phaser.GameObjects.Text;
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
@@ -682,6 +686,26 @@ export class GameScene extends Phaser.Scene {
       this.towerTrayItems.push(button, nameText, costText);
     });
 
+    this.abartiOrientationButton = this.add.rectangle(GAME_WORLD_WIDTH - 56, this.trayTop + 14, 92, 24, 0x312e81, 0.92)
+      .setStrokeStyle(1, 0x67e8f9, 0.62)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(28)
+      .setVisible(false);
+    this.abartiOrientationText = this.add.text(GAME_WORLD_WIDTH - 56, this.trayTop + 14, "", {
+      color: "#cffafe",
+      fontFamily: "Arial",
+      fontSize: "10px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(29).setVisible(false);
+    const toggleAbartiOrientation = () => {
+      this.ignoreMapPointerUntil = performance.now() + 180;
+      this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
+      this.updateAbartiOrientationButton();
+      this.updateSelectionUi();
+    };
+    this.abartiOrientationButton.on("pointerup", toggleAbartiOrientation);
+    this.abartiOrientationText.setInteractive({ useHandCursor: true }).on("pointerup", toggleAbartiOrientation);
+
     this.selectedTowerStatsText = this.add.text(16, this.trayTop + 30, "", {
       color: "#f8fafc",
       fontFamily: "Arial",
@@ -705,8 +729,10 @@ export class GameScene extends Phaser.Scene {
     this.placementGhost?.destroy();
     const previewPoint = this.getTowerDragPreviewPoint(pointer);
     const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
+    const ghostWidth = tower.id === "zeynep-8" && this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize;
+    const ghostHeight = tower.id === "zeynep-8" && this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize;
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
-      .setDisplaySize(tower.id === "zeynep-8" ? previewSize * 1.7 : previewSize, previewSize)
+      .setDisplaySize(ghostWidth, ghostHeight)
       .setAlpha(0.78)
       .setDepth(28);
     this.updateTowerDrag(pointer);
@@ -738,7 +764,8 @@ export class GameScene extends Phaser.Scene {
       this.room.send("placeTower", {
         definitionId: tower.id,
         x: cell.x,
-        y: cell.y
+        y: cell.y,
+        orientation: tower.id === "zeynep-8" ? this.abartiOrientation : undefined
       });
       this.hintText?.setText(`${tower.name} yerlestirme istegi gonderildi`);
     } else {
@@ -789,9 +816,19 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id) {
+  private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id, orientation = this.getPlacementOrientation(definitionId)) {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
     if (definitionId === "zeynep-8") {
+      if (orientation === "vertical") {
+        const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, gridPoint.row));
+        const top = gridToWorld(gridPoint.col, row, this.selectedMapData);
+        const bottom = gridToWorld(gridPoint.col, row + 1, this.selectedMapData);
+        return {
+          x: top.x,
+          y: (top.y + bottom.y) / 2
+        };
+      }
+
       const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, gridPoint.col));
       const left = gridToWorld(col, gridPoint.row, this.selectedMapData);
       const right = gridToWorld(col + 1, gridPoint.row, this.selectedMapData);
@@ -824,7 +861,7 @@ export class GameScene extends Phaser.Scene {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId);
+      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId, tower.orientation);
       if (towerCells.some((cell) => occupiedCells.has(`${cell.col}:${cell.row}`))) {
         return false;
       }
@@ -834,22 +871,36 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getTowerPreviewFootprintCells(x: number, y: number) {
-    return this.getTowerFootprintCells(x, y, this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id);
+    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
+    return this.getTowerFootprintCells(x, y, definitionId, this.getPlacementOrientation(definitionId));
   }
 
-  private getTowerFootprintCells(x: number, y: number, definitionId = "") {
+  private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
     if (definitionId !== "zeynep-8") {
       return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
     }
 
     const cellSize = this.getMapCellSize();
+    if (orientation === "vertical") {
+      const topPoint = worldToGrid(x, y - cellSize / 2, this.selectedMapData);
+      const cells = [
+        { col: topPoint.col, row: topPoint.row },
+        { col: topPoint.col, row: topPoint.row + 1 }
+      ];
+      return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
+    }
+
     const leftPoint = worldToGrid(x - cellSize / 2, y, this.selectedMapData);
     const cells = [
       { col: leftPoint.col, row: leftPoint.row },
       { col: leftPoint.col + 1, row: leftPoint.row }
     ];
     return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
+  }
+
+  private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id): TowerOrientation {
+    return definitionId === "zeynep-8" ? this.abartiOrientation : "horizontal";
   }
 
   private createKillStreakAudio() {
@@ -1657,7 +1708,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}`;
       if (rendered.key !== key) {
         const haloStyle = getTowerLevelHalo(tower.level);
         rendered.halo.setPosition(tower.x, tower.y);
@@ -1673,8 +1724,9 @@ export class GameScene extends Phaser.Scene {
         rendered.key = key;
       }
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
-      const footprintScaleX = tower.definitionId === "zeynep-8" ? 1.7 : 1;
-      rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale);
+      const footprintScaleX = tower.definitionId === "zeynep-8" && tower.orientation !== "vertical" ? 1.7 : 1;
+      const footprintScaleY = tower.definitionId === "zeynep-8" && tower.orientation === "vertical" ? 1.7 : 1;
+      rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale * footprintScaleY);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
@@ -2767,8 +2819,8 @@ export class GameScene extends Phaser.Scene {
   private findTowerAt(x: number, y: number) {
     const pointerCell = worldToGrid(x, y, this.selectedMapData);
     const sameCellTower = Array.from(this.towerSnapshots.values()).find((tower) => {
-      const towerCell = worldToGrid(tower.x, tower.y, this.selectedMapData);
-      return towerCell.col === pointerCell.col && towerCell.row === pointerCell.row;
+      return this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId, tower.orientation)
+        .some((cell) => cell.col === pointerCell.col && cell.row === pointerCell.row);
     });
     if (sameCellTower) {
       return sameCellTower;
@@ -2798,14 +2850,30 @@ export class GameScene extends Phaser.Scene {
     }
     this.selectedTowerStatsText?.setVisible(!visible);
     this.selectedTowerStatsHelpText?.setVisible(!visible);
+    this.updateAbartiOrientationButton(visible);
+  }
+
+  private updateAbartiOrientationButton(shopVisible = !this.selectedPlacedTowerId) {
+    const visible = shopVisible && this.selectedTowerDefinition.id === "zeynep-8" && !this.selectedPlacedTowerId;
+    this.abartiOrientationButton?.setVisible(visible);
+    this.abartiOrientationText?.setVisible(visible);
+    if (visible) {
+      this.abartiOrientationButton?.setInteractive({ useHandCursor: true });
+      this.abartiOrientationText?.setInteractive({ useHandCursor: true });
+    } else {
+      this.abartiOrientationButton?.disableInteractive();
+      this.abartiOrientationText?.disableInteractive();
+    }
+    this.abartiOrientationText?.setText(this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey");
   }
 
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
       ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}`
-      : `new|${this.selectedTowerDefinition.id}`;
+      : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
+      this.updateAbartiOrientationButton();
       return;
     }
     this.lastSelectionKey = selectionKey;
@@ -2819,7 +2887,10 @@ export class GameScene extends Phaser.Scene {
 
     if (!selectedTower) {
       this.setTowerTrayShopVisible(true);
-      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`);
+      const orientationHint = this.selectedTowerDefinition.id === "zeynep-8"
+        ? ` | ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
+        : "";
+      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g${orientationHint} | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
       this.sellText?.setText("Sat");

@@ -47,7 +47,8 @@ import {
   type ProjectileKind,
   type RoomListingSnapshot,
   type ServerPerfSnapshot,
-  type TowerDefinition
+  type TowerDefinition,
+  type TowerSnapshot
 } from "@karayel/shared";
 
 const TEAM_START_GOLD = 240;
@@ -134,6 +135,7 @@ type PlaceTowerMessage = {
   definitionId?: string;
   x?: number;
   y?: number;
+  orientation?: TowerOrientation;
 };
 
 type UpgradeTowerMessage = {
@@ -221,6 +223,7 @@ type TowerModel = {
   definition: TowerDefinition;
   x: number;
   y: number;
+  orientation: TowerOrientation;
   hp: number;
   maxHp: number;
   level: number;
@@ -317,6 +320,8 @@ type ZeynepRayModel = {
   abartiLevel: number;
   hitEnemyIds: string[];
 };
+
+type TowerOrientation = NonNullable<TowerSnapshot["orientation"]>;
 
 type BurnZoneModel = {
   id: string;
@@ -1614,6 +1619,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private getAbartiRect(tower: TowerModel) {
     const gridSize = getMapGridSize(this.activeMap);
+    if (tower.orientation === "vertical") {
+      return {
+        left: tower.x - gridSize / 2,
+        right: tower.x + gridSize / 2,
+        top: tower.y - gridSize,
+        bottom: tower.y + gridSize
+      };
+    }
+
     return {
       left: tower.x - gridSize,
       right: tower.x + gridSize,
@@ -2088,8 +2102,9 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
-    const placement = this.snapToTowerGrid(message.x, message.y, definition?.id);
-    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y, definition.id)) {
+    const orientation = getTowerPlacementOrientation(definition?.id, message.orientation);
+    const placement = this.snapToTowerGrid(message.x, message.y, definition?.id, orientation);
+    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y, definition.id, orientation)) {
       return;
     }
 
@@ -2101,6 +2116,7 @@ export class MatchRoom extends Room<MatchState> {
       definition,
       x: placement.x,
       y: placement.y,
+      orientation,
       hp: 100,
       maxHp: 100,
       level: 1,
@@ -2197,8 +2213,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const tower = this.towers.get(message.towerId);
-    const { x, y } = this.snapToTowerGrid(message.x, message.y, tower?.definition.id);
-    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.definition.id, tower.id)) {
+    const { x, y } = this.snapToTowerGrid(message.x, message.y, tower?.definition.id, tower?.orientation);
+    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.definition.id, tower.orientation, tower.id)) {
       return false;
     }
 
@@ -2598,9 +2614,8 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private canPlaceTower(x: number, y: number, definitionId = "", ignoreTowerId = "") {
-    const gridSize = getMapGridSize(this.activeMap);
-    const footprint = this.getTowerFootprintCells(x, y, definitionId);
+  private canPlaceTower(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal", ignoreTowerId = "") {
+    const footprint = this.getTowerFootprintCells(x, y, definitionId, orientation);
     if (footprint.length === 0) {
       return false;
     }
@@ -2616,7 +2631,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id);
+      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation);
       if (towerCells.some((cell) => occupiedCells.has(`${cell.col}:${cell.row}`))) {
         return false;
       }
@@ -2625,9 +2640,19 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private snapToTowerGrid(x: number, y: number, definitionId = "") {
+  private snapToTowerGrid(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
     if (definitionId === "zeynep-8") {
+      if (orientation === "vertical") {
+        const row = Math.max(0, Math.min(this.activeMap.rows - 2, gridPoint.row));
+        const top = gridToWorld(gridPoint.col, row, this.activeMap);
+        const bottom = gridToWorld(gridPoint.col, row + 1, this.activeMap);
+        return {
+          x: top.x,
+          y: (top.y + bottom.y) / 2
+        };
+      }
+
       const col = Math.max(0, Math.min(this.activeMap.cols - 2, gridPoint.col));
       const left = gridToWorld(col, gridPoint.row, this.activeMap);
       const right = gridToWorld(col + 1, gridPoint.row, this.activeMap);
@@ -2640,13 +2665,22 @@ export class MatchRoom extends Room<MatchState> {
     return gridToWorld(gridPoint.col, gridPoint.row, this.activeMap);
   }
 
-  private getTowerFootprintCells(x: number, y: number, definitionId = "") {
+  private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
     if (definitionId !== "zeynep-8") {
       return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
     }
 
     const gridSize = getMapGridSize(this.activeMap);
+    if (orientation === "vertical") {
+      const topPoint = worldToGrid(x, y - gridSize / 2, this.activeMap);
+      const cells = [
+        { col: topPoint.col, row: topPoint.row },
+        { col: topPoint.col, row: topPoint.row + 1 }
+      ];
+      return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
+    }
+
     const leftPoint = worldToGrid(x - gridSize / 2, y, this.activeMap);
     const cells = [
       { col: leftPoint.col, row: leftPoint.row },
@@ -3045,6 +3079,7 @@ export class MatchRoom extends Room<MatchState> {
         name: tower.definition.name,
         x: tower.x,
         y: tower.y,
+        orientation: tower.orientation,
         level: tower.level,
         range: this.getTowerRange(tower),
         color: tower.definition.color,
@@ -3962,6 +3997,14 @@ function getAbartiArmorBreak(level: number) {
 function getAbartiRayDamageGrowth(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.01 + ((clampedLevel - 1) / 9) * 0.04;
+}
+
+function getTowerPlacementOrientation(definitionId?: string, orientation?: TowerOrientation): TowerOrientation {
+  if (definitionId !== "zeynep-8") {
+    return "horizontal";
+  }
+
+  return orientation === "vertical" ? "vertical" : "horizontal";
 }
 
 function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel, gridSize: number) {

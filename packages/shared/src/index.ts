@@ -103,6 +103,7 @@ export type TowerSnapshot = {
   name: string;
   x: number;
   y: number;
+  orientation?: "horizontal" | "vertical";
   level: number;
   range: number;
   color: number;
