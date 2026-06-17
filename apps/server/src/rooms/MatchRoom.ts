@@ -476,6 +476,7 @@ export class MatchRoom extends Room<MatchState> {
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
+    this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
     this.onMessage("lobby:setCharacter", (client, message: { characterId?: CharacterId }) => {
@@ -699,6 +700,10 @@ export class MatchRoom extends Room<MatchState> {
     return value * this.getMapWorldScale();
   }
 
+  private getScaledWaveEnemyCount(wave: number) {
+    return Math.round(getWaveEnemyCount(wave) * this.mapScale);
+  }
+
   private update(deltaTime: number) {
     if (!this.gameStarted) {
       this.syncRoomRegistry();
@@ -778,7 +783,7 @@ export class MatchRoom extends Room<MatchState> {
       this.advanceWaveGrowth();
       this.wave += 1;
       this.waveSpawned = 0;
-      this.waveTarget = getWaveEnemyCount(this.wave);
+      this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
       this.teamGold += 20 + this.wave * 3;
     }
