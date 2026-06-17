@@ -15,6 +15,7 @@ import {
   getTowerUpgradeCost,
   getTile,
   gridToWorld,
+  isInsideMap,
   normalizeMapData,
   worldToGrid,
   towerCatalog,
@@ -705,7 +706,7 @@ export class GameScene extends Phaser.Scene {
     const previewPoint = this.getTowerDragPreviewPoint(pointer);
     const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
-      .setDisplaySize(previewSize, previewSize)
+      .setDisplaySize(tower.id === "zeynep-8" ? previewSize * 1.7 : previewSize, previewSize)
       .setAlpha(0.78)
       .setDepth(28);
     this.updateTowerDrag(pointer);
@@ -718,7 +719,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const previewPoint = this.getTowerDragPreviewPoint(pointer);
-    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y);
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, this.draggedTowerDefinition.id);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     this.placementGhost?.setPosition(cell.x, cell.y).setTint(canPlace ? 0x86efac : 0xf87171);
     this.drawPlacementGrid(cell.x, cell.y, canPlace);
@@ -731,7 +732,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const previewPoint = this.getTowerDragPreviewPoint(pointer);
-    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y);
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
       this.room.send("placeTower", {
@@ -766,11 +767,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     const cellSize = this.getMapCellSize();
+    const footprint = this.getTowerPreviewFootprintCells(highlightX, highlightY);
     grid.clear();
     grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.28);
-    grid.fillRect(highlightX - cellSize / 2, highlightY - cellSize / 2, cellSize, cellSize);
+    for (const cell of footprint) {
+      const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
+      grid.fillRect(world.x - cellSize / 2, world.y - cellSize / 2, cellSize, cellSize);
+    }
     grid.lineStyle(1, canPlace ? 0x86efac : 0xfca5a5, 0.92);
-    grid.strokeRect(highlightX - cellSize / 2, highlightY - cellSize / 2, cellSize, cellSize);
+    for (const cell of footprint) {
+      const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
+      grid.strokeRect(world.x - cellSize / 2, world.y - cellSize / 2, cellSize, cellSize);
+    }
 
     grid.lineStyle(1, 0xe2e8f0, 0.16);
     for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
@@ -781,8 +789,17 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private snapToTowerGrid(x: number, y: number) {
+  private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id) {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
+    if (definitionId === "zeynep-8") {
+      const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, gridPoint.col));
+      const left = gridToWorld(col, gridPoint.row, this.selectedMapData);
+      const right = gridToWorld(col + 1, gridPoint.row, this.selectedMapData);
+      return {
+        x: (left.x + right.x) / 2,
+        y: left.y
+      };
+    }
     return gridToWorld(gridPoint.col, gridPoint.row, this.selectedMapData);
   }
 
@@ -791,33 +808,48 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
-    const cellSize = this.getMapCellSize();
-    const halfCell = cellSize / 2;
-    if (
-      x < halfCell ||
-      x > GAME_WORLD_WIDTH - halfCell ||
-      y < TOWER_BUILD_TOP + halfCell ||
-      y > TOWER_BUILD_BOTTOM - halfCell
-    ) {
+    const footprint = this.getTowerPreviewFootprintCells(x, y);
+    if (footprint.length === 0) {
       return false;
     }
 
-    const gridPoint = worldToGrid(x, y, this.selectedMapData);
-    if (getTile(this.selectedMapData, gridPoint.col, gridPoint.row) !== "tower") {
-      return false;
+    for (const cell of footprint) {
+      if (getTile(this.selectedMapData, cell.col, cell.row) !== "tower") {
+        return false;
+      }
     }
 
+    const occupiedCells = new Set(footprint.map((cell) => `${cell.col}:${cell.row}`));
     for (const tower of this.towerSnapshots.values()) {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      const minDistance = cellSize - 0.5;
-      if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < minDistance * minDistance) {
+      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId);
+      if (towerCells.some((cell) => occupiedCells.has(`${cell.col}:${cell.row}`))) {
         return false;
       }
     }
 
     return true;
+  }
+
+  private getTowerPreviewFootprintCells(x: number, y: number) {
+    return this.getTowerFootprintCells(x, y, this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id);
+  }
+
+  private getTowerFootprintCells(x: number, y: number, definitionId = "") {
+    const gridPoint = worldToGrid(x, y, this.selectedMapData);
+    if (definitionId !== "zeynep-8") {
+      return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
+    }
+
+    const cellSize = this.getMapCellSize();
+    const leftPoint = worldToGrid(x - cellSize / 2, y, this.selectedMapData);
+    const cells = [
+      { col: leftPoint.col, row: leftPoint.row },
+      { col: leftPoint.col + 1, row: leftPoint.row }
+    ];
+    return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
   }
 
   private createKillStreakAudio() {
@@ -1640,7 +1672,9 @@ export class GameScene extends Phaser.Scene {
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
       }
-      rendered.base.setScale((tower.id === this.selectedPlacedTowerId ? 1.18 : 1) * baseScale);
+      const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
+      const footprintScaleX = tower.definitionId === "zeynep-8" ? 1.7 : 1;
+      rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");

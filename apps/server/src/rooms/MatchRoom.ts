@@ -22,6 +22,7 @@ import {
   getMapPoints,
   getMapGridSize,
   getTile,
+  isInsideMap,
   getTowerSellRefund,
   gridToWorld,
   normalizeMapData,
@@ -275,6 +276,7 @@ type ProjectileModel = {
   aoeRadius: number;
   slowMs: number;
   pierceLimit: number;
+  armorBreakAmount: number;
   piercedEnemyIds: string[];
 };
 
@@ -312,6 +314,7 @@ type ZeynepRayModel = {
   y: number;
   speed: number;
   damage: number;
+  abartiLevel: number;
   hitEnemyIds: string[];
 };
 
@@ -1017,7 +1020,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (tower.definition.id === "zeynep-7") {
+      if (tower.definition.id === "zeynep-7" || tower.definition.id === "zeynep-8") {
         continue;
       }
 
@@ -1085,6 +1088,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 5),
       slowMs: tower.definition.slowMs + (tower.level - 1) * 90,
       pierceLimit: tower.definition.id === "zeynep-1" ? 2 : 1,
+      armorBreakAmount: 0,
       piercedEnemyIds: []
     });
   }
@@ -1113,6 +1117,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: this.scaleWorldDistance(aoeRadius),
       slowMs,
       pierceLimit: 1,
+      armorBreakAmount: 0,
       piercedEnemyIds: []
     });
   }
@@ -1226,7 +1231,7 @@ export class MatchRoom extends Room<MatchState> {
       x2: result.endX,
       y2: result.endY,
       width: this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS * 2),
-      color: tower.definition.color,
+      color: result.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(tower.definition.color, result.abartiLevel) : tower.definition.color,
       overdrive: false,
       ttlMs: 260
     });
@@ -1239,7 +1244,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const length = this.getTowerRange(tower);
-    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number } | undefined;
+    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number; abartiLevel: number } | undefined;
 
     for (const enemy of enemies) {
       const dx = enemy.x - tower.x;
@@ -1251,14 +1256,18 @@ export class MatchRoom extends Room<MatchState> {
 
       const endX = tower.x + (dx / distance) * length;
       const endY = tower.y + (dy / distance) * length;
+      const abartiLevel = this.getAbartiPassThroughLevel(tower.ownerId, tower.x, tower.y, endX, endY);
+      const rangeMultiplier = abartiLevel > 0 ? getAbartiShowcaseRangeMultiplier(abartiLevel) : 1;
+      const finalEndX = tower.x + (dx / distance) * length * rangeMultiplier;
+      const finalEndY = tower.y + (dy / distance) * length * rangeMultiplier;
       const targets = enemies.filter((candidate) => {
         const hitRadius = this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS) + getEnemyCollisionRadius(candidate);
-        const projection = getSegmentProjection(candidate.x, candidate.y, tower.x, tower.y, endX, endY);
-        return projection >= 0 && projection <= 1 && distanceToSegmentSq(candidate.x, candidate.y, tower.x, tower.y, endX, endY) <= hitRadius * hitRadius;
+        const projection = getSegmentProjection(candidate.x, candidate.y, tower.x, tower.y, finalEndX, finalEndY);
+        return projection >= 0 && projection <= 1 && distanceToSegmentSq(candidate.x, candidate.y, tower.x, tower.y, finalEndX, finalEndY) <= hitRadius * hitRadius;
       });
       const score = targets.length * 100000 + targets.reduce((total, target) => total + target.pathDistance, 0);
       if (!best || score > best.score) {
-        best = { endX, endY, targets, score };
+        best = { endX: finalEndX, endY: finalEndY, targets, score, abartiLevel };
       }
     }
 
@@ -1303,9 +1312,7 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       for (const candidate of this.towers.values()) {
-        if (
-          group.has(candidate.id)
-        ) {
+        if (group.has(candidate.id) || candidate.definition.id === "zeynep-7" || candidate.definition.id === "zeynep-8") {
           continue;
         }
 
@@ -1406,7 +1413,7 @@ export class MatchRoom extends Room<MatchState> {
       x2: endX,
       y2: endY,
       width: this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS * 2),
-      color: 0x22d3ee,
+      color: (result?.abartiLevel ?? 0) > 0 ? this.getAbartiDarkenedBeamColor(0x22d3ee, result?.abartiLevel ?? 0) : 0x22d3ee,
       overdrive: false,
       ttlMs: 260
     });
@@ -1415,6 +1422,7 @@ export class MatchRoom extends Room<MatchState> {
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
     const bounces = 1 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-2");
     const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces);
+    const abartiLevel = this.getAbartiPassThroughLevelForSegments(tower.ownerId, segments);
     const firstSegment = segments[0];
     const initialDistance = Math.min(this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH), firstSegment.length);
     const initialHead = getPointOnRaySegments(segments, initialDistance);
@@ -1430,6 +1438,7 @@ export class MatchRoom extends Room<MatchState> {
       y: initialHead.y,
       speed: this.scaleWorldSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED),
       damage: this.getTowerDamage(tower),
+      abartiLevel,
       hitEnemyIds: []
     };
     this.zeynepRays.set(id, ray);
@@ -1512,8 +1521,9 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       ray.hitEnemyIds.push(enemy.id);
-      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5, 0, "physical", 0);
-      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5, 0, "light", 0);
+      const abartiMultiplier = ray.abartiLevel > 0 ? 1 + Math.max(0, ray.hitEnemyIds.length - 1) * getAbartiRayDamageGrowth(ray.abartiLevel) : 1;
+      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5 * abartiMultiplier, 0, "physical", 0);
+      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5 * abartiMultiplier, 0, "light", 0);
     }
   }
 
@@ -1527,7 +1537,7 @@ export class MatchRoom extends Room<MatchState> {
       x2: segment.x2,
       y2: segment.y2,
       width: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2),
-      color: ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
+      color: ray.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8, ray.abartiLevel) : ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
       overdrive: false,
       ttlMs: ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS
     });
@@ -1556,6 +1566,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: 0,
       slowMs: 0,
       pierceLimit,
+      armorBreakAmount: 0,
       piercedEnemyIds: []
     });
   }
@@ -1577,6 +1588,46 @@ export class MatchRoom extends Room<MatchState> {
       expiresAt: now + scaleGameDuration(durationMs),
       nextTickAt: now + scaleGameDuration(ZEYNEP_SYNTHESIS_BURN_TICK_MS)
     });
+  }
+
+  private getAbartiPassThroughLevel(ownerId: string, x1: number, y1: number, x2: number, y2: number) {
+    let level = 0;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== ownerId || tower.definition.id !== "zeynep-8") {
+        continue;
+      }
+
+      if (segmentIntersectsRect(x1, y1, x2, y2, this.getAbartiRect(tower))) {
+        level = Math.max(level, tower.level);
+      }
+    }
+    return level;
+  }
+
+  private getAbartiPassThroughLevelForSegments(ownerId: string, segments: RaySegment[]) {
+    let level = 0;
+    for (const segment of segments) {
+      level = Math.max(level, this.getAbartiPassThroughLevel(ownerId, segment.x1, segment.y1, segment.x2, segment.y2));
+    }
+    return level;
+  }
+
+  private getAbartiRect(tower: TowerModel) {
+    const gridSize = getMapGridSize(this.activeMap);
+    return {
+      left: tower.x - gridSize,
+      right: tower.x + gridSize,
+      top: tower.y - gridSize / 2,
+      bottom: tower.y + gridSize / 2
+    };
+  }
+
+  private getAbartiDarkenedBeamColor(color: number, level: number) {
+    const factor = 0.78 - Math.min(9, Math.max(0, level - 1)) * 0.025;
+    const r = Math.max(0, Math.round(((color >> 16) & 255) * factor));
+    const g = Math.max(0, Math.round(((color >> 8) & 255) * factor));
+    const b = Math.max(0, Math.round((color & 255) * factor));
+    return (r << 16) | (g << 8) | b;
   }
 
   private getZeynepSynthesisAmplifierBonus(ownerId: string, combo: "1-1" | "2-2" | "1-2") {
@@ -1792,6 +1843,7 @@ export class MatchRoom extends Room<MatchState> {
       if (projectile.piercedEnemyIds.length > 0 && projectile.piercedEnemyIds.length < projectile.pierceLimit) {
         projectile.x += projectile.vx * seconds;
         projectile.y += projectile.vy * seconds;
+        this.updateProjectileAbartiModifier(projectile, previousX, previousY);
 
         if (this.isProjectileOutOfBounds(projectile)) {
           this.projectiles.delete(id);
@@ -1831,6 +1883,7 @@ export class MatchRoom extends Room<MatchState> {
         projectile.x += projectile.vx * seconds;
         projectile.y += projectile.vy * seconds;
       }
+      this.updateProjectileAbartiModifier(projectile, previousX, previousY);
 
       if (this.isProjectileOutOfBounds(projectile)) {
         this.projectiles.delete(id);
@@ -1884,10 +1937,31 @@ export class MatchRoom extends Room<MatchState> {
     return bestTarget;
   }
 
+  private updateProjectileAbartiModifier(projectile: ProjectileModel, previousX: number, previousY: number) {
+    if (projectile.damageType !== "physical" || (projectile.definitionId !== "zeynep-1" && projectile.definitionId !== "zeynep-3")) {
+      return;
+    }
+
+    const tower = this.towers.get(projectile.towerId);
+    if (!tower?.ownerId) {
+      return;
+    }
+
+    const abartiLevel = this.getAbartiPassThroughLevel(tower.ownerId, previousX, previousY, projectile.x, projectile.y);
+    if (abartiLevel <= 0) {
+      return;
+    }
+
+    projectile.armorBreakAmount = Math.max(projectile.armorBreakAmount, getAbartiArmorBreak(abartiLevel));
+  }
+
   private applyProjectileHit(projectile: ProjectileModel, target: EnemyModel) {
     const projectileTower = this.towers.get(projectile.towerId);
     const projectileOwnerId = projectileTower?.ownerId ?? "";
     const projectileTowerLevel = projectileTower?.level ?? 1;
+    if (projectile.armorBreakAmount > 0) {
+      target.armor = Math.max(-100, target.armor - projectile.armorBreakAmount);
+    }
     if (projectile.aoeRadius > 0) {
       for (const enemy of this.enemies.values()) {
         this.perfCounters.aoeChecks += 1;
@@ -2014,8 +2088,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
-    const placement = this.snapToTowerGrid(message.x, message.y);
-    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y)) {
+    const placement = this.snapToTowerGrid(message.x, message.y, definition?.id);
+    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y, definition.id)) {
       return;
     }
 
@@ -2123,8 +2197,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const tower = this.towers.get(message.towerId);
-    const { x, y } = this.snapToTowerGrid(message.x, message.y);
-    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.id)) {
+    const { x, y } = this.snapToTowerGrid(message.x, message.y, tower?.definition.id);
+    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.definition.id, tower.id)) {
       return false;
     }
 
@@ -2471,7 +2545,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private refreshZeynepFormations() {
-    const allZeynepTowers = Array.from(this.towers.values()).filter((tower) => tower.characterId === "zeynep");
+    const allZeynepTowers = Array.from(this.towers.values()).filter((tower) => {
+      return tower.characterId === "zeynep" && tower.definition.id !== "zeynep-7" && tower.definition.id !== "zeynep-8";
+    });
     for (const tower of allZeynepTowers) {
       tower.zeynepFormationSize = 0;
       tower.zeynepFormationLevel = 0;
@@ -2513,7 +2589,7 @@ export class MatchRoom extends Room<MatchState> {
       const formationSize = isValidFormation ? group.length : 0;
       const formationLevel = isValidFormation ? Math.min(...group.map((member) => member.level)) : 0;
       for (const member of group) {
-        if (member.characterId !== "zeynep" || member.definition.id === "zeynep-7") {
+        if (member.characterId !== "zeynep" || member.definition.id === "zeynep-7" || member.definition.id === "zeynep-8") {
           continue;
         }
         member.zeynepFormationSize = formationSize;
@@ -2522,29 +2598,26 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private canPlaceTower(x: number, y: number, ignoreTowerId = "") {
+  private canPlaceTower(x: number, y: number, definitionId = "", ignoreTowerId = "") {
     const gridSize = getMapGridSize(this.activeMap);
-    const halfCell = gridSize / 2;
-    if (
-      x < halfCell ||
-      x > GAME_WORLD_WIDTH - halfCell ||
-      y < TOWER_BUILD_TOP + halfCell ||
-      y > TOWER_BUILD_BOTTOM - halfCell
-    ) {
+    const footprint = this.getTowerFootprintCells(x, y, definitionId);
+    if (footprint.length === 0) {
       return false;
     }
 
-    const gridPoint = worldToGrid(x, y, this.activeMap);
-    if (getTile(this.activeMap, gridPoint.col, gridPoint.row) !== "tower") {
-      return false;
+    for (const cell of footprint) {
+      if (getTile(this.activeMap, cell.col, cell.row) !== "tower") {
+        return false;
+      }
     }
 
-    const minDistance = gridSize - 1;
+    const occupiedCells = new Set(footprint.map((cell) => `${cell.col}:${cell.row}`));
     for (const tower of this.towers.values()) {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      if (distanceSq(x, y, tower.x, tower.y) < minDistance * minDistance) {
+      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id);
+      if (towerCells.some((cell) => occupiedCells.has(`${cell.col}:${cell.row}`))) {
         return false;
       }
     }
@@ -2552,9 +2625,34 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private snapToTowerGrid(x: number, y: number) {
+  private snapToTowerGrid(x: number, y: number, definitionId = "") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
+    if (definitionId === "zeynep-8") {
+      const col = Math.max(0, Math.min(this.activeMap.cols - 2, gridPoint.col));
+      const left = gridToWorld(col, gridPoint.row, this.activeMap);
+      const right = gridToWorld(col + 1, gridPoint.row, this.activeMap);
+      return {
+        x: (left.x + right.x) / 2,
+        y: left.y
+      };
+    }
+
     return gridToWorld(gridPoint.col, gridPoint.row, this.activeMap);
+  }
+
+  private getTowerFootprintCells(x: number, y: number, definitionId = "") {
+    const gridPoint = worldToGrid(x, y, this.activeMap);
+    if (definitionId !== "zeynep-8") {
+      return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
+    }
+
+    const gridSize = getMapGridSize(this.activeMap);
+    const leftPoint = worldToGrid(x - gridSize / 2, y, this.activeMap);
+    const cells = [
+      { col: leftPoint.col, row: leftPoint.row },
+      { col: leftPoint.col + 1, row: leftPoint.row }
+    ];
+    return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
   }
 
   private findTowerTarget(tower: TowerModel) {
@@ -3851,6 +3949,21 @@ function getZeynepShowcaseBeamLength(level: number) {
   return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
 }
 
+function getAbartiShowcaseRangeMultiplier(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 1.1 + ((clampedLevel - 1) / 9) * 0.9;
+}
+
+function getAbartiArmorBreak(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return Math.round(10 + ((clampedLevel - 1) / 9) * 20);
+}
+
+function getAbartiRayDamageGrowth(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 0.01 + ((clampedLevel - 1) / 9) * 0.04;
+}
+
 function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel, gridSize: number) {
   const dx = Math.abs(towerA.x - towerB.x);
   const dy = Math.abs(towerA.y - towerB.y);
@@ -3869,7 +3982,7 @@ function isCompleteZeynepFormation(group: TowerModel[], gridSize: number) {
 }
 
 function isValidZeynepFormationGroup(group: TowerModel[], gridSize: number) {
-  if (!group.every((member) => member.characterId === "zeynep" && member.definition.id !== "zeynep-7")) {
+  if (!group.every((member) => member.characterId === "zeynep" && member.definition.id !== "zeynep-7" && member.definition.id !== "zeynep-8")) {
     return false;
   }
 
@@ -3970,6 +4083,53 @@ function getSegmentProjection(px: number, py: number, ax: number, ay: number, bx
   }
 
   return ((px - ax) * dx + (py - ay) * dy) / lengthSq;
+}
+
+function segmentIntersectsRect(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  rect: { left: number; right: number; top: number; bottom: number }
+) {
+  if (pointInRect(x1, y1, rect) || pointInRect(x2, y2, rect)) {
+    return true;
+  }
+
+  return segmentsIntersect(x1, y1, x2, y2, rect.left, rect.top, rect.right, rect.top) ||
+    segmentsIntersect(x1, y1, x2, y2, rect.right, rect.top, rect.right, rect.bottom) ||
+    segmentsIntersect(x1, y1, x2, y2, rect.right, rect.bottom, rect.left, rect.bottom) ||
+    segmentsIntersect(x1, y1, x2, y2, rect.left, rect.bottom, rect.left, rect.top);
+}
+
+function pointInRect(x: number, y: number, rect: { left: number; right: number; top: number; bottom: number }) {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function segmentsIntersect(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+  const d1 = orientation(ax, ay, bx, by, cx, cy);
+  const d2 = orientation(ax, ay, bx, by, dx, dy);
+  const d3 = orientation(cx, cy, dx, dy, ax, ay);
+  const d4 = orientation(cx, cy, dx, dy, bx, by);
+
+  if (d1 === 0 && pointOnSegment(cx, cy, ax, ay, bx, by)) return true;
+  if (d2 === 0 && pointOnSegment(dx, dy, ax, ay, bx, by)) return true;
+  if (d3 === 0 && pointOnSegment(ax, ay, cx, cy, dx, dy)) return true;
+  if (d4 === 0 && pointOnSegment(bx, by, cx, cy, dx, dy)) return true;
+
+  return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
+}
+
+function orientation(ax: number, ay: number, bx: number, by: number, cx: number, cy: number) {
+  const value = (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
+  return Math.abs(value) < 0.000001 ? 0 : value > 0 ? 1 : -1;
+}
+
+function pointOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  return px >= Math.min(ax, bx) - 0.000001 &&
+    px <= Math.max(ax, bx) + 0.000001 &&
+    py >= Math.min(ay, by) - 0.000001 &&
+    py <= Math.max(ay, by) + 0.000001;
 }
 
 function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel, previousX: number, previousY: number) {

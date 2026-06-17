@@ -243,6 +243,7 @@ export {
   getPointAlongRuntimePath,
   getTile,
   gridToWorld,
+  isInsideMap,
   isWalkableTile,
   normalizeMapData,
   pathToWorldPoints,
