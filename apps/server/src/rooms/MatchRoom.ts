@@ -52,8 +52,6 @@ import {
 const TEAM_START_GOLD = 240;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
-const TOWER_MIN_DISTANCE = TOWER_GRID_SIZE - 1;
-const BUILD_MARGIN = 18;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
@@ -2377,10 +2375,10 @@ export class MatchRoom extends Room<MatchState> {
     const gridSize = getMapGridSize(this.activeMap);
     const halfCell = gridSize / 2;
     if (
-      x < BUILD_MARGIN ||
-      x > GAME_WORLD_WIDTH - BUILD_MARGIN ||
-      y < Math.max(BUILD_MARGIN, TOWER_BUILD_TOP + halfCell) ||
-      y > Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell)
+      x < halfCell ||
+      x > GAME_WORLD_WIDTH - halfCell ||
+      y < TOWER_BUILD_TOP + halfCell ||
+      y > TOWER_BUILD_BOTTOM - halfCell
     ) {
       return false;
     }
@@ -2404,14 +2402,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private snapToTowerGrid(x: number, y: number) {
-    const gridSize = getMapGridSize(this.activeMap);
-    const halfCell = gridSize / 2;
-    const top = Math.max(BUILD_MARGIN, TOWER_BUILD_TOP);
-    const bottom = Math.min(GAME_WORLD_HEIGHT - BUILD_MARGIN, TOWER_BUILD_BOTTOM - halfCell);
-    return {
-      x: this.clamp(Math.floor(x / gridSize) * gridSize + halfCell, BUILD_MARGIN, GAME_WORLD_WIDTH - BUILD_MARGIN),
-      y: this.clamp(Math.floor((y - top) / gridSize) * gridSize + top + halfCell, top + halfCell, bottom)
-    };
+    const gridPoint = worldToGrid(x, y, this.activeMap);
+    return gridToWorld(gridPoint.col, gridPoint.row, this.activeMap);
   }
 
   private findTowerTarget(tower: TowerModel) {

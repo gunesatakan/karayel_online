@@ -14,6 +14,7 @@ import {
   getTowerSellRefund,
   getTowerUpgradeCost,
   getTile,
+  gridToWorld,
   normalizeMapData,
   worldToGrid,
   towerCatalog,
@@ -675,13 +676,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private snapToTowerGrid(x: number, y: number) {
-    const cellSize = this.getMapCellSize();
-    const halfCell = cellSize / 2;
-    const margin = halfCell + 1;
-    return {
-      x: Phaser.Math.Clamp(Math.floor(x / cellSize) * cellSize + halfCell, margin, GAME_WORLD_WIDTH - margin),
-      y: Phaser.Math.Clamp(Math.floor((y - TOWER_BUILD_TOP) / cellSize) * cellSize + TOWER_BUILD_TOP + halfCell, TOWER_BUILD_TOP + halfCell, TOWER_BUILD_BOTTOM - halfCell)
-    };
+    const gridPoint = worldToGrid(x, y, this.selectedMapData);
+    return gridToWorld(gridPoint.col, gridPoint.row, this.selectedMapData);
   }
 
   private canPlaceTowerPreview(x: number, y: number, ignoreTowerId = "") {
@@ -690,12 +686,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const cellSize = this.getMapCellSize();
-    const margin = cellSize / 2 + 1;
+    const halfCell = cellSize / 2;
     if (
-      x < margin ||
-      x > GAME_WORLD_WIDTH - margin ||
-      y < TOWER_BUILD_TOP + cellSize / 2 ||
-      y > TOWER_BUILD_BOTTOM - cellSize / 2
+      x < halfCell ||
+      x > GAME_WORLD_WIDTH - halfCell ||
+      y < TOWER_BUILD_TOP + halfCell ||
+      y > TOWER_BUILD_BOTTOM - halfCell
     ) {
       return false;
     }
@@ -709,7 +705,7 @@ export class GameScene extends Phaser.Scene {
       if (tower.id === ignoreTowerId) {
         continue;
       }
-      const minDistance = cellSize - 1;
+      const minDistance = cellSize - 0.5;
       if (Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) < minDistance * minDistance) {
         return false;
       }
@@ -2569,7 +2565,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private findTowerAt(x: number, y: number) {
-    return Array.from(this.towerSnapshots.values()).find((tower) => Phaser.Math.Distance.Squared(x, y, tower.x, tower.y) <= 24 * 24);
+    const pointerCell = worldToGrid(x, y, this.selectedMapData);
+    const sameCellTower = Array.from(this.towerSnapshots.values()).find((tower) => {
+      const towerCell = worldToGrid(tower.x, tower.y, this.selectedMapData);
+      return towerCell.col === pointerCell.col && towerCell.row === pointerCell.row;
+    });
+    if (sameCellTower) {
+      return sameCellTower;
+    }
+
+    const hitRadius = Math.max(10, this.getMapCellSize() * 0.62);
+    return Array.from(this.towerSnapshots.values())
+      .map((tower) => ({
+        tower,
+        distanceSq: Phaser.Math.Distance.Squared(x, y, tower.x, tower.y)
+      }))
+      .filter((candidate) => candidate.distanceSq <= hitRadius * hitRadius)
+      .sort((left, right) => left.distanceSq - right.distanceSq)[0]?.tower;
   }
 
   private setTowerTrayShopVisible(visible: boolean) {
