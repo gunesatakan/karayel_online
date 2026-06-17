@@ -916,7 +916,7 @@ function getObsessionDamageMultiplier(level: number) {
 }
 
 function getDebugLaserDamageMultiplier(level: number) {
-  const multipliers = [1.3333, 1.5904, 1.89, 2.2505, 2.432, 2.508, 2.5632, 2.5976, 2.6112, 2.604];
+  const multipliers = [1.3333, 1.6976, 2.1449, 2.7057, 3.0879, 3.3535, 3.6001, 3.8235, 4.0196, 4.1841];
   return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
 

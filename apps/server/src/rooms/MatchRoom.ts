@@ -3558,8 +3558,8 @@ function getObsessionFearDurationMs(level: number) {
 }
 
 function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
-  const normalMultipliers = [1.3333, 1.5904, 1.89, 2.2505, 2.432, 2.508, 2.5632, 2.5976, 2.6112, 2.604];
-  const overdriveMultipliers = [1.92, 2.0611, 2.1773, 2.2685, 2.3347, 2.4077, 2.4607, 2.4937, 2.5068, 2.4998];
+  const normalMultipliers = [1.3333, 1.6976, 2.1449, 2.7057, 3.0879, 3.3535, 3.6001, 3.8235, 4.0196, 4.1841];
+  const overdriveMultipliers = [1.92, 2.2001, 2.4709, 2.7273, 2.9643, 3.2194, 3.4561, 3.6706, 3.8589, 4.0167];
   const multipliers = overdrive ? overdriveMultipliers : normalMultipliers;
   return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
