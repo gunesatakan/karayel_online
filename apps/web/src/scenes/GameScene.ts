@@ -272,6 +272,12 @@ export class GameScene extends Phaser.Scene {
     return value * (this.getMapCellSize() / TOWER_GRID_SIZE);
   }
 
+  private getTowerEffectScale() {
+    const baselineSpriteRadius = (TOWER_GRID_SIZE * 1.12) / 2;
+    const spriteRadius = Math.max(20, this.getMapCellSize() * 1.12) / 2;
+    return spriteRadius / baselineSpriteRadius;
+  }
+
   create() {
     configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#0f172a");
@@ -1711,6 +1717,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const effectScale = this.getTowerEffectScale();
     const isMaxHealthTier = linkAge >= 10;
     const phase = (Date.now() % 1200) / 1200;
     const columns = isMaxHealthTier ? 5 : 4;
@@ -1718,16 +1725,20 @@ export class GameScene extends Phaser.Scene {
     const primary = isMaxHealthTier ? 0xd8b4fe : 0x22d3ee;
     const secondary = isMaxHealthTier ? 0xfacc15 : 0x22c55e;
     const alpha = isMaxHealthTier ? 0.86 : 0.62;
-    const radiusLimit = 15.5;
+    const radiusLimit = 15.5 * effectScale;
+    const span = 22 * effectScale;
+    const rowStep = 6 * effectScale;
+    const rectWidth = Math.max(1, 2 * effectScale);
+    const rectHeight = Math.max(2, 4 * effectScale);
 
     graphics.fillStyle(0x020617, isMaxHealthTier ? 0.22 : 0.16);
     graphics.fillCircle(tower.x, tower.y, radiusLimit);
 
     for (let column = 0; column < columns; column += 1) {
-      const x = tower.x - 11 + column * (22 / Math.max(1, columns - 1));
+      const x = tower.x - span / 2 + column * (span / Math.max(1, columns - 1));
       const columnOffset = (phase * rows + column * 0.7) % rows;
       for (let row = 0; row < rows; row += 1) {
-        const y = tower.y - 12 + ((row + columnOffset) % rows) * 6;
+        const y = tower.y - 12 * effectScale + ((row + columnOffset) % rows) * rowStep;
         if (Phaser.Math.Distance.Between(tower.x, tower.y, x, y) > radiusLimit) {
           continue;
         }
@@ -1735,18 +1746,18 @@ export class GameScene extends Phaser.Scene {
         const color = isAccent ? secondary : primary;
         const glyphAlpha = alpha * (isAccent ? 1 : 0.7);
         graphics.fillStyle(color, glyphAlpha);
-        graphics.fillRect(x - 1, y - 2, 2, 4);
+        graphics.fillRect(x - rectWidth / 2, y - rectHeight / 2, rectWidth, rectHeight);
       }
     }
 
-    graphics.lineStyle(isMaxHealthTier ? 1.6 : 1.1, primary, isMaxHealthTier ? 0.8 : 0.52);
+    graphics.lineStyle((isMaxHealthTier ? 1.6 : 1.1) * effectScale, primary, isMaxHealthTier ? 0.8 : 0.52);
     graphics.strokeCircle(tower.x, tower.y, radiusLimit);
     if (isMaxHealthTier) {
-      graphics.lineStyle(1, secondary, 0.7);
+      graphics.lineStyle(Math.max(0.7, effectScale), secondary, 0.7);
       graphics.beginPath();
-      graphics.moveTo(tower.x - 10, tower.y + 8);
-      graphics.lineTo(tower.x - 2, tower.y + 12);
-      graphics.lineTo(tower.x + 10, tower.y - 8);
+      graphics.moveTo(tower.x - 10 * effectScale, tower.y + 8 * effectScale);
+      graphics.lineTo(tower.x - 2 * effectScale, tower.y + 12 * effectScale);
+      graphics.lineTo(tower.x + 10 * effectScale, tower.y - 8 * effectScale);
       graphics.strokePath();
     }
   }
@@ -1759,16 +1770,17 @@ export class GameScene extends Phaser.Scene {
 
     const waveCount = bonusLevel >= 5 ? 4 : 2;
     const phase = (Date.now() % 900) / 900;
+    const effectScale = this.getTowerEffectScale();
     for (let waveIndex = 0; waveIndex < waveCount; waveIndex += 1) {
-      const radius = 11.5 + waveIndex * 1.6;
+      const radius = (11.5 + waveIndex * 1.6) * effectScale;
       const segments = 10 + waveIndex * 2;
       const offset = phase * Math.PI * 2 + waveIndex * 0.85;
-      graphics.lineStyle(waveIndex % 2 === 0 ? 1.5 : 1, 0xffffff, bonusLevel >= 5 ? 0.86 : 0.66);
+      graphics.lineStyle((waveIndex % 2 === 0 ? 1.5 : 1) * effectScale, 0xffffff, bonusLevel >= 5 ? 0.86 : 0.66);
       graphics.beginPath();
       for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
         const angle = offset + (pointIndex / segments) * Math.PI * 2;
-        const jag = pointIndex % 2 === 0 ? 2.2 : -1.5;
-        const clampedRadius = Phaser.Math.Clamp(radius + jag, 8, 18);
+        const jag = (pointIndex % 2 === 0 ? 2.2 : -1.5) * effectScale;
+        const clampedRadius = Phaser.Math.Clamp(radius + jag, 8 * effectScale, 18 * effectScale);
         const x = tower.x + Math.cos(angle) * clampedRadius;
         const y = tower.y + Math.sin(angle) * clampedRadius;
         if (pointIndex === 0) {
@@ -1816,6 +1828,7 @@ export class GameScene extends Phaser.Scene {
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
+      sprite.setScale(this.getTowerEffectScale());
     }
   }
 
@@ -2545,13 +2558,14 @@ export class GameScene extends Phaser.Scene {
       this.beamGraphics?.strokePath();
     };
 
-    strokeJagged(beam.width + 10, color, 0.16);
-    strokeJagged(beam.width + 4, 0x38bdf8, 0.5);
-    strokeJagged(Math.max(2, beam.width - 1), 0xfef08a, 0.95);
+    const visualScale = this.getTowerEffectScale();
+    strokeJagged((beam.width + 10) * visualScale, color, 0.16);
+    strokeJagged((beam.width + 4) * visualScale, 0xffffff, 0.58);
+    strokeJagged(Math.max(1.5, (beam.width - 1) * visualScale), 0x93c5fd, 0.98);
     this.beamGraphics.fillStyle(0x67e8f9, 0.72);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5);
-    this.beamGraphics.fillStyle(0xfef08a, 0.9);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5 * visualScale);
+    this.beamGraphics.fillStyle(0xffffff, 0.92);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4 * visualScale);
   }
 
   private drawLaserConnection(beam: BeamSnapshot, color: number) {

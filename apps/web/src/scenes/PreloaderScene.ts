@@ -108,8 +108,22 @@ export class PreloaderScene extends Phaser.Scene {
   private createProjectileTexture(tower: TowerDefinition) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const palette = getVisualPalette(tower);
-    const size = tower.hitType === "focus" ? 34 : tower.hitType === "impact" ? 24 : 20;
+    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" ? 24 : 20;
     const center = size / 2;
+
+    if (tower.id === "warrior-2") {
+      this.drawServerBurstProjectile(graphics, center);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "warrior-6") {
+      this.drawUcubeSparkProjectile(graphics, center);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
 
     graphics.fillStyle(palette.glow, 0.18);
     graphics.fillCircle(center, center, center - 1);
@@ -140,6 +154,46 @@ export class PreloaderScene extends Phaser.Scene {
 
     graphics.generateTexture(`projectile-${tower.id}`, size, size);
     graphics.destroy();
+  }
+
+  private drawServerBurstProjectile(graphics: Phaser.GameObjects.Graphics, center: number) {
+    graphics.fillStyle(0x22d3ee, 0.18);
+    graphics.fillCircle(center, center, 14);
+    graphics.fillStyle(0x0f172a, 0.92);
+    graphics.fillCircle(center, center, 9);
+    graphics.lineStyle(2, 0x67e8f9, 0.96);
+    graphics.strokeCircle(center, center, 10);
+    graphics.lineStyle(1.5, 0xfacc15, 0.95);
+    graphics.strokeRect(center - 5, center - 5, 10, 10);
+    graphics.fillStyle(0xfef08a, 1);
+    graphics.fillCircle(center, center, 3);
+    graphics.lineStyle(1, 0x22c55e, 0.72);
+    graphics.lineBetween(center - 11, center, center - 6, center);
+    graphics.lineBetween(center + 6, center, center + 11, center);
+    graphics.lineBetween(center, center - 11, center, center - 6);
+    graphics.lineBetween(center, center + 6, center, center + 11);
+  }
+
+  private drawUcubeSparkProjectile(graphics: Phaser.GameObjects.Graphics, center: number) {
+    graphics.fillStyle(0x38bdf8, 0.1);
+    graphics.fillCircle(center, center, 13);
+    graphics.lineStyle(5, 0x38bdf8, 0.2);
+    graphics.beginPath();
+    graphics.moveTo(center - 11, center + 5);
+    graphics.lineTo(center - 4, center - 4);
+    graphics.lineTo(center + 1, center + 3);
+    graphics.lineTo(center + 11, center - 8);
+    graphics.strokePath();
+    graphics.lineStyle(2.5, 0xffffff, 1);
+    graphics.beginPath();
+    graphics.moveTo(center - 11, center + 5);
+    graphics.lineTo(center - 4, center - 4);
+    graphics.lineTo(center + 1, center + 3);
+    graphics.lineTo(center + 11, center - 8);
+    graphics.strokePath();
+    graphics.lineStyle(1, 0x93c5fd, 0.95);
+    graphics.lineBetween(center - 2, center - 8, center + 3, center - 2);
+    graphics.lineBetween(center + 4, center + 6, center + 9, center + 1);
   }
 
   private drawCrosshair(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
