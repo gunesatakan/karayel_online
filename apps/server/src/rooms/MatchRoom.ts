@@ -57,6 +57,7 @@ const MAX_TOWER_LEVEL = 10;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
+const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
 const GAME_SPEED_MULTIPLIER = 0.8;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
@@ -955,7 +956,7 @@ export class MatchRoom extends Room<MatchState> {
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
-    const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier));
+    const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier * ENEMY_HP_BALANCE_MULTIPLIER));
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
     const speed = this.scaleWorldSpeed(definition.speed + this.wave * 2.4);
     const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
