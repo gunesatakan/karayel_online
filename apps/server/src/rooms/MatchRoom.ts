@@ -352,6 +352,7 @@ type KinWaveModel = {
   bandDepth: number;
   slowMs: number;
   pushbackDistance: number;
+  abartiLevel: number;
   hitEnemyIds: string[];
 };
 
@@ -1454,6 +1455,11 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const angle = Math.atan2(dy, dx);
+    const baseRange = this.getTowerRange(tower);
+    const baseEndX = tower.x + Math.cos(angle) * baseRange;
+    const baseEndY = tower.y + Math.sin(angle) * baseRange;
+    const abartiLevel = this.getAbartiPassThroughLevel(tower.ownerId, tower.x, tower.y, baseEndX, baseEndY);
+    const rangeMultiplier = abartiLevel > 0 ? getAbartiShowcaseRangeMultiplier(abartiLevel) : 1;
     const id = `kw${this.nextKinWaveId++}`;
     this.kinWaves.set(id, {
       id,
@@ -1465,11 +1471,12 @@ export class MatchRoom extends Room<MatchState> {
       angle,
       halfAngle: (options.angleRadians ?? KIN_WAVE_ANGLE_RADIANS) / 2,
       distance: 0,
-      range: this.getTowerRange(tower),
+      range: baseRange * rangeMultiplier,
       speed: this.scaleWorldSpeed(KIN_WAVE_SPEED + tower.level * 4),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
       slowMs: tower.definition.slowMs + (tower.level - 1) * 80,
       pushbackDistance: options.pushbackDistance ?? 0,
+      abartiLevel,
       hitEnemyIds: []
     });
   }
@@ -1562,6 +1569,7 @@ export class MatchRoom extends Room<MatchState> {
     const visibleDistance = Math.min(wave.distance, wave.range);
     const x2 = wave.x + Math.cos(wave.angle) * visibleDistance;
     const y2 = wave.y + Math.sin(wave.angle) * visibleDistance;
+    const baseColor = wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0xdc2626 : 0x7f1d1d;
     this.beams.set(`kin-wave-${wave.id}`, {
       id: `kin-wave-${wave.id}`,
       definitionId: wave.sourceDefinitionId,
@@ -1570,7 +1578,7 @@ export class MatchRoom extends Room<MatchState> {
       x2,
       y2,
       width: Math.max(8, Math.tan(wave.halfAngle) * visibleDistance * 2),
-      color: wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0xdc2626 : 0x7f1d1d,
+      color: wave.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(baseColor, wave.abartiLevel) : baseColor,
       overdrive: false,
       ttlMs: 120
     });
@@ -1606,8 +1614,8 @@ export class MatchRoom extends Room<MatchState> {
       y1: tower.y,
       x2: result.endX,
       y2: result.endY,
-      width: Math.max(12, Math.tan(KIN_WAVE_ANGLE_RADIANS / 2) * this.getTowerRange(tower) * 2),
-      color: 0xef4444,
+      width: Math.max(12, Math.tan(KIN_WAVE_ANGLE_RADIANS / 2) * Math.hypot(result.endX - tower.x, result.endY - tower.y) * 2),
+      color: result.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(0xef4444, result.abartiLevel) : 0xef4444,
       overdrive: false,
       ttlMs: 260
     });
@@ -1620,17 +1628,22 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const range = this.getTowerRange(tower);
-    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number } | undefined;
+    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number; abartiLevel: number } | undefined;
     for (const enemy of enemies.length > 0 ? enemies : [fallbackTarget]) {
       const angle = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
-      const targets = enemies.filter((candidate) => this.isPointInsideCone(candidate.x, candidate.y, tower.x, tower.y, angle, KIN_WAVE_ANGLE_RADIANS / 2, range));
+      const baseEndX = tower.x + Math.cos(angle) * range;
+      const baseEndY = tower.y + Math.sin(angle) * range;
+      const abartiLevel = this.getAbartiPassThroughLevel(tower.ownerId, tower.x, tower.y, baseEndX, baseEndY);
+      const finalRange = range * (abartiLevel > 0 ? getAbartiShowcaseRangeMultiplier(abartiLevel) : 1);
+      const targets = enemies.filter((candidate) => this.isPointInsideCone(candidate.x, candidate.y, tower.x, tower.y, angle, KIN_WAVE_ANGLE_RADIANS / 2, finalRange));
       const score = targets.length * 100000 + targets.reduce((total, candidate) => total + candidate.pathDistance, 0);
       if (!best || score > best.score) {
         best = {
-          endX: tower.x + Math.cos(angle) * range,
-          endY: tower.y + Math.sin(angle) * range,
+          endX: tower.x + Math.cos(angle) * finalRange,
+          endY: tower.y + Math.sin(angle) * finalRange,
           targets,
-          score
+          score,
+          abartiLevel
         };
       }
     }
@@ -2238,7 +2251,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateProjectileAbartiModifier(projectile: ProjectileModel, previousX: number, previousY: number) {
-    if (projectile.damageType !== "physical" || (projectile.definitionId !== "zeynep-1" && projectile.definitionId !== "zeynep-3")) {
+    if (projectile.damageType !== "physical" || !isAbartiArmorBreakProjectile(projectile.definitionId)) {
       return;
     }
 
@@ -4358,6 +4371,12 @@ function getAbartiShowcaseRangeMultiplier(level: number) {
 function getAbartiArmorBreak(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return Math.round(10 + ((clampedLevel - 1) / 9) * 20);
+}
+
+function isAbartiArmorBreakProjectile(definitionId: string) {
+  return definitionId === "zeynep-1" ||
+    definitionId === "zeynep-3" ||
+    definitionId === "zeynep-3-kin-projectile";
 }
 
 function getAbartiRayDamageGrowth(level: number) {
