@@ -109,6 +109,7 @@ const KIN_WAVE_BAND_DEPTH = 30;
 const KIN_SLOW_NEAR_MULTIPLIER = 1;
 const KIN_SLOW_FAR_MULTIPLIER = 0.6;
 const KIN_SYNTHESIS_PUSHBACK_DISTANCE = 12;
+const KIN_SYNTHESIS_TIP_HOLD_SECONDS = 0.5;
 const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
 const KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL = 2;
 
@@ -353,6 +354,7 @@ type KinWaveModel = {
   slowMs: number;
   pushbackDistance: number;
   abartiLevel: number;
+  tipHoldSeconds: number;
   hitEnemyIds: string[];
 };
 
@@ -1477,6 +1479,7 @@ export class MatchRoom extends Room<MatchState> {
       slowMs: tower.definition.slowMs + (tower.level - 1) * 80,
       pushbackDistance: options.pushbackDistance ?? 0,
       abartiLevel,
+      tipHoldSeconds: (options.pushbackDistance ?? 0) > 0 ? KIN_SYNTHESIS_TIP_HOLD_SECONDS : 0,
       hitEnemyIds: []
     });
   }
@@ -1490,11 +1493,17 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      wave.distance += wave.speed * seconds;
+      if (wave.distance < wave.range) {
+        wave.distance = Math.min(wave.range, wave.distance + wave.speed * seconds);
+      } else if (wave.tipHoldSeconds > 0) {
+        wave.tipHoldSeconds = Math.max(0, wave.tipHoldSeconds - seconds);
+      } else {
+        wave.distance += wave.speed * seconds;
+      }
       this.applyKinWaveHits(tower, wave, seconds);
       this.setKinWaveBeam(wave);
 
-      if (wave.distance >= wave.range + wave.bandDepth) {
+      if (wave.distance >= wave.range + wave.bandDepth && wave.tipHoldSeconds <= 0) {
         this.kinWaves.delete(id);
         this.beams.delete(`kin-wave-${id}`);
       }
