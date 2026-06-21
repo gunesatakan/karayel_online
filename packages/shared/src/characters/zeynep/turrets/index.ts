@@ -67,6 +67,28 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       };
     }
 
+    if (tower.id === "zeynep-6") {
+      return {
+        ...tower,
+        name: "Kin Kulesi",
+        role: "Mesafeye bagli yavaslatma dalgasi",
+        description: "Uzun araliklarla 60 derecelik, yavas ilerleyen koni dalgasi yollar. Dalga ile uzakta temas eden dusmanlar, yakindakilere gore 3 kata kadar daha guclu yavaslar. Kin slow'u stacklenmez; yeni dalga temasinda yeniden hesaplanir.",
+        classType: "control",
+        damageType: "none",
+        hitType: "aura",
+        mechanics: ["moving-cone-wave", "distance-scaled-slow", "synthesis-combo"],
+        cost: 118,
+        upgradeCost: 84,
+        range: 168,
+        damage: 0,
+        fireIntervalMs: 3200,
+        projectileSpeed: 0,
+        aoeRadius: 0,
+        slowMs: 1150,
+        color: 0x0ea5e9
+      };
+    }
+
     if (tower.id === "zeynep-8") {
       return {
         ...tower,
@@ -102,4 +124,4 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
     aoeRadius: 0,
     slowMs: 0
   };
-}).filter((tower) => !["zeynep-4", "zeynep-5", "zeynep-6"].includes(tower.id));
+}).filter((tower) => !["zeynep-4", "zeynep-5"].includes(tower.id));

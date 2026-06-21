@@ -2619,6 +2619,8 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
+      } else if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave" || beam.definitionId === "zeynep-3-kin-showcase") {
+        this.drawKinConeWave(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -2701,6 +2703,57 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
     this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
+  }
+
+  private drawKinConeWave(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const halfWidth = Math.max(4, beam.width / 2);
+    const isInstant = beam.definitionId === "zeynep-3-kin-showcase";
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 120) / (isInstant ? 260 : 120), 0, 1);
+    const pulse = 0.9 + Math.sin(Date.now() / 70) * 0.1;
+    const startInset = isInstant ? 4 : Math.min(18, length * 0.18);
+    const startX = beam.x1 + ux * startInset;
+    const startY = beam.y1 + uy * startInset;
+
+    const left = new Phaser.Geom.Point(beam.x2 + nx * halfWidth, beam.y2 + ny * halfWidth);
+    const right = new Phaser.Geom.Point(beam.x2 - nx * halfWidth, beam.y2 - ny * halfWidth);
+    const origin = new Phaser.Geom.Point(startX, startY);
+    const innerLeft = new Phaser.Geom.Point(beam.x2 + nx * halfWidth * 0.72 - ux * 18, beam.y2 + ny * halfWidth * 0.72 - uy * 18);
+    const innerRight = new Phaser.Geom.Point(beam.x2 - nx * halfWidth * 0.72 - ux * 18, beam.y2 - ny * halfWidth * 0.72 - uy * 18);
+
+    this.beamGraphics.fillStyle(color, (isInstant ? 0.18 : 0.12) * life * pulse);
+    this.beamGraphics.fillPoints([origin, left, right], true);
+    this.beamGraphics.lineStyle(Math.max(2, 4 * this.getTowerEffectScale()), color, (isInstant ? 0.74 : 0.52) * life);
+    this.beamGraphics.beginPath();
+    this.beamGraphics.moveTo(startX, startY);
+    this.beamGraphics.lineTo(left.x, left.y);
+    this.beamGraphics.moveTo(startX, startY);
+    this.beamGraphics.lineTo(right.x, right.y);
+    this.beamGraphics.moveTo(innerLeft.x, innerLeft.y);
+    this.beamGraphics.lineTo(beam.x2, beam.y2);
+    this.beamGraphics.lineTo(innerRight.x, innerRight.y);
+    this.beamGraphics.strokePath();
+    this.beamGraphics.lineStyle(Math.max(1, 2 * this.getTowerEffectScale()), isInstant ? 0xf0fdfa : 0xbae6fd, (isInstant ? 0.86 : 0.58) * life);
+    this.beamGraphics.beginPath();
+    this.beamGraphics.moveTo(innerLeft.x, innerLeft.y);
+    this.beamGraphics.lineTo(beam.x2, beam.y2);
+    this.beamGraphics.lineTo(innerRight.x, innerRight.y);
+    this.beamGraphics.strokePath();
+
+    if (isInstant) {
+      this.beamGraphics.fillStyle(0xecfeff, 0.52 * life);
+      this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(5, halfWidth * 0.12));
+    }
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {

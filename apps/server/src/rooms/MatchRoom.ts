@@ -102,6 +102,15 @@ const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.08;
 const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.16;
 const ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER = 0.94;
 const ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER = 0.88;
+const KIN_WAVE_ANGLE_RADIANS = degreesToRadians(60);
+const KIN_SYNTHESIS_WAVE_ANGLE_RADIANS = degreesToRadians(90);
+const KIN_WAVE_SPEED = 104;
+const KIN_WAVE_BAND_DEPTH = 30;
+const KIN_SLOW_NEAR_MULTIPLIER = 0.72;
+const KIN_SLOW_FAR_MULTIPLIER = 0.24;
+const KIN_SYNTHESIS_PUSHBACK_DISTANCE = 12;
+const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
+const KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL = 2;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -212,6 +221,8 @@ type EnemyModel = {
   pathDistance: number;
   slowUntil: number;
   auraSlowMultiplier: number;
+  kinSlowUntil: number;
+  kinSlowMultiplier: number;
   fearUntil: number;
   trackingStackUntil: [number, number, number];
   pathId: number;
@@ -323,6 +334,24 @@ type ZeynepRayModel = {
   hitEnemyIds: string[];
 };
 
+type KinWaveModel = {
+  id: string;
+  towerId: string;
+  ownerId: string;
+  sourceDefinitionId: string;
+  x: number;
+  y: number;
+  angle: number;
+  halfAngle: number;
+  distance: number;
+  range: number;
+  speed: number;
+  bandDepth: number;
+  slowMs: number;
+  pushbackDistance: number;
+  hitEnemyIds: string[];
+};
+
 type TowerOrientation = NonNullable<TowerSnapshot["orientation"]>;
 
 type BurnZoneModel = {
@@ -385,11 +414,12 @@ type RuntimePath = {
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type ZeynepCommandType = "haste" | "range" | "slow";
-type ZeynepSynthesisMode = "dual-projectile" | "mirror-beam" | "burn-impact" | "copy-projectile" | "copy-showcase";
+type ZeynepSynthesisMode = "dual-projectile" | "mirror-beam" | "burn-impact" | "copy-projectile" | "copy-showcase" | "kin-wave" | "kin-projectile" | "kin-showcase";
 type ZeynepSynthesisComposition = {
   mode?: ZeynepSynthesisMode;
   hizaCount: number;
   showcaseCount: number;
+  kinCount: number;
   linkedTowers: TowerModel[];
   synthesisTowerCount: number;
   copySourceTower?: TowerModel;
@@ -432,6 +462,7 @@ export class MatchRoom extends Room<MatchState> {
   private drones = new Map<string, DroneModel>();
   private beams = new Map<string, BeamModel>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
+  private kinWaves = new Map<string, KinWaveModel>();
   private burnZones = new Map<string, BurnZoneModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
@@ -443,6 +474,7 @@ export class MatchRoom extends Room<MatchState> {
   private nextDroneId = 1;
   private nextBeamId = 1;
   private nextZeynepRayId = 1;
+  private nextKinWaveId = 1;
   private nextBurnZoneId = 1;
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
@@ -888,6 +920,7 @@ export class MatchRoom extends Room<MatchState> {
     sectionStart = performance.now();
     this.updateProjectiles(seconds);
     this.updateZeynepRays(seconds);
+    this.updateKinWaves(seconds);
     this.updateBurnZones();
     this.updateDrones(gameDeltaTime, seconds);
     this.updateBeams(gameDeltaTime);
@@ -997,6 +1030,8 @@ export class MatchRoom extends Room<MatchState> {
       pathDistance: 0,
       slowUntil: 0,
       auraSlowMultiplier: 1,
+      kinSlowUntil: 0,
+      kinSlowMultiplier: 1,
       fearUntil: 0,
       trackingStackUntil: [0, 0, 0],
       pathId
@@ -1081,6 +1116,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-3") {
       this.fireZeynepSynthesis(tower, target);
+      return;
+    }
+
+    if (tower.definition.id === "zeynep-6") {
+      this.fireKinWave(tower, target);
       return;
     }
 
@@ -1296,12 +1336,13 @@ export class MatchRoom extends Room<MatchState> {
   private getZeynepSynthesisComposition(tower: TowerModel): ZeynepSynthesisComposition {
     const formationGroup = this.getZeynepFormationGroup(tower);
     if (!isValidZeynepFormationGroup(formationGroup, getMapGridSize(this.activeMap)) || formationGroup.length !== 3) {
-      return { hizaCount: 0, showcaseCount: 0, linkedTowers: [], synthesisTowerCount: formationGroup.filter((member) => member.definition.id === "zeynep-3").length };
+      return { hizaCount: 0, showcaseCount: 0, kinCount: 0, linkedTowers: [], synthesisTowerCount: formationGroup.filter((member) => member.definition.id === "zeynep-3").length };
     }
 
     const linkedTowers = formationGroup.filter((member) => member.id !== tower.id);
     const hizaCount = formationGroup.filter((member) => member.definition.id === "zeynep-1").length;
     const showcaseCount = formationGroup.filter((member) => member.definition.id === "zeynep-2").length;
+    const kinCount = formationGroup.filter((member) => member.definition.id === "zeynep-6").length;
     const synthesisTowerCount = formationGroup.filter((member) => member.definition.id === "zeynep-3").length;
     const copySourceTower = synthesisTowerCount === 2
       ? formationGroup.find((member) => member.definition.id === "zeynep-1" || member.definition.id === "zeynep-2")
@@ -1312,11 +1353,17 @@ export class MatchRoom extends Room<MatchState> {
         ? "dual-projectile"
         : showcaseCount === 2
           ? "burn-impact"
-          : hizaCount === 1 && showcaseCount === 1
-            ? "mirror-beam"
-            : undefined;
+          : kinCount === 2
+            ? "kin-wave"
+            : hizaCount === 1 && showcaseCount === 1
+              ? "mirror-beam"
+              : hizaCount === 1 && kinCount === 1
+                ? "kin-projectile"
+                : showcaseCount === 1 && kinCount === 1
+                  ? "kin-showcase"
+                  : undefined;
 
-    return { mode, hizaCount, showcaseCount, linkedTowers, synthesisTowerCount, copySourceTower };
+    return { mode, hizaCount, showcaseCount, kinCount, linkedTowers, synthesisTowerCount, copySourceTower };
   }
 
   private getZeynepFormationGroup(tower: TowerModel) {
@@ -1363,6 +1410,25 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (composition.mode === "kin-wave") {
+      this.fireKinWave(tower, target, {
+        angleRadians: KIN_SYNTHESIS_WAVE_ANGLE_RADIANS,
+        sourceDefinitionId: "zeynep-3-kin-wave",
+        pushbackDistance: this.scaleWorldDistance(KIN_SYNTHESIS_PUSHBACK_DISTANCE)
+      });
+      return;
+    }
+
+    if (composition.mode === "kin-projectile") {
+      this.fireZeynepSynthesisKinProjectile(tower, target);
+      return;
+    }
+
+    if (composition.mode === "kin-showcase") {
+      this.fireZeynepSynthesisKinShowcase(tower, target);
+      return;
+    }
+
     if (composition.mode === "copy-projectile" && composition.copySourceTower) {
       this.fireZeynepSynthesisCopiedProjectile(tower, target, composition.copySourceTower);
       return;
@@ -1374,6 +1440,176 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.fireZeynepSynthesisMirrorBeam(tower, target);
+  }
+
+  private fireKinWave(
+    tower: TowerModel,
+    target: EnemyModel,
+    options: { angleRadians?: number; sourceDefinitionId?: string; pushbackDistance?: number } = {}
+  ) {
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    const angle = Math.atan2(dy, dx);
+    const id = `kw${this.nextKinWaveId++}`;
+    this.kinWaves.set(id, {
+      id,
+      towerId: tower.id,
+      ownerId: tower.ownerId,
+      sourceDefinitionId: options.sourceDefinitionId ?? tower.definition.id,
+      x: tower.x,
+      y: tower.y,
+      angle,
+      halfAngle: (options.angleRadians ?? KIN_WAVE_ANGLE_RADIANS) / 2,
+      distance: 0,
+      range: this.getTowerRange(tower),
+      speed: this.scaleWorldSpeed(KIN_WAVE_SPEED + tower.level * 4),
+      bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
+      slowMs: tower.definition.slowMs + (tower.level - 1) * 80,
+      pushbackDistance: options.pushbackDistance ?? 0,
+      hitEnemyIds: []
+    });
+  }
+
+  private updateKinWaves(seconds: number) {
+    for (const [id, wave] of this.kinWaves) {
+      const tower = this.towers.get(wave.towerId);
+      if (!tower) {
+        this.kinWaves.delete(id);
+        this.beams.delete(`kin-wave-${id}`);
+        continue;
+      }
+
+      wave.distance += wave.speed * seconds;
+      this.applyKinWaveHits(tower, wave);
+      this.setKinWaveBeam(wave);
+
+      if (wave.distance >= wave.range + wave.bandDepth) {
+        this.kinWaves.delete(id);
+        this.beams.delete(`kin-wave-${id}`);
+      }
+    }
+  }
+
+  private applyKinWaveHits(tower: TowerModel, wave: KinWaveModel) {
+    for (const enemy of this.enemies.values()) {
+      this.perfCounters.aoeChecks += 1;
+      if (wave.hitEnemyIds.includes(enemy.id) || !this.canTowerTargetEnemy(tower, enemy)) {
+        continue;
+      }
+
+      const projection = getProjectionOnAngle(enemy.x, enemy.y, wave.x, wave.y, wave.angle);
+      if (projection < Math.max(0, wave.distance - wave.bandDepth) || projection > wave.distance + getEnemyCollisionRadius(enemy)) {
+        continue;
+      }
+
+      const perpendicularDistance = getPerpendicularDistanceOnAngle(enemy.x, enemy.y, wave.x, wave.y, wave.angle);
+      const coneRadiusAtProjection = Math.tan(wave.halfAngle) * Math.max(1, projection);
+      if (Math.abs(perpendicularDistance) > coneRadiusAtProjection + getEnemyCollisionRadius(enemy)) {
+        continue;
+      }
+
+      wave.hitEnemyIds.push(enemy.id);
+      this.applyKinSlow(enemy, tower, projection, wave.range, wave.slowMs);
+      if (wave.pushbackDistance > 0) {
+        enemy.pathDistance = Math.max(0, enemy.pathDistance - wave.pushbackDistance);
+      }
+    }
+  }
+
+  private applyKinSlow(enemy: EnemyModel, tower: TowerModel, distanceFromTower: number, range: number, slowMs: number) {
+    const now = Date.now();
+    const ratio = this.clamp(distanceFromTower / Math.max(1, range), 0, 1);
+    const multiplier = KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio;
+    const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
+    enemy.kinSlowMultiplier = this.clamp(multiplier, KIN_SLOW_FAR_MULTIPLIER, KIN_SLOW_NEAR_MULTIPLIER);
+    enemy.kinSlowUntil = now + scaleGameDuration(duration);
+  }
+
+  private setKinWaveBeam(wave: KinWaveModel) {
+    const visibleDistance = Math.min(wave.distance, wave.range);
+    const x2 = wave.x + Math.cos(wave.angle) * visibleDistance;
+    const y2 = wave.y + Math.sin(wave.angle) * visibleDistance;
+    this.beams.set(`kin-wave-${wave.id}`, {
+      id: `kin-wave-${wave.id}`,
+      definitionId: wave.sourceDefinitionId,
+      x1: wave.x,
+      y1: wave.y,
+      x2,
+      y2,
+      width: Math.max(8, Math.tan(wave.halfAngle) * visibleDistance * 2),
+      color: wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0x38bdf8 : 0x0ea5e9,
+      overdrive: false,
+      ttlMs: 120
+    });
+  }
+
+  private fireZeynepSynthesisKinProjectile(tower: TowerModel, target: EnemyModel) {
+    const damage = this.getTowerDamage(tower) * 0.72;
+    const speed = Math.max(1, tower.definition.projectileSpeed + tower.level * 22);
+    this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", 2, "zeynep-3-kin-projectile");
+  }
+
+  private fireZeynepSynthesisKinShowcase(tower: TowerModel, target: EnemyModel) {
+    const result = this.findBestKinShowcaseCone(tower, target);
+    if (!result) {
+      return;
+    }
+
+    const armorBreak = KIN_SHOWCASE_ARMOR_BREAK_BASE + tower.level * KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL;
+    const damage = this.getTowerDamage(tower) * 0.62;
+    for (const enemy of result.targets) {
+      enemy.armor = Math.max(-100, enemy.armor - armorBreak);
+      this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light", 0);
+    }
+
+    const beamId = `kin-showcase-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "zeynep-3-kin-showcase",
+      x1: tower.x,
+      y1: tower.y,
+      x2: result.endX,
+      y2: result.endY,
+      width: Math.max(12, Math.tan(KIN_WAVE_ANGLE_RADIANS / 2) * this.getTowerRange(tower) * 2),
+      color: 0x67e8f9,
+      overdrive: false,
+      ttlMs: 260
+    });
+  }
+
+  private findBestKinShowcaseCone(tower: TowerModel, fallbackTarget: EnemyModel) {
+    const enemies = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    if (enemies.length === 0) {
+      return undefined;
+    }
+
+    const range = this.getTowerRange(tower);
+    let best: { endX: number; endY: number; targets: EnemyModel[]; score: number } | undefined;
+    for (const enemy of enemies.length > 0 ? enemies : [fallbackTarget]) {
+      const angle = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
+      const targets = enemies.filter((candidate) => this.isPointInsideCone(candidate.x, candidate.y, tower.x, tower.y, angle, KIN_WAVE_ANGLE_RADIANS / 2, range));
+      const score = targets.length * 100000 + targets.reduce((total, candidate) => total + candidate.pathDistance, 0);
+      if (!best || score > best.score) {
+        best = {
+          endX: tower.x + Math.cos(angle) * range,
+          endY: tower.y + Math.sin(angle) * range,
+          targets,
+          score
+        };
+      }
+    }
+
+    return best;
+  }
+
+  private isPointInsideCone(x: number, y: number, originX: number, originY: number, angle: number, halfAngle: number, range: number) {
+    const dx = x - originX;
+    const dy = y - originY;
+    const distance = Math.hypot(dx, dy);
+    if (distance > range) {
+      return false;
+    }
+    return Math.abs(normalizeAngle(Math.atan2(dy, dx) - angle)) <= halfAngle;
   }
 
   private fireZeynepSynthesisCopiedProjectile(tower: TowerModel, target: EnemyModel, copySourceTower: TowerModel) {
@@ -1995,12 +2231,28 @@ export class MatchRoom extends Room<MatchState> {
         this.perfCounters.aoeChecks += 1;
         if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
           this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+          this.applyKinProjectileSlow(projectile, enemy);
         }
       }
     } else {
       this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+      this.applyKinProjectileSlow(projectile, target);
     }
     this.applyPostHitEffects(projectile, target);
+  }
+
+  private applyKinProjectileSlow(projectile: ProjectileModel, target: EnemyModel) {
+    if (projectile.definitionId !== "zeynep-3-kin-projectile") {
+      return;
+    }
+
+    const tower = this.towers.get(projectile.towerId);
+    if (!tower) {
+      return;
+    }
+
+    const distanceFromTower = Math.hypot(target.x - tower.x, target.y - tower.y);
+    this.applyKinSlow(target, tower, distanceFromTower, this.getTowerRange(tower), 900 + tower.level * 70);
   }
 
   private updateDrones(deltaTime: number, seconds: number) {
@@ -2070,8 +2322,9 @@ export class MatchRoom extends Room<MatchState> {
 
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
+      const kinSlowMultiplier = enemy.kinSlowUntil > now ? enemy.kinSlowMultiplier : 1;
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
-      const speedMultiplier = Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, zeynepSlowMultiplier);
+      const speedMultiplier = Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier);
       if (isFeared) {
         enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
       } else {
@@ -2751,6 +3004,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.definition.id === "warrior-6" ||
       tower.definition.id === "zeynep-1" ||
       tower.definition.id === "zeynep-2" ||
+      tower.definition.id === "zeynep-6" ||
       (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
   }
 
@@ -3241,11 +3495,16 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
-      const baseInterval = composition.mode === "dual-projectile" || composition.mode === "copy-projectile"
-        ? getZeynepHizaFireInterval(composition.copySourceTower?.level ?? tower.level)
-        : composition.mode === "copy-showcase"
-          ? composition.copySourceTower?.definition.fireIntervalMs ?? tower.definition.fireIntervalMs
-          : tower.definition.fireIntervalMs;
+      let baseInterval = tower.definition.fireIntervalMs;
+      if (composition.mode === "dual-projectile" || composition.mode === "copy-projectile") {
+        baseInterval = getZeynepHizaFireInterval(composition.copySourceTower?.level ?? tower.level);
+      } else if (composition.mode === "kin-projectile") {
+        baseInterval = getZeynepHizaFireInterval(tower.level);
+      } else if (composition.mode === "kin-wave" || composition.mode === "kin-showcase") {
+        baseInterval = getKinFireInterval(tower.level);
+      } else if (composition.mode === "copy-showcase") {
+        baseInterval = composition.copySourceTower?.definition.fireIntervalMs ?? tower.definition.fireIntervalMs;
+      }
       return Math.max(80, baseInterval * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
     }
 
@@ -3259,6 +3518,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-1") {
       return getZeynepHizaFireInterval(tower.level) * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
+    }
+
+    if (tower.definition.id === "zeynep-6") {
+      return getKinFireInterval(tower.level) * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
     }
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
@@ -3993,6 +4256,11 @@ function getZeynepHizaDamageCompensation(level: number) {
   return newInterval / oldInterval;
 }
 
+function getKinFireInterval(level: number) {
+  const clampedLevel = Math.min(Math.max(level, 1), 10);
+  return 3200 - ((clampedLevel - 1) / 9) * 900;
+}
+
 function getUcubeLateDamageMultiplier(level: number) {
   if (level >= 10) return 1.3;
   if (level >= 9) return 1.4;
@@ -4159,6 +4427,22 @@ function getSegmentProjection(px: number, py: number, ax: number, ay: number, bx
   }
 
   return ((px - ax) * dx + (py - ay) * dy) / lengthSq;
+}
+
+function getProjectionOnAngle(px: number, py: number, originX: number, originY: number, angle: number) {
+  const dx = px - originX;
+  const dy = py - originY;
+  return dx * Math.cos(angle) + dy * Math.sin(angle);
+}
+
+function getPerpendicularDistanceOnAngle(px: number, py: number, originX: number, originY: number, angle: number) {
+  const dx = px - originX;
+  const dy = py - originY;
+  return dx * -Math.sin(angle) + dy * Math.cos(angle);
+}
+
+function normalizeAngle(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
 function segmentIntersectsRect(
