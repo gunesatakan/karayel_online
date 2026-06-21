@@ -59,6 +59,7 @@ const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
 const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
 const GAME_SPEED_MULTIPLIER = 0.8;
+const SNAPSHOT_SEND_INTERVAL_MS = 50;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
@@ -473,6 +474,8 @@ export class MatchRoom extends Room<MatchState> {
   private gameStarted = false;
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
+  private lastSnapshotBroadcastAt = 0;
+  private snapshotBroadcastTimes: number[] = [];
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
   private latestPerfSnapshot: ServerPerfSnapshot = {
@@ -903,11 +906,19 @@ export class MatchRoom extends Room<MatchState> {
     this.chargeUltimates(seconds);
     timings.ultimatesMs = performance.now() - sectionStart;
 
-    sectionStart = performance.now();
-    const snapshot = this.getSnapshot();
-    timings.snapshotMs = performance.now() - sectionStart;
-    snapshot.perf = this.latestPerfSnapshot;
-    const snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+    const now = performance.now();
+    const shouldBroadcastSnapshot = now - this.lastSnapshotBroadcastAt >= SNAPSHOT_SEND_INTERVAL_MS;
+    let snapshot: GameSnapshot | undefined;
+    let snapshotBytes = 0;
+    if (shouldBroadcastSnapshot) {
+      sectionStart = performance.now();
+      snapshot = this.getSnapshot();
+      timings.snapshotMs = performance.now() - sectionStart;
+      snapshot.perf = this.latestPerfSnapshot;
+      snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+      this.recordSnapshotBroadcast(now);
+      this.lastSnapshotBroadcastAt = now;
+    }
     const tickMs = performance.now() - frameStart;
 
     this.recordPerfFrame({
@@ -917,8 +928,10 @@ export class MatchRoom extends Room<MatchState> {
       snapshotBytes
     });
 
-    snapshot.perf = this.latestPerfSnapshot;
-    this.broadcast("snapshot", snapshot);
+    if (snapshot) {
+      snapshot.perf = this.latestPerfSnapshot;
+      this.broadcast("snapshot", snapshot);
+    }
   }
 
   private updateSpawning(deltaTime: number) {
@@ -3639,14 +3652,18 @@ export class MatchRoom extends Room<MatchState> {
 
     const sampleCount = Math.max(1, this.perfFrames.length);
     const average = (key: keyof ServerPerfFrame) => this.perfFrames.reduce((total, sample) => total + sample[key], 0) / sampleCount;
+    const averageSentSnapshot = (key: "snapshotMs" | "snapshotBytes") => {
+      const sentFrames = this.perfFrames.filter((sample) => sample.snapshotBytes > 0);
+      const count = Math.max(1, sentFrames.length);
+      return sentFrames.reduce((total, sample) => total + sample[key], 0) / count;
+    };
     const maxTickMs = this.perfFrames.reduce((max, sample) => Math.max(max, sample.tickMs), 0);
-    const snapshotHz = frame.tickMs > 0 ? 1000 / frame.tickMs : 0;
 
     this.latestPerfSnapshot = {
       tickMs: roundMetric(average("tickMs")),
       tickMaxMs: roundMetric(maxTickMs),
-      snapshotBytes: Math.round(average("snapshotBytes")),
-      snapshotHz: roundMetric(snapshotHz),
+      snapshotBytes: Math.round(averageSentSnapshot("snapshotBytes")),
+      snapshotHz: roundMetric(this.getSnapshotBroadcastHz()),
       sections: {
         spawnMs: roundMetric(average("spawnMs")),
         towersMs: roundMetric(average("towersMs")),
@@ -3654,7 +3671,7 @@ export class MatchRoom extends Room<MatchState> {
         enemiesMs: roundMetric(average("enemiesMs")),
         cooldownsMs: roundMetric(average("cooldownsMs")),
         ultimatesMs: roundMetric(average("ultimatesMs")),
-        snapshotMs: roundMetric(average("snapshotMs"))
+        snapshotMs: roundMetric(averageSentSnapshot("snapshotMs"))
       },
       ops: {
         targetSearches: Math.round(average("targetSearches")),
@@ -3664,6 +3681,21 @@ export class MatchRoom extends Room<MatchState> {
         damageEvents: Math.round(average("damageEvents"))
       }
     };
+  }
+
+  private recordSnapshotBroadcast(now: number) {
+    const keepAfter = now - 1000;
+    this.snapshotBroadcastTimes.push(now);
+    this.snapshotBroadcastTimes = this.snapshotBroadcastTimes.filter((time) => time >= keepAfter);
+  }
+
+  private getSnapshotBroadcastHz() {
+    if (this.snapshotBroadcastTimes.length < 2) {
+      return this.snapshotBroadcastTimes.length;
+    }
+
+    const elapsedMs = Math.max(1, this.snapshotBroadcastTimes[this.snapshotBroadcastTimes.length - 1] - this.snapshotBroadcastTimes[0]);
+    return ((this.snapshotBroadcastTimes.length - 1) / elapsedMs) * 1000;
   }
 }
 
