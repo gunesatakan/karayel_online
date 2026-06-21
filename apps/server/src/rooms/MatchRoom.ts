@@ -1555,9 +1555,12 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const armorBreak = KIN_SHOWCASE_ARMOR_BREAK_BASE + tower.level * KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL;
+    const baseArmorBreak = KIN_SHOWCASE_ARMOR_BREAK_BASE + tower.level * KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL;
+    const range = this.getTowerRange(tower);
     const damage = this.getTowerDamage(tower) * 0.62;
     for (const enemy of result.targets) {
+      const distanceRatio = this.clamp(Math.hypot(enemy.x - tower.x, enemy.y - tower.y) / Math.max(1, range), 0, 1);
+      const armorBreak = Math.round(baseArmorBreak * (1 + distanceRatio * 2));
       enemy.armor = Math.max(-100, enemy.armor - armorBreak);
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light", 0);
     }
