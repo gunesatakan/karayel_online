@@ -2743,7 +2743,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.lineTo(beam.x2, beam.y2);
     this.beamGraphics.lineTo(innerRight.x, innerRight.y);
     this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(Math.max(1, 2 * this.getTowerEffectScale()), isInstant ? 0xf0fdfa : 0xbae6fd, (isInstant ? 0.86 : 0.58) * life);
+    this.beamGraphics.lineStyle(Math.max(1, 2 * this.getTowerEffectScale()), isInstant ? 0xffe4e6 : 0xfca5a5, (isInstant ? 0.86 : 0.58) * life);
     this.beamGraphics.beginPath();
     this.beamGraphics.moveTo(innerLeft.x, innerLeft.y);
     this.beamGraphics.lineTo(beam.x2, beam.y2);
@@ -2751,7 +2751,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.strokePath();
 
     if (isInstant) {
-      this.beamGraphics.fillStyle(0xecfeff, 0.52 * life);
+      this.beamGraphics.fillStyle(0xfff1f2, 0.52 * life);
       this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(5, halfWidth * 0.12));
     }
   }

@@ -1537,7 +1537,7 @@ export class MatchRoom extends Room<MatchState> {
       x2,
       y2,
       width: Math.max(8, Math.tan(wave.halfAngle) * visibleDistance * 2),
-      color: wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0x38bdf8 : 0x0ea5e9,
+      color: wave.sourceDefinitionId === "zeynep-3-kin-wave" ? 0xdc2626 : 0x7f1d1d,
       overdrive: false,
       ttlMs: 120
     });
@@ -1574,7 +1574,7 @@ export class MatchRoom extends Room<MatchState> {
       x2: result.endX,
       y2: result.endY,
       width: Math.max(12, Math.tan(KIN_WAVE_ANGLE_RADIANS / 2) * this.getTowerRange(tower) * 2),
-      color: 0x67e8f9,
+      color: 0xef4444,
       overdrive: false,
       ttlMs: 260
     });

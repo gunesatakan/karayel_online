@@ -85,7 +85,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         projectileSpeed: 0,
         aoeRadius: 0,
         slowMs: 1150,
-        color: 0x0ea5e9
+        color: 0x991b1b
       };
     }
 
