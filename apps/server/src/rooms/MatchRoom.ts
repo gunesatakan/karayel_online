@@ -87,7 +87,7 @@ const ZEYNEP_REPUTATION_GAIN_MULTIPLIER = 1 / 3;
 const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
 const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
-const ZEYNEP_SHOWCASE_BASE_LENGTH = 190;
+const ZEYNEP_SHOWCASE_BASE_LENGTH = 100;
 const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
 const ZEYNEP_SYNTHESIS_BEAM_RADIUS = 10;
@@ -3515,15 +3515,26 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
-      if (composition.copySourceTower?.definition.id === "zeynep-2") {
-        return this.scaleWorldDistance(getZeynepShowcaseBeamLength(composition.copySourceTower.level) * passiveMultiplier * zeynepRangeMultiplier);
-      }
-      if (composition.copySourceTower?.definition.id === "zeynep-1") {
-        return this.scaleWorldDistance((composition.copySourceTower.definition.range + (composition.copySourceTower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
+      if (composition.mode) {
+        const baseRange = this.getZeynepSynthesisBaseRange(composition);
+        return this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
       }
     }
 
     return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
+  }
+
+  private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {
+    const sourceTowers = composition.copySourceTower
+      ? [composition.copySourceTower, composition.copySourceTower]
+      : composition.linkedTowers.filter((tower) => tower.definition.id !== "zeynep-3");
+
+    if (sourceTowers.length === 0) {
+      return 0;
+    }
+
+    const totalBaseRange = sourceTowers.reduce((total, tower) => total + getZeynepBaseRange(tower.definition), 0);
+    return (totalBaseRange / sourceTowers.length) * 1.1;
   }
 
   private getTowerFireInterval(tower: TowerModel) {
@@ -4304,7 +4315,15 @@ function getZeynepHizaDamageCompensation(level: number) {
 
 function getKinFireInterval(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 3200 - ((clampedLevel - 1) / 9) * 900;
+  return 5000 - ((clampedLevel - 1) / 9) * 2000;
+}
+
+function getZeynepBaseRange(definition: TowerDefinition) {
+  if (definition.id === "zeynep-2") {
+    return ZEYNEP_SHOWCASE_BASE_LENGTH;
+  }
+
+  return definition.range;
 }
 
 function getUcubeLateDamageMultiplier(level: number) {

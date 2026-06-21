@@ -10,7 +10,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Zeynep Nexus", "En ust seviye hasar"],
   ["Saray Arsivi", "Pahali pasif kule. Gelistirildikce Taht Muhru sentez kombinasyonlarini stackli bicimde guclendirir"],
   ["Abarti", "2 kare yer kaplayan pasif kule. Icindan gecen Hiza, Gosteri ve Taht Muhru vuruslarini abartili sekilde guclendirir"]
-], { cost: 55, range: 118, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 }).map((tower): TowerDefinition => {
+], { cost: 55, range: 75, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 }).map((tower): TowerDefinition => {
   if (tower.id !== "zeynep-1") {
     if (tower.id === "zeynep-2") {
       return {
@@ -23,7 +23,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         mechanics: ["showcase-line-blast"],
         damage: 42,
         fireIntervalMs: 2350,
-        range: 175,
+        range: 100,
         aoeRadius: 0,
         slowMs: 0,
         color: 0xf9a8d4
