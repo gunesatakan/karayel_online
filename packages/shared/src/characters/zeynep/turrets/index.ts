@@ -79,7 +79,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         mechanics: ["moving-cone-wave", "distance-scaled-slow", "synthesis-combo"],
         cost: 118,
         upgradeCost: 84,
-        range: 168,
+        range: 56,
         damage: 0,
         fireIntervalMs: 3200,
         projectileSpeed: 0,

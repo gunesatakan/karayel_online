@@ -2721,6 +2721,57 @@ export class GameScene extends Phaser.Scene {
     const isInstant = beam.definitionId === "zeynep-3-kin-showcase";
     const life = Phaser.Math.Clamp((beam.ttlMs ?? 120) / (isInstant ? 260 : 120), 0, 1);
     const pulse = 0.9 + Math.sin(Date.now() / 70) * 0.1;
+    const heading = Math.atan2(dy, dx);
+    const halfAngle = Math.atan2(halfWidth, length);
+
+    if (!isInstant) {
+      const waveDepth = Math.min(Math.max(12, length * 0.34), 34 * this.getTowerEffectScale());
+      const outerRadius = length;
+      const innerRadius = Math.max(1, length - waveDepth);
+      const steps = 12;
+      const outerPoints: Phaser.Geom.Point[] = [];
+      const innerPoints: Phaser.Geom.Point[] = [];
+
+      for (let index = 0; index <= steps; index += 1) {
+        const t = index / steps;
+        const angle = heading - halfAngle + halfAngle * 2 * t;
+        const ripple = Math.sin(Date.now() / 90 + index * 1.7) * 2.2 * this.getTowerEffectScale();
+        outerPoints.push(new Phaser.Geom.Point(
+          beam.x1 + Math.cos(angle) * (outerRadius + ripple),
+          beam.y1 + Math.sin(angle) * (outerRadius + ripple)
+        ));
+        innerPoints.unshift(new Phaser.Geom.Point(
+          beam.x1 + Math.cos(angle) * Math.max(1, innerRadius + ripple * 0.35),
+          beam.y1 + Math.sin(angle) * Math.max(1, innerRadius + ripple * 0.35)
+        ));
+      }
+
+      this.beamGraphics.fillStyle(color, 0.18 * life * pulse);
+      this.beamGraphics.fillPoints([...outerPoints, ...innerPoints], true);
+      for (let band = 0; band < 3; band += 1) {
+        const radius = Math.max(1, outerRadius - band * waveDepth * 0.34);
+        const alpha = (0.72 - band * 0.18) * life;
+        this.beamGraphics.lineStyle(Math.max(1.5, (4 - band) * this.getTowerEffectScale()), band === 0 ? 0xffe4e6 : color, alpha);
+        this.beamGraphics.beginPath();
+        for (let index = 0; index <= steps; index += 1) {
+          const t = index / steps;
+          const angle = heading - halfAngle + halfAngle * 2 * t;
+          const ripple = Math.sin(Date.now() / 85 + index * 1.6 + band) * 1.8 * this.getTowerEffectScale();
+          const x = beam.x1 + Math.cos(angle) * (radius + ripple);
+          const y = beam.y1 + Math.sin(angle) * (radius + ripple);
+          if (index === 0) {
+            this.beamGraphics.moveTo(x, y);
+          } else {
+            this.beamGraphics.lineTo(x, y);
+          }
+        }
+        this.beamGraphics.strokePath();
+      }
+      this.beamGraphics.fillStyle(0x7f1d1d, 0.2 * life);
+      this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(3, halfWidth * 0.08));
+      return;
+    }
+
     const startInset = isInstant ? 4 : Math.min(18, length * 0.18);
     const startX = beam.x1 + ux * startInset;
     const startY = beam.y1 + uy * startInset;
