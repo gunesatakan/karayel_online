@@ -1484,7 +1484,7 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       wave.distance += wave.speed * seconds;
-      this.applyKinWaveHits(tower, wave);
+      this.applyKinWaveHits(tower, wave, seconds);
       this.setKinWaveBeam(wave);
 
       if (wave.distance >= wave.range + wave.bandDepth) {
@@ -1494,10 +1494,11 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private applyKinWaveHits(tower: TowerModel, wave: KinWaveModel) {
+  private applyKinWaveHits(tower: TowerModel, wave: KinWaveModel, seconds: number) {
+    const isPushWave = wave.pushbackDistance > 0;
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
-      if (wave.hitEnemyIds.includes(enemy.id) || !this.canTowerTargetEnemy(tower, enemy)) {
+      if ((!isPushWave && wave.hitEnemyIds.includes(enemy.id)) || !this.canTowerTargetEnemy(tower, enemy)) {
         continue;
       }
 
@@ -1512,13 +1513,36 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      wave.hitEnemyIds.push(enemy.id);
-      const distanceRatio = this.getKinDistanceRatio(projection, wave.range);
-      this.applyKinSlow(enemy, tower, projection, wave.range, wave.slowMs);
-      if (wave.pushbackDistance > 0) {
-        enemy.pathDistance = Math.max(0, enemy.pathDistance - wave.pushbackDistance * distanceRatio);
+      if (isPushWave) {
+        this.pushEnemyWithKinWave(enemy, wave, Math.min(wave.pushbackDistance, wave.speed * seconds));
+        continue;
       }
+
+      wave.hitEnemyIds.push(enemy.id);
+      this.applyKinSlow(enemy, tower, projection, wave.range, wave.slowMs);
     }
+  }
+
+  private pushEnemyWithKinWave(enemy: EnemyModel, wave: KinWaveModel, distance: number) {
+    if (distance <= 0) {
+      return;
+    }
+
+    const pushX = Math.cos(wave.angle) * distance;
+    const pushY = Math.sin(wave.angle) * distance;
+    const path = this.activePaths[enemy.pathId] ?? this.activePaths[0];
+
+    if (enemy.movementKind === "air") {
+      const start = getAirSpawnPoint(path, this.activeMap);
+      const end = path?.points[path.points.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+      const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
+      const delta = (pushX * (end.x - start.x) + pushY * (end.y - start.y)) / flightLength;
+      enemy.pathDistance = this.clamp(enemy.pathDistance + delta, 0, flightLength);
+      return;
+    }
+
+    const pushedDistance = getClosestPathDistance(path, enemy.x + pushX, enemy.y + pushY);
+    enemy.pathDistance = this.clamp(pushedDistance, 0, path?.totalLength ?? pushedDistance);
   }
 
   private applyKinSlow(enemy: EnemyModel, tower: TowerModel, distanceFromTower: number, range: number, slowMs: number) {
