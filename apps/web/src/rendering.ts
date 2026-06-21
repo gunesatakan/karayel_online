@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH } from "@karayel/shared";
 
-export const RENDER_SCALE = Math.min(window.devicePixelRatio || 1, 2);
+export const RENDER_SCALE = Math.min(window.devicePixelRatio || 1, 1.5);
 export const CANVAS_WIDTH = Math.round(GAME_WORLD_WIDTH * RENDER_SCALE);
 export const CANVAS_HEIGHT = Math.round(GAME_WORLD_HEIGHT * RENDER_SCALE);
 
