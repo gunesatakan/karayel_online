@@ -2619,8 +2619,10 @@ export class GameScene extends Phaser.Scene {
       const color = beam.color ?? 0xfb7185;
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave" || beam.definitionId === "zeynep-3-kin-showcase") {
+      } else if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave") {
         this.drawKinConeWave(beam, color);
+      } else if (beam.definitionId === "zeynep-3-kin-showcase") {
+        this.drawKinShowcaseLight(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -2805,6 +2807,50 @@ export class GameScene extends Phaser.Scene {
       this.beamGraphics.fillStyle(0xfff1f2, 0.52 * life);
       this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(5, halfWidth * 0.12));
     }
+  }
+
+  private drawKinShowcaseLight(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 260) / 260, 0, 1);
+    const flash = Phaser.Math.Clamp((life - 0.18) / 0.82, 0, 1);
+    const spread = Math.min(beam.width * 0.42, length * 0.5);
+    const coreWidth = Math.max(5, Math.min(18, beam.width * 0.18));
+    const pulse = 0.92 + Math.sin(Date.now() / 30) * 0.08;
+
+    for (let index = -2; index <= 2; index += 1) {
+      const ratio = index / 2;
+      const endX = beam.x2 + nx * spread * ratio;
+      const endY = beam.y2 + ny * spread * ratio;
+      const width = coreWidth * (index === 0 ? 1.35 : 0.72);
+      const alpha = (index === 0 ? 0.88 : 0.42) * flash * pulse;
+      this.beamGraphics.lineStyle(width + 10, color, 0.13 * life);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
+      this.beamGraphics.lineStyle(width + 4, color, 0.34 * life);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
+      this.beamGraphics.lineStyle(Math.max(2, width), index === 0 ? 0xfff1f2 : 0xfca5a5, alpha);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
+    }
+
+    this.beamGraphics.fillStyle(color, 0.18 * life);
+    this.beamGraphics.fillPoints([
+      new Phaser.Geom.Point(beam.x1, beam.y1),
+      new Phaser.Geom.Point(beam.x2 + nx * spread, beam.y2 + ny * spread),
+      new Phaser.Geom.Point(beam.x2 - nx * spread, beam.y2 - ny * spread)
+    ], true);
+    this.beamGraphics.fillStyle(0xfff1f2, 0.86 * flash);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, Math.max(5, coreWidth * 0.7));
+    this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(8, spread * 0.08));
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {

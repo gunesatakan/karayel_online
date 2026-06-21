@@ -106,7 +106,7 @@ const KIN_WAVE_ANGLE_RADIANS = degreesToRadians(60);
 const KIN_SYNTHESIS_WAVE_ANGLE_RADIANS = degreesToRadians(90);
 const KIN_WAVE_SPEED = 104;
 const KIN_WAVE_BAND_DEPTH = 30;
-const KIN_SLOW_NEAR_MULTIPLIER = 0.72;
+const KIN_SLOW_NEAR_MULTIPLIER = 1;
 const KIN_SLOW_FAR_MULTIPLIER = 0.24;
 const KIN_SYNTHESIS_PUSHBACK_DISTANCE = 12;
 const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
@@ -1509,20 +1509,25 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       wave.hitEnemyIds.push(enemy.id);
+      const distanceRatio = this.getKinDistanceRatio(projection, wave.range);
       this.applyKinSlow(enemy, tower, projection, wave.range, wave.slowMs);
       if (wave.pushbackDistance > 0) {
-        enemy.pathDistance = Math.max(0, enemy.pathDistance - wave.pushbackDistance);
+        enemy.pathDistance = Math.max(0, enemy.pathDistance - wave.pushbackDistance * distanceRatio);
       }
     }
   }
 
   private applyKinSlow(enemy: EnemyModel, tower: TowerModel, distanceFromTower: number, range: number, slowMs: number) {
     const now = Date.now();
-    const ratio = this.clamp(distanceFromTower / Math.max(1, range), 0, 1);
+    const ratio = this.getKinDistanceRatio(distanceFromTower, range);
     const multiplier = KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio;
     const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
     enemy.kinSlowMultiplier = this.clamp(multiplier, KIN_SLOW_FAR_MULTIPLIER, KIN_SLOW_NEAR_MULTIPLIER);
     enemy.kinSlowUntil = now + scaleGameDuration(duration);
+  }
+
+  private getKinDistanceRatio(distanceFromTower: number, range: number) {
+    return this.clamp(distanceFromTower / Math.max(1, range), 0, 1);
   }
 
   private setKinWaveBeam(wave: KinWaveModel) {
@@ -1559,8 +1564,8 @@ export class MatchRoom extends Room<MatchState> {
     const range = this.getTowerRange(tower);
     const damage = this.getTowerDamage(tower) * 0.62;
     for (const enemy of result.targets) {
-      const distanceRatio = this.clamp(Math.hypot(enemy.x - tower.x, enemy.y - tower.y) / Math.max(1, range), 0, 1);
-      const armorBreak = Math.round(baseArmorBreak * (1 + distanceRatio * 2));
+      const distanceRatio = this.getKinDistanceRatio(Math.hypot(enemy.x - tower.x, enemy.y - tower.y), range);
+      const armorBreak = Math.round(baseArmorBreak * distanceRatio * 3);
       enemy.armor = Math.max(-100, enemy.armor - armorBreak);
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light", 0);
     }
