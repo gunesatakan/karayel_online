@@ -102,4 +102,4 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
     aoeRadius: 0,
     slowMs: 0
   };
-});
+}).filter((tower) => !["zeynep-4", "zeynep-5", "zeynep-6"].includes(tower.id));

@@ -2583,7 +2583,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.zeynepFormationLevel = 0;
     }
 
-    const towers = Array.from(this.towers.values());
+    const towers = allZeynepTowers;
     const gridSize = getMapGridSize(this.activeMap);
     const visited = new Set<string>();
     for (const tower of towers) {
