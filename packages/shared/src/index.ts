@@ -92,6 +92,7 @@ export type EnemySnapshot = {
   isTracked?: boolean;
   trackingStacks?: number;
   isFeared?: boolean;
+  isArmorBroken?: boolean;
 };
 
 export type TowerSnapshot = {

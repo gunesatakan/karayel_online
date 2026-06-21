@@ -192,6 +192,8 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
   { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
 ];
 
+const ARMOR_BREAK_MARKER_MS = 3000;
+
 type PingMessage = {
   sentAt?: number;
 };
@@ -224,6 +226,7 @@ type EnemyModel = {
   kinSlowUntil: number;
   kinSlowMultiplier: number;
   fearUntil: number;
+  armorBrokenUntil: number;
   trackingStackUntil: [number, number, number];
   pathId: number;
 };
@@ -1033,6 +1036,7 @@ export class MatchRoom extends Room<MatchState> {
       kinSlowUntil: 0,
       kinSlowMultiplier: 1,
       fearUntil: 0,
+      armorBrokenUntil: 0,
       trackingStackUntil: [0, 0, 0],
       pathId
     });
@@ -1566,7 +1570,7 @@ export class MatchRoom extends Room<MatchState> {
     for (const enemy of result.targets) {
       const distanceRatio = this.getKinDistanceRatio(Math.hypot(enemy.x - tower.x, enemy.y - tower.y), range);
       const armorBreak = Math.round(baseArmorBreak * distanceRatio * 3);
-      enemy.armor = Math.max(-100, enemy.armor - armorBreak);
+      this.applyArmorBreak(enemy, armorBreak);
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light", 0);
     }
 
@@ -2232,7 +2236,7 @@ export class MatchRoom extends Room<MatchState> {
     const projectileOwnerId = projectileTower?.ownerId ?? "";
     const projectileTowerLevel = projectileTower?.level ?? 1;
     if (projectile.armorBreakAmount > 0) {
-      target.armor = Math.max(-100, target.armor - projectile.armorBreakAmount);
+      this.applyArmorBreak(target, projectile.armorBreakAmount);
     }
     if (projectile.aoeRadius > 0) {
       for (const enemy of this.enemies.values()) {
@@ -2247,6 +2251,15 @@ export class MatchRoom extends Room<MatchState> {
       this.applyKinProjectileSlow(projectile, target);
     }
     this.applyPostHitEffects(projectile, target);
+  }
+
+  private applyArmorBreak(enemy: EnemyModel, amount: number) {
+    if (amount <= 0) {
+      return;
+    }
+
+    enemy.armor = Math.max(-100, enemy.armor - amount);
+    enemy.armorBrokenUntil = Math.max(enemy.armorBrokenUntil, Date.now() + scaleGameDuration(ARMOR_BREAK_MARKER_MS));
   }
 
   private applyKinProjectileSlow(projectile: ProjectileModel, target: EnemyModel) {
@@ -3344,7 +3357,8 @@ export class MatchRoom extends Room<MatchState> {
         pathId: enemy.pathId,
         trackingStacks: this.getTrackingStackCount(enemy, now),
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
-        isFeared: enemy.fearUntil > now
+        isFeared: enemy.fearUntil > now,
+        isArmorBroken: enemy.armorBrokenUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,

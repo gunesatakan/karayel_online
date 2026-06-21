@@ -56,6 +56,7 @@ type RenderTower = {
 type RenderMover = {
   sprite: Phaser.Physics.Arcade.Sprite;
   marker?: Phaser.GameObjects.Text;
+  armorBreakIcon?: Phaser.GameObjects.Image;
 };
 
 type BufferedSnapshot = {
@@ -1591,6 +1592,7 @@ export class GameScene extends Phaser.Scene {
           mover.sprite.body.enable = false;
         }
         mover.marker?.destroy();
+        mover.armorBreakIcon?.destroy();
         this.enemies.delete(id);
       }
     }
@@ -1618,6 +1620,10 @@ export class GameScene extends Phaser.Scene {
           stroke: "#020617",
           strokeThickness: 3
         }).setOrigin(0.5).setDepth(14).setVisible(false);
+        mover.armorBreakIcon = this.add.image(enemy.x + 12, enemy.y - 14, "status-armor-broken")
+          .setOrigin(0.5)
+          .setDepth(15)
+          .setVisible(false);
         this.enemies.set(enemy.id, mover);
       }
 
@@ -1638,6 +1644,11 @@ export class GameScene extends Phaser.Scene {
       mover.marker?.setColor(enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
       mover.marker?.setFontSize(enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
+      const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
+      mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
+      mover.armorBreakIcon?.setScale(this.getTowerEffectScale() * 0.62 * iconPulse);
+      mover.armorBreakIcon?.setAlpha(enemy.isArmorBroken ? 0.96 : 0);
+      mover.armorBreakIcon?.setVisible(Boolean(enemy.isArmorBroken));
     }
   }
 
