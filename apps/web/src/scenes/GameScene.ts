@@ -1231,6 +1231,7 @@ export class GameScene extends Phaser.Scene {
         this.room.send("useSkill", { slot: index, towerId: this.selectedPlacedTowerId });
         return;
       }
+      this.room.send("useSkill", { slot: index });
       return;
     }
 
