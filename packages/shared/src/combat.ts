@@ -2,10 +2,12 @@ export type DamageType = "physical" | "electric" | "psychic" | "fire" | "light" 
 export type HitType = "projectile" | "impact" | "focus" | "aura" | "contamination";
 export type MovementKind = "ground" | "air";
 export type StatusEffectId = "slow" | "fear" | "tracking";
+export type EnemyRace = "meka" | "spaceBug" | "fourthDimensional" | "holyGuardian" | "fallen" | "golem";
 
 export type ResistanceTable<T extends string> = Partial<Record<T, number>>;
 
 export type EnemyCombatDefinition = {
+  race: EnemyRace;
   maxHp: number;
   armor: number;
   healthRegenPerSecond: number;
@@ -17,6 +19,10 @@ export type EnemyCombatDefinition = {
   hitTypeResistances?: ResistanceTable<HitType>;
   statusResistances?: ResistanceTable<StatusEffectId>;
   abilities?: string[];
+};
+
+export type EnemyRaceDefinition = {
+  damageResistances: ResistanceTable<DamageType>;
 };
 
 export type DamagePacket = {
@@ -33,8 +39,48 @@ export type DamageResult = {
   remainingShield: number;
 };
 
+export const enemyRaceDefinitions = {
+  meka: {
+    damageResistances: {
+      electric: -0.2,
+      psychic: 0.2
+    }
+  },
+  spaceBug: {
+    damageResistances: {
+      cellular: -0.2,
+      fire: 0.2
+    }
+  },
+  fourthDimensional: {
+    damageResistances: {
+      psychic: -0.2,
+      physical: 0.2
+    }
+  },
+  holyGuardian: {
+    damageResistances: {
+      fire: -0.2,
+      light: 0.2
+    }
+  },
+  fallen: {
+    damageResistances: {
+      light: -0.2,
+      electric: 0.2
+    }
+  },
+  golem: {
+    damageResistances: {
+      physical: -0.2,
+      cellular: 0.2
+    }
+  }
+} as const satisfies Record<EnemyRace, EnemyRaceDefinition>;
+
 export const enemyCombatDefinitions = {
   grunt: {
+    race: "meka",
     maxHp: 46,
     armor: 5,
     healthRegenPerSecond: 0,
@@ -47,6 +93,7 @@ export const enemyCombatDefinitions = {
     statusResistances: {}
   },
   brute: {
+    race: "meka",
     maxHp: 76,
     armor: 34,
     healthRegenPerSecond: 0.35,
@@ -70,6 +117,7 @@ export const enemyCombatDefinitions = {
     abilities: ["heavy-body"]
   },
   runner: {
+    race: "meka",
     maxHp: 30,
     armor: 0,
     healthRegenPerSecond: 0,
@@ -90,6 +138,7 @@ export const enemyCombatDefinitions = {
     abilities: ["fast"]
   },
   shooter: {
+    race: "meka",
     maxHp: 42,
     armor: 10,
     healthRegenPerSecond: 0.18,
@@ -108,6 +157,24 @@ export const enemyCombatDefinitions = {
 
 export function getEnemyCombatDefinition(enemyType: keyof typeof enemyCombatDefinitions): EnemyCombatDefinition {
   return enemyCombatDefinitions[enemyType];
+}
+
+export function getEnemyDamageResistances(definition: EnemyCombatDefinition): ResistanceTable<DamageType> {
+  return combineResistanceTables(enemyRaceDefinitions[definition.race].damageResistances, definition.damageResistances);
+}
+
+export function combineResistanceTables<T extends string>(
+  first: ResistanceTable<T> | undefined,
+  second: ResistanceTable<T> | undefined
+): ResistanceTable<T> {
+  const combined: ResistanceTable<T> = {};
+  for (const [key, value] of Object.entries(first ?? {}) as Array<[T, number]>) {
+    combined[key] = value;
+  }
+  for (const [key, value] of Object.entries(second ?? {}) as Array<[T, number]>) {
+    combined[key] = (combined[key] ?? 0) + value;
+  }
+  return combined;
 }
 
 export function calculateArmorDamageMultiplier(armor: number) {

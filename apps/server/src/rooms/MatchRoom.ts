@@ -19,6 +19,7 @@ import {
   getMapMetrics,
   getMapScale,
   getEnemyCombatDefinition,
+  getEnemyDamageResistances,
   getMapPoints,
   getMapGridSize,
   getTile,
@@ -35,6 +36,7 @@ import {
   type DamageEventSnapshot,
   type DamageType,
   type DroneSnapshot,
+  type EnemyRace,
   type EnemyType,
   type EditableMapData,
   type MovementKind,
@@ -222,6 +224,7 @@ type LinkServerMessage = {
 type EnemyModel = {
   id: string;
   type: EnemyType;
+  race: EnemyRace;
   x: number;
   y: number;
   hp: number;
@@ -1047,6 +1050,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.set(id, {
       id,
       type,
+      race: definition.race,
       x: start.x,
       y: start.y,
       hp: maxHp,
@@ -1056,7 +1060,7 @@ export class MatchRoom extends Room<MatchState> {
       shield: maxShield,
       maxShield,
       movementKind: isFlyingEnemy ? "air" : definition.movementKind,
-      damageResistances: { ...definition.damageResistances },
+      damageResistances: getEnemyDamageResistances(definition),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
@@ -3633,6 +3637,7 @@ export class MatchRoom extends Room<MatchState> {
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
         type: enemy.type,
+        race: enemy.race,
         x: enemy.x,
         y: enemy.y,
         hp: Math.max(0, enemy.hp),

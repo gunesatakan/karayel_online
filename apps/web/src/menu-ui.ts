@@ -6,6 +6,7 @@ import {
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
   enemyCombatDefinitions,
+  getEnemyDamageResistances,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -825,12 +826,13 @@ function renderBestiary() {
                 ${renderBestiaryStat("Altın", definition.reward)}
               </dl>
               <div class="bestiary-tags">
+                <span>Irk: ${escapeHtml(formatEnemyRace(definition.race))}</span>
                 <span>${movementKind === "air" ? "Havacı" : "Karacı"}</span>
                 <span>Tehdit ${escapeHtml(dossier.threat)}</span>
                 ${abilities.map((ability) => `<span>${escapeHtml(formatEnemyAbility(ability))}</span>`).join("")}
               </div>
               <div class="bestiary-notes">
-                ${formatResistanceLine("Hasar", definition.damageResistances)}
+                ${formatResistanceLine("Hasar", getEnemyDamageResistances(definition))}
                 ${formatResistanceLine("Vuruş", definition.hitTypeResistances)}
                 ${formatResistanceLine("Durum", definition.statusResistances)}
               </div>
@@ -934,6 +936,17 @@ function formatEnemyAbility(ability: string) {
     fast: "Çok Hızlı",
     "ranged-shot": "Ateş Eder"
   }[ability] ?? ability;
+}
+
+function formatEnemyRace(race: string) {
+  return {
+    meka: "Meka",
+    spaceBug: "Uzay böceği",
+    fourthDimensional: "4. boyut yerlisi",
+    holyGuardian: "Kutsal koruyucu",
+    fallen: "Düşmüş",
+    golem: "Golem"
+  }[race] ?? race;
 }
 
 function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {

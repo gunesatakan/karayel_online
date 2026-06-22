@@ -1,12 +1,12 @@
 import type { EditableMapData, MapScale } from "./map.js";
-import type { MovementKind } from "./combat.js";
+import type { EnemyRace, MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
 export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
-export type { DamageType, HitType, MovementKind, StatusEffectId } from "./combat.js";
-export { applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, getEnemyCombatDefinition } from "./combat.js";
+export type { DamageType, EnemyRace, HitType, MovementKind, StatusEffectId } from "./combat.js";
+export { applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances } from "./combat.js";
 
 export const GAME_WORLD_WIDTH = 390;
 export const GAME_WORLD_HEIGHT = 844;
@@ -80,6 +80,7 @@ export type RoomListingSnapshot = {
 export type EnemySnapshot = {
   id: string;
   type: EnemyType;
+  race: EnemyRace;
   x: number;
   y: number;
   hp: number;
