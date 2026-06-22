@@ -265,11 +265,11 @@ export class GameScene extends Phaser.Scene {
   private readonly playbackDelayMs = 500;
   private readonly killStreakMaxWindowMs = 11000;
   private readonly dragPreviewOffsetY = 64;
-  private readonly controlTop = 666;
-  private readonly skillRowY = 682;
-  private readonly actionRowY = 711;
-  private readonly trayTop = 736;
-  private readonly towerCardHeight = 32;
+  private readonly controlTop = 684;
+  private readonly skillRowY = 696;
+  private readonly actionRowY = 721;
+  private readonly trayTop = 744;
+  private readonly towerCardHeight = 28;
 
   constructor() {
     super("game");
@@ -664,21 +664,21 @@ export class GameScene extends Phaser.Scene {
       const col = index % 4;
       const row = Math.floor(index / 4);
       const x = 9 + col * 94;
-      const y = this.trayTop + 25 + row * 37;
+      const y = this.trayTop + 22 + row * 33;
       const button = this.add.rectangle(x, y, 88, this.towerCardHeight, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
         .setOrigin(0, 0)
         .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
         .setInteractive({ useHandCursor: true })
         .setDepth(26);
       this.input.setDraggable(button);
-      const nameText = this.add.text(x + 8, y + 6, tower.name, {
+      const nameText = this.add.text(x + 7, y + 4, tower.name, {
         color: "#f8fafc",
         fontFamily: "Arial",
         fontSize: "9px",
         fontStyle: "bold",
         wordWrap: { width: 74 }
       }).setDepth(27);
-      const costText = this.add.text(x + 8, y + 19, `${tower.cost}g`, {
+      const costText = this.add.text(x + 7, y + 16, `${tower.cost}g`, {
         color: "#facc15",
         fontFamily: "Arial",
         fontSize: "10px"
@@ -715,15 +715,15 @@ export class GameScene extends Phaser.Scene {
     this.abartiOrientationButton.on("pointerup", toggleAbartiOrientation);
     this.abartiOrientationText.setInteractive({ useHandCursor: true }).on("pointerup", toggleAbartiOrientation);
 
-    this.selectedTowerStatsText = this.add.text(14, this.trayTop + 24, "", {
+    this.selectedTowerStatsText = this.add.text(14, this.trayTop + 20, "", {
       color: "#f8fafc",
       fontFamily: "Arial",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "bold",
       lineSpacing: 5,
       wordWrap: { width: GAME_WORLD_WIDTH - 32 }
     }).setDepth(27).setVisible(false);
-    this.selectedTowerStatsHelpText = this.add.text(14, this.trayTop + 88, "Haritaya dokun: dukkan alanina don", {
+    this.selectedTowerStatsHelpText = this.add.text(14, this.trayTop + 82, "Haritaya dokun: dukkan alanina don", {
       color: "#94a3b8",
       fontFamily: "Arial",
       fontSize: "10px"
@@ -1124,13 +1124,13 @@ export class GameScene extends Phaser.Scene {
 
   private createZeynepTierChoiceButton(x: number, label: string, tier: ZeynepCommandTier, cost: number, reputation: number, color: number) {
     const canUse = reputation >= cost;
-    const button = this.add.rectangle(x, 584, 40, 30, canUse ? color : 0x0f172a, canUse ? 0.96 : 0.68)
+    const button = this.add.rectangle(x, this.actionRowY, 38, 26, canUse ? color : 0x0f172a, canUse ? 0.96 : 0.68)
       .setStrokeStyle(1, canUse ? 0xf8fafc : 0x475569, canUse ? 0.78 : 0.5)
       .setDepth(60);
-    const text = this.add.text(x, 584, `${label}\n${cost}I`, {
+    const text = this.add.text(x, this.actionRowY, `${label}\n${cost}I`, {
       color: canUse ? "#f8fafc" : "#64748b",
       fontFamily: "Arial",
-      fontSize: "9px",
+      fontSize: "8px",
       fontStyle: "bold",
       align: "center"
     }).setOrigin(0.5).setDepth(61);
@@ -3320,11 +3320,10 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter.skills.forEach((skill, index) => {
       const cooldown = cooldowns[index] ?? 0;
       const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
-      const canUseCommand = !zeynepCommand || reputation >= zeynepCommand.cost;
       const readyLabel = zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : skill.name;
-      const isDisabled = cooldown > 0 || !canUseCommand;
+      const isDisabled = cooldown > 0;
       this.skillTexts[index]?.setText(cooldown > 0 ? `${cooldown}s` : readyLabel);
-      this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : canUseCommand ? "#dbeafe" : "#64748b");
+      this.skillTexts[index]?.setColor(cooldown > 0 ? "#94a3b8" : "#dbeafe");
       this.skillButtons[index]?.setFillStyle(isDisabled ? 0x0f172a : 0x1e293b, isDisabled ? 0.72 : 0.94);
       this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });

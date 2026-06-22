@@ -16,7 +16,7 @@ export const SHOP_HEIGHT = GAME_WORLD_HEIGHT - SHOP_TOP;
 export const PATH_WIDTH = 54;
 export const TOWER_GRID_SIZE = 34;
 export const TOWER_BUILD_TOP = BATTLE_TOP;
-export const TOWER_BUILD_BOTTOM = 606;
+export const TOWER_BUILD_BOTTOM = 684;
 
 export const MAP_PATH = [
   { x: 34, y: 104 },
@@ -27,9 +27,9 @@ export const MAP_PATH = [
   { x: 318, y: 392 },
   { x: 318, y: 540 },
   { x: 72, y: 540 },
-  { x: 72, y: 694 },
-  { x: 356, y: 694 },
-  { x: 356, y: 812 }
+  { x: 72, y: 610 },
+  { x: 356, y: 610 },
+  { x: 356, y: 660 }
 ] as const;
 
 export type PlayerSnapshot = {

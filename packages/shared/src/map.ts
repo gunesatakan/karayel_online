@@ -27,7 +27,7 @@ export type RuntimePath = {
 };
 
 const GAME_WIDTH = 390;
-const GAME_HEIGHT = 844;
+const GAME_HEIGHT = 684;
 const GRID_TOP = 86;
 const GRID_SIZE = 34;
 export const DEFAULT_MAP_SCALE: MapScale = 1;
@@ -41,9 +41,9 @@ const DEFAULT_PATH = [
   { x: 318, y: 392 },
   { x: 318, y: 540 },
   { x: 72, y: 540 },
-  { x: 72, y: 694 },
-  { x: 356, y: 694 },
-  { x: 356, y: 812 }
+  { x: 72, y: 610 },
+  { x: 356, y: 610 },
+  { x: 356, y: 660 }
 ] as const;
 
 export const MAP_GRID_COLS = Math.floor(GAME_WIDTH / GRID_SIZE);
