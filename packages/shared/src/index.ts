@@ -168,6 +168,7 @@ export type KillEventSnapshot = {
   ownerId: string;
   enemyId: string;
   serverTime: number;
+  streakTier?: "granted" | "unstoppable" | "rampage" | "legendary";
 };
 
 export type ZeynepCommandTier = "small" | "medium" | "big";

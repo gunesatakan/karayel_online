@@ -2170,7 +2170,9 @@ export class GameScene extends Phaser.Scene {
       ].filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
       this.killStreakTimesByOwner.set(event.ownerId, ownerKillTimes);
 
-      const streakRule = this.getTriggeredKillStreakRule(event.ownerId, event.serverTime, snapshot.team.wave);
+      const streakRule = event.streakTier
+        ? getKillStreakRuleByTier(event.streakTier)
+        : this.getTriggeredKillStreakRule(event.ownerId, event.serverTime, snapshot.team.wave);
       if (streakRule) {
         const ownerLocks = this.getKillStreakLocks(event.ownerId);
         for (const rule of KILL_STREAK_RULES) {
@@ -3665,6 +3667,10 @@ function getZeynepCommandButtonState(authorityChain: number) {
 
 function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+}
+
+function getKillStreakRuleByTier(tier: KillStreakTier) {
+  return KILL_STREAK_RULES.find((rule) => rule.tier === tier);
 }
 
 function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule): KillStreakVisualTheme {

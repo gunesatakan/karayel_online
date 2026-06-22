@@ -3370,12 +3370,14 @@ export class MatchRoom extends Room<MatchState> {
 
   private addKillEvent(ownerId: string, enemyId: string) {
     const now = Date.now();
+    const streakRule = this.recordPlayerKillStreak(ownerId, now);
     const id = `k${this.nextKillEventId++}`;
     this.killEvents.set(id, {
       id,
       ownerId,
       enemyId,
       serverTime: now,
+      streakTier: streakRule?.tier,
       ttlMs: 2200
     });
 
@@ -3385,8 +3387,6 @@ export class MatchRoom extends Room<MatchState> {
         this.killEvents.delete(oldestId);
       }
     }
-
-    this.recordPlayerKillStreak(ownerId, now);
   }
 
   private recordPlayerKillStreak(ownerId: string, serverTime: number) {
@@ -3396,7 +3396,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const rule = this.getTriggeredKillStreakRule(ownerId, serverTime, killTimes);
     if (!rule) {
-      return;
+      return undefined;
     }
 
     const locks = this.getPlayerKillStreakLocks(ownerId);
@@ -3411,6 +3411,7 @@ export class MatchRoom extends Room<MatchState> {
 
     this.awardMelisApproval(ownerId, getMelisApprovalGain(rule.tier));
     this.applyKillStreakBuff(ownerId, rule, serverTime);
+    return rule;
   }
 
   private getTriggeredKillStreakRule(ownerId: string, serverTime: number, killTimes: number[]) {
@@ -3707,7 +3708,8 @@ export class MatchRoom extends Room<MatchState> {
         id: event.id,
         ownerId: event.ownerId,
         enemyId: event.enemyId,
-        serverTime: event.serverTime
+        serverTime: event.serverTime,
+        streakTier: event.streakTier
       })),
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       team: {
