@@ -7,8 +7,9 @@ import { melisUltimate } from "./ultimate/index.js";
 export const melisCharacter: CharacterDefinition = {
   id: "archer",
   displayName: "Melis",
-  role: "Hizli",
-  summary: "Hizli atis, dusuk hasar, coklu hedef.",
+  role: "Gotik Zihin",
+  theme: "Ani ofke, onay ihtiyaci, kararsizlik ve gotik zihin.",
+  summary: "Streaklerden onay toplar, stresini kule evrimlerine harcar. Favori kuleleri onayla guclenir.",
   maxHp: 85,
   speed: 1.12,
   damage: 7,

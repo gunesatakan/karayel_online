@@ -112,6 +112,15 @@ const KIN_SYNTHESIS_PUSHBACK_DISTANCE = 12;
 const KIN_SYNTHESIS_TIP_HOLD_SECONDS = 0.5;
 const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
 const KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL = 2;
+const MELIS_MAX_FAVORITE_TOWERS = 3;
+const MELIS_EVOLUTION_STRESS_COST = 4;
+const MELIS_MAX_EVOLUTION_LEVEL = 3;
+const MELIS_GOTHIC_NIGHTMARE_MS = 9000;
+const MELIS_BULLY_RADIUS = 78;
+const MELIS_BULLY_DURATION_MS = 7000;
+const MELIS_BULLY_DAMAGE_RADIUS = 70;
+const MELIS_PARLAMA_FEAR_MS = 2200;
+const MELIS_PARLAMA_RAGE_RADIUS = 92;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -128,6 +137,11 @@ class Player extends Schema {
   @type("number") reputation = 0;
   @type("number") authorityChain = 0;
   @type("number") authorityQuality = 0;
+  @type("number") approval = 0;
+  @type("number") stress = 0;
+  @type("number") currentWaveApproval = 0;
+  @type("number") lastWaveApproval = -1;
+  @type("number") sameApprovalWaveCount = 0;
 }
 
 class MatchState extends Schema {
@@ -228,6 +242,8 @@ type EnemyModel = {
   kinSlowMultiplier: number;
   fearUntil: number;
   armorBrokenUntil: number;
+  dominatedUntil: number;
+  dominatedOwnerId: string;
   trackingStackUntil: [number, number, number];
   pathId: number;
 };
@@ -270,6 +286,7 @@ type TowerModel = {
   streakHasteMultiplier: number;
   zeynepFormationSize: number;
   zeynepFormationLevel: number;
+  melisEvolutionLevel: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -474,6 +491,7 @@ export class MatchRoom extends Room<MatchState> {
   private killEvents = new Map<string, KillEventModel>();
   private playerKillStreakTimes = new Map<string, number[]>();
   private playerKillStreakLocks = new Map<string, Map<KillStreakTier, KillStreakLock>>();
+  private melisFavoriteTowerIds = new Map<string, string[]>();
   private nextEnemyId = 1;
   private nextTowerId = 1;
   private nextProjectileId = 1;
@@ -504,6 +522,7 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowUntil = 0;
   private zeynepSlowMultiplier = 1;
   private zeynepSlowTier: ZeynepCommandTier = "small";
+  private melisGothicNightmareUntil = 0;
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private lobbyRoomName = "Yeni Oda";
@@ -712,6 +731,7 @@ export class MatchRoom extends Room<MatchState> {
 
     this.transferMapKey(this.playerKillStreakTimes, previousSessionId, nextSessionId);
     this.transferMapKey(this.playerKillStreakLocks, previousSessionId, nextSessionId);
+    this.transferMapKey(this.melisFavoriteTowerIds, previousSessionId, nextSessionId);
   }
 
   onDispose() {
@@ -979,6 +999,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (this.waveSpawned >= this.waveTarget && this.enemies.size === 0) {
+      this.applyMelisWaveStress();
       this.advanceWaveGrowth();
       this.wave += 1;
       this.waveSpawned = 0;
@@ -988,6 +1009,10 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (this.waveSpawned >= this.waveTarget) {
+      return;
+    }
+
+    if (this.melisGothicNightmareUntil > Date.now()) {
       return;
     }
 
@@ -1040,6 +1065,8 @@ export class MatchRoom extends Room<MatchState> {
       kinSlowMultiplier: 1,
       fearUntil: 0,
       armorBrokenUntil: 0,
+      dominatedUntil: 0,
+      dominatedOwnerId: "",
       trackingStackUntil: [0, 0, 0],
       pathId
     });
@@ -2383,6 +2410,11 @@ export class MatchRoom extends Room<MatchState> {
   private updateEnemies(seconds: number) {
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
+      if (enemy.dominatedUntil > now) {
+        this.applyDominatedEnemyAura(enemy, seconds);
+        continue;
+      }
+
       if (enemy.healthRegenPerSecond > 0 && enemy.hp > 0) {
         enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.healthRegenPerSecond * seconds);
       }
@@ -2405,8 +2437,12 @@ export class MatchRoom extends Room<MatchState> {
         const end = pathPoints[pathPoints.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
         const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
         if (enemy.pathDistance >= flightLength) {
-          this.enemies.delete(id);
-          this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          if (this.melisGothicNightmareUntil > now) {
+            enemy.pathDistance = Math.max(0, flightLength - 1);
+          } else {
+            this.enemies.delete(id);
+            this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          }
           continue;
         }
 
@@ -2418,14 +2454,32 @@ export class MatchRoom extends Room<MatchState> {
 
       const pathLength = path?.totalLength ?? totalPathLength;
       if (enemy.pathDistance >= pathLength) {
-        this.enemies.delete(id);
-        this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+        if (this.melisGothicNightmareUntil > now) {
+          enemy.pathDistance = Math.max(0, pathLength - 1);
+        } else {
+          this.enemies.delete(id);
+          this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+        }
         continue;
       }
 
       const point = getPointAlongRuntimePath(path, enemy.pathDistance);
       enemy.x = point.x;
       enemy.y = point.y;
+    }
+  }
+
+  private applyDominatedEnemyAura(source: EnemyModel, seconds: number) {
+    const damage = source.maxHp * 0.05 * seconds;
+    const radius = this.scaleWorldDistance(MELIS_BULLY_DAMAGE_RADIUS);
+    for (const enemy of Array.from(this.enemies.values())) {
+      if (enemy.id === source.id || enemy.dominatedUntil > Date.now()) {
+        continue;
+      }
+
+      if (distanceSq(source.x, source.y, enemy.x, enemy.y) <= radius * radius) {
+        this.damageEnemy(enemy, damage, 0, "archer-skill-bully", source.dominatedOwnerId, "true");
+      }
     }
   }
 
@@ -2480,11 +2534,13 @@ export class MatchRoom extends Room<MatchState> {
       streakHasteMultiplier: 1,
       zeynepFormationSize: 0,
       zeynepFormationLevel: 0,
+      melisEvolutionLevel: 0,
       damageDealt: 0,
       damageWindow: []
     };
 
     this.towers.set(tower.id, tower);
+    this.registerMelisFavoriteTower(tower);
     player.gold -= definition.cost;
     player.goldSpent += definition.cost;
     player.towersBuilt += 1;
@@ -2531,6 +2587,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private removeTowerReferences(towerId: string) {
+    for (const [ownerId, favoriteTowerIds] of this.melisFavoriteTowerIds) {
+      this.melisFavoriteTowerIds.set(ownerId, favoriteTowerIds.filter((favoriteTowerId) => favoriteTowerId !== towerId));
+    }
+
     for (const tower of this.towers.values()) {
       tower.linkedTowerIds = tower.linkedTowerIds.filter((linkedTowerId) => linkedTowerId !== towerId);
       delete tower.linkedTowerWaveAges[towerId];
@@ -2632,6 +2692,14 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (player.characterId === "archer") {
+      const didUseMelisSkill = this.useMelisSkill(client, player, slot, message);
+      if (!didUseMelisSkill) {
+        this.setSkillCooldown(player, slot, 0);
+      }
+      return;
+    }
+
     if (slot === 0) {
       player.gold += 22;
       return;
@@ -2718,6 +2786,54 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     this.applyZeynepSlow(profile.durationMs, profile.multiplier, tier, now);
+  }
+
+  private useMelisSkill(client: Client, player: Player, slot: number, message: UseSkillMessage) {
+    if (slot === 0) {
+      return this.useMelisBully(client.sessionId, message);
+    }
+
+    if (slot === 1) {
+      return this.evolveMelisTower(client.sessionId, player, message.towerId);
+    }
+
+    return false;
+  }
+
+  private useMelisBully(ownerId: string, message: UseSkillMessage) {
+    if (typeof message.x !== "number" || typeof message.y !== "number") {
+      return false;
+    }
+
+    const radius = this.scaleWorldDistance(MELIS_BULLY_RADIUS);
+    const target = Array.from(this.enemies.values())
+      .filter((enemy) => enemy.type === "brute" && enemy.dominatedUntil <= Date.now() && distanceSq(enemy.x, enemy.y, message.x!, message.y!) <= radius * radius)
+      .sort((a, b) => b.maxHp - a.maxHp || b.pathDistance - a.pathDistance)[0];
+    if (!target) {
+      return false;
+    }
+
+    target.dominatedUntil = Date.now() + scaleGameDuration(MELIS_BULLY_DURATION_MS);
+    target.dominatedOwnerId = ownerId;
+    target.fearUntil = 0;
+    target.slowUntil = 0;
+    return true;
+  }
+
+  private evolveMelisTower(ownerId: string, player: Player, towerId?: string) {
+    if (!towerId || player.stress < MELIS_EVOLUTION_STRESS_COST) {
+      return false;
+    }
+
+    const tower = this.towers.get(towerId);
+    if (!tower || tower.ownerId !== ownerId || tower.characterId !== "archer" || tower.melisEvolutionLevel >= MELIS_MAX_EVOLUTION_LEVEL) {
+      return false;
+    }
+
+    player.stress -= MELIS_EVOLUTION_STRESS_COST;
+    tower.melisEvolutionLevel += 1;
+    tower.cooldownMs = Math.min(tower.cooldownMs, 120);
+    return true;
   }
 
   private applyZeynepHaste(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
@@ -2825,8 +2941,11 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "archer") {
-      for (const enemy of Array.from(this.enemies.values()).sort((a, b) => b.pathDistance - a.pathDistance).slice(0, 6)) {
-        this.damageEnemy(enemy, 70, 0, "ultimate", client.sessionId);
+      this.melisGothicNightmareUntil = Math.max(this.melisGothicNightmareUntil, Date.now() + scaleGameDuration(MELIS_GOTHIC_NIGHTMARE_MS));
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId === client.sessionId && tower.characterId === "archer") {
+          tower.cooldownMs = Math.min(tower.cooldownMs, 80);
+        }
       }
       return;
     }
@@ -3042,6 +3161,25 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
+    if (tower.definition.id === "archer-1") {
+      const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
+      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget)) {
+        return lockedTarget;
+      }
+      tower.focusTargetId = "";
+    }
+
+    if (tower.definition.id === "archer-2") {
+      const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
+      if (lockedTarget) {
+        if (distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)) {
+          return lockedTarget;
+        }
+        this.triggerMelisRageWave(tower);
+      }
+      tower.focusTargetId = "";
+    }
+
     const range = isGuidedHit ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
     const candidates = Array.from(this.enemies.values())
@@ -3062,6 +3200,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
+    if (enemy.dominatedUntil > Date.now()) {
+      return false;
+    }
+
     if (enemy.movementKind !== "air") {
       return true;
     }
@@ -3069,6 +3211,8 @@ export class MatchRoom extends Room<MatchState> {
     return tower.definition.id === "warrior-1" ||
       tower.definition.id === "warrior-4" ||
       tower.definition.id === "warrior-6" ||
+      tower.definition.id === "archer-1" ||
+      tower.definition.id === "archer-2" ||
       tower.definition.id === "zeynep-1" ||
       tower.definition.id === "zeynep-2" ||
       tower.definition.id === "zeynep-6" ||
@@ -3077,6 +3221,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
     if (!this.enemies.has(enemy.id)) {
+      return false;
+    }
+
+    if (enemy.dominatedUntil > Date.now() && sourceDefinitionId !== "archer-skill-bully") {
       return false;
     }
 
@@ -3131,7 +3279,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, tower.definition.damageType ?? "physical", this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
+    const damageType = tower.characterId === "archer" && this.melisGothicNightmareUntil > Date.now()
+      ? "true"
+      : tower.definition.damageType ?? "physical";
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
   }
 
   private damageEnemyFromTowerAs(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number, damageType: DamageType, maxHealthDamageRatio?: number) {
@@ -3242,6 +3393,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
+    this.awardMelisApproval(ownerId, getMelisApprovalGain(rule.tier));
     this.applyKillStreakBuff(ownerId, rule, serverTime);
   }
 
@@ -3264,6 +3416,43 @@ export class MatchRoom extends Room<MatchState> {
       this.playerKillStreakLocks.set(ownerId, locks);
     }
     return locks;
+  }
+
+  private awardMelisApproval(ownerId: string, amount: number) {
+    const player = this.state.players.get(ownerId);
+    if (!player || player.characterId !== "archer") {
+      return;
+    }
+
+    player.approval += amount;
+    player.currentWaveApproval += amount;
+  }
+
+  private applyMelisWaveStress() {
+    for (const player of this.state.players.values()) {
+      if (player.characterId !== "archer") {
+        continue;
+      }
+
+      const approval = player.currentWaveApproval;
+      if (approval <= 0) {
+        player.stress += 4;
+        player.sameApprovalWaveCount = 0;
+      } else if (player.lastWaveApproval >= 0 && approval < player.lastWaveApproval) {
+        player.stress += 2;
+        player.sameApprovalWaveCount = 1;
+      } else if (player.lastWaveApproval >= 0 && approval === player.lastWaveApproval) {
+        player.sameApprovalWaveCount += 1;
+        if (player.sameApprovalWaveCount >= 2) {
+          player.stress += 1;
+        }
+      } else {
+        player.sameApprovalWaveCount = 1;
+      }
+
+      player.lastWaveApproval = approval;
+      player.currentWaveApproval = 0;
+    }
   }
 
   private applyKillStreakBuff(ownerId: string, rule: KillStreakRule, serverTime: number) {
@@ -3345,6 +3534,33 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private triggerMelisRageWave(tower: TowerModel) {
+    const now = Date.now();
+    const radius = this.scaleWorldDistance(MELIS_PARLAMA_RAGE_RADIUS + tower.level * 5 + tower.melisEvolutionLevel * 12);
+    for (const enemy of this.enemies.values()) {
+      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) {
+        continue;
+      }
+
+      const duration = applyStatusResistance(MELIS_PARLAMA_FEAR_MS + tower.melisEvolutionLevel * 500, enemy.statusResistances.fear);
+      enemy.fearUntil = Math.max(enemy.fearUntil, now + scaleGameDuration(duration));
+    }
+
+    const beamId = `melis-rage-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-2-rage",
+      x1: tower.x,
+      y1: tower.y,
+      x2: tower.x,
+      y2: tower.y,
+      width: radius * 2,
+      color: 0xdb2777,
+      overdrive: false,
+      ttlMs: 380
+    });
+  }
+
   private updateSkillCooldowns(deltaTime: number) {
     for (const player of this.state.players.values()) {
       player.skill1CooldownMs = Math.max(0, player.skill1CooldownMs - deltaTime);
@@ -3385,7 +3601,9 @@ export class MatchRoom extends Room<MatchState> {
         ],
         reputation: player.characterId === "zeynep" ? Math.floor(player.reputation + 0.0001) : undefined,
         authorityChain: player.characterId === "zeynep" ? player.authorityChain : undefined,
-        authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined
+        authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined,
+        approval: player.characterId === "archer" ? player.approval : undefined,
+        stress: player.characterId === "archer" ? player.stress : undefined
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
@@ -3404,7 +3622,8 @@ export class MatchRoom extends Room<MatchState> {
         trackingStacks: this.getTrackingStackCount(enemy, now),
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
         isFeared: enemy.fearUntil > now,
-        isArmorBroken: enemy.armorBrokenUntil > now
+        isArmorBroken: enemy.armorBrokenUntil > now,
+        isDominated: enemy.dominatedUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -3424,6 +3643,8 @@ export class MatchRoom extends Room<MatchState> {
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
+        melisEvolutionLevel: tower.characterId === "archer" ? tower.melisEvolutionLevel : undefined,
+        isMelisFavorite: tower.characterId === "archer" ? this.isMelisFavoriteTower(tower) : undefined,
         waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds],
@@ -3531,6 +3752,10 @@ export class MatchRoom extends Room<MatchState> {
       return GAME_WORLD_HEIGHT;
     }
 
+    if (tower.definition.id === "archer-1") {
+      return GAME_WORLD_HEIGHT * 4 * (1 + tower.melisEvolutionLevel * 0.12);
+    }
+
     if (tower.definition.id === "zeynep-2") {
       return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier);
     }
@@ -3543,7 +3768,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
+    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower));
   }
 
   private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {
@@ -3605,7 +3830,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower));
   }
 
   private getTowerDamage(tower: TowerModel) {
@@ -3626,6 +3851,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-1") {
       damage *= getZeynepHizaDamageCompensation(tower.level);
+    }
+
+    if (tower.characterId === "archer") {
+      damage *= this.getMelisFavoriteDamageMultiplier(tower) * this.getMelisEvolutionDamageMultiplier(tower);
     }
 
     if (tower.definition.hitType === "impact") {
@@ -3744,10 +3973,19 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       return "Overdrive";
     }
+    if (tower.characterId === "archer" && this.melisGothicNightmareUntil > now) {
+      return "Gotik Kabus";
+    }
     if (tower.streakDamageUntil > now || tower.streakHasteUntil > now) {
       const damageBonus = tower.streakDamageUntil > now ? Math.round((tower.streakDamageMultiplier - 1) * 100) : 0;
       const hasteBonus = tower.streakHasteUntil > now ? Math.round((tower.streakHasteMultiplier - 1) * 100) : 0;
       return hasteBonus > 0 ? `Streak +${damageBonus}%/+${hasteBonus}%` : `Streak +${damageBonus}%`;
+    }
+    if (tower.characterId === "archer" && tower.melisEvolutionLevel > 0) {
+      return `${this.isMelisFavoriteTower(tower) ? "Favori " : ""}Evrim ${tower.melisEvolutionLevel}`;
+    }
+    if (this.isMelisFavoriteTower(tower)) {
+      return "Favori";
     }
     if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
       const maxAge = Math.max(...tower.linkedTowerIds.map((towerId) => tower.linkedTowerWaveAges[towerId] ?? 0));
@@ -3793,6 +4031,54 @@ export class MatchRoom extends Room<MatchState> {
 
   private getAtakanPassiveMultiplier(tower: TowerModel) {
     return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower) ? 1.12 : 1;
+  }
+
+  private registerMelisFavoriteTower(tower: TowerModel) {
+    if (tower.characterId !== "archer") {
+      return;
+    }
+
+    const favorites = this.melisFavoriteTowerIds.get(tower.ownerId) ?? [];
+    if (favorites.length >= MELIS_MAX_FAVORITE_TOWERS || favorites.includes(tower.id)) {
+      return;
+    }
+
+    favorites.push(tower.id);
+    this.melisFavoriteTowerIds.set(tower.ownerId, favorites);
+  }
+
+  private isMelisFavoriteTower(tower: TowerModel) {
+    return tower.characterId === "archer" && (this.melisFavoriteTowerIds.get(tower.ownerId) ?? []).includes(tower.id);
+  }
+
+  private getMelisFavoriteDamageMultiplier(tower: TowerModel) {
+    if (!this.isMelisFavoriteTower(tower)) {
+      return 1;
+    }
+
+    const approval = this.state.players.get(tower.ownerId)?.approval ?? 0;
+    return 1 + Math.min(40, approval) * 0.04;
+  }
+
+  private getMelisFavoriteFireIntervalMultiplier(tower: TowerModel) {
+    if (!this.isMelisFavoriteTower(tower)) {
+      return 1;
+    }
+
+    const approval = this.state.players.get(tower.ownerId)?.approval ?? 0;
+    return Math.max(0.48, 1 - Math.min(40, approval) * 0.018);
+  }
+
+  private getMelisEvolutionDamageMultiplier(tower: TowerModel) {
+    return tower.characterId === "archer" ? 1 + tower.melisEvolutionLevel * 0.28 : 1;
+  }
+
+  private getMelisEvolutionFireIntervalMultiplier(tower: TowerModel) {
+    return tower.characterId === "archer" ? Math.max(0.68, 1 - tower.melisEvolutionLevel * 0.1) : 1;
+  }
+
+  private getMelisEvolutionRangeMultiplier(tower: TowerModel) {
+    return tower.characterId === "archer" ? 1 + tower.melisEvolutionLevel * 0.1 : 1;
   }
 
   private updateUcubeRhythm(tower: TowerModel, target: EnemyModel | undefined, deltaTime: number) {
@@ -3878,6 +4164,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private prepareTowerShot(tower: TowerModel, target: EnemyModel) {
+    if (tower.definition.id === "archer-1" || tower.definition.id === "archer-2") {
+      tower.focusTargetId = target.id;
+      return;
+    }
+
     if (tower.definition.id !== "warrior-4") {
       return;
     }
@@ -3893,6 +4184,11 @@ export class MatchRoom extends Room<MatchState> {
   private applyPostHitEffects(projectile: ProjectileModel, target: EnemyModel) {
     const tower = this.towers.get(projectile.towerId);
     if (!tower) {
+      return;
+    }
+
+    if ((tower.definition.id === "archer-1" || tower.definition.id === "archer-2") && !this.enemies.has(target.id)) {
+      tower.focusTargetId = "";
       return;
     }
 
@@ -4391,6 +4687,13 @@ function isAbartiArmorBreakProjectile(definitionId: string) {
 function getAbartiRayDamageGrowth(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.01 + ((clampedLevel - 1) / 9) * 0.04;
+}
+
+function getMelisApprovalGain(tier: KillStreakTier) {
+  if (tier === "legendary") return 4;
+  if (tier === "rampage") return 3;
+  if (tier === "unstoppable") return 2;
+  return 1;
 }
 
 function getTowerPlacementOrientation(definitionId?: string, orientation?: TowerOrientation): TowerOrientation {

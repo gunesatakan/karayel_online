@@ -44,6 +44,8 @@ export type PlayerSnapshot = {
   reputation?: number;
   authorityChain?: number;
   authorityQuality?: number;
+  approval?: number;
+  stress?: number;
 };
 
 export type LobbyPlayerSnapshot = {
@@ -93,6 +95,7 @@ export type EnemySnapshot = {
   trackingStacks?: number;
   isFeared?: boolean;
   isArmorBroken?: boolean;
+  isDominated?: boolean;
 };
 
 export type TowerSnapshot = {
@@ -113,6 +116,8 @@ export type TowerSnapshot = {
   status?: string;
   damageDealt?: number;
   currentDps?: number;
+  melisEvolutionLevel?: number;
+  isMelisFavorite?: boolean;
   waveBonusLevel?: number;
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];

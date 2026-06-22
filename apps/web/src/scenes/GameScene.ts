@@ -1173,7 +1173,7 @@ export class GameScene extends Phaser.Scene {
     this.hideUltimateChoices();
 
     if (this.pendingAction?.type === "guidance") {
-      this.hintText?.setText("Yonlendirme icin haritada basili tutup surukle");
+      this.hintText?.setText(this.selectedCharacterId === "archer" ? "Zorba icin alani surukle" : "Yonlendirme icin haritada basili tutup surukle");
       return;
     }
 
@@ -1212,6 +1212,24 @@ export class GameScene extends Phaser.Scene {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
       this.showZeynepTierChoices(index, reputation);
       this.hintText?.setText("Komut gucunu sec: dusuk, orta veya yuksek");
+      return;
+    }
+
+    if (this.selectedCharacterId === "archer") {
+      this.hideZeynepTierChoices();
+      if (index === 0) {
+        this.pendingAction = { type: "guidance" };
+        this.hintText?.setText("Zorba: tank dusmanin oldugu alani surukle");
+        return;
+      }
+      if (index === 1) {
+        if (!this.selectedPlacedTowerId) {
+          this.hintText?.setText("Olumcul Stres icin once kendi kuleni sec");
+          return;
+        }
+        this.room.send("useSkill", { slot: index, towerId: this.selectedPlacedTowerId });
+        return;
+      }
       return;
     }
 
@@ -1568,9 +1586,12 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
     }
     const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
-    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}`;
+    const approval = player?.approval ?? 0;
+    const stress = player?.stress ?? 0;
+    const melisStats = player?.characterId === "archer" ? `  Onay ${approval}  Stres ${stress}` : "";
+    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
+      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}${melisStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
@@ -1635,14 +1656,14 @@ export class GameScene extends Phaser.Scene {
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
       mover.sprite.setScale((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse);
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
-      mover.sprite.setTint(slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
+      mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
-      const hasCombatMarker = Boolean(enemy.isFeared || trackingStacks > 0);
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -2634,6 +2655,8 @@ export class GameScene extends Phaser.Scene {
         this.drawKinConeWave(beam, color);
       } else if (beam.definitionId === "zeynep-3-kin-showcase") {
         this.drawKinShowcaseLight(beam, color);
+      } else if (beam.definitionId === "archer-2-rage") {
+        this.drawMelisRageWave(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -2643,6 +2666,32 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.drawLaserConnection(beam, color);
       }
+    }
+  }
+
+  private drawMelisRageWave(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(8, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 380, 0, 1);
+    const pulse = 1 + Math.sin(Date.now() / 42) * 0.08;
+    this.beamGraphics.fillStyle(color, 0.08 * life);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, radius * pulse);
+    this.beamGraphics.lineStyle(3 * this.getTowerEffectScale(), color, 0.75 * life);
+    this.beamGraphics.strokeCircle(beam.x1, beam.y1, radius * (1.02 - life * 0.18));
+    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0xfdf2f8, 0.62 * life);
+    for (let index = 0; index < 10; index += 1) {
+      const angle = (Math.PI * 2 * index) / 10 + Date.now() / 480;
+      const inner = radius * 0.45;
+      const outer = radius * (0.82 + (index % 3) * 0.04);
+      this.beamGraphics.lineBetween(
+        beam.x1 + Math.cos(angle) * inner,
+        beam.y1 + Math.sin(angle) * inner,
+        beam.x1 + Math.cos(angle) * outer,
+        beam.y1 + Math.sin(angle) * outer
+      );
     }
   }
 

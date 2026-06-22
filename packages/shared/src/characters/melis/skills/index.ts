@@ -1,7 +1,6 @@
 import { makeSkills } from "../../common/factory.js";
 
 export const melisSkills = makeSkills("archer", [
-  ["Hizli Hazirlik", "Takima altin kazandirir.", 12000],
-  ["Ok Serisi", "Yolda ondeki dusmanlari vurur.", 17000],
-  ["Keskin Yaylim", "Daha fazla ondeki dusmana hasar verir.", 25000]
+  ["Zorba", "Secilen alandaki bir tank dusmani sabitler, taraf degistirir ve yakin dusmanlara saniyede max caninin %5'i kadar hasar verir.", 22000],
+  ["Olumcul Stres", "Melis stres puanlarini harcayarak secili kulesini 3 evrim duzeyine kadar evriltir.", 6000]
 ]);
