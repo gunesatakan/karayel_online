@@ -809,7 +809,7 @@ function renderBestiary() {
           return `
             <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
               <div class="bestiary-card__visual" aria-hidden="true">
-                <span class="enemy-game-sprite enemy-game-sprite--${type}"></span>
+                <img class="enemy-game-sprite enemy-game-sprite--${type}" src="/images/enemies/enemy-${type}.png" alt="" />
               </div>
               <div class="bestiary-card__copy">
                 <p class="kicker">${escapeHtml(dossier.title)}</p>

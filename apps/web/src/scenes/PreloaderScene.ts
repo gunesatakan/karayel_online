@@ -10,6 +10,10 @@ export class PreloaderScene extends Phaser.Scene {
     this.load.image("zeynep-puppet-hands", "/images/zeynep-puppet-hands.png");
     this.load.image("melis-creepy", "/images/melis-creepy.png");
     this.load.image("melis-creepy-legend", "/images/melis-creepy-legend.png");
+    this.load.image("enemy-grunt", "/images/enemies/enemy-grunt.png");
+    this.load.image("enemy-brute", "/images/enemies/enemy-brute.png");
+    this.load.image("enemy-runner", "/images/enemies/enemy-runner.png");
+    this.load.image("enemy-shooter", "/images/enemies/enemy-shooter.png");
   }
 
   create() {
@@ -20,10 +24,6 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("player-healer", 0xf9a8d4, 13);
     this.createCircleTexture("player-tank", 0xfacc15, 15);
     this.createCircleTexture("player-onur", 0x14b8a6, 14);
-    this.createCircleTexture("enemy-grunt", 0xef4444, 11);
-    this.createCircleTexture("enemy-brute", 0xb91c1c, 15);
-    this.createCircleTexture("enemy-runner", 0xfb923c, 9);
-    this.createCircleTexture("enemy-shooter", 0xf97316, 10);
     this.createArmorBreakTexture();
     this.createCircleTexture("projectile-arrow", 0xbae6fd, 4);
     this.createCircleTexture("projectile-bolt", 0x86efac, 4);

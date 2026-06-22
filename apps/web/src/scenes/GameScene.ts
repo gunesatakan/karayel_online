@@ -1863,7 +1863,8 @@ export class GameScene extends Phaser.Scene {
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
-      mover.sprite.setScale((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse);
+      const baseSpriteScale = getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) / 512;
+      mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
@@ -3982,6 +3983,16 @@ function getZeynepCommandButtonState(authorityChain: number) {
 
 function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+}
+
+function getEnemySpriteDisplaySize(type: EnemySnapshot["type"], cellSize: number) {
+  const base = {
+    grunt: 34,
+    brute: 48,
+    runner: 40,
+    shooter: 38
+  }[type] ?? 34;
+  return base * (cellSize / TOWER_GRID_SIZE);
 }
 
 function getKillStreakRuleByTier(tier: KillStreakTier) {

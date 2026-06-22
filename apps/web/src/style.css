@@ -705,35 +705,31 @@ canvas {
 }
 
 .enemy-game-sprite {
-  --sprite-size: 22px;
   display: block;
-  width: calc(var(--sprite-size) * 2.35);
-  height: calc(var(--sprite-size) * 2.35);
-  border-radius: 999px;
-  background: var(--enemy);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--enemy) 60%, #020617),
-    0 0 24px color-mix(in srgb, var(--enemy) 72%, transparent);
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--enemy) 62%, transparent));
 }
 
 .enemy-game-sprite--grunt {
-  --sprite-size: 22px;
-  background: #ef4444;
+  width: 66px;
+  height: 66px;
 }
 
 .enemy-game-sprite--brute {
-  --sprite-size: 30px;
-  background: #b91c1c;
+  width: 82px;
+  height: 82px;
 }
 
 .enemy-game-sprite--runner {
-  --sprite-size: 18px;
-  background: #fb923c;
+  width: 76px;
+  height: 76px;
 }
 
 .enemy-game-sprite--shooter {
-  --sprite-size: 20px;
-  background: #f97316;
+  width: 76px;
+  height: 76px;
 }
 
 .bestiary-card__copy h2 {
