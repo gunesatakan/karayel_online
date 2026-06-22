@@ -1860,8 +1860,11 @@ export class GameScene extends Phaser.Scene {
       if (mover.sprite.texture.key !== texture) {
         mover.sprite.setTexture(texture);
       }
+      const previousX = mover.sprite.x;
+      const previousY = mover.sprite.y;
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
+      mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
@@ -1881,6 +1884,20 @@ export class GameScene extends Phaser.Scene {
       mover.armorBreakIcon?.setAlpha(enemy.isArmorBroken ? 0.96 : 0);
       mover.armorBreakIcon?.setVisible(Boolean(enemy.isArmorBroken));
     }
+  }
+
+  private getEnemySpriteRotation(enemy: EnemySnapshot, previousX: number, previousY: number) {
+    const dx = enemy.x - previousX;
+    const dy = enemy.y - previousY;
+    if (Math.abs(dx) + Math.abs(dy) > 0.05) {
+      return Math.atan2(dy, dx) - Math.PI / 2;
+    }
+
+    const path = this.activeRenderPaths[enemy.pathId ?? 0] ?? this.activeRenderPaths[0];
+    const angle = enemy.movementKind === "air"
+      ? getRuntimePathEndpointAngle(path)
+      : getRuntimePathTangentAngle(path, enemy.pathDistance);
+    return angle - Math.PI / 2;
   }
 
   private renderTowers(towers: TowerSnapshot[]) {
@@ -3993,6 +4010,33 @@ function getEnemySpriteDisplaySize(type: EnemySnapshot["type"], cellSize: number
     shooter: 38
   }[type] ?? 34;
   return base * (cellSize / TOWER_GRID_SIZE);
+}
+
+function getRuntimePathTangentAngle(path: RuntimePath | undefined, pathDistance: number) {
+  if (!path || path.segments.length === 0) {
+    return Math.PI / 2;
+  }
+
+  let remaining = Math.max(0, pathDistance);
+  for (const segment of path.segments) {
+    if (remaining <= segment.length) {
+      return Math.atan2(segment.to.y - segment.from.y, segment.to.x - segment.from.x);
+    }
+    remaining -= segment.length;
+  }
+
+  const last = path.segments[path.segments.length - 1];
+  return Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
+}
+
+function getRuntimePathEndpointAngle(path: RuntimePath | undefined) {
+  if (!path || path.points.length < 2) {
+    return Math.PI / 2;
+  }
+
+  const start = path.points[0];
+  const end = path.points[path.points.length - 1];
+  return Math.atan2(end.y - start.y, end.x - start.x);
 }
 
 function getKillStreakRuleByTier(tier: KillStreakTier) {
