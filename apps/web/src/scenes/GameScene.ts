@@ -4,7 +4,6 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
-  TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
   buildRuntimePaths,
@@ -266,8 +265,11 @@ export class GameScene extends Phaser.Scene {
   private readonly playbackDelayMs = 500;
   private readonly killStreakMaxWindowMs = 11000;
   private readonly dragPreviewOffsetY = 64;
-  private readonly controlTop = 606;
-  private readonly trayTop = 708;
+  private readonly controlTop = 666;
+  private readonly skillRowY = 682;
+  private readonly actionRowY = 711;
+  private readonly trayTop = 736;
+  private readonly towerCardHeight = 32;
 
   constructor() {
     super("game");
@@ -352,12 +354,16 @@ export class GameScene extends Phaser.Scene {
     const tileRows = this.selectedMapData.rows;
 
     graphics.fillStyle(0x07111f, 1);
-    graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT - TOWER_BUILD_TOP);
+    graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, this.controlTop - TOWER_BUILD_TOP);
 
     for (let row = 0; row < tileRows; row += 1) {
       for (let col = 0; col < tileColumns; col += 1) {
         const x = col * cellSize;
         const y = TOWER_BUILD_TOP + row * cellSize;
+        const tileHeight = Math.min(cellSize, this.controlTop - y);
+        if (tileHeight <= 0) {
+          continue;
+        }
         const tile = getTile(this.selectedMapData, col, row);
         const isPath = tile === "road" || tile === "spawn" || tile === "nexus";
         const isBuildArea = tile === "tower";
@@ -369,14 +375,14 @@ export class GameScene extends Phaser.Scene {
                   0x07111f;
 
         graphics.fillStyle(fill, 1);
-        graphics.fillRect(x, y, cellSize, cellSize);
+        graphics.fillRect(x, y, cellSize, tileHeight);
         graphics.lineStyle(1, isPath ? 0x64748b : isBuildArea ? 0x1e293b : 0x0f172a, isPath ? 0.72 : 0.55);
-        graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, cellSize - 1);
+        graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, Math.max(1, tileHeight - 1));
       }
     }
 
     graphics.lineStyle(2, 0x0f172a, 0.92);
-    graphics.strokeRect(0, TOWER_BUILD_TOP, tileColumns * cellSize, tileRows * cellSize);
+    graphics.strokeRect(0, TOWER_BUILD_TOP, tileColumns * cellSize, Math.min(tileRows * cellSize, this.controlTop - TOWER_BUILD_TOP));
   }
 
   private createPlacementGrid() {
@@ -643,11 +649,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createTowerTray() {
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, this.trayTop + 68, GAME_WORLD_WIDTH, 136, 0x020617, 0.94)
+    const trayHeight = GAME_WORLD_HEIGHT - this.trayTop;
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, this.trayTop + trayHeight / 2, GAME_WORLD_WIDTH, trayHeight, 0x020617, 0.94)
       .setStrokeStyle(1, 0x334155, 0.9)
       .setDepth(25);
 
-    this.hintText = this.add.text(14, this.trayTop + 8, `${this.selectedCharacter.displayName}: kuleyi haritaya surukle`, {
+    this.hintText = this.add.text(12, this.trayTop + 5, `${this.selectedCharacter.displayName}: kuleyi haritaya surukle`, {
       color: "#cbd5e1",
       fontFamily: "Arial",
       fontSize: "11px"
@@ -656,9 +663,9 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter.towers.forEach((tower, index) => {
       const col = index % 4;
       const row = Math.floor(index / 4);
-      const x = 10 + col * 94;
-      const y = this.trayTop + 28 + row * 45;
-      const button = this.add.rectangle(x, y, 88, 38, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
+      const x = 9 + col * 94;
+      const y = this.trayTop + 25 + row * 37;
+      const button = this.add.rectangle(x, y, 88, this.towerCardHeight, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
         .setOrigin(0, 0)
         .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
         .setInteractive({ useHandCursor: true })
@@ -671,7 +678,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: "bold",
         wordWrap: { width: 74 }
       }).setDepth(27);
-      const costText = this.add.text(x + 8, y + 22, `${tower.cost}g`, {
+      const costText = this.add.text(x + 8, y + 19, `${tower.cost}g`, {
         color: "#facc15",
         fontFamily: "Arial",
         fontSize: "10px"
@@ -688,12 +695,12 @@ export class GameScene extends Phaser.Scene {
       this.towerTrayItems.push(button, nameText, costText);
     });
 
-    this.abartiOrientationButton = this.add.rectangle(GAME_WORLD_WIDTH - 56, this.trayTop + 14, 92, 24, 0x312e81, 0.92)
+    this.abartiOrientationButton = this.add.rectangle(GAME_WORLD_WIDTH - 56, this.trayTop + 13, 92, 22, 0x312e81, 0.92)
       .setStrokeStyle(1, 0x67e8f9, 0.62)
       .setInteractive({ useHandCursor: true })
       .setDepth(28)
       .setVisible(false);
-    this.abartiOrientationText = this.add.text(GAME_WORLD_WIDTH - 56, this.trayTop + 14, "", {
+    this.abartiOrientationText = this.add.text(GAME_WORLD_WIDTH - 56, this.trayTop + 13, "", {
       color: "#cffafe",
       fontFamily: "Arial",
       fontSize: "10px",
@@ -708,15 +715,15 @@ export class GameScene extends Phaser.Scene {
     this.abartiOrientationButton.on("pointerup", toggleAbartiOrientation);
     this.abartiOrientationText.setInteractive({ useHandCursor: true }).on("pointerup", toggleAbartiOrientation);
 
-    this.selectedTowerStatsText = this.add.text(16, this.trayTop + 30, "", {
+    this.selectedTowerStatsText = this.add.text(14, this.trayTop + 24, "", {
       color: "#f8fafc",
       fontFamily: "Arial",
-      fontSize: "13px",
+      fontSize: "12px",
       fontStyle: "bold",
-      lineSpacing: 7,
+      lineSpacing: 5,
       wordWrap: { width: GAME_WORLD_WIDTH - 32 }
     }).setDepth(27).setVisible(false);
-    this.selectedTowerStatsHelpText = this.add.text(16, this.trayTop + 106, "Haritaya dokun: dukkan alanina don", {
+    this.selectedTowerStatsHelpText = this.add.text(14, this.trayTop + 88, "Haritaya dokun: dukkan alanina don", {
       color: "#94a3b8",
       fontFamily: "Arial",
       fontSize: "10px"
@@ -811,9 +818,9 @@ export class GameScene extends Phaser.Scene {
 
     grid.lineStyle(1, 0xe2e8f0, 0.16);
     for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
-      grid.lineBetween(x, TOWER_BUILD_TOP, x, TOWER_BUILD_BOTTOM);
+      grid.lineBetween(x, TOWER_BUILD_TOP, x, this.controlTop);
     }
-    for (let y = TOWER_BUILD_TOP; y <= TOWER_BUILD_BOTTOM; y += cellSize) {
+    for (let y = TOWER_BUILD_TOP; y <= this.controlTop; y += cellSize) {
       grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
     }
   }
@@ -853,6 +860,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const cell of footprint) {
+      const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
+      if (world.y + this.getMapCellSize() / 2 > this.controlTop) {
+        return false;
+      }
       if (getTile(this.selectedMapData, cell.col, cell.row) !== "tower") {
         return false;
       }
@@ -954,19 +965,30 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createActionButtons() {
+    this.add.rectangle(
+      GAME_WORLD_WIDTH / 2,
+      this.controlTop + (this.trayTop - this.controlTop) / 2,
+      GAME_WORLD_WIDTH,
+      this.trayTop - this.controlTop,
+      0x020617,
+      0.9
+    )
+      .setStrokeStyle(1, 0x334155, 0.88)
+      .setDepth(24);
+
     this.selectedCharacter.skills.forEach((skill, index) => {
       const x = 70 + index * 125;
-      const button = this.add.rectangle(x, 626, 112, 34, 0x1e293b, 0.94)
+      const button = this.add.rectangle(x, this.skillRowY, 108, 28, 0x1e293b, 0.94)
         .setStrokeStyle(1, 0x60a5fa, 0.55)
         .setInteractive({ useHandCursor: true })
         .setDepth(25);
-      const label = this.add.text(x, 626, skill.name, {
+      const label = this.add.text(x, this.skillRowY, skill.name, {
         color: "#dbeafe",
         fontFamily: "Arial",
-        fontSize: "10px",
+        fontSize: "9px",
         fontStyle: "bold",
         align: "center",
-        wordWrap: { width: 102 }
+        wordWrap: { width: 98 }
       }).setOrigin(0.5).setDepth(26);
       button.on("pointerup", () => this.handleSkillButton(index));
       this.skillButtons.push(button);
@@ -974,33 +996,33 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.zeynepChainEffect = this.add.graphics().setDepth(58).setVisible(false);
-    this.zeynepChainText = this.add.text(GAME_WORLD_WIDTH / 2, 596, "", {
+    this.zeynepChainText = this.add.text(GAME_WORLD_WIDTH / 2, this.controlTop + 4, "", {
       color: "#f9a8d4",
       fontFamily: "Arial",
-      fontSize: "11px",
+      fontSize: "10px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(59).setVisible(false);
 
-    this.ultimateButton = this.add.rectangle(86, 672, 140, 34, 0x7c3aed, 0.92)
+    this.ultimateButton = this.add.rectangle(78, this.actionRowY, 128, 28, 0x7c3aed, 0.92)
       .setStrokeStyle(1, 0xc4b5fd, 0.7)
       .setInteractive({ useHandCursor: true })
       .setDepth(25);
-    this.ultimateText = this.add.text(86, 672, "Ulti 0%", {
+    this.ultimateText = this.add.text(78, this.actionRowY, "Ulti 0%", {
       color: "#f8fafc",
       fontFamily: "Arial",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(26);
     this.ultimateButton.on("pointerup", () => this.handleUltimateButton());
 
-    this.upgradeButton = this.add.rectangle(244, 672, 108, 34, 0x1e293b, 0.92)
+    this.upgradeButton = this.add.rectangle(235, this.actionRowY, 106, 28, 0x1e293b, 0.92)
       .setStrokeStyle(1, 0x94a3b8, 0.6)
       .setInteractive({ useHandCursor: true })
       .setDepth(25);
-    this.upgradeText = this.add.text(244, 672, "Kule sec", {
+    this.upgradeText = this.add.text(235, this.actionRowY, "Kule sec", {
       color: "#cbd5e1",
       fontFamily: "Arial",
-      fontSize: "10px",
+      fontSize: "9px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(26);
     this.upgradeButton.on("pointerup", () => {
@@ -1009,14 +1031,14 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.sellButton = this.add.rectangle(342, 672, 78, 34, 0x450a0a, 0.88)
+    this.sellButton = this.add.rectangle(340, this.actionRowY, 76, 28, 0x450a0a, 0.88)
       .setStrokeStyle(1, 0xfca5a5, 0.55)
       .setInteractive({ useHandCursor: true })
       .setDepth(25);
-    this.sellText = this.add.text(342, 672, "Sat", {
+    this.sellText = this.add.text(340, this.actionRowY, "Sat", {
       color: "#fecaca",
       fontFamily: "Arial",
-      fontSize: "10px",
+      fontSize: "9px",
       fontStyle: "bold",
       align: "center"
     }).setOrigin(0.5).setDepth(26);
@@ -1068,14 +1090,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createUltimateChoiceButton(x: number, label: string, color: number, onSelect: () => void) {
-    const button = this.add.rectangle(x, 672, x < 160 ? 140 : 156, 34, color, 0.96)
+    const button = this.add.rectangle(x, this.actionRowY, x < 160 ? 128 : 148, 28, color, 0.96)
       .setStrokeStyle(2, 0xf8fafc, 0.8)
       .setInteractive({ useHandCursor: true })
       .setDepth(60);
-    const text = this.add.text(x, 672, label, {
+    const text = this.add.text(x, this.actionRowY, label, {
       color: "#f8fafc",
       fontFamily: "Arial",
-      fontSize: "12px",
+      fontSize: "11px",
       fontStyle: "bold"
     }).setOrigin(0.5).setDepth(61);
     button.on("pointerup", onSelect);
@@ -3330,13 +3352,13 @@ export class GameScene extends Phaser.Scene {
     graphics.lineStyle(2, 0xfdf2f8, 0.86);
     for (const [index] of this.selectedCharacter.skills.entries()) {
       const x = 70 + index * 125;
-      const y = 626;
-      graphics.strokeRoundedRect(x - 59, y - 20, 118, 40, 6);
+      const y = this.skillRowY;
+      graphics.strokeRoundedRect(x - 56, y - 17, 112, 34, 6);
       for (let link = 0; link < 4; link += 1) {
         const linkX = x - 42 + link * 28;
         graphics.lineStyle(2, link % 2 === 0 ? 0xf9a8d4 : 0xfdf2f8, 0.78);
-        graphics.strokeEllipse(linkX, y - 24, 19, 8);
-        graphics.strokeEllipse(linkX + 11, y - 24, 19, 8);
+        graphics.strokeEllipse(linkX, y - 20, 17, 7);
+        graphics.strokeEllipse(linkX + 10, y - 20, 17, 7);
       }
     }
   }
