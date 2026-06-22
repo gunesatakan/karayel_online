@@ -288,10 +288,10 @@ export class GameScene extends Phaser.Scene {
   private readonly playbackDelayMs = 500;
   private readonly killStreakMaxWindowMs = 11000;
   private readonly dragPreviewOffsetY = 64;
-  private readonly controlTop = 684;
-  private readonly skillRowY = 696;
-  private readonly actionRowY = 721;
-  private readonly trayTop = 744;
+  private readonly controlTop = 698;
+  private readonly skillRowY = 710;
+  private readonly actionRowY = 735;
+  private readonly trayTop = 758;
   private readonly towerCardHeight = 28;
   private readonly handleControlAction = (event: Event) => {
     this.handleDomControlAction(event as CustomEvent<ControlActionDetail>);

@@ -55,9 +55,9 @@ canvas {
   display: grid;
   grid-template-rows: 28px 30px 1fr 18px;
   gap: 4px;
-  height: 19%;
-  min-height: 142px;
-  max-height: 164px;
+  height: 17.3%;
+  min-height: 136px;
+  max-height: 150px;
   padding: 5px 6px max(5px, env(safe-area-inset-bottom));
   box-sizing: border-box;
   pointer-events: auto;
