@@ -957,10 +957,12 @@ function formatResistanceKey(key: string) {
     psychic: "Psişik",
     fire: "Ateş",
     light: "Işık",
+    cellular: "Hücresel",
     projectile: "Mermi",
     impact: "Patlama",
     focus: "Odaklanma",
     aura: "Aura",
+    contamination: "Kontaminasyon",
     slow: "Slow",
     fear: "Korku",
     tracking: "Takip"

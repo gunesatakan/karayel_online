@@ -141,7 +141,7 @@ export class PreloaderScene extends Phaser.Scene {
   private createProjectileTexture(tower: TowerDefinition) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const palette = getVisualPalette(tower);
-    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" ? 24 : 20;
+    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" ? 24 : 20;
     const center = size / 2;
 
     if (tower.id === "warrior-2") {
@@ -181,6 +181,15 @@ export class PreloaderScene extends Phaser.Scene {
     } else if (tower.hitType === "aura") {
       graphics.lineStyle(3, palette.main, 0.9);
       graphics.strokeCircle(center, center, 7);
+    } else if (tower.hitType === "contamination") {
+      graphics.fillStyle(palette.main, 0.62);
+      graphics.fillCircle(center - 3, center + 1, 5);
+      graphics.fillStyle(palette.accent, 0.86);
+      graphics.fillCircle(center + 4, center - 2, 4);
+      graphics.fillStyle(palette.glow, 0.72);
+      graphics.fillCircle(center + 1, center + 5, 2.5);
+      graphics.lineStyle(1.5, palette.dark, 0.72);
+      graphics.strokeCircle(center, center, 8);
     } else {
       graphics.fillCircle(center, center, 5);
     }
@@ -332,6 +341,9 @@ function getVisualPalette(tower: TowerDefinition): VisualPalette {
   }
   if (tower.damageType === "fire") {
     return { main: 0xfb7185, accent: 0xfbbf24, glow: 0xf97316, dark: 0x9f1239 };
+  }
+  if (tower.damageType === "cellular") {
+    return { main: 0x84cc16, accent: 0x22c55e, glow: 0xbbf7d0, dark: 0x365314 };
   }
   if (tower.damageType === "none" || tower.classType === "control") {
     return { main: 0x94a3b8, accent: 0xa7f3d0, glow: 0x99f6e4, dark: 0x334155 };

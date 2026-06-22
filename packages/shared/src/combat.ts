@@ -1,5 +1,5 @@
-export type DamageType = "physical" | "electric" | "psychic" | "fire" | "light" | "true" | "none";
-export type HitType = "projectile" | "impact" | "focus" | "aura";
+export type DamageType = "physical" | "electric" | "psychic" | "fire" | "light" | "cellular" | "true" | "none";
+export type HitType = "projectile" | "impact" | "focus" | "aura" | "contamination";
 export type MovementKind = "ground" | "air";
 export type StatusEffectId = "slow" | "fear" | "tracking";
 
