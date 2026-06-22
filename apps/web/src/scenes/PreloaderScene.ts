@@ -8,6 +8,8 @@ export class PreloaderScene extends Phaser.Scene {
 
   preload() {
     this.load.image("zeynep-puppet-hands", "/images/zeynep-puppet-hands.png");
+    this.load.image("melis-creepy", "/images/melis-creepy.png");
+    this.load.image("melis-creepy-legend", "/images/melis-creepy-legend.png");
   }
 
   create() {

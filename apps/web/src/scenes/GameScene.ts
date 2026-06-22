@@ -99,7 +99,7 @@ type KillStreakLock = {
 };
 
 type KillStreakVisualTheme = {
-  style: "brutal" | "command" | "precision" | "arcane" | "sanctuary" | "bulwark" | "storm";
+  style: "brutal" | "command" | "creepy" | "precision" | "arcane" | "sanctuary" | "bulwark" | "storm";
   primary: number;
   secondary: number;
   accent: number;
@@ -107,6 +107,7 @@ type KillStreakVisualTheme = {
   textColor: string;
   strokeColor: string;
   motif: string;
+  imageKey?: string;
 };
 
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
@@ -2234,6 +2235,10 @@ export class GameScene extends Phaser.Scene {
       this.showCommandKillStreakAnnouncement(message, rule, theme);
       return;
     }
+    if (theme.style === "creepy") {
+      this.showMelisKillStreakAnnouncement(message, rule, theme);
+      return;
+    }
 
     const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "27px" : "31px";
     const container = this.add.container(GAME_WORLD_WIDTH / 2, -78).setDepth(80).setAlpha(0);
@@ -2631,6 +2636,155 @@ export class GameScene extends Phaser.Scene {
       alpha: 0,
       delay: 2200 + rule.chaos * 280,
       duration: 500,
+      ease: "Cubic.easeIn",
+      onComplete: () => {
+        container.destroy(true);
+        if (this.rampageContainer === container) {
+          this.rampageContainer = undefined;
+        }
+      }
+    });
+  }
+
+  private showMelisKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
+    const imageKey = theme.imageKey ?? "melis-creepy";
+    const container = this.add.container(GAME_WORLD_WIDTH / 2, -92).setDepth(82).setAlpha(0);
+    const chaos = rule.chaos;
+    const plate = this.add.graphics();
+    const width = 182 + chaos * 18;
+    const height = 48 + chaos * 7;
+    const slash = 20 + chaos * 3;
+
+    plate.fillStyle(theme.fill, 0.88);
+    plate.fillPoints([
+      new Phaser.Geom.Point(-width, -height),
+      new Phaser.Geom.Point(width - slash, -height - chaos * 4),
+      new Phaser.Geom.Point(width + slash, 0),
+      new Phaser.Geom.Point(width - 18, height),
+      new Phaser.Geom.Point(-width + slash, height - 5),
+      new Phaser.Geom.Point(-width - slash, -6)
+    ], true);
+    plate.lineStyle(2 + chaos, theme.primary, 0.82);
+    plate.strokePoints([
+      new Phaser.Geom.Point(-width, -height),
+      new Phaser.Geom.Point(width - slash, -height - chaos * 4),
+      new Phaser.Geom.Point(width + slash, 0),
+      new Phaser.Geom.Point(width - 18, height),
+      new Phaser.Geom.Point(-width + slash, height - 5),
+      new Phaser.Geom.Point(-width - slash, -6)
+    ], true);
+
+    const image = this.add.image(-width + 54, 0, imageKey)
+      .setOrigin(0.5)
+      .setScale(imageKey === "melis-creepy-legend" ? 0.38 + chaos * 0.035 : 0.32 + chaos * 0.035)
+      .setAlpha(0.92)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const imageGhostA = this.add.image(image.x + 5 + chaos, image.y - 2, imageKey)
+      .setOrigin(0.5)
+      .setScale(image.scaleX)
+      .setTint(theme.secondary)
+      .setAlpha(0.34)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const imageGhostB = this.add.image(image.x - 5 - chaos, image.y + 2, imageKey)
+      .setOrigin(0.5)
+      .setScale(image.scaleX)
+      .setTint(theme.primary)
+      .setAlpha(0.3)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "28px" : "32px";
+    const baseStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "Impact, Arial Black, Arial",
+      fontSize,
+      fontStyle: "bold",
+      color: theme.textColor,
+      stroke: "#02010a",
+      strokeThickness: 8
+    };
+    const mainText = this.add.text(34, -5, message, baseStyle)
+      .setOrigin(0.5)
+      .setAngle(-2 - chaos * 0.3);
+    const hotText = this.add.text(39 + chaos, -2, message, {
+      ...baseStyle,
+      color: toCssColor(theme.primary),
+      strokeThickness: 3
+    }).setOrigin(0.5).setAlpha(0.42);
+    const coldText = this.add.text(28 - chaos, -8, message, {
+      ...baseStyle,
+      color: toCssColor(theme.secondary),
+      strokeThickness: 3
+    }).setOrigin(0.5).setAlpha(0.38);
+    const motifText = this.add.text(8, height - 13, theme.motif, {
+      fontFamily: "Arial Black, Arial",
+      fontSize: `${10 + chaos}px`,
+      color: toCssColor(theme.accent),
+      stroke: "#030014",
+      strokeThickness: 3
+    }).setOrigin(0.5).setAlpha(0.86);
+
+    const glitches: Phaser.GameObjects.Rectangle[] = [];
+    const glitchCount = 8 + chaos * 5;
+    for (let index = 0; index < glitchCount; index += 1) {
+      const y = Phaser.Math.Between(-height - 8, height + 8);
+      const x = Phaser.Math.Between(-width + 18, width - 18);
+      const barWidth = Phaser.Math.Between(14, 44 + chaos * 14);
+      const color = index % 3 === 0 ? theme.primary : index % 3 === 1 ? theme.secondary : theme.accent;
+      const bar = this.add.rectangle(x, y, barWidth, Phaser.Math.Between(2, 5 + chaos), color, 0.35 + chaos * 0.07)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      glitches.push(bar);
+    }
+
+    container.add([plate, imageGhostA, imageGhostB, image, coldText, hotText, mainText, motifText, ...glitches]);
+    this.rampageContainer = container;
+    this.cameras.main.shake(130 + chaos * 110, 0.0025 + chaos * 0.0024);
+
+    this.tweens.add({
+      targets: container,
+      y: 84,
+      alpha: 1,
+      duration: Math.max(110, 230 - chaos * 24),
+      ease: "Back.easeOut"
+    });
+    this.tweens.add({
+      targets: container,
+      x: { from: GAME_WORLD_WIDTH / 2 - chaos * 3, to: GAME_WORLD_WIDTH / 2 + chaos * 3 },
+      yoyo: true,
+      repeat: 8 + chaos * 5,
+      duration: Math.max(24, 58 - chaos * 6),
+      ease: "Stepped"
+    });
+    this.tweens.add({
+      targets: [imageGhostA, imageGhostB, hotText, coldText],
+      x: `+=${5 + chaos * 3}`,
+      yoyo: true,
+      repeat: 12 + chaos * 6,
+      duration: Math.max(22, 48 - chaos * 4),
+      ease: "Stepped"
+    });
+    this.tweens.add({
+      targets: glitches,
+      x: `+=${18 + chaos * 10}`,
+      alpha: { from: 0.1, to: 0.82 },
+      yoyo: true,
+      repeat: 10 + chaos * 7,
+      duration: Math.max(18, 42 - chaos * 4),
+      ease: "Stepped"
+    });
+    this.tweens.add({
+      targets: mainText,
+      scaleX: { from: 0.96, to: 1.07 + chaos * 0.025 },
+      scaleY: { from: 1.04, to: 0.94 - chaos * 0.015 },
+      yoyo: true,
+      repeat: 6 + chaos * 4,
+      duration: 66,
+      ease: "Sine.easeInOut"
+    });
+    this.tweens.add({
+      targets: container,
+      y: 58,
+      alpha: 0,
+      delay: 2200 + chaos * 300,
+      duration: 520,
       ease: "Cubic.easeIn",
       onComplete: () => {
         container.destroy(true);
@@ -3548,11 +3702,14 @@ function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule
   const themes: Record<Exclude<CharacterId, "zeynep">, CharacterKillStreakTheme> = {
     warrior: atakanTheme,
     archer: {
-      style: "precision",
-      textColor: "#ecfeff",
-      strokeColor: "#082f49",
-      motif: rule.chaos >= 4 ? "PERFECT VECTOR" : "MULTI-SHOT LOCK",
-      colors: [0x22d3ee, 0xa7f3d0, 0xfef08a, 0x062b35] as const
+      style: "creepy",
+      textColor: rule.chaos >= 4 ? "#fff1f2" : "#fdf4ff",
+      strokeColor: "#050013",
+      motif: rule.chaos >= 4 ? "GOTHIC NIGHTMARE / APPROVAL ERROR" : rule.chaos >= 3 ? "STRESS BLOOM / HEART GLITCH" : "CREEP SMILE / APPROVAL SPIKE",
+      imageKey: rule.chaos >= 3 ? "melis-creepy-legend" : "melis-creepy",
+      colors: rule.chaos >= 3
+        ? [0xef4444, 0x7f1d1d, 0xf0abfc, 0x050008] as const
+        : [0xec4899, 0x2563eb, 0xa855f7, 0x050013] as const
     },
     mage: {
       style: "arcane",
