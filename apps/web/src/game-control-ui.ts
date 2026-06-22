@@ -39,6 +39,7 @@ export function setupGameControlUi(game: Phaser.Game) {
   let latestState: ControlState = { visible: false };
   let latestKey = "";
   let activeTowerId = "";
+  let activePointerId = -1;
 
   const dispatch = (detail: ControlAction) => {
     window.dispatchEvent(new CustomEvent("karayel:control-action", { detail }));
@@ -54,6 +55,31 @@ export function setupGameControlUi(game: Phaser.Game) {
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
     root.style.height = `${rect.height}px`;
+  };
+
+  const clearActiveTowerDrag = () => {
+    activeTowerId = "";
+    activePointerId = -1;
+    window.removeEventListener("pointermove", handleTowerDragMove);
+    window.removeEventListener("pointerup", handleTowerDragEnd);
+    window.removeEventListener("pointercancel", handleTowerDragEnd);
+  };
+
+  const handleTowerDragMove = (event: PointerEvent) => {
+    if (!activeTowerId || event.pointerId !== activePointerId) {
+      return;
+    }
+    event.preventDefault();
+    dispatch({ action: "towerDragMove", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
+  };
+
+  const handleTowerDragEnd = (event: PointerEvent) => {
+    if (!activeTowerId || event.pointerId !== activePointerId) {
+      return;
+    }
+    event.preventDefault();
+    dispatch({ action: "towerDragEnd", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
+    clearActiveTowerDrag();
   };
 
   const render = (state: ControlState) => {
@@ -169,26 +195,16 @@ export function setupGameControlUi(game: Phaser.Game) {
     button.style.setProperty("--tower-color", tower.color);
     button.innerHTML = `<span>${tower.name}</span><strong>${tower.cost}g</strong>`;
     button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      clearActiveTowerDrag();
       activeTowerId = tower.id;
-      button.setPointerCapture(event.pointerId);
+      activePointerId = event.pointerId;
+      window.addEventListener("pointermove", handleTowerDragMove, { passive: false });
+      window.addEventListener("pointerup", handleTowerDragEnd, { passive: false });
+      window.addEventListener("pointercancel", handleTowerDragEnd, { passive: false });
       dispatch({ action: "selectTower", towerId: tower.id });
       dispatch({ action: "towerDragStart", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
     });
-    button.addEventListener("pointermove", (event) => {
-      if (activeTowerId !== tower.id) {
-        return;
-      }
-      dispatch({ action: "towerDragMove", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
-    });
-    const endDrag = (event: PointerEvent) => {
-      if (activeTowerId !== tower.id) {
-        return;
-      }
-      dispatch({ action: "towerDragEnd", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
-      activeTowerId = "";
-    };
-    button.addEventListener("pointerup", endDrag);
-    button.addEventListener("pointercancel", endDrag);
     return button;
   };
 
