@@ -1240,6 +1240,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showZeynepTierChoices(slot: number, reputation: number) {
+    if (this.pendingZeynepCommandSlot === slot) {
+      this.hideZeynepTierChoices();
+      return;
+    }
+
     this.hideZeynepTierChoices();
     this.pendingZeynepCommandSlot = slot;
     void reputation;
