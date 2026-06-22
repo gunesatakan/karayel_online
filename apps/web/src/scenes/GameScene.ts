@@ -1914,13 +1914,13 @@ export class GameScene extends Phaser.Scene {
       mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
-      const shieldPulse = 1 + Math.sin(performance.now() / 130) * 0.035;
-      const shieldRadius = (getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * 0.54 + 4) * shieldPulse;
+      const displayedEnemySize = getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
+      const shieldRadius = displayedEnemySize * 0.48;
       mover.shieldHalo?.setPosition(enemy.x, enemy.y);
       mover.shieldHalo?.setDepth(enemy.movementKind === "air" ? 8.6 : 7.6);
       mover.shieldHalo?.setRadius(shieldRadius);
       mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
-      mover.shieldHalo?.setStrokeStyle(2, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
+      mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
       mover.shieldHalo?.setVisible(hasShield);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
