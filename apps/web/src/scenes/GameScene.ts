@@ -4005,7 +4005,7 @@ function getBackgroundMusicPath(characterId: CharacterId) {
 function getEnemySpriteDisplaySize(type: EnemySnapshot["type"], cellSize: number) {
   const base = {
     grunt: 34,
-    brute: 48,
+    brute: 43.2,
     runner: 40,
     shooter: 38
   }[type] ?? 34;
