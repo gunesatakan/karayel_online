@@ -2675,22 +2675,22 @@ export class GameScene extends Phaser.Scene {
       new Phaser.Geom.Point(-width - slash, -6)
     ], true);
 
-    const image = this.add.image(-width + 86, 0, imageKey)
+    const image = this.add.image(0, 0, imageKey)
       .setOrigin(0.5)
-      .setScale(imageKey === "melis-creepy-legend" ? 0.5 + chaos * 0.045 : 0.43 + chaos * 0.045)
-      .setAlpha(0.92)
+      .setScale(imageKey === "melis-creepy-legend" ? 0.94 + chaos * 0.08 : 0.82 + chaos * 0.08)
+      .setAlpha(imageKey === "melis-creepy-legend" ? 0.82 : 0.72)
       .setBlendMode(Phaser.BlendModes.ADD);
-    const imageGhostA = this.add.image(image.x + 5 + chaos, image.y - 2, imageKey)
+    const imageGhostA = this.add.image(image.x + 7 + chaos * 2, image.y - 3, imageKey)
       .setOrigin(0.5)
       .setScale(image.scaleX)
       .setTint(theme.secondary)
-      .setAlpha(0.34)
+      .setAlpha(0.26)
       .setBlendMode(Phaser.BlendModes.ADD);
-    const imageGhostB = this.add.image(image.x - 5 - chaos, image.y + 2, imageKey)
+    const imageGhostB = this.add.image(image.x - 7 - chaos * 2, image.y + 3, imageKey)
       .setOrigin(0.5)
       .setScale(image.scaleX)
       .setTint(theme.primary)
-      .setAlpha(0.3)
+      .setAlpha(0.24)
       .setBlendMode(Phaser.BlendModes.ADD);
 
     const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "28px" : "32px";
@@ -2702,20 +2702,20 @@ export class GameScene extends Phaser.Scene {
       stroke: "#02010a",
       strokeThickness: 8
     };
-    const mainText = this.add.text(54, -5, message, baseStyle)
+    const mainText = this.add.text(0, -5, message, baseStyle)
       .setOrigin(0.5)
       .setAngle(-2 - chaos * 0.3);
-    const hotText = this.add.text(59 + chaos, -2, message, {
+    const hotText = this.add.text(5 + chaos, -2, message, {
       ...baseStyle,
       color: toCssColor(theme.primary),
       strokeThickness: 3
     }).setOrigin(0.5).setAlpha(0.42);
-    const coldText = this.add.text(48 - chaos, -8, message, {
+    const coldText = this.add.text(-6 - chaos, -8, message, {
       ...baseStyle,
       color: toCssColor(theme.secondary),
       strokeThickness: 3
     }).setOrigin(0.5).setAlpha(0.38);
-    const motifText = this.add.text(30, height - 13, theme.motif, {
+    const motifText = this.add.text(0, height - 13, theme.motif, {
       fontFamily: "Arial Black, Arial",
       fontSize: `${10 + chaos}px`,
       color: toCssColor(theme.accent),
