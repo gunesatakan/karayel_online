@@ -228,6 +228,7 @@ export type GameSnapshot = {
     range?: ZeynepCommandEffectSnapshot;
     slow?: ZeynepCommandEffectSnapshot;
   };
+  melisGothicNightmareActive?: boolean;
   team: TeamSnapshot;
   perf?: ServerPerfSnapshot;
 };

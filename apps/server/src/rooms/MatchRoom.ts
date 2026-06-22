@@ -3712,6 +3712,7 @@ export class MatchRoom extends Room<MatchState> {
         streakTier: event.streakTier
       })),
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
+      melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,

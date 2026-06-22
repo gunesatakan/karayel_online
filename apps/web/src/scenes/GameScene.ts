@@ -9,6 +9,7 @@ import {
   buildRuntimePaths,
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
+  getMapPoints,
   getPointAlongRuntimePath,
   getTowerSellRefund,
   getTowerUpgradeCost,
@@ -203,6 +204,7 @@ export class GameScene extends Phaser.Scene {
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
+  private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private towerSnapshots = new Map<string, TowerSnapshot>();
@@ -351,6 +353,7 @@ export class GameScene extends Phaser.Scene {
       window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
       this.placementGrid?.destroy();
+      this.melisNightmareMapGraphics?.destroy();
       this.placementGhost?.destroy();
       this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
@@ -1626,6 +1629,7 @@ export class GameScene extends Phaser.Scene {
     let sectionStart = performance.now();
     this.syncMapFromSnapshot(snapshot);
     this.recordClientPerfSection("map", performance.now() - sectionStart);
+    this.renderMelisNightmareMapLocks(Boolean(snapshot.melisGothicNightmareActive));
     sectionStart = performance.now();
     this.renderTowers(snapshot.towers);
     this.recordClientPerfSection("towers", performance.now() - sectionStart);
@@ -1720,6 +1724,57 @@ export class GameScene extends Phaser.Scene {
     this.activeRenderPaths = buildRuntimePaths(map);
     this.renderedMapKey = mapKey;
     this.drawMap();
+  }
+
+  private renderMelisNightmareMapLocks(active: boolean) {
+    const graphics = this.melisNightmareMapGraphics ?? this.add.graphics().setDepth(9.4);
+    this.melisNightmareMapGraphics = graphics;
+    graphics.clear();
+    if (!active) {
+      return;
+    }
+
+    const points = [
+      ...getMapPoints(this.selectedMapData, "spawn"),
+      ...getMapPoints(this.selectedMapData, "nexus")
+    ];
+    const cellSize = this.getMapCellSize();
+    const now = performance.now();
+
+    for (const point of points) {
+      const world = gridToWorld(point.col, point.row, this.selectedMapData);
+      this.drawMelisNightmareLock(graphics, world.x, world.y, Math.max(34, cellSize * 1.7), now + point.col * 41 + point.row * 67);
+    }
+  }
+
+  private drawMelisNightmareLock(graphics: Phaser.GameObjects.Graphics, x: number, y: number, size: number, time: number) {
+    const phase = (time % 720) / 720;
+    const jitterX = Math.sin(phase * Math.PI * 8) * 1.8;
+    const jitterY = Math.cos(phase * Math.PI * 6) * 1.4;
+    const half = size / 2;
+
+    graphics.lineStyle(10, 0x020617, 0.68);
+    graphics.lineBetween(x - half, y - half, x + half, y + half);
+    graphics.lineBetween(x + half, y - half, x - half, y + half);
+
+    graphics.lineStyle(6, 0xff1b8d, 0.52);
+    graphics.lineBetween(x - half + jitterX, y - half, x + half + jitterX, y + half);
+    graphics.lineBetween(x + half - jitterX, y - half, x - half - jitterX, y + half);
+
+    graphics.lineStyle(3, 0x22d3ee, 0.84);
+    graphics.lineBetween(x - half + jitterX * 0.4, y - half + jitterY, x + half + jitterX * 0.4, y + half + jitterY);
+    graphics.lineBetween(x + half - jitterX * 0.4, y - half - jitterY, x - half - jitterX * 0.4, y + half - jitterY);
+
+    graphics.lineStyle(1.2, 0xfdf2f8, 0.9);
+    graphics.lineBetween(x - half * 0.72, y - half * 0.72, x + half * 0.72, y + half * 0.72);
+    graphics.lineBetween(x + half * 0.72, y - half * 0.72, x - half * 0.72, y + half * 0.72);
+
+    for (let index = 0; index < 5; index += 1) {
+      const offset = (index - 2) * size * 0.18;
+      const glitchY = y + offset + Math.sin(phase * Math.PI * 2 + index) * 3;
+      graphics.lineStyle(1.6, index % 2 === 0 ? 0xff1b8d : 0x22d3ee, 0.36);
+      graphics.lineBetween(x - half * 0.78, glitchY, x + half * 0.78, glitchY + Math.sin(index + phase * 10) * 4);
+    }
   }
 
   private renderHud(snapshot: GameSnapshot) {
@@ -1977,11 +2032,50 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderMelisGothicTowerRing(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
     this.renderZeynepFormationEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderMelisGothicTowerRing(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.characterId !== "archer" || tower.status !== "Gotik Kabus") {
+      return;
+    }
+
+    const cellSize = this.getMapCellSize();
+    const effectScale = this.getTowerEffectScale();
+    const radius = Math.max(13, cellSize * 0.58);
+    const phase = ((performance.now() + tower.x * 13 + tower.y * 7) % 1100) / 1100;
+    const wave = Math.sin(phase * Math.PI * 2);
+
+    graphics.fillStyle(0x020617, 0.2);
+    graphics.fillCircle(tower.x, tower.y, radius + 1.5 * effectScale);
+
+    for (let ring = 0; ring < 3; ring += 1) {
+      const ringPhase = phase + ring * 0.23;
+      const ringRadius = radius + Math.sin(ringPhase * Math.PI * 2) * 1.5 * effectScale + ring * 1.1 * effectScale;
+      graphics.lineStyle((2.4 - ring * 0.45) * effectScale, 0x020617, 0.88 - ring * 0.18);
+      graphics.strokeCircle(tower.x, tower.y, ringRadius);
+      graphics.lineStyle(Math.max(0.8, 1.1 * effectScale), ring % 2 === 0 ? 0xff1b8d : 0x22d3ee, 0.18 + ring * 0.05);
+      graphics.strokeCircle(tower.x, tower.y, ringRadius + 1.8 * effectScale);
+    }
+
+    const marks = 12;
+    for (let index = 0; index < marks; index += 1) {
+      const angle = index * (Math.PI * 2 / marks) + phase * Math.PI * 2 * 0.32;
+      const wobble = Math.sin(phase * Math.PI * 6 + index * 1.7) * 2.2 * effectScale;
+      const inner = radius - 2.8 * effectScale + wobble * 0.18;
+      const outer = radius + 2.6 * effectScale + wobble;
+      const x1 = tower.x + Math.cos(angle) * inner;
+      const y1 = tower.y + Math.sin(angle) * inner;
+      const x2 = tower.x + Math.cos(angle + wave * 0.05) * outer;
+      const y2 = tower.y + Math.sin(angle + wave * 0.05) * outer;
+      graphics.lineStyle((index % 3 === 0 ? 2.1 : 1.2) * effectScale, 0x020617, 0.78);
+      graphics.lineBetween(x1, y1, x2, y2);
+    }
   }
 
   private renderZeynepCommandTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
