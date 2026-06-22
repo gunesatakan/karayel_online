@@ -2797,6 +2797,10 @@ export class MatchRoom extends Room<MatchState> {
       return this.evolveMelisTower(client.sessionId, player, message.towerId);
     }
 
+    if (slot === 2) {
+      return this.useMelisTestNightmare(client.sessionId);
+    }
+
     return false;
   }
 
@@ -2833,6 +2837,18 @@ export class MatchRoom extends Room<MatchState> {
     player.stress -= MELIS_EVOLUTION_STRESS_COST;
     tower.melisEvolutionLevel += 1;
     tower.cooldownMs = Math.min(tower.cooldownMs, 120);
+    return true;
+  }
+
+  private useMelisTestNightmare(ownerId: string) {
+    const enemies = Array.from(this.enemies.values());
+    if (enemies.length === 0) {
+      return false;
+    }
+
+    for (const enemy of enemies) {
+      this.damageEnemy(enemy, enemy.hp + enemy.shield + enemy.maxHp + 1, 0, "archer-skill-test", ownerId, "true");
+    }
     return true;
   }
 
