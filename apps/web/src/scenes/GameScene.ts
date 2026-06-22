@@ -77,6 +77,7 @@ type RenderTower = {
 
 type RenderMover = {
   sprite: Phaser.Physics.Arcade.Sprite;
+  shieldHalo?: Phaser.GameObjects.Arc;
   marker?: Phaser.GameObjects.Text;
   armorBreakIcon?: Phaser.GameObjects.Image;
 };
@@ -1822,6 +1823,7 @@ export class GameScene extends Phaser.Scene {
           mover.sprite.body.enable = false;
         }
         mover.marker?.destroy();
+        mover.shieldHalo?.destroy();
         mover.armorBreakIcon?.destroy();
         this.enemies.delete(id);
       }
@@ -1842,6 +1844,10 @@ export class GameScene extends Phaser.Scene {
           sprite.body.enable = false;
         }
         mover = this.createMover(sprite, enemy.x, enemy.y);
+        mover.shieldHalo = this.add.circle(enemy.x, enemy.y, 18, 0x38bdf8, 0.08)
+          .setStrokeStyle(2, 0x60a5fa, 0.86)
+          .setDepth(7.6)
+          .setVisible(false);
         mover.marker = this.add.text(enemy.x, enemy.y - 22, "T", {
           color: "#fde047",
           fontFamily: "Arial",
@@ -1870,6 +1876,16 @@ export class GameScene extends Phaser.Scene {
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
+      const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
+      const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
+      const shieldPulse = 1 + Math.sin(performance.now() / 130) * 0.035;
+      const shieldRadius = (getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * 0.54 + 4) * shieldPulse;
+      mover.shieldHalo?.setPosition(enemy.x, enemy.y);
+      mover.shieldHalo?.setDepth(enemy.movementKind === "air" ? 8.6 : 7.6);
+      mover.shieldHalo?.setRadius(shieldRadius);
+      mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
+      mover.shieldHalo?.setStrokeStyle(2, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
+      mover.shieldHalo?.setVisible(hasShield);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || trackingStacks > 0);
