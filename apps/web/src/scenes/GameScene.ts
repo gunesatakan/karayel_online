@@ -901,6 +901,7 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("useSkill", { slot: this.pendingZeynepCommandSlot, commandTier: detail.tier });
         }
         this.hideZeynepTierChoices();
+        this.clearPlacedTowerSelection();
         break;
       case "useUltimate":
         this.handleUltimateButton();
@@ -910,6 +911,7 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("useUltimate", { mode: detail.mode });
         }
         this.hideUltimateChoices();
+        this.clearPlacedTowerSelection();
         break;
       case "upgradeTower":
         if (this.selectedPlacedTowerId) {
@@ -928,8 +930,7 @@ export class GameScene extends Phaser.Scene {
         this.updateSelectionUi();
         break;
       case "clearSelection":
-        this.selectedPlacedTowerId = undefined;
-        this.updateSelectionUi();
+        this.clearPlacedTowerSelection();
         break;
     }
   }
@@ -1194,6 +1195,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.clearPlacedTowerSelection();
+
     if (this.currentUltimateCharge < 100) {
       this.hideUltimateChoices();
       this.hintText?.setText("Ulti henuz hazir degil");
@@ -1275,6 +1278,7 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("useSkill", { slot: this.pendingZeynepCommandSlot, commandTier: tier });
         }
         this.hideZeynepTierChoices();
+        this.clearPlacedTowerSelection();
       });
     }
 
@@ -1316,6 +1320,7 @@ export class GameScene extends Phaser.Scene {
       this.room?.send("useSkill", { slot: 0, x: point.x, y: point.y });
       this.isGuidanceDragging = false;
       this.pendingAction = undefined;
+      this.clearPlacedTowerSelection();
       this.clearGuidancePreview();
       this.hintText?.setText("Yonlendirme alani gonderildi");
       return;
@@ -1342,6 +1347,7 @@ export class GameScene extends Phaser.Scene {
         y: pointer.worldY
       });
       this.pendingAction = undefined;
+      this.clearPlacedTowerSelection();
       this.hintText?.setText("Refactor istegi gonderildi");
       return;
     }
@@ -1356,8 +1362,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.selectedPlacedTowerId = undefined;
-    this.updateSelectionUi();
+    this.clearPlacedTowerSelection();
   }
 
   private handleSkillButton(index: number) {
@@ -1367,6 +1372,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.selectedCharacterId === "zeynep") {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
+      this.clearPlacedTowerSelection();
       this.showZeynepTierChoices(index, reputation);
       this.hintText?.setText("Komut gucunu sec: dusuk, orta veya yuksek");
       return;
@@ -1376,46 +1382,55 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
       if (index === 0) {
         this.pendingAction = { type: "guidance" };
+        this.clearPlacedTowerSelection();
         this.hintText?.setText("Zorba: tank dusmanin oldugu alani surukle");
         return;
       }
       if (index === 1) {
-        if (!this.selectedPlacedTowerId) {
+        const towerId = this.selectedPlacedTowerId;
+        if (!towerId) {
           this.hintText?.setText("Olumcul Stres icin once kendi kuleni sec");
           return;
         }
-        this.room.send("useSkill", { slot: index, towerId: this.selectedPlacedTowerId });
+        this.room.send("useSkill", { slot: index, towerId });
+        this.clearPlacedTowerSelection();
         return;
       }
       this.room.send("useSkill", { slot: index });
+      this.clearPlacedTowerSelection();
       return;
     }
 
     if (this.selectedCharacterId !== "warrior") {
       this.hideZeynepTierChoices();
       this.room.send("useSkill", { slot: index });
+      this.clearPlacedTowerSelection();
       return;
     }
 
     if (index === 0) {
       this.hideZeynepTierChoices();
       this.pendingAction = { type: "guidance" };
+      this.clearPlacedTowerSelection();
       this.hintText?.setText("Yonlendirme: haritada basili tutup alani surukle");
       return;
     }
 
     if (index === 1) {
-      if (!this.selectedPlacedTowerId) {
+      const towerId = this.selectedPlacedTowerId;
+      if (!towerId) {
         this.hintText?.setText("Refactor icin once kendi kuleni sec");
         return;
       }
-      this.pendingAction = { type: "refactor", towerId: this.selectedPlacedTowerId };
+      this.pendingAction = { type: "refactor", towerId };
+      this.clearPlacedTowerSelection();
       this.hintText?.setText("Refactor: yeni konuma dokun");
       return;
     }
 
     this.hideZeynepTierChoices();
     this.room.send("useSkill", { slot: index });
+    this.clearPlacedTowerSelection();
   }
 
   private tryLinkServerTower(targetTower: TowerSnapshot) {
@@ -1525,6 +1540,9 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
+    sectionStart = performance.now();
+    this.renderProjectiles(frame.snapshot.projectiles);
+    this.recordClientPerfSection("projectiles", performance.now() - sectionStart);
     this.lastPlaybackAlpha = frame.alpha;
 
     if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
@@ -1614,10 +1632,31 @@ export class GameScene extends Phaser.Scene {
       };
     });
 
+    const previousProjectiles = new Map(previous.projectiles.map((projectile) => [projectile.id, projectile]));
+    const snapshotDeltaSeconds = Math.max(0, (next.serverTime - previous.serverTime) / 1000);
+    const projectiles = next.projectiles.map((projectile) => {
+      const oldProjectile = previousProjectiles.get(projectile.id);
+      if (oldProjectile) {
+        return {
+          ...projectile,
+          x: Phaser.Math.Linear(oldProjectile.x, projectile.x, alpha),
+          y: Phaser.Math.Linear(oldProjectile.y, projectile.y, alpha)
+        };
+      }
+
+      const remainingSeconds = snapshotDeltaSeconds * (1 - alpha);
+      return {
+        ...projectile,
+        x: projectile.x - (projectile.vx ?? 0) * remainingSeconds,
+        y: projectile.y - (projectile.vy ?? 0) * remainingSeconds
+      };
+    });
+
     return {
       ...next,
       enemies,
-      drones
+      drones,
+      projectiles
     };
   }
 
@@ -1637,9 +1676,6 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderBeams(snapshot.beams);
     this.recordClientPerfSection("beams", performance.now() - sectionStart);
-    sectionStart = performance.now();
-    this.renderProjectiles(snapshot.projectiles);
-    this.recordClientPerfSection("projectiles", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderKillEvents(snapshot);
     this.recordClientPerfSection("events", performance.now() - sectionStart);
@@ -3453,6 +3489,15 @@ export class GameScene extends Phaser.Scene {
     return {
       sprite
     };
+  }
+
+  private clearPlacedTowerSelection() {
+    if (!this.selectedPlacedTowerId) {
+      return;
+    }
+
+    this.selectedPlacedTowerId = undefined;
+    this.updateSelectionUi();
   }
 
   private findTowerAt(x: number, y: number) {

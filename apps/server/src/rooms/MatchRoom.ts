@@ -3682,7 +3682,9 @@ export class MatchRoom extends Room<MatchState> {
         source: projectile.source,
         definitionId: projectile.definitionId,
         x: projectile.x,
-        y: projectile.y
+        y: projectile.y,
+        vx: projectile.vx,
+        vy: projectile.vy
       })),
       drones: Array.from(this.drones.values()).map((drone) => ({
         id: drone.id,

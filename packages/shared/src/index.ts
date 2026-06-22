@@ -132,6 +132,8 @@ export type ProjectileSnapshot = {
   definitionId?: string;
   x: number;
   y: number;
+  vx?: number;
+  vy?: number;
 };
 
 export type DroneSnapshot = {
