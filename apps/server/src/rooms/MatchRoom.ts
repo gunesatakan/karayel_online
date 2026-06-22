@@ -41,6 +41,7 @@ import {
   type StatusEffectId,
   type BeamSnapshot,
   type GameSnapshot,
+  type HitType,
   type KillEventSnapshot,
   type LobbyStateSnapshot,
   type MapScale,
@@ -231,6 +232,7 @@ type EnemyModel = {
   maxShield: number;
   movementKind: MovementKind;
   damageResistances: Partial<Record<DamageType, number>>;
+  hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
   abilities: string[];
   speed: number;
@@ -302,6 +304,7 @@ type ProjectileModel = {
   definitionId: string;
   kind: ProjectileKind;
   damageType: DamageType;
+  hitType: HitType;
   source: "tower";
   targetId: string;
   x: number;
@@ -1054,6 +1057,7 @@ export class MatchRoom extends Room<MatchState> {
       maxShield,
       movementKind: isFlyingEnemy ? "air" : definition.movementKind,
       damageResistances: { ...definition.damageResistances },
+      hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
@@ -1170,6 +1174,7 @@ export class MatchRoom extends Room<MatchState> {
       definitionId: tower.definition.id,
       kind: "tower",
       damageType: tower.definition.damageType ?? "physical",
+      hitType: tower.definition.hitType ?? "projectile",
       source: "tower",
       targetId: target.id,
       x: tower.x,
@@ -1199,6 +1204,7 @@ export class MatchRoom extends Room<MatchState> {
       definitionId,
       kind: "tower",
       damageType: sourceTower.definition.damageType ?? "electric",
+      hitType: sourceTower.definition.hitType ?? "impact",
       source: "tower",
       targetId: target.id,
       x: sourceTower.x,
@@ -1895,6 +1901,7 @@ export class MatchRoom extends Room<MatchState> {
       definitionId,
       kind: "tower",
       damageType,
+      hitType: tower.definition.hitType ?? "projectile",
       source: "tower",
       targetId: target.id,
       x: tower.x,
@@ -2007,7 +2014,7 @@ export class MatchRoom extends Room<MatchState> {
         this.perfCounters.aoeChecks += 1;
         const hitRadius = zone.radius + getEnemyCollisionRadius(enemy);
         if (distanceToSegmentSq(enemy.x, enemy.y, zone.x1, zone.y1, zone.x2, zone.y2) <= hitRadius * hitRadius) {
-          this.damageEnemy(enemy, zone.damage, 0, "zeynep-3-burn", zone.ownerId, zone.damageType, 0, 1, zone.towerId);
+          this.damageEnemy(enemy, zone.damage, 0, "zeynep-3-burn", zone.ownerId, zone.damageType, 0, 1, zone.towerId, "aura");
         }
       }
     }
@@ -2315,12 +2322,12 @@ export class MatchRoom extends Room<MatchState> {
       for (const enemy of this.enemies.values()) {
         this.perfCounters.aoeChecks += 1;
         if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-          this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+          this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
           this.applyKinProjectileSlow(projectile, enemy);
         }
       }
     } else {
-      this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId);
+      this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
       this.applyKinProjectileSlow(projectile, target);
     }
     this.applyPostHitEffects(projectile, target);
@@ -3235,7 +3242,7 @@ export class MatchRoom extends Room<MatchState> {
       (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "") {
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "", hitType?: HitType) {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
@@ -3250,11 +3257,12 @@ export class MatchRoom extends Room<MatchState> {
     const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * 0.2 : 1;
     const guidanceBonus = this.isEnemyInProjectileGuidance(enemy, now) ? PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER : 1;
     const result = calculateDamageTaken(
-      { amount: damage * trackingBonus * guidanceBonus, damageType },
+      { amount: damage * trackingBonus * guidanceBonus, damageType, hitType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
-        damageResistances: enemy.damageResistances
+        damageResistances: enemy.damageResistances,
+        hitTypeResistances: enemy.hitTypeResistances
       }
     );
     enemy.shield = result.remainingShield;
@@ -3298,11 +3306,11 @@ export class MatchRoom extends Room<MatchState> {
     const damageType = tower.characterId === "archer" && this.melisGothicNightmareUntil > Date.now()
       ? "true"
       : tower.definition.damageType ?? "physical";
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id, tower.definition.hitType);
   }
 
   private damageEnemyFromTowerAs(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number, damageType: DamageType, maxHealthDamageRatio?: number) {
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id, tower.definition.hitType);
   }
 
   private recordTowerDamage(towerId: string, amount: number, now = Date.now()) {
@@ -4235,7 +4243,7 @@ export class MatchRoom extends Room<MatchState> {
         .slice(0, 2);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id, projectile.hitType);
       }
     }
 

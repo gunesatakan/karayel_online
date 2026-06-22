@@ -14,6 +14,7 @@ export type EnemyCombatDefinition = {
   movementKind: MovementKind;
   reward: number;
   damageResistances?: ResistanceTable<DamageType>;
+  hitTypeResistances?: ResistanceTable<HitType>;
   statusResistances?: ResistanceTable<StatusEffectId>;
   abilities?: string[];
 };
@@ -21,6 +22,7 @@ export type EnemyCombatDefinition = {
 export type DamagePacket = {
   amount: number;
   damageType: DamageType;
+  hitType?: HitType;
 };
 
 export type DamageResult = {
@@ -41,6 +43,7 @@ export const enemyCombatDefinitions = {
     movementKind: "ground",
     reward: 12,
     damageResistances: {},
+    hitTypeResistances: {},
     statusResistances: {}
   },
   brute: {
@@ -55,6 +58,11 @@ export const enemyCombatDefinitions = {
       physical: 0.08,
       fire: -0.08
     },
+    hitTypeResistances: {
+      projectile: -0.2,
+      impact: 0.2,
+      focus: 0.2
+    },
     statusResistances: {
       slow: 0.2,
       fear: 0.25
@@ -65,12 +73,16 @@ export const enemyCombatDefinitions = {
     maxHp: 30,
     armor: 0,
     healthRegenPerSecond: 0,
-    speed: 78,
+    speed: 90,
     shield: 0,
     movementKind: "ground",
     reward: 11,
     damageResistances: {
       electric: -0.08
+    },
+    hitTypeResistances: {
+      focus: -0.2,
+      projectile: 0.2
     },
     statusResistances: {
       slow: 0.35
@@ -82,12 +94,13 @@ export const enemyCombatDefinitions = {
     armor: 10,
     healthRegenPerSecond: 0.18,
     speed: 44,
-    shield: 10,
+    shield: 30,
     movementKind: "ground",
     reward: 14,
     damageResistances: {
       psychic: 0.08
     },
+    hitTypeResistances: {},
     statusResistances: {},
     abilities: ["ranged-shot"]
   }
@@ -111,12 +124,15 @@ export function calculateDamageTaken(
     armor: number;
     shield: number;
     damageResistances?: ResistanceTable<DamageType>;
+    hitTypeResistances?: ResistanceTable<HitType>;
   }
 ): DamageResult {
   const armorMultiplier = packet.damageType === "true" ? 1 : calculateArmorDamageMultiplier(target.armor);
   const resistance = target.damageResistances?.[packet.damageType] ?? 0;
   const resistanceMultiplier = Math.max(0, 1 - resistance);
-  const rawDamage = Math.max(0, packet.amount * armorMultiplier * resistanceMultiplier);
+  const hitTypeResistance = packet.damageType !== "true" && packet.hitType ? target.hitTypeResistances?.[packet.hitType] ?? 0 : 0;
+  const hitTypeResistanceMultiplier = Math.max(0, 1 - hitTypeResistance);
+  const rawDamage = Math.max(0, packet.amount * armorMultiplier * resistanceMultiplier * hitTypeResistanceMultiplier);
   const shieldDamage = Math.min(target.shield, rawDamage);
   const hpDamage = rawDamage - shieldDamage;
 

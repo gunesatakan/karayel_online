@@ -831,6 +831,7 @@ function renderBestiary() {
               </div>
               <div class="bestiary-notes">
                 ${formatResistanceLine("Hasar", definition.damageResistances)}
+                ${formatResistanceLine("Vuruş", definition.hitTypeResistances)}
                 ${formatResistanceLine("Durum", definition.statusResistances)}
               </div>
             </article>
@@ -956,6 +957,10 @@ function formatResistanceKey(key: string) {
     psychic: "Psişik",
     fire: "Ateş",
     light: "Işık",
+    projectile: "Mermi",
+    impact: "Patlama",
+    focus: "Odaklanma",
+    aura: "Aura",
     slow: "Slow",
     fear: "Korku",
     tracking: "Takip"
