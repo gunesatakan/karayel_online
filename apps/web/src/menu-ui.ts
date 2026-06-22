@@ -5,6 +5,7 @@ import {
   MAX_MAP_SCALE,
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
+  enemyCombatDefinitions,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -13,6 +14,7 @@ import {
   type CharacterDefinition,
   type CharacterId,
   type EditableMapData,
+  type EnemyType,
   type LobbyStateSnapshot,
   type MapScale,
   type MapTileKind,
@@ -23,7 +25,7 @@ import {
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, setActiveLobbyRoom } from "./online-session";
 
-type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby";
+type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary";
 type DetailItem = {
   key: string;
   title: string;
@@ -52,6 +54,43 @@ const classColor: Record<CharacterId, string> = {
   healer: "#f9a8d4",
   tank: "#facc15",
   onur: "#14b8a6"
+};
+
+const enemyDossier: Record<EnemyType, {
+  name: string;
+  title: string;
+  threat: string;
+  visual: string;
+  summary: string;
+}> = {
+  grunt: {
+    name: "Sürü Artığı",
+    title: "Standart kara hedefi",
+    threat: "Düşük",
+    visual: "core",
+    summary: "Dalgaların temel gövdesi. Özel savunması yoktur; sayıları arttıkça yolu tıkayıp kule hedeflerini dağıtır."
+  },
+  brute: {
+    name: "Zırhlı Ezici",
+    title: "Tank sınıfı kara hedefi",
+    threat: "Yüksek",
+    visual: "brute",
+    summary: "Yavaş ama dirençli ilerler. Zırhı, kalkanı ve yavaşlatma/korkuya direnci nedeniyle ham hasar testidir."
+  },
+  runner: {
+    name: "Çatlak Koşucu",
+    title: "Hızlı sızma hedefi",
+    threat: "Orta",
+    visual: "runner",
+    summary: "Düşük cana rağmen çok hızlıdır. Elektrik hasarına daha açık, slow etkilerine ise daha dirençlidir."
+  },
+  shooter: {
+    name: "Uzak Atıcı",
+    title: "Menzilli baskı hedefi",
+    threat: "Orta",
+    visual: "shooter",
+    summary: "İlerlerken ateş edebilen varyanttır. Kalkanı ve can yenilemesiyle uzun çatışmalarda değer kazanır."
+  }
 };
 
 export function setupMenuUi(game: Phaser.Game) {
@@ -423,6 +462,7 @@ function renderShell(
         ${view === "home" ? renderHome(selectedCharacter) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
+        ${view === "bestiary" ? renderBestiary() : ""}
         ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus, savedMaps, activeSavedMapId, selectedMapName) : ""}
         ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError) : ""}
         ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
@@ -461,6 +501,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
 
       <footer class="home-actions">
         <button class="command command--primary" data-view="archive">Operatör Arşivi</button>
+        <button class="command command--ghost" data-view="bestiary">Bestiary</button>
         <button class="command command--ghost" data-view="online">Online</button>
         <button class="command command--ghost" data-view="map">Harita Tasarla</button>
         <button class="command command--ghost" data-start-game>Başlat</button>
@@ -753,6 +794,75 @@ function renderArchive(selectedCharacter: CharacterDefinition) {
   `;
 }
 
+function renderBestiary() {
+  const enemies = Object.entries(enemyCombatDefinitions) as Array<[EnemyType, typeof enemyCombatDefinitions[EnemyType]]>;
+  return `
+    <div class="archive-screen bestiary-screen">
+      <header class="screen-topbar">
+        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <div>
+          <p class="eyebrow">Threat Bestiary</p>
+          <h1>Düşman Arşivi</h1>
+        </div>
+      </header>
+
+      <section class="bestiary-grid">
+        ${enemies.map(([type, definition]) => {
+          const dossier = enemyDossier[type];
+          const movementKind = definition.movementKind as string;
+          const abilities = "abilities" in definition ? [...definition.abilities] : [];
+          return `
+            <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
+              <div class="bestiary-card__visual" aria-hidden="true">
+                <span class="enemy-portrait enemy-portrait--${dossier.visual}">
+                  <i></i>
+                </span>
+              </div>
+              <div class="bestiary-card__copy">
+                <p class="kicker">${escapeHtml(dossier.title)}</p>
+                <h2>${escapeHtml(dossier.name)}</h2>
+                <p>${escapeHtml(dossier.summary)}</p>
+              </div>
+              <dl class="bestiary-stats">
+                ${renderBestiaryStat("HP", definition.maxHp)}
+                ${renderBestiaryStat("Zırh", definition.armor)}
+                ${renderBestiaryStat("Kalkan", definition.shield)}
+                ${renderBestiaryStat("Regen", `${definition.healthRegenPerSecond}/sn`)}
+                ${renderBestiaryStat("Hız", definition.speed)}
+                ${renderBestiaryStat("Altın", definition.reward)}
+              </dl>
+              <div class="bestiary-tags">
+                <span>${movementKind === "air" ? "Havacı" : "Karacı"}</span>
+                <span>Tehdit ${escapeHtml(dossier.threat)}</span>
+                ${abilities.map((ability) => `<span>${escapeHtml(formatEnemyAbility(ability))}</span>`).join("")}
+              </div>
+              <div class="bestiary-notes">
+                ${formatResistanceLine("Hasar", definition.damageResistances)}
+                ${formatResistanceLine("Durum", definition.statusResistances)}
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </section>
+
+      <section class="selected-dossier bestiary-note">
+        <p class="kicker">Dalga Varyantı</p>
+        <h2>Uçan dalgalar</h2>
+        <p>Belirli dalgalarda düşmanlar havacı varyant olarak doğabilir. Havacılar yolu takip etmez, spawn noktasından nexusa en kısa hatla uçar ve mevcut can değerleri hava saldırısı dengesine göre düşürülür.</p>
+      </section>
+    </div>
+  `;
+}
+
+function renderBestiaryStat(label: string, value: string | number) {
+  return `
+    <div>
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${escapeHtml(String(value))}</dd>
+    </div>
+  `;
+}
+
 function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem) {
   const details = getDetailItems(character);
   return `
@@ -813,6 +923,55 @@ function getDetailItems(character: CharacterDefinition): DetailItem[] {
     ...character.skills.map(skillToDetail),
     ...character.towers.map(towerToDetail)
   ];
+}
+
+function enemyColor(type: EnemyType) {
+  return {
+    grunt: "#38bdf8",
+    brute: "#ef4444",
+    runner: "#a3e635",
+    shooter: "#f59e0b"
+  }[type];
+}
+
+function formatEnemyAbility(ability: string) {
+  return {
+    "heavy-body": "Ağır Gövde",
+    fast: "Çok Hızlı",
+    "ranged-shot": "Ateş Eder"
+  }[ability] ?? ability;
+}
+
+function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {
+  const entries = Object.entries(resistances ?? {});
+  if (entries.length === 0) {
+    return `<p><strong>${label}</strong><span>Özel direnç yok</span></p>`;
+  }
+
+  return `
+    <p>
+      <strong>${label}</strong>
+      <span>${entries.map(([key, value]) => `${formatResistanceKey(key)} ${formatResistanceValue(value)}`).join(" · ")}</span>
+    </p>
+  `;
+}
+
+function formatResistanceKey(key: string) {
+  return {
+    physical: "Fiziksel",
+    electric: "Elektrik",
+    psychic: "Psişik",
+    fire: "Ateş",
+    light: "Işık",
+    slow: "Slow",
+    fear: "Korku",
+    tracking: "Takip"
+  }[key] ?? key;
+}
+
+function formatResistanceValue(value: number) {
+  const percent = Math.round(Math.abs(value) * 100);
+  return value < 0 ? `+%${percent} zayıf` : `%${percent} direnç`;
 }
 
 function skillToDetail(skill: SkillDefinition): DetailItem {
