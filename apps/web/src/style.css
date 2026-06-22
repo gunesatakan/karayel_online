@@ -704,82 +704,36 @@ canvas {
   clip-path: polygon(50% 0, 100% 28%, 88% 100%, 12% 100%, 0 28%);
 }
 
-.enemy-portrait {
-  position: relative;
+.enemy-game-sprite {
+  --sprite-size: 22px;
   display: block;
-  width: 54px;
-  height: 62px;
-  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--enemy) 72%, transparent));
+  width: calc(var(--sprite-size) * 2.35);
+  height: calc(var(--sprite-size) * 2.35);
+  border-radius: 999px;
+  background: var(--enemy);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--enemy) 60%, #020617),
+    0 0 24px color-mix(in srgb, var(--enemy) 72%, transparent);
 }
 
-.enemy-portrait::before,
-.enemy-portrait::after,
-.enemy-portrait i {
-  content: "";
-  position: absolute;
-  display: block;
+.enemy-game-sprite--grunt {
+  --sprite-size: 22px;
+  background: #ef4444;
 }
 
-.enemy-portrait::before {
-  inset: 8px 9px 10px;
-  border: 2px solid var(--enemy);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--enemy) 24%, #020617), #020617);
-  clip-path: polygon(50% 0, 87% 18%, 100% 60%, 74% 100%, 26% 100%, 0 60%, 13% 18%);
+.enemy-game-sprite--brute {
+  --sprite-size: 30px;
+  background: #b91c1c;
 }
 
-.enemy-portrait::after {
-  inset: 25px 17px auto;
-  height: 6px;
-  background:
-    linear-gradient(90deg, var(--enemy) 0 30%, transparent 30% 70%, var(--enemy) 70%);
-  box-shadow: 0 12px 0 rgba(248, 250, 252, 0.78);
+.enemy-game-sprite--runner {
+  --sprite-size: 18px;
+  background: #fb923c;
 }
 
-.enemy-portrait i {
-  left: 50%;
-  bottom: 0;
-  width: 34px;
-  height: 18px;
-  transform: translateX(-50%);
-  border: 2px solid color-mix(in srgb, var(--enemy) 70%, #f8fafc);
-  border-top: 0;
-  clip-path: polygon(0 0, 100% 0, 78% 100%, 22% 100%);
-}
-
-.enemy-portrait--brute {
-  width: 66px;
-  height: 66px;
-}
-
-.enemy-portrait--brute::before {
-  inset: 5px 6px 8px;
-  border-width: 3px;
-  clip-path: polygon(50% 0, 95% 12%, 100% 68%, 68% 100%, 32% 100%, 0 68%, 5% 12%);
-}
-
-.enemy-portrait--runner {
-  transform: skewX(-12deg);
-}
-
-.enemy-portrait--runner::before {
-  inset: 10px 13px 12px 6px;
-  clip-path: polygon(66% 0, 100% 34%, 72% 100%, 10% 88%, 0 28%);
-}
-
-.enemy-portrait--shooter::before {
-  inset: 9px 10px 11px;
-  clip-path: polygon(50% 0, 100% 30%, 88% 88%, 50% 100%, 12% 88%, 0 30%);
-}
-
-.enemy-portrait--shooter i::after {
-  content: "";
-  position: absolute;
-  right: -15px;
-  top: -24px;
-  width: 24px;
-  height: 7px;
-  border: 1px solid var(--enemy);
-  background: rgba(2, 6, 23, 0.9);
+.enemy-game-sprite--shooter {
+  --sprite-size: 20px;
+  background: #f97316;
 }
 
 .bestiary-card__copy h2 {

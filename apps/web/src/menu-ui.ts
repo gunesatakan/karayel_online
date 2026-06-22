@@ -60,35 +60,30 @@ const enemyDossier: Record<EnemyType, {
   name: string;
   title: string;
   threat: string;
-  visual: string;
   summary: string;
 }> = {
   grunt: {
     name: "Sürü Artığı",
     title: "Standart kara hedefi",
     threat: "Düşük",
-    visual: "core",
     summary: "Dalgaların temel gövdesi. Özel savunması yoktur; sayıları arttıkça yolu tıkayıp kule hedeflerini dağıtır."
   },
   brute: {
     name: "Zırhlı Ezici",
     title: "Tank sınıfı kara hedefi",
     threat: "Yüksek",
-    visual: "brute",
     summary: "Yavaş ama dirençli ilerler. Zırhı, kalkanı ve yavaşlatma/korkuya direnci nedeniyle ham hasar testidir."
   },
   runner: {
     name: "Çatlak Koşucu",
     title: "Hızlı sızma hedefi",
     threat: "Orta",
-    visual: "runner",
     summary: "Düşük cana rağmen çok hızlıdır. Elektrik hasarına daha açık, slow etkilerine ise daha dirençlidir."
   },
   shooter: {
     name: "Uzak Atıcı",
     title: "Menzilli baskı hedefi",
     threat: "Orta",
-    visual: "shooter",
     summary: "İlerlerken ateş edebilen varyanttır. Kalkanı ve can yenilemesiyle uzun çatışmalarda değer kazanır."
   }
 };
@@ -814,9 +809,7 @@ function renderBestiary() {
           return `
             <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
               <div class="bestiary-card__visual" aria-hidden="true">
-                <span class="enemy-portrait enemy-portrait--${dossier.visual}">
-                  <i></i>
-                </span>
+                <span class="enemy-game-sprite enemy-game-sprite--${type}"></span>
               </div>
               <div class="bestiary-card__copy">
                 <p class="kicker">${escapeHtml(dossier.title)}</p>
@@ -927,10 +920,10 @@ function getDetailItems(character: CharacterDefinition): DetailItem[] {
 
 function enemyColor(type: EnemyType) {
   return {
-    grunt: "#38bdf8",
-    brute: "#ef4444",
-    runner: "#a3e635",
-    shooter: "#f59e0b"
+    grunt: "#ef4444",
+    brute: "#b91c1c",
+    runner: "#fb923c",
+    shooter: "#f97316"
   }[type];
 }
 
