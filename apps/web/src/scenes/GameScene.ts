@@ -40,6 +40,28 @@ type GameSceneData = {
   mapData?: EditableMapData;
 };
 
+type ControlActionDetail = {
+  action:
+    | "selectTower"
+    | "towerDragStart"
+    | "towerDragMove"
+    | "towerDragEnd"
+    | "useSkill"
+    | "useZeynepTier"
+    | "useUltimate"
+    | "useUltimateMode"
+    | "upgradeTower"
+    | "sellTower"
+    | "toggleAbartiOrientation"
+    | "clearSelection";
+  towerId?: string;
+  slot?: number;
+  tier?: ZeynepCommandTier;
+  mode?: "attack" | "repair";
+  clientX?: number;
+  clientY?: number;
+};
+
 type RenderTower = {
   effect: Phaser.GameObjects.Graphics;
   linkHighlight: Phaser.GameObjects.Arc;
@@ -227,6 +249,7 @@ export class GameScene extends Phaser.Scene {
   private ultimateButton?: Phaser.GameObjects.Rectangle;
   private ultimateText?: Phaser.GameObjects.Text;
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
+  private ultimateChoiceOpen = false;
   private zeynepTierChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private pendingZeynepCommandSlot?: number;
   private zeynepChainText?: Phaser.GameObjects.Text;
@@ -270,6 +293,9 @@ export class GameScene extends Phaser.Scene {
   private readonly actionRowY = 721;
   private readonly trayTop = 744;
   private readonly towerCardHeight = 28;
+  private readonly handleControlAction = (event: Event) => {
+    this.handleDomControlAction(event as CustomEvent<ControlActionDetail>);
+  };
 
   constructor() {
     super("game");
@@ -305,11 +331,11 @@ export class GameScene extends Phaser.Scene {
     this.createPlacementGrid();
     this.createHeader();
     this.createAudioSettingsButton();
-    this.createTowerTray();
-    this.createActionButtons();
+    window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
     this.createKillStreakAudio();
     this.createBackgroundMusic();
+    this.emitControlState();
 
     this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt" });
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
@@ -322,6 +348,7 @@ export class GameScene extends Phaser.Scene {
       this.input.off("pointerdown", this.handleMapPointerDown, this);
       this.input.off("pointermove", this.handleMapPointerMove, this);
       this.input.off("pointerup", this.handleMapPointer, this);
+      window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
       this.placementGrid?.destroy();
       this.placementGhost?.destroy();
@@ -334,6 +361,7 @@ export class GameScene extends Phaser.Scene {
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
       this.backgroundMusic?.pause();
+      this.game.events.emit("game:controls-state", { visible: false });
     });
 
     void this.connect();
@@ -731,12 +759,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
+    this.startTowerDragAt(tower, this.getTowerDragPreviewPoint(pointer));
+  }
+
+  private startTowerDragAt(tower: TowerDefinition, previewPoint: { x: number; y: number }) {
     this.draggedTowerDefinition = tower;
     this.selectedTowerDefinition = tower;
     this.selectedPlacedTowerId = undefined;
     this.placementGrid?.setVisible(true);
     this.placementGhost?.destroy();
-    const previewPoint = this.getTowerDragPreviewPoint(pointer);
     const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
     const ghostWidth = tower.id === "zeynep-8" && this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize;
     const ghostHeight = tower.id === "zeynep-8" && this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize;
@@ -744,16 +775,19 @@ export class GameScene extends Phaser.Scene {
       .setDisplaySize(ghostWidth, ghostHeight)
       .setAlpha(0.78)
       .setDepth(28);
-    this.updateTowerDrag(pointer);
+    this.updateTowerDragAt(previewPoint);
     this.updateSelectionUi();
   }
 
   private updateTowerDrag(pointer: Phaser.Input.Pointer) {
+    this.updateTowerDragAt(this.getTowerDragPreviewPoint(pointer));
+  }
+
+  private updateTowerDragAt(previewPoint: { x: number; y: number }) {
     if (!this.draggedTowerDefinition) {
       return;
     }
 
-    const previewPoint = this.getTowerDragPreviewPoint(pointer);
     const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, this.draggedTowerDefinition.id);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     this.placementGhost?.setPosition(cell.x, cell.y).setTint(canPlace ? 0x86efac : 0xf87171);
@@ -761,12 +795,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private finishTowerDrag(pointer: Phaser.Input.Pointer) {
+    this.finishTowerDragAt(this.getTowerDragPreviewPoint(pointer));
+  }
+
+  private finishTowerDragAt(previewPoint: { x: number; y: number }) {
     const tower = this.draggedTowerDefinition;
     if (!tower) {
       return;
     }
 
-    const previewPoint = this.getTowerDragPreviewPoint(pointer);
     const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
@@ -794,6 +831,103 @@ export class GameScene extends Phaser.Scene {
       x: pointer.worldX,
       y: pointer.worldY - this.dragPreviewOffsetY
     };
+  }
+
+  private getTowerDragPreviewPointFromClient(clientX: number, clientY: number) {
+    const rect = this.game.canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * GAME_WORLD_WIDTH,
+      y: ((clientY - rect.top) / rect.height) * GAME_WORLD_HEIGHT - this.dragPreviewOffsetY
+    };
+  }
+
+  private handleDomControlAction(event: CustomEvent<ControlActionDetail>) {
+    const detail = event.detail;
+    if (!detail) {
+      return;
+    }
+
+    const findTower = () => this.selectedCharacter.towers.find((tower) => tower.id === detail.towerId);
+    const previewPoint = () => {
+      if (detail.clientX === undefined || detail.clientY === undefined) {
+        return undefined;
+      }
+      return this.getTowerDragPreviewPointFromClient(detail.clientX, detail.clientY);
+    };
+
+    switch (detail.action) {
+      case "selectTower": {
+        const tower = findTower();
+        if (!tower) {
+          return;
+        }
+        this.selectedTowerDefinition = tower;
+        this.selectedPlacedTowerId = undefined;
+        this.updateSelectionUi();
+        break;
+      }
+      case "towerDragStart": {
+        const tower = findTower();
+        const point = previewPoint();
+        if (!tower || !point) {
+          return;
+        }
+        this.startTowerDragAt(tower, point);
+        break;
+      }
+      case "towerDragMove": {
+        const point = previewPoint();
+        if (point) {
+          this.updateTowerDragAt(point);
+        }
+        break;
+      }
+      case "towerDragEnd": {
+        const point = previewPoint();
+        if (point) {
+          this.finishTowerDragAt(point);
+        }
+        break;
+      }
+      case "useSkill":
+        this.handleSkillButton(detail.slot ?? 0);
+        break;
+      case "useZeynepTier":
+        if (this.pendingZeynepCommandSlot !== undefined && detail.tier) {
+          this.room?.send("useSkill", { slot: this.pendingZeynepCommandSlot, commandTier: detail.tier });
+        }
+        this.hideZeynepTierChoices();
+        break;
+      case "useUltimate":
+        this.handleUltimateButton();
+        break;
+      case "useUltimateMode":
+        if (detail.mode) {
+          this.room?.send("useUltimate", { mode: detail.mode });
+        }
+        this.hideUltimateChoices();
+        break;
+      case "upgradeTower":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
+        }
+        break;
+      case "sellTower":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
+          this.selectedPlacedTowerId = undefined;
+          this.updateSelectionUi();
+        }
+        break;
+      case "toggleAbartiOrientation":
+        this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
+        this.updateSelectionUi();
+        break;
+      case "clearSelection":
+        this.selectedPlacedTowerId = undefined;
+        this.updateSelectionUi();
+        break;
+    }
   }
 
   private drawPlacementGrid(highlightX: number, highlightY: number, canPlace: boolean) {
@@ -1067,7 +1201,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this.ultimateChoiceItems.length > 0) {
+    if (this.ultimateChoiceOpen) {
       this.hideUltimateChoices();
       return;
     }
@@ -1077,16 +1211,8 @@ export class GameScene extends Phaser.Scene {
 
   private showUltimateChoices() {
     this.hideUltimateChoices();
-    this.ultimateChoiceItems.push(
-      ...this.createUltimateChoiceButton(86, "Saldiri", 0xef4444, () => {
-        this.room?.send("useUltimate", { mode: "attack" });
-        this.hideUltimateChoices();
-      }),
-      ...this.createUltimateChoiceButton(282, "Tamir", 0x14b8a6, () => {
-        this.room?.send("useUltimate", { mode: "repair" });
-        this.hideUltimateChoices();
-      })
-    );
+    this.ultimateChoiceOpen = true;
+    this.emitControlState();
   }
 
   private createUltimateChoiceButton(x: number, label: string, color: number, onSelect: () => void) {
@@ -1109,17 +1235,15 @@ export class GameScene extends Phaser.Scene {
       item.destroy();
     }
     this.ultimateChoiceItems = [];
+    this.ultimateChoiceOpen = false;
+    this.emitControlState();
   }
 
   private showZeynepTierChoices(slot: number, reputation: number) {
     this.hideZeynepTierChoices();
     this.pendingZeynepCommandSlot = slot;
-    const x = 70 + slot * 125;
-    this.zeynepTierChoiceItems.push(
-      ...this.createZeynepTierChoiceButton(x - 42, "Dusuk", "small", 10, reputation, 0x475569),
-      ...this.createZeynepTierChoiceButton(x, "Orta", "medium", 40, reputation, 0x0ea5e9),
-      ...this.createZeynepTierChoiceButton(x + 42, "Yuksek", "big", 80, reputation, 0xdb2777)
-    );
+    void reputation;
+    this.emitControlState();
   }
 
   private createZeynepTierChoiceButton(x: number, label: string, tier: ZeynepCommandTier, cost: number, reputation: number, color: number) {
@@ -1154,6 +1278,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.zeynepTierChoiceItems = [];
     this.pendingZeynepCommandSlot = undefined;
+    this.emitControlState();
   }
 
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
@@ -1599,7 +1724,7 @@ export class GameScene extends Phaser.Scene {
     const gold = player?.gold ?? 0;
     this.currentTeamGold = gold;
     this.currentUltimateCharge = charge;
-    if (charge < 100 && this.ultimateChoiceItems.length > 0) {
+    if (charge < 100 && this.ultimateChoiceOpen) {
       this.hideUltimateChoices();
     }
 
@@ -3248,6 +3373,79 @@ export class GameScene extends Phaser.Scene {
     this.abartiOrientationText?.setText(this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey");
   }
 
+  private emitControlState() {
+    const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    const definition = selectedTower
+      ? towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId)
+      : undefined;
+    const upgradeCost = definition ? getTowerUpgradeCost(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
+    const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
+    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10);
+    const canSell = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId);
+    const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
+    const reputation = this.localPlayerSnapshot?.reputation ?? 0;
+    const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
+
+    const towerHint = selectedTower
+      ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
+      : `${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`;
+
+    this.game.events.emit("game:controls-state", {
+      visible: true,
+      characterName: this.selectedCharacter.displayName,
+      hint: towerHint,
+      selectedPlacedTowerId: selectedTower?.id,
+      selectedTowerDefinitionId: this.selectedTowerDefinition.id,
+      showOrientationToggle: this.selectedTowerDefinition.id === "zeynep-8" && !selectedTower,
+      orientation: this.abartiOrientation,
+      towers: this.selectedCharacter.towers.map((tower) => ({
+        id: tower.id,
+        name: tower.name,
+        cost: tower.cost,
+        color: `#${tower.color.toString(16).padStart(6, "0")}`,
+        selected: tower.id === this.selectedTowerDefinition.id && !selectedTower
+      })),
+      skills: this.selectedCharacter.skills.map((skill, index) => {
+        const cooldown = cooldowns[index] ?? 0;
+        const zeynepCommand = this.localPlayerSnapshot?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
+        return {
+          slot: index,
+          name: skill.name,
+          label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : skill.name,
+          disabled: cooldown > 0
+        };
+      }),
+      zeynepTier: this.pendingZeynepCommandSlot === undefined ? undefined : {
+        slot: this.pendingZeynepCommandSlot,
+        reputation
+      },
+      zeynepChain: this.localPlayerSnapshot?.characterId === "zeynep" ? {
+        value: authorityChain,
+        ready: authorityChain >= 2
+      } : undefined,
+      ultimate: {
+        charge: this.currentUltimateCharge,
+        ready: this.currentUltimateCharge >= 100,
+        choiceOpen: this.ultimateChoiceOpen,
+        needsChoice: this.selectedCharacterId === "warrior"
+      },
+      upgrade: {
+        label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",
+        enabled: canUpgrade
+      },
+      sell: {
+        label: canSell ? `Sat ${sellRefund}g` : "Sat",
+        enabled: canSell
+      },
+      selectedStats: selectedTower ? [
+        `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
+        `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+        canUpgrade ? `Sonraki: ${upgradeCost}g` : "Maksimum level",
+        canSell ? `Satis: ${sellRefund}g` : "Sadece sahibi satar"
+      ] : undefined
+    });
+  }
+
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
@@ -3255,6 +3453,7 @@ export class GameScene extends Phaser.Scene {
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
+      this.emitControlState();
       return;
     }
     this.lastSelectionKey = selectionKey;
@@ -3276,6 +3475,7 @@ export class GameScene extends Phaser.Scene {
       this.upgradeButton?.setAlpha(0.6);
       this.sellText?.setText("Sat");
       this.sellButton?.setAlpha(0.42);
+      this.emitControlState();
       return;
     }
 
@@ -3304,6 +3504,7 @@ export class GameScene extends Phaser.Scene {
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
     this.sellText?.setText(canSell ? `Sat ${sellRefund}g` : "Satilamaz");
     this.sellButton?.setAlpha(canSell ? 1 : 0.42);
+    this.emitControlState();
   }
 
   private updateSkillButtons(cooldowns: number[], player?: GameSnapshot["players"][number]) {
@@ -3311,6 +3512,7 @@ export class GameScene extends Phaser.Scene {
     const authorityChain = player?.authorityChain ?? 0;
     const skillKey = `${cooldowns.join("|")}|${reputation}|${authorityChain}`;
     if (this.lastSkillKey === skillKey) {
+      this.emitControlState();
       return;
     }
     this.lastSkillKey = skillKey;
@@ -3327,6 +3529,7 @@ export class GameScene extends Phaser.Scene {
       this.skillButtons[index]?.setFillStyle(isDisabled ? 0x0f172a : 0x1e293b, isDisabled ? 0.72 : 0.94);
       this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });
+    this.emitControlState();
   }
 
   private updateZeynepChainPanel(isZeynep: boolean, authorityChain: number) {

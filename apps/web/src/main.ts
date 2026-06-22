@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { PreloaderScene } from "./scenes/PreloaderScene";
 import { GameScene } from "./scenes/GameScene";
+import { setupGameControlUi } from "./game-control-ui";
 import { setupMenuUi } from "./menu-ui";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./rendering";
 import "./style.css";
@@ -34,6 +35,7 @@ const game = new Phaser.Game({
 });
 
 setupMenuUi(game);
+setupGameControlUi(game);
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
