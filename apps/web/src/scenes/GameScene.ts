@@ -4070,7 +4070,7 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
     runner: 40,
     shooter: 38
   }[enemy.type] ?? 34;
-  const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : 1;
+  const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : enemy.race === "fallen" && enemy.type === "brute" ? 1.1 : 1;
   return base * raceMultiplier * (cellSize / TOWER_GRID_SIZE);
 }
 

@@ -983,7 +983,12 @@ function getEnemyImagePath(race: EnemyRace, type: EnemyType) {
 }
 
 function getEnemyImageClass(race: EnemyRace, type: EnemyType) {
-  return `enemy-game-sprite enemy-game-sprite--${type}${race === "spaceBug" && type === "brute" ? " enemy-game-sprite--space-bug-brute" : ""}`;
+  const variantClass = race === "spaceBug" && type === "brute"
+    ? " enemy-game-sprite--space-bug-brute"
+    : race === "fallen" && type === "brute"
+      ? " enemy-game-sprite--fallen-brute"
+      : "";
+  return `enemy-game-sprite enemy-game-sprite--${type}${variantClass}`;
 }
 
 function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {
