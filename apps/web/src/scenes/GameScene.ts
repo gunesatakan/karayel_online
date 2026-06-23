@@ -3053,7 +3053,7 @@ export class GameScene extends Phaser.Scene {
 
     container.add([plate, ...imageObjects, coldText, hotText, mainText, ...glitches]);
     this.rampageContainer = container;
-    this.cameras.main.shake(130 + chaos * 110, 0.0025 + chaos * 0.0024);
+    this.cameras.main.shake(120 + chaos * 160, 0.002 + chaos * chaos * 0.0011);
 
     this.tweens.add({
       targets: container,
@@ -3070,14 +3070,19 @@ export class GameScene extends Phaser.Scene {
       duration: Math.max(24, 58 - chaos * 6),
       ease: "Stepped"
     });
-    this.tweens.add({
-      targets: [...imageObjects, hotText, coldText],
-      x: `+=${5 + chaos * 3}`,
-      yoyo: true,
-      repeat: 12 + chaos * 6,
-      duration: Math.max(22, 48 - chaos * 4),
-      ease: "Stepped"
-    });
+    for (const target of [...imageObjects, hotText, coldText]) {
+      const baseX = target.x;
+      const jitter = 4 + chaos * 3;
+      this.tweens.add({
+        targets: target,
+        x: { from: baseX - jitter, to: baseX + jitter },
+        yoyo: true,
+        repeat: 14 + chaos * 8,
+        duration: Math.max(16, 44 - chaos * 5),
+        ease: "Stepped",
+        onComplete: () => target.setX(baseX)
+      });
+    }
     this.tweens.add({
       targets: glitches,
       x: `+=${18 + chaos * 10}`,
