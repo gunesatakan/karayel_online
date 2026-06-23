@@ -3011,21 +3011,21 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDisplaySize(...getMelisKillStreakImageDisplaySize(imageKey, width, height, chaos))
         .setAngle(imageAngle)
-        .setAlpha((imageKey === "melis-creepy-legend" ? 0.66 : imageKey === "melis-creepy-unstoppable" ? 0.5 : 0.58) * 0.8)
+        .setAlpha(imageKey === "melis-creepy-legend" ? 0.82 : imageKey === "melis-creepy-unstoppable" ? 0.74 : 0.78)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostA = this.add.image(image.x + 5 + chaos, image.y - 2, imageKey)
         .setOrigin(0.5)
         .setDisplaySize(image.displayWidth, image.displayHeight)
         .setAngle(imageAngle)
         .setTint(theme.secondary)
-        .setAlpha(0.14)
+        .setAlpha(0.22)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostB = this.add.image(image.x - 5 - chaos, image.y + 2, imageKey)
         .setOrigin(0.5)
         .setDisplaySize(image.displayWidth, image.displayHeight)
         .setAngle(imageAngle)
         .setTint(theme.primary)
-        .setAlpha(0.13)
+        .setAlpha(0.2)
         .setBlendMode(Phaser.BlendModes.ADD);
       imageObjects.push(imageGhostA, imageGhostB, image);
     }
@@ -3071,7 +3071,7 @@ export class GameScene extends Phaser.Scene {
       glitches.push(bar);
     }
 
-    container.add([...imageObjects, plate, coldText, hotText, mainText, motifText, ...glitches]);
+    container.add([plate, ...imageObjects, coldText, hotText, mainText, motifText, ...glitches]);
     this.rampageContainer = container;
     this.cameras.main.shake(130 + chaos * 180, 0.002 + chaos * chaos * 0.00125);
 
