@@ -3006,20 +3006,24 @@ export class GameScene extends Phaser.Scene {
 
     const imageObjects: Phaser.GameObjects.Image[] = [];
     if (imageKey) {
+      const imageAngle = getMelisKillStreakImageAngle(imageKey, chaos);
       const image = this.add.image(getMelisKillStreakImageOffsetX(imageKey, width), imageKey === "melis-creepy-legend" ? -4 : 0, imageKey)
         .setOrigin(0.5)
         .setDisplaySize(...getMelisKillStreakImageDisplaySize(imageKey, width, height, chaos))
+        .setAngle(imageAngle)
         .setAlpha((imageKey === "melis-creepy-legend" ? 0.66 : imageKey === "melis-creepy-unstoppable" ? 0.5 : 0.58) * 0.8)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostA = this.add.image(image.x + 5 + chaos, image.y - 2, imageKey)
         .setOrigin(0.5)
         .setDisplaySize(image.displayWidth, image.displayHeight)
+        .setAngle(imageAngle)
         .setTint(theme.secondary)
         .setAlpha(0.14)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostB = this.add.image(image.x - 5 - chaos, image.y + 2, imageKey)
         .setOrigin(0.5)
         .setDisplaySize(image.displayWidth, image.displayHeight)
+        .setAngle(imageAngle)
         .setTint(theme.primary)
         .setAlpha(0.13)
         .setBlendMode(Phaser.BlendModes.ADD);
@@ -4143,7 +4147,11 @@ function getMelisKillStreakImageDisplaySize(imageKey: string, plateHalfWidth: nu
 }
 
 function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
-  return imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.16 : 0;
+  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.94 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.92 : -plateHalfWidth * 0.88;
+}
+
+function getMelisKillStreakImageAngle(imageKey: string, chaos: number) {
+  return imageKey === "melis-creepy-unstoppable" ? -10 - chaos * 0.4 : -8 - chaos * 0.6;
 }
 
 function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule): KillStreakVisualTheme {
