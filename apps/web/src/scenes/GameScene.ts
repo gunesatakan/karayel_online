@@ -1867,7 +1867,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const enemy of enemies) {
       let mover = this.enemies.get(enemy.id);
-      const texture = `enemy-${enemy.type}`;
+      const texture = getEnemyTextureKey(enemy);
 
       if (!mover) {
         let sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
@@ -4071,6 +4071,10 @@ function getEnemySpriteDisplaySize(type: EnemySnapshot["type"], cellSize: number
     shooter: 38
   }[type] ?? 34;
   return base * (cellSize / TOWER_GRID_SIZE);
+}
+
+function getEnemyTextureKey(enemy: EnemySnapshot) {
+  return enemy.race === "meka" ? `enemy-${enemy.type}` : `enemy-${enemy.race}-${enemy.type}`;
 }
 
 function getRuntimePathTangentAngle(path: RuntimePath | undefined, pathDistance: number) {

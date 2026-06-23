@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { towerCatalog, type TowerDefinition } from "@karayel/shared";
 
+const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
+const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
+
 export class PreloaderScene extends Phaser.Scene {
   constructor() {
     super("preloader");
@@ -14,6 +17,11 @@ export class PreloaderScene extends Phaser.Scene {
     this.load.image("enemy-brute", "/images/enemies/enemy-brute.png");
     this.load.image("enemy-runner", "/images/enemies/enemy-runner.png");
     this.load.image("enemy-shooter", "/images/enemies/enemy-shooter.png");
+    for (const race of ENEMY_RACE_TEXTURES) {
+      for (const type of ENEMY_TYPE_TEXTURES) {
+        this.load.image(`enemy-${race}-${type}`, `/images/enemies/enemy-${race}-${type}.png`);
+      }
+    }
   }
 
   create() {

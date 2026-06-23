@@ -61,6 +61,7 @@ const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
 const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
+const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const GAME_SPEED_MULTIPLIER = 0.8;
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
@@ -1036,6 +1037,7 @@ export class MatchRoom extends Room<MatchState> {
     const roll = Math.random();
     const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
     const definition = getEnemyCombatDefinition(type);
+    const race = getEnemyRaceForWave(this.wave);
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
@@ -1050,7 +1052,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.set(id, {
       id,
       type,
-      race: definition.race,
+      race,
       x: start.x,
       y: start.y,
       hp: maxHp,
@@ -1060,7 +1062,7 @@ export class MatchRoom extends Room<MatchState> {
       shield: maxShield,
       maxShield,
       movementKind: isFlyingEnemy ? "air" : definition.movementKind,
-      damageResistances: getEnemyDamageResistances(definition),
+      damageResistances: getEnemyDamageResistances(definition, race),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
@@ -4934,6 +4936,10 @@ function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel,
   const traveledSq = distanceSq(previousX, previousY, projectile.x, projectile.y);
 
   return currentDistanceSq > previousDistanceSq && previousDistanceSq <= traveledSq + hitRadius * hitRadius;
+}
+
+function getEnemyRaceForWave(wave: number): EnemyRace {
+  return ENEMY_RACE_WAVE_ORDER[Math.max(0, wave - 1) % ENEMY_RACE_WAVE_ORDER.length];
 }
 
 function getEnemyCollisionRadius(enemy: EnemyModel) {

@@ -159,8 +159,11 @@ export function getEnemyCombatDefinition(enemyType: keyof typeof enemyCombatDefi
   return enemyCombatDefinitions[enemyType];
 }
 
-export function getEnemyDamageResistances(definition: EnemyCombatDefinition): ResistanceTable<DamageType> {
-  return combineResistanceTables(enemyRaceDefinitions[definition.race].damageResistances, definition.damageResistances);
+export function getEnemyDamageResistances(
+  definition: EnemyCombatDefinition,
+  race: EnemyRace = definition.race
+): ResistanceTable<DamageType> {
+  return combineResistanceTables(enemyRaceDefinitions[race].damageResistances, definition.damageResistances);
 }
 
 export function combineResistanceTables<T extends string>(

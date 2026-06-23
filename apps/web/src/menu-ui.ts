@@ -15,6 +15,7 @@ import {
   type CharacterDefinition,
   type CharacterId,
   type EditableMapData,
+  type EnemyRace,
   type EnemyType,
   type LobbyStateSnapshot,
   type MapScale,
@@ -46,6 +47,14 @@ type SavedMapRecord = {
 
 const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
 const MAP_RECORDS_STORAGE_KEY = "karayel:custom-maps:v2";
+const enemyRaceOrder: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
+const enemyTypeOrder: EnemyType[] = ["grunt", "brute", "runner", "shooter"];
+const enemyTypeLabels: Record<EnemyType, string> = {
+  grunt: "Sürü",
+  brute: "Ezici",
+  runner: "Koşucu",
+  shooter: "Atıcı"
+};
 
 const classColor: Record<CharacterId, string> = {
   zeynep: "#ec4899",
@@ -810,7 +819,7 @@ function renderBestiary() {
           return `
             <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
               <div class="bestiary-card__visual" aria-hidden="true">
-                <img class="enemy-game-sprite enemy-game-sprite--${type}" src="/images/enemies/enemy-${type}.png" alt="" />
+                <img class="enemy-game-sprite enemy-game-sprite--${type}" src="${getEnemyImagePath(definition.race, type)}" alt="" />
               </div>
               <div class="bestiary-card__copy">
                 <p class="kicker">${escapeHtml(dossier.title)}</p>
@@ -839,6 +848,26 @@ function renderBestiary() {
             </article>
           `;
         }).join("")}
+      </section>
+
+      <section class="selected-dossier bestiary-note">
+        <p class="kicker">Irk Varyantları</p>
+        <h2>Dalga kimlikleri</h2>
+        <div class="bestiary-race-gallery">
+          ${enemyRaceOrder.map((race) => `
+            <article class="bestiary-race-row">
+              <strong>${escapeHtml(formatEnemyRace(race))}</strong>
+              <div>
+                ${enemyTypeOrder.map((type) => `
+                  <figure>
+                    <img class="enemy-game-sprite enemy-game-sprite--${type}" src="${getEnemyImagePath(race, type)}" alt="" />
+                    <figcaption>${escapeHtml(enemyTypeLabels[type])}</figcaption>
+                  </figure>
+                `).join("")}
+              </div>
+            </article>
+          `).join("")}
+        </div>
       </section>
 
       <section class="selected-dossier bestiary-note">
@@ -947,6 +976,10 @@ function formatEnemyRace(race: string) {
     fallen: "Düşmüş",
     golem: "Golem"
   }[race] ?? race;
+}
+
+function getEnemyImagePath(race: EnemyRace, type: EnemyType) {
+  return race === "meka" ? `/images/enemies/enemy-${type}.png` : `/images/enemies/enemy-${race}-${type}.png`;
 }
 
 function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {
