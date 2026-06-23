@@ -1908,13 +1908,13 @@ export class GameScene extends Phaser.Scene {
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
       mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
-      const baseSpriteScale = getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) / 512;
+      const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
-      const displayedEnemySize = getEnemySpriteDisplaySize(enemy.type, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
+      const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
       const shieldRadius = displayedEnemySize * 0.48;
       mover.shieldHalo?.setPosition(enemy.x, enemy.y);
       mover.shieldHalo?.setDepth(enemy.movementKind === "air" ? 8.6 : 7.6);
@@ -4063,14 +4063,15 @@ function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
 }
 
-function getEnemySpriteDisplaySize(type: EnemySnapshot["type"], cellSize: number) {
+function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
   const base = {
     grunt: 34,
     brute: 43.2,
     runner: 40,
     shooter: 38
-  }[type] ?? 34;
-  return base * (cellSize / TOWER_GRID_SIZE);
+  }[enemy.type] ?? 34;
+  const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : 1;
+  return base * raceMultiplier * (cellSize / TOWER_GRID_SIZE);
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {

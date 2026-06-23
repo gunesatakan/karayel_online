@@ -732,6 +732,11 @@ canvas {
   height: 76px;
 }
 
+.enemy-game-sprite--space-bug-brute {
+  width: 107px;
+  height: 107px;
+}
+
 .bestiary-race-gallery {
   display: grid;
   gap: 12px;
@@ -772,6 +777,11 @@ canvas {
 .bestiary-race-row .enemy-game-sprite {
   width: 54px;
   height: 54px;
+}
+
+.bestiary-race-row .enemy-game-sprite--space-bug-brute {
+  width: 70px;
+  height: 70px;
 }
 
 .bestiary-race-row figcaption {

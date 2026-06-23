@@ -819,7 +819,7 @@ function renderBestiary() {
           return `
             <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
               <div class="bestiary-card__visual" aria-hidden="true">
-                <img class="enemy-game-sprite enemy-game-sprite--${type}" src="${getEnemyImagePath(definition.race, type)}" alt="" />
+                <img class="${getEnemyImageClass(definition.race, type)}" src="${getEnemyImagePath(definition.race, type)}" alt="" />
               </div>
               <div class="bestiary-card__copy">
                 <p class="kicker">${escapeHtml(dossier.title)}</p>
@@ -860,7 +860,7 @@ function renderBestiary() {
               <div>
                 ${enemyTypeOrder.map((type) => `
                   <figure>
-                    <img class="enemy-game-sprite enemy-game-sprite--${type}" src="${getEnemyImagePath(race, type)}" alt="" />
+                    <img class="${getEnemyImageClass(race, type)}" src="${getEnemyImagePath(race, type)}" alt="" />
                     <figcaption>${escapeHtml(enemyTypeLabels[type])}</figcaption>
                   </figure>
                 `).join("")}
@@ -980,6 +980,10 @@ function formatEnemyRace(race: string) {
 
 function getEnemyImagePath(race: EnemyRace, type: EnemyType) {
   return race === "meka" ? `/images/enemies/enemy-${type}.png` : `/images/enemies/enemy-${race}-${type}.png`;
+}
+
+function getEnemyImageClass(race: EnemyRace, type: EnemyType) {
+  return `enemy-game-sprite enemy-game-sprite--${type}${race === "spaceBug" && type === "brute" ? " enemy-game-sprite--space-bug-brute" : ""}`;
 }
 
 function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {
