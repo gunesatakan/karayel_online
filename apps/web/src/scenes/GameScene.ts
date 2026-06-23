@@ -4144,7 +4144,7 @@ function getMelisKillStreakImageDisplaySize(scene: Phaser.Scene, imageKey: strin
 }
 
 function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
-  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.66 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.64 : -plateHalfWidth * 0.6;
+  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.66 + 3 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.64 : -plateHalfWidth * 0.6;
 }
 
 function getMelisKillStreakImageOffsetY(imageKey: string, plateHalfHeight: number) {
