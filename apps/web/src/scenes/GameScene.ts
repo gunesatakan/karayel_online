@@ -3009,7 +3009,7 @@ export class GameScene extends Phaser.Scene {
       const imageAngle = getMelisKillStreakImageAngle(imageKey, chaos);
       const image = this.add.image(getMelisKillStreakImageOffsetX(imageKey, width), getMelisKillStreakImageOffsetY(imageKey, height), imageKey)
         .setOrigin(0.5)
-        .setDisplaySize(...getMelisKillStreakImageDisplaySize(imageKey, width, height, chaos))
+        .setDisplaySize(...getMelisKillStreakImageDisplaySize(this, imageKey, width, height, chaos))
         .setAngle(imageAngle)
         .setAlpha(imageKey === "melis-creepy-legend" ? 0.82 : imageKey === "melis-creepy-unstoppable" ? 0.74 : 0.78)
         .setBlendMode(Phaser.BlendModes.ADD);
@@ -4134,20 +4134,24 @@ function getKillStreakRuleByTier(tier: KillStreakTier) {
   return KILL_STREAK_RULES.find((rule) => rule.tier === tier);
 }
 
-function getMelisKillStreakImageDisplaySize(imageKey: string, plateHalfWidth: number, plateHalfHeight: number, chaos: number): [number, number] {
+function getMelisKillStreakImageDisplaySize(scene: Phaser.Scene, imageKey: string, plateHalfWidth: number, plateHalfHeight: number, chaos: number): [number, number] {
+  const source = scene.textures.get(imageKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+  const aspectRatio = source.width / source.height;
+  const fromHeight = (height: number): [number, number] => [height * aspectRatio, height];
+
   if (imageKey === "melis-creepy-legend") {
-    return [plateHalfWidth * 1.18, plateHalfHeight * 2.05];
+    return fromHeight(plateHalfHeight * 2.05);
   }
 
   if (imageKey === "melis-creepy-unstoppable") {
-    return [plateHalfWidth * 0.82, plateHalfHeight * 1.8];
+    return fromHeight(plateHalfHeight * 1.8);
   }
 
-  return [plateHalfWidth * 0.86, plateHalfHeight * 1.75];
+  return fromHeight(plateHalfHeight * 1.75);
 }
 
 function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
-  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.78 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.76 : -plateHalfWidth * 0.72;
+  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.66 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.64 : -plateHalfWidth * 0.6;
 }
 
 function getMelisKillStreakImageOffsetY(imageKey: string, plateHalfHeight: number) {
