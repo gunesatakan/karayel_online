@@ -2995,22 +2995,24 @@ export class GameScene extends Phaser.Scene {
 
     const imageObjects: Phaser.GameObjects.Image[] = [];
     if (imageKey) {
+      const imageX = getMelisKillStreakImageOffsetX(imageKey, width);
       const image = this.add.image(0, 0, imageKey)
         .setOrigin(0.5)
+        .setX(imageX)
         .setScale(getMelisKillStreakImageScale(this, imageKey, width, height, chaos))
-        .setAlpha(imageKey === "melis-creepy-legend" ? 0.82 : imageKey === "melis-creepy-unstoppable" ? 0.66 : 0.72)
+        .setAlpha((imageKey === "melis-creepy-legend" ? 0.82 : imageKey === "melis-creepy-unstoppable" ? 0.66 : 0.72) * 0.8)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostA = this.add.image(image.x + 7 + chaos * 2, image.y - 3, imageKey)
         .setOrigin(0.5)
         .setScale(image.scaleX)
         .setTint(theme.secondary)
-        .setAlpha(0.26)
+        .setAlpha(0.26 * 0.8)
         .setBlendMode(Phaser.BlendModes.ADD);
       const imageGhostB = this.add.image(image.x - 7 - chaos * 2, image.y + 3, imageKey)
         .setOrigin(0.5)
         .setScale(image.scaleX)
         .setTint(theme.primary)
-        .setAlpha(0.24)
+        .setAlpha(0.24 * 0.8)
         .setBlendMode(Phaser.BlendModes.ADD);
       imageObjects.push(imageGhostA, imageGhostB, image);
     }
@@ -4125,7 +4127,11 @@ function getMelisKillStreakImageScale(scene: Phaser.Scene, imageKey: string, pla
   const source = scene.textures.get(imageKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
   const targetWidth = plateHalfWidth * 2.1;
   const targetHeight = plateHalfHeight * 2.1;
-  return Math.max(targetWidth / source.width, targetHeight / source.height) * 0.5;
+  return Math.max(targetWidth / source.width, targetHeight / source.height) * 0.4;
+}
+
+function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
+  return imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.2 : 0;
 }
 
 function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule): KillStreakVisualTheme {
@@ -4167,11 +4173,11 @@ function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule
       style: "creepy",
       textColor: rule.chaos >= 4 ? "#fff1f2" : "#fdf4ff",
       strokeColor: "#050013",
-      motif: rule.chaos >= 4 ? "GOTHIC NIGHTMARE / APPROVAL ERROR" : rule.chaos >= 3 ? "STRESS BLOOM / HEART GLITCH" : "CREEP SMILE / APPROVAL SPIKE",
-      imageKey: rule.tier === "granted" ? null : rule.tier === "unstoppable" ? "melis-creepy-unstoppable" : rule.chaos >= 3 ? "melis-creepy-legend" : "melis-creepy",
+      motif: rule.chaos >= 4 ? "GOTHIC HORROR / BLOOD MIRROR" : rule.chaos >= 3 ? "CURSED BLOOM / CRIMSON STATIC" : "DARK FANTASY / HAUNTED APPROVAL",
+      imageKey: rule.tier === "unstoppable" ? "melis-creepy-unstoppable" : rule.chaos >= 3 ? "melis-creepy-legend" : "melis-creepy",
       colors: rule.chaos >= 3
-        ? [0xef4444, 0x7f1d1d, 0xf0abfc, 0x050008] as const
-        : [0xec4899, 0x2563eb, 0xa855f7, 0x050013] as const
+        ? [0xdc2626, 0x581c87, 0xf0abfc, 0x050008] as const
+        : [0xbe123c, 0x6d28d9, 0xf43f5e, 0x07000f] as const
     },
     mage: {
       style: "arcane",
