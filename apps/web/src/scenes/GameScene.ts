@@ -3052,13 +3052,6 @@ export class GameScene extends Phaser.Scene {
       color: toCssColor(theme.secondary),
       strokeThickness: 3
     }).setOrigin(0.5).setAlpha(0.32);
-    const motifText = this.add.text(-width + 28, -height + 10, theme.motif, {
-      fontFamily: "Arial Black, Arial",
-      fontSize: "10px",
-      color: toCssColor(theme.accent),
-      stroke: "#020617",
-      strokeThickness: 3
-    }).setOrigin(0, 0.5).setAlpha(0.82);
     const glitches: Phaser.GameObjects.Rectangle[] = [];
     const glitchCount = 7 + chaos * 4;
     for (let index = 0; index < glitchCount; index += 1) {
@@ -3071,7 +3064,7 @@ export class GameScene extends Phaser.Scene {
       glitches.push(bar);
     }
 
-    container.add([plate, ...imageObjects, coldText, hotText, mainText, motifText, ...glitches]);
+    container.add([plate, coldText, hotText, mainText, ...glitches, ...imageObjects]);
     this.rampageContainer = container;
     this.cameras.main.shake(130 + chaos * 180, 0.002 + chaos * chaos * 0.00125);
 
