@@ -4125,7 +4125,7 @@ function getMelisKillStreakImageScale(scene: Phaser.Scene, imageKey: string, pla
   const source = scene.textures.get(imageKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
   const targetWidth = plateHalfWidth * 2.1;
   const targetHeight = plateHalfHeight * 2.1;
-  return Math.max(targetWidth / source.width, targetHeight / source.height);
+  return Math.max(targetWidth / source.width, targetHeight / source.height) * 0.5;
 }
 
 function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule): KillStreakVisualTheme {
