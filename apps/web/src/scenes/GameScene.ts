@@ -3007,7 +3007,7 @@ export class GameScene extends Phaser.Scene {
     const imageObjects: Phaser.GameObjects.Image[] = [];
     if (imageKey) {
       const imageAngle = getMelisKillStreakImageAngle(imageKey, chaos);
-      const image = this.add.image(getMelisKillStreakImageOffsetX(imageKey, width), imageKey === "melis-creepy-legend" ? -4 : 0, imageKey)
+      const image = this.add.image(getMelisKillStreakImageOffsetX(imageKey, width), getMelisKillStreakImageOffsetY(imageKey, height), imageKey)
         .setOrigin(0.5)
         .setDisplaySize(...getMelisKillStreakImageDisplaySize(imageKey, width, height, chaos))
         .setAngle(imageAngle)
@@ -3071,7 +3071,7 @@ export class GameScene extends Phaser.Scene {
       glitches.push(bar);
     }
 
-    container.add([plate, ...imageObjects, coldText, hotText, mainText, motifText, ...glitches]);
+    container.add([...imageObjects, plate, coldText, hotText, mainText, motifText, ...glitches]);
     this.rampageContainer = container;
     this.cameras.main.shake(130 + chaos * 180, 0.002 + chaos * chaos * 0.00125);
 
@@ -4148,6 +4148,10 @@ function getMelisKillStreakImageDisplaySize(imageKey: string, plateHalfWidth: nu
 
 function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
   return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.94 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.92 : -plateHalfWidth * 0.88;
+}
+
+function getMelisKillStreakImageOffsetY(imageKey: string, plateHalfHeight: number) {
+  return imageKey === "melis-creepy-legend" ? -plateHalfHeight * 1.12 : imageKey === "melis-creepy-unstoppable" ? -plateHalfHeight * 1.08 : -plateHalfHeight * 1;
 }
 
 function getMelisKillStreakImageAngle(imageKey: string, chaos: number) {
