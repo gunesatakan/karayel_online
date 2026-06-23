@@ -4147,11 +4147,11 @@ function getMelisKillStreakImageDisplaySize(imageKey: string, plateHalfWidth: nu
 }
 
 function getMelisKillStreakImageOffsetX(imageKey: string, plateHalfWidth: number) {
-  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.94 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.92 : -plateHalfWidth * 0.88;
+  return imageKey === "melis-creepy-legend" ? -plateHalfWidth * 0.78 : imageKey === "melis-creepy-unstoppable" ? -plateHalfWidth * 0.76 : -plateHalfWidth * 0.72;
 }
 
 function getMelisKillStreakImageOffsetY(imageKey: string, plateHalfHeight: number) {
-  return imageKey === "melis-creepy-legend" ? -plateHalfHeight * 1.12 : imageKey === "melis-creepy-unstoppable" ? -plateHalfHeight * 1.08 : -plateHalfHeight * 1;
+  return imageKey === "melis-creepy-legend" ? -plateHalfHeight * 0.72 : imageKey === "melis-creepy-unstoppable" ? -plateHalfHeight * 0.68 : -plateHalfHeight * 0.62;
 }
 
 function getMelisKillStreakImageAngle(imageKey: string, chaos: number) {
