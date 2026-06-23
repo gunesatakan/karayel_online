@@ -3204,7 +3204,9 @@ export class MatchRoom extends Room<MatchState> {
         if (distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)) {
           return lockedTarget;
         }
-        this.triggerMelisRageWave(tower);
+        if (lockedTarget.fearUntil <= Date.now()) {
+          this.triggerMelisRageWave(tower);
+        }
       }
       tower.focusTargetId = "";
     }
