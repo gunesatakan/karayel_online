@@ -125,6 +125,8 @@ const MELIS_BULLY_DURATION_MS = 7000;
 const MELIS_BULLY_DAMAGE_RADIUS = 70;
 const MELIS_PARLAMA_FEAR_MS = 2200;
 const MELIS_PARLAMA_RAGE_RADIUS = 92;
+const MELIS_INITIAL_APPROVAL = 6;
+const MELIS_INITIAL_STRESS = 6;
 
 class Player extends Schema {
   @type("string") name = "";
@@ -654,6 +656,7 @@ export class MatchRoom extends Room<MatchState> {
     player.ready = false;
     player.connected = true;
     player.gold = TEAM_START_GOLD;
+    this.initializeMelisSpectrum(player);
 
     this.state.players.set(client.sessionId, player);
     if (!this.hostSessionId) {
@@ -707,6 +710,7 @@ export class MatchRoom extends Room<MatchState> {
     player.ready = true;
     player.connected = true;
     player.gold = TEAM_START_GOLD;
+    this.initializeMelisSpectrum(player);
     this.state.players.set(client.sessionId, player);
     this.sendLobbyState(client);
     client.send("lobby:started", { roomId: this.roomId });
@@ -762,8 +766,25 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     player.characterId = characterId;
+    this.initializeMelisSpectrum(player);
     player.ready = false;
     this.broadcastLobbyState();
+  }
+
+  private initializeMelisSpectrum(player: Player) {
+    if (player.characterId !== "archer") {
+      player.approval = 0;
+      player.stress = 0;
+      player.currentWaveApproval = 0;
+      player.lastWaveApproval = -1;
+      player.sameApprovalWaveCount = 0;
+      return;
+    }
+
+    if (player.approval <= 0 && player.stress <= 0) {
+      player.approval = MELIS_INITIAL_APPROVAL;
+      player.stress = MELIS_INITIAL_STRESS;
+    }
   }
 
   private setLobbyReady(client: Client, ready: boolean | undefined) {
