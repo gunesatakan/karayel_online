@@ -217,21 +217,25 @@ export function setupGameControlUi(game: Phaser.Game) {
     const shell = document.createElement("section");
     shell.className = `game-controls__melis-spectrum game-controls__melis-spectrum--${spectrum.zone}`;
     shell.style.setProperty("--stress-ratio", String(spectrum.ratio));
+    const approvalValue = Math.floor(spectrum.approval);
+    const stressValue = Math.floor(spectrum.stress);
+    const approvalPercent = Math.round((1 - spectrum.ratio) * 100);
+    const stressPercent = Math.round(spectrum.ratio * 100);
 
     const header = document.createElement("div");
     header.className = "melis-spectrum__header";
 
     const approval = document.createElement("span");
     approval.className = "melis-spectrum__side melis-spectrum__side--approval";
-    approval.textContent = `Onay ${Math.floor(spectrum.approval)}`;
+    approval.textContent = String(approvalValue);
 
     const stateLabel = document.createElement("strong");
     stateLabel.className = "melis-spectrum__state";
-    stateLabel.textContent = spectrum.zone === "approval" ? "ONAY DOMINANT" : spectrum.zone === "stress" ? "STRES DOMINANT" : "DENGE";
+    stateLabel.textContent = `${approvalPercent}/${stressPercent}`;
 
     const stress = document.createElement("span");
     stress.className = "melis-spectrum__side melis-spectrum__side--stress";
-    stress.textContent = `Stres ${Math.floor(spectrum.stress)}`;
+    stress.textContent = String(stressValue);
 
     header.append(approval, stateLabel, stress);
 
@@ -244,7 +248,7 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     const footer = document.createElement("div");
     footer.className = "melis-spectrum__footer";
-    footer.textContent = `Yogunluk ${Math.floor(spectrum.intensity)} | Turkuaz sakinlikten kirmizi baskiya`;
+    footer.textContent = `${approvalValue}:${stressValue}`;
 
     shell.append(header, meter, footer);
     return shell;

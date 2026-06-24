@@ -75,8 +75,8 @@ canvas {
   right: 8px;
   bottom: calc(var(--game-controls-panel-height) + max(8px, env(safe-area-inset-bottom)));
   display: grid;
-  gap: 5px;
-  padding: 8px 10px 7px;
+  gap: 4px;
+  padding: 7px 10px 6px;
   box-sizing: border-box;
   pointer-events: none;
   color: #e0f2fe;
@@ -138,11 +138,11 @@ canvas {
 }
 
 .melis-spectrum__header {
-  grid-template-columns: 1fr auto 1fr;
-  gap: 8px;
+  grid-template-columns: 52px 1fr 52px;
+  gap: 10px;
   min-width: 0;
   font-family: Rajdhani, "Exo 2", Arial, sans-serif;
-  font-size: clamp(9px, 2.55vw, 11px);
+  font-size: clamp(13px, 3.6vw, 16px);
   font-weight: 900;
   line-height: 1;
   text-transform: uppercase;
@@ -153,20 +153,28 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .melis-spectrum__side--approval {
   color: #a5f3fc;
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.66);
 }
 
 .melis-spectrum__side--stress {
   color: #fecaca;
   text-align: right;
+  text-shadow: 0 0 12px rgba(239, 68, 68, 0.66);
 }
 
 .melis-spectrum__state {
   color: #f8fafc;
-  font-size: clamp(10px, 2.8vw, 12px);
+  justify-self: center;
+  padding: 2px 10px;
+  border: 1px solid rgba(226, 232, 240, 0.28);
+  background: rgba(2, 6, 23, 0.46);
+  font-size: clamp(11px, 3vw, 14px);
+  font-variant-numeric: tabular-nums;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.38);
   white-space: nowrap;
 }
@@ -189,7 +197,7 @@ canvas {
 .melis-spectrum__meter {
   position: relative;
   z-index: 1;
-  height: 13px;
+  height: 14px;
   overflow: hidden;
   background:
     linear-gradient(90deg, #22d3ee 0%, #2dd4bf 24%, #facc15 50%, #fb7185 74%, #ef4444 100%);
@@ -256,13 +264,15 @@ canvas {
 
 .melis-spectrum__footer {
   grid-template-columns: 1fr;
-  color: #94a3b8;
-  font-size: clamp(8px, 2.25vw, 10px);
+  justify-items: center;
+  color: rgba(226, 232, 240, 0.74);
+  font-size: clamp(9px, 2.5vw, 11px);
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .game-controls__skills,
