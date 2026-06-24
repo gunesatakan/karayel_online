@@ -239,8 +239,6 @@ export class GameScene extends Phaser.Scene {
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
-  private melisSpectrumGraphics?: Phaser.GameObjects.Graphics;
-  private melisSpectrumText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
   private perfText?: Phaser.GameObjects.Text;
   private perfInfoText?: Phaser.GameObjects.Text;
@@ -442,13 +440,6 @@ export class GameScene extends Phaser.Scene {
       fontSize: "12px",
       fontStyle: "bold"
     }).setDepth(21);
-    this.melisSpectrumGraphics = this.add.graphics().setDepth(22).setVisible(false);
-    this.melisSpectrumText = this.add.text(16, 70, "", {
-      color: "#e0f2fe",
-      fontFamily: "Arial",
-      fontSize: "9px",
-      fontStyle: "bold"
-    }).setDepth(23).setVisible(false);
     this.pingText = this.add.text(GAME_WORLD_WIDTH - 42, 16, "-- ms", {
       color: "#cbd5e1",
       fontFamily: "Arial",
@@ -1850,56 +1841,8 @@ export class GameScene extends Phaser.Scene {
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
     }
-    this.updateMelisSpectrumHud(player, approval, stress);
-
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);
     this.updateSelectionUi();
-  }
-
-  private updateMelisSpectrumHud(player: GameSnapshot["players"][number] | undefined, approval: number, stress: number) {
-    if (!this.melisSpectrumGraphics || !this.melisSpectrumText) {
-      return;
-    }
-
-    if (player?.characterId !== "archer") {
-      this.melisSpectrumGraphics.clear().setVisible(false);
-      this.melisSpectrumText.setVisible(false);
-      return;
-    }
-
-    const graphics = this.melisSpectrumGraphics;
-    const total = Math.max(1, approval + stress);
-    const stressRatio = Phaser.Math.Clamp(stress / total, 0, 1);
-    const intensity = approval + stress;
-    const x = 16;
-    const y = 73;
-    const width = 168;
-    const height = 7;
-    const radius = 3.5;
-    const segments = 28;
-    const markerX = x + stressRatio * width;
-    const zone = stressRatio < 0.32 ? "Onay" : stressRatio > 0.68 ? "Stres" : "Denge";
-
-    graphics.clear().setVisible(true);
-    graphics.fillStyle(0x020617, 0.82);
-    graphics.fillRoundedRect(x - 2, y - 2, width + 4, height + 4, radius + 2);
-    for (let index = 0; index < segments; index += 1) {
-      const t = index / Math.max(1, segments - 1);
-      const color = interpolateColor(0x22d3ee, 0xef4444, t);
-      graphics.fillStyle(color, 0.92);
-      graphics.fillRect(x + (width / segments) * index, y, width / segments + 0.5, height);
-    }
-    graphics.lineStyle(1, 0xe0f2fe, 0.52);
-    graphics.strokeRoundedRect(x - 2, y - 2, width + 4, height + 4, radius + 2);
-    graphics.lineStyle(2, 0xf8fafc, 0.95);
-    graphics.lineBetween(markerX, y - 4, markerX, y + height + 4);
-    graphics.fillStyle(stressRatio >= 0.5 ? 0xfca5a5 : 0x67e8f9, 0.95);
-    graphics.fillTriangle(markerX, y - 6, markerX - 4, y - 1, markerX + 4, y - 1);
-
-    this.melisSpectrumText
-      .setText(`Onay ${Math.floor(approval)}  ${zone}  Stres ${Math.floor(stress)}  Yogunluk ${Math.floor(intensity)}`)
-      .setColor(stressRatio > 0.68 ? "#fecaca" : stressRatio < 0.32 ? "#a5f3fc" : "#fef3c7")
-      .setVisible(true);
   }
 
   private renderEnemies(enemies: EnemySnapshot[]) {
@@ -3636,6 +3579,10 @@ export class GameScene extends Phaser.Scene {
     const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
     const reputation = this.localPlayerSnapshot?.reputation ?? 0;
     const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
+    const approval = this.localPlayerSnapshot?.approval ?? 0;
+    const stress = this.localPlayerSnapshot?.stress ?? 0;
+    const spectrumTotal = Math.max(1, approval + stress);
+    const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
 
     const towerHint = selectedTower
       ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
@@ -3673,6 +3620,13 @@ export class GameScene extends Phaser.Scene {
       zeynepChain: this.localPlayerSnapshot?.characterId === "zeynep" ? {
         value: authorityChain,
         ready: authorityChain >= 2
+      } : undefined,
+      melisSpectrum: this.localPlayerSnapshot?.characterId === "archer" ? {
+        approval,
+        stress,
+        ratio: stressRatio,
+        zone: stressRatio < 0.32 ? "approval" : stressRatio > 0.68 ? "stress" : "balanced",
+        intensity: approval + stress
       } : undefined,
       ultimate: {
         charge: this.currentUltimateCharge,
@@ -4415,20 +4369,4 @@ function getZeynepSlowTextColor(tierLevel: number) {
 
 function toCssColor(color: number) {
   return `#${color.toString(16).padStart(6, "0")}`;
-}
-
-function interpolateColor(from: number, to: number, ratio: number) {
-  const clampedRatio = Phaser.Math.Clamp(ratio, 0, 1);
-  const fromRed = (from >> 16) & 0xff;
-  const fromGreen = (from >> 8) & 0xff;
-  const fromBlue = from & 0xff;
-  const toRed = (to >> 16) & 0xff;
-  const toGreen = (to >> 8) & 0xff;
-  const toBlue = to & 0xff;
-
-  return Phaser.Display.Color.GetColor(
-    Math.round(fromRed + (toRed - fromRed) * clampedRatio),
-    Math.round(fromGreen + (toGreen - fromGreen) * clampedRatio),
-    Math.round(fromBlue + (toBlue - fromBlue) * clampedRatio)
-  );
 }

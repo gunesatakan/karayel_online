@@ -14,6 +14,7 @@ type ControlState = {
   skills?: Array<{ slot: number; name: string; label: string; disabled: boolean }>;
   zeynepTier?: { slot: number; reputation: number };
   zeynepChain?: { value: number; ready: boolean };
+  melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
@@ -96,6 +97,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
 
     root.replaceChildren();
+
+    if (state.melisSpectrum) {
+      root.append(makeMelisSpectrum(state.melisSpectrum));
+    }
 
     const panel = document.createElement("section");
     panel.className = "game-controls__panel";
@@ -206,6 +211,43 @@ export function setupGameControlUi(game: Phaser.Game) {
       dispatch({ action: "towerDragStart", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
     });
     return button;
+  };
+
+  const makeMelisSpectrum = (spectrum: NonNullable<ControlState["melisSpectrum"]>) => {
+    const shell = document.createElement("section");
+    shell.className = `game-controls__melis-spectrum game-controls__melis-spectrum--${spectrum.zone}`;
+    shell.style.setProperty("--stress-ratio", String(spectrum.ratio));
+
+    const header = document.createElement("div");
+    header.className = "melis-spectrum__header";
+
+    const approval = document.createElement("span");
+    approval.className = "melis-spectrum__side melis-spectrum__side--approval";
+    approval.textContent = `Onay ${Math.floor(spectrum.approval)}`;
+
+    const stateLabel = document.createElement("strong");
+    stateLabel.className = "melis-spectrum__state";
+    stateLabel.textContent = spectrum.zone === "approval" ? "ONAY DOMINANT" : spectrum.zone === "stress" ? "STRES DOMINANT" : "DENGE";
+
+    const stress = document.createElement("span");
+    stress.className = "melis-spectrum__side melis-spectrum__side--stress";
+    stress.textContent = `Stres ${Math.floor(spectrum.stress)}`;
+
+    header.append(approval, stateLabel, stress);
+
+    const meter = document.createElement("div");
+    meter.className = "melis-spectrum__meter";
+
+    const marker = document.createElement("div");
+    marker.className = "melis-spectrum__marker";
+    meter.append(marker);
+
+    const footer = document.createElement("div");
+    footer.className = "melis-spectrum__footer";
+    footer.textContent = `Yogunluk ${Math.floor(spectrum.intensity)} | Turkuaz sakinlikten kirmizi baskiya`;
+
+    shell.append(header, meter, footer);
+    return shell;
   };
 
   game.events.on("game:controls-state", render);
