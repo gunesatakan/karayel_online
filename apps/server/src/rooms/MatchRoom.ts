@@ -125,6 +125,7 @@ const MELIS_BULLY_DURATION_MS = 7000;
 const MELIS_BULLY_DAMAGE_RADIUS = 70;
 const MELIS_PARLAMA_FEAR_MS = 2200;
 const MELIS_PARLAMA_RAGE_RADIUS = 92;
+const MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS = 500;
 const MELIS_INITIAL_APPROVAL = 6;
 const MELIS_INITIAL_STRESS = 6;
 
@@ -3213,7 +3214,8 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "archer-1") {
       const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
-      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget)) {
+      const range = this.getTowerRange(tower);
+      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget) && distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= range * range) {
         return lockedTarget;
       }
       tower.focusTargetId = "";
@@ -3600,6 +3602,10 @@ export class MatchRoom extends Room<MatchState> {
       enemy.fearUntil = Math.max(enemy.fearUntil, now + scaleGameDuration(duration));
     }
 
+    if (this.isMelisStressDominant(tower)) {
+      this.pauseFriendlyTowersInMelisParlamaArea(tower, now);
+    }
+
     const beamId = `melis-rage-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(beamId, {
       id: beamId,
@@ -3613,6 +3619,20 @@ export class MatchRoom extends Room<MatchState> {
       overdrive: false,
       ttlMs: 380
     });
+  }
+
+  private pauseFriendlyTowersInMelisParlamaArea(tower: TowerModel, now: number) {
+    const radius = this.getTowerRange(tower);
+    const radiusSq = radius * radius;
+    const pauseUntil = now + scaleGameDuration(MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS);
+
+    for (const candidate of this.towers.values()) {
+      if (candidate.id === tower.id || distanceSq(tower.x, tower.y, candidate.x, candidate.y) > radiusSq) {
+        continue;
+      }
+
+      candidate.offlineUntil = Math.max(candidate.offlineUntil, pauseUntil);
+    }
   }
 
   private updateSkillCooldowns(deltaTime: number) {
@@ -3811,7 +3831,7 @@ export class MatchRoom extends Room<MatchState> {
       return GAME_WORLD_HEIGHT;
     }
 
-    if (tower.definition.id === "archer-1") {
+    if (tower.definition.id === "archer-1" && this.isMelisStressDominant(tower)) {
       return GAME_WORLD_HEIGHT * 4 * (1 + tower.melisEvolutionLevel * 0.12);
     }
 
@@ -4108,6 +4128,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private isMelisFavoriteTower(tower: TowerModel) {
     return tower.characterId === "archer" && (this.melisFavoriteTowerIds.get(tower.ownerId) ?? []).includes(tower.id);
+  }
+
+  private isMelisStressDominant(tower: TowerModel) {
+    if (tower.characterId !== "archer") {
+      return false;
+    }
+
+    const player = this.state.players.get(tower.ownerId);
+    return Boolean(player && player.stress > player.approval);
   }
 
   private getMelisFavoriteDamageMultiplier(tower: TowerModel) {
