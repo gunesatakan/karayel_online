@@ -63,6 +63,7 @@ const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
 const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const GAME_SPEED_MULTIPLIER = 0.8;
+const GLOBAL_TOWER_RANGE_MULTIPLIER = 2 / 3;
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
@@ -3944,7 +3945,7 @@ export class MatchRoom extends Room<MatchState> {
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
-      return this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
+      return this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
@@ -3956,18 +3957,18 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "zeynep-2") {
-      return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier);
+      return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
     }
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
       if (composition.mode) {
         const baseRange = this.getZeynepSynthesisBaseRange(composition);
-        return this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier);
+        return this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
       }
     }
 
-    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower));
+    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER);
   }
 
   private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {
