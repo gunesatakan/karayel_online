@@ -126,6 +126,11 @@ const MELIS_BULLY_DAMAGE_RADIUS = 70;
 const MELIS_PARLAMA_FEAR_MS = 2200;
 const MELIS_PARLAMA_RAGE_RADIUS = 92;
 const MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS = 500;
+const MELIS_CURSE_NORMAL_DURATION_MS = 5000;
+const MELIS_CURSE_STRESS_DURATION_MS = 3000;
+const MELIS_CURSE_APPROVAL_DURATION_MS = 7000;
+const MELIS_CURSE_STRESS_AREA_MULTIPLIER = 1.45;
+const MELIS_CURSE_DEATH_BURST_RADIUS = 58;
 const MELIS_INITIAL_APPROVAL = 6;
 const MELIS_INITIAL_STRESS = 6;
 
@@ -254,6 +259,10 @@ type EnemyModel = {
   dominatedUntil: number;
   dominatedOwnerId: string;
   trackingStackUntil: [number, number, number];
+  melisCurseLoad: number;
+  melisCurseUntil: number;
+  melisCurseOwnerId: string;
+  melisCurseTowerId: string;
   pathId: number;
 };
 
@@ -1100,6 +1109,10 @@ export class MatchRoom extends Room<MatchState> {
       dominatedUntil: 0,
       dominatedOwnerId: "",
       trackingStackUntil: [0, 0, 0],
+      melisCurseLoad: 0,
+      melisCurseUntil: 0,
+      melisCurseOwnerId: "",
+      melisCurseTowerId: "",
       pathId
     });
   }
@@ -1187,6 +1200,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "zeynep-6") {
       this.fireKinWave(tower, target);
+      return;
+    }
+
+    if (tower.definition.id === "archer-3") {
+      this.fireMelisCurse(tower, target);
       return;
     }
 
@@ -2454,6 +2472,12 @@ export class MatchRoom extends Room<MatchState> {
         enemy.hp = Math.min(enemy.maxHp, enemy.hp + enemy.healthRegenPerSecond * seconds);
       }
 
+      if (enemy.melisCurseLoad > 0 && enemy.melisCurseUntil <= now) {
+        enemy.melisCurseLoad = 0;
+        enemy.melisCurseOwnerId = "";
+        enemy.melisCurseTowerId = "";
+      }
+
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
       const kinSlowMultiplier = enemy.kinSlowUntil > now ? enemy.kinSlowMultiplier : 1;
@@ -3317,6 +3341,7 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
+    this.triggerMelisCurseDeathBurst(enemy, now);
     this.enemies.delete(enemy.id);
     this.awardEnemyGold(enemy);
     this.kills += 1;
@@ -3590,6 +3615,94 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private fireMelisCurse(tower: TowerModel, target: EnemyModel) {
+    const now = Date.now();
+    const radius = this.getMelisCurseAreaRadius(tower);
+    const radiusSq = radius * radius;
+    const load = this.getTowerDamage(tower);
+    const expiresAt = now + scaleGameDuration(this.getMelisCurseDurationMs(tower));
+
+    for (const enemy of this.enemies.values()) {
+      this.perfCounters.aoeChecks += 1;
+      if (distanceSq(target.x, target.y, enemy.x, enemy.y) > radiusSq) {
+        continue;
+      }
+
+      enemy.melisCurseLoad += load;
+      enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
+      enemy.melisCurseOwnerId = tower.ownerId;
+      enemy.melisCurseTowerId = tower.id;
+    }
+
+    this.beams.set(`melis-curse-${tower.id}`, {
+      id: `melis-curse-${tower.id}`,
+      definitionId: "archer-3-curse",
+      x1: tower.x,
+      y1: tower.y,
+      x2: target.x,
+      y2: target.y,
+      width: radius * 2,
+      color: 0x7f1dff,
+      overdrive: false,
+      ttlMs: 320
+    });
+  }
+
+  private triggerMelisCurseDeathBurst(enemy: EnemyModel, now: number) {
+    if (enemy.melisCurseLoad <= 0 || enemy.melisCurseUntil <= now) {
+      return;
+    }
+
+    const ownerId = enemy.melisCurseOwnerId;
+    const towerId = enemy.melisCurseTowerId;
+    const damage = enemy.melisCurseLoad;
+    enemy.melisCurseLoad = 0;
+    enemy.melisCurseOwnerId = "";
+    enemy.melisCurseTowerId = "";
+    const radius = this.scaleWorldDistance(MELIS_CURSE_DEATH_BURST_RADIUS);
+    const radiusSq = radius * radius;
+
+    for (const target of Array.from(this.enemies.values())) {
+      if (target.id === enemy.id || distanceSq(enemy.x, enemy.y, target.x, target.y) > radiusSq) {
+        continue;
+      }
+
+      this.damageEnemy(target, damage, 0, "archer-3-curse-burst", ownerId, "psychic", 0, 1, towerId, "curse");
+    }
+
+    const beamId = `melis-curse-burst-${enemy.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-3-curse-burst",
+      x1: enemy.x,
+      y1: enemy.y,
+      x2: enemy.x,
+      y2: enemy.y,
+      width: radius * 2,
+      color: 0xa855f7,
+      overdrive: false,
+      ttlMs: 360
+    });
+  }
+
+  private getMelisCurseDurationMs(tower: TowerModel) {
+    if (this.isMelisStressDominant(tower)) {
+      return MELIS_CURSE_STRESS_DURATION_MS;
+    }
+
+    if (this.isMelisApprovalDominant(tower)) {
+      return MELIS_CURSE_APPROVAL_DURATION_MS;
+    }
+
+    return MELIS_CURSE_NORMAL_DURATION_MS;
+  }
+
+  private getMelisCurseAreaRadius(tower: TowerModel) {
+    const baseRadius = tower.definition.aoeRadius + (tower.level - 1) * 4 + tower.melisEvolutionLevel * 8;
+    const stressMultiplier = this.isMelisStressDominant(tower) ? MELIS_CURSE_STRESS_AREA_MULTIPLIER : 1;
+    return this.scaleWorldDistance(baseRadius * stressMultiplier);
+  }
+
   private triggerMelisRageWave(tower: TowerModel) {
     const now = Date.now();
     const radius = this.scaleWorldDistance(MELIS_PARLAMA_RAGE_RADIUS + tower.level * 5 + tower.melisEvolutionLevel * 12);
@@ -3698,7 +3811,8 @@ export class MatchRoom extends Room<MatchState> {
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
         isFeared: enemy.fearUntil > now,
         isArmorBroken: enemy.armorBrokenUntil > now,
-        isDominated: enemy.dominatedUntil > now
+        isDominated: enemy.dominatedUntil > now,
+        curseLoad: enemy.melisCurseUntil > now ? Math.round(enemy.melisCurseLoad) : 0
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -4137,6 +4251,15 @@ export class MatchRoom extends Room<MatchState> {
 
     const player = this.state.players.get(tower.ownerId);
     return Boolean(player && player.stress > player.approval);
+  }
+
+  private isMelisApprovalDominant(tower: TowerModel) {
+    if (tower.characterId !== "archer") {
+      return false;
+    }
+
+    const player = this.state.players.get(tower.ownerId);
+    return Boolean(player && player.approval > player.stress);
   }
 
   private getMelisFavoriteDamageMultiplier(tower: TowerModel) {

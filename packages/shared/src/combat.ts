@@ -1,5 +1,5 @@
 export type DamageType = "physical" | "electric" | "psychic" | "fire" | "light" | "cellular" | "true" | "none";
-export type HitType = "projectile" | "impact" | "focus" | "aura" | "contamination";
+export type HitType = "projectile" | "impact" | "focus" | "aura" | "contamination" | "curse";
 export type MovementKind = "ground" | "air";
 export type StatusEffectId = "slow" | "fear" | "tracking";
 export type EnemyRace = "meka" | "spaceBug" | "fourthDimensional" | "holyGuardian" | "fallen" | "golem";

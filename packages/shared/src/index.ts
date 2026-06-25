@@ -97,6 +97,7 @@ export type EnemySnapshot = {
   isFeared?: boolean;
   isArmorBroken?: boolean;
   isDominated?: boolean;
+  curseLoad?: number;
 };
 
 export type TowerSnapshot = {

@@ -150,7 +150,7 @@ export class PreloaderScene extends Phaser.Scene {
   private createProjectileTexture(tower: TowerDefinition) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const palette = getVisualPalette(tower);
-    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" ? 24 : 20;
+    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" || tower.hitType === "curse" ? 24 : 20;
     const center = size / 2;
 
     if (tower.id === "warrior-2") {
@@ -199,6 +199,16 @@ export class PreloaderScene extends Phaser.Scene {
       graphics.fillCircle(center + 1, center + 5, 2.5);
       graphics.lineStyle(1.5, palette.dark, 0.72);
       graphics.strokeCircle(center, center, 8);
+    } else if (tower.hitType === "curse") {
+      graphics.fillStyle(palette.main, 0.2);
+      graphics.fillCircle(center, center, 10);
+      graphics.lineStyle(2, palette.main, 0.92);
+      graphics.strokeCircle(center, center, 8);
+      graphics.lineStyle(1.5, palette.accent, 0.86);
+      graphics.lineBetween(center - 6, center - 5, center + 6, center + 5);
+      graphics.lineBetween(center + 6, center - 5, center - 6, center + 5);
+      graphics.fillStyle(palette.glow, 0.9);
+      graphics.fillCircle(center, center, 2.5);
     } else {
       graphics.fillCircle(center, center, 5);
     }

@@ -40,5 +40,25 @@ export const melisTowers: TowerDefinition[] = [
     aoeRadius: 0,
     slowMs: 0,
     color: 0xdb2777
+  },
+  {
+    id: "archer-3",
+    characterId: "archer",
+    name: "Lanet Kulesi",
+    role: "Biriken lanet yukleri",
+    description: "Bir alandaki dusmanlari lanetler. Lanet sonsuz birikir; lanetli dusman oldugunde biriken yuk kadar cevresine psisik hasar verir. Normal sure 5sn, stres baskinken 3sn ve daha genis alan, onay baskinken 7sn.",
+    classType: "damage",
+    damageType: "psychic",
+    hitType: "curse",
+    mechanics: ["stacking-curse", "death-burst", "approval-duration", "stress-area"],
+    cost: 104,
+    upgradeCost: 70,
+    range: 116,
+    damage: 15,
+    fireIntervalMs: 1180,
+    projectileSpeed: 0,
+    aoeRadius: 42,
+    slowMs: 0,
+    color: 0x7f1dff
   }
 ];

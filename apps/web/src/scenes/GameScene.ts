@@ -1922,11 +1922,13 @@ export class GameScene extends Phaser.Scene {
       mover.shieldHalo?.setVisible(hasShield);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || trackingStacks > 0);
+      const curseLoad = enemy.curseLoad ?? 0;
+      const isCursed = curseLoad > 0;
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -3138,6 +3140,8 @@ export class GameScene extends Phaser.Scene {
         this.drawKinShowcaseLight(beam, color);
       } else if (beam.definitionId === "archer-2-rage") {
         this.drawMelisRageWave(beam, color);
+      } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst") {
+        this.drawMelisCursePulse(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -3172,6 +3176,35 @@ export class GameScene extends Phaser.Scene {
         beam.y1 + Math.sin(angle) * inner,
         beam.x1 + Math.cos(angle) * outer,
         beam.y1 + Math.sin(angle) * outer
+      );
+    }
+  }
+
+  private drawMelisCursePulse(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(8, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 360, 0, 1);
+    const isBurst = beam.definitionId === "archer-3-curse-burst";
+    const pulse = 1 + Math.sin(Date.now() / 58) * 0.06;
+    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xf5d0fe, 0.48 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(color, isBurst ? 0.13 * life : 0.08 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
+    this.beamGraphics.lineStyle((isBurst ? 3 : 2) * this.getTowerEffectScale(), color, 0.78 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.05 - life * 0.22));
+    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0x020617, 0.36 * life);
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8 + Date.now() / 520;
+      const inner = radius * 0.22;
+      const outer = radius * (0.72 + (index % 2) * 0.12);
+      this.beamGraphics.lineBetween(
+        beam.x2 + Math.cos(angle) * inner,
+        beam.y2 + Math.sin(angle) * inner,
+        beam.x2 + Math.cos(angle) * outer,
+        beam.y2 + Math.sin(angle) * outer
       );
     }
   }
