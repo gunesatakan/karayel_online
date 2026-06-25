@@ -1678,6 +1678,7 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("beams", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderKillEvents(snapshot);
+    this.renderDamageEvents(snapshot.damageEvents);
     this.recordClientPerfSection("events", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderHud(snapshot);

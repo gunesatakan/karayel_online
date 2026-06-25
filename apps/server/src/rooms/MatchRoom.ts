@@ -260,6 +260,7 @@ type EnemyModel = {
   dominatedOwnerId: string;
   trackingStackUntil: [number, number, number];
   melisCurseLoad: number;
+  melisCurseBurstDamage: number;
   melisCurseUntil: number;
   melisCurseOwnerId: string;
   melisCurseTowerId: string;
@@ -1110,6 +1111,7 @@ export class MatchRoom extends Room<MatchState> {
       dominatedOwnerId: "",
       trackingStackUntil: [0, 0, 0],
       melisCurseLoad: 0,
+      melisCurseBurstDamage: 0,
       melisCurseUntil: 0,
       melisCurseOwnerId: "",
       melisCurseTowerId: "",
@@ -2474,6 +2476,7 @@ export class MatchRoom extends Room<MatchState> {
 
       if (enemy.melisCurseLoad > 0 && enemy.melisCurseUntil <= now) {
         enemy.melisCurseLoad = 0;
+        enemy.melisCurseBurstDamage = 0;
         enemy.melisCurseOwnerId = "";
         enemy.melisCurseTowerId = "";
       }
@@ -3328,6 +3331,7 @@ export class MatchRoom extends Room<MatchState> {
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
+    this.addDamageEvent(enemy, dealtAmount);
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
@@ -3619,7 +3623,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const radius = this.getMelisCurseAreaRadius(tower);
     const radiusSq = radius * radius;
-    const load = this.getTowerDamage(tower);
+    const burstDamage = this.getTowerDamage(tower);
     const expiresAt = now + scaleGameDuration(this.getMelisCurseDurationMs(tower));
 
     for (const enemy of this.enemies.values()) {
@@ -3628,7 +3632,8 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      enemy.melisCurseLoad += load;
+      enemy.melisCurseLoad += 1;
+      enemy.melisCurseBurstDamage += burstDamage;
       enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
       enemy.melisCurseOwnerId = tower.ownerId;
       enemy.melisCurseTowerId = tower.id;
@@ -3655,8 +3660,9 @@ export class MatchRoom extends Room<MatchState> {
 
     const ownerId = enemy.melisCurseOwnerId;
     const towerId = enemy.melisCurseTowerId;
-    const damage = enemy.melisCurseLoad;
+    const damage = enemy.melisCurseBurstDamage;
     enemy.melisCurseLoad = 0;
+    enemy.melisCurseBurstDamage = 0;
     enemy.melisCurseOwnerId = "";
     enemy.melisCurseTowerId = "";
     const radius = this.scaleWorldDistance(MELIS_CURSE_DEATH_BURST_RADIUS);
