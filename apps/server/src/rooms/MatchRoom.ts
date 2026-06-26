@@ -3413,11 +3413,16 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "archer-1") {
       const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
-      const range = this.getTowerRange(tower);
-      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget) && distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= range * range) {
+      if (
+        lockedTarget &&
+        this.canTowerTargetEnemy(tower, lockedTarget) &&
+        (tower.melisEvolutionLevel < 1 || this.isMelisUnderworldLinkedEnemyForOwner(tower.ownerId, lockedTarget.id))
+      ) {
         return lockedTarget;
       }
-      tower.focusTargetId = "";
+      if (!lockedTarget || !this.canTowerTargetEnemy(tower, lockedTarget)) {
+        tower.focusTargetId = "";
+      }
     }
 
     if (tower.definition.id === "archer-2") {
@@ -3449,6 +3454,17 @@ export class MatchRoom extends Room<MatchState> {
       return candidates.sort((a, b) => this.getTrackingStackCount(b, now) - this.getTrackingStackCount(a, now) || b.pathDistance - a.pathDistance)[0];
     }
 
+    if (tower.definition.id === "archer-1") {
+      const underworldTarget = this.findMelisUnderworldLinkedTargetForHedefci(tower, candidates);
+      if (underworldTarget) {
+        return underworldTarget;
+      }
+      const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
+      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget)) {
+        return lockedTarget;
+      }
+    }
+
     return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
   }
 
@@ -3473,6 +3489,39 @@ export class MatchRoom extends Room<MatchState> {
       tower.definition.id === "zeynep-2" ||
       tower.definition.id === "zeynep-6" ||
       (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
+  }
+
+  private findMelisUnderworldLinkedTargetForHedefci(tower: TowerModel, candidates: EnemyModel[]) {
+    if (tower.definition.id !== "archer-1" || tower.melisEvolutionLevel < 1) {
+      return undefined;
+    }
+
+    const linkedEnemyIds = new Set<string>();
+    for (const candidateTower of this.towers.values()) {
+      if (candidateTower.definition.id !== "archer-4" || candidateTower.ownerId !== tower.ownerId) {
+        continue;
+      }
+      for (const enemyId of candidateTower.melisUnderworldTargetIds) {
+        linkedEnemyIds.add(enemyId);
+      }
+    }
+
+    if (linkedEnemyIds.size === 0) {
+      return undefined;
+    }
+
+    return candidates
+      .filter((enemy) => linkedEnemyIds.has(enemy.id))
+      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  }
+
+  private isMelisUnderworldLinkedEnemyForOwner(ownerId: string, enemyId: string) {
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId === ownerId && tower.definition.id === "archer-4" && tower.melisUnderworldTargetIds.includes(enemyId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "", hitType?: HitType) {
@@ -4836,10 +4885,6 @@ export class MatchRoom extends Room<MatchState> {
       return GAME_WORLD_HEIGHT;
     }
 
-    if (tower.definition.id === "archer-1" && this.isMelisApprovalDominant(tower)) {
-      return GAME_WORLD_HEIGHT * 4 * (1 + tower.melisEvolutionLevel * 0.12);
-    }
-
     if (tower.definition.id === "zeynep-2") {
       return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
     }
@@ -4914,7 +4959,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower));
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower) * this.getMelisHedefciDoubtFireIntervalMultiplier(tower));
   }
 
   private getTowerDamage(tower: TowerModel) {
@@ -4939,6 +4984,10 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.characterId === "archer") {
       damage *= this.getMelisFavoriteDamageMultiplier(tower) * this.getMelisEvolutionDamageMultiplier(tower);
+    }
+
+    if (tower.definition.id === "archer-1") {
+      damage *= this.getMelisHedefciFocusDamageMultiplier(tower);
     }
 
     if (tower.definition.hitType === "impact") {
@@ -5188,6 +5237,35 @@ export class MatchRoom extends Room<MatchState> {
 
   private getMelisEvolutionRangeMultiplier(tower: TowerModel) {
     return tower.characterId === "archer" ? 1 + tower.melisEvolutionLevel * 0.1 : 1;
+  }
+
+  private getMelisHedefciFocusDamageMultiplier(tower: TowerModel) {
+    if (tower.definition.id !== "archer-1" || tower.melisEvolutionLevel < 2 || !tower.focusTargetId) {
+      return 1;
+    }
+
+    const focusedHedefciCount = Array.from(this.towers.values()).filter((candidate) => (
+      candidate.ownerId === tower.ownerId &&
+      candidate.definition.id === "archer-1" &&
+      candidate.focusTargetId === tower.focusTargetId
+    )).length;
+
+    return focusedHedefciCount > 0 ? 1.2 ** focusedHedefciCount : 1;
+  }
+
+  private getMelisHedefciDoubtFireIntervalMultiplier(tower: TowerModel) {
+    if (tower.definition.id !== "archer-1" || tower.melisEvolutionLevel < 3 || !tower.focusTargetId) {
+      return 1;
+    }
+
+    const target = this.enemies.get(tower.focusTargetId);
+    if (!target || target.melisDoubtUntil <= Date.now()) {
+      return 1;
+    }
+
+    const doubtStacks = Math.max(0, Math.min(3, target.melisDoubtStacks));
+    const attackSpeedBonus = doubtStacks >= 3 ? 0.4 : doubtStacks * 0.1;
+    return 1 / (1 + attackSpeedBonus);
   }
 
   private updateUcubeRhythm(tower: TowerModel, target: EnemyModel | undefined, deltaTime: number) {

@@ -184,7 +184,7 @@ Haritada giris ve cikislar kapanir. Yeni dusman giremez, icerideki dusmanlar cik
 **Hasar turu:** Psisik  
 **Vurus turu:** Mermi
 
-Hedefci bir hedef belirler ve o hedef olene kadar ona odaklanir. Normalde menzilli oynar, ancak onay baskinken menzil siniri kalkar.
+Hedefci menziline giren bir hedefi kilide alir ve hedef olene kadar ona odaklanir. Kilit alindiktan sonra hedef menzil disina ciksa bile Hedefci onu vurmaya devam eder; ancak yeni bir hedefe kilitlenmek icin hedefin once normal menzile girmesi gerekir.
 
 | Ozellik | Deger |
 |---|---:|
@@ -199,9 +199,12 @@ Hedefci bir hedef belirler ve o hedef olene kadar ona odaklanir. Normalde menzil
 **Ozel davranislar:**
 
 - Hedef kilidi mantigiyla calisir.
-- Onay baskinken menzili pratikte sinirsiz hale gelir.
+- Yeni hedefleri sadece normal menziline girdiklerinde kilide alir.
+- Kilitlenmis hedef menzil disina ciksa bile hedef olene kadar takip edilir.
 - Favori kuleyse onaydan hasar ve atis hizi bonusu alir.
-- Evrimle hasar, atis hizi ve menzili artar.
+- Evrim 1: Menziline Oluler Bagi ile bagli bir dusman girerse ona oncelik verir. Zaten Oluler Bagi ile bagli bir hedefe vuruyorsa hedef degistirmez.
+- Evrim 2: Ayni hedefe kilitlenmis Hedefci sayisina gore hasari artar; hedefe odaklanan Hedefci basina x1.2 hasar carpani uygulanir.
+- Evrim 3: Suphe yuku olan hedeflere vururken o hedefe ozel atis hizi artar: 1 yukta %10, 2 yukta %20, 3 yukta %40.
 
 ### 2. Parlama
 
