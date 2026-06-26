@@ -260,6 +260,50 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 - Lanetli dusman oldugunde biriken lanet hasari yakin dusmanlara psisik/lanet hasari olarak patlar.
 - Dusman uzerinde `L + stack` seklinde lanet yuk miktari gorunur.
 
+### 4. Fısıltı Korosu
+
+**Rol:** Alan kontrolu, yavaslatma, korku hazirligi  
+**Sinif:** Kontrol  
+**Hasar turu:** Psisik  
+**Vurus turu:** Dalga
+
+Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizmalarini bozar. Dalga vuruslari dusmanlara `Suphe` stack'i uygular. Yeterince suphe biriken dusmanlar kisa sure duraksar.
+
+| Ozellik | Deger |
+|---|---:|
+| Maliyet | 108 altin |
+| Upgrade temel maliyeti | 72 |
+| Menzil | 62 |
+| Hasar | 5 |
+| Atis araligi | 1350 ms |
+| Dalga alani | 40 |
+| Suphe suresi | 4 saniye |
+| Maksimum suphe stack'i | 3 |
+
+**Suphe mekanigi:**
+
+- Her dalga vurusunda alandaki dusmanlara 1 Suphe stack'i uygulanir.
+- 3 stack'e ulasan dusman 0.5 saniye duraksar.
+- Duraksama tetiklenince stack'ler sifirlanir.
+- Dusman ustunde `Ş1`, `Ş2`, `Ş3` seklinde suphe miktari gorunur.
+- Duraksama aninda dusman ustunde `DUR` yazisi gorunur.
+
+**Spektrum davranisi:**
+
+| Durum | Davranis |
+|---|---|
+| Onay baskin | Suphe stack'leri 2 saniye daha uzun kalir. Kontrol daha stabil olur. |
+| Stres baskin | Duraksama 3 stack yerine 2 stack'te tetiklenir. Duraksama bitince dusman 0.5 saniye %50 hizlanir. |
+| Dengeli | Normal calisir. |
+
+**Evrim etkileri:**
+
+| Evrim | Etki |
+|---|---|
+| 1 | Suphe stack suresi +1 saniye |
+| 2 | Duraksama suresi +0.5 saniye |
+| 3 | Duraksayan dusman cevresindeki dusmanlara 1 Suphe yayar |
+
 ## Streak Gorsel Dili
 
 Melis'in streak anonslari glitch neon ve korku fantezisi temalidir. Granted, Unstoppable, Rampage ve Legendary seviyelerinde tasarim giderek daha kaotik ve sarsintili hale gelir.
@@ -280,4 +324,3 @@ Yeni Melis kuleleri tasarlanirken yalnizca hasar artisi degil, oyuncuya su sorul
 - Stresi kule evrimine harcarsam spektrum dengem bozulur mu?
 - Onay baskinligini korumak daha mi guvenli, yoksa stres baskisina girip daha riskli ama daha yuksek potansiyelli bir oyun mu kurmaliyim?
 - Hangi 3 kule favori olmali?
-

@@ -139,6 +139,8 @@ export class PreloaderScene extends Phaser.Scene {
       this.drawDebugPrism(graphics, center, palette);
     } else if (tower.id === "warrior-6") {
       this.drawUnstableCore(graphics, center, palette);
+    } else if (tower.id === "archer-4") {
+      this.drawWhisperChoir(graphics, center, palette);
     } else {
       this.drawGenericTowerGlyph(graphics, center, tower, palette);
     }
@@ -150,7 +152,7 @@ export class PreloaderScene extends Phaser.Scene {
   private createProjectileTexture(tower: TowerDefinition) {
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const palette = getVisualPalette(tower);
-    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" || tower.hitType === "curse" ? 24 : 20;
+    const size = tower.id === "warrior-2" ? 30 : tower.id === "warrior-6" ? 28 : tower.hitType === "focus" ? 34 : tower.hitType === "impact" || tower.hitType === "contamination" || tower.hitType === "curse" || tower.hitType === "wave" ? 24 : 20;
     const center = size / 2;
 
     if (tower.id === "warrior-2") {
@@ -208,6 +210,16 @@ export class PreloaderScene extends Phaser.Scene {
       graphics.lineBetween(center - 6, center - 5, center + 6, center + 5);
       graphics.lineBetween(center + 6, center - 5, center - 6, center + 5);
       graphics.fillStyle(palette.glow, 0.9);
+      graphics.fillCircle(center, center, 2.5);
+    } else if (tower.hitType === "wave") {
+      graphics.fillStyle(palette.main, 0.14);
+      graphics.fillCircle(center, center, 10);
+      graphics.lineStyle(2, palette.main, 0.88);
+      graphics.strokeCircle(center, center, 5);
+      graphics.strokeCircle(center, center, 10);
+      graphics.lineStyle(1.5, palette.accent, 0.72);
+      graphics.lineBetween(center - 9, center, center + 9, center);
+      graphics.fillStyle(palette.glow, 0.95);
       graphics.fillCircle(center, center, 2.5);
     } else {
       graphics.fillCircle(center, center, 5);
@@ -328,6 +340,26 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.strokePath();
     graphics.fillStyle(0xbfdbfe, 1);
     graphics.fillCircle(center, center, 4);
+  }
+
+  private drawWhisperChoir(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(2.5, palette.main, 0.95);
+    graphics.strokeCircle(center, center, 13);
+    graphics.lineStyle(1.8, palette.accent, 0.82);
+    graphics.strokeCircle(center, center, 7);
+    for (let index = 0; index < 5; index += 1) {
+      const angle = -Math.PI / 2 + (index - 2) * 0.62;
+      const x = center + Math.cos(angle) * 10;
+      const y = center + Math.sin(angle) * 9;
+      graphics.fillStyle(palette.main, 0.9);
+      graphics.fillCircle(x, y, 2.7);
+      graphics.lineStyle(1.2, palette.glow, 0.72);
+      graphics.lineBetween(center, center, x, y);
+    }
+    graphics.lineStyle(2, 0xccfbf1, 0.92);
+    graphics.beginPath();
+    graphics.arc(center, center + 2, 9, Math.PI * 0.1, Math.PI * 0.9);
+    graphics.strokePath();
   }
 
   private drawGenericTowerGlyph(graphics: Phaser.GameObjects.Graphics, center: number, tower: TowerDefinition, palette: VisualPalette) {

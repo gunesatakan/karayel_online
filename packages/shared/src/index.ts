@@ -98,6 +98,8 @@ export type EnemySnapshot = {
   isArmorBroken?: boolean;
   isDominated?: boolean;
   curseLoad?: number;
+  doubtStacks?: number;
+  isHesitating?: boolean;
 };
 
 export type TowerSnapshot = {

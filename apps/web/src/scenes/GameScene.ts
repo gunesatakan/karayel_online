@@ -1925,11 +1925,13 @@ export class GameScene extends Phaser.Scene {
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
       const isCursed = curseLoad > 0;
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || trackingStacks > 0);
+      const doubtStacks = enemy.doubtStacks ?? 0;
+      const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasDoubt || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isHesitating ? "DUR" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : hasDoubt ? `Ş${doubtStacks}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isHesitating ? "#99f6e4" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasDoubt ? "#5eead4" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isHesitating ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasDoubt ? 10 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -3143,6 +3145,8 @@ export class GameScene extends Phaser.Scene {
         this.drawMelisRageWave(beam, color);
       } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst") {
         this.drawMelisCursePulse(beam, color);
+      } else if (beam.definitionId === "archer-4-whisper") {
+        this.drawMelisWhisperWave(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -3201,6 +3205,35 @@ export class GameScene extends Phaser.Scene {
       const angle = (Math.PI * 2 * index) / 8 + Date.now() / 520;
       const inner = radius * 0.22;
       const outer = radius * (0.72 + (index % 2) * 0.12);
+      this.beamGraphics.lineBetween(
+        beam.x2 + Math.cos(angle) * inner,
+        beam.y2 + Math.sin(angle) * inner,
+        beam.x2 + Math.cos(angle) * outer,
+        beam.y2 + Math.sin(angle) * outer
+      );
+    }
+  }
+
+  private drawMelisWhisperWave(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(8, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 420, 0, 1);
+    const now = Date.now();
+    const pulse = 1 + Math.sin(now / 38) * 0.05;
+    this.beamGraphics.lineStyle(1.1 * this.getTowerEffectScale(), 0xccfbf1, 0.32 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(color, 0.055 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
+    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.72 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.04 - life * 0.2));
+    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0x7dd3fc, 0.5 * life);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9 + Math.sin(now / 260 + index) * 0.25;
+      const inner = radius * 0.18;
+      const outer = radius * (0.68 + (index % 3) * 0.08);
       this.beamGraphics.lineBetween(
         beam.x2 + Math.cos(angle) * inner,
         beam.y2 + Math.sin(angle) * inner,
