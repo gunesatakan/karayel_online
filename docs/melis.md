@@ -214,7 +214,7 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 | Hasar | 22 |
 | Atis araligi | 950 ms |
 | Mermi hizi | 460 |
-| Ofke dalgasi temel yaricapi | 92 + kule seviyesi x 5 |
+| Ofke dalgasi yaricapi | Kulenin guncel menzili ile ayni |
 | Korku suresi | 2.2 saniye + evrim x 0.5 saniye |
 
 **Ozel davranislar:**
@@ -222,7 +222,7 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 - Hedef menzilden cikarsa ofke dalgasi tetiklenir.
 - Korku halindeyken menzilden cikan hedefler Parlama'nin basarisizligi olarak sayilmaz.
 - Stres baskinken ofke patlamasi, kendi alanindaki dost kuleleri 0.5 saniye durdurur.
-- Evrim, ofke dalgasi yaricapini ve korku suresini artirir.
+- Evrim ve diger menzil bonuslari kulenin menzilini artirdigi icin ofke dalgasi yaricapini da ayni oranda artirir.
 
 ### 3. Lanet Kulesi
 

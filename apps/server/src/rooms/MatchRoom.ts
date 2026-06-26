@@ -125,7 +125,6 @@ const MELIS_BULLY_RADIUS = 78;
 const MELIS_BULLY_DURATION_MS = 7000;
 const MELIS_BULLY_DAMAGE_RADIUS = 70;
 const MELIS_PARLAMA_FEAR_MS = 2200;
-const MELIS_PARLAMA_RAGE_RADIUS = 92;
 const MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS = 500;
 const MELIS_CURSE_NORMAL_DURATION_MS = 5000;
 const MELIS_CURSE_STRESS_DURATION_MS = 3000;
@@ -4357,7 +4356,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private triggerMelisRageWave(tower: TowerModel) {
     const now = Date.now();
-    const radius = this.scaleWorldDistance(MELIS_PARLAMA_RAGE_RADIUS + tower.level * 5 + tower.melisEvolutionLevel * 12);
+    const radius = this.getTowerRange(tower);
     for (const enemy of this.enemies.values()) {
       if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) {
         continue;
