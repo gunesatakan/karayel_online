@@ -4394,7 +4394,7 @@ function getZeynepCommandButtonState(authorityChain: number) {
 }
 
 function getBackgroundMusicPath(characterId: CharacterId) {
-  return characterId === "zeynep" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+  return characterId === "zeynep" || characterId === "archer" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
 }
 
 function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
