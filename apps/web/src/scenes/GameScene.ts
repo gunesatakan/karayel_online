@@ -81,6 +81,8 @@ type RenderMover = {
   sprite: Phaser.Physics.Arcade.Sprite;
   shieldHalo?: Phaser.GameObjects.Arc;
   marker?: Phaser.GameObjects.Text;
+  curseMarker?: Phaser.GameObjects.Text;
+  doubtMarker?: Phaser.GameObjects.Text;
   armorBreakIcon?: Phaser.GameObjects.Image;
 };
 
@@ -1862,6 +1864,8 @@ export class GameScene extends Phaser.Scene {
           mover.sprite.body.enable = false;
         }
         mover.marker?.destroy();
+        mover.curseMarker?.destroy();
+        mover.doubtMarker?.destroy();
         mover.shieldHalo?.destroy();
         mover.armorBreakIcon?.destroy();
         this.enemies.delete(id);
@@ -1895,6 +1899,22 @@ export class GameScene extends Phaser.Scene {
           stroke: "#020617",
           strokeThickness: 3
         }).setOrigin(0.5).setDepth(14).setVisible(false);
+        mover.curseMarker = this.add.text(enemy.x - 10, enemy.y - 20, "L1", {
+          color: "#f0abfc",
+          fontFamily: "Arial",
+          fontSize: "9px",
+          fontStyle: "bold",
+          stroke: "#020617",
+          strokeThickness: 3
+        }).setOrigin(0.5).setDepth(15).setVisible(false);
+        mover.doubtMarker = this.add.text(enemy.x + 10, enemy.y - 20, "Ş1", {
+          color: "#5eead4",
+          fontFamily: "Arial",
+          fontSize: "9px",
+          fontStyle: "bold",
+          stroke: "#020617",
+          strokeThickness: 3
+        }).setOrigin(0.5).setDepth(15).setVisible(false);
         mover.armorBreakIcon = this.add.image(enemy.x + 12, enemy.y - 14, "status-armor-broken")
           .setOrigin(0.5)
           .setDepth(15)
@@ -1919,6 +1939,7 @@ export class GameScene extends Phaser.Scene {
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
       const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
       const shieldRadius = displayedEnemySize * 0.48;
+      const statusYOffset = Math.max(18, displayedEnemySize * 0.42);
       mover.shieldHalo?.setPosition(enemy.x, enemy.y);
       mover.shieldHalo?.setDepth(enemy.movementKind === "air" ? 8.6 : 7.6);
       mover.shieldHalo?.setRadius(shieldRadius);
@@ -1932,12 +1953,25 @@ export class GameScene extends Phaser.Scene {
       const doubtStacks = enemy.doubtStacks ?? 0;
       const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
       const hasUnderworld = Boolean(enemy.isUnderworldLinked || enemy.isUndead);
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasDoubt || hasUnderworld || trackingStacks > 0);
+      const hasSeparateMelisMarker = isCursed || hasDoubt;
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || hasUnderworld || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isHesitating ? "DUR" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : hasDoubt ? `Ş${doubtStacks}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isHesitating ? "#99f6e4" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasDoubt ? "#5eead4" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isHesitating ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasDoubt ? 10 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setPosition(enemy.x, enemy.y - statusYOffset - (hasSeparateMelisMarker ? 11 : 4));
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
+      const curseText = `L${Math.min(999, Math.round(curseLoad))}`;
+      const doubtText = enemy.isHesitating ? "Ş!" : `Ş${Math.max(1, doubtStacks)}`;
+      const melisMarkerGap = isCursed && hasDoubt ? Math.max(10, displayedEnemySize * 0.2) : 0;
+      mover.curseMarker?.setPosition(enemy.x - melisMarkerGap, enemy.y - statusYOffset);
+      mover.curseMarker?.setText(curseText);
+      mover.curseMarker?.setFontSize(curseLoad >= 100 ? 8 : 9);
+      mover.curseMarker?.setVisible(isCursed);
+      mover.doubtMarker?.setPosition(enemy.x + melisMarkerGap, enemy.y - statusYOffset);
+      mover.doubtMarker?.setText(doubtText);
+      mover.doubtMarker?.setColor(enemy.isHesitating ? "#99f6e4" : "#5eead4");
+      mover.doubtMarker?.setVisible(hasDoubt);
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
       mover.armorBreakIcon?.setScale(this.getTowerEffectScale() * 0.62 * iconPulse);
