@@ -401,7 +401,7 @@ canvas {
 .game-controls__stats {
   display: flex;
   align-items: center;
-  height: 100%;
+  min-height: 24px;
   padding: 0 9px;
   overflow: hidden;
   color: #dbeafe;
@@ -411,6 +411,31 @@ canvas {
   font-weight: 800;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.game-controls__underworld-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.game-controls__underworld-mode-button {
+  min-height: 24px;
+  font-size: clamp(9px, 2.5vw, 11px);
+}
+
+.game-controls__underworld-mode-button--approval {
+  border-color: rgba(45, 212, 191, 0.64);
+}
+
+.game-controls__underworld-mode-button--stress {
+  border-color: rgba(248, 113, 113, 0.64);
+}
+
+.game-controls__underworld-mode-button.is-active {
+  color: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.22), 0 0 14px rgba(45, 212, 191, 0.18);
 }
 
 .game-controls__footer {

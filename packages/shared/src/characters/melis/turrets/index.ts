@@ -100,5 +100,25 @@ export const melisTowers: TowerDefinition[] = [
     aoeRadius: 0,
     slowMs: 0,
     color: 0xe879f9
+  },
+  {
+    id: "archer-6",
+    characterId: "archer",
+    name: "Fısıltı Korosu",
+    role: "Alan kontrolu ve suphe",
+    description: "Dusmanlarin karar verme mekanizmasini bozan gotik bir dalga yayar. Vurdugu dusmanlara Suphe stack'i uygular; yeterince suphe biriken dusmanlar kisa sure duraksar. Onay baskinken suphe daha uzun surer, stres baskinken daha az stack ile tetiklenir ama dusman sonra kisa sure hizlanir.",
+    classType: "control",
+    damageType: "psychic",
+    hitType: "wave",
+    mechanics: ["doubt-stacks", "hesitation", "approval-duration", "stress-threshold"],
+    cost: 108,
+    upgradeCost: 72,
+    range: 62,
+    damage: 5,
+    fireIntervalMs: 1350,
+    projectileSpeed: 0,
+    aoeRadius: 40,
+    slowMs: 0,
+    color: 0x14b8a6
   }
 ];

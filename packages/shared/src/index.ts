@@ -98,6 +98,8 @@ export type EnemySnapshot = {
   isArmorBroken?: boolean;
   isDominated?: boolean;
   curseLoad?: number;
+  doubtStacks?: number;
+  isHesitating?: boolean;
   isUnderworldLinked?: boolean;
   isUndead?: boolean;
 };
@@ -122,6 +124,8 @@ export type TowerSnapshot = {
   currentDps?: number;
   melisEvolutionLevel?: number;
   isMelisFavorite?: boolean;
+  melisUnderworldMode?: "approval" | "stress";
+  melisUnderworldPullCount?: number;
   waveBonusLevel?: number;
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];

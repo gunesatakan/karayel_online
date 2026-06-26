@@ -53,12 +53,14 @@ type ControlActionDetail = {
     | "useUltimateMode"
     | "upgradeTower"
     | "sellTower"
+    | "setUnderworldMode"
     | "toggleAbartiOrientation"
     | "clearSelection";
   towerId?: string;
   slot?: number;
   tier?: ZeynepCommandTier;
   mode?: "attack" | "repair";
+  underworldMode?: "approval" | "stress";
   clientX?: number;
   clientY?: number;
 };
@@ -923,6 +925,11 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
           this.selectedPlacedTowerId = undefined;
           this.updateSelectionUi();
+        }
+        break;
+      case "setUnderworldMode":
+        if (this.selectedPlacedTowerId && detail.underworldMode) {
+          this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: detail.underworldMode });
         }
         break;
       case "toggleAbartiOrientation":
@@ -1925,12 +1932,14 @@ export class GameScene extends Phaser.Scene {
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
       const isCursed = curseLoad > 0;
+      const doubtStacks = enemy.doubtStacks ?? 0;
+      const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
       const hasUnderworld = Boolean(enemy.isUnderworldLinked || enemy.isUndead);
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasUnderworld || trackingStacks > 0);
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasDoubt || hasUnderworld || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isHesitating ? "DUR" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : hasDoubt ? `Ş${doubtStacks}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isHesitating ? "#99f6e4" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasDoubt ? "#5eead4" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isHesitating ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasDoubt ? 10 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -3150,6 +3159,8 @@ export class GameScene extends Phaser.Scene {
         this.drawMelisRageWave(beam, color);
       } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst") {
         this.drawMelisCursePulse(beam, color);
+      } else if (beam.definitionId === "archer-6-whisper") {
+        this.drawMelisWhisperWave(beam, color);
       } else if (beam.definitionId === "archer-4-underworld-link" || beam.definitionId === "archer-4-underworld-execute" || beam.definitionId === "archer-4-undead-shot") {
         this.drawMelisUnderworldLink(beam, color);
       } else if (beam.definitionId === "archer-5-mirror") {
@@ -3212,6 +3223,35 @@ export class GameScene extends Phaser.Scene {
       const angle = (Math.PI * 2 * index) / 8 + Date.now() / 520;
       const inner = radius * 0.22;
       const outer = radius * (0.72 + (index % 2) * 0.12);
+      this.beamGraphics.lineBetween(
+        beam.x2 + Math.cos(angle) * inner,
+        beam.y2 + Math.sin(angle) * inner,
+        beam.x2 + Math.cos(angle) * outer,
+        beam.y2 + Math.sin(angle) * outer
+      );
+    }
+  }
+
+  private drawMelisWhisperWave(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(8, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 420, 0, 1);
+    const now = Date.now();
+    const pulse = 1 + Math.sin(now / 38) * 0.05;
+    this.beamGraphics.lineStyle(1.1 * this.getTowerEffectScale(), 0xccfbf1, 0.32 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(color, 0.055 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
+    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.72 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.04 - life * 0.2));
+    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0x7dd3fc, 0.5 * life);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = (Math.PI * 2 * index) / 9 + Math.sin(now / 260 + index) * 0.25;
+      const inner = radius * 0.18;
+      const outer = radius * (0.68 + (index % 3) * 0.08);
       this.beamGraphics.lineBetween(
         beam.x2 + Math.cos(angle) * inner,
         beam.y2 + Math.sin(angle) * inner,
@@ -3693,6 +3733,7 @@ export class GameScene extends Phaser.Scene {
     const stress = this.localPlayerSnapshot?.stress ?? 0;
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
+    const isUnderworldTower = selectedTower?.definitionId === "archer-4";
 
     const towerHint = selectedTower
       ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
@@ -3744,6 +3785,11 @@ export class GameScene extends Phaser.Scene {
         choiceOpen: this.ultimateChoiceOpen,
         needsChoice: this.selectedCharacterId === "warrior"
       },
+      underworldMode: isUnderworldTower ? {
+        current: selectedTower.melisUnderworldMode ?? "approval",
+        pullCount: selectedTower.melisUnderworldPullCount ?? 0,
+        canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
       upgrade: {
         label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",
         enabled: canUpgrade
@@ -3755,6 +3801,10 @@ export class GameScene extends Phaser.Scene {
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+        ...(isUnderworldTower ? [
+          `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
+          `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
+        ] : []),
         canUpgrade ? `Sonraki: ${upgradeCost}g` : "Maksimum level",
         canSell ? `Satis: ${sellRefund}g` : "Sadece sahibi satar"
       ] : undefined
@@ -3764,7 +3814,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -3812,6 +3862,10 @@ export class GameScene extends Phaser.Scene {
     this.selectedTowerStatsText?.setText([
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+      ...(selectedTower.definitionId === "archer-4" ? [
+        `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
+        `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
+      ] : []),
       canUpgrade ? `Sonraki upgrade: ${cost}g` : "Sonraki upgrade: maksimum level",
       canSell ? `Satis iadesi: ${sellRefund}g` : "Satis: sadece sahibi"
     ].join("\n"));

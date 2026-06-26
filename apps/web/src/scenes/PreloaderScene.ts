@@ -146,9 +146,11 @@ export class PreloaderScene extends Phaser.Scene {
     } else if (tower.id === "archer-3") {
       this.drawMelisCurseSeal(graphics, center, palette);
     } else if (tower.id === "archer-4") {
-      this.drawWhisperChoir(graphics, center, palette);
+      this.drawUnderworldGate(graphics, center, palette);
     } else if (tower.id === "archer-5") {
       this.drawBrokenMirror(graphics, center, palette);
+    } else if (tower.id === "archer-6") {
+      this.drawWhisperChoir(graphics, center, palette);
     } else {
       this.drawGenericTowerGlyph(graphics, center, tower, palette);
     }
@@ -198,7 +200,7 @@ export class PreloaderScene extends Phaser.Scene {
       return;
     }
 
-    if (tower.id === "archer-4") {
+    if (tower.id === "archer-6") {
       this.drawMelisWhisperProjectile(graphics, center, palette, size);
       graphics.generateTexture(`projectile-${tower.id}`, size, size);
       graphics.destroy();
@@ -443,7 +445,7 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.fillCircle(center, center, 3.2);
   }
 
-  private drawWhisperChoir(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+  private drawUnderworldGate(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
     graphics.fillStyle(0x020617, 0.92);
     graphics.fillCircle(center, center, 13);
     graphics.lineStyle(2.6, palette.main, 0.95);
@@ -467,6 +469,28 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.strokePath();
     graphics.lineStyle(1.1, 0x020617, 0.92);
     graphics.lineBetween(center - 8, center + 3, center + 8, center + 3);
+  }
+
+  private drawWhisperChoir(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(2.5, palette.main, 0.95);
+    graphics.strokeCircle(center, center, 13);
+    graphics.lineStyle(1.8, palette.accent, 0.82);
+    graphics.strokeCircle(center, center, 7);
+    for (let index = 0; index < 5; index += 1) {
+      const angle = -Math.PI / 2 + (index - 2) * 0.62;
+      const x = center + Math.cos(angle) * 10;
+      const y = center + Math.sin(angle) * 9;
+      graphics.fillStyle(palette.main, 0.9);
+      graphics.fillCircle(x, y, 2.7);
+      graphics.lineStyle(1.2, palette.glow, 0.72);
+      graphics.lineBetween(center, center, x, y);
+    }
+    graphics.lineStyle(2, 0xccfbf1, 0.92);
+    graphics.beginPath();
+    graphics.arc(center, center + 2, 9, Math.PI * 0.1, Math.PI * 0.9);
+    graphics.strokePath();
+    graphics.lineStyle(1.2, 0x020617, 0.6);
+    graphics.lineBetween(center - 9, center - 4, center + 9, center - 4);
   }
 
   private drawBrokenMirror(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
@@ -591,6 +615,9 @@ function getVisualPalette(tower: TowerDefinition): VisualPalette {
     }
     if (tower.id === "archer-5") {
       return { main: tower.color, accent: 0xfdf4ff, glow: 0xf0abfc, dark: 0x701a75 };
+    }
+    if (tower.id === "archer-6") {
+      return { main: tower.color, accent: 0x99f6e4, glow: 0x2dd4bf, dark: 0x134e4a };
     }
   }
   if (tower.damageType === "electric") {

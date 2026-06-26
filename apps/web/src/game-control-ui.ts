@@ -16,6 +16,7 @@ type ControlState = {
   zeynepChain?: { value: number; ready: boolean };
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
+  underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
@@ -27,6 +28,7 @@ type ControlAction = {
   slot?: number;
   tier?: ZeynepTier;
   mode?: "attack" | "repair";
+  underworldMode?: "approval" | "stress";
   clientX?: number;
   clientY?: number;
 };
@@ -145,6 +147,15 @@ export function setupGameControlUi(game: Phaser.Game) {
       stats.className = "game-controls__stats";
       stats.textContent = state.selectedStats.join("  |  ");
       shop.append(stats);
+      if (state.underworldMode) {
+        const modeRow = document.createElement("div");
+        modeRow.className = "game-controls__underworld-mode";
+        modeRow.append(
+          makeUnderworldModeButton("Onay", "approval", state.underworldMode),
+          makeUnderworldModeButton("Stres", "stress", state.underworldMode)
+        );
+        shop.append(modeRow);
+      }
     } else {
       const towerGrid = document.createElement("div");
       towerGrid.className = "game-controls__tower-grid";
@@ -190,6 +201,17 @@ export function setupGameControlUi(game: Phaser.Game) {
     const button = makeActionButton(`${label} ${cost}I`, `game-controls__tier game-controls__tier--${tier}`, reputation >= cost, () => {
       dispatch({ action: "useZeynepTier", tier });
     });
+    return button;
+  };
+
+  const makeUnderworldModeButton = (label: string, mode: "approval" | "stress", state: NonNullable<ControlState["underworldMode"]>) => {
+    const button = makeActionButton(
+      `${label}${state.current === mode ? " ✓" : ""}`,
+      `game-controls__underworld-mode-button game-controls__underworld-mode-button--${mode}`,
+      state.canEdit,
+      () => dispatch({ action: "setUnderworldMode", underworldMode: mode })
+    );
+    button.classList.toggle("is-active", state.current === mode);
     return button;
   };
 
