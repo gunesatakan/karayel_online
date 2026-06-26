@@ -97,6 +97,7 @@ export type EnemySnapshot = {
   isFeared?: boolean;
   isArmorBroken?: boolean;
   isDominated?: boolean;
+  isWhisperTurned?: boolean;
   curseLoad?: number;
   doubtStacks?: number;
   isHesitating?: boolean;

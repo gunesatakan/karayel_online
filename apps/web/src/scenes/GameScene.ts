@@ -1934,7 +1934,7 @@ export class GameScene extends Phaser.Scene {
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
-      mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
+      mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
       const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
@@ -1954,12 +1954,12 @@ export class GameScene extends Phaser.Scene {
       const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
       const hasUnderworld = Boolean(enemy.isUnderworldLinked || enemy.isUndead);
       const hasSeparateMelisMarker = isCursed || hasDoubt;
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || hasUnderworld || trackingStacks > 0);
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isWhisperTurned || enemy.isFeared || hasUnderworld || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
       mover.marker?.setPosition(enemy.x, enemy.y - statusYOffset - (hasSeparateMelisMarker ? 11 : 4));
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isWhisperTurned ? "DÖN" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isWhisperTurned ? "#c4b5fd" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isWhisperTurned ? 10 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const curseText = `L${Math.min(999, Math.round(curseLoad))}`;
       const doubtText = enemy.isHesitating ? "Ş!" : `Ş${Math.max(1, doubtStacks)}`;

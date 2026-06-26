@@ -398,9 +398,9 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 
 | Evrim | Etki |
 |---|---|
-| 1 | Suphe stack suresi +1 saniye |
-| 2 | Duraksama suresi +0.5 saniye |
-| 3 | Duraksayan dusman cevresindeki dusmanlara 1 Suphe yayar |
+| 1 | Korku uygulanmis bir dusmanda Suphe tetiklenir ve dusman durursa, dusman 1 saniyeligine taraf degistirir ve diger dusmanlara saldirir. Diger dusmanlar yanindan gecip gidebilir. |
+| 2 | Ayni taraf degistirme tetiklenir; bu kez dusmanlar ilerleyebilmek icin onu oldurmek zorundadir ve ona saldirir. |
+| 3 | Evrim 2 etkilerine ek olarak, taraf degistirmis dusman cani %10'un altina indiginde intihar bombacisi gibi patlar ve kalan cani kadar cevresine psisik hasar verir. |
 
 ## Streak Gorsel Dili
 

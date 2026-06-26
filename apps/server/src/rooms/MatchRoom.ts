@@ -137,6 +137,12 @@ const MELIS_DOUBT_HESITATION_BASE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MULTIPLIER = 1.5;
 const MELIS_DOUBT_SPREAD_RADIUS = 56;
+const MELIS_WHISPER_TURN_MS = 1000;
+const MELIS_WHISPER_TURN_ATTACK_RANGE = 92;
+const MELIS_WHISPER_TURN_ATTACK_DAMAGE = 28;
+const MELIS_WHISPER_TURN_ATTACK_INTERVAL_MS = 320;
+const MELIS_WHISPER_TURN_BLOCK_RADIUS = 42;
+const MELIS_WHISPER_TURN_EXPLOSION_RADIUS = 58;
 const MELIS_UNDERWORLD_EXECUTE_MIN_RATIO = 0.03;
 const MELIS_UNDERWORLD_EXECUTE_MAX_RATIO = 0.18;
 const MELIS_UNDERWORLD_DIGEST_MAX_MS = 3000;
@@ -303,6 +309,11 @@ type EnemyModel = {
   melisDoubtUntil: number;
   melisDoubtHesitateUntil: number;
   melisDoubtHasteUntil: number;
+  melisWhisperTurnedUntil: number;
+  melisWhisperTurnedOwnerId: string;
+  melisWhisperTurnedSourceTowerId: string;
+  melisWhisperTurnedEvolutionLevel: number;
+  melisWhisperTurnedAttackCooldownMs: number;
   melisUndeadOwnerId: string;
   melisUndeadUntil: number;
   melisUndeadAttackCooldownMs: number;
@@ -1176,6 +1187,11 @@ export class MatchRoom extends Room<MatchState> {
       melisDoubtUntil: 0,
       melisDoubtHesitateUntil: 0,
       melisDoubtHasteUntil: 0,
+      melisWhisperTurnedUntil: 0,
+      melisWhisperTurnedOwnerId: "",
+      melisWhisperTurnedSourceTowerId: "",
+      melisWhisperTurnedEvolutionLevel: 0,
+      melisWhisperTurnedAttackCooldownMs: 0,
       melisUndeadOwnerId: "",
       melisUndeadUntil: 0,
       melisUndeadAttackCooldownMs: 0,
@@ -2554,9 +2570,22 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      if (enemy.melisWhisperTurnedUntil > now) {
+        this.updateMelisWhisperTurnedEnemy(enemy, seconds, now);
+        continue;
+      }
+
       if (enemy.dominatedUntil > now) {
         this.applyDominatedEnemyAura(enemy, seconds);
         continue;
+      }
+
+      if (enemy.melisWhisperTurnedUntil > 0) {
+        enemy.melisWhisperTurnedUntil = 0;
+        enemy.melisWhisperTurnedOwnerId = "";
+        enemy.melisWhisperTurnedSourceTowerId = "";
+        enemy.melisWhisperTurnedEvolutionLevel = 0;
+        enemy.melisWhisperTurnedAttackCooldownMs = 0;
       }
 
       if (enemy.healthRegenPerSecond > 0 && enemy.hp > 0) {
@@ -2581,13 +2610,17 @@ export class MatchRoom extends Room<MatchState> {
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
       const doubtHasteMultiplier = enemy.melisDoubtHasteUntil > now ? MELIS_DOUBT_STRESS_HASTE_MULTIPLIER : 1;
       const undeadBlocker = this.getBlockingMelisUndead(enemy);
+      const whisperBlocker = this.getBlockingMelisWhisperTurned(enemy);
       if (undeadBlocker) {
         undeadBlocker.hp -= enemy.maxHp * 0.18 * seconds;
         if (undeadBlocker.hp <= 0) {
           this.enemies.delete(undeadBlocker.id);
         }
       }
-      const speedMultiplier = isHesitating || undeadBlocker
+      if (whisperBlocker) {
+        this.damageMelisWhisperTurnedBlocker(whisperBlocker, enemy.maxHp * 0.18 * seconds);
+      }
+      const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
         : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier) * doubtHasteMultiplier;
       if (isFeared) {
@@ -3404,7 +3437,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
     const now = Date.now();
-    if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now) {
+    if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now) {
       return false;
     }
 
@@ -4033,6 +4066,9 @@ export class MatchRoom extends Room<MatchState> {
     if (this.isMelisStressDominant(tower)) {
       enemy.melisDoubtHasteUntil = Math.max(enemy.melisDoubtHasteUntil, enemy.melisDoubtHesitateUntil + scaleGameDuration(MELIS_DOUBT_STRESS_HASTE_MS));
     }
+    if (tower.melisEvolutionLevel >= 1 && enemy.fearUntil > now) {
+      this.activateMelisWhisperTurnedEnemy(tower, enemy, now);
+    }
 
     if (!fromSpread && tower.melisEvolutionLevel >= 3) {
       this.spreadMelisDoubt(tower, enemy, now);
@@ -4043,7 +4079,13 @@ export class MatchRoom extends Room<MatchState> {
     const radius = this.scaleWorldDistance(MELIS_DOUBT_SPREAD_RADIUS);
     const radiusSq = radius * radius;
     for (const enemy of this.enemies.values()) {
-      if (enemy.id === source.id || distanceSq(source.x, source.y, enemy.x, enemy.y) > radiusSq) {
+      if (
+        enemy.id === source.id ||
+        enemy.dominatedUntil > now ||
+        enemy.melisUndeadUntil > now ||
+        enemy.melisWhisperTurnedUntil > now ||
+        distanceSq(source.x, source.y, enemy.x, enemy.y) > radiusSq
+      ) {
         continue;
       }
       this.applyMelisDoubt(tower, enemy, now, true);
@@ -4065,12 +4107,144 @@ export class MatchRoom extends Room<MatchState> {
     return this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 3 + tower.melisEvolutionLevel * 6);
   }
 
+  private activateMelisWhisperTurnedEnemy(tower: TowerModel, enemy: EnemyModel, now: number) {
+    enemy.fearUntil = 0;
+    enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, now + scaleGameDuration(MELIS_WHISPER_TURN_MS));
+    enemy.melisWhisperTurnedUntil = Math.max(enemy.melisWhisperTurnedUntil, now + scaleGameDuration(MELIS_WHISPER_TURN_MS));
+    enemy.melisWhisperTurnedOwnerId = tower.ownerId;
+    enemy.melisWhisperTurnedSourceTowerId = tower.id;
+    enemy.melisWhisperTurnedEvolutionLevel = Math.max(enemy.melisWhisperTurnedEvolutionLevel, tower.melisEvolutionLevel);
+    enemy.melisWhisperTurnedAttackCooldownMs = 0;
+  }
+
+  private updateMelisWhisperTurnedEnemy(enemy: EnemyModel, seconds: number, now: number) {
+    if (enemy.hp <= 0 || enemy.melisWhisperTurnedUntil <= now) {
+      this.clearMelisWhisperTurnedEnemy(enemy);
+      return;
+    }
+
+    if (enemy.melisWhisperTurnedEvolutionLevel >= 3 && enemy.hp / Math.max(1, enemy.maxHp) <= 0.1) {
+      this.explodeMelisWhisperTurnedEnemy(enemy);
+      return;
+    }
+
+    enemy.melisWhisperTurnedAttackCooldownMs = Math.max(0, enemy.melisWhisperTurnedAttackCooldownMs - seconds * 1000);
+    if (enemy.melisWhisperTurnedAttackCooldownMs > 0) {
+      return;
+    }
+
+    const target = this.findMelisWhisperTurnedTarget(enemy, now);
+    if (!target) {
+      return;
+    }
+
+    const damage = Math.max(MELIS_WHISPER_TURN_ATTACK_DAMAGE, enemy.maxHp * 0.035);
+    this.damageEnemy(target, damage, 0, "archer-6-whisper-turn", enemy.melisWhisperTurnedOwnerId, "psychic", 0, 1, enemy.melisWhisperTurnedSourceTowerId, "wave");
+    enemy.melisWhisperTurnedAttackCooldownMs = scaleGameDuration(MELIS_WHISPER_TURN_ATTACK_INTERVAL_MS);
+    const beamId = `melis-whisper-turn-${enemy.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-6-whisper-turn",
+      x1: enemy.x,
+      y1: enemy.y,
+      x2: target.x,
+      y2: target.y,
+      width: this.scaleWorldDistance(6),
+      color: 0xa855f7,
+      overdrive: false,
+      ttlMs: 180
+    });
+  }
+
+  private clearMelisWhisperTurnedEnemy(enemy: EnemyModel) {
+    enemy.melisWhisperTurnedUntil = 0;
+    enemy.melisWhisperTurnedOwnerId = "";
+    enemy.melisWhisperTurnedSourceTowerId = "";
+    enemy.melisWhisperTurnedEvolutionLevel = 0;
+    enemy.melisWhisperTurnedAttackCooldownMs = 0;
+  }
+
+  private findMelisWhisperTurnedTarget(source: EnemyModel, now: number) {
+    const range = this.scaleWorldDistance(MELIS_WHISPER_TURN_ATTACK_RANGE);
+    const rangeSq = range * range;
+    return Array.from(this.enemies.values())
+      .filter((enemy) => (
+        enemy.id !== source.id &&
+        enemy.dominatedUntil <= now &&
+        enemy.melisUndeadUntil <= now &&
+        enemy.melisWhisperTurnedUntil <= now &&
+        distanceSq(source.x, source.y, enemy.x, enemy.y) <= rangeSq
+      ))
+      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  }
+
+  private getBlockingMelisWhisperTurned(enemy: EnemyModel) {
+    const now = Date.now();
+    const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_BLOCK_RADIUS);
+    const radiusSq = radius * radius;
+    return Array.from(this.enemies.values()).find((candidate) => (
+      candidate.id !== enemy.id &&
+      candidate.melisWhisperTurnedUntil > now &&
+      candidate.melisWhisperTurnedEvolutionLevel >= 2 &&
+      candidate.pathId === enemy.pathId &&
+      distanceSq(candidate.x, candidate.y, enemy.x, enemy.y) <= radiusSq
+    ));
+  }
+
+  private damageMelisWhisperTurnedBlocker(enemy: EnemyModel, amount: number) {
+    enemy.hp -= amount;
+    if (enemy.melisWhisperTurnedEvolutionLevel >= 3 && enemy.hp > 0 && enemy.hp / Math.max(1, enemy.maxHp) <= 0.1) {
+      this.explodeMelisWhisperTurnedEnemy(enemy);
+      return;
+    }
+
+    if (enemy.hp <= 0) {
+      this.enemies.delete(enemy.id);
+    }
+  }
+
+  private explodeMelisWhisperTurnedEnemy(enemy: EnemyModel) {
+    if (!this.enemies.has(enemy.id)) {
+      return;
+    }
+
+    const damage = Math.max(1, enemy.hp);
+    const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_EXPLOSION_RADIUS);
+    const radiusSq = radius * radius;
+    for (const target of Array.from(this.enemies.values())) {
+      if (
+        target.id === enemy.id ||
+        target.melisUndeadUntil > Date.now() ||
+        target.melisWhisperTurnedUntil > Date.now() ||
+        distanceSq(enemy.x, enemy.y, target.x, target.y) > radiusSq
+      ) {
+        continue;
+      }
+      this.damageEnemy(target, damage, 0, "archer-6-whisper-suicide", enemy.melisWhisperTurnedOwnerId, "psychic", 0, 1, enemy.melisWhisperTurnedSourceTowerId, "impact");
+    }
+
+    const beamId = `melis-whisper-suicide-${enemy.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-6-whisper-suicide",
+      x1: enemy.x,
+      y1: enemy.y,
+      x2: enemy.x,
+      y2: enemy.y,
+      width: radius * 2,
+      color: 0xef4444,
+      overdrive: false,
+      ttlMs: 380
+    });
+    this.enemies.delete(enemy.id);
+  }
+
   private updateMelisUnderworldLink(tower: TowerModel, deltaTime: number, now: number) {
     tower.cooldownMs = Math.max(0, tower.cooldownMs - deltaTime);
     const maxLinks = tower.melisEvolutionLevel >= 2 ? 2 : 1;
     tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => {
       const enemy = this.enemies.get(enemyId);
-      return Boolean(enemy && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now);
+      return Boolean(enemy && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now && enemy.melisWhisperTurnedUntil <= now);
     }).slice(0, maxLinks);
 
     while (tower.melisUnderworldTargetIds.length < maxLinks) {
@@ -4144,7 +4318,7 @@ export class MatchRoom extends Room<MatchState> {
     const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_CHAIN_RADIUS);
     for (const enemy of Array.from(this.enemies.values())) {
       this.perfCounters.aoeChecks += 1;
-      if (enemy.id === linkedEnemy.id || enemy.melisUndeadUntil > Date.now() || enemy.dominatedUntil > Date.now()) {
+      if (enemy.id === linkedEnemy.id || enemy.melisUndeadUntil > Date.now() || enemy.dominatedUntil > Date.now() || enemy.melisWhisperTurnedUntil > Date.now()) {
         continue;
       }
 
@@ -4273,6 +4447,11 @@ export class MatchRoom extends Room<MatchState> {
       melisDoubtUntil: 0,
       melisDoubtHesitateUntil: 0,
       melisDoubtHasteUntil: 0,
+      melisWhisperTurnedUntil: 0,
+      melisWhisperTurnedOwnerId: "",
+      melisWhisperTurnedSourceTowerId: "",
+      melisWhisperTurnedEvolutionLevel: 0,
+      melisWhisperTurnedAttackCooldownMs: 0,
       melisUndeadOwnerId: tower.ownerId,
       melisUndeadUntil: now + scaleGameDuration(MELIS_UNDERWORLD_UNDEAD_TTL_MS),
       melisUndeadAttackCooldownMs: 0,
@@ -4326,7 +4505,7 @@ export class MatchRoom extends Room<MatchState> {
     const range = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_RANGE);
     const rangeSq = range * range;
     return Array.from(this.enemies.values())
-      .filter((enemy) => enemy.id !== source.id && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now && distanceSq(source.x, source.y, enemy.x, enemy.y) <= rangeSq)
+      .filter((enemy) => enemy.id !== source.id && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now && enemy.melisWhisperTurnedUntil <= now && distanceSq(source.x, source.y, enemy.x, enemy.y) <= rangeSq)
       .sort((a, b) => a.pathDistance - b.pathDistance)[0];
   }
 
@@ -4500,6 +4679,7 @@ export class MatchRoom extends Room<MatchState> {
         isFeared: enemy.fearUntil > now,
         isArmorBroken: enemy.armorBrokenUntil > now,
         isDominated: enemy.dominatedUntil > now,
+        isWhisperTurned: enemy.melisWhisperTurnedUntil > now,
         curseLoad: enemy.melisCurseUntil > now ? Math.round(enemy.melisCurseLoad) : 0,
         doubtStacks: enemy.melisDoubtUntil > now ? enemy.melisDoubtStacks : 0,
         isHesitating: enemy.melisDoubtHesitateUntil > now,
