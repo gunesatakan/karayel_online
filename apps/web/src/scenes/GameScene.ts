@@ -3192,6 +3192,10 @@ export class GameScene extends Phaser.Scene {
         this.drawMelisCursePulse(beam, color);
       } else if (beam.definitionId === "archer-6-whisper") {
         this.drawMelisWhisperWave(beam, color);
+      } else if (beam.definitionId === "archer-6-whisper-turn") {
+        this.drawMelisWhisperTurnShot(beam, color);
+      } else if (beam.definitionId === "archer-6-whisper-suicide") {
+        this.drawMelisWhisperSuicideBurst(beam, color);
       } else if (beam.definitionId === "archer-4-underworld-link" || beam.definitionId === "archer-4-underworld-execute" || beam.definitionId === "archer-4-undead-shot") {
         this.drawMelisUnderworldLink(beam, color);
       } else if (beam.definitionId === "archer-5-mirror") {
@@ -3271,23 +3275,90 @@ export class GameScene extends Phaser.Scene {
     const radius = Math.max(8, beam.width / 2);
     const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 420, 0, 1);
     const now = Date.now();
-    const pulse = 1 + Math.sin(now / 38) * 0.05;
-    this.beamGraphics.lineStyle(1.1 * this.getTowerEffectScale(), 0xccfbf1, 0.32 * life);
+    const scale = this.getTowerEffectScale();
+    const pulse = 1 + Math.sin(now / 34) * 0.07;
+    this.beamGraphics.lineStyle(4.8 * scale, 0x020617, 0.58 * life);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(color, 0.055 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
-    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.72 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.04 - life * 0.2));
-    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0x7dd3fc, 0.5 * life);
-    for (let index = 0; index < 9; index += 1) {
-      const angle = (Math.PI * 2 * index) / 9 + Math.sin(now / 260 + index) * 0.25;
-      const inner = radius * 0.18;
-      const outer = radius * (0.68 + (index % 3) * 0.08);
+    this.beamGraphics.lineStyle(2.2 * scale, 0xccfbf1, 0.82 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(1.1 * scale, 0xf0abfc, 0.62 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0x14b8a6, 0.14 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.92 * pulse);
+    this.beamGraphics.fillStyle(0x7c3aed, 0.075 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 1.26 * pulse);
+
+    for (let ring = 0; ring < 3; ring += 1) {
+      const ringRadius = radius * (0.48 + ring * 0.24 + Math.sin(now / 80 + ring) * 0.035);
+      this.beamGraphics.lineStyle((3 - ring * 0.55) * scale, ring === 1 ? 0xf0abfc : color, (0.82 - ring * 0.18) * life);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, ringRadius);
+    }
+
+    this.beamGraphics.lineStyle(1.5 * scale, 0xccfbf1, 0.74 * life);
+    for (let index = 0; index < 14; index += 1) {
+      const angle = (Math.PI * 2 * index) / 14 + Math.sin(now / 220 + index) * 0.32;
+      const inner = radius * (0.22 + (index % 2) * 0.08);
+      const outer = radius * (0.92 + (index % 4) * 0.09);
       this.beamGraphics.lineBetween(
         beam.x2 + Math.cos(angle) * inner,
         beam.y2 + Math.sin(angle) * inner,
         beam.x2 + Math.cos(angle) * outer,
         beam.y2 + Math.sin(angle) * outer
+      );
+    }
+  }
+
+  private drawMelisWhisperTurnShot(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 180, 0, 1);
+    const scale = this.getTowerEffectScale();
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const wobble = Math.sin(Date.now() / 35) * 4 * scale;
+    this.beamGraphics.lineStyle(5.2 * scale, 0x020617, 0.72 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(2.4 * scale, 0xc4b5fd, 0.88 * life);
+    this.beamGraphics.lineBetween(beam.x1 + nx * wobble, beam.y1 + ny * wobble, beam.x2 - nx * wobble, beam.y2 - ny * wobble);
+    this.beamGraphics.lineStyle(1.2 * scale, color, 0.72 * life);
+    for (let index = 0; index < 5; index += 1) {
+      const t = (index + 0.5) / 5;
+      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
+      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
+      this.beamGraphics.lineBetween(x - nx * 7 * scale - ux * 3, y - ny * 7 * scale - uy * 3, x + nx * 7 * scale + ux * 3, y + ny * 7 * scale + uy * 3);
+    }
+  }
+
+  private drawMelisWhisperSuicideBurst(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(12, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 380) / 380, 0, 1);
+    const scale = this.getTowerEffectScale();
+    const now = Date.now();
+    this.beamGraphics.fillStyle(0x7f1d1d, 0.16 * life);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, radius * (0.62 + Math.sin(now / 40) * 0.04));
+    this.beamGraphics.lineStyle(3.2 * scale, 0xef4444, 0.82 * life);
+    this.beamGraphics.strokeCircle(beam.x1, beam.y1, radius * 0.52);
+    this.beamGraphics.lineStyle(1.8 * scale, color, 0.72 * life);
+    for (let index = 0; index < 12; index += 1) {
+      const angle = (Math.PI * 2 * index) / 12 + now / 300;
+      const inner = radius * 0.18;
+      const outer = radius * (0.42 + (index % 3) * 0.1);
+      this.beamGraphics.lineBetween(
+        beam.x1 + Math.cos(angle) * inner,
+        beam.y1 + Math.sin(angle) * inner,
+        beam.x1 + Math.cos(angle) * outer,
+        beam.y1 + Math.sin(angle) * outer
       );
     }
   }
@@ -3334,18 +3405,38 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const radius = Math.max(12, beam.width / 2);
+    const radius = Math.max(18, beam.width / 2);
     const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 520, 0, 1);
-    const pulse = 1 + Math.sin(Date.now() / 34) * 0.04;
-    this.beamGraphics.lineStyle(2.4 * this.getTowerEffectScale(), color, 0.82 * life);
+    const now = Date.now();
+    const scale = this.getTowerEffectScale();
+    const pulse = 1 + Math.sin(now / 32) * 0.05;
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+
+    this.beamGraphics.lineStyle(9 * scale, 0x020617, 0.82 * life);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(0xfdf4ff, 0.08 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.72 * pulse);
-    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.82 * life);
-    for (let index = 0; index < 7; index += 1) {
-      const angle = (Math.PI * 2 * index) / 7 + Date.now() / 220;
-      const inner = radius * 0.16;
-      const outer = radius * (0.48 + (index % 3) * 0.1);
+    this.beamGraphics.lineStyle(5.4 * scale, 0xfdf4ff, 0.64 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(2.6 * scale, color, 0.92 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+
+    this.beamGraphics.fillStyle(0xfdf4ff, 0.18 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.92 * pulse);
+    this.beamGraphics.fillStyle(0xe879f9, 0.12 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 1.35 * pulse);
+    this.beamGraphics.lineStyle(4.2 * scale, 0xfdf4ff, 0.92 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.82 - life * 0.1));
+    this.beamGraphics.lineStyle(2.5 * scale, color, 0.86 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.18 - life * 0.16));
+
+    this.beamGraphics.lineStyle(2.2 * scale, 0xf0abfc, 0.92 * life);
+    for (let index = 0; index < 14; index += 1) {
+      const angle = (Math.PI * 2 * index) / 14 + now / 260;
+      const inner = radius * (0.18 + (index % 2) * 0.08);
+      const outer = radius * (0.76 + (index % 5) * 0.13);
       this.beamGraphics.lineBetween(
         beam.x2 + Math.cos(angle) * inner,
         beam.y2 + Math.sin(angle) * inner,
@@ -3353,8 +3444,22 @@ export class GameScene extends Phaser.Scene {
         beam.y2 + Math.sin(angle) * outer
       );
     }
-    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xfdf4ff, 0.7 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.58 - life * 0.18));
+
+    this.beamGraphics.fillStyle(0xfdf4ff, 0.74 * life);
+    for (let index = 0; index < 6; index += 1) {
+      const t = (index + 1) / 7;
+      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
+      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
+      const shard = (5 + (index % 3) * 2) * scale;
+      this.beamGraphics.fillTriangle(
+        x + nx * shard,
+        y + ny * shard,
+        x - nx * shard * 0.7,
+        y - ny * shard * 0.7,
+        x + dx / length * shard * 1.6,
+        y + dy / length * shard * 1.6
+      );
+    }
   }
 
   private drawShowcaseBeam(beam: BeamSnapshot, color: number) {
