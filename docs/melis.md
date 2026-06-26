@@ -396,10 +396,12 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 | Dalga alani | 40 |
 | Suphe suresi | 4 saniye |
 | Maksimum suphe stack'i | 3 |
+| Stack basina yavaslatma | %10 |
 
 **Suphe mekanigi:**
 
 - Her dalga vurusunda alandaki dusmanlara 1 Suphe stack'i uygulanir.
+- Her Suphe stack'i dusmani %10 yavaslatir; 3 stack'te toplam yavaslatma %30 olur.
 - 3 stack'e ulasan dusman 0.5 saniye duraksar.
 - Duraksama tetiklenince stack'ler sifirlanir.
 - Dusman ustunde `Ş1`, `Ş2`, `Ş3` seklinde suphe miktari gorunur.

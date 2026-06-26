@@ -139,6 +139,7 @@ const MELIS_DOUBT_APPROVAL_BONUS_MS = 2000;
 const MELIS_DOUBT_HESITATION_BASE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MULTIPLIER = 1.5;
+const MELIS_DOUBT_SLOW_PER_STACK = 0.1;
 const MELIS_DOUBT_SPREAD_RADIUS = 56;
 const MELIS_WHISPER_TURN_MS = 1000;
 const MELIS_WHISPER_TURN_ATTACK_RANGE = 92;
@@ -2631,6 +2632,7 @@ export class MatchRoom extends Room<MatchState> {
       const isHesitating = enemy.melisDoubtHesitateUntil > now;
       const kinSlowMultiplier = enemy.kinSlowUntil > now ? enemy.kinSlowMultiplier : 1;
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
+      const doubtSlowMultiplier = enemy.melisDoubtUntil > now ? Math.max(0.1, 1 - Math.min(3, enemy.melisDoubtStacks) * MELIS_DOUBT_SLOW_PER_STACK) : 1;
       const doubtHasteMultiplier = enemy.melisDoubtHasteUntil > now ? MELIS_DOUBT_STRESS_HASTE_MULTIPLIER : 1;
       const undeadBlocker = this.getBlockingMelisUndead(enemy);
       const whisperBlocker = this.getBlockingMelisWhisperTurned(enemy);
@@ -2645,7 +2647,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier) * doubtHasteMultiplier;
+        : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier) * doubtHasteMultiplier;
       if (isFeared) {
         enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
       } else {
