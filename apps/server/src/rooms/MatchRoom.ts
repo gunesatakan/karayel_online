@@ -132,12 +132,20 @@ const MELIS_CURSE_STRESS_DURATION_MS = 3000;
 const MELIS_CURSE_APPROVAL_DURATION_MS = 7000;
 const MELIS_CURSE_STRESS_AREA_MULTIPLIER = 1.45;
 const MELIS_CURSE_DEATH_BURST_RADIUS = 58;
-const MELIS_DOUBT_BASE_DURATION_MS = 4000;
-const MELIS_DOUBT_APPROVAL_BONUS_MS = 2000;
-const MELIS_DOUBT_HESITATION_BASE_MS = 500;
-const MELIS_DOUBT_STRESS_HASTE_MS = 500;
-const MELIS_DOUBT_STRESS_HASTE_MULTIPLIER = 1.5;
-const MELIS_DOUBT_SPREAD_RADIUS = 56;
+const MELIS_UNDERWORLD_EXECUTE_MIN_RATIO = 0.03;
+const MELIS_UNDERWORLD_EXECUTE_MAX_RATIO = 0.18;
+const MELIS_UNDERWORLD_DIGEST_MAX_MS = 3000;
+const MELIS_UNDERWORLD_DIGEST_MIN_MS = 1000;
+const MELIS_UNDERWORLD_FEAR_RADIUS = 56;
+const MELIS_UNDERWORLD_FEAR_MS = 1000;
+const MELIS_UNDERWORLD_CHAIN_DAMAGE_INTERVAL_MS = 350;
+const MELIS_UNDERWORLD_CHAIN_DAMAGE = 18;
+const MELIS_UNDERWORLD_CHAIN_RADIUS = 12;
+const MELIS_UNDERWORLD_UNDEAD_RANGE = 92;
+const MELIS_UNDERWORLD_UNDEAD_DAMAGE = 34;
+const MELIS_UNDERWORLD_UNDEAD_FIRE_INTERVAL_MS = 900;
+const MELIS_UNDERWORLD_UNDEAD_BLOCK_RADIUS = 42;
+const MELIS_UNDERWORLD_UNDEAD_TTL_MS = 18000;
 const MELIS_BROKEN_MIRROR_BASE_CAPACITY = 180;
 const MELIS_BROKEN_MIRROR_CAPACITY_MULTIPLIER = 1.5;
 const MELIS_BROKEN_MIRROR_BASE_STORE_RATIO = 0.2;
@@ -281,10 +289,12 @@ type EnemyModel = {
   melisCurseUntil: number;
   melisCurseOwnerId: string;
   melisCurseTowerId: string;
-  melisDoubtStacks: number;
-  melisDoubtUntil: number;
-  melisDoubtHesitateUntil: number;
-  melisDoubtHasteUntil: number;
+  melisUndeadOwnerId: string;
+  melisUndeadUntil: number;
+  melisUndeadAttackCooldownMs: number;
+  melisUndeadSourceTowerId: string;
+  melisUnderworldVulnerableUntil: number;
+  melisUnderworldDamageTakenMultiplier: number;
   pathId: number;
 };
 
@@ -327,6 +337,9 @@ type TowerModel = {
   zeynepFormationSize: number;
   zeynepFormationLevel: number;
   melisEvolutionLevel: number;
+  melisUnderworldTargetIds: string[];
+  melisUnderworldPullCount: number;
+  melisUnderworldChainLastAt: number;
   melisMirrorCharge: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
@@ -1137,10 +1150,12 @@ export class MatchRoom extends Room<MatchState> {
       melisCurseUntil: 0,
       melisCurseOwnerId: "",
       melisCurseTowerId: "",
-      melisDoubtStacks: 0,
-      melisDoubtUntil: 0,
-      melisDoubtHesitateUntil: 0,
-      melisDoubtHasteUntil: 0,
+      melisUndeadOwnerId: "",
+      melisUndeadUntil: 0,
+      melisUndeadAttackCooldownMs: 0,
+      melisUndeadSourceTowerId: "",
+      melisUnderworldVulnerableUntil: 0,
+      melisUnderworldDamageTakenMultiplier: 1,
       pathId
     });
   }
@@ -1159,6 +1174,11 @@ export class MatchRoom extends Room<MatchState> {
 
       if (tower.overheatMs > 0) {
         tower.overheatMs = Math.max(0, tower.overheatMs - deltaTime);
+        continue;
+      }
+
+      if (tower.definition.id === "archer-4") {
+        this.updateMelisUnderworldLink(tower, deltaTime, now);
         continue;
       }
 
@@ -1240,11 +1260,6 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "archer-3") {
       this.fireMelisCurse(tower, target);
-      return;
-    }
-
-    if (tower.definition.id === "archer-4") {
-      this.fireMelisWhisperChorus(tower, target);
       return;
     }
 
@@ -2503,6 +2518,11 @@ export class MatchRoom extends Room<MatchState> {
   private updateEnemies(seconds: number) {
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
+      if (enemy.melisUndeadUntil > now) {
+        this.updateMelisUndead(enemy, seconds, now);
+        continue;
+      }
+
       if (enemy.dominatedUntil > now) {
         this.applyDominatedEnemyAura(enemy, seconds);
         continue;
@@ -2519,19 +2539,20 @@ export class MatchRoom extends Room<MatchState> {
         enemy.melisCurseTowerId = "";
       }
 
-      if (enemy.melisDoubtStacks > 0 && enemy.melisDoubtUntil <= now) {
-        enemy.melisDoubtStacks = 0;
-      }
-
       const isFeared = enemy.fearUntil > now;
       const isSlowed = enemy.slowUntil > now;
-      const isHesitating = enemy.melisDoubtHesitateUntil > now;
       const kinSlowMultiplier = enemy.kinSlowUntil > now ? enemy.kinSlowMultiplier : 1;
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
-      const doubtHasteMultiplier = enemy.melisDoubtHasteUntil > now ? MELIS_DOUBT_STRESS_HASTE_MULTIPLIER : 1;
-      const speedMultiplier = isHesitating
+      const undeadBlocker = this.getBlockingMelisUndead(enemy);
+      if (undeadBlocker) {
+        undeadBlocker.hp -= enemy.maxHp * 0.18 * seconds;
+        if (undeadBlocker.hp <= 0) {
+          this.enemies.delete(undeadBlocker.id);
+        }
+      }
+      const speedMultiplier = undeadBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier) * doubtHasteMultiplier;
+        : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier);
       if (isFeared) {
         enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
       } else {
@@ -2643,6 +2664,9 @@ export class MatchRoom extends Room<MatchState> {
       zeynepFormationSize: 0,
       zeynepFormationLevel: 0,
       melisEvolutionLevel: 0,
+      melisUnderworldTargetIds: [],
+      melisUnderworldPullCount: 0,
+      melisUnderworldChainLastAt: 0,
       melisMirrorCharge: 0,
       damageDealt: 0,
       damageWindow: []
@@ -3328,7 +3352,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
-    if (enemy.dominatedUntil > Date.now()) {
+    const now = Date.now();
+    if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now) {
       return false;
     }
 
@@ -3362,8 +3387,12 @@ export class MatchRoom extends Room<MatchState> {
     const trackingStacks = this.getTrackingStackCount(enemy, now);
     const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * 0.2 : 1;
     const guidanceBonus = this.isEnemyInProjectileGuidance(enemy, now) ? PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER : 1;
+    const underworldVulnerabilityBonus = enemy.melisUnderworldVulnerableUntil > now ? enemy.melisUnderworldDamageTakenMultiplier : 1;
+    if (enemy.melisUnderworldVulnerableUntil <= now) {
+      enemy.melisUnderworldDamageTakenMultiplier = 1;
+    }
     const result = calculateDamageTaken(
-      { amount: damage * trackingBonus * guidanceBonus, damageType, hitType },
+      { amount: damage * trackingBonus * guidanceBonus * underworldVulnerabilityBonus, damageType, hitType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
@@ -3885,88 +3914,304 @@ export class MatchRoom extends Room<MatchState> {
     return this.scaleWorldDistance(baseRadius * stressMultiplier);
   }
 
-  private fireMelisWhisperChorus(tower: TowerModel, target: EnemyModel) {
-    const now = Date.now();
-    const radius = this.getMelisWhisperRadius(tower);
-    const radiusSq = radius * radius;
-    const damage = this.getTowerDamage(tower);
+  private updateMelisUnderworldLink(tower: TowerModel, deltaTime: number, now: number) {
+    tower.cooldownMs = Math.max(0, tower.cooldownMs - deltaTime);
+    const maxLinks = tower.melisEvolutionLevel >= 2 ? 2 : 1;
+    tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => {
+      const enemy = this.enemies.get(enemyId);
+      return Boolean(enemy && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now);
+    }).slice(0, maxLinks);
 
-    for (const enemy of Array.from(this.enemies.values())) {
-      this.perfCounters.aoeChecks += 1;
-      if (distanceSq(target.x, target.y, enemy.x, enemy.y) > radiusSq) {
+    while (tower.melisUnderworldTargetIds.length < maxLinks) {
+      const target = this.findMelisUnderworldTarget(tower, tower.melisUnderworldTargetIds, now);
+      if (!target) {
+        break;
+      }
+      tower.melisUnderworldTargetIds.push(target.id);
+    }
+
+    if (tower.melisUnderworldTargetIds.length === 0) {
+      return;
+    }
+
+    const isStressMode = this.isMelisStressDominant(tower);
+    for (const targetId of [...tower.melisUnderworldTargetIds]) {
+      const target = this.enemies.get(targetId);
+      if (!target) {
         continue;
       }
 
-      const survived = !this.damageEnemyFromTower(tower, enemy, damage, 0);
-      if (survived && this.enemies.has(enemy.id)) {
-        this.applyMelisDoubt(tower, enemy, now);
+      this.applyMelisUnderworldLinkEffects(tower, target, isStressMode, now);
+      this.renderMelisUnderworldLink(tower, target, isStressMode);
+
+      if (tower.melisUnderworldPullCount >= 100 && now - tower.melisUnderworldChainLastAt >= scaleGameDuration(MELIS_UNDERWORLD_CHAIN_DAMAGE_INTERVAL_MS)) {
+        this.damageMelisUnderworldLinkLine(tower, target);
+        tower.melisUnderworldChainLastAt = now;
+      }
+
+      if (target.hp / Math.max(1, target.maxHp) <= this.getMelisUnderworldExecuteRatio(tower, target)) {
+        this.executeMelisUnderworldTarget(tower, target, isStressMode, now);
+      }
+    }
+  }
+
+  private findMelisUnderworldTarget(tower: TowerModel, existingTargetIds: string[], now: number) {
+    const range = this.getTowerRange(tower);
+    const rangeSq = range * range;
+    return Array.from(this.enemies.values())
+      .filter((enemy) => (
+        !existingTargetIds.includes(enemy.id) &&
+        enemy.melisUndeadUntil <= now &&
+        this.canTowerTargetEnemy(tower, enemy) &&
+        distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= rangeSq
+      ))
+      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  }
+
+  private applyMelisUnderworldLinkEffects(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean, now: number) {
+    if (tower.melisUnderworldPullCount < 20) {
+      return;
+    }
+
+    const distanceMultiplier = tower.melisUnderworldPullCount >= 50
+      ? this.getMelisUnderworldDistanceMultiplier(tower, enemy)
+      : 1;
+
+    if (isStressMode) {
+      const slowAmount = 0.1 * distanceMultiplier;
+      const resistance = enemy.statusResistances.slow ?? 0;
+      const resistedMultiplier = 1 - slowAmount * Math.max(0, 1 - resistance);
+      enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+      return;
+    }
+
+    enemy.melisUnderworldVulnerableUntil = Math.max(enemy.melisUnderworldVulnerableUntil, now + 140);
+    enemy.melisUnderworldDamageTakenMultiplier = Math.max(enemy.melisUnderworldDamageTakenMultiplier, 1 + 0.2 * distanceMultiplier);
+  }
+
+  private damageMelisUnderworldLinkLine(tower: TowerModel, linkedEnemy: EnemyModel) {
+    const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_CHAIN_RADIUS);
+    for (const enemy of Array.from(this.enemies.values())) {
+      this.perfCounters.aoeChecks += 1;
+      if (enemy.id === linkedEnemy.id || enemy.melisUndeadUntil > Date.now() || enemy.dominatedUntil > Date.now()) {
+        continue;
+      }
+
+      if (distanceToSegment(enemy.x, enemy.y, tower.x, tower.y, linkedEnemy.x, linkedEnemy.y) <= radius + getEnemyCollisionRadius(enemy)) {
+        this.damageEnemy(enemy, this.getMelisUnderworldChainDamage(tower), 0, "archer-4-underworld-link", tower.ownerId, "psychic", 0, tower.level, tower.id, "focus");
+      }
+    }
+  }
+
+  private executeMelisUnderworldTarget(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean, now: number) {
+    const x = enemy.x;
+    const y = enemy.y;
+    const pathId = enemy.pathId;
+    const canRaiseShooter = tower.melisEvolutionLevel >= 3 && enemy.type === "shooter";
+    const killed = this.damageEnemy(enemy, enemy.hp + enemy.shield + enemy.maxHp + 1, 0, "archer-4-underworld-execute", tower.ownerId, "true", 0, tower.level, tower.id, "focus");
+    if (!killed) {
+      return;
+    }
+
+    tower.melisUnderworldPullCount += 1;
+    tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => enemyId !== enemy.id);
+    const player = this.state.players.get(tower.ownerId);
+    if (player?.characterId === "archer") {
+      if (isStressMode) {
+        player.stress += 1;
+      } else {
+        player.approval += 1;
+        player.currentWaveApproval += 1;
       }
     }
 
-    const beamId = `melis-whisper-${tower.id}-${this.nextBeamId++}`;
+    if (tower.melisEvolutionLevel >= 1) {
+      this.fearEnemiesAroundMelisUnderworldPull(tower, x, y, now);
+    }
+
+    if (canRaiseShooter) {
+      this.spawnMelisUndeadShooter(tower, pathId, now);
+    }
+
+    tower.offlineUntil = Math.max(tower.offlineUntil, now + scaleGameDuration(this.getMelisUnderworldDigestMs(tower)));
+    const beamId = `melis-underworld-execute-${tower.id}-${this.nextBeamId++}`;
     this.beams.set(beamId, {
       id: beamId,
-      definitionId: "archer-4-whisper",
+      definitionId: "archer-4-underworld-execute",
       x1: tower.x,
       y1: tower.y,
-      x2: target.x,
-      y2: target.y,
-      width: radius * 2,
-      color: tower.definition.color,
+      x2: x,
+      y2: y,
+      width: this.scaleWorldDistance(34),
+      color: isStressMode ? 0xef4444 : 0x2dd4bf,
       overdrive: false,
       ttlMs: 420
     });
   }
 
-  private applyMelisDoubt(tower: TowerModel, enemy: EnemyModel, now: number, fromSpread = false) {
-    if (enemy.melisDoubtUntil <= now) {
-      enemy.melisDoubtStacks = 0;
+  private fearEnemiesAroundMelisUnderworldPull(tower: TowerModel, x: number, y: number, now: number) {
+    const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_FEAR_RADIUS);
+    const radiusSq = radius * radius;
+    for (const enemy of this.enemies.values()) {
+      if (enemy.melisUndeadUntil > now || distanceSq(x, y, enemy.x, enemy.y) > radiusSq) {
+        continue;
+      }
+      const duration = applyStatusResistance(MELIS_UNDERWORLD_FEAR_MS, enemy.statusResistances.fear);
+      enemy.fearUntil = Math.max(enemy.fearUntil, now + scaleGameDuration(duration));
     }
+  }
 
-    enemy.melisDoubtStacks = Math.min(3, enemy.melisDoubtStacks + 1);
-    enemy.melisDoubtUntil = Math.max(enemy.melisDoubtUntil, now + scaleGameDuration(this.getMelisDoubtDurationMs(tower)));
+  private spawnMelisUndeadShooter(tower: TowerModel, pathId: number, now: number) {
+    const definition = getEnemyCombatDefinition("shooter");
+    const race: EnemyRace = "fallen";
+    const path = this.activePaths[pathId] ?? this.activePaths[0];
+    const pathDistance = Math.max(0, (path?.totalLength ?? totalPathLength) - 1);
+    const point = getPointAlongRuntimePath(path, pathDistance);
+    const waveScale = getWaveHpMultiplier(this.wave);
+    const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * 0.55));
+    const id = `e${this.nextEnemyId++}`;
+    this.enemies.set(id, {
+      id,
+      type: "shooter",
+      race,
+      x: point.x,
+      y: point.y,
+      hp: maxHp,
+      maxHp,
+      armor: definition.armor,
+      healthRegenPerSecond: 0,
+      shield: 0,
+      maxShield: 0,
+      movementKind: "ground",
+      damageResistances: getEnemyDamageResistances(definition, race),
+      hitTypeResistances: { ...definition.hitTypeResistances },
+      statusResistances: { ...definition.statusResistances },
+      abilities: ["melis-undead"],
+      speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72)),
+      reward: 0,
+      pathDistance,
+      slowUntil: 0,
+      auraSlowMultiplier: 1,
+      kinSlowUntil: 0,
+      kinSlowMultiplier: 1,
+      fearUntil: 0,
+      armorBrokenUntil: 0,
+      dominatedUntil: 0,
+      dominatedOwnerId: "",
+      trackingStackUntil: [0, 0, 0],
+      melisCurseLoad: 0,
+      melisCurseBurstDamage: 0,
+      melisCurseUntil: 0,
+      melisCurseOwnerId: "",
+      melisCurseTowerId: "",
+      melisUndeadOwnerId: tower.ownerId,
+      melisUndeadUntil: now + scaleGameDuration(MELIS_UNDERWORLD_UNDEAD_TTL_MS),
+      melisUndeadAttackCooldownMs: 0,
+      melisUndeadSourceTowerId: tower.id,
+      melisUnderworldVulnerableUntil: 0,
+      melisUnderworldDamageTakenMultiplier: 1,
+      pathId
+    });
+  }
 
-    const triggerStacks = this.isMelisStressDominant(tower) ? 2 : 3;
-    if (enemy.melisDoubtStacks < triggerStacks) {
+  private updateMelisUndead(enemy: EnemyModel, seconds: number, now: number) {
+    if (enemy.hp <= 0 || enemy.melisUndeadUntil <= now) {
+      this.enemies.delete(enemy.id);
       return;
     }
 
-    enemy.melisDoubtStacks = 0;
-    enemy.melisDoubtUntil = 0;
-    enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, now + scaleGameDuration(this.getMelisDoubtHesitationMs(tower)));
-    if (this.isMelisStressDominant(tower)) {
-      enemy.melisDoubtHasteUntil = Math.max(enemy.melisDoubtHasteUntil, enemy.melisDoubtHesitateUntil + scaleGameDuration(MELIS_DOUBT_STRESS_HASTE_MS));
-    }
-
-    if (!fromSpread && tower.melisEvolutionLevel >= 3) {
-      this.spreadMelisDoubt(tower, enemy, now);
-    }
-  }
-
-  private spreadMelisDoubt(tower: TowerModel, source: EnemyModel, now: number) {
-    const radius = this.scaleWorldDistance(MELIS_DOUBT_SPREAD_RADIUS);
-    const radiusSq = radius * radius;
-    for (const enemy of this.enemies.values()) {
-      if (enemy.id === source.id || distanceSq(source.x, source.y, enemy.x, enemy.y) > radiusSq) {
-        continue;
+    enemy.melisUndeadAttackCooldownMs = Math.max(0, enemy.melisUndeadAttackCooldownMs - seconds * 1000);
+    const target = this.findMelisUndeadTarget(enemy, now);
+    if (target) {
+      if (enemy.melisUndeadAttackCooldownMs <= 0) {
+        this.damageEnemy(target, MELIS_UNDERWORLD_UNDEAD_DAMAGE, 0, "archer-4-undead-shot", enemy.melisUndeadOwnerId, "psychic", 0, 1, enemy.melisUndeadSourceTowerId, "projectile");
+        enemy.melisUndeadAttackCooldownMs = scaleGameDuration(MELIS_UNDERWORLD_UNDEAD_FIRE_INTERVAL_MS);
+        const beamId = `melis-undead-shot-${enemy.id}-${this.nextBeamId++}`;
+        this.beams.set(beamId, {
+          id: beamId,
+          definitionId: "archer-4-undead-shot",
+          x1: enemy.x,
+          y1: enemy.y,
+          x2: target.x,
+          y2: target.y,
+          width: this.scaleWorldDistance(5),
+          color: 0x22d3ee,
+          overdrive: false,
+          ttlMs: 180
+        });
       }
-      this.applyMelisDoubt(tower, enemy, now, true);
+      return;
     }
+
+    enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * seconds);
+    if (enemy.pathDistance <= 0) {
+      this.enemies.delete(enemy.id);
+      return;
+    }
+    const point = getPointAlongRuntimePath(this.activePaths[enemy.pathId] ?? this.activePaths[0], enemy.pathDistance);
+    enemy.x = point.x;
+    enemy.y = point.y;
   }
 
-  private getMelisDoubtDurationMs(tower: TowerModel) {
-    const evolutionBonus = tower.melisEvolutionLevel >= 1 ? 1000 : 0;
-    const approvalBonus = this.isMelisApprovalDominant(tower) ? MELIS_DOUBT_APPROVAL_BONUS_MS : 0;
-    return MELIS_DOUBT_BASE_DURATION_MS + evolutionBonus + approvalBonus;
+  private findMelisUndeadTarget(source: EnemyModel, now: number) {
+    const range = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_RANGE);
+    const rangeSq = range * range;
+    return Array.from(this.enemies.values())
+      .filter((enemy) => enemy.id !== source.id && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now && distanceSq(source.x, source.y, enemy.x, enemy.y) <= rangeSq)
+      .sort((a, b) => a.pathDistance - b.pathDistance)[0];
   }
 
-  private getMelisDoubtHesitationMs(tower: TowerModel) {
-    const evolutionBonus = tower.melisEvolutionLevel >= 2 ? 500 : 0;
-    return MELIS_DOUBT_HESITATION_BASE_MS + evolutionBonus;
+  private getBlockingMelisUndead(enemy: EnemyModel) {
+    const now = Date.now();
+    const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_BLOCK_RADIUS);
+    const radiusSq = radius * radius;
+    return Array.from(this.enemies.values()).find((candidate) => (
+      candidate.id !== enemy.id &&
+      candidate.melisUndeadUntil > now &&
+      candidate.pathId === enemy.pathId &&
+      distanceSq(candidate.x, candidate.y, enemy.x, enemy.y) <= radiusSq
+    ));
   }
 
-  private getMelisWhisperRadius(tower: TowerModel) {
-    return this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 3 + tower.melisEvolutionLevel * 6);
+  private renderMelisUnderworldLink(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean) {
+    const beamId = `melis-underworld-link-${tower.id}-${enemy.id}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-4-underworld-link",
+      x1: tower.x,
+      y1: tower.y,
+      x2: enemy.x,
+      y2: enemy.y,
+      width: this.scaleWorldDistance(7 + Math.min(10, tower.melisUnderworldPullCount / 12)),
+      color: isStressMode ? 0xef4444 : 0x2dd4bf,
+      overdrive: false,
+      ttlMs: 120
+    });
+  }
+
+  private getMelisUnderworldExecuteRatio(tower: TowerModel, enemy: EnemyModel) {
+    const levelRatio = (Math.max(1, Math.min(MAX_TOWER_LEVEL, tower.level)) - 1) / (MAX_TOWER_LEVEL - 1);
+    const baseRatio = MELIS_UNDERWORLD_EXECUTE_MIN_RATIO + (MELIS_UNDERWORLD_EXECUTE_MAX_RATIO - MELIS_UNDERWORLD_EXECUTE_MIN_RATIO) * levelRatio;
+    const distanceRatio = Math.min(1, Math.hypot(tower.x - enemy.x, tower.y - enemy.y) / this.getMelisUnderworldFullDistance());
+    return baseRatio / (1 + distanceRatio);
+  }
+
+  private getMelisUnderworldDigestMs(tower: TowerModel) {
+    const levelRatio = (Math.max(1, Math.min(MAX_TOWER_LEVEL, tower.level)) - 1) / (MAX_TOWER_LEVEL - 1);
+    return MELIS_UNDERWORLD_DIGEST_MAX_MS - (MELIS_UNDERWORLD_DIGEST_MAX_MS - MELIS_UNDERWORLD_DIGEST_MIN_MS) * levelRatio;
+  }
+
+  private getMelisUnderworldDistanceMultiplier(tower: TowerModel, enemy: EnemyModel) {
+    const distanceRatio = Math.min(1, Math.hypot(tower.x - enemy.x, tower.y - enemy.y) / this.getMelisUnderworldFullDistance());
+    return 1 + distanceRatio;
+  }
+
+  private getMelisUnderworldFullDistance() {
+    return Math.max(1, this.activeMap.rows * getMapGridSize(this.activeMap));
+  }
+
+  private getMelisUnderworldChainDamage(tower: TowerModel) {
+    return MELIS_UNDERWORLD_CHAIN_DAMAGE * (1 + (tower.level - 1) * 0.18) * this.getMelisEvolutionDamageMultiplier(tower);
   }
 
   private triggerMelisRageWave(tower: TowerModel) {
@@ -4035,6 +4280,14 @@ export class MatchRoom extends Room<MatchState> {
   private getSnapshot(): GameSnapshot {
     const now = Date.now();
     this.refreshZeynepFormations();
+    const underworldLinkedEnemyIds = new Set<string>();
+    for (const tower of this.towers.values()) {
+      if (tower.definition.id === "archer-4") {
+        for (const enemyId of tower.melisUnderworldTargetIds) {
+          underworldLinkedEnemyIds.add(enemyId);
+        }
+      }
+    }
     return {
       serverTime: now,
       hostId: this.hostSessionId,
@@ -4079,8 +4332,8 @@ export class MatchRoom extends Room<MatchState> {
         isArmorBroken: enemy.armorBrokenUntil > now,
         isDominated: enemy.dominatedUntil > now,
         curseLoad: enemy.melisCurseUntil > now ? Math.round(enemy.melisCurseLoad) : 0,
-        doubtStacks: enemy.melisDoubtUntil > now ? enemy.melisDoubtStacks : 0,
-        isHesitating: enemy.melisDoubtHesitateUntil > now
+        isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
+        isUndead: enemy.melisUndeadUntil > now
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
@@ -4440,6 +4693,9 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "archer-5") {
       const capacity = this.getMelisBrokenMirrorCapacity(tower);
       return `Ayna ${Math.min(100, Math.round((tower.melisMirrorCharge / Math.max(1, capacity)) * 100))}%`;
+    }
+    if (tower.definition.id === "archer-4") {
+      return `Bag ${tower.melisUnderworldTargetIds.length}/${tower.melisEvolutionLevel >= 2 ? 2 : 1} | Ruh ${tower.melisUnderworldPullCount}`;
     }
     if (tower.streakDamageUntil > now || tower.streakHasteUntil > now) {
       const damageBonus = tower.streakDamageUntil > now ? Math.round((tower.streakDamageMultiplier - 1) * 100) : 0;

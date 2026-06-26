@@ -260,49 +260,57 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 - Lanetli dusman oldugunde biriken lanet hasari yakin dusmanlara psisik/lanet hasari olarak patlar.
 - Dusman uzerinde `L + stack` seklinde lanet yuk miktari gorunur.
 
-### 4. Fısıltı Korosu
+### 4. Ölüler Bağı
 
-**Rol:** Alan kontrolu, yavaslatma, korku hazirligi  
+**Rol:** Execute, ruh bagi, spektrum yonetimi  
 **Sinif:** Kontrol  
 **Hasar turu:** Psisik  
-**Vurus turu:** Dalga
+**Vurus turu:** Odaklanma
 
-Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizmalarini bozar. Dalga vuruslari dusmanlara `Suphe` stack'i uygular. Yeterince suphe biriken dusmanlar kisa sure duraksar.
+Ölüler Bağı bir dusmana baglanir ve hedef olene ya da nexusa ulasana kadar bagini surdurur. Hedefin cani execute esiginin altina indiginde onu oluler alemine ceker. Kule o anda hangi spektrum modundaysa odul ona gore gelir: Onay modunda +1 onay, Stres modunda +1 stres.
 
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 108 altin |
 | Upgrade temel maliyeti | 72 |
 | Menzil | 62 |
-| Hasar | 5 |
-| Atis araligi | 1350 ms |
-| Dalga alani | 40 |
-| Suphe suresi | 4 saniye |
-| Maksimum suphe stack'i | 3 |
+| Dogrudan hasar | 0 |
+| Bag sayisi | 1, Evrim 2 ile 2 |
+| Execute esigi | Level 1'de %3, level 10'da %18 |
+| Sindirim suresi | Level 1'de 3 sn, level 10'da 1 sn |
+| Bag zorlugu | Bag uzadikca execute esigi azalir |
 
-**Suphe mekanigi:**
+**Execute formulu:**
 
-- Her dalga vurusunda alandaki dusmanlara 1 Suphe stack'i uygulanir.
-- 3 stack'e ulasan dusman 0.5 saniye duraksar.
-- Duraksama tetiklenince stack'ler sifirlanir.
-- Dusman ustunde `Ş1`, `Ş2`, `Ş3` seklinde suphe miktari gorunur.
-- Duraksama aninda dusman ustunde `DUR` yazisi gorunur.
+- Temel execute esigi level ile dogrusal artar: `%3 -> %18`.
+- Bag mesafesi haritanin dikey kare uzunluguna yaklastikca bu esik zorlasir.
+- Uygulanan esik: `temel esik / (1 + mesafe_orani)`.
+- `mesafe_orani` 0 ile 1 arasindadir. Mesafe haritanin dikey uzunluguna ulastiginda execute esigi yarilanir.
+- Execute gercek hasar gibi davranir ve kalkani/cani bitirerek hedefi oldurur.
 
 **Spektrum davranisi:**
 
 | Durum | Davranis |
 |---|---|
-| Onay baskin | Suphe stack'leri 2 saniye daha uzun kalir. Kontrol daha stabil olur. |
-| Stres baskin | Duraksama 3 stack yerine 2 stack'te tetiklenir. Duraksama bitince dusman 0.5 saniye %50 hizlanir. |
-| Dengeli | Normal calisir. |
+| Onay modu | Execute edilen dusman +1 onay verir. |
+| Stres modu | Execute edilen dusman +1 stres verir. |
+| Dengeli | Onay modu gibi davranir. |
+
+**Oluler alemine cekilen toplam dusman sayisi:**
+
+| Esik | Etki |
+|---:|---|
+| 20+ | Stres modundaki bag hedefi %10 yavaslatir. Onay modundaki bag hedefin %20 fazla hasar almasini saglar. |
+| 50+ | Bag uzadikca bu slow/hasar alma bonusu artar. Haritanin dikey uzunlugunda maksimum 2 katina cikar. |
+| 100+ | Bag cizgisinin uzerinden gecen diger dusmanlar kisa araliklarla psisik hasar alir. |
 
 **Evrim etkileri:**
 
 | Evrim | Etki |
 |---|---|
-| 1 | Suphe stack suresi +1 saniye |
-| 2 | Duraksama suresi +0.5 saniye |
-| 3 | Duraksayan dusman cevresindeki dusmanlara 1 Suphe yayar |
+| 1 | Kule bir dusmani oluler alemine cektiginde bitisigindeki dusmanlar 1 saniye korkar. |
+| 2 | Kulenin bag sayisi 2 olur. |
+| 3 | Uzak atici tarzinda vuran bir dusman execute edilirse, bu dusman nexus tarafinda olu olarak dirilir ve ters yone kosar. Menziline dusman girince durup ates eder; normal dusmanlar ilerlemek icin onu oldurmek zorundadir. |
 
 ### 5. Kırık Ayna
 

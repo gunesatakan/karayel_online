@@ -444,25 +444,29 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   private drawWhisperChoir(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
-    graphics.lineStyle(2.5, palette.main, 0.95);
+    graphics.fillStyle(0x020617, 0.92);
+    graphics.fillCircle(center, center, 13);
+    graphics.lineStyle(2.6, palette.main, 0.95);
     graphics.strokeCircle(center, center, 13);
-    graphics.lineStyle(1.8, palette.accent, 0.82);
-    graphics.strokeCircle(center, center, 7);
-    for (let index = 0; index < 5; index += 1) {
-      const angle = -Math.PI / 2 + (index - 2) * 0.62;
-      const x = center + Math.cos(angle) * 10;
-      const y = center + Math.sin(angle) * 9;
-      graphics.fillStyle(palette.main, 0.9);
-      graphics.fillCircle(x, y, 2.7);
-      graphics.lineStyle(1.2, palette.glow, 0.72);
-      graphics.lineBetween(center, center, x, y);
+    graphics.lineStyle(1.5, palette.accent, 0.86);
+    graphics.strokeCircle(center, center, 7.5);
+    graphics.fillStyle(palette.glow, 0.85);
+    graphics.fillCircle(center, center, 3.8);
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (Math.PI * 2 * index) / 6 + Math.PI / 6;
+      const x1 = center + Math.cos(angle) * 5;
+      const y1 = center + Math.sin(angle) * 5;
+      const x2 = center + Math.cos(angle) * 14;
+      const y2 = center + Math.sin(angle) * 14;
+      graphics.lineStyle(1.2, index % 2 === 0 ? palette.main : 0x111827, 0.78);
+      graphics.lineBetween(x1, y1, x2, y2);
     }
-    graphics.lineStyle(2, 0xccfbf1, 0.92);
+    graphics.lineStyle(1.4, 0xccfbf1, 0.84);
     graphics.beginPath();
-    graphics.arc(center, center + 2, 9, Math.PI * 0.1, Math.PI * 0.9);
+    graphics.arc(center, center, 10, Math.PI * 1.12, Math.PI * 1.88);
     graphics.strokePath();
-    graphics.lineStyle(1.2, 0x020617, 0.6);
-    graphics.lineBetween(center - 9, center - 4, center + 9, center - 4);
+    graphics.lineStyle(1.1, 0x020617, 0.92);
+    graphics.lineBetween(center - 8, center + 3, center + 8, center + 3);
   }
 
   private drawBrokenMirror(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
@@ -528,16 +532,15 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   private drawMelisWhisperProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
-    graphics.fillStyle(palette.main, 0.11);
+    graphics.fillStyle(0x020617, 0.8);
     graphics.fillCircle(center, center, center - 1);
-    graphics.lineStyle(1.7, palette.main, 0.85);
-    graphics.strokeCircle(center, center, 5);
-    graphics.strokeCircle(center, center, 10);
-    graphics.lineStyle(1.2, palette.accent, 0.75);
-    graphics.beginPath();
-    graphics.arc(center, center, 7, -0.55, 0.55);
-    graphics.arc(center, center, 7, Math.PI - 0.55, Math.PI + 0.55);
-    graphics.strokePath();
+    graphics.lineStyle(1.8, palette.main, 0.88);
+    graphics.strokeCircle(center, center, 9);
+    graphics.lineStyle(1.2, palette.accent, 0.78);
+    graphics.lineBetween(center, 3, center, size - 3);
+    graphics.lineBetween(3, center, size - 3, center);
+    graphics.fillStyle(palette.glow, 0.95);
+    graphics.fillCircle(center, center, 2.8);
   }
 
   private drawMelisMirrorProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
@@ -584,7 +587,7 @@ function getVisualPalette(tower: TowerDefinition): VisualPalette {
       return { main: tower.color, accent: 0xf0abfc, glow: 0xa855f7, dark: 0x3b0764 };
     }
     if (tower.id === "archer-4") {
-      return { main: tower.color, accent: 0x99f6e4, glow: 0x2dd4bf, dark: 0x134e4a };
+      return { main: tower.color, accent: 0x020617, glow: 0x2dd4bf, dark: 0x134e4a };
     }
     if (tower.id === "archer-5") {
       return { main: tower.color, accent: 0xfdf4ff, glow: 0xf0abfc, dark: 0x701a75 };

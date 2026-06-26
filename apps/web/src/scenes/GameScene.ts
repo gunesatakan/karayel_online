@@ -1925,13 +1925,12 @@ export class GameScene extends Phaser.Scene {
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
       const isCursed = curseLoad > 0;
-      const doubtStacks = enemy.doubtStacks ?? 0;
-      const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasDoubt || trackingStacks > 0);
+      const hasUnderworld = Boolean(enemy.isUnderworldLinked || enemy.isUndead);
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isFeared || isCursed || hasUnderworld || trackingStacks > 0);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isHesitating ? "DUR" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : hasDoubt ? `Ş${doubtStacks}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isHesitating ? "#99f6e4" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasDoubt ? "#5eead4" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isHesitating ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasDoubt ? 10 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : isCursed ? `L${Math.min(999, Math.round(curseLoad))}` : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : isCursed ? "#f0abfc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : isCursed ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -3151,8 +3150,8 @@ export class GameScene extends Phaser.Scene {
         this.drawMelisRageWave(beam, color);
       } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst") {
         this.drawMelisCursePulse(beam, color);
-      } else if (beam.definitionId === "archer-4-whisper") {
-        this.drawMelisWhisperWave(beam, color);
+      } else if (beam.definitionId === "archer-4-underworld-link" || beam.definitionId === "archer-4-underworld-execute" || beam.definitionId === "archer-4-undead-shot") {
+        this.drawMelisUnderworldLink(beam, color);
       } else if (beam.definitionId === "archer-5-mirror") {
         this.drawMelisBrokenMirrorBurst(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
@@ -3222,32 +3221,40 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawMelisWhisperWave(beam: BeamSnapshot, color: number) {
+  private drawMelisUnderworldLink(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
     }
 
-    const radius = Math.max(8, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 420, 0, 1);
+    const lifeBase = beam.definitionId === "archer-4-underworld-execute" ? 420 : 180;
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / lifeBase, 0, 1);
     const now = Date.now();
-    const pulse = 1 + Math.sin(now / 38) * 0.05;
-    this.beamGraphics.lineStyle(1.1 * this.getTowerEffectScale(), 0xccfbf1, 0.32 * life);
+    const width = Math.max(2, beam.width * this.getTowerEffectScale());
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+    const pull = beam.definitionId === "archer-4-underworld-execute";
+    this.beamGraphics.lineStyle((pull ? 4.4 : width) * this.getTowerEffectScale(), 0x020617, 0.86 * life);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(color, 0.055 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
-    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.72 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.04 - life * 0.2));
-    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0x7dd3fc, 0.5 * life);
-    for (let index = 0; index < 9; index += 1) {
-      const angle = (Math.PI * 2 * index) / 9 + Math.sin(now / 260 + index) * 0.25;
-      const inner = radius * 0.18;
-      const outer = radius * (0.68 + (index % 3) * 0.08);
-      this.beamGraphics.lineBetween(
-        beam.x2 + Math.cos(angle) * inner,
-        beam.y2 + Math.sin(angle) * inner,
-        beam.x2 + Math.cos(angle) * outer,
-        beam.y2 + Math.sin(angle) * outer
-      );
+    this.beamGraphics.lineStyle((pull ? 2.4 : 1.6) * this.getTowerEffectScale(), color, 0.72 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(0.9 * this.getTowerEffectScale(), 0xf0fdfa, 0.38 * life);
+    for (let index = 0; index < 5; index += 1) {
+      const t = (index + ((now / 220) % 1)) / 5;
+      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
+      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
+      const wave = Math.sin(now / 70 + index * 1.8) * 4 * this.getTowerEffectScale();
+      this.beamGraphics.lineBetween(x - nx * (5 + wave), y - ny * (5 + wave), x + nx * (5 - wave), y + ny * (5 - wave));
+    }
+
+    if (pull) {
+      const radius = Math.max(10, beam.width / 2);
+      this.beamGraphics.fillStyle(color, 0.18 * life);
+      this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * (1.05 + Math.sin(now / 48) * 0.08));
+      this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), 0xf0fdfa, 0.7 * life);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.8 + life * 0.2));
     }
   }
 
