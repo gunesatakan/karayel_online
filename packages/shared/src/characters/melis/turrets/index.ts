@@ -80,5 +80,25 @@ export const melisTowers: TowerDefinition[] = [
     aoeRadius: 40,
     slowMs: 0,
     color: 0x14b8a6
+  },
+  {
+    id: "archer-5",
+    characterId: "archer",
+    name: "Kırık Ayna",
+    role: "Gecikmeli patlama",
+    description: "Yakinindaki Melis kulelerinin verdigi gercek hasarin bir kismini icinde depolar. Deposu dolunca spektrum durumuna gore bir hedef secip birikmis psisik hasari patlatir. Onay baskinken cikisa en yakin hedefe, dengedeyken can yuzdesi en yuksek hedefe, stres baskinken rastgele hedefe patlar.",
+    classType: "hybrid",
+    damageType: "psychic",
+    hitType: "impact",
+    mechanics: ["damage-storage", "delayed-burst", "approval-exit-target", "stress-random-target", "evolution-true-damage"],
+    cost: 132,
+    upgradeCost: 84,
+    range: 64,
+    damage: 10,
+    fireIntervalMs: 1750,
+    projectileSpeed: 360,
+    aoeRadius: 0,
+    slowMs: 0,
+    color: 0xe879f9
   }
 ];

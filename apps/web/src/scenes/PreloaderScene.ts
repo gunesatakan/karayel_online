@@ -141,6 +141,8 @@ export class PreloaderScene extends Phaser.Scene {
       this.drawUnstableCore(graphics, center, palette);
     } else if (tower.id === "archer-4") {
       this.drawWhisperChoir(graphics, center, palette);
+    } else if (tower.id === "archer-5") {
+      this.drawBrokenMirror(graphics, center, palette);
     } else {
       this.drawGenericTowerGlyph(graphics, center, tower, palette);
     }
@@ -360,6 +362,27 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.beginPath();
     graphics.arc(center, center + 2, 9, Math.PI * 0.1, Math.PI * 0.9);
     graphics.strokePath();
+  }
+
+  private drawBrokenMirror(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.fillStyle(palette.main, 0.16);
+    graphics.fillCircle(center, center, 14);
+    graphics.lineStyle(2.4, palette.main, 0.98);
+    graphics.strokeEllipse(center, center, 25, 30);
+    graphics.lineStyle(1.8, palette.accent, 0.9);
+    graphics.beginPath();
+    graphics.moveTo(center - 10, center - 12);
+    graphics.lineTo(center - 1, center - 2);
+    graphics.lineTo(center - 8, center + 12);
+    graphics.moveTo(center - 1, center - 2);
+    graphics.lineTo(center + 10, center - 9);
+    graphics.moveTo(center - 1, center - 2);
+    graphics.lineTo(center + 9, center + 12);
+    graphics.strokePath();
+    graphics.fillStyle(0xfdf4ff, 0.9);
+    graphics.fillTriangle(center - 8, center - 10, center - 1, center - 2, center - 12, center + 4);
+    graphics.fillStyle(palette.glow, 0.72);
+    graphics.fillTriangle(center + 2, center - 1, center + 11, center - 8, center + 9, center + 9);
   }
 
   private drawGenericTowerGlyph(graphics: Phaser.GameObjects.Graphics, center: number, tower: TowerDefinition, palette: VisualPalette) {

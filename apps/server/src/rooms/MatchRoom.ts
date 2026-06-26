@@ -138,6 +138,16 @@ const MELIS_DOUBT_HESITATION_BASE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MULTIPLIER = 1.5;
 const MELIS_DOUBT_SPREAD_RADIUS = 56;
+const MELIS_BROKEN_MIRROR_BASE_CAPACITY = 180;
+const MELIS_BROKEN_MIRROR_CAPACITY_MULTIPLIER = 1.5;
+const MELIS_BROKEN_MIRROR_BASE_STORE_RATIO = 0.2;
+const MELIS_BROKEN_MIRROR_STRESS_STORE_RATIO = 0.24;
+const MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS = 0.04;
+const MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO = 0.25;
+const MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO = 0.35;
+const MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS = 58;
+const MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MS = 2000;
+const MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MULTIPLIER = 1.2;
 const MELIS_INITIAL_APPROVAL = 6;
 const MELIS_INITIAL_STRESS = 6;
 
@@ -317,6 +327,7 @@ type TowerModel = {
   zeynepFormationSize: number;
   zeynepFormationLevel: number;
   melisEvolutionLevel: number;
+  melisMirrorCharge: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -1148,6 +1159,13 @@ export class MatchRoom extends Room<MatchState> {
 
       if (tower.overheatMs > 0) {
         tower.overheatMs = Math.max(0, tower.overheatMs - deltaTime);
+        continue;
+      }
+
+      if (tower.definition.id === "archer-5" && tower.melisMirrorCharge >= this.getMelisBrokenMirrorCapacity(tower)) {
+        if (this.fireMelisBrokenMirrorExplosion(tower)) {
+          tower.cooldownMs = this.getTowerFireInterval(tower);
+        }
         continue;
       }
 
@@ -2625,6 +2643,7 @@ export class MatchRoom extends Room<MatchState> {
       zeynepFormationSize: 0,
       zeynepFormationLevel: 0,
       melisEvolutionLevel: 0,
+      melisMirrorCharge: 0,
       damageDealt: 0,
       damageWindow: []
     };
@@ -3415,6 +3434,134 @@ export class MatchRoom extends Room<MatchState> {
     tower.damageDealt += amount;
     tower.damageWindow.push({ dealtAt: now, amount });
     this.pruneTowerDamageWindow(tower, now);
+    this.absorbMelisBrokenMirrorDamage(tower, amount, now);
+  }
+
+  private absorbMelisBrokenMirrorDamage(sourceTower: TowerModel, amount: number, now: number) {
+    if (sourceTower.characterId !== "archer" || sourceTower.definition.id === "archer-5") {
+      return;
+    }
+
+    for (const mirror of this.towers.values()) {
+      if (
+        mirror.definition.id !== "archer-5" ||
+        mirror.ownerId !== sourceTower.ownerId ||
+        mirror.offlineUntil > now ||
+        mirror.overheatMs > 0 ||
+        distanceSq(mirror.x, mirror.y, sourceTower.x, sourceTower.y) > this.getTowerRange(mirror) ** 2
+      ) {
+        continue;
+      }
+
+      const capacity = this.getMelisBrokenMirrorCapacity(mirror);
+      mirror.melisMirrorCharge = Math.min(capacity, mirror.melisMirrorCharge + amount * this.getMelisBrokenMirrorStoreRatio(mirror));
+    }
+  }
+
+  private fireMelisBrokenMirrorExplosion(tower: TowerModel) {
+    const target = this.findMelisBrokenMirrorExplosionTarget(tower);
+    if (!target) {
+      return false;
+    }
+
+    const storedDamage = Math.max(0, tower.melisMirrorCharge);
+    tower.melisMirrorCharge = 0;
+    if (storedDamage <= 0) {
+      return false;
+    }
+
+    const isStress = this.isMelisStressDominant(tower);
+    let killed = false;
+    if (tower.melisEvolutionLevel >= 2) {
+      killed = this.damageEnemy(target, storedDamage * (1 - MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO), 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
+      if (!killed && this.enemies.has(target.id)) {
+        killed = this.damageEnemy(target, storedDamage * MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO, 0, tower.definition.id, tower.ownerId, "true", 0, tower.level, tower.id, "impact");
+      }
+    } else {
+      killed = this.damageEnemy(target, storedDamage, 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
+    }
+
+    const beamId = `melis-broken-mirror-${tower.id}-${this.nextBeamId++}`;
+    this.beams.set(beamId, {
+      id: beamId,
+      definitionId: "archer-5-mirror",
+      x1: tower.x,
+      y1: tower.y,
+      x2: target.x,
+      y2: target.y,
+      width: this.scaleWorldDistance(MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS * 2),
+      color: tower.definition.color,
+      overdrive: false,
+      ttlMs: 520
+    });
+
+    if (killed) {
+      if (!isStress) {
+        this.triggerMelisBrokenMirrorDeathBurst(tower, target.x, target.y, storedDamage);
+      }
+      if (tower.melisEvolutionLevel >= 3) {
+        this.applyMelisBrokenMirrorEvolutionHaste(tower);
+      }
+    } else {
+      const player = this.state.players.get(tower.ownerId);
+      if (player?.characterId === "archer") {
+        player.stress += 1;
+      }
+    }
+
+    return true;
+  }
+
+  private findMelisBrokenMirrorExplosionTarget(tower: TowerModel) {
+    const candidates = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    if (candidates.length === 0) {
+      return undefined;
+    }
+
+    if (this.isMelisApprovalDominant(tower)) {
+      return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
+    }
+
+    if (this.isMelisStressDominant(tower)) {
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    return candidates.sort((a, b) => getEnemyHealthRatio(b) - getEnemyHealthRatio(a) || b.pathDistance - a.pathDistance)[0];
+  }
+
+  private triggerMelisBrokenMirrorDeathBurst(tower: TowerModel, x: number, y: number, storedDamage: number) {
+    const radius = this.scaleWorldDistance(MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS);
+    const radiusSq = radius * radius;
+    const burstDamage = storedDamage * MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO;
+    for (const enemy of Array.from(this.enemies.values())) {
+      if (distanceSq(x, y, enemy.x, enemy.y) > radiusSq) {
+        continue;
+      }
+      this.damageEnemy(enemy, burstDamage, 0, "archer-5-mirror-burst", tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
+    }
+  }
+
+  private applyMelisBrokenMirrorEvolutionHaste(tower: TowerModel) {
+    const now = Date.now();
+    const until = now + scaleGameDuration(MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MS);
+    for (const candidate of this.towers.values()) {
+      if (candidate.ownerId !== tower.ownerId || candidate.characterId !== "archer" || candidate.definition.hitType === "focus") {
+        continue;
+      }
+      candidate.streakHasteUntil = Math.max(candidate.streakHasteUntil, until);
+      candidate.streakHasteMultiplier = Math.max(candidate.streakHasteMultiplier, MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MULTIPLIER);
+    }
+  }
+
+  private getMelisBrokenMirrorCapacity(tower: TowerModel) {
+    return MELIS_BROKEN_MIRROR_BASE_CAPACITY * MELIS_BROKEN_MIRROR_CAPACITY_MULTIPLIER ** Math.max(0, tower.level - 1);
+  }
+
+  private getMelisBrokenMirrorStoreRatio(tower: TowerModel) {
+    const baseRatio = this.isMelisStressDominant(tower)
+      ? MELIS_BROKEN_MIRROR_STRESS_STORE_RATIO
+      : MELIS_BROKEN_MIRROR_BASE_STORE_RATIO;
+    return baseRatio + (tower.melisEvolutionLevel >= 1 ? MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS : 0);
   }
 
   private getTowerCurrentDps(tower: TowerModel, now = Date.now()) {
@@ -4290,6 +4437,10 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.characterId === "archer" && this.melisGothicNightmareUntil > now) {
       return "Gotik Kabus";
     }
+    if (tower.definition.id === "archer-5") {
+      const capacity = this.getMelisBrokenMirrorCapacity(tower);
+      return `Ayna ${Math.min(100, Math.round((tower.melisMirrorCharge / Math.max(1, capacity)) * 100))}%`;
+    }
     if (tower.streakDamageUntil > now || tower.streakHasteUntil > now) {
       const damageBonus = tower.streakDamageUntil > now ? Math.round((tower.streakDamageMultiplier - 1) * 100) : 0;
       const hasteBonus = tower.streakHasteUntil > now ? Math.round((tower.streakHasteMultiplier - 1) * 100) : 0;
@@ -5019,6 +5170,10 @@ function isAbartiArmorBreakProjectile(definitionId: string) {
 function getAbartiRayDamageGrowth(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return 0.01 + ((clampedLevel - 1) / 9) * 0.04;
+}
+
+function getEnemyHealthRatio(enemy: EnemyModel) {
+  return (Math.max(0, enemy.hp) + Math.max(0, enemy.shield)) / Math.max(1, enemy.maxHp + enemy.maxShield);
 }
 
 function getMelisApprovalGain(tier: KillStreakTier) {

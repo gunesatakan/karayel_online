@@ -3147,6 +3147,8 @@ export class GameScene extends Phaser.Scene {
         this.drawMelisCursePulse(beam, color);
       } else if (beam.definitionId === "archer-4-whisper") {
         this.drawMelisWhisperWave(beam, color);
+      } else if (beam.definitionId === "archer-5-mirror") {
+        this.drawMelisBrokenMirrorBurst(beam, color);
       } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -3241,6 +3243,34 @@ export class GameScene extends Phaser.Scene {
         beam.y2 + Math.sin(angle) * outer
       );
     }
+  }
+
+  private drawMelisBrokenMirrorBurst(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const radius = Math.max(12, beam.width / 2);
+    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 520, 0, 1);
+    const pulse = 1 + Math.sin(Date.now() / 34) * 0.04;
+    this.beamGraphics.lineStyle(2.4 * this.getTowerEffectScale(), color, 0.82 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.fillStyle(0xfdf4ff, 0.08 * life);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.72 * pulse);
+    this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), color, 0.82 * life);
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (Math.PI * 2 * index) / 7 + Date.now() / 220;
+      const inner = radius * 0.16;
+      const outer = radius * (0.48 + (index % 3) * 0.1);
+      this.beamGraphics.lineBetween(
+        beam.x2 + Math.cos(angle) * inner,
+        beam.y2 + Math.sin(angle) * inner,
+        beam.x2 + Math.cos(angle) * outer,
+        beam.y2 + Math.sin(angle) * outer
+      );
+    }
+    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xfdf4ff, 0.7 * life);
+    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.58 - life * 0.18));
   }
 
   private drawShowcaseBeam(beam: BeamSnapshot, color: number) {

@@ -304,6 +304,51 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 | 2 | Duraksama suresi +0.5 saniye |
 | 3 | Duraksayan dusman cevresindeki dusmanlara 1 Suphe yayar |
 
+### 5. Kırık Ayna
+
+**Rol:** Gecikmeli patlama, riskli burst  
+**Sinif:** Hasar-destek  
+**Hasar turu:** Psisik, evrimle kismen gercek hasar  
+**Vurus turu:** Carpma
+
+Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekanigine cevirir. Kendi vuruslari zayiftir; asil gucu yakindaki Melis kulelerinin verdigi gercek hasarin bir kismini depolamasindan gelir.
+
+| Ozellik | Deger |
+|---|---:|
+| Maliyet | 132 altin |
+| Upgrade temel maliyeti | 84 |
+| Menzil | 64 |
+| Hasar | 10 |
+| Atis araligi | 1750 ms |
+| Depolama orani | Yakindaki Melis kulelerinin vurdugu gercek hasarin %20'si |
+| Depo ust limiti | 180 x `1.5 ^ (level - 1)` |
+| Patlama esigi | Depo %100 dolunca |
+
+**Icine Atma mekanigi:**
+
+- Kırık Ayna'nin menzilindeki ayni oyuncuya ait Melis kuleleri hasar verdikce, vurulan gercek hasarin bir kismi aynada depolanir.
+- Kırık Ayna kendi verdigi hasari depolamaz.
+- Depo dolunca kule birikmis hasari tek hedefe patlatir.
+- Patlama hedefi oldururse, stres baskin degilse hedefin cevresinde kucuk bir psisik patlama olur.
+- Patlama hedefi oldurmezse Melis +1 stres kazanir.
+- Kule status satirinda `Ayna %` seklinde depo dolulugu gorunur.
+
+**Spektrum davranisi:**
+
+| Durum | Davranis |
+|---|---|
+| Onay baskin | Patlama cikisa en yakin dusmani hedefler. Daha kontrolludur. |
+| Stres baskin | Depolama orani %20 yerine %24 olur. Patlama rastgele hedef secerek vurur ve hedef oldurse bile cevresel patlama yapmaz. |
+| Dengeli | Patlama can/kalkan yuzdesi en yuksek dusmani hedefler. |
+
+**Evrim etkileri:**
+
+| Evrim | Etki |
+|---|---|
+| 1 | Depolama orani +%4 |
+| 2 | Patlamanin %25'i gercek hasara donusur |
+| 3 | Patlama hedefi oldururse Melis'in kuleleri 2 saniye boyunca %20 saldiri hizi kazanir |
+
 ## Streak Gorsel Dili
 
 Melis'in streak anonslari glitch neon ve korku fantezisi temalidir. Granted, Unstoppable, Rampage ve Legendary seviyelerinde tasarim giderek daha kaotik ve sarsintili hale gelir.
