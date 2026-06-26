@@ -118,8 +118,8 @@ const KIN_SYNTHESIS_TIP_HOLD_SECONDS = 0.5;
 const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
 const KIN_SHOWCASE_ARMOR_BREAK_PER_LEVEL = 2;
 const MELIS_MAX_FAVORITE_TOWERS = 3;
-const MELIS_EVOLUTION_STRESS_COST = 4;
 const MELIS_MAX_EVOLUTION_LEVEL = 3;
+const MELIS_EVOLUTION_RATIO_THRESHOLDS = [1.5, 2, 3];
 const MELIS_GOTHIC_NIGHTMARE_MS = 9000;
 const MELIS_BULLY_RADIUS = 78;
 const MELIS_BULLY_DURATION_MS = 7000;
@@ -3042,7 +3042,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private evolveMelisTower(ownerId: string, player: Player, towerId?: string) {
-    if (!towerId || player.stress < MELIS_EVOLUTION_STRESS_COST) {
+    if (!towerId) {
       return false;
     }
 
@@ -3051,10 +3051,27 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    player.stress -= MELIS_EVOLUTION_STRESS_COST;
+    if (!this.canMelisEvolveNextLevel(player, tower.melisEvolutionLevel + 1)) {
+      return false;
+    }
+
     tower.melisEvolutionLevel += 1;
+    player.stress = player.approval;
     tower.cooldownMs = Math.min(tower.cooldownMs, 120);
     return true;
+  }
+
+  private canMelisEvolveNextLevel(player: Player, nextEvolutionLevel: number) {
+    const requiredRatio = MELIS_EVOLUTION_RATIO_THRESHOLDS[nextEvolutionLevel - 1];
+    if (!requiredRatio || player.stress <= player.approval) {
+      return false;
+    }
+
+    if (player.approval <= 0) {
+      return player.stress > 0;
+    }
+
+    return player.stress / player.approval >= requiredRatio;
   }
 
   private useMelisTestNightmare(ownerId: string) {

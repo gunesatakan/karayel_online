@@ -85,11 +85,14 @@ Yani onay arttikca favori kulelerin hasari artar ve atis araligi kisalir. Bonusl
 
 ## Evrim Sistemi
 
-Melis, `Olumcul Stres` becerisiyle stres harcayarak kendi kulesini evriltir.
+Melis, `Olumcul Stres` becerisiyle stres/onay oranini kullanarak kendi kulesini sirayla evriltir.
 
 | Ozellik | Deger |
 |---|---:|
-| Evrim maliyeti | 4 stres |
+| Evrim 1 kosulu | Stres/Onay >= 3/2 |
+| Evrim 2 kosulu | Stres/Onay >= 2/1 |
+| Evrim 3 kosulu | Stres/Onay >= 3/1 |
+| Basarili evrim sonrasi | Stres puani onay puanina esitlenir |
 | Maksimum evrim | 3 |
 
 Her evrim seviyesi Melis kulesine kalici bonus verir:
@@ -100,7 +103,7 @@ Her evrim seviyesi Melis kulesine kalici bonus verir:
 | Atis araligi | `max(0.68, 1 - evrim x 0.1)` |
 | Menzil | `1 + evrim x 0.1` |
 
-Evrim, Melis'in stres tarafini sadece ceza degil, planli bir yatirim kaynagi yapar.
+Evrimler sirayla acilir; evrim 1 yapilmadan evrim 2, evrim 2 yapilmadan evrim 3 yapilamaz. Evrim, Melis'in stres tarafini sadece ceza degil, planli bir yatirim kaynagi yapar; fakat her basarili evrimden sonra stres onaya esitlenerek spektrum tekrar 1/1'e cekilir.
 
 ## Beceriler
 
@@ -127,15 +130,18 @@ Secilen dairesel alandaki bir tank dusmani sabitler, taraf degistirir ve yakinin
 ### 2. Olumcul Stres
 
 **Aciklama:**  
-Melis stres puanlarini harcayarak secili kulesini evriltir.
+Melis stres/onay oranini yeterince stres baskin hale getirirse secili kulesini siradaki evrim seviyesine tasir.
 
 | Ozellik | Deger |
 |---|---:|
 | Cooldown | 6 saniye |
-| Maliyet | 4 stres |
+| Evrim 1 kosulu | Stres/Onay >= 3/2 |
+| Evrim 2 kosulu | Stres/Onay >= 2/1 |
+| Evrim 3 kosulu | Stres/Onay >= 3/1 |
+| Basarili evrim sonrasi | Stres onaya esitlenir |
 | Maksimum evrim | 3 |
 
-Secili kule Melis'e ait degilse, maksimum evrimdeyse veya yeterli stres yoksa beceri calismaz.
+Secili kule Melis'e ait degilse, maksimum evrimdeyse, evrim sirasi bozuluyorsa veya gerekli stres/onay orani yoksa beceri calismaz.
 
 ### 3. Test Kabusu
 
