@@ -4627,7 +4627,7 @@ export class MatchRoom extends Room<MatchState> {
       return GAME_WORLD_HEIGHT;
     }
 
-    if (tower.definition.id === "archer-1" && this.isMelisStressDominant(tower)) {
+    if (tower.definition.id === "archer-1" && this.isMelisApprovalDominant(tower)) {
       return GAME_WORLD_HEIGHT * 4 * (1 + tower.melisEvolutionLevel * 0.12);
     }
 

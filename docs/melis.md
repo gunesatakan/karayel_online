@@ -178,7 +178,7 @@ Haritada giris ve cikislar kapanir. Yeni dusman giremez, icerideki dusmanlar cik
 **Hasar turu:** Psisik  
 **Vurus turu:** Mermi
 
-Hedefci bir hedef belirler ve o hedef olene kadar ona odaklanir. Normalde menzilli oynar, ancak stres baskinken menzil siniri kalkar.
+Hedefci bir hedef belirler ve o hedef olene kadar ona odaklanir. Normalde menzilli oynar, ancak onay baskinken menzil siniri kalkar.
 
 | Ozellik | Deger |
 |---|---:|
@@ -193,7 +193,7 @@ Hedefci bir hedef belirler ve o hedef olene kadar ona odaklanir. Normalde menzil
 **Ozel davranislar:**
 
 - Hedef kilidi mantigiyla calisir.
-- Stres baskinken menzili pratikte sinirsiz hale gelir.
+- Onay baskinken menzili pratikte sinirsiz hale gelir.
 - Favori kuleyse onaydan hasar ve atis hizi bonusu alir.
 - Evrimle hasar, atis hizi ve menzili artar.
 
