@@ -213,7 +213,7 @@ Hedefci menziline giren bir hedefi kilide alir ve hedef olene kadar ona odaklani
 **Hasar turu:** Psisik  
 **Vurus turu:** Mermi
 
-Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi yasar. Bu patlama cevresindeki dusmanlara korku uygular.
+Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi yasar. Bu patlama cevresindeki dusmanlara kisa sureli korku uygular.
 
 | Ozellik | Deger |
 |---|---:|
@@ -224,11 +224,15 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 | Atis araligi | 950 ms |
 | Mermi hizi | 460 |
 | Ofke dalgasi yaricapi | Kulenin guncel menzili ile ayni |
-| Korku suresi | 2.2 saniye + evrim x 0.5 saniye |
+| Korku suresi | 0.5 saniye |
+| Evrim 3 korku suresi | 1.0 saniye |
 
 **Ozel davranislar:**
 
 - Hedef menzilden cikarsa ofke dalgasi tetiklenir.
+- Evrim 1: Duz vurusuyla bir dusmana son vurus yaparsa ofke dalgasi tetiklenir.
+- Evrim 2: Ofke dalgasi kalkanli bir dusmana vuruyorsa kalkan katmanina 2x hasar verir.
+- Evrim 3: Korku suresi 0.5 saniye artarak toplam 1.0 saniyeye cikar.
 - Korku halindeyken menzilden cikan hedefler Parlama'nin basarisizligi olarak sayilmaz.
 - Stres baskinken ofke patlamasi, kendi alanindaki dost kuleleri 0.5 saniye durdurur.
 - Evrim ve diger menzil bonuslari kulenin menzilini artirdigi icin ofke dalgasi yaricapini da ayni oranda artirir.

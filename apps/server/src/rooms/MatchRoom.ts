@@ -124,7 +124,7 @@ const MELIS_GOTHIC_NIGHTMARE_MS = 9000;
 const MELIS_BULLY_RADIUS = 78;
 const MELIS_BULLY_DURATION_MS = 7000;
 const MELIS_BULLY_DAMAGE_RADIUS = 70;
-const MELIS_PARLAMA_FEAR_MS = 2200;
+const MELIS_PARLAMA_FEAR_MS = 500;
 const MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS = 500;
 const MELIS_CURSE_NORMAL_DURATION_MS = 5000;
 const MELIS_CURSE_STRESS_DURATION_MS = 3000;
@@ -4628,15 +4628,37 @@ export class MatchRoom extends Room<MatchState> {
     return MELIS_UNDERWORLD_CHAIN_DAMAGE * (1 + (tower.level - 1) * 0.18) * this.getMelisEvolutionDamageMultiplier(tower);
   }
 
+  private getMelisParlamaFearMs(tower: TowerModel) {
+    return MELIS_PARLAMA_FEAR_MS + (tower.melisEvolutionLevel >= 3 ? 500 : 0);
+  }
+
   private triggerMelisRageWave(tower: TowerModel) {
     const now = Date.now();
     const radius = this.getTowerRange(tower);
-    for (const enemy of this.enemies.values()) {
+    for (const enemy of Array.from(this.enemies.values())) {
       if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) {
         continue;
       }
 
-      const duration = applyStatusResistance(MELIS_PARLAMA_FEAR_MS + tower.melisEvolutionLevel * 500, enemy.statusResistances.fear);
+      if (tower.melisEvolutionLevel >= 2 && enemy.shield > 0) {
+        const killed = this.damageEnemy(
+          enemy,
+          this.getTowerDamage(tower) * 2,
+          0,
+          "archer-2-rage",
+          tower.ownerId,
+          "psychic",
+          0,
+          tower.level,
+          tower.id,
+          "wave"
+        );
+        if (killed || !this.enemies.has(enemy.id)) {
+          continue;
+        }
+      }
+
+      const duration = applyStatusResistance(this.getMelisParlamaFearMs(tower), enemy.statusResistances.fear);
       enemy.fearUntil = Math.max(enemy.fearUntil, now + scaleGameDuration(duration));
     }
 
@@ -5374,9 +5396,14 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    if ((tower.definition.id === "archer-1" || tower.definition.id === "archer-2") && !this.enemies.has(target.id)) {
-      tower.focusTargetId = "";
-      return;
+    if (!this.enemies.has(target.id)) {
+      if (tower.definition.id === "archer-2" && tower.melisEvolutionLevel >= 1) {
+        this.triggerMelisRageWave(tower);
+      }
+      if (tower.definition.id === "archer-1" || tower.definition.id === "archer-2") {
+        tower.focusTargetId = "";
+        return;
+      }
     }
 
     if (tower.definition.id === "warrior-4") {
