@@ -2387,6 +2387,12 @@ export class GameScene extends Phaser.Scene {
       }
       sprite.setPosition(projectile.x, projectile.y);
       sprite.setScale(this.getTowerEffectScale());
+      if (typeof projectile.vx === "number" && typeof projectile.vy === "number" && Math.abs(projectile.vx) + Math.abs(projectile.vy) > 0.01) {
+        sprite.setRotation(Math.atan2(projectile.vy, projectile.vx));
+      }
+      const isMelisProjectile = projectile.definitionId?.startsWith("archer-");
+      sprite.setAlpha(isMelisProjectile ? 0.92 : 1);
+      sprite.setDepth(isMelisProjectile ? 11.2 : 11);
     }
   }
 

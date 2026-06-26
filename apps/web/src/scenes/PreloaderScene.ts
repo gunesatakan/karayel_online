@@ -139,6 +139,12 @@ export class PreloaderScene extends Phaser.Scene {
       this.drawDebugPrism(graphics, center, palette);
     } else if (tower.id === "warrior-6") {
       this.drawUnstableCore(graphics, center, palette);
+    } else if (tower.id === "archer-1") {
+      this.drawMelisFixationEye(graphics, center, palette);
+    } else if (tower.id === "archer-2") {
+      this.drawMelisFlareHeart(graphics, center, palette);
+    } else if (tower.id === "archer-3") {
+      this.drawMelisCurseSeal(graphics, center, palette);
     } else if (tower.id === "archer-4") {
       this.drawWhisperChoir(graphics, center, palette);
     } else if (tower.id === "archer-5") {
@@ -166,6 +172,41 @@ export class PreloaderScene extends Phaser.Scene {
 
     if (tower.id === "warrior-6") {
       this.drawUcubeSparkProjectile(graphics, center);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "archer-1") {
+      this.drawMelisFixationProjectile(graphics, center, palette, size);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "archer-2") {
+      this.drawMelisFlareProjectile(graphics, center, palette, size);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "archer-3") {
+      this.drawMelisCurseProjectile(graphics, center, palette, size);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "archer-4") {
+      this.drawMelisWhisperProjectile(graphics, center, palette, size);
+      graphics.generateTexture(`projectile-${tower.id}`, size, size);
+      graphics.destroy();
+      return;
+    }
+
+    if (tower.id === "archer-5") {
+      this.drawMelisMirrorProjectile(graphics, center, palette, size);
       graphics.generateTexture(`projectile-${tower.id}`, size, size);
       graphics.destroy();
       return;
@@ -344,6 +385,64 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.fillCircle(center, center, 4);
   }
 
+  private drawMelisFixationEye(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(2.5, palette.main, 0.95);
+    graphics.strokeEllipse(center, center, 30, 18);
+    graphics.lineStyle(1.4, palette.accent, 0.8);
+    graphics.strokeCircle(center, center, 9);
+    graphics.fillStyle(0x020617, 0.96);
+    graphics.fillCircle(center, center, 6);
+    graphics.fillStyle(palette.glow, 1);
+    graphics.fillCircle(center, center, 3);
+    graphics.lineStyle(1.5, 0xfdf4ff, 0.8);
+    graphics.lineBetween(center - 17, center, center - 9, center);
+    graphics.lineBetween(center + 9, center, center + 17, center);
+    graphics.lineBetween(center, center - 17, center, center - 9);
+    graphics.lineBetween(center, center + 9, center, center + 17);
+  }
+
+  private drawMelisFlareHeart(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.fillStyle(palette.main, 0.9);
+    graphics.fillCircle(center - 6, center - 5, 8);
+    graphics.fillCircle(center + 6, center - 5, 8);
+    graphics.fillTriangle(center - 14, center - 2, center + 14, center - 2, center, center + 15);
+    graphics.lineStyle(2, palette.accent, 0.95);
+    graphics.beginPath();
+    graphics.moveTo(center - 2, center - 12);
+    graphics.lineTo(center + 3, center - 2);
+    graphics.lineTo(center - 2, center + 2);
+    graphics.lineTo(center + 5, center + 13);
+    graphics.strokePath();
+    graphics.fillStyle(0x020617, 0.72);
+    graphics.fillCircle(center - 6, center - 3, 2.4);
+    graphics.fillCircle(center + 6, center - 3, 2.4);
+  }
+
+  private drawMelisCurseSeal(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
+    graphics.lineStyle(2.3, palette.main, 0.95);
+    graphics.strokeCircle(center, center, 14);
+    graphics.lineStyle(1.5, palette.accent, 0.9);
+    graphics.strokeCircle(center, center, 8);
+    graphics.beginPath();
+    for (let index = 0; index < 6; index += 1) {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / 6;
+      const x = center + Math.cos(angle) * 14;
+      const y = center + Math.sin(angle) * 14;
+      if (index === 0) {
+        graphics.moveTo(x, y);
+      } else {
+        graphics.lineTo(x, y);
+      }
+    }
+    graphics.closePath();
+    graphics.strokePath();
+    graphics.lineStyle(1.5, 0xfdf4ff, 0.7);
+    graphics.lineBetween(center - 7, center - 7, center + 7, center + 7);
+    graphics.lineBetween(center + 7, center - 7, center - 7, center + 7);
+    graphics.fillStyle(palette.glow, 0.95);
+    graphics.fillCircle(center, center, 3.2);
+  }
+
   private drawWhisperChoir(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
     graphics.lineStyle(2.5, palette.main, 0.95);
     graphics.strokeCircle(center, center, 13);
@@ -362,6 +461,8 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.beginPath();
     graphics.arc(center, center + 2, 9, Math.PI * 0.1, Math.PI * 0.9);
     graphics.strokePath();
+    graphics.lineStyle(1.2, 0x020617, 0.6);
+    graphics.lineBetween(center - 9, center - 4, center + 9, center - 4);
   }
 
   private drawBrokenMirror(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette) {
@@ -383,6 +484,71 @@ export class PreloaderScene extends Phaser.Scene {
     graphics.fillTriangle(center - 8, center - 10, center - 1, center - 2, center - 12, center + 4);
     graphics.fillStyle(palette.glow, 0.72);
     graphics.fillTriangle(center + 2, center - 1, center + 11, center - 8, center + 9, center + 9);
+  }
+
+  private drawMelisFixationProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
+    graphics.fillStyle(palette.glow, 0.16);
+    graphics.fillEllipse(center, center, size - 2, size * 0.58);
+    graphics.fillStyle(palette.main, 0.98);
+    graphics.beginPath();
+    graphics.moveTo(size - 2, center);
+    graphics.lineTo(5, center - 5);
+    graphics.lineTo(8, center);
+    graphics.lineTo(5, center + 5);
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.lineStyle(1.4, palette.accent, 0.95);
+    graphics.strokeCircle(center, center, 4);
+    graphics.fillStyle(0xfdf4ff, 0.95);
+    graphics.fillCircle(center + 1, center, 1.8);
+  }
+
+  private drawMelisFlareProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
+    graphics.fillStyle(palette.main, 0.24);
+    graphics.fillCircle(center, center, center - 1);
+    graphics.fillStyle(palette.main, 0.96);
+    graphics.fillTriangle(size - 2, center, center - 5, center - 7, center - 2, center + 7);
+    graphics.fillStyle(palette.accent, 0.9);
+    graphics.fillTriangle(center + 4, center, 4, center - 4, 5, center + 4);
+    graphics.lineStyle(1.2, 0xfdf2f8, 0.75);
+    graphics.lineBetween(center - 6, center - 7, center + 5, center + 7);
+  }
+
+  private drawMelisCurseProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
+    graphics.fillStyle(palette.main, 0.18);
+    graphics.fillCircle(center, center, center - 1);
+    graphics.lineStyle(1.8, palette.main, 0.92);
+    graphics.strokeCircle(center, center, 8);
+    graphics.lineStyle(1.4, palette.accent, 0.9);
+    graphics.strokeTriangle(center, 3, size - 4, size - 5, 4, size - 5);
+    graphics.fillStyle(0x020617, 0.7);
+    graphics.fillCircle(center, center, 4);
+    graphics.fillStyle(palette.glow, 0.95);
+    graphics.fillCircle(center, center, 2);
+  }
+
+  private drawMelisWhisperProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
+    graphics.fillStyle(palette.main, 0.11);
+    graphics.fillCircle(center, center, center - 1);
+    graphics.lineStyle(1.7, palette.main, 0.85);
+    graphics.strokeCircle(center, center, 5);
+    graphics.strokeCircle(center, center, 10);
+    graphics.lineStyle(1.2, palette.accent, 0.75);
+    graphics.beginPath();
+    graphics.arc(center, center, 7, -0.55, 0.55);
+    graphics.arc(center, center, 7, Math.PI - 0.55, Math.PI + 0.55);
+    graphics.strokePath();
+  }
+
+  private drawMelisMirrorProjectile(graphics: Phaser.GameObjects.Graphics, center: number, palette: VisualPalette, size: number) {
+    graphics.fillStyle(0xfdf4ff, 0.2);
+    graphics.fillCircle(center, center, center - 1);
+    graphics.fillStyle(palette.main, 0.92);
+    graphics.fillTriangle(size - 3, center - 7, center + 2, center, size - 4, center + 8);
+    graphics.fillStyle(0xfdf4ff, 0.9);
+    graphics.fillTriangle(center - 8, center - 5, center + 1, center, center - 7, center + 7);
+    graphics.lineStyle(1.2, palette.accent, 0.9);
+    graphics.lineBetween(center - 8, center - 7, center + 8, center + 7);
   }
 
   private drawGenericTowerGlyph(graphics: Phaser.GameObjects.Graphics, center: number, tower: TowerDefinition, palette: VisualPalette) {
@@ -407,6 +573,23 @@ type VisualPalette = {
 };
 
 function getVisualPalette(tower: TowerDefinition): VisualPalette {
+  if (tower.characterId === "archer") {
+    if (tower.id === "archer-1") {
+      return { main: tower.color, accent: 0xf0abfc, glow: 0xc4b5fd, dark: 0x312e81 };
+    }
+    if (tower.id === "archer-2") {
+      return { main: tower.color, accent: 0xfda4af, glow: 0xfb7185, dark: 0x831843 };
+    }
+    if (tower.id === "archer-3") {
+      return { main: tower.color, accent: 0xf0abfc, glow: 0xa855f7, dark: 0x3b0764 };
+    }
+    if (tower.id === "archer-4") {
+      return { main: tower.color, accent: 0x99f6e4, glow: 0x2dd4bf, dark: 0x134e4a };
+    }
+    if (tower.id === "archer-5") {
+      return { main: tower.color, accent: 0xfdf4ff, glow: 0xf0abfc, dark: 0x701a75 };
+    }
+  }
   if (tower.damageType === "electric") {
     return { main: 0x38bdf8, accent: 0xfef08a, glow: 0x67e8f9, dark: 0x0e7490 };
   }
