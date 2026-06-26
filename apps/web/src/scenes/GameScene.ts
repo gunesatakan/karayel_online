@@ -1066,10 +1066,7 @@ export class GameScene extends Phaser.Scene {
     this.killStreakSounds = {
       granted: [new Audio("/audio/streak-granted.mp3")],
       unstoppable: [new Audio("/audio/streak-unstopable.mp3")],
-      rampage: [
-        new Audio("/audio/kill-streak-deep.mp3"),
-        new Audio("/audio/kill-streak-emotive.mp3")
-      ],
+      rampage: [new Audio("/audio/kill-streak-deep.mp3")],
       legendary: [new Audio("/audio/streak-legendary.mp3")]
     };
 
