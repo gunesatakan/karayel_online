@@ -3474,6 +3474,9 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
+    if (sourceDefinitionId !== "archer-4-underworld-execute") {
+      this.resolveMelisUnderworldLinkedDeath(enemy, now);
+    }
     this.triggerMelisCurseDeathBurst(enemy, now);
     this.enemies.delete(enemy.id);
     this.awardEnemyGold(enemy);
@@ -4140,15 +4143,29 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private executeMelisUnderworldTarget(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean, now: number) {
-    const x = enemy.x;
-    const y = enemy.y;
-    const pathId = enemy.pathId;
-    const canRaiseShooter = tower.melisEvolutionLevel >= 3 && enemy.type === "shooter";
     const killed = this.damageEnemy(enemy, enemy.hp + enemy.shield + enemy.maxHp + 1, 0, "archer-4-underworld-execute", tower.ownerId, "true", 0, tower.level, tower.id, "focus");
     if (!killed) {
       return;
     }
 
+    this.completeMelisUnderworldPull(tower, enemy, isStressMode, now);
+  }
+
+  private resolveMelisUnderworldLinkedDeath(enemy: EnemyModel, now: number) {
+    for (const tower of this.towers.values()) {
+      if (tower.definition.id !== "archer-4" || !tower.melisUnderworldTargetIds.includes(enemy.id)) {
+        continue;
+      }
+
+      this.completeMelisUnderworldPull(tower, enemy, tower.melisUnderworldMode === "stress", now);
+    }
+  }
+
+  private completeMelisUnderworldPull(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean, now: number) {
+    const x = enemy.x;
+    const y = enemy.y;
+    const pathId = enemy.pathId;
+    const canRaiseShooter = tower.melisEvolutionLevel >= 3 && enemy.type === "shooter";
     tower.melisUnderworldPullCount += 1;
     tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => enemyId !== enemy.id);
     const player = this.state.players.get(tower.ownerId);
