@@ -130,7 +130,10 @@ const MELIS_CURSE_NORMAL_DURATION_MS = 5000;
 const MELIS_CURSE_STRESS_DURATION_MS = 3000;
 const MELIS_CURSE_APPROVAL_DURATION_MS = 7000;
 const MELIS_CURSE_STRESS_AREA_MULTIPLIER = 1.45;
+const MELIS_CURSE_EVOLUTION_AREA_BONUS = 8;
 const MELIS_CURSE_DEATH_BURST_RADIUS = 58;
+const MELIS_CURSE_POOL_DURATION_MS = 3000;
+const MELIS_CURSE_POOL_TICK_MS = 500;
 const MELIS_DOUBT_BASE_DURATION_MS = 4000;
 const MELIS_DOUBT_APPROVAL_BONUS_MS = 2000;
 const MELIS_DOUBT_HESITATION_BASE_MS = 500;
@@ -305,6 +308,7 @@ type EnemyModel = {
   melisCurseUntil: number;
   melisCurseOwnerId: string;
   melisCurseTowerId: string;
+  melisCurseEvolutionLevel: number;
   melisDoubtStacks: number;
   melisDoubtUntil: number;
   melisDoubtHesitateUntil: number;
@@ -411,6 +415,20 @@ type DroneModel = DroneSnapshot & {
 type BeamModel = BeamSnapshot & {
   ttlMs: number;
   delayMs?: number;
+};
+
+type MelisCursePoolModel = {
+  id: string;
+  ownerId: string;
+  towerId: string;
+  x: number;
+  y: number;
+  radius: number;
+  burstDamage: number;
+  evolutionLevel: number;
+  expiresAt: number;
+  affectedEnemyIds: Set<string>;
+  lastAppliedAtByEnemyId: Map<string, number>;
 };
 
 type RaySegment = {
@@ -568,6 +586,7 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
   private burnZones = new Map<string, BurnZoneModel>();
+  private melisCursePools = new Map<string, MelisCursePoolModel>();
   private damageEvents = new Map<string, DamageEventModel>();
   private killEvents = new Map<string, KillEventModel>();
   private playerKillStreakTimes = new Map<string, number[]>();
@@ -581,6 +600,7 @@ export class MatchRoom extends Room<MatchState> {
   private nextZeynepRayId = 1;
   private nextKinWaveId = 1;
   private nextBurnZoneId = 1;
+  private nextMelisCursePoolId = 1;
   private nextDamageEventId = 1;
   private nextKillEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
@@ -1055,6 +1075,7 @@ export class MatchRoom extends Room<MatchState> {
     this.updateZeynepRays(seconds);
     this.updateKinWaves(seconds);
     this.updateBurnZones();
+    this.updateMelisCursePools();
     this.updateDrones(gameDeltaTime, seconds);
     this.updateBeams(gameDeltaTime);
     this.updateDamageEvents(gameDeltaTime);
@@ -1183,6 +1204,7 @@ export class MatchRoom extends Room<MatchState> {
       melisCurseUntil: 0,
       melisCurseOwnerId: "",
       melisCurseTowerId: "",
+      melisCurseEvolutionLevel: 0,
       melisDoubtStacks: 0,
       melisDoubtUntil: 0,
       melisDoubtHesitateUntil: 0,
@@ -2597,6 +2619,7 @@ export class MatchRoom extends Room<MatchState> {
         enemy.melisCurseBurstDamage = 0;
         enemy.melisCurseOwnerId = "";
         enemy.melisCurseTowerId = "";
+        enemy.melisCurseEvolutionLevel = 0;
       }
 
       if (enemy.melisDoubtStacks > 0 && enemy.melisDoubtUntil <= now) {
@@ -4003,11 +4026,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      enemy.melisCurseLoad += 1;
-      enemy.melisCurseBurstDamage += burstDamage;
-      enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
-      enemy.melisCurseOwnerId = tower.ownerId;
-      enemy.melisCurseTowerId = tower.id;
+      this.applyMelisCurseLoad(enemy, tower.ownerId, tower.id, tower.melisEvolutionLevel, burstDamage, expiresAt);
     }
 
     this.beams.set(`melis-curse-${tower.id}`, {
@@ -4024,6 +4043,15 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  private applyMelisCurseLoad(enemy: EnemyModel, ownerId: string, towerId: string, evolutionLevel: number, burstDamage: number, expiresAt: number) {
+    enemy.melisCurseLoad += 1;
+    enemy.melisCurseBurstDamage += burstDamage;
+    enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
+    enemy.melisCurseOwnerId = ownerId;
+    enemy.melisCurseTowerId = towerId;
+    enemy.melisCurseEvolutionLevel = Math.max(enemy.melisCurseEvolutionLevel, evolutionLevel);
+  }
+
   private triggerMelisCurseDeathBurst(enemy: EnemyModel, now: number) {
     if (enemy.melisCurseLoad <= 0 || enemy.melisCurseUntil <= now) {
       return;
@@ -4031,11 +4059,14 @@ export class MatchRoom extends Room<MatchState> {
 
     const ownerId = enemy.melisCurseOwnerId;
     const towerId = enemy.melisCurseTowerId;
+    const evolutionLevel = enemy.melisCurseEvolutionLevel;
+    const curseLoad = enemy.melisCurseLoad;
     const damage = enemy.melisCurseBurstDamage;
     enemy.melisCurseLoad = 0;
     enemy.melisCurseBurstDamage = 0;
     enemy.melisCurseOwnerId = "";
     enemy.melisCurseTowerId = "";
+    enemy.melisCurseEvolutionLevel = 0;
     const radius = this.scaleWorldDistance(MELIS_CURSE_DEATH_BURST_RADIUS);
     const radiusSq = radius * radius;
 
@@ -4060,6 +4091,76 @@ export class MatchRoom extends Room<MatchState> {
       overdrive: false,
       ttlMs: 360
     });
+
+    if (evolutionLevel >= 2) {
+      this.createMelisCursePool(enemy.x, enemy.y, radius, ownerId, towerId, evolutionLevel, damage / Math.max(1, curseLoad));
+    }
+  }
+
+  private createMelisCursePool(x: number, y: number, radius: number, ownerId: string, towerId: string, evolutionLevel: number, burstDamage: number) {
+    const id = `melis-curse-pool-${this.nextMelisCursePoolId++}`;
+    this.melisCursePools.set(id, {
+      id,
+      ownerId,
+      towerId,
+      x,
+      y,
+      radius,
+      burstDamage: Math.max(1, burstDamage),
+      evolutionLevel,
+      expiresAt: Date.now() + scaleGameDuration(MELIS_CURSE_POOL_DURATION_MS),
+      affectedEnemyIds: new Set<string>(),
+      lastAppliedAtByEnemyId: new Map<string, number>()
+    });
+  }
+
+  private updateMelisCursePools() {
+    const now = Date.now();
+    for (const [id, pool] of Array.from(this.melisCursePools.entries())) {
+      if (pool.expiresAt <= now) {
+        this.melisCursePools.delete(id);
+        this.beams.delete(id);
+        continue;
+      }
+
+      const radiusSq = pool.radius * pool.radius;
+      for (const enemy of Array.from(this.enemies.values())) {
+        this.perfCounters.aoeChecks += 1;
+        if (distanceSq(pool.x, pool.y, enemy.x, enemy.y) > radiusSq) {
+          continue;
+        }
+
+        const lastAppliedAt = pool.lastAppliedAtByEnemyId.get(enemy.id) ?? 0;
+        const canApply = pool.evolutionLevel >= 3
+          ? now - lastAppliedAt >= scaleGameDuration(MELIS_CURSE_POOL_TICK_MS)
+          : !pool.affectedEnemyIds.has(enemy.id);
+        if (!canApply) {
+          continue;
+        }
+
+        pool.affectedEnemyIds.add(enemy.id);
+        pool.lastAppliedAtByEnemyId.set(enemy.id, now);
+        this.applyMelisCurseLoad(enemy, pool.ownerId, pool.towerId, pool.evolutionLevel, pool.burstDamage, now + scaleGameDuration(this.getMelisCursePoolCurseDurationMs(pool)));
+      }
+
+      this.beams.set(id, {
+        id,
+        definitionId: "archer-3-curse-pool",
+        x1: pool.x,
+        y1: pool.y,
+        x2: pool.x,
+        y2: pool.y,
+        width: pool.radius * 2,
+        color: 0x581c87,
+        overdrive: false,
+        ttlMs: Math.max(0, pool.expiresAt - now)
+      });
+    }
+  }
+
+  private getMelisCursePoolCurseDurationMs(pool: MelisCursePoolModel) {
+    const tower = this.towers.get(pool.towerId);
+    return tower ? this.getMelisCurseDurationMs(tower) : MELIS_CURSE_NORMAL_DURATION_MS;
   }
 
   private getMelisCurseDurationMs(tower: TowerModel) {
@@ -4075,7 +4176,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getMelisCurseAreaRadius(tower: TowerModel) {
-    const baseRadius = tower.definition.aoeRadius + (tower.level - 1) * 4 + tower.melisEvolutionLevel * 8;
+    const evolutionBonus = tower.melisEvolutionLevel >= 1 ? MELIS_CURSE_EVOLUTION_AREA_BONUS : 0;
+    const baseRadius = tower.definition.aoeRadius + (tower.level - 1) * 4 + evolutionBonus;
     const stressMultiplier = this.isMelisStressDominant(tower) ? MELIS_CURSE_STRESS_AREA_MULTIPLIER : 1;
     return this.scaleWorldDistance(baseRadius * stressMultiplier);
   }
@@ -4509,6 +4611,7 @@ export class MatchRoom extends Room<MatchState> {
       melisCurseUntil: 0,
       melisCurseOwnerId: "",
       melisCurseTowerId: "",
+      melisCurseEvolutionLevel: 0,
       melisDoubtStacks: 0,
       melisDoubtUntil: 0,
       melisDoubtHesitateUntil: 0,

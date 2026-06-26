@@ -255,6 +255,9 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 | Atis araligi | 1180 ms |
 | Lanet uygulama alani | 42 |
 | Olum patlamasi yaricapi | 58 |
+| Evrim 1 alan bonusu | +8 |
+| Evrim 2 lanet goleti | 3 saniye |
+| Evrim 3 golet uygulama araligi | 0.5 saniye |
 
 **Sureler:**
 
@@ -271,6 +274,9 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 - Stres baskinken lanet suresi kisalir, fakat uygulama alani `x1.45` olur.
 - Onay baskinken lanet suresi 7 saniyeye cikar.
 - Lanetli dusman oldugunde biriken lanet hasari yakin dusmanlara psisik/lanet hasari olarak patlar.
+- Evrim 1: Lanet uygulama alani genisler.
+- Evrim 2: Lanetli yaratık oldugunde altinda 3 saniye kalan bir lanet goleti birakir. Goletin uzerinden gecen her dusman 1 kereligine 1 lanet yuku alir.
+- Evrim 3: Lanet goleti, uzerindeki dusmanlara 0.5 saniyede bir 1 lanet yuku uygular.
 - Dusman uzerinde `L + stack` seklinde lanet yuk miktari gorunur.
 
 ### 4. Ölüler Bağı

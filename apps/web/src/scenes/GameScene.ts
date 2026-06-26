@@ -3188,7 +3188,7 @@ export class GameScene extends Phaser.Scene {
         this.drawKinShowcaseLight(beam, color);
       } else if (beam.definitionId === "archer-2-rage") {
         this.drawMelisRageWave(beam, color);
-      } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst") {
+      } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst" || beam.definitionId === "archer-3-curse-pool") {
         this.drawMelisCursePulse(beam, color);
       } else if (beam.definitionId === "archer-6-whisper") {
         this.drawMelisWhisperWave(beam, color);
@@ -3246,24 +3246,31 @@ export class GameScene extends Phaser.Scene {
     const radius = Math.max(8, beam.width / 2);
     const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 360, 0, 1);
     const isBurst = beam.definitionId === "archer-3-curse-burst";
+    const isPool = beam.definitionId === "archer-3-curse-pool";
     const pulse = 1 + Math.sin(Date.now() / 58) * 0.06;
-    this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xf5d0fe, 0.48 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(color, isBurst ? 0.13 * life : 0.08 * life);
+    if (!isPool) {
+      this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xf5d0fe, 0.48 * life);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    }
+    this.beamGraphics.fillStyle(color, isPool ? 0.18 * life : isBurst ? 0.13 * life : 0.08 * life);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
-    this.beamGraphics.lineStyle((isBurst ? 3 : 2) * this.getTowerEffectScale(), color, 0.78 * life);
+    this.beamGraphics.lineStyle((isBurst || isPool ? 3 : 2) * this.getTowerEffectScale(), color, 0.78 * life);
     this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.05 - life * 0.22));
-    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0x020617, 0.36 * life);
+    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), isPool ? 0xf0abfc : 0x020617, isPool ? 0.52 * life : 0.36 * life);
     for (let index = 0; index < 8; index += 1) {
       const angle = (Math.PI * 2 * index) / 8 + Date.now() / 520;
-      const inner = radius * 0.22;
-      const outer = radius * (0.72 + (index % 2) * 0.12);
+      const inner = radius * (isPool ? 0.12 : 0.22);
+      const outer = radius * (isPool ? 0.9 : 0.72 + (index % 2) * 0.12);
       this.beamGraphics.lineBetween(
         beam.x2 + Math.cos(angle) * inner,
         beam.y2 + Math.sin(angle) * inner,
         beam.x2 + Math.cos(angle) * outer,
         beam.y2 + Math.sin(angle) * outer
       );
+    }
+    if (isPool) {
+      this.beamGraphics.lineStyle(1 * this.getTowerEffectScale(), 0xd8b4fe, 0.38 * life);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.58 + Math.sin(Date.now() / 94) * 0.04));
     }
   }
 
