@@ -93,7 +93,7 @@ export const melisTowers: TowerDefinition[] = [
     mechanics: ["damage-storage", "delayed-burst", "approval-exit-target", "stress-random-target", "evolution-true-damage"],
     cost: 132,
     upgradeCost: 84,
-    range: 64,
+    range: 96,
     damage: 10,
     fireIntervalMs: 1750,
     projectileSpeed: 360,
