@@ -319,22 +319,23 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 **Hasar turu:** Psisik, evrimle kismen gercek hasar  
 **Vurus turu:** Carpma
 
-Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekanigine cevirir. Kendi vuruslari zayiftir; asil gucu yakindaki Melis kulelerinin verdigi gercek hasarin bir kismini depolamasindan gelir.
+Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekanigine cevirir. Kendi vuruslari zayiftir; asil gucu etrafindaki 8 komsu karede duran Melis kulelerinin verdigi gercek hasarin bir kismini depolamasindan gelir.
 
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 132 altin |
 | Upgrade temel maliyeti | 84 |
-| Menzil | 64 |
+| Menzil | 96 |
 | Hasar | 10 |
 | Atis araligi | 1750 ms |
-| Depolama orani | Yakindaki Melis kulelerinin vurdugu gercek hasarin %20'si |
+| Depolama orani | Komsu Melis kulelerinin vurdugu gercek hasarin %20'si |
 | Depo ust limiti | 180 x `1.5 ^ (level - 1)` |
 | Patlama esigi | Depo %100 dolunca |
 
 **Icine Atma mekanigi:**
 
-- Kırık Ayna'nin menzilindeki ayni oyuncuya ait Melis kuleleri hasar verdikce, vurulan gercek hasarin bir kismi aynada depolanir.
+- Kırık Ayna'nin cevresindeki 8 komsu karede duran, ayni oyuncuya ait Melis kuleleri hasar verdikce, vurulan gercek hasarin bir kismi aynada depolanir.
+- Ayni anda en fazla 8 kuleden etkilenebilir.
 - Kırık Ayna kendi verdigi hasari depolamaz.
 - Depo dolunca kule birikmis hasari tek hedefe patlatir.
 - Patlama hedefi oldururse, stres baskin degilse hedefin cevresinde kucuk bir psisik patlama olur.

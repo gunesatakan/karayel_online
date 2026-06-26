@@ -3532,7 +3532,7 @@ export class MatchRoom extends Room<MatchState> {
         mirror.ownerId !== sourceTower.ownerId ||
         mirror.offlineUntil > now ||
         mirror.overheatMs > 0 ||
-        distanceSq(mirror.x, mirror.y, sourceTower.x, sourceTower.y) > this.getTowerRange(mirror) ** 2
+        !this.isMelisBrokenMirrorAdjacentSource(mirror, sourceTower)
       ) {
         continue;
       }
@@ -3540,6 +3540,18 @@ export class MatchRoom extends Room<MatchState> {
       const capacity = this.getMelisBrokenMirrorCapacity(mirror);
       mirror.melisMirrorCharge = Math.min(capacity, mirror.melisMirrorCharge + amount * this.getMelisBrokenMirrorStoreRatio(mirror));
     }
+  }
+
+  private isMelisBrokenMirrorAdjacentSource(mirror: TowerModel, sourceTower: TowerModel) {
+    const mirrorCells = this.getTowerFootprintCells(mirror.x, mirror.y, mirror.definition.id, mirror.orientation);
+    const sourceCells = this.getTowerFootprintCells(sourceTower.x, sourceTower.y, sourceTower.definition.id, sourceTower.orientation);
+    return mirrorCells.some((mirrorCell) => {
+      return sourceCells.some((sourceCell) => {
+        const colDistance = Math.abs(sourceCell.col - mirrorCell.col);
+        const rowDistance = Math.abs(sourceCell.row - mirrorCell.row);
+        return colDistance <= 1 && rowDistance <= 1 && (colDistance > 0 || rowDistance > 0);
+      });
+    });
   }
 
   private fireMelisBrokenMirrorExplosion(tower: TowerModel) {

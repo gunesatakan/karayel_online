@@ -86,7 +86,7 @@ export const melisTowers: TowerDefinition[] = [
     characterId: "archer",
     name: "Kırık Ayna",
     role: "Gecikmeli patlama",
-    description: "Yakinindaki Melis kulelerinin verdigi gercek hasarin bir kismini icinde depolar. Deposu dolunca spektrum durumuna gore bir hedef secip birikmis psisik hasari patlatir. Onay baskinken cikisa en yakin hedefe, dengedeyken can yuzdesi en yuksek hedefe, stres baskinken rastgele hedefe patlar.",
+    description: "Komsu 8 karedeki Melis kulelerinin verdigi gercek hasarin bir kismini icinde depolar. Deposu dolunca spektrum durumuna gore bir hedef secip birikmis psisik hasari patlatir. Onay baskinken cikisa en yakin hedefe, dengedeyken can yuzdesi en yuksek hedefe, stres baskinken rastgele hedefe patlar.",
     classType: "hybrid",
     damageType: "psychic",
     hitType: "impact",
