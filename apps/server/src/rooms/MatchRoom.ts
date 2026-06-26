@@ -4220,7 +4220,7 @@ export class MatchRoom extends Room<MatchState> {
       ) {
         continue;
       }
-      this.damageEnemy(target, damage, 0, "archer-6-whisper-suicide", enemy.melisWhisperTurnedOwnerId, "psychic", 0, 1, enemy.melisWhisperTurnedSourceTowerId, "impact");
+      this.damageEnemy(target, damage, 0, "archer-6-whisper-suicide", enemy.melisWhisperTurnedOwnerId, "physical", 0, 1, enemy.melisWhisperTurnedSourceTowerId, "impact");
     }
 
     const beamId = `melis-whisper-suicide-${enemy.id}-${this.nextBeamId++}`;

@@ -400,7 +400,7 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 |---|---|
 | 1 | Korku uygulanmis bir dusmanda Suphe tetiklenir ve dusman durursa, dusman 1 saniyeligine taraf degistirir ve diger dusmanlara saldirir. Diger dusmanlar yanindan gecip gidebilir. |
 | 2 | Ayni taraf degistirme tetiklenir; bu kez dusmanlar ilerleyebilmek icin onu oldurmek zorundadir ve ona saldirir. |
-| 3 | Evrim 2 etkilerine ek olarak, taraf degistirmis dusman cani %10'un altina indiginde intihar bombacisi gibi patlar ve kalan cani kadar cevresine psisik hasar verir. |
+| 3 | Evrim 2 etkilerine ek olarak, taraf degistirmis dusman cani %10'un altina indiginde intihar bombacisi gibi patlar ve kalan cani kadar cevresine fiziksel hasar verir. |
 
 ## Streak Gorsel Dili
 
