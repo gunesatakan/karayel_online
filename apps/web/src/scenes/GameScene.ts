@@ -2263,6 +2263,7 @@ export class GameScene extends Phaser.Scene {
     graphics.clear();
     this.renderAbartiEdgeBody(graphics, tower);
     this.renderMelisGothicTowerRing(graphics, tower);
+    this.renderMelisEvolutionStraps(graphics, tower);
     this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
     this.renderZeynepFormationEffect(graphics, tower);
@@ -2374,6 +2375,43 @@ export class GameScene extends Phaser.Scene {
       const y2 = tower.y + Math.sin(angle + wave * 0.05) * outer;
       graphics.lineStyle((index % 3 === 0 ? 2.1 : 1.2) * effectScale, 0x020617, 0.78);
       graphics.lineBetween(x1, y1, x2, y2);
+    }
+  }
+
+  private renderMelisEvolutionStraps(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.characterId !== "archer" || !tower.melisEvolutionLevel) {
+      return;
+    }
+
+    const strapCount = Phaser.Math.Clamp(Math.floor(tower.melisEvolutionLevel), 1, 3);
+    const cellSize = this.getMapCellSize();
+    const spriteRadius = Math.max(20, cellSize * 1.12) / 2;
+    const halfLength = spriteRadius * 0.84;
+    const strapWidth = Math.max(1.2, cellSize * 0.038);
+    const dx = Math.SQRT1_2;
+    const dy = Math.SQRT1_2;
+    const px = -Math.SQRT1_2;
+    const py = Math.SQRT1_2;
+    const offsets = strapCount === 1
+      ? [0]
+      : strapCount === 2
+        ? [-spriteRadius * 0.22, spriteRadius * 0.22]
+        : [-spriteRadius * 0.34, 0, spriteRadius * 0.34];
+
+    for (const offset of offsets) {
+      const centerX = tower.x + px * offset;
+      const centerY = tower.y + py * offset;
+      const startX = centerX - dx * halfLength;
+      const startY = centerY - dy * halfLength;
+      const endX = centerX + dx * halfLength;
+      const endY = centerY + dy * halfLength;
+
+      graphics.lineStyle(strapWidth + Math.max(1, strapWidth * 0.9), 0x020617, 0.58);
+      graphics.lineBetween(startX, startY, endX, endY);
+      graphics.lineStyle(strapWidth, 0xf8fafc, 0.96);
+      graphics.lineBetween(startX, startY, endX, endY);
+      graphics.lineStyle(Math.max(0.6, strapWidth * 0.38), 0xffffff, 0.85);
+      graphics.lineBetween(startX, startY, endX, endY);
     }
   }
 
