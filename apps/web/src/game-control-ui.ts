@@ -180,7 +180,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
 
     if (state.showOrientationToggle) {
-      footer.append(makeActionButton(state.orientation === "vertical" ? "Dikey" : "Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
+      footer.append(makeActionButton(state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
     }
 
     panel.append(skillRow, actionRow, shop, footer);

@@ -1001,17 +1001,17 @@ export class GameScene extends Phaser.Scene {
       const top = TOWER_BUILD_TOP;
       if (orientation === "vertical") {
         const lineCol = Math.max(0, Math.min(this.selectedMapData.cols, Math.round(x / gridSize)));
-        const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.floor((y - top) / gridSize)));
+        const centerRow = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - top) / gridSize)));
         return {
           x: lineCol * gridSize,
-          y: top + (row + 1) * gridSize
+          y: top + centerRow * gridSize
         };
       }
 
-      const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.floor(x / gridSize)));
+      const centerCol = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round(x / gridSize)));
       const lineRow = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - top) / gridSize)));
       return {
-        x: (col + 1) * gridSize,
+        x: centerCol * gridSize,
         y: top + lineRow * gridSize
       };
     }
@@ -4033,7 +4033,7 @@ export class GameScene extends Phaser.Scene {
       this.abartiOrientationButton?.disableInteractive();
       this.abartiOrientationText?.disableInteractive();
     }
-    this.abartiOrientationText?.setText(this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey");
+    this.abartiOrientationText?.setText(this.abartiOrientation === "horizontal" ? "Yon: Yatay" : "Yon: Dikey");
   }
 
   private emitControlState() {
@@ -4054,9 +4054,12 @@ export class GameScene extends Phaser.Scene {
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
 
+    const orientationHint = !selectedTower && this.selectedTowerDefinition.id === "zeynep-8"
+      ? ` | Yon: ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
+      : "";
     const towerHint = selectedTower
       ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
-      : `${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g | haritaya surukle`;
+      : `${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g${orientationHint} | haritaya surukle`;
 
     this.game.events.emit("game:controls-state", {
       visible: true,

@@ -3407,17 +3407,17 @@ export class MatchRoom extends Room<MatchState> {
       const top = TOWER_BUILD_TOP;
       if (orientation === "vertical") {
         const lineCol = Math.max(0, Math.min(this.activeMap.cols, Math.round(x / gridSize)));
-        const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.floor((y - top) / gridSize)));
+        const centerRow = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - top) / gridSize)));
         return {
           x: lineCol * gridSize,
-          y: top + (row + 1) * gridSize
+          y: top + centerRow * gridSize
         };
       }
 
-      const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.floor(x / gridSize)));
+      const centerCol = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round(x / gridSize)));
       const lineRow = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - top) / gridSize)));
       return {
-        x: (col + 1) * gridSize,
+        x: centerCol * gridSize,
         y: top + lineRow * gridSize
       };
     }
