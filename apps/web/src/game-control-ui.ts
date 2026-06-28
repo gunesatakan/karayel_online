@@ -243,6 +243,16 @@ export function setupGameControlUi(game: Phaser.Game) {
     const stressValue = Math.floor(spectrum.stress);
     const approvalPercent = Math.round((1 - spectrum.ratio) * 100);
     const stressPercent = Math.round(spectrum.ratio * 100);
+    const stressDominanceRatio = approvalValue <= 0 ? (stressValue > 0 ? Infinity : 0) : stressValue / approvalValue;
+    const evolutionTier = stressValue <= approvalValue
+      ? 0
+      : stressDominanceRatio >= 3
+        ? 3
+        : stressDominanceRatio >= 2
+          ? 2
+          : stressDominanceRatio >= 1.5
+            ? 1
+            : 0;
 
     const header = document.createElement("div");
     header.className = "melis-spectrum__header";
@@ -259,7 +269,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     stress.className = "melis-spectrum__side melis-spectrum__side--stress";
     stress.textContent = String(stressValue);
 
-    header.append(approval, stateLabel, stress);
+    const evolution = document.createElement("span");
+    evolution.className = `melis-spectrum__evolution melis-spectrum__evolution--${evolutionTier > 0 ? "ready" : "locked"}`;
+    evolution.textContent = String(evolutionTier);
+
+    header.append(approval, stateLabel, stress, evolution);
 
     const meter = document.createElement("div");
     meter.className = "melis-spectrum__meter";
@@ -268,11 +282,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     marker.className = "melis-spectrum__marker";
     meter.append(marker);
 
-    const footer = document.createElement("div");
-    footer.className = "melis-spectrum__footer";
-    footer.textContent = `${approvalValue}:${stressValue}`;
-
-    shell.append(header, meter, footer);
+    shell.append(header, meter);
     return shell;
   };
 
