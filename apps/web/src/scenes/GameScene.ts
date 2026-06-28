@@ -865,6 +865,7 @@ export class GameScene extends Phaser.Scene {
 
     switch (detail.action) {
       case "selectTower": {
+        this.hideZeynepTierChoicesIfOpen();
         const tower = findTower();
         if (!tower) {
           return;
@@ -875,6 +876,7 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case "towerDragStart": {
+        this.hideZeynepTierChoicesIfOpen();
         const tower = findTower();
         const point = previewPoint();
         if (!tower || !point) {
@@ -908,9 +910,11 @@ export class GameScene extends Phaser.Scene {
         this.clearPlacedTowerSelection();
         break;
       case "useUltimate":
+        this.hideZeynepTierChoicesIfOpen();
         this.handleUltimateButton();
         break;
       case "useUltimateMode":
+        this.hideZeynepTierChoicesIfOpen();
         if (detail.mode) {
           this.room?.send("useUltimate", { mode: detail.mode });
         }
@@ -918,11 +922,13 @@ export class GameScene extends Phaser.Scene {
         this.clearPlacedTowerSelection();
         break;
       case "upgradeTower":
+        this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId) {
           this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
         }
         break;
       case "sellTower":
+        this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId) {
           this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
           this.selectedPlacedTowerId = undefined;
@@ -930,15 +936,18 @@ export class GameScene extends Phaser.Scene {
         }
         break;
       case "setUnderworldMode":
+        this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId && detail.underworldMode) {
           this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: detail.underworldMode });
         }
         break;
       case "toggleAbartiOrientation":
+        this.hideZeynepTierChoicesIfOpen();
         this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
         this.updateSelectionUi();
         break;
       case "clearSelection":
+        this.hideZeynepTierChoicesIfOpen();
         this.clearPlacedTowerSelection();
         break;
     }
@@ -1399,6 +1408,13 @@ export class GameScene extends Phaser.Scene {
     this.emitControlState();
   }
 
+  private hideZeynepTierChoicesIfOpen() {
+    if (this.pendingZeynepCommandSlot === undefined) {
+      return;
+    }
+    this.hideZeynepTierChoices();
+  }
+
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
       return;
@@ -1438,6 +1454,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.hideUltimateChoices();
+    this.hideZeynepTierChoicesIfOpen();
 
     if (this.pendingAction?.type === "guidance") {
       this.hintText?.setText(this.selectedCharacterId === "archer" ? "Zorba icin alani surukle" : "Yonlendirme icin haritada basili tutup surukle");
