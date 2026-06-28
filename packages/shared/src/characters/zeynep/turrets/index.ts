@@ -9,7 +9,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Emir Kulesi", "Yavaslatma"],
   ["Zeynep Nexus", "En ust seviye hasar"],
   ["Saray Arsivi", "Pahali pasif kule. Gelistirildikce Taht Muhru sentez kombinasyonlarini stackli bicimde guclendirir"],
-  ["Abarti", "2 kare yer kaplayan pasif kule. Icindan gecen Hiza, Gosteri ve Taht Muhru vuruslarini abartili sekilde guclendirir"]
+  ["Abarti", "Kare kenarlarina cizgisel yerlestirilen pasif kule. Icindan gecen Hiza, Gosteri ve Taht Muhru vuruslarini abartili sekilde guclendirir"]
 ], { cost: 55, range: 75, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 }).map((tower): TowerDefinition => {
   if (tower.id !== "zeynep-1") {
     if (tower.id === "zeynep-2") {
@@ -94,12 +94,12 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         ...tower,
         name: "Abarti",
         role: "Pasif vurus modulatoru",
-        description: "2 kare yer kaplar ve ates etmez. Icindan gecen Gosteri ve Gosteri+Gosteri isik hatlarinin menzilini artirip rengini koyulastirir. Hiza ve Hiza+Hiza vuruslari zirh kirar. Hiza+Gosteri Taht Muhru isini icinden gecerse rengi koyulasir ve her deldigi dusman sonraki hedeflere daha cok hasar aktarir.",
+        description: "Karelerin kenarlarina 2 cizgi uzunlugunda yerlesir ve normal kule hacmi kaplamaz. Ates etmez. Icindan gecen Gosteri ve Gosteri+Gosteri isik hatlarinin menzilini artirip rengini koyulastirir. Hiza ve Hiza+Hiza vuruslari zirh kirar. Hiza+Gosteri Taht Muhru isini icinden gecerse rengi koyulasir ve her deldigi dusman sonraki hedeflere daha cok hasar aktarir.",
         classType: "support",
         damageType: "none",
         hitType: "aura",
-        mechanics: ["two-cell-footprint", "line-pass-through-buff", "armor-break", "ray-amplifier"],
-        cost: 260,
+        mechanics: ["edge-line-placement", "line-pass-through-buff", "armor-break", "ray-amplifier"],
+        cost: 130,
         upgradeCost: 190,
         range: 0,
         damage: 0,

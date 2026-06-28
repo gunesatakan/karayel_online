@@ -2143,10 +2143,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private getAbartiRect(tower: TowerModel) {
     const gridSize = getMapGridSize(this.activeMap);
+    const thickness = Math.max(5, gridSize * 0.16);
     if (tower.orientation === "vertical") {
       return {
-        left: tower.x - gridSize / 2,
-        right: tower.x + gridSize / 2,
+        left: tower.x - thickness / 2,
+        right: tower.x + thickness / 2,
         top: tower.y - gridSize,
         bottom: tower.y + gridSize
       };
@@ -2155,8 +2156,8 @@ export class MatchRoom extends Room<MatchState> {
     return {
       left: tower.x - gridSize,
       right: tower.x + gridSize,
-      top: tower.y - gridSize / 2,
-      bottom: tower.y + gridSize / 2
+      top: tower.y - thickness / 2,
+      bottom: tower.y + thickness / 2
     };
   }
 
@@ -3370,6 +3371,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canPlaceTower(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal", ignoreTowerId = "") {
+    if (definitionId === "zeynep-8") {
+      return this.canPlaceAbartiEdge(x, y, orientation, ignoreTowerId);
+    }
+
     const footprint = this.getTowerFootprintCells(x, y, definitionId, orientation);
     if (footprint.length === 0) {
       return false;
@@ -3398,22 +3403,22 @@ export class MatchRoom extends Room<MatchState> {
   private snapToTowerGrid(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
     if (definitionId === "zeynep-8") {
+      const gridSize = getMapGridSize(this.activeMap);
+      const top = TOWER_BUILD_TOP;
       if (orientation === "vertical") {
-        const row = Math.max(0, Math.min(this.activeMap.rows - 2, gridPoint.row));
-        const top = gridToWorld(gridPoint.col, row, this.activeMap);
-        const bottom = gridToWorld(gridPoint.col, row + 1, this.activeMap);
+        const lineCol = Math.max(0, Math.min(this.activeMap.cols, Math.round(x / gridSize)));
+        const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.floor((y - top) / gridSize)));
         return {
-          x: top.x,
-          y: (top.y + bottom.y) / 2
+          x: lineCol * gridSize,
+          y: top + (row + 1) * gridSize
         };
       }
 
-      const col = Math.max(0, Math.min(this.activeMap.cols - 2, gridPoint.col));
-      const left = gridToWorld(col, gridPoint.row, this.activeMap);
-      const right = gridToWorld(col + 1, gridPoint.row, this.activeMap);
+      const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.floor(x / gridSize)));
+      const lineRow = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - top) / gridSize)));
       return {
-        x: (left.x + right.x) / 2,
-        y: left.y
+        x: (col + 1) * gridSize,
+        y: top + lineRow * gridSize
       };
     }
 
@@ -3426,22 +3431,71 @@ export class MatchRoom extends Room<MatchState> {
       return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
     }
 
-    const gridSize = getMapGridSize(this.activeMap);
-    if (orientation === "vertical") {
-      const topPoint = worldToGrid(x, y - gridSize / 2, this.activeMap);
-      const cells = [
-        { col: topPoint.col, row: topPoint.row },
-        { col: topPoint.col, row: topPoint.row + 1 }
-      ];
-      return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
+    return [];
+  }
+
+  private canPlaceAbartiEdge(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
+    const segments = this.getAbartiEdgeSegments(x, y, orientation);
+    if (segments.length !== 2 || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+      return false;
     }
 
-    const leftPoint = worldToGrid(x - gridSize / 2, y, this.activeMap);
-    const cells = [
-      { col: leftPoint.col, row: leftPoint.row },
-      { col: leftPoint.col + 1, row: leftPoint.row }
+    for (const tower of this.towers.values()) {
+      if (tower.id === ignoreTowerId || tower.definition.id !== "zeynep-8") {
+        continue;
+      }
+
+      const existingSegments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation);
+      if (segments.some((segment) => existingSegments.some((existing) => (
+        existing.orientation === segment.orientation &&
+        existing.col === segment.col &&
+        existing.row === segment.row
+      )))) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
+    const gridSize = getMapGridSize(this.activeMap);
+    const top = TOWER_BUILD_TOP;
+    if (orientation === "vertical") {
+      const col = Math.max(0, Math.min(this.activeMap.cols, Math.round(x / gridSize)));
+      const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.round((y - top) / gridSize - 1)));
+      return [
+        { orientation, col, row },
+        { orientation, col, row: row + 1 }
+      ];
+    }
+
+    const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.round(x / gridSize - 1)));
+    const row = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - top) / gridSize)));
+    return [
+      { orientation, col, row },
+      { orientation, col: col + 1, row }
     ];
-    return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
+  }
+
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
+    if (segment.orientation === "vertical") {
+      if (segment.col < 0 || segment.col > this.activeMap.cols || segment.row < 0 || segment.row >= this.activeMap.rows) {
+        return false;
+      }
+
+      return this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row);
+    }
+
+    if (segment.col < 0 || segment.col >= this.activeMap.cols || segment.row < 0 || segment.row > this.activeMap.rows) {
+      return false;
+    }
+
+    return this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+  }
+
+  private isTowerTile(col: number, row: number) {
+    return isInsideMap(this.activeMap, col, row) && getTile(this.activeMap, col, row) === "tower";
   }
 
   private findTowerTarget(tower: TowerModel) {

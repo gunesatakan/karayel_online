@@ -777,8 +777,8 @@ export class GameScene extends Phaser.Scene {
     this.placementGrid?.setVisible(true);
     this.placementGhost?.destroy();
     const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
-    const ghostWidth = tower.id === "zeynep-8" && this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize;
-    const ghostHeight = tower.id === "zeynep-8" && this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize;
+    const ghostWidth = tower.id === "zeynep-8" ? (this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
+    const ghostHeight = tower.id === "zeynep-8" ? (this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
       .setDisplaySize(ghostWidth, ghostHeight)
       .setAlpha(0.78)
@@ -953,6 +953,27 @@ export class GameScene extends Phaser.Scene {
     const cellSize = this.getMapCellSize();
     const footprint = this.getTowerPreviewFootprintCells(highlightX, highlightY);
     grid.clear();
+
+    if ((this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id) === "zeynep-8") {
+      grid.lineStyle(1, 0xe2e8f0, 0.16);
+      for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
+        grid.lineBetween(x, TOWER_BUILD_TOP, x, this.controlTop);
+      }
+      for (let y = TOWER_BUILD_TOP; y <= this.controlTop; y += cellSize) {
+        grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
+      }
+
+      const segments = this.getAbartiEdgeSegments(highlightX, highlightY, this.getPlacementOrientation("zeynep-8"));
+      grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.42);
+      grid.lineStyle(2, canPlace ? 0x86efac : 0xfca5a5, 0.95);
+      for (const segment of segments) {
+        const rect = this.getAbartiEdgeSegmentRect(segment);
+        grid.fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+        grid.strokeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+      }
+      return;
+    }
+
     grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.28);
     for (const cell of footprint) {
       const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
@@ -976,22 +997,22 @@ export class GameScene extends Phaser.Scene {
   private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id, orientation = this.getPlacementOrientation(definitionId)) {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
     if (definitionId === "zeynep-8") {
+      const gridSize = this.getMapCellSize();
+      const top = TOWER_BUILD_TOP;
       if (orientation === "vertical") {
-        const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, gridPoint.row));
-        const top = gridToWorld(gridPoint.col, row, this.selectedMapData);
-        const bottom = gridToWorld(gridPoint.col, row + 1, this.selectedMapData);
+        const lineCol = Math.max(0, Math.min(this.selectedMapData.cols, Math.round(x / gridSize)));
+        const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.floor((y - top) / gridSize)));
         return {
-          x: top.x,
-          y: (top.y + bottom.y) / 2
+          x: lineCol * gridSize,
+          y: top + (row + 1) * gridSize
         };
       }
 
-      const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, gridPoint.col));
-      const left = gridToWorld(col, gridPoint.row, this.selectedMapData);
-      const right = gridToWorld(col + 1, gridPoint.row, this.selectedMapData);
+      const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.floor(x / gridSize)));
+      const lineRow = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - top) / gridSize)));
       return {
-        x: (left.x + right.x) / 2,
-        y: left.y
+        x: (col + 1) * gridSize,
+        y: top + lineRow * gridSize
       };
     }
     return gridToWorld(gridPoint.col, gridPoint.row, this.selectedMapData);
@@ -1000,6 +1021,11 @@ export class GameScene extends Phaser.Scene {
   private canPlaceTowerPreview(x: number, y: number, ignoreTowerId = "") {
     if (this.draggedTowerDefinition && this.currentTeamGold < this.draggedTowerDefinition.cost) {
       return false;
+    }
+
+    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
+    if (definitionId === "zeynep-8") {
+      return this.canPlaceAbartiEdgePreview(x, y, this.getPlacementOrientation(definitionId), ignoreTowerId);
     }
 
     const footprint = this.getTowerPreviewFootprintCells(x, y);
@@ -1042,22 +1068,95 @@ export class GameScene extends Phaser.Scene {
       return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
     }
 
-    const cellSize = this.getMapCellSize();
-    if (orientation === "vertical") {
-      const topPoint = worldToGrid(x, y - cellSize / 2, this.selectedMapData);
-      const cells = [
-        { col: topPoint.col, row: topPoint.row },
-        { col: topPoint.col, row: topPoint.row + 1 }
-      ];
-      return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
+    return [];
+  }
+
+  private canPlaceAbartiEdgePreview(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
+    const segments = this.getAbartiEdgeSegments(x, y, orientation);
+    if (segments.length !== 2 || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+      return false;
     }
 
-    const leftPoint = worldToGrid(x - cellSize / 2, y, this.selectedMapData);
-    const cells = [
-      { col: leftPoint.col, row: leftPoint.row },
-      { col: leftPoint.col + 1, row: leftPoint.row }
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.id === ignoreTowerId || tower.definitionId !== "zeynep-8") {
+        continue;
+      }
+
+      const existingSegments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal");
+      if (segments.some((segment) => existingSegments.some((existing) => (
+        existing.orientation === segment.orientation &&
+        existing.col === segment.col &&
+        existing.row === segment.row
+      )))) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
+    const gridSize = this.getMapCellSize();
+    const top = TOWER_BUILD_TOP;
+    if (orientation === "vertical") {
+      const col = Math.max(0, Math.min(this.selectedMapData.cols, Math.round(x / gridSize)));
+      const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.round((y - top) / gridSize - 1)));
+      return [
+        { orientation, col, row },
+        { orientation, col, row: row + 1 }
+      ];
+    }
+
+    const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.round(x / gridSize - 1)));
+    const row = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - top) / gridSize)));
+    return [
+      { orientation, col, row },
+      { orientation, col: col + 1, row }
     ];
-    return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
+  }
+
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
+    if (segment.orientation === "vertical") {
+      if (segment.col < 0 || segment.col > this.selectedMapData.cols || segment.row < 0 || segment.row >= this.selectedMapData.rows) {
+        return false;
+      }
+
+      return this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row);
+    }
+
+    if (segment.col < 0 || segment.col >= this.selectedMapData.cols || segment.row < 0 || segment.row > this.selectedMapData.rows) {
+      return false;
+    }
+
+    return this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+  }
+
+  private isTowerTile(col: number, row: number) {
+    return isInsideMap(this.selectedMapData, col, row) && getTile(this.selectedMapData, col, row) === "tower";
+  }
+
+  private getAbartiEdgeSegmentRect(segment: { orientation: TowerOrientation; col: number; row: number }) {
+    const gridSize = this.getMapCellSize();
+    const thickness = Math.max(4, gridSize * 0.16);
+    if (segment.orientation === "vertical") {
+      const x = segment.col * gridSize;
+      const y1 = TOWER_BUILD_TOP + segment.row * gridSize;
+      return {
+        left: x - thickness / 2,
+        right: x + thickness / 2,
+        top: y1,
+        bottom: y1 + gridSize
+      };
+    }
+
+    const x1 = segment.col * gridSize;
+    const y = TOWER_BUILD_TOP + segment.row * gridSize;
+    return {
+      left: x1,
+      right: x1 + gridSize,
+      top: y - thickness / 2,
+      bottom: y + thickness / 2
+    };
   }
 
   private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id): TowerOrientation {
@@ -2077,12 +2176,12 @@ export class GameScene extends Phaser.Scene {
         rendered.key = key;
       }
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
-      const footprintScaleX = tower.definitionId === "zeynep-8" && tower.orientation !== "vertical" ? 1.7 : 1;
-      const footprintScaleY = tower.definitionId === "zeynep-8" && tower.orientation === "vertical" ? 1.7 : 1;
+      const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
+      const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
       rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale * footprintScaleY);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
-      rendered.halo.setVisible(tower.status !== "Tukenmis" && tower.status !== "Hararet");
+      rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet");
       this.renderTowerSpriteEffects(rendered.effect, tower);
       rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
@@ -3872,6 +3971,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private findTowerAt(x: number, y: number) {
+    const abartiHit = Array.from(this.towerSnapshots.values()).find((tower) => {
+      if (tower.definitionId !== "zeynep-8") {
+        return false;
+      }
+
+      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal")
+        .some((segment) => {
+          const rect = this.getAbartiEdgeSegmentRect(segment);
+          return x >= rect.left - 4 && x <= rect.right + 4 && y >= rect.top - 4 && y <= rect.bottom + 4;
+        });
+    });
+    if (abartiHit) {
+      return abartiHit;
+    }
+
     const pointerCell = worldToGrid(x, y, this.selectedMapData);
     const sameCellTower = Array.from(this.towerSnapshots.values()).find((tower) => {
       return this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId, tower.orientation)
