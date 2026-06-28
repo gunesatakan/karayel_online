@@ -637,6 +637,7 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowMultiplier = 1;
   private zeynepSlowTier: ZeynepCommandTier = "small";
   private melisGothicNightmareUntil = 0;
+  private melisGothicNightmareOwnerUntil = new Map<string, number>();
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private lobbyRoomName = "Yeni Oda";
@@ -855,6 +856,7 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.playerKillStreakTimes, previousSessionId, nextSessionId);
     this.transferMapKey(this.playerKillStreakLocks, previousSessionId, nextSessionId);
     this.transferMapKey(this.melisFavoriteTowerIds, previousSessionId, nextSessionId);
+    this.transferMapKey(this.melisGothicNightmareOwnerUntil, previousSessionId, nextSessionId);
   }
 
   onDispose() {
@@ -3246,7 +3248,9 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "archer") {
-      this.melisGothicNightmareUntil = Math.max(this.melisGothicNightmareUntil, Date.now() + scaleGameDuration(MELIS_GOTHIC_NIGHTMARE_MS));
+      const until = Date.now() + scaleGameDuration(MELIS_GOTHIC_NIGHTMARE_MS);
+      this.melisGothicNightmareUntil = Math.max(this.melisGothicNightmareUntil, until);
+      this.melisGothicNightmareOwnerUntil.set(client.sessionId, Math.max(this.melisGothicNightmareOwnerUntil.get(client.sessionId) ?? 0, until));
       for (const tower of this.towers.values()) {
         if (tower.ownerId === client.sessionId && tower.characterId === "archer") {
           tower.cooldownMs = Math.min(tower.cooldownMs, 80);
@@ -3746,7 +3750,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
-    const damageType = tower.characterId === "archer" && this.melisGothicNightmareUntil > Date.now()
+    const damageType = this.isMelisGothicNightmareActiveForTower(tower, Date.now())
       ? "true"
       : tower.definition.damageType ?? "physical";
     return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id, tower.definition.hitType);
@@ -5179,7 +5183,7 @@ export class MatchRoom extends Room<MatchState> {
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const zeynepFormationMultiplier = getZeynepFormationFireIntervalMultiplier(tower);
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
-    const melisNightmareHasteMultiplier = tower.characterId === "archer" && this.melisGothicNightmareUntil > now ? 1 / MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER : 1;
+    const melisNightmareHasteMultiplier = this.isMelisGothicNightmareActiveForTower(tower, now) ? 1 / MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER : 1;
     const melisFocusKillHasteMultiplier = tower.characterId === "archer" && tower.melisFocusKillHasteUntil > now ? 1 / MELIS_FOCUS_KILL_HASTE_MULTIPLIER : 1;
 
     if (tower.definition.id === "warrior-5") {
@@ -5222,6 +5226,10 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower) * this.getMelisHedefciDoubtFireIntervalMultiplier(tower));
   }
 
+  private isMelisGothicNightmareActiveForTower(tower: TowerModel, now = Date.now()) {
+    return tower.characterId === "archer" && (this.melisGothicNightmareOwnerUntil.get(tower.ownerId) ?? 0) > now;
+  }
+
   private getTowerDamage(tower: TowerModel) {
     const now = Date.now();
     let damage = tower.definition.damage * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now) * getZeynepFormationDamageMultiplier(tower);
@@ -5244,7 +5252,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.characterId === "archer") {
       damage *= this.getMelisFavoriteDamageMultiplier(tower) * this.getMelisEvolutionDamageMultiplier(tower);
-      if (this.melisGothicNightmareUntil > now) {
+      if (this.isMelisGothicNightmareActiveForTower(tower, now)) {
         damage *= MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER;
       }
     }
@@ -5372,7 +5380,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.characterId === "archer" && tower.melisFocusUntil > now) {
       return tower.melisFocusKillHasteUntil > now ? "Odaklan x5" : "Odaklan";
     }
-    if (tower.characterId === "archer" && this.melisGothicNightmareUntil > now) {
+    if (this.isMelisGothicNightmareActiveForTower(tower, now)) {
       return "Gotik Kabus";
     }
     if (tower.definition.id === "archer-5") {
