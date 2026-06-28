@@ -1086,7 +1086,7 @@ function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
   const notes: Record<string, string[]> = {
     "archer-1": [
       "Oluler Bagi ile bagli dusman menzile girerse ona oncelik verir; zaten boyle bir hedefe vuruyorsa hedef degistirmez.",
-      "Ayni hedefe kilitlenen Hedefci sayisi basina hasar x1.2 artar.",
+      "Ayni hedefe kilitlenen Hedefci sayisi basina hasar x1.5 artar.",
       "Suphe yuklu hedeflere vururken hedefe ozel saldiri hizi artar: 1 yuk %10, 2 yuk %20, 3 yuk %40."
     ],
     "archer-2": [

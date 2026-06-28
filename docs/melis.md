@@ -118,7 +118,7 @@ Secilen dairesel alandaki bir tank dusmani sabitler, taraf degistirir ve yakinin
 | Secim yaricapi | 78 |
 | Etki suresi | 7 saniye |
 | Hasar alani | 70 |
-| Hasar | Saniyede hedefin max caninin %5'i |
+| Hasar | Saniyede hedefin max caninin %15'i |
 | Hasar turu | Gercek hasar |
 
 **Notlar:**
@@ -143,17 +143,19 @@ Melis stres/onay oranini yeterince stres baskin hale getirirse secili kulesini s
 
 Secili kule Melis'e ait degilse, maksimum evrimdeyse, evrim sirasi bozuluyorsa veya gerekli stres/onay orani yoksa beceri calismaz.
 
-### 3. Test Kabusu
+### 3. Odaklan
 
 **Aciklama:**  
-Gecici test becerisidir. Tum dusmanlari aninda oldurur ve streak gorsellerini test etmek icin kullanilir.
+Melis kuleleri 5 saniye boyunca o anda vuruyor olduklari hedefe kilitlenir. Kilitli hedef menzil disina ciksa bile beceri suresince takip edilir. Kulelerin vurus animasyonu ve mermi ulasma hizi 3 katina cikar; bu surede son vurus yapan kule Odaklan bitene kadar 5 kat saldiri hizi kazanir.
 
 | Ozellik | Deger |
 |---|---:|
-| Cooldown | 3 saniye |
-| Etki | Haritadaki tum dusmanlara oldurucu gercek hasar |
+| Cooldown | 12 saniye |
+| Etki suresi | 5 saniye |
+| Mermi/vurus animasyonu hizi | x3 |
+| Son vurus odulu | Becerinin kalan suresinde x5 saldiri hizi |
 
-Bu beceri nihai tasarimin parcasi degil, Melis'in streak anonslarini ve psikolojik gorsel dilini test etmek icin tutulur.
+Odaklan, mevcut hedefleri dondurdugu icin hedef secimi dogru zamanda yapildiginda guclenir; bosta kalan kuleler hedef bulamazsa kilit alamaz.
 
 ## Ultimate: Gotik Kabus
 
@@ -194,7 +196,7 @@ Hedefci menziline giren bir hedefi kilide alir. Onay baskinken kilitli hedef men
 | Maliyet | 72 altin |
 | Upgrade temel maliyeti | 52 |
 | Menzil | 79 |
-| Hasar | 16 |
+| Hasar | 32 |
 | Atis araligi | 820 ms |
 | Mermi hizi | 520 |
 | AOE | Yok |
@@ -207,7 +209,7 @@ Hedefci menziline giren bir hedefi kilide alir. Onay baskinken kilitli hedef men
 - Stres baskin veya dengeli durumda kilitli hedef menzil disina cikarsa kilit kopar.
 - Favori kuleyse onaydan hasar ve atis hizi bonusu alir.
 - Evrim 1: Menziline Oluler Bagi ile bagli bir dusman girerse ona oncelik verir. Zaten Oluler Bagi ile bagli bir hedefe vuruyorsa hedef degistirmez.
-- Evrim 2: Ayni hedefe kilitlenmis Hedefci sayisina gore hasari artar; hedefe odaklanan Hedefci basina x1.2 hasar carpani uygulanir.
+- Evrim 2: Ayni hedefe kilitlenmis Hedefci sayisina gore hasari artar; hedefe odaklanan Hedefci basina x1.5 hasar carpani uygulanir.
 - Evrim 3: Suphe yuku olan hedeflere vururken o hedefe ozel atis hizi artar: 1 yukta %10, 2 yukta %20, 3 yukta %40.
 
 ### 2. Parlama
@@ -217,7 +219,7 @@ Hedefci menziline giren bir hedefi kilide alir. Onay baskinken kilitli hedef men
 **Hasar turu:** Psisik  
 **Vurus turu:** Mermi
 
-Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi yasar. Bu patlama cevresindeki dusmanlara kisa sureli korku uygular.
+Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi yasar. Bu patlama cevresindeki dusmanlara 2x alan hasari verir ve kisa sureli korku uygular.
 
 | Ozellik | Deger |
 |---|---:|
@@ -234,6 +236,7 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 **Ozel davranislar:**
 
 - Hedef menzilden cikarsa ofke dalgasi tetiklenir.
+- Hedef menzilden cikma ile tetiklenen ofke dalgasi kulenin guncel hasarinin 2 kati kadar psisik alan hasari verir.
 - Evrim 1: Duz vurusuyla bir dusmana son vurus yaparsa ofke dalgasi tetiklenir.
 - Evrim 2: Ofke dalgasi kalkanli bir dusmana vuruyorsa kalkan katmanina 2x hasar verir.
 - Evrim 3: Korku suresi 0.5 saniye artarak toplam 1.0 saniyeye cikar.
@@ -353,7 +356,7 @@ Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekan
 | Atis araligi | 1750 ms |
 | Depolama orani | Komsu Melis kulelerinin vurdugu gercek hasarin %20'si |
 | Depo ust limiti | 180 x `1.5 ^ (level - 1)` |
-| Patlama hasar carpani | Level 1'de x1.10, level 10'da x1.50 |
+| Patlama hasar carpani | Level 1'de x1.10, level 10'da x2.00 |
 | Patlama esigi | Depo %100 dolunca |
 
 **Icine Atma mekanigi:**
@@ -361,7 +364,7 @@ Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekan
 - Kırık Ayna'nin cevresindeki 8 komsu karede duran, ayni oyuncuya ait Melis kuleleri hasar verdikce, vurulan gercek hasarin bir kismi aynada depolanir.
 - Ayni anda en fazla 8 kuleden etkilenebilir.
 - Kırık Ayna kendi verdigi hasari depolamaz.
-- Depo dolunca kule birikmis hasari leveline gore `x1.10 -> x1.50` arasi artirarak tek hedefe patlatir.
+- Depo dolunca kule birikmis hasari leveline gore `x1.10 -> x2.00` arasi artirarak tek hedefe patlatir.
 - Patlama hedefi oldururse, stres baskin degilse hedefin cevresinde kucuk bir psisik patlama olur.
 - Patlama hedefi oldurmezse Melis +1 stres kazanir.
 - Kule status satirinda `Ayna %` seklinde depo dolulugu gorunur.

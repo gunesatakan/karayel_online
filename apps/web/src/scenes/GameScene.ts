@@ -2145,11 +2145,44 @@ export class GameScene extends Phaser.Scene {
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
     this.renderMelisGothicTowerRing(graphics, tower);
+    this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
     this.renderZeynepFormationEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderMelisFocusTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.characterId !== "archer" || !tower.status?.startsWith("Odaklan")) {
+      return;
+    }
+
+    const effectScale = this.getTowerEffectScale();
+    const cellSize = this.getMapCellSize();
+    const boosted = tower.status.includes("x5");
+    const phase = ((performance.now() + tower.x * 11 + tower.y * 17) % 720) / 720;
+    const radius = Math.max(11, cellSize * 0.48);
+    const pulse = Math.sin(phase * Math.PI * 2);
+    const primary = boosted ? 0xfacc15 : 0x67e8f9;
+    const secondary = boosted ? 0xfb7185 : 0xc084fc;
+
+    graphics.lineStyle((boosted ? 3.2 : 2.2) * effectScale, primary, boosted ? 0.92 : 0.78);
+    graphics.strokeCircle(tower.x, tower.y, radius + pulse * 1.7 * effectScale);
+    graphics.lineStyle(1.2 * effectScale, secondary, 0.7);
+    graphics.strokeCircle(tower.x, tower.y, radius * 0.68 - pulse * 1.1 * effectScale);
+
+    for (let index = 0; index < 4; index += 1) {
+      const angle = phase * Math.PI * 2 + index * Math.PI * 0.5;
+      const inner = radius * 0.78;
+      const outer = radius + (boosted ? 7 : 5) * effectScale;
+      const x1 = tower.x + Math.cos(angle) * inner;
+      const y1 = tower.y + Math.sin(angle) * inner;
+      const x2 = tower.x + Math.cos(angle) * outer;
+      const y2 = tower.y + Math.sin(angle) * outer;
+      graphics.lineStyle((boosted ? 2 : 1.35) * effectScale, index % 2 === 0 ? primary : secondary, 0.82);
+      graphics.lineBetween(x1, y1, x2, y2);
+    }
   }
 
   private renderMelisGothicTowerRing(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
