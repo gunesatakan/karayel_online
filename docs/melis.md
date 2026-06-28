@@ -193,8 +193,8 @@ Hedefci menziline giren bir hedefi kilide alir. Onay baskinken kilitli hedef men
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 72 altin |
-| Upgrade temel maliyeti | 52 |
+| Maliyet | 76 altin |
+| Upgrade temel maliyeti | 55 |
 | Menzil | 79 |
 | Hasar | 32 |
 | Atis araligi | 820 ms |
@@ -223,8 +223,8 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 88 altin |
-| Upgrade temel maliyeti | 64 |
+| Maliyet | 92 altin |
+| Upgrade temel maliyeti | 67 |
 | Menzil | 74 |
 | Hasar | 22 |
 | Atis araligi | 950 ms |
@@ -255,8 +255,8 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 104 altin |
-| Upgrade temel maliyeti | 70 |
+| Maliyet | 109 altin |
+| Upgrade temel maliyeti | 74 |
 | Menzil | 73 |
 | Hasar | 15 |
 | Atis araligi | 1180 ms |
@@ -297,8 +297,8 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 108 altin |
-| Upgrade temel maliyeti | 72 |
+| Maliyet | 113 altin |
+| Upgrade temel maliyeti | 76 |
 | Menzil | 78 |
 | Dogrudan hasar | 0 |
 | Bag sayisi | 1, Evrim 2 ile 2 |
@@ -349,8 +349,8 @@ Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekan
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 132 altin |
-| Upgrade temel maliyeti | 84 |
+| Maliyet | 139 altin |
+| Upgrade temel maliyeti | 88 |
 | Menzil | 120 |
 | Hasar | 10 |
 | Atis araligi | 1750 ms |
@@ -396,8 +396,8 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 
 | Ozellik | Deger |
 |---|---:|
-| Maliyet | 108 altin |
-| Upgrade temel maliyeti | 72 |
+| Maliyet | 113 altin |
+| Upgrade temel maliyeti | 76 |
 | Menzil | 78 |
 | Hasar | 5 |
 | Atis araligi | 1350 ms |

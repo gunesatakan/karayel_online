@@ -55,6 +55,7 @@ import {
 } from "@karayel/shared";
 
 const TEAM_START_GOLD = 240;
+const MELIS_START_GOLD = 100;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const BASE_WAVE_ENEMY_COUNT = 10;
@@ -766,7 +767,7 @@ export class MatchRoom extends Room<MatchState> {
     player.characterId = this.getAvailableCharacterId(options.characterId);
     player.ready = false;
     player.connected = true;
-    player.gold = TEAM_START_GOLD;
+    player.gold = getPlayerStartGold(player.characterId);
     this.initializeMelisSpectrum(player);
 
     this.state.players.set(client.sessionId, player);
@@ -820,7 +821,7 @@ export class MatchRoom extends Room<MatchState> {
     player.characterId = this.getAvailableCharacterId(options.characterId);
     player.ready = true;
     player.connected = true;
-    player.gold = TEAM_START_GOLD;
+    player.gold = getPlayerStartGold(player.characterId);
     this.initializeMelisSpectrum(player);
     this.state.players.set(client.sessionId, player);
     this.sendLobbyState(client);
@@ -877,6 +878,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     player.characterId = characterId;
+    player.gold = getPlayerStartGold(player.characterId);
     this.initializeMelisSpectrum(player);
     player.ready = false;
     this.broadcastLobbyState();
@@ -6160,6 +6162,10 @@ function getMelisApprovalGain(tier: KillStreakTier) {
   if (tier === "rampage") return 3;
   if (tier === "unstoppable") return 2;
   return 1;
+}
+
+function getPlayerStartGold(characterId: CharacterId) {
+  return characterId === "archer" ? MELIS_START_GOLD : TEAM_START_GOLD;
 }
 
 function getTowerPlacementOrientation(definitionId?: string, orientation?: TowerOrientation): TowerOrientation {
