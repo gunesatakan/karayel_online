@@ -3254,6 +3254,35 @@ export class GameScene extends Phaser.Scene {
     }
     this.beamGraphics.fillStyle(color, isPool ? 0.18 * life : isBurst ? 0.13 * life : 0.08 * life);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
+    if (isBurst) {
+      const now = Date.now();
+      this.beamGraphics.fillStyle(0x020617, 0.7 * life);
+      this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.34);
+      this.beamGraphics.lineStyle(5.2 * this.getTowerEffectScale(), 0xf0abfc, 0.78 * life);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.34 - life * 0.24));
+      this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), 0x7f1dff, 0.95 * life);
+      for (let index = 0; index < 16; index += 1) {
+        const angle = (Math.PI * 2 * index) / 16 + now / 380;
+        const inner = radius * (0.2 + (index % 3) * 0.06);
+        const mid = radius * (0.62 + (index % 4) * 0.09);
+        const outer = radius * (1.08 + (index % 2) * 0.16);
+        this.beamGraphics.lineBetween(
+          beam.x2 + Math.cos(angle) * inner,
+          beam.y2 + Math.sin(angle) * inner,
+          beam.x2 + Math.cos(angle + 0.12) * mid,
+          beam.y2 + Math.sin(angle + 0.12) * mid
+        );
+        this.beamGraphics.lineBetween(
+          beam.x2 + Math.cos(angle + 0.12) * mid,
+          beam.y2 + Math.sin(angle + 0.12) * mid,
+          beam.x2 + Math.cos(angle - 0.08) * outer,
+          beam.y2 + Math.sin(angle - 0.08) * outer
+        );
+      }
+      this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0xfdf4ff, 0.72 * life);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.54 + Math.sin(now / 40) * 0.05));
+      return;
+    }
     this.beamGraphics.lineStyle((isBurst || isPool ? 3 : 2) * this.getTowerEffectScale(), color, 0.78 * life);
     this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.05 - life * 0.22));
     this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), isPool ? 0xf0abfc : 0x020617, isPool ? 0.52 * life : 0.36 * life);

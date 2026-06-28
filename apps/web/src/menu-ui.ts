@@ -1067,6 +1067,10 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   if (tower.id === "warrior-6") {
     parts.push("Denge: Impact/carpma oldugu icin level ile baz saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Dalga bonuslari 2, 4, 6, 8, 10, 14 ve 16 tamamlanan dalgada acilir. Lv10+16dalga+15stack+2chain yaklasik 2114 DPS.");
   }
+  const evolutionNotes = getTowerEvolutionArchiveNotes(tower);
+  if (evolutionNotes.length > 0) {
+    parts.push(`Evrimler:\n${evolutionNotes.map((note, index) => `E${index + 1}: ${note}`).join("\n")}`);
+  }
 
   return {
     key: `tower-${tower.id}`,
@@ -1076,6 +1080,43 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     color: colorNumberToHex(tower.color),
     body: parts.join("\n")
   };
+}
+
+function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
+  const notes: Record<string, string[]> = {
+    "archer-1": [
+      "Oluler Bagi ile bagli dusman menzile girerse ona oncelik verir; zaten boyle bir hedefe vuruyorsa hedef degistirmez.",
+      "Ayni hedefe kilitlenen Hedefci sayisi basina hasar x1.2 artar.",
+      "Suphe yuklu hedeflere vururken hedefe ozel saldiri hizi artar: 1 yuk %10, 2 yuk %20, 3 yuk %40."
+    ],
+    "archer-2": [
+      "Duz vurusuyla son vurus yaparsa korku dalgasi tetikler.",
+      "Korku dalgasi kalkanli hedefe vuruyorsa kalkan katmanina 2x hasar verir.",
+      "Korku suresi 0.5 saniye artarak toplam 1.0 saniyeye cikar."
+    ],
+    "archer-3": [
+      "Lanet uygulama alani genisler.",
+      "Lanetli dusman oldugunde altinda 3 saniyelik lanet goleti birakir; gecen dusmanlar 1 kez 1 lanet yuku alir.",
+      "Lanet goleti uzerindeki dusmanlara 0.5 saniyede bir tekrar lanet uygular."
+    ],
+    "archer-4": [
+      "Oluler alemine cekilen hedefin bitisigindeki dusmanlar 1 saniye korkar.",
+      "Bag sayisi 2 olur.",
+      "Uzak atici execute edilirse nexus tarafinda olu olarak dirilir ve ters yone savasir."
+    ],
+    "archer-5": [
+      "Depolama orani +%4 olur.",
+      "Patlamanin %25'i gercek hasara donusur.",
+      "Patlama hedefi oldururse Melis kuleleri 2 saniye %20 saldiri hizi kazanir."
+    ],
+    "archer-6": [
+      "Korku uygulanmis dusmanda Suphe tetiklenip duraksama olursa hedef 1 saniye taraf degistirir ve diger dusmanlara saldirir.",
+      "Taraf degistiren hedef dusmanlar icin engel olur; dusmanlar ilerlemek icin onu oldurmek zorundadir.",
+      "Taraf degistiren hedef cani %10 altina inerse kalan cani kadar fiziksel patlama yapar."
+    ]
+  };
+
+  return notes[tower.id] ?? [];
 }
 
 function formatDps(damage: number, intervalMs: number) {

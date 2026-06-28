@@ -158,18 +158,21 @@ Bu beceri nihai tasarimin parcasi degil, Melis'in streak anonslarini ve psikoloj
 ## Ultimate: Gotik Kabus
 
 **Aciklama:**  
-Haritada giris ve cikislar kapanir. Yeni dusman giremez, icerideki dusmanlar cikamaz. Melis kuleleri canavarlasir ve gercek hasar vermeye baslar.
+Haritada giris ve cikislar kapanir. Yeni dusman giremez, icerideki dusmanlar cikamaz. Melis kuleleri canavarlasir; gercek hasar vermeye baslar, hasari ve saldiri temposu artar.
 
 | Ozellik | Deger |
 |---|---:|
 | Sure | 9 saniye |
 | Kule hasar turu | Gercek hasar |
+| Kule hasar bonusu | x1.5 |
+| Kule saldiri hizi bonusu | x1.25 |
 | Gorsel | Gecitler ve nexus uzerinde glitch neon X |
 | Kule gorseli | Melis kulelerinde siyah/gotik dalgali halka |
 
 **Mevcut uygulama:**
 
 - Ultimate aktifken Melis kulelerinin hasar turu `true` olur.
+- Ultimate aktifken Melis kuleleri `x1.5` hasar ve `x1.25` saldiri hizi alir.
 - Gecit ve nexus noktalarinda buyuk glitch neon X gorselleri cizilir.
 - Melis kuleleri `Gotik Kabus` statusu alir.
 - Melis kulelerinin cooldown'u aktivasyon aninda kisa sureli hizli tepki verecek sekilde dusurulur.
@@ -184,13 +187,13 @@ Haritada giris ve cikislar kapanir. Yeni dusman giremez, icerideki dusmanlar cik
 **Hasar turu:** Psisik  
 **Vurus turu:** Mermi
 
-Hedefci menziline giren bir hedefi kilide alir ve hedef olene kadar ona odaklanir. Kilit alindiktan sonra hedef menzil disina ciksa bile Hedefci onu vurmaya devam eder; ancak yeni bir hedefe kilitlenmek icin hedefin once normal menzile girmesi gerekir.
+Hedefci menziline giren bir hedefi kilide alir. Onay baskinken kilitli hedef menzil disina ciksa bile Hedefci onu vurmaya devam eder; stres veya denge durumunda hedef menzilden cikarsa kilit kopar. Yeni hedefe kilitlenmek icin hedefin once normal menzile girmesi gerekir.
 
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 72 altin |
 | Upgrade temel maliyeti | 52 |
-| Menzil | 63 |
+| Menzil | 79 |
 | Hasar | 16 |
 | Atis araligi | 820 ms |
 | Mermi hizi | 520 |
@@ -200,7 +203,8 @@ Hedefci menziline giren bir hedefi kilide alir ve hedef olene kadar ona odaklani
 
 - Hedef kilidi mantigiyla calisir.
 - Yeni hedefleri sadece normal menziline girdiklerinde kilide alir.
-- Kilitlenmis hedef menzil disina ciksa bile hedef olene kadar takip edilir.
+- Onay baskinken kilitlenmis hedef menzil disina ciksa bile hedef olene kadar takip edilir.
+- Stres baskin veya dengeli durumda kilitli hedef menzil disina cikarsa kilit kopar.
 - Favori kuleyse onaydan hasar ve atis hizi bonusu alir.
 - Evrim 1: Menziline Oluler Bagi ile bagli bir dusman girerse ona oncelik verir. Zaten Oluler Bagi ile bagli bir hedefe vuruyorsa hedef degistirmez.
 - Evrim 2: Ayni hedefe kilitlenmis Hedefci sayisina gore hasari artar; hedefe odaklanan Hedefci basina x1.2 hasar carpani uygulanir.
@@ -219,7 +223,7 @@ Parlama hedefledigi dusmani menzilinden cikana kadar olduremezse ofke patlamasi 
 |---|---:|
 | Maliyet | 88 altin |
 | Upgrade temel maliyeti | 64 |
-| Menzil | 59 |
+| Menzil | 74 |
 | Hasar | 22 |
 | Atis araligi | 950 ms |
 | Mermi hizi | 460 |
@@ -250,7 +254,7 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 |---|---:|
 | Maliyet | 104 altin |
 | Upgrade temel maliyeti | 70 |
-| Menzil | 58 |
+| Menzil | 73 |
 | Hasar | 15 |
 | Atis araligi | 1180 ms |
 | Lanet uygulama alani | 42 |
@@ -292,7 +296,7 @@ Lanet Kulesi bir alandaki dusmanlara lanet uygular. Her vurus 1 lanet stack'i ek
 |---|---:|
 | Maliyet | 108 altin |
 | Upgrade temel maliyeti | 72 |
-| Menzil | 62 |
+| Menzil | 78 |
 | Dogrudan hasar | 0 |
 | Bag sayisi | 1, Evrim 2 ile 2 |
 | Execute esigi | Level 1'de %3, level 10'da %18 |
@@ -344,11 +348,12 @@ Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekan
 |---|---:|
 | Maliyet | 132 altin |
 | Upgrade temel maliyeti | 84 |
-| Menzil | 96 |
+| Menzil | 120 |
 | Hasar | 10 |
 | Atis araligi | 1750 ms |
 | Depolama orani | Komsu Melis kulelerinin vurdugu gercek hasarin %20'si |
 | Depo ust limiti | 180 x `1.5 ^ (level - 1)` |
+| Patlama hasar carpani | Level 1'de x1.10, level 10'da x1.50 |
 | Patlama esigi | Depo %100 dolunca |
 
 **Icine Atma mekanigi:**
@@ -356,7 +361,7 @@ Kırık Ayna Melis'in "icine atar, icine atar, sonra kirilir" fikrini kule mekan
 - Kırık Ayna'nin cevresindeki 8 komsu karede duran, ayni oyuncuya ait Melis kuleleri hasar verdikce, vurulan gercek hasarin bir kismi aynada depolanir.
 - Ayni anda en fazla 8 kuleden etkilenebilir.
 - Kırık Ayna kendi verdigi hasari depolamaz.
-- Depo dolunca kule birikmis hasari tek hedefe patlatir.
+- Depo dolunca kule birikmis hasari leveline gore `x1.10 -> x1.50` arasi artirarak tek hedefe patlatir.
 - Patlama hedefi oldururse, stres baskin degilse hedefin cevresinde kucuk bir psisik patlama olur.
 - Patlama hedefi oldurmezse Melis +1 stres kazanir.
 - Kule status satirinda `Ayna %` seklinde depo dolulugu gorunur.
@@ -390,7 +395,7 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 |---|---:|
 | Maliyet | 108 altin |
 | Upgrade temel maliyeti | 72 |
-| Menzil | 62 |
+| Menzil | 78 |
 | Hasar | 5 |
 | Atis araligi | 1350 ms |
 | Dalga alani | 40 |

@@ -121,6 +121,8 @@ const MELIS_MAX_FAVORITE_TOWERS = 3;
 const MELIS_MAX_EVOLUTION_LEVEL = 3;
 const MELIS_EVOLUTION_RATIO_THRESHOLDS = [1.5, 2, 3];
 const MELIS_GOTHIC_NIGHTMARE_MS = 9000;
+const MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER = 1.5;
+const MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER = 1.25;
 const MELIS_BULLY_RADIUS = 78;
 const MELIS_BULLY_DURATION_MS = 7000;
 const MELIS_BULLY_DAMAGE_RADIUS = 70;
@@ -169,6 +171,8 @@ const MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS = 0.04;
 const MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO = 0.25;
 const MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO = 0.35;
 const MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS = 58;
+const MELIS_BROKEN_MIRROR_RELEASE_MIN_MULTIPLIER = 1.1;
+const MELIS_BROKEN_MIRROR_RELEASE_MAX_MULTIPLIER = 1.5;
 const MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MS = 2000;
 const MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MULTIPLIER = 1.2;
 const MELIS_INITIAL_APPROVAL = 6;
@@ -3438,14 +3442,18 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "archer-1") {
       const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
+      const lockedTargetInRange = lockedTarget
+        ? distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)
+        : false;
       if (
         lockedTarget &&
         this.canTowerTargetEnemy(tower, lockedTarget) &&
+        (lockedTargetInRange || this.canMelisHedefciHoldLockOutsideRange(tower)) &&
         (tower.melisEvolutionLevel < 1 || this.isMelisUnderworldLinkedEnemyForOwner(tower.ownerId, lockedTarget.id))
       ) {
         return lockedTarget;
       }
-      if (!lockedTarget || !this.canTowerTargetEnemy(tower, lockedTarget)) {
+      if (!lockedTarget || !this.canTowerTargetEnemy(tower, lockedTarget) || (!lockedTargetInRange && !this.canMelisHedefciHoldLockOutsideRange(tower))) {
         tower.focusTargetId = "";
       }
     }
@@ -3485,7 +3493,10 @@ export class MatchRoom extends Room<MatchState> {
         return underworldTarget;
       }
       const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
-      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget)) {
+      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget) && (
+        distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= range * range ||
+        this.canMelisHedefciHoldLockOutsideRange(tower)
+      )) {
         return lockedTarget;
       }
     }
@@ -3514,6 +3525,10 @@ export class MatchRoom extends Room<MatchState> {
       tower.definition.id === "zeynep-2" ||
       tower.definition.id === "zeynep-6" ||
       (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
+  }
+
+  private canMelisHedefciHoldLockOutsideRange(tower: TowerModel) {
+    return tower.definition.id === "archer-1" && this.isMelisApprovalDominant(tower);
   }
 
   private findMelisUnderworldLinkedTargetForHedefci(tower: TowerModel, candidates: EnemyModel[]) {
@@ -3685,6 +3700,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const storedDamage = Math.max(0, tower.melisMirrorCharge);
+    const releasedDamage = storedDamage * getMelisBrokenMirrorReleaseMultiplier(tower.level);
     tower.melisMirrorCharge = 0;
     if (storedDamage <= 0) {
       return false;
@@ -3693,12 +3709,12 @@ export class MatchRoom extends Room<MatchState> {
     const isStress = this.isMelisStressDominant(tower);
     let killed = false;
     if (tower.melisEvolutionLevel >= 2) {
-      killed = this.damageEnemy(target, storedDamage * (1 - MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO), 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
+      killed = this.damageEnemy(target, releasedDamage * (1 - MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO), 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
       if (!killed && this.enemies.has(target.id)) {
-        killed = this.damageEnemy(target, storedDamage * MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO, 0, tower.definition.id, tower.ownerId, "true", 0, tower.level, tower.id, "impact");
+        killed = this.damageEnemy(target, releasedDamage * MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO, 0, tower.definition.id, tower.ownerId, "true", 0, tower.level, tower.id, "impact");
       }
     } else {
-      killed = this.damageEnemy(target, storedDamage, 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
+      killed = this.damageEnemy(target, releasedDamage, 0, tower.definition.id, tower.ownerId, "psychic", 0, tower.level, tower.id, "impact");
     }
 
     const beamId = `melis-broken-mirror-${tower.id}-${this.nextBeamId++}`;
@@ -3717,7 +3733,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (killed) {
       if (!isStress) {
-        this.triggerMelisBrokenMirrorDeathBurst(tower, target.x, target.y, storedDamage);
+        this.triggerMelisBrokenMirrorDeathBurst(tower, target.x, target.y, releasedDamage);
       }
       if (tower.melisEvolutionLevel >= 3) {
         this.applyMelisBrokenMirrorEvolutionHaste(tower);
@@ -5048,9 +5064,10 @@ export class MatchRoom extends Room<MatchState> {
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const zeynepFormationMultiplier = getZeynepFormationFireIntervalMultiplier(tower);
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
+    const melisNightmareHasteMultiplier = tower.characterId === "archer" && this.melisGothicNightmareUntil > now ? 1 / MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER : 1;
 
     if (tower.definition.id === "warrior-5") {
-      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier;
+      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier * melisNightmareHasteMultiplier;
     }
 
     if (tower.definition.id === "zeynep-3") {
@@ -5065,28 +5082,28 @@ export class MatchRoom extends Room<MatchState> {
       } else if (composition.mode === "copy-showcase") {
         baseInterval = composition.copySourceTower?.definition.fireIntervalMs ?? tower.definition.fireIntervalMs;
       }
-      return Math.max(80, baseInterval * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
+      return Math.max(80, baseInterval * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier);
     }
 
     if (tower.definition.hitType === "impact") {
-      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier);
+      return Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier);
     }
 
     if (tower.definition.id === "warrior-1") {
-      return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
+      return getTrackerFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier;
     }
 
     if (tower.definition.id === "zeynep-1") {
-      return getZeynepHizaFireInterval(tower.level) * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
+      return getZeynepHizaFireInterval(tower.level) * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier;
     }
 
     if (tower.definition.id === "zeynep-6") {
-      return getKinFireInterval(tower.level) * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier;
+      return getKinFireInterval(tower.level) * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier;
     }
 
     const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
     const minimumInterval = 80;
-    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower) * this.getMelisHedefciDoubtFireIntervalMultiplier(tower));
+    return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower) * this.getMelisHedefciDoubtFireIntervalMultiplier(tower));
   }
 
   private getTowerDamage(tower: TowerModel) {
@@ -5111,6 +5128,9 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.characterId === "archer") {
       damage *= this.getMelisFavoriteDamageMultiplier(tower) * this.getMelisEvolutionDamageMultiplier(tower);
+      if (this.melisGothicNightmareUntil > now) {
+        damage *= MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER;
+      }
     }
 
     if (tower.definition.id === "archer-1") {
@@ -6080,6 +6100,11 @@ function getZeynepFormationFireIntervalMultiplier(tower: TowerModel) {
     return 1 - (1 - ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER) * levelRatio;
   }
   return 1;
+}
+
+function getMelisBrokenMirrorReleaseMultiplier(level: number) {
+  const levelRatio = Math.max(0, Math.min(1, (level - 1) / 9));
+  return MELIS_BROKEN_MIRROR_RELEASE_MIN_MULTIPLIER + (MELIS_BROKEN_MIRROR_RELEASE_MAX_MULTIPLIER - MELIS_BROKEN_MIRROR_RELEASE_MIN_MULTIPLIER) * levelRatio;
 }
 
 function scaleGameDuration(durationMs: number) {

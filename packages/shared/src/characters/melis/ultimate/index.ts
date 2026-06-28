@@ -1,1 +1,1 @@
-export const melisUltimate = "Gotik Kabus: Giris ve cikislar kapanir. Yeni dusman giremez, iceridekiler cikamaz. Melis kuleleri canavarlasir ve gercek hasar verir.";
+export const melisUltimate = "Gotik Kabus: Giris ve cikislar kapanir. Yeni dusman giremez, iceridekiler cikamaz. Melis kuleleri canavarlasir; gercek hasar verir, %50 hasar ve %25 saldiri hizi kazanir.";
