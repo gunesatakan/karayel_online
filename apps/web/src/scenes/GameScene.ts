@@ -2179,6 +2179,7 @@ export class GameScene extends Phaser.Scene {
       const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
       const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
       rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale * footprintScaleY);
+      rendered.base.setVisible(tower.definitionId !== "zeynep-8");
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet");
@@ -2243,6 +2244,7 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderAbartiEdgeBody(graphics, tower);
     this.renderMelisGothicTowerRing(graphics, tower);
     this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
@@ -2250,6 +2252,42 @@ export class GameScene extends Phaser.Scene {
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderAbartiEdgeBody(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.definitionId !== "zeynep-8") {
+      return;
+    }
+
+    const segments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal");
+    const phase = (performance.now() % 1200) / 1200;
+    const selected = tower.id === this.selectedPlacedTowerId;
+    const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.16;
+    const thickness = Math.max(5, this.getMapCellSize() * 0.16);
+    const glowWidth = thickness * (selected ? 4.2 : 3.2);
+    const coreWidth = Math.max(2, thickness * 0.42);
+
+    for (const segment of segments) {
+      const rect = this.getAbartiEdgeSegmentRect(segment);
+      const horizontal = segment.orientation !== "vertical";
+      const x1 = horizontal ? rect.left : (rect.left + rect.right) / 2;
+      const y1 = horizontal ? (rect.top + rect.bottom) / 2 : rect.top;
+      const x2 = horizontal ? rect.right : (rect.left + rect.right) / 2;
+      const y2 = horizontal ? (rect.top + rect.bottom) / 2 : rect.bottom;
+
+      graphics.lineStyle(glowWidth, 0x7c3aed, selected ? 0.3 : 0.18);
+      graphics.lineBetween(x1, y1, x2, y2);
+      graphics.lineStyle(thickness * 1.45, 0x2e1065, 0.94);
+      graphics.lineBetween(x1, y1, x2, y2);
+      graphics.lineStyle(thickness * 0.9, 0x6d28d9, 0.94);
+      graphics.lineBetween(x1, y1, x2, y2);
+      graphics.lineStyle(coreWidth, selected ? 0xfdf2f8 : 0xc4b5fd, pulse);
+      graphics.lineBetween(x1, y1, x2, y2);
+
+      graphics.fillStyle(selected ? 0xfdf2f8 : 0xa78bfa, selected ? 0.9 : 0.72);
+      graphics.fillCircle(x1, y1, thickness * 0.55);
+      graphics.fillCircle(x2, y2, thickness * 0.55);
+    }
   }
 
   private renderMelisFocusTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -2323,7 +2361,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderZeynepCommandTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.status === "Hararet" || tower.status === "Tukenmis") {
+    if (tower.definitionId === "zeynep-8" || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;
     }
 
@@ -4088,7 +4126,8 @@ export class GameScene extends Phaser.Scene {
       }),
       zeynepTier: this.pendingZeynepCommandSlot === undefined ? undefined : {
         slot: this.pendingZeynepCommandSlot,
-        reputation
+        reputation,
+        chainReady: authorityChain >= 2
       },
       zeynepChain: this.localPlayerSnapshot?.characterId === "zeynep" ? {
         value: authorityChain,

@@ -12,7 +12,7 @@ type ControlState = {
   orientation?: "horizontal" | "vertical";
   towers?: Array<{ id: string; name: string; cost: number; color: string; selected: boolean }>;
   skills?: Array<{ slot: number; name: string; label: string; disabled: boolean }>;
-  zeynepTier?: { slot: number; reputation: number };
+  zeynepTier?: { slot: number; reputation: number; chainReady?: boolean };
   zeynepChain?: { value: number; ready: boolean };
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
@@ -112,7 +112,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     for (const skill of state.skills ?? []) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "game-controls__skill";
+      button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}`;
       button.disabled = skill.disabled;
       button.textContent = skill.label;
       button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
@@ -128,9 +128,9 @@ export function setupGameControlUi(game: Phaser.Game) {
       );
     } else if (state.zeynepTier) {
       actionRow.append(
-        makeTierButton("Dusuk", "small", 10, state.zeynepTier.reputation),
-        makeTierButton("Orta", "medium", 40, state.zeynepTier.reputation),
-        makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation)
+        makeTierButton("Dusuk", "small", 10, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton("Orta", "medium", 40, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
       );
     } else {
       actionRow.append(
@@ -197,8 +197,8 @@ export function setupGameControlUi(game: Phaser.Game) {
     return button;
   };
 
-  const makeTierButton = (label: string, tier: ZeynepTier, cost: number, reputation: number) => {
-    const button = makeActionButton(`${label} ${cost}I`, `game-controls__tier game-controls__tier--${tier}`, reputation >= cost, () => {
+  const makeTierButton = (label: string, tier: ZeynepTier, cost: number, reputation: number, chainReady = false) => {
+    const button = makeActionButton(`${label} ${cost}I`, `game-controls__tier game-controls__tier--${tier}${chainReady && reputation >= cost ? " game-controls__tier--chain-ready" : ""}`, reputation >= cost, () => {
       dispatch({ action: "useZeynepTier", tier });
     });
     return button;

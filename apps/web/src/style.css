@@ -327,6 +327,18 @@ canvas {
   line-height: 0.95;
 }
 
+.game-controls__skill--chain-ready {
+  border-color: rgba(253, 242, 248, 0.95);
+  background:
+    linear-gradient(120deg, rgba(244, 114, 182, 0.34), rgba(14, 165, 233, 0.16), rgba(253, 242, 248, 0.22)),
+    rgba(30, 41, 59, 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgba(253, 242, 248, 0.18),
+    0 0 14px rgba(244, 114, 182, 0.46),
+    0 0 24px rgba(14, 165, 233, 0.2);
+  animation: zeynep-chain-pulse 1s ease-in-out infinite alternate;
+}
+
 .game-controls__action {
   font-size: clamp(10px, 2.8vw, 12px);
   line-height: 1;
@@ -354,6 +366,29 @@ canvas {
 
 .game-controls__tier--big {
   border-color: rgba(244, 114, 182, 0.72);
+}
+
+.game-controls__tier--chain-ready {
+  color: #fdf2f8;
+  border-color: rgba(253, 242, 248, 0.95);
+  background:
+    linear-gradient(135deg, rgba(244, 114, 182, 0.5), rgba(14, 165, 233, 0.22), rgba(88, 28, 135, 0.94));
+  box-shadow:
+    inset 0 0 0 1px rgba(253, 242, 248, 0.24),
+    0 0 16px rgba(244, 114, 182, 0.56),
+    0 0 28px rgba(14, 165, 233, 0.26);
+  animation: zeynep-chain-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes zeynep-chain-pulse {
+  from {
+    filter: brightness(1);
+    transform: translateY(0);
+  }
+  to {
+    filter: brightness(1.28);
+    transform: translateY(-1px);
+  }
 }
 
 .game-controls__tower {
