@@ -1,1 +1,1 @@
-export const melisUltimate = "Gotik Kabus: Giris ve cikislar kapanir. Yeni dusman giremez, iceridekiler cikamaz. Melis kuleleri canavarlasir; gercek hasar verir, %50 hasar ve %25 saldiri hizi kazanir.";
+export const melisUltimate = "Gotik Kabus: Haritanın giriş ve çıkışları 9 saniye kapanır. Yeni düşman doğmaz, içerideki düşmanlar nexusa ulaşamaz. Bu süre boyunca Melis kuleleri zırhı yok sayan gerçek hasara geçer, %50 hasar ve %25 atış hızı kazanır. Sahada sıkışan dalgayı temizlemek için kullanılır.";

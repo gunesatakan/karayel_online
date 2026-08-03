@@ -1,7 +1,7 @@
 import { makeSkills } from "../../common/factory.js";
 
 export const melisSkills = makeSkills("archer", [
-  ["Zorba", "Secilen alandaki bir tank dusmani sabitler, taraf degistirir ve yakin dusmanlara saniyede max caninin %15'i kadar hasar verir.", 22000],
-  ["Olumcul Stres", "Secili Melis kulesini stres/onay orani yeterliyse siradaki evrime tasir. Evrim 1 icin 3/2, evrim 2 icin 2/1, evrim 3 icin 3/1 gerekir; basaridan sonra stres onaya esitlenir.", 6000],
-  ["Odaklan", "5 saniye boyunca Melis kuleleri o anda vurduklari hedefe kilitlenir. Vurus animasyonu/mermi hizi 3 katina cikar; bu surede son vurus yapan kule Odaklan bitene kadar 5 kat saldiri hizi kazanir.", 12000]
+  ["Zorba", "Seçilen alandaki bir tank düşmanı yerine sabitler ve tarafını değiştirir. Sabitlenen düşman 7 saniye boyunca çevresindeki düşmanlara saniyede kendi maksimum canının %15'i kadar hasar verir. Kalabalık dalgayı kendi tankıyla kırmak için kullanılır.", 22000],
+  ["Ölümcül Stres", "Seçili Melis kulesini bir sonraki evrime taşır. Stresin onaya oranı yetmelidir: 1. evrim için 3/2, 2. evrim için 2/1, 3. evrim için 3/1. Evrim açıldıktan sonra stres onaya eşitlenir, yani her evrim biriken baskıyı sıfırlar.", 6000],
+  ["Odaklan", "5 saniye boyunca tüm Melis kuleleri o an vurdukları hedefe kilitlenir ve mermi hızları 3 katına çıkar. Bu sürede son vuruşu yapan kule, Odaklan bitene kadar 5 kat atış hızı kazanır. Tek bir kalın hedefi eritmek için kullanılır.", 12000]
 ]);

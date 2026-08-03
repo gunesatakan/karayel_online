@@ -24,17 +24,29 @@ import {
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
+import { classTypeCodex, damageTypeCodex, getBaseMechanics, hitTypeCodex, lookupMechanic } from "./codex";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, setActiveLobbyRoom } from "./online-session";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary";
+
+// The dossier used to be one long newline-joined string. Splitting it into
+// typed blocks lets the panel show a readable brief, a stat table and an
+// explained mechanic list instead of a wall of "Key: value" lines.
+type DetailBlock =
+  | { kind: "brief"; text: string }
+  | { kind: "stats"; label: string; rows: Array<{ label: string; value: string; hint?: string }> }
+  | { kind: "entries"; label: string; items: Array<{ title: string; text: string }> }
+  | { kind: "steps"; label: string; items: string[] }
+  | { kind: "note"; text: string };
+
 type DetailItem = {
   key: string;
   title: string;
   label: string;
   type: "passive" | "ultimate" | "skill" | "tower";
   color: string;
-  body: string;
+  blocks: DetailBlock[];
 };
 
 type OnlineTab = "create" | "join";
@@ -49,6 +61,13 @@ const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
 const MAP_RECORDS_STORAGE_KEY = "karayel:custom-maps:v2";
 const enemyRaceOrder: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const enemyTypeOrder: EnemyType[] = ["grunt", "brute", "runner", "shooter"];
+const detailTypeLabels: Record<DetailItem["type"], string> = {
+  passive: "Pasif",
+  ultimate: "Ulti",
+  skill: "Yetenek",
+  tower: "Kule"
+};
+
 const enemyTypeLabels: Record<EnemyType, string> = {
   grunt: "Sürü",
   brute: "Ezici",
@@ -987,18 +1006,70 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
       <section class="loadout-grid">
         ${details.map((item) => `
           <button class="loadout-chip ${item.key === selectedDetail.key ? "is-active" : ""}" data-detail-key="${item.key}" style="--item: ${item.color}">
-            <span>${item.type}</span>
+            <span>${detailTypeLabels[item.type]}</span>
             <strong>${escapeHtml(item.title)}</strong>
           </button>
         `).join("")}
       </section>
 
       <article class="intel-panel frame" style="--item: ${selectedDetail.color}; --accent: ${selectedDetail.color}">
-        <span>${selectedDetail.type.toUpperCase()} / ${escapeHtml(selectedDetail.label)}</span>
+        <span>${escapeHtml(selectedDetail.label)}</span>
         <h2>${escapeHtml(selectedDetail.title)}</h2>
-        <p>${escapeHtml(selectedDetail.body).replaceAll("\n", "<br />")}</p>
+        ${selectedDetail.blocks.map(renderDetailBlock).join("")}
       </article>
     </div>
+  `;
+}
+
+function renderDetailBlock(block: DetailBlock): string {
+  if (block.kind === "brief") {
+    return `<p class="intel-brief">${escapeHtml(block.text)}</p>`;
+  }
+
+  if (block.kind === "note") {
+    return `<p class="intel-note">${escapeHtml(block.text)}</p>`;
+  }
+
+  if (block.kind === "stats") {
+    return `
+      <section class="intel-block">
+        <h3>${escapeHtml(block.label)}</h3>
+        <dl class="intel-stats">
+          ${block.rows.map((row) => `
+            <div>
+              <dt>${escapeHtml(row.label)}</dt>
+              <dd>${escapeHtml(row.value)}</dd>
+              ${row.hint ? `<small>${escapeHtml(row.hint)}</small>` : ""}
+            </div>
+          `).join("")}
+        </dl>
+      </section>
+    `;
+  }
+
+  if (block.kind === "entries") {
+    return `
+      <section class="intel-block">
+        <h3>${escapeHtml(block.label)}</h3>
+        <ul class="intel-entries">
+          ${block.items.map((item) => `
+            <li>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.text)}</span>
+            </li>
+          `).join("")}
+        </ul>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="intel-block">
+      <h3>${escapeHtml(block.label)}</h3>
+      <ol class="intel-steps">
+        ${block.items.map((item) => `<li><span>${escapeHtml(item)}</span></li>`).join("")}
+      </ol>
+    </section>
   `;
 }
 
@@ -1006,23 +1077,33 @@ function getDetailItems(character: CharacterDefinition): DetailItem[] {
   return [
     {
       key: "passive",
-      title: "Pasif",
-      label: "Sabit Etki",
+      title: splitTitle(character.passive).title ?? "Pasif",
+      label: "Pasif",
       type: "passive",
       color: "#34d399",
-      body: character.passive
+      blocks: [{ kind: "brief", text: splitTitle(character.passive).body }]
     },
     {
       key: "ultimate",
-      title: "Ulti",
-      label: "Kırılma Protokolü",
+      title: splitTitle(character.ultimate).title ?? "Ulti",
+      label: "Ulti",
       type: "ultimate",
       color: "#facc15",
-      body: character.ultimate
+      blocks: [{ kind: "brief", text: splitTitle(character.ultimate).body }]
     },
     ...character.skills.map(skillToDetail),
     ...character.towers.map(towerToDetail)
   ];
+}
+
+// Passive and ultimate copy is written as "Ad: açıklama"; the name deserves to
+// be the heading rather than sitting inside the paragraph.
+function splitTitle(text: string): { title?: string; body: string } {
+  const separator = text.indexOf(": ");
+  if (separator < 0 || separator > 34) {
+    return { body: text };
+  }
+  return { title: text.slice(0, separator), body: text.slice(separator + 2) };
 }
 
 function enemyColor(type: EnemyType) {
@@ -1108,43 +1189,84 @@ function skillToDetail(skill: SkillDefinition): DetailItem {
   return {
     key: `skill-${skill.id}`,
     title: skill.name,
-    label: `${Math.round(skill.cooldownMs / 1000)}s Cooldown`,
+    label: "Yetenek",
     type: "skill",
     color: "#22d3ee",
-    body: `${skill.description}\nBekleme: ${(skill.cooldownMs / 1000).toFixed(1)} saniye`
+    blocks: [
+      { kind: "brief", text: skill.description },
+      {
+        kind: "stats",
+        label: "Kullanım",
+        rows: [{ label: "Bekleme", value: `${(skill.cooldownMs / 1000).toFixed(1)} sn` }]
+      }
+    ]
   };
 }
 
 function towerToDetail(tower: TowerDefinition): DetailItem {
-  const level1Damage = getTowerLevelDamage(tower, 1);
-  const level1Interval = getTowerLevelInterval(tower, 1);
-  const level10Damage = getTowerLevelDamage(tower, 10);
-  const level10Interval = getTowerLevelInterval(tower, 10);
-  const l1Dps = formatDps(level1Damage, level1Interval);
-  const l10Dps = formatDps(level10Damage, level10Interval);
-  const parts = [
-    tower.description ?? tower.role,
-    `Sınıf: ${tower.classType ?? "hybrid"} | Hasar: ${tower.damageType ?? "none"} | Vuruş: ${tower.hitType ?? "impact"}`,
-    `Maliyet: ${tower.cost}g | L2/L3/L4: ${getTowerUpgradeCost(tower.cost, 1, tower.id)}/${getTowerUpgradeCost(tower.cost, 2, tower.id)}/${getTowerUpgradeCost(tower.cost, 3, tower.id)}g`,
-    `Menzil: ${tower.id === "warrior-2" ? "Global" : tower.range} | Mermi Hızı: ${tower.projectileSpeed}`,
-    `L1 DPS: ${l1Dps} | L10 Baz DPS: ${l10Dps}`,
-    `Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
-  ];
-  if (tower.id === "warrior-2") {
-    parts.push("Uzun link buff: Ayni kuleye 5 dalga bagli kalirsa impact/carpma vuruslu bagli kule Sunucu leveline gore +%12-30 hasar alir. 10 dalga bagli kalirsa bagli kulenin her vurusuna Sunucu leveline gore hedef max HP'sinin %0.1-0.5'i kadar ek hasar eklenir.");
+  const isGlobalRange = tower.id === "warrior-2";
+  const isPassiveTower = (tower.fireIntervalMs ?? 0) > 100000;
+  const classType = tower.classType ?? "hybrid";
+  const damageType = tower.damageType ?? "none";
+  const hitType = tower.hitType ?? "impact";
+  const blocks: DetailBlock[] = [{ kind: "brief", text: tower.description ?? tower.role }];
+
+  const mechanics = getBaseMechanics(tower.id, tower.mechanics ?? []);
+  if (mechanics.length > 0) {
+    blocks.push({
+      kind: "entries",
+      label: "Mekanik",
+      items: mechanics.map((slug) => {
+        const entry = lookupMechanic(slug);
+        return { title: entry.name, text: entry.text };
+      }).filter((item) => item.text.length > 0)
+    });
   }
-  if (tower.id === "warrior-4") {
-    parts.push("Denge: Impact/carpma oldugu icin level ile saldiri hizi artmaz; DPS hasara tasinir. Lv6 yaklasik 425 DPS, Lv7 yaklasik 600 DPS, Lv8 yaklasik 750 DPS, Lv10 yaklasik 1000 DPS.");
+
+  blocks.push({
+    kind: "stats",
+    label: "Künye",
+    rows: [
+      { label: "Sınıf", value: classTypeCodex[classType]?.name ?? classType, hint: classTypeCodex[classType]?.text },
+      { label: "Hasar türü", value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
+      { label: "Vuruş", value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
+      { label: "Menzil", value: isGlobalRange ? "Global" : String(tower.range) },
+      ...(isPassiveTower ? [] : [{ label: "Atış aralığı", value: `${(tower.fireIntervalMs / 1000).toFixed(2)} sn` }]),
+      ...(tower.aoeRadius > 0 ? [{ label: "Etki alanı", value: String(tower.aoeRadius) }] : []),
+      ...(tower.slowMs > 0 ? [{ label: "Yavaşlatma", value: `${(tower.slowMs / 1000).toFixed(2)} sn` }] : [])
+    ]
+  });
+
+  blocks.push({
+    kind: "stats",
+    label: "Ekonomi",
+    rows: [
+      { label: "Kuruluş", value: `${tower.cost} altın` },
+      { label: "2. seviye", value: `${getTowerUpgradeCost(tower.cost, 1, tower.id)} altın` },
+      { label: "3. seviye", value: `${getTowerUpgradeCost(tower.cost, 2, tower.id)} altın` },
+      { label: "4. seviye", value: `${getTowerUpgradeCost(tower.cost, 3, tower.id)} altın` }
+    ]
+  });
+
+  if (!isPassiveTower && tower.damage > 0) {
+    blocks.push({
+      kind: "stats",
+      label: "Güç",
+      rows: [
+        { label: "1. seviye DPS", value: formatDps(getTowerLevelDamage(tower, 1), getTowerLevelInterval(tower, 1)) },
+        { label: "10. seviye DPS", value: formatDps(getTowerLevelDamage(tower, 10), getTowerLevelInterval(tower, 10)), hint: "Evrim, işaret ve dizilim bonusları hariç ham değer." }
+      ]
+    });
   }
-  if (tower.id === "warrior-5") {
-    parts.push("Denge: Normal lazer gercek araligi Lv1 0.20sn, Lv5 0.16sn, Lv10 0.12sn. Overdrive bunun yarisidir: 0.10sn, 0.08sn, 0.06sn. DPS onceki dengeye yakin korunur.");
+
+  const balanceNote = getTowerBalanceNote(tower.id);
+  if (balanceNote) {
+    blocks.push({ kind: "note", text: balanceNote });
   }
-  if (tower.id === "warrior-6") {
-    parts.push("Denge: Impact/carpma oldugu icin level ile baz saldiri hizi artmaz; DPS korunacak sekilde hasari agirlasir. Dalga bonuslari 2, 4, 6, 8, 10, 14 ve 16 tamamlanan dalgada acilir. Lv10+16dalga+15stack+2chain yaklasik 2114 DPS.");
-  }
+
   const evolutionNotes = getTowerEvolutionArchiveNotes(tower);
   if (evolutionNotes.length > 0) {
-    parts.push(`Evrimler:\n${evolutionNotes.map((note, index) => `E${index + 1}: ${note}`).join("\n")}`);
+    blocks.push({ kind: "steps", label: "Evrimler", items: evolutionNotes });
   }
 
   return {
@@ -1153,41 +1275,50 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     label: tower.role,
     type: "tower",
     color: colorNumberToHex(tower.color),
-    body: parts.join("\n")
+    blocks
   };
+}
+
+function getTowerBalanceNote(towerId: string) {
+  return {
+    "warrior-2": "Uzun bağlantı ödülü: aynı kuleye 5 dalga bağlı kalırsa çarpma vuruşlu bağlı kule Sunucu seviyesine göre %12-30 ek hasar alır. 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının %0.1-0.5'i kadar ek hasar eklenir.",
+    "warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 425, 7. seviye 600, 8. seviye 750, 10. seviye 1000 DPS.",
+    "warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Aşırı yükleme sırasında bu değerlerin yarısına iner.",
+    "warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 2114 DPS'ye ulaşır."
+  }[towerId];
 }
 
 function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
   const notes: Record<string, string[]> = {
     "archer-1": [
-      "Oluler Bagi ile bagli dusman menzile girerse ona oncelik verir; zaten boyle bir hedefe vuruyorsa hedef degistirmez.",
-      "Ayni hedefe kilitlenen Hedefci sayisi basina hasar x1.5 artar.",
-      "Suphe yuklu hedeflere vururken hedefe ozel saldiri hizi artar: 1 yuk %10, 2 yuk %20, 3 yuk %40."
+      "Ölüler Bağı'na bağlı bir düşman menziline girerse ona öncelik verir; zaten böyle bir hedefe vuruyorsa hedef değiştirmez.",
+      "Aynı hedefe kilitlenen her ek Hedefçi için hasar 1.5 katına çıkar.",
+      "Şüphe yüklü hedeflere vururken o hedefe özel atış hızı kazanır: 1 yükte %10, 2 yükte %20, 3 yükte %40."
     ],
     "archer-2": [
-      "Duz vurusuyla son vurus yaparsa korku dalgasi tetikler.",
-      "Korku dalgasi kalkanli hedefe vuruyorsa kalkan katmanina 2x hasar verir.",
-      "Korku suresi 0.5 saniye artarak toplam 1.0 saniyeye cikar."
+      "Düz vuruşuyla son vuruşu yaptığında da korku dalgasını tetikler.",
+      "Korku dalgası kalkanlı bir hedefe denk gelirse kalkan katmanına iki kat hasar verir.",
+      "Korku süresi 0.5 saniye artarak toplam 1 saniyeye çıkar."
     ],
     "archer-3": [
-      "Lanet uygulama alani genisler.",
-      "Lanetli dusman oldugunde altinda 3 saniyelik lanet goleti birakir; gecen dusmanlar 1 kez 1 lanet yuku alir.",
-      "Lanet goleti uzerindeki dusmanlara 0.5 saniyede bir tekrar lanet uygular."
+      "Lanet uygulama alanı genişler.",
+      "Lanetli düşman öldüğünde altında 3 saniyelik lanet göleti bırakır; gölete giren düşmanlar bir kez lanet yükü alır.",
+      "Gölet artık pasif değildir: üzerindeki düşmanlara 0.5 saniyede bir yeniden lanet uygular."
     ],
     "archer-4": [
-      "Oluler alemine cekilen hedefin bitisigindeki dusmanlar 1 saniye korkar.",
-      "Bag sayisi 2 olur.",
-      "Uzak atici execute edilirse nexus tarafinda olu olarak dirilir ve ters yone savasir."
+      "Ölüler alemine çekilen hedefin bitişiğindeki düşmanlar 1 saniye korkar.",
+      "Aynı anda kurabildiği bağ sayısı 2'ye çıkar.",
+      "İnfaz edilen bir Uzak Atıcı, nexus tarafında ölü olarak dirilir ve kendi ırkına karşı savaşır."
     ],
     "archer-5": [
-      "Depolama orani +%4 olur.",
-      "Patlamanin %25'i gercek hasara donusur.",
-      "Patlama hedefi oldururse Melis kuleleri 2 saniye %20 saldiri hizi kazanir."
+      "Komşu kulelerden depoladığı hasar oranı %4 artar.",
+      "Patlamanın %25'i zırhı yok sayan gerçek hasara dönüşür.",
+      "Patlama hedefi öldürürse tüm Melis kuleleri 2 saniye boyunca %20 atış hızı kazanır."
     ],
     "archer-6": [
-      "Korku uygulanmis dusmanda Suphe tetiklenip duraksama olursa hedef 1 saniye taraf degistirir ve diger dusmanlara saldirir.",
-      "Taraf degistiren hedef dusmanlar icin engel olur; dusmanlar ilerlemek icin onu oldurmek zorundadir.",
-      "Taraf degistiren hedef cani %10 altina inerse kalan cani kadar fiziksel patlama yapar."
+      "Korku altındaki bir düşmanda duraksama tetiklenirse hedef 1 saniye taraf değiştirir ve kendi ırkına saldırır.",
+      "Taraf değiştiren hedef fiziksel engel olur; arkadan gelen düşmanlar ilerlemek için onu öldürmek zorunda kalır.",
+      "Taraf değiştiren hedefin canı %10'un altına inerse kalan canı kadar fiziksel patlama yapar."
     ]
   };
 

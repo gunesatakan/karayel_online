@@ -7,9 +7,9 @@ import { atakanUltimate } from "./ultimate/index.js";
 export const atakanCharacter: CharacterDefinition = {
   id: "warrior",
   displayName: "Atakan",
-  role: "Moduler Stratejist",
-  theme: "Adaptif savunma, kule sinerjisi ve kontrollu kaos.",
-  summary: "Adaptif ve stratejik bir operator. Ham gucu abartili degildir; kulelerini izole ederek, isaretleyerek ve birbirine baglayarak savunma hattini katlanarak guclendirir.",
+  role: "Modüler Stratejist",
+  theme: "Kule yerleşimini yalıtma, işaretleme ve bağlantı üzerine kuran sinerji oyunu.",
+  summary: "Tek tek kuleleri güçlü değildir; gücü yerleşimden gelir. Yalnız duran kuleleri pasifiyle daha verimli çalışır, Takipçi'nin işaretlediği düşmanlar tüm takımdan fazla hasar alır, Sunucu ise iki kuleyi birbirine bağlayarak menzil dışına kaçanı vurur. Doğru kurulan modüler hat, ham gücü katlar.",
   maxHp: 90,
   speed: 0.92,
   damage: 12,

@@ -7,9 +7,9 @@ import { melisUltimate } from "./ultimate/index.js";
 export const melisCharacter: CharacterDefinition = {
   id: "archer",
   displayName: "Melis",
-  role: "Gotik Zihin",
-  theme: "Ani ofke, onay ihtiyaci, kararsizlik ve gotik zihin.",
-  summary: "Streaklerden onay toplar, stresini kule evrimlerine harcar. Favori kuleleri onayla guclenir.",
+  role: "Evrim Uzmanı",
+  theme: "Onay ve stres dengesini kule evrimine çeviren baskı oyunu.",
+  summary: "Seri öldürmelerden onay, sessiz geçen dalgalardan stres toplar. İki değerin oranı yeterince açıldığında kulelerini bir sonraki evrime taşır. İlk kurduğu üç kule favori sayılır ve onay yükseldikçe güçlenir; stres baskınken aynı kuleler daha sert ama daha kontrolsüz çalışır.",
   maxHp: 85,
   speed: 1.12,
   damage: 7,

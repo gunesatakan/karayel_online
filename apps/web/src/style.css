@@ -1823,18 +1823,160 @@ canvas {
 
 .intel-panel {
   display: grid;
-  gap: 6px;
+  gap: 12px;
   padding: clamp(13px, 3.8vw, 16px);
 }
 
 .intel-panel h2 {
+  margin-bottom: -4px;
   color: var(--item);
   font-size: var(--fs-h2);
 }
 
-.intel-panel p {
+.intel-brief {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+}
+
+.intel-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 2px solid color-mix(in srgb, var(--item) 70%, transparent);
+  background: var(--panel-2);
+  color: var(--ink-2);
   font-size: var(--fs-small);
   line-height: 1.5;
+}
+
+.intel-block {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.intel-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.intel-block h3::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--item) 44%, transparent), transparent);
+}
+
+/* stat table — label left, value right, optional explainer underneath */
+.intel-stats {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: rgba(198, 178, 150, 0.12);
+  border: 1px solid rgba(198, 178, 150, 0.12);
+}
+
+.intel-stats > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  background: var(--panel-2);
+}
+
+.intel-stats dt,
+.intel-stats dd,
+.intel-stats small {
+  margin: 0;
+  min-width: 0;
+}
+
+.intel-stats dt {
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.intel-stats dd {
+  color: #f2ece0;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.intel-stats small {
+  grid-column: 1 / -1;
+  color: var(--ink-3);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+}
+
+/* mechanic list — the slug turned into a name plus what it actually does */
+.intel-entries,
+.intel-steps {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: intel-step;
+}
+
+.intel-entries li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(198, 178, 150, 0.14);
+  background: var(--panel-2);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+.intel-entries strong {
+  color: var(--item);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.intel-entries span,
+.intel-steps span {
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.intel-steps li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+}
+
+.intel-steps li::before {
+  counter-increment: intel-step;
+  content: "E" counter(intel-step);
+  display: grid;
+  place-items: center;
+  height: 20px;
+  color: var(--item);
+  border: 1px solid color-mix(in srgb, var(--item) 46%, transparent);
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 700;
 }
 
 /* --- map editor ----------------------------------------------------------- */

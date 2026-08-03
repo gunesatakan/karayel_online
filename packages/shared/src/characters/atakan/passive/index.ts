@@ -1,1 +1,1 @@
-export const atakanPassive = "Kendi Halinde Uretkenlik: Tek basina duran Atakan kuleleri daha verimli calisir; dogru moduler kurulumla ham guc eksigini kapatir.";
+export const atakanPassive = "Kendi Halinde Üretkenlik: Yakınında başka kule bulunmayan Atakan kuleleri daha verimli çalışır; hasarı x1.12, atış aralığı x0.9 olur. Yalnız sayılmak için 76 birim çapında komşu kule olmamalıdır, Sunucu bu sayımın dışındadır. Kuleleri tek noktaya yığmak yerine hat boyunca dağıtmayı ödüllendirir.";

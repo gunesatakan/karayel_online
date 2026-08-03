@@ -1,1 +1,1 @@
-export const melisPassive = "Supersin: Melis streak yaptikca onay puani toplar. Ilk 3 favori kulesi onay seviyesine gore guclenir. Dalga boyunca onay alamazsa veya onayi duserse stres kazanir.";
+export const melisPassive = "Süpersin: Melis üst üste öldürme serisi yaptıkça onay kazanır; bir dalgayı seri yapmadan geçirirse veya onayı düşerse stres kazanır. Kurduğu ilk üç kule favori sayılır ve onay seviyesine göre hasar ile atış hızı kazanır. Onay ile stresin oranı aynı zamanda Ölümcül Stres ile açabileceği evrim seviyesini belirler.";

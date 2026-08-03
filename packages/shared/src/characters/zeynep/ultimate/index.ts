@@ -1,1 +1,1 @@
-export const zeynepUltimate = "Kurucu Fermani: Ekrandaki tum dusmanlara buyuk hasar verir.";
+export const zeynepUltimate = "Kurucu Fermanı: Haritadaki tüm düşmanlara aynı anda büyük hasar verir. Menzil, hedef sayısı ve dizilim şartı yoktur; hattın tamamen dolduğu ve kulelerin yetişemediği anda dalgayı kırmak için saklanır.";

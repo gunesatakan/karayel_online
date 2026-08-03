@@ -7,8 +7,9 @@ import { zeynepUltimate } from "./ultimate/index.js";
 export const zeynepCharacter: CharacterDefinition = {
   id: "zeynep",
   displayName: "Zeynep",
-  role: "Saha Lideri",
-  summary: "Savunma hattini komutlarla yoneten lider. Itibar ve Zincir Kalitesi yonetir; tam 2'li veya 3'lu kule dizilimleri guclenir, kalabaliklasinca buff bozulur.",
+  role: "Komuta ve Dizilim",
+  theme: "İtibarla komut veren, kuleleri ikili ve üçlü dizilimlerle güçlendiren düzen oyunu.",
+  summary: "Kule kurmakla bitmez; hattı komutlarla yönetir. Öldürdükçe topladığı İtibar'ı takım geneline atış hızı, menzil veya yavaşlatma vermek için harcar ve komutları zincirledikçe etkileri büyür. Kuleleri tam ikili veya üçgen üçlü dizilimde durduğunda ek buff alır, gruba fazladan kule girerse buff bozulur.",
   maxHp: 160,
   speed: 1.35,
   damage: 34,

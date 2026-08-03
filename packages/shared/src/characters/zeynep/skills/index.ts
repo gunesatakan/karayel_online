@@ -1,7 +1,7 @@
 import { makeSkills } from "../../common/factory.js";
 
 export const zeynepSkills = makeSkills("zeynep", [
-  ["Hizlanin", "Itibar harcayan komut. Takim kulelerine saldiri hizi verir; zincir finisher'iysa etki kucuk/orta/buyuk seviyeye ve Zincir Kalitesi'ne gore buyur.", 900],
-  ["Alani Tutun", "Itibar harcayan komut. Takim kulelerine menzil verir; zincir finisher'iysa etki kucuk/orta/buyuk seviyeye ve Zincir Kalitesi'ne gore buyur.", 900],
-  ["Yavaslatin", "Itibar harcayan komut. Dusmanlara global slow uygular; zincir finisher'iysa etki kucuk/orta/buyuk seviyeye ve Zincir Kalitesi'ne gore buyur.", 900]
+  ["Hızlanın", "İtibar harcayan komut. Takımdaki tüm kulelere süreli atış hızı verir. Küçük, orta ve büyük olmak üzere üç kademede verilebilir; kademe yükseldikçe hem itibar bedeli hem etkisi artar. Zinciri kapatan komutsa Zincir Kalitesi kadar daha da güçlenir.", 900],
+  ["Alanı Tutun", "İtibar harcayan komut. Takımdaki tüm kulelere süreli menzil verir ve savunma hattının kapsadığı alanı genişletir. Üç kademelidir; zinciri kapatan komutsa Zincir Kalitesi kadar güçlenir.", 900],
+  ["Yavaşlatın", "İtibar harcayan komut. Haritadaki tüm düşmanlara süreli yavaşlatma uygular. Üç kademelidir; zinciri kapatan komutsa Zincir Kalitesi kadar güçlenir. Nexusa yaklaşan dalgaya zaman kazanmak için kullanılır.", 900]
 ]);
