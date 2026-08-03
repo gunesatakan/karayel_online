@@ -553,18 +553,22 @@ canvas {
 }
 
 #menu-root {
-  --void: #04050a;
-  --panel: rgba(9, 13, 25, 0.86);
-  --panel-2: rgba(4, 7, 15, 0.7);
-  --line: rgba(148, 163, 184, 0.2);
-  --ink: #e9edf5;
-  --ink-2: #adbace;
-  --ink-3: #78879f;
-  --cyan: #22d3ee;
-  --gold: #f5c542;
+  /* obsidian hall lit from below by the nexus; alien races supply the colour */
+  --void: #050408;
+  --panel: rgba(14, 11, 16, 0.88);
+  --panel-2: rgba(6, 5, 9, 0.74);
+  --line: rgba(198, 178, 150, 0.16);
+  --ink: #ece4d6;
+  --ink-2: #b3a894;
+  --ink-3: #7d7466;
+  --ember: #ff7a2f;
+  --ember-deep: #b23a11;
+  --gold: #e8b44a;
+  --cyan: #45d9e8;
   --violet: #8b5cf6;
   --blood: #dc2626;
-  --accent: var(--cyan);
+  --race: #ef4444;
+  --accent: var(--ember);
   --serif: Cinzel, "Times New Roman", Georgia, serif;
   --sans: Rajdhani, "Exo 2", "Segoe UI", Inter, Arial, sans-serif;
   --mono: "Share Tech Mono", "Courier New", monospace;
@@ -581,9 +585,13 @@ canvas {
   position: fixed;
   inset: 0;
   z-index: 5;
+  overflow: hidden;
   touch-action: pan-y;
   color: var(--ink);
   font-family: var(--sans);
+  background:
+    radial-gradient(140% 52% at 50% 106%, rgba(255, 122, 47, 0.2), transparent 70%),
+    linear-gradient(178deg, #0b0810 0%, #07060c 44%, #050408 100%);
   transition: opacity 220ms ease;
 }
 
@@ -633,16 +641,13 @@ canvas {
 
 /* --- shell + backdrop ----------------------------------------------------- */
 
+.menu-shell-host,
 .menu-shell {
   position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(120% 82% at 50% -12%, rgba(139, 92, 246, 0.22), transparent 62%),
-    radial-gradient(90% 60% at 12% 108%, rgba(34, 211, 238, 0.14), transparent 68%),
-    radial-gradient(70% 46% at 92% 88%, rgba(220, 38, 38, 0.1), transparent 70%),
-    linear-gradient(178deg, #070a14 0%, #05060d 46%, #04050a 100%);
 }
 
 .menu-backdrop,
@@ -652,85 +657,67 @@ canvas {
 }
 
 .menu-backdrop {
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
 }
 
-.backdrop__stars {
-  background-image:
-    radial-gradient(1px 1px at 24px 38px, rgba(255, 255, 255, 0.85), transparent 62%),
-    radial-gradient(1px 1px at 128px 96px, rgba(186, 230, 253, 0.6), transparent 62%),
-    radial-gradient(1.4px 1.4px at 196px 170px, rgba(255, 255, 255, 0.7), transparent 62%),
-    radial-gradient(1px 1px at 74px 214px, rgba(216, 180, 254, 0.55), transparent 62%),
-    radial-gradient(1px 1px at 236px 26px, rgba(255, 255, 255, 0.5), transparent 62%);
-  background-size: 268px 268px;
-  opacity: 0.7;
-  animation: star-drift 210s linear infinite;
+/* Splash art. It carries the whole mood, so everything above it exists only
+   to keep type legible: a graded scrim, a warm floor glow, a vignette. */
+.backdrop__art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+  opacity: 0;
+  transform: scale(1.04);
+  transform-origin: 50% 22%;
+  filter: saturate(1.06) contrast(1.05) brightness(0.82);
+  transition: opacity 1200ms ease;
 }
 
-.backdrop__stars--far {
-  background-image:
-    radial-gradient(1px 1px at 52px 120px, rgba(255, 255, 255, 0.4), transparent 62%),
-    radial-gradient(1.6px 1.6px at 154px 44px, rgba(165, 243, 252, 0.5), transparent 62%),
-    radial-gradient(1px 1px at 108px 188px, rgba(255, 255, 255, 0.32), transparent 62%);
-  background-size: 173px 173px;
-  opacity: 0.5;
-  animation: star-drift 340s linear infinite reverse, star-twinkle 7s ease-in-out infinite;
+.backdrop__art.is-loaded {
+  opacity: 1;
+  animation: art-drift 48s ease-in-out infinite alternate;
 }
 
-.backdrop__horizon {
+/* Readability scrim: barely there over the spire, near-solid under the
+   controls at the bottom of the screen. */
+.backdrop__scrim {
   background:
-    linear-gradient(90deg, transparent 0 14%, rgba(34, 211, 238, 0.16) 50%, transparent 86%),
-    linear-gradient(180deg, transparent 0 38%, rgba(139, 92, 246, 0.22) 48%, transparent 62%);
-  transform: skewY(-8deg) translateY(-6%);
+    linear-gradient(
+      180deg,
+      rgba(5, 4, 8, 0.46) 0%,
+      rgba(5, 4, 8, 0.24) 16%,
+      rgba(6, 5, 10, 0.34) 42%,
+      rgba(6, 5, 10, 0.66) 64%,
+      rgba(5, 4, 8, 0.9) 84%,
+      #050408 100%
+    ),
+    linear-gradient(90deg, rgba(5, 4, 8, 0.42), transparent 22%, transparent 78%, rgba(5, 4, 8, 0.42));
 }
 
-.backdrop__gate {
-  width: min(88vw, 380px);
-  height: min(88vw, 380px);
-  inset: 9dvh auto auto 50%;
-  transform: translateX(-50%) rotate(45deg);
-  border: 1px solid rgba(245, 197, 66, 0.26);
-  box-shadow:
-    inset 0 0 0 14px rgba(34, 211, 238, 0.03),
-    inset 0 0 0 40px rgba(139, 92, 246, 0.045),
-    0 0 90px rgba(34, 211, 238, 0.12);
-  animation: gate-breathe 12s ease-in-out infinite;
+/* the nexus burning at the foot of the tower */
+.backdrop__ember {
+  top: auto;
+  height: 40dvh;
+  background:
+    radial-gradient(120% 100% at 50% 100%, rgba(255, 138, 61, 0.24), transparent 64%),
+    radial-gradient(64% 72% at 50% 104%, rgba(255, 206, 128, 0.16), transparent 62%);
+  filter: blur(2px);
+  mix-blend-mode: screen;
+  animation: ember-breathe 9s ease-in-out infinite;
 }
 
-.backdrop__gate::before,
-.backdrop__gate::after {
-  content: "";
-  position: absolute;
-  inset: 17%;
-  border: 1px solid rgba(34, 211, 238, 0.22);
-}
-
-.backdrop__gate::after {
-  inset: 33%;
-  border-color: rgba(220, 38, 38, 0.2);
-}
-
-.backdrop__grid {
-  background-image:
-    linear-gradient(rgba(34, 211, 238, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(245, 197, 66, 0.05) 1px, transparent 1px);
-  background-size: 38px 38px;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 26%, #000 84%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 26%, #000 84%, transparent);
-  transform: perspective(620px) rotateX(60deg) translateY(30%);
-  transform-origin: bottom;
-  animation: grid-run 9s linear infinite;
-}
-
+/* faint signal texture — the techno layer, kept subtle enough not to
+   read as a filter on top of painted art */
 .backdrop__scan {
-  opacity: 0.4;
+  opacity: 0.5;
   background-image: repeating-linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.035) 0 1px,
+    rgba(255, 255, 255, 0.022) 0 1px,
     transparent 1px 3px
   );
-  mix-blend-mode: overlay;
 }
 
 .backdrop__scan::after {
@@ -738,54 +725,51 @@ canvas {
   position: absolute;
   left: 0;
   right: 0;
-  height: 28dvh;
-  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.07), transparent);
-  animation: scan-sweep 8.5s ease-in-out infinite;
+  height: 26dvh;
+  background: linear-gradient(180deg, transparent, rgba(190, 160, 255, 0.05), transparent);
+  animation: scan-sweep 11s ease-in-out infinite;
 }
 
 .backdrop__vignette {
-  background:
-    radial-gradient(120% 88% at 50% 34%, transparent 42%, rgba(2, 3, 7, 0.62) 88%),
-    linear-gradient(180deg, rgba(4, 5, 10, 0.72), transparent 22%, transparent 74%, rgba(4, 5, 10, 0.86));
+  background: radial-gradient(118% 84% at 50% 32%, transparent 44%, rgba(2, 2, 5, 0.66) 92%);
 }
 
-@keyframes star-drift {
+/* Away from home the art becomes wallpaper so dense content stays readable. */
+#menu-root:not([data-screen="home"]) .backdrop__art.is-loaded {
+  opacity: 0.24;
+  animation: none;
+}
+
+#menu-root:not([data-screen="home"]) .backdrop__scrim {
+  background: linear-gradient(180deg, rgba(5, 4, 8, 0.84), rgba(5, 4, 8, 0.9) 60%, #050408 100%);
+}
+
+#menu-root:not([data-screen="home"]) .backdrop__ember {
+  opacity: 0.4;
+}
+
+@keyframes art-drift {
+  from {
+    transform: scale(1.04) translateY(0);
+  }
   to {
-    background-position: 268px 536px;
+    transform: scale(1.1) translateY(-1.2%);
   }
 }
 
-@keyframes star-twinkle {
+@keyframes ember-breathe {
   0%,
   100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.24;
-  }
-}
-
-@keyframes gate-breathe {
-  0%,
-  100% {
-    opacity: 0.85;
-    transform: translateX(-50%) rotate(45deg) scale(1);
+    opacity: 0.78;
   }
   50% {
     opacity: 1;
-    transform: translateX(-50%) rotate(45deg) scale(1.035);
-  }
-}
-
-@keyframes grid-run {
-  to {
-    background-position: 0 38px, 38px 0;
   }
 }
 
 @keyframes scan-sweep {
   0% {
-    top: -30dvh;
+    top: -26dvh;
   }
   100% {
     top: 100dvh;
@@ -1006,24 +990,80 @@ canvas {
   animation: hero-sheen 9s ease-in-out infinite;
 }
 
+/* --- operator sigil ------------------------------------------------------- */
+
 .sigil {
   position: relative;
   z-index: 1;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: clamp(62px, 19vw, 78px);
+  width: var(--sigil-size, clamp(62px, 19vw, 76px));
   aspect-ratio: 1;
   color: #fff8ec;
-  border: 1px solid var(--accent);
   background:
-    linear-gradient(150deg, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
-    #05060c;
+    linear-gradient(155deg, color-mix(in srgb, var(--accent) 26%, transparent), transparent 58%),
+    radial-gradient(circle at 50% 108%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
+    #08060d;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  box-shadow: 0 0 32px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.sigil__frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+.sigil__frame * {
+  vector-effect: non-scaling-stroke;
+}
+
+.sigil__hex {
+  stroke-width: 1.2;
+  opacity: 0.9;
+}
+
+.sigil__hex--inner {
+  stroke-width: 1;
+  opacity: 0.38;
+}
+
+.sigil__ring {
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  opacity: 0.55;
+}
+
+.sigil__nodes {
+  fill: var(--accent);
+  stroke: none;
+  opacity: 0.85;
+}
+
+.sigil__mark,
+.sigil__art {
+  position: relative;
+  z-index: 1;
+}
+
+.sigil__mark {
   font-family: var(--mono);
-  font-size: clamp(17px, 5.4vw, 22px);
+  font-size: calc(var(--sigil-size, 72px) * 0.29);
   font-weight: 800;
   letter-spacing: 0.06em;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.sigil__art {
+  width: 66%;
+  height: 66%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
 }
 
 .hero__copy {
@@ -1037,7 +1077,7 @@ canvas {
 
 .hero__copy h2 {
   margin: 0;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--serif);
   font-size: var(--fs-h2);
   font-weight: 700;
@@ -1086,7 +1126,7 @@ canvas {
 }
 
 .hero__stats dd {
-  color: #f1f5f9;
+  color: #efe7d9;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -1141,21 +1181,11 @@ canvas {
   background: none;
 }
 
-.token__hex {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  max-width: 62px;
-  aspect-ratio: 1 / 1.1;
-  color: #eef2f9;
-  border: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
-    rgba(5, 7, 14, 0.82);
-  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  font-family: var(--mono);
-  font-size: var(--fs-small);
-  font-weight: 800;
+.token .sigil {
+  --sigil-size: min(100%, 60px);
+  opacity: 0.62;
+  filter: grayscale(0.35);
+  transition: opacity 180ms ease, filter 180ms ease, transform 180ms ease;
 }
 
 .token__name {
@@ -1171,19 +1201,15 @@ canvas {
   white-space: nowrap;
 }
 
-.token.is-active .token__hex {
-  color: #fff9ec;
-  border-color: var(--accent);
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--accent) 40%, transparent), transparent 68%),
-    rgba(5, 7, 14, 0.9);
-  box-shadow:
-    0 0 20px color-mix(in srgb, var(--accent) 40%, transparent),
-    inset 0 0 14px color-mix(in srgb, var(--accent) 22%, transparent);
+.token.is-active .sigil {
+  opacity: 1;
+  filter: none;
+  transform: translateY(-2px);
 }
 
 .token.is-active .token__name {
   color: var(--ink);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* --- commands ------------------------------------------------------------- */
@@ -1217,8 +1243,8 @@ canvas {
   min-width: 0;
   padding: 6px 12px;
   border: 1px solid rgba(34, 211, 238, 0.5);
-  color: #ecfeff;
-  background: linear-gradient(180deg, rgba(12, 18, 34, 0.92), rgba(6, 9, 19, 0.92));
+  color: #f5ede0;
+  background: linear-gradient(180deg, rgba(19, 15, 22, 0.92), rgba(10, 8, 13, 0.92));
   font-size: var(--fs-small);
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1244,7 +1270,7 @@ canvas {
 }
 
 .command--ghost {
-  border-color: rgba(173, 186, 206, 0.28);
+  border-color: rgba(198, 178, 150, 0.28);
   color: var(--ink);
 }
 
@@ -1256,7 +1282,7 @@ canvas {
   border-color: rgba(245, 197, 66, 0.85);
   background:
     linear-gradient(100deg, rgba(245, 197, 66, 0.24), rgba(139, 92, 246, 0.34) 62%, rgba(34, 211, 238, 0.22)),
-    rgba(6, 9, 19, 0.9);
+    rgba(10, 8, 13, 0.9);
   box-shadow:
     0 0 0 1px rgba(245, 197, 66, 0.16),
     0 18px 46px rgba(139, 92, 246, 0.24);
@@ -1306,7 +1332,7 @@ canvas {
   gap: 10px;
   min-width: 0;
   padding-top: 9px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  border-top: 1px solid rgba(198, 178, 150, 0.18);
   color: var(--ink-3);
   font-family: var(--mono);
   font-size: var(--fs-micro);
@@ -1320,6 +1346,10 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.slate__name {
+  color: var(--ink-2);
 }
 
 .slate .slate__node {
@@ -1360,7 +1390,7 @@ canvas {
 
 .screen-topbar h1 {
   margin: 2px 0 0;
-  color: #eef2f8;
+  color: #efe7d9;
   font-family: var(--serif);
   font-size: var(--fs-h1);
   font-weight: 700;
@@ -1378,7 +1408,7 @@ canvas {
   overflow: hidden;
   border: 1px solid rgba(34, 211, 238, 0.34);
   color: #c4f1ff;
-  background: rgba(8, 12, 24, 0.86);
+  background: rgba(13, 10, 16, 0.86);
   font-family: var(--mono);
   font-size: var(--fs-micro);
   font-weight: 700;
@@ -1404,17 +1434,17 @@ canvas {
   width: 100%;
   min-height: 62px;
   padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, rgba(148, 163, 184, 0.16));
-  color: #f8fafc;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, rgba(198, 178, 150, 0.16));
+  color: #f2ece0;
   text-align: left;
   background:
     linear-gradient(100deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 46%),
-    rgba(8, 12, 24, 0.8);
+    rgba(13, 10, 16, 0.8);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
 }
 
 .archive-card.is-active {
-  background: color-mix(in srgb, var(--accent) 15%, rgba(8, 12, 24, 0.9));
+  background: color-mix(in srgb, var(--accent) 15%, rgba(13, 10, 16, 0.9));
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -1424,7 +1454,7 @@ canvas {
   width: 40px;
   height: 44px;
   border: 1px solid var(--accent);
-  background: rgba(4, 6, 13, 0.8);
+  background: rgba(8, 6, 11, 0.8);
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
   font-family: var(--mono);
   font-size: var(--fs-micro);
@@ -1463,7 +1493,7 @@ canvas {
 .selected-dossier h2,
 .intel-panel h2 {
   margin: 0;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--serif);
   font-size: var(--fs-h2);
   font-weight: 700;
@@ -1499,10 +1529,10 @@ canvas {
   gap: 11px;
   padding: 12px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--enemy) 48%, rgba(148, 163, 184, 0.16));
+  border: 1px solid color-mix(in srgb, var(--enemy) 48%, rgba(198, 178, 150, 0.16));
   background:
     linear-gradient(140deg, color-mix(in srgb, var(--enemy) 15%, transparent), transparent 44%),
-    rgba(8, 12, 24, 0.86);
+    rgba(13, 10, 16, 0.86);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
   clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
 }
@@ -1540,7 +1570,7 @@ canvas {
   border: 1px solid color-mix(in srgb, var(--enemy) 54%, transparent);
   background:
     radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--enemy) 26%, transparent), transparent 58%),
-    rgba(2, 5, 14, 0.74);
+    rgba(7, 5, 10, 0.74);
   clip-path: polygon(50% 0, 100% 28%, 88% 100%, 12% 100%, 0 28%);
 }
 
@@ -1578,7 +1608,7 @@ canvas {
 
 .bestiary-card__copy h2 {
   margin: 3px 0 5px;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--serif);
   font-size: var(--fs-body);
   font-weight: 700;
@@ -1603,8 +1633,8 @@ canvas {
 .bestiary-stats div {
   min-width: 0;
   padding: 5px 6px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(2, 5, 14, 0.5);
+  border: 1px solid rgba(198, 178, 150, 0.16);
+  background: rgba(7, 5, 10, 0.5);
 }
 
 .bestiary-stats dt,
@@ -1623,7 +1653,7 @@ canvas {
 }
 
 .bestiary-stats dd {
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -1640,8 +1670,8 @@ canvas {
   padding: 3px 7px;
   overflow: hidden;
   color: #e0f2fe;
-  border: 1px solid color-mix(in srgb, var(--enemy) 44%, rgba(148, 163, 184, 0.16));
-  background: rgba(12, 18, 34, 0.62);
+  border: 1px solid color-mix(in srgb, var(--enemy) 44%, rgba(198, 178, 150, 0.16));
+  background: rgba(19, 15, 22, 0.62);
   font-size: var(--fs-micro);
   font-weight: 700;
   text-overflow: ellipsis;
@@ -1679,12 +1709,12 @@ canvas {
   gap: 8px;
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(8, 12, 24, 0.55);
+  border: 1px solid rgba(198, 178, 150, 0.18);
+  background: rgba(13, 10, 16, 0.55);
 }
 
 .bestiary-race-row > strong {
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--serif);
   font-size: var(--fs-small);
   font-weight: 700;
@@ -1754,17 +1784,17 @@ canvas {
   min-height: 50px;
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--item) 46%, rgba(148, 163, 184, 0.18));
-  color: #f8fafc;
+  border: 1px solid color-mix(in srgb, var(--item) 46%, rgba(198, 178, 150, 0.18));
+  color: #f2ece0;
   text-align: left;
   background:
     linear-gradient(150deg, color-mix(in srgb, var(--item) 10%, transparent), transparent 52%),
-    rgba(8, 12, 24, 0.78);
+    rgba(13, 10, 16, 0.78);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
 }
 
 .loadout-chip.is-active {
-  background: color-mix(in srgb, var(--item) 18%, rgba(8, 12, 24, 0.92));
+  background: color-mix(in srgb, var(--item) 18%, rgba(13, 10, 16, 0.92));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--item) 40%, transparent);
 }
 
@@ -1814,8 +1844,8 @@ canvas {
   display: grid;
   min-width: 0;
   padding: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(8, 12, 24, 0.72);
+  border: 1px solid rgba(198, 178, 150, 0.2);
+  background: rgba(13, 10, 16, 0.72);
 }
 
 .map-scale-panel {
@@ -1828,7 +1858,7 @@ canvas {
 .map-scale-panel strong {
   display: block;
   margin-top: 2px;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--mono);
   font-size: var(--fs-small);
   text-transform: uppercase;
@@ -1837,7 +1867,7 @@ canvas {
 .map-records {
   gap: 9px;
   border-color: rgba(139, 92, 246, 0.26);
-  background: rgba(5, 7, 14, 0.7);
+  background: rgba(9, 7, 12, 0.7);
 }
 
 .map-records__head,
@@ -1851,7 +1881,7 @@ canvas {
 .map-records__head strong {
   display: block;
   margin-top: 2px;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--mono);
   font-size: var(--fs-small);
   text-transform: uppercase;
@@ -1878,9 +1908,9 @@ canvas {
   min-height: 44px;
   min-width: 0;
   padding: 7px 8px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  color: #e2e8f0;
-  background: rgba(12, 18, 34, 0.84);
+  border: 1px solid rgba(198, 178, 150, 0.22);
+  color: #ded5c6;
+  background: rgba(19, 15, 22, 0.84);
   text-align: left;
 }
 
@@ -1926,9 +1956,9 @@ canvas {
   min-width: 0;
   padding: 0 3px;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(198, 178, 150, 0.22);
   color: var(--ink-2);
-  background: rgba(8, 12, 24, 0.82);
+  background: rgba(13, 10, 16, 0.82);
   font-size: var(--fs-micro);
   font-weight: 800;
   text-overflow: ellipsis;
@@ -1945,7 +1975,7 @@ canvas {
 .map-editor-card {
   padding: 9px;
   border: 1px solid rgba(34, 211, 238, 0.3);
-  background: rgba(4, 6, 13, 0.72);
+  background: rgba(8, 6, 11, 0.72);
   box-shadow: inset 0 0 0 1px rgba(233, 237, 245, 0.035), 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
@@ -1966,7 +1996,7 @@ canvas {
 
 .map-cell--tower {
   background: #151a2e;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(198, 178, 150, 0.16);
 }
 
 .map-cell--road {
@@ -1999,8 +2029,8 @@ canvas {
   min-width: 0;
   padding: 7px 4px;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(8, 12, 24, 0.72);
+  border: 1px solid rgba(198, 178, 150, 0.22);
+  background: rgba(13, 10, 16, 0.72);
   color: var(--ink-3);
   font-size: var(--fs-micro);
   font-weight: 800;
@@ -2012,7 +2042,7 @@ canvas {
 
 .map-summary strong {
   display: block;
-  color: #f8fafc;
+  color: #f2ece0;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -2068,9 +2098,9 @@ canvas {
   min-width: 0;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: #f8fafc;
-  background: rgba(2, 5, 14, 0.86);
+  border: 1px solid rgba(198, 178, 150, 0.24);
+  color: #f2ece0;
+  background: rgba(7, 5, 10, 0.86);
   font-size: var(--fs-body);
   outline: none;
 }
@@ -2084,9 +2114,9 @@ canvas {
 .scale-chip {
   min-height: 40px;
   min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid rgba(198, 178, 150, 0.24);
   color: var(--ink-2);
-  background: rgba(8, 12, 24, 0.82);
+  background: rgba(13, 10, 16, 0.82);
   font-size: var(--fs-small);
   font-weight: 800;
 }
@@ -2139,8 +2169,8 @@ canvas {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 3px 10px;
   padding: 9px 11px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(2, 5, 14, 0.46);
+  border: 1px solid rgba(198, 178, 150, 0.18);
+  background: rgba(7, 5, 10, 0.46);
 }
 
 .lobby-player-row strong,
@@ -2202,8 +2232,8 @@ canvas {
     padding: 10px;
   }
 
-  .token__hex {
-    max-width: 54px;
+  .token .sigil {
+    --sigil-size: min(100%, 52px);
   }
 
   .command--hero {
@@ -2216,8 +2246,9 @@ canvas {
     width: min(100vw, 680px);
   }
 
-  .backdrop__gate {
-    inset: -16dvh auto auto 50%;
+  /* landscape crops the tall art badly, so favour its upper third */
+  .backdrop__art {
+    object-position: 50% 8%;
   }
 
   /* two columns so the whole menu still lands on one screen */

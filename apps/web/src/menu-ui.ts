@@ -66,6 +66,13 @@ const classColor: Record<CharacterId, string> = {
   onur: "#14b8a6"
 };
 
+// Portraits that exist as real art; everyone else falls back to an engraved mark.
+const characterArt: Partial<Record<CharacterId, string>> = {
+  zeynep: "/images/zeynep-puppet-hands.png",
+  archer: "/images/melis-creepy.png"
+};
+
+
 const enemyDossier: Record<EnemyType, {
   name: string;
   title: string;
@@ -121,9 +128,25 @@ export function setupMenuUi(game: Phaser.Game) {
   let lobbyError = "";
   let onlineGameStarting = false;
   let phaserReady = false;
+  // The backdrop lives outside the render cycle: rebuilding it per view would
+  // re-decode the splash and replay its fade on every navigation.
+  root.innerHTML = renderBackdrop();
+  const shellHost = document.createElement("div");
+  shellHost.className = "menu-shell-host";
+  root.append(shellHost);
+
+  const splashArt = root.querySelector<HTMLImageElement>("[data-splash-art]");
+  if (splashArt) {
+    if (splashArt.complete) {
+      splashArt.classList.add("is-loaded");
+    } else {
+      splashArt.addEventListener("load", () => splashArt.classList.add("is-loaded"), { once: true });
+    }
+  }
 
   const render = (view: ViewName) => {
-    root.innerHTML = renderShell(
+    root.dataset.screen = view;
+    shellHost.innerHTML = renderShell(
       view,
       selectedCharacter,
       selectedDetail,
@@ -438,6 +461,48 @@ export function setupMenuUi(game: Phaser.Game) {
   render("home");
 }
 
+function renderBackdrop() {
+  return `
+    <div class="menu-backdrop" aria-hidden="true">
+      <img
+        class="backdrop__art"
+        data-splash-art
+        src="/images/splash-siege.webp"
+        srcset="/images/splash-siege-sm.webp 640w, /images/splash-siege.webp 1024w"
+        sizes="100vw"
+        alt=""
+        fetchpriority="high"
+        decoding="async"
+      />
+      <div class="backdrop__scrim"></div>
+      <div class="backdrop__ember"></div>
+      <div class="backdrop__scan"></div>
+      <div class="backdrop__vignette"></div>
+    </div>
+  `;
+}
+
+function renderSigil(characterId: CharacterId, mark: string) {
+  const art = characterArt[characterId];
+  return `
+    <span class="sigil" style="--accent: ${classColor[characterId]}">
+      <svg class="sigil__frame" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+        <polygon class="sigil__hex" points="50,3 93,26.5 93,73.5 50,97 7,73.5 7,26.5" />
+        <polygon class="sigil__hex sigil__hex--inner" points="50,13 84,32 84,68 50,87 16,68 16,32" />
+        <circle class="sigil__ring" cx="50" cy="50" r="31" />
+        <g class="sigil__nodes">
+          <circle cx="50" cy="3.6" r="1.8" /><circle cx="92.4" cy="26.5" r="1.8" />
+          <circle cx="92.4" cy="73.5" r="1.8" /><circle cx="50" cy="96.4" r="1.8" />
+          <circle cx="7.6" cy="73.5" r="1.8" /><circle cx="7.6" cy="26.5" r="1.8" />
+        </g>
+      </svg>
+      ${art
+        ? `<img class="sigil__art" src="${art}" alt="" loading="lazy" decoding="async" />`
+        : `<b class="sigil__mark">${escapeHtml(mark)}</b>`}
+    </span>
+  `;
+}
+
 function renderShell(
   view: ViewName,
   selectedCharacter: CharacterDefinition,
@@ -456,16 +521,7 @@ function renderShell(
   lobbyError = ""
 ) {
   return `
-    <main class="menu-shell" data-screen="${view}">
-      <div class="menu-backdrop" aria-hidden="true">
-        <div class="backdrop__stars"></div>
-        <div class="backdrop__stars backdrop__stars--far"></div>
-        <div class="backdrop__horizon"></div>
-        <div class="backdrop__gate"></div>
-        <div class="backdrop__grid"></div>
-        <div class="backdrop__scan"></div>
-        <div class="backdrop__vignette"></div>
-      </div>
+    <main class="menu-shell">
       <section class="menu-stage">
         ${view === "home" ? renderHome(selectedCharacter) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
@@ -489,7 +545,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
       </header>
 
       <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
-        <div class="sigil">${initials(selectedCharacter.displayName)}</div>
+        ${renderSigil(selectedCharacter.id, initials(selectedCharacter.displayName))}
         <div class="hero__copy">
           <p class="kicker">Seçili Operatör</p>
           <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
@@ -511,7 +567,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
         <div class="roster__grid">
           ${characters.map((character) => `
             <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
-              <span class="token__hex">${initials(character.displayName)}</span>
+              ${renderSigil(character.id, initials(character.displayName))}
               <span class="token__name">${escapeHtml(character.displayName)}</span>
             </button>
           `).join("")}
@@ -532,7 +588,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
       </footer>
 
       <aside class="slate">
-        <span>${escapeHtml(getPlayerName())}</span>
+        <span class="slate__name">${escapeHtml(getPlayerName())}</span>
         <span class="slate__node"><i></i>Frankfurt Shard</span>
       </aside>
     </div>
