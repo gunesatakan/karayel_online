@@ -260,7 +260,7 @@ export function setupMenuUi(game: Phaser.Game) {
         }
         selectedCharacter = character;
         selectedDetail = getDetailItems(character)[0];
-        render(view === "home" ? "detail" : view);
+        render(view);
       });
     });
 
@@ -458,10 +458,13 @@ function renderShell(
   return `
     <main class="menu-shell" data-screen="${view}">
       <div class="menu-backdrop" aria-hidden="true">
+        <div class="backdrop__stars"></div>
+        <div class="backdrop__stars backdrop__stars--far"></div>
         <div class="backdrop__horizon"></div>
         <div class="backdrop__gate"></div>
         <div class="backdrop__grid"></div>
-        <div class="backdrop__noise"></div>
+        <div class="backdrop__scan"></div>
+        <div class="backdrop__vignette"></div>
       </div>
       <section class="menu-stage">
         ${view === "home" ? renderHome(selectedCharacter) : ""}
@@ -478,43 +481,59 @@ function renderShell(
 
 function renderHome(selectedCharacter: CharacterDefinition) {
   return `
-    <div class="home-screen">
-      <header class="brand-lockup">
-        <p class="eyebrow">KARAYEL ONLINE</p>
-        <h1>Karayel</h1>
-        <div class="brand-rule"><span></span><span></span><span></span></div>
+    <div class="screen screen--home">
+      <header class="brand">
+        <p class="eyebrow"><i class="rule-dot"></i>Derin Uzay Savunma Ağı</p>
+        <h1 class="brand__word">Karayel</h1>
+        <div class="brand__rule"><i></i><b>Online</b><i></i></div>
       </header>
 
-      <section class="operator-altar" style="--accent: ${classColor[selectedCharacter.id]}">
-        <div class="operator-portrait">
-          <span>${initials(selectedCharacter.displayName)}</span>
-        </div>
-        <div class="operator-copy">
+      <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
+        <div class="sigil">${initials(selectedCharacter.displayName)}</div>
+        <div class="hero__copy">
           <p class="kicker">Seçili Operatör</p>
           <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
-          <p>${escapeHtml(selectedCharacter.role)}</p>
+          <p class="hero__role">${escapeHtml(selectedCharacter.role)}</p>
         </div>
+        <button class="hero__cta" data-view="detail" aria-label="Operatör dosyasını aç">
+          <i>›</i>
+          Dosya
+        </button>
+        <dl class="hero__stats">
+          <div><dt>Dayanım</dt><dd>${selectedCharacter.maxHp}</dd></div>
+          <div><dt>Hasar</dt><dd>${selectedCharacter.damage}</dd></div>
+          <div><dt>Kule</dt><dd>${selectedCharacter.towers.length}</dd></div>
+        </dl>
       </section>
 
-      <section class="quick-roster" aria-label="Operatörler">
-        ${characters.map((character) => `
-          <button class="roster-token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
-            <span>${initials(character.displayName)}</span>
-          </button>
-        `).join("")}
+      <section class="roster" aria-label="Operatörler">
+        <p class="section-label">Operatör Kadrosu <b>${characters.length}</b></p>
+        <div class="roster__grid">
+          ${characters.map((character) => `
+            <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
+              <span class="token__hex">${initials(character.displayName)}</span>
+              <span class="token__name">${escapeHtml(character.displayName)}</span>
+            </button>
+          `).join("")}
+        </div>
       </section>
 
       <footer class="home-actions">
-        <button class="command command--primary" data-view="archive">Operatör Arşivi</button>
-        <button class="command command--ghost" data-view="bestiary">Bestiary</button>
-        <button class="command command--ghost" data-view="online">Online</button>
-        <button class="command command--ghost" data-view="map">Harita Tasarla</button>
-        <button class="command command--ghost" data-start-game>Başlat</button>
+        <button class="command command--hero" data-start-game>
+          <span>Savaşa Gir</span>
+          <small>Tek kişilik savunma</small>
+        </button>
+        <div class="home-actions__grid">
+          <button class="command command--ghost" data-view="online">Online</button>
+          <button class="command command--ghost" data-view="archive">Operatör</button>
+          <button class="command command--ghost" data-view="bestiary">Düşman</button>
+          <button class="command command--ghost" data-view="map">Harita</button>
+        </div>
       </footer>
 
-      <aside class="connection-slate">
+      <aside class="slate">
         <span>${escapeHtml(getPlayerName())}</span>
-        <strong>Frankfurt Shard</strong>
+        <span class="slate__node"><i></i>Frankfurt Shard</span>
       </aside>
     </div>
   `;
@@ -528,8 +547,8 @@ function renderOnline(
   lobbyError: string
 ) {
   return `
-    <div class="archive-screen online-screen">
-      <header class="screen-topbar">
+    <div class="screen">
+      <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
         <div>
           <p class="eyebrow">Online Nexus</p>
@@ -546,7 +565,7 @@ function renderOnline(
       ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
 
       ${onlineTab === "create" ? `
-        <section class="selected-dossier online-card" style="--accent: ${classColor[selectedCharacter.id]}">
+        <section class="selected-dossier frame online-card" style="--accent: ${classColor[selectedCharacter.id]}">
           <p class="kicker">Kurulum</p>
           <h2>Yeni Oda</h2>
           <label class="field-stack">
@@ -564,7 +583,7 @@ function renderOnline(
           <button class="command command--primary" data-create-room>Odayı Kur</button>
         </section>
       ` : `
-        <section class="archive-list online-room-list">
+        <section class="online-room-list">
           <div class="online-list-head">
             <p class="kicker">Açık Odalar</p>
             <button class="command command--ghost command--small" data-refresh-rooms>Yenile</button>
@@ -578,7 +597,7 @@ function renderOnline(
               </span>
             </button>
           `).join("") : `
-            <div class="selected-dossier online-card">
+            <div class="selected-dossier frame online-card">
               <p class="kicker">Bekleme</p>
               <h2>Şu an açık oda yok</h2>
               <p>Bir oda kurulduğunda bu listede görünecek.</p>
@@ -593,7 +612,7 @@ function renderOnline(
 function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyStateSnapshot, lobbySessionId = "", lobbyError = "") {
   if (!lobbyState) {
     return `
-      <div class="archive-screen online-screen">
+      <div class="screen">
         <header class="screen-topbar">
           <button class="icon-command" data-view="online" aria-label="Online">‹</button>
           <div>
@@ -610,7 +629,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
   const everyoneReady = lobbyState.players.length > 0 && lobbyState.players.every((player) => player.ready);
 
   return `
-    <div class="detail-screen lobby-screen" style="--accent: ${classColor[selectedCharacter.id]}">
+    <div class="screen" style="--accent: ${classColor[selectedCharacter.id]}">
       <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="online" aria-label="Online">‹</button>
         <div>
@@ -622,7 +641,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
 
       ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
 
-      <section class="selected-dossier online-card" style="--accent: ${classColor[selectedCharacter.id]}">
+      <section class="selected-dossier frame online-card" style="--accent: ${classColor[selectedCharacter.id]}">
         <p class="kicker">Oyuncular</p>
         <h2>${lobbyState.players.length}/${lobbyState.maxPlayers} hazır bekliyor</h2>
         <div class="lobby-player-list">
@@ -652,7 +671,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
         }).join("")}
       </section>
 
-      <footer class="home-actions lobby-actions">
+      <footer class="lobby-actions">
         <button class="command ${localPlayer?.ready ? "command--primary" : "command--ghost"}" data-lobby-ready>
           ${localPlayer?.ready ? "Hazırım" : "Hazır Değilim"}
         </button>
@@ -661,7 +680,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
             Oyunu Başlat
           </button>
         ` : `
-          <span class="online-note">Kurucu herkes hazır olduğunda oyunu başlatır.</span>
+          <p class="online-note">Kurucu herkes hazır olduğunda oyunu başlatır.</p>
         `}
       </footer>
     </div>
@@ -678,7 +697,7 @@ function renderMapEditor(
 ) {
   const counts = getMapCounts(map);
   return `
-    <div class="map-screen">
+    <div class="screen">
       <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
         <div>
@@ -768,7 +787,7 @@ function renderTool(tool: MapTileKind, label: string, selectedTool: MapTileKind)
 
 function renderArchive(selectedCharacter: CharacterDefinition) {
   return `
-    <div class="archive-screen">
+    <div class="screen">
       <header class="screen-topbar">
         <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
         <div>
@@ -789,7 +808,7 @@ function renderArchive(selectedCharacter: CharacterDefinition) {
         `).join("")}
       </section>
 
-      <section class="selected-dossier" style="--accent: ${classColor[selectedCharacter.id]}">
+      <section class="selected-dossier frame" style="--accent: ${classColor[selectedCharacter.id]}">
         <p class="kicker">Aktif Dosya</p>
         <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
         <p>${escapeHtml(selectedCharacter.summary)}</p>
@@ -802,7 +821,7 @@ function renderArchive(selectedCharacter: CharacterDefinition) {
 function renderBestiary() {
   const enemies = Object.entries(enemyCombatDefinitions) as Array<[EnemyType, typeof enemyCombatDefinitions[EnemyType]]>;
   return `
-    <div class="archive-screen bestiary-screen">
+    <div class="screen">
       <header class="screen-topbar">
         <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
         <div>
@@ -850,7 +869,7 @@ function renderBestiary() {
         }).join("")}
       </section>
 
-      <section class="selected-dossier bestiary-note">
+      <section class="selected-dossier frame">
         <p class="kicker">Irk Varyantları</p>
         <h2>Dalga kimlikleri</h2>
         <div class="bestiary-race-gallery">
@@ -859,8 +878,8 @@ function renderBestiary() {
               <strong>${escapeHtml(formatEnemyRace(race))}</strong>
               <div>
                 ${enemyTypeOrder.map((type) => `
-                  <figure>
-                    <img class="${getEnemyImageClass(race, type)}" src="${getEnemyImagePath(race, type)}" alt="" />
+                  <figure style="--enemy: ${enemyColor(type)}">
+                    <img class="${getEnemyImageClass(race, type)}" src="${getEnemyImagePath(race, type)}" alt="" loading="lazy" />
                     <figcaption>${escapeHtml(enemyTypeLabels[type])}</figcaption>
                   </figure>
                 `).join("")}
@@ -870,7 +889,7 @@ function renderBestiary() {
         </div>
       </section>
 
-      <section class="selected-dossier bestiary-note">
+      <section class="selected-dossier frame">
         <p class="kicker">Dalga Varyantı</p>
         <h2>Uçan dalgalar</h2>
         <p>Belirli dalgalarda düşmanlar havacı varyant olarak doğabilir. Havacılar yolu takip etmez, spawn noktasından nexusa en kısa hatla uçar ve mevcut can değerleri hava saldırısı dengesine göre düşürülür.</p>
@@ -891,18 +910,18 @@ function renderBestiaryStat(label: string, value: string | number) {
 function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem) {
   const details = getDetailItems(character);
   return `
-    <div class="detail-screen" style="--accent: ${classColor[character.id]}">
+    <div class="screen" style="--accent: ${classColor[character.id]}">
       <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="archive" aria-label="Arşive dön">‹</button>
         <div>
           <p class="eyebrow">Operator Dossier</p>
           <h1>${escapeHtml(character.displayName)}</h1>
         </div>
-        <button class="command command--small" data-start-game>Başlat</button>
+        <button class="command command--small command--primary" data-start-game>Başlat</button>
       </header>
 
-      <section class="dossier-hero">
-        <div class="dossier-portrait"><span>${initials(character.displayName)}</span></div>
+      <section class="dossier-hero frame">
+        <div class="sigil">${initials(character.displayName)}</div>
         <div class="dossier-copy">
           <strong>${escapeHtml(character.role)}</strong>
           <p>${escapeHtml(character.summary)}</p>
@@ -918,7 +937,7 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
         `).join("")}
       </section>
 
-      <article class="intel-panel" style="--item: ${selectedDetail.color}">
+      <article class="intel-panel frame" style="--item: ${selectedDetail.color}; --accent: ${selectedDetail.color}">
         <span>${selectedDetail.type.toUpperCase()} / ${escapeHtml(selectedDetail.label)}</span>
         <h2>${escapeHtml(selectedDetail.title)}</h2>
         <p>${escapeHtml(selectedDetail.body).replaceAll("\n", "<br />")}</p>
