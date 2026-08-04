@@ -68,9 +68,9 @@ type ControlActionDetail = {
 type RenderTower = {
   effect: Phaser.GameObjects.Graphics;
   linkHighlight: Phaser.GameObjects.Arc;
-  halo: Phaser.GameObjects.Arc;
+  /** Level dial, drawn over the sprite. Replaces the old under-sprite halo. */
+  halo: Phaser.GameObjects.Graphics;
   base: Phaser.GameObjects.Image;
-  level: Phaser.GameObjects.Text;
   range: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
   status: Phaser.GameObjects.Text;
@@ -2131,7 +2131,6 @@ export class GameScene extends Phaser.Scene {
         tower.effect.destroy();
         tower.linkHighlight.destroy();
         tower.base.destroy();
-        tower.level.destroy();
         tower.range.destroy();
         tower.isolation.destroy();
         tower.status.destroy();
@@ -2146,9 +2145,8 @@ export class GameScene extends Phaser.Scene {
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       if (!rendered) {
-        const halo = this.add.circle(tower.x, tower.y, haloRadius, 0xffffff, 0)
-          .setStrokeStyle(3, 0xffffff, 0.8)
-          .setDepth(11);
+        // Above the sprite, not under it: an opaque tower would hide the ring.
+        const halo = this.add.graphics().setDepth(12.6);
         const effect = this.add.graphics().setDepth(12.4);
         const linkHighlight = this.add.circle(tower.x, tower.y, linkRadius, 0x22d3ee, 0.16)
           .setStrokeStyle(3, 0xfacc15, 0.92)
@@ -2165,33 +2163,22 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        const level = this.add.text(tower.x, tower.y + 1, `${tower.level}`, {
-          color: "#020617",
-          fontFamily: "Arial",
-          fontSize: "12px",
-          fontStyle: "bold"
-        }).setOrigin(0.5).setDepth(13);
         const status = this.add.text(tower.x, tower.y + statusOffset, "", {
           color: "#fde68a",
           fontFamily: "Arial",
           fontSize: "8px",
           fontStyle: "bold"
         }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, linkHighlight, halo, base, level, range, isolation, status, key: "" };
+        rendered = { effect, linkHighlight, halo, base, range, isolation, status, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
       const texture = `tower-${tower.definitionId}`;
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}`;
       if (rendered.key !== key) {
-        const haloStyle = getTowerLevelHalo(tower.level);
-        rendered.halo.setPosition(tower.x, tower.y);
-        rendered.halo.setRadius(Math.max(haloRadius, cellSize * 0.5));
-        rendered.halo.setFillStyle(haloStyle.color, haloStyle.fillAlpha);
-        rendered.halo.setStrokeStyle(haloStyle.strokeWidth, haloStyle.color, haloStyle.strokeAlpha);
+        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, haloRadius);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
-        rendered.level.setPosition(tower.x, tower.y + 1).setText(`${tower.level}`);
         rendered.status.setPosition(tower.x, tower.y + statusOffset).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
@@ -2212,6 +2199,45 @@ export class GameScene extends Phaser.Scene {
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }
+  }
+
+  /**
+   * Level ring. Three redundant ordinal cues so it reads without a legend and
+   * without relying on hue: the arc fills clockwise as the tower levels (a full
+   * circle is 10), the stroke thickens, and the colour heats from steel to
+   * white. Drawn outside the sprite radius so painted art stays uncovered.
+   */
+  private drawTowerLevelRing(graphics: Phaser.GameObjects.Graphics, x: number, y: number, level: number, spriteRadius: number) {
+    const style = getTowerLevelStyle(level);
+    // Sits on the sprite's outer rim like a collar rather than orbiting outside
+    // it: a ring wide enough to clear a 38px sprite would be 48px across on a
+    // 34px cell, so neighbouring towers would overlap each other's rings. Drawn
+    // above the sprite, so it stays visible on opaque art; the centre -- where
+    // the eye, lens or muzzle lives -- is never covered.
+    const radius = spriteRadius - 1;
+    const start = -Math.PI / 2;
+    const sweep = Math.PI * 2 * style.fill;
+
+    graphics.clear();
+
+    // Unfilled remainder. Has to stay visible against the dark map or level 1
+    // reads as "no ring" instead of "one tenth of the dial".
+    graphics.lineStyle(1, 0x64748b, 0.5);
+    graphics.beginPath();
+    graphics.arc(x, y, radius, 0, Math.PI * 2);
+    graphics.strokePath();
+
+    if (style.glow) {
+      graphics.lineStyle(style.width + 3, style.color, 0.18);
+      graphics.beginPath();
+      graphics.arc(x, y, radius, start, start + sweep);
+      graphics.strokePath();
+    }
+
+    graphics.lineStyle(style.width, style.color, 0.95);
+    graphics.beginPath();
+    graphics.arc(x, y, radius, start, start + sweep);
+    graphics.strokePath();
   }
 
   /**
@@ -4892,29 +4918,31 @@ function roundClientMetric(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-function getTowerLevelHalo(level: number) {
+/**
+ * Ordinal by construction: the old palette cycled through unrelated hues, so
+ * level 7 looked no higher than level 3. This one only heats up -- steel, cyan,
+ * lime, gold, ember, white -- and every other cue rises with it too.
+ */
+function getTowerLevelStyle(level: number) {
   const normalizedLevel = Phaser.Math.Clamp(Math.round(level), 1, 10);
-  const palette = [
-    0x22c55e,
-    0x3b82f6,
-    0xa855f7,
-    0xeab308,
+  const heat = [
+    0x94a3b8,
+    0x7dd3fc,
+    0x22d3ee,
+    0x34d399,
+    0xa3e635,
+    0xfacc15,
+    0xfb923c,
+    0xf97316,
     0xef4444,
-    0x39ff88,
-    0x38bdf8,
-    0xd946ef,
-    0xfde047,
-    0xff3131
+    0xfff1f2
   ];
-  const glowing = normalizedLevel >= 6;
-  const color = palette[normalizedLevel - 1];
 
   return {
-    color,
-    radius: 19,
-    fillAlpha: glowing ? 0.11 : 0.02,
-    strokeAlpha: glowing ? 1 : 0.78,
-    strokeWidth: glowing ? 3 : 2
+    color: heat[normalizedLevel - 1],
+    fill: normalizedLevel / 10,
+    width: 1.8 + (normalizedLevel - 1) * (2.4 / 9),
+    glow: normalizedLevel >= 6
   };
 }
 

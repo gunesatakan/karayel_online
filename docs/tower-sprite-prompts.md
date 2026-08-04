@@ -20,6 +20,11 @@ arka plan, ortalanmış, yüksek kontrastlı boyalı 3B render.
 Silüet testi: sprite'ı 40 px'e küçültüp tek renk siyaha çevirdiğinde hangi kule olduğu
 ayırt edilebilmeli. Detay değil, dış hat taşır.
 
+**Dış kenarda tasma payı bırakın.** Kule seviyesi, sprite'ın dış kenarına oturan bir
+halka ile gösteriliyor (aşağıdaki Seviye halkası bölümü). Sprite'ın en dıştaki
+yaklaşık %10'luk bandı sade bir bilezik olmalı — oraya ince detay, çıkıntı veya
+yazı koyulursa halkanın altında kalır.
+
 Dosya adı `tower-<id>.png` olmalı; `PreloaderScene` içinde `this.load.image("tower-" + id, ...)`
 ile yüklenip `createProceduralTowerTextures()` çağrısı kaldırıldığında doğrudan devreye girer.
 
@@ -49,6 +54,22 @@ karakter üstteki parçada durmalı.
 
 Sabit kalan kulelerde bu kısıtların ikisi de yok; istendiği kadar asimetrik ve
 yönlü olabilirler.
+
+## Seviye halkası — merkezi boş bırakın
+
+Seviye artık kulenin ortasındaki rakamla değil, dış kenarına oturan bir kadran
+halkasıyla gösteriliyor (`GameScene.drawTowerLevelRing`). Halka saat yönünde
+doluyor: seviye 1'de onda bir, seviye 10'da tam tur. Aynı anda kalınlaşıyor ve
+rengi çelikten beyaza doğru ısınıyor — üç bağımsız ipucu, yani renk körlüğünde de
+okunuyor.
+
+Sprite açısından iki sonucu var:
+
+- **Merkez tamamen serbest.** Eskiden ortada 12px'lik koyu bir rakam vardı ve
+  sanatın odak noktasını kapatıyordu. Artık yok; gözü, lensi, namluyu ortaya
+  koyabilirsiniz.
+- **Dış bilezik sade olmalı.** Halka sprite'ın dış kenarında, üstünde çiziliyor.
+  En dıştaki ince bant düz bir yüzey olarak bırakılmalı.
 
 ## Ortak stil bloğu
 
