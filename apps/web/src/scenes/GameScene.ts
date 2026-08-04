@@ -75,7 +75,6 @@ type RenderTower = {
   base: Phaser.GameObjects.Image;
   range: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
-  status: Phaser.GameObjects.Text;
   key: string;
   /** Eased separately from the snapshot so the muzzle sweeps instead of snapping. */
   facing?: number;
@@ -2149,7 +2148,6 @@ export class GameScene extends Phaser.Scene {
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
-    const statusOffset = Math.max(14, cellSize * 0.66);
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
@@ -2159,7 +2157,6 @@ export class GameScene extends Phaser.Scene {
         tower.base.destroy();
         tower.range.destroy();
         tower.isolation.destroy();
-        tower.status.destroy();
         this.towers.delete(id);
       }
     }
@@ -2189,13 +2186,7 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        const status = this.add.text(tower.x, tower.y + statusOffset, "", {
-          color: "#fde68a",
-          fontFamily: "Arial",
-          fontSize: "8px",
-          fontStyle: "bold"
-        }).setOrigin(0.5).setDepth(13);
-        rendered = { effect, linkHighlight, halo, base, range, isolation, status, key: "" };
+        rendered = { effect, linkHighlight, halo, base, range, isolation, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -2211,7 +2202,6 @@ export class GameScene extends Phaser.Scene {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
-        rendered.status.setPosition(tower.x, tower.y + statusOffset).setText(tower.status ?? "");
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
@@ -2230,7 +2220,6 @@ export class GameScene extends Phaser.Scene {
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet");
       this.renderTowerSpriteEffects(rendered.effect, tower);
-      rendered.status.setVisible(Boolean(tower.status));
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
@@ -2355,7 +2344,6 @@ export class GameScene extends Phaser.Scene {
     this.renderMelisEvolutionStraps(graphics, tower);
     this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
-    this.renderZeynepFormationEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
@@ -2554,37 +2542,6 @@ export class GameScene extends Phaser.Scene {
 
     drawCommandRing("range", commands.range, 0);
     drawCommandRing("haste", commands.haste, commands.range ? 3 : 0);
-  }
-
-  private renderZeynepFormationEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    const formationSize = tower.zeynepFormationSize ?? 0;
-    if (tower.characterId !== "zeynep" || formationSize < 2 || tower.status === "Hararet" || tower.status === "Tukenmis") {
-      return;
-    }
-
-    const phase = (Date.now() % 1000) / 1000;
-    const pulse = 0.7 + Math.sin(phase * Math.PI * 2) * 0.18;
-    const primary = formationSize === 3 ? 0xfdf2f8 : 0xf9a8d4;
-    const secondary = formationSize === 3 ? 0xdb2777 : 0x0ea5e9;
-
-    const neighbors = Array.from(this.towerSnapshots.values()).filter((candidate) => (
-      candidate.id > tower.id &&
-      candidate.characterId === "zeynep" &&
-      (candidate.zeynepFormationSize ?? 0) === formationSize &&
-      areFormationNeighbors(tower, candidate, this.getMapCellSize())
-    ));
-
-    for (const neighbor of neighbors) {
-      const lineScale = Math.max(0.55, this.getMapCellSize() / TOWER_GRID_SIZE);
-      graphics.lineStyle(4 * lineScale, secondary, 0.16 + pulse * 0.08);
-      graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
-      graphics.lineStyle(2 * lineScale, primary, 0.5 + pulse * 0.18);
-      graphics.lineBetween(tower.x, tower.y, neighbor.x, neighbor.y);
-      const midX = (tower.x + neighbor.x) / 2;
-      const midY = (tower.y + neighbor.y) / 2;
-      graphics.fillStyle(primary, 0.82);
-      graphics.fillCircle(midX, midY, (formationSize === 3 ? 3 : 2.5) * lineScale);
-    }
   }
 
   private renderDebugLaserLevelPrism(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -4942,12 +4899,6 @@ function writeStoredVolume(key: string, value: number) {
 
 function formatVolumePercent(value: number) {
   return `${Math.round(Phaser.Math.Clamp(value, 0, 1) * 100)}%`;
-}
-
-function areFormationNeighbors(towerA: TowerSnapshot, towerB: TowerSnapshot, cellSize: number) {
-  const dx = Math.abs(towerA.x - towerB.x);
-  const dy = Math.abs(towerA.y - towerB.y);
-  return dx <= cellSize + 2 && dy <= cellSize + 2 && dx + dy > 2;
 }
 
 function roundClientMetric(value: number) {
