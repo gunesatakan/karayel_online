@@ -12,7 +12,7 @@ arka plan, ortalanmış, yüksek kontrastlı boyalı 3B render.
 |---|---|---|
 | Çözünürlük | 512×512 PNG | Düşman sprite'larıyla aynı |
 | Arka plan | Şeffaf | Kule zemin karesinin üstüne biner |
-| Görüş açısı | Tam tepeden (top-down) | Oyun tepeden bakışlı |
+| Görüş açısı | Tam dik tepeden | Aşağıdaki Dik bakış bölümü — zorlaması gerekiyor |
 | Kompozisyon | Ortalanmış; dönenlerde yuvarlak taban | Aşağıdaki Yönelme bölümüne bakın |
 | Ekranda boyut | 52×52 px (grid karesi 34 px) | Siluet 40 px'te okunmalı |
 | Zemin gölgesi | Yok | Gölgeyi oyun kendi çiziyor |
@@ -27,6 +27,73 @@ yazı koyulursa halkanın altında kalır.
 
 Dosya adı `tower-<id>.png` olmalı; `PreloaderScene` içinde `this.load.image("tower-" + id, ...)`
 ile yüklenip `createProceduralTowerTextures()` çağrısı kaldırıldığında doğrudan devreye girer.
+
+## Dik bakış — tek başına "top-down" yazmak yetmiyor
+
+Görsel üreticiler "top-down" ifadesini genellikle *yüksek açı* olarak yorumluyor ve
+30-45 derece eğimli, perspektifli bir görüntü veriyor. Eğitim verisinde "top-down"
+etiketli görsellerin çoğu gerçekten dik değil. Bu yüzden açıyı tek bir ifadeyle
+istemek işe yaramıyor; **birbirini tekrarlayan birden fazla ifadeyle kuşatmak**
+gerekiyor.
+
+Bizde bu estetik bir tercih değil, işlevsel zorunluluk: **kuleler dönüyor.**
+Sprite'ta perspektif varsa kule döndükçe o sahte perspektif de dönüyor ve kamera
+nesnenin etrafında dolanıyormuş gibi görünüyor. Eğik bir sprite sabitken kabul
+edilebilir durur, dönerken bariz biçimde bozulur.
+
+### Prompta konacak zorlama
+
+Aşağıdaki ifadeler **promptun en başına** gelmeli; üreticiler baştaki kelimelere
+daha çok ağırlık veriyor.
+
+```
+flat lay, shot from a camera mounted directly overhead pointing straight down,
+90 degree bird's eye view, orthographic top projection, the object lies flat on
+the ground like a coin on a table, only its top surface is visible, none of its
+vertical sides or walls can be seen, a circular base must render as a perfect
+circle and never as an ellipse, no perspective, no vanishing point, no horizon,
+no camera tilt, not isometric, not a three quarter view, not an angled shot,
+not a front view
+```
+
+Buradaki asıl iş üç ifadede:
+
+- **`flat lay`** — ürün fotoğrafçılığından gelen bir terim ve neredeyse her zaman
+  gerçek dik bakış üretiyor. Tek başına en güçlü ipucu.
+- **`only its top surface is visible, none of its vertical sides`** — açıyı
+  tarif etmek yerine *sonucunu* tarif ediyor. Nesnenin yan yüzü görünmüyorsa
+  kamera dik demektir; model bunu geometrik olarak çözebiliyor.
+- **`a circular base must render as a perfect circle and never as an ellipse`** —
+  eğik kameranın en belirgin işareti dairenin elipse dönmesidir. Doğrudan yasaklamak
+  modeli açıyı düzeltmeye zorluyor.
+
+### Negatif prompt
+
+Destekleyen araçlarda (Stable Diffusion, Midjourney `--no`) ayrıca:
+
+```
+isometric, 3/4 view, angled camera, perspective view, side view, front view,
+eye level, horizon, tilted, dutch angle, depth of field, ellipse base
+```
+
+### Kabul kontrolü
+
+Üretilen görseli şu üç soruyla eleyin; biri bile "evet" ise açı yanlıştır:
+
+1. Nesnenin herhangi bir **yan yüzü** (duvar, gövde kenarı, silindir yanağı) görünüyor mu?
+2. Yuvarlak olması gereken taban **elips** mi çıkmış?
+3. Gölge nesnenin **yanına** mı düşmüş (altına değil)?
+
+En hızlı test: görseli 90° döndürün. Gerçekten dikse döndürülmüş hali de doğal durur;
+perspektif varsa ışık ve eğim anında yanlış görünür. Kule zaten oyunda dönecek,
+yani bu testi her sprite'ın geçmesi şart.
+
+### Referans görsel
+
+Mevcut düşman sprite'ları arasında `enemy-spaceBug-runner.png` gerçek dik bakışın
+iyi bir örneği. Aracınız stil/kompozisyon referansı alıyorsa (Midjourney `--sref`,
+ChatGPT'ye görsel ekleme) onu referans vermek açıyı tutturmayı belirgin biçimde
+kolaylaştırıyor.
 
 ## Yönelme — sprite'ı doğrudan etkiler
 
@@ -78,24 +145,37 @@ Her promptun başına bu blok eklenir; sonuna kule özel tarifi gelir.
 **Dönen kuleler için:**
 
 ```
-top-down orthographic game asset, centered on a circular radially symmetric
-base, the working end clearly pointing to the right, dark fantasy techno-occult,
-painted 3D render with crisp readable edges, obsidian and blackened steel
-construction, emissive {RENK} energy glowing from within, dramatic rim light,
-strong value contrast so the shape reads at 40 pixels, isolated on transparent
-background, square 1:1, 512x512, no ground shadow, no text, no watermark,
-no UI elements
+flat lay, shot from a camera mounted directly overhead pointing straight down,
+90 degree bird's eye view, orthographic top projection, the object lies flat on
+the ground like a coin on a table, only its top surface is visible, none of its
+vertical sides or walls can be seen, the circular base renders as a perfect
+circle and never as an ellipse, no perspective, no vanishing point, no horizon,
+no camera tilt, not isometric, not a three quarter view, not an angled shot,
+game asset centered on a circular radially symmetric base, the working end
+clearly pointing to the right, dark fantasy techno-occult, painted 3D render
+with crisp readable edges, obsidian and blackened steel construction, emissive
+{RENK} energy glowing from within, light falling from directly above, strong
+value contrast so the shape reads at 40 pixels, the outermost band of the base
+left as a plain smooth collar, isolated on transparent background, square 1:1,
+512x512, no cast shadow, no text, no watermark, no UI elements
 ```
 
 **Sabit kuleler için:**
 
 ```
-top-down orthographic game asset, centered, vertically symmetric, dark fantasy
-techno-occult, painted 3D render with crisp readable edges, obsidian and
-blackened steel construction, emissive {RENK} energy glowing from within,
-dramatic rim light, strong value contrast so the shape reads at 40 pixels,
-isolated on transparent background, square 1:1, 512x512, no ground shadow,
-no text, no watermark, no UI elements
+flat lay, shot from a camera mounted directly overhead pointing straight down,
+90 degree bird's eye view, orthographic top projection, the object lies flat on
+the ground like a coin on a table, only its top surface is visible, none of its
+vertical sides or walls can be seen, a circular base renders as a perfect circle
+and never as an ellipse, no perspective, no vanishing point, no horizon, no
+camera tilt, not isometric, not a three quarter view, not an angled shot,
+game asset centered and vertically symmetric, dark fantasy techno-occult,
+painted 3D render with crisp readable edges, obsidian and blackened steel
+construction, emissive {RENK} energy glowing from within, light falling from
+directly above, strong value contrast so the shape reads at 40 pixels, the
+outermost band left as a plain smooth collar, isolated on transparent
+background, square 1:1, 512x512, no cast shadow, no text, no watermark,
+no UI elements
 ```
 
 `{RENK}` her kulenin oyundaki vurgu rengiyle değiştirilir; bu renk kule kartında,
@@ -123,7 +203,7 @@ Delici mermi atar: namlu uzun, ince ve tek olmalı — çift namlu mekaniği yan
 
 ```
 circular theatre-light emitter, a ring of eight faceted crystal lenses angled
-outward around a raised center prism, pale rose #f9a8d4 light beams caught in
+outward around a center prism at the hub, pale rose #f9a8d4 light beams caught in
 the lenses, polished dark chrome housing with ornate scalloped rim, faint
 lens-flare bloom on the crystal tips
 ```
@@ -145,7 +225,7 @@ Soketleri bağlı kulelere baktığı için bu kule **dönmüyor**; taban serbes
 ### 4. Zirve Oku — `tower-zeynep-4` — `#ec4899` *(veride tanımlı, şu an devre dışı)* — **döner**
 
 ```
-tall narrow ballista spire seen from directly above, a single long arrow shaft
+narrow ballista frame lying flat, a single long arrow shaft
 locked in a drawn firing groove, tapered needle silhouette, magenta #ec4899
 charge crawling up the shaft toward the tip, minimal footprint, sharp
 elongated form
@@ -154,8 +234,8 @@ elongated form
 ### 5. Emir Kulesi — `tower-zeynep-5` — `#ec4899` *(veride tanımlı, şu an devre dışı)* — sabit
 
 ```
-squat command post with a raised speaking horn opening upward, concentric
-pressure rings radiating from the horn mouth, magenta #ec4899 pulse rendered
+command post whose speaking horn opens straight up toward the camera, read as
+concentric circles nested into the base, pressure rings radiating outward, magenta #ec4899 pulse rendered
 as a faint expanding ring, heavy armored collar around the base, no barrel
 ```
 
@@ -173,9 +253,9 @@ Tek yönlü koni dalgası atar: burası bilerek simetrik **değil**, ağzın yö
 ### 7. Saray Arşivi — `tower-zeynep-7` — `#facc15` — sabit
 
 ```
-palace archive vault, stacked layers of gilded scroll cases and ledger drawers
-forming a stepped ziggurat, warm gold #facc15 light leaking from the seams
-between layers, ornate crown molding on the top tier, completely sealed with
+palace archive vault, concentric tiers of gilded scroll cases and ledger drawers
+nested one inside the next so the steps read as rings, warm gold #facc15 light
+leaking from the seams between tiers, ornate crown molding on the top tier, completely sealed with
 no opening, no barrel, no aperture
 ```
 
@@ -225,9 +305,9 @@ Kendi ateş etmez, iki kuleye bağlanır: iki kalın kablonun zıt kenarlardan �
 ### 3. İzolasyon Kulesi — `tower-warrior-3` — sabit
 
 ```
-containment field emitter, three curved pylons leaning inward around an empty
-center, green #22c55e field arcing between the pylon tips, heavy grounded base
-with warning chevrons, no barrel, the empty center reading as the active part
+containment field emitter, three curved pylons arranged around an empty center
+with their tips converging, green #22c55e field arcing between the tips, heavy
+grounded base with warning chevrons, no barrel, the empty center reading as the active part
 ```
 
 ### 4. Obsesyon Kulesi — `tower-warrior-4` — **döner**
@@ -283,7 +363,7 @@ yönlendirir; kırılana kadar canı vardır ve üstünden geçmeye çalışan d
 
 ```
 firewall barrier segment, a heavy armored bulkhead slab spanning the tile edge to
-edge, thick riveted plating with a central seam, green #22c55e energy curtain
+edge, thick riveted top plating with a central seam, green #22c55e energy curtain
 flickering in the seam gap, scorch and impact dents across the face, low and wide,
 built to be hit rather than to shoot
 ```
@@ -329,10 +409,10 @@ Sınırsız biriken lanet: taşan, damlayan bir kap gibi durmalı.
 ### 4. Ölüler Bağı — `tower-archer-4` — `#14b8a6` — **döner**
 
 ```
-underworld gate ring standing over a black opening, four heavy chains rising
-from inside the pit and hooked over the ring rim, teal #14b8a6 spectral light
-coming up out of the hole, bone and iron gate frame, the opening reading as
-genuinely deep
+underworld gate ring set flush into the ground around a black circular opening,
+four heavy chains laid across the opening and hooked over the ring rim, teal
+#14b8a6 spectral light welling up out of the hole, bone and iron gate frame, the
+opening a flat disc that darkens toward its middle
 ```
 
 ### 5. Kırık Ayna — `tower-archer-5` — `#e879f9` — **döner**
@@ -361,10 +441,10 @@ patlama üzerinden geliyor. Önerilen rol: menzilindeki tüm düşmanlara sürek
 psişik alan hasarı veren bir ağıt.
 
 ```
-mourning bell hung in a cracked stone yoke, the bell mouth facing downward and
-swinging mid-toll, dark magenta #a21caf grief light bleeding out from under the
-rim in concentric waves, tear-track staining down the bell surface, weathered
-bronze and black stone, no barrel
+mourning bell set into a cracked stone yoke and seen from straight above, so only
+its crown and the concentric rings of its body are visible, dark magenta #a21caf
+grief light bleeding outward from under the rim in rings, verdigris staining
+spreading across the bronze, weathered black stone, no barrel
 ```
 
 Sürekli alan hasarı: çan sallanır halde ve dalgalar dışa doğru okunmalı.
