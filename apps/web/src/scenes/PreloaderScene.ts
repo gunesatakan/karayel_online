@@ -4,6 +4,23 @@ import { towerCatalog, type TowerDefinition } from "@karayel/shared";
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
 
+/**
+ * Towers that have painted art. Everything else keeps the procedural glyph, so
+ * the two can coexist while the set is filled in one operator at a time.
+ *
+ * zeynep-8 (Abarti) is deliberately absent even though its art exists: it is not
+ * a tile sprite but an edge rail, drawn segment by segment in
+ * GameScene.renderAbartiEdgeBody, so swapping it in needs that renderer reworked
+ * rather than just a texture swap.
+ */
+const PAINTED_TOWER_IDS = [
+  "zeynep-1",
+  "zeynep-2",
+  "zeynep-3",
+  "zeynep-6",
+  "zeynep-7"
+] as const;
+
 export class PreloaderScene extends Phaser.Scene {
   constructor() {
     super("preloader");
@@ -22,6 +39,9 @@ export class PreloaderScene extends Phaser.Scene {
       for (const type of ENEMY_TYPE_TEXTURES) {
         this.load.image(`enemy-${race}-${type}`, `/images/enemies/enemy-${race}-${type}.png`);
       }
+    }
+    for (const towerId of PAINTED_TOWER_IDS) {
+      this.load.image(`tower-${towerId}`, `/images/towers/tower-${towerId}.webp`);
     }
   }
 
@@ -112,6 +132,12 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   private createTowerTexture(tower: TowerDefinition) {
+    // Painted art already loaded under this key; generating the glyph would
+    // overwrite it, since generateTexture replaces by key.
+    if (this.textures.exists(`tower-${tower.id}`)) {
+      return;
+    }
+
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
     const size = 52;
     const center = size / 2;

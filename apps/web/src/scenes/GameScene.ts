@@ -2120,7 +2120,6 @@ export class GameScene extends Phaser.Scene {
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     const cellSize = this.getMapCellSize();
     const spriteSize = Math.max(20, cellSize * 1.12);
-    const baseScale = spriteSize / 52;
     const haloRadius = Math.max(10, cellSize * 0.56);
     const linkRadius = Math.max(14, cellSize * 0.8);
     const statusOffset = Math.max(14, cellSize * 0.66);
@@ -2188,7 +2187,10 @@ export class GameScene extends Phaser.Scene {
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
       const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
       const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
-      rendered.base.setScale(selectionScale * baseScale * footprintScaleX, selectionScale * baseScale * footprintScaleY);
+      // Derived from the frame rather than a fixed 52, because painted towers
+      // ship at 256 while the procedural glyphs are still generated at 52.
+      const textureScale = spriteSize / Math.max(1, rendered.base.frame.width);
+      rendered.base.setScale(selectionScale * textureScale * footprintScaleX, selectionScale * textureScale * footprintScaleY);
       rendered.base.setVisible(tower.definitionId !== "zeynep-8");
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
