@@ -75,6 +75,8 @@ type RenderTower = {
   isolation: Phaser.GameObjects.Graphics;
   status: Phaser.GameObjects.Text;
   key: string;
+  /** Eased separately from the snapshot so the muzzle sweeps instead of snapping. */
+  facing?: number;
 };
 
 type RenderMover = {
@@ -139,6 +141,9 @@ type KillStreakVisualTheme = {
 
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const GUIDANCE_RADIUS = 78;
+// Fast enough that the muzzle is on target before the projectile leaves it,
+// slow enough to read as a sweep rather than a snap.
+const TOWER_TURN_RATE_RADIANS_PER_SECOND = 12;
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type AudioVolumeChannel = "music" | "voice";
@@ -2192,6 +2197,7 @@ export class GameScene extends Phaser.Scene {
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
       }
+      this.applyTowerFacing(rendered, tower);
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
       const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
       const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
@@ -2206,6 +2212,27 @@ export class GameScene extends Phaser.Scene {
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }
+  }
+
+  /**
+   * Turns the muzzle toward the server-reported bearing. The snapshot only
+   * arrives every 33 ms, so the angle is eased per frame along the shortest arc
+   * -- lerping the raw value would spin the long way round when it crosses PI.
+   * Sprites are authored pointing right (+X), matching atan2's zero.
+   */
+  private applyTowerFacing(rendered: RenderTower, tower: TowerSnapshot) {
+    if (typeof tower.facing !== "number") {
+      return;
+    }
+
+    if (rendered.facing === undefined) {
+      rendered.facing = tower.facing;
+    } else {
+      const step = TOWER_TURN_RATE_RADIANS_PER_SECOND * (this.game.loop.delta / 1000);
+      rendered.facing = Phaser.Math.Angle.RotateTo(rendered.facing, tower.facing, step);
+    }
+
+    rendered.base.setRotation(rendered.facing);
   }
 
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {

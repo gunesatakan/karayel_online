@@ -31,6 +31,7 @@ import {
   scaleEditableMap,
   worldToGrid,
   getTowerUpgradeCost,
+  towerAims,
   towerCatalog,
   type CharacterId,
   type DamageEventSnapshot,
@@ -384,6 +385,7 @@ type TowerModel = {
   melisFocusTargetId: string;
   melisFocusKillHasteUntil: number;
   melisMirrorCharge: number;
+  facing: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
 };
@@ -1299,6 +1301,7 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const target = this.findTowerTarget(tower);
+      this.aimTowerAt(tower, target);
       this.updateUcubeRhythm(tower, target, deltaTime);
       if (tower.cooldownMs > 0) {
         continue;
@@ -1313,6 +1316,24 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.updateServerLinks();
+  }
+
+  /**
+   * Records which way an aiming tower is pointing. Kept sticky: when the target
+   * dies the muzzle holds its last bearing instead of snapping back to zero.
+   */
+  private aimTowerAt(tower: TowerModel, target: { x: number; y: number } | undefined) {
+    if (!target || !towerAims(tower.definition.id)) {
+      return;
+    }
+
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    if (dx === 0 && dy === 0) {
+      return;
+    }
+
+    tower.facing = Math.atan2(dy, dx);
   }
 
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
@@ -2783,6 +2804,7 @@ export class MatchRoom extends Room<MatchState> {
       melisFocusTargetId: "",
       melisFocusKillHasteUntil: 0,
       melisMirrorCharge: 0,
+      facing: Math.PI / 2,
       damageDealt: 0,
       damageWindow: []
     };
@@ -4568,6 +4590,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      this.aimTowerAt(tower, target);
       this.applyMelisUnderworldLinkEffects(tower, target, isStressMode, now);
       this.renderMelisUnderworldLink(tower, target, isStressMode);
 
@@ -5024,6 +5047,7 @@ export class MatchRoom extends Room<MatchState> {
         x: tower.x,
         y: tower.y,
         orientation: tower.orientation,
+        facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
         range: this.getTowerRange(tower),
         color: tower.definition.color,

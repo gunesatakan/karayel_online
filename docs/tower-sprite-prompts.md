@@ -13,7 +13,7 @@ arka plan, ortalanmış, yüksek kontrastlı boyalı 3B render.
 | Çözünürlük | 512×512 PNG | Düşman sprite'larıyla aynı |
 | Arka plan | Şeffaf | Kule zemin karesinin üstüne biner |
 | Görüş açısı | Tam tepeden (top-down) | Oyun tepeden bakışlı |
-| Kompozisyon | Ortalanmış, dikey simetrik | Kule her yöne ateş eder, yönü yok |
+| Kompozisyon | Ortalanmış; dönenlerde yuvarlak taban | Aşağıdaki Yönelme bölümüne bakın |
 | Ekranda boyut | 52×52 px (grid karesi 34 px) | Siluet 40 px'te okunmalı |
 | Zemin gölgesi | Yok | Gölgeyi oyun kendi çiziyor |
 
@@ -23,18 +23,58 @@ ayırt edilebilmeli. Detay değil, dış hat taşır.
 Dosya adı `tower-<id>.png` olmalı; `PreloaderScene` içinde `this.load.image("tower-" + id, ...)`
 ile yüklenip `createProceduralTowerTextures()` çağrısı kaldırıldığında doğrudan devreye girer.
 
+## Yönelme — sprite'ı doğrudan etkiler
+
+Kuleler artık ateş ettikleri düşmana **dönüyor**. Sunucu her tick hedefin açısını
+hesaplayıp snapshot'a `facing` olarak koyuyor, istemci de sprite'ı o açıya
+yumuşatarak çeviriyor (`GameScene.applyTowerFacing`).
+
+18 kulenin 11'i dönüyor. Auralar, pasifler, global Sunucu ve alan lanetleri sabit
+kalıyor — liste `packages/shared/src/index.ts` içindeki `AIMING_TOWER_IDS`.
+
+Bunun sprite üretimine iki sonucu var:
+
+**1. Dönen kulelerin namlusu sağa bakmalı.** Motor `Math.atan2` çıktısını doğrudan
+rotasyon olarak uyguluyor; açı 0 = sağ (+X). Kaynak görselde namlu/göz/ağız sağa
+bakıyorsa hiçbir ofset gerekmez. Yukarı bakan bir görsel 90° yanlış durur.
+
+**2. Dönen kulelerin tabanı dairesel simetrik olmalı.** Şu an tek sprite dönüyor,
+taban dahil. Taban asimetrikse (köşeli kaide, sancak, kablo) kule döndükçe zemin de
+dönüyormuş gibi görünür. Dönen kulelerde taban yuvarlak bir disk olmalı; tüm
+karakter üstteki parçada durmalı.
+
+> İleride taban ve kafa iki ayrı sprite'a ayrılırsa (`tower-<id>-base.png` +
+> `tower-<id>-head.png`) bu kısıt kalkar ve süslü kaideler serbest kalır.
+> Şimdilik tek katman.
+
+Sabit kalan kulelerde bu kısıtların ikisi de yok; istendiği kadar asimetrik ve
+yönlü olabilirler.
+
 ## Ortak stil bloğu
 
 Her promptun başına bu blok eklenir; sonuna kule özel tarifi gelir.
+
+**Dönen kuleler için:**
+
+```
+top-down orthographic game asset, centered on a circular radially symmetric
+base, the working end clearly pointing to the right, dark fantasy techno-occult,
+painted 3D render with crisp readable edges, obsidian and blackened steel
+construction, emissive {RENK} energy glowing from within, dramatic rim light,
+strong value contrast so the shape reads at 40 pixels, isolated on transparent
+background, square 1:1, 512x512, no ground shadow, no text, no watermark,
+no UI elements
+```
+
+**Sabit kuleler için:**
 
 ```
 top-down orthographic game asset, centered, vertically symmetric, dark fantasy
 techno-occult, painted 3D render with crisp readable edges, obsidian and
 blackened steel construction, emissive {RENK} energy glowing from within,
-dramatic rim light, deep contact shadow inside the silhouette only, strong
-value contrast so the shape reads at 40 pixels, isolated on transparent
-background, square 1:1, 512x512, no ground shadow, no text, no watermark,
-no UI elements
+dramatic rim light, strong value contrast so the shape reads at 40 pixels,
+isolated on transparent background, square 1:1, 512x512, no ground shadow,
+no text, no watermark, no UI elements
 ```
 
 `{RENK}` her kulenin oyundaki vurgu rengiyle değiştirilir; bu renk kule kartında,
@@ -47,18 +87,18 @@ menzil çemberinde ve mermide de kullanıldığı için sprite'ın ondan sapmama
 Ortak dil: sekizgen taban, sarayı andıran oyma süsleme, sancak/flama detayları,
 disiplinli ve simetrik geometri. Zeynep'in kuleleri "emir veren" nesneler gibi durmalı.
 
-### 1. Hiza Emri — `tower-zeynep-1` — `#ec4899`
+### 1. Hiza Emri — `tower-zeynep-1` — `#ec4899` — **döner**
 
 ```
-octagonal command dais of black basalt with engraved parade-ground lines, a
+circular command dais of black basalt with engraved parade-ground lines, a
 single long slender rail-lance barrel lying flat across the top, magenta
 #ec4899 energy running down an open channel in the barrel like a drawn bowstring,
-two small banner fins folded at the base, brass filigree edging
+brass filigree edging on a round dais
 ```
 
 Delici mermi atar: namlu uzun, ince ve tek olmalı — çift namlu mekaniği yanlış anlatır.
 
-### 2. Gösteri Kulesi — `tower-zeynep-2` — `#f9a8d4`
+### 2. Gösteri Kulesi — `tower-zeynep-2` — `#f9a8d4` — **döner**
 
 ```
 circular theatre-light emitter, a ring of eight faceted crystal lenses angled
@@ -69,7 +109,7 @@ lens-flare bloom on the crystal tips
 
 Tek hedefe değil, bir hat boyunca patlar: lenslerin dışa dönük halkası bunu anlatır.
 
-### 3. Taht Mührü — `tower-zeynep-3` — `#f0abfc`
+### 3. Taht Mührü — `tower-zeynep-3` — `#f0abfc` — sabit
 
 ```
 floating royal seal disc hovering above a low throne-shaped plinth, three
@@ -79,8 +119,9 @@ no barrel, no muzzle
 ```
 
 Kendi ateş etmez, üçgen dizilim kurar: üç soket ve namlusuzluk şart.
+Soketleri bağlı kulelere baktığı için bu kule **dönmüyor**; taban serbestçe asimetrik olabilir.
 
-### 4. Zirve Oku — `tower-zeynep-4` — `#ec4899` *(veride tanımlı, şu an devre dışı)*
+### 4. Zirve Oku — `tower-zeynep-4` — `#ec4899` *(veride tanımlı, şu an devre dışı)* — **döner**
 
 ```
 tall narrow ballista spire seen from directly above, a single long arrow shaft
@@ -89,7 +130,7 @@ charge crawling up the shaft toward the tip, minimal footprint, sharp
 elongated form
 ```
 
-### 5. Emir Kulesi — `tower-zeynep-5` — `#ec4899` *(veride tanımlı, şu an devre dışı)*
+### 5. Emir Kulesi — `tower-zeynep-5` — `#ec4899` *(veride tanımlı, şu an devre dışı)* — sabit
 
 ```
 squat command post with a raised speaking horn opening upward, concentric
@@ -97,7 +138,7 @@ pressure rings radiating from the horn mouth, magenta #ec4899 pulse rendered
 as a faint expanding ring, heavy armored collar around the base, no barrel
 ```
 
-### 6. Kin Kulesi — `tower-zeynep-6` — `#991b1b`
+### 6. Kin Kulesi — `tower-zeynep-6` — `#991b1b` — **döner**
 
 ```
 wide-mouthed grudge horn, a 60 degree wedge aperture cut into a heavy dark
@@ -108,7 +149,7 @@ asymmetric and directional unlike the other towers
 
 Tek yönlü koni dalgası atar: burası bilerek simetrik **değil**, ağzın yönü okunmalı.
 
-### 7. Saray Arşivi — `tower-zeynep-7` — `#facc15`
+### 7. Saray Arşivi — `tower-zeynep-7` — `#facc15` — sabit
 
 ```
 palace archive vault, stacked layers of gilded scroll cases and ledger drawers
@@ -119,7 +160,7 @@ no opening, no barrel, no aperture
 
 Hiç ateş etmez, pasif güçlendirir: tamamen kapalı ve ağır durmalı.
 
-### 8. Abartı — `tower-zeynep-8` — `#7c3aed` — **format farklı**
+### 8. Abartı — `tower-zeynep-8` — `#7c3aed` — **format farklı** — sabit
 
 ```
 long slender conduit bar laid horizontally, two tile lengths, a spine of five
@@ -140,7 +181,7 @@ terminal yeşili. Süsleme yok; her parça bir işlev gibi görünmeli.
 
 Hepsinin vurgu rengi `#22c55e`.
 
-### 1. Takipçi — `tower-warrior-1`
+### 1. Takipçi — `tower-warrior-1` — **döner**
 
 ```
 compact targeting scanner, a free-spinning reticle ring mounted over a squat
@@ -149,7 +190,7 @@ to one side, green #22c55e scan line sweeping the ring, exposed cable loom
 running into the base
 ```
 
-### 2. Sunucu — `tower-warrior-2`
+### 2. Sunucu — `tower-warrior-2` — sabit
 
 ```
 server rack seen from above, four blade units slotted into a vented chassis,
@@ -160,7 +201,7 @@ no weapon
 
 Kendi ateş etmez, iki kuleye bağlanır: iki kalın kablonun zıt kenarlardan çıkması bunu anlatır.
 
-### 3. İzolasyon Kulesi — `tower-warrior-3`
+### 3. İzolasyon Kulesi — `tower-warrior-3` — sabit
 
 ```
 containment field emitter, three curved pylons leaning inward around an empty
@@ -168,7 +209,7 @@ center, green #22c55e field arcing between the pylon tips, heavy grounded base
 with warning chevrons, no barrel, the empty center reading as the active part
 ```
 
-### 4. Obsesyon Kulesi — `tower-warrior-4`
+### 4. Obsesyon Kulesi — `tower-warrior-4` — **döner**
 
 ```
 mechanical fixation lens, a large iris aperture filling most of the top face,
@@ -177,7 +218,7 @@ iris throat, brass focus actuators around the rim, the whole object reading as
 one unblinking eye
 ```
 
-### 5. Debug Lazer — `tower-warrior-5`
+### 5. Debug Lazer — `tower-warrior-5` — **döner**
 
 ```
 prism laser emitter, a triangular cut crystal held in a gimbal cradle, green
@@ -188,7 +229,7 @@ precise muzzle
 
 Aşırı ısınma mekaniği var: kızarmış radyatör kanatları bunu görünür kılar.
 
-### 6. Ucube — `tower-warrior-6`
+### 6. Ucube — `tower-warrior-6` — **döner**
 
 ```
 unstable overgrown core, a matte black irregular mass that has burst out of its
@@ -199,7 +240,7 @@ clearly larger and heavier than the other towers
 
 Geç oyun kulesi: diğerlerinden belirgin biçimde büyük ve düzensiz durmalı.
 
-### 7. Derleyici — `tower-warrior-7` — **öneri, veride yok**
+### 7. Derleyici — `tower-warrior-7` — **öneri, veride yok** — sabit
 
 Kitte ekonomi kulesi yok. Önerilen rol: ateş etmez; her dalga sonunda sahadaki
 **yalnız duran** Atakan kulesi sayısına göre altın üretir, yani pasifi ödüle çevirir.
@@ -214,7 +255,7 @@ small stamped output tray on the opposite edge, no barrel, no weapon
 Üretim yapan bir cihaz gibi durmalı; ilerleme çubuğu "her dalga bir şey teslim ediyor"
 hissini taşır.
 
-### 8. Güvenlik Duvarı — `tower-warrior-8` — **öneri, veride yok**
+### 8. Güvenlik Duvarı — `tower-warrior-8` — **öneri, veride yok** — sabit
 
 Kitte fiziksel engel yok. Önerilen rol: yol karesini kapatır, düşmanı yeniden
 yönlendirir; kırılana kadar canı vardır ve üstünden geçmeye çalışan düşmana hasar verir.
@@ -235,7 +276,7 @@ Bariyer kulesi: Abartı gibi **1024×512 (2:1 yatay)** üretilmeli, kare değil.
 Ortak dil: göz, ağız, zincir, kırık cam, mühür. Organik ve rahatsız edici;
 Atakan'ın aksine mühendislik ürünü gibi görünmemeli.
 
-### 1. Hedefçi — `tower-archer-1` — `#8b5cf6`
+### 1. Hedefçi — `tower-archer-1` — `#8b5cf6` — **döner**
 
 ```
 single fixated eye set in a ring of dark bone plates, pupil narrowed to a
@@ -243,7 +284,7 @@ vertical slit, violet #8b5cf6 glow behind the iris, thin needle spines around
 the socket all angled inward toward the pupil, wet obsidian sheen
 ```
 
-### 2. Parlama — `tower-archer-2` — `#db2777`
+### 2. Parlama — `tower-archer-2` — `#db2777` — **döner**
 
 ```
 swelling flare heart, a cracked dark shell straining around a bright core,
@@ -253,7 +294,7 @@ visibly pushed apart and about to burst, no barrel, tension in the silhouette
 
 Öldüremezse patlar: kabuğun çatlayıp ayrılması bu gerilimi taşımalı.
 
-### 3. Lanet Kulesi — `tower-archer-3` — `#7f1dff`
+### 3. Lanet Kulesi — `tower-archer-3` — `#7f1dff` — sabit
 
 ```
 stacked curse seal, three concentric carved stone rings each engraved with
@@ -264,7 +305,7 @@ no barrel
 
 Sınırsız biriken lanet: taşan, damlayan bir kap gibi durmalı.
 
-### 4. Ölüler Bağı — `tower-archer-4` — `#14b8a6`
+### 4. Ölüler Bağı — `tower-archer-4` — `#14b8a6` — **döner**
 
 ```
 underworld gate ring standing over a black opening, four heavy chains rising
@@ -273,7 +314,7 @@ coming up out of the hole, bone and iron gate frame, the opening reading as
 genuinely deep
 ```
 
-### 5. Kırık Ayna — `tower-archer-5` — `#e879f9`
+### 5. Kırık Ayna — `tower-archer-5` — `#e879f9` — **döner**
 
 ```
 shattered mirror disc held in a dark ornate frame, glass broken into large
@@ -284,7 +325,7 @@ of something not present in the shards
 
 Hasar depolar sonra patlatır: çatlaklarda biriken ışık bunu anlatır.
 
-### 6. Fısıltı Korosu — `tower-archer-6` — `#14b8a6`
+### 6. Fısıltı Korosu — `tower-archer-6` — `#14b8a6` — sabit
 
 ```
 choir of small open mouths arranged in a ring on a dark stone drum, all mouths
@@ -292,7 +333,7 @@ open mid-whisper, faint teal #14b8a6 sound rings rippling outward from the
 cluster, worn carved stone, unsettling rather than mechanical, no barrel
 ```
 
-### 7. Ağıt — `tower-archer-7` — `#a21caf` — **öneri, veride yok**
+### 7. Ağıt — `tower-archer-7` — `#a21caf` — **öneri, veride yok** — sabit
 
 Kitte doğrudan alan hasarı yok; Melis'in tüm hasarı tekil hedef, lanet veya gecikmeli
 patlama üzerinden geliyor. Önerilen rol: menzilindeki tüm düşmanlara sürekli, küçük
@@ -307,7 +348,7 @@ bronze and black stone, no barrel
 
 Sürekli alan hasarı: çan sallanır halde ve dalgalar dışa doğru okunmalı.
 
-### 8. Yas Sunağı — `tower-archer-8` — `#2dd4bf` — **öneri, veride yok**
+### 8. Yas Sunağı — `tower-archer-8` — `#2dd4bf` — **öneri, veride yok** — sabit
 
 Melis'in stres biriktirmekten başka çıkışı yok. Önerilen rol: ateş etmez; biriken
 stresi harcayarak nexusa can döndürür, yani baskıyı tahliye vanası olarak kullanır.

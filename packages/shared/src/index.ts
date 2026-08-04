@@ -115,6 +115,8 @@ export type TowerSnapshot = {
   x: number;
   y: number;
   orientation?: "horizontal" | "vertical";
+  /** Radians toward the current target. Only sent for towers that aim. */
+  facing?: number;
   level: number;
   range: number;
   color: number;
@@ -277,6 +279,35 @@ export {
   type RuntimePath,
   type WorldPoint
 } from "./map.js";
+
+/**
+ * Towers whose muzzle should turn toward what they are shooting.
+ *
+ * Kept as an explicit list rather than inferred from hitType: Kin Kulesi is an
+ * aura tower but fires a directional cone, while Sunucu throws projectiles yet
+ * is a global rack with no muzzle. Auras, passives and area curses never aim.
+ *
+ * Taht Muhru is excluded on purpose -- it does shoot, but its sockets read as
+ * pointing at the two towers it is synthesising with, so turning it toward an
+ * enemy would break that.
+ */
+const AIMING_TOWER_IDS = new Set<string>([
+  "zeynep-1",
+  "zeynep-2",
+  "zeynep-6",
+  "warrior-1",
+  "warrior-4",
+  "warrior-5",
+  "warrior-6",
+  "archer-1",
+  "archer-2",
+  "archer-4",
+  "archer-5"
+]);
+
+export function towerAims(definitionId: string) {
+  return AIMING_TOWER_IDS.has(definitionId);
+}
 
 export const upgradeCosts: Record<UpgradeId, number> = {
   damage: 35,
