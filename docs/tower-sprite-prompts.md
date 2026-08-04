@@ -5,17 +5,41 @@ Bu doküman, onların yerine geçecek çizilmiş sprite'lar için üretim prompt
 
 ## Teknik çerçeve
 
-Mevcut düşman sprite'ları referans stildir (`public/images/enemies/*.png`): 512×512, şeffaf
-arka plan, ortalanmış, yüksek kontrastlı boyalı 3B render.
+Mevcut düşman sprite'ları referans stildir (`public/images/enemies/*.png`): şeffaf arka plan,
+ortalanmış, yüksek kontrastlı boyalı 3B render.
 
 | Kural | Değer | Neden |
 |---|---|---|
-| Çözünürlük | 512×512 PNG | Düşman sprite'larıyla aynı |
+| Üretim çözünürlüğü | 1024×1024 | Kırpma payı bırakır |
+| Oyuna giren dosya | 128×128 WebP | Aşağıdaki Ölçek bölümü |
 | Arka plan | Şeffaf | Kule zemin karesinin üstüne biner |
 | Görüş açısı | Tam dik tepeden | Aşağıdaki Dik bakış bölümü — zorlaması gerekiyor |
-| Kompozisyon | Ortalanmış; dönenlerde yuvarlak taban | Aşağıdaki Yönelme bölümüne bakın |
-| Ekranda boyut | 52×52 px (grid karesi 34 px) | Siluet 40 px'te okunmalı |
+| Kompozisyon | Daire ortada, çevresinde pay | Aşağıdaki Ölçek bölümü |
+| Ekranda boyut | Disk = 1 hücre (34 px) | Daire kareyi taşmamalı |
 | Zemin gölgesi | Yok | Gölgeyi oyun kendi çiziyor |
+
+## Ölçek ve çerçeve
+
+İki kural sprite'ın nasıl çerçeveleneceğini belirliyor.
+
+**1. Daire hücreyi taşmaz.** Kulenin dairesi tam olarak durduğu karenin kenar
+uzunluğu kadar çizilir, daha büyük değil. Namlu, mızrak, çıkıntı gibi parçalar
+dairenin dışına taşabilir — taşması gereken de zaten onlardır.
+
+Bunu mümkün kılmak için sprite karesinde daire **%70**'lik bir yer kaplar, kalan
+pay çıkıntılara ayrılır (`TOWER_ART_DISC_RATIO`). Oyun sprite'ı bu orana göre
+ölçekler, yani daire her zaman hücreye oturur, çıkıntı ne kadar uzun olursa olsun.
+Pratikte: daireyi ortala, çevresinde her yönde dairenin yarıçapının ~%43'ü kadar
+boşluk bırak, çıkıntılar o boşluğa taşsın.
+
+**2. Dosya 128×128 gider.** Kule ekranda ~34 px çiziliyor. 512 veya 1024'lük bir
+dokuyu oraya küçültmek aşırı örnekleme yapıp detayı gürültüye çeviriyordu —
+"garip görüntü" bundan kaynaklanıyor. 128 hem 2'nin kuvveti (mipmap zinciri
+kurulabiliyor, `mipmapFilter` açık) hem de yüksek yoğunluklu ekranlar için yeterli
+pay bırakıyor. Üretimi 1024'te yapın, dosyaya 128 olarak inin.
+
+**Saray Arşivi 2×2'dir.** Dört hücre kaplar, hücre köşesine oturur ve dairesi iki
+hücre eninde çizilir. Çerçeve kuralı aynı; sadece daha büyük render edilir.
 
 Silüet testi: sprite'ı 40 px'e küçültüp tek renk siyaha çevirdiğinde hangi kule olduğu
 ayırt edilebilmeli. Detay değil, dış hat taşır.
@@ -25,8 +49,9 @@ halka ile gösteriliyor (aşağıdaki Seviye halkası bölümü). Sprite'ın en 
 yaklaşık %10'luk bandı sade bir bilezik olmalı — oraya ince detay, çıkıntı veya
 yazı koyulursa halkanın altında kalır.
 
-Dosya adı `tower-<id>.png` olmalı; `PreloaderScene` içinde `this.load.image("tower-" + id, ...)`
-ile yüklenip `createProceduralTowerTextures()` çağrısı kaldırıldığında doğrudan devreye girer.
+Dosya adı `tower-<id>.webp` olmalı ve `apps/web/public/images/towers/` altına konmalı.
+`PreloaderScene` içindeki `PAINTED_TOWER_IDS` listesine id eklenince devreye girer;
+listede olmayan kuleler prosedürel çizimle çalışmaya devam eder.
 
 ## Dik bakış — tek başına "top-down" yazmak yetmiyor
 
@@ -101,7 +126,7 @@ Kuleler artık ateş ettikleri düşmana **dönüyor**. Sunucu her tick hedefin 
 hesaplayıp snapshot'a `facing` olarak koyuyor, istemci de sprite'ı o açıya
 yumuşatarak çeviriyor (`GameScene.applyTowerFacing`).
 
-18 kulenin 11'i dönüyor. Auralar, pasifler, global Sunucu ve alan lanetleri sabit
+18 kulenin 12'si dönüyor. Auralar, pasifler, global Sunucu ve alan lanetleri sabit
 kalıyor — liste `packages/shared/src/index.ts` içindeki `AIMING_TOWER_IDS`.
 
 Bunun sprite üretimine iki sonucu var:
@@ -210,7 +235,7 @@ lens-flare bloom on the crystal tips
 
 Tek hedefe değil, bir hat boyunca patlar: lenslerin dışa dönük halkası bunu anlatır.
 
-### 3. Taht Mührü — `tower-zeynep-3` — `#f0abfc` — sabit
+### 3. Taht Mührü — `tower-zeynep-3` — `#f0abfc` — **döner**
 
 ```
 floating royal seal disc hovering above a low throne-shaped plinth, three
@@ -219,8 +244,8 @@ light bridging between the sockets, wax-seal relief carved into the disc face,
 no barrel, no muzzle
 ```
 
-Kendi ateş etmez, üçgen dizilim kurar: üç soket ve namlusuzluk şart.
-Soketleri bağlı kulelere baktığı için bu kule **dönmüyor**; taban serbestçe asimetrik olabilir.
+Sağ tarafındaki namlu yüzünden bu kule dönüyor: namlu hedefe çevrilir, gövde
+sabit bir disk olarak kalır.
 
 ### 4. Zirve Oku — `tower-zeynep-4` — `#ec4899` *(veride tanımlı, şu an devre dışı)* — **döner**
 
@@ -250,7 +275,7 @@ asymmetric and directional unlike the other towers
 
 Tek yönlü koni dalgası atar: burası bilerek simetrik **değil**, ağzın yönü okunmalı.
 
-### 7. Saray Arşivi — `tower-zeynep-7` — `#facc15` — sabit
+### 7. Saray Arşivi — `tower-zeynep-7` — `#facc15` — sabit — **2×2**
 
 ```
 palace archive vault, concentric tiers of gilded scroll cases and ledger drawers
@@ -260,6 +285,8 @@ no opening, no barrel, no aperture
 ```
 
 Hiç ateş etmez, pasif güçlendirir: tamamen kapalı ve ağır durmalı.
+Dört hücre kapladığı için diğerlerinin iki katı boyutta çizilir; detay yoğunluğu
+ona göre artırılabilir.
 
 ### 8. Abartı — `tower-zeynep-8` — `#7c3aed` — **format farklı** — sabit
 

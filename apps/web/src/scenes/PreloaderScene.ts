@@ -139,7 +139,10 @@ export class PreloaderScene extends Phaser.Scene {
     }
 
     const graphics = this.make.graphics({ x: 0, y: 0 }, false);
-    const size = 52;
+    // 68 rather than 52 so the 48px disc takes up TOWER_ART_DISC_RATIO of the
+    // frame, the same margin the painted sprites reserve. The glyphs are drawn
+    // from `center`, so they follow automatically.
+    const size = 68;
     const center = size / 2;
     const palette = getVisualPalette(tower);
 

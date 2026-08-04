@@ -30,6 +30,7 @@ import {
   pathToWorldPoints,
   scaleEditableMap,
   worldToGrid,
+  getTowerGridSpan,
   getTowerUpgradeCost,
   towerAims,
   towerCatalog,
@@ -3450,16 +3451,40 @@ export class MatchRoom extends Room<MatchState> {
       };
     }
 
+    // A 2x2 tower centres on a cell corner rather than a cell.
+    if (getTowerGridSpan(definitionId) === 2) {
+      const gridSize = getMapGridSize(this.activeMap);
+      const col = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round(x / gridSize)));
+      const row = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - TOWER_BUILD_TOP) / gridSize)));
+      return {
+        x: col * gridSize,
+        y: TOWER_BUILD_TOP + row * gridSize
+      };
+    }
+
     return gridToWorld(gridPoint.col, gridPoint.row, this.activeMap);
   }
 
   private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
-    const gridPoint = worldToGrid(x, y, this.activeMap);
-    if (definitionId !== "zeynep-8") {
-      return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
+    if (definitionId === "zeynep-8") {
+      return [];
     }
 
-    return [];
+    if (getTowerGridSpan(definitionId) === 2) {
+      const gridSize = getMapGridSize(this.activeMap);
+      const col = Math.round(x / gridSize);
+      const row = Math.round((y - TOWER_BUILD_TOP) / gridSize);
+      const cells = [
+        { col: col - 1, row: row - 1 },
+        { col, row: row - 1 },
+        { col: col - 1, row },
+        { col, row }
+      ];
+      return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
+    }
+
+    const gridPoint = worldToGrid(x, y, this.activeMap);
+    return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
   }
 
   private canPlaceAbartiEdge(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {

@@ -16,7 +16,11 @@ const game = new Phaser.Game({
     antialias: true,
     antialiasGL: true,
     pixelArt: false,
-    roundPixels: false
+    roundPixels: false,
+    // Painted tower art is authored far larger than the ~34px it draws at.
+    // Without mipmaps that minification undersamples and the fine detail
+    // shimmers into noise; power-of-two textures get a proper filter chain.
+    mipmapFilter: "LINEAR_MIPMAP_LINEAR"
   },
   scene: [BootScene, PreloaderScene, GameScene],
   physics: {

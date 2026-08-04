@@ -287,13 +287,14 @@ export {
  * aura tower but fires a directional cone, while Sunucu throws projectiles yet
  * is a global rack with no muzzle. Auras, passives and area curses never aim.
  *
- * Taht Muhru is excluded on purpose -- it does shoot, but its sockets read as
- * pointing at the two towers it is synthesising with, so turning it toward an
- * enemy would break that.
+ * Taht Muhru was excluded while it was a socketed seal, but its art now carries
+ * an explicit barrel on the right, and a muzzle that never turns reads worse
+ * than one that does.
  */
 const AIMING_TOWER_IDS = new Set<string>([
   "zeynep-1",
   "zeynep-2",
+  "zeynep-3",
   "zeynep-6",
   "warrior-1",
   "warrior-4",
@@ -308,6 +309,23 @@ const AIMING_TOWER_IDS = new Set<string>([
 export function towerAims(definitionId: string) {
   return AIMING_TOWER_IDS.has(definitionId);
 }
+
+/**
+ * How many grid cells a tower covers per side. Saray Arsivi is a 2x2 vault, so
+ * it snaps to a cell corner and occupies four tiles. Abarti is not a tile tower
+ * at all and goes through the edge placement path instead.
+ */
+export function getTowerGridSpan(definitionId: string) {
+  return definitionId === "zeynep-7" ? 2 : 1;
+}
+
+/**
+ * Painted tower art reserves a margin around the disc so muzzles and spikes can
+ * overhang without making the disc itself smaller. The disc is this fraction of
+ * the frame, which lets the renderer size a sprite so its disc lands exactly on
+ * the tile regardless of how much the art sticks out.
+ */
+export const TOWER_ART_DISC_RATIO = 0.7;
 
 export const upgradeCosts: Record<UpgradeId, number> = {
   damage: 35,

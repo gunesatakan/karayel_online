@@ -4,6 +4,7 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
   buildRuntimePaths,
@@ -11,6 +12,7 @@ import {
   getMapGridSize as getSharedMapGridSize,
   getMapPoints,
   getPointAlongRuntimePath,
+  getTowerGridSpan,
   getTowerSellRefund,
   getTowerUpgradeCost,
   getTile,
@@ -781,7 +783,9 @@ export class GameScene extends Phaser.Scene {
     this.selectedPlacedTowerId = undefined;
     this.placementGrid?.setVisible(true);
     this.placementGhost?.destroy();
-    const previewSize = Math.max(22, this.getMapCellSize() * 1.2);
+    // Matches the placed sprite: disc on the tile, frame slightly larger to hold
+    // whatever overhangs it.
+    const previewSize = (this.getMapCellSize() * getTowerGridSpan(tower.id)) / TOWER_ART_DISC_RATIO;
     const ghostWidth = tower.id === "zeynep-8" ? (this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     const ghostHeight = tower.id === "zeynep-8" ? (this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
@@ -1029,6 +1033,18 @@ export class GameScene extends Phaser.Scene {
         y: top + lineRow * gridSize
       };
     }
+
+    // A 2x2 tower centres on a cell corner rather than a cell.
+    if (getTowerGridSpan(definitionId) === 2) {
+      const gridSize = this.getMapCellSize();
+      const col = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round(x / gridSize)));
+      const row = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - TOWER_BUILD_TOP) / gridSize)));
+      return {
+        x: col * gridSize,
+        y: TOWER_BUILD_TOP + row * gridSize
+      };
+    }
+
     return gridToWorld(gridPoint.col, gridPoint.row, this.selectedMapData);
   }
 
@@ -1077,12 +1093,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
-    const gridPoint = worldToGrid(x, y, this.selectedMapData);
-    if (definitionId !== "zeynep-8") {
-      return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
+    if (definitionId === "zeynep-8") {
+      return [];
     }
 
-    return [];
+    if (getTowerGridSpan(definitionId) === 2) {
+      const gridSize = this.getMapCellSize();
+      const col = Math.round(x / gridSize);
+      const row = Math.round((y - TOWER_BUILD_TOP) / gridSize);
+      const cells = [
+        { col: col - 1, row: row - 1 },
+        { col, row: row - 1 },
+        { col: col - 1, row },
+        { col, row }
+      ];
+      return cells.every((cell) => isInsideMap(this.selectedMapData, cell.col, cell.row)) ? cells : [];
+    }
+
+    const gridPoint = worldToGrid(x, y, this.selectedMapData);
+    return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
   }
 
   private canPlaceAbartiEdgePreview(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
@@ -2119,8 +2148,6 @@ export class GameScene extends Phaser.Scene {
     const activeIds = new Set(towers.map((tower) => tower.id));
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     const cellSize = this.getMapCellSize();
-    const spriteSize = Math.max(20, cellSize * 1.12);
-    const haloRadius = Math.max(10, cellSize * 0.56);
     const linkRadius = Math.max(14, cellSize * 0.8);
     const statusOffset = Math.max(14, cellSize * 0.66);
 
@@ -2172,10 +2199,16 @@ export class GameScene extends Phaser.Scene {
         this.towers.set(tower.id, rendered);
       }
 
+      // The disc covers exactly the tile it sits on -- 2x2 towers cover four --
+      // and the sprite is sized larger only to make room for whatever the art
+      // hangs outside the disc, such as Taht Muhru's barrel.
+      const discSize = cellSize * getTowerGridSpan(tower.definitionId);
+      const spriteSize = discSize / TOWER_ART_DISC_RATIO;
+
       const texture = `tower-${tower.definitionId}`;
-      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}`;
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
-        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, haloRadius);
+        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.status.setPosition(tower.x, tower.y + statusOffset).setText(tower.status ?? "");
@@ -2187,8 +2220,9 @@ export class GameScene extends Phaser.Scene {
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
       const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
       const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
-      // Derived from the frame rather than a fixed 52, because painted towers
-      // ship at 256 while the procedural glyphs are still generated at 52.
+      // Derived from the frame rather than a constant: painted art and the
+      // procedural glyphs ship at different sizes, but both reserve the same
+      // disc-to-frame ratio, so this lands the disc on the tile either way.
       const textureScale = spriteSize / Math.max(1, rendered.base.frame.width);
       rendered.base.setScale(selectionScale * textureScale * footprintScaleX, selectionScale * textureScale * footprintScaleY);
       rendered.base.setVisible(tower.definitionId !== "zeynep-8");
