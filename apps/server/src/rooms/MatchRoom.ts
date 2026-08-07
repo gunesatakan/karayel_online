@@ -1231,6 +1231,7 @@ export class MatchRoom extends Room<MatchState> {
       this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
       this.awardGoldToPlayers(20 + this.wave * 3);
+      this.resetTowerHeatAfterWave();
       this.setupPhase = true;
       this.setupReadyPlayerIds.clear();
       return;
@@ -1289,6 +1290,13 @@ export class MatchRoom extends Room<MatchState> {
       this.setupPhase = false;
       this.setupReadyPlayerIds.clear();
       this.spawnCooldownMs = 350;
+    }
+  }
+
+  private resetTowerHeatAfterWave() {
+    for (const tower of this.towers.values()) {
+      tower.temperature = 0;
+      tower.heatLocked = false;
     }
   }
 
