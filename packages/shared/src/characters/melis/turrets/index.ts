@@ -123,13 +123,13 @@ export const melisTowers: TowerDefinition[] = [
   },
   {
     id: "archer-7", characterId: "archer", name: "Gölge Cephaneliği", role: "Mühimmat ikmali",
-    description: "Melis kulelerinin mühimmat ve kristal depolarını yeniler.", classType: "support", damageType: "none", hitType: "aura",
+    description: "Taşınan enerjiyi tüketerek mühimmat üretir; lojistik işçisi üretilen mühimmatı sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
     mechanics: ["resource-supply", "ammunition"], cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },
   {
     id: "archer-8", characterId: "archer", name: "Ruh Reaktörü", role: "Enerji ikmali",
-    description: "Melis kulelerinin enerji depolarını sürekli doldurur.", classType: "support", damageType: "none", hitType: "aura",
+    description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
     mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }

@@ -23,6 +23,7 @@ import {
   type CharacterDefinition,
   type CharacterId,
   type DamageEventSnapshot,
+  type CrystalNodeSnapshot,
   type DroneSnapshot,
   type EditableMapData,
   type EnemySnapshot,
@@ -54,6 +55,7 @@ type ControlActionDetail = {
     | "upgradeTower"
     | "sellTower"
     | "setUnderworldMode"
+    | "toggleAmmoLogistics"
     | "toggleAbartiOrientation"
     | "clearSelection";
   towerId?: string;
@@ -212,6 +214,7 @@ export class GameScene extends Phaser.Scene {
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
+  private crystalGraphics?: Phaser.GameObjects.Graphics;
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -962,6 +965,11 @@ export class GameScene extends Phaser.Scene {
         this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId && detail.underworldMode) {
           this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: detail.underworldMode });
+        }
+        break;
+      case "toggleAmmoLogistics":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
         }
         break;
       case "toggleAbartiOrientation":
@@ -1719,6 +1727,7 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("enemies", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
+    this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderProjectiles(frame.snapshot.projectiles);
@@ -2793,7 +2802,7 @@ export class GameScene extends Phaser.Scene {
 
     const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
     for (const drone of drones) {
-      const texture = drone.mode === "repair" ? "drone-repair" : "drone-attack";
+      const texture = drone.mode === "repair" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
       if (!sprite) {
         sprite = this.physics.add.sprite(drone.x, drone.y, texture);
@@ -2814,7 +2823,23 @@ export class GameScene extends Phaser.Scene {
       sprite.setPosition(drone.x, drone.y);
       sprite.setScale(drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
+      sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
+    }
+  }
+
+  private renderCrystalNodes(nodes: CrystalNodeSnapshot[]) {
+    const graphics = this.crystalGraphics ?? this.add.graphics().setDepth(8);
+    this.crystalGraphics = graphics;
+    graphics.clear();
+    const pulse = 1 + Math.sin(Date.now() / 260) * 0.12;
+    for (const node of nodes) {
+      graphics.fillStyle(0x7c3aed, 0.24);
+      graphics.fillCircle(node.x, node.y, 15 * pulse);
+      graphics.lineStyle(2, 0xc4b5fd, 0.9);
+      graphics.strokeCircle(node.x, node.y, 9 * pulse);
+      graphics.fillStyle(0xe9d5ff, 0.95);
+      graphics.fillTriangle(node.x, node.y - 9, node.x + 7, node.y + 7, node.x - 7, node.y + 7);
     }
   }
 
@@ -4327,6 +4352,10 @@ export class GameScene extends Phaser.Scene {
         pullCount: selectedTower.melisUnderworldPullCount ?? 0,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
+      ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
+        enabled: selectedTower.ammoLogisticsEnabled !== false,
+        canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
       upgrade: {
         label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",
         enabled: canUpgrade
@@ -4338,6 +4367,10 @@ export class GameScene extends Phaser.Scene {
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+        ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
         ...(isUnderworldTower ? [
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
           `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
@@ -4351,7 +4384,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -4398,7 +4431,9 @@ export class GameScene extends Phaser.Scene {
       : "";
     const ammoLabels = { bullet: "Mermi", auraCrystal: "Aura Kristali", powerCrystal: "Güç Kristali" } as const;
     const resourceText = selectedTower.resourceProvider
-      ? ` | ${selectedTower.resourceProvider === "ammunition" ? "Mühimmat ikmali" : "Enerji ikmali"}`
+      ? selectedTower.resourceProvider === "ammunition"
+        ? ` | Fabrika ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
+        : ` | Enerji Deposu ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
       : selectedTower.ammoType
         ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : "";
@@ -4407,6 +4442,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedTowerStatsText?.setText([
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+      ...(!selectedTower.resourceProvider ? [`Mühimmat akışı: ${selectedTower.ammoLogisticsEnabled === false ? "Kapalı" : "Açık"}`] : []),
       ...(selectedTower.definitionId === "archer-4" ? [
         `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
         `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`

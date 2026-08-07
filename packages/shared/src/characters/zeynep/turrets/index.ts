@@ -123,8 +123,8 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
     return {
       ...tower,
       description: providesAmmunition
-        ? "Aynı oyuncuya ait aktif kulelerin kullandığı mühimmatı sürekli yeniler."
-        : "Aynı oyuncuya ait aktif kulelerin ortak enerji rezervini sürekli yeniler.",
+        ? "Taşınan enerjiyi tüketerek mühimmat üretir; lojistik işçisi üretilen mühimmatı sevkiyatı açık kulelere taşır."
+        : "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.",
       classType: "support",
       damageType: "none",
       hitType: "aura",

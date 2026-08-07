@@ -67,10 +67,13 @@ const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 60;
 const TOWER_BASE_ENERGY = 100;
-const AMMO_SUPPLY_PER_SECOND = 6;
-const ENERGY_SUPPLY_PER_SECOND = 8;
 const SHOT_AMMO_COST = 1;
 const SHOT_ENERGY_COST = 1;
+const LOGISTICS_WORKER_SPEED = 82;
+const LOGISTICS_WORKER_CAPACITY = 12;
+const AMMO_FACTORY_RATE_PER_SECOND = 5;
+const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
+const RESOURCE_PROVIDER_CAPACITY = 240;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -371,6 +374,7 @@ type TowerModel = {
   maxAmmo: number;
   energy: number;
   maxEnergy: number;
+  ammoLogisticsEnabled: boolean;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
@@ -447,6 +451,12 @@ type DroneModel = DroneSnapshot & {
   damage: number;
   repairAmount: number;
   ttlMs: number;
+  logisticsPhase?: "pickup" | "deliver";
+  cargoAmmoType?: AmmoType;
+};
+
+type ToggleAmmoLogisticsMessage = {
+  towerId?: string;
 };
 
 type BeamModel = BeamSnapshot & {
@@ -772,6 +782,13 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.setTowerMode(client, message);
+    });
+
+    this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => {
+      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+      if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider) {
+        tower.ammoLogisticsEnabled = !tower.ammoLogisticsEnabled;
+      }
     });
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
@@ -1338,27 +1355,14 @@ export class MatchRoom extends Room<MatchState> {
     return "bullet";
   }
 
-  private updateTowerResources(seconds: number) {
-    const providerCounts = new Map<string, { ammunition: number; energy: number }>();
+  private updateResourceFactories(seconds: number) {
     for (const tower of this.towers.values()) {
-      if (tower.hp <= 0 || !tower.definition.resourceProvider) {
+      if (tower.hp <= 0 || tower.definition.resourceProvider !== "ammunition" || tower.energy <= 0 || tower.ammo >= tower.maxAmmo) {
         continue;
       }
-      const counts = providerCounts.get(tower.ownerId) ?? { ammunition: 0, energy: 0 };
-      counts[tower.definition.resourceProvider] += 1;
-      providerCounts.set(tower.ownerId, counts);
-    }
-
-    for (const tower of this.towers.values()) {
-      if (tower.hp <= 0 || tower.definition.resourceProvider) {
-        continue;
-      }
-      const counts = providerCounts.get(tower.ownerId);
-      if (!counts) {
-        continue;
-      }
-      tower.ammo = Math.min(tower.maxAmmo, tower.ammo + counts.ammunition * AMMO_SUPPLY_PER_SECOND * seconds);
-      tower.energy = Math.min(tower.maxEnergy, tower.energy + counts.energy * ENERGY_SUPPLY_PER_SECOND * seconds);
+      const production = Math.min(AMMO_FACTORY_RATE_PER_SECOND * seconds, tower.maxAmmo - tower.ammo, tower.energy / AMMO_FACTORY_ENERGY_PER_AMMO);
+      tower.ammo += production;
+      tower.energy = Math.max(0, tower.energy - production * AMMO_FACTORY_ENERGY_PER_AMMO);
     }
   }
 
@@ -1373,7 +1377,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateTowers(deltaTime: number) {
     const now = Date.now();
-    this.updateTowerResources(deltaTime / 1000);
+    this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
       if (tower.hp <= 0) {
@@ -2729,10 +2733,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateDrones(deltaTime: number, seconds: number) {
+    this.ensureLogisticsWorkers();
     const nexusX = GAME_WORLD_WIDTH / 2;
     const nexusY = GAME_WORLD_HEIGHT - 26;
 
     for (const [id, drone] of this.drones) {
+      if (drone.mode === "crystalCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
+        this.updateLogisticsWorker(drone, seconds);
+        continue;
+      }
       drone.ttlMs -= deltaTime;
 
       if (drone.mode === "attack") {
@@ -2878,6 +2887,150 @@ export class MatchRoom extends Room<MatchState> {
         this.damageTower(route.targetTower, enemy.attack);
         enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
       }
+    }
+  }
+
+  private getCrystalNodes() {
+    const origin = getMapOrigin(this.activeMap);
+    const { gridSize } = getMapMetrics(this.activeMap);
+    const columns = [0.2, 0.5, 0.8];
+    return columns.map((ratio, index) => ({
+      id: `crystal-${index + 1}`,
+      x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
+      y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.35 : 0.62)))) * gridSize + gridSize / 2
+    }));
+  }
+
+  private ensureLogisticsWorkers() {
+    const workerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "energyTransport"];
+    const origin = getMapOrigin(this.activeMap);
+    const { gridSize } = getMapMetrics(this.activeMap);
+    for (const ownerId of this.state.players.keys()) {
+      for (const [index, mode] of workerModes.entries()) {
+        const exists = Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === mode);
+        if (exists) {
+          continue;
+        }
+        const id = `logistics-${ownerId}-${mode}`;
+        this.drones.set(id, {
+          id,
+          ownerId,
+          mode,
+          x: origin.x + gridSize * (1.5 + index),
+          y: origin.y + gridSize * (this.activeMap.rows - 1.5),
+          vx: 0,
+          vy: 0,
+          damage: 0,
+          repairAmount: 0,
+          ttlMs: Number.POSITIVE_INFINITY,
+          logisticsPhase: "pickup",
+          cargo: 0,
+          capacity: LOGISTICS_WORKER_CAPACITY,
+          speed: LOGISTICS_WORKER_SPEED
+        });
+      }
+    }
+  }
+
+  private moveLogisticsWorker(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
+    const dx = targetX - worker.x;
+    const dy = targetY - worker.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance <= this.scaleWorldDistance(7)) {
+      worker.x = targetX;
+      worker.y = targetY;
+      worker.vx = 0;
+      worker.vy = 0;
+      return true;
+    }
+    const speed = this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED);
+    worker.vx = (dx / Math.max(1, distance)) * speed;
+    worker.vy = (dy / Math.max(1, distance)) * speed;
+    worker.x += worker.vx * seconds;
+    worker.y += worker.vy * seconds;
+    return false;
+  }
+
+  private updateLogisticsWorker(worker: DroneModel, seconds: number) {
+    const capacity = worker.capacity ?? LOGISTICS_WORKER_CAPACITY;
+    if (worker.mode === "crystalCollector") {
+      if (worker.logisticsPhase === "pickup") {
+        const nodes = this.getCrystalNodes();
+        const node = nodes[Math.abs(hashString(worker.ownerId)) % nodes.length];
+        if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
+          worker.cargo = capacity;
+          worker.logisticsPhase = "deliver";
+        }
+        return;
+      }
+      const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy" && tower.energy < tower.maxEnergy);
+      if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
+        const delivered = Math.min(worker.cargo ?? 0, reactor.maxEnergy - reactor.energy);
+        reactor.energy += delivered;
+        worker.cargo = 0;
+        worker.logisticsPhase = "pickup";
+      }
+      return;
+    }
+
+    if (worker.mode === "energyTransport") {
+      if (worker.logisticsPhase === "pickup") {
+        const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy" && tower.energy > 0);
+        if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
+          const loaded = Math.min(capacity, reactor.energy);
+          reactor.energy -= loaded;
+          worker.cargo = loaded;
+          worker.logisticsPhase = "deliver";
+          worker.targetTowerId = "";
+        }
+        return;
+      }
+      const target = (worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined) ?? Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy)
+        .sort((left, right) => left.energy / Math.max(1, left.maxEnergy) - right.energy / Math.max(1, right.maxEnergy))[0];
+      if (!target) {
+        worker.logisticsPhase = "pickup";
+        return;
+      }
+      worker.targetTowerId = target.id;
+      if (this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
+        const delivered = Math.min(worker.cargo ?? 0, target.maxEnergy - target.energy);
+        target.energy += delivered;
+        worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
+        worker.logisticsPhase = "pickup";
+        worker.targetTowerId = "";
+      }
+      return;
+    }
+
+    if (worker.logisticsPhase === "pickup") {
+      const target = Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && !tower.definition.resourceProvider && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo)
+        .sort((left, right) => left.ammo / Math.max(1, left.maxAmmo) - right.ammo / Math.max(1, right.maxAmmo))[0];
+      const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition" && tower.ammo > 0);
+      if (target && factory && this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
+        const loaded = Math.min(capacity, factory.ammo);
+        factory.ammo -= loaded;
+        worker.cargo = loaded;
+        worker.cargoAmmoType = target.ammoType;
+        worker.targetTowerId = target.id;
+        worker.logisticsPhase = "deliver";
+      }
+      return;
+    }
+    const target = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    if (!target || !target.ammoLogisticsEnabled) {
+      worker.cargo = 0;
+      worker.logisticsPhase = "pickup";
+      worker.targetTowerId = "";
+      return;
+    }
+    if (this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
+      const delivered = Math.min(worker.cargo ?? 0, target.maxAmmo - target.ammo);
+      target.ammo += delivered;
+      worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
+      worker.logisticsPhase = "pickup";
+      worker.targetTowerId = "";
     }
   }
 
@@ -3049,10 +3202,11 @@ export class MatchRoom extends Room<MatchState> {
       maxHp: TOWER_BASE_HP,
       armor: TOWER_BASE_ARMOR,
       ammoType: this.getTowerAmmoType(definition),
-      ammo: definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
-      maxAmmo: definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
-      energy: definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
-      maxEnergy: definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
+      ammo: definition.resourceProvider === "ammunition" ? 40 : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      maxAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      energy: definition.resourceProvider === "ammunition" ? 20 : definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
+      maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
+      ammoLogisticsEnabled: true,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
@@ -5389,6 +5543,7 @@ export class MatchRoom extends Room<MatchState> {
         energy: Math.floor(tower.energy),
         maxEnergy: tower.maxEnergy,
         resourceProvider: tower.definition.resourceProvider,
+        ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
@@ -5416,8 +5571,14 @@ export class MatchRoom extends Room<MatchState> {
         id: drone.id,
         mode: drone.mode,
         x: drone.x,
-        y: drone.y
+        y: drone.y,
+        ownerId: drone.ownerId,
+        cargo: drone.cargo,
+        capacity: drone.capacity,
+        speed: drone.speed,
+        targetTowerId: drone.targetTowerId
       })),
+      crystalNodes: this.getCrystalNodes(),
       beams: Array.from(this.beams.values())
         .filter((beam) => !beam.delayMs || beam.delayMs <= 0)
         .map((beam) => ({
@@ -5742,10 +5903,10 @@ export class MatchRoom extends Room<MatchState> {
       return "Devre Disi";
     }
     if (tower.definition.resourceProvider === "ammunition") {
-      return `Muhimmat +${AMMO_SUPPLY_PER_SECOND}/sn`;
+      return tower.energy > 0 ? `Fabrika ${Math.floor(tower.ammo)}/${tower.maxAmmo}` : "Fabrika Enerjisiz";
     }
     if (tower.definition.resourceProvider === "energy") {
-      return `Enerji +${ENERGY_SUPPLY_PER_SECOND}/sn`;
+      return `Enerji Deposu ${Math.floor(tower.energy)}/${tower.maxEnergy}`;
     }
     if (tower.offlineUntil > now) {
       return "Tukenmis";
@@ -6967,4 +7128,12 @@ function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: n
 
 function roundMetric(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return hash;
 }

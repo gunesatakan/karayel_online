@@ -131,6 +131,7 @@ export type TowerSnapshot = {
   energy?: number;
   maxEnergy?: number;
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
+  ammoLogisticsEnabled?: boolean;
   status?: string;
   damageDealt?: number;
   currentDps?: number;
@@ -158,7 +159,18 @@ export type ProjectileSnapshot = {
 
 export type DroneSnapshot = {
   id: string;
-  mode: "attack" | "repair";
+  mode: "attack" | "repair" | "crystalCollector" | "energyTransport" | "ammoTransport";
+  x: number;
+  y: number;
+  ownerId?: string;
+  cargo?: number;
+  capacity?: number;
+  speed?: number;
+  targetTowerId?: string;
+};
+
+export type CrystalNodeSnapshot = {
+  id: string;
   x: number;
   y: number;
 };
@@ -246,6 +258,7 @@ export type GameSnapshot = {
   towers: TowerSnapshot[];
   projectiles: ProjectileSnapshot[];
   drones: DroneSnapshot[];
+  crystalNodes: CrystalNodeSnapshot[];
   beams: BeamSnapshot[];
   damageEvents: DamageEventSnapshot[];
   killEvents: KillEventSnapshot[];

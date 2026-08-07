@@ -17,6 +17,7 @@ type ControlState = {
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
+  ammoLogistics?: { enabled: boolean; canEdit: boolean };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
@@ -155,6 +156,17 @@ export function setupGameControlUi(game: Phaser.Game) {
           makeUnderworldModeButton("Stres", "stress", state.underworldMode)
         );
         shop.append(modeRow);
+      }
+      if (state.ammoLogistics) {
+        const logisticsRow = document.createElement("div");
+        logisticsRow.className = "game-controls__underworld-mode";
+        logisticsRow.append(makeActionButton(
+          state.ammoLogistics.enabled ? "Mühimmat Akışı: Açık" : "Mühimmat Akışı: Kapalı",
+          "game-controls__underworld-mode-button",
+          state.ammoLogistics.canEdit,
+          () => dispatch({ action: "toggleAmmoLogistics" })
+        ));
+        shop.append(logisticsRow);
       }
     } else {
       const towerGrid = document.createElement("div");
