@@ -1838,11 +1838,11 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
 
     this.syncBackgroundMusic(snapshot);
-    this.arenaPlayerCount = Math.max(1, snapshot.players.length);
     this.renderSetupPhase(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
     let sectionStart = performance.now();
     this.syncMapFromSnapshot(snapshot);
+    this.arenaPlayerCount = this.selectedMapData.cols >= 15 ? 4 : this.selectedMapData.cols >= 13 ? 3 : this.selectedMapData.cols >= 10 ? 2 : 1;
     this.recordClientPerfSection("map", performance.now() - sectionStart);
     this.renderMelisNightmareMapLocks(Boolean(snapshot.melisGothicNightmareActive));
     sectionStart = performance.now();

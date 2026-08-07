@@ -719,7 +719,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
 
       <section class="selected-dossier frame online-card" style="--accent: ${classColor[selectedCharacter.id]}">
         <p class="kicker">Oyuncular</p>
-        <h2>${lobbyState.players.length}/${lobbyState.maxPlayers} hazır bekliyor</h2>
+        <h2>${lobbyState.players.filter((player) => player.ready).length}/${lobbyState.players.length} hazır</h2>
         <div class="lobby-player-list">
           ${lobbyState.players.map((player) => `
             <div class="lobby-player-row ${player.ready ? "is-ready" : ""}">
@@ -748,8 +748,8 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
       </section>
 
       <footer class="lobby-actions">
-        <button class="command ${localPlayer?.ready ? "command--primary" : "command--ghost"}" data-lobby-ready>
-          ${localPlayer?.ready ? "Hazırım" : "Hazır Değilim"}
+        <button class="command ${localPlayer?.ready ? "command--ghost" : "command--primary"}" data-lobby-ready>
+          ${localPlayer?.ready ? "Hazır Değilim" : "Hazırım"}
         </button>
         ${localIsHost ? `
           <button class="command ${everyoneReady ? "command--primary" : "command--ghost"}" data-lobby-start>

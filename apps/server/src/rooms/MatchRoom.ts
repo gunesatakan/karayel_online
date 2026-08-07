@@ -796,7 +796,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (this.autoStartOnFirstJoin && this.state.players.size === 1) {
       player.ready = true;
-      this.configureArenaForPlayerCount(1);
+      this.configureArenaForScale();
       this.gameStarted = true;
       this.syncRoomRegistry();
       return;
@@ -946,7 +946,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    this.configureArenaForPlayerCount(this.getConnectedPlayerCount());
+    this.configureArenaForScale();
     this.gameStarted = true;
     this.setupPhase = true;
     this.setupReadyPlayerIds.clear();
@@ -1203,13 +1203,13 @@ export class MatchRoom extends Room<MatchState> {
     this.spawnCooldownMs = Math.max(310, 980 - this.wave * 34);
   }
 
-  private configureArenaForPlayerCount(playerCount: number) {
+  private configureArenaForScale() {
     const dimensions = [
       { cols: 8, rows: 12 },
       { cols: 10, rows: 18 },
       { cols: 13, rows: 21 },
       { cols: 15, rows: 24 }
-    ][Math.max(1, Math.min(4, playerCount)) - 1];
+    ][this.mapScale - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
