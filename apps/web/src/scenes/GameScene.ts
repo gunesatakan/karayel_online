@@ -7,11 +7,9 @@ import {
   TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
-  buildRuntimePaths,
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
   getMapPoints,
-  getPointAlongRuntimePath,
   getTowerGridSpan,
   getTowerSellRefund,
   getTowerUpgradeCost,
@@ -30,7 +28,6 @@ import {
   type BeamSnapshot,
   type GameSnapshot,
   type ProjectileSnapshot,
-  type RuntimePath,
   type TowerDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
@@ -208,7 +205,6 @@ export class GameScene extends Phaser.Scene {
   private selectedCharacter: CharacterDefinition = characters[0];
   private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
   private selectedMapData: EditableMapData = createDefaultEditableMap();
-  private activeRenderPaths: RuntimePath[] = buildRuntimePaths(this.selectedMapData);
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
@@ -319,7 +315,6 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
-    this.activeRenderPaths = buildRuntimePaths(this.selectedMapData);
   }
 
   private getMapCellSize() {
@@ -1752,16 +1747,14 @@ export class GameScene extends Phaser.Scene {
     const previousEnemies = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]));
     const enemies = next.enemies.map((enemy) => {
       const oldEnemy = previousEnemies.get(enemy.id);
-      const isAir = enemy.movementKind === "air" || oldEnemy?.movementKind === "air";
       const pathDistance = oldEnemy
         ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
         : enemy.pathDistance;
-      const pathPoint = isAir ? undefined : getPointAlongRuntimePath(this.activeRenderPaths[enemy.pathId ?? oldEnemy?.pathId ?? 0], pathDistance);
 
       return {
         ...enemy,
-        x: isAir ? oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x : pathPoint?.x ?? enemy.x,
-        y: isAir ? oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y : pathPoint?.y ?? enemy.y,
+        x: oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x,
+        y: oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp,
         shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield
@@ -1905,7 +1898,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.selectedMapData = map;
-    this.activeRenderPaths = buildRuntimePaths(map);
     this.renderedMapKey = mapKey;
     this.drawMap();
   }
@@ -2069,7 +2061,7 @@ export class GameScene extends Phaser.Scene {
       const previousY = mover.sprite.y;
       mover.sprite.setPosition(enemy.x, enemy.y);
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
-      mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY));
+      mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY, mover.sprite.rotation));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
@@ -2120,18 +2112,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private getEnemySpriteRotation(enemy: EnemySnapshot, previousX: number, previousY: number) {
+  private getEnemySpriteRotation(enemy: EnemySnapshot, previousX: number, previousY: number, previousRotation: number) {
     const dx = enemy.x - previousX;
     const dy = enemy.y - previousY;
     if (Math.abs(dx) + Math.abs(dy) > 0.05) {
       return Math.atan2(dy, dx) - Math.PI / 2;
     }
 
-    const path = this.activeRenderPaths[enemy.pathId ?? 0] ?? this.activeRenderPaths[0];
-    const angle = enemy.movementKind === "air"
-      ? getRuntimePathEndpointAngle(path)
-      : getRuntimePathTangentAngle(path, enemy.pathDistance);
-    return angle - Math.PI / 2;
+    return previousRotation;
   }
 
   private renderTowers(towers: TowerSnapshot[]) {
@@ -4722,33 +4710,6 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {
   return enemy.race === "meka" ? `enemy-${enemy.type}` : `enemy-${enemy.race}-${enemy.type}`;
-}
-
-function getRuntimePathTangentAngle(path: RuntimePath | undefined, pathDistance: number) {
-  if (!path || path.segments.length === 0) {
-    return Math.PI / 2;
-  }
-
-  let remaining = Math.max(0, pathDistance);
-  for (const segment of path.segments) {
-    if (remaining <= segment.length) {
-      return Math.atan2(segment.to.y - segment.from.y, segment.to.x - segment.from.x);
-    }
-    remaining -= segment.length;
-  }
-
-  const last = path.segments[path.segments.length - 1];
-  return Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
-}
-
-function getRuntimePathEndpointAngle(path: RuntimePath | undefined) {
-  if (!path || path.points.length < 2) {
-    return Math.PI / 2;
-  }
-
-  const start = path.points[0];
-  const end = path.points[path.points.length - 1];
-  return Math.atan2(end.y - start.y, end.x - start.x);
 }
 
 function getKillStreakRuleByTier(tier: KillStreakTier) {
