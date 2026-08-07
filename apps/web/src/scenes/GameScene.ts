@@ -246,6 +246,8 @@ export class GameScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
+  private continueButton?: Phaser.GameObjects.Rectangle;
+  private continueText?: Phaser.GameObjects.Text;
   private perfText?: Phaser.GameObjects.Text;
   private perfInfoText?: Phaser.GameObjects.Text;
   private hintText?: Phaser.GameObjects.Text;
@@ -277,6 +279,10 @@ export class GameScene extends Phaser.Scene {
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
+  private arenaPlayerCount = 1;
+  private lastArenaTapAt = 0;
+  private lastArenaTapX = 0;
+  private lastArenaTapY = 0;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
@@ -446,6 +452,23 @@ export class GameScene extends Phaser.Scene {
       fontStyle: "bold"
     }).setOrigin(1, 0).setDepth(21);
     this.createPerfInfoButton();
+    this.continueButton = this.add.rectangle(GAME_WORLD_WIDTH - 78, 54, 96, 28, 0x15803d, 0.98)
+      .setStrokeStyle(1.5, 0x86efac, 0.9)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(64)
+      .setVisible(false);
+    this.continueText = this.add.text(GAME_WORLD_WIDTH - 78, 54, "Devam", {
+      color: "#f0fdf4",
+      fontFamily: "Arial",
+      fontSize: "12px",
+      fontStyle: "bold"
+    }).setOrigin(0.5).setDepth(65).setVisible(false);
+    const continueWave = () => {
+      this.room?.send("wave:continue");
+      this.ignoreMapPointerUntil = performance.now() + 220;
+    };
+    this.continueButton.on("pointerup", continueWave);
+    this.continueText.setInteractive({ useHandCursor: true }).on("pointerup", continueWave);
   }
 
   private createPerfInfoButton() {
@@ -1472,6 +1495,9 @@ export class GameScene extends Phaser.Scene {
     if (!this.isBattlePointer(pointer)) {
       return;
     }
+    if (this.handleArenaZoomTap(pointer)) {
+      return;
+    }
     this.hideUltimateChoices();
     this.hideZeynepTierChoicesIfOpen();
 
@@ -1804,6 +1830,8 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
 
     this.syncBackgroundMusic(snapshot);
+    this.arenaPlayerCount = Math.max(1, snapshot.players.length);
+    this.renderSetupPhase(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
     let sectionStart = performance.now();
     this.syncMapFromSnapshot(snapshot);
@@ -1855,7 +1883,40 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isBattlePointer(pointer: Phaser.Input.Pointer) {
-    return Boolean(this.room) && !this.draggedTowerDefinition && pointer.worldY < this.controlTop && pointer.worldY > 84;
+    const arenaBottom = TOWER_BUILD_TOP + this.selectedMapData.rows * this.getMapCellSize();
+    return Boolean(this.room) && !this.draggedTowerDefinition && pointer.worldY < arenaBottom && pointer.worldY > 84;
+  }
+
+  private renderSetupPhase(snapshot: GameSnapshot) {
+    const active = Boolean(snapshot.setupPhase);
+    const localReady = Boolean(this.localSessionId && snapshot.setupReadyPlayerIds?.includes(this.localSessionId));
+    this.continueButton?.setVisible(active).setFillStyle(localReady ? 0x334155 : 0x15803d, 0.98);
+    this.continueText?.setVisible(active).setText(localReady ? "Bekleniyor" : "Devam");
+    if (active) {
+      const readyCount = snapshot.setupReadyPlayerIds?.length ?? 0;
+      this.statusText?.setText(`Kurulum: ${readyCount}/${snapshot.players.length} oyuncu hazir`);
+    }
+  }
+
+  private handleArenaZoomTap(pointer: Phaser.Input.Pointer) {
+    if (this.arenaPlayerCount < 3) {
+      return false;
+    }
+    const now = performance.now();
+    const isDoubleTap = now - this.lastArenaTapAt <= 320 && Math.hypot(pointer.x - this.lastArenaTapX, pointer.y - this.lastArenaTapY) <= 36;
+    this.lastArenaTapAt = now;
+    this.lastArenaTapX = pointer.x;
+    this.lastArenaTapY = pointer.y;
+    if (isDoubleTap) {
+      this.cameras.main.zoomTo(1, 180, "Sine.easeOut");
+      this.cameras.main.pan(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, 180, "Sine.easeOut");
+      this.lastArenaTapAt = 0;
+      return true;
+    }
+    const zoom = this.arenaPlayerCount === 3 ? 3 : 4;
+    this.cameras.main.zoomTo(zoom, 180, "Sine.easeOut");
+    this.cameras.main.pan(pointer.worldX, pointer.worldY, 180, "Sine.easeOut");
+    return false;
   }
 
   private getClampedGuidancePoint(pointer: Phaser.Input.Pointer) {

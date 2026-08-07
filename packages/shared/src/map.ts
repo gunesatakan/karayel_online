@@ -59,17 +59,43 @@ export function getMapScale(mapOrScale: EditableMapData | number | undefined): M
 }
 
 export function getMapGridSize(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
+  if (mapOrScale && typeof mapOrScale === "object" && Number.isInteger(mapOrScale.cols) && mapOrScale.cols > 0) {
+    return GAME_WIDTH / mapOrScale.cols;
+  }
   return GRID_SIZE / getMapScale(mapOrScale);
 }
 
 export function getMapMetrics(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
   const scale = getMapScale(mapOrScale);
   const gridSize = getMapGridSize(scale);
+  if (mapOrScale && typeof mapOrScale === "object" && Number.isInteger(mapOrScale.cols) && Number.isInteger(mapOrScale.rows)) {
+    return {
+      scale,
+      gridSize: getMapGridSize(mapOrScale),
+      cols: mapOrScale.cols,
+      rows: mapOrScale.rows
+    };
+  }
   return {
     scale,
     gridSize,
     cols: Math.floor(GAME_WIDTH / gridSize),
     rows: Math.floor((GAME_HEIGHT - GRID_TOP) / gridSize)
+  };
+}
+
+export function createOpenArenaMap(cols: number, rows: number): EditableMapData {
+  const safeCols = Math.max(4, Math.min(32, Math.floor(cols)));
+  const safeRows = Math.max(4, Math.min(32, Math.floor(rows)));
+  return {
+    version: 1,
+    scale: DEFAULT_MAP_SCALE,
+    cols: safeCols,
+    rows: safeRows,
+    tiles: Array.from({ length: safeCols * safeRows }, (_, index) => {
+      const row = Math.floor(index / safeCols);
+      return row === 0 ? "spawn" : row === safeRows - 1 ? "nexus" : "road";
+    })
   };
 }
 
@@ -111,13 +137,17 @@ export function normalizeMapData(map: unknown, fallbackScale: MapScale = DEFAULT
 
   const candidate = map as Partial<EditableMapData>;
   const scale = normalizeMapScale(candidate.scale ?? fallbackScale);
-  const metrics = getMapMetrics(scale);
+  const defaultMetrics = getMapMetrics(scale);
+  const cols = Number.isInteger(candidate.cols) && Number(candidate.cols) >= 4 && Number(candidate.cols) <= 32
+    ? Number(candidate.cols)
+    : defaultMetrics.cols;
+  const rows = Number.isInteger(candidate.rows) && Number(candidate.rows) >= 4 && Number(candidate.rows) <= 32
+    ? Number(candidate.rows)
+    : defaultMetrics.rows;
   if (
     candidate.version !== 1 ||
-    candidate.cols !== metrics.cols ||
-    candidate.rows !== metrics.rows ||
     !Array.isArray(candidate.tiles) ||
-    candidate.tiles.length !== metrics.cols * metrics.rows
+    candidate.tiles.length !== cols * rows
   ) {
     return createDefaultEditableMap(scale);
   }
@@ -126,8 +156,8 @@ export function normalizeMapData(map: unknown, fallbackScale: MapScale = DEFAULT
   return {
     version: 1,
     scale,
-    cols: metrics.cols,
-    rows: metrics.rows,
+    cols,
+    rows,
     tiles: candidate.tiles.map((tile) => validKinds.has(tile as MapTileKind) ? tile as MapTileKind : "tower")
   };
 }

@@ -246,6 +246,8 @@ export type GameSnapshot = {
   };
   melisGothicNightmareActive?: boolean;
   team: TeamSnapshot;
+  setupPhase?: boolean;
+  setupReadyPlayerIds?: string[];
   perf?: ServerPerfSnapshot;
 };
 
@@ -259,6 +261,7 @@ export {
   DEFAULT_MAP_SCALE,
   MAX_MAP_SCALE,
   createDefaultEditableMap,
+  createOpenArenaMap,
   getMapGridSize,
   getMapMetrics,
   getMapScale,

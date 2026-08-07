@@ -13,6 +13,7 @@ import {
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
   createDefaultEditableMap,
+  createOpenArenaMap,
   applyStatusResistance,
   calculateDamageTaken,
   findPathToNearestNexus,
@@ -598,7 +599,7 @@ export class MatchRoom extends Room<MatchState> {
     await Promise.all(emptyRooms.map((room) => room.disconnect()));
   }
 
-  maxClients = 7;
+  maxClients = 4;
   autoDispose = false;
   private enemies = new Map<string, EnemyModel>();
   private towers = new Map<string, TowerModel>();
@@ -653,6 +654,8 @@ export class MatchRoom extends Room<MatchState> {
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
   private hostSessionId = "";
   private gameStarted = false;
+  private setupPhase = true;
+  private setupReadyPlayerIds = new Set<string>();
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
@@ -763,6 +766,10 @@ export class MatchRoom extends Room<MatchState> {
       });
     });
 
+    this.onMessage("wave:continue", (client) => {
+      this.markSetupReady(client);
+    });
+
     this.syncRoomRegistry();
   }
 
@@ -787,6 +794,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (this.autoStartOnFirstJoin && this.state.players.size === 1) {
       player.ready = true;
+      this.configureArenaForPlayerCount(1);
       this.gameStarted = true;
       this.syncRoomRegistry();
       return;
@@ -800,6 +808,7 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     if (this.gameStarted && player) {
       player.connected = false;
+      this.tryFinishSetupPhase();
       this.broadcastLobbyState();
       return;
     }
@@ -844,6 +853,9 @@ export class MatchRoom extends Room<MatchState> {
     player.connected = true;
     player.name = playerName?.slice(0, 20) || player.name;
     this.state.players.set(nextSessionId, player);
+    if (this.setupReadyPlayerIds.delete(previousSessionId)) {
+      this.setupReadyPlayerIds.add(nextSessionId);
+    }
 
     if (this.hostSessionId === previousSessionId) {
       this.hostSessionId = nextSessionId;
@@ -932,7 +944,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    this.configureArenaForPlayerCount(this.getConnectedPlayerCount());
     this.gameStarted = true;
+    this.setupPhase = true;
+    this.setupReadyPlayerIds.clear();
     this.syncRoomRegistry();
     this.broadcastLobbyState();
     this.broadcast("lobby:started", {
@@ -1151,6 +1166,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    if (this.setupPhase) {
+      return;
+    }
+
     if (this.waveSpawned >= this.waveTarget && this.enemies.size === 0) {
       this.applyMelisWaveStress();
       this.advanceWaveGrowth();
@@ -1159,6 +1178,9 @@ export class MatchRoom extends Room<MatchState> {
       this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
       this.awardGoldToPlayers(20 + this.wave * 3);
+      this.setupPhase = true;
+      this.setupReadyPlayerIds.clear();
+      return;
     }
 
     if (this.waveSpawned >= this.waveTarget) {
@@ -1177,6 +1199,44 @@ export class MatchRoom extends Room<MatchState> {
     this.spawnEnemy();
     this.waveSpawned += 1;
     this.spawnCooldownMs = Math.max(310, 980 - this.wave * 34);
+  }
+
+  private configureArenaForPlayerCount(playerCount: number) {
+    const dimensions = [
+      { cols: 12, rows: 8 },
+      { cols: 18, rows: 10 },
+      { cols: 21, rows: 13 },
+      { cols: 24, rows: 15 }
+    ][Math.max(1, Math.min(4, playerCount)) - 1];
+    this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
+    this.activePaths = buildRuntimePaths(this.activeMap);
+    this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
+  }
+
+  private markSetupReady(client: Client) {
+    if (!this.gameStarted || !this.setupPhase) {
+      return;
+    }
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !player.connected) {
+      return;
+    }
+    this.setupReadyPlayerIds.add(client.sessionId);
+    this.tryFinishSetupPhase();
+  }
+
+  private tryFinishSetupPhase() {
+    if (!this.setupPhase) {
+      return;
+    }
+    const connectedPlayerIds = Array.from(this.state.players.entries())
+      .filter(([, player]) => player.connected)
+      .map(([id]) => id);
+    if (connectedPlayerIds.length > 0 && connectedPlayerIds.every((id) => this.setupReadyPlayerIds.has(id))) {
+      this.setupPhase = false;
+      this.setupReadyPlayerIds.clear();
+      this.spawnCooldownMs = 350;
+    }
   }
 
   private spawnEnemy() {
@@ -2746,7 +2806,7 @@ export class MatchRoom extends Room<MatchState> {
       const current = queue[index];
       if (current.row === this.activeMap.rows - 1) {
         const cells = this.reconstructGridRoute(current, start, parent);
-        return { cells, reachedBottom: cells.length <= 1 && enemy.y >= TOWER_BUILD_BOTTOM - this.getMapCellRadius(), targetTower: undefined };
+        return { cells, reachedBottom: cells.length <= 1 && enemy.y >= this.getArenaBottom() - this.getMapCellRadius(), targetTower: undefined };
       }
 
       for (const next of this.getGridNeighbors(current.col, current.row)) {
@@ -2830,6 +2890,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private getMapCellRadius() {
     return getMapGridSize(this.activeMap) / 2;
+  }
+
+  private getArenaBottom() {
+    return TOWER_BUILD_TOP + this.activeMap.rows * getMapGridSize(this.activeMap);
   }
 
   private damageTower(tower: TowerModel, rawDamage: number) {
@@ -5257,6 +5321,8 @@ export class MatchRoom extends Room<MatchState> {
       })),
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
+      setupPhase: this.setupPhase,
+      setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,
