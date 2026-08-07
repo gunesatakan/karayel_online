@@ -34,7 +34,7 @@ import {
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 import { clearActiveLobbyRoom, getActiveLobbyRoom } from "../online-session";
-import { configureHiDpiCamera } from "../rendering";
+import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -284,6 +284,7 @@ export class GameScene extends Phaser.Scene {
   private lastArenaTapAt = 0;
   private lastArenaTapX = 0;
   private lastArenaTapY = 0;
+  private arenaZoomed = false;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
@@ -1500,6 +1501,10 @@ export class GameScene extends Phaser.Scene {
     if (this.draggedTowerDefinition || performance.now() < this.ignoreMapPointerUntil) {
       return;
     }
+    if (this.arenaZoomed) {
+      this.handleArenaZoomTap(pointer);
+      return;
+    }
     if (!this.isBattlePointer(pointer)) {
       return;
     }
@@ -1919,16 +1924,32 @@ export class GameScene extends Phaser.Scene {
     this.lastArenaTapAt = now;
     this.lastArenaTapX = pointer.x;
     this.lastArenaTapY = pointer.y;
-    if (isDoubleTap) {
-      this.cameras.main.zoomTo(1, 180, "Sine.easeOut");
-      this.cameras.main.pan(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, 180, "Sine.easeOut");
+    if (this.arenaZoomed) {
+      if (!isDoubleTap) {
+        return true;
+      }
+      this.resetArenaZoom();
       this.lastArenaTapAt = 0;
       return true;
     }
-    const zoom = this.arenaPlayerCount === 3 ? 3 : 4;
-    this.cameras.main.zoomTo(zoom, 180, "Sine.easeOut");
-    this.cameras.main.pan(pointer.worldX, pointer.worldY, 180, "Sine.easeOut");
+
+    const camera = this.cameras.main;
+    camera.panEffect.reset();
+    camera.zoomEffect.reset();
+    const zoom = (this.arenaPlayerCount === 3 ? 3 : 4) * RENDER_SCALE;
+    camera.setZoom(zoom);
+    camera.centerOn(pointer.worldX, pointer.worldY);
+    this.arenaZoomed = true;
     return false;
+  }
+
+  private resetArenaZoom() {
+    const camera = this.cameras.main;
+    camera.panEffect.reset();
+    camera.zoomEffect.reset();
+    camera.setZoom(RENDER_SCALE);
+    camera.setScroll(0, 0);
+    this.arenaZoomed = false;
   }
 
   private getClampedGuidancePoint(pointer: Phaser.Input.Pointer) {
