@@ -2862,22 +2862,29 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(18);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
-    const width = Math.max(48, discSize * 1.35);
-    const height = 5;
-    const x = tower.x - width / 2;
-    const ammoY = tower.y + discSize / 2 + 10;
-    const energyY = ammoY + 12;
+    const panelWidth = Math.max(92, Math.min(126, discSize * 1.65));
+    const panelHeight = 50;
+    const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
+    const panelX = panelCenterX - panelWidth / 2;
+    const panelY = tower.y + discSize / 2 + 7;
+    const barX = panelX + 7;
+    const barWidth = panelWidth - 14;
+    const barHeight = 7;
+    const ammoBarY = panelY + 16;
+    const energyBarY = panelY + 38;
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
-    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, ammoY - 1, width + 2, height + 2, 2);
-    graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(x, ammoY, width * ammoRatio, height, 1);
-    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, energyY - 1, width + 2, height + 2, 2);
-    graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(x, energyY, width * energyRatio, height, 1);
+    graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
+    graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
+    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
+    graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
+    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
+    graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
 
-    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold", stroke: "#020617", strokeThickness: 2 }).setOrigin(0.5, 1).setDepth(19);
-    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold", stroke: "#020617", strokeThickness: 2 }).setOrigin(0.5, 1).setDepth(19);
-    this.selectedAmmoText.setText(`M ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(tower.x, ammoY).setVisible(true);
-    this.selectedEnergyText.setText(`E ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(tower.x, energyY).setVisible(true);
+    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "10px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
+    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "10px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
+    this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(panelCenterX, panelY + 2).setVisible(true);
+    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(panelCenterX, panelY + 24).setVisible(true);
   }
 
   private drawEnemyHealthBar(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
