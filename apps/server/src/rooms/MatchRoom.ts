@@ -60,6 +60,9 @@ const TEAM_START_GOLD = 240;
 const MELIS_START_GOLD = 100;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
+const TOWER_BASE_HP = 100;
+const TOWER_BASE_ARMOR = 3;
+const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
@@ -305,6 +308,8 @@ type EnemyModel = {
   abilities: string[];
   speed: number;
   reward: number;
+  attack: number;
+  towerAttackCooldownMs: number;
   pathDistance: number;
   slowUntil: number;
   auraSlowMultiplier: number;
@@ -350,6 +355,7 @@ type TowerModel = {
   orientation: TowerOrientation;
   hp: number;
   maxHp: number;
+  armor: number;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
@@ -1184,9 +1190,11 @@ export class MatchRoom extends Room<MatchState> {
     const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier * ENEMY_HP_BALANCE_MULTIPLIER));
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
     const speed = this.scaleWorldSpeed(definition.speed + this.wave * 2.4);
-    const pathId = Math.floor(Math.random() * Math.max(1, this.activePaths.length));
-    const path = this.activePaths[pathId] ?? buildRuntimePaths(createDefaultEditableMap())[0];
-    const start = isFlyingEnemy ? getAirSpawnPoint(path, this.activeMap) : path.points[0] ?? gridToWorld(0, 0, this.activeMap);
+    const pathId = 0;
+    const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
+      .filter((col) => !this.getTowerAtCell(col, 0));
+    const spawnCol = openSpawnColumns[Math.floor(Math.random() * Math.max(1, openSpawnColumns.length))] ?? 0;
+    const start = gridToWorld(spawnCol, 0, this.activeMap);
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -1208,6 +1216,8 @@ export class MatchRoom extends Room<MatchState> {
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
       reward: definition.reward,
+      attack: definition.attack,
+      towerAttackCooldownMs: 0,
       pathDistance: 0,
       slowUntil: 0,
       auraSlowMultiplier: 1,
@@ -1247,6 +1257,9 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
+      if (tower.hp <= 0) {
+        continue;
+      }
       if (this.silentModeUntil > now) {
         continue;
       }
@@ -2686,38 +2699,11 @@ export class MatchRoom extends Room<MatchState> {
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
         : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier) * doubtHasteMultiplier;
-      if (isFeared) {
-        enemy.pathDistance = Math.max(0, enemy.pathDistance - enemy.speed * 0.86 * speedMultiplier * seconds);
-      } else {
-        enemy.pathDistance += enemy.speed * speedMultiplier * seconds;
-      }
-
-      const path = this.activePaths[enemy.pathId] ?? this.activePaths[0];
-      if (enemy.movementKind === "air") {
-        const pathPoints = path?.points ?? [];
-        const start = getAirSpawnPoint(path);
-        const end = pathPoints[pathPoints.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
-        const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
-        if (enemy.pathDistance >= flightLength) {
-          if (this.melisGothicNightmareUntil > now) {
-            enemy.pathDistance = Math.max(0, flightLength - 1);
-          } else {
-            this.enemies.delete(id);
-            this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
-          }
-          continue;
-        }
-
-        const progress = Math.min(1, enemy.pathDistance / flightLength);
-        enemy.x = start.x + (end.x - start.x) * progress;
-        enemy.y = start.y + (end.y - start.y) * progress;
-        continue;
-      }
-
-      const pathLength = path?.totalLength ?? totalPathLength;
-      if (enemy.pathDistance >= pathLength) {
+      enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
+      const route = this.findEnemyRoute(enemy);
+      if (route.reachedBottom) {
         if (this.melisGothicNightmareUntil > now) {
-          enemy.pathDistance = Math.max(0, pathLength - 1);
+          enemy.y = Math.min(enemy.y, TOWER_BUILD_BOTTOM - 1);
         } else {
           this.enemies.delete(id);
           this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
@@ -2725,9 +2711,136 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const point = getPointAlongRuntimePath(path, enemy.pathDistance);
-      enemy.x = point.x;
-      enemy.y = point.y;
+      const nextCell = route.cells[1];
+      if (nextCell && !isFeared && speedMultiplier > 0) {
+        const point = gridToWorld(nextCell.col, nextCell.row, this.activeMap);
+        const dx = point.x - enemy.x;
+        const dy = point.y - enemy.y;
+        const distance = Math.max(0.001, Math.hypot(dx, dy));
+        const movement = Math.min(distance, enemy.speed * speedMultiplier * seconds);
+        enemy.x += dx / distance * movement;
+        enemy.y += dy / distance * movement;
+        enemy.pathDistance += movement;
+      }
+
+      if (route.targetTower && route.cells.length <= 1 && enemy.towerAttackCooldownMs <= 0) {
+        this.damageTower(route.targetTower, enemy.attack);
+        enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
+      }
+    }
+  }
+
+  private findEnemyRoute(enemy: EnemyModel) {
+    const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
+    const startTower = this.getTowerAtCell(start.col, start.row);
+    if (startTower) {
+      return { cells: [start], reachedBottom: false, targetTower: startTower.hp > 0 ? startTower : undefined };
+    }
+    const queue = [start];
+    const visited = new Set<string>([`${start.col}:${start.row}`]);
+    const parent = new Map<string, { col: number; row: number }>();
+    let attackCell: { col: number; row: number } | undefined;
+    let targetTower: TowerModel | undefined;
+
+    for (let index = 0; index < queue.length; index += 1) {
+      const current = queue[index];
+      if (current.row === this.activeMap.rows - 1) {
+        const cells = this.reconstructGridRoute(current, start, parent);
+        return { cells, reachedBottom: cells.length <= 1 && enemy.y >= TOWER_BUILD_BOTTOM - this.getMapCellRadius(), targetTower: undefined };
+      }
+
+      for (const next of this.getGridNeighbors(current.col, current.row)) {
+        const blockingTower = this.getBlockingTowerBetween(current, next);
+        if (blockingTower) {
+          if (!targetTower && blockingTower.hp > 0) {
+            targetTower = blockingTower;
+            attackCell = current;
+          }
+          continue;
+        }
+        const key = `${next.col}:${next.row}`;
+        if (visited.has(key)) {
+          continue;
+        }
+        visited.add(key);
+        parent.set(key, current);
+        queue.push(next);
+      }
+    }
+
+    return {
+      cells: attackCell ? this.reconstructGridRoute(attackCell, start, parent) : [start],
+      reachedBottom: false,
+      targetTower
+    };
+  }
+
+  private reconstructGridRoute(end: { col: number; row: number }, start: { col: number; row: number }, parent: Map<string, { col: number; row: number }>) {
+    const route = [end];
+    let current = end;
+    while (current.col !== start.col || current.row !== start.row) {
+      const previous = parent.get(`${current.col}:${current.row}`);
+      if (!previous) {
+        break;
+      }
+      route.push(previous);
+      current = previous;
+    }
+    return route.reverse();
+  }
+
+  private getGridNeighbors(col: number, row: number) {
+    return [
+      { col, row: row + 1 },
+      { col: col - 1, row },
+      { col: col + 1, row },
+      { col, row: row - 1 }
+    ].filter((cell) => isInsideMap(this.activeMap, cell.col, cell.row));
+  }
+
+  private getTowerAtCell(col: number, row: number) {
+    return Array.from(this.towers.values()).find((tower) => (
+      tower.definition.id !== "zeynep-8" &&
+      this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)
+        .some((cell) => cell.col === col && cell.row === row)
+    ));
+  }
+
+  private getBlockingTowerBetween(from: { col: number; row: number }, to: { col: number; row: number }) {
+    const occupiedTower = this.getTowerAtCell(to.col, to.row);
+    if (occupiedTower) {
+      return occupiedTower;
+    }
+
+    return Array.from(this.towers.values()).find((tower) => {
+      if (tower.definition.id !== "zeynep-8") {
+        return false;
+      }
+      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation).some((segment) => {
+        if (segment.orientation === "vertical" && from.row === to.row) {
+          return segment.row === from.row && Math.max(from.col, to.col) === segment.col;
+        }
+        if (segment.orientation === "horizontal" && from.col === to.col) {
+          return segment.col === from.col && Math.max(from.row, to.row) === segment.row;
+        }
+        return false;
+      });
+    });
+  }
+
+  private getMapCellRadius() {
+    return getMapGridSize(this.activeMap) / 2;
+  }
+
+  private damageTower(tower: TowerModel, rawDamage: number) {
+    if (tower.hp <= 0) {
+      return;
+    }
+    tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - tower.armor));
+    if (tower.hp <= 0) {
+      tower.cooldownMs = 0;
+      tower.focusTargetId = "";
+      tower.linkedTowerIds = [];
     }
   }
 
@@ -2767,8 +2880,9 @@ export class MatchRoom extends Room<MatchState> {
       x: placement.x,
       y: placement.y,
       orientation,
-      hp: 100,
-      maxHp: 100,
+      hp: TOWER_BASE_HP,
+      maxHp: TOWER_BASE_HP,
+      armor: TOWER_BASE_ARMOR,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
@@ -3409,13 +3523,13 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    for (const cell of footprint) {
-      if (getTile(this.activeMap, cell.col, cell.row) !== "tower") {
+    const occupiedCells = new Set(footprint.map((cell) => `${cell.col}:${cell.row}`));
+    for (const enemy of this.enemies.values()) {
+      const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
+      if (occupiedCells.has(`${enemyCell.col}:${enemyCell.row}`)) {
         return false;
       }
     }
-
-    const occupiedCells = new Set(footprint.map((cell) => `${cell.col}:${cell.row}`));
     for (const tower of this.towers.values()) {
       if (tower.id === ignoreTowerId) {
         continue;
@@ -4778,6 +4892,8 @@ export class MatchRoom extends Room<MatchState> {
       abilities: ["melis-undead"],
       speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72)),
       reward: 0,
+      attack: definition.attack,
+      towerAttackCooldownMs: 0,
       pathDistance,
       slowUntil: 0,
       auraSlowMultiplier: 1,
@@ -5044,6 +5160,7 @@ export class MatchRoom extends Room<MatchState> {
         hp: Math.max(0, enemy.hp),
         maxHp: enemy.maxHp,
         armor: enemy.armor,
+        attack: enemy.attack,
         healthRegenPerSecond: enemy.healthRegenPerSecond,
         shield: Math.max(0, enemy.shield),
         maxShield: enemy.maxShield,
@@ -5078,6 +5195,8 @@ export class MatchRoom extends Room<MatchState> {
         color: tower.definition.color,
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
+        armor: tower.armor,
+        disabled: tower.hp <= 0,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
@@ -5417,6 +5536,9 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerStatus(tower: TowerModel) {
     const now = Date.now();
+    if (tower.hp <= 0) {
+      return "Devre Disi";
+    }
     if (tower.offlineUntil > now) {
       return "Tukenmis";
     }

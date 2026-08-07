@@ -86,6 +86,7 @@ export type EnemySnapshot = {
   hp: number;
   maxHp: number;
   armor: number;
+  attack: number;
   healthRegenPerSecond: number;
   shield: number;
   maxShield: number;
@@ -122,6 +123,8 @@ export type TowerSnapshot = {
   color: number;
   hp?: number;
   maxHp?: number;
+  armor?: number;
+  disabled?: boolean;
   status?: string;
   damageDealt?: number;
   currentDps?: number;

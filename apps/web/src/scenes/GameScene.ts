@@ -406,19 +406,13 @@ export class GameScene extends Phaser.Scene {
         if (tileHeight <= 0) {
           continue;
         }
-        const tile = getTile(this.selectedMapData, col, row);
-        const isPath = tile === "road" || tile === "spawn" || tile === "nexus";
-        const isBuildArea = tile === "tower";
-        const fill =
-          tile === "spawn" ? 0x14532d :
-            tile === "nexus" ? 0x7f1d1d :
-              isPath ? 0x334155 :
-                isBuildArea ? 0x101827 :
-                  0x07111f;
+        const isEntry = row === 0;
+        const isExit = row === tileRows - 1;
+        const fill = isEntry ? 0x123524 : isExit ? 0x3f1d2a : 0x101827;
 
         graphics.fillStyle(fill, 1);
         graphics.fillRect(x, y, cellSize, tileHeight);
-        graphics.lineStyle(1, isPath ? 0x64748b : isBuildArea ? 0x1e293b : 0x0f172a, isPath ? 0.72 : 0.55);
+        graphics.lineStyle(1, isEntry ? 0x166534 : isExit ? 0x7f1d1d : 0x1e293b, 0.55);
         graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, Math.max(1, tileHeight - 1));
       }
     }
@@ -1065,9 +1059,6 @@ export class GameScene extends Phaser.Scene {
     for (const cell of footprint) {
       const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
       if (world.y + this.getMapCellSize() / 2 > this.controlTop) {
-        return false;
-      }
-      if (getTile(this.selectedMapData, cell.col, cell.row) !== "tower") {
         return false;
       }
     }
@@ -2217,8 +2208,8 @@ export class GameScene extends Phaser.Scene {
       rendered.base.setScale(selectionScale * textureScale * footprintScaleX, selectionScale * textureScale * footprintScaleY);
       rendered.base.setVisible(tower.definitionId !== "zeynep-8");
       rendered.base.setTint(this.getTowerTint(tower));
-      rendered.base.setAlpha(tower.status === "Tukenmis" ? 0.52 : tower.ownerId === this.localSessionId ? 1 : 0.78);
-      rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet");
+      rendered.base.setAlpha(tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78);
+      rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
       this.renderTowerSpriteEffects(rendered.effect, tower);
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
@@ -2311,7 +2302,7 @@ export class GameScene extends Phaser.Scene {
     if (tower.status === "Overdrive") {
       return 0xfff1a8;
     }
-    if (tower.status === "Hararet" || tower.status === "Tukenmis") {
+    if (tower.status === "Hararet" || tower.status === "Tukenmis" || tower.disabled) {
       return 0x94a3b8;
     }
     if (tower.definitionId === "warrior-6") {
@@ -4318,7 +4309,9 @@ export class GameScene extends Phaser.Scene {
       : selectedTower.definitionId === "zeynep-3"
         ? " | Sentez icin 3'lu ucgen dizilim kur"
         : "";
-    const hpText = selectedTower.hp && selectedTower.maxHp ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp}` : "";
+    const hpText = selectedTower.hp !== undefined && selectedTower.maxHp !== undefined
+      ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp} Zırh ${selectedTower.armor ?? 0}`
+      : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${status}${linkHint}`);
     this.selectedTowerStatsText?.setText([

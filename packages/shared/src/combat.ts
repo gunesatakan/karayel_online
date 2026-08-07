@@ -15,6 +15,7 @@ export type EnemyCombatDefinition = {
   shield: number;
   movementKind: MovementKind;
   reward: number;
+  attack: number;
   damageResistances?: ResistanceTable<DamageType>;
   hitTypeResistances?: ResistanceTable<HitType>;
   statusResistances?: ResistanceTable<StatusEffectId>;
@@ -88,6 +89,7 @@ export const enemyCombatDefinitions = {
     shield: 0,
     movementKind: "ground",
     reward: 12,
+    attack: 12,
     damageResistances: {},
     hitTypeResistances: {},
     statusResistances: {}
@@ -101,6 +103,7 @@ export const enemyCombatDefinitions = {
     shield: 18,
     movementKind: "ground",
     reward: 18,
+    attack: 12,
     damageResistances: {
       physical: 0.08,
       fire: -0.08
@@ -125,6 +128,7 @@ export const enemyCombatDefinitions = {
     shield: 0,
     movementKind: "ground",
     reward: 11,
+    attack: 12,
     damageResistances: {
       electric: -0.08
     },
@@ -146,6 +150,7 @@ export const enemyCombatDefinitions = {
     shield: 30,
     movementKind: "ground",
     reward: 14,
+    attack: 12,
     damageResistances: {
       psychic: 0.08
     },
