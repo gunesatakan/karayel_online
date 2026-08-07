@@ -59,8 +59,8 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 
-const TEAM_START_GOLD = 480;
-const MELIS_START_GOLD = 200;
+const TEAM_START_GOLD = 240;
+const MELIS_START_GOLD = 100;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const TOWER_BASE_HP = 100;
@@ -104,7 +104,8 @@ const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
-const ENEMY_REWARD_MULTIPLIER = 1.1;
+const ENEMY_REWARD_MULTIPLIER = 0.55;
+const GLOBAL_TOWER_DAMAGE_MULTIPLIER = 2;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 const ZEYNEP_MAX_REPUTATION = 100;
@@ -5991,7 +5992,7 @@ export class MatchRoom extends Room<MatchState> {
       damage *= this.getImpactFireRateDamageCompensation(tower);
     }
 
-    return damage;
+    return damage * GLOBAL_TOWER_DAMAGE_MULTIPLIER;
   }
 
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
