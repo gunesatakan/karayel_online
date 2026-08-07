@@ -27,6 +27,7 @@ import {
   getTile,
   isInsideMap,
   getTowerSellRefund,
+  getTowerBuildCost,
   gridToWorld,
   normalizeMapData,
   pathToWorldPoints,
@@ -104,7 +105,7 @@ const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
-const ENEMY_REWARD_MULTIPLIER = 0.275;
+const ENEMY_REWARD_MULTIPLIER = 0.55;
 const BASE_TOWER_DAMAGE_MULTIPLIER = 2;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
@@ -3344,9 +3345,10 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
+    const buildCost = definition ? getTowerBuildCost(definition.cost) : Number.POSITIVE_INFINITY;
     const orientation = getTowerPlacementOrientation(definition?.id, message.orientation);
     const placement = this.snapToTowerGrid(message.x, message.y, definition?.id, orientation);
-    if (!definition || player.gold < definition.cost || !this.canPlaceTower(placement.x, placement.y, definition.id, orientation)) {
+    if (!definition || player.gold < buildCost || !this.canPlaceTower(placement.x, placement.y, definition.id, orientation)) {
       return;
     }
 
@@ -3416,8 +3418,8 @@ export class MatchRoom extends Room<MatchState> {
 
     this.towers.set(tower.id, tower);
     this.registerMelisFavoriteTower(tower);
-    player.gold -= definition.cost;
-    player.goldSpent += definition.cost;
+    player.gold -= buildCost;
+    player.goldSpent += buildCost;
     player.towersBuilt += 1;
   }
 

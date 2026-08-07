@@ -6,6 +6,7 @@ import {
   createDefaultEditableMap,
   enemyCombatDefinitions,
   getEnemyDamageResistances,
+  getTowerBuildCost,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -1242,7 +1243,7 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     kind: "stats",
     label: "Ekonomi",
     rows: [
-      { label: "Kuruluş", value: `${tower.cost} altın` },
+      { label: "Kuruluş", value: `${getTowerBuildCost(tower.cost)} altın` },
       { label: "2. seviye", value: `${getTowerUpgradeCost(tower.cost, 1, tower.id)} altın` },
       { label: "3. seviye", value: `${getTowerUpgradeCost(tower.cost, 2, tower.id)} altın` },
       { label: "4. seviye", value: `${getTowerUpgradeCost(tower.cost, 3, tower.id)} altın` }

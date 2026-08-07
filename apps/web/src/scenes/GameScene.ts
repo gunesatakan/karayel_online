@@ -12,6 +12,7 @@ import {
   getMapOrigin,
   getMapPoints,
   getTowerGridSpan,
+  getTowerBuildCost,
   getTowerSellRefund,
   getTowerUpgradeCost,
   getTile,
@@ -755,7 +756,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: "bold",
         wordWrap: { width: 74 }
       }).setDepth(27);
-      const costText = this.add.text(x + 7, y + 16, `${tower.cost}g`, {
+      const costText = this.add.text(x + 7, y + 16, `${getTowerBuildCost(tower.cost)}g`, {
         color: "#facc15",
         fontFamily: "Arial",
         fontSize: "10px"
@@ -1097,7 +1098,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private canPlaceTowerPreview(x: number, y: number, ignoreTowerId = "") {
-    if (this.draggedTowerDefinition && this.currentTeamGold < this.draggedTowerDefinition.cost) {
+    if (this.draggedTowerDefinition && this.currentTeamGold < getTowerBuildCost(this.draggedTowerDefinition.cost)) {
       return false;
     }
 
@@ -4487,7 +4488,7 @@ export class GameScene extends Phaser.Scene {
       : "";
     const towerHint = selectedTower
       ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
-      : `${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g${orientationHint} | haritaya surukle`;
+      : `${this.selectedTowerDefinition.name}: ${getTowerBuildCost(this.selectedTowerDefinition.cost)}g${orientationHint} | haritaya surukle`;
 
     this.game.events.emit("game:controls-state", {
       visible: true,
@@ -4500,7 +4501,7 @@ export class GameScene extends Phaser.Scene {
       towers: this.selectedCharacter.towers.map((tower) => ({
         id: tower.id,
         name: tower.name,
-        cost: tower.cost,
+        cost: getTowerBuildCost(tower.cost),
         color: `#${tower.color.toString(16).padStart(6, "0")}`,
         selected: tower.id === this.selectedTowerDefinition.id && !selectedTower
       })),
@@ -4596,7 +4597,7 @@ export class GameScene extends Phaser.Scene {
       const orientationHint = this.selectedTowerDefinition.id === "zeynep-8"
         ? ` | ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
         : "";
-      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${this.selectedTowerDefinition.cost}g${orientationHint} | haritaya surukle`);
+      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${getTowerBuildCost(this.selectedTowerDefinition.cost)}g${orientationHint} | haritaya surukle`);
       this.upgradeText?.setText("Kule sec");
       this.upgradeButton?.setAlpha(0.6);
       this.sellText?.setText("Sat");

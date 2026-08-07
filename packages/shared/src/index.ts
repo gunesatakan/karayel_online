@@ -378,6 +378,11 @@ export const upgradeCosts: Record<UpgradeId, number> = {
 };
 
 const TOWER_UPGRADE_COST_RATIO = 0.72;
+const TOWER_BUILD_COST_MULTIPLIER = 2;
+
+export function getTowerBuildCost(towerCost: number) {
+  return Math.round(towerCost * TOWER_BUILD_COST_MULTIPLIER);
+}
 
 export function getTowerUpgradeCost(towerCost: number, currentLevel: number, towerId?: string) {
   if (towerId === "warrior-2") {
@@ -398,7 +403,7 @@ export function getTowerUpgradeCost(towerCost: number, currentLevel: number, tow
 
 export function getTowerTotalInvestedGold(towerCost: number, currentLevel: number, towerId?: string) {
   const safeLevel = Math.min(Math.max(Math.round(currentLevel), 1), 10);
-  let total = towerCost;
+  let total = getTowerBuildCost(towerCost);
   for (let level = 1; level < safeLevel; level += 1) {
     total += getTowerUpgradeCost(towerCost, level, towerId);
   }
