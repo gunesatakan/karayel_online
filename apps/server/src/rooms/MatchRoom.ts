@@ -3006,17 +3006,27 @@ export class MatchRoom extends Room<MatchState> {
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
     const capacity = worker.capacity ?? LOGISTICS_WORKER_CAPACITY;
     if (worker.mode === "crystalCollector") {
+      const reactor = this.getCrystalWorkerReactor(worker);
+      if (!reactor) {
+        worker.vx = 0;
+        worker.vy = 0;
+        return;
+      }
       if (worker.logisticsPhase === "pickup") {
-        const nodes = this.getCrystalNodes();
-        const node = nodes[Math.abs(hashString(worker.ownerId)) % nodes.length];
+        if (reactor.energy >= reactor.maxEnergy) {
+          worker.vx = 0;
+          worker.vy = 0;
+          return;
+        }
+        const node = this.getCrystalNodes()
+          .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))[0];
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          worker.cargo = capacity;
+          worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
           worker.logisticsPhase = "deliver";
         }
         return;
       }
-      const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy" && tower.energy < tower.maxEnergy);
-      if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
+      if (reactor.energy < reactor.maxEnergy && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
         const delivered = Math.min(worker.cargo ?? 0, reactor.maxEnergy - reactor.energy);
         reactor.energy += delivered;
         worker.cargo = 0;
@@ -3084,6 +3094,19 @@ export class MatchRoom extends Room<MatchState> {
       worker.logisticsPhase = "pickup";
       worker.targetTowerId = "";
     }
+  }
+
+  private getCrystalWorkerReactor(worker: DroneModel) {
+    const boundReactor = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    if (boundReactor && boundReactor.ownerId === worker.ownerId && boundReactor.hp > 0 && boundReactor.definition.resourceProvider === "energy") {
+      return boundReactor;
+    }
+
+    const reactor = Array.from(this.towers.values())
+      .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy")
+      .sort((left, right) => distanceSq(worker.x, worker.y, left.x, left.y) - distanceSq(worker.x, worker.y, right.x, right.y))[0];
+    worker.targetTowerId = reactor?.id ?? "";
+    return reactor;
   }
 
   private findEnemyRoute(enemy: EnemyModel) {
@@ -7196,12 +7219,4 @@ function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: n
 
 function roundMetric(value: number) {
   return Math.round(value * 10) / 10;
-}
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
-  }
-  return hash;
 }
