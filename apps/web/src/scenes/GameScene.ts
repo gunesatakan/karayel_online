@@ -56,6 +56,7 @@ type ControlActionDetail = {
     | "sellTower"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "setTowerPerformance"
     | "toggleAbartiOrientation"
     | "clearSelection";
   towerId?: string;
@@ -63,6 +64,7 @@ type ControlActionDetail = {
   tier?: ZeynepCommandTier;
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
+  performance?: number;
   clientX?: number;
   clientY?: number;
 };
@@ -975,6 +977,11 @@ export class GameScene extends Phaser.Scene {
       case "toggleAmmoLogistics":
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
+        }
+        break;
+      case "setTowerPerformance":
+        if (this.selectedPlacedTowerId && typeof detail.performance === "number") {
+          this.room?.send("setTowerPerformance", { towerId: this.selectedPlacedTowerId, performance: detail.performance });
         }
         break;
       case "toggleAbartiOrientation":
@@ -4435,6 +4442,11 @@ export class GameScene extends Phaser.Scene {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
+      towerPerformance: selectedTower && !selectedTower.resourceProvider ? {
+        value: selectedTower.performance ?? 0.5,
+        temperature: selectedTower.temperature ?? 0,
+        canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
       upgrade: {
         label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",
         enabled: canUpgrade
@@ -4449,6 +4461,7 @@ export class GameScene extends Phaser.Scene {
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
         ...(isUnderworldTower ? [
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
@@ -4463,7 +4476,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -4521,6 +4534,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedTowerStatsText?.setText([
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+      ...(!selectedTower.resourceProvider ? [`Sıcaklık: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
       ...(!selectedTower.resourceProvider ? [`Mühimmat akışı: ${selectedTower.ammoLogisticsEnabled === false ? "Kapalı" : "Açık"}`] : []),
       ...(selectedTower.definitionId === "archer-4" ? [
         `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,

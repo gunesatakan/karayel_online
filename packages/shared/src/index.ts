@@ -132,6 +132,8 @@ export type TowerSnapshot = {
   maxEnergy?: number;
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   ammoLogisticsEnabled?: boolean;
+  temperature?: number;
+  performance?: number;
   status?: string;
   damageDealt?: number;
   currentDps?: number;

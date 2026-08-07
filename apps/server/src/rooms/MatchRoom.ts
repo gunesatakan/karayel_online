@@ -74,6 +74,8 @@ const LOGISTICS_WORKER_CAPACITY = 12;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 240;
+const TOWER_HEAT_PER_SHOT = 3.5;
+const TOWER_COOLING_PER_SECOND = 5;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -375,6 +377,9 @@ type TowerModel = {
   energy: number;
   maxEnergy: number;
   ammoLogisticsEnabled: boolean;
+  temperature: number;
+  performance: number;
+  heatLocked: boolean;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
@@ -457,6 +462,11 @@ type DroneModel = DroneSnapshot & {
 
 type ToggleAmmoLogisticsMessage = {
   towerId?: string;
+};
+
+type SetTowerPerformanceMessage = {
+  towerId?: string;
+  performance?: number;
 };
 
 type BeamModel = BeamSnapshot & {
@@ -788,6 +798,13 @@ export class MatchRoom extends Room<MatchState> {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
       if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider) {
         tower.ammoLogisticsEnabled = !tower.ammoLogisticsEnabled;
+      }
+    });
+
+    this.onMessage("setTowerPerformance", (client, message: SetTowerPerformanceMessage) => {
+      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+      if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider && typeof message.performance === "number") {
+        tower.performance = Math.max(0, Math.min(1, message.performance));
       }
     });
 
@@ -1367,12 +1384,33 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerFire(tower: TowerModel) {
-    return tower.ammo >= SHOT_AMMO_COST && tower.energy >= SHOT_ENERGY_COST;
+    return tower.performance > 0 && !tower.heatLocked && tower.ammo >= SHOT_AMMO_COST && tower.energy >= this.getTowerEnergyCost(tower);
   }
 
   private consumeTowerResources(tower: TowerModel) {
     tower.ammo = Math.max(0, tower.ammo - SHOT_AMMO_COST);
-    tower.energy = Math.max(0, tower.energy - SHOT_ENERGY_COST);
+    tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
+    tower.temperature = Math.min(100, tower.temperature + TOWER_HEAT_PER_SHOT * (0.5 + tower.performance * 1.5));
+    if (tower.temperature >= 100) {
+      tower.heatLocked = true;
+    }
+  }
+
+  private getTowerEnergyCost(tower: TowerModel) {
+    const multiplier = tower.performance <= 0.5
+      ? tower.performance * 2
+      : 1 + (tower.performance - 0.5) * 4;
+    return SHOT_ENERGY_COST * multiplier;
+  }
+
+  private getTowerPerformanceAttackMultiplier(tower: TowerModel) {
+    const performanceMultiplier = tower.performance * 2;
+    const heatMultiplier = tower.temperature <= 50 ? 1 : Math.max(0, (100 - tower.temperature) / 50);
+    return performanceMultiplier * heatMultiplier;
+  }
+
+  private adjustIntervalForPerformanceAndHeat(tower: TowerModel, interval: number) {
+    return interval / Math.max(0.01, this.getTowerPerformanceAttackMultiplier(tower));
   }
 
   private updateTowers(deltaTime: number) {
@@ -1380,6 +1418,12 @@ export class MatchRoom extends Room<MatchState> {
     this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
+      if (!tower.definition.resourceProvider) {
+        tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * (deltaTime / 1000));
+        if (tower.heatLocked && tower.temperature <= 70) {
+          tower.heatLocked = false;
+        }
+      }
       if (tower.hp <= 0) {
         continue;
       }
@@ -1430,7 +1474,7 @@ export class MatchRoom extends Room<MatchState> {
             continue;
           }
           this.consumeTowerResources(tower);
-          tower.cooldownMs = 220;
+          tower.cooldownMs = this.adjustIntervalForPerformanceAndHeat(tower, 220);
         }
         this.updateDebugLaserSweep(tower);
         continue;
@@ -1457,7 +1501,7 @@ export class MatchRoom extends Room<MatchState> {
             continue;
           }
           this.consumeTowerResources(tower);
-          tower.cooldownMs = 220;
+          tower.cooldownMs = this.adjustIntervalForPerformanceAndHeat(tower, 220);
         }
         this.applyIsolationAura(tower);
         continue;
@@ -3212,6 +3256,9 @@ export class MatchRoom extends Room<MatchState> {
       energy: definition.resourceProvider === "ammunition" ? 20 : definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
       maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
       ammoLogisticsEnabled: true,
+      temperature: 0,
+      performance: 0.5,
+      heatLocked: false,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
@@ -5549,6 +5596,8 @@ export class MatchRoom extends Room<MatchState> {
         maxEnergy: tower.maxEnergy,
         resourceProvider: tower.definition.resourceProvider,
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
+        temperature: Math.round(tower.temperature * 10) / 10,
+        performance: Math.round(tower.performance * 100) / 100,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
@@ -5712,6 +5761,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
+    return this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower));
+  }
+
+  private getTowerBaseFireInterval(tower: TowerModel) {
     const now = Date.now();
     const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
@@ -5918,6 +5971,12 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (tower.overheatMs > 0) {
       return "Hararet";
+    }
+    if (!tower.definition.resourceProvider && tower.performance <= 0) {
+      return "Performans Kapali";
+    }
+    if (!tower.definition.resourceProvider && tower.heatLocked) {
+      return "Asiri Sicak";
     }
     if (tower.ammo < SHOT_AMMO_COST) {
       return "Muhimmat Yok";
