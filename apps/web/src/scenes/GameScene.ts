@@ -4462,6 +4462,7 @@ export class GameScene extends Phaser.Scene {
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
         ...(isUnderworldTower ? [
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
@@ -4535,6 +4536,7 @@ export class GameScene extends Phaser.Scene {
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
       ...(!selectedTower.resourceProvider ? [`Sıcaklık: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+      ...(!selectedTower.resourceProvider ? [`Soğuma hızı: %${selectedTower.coolingRate ?? 0}/sn`] : []),
       ...(!selectedTower.resourceProvider ? [`Mühimmat akışı: ${selectedTower.ammoLogisticsEnabled === false ? "Kapalı" : "Açık"}`] : []),
       ...(selectedTower.definitionId === "archer-4" ? [
         `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,

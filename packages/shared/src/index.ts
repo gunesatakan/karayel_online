@@ -134,6 +134,7 @@ export type TowerSnapshot = {
   ammoLogisticsEnabled?: boolean;
   temperature?: number;
   performance?: number;
+  coolingRate?: number;
   status?: string;
   damageDealt?: number;
   currentDps?: number;

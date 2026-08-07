@@ -1390,7 +1390,10 @@ export class MatchRoom extends Room<MatchState> {
   private consumeTowerResources(tower: TowerModel) {
     tower.ammo = Math.max(0, tower.ammo - SHOT_AMMO_COST);
     tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
-    tower.temperature = Math.min(100, tower.temperature + TOWER_HEAT_PER_SHOT * (0.5 + tower.performance * 1.5));
+    const heatMultiplier = tower.performance <= 0.5
+      ? tower.performance * 2
+      : 1 + (tower.performance - 0.5) * 6;
+    tower.temperature = Math.min(100, tower.temperature + TOWER_HEAT_PER_SHOT * heatMultiplier);
     if (tower.temperature >= 100) {
       tower.heatLocked = true;
     }
@@ -5598,6 +5601,7 @@ export class MatchRoom extends Room<MatchState> {
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
         temperature: Math.round(tower.temperature * 10) / 10,
         performance: Math.round(tower.performance * 100) / 100,
+        coolingRate: TOWER_COOLING_PER_SECOND,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
