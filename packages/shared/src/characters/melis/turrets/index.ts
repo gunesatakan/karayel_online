@@ -123,7 +123,7 @@ export const melisTowers: TowerDefinition[] = [
   },
   {
     id: "archer-7", characterId: "archer", name: "Gölge Cephaneliği", role: "Mühimmat ikmali",
-    description: "Taşınan enerjiyi tüketerek mühimmat üretir; lojistik işçisi üretilen mühimmatı sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
+    description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
     mechanics: ["resource-supply", "ammunition"], cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },

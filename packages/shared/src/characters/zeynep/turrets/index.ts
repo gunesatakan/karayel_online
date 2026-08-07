@@ -123,7 +123,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
     return {
       ...tower,
       description: providesAmmunition
-        ? "Taşınan enerjiyi tüketerek mühimmat üretir; lojistik işçisi üretilen mühimmatı sevkiyatı açık kulelere taşır."
+        ? "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır."
         : "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.",
       classType: "support",
       damageType: "none",

@@ -24,6 +24,7 @@ import {
   type CharacterId,
   type DamageEventSnapshot,
   type CrystalNodeSnapshot,
+  type AmmoNodeSnapshot,
   type DroneSnapshot,
   type EditableMapData,
   type EnemySnapshot,
@@ -219,6 +220,7 @@ export class GameScene extends Phaser.Scene {
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
+  private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
   private selectedResourceGraphics?: Phaser.GameObjects.Graphics;
   private selectedAmmoText?: Phaser.GameObjects.Text;
   private selectedEnergyText?: Phaser.GameObjects.Text;
@@ -1748,6 +1750,7 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
     this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
+    this.renderAmmoNodes(frame.snapshot.ammoNodes ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderProjectiles(frame.snapshot.projectiles);
@@ -2856,10 +2859,10 @@ export class GameScene extends Phaser.Scene {
         sprite.setRotation(angle);
       }
       sprite.setPosition(drone.x, drone.y);
-      const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
+      const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
       sprite.setScale(isLogisticsWorker ? 0.69 * pulse : drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
-      sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
+      sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
     }
   }
@@ -3009,6 +3012,23 @@ export class GameScene extends Phaser.Scene {
       graphics.strokeCircle(node.x, node.y, 9 * pulse);
       graphics.fillStyle(0xe9d5ff, 0.95);
       graphics.fillTriangle(node.x, node.y - 9, node.x + 7, node.y + 7, node.x - 7, node.y + 7);
+    }
+  }
+
+  private renderAmmoNodes(nodes: AmmoNodeSnapshot[]) {
+    const graphics = this.ammoNodeGraphics ?? this.add.graphics().setDepth(8);
+    this.ammoNodeGraphics = graphics;
+    graphics.clear();
+    const pulse = 1 + Math.sin(Date.now() / 310) * 0.1;
+    for (const node of nodes) {
+      graphics.fillStyle(0x365314, 0.3);
+      graphics.fillCircle(node.x, node.y, 14 * pulse);
+      graphics.lineStyle(2, 0xa3e635, 0.9);
+      graphics.strokeCircle(node.x, node.y, 8 * pulse);
+      graphics.fillStyle(0xd9f99d, 0.96);
+      graphics.fillRect(node.x - 6, node.y - 5, 12, 10);
+      graphics.lineStyle(1, 0x3f6212, 0.9);
+      graphics.lineBetween(node.x - 4, node.y, node.x + 4, node.y);
     }
   }
 
@@ -4536,7 +4556,7 @@ export class GameScene extends Phaser.Scene {
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
-        ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
@@ -4603,7 +4623,7 @@ export class GameScene extends Phaser.Scene {
     const ammoLabels = { bullet: "Mermi", auraCrystal: "Aura Kristali", powerCrystal: "Güç Kristali" } as const;
     const resourceText = selectedTower.resourceProvider
       ? selectedTower.resourceProvider === "ammunition"
-        ? ` | Fabrika ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
+        ? ` | Fabrika ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : ` | Enerji Deposu ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
       : selectedTower.ammoType
         ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`

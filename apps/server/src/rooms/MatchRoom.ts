@@ -74,6 +74,8 @@ const LOGISTICS_WORKER_CAPACITY = 12;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 240;
+const AMMO_RAW_MATERIAL_PER_AMMO = 1;
+const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_HEAT_PER_SHOT = 3.5;
 const TOWER_COOLING_PER_SECOND = 5;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
@@ -380,6 +382,8 @@ type TowerModel = {
   temperature: number;
   performance: number;
   heatLocked: boolean;
+  rawAmmo: number;
+  maxRawAmmo: number;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
@@ -639,6 +643,7 @@ export class MatchRoom extends Room<MatchState> {
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
+  private deadLogisticsWorkers = new Set<string>();
   private beams = new Map<string, BeamModel>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
@@ -1374,12 +1379,18 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateResourceFactories(seconds: number) {
     for (const tower of this.towers.values()) {
-      if (tower.hp <= 0 || tower.definition.resourceProvider !== "ammunition" || tower.energy <= 0 || tower.ammo >= tower.maxAmmo) {
+      if (tower.hp <= 0 || tower.definition.resourceProvider !== "ammunition" || tower.energy <= 0 || tower.rawAmmo <= 0 || tower.ammo >= tower.maxAmmo) {
         continue;
       }
-      const production = Math.min(AMMO_FACTORY_RATE_PER_SECOND * seconds, tower.maxAmmo - tower.ammo, tower.energy / AMMO_FACTORY_ENERGY_PER_AMMO);
+      const production = Math.min(
+        AMMO_FACTORY_RATE_PER_SECOND * seconds,
+        tower.maxAmmo - tower.ammo,
+        tower.energy / AMMO_FACTORY_ENERGY_PER_AMMO,
+        tower.rawAmmo / AMMO_RAW_MATERIAL_PER_AMMO
+      );
       tower.ammo += production;
       tower.energy = Math.max(0, tower.energy - production * AMMO_FACTORY_ENERGY_PER_AMMO);
+      tower.rawAmmo = Math.max(0, tower.rawAmmo - production * AMMO_RAW_MATERIAL_PER_AMMO);
     }
   }
 
@@ -2785,7 +2796,16 @@ export class MatchRoom extends Room<MatchState> {
     const nexusY = GAME_WORLD_HEIGHT - 26;
 
     for (const [id, drone] of this.drones) {
-      if (drone.mode === "crystalCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
+      if (drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
+        const collidedWithEnemy = Array.from(this.enemies.values()).some((enemy) => {
+          const collisionRadius = this.scaleWorldDistance(WORKER_ENEMY_COLLISION_RADIUS) + getEnemyCollisionRadius(enemy);
+          return distanceSq(drone.x, drone.y, enemy.x, enemy.y) <= collisionRadius * collisionRadius;
+        });
+        if (collidedWithEnemy) {
+          this.deadLogisticsWorkers.add(`${drone.ownerId}:${drone.mode}`);
+          this.drones.delete(id);
+          continue;
+        }
         if (this.setupPhase) {
           drone.vx = 0;
           drone.vy = 0;
@@ -2953,12 +2973,26 @@ export class MatchRoom extends Room<MatchState> {
     }));
   }
 
+  private getAmmoNodes() {
+    const origin = getMapOrigin(this.activeMap);
+    const { gridSize } = getMapMetrics(this.activeMap);
+    const columns = [0.14, 0.56, 0.86];
+    return columns.map((ratio, index) => ({
+      id: `ammo-source-${index + 1}`,
+      x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
+      y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.68 : 0.28)))) * gridSize + gridSize / 2
+    }));
+  }
+
   private ensureLogisticsWorkers() {
-    const workerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "energyTransport"];
+    const workerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "ammoCollector", "energyTransport"];
     const origin = getMapOrigin(this.activeMap);
     const { gridSize } = getMapMetrics(this.activeMap);
     for (const ownerId of this.state.players.keys()) {
       for (const [index, mode] of workerModes.entries()) {
+        if (this.deadLogisticsWorkers.has(`${ownerId}:${mode}`)) {
+          continue;
+        }
         const exists = Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === mode);
         if (exists) {
           continue;
@@ -3029,6 +3063,36 @@ export class MatchRoom extends Room<MatchState> {
       if (reactor.energy < reactor.maxEnergy && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
         const delivered = Math.min(worker.cargo ?? 0, reactor.maxEnergy - reactor.energy);
         reactor.energy += delivered;
+        worker.cargo = 0;
+        worker.logisticsPhase = "pickup";
+      }
+      return;
+    }
+
+    if (worker.mode === "ammoCollector") {
+      const factory = this.getAmmoCollectorFactory(worker);
+      if (!factory) {
+        worker.vx = 0;
+        worker.vy = 0;
+        return;
+      }
+      if (worker.logisticsPhase === "pickup") {
+        if (factory.rawAmmo >= factory.maxRawAmmo) {
+          worker.vx = 0;
+          worker.vy = 0;
+          return;
+        }
+        const node = this.getAmmoNodes()
+          .sort((left, right) => distanceSq(factory.x, factory.y, left.x, left.y) - distanceSq(factory.x, factory.y, right.x, right.y))[0];
+        if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
+          worker.cargo = Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo);
+          worker.logisticsPhase = "deliver";
+        }
+        return;
+      }
+      if (factory.rawAmmo < factory.maxRawAmmo && this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
+        const delivered = Math.min(worker.cargo ?? 0, factory.maxRawAmmo - factory.rawAmmo);
+        factory.rawAmmo += delivered;
         worker.cargo = 0;
         worker.logisticsPhase = "pickup";
       }
@@ -3107,6 +3171,19 @@ export class MatchRoom extends Room<MatchState> {
       .sort((left, right) => distanceSq(worker.x, worker.y, left.x, left.y) - distanceSq(worker.x, worker.y, right.x, right.y))[0];
     worker.targetTowerId = reactor?.id ?? "";
     return reactor;
+  }
+
+  private getAmmoCollectorFactory(worker: DroneModel) {
+    const boundFactory = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    if (boundFactory && boundFactory.ownerId === worker.ownerId && boundFactory.hp > 0 && boundFactory.definition.resourceProvider === "ammunition") {
+      return boundFactory;
+    }
+
+    const factory = Array.from(this.towers.values())
+      .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition")
+      .sort((left, right) => distanceSq(worker.x, worker.y, left.x, left.y) - distanceSq(worker.x, worker.y, right.x, right.y))[0];
+    worker.targetTowerId = factory?.id ?? "";
+    return factory;
   }
 
   private findEnemyRoute(enemy: EnemyModel) {
@@ -3285,6 +3362,8 @@ export class MatchRoom extends Room<MatchState> {
       temperature: 0,
       performance: 0.5,
       heatLocked: false,
+      rawAmmo: 0,
+      maxRawAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : 0,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
@@ -5625,6 +5704,8 @@ export class MatchRoom extends Room<MatchState> {
         temperature: Math.round(tower.temperature * 10) / 10,
         performance: Math.round(tower.performance * 100) / 100,
         coolingRate: TOWER_COOLING_PER_SECOND,
+        rawAmmo: Math.floor(tower.rawAmmo),
+        maxRawAmmo: tower.maxRawAmmo,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
@@ -5660,6 +5741,7 @@ export class MatchRoom extends Room<MatchState> {
         targetTowerId: drone.targetTowerId
       })),
       crystalNodes: this.getCrystalNodes(),
+      ammoNodes: this.getAmmoNodes(),
       beams: Array.from(this.beams.values())
         .filter((beam) => !beam.delayMs || beam.delayMs <= 0)
         .map((beam) => ({
@@ -5988,7 +6070,11 @@ export class MatchRoom extends Room<MatchState> {
       return "Devre Disi";
     }
     if (tower.definition.resourceProvider === "ammunition") {
-      return tower.energy > 0 ? `Fabrika ${Math.floor(tower.ammo)}/${tower.maxAmmo}` : "Fabrika Enerjisiz";
+      return tower.rawAmmo <= 0
+        ? "Cephane Hammaddesi Yok"
+        : tower.energy > 0
+          ? `Fabrika ${Math.floor(tower.ammo)}/${tower.maxAmmo}`
+          : "Fabrika Enerjisiz";
     }
     if (tower.definition.resourceProvider === "energy") {
       return `Enerji Deposu ${Math.floor(tower.energy)}/${tower.maxEnergy}`;

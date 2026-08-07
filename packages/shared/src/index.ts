@@ -135,6 +135,8 @@ export type TowerSnapshot = {
   temperature?: number;
   performance?: number;
   coolingRate?: number;
+  rawAmmo?: number;
+  maxRawAmmo?: number;
   status?: string;
   damageDealt?: number;
   currentDps?: number;
@@ -162,7 +164,7 @@ export type ProjectileSnapshot = {
 
 export type DroneSnapshot = {
   id: string;
-  mode: "attack" | "repair" | "crystalCollector" | "energyTransport" | "ammoTransport";
+  mode: "attack" | "repair" | "crystalCollector" | "ammoCollector" | "energyTransport" | "ammoTransport";
   x: number;
   y: number;
   ownerId?: string;
@@ -173,6 +175,12 @@ export type DroneSnapshot = {
 };
 
 export type CrystalNodeSnapshot = {
+  id: string;
+  x: number;
+  y: number;
+};
+
+export type AmmoNodeSnapshot = {
   id: string;
   x: number;
   y: number;
@@ -262,6 +270,7 @@ export type GameSnapshot = {
   projectiles: ProjectileSnapshot[];
   drones: DroneSnapshot[];
   crystalNodes: CrystalNodeSnapshot[];
+  ammoNodes: AmmoNodeSnapshot[];
   beams: BeamSnapshot[];
   damageEvents: DamageEventSnapshot[];
   killEvents: KillEventSnapshot[];
