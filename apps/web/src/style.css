@@ -499,42 +499,6 @@ canvas {
   box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.22), 0 0 14px rgba(45, 212, 191, 0.18);
 }
 
-.game-controls__performance {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  grid-template-rows: 1fr 1fr;
-  align-items: center;
-  gap: 2px 8px;
-  min-height: 72px;
-  margin-top: 4px;
-  padding: 4px 8px;
-  color: #dbeafe;
-  border: 1px solid rgba(34, 211, 238, 0.45);
-  border-radius: 6px;
-  background: rgba(2, 6, 23, 0.94);
-  font-size: clamp(10px, 2.7vw, 12px);
-  font-variant-numeric: tabular-nums;
-}
-
-.game-controls__performance-slider {
-  grid-row: 1 / 3;
-  width: 28px;
-  height: 62px;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  accent-color: #22d3ee;
-  touch-action: none;
-}
-
-.game-controls__performance .is-hot {
-  color: #fb923c;
-}
-
-.game-controls__performance .is-overheated {
-  color: #ef4444;
-  font-weight: 900;
-}
-
 .game-controls__footer {
   display: flex;
   align-items: center;

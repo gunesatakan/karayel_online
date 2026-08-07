@@ -18,7 +18,6 @@ type ControlState = {
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
-  towerPerformance?: { value: number; temperature: number; canEdit: boolean };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
@@ -46,7 +45,6 @@ export function setupGameControlUi(game: Phaser.Game) {
   let latestKey = "";
   let activeTowerId = "";
   let activePointerId = -1;
-  let performanceDragging = false;
 
   const dispatch = (detail: ControlAction) => {
     window.dispatchEvent(new CustomEvent("karayel:control-action", { detail }));
@@ -91,9 +89,6 @@ export function setupGameControlUi(game: Phaser.Game) {
 
   const render = (state: ControlState) => {
     latestState = state;
-    if (performanceDragging) {
-      return;
-    }
     const key = JSON.stringify(state);
     if (key === latestKey) {
       return;
@@ -173,37 +168,6 @@ export function setupGameControlUi(game: Phaser.Game) {
           () => dispatch({ action: "toggleAmmoLogistics" })
         ));
         shop.append(logisticsRow);
-      }
-      if (state.towerPerformance) {
-        const performancePanel = document.createElement("div");
-        performancePanel.className = "game-controls__performance";
-        const slider = document.createElement("input");
-        slider.type = "range";
-        slider.min = "0";
-        slider.max = "100";
-        slider.step = "1";
-        slider.value = String(Math.round(state.towerPerformance.value * 100));
-        slider.disabled = !state.towerPerformance.canEdit;
-        slider.className = "game-controls__performance-slider";
-        const value = document.createElement("strong");
-        value.textContent = `Performans %${slider.value}`;
-        const heat = document.createElement("span");
-        heat.textContent = `Sıcaklık %${Math.round(state.towerPerformance.temperature)}`;
-        heat.className = state.towerPerformance.temperature >= 100 ? "is-overheated" : state.towerPerformance.temperature > 50 ? "is-hot" : "";
-        slider.addEventListener("pointerdown", () => { performanceDragging = true; });
-        slider.addEventListener("input", () => {
-          value.textContent = `Performans %${slider.value}`;
-          dispatch({ action: "setTowerPerformance", performance: Number(slider.value) / 100 });
-        });
-        const finishDrag = () => {
-          performanceDragging = false;
-          dispatch({ action: "setTowerPerformance", performance: Number(slider.value) / 100 });
-          render(latestState);
-        };
-        slider.addEventListener("pointerup", finishDrag);
-        slider.addEventListener("pointercancel", finishDrag);
-        performancePanel.append(slider, value, heat);
-        shop.append(performancePanel);
       }
     } else {
       const towerGrid = document.createElement("div");

@@ -222,6 +222,12 @@ export class GameScene extends Phaser.Scene {
   private selectedResourceGraphics?: Phaser.GameObjects.Graphics;
   private selectedAmmoText?: Phaser.GameObjects.Text;
   private selectedEnergyText?: Phaser.GameObjects.Text;
+  private selectedTemperatureText?: Phaser.GameObjects.Text;
+  private selectedPerformanceText?: Phaser.GameObjects.Text;
+  private performanceSliderHitZone?: Phaser.GameObjects.Rectangle;
+  private performanceSliderTop = 0;
+  private performanceSliderBottom = 0;
+  private performanceSliderTowerId = "";
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -2250,6 +2256,9 @@ export class GameScene extends Phaser.Scene {
     this.selectedResourceGraphics?.clear().setVisible(false);
     this.selectedAmmoText?.setVisible(false);
     this.selectedEnergyText?.setVisible(false);
+    this.selectedTemperatureText?.setVisible(false);
+    this.selectedPerformanceText?.setVisible(false);
+    this.performanceSliderHitZone?.setVisible(false).disableInteractive();
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
@@ -2869,29 +2878,81 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(18);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
-    const panelWidth = Math.max(92, Math.min(126, discSize * 1.65));
-    const panelHeight = 50;
+    const panelWidth = Math.max(138, Math.min(158, discSize * 2));
+    const panelHeight = 76;
     const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
     const panelY = tower.y + discSize / 2 + 7;
     const barX = panelX + 7;
-    const barWidth = panelWidth - 14;
-    const barHeight = 7;
+    const barWidth = panelWidth - 48;
+    const barHeight = 6;
     const ammoBarY = panelY + 16;
     const energyBarY = panelY + 38;
+    const temperatureBarY = panelY + 60;
+    const performanceX = panelX + panelWidth - 20;
+    const performanceTop = panelY + 11;
+    const performanceBottom = panelY + panelHeight - 8;
+    const performanceHeight = performanceBottom - performanceTop;
+    const hasPerformanceControl = !tower.resourceProvider;
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
+    const temperatureRatio = Phaser.Math.Clamp((tower.temperature ?? 0) / 100, 0, 1);
+    const performanceRatio = Phaser.Math.Clamp(tower.performance ?? 0.5, 0, 1);
     graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
     graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
     graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
+    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, barWidth, barHeight, 3);
+    graphics.fillStyle(temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
+      .fillRoundedRect(barX, temperatureBarY, barWidth * temperatureRatio, barHeight, 3);
+    const performanceFillHeight = performanceHeight * performanceRatio;
+    if (hasPerformanceControl) {
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(performanceX - 4, performanceTop, 8, performanceHeight, 4);
+      graphics.fillStyle(0x22c55e, 1).fillRoundedRect(performanceX - 4, performanceBottom - performanceFillHeight, 8, performanceFillHeight, 4);
+      graphics.fillStyle(0xf8fafc, 1).fillCircle(performanceX, performanceBottom - performanceFillHeight, 5);
+    }
 
-    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "10px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
-    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "10px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
-    this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(panelCenterX, panelY + 2).setVisible(true);
-    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(panelCenterX, panelY + 24).setVisible(true);
+    const labelCenterX = barX + barWidth / 2;
+    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
+    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
+    this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
+    this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0.5).setDepth(19).setRotation(-Math.PI / 2);
+    this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(labelCenterX, panelY + 2).setVisible(true);
+    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
+    this.selectedTemperatureText.setText(`Sıcaklık %${Math.round(tower.temperature ?? 0)}`).setPosition(labelCenterX, panelY + 46).setVisible(true);
+    this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(panelX + panelWidth - 8, panelY + panelHeight / 2).setVisible(hasPerformanceControl);
+
+    this.performanceSliderTop = performanceTop;
+    this.performanceSliderBottom = performanceBottom;
+    this.performanceSliderTowerId = tower.id;
+    if (!this.performanceSliderHitZone) {
+      this.performanceSliderHitZone = this.add.rectangle(performanceX, panelY + panelHeight / 2, 32, panelHeight, 0xffffff, 0.001)
+        .setDepth(20)
+        .setInteractive({ useHandCursor: true });
+      const updatePerformance = (pointer: Phaser.Input.Pointer) => this.setSelectedTowerPerformanceFromY(pointer.worldY);
+      this.performanceSliderHitZone.on("pointerdown", updatePerformance);
+      this.performanceSliderHitZone.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+        if (pointer.isDown) {
+          updatePerformance(pointer);
+        }
+      });
+    }
+    this.performanceSliderHitZone.setPosition(performanceX, panelY + panelHeight / 2).setSize(32, panelHeight).setVisible(hasPerformanceControl);
+    if (hasPerformanceControl && tower.ownerId === this.localSessionId) {
+      this.performanceSliderHitZone.setInteractive({ useHandCursor: true });
+    } else {
+      this.performanceSliderHitZone.disableInteractive();
+    }
+  }
+
+  private setSelectedTowerPerformanceFromY(worldY: number) {
+    if (!this.performanceSliderTowerId || this.performanceSliderBottom <= this.performanceSliderTop) {
+      return;
+    }
+    const performance = Phaser.Math.Clamp((this.performanceSliderBottom - worldY) / (this.performanceSliderBottom - this.performanceSliderTop), 0, 1);
+    this.room?.send("setTowerPerformance", { towerId: this.performanceSliderTowerId, performance });
   }
 
   private drawEnemyHealthBar(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
@@ -4440,11 +4501,6 @@ export class GameScene extends Phaser.Scene {
       } : undefined,
       ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
-        canEdit: selectedTower.ownerId === this.localSessionId
-      } : undefined,
-      towerPerformance: selectedTower && !selectedTower.resourceProvider ? {
-        value: selectedTower.performance ?? 0.5,
-        temperature: selectedTower.temperature ?? 0,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
       upgrade: {
