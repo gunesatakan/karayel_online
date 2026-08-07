@@ -2884,15 +2884,14 @@ export class GameScene extends Phaser.Scene {
     if (!graphics) {
       return;
     }
-    const width = Math.max(20, Math.min(44, displayedSize * 0.78));
-    const height = 3;
+    const width = Math.max(17, Math.min(38, displayedSize * 0.68));
+    const height = 2;
     const x = enemy.x - width / 2;
     const y = enemy.y + displayedSize * 0.5 + 5;
     const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
     graphics.clear();
     graphics.fillStyle(0x020617, 0.92).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
-    graphics.fillStyle(hpRatio > 0.5 ? 0x22c55e : hpRatio > 0.2 ? 0xf59e0b : 0xef4444, 1)
-      .fillRoundedRect(x, y, width * hpRatio, height, 1);
+    graphics.fillStyle(0xef4444, 1).fillRoundedRect(x, y, width * hpRatio, height, 1);
     if (enemy.maxShield > 0) {
       const shieldRatio = Phaser.Math.Clamp(enemy.shield / Math.max(1, enemy.maxShield), 0, 1);
       const shieldY = y + height + 2;
