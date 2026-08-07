@@ -75,6 +75,7 @@ type RenderTower = {
   base: Phaser.GameObjects.Image;
   range: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
+  healthBar: Phaser.GameObjects.Graphics;
   key: string;
   /** Eased separately from the snapshot so the muzzle sweeps instead of snapping. */
   facing?: number;
@@ -82,6 +83,7 @@ type RenderTower = {
 
 type RenderMover = {
   sprite: Phaser.Physics.Arcade.Sprite;
+  healthBar?: Phaser.GameObjects.Graphics;
   shieldHalo?: Phaser.GameObjects.Arc;
   marker?: Phaser.GameObjects.Text;
   curseMarker?: Phaser.GameObjects.Text;
@@ -215,6 +217,9 @@ export class GameScene extends Phaser.Scene {
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
+  private selectedResourceGraphics?: Phaser.GameObjects.Graphics;
+  private selectedAmmoText?: Phaser.GameObjects.Text;
+  private selectedEnergyText?: Phaser.GameObjects.Text;
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -2103,6 +2108,7 @@ export class GameScene extends Phaser.Scene {
         mover.marker?.destroy();
         mover.curseMarker?.destroy();
         mover.doubtMarker?.destroy();
+        mover.healthBar?.destroy();
         mover.shieldHalo?.destroy();
         mover.armorBreakIcon?.destroy();
         this.enemies.delete(id);
@@ -2128,6 +2134,7 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, 0x60a5fa, 0.86)
           .setDepth(7.6)
           .setVisible(false);
+        mover.healthBar = this.add.graphics().setDepth(16);
         mover.marker = this.add.text(enemy.x, enemy.y - 22, "T", {
           color: "#fde047",
           fontFamily: "Arial",
@@ -2183,6 +2190,7 @@ export class GameScene extends Phaser.Scene {
       mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
       mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
       mover.shieldHalo?.setVisible(hasShield);
+      this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
@@ -2232,6 +2240,9 @@ export class GameScene extends Phaser.Scene {
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
+    this.selectedResourceGraphics?.clear().setVisible(false);
+    this.selectedAmmoText?.setVisible(false);
+    this.selectedEnergyText?.setVisible(false);
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
@@ -2241,6 +2252,7 @@ export class GameScene extends Phaser.Scene {
         tower.base.destroy();
         tower.range.destroy();
         tower.isolation.destroy();
+        tower.healthBar.destroy();
         this.towers.delete(id);
       }
     }
@@ -2266,11 +2278,12 @@ export class GameScene extends Phaser.Scene {
         const isolation = this.add.graphics()
           .setVisible(false)
           .setDepth(6);
+        const healthBar = this.add.graphics().setDepth(16);
         const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        rendered = { effect, linkHighlight, halo, base, range, isolation, key: "" };
+        rendered = { effect, linkHighlight, halo, base, range, isolation, healthBar, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -2303,6 +2316,10 @@ export class GameScene extends Phaser.Scene {
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78);
       rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
+      this.drawTowerHealthBar(rendered.healthBar, tower, discSize);
+      if (tower.id === this.selectedPlacedTowerId) {
+        this.drawSelectedTowerResources(tower, discSize);
+      }
       this.renderTowerSpriteEffects(rendered.effect, tower);
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
@@ -2825,6 +2842,61 @@ export class GameScene extends Phaser.Scene {
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
+    }
+  }
+
+  private drawTowerHealthBar(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot, discSize: number) {
+    const width = Math.max(22, discSize * 0.88);
+    const height = 4;
+    const x = tower.x - width / 2;
+    const y = tower.y - discSize / 2 - 8;
+    const ratio = Phaser.Math.Clamp((tower.hp ?? 0) / Math.max(1, tower.maxHp ?? 1), 0, 1);
+    graphics.clear();
+    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
+    graphics.fillStyle(ratio > 0.5 ? 0x22c55e : ratio > 0.2 ? 0xf59e0b : 0xef4444, 1)
+      .fillRoundedRect(x, y, width * ratio, height, 1);
+  }
+
+  private drawSelectedTowerResources(tower: TowerSnapshot, discSize: number) {
+    const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(18);
+    this.selectedResourceGraphics = graphics;
+    graphics.clear().setVisible(true);
+    const width = Math.max(48, discSize * 1.35);
+    const height = 5;
+    const x = tower.x - width / 2;
+    const ammoY = tower.y + discSize / 2 + 10;
+    const energyY = ammoY + 12;
+    const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
+    const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
+    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, ammoY - 1, width + 2, height + 2, 2);
+    graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(x, ammoY, width * ammoRatio, height, 1);
+    graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, energyY - 1, width + 2, height + 2, 2);
+    graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(x, energyY, width * energyRatio, height, 1);
+
+    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold", stroke: "#020617", strokeThickness: 2 }).setOrigin(0.5, 1).setDepth(19);
+    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold", stroke: "#020617", strokeThickness: 2 }).setOrigin(0.5, 1).setDepth(19);
+    this.selectedAmmoText.setText(`M ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(tower.x, ammoY).setVisible(true);
+    this.selectedEnergyText.setText(`E ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(tower.x, energyY).setVisible(true);
+  }
+
+  private drawEnemyHealthBar(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
+    if (!graphics) {
+      return;
+    }
+    const width = Math.max(24, Math.min(52, displayedSize * 0.92));
+    const height = 4;
+    const x = enemy.x - width / 2;
+    const y = enemy.y + displayedSize * 0.5 + 5;
+    const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+    graphics.clear();
+    graphics.fillStyle(0x020617, 0.92).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
+    graphics.fillStyle(hpRatio > 0.5 ? 0x22c55e : hpRatio > 0.2 ? 0xf59e0b : 0xef4444, 1)
+      .fillRoundedRect(x, y, width * hpRatio, height, 1);
+    if (enemy.maxShield > 0) {
+      const shieldRatio = Phaser.Math.Clamp(enemy.shield / Math.max(1, enemy.maxShield), 0, 1);
+      const shieldY = y + height + 2;
+      graphics.fillStyle(0x020617, 0.92).fillRoundedRect(x - 1, shieldY - 1, width + 2, height + 2, 2);
+      graphics.fillStyle(0x38bdf8, 1).fillRoundedRect(x, shieldY, width * shieldRatio, height, 1);
     }
   }
 
