@@ -2848,7 +2848,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawTowerHealthBar(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot, discSize: number) {
     const width = Math.max(22, discSize * 0.88);
-    const height = 4;
+    const height = 3;
     const x = tower.x - width / 2;
     const y = tower.y - discSize / 2 - 8;
     const ratio = Phaser.Math.Clamp((tower.hp ?? 0) / Math.max(1, tower.maxHp ?? 1), 0, 1);
@@ -2884,8 +2884,8 @@ export class GameScene extends Phaser.Scene {
     if (!graphics) {
       return;
     }
-    const width = Math.max(24, Math.min(52, displayedSize * 0.92));
-    const height = 4;
+    const width = Math.max(20, Math.min(44, displayedSize * 0.78));
+    const height = 3;
     const x = enemy.x - width / 2;
     const y = enemy.y + displayedSize * 0.5 + 5;
     const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
