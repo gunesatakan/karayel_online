@@ -2,7 +2,6 @@ import { Room } from "colyseus.js";
 import type Phaser from "phaser";
 import {
   characters,
-  MAX_MAP_SCALE,
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
   enemyCombatDefinitions,
@@ -401,7 +400,7 @@ export function setupMenuUi(game: Phaser.Game) {
 
     root.querySelectorAll<HTMLElement>("[data-map-editor-scale]").forEach((button) => {
       button.addEventListener("click", () => {
-        const nextScale: MapScale = Number(button.dataset.mapEditorScale) === MAX_MAP_SCALE ? MAX_MAP_SCALE : 1;
+        const nextScale = parseMapScale(button.dataset.mapEditorScale);
         if (selectedMap.scale !== nextScale) {
           selectedMap = scaleEditableMap(selectedMap, nextScale);
           selectedMapScale = nextScale;
@@ -423,7 +422,7 @@ export function setupMenuUi(game: Phaser.Game) {
 
     root.querySelectorAll<HTMLElement>("[data-map-scale]").forEach((button) => {
       button.addEventListener("click", () => {
-        selectedMapScale = Number(button.dataset.mapScale) === MAX_MAP_SCALE ? MAX_MAP_SCALE : 1;
+        selectedMapScale = parseMapScale(button.dataset.mapScale);
         render("online");
       });
     });
@@ -652,9 +651,11 @@ function renderOnline(
             <div class="scale-picker__buttons">
               <button class="scale-chip ${selectedMapScale === 1 ? "is-active" : ""}" data-map-scale="1">1x</button>
               <button class="scale-chip ${selectedMapScale === 2 ? "is-active" : ""}" data-map-scale="2">2x</button>
+              <button class="scale-chip ${selectedMapScale === 3 ? "is-active" : ""}" data-map-scale="3">3x</button>
+              <button class="scale-chip ${selectedMapScale === 4 ? "is-active" : ""}" data-map-scale="4">4x</button>
             </div>
           </div>
-          <p class="online-note">2x seçildiğinde aynı ekrana iki kat kule karesi sığar; kuleler ve build alanları küçülür.</p>
+          <p class="online-note">1x–4x seçenekleri aynı alandaki grid yoğunluğunu belirler; ölçek büyüdükçe kule kareleri küçülür.</p>
           <button class="command command--primary" data-create-room>Odayı Kur</button>
         </section>
       ` : `
@@ -1499,6 +1500,11 @@ function createMapRecordId() {
 
 function replaceTileKind(map: EditableMapData, from: MapTileKind, to: MapTileKind) {
   map.tiles = map.tiles.map((tile) => tile === from ? to : tile);
+}
+
+function parseMapScale(value: string | undefined): MapScale {
+  const scale = Number(value);
+  return scale === 2 || scale === 3 || scale === 4 ? scale : 1;
 }
 
 function getMapCounts(map: EditableMapData) {

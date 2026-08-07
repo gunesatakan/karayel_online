@@ -8,7 +8,7 @@ export type EditableMapData = {
   tiles: MapTileKind[];
 };
 
-export type MapScale = 1 | 2;
+export type MapScale = 1 | 2 | 3 | 4;
 
 export type GridPoint = {
   col: number;
@@ -31,7 +31,7 @@ const GAME_HEIGHT = 698;
 const GRID_TOP = 86;
 const GRID_SIZE = 34;
 export const DEFAULT_MAP_SCALE: MapScale = 1;
-export const MAX_MAP_SCALE: MapScale = 2;
+export const MAX_MAP_SCALE: MapScale = 4;
 const DEFAULT_PATH = [
   { x: 34, y: 104 },
   { x: 326, y: 104 },
@@ -396,5 +396,5 @@ function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: n
 }
 
 function normalizeMapScale(scale: unknown): MapScale {
-  return scale === 2 ? 2 : 1;
+  return scale === 2 || scale === 3 || scale === 4 ? scale : 1;
 }

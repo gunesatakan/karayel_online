@@ -69,6 +69,7 @@ const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
 const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
 const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
+const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const GAME_SPEED_MULTIPLIER = 0.8;
 const GLOBAL_TOWER_RANGE_MULTIPLIER = 2 / 3;
@@ -1250,7 +1251,7 @@ export class MatchRoom extends Room<MatchState> {
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
     const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier * ENEMY_HP_BALANCE_MULTIPLIER));
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
-    const speed = this.scaleWorldSpeed(definition.speed + this.wave * 2.4);
+    const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
     const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
       .filter((col) => !this.getTowerAtCell(col, 0));
@@ -2773,8 +2774,9 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const nextCell = route.cells[1];
-      if (nextCell && !isFeared && speedMultiplier > 0) {
-        const point = gridToWorld(nextCell.col, nextCell.row, this.activeMap);
+      const movementTarget = nextCell ? gridToWorld(nextCell.col, nextCell.row, this.activeMap) : route.exitPoint;
+      if (movementTarget && !isFeared && speedMultiplier > 0) {
+        const point = movementTarget;
         const dx = point.x - enemy.x;
         const dy = point.y - enemy.y;
         const distance = Math.max(0.001, Math.hypot(dx, dy));
@@ -2793,6 +2795,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private findEnemyRoute(enemy: EnemyModel) {
     const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
+    if (start.row === this.activeMap.rows - 1) {
+      const exitPoint = { x: enemy.x, y: this.getArenaBottom() + this.getMapCellRadius() };
+      return {
+        cells: [start],
+        reachedBottom: enemy.y >= exitPoint.y - 0.01,
+        targetTower: undefined,
+        exitPoint
+      };
+    }
     const startTower = this.getTowerAtCell(start.col, start.row);
     if (startTower) {
       return { cells: [start], reachedBottom: false, targetTower: startTower.hp > 0 ? startTower : undefined };
@@ -2807,7 +2818,7 @@ export class MatchRoom extends Room<MatchState> {
       const current = queue[index];
       if (current.row === this.activeMap.rows - 1) {
         const cells = this.reconstructGridRoute(current, start, parent);
-        return { cells, reachedBottom: cells.length <= 1 && enemy.y >= this.getArenaBottom() - this.getMapCellRadius(), targetTower: undefined };
+        return { cells, reachedBottom: false, targetTower: undefined, exitPoint: undefined };
       }
 
       for (const next of this.getGridNeighbors(current.col, current.row)) {
@@ -4958,7 +4969,7 @@ export class MatchRoom extends Room<MatchState> {
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       abilities: ["melis-undead"],
-      speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72)),
+      speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72) * ENEMY_MOVEMENT_SPEED_MULTIPLIER),
       reward: 0,
       attack: definition.attack,
       towerAttackCooldownMs: 0,
