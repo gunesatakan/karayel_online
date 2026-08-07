@@ -228,6 +228,8 @@ export class GameScene extends Phaser.Scene {
   private performanceSliderTop = 0;
   private performanceSliderBottom = 0;
   private performanceSliderTowerId = "";
+  private performanceSliderDragging = false;
+  private optimisticPerformance?: { towerId: string; value: number };
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -2897,7 +2899,15 @@ export class GameScene extends Phaser.Scene {
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
     const temperatureRatio = Phaser.Math.Clamp((tower.temperature ?? 0) / 100, 0, 1);
-    const performanceRatio = Phaser.Math.Clamp(tower.performance ?? 0.5, 0, 1);
+    const serverPerformance = Phaser.Math.Clamp(tower.performance ?? 0.5, 0, 1);
+    if (!this.performanceSliderDragging && this.optimisticPerformance?.towerId === tower.id && Math.abs(serverPerformance - this.optimisticPerformance.value) < 0.015) {
+      this.optimisticPerformance = undefined;
+    }
+    const performanceRatio = Phaser.Math.Clamp(
+      this.optimisticPerformance?.towerId === tower.id ? this.optimisticPerformance.value : serverPerformance,
+      0,
+      1
+    );
     graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
@@ -2932,11 +2942,17 @@ export class GameScene extends Phaser.Scene {
         .setDepth(20)
         .setInteractive({ useHandCursor: true });
       const updatePerformance = (pointer: Phaser.Input.Pointer) => this.setSelectedTowerPerformanceFromY(pointer.worldY);
-      this.performanceSliderHitZone.on("pointerdown", updatePerformance);
+      this.performanceSliderHitZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        this.performanceSliderDragging = true;
+        updatePerformance(pointer);
+      });
       this.performanceSliderHitZone.on("pointermove", (pointer: Phaser.Input.Pointer) => {
         if (pointer.isDown) {
           updatePerformance(pointer);
         }
+      });
+      this.input.on("pointerup", () => {
+        this.performanceSliderDragging = false;
       });
     }
     this.performanceSliderHitZone.setPosition(performanceX, panelY + panelHeight / 2).setSize(32, panelHeight).setVisible(hasPerformanceControl);
@@ -2952,6 +2968,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const performance = Phaser.Math.Clamp((this.performanceSliderBottom - worldY) / (this.performanceSliderBottom - this.performanceSliderTop), 0, 1);
+    this.optimisticPerformance = { towerId: this.performanceSliderTowerId, value: performance };
+    const tower = this.towerSnapshots.get(this.performanceSliderTowerId);
+    if (tower) {
+      const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
+      this.drawSelectedTowerResources({ ...tower, performance }, discSize);
+    }
     this.room?.send("setTowerPerformance", { towerId: this.performanceSliderTowerId, performance });
   }
 
