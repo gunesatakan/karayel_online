@@ -264,6 +264,7 @@ export {
   createOpenArenaMap,
   getMapGridSize,
   getMapMetrics,
+  getMapOrigin,
   getMapScale,
   findPathToNearestNexus,
   buildRuntimePaths,

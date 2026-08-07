@@ -60,9 +60,17 @@ export function getMapScale(mapOrScale: EditableMapData | number | undefined): M
 
 export function getMapGridSize(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
   if (mapOrScale && typeof mapOrScale === "object" && Number.isInteger(mapOrScale.cols) && mapOrScale.cols > 0) {
-    return GAME_WIDTH / mapOrScale.cols;
+    return Math.min(GAME_WIDTH / mapOrScale.cols, (GAME_HEIGHT - GRID_TOP) / mapOrScale.rows);
   }
   return GRID_SIZE / getMapScale(mapOrScale);
+}
+
+export function getMapOrigin(map: EditableMapData) {
+  const gridSize = getMapGridSize(map);
+  return {
+    x: (GAME_WIDTH - map.cols * gridSize) / 2,
+    y: GRID_TOP + (GAME_HEIGHT - GRID_TOP - map.rows * gridSize) / 2
+  };
 }
 
 export function getMapMetrics(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
@@ -215,17 +223,19 @@ export function isInsideMap(map: EditableMapData, col: number, row: number) {
 
 export function worldToGrid(x: number, y: number, mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE): GridPoint {
   const metrics = getMapMetrics(mapOrScale);
+  const origin = mapOrScale && typeof mapOrScale === "object" ? getMapOrigin(mapOrScale) : { x: 0, y: GRID_TOP };
   return {
-    col: Math.max(0, Math.min(metrics.cols - 1, Math.floor(x / metrics.gridSize))),
-    row: Math.max(0, Math.min(metrics.rows - 1, Math.floor((y - GRID_TOP) / metrics.gridSize)))
+    col: Math.max(0, Math.min(metrics.cols - 1, Math.floor((x - origin.x) / metrics.gridSize))),
+    row: Math.max(0, Math.min(metrics.rows - 1, Math.floor((y - origin.y) / metrics.gridSize)))
   };
 }
 
 export function gridToWorld(col: number, row: number, mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE): WorldPoint {
   const gridSize = getMapGridSize(mapOrScale);
+  const origin = mapOrScale && typeof mapOrScale === "object" ? getMapOrigin(mapOrScale) : { x: 0, y: GRID_TOP };
   return {
-    x: col * gridSize + gridSize / 2,
-    y: GRID_TOP + row * gridSize + gridSize / 2
+    x: origin.x + col * gridSize + gridSize / 2,
+    y: origin.y + row * gridSize + gridSize / 2
   };
 }
 

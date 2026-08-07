@@ -9,6 +9,7 @@ import {
   TOWER_GRID_SIZE,
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
+  getMapOrigin,
   getMapPoints,
   getTowerGridSpan,
   getTowerSellRefund,
@@ -393,6 +394,7 @@ export class GameScene extends Phaser.Scene {
     graphics.clear();
     this.renderedMapKey = this.selectedMapData.tiles.join("");
     const cellSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
     const tileColumns = this.selectedMapData.cols;
     const tileRows = this.selectedMapData.rows;
 
@@ -401,8 +403,8 @@ export class GameScene extends Phaser.Scene {
 
     for (let row = 0; row < tileRows; row += 1) {
       for (let col = 0; col < tileColumns; col += 1) {
-        const x = col * cellSize;
-        const y = TOWER_BUILD_TOP + row * cellSize;
+        const x = origin.x + col * cellSize;
+        const y = origin.y + row * cellSize;
         const tileHeight = Math.min(cellSize, this.controlTop - y);
         if (tileHeight <= 0) {
           continue;
@@ -419,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     graphics.lineStyle(2, 0x0f172a, 0.92);
-    graphics.strokeRect(0, TOWER_BUILD_TOP, tileColumns * cellSize, Math.min(tileRows * cellSize, this.controlTop - TOWER_BUILD_TOP));
+    graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
   }
 
   private createPlacementGrid() {
@@ -980,16 +982,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     const cellSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
+    const arenaRight = origin.x + this.selectedMapData.cols * cellSize;
+    const arenaBottom = origin.y + this.selectedMapData.rows * cellSize;
     const footprint = this.getTowerPreviewFootprintCells(highlightX, highlightY);
     grid.clear();
 
     if ((this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id) === "zeynep-8") {
       grid.lineStyle(1, 0xe2e8f0, 0.16);
-      for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
-        grid.lineBetween(x, TOWER_BUILD_TOP, x, this.controlTop);
+      for (let x = origin.x; x <= arenaRight + 0.01; x += cellSize) {
+        grid.lineBetween(x, origin.y, x, arenaBottom);
       }
-      for (let y = TOWER_BUILD_TOP; y <= this.controlTop; y += cellSize) {
-        grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
+      for (let y = origin.y; y <= arenaBottom + 0.01; y += cellSize) {
+        grid.lineBetween(origin.x, y, arenaRight, y);
       }
 
       const segments = this.getAbartiEdgeSegments(highlightX, highlightY, this.getPlacementOrientation("zeynep-8"));
@@ -1015,11 +1020,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     grid.lineStyle(1, 0xe2e8f0, 0.16);
-    for (let x = 0; x <= GAME_WORLD_WIDTH; x += cellSize) {
-      grid.lineBetween(x, TOWER_BUILD_TOP, x, this.controlTop);
+    for (let x = origin.x; x <= arenaRight + 0.01; x += cellSize) {
+      grid.lineBetween(x, origin.y, x, arenaBottom);
     }
-    for (let y = TOWER_BUILD_TOP; y <= this.controlTop; y += cellSize) {
-      grid.lineBetween(0, y, GAME_WORLD_WIDTH, y);
+    for (let y = origin.y; y <= arenaBottom + 0.01; y += cellSize) {
+      grid.lineBetween(origin.x, y, arenaRight, y);
     }
   }
 
@@ -1027,32 +1032,33 @@ export class GameScene extends Phaser.Scene {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
     if (definitionId === "zeynep-8") {
       const gridSize = this.getMapCellSize();
-      const top = TOWER_BUILD_TOP;
+      const origin = getMapOrigin(this.selectedMapData);
       if (orientation === "vertical") {
-        const lineCol = Math.max(0, Math.min(this.selectedMapData.cols, Math.round(x / gridSize)));
-        const centerRow = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - top) / gridSize)));
+        const lineCol = Math.max(0, Math.min(this.selectedMapData.cols, Math.round((x - origin.x) / gridSize)));
+        const centerRow = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - origin.y) / gridSize)));
         return {
-          x: lineCol * gridSize,
-          y: top + centerRow * gridSize
+          x: origin.x + lineCol * gridSize,
+          y: origin.y + centerRow * gridSize
         };
       }
 
-      const centerCol = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round(x / gridSize)));
-      const lineRow = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - top) / gridSize)));
+      const centerCol = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round((x - origin.x) / gridSize)));
+      const lineRow = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - origin.y) / gridSize)));
       return {
-        x: centerCol * gridSize,
-        y: top + lineRow * gridSize
+        x: origin.x + centerCol * gridSize,
+        y: origin.y + lineRow * gridSize
       };
     }
 
     // A 2x2 tower centres on a cell corner rather than a cell.
     if (getTowerGridSpan(definitionId) === 2) {
       const gridSize = this.getMapCellSize();
-      const col = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round(x / gridSize)));
-      const row = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - TOWER_BUILD_TOP) / gridSize)));
+      const origin = getMapOrigin(this.selectedMapData);
+      const col = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round((x - origin.x) / gridSize)));
+      const row = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - origin.y) / gridSize)));
       return {
-        x: col * gridSize,
-        y: TOWER_BUILD_TOP + row * gridSize
+        x: origin.x + col * gridSize,
+        y: origin.y + row * gridSize
       };
     }
 
@@ -1107,8 +1113,9 @@ export class GameScene extends Phaser.Scene {
 
     if (getTowerGridSpan(definitionId) === 2) {
       const gridSize = this.getMapCellSize();
-      const col = Math.round(x / gridSize);
-      const row = Math.round((y - TOWER_BUILD_TOP) / gridSize);
+      const origin = getMapOrigin(this.selectedMapData);
+      const col = Math.round((x - origin.x) / gridSize);
+      const row = Math.round((y - origin.y) / gridSize);
       const cells = [
         { col: col - 1, row: row - 1 },
         { col, row: row - 1 },
@@ -1148,18 +1155,18 @@ export class GameScene extends Phaser.Scene {
 
   private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
     const gridSize = this.getMapCellSize();
-    const top = TOWER_BUILD_TOP;
+    const origin = getMapOrigin(this.selectedMapData);
     if (orientation === "vertical") {
-      const col = Math.max(0, Math.min(this.selectedMapData.cols, Math.round(x / gridSize)));
-      const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.round((y - top) / gridSize - 1)));
+      const col = Math.max(0, Math.min(this.selectedMapData.cols, Math.round((x - origin.x) / gridSize)));
+      const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.round((y - origin.y) / gridSize - 1)));
       return [
         { orientation, col, row },
         { orientation, col, row: row + 1 }
       ];
     }
 
-    const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.round(x / gridSize - 1)));
-    const row = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - top) / gridSize)));
+    const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.round((x - origin.x) / gridSize - 1)));
+    const row = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - origin.y) / gridSize)));
     return [
       { orientation, col, row },
       { orientation, col: col + 1, row }
@@ -1188,10 +1195,11 @@ export class GameScene extends Phaser.Scene {
 
   private getAbartiEdgeSegmentRect(segment: { orientation: TowerOrientation; col: number; row: number }) {
     const gridSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
     const thickness = Math.max(4, gridSize * 0.16);
     if (segment.orientation === "vertical") {
-      const x = segment.col * gridSize;
-      const y1 = TOWER_BUILD_TOP + segment.row * gridSize;
+      const x = origin.x + segment.col * gridSize;
+      const y1 = origin.y + segment.row * gridSize;
       return {
         left: x - thickness / 2,
         right: x + thickness / 2,
@@ -1200,8 +1208,8 @@ export class GameScene extends Phaser.Scene {
       };
     }
 
-    const x1 = segment.col * gridSize;
-    const y = TOWER_BUILD_TOP + segment.row * gridSize;
+    const x1 = origin.x + segment.col * gridSize;
+    const y = origin.y + segment.row * gridSize;
     return {
       left: x1,
       right: x1 + gridSize,
@@ -1883,8 +1891,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isBattlePointer(pointer: Phaser.Input.Pointer) {
-    const arenaBottom = TOWER_BUILD_TOP + this.selectedMapData.rows * this.getMapCellSize();
-    return Boolean(this.room) && !this.draggedTowerDefinition && pointer.worldY < arenaBottom && pointer.worldY > 84;
+    const origin = getMapOrigin(this.selectedMapData);
+    const arenaRight = origin.x + this.selectedMapData.cols * this.getMapCellSize();
+    const arenaBottom = origin.y + this.selectedMapData.rows * this.getMapCellSize();
+    return Boolean(this.room) && !this.draggedTowerDefinition &&
+      pointer.worldX >= origin.x && pointer.worldX <= arenaRight &&
+      pointer.worldY >= origin.y && pointer.worldY <= arenaBottom;
   }
 
   private renderSetupPhase(snapshot: GameSnapshot) {

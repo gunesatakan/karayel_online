@@ -18,6 +18,7 @@ import {
   calculateDamageTaken,
   findPathToNearestNexus,
   getMapMetrics,
+  getMapOrigin,
   getMapScale,
   getEnemyCombatDefinition,
   getEnemyDamageResistances,
@@ -1203,10 +1204,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private configureArenaForPlayerCount(playerCount: number) {
     const dimensions = [
-      { cols: 12, rows: 8 },
-      { cols: 18, rows: 10 },
-      { cols: 21, rows: 13 },
-      { cols: 24, rows: 15 }
+      { cols: 8, rows: 12 },
+      { cols: 10, rows: 18 },
+      { cols: 13, rows: 21 },
+      { cols: 15, rows: 24 }
     ][Math.max(1, Math.min(4, playerCount)) - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
@@ -2893,7 +2894,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getArenaBottom() {
-    return TOWER_BUILD_TOP + this.activeMap.rows * getMapGridSize(this.activeMap);
+    const origin = getMapOrigin(this.activeMap);
+    return origin.y + this.activeMap.rows * getMapGridSize(this.activeMap);
   }
 
   private damageTower(tower: TowerModel, rawDamage: number) {
@@ -3611,32 +3613,33 @@ export class MatchRoom extends Room<MatchState> {
     const gridPoint = worldToGrid(x, y, this.activeMap);
     if (definitionId === "zeynep-8") {
       const gridSize = getMapGridSize(this.activeMap);
-      const top = TOWER_BUILD_TOP;
+      const origin = getMapOrigin(this.activeMap);
       if (orientation === "vertical") {
-        const lineCol = Math.max(0, Math.min(this.activeMap.cols, Math.round(x / gridSize)));
-        const centerRow = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - top) / gridSize)));
+        const lineCol = Math.max(0, Math.min(this.activeMap.cols, Math.round((x - origin.x) / gridSize)));
+        const centerRow = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - origin.y) / gridSize)));
         return {
-          x: lineCol * gridSize,
-          y: top + centerRow * gridSize
+          x: origin.x + lineCol * gridSize,
+          y: origin.y + centerRow * gridSize
         };
       }
 
-      const centerCol = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round(x / gridSize)));
-      const lineRow = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - top) / gridSize)));
+      const centerCol = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round((x - origin.x) / gridSize)));
+      const lineRow = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - origin.y) / gridSize)));
       return {
-        x: centerCol * gridSize,
-        y: top + lineRow * gridSize
+        x: origin.x + centerCol * gridSize,
+        y: origin.y + lineRow * gridSize
       };
     }
 
     // A 2x2 tower centres on a cell corner rather than a cell.
     if (getTowerGridSpan(definitionId) === 2) {
       const gridSize = getMapGridSize(this.activeMap);
-      const col = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round(x / gridSize)));
-      const row = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - TOWER_BUILD_TOP) / gridSize)));
+      const origin = getMapOrigin(this.activeMap);
+      const col = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round((x - origin.x) / gridSize)));
+      const row = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - origin.y) / gridSize)));
       return {
-        x: col * gridSize,
-        y: TOWER_BUILD_TOP + row * gridSize
+        x: origin.x + col * gridSize,
+        y: origin.y + row * gridSize
       };
     }
 
@@ -3650,8 +3653,9 @@ export class MatchRoom extends Room<MatchState> {
 
     if (getTowerGridSpan(definitionId) === 2) {
       const gridSize = getMapGridSize(this.activeMap);
-      const col = Math.round(x / gridSize);
-      const row = Math.round((y - TOWER_BUILD_TOP) / gridSize);
+      const origin = getMapOrigin(this.activeMap);
+      const col = Math.round((x - origin.x) / gridSize);
+      const row = Math.round((y - origin.y) / gridSize);
       const cells = [
         { col: col - 1, row: row - 1 },
         { col, row: row - 1 },
@@ -3691,18 +3695,18 @@ export class MatchRoom extends Room<MatchState> {
 
   private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
     const gridSize = getMapGridSize(this.activeMap);
-    const top = TOWER_BUILD_TOP;
+    const origin = getMapOrigin(this.activeMap);
     if (orientation === "vertical") {
-      const col = Math.max(0, Math.min(this.activeMap.cols, Math.round(x / gridSize)));
-      const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.round((y - top) / gridSize - 1)));
+      const col = Math.max(0, Math.min(this.activeMap.cols, Math.round((x - origin.x) / gridSize)));
+      const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.round((y - origin.y) / gridSize - 1)));
       return [
         { orientation, col, row },
         { orientation, col, row: row + 1 }
       ];
     }
 
-    const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.round(x / gridSize - 1)));
-    const row = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - top) / gridSize)));
+    const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.round((x - origin.x) / gridSize - 1)));
+    const row = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - origin.y) / gridSize)));
     return [
       { orientation, col, row },
       { orientation, col: col + 1, row }
