@@ -9,7 +9,9 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Emir Kulesi", "Yavaşlatma"],
   ["Kin Kulesi", "Mesafeye bağlı yavaşlatma"],
   ["Saray Arşivi", "Sentez güçlendirici"],
-  ["Abartı", "Pasif vuruş modülatörü"]
+  ["Abartı", "Pasif vuruş modülatörü"],
+  ["Cephane Divanı", "Mühimmat ikmali"],
+  ["Enerji Ocağı", "Enerji ikmali"]
 ], { cost: 55, range: 75, damage: 24, fireIntervalMs: 330, projectileSpeed: 440, aoeRadius: 16, slowMs: 160 }).map((tower): TowerDefinition => {
   if (tower.id === "zeynep-1") {
     return {
@@ -113,6 +115,29 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       aoeRadius: 0,
       slowMs: 0,
       color: 0x7c3aed
+    };
+  }
+
+  if (tower.id === "zeynep-9" || tower.id === "zeynep-10") {
+    const providesAmmunition = tower.id === "zeynep-9";
+    return {
+      ...tower,
+      description: providesAmmunition
+        ? "Aynı oyuncuya ait aktif kulelerin kullandığı mühimmatı sürekli yeniler."
+        : "Aynı oyuncuya ait aktif kulelerin ortak enerji rezervini sürekli yeniler.",
+      classType: "support",
+      damageType: "none",
+      hitType: "aura",
+      mechanics: [providesAmmunition ? "ammunition-supply" : "energy-supply"],
+      resourceProvider: providesAmmunition ? "ammunition" : "energy",
+      cost: providesAmmunition ? 95 : 105,
+      range: 0,
+      damage: 0,
+      fireIntervalMs: 999999,
+      projectileSpeed: 0,
+      aoeRadius: 0,
+      slowMs: 0,
+      color: providesAmmunition ? 0xf59e0b : 0x22d3ee
     };
   }
 

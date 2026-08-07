@@ -1,6 +1,9 @@
 import type { CharacterId } from "../../index.js";
 import type { DamageType, HitType } from "../../combat.js";
 
+export type AmmoType = "bullet" | "auraCrystal" | "powerCrystal";
+export type TowerResourceProvider = "ammunition" | "energy";
+
 export type TowerDefinition = {
   id: string;
   characterId: CharacterId;
@@ -20,6 +23,7 @@ export type TowerDefinition = {
   aoeRadius: number;
   slowMs: number;
   color: number;
+  resourceProvider?: TowerResourceProvider;
 };
 
 export type SkillDefinition = {

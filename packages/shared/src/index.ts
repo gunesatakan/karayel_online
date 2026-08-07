@@ -125,6 +125,12 @@ export type TowerSnapshot = {
   maxHp?: number;
   armor?: number;
   disabled?: boolean;
+  ammoType?: import("./characters/common/types.js").AmmoType;
+  ammo?: number;
+  maxAmmo?: number;
+  energy?: number;
+  maxEnergy?: number;
+  resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   status?: string;
   damageDealt?: number;
   currentDps?: number;
@@ -202,6 +208,10 @@ export type TeamSnapshot = {
   wave: number;
   enemiesLeft: number;
   kills: number;
+  energy: number;
+  maxEnergy: number;
+  ammunition: Record<import("./characters/common/types.js").AmmoType, number>;
+  maxAmmunition: Record<import("./characters/common/types.js").AmmoType, number>;
 };
 
 export type ServerPerfSnapshot = {
@@ -253,6 +263,7 @@ export type GameSnapshot = {
 
 export { characters, towerCatalog } from "./characters/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
+export type { AmmoType, TowerResourceProvider } from "./characters/common/types.js";
 export { STATUS_EFFECTS } from "./statuses/index.js";
 export {
   MAP_GRID_COLS,

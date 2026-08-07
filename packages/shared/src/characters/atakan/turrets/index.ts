@@ -122,5 +122,17 @@ export const atakanTowers: TowerDefinition[] = [
     aoeRadius: 0,
     slowMs: 0,
     color
+  },
+  {
+    id: "warrior-7", characterId: "warrior", name: "Cephane Merkezi", role: "Mühimmat ikmali",
+    description: "Atakan kulelerinin kullandığı mühimmatı sürekli yeniler.", classType: "support", damageType: "none", hitType: "aura",
+    mechanics: ["resource-supply", "ammunition"], cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
+    projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
+  },
+  {
+    id: "warrior-8", characterId: "warrior", name: "Enerji Reaktörü", role: "Enerji ikmali",
+    description: "Atakan kulelerinin ortak enerji hücrelerini sürekli doldurur.", classType: "support", damageType: "none", hitType: "aura",
+    mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
+    projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
 ];

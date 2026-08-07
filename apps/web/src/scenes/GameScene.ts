@@ -2067,9 +2067,11 @@ export class GameScene extends Phaser.Scene {
     const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
     const approval = player?.approval ?? 0;
     const stress = player?.stress ?? 0;
-    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}`;
+    const ammunition = snapshot.team.ammunition ?? { bullet: 0, auraCrystal: 0, powerCrystal: 0 };
+    const resourceStats = `  E ${Math.floor(snapshot.team.energy ?? 0)}/${snapshot.team.maxEnergy ?? 0}  M ${Math.floor(ammunition.bullet)}  A ${Math.floor(ammunition.auraCrystal)}  G ${Math.floor(ammunition.powerCrystal)}`;
+    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${zeynepStats}`);
+      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
@@ -4394,8 +4396,14 @@ export class GameScene extends Phaser.Scene {
     const hpText = selectedTower.hp !== undefined && selectedTower.maxHp !== undefined
       ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp} Zırh ${selectedTower.armor ?? 0}`
       : "";
+    const ammoLabels = { bullet: "Mermi", auraCrystal: "Aura Kristali", powerCrystal: "Güç Kristali" } as const;
+    const resourceText = selectedTower.resourceProvider
+      ? ` | ${selectedTower.resourceProvider === "ammunition" ? "Mühimmat ikmali" : "Enerji ikmali"}`
+      : selectedTower.ammoType
+        ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
+        : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
-    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${status}${linkHint}`);
+    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
     this.selectedTowerStatsText?.setText([
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,

@@ -55,6 +55,7 @@ import {
   type RoomListingSnapshot,
   type ServerPerfSnapshot,
   type TowerDefinition,
+  type AmmoType,
   type TowerSnapshot
 } from "@karayel/shared";
 
@@ -64,6 +65,12 @@ const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
+const TOWER_BASE_AMMO = 60;
+const TOWER_BASE_ENERGY = 100;
+const AMMO_SUPPLY_PER_SECOND = 6;
+const ENERGY_SUPPLY_PER_SECOND = 8;
+const SHOT_AMMO_COST = 1;
+const SHOT_ENERGY_COST = 1;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -359,6 +366,11 @@ type TowerModel = {
   hp: number;
   maxHp: number;
   armor: number;
+  ammoType: AmmoType;
+  ammo: number;
+  maxAmmo: number;
+  energy: number;
+  maxEnergy: number;
   level: number;
   cooldownMs: number;
   focusTargetId: string;
@@ -1315,8 +1327,53 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  private getTowerAmmoType(definition: TowerDefinition): AmmoType {
+    const mechanics = definition.mechanics ?? [];
+    if (definition.hitType === "focus" || mechanics.some((mechanic) => /laser|beam|light-line|showcase-line|mirror/.test(mechanic))) {
+      return "powerCrystal";
+    }
+    if (definition.hitType && ["aura", "wave", "curse"].includes(definition.hitType)) {
+      return "auraCrystal";
+    }
+    return "bullet";
+  }
+
+  private updateTowerResources(seconds: number) {
+    const providerCounts = new Map<string, { ammunition: number; energy: number }>();
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0 || !tower.definition.resourceProvider) {
+        continue;
+      }
+      const counts = providerCounts.get(tower.ownerId) ?? { ammunition: 0, energy: 0 };
+      counts[tower.definition.resourceProvider] += 1;
+      providerCounts.set(tower.ownerId, counts);
+    }
+
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0 || tower.definition.resourceProvider) {
+        continue;
+      }
+      const counts = providerCounts.get(tower.ownerId);
+      if (!counts) {
+        continue;
+      }
+      tower.ammo = Math.min(tower.maxAmmo, tower.ammo + counts.ammunition * AMMO_SUPPLY_PER_SECOND * seconds);
+      tower.energy = Math.min(tower.maxEnergy, tower.energy + counts.energy * ENERGY_SUPPLY_PER_SECOND * seconds);
+    }
+  }
+
+  private canTowerFire(tower: TowerModel) {
+    return tower.ammo >= SHOT_AMMO_COST && tower.energy >= SHOT_ENERGY_COST;
+  }
+
+  private consumeTowerResources(tower: TowerModel) {
+    tower.ammo = Math.max(0, tower.ammo - SHOT_AMMO_COST);
+    tower.energy = Math.max(0, tower.energy - SHOT_ENERGY_COST);
+  }
+
   private updateTowers(deltaTime: number) {
     const now = Date.now();
+    this.updateTowerResources(deltaTime / 1000);
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
       if (tower.hp <= 0) {
@@ -1335,13 +1392,26 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      if (tower.definition.resourceProvider) {
+        continue;
+      }
+
       if (tower.definition.id === "archer-4") {
-        this.updateMelisUnderworldLink(tower, deltaTime, now);
+        tower.cooldownMs = Math.max(0, tower.cooldownMs - deltaTime);
+        if (tower.cooldownMs <= 0) {
+          if (!this.canTowerFire(tower)) {
+            continue;
+          }
+          this.consumeTowerResources(tower);
+          tower.cooldownMs = this.getTowerFireInterval(tower);
+        }
+        this.updateMelisUnderworldLink(tower, now);
         continue;
       }
 
       if (tower.definition.id === "archer-5" && tower.melisMirrorCharge >= this.getMelisBrokenMirrorCapacity(tower)) {
-        if (this.fireMelisBrokenMirrorExplosion(tower)) {
+        if (this.canTowerFire(tower) && this.fireMelisBrokenMirrorExplosion(tower)) {
+          this.consumeTowerResources(tower);
           tower.cooldownMs = this.getTowerFireInterval(tower);
         }
         continue;
@@ -1351,6 +1421,13 @@ export class MatchRoom extends Room<MatchState> {
       tower.linkBurstCooldownMs = Math.max(0, tower.linkBurstCooldownMs - deltaTime);
 
       if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+        if (tower.cooldownMs <= 0) {
+          if (!this.canTowerFire(tower)) {
+            continue;
+          }
+          this.consumeTowerResources(tower);
+          tower.cooldownMs = 220;
+        }
         this.updateDebugLaserSweep(tower);
         continue;
       }
@@ -1371,8 +1448,14 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
+        if (tower.cooldownMs <= 0) {
+          if (!this.canTowerFire(tower)) {
+            continue;
+          }
+          this.consumeTowerResources(tower);
+          tower.cooldownMs = 220;
+        }
         this.applyIsolationAura(tower);
-        tower.cooldownMs = Math.max(tower.cooldownMs, 220);
         continue;
       }
 
@@ -1387,6 +1470,11 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      if (!this.canTowerFire(tower)) {
+        continue;
+      }
+
+      this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
       tower.cooldownMs = this.getTowerFireInterval(tower);
     }
@@ -2960,6 +3048,11 @@ export class MatchRoom extends Room<MatchState> {
       hp: TOWER_BASE_HP,
       maxHp: TOWER_BASE_HP,
       armor: TOWER_BASE_ARMOR,
+      ammoType: this.getTowerAmmoType(definition),
+      ammo: definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      maxAmmo: definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      energy: definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
+      maxEnergy: definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
@@ -4781,8 +4874,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.delete(enemy.id);
   }
 
-  private updateMelisUnderworldLink(tower: TowerModel, deltaTime: number, now: number) {
-    tower.cooldownMs = Math.max(0, tower.cooldownMs - deltaTime);
+  private updateMelisUnderworldLink(tower: TowerModel, now: number) {
     const maxLinks = tower.melisEvolutionLevel >= 2 ? 2 : 1;
     tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => {
       const enemy = this.enemies.get(enemyId);
@@ -5207,6 +5299,21 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
     }
+    const teamResources = {
+      energy: 0,
+      maxEnergy: 0,
+      ammunition: { bullet: 0, auraCrystal: 0, powerCrystal: 0 },
+      maxAmmunition: { bullet: 0, auraCrystal: 0, powerCrystal: 0 }
+    };
+    for (const tower of this.towers.values()) {
+      if (tower.definition.resourceProvider) {
+        continue;
+      }
+      teamResources.energy += tower.energy;
+      teamResources.maxEnergy += tower.maxEnergy;
+      teamResources.ammunition[tower.ammoType] += tower.ammo;
+      teamResources.maxAmmunition[tower.ammoType] += tower.maxAmmo;
+    }
     return {
       serverTime: now,
       hostId: this.hostSessionId,
@@ -5276,6 +5383,12 @@ export class MatchRoom extends Room<MatchState> {
         maxHp: Math.round(tower.maxHp),
         armor: tower.armor,
         disabled: tower.hp <= 0,
+        ammoType: tower.ammoType,
+        ammo: Math.floor(tower.ammo),
+        maxAmmo: tower.maxAmmo,
+        energy: Math.floor(tower.energy),
+        maxEnergy: tower.maxEnergy,
+        resourceProvider: tower.definition.resourceProvider,
         status: this.getTowerStatus(tower),
         damageDealt: Math.round(tower.damageDealt),
         currentDps: roundMetric(this.getTowerCurrentDps(tower, now)),
@@ -5341,6 +5454,14 @@ export class MatchRoom extends Room<MatchState> {
       team: {
         health: this.teamHealth,
         maxHealth: MAX_TEAM_HEALTH,
+        energy: Math.floor(teamResources.energy),
+        maxEnergy: teamResources.maxEnergy,
+        ammunition: {
+          bullet: Math.floor(teamResources.ammunition.bullet),
+          auraCrystal: Math.floor(teamResources.ammunition.auraCrystal),
+          powerCrystal: Math.floor(teamResources.ammunition.powerCrystal)
+        },
+        maxAmmunition: teamResources.maxAmmunition,
         gold: Math.floor(Array.from(this.state.players.values()).reduce((total, player) => total + player.gold, 0)),
         wave: this.wave,
         enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size,
@@ -5620,11 +5741,23 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0) {
       return "Devre Disi";
     }
+    if (tower.definition.resourceProvider === "ammunition") {
+      return `Muhimmat +${AMMO_SUPPLY_PER_SECOND}/sn`;
+    }
+    if (tower.definition.resourceProvider === "energy") {
+      return `Enerji +${ENERGY_SUPPLY_PER_SECOND}/sn`;
+    }
     if (tower.offlineUntil > now) {
       return "Tukenmis";
     }
     if (tower.overheatMs > 0) {
       return "Hararet";
+    }
+    if (tower.ammo < SHOT_AMMO_COST) {
+      return "Muhimmat Yok";
+    }
+    if (tower.energy < SHOT_ENERGY_COST) {
+      return "Enerji Yok";
     }
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       return "Overdrive";
