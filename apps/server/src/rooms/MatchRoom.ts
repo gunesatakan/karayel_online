@@ -1205,10 +1205,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private configureArenaForScale() {
     const dimensions = [
-      { cols: 8, rows: 12 },
-      { cols: 10, rows: 18 },
-      { cols: 13, rows: 21 },
-      { cols: 15, rows: 24 }
+      { cols: 12, rows: 18 },
+      { cols: 15, rows: 27 },
+      { cols: 20, rows: 32 },
+      { cols: 23, rows: 36 }
     ][this.mapScale - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);

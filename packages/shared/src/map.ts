@@ -93,8 +93,8 @@ export function getMapMetrics(mapOrScale: EditableMapData | number | undefined =
 }
 
 export function createOpenArenaMap(cols: number, rows: number): EditableMapData {
-  const safeCols = Math.max(4, Math.min(32, Math.floor(cols)));
-  const safeRows = Math.max(4, Math.min(32, Math.floor(rows)));
+  const safeCols = Math.max(4, Math.min(48, Math.floor(cols)));
+  const safeRows = Math.max(4, Math.min(48, Math.floor(rows)));
   return {
     version: 1,
     scale: DEFAULT_MAP_SCALE,
@@ -146,10 +146,10 @@ export function normalizeMapData(map: unknown, fallbackScale: MapScale = DEFAULT
   const candidate = map as Partial<EditableMapData>;
   const scale = normalizeMapScale(candidate.scale ?? fallbackScale);
   const defaultMetrics = getMapMetrics(scale);
-  const cols = Number.isInteger(candidate.cols) && Number(candidate.cols) >= 4 && Number(candidate.cols) <= 32
+  const cols = Number.isInteger(candidate.cols) && Number(candidate.cols) >= 4 && Number(candidate.cols) <= 48
     ? Number(candidate.cols)
     : defaultMetrics.cols;
-  const rows = Number.isInteger(candidate.rows) && Number(candidate.rows) >= 4 && Number(candidate.rows) <= 32
+  const rows = Number.isInteger(candidate.rows) && Number(candidate.rows) >= 4 && Number(candidate.rows) <= 48
     ? Number(candidate.rows)
     : defaultMetrics.rows;
   if (
