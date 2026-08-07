@@ -2838,7 +2838,8 @@ export class GameScene extends Phaser.Scene {
         sprite.setRotation(angle);
       }
       sprite.setPosition(drone.x, drone.y);
-      sprite.setScale(drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
+      const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
+      sprite.setScale(isLogisticsWorker ? 0.69 * pulse : drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
       sprite.setBlendMode(Phaser.BlendModes.ADD);

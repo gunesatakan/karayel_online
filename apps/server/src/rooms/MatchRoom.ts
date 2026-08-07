@@ -59,8 +59,8 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 
-const TEAM_START_GOLD = 240;
-const MELIS_START_GOLD = 100;
+const TEAM_START_GOLD = 480;
+const MELIS_START_GOLD = 200;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const TOWER_BASE_HP = 100;
@@ -2739,6 +2739,11 @@ export class MatchRoom extends Room<MatchState> {
 
     for (const [id, drone] of this.drones) {
       if (drone.mode === "crystalCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
+        if (this.setupPhase) {
+          drone.vx = 0;
+          drone.vy = 0;
+          continue;
+        }
         this.updateLogisticsWorker(drone, seconds);
         continue;
       }
