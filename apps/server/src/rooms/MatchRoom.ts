@@ -20,6 +20,8 @@ import {
   getTowerStackMultiplier,
   dispatchTowerTriggers,
   evaluateTowerAuras,
+  isTargetInsideAttackShape,
+  selectAttackShapeTargets,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
@@ -76,6 +78,7 @@ import {
   type ServerPerfSnapshot,
   type TowerDefinition,
   type AmmoType,
+  type AttackShapeQuery,
   type TowerSnapshot
 } from "@karayel/shared";
 
@@ -1835,11 +1838,16 @@ export class MatchRoom extends Room<MatchState> {
       const rangeMultiplier = abartiLevel > 0 ? getAbartiShowcaseRangeMultiplier(abartiLevel) : 1;
       const finalEndX = tower.x + (dx / distance) * length * rangeMultiplier;
       const finalEndY = tower.y + (dy / distance) * length * rangeMultiplier;
-      const targets = enemies.filter((candidate) => {
-        const hitRadius = this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS) + getEnemyCollisionRadius(candidate);
-        const projection = getSegmentProjection(candidate.x, candidate.y, tower.x, tower.y, finalEndX, finalEndY);
-        return projection >= 0 && projection <= 1 && distanceToSegmentSq(candidate.x, candidate.y, tower.x, tower.y, finalEndX, finalEndY) <= hitRadius * hitRadius;
-      });
+      const targets = this.selectEnemiesForAttackShape({
+        shape: tower.definition.engine?.attack.shape ?? "line",
+        x: tower.x,
+        y: tower.y,
+        aimX: finalEndX,
+        aimY: finalEndY,
+        length: Math.hypot(finalEndX - tower.x, finalEndY - tower.y),
+        width: this.scaleWorldDistance(ZEYNEP_SHOWCASE_BEAM_RADIUS),
+        canHitAir: tower.definition.engine?.canHitAir ?? false
+      }, enemies);
       const score = targets.length * 100000 + targets.reduce((total, target) => total + target.pathDistance, 0);
       if (!best || score > best.score) {
         best = { endX: finalEndX, endY: finalEndY, targets, score, abartiLevel };
@@ -2032,9 +2040,16 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      const perpendicularDistance = getPerpendicularDistanceOnAngle(enemy.x, enemy.y, wave.x, wave.y, wave.angle);
-      const coneRadiusAtProjection = Math.tan(wave.halfAngle) * Math.max(1, projection);
-      if (Math.abs(perpendicularDistance) > coneRadiusAtProjection + getEnemyCollisionRadius(enemy)) {
+      if (!isTargetInsideAttackShape({
+        shape: tower.definition.engine?.attack.shape ?? "cone",
+        x: wave.x,
+        y: wave.y,
+        aimX: wave.x + Math.cos(wave.angle) * wave.range,
+        aimY: wave.y + Math.sin(wave.angle) * wave.range,
+        length: wave.range,
+        angle: wave.halfAngle * 2 * 180 / Math.PI,
+        canHitAir: tower.definition.engine?.canHitAir ?? false
+      }, { ...enemy, radius: getEnemyCollisionRadius(enemy) })) {
         continue;
       }
 
@@ -2159,6 +2174,17 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     return result.effects;
+  }
+
+  private selectEnemiesForAttackShape(query: AttackShapeQuery, enemies: EnemyModel[], includeCollisionRadius = true) {
+    const byId = new Map(enemies.map((enemy) => [enemy.id, enemy]));
+    return selectAttackShapeTargets(query, enemies.map((enemy) => ({
+      id: enemy.id,
+      x: enemy.x,
+      y: enemy.y,
+      radius: includeCollisionRadius ? getEnemyCollisionRadius(enemy) : 0,
+      movementKind: enemy.movementKind
+    }))).map((target) => byId.get(target.id)).filter((enemy): enemy is EnemyModel => Boolean(enemy));
   }
 
   private getKinDistanceRatio(distanceFromTower: number, range: number) {
@@ -2831,26 +2857,18 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findPierceLineTarget(projectile: ProjectileModel, previousX: number, previousY: number) {
-    let bestTarget: EnemyModel | undefined;
-    let bestDistanceSq = Number.POSITIVE_INFINITY;
-    for (const enemy of this.enemies.values()) {
-      if (projectile.piercedEnemyIds.includes(enemy.id)) {
-        continue;
-      }
-
-      const hitRadius = getEnemyCollisionRadius(enemy) + 4;
-      if (distanceToSegmentSq(enemy.x, enemy.y, previousX, previousY, projectile.x, projectile.y) > hitRadius * hitRadius) {
-        continue;
-      }
-
-      const segmentDistanceSq = distanceSq(previousX, previousY, enemy.x, enemy.y);
-      if (segmentDistanceSq < bestDistanceSq) {
-        bestTarget = enemy;
-        bestDistanceSq = segmentDistanceSq;
-      }
-    }
-
-    return bestTarget;
+    return this.selectEnemiesForAttackShape({
+      shape: "line",
+      x: previousX,
+      y: previousY,
+      aimX: projectile.x,
+      aimY: projectile.y,
+      length: Math.hypot(projectile.x - previousX, projectile.y - previousY),
+      width: 4,
+      pierceCount: 1,
+      canHitAir: true,
+      alreadyHitIds: projectile.piercedEnemyIds
+    }, Array.from(this.enemies.values()))[0];
   }
 
   private updateProjectileAbartiModifier(projectile: ProjectileModel, previousX: number, previousY: number) {
@@ -2879,12 +2897,19 @@ export class MatchRoom extends Room<MatchState> {
       this.applyArmorBreak(target, projectile.armorBreakAmount);
     }
     if (projectile.aoeRadius > 0) {
-      for (const enemy of this.enemies.values()) {
+      const areaTargets = this.selectEnemiesForAttackShape({
+        shape: "circle",
+        x: projectile.x,
+        y: projectile.y,
+        aimX: target.x,
+        aimY: target.y,
+        radius: projectile.aoeRadius,
+        canHitAir: true
+      }, Array.from(this.enemies.values()), false);
+      for (const enemy of areaTargets) {
         this.perfCounters.aoeChecks += 1;
-        if (distanceSq(enemy.x, enemy.y, target.x, target.y) <= projectile.aoeRadius * projectile.aoeRadius) {
-          this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
-          this.applyKinProjectileSlow(projectile, enemy);
-        }
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
+        this.applyKinProjectileSlow(projectile, enemy);
       }
     } else {
       this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
@@ -4946,16 +4971,20 @@ export class MatchRoom extends Room<MatchState> {
   private fireMelisCurse(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const radius = this.getMelisCurseAreaRadius(tower);
-    const radiusSq = radius * radius;
     const burstDamage = this.getTowerDamage(tower);
     const expiresAt = now + scaleGameDuration(this.getMelisCurseDurationMs(tower));
 
-    for (const enemy of this.enemies.values()) {
+    const targets = this.selectEnemiesForAttackShape({
+      shape: tower.definition.engine?.attack.shape ?? "circle",
+      x: tower.x,
+      y: tower.y,
+      aimX: target.x,
+      aimY: target.y,
+      radius,
+      canHitAir: tower.definition.engine?.canHitAir ?? false
+    }, Array.from(this.enemies.values()), false);
+    for (const enemy of targets) {
       this.perfCounters.aoeChecks += 1;
-      if (distanceSq(target.x, target.y, enemy.x, enemy.y) > radiusSq) {
-        continue;
-      }
-
       this.applyMelisCurseLoad(enemy, tower.ownerId, tower.id, tower.melisEvolutionLevel, burstDamage, expiresAt);
     }
 
@@ -5130,15 +5159,19 @@ export class MatchRoom extends Room<MatchState> {
   private fireMelisWhisperChorus(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const radius = this.getMelisWhisperRadius(tower);
-    const radiusSq = radius * radius;
     const damage = this.getTowerDamage(tower);
 
-    for (const enemy of Array.from(this.enemies.values())) {
+    const targets = this.selectEnemiesForAttackShape({
+      shape: tower.definition.engine?.attack.shape ?? "circle",
+      x: tower.x,
+      y: tower.y,
+      aimX: target.x,
+      aimY: target.y,
+      radius,
+      canHitAir: tower.definition.engine?.canHitAir ?? false
+    }, Array.from(this.enemies.values()), false);
+    for (const enemy of targets) {
       this.perfCounters.aoeChecks += 1;
-      if (distanceSq(target.x, target.y, enemy.x, enemy.y) > radiusSq) {
-        continue;
-      }
-
       const survived = !this.damageEnemyFromTower(tower, enemy, damage, 0);
       if (survived && this.enemies.has(enemy.id)) {
         this.applyMelisDoubt(tower, enemy, now);
@@ -5706,11 +5739,16 @@ export class MatchRoom extends Room<MatchState> {
   private triggerMelisRageWave(tower: TowerModel, areaDamageMultiplier = 0) {
     const now = Date.now();
     const radius = this.getTowerRange(tower);
-    for (const enemy of Array.from(this.enemies.values())) {
-      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) {
-        continue;
-      }
-
+    const targets = this.selectEnemiesForAttackShape({
+      shape: tower.definition.engine?.attack.shape ?? "circle",
+      x: tower.x,
+      y: tower.y,
+      aimX: tower.x,
+      aimY: tower.y,
+      radius,
+      canHitAir: tower.definition.engine?.canHitAir ?? false
+    }, Array.from(this.enemies.values()), false);
+    for (const enemy of targets) {
       const rangeExitDamage = areaDamageMultiplier > 0 ? this.getTowerDamage(tower) * areaDamageMultiplier : 0;
       const shieldDamage = tower.melisEvolutionLevel >= 2 && enemy.shield > 0 ? this.getTowerDamage(tower) * 2 : 0;
       const waveDamage = Math.max(rangeExitDamage, shieldDamage);

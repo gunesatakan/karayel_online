@@ -333,6 +333,8 @@ export { dispatchTowerTriggers } from "./triggers/index.js";
 export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
 export { evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
+export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
+export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,
