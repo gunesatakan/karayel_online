@@ -295,6 +295,7 @@ export type {
   TowerTargetingMode,
   TowerAttackShape,
   TowerStatusEffectType,
+  TowerStatusEffectDefinition,
   TowerTriggerEvent
 } from "./characters/common/types.js";
 export {
@@ -311,7 +312,13 @@ export {
   calculateTowerScaledBaseDamage,
   inferTowerAmmoType
 } from "./tower-rules.js";
-export { STATUS_EFFECTS } from "./statuses/index.js";
+export {
+  STATUS_EFFECTS,
+  applyTowerStatusEffect,
+  getActiveStatusMagnitude,
+  isStatusEffectActive
+} from "./statuses/index.js";
+export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

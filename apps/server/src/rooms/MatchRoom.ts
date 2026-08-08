@@ -15,6 +15,7 @@ import {
   createDefaultEditableMap,
   createOpenArenaMap,
   applyStatusResistance,
+  applyTowerStatusEffect,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
@@ -51,6 +52,9 @@ import {
   type EditableMapData,
   type MovementKind,
   type StatusEffectId,
+  type StatusEffectRuntimeState,
+  type TowerStatusEffectDefinition,
+  type TowerStatusEffectType,
   type BeamSnapshot,
   type GameSnapshot,
   type HitType,
@@ -329,6 +333,7 @@ type EnemyModel = {
   damageResistances: Partial<Record<DamageType, number>>;
   hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
+  statusEffects: Partial<Record<TowerStatusEffectType, StatusEffectRuntimeState>>;
   abilities: string[];
   speed: number;
   reward: number;
@@ -1341,6 +1346,7 @@ export class MatchRoom extends Room<MatchState> {
       damageResistances: getEnemyDamageResistances(definition, race),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
+      statusEffects: {},
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
       reward: definition.reward,
@@ -2042,9 +2048,40 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const ratio = this.getKinDistanceRatio(distanceFromTower, range);
     const multiplier = KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio;
+    const definition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "slow");
+    if (definition) {
+      this.applyEnemyStatusEffect(enemy, definition, now, { durationMs: slowMs, scalingFactor: ratio });
+    }
     const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
     enemy.kinSlowMultiplier = this.clamp(multiplier, KIN_SLOW_FAR_MULTIPLIER, KIN_SLOW_NEAR_MULTIPLIER);
     enemy.kinSlowUntil = now + scaleGameDuration(duration);
+  }
+
+  private applyEnemyStatusEffect(
+    enemy: EnemyModel,
+    definition: TowerStatusEffectDefinition,
+    now: number,
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number } = {}
+  ) {
+    const scaledDefinition = {
+      ...definition,
+      durationMs: scaleGameDuration(overrides.durationMs ?? definition.durationMs)
+    };
+    const state = applyTowerStatusEffect(enemy.statusEffects[definition.type], scaledDefinition, {
+      now,
+      resistance: enemy.statusResistances[definition.type === "mark" ? "tracking" : definition.type],
+      magnitude: overrides.magnitude,
+      scalingFactor: overrides.scalingFactor
+    });
+    enemy.statusEffects[definition.type] = state;
+    if (definition.type === "slow") {
+      enemy.slowUntil = Math.max(enemy.slowUntil, state.expiresAt);
+    } else if (definition.type === "fear") {
+      enemy.fearUntil = Math.max(enemy.fearUntil, state.expiresAt);
+    } else if (definition.type === "stun") {
+      enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, state.expiresAt);
+    }
+    return state;
   }
 
   private getKinDistanceRatio(distanceFromTower: number, range: number) {
@@ -4357,10 +4394,19 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
+      const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+      const mark = sourceTower?.definition.engine?.appliesMark;
+      if (mark) {
+        this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now);
+      }
     }
     if (slowMs > 0) {
-      const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-      enemy.slowUntil = Math.max(enemy.slowUntil, now + scaleGameDuration(duration));
+      this.applyEnemyStatusEffect(enemy, {
+        type: "slow",
+        magnitude: 0.52,
+        durationMs: slowMs,
+        stacking: "refresh"
+      }, now);
     }
 
     if (enemy.hp > 0) {
@@ -4793,9 +4839,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private slowAllEnemies(slowMs: number) {
+    const now = Date.now();
     for (const enemy of this.enemies.values()) {
-      const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-      enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + scaleGameDuration(duration));
+      this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.52, durationMs: slowMs, stacking: "refresh" }, now);
     }
   }
 
@@ -4830,6 +4876,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyMelisCurseLoad(enemy: EnemyModel, ownerId: string, towerId: string, evolutionLevel: number, burstDamage: number, expiresAt: number) {
+    const now = Date.now();
+    const tower = this.towers.get(towerId);
+    const definition = tower?.definition.engine?.statusEffects?.find((effect) => effect.type === "curse");
+    if (definition) {
+      this.applyEnemyStatusEffect(enemy, definition, now, { durationMs: Math.max(0, expiresAt - now) });
+    }
     enemy.melisCurseLoad += 1;
     enemy.melisCurseBurstDamage += burstDamage;
     enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
@@ -5008,6 +5060,10 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisDoubtStacks = Math.min(3, enemy.melisDoubtStacks + 1);
     enemy.melisDoubtUntil = Math.max(enemy.melisDoubtUntil, now + scaleGameDuration(this.getMelisDoubtDurationMs(tower)));
+    const slowDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "slow");
+    if (slowDefinition) {
+      this.applyEnemyStatusEffect(enemy, slowDefinition, now, { durationMs: this.getMelisDoubtDurationMs(tower) });
+    }
 
     const triggerStacks = this.isMelisStressDominant(tower) ? 2 : 3;
     if (enemy.melisDoubtStacks < triggerStacks) {
@@ -5016,7 +5072,12 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisDoubtStacks = 0;
     enemy.melisDoubtUntil = 0;
-    enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, now + scaleGameDuration(this.getMelisDoubtHesitationMs(tower)));
+    const stunDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "stun");
+    if (stunDefinition) {
+      this.applyEnemyStatusEffect(enemy, stunDefinition, now, { durationMs: this.getMelisDoubtHesitationMs(tower) });
+    } else {
+      enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, now + scaleGameDuration(this.getMelisDoubtHesitationMs(tower)));
+    }
     if (this.isMelisStressDominant(tower)) {
       enemy.melisDoubtHasteUntil = Math.max(enemy.melisDoubtHasteUntil, enemy.melisDoubtHesitateUntil + scaleGameDuration(MELIS_DOUBT_STRESS_HASTE_MS));
     }
@@ -5206,6 +5267,10 @@ export class MatchRoom extends Room<MatchState> {
         break;
       }
       tower.melisUnderworldTargetIds.push(target.id);
+      const bindDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "bind");
+      if (bindDefinition) {
+        this.applyEnemyStatusEffect(target, bindDefinition, now);
+      }
     }
 
     if (tower.melisUnderworldTargetIds.length === 0) {
@@ -5379,6 +5444,7 @@ export class MatchRoom extends Room<MatchState> {
       damageResistances: getEnemyDamageResistances(definition, race),
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
+      statusEffects: {},
       abilities: ["melis-undead"],
       speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72) * ENEMY_MOVEMENT_SPEED_MULTIPLIER),
       reward: 0,
@@ -5552,8 +5618,10 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
 
-      const duration = applyStatusResistance(this.getMelisParlamaFearMs(tower), enemy.statusResistances.fear);
-      enemy.fearUntil = Math.max(enemy.fearUntil, now + scaleGameDuration(duration));
+      const fearDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "fear");
+      if (fearDefinition) {
+        this.applyEnemyStatusEffect(enemy, fearDefinition, now, { durationMs: this.getMelisParlamaFearMs(tower) });
+      }
     }
 
     if (this.isMelisStressDominant(tower)) {

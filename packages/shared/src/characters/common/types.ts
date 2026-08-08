@@ -7,6 +7,14 @@ export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "c
 export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam";
 export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "chill" | "curse" | "mark";
 export type TowerTriggerEvent = "kill" | "towerDeath" | "escape" | "overheat" | "ammoEmpty";
+export type TowerStatusEffectDefinition = {
+  type: TowerStatusEffectType;
+  magnitude: number;
+  durationMs: number;
+  stacking?: "none" | "refresh" | "add";
+  maxStacks?: number;
+  scaling?: "none" | "distance";
+};
 
 export type TowerEngineConfig = {
   targeting: TowerTargetingMode;
@@ -17,14 +25,7 @@ export type TowerEngineConfig = {
     angle?: number;
     pierceCount?: number;
   };
-  statusEffects?: Array<{
-    type: TowerStatusEffectType;
-    magnitude: number;
-    durationMs: number;
-    stacking?: "none" | "refresh" | "add";
-    maxStacks?: number;
-    scaling?: "none" | "distance";
-  }>;
+  statusEffects?: TowerStatusEffectDefinition[];
   stacks?: Array<{
     id: string;
     trigger: "hit" | "kill" | "wave" | "sameTarget";
