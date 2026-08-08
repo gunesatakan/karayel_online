@@ -23,6 +23,9 @@ import {
   isTargetInsideAttackShape,
   selectAttackShapeTargets,
   selectTowerTarget,
+  getPlacementFootprint,
+  validateEdgePlacement,
+  validateTowerPlacement,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
@@ -47,7 +50,6 @@ import {
   pathToWorldPoints,
   scaleEditableMap,
   worldToGrid,
-  getTowerGridSpan,
   getTowerUpgradeCost,
   towerAims,
   towerCatalog,
@@ -80,6 +82,7 @@ import {
   type TowerDefinition,
   type AmmoType,
   type AttackShapeQuery,
+  type EdgeSegment,
   type TowerTargetingMode,
   type TowerSnapshot
 } from "@karayel/shared";
@@ -4169,7 +4172,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canPlaceTower(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal", ignoreTowerId = "") {
-    if (definitionId === "zeynep-8") {
+    const definition = this.findTowerDefinitionById(definitionId);
+    if (definition?.engine?.placement?.requiresEdge) {
       return this.canPlaceAbartiEdge(x, y, orientation, ignoreTowerId);
     }
 
@@ -4177,30 +4181,28 @@ export class MatchRoom extends Room<MatchState> {
     if (footprint.length === 0) {
       return false;
     }
-
-    const occupiedCells = new Set(footprint.map((cell) => `${cell.col}:${cell.row}`));
-    for (const enemy of this.enemies.values()) {
-      const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
-      if (occupiedCells.has(`${enemyCell.col}:${enemyCell.row}`)) {
-        return false;
-      }
-    }
-    for (const tower of this.towers.values()) {
-      if (tower.id === ignoreTowerId) {
-        continue;
-      }
-      const towerCells = this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation);
-      if (towerCells.some((cell) => occupiedCells.has(`${cell.col}:${cell.row}`))) {
-        return false;
-      }
-    }
-
-    return true;
+    const otherTowers = Array.from(this.towers.values()).filter((tower) => tower.id !== ignoreTowerId);
+    const occupiedCells = otherTowers.flatMap((tower) => this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation));
+    const enemyCells = Array.from(this.enemies.values()).map((enemy) => worldToGrid(enemy.x, enemy.y, this.activeMap));
+    const pathCells = getMapPoints(this.activeMap, "road").concat(getMapPoints(this.activeMap, "spawn"), getMapPoints(this.activeMap, "nexus"));
+    const topLeft = footprint.reduce((result, cell) => ({ col: Math.min(result.col, cell.col), row: Math.min(result.row, cell.row) }), footprint[0]);
+    return validateTowerPlacement({
+      board: { cols: this.activeMap.cols, rows: this.activeMap.rows },
+      col: topLeft.col,
+      row: topLeft.row,
+      span: this.getTowerPlacementSpan(definitionId),
+      occupiedCells,
+      enemyCells,
+      existingTowerCells: occupiedCells,
+      minDistanceFromTowers: definition?.engine?.placement?.minDistanceFromTowers,
+      pathCells,
+      requiresPathAdjacent: definition?.engine?.placement?.requiresPathAdjacent
+    }).valid;
   }
 
   private snapToTowerGrid(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
-    if (definitionId === "zeynep-8") {
+    if (this.findTowerDefinitionById(definitionId)?.engine?.placement?.requiresEdge) {
       const gridSize = getMapGridSize(this.activeMap);
       const origin = getMapOrigin(this.activeMap);
       if (orientation === "vertical") {
@@ -4221,7 +4223,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     // A 2x2 tower centres on a cell corner rather than a cell.
-    if (getTowerGridSpan(definitionId) === 2) {
+    if (this.getTowerPlacementSpan(definitionId) === 2) {
       const gridSize = getMapGridSize(this.activeMap);
       const origin = getMapOrigin(this.activeMap);
       const col = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round((x - origin.x) / gridSize)));
@@ -4236,49 +4238,42 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
-    if (definitionId === "zeynep-8") {
+    if (this.findTowerDefinitionById(definitionId)?.engine?.placement?.requiresEdge) {
       return [];
     }
 
-    if (getTowerGridSpan(definitionId) === 2) {
+    const span = this.getTowerPlacementSpan(definitionId);
+    if (span === 2) {
       const gridSize = getMapGridSize(this.activeMap);
       const origin = getMapOrigin(this.activeMap);
       const col = Math.round((x - origin.x) / gridSize);
       const row = Math.round((y - origin.y) / gridSize);
-      const cells = [
-        { col: col - 1, row: row - 1 },
-        { col, row: row - 1 },
-        { col: col - 1, row },
-        { col, row }
-      ];
-      return cells.every((cell) => isInsideMap(this.activeMap, cell.col, cell.row)) ? cells : [];
+      return getPlacementFootprint({ col: col - 1, row: row - 1, span }, { cols: this.activeMap.cols, rows: this.activeMap.rows });
     }
 
     const gridPoint = worldToGrid(x, y, this.activeMap);
-    return isInsideMap(this.activeMap, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
+    return getPlacementFootprint({ ...gridPoint, span }, { cols: this.activeMap.cols, rows: this.activeMap.rows });
   }
 
   private canPlaceAbartiEdge(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
     const segments = this.getAbartiEdgeSegments(x, y, orientation);
-    if (segments.length !== 2 || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+    const occupiedSegments: EdgeSegment[] = [];
+    for (const tower of this.towers.values()) {
+      if (tower.id !== ignoreTowerId && tower.definition.engine?.placement?.requiresEdge) {
+        occupiedSegments.push(...this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation));
+      }
+    }
+    const edgeValidation = validateEdgePlacement({
+      board: { cols: this.activeMap.cols, rows: this.activeMap.rows },
+      orientation,
+      col: segments[0]?.col ?? -1,
+      row: segments[0]?.row ?? -1,
+      length: 2,
+      occupiedSegments
+    });
+    if (!edgeValidation.valid || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
       return false;
     }
-
-    for (const tower of this.towers.values()) {
-      if (tower.id === ignoreTowerId || tower.definition.id !== "zeynep-8") {
-        continue;
-      }
-
-      const existingSegments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation);
-      if (segments.some((segment) => existingSegments.some((existing) => (
-        existing.orientation === segment.orientation &&
-        existing.col === segment.col &&
-        existing.row === segment.row
-      )))) {
-        return false;
-      }
-    }
-
     return true;
   }
 
@@ -6036,6 +6031,18 @@ export class MatchRoom extends Room<MatchState> {
 
   private findTowerDefinition(characterId: CharacterId, definitionId: string) {
     return towerCatalog[characterId].find((definition) => definition.id === definitionId);
+  }
+
+  private findTowerDefinitionById(definitionId: string) {
+    for (const definitions of Object.values(towerCatalog)) {
+      const definition = definitions.find((candidate) => candidate.id === definitionId);
+      if (definition) return definition;
+    }
+    return undefined;
+  }
+
+  private getTowerPlacementSpan(definitionId: string) {
+    return Math.max(1, this.findTowerDefinitionById(definitionId)?.engine?.placement?.footprintSpan ?? 1);
   }
 
   private getTowerRange(tower: TowerModel) {

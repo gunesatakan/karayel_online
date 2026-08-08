@@ -186,4 +186,6 @@ test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanıml�
     multiplier: 0.48,
     stacking: "strongest"
   });
+  assert.equal(byId["zeynep-7"].placement.footprintSpan, 2);
+  assert.equal(byId["zeynep-8"].placement.requiresEdge, true);
 });

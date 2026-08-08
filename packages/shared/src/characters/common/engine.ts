@@ -25,7 +25,7 @@ const profiles: Record<string, EngineProfile> = {
   "zeynep-2": { targeting: "first", attack: { shape: "line" }, canHitAir: true, resources: { ammoType: "powerCrystal" } },
   "zeynep-3": { targeting: "first", attack: { shape: "beam" }, canHitAir: true, resources: { ammoType: "powerCrystal" } },
   "zeynep-6": { targeting: "first", attack: { shape: "cone", angle: 60 }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 1150, stacking: "refresh", scaling: "distance" }], resources: { ammoType: "auraCrystal" } },
-  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1 }] , resources: { ammoType: "auraCrystal" } },
+  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1 }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
   "zeynep-8": { targeting: "first", attack: { shape: "line" }, canHitAir: false, placement: { requiresEdge: true }, auras: [{ affects: "towers", shape: "line", radius: 0, stat: "damage", multiplier: 1 }] , resources: { ammoType: "auraCrystal" } },
   "zeynep-9": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "zeynep-10": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },

@@ -63,6 +63,7 @@ export type TowerEngineConfig = {
   consumesMarks?: string[];
   placement?: {
     requiresEdge?: boolean;
+    footprintSpan?: number;
     minDistanceFromTowers?: number;
     requiresPathAdjacent?: boolean;
   };
