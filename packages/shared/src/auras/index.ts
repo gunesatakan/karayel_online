@@ -48,6 +48,10 @@ export function evaluateTowerAuras(sources: TowerAuraSource[], target: TowerAura
   return modifiers;
 }
 
+export function applyTowerAuraModifier(baseValue: number, modifiers: TowerAuraModifiers, stat: "damage" | "range" | "armor") {
+  return baseValue * (modifiers[stat] ?? 1);
+}
+
 function distanceSquared(x1: number, y1: number, x2: number, y2: number) {
   const dx = x2 - x1;
   const dy = y2 - y1;

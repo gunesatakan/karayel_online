@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyTowerStatusEffect,
   getActiveStatusMagnitude,
+  getTowerStatusOutcomes,
   isStatusEffectActive
 } from "../packages/shared/dist/index.js";
 
@@ -47,4 +48,27 @@ test("süresi dolmuş etki aktif veya etkili sayılmaz", () => {
   const state = { type: "fear", magnitude: 1, stacks: 1, expiresAt: 1000 };
   assert.equal(isStatusEffectActive(state, 1000), false);
   assert.equal(getActiveStatusMagnitude(state, 1000), 0);
+});
+
+test("burn saniyelik maksimum can hasar oranına dönüşür", () => {
+  const burn = applyTowerStatusEffect(undefined, { type: "burn", magnitude: 0.015, durationMs: 5000 }, { now: 100 });
+  assert.equal(getTowerStatusOutcomes({ burn }, 200).burnMaxHealthRatioPerSecond, 0.015);
+});
+
+test("chill hareket çarpanına dönüşür", () => {
+  const chill = applyTowerStatusEffect(undefined, { type: "chill", magnitude: 0.3, durationMs: 5000 }, { now: 100 });
+  assert.equal(getTowerStatusOutcomes({ chill }, 200).speedMultiplier, 0.7);
+});
+
+test("convert kaynak sahibi ve bitiş süresiyle yürütülür", () => {
+  const convert = applyTowerStatusEffect(undefined, { type: "convert", magnitude: 1, durationMs: 2500 }, {
+    now: 100, sourceTowerId: "tower-1", sourceOwnerId: "player-1"
+  });
+  assert.deepEqual(getTowerStatusOutcomes({ convert }, 200), {
+    burnMaxHealthRatioPerSecond: 0,
+    speedMultiplier: 1,
+    converted: true,
+    convertExpiresAt: 2600,
+    convertOwnerId: "player-1"
+  });
 });

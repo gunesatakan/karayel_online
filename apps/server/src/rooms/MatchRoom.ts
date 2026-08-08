@@ -18,6 +18,8 @@ import {
   applyTowerStatusEffect,
   applyTowerStack,
   getTowerStackMultiplier,
+  getTowerStatusOutcomes,
+  applyTowerAuraModifier,
   dispatchTowerTriggers,
   evaluateTowerAuras,
   isTargetInsideAttackShape,
@@ -88,6 +90,7 @@ import {
   type AttackShapeQuery,
   type EdgeSegment,
   type TowerTargetingMode,
+  type TowerAuraSource,
   type TowerSnapshot
 } from "@karayel/shared";
 
@@ -358,6 +361,7 @@ type EnemyModel = {
   hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
   statusEffects: Partial<Record<TowerStatusEffectType, StatusEffectRuntimeState>>;
+  statusTickAt: Partial<Record<TowerStatusEffectType, number>>;
   stackStates: Record<string, TowerStackRuntimeState>;
   abilities: string[];
   speed: number;
@@ -1384,6 +1388,7 @@ export class MatchRoom extends Room<MatchState> {
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       statusEffects: {},
+      statusTickAt: {},
       stackStates: {},
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
@@ -2123,7 +2128,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy: EnemyModel,
     definition: TowerStatusEffectDefinition,
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string } = {}
   ) {
     const scaledDefinition = {
       ...definition,
@@ -2133,7 +2138,9 @@ export class MatchRoom extends Room<MatchState> {
       now,
       resistance: enemy.statusResistances[definition.type === "mark" ? "tracking" : definition.type],
       magnitude: overrides.magnitude,
-      scalingFactor: overrides.scalingFactor
+      scalingFactor: overrides.scalingFactor,
+      sourceTowerId: overrides.sourceTowerId,
+      sourceOwnerId: overrides.sourceOwnerId
     });
     enemy.statusEffects[definition.type] = state;
     if (definition.type === "slow") {
@@ -2144,6 +2151,31 @@ export class MatchRoom extends Room<MatchState> {
       enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, state.expiresAt);
     }
     return state;
+  }
+
+  private updateEnemyEngineStatusOutcomes(enemy: EnemyModel, now: number) {
+    const outcomes = getTowerStatusOutcomes(enemy.statusEffects, now);
+    if (outcomes.converted) {
+      enemy.dominatedUntil = Math.max(enemy.dominatedUntil, outcomes.convertExpiresAt);
+      enemy.dominatedOwnerId = outcomes.convertOwnerId || enemy.dominatedOwnerId;
+    }
+    if (outcomes.burnMaxHealthRatioPerSecond > 0 && (enemy.statusTickAt.burn ?? 0) <= now) {
+      const burn = enemy.statusEffects.burn;
+      enemy.statusTickAt.burn = now + 500;
+      this.damageEnemy(
+        enemy,
+        enemy.maxHp * outcomes.burnMaxHealthRatioPerSecond * 0.5,
+        0,
+        "status:burn",
+        burn?.sourceOwnerId ?? "",
+        "fire",
+        0,
+        1,
+        burn?.sourceTowerId ?? "",
+        "aura"
+      );
+    }
+    return this.enemies.has(enemy.id);
   }
 
   private applyEngineStack(
@@ -2170,6 +2202,18 @@ export class MatchRoom extends Room<MatchState> {
   private getEngineStackMultiplier(tower: TowerModel, stackId: string, fallback: number, now = Date.now()) {
     const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === stackId);
     return definition ? getTowerStackMultiplier(tower.stackStates[stackId], definition, now) : fallback;
+  }
+
+  private getEngineStackStatMultiplier(tower: TowerModel, stat: TowerStackDefinition["stat"], now = Date.now()) {
+    return (tower.definition.engine?.stacks ?? [])
+      .filter((definition) => definition.stat === stat)
+      .reduce((multiplier, definition) => multiplier * getTowerStackMultiplier(tower.stackStates[definition.id], definition, now), 1);
+  }
+
+  private applyTowerStacksForTrigger(tower: TowerModel, trigger: TowerStackTrigger, now: number, targetId?: string) {
+    for (const definition of tower.definition.engine?.stacks ?? []) {
+      this.applyEngineStack(tower.stackStates, definition, { trigger, now, targetId });
+    }
   }
 
   private runTowerTriggers(
@@ -3042,6 +3086,9 @@ export class MatchRoom extends Room<MatchState> {
   private updateEnemies(seconds: number) {
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
+      if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
+        continue;
+      }
       if (enemy.melisUndeadUntil > now) {
         this.updateMelisUndead(enemy, seconds, now);
         continue;
@@ -3101,9 +3148,10 @@ export class MatchRoom extends Room<MatchState> {
       if (whisperBlocker) {
         this.damageMelisWhisperTurnedBlocker(whisperBlocker, enemy.maxHp * 0.18 * seconds);
       }
+      const statusSpeedMultiplier = getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier;
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier) * doubtHasteMultiplier;
+        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier) * doubtHasteMultiplier;
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
       const route = this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
@@ -3481,7 +3529,8 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0) {
       return;
     }
-    tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - tower.armor));
+    const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
+    tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
     if (tower.hp <= 0) {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
@@ -4490,7 +4539,7 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    if (enemy.dominatedUntil > Date.now() && sourceDefinitionId !== "archer-skill-bully") {
+    if (enemy.dominatedUntil > Date.now() && sourceDefinitionId !== "archer-skill-bully" && !sourceDefinitionId.startsWith("status:")) {
       return false;
     }
 
@@ -4539,6 +4588,18 @@ export class MatchRoom extends Room<MatchState> {
       }, now);
     }
 
+    if (enemy.hp > 0 && sourceTowerId && !sourceDefinitionId.startsWith("status:")) {
+      const sourceTower = this.towers.get(sourceTowerId);
+      for (const definition of sourceTower?.definition.engine?.statusEffects ?? []) {
+        if (definition.type === "burn" || definition.type === "chill" || definition.type === "convert") {
+          this.applyEnemyStatusEffect(enemy, definition, now, {
+            sourceTowerId,
+            sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
+          });
+        }
+      }
+    }
+
     if (enemy.hp > 0) {
       return false;
     }
@@ -4551,6 +4612,10 @@ export class MatchRoom extends Room<MatchState> {
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     this.awardEnemyGold(enemy);
     this.kills += 1;
+    const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+    if (sourceTower) {
+      this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
+    }
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
       if (player?.characterId === "zeynep") {
@@ -5595,6 +5660,7 @@ export class MatchRoom extends Room<MatchState> {
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       statusEffects: {},
+      statusTickAt: {},
       stackStates: {},
       abilities: ["melis-undead"],
       speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72) * ENEMY_MOVEMENT_SPEED_MULTIPLIER),
@@ -6068,35 +6134,69 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(1, this.findTowerDefinitionById(definitionId)?.engine?.placement?.footprintSpan ?? 1);
   }
 
+  private getTowerAuraModifiers(target: TowerModel) {
+    const sources: TowerAuraSource[] = [];
+    for (const source of this.towers.values()) {
+      for (const aura of source.definition.engine?.auras ?? []) {
+        if (aura.affects !== "towers") {
+          continue;
+        }
+        const runtimeAura = { ...aura, radius: this.scaleWorldDistance(aura.radius) };
+        if (aura.shape === "line") {
+          const rect = this.getAbartiRect(source);
+          sources.push({
+            x: source.orientation === "vertical" ? source.x : rect.left,
+            y: source.orientation === "vertical" ? rect.top : source.y,
+            x2: source.orientation === "vertical" ? source.x : rect.right,
+            y2: source.orientation === "vertical" ? rect.bottom : source.y,
+            ownerId: source.ownerId,
+            enabled: source.hp > 0 && source.offlineUntil <= Date.now(),
+            aura: runtimeAura
+          });
+        } else {
+          sources.push({
+            x: source.x,
+            y: source.y,
+            ownerId: source.ownerId,
+            enabled: source.hp > 0 && source.offlineUntil <= Date.now(),
+            aura: runtimeAura
+          });
+        }
+      }
+    }
+    return evaluateTowerAuras(sources, { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+  }
+
   private getTowerRange(tower: TowerModel) {
+    const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range");
     if (tower.definition.id === "warrior-2") {
-      return GAME_WORLD_HEIGHT;
+      return applyRangeAura(GAME_WORLD_HEIGHT);
     }
 
     const now = Date.now();
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
-      return this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
+      return applyRangeAura(this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
-      return GAME_WORLD_HEIGHT;
+      return applyRangeAura(GAME_WORLD_HEIGHT);
     }
 
     if (tower.definition.id === "zeynep-2") {
-      return this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
+      return applyRangeAura(this.scaleWorldDistance(getZeynepShowcaseBeamLength(tower.level) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
     }
 
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
       if (composition.mode) {
         const baseRange = this.getZeynepSynthesisBaseRange(composition);
-        return this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER);
+        return applyRangeAura(this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
       }
     }
 
-    return this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER);
+    return applyRangeAura(this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER));
   }
 
   private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {
@@ -6118,7 +6218,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerBaseFireInterval(tower: TowerModel) {
     const now = Date.now();
-    const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks), now) : 1;
+    const stackMultiplier = this.getEngineStackStatMultiplier(tower, "fireRate", now);
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
@@ -6206,9 +6306,7 @@ export class MatchRoom extends Room<MatchState> {
       damage *= this.getServerLinkedImpactDamageMultiplier(tower);
     }
 
-    if (tower.definition.id === "warrior-4") {
-      damage *= this.getEngineStackMultiplier(tower, "obsession", 1 + tower.focusStacks * 0.2, now);
-    }
+    damage *= this.getEngineStackStatMultiplier(tower, "damage", now);
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
       damage *= 1.2;
@@ -6226,7 +6324,7 @@ export class MatchRoom extends Room<MatchState> {
       damage *= this.getImpactFireRateDamageCompensation(tower);
     }
 
-    return damage;
+    return applyTowerAuraModifier(damage, this.getTowerAuraModifiers(tower), "damage");
   }
 
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
@@ -6601,6 +6699,14 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private advanceWaveGrowth() {
+    const now = Date.now();
+    for (const tower of this.towers.values()) {
+      for (const definition of tower.definition.engine?.stacks ?? []) {
+        this.resetEngineStack(tower.stackStates, definition, "waveEnd");
+      }
+      this.applyTowerStacksForTrigger(tower, "wave", now);
+    }
+
     for (const tower of this.towers.values()) {
       if (tower.definition.id === "warrior-2") {
         tower.linkedTowerIds = tower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));

@@ -45,3 +45,10 @@ test("yalnız tanımlı reset sebebi stacki temizler", () => {
 test("uyuşmayan olay stack oluşturmaz", () => {
   assert.equal(applyTowerStack(undefined, damageStack, { trigger: "kill", now: 1 }), undefined);
 });
+
+test("kill ve wave tetikleyicileri kendi olaylarında stack üretir", () => {
+  const killDefinition = { id: "kill-rage", trigger: "kill", stat: "damage", perStack: 0.1, max: 3 };
+  const waveDefinition = { id: "wave-growth", trigger: "wave", stat: "damage", perStack: 0.2 };
+  assert.equal(applyTowerStack(undefined, killDefinition, { trigger: "kill", now: 100 })?.value, 0.1);
+  assert.equal(applyTowerStack(undefined, waveDefinition, { trigger: "wave", now: 100 })?.value, 0.2);
+});

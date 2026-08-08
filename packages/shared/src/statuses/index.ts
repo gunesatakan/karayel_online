@@ -11,6 +11,8 @@ export type StatusEffectRuntimeState = {
   stacks: number;
   /** Zero represents an effect that remains until explicitly removed. */
   expiresAt: number;
+  sourceTowerId?: string;
+  sourceOwnerId?: string;
 };
 
 export type ApplyStatusEffectOptions = {
@@ -19,6 +21,8 @@ export type ApplyStatusEffectOptions = {
   durationMs?: number;
   magnitude?: number;
   scalingFactor?: number;
+  sourceTowerId?: string;
+  sourceOwnerId?: string;
 };
 
 export function applyTowerStatusEffect(
@@ -42,7 +46,16 @@ export function applyTowerStatusEffect(
     ? 0
     : Math.max(currentIsActive ? current?.expiresAt ?? 0 : 0, nextExpiry);
 
-  return { type: definition.type, magnitude, stacks, expiresAt };
+  const sourceTowerId = options.sourceTowerId ?? current?.sourceTowerId;
+  const sourceOwnerId = options.sourceOwnerId ?? current?.sourceOwnerId;
+  return {
+    type: definition.type,
+    magnitude,
+    stacks,
+    expiresAt,
+    ...(sourceTowerId ? { sourceTowerId } : {}),
+    ...(sourceOwnerId ? { sourceOwnerId } : {})
+  };
 }
 
 export function isStatusEffectActive(state: StatusEffectRuntimeState | undefined, now: number) {
@@ -51,4 +64,20 @@ export function isStatusEffectActive(state: StatusEffectRuntimeState | undefined
 
 export function getActiveStatusMagnitude(state: StatusEffectRuntimeState | undefined, now: number) {
   return isStatusEffectActive(state, now) ? state?.magnitude ?? 0 : 0;
+}
+
+export function getTowerStatusOutcomes(
+  states: Partial<Record<TowerStatusEffectType, StatusEffectRuntimeState>>,
+  now: number
+) {
+  const burn = getActiveStatusMagnitude(states.burn, now);
+  const chill = getActiveStatusMagnitude(states.chill, now);
+  const convert = isStatusEffectActive(states.convert, now) ? states.convert : undefined;
+  return {
+    burnMaxHealthRatioPerSecond: burn,
+    speedMultiplier: Math.max(0, 1 - chill),
+    converted: Boolean(convert),
+    convertExpiresAt: convert?.expiresAt ?? 0,
+    convertOwnerId: convert?.sourceOwnerId ?? ""
+  };
 }

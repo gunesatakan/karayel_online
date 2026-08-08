@@ -326,6 +326,7 @@ export {
   STATUS_EFFECTS,
   applyTowerStatusEffect,
   getActiveStatusMagnitude,
+  getTowerStatusOutcomes,
   isStatusEffectActive
 } from "./statuses/index.js";
 export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
@@ -333,7 +334,7 @@ export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./sta
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
 export { dispatchTowerTriggers } from "./triggers/index.js";
 export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
-export { evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";
+export { applyTowerAuraModifier, evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";

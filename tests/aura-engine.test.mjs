@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evaluateTowerAuras, isPointInsideTowerAura } from "../packages/shared/dist/index.js";
+import { applyTowerAuraModifier, evaluateTowerAuras, isPointInsideTowerAura } from "../packages/shared/dist/index.js";
 
 const enemySlowAura = {
   affects: "enemies",
@@ -51,4 +51,10 @@ test("multiply auralar çarpılarak birleşir ve devre dışı kaynak yok sayıl
     { x: 0, y: 0, enabled: false, aura: { ...aura, multiplier: 10 } }
   ];
   assert.ok(Math.abs(evaluateTowerAuras(sources, { x: 1, y: 1, kind: "enemy" }).damage - 1.8) < 1e-9);
+});
+
+test("damage, range ve armor aura sonuçları temel statlara uygulanır", () => {
+  assert.equal(applyTowerAuraModifier(100, { damage: 1.25 }, "damage"), 125);
+  assert.equal(applyTowerAuraModifier(80, { range: 1.5 }, "range"), 120);
+  assert.equal(applyTowerAuraModifier(12, { armor: 2 }, "armor"), 24);
 });
