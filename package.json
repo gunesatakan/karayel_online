@@ -14,7 +14,7 @@
     "build": "npm run build --workspace @karayel/shared && npm run build --workspace @karayel/server && npm run build --workspace @karayel/web",
     "build:web": "npm run build --workspace @karayel/shared && npm run build --workspace @karayel/web",
     "build:server": "npm run build --workspace @karayel/shared && npm run build --workspace @karayel/server",
-    "typecheck": "npm run typecheck --workspaces",
+    "typecheck": "npm run build --workspace @karayel/shared && npm run typecheck --workspace @karayel/server && npm run typecheck --workspace @karayel/web",
     "test": "npm run build --workspace @karayel/shared && node --test tests/*.test.mjs"
   },
   "devDependencies": {
