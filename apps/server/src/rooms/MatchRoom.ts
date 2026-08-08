@@ -2968,14 +2968,20 @@ export class MatchRoom extends Room<MatchState> {
           { x: projectile.x, y: projectile.y },
           collisionCandidates
             .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
-            .map((enemy) => ({ ...enemy, radius: getEnemyCollisionRadius(enemy) })),
+            .map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, radius: getEnemyCollisionRadius(enemy) })),
           4,
           new Set(projectile.piercedEnemyIds)
         );
         if (collision) {
+          // Carpisma govdesi yalnizca geometri tasir. Hasar canli dusman
+          // nesnesine uygulanmali; govdenin kendisine yazilan can ve kalkan
+          // degisiklikleri kaybolur.
+          const hitEnemy = this.enemies.get(collision.body.id);
           projectile.x = previousX + (projectile.x - previousX) * collision.progress;
           projectile.y = previousY + (projectile.y - previousY) * collision.progress;
-          this.applyProjectileHit(projectile, collision.body);
+          if (hitEnemy) {
+            this.applyProjectileHit(projectile, hitEnemy);
+          }
           projectile.piercedEnemyIds.push(collision.body.id);
           if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
             this.projectiles.delete(id);
