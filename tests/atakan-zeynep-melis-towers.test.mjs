@@ -1,0 +1,118 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  calculateTowerScaledBaseDamage,
+  calculateTowerShotEnergy,
+  calculateTowerShotHeat,
+  inferTowerAmmoType,
+  TOWER_BASE_AMMO_COST,
+  towerCatalog
+} from "../packages/shared/dist/index.js";
+
+const expectedProfiles = {
+  warrior: [
+    ["warrior-1", "projectile", "physical", "bullet", 7, 24, 114.72, null],
+    ["warrior-2", "impact", "electric", "bullet", 28.6, 0, 0, null],
+    ["warrior-3", "aura", "none", "auraCrystal", 1, 0, 0, null],
+    ["warrior-4", "impact", "psychic", "bullet", 8.8, 36, 172.08, null],
+    ["warrior-5", "focus", "fire", "powerCrystal", 4, 10, 47.8, null],
+    ["warrior-6", "impact", "electric", "bullet", 28.6, 27, 129.06, null],
+    ["warrior-7", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
+    ["warrior-8", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+  ],
+  zeynep: [
+    ["zeynep-1", "projectile", "physical", "bullet", 7, 48, 229.44, null],
+    ["zeynep-2", "impact", "light", "powerCrystal", 24.2, 84, 401.52, null],
+    ["zeynep-3", "impact", "none", "powerCrystal", 22, 60, 286.8, null],
+    ["zeynep-6", "aura", "none", "auraCrystal", 1, 0, 0, null],
+    ["zeynep-7", "aura", "none", "auraCrystal", 1, 0, 0, null],
+    ["zeynep-8", "aura", "none", "auraCrystal", 1, 0, 0, null],
+    ["zeynep-9", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
+    ["zeynep-10", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+  ],
+  archer: [
+    ["archer-1", "projectile", "psychic", "bullet", 2.8, 64, 305.92, null],
+    ["archer-2", "projectile", "psychic", "bullet", 2.8, 44, 210.32, null],
+    ["archer-3", "curse", "psychic", "auraCrystal", 0.2, 30, 143.4, null],
+    ["archer-4", "focus", "psychic", "powerCrystal", 1, 0, 0, null],
+    ["archer-5", "impact", "psychic", "bullet", 8.8, 20, 95.6, null],
+    ["archer-6", "wave", "psychic", "auraCrystal", 8, 10, 47.8, null],
+    ["archer-7", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
+    ["archer-8", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+  ]
+};
+
+function round(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function profile(tower) {
+  return [
+    tower.id,
+    tower.hitType,
+    tower.damageType,
+    inferTowerAmmoType(tower),
+    round(calculateTowerShotHeat(tower, 0.5)),
+    round(calculateTowerScaledBaseDamage(tower, 1)),
+    round(calculateTowerScaledBaseDamage(tower, 10)),
+    tower.resourceProvider ?? null
+  ];
+}
+
+for (const [characterId, expected] of Object.entries(expectedProfiles)) {
+  test(`${characterId} kulelerinin davranış profili değişmedi`, () => {
+    assert.deepEqual(towerCatalog[characterId].map(profile), expected);
+  });
+}
+
+test("Atakan, Zeynep ve Melis kule kimlikleri benzersiz ve mekanik tanımları dolu", () => {
+  const towers = [
+    ...towerCatalog.warrior,
+    ...towerCatalog.zeynep,
+    ...towerCatalog.archer
+  ];
+  assert.equal(towers.length, 24);
+  assert.equal(new Set(towers.map((tower) => tower.id)).size, towers.length);
+  for (const tower of towers) {
+    assert.ok(tower.hitType, `${tower.id}: hitType eksik`);
+    assert.ok(tower.damageType, `${tower.id}: damageType eksik`);
+    assert.ok(tower.mechanics?.length, `${tower.id}: mechanics eksik`);
+  }
+});
+
+test("her karakterin bir cephane ve bir enerji sağlayıcısı var", () => {
+  for (const characterId of ["warrior", "zeynep", "archer"]) {
+    const providers = towerCatalog[characterId]
+      .map((tower) => tower.resourceProvider)
+      .filter(Boolean)
+      .sort();
+    assert.deepEqual(providers, ["ammunition", "energy"]);
+  }
+});
+
+test("performans enerji maliyeti ara değerleri dahil karakterize edildi", () => {
+  assert.equal(TOWER_BASE_AMMO_COST, 1);
+  assert.equal(calculateTowerShotEnergy(0), 0);
+  assert.equal(calculateTowerShotEnergy(0.25), 2);
+  assert.equal(calculateTowerShotEnergy(0.4), 3.2);
+  assert.equal(calculateTowerShotEnergy(0.5), 4);
+  assert.equal(calculateTowerShotEnergy(0.6), 5.6);
+  assert.equal(calculateTowerShotEnergy(0.75), 8);
+  assert.equal(calculateTowerShotEnergy(1), 12);
+});
+
+test("ısı performans eğrisi yüzde 50'de 1x ve yüzde 100'de 4x", () => {
+  const projectile = towerCatalog.warrior.find((tower) => tower.id === "warrior-1");
+  assert.ok(projectile);
+  assert.equal(calculateTowerShotHeat(projectile, 0), 0);
+  assert.equal(calculateTowerShotHeat(projectile, 0.5), 7);
+  assert.equal(calculateTowerShotHeat(projectile, 1), 28);
+});
+
+test("temel hasar seviye 1-10 aralığına sabitleniyor", () => {
+  const tower = towerCatalog.zeynep.find((candidate) => candidate.id === "zeynep-1");
+  assert.ok(tower);
+  assert.equal(calculateTowerScaledBaseDamage(tower, 0), 48);
+  assert.equal(round(calculateTowerScaledBaseDamage(tower, 10)), 229.44);
+  assert.equal(round(calculateTowerScaledBaseDamage(tower, 99)), 229.44);
+});

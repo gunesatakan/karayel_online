@@ -289,6 +289,20 @@ export type GameSnapshot = {
 export { characters, towerCatalog } from "./characters/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type { AmmoType, TowerResourceProvider } from "./characters/common/types.js";
+export {
+  TOWER_BASE_AMMO_COST,
+  TOWER_BASE_ENERGY_COST,
+  TOWER_BASE_DAMAGE_MULTIPLIER,
+  TOWER_LEVEL_DAMAGE_STEP,
+  TOWER_HEAT_BY_HIT_TYPE,
+  TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
+  getTowerPerformanceHeatMultiplier,
+  getTowerPerformanceEnergyMultiplier,
+  calculateTowerShotHeat,
+  calculateTowerShotEnergy,
+  calculateTowerScaledBaseDamage,
+  inferTowerAmmoType
+} from "./tower-rules.js";
 export { STATUS_EFFECTS } from "./statuses/index.js";
 export {
   MAP_GRID_COLS,

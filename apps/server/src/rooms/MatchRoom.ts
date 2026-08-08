@@ -15,6 +15,10 @@ import {
   createDefaultEditableMap,
   createOpenArenaMap,
   applyStatusResistance,
+  calculateTowerScaledBaseDamage,
+  calculateTowerShotEnergy,
+  calculateTowerShotHeat,
+  TOWER_BASE_AMMO_COST,
   calculateDamageTaken,
   findPathToNearestNexus,
   getMapMetrics,
@@ -26,6 +30,7 @@ import {
   getMapGridSize,
   getTile,
   isInsideMap,
+  inferTowerAmmoType,
   getTowerSellRefund,
   getTowerBuildCost,
   gridToWorld,
@@ -70,8 +75,7 @@ const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
-const SHOT_AMMO_COST = 1;
-const SHOT_ENERGY_COST = 4;
+const SHOT_AMMO_COST = TOWER_BASE_AMMO_COST;
 const LOGISTICS_WORKER_SPEED = 82;
 const LOGISTICS_WORKER_CAPACITY = 12;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
@@ -81,25 +85,6 @@ const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_COOLING_PER_SECOND = 1;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
-const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
-  impact: 22,
-  wave: 20,
-  projectile: 7,
-  focus: 2.5,
-  aura: 1,
-  curse: 0.5,
-  contamination: 0.5
-};
-const TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER: Record<DamageType, number> = {
-  fire: 1.6,
-  electric: 1.3,
-  light: 1.1,
-  physical: 1,
-  true: 1,
-  psychic: 0.4,
-  cellular: 0.3,
-  none: 1
-};
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -127,7 +112,6 @@ const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const ENEMY_REWARD_MULTIPLIER = 0.55;
-const BASE_TOWER_DAMAGE_MULTIPLIER = 2;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 const ZEYNEP_MAX_REPUTATION = 100;
@@ -1397,17 +1381,6 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private getTowerAmmoType(definition: TowerDefinition): AmmoType {
-    const mechanics = definition.mechanics ?? [];
-    if (definition.hitType === "focus" || mechanics.some((mechanic) => /laser|beam|light-line|showcase-line|mirror/.test(mechanic))) {
-      return "powerCrystal";
-    }
-    if (definition.hitType && ["aura", "wave", "curse"].includes(definition.hitType)) {
-      return "auraCrystal";
-    }
-    return "bullet";
-  }
-
   private updateResourceFactories(seconds: number) {
     for (const tower of this.towers.values()) {
       if (tower.hp <= 0 || tower.definition.resourceProvider !== "ammunition" || tower.energy <= 0 || tower.rawAmmo <= 0 || tower.ammo >= tower.maxAmmo) {
@@ -1440,22 +1413,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerEnergyCost(tower: TowerModel) {
-    const multiplier = tower.performance <= 0.5
-      ? tower.performance * 2
-      : 1 + (tower.performance - 0.5) * 4;
-    return SHOT_ENERGY_COST * multiplier;
+    return calculateTowerShotEnergy(tower.performance);
   }
 
   private getTowerShotHeat(tower: TowerModel) {
-    const hitType = tower.definition.hitType ?? "projectile";
-    const damageType = tower.definition.damageType ?? "physical";
-    const performanceMultiplier = tower.performance <= 0.5
-      ? tower.performance * 2
-      : 1 + (tower.performance - 0.5) * 6;
-    return TOWER_HEAT_BY_HIT_TYPE[hitType]
-      * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[damageType]
-      * performanceMultiplier
-      * this.getTowerSpecialHeatMultiplier(tower);
+    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower));
   }
 
   private getTowerSpecialHeatMultiplier(_tower: TowerModel) {
@@ -3405,7 +3367,7 @@ export class MatchRoom extends Room<MatchState> {
       hp: TOWER_BASE_HP,
       maxHp: TOWER_BASE_HP,
       armor: TOWER_BASE_ARMOR,
-      ammoType: this.getTowerAmmoType(definition),
+      ammoType: inferTowerAmmoType(definition),
       ammo: definition.resourceProvider === "ammunition" ? 40 : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
       maxAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
       energy: definition.resourceProvider === "ammunition" ? 20 : definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
@@ -5982,7 +5944,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerDamage(tower: TowerModel) {
     const now = Date.now();
-    let damage = tower.definition.damage * BASE_TOWER_DAMAGE_MULTIPLIER * (1 + (tower.level - 1) * 0.42) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now) * getZeynepFormationDamageMultiplier(tower);
+    let damage = calculateTowerScaledBaseDamage(tower.definition, tower.level) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now) * getZeynepFormationDamageMultiplier(tower);
 
     if (tower.definition.id === "warrior-4") {
       damage *= getObsessionDamageMultiplier(tower.level);
@@ -6146,7 +6108,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.ammo < SHOT_AMMO_COST) {
       return "Muhimmat Yok";
     }
-    if (tower.energy < SHOT_ENERGY_COST) {
+    if (tower.energy < this.getTowerEnergyCost(tower)) {
       return "Enerji Yok";
     }
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
