@@ -16,6 +16,9 @@ import {
   createOpenArenaMap,
   applyStatusResistance,
   applyTowerStatusEffect,
+  applyTowerStack,
+  getTowerStackMultiplier,
+  resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
@@ -55,6 +58,9 @@ import {
   type StatusEffectRuntimeState,
   type TowerStatusEffectDefinition,
   type TowerStatusEffectType,
+  type TowerStackRuntimeState,
+  type TowerStackDefinition,
+  type TowerStackTrigger,
   type BeamSnapshot,
   type GameSnapshot,
   type HitType,
@@ -334,6 +340,7 @@ type EnemyModel = {
   hitTypeResistances: Partial<Record<HitType, number>>;
   statusResistances: Partial<Record<StatusEffectId, number>>;
   statusEffects: Partial<Record<TowerStatusEffectType, StatusEffectRuntimeState>>;
+  stackStates: Record<string, TowerStackRuntimeState>;
   abilities: string[];
   speed: number;
   reward: number;
@@ -400,6 +407,7 @@ type TowerModel = {
   cooldownMs: number;
   focusTargetId: string;
   focusStacks: number;
+  stackStates: Record<string, TowerStackRuntimeState>;
   activeMs: number;
   overheatMs: number;
   offlineUntil: number;
@@ -1347,6 +1355,7 @@ export class MatchRoom extends Room<MatchState> {
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       statusEffects: {},
+      stackStates: {},
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
       reward: definition.reward,
@@ -2082,6 +2091,32 @@ export class MatchRoom extends Room<MatchState> {
       enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, state.expiresAt);
     }
     return state;
+  }
+
+  private applyEngineStack(
+    states: Record<string, TowerStackRuntimeState>,
+    definition: TowerStackDefinition,
+    options: { trigger: TowerStackTrigger; now: number; targetId?: string; amount?: number; maxCount?: number; maxValue?: number }
+  ) {
+    const state = applyTowerStack(states[definition.id], definition, options);
+    if (state) {
+      states[definition.id] = state;
+    }
+    return state;
+  }
+
+  private resetEngineStack(states: Record<string, TowerStackRuntimeState>, definition: TowerStackDefinition, reason: "targetChange" | "noTarget" | "waveEnd") {
+    const state = resetTowerStack(states[definition.id], definition, reason);
+    if (state) {
+      states[definition.id] = state;
+    } else {
+      delete states[definition.id];
+    }
+  }
+
+  private getEngineStackMultiplier(tower: TowerModel, stackId: string, fallback: number, now = Date.now()) {
+    const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === stackId);
+    return definition ? getTowerStackMultiplier(tower.stackStates[stackId], definition, now) : fallback;
   }
 
   private getKinDistanceRatio(distanceFromTower: number, range: number) {
@@ -2951,10 +2986,12 @@ export class MatchRoom extends Room<MatchState> {
         enemy.melisCurseOwnerId = "";
         enemy.melisCurseTowerId = "";
         enemy.melisCurseEvolutionLevel = 0;
+        delete enemy.stackStates["curse-pool"];
       }
 
       if (enemy.melisDoubtStacks > 0 && enemy.melisDoubtUntil <= now) {
         enemy.melisDoubtStacks = 0;
+        delete enemy.stackStates["doubt"];
       }
 
       const isFeared = enemy.fearUntil > now;
@@ -3423,6 +3460,7 @@ export class MatchRoom extends Room<MatchState> {
       cooldownMs: 150,
       focusTargetId: "",
       focusStacks: 0,
+      stackStates: {},
       activeMs: 0,
       overheatMs: 0,
       offlineUntil: 0,
@@ -4491,7 +4529,12 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const capacity = this.getMelisBrokenMirrorCapacity(mirror);
-      mirror.melisMirrorCharge = Math.min(capacity, mirror.melisMirrorCharge + amount * this.getMelisBrokenMirrorStoreRatio(mirror));
+      const storedAmount = amount * this.getMelisBrokenMirrorStoreRatio(mirror);
+      const stackDefinition = mirror.definition.engine?.stacks?.find((stack) => stack.id === "mirror-storage");
+      const stackState = stackDefinition
+        ? this.applyEngineStack(mirror.stackStates, stackDefinition, { trigger: "hit", now, amount: storedAmount, maxValue: capacity })
+        : undefined;
+      mirror.melisMirrorCharge = stackState?.value ?? Math.min(capacity, mirror.melisMirrorCharge + storedAmount);
     }
   }
 
@@ -4516,6 +4559,7 @@ export class MatchRoom extends Room<MatchState> {
     const storedDamage = Math.max(0, tower.melisMirrorCharge);
     const releasedDamage = storedDamage * getMelisBrokenMirrorReleaseMultiplier(tower.level);
     tower.melisMirrorCharge = 0;
+    delete tower.stackStates["mirror-storage"];
     if (storedDamage <= 0) {
       return false;
     }
@@ -4882,8 +4926,12 @@ export class MatchRoom extends Room<MatchState> {
     if (definition) {
       this.applyEnemyStatusEffect(enemy, definition, now, { durationMs: Math.max(0, expiresAt - now) });
     }
-    enemy.melisCurseLoad += 1;
-    enemy.melisCurseBurstDamage += burstDamage;
+    const stackDefinition = tower?.definition.engine?.stacks?.find((stack) => stack.id === "curse-pool");
+    const stackState = stackDefinition
+      ? this.applyEngineStack(enemy.stackStates, stackDefinition, { trigger: "hit", now, amount: burstDamage })
+      : undefined;
+    enemy.melisCurseLoad = stackState?.count ?? enemy.melisCurseLoad + 1;
+    enemy.melisCurseBurstDamage = stackState?.value ?? enemy.melisCurseBurstDamage + burstDamage;
     enemy.melisCurseUntil = Math.max(enemy.melisCurseUntil, expiresAt);
     enemy.melisCurseOwnerId = ownerId;
     enemy.melisCurseTowerId = towerId;
@@ -4905,6 +4953,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.melisCurseOwnerId = "";
     enemy.melisCurseTowerId = "";
     enemy.melisCurseEvolutionLevel = 0;
+    delete enemy.stackStates["curse-pool"];
     const radius = this.scaleWorldDistance(MELIS_CURSE_DEATH_BURST_RADIUS);
     const radiusSq = radius * radius;
 
@@ -5064,6 +5113,11 @@ export class MatchRoom extends Room<MatchState> {
     if (slowDefinition) {
       this.applyEnemyStatusEffect(enemy, slowDefinition, now, { durationMs: this.getMelisDoubtDurationMs(tower) });
     }
+    const doubtStackDefinition = tower.definition.engine?.stacks?.find((stack) => stack.id === "doubt");
+    if (doubtStackDefinition) {
+      const state = this.applyEngineStack(enemy.stackStates, doubtStackDefinition, { trigger: "hit", now, maxCount: 3 });
+      enemy.melisDoubtStacks = state?.count ?? enemy.melisDoubtStacks;
+    }
 
     const triggerStacks = this.isMelisStressDominant(tower) ? 2 : 3;
     if (enemy.melisDoubtStacks < triggerStacks) {
@@ -5072,6 +5126,7 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisDoubtStacks = 0;
     enemy.melisDoubtUntil = 0;
+    delete enemy.stackStates["doubt"];
     const stunDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "stun");
     if (stunDefinition) {
       this.applyEnemyStatusEffect(enemy, stunDefinition, now, { durationMs: this.getMelisDoubtHesitationMs(tower) });
@@ -5445,6 +5500,7 @@ export class MatchRoom extends Room<MatchState> {
       hitTypeResistances: { ...definition.hitTypeResistances },
       statusResistances: { ...definition.statusResistances },
       statusEffects: {},
+      stackStates: {},
       abilities: ["melis-undead"],
       speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72) * ENEMY_MOVEMENT_SPEED_MULTIPLIER),
       reward: 0,
@@ -5951,7 +6007,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerBaseFireInterval(tower: TowerModel) {
     const now = Date.now();
-    const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
+    const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks), now) : 1;
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
@@ -6040,7 +6096,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-4") {
-      damage *= 1 + tower.focusStacks * 0.2;
+      damage *= this.getEngineStackMultiplier(tower, "obsession", 1 + tower.focusStacks * 0.2, now);
     }
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
@@ -6075,7 +6131,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
-    const stackMultiplier = tower.definition.id === "warrior-6" ? getUcubeStackIntervalMultiplier(tower.focusStacks) : 1;
+    const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks)) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
@@ -6356,17 +6412,33 @@ export class MatchRoom extends Room<MatchState> {
       tower.activeMs = 0;
       tower.focusStacks = 0;
       tower.focusTargetId = "";
+      const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === "ucube-fire-rate");
+      if (definition) {
+        this.resetEngineStack(tower.stackStates, definition, "noTarget");
+      }
       return;
     }
 
     tower.activeMs += deltaTime;
     tower.focusTargetId = target.id;
-    tower.focusStacks = Math.min(tower.waveBonusLevel >= 8 ? 20 : tower.waveBonusLevel >= 4 ? 15 : 10, Math.floor(tower.activeMs / 1000));
+    const stackLimit = tower.waveBonusLevel >= 8 ? 20 : tower.waveBonusLevel >= 4 ? 15 : 10;
+    const desiredStacks = Math.min(stackLimit, Math.floor(tower.activeMs / 1000));
+    const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === "ucube-fire-rate");
+    if (definition) {
+      let state: TowerStackRuntimeState | undefined = tower.stackStates[definition.id];
+      while ((state?.count ?? 0) < desiredStacks) {
+        state = this.applyEngineStack(tower.stackStates, definition, { trigger: "activeSecond", now: Date.now(), maxCount: stackLimit });
+      }
+      tower.focusStacks = state?.count ?? 0;
+    } else {
+      tower.focusStacks = desiredStacks;
+    }
 
     if (tower.waveBonusLevel < 6 && tower.activeMs >= 20000) {
       tower.overheatMs = 10000;
       tower.activeMs = 0;
       tower.focusStacks = 0;
+      delete tower.stackStates["ucube-fire-rate"];
     }
   }
 
@@ -6439,11 +6511,18 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === "obsession");
     if (tower.focusTargetId === target.id) {
-      tower.focusStacks = Math.min(10, tower.focusStacks + 1);
+      const state = definition
+        ? this.applyEngineStack(tower.stackStates, definition, { trigger: "sameTarget", now: Date.now(), targetId: target.id })
+        : undefined;
+      tower.focusStacks = state?.count ?? Math.min(10, tower.focusStacks + 1);
     } else {
       tower.focusTargetId = target.id;
       tower.focusStacks = 0;
+      if (definition) {
+        this.resetEngineStack(tower.stackStates, definition, "targetChange");
+      }
     }
   }
 

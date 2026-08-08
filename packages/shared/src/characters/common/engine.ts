@@ -15,9 +15,9 @@ const profiles: Record<string, EngineProfile> = {
   "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
   "warrior-2": { targeting: "first", attack: { shape: "circle" }, canHitAir: false },
   "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh" }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
-  "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, resetOn: "targetChange" }] },
+  "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
   "warrior-5": { targeting: "marked", attack: { shape: "beam" }, canHitAir: false, consumesMarks: ["tracking"], triggers: [{ event: "overheat", effect: "disable" }] , resources: { ammoType: "powerCrystal" } },
-  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "hit", stat: "fireRate", perStack: 0.1, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }] },
+  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireRate", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }] },
   "warrior-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "warrior-8": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },
 
@@ -35,7 +35,7 @@ const profiles: Record<string, EngineProfile> = {
   "archer-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "curse", magnitude: 1, durationMs: 0, stacking: "add" }], stacks: [{ id: "curse-pool", trigger: "hit", stat: "storedDamage", perStack: 1 }], triggers: [{ event: "kill", effect: "death-burst" }], resources: { ammoType: "auraCrystal" } },
   "archer-4": { targeting: "first", attack: { shape: "beam" }, canHitAir: true, locksTarget: true, statusEffects: [{ type: "bind", magnitude: 1, durationMs: 0, stacking: "none" }], resources: { ammoType: "powerCrystal" } },
   "archer-5": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: false, stacks: [{ id: "mirror-storage", trigger: "hit", stat: "storedDamage", perStack: 1 }] },
-  "archer-6": { targeting: "first", attack: { shape: "circle" }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 0.1, durationMs: 0, stacking: "add", maxStacks: 3 }, { type: "stun", magnitude: 1, durationMs: 350, stacking: "none" }], resources: { ammoType: "auraCrystal" } },
+  "archer-6": { targeting: "first", attack: { shape: "circle" }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 0.1, durationMs: 0, stacking: "add", maxStacks: 3 }, { type: "stun", magnitude: 1, durationMs: 350, stacking: "none" }], stacks: [{ id: "doubt", trigger: "hit", stat: "slow", perStack: 0.1, max: 3 }], resources: { ammoType: "auraCrystal" } },
   "archer-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "archer-8": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } }
 };

@@ -296,6 +296,10 @@ export type {
   TowerAttackShape,
   TowerStatusEffectType,
   TowerStatusEffectDefinition,
+  TowerStackDefinition,
+  TowerStackTrigger,
+  TowerStackStat,
+  TowerStackResetReason,
   TowerTriggerEvent
 } from "./characters/common/types.js";
 export {
@@ -319,6 +323,8 @@ export {
   isStatusEffectActive
 } from "./statuses/index.js";
 export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
+export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./stacks/index.js";
+export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

@@ -15,6 +15,18 @@ export type TowerStatusEffectDefinition = {
   maxStacks?: number;
   scaling?: "none" | "distance";
 };
+export type TowerStackTrigger = "hit" | "kill" | "wave" | "sameTarget" | "activeSecond";
+export type TowerStackStat = "damage" | "fireRate" | "slow" | "storedDamage";
+export type TowerStackResetReason = "targetChange" | "noTarget" | "waveEnd";
+export type TowerStackDefinition = {
+  id: string;
+  trigger: TowerStackTrigger;
+  stat: TowerStackStat;
+  perStack: number;
+  max?: number;
+  decayMs?: number;
+  resetOn?: TowerStackResetReason;
+};
 
 export type TowerEngineConfig = {
   targeting: TowerTargetingMode;
@@ -26,15 +38,7 @@ export type TowerEngineConfig = {
     pierceCount?: number;
   };
   statusEffects?: TowerStatusEffectDefinition[];
-  stacks?: Array<{
-    id: string;
-    trigger: "hit" | "kill" | "wave" | "sameTarget";
-    stat: "damage" | "fireRate" | "slow" | "storedDamage";
-    perStack: number;
-    max?: number;
-    decayMs?: number;
-    resetOn?: "targetChange" | "noTarget" | "waveEnd";
-  }>;
+  stacks?: TowerStackDefinition[];
   auras?: Array<{
     affects: "towers" | "enemies";
     shape: "circle" | "line";
