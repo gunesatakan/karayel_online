@@ -64,6 +64,8 @@ const TEAM_START_GOLD = 360;
 const MELIS_START_GOLD = 150;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
+const DEFAULT_PLAYER_TOWER_LIMIT = 10;
+const ZEYNEP_TOWER_LIMIT = 12;
 const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
@@ -3341,6 +3343,12 @@ export class MatchRoom extends Room<MatchState> {
   private placeTower(client: Client, message: PlaceTowerMessage) {
     const player = this.state.players.get(client.sessionId);
     if (!player || typeof message.x !== "number" || typeof message.y !== "number" || !message.definitionId) {
+      return;
+    }
+
+    const towerLimit = player.characterId === "zeynep" ? ZEYNEP_TOWER_LIMIT : DEFAULT_PLAYER_TOWER_LIMIT;
+    const currentTowerCount = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId).length;
+    if (currentTowerCount >= towerLimit) {
       return;
     }
 

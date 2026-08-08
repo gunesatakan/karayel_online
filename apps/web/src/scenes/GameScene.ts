@@ -1102,6 +1102,11 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
+    const towerLimit = this.localPlayerSnapshot?.characterId === "zeynep" ? 12 : 10;
+    if (!ignoreTowerId && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
+      return false;
+    }
+
     const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
     if (definitionId === "zeynep-8") {
       return this.canPlaceAbartiEdgePreview(x, y, this.getPlacementOrientation(definitionId), ignoreTowerId);
