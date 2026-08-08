@@ -335,6 +335,8 @@ export { evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
+export { selectTowerTarget } from "./targeting/index.js";
+export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

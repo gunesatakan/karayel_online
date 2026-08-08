@@ -22,6 +22,7 @@ import {
   evaluateTowerAuras,
   isTargetInsideAttackShape,
   selectAttackShapeTargets,
+  selectTowerTarget,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
@@ -79,6 +80,7 @@ import {
   type TowerDefinition,
   type AmmoType,
   type AttackShapeQuery,
+  type TowerTargetingMode,
   type TowerSnapshot
 } from "@karayel/shared";
 
@@ -4344,68 +4346,70 @@ export class MatchRoom extends Room<MatchState> {
       return melisFocusTarget;
     }
 
-    if (tower.definition.id === "archer-1") {
-      const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
-      const lockedTargetInRange = lockedTarget
-        ? distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)
-        : false;
-      if (
-        lockedTarget &&
-        this.canTowerTargetEnemy(tower, lockedTarget) &&
-        (lockedTargetInRange || this.canMelisHedefciHoldLockOutsideRange(tower)) &&
-        (tower.melisEvolutionLevel < 1 || this.isMelisUnderworldLinkedEnemyForOwner(tower.ownerId, lockedTarget.id))
-      ) {
-        return lockedTarget;
-      }
-      if (!lockedTarget || !this.canTowerTargetEnemy(tower, lockedTarget) || (!lockedTargetInRange && !this.canMelisHedefciHoldLockOutsideRange(tower))) {
-        tower.focusTargetId = "";
-      }
-    }
-
     if (tower.definition.id === "archer-2") {
       const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
       if (lockedTarget) {
-        if (distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)) {
-          return lockedTarget;
-        }
-        if (lockedTarget.fearUntil <= Date.now()) {
+        const lockedTargetInRange = distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) * this.getTowerRange(tower);
+        if (!lockedTargetInRange && lockedTarget.fearUntil <= now) {
           this.runTowerTriggers(tower, "escape", { target: lockedTarget, areaDamageMultiplier: 2, now });
         }
+        if (!lockedTargetInRange) {
+          tower.focusTargetId = "";
+        }
       }
-      tower.focusTargetId = "";
     }
 
     const range = isGuidedHit ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
-    const candidates = Array.from(this.enemies.values())
-      .filter((enemy) => {
-        this.perfCounters.targetChecks += 1;
-        return this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
-      });
-
-    if (tower.definition.engine?.targeting === "strongest") {
-      return candidates.sort((a, b) => Number(b.type === "brute") - Number(a.type === "brute") || b.pathDistance - a.pathDistance)[0];
+    const candidates = Array.from(this.enemies.values());
+    this.perfCounters.targetChecks += candidates.length;
+    const preferredTargetIds = tower.definition.id === "archer-1" && tower.melisEvolutionLevel >= 1
+      ? this.getMelisUnderworldLinkedEnemyIds(tower.ownerId)
+      : [];
+    if (tower.definition.id === "archer-1" && tower.melisEvolutionLevel >= 1 && tower.focusTargetId && !preferredTargetIds.includes(tower.focusTargetId)) {
+      tower.focusTargetId = "";
     }
-
-    if (tower.definition.engine?.targeting === "marked") {
-      return candidates.sort((a, b) => this.getTrackingStackCount(b, now) - this.getTrackingStackCount(a, now) || b.pathDistance - a.pathDistance)[0];
+    const selected = this.selectEnemyTarget(tower, candidates, tower.definition.engine?.targeting ?? "first", {
+      range,
+      now,
+      lockedTargetId: tower.focusTargetId,
+      retainLockOutsideRange: tower.definition.id === "archer-1" && this.canMelisHedefciHoldLockOutsideRange(tower),
+      preferredTargetIds
+    });
+    if (!selected && tower.definition.engine?.locksTarget) {
+      tower.focusTargetId = "";
     }
+    return selected;
+  }
 
-    if (tower.definition.id === "archer-1") {
-      const underworldTarget = this.findMelisUnderworldLinkedTargetForHedefci(tower, candidates);
-      if (underworldTarget) {
-        return underworldTarget;
-      }
-      const lockedTarget = tower.focusTargetId ? this.enemies.get(tower.focusTargetId) : undefined;
-      if (lockedTarget && this.canTowerTargetEnemy(tower, lockedTarget) && (
-        distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= range * range ||
-        this.canMelisHedefciHoldLockOutsideRange(tower)
-      )) {
-        return lockedTarget;
-      }
-    }
-
-    return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
+  private selectEnemyTarget(
+    tower: TowerModel,
+    enemies: EnemyModel[],
+    mode: TowerTargetingMode,
+    options: { range: number; now: number; lockedTargetId?: string; retainLockOutsideRange?: boolean; preferredTargetIds?: string[]; random?: () => number; strength?: (enemy: EnemyModel) => number; useTypePriority?: boolean }
+  ) {
+    const byId = new Map(enemies.map((enemy) => [enemy.id, enemy]));
+    const selected = selectTowerTarget({
+      mode,
+      canHitAir: tower.definition.engine?.canHitAir ?? false,
+      locksTarget: tower.definition.engine?.locksTarget,
+      lockedTargetId: options.lockedTargetId,
+      retainLockOutsideRange: options.retainLockOutsideRange,
+      preferredTargetIds: options.preferredTargetIds,
+      random: options.random
+    }, enemies.map((enemy) => ({
+      id: enemy.id,
+      progress: enemy.pathDistance,
+      health: enemy.hp + enemy.shield,
+      strength: options.strength?.(enemy) ?? enemy.maxHp + enemy.maxShield,
+      distance: Math.hypot(enemy.x - tower.x, enemy.y - tower.y),
+      markScore: this.getTrackingStackCount(enemy, options.now),
+      priorityScore: options.useTypePriority === false ? 0 : enemy.type === "brute" ? 1 : 0,
+      inRange: distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= options.range * options.range,
+      eligible: this.canTowerTargetEnemy(tower, enemy),
+      movementKind: enemy.movementKind
+    })));
+    return selected ? byId.get(selected.id) : undefined;
   }
 
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
@@ -4439,14 +4443,10 @@ export class MatchRoom extends Room<MatchState> {
     return tower.definition.id === "archer-1" && this.isMelisApprovalDominant(tower);
   }
 
-  private findMelisUnderworldLinkedTargetForHedefci(tower: TowerModel, candidates: EnemyModel[]) {
-    if (tower.definition.id !== "archer-1" || tower.melisEvolutionLevel < 1) {
-      return undefined;
-    }
-
+  private getMelisUnderworldLinkedEnemyIds(ownerId: string) {
     const linkedEnemyIds = new Set<string>();
     for (const candidateTower of this.towers.values()) {
-      if (candidateTower.definition.id !== "archer-4" || candidateTower.ownerId !== tower.ownerId) {
+      if (candidateTower.definition.id !== "archer-4" || candidateTower.ownerId !== ownerId) {
         continue;
       }
       for (const enemyId of candidateTower.melisUnderworldTargetIds) {
@@ -4454,13 +4454,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    if (linkedEnemyIds.size === 0) {
-      return undefined;
-    }
-
-    return candidates
-      .filter((enemy) => linkedEnemyIds.has(enemy.id))
-      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+    return Array.from(linkedEnemyIds);
   }
 
   private isMelisUnderworldLinkedEnemyForOwner(ownerId: string, enemyId: string) {
@@ -4686,20 +4680,18 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findMelisBrokenMirrorExplosionTarget(tower: TowerModel) {
-    const candidates = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
-    if (candidates.length === 0) {
-      return undefined;
-    }
-
-    if (this.isMelisApprovalDominant(tower)) {
-      return candidates.sort((a, b) => b.pathDistance - a.pathDistance)[0];
-    }
-
-    if (this.isMelisStressDominant(tower)) {
-      return candidates[Math.floor(Math.random() * candidates.length)];
-    }
-
-    return candidates.sort((a, b) => getEnemyHealthRatio(b) - getEnemyHealthRatio(a) || b.pathDistance - a.pathDistance)[0];
+    const state = this.isMelisApprovalDominant(tower)
+      ? "approval"
+      : this.isMelisStressDominant(tower)
+        ? "stress"
+        : "balanced";
+    const mode = tower.definition.engine?.targetingByState?.[state] ?? tower.definition.engine?.targeting ?? "strongest";
+    return this.selectEnemyTarget(tower, Array.from(this.enemies.values()), mode, {
+      range: Number.POSITIVE_INFINITY,
+      now: Date.now(),
+      strength: getEnemyHealthRatio,
+      useTypePriority: false
+    });
   }
 
   private triggerMelisBrokenMirrorDeathBurst(tower: TowerModel, x: number, y: number, storedDamage: number) {
@@ -5447,15 +5439,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private findMelisUnderworldTarget(tower: TowerModel, existingTargetIds: string[], now: number) {
     const range = this.getTowerRange(tower);
-    const rangeSq = range * range;
-    return Array.from(this.enemies.values())
-      .filter((enemy) => (
-        !existingTargetIds.includes(enemy.id) &&
-        enemy.melisUndeadUntil <= now &&
-        this.canTowerTargetEnemy(tower, enemy) &&
-        distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= rangeSq
-      ))
-      .sort((a, b) => b.pathDistance - a.pathDistance)[0];
+    const candidates = Array.from(this.enemies.values()).filter((enemy) => !existingTargetIds.includes(enemy.id) && enemy.melisUndeadUntil <= now);
+    return this.selectEnemyTarget(tower, candidates, tower.definition.engine?.targeting ?? "first", { range, now });
   }
 
   private applyMelisUnderworldLinkEffects(tower: TowerModel, enemy: EnemyModel, isStressMode: boolean, now: number) {

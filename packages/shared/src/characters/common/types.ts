@@ -47,6 +47,7 @@ export type TowerAuraDefinition = {
 
 export type TowerEngineConfig = {
   targeting: TowerTargetingMode;
+  targetingByState?: Partial<Record<"approval" | "stress" | "balanced", TowerTargetingMode>>;
   attack: {
     shape: TowerAttackShape;
     width?: number;
