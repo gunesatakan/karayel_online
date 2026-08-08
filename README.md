@@ -7,7 +7,6 @@ Mobile browser multiplayer game prototype.
 - `apps/web`: Phaser 3 + Vite + TypeScript
 - `apps/server`: Node.js + Colyseus + TypeScript
 - `packages/shared`: shared character and player types
-- `supabase`: database migrations and seed files
 
 ## Local Development
 
@@ -30,13 +29,6 @@ npm run dev:web
 ```
 
 The web client expects the game server at `ws://localhost:2567` by default.
-
-## Match telemetry
-
-Apply the SQL files in `supabase/migrations` to the Supabase project, then set
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` on the game server. When either
-variable is absent, telemetry is disabled and matches continue normally. The
-service-role key must never be exposed through a `VITE_` variable or the client.
 
 ## Deployment
 

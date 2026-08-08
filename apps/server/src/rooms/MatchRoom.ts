@@ -1,7 +1,6 @@
 import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
-import { createSupabaseMatchTelemetryStore, type MatchTelemetry } from "../persistence/supabase.js";
 import {
   characters,
   DEFAULT_MAP_SCALE,
@@ -733,9 +732,6 @@ export class MatchRoom extends Room<MatchState> {
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
   private hostSessionId = "";
   private gameStarted = false;
-  private readonly matchStartedAt = new Date();
-  private readonly telemetryStore = createSupabaseMatchTelemetryStore();
-  private matchTelemetryRecorded = false;
   private setupPhase = true;
   private setupReadyPlayerIds = new Set<string>();
   private autoStartOnFirstJoin = false;
@@ -981,39 +977,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   onDispose() {
-    if (this.gameStarted && !this.matchTelemetryRecorded) {
-      void this.persistMatchTelemetry("abandoned");
-    }
     MatchRoom.rooms.delete(this.roomId);
     MatchRoom.publicRooms.delete(this.roomId);
-  }
-
-  private async persistMatchTelemetry(outcome: MatchTelemetry["outcome"]) {
-    if (!this.telemetryStore || this.matchTelemetryRecorded) {
-      return;
-    }
-    this.matchTelemetryRecorded = true;
-    try {
-      await this.telemetryStore.recordMatch({
-        roomId: this.roomId,
-        startedAt: this.matchStartedAt.toISOString(),
-        endedAt: new Date().toISOString(),
-        outcome,
-        wave: this.wave,
-        kills: this.kills,
-        teamHealth: this.teamHealth,
-        mapScale: String(this.mapScale),
-        players: Array.from(this.state.players.values()).map((player) => ({
-          name: player.name,
-          characterId: player.characterId,
-          gold: Math.floor(player.gold),
-          goldSpent: player.goldSpent,
-          towersBuilt: player.towersBuilt
-        }))
-      });
-    } catch (error) {
-      console.error("Supabase match telemetry failed", error);
-    }
   }
 
   private setLobbyCharacter(client: Client, requestedCharacterId: CharacterId | undefined) {
@@ -3148,9 +3113,6 @@ export class MatchRoom extends Room<MatchState> {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
           this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
-          if (this.teamHealth === 0) {
-            void this.persistMatchTelemetry("defeat");
-          }
         }
         continue;
       }
