@@ -334,6 +334,16 @@ export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statu
 export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./stacks/index.js";
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
 export {
+  MAX_TARGETED_CARDS_PER_TOWER,
+  DEFAULT_MODIFIER_CAPS,
+  appendLegacyMultiplier,
+  canAcceptTargetedCard,
+  getModifierAdd,
+  getModifierMultiplier,
+  resolveModifierBreakdown
+} from "./modifiers/index.js";
+export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers } from "./modifiers/index.js";
+export {
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,
   ENEMY_COUNT_WAVE_MULTIPLIER,

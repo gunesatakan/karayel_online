@@ -33,6 +33,8 @@ import {
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
+  appendLegacyMultiplier,
+  resolveModifierBreakdown,
   FINAL_WAVE,
   ENEMY_REWARD_MULTIPLIER,
   getWaveCompletionGold,
@@ -88,8 +90,10 @@ import {
   type KillEventSnapshot,
   type LobbyStateSnapshot,
   type MapScale,
+  type ModifierBreakdown,
   type ProjectileKind,
   type RoomListingSnapshot,
+  type RunModifiers,
   type ServerPerfSnapshot,
   type TowerDefinition,
   type AmmoType,
@@ -245,6 +249,7 @@ const MELIS_INITIAL_APPROVAL = 6;
 const MELIS_INITIAL_STRESS = 6;
 
 class Player extends Schema {
+  runModifiers: RunModifiers = [];
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
@@ -467,6 +472,8 @@ type TowerModel = {
   facing: number;
   damageDealt: number;
   damageWindow: Array<{ dealtAt: number; amount: number }>;
+  runModifiers: RunModifiers;
+  targetedCardIds: string[];
 };
 
 type DebugOverdriveHeatSegment = {
@@ -3630,6 +3637,8 @@ export class MatchRoom extends Room<MatchState> {
       focusStacks: 0,
       stackStates: {},
       triggerCooldowns: {},
+      runModifiers: [],
+      targetedCardIds: [],
       activeMs: 0,
       overheatMs: 0,
       offlineUntil: 0,
@@ -6293,59 +6302,79 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerDamage(tower: TowerModel) {
+    return resolveModifierBreakdown(this.getTowerDamageBreakdown(tower));
+  }
+
+  private getTowerDamageBreakdown(tower: TowerModel): ModifierBreakdown {
     const now = Date.now();
-    let damage = calculateTowerScaledBaseDamage(tower.definition, tower.level) * this.getAtakanPassiveMultiplier(tower) * this.getTowerStreakDamageMultiplier(tower, now) * getZeynepFormationDamageMultiplier(tower);
+    let breakdown: ModifierBreakdown = {
+      base: calculateTowerScaledBaseDamage(tower.definition, tower.level),
+      mods: []
+    };
+    const add = (source: string, multiplier: number) => {
+      breakdown = appendLegacyMultiplier(breakdown, source, multiplier);
+    };
+    add("character:atakan-passive", this.getAtakanPassiveMultiplier(tower));
+    add("tower:kill-streak", this.getTowerStreakDamageMultiplier(tower, now));
+    add("character:zeynep-formation", getZeynepFormationDamageMultiplier(tower));
 
     if (tower.definition.id === "warrior-4") {
-      damage *= getObsessionDamageMultiplier(tower.level);
+      add("tower:warrior-4:obsession", getObsessionDamageMultiplier(tower.level));
     }
 
     if (tower.definition.id === "warrior-5") {
-      damage *= getDebugLaserDamageMultiplier(tower.level, tower.debugOverdriveUntil > Date.now());
+      add("tower:warrior-5:debug", getDebugLaserDamageMultiplier(tower.level, tower.debugOverdriveUntil > now));
     }
 
     if (tower.definition.id === "warrior-6") {
-      damage *= getUcubeGrowthDamageMultiplier(tower.level);
+      add("tower:warrior-6:growth", getUcubeGrowthDamageMultiplier(tower.level));
     }
 
     if (tower.definition.id === "zeynep-1") {
-      damage *= getZeynepHizaDamageCompensation(tower.level);
+      add("tower:zeynep-1:compensation", getZeynepHizaDamageCompensation(tower.level));
     }
 
     if (tower.characterId === "archer") {
-      damage *= this.getMelisFavoriteDamageMultiplier(tower) * this.getMelisEvolutionDamageMultiplier(tower);
+      add("character:melis-favorite", this.getMelisFavoriteDamageMultiplier(tower));
+      add("character:melis-evolution", this.getMelisEvolutionDamageMultiplier(tower));
       if (this.isMelisGothicNightmareActiveForTower(tower, now)) {
-        damage *= MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER;
+        add("character:melis-nightmare", MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER);
       }
     }
 
     if (tower.definition.id === "archer-1") {
-      damage *= this.getMelisHedefciFocusDamageMultiplier(tower);
+      add("tower:archer-1:focus", this.getMelisHedefciFocusDamageMultiplier(tower));
     }
 
     if (tower.definition.hitType === "impact") {
-      damage *= this.getServerLinkedImpactDamageMultiplier(tower);
+      add("tower:warrior-2:server-link", this.getServerLinkedImpactDamageMultiplier(tower));
     }
 
-    damage *= this.getEngineStackStatMultiplier(tower, "damage", now);
+    add("engine:stack", this.getEngineStackStatMultiplier(tower, "damage", now));
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
-      damage *= 1.2;
+      add("tower:warrior-6:wave-3", 1.2);
     }
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 6) {
-      damage *= getUcubeLateDamageMultiplier(tower.level);
+      add("tower:warrior-6:wave-6", getUcubeLateDamageMultiplier(tower.level));
     }
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 7) {
-      damage *= 2;
+      add("tower:warrior-6:wave-7", 2);
     }
 
     if (tower.definition.hitType === "impact") {
-      damage *= this.getImpactFireRateDamageCompensation(tower);
+      add("engine:impact-compensation", this.getImpactFireRateDamageCompensation(tower));
     }
 
-    return applyTowerAuraModifier(damage, this.getTowerAuraModifiers(tower), "damage");
+    add("engine:aura", applyTowerAuraModifier(1, this.getTowerAuraModifiers(tower), "damage"));
+    const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
+    breakdown.mods.push(
+      ...playerModifiers.filter((modifier) => modifier.stat === "damage"),
+      ...tower.runModifiers.filter((modifier) => modifier.stat === "damage")
+    );
+    return breakdown;
   }
 
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
