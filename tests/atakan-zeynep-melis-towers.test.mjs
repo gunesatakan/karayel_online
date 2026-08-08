@@ -173,4 +173,12 @@ test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanıml�
   });
   assert.equal(byId["archer-2"].triggers.some((trigger) => trigger.event === "escape"), true);
   assert.equal(byId["archer-3"].triggers[0].effect, "death-burst");
+  assert.deepEqual(byId["warrior-3"].auras[0], {
+    affects: "enemies",
+    shape: "circle",
+    radius: 104,
+    stat: "slow",
+    multiplier: 0.48,
+    stacking: "strongest"
+  });
 });

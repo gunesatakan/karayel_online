@@ -19,6 +19,7 @@ import {
   applyTowerStack,
   getTowerStackMultiplier,
   dispatchTowerTriggers,
+  evaluateTowerAuras,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
@@ -2548,7 +2549,8 @@ export class MatchRoom extends Room<MatchState> {
     const requiredLevel = combo === "1-1" ? 2 : combo === "2-2" ? 3 : 6;
     let bonus = 0;
     for (const tower of this.towers.values()) {
-      if (tower.ownerId === ownerId && tower.definition.id === "zeynep-7" && tower.level >= requiredLevel) {
+      const providesSynthesisAura = tower.definition.engine?.auras?.some((aura) => aura.affects === "towers" && aura.stat === "synthesis");
+      if (tower.ownerId === ownerId && providesSynthesisAura && tower.level >= requiredLevel && tower.hp > 0) {
         bonus += 1;
       }
     }
@@ -6517,12 +6519,23 @@ export class MatchRoom extends Room<MatchState> {
   private applyIsolationAura(tower: TowerModel) {
     const range = this.getTowerRange(tower);
     const speedMultiplier = getIsolationAuraSpeedMultiplier(tower.level);
+    const definition = tower.definition.engine?.auras?.find((aura) => aura.affects === "enemies" && aura.stat === "slow");
+    if (!definition) {
+      return;
+    }
 
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
-      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range) {
+      const modifier = evaluateTowerAuras([{
+        x: tower.x,
+        y: tower.y,
+        ownerId: tower.ownerId,
+        enabled: tower.hp > 0 && tower.offlineUntil <= Date.now(),
+        aura: { ...definition, radius: range, multiplier: speedMultiplier }
+      }], { x: enemy.x, y: enemy.y, kind: "enemy" }).slow;
+      if (modifier !== undefined) {
         const resistance = enemy.statusResistances.slow ?? 0;
-        const resistedMultiplier = 1 - (1 - speedMultiplier) * Math.max(0, 1 - resistance);
+        const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
         enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
       }
     }

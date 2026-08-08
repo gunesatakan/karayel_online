@@ -300,6 +300,8 @@ export type {
   TowerStackTrigger,
   TowerStackStat,
   TowerStackResetReason,
+  TowerAuraDefinition,
+  TowerAuraStat,
   TowerTriggerCondition,
   TowerTriggerDefinition,
   TowerTriggerEvent
@@ -329,6 +331,8 @@ export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./sta
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
 export { dispatchTowerTriggers } from "./triggers/index.js";
 export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
+export { evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";
+export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

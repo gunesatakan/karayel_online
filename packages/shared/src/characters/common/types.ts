@@ -34,6 +34,16 @@ export type TowerStackDefinition = {
   decayMs?: number;
   resetOn?: TowerStackResetReason;
 };
+export type TowerAuraStat = "damage" | "range" | "slow" | "armor" | "synthesis";
+export type TowerAuraDefinition = {
+  affects: "towers" | "enemies";
+  shape: "circle" | "line";
+  radius: number;
+  stat: TowerAuraStat;
+  multiplier: number;
+  stacking?: "strongest" | "multiply";
+  scope?: "owner" | "team";
+};
 
 export type TowerEngineConfig = {
   targeting: TowerTargetingMode;
@@ -46,13 +56,7 @@ export type TowerEngineConfig = {
   };
   statusEffects?: TowerStatusEffectDefinition[];
   stacks?: TowerStackDefinition[];
-  auras?: Array<{
-    affects: "towers" | "enemies";
-    shape: "circle" | "line";
-    radius: number;
-    stat: "damage" | "range" | "slow" | "armor" | "synthesis";
-    multiplier: number;
-  }>;
+  auras?: TowerAuraDefinition[];
   triggers?: TowerTriggerDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
   consumesMarks?: string[];
