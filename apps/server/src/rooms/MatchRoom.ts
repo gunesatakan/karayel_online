@@ -81,6 +81,7 @@ const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_HEAT_PER_SHOT = 10.5;
 const TOWER_COOLING_PER_SECOND = 1;
+const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -1446,7 +1447,7 @@ export class MatchRoom extends Room<MatchState> {
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
         tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * (deltaTime / 1000));
-        if (tower.heatLocked && tower.temperature <= 70) {
+        if (tower.heatLocked && tower.temperature <= TOWER_HEAT_UNLOCK_THRESHOLD) {
           tower.heatLocked = false;
         }
       }
