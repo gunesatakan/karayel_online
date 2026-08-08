@@ -88,7 +88,6 @@ export type TowerDefinition = {
   classType?: "damage" | "support" | "control" | "hybrid";
   damageType?: DamageType;
   hitType?: HitType;
-  mechanics?: string[];
   engine?: TowerEngineConfig;
   cost: number;
   upgradeCost: number;

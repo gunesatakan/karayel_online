@@ -76,7 +76,7 @@ test("Atakan, Zeynep ve Melis kule kimlikleri benzersiz ve mekanik tanımları d
   for (const tower of towers) {
     assert.ok(tower.hitType, `${tower.id}: hitType eksik`);
     assert.ok(tower.damageType, `${tower.id}: damageType eksik`);
-    assert.ok(tower.mechanics?.length, `${tower.id}: mechanics eksik`);
+    assert.ok(tower.engine, `${tower.id}: ortak motor profili eksik`);
   }
 });
 
@@ -126,6 +126,13 @@ test("24 kulenin tamamı ortak motor profiline taşındı", () => {
     assert.ok(tower.engine.resources.ammoType, `${tower.id}: mühimmat türü eksik`);
     assert.equal(typeof tower.engine.canHitAir, "boolean", `${tower.id}: hava hedefleme kuralı eksik`);
     assert.equal(inferTowerAmmoType(tower), tower.engine.resources.ammoType);
+  }
+});
+
+test("kule tanımlarında eski mechanics etiketi bulunmuyor", () => {
+  const towers = [...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer];
+  for (const tower of towers) {
+    assert.equal(Object.hasOwn(tower, "mechanics"), false, `${tower.id}: mechanics kaldırılmadı`);
   }
 });
 

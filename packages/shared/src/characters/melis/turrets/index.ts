@@ -11,7 +11,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "psychic",
     hitType: "projectile",
-    mechanics: ["focus-lock", "underworld-priority", "shared-focus-damage", "doubt-fire-rate"],
     cost: 76,
     upgradeCost: 55,
     range: 79,
@@ -31,7 +30,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "psychic",
     hitType: "projectile",
-    mechanics: ["rage-wave-on-escape", "kill-trigger-rage", "shield-break-wave", "fear", "stress-friendly-pause"],
     cost: 92,
     upgradeCost: 67,
     range: 74,
@@ -51,7 +49,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "psychic",
     hitType: "curse",
-    mechanics: ["stacking-curse", "death-burst", "curse-pool", "approval-duration", "stress-area"],
     cost: 109,
     upgradeCost: 74,
     range: 73,
@@ -71,7 +68,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "control",
     damageType: "psychic",
     hitType: "focus",
-    mechanics: ["bind-until-death", "execute-threshold", "approval-stress-mode", "digest-cooldown", "underworld-pull-scaling"],
     cost: 113,
     upgradeCost: 76,
     range: 78,
@@ -91,7 +87,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "hybrid",
     damageType: "psychic",
     hitType: "impact",
-    mechanics: ["damage-storage", "delayed-burst", "approval-exit-target", "stress-random-target", "evolution-true-damage"],
     cost: 139,
     upgradeCost: 88,
     range: 120,
@@ -111,7 +106,6 @@ export const melisTowers: TowerDefinition[] = ([
     classType: "control",
     damageType: "psychic",
     hitType: "wave",
-    mechanics: ["doubt-stacks", "stacking-slow", "hesitation", "fear-conversion", "temporary-turncoat", "suicide-burst"],
     cost: 113,
     upgradeCost: 76,
     range: 78,
@@ -125,13 +119,13 @@ export const melisTowers: TowerDefinition[] = ([
   {
     id: "archer-7", characterId: "archer", name: "Gölge Cephaneliği", role: "Mühimmat ikmali",
     description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
-    mechanics: ["resource-supply", "ammunition"], cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },
   {
     id: "archer-8", characterId: "archer", name: "Ruh Reaktörü", role: "Enerji ikmali",
     description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
-    mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
 ] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);

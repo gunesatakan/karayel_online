@@ -13,7 +13,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "physical",
     hitType: "projectile",
-    mechanics: ["mark:tracking", "team-damage-amp", "anti-air-ready"],
     cost: 42,
     upgradeCost: 32,
     range: 112,
@@ -33,7 +32,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "hybrid",
     damageType: "electric",
     hitType: "impact",
-    mechanics: ["server-link-ready", "electric-burst"],
     cost: 74,
     upgradeCost: 54,
     range: 844,
@@ -53,7 +51,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "control",
     damageType: "none",
     hitType: "aura",
-    mechanics: ["slow", "solo-aura"],
     cost: 58,
     upgradeCost: 42,
     range: 104,
@@ -73,7 +70,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "psychic",
     hitType: "impact",
-    mechanics: ["same-target-ramp", "prioritize-tank"],
     cost: 108,
     upgradeCost: 60,
     range: 118,
@@ -93,7 +89,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "fire",
     hitType: "focus",
-    mechanics: ["laser-channel", "prioritize-tracking", "marked-kill-overdrive-ready", "overheat"],
     cost: 82,
     upgradeCost: 78,
     range: 134,
@@ -113,7 +108,6 @@ export const atakanTowers: TowerDefinition[] = ([
     classType: "damage",
     damageType: "electric",
     hitType: "impact",
-    mechanics: ["wave-growth", "attack-speed-stack", "overheat", "anti-air-ready"],
     cost: 240,
     upgradeCost: 115,
     range: 118,
@@ -127,13 +121,13 @@ export const atakanTowers: TowerDefinition[] = ([
   {
     id: "warrior-7", characterId: "warrior", name: "Cephane Merkezi", role: "Mühimmat ikmali",
     description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
-    mechanics: ["resource-supply", "ammunition"], cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },
   {
     id: "warrior-8", characterId: "warrior", name: "Enerji Reaktörü", role: "Enerji ikmali",
     description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
-    mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
 ] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);

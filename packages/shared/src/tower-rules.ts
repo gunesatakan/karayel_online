@@ -64,8 +64,7 @@ export function inferTowerAmmoType(definition: TowerDefinition): AmmoType {
   if (definition.engine) {
     return definition.engine.resources.ammoType;
   }
-  const mechanics = definition.mechanics ?? [];
-  if (definition.hitType === "focus" || mechanics.some((mechanic) => /laser|beam|light-line|showcase-line|mirror/.test(mechanic))) {
+  if (definition.hitType === "focus") {
     return "powerCrystal";
   }
   if (definition.hitType && ["aura", "wave", "curse"].includes(definition.hitType)) {

@@ -307,7 +307,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       `Maliyet ${getTowerBuildCost(tower.cost)}g | Upgrade L2/L3/L4: ${getTowerUpgradeCost(tower.cost, 1, tower.id)}/${getTowerUpgradeCost(tower.cost, 2, tower.id)}/${getTowerUpgradeCost(tower.cost, 3, tower.id)}g | Menzil ${tower.id === "warrior-2" ? "Global" : tower.range}`,
       `L1: Hasar ${level1Damage.toFixed(1)} / ${Math.round(level1Interval)}ms => DPS ${dps}${getTowerAttackRadius(tower) > 0 ? ` | AOE r${getTowerAttackRadius(tower)}` : ""}${getTowerSlowDurationMs(tower) > 0 ? ` | Slow ${getTowerSlowDurationMs(tower)}ms` : ""}`,
       `L10 baz: Hasar ${level10Damage.toFixed(1)} / ${Math.round(level10Interval)}ms => DPS ${level10Dps}`,
-      `Mermi hizi ${tower.projectileSpeed} | Mekanik: ${(tower.mechanics ?? []).join(", ") || "standart"}`
+      `Mermi hizi ${tower.projectileSpeed}`
     ];
 
     if (tower.id === "warrior-2") {

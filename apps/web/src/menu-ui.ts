@@ -26,7 +26,7 @@ import {
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
-import { classTypeCodex, damageTypeCodex, getBaseMechanics, hitTypeCodex, lookupMechanic } from "./codex";
+import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, setActiveLobbyRoom } from "./online-session";
 
@@ -1214,18 +1214,6 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   const damageType = tower.damageType ?? "none";
   const hitType = tower.hitType ?? "impact";
   const blocks: DetailBlock[] = [{ kind: "brief", text: tower.description ?? tower.role }];
-
-  const mechanics = getBaseMechanics(tower.id, tower.mechanics ?? []);
-  if (mechanics.length > 0) {
-    blocks.push({
-      kind: "entries",
-      label: "Mekanik",
-      items: mechanics.map((slug) => {
-        const entry = lookupMechanic(slug);
-        return { title: entry.name, text: entry.text };
-      }).filter((item) => item.text.length > 0)
-    });
-  }
 
   blocks.push({
     kind: "stats",
