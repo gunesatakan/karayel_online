@@ -348,6 +348,13 @@ export type { CardDefinition, CardScope, CardTowerProfile } from "./cards/index.
 export { applyEnemyMark, getMarkDamageMultiplier } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {
+  TOWER_TURN_RATE_RADIANS_PER_SECOND,
+  TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS,
+  shortestAngleDelta,
+  rotateTowerTowards,
+  isTowerAligned
+} from "./aiming/index.js";
+export {
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,
   ENEMY_COUNT_WAVE_MULTIPLIER,

@@ -21,6 +21,7 @@ import {
   normalizeMapData,
   worldToGrid,
   towerCatalog,
+  TOWER_TURN_RATE_RADIANS_PER_SECOND,
   type CharacterDefinition,
   type CardDefinition,
   type CharacterId,
@@ -151,7 +152,6 @@ const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 const GUIDANCE_RADIUS = 78;
 // Fast enough that the muzzle is on target before the projectile leaves it,
 // slow enough to read as a sweep rather than a snap.
-const TOWER_TURN_RATE_RADIANS_PER_SECOND = 12;
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type AudioVolumeChannel = "music" | "voice";

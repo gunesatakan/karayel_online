@@ -62,6 +62,8 @@ import {
   getTile,
   isInsideMap,
   inferTowerAmmoType,
+  isTowerAligned,
+  rotateTowerTowards,
   getTowerSellRefund,
   getTowerBuildCost,
   getTowerAttackRadius,
@@ -1623,7 +1625,7 @@ export class MatchRoom extends Room<MatchState> {
           this.consumeTowerResources(tower);
           tower.cooldownMs = this.getTowerFireInterval(tower);
         }
-        this.updateMelisUnderworldLink(tower, now);
+        this.updateMelisUnderworldLink(tower, now, deltaTime / 1000);
         continue;
       }
 
@@ -1678,13 +1680,17 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const target = this.findTowerTarget(tower);
-      this.aimTowerAt(tower, target);
+      const isAimedAtTarget = this.aimTowerAt(tower, target, deltaTime / 1000);
       this.updateUcubeRhythm(tower, target, deltaTime);
       if (tower.cooldownMs > 0) {
         continue;
       }
 
       if (!target) {
+        continue;
+      }
+
+      if (!isAimedAtTarget) {
         continue;
       }
 
@@ -1704,18 +1710,23 @@ export class MatchRoom extends Room<MatchState> {
    * Records which way an aiming tower is pointing. Kept sticky: when the target
    * dies the muzzle holds its last bearing instead of snapping back to zero.
    */
-  private aimTowerAt(tower: TowerModel, target: { x: number; y: number } | undefined) {
-    if (!target || !towerAims(tower.definition.id)) {
-      return;
+  private aimTowerAt(tower: TowerModel, target: { x: number; y: number } | undefined, deltaSeconds: number) {
+    if (!target) {
+      return false;
+    }
+    if (!towerAims(tower.definition.id)) {
+      return true;
     }
 
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     if (dx === 0 && dy === 0) {
-      return;
+      return true;
     }
 
-    tower.facing = Math.atan2(dy, dx);
+    const targetAngle = Math.atan2(dy, dx);
+    tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds);
+    return isTowerAligned(tower.facing, targetAngle);
   }
 
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
@@ -5593,7 +5604,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.delete(enemy.id);
   }
 
-  private updateMelisUnderworldLink(tower: TowerModel, now: number) {
+  private updateMelisUnderworldLink(tower: TowerModel, now: number, deltaSeconds: number) {
     const maxLinks = tower.melisEvolutionLevel >= 2 ? 2 : 1;
     tower.melisUnderworldTargetIds = tower.melisUnderworldTargetIds.filter((enemyId) => {
       const enemy = this.enemies.get(enemyId);
@@ -5623,7 +5634,9 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      this.aimTowerAt(tower, target);
+      if (!this.aimTowerAt(tower, target, deltaSeconds)) {
+        break;
+      }
       this.applyMelisUnderworldLinkEffects(tower, target, isStressMode, now);
       this.renderMelisUnderworldLink(tower, target, isStressMode);
 
@@ -5965,6 +5978,7 @@ export class MatchRoom extends Room<MatchState> {
       if (fearDefinition) {
         this.applyEnemyStatusEffect(enemy, fearDefinition, now, { durationMs: this.getMelisParlamaFearMs(tower) });
       }
+      break;
     }
 
     if (this.isMelisStressDominant(tower)) {
