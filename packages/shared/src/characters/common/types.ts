@@ -3,6 +3,7 @@ import type { DamageType, HitType } from "../../combat.js";
 
 export type AmmoType = "bullet" | "auraCrystal" | "powerCrystal";
 export type TowerResourceProvider = "ammunition" | "energy";
+export type TowerAxis = "amplify" | "dps" | "cc" | "economy" | "barricade";
 export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "closest" | "marked" | "random";
 export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam";
 export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "chill" | "curse" | "mark";
@@ -95,6 +96,7 @@ export type TowerDefinition = {
   classType?: "damage" | "support" | "control" | "hybrid";
   damageType?: DamageType;
   hitType?: HitType;
+  axes?: TowerAxis[];
   engine?: TowerEngineConfig;
   cost: number;
   upgradeCost: number;

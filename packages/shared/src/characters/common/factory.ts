@@ -21,6 +21,7 @@ export function makeTowers(
     aoeRadius: base.aoeRadius ?? 0,
     slowMs: base.slowMs ?? 0,
     color,
+    axes: ["dps"],
     engine: {
       targeting: "first",
       attack: { shape: (base.aoeRadius ?? 0) > 0 ? "circle" : "single", radius: base.aoeRadius },

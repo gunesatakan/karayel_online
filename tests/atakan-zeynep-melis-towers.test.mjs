@@ -173,6 +173,22 @@ test("tüm karakter kuleleri seviye ölçeğini ortak motordan alır", () => {
   }
 });
 
+test("Atakan, Melis ve Zeynep kule eksenleri tasarım tablosuyla eşleşir", () => {
+  const expected = {
+    "warrior-1": ["amplify", "dps"], "warrior-2": ["amplify", "dps"], "warrior-3": ["cc"],
+    "warrior-4": ["dps"], "warrior-5": ["dps"], "warrior-6": ["dps"],
+    "warrior-7": ["economy"], "warrior-8": ["economy"],
+    "archer-1": ["dps", "amplify"], "archer-2": ["dps", "cc"], "archer-3": ["dps"],
+    "archer-4": ["barricade", "dps"], "archer-5": ["dps"], "archer-6": ["cc", "barricade"],
+    "archer-7": ["economy"], "archer-8": ["economy"],
+    "zeynep-1": ["dps"], "zeynep-2": ["dps"], "zeynep-3": ["amplify", "dps"],
+    "zeynep-6": ["cc"], "zeynep-7": ["amplify"], "zeynep-8": ["amplify"],
+    "zeynep-9": ["economy"], "zeynep-10": ["economy"]
+  };
+  const towers = [...towerCatalog.warrior, ...towerCatalog.archer, ...towerCatalog.zeynep];
+  assert.deepEqual(Object.fromEntries(towers.map((tower) => [tower.id, tower.axes])), expected);
+});
+
 test("kule tanımlarında eski mechanics etiketi bulunmuyor", () => {
   const towers = [...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer];
   for (const tower of towers) {

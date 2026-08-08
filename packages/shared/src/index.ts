@@ -291,6 +291,7 @@ export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,
+  TowerAxis,
   TowerResourceProvider,
   TowerEngineConfig,
   TowerTargetingMode,
