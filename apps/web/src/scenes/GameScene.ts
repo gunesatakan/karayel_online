@@ -267,7 +267,7 @@ export class GameScene extends Phaser.Scene {
   private perfPopupOpen = false;
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private matchResultShown = false;
-  private cardChoiceItems: Phaser.GameObjects.GameObject[] = [];
+  private cardChoiceRoot?: HTMLElement;
   private cardChoices: CardDefinition[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
@@ -425,8 +425,21 @@ export class GameScene extends Phaser.Scene {
     const tileColumns = this.selectedMapData.cols;
     const tileRows = this.selectedMapData.rows;
 
-    graphics.fillStyle(0x07111f, 1);
+    graphics.fillGradientStyle(0x020617, 0x071426, 0x0b1024, 0x020617, 1);
     graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, this.controlTop - TOWER_BUILD_TOP);
+
+    // Deterministic star field: the map stays stable across snapshot redraws.
+    for (let index = 0; index < 92; index += 1) {
+      const starX = (index * 137 + 29) % GAME_WORLD_WIDTH;
+      const starY = TOWER_BUILD_TOP + ((index * 83 + 47) % Math.max(1, this.controlTop - TOWER_BUILD_TOP));
+      const radius = index % 13 === 0 ? 1.45 : index % 5 === 0 ? 0.9 : 0.45;
+      graphics.fillStyle(index % 7 === 0 ? 0x67e8f9 : index % 11 === 0 ? 0xc4b5fd : 0xf8fafc, index % 4 === 0 ? 0.8 : 0.42);
+      graphics.fillCircle(starX, starY, radius);
+    }
+    graphics.fillStyle(0x4338ca, 0.055);
+    graphics.fillCircle(GAME_WORLD_WIDTH * 0.18, TOWER_BUILD_TOP + 180, 150);
+    graphics.fillStyle(0x0891b2, 0.045);
+    graphics.fillCircle(GAME_WORLD_WIDTH * 0.82, this.controlTop - 190, 190);
 
     for (let row = 0; row < tileRows; row += 1) {
       for (let col = 0; col < tileColumns; col += 1) {
@@ -438,16 +451,20 @@ export class GameScene extends Phaser.Scene {
         }
         const isEntry = row === 0;
         const isExit = row === tileRows - 1;
-        const fill = isEntry ? 0x123524 : isExit ? 0x3f1d2a : 0x101827;
+        const fill = isEntry ? 0x063c45 : isExit ? 0x451a3a : (row + col) % 2 === 0 ? 0x0b1428 : 0x0d172d;
 
-        graphics.fillStyle(fill, 1);
+        graphics.fillStyle(fill, isEntry || isExit ? 0.74 : 0.58);
         graphics.fillRect(x, y, cellSize, tileHeight);
-        graphics.lineStyle(1, isEntry ? 0x166534 : isExit ? 0x7f1d1d : 0x1e293b, 0.55);
+        graphics.lineStyle(1, isEntry ? 0x22d3ee : isExit ? 0xf472b6 : 0x38bdf8, isEntry || isExit ? 0.5 : 0.14);
         graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, Math.max(1, tileHeight - 1));
+        if (isEntry || isExit) {
+          graphics.lineStyle(1, isEntry ? 0x67e8f9 : 0xf9a8d4, 0.18);
+          graphics.strokeCircle(x + cellSize / 2, y + tileHeight / 2, Math.max(3, Math.min(cellSize, tileHeight) * 0.28));
+        }
       }
     }
 
-    graphics.lineStyle(2, 0x0f172a, 0.92);
+    graphics.lineStyle(2, 0x38bdf8, 0.34);
     graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
   }
 
@@ -1993,56 +2010,86 @@ export class GameScene extends Phaser.Scene {
   private showCardChoices(cards: CardDefinition[]) {
     this.hideCardChoices();
     this.cardChoices = cards;
-    const depth = 900;
-    const panel = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, Math.min(370, GAME_WORLD_WIDTH - 20), 520, 0x07111f, 0.97)
-      .setStrokeStyle(2, 0xfacc15).setScrollFactor(0).setDepth(depth);
-    const title = this.add.text(GAME_WORLD_WIDTH / 2, panel.y - 225, "DALGA ÖDÜLÜ • 1 KART SEÇ", {
-      fontFamily: "Arial Black, Arial", fontSize: "19px", color: "#facc15"
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    this.cardChoiceItems.push(panel, title);
+    const root = document.querySelector<HTMLElement>("#card-root");
+    if (!root) return;
+    this.cardChoiceRoot = root;
+    root.className = "card-draft card-draft--visible";
+    root.innerHTML = `
+      <div class="card-draft__veil"></div>
+      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Kart seçimi">
+        <header class="card-draft__header">
+          <span class="card-draft__eyebrow">DALGA TAMAMLANDI</span>
+          <h2>Rotanı güçlendir</h2>
+          <p>Koşu boyunca kalacak bir kart seç</p>
+        </header>
+        <div class="card-draft__grid"></div>
+      </section>`;
+    const grid = root.querySelector<HTMLElement>(".card-draft__grid");
     cards.forEach((card, index) => {
-      const y = panel.y - 145 + index * 116;
-      const box = this.add.rectangle(GAME_WORLD_WIDTH / 2, y, panel.width - 28, 98, 0x172033)
-        .setStrokeStyle(1, 0x64748b).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(depth + 1);
-      const scope = card.scope.kind === "global"
-        ? "Tüm kuleler"
-        : card.scope.kind === "targeted"
-          ? "Bir kule seç"
-          : card.scope.axes?.includes("amplify") ? "Büyütme kuleleri" : "Kontrol kuleleri";
-      const text = this.add.text(box.x - box.width / 2 + 12, y - 36, `${card.name}\n${card.description}\n${scope}`, {
-        fontFamily: "Arial", fontStyle: "bold", fontSize: "15px", color: "#f8fafc", wordWrap: { width: box.width - 24 }
-      }).setScrollFactor(0).setDepth(depth + 2);
-      box.on("pointerup", () => card.scope.kind === "targeted" ? this.showTargetedTowerChoices(card) : this.room?.send("card:choose", { cardId: card.id }));
-      this.cardChoiceItems.push(box, text);
+      const scope = this.getCardScopeLabel(card);
+      const accent = this.getCardAccent(card);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "run-card";
+      button.style.setProperty("--card-accent", accent);
+      button.innerHTML = `
+        <span class="run-card__index">0${index + 1}</span>
+        <span class="run-card__glow"></span>
+        <span class="run-card__axis">${card.axes.map((axis) => axis.toLocaleUpperCase("tr-TR")).join(" • ")}</span>
+        <strong>${card.name}</strong>
+        <span class="run-card__description">${card.description}</span>
+        <span class="run-card__scope">${scope}</span>`;
+      button.addEventListener("click", () => card.scope.kind === "targeted"
+        ? this.showTargetedTowerChoices(card)
+        : this.room?.send("card:choose", { cardId: card.id }));
+      grid?.append(button);
     });
   }
 
   private showTargetedTowerChoices(card: CardDefinition) {
-    this.hideCardChoices();
-    const depth = 900;
+    const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
+    if (!root) return;
     const towers = (this.latestPerfSnapshot?.towers ?? []).filter((tower) => tower.ownerId === this.localSessionId && !tower.resourceProvider);
-    const panelHeight = Math.min(650, 150 + towers.length * 48);
-    const panel = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, Math.min(370, GAME_WORLD_WIDTH - 20), panelHeight, 0x07111f, 0.97)
-      .setStrokeStyle(2, 0x38bdf8).setScrollFactor(0).setDepth(depth);
-    const title = this.add.text(GAME_WORLD_WIDTH / 2, panel.y - panelHeight / 2 + 36, `${card.name}: kule seç`, {
-      fontFamily: "Arial Black, Arial", fontSize: "18px", color: "#7dd3fc"
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    this.cardChoiceItems.push(panel, title);
-    towers.forEach((tower, index) => {
-      const y = panel.y - panelHeight / 2 + 82 + index * 48;
-      const button = this.add.rectangle(GAME_WORLD_WIDTH / 2, y, panel.width - 30, 38, 0x1e293b)
-        .setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(depth + 1);
-      const label = this.add.text(button.x, button.y, `${tower.name} • Sv.${tower.level}`, { fontFamily: "Arial", fontSize: "15px", color: "#f8fafc" })
-        .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 2);
-      button.on("pointerup", () => this.room?.send("card:choose", { cardId: card.id, towerId: tower.id }));
-      this.cardChoiceItems.push(button, label);
+    const panel = root.querySelector<HTMLElement>(".card-draft__panel");
+    if (!panel) return;
+    panel.classList.add("card-draft__panel--targets");
+    panel.innerHTML = `
+      <header class="card-draft__header">
+        <button class="card-draft__back" type="button" aria-label="Kartlara dön">←</button>
+        <span class="card-draft__eyebrow">${card.name.toLocaleUpperCase("tr-TR")}</span>
+        <h2>Hedef kuleyi seç</h2>
+        <p>Kart bu kuleye kalıcı olarak bağlanacak</p>
+      </header>
+      <div class="tower-choice-list"></div>`;
+    const currentChoices = [...this.cardChoices];
+    panel.querySelector(".card-draft__back")?.addEventListener("click", () => this.showCardChoices(currentChoices));
+    const list = panel.querySelector<HTMLElement>(".tower-choice-list");
+    towers.forEach((tower) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tower-choice";
+      button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${tower.name}</strong><small>Seviye ${tower.level} • ${Math.round(tower.damageDealt ?? 0)} hasar</small></span><span class="tower-choice__arrow">→</span>`;
+      button.addEventListener("click", () => this.room?.send("card:choose", { cardId: card.id, towerId: tower.id }));
+      list?.append(button);
     });
   }
 
   private hideCardChoices() {
-    this.cardChoiceItems.forEach((item) => item.destroy());
-    this.cardChoiceItems = [];
+    const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
+    root?.replaceChildren();
+    if (root) root.className = "";
+    this.cardChoiceRoot = undefined;
     this.cardChoices = [];
+  }
+
+  private getCardScopeLabel(card: CardDefinition) {
+    if (card.scope.kind === "global") return "Tüm kuleler";
+    if (card.scope.kind === "targeted") return "Bir kule seç";
+    return card.scope.axes?.includes("amplify") ? "Büyütme kuleleri" : "Kontrol kuleleri";
+  }
+
+  private getCardAccent(card: CardDefinition) {
+    return card.axes.includes("dps") ? "#fb7185" : card.axes.includes("economy") ? "#facc15" : card.axes.includes("amplify") ? "#a78bfa" : card.axes.includes("cc") ? "#22d3ee" : "#60a5fa";
   }
 
   private renderSetupPhase(snapshot: GameSnapshot) {
