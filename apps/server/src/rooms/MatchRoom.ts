@@ -79,9 +79,27 @@ const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 240;
 const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const WORKER_ENEMY_COLLISION_RADIUS = 12;
-const TOWER_HEAT_PER_SHOT = 10.5;
 const TOWER_COOLING_PER_SECOND = 1;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
+const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
+  impact: 22,
+  wave: 20,
+  projectile: 7,
+  focus: 2.5,
+  aura: 1,
+  curse: 0.5,
+  contamination: 0.5
+};
+const TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER: Record<DamageType, number> = {
+  fire: 1.6,
+  electric: 1.3,
+  light: 1.1,
+  physical: 1,
+  true: 1,
+  psychic: 0.4,
+  cellular: 0.3,
+  none: 1
+};
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const BASE_WAVE_ENEMY_COUNT = 10;
 const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
@@ -1414,10 +1432,8 @@ export class MatchRoom extends Room<MatchState> {
   private consumeTowerResources(tower: TowerModel) {
     tower.ammo = Math.max(0, tower.ammo - SHOT_AMMO_COST);
     tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
-    const heatMultiplier = tower.performance <= 0.5
-      ? tower.performance * 2
-      : 1 + (tower.performance - 0.5) * 6;
-    tower.temperature = Math.min(100, tower.temperature + TOWER_HEAT_PER_SHOT * heatMultiplier);
+    const heat = this.getTowerShotHeat(tower);
+    tower.temperature = Math.min(100, tower.temperature + heat);
     if (tower.temperature >= 100) {
       tower.heatLocked = true;
     }
@@ -1428,6 +1444,22 @@ export class MatchRoom extends Room<MatchState> {
       ? tower.performance * 2
       : 1 + (tower.performance - 0.5) * 4;
     return SHOT_ENERGY_COST * multiplier;
+  }
+
+  private getTowerShotHeat(tower: TowerModel) {
+    const hitType = tower.definition.hitType ?? "projectile";
+    const damageType = tower.definition.damageType ?? "physical";
+    const performanceMultiplier = tower.performance <= 0.5
+      ? tower.performance * 2
+      : 1 + (tower.performance - 0.5) * 6;
+    return TOWER_HEAT_BY_HIT_TYPE[hitType]
+      * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[damageType]
+      * performanceMultiplier
+      * this.getTowerSpecialHeatMultiplier(tower);
+  }
+
+  private getTowerSpecialHeatMultiplier(_tower: TowerModel) {
+    return 1;
   }
 
   private getTowerPerformanceAttackMultiplier(tower: TowerModel) {
