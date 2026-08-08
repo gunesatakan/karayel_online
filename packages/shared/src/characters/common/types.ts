@@ -53,6 +53,7 @@ export type TowerEngineConfig = {
     width?: number;
     length?: number;
     angle?: number;
+    radius?: number;
     pierceCount?: number;
   };
   statusEffects?: TowerStatusEffectDefinition[];
@@ -95,8 +96,10 @@ export type TowerDefinition = {
   damage: number;
   fireIntervalMs: number;
   projectileSpeed: number;
-  aoeRadius: number;
-  slowMs: number;
+  /** @deprecated Engine attack.radius is authoritative. */
+  aoeRadius?: number;
+  /** @deprecated Engine statusEffects is authoritative. */
+  slowMs?: number;
   color: number;
   resourceProvider?: TowerResourceProvider;
 };

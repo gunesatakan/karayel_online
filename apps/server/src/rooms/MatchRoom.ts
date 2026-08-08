@@ -46,6 +46,8 @@ import {
   inferTowerAmmoType,
   getTowerSellRefund,
   getTowerBuildCost,
+  getTowerAttackRadius,
+  getTowerSlowDurationMs,
   gridToWorld,
   normalizeMapData,
   pathToWorldPoints,
@@ -1676,8 +1678,8 @@ export class MatchRoom extends Room<MatchState> {
       vy: (dy / length) * speed,
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
-      aoeRadius: this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 5),
-      slowMs: tower.definition.slowMs + (tower.level - 1) * 90,
+      aoeRadius: this.scaleWorldDistance(getTowerAttackRadius(tower.definition) + (tower.level - 1) * 5),
+      slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 90,
       pierceLimit: tower.definition.engine?.attack.pierceCount ?? 1,
       armorBreakAmount: 0,
       piercedEnemyIds: []
@@ -1748,7 +1750,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
     const wasTracked = this.getTrackingStackCount(target, now) > 0;
-    const killed = this.damageEnemyFromTower(tower, target, baseDamage, tower.definition.slowMs);
+    const killed = this.damageEnemyFromTower(tower, target, baseDamage, getTowerSlowDurationMs(tower.definition));
 
     if (wasTracked && killed) {
       this.runTowerTriggers(tower, "kill", { target, conditions: ["targetMarked"], now });
@@ -2011,7 +2013,7 @@ export class MatchRoom extends Room<MatchState> {
       range: baseRange * rangeMultiplier,
       speed: this.scaleWorldSpeed(KIN_WAVE_SPEED + tower.level * 4),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
-      slowMs: tower.definition.slowMs + (tower.level - 1) * 80,
+      slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80,
       pushbackDistance: options.pushbackDistance ?? 0,
       abartiLevel,
       tipHoldSeconds: (options.pushbackDistance ?? 0) > 0 ? KIN_SYNTHESIS_TIP_HOLD_SECONDS : 0,
@@ -5160,7 +5162,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getMelisCurseAreaRadius(tower: TowerModel) {
     const evolutionBonus = tower.melisEvolutionLevel >= 1 ? MELIS_CURSE_EVOLUTION_AREA_BONUS : 0;
-    const baseRadius = tower.definition.aoeRadius + (tower.level - 1) * 4 + evolutionBonus;
+    const baseRadius = getTowerAttackRadius(tower.definition) + (tower.level - 1) * 4 + evolutionBonus;
     const stressMultiplier = this.isMelisStressDominant(tower) ? MELIS_CURSE_STRESS_AREA_MULTIPLIER : 1;
     return this.scaleWorldDistance(baseRadius * stressMultiplier);
   }
@@ -5274,7 +5276,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getMelisWhisperRadius(tower: TowerModel) {
-    return this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 3 + tower.melisEvolutionLevel * 6);
+    return this.scaleWorldDistance(getTowerAttackRadius(tower.definition) + (tower.level - 1) * 3 + tower.melisEvolutionLevel * 6);
   }
 
   private activateMelisWhisperTurnedEnemy(tower: TowerModel, enemy: EnemyModel, now: number) {

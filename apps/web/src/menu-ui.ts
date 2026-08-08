@@ -7,6 +7,8 @@ import {
   enemyCombatDefinitions,
   getEnemyDamageResistances,
   getTowerBuildCost,
+  getTowerAttackRadius,
+  getTowerSlowDurationMs,
   getTowerUpgradeCost,
   getTile,
   normalizeMapData,
@@ -1234,8 +1236,8 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
       { label: "Vuruş", value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
       { label: "Menzil", value: isGlobalRange ? "Global" : String(tower.range) },
       ...(isPassiveTower ? [] : [{ label: "Atış aralığı", value: `${(tower.fireIntervalMs / 1000).toFixed(2)} sn` }]),
-      ...(tower.aoeRadius > 0 ? [{ label: "Etki alanı", value: String(tower.aoeRadius) }] : []),
-      ...(tower.slowMs > 0 ? [{ label: "Yavaşlatma", value: `${(tower.slowMs / 1000).toFixed(2)} sn` }] : [])
+      ...(getTowerAttackRadius(tower) > 0 ? [{ label: "Etki alanı", value: String(getTowerAttackRadius(tower)) }] : []),
+      ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: "Yavaşlatma", value: `${(getTowerSlowDurationMs(tower) / 1000).toFixed(2)} sn` }] : [])
     ]
   });
 
