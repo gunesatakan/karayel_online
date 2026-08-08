@@ -1,12 +1,14 @@
 import type { TowerDefinition, TowerEngineConfig } from "./types.js";
 
-type EngineProfile = Omit<TowerEngineConfig, "resources"> & {
+type EngineProfile = Omit<TowerEngineConfig, "resources" | "levelScaling"> & {
   resources?: Partial<TowerEngineConfig["resources"]>;
+  levelScaling?: TowerEngineConfig["levelScaling"];
 };
 
 const defaultEngine: TowerEngineConfig = {
   targeting: "first",
   attack: { shape: "single", pierceCount: 1 },
+  levelScaling: [{ stat: "damage", perLevel: 0.42, source: "base" }],
   resources: { ammoType: "bullet", ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
   canHitAir: false
 };
@@ -54,6 +56,7 @@ export function attachTowerEngine(definition: Omit<TowerDefinition, "engine">): 
         ...profile.attack,
         pierceCount: profile.attack.pierceCount ?? (profile.attack.shape === "single" ? 1 : undefined)
       },
+      levelScaling: profile.levelScaling ?? defaultEngine.levelScaling.map((scaling) => ({ ...scaling })),
       resources: { ...defaultEngine.resources, ...profile.resources },
       resourceProvider: profile.resourceProvider ?? definition.resourceProvider
     }

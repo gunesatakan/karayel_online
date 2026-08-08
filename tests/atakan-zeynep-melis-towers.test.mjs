@@ -124,8 +124,34 @@ test("24 kulenin tamamı ortak motor profiline taşındı", () => {
     assert.ok(tower.engine.attack.shape, `${tower.id}: saldırı şekli eksik`);
     assert.ok(tower.engine.targeting, `${tower.id}: hedefleme modu eksik`);
     assert.ok(tower.engine.resources.ammoType, `${tower.id}: mühimmat türü eksik`);
+    assert.deepEqual(tower.engine.levelScaling, [{ stat: "damage", perLevel: 0.42, source: "base" }], `${tower.id}: seviye ölçeği eksik`);
     assert.equal(typeof tower.engine.canHitAir, "boolean", `${tower.id}: hava hedefleme kuralı eksik`);
     assert.equal(inferTowerAmmoType(tower), tower.engine.resources.ammoType);
+  }
+});
+
+test("motor seviye ölçekleri keystone katkılarıyla birleşir", () => {
+  const base = towerCatalog.warrior.find((tower) => tower.id === "warrior-1");
+  assert.ok(base);
+  const withKeystone = {
+    ...base,
+    engine: {
+      ...base.engine,
+      levelScaling: [
+        ...base.engine.levelScaling,
+        { stat: "damage", perLevel: 0.08, source: "keystone" }
+      ]
+    }
+  };
+  assert.equal(calculateTowerScaledBaseDamage(withKeystone, 1), 24);
+  assert.equal(calculateTowerScaledBaseDamage(withKeystone, 2), 36);
+});
+
+test("tüm karakter kuleleri seviye ölçeğini ortak motordan alır", () => {
+  for (const towers of Object.values(towerCatalog)) {
+    for (const tower of towers) {
+      assert.ok(tower.engine?.levelScaling.length, `${tower.id}: motor seviye ölçeği eksik`);
+    }
   }
 });
 

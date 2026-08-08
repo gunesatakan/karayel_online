@@ -4,7 +4,6 @@ import type { AmmoType, TowerDefinition } from "./characters/common/types.js";
 export const TOWER_BASE_AMMO_COST = 1;
 export const TOWER_BASE_ENERGY_COST = 4;
 export const TOWER_BASE_DAMAGE_MULTIPLIER = 2;
-export const TOWER_LEVEL_DAMAGE_STEP = 0.42;
 
 export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
   impact: 22,
@@ -57,7 +56,10 @@ export function calculateTowerShotEnergy(performance: number, energyCostMultipli
 
 export function calculateTowerScaledBaseDamage(definition: TowerDefinition, level: number) {
   const safeLevel = Math.max(1, Math.min(10, Math.round(level)));
-  return definition.damage * TOWER_BASE_DAMAGE_MULTIPLIER * (1 + (safeLevel - 1) * TOWER_LEVEL_DAMAGE_STEP);
+  const damagePerLevel = definition.engine?.levelScaling
+    .filter((scaling) => scaling.stat === "damage")
+    .reduce((total, scaling) => total + scaling.perLevel, 0) ?? 0;
+  return definition.damage * TOWER_BASE_DAMAGE_MULTIPLIER * (1 + (safeLevel - 1) * damagePerLevel);
 }
 
 export function inferTowerAmmoType(definition: TowerDefinition): AmmoType {

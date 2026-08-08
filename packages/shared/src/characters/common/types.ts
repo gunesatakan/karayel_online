@@ -44,6 +44,11 @@ export type TowerAuraDefinition = {
   stacking?: "strongest" | "multiply";
   scope?: "owner" | "team";
 };
+export type TowerLevelScalingDefinition = {
+  stat: "damage";
+  perLevel: number;
+  source?: "base" | "keystone";
+};
 
 export type TowerEngineConfig = {
   targeting: TowerTargetingMode;
@@ -60,6 +65,7 @@ export type TowerEngineConfig = {
   stacks?: TowerStackDefinition[];
   auras?: TowerAuraDefinition[];
   triggers?: TowerTriggerDefinition[];
+  levelScaling: TowerLevelScalingDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
   consumesMarks?: string[];
   placement?: {

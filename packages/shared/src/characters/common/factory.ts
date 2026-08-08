@@ -20,7 +20,17 @@ export function makeTowers(
     projectileSpeed: base.projectileSpeed + index * 18,
     aoeRadius: base.aoeRadius ?? 0,
     slowMs: base.slowMs ?? 0,
-    color
+    color,
+    engine: {
+      targeting: "first",
+      attack: { shape: (base.aoeRadius ?? 0) > 0 ? "circle" : "single", radius: base.aoeRadius },
+      statusEffects: (base.slowMs ?? 0) > 0
+        ? [{ type: "slow", magnitude: 1, durationMs: base.slowMs ?? 0, stacking: "refresh" }]
+        : undefined,
+      levelScaling: [{ stat: "damage", perLevel: 0.42, source: "base" }],
+      resources: { ammoType: "bullet", ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
+      canHitAir: false
+    }
   }));
 }
 

@@ -303,6 +303,7 @@ export type {
   TowerStackResetReason,
   TowerAuraDefinition,
   TowerAuraStat,
+  TowerLevelScalingDefinition,
   TowerTriggerCondition,
   TowerTriggerDefinition,
   TowerTriggerEvent
@@ -311,7 +312,6 @@ export {
   TOWER_BASE_AMMO_COST,
   TOWER_BASE_ENERGY_COST,
   TOWER_BASE_DAMAGE_MULTIPLIER,
-  TOWER_LEVEL_DAMAGE_STEP,
   TOWER_HEAT_BY_HIT_TYPE,
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
   getTowerPerformanceHeatMultiplier,
