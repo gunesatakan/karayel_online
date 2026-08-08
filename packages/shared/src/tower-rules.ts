@@ -47,7 +47,8 @@ export function calculateTowerShotHeat(definition: TowerDefinition, performance:
   return TOWER_HEAT_BY_HIT_TYPE[hitType]
     * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[damageType]
     * getTowerPerformanceHeatMultiplier(performance)
-    * towerSpecialMultiplier;
+    * towerSpecialMultiplier
+    * (definition.engine?.resources.heatMultiplier ?? 1);
 }
 
 export function calculateTowerShotEnergy(performance: number, energyCostMultiplier = 1) {
@@ -60,6 +61,9 @@ export function calculateTowerScaledBaseDamage(definition: TowerDefinition, leve
 }
 
 export function inferTowerAmmoType(definition: TowerDefinition): AmmoType {
+  if (definition.engine) {
+    return definition.engine.resources.ammoType;
+  }
   const mechanics = definition.mechanics ?? [];
   if (definition.hitType === "focus" || mechanics.some((mechanic) => /laser|beam|light-line|showcase-line|mirror/.test(mechanic))) {
     return "powerCrystal";

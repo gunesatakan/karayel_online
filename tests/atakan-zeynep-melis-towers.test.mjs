@@ -116,3 +116,42 @@ test("temel hasar seviye 1-10 aralığına sabitleniyor", () => {
   assert.equal(round(calculateTowerScaledBaseDamage(tower, 10)), 229.44);
   assert.equal(round(calculateTowerScaledBaseDamage(tower, 99)), 229.44);
 });
+
+test("24 kulenin tamamı ortak motor profiline taşındı", () => {
+  const towers = [...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer];
+  for (const tower of towers) {
+    assert.ok(tower.engine, `${tower.id}: ortak motor profili eksik`);
+    assert.ok(tower.engine.attack.shape, `${tower.id}: saldırı şekli eksik`);
+    assert.ok(tower.engine.targeting, `${tower.id}: hedefleme modu eksik`);
+    assert.ok(tower.engine.resources.ammoType, `${tower.id}: mühimmat türü eksik`);
+    assert.equal(typeof tower.engine.canHitAir, "boolean", `${tower.id}: hava hedefleme kuralı eksik`);
+    assert.equal(inferTowerAmmoType(tower), tower.engine.resources.ammoType);
+  }
+});
+
+test("ortak motor hedefleme ve saldırı profilleri kule davranışlarını koruyor", () => {
+  const expected = {
+    "warrior-4": ["strongest", "single", 1, true],
+    "warrior-5": ["marked", "beam", null, false],
+    "zeynep-1": ["first", "line", 2, true],
+    "zeynep-6": ["first", "cone", null, true],
+    "archer-3": ["first", "circle", null, false],
+    "archer-4": ["first", "beam", null, true]
+  };
+  const towers = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower]));
+  for (const [id, profile] of Object.entries(expected)) {
+    const engine = towers[id].engine;
+    assert.deepEqual([engine.targeting, engine.attack.shape, engine.attack.pierceCount ?? null, engine.canHitAir], profile, id);
+  }
+});
+
+test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanımlı", () => {
+  const byId = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower.engine]));
+  assert.equal(byId["warrior-3"].statusEffects[0].type, "slow");
+  assert.equal(byId["warrior-4"].stacks[0].trigger, "sameTarget");
+  assert.equal(byId["warrior-1"].appliesMark.id, "tracking");
+  assert.equal(byId["zeynep-8"].placement.requiresEdge, true);
+  assert.equal(byId["zeynep-7"].auras[0].stat, "synthesis");
+  assert.equal(byId["archer-2"].triggers[0].event, "escape");
+  assert.equal(byId["archer-6"].statusEffects[1].type, "stun");
+});

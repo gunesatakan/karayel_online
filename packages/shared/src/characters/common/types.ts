@@ -3,6 +3,62 @@ import type { DamageType, HitType } from "../../combat.js";
 
 export type AmmoType = "bullet" | "auraCrystal" | "powerCrystal";
 export type TowerResourceProvider = "ammunition" | "energy";
+export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "closest" | "marked" | "random";
+export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam";
+export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "chill" | "curse" | "mark";
+export type TowerTriggerEvent = "kill" | "towerDeath" | "escape" | "overheat" | "ammoEmpty";
+
+export type TowerEngineConfig = {
+  targeting: TowerTargetingMode;
+  attack: {
+    shape: TowerAttackShape;
+    width?: number;
+    length?: number;
+    angle?: number;
+    pierceCount?: number;
+  };
+  statusEffects?: Array<{
+    type: TowerStatusEffectType;
+    magnitude: number;
+    durationMs: number;
+    stacking?: "none" | "refresh" | "add";
+    maxStacks?: number;
+    scaling?: "none" | "distance";
+  }>;
+  stacks?: Array<{
+    id: string;
+    trigger: "hit" | "kill" | "wave" | "sameTarget";
+    stat: "damage" | "fireRate" | "slow" | "storedDamage";
+    perStack: number;
+    max?: number;
+    decayMs?: number;
+    resetOn?: "targetChange" | "noTarget" | "waveEnd";
+  }>;
+  auras?: Array<{
+    affects: "towers" | "enemies";
+    shape: "circle" | "line";
+    radius: number;
+    stat: "damage" | "range" | "slow" | "armor" | "synthesis";
+    multiplier: number;
+  }>;
+  triggers?: Array<{ event: TowerTriggerEvent; effect: string }>;
+  appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
+  consumesMarks?: string[];
+  placement?: {
+    requiresEdge?: boolean;
+    minDistanceFromTowers?: number;
+    requiresPathAdjacent?: boolean;
+  };
+  resources: {
+    ammoType: AmmoType;
+    ammoCostMultiplier: number;
+    energyCostMultiplier: number;
+    heatMultiplier: number;
+  };
+  canHitAir: boolean;
+  locksTarget?: boolean;
+  resourceProvider?: TowerResourceProvider;
+};
 
 export type TowerDefinition = {
   id: string;
@@ -14,6 +70,7 @@ export type TowerDefinition = {
   damageType?: DamageType;
   hitType?: HitType;
   mechanics?: string[];
+  engine?: TowerEngineConfig;
   cost: number;
   upgradeCost: number;
   range: number;

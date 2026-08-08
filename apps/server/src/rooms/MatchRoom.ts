@@ -1399,11 +1399,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerFire(tower: TowerModel) {
-    return tower.performance > 0 && !tower.heatLocked && tower.ammo >= SHOT_AMMO_COST && tower.energy >= this.getTowerEnergyCost(tower);
+    return tower.performance > 0 && !tower.heatLocked && tower.ammo >= this.getTowerAmmoCost(tower) && tower.energy >= this.getTowerEnergyCost(tower);
+  }
+
+  private getTowerAmmoCost(tower: TowerModel) {
+    return SHOT_AMMO_COST * (tower.definition.engine?.resources.ammoCostMultiplier ?? 1);
   }
 
   private consumeTowerResources(tower: TowerModel) {
-    tower.ammo = Math.max(0, tower.ammo - SHOT_AMMO_COST);
+    tower.ammo = Math.max(0, tower.ammo - this.getTowerAmmoCost(tower));
     tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
     const heat = this.getTowerShotHeat(tower);
     tower.temperature = Math.min(100, tower.temperature + heat);
@@ -1413,7 +1417,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerEnergyCost(tower: TowerModel) {
-    return calculateTowerShotEnergy(tower.performance);
+    return calculateTowerShotEnergy(tower.performance, tower.definition.engine?.resources.energyCostMultiplier ?? 1);
   }
 
   private getTowerShotHeat(tower: TowerModel) {
@@ -1625,7 +1629,7 @@ export class MatchRoom extends Room<MatchState> {
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: this.scaleWorldDistance(tower.definition.aoeRadius + (tower.level - 1) * 5),
       slowMs: tower.definition.slowMs + (tower.level - 1) * 90,
-      pierceLimit: tower.definition.id === "zeynep-1" ? 2 : 1,
+      pierceLimit: tower.definition.engine?.attack.pierceCount ?? 1,
       armorBreakAmount: 0,
       piercedEnemyIds: []
     });
@@ -4225,11 +4229,11 @@ export class MatchRoom extends Room<MatchState> {
         return this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
       });
 
-    if (tower.definition.id === "warrior-4") {
+    if (tower.definition.engine?.targeting === "strongest") {
       return candidates.sort((a, b) => Number(b.type === "brute") - Number(a.type === "brute") || b.pathDistance - a.pathDistance)[0];
     }
 
-    if (tower.definition.id === "warrior-5") {
+    if (tower.definition.engine?.targeting === "marked") {
       return candidates.sort((a, b) => this.getTrackingStackCount(b, now) - this.getTrackingStackCount(a, now) || b.pathDistance - a.pathDistance)[0];
     }
 
@@ -4260,17 +4264,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return tower.definition.id === "warrior-1" ||
-      tower.definition.id === "warrior-4" ||
-      tower.definition.id === "warrior-6" ||
-      tower.definition.id === "archer-1" ||
-      tower.definition.id === "archer-2" ||
-      tower.definition.id === "archer-4" ||
-      tower.definition.id === "archer-6" ||
-      tower.definition.id === "zeynep-1" ||
-      tower.definition.id === "zeynep-2" ||
-      tower.definition.id === "zeynep-6" ||
-      (tower.definition.id === "zeynep-3" && Boolean(this.getZeynepSynthesisComposition(tower).mode));
+    return Boolean(tower.definition.engine?.canHitAir);
   }
 
   private getMelisFocusSkillTarget(tower: TowerModel, now: number) {
@@ -6105,7 +6099,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!tower.definition.resourceProvider && tower.heatLocked) {
       return "Asiri Sicak";
     }
-    if (tower.ammo < SHOT_AMMO_COST) {
+    if (tower.ammo < this.getTowerAmmoCost(tower)) {
       return "Muhimmat Yok";
     }
     if (tower.energy < this.getTowerEnergyCost(tower)) {

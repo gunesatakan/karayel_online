@@ -1,6 +1,7 @@
 import type { TowerDefinition } from "../../common/types.js";
+import { attachTowerEngine } from "../../common/engine.js";
 
-export const melisTowers: TowerDefinition[] = [
+export const melisTowers: TowerDefinition[] = ([
   {
     id: "archer-1",
     characterId: "archer",
@@ -133,4 +134,4 @@ export const melisTowers: TowerDefinition[] = [
     mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
-];
+] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);

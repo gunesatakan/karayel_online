@@ -288,7 +288,15 @@ export type GameSnapshot = {
 
 export { characters, towerCatalog } from "./characters/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
-export type { AmmoType, TowerResourceProvider } from "./characters/common/types.js";
+export type {
+  AmmoType,
+  TowerResourceProvider,
+  TowerEngineConfig,
+  TowerTargetingMode,
+  TowerAttackShape,
+  TowerStatusEffectType,
+  TowerTriggerEvent
+} from "./characters/common/types.js";
 export {
   TOWER_BASE_AMMO_COST,
   TOWER_BASE_ENERGY_COST,

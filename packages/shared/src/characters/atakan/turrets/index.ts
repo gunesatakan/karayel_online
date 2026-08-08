@@ -1,8 +1,9 @@
 import type { TowerDefinition } from "../../common/types.js";
+import { attachTowerEngine } from "../../common/engine.js";
 
 const color = 0x22c55e;
 
-export const atakanTowers: TowerDefinition[] = [
+export const atakanTowers: TowerDefinition[] = ([
   {
     id: "warrior-1",
     characterId: "warrior",
@@ -135,4 +136,4 @@ export const atakanTowers: TowerDefinition[] = [
     mechanics: ["resource-supply", "energy"], cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
-];
+] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);

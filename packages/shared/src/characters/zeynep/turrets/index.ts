@@ -1,5 +1,6 @@
 import { makeTowers } from "../../common/factory.js";
 import type { TowerDefinition } from "../../common/types.js";
+import { attachTowerEngine } from "../../common/engine.js";
 
 export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Hiza Emri", "Delici fiziksel mermi"],
@@ -142,4 +143,4 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   }
 
   return tower;
-}).filter((tower) => !["zeynep-4", "zeynep-5"].includes(tower.id));
+}).filter((tower) => !["zeynep-4", "zeynep-5"].includes(tower.id)).map(attachTowerEngine);
