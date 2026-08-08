@@ -17,8 +17,8 @@ const expectedProfiles = {
     ["warrior-4", "impact", "psychic", "bullet", 8.8, 36, 172.08, null],
     ["warrior-5", "focus", "fire", "powerCrystal", 4, 10, 47.8, null],
     ["warrior-6", "impact", "electric", "bullet", 28.6, 27, 129.06, null],
-    ["warrior-7", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
-    ["warrior-8", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+    ["warrior-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
+    ["warrior-8", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ],
   zeynep: [
     ["zeynep-1", "projectile", "physical", "bullet", 7, 48, 229.44, null],
@@ -27,8 +27,8 @@ const expectedProfiles = {
     ["zeynep-6", "aura", "none", "auraCrystal", 1, 0, 0, null],
     ["zeynep-7", "aura", "none", "auraCrystal", 1, 0, 0, null],
     ["zeynep-8", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["zeynep-9", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
-    ["zeynep-10", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+    ["zeynep-9", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
+    ["zeynep-10", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ],
   archer: [
     ["archer-1", "projectile", "psychic", "bullet", 2.8, 64, 305.92, null],
@@ -37,8 +37,8 @@ const expectedProfiles = {
     ["archer-4", "focus", "psychic", "powerCrystal", 1, 0, 0, null],
     ["archer-5", "impact", "psychic", "bullet", 8.8, 20, 95.6, null],
     ["archer-6", "wave", "psychic", "auraCrystal", 8, 10, 47.8, null],
-    ["archer-7", "aura", "none", "auraCrystal", 1, 0, 0, "ammunition"],
-    ["archer-8", "aura", "none", "auraCrystal", 1, 0, 0, "energy"]
+    ["archer-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
+    ["archer-8", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ]
 };
 
@@ -87,6 +87,15 @@ test("her karakterin bir cephane ve bir enerji sağlayıcısı var", () => {
       .filter(Boolean)
       .sort();
     assert.deepEqual(providers, ["ammunition", "energy"]);
+  }
+});
+
+test("lojistik binaları saldırı üretmeyen none vuruş türünü kullanır", () => {
+  for (const towers of Object.values(towerCatalog)) {
+    for (const tower of towers.filter((candidate) => candidate.resourceProvider)) {
+      assert.equal(tower.hitType, "none", tower.id);
+      assert.equal(tower.damage, 0, tower.id);
+    }
   }
 });
 

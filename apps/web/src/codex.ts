@@ -25,6 +25,7 @@ export const damageTypeCodex: Record<DamageType, CodexEntry> = {
 };
 
 export const hitTypeCodex: Record<HitType, CodexEntry> = {
+  none: { name: "Yok", text: "Saldırı veya vuruş üretmez." },
   projectile: { name: "Mermi", text: "Hedefe doğru ilerleyen atış; yolda vakit kaybeder." },
   impact: { name: "Çarpma", text: "Patlama tipi vuruş. Seviye ile atış hızı değil hasarı büyür." },
   focus: { name: "Odak", text: "Kanal veya lazer; sık ve küçük vuruşlar." },

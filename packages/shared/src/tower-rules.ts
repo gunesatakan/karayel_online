@@ -6,6 +6,7 @@ export const TOWER_BASE_ENERGY_COST = 4;
 export const TOWER_BASE_DAMAGE_MULTIPLIER = 2;
 
 export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
+  none: 0,
   impact: 22,
   wave: 20,
   projectile: 7,

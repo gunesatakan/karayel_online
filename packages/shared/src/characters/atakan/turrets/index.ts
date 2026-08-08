@@ -120,13 +120,13 @@ export const atakanTowers: TowerDefinition[] = ([
   },
   {
     id: "warrior-7", characterId: "warrior", name: "Cephane Merkezi", role: "Mühimmat ikmali",
-    description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
+    description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "none",
     cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },
   {
     id: "warrior-8", characterId: "warrior", name: "Enerji Reaktörü", role: "Enerji ikmali",
-    description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "aura",
+    description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "none",
     cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }

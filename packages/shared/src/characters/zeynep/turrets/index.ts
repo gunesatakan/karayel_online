@@ -122,7 +122,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
         : "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.",
       classType: "support",
       damageType: "none",
-      hitType: "aura",
+      hitType: "none",
       resourceProvider: providesAmmunition ? "ammunition" : "energy",
       cost: providesAmmunition ? 95 : 105,
       range: 0,
