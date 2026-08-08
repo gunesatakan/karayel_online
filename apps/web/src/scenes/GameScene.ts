@@ -265,6 +265,7 @@ export class GameScene extends Phaser.Scene {
   private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
   private perfPopupOpen = false;
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
+  private matchResultShown = false;
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -1704,6 +1705,8 @@ export class GameScene extends Phaser.Scene {
 
       this.room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
+      this.room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
+      this.room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
       this.startPingLoop();
@@ -1726,6 +1729,9 @@ export class GameScene extends Phaser.Scene {
 
   private queueSnapshot(snapshot: GameSnapshot) {
     const receiveStart = performance.now();
+    if (snapshot.result) {
+      this.showMatchResult(snapshot.result, { wave: snapshot.team.wave, kills: snapshot.team.kills });
+    }
     const bufferedSnapshot = {
       snapshot,
       receivedAt: performance.now()
@@ -1941,6 +1947,41 @@ export class GameScene extends Phaser.Scene {
     return Boolean(this.room) && !this.draggedTowerDefinition &&
       pointer.worldX >= origin.x && pointer.worldX <= arenaRight &&
       pointer.worldY >= origin.y && pointer.worldY <= arenaBottom;
+  }
+
+  private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number }) {
+    if (this.matchResultShown) {
+      return;
+    }
+    this.matchResultShown = true;
+    const victory = result === "victory";
+    const depth = 1000;
+    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x020617, 0.88)
+      .setScrollFactor(0)
+      .setDepth(depth);
+    this.add.text(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 - 72, victory ? "ZAFER" : "YENİLGİ", {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "58px",
+      color: victory ? "#facc15" : "#fb7185",
+      stroke: "#020617",
+      strokeThickness: 8
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    this.add.text(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 + 2, `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
+      fontFamily: "Arial",
+      fontSize: "24px",
+      color: "#e2e8f0"
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    const button = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 + 82, 230, 52, 0x1e293b)
+      .setStrokeStyle(2, victory ? 0xfacc15 : 0xfb7185)
+      .setInteractive({ useHandCursor: true })
+      .setScrollFactor(0)
+      .setDepth(depth + 1);
+    this.add.text(button.x, button.y, "ANA MENÜ", {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "20px",
+      color: "#f8fafc"
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 2);
+    button.on("pointerup", () => window.location.reload());
   }
 
   private renderSetupPhase(snapshot: GameSnapshot) {

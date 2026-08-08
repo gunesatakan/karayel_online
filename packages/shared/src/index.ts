@@ -280,6 +280,7 @@ export type GameSnapshot = {
     slow?: ZeynepCommandEffectSnapshot;
   };
   melisGothicNightmareActive?: boolean;
+  result?: "victory" | "defeat";
   team: TeamSnapshot;
   setupPhase?: boolean;
   setupReadyPlayerIds?: string[];
@@ -332,6 +333,18 @@ export {
 export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
 export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./stacks/index.js";
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
+export {
+  FINAL_WAVE,
+  BASE_WAVE_ENEMY_COUNT,
+  ENEMY_COUNT_WAVE_MULTIPLIER,
+  ENEMY_HP_WAVE_MULTIPLIER,
+  ENEMY_HP_BALANCE_MULTIPLIER,
+  ENEMY_REWARD_MULTIPLIER,
+  getWaveEnemyCount,
+  getWaveHpMultiplier,
+  getWaveEnemyMaxHp,
+  getWaveCompletionGold
+} from "./balance/index.js";
 export { dispatchTowerTriggers } from "./triggers/index.js";
 export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
 export { applyTowerAuraModifier, evaluateTowerAuras, isPointInsideTowerAura } from "./auras/index.js";

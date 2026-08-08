@@ -33,6 +33,12 @@ import {
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
+  FINAL_WAVE,
+  ENEMY_REWARD_MULTIPLIER,
+  getWaveCompletionGold,
+  getWaveEnemyCount,
+  getWaveEnemyMaxHp,
+  getWaveHpMultiplier,
   TOWER_BASE_AMMO_COST,
   calculateDamageTaken,
   findPathToNearestNexus,
@@ -115,10 +121,6 @@ const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
-const BASE_WAVE_ENEMY_COUNT = 10;
-const ENEMY_COUNT_WAVE_MULTIPLIER = 1.2;
-const ENEMY_HP_WAVE_MULTIPLIER = 1.5;
-const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const GAME_SPEED_MULTIPLIER = 0.8;
@@ -142,7 +144,6 @@ const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
 const KILL_STREAK_BUFF_DURATION_MS = 3000;
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
-const ENEMY_REWARD_MULTIPLIER = 0.55;
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 const ZEYNEP_MAX_REPUTATION = 100;
@@ -738,6 +739,7 @@ export class MatchRoom extends Room<MatchState> {
   private hostSessionId = "";
   private gameStarted = false;
   private setupPhase = true;
+  private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
@@ -1268,7 +1270,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateSpawning(deltaTime: number) {
-    if (this.state.players.size === 0 || this.teamHealth <= 0) {
+    if (this.state.players.size === 0 || this.teamHealth <= 0 || this.matchResult) {
       return;
     }
 
@@ -1279,12 +1281,17 @@ export class MatchRoom extends Room<MatchState> {
     if (this.waveSpawned >= this.waveTarget && this.enemies.size === 0) {
       this.applyMelisWaveStress();
       this.advanceWaveGrowth();
+      this.resetTowerHeatAfterWave();
+      if (this.wave >= FINAL_WAVE) {
+        this.finishMatch("victory");
+        return;
+      }
+      const completedWave = this.wave;
       this.wave += 1;
       this.waveSpawned = 0;
       this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
-      this.awardGoldToPlayers(20 + this.wave * 3);
-      this.resetTowerHeatAfterWave();
+      this.awardGoldToPlayers(getWaveCompletionGold(completedWave));
       this.setupPhase = true;
       this.setupReadyPlayerIds.clear();
       return;
@@ -1353,6 +1360,16 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private finishMatch(result: "victory" | "defeat") {
+    if (this.matchResult) {
+      return;
+    }
+    this.matchResult = result;
+    this.setupPhase = false;
+    this.setupReadyPlayerIds.clear();
+    this.broadcast(`match:${result}`, { result, wave: this.wave, kills: this.kills });
+  }
+
   private spawnEnemy() {
     const roll = Math.random();
     const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
@@ -1361,7 +1378,7 @@ export class MatchRoom extends Room<MatchState> {
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
-    const maxHp = Math.max(1, Math.round(definition.maxHp * waveScale * airHealthMultiplier * ENEMY_HP_BALANCE_MULTIPLIER));
+    const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier);
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
@@ -1380,7 +1397,7 @@ export class MatchRoom extends Room<MatchState> {
       hp: maxHp,
       maxHp,
       armor: definition.armor,
-      healthRegenPerSecond: definition.healthRegenPerSecond,
+      healthRegenPerSecond: definition.healthRegenPerSecond * waveScale,
       shield: maxShield,
       maxShield,
       movementKind: isFlyingEnemy ? "air" : definition.movementKind,
@@ -3161,6 +3178,9 @@ export class MatchRoom extends Room<MatchState> {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
           this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          if (this.teamHealth === 0) {
+            this.finishMatch("defeat");
+          }
         }
         continue;
       }
@@ -6070,6 +6090,7 @@ export class MatchRoom extends Room<MatchState> {
       })),
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
+      result: this.matchResult,
       setupPhase: this.setupPhase,
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
@@ -7035,15 +7056,6 @@ function getClosestPathDistance(path: RuntimePath | undefined, x: number, y: num
   }
 
   return bestDistance;
-}
-
-function getWaveEnemyCount(wave: number) {
-  const count = Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
-  return count;
-}
-
-function getWaveHpMultiplier(wave: number) {
-  return ENEMY_HP_WAVE_MULTIPLIER ** Math.max(0, wave - 1);
 }
 
 function shouldSpawnFlyingEnemy(wave: number, waveSpawned: number) {
