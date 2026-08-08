@@ -3040,7 +3040,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawSelectedTowerResources(tower: TowerSnapshot, discSize: number) {
-    const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(18);
+    const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
     const panelWidth = Math.max(138, Math.min(158, discSize * 2));
@@ -3094,10 +3094,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     const labelCenterX = barX + barWidth / 2;
-    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
-    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
-    this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(19);
-    this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0.5).setDepth(19).setRotation(-Math.PI / 2);
+    this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
+    this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
+    this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
+    this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0.5).setDepth(67).setRotation(-Math.PI / 2);
     this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(labelCenterX, panelY + 2).setVisible(true);
     this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
     this.selectedTemperatureText.setText(`Sıcaklık %${Math.round(tower.temperature ?? 0)}`).setPosition(labelCenterX, panelY + 46).setVisible(true);
@@ -3108,7 +3108,7 @@ export class GameScene extends Phaser.Scene {
     this.performanceSliderTowerId = tower.id;
     if (!this.performanceSliderHitZone) {
       this.performanceSliderHitZone = this.add.rectangle(performanceX, panelY + panelHeight / 2, 32, panelHeight, 0xffffff, 0.001)
-        .setDepth(20)
+        .setDepth(68)
         .setInteractive({ useHandCursor: true });
       const updatePerformance = (pointer: Phaser.Input.Pointer) => this.setSelectedTowerPerformanceFromY(pointer.worldY);
       this.performanceSliderHitZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
