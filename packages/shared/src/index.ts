@@ -337,6 +337,8 @@ export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/i
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
+export { getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
+export type { EdgeOrientation, EdgeSegment, PlacementBoard, PlacementCell, PlacementFailureReason, PlacementValidation } from "./placement/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,
