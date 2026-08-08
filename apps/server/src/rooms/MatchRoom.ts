@@ -23,6 +23,7 @@ import {
   isTargetInsideAttackShape,
   selectAttackShapeTargets,
   selectTowerTarget,
+  SpatialGrid,
   getPlacementFootprint,
   validateEdgePlacement,
   validateTowerPlacement,
@@ -675,6 +676,7 @@ export class MatchRoom extends Room<MatchState> {
   maxClients = 4;
   autoDispose = false;
   private enemies = new Map<string, EnemyModel>();
+  private readonly enemySpatialGrid = new SpatialGrid<EnemyModel>(128);
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
@@ -1199,6 +1201,7 @@ export class MatchRoom extends Room<MatchState> {
     timings.spawnMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
+    this.enemySpatialGrid.rebuild(this.enemies.values());
     this.resetAuraSlows();
     this.updateTowers(gameDeltaTime);
     timings.towersMs = performance.now() - sectionStart;
@@ -1831,7 +1834,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findBestZeynepShowcaseLine(tower: TowerModel) {
-    const enemies = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    const enemies = this.getEnemiesNear(tower.x, tower.y, this.getTowerRange(tower) * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
     if (enemies.length === 0) {
       return undefined;
     }
@@ -2263,7 +2266,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findBestKinShowcaseCone(tower: TowerModel, fallbackTarget: EnemyModel) {
-    const enemies = Array.from(this.enemies.values()).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    const enemies = this.getEnemiesNear(tower.x, tower.y, this.getTowerRange(tower) * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
     if (enemies.length === 0) {
       return undefined;
     }
@@ -2309,7 +2312,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisDualProjectiles(tower: TowerModel) {
-    const targets = Array.from(this.enemies.values())
+    const range = this.getTowerRange(tower);
+    const targets = this.getEnemiesNear(tower.x, tower.y, range)
       .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= this.getTowerRange(tower) * this.getTowerRange(tower))
       .sort((a, b) => b.pathDistance - a.pathDistance)
       .slice(0, 2);
@@ -4366,7 +4370,9 @@ export class MatchRoom extends Room<MatchState> {
 
     const range = isGuidedHit ? Number.POSITIVE_INFINITY : this.getTowerRange(tower);
     this.perfCounters.targetSearches += 1;
-    const candidates = Array.from(this.enemies.values());
+    const candidates = Number.isFinite(range)
+      ? this.getEnemiesNear(tower.x, tower.y, range)
+      : Array.from(this.enemies.values());
     this.perfCounters.targetChecks += candidates.length;
     const preferredTargetIds = tower.definition.id === "archer-1" && tower.melisEvolutionLevel >= 1
       ? this.getMelisUnderworldLinkedEnemyIds(tower.ownerId)
@@ -4428,6 +4434,12 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return Boolean(tower.definition.engine?.canHitAir);
+  }
+
+  private getEnemiesNear(x: number, y: number, radius: number) {
+    return this.enemySpatialGrid
+      .queryCircle(x, y, radius)
+      .filter((enemy) => this.enemies.get(enemy.id) === enemy);
   }
 
   private getMelisFocusSkillTarget(tower: TowerModel, now: number) {
@@ -4703,7 +4715,7 @@ export class MatchRoom extends Room<MatchState> {
     const radius = this.scaleWorldDistance(MELIS_BROKEN_MIRROR_DEATH_BURST_RADIUS);
     const radiusSq = radius * radius;
     const burstDamage = storedDamage * MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO;
-    for (const enemy of Array.from(this.enemies.values())) {
+    for (const enemy of this.getEnemiesNear(x, y, radius)) {
       if (distanceSq(x, y, enemy.x, enemy.y) > radiusSq) {
         continue;
       }
@@ -5325,7 +5337,7 @@ export class MatchRoom extends Room<MatchState> {
   private findMelisWhisperTurnedTarget(source: EnemyModel, now: number) {
     const range = this.scaleWorldDistance(MELIS_WHISPER_TURN_ATTACK_RANGE);
     const rangeSq = range * range;
-    return Array.from(this.enemies.values())
+    return this.getEnemiesNear(source.x, source.y, range)
       .filter((enemy) => (
         enemy.id !== source.id &&
         enemy.dominatedUntil <= now &&
@@ -5340,7 +5352,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_BLOCK_RADIUS);
     const radiusSq = radius * radius;
-    return Array.from(this.enemies.values()).find((candidate) => (
+    return this.getEnemiesNear(enemy.x, enemy.y, radius).find((candidate) => (
       candidate.id !== enemy.id &&
       candidate.melisWhisperTurnedUntil > now &&
       candidate.melisWhisperTurnedEvolutionLevel >= 2 &&
@@ -5369,7 +5381,7 @@ export class MatchRoom extends Room<MatchState> {
     const damage = Math.max(1, enemy.hp);
     const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_EXPLOSION_RADIUS);
     const radiusSq = radius * radius;
-    for (const target of Array.from(this.enemies.values())) {
+    for (const target of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
       if (
         target.id === enemy.id ||
         target.melisUndeadUntil > Date.now() ||
@@ -5664,7 +5676,7 @@ export class MatchRoom extends Room<MatchState> {
   private findMelisUndeadTarget(source: EnemyModel, now: number) {
     const range = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_RANGE);
     const rangeSq = range * range;
-    return Array.from(this.enemies.values())
+    return this.getEnemiesNear(source.x, source.y, range)
       .filter((enemy) => enemy.id !== source.id && enemy.melisUndeadUntil <= now && enemy.dominatedUntil <= now && enemy.melisWhisperTurnedUntil <= now && distanceSq(source.x, source.y, enemy.x, enemy.y) <= rangeSq)
       .sort((a, b) => a.pathDistance - b.pathDistance)[0];
   }
@@ -5673,7 +5685,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_BLOCK_RADIUS);
     const radiusSq = radius * radius;
-    return Array.from(this.enemies.values()).find((candidate) => (
+    return this.getEnemiesNear(enemy.x, enemy.y, radius).find((candidate) => (
       candidate.id !== enemy.id &&
       candidate.melisUndeadUntil > now &&
       candidate.pathId === enemy.pathId &&

@@ -287,6 +287,7 @@ export type GameSnapshot = {
 };
 
 export { characters, towerCatalog } from "./characters/index.js";
+export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,
