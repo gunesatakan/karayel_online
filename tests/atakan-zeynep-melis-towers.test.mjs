@@ -4,6 +4,7 @@ import {
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
+  getTowerModeDamageType,
   inferTowerAmmoType,
   TOWER_BASE_AMMO_COST,
   towerCatalog
@@ -154,6 +155,14 @@ test("motor seviye ölçekleri keystone katkılarıyla birleşir", () => {
   };
   assert.equal(calculateTowerScaledBaseDamage(withKeystone, 1), 24);
   assert.equal(calculateTowerScaledBaseDamage(withKeystone, 2), 36);
+});
+
+test("Taht Mührü kombinasyonları doğru hasar türünü seçer", () => {
+  const throneSeal = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-3");
+  assert.ok(throneSeal);
+  assert.equal(getTowerModeDamageType(throneSeal, "dual-projectile"), "physical");
+  assert.equal(getTowerModeDamageType(throneSeal, "mirror-beam"), "light");
+  assert.equal(getTowerModeDamageType(throneSeal, "burn-impact"), "light");
 });
 
 test("tüm karakter kuleleri seviye ölçeğini ortak motordan alır", () => {

@@ -25,7 +25,13 @@ const profiles: Record<string, EngineProfile> = {
 
   "zeynep-1": { targeting: "first", attack: { shape: "line", pierceCount: 2 }, canHitAir: true },
   "zeynep-2": { targeting: "first", attack: { shape: "line" }, canHitAir: true, resources: { ammoType: "powerCrystal" } },
-  "zeynep-3": { targeting: "first", attack: { shape: "beam" }, canHitAir: true, resources: { ammoType: "powerCrystal" } },
+  "zeynep-3": {
+    targeting: "first",
+    attack: { shape: "beam" },
+    canHitAir: true,
+    damageTypeByMode: { "dual-projectile": "physical", "mirror-beam": "light", "burn-impact": "light" },
+    resources: { ammoType: "powerCrystal" }
+  },
   "zeynep-6": { targeting: "first", attack: { shape: "cone", angle: 60 }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 1150, stacking: "refresh", scaling: "distance" }], resources: { ammoType: "auraCrystal" } },
   "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1 }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
   "zeynep-8": { targeting: "first", attack: { shape: "line" }, canHitAir: false, placement: { requiresEdge: true }, auras: [{ affects: "towers", shape: "line", radius: 0, stat: "damage", multiplier: 1 }] , resources: { ammoType: "auraCrystal" } },
@@ -69,4 +75,8 @@ export function getTowerAttackRadius(definition: TowerDefinition) {
 
 export function getTowerSlowDurationMs(definition: TowerDefinition) {
   return definition.engine?.statusEffects?.find((effect) => effect.type === "slow")?.durationMs ?? definition.slowMs ?? 0;
+}
+
+export function getTowerModeDamageType(definition: TowerDefinition, mode: string) {
+  return definition.engine?.damageTypeByMode?.[mode] ?? definition.damageType ?? "none";
 }

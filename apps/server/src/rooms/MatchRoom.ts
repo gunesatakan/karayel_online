@@ -47,6 +47,7 @@ import {
   getTowerSellRefund,
   getTowerBuildCost,
   getTowerAttackRadius,
+  getTowerModeDamageType,
   getTowerSlowDurationMs,
   gridToWorld,
   normalizeMapData,
@@ -2324,7 +2325,7 @@ export class MatchRoom extends Room<MatchState> {
     const pierceLimit = 2 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-1");
 
     for (const target of targets) {
-      this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, "physical", pierceLimit);
+      this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, getTowerModeDamageType(tower.definition, "dual-projectile"), pierceLimit);
     }
   }
 
@@ -2336,7 +2337,7 @@ export class MatchRoom extends Room<MatchState> {
     const damage = this.getTowerDamage(tower);
     const burnDurationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "2-2") * 1000;
     for (const enemy of targets) {
-      this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light");
+      this.damageEnemyFromTowerAs(tower, enemy, damage, 0, getTowerModeDamageType(tower.definition, "burn-impact"));
     }
     this.addZeynepBurnLine(tower, tower.x, tower.y, endX, endY, damage * 0.42, burnDurationMs);
 
@@ -2473,8 +2474,7 @@ export class MatchRoom extends Room<MatchState> {
 
       ray.hitEnemyIds.push(enemy.id);
       const abartiMultiplier = ray.abartiLevel > 0 ? 1 + Math.max(0, ray.hitEnemyIds.length - 1) * getAbartiRayDamageGrowth(ray.abartiLevel) : 1;
-      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5 * abartiMultiplier, 0, "physical", 0);
-      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * 0.5 * abartiMultiplier, 0, "light", 0);
+      this.damageEnemyFromTowerAs(tower, enemy, ray.damage * abartiMultiplier, 0, getTowerModeDamageType(tower.definition, "mirror-beam"), 0);
     }
   }
 

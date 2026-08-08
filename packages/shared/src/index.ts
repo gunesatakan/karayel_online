@@ -286,7 +286,7 @@ export type GameSnapshot = {
   perf?: ServerPerfSnapshot;
 };
 
-export { characters, towerCatalog, getTowerAttackRadius, getTowerSlowDurationMs } from "./characters/index.js";
+export { characters, towerCatalog, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {

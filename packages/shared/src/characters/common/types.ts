@@ -65,6 +65,7 @@ export type TowerEngineConfig = {
   stacks?: TowerStackDefinition[];
   auras?: TowerAuraDefinition[];
   triggers?: TowerTriggerDefinition[];
+  damageTypeByMode?: Record<string, DamageType>;
   levelScaling: TowerLevelScalingDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
   consumesMarks?: string[];
