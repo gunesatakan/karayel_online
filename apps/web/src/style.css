@@ -196,6 +196,10 @@ canvas {
   pointer-events: none;
 }
 
+.game-controls--tower-selected {
+  --game-controls-panel-height: min(38dvh, 292px);
+}
+
 .game-controls__panel {
   position: absolute;
   left: 0;
@@ -466,6 +470,15 @@ canvas {
 
 .game-controls__shop {
   min-height: 0;
+  overflow: hidden;
+}
+
+.game-controls__panel--tower-selected .game-controls__shop {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.55) rgba(15, 23, 42, 0.5);
 }
 
 .game-controls__tower-grid {
@@ -620,6 +633,36 @@ canvas {
   font-weight: 800;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.game-controls__panel--tower-selected .game-controls__stats {
+  align-items: flex-start;
+  min-height: unset;
+  padding: 7px 9px;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .game-controls--tower-selected {
+    --game-controls-panel-height: min(44dvh, 310px);
+  }
+
+  .game-controls__panel--tower-selected {
+    grid-template-rows: 26px 30px minmax(0, 1fr) 16px;
+    gap: 3px;
+  }
+
+  .game-controls__panel--tower-selected .game-controls__stats {
+    font-size: 10px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .game-controls--tower-selected {
+    --game-controls-panel-height: min(62dvh, 260px);
+  }
 }
 
 .game-controls__underworld-mode {

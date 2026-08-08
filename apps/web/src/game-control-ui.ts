@@ -95,6 +95,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
     latestKey = key;
     root.classList.toggle("game-controls--hidden", !state.visible);
+    root.classList.toggle("game-controls--tower-selected", Boolean(state.selectedStats));
     if (!state.visible) {
       root.replaceChildren();
       return;
@@ -107,7 +108,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
 
     const panel = document.createElement("section");
-    panel.className = "game-controls__panel";
+    panel.className = `game-controls__panel${state.selectedStats ? " game-controls__panel--tower-selected" : ""}`;
 
     const skillRow = document.createElement("div");
     skillRow.className = "game-controls__skills";

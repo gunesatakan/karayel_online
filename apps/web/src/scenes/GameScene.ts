@@ -3047,7 +3047,13 @@ export class GameScene extends Phaser.Scene {
     const panelHeight = 76;
     const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
-    const panelY = tower.y + discSize / 2 + 7;
+    const belowTowerY = tower.y + discSize / 2 + 7;
+    const aboveTowerY = tower.y - discSize / 2 - panelHeight - 7;
+    const panelY = Phaser.Math.Clamp(
+      belowTowerY + panelHeight <= this.controlTop - 4 ? belowTowerY : aboveTowerY,
+      TOWER_BUILD_TOP + 4,
+      this.controlTop - panelHeight - 4
+    );
     const barX = panelX + 7;
     const barWidth = panelWidth - 48;
     const barHeight = 6;
