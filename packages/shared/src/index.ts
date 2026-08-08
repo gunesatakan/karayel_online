@@ -300,6 +300,8 @@ export type {
   TowerStackTrigger,
   TowerStackStat,
   TowerStackResetReason,
+  TowerTriggerCondition,
+  TowerTriggerDefinition,
   TowerTriggerEvent
 } from "./characters/common/types.js";
 export {
@@ -325,6 +327,8 @@ export {
 export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
 export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./stacks/index.js";
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
+export { dispatchTowerTriggers } from "./triggers/index.js";
+export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

@@ -18,6 +18,7 @@ import {
   applyTowerStatusEffect,
   applyTowerStack,
   getTowerStackMultiplier,
+  dispatchTowerTriggers,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
   calculateTowerShotEnergy,
@@ -61,6 +62,8 @@ import {
   type TowerStackRuntimeState,
   type TowerStackDefinition,
   type TowerStackTrigger,
+  type TowerTriggerCondition,
+  type TowerTriggerEvent,
   type BeamSnapshot,
   type GameSnapshot,
   type HitType,
@@ -408,6 +411,7 @@ type TowerModel = {
   focusTargetId: string;
   focusStacks: number;
   stackStates: Record<string, TowerStackRuntimeState>;
+  triggerCooldowns: Record<string, number>;
   activeMs: number;
   overheatMs: number;
   offlineUntil: number;
@@ -1422,12 +1426,20 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private consumeTowerResources(tower: TowerModel) {
+    const hadAmmo = tower.ammo > 0;
+    const wasHeatLocked = tower.heatLocked;
     tower.ammo = Math.max(0, tower.ammo - this.getTowerAmmoCost(tower));
     tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
     const heat = this.getTowerShotHeat(tower);
     tower.temperature = Math.min(100, tower.temperature + heat);
     if (tower.temperature >= 100) {
       tower.heatLocked = true;
+    }
+    if (hadAmmo && tower.ammo <= 0) {
+      this.runTowerTriggers(tower, "ammoEmpty");
+    }
+    if (!wasHeatLocked && tower.heatLocked) {
+      this.runTowerTriggers(tower, "overheat");
     }
   }
 
@@ -1717,18 +1729,22 @@ export class MatchRoom extends Room<MatchState> {
     const killed = this.damageEnemyFromTower(tower, target, baseDamage, tower.definition.slowMs);
 
     if (wasTracked && killed) {
-      tower.debugSweepStartedAt = now;
-      tower.debugSweepPathId = target.pathId;
-      tower.debugSweepStartDistance = target.pathDistance;
-      tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance, target.pathId);
-      tower.debugSweepLastDamageAt = 0;
-      tower.debugOverdriveHeatLastAt = now;
-      tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
-      this.updateDebugLaserSweep(tower);
+      this.runTowerTriggers(tower, "kill", { target, conditions: ["targetMarked"], now });
       return;
     }
 
     this.setBeam(tower, target.x, target.y, false);
+  }
+
+  private startDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, now: number) {
+    tower.debugSweepStartedAt = now;
+    tower.debugSweepPathId = target.pathId;
+    tower.debugSweepStartDistance = target.pathDistance;
+    tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance, target.pathId);
+    tower.debugSweepLastDamageAt = 0;
+    tower.debugOverdriveHeatLastAt = now;
+    tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
+    this.updateDebugLaserSweep(tower);
   }
 
   private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number) {
@@ -2117,6 +2133,31 @@ export class MatchRoom extends Room<MatchState> {
   private getEngineStackMultiplier(tower: TowerModel, stackId: string, fallback: number, now = Date.now()) {
     const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === stackId);
     return definition ? getTowerStackMultiplier(tower.stackStates[stackId], definition, now) : fallback;
+  }
+
+  private runTowerTriggers(
+    tower: TowerModel,
+    event: TowerTriggerEvent,
+    context: { target?: EnemyModel; conditions?: TowerTriggerCondition[]; areaDamageMultiplier?: number; now?: number } = {}
+  ) {
+    const result = dispatchTowerTriggers(tower.definition.engine?.triggers ?? [], event, {
+      now: context.now ?? Date.now(),
+      cooldowns: tower.triggerCooldowns,
+      conditions: context.conditions
+    });
+    tower.triggerCooldowns = result.cooldowns;
+    for (const effect of result.effects) {
+      if (effect === "disable") {
+        tower.heatLocked = true;
+      } else if (effect === "rage-wave") {
+        this.triggerMelisRageWave(tower, context.areaDamageMultiplier ?? 0);
+      } else if (effect === "rage-wave-on-kill" && tower.melisEvolutionLevel >= 1) {
+        this.triggerMelisRageWave(tower);
+      } else if (effect === "marked-overdrive" && context.target) {
+        this.startDebugLaserOverdrive(tower, context.target, context.now ?? Date.now());
+      }
+    }
+    return result.effects;
   }
 
   private getKinDistanceRatio(distanceFromTower: number, range: number) {
@@ -3021,6 +3062,7 @@ export class MatchRoom extends Room<MatchState> {
         if (this.melisGothicNightmareUntil > now) {
           enemy.y = Math.min(enemy.y, TOWER_BUILD_BOTTOM - 1);
         } else {
+          this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
           this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
         }
@@ -3396,6 +3438,15 @@ export class MatchRoom extends Room<MatchState> {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
+      this.runTowerTriggers(tower, "towerDeath");
+    }
+  }
+
+  private runEnemyEscapeTriggers(enemy: EnemyModel, now: number) {
+    for (const tower of this.towers.values()) {
+      if (tower.focusTargetId === enemy.id) {
+        this.runTowerTriggers(tower, "escape", { target: enemy, now });
+      }
     }
   }
 
@@ -3461,6 +3512,7 @@ export class MatchRoom extends Room<MatchState> {
       focusTargetId: "",
       focusStacks: 0,
       stackStates: {},
+      triggerCooldowns: {},
       activeMs: 0,
       overheatMs: 0,
       offlineUntil: 0,
@@ -4290,7 +4342,7 @@ export class MatchRoom extends Room<MatchState> {
           return lockedTarget;
         }
         if (lockedTarget.fearUntil <= Date.now()) {
-          this.triggerMelisRageWave(tower, 2);
+          this.runTowerTriggers(tower, "escape", { target: lockedTarget, areaDamageMultiplier: 2, now });
         }
       }
       tower.focusTargetId = "";
@@ -4948,6 +5000,10 @@ export class MatchRoom extends Room<MatchState> {
     const evolutionLevel = enemy.melisCurseEvolutionLevel;
     const curseLoad = enemy.melisCurseLoad;
     const damage = enemy.melisCurseBurstDamage;
+    const curseTower = this.towers.get(towerId);
+    if (curseTower && !this.runTowerTriggers(curseTower, "kill", { target: enemy, now }).includes("death-burst")) {
+      return;
+    }
     enemy.melisCurseLoad = 0;
     enemy.melisCurseBurstDamage = 0;
     enemy.melisCurseOwnerId = "";
@@ -6533,9 +6589,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (!this.enemies.has(target.id)) {
-      if (tower.definition.id === "archer-2" && tower.melisEvolutionLevel >= 1) {
-        this.triggerMelisRageWave(tower);
-      }
+      this.runTowerTriggers(tower, "kill", { target });
       if (tower.definition.id === "archer-1" || tower.definition.id === "archer-2") {
         tower.focusTargetId = "";
         return;

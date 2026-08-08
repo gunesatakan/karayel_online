@@ -7,6 +7,13 @@ export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "c
 export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam";
 export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "chill" | "curse" | "mark";
 export type TowerTriggerEvent = "kill" | "towerDeath" | "escape" | "overheat" | "ammoEmpty";
+export type TowerTriggerCondition = "targetMarked";
+export type TowerTriggerDefinition = {
+  event: TowerTriggerEvent;
+  effect: string;
+  cooldownMs?: number;
+  condition?: TowerTriggerCondition;
+};
 export type TowerStatusEffectDefinition = {
   type: TowerStatusEffectType;
   magnitude: number;
@@ -46,7 +53,7 @@ export type TowerEngineConfig = {
     stat: "damage" | "range" | "slow" | "armor" | "synthesis";
     multiplier: number;
   }>;
-  triggers?: Array<{ event: TowerTriggerEvent; effect: string }>;
+  triggers?: TowerTriggerDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
   consumesMarks?: string[];
   placement?: {

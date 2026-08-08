@@ -166,4 +166,11 @@ test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanıml�
   assert.equal(byId["archer-3"].stacks[0].stat, "storedDamage");
   assert.equal(byId["archer-5"].stacks[0].id, "mirror-storage");
   assert.equal(byId["archer-6"].stacks[0].max, 3);
+  assert.deepEqual(byId["warrior-5"].triggers[1], {
+    event: "kill",
+    effect: "marked-overdrive",
+    condition: "targetMarked"
+  });
+  assert.equal(byId["archer-2"].triggers.some((trigger) => trigger.event === "escape"), true);
+  assert.equal(byId["archer-3"].triggers[0].effect, "death-burst");
 });
