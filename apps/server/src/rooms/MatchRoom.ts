@@ -117,6 +117,8 @@ const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimension
 const GAME_SPEED_MULTIPLIER = 0.8;
 const GLOBAL_TOWER_RANGE_MULTIPLIER = 2 / 3;
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
+const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
+const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
@@ -731,6 +733,7 @@ export class MatchRoom extends Room<MatchState> {
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
+  private lastSnapshotSizeSampleAt = 0;
   private snapshotBroadcastTimes: number[] = [];
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
   private perfFrames: ServerPerfFrame[] = [];
@@ -1232,7 +1235,10 @@ export class MatchRoom extends Room<MatchState> {
       snapshot = this.getSnapshot();
       timings.snapshotMs = performance.now() - sectionStart;
       snapshot.perf = this.latestPerfSnapshot;
-      snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+      if (SNAPSHOT_SIZE_METRICS_ENABLED && now - this.lastSnapshotSizeSampleAt >= SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS) {
+        snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
+        this.lastSnapshotSizeSampleAt = now;
+      }
       this.recordSnapshotBroadcast(now);
       this.lastSnapshotBroadcastAt = now;
     }
