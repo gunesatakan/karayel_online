@@ -1702,6 +1702,7 @@ export class GameScene extends Phaser.Scene {
       this.localSessionId = this.room.sessionId;
       this.statusText?.setText(`Oda: ${this.room.roomId}`);
 
+      this.room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
@@ -2023,7 +2024,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const map = normalizeMapData(snapshot.map);
+    this.syncMap(snapshot.map);
+  }
+
+  private syncMap(mapData: EditableMapData) {
+    const map = normalizeMapData(mapData);
     const mapKey = map.tiles.join("");
     if (mapKey === this.renderedMapKey) {
       return;

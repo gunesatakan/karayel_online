@@ -882,6 +882,7 @@ export class MatchRoom extends Room<MatchState> {
       player.ready = true;
       this.configureArenaForScale();
       this.gameStarted = true;
+      client.send("match:map", this.activeMap);
       this.syncRoomRegistry();
       return;
     }
@@ -912,6 +913,7 @@ export class MatchRoom extends Room<MatchState> {
       const [previousSessionId, player] = disconnectedEntry;
       this.transferPlayerSession(previousSessionId, client.sessionId, player, options.playerName);
       this.sendLobbyState(client);
+      client.send("match:map", this.activeMap);
       client.send("lobby:started", { roomId: this.roomId });
       this.syncRoomRegistry();
       return;
@@ -930,6 +932,7 @@ export class MatchRoom extends Room<MatchState> {
     this.initializeMelisSpectrum(player);
     this.state.players.set(client.sessionId, player);
     this.sendLobbyState(client);
+    client.send("match:map", this.activeMap);
     client.send("lobby:started", { roomId: this.roomId });
     this.syncRoomRegistry();
   }
@@ -1036,6 +1039,7 @@ export class MatchRoom extends Room<MatchState> {
     this.setupReadyPlayerIds.clear();
     this.syncRoomRegistry();
     this.broadcastLobbyState();
+    this.broadcast("match:map", this.activeMap);
     this.broadcast("lobby:started", {
       roomId: this.roomId
     });
@@ -5836,7 +5840,6 @@ export class MatchRoom extends Room<MatchState> {
     return {
       serverTime: now,
       hostId: this.hostSessionId,
-      map: this.activeMap,
       players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,
         name: player.name,
