@@ -52,6 +52,7 @@ import {
   TOWER_BASE_AMMO_COST,
   calculateDamageTaken,
   findPathToNearestNexus,
+  findFirstLinearCollision,
   getMapMetrics,
   getMapOrigin,
   getMapScale,
@@ -63,6 +64,7 @@ import {
   isInsideMap,
   inferTowerAmmoType,
   isTowerAligned,
+  usesLinearBallistics,
   rotateTowerTowards,
   getTowerSellRefund,
   getTowerBuildCost,
@@ -1765,6 +1767,7 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
+    const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
     const speed = this.scaleWorldSpeed((tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower));
     const id = `p${this.nextProjectileId++}`;
 
@@ -1779,8 +1782,8 @@ export class MatchRoom extends Room<MatchState> {
       targetId: target.id,
       x: tower.x,
       y: tower.y,
-      vx: (dx / length) * speed,
-      vy: (dy / length) * speed,
+      vx: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.cos(launchAngle) * speed : (dx / length) * speed,
+      vy: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.sin(launchAngle) * speed : (dy / length) * speed,
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: this.scaleWorldDistance(getTowerAttackRadius(tower.definition) + (tower.level - 1) * 5),
@@ -1795,6 +1798,7 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - sourceTower.x;
     const dy = target.y - sourceTower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
+    const launchAngle = towerAims(sourceTower.definition.id) ? sourceTower.facing : Math.atan2(dy, dx);
     const scaledSpeed = this.scaleWorldSpeed(speed);
     const id = `p${this.nextProjectileId++}`;
 
@@ -1809,8 +1813,8 @@ export class MatchRoom extends Room<MatchState> {
       targetId: target.id,
       x: sourceTower.x,
       y: sourceTower.y,
-      vx: (dx / length) * scaledSpeed,
-      vy: (dy / length) * scaledSpeed,
+      vx: usesLinearBallistics(sourceTower.definition.hitType ?? "impact") ? Math.cos(launchAngle) * scaledSpeed : (dx / length) * scaledSpeed,
+      vy: usesLinearBallistics(sourceTower.definition.hitType ?? "impact") ? Math.sin(launchAngle) * scaledSpeed : (dy / length) * scaledSpeed,
       damage,
       maxHealthDamageRatio: 0,
       aoeRadius: this.scaleWorldDistance(aoeRadius),
@@ -2641,6 +2645,8 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
+    const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
+    const projectileSpeed = this.scaleWorldSpeed(speed);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -2654,8 +2660,8 @@ export class MatchRoom extends Room<MatchState> {
       targetId: target.id,
       x: tower.x,
       y: tower.y,
-      vx: (dx / length) * this.scaleWorldSpeed(speed),
-      vy: (dy / length) * this.scaleWorldSpeed(speed),
+      vx: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.cos(launchAngle) * projectileSpeed : (dx / length) * projectileSpeed,
+      vy: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.sin(launchAngle) * projectileSpeed : (dy / length) * projectileSpeed,
       damage,
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: 0,
@@ -2946,6 +2952,42 @@ export class MatchRoom extends Room<MatchState> {
       const previousX = projectile.x;
       const previousY = projectile.y;
 
+      if (usesLinearBallistics(projectile.hitType)) {
+        projectile.x += projectile.vx * seconds;
+        projectile.y += projectile.vy * seconds;
+        this.updateProjectileAbartiModifier(projectile, previousX, previousY);
+        const sourceTower = this.towers.get(projectile.towerId);
+        const segmentLength = Math.hypot(projectile.x - previousX, projectile.y - previousY);
+        const collisionCandidates = this.getEnemiesNear(
+          (previousX + projectile.x) / 2,
+          (previousY + projectile.y) / 2,
+          segmentLength / 2 + this.scaleWorldDistance(48)
+        );
+        const collision = findFirstLinearCollision(
+          { x: previousX, y: previousY },
+          { x: projectile.x, y: projectile.y },
+          collisionCandidates
+            .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
+            .map((enemy) => ({ ...enemy, radius: getEnemyCollisionRadius(enemy) })),
+          4,
+          new Set(projectile.piercedEnemyIds)
+        );
+        if (collision) {
+          projectile.x = previousX + (projectile.x - previousX) * collision.progress;
+          projectile.y = previousY + (projectile.y - previousY) * collision.progress;
+          this.applyProjectileHit(projectile, collision.body);
+          projectile.piercedEnemyIds.push(collision.body.id);
+          if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
+            this.projectiles.delete(id);
+          }
+          continue;
+        }
+        if (this.isProjectileOutOfBounds(projectile)) {
+          this.projectiles.delete(id);
+        }
+        continue;
+      }
+
       if (projectile.piercedEnemyIds.length > 0 && projectile.piercedEnemyIds.length < projectile.pierceLimit) {
         projectile.x += projectile.vx * seconds;
         projectile.y += projectile.vy * seconds;
@@ -3072,7 +3114,10 @@ export class MatchRoom extends Room<MatchState> {
       }, Array.from(this.enemies.values()), false);
       for (const enemy of areaTargets) {
         this.perfCounters.aoeChecks += 1;
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
+        const killed = this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
+        if (projectile.definitionId === "archer-6-whisper" && !killed && projectileTower) {
+          this.applyMelisDoubt(projectileTower, enemy, Date.now());
+        }
         this.applyKinProjectileSlow(projectile, enemy);
       }
     } else {
@@ -5361,40 +5406,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireMelisWhisperChorus(tower: TowerModel, target: EnemyModel) {
-    const now = Date.now();
     const radius = this.getMelisWhisperRadius(tower);
     const damage = this.getTowerDamage(tower);
-
-    const targets = this.selectEnemiesForAttackShape({
-      shape: tower.definition.engine?.attack.shape ?? "circle",
-      x: tower.x,
-      y: tower.y,
-      aimX: target.x,
-      aimY: target.y,
-      radius,
-      canHitAir: tower.definition.engine?.canHitAir ?? false
-    }, Array.from(this.enemies.values()), false);
-    for (const enemy of targets) {
-      this.perfCounters.aoeChecks += 1;
-      const survived = !this.damageEnemyFromTower(tower, enemy, damage, 0);
-      if (survived && this.enemies.has(enemy.id)) {
-        this.applyMelisDoubt(tower, enemy, now);
-      }
-    }
-
-    const beamId = `melis-whisper-${tower.id}-${this.nextBeamId++}`;
-    this.beams.set(beamId, {
-      id: beamId,
-      definitionId: "archer-6-whisper",
-      x1: tower.x,
-      y1: tower.y,
-      x2: target.x,
-      y2: target.y,
-      width: radius * 2,
-      color: tower.definition.color,
-      overdrive: false,
-      ttlMs: 420
-    });
+    this.spawnSpecialProjectile(tower, "archer-6-whisper", target, damage, 360, radius, 0);
   }
 
   private applyMelisDoubt(tower: TowerModel, enemy: EnemyModel, now: number, fromSpread = false) {
