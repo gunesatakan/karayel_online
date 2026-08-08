@@ -12,7 +12,12 @@ export type ModifierStat =
   | "critDamage"
   | "markAmplification"
   | "goldGain"
-  | "towerCapacity";
+  | "towerCapacity"
+  | "cooling"
+  | "armorBreak"
+  | "statusDuration"
+  | "statusMagnitude"
+  | "ammoEmptyDamage";
 
 export type Modifier = {
   source: string;

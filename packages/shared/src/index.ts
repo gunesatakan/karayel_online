@@ -343,6 +343,10 @@ export {
   resolveModifierBreakdown
 } from "./modifiers/index.js";
 export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers } from "./modifiers/index.js";
+export { cardCatalog, cardAppliesToTower, drawCards } from "./cards/index.js";
+export type { CardDefinition, CardScope, CardTowerProfile } from "./cards/index.js";
+export { applyEnemyMark, getMarkDamageMultiplier } from "./marks/index.js";
+export type { ActiveMark } from "./marks/index.js";
 export {
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,

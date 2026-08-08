@@ -15,6 +15,7 @@ import {
   createDefaultEditableMap,
   createOpenArenaMap,
   applyStatusResistance,
+  applyEnemyMark,
   applyTowerStatusEffect,
   applyTowerStack,
   getTowerStackMultiplier,
@@ -34,6 +35,13 @@ import {
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
   appendLegacyMultiplier,
+  canAcceptTargetedCard,
+  cardAppliesToTower,
+  cardCatalog,
+  drawCards,
+  getModifierAdd,
+  getModifierMultiplier,
+  getMarkDamageMultiplier,
   resolveModifierBreakdown,
   FINAL_WAVE,
   ENEMY_REWARD_MULTIPLIER,
@@ -68,6 +76,7 @@ import {
   towerAims,
   towerCatalog,
   type CharacterId,
+  type CardDefinition,
   type DamageEventSnapshot,
   type DamageType,
   type DroneSnapshot,
@@ -250,6 +259,7 @@ const MELIS_INITIAL_STRESS = 6;
 
 class Player extends Schema {
   runModifiers: RunModifiers = [];
+  ownedCardIds: string[] = [];
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
@@ -405,6 +415,9 @@ type EnemyModel = {
   melisUndeadSourceTowerId: string;
   melisUnderworldVulnerableUntil: number;
   melisUnderworldDamageTakenMultiplier: number;
+  activeMarkId: string;
+  activeMarkAdd: number;
+  activeMarkUntil: number;
   pathId: number;
 };
 
@@ -475,6 +488,8 @@ type TowerModel = {
   runModifiers: RunModifiers;
   targetedCardIds: string[];
 };
+
+type ChooseCardMessage = { cardId?: string; towerId?: string };
 
 type DebugOverdriveHeatSegment = {
   startedAt: number;
@@ -748,6 +763,7 @@ export class MatchRoom extends Room<MatchState> {
   private setupPhase = true;
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
+  private pendingCardChoices = new Map<string, CardDefinition[]>();
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
@@ -875,6 +891,9 @@ export class MatchRoom extends Room<MatchState> {
 
     this.onMessage("wave:continue", (client) => {
       this.markSetupReady(client);
+    });
+    this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
+      this.chooseCard(client, message);
     });
 
     this.syncRoomRegistry();
@@ -1186,7 +1205,7 @@ export class MatchRoom extends Room<MatchState> {
     const totalReward = Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
     const share = Math.max(1, Math.round(totalReward / players.length));
     for (const player of players) {
-      player.gold += share;
+      player.gold += share * getModifierMultiplier(player.runModifiers, "goldGain");
     }
   }
 
@@ -1301,6 +1320,7 @@ export class MatchRoom extends Room<MatchState> {
       this.awardGoldToPlayers(getWaveCompletionGold(completedWave));
       this.setupPhase = true;
       this.setupReadyPlayerIds.clear();
+      this.offerWaveCards();
       return;
     }
 
@@ -1335,7 +1355,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private markSetupReady(client: Client) {
-    if (!this.gameStarted || !this.setupPhase) {
+    if (!this.gameStarted || !this.setupPhase || this.pendingCardChoices.has(client.sessionId)) {
       return;
     }
     const player = this.state.players.get(client.sessionId);
@@ -1344,6 +1364,44 @@ export class MatchRoom extends Room<MatchState> {
     }
     this.setupReadyPlayerIds.add(client.sessionId);
     this.tryFinishSetupPhase();
+  }
+
+  private offerWaveCards() {
+    for (const [playerId, player] of this.state.players.entries()) {
+      const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
+      const choices = drawCards({ preferredAxes: getCharacterCardAxes(player.characterId), towers, ownedCardIds: player.ownedCardIds });
+      if (choices.length === 0) continue;
+      this.pendingCardChoices.set(playerId, choices);
+      this.clients.find((client) => client.sessionId === playerId)?.send("card:choices", choices);
+    }
+  }
+
+  private chooseCard(client: Client, message: ChooseCardMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const choices = this.pendingCardChoices.get(client.sessionId);
+    const card = choices?.find((choice) => choice.id === message.cardId);
+    if (!player || !card) return;
+    if (card.scope.kind === "targeted") {
+      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+      if (!tower || tower.ownerId !== client.sessionId || tower.definition.resourceProvider || !canAcceptTargetedCard(tower.targetedCardIds)) return;
+      tower.runModifiers.push(...card.effects);
+      tower.targetedCardIds.push(card.id);
+    } else {
+      const previousHealthMultiplier = getModifierMultiplier(player.runModifiers, "towerHealth");
+      player.runModifiers.push(...card.effects);
+      const nextHealthMultiplier = getModifierMultiplier(player.runModifiers, "towerHealth");
+      if (nextHealthMultiplier !== previousHealthMultiplier) {
+        const ratio = nextHealthMultiplier / previousHealthMultiplier;
+        for (const tower of this.towers.values()) {
+          if (tower.ownerId !== client.sessionId) continue;
+          tower.maxHp *= ratio;
+          tower.hp *= ratio;
+        }
+      }
+    }
+    player.ownedCardIds.push(card.id);
+    this.pendingCardChoices.delete(client.sessionId);
+    client.send("card:applied", { cardId: card.id });
   }
 
   private tryFinishSetupPhase() {
@@ -1450,6 +1508,9 @@ export class MatchRoom extends Room<MatchState> {
       melisUndeadSourceTowerId: "",
       melisUnderworldVulnerableUntil: 0,
       melisUnderworldDamageTakenMultiplier: 1,
+      activeMarkId: "",
+      activeMarkAdd: 0,
+      activeMarkUntil: 0,
       pathId
     });
   }
@@ -1476,7 +1537,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerAmmoCost(tower: TowerModel) {
-    return SHOT_AMMO_COST * (tower.definition.engine?.resources.ammoCostMultiplier ?? 1);
+    return SHOT_AMMO_COST * (tower.definition.engine?.resources.ammoCostMultiplier ?? 1)
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoCost");
   }
 
   private consumeTowerResources(tower: TowerModel) {
@@ -1498,11 +1560,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerEnergyCost(tower: TowerModel) {
-    return calculateTowerShotEnergy(tower.performance, tower.definition.engine?.resources.energyCostMultiplier ?? 1);
+    return calculateTowerShotEnergy(tower.performance, tower.definition.engine?.resources.energyCostMultiplier ?? 1)
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "energyCost");
   }
 
   private getTowerShotHeat(tower: TowerModel) {
-    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower));
+    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower))
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
   }
 
   private getTowerSpecialHeatMultiplier(_tower: TowerModel) {
@@ -1525,7 +1589,7 @@ export class MatchRoom extends Room<MatchState> {
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
-        tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * (deltaTime / 1000));
+        tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling") * (deltaTime / 1000));
         if (tower.heatLocked && tower.temperature <= TOWER_HEAT_UNLOCK_THRESHOLD) {
           tower.heatLocked = false;
         }
@@ -1711,7 +1775,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: this.scaleWorldDistance(getTowerAttackRadius(tower.definition) + (tower.level - 1) * 5),
       slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 90,
       pierceLimit: tower.definition.engine?.attack.pierceCount ?? 1,
-      armorBreakAmount: 0,
+      armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: []
     });
   }
@@ -1741,7 +1805,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: this.scaleWorldDistance(aoeRadius),
       slowMs,
       pierceLimit: 1,
-      armorBreakAmount: 0,
+      armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(sourceTower), "armorBreak"),
       piercedEnemyIds: []
     });
   }
@@ -2586,7 +2650,7 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: 0,
       slowMs: 0,
       pierceLimit,
-      armorBreakAmount: 0,
+      armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: []
     });
   }
@@ -3594,7 +3658,8 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const towerLimit = player.characterId === "zeynep" ? ZEYNEP_TOWER_LIMIT : DEFAULT_PLAYER_TOWER_LIMIT;
+    const towerLimit = (player.characterId === "zeynep" ? ZEYNEP_TOWER_LIMIT : DEFAULT_PLAYER_TOWER_LIMIT)
+      + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
     const currentTowerCount = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId).length;
     if (currentTowerCount >= towerLimit) {
       return;
@@ -3608,6 +3673,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    const towerHealth = TOWER_BASE_HP * getModifierMultiplier(player.runModifiers, "towerHealth");
     const tower: TowerModel = {
       id: `t${this.nextTowerId++}`,
       ownerId: client.sessionId,
@@ -3617,8 +3683,8 @@ export class MatchRoom extends Room<MatchState> {
       x: placement.x,
       y: placement.y,
       orientation,
-      hp: TOWER_BASE_HP,
-      maxHp: TOWER_BASE_HP,
+      hp: towerHealth,
+      maxHp: towerHealth,
       armor: TOWER_BASE_ARMOR,
       ammoType: inferTowerAmmoType(definition),
       ammo: definition.resourceProvider === "ammunition" ? 40 : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
@@ -4574,15 +4640,18 @@ export class MatchRoom extends Room<MatchState> {
 
     this.perfCounters.damageEvents += 1;
     const now = Date.now();
-    const trackingStacks = this.getTrackingStackCount(enemy, now);
-    const trackingBonus = sourceDefinitionId !== "warrior-1" ? 1 + trackingStacks * 0.2 : 1;
-    const guidanceBonus = this.isEnemyInProjectileGuidance(enemy, now) ? PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER : 1;
-    const underworldVulnerabilityBonus = enemy.melisUnderworldVulnerableUntil > now ? enemy.melisUnderworldDamageTakenMultiplier : 1;
+    if (this.isEnemyInProjectileGuidance(enemy, now)) {
+      this.setEnemyMark(enemy, "guidance", PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER - 1, now + 100);
+    }
+    const activeMark = sourceDefinitionId === "warrior-1" && enemy.activeMarkId === "tracking" ? undefined : {
+      id: enemy.activeMarkId, add: enemy.activeMarkAdd, expiresAt: enemy.activeMarkUntil
+    };
+    const markMultiplier = getMarkDamageMultiplier(activeMark, this.state.players.get(sourceOwnerId)?.runModifiers ?? [], now);
     if (enemy.melisUnderworldVulnerableUntil <= now) {
       enemy.melisUnderworldDamageTakenMultiplier = 1;
     }
     const result = calculateDamageTaken(
-      { amount: damage * trackingBonus * guidanceBonus * underworldVulnerabilityBonus, damageType, hitType },
+      { amount: damage * markMultiplier, damageType, hitType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
@@ -4609,19 +4678,27 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     if (slowMs > 0) {
+      const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+      const modifiers = sourceTower ? this.getTowerRunModifiers(sourceTower) : [];
       this.applyEnemyStatusEffect(enemy, {
         type: "slow",
         magnitude: 0.52,
         durationMs: slowMs,
         stacking: "refresh"
-      }, now);
+      }, now, {
+        durationMs: slowMs * getModifierMultiplier(modifiers, "statusDuration"),
+        magnitude: 0.52 * getModifierMultiplier(modifiers, "statusMagnitude")
+      });
     }
 
     if (enemy.hp > 0 && sourceTowerId && !sourceDefinitionId.startsWith("status:")) {
       const sourceTower = this.towers.get(sourceTowerId);
+      const modifiers = sourceTower ? this.getTowerRunModifiers(sourceTower) : [];
       for (const definition of sourceTower?.definition.engine?.statusEffects ?? []) {
         if (definition.type === "burn" || definition.type === "chill" || definition.type === "convert") {
           this.applyEnemyStatusEffect(enemy, definition, now, {
+            durationMs: definition.durationMs * getModifierMultiplier(modifiers, "statusDuration"),
+            magnitude: definition.magnitude * getModifierMultiplier(modifiers, "statusMagnitude"),
             sourceTowerId,
             sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
           });
@@ -4874,6 +4951,17 @@ export class MatchRoom extends Room<MatchState> {
     for (let index = 0; index < stackLimit; index += 1) {
       enemy.trackingStackUntil[index] = Math.max(enemy.trackingStackUntil[index], expiresAt);
     }
+    this.setEnemyMark(enemy, "tracking", stackLimit * 0.2, expiresAt);
+  }
+
+  private setEnemyMark(enemy: EnemyModel, id: string, add: number, until: number) {
+    const next = applyEnemyMark(
+      enemy.activeMarkId ? { id: enemy.activeMarkId, add: enemy.activeMarkAdd, expiresAt: enemy.activeMarkUntil } : undefined,
+      { id, add, expiresAt: until }
+    );
+    enemy.activeMarkId = next.id;
+    enemy.activeMarkAdd = next.add;
+    enemy.activeMarkUntil = next.expiresAt;
   }
 
   private getTrackingStackLimit(towerLevel: number) {
@@ -5575,6 +5663,7 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisUnderworldVulnerableUntil = Math.max(enemy.melisUnderworldVulnerableUntil, now + 140);
     enemy.melisUnderworldDamageTakenMultiplier = Math.max(enemy.melisUnderworldDamageTakenMultiplier, 1 + 0.2 * distanceMultiplier);
+    this.setEnemyMark(enemy, "underworld", enemy.melisUnderworldDamageTakenMultiplier - 1, now + 140);
   }
 
   private damageMelisUnderworldLinkLine(tower: TowerModel, linkedEnemy: EnemyModel) {
@@ -5727,6 +5816,9 @@ export class MatchRoom extends Room<MatchState> {
       melisUndeadSourceTowerId: tower.id,
       melisUnderworldVulnerableUntil: 0,
       melisUnderworldDamageTakenMultiplier: 1,
+      activeMarkId: "",
+      activeMarkAdd: 0,
+      activeMarkUntil: 0,
       pathId
     });
   }
@@ -6198,7 +6290,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerRange(tower: TowerModel) {
-    const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range");
+    const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range")
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "range");
     if (tower.definition.id === "warrior-2") {
       return applyRangeAura(GAME_WORLD_HEIGHT);
     }
@@ -6243,7 +6336,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
-    return this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower));
+    return this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower))
+      / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
   }
 
   private getTowerBaseFireInterval(tower: TowerModel) {
@@ -6369,12 +6463,27 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     add("engine:aura", applyTowerAuraModifier(1, this.getTowerAuraModifiers(tower), "damage"));
-    const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
+    if (tower.ammo <= 0) {
+      add("card:son-atis", 1 + getModifierAdd(this.getTowerRunModifiers(tower), "ammoEmptyDamage"));
+    }
+    const playerModifiers = this.getTowerRunModifiers(tower).filter((modifier) => modifier.scope === "player");
     breakdown.mods.push(
       ...playerModifiers.filter((modifier) => modifier.stat === "damage"),
       ...tower.runModifiers.filter((modifier) => modifier.stat === "damage")
     );
     return breakdown;
+  }
+
+  private getTowerRunModifiers(tower: TowerModel): RunModifiers {
+    const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
+    return [
+      ...playerModifiers.filter((modifier) => {
+        const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
+        const card = cardCatalog.find((candidate) => candidate.id === cardId);
+        return !card || card.scope.kind === "global" || cardAppliesToTower(card, tower.definition);
+      }),
+      ...tower.runModifiers
+    ];
   }
 
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
@@ -7097,6 +7206,13 @@ function isPureFlyingWave(wave: number) {
 
 function isMixedFlyingWave(wave: number) {
   return wave === 15 || wave === 20;
+}
+
+function getCharacterCardAxes(characterId: CharacterId): import("@karayel/shared").TowerAxis[] {
+  if (characterId === "warrior") return ["dps", "amplify"];
+  if (characterId === "archer") return ["cc", "dps"];
+  if (characterId === "zeynep") return ["amplify", "dps"];
+  return ["dps"];
 }
 
 function getIsolationAuraSpeedMultiplier(level: number) {

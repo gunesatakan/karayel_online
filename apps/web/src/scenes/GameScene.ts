@@ -22,6 +22,7 @@ import {
   worldToGrid,
   towerCatalog,
   type CharacterDefinition,
+  type CardDefinition,
   type CharacterId,
   type DamageEventSnapshot,
   type CrystalNodeSnapshot,
@@ -266,6 +267,8 @@ export class GameScene extends Phaser.Scene {
   private perfPopupOpen = false;
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private matchResultShown = false;
+  private cardChoiceItems: Phaser.GameObjects.GameObject[] = [];
+  private cardChoices: CardDefinition[] = [];
   private statusText?: Phaser.GameObjects.Text;
   private topStatsText?: Phaser.GameObjects.Text;
   private pingText?: Phaser.GameObjects.Text;
@@ -399,6 +402,7 @@ export class GameScene extends Phaser.Scene {
       this.hidePerfPopup();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
+      this.hideCardChoices();
       this.backgroundMusic?.pause();
       this.game.events.emit("game:controls-state", { visible: false });
     });
@@ -1707,6 +1711,8 @@ export class GameScene extends Phaser.Scene {
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
       this.room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
       this.room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
+      this.room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
+      this.room.onMessage("card:applied", () => this.hideCardChoices());
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
       this.startPingLoop();
@@ -1982,6 +1988,61 @@ export class GameScene extends Phaser.Scene {
       color: "#f8fafc"
     }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 2);
     button.on("pointerup", () => window.location.reload());
+  }
+
+  private showCardChoices(cards: CardDefinition[]) {
+    this.hideCardChoices();
+    this.cardChoices = cards;
+    const depth = 900;
+    const panel = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, Math.min(370, GAME_WORLD_WIDTH - 20), 520, 0x07111f, 0.97)
+      .setStrokeStyle(2, 0xfacc15).setScrollFactor(0).setDepth(depth);
+    const title = this.add.text(GAME_WORLD_WIDTH / 2, panel.y - 225, "DALGA ÖDÜLÜ • 1 KART SEÇ", {
+      fontFamily: "Arial Black, Arial", fontSize: "19px", color: "#facc15"
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    this.cardChoiceItems.push(panel, title);
+    cards.forEach((card, index) => {
+      const y = panel.y - 145 + index * 116;
+      const box = this.add.rectangle(GAME_WORLD_WIDTH / 2, y, panel.width - 28, 98, 0x172033)
+        .setStrokeStyle(1, 0x64748b).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(depth + 1);
+      const scope = card.scope.kind === "global"
+        ? "Tüm kuleler"
+        : card.scope.kind === "targeted"
+          ? "Bir kule seç"
+          : card.scope.axes?.includes("amplify") ? "Büyütme kuleleri" : "Kontrol kuleleri";
+      const text = this.add.text(box.x - box.width / 2 + 12, y - 36, `${card.name}\n${card.description}\n${scope}`, {
+        fontFamily: "Arial", fontStyle: "bold", fontSize: "15px", color: "#f8fafc", wordWrap: { width: box.width - 24 }
+      }).setScrollFactor(0).setDepth(depth + 2);
+      box.on("pointerup", () => card.scope.kind === "targeted" ? this.showTargetedTowerChoices(card) : this.room?.send("card:choose", { cardId: card.id }));
+      this.cardChoiceItems.push(box, text);
+    });
+  }
+
+  private showTargetedTowerChoices(card: CardDefinition) {
+    this.hideCardChoices();
+    const depth = 900;
+    const towers = (this.latestPerfSnapshot?.towers ?? []).filter((tower) => tower.ownerId === this.localSessionId && !tower.resourceProvider);
+    const panelHeight = Math.min(650, 150 + towers.length * 48);
+    const panel = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, Math.min(370, GAME_WORLD_WIDTH - 20), panelHeight, 0x07111f, 0.97)
+      .setStrokeStyle(2, 0x38bdf8).setScrollFactor(0).setDepth(depth);
+    const title = this.add.text(GAME_WORLD_WIDTH / 2, panel.y - panelHeight / 2 + 36, `${card.name}: kule seç`, {
+      fontFamily: "Arial Black, Arial", fontSize: "18px", color: "#7dd3fc"
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
+    this.cardChoiceItems.push(panel, title);
+    towers.forEach((tower, index) => {
+      const y = panel.y - panelHeight / 2 + 82 + index * 48;
+      const button = this.add.rectangle(GAME_WORLD_WIDTH / 2, y, panel.width - 30, 38, 0x1e293b)
+        .setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(depth + 1);
+      const label = this.add.text(button.x, button.y, `${tower.name} • Sv.${tower.level}`, { fontFamily: "Arial", fontSize: "15px", color: "#f8fafc" })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 2);
+      button.on("pointerup", () => this.room?.send("card:choose", { cardId: card.id, towerId: tower.id }));
+      this.cardChoiceItems.push(button, label);
+    });
+  }
+
+  private hideCardChoices() {
+    this.cardChoiceItems.forEach((item) => item.destroy());
+    this.cardChoiceItems = [];
+    this.cardChoices = [];
   }
 
   private renderSetupPhase(snapshot: GameSnapshot) {
