@@ -212,6 +212,16 @@ test("ortak motor hedefleme ve saldırı profilleri kule davranışlarını koru
   }
 });
 
+test("özel saldırılar kule kimliği yerine ortak executor verisiyle yönlendirilir", () => {
+  const byId = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower.engine]));
+  assert.equal(byId["warrior-5"].attack.executor, "debug-laser");
+  assert.equal(byId["zeynep-2"].attack.executor, "showcase-beam");
+  assert.equal(byId["zeynep-3"].attack.executor, "synthesis");
+  assert.equal(byId["zeynep-6"].attack.executor, "kin-wave");
+  assert.equal(byId["archer-3"].attack.executor, "curse-burst");
+  assert.equal(byId["archer-6"].attack.executor, "whisper-chorus");
+});
+
 test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanımlı", () => {
   const byId = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower.engine]));
   assert.equal(byId["warrior-3"].statusEffects[0].type, "slow");

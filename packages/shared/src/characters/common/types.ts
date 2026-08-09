@@ -62,6 +62,7 @@ export type TowerEngineConfig = {
   targetingByState?: Partial<Record<"approval" | "stress" | "balanced", TowerTargetingMode>>;
   attack: {
     shape: TowerAttackShape;
+    executor?: "ballistic" | "debug-laser" | "showcase-beam" | "synthesis" | "kin-wave" | "curse-burst" | "whisper-chorus";
     width?: number;
     length?: number;
     angle?: number;
@@ -75,7 +76,7 @@ export type TowerEngineConfig = {
   damageTypeByMode?: Record<string, DamageType>;
   levelScaling: TowerLevelScalingDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
-  consumesMarks?: string[];
+  consumesMarks?: Array<string | { id: string; event?: "hit" | "kill"; consumeStacks?: number }>;
   placement?: {
     requiresEdge?: boolean;
     footprintSpan?: number;

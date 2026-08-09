@@ -1831,35 +1831,13 @@ export class MatchRoom extends Room<MatchState> {
 
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
     this.prepareTowerShot(tower, target);
-
-    if (tower.definition.id === "warrior-5") {
-      this.fireDebugLaser(tower, target);
-      return;
-    }
-
-    if (tower.definition.id === "zeynep-2") {
-      this.fireZeynepShowcaseBeam(tower);
-      return;
-    }
-
-    if (tower.definition.id === "zeynep-3") {
-      this.fireZeynepSynthesis(tower, target);
-      return;
-    }
-
-    if (tower.definition.id === "zeynep-6") {
-      this.fireKinWave(tower, target);
-      return;
-    }
-
-    if (tower.definition.id === "archer-3") {
-      this.fireMelisCurse(tower, target);
-      return;
-    }
-
-    if (tower.definition.id === "archer-6") {
-      this.fireMelisWhisperChorus(tower, target);
-      return;
+    switch (tower.definition.engine?.attack.executor ?? "ballistic") {
+      case "debug-laser": this.fireDebugLaser(tower, target); return;
+      case "showcase-beam": this.fireZeynepShowcaseBeam(tower); return;
+      case "synthesis": this.fireZeynepSynthesis(tower, target); return;
+      case "kin-wave": this.fireKinWave(tower, target); return;
+      case "curse-burst": this.fireMelisCurse(tower, target); return;
+      case "whisper-chorus": this.fireMelisWhisperChorus(tower, target); return;
     }
 
     const dx = target.x - tower.x;
@@ -1966,8 +1944,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (wasTracked && killed) {
       this.runTowerTriggers(tower, "kill", { target, conditions: ["targetMarked"], now });
+      this.consumeConfiguredMarks(tower, target, "kill");
       return;
     }
+
+    this.consumeConfiguredMarks(tower, target, "hit");
 
     this.setBeam(tower, target.x, target.y, false);
   }
@@ -2322,10 +2303,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const ratio = this.getKinDistanceRatio(distanceFromTower, range);
     const multiplier = KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio;
-    const definition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "slow");
-    if (definition) {
-      this.applyEnemyStatusEffect(enemy, definition, now, { durationMs: slowMs, scalingFactor: ratio });
-    }
+    this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio });
     const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
     enemy.kinSlowMultiplier = this.clamp(multiplier, KIN_SLOW_FAR_MULTIPLIER, KIN_SLOW_NEAR_MULTIPLIER);
     enemy.kinSlowUntil = now + scaleGameDuration(duration);
@@ -2358,6 +2336,25 @@ export class MatchRoom extends Room<MatchState> {
       enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, state.expiresAt);
     }
     return state;
+  }
+
+  private applyConfiguredTowerStatus(
+    tower: TowerModel,
+    enemy: EnemyModel,
+    type: TowerStatusEffectDefinition["type"],
+    now: number,
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceOwnerId?: string } = {}
+  ) {
+    const definition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === type);
+    if (!definition) return undefined;
+    const modifiers = this.getTowerRunModifiers(tower);
+    return this.applyEnemyStatusEffect(enemy, definition, now, {
+      durationMs: (overrides.durationMs ?? definition.durationMs) * getModifierMultiplier(modifiers, "statusDuration"),
+      magnitude: (overrides.magnitude ?? definition.magnitude) * getModifierMultiplier(modifiers, "statusMagnitude"),
+      scalingFactor: overrides.scalingFactor,
+      sourceTowerId: tower.id,
+      sourceOwnerId: overrides.sourceOwnerId ?? tower.ownerId
+    });
   }
 
   private updateEnemyEngineStatusOutcomes(enemy: EnemyModel, now: number) {
@@ -5090,15 +5087,11 @@ export class MatchRoom extends Room<MatchState> {
 
     if (enemy.hp > 0 && sourceTowerId && !sourceDefinitionId.startsWith("status:")) {
       const sourceTower = this.towers.get(sourceTowerId);
-      const modifiers = sourceTower ? this.getTowerRunModifiers(sourceTower) : [];
-      for (const definition of sourceTower?.definition.engine?.statusEffects ?? []) {
-        if (definition.type === "burn" || definition.type === "chill" || definition.type === "convert") {
-          this.applyEnemyStatusEffect(enemy, definition, now, {
-            durationMs: definition.durationMs * getModifierMultiplier(modifiers, "statusDuration"),
-            magnitude: definition.magnitude * getModifierMultiplier(modifiers, "statusMagnitude"),
-            sourceTowerId,
-            sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
-          });
+      if (sourceTower) {
+        for (const definition of sourceTower.definition.engine?.statusEffects ?? []) {
+          if (definition.type === "burn" || definition.type === "chill" || definition.type === "convert") {
+            this.applyConfiguredTowerStatus(sourceTower, enemy, definition.type, now, { sourceOwnerId: sourceOwnerId || sourceTower.ownerId });
+          }
         }
       }
       if (sourceTower && damagePlayer?.ownedShopItemIds?.includes("termal-funye") && damageType === "fire") {
@@ -5601,10 +5594,7 @@ export class MatchRoom extends Room<MatchState> {
   private applyMelisCurseLoad(enemy: EnemyModel, ownerId: string, towerId: string, evolutionLevel: number, burstDamage: number, expiresAt: number) {
     const now = Date.now();
     const tower = this.towers.get(towerId);
-    const definition = tower?.definition.engine?.statusEffects?.find((effect) => effect.type === "curse");
-    if (definition) {
-      this.applyEnemyStatusEffect(enemy, definition, now, { durationMs: Math.max(0, expiresAt - now) });
-    }
+    if (tower) this.applyConfiguredTowerStatus(tower, enemy, "curse", now, { durationMs: Math.max(0, expiresAt - now) });
     const stackDefinition = tower?.definition.engine?.stacks?.find((stack) => stack.id === "curse-pool");
     const stackState = stackDefinition
       ? this.applyEngineStack(enemy.stackStates, stackDefinition, { trigger: "hit", now, amount: burstDamage })
@@ -5765,10 +5755,7 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisDoubtStacks = Math.min(3, enemy.melisDoubtStacks + 1);
     enemy.melisDoubtUntil = Math.max(enemy.melisDoubtUntil, now + scaleGameDuration(this.getMelisDoubtDurationMs(tower)));
-    const slowDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "slow");
-    if (slowDefinition) {
-      this.applyEnemyStatusEffect(enemy, slowDefinition, now, { durationMs: this.getMelisDoubtDurationMs(tower) });
-    }
+    this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: this.getMelisDoubtDurationMs(tower) });
     const doubtStackDefinition = tower.definition.engine?.stacks?.find((stack) => stack.id === "doubt");
     if (doubtStackDefinition) {
       const state = this.applyEngineStack(enemy.stackStates, doubtStackDefinition, { trigger: "hit", now, maxCount: 3 });
@@ -5783,9 +5770,9 @@ export class MatchRoom extends Room<MatchState> {
     enemy.melisDoubtStacks = 0;
     enemy.melisDoubtUntil = 0;
     delete enemy.stackStates["doubt"];
-    const stunDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "stun");
-    if (stunDefinition) {
-      this.applyEnemyStatusEffect(enemy, stunDefinition, now, { durationMs: this.getMelisDoubtHesitationMs(tower) });
+    const stunState = this.applyConfiguredTowerStatus(tower, enemy, "stun", now, { durationMs: this.getMelisDoubtHesitationMs(tower) });
+    if (stunState) {
+      enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, stunState.expiresAt);
     } else {
       enemy.melisDoubtHesitateUntil = Math.max(enemy.melisDoubtHesitateUntil, now + scaleGameDuration(this.getMelisDoubtHesitationMs(tower)));
     }
@@ -5978,10 +5965,7 @@ export class MatchRoom extends Room<MatchState> {
         break;
       }
       tower.melisUnderworldTargetIds.push(target.id);
-      const bindDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "bind");
-      if (bindDefinition) {
-        this.applyEnemyStatusEffect(target, bindDefinition, now);
-      }
+      this.applyConfiguredTowerStatus(tower, target, "bind", now);
     }
 
     if (tower.melisUnderworldTargetIds.length === 0) {
@@ -6335,10 +6319,7 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
 
-      const fearDefinition = tower.definition.engine?.statusEffects?.find((effect) => effect.type === "fear");
-      if (fearDefinition) {
-        this.applyEnemyStatusEffect(enemy, fearDefinition, now, { durationMs: this.getMelisParlamaFearMs(tower) });
-      }
+      this.applyConfiguredTowerStatus(tower, enemy, "fear", now, { durationMs: this.getMelisParlamaFearMs(tower) });
       break;
     }
 
@@ -7369,6 +7350,7 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
     }
+    this.consumeConfiguredMarks(tower, target, this.enemies.has(target.id) ? "hit" : "kill");
 
     if (tower.definition.id === "warrior-4") {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
@@ -7400,6 +7382,33 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.waveBonusLevel >= 2 && this.enemies.has(target.id)) {
       target.pathDistance = Math.max(0, target.pathDistance - this.scaleWorldDistance(18));
+    }
+  }
+
+  private consumeConfiguredMarks(tower: TowerModel, target: EnemyModel, event: "hit" | "kill") {
+    for (const rawRule of tower.definition.engine?.consumesMarks ?? []) {
+      const rule = typeof rawRule === "string" ? { id: rawRule, event: "hit" as const, consumeStacks: 1 } : rawRule;
+      if ((rule.event ?? "hit") !== event || target.activeMarkId !== rule.id || target.activeMarkUntil <= Date.now()) continue;
+      if (rule.id === "tracking") {
+        let remainingToConsume = Math.max(1, rule.consumeStacks ?? 1);
+        const activeIndexes = target.trackingStackUntil
+          .map((until, index) => ({ until, index }))
+          .filter((entry) => entry.until > Date.now())
+          .sort((left, right) => left.until - right.until);
+        for (const entry of activeIndexes) {
+          if (remainingToConsume <= 0) break;
+          target.trackingStackUntil[entry.index] = 0;
+          remainingToConsume -= 1;
+        }
+        const remaining = target.trackingStackUntil.filter((until) => until > Date.now());
+        target.activeMarkAdd = remaining.length * 0.2;
+        target.activeMarkUntil = remaining.length > 0 ? Math.max(...remaining) : 0;
+        if (remaining.length === 0) target.activeMarkId = "";
+      } else {
+        target.activeMarkId = "";
+        target.activeMarkAdd = 0;
+        target.activeMarkUntil = 0;
+      }
     }
   }
 
