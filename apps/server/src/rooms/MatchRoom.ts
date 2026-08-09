@@ -39,6 +39,8 @@ import {
   getLogisticsWorkerRespawnRemainingMs,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
+  LOGISTICS_WORKER_CAPACITY,
+  RESOURCE_PROVIDER_INITIAL_STOCK,
   canAcceptTargetedCard,
   cardAppliesToTower,
   cardCatalog,
@@ -134,7 +136,6 @@ const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
 const SHOT_AMMO_COST = TOWER_BASE_AMMO_COST;
 const LOGISTICS_WORKER_SPEED = 82;
-const LOGISTICS_WORKER_CAPACITY = 12;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 240;
@@ -3809,15 +3810,15 @@ export class MatchRoom extends Room<MatchState> {
       maxHp: towerHealth,
       armor: TOWER_BASE_ARMOR,
       ammoType: inferTowerAmmoType(definition),
-      ammo: definition.resourceProvider === "ammunition" ? 40 : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      ammo: definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_AMMO,
       maxAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
-      energy: definition.resourceProvider === "ammunition" ? 20 : definition.resourceProvider ? 0 : TOWER_BASE_ENERGY,
+      energy: definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_ENERGY,
       maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
       ammoLogisticsEnabled: true,
       temperature: 0,
       performance: 0.5,
       heatLocked: false,
-      rawAmmo: 0,
+      rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
       maxRawAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : 0,
       level: 1,
       cooldownMs: 150,

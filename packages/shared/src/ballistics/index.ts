@@ -1,7 +1,9 @@
 import type { HitType } from "../combat.js";
 
 export const LINEAR_BALLISTIC_HIT_TYPES: ReadonlySet<HitType> = new Set(["impact", "wave", "projectile"]);
-export const LINEAR_BALLISTIC_SPEED_MULTIPLIER = 0.5;
+// Previous balance pass already halved these shots; the current pass reduces
+// that live speed to two thirds (1/2 * 2/3 = 1/3 of the original definition).
+export const LINEAR_BALLISTIC_SPEED_MULTIPLIER = 1 / 3;
 
 export type BallisticCollisionBody = { id: string; x: number; y: number; radius: number };
 
