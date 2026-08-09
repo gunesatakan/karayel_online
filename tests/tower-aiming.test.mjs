@@ -9,12 +9,13 @@ import {
   shortestAngleDelta
 } from "../packages/shared/dist/index.js";
 
-test("kule dönüş hızı önceki 18 rad/sn değerinin yarısıdır", () => {
-  assert.equal(TOWER_TURN_RATE_RADIANS_PER_SECOND, 9);
+test("kule dönüş hızı yaklaşık 115 derece/sn değerindedir", () => {
+  assert.equal(TOWER_TURN_RATE_RADIANS_PER_SECOND, 2);
+  assert.ok(Math.abs(TOWER_TURN_RATE_RADIANS_PER_SECOND * 180 / Math.PI - 114.591559) < 0.000001);
 });
 
 test("kule hedefe doğru sınırlı adımla döner ve hedefi geçmez", () => {
-  assert.equal(rotateTowerTowards(0, Math.PI, 1 / 18), 0.5);
+  assert.equal(rotateTowerTowards(0, Math.PI, 0.25), 0.5);
   assert.ok(Math.abs(shortestAngleDelta(rotateTowerTowards(0, 0.2, 1), 0.2)) < 1e-9);
 });
 
