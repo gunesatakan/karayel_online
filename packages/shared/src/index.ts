@@ -354,7 +354,7 @@ export {
   rotateTowerTowards,
   isTowerAligned
 } from "./aiming/index.js";
-export { LINEAR_BALLISTIC_HIT_TYPES, usesLinearBallistics, findFirstLinearCollision } from "./ballistics/index.js";
+export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, getBallisticMovementSpeed, usesLinearBallistics, findFirstLinearCollision } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {
   FINAL_WAVE,

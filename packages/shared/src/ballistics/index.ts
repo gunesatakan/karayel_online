@@ -1,11 +1,16 @@
 import type { HitType } from "../combat.js";
 
 export const LINEAR_BALLISTIC_HIT_TYPES: ReadonlySet<HitType> = new Set(["impact", "wave", "projectile"]);
+export const LINEAR_BALLISTIC_SPEED_MULTIPLIER = 0.5;
 
 export type BallisticCollisionBody = { id: string; x: number; y: number; radius: number };
 
 export function usesLinearBallistics(hitType: HitType) {
   return LINEAR_BALLISTIC_HIT_TYPES.has(hitType);
+}
+
+export function getBallisticMovementSpeed(speed: number, hitType: HitType) {
+  return usesLinearBallistics(hitType) ? speed * LINEAR_BALLISTIC_SPEED_MULTIPLIER : speed;
 }
 
 export function findFirstLinearCollision<T extends BallisticCollisionBody>(

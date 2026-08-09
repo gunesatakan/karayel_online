@@ -53,6 +53,7 @@ import {
   calculateDamageTaken,
   findPathToNearestNexus,
   findFirstLinearCollision,
+  getBallisticMovementSpeed,
   getMapMetrics,
   getMapOrigin,
   getMapScale,
@@ -1768,7 +1769,11 @@ export class MatchRoom extends Room<MatchState> {
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
     const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
-    const speed = this.scaleWorldSpeed((tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower));
+    const hitType = tower.definition.hitType ?? "projectile";
+    const speed = this.scaleWorldSpeed(getBallisticMovementSpeed(
+      (tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower),
+      hitType
+    ));
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -1777,13 +1782,13 @@ export class MatchRoom extends Room<MatchState> {
       definitionId: tower.definition.id,
       kind: "tower",
       damageType: tower.definition.damageType ?? "physical",
-      hitType: tower.definition.hitType ?? "projectile",
+      hitType,
       source: "tower",
       targetId: target.id,
       x: tower.x,
       y: tower.y,
-      vx: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.cos(launchAngle) * speed : (dx / length) * speed,
-      vy: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.sin(launchAngle) * speed : (dy / length) * speed,
+      vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * speed : (dx / length) * speed,
+      vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * speed : (dy / length) * speed,
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: this.scaleWorldDistance(getTowerAttackRadius(tower.definition) + (tower.level - 1) * 5),
@@ -1799,7 +1804,8 @@ export class MatchRoom extends Room<MatchState> {
     const dy = target.y - sourceTower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
     const launchAngle = towerAims(sourceTower.definition.id) ? sourceTower.facing : Math.atan2(dy, dx);
-    const scaledSpeed = this.scaleWorldSpeed(speed);
+    const hitType = sourceTower.definition.hitType ?? "impact";
+    const scaledSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType));
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -1808,13 +1814,13 @@ export class MatchRoom extends Room<MatchState> {
       definitionId,
       kind: "tower",
       damageType: sourceTower.definition.damageType ?? "electric",
-      hitType: sourceTower.definition.hitType ?? "impact",
+      hitType,
       source: "tower",
       targetId: target.id,
       x: sourceTower.x,
       y: sourceTower.y,
-      vx: usesLinearBallistics(sourceTower.definition.hitType ?? "impact") ? Math.cos(launchAngle) * scaledSpeed : (dx / length) * scaledSpeed,
-      vy: usesLinearBallistics(sourceTower.definition.hitType ?? "impact") ? Math.sin(launchAngle) * scaledSpeed : (dy / length) * scaledSpeed,
+      vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * scaledSpeed : (dx / length) * scaledSpeed,
+      vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * scaledSpeed : (dy / length) * scaledSpeed,
       damage,
       maxHealthDamageRatio: 0,
       aoeRadius: this.scaleWorldDistance(aoeRadius),
@@ -2120,7 +2126,7 @@ export class MatchRoom extends Room<MatchState> {
       halfAngle: (options.angleRadians ?? KIN_WAVE_ANGLE_RADIANS) / 2,
       distance: 0,
       range: baseRange * rangeMultiplier,
-      speed: this.scaleWorldSpeed(KIN_WAVE_SPEED + tower.level * 4),
+      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave")),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
       slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80,
       pushbackDistance: options.pushbackDistance ?? 0,
@@ -2535,7 +2541,7 @@ export class MatchRoom extends Room<MatchState> {
       distanceOnSegment: initialDistance,
       x: initialHead.x,
       y: initialHead.y,
-      speed: this.scaleWorldSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED),
+      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED, "impact")),
       damage: this.getTowerDamage(tower),
       abartiLevel,
       hitEnemyIds: []
@@ -2646,7 +2652,8 @@ export class MatchRoom extends Room<MatchState> {
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
     const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
-    const projectileSpeed = this.scaleWorldSpeed(speed);
+    const hitType = tower.definition.hitType ?? "projectile";
+    const projectileSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType));
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -2655,13 +2662,13 @@ export class MatchRoom extends Room<MatchState> {
       definitionId,
       kind: "tower",
       damageType,
-      hitType: tower.definition.hitType ?? "projectile",
+      hitType,
       source: "tower",
       targetId: target.id,
       x: tower.x,
       y: tower.y,
-      vx: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.cos(launchAngle) * projectileSpeed : (dx / length) * projectileSpeed,
-      vy: usesLinearBallistics(tower.definition.hitType ?? "projectile") ? Math.sin(launchAngle) * projectileSpeed : (dy / length) * projectileSpeed,
+      vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * projectileSpeed : (dx / length) * projectileSpeed,
+      vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * projectileSpeed : (dy / length) * projectileSpeed,
       damage,
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
       aoeRadius: 0,

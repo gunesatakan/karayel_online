@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findFirstLinearCollision, usesLinearBallistics } from "../packages/shared/dist/index.js";
+import { findFirstLinearCollision, getBallisticMovementSpeed, usesLinearBallistics } from "../packages/shared/dist/index.js";
+
+test("impact, wave ve projectile hareket hızları yarıya iner", () => {
+  assert.equal(getBallisticMovementSpeed(340, "projectile"), 170);
+  assert.equal(getBallisticMovementSpeed(360, "wave"), 180);
+  assert.equal(getBallisticMovementSpeed(520, "impact"), 260);
+  assert.equal(getBallisticMovementSpeed(340, "focus"), 340);
+});
 
 test("impact wave ve projectile doğrusal balistik kullanır", () => {
   assert.equal(usesLinearBallistics("impact"), true);
