@@ -1,5 +1,5 @@
 import type { EditableMapData, MapScale } from "./map.js";
-import type { EnemyRace, MovementKind } from "./combat.js";
+import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -157,6 +157,7 @@ export type ProjectileSnapshot = {
   kind: ProjectileKind;
   source: "tower" | "enemy";
   definitionId?: string;
+  hitType?: HitType;
   x: number;
   y: number;
   vx?: number;

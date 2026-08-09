@@ -12,6 +12,7 @@ import {
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
   getMapPoints,
+  getBallisticCollisionRadius,
   getTowerGridSpan,
   getTowerBuildCost,
   getTowerSellRefund,
@@ -2972,7 +2973,12 @@ export class GameScene extends Phaser.Scene {
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
-      sprite.setScale(this.getTowerEffectScale());
+      if (projectile.hitType === "projectile" || projectile.hitType === "impact") {
+        const diameter = getBallisticCollisionRadius(projectile.hitType) * 2;
+        sprite.setDisplaySize(diameter, diameter);
+      } else {
+        sprite.setScale(this.getTowerEffectScale());
+      }
       if (typeof projectile.vx === "number" && typeof projectile.vy === "number" && Math.abs(projectile.vx) + Math.abs(projectile.vy) > 0.01) {
         sprite.setRotation(Math.atan2(projectile.vy, projectile.vx));
       }

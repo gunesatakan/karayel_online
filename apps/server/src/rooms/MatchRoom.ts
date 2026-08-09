@@ -6286,6 +6286,7 @@ export class MatchRoom extends Room<MatchState> {
         kind: projectile.kind,
         source: projectile.source,
         definitionId: projectile.definitionId,
+        hitType: projectile.hitType,
         x: projectile.x,
         y: projectile.y,
         vx: projectile.vx,
