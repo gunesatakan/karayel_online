@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   FINAL_WAVE,
+  ENEMY_REWARD_MULTIPLIER,
   calculateTowerScaledBaseDamage,
   cardCatalog,
   drawCards,
@@ -19,7 +20,6 @@ import {
 
 const START_GOLD = 360;
 const BASE_TOWER_CAPACITY = 10;
-const ENEMY_REWARD_MULTIPLIER = 0.55;
 const enemyTypes = ["grunt", "grunt", "runner", "shooter", "brute"];
 
 export const botStrategies = {
