@@ -1596,10 +1596,6 @@ export class GameScene extends Phaser.Scene {
     if (this.draggedTowerDefinition || performance.now() < this.ignoreMapPointerUntil) {
       return;
     }
-    if (this.arenaZoomed) {
-      this.handleArenaZoomTap(pointer);
-      return;
-    }
     if (!this.isBattlePointer(pointer)) {
       return;
     }
@@ -2155,7 +2151,9 @@ export class GameScene extends Phaser.Scene {
     this.lastArenaTapY = pointer.y;
     if (this.arenaZoomed) {
       if (!isDoubleTap) {
-        return true;
+        // Yakınlaştırılmış haritadaki normal dokunuş seçim/yerleştirme akışına
+        // devam etmeli. Yalnız çift dokunuş zoom-out tarafından tüketilir.
+        return false;
       }
       this.resetArenaZoom();
       this.lastArenaTapAt = 0;
