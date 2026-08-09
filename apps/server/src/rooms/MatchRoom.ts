@@ -51,6 +51,8 @@ import {
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_CAPACITY,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
+  AMMO_LOGISTICS_WORKER_CAPACITY,
+  AMMO_COLLECTOR_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
   canAcceptTargetedCard,
@@ -3629,9 +3631,13 @@ export class MatchRoom extends Room<MatchState> {
           ttlMs: Number.POSITIVE_INFINITY,
           logisticsPhase: "pickup",
           cargo: 0,
-          capacity: mode === "crystalCollector" || mode === "energyTransport"
-            ? ENERGY_LOGISTICS_WORKER_CAPACITY
-            : LOGISTICS_WORKER_CAPACITY,
+          capacity: mode === "ammoTransport"
+            ? AMMO_LOGISTICS_WORKER_CAPACITY
+            : mode === "ammoCollector"
+              ? AMMO_COLLECTOR_WORKER_CAPACITY
+            : mode === "crystalCollector" || mode === "energyTransport"
+              ? ENERGY_LOGISTICS_WORKER_CAPACITY
+              : LOGISTICS_WORKER_CAPACITY,
           speed: LOGISTICS_WORKER_SPEED
         });
       }
@@ -3868,7 +3874,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       const energyTargets = Array.from(this.towers.values())
         .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy);
-      const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * LOGISTICS_WORKER_CAPACITY;
+      const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * AMMO_LOGISTICS_WORKER_CAPACITY;
       const underpoweredAmmoFactory = energyTargets.find((tower) => (
         tower.definition.resourceProvider === "ammunition" && tower.energy < factoryMinimumEnergy
       ));
