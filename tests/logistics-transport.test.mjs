@@ -80,7 +80,9 @@ test("tasiyicilar kaynak gelince bekledikleri binadan yukleme yapar", () => {
     ammoLogisticsEnabled: true,
     ammoType: "bullet"
   };
-  room.towers = new Map([[reactor.id, reactor], [factory.id, factory], [target.id, target]]);
+  // Savas kulesi fabrikadan once eklenmis olsa bile, sifir enerjili fabrika
+  // ilk uretim partisini baslatabilmek icin enerji onceligi almali.
+  room.towers = new Map([[reactor.id, reactor], [target.id, target], [factory.id, factory]]);
   const energyTransport = worker("energyTransport", reactor.x, reactor.y);
   const ammoTransport = worker("ammoTransport", factory.x, factory.y);
   reactor.energy = 2;
@@ -88,9 +90,11 @@ test("tasiyicilar kaynak gelince bekledikleri binadan yukleme yapar", () => {
 
   room.updateLogisticsWorker(energyTransport, 0.1);
   room.updateLogisticsWorker(ammoTransport, 0.1);
+  room.updateLogisticsWorker(energyTransport, 0.1);
 
   assert.equal(energyTransport.cargo, 2);
   assert.equal(energyTransport.logisticsPhase, "deliver");
+  assert.equal(energyTransport.targetTowerId, factory.id);
   assert.equal(ammoTransport.cargo, 2);
   assert.equal(ammoTransport.logisticsPhase, "deliver");
   assert.equal(ammoTransport.targetTowerId, target.id);

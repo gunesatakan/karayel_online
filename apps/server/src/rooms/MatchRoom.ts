@@ -3561,9 +3561,15 @@ export class MatchRoom extends Room<MatchState> {
         }
         return;
       }
-      const target = (worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined) ?? Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy)
-        .sort((left, right) => left.energy / Math.max(1, left.maxEnergy) - right.energy / Math.max(1, right.maxEnergy))[0];
+      const energyTargets = Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy);
+      const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * LOGISTICS_WORKER_CAPACITY;
+      const underpoweredAmmoFactory = energyTargets.find((tower) => (
+        tower.definition.resourceProvider === "ammunition" && tower.energy < factoryMinimumEnergy
+      ));
+      const target = (worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined)
+        ?? underpoweredAmmoFactory
+        ?? energyTargets.sort((left, right) => left.energy / Math.max(1, left.maxEnergy) - right.energy / Math.max(1, right.maxEnergy))[0];
       if (!target) {
         worker.logisticsPhase = "pickup";
         return;
