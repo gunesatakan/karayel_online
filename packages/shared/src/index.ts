@@ -418,6 +418,7 @@ export {
   ENEMY_HP_BALANCE_MULTIPLIER,
   ENEMY_REWARD_MULTIPLIER,
   getWaveEnemyCount,
+  getArenaWaveEnemyCount,
   getWaveHpMultiplier,
   getWaveEnemyMaxHp,
   getWaveCompletionGold

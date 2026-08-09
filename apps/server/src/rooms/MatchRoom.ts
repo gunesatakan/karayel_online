@@ -66,6 +66,7 @@ import {
   ENEMY_REWARD_MULTIPLIER,
   getWaveCompletionGold,
   getWaveEnemyCount,
+  getArenaWaveEnemyCount,
   getWaveEnemyMaxHp,
   getWaveHpMultiplier,
   calculateDamageTaken,
@@ -1241,7 +1242,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getScaledWaveEnemyCount(wave: number) {
-    return Math.round(getWaveEnemyCount(wave) * (1 + Math.max(0, this.state.players.size - 1) * 0.35));
+    return getArenaWaveEnemyCount(wave, this.mapScale, this.state.players.size);
   }
 
   private awardGoldToPlayers(amount: number) {

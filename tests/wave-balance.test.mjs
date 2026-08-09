@@ -8,6 +8,7 @@ import {
   getEnemyCombatDefinition,
   getWaveCompletionGold,
   getWaveEnemyCount,
+  getArenaWaveEnemyCount,
   getWaveEnemyMaxHp,
   getWaveHpMultiplier
 } from "../packages/shared/dist/index.js";
@@ -21,6 +22,14 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
   const gruntHp = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, 20);
   assert.equal(gruntHp, 2213);
   assert.equal(gruntHp * getWaveEnemyCount(20), 161_549);
+});
+
+test("düşman sayısı harita ölçeği ve oyuncu sayısıyla çarpılır", () => {
+  assert.equal(getArenaWaveEnemyCount(1, 1, 1), 10);
+  assert.equal(getArenaWaveEnemyCount(1, 2, 1), 20);
+  assert.equal(getArenaWaveEnemyCount(1, 3, 1), 30);
+  assert.equal(getArenaWaveEnemyCount(1, 4, 1), 40);
+  assert.equal(getArenaWaveEnemyCount(1, 4, 4), 82);
 });
 
 test("dalga ekonomisini ve rejenerasyon ölçeklemesini sabitler", () => {

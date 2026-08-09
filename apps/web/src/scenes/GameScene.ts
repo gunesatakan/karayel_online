@@ -3057,6 +3057,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
+    const mapEntityScale = this.getMapCellSize() / TOWER_GRID_SIZE;
     for (const drone of drones) {
       const texture = drone.mode === "repair" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
@@ -3078,7 +3079,7 @@ export class GameScene extends Phaser.Scene {
       }
       sprite.setPosition(drone.x, drone.y);
       const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
-      sprite.setScale(isLogisticsWorker ? 0.69 * pulse : drone.mode === "attack" ? 1.55 * pulse : 1.38 * pulse);
+      sprite.setScale((isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38) * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
@@ -3244,13 +3245,14 @@ export class GameScene extends Phaser.Scene {
     this.crystalGraphics = graphics;
     graphics.clear();
     const pulse = 1 + Math.sin(Date.now() / 260) * 0.12;
+    const scale = this.getMapCellSize() / TOWER_GRID_SIZE;
     for (const node of nodes) {
       graphics.fillStyle(0x7c3aed, 0.24);
-      graphics.fillCircle(node.x, node.y, 15 * pulse);
-      graphics.lineStyle(2, 0xc4b5fd, 0.9);
-      graphics.strokeCircle(node.x, node.y, 9 * pulse);
+      graphics.fillCircle(node.x, node.y, 15 * scale * pulse);
+      graphics.lineStyle(Math.max(1, 2 * scale), 0xc4b5fd, 0.9);
+      graphics.strokeCircle(node.x, node.y, 9 * scale * pulse);
       graphics.fillStyle(0xe9d5ff, 0.95);
-      graphics.fillTriangle(node.x, node.y - 9, node.x + 7, node.y + 7, node.x - 7, node.y + 7);
+      graphics.fillTriangle(node.x, node.y - 9 * scale, node.x + 7 * scale, node.y + 7 * scale, node.x - 7 * scale, node.y + 7 * scale);
     }
   }
 
@@ -3259,15 +3261,16 @@ export class GameScene extends Phaser.Scene {
     this.ammoNodeGraphics = graphics;
     graphics.clear();
     const pulse = 1 + Math.sin(Date.now() / 310) * 0.1;
+    const scale = this.getMapCellSize() / TOWER_GRID_SIZE;
     for (const node of nodes) {
       graphics.fillStyle(0x365314, 0.3);
-      graphics.fillCircle(node.x, node.y, 14 * pulse);
-      graphics.lineStyle(2, 0xa3e635, 0.9);
-      graphics.strokeCircle(node.x, node.y, 8 * pulse);
+      graphics.fillCircle(node.x, node.y, 14 * scale * pulse);
+      graphics.lineStyle(Math.max(1, 2 * scale), 0xa3e635, 0.9);
+      graphics.strokeCircle(node.x, node.y, 8 * scale * pulse);
       graphics.fillStyle(0xd9f99d, 0.96);
-      graphics.fillRect(node.x - 6, node.y - 5, 12, 10);
-      graphics.lineStyle(1, 0x3f6212, 0.9);
-      graphics.lineBetween(node.x - 4, node.y, node.x + 4, node.y);
+      graphics.fillRect(node.x - 6 * scale, node.y - 5 * scale, 12 * scale, 10 * scale);
+      graphics.lineStyle(Math.max(1, scale), 0x3f6212, 0.9);
+      graphics.lineBetween(node.x - 4 * scale, node.y, node.x + 4 * scale, node.y);
     }
   }
 

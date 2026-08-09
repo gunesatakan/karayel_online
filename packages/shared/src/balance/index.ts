@@ -9,6 +9,12 @@ export function getWaveEnemyCount(wave: number) {
   return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
 }
 
+export function getArenaWaveEnemyCount(wave: number, mapScale: number, playerCount: number) {
+  const safeMapScale = Math.max(1, Math.min(4, Math.round(mapScale)));
+  const multiplayerMultiplier = 1 + Math.max(0, Math.round(playerCount) - 1) * 0.35;
+  return Math.max(1, Math.round(getWaveEnemyCount(wave) * safeMapScale * multiplayerMultiplier));
+}
+
 export function getWaveHpMultiplier(wave: number) {
   return ENEMY_HP_WAVE_MULTIPLIER ** Math.max(0, wave - 1);
 }
