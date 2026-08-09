@@ -852,7 +852,7 @@ export class GameScene extends Phaser.Scene {
     const previewSize = (this.getMapCellSize() * getTowerGridSpan(tower.id)) / TOWER_ART_DISC_RATIO;
     const ghostWidth = tower.id === "zeynep-8" ? (this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     const ghostHeight = tower.id === "zeynep-8" ? (this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
-    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, `tower-${tower.id}`)
+    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, this.getTowerTextureKey(tower.id, 1))
       .setDisplaySize(ghostWidth, ghostHeight)
       .setAlpha(0.78)
       .setDepth(28);
@@ -2489,7 +2489,7 @@ export class GameScene extends Phaser.Scene {
           .setVisible(false)
           .setDepth(6);
         const healthBar = this.add.graphics().setDepth(16);
-        const base = this.add.image(tower.x, tower.y, `tower-${tower.definitionId}`)
+        const base = this.add.image(tower.x, tower.y, this.getTowerTextureKey(tower.definitionId, tower.level))
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
@@ -2503,7 +2503,7 @@ export class GameScene extends Phaser.Scene {
       const discSize = cellSize * getTowerGridSpan(tower.definitionId);
       const spriteSize = discSize / TOWER_ART_DISC_RATIO;
 
-      const texture = `tower-${tower.definitionId}`;
+      const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
@@ -2587,6 +2587,16 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     rendered.base.setRotation(tower.facing);
+  }
+
+  private getTowerTextureKey(definitionId: string, level: number) {
+    if (definitionId !== "warrior-1") {
+      return `tower-${definitionId}`;
+    }
+    if (level >= 10) {
+      return "tower-warrior-1-level-10";
+    }
+    return level >= 5 ? "tower-warrior-1-levels-5-9" : "tower-warrior-1-levels-1-4";
   }
 
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {

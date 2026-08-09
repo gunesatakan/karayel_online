@@ -35,6 +35,9 @@ export class PreloaderScene extends Phaser.Scene {
     this.load.image("enemy-brute", "/images/enemies/enemy-brute.png");
     this.load.image("enemy-runner", "/images/enemies/enemy-runner.png");
     this.load.image("enemy-shooter", "/images/enemies/enemy-shooter.png");
+    this.load.image("tower-warrior-1-levels-1-4", "/images/towers/tower-warrior-1-levels-1-4.png");
+    this.load.image("tower-warrior-1-levels-5-9", "/images/towers/tower-warrior-1-levels-5-9.png");
+    this.load.image("tower-warrior-1-level-10", "/images/towers/tower-warrior-1-level-10.png");
     for (const race of ENEMY_RACE_TEXTURES) {
       for (const type of ENEMY_TYPE_TEXTURES) {
         this.load.image(`enemy-${race}-${type}`, `/images/enemies/enemy-${race}-${type}.png`);
