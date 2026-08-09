@@ -1,4 +1,4 @@
-export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 36;
+export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 18;
 export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 36;
 
 export function shortestAngleDelta(from: number, to: number) {
