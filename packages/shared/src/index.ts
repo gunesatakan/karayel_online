@@ -352,6 +352,7 @@ export {
   TOWER_TURN_RATE_RADIANS_PER_SECOND,
   TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS,
   getTowerFireAlignmentTolerance,
+  shouldRetainAimTargetLock,
   shortestAngleDelta,
   rotateTowerTowards,
   isTowerAligned

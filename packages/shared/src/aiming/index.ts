@@ -5,6 +5,15 @@ export function getTowerFireAlignmentTolerance(accuracyBonus = 0) {
   return TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS * (1 - Math.max(0, Math.min(1, accuracyBonus)));
 }
 
+export function shouldRetainAimTargetLock(options: {
+  now: number;
+  lockUntil: number;
+  hasFired: boolean;
+  targetIsValid: boolean;
+}) {
+  return options.targetIsValid && (!options.hasFired || options.now < options.lockUntil);
+}
+
 export function shortestAngleDelta(from: number, to: number) {
   return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 }

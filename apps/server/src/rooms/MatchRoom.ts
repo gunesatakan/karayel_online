@@ -72,6 +72,7 @@ import {
   inferTowerAmmoType,
   isTowerAligned,
   getTowerFireAlignmentTolerance,
+  shouldRetainAimTargetLock,
   usesLinearBallistics,
   rotateTowerTowards,
   getTowerSellRefund,
@@ -144,6 +145,7 @@ const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
+const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
@@ -458,6 +460,9 @@ type TowerModel = {
   level: number;
   cooldownMs: number;
   focusTargetId: string;
+  aimTargetId: string;
+  aimTargetLockUntil: number;
+  aimTargetHasFired: boolean;
   focusStacks: number;
   stackStates: Record<string, TowerStackRuntimeState>;
   triggerCooldowns: Record<string, number>;
@@ -1719,6 +1724,9 @@ export class MatchRoom extends Room<MatchState> {
 
       this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
+      if (tower.definition.hitType === "focus" && tower.aimTargetId === target.id) {
+        tower.aimTargetHasFired = true;
+      }
       tower.cooldownMs = this.getTowerFireInterval(tower);
     }
 
@@ -3827,6 +3835,9 @@ export class MatchRoom extends Room<MatchState> {
       level: 1,
       cooldownMs: 150,
       focusTargetId: "",
+      aimTargetId: "",
+      aimTargetLockUntil: 0,
+      aimTargetHasFired: false,
       focusStacks: 0,
       stackStates: {},
       triggerCooldowns: {},
@@ -4613,6 +4624,28 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
+    if (tower.definition.hitType === "focus" && tower.aimTargetId) {
+      const lockedTarget = this.enemies.get(tower.aimTargetId);
+      const targetIsValid = Boolean(
+        lockedTarget &&
+        this.canTowerTargetEnemy(tower, lockedTarget) &&
+        distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) ** 2
+      );
+      if (shouldRetainAimTargetLock({
+        now,
+        lockUntil: tower.aimTargetLockUntil,
+        hasFired: tower.aimTargetHasFired,
+        targetIsValid
+      })) {
+        return lockedTarget;
+      }
+      if (!targetIsValid) {
+        tower.aimTargetId = "";
+        tower.aimTargetLockUntil = 0;
+        tower.aimTargetHasFired = false;
+      }
+    }
+
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
     if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
@@ -4662,6 +4695,11 @@ export class MatchRoom extends Room<MatchState> {
     });
     if (!selected && tower.definition.engine?.locksTarget) {
       tower.focusTargetId = "";
+    }
+    if (tower.definition.hitType === "focus" && selected && selected.id !== tower.aimTargetId) {
+      tower.aimTargetId = selected.id;
+      tower.aimTargetLockUntil = now + FOCUS_AIM_TARGET_LOCK_MS;
+      tower.aimTargetHasFired = false;
     }
     return selected;
   }
