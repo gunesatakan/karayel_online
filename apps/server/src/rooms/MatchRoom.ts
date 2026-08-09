@@ -976,7 +976,6 @@ export class MatchRoom extends Room<MatchState> {
       player.ready = true;
       this.configureArenaForScale();
       this.gameStarted = true;
-      this.openSetupShops();
       client.send("match:map", this.activeMap);
       this.syncRoomRegistry();
       return;
@@ -1130,7 +1129,6 @@ export class MatchRoom extends Room<MatchState> {
 
     this.configureArenaForScale();
     this.gameStarted = true;
-    this.openSetupShops();
     this.setupPhase = true;
     this.setupReadyPlayerIds.clear();
     this.syncRoomRegistry();
@@ -1379,8 +1377,8 @@ export class MatchRoom extends Room<MatchState> {
       }
       this.setupPhase = true;
       this.setupReadyPlayerIds.clear();
+      for (const player of this.state.players.values()) player.shopOffers = [];
       this.offerWaveCards();
-      this.openSetupShops();
       return;
     }
 
@@ -1430,7 +1428,10 @@ export class MatchRoom extends Room<MatchState> {
     for (const [playerId, player] of this.state.players.entries()) {
       const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
       const choices = drawCards({ preferredAxes: getCharacterCardAxes(player.characterId), towers, ownedCardIds: player.ownedCardIds });
-      if (choices.length === 0) continue;
+      if (choices.length === 0) {
+        this.openPlayerSetupShop(playerId, player);
+        continue;
+      }
       this.pendingCardChoices.set(playerId, choices);
       this.clients.find((client) => client.sessionId === playerId)?.send("card:choices", choices);
     }
@@ -1462,6 +1463,7 @@ export class MatchRoom extends Room<MatchState> {
     player.ownedCardIds.push(card.id);
     this.pendingCardChoices.delete(client.sessionId);
     client.send("card:applied", { cardId: card.id });
+    this.openPlayerSetupShop(client.sessionId, player);
   }
 
   private tryFinishSetupPhase() {
@@ -3503,11 +3505,9 @@ export class MatchRoom extends Room<MatchState> {
     return Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
   }
 
-  private openSetupShops() {
-    for (const [playerId, player] of this.state.players.entries()) {
-      player.shopRerolls = 0;
-      player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds });
-    }
+  private openPlayerSetupShop(playerId: string, player: Player) {
+    player.shopRerolls = 0;
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds });
   }
 
   private rerollShop(client: Client) {

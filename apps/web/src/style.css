@@ -199,33 +199,40 @@ canvas {
 .gold-shop {
   position: absolute;
   z-index: 42;
-  inset: max(8px, env(safe-area-inset-top)) 8px auto;
+  top: 16%;
+  left: 5%;
+  right: 5%;
   display: grid;
-  gap: 7px;
-  padding: 10px;
+  gap: 12px;
+  min-height: 48%;
+  padding: 18px;
   border: 1px solid rgba(245, 197, 66, .38);
   border-radius: 14px;
   background: linear-gradient(145deg, rgba(8, 13, 28, .96), rgba(25, 15, 38, .94));
-  box-shadow: 0 12px 36px rgba(0, 0, 0, .48), inset 0 1px rgba(255, 255, 255, .06);
+  box-shadow: 0 0 0 100vmax rgba(1, 4, 15, .76), 0 22px 60px rgba(0, 0, 0, .72), inset 0 1px rgba(255, 255, 255, .06);
   pointer-events: auto;
 }
 
-.gold-shop header { display: flex; justify-content: space-between; color: #f8d86b; font: 800 11px/1.2 var(--mono); letter-spacing: .12em; }
+.gold-shop header { display: flex; justify-content: space-between; color: #f8d86b; font: 800 16px/1.2 var(--mono); letter-spacing: .12em; }
+.gold-shop > p { margin: 0; color: #aab7cc; font-size: 12px; }
 .gold-shop__offers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-.gold-shop__item { position: relative; min-width: 0; min-height: 86px; padding: 7px; border: 1px solid rgba(148, 163, 184, .25); border-radius: 9px; color: #eaf2ff; background: rgba(15, 23, 42, .84); text-align: left; }
-.gold-shop__item > span { display: block; color: #7dd3fc; font-size: 7px; text-transform: uppercase; }
-.gold-shop__item > strong { display: block; margin: 3px 0; font-size: 10px; }
-.gold-shop__item > small { display: block; color: #aab7cc; font-size: 8px; line-height: 1.25; }
-.gold-shop__item > b { position: absolute; right: 6px; bottom: 5px; color: #facc15; font-size: 10px; }
+.gold-shop__item { position: relative; min-width: 0; min-height: 150px; padding: 11px; border: 1px solid rgba(148, 163, 184, .25); border-radius: 12px; color: #eaf2ff; background: rgba(15, 23, 42, .84); text-align: left; }
+.gold-shop__item > span { display: block; color: #7dd3fc; font-size: 9px; text-transform: uppercase; }
+.gold-shop__item > strong { display: block; margin: 8px 0; font-size: 14px; }
+.gold-shop__item > small { display: block; color: #aab7cc; font-size: 11px; line-height: 1.4; }
+.gold-shop__item > b { position: absolute; right: 10px; bottom: 9px; color: #facc15; font-size: 14px; }
 .gold-shop__item--risk { border-color: rgba(248, 113, 113, .52); }
 .gold-shop__item--class { border-color: rgba(167, 139, 250, .45); }
 .gold-shop__item:disabled { opacity: .42; }
 .gold-shop__reroll { min-height: 28px !important; color: #fde68a !important; background: rgba(113, 63, 18, .45) !important; }
+.gold-shop__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gold-shop__close { min-height: 34px !important; color: #dbeafe !important; background: rgba(30, 64, 175, .35) !important; }
 .game-controls__targeting { width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid rgba(125, 211, 252, .35); border-radius: 7px; color: #e0f2fe; background: #111827; }
 
 @media (max-width: 520px) {
-  .gold-shop__offers { grid-template-columns: repeat(5, minmax(74px, 1fr)); overflow-x: auto; padding-bottom: 3px; }
-  .gold-shop__item { min-height: 92px; }
+  .gold-shop { top: 14%; left: 3%; right: 3%; min-height: 54%; padding: 14px; }
+  .gold-shop__offers { grid-template-columns: repeat(5, minmax(126px, 1fr)); overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+  .gold-shop__item { min-height: 168px; scroll-snap-align: start; }
 }
 
 .game-controls__panel {

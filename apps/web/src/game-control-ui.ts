@@ -111,7 +111,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.goldShop) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop";
-      drawer.innerHTML = `<header><span>ALTIN MAĞAZASI</span><strong>${state.goldShop.gold}g</strong></header><div class="gold-shop__offers"></div>`;
+      drawer.innerHTML = `<header><span>ALTIN MAĞAZASI</span><strong>${state.goldShop.gold}g</strong></header><p>Kurulumunu genişletmek için bir geliştirme seç.</p><div class="gold-shop__offers"></div>`;
       const offers = drawer.querySelector<HTMLElement>(".gold-shop__offers");
       for (const item of state.goldShop.offers) {
         const button = document.createElement("button");
@@ -123,7 +123,11 @@ export function setupGameControlUi(game: Phaser.Game) {
         offers?.append(button);
       }
       const reroll = makeActionButton(`Yenile ${state.goldShop.rerollPrice}g`, "gold-shop__reroll", state.goldShop.gold >= state.goldShop.rerollPrice, () => dispatch({ action: "rerollShop" }));
-      drawer.append(reroll);
+      const close = makeActionButton("Mağazayı Kapat", "gold-shop__close", true, () => dispatch({ action: "closeShop" }));
+      const actions = document.createElement("div");
+      actions.className = "gold-shop__actions";
+      actions.append(reroll, close);
+      drawer.append(actions);
       root.append(drawer);
     }
 

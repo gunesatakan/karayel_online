@@ -66,6 +66,7 @@ type ControlActionDetail = {
     | "setTowerPerformance"
     | "buyShopItem"
     | "rerollShop"
+    | "closeShop"
     | "setTargeting"
     | "toggleAbartiOrientation"
     | "clearSelection";
@@ -330,6 +331,7 @@ export class GameScene extends Phaser.Scene {
   private snapshotBuffer: BufferedSnapshot[] = [];
   private latestPerfSnapshot?: GameSnapshot;
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
+  private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private draggedTowerDefinition?: TowerDefinition;
@@ -1032,6 +1034,10 @@ export class GameScene extends Phaser.Scene {
         break;
       case "rerollShop":
         this.room?.send("shop:reroll");
+        break;
+      case "closeShop":
+        this.shopDismissedWave = this.latestPerfSnapshot?.team.wave ?? 0;
+        this.emitControlState();
         break;
       case "setTargeting":
         if (this.selectedPlacedTowerId && detail.targetingMode) this.room?.send("tower:targeting", { towerId: this.selectedPlacedTowerId, mode: detail.targetingMode });
@@ -4756,7 +4762,7 @@ export class GameScene extends Phaser.Scene {
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
       targeting: selectedTower && !selectedTower.resourceProvider ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] } : undefined,
-      goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot ? {
+      goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot && (this.localPlayerSnapshot.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== this.latestPerfSnapshot.team.wave ? {
         gold: Math.floor(this.localPlayerSnapshot.gold),
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
