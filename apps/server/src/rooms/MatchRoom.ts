@@ -59,6 +59,7 @@ import {
   calculateDamageTaken,
   findPathToNearestNexus,
   findFirstLinearCollision,
+  getBallisticCollisionRadius,
   getBallisticMovementSpeed,
   getMapMetrics,
   getMapOrigin,
@@ -3001,7 +3002,7 @@ export class MatchRoom extends Room<MatchState> {
           collisionCandidates
             .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
             .map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, radius: getEnemyCollisionRadius(enemy) })),
-          4,
+          getBallisticCollisionRadius(projectile.hitType),
           new Set(projectile.piercedEnemyIds)
         );
         if (collision) {

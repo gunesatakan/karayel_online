@@ -4,6 +4,11 @@ export const LINEAR_BALLISTIC_HIT_TYPES: ReadonlySet<HitType> = new Set(["impact
 // Successive balance passes reduce the live speed to two ninths of the
 // original definition (1/2 * 2/3 * 2/3).
 export const LINEAR_BALLISTIC_SPEED_MULTIPLIER = 2 / 9;
+export const LINEAR_BALLISTIC_COLLISION_RADIUS: Readonly<Partial<Record<HitType, number>>> = {
+  projectile: 1,
+  impact: 2,
+  wave: 4
+};
 
 export type BallisticCollisionBody = { id: string; x: number; y: number; radius: number };
 
@@ -13,6 +18,10 @@ export function usesLinearBallistics(hitType: HitType) {
 
 export function getBallisticMovementSpeed(speed: number, hitType: HitType) {
   return usesLinearBallistics(hitType) ? speed * LINEAR_BALLISTIC_SPEED_MULTIPLIER : speed;
+}
+
+export function getBallisticCollisionRadius(hitType: HitType) {
+  return LINEAR_BALLISTIC_COLLISION_RADIUS[hitType] ?? 0;
 }
 
 export function findFirstLinearCollision<T extends BallisticCollisionBody>(

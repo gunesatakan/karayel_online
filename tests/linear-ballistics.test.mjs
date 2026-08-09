@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findFirstLinearCollision, getBallisticMovementSpeed, usesLinearBallistics } from "../packages/shared/dist/index.js";
+import { findFirstLinearCollision, getBallisticCollisionRadius, getBallisticMovementSpeed, usesLinearBallistics } from "../packages/shared/dist/index.js";
+
+test("projectile ve impact farkli carpisma yaricaplari kullanir", () => {
+  assert.equal(getBallisticCollisionRadius("projectile"), 1);
+  assert.equal(getBallisticCollisionRadius("impact"), 2);
+  assert.equal(getBallisticCollisionRadius("wave"), 4);
+});
 
 test("impact, wave ve projectile hareket hızları tekrar mevcut hızın üçte ikisine iner", () => {
   assert.ok(Math.abs(getBallisticMovementSpeed(340, "projectile") - 680 / 9) < 0.0001);
