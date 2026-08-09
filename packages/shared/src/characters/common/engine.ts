@@ -1,4 +1,5 @@
 import type { TowerDefinition, TowerEngineConfig } from "./types.js";
+import { getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
   "warrior-1": ["amplify", "dps"],
@@ -36,7 +37,7 @@ const defaultEngine: TowerEngineConfig = {
   targeting: "first",
   attack: { shape: "single", pierceCount: 1 },
   levelScaling: [{ stat: "damage", perLevel: 0.42, source: "base" }],
-  resources: { ammoType: "bullet", ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
+  resources: { ammoType: "bullet", shotFuel: "ammo", operatingEnergyPerSecond: 0.6, ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
   canHitAir: false
 };
 
@@ -75,6 +76,18 @@ const profiles: Record<string, EngineProfile> = {
   "archer-8": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } }
 };
 
+export function deriveTowerResources(definition: Pick<TowerDefinition, "hitType" | "fireIntervalMs" | "resourceProvider">, overrides: Partial<TowerEngineConfig["resources"]> = {}): TowerEngineConfig["resources"] {
+  const costMultiplier = getTowerFuelCostMultiplier(definition.fireIntervalMs);
+  return {
+    ...defaultEngine.resources,
+    shotFuel: getTowerShotFuel(definition.hitType),
+    operatingEnergyPerSecond: definition.resourceProvider ? 0 : getTowerOperatingEnergyPerSecond(definition.hitType),
+    ammoCostMultiplier: costMultiplier,
+    energyCostMultiplier: costMultiplier,
+    ...overrides
+  };
+}
+
 export function attachTowerEngine(definition: Omit<TowerDefinition, "engine">): TowerDefinition {
   const profile = profiles[definition.id];
   if (!profile) {
@@ -91,7 +104,7 @@ export function attachTowerEngine(definition: Omit<TowerDefinition, "engine">): 
         pierceCount: profile.attack.pierceCount ?? (profile.attack.shape === "single" ? 1 : undefined)
       },
       levelScaling: profile.levelScaling ?? defaultEngine.levelScaling.map((scaling) => ({ ...scaling })),
-      resources: { ...defaultEngine.resources, ...profile.resources },
+      resources: deriveTowerResources(definition, profile.resources),
       resourceProvider: profile.resourceProvider ?? definition.resourceProvider
     }
   };

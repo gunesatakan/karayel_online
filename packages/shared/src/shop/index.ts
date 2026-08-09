@@ -109,7 +109,8 @@ export const shopCatalog: ShopItem[] = [
   globalItem("zafer-serisi", "Zafer Serisi", "Öldürme başına +%3 hasar; dalga içi tavan %45.", "power", 250, { unlocks: ["stack:kill"] }),
   globalItem("kidem", "Kıdem", "Tamamlanan her dalga için kalıcı hasar +%2.", "power", 300, { unlocks: ["stack:wave"] }),
 
-  globalItem("kristal-rafinerisi", "Kristal Rafinerisi", "Güç kristali kullanan kulelerin mühimmat maliyeti -%40.", "class", 170, { scope: { kind: "tagged", ammoTypes: ["powerCrystal"] }, effects: [effect("kristal-rafinerisi", "ammoCost", -0.4)] }),
+  globalItem("kristal-rafinerisi", "Kristal Rafinerisi", "Güç kristali kullanan kulelerin atış yakıtı maliyeti -%40.", "class", 170, { scope: { kind: "tagged", ammoTypes: ["powerCrystal"] }, effects: [effect("kristal-rafinerisi", "ammoCost", -0.4), effect("kristal-rafinerisi", "energyCost", -0.4)] }),
+  globalItem("dusuk-guc-modu", "Düşük Güç Modülü", "Tüm kulelerin çalışma enerjisi tüketimi -%25.", "utility", 220, { effects: [effect("dusuk-guc-modu", "operatingEnergyCost", -0.25)] }),
   globalItem("bitisik-devre", "Bitişik Devre", "Bitişik her kule çifti +%8 hasar verir; en fazla 4 çift.", "map", 220, { unlocks: ["adjacencyBonus"] }),
   globalItem("yalniz-kurt", "Yalnız Kurt", "Komşusuz kuleler +%25 hasar ve +%15 menzil kazanır.", "map", 200, { unlocks: ["isolationBonus"] }),
 

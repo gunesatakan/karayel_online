@@ -135,6 +135,11 @@ export type TowerSnapshot = {
   maxAmmo?: number;
   energy?: number;
   maxEnergy?: number;
+  shotFuel?: "ammo" | "energy";
+  operatingEnergyPerSecond?: number;
+  standby?: boolean;
+  wakeRemainingMs?: number;
+  energyState?: import("./tower-rules.js").TowerEnergyState;
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   ammoLogisticsEnabled?: boolean;
   temperature?: number;
@@ -294,7 +299,7 @@ export type GameSnapshot = {
   perf?: ServerPerfSnapshot;
 };
 
-export { characters, towerCatalog, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
+export { characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
@@ -321,12 +326,26 @@ export {
   TOWER_BASE_AMMO_COST,
   TOWER_BASE_ENERGY_COST,
   TOWER_BASE_DAMAGE_MULTIPLIER,
+  FUEL_NORMALIZATION_INTERVAL_MS,
+  FUEL_NORMALIZATION_EXPONENT,
+  PASSIVE_TOWER_INTERVAL_THRESHOLD_MS,
+  ENERGY_OUTAGE_TRACKING_DELAY_MS,
+  ENERGY_OUTAGE_AURA_DELAY_MS,
+  TOWER_OPERATING_ENERGY_BY_HIT_TYPE,
+  getTowerFuelCostMultiplier,
+  getTowerShotFuel,
+  getTowerOperatingEnergyPerSecond,
   TOWER_HEAT_BY_HIT_TYPE,
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
   getTowerPerformanceHeatMultiplier,
   getTowerPerformanceEnergyMultiplier,
   calculateTowerShotHeat,
   calculateTowerShotEnergy,
+  calculateTowerAmmoCost,
+  calculateTowerShotEnergyCost,
+  calculateTowerOperatingEnergy,
+  getTowerEnergyState,
+  type TowerEnergyState,
   calculateTowerScaledBaseDamage,
   inferTowerAmmoType
 } from "./tower-rules.js";
@@ -383,6 +402,7 @@ export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {
   RESOURCE_EXTRACTION_DURATION_MS,
   LOGISTICS_WORKER_CAPACITY,
+  ENERGY_LOGISTICS_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,

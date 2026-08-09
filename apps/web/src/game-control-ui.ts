@@ -18,6 +18,7 @@ type ControlState = {
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
+  standby?: { active: boolean; waking: boolean; canEdit: boolean };
   workerRevive?: { count: number; remainingSeconds: number; enabled: boolean; cost: number };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
@@ -197,6 +198,15 @@ export function setupGameControlUi(game: Phaser.Game) {
           () => dispatch({ action: "toggleAmmoLogistics" })
         ));
         shop.append(logisticsRow);
+      }
+      if (state.standby) {
+        const standby = state.standby;
+        shop.append(makeActionButton(
+          standby.active ? "Kuleyi Ac" : standby.waking ? "Kule Isiniyor..." : "Beklemeye Al",
+          "game-controls__underworld-mode-button",
+          standby.canEdit && !standby.waking,
+          () => dispatch({ action: "toggleTowerStandby" })
+        ));
       }
       if (state.targeting) {
         const select = document.createElement("select");

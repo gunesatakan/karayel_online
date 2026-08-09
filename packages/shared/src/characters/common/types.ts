@@ -78,6 +78,8 @@ export type TowerEngineConfig = {
   };
   resources: {
     ammoType: AmmoType;
+    shotFuel: "ammo" | "energy";
+    operatingEnergyPerSecond: number;
     ammoCostMultiplier: number;
     energyCostMultiplier: number;
     heatMultiplier: number;

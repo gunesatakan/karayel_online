@@ -29,7 +29,7 @@ test("kaynak çıkarma toplam sekiz saniyede tamamlanır", () => {
     assert.equal(state.completed, second === 7);
   }
   assert.equal(RESOURCE_EXTRACTION_DURATION_MS, 8000);
-  assert.equal(LOGISTICS_WORKER_CAPACITY, 2);
+  assert.equal(LOGISTICS_WORKER_CAPACITY, 12);
   assert.equal(RESOURCE_PROVIDER_INITIAL_STOCK, 0);
   assert.equal(AMMO_FACTORY_INITIAL_ENERGY, 20);
   assert.equal(remainingMs, 0);

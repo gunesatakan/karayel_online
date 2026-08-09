@@ -1,5 +1,6 @@
 import type { CharacterId } from "../../index.js";
 import type { SkillDefinition, TowerDefinition } from "./types.js";
+import { getTowerFuelCostMultiplier } from "../../tower-rules.js";
 
 export function makeTowers(
   characterId: CharacterId,
@@ -29,7 +30,14 @@ export function makeTowers(
         ? [{ type: "slow", magnitude: 1, durationMs: base.slowMs ?? 0, stacking: "refresh" }]
         : undefined,
       levelScaling: [{ stat: "damage", perLevel: 0.42, source: "base" }],
-      resources: { ammoType: "bullet", ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
+      resources: {
+        ammoType: "bullet",
+        shotFuel: "ammo",
+        operatingEnergyPerSecond: 0.6,
+        ammoCostMultiplier: getTowerFuelCostMultiplier(Math.max(160, base.fireIntervalMs - index * 28)),
+        energyCostMultiplier: getTowerFuelCostMultiplier(Math.max(160, base.fireIntervalMs - index * 28)),
+        heatMultiplier: 1
+      },
       canHitAir: false
     }
   }));

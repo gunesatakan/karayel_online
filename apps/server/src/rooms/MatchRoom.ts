@@ -34,7 +34,10 @@ import {
   validateTowerPlacement,
   resetTowerStack,
   calculateTowerScaledBaseDamage,
-  calculateTowerShotEnergy,
+  calculateTowerAmmoCost,
+  calculateTowerShotEnergyCost,
+  calculateTowerOperatingEnergy,
+  getTowerEnergyState,
   calculateTowerShotHeat,
   appendLegacyMultiplier,
   advanceResourceExtraction,
@@ -42,6 +45,7 @@ import {
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_CAPACITY,
+  ENERGY_LOGISTICS_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
   canAcceptTargetedCard,
@@ -64,7 +68,6 @@ import {
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
   getWaveHpMultiplier,
-  TOWER_BASE_AMMO_COST,
   calculateDamageTaken,
   findPathToNearestNexus,
   findFirstLinearCollision,
@@ -149,11 +152,10 @@ const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
-const SHOT_AMMO_COST = TOWER_BASE_AMMO_COST;
 const LOGISTICS_WORKER_SPEED = 82;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
-const RESOURCE_PROVIDER_CAPACITY = 240;
+const RESOURCE_PROVIDER_CAPACITY = 480;
 const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_COOLING_PER_SECOND = 3;
@@ -388,7 +390,7 @@ type LinkServerMessage = {
 
 type TowerModeMessage = {
   towerId?: string;
-  mode?: "approval" | "stress";
+  mode?: "approval" | "stress" | "standby";
 };
 
 type EnemyModel = {
@@ -469,6 +471,9 @@ type TowerModel = {
   maxAmmo: number;
   energy: number;
   maxEnergy: number;
+  energyDepletedAt: number;
+  standby: boolean;
+  wakeReadyAt: number;
   ammoLogisticsEnabled: boolean;
   temperature: number;
   performance: number;
@@ -1599,12 +1604,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerFire(tower: TowerModel) {
-    return tower.performance > 0 && !tower.heatLocked && tower.ammo >= this.getTowerAmmoCost(tower) && tower.energy >= this.getTowerEnergyCost(tower);
+    return !tower.standby && tower.wakeReadyAt <= Date.now() && tower.performance > 0 && !tower.heatLocked
+      && getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now()) === "powered"
+      && tower.ammo >= this.getTowerAmmoCost(tower) && tower.energy >= this.getTowerEnergyCost(tower);
   }
 
   private getTowerAmmoCost(tower: TowerModel) {
-    return SHOT_AMMO_COST * (tower.definition.engine?.resources.ammoCostMultiplier ?? 1)
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoCost");
+    return calculateTowerAmmoCost(tower.definition, getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoCost"));
   }
 
   private consumeTowerResources(tower: TowerModel) {
@@ -1626,8 +1632,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerEnergyCost(tower: TowerModel) {
-    return calculateTowerShotEnergy(tower.performance, tower.definition.engine?.resources.energyCostMultiplier ?? 1)
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "energyCost");
+    return calculateTowerShotEnergyCost(tower.definition, tower.performance, getModifierMultiplier(this.getTowerRunModifiers(tower), "energyCost"));
   }
 
   private getTowerShotHeat(tower: TowerModel) {
@@ -1662,6 +1667,16 @@ export class MatchRoom extends Room<MatchState> {
       }
       if (tower.hp <= 0) {
         continue;
+      }
+      if (tower.standby) {
+        continue;
+      }
+      if (!tower.definition.resourceProvider) {
+        const upkeep = calculateTowerOperatingEnergy(tower.definition, deltaTime / 1000, getModifierMultiplier(this.getTowerRunModifiers(tower), "operatingEnergyCost"));
+        tower.energy = Math.max(0, tower.energy - upkeep);
+        if (tower.energy <= 0 && tower.energyDepletedAt <= 0) tower.energyDepletedAt = now;
+        if (tower.energy > 0) tower.energyDepletedAt = 0;
+        if (tower.wakeReadyAt > now) continue;
       }
       if (this.silentModeUntil > now) {
         continue;
@@ -1786,6 +1801,8 @@ export class MatchRoom extends Room<MatchState> {
     if (!towerAims(tower.definition.id)) {
       return true;
     }
+    const energyState = getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now());
+    if (energyState === "tracking-off" || energyState === "offline") return false;
 
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
@@ -3475,7 +3492,9 @@ export class MatchRoom extends Room<MatchState> {
           ttlMs: Number.POSITIVE_INFINITY,
           logisticsPhase: "pickup",
           cargo: 0,
-          capacity: LOGISTICS_WORKER_CAPACITY,
+          capacity: mode === "crystalCollector" || mode === "energyTransport"
+            ? ENERGY_LOGISTICS_WORKER_CAPACITY
+            : LOGISTICS_WORKER_CAPACITY,
           speed: LOGISTICS_WORKER_SPEED
         });
       }
@@ -3994,6 +4013,9 @@ export class MatchRoom extends Room<MatchState> {
         ? AMMO_FACTORY_INITIAL_ENERGY
         : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_ENERGY,
       maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
+      energyDepletedAt: 0,
+      standby: false,
+      wakeReadyAt: 0,
       ammoLogisticsEnabled: true,
       temperature: 0,
       performance: 0.5,
@@ -4098,14 +4120,23 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private setTowerMode(client: Client, message: TowerModeMessage) {
-    if (!message.towerId || (message.mode !== "approval" && message.mode !== "stress")) {
+    if (!message.towerId || !message.mode) {
       return;
     }
 
     const tower = this.towers.get(message.towerId);
-    if (!tower || tower.ownerId !== client.sessionId || tower.definition.id !== "archer-4") {
+    if (!tower || tower.ownerId !== client.sessionId) {
       return;
     }
+
+    if (message.mode === "standby") {
+      if (tower.definition.resourceProvider) return;
+      tower.standby = !tower.standby;
+      tower.wakeReadyAt = tower.standby ? 0 : Date.now() + 3500;
+      return;
+    }
+
+    if (tower.definition.id !== "archer-4") return;
 
     tower.melisUnderworldMode = message.mode;
   }
@@ -6451,6 +6482,11 @@ export class MatchRoom extends Room<MatchState> {
         maxAmmo: tower.maxAmmo,
         energy: Math.floor(tower.energy),
         maxEnergy: tower.maxEnergy,
+        shotFuel: tower.definition.engine?.resources.shotFuel,
+        operatingEnergyPerSecond: tower.definition.engine?.resources.operatingEnergyPerSecond,
+        standby: tower.standby,
+        wakeRemainingMs: Math.max(0, tower.wakeReadyAt - now),
+        energyState: getTowerEnergyState(tower.energy, tower.energyDepletedAt, now),
         resourceProvider: tower.definition.resourceProvider,
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
         temperature: Math.round(tower.temperature * 10) / 10,
@@ -6608,7 +6644,7 @@ export class MatchRoom extends Room<MatchState> {
             x2: source.orientation === "vertical" ? source.x : rect.right,
             y2: source.orientation === "vertical" ? rect.bottom : source.y,
             ownerId: source.ownerId,
-            enabled: source.hp > 0 && source.offlineUntil <= Date.now(),
+            enabled: this.isTowerAuraPowered(source),
             aura: runtimeAura
           });
         } else {
@@ -6616,13 +6652,19 @@ export class MatchRoom extends Room<MatchState> {
             x: source.x,
             y: source.y,
             ownerId: source.ownerId,
-            enabled: source.hp > 0 && source.offlineUntil <= Date.now(),
+            enabled: this.isTowerAuraPowered(source),
             aura: runtimeAura
           });
         }
       }
     }
     return evaluateTowerAuras(sources, { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+  }
+
+  private isTowerAuraPowered(tower: TowerModel) {
+    return tower.hp > 0 && !tower.standby && tower.wakeReadyAt <= Date.now()
+      && tower.offlineUntil <= Date.now()
+      && getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now()) !== "offline";
   }
 
   private getTowerRange(tower: TowerModel) {
@@ -6924,6 +6966,8 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.resourceProvider === "energy") {
       return `Enerji Deposu ${Math.floor(tower.energy)}/${tower.maxEnergy}`;
     }
+    if (tower.standby) return "Beklemede";
+    if (tower.wakeReadyAt > now) return `Isiniyor ${Math.ceil((tower.wakeReadyAt - now) / 1000)}sn`;
     if (tower.offlineUntil > now) {
       return "Tukenmis";
     }
@@ -6939,7 +6983,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.ammo < this.getTowerAmmoCost(tower)) {
       return "Muhimmat Yok";
     }
-    if (tower.energy < this.getTowerEnergyCost(tower)) {
+    if (getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "powered" || tower.energy < this.getTowerEnergyCost(tower)) {
       return "Enerji Yok";
     }
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
@@ -7196,7 +7240,7 @@ export class MatchRoom extends Room<MatchState> {
         x: tower.x,
         y: tower.y,
         ownerId: tower.ownerId,
-        enabled: tower.hp > 0 && tower.offlineUntil <= Date.now(),
+        enabled: this.isTowerAuraPowered(tower),
         aura: { ...definition, radius: range, multiplier: speedMultiplier }
       }], { x: enemy.x, y: enemy.y, kind: "enemy" }).slow;
       if (modifier !== undefined) {

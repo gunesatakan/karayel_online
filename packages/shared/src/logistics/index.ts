@@ -1,5 +1,8 @@
 export const RESOURCE_EXTRACTION_DURATION_MS = 8000;
-export const LOGISTICS_WORKER_CAPACITY = 2;
+export const LOGISTICS_WORKER_CAPACITY = 12;
+// One collector can extract at most 7.5 loads in a 60 second wave before travel.
+// 96 keeps the theoretical energy throughput (720/wave) above the ~520 upkeep target.
+export const ENERGY_LOGISTICS_WORKER_CAPACITY = 96;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 export const AMMO_FACTORY_INITIAL_ENERGY = 20;
 export const LOGISTICS_WORKER_RESPAWN_DELAY_MS = 10000;

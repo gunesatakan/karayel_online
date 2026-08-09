@@ -2,8 +2,36 @@ import type { DamageType, HitType } from "./combat.js";
 import type { AmmoType, TowerDefinition } from "./characters/common/types.js";
 
 export const TOWER_BASE_AMMO_COST = 1;
-export const TOWER_BASE_ENERGY_COST = 4;
+export const TOWER_BASE_ENERGY_COST = 4.1;
 export const TOWER_BASE_DAMAGE_MULTIPLIER = 2;
+export const FUEL_NORMALIZATION_INTERVAL_MS = 700;
+export const FUEL_NORMALIZATION_EXPONENT = 0.75;
+export const PASSIVE_TOWER_INTERVAL_THRESHOLD_MS = 10000;
+export const ENERGY_OUTAGE_TRACKING_DELAY_MS = 1000;
+export const ENERGY_OUTAGE_AURA_DELAY_MS = 2000;
+export const TOWER_OPERATING_ENERGY_BY_HIT_TYPE: Record<HitType, number> = {
+  none: 0,
+  projectile: 0.6,
+  impact: 0.9,
+  wave: 0.9,
+  curse: 0.9,
+  contamination: 0.9,
+  focus: 1.4,
+  aura: 1.2
+};
+
+export function getTowerFuelCostMultiplier(fireIntervalMs: number) {
+  if (fireIntervalMs > PASSIVE_TOWER_INTERVAL_THRESHOLD_MS) return 0;
+  return Math.pow(Math.max(1, fireIntervalMs) / FUEL_NORMALIZATION_INTERVAL_MS, FUEL_NORMALIZATION_EXPONENT);
+}
+
+export function getTowerShotFuel(hitType: HitType | undefined): "ammo" | "energy" {
+  return hitType === "focus" || hitType === "aura" ? "energy" : "ammo";
+}
+
+export function getTowerOperatingEnergyPerSecond(hitType: HitType | undefined) {
+  return TOWER_OPERATING_ENERGY_BY_HIT_TYPE[hitType ?? "projectile"];
+}
 
 export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
   none: 0,
@@ -53,6 +81,31 @@ export function calculateTowerShotHeat(definition: TowerDefinition, performance:
 
 export function calculateTowerShotEnergy(performance: number, energyCostMultiplier = 1) {
   return TOWER_BASE_ENERGY_COST * getTowerPerformanceEnergyMultiplier(performance) * energyCostMultiplier;
+}
+
+export function calculateTowerAmmoCost(definition: TowerDefinition, modifierMultiplier = 1) {
+  if (definition.engine?.resources.shotFuel !== "ammo") return 0;
+  return TOWER_BASE_AMMO_COST * (definition.engine.resources.ammoCostMultiplier ?? 1) * modifierMultiplier;
+}
+
+export function calculateTowerShotEnergyCost(definition: TowerDefinition, performance: number, modifierMultiplier = 1) {
+  if (definition.engine?.resources.shotFuel !== "energy") return 0;
+  return calculateTowerShotEnergy(performance, definition.engine.resources.energyCostMultiplier ?? 1) * modifierMultiplier;
+}
+
+export function calculateTowerOperatingEnergy(definition: TowerDefinition, seconds: number, modifierMultiplier = 1) {
+  if (definition.resourceProvider) return 0;
+  return Math.max(0, definition.engine?.resources.operatingEnergyPerSecond ?? 0) * Math.max(0, seconds) * modifierMultiplier;
+}
+
+export type TowerEnergyState = "powered" | "fire-off" | "tracking-off" | "offline";
+
+export function getTowerEnergyState(energy: number, depletedAt: number, now: number): TowerEnergyState {
+  if (energy > 0 || depletedAt <= 0) return "powered";
+  const elapsed = Math.max(0, now - depletedAt);
+  if (elapsed < ENERGY_OUTAGE_TRACKING_DELAY_MS) return "fire-off";
+  if (elapsed < ENERGY_OUTAGE_AURA_DELAY_MS) return "tracking-off";
+  return "offline";
 }
 
 export function calculateTowerScaledBaseDamage(definition: TowerDefinition, level: number) {

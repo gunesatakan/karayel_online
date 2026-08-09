@@ -9,7 +9,7 @@ import { ulkuCharacter } from "./ulku/index.js";
 import { zeynepCharacter } from "./zeynep/index.js";
 
 export type { CharacterDefinition, SkillDefinition, TowerDefinition };
-export { getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./common/engine.js";
+export { attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./common/engine.js";
 
 export const characters: CharacterDefinition[] = [
   zeynepCharacter,

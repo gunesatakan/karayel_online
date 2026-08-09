@@ -62,6 +62,7 @@ type ControlActionDetail = {
     | "sellTower"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "toggleTowerStandby"
     | "reviveLogisticsWorker"
     | "setTowerPerformance"
     | "buyShopItem"
@@ -1020,6 +1021,11 @@ export class GameScene extends Phaser.Scene {
       case "toggleAmmoLogistics":
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
+        }
+        break;
+      case "toggleTowerStandby":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: "standby" });
         }
         break;
       case "reviveLogisticsWorker":
@@ -2636,6 +2642,9 @@ export class GameScene extends Phaser.Scene {
     if (tower.status === "Hararet" || tower.status === "Tukenmis" || tower.disabled) {
       return 0x94a3b8;
     }
+    if (tower.energyState && tower.energyState !== "powered") {
+      return 0xf87171;
+    }
     if (tower.definitionId === "warrior-6") {
       return 0xffffff;
     }
@@ -2661,6 +2670,12 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    if (tower.energyState && tower.energyState !== "powered") {
+      const size = Math.max(5, this.getMapCellSize() * 0.14);
+      graphics.fillStyle(0x7f1d1d, 0.94).fillCircle(tower.x + size * 1.9, tower.y - size * 1.9, size);
+      graphics.lineStyle(Math.max(2, size * 0.35), 0xfef2f2, 1);
+      graphics.lineBetween(tower.x + size * 1.45, tower.y - size * 2.35, tower.x + size * 2.35, tower.y - size * 1.45);
+    }
     this.renderAbartiEdgeBody(graphics, tower);
     this.renderMelisGothicTowerRing(graphics, tower);
     this.renderMelisEvolutionStraps(graphics, tower);
@@ -4764,6 +4779,11 @@ export class GameScene extends Phaser.Scene {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
+      standby: selectedTower && !selectedTower.resourceProvider ? {
+        active: selectedTower.standby === true,
+        waking: (selectedTower.wakeRemainingMs ?? 0) > 0,
+        canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
       targeting: selectedTower && !selectedTower.resourceProvider ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] } : undefined,
       goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot && (this.localPlayerSnapshot.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== this.latestPerfSnapshot.team.wave ? {
         gold: Math.floor(this.localPlayerSnapshot.gold),
@@ -4793,6 +4813,8 @@ export class GameScene extends Phaser.Scene {
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
+        ...(!selectedTower.resourceProvider && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
         ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
         ...(!selectedTower.resourceProvider ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),

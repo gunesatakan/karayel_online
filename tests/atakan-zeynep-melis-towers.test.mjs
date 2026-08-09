@@ -103,12 +103,12 @@ test("lojistik binaları saldırı üretmeyen none vuruş türünü kullanır", 
 test("performans enerji maliyeti ara değerleri dahil karakterize edildi", () => {
   assert.equal(TOWER_BASE_AMMO_COST, 1);
   assert.equal(calculateTowerShotEnergy(0), 0);
-  assert.equal(calculateTowerShotEnergy(0.25), 2);
-  assert.equal(calculateTowerShotEnergy(0.4), 3.2);
-  assert.equal(calculateTowerShotEnergy(0.5), 4);
-  assert.equal(calculateTowerShotEnergy(0.6), 5.6);
-  assert.equal(calculateTowerShotEnergy(0.75), 8);
-  assert.equal(calculateTowerShotEnergy(1), 12);
+  assert.equal(calculateTowerShotEnergy(0.25), 2.05);
+  assert.equal(calculateTowerShotEnergy(0.4), 3.28);
+  assert.equal(calculateTowerShotEnergy(0.5), 4.1);
+  assert.ok(Math.abs(calculateTowerShotEnergy(0.6) - 5.74) < 1e-9);
+  assert.equal(calculateTowerShotEnergy(0.75), 8.2);
+  assert.ok(Math.abs(calculateTowerShotEnergy(1) - 12.3) < 1e-9);
 });
 
 test("ısı performans eğrisi yüzde 50'de 1x ve yüzde 100'de 4x", () => {
