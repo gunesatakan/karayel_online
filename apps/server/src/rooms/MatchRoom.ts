@@ -5286,7 +5286,10 @@ export class MatchRoom extends Room<MatchState> {
       id,
       x: enemy.x + (Math.random() - 0.5) * 14,
       y: enemy.y - 16 + (Math.random() - 0.5) * 8,
-      amount: Math.max(1, Math.round(amount)),
+      // Floating combat text must not claim more damage than was actually
+      // applied. Rounding every hit up can accumulate into a visible total
+      // larger than the enemy's real shield/HP loss.
+      amount: Math.max(1, Math.floor(amount)),
       ttlMs: 900
     });
 
