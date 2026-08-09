@@ -22,7 +22,6 @@ import {
   normalizeMapData,
   worldToGrid,
   towerCatalog,
-  TOWER_TURN_RATE_RADIANS_PER_SECOND,
   type CharacterDefinition,
   type CardDefinition,
   type CharacterId,
@@ -85,8 +84,6 @@ type RenderTower = {
   isolation: Phaser.GameObjects.Graphics;
   healthBar: Phaser.GameObjects.Graphics;
   key: string;
-  /** Eased separately from the snapshot so the muzzle sweeps instead of snapping. */
-  facing?: number;
 };
 
 type RenderMover = {
@@ -2553,24 +2550,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Turns the muzzle toward the server-reported bearing. The snapshot only
-   * arrives every 33 ms, so the angle is eased per frame along the shortest arc
-   * -- lerping the raw value would spin the long way round when it crosses PI.
-   * Sprites are authored pointing right (+X), matching atan2's zero.
+   * Uses the authoritative bearing directly. Applying another client-side turn
+   * step here leaves the sprite one snapshot behind the projectile, making an
+   * aligned server shot look as if it left a sideways muzzle. Sprites are
+   * authored pointing right (+X), matching atan2's zero.
    */
   private applyTowerFacing(rendered: RenderTower, tower: TowerSnapshot) {
     if (typeof tower.facing !== "number") {
       return;
     }
-
-    if (rendered.facing === undefined) {
-      rendered.facing = tower.facing;
-    } else {
-      const step = TOWER_TURN_RATE_RADIANS_PER_SECOND * (this.game.loop.delta / 1000);
-      rendered.facing = Phaser.Math.Angle.RotateTo(rendered.facing, tower.facing, step);
-    }
-
-    rendered.base.setRotation(rendered.facing);
+    rendered.base.setRotation(tower.facing);
   }
 
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {
