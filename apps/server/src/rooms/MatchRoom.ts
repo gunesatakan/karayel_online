@@ -1646,7 +1646,9 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       if (tower.definition.id === "archer-5" && tower.melisMirrorCharge >= this.getMelisBrokenMirrorCapacity(tower)) {
-        if (this.canTowerFire(tower) && this.fireMelisBrokenMirrorExplosion(tower)) {
+        const mirrorTarget = this.findMelisBrokenMirrorExplosionTarget(tower);
+        const isAimedAtMirrorTarget = this.aimTowerAt(tower, mirrorTarget, deltaTime / 1000);
+        if (mirrorTarget && isAimedAtMirrorTarget && this.canTowerFire(tower) && this.fireMelisBrokenMirrorExplosion(tower, mirrorTarget)) {
           this.consumeTowerResources(tower);
           tower.cooldownMs = this.getTowerFireInterval(tower);
         }
@@ -4936,11 +4938,8 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private fireMelisBrokenMirrorExplosion(tower: TowerModel) {
-    const target = this.findMelisBrokenMirrorExplosionTarget(tower);
-    if (!target) {
-      return false;
-    }
+  private fireMelisBrokenMirrorExplosion(tower: TowerModel, target = this.findMelisBrokenMirrorExplosionTarget(tower)) {
+    if (!target) return false;
 
     const storedDamage = Math.max(0, tower.melisMirrorCharge);
     const releasedDamage = storedDamage * getMelisBrokenMirrorReleaseMultiplier(tower.level);
