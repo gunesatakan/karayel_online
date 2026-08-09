@@ -1,6 +1,7 @@
 import { makeTowers } from "../../common/factory.js";
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
+import { NON_FIRING_INTERVAL_MS, PASSIVE_AURA_TICK_INTERVAL_MS } from "../../../tower-rules.js";
 
 export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Hiza Emri", "Delici fiziksel mermi"],
@@ -86,7 +87,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       upgradeCost: 300,
       range: 0,
       damage: 0,
-      fireIntervalMs: 999999,
+      fireIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS,
       projectileSpeed: 0,
       aoeRadius: 0,
       slowMs: 0,
@@ -105,7 +106,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       upgradeCost: 190,
       range: 0,
       damage: 0,
-      fireIntervalMs: 999999,
+      fireIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS,
       projectileSpeed: 0,
       aoeRadius: 0,
       slowMs: 0,
@@ -127,7 +128,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       cost: providesAmmunition ? 95 : 105,
       range: 0,
       damage: 0,
-      fireIntervalMs: 999999,
+      fireIntervalMs: NON_FIRING_INTERVAL_MS,
       projectileSpeed: 0,
       aoeRadius: 0,
       slowMs: 0,

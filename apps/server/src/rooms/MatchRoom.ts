@@ -36,6 +36,9 @@ import {
   calculateTowerScaledBaseDamage,
   calculateTowerAmmoCost,
   calculateTowerShotEnergyCost,
+  getTowerShotFuelModifierMultiplier,
+  isPeriodicTowerAura,
+  AURA_REFRESH_DURATION_MULTIPLIER,
   calculateTowerOperatingEnergy,
   shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
@@ -485,6 +488,7 @@ type TowerModel = {
   maxRawAmmo: number;
   level: number;
   cooldownMs: number;
+  auraExpiresAt: number;
   focusTargetId: string;
   aimTargetId: string;
   aimTargetLockUntil: number;
@@ -1617,7 +1621,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerAmmoCost(tower: TowerModel) {
-    return calculateTowerAmmoCost(tower.definition, getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoCost"));
+    const modifiers = this.getTowerRunModifiers(tower);
+    return calculateTowerAmmoCost(tower.definition, getTowerShotFuelModifierMultiplier(modifiers, "ammoCost"));
   }
 
   private consumeTowerResources(tower: TowerModel) {
@@ -1639,7 +1644,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerEnergyCost(tower: TowerModel) {
-    return calculateTowerShotEnergyCost(tower.definition, tower.performance, getModifierMultiplier(this.getTowerRunModifiers(tower), "energyCost"));
+    const modifiers = this.getTowerRunModifiers(tower);
+    return calculateTowerShotEnergyCost(tower.definition, tower.performance, getTowerShotFuelModifierMultiplier(modifiers, "energyCost"));
   }
 
   private getTowerShotHeat(tower: TowerModel) {
@@ -1751,7 +1757,14 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (tower.definition.id === "zeynep-7" || tower.definition.id === "zeynep-8") {
+      if (isPeriodicTowerAura(tower.definition)) {
+        if (this.setupPhase || tower.cooldownMs > 0 || !this.canTowerFire(tower)) {
+          continue;
+        }
+        this.consumeTowerResources(tower);
+        const interval = this.getTowerFireInterval(tower);
+        tower.cooldownMs = interval;
+        tower.auraExpiresAt = now + interval * AURA_REFRESH_DURATION_MULTIPLIER;
         continue;
       }
 
@@ -4035,6 +4048,7 @@ export class MatchRoom extends Room<MatchState> {
       maxRawAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : 0,
       level: 1,
       cooldownMs: 150,
+      auraExpiresAt: 0,
       focusTargetId: "",
       aimTargetId: "",
       aimTargetLockUntil: 0,
@@ -6676,9 +6690,13 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isTowerAuraPowered(tower: TowerModel) {
-    return tower.hp > 0 && !tower.standby && tower.wakeReadyAt <= Date.now()
-      && tower.offlineUntil <= Date.now()
-      && getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now()) !== "offline";
+    const now = Date.now();
+    const periodicAura = isPeriodicTowerAura(tower.definition);
+    const refreshActive = !periodicAura || tower.auraExpiresAt >= now;
+    const energyStateActive = periodicAura || getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "offline";
+    return refreshActive && tower.hp > 0 && !tower.standby && tower.wakeReadyAt <= now
+      && tower.offlineUntil <= now
+      && energyStateActive;
   }
 
   private getTowerRange(tower: TowerModel) {

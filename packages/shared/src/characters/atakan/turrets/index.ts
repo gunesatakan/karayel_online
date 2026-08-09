@@ -1,5 +1,6 @@
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
+import { NON_FIRING_INTERVAL_MS } from "../../../tower-rules.js";
 
 const color = 0x22c55e;
 
@@ -121,13 +122,13 @@ export const atakanTowers: TowerDefinition[] = ([
   {
     id: "warrior-7", characterId: "warrior", name: "Cephane Merkezi", role: "Mühimmat ikmali",
     description: "Taşınan enerji ve cephane hammaddesini tüketerek mühimmat üretir; lojistik işçisi ürünü sevkiyatı açık kulelere taşır.", classType: "support", damageType: "none", hitType: "none",
-    cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 95, upgradeCost: 60, range: 0, damage: 0, fireIntervalMs: NON_FIRING_INTERVAL_MS,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0xf59e0b, resourceProvider: "ammunition"
   },
   {
     id: "warrior-8", characterId: "warrior", name: "Enerji Reaktörü", role: "Enerji ikmali",
     description: "Kristal işçilerinin getirdiği kristalleri enerji olarak depolar; enerji işçisi bu enerjiyi kulelere taşır.", classType: "support", damageType: "none", hitType: "none",
-    cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: 999999,
+    cost: 105, upgradeCost: 65, range: 0, damage: 0, fireIntervalMs: NON_FIRING_INTERVAL_MS,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
 ] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);

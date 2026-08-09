@@ -1,5 +1,6 @@
 import type { DamageType, HitType } from "./combat.js";
 import type { AmmoType, TowerDefinition } from "./characters/common/types.js";
+import { getModifierAdd, type Modifier } from "./modifiers/index.js";
 
 export const TOWER_BASE_AMMO_COST = 1;
 export const TOWER_BASE_ENERGY_COST = 4.1;
@@ -7,6 +8,9 @@ export const TOWER_BASE_DAMAGE_MULTIPLIER = 2;
 export const FUEL_NORMALIZATION_INTERVAL_MS = 700;
 export const FUEL_NORMALIZATION_EXPONENT = 0.75;
 export const PASSIVE_TOWER_INTERVAL_THRESHOLD_MS = 10000;
+export const NON_FIRING_INTERVAL_MS = 999999;
+export const PASSIVE_AURA_TICK_INTERVAL_MS = 2000;
+export const AURA_REFRESH_DURATION_MULTIPLIER = 2;
 export const ENERGY_OUTAGE_TRACKING_DELAY_MS = 1000;
 export const ENERGY_OUTAGE_AURA_DELAY_MS = 2000;
 export const TOWER_OPERATING_ENERGY_BY_HIT_TYPE: Record<HitType, number> = {
@@ -93,9 +97,25 @@ export function calculateTowerShotEnergyCost(definition: TowerDefinition, perfor
   return calculateTowerShotEnergy(performance, definition.engine.resources.energyCostMultiplier ?? 1) * modifierMultiplier;
 }
 
+export function getTowerShotFuelModifierMultiplier(modifiers: readonly Modifier[], specific: "ammoCost" | "energyCost") {
+  return Math.max(0, 1 + getModifierAdd(modifiers, specific) + getModifierAdd(modifiers, "shotFuelCost"));
+}
+
 export function calculateTowerOperatingEnergy(definition: TowerDefinition, seconds: number, modifierMultiplier = 1) {
   if (definition.resourceProvider) return 0;
   return Math.max(0, definition.engine?.resources.operatingEnergyPerSecond ?? 0) * Math.max(0, seconds) * modifierMultiplier;
+}
+
+export function isPeriodicTowerAura(definition: TowerDefinition) {
+  return !definition.resourceProvider
+    && definition.hitType === "aura"
+    && Boolean(definition.engine?.auras?.some((aura) => aura.affects === "towers"));
+}
+
+export function calculateTowerEnergyPerSecond(definition: TowerDefinition, performance = 0.5) {
+  const intervalSeconds = Math.max(0.001, definition.fireIntervalMs / 1000);
+  return calculateTowerShotEnergyCost(definition, performance) / intervalSeconds
+    + calculateTowerOperatingEnergy(definition, 1);
 }
 
 export function shouldConsumeTowerOperatingEnergy(definition: TowerDefinition, setupPhase: boolean, standby: boolean) {

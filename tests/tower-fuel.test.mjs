@@ -7,6 +7,8 @@ import {
   deriveTowerResources,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
   getTowerEnergyState,
+  getTowerShotFuelModifierMultiplier,
+  cardCatalog,
   shouldConsumeTowerOperatingEnergy,
   towerCatalog
 } from "../packages/shared/dist/index.js";
@@ -64,4 +66,29 @@ test("çalışma enerjisi yalnız aktif dalgada tüketilir", () => {
   assert.equal(shouldConsumeTowerOperatingEnergy(combatTower, false, false), true);
   assert.equal(shouldConsumeTowerOperatingEnergy(combatTower, false, true), false);
   assert.equal(shouldConsumeTowerOperatingEnergy(provider, false, false), false);
+});
+
+test("shotFuelCost mühimmat ve enerji atış maliyetlerini etkiler", () => {
+  const modifier = [{ source: "test", scope: "tower", stat: "shotFuelCost", add: -0.3 }];
+  const multiplier = getTowerShotFuelModifierMultiplier(modifier, "ammoCost");
+  assert.equal(multiplier, 0.7);
+  assert.equal(calculateTowerAmmoCost(tower("zeynep-1"), multiplier), calculateTowerAmmoCost(tower("zeynep-1")) * 0.7);
+  assert.equal(calculateTowerShotEnergyCost(tower("warrior-5"), 0.5, multiplier), calculateTowerShotEnergyCost(tower("warrior-5"), 0.5) * 0.7);
+});
+
+test("shotFuelCost spesifik maliyetle toplamsal birleşir ve çalışma enerjisini etkilemez", () => {
+  const modifiers = [
+    { source: "generic", scope: "tower", stat: "shotFuelCost", add: -0.3 },
+    { source: "specific", scope: "tower", stat: "ammoCost", add: -0.4 }
+  ];
+  assert.ok(Math.abs(getTowerShotFuelModifierMultiplier(modifiers, "ammoCost") - 0.3) < 1e-9);
+  assert.equal(getTowerShotFuelModifierMultiplier(modifiers, "energyCost"), 0.7);
+  assert.equal(calculateTowerOperatingEnergy(tower("warrior-1"), 1, 1), tower("warrior-1").engine.resources.operatingEnergyPerSecond);
+});
+
+test("seri-atis Debug Lazer atış enerjisine yüzde 35 ceza uygular", () => {
+  const card = cardCatalog.find((candidate) => candidate.id === "seri-atis");
+  const multiplier = getTowerShotFuelModifierMultiplier(card.effects, "energyCost");
+  assert.equal(multiplier, 1.35);
+  assert.equal(card.effects.some((effect) => effect.stat === "shotFuelCost"), true);
 });

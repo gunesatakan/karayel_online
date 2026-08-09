@@ -22,7 +22,7 @@ export const SHIELDED_ENEMIES = {
   brute: { type: "brute", hp: 84, maxHp: 84, shield: 18, maxShield: 18, armor: 34 }
 };
 
-function createRoom(characterId) {
+export function createRoom(characterId) {
   const room = new MatchRoom();
   const player = {
     id: "p1",
@@ -49,7 +49,7 @@ function createRoom(characterId) {
 }
 
 /** Yolun ortasina en yakin insa edilebilir kareyi bulur. */
-function findBuildableSpot(room, definitionId) {
+export function findBuildableSpot(room, definitionId) {
   const points = room.activePaths[0].points;
   const middle = points[Math.floor(points.length / 2)];
   const origin = worldToGrid(middle.x, middle.y, room.activeMap);

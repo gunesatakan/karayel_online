@@ -7,6 +7,7 @@ export type ModifierStat =
   | "heat"
   | "ammoCost"
   | "energyCost"
+  | "shotFuelCost"
   | "operatingEnergyCost"
   | "towerHealth"
   | "critChance"
