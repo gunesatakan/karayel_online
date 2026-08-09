@@ -4,6 +4,7 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
@@ -60,6 +61,7 @@ type ControlActionDetail = {
     | "sellTower"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "reviveLogisticsWorker"
     | "setTowerPerformance"
     | "toggleAbartiOrientation"
     | "clearSelection";
@@ -1011,6 +1013,9 @@ export class GameScene extends Phaser.Scene {
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
         }
+        break;
+      case "reviveLogisticsWorker":
+        this.room?.send("reviveLogisticsWorker");
         break;
       case "setTowerPerformance":
         if (this.selectedPlacedTowerId && typeof detail.performance === "number") {
@@ -4643,6 +4648,7 @@ export class GameScene extends Phaser.Scene {
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
+    const deadWorkers = this.localPlayerSnapshot?.deadLogisticsWorkers ?? [];
 
     const orientationHint = !selectedTower && this.selectedTowerDefinition.id === "zeynep-8"
       ? ` | Yon: ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
@@ -4706,6 +4712,12 @@ export class GameScene extends Phaser.Scene {
       ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
+      workerRevive: deadWorkers.length > 0 ? {
+        count: deadWorkers.length,
+        remainingSeconds: Math.min(...deadWorkers.map((worker) => worker.remainingSeconds)),
+        enabled: (this.localPlayerSnapshot?.gold ?? 0) >= LOGISTICS_WORKER_INSTANT_REVIVE_COST,
+        cost: LOGISTICS_WORKER_INSTANT_REVIVE_COST
       } : undefined,
       upgrade: {
         label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",

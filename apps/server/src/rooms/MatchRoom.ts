@@ -36,6 +36,9 @@ import {
   calculateTowerShotHeat,
   appendLegacyMultiplier,
   advanceResourceExtraction,
+  getLogisticsWorkerRespawnRemainingMs,
+  LOGISTICS_WORKER_INSTANT_REVIVE_COST,
+  LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   canAcceptTargetedCard,
   cardAppliesToTower,
   cardCatalog,
@@ -717,7 +720,7 @@ export class MatchRoom extends Room<MatchState> {
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
-  private deadLogisticsWorkers = new Set<string>();
+  private deadLogisticsWorkers = new Map<string, number>();
   private beams = new Map<string, BeamModel>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
@@ -887,6 +890,12 @@ export class MatchRoom extends Room<MatchState> {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
       if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider && typeof message.performance === "number") {
         tower.performance = Math.max(0, Math.min(1, message.performance));
+      }
+    });
+
+    this.onMessage("reviveLogisticsWorker", (client) => {
+      if (this.gameStarted) {
+        this.reviveLogisticsWorker(client.sessionId);
       }
     });
 
@@ -1315,6 +1324,7 @@ export class MatchRoom extends Room<MatchState> {
       this.applyMelisWaveStress();
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
+      this.reviveAllLogisticsWorkers();
       if (this.wave >= FINAL_WAVE) {
         this.finishMatch("victory");
         return;
@@ -3177,7 +3187,7 @@ export class MatchRoom extends Room<MatchState> {
           return distanceSq(drone.x, drone.y, enemy.x, enemy.y) <= collisionRadius * collisionRadius;
         });
         if (collidedWithEnemy) {
-          this.deadLogisticsWorkers.add(`${drone.ownerId}:${drone.mode}`);
+          this.deadLogisticsWorkers.set(`${drone.ownerId}:${drone.mode}`, Date.now() + LOGISTICS_WORKER_RESPAWN_DELAY_MS);
           this.drones.delete(id);
           continue;
         }
@@ -3375,8 +3385,13 @@ export class MatchRoom extends Room<MatchState> {
     const { gridSize } = getMapMetrics(this.activeMap);
     for (const ownerId of this.state.players.keys()) {
       for (const [index, mode] of workerModes.entries()) {
-        if (this.deadLogisticsWorkers.has(`${ownerId}:${mode}`)) {
-          continue;
+        const workerKey = `${ownerId}:${mode}`;
+        const respawnAt = this.deadLogisticsWorkers.get(workerKey);
+        if (respawnAt !== undefined) {
+          if (getLogisticsWorkerRespawnRemainingMs(respawnAt, Date.now()) > 0) {
+            continue;
+          }
+          this.deadLogisticsWorkers.delete(workerKey);
         }
         const exists = Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === mode);
         if (exists) {
@@ -3420,6 +3435,24 @@ export class MatchRoom extends Room<MatchState> {
     worker.x += worker.vx * seconds;
     worker.y += worker.vy * seconds;
     return false;
+  }
+
+  private reviveLogisticsWorker(ownerId: string) {
+    const player = this.state.players.get(ownerId);
+    if (!player || player.gold < LOGISTICS_WORKER_INSTANT_REVIVE_COST) {
+      return;
+    }
+    const workerKey = Array.from(this.deadLogisticsWorkers.keys()).find((key) => key.startsWith(`${ownerId}:`));
+    if (!workerKey) {
+      return;
+    }
+    player.gold -= LOGISTICS_WORKER_INSTANT_REVIVE_COST;
+    player.goldSpent += LOGISTICS_WORKER_INSTANT_REVIVE_COST;
+    this.deadLogisticsWorkers.delete(workerKey);
+  }
+
+  private reviveAllLogisticsWorkers() {
+    this.deadLogisticsWorkers.clear();
   }
 
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
@@ -6125,7 +6158,13 @@ export class MatchRoom extends Room<MatchState> {
         authorityChain: player.characterId === "zeynep" ? player.authorityChain : undefined,
         authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined,
         approval: player.characterId === "archer" ? player.approval : undefined,
-        stress: player.characterId === "archer" ? player.stress : undefined
+        stress: player.characterId === "archer" ? player.stress : undefined,
+        deadLogisticsWorkers: Array.from(this.deadLogisticsWorkers.entries())
+          .filter(([key]) => key.startsWith(`${id}:`))
+          .map(([key, respawnAt]) => ({
+            mode: key.slice(id.length + 1) as DroneSnapshot["mode"],
+            remainingSeconds: Math.ceil(getLogisticsWorkerRespawnRemainingMs(respawnAt, now) / 1000)
+          }))
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,

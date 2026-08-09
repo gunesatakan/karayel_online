@@ -18,6 +18,7 @@ type ControlState = {
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
+  workerRevive?: { count: number; remainingSeconds: number; enabled: boolean; cost: number };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
@@ -195,6 +196,15 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     if (state.showOrientationToggle) {
       footer.append(makeActionButton(state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
+    }
+
+    if (state.workerRevive) {
+      footer.append(makeActionButton(
+        `İşçi${state.workerRevive.count > 1 ? ` x${state.workerRevive.count}` : ""} ${state.workerRevive.remainingSeconds}s / ${state.workerRevive.cost}g`,
+        "game-controls__worker-revive",
+        state.workerRevive.enabled,
+        () => dispatch({ action: "reviveLogisticsWorker" })
+      ));
     }
 
     panel.append(skillRow, actionRow, shop, footer);
