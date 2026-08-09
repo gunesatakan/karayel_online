@@ -33,3 +33,39 @@ test("dalga sonunda mağaza kart seçildikten sonra açılır", () => {
   room.chooseCard({ sessionId: "p1", send() {} }, { cardId: globalChoice.id });
   assert.equal(player.shopOffers.length, 5);
 });
+
+test("yeniden bağlantıda bekleyen kart seçimi yeni oturuma taşınır ve tekrar gönderilir", () => {
+  const room = new MatchRoom();
+  const player = createPlayer();
+  const choice = cardCatalog.find((card) => card.id === "verimli-namlu");
+  assert.ok(choice);
+  room.state = { players: new Map([["old-session", player]]) };
+  room.pendingCardChoices.set("old-session", [choice]);
+
+  room.transferPlayerSession("old-session", "new-session", player, "Test");
+
+  assert.equal(room.pendingCardChoices.has("old-session"), false);
+  assert.deepEqual(room.pendingCardChoices.get("new-session"), [choice]);
+  const sent = [];
+  room.sendMatchResumeState({
+    sessionId: "new-session",
+    send(type, payload) { sent.push({ type, payload }); }
+  });
+  assert.deepEqual(sent.find((message) => message.type === "card:choices")?.payload, [choice]);
+});
+
+test("geçersiz kart seçimi sessiz kalmak yerine reddedilir", () => {
+  const room = new MatchRoom();
+  const player = createPlayer();
+  room.state = { players: new Map([["p1", player]]) };
+  room.pendingCardChoices.set("p1", []);
+  const sent = [];
+
+  room.chooseCard({
+    sessionId: "p1",
+    send(type, payload) { sent.push({ type, payload }); }
+  }, { cardId: "olmayan-kart" });
+
+  assert.equal(sent[0]?.type, "card:rejected");
+  assert.match(sent[0]?.payload.reason, /geçerli bir seçenek değil/);
+});

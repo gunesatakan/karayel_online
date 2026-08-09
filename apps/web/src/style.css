@@ -95,6 +95,24 @@ canvas {
   font-size: 15px;
 }
 
+.card-draft__status {
+  display: block;
+  min-height: 18px;
+  margin-top: 7px;
+  color: #67e8f9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.card-draft__status--error { color: #fda4af; }
+
+.run-card:disabled,
+.tower-choice:disabled {
+  cursor: wait;
+  opacity: .58;
+  transform: none;
+}
+
 .card-draft__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

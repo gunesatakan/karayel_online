@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { Client, Room } from "colyseus.js";
+import { Room } from "colyseus.js";
 import {
   characters,
   GAME_WORLD_HEIGHT,
@@ -41,7 +41,7 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
-import { clearActiveLobbyRoom, getActiveLobbyRoom } from "../online-session";
+import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
 import type { HudState } from "../game-control-ui";
 
@@ -285,6 +285,9 @@ export class GameScene extends Phaser.Scene {
   private matchResultShown = false;
   private cardChoiceRoot?: HTMLElement;
   private cardChoices: CardDefinition[] = [];
+  private cardChoicePending = false;
+  private cardChoiceTimeout?: number;
+  private reconnecting = false;
   private perfText?: Phaser.GameObjects.Text;
   private hudState: HudState = {
     status: "Sunucu kontrol ediliyor...",
@@ -1690,7 +1693,7 @@ export class GameScene extends Phaser.Scene {
       if (existingRoom) {
         this.room = existingRoom;
       } else {
-        const client = new Client(gameServerUrl);
+        const client = getSharedClient(gameServerUrl);
         this.room = await client.create("match", {
           playerName: this.selectedCharacter.displayName,
           characterId: this.selectedCharacterId,
@@ -1700,19 +1703,8 @@ export class GameScene extends Phaser.Scene {
       }
       this.localSessionId = this.room.sessionId;
       this.emitHudState({ status: `Oda: ${this.room.roomId}` });
-
-      this.room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
-      this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
-      this.room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
-      this.room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
-      this.room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
-      this.room.onMessage("card:applied", () => this.hideCardChoices());
-      this.room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
-        this.pendingShopPlacement = message.itemId;
-        this.hintText?.setText(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
-      });
-      this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
-      this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
+      this.bindRoomHandlers(this.room);
+      this.room.send("card:sync");
       this.startPingLoop();
     } catch (error) {
       console.error(error);
@@ -1953,6 +1945,58 @@ export class GameScene extends Phaser.Scene {
       pointer.worldY >= origin.y && pointer.worldY <= arenaBottom;
   }
 
+  private bindRoomHandlers(room: Room) {
+    room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
+    room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
+    room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
+    room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
+    room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
+    room.onMessage("card:applied", () => this.hideCardChoices());
+    room.onMessage("card:rejected", (message: { reason?: string }) => {
+      this.setCardChoicePending(false, message.reason ?? "Kart seçimi uygulanamadı. Tekrar dene.");
+    });
+    room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
+      this.pendingShopPlacement = message.itemId;
+      this.hintText?.setText(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
+    });
+    room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
+    room.onLeave((code) => {
+      if (this.room !== room) return;
+      void this.reconnectRoom(room, code);
+    });
+  }
+
+  private async reconnectRoom(disconnectedRoom: Room, code: number) {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    this.setCardChoicePending(true, "Bağlantı yenileniyor…");
+    this.emitHudState({ status: "Bağlantı koptu, yeniden bağlanılıyor…" });
+    const client = getSharedClient(gameServerUrl);
+    const deadline = Date.now() + 18_000;
+
+    while (Date.now() < deadline) {
+      try {
+        const room = await client.reconnect(disconnectedRoom.reconnectionToken);
+        this.room = room;
+        this.localSessionId = room.sessionId;
+        setActiveLobbyRoom(room);
+        this.bindRoomHandlers(room);
+        room.send("card:sync");
+        this.reconnecting = false;
+        this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
+        this.emitHudState({ status: `Oda: ${room.roomId}` });
+        return;
+      } catch {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+    }
+
+    this.reconnecting = false;
+    clearActiveLobbyRoom(disconnectedRoom.roomId);
+    this.setCardChoicePending(false, "Bağlantı kurulamadı. Oyuna yeniden girmen gerekiyor.");
+    this.emitHudState({ status: `Bağlantı kesildi (${code})` });
+  }
+
   private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number }) {
     if (this.matchResultShown) {
       return;
@@ -1990,6 +2034,7 @@ export class GameScene extends Phaser.Scene {
 
   private showCardChoices(cards: CardDefinition[]) {
     this.hideCardChoices();
+    this.cardChoicePending = false;
     this.cardChoices = cards;
     const root = document.querySelector<HTMLElement>("#card-root");
     if (!root) return;
@@ -2002,6 +2047,7 @@ export class GameScene extends Phaser.Scene {
           <span class="card-draft__eyebrow">DALGA TAMAMLANDI</span>
           <h2>Rotanı güçlendir</h2>
           <p>Koşu boyunca kalacak bir kart seç</p>
+          <span class="card-draft__status" role="status" aria-live="polite"></span>
         </header>
         <div class="card-draft__grid"></div>
       </section>`;
@@ -2020,9 +2066,11 @@ export class GameScene extends Phaser.Scene {
         <strong>${card.name}</strong>
         <span class="run-card__description">${card.description}</span>
         <span class="run-card__scope">${scope}</span>`;
-      button.addEventListener("click", () => card.scope.kind === "targeted"
-        ? this.showTargetedTowerChoices(card)
-        : this.room?.send("card:choose", { cardId: card.id }));
+      button.addEventListener("click", () => {
+        if (this.cardChoicePending) return;
+        if (card.scope.kind === "targeted") this.showTargetedTowerChoices(card);
+        else this.submitCardChoice({ cardId: card.id });
+      });
       grid?.append(button);
     });
   }
@@ -2040,6 +2088,7 @@ export class GameScene extends Phaser.Scene {
         <span class="card-draft__eyebrow">${card.name.toLocaleUpperCase("tr-TR")}</span>
         <h2>Hedef kuleyi seç</h2>
         <p>Kart bu kuleye kalıcı olarak bağlanacak</p>
+        <span class="card-draft__status" role="status" aria-live="polite"></span>
       </header>
       <div class="tower-choice-list"></div>`;
     const currentChoices = [...this.cardChoices];
@@ -2050,17 +2099,49 @@ export class GameScene extends Phaser.Scene {
       button.type = "button";
       button.className = "tower-choice";
       button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${tower.name}</strong><small>Seviye ${tower.level} • ${Math.round(tower.damageDealt ?? 0)} hasar</small></span><span class="tower-choice__arrow">→</span>`;
-      button.addEventListener("click", () => this.room?.send("card:choose", { cardId: card.id, towerId: tower.id }));
+      button.addEventListener("click", () => this.submitCardChoice({ cardId: card.id, towerId: tower.id }));
       list?.append(button);
     });
   }
 
   private hideCardChoices() {
+    this.clearCardChoiceTimeout();
+    this.cardChoicePending = false;
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     root?.replaceChildren();
     if (root) root.className = "";
     this.cardChoiceRoot = undefined;
     this.cardChoices = [];
+  }
+
+  private submitCardChoice(message: { cardId: string; towerId?: string }) {
+    if (!this.room || this.cardChoicePending) return;
+    this.setCardChoicePending(true, "Kart uygulanıyor…");
+    this.room.send("card:choose", message);
+    this.cardChoiceTimeout = window.setTimeout(() => {
+      this.setCardChoicePending(false, "Sunucudan yanıt alınamadı. Tekrar deneyebilirsin.");
+    }, 4500);
+  }
+
+  private setCardChoicePending(pending: boolean, status = "") {
+    this.cardChoicePending = pending;
+    if (!pending) this.clearCardChoiceTimeout();
+    const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
+    root?.querySelectorAll<HTMLButtonElement>(".run-card, .tower-choice").forEach((button) => {
+      button.disabled = pending;
+    });
+    const statusElement = root?.querySelector<HTMLElement>(".card-draft__status");
+    if (statusElement) {
+      statusElement.textContent = status;
+      statusElement.classList.toggle("card-draft__status--error", !pending && Boolean(status));
+    }
+  }
+
+  private clearCardChoiceTimeout() {
+    if (this.cardChoiceTimeout !== undefined) {
+      window.clearTimeout(this.cardChoiceTimeout);
+      this.cardChoiceTimeout = undefined;
+    }
   }
 
   private getCardScopeLabel(card: CardDefinition) {

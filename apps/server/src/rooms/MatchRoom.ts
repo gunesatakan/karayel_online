@@ -959,6 +959,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
       this.chooseCard(client, message);
     });
+    this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
@@ -999,12 +1000,26 @@ export class MatchRoom extends Room<MatchState> {
     this.broadcastLobbyState();
   }
 
-  onLeave(client: Client) {
+  async onLeave(client: Client, consented = false) {
     const player = this.state.players.get(client.sessionId);
     if (this.gameStarted && player) {
       player.connected = false;
-      this.tryFinishSetupPhase();
       this.broadcastLobbyState();
+
+      if (!consented) {
+        try {
+          const reconnectedClient = await this.allowReconnection(client, 20);
+          player.connected = true;
+          this.sendMatchResumeState(reconnectedClient);
+          this.broadcastLobbyState();
+          return;
+        } catch {
+          // The reconnect window expired. Keep the player slot available for
+          // the existing started-match fallback in joinStartedMatch().
+        }
+      }
+
+      this.tryFinishSetupPhase();
       return;
     }
 
@@ -1020,9 +1035,7 @@ export class MatchRoom extends Room<MatchState> {
     if (disconnectedEntry) {
       const [previousSessionId, player] = disconnectedEntry;
       this.transferPlayerSession(previousSessionId, client.sessionId, player, options.playerName);
-      this.sendLobbyState(client);
-      client.send("match:map", this.activeMap);
-      client.send("lobby:started", { roomId: this.roomId });
+      this.sendMatchResumeState(client);
       this.syncRoomRegistry();
       return;
     }
@@ -1075,6 +1088,20 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.playerKillStreakLocks, previousSessionId, nextSessionId);
     this.transferMapKey(this.melisFavoriteTowerIds, previousSessionId, nextSessionId);
     this.transferMapKey(this.melisGothicNightmareOwnerUntil, previousSessionId, nextSessionId);
+    this.transferMapKey(this.pendingCardChoices, previousSessionId, nextSessionId);
+    this.transferMapKey(this.shopPlacementCharges, previousSessionId, nextSessionId);
+  }
+
+  private sendMatchResumeState(client: Client) {
+    this.sendLobbyState(client);
+    client.send("match:map", this.activeMap);
+    client.send("lobby:started", { roomId: this.roomId });
+    this.sendPendingCardChoices(client);
+  }
+
+  private sendPendingCardChoices(client: Client) {
+    const choices = this.pendingCardChoices.get(client.sessionId);
+    if (choices) client.send("card:choices", choices);
   }
 
   onDispose() {
@@ -1459,10 +1486,22 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     const choices = this.pendingCardChoices.get(client.sessionId);
     const card = choices?.find((choice) => choice.id === message.cardId);
-    if (!player || !card) return;
+    if (!player || !choices) {
+      client.send("card:rejected", { reason: "Bekleyen kart seçimi bulunamadı. Bağlantı yenileniyor olabilir." });
+      return;
+    }
+    if (!card) {
+      client.send("card:rejected", { reason: "Bu kart artık geçerli bir seçenek değil." });
+      client.send("card:choices", choices);
+      return;
+    }
     if (card.scope.kind === "targeted") {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-      if (!tower || tower.ownerId !== client.sessionId || tower.definition.resourceProvider || !canAcceptTargetedCard(tower.targetedCardIds)) return;
+      if (!tower || tower.ownerId !== client.sessionId || tower.definition.resourceProvider || !canAcceptTargetedCard(tower.targetedCardIds)) {
+        client.send("card:rejected", { reason: "Seçilen kule bu kartı alamıyor. Başka bir kule seç." });
+        client.send("card:choices", choices);
+        return;
+      }
       tower.runModifiers.push(...card.effects);
       tower.targetedCardIds.push(card.id);
     } else {
