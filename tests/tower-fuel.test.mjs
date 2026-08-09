@@ -7,6 +7,7 @@ import {
   deriveTowerResources,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
   getTowerEnergyState,
+  shouldConsumeTowerOperatingEnergy,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 
@@ -54,4 +55,13 @@ test("enerji ve mühimmat tüketim bantları tasarım değerlerine yakındır", 
 test("pasif aura çalışırken enerji harcar, lojistik binası harcamaz", () => {
   assert.equal(calculateTowerOperatingEnergy(tower("zeynep-7"), 10), 12);
   assert.equal(calculateTowerOperatingEnergy(tower("zeynep-10"), 10), 0);
+});
+
+test("çalışma enerjisi yalnız aktif dalgada tüketilir", () => {
+  const combatTower = tower("warrior-1");
+  const provider = tower("warrior-8");
+  assert.equal(shouldConsumeTowerOperatingEnergy(combatTower, true, false), false);
+  assert.equal(shouldConsumeTowerOperatingEnergy(combatTower, false, false), true);
+  assert.equal(shouldConsumeTowerOperatingEnergy(combatTower, false, true), false);
+  assert.equal(shouldConsumeTowerOperatingEnergy(provider, false, false), false);
 });

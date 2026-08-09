@@ -344,6 +344,7 @@ export {
   calculateTowerAmmoCost,
   calculateTowerShotEnergyCost,
   calculateTowerOperatingEnergy,
+  shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
   type TowerEnergyState,
   calculateTowerScaledBaseDamage,

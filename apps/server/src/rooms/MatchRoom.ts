@@ -37,6 +37,7 @@ import {
   calculateTowerAmmoCost,
   calculateTowerShotEnergyCost,
   calculateTowerOperatingEnergy,
+  shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
   calculateTowerShotHeat,
   appendLegacyMultiplier,
@@ -1677,7 +1678,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.standby) {
         continue;
       }
-      if (!tower.definition.resourceProvider) {
+      if (shouldConsumeTowerOperatingEnergy(tower.definition, this.setupPhase, tower.standby)) {
         const upkeep = calculateTowerOperatingEnergy(tower.definition, deltaTime / 1000, getModifierMultiplier(this.getTowerRunModifiers(tower), "operatingEnergyCost"));
         tower.energy = Math.max(0, tower.energy - upkeep);
         if (tower.energy <= 0 && tower.energyDepletedAt <= 0) tower.energyDepletedAt = now;

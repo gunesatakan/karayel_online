@@ -98,6 +98,10 @@ export function calculateTowerOperatingEnergy(definition: TowerDefinition, secon
   return Math.max(0, definition.engine?.resources.operatingEnergyPerSecond ?? 0) * Math.max(0, seconds) * modifierMultiplier;
 }
 
+export function shouldConsumeTowerOperatingEnergy(definition: TowerDefinition, setupPhase: boolean, standby: boolean) {
+  return !definition.resourceProvider && !setupPhase && !standby;
+}
+
 export type TowerEnergyState = "powered" | "fire-off" | "tracking-off" | "offline";
 
 export function getTowerEnergyState(energy: number, depletedAt: number, now: number): TowerEnergyState {
