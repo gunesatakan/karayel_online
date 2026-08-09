@@ -229,8 +229,8 @@ export class GameScene extends Phaser.Scene {
   private selectedTemperatureText?: Phaser.GameObjects.Text;
   private selectedPerformanceText?: Phaser.GameObjects.Text;
   private performanceSliderHitZone?: Phaser.GameObjects.Rectangle;
-  private performanceSliderTop = 0;
-  private performanceSliderBottom = 0;
+  private performanceSliderLeft = 0;
+  private performanceSliderRight = 0;
   private performanceSliderTowerId = "";
   private performanceSliderDragging = false;
   private optimisticPerformance?: { towerId: string; value: number };
@@ -3043,8 +3043,8 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
-    const panelWidth = Math.max(138, Math.min(158, discSize * 2));
-    const panelHeight = 76;
+    const panelWidth = Math.max(210, Math.min(244, discSize * 2.4));
+    const panelHeight = 98;
     const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
     const belowTowerY = tower.y + discSize / 2 + 7;
@@ -3054,16 +3054,13 @@ export class GameScene extends Phaser.Scene {
       TOWER_BUILD_TOP + 4,
       this.controlTop - panelHeight - 4
     );
-    const barX = panelX + 7;
-    const barWidth = panelWidth - 48;
+    const barX = panelX + 10;
+    const barWidth = panelWidth - 20;
     const barHeight = 6;
     const ammoBarY = panelY + 16;
     const energyBarY = panelY + 38;
     const temperatureBarY = panelY + 60;
-    const performanceX = panelX + panelWidth - 20;
-    const performanceTop = panelY + 11;
-    const performanceBottom = panelY + panelHeight - 8;
-    const performanceHeight = performanceBottom - performanceTop;
+    const performanceBarY = panelY + 82;
     const hasPerformanceControl = !tower.resourceProvider;
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
@@ -3086,31 +3083,30 @@ export class GameScene extends Phaser.Scene {
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, barWidth, barHeight, 3);
     graphics.fillStyle(temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
       .fillRoundedRect(barX, temperatureBarY, barWidth * temperatureRatio, barHeight, 3);
-    const performanceFillHeight = performanceHeight * performanceRatio;
     if (hasPerformanceControl) {
-      graphics.fillStyle(0x172033, 1).fillRoundedRect(performanceX - 4, performanceTop, 8, performanceHeight, 4);
-      graphics.fillStyle(0x22c55e, 1).fillRoundedRect(performanceX - 4, performanceBottom - performanceFillHeight, 8, performanceFillHeight, 4);
-      graphics.fillStyle(0xf8fafc, 1).fillCircle(performanceX, performanceBottom - performanceFillHeight, 5);
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, performanceBarY, barWidth, barHeight, 3);
+      graphics.fillStyle(0x22c55e, 1).fillRoundedRect(barX, performanceBarY, barWidth * performanceRatio, barHeight, 3);
+      graphics.fillStyle(0xf8fafc, 1).fillCircle(barX + barWidth * performanceRatio, performanceBarY + barHeight / 2, 5);
     }
 
     const labelCenterX = barX + barWidth / 2;
     this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
-    this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0.5).setDepth(67).setRotation(-Math.PI / 2);
+    this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(labelCenterX, panelY + 2).setVisible(true);
     this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
     this.selectedTemperatureText.setText(`Sıcaklık %${Math.round(tower.temperature ?? 0)}`).setPosition(labelCenterX, panelY + 46).setVisible(true);
-    this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(panelX + panelWidth - 8, panelY + panelHeight / 2).setVisible(hasPerformanceControl);
+    this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
-    this.performanceSliderTop = performanceTop;
-    this.performanceSliderBottom = performanceBottom;
+    this.performanceSliderLeft = barX;
+    this.performanceSliderRight = barX + barWidth;
     this.performanceSliderTowerId = tower.id;
     if (!this.performanceSliderHitZone) {
-      this.performanceSliderHitZone = this.add.rectangle(performanceX, panelY + panelHeight / 2, 32, panelHeight, 0xffffff, 0.001)
+      this.performanceSliderHitZone = this.add.rectangle(labelCenterX, performanceBarY, barWidth + 12, 24, 0xffffff, 0.001)
         .setDepth(68)
         .setInteractive({ useHandCursor: true });
-      const updatePerformance = (pointer: Phaser.Input.Pointer) => this.setSelectedTowerPerformanceFromY(pointer.worldY);
+      const updatePerformance = (pointer: Phaser.Input.Pointer) => this.setSelectedTowerPerformanceFromX(pointer.worldX);
       this.performanceSliderHitZone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
         this.performanceSliderDragging = true;
         updatePerformance(pointer);
@@ -3124,7 +3120,7 @@ export class GameScene extends Phaser.Scene {
         this.performanceSliderDragging = false;
       });
     }
-    this.performanceSliderHitZone.setPosition(performanceX, panelY + panelHeight / 2).setSize(32, panelHeight).setVisible(hasPerformanceControl);
+    this.performanceSliderHitZone.setPosition(labelCenterX, performanceBarY).setSize(barWidth + 12, 24).setVisible(hasPerformanceControl);
     if (hasPerformanceControl && tower.ownerId === this.localSessionId) {
       this.performanceSliderHitZone.setInteractive({ useHandCursor: true });
     } else {
@@ -3132,11 +3128,11 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private setSelectedTowerPerformanceFromY(worldY: number) {
-    if (!this.performanceSliderTowerId || this.performanceSliderBottom <= this.performanceSliderTop) {
+  private setSelectedTowerPerformanceFromX(worldX: number) {
+    if (!this.performanceSliderTowerId || this.performanceSliderRight <= this.performanceSliderLeft) {
       return;
     }
-    const performance = Phaser.Math.Clamp((this.performanceSliderBottom - worldY) / (this.performanceSliderBottom - this.performanceSliderTop), 0, 1);
+    const performance = Phaser.Math.Clamp((worldX - this.performanceSliderLeft) / (this.performanceSliderRight - this.performanceSliderLeft), 0, 1);
     this.optimisticPerformance = { towerId: this.performanceSliderTowerId, value: performance };
     const tower = this.towerSnapshots.get(this.performanceSliderTowerId);
     if (tower) {
