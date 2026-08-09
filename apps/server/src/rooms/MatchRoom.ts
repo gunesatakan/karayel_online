@@ -176,6 +176,8 @@ const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimension
 const GAME_SPEED_MULTIPLIER = 0.8;
 const GLOBAL_TOWER_RANGE_MULTIPLIER = 2 / 3;
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
+const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 256 * 1024;
+const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
@@ -826,6 +828,7 @@ export class MatchRoom extends Room<MatchState> {
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
+  private lastPerfBroadcastAt = 0;
   private lastSnapshotSizeSampleAt = 0;
   private snapshotBroadcastTimes: number[] = [];
   private perfCounters: ServerPerfCounters = this.createPerfCounters();
@@ -949,8 +952,13 @@ export class MatchRoom extends Room<MatchState> {
     });
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
+      const serverAt = Date.now();
+      const processingStartedAt = performance.now();
       client.send("latency:pong", {
-        sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now()
+        sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now(),
+        serverAt,
+        serverProcessingMs: roundMetric(performance.now() - processingStartedAt),
+        bufferedAmount: getClientBufferedAmount(client)
       });
     });
 
@@ -1371,12 +1379,10 @@ export class MatchRoom extends Room<MatchState> {
       sectionStart = performance.now();
       snapshot = this.getSnapshot();
       timings.snapshotMs = performance.now() - sectionStart;
-      snapshot.perf = this.latestPerfSnapshot;
       if (SNAPSHOT_SIZE_METRICS_ENABLED && now - this.lastSnapshotSizeSampleAt >= SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS) {
         snapshotBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
         this.lastSnapshotSizeSampleAt = now;
       }
-      this.recordSnapshotBroadcast(now);
       this.lastSnapshotBroadcastAt = now;
     }
     const tickMs = performance.now() - frameStart;
@@ -1389,9 +1395,24 @@ export class MatchRoom extends Room<MatchState> {
     });
 
     if (snapshot) {
-      snapshot.perf = this.latestPerfSnapshot;
-      this.broadcast("snapshot", snapshot);
+      if (this.sendSnapshotWithBackpressure(snapshot)) {
+        this.recordSnapshotBroadcast(now);
+      }
     }
+    if (now - this.lastPerfBroadcastAt >= PERF_SEND_INTERVAL_MS) {
+      this.broadcast("perf:snapshot", this.latestPerfSnapshot);
+      this.lastPerfBroadcastAt = now;
+    }
+  }
+
+  private sendSnapshotWithBackpressure(snapshot: GameSnapshot) {
+    let sent = false;
+    for (const client of this.clients) {
+      if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) continue;
+      client.send("snapshot", snapshot);
+      sent = true;
+    }
+    return sent;
   }
 
   private updateSpawning(deltaTime: number) {
@@ -6432,6 +6453,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private getSnapshot(): GameSnapshot {
     const now = Date.now();
+    const worldBounds = this.getActiveWorldBounds();
+    const projectileMargin = this.scaleWorldDistance(80);
     this.refreshZeynepFormations();
     const underworldLinkedEnemyIds = new Set<string>();
     for (const tower of this.towers.values()) {
@@ -6492,17 +6515,17 @@ export class MatchRoom extends Room<MatchState> {
         id: enemy.id,
         type: enemy.type,
         race: enemy.race,
-        x: enemy.x,
-        y: enemy.y,
-        hp: Math.max(0, enemy.hp),
+        x: roundNetworkNumber(enemy.x),
+        y: roundNetworkNumber(enemy.y),
+        hp: roundNetworkNumber(Math.max(0, enemy.hp)),
         maxHp: enemy.maxHp,
         armor: enemy.armor,
         attack: enemy.attack,
         healthRegenPerSecond: enemy.healthRegenPerSecond,
-        shield: Math.max(0, enemy.shield),
+        shield: roundNetworkNumber(Math.max(0, enemy.shield)),
         maxShield: enemy.maxShield,
         movementKind: enemy.movementKind,
-        pathDistance: enemy.pathDistance,
+        pathDistance: roundNetworkNumber(enemy.pathDistance),
         pathId: enemy.pathId,
         trackingStacks: this.getTrackingStackCount(enemy, now),
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
@@ -6523,12 +6546,12 @@ export class MatchRoom extends Room<MatchState> {
         characterId: tower.characterId,
         definitionId: tower.definition.id,
         name: tower.definition.name,
-        x: tower.x,
-        y: tower.y,
+        x: roundNetworkNumber(tower.x),
+        y: roundNetworkNumber(tower.y),
         orientation: tower.orientation,
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
-        range: this.getTowerRange(tower),
+        range: roundNetworkNumber(this.getTowerRange(tower)),
         color: tower.definition.color,
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
@@ -6565,22 +6588,25 @@ export class MatchRoom extends Room<MatchState> {
         zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
         ,targetingMode: tower.targetingMode
       })),
-      projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
+      projectiles: Array.from(this.projectiles.values())
+        .filter((projectile) => projectile.x >= worldBounds.left - projectileMargin && projectile.x <= worldBounds.right + projectileMargin
+          && projectile.y >= worldBounds.top - projectileMargin && projectile.y <= worldBounds.bottom + projectileMargin)
+        .map((projectile) => ({
         id: projectile.id,
         kind: projectile.kind,
         source: projectile.source,
         definitionId: projectile.definitionId,
         hitType: projectile.hitType,
-        x: projectile.x,
-        y: projectile.y,
-        vx: projectile.vx,
-        vy: projectile.vy
+        x: roundNetworkNumber(projectile.x),
+        y: roundNetworkNumber(projectile.y),
+        vx: roundNetworkNumber(projectile.vx),
+        vy: roundNetworkNumber(projectile.vy)
       })),
       drones: Array.from(this.drones.values()).map((drone) => ({
         id: drone.id,
         mode: drone.mode,
-        x: drone.x,
-        y: drone.y,
+        x: roundNetworkNumber(drone.x),
+        y: roundNetworkNumber(drone.y),
         ownerId: drone.ownerId,
         cargo: drone.cargo,
         capacity: drone.capacity,
@@ -6594,22 +6620,22 @@ export class MatchRoom extends Room<MatchState> {
         .map((beam) => ({
           id: beam.id,
           definitionId: beam.definitionId,
-          x1: beam.x1,
-          y1: beam.y1,
-          x2: beam.x2,
-          y2: beam.y2,
-          scanX: beam.scanX,
-          scanY: beam.scanY,
-          width: beam.width,
+          x1: roundNetworkNumber(beam.x1),
+          y1: roundNetworkNumber(beam.y1),
+          x2: roundNetworkNumber(beam.x2),
+          y2: roundNetworkNumber(beam.y2),
+          scanX: beam.scanX === undefined ? undefined : roundNetworkNumber(beam.scanX),
+          scanY: beam.scanY === undefined ? undefined : roundNetworkNumber(beam.scanY),
+          width: roundNetworkNumber(beam.width),
           color: beam.color,
           overdrive: beam.overdrive,
           ttlMs: Math.max(0, Math.round(beam.ttlMs))
         })),
       damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
         id: event.id,
-        x: event.x,
-        y: event.y,
-        amount: event.amount
+        x: roundNetworkNumber(event.x),
+        y: roundNetworkNumber(event.y),
+        amount: roundNetworkNumber(event.amount)
       })),
       killEvents: Array.from(this.killEvents.values()).map((event) => ({
         id: event.id,
@@ -7940,6 +7966,19 @@ function getMelisApprovalGain(tier: KillStreakTier) {
 
 export function getPlayerStartGold(characterId: CharacterId) {
   return characterId === "archer" ? MELIS_START_GOLD : TEAM_START_GOLD;
+}
+
+export function getClientBufferedAmount(client: Pick<Client, "ref">) {
+  const transport = client.ref as typeof client.ref & {
+    bufferedAmount?: number;
+    _socket?: { bufferedAmount?: number };
+  };
+  const amount = transport.bufferedAmount ?? transport._socket?.bufferedAmount ?? 0;
+  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+export function roundNetworkNumber(value: number) {
+  return Math.round(value * 10) / 10;
 }
 
 function getTowerPlacementOrientation(definitionId?: string, orientation?: TowerOrientation): TowerOrientation {

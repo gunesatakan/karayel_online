@@ -39,6 +39,7 @@ import {
   type BeamSnapshot,
   type GameSnapshot,
   type ProjectileSnapshot,
+  type ServerPerfSnapshot,
   type TowerDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
@@ -351,6 +352,7 @@ export class GameScene extends Phaser.Scene {
   private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
   private latestPerfSnapshot?: GameSnapshot;
+  private latestServerPerf?: ServerPerfSnapshot;
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
@@ -1961,7 +1963,11 @@ export class GameScene extends Phaser.Scene {
       this.pendingShopPlacement = message.itemId;
       this.hintText?.setText(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
     });
-    room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
+    room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
+    room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
+      this.latestServerPerf = perf;
+      if (this.latestPerfSnapshot) this.latestPerfSnapshot.perf = perf;
+    });
     room.onLeave((code) => {
       if (this.room !== room) return;
       void this.reconnectRoom(room, code);
@@ -5116,23 +5122,24 @@ export class GameScene extends Phaser.Scene {
     this.room?.send("latency:ping", { sentAt: performance.now() });
   }
 
-  private updatePing(sentAt: unknown) {
-    if (typeof sentAt !== "number") {
+  private updatePing(message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) {
+    if (typeof message.sentAt !== "number") {
       return;
     }
 
-    const ping = Math.max(0, Math.round(performance.now() - sentAt));
+    const ping = Math.max(0, Math.round(performance.now() - message.sentAt));
     this.pingSamples.push(ping);
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);
     const jitter = Math.max(...this.pingSamples) - Math.min(...this.pingSamples);
     this.emitHudState({
-      ping: `${averagePing} ms ±${jitter}`,
+      ping: `${averagePing} ms ±${jitter}${(message.bufferedAmount ?? 0) > 0 ? ` q${Math.ceil((message.bufferedAmount ?? 0) / 1024)}K` : ""}`,
       pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad"
     });
   }
 
   private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
+    snapshot.perf = this.latestServerPerf;
     this.latestPerfSnapshot = snapshot;
     this.snapshotCount += 1;
     this.renderMsSamples.push(renderMs);
