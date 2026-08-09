@@ -342,6 +342,7 @@ export {
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
   getTowerPerformanceHeatMultiplier,
   getTowerPerformanceEnergyMultiplier,
+  getTowerPerformanceFlameIntensity,
   calculateTowerShotHeat,
   calculateTowerShotEnergy,
   calculateTowerAmmoCost,

@@ -73,6 +73,13 @@ export function getTowerPerformanceEnergyMultiplier(performance: number) {
     : 1 + (safePerformance - 0.5) * 4;
 }
 
+/** Visual intensity for the high-performance flame, including a faint 50% pilot glow. */
+export function getTowerPerformanceFlameIntensity(performance: number) {
+  const safePerformance = Math.max(0, Math.min(1, performance));
+  if (safePerformance < 0.5) return 0;
+  return 0.08 + ((safePerformance - 0.5) / 0.5) * 0.92;
+}
+
 export function calculateTowerShotHeat(definition: TowerDefinition, performance: number, towerSpecialMultiplier = 1) {
   const hitType = definition.hitType ?? "projectile";
   const damageType = definition.damageType ?? "physical";

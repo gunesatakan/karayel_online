@@ -18,6 +18,7 @@ import {
   getTowerBuildCost,
   getTowerSellRefund,
   getTowerLevelExpCost,
+  getTowerPerformanceFlameIntensity,
   getShopItemPrice,
   getTile,
   gridToWorld,
@@ -2720,6 +2721,7 @@ export class GameScene extends Phaser.Scene {
 
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
+    this.renderTowerPerformanceFlames(graphics, tower);
     if (tower.energyState && tower.energyState !== "powered") {
       const size = Math.max(5, this.getMapCellSize() * 0.14);
       graphics.fillStyle(0x7f1d1d, 0.94).fillCircle(tower.x + size * 1.9, tower.y - size * 1.9, size);
@@ -2734,6 +2736,64 @@ export class GameScene extends Phaser.Scene {
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderTowerPerformanceFlames(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.resourceProvider) return;
+    const intensity = getTowerPerformanceFlameIntensity(tower.performance ?? 0.5);
+    if (intensity <= 0) return;
+
+    const cellSize = this.getMapCellSize();
+    const footprintRadius = cellSize * getTowerGridSpan(tower.definitionId) * 0.47;
+    const phase = performance.now() / 210;
+    const flameCount = 5 + Math.round(intensity * 9);
+    const glowAlpha = 0.025 + intensity * 0.13;
+
+    graphics.fillStyle(0xef4444, glowAlpha);
+    graphics.fillCircle(tower.x, tower.y, footprintRadius * (1.08 + intensity * 0.32));
+    graphics.lineStyle(1 + intensity * 2.2, 0xf97316, 0.12 + intensity * 0.58);
+    graphics.strokeCircle(tower.x, tower.y, footprintRadius * (0.95 + Math.sin(phase) * 0.035));
+
+    for (let index = 0; index < flameCount; index += 1) {
+      const angle = (index / flameCount) * Math.PI * 2 + Math.sin(phase * 0.42 + index * 1.7) * 0.09;
+      const flicker = 0.72 + Math.sin(phase * 1.65 + index * 2.31) * 0.2 + Math.sin(phase * 2.7 + index) * 0.08;
+      const baseDistance = footprintRadius * (0.82 + intensity * 0.08);
+      const flameHeight = cellSize * (0.07 + intensity * 0.36) * flicker;
+      const halfWidth = cellSize * (0.018 + intensity * 0.075);
+      const radialX = Math.cos(angle);
+      const radialY = Math.sin(angle);
+      const tangentX = -radialY;
+      const tangentY = radialX;
+      const baseX = tower.x + radialX * baseDistance;
+      const baseY = tower.y + radialY * baseDistance;
+      const tipX = baseX + radialX * flameHeight;
+      const tipY = baseY + radialY * flameHeight;
+
+      graphics.fillStyle(0xef4444, 0.06 + intensity * 0.2);
+      graphics.fillCircle(tipX, tipY, halfWidth * (1.8 + intensity));
+      graphics.fillStyle(0xf97316, 0.18 + intensity * 0.7);
+      graphics.fillTriangle(
+        baseX + tangentX * halfWidth, baseY + tangentY * halfWidth,
+        baseX - tangentX * halfWidth, baseY - tangentY * halfWidth,
+        tipX, tipY
+      );
+      graphics.fillStyle(0xfacc15, 0.12 + intensity * 0.78);
+      graphics.fillTriangle(
+        baseX + tangentX * halfWidth * 0.42, baseY + tangentY * halfWidth * 0.42,
+        baseX - tangentX * halfWidth * 0.42, baseY - tangentY * halfWidth * 0.42,
+        baseX + radialX * flameHeight * 0.58, baseY + radialY * flameHeight * 0.58
+      );
+
+      if (intensity > 0.55 && index % 2 === 0) {
+        const emberDistance = flameHeight * (1.25 + ((index * 37) % 5) * 0.08);
+        graphics.fillStyle(index % 4 === 0 ? 0xfef08a : 0xfb923c, 0.3 + intensity * 0.55);
+        graphics.fillCircle(
+          baseX + radialX * emberDistance + tangentX * Math.sin(phase + index) * halfWidth,
+          baseY + radialY * emberDistance + tangentY * Math.sin(phase + index) * halfWidth,
+          Math.max(0.7, halfWidth * 0.28)
+        );
+      }
+    }
   }
 
   private renderAbartiEdgeBody(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
