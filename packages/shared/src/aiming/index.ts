@@ -1,5 +1,9 @@
 export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 18;
-export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 36;
+export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 18;
+
+export function getTowerFireAlignmentTolerance(accuracyBonus = 0) {
+  return TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS * (1 - Math.max(0, Math.min(1, accuracyBonus)));
+}
 
 export function shortestAngleDelta(from: number, to: number) {
   return Math.atan2(Math.sin(to - from), Math.cos(to - from));

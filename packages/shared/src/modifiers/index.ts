@@ -10,6 +10,7 @@ export type ModifierStat =
   | "towerHealth"
   | "critChance"
   | "critDamage"
+  | "accuracy"
   | "markAmplification"
   | "goldGain"
   | "towerCapacity"

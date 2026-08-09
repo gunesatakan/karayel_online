@@ -71,6 +71,7 @@ import {
   isInsideMap,
   inferTowerAmmoType,
   isTowerAligned,
+  getTowerFireAlignmentTolerance,
   usesLinearBallistics,
   rotateTowerTowards,
   getTowerSellRefund,
@@ -1744,7 +1745,8 @@ export class MatchRoom extends Room<MatchState> {
 
     const targetAngle = Math.atan2(dy, dx);
     tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds);
-    return isTowerAligned(tower.facing, targetAngle);
+    const accuracyBonus = getModifierAdd(this.getTowerRunModifiers(tower), "accuracy");
+    return isTowerAligned(tower.facing, targetAngle, getTowerFireAlignmentTolerance(accuracyBonus));
   }
 
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
