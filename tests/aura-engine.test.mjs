@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyTowerAuraModifier, evaluateTowerAuras, isPointInsideTowerAura } from "../packages/shared/dist/index.js";
+import { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier, isPointInsideTowerAura } from "../packages/shared/dist/index.js";
 
 const enemySlowAura = {
   affects: "enemies",
@@ -14,6 +14,13 @@ const enemySlowAura = {
 test("daire aura yalnız yarıçap içindeki hedefi kapsar", () => {
   assert.equal(isPointInsideTowerAura({ x: 0, y: 0, aura: enemySlowAura }, { x: 60, y: 80 }), true);
   assert.equal(isPointInsideTowerAura({ x: 0, y: 0, aura: enemySlowAura }, { x: 101, y: 0 }), false);
+});
+
+test("aura seviye ölçeği veri üzerinden hesaplanır ve alt sınıra uyar", () => {
+  const aura = { ...enemySlowAura, multiplierPerLevel: -0.026, minMultiplier: 0.25 };
+  assert.equal(getTowerAuraLevelMultiplier(aura, 1), 0.6);
+  assert.ok(Math.abs(getTowerAuraLevelMultiplier(aura, 5) - 0.496) < 1e-9);
+  assert.equal(getTowerAuraLevelMultiplier(aura, 99), 0.25);
 });
 
 test("çizgi aura genişliği içinde çalışır", () => {

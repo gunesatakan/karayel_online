@@ -24,6 +24,7 @@ import {
   applyTowerAuraModifier,
   dispatchTowerTriggers,
   evaluateTowerAuras,
+  getTowerAuraLevelMultiplier,
   isTargetInsideAttackShape,
   selectAttackShapeTargets,
   selectTowerTarget,
@@ -145,6 +146,7 @@ import {
   type EdgeSegment,
   type TowerTargetingMode,
   type TowerAuraSource,
+  type TowerAuraDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
 
@@ -1757,26 +1759,16 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (isPeriodicTowerAura(tower.definition)) {
-        if (this.setupPhase || tower.cooldownMs > 0 || !this.canTowerFire(tower)) {
-          continue;
-        }
-        this.consumeTowerResources(tower);
-        const interval = this.getTowerFireInterval(tower);
-        tower.cooldownMs = interval;
-        tower.auraExpiresAt = now + interval * AURA_REFRESH_DURATION_MULTIPLIER;
-        continue;
-      }
-
-      if (tower.definition.id === "warrior-3" && this.isTowerIsolated(tower)) {
-        if (tower.cooldownMs <= 0) {
-          if (!this.canTowerFire(tower)) {
-            continue;
-          }
+      const activeAuras = this.getActiveTowerAuras(tower);
+      if (activeAuras.length > 0) {
+        if (!this.setupPhase && tower.cooldownMs <= 0 && this.canTowerFire(tower)) {
           this.consumeTowerResources(tower);
-          tower.cooldownMs = this.adjustIntervalForPerformanceAndHeat(tower, 220);
+          const interval = this.getTowerAuraTickInterval(tower, activeAuras);
+          const refreshMultiplier = Math.max(...activeAuras.map((aura) => aura.refreshDurationMultiplier ?? AURA_REFRESH_DURATION_MULTIPLIER));
+          tower.cooldownMs = interval;
+          tower.auraExpiresAt = now + interval * refreshMultiplier;
         }
-        this.applyIsolationAura(tower);
+        this.applyTowerEnemyAuras(tower, activeAuras);
         continue;
       }
 
@@ -5073,14 +5065,14 @@ export class MatchRoom extends Room<MatchState> {
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
     this.addDamageEvent(enemy, dealtAmount);
+    const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
-      const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
-      const mark = sourceTower?.definition.engine?.appliesMark;
-      if (mark) {
-        this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now);
-      }
+    }
+    const mark = markSourceTower?.definition.engine?.appliesMark;
+    if (mark) {
+      this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now);
     }
     if (slowMs > 0) {
       const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
@@ -6659,7 +6651,7 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerAuraModifiers(target: TowerModel) {
     const sources: TowerAuraSource[] = [];
     for (const source of this.towers.values()) {
-      for (const aura of source.definition.engine?.auras ?? []) {
+      for (const aura of this.getActiveTowerAuras(source)) {
         if (aura.affects !== "towers") {
           continue;
         }
@@ -6687,6 +6679,19 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     return evaluateTowerAuras(sources, { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+  }
+
+  private getActiveTowerAuras(tower: TowerModel) {
+    return (tower.definition.engine?.auras ?? []).filter((aura) => {
+      const activation = aura.activation ?? "always";
+      return activation !== "isolated" || this.isTowerIsolated(tower);
+    });
+  }
+
+  private getTowerAuraTickInterval(tower: TowerModel, auras = this.getActiveTowerAuras(tower)) {
+    const baseInterval = Math.min(...auras.map((aura) => aura.tickIntervalMs ?? tower.definition.fireIntervalMs));
+    const adjustedInterval = this.adjustIntervalForPerformanceAndHeat(tower, baseInterval);
+    return adjustedInterval / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
   }
 
   private isTowerAuraPowered(tower: TowerModel) {
@@ -7260,27 +7265,29 @@ export class MatchRoom extends Room<MatchState> {
     return count;
   }
 
-  private applyIsolationAura(tower: TowerModel) {
+  private applyTowerEnemyAuras(tower: TowerModel, activeAuras = this.getActiveTowerAuras(tower)) {
     const range = this.getTowerRange(tower);
-    const speedMultiplier = getIsolationAuraSpeedMultiplier(tower.level);
-    const definition = tower.definition.engine?.auras?.find((aura) => aura.affects === "enemies" && aura.stat === "slow");
-    if (!definition) {
-      return;
-    }
-
-    for (const enemy of this.enemies.values()) {
-      this.perfCounters.aoeChecks += 1;
-      const modifier = evaluateTowerAuras([{
-        x: tower.x,
-        y: tower.y,
-        ownerId: tower.ownerId,
-        enabled: this.isTowerAuraPowered(tower),
-        aura: { ...definition, radius: range, multiplier: speedMultiplier }
-      }], { x: enemy.x, y: enemy.y, kind: "enemy" }).slow;
-      if (modifier !== undefined) {
-        const resistance = enemy.statusResistances.slow ?? 0;
-        const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
-        enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+    for (const definition of activeAuras) {
+      if (definition.affects !== "enemies" || definition.stat !== "slow") continue;
+      const runtimeDefinition: TowerAuraDefinition = {
+        ...definition,
+        radius: range,
+        multiplier: getTowerAuraLevelMultiplier(definition, tower.level)
+      };
+      for (const enemy of this.enemies.values()) {
+        this.perfCounters.aoeChecks += 1;
+        const modifier = evaluateTowerAuras([{
+          x: tower.x,
+          y: tower.y,
+          ownerId: tower.ownerId,
+          enabled: this.isTowerAuraPowered(tower),
+          aura: runtimeDefinition
+        }], { x: enemy.x, y: enemy.y, kind: "enemy" }).slow;
+        if (modifier !== undefined) {
+          const resistance = enemy.statusResistances.slow ?? 0;
+          const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
+          enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+        }
       }
     }
   }
@@ -7650,10 +7657,6 @@ function getCharacterCardAxes(characterId: CharacterId): import("@karayel/shared
   if (characterId === "archer") return ["cc", "dps"];
   if (characterId === "zeynep") return ["amplify", "dps"];
   return ["dps"];
-}
-
-function getIsolationAuraSpeedMultiplier(level: number) {
-  return Math.max(0.25, 0.48 - (level - 1) * 0.026);
 }
 
 function getObsessionDamageMultiplier(level: number) {

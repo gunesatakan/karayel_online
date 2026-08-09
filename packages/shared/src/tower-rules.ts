@@ -108,8 +108,7 @@ export function calculateTowerOperatingEnergy(definition: TowerDefinition, secon
 
 export function isPeriodicTowerAura(definition: TowerDefinition) {
   return !definition.resourceProvider
-    && definition.hitType === "aura"
-    && Boolean(definition.engine?.auras?.some((aura) => aura.affects === "towers"));
+    && Boolean(definition.engine?.auras?.length);
 }
 
 export function calculateTowerEnergyPerSecond(definition: TowerDefinition, performance = 0.5) {

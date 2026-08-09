@@ -1,5 +1,5 @@
 import type { TowerDefinition, TowerEngineConfig } from "./types.js";
-import { getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
+import { PASSIVE_AURA_TICK_INTERVAL_MS, getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
   "warrior-1": ["amplify", "dps"],
@@ -44,7 +44,7 @@ const defaultEngine: TowerEngineConfig = {
 const profiles: Record<string, EngineProfile> = {
   "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
   "warrior-2": { targeting: "first", attack: { shape: "circle", radius: 18 }, canHitAir: false },
-  "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh" }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 0.48, stacking: "strongest" }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
+  "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh" }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 0.48, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated", multiplierPerLevel: -0.026, minMultiplier: 0.25 }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
   "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
   "warrior-5": { targeting: "marked", attack: { shape: "beam" }, canHitAir: false, consumesMarks: ["tracking"], triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
   "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireRate", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }] },
@@ -61,8 +61,8 @@ const profiles: Record<string, EngineProfile> = {
     resources: { ammoType: "powerCrystal" }
   },
   "zeynep-6": { targeting: "first", attack: { shape: "cone", angle: 60 }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 1150, stacking: "refresh", scaling: "distance" }], resources: { ammoType: "auraCrystal" } },
-  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1 }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
-  "zeynep-8": { targeting: "first", attack: { shape: "line" }, canHitAir: false, placement: { requiresEdge: true }, auras: [{ affects: "towers", shape: "line", radius: 0, stat: "damage", multiplier: 1 }] , resources: { ammoType: "auraCrystal" } },
+  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1, tickIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS, refreshDurationMultiplier: 2, activation: "always" }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
+  "zeynep-8": { targeting: "first", attack: { shape: "line" }, canHitAir: false, placement: { requiresEdge: true }, auras: [{ affects: "towers", shape: "line", radius: 0, stat: "damage", multiplier: 1, tickIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS, refreshDurationMultiplier: 2, activation: "always" }] , resources: { ammoType: "auraCrystal" } },
   "zeynep-9": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "zeynep-10": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },
 

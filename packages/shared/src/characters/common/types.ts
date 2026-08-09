@@ -44,6 +44,12 @@ export type TowerAuraDefinition = {
   multiplier: number;
   stacking?: "strongest" | "multiply";
   scope?: "owner" | "team";
+  tickIntervalMs?: number;
+  refreshDurationMultiplier?: number;
+  activation?: "always" | "isolated";
+  multiplierPerLevel?: number;
+  minMultiplier?: number;
+  maxMultiplier?: number;
 };
 export type TowerLevelScalingDefinition = {
   stat: "damage";

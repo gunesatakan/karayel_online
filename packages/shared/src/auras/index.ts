@@ -52,6 +52,12 @@ export function applyTowerAuraModifier(baseValue: number, modifiers: TowerAuraMo
   return baseValue * (modifiers[stat] ?? 1);
 }
 
+export function getTowerAuraLevelMultiplier(aura: TowerAuraDefinition, level: number) {
+  const safeLevel = Math.max(1, Math.round(level));
+  const scaled = aura.multiplier + (safeLevel - 1) * (aura.multiplierPerLevel ?? 0);
+  return Math.max(aura.minMultiplier ?? Number.NEGATIVE_INFINITY, Math.min(aura.maxMultiplier ?? Number.POSITIVE_INFINITY, scaled));
+}
+
 function distanceSquared(x1: number, y1: number, x2: number, y2: number) {
   const dx = x2 - x1;
   const dy = y2 - y1;

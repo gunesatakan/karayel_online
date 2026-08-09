@@ -13,6 +13,17 @@ import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs"
 
 const towerDefinition = (id) => Object.values(towerCatalog).flat().find((definition) => definition.id === id);
 
+test("ortak motordaki her aura ortak tick sözleşmesini tanımlar", () => {
+  for (const definition of Object.values(towerCatalog).flat()) {
+    for (const aura of definition.engine.auras ?? []) {
+      assert.ok((aura.tickIntervalMs ?? definition.fireIntervalMs) > 0, `${definition.id}: tickIntervalMs`);
+      assert.ok((aura.refreshDurationMultiplier ?? 2) > 0, `${definition.id}: refreshDurationMultiplier`);
+      assert.ok(["always", "isolated"].includes(aura.activation ?? "always"), `${definition.id}: activation`);
+      assert.equal(isPeriodicTowerAura(definition), true, definition.id);
+    }
+  }
+});
+
 function placeAuraTower(id = "zeynep-7") {
   const room = createRoom("zeynep");
   const spot = findBuildableSpot(room, id);
@@ -76,6 +87,24 @@ test("İzolasyon ve Kin gerçek saldırı aralıklarıyla yakıtlı tick hattın
   assert.equal(kin.fireIntervalMs, 3200);
   assert.ok(calculateTowerShotEnergyCost(isolation, 0.5) > 0);
   assert.ok(calculateTowerShotEnergyCost(kin, 0.5) > 0);
+  assert.equal(isPeriodicTowerAura(isolation), true);
+  assert.equal(isPeriodicTowerAura(kin), false, "Kin aura değil, durum etkili cone saldırısıdır");
+});
+
+test("İzolasyon Kulesi yalnızken ortak aura tick yürütücüsünü kullanır", () => {
+  const room = createRoom("warrior");
+  const spot = findBuildableSpot(room, "warrior-3");
+  assert.ok(spot);
+  room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-3" });
+  const isolation = [...room.towers.values()][0];
+  isolation.energy = isolation.maxEnergy;
+  isolation.cooldownMs = 0;
+  const before = isolation.energy;
+  room.updateTowers(50);
+  assert.ok(isolation.energy < before);
+  assert.ok(isolation.auraExpiresAt > Date.now());
+  assert.equal(room.getActiveTowerAuras(isolation)[0].activation, "isolated");
+  assert.ok(Math.abs(room.getTowerAuraTickInterval(isolation) - 220) < 1e-9);
 });
 
 test("pasif aura kulelerinin dengeli enerji/saniye karakterizasyonu", () => {
