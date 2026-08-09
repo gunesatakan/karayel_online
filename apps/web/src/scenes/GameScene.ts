@@ -3122,6 +3122,7 @@ export class GameScene extends Phaser.Scene {
     const temperatureBarY = panelY + 60;
     const performanceBarY = panelY + 82;
     const hasPerformanceControl = !tower.resourceProvider;
+    const usesAmmo = tower.resourceProvider === "ammunition" || tower.shotFuel !== "energy";
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
     const temperatureRatio = Phaser.Math.Clamp((tower.temperature ?? 0) / 100, 0, 1);
@@ -3139,7 +3140,14 @@ export class GameScene extends Phaser.Scene {
     graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
-    graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
+    if (usesAmmo) {
+      graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
+    } else {
+      graphics.fillStyle(0x475569, 0.9).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
+      graphics.lineStyle(2, 0xf87171, 0.95);
+      graphics.lineBetween(barX + 2, ammoBarY + 1, barX + barWidth - 2, ammoBarY + barHeight - 1);
+      graphics.lineBetween(barX + 2, ammoBarY + barHeight - 1, barX + barWidth - 2, ammoBarY + 1);
+    }
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
     graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, barWidth, barHeight, 3);
@@ -3156,7 +3164,11 @@ export class GameScene extends Phaser.Scene {
     this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
-    this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(labelCenterX, panelY + 2).setVisible(true);
+    this.selectedAmmoText
+      .setText(usesAmmo ? `Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}` : "Mühimmat — KULLANMIYOR")
+      .setColor(usesAmmo ? "#fef3c7" : "#fecaca")
+      .setPosition(labelCenterX, panelY + 2)
+      .setVisible(true);
     this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
     this.selectedTemperatureText
       .setText(isAmmoFactory
@@ -4812,7 +4824,7 @@ export class GameScene extends Phaser.Scene {
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
         ...(!selectedTower.resourceProvider && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
         ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
@@ -4882,8 +4894,10 @@ export class GameScene extends Phaser.Scene {
       ? selectedTower.resourceProvider === "ammunition"
         ? ` | Fabrika ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : ` | Enerji Deposu ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
-      : selectedTower.ammoType
-        ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
+      : selectedTower.shotFuel === "energy"
+        ? ` | Mühimmat KULLANMIYOR | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
+        : selectedTower.ammoType
+          ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
     this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
