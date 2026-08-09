@@ -22,9 +22,8 @@ test("focus ve aura enerji, diğer vuruş türleri mühimmat yakar", () => {
   }
 });
 
-test("enerji lojistiğinin teorik dalga üretimi çalışma yükünü karşılar", () => {
-  const extractionCyclesPerMinute = 60 / 8;
-  assert.ok(ENERGY_LOGISTICS_WORKER_CAPACITY * extractionCyclesPerMinute >= 520);
+test("enerji lojistiği de standart işçi kapasitesini kullanır", () => {
+  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, 12);
 });
 
 test("enerji kesintisi atış, takip ve aura sırasıyla ilerler", () => {
