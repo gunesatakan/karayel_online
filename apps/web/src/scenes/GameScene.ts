@@ -17,6 +17,7 @@ import {
   getTowerBuildCost,
   getTowerSellRefund,
   getTowerLevelExpCost,
+  getShopItemPrice,
   getTile,
   gridToWorld,
   isInsideMap,
@@ -63,6 +64,9 @@ type ControlActionDetail = {
     | "toggleAmmoLogistics"
     | "reviveLogisticsWorker"
     | "setTowerPerformance"
+    | "buyShopItem"
+    | "rerollShop"
+    | "setTargeting"
     | "toggleAbartiOrientation"
     | "clearSelection";
   towerId?: string;
@@ -71,6 +75,8 @@ type ControlActionDetail = {
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
   performance?: number;
+  itemId?: string;
+  targetingMode?: string;
   clientX?: number;
   clientY?: number;
 };
@@ -323,6 +329,7 @@ export class GameScene extends Phaser.Scene {
   private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
   private latestPerfSnapshot?: GameSnapshot;
+  private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   private draggedTowerDefinition?: TowerDefinition;
@@ -1020,6 +1027,15 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("setTowerPerformance", { towerId: this.selectedPlacedTowerId, performance: detail.performance });
         }
         break;
+      case "buyShopItem":
+        if (detail.itemId) this.room?.send("shop:buy", { itemId: detail.itemId });
+        break;
+      case "rerollShop":
+        this.room?.send("shop:reroll");
+        break;
+      case "setTargeting":
+        if (this.selectedPlacedTowerId && detail.targetingMode) this.room?.send("tower:targeting", { towerId: this.selectedPlacedTowerId, mode: detail.targetingMode });
+        break;
       case "toggleAbartiOrientation":
         this.hideZeynepTierChoicesIfOpen();
         this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
@@ -1548,6 +1564,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (this.pendingShopPlacement && this.isBattlePointer(pointer)) {
+      this.room?.send("shop:place", { itemId: this.pendingShopPlacement, x: pointer.worldX, y: pointer.worldY });
+      this.pendingShopPlacement = undefined;
+      return;
+    }
     if (this.isGuidanceDragging) {
       const point = this.getClampedGuidancePoint(pointer);
       this.room?.send("useSkill", { slot: 0, x: point.x, y: point.y });
@@ -1733,6 +1754,10 @@ export class GameScene extends Phaser.Scene {
       this.room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
       this.room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
       this.room.onMessage("card:applied", () => this.hideCardChoices());
+      this.room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
+        this.pendingShopPlacement = message.itemId;
+        this.hintText?.setText(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
+      });
       this.room.onMessage("latency:pong", (message: { sentAt?: number }) => this.updatePing(message.sentAt));
       this.room.onLeave(() => clearActiveLobbyRoom(this.room?.roomId));
       this.startPingLoop();
@@ -4652,6 +4677,10 @@ export class GameScene extends Phaser.Scene {
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
     const deadWorkers = this.localPlayerSnapshot?.deadLogisticsWorkers ?? [];
+    const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
+    const targetModes = [definition?.engine?.targeting ?? "first"];
+    if (ownedShopItems.includes("avci-protokolu")) targetModes.push("weakest", "random");
+    if (ownedShopItems.includes("nobetci-protokolu")) targetModes.push("closest", "last");
 
     const orientationHint = !selectedTower && this.selectedTowerDefinition.id === "zeynep-8"
       ? ` | Yon: ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
@@ -4715,6 +4744,15 @@ export class GameScene extends Phaser.Scene {
       ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
+      targeting: selectedTower && !selectedTower.resourceProvider ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] } : undefined,
+      goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot ? {
+        gold: Math.floor(this.localPlayerSnapshot.gold),
+        rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
+        offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
+          const price = getShopItemPrice(item, ownedShopItems);
+          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price };
+        })
       } : undefined,
       workerRevive: deadWorkers.length > 0 ? {
         count: deadWorkers.length,

@@ -4,6 +4,8 @@ import {
   calculateTowerScaledBaseDamage,
   cardCatalog,
   drawCards,
+  drawShopOffers,
+  getShopItemPrice,
   getEnemyCombatDefinition,
   getModifierMultiplier,
   getEnemyExp,
@@ -42,6 +44,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
   const playerModifiers = [];
   const ownedCardIds = [];
   const cardHistory = [];
+  const ownedShopItemIds = [];
   let gold = START_GOLD;
   let experience = 0;
   let nexusHealth = 100;
@@ -49,6 +52,16 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
 
   for (let wave = 1; wave <= FINAL_WAVE; wave += 1) {
     spendGold({ towers, definitions, playerModifiers, config, goldRef: { get value() { return gold; }, set value(value) { gold = value; } } });
+    const shopOffers = drawShopOffers({ wave, preferredAxes: config.axes, towers: definitions, ownedItemIds: ownedShopItemIds, random });
+    const purchase = ownedShopItemIds.length < 1 ? shopOffers
+      .map((item) => ({ item, price: getShopItemPrice(item, ownedShopItemIds), score: item.effects.reduce((sum, mod) => sum + (mod.stat === "damage" ? mod.add * 5 : mod.stat === "fireRate" ? mod.add * 4 : 0), 0) }))
+      .filter(({ price, score }) => price <= gold && score > 0)
+      .sort((a, b) => b.score / Math.max(1, b.price) - a.score / Math.max(1, a.price))[0] : undefined;
+    if (purchase) {
+      gold -= purchase.price;
+      ownedShopItemIds.push(purchase.item.id);
+      playerModifiers.push(...purchase.item.effects);
+    }
     spendExperience({ towers, config, experienceRef: { get value() { return experience; }, set value(value) { experience = value; } } });
     const count = getWaveEnemyCount(wave);
     let totalHealth = 0;

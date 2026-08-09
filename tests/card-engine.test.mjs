@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { cardAppliesToTower, cardCatalog, drawCards, towerCatalog } from "../packages/shared/dist/index.js";
 
-test("ilk kart havuzu 12 Türkçe ve sayısal açıklamalı karttan oluşur", () => {
-  assert.equal(cardCatalog.length, 12);
-  assert.equal(new Set(cardCatalog.map(({ id }) => id)).size, 12);
+test("ilk kart havuzu 11 Türkçe ve sayısal açıklamalı karttan oluşur", () => {
+  assert.equal(cardCatalog.length, 11);
+  assert.equal(new Set(cardCatalog.map(({ id }) => id)).size, 11);
   for (const card of cardCatalog) {
     assert.equal(card.description.includes("\n"), false);
     assert.match(card.description, /\d/);

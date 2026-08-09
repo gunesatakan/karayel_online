@@ -39,6 +39,9 @@ export type PlayerSnapshot = {
   gold: number;
   goldSpent: number;
   experience: number;
+  ownedShopItemIds?: string[];
+  shopOffers?: import("./shop/index.js").ShopItem[];
+  shopRerollPrice?: number;
   towersBuilt: number;
   ultimateCharge: number;
   skillCooldowns: number[];
@@ -151,6 +154,7 @@ export type TowerSnapshot = {
   linkedTowerIds?: string[];
   zeynepFormationSize?: number;
   zeynepFormationLevel?: number;
+  targetingMode?: import("./characters/common/types.js").TowerTargetingMode;
 };
 
 export type ProjectileSnapshot = {
@@ -348,6 +352,21 @@ export {
 export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers } from "./modifiers/index.js";
 export { cardCatalog, cardAppliesToTower, drawCards } from "./cards/index.js";
 export type { CardDefinition, CardScope, CardTowerProfile } from "./cards/index.js";
+export {
+  SHOP_OFFER_COUNT,
+  SHOP_REROLL_BASE_PRICE,
+  SHOP_REROLL_PRICE_STEP,
+  DEFAULT_SHOP_PRICE_GROWTH,
+  shopItemAppliesToTower,
+  getShopItemCount,
+  getShopItemPrice,
+  getShopRerollPrice,
+  isShopItemAvailable,
+  getShopItem,
+  drawShopOffers,
+  shopCatalog
+} from "./shop/index.js";
+export type { ShopItem, ShopItemCategory, ShopState, ShopUnlock } from "./shop/index.js";
 export { applyEnemyMark, getMarkDamageMultiplier } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {

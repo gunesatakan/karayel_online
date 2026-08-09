@@ -22,6 +22,8 @@ type ControlState = {
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
+  goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean }> };
+  targeting?: { current: string; modes: string[] };
 };
 
 type ControlAction = {
@@ -32,6 +34,8 @@ type ControlAction = {
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
   performance?: number;
+  itemId?: string;
+  targetingMode?: string;
   clientX?: number;
   clientY?: number;
 };
@@ -104,6 +108,25 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     root.replaceChildren();
 
+    if (state.goldShop) {
+      const drawer = document.createElement("section");
+      drawer.className = "gold-shop";
+      drawer.innerHTML = `<header><span>ALTIN MAĞAZASI</span><strong>${state.goldShop.gold}g</strong></header><div class="gold-shop__offers"></div>`;
+      const offers = drawer.querySelector<HTMLElement>(".gold-shop__offers");
+      for (const item of state.goldShop.offers) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `gold-shop__item gold-shop__item--${item.category}`;
+        button.disabled = !item.affordable;
+        button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
+        button.addEventListener("pointerup", () => dispatch({ action: "buyShopItem", itemId: item.id }));
+        offers?.append(button);
+      }
+      const reroll = makeActionButton(`Yenile ${state.goldShop.rerollPrice}g`, "gold-shop__reroll", state.goldShop.gold >= state.goldShop.rerollPrice, () => dispatch({ action: "rerollShop" }));
+      drawer.append(reroll);
+      root.append(drawer);
+    }
+
     if (state.melisSpectrum) {
       root.append(makeMelisSpectrum(state.melisSpectrum));
     }
@@ -170,6 +193,19 @@ export function setupGameControlUi(game: Phaser.Game) {
           () => dispatch({ action: "toggleAmmoLogistics" })
         ));
         shop.append(logisticsRow);
+      }
+      if (state.targeting) {
+        const select = document.createElement("select");
+        select.className = "game-controls__targeting";
+        for (const mode of state.targeting.modes) {
+          const option = document.createElement("option");
+          option.value = mode;
+          option.textContent = ({ first: "İlk", strongest: "En güçlü", weakest: "En zayıf", closest: "En yakın", last: "Son", random: "Rastgele" } as Record<string, string>)[mode] ?? mode;
+          option.selected = mode === state.targeting.current;
+          select.append(option);
+        }
+        select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
+        shop.append(select);
       }
     } else {
       const towerGrid = document.createElement("div");

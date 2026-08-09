@@ -12,6 +12,7 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  TOWER_TURN_RATE_RADIANS_PER_SECOND,
   createDefaultEditableMap,
   createOpenArenaMap,
   applyStatusResistance,
@@ -28,6 +29,7 @@ import {
   selectTowerTarget,
   SpatialGrid,
   getPlacementFootprint,
+  hasOpenGridRoute,
   validateEdgePlacement,
   validateTowerPlacement,
   resetTowerStack,
@@ -46,6 +48,12 @@ import {
   cardAppliesToTower,
   cardCatalog,
   drawCards,
+  drawShopOffers,
+  getShopItem,
+  getShopItemPrice,
+  getShopRerollPrice,
+  shopCatalog,
+  shopItemAppliesToTower,
   getModifierAdd,
   getModifierMultiplier,
   getMarkDamageMultiplier,
@@ -86,6 +94,7 @@ import {
   normalizeMapData,
   pathToWorldPoints,
   scaleEditableMap,
+  setTile,
   worldToGrid,
   getTowerLevelExpCost,
   getEnemyExp,
@@ -93,6 +102,7 @@ import {
   towerCatalog,
   type CharacterId,
   type CardDefinition,
+  type ShopItem,
   type DamageEventSnapshot,
   type DamageType,
   type DroneSnapshot,
@@ -276,6 +286,10 @@ const MELIS_INITIAL_STRESS = 6;
 class Player extends Schema {
   runModifiers: RunModifiers = [];
   ownedCardIds: string[] = [];
+  ownedShopItemIds: string[] = [];
+  shopOffers: ShopItem[] = [];
+  shopRerolls = 0;
+  nexusShieldCharges = 0;
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
@@ -507,9 +521,15 @@ type TowerModel = {
   damageWindow: Array<{ dealtAt: number; amount: number }>;
   runModifiers: RunModifiers;
   targetedCardIds: string[];
+  targetingMode: TowerTargetingMode;
+  shopKillStacks: number;
+  shopWaveStacks: number;
 };
 
 type ChooseCardMessage = { cardId?: string; towerId?: string };
+type BuyShopItemMessage = { itemId?: string };
+type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
+type PlaceShopMapItemMessage = { itemId?: "bariyer" | "ziftli-zemin"; x?: number; y?: number };
 
 type DebugOverdriveHeatSegment = {
   startedAt: number;
@@ -785,6 +805,9 @@ export class MatchRoom extends Room<MatchState> {
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private pendingCardChoices = new Map<string, CardDefinition[]>();
+  private shopPlacementCharges = new Map<string, { bariyer: number; "ziftli-zemin": number }>();
+  private tarredCells = new Set<string>();
+  private debrisCells = new Map<string, number>();
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
@@ -922,6 +945,10 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
       this.chooseCard(client, message);
     });
+    this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
+    this.onMessage("shop:reroll", (client) => this.rerollShop(client));
+    this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
+    this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
 
     this.syncRoomRegistry();
   }
@@ -949,6 +976,7 @@ export class MatchRoom extends Room<MatchState> {
       player.ready = true;
       this.configureArenaForScale();
       this.gameStarted = true;
+      this.openSetupShops();
       client.send("match:map", this.activeMap);
       this.syncRoomRegistry();
       return;
@@ -1102,6 +1130,7 @@ export class MatchRoom extends Room<MatchState> {
 
     this.configureArenaForScale();
     this.gameStarted = true;
+    this.openSetupShops();
     this.setupPhase = true;
     this.setupReadyPlayerIds.clear();
     this.syncRoomRegistry();
@@ -1209,7 +1238,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getScaledWaveEnemyCount(wave: number) {
-    return Math.round(getWaveEnemyCount(wave) * this.mapScale);
+    return Math.round(getWaveEnemyCount(wave) * (1 + Math.max(0, this.state.players.size - 1) * 0.35));
   }
 
   private awardGoldToPlayers(amount: number) {
@@ -1229,8 +1258,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const totalReward = Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
-    const share = Math.max(1, Math.round(totalReward / players.length));
+    const share = Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
     for (const player of players) {
       player.gold += share * getModifierMultiplier(player.runModifiers, "goldGain");
     }
@@ -1346,9 +1374,13 @@ export class MatchRoom extends Room<MatchState> {
       this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
       this.spawnCooldownMs = 950;
       this.awardGoldToPlayers(getWaveCompletionGold(completedWave));
+      for (const player of this.state.players.values()) {
+        if (player.ownedShopItemIds.includes("faiz-hesabi")) player.gold += Math.min(60, Math.floor(player.gold * 0.08));
+      }
       this.setupPhase = true;
       this.setupReadyPlayerIds.clear();
       this.offerWaveCards();
+      this.openSetupShops();
       return;
     }
 
@@ -1443,6 +1475,9 @@ export class MatchRoom extends Room<MatchState> {
       this.setupPhase = false;
       this.setupReadyPlayerIds.clear();
       this.spawnCooldownMs = 350;
+      for (const player of this.state.players.values()) {
+        if (player.ownedShopItemIds.includes("kan-bankasi") && this.teamHealth > 5) this.teamHealth -= 5;
+      }
     }
   }
 
@@ -1471,8 +1506,9 @@ export class MatchRoom extends Room<MatchState> {
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
-    const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier);
-    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier);
+    const multiplayerHealth = 1 + Math.max(0, this.state.players.size - 1) * 0.45;
+    const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier) * multiplayerHealth;
+    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
     const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
@@ -1549,7 +1585,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       const production = Math.min(
-        AMMO_FACTORY_RATE_PER_SECOND * seconds,
+        AMMO_FACTORY_RATE_PER_SECOND * seconds * getModifierMultiplier(this.getTowerRunModifiers(tower), "resourceProduction"),
         tower.maxAmmo - tower.ammo,
         tower.energy / AMMO_FACTORY_ENERGY_PER_AMMO,
         tower.rawAmmo / AMMO_RAW_MATERIAL_PER_AMMO
@@ -1728,7 +1764,7 @@ export class MatchRoom extends Room<MatchState> {
 
       this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
-      if (tower.definition.hitType === "focus" && tower.aimTargetId === target.id) {
+      if (tower.aimTargetId === target.id) {
         tower.aimTargetHasFired = true;
       }
       tower.cooldownMs = this.getTowerFireInterval(tower);
@@ -1756,7 +1792,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const targetAngle = Math.atan2(dy, dx);
-    tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds);
+    const turnRate = getModifierMultiplier(this.getTowerRunModifiers(tower), "turnRate") * TOWER_TURN_RATE_RADIANS_PER_SECOND;
+    tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds, turnRate);
     const accuracyBonus = getModifierAdd(this.getTowerRunModifiers(tower), "accuracy");
     return isTowerAligned(tower.facing, targetAngle, getTowerFireAlignmentTolerance(accuracyBonus));
   }
@@ -1802,7 +1839,7 @@ export class MatchRoom extends Room<MatchState> {
     const speed = this.scaleWorldSpeed(getBallisticMovementSpeed(
       (tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower),
       hitType
-    ));
+    )) * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed");
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -3335,9 +3372,12 @@ export class MatchRoom extends Room<MatchState> {
         this.damageMelisWhisperTurnedBlocker(whisperBlocker, enemy.maxHp * 0.18 * seconds);
       }
       const statusSpeedMultiplier = getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier;
+      const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
+      const tarMultiplier = this.tarredCells.has(`${enemyCell.col}:${enemyCell.row}`) ? 0.75 : 1;
+      const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier) * doubtHasteMultiplier;
+        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * doubtHasteMultiplier;
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
       const route = this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
@@ -3346,7 +3386,9 @@ export class MatchRoom extends Room<MatchState> {
         } else {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
-          this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          const shieldOwner = Array.from(this.state.players.values()).find((player) => player.nexusShieldCharges > 0);
+          if (shieldOwner) shieldOwner.nexusShieldCharges -= 1;
+          else this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
           if (this.teamHealth === 0) {
             this.finishMatch("defeat");
           }
@@ -3397,12 +3439,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private ensureLogisticsWorkers() {
-    const workerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "ammoCollector", "energyTransport"];
+    const baseWorkerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "ammoCollector", "energyTransport"];
     const origin = getMapOrigin(this.activeMap);
     const { gridSize } = getMapMetrics(this.activeMap);
     for (const ownerId of this.state.players.keys()) {
+      const player = this.state.players.get(ownerId);
+      const workerModes = player?.ownedShopItemIds.includes("besinci-isci") ? [...baseWorkerModes, "ammoTransport" as const] : baseWorkerModes;
       for (const [index, mode] of workerModes.entries()) {
-        const workerKey = `${ownerId}:${mode}`;
+        const suffix = index >= baseWorkerModes.length ? ":extra" : "";
+        const workerKey = `${ownerId}:${mode}${suffix}`;
         const respawnAt = this.deadLogisticsWorkers.get(workerKey);
         if (respawnAt !== undefined) {
           if (getLogisticsWorkerRespawnRemainingMs(respawnAt, Date.now()) > 0) {
@@ -3410,11 +3455,11 @@ export class MatchRoom extends Room<MatchState> {
           }
           this.deadLogisticsWorkers.delete(workerKey);
         }
-        const exists = Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === mode);
+        const id = `logistics-${ownerId}-${mode}${suffix}`;
+        const exists = this.drones.has(id);
         if (exists) {
           continue;
         }
-        const id = `logistics-${ownerId}-${mode}`;
         this.drones.set(id, {
           id,
           ownerId,
@@ -3452,6 +3497,93 @@ export class MatchRoom extends Room<MatchState> {
     worker.x += worker.vx * seconds;
     worker.y += worker.vy * seconds;
     return false;
+  }
+
+  private getPlayerTowerDefinitions(playerId: string) {
+    return Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
+  }
+
+  private openSetupShops() {
+    for (const [playerId, player] of this.state.players.entries()) {
+      player.shopRerolls = 0;
+      player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds });
+    }
+  }
+
+  private rerollShop(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !this.setupPhase) return;
+    const price = getShopRerollPrice(player.shopRerolls);
+    if (player.gold < price) return;
+    player.gold -= price;
+    player.goldSpent += price;
+    player.shopRerolls += 1;
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds });
+  }
+
+  private buyShopItem(client: Client, message: BuyShopItemMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const item = message.itemId ? getShopItem(message.itemId) : undefined;
+    if (!player || !item || !this.setupPhase || !player.shopOffers.some(({ id }) => id === item.id)) return;
+    if (item.id === "riskli-yatirim" && this.teamHealth <= 10) return;
+    const price = getShopItemPrice(item, player.ownedShopItemIds);
+    if (player.gold < price) return;
+    player.gold -= price;
+    player.goldSpent += price;
+    player.ownedShopItemIds.push(item.id);
+    const healthAdd = item.effects.filter(({ stat }) => stat === "towerHealth").reduce((sum, modifier) => sum + modifier.add, 0);
+    if (healthAdd !== 0) {
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId !== client.sessionId || !shopItemAppliesToTower(item, tower.definition)) continue;
+        const ratio = (1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth") + healthAdd) / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth"));
+        tower.maxHp *= ratio;
+        tower.hp *= ratio;
+      }
+    }
+    player.runModifiers.push(...item.effects);
+    if (item.id === "nexus-kalkani") player.nexusShieldCharges += 3;
+    if (item.id === "bariyer" || item.id === "ziftli-zemin") {
+      const charges = this.shopPlacementCharges.get(client.sessionId) ?? { bariyer: 0, "ziftli-zemin": 0 };
+      charges[item.id] += 1;
+      this.shopPlacementCharges.set(client.sessionId, charges);
+      client.send("shop:placement-required", { itemId: item.id });
+    }
+    if (item.id === "riskli-yatirim" && this.teamHealth > 10) {
+      this.teamHealth -= 10;
+      player.gold += 200;
+    }
+    player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
+    client.send("shop:purchased", { itemId: item.id, price });
+  }
+
+  private setTowerTargeting(client: Client, message: SetTowerTargetingMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!player || !tower || tower.ownerId !== client.sessionId || !message.mode) return;
+    const required = message.mode === "weakest" || message.mode === "random" ? "avci-protokolu" : message.mode === "closest" || message.mode === "last" ? "nobetci-protokolu" : "";
+    if (required && !player.ownedShopItemIds.includes(required)) return;
+    tower.targetingMode = message.mode;
+  }
+
+  private placeShopMapItem(client: Client, message: PlaceShopMapItemMessage) {
+    if (!this.setupPhase || !message.itemId || typeof message.x !== "number" || typeof message.y !== "number") return;
+    const charges = this.shopPlacementCharges.get(client.sessionId);
+    if (!charges || charges[message.itemId] <= 0) return;
+    const cell = worldToGrid(message.x, message.y, this.activeMap);
+    if (!isInsideMap(this.activeMap, cell.col, cell.row) || getTile(this.activeMap, cell.col, cell.row) !== "road" || cell.row === 0 || cell.row === this.activeMap.rows - 1) return;
+    const key = `${cell.col}:${cell.row}`;
+    if (message.itemId === "ziftli-zemin") {
+      if (this.tarredCells.has(key)) return;
+      this.tarredCells.add(key);
+    } else {
+      const blocked = Array.from(this.towers.values()).map((tower) => worldToGrid(tower.x, tower.y, this.activeMap));
+      blocked.push(cell);
+      if (!hasOpenGridRoute({ cols: this.activeMap.cols, rows: this.activeMap.rows }, blocked)) return;
+      setTile(this.activeMap, cell.col, cell.row, "tower");
+      this.activePaths = buildRuntimePaths(this.activeMap);
+      this.broadcast("match:map", this.activeMap);
+    }
+    charges[message.itemId] -= 1;
   }
 
   private awardEnemyExperience(enemy: EnemyModel) {
@@ -3787,6 +3919,10 @@ export class MatchRoom extends Room<MatchState> {
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
       this.runTowerTriggers(tower, "towerDeath");
+      if (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("enkaz-alani")) {
+        const cell = worldToGrid(tower.x, tower.y, this.activeMap);
+        this.debrisCells.set(`${cell.col}:${cell.row}`, Date.now() + 12000);
+      }
     }
   }
 
@@ -3833,7 +3969,12 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const towerHealth = TOWER_BASE_HP * getModifierMultiplier(player.runModifiers, "towerHealth");
+    const applicableHealthModifiers = player.runModifiers.filter((modifier) => {
+      if (!modifier.source.startsWith("shop:")) return true;
+      const item = getShopItem(modifier.source.slice(5));
+      return !item || item.scope.kind === "global" || shopItemAppliesToTower(item, definition);
+    });
+    const towerHealth = TOWER_BASE_HP * getModifierMultiplier(applicableHealthModifiers, "towerHealth");
     const tower: TowerModel = {
       id: `t${this.nextTowerId++}`,
       ownerId: client.sessionId,
@@ -3870,6 +4011,9 @@ export class MatchRoom extends Room<MatchState> {
       triggerCooldowns: {},
       runModifiers: [],
       targetedCardIds: [],
+      targetingMode: definition.engine?.targeting ?? "first",
+      shopKillStacks: 0,
+      shopWaveStacks: 0,
       activeMs: 0,
       overheatMs: 0,
       offlineUntil: 0,
@@ -4650,7 +4794,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    if (tower.definition.hitType === "focus" && tower.aimTargetId) {
+    if (towerAims(tower.definition.id) && tower.aimTargetId) {
       const lockedTarget = this.enemies.get(tower.aimTargetId);
       const targetIsValid = Boolean(
         lockedTarget &&
@@ -4712,7 +4856,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id === "archer-1" && tower.melisEvolutionLevel >= 1 && tower.focusTargetId && !preferredTargetIds.includes(tower.focusTargetId)) {
       tower.focusTargetId = "";
     }
-    const selected = this.selectEnemyTarget(tower, candidates, tower.definition.engine?.targeting ?? "first", {
+    const selected = this.selectEnemyTarget(tower, candidates, tower.targetingMode, {
       range,
       now,
       lockedTargetId: tower.focusTargetId,
@@ -4722,9 +4866,9 @@ export class MatchRoom extends Room<MatchState> {
     if (!selected && tower.definition.engine?.locksTarget) {
       tower.focusTargetId = "";
     }
-    if (tower.definition.hitType === "focus" && selected && selected.id !== tower.aimTargetId) {
+    if (towerAims(tower.definition.id) && selected && selected.id !== tower.aimTargetId) {
       tower.aimTargetId = selected.id;
-      tower.aimTargetLockUntil = now + FOCUS_AIM_TARGET_LOCK_MS;
+      tower.aimTargetLockUntil = now + FOCUS_AIM_TARGET_LOCK_MS + Math.max(0, getModifierAdd(this.getTowerRunModifiers(tower), "targetLockMs"));
       tower.aimTargetHasFired = false;
     }
     return selected;
@@ -4739,7 +4883,7 @@ export class MatchRoom extends Room<MatchState> {
     const byId = new Map(enemies.map((enemy) => [enemy.id, enemy]));
     const selected = selectTowerTarget({
       mode,
-      canHitAir: tower.definition.engine?.canHitAir ?? false,
+      canHitAir: tower.definition.engine?.canHitAir || this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("ucaksavar-kiti") || false,
       locksTarget: tower.definition.engine?.locksTarget,
       lockedTargetId: options.lockedTargetId,
       retainLockOutsideRange: options.retainLockOutsideRange,
@@ -4770,7 +4914,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return Boolean(tower.definition.engine?.canHitAir);
+    return Boolean(tower.definition.engine?.canHitAir || this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("ucaksavar-kiti"));
   }
 
   private getEnemiesNear(x: number, y: number, radius: number) {
@@ -4841,8 +4985,19 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.melisUnderworldVulnerableUntil <= now) {
       enemy.melisUnderworldDamageTakenMultiplier = 1;
     }
+    const damageSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+    const damagePlayer = this.state.players.get(sourceOwnerId);
+    const damageModifiers = damageSourceTower ? this.getTowerRunModifiers(damageSourceTower) : [];
+    let shopDamageAdd = 0;
+    if (enemy.movementKind === "air") shopDamageAdd += getModifierAdd(damageModifiers, "airDamage");
+    if (enemy.shield > 0) shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShielded");
+    if (enemy.type === "brute") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsBrute");
+    if (damagePlayer?.ownedShopItemIds?.includes("kriyojen-hat") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
+    if (damagePlayer?.ownedShopItemIds?.includes("kan-bankasi")) shopDamageAdd += 0.2;
+    const critChance = Math.max(0, getModifierAdd(damageModifiers, "critChance"));
+    const critAdd = Math.random() < critChance ? Math.max(0, getModifierAdd(damageModifiers, "critDamage")) : 0;
     const result = calculateDamageTaken(
-      { amount: damage * markMultiplier, damageType, hitType },
+      { amount: damage * markMultiplier * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
@@ -4895,6 +5050,9 @@ export class MatchRoom extends Room<MatchState> {
           });
         }
       }
+      if (sourceTower && damagePlayer?.ownedShopItemIds?.includes("termal-funye") && damageType === "fire") {
+        this.applyEnemyStatusEffect(enemy, { type: "burn", magnitude: 0.015, durationMs: 4000, stacking: "refresh" }, now, { sourceTowerId, sourceOwnerId });
+      }
     }
 
     if (enemy.hp > 0) {
@@ -4913,6 +5071,8 @@ export class MatchRoom extends Room<MatchState> {
     const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceTower) {
       this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
+      if (damagePlayer?.ownedShopItemIds?.includes("zafer-serisi")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + 1);
+      if (damagePlayer?.ownedShopItemIds?.includes("ganimet-avcisi") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
     }
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
@@ -6218,6 +6378,9 @@ export class MatchRoom extends Room<MatchState> {
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
+        ownedShopItemIds: [...player.ownedShopItemIds],
+        shopOffers: player.shopOffers,
+        shopRerollPrice: getShopRerollPrice(player.shopRerolls),
         towersBuilt: player.towersBuilt,
         ultimateCharge: Math.round(player.ultimateCharge),
         skillCooldowns: [
@@ -6307,6 +6470,7 @@ export class MatchRoom extends Room<MatchState> {
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
         zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
+        ,targetingMode: tower.targetingMode
       })),
       projectiles: Array.from(this.projectiles.values()).map((projectile) => ({
         id: projectile.id,
@@ -6463,7 +6627,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerRange(tower: TowerModel) {
     const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range")
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "range");
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "range")
+      * (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("yalniz-kurt") && this.isTowerIsolated(tower) ? 1.15 : 1);
     if (tower.definition.id === "warrior-2") {
       return applyRangeAura(GAME_WORLD_HEIGHT);
     }
@@ -6617,6 +6782,11 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     add("engine:stack", this.getEngineStackStatMultiplier(tower, "damage", now));
+    breakdown.mods.push({ source: "shop:zafer-serisi", scope: "player", stat: "damage", add: tower.shopKillStacks * 0.03 });
+    breakdown.mods.push({ source: "shop:kidem", scope: "player", stat: "damage", add: tower.shopWaveStacks * 0.02 });
+    const shopOwner = this.state.players.get(tower.ownerId);
+    if (shopOwner?.ownedShopItemIds?.includes("bitisik-devre")) breakdown.mods.push({ source: "shop:bitisik-devre", scope: "player", stat: "damage", add: Math.min(4, this.countAdjacentFriendlyTowers(tower)) * 0.08 });
+    if (shopOwner?.ownedShopItemIds?.includes("yalniz-kurt") && this.isTowerIsolated(tower)) breakdown.mods.push({ source: "shop:yalniz-kurt", scope: "player", stat: "damage", add: 0.25 });
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
       add("tower:warrior-6:wave-3", 1.2);
@@ -6650,6 +6820,9 @@ export class MatchRoom extends Room<MatchState> {
     const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
     return [
       ...playerModifiers.filter((modifier) => {
+        const shopId = modifier.source.startsWith("shop:") ? modifier.source.slice(5) : "";
+        const shopItem = shopId ? shopCatalog.find((candidate) => candidate.id === shopId) : undefined;
+        if (shopItem) return shopItem.scope.kind === "global" || shopItemAppliesToTower(shopItem, tower.definition);
         const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
         const card = cardCatalog.find((candidate) => candidate.id === cardId);
         return !card || card.scope.kind === "global" || cardAppliesToTower(card, tower.definition);
@@ -6998,6 +7171,17 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
+  private countAdjacentFriendlyTowers(tower: TowerModel) {
+    const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
+    let count = 0;
+    for (const other of this.towers.values()) {
+      if (other.id === tower.id || other.ownerId !== tower.ownerId) continue;
+      const otherCell = worldToGrid(other.x, other.y, this.activeMap);
+      if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) count += 1;
+    }
+    return count;
+  }
+
   private applyIsolationAura(tower: TowerModel) {
     const range = this.getTowerRange(tower);
     const speedMultiplier = getIsolationAuraSpeedMultiplier(tower.level);
@@ -7032,6 +7216,8 @@ export class MatchRoom extends Room<MatchState> {
   private advanceWaveGrowth() {
     const now = Date.now();
     for (const tower of this.towers.values()) {
+      tower.shopKillStacks = 0;
+      if (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("kidem")) tower.shopWaveStacks += 1;
       for (const definition of tower.definition.engine?.stacks ?? []) {
         this.resetEngineStack(tower.stackStates, definition, "waveEnd");
       }

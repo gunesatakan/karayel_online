@@ -18,7 +18,14 @@ export type ModifierStat =
   | "armorBreak"
   | "statusDuration"
   | "statusMagnitude"
-  | "ammoEmptyDamage";
+  | "ammoEmptyDamage"
+  | "turnRate"
+  | "projectileSpeed"
+  | "resourceProduction"
+  | "airDamage"
+  | "damageVsShielded"
+  | "damageVsBrute"
+  | "targetLockMs";
 
 export type Modifier = {
   source: string;
