@@ -41,6 +41,7 @@ import {
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
+  AMMO_FACTORY_INITIAL_ENERGY,
   canAcceptTargetedCard,
   cardAppliesToTower,
   cardCatalog,
@@ -3834,7 +3835,9 @@ export class MatchRoom extends Room<MatchState> {
       ammoType: inferTowerAmmoType(definition),
       ammo: definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_AMMO,
       maxAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
-      energy: definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_ENERGY,
+      energy: definition.resourceProvider === "ammunition"
+        ? AMMO_FACTORY_INITIAL_ENERGY
+        : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_ENERGY,
       maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
       ammoLogisticsEnabled: true,
       temperature: 0,

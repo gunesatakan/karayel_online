@@ -3065,6 +3065,8 @@ export class GameScene extends Phaser.Scene {
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
     const temperatureRatio = Phaser.Math.Clamp((tower.temperature ?? 0) / 100, 0, 1);
+    const rawAmmoRatio = Phaser.Math.Clamp((tower.rawAmmo ?? 0) / Math.max(1, tower.maxRawAmmo ?? 1), 0, 1);
+    const isAmmoFactory = tower.resourceProvider === "ammunition";
     const serverPerformance = Phaser.Math.Clamp(tower.performance ?? 0.5, 0, 1);
     if (!this.performanceSliderDragging && this.optimisticPerformance?.towerId === tower.id && Math.abs(serverPerformance - this.optimisticPerformance.value) < 0.015) {
       this.optimisticPerformance = undefined;
@@ -3081,8 +3083,8 @@ export class GameScene extends Phaser.Scene {
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
     graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, barWidth, barHeight, 3);
-    graphics.fillStyle(temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
-      .fillRoundedRect(barX, temperatureBarY, barWidth * temperatureRatio, barHeight, 3);
+    graphics.fillStyle(isAmmoFactory ? 0x84cc16 : temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
+      .fillRoundedRect(barX, temperatureBarY, barWidth * (isAmmoFactory ? rawAmmoRatio : temperatureRatio), barHeight, 3);
     if (hasPerformanceControl) {
       graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, performanceBarY, barWidth, barHeight, 3);
       graphics.fillStyle(0x22c55e, 1).fillRoundedRect(barX, performanceBarY, barWidth * performanceRatio, barHeight, 3);
@@ -3096,7 +3098,12 @@ export class GameScene extends Phaser.Scene {
     this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedAmmoText.setText(`Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}`).setPosition(labelCenterX, panelY + 2).setVisible(true);
     this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
-    this.selectedTemperatureText.setText(`Sıcaklık %${Math.round(tower.temperature ?? 0)}`).setPosition(labelCenterX, panelY + 46).setVisible(true);
+    this.selectedTemperatureText
+      .setText(isAmmoFactory
+        ? `Hammadde ${Math.floor(tower.rawAmmo ?? 0)}/${tower.maxRawAmmo ?? 0}`
+        : `Sıcaklık %${Math.round(tower.temperature ?? 0)}`)
+      .setPosition(labelCenterX, panelY + 46)
+      .setVisible(true);
     this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
     this.performanceSliderLeft = barX;

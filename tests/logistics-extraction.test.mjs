@@ -6,6 +6,7 @@ import {
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   RESOURCE_EXTRACTION_DURATION_MS,
   RESOURCE_PROVIDER_INITIAL_STOCK,
+  AMMO_FACTORY_INITIAL_ENERGY,
   advanceResourceExtraction,
   getLogisticsWorkerRespawnRemainingMs
 } from "../packages/shared/dist/index.js";
@@ -30,6 +31,7 @@ test("kaynak çıkarma toplam sekiz saniyede tamamlanır", () => {
   assert.equal(RESOURCE_EXTRACTION_DURATION_MS, 8000);
   assert.equal(LOGISTICS_WORKER_CAPACITY, 2);
   assert.equal(RESOURCE_PROVIDER_INITIAL_STOCK, 0);
+  assert.equal(AMMO_FACTORY_INITIAL_ENERGY, 20);
   assert.equal(remainingMs, 0);
 });
 
