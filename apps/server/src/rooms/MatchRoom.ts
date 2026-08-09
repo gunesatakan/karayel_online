@@ -76,6 +76,7 @@ import {
   getBallisticMovementSpeed,
   getMapMetrics,
   getMapOrigin,
+  getMapWorldBounds,
   getMapScale,
   getEnemyCombatDefinition,
   getEnemyDamageResistances,
@@ -1245,6 +1246,10 @@ export class MatchRoom extends Room<MatchState> {
     return getArenaWaveEnemyCount(wave, this.mapScale, this.state.players.size);
   }
 
+  private getActiveWorldBounds() {
+    return getMapWorldBounds(this.activeMap);
+  }
+
   private awardGoldToPlayers(amount: number) {
     const gold = Math.max(0, Math.round(amount));
     if (gold <= 0) {
@@ -2295,7 +2300,8 @@ export class MatchRoom extends Room<MatchState> {
 
     if (enemy.movementKind === "air") {
       const start = getAirSpawnPoint(path, this.activeMap);
-      const end = path?.points[path.points.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+      const bounds = this.getActiveWorldBounds();
+      const end = path?.points[path.points.length - 1] ?? { x: bounds.left + bounds.width / 2, y: bounds.bottom - getMapGridSize(this.activeMap) / 2 };
       const flightLength = Math.max(1, Math.hypot(end.x - start.x, end.y - start.y));
       const delta = (pushX * (end.x - start.x) + pushY * (end.y - start.y)) / flightLength;
       enemy.pathDistance = this.clamp(enemy.pathDistance + delta, 0, flightLength);
@@ -2612,7 +2618,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
     const bounces = 1 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-2");
-    const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces);
+    const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces, this.getActiveWorldBounds());
     const abartiLevel = this.getAbartiPassThroughLevelForSegments(tower.ownerId, segments);
     const firstSegment = segments[0];
     const initialDistance = Math.min(this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH), firstSegment.length);
@@ -2889,7 +2895,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepEndDistance,
       elapsedSeconds
     );
-    const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle);
+    const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle, this.getActiveWorldBounds());
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
 
@@ -3153,11 +3159,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isProjectileOutOfBounds(projectile: ProjectileModel) {
+    const bounds = this.getActiveWorldBounds();
     return (
-      projectile.x < -30 ||
-      projectile.x > GAME_WORLD_WIDTH + 30 ||
-      projectile.y < -30 ||
-      projectile.y > GAME_WORLD_HEIGHT + 30
+      projectile.x < bounds.left - 30 ||
+      projectile.x > bounds.right + 30 ||
+      projectile.y < bounds.top - 30 ||
+      projectile.y > bounds.bottom + 30
     );
   }
 
@@ -3251,8 +3258,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateDrones(deltaTime: number, seconds: number) {
     this.ensureLogisticsWorkers();
-    const nexusX = GAME_WORLD_WIDTH / 2;
-    const nexusY = GAME_WORLD_HEIGHT - 26;
+    const nexus = this.activePaths[0]?.points.at(-1);
+    const bounds = this.getActiveWorldBounds();
+    const nexusX = nexus?.x ?? bounds.left + bounds.width / 2;
+    const nexusY = nexus?.y ?? bounds.bottom - getMapGridSize(this.activeMap) / 2;
 
     for (const [id, drone] of this.drones) {
       if (drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
@@ -4294,8 +4303,9 @@ export class MatchRoom extends Room<MatchState> {
         return false;
       }
       this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + scaleGameDuration(3000));
-      this.projectileGuidanceX = this.clamp(message.x, 0, GAME_WORLD_WIDTH);
-      this.projectileGuidanceY = this.clamp(message.y, 0, GAME_WORLD_HEIGHT);
+      const bounds = this.getActiveWorldBounds();
+      this.projectileGuidanceX = this.clamp(message.x, bounds.left, bounds.right);
+      this.projectileGuidanceY = this.clamp(message.y, bounds.top, bounds.bottom);
       return true;
     }
 
@@ -4585,8 +4595,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const targetX = repairNexus ? GAME_WORLD_WIDTH / 2 : target?.x ?? tower.x;
-    const targetY = repairNexus ? GAME_WORLD_HEIGHT - 26 : target?.y ?? tower.y;
+    const nexus = this.activePaths[0]?.points.at(-1);
+    const bounds = this.getActiveWorldBounds();
+    const targetX = repairNexus ? nexus?.x ?? bounds.left + bounds.width / 2 : target?.x ?? tower.x;
+    const targetY = repairNexus ? nexus?.y ?? bounds.bottom - getMapGridSize(this.activeMap) / 2 : target?.y ?? tower.y;
     const speed = this.scaleWorldSpeed(repairNexus ? ATAKAN_DRONE_REPAIR_SPEED : ATAKAN_DRONE_ATTACK_SPEED);
     const dx = targetX - tower.x;
     const dy = targetY - tower.y;
@@ -6673,7 +6685,8 @@ export class MatchRoom extends Room<MatchState> {
       * getModifierMultiplier(this.getTowerRunModifiers(tower), "range")
       * (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("yalniz-kurt") && this.isTowerIsolated(tower) ? 1.15 : 1);
     if (tower.definition.id === "warrior-2") {
-      return applyRangeAura(GAME_WORLD_HEIGHT);
+      const bounds = this.getActiveWorldBounds();
+      return applyRangeAura(Math.hypot(bounds.width, bounds.height));
     }
 
     const now = Date.now();
@@ -6684,7 +6697,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
-      return applyRangeAura(GAME_WORLD_HEIGHT);
+      const bounds = this.getActiveWorldBounds();
+      return applyRangeAura(Math.hypot(bounds.width, bounds.height));
     }
 
     if (tower.definition.id === "zeynep-2") {
@@ -7558,7 +7572,8 @@ function getPointAlongRuntimePath(path: RuntimePath | undefined, distance: numbe
 }
 
 function getAirSpawnPoint(path: RuntimePath | undefined, map: EditableMapData = createDefaultEditableMap()) {
-  const nexus = path?.points[path.points.length - 1] ?? { x: GAME_WORLD_WIDTH / 2, y: GAME_WORLD_HEIGHT - 26 };
+  const bounds = getMapWorldBounds(map);
+  const nexus = path?.points[path.points.length - 1] ?? { x: bounds.left + bounds.width / 2, y: bounds.bottom - getMapGridSize(map) / 2 };
   const metrics = getMapMetrics(map);
   const corners = [
     gridToWorld(0, 0, map),
@@ -8096,20 +8111,13 @@ function didDebugLaserSweepHitEnemy(
   return enemyFromPrevious <= angleTolerance && enemyFromPrevious >= sweptAngle - angleTolerance;
 }
 
-function getRayToWorldEdge(x1: number, y1: number, x2: number, y2: number) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const length = Math.max(1, Math.hypot(dx, dy));
-  const nx = dx / length;
-  const ny = dy / length;
-  return getRayDirectionToWorldEdge(x1, y1, nx, ny);
+type WorldBounds = ReturnType<typeof getMapWorldBounds>;
+
+function getRayAngleToWorldEdge(x1: number, y1: number, angle: number, bounds: WorldBounds) {
+  return getRayDirectionToWorldEdge(x1, y1, Math.cos(angle), Math.sin(angle), bounds);
 }
 
-function getRayAngleToWorldEdge(x1: number, y1: number, angle: number) {
-  return getRayDirectionToWorldEdge(x1, y1, Math.cos(angle), Math.sin(angle));
-}
-
-function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY: number, bounces = 1) {
+function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY: number, bounces: number, bounds: WorldBounds) {
   const dx = targetX - x1;
   const dy = targetY - y1;
   const length = Math.max(1, Math.hypot(dx, dy));
@@ -8121,7 +8129,7 @@ function getMirrorBeamSegments(x1: number, y1: number, targetX: number, targetY:
   const segmentCount = Math.max(1, Math.min(12, Math.round(bounces) + 1));
 
   for (let index = 0; index < segmentCount; index += 1) {
-    const hit = getRayBoundaryHit(startX, startY, nx, ny);
+    const hit = getRayBoundaryHit(startX, startY, nx, ny, bounds);
     segments.push(makeRaySegment(startX, startY, hit.x, hit.y));
     nx = hit.axis === "x" ? -nx : nx;
     ny = hit.axis === "y" ? -ny : ny;
@@ -8167,19 +8175,19 @@ function getPointOnRaySegments(segments: RaySegment[], distance: number) {
   return last ? { x: last.x2, y: last.y2 } : { x: 0, y: 0 };
 }
 
-function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number) {
+function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number, bounds: WorldBounds) {
   const candidates: Array<{ t: number; axis: "x" | "y" }> = [];
 
   if (nx > 0) {
-    candidates.push({ t: (GAME_WORLD_WIDTH - x1) / nx, axis: "x" });
+    candidates.push({ t: (bounds.right - x1) / nx, axis: "x" });
   } else if (nx < 0) {
-    candidates.push({ t: (0 - x1) / nx, axis: "x" });
+    candidates.push({ t: (bounds.left - x1) / nx, axis: "x" });
   }
 
   if (ny > 0) {
-    candidates.push({ t: (GAME_WORLD_HEIGHT - y1) / ny, axis: "y" });
+    candidates.push({ t: (bounds.bottom - y1) / ny, axis: "y" });
   } else if (ny < 0) {
-    candidates.push({ t: (0 - y1) / ny, axis: "y" });
+    candidates.push({ t: (bounds.top - y1) / ny, axis: "y" });
   }
 
   const hit = candidates
@@ -8187,8 +8195,8 @@ function getRayBoundaryHit(x1: number, y1: number, nx: number, ny: number) {
     .sort((a, b) => a.t - b.t)[0] ?? { t: 1, axis: "x" as const };
 
   return {
-    x: Math.min(GAME_WORLD_WIDTH, Math.max(0, x1 + nx * hit.t)),
-    y: Math.min(GAME_WORLD_HEIGHT, Math.max(0, y1 + ny * hit.t)),
+    x: Math.min(bounds.right, Math.max(bounds.left, x1 + nx * hit.t)),
+    y: Math.min(bounds.bottom, Math.max(bounds.top, y1 + ny * hit.t)),
     axis: hit.axis
   };
 }
@@ -8200,19 +8208,19 @@ function getPointOnRay(x1: number, y1: number, angle: number, distance: number) 
   };
 }
 
-function getRayDirectionToWorldEdge(x1: number, y1: number, nx: number, ny: number) {
+function getRayDirectionToWorldEdge(x1: number, y1: number, nx: number, ny: number, bounds: WorldBounds) {
   const candidates: number[] = [];
 
   if (nx > 0) {
-    candidates.push((GAME_WORLD_WIDTH - x1) / nx);
+    candidates.push((bounds.right - x1) / nx);
   } else if (nx < 0) {
-    candidates.push((0 - x1) / nx);
+    candidates.push((bounds.left - x1) / nx);
   }
 
   if (ny > 0) {
-    candidates.push((GAME_WORLD_HEIGHT - y1) / ny);
+    candidates.push((bounds.bottom - y1) / ny);
   } else if (ny < 0) {
-    candidates.push((0 - y1) / ny);
+    candidates.push((bounds.top - y1) / ny);
   }
 
   const distance = Math.max(1, Math.min(...candidates.filter((candidate) => candidate > 0)));

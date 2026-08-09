@@ -60,17 +60,24 @@ export function getMapScale(mapOrScale: EditableMapData | number | undefined): M
 
 export function getMapGridSize(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {
   if (mapOrScale && typeof mapOrScale === "object" && Number.isInteger(mapOrScale.cols) && mapOrScale.cols > 0) {
-    return Math.min(GAME_WIDTH / mapOrScale.cols, (GAME_HEIGHT - GRID_TOP) / mapOrScale.rows);
+    return GRID_SIZE;
   }
   return GRID_SIZE / getMapScale(mapOrScale);
 }
 
 export function getMapOrigin(map: EditableMapData) {
-  const gridSize = getMapGridSize(map);
   return {
-    x: (GAME_WIDTH - map.cols * gridSize) / 2,
-    y: GRID_TOP + (GAME_HEIGHT - GRID_TOP - map.rows * gridSize) / 2
+    x: 0,
+    y: GRID_TOP
   };
+}
+
+export function getMapWorldBounds(map: EditableMapData) {
+  const origin = getMapOrigin(map);
+  const gridSize = getMapGridSize(map);
+  const width = map.cols * gridSize;
+  const height = map.rows * gridSize;
+  return { left: origin.x, top: origin.y, right: origin.x + width, bottom: origin.y + height, width, height };
 }
 
 export function getMapMetrics(mapOrScale: EditableMapData | number | undefined = DEFAULT_MAP_SCALE) {

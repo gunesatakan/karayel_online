@@ -11,6 +11,7 @@ import {
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
+  getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
   getTowerGridSpan,
@@ -379,6 +380,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#0f172a");
     this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x101827);
     this.drawMap();
+    this.configureArenaCamera();
     this.createPlacementGrid();
     this.createHeader();
     this.createAudioSettingsButton();
@@ -429,36 +431,34 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.mapGraphics ?? this.add.graphics().setDepth(1);
     this.mapGraphics = graphics;
     graphics.clear();
-    this.renderedMapKey = this.selectedMapData.tiles.join("");
+    this.renderedMapKey = `${this.selectedMapData.cols}x${this.selectedMapData.rows}:${this.selectedMapData.tiles.join("")}`;
     const cellSize = this.getMapCellSize();
     const origin = getMapOrigin(this.selectedMapData);
     const tileColumns = this.selectedMapData.cols;
     const tileRows = this.selectedMapData.rows;
+    const bounds = getMapWorldBounds(this.selectedMapData);
 
     graphics.fillGradientStyle(0x020617, 0x071426, 0x0b1024, 0x020617, 1);
-    graphics.fillRect(0, TOWER_BUILD_TOP, GAME_WORLD_WIDTH, this.controlTop - TOWER_BUILD_TOP);
+    graphics.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
 
     // Deterministic star field: the map stays stable across snapshot redraws.
     for (let index = 0; index < 92; index += 1) {
-      const starX = (index * 137 + 29) % GAME_WORLD_WIDTH;
-      const starY = TOWER_BUILD_TOP + ((index * 83 + 47) % Math.max(1, this.controlTop - TOWER_BUILD_TOP));
+      const starX = bounds.left + ((index * 137 + 29) % Math.max(1, bounds.width));
+      const starY = bounds.top + ((index * 83 + 47) % Math.max(1, bounds.height));
       const radius = index % 13 === 0 ? 1.45 : index % 5 === 0 ? 0.9 : 0.45;
       graphics.fillStyle(index % 7 === 0 ? 0x67e8f9 : index % 11 === 0 ? 0xc4b5fd : 0xf8fafc, index % 4 === 0 ? 0.8 : 0.42);
       graphics.fillCircle(starX, starY, radius);
     }
     graphics.fillStyle(0x4338ca, 0.055);
-    graphics.fillCircle(GAME_WORLD_WIDTH * 0.18, TOWER_BUILD_TOP + 180, 150);
+    graphics.fillCircle(bounds.left + bounds.width * 0.18, bounds.top + bounds.height * 0.3, 150);
     graphics.fillStyle(0x0891b2, 0.045);
-    graphics.fillCircle(GAME_WORLD_WIDTH * 0.82, this.controlTop - 190, 190);
+    graphics.fillCircle(bounds.left + bounds.width * 0.82, bounds.top + bounds.height * 0.7, 190);
 
     for (let row = 0; row < tileRows; row += 1) {
       for (let col = 0; col < tileColumns; col += 1) {
         const x = origin.x + col * cellSize;
         const y = origin.y + row * cellSize;
-        const tileHeight = Math.min(cellSize, this.controlTop - y);
-        if (tileHeight <= 0) {
-          continue;
-        }
+        const tileHeight = cellSize;
         const isEntry = row === 0;
         const isExit = row === tileRows - 1;
         const fill = isEntry ? 0x063c45 : isExit ? 0x451a3a : (row + col) % 2 === 0 ? 0x0b1428 : 0x0d172d;
@@ -914,15 +914,18 @@ export class GameScene extends Phaser.Scene {
   private getTowerDragPreviewPoint(pointer: Phaser.Input.Pointer) {
     return {
       x: pointer.worldX,
-      y: pointer.worldY - this.dragPreviewOffsetY
+      y: pointer.worldY - this.dragPreviewOffsetY / this.getArenaFitFactor()
     };
   }
 
   private getTowerDragPreviewPointFromClient(clientX: number, clientY: number) {
     const rect = this.game.canvas.getBoundingClientRect();
+    const screenX = ((clientX - rect.left) / rect.width) * this.cameras.main.width;
+    const screenY = ((clientY - rect.top) / rect.height) * this.cameras.main.height;
+    const world = this.cameras.main.getWorldPoint(screenX, screenY);
     return {
-      x: ((clientX - rect.left) / rect.width) * GAME_WORLD_WIDTH,
-      y: ((clientY - rect.top) / rect.height) * GAME_WORLD_HEIGHT - this.dragPreviewOffsetY
+      x: world.x,
+      y: world.y - this.dragPreviewOffsetY / this.getArenaFitFactor()
     };
   }
 
@@ -1173,7 +1176,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const cell of footprint) {
       const world = gridToWorld(cell.col, cell.row, this.selectedMapData);
-      if (world.y + this.getMapCellSize() / 2 > this.controlTop) {
+      if (world.y + this.getMapCellSize() / 2 > getMapWorldBounds(this.selectedMapData).bottom) {
         return false;
       }
     }
@@ -2163,27 +2166,24 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.panEffect.reset();
     camera.zoomEffect.reset();
-    const zoom = (this.arenaPlayerCount === 3 ? 3 : 4) * RENDER_SCALE;
-    camera.setZoom(zoom);
+    camera.setZoom(RENDER_SCALE);
     camera.centerOn(pointer.worldX, pointer.worldY);
     this.arenaZoomed = true;
     return false;
   }
 
   private resetArenaZoom() {
-    const camera = this.cameras.main;
-    camera.panEffect.reset();
-    camera.zoomEffect.reset();
-    camera.setZoom(RENDER_SCALE);
-    camera.setScroll(0, 0);
-    this.arenaZoomed = false;
+    this.cameras.main.panEffect.reset();
+    this.cameras.main.zoomEffect.reset();
+    this.configureArenaCamera();
   }
 
   private getClampedGuidancePoint(pointer: Phaser.Input.Pointer) {
     const radius = this.scaleWorldDistance(GUIDANCE_RADIUS);
+    const bounds = getMapWorldBounds(this.selectedMapData);
     return {
-      x: Phaser.Math.Clamp(pointer.worldX, radius, GAME_WORLD_WIDTH - radius),
-      y: Phaser.Math.Clamp(pointer.worldY, 84 + radius, this.controlTop - radius)
+      x: Phaser.Math.Clamp(pointer.worldX, bounds.left + radius, bounds.right - radius),
+      y: Phaser.Math.Clamp(pointer.worldY, bounds.top + radius, bounds.bottom - radius)
     };
   }
 
@@ -2217,7 +2217,7 @@ export class GameScene extends Phaser.Scene {
 
   private syncMap(mapData: EditableMapData) {
     const map = normalizeMapData(mapData);
-    const mapKey = map.tiles.join("");
+    const mapKey = `${map.cols}x${map.rows}:${map.tiles.join("")}`;
     if (mapKey === this.renderedMapKey) {
       return;
     }
@@ -2225,6 +2225,24 @@ export class GameScene extends Phaser.Scene {
     this.selectedMapData = map;
     this.renderedMapKey = mapKey;
     this.drawMap();
+    this.configureArenaCamera();
+  }
+
+  private getArenaFitFactor() {
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    if (this.selectedMapData.cols < 15) return 1;
+    const availableHeight = this.controlTop - TOWER_BUILD_TOP;
+    return Math.min(1, GAME_WORLD_WIDTH / bounds.width, availableHeight / bounds.height);
+  }
+
+  private configureArenaCamera() {
+    const camera = this.cameras.main;
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const fit = this.getArenaFitFactor();
+    camera.setBounds(bounds.left, 0, Math.max(GAME_WORLD_WIDTH, bounds.width), Math.max(GAME_WORLD_HEIGHT, bounds.bottom));
+    camera.setZoom(RENDER_SCALE * fit);
+    camera.centerOn(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    this.arenaZoomed = false;
   }
 
   private renderMelisNightmareMapLocks(active: boolean) {
@@ -3104,14 +3122,15 @@ export class GameScene extends Phaser.Scene {
     graphics.clear().setVisible(true);
     const panelWidth = Math.max(147, Math.min(169, discSize * 1.6));
     const panelHeight = 98;
-    const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const panelCenterX = Phaser.Math.Clamp(tower.x, bounds.left + panelWidth / 2 + 4, bounds.right - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
     const belowTowerY = tower.y + discSize / 2 + 7;
     const aboveTowerY = tower.y - discSize / 2 - panelHeight - 7;
     const panelY = Phaser.Math.Clamp(
-      belowTowerY + panelHeight <= this.controlTop - 4 ? belowTowerY : aboveTowerY,
-      TOWER_BUILD_TOP + 4,
-      this.controlTop - panelHeight - 4
+      belowTowerY + panelHeight <= bounds.bottom - 4 ? belowTowerY : aboveTowerY,
+      bounds.top + 4,
+      bounds.bottom - panelHeight - 4
     );
     const barX = panelX + 10;
     const barWidth = panelWidth - 20;

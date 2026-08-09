@@ -444,6 +444,7 @@ export {
   getMapGridSize,
   getMapMetrics,
   getMapOrigin,
+  getMapWorldBounds,
   getMapScale,
   findPathToNearestNexus,
   buildRuntimePaths,
