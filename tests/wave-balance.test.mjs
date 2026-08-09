@@ -24,7 +24,7 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
 });
 
 test("dalga ekonomisini ve rejenerasyon ölçeklemesini sabitler", () => {
-  assert.equal(ENEMY_REWARD_MULTIPLIER, 0.825);
+  assert.equal(ENEMY_REWARD_MULTIPLIER, 1);
   assert.equal(getWaveCompletionGold(1), 26);
   assert.equal(getWaveCompletionGold(19), 80);
 
