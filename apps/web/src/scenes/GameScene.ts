@@ -3048,7 +3048,7 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
-    const panelWidth = Math.max(210, Math.min(244, discSize * 2.4));
+    const panelWidth = Math.max(147, Math.min(169, discSize * 1.6));
     const panelHeight = 98;
     const panelCenterX = Phaser.Math.Clamp(tower.x, panelWidth / 2 + 4, GAME_WORLD_WIDTH - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
