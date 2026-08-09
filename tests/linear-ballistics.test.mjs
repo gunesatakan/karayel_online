@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { findFirstLinearCollision, getBallisticMovementSpeed, usesLinearBallistics } from "../packages/shared/dist/index.js";
 
-test("impact, wave ve projectile hareket hızları önceki hızın üçte ikisine iner", () => {
-  assert.ok(Math.abs(getBallisticMovementSpeed(340, "projectile") - 340 / 3) < 0.0001);
-  assert.equal(getBallisticMovementSpeed(360, "wave"), 120);
-  assert.ok(Math.abs(getBallisticMovementSpeed(520, "impact") - 520 / 3) < 0.0001);
+test("impact, wave ve projectile hareket hızları tekrar mevcut hızın üçte ikisine iner", () => {
+  assert.ok(Math.abs(getBallisticMovementSpeed(340, "projectile") - 680 / 9) < 0.0001);
+  assert.equal(getBallisticMovementSpeed(360, "wave"), 80);
+  assert.ok(Math.abs(getBallisticMovementSpeed(520, "impact") - 1040 / 9) < 0.0001);
   assert.equal(getBallisticMovementSpeed(340, "focus"), 340);
 });
 

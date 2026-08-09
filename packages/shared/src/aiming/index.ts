@@ -1,4 +1,4 @@
-export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 2;
+export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 1.5;
 export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 12;
 
 export function getTowerFireAlignmentTolerance(accuracyBonus = 0) {
