@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { findFirstLinearCollision, getBallisticCollisionRadius, getBallisticMovementSpeed, usesLinearBallistics } from "../packages/shared/dist/index.js";
 
 test("projectile ve impact farkli carpisma yaricaplari kullanir", () => {
-  assert.equal(getBallisticCollisionRadius("projectile"), 1);
-  assert.equal(getBallisticCollisionRadius("impact"), 2);
+  assert.equal(getBallisticCollisionRadius("projectile"), 2);
+  assert.equal(getBallisticCollisionRadius("impact"), 4);
   assert.equal(getBallisticCollisionRadius("wave"), 4);
 });
 

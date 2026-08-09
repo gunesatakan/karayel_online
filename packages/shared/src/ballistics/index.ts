@@ -5,8 +5,8 @@ export const LINEAR_BALLISTIC_HIT_TYPES: ReadonlySet<HitType> = new Set(["impact
 // original definition (1/2 * 2/3 * 2/3).
 export const LINEAR_BALLISTIC_SPEED_MULTIPLIER = 2 / 9;
 export const LINEAR_BALLISTIC_COLLISION_RADIUS: Readonly<Partial<Record<HitType, number>>> = {
-  projectile: 1,
-  impact: 2,
+  projectile: 2,
+  impact: 4,
   wave: 4
 };
 
