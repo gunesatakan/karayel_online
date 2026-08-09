@@ -18,6 +18,7 @@ import {
   getTowerBuildCost,
   getTowerSellRefund,
   getTowerLevelExpCost,
+  getTowerLevelGoldCost,
   getTowerPerformanceFlameIntensity,
   getShopItemPrice,
   getTile,
@@ -4825,8 +4826,12 @@ export class GameScene extends Phaser.Scene {
       ? towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId)
       : undefined;
     const upgradeCost = definition ? getTowerLevelExpCost(definition.cost, selectedTower?.level ?? 1) : 0;
+    const upgradeGoldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower?.level ?? 1) : 0;
     const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
-    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10 && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost);
+    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10
+      && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost
+      && (this.localPlayerSnapshot?.gold ?? 0) >= upgradeGoldCost);
+    const upgradePriceLabel = `${upgradeCost} XP${upgradeGoldCost > 0 ? ` + ${upgradeGoldCost}g` : ""}`;
     const canSell = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId);
     const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
     const reputation = this.localPlayerSnapshot?.reputation ?? 0;
@@ -4926,7 +4931,7 @@ export class GameScene extends Phaser.Scene {
         cost: LOGISTICS_WORKER_INSTANT_REVIVE_COST
       } : undefined,
       upgrade: {
-        label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradeCost} XP` : "Kule sec",
+        label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradePriceLabel}` : "Kule sec",
         enabled: canUpgrade
       },
       sell: {
@@ -4948,7 +4953,7 @@ export class GameScene extends Phaser.Scene {
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
           `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
         ] : []),
-        selectedTower.level < 10 ? `Sonraki: ${upgradeCost} XP | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP` : "Maksimum level",
+        selectedTower.level < 10 ? `Sonraki: ${upgradePriceLabel} | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP, ${Math.floor(this.localPlayerSnapshot?.gold ?? 0)}g` : "Maksimum level",
         canSell ? `Satis: ${sellRefund}g` : "Sadece sahibi satar"
       ] : undefined
     });
@@ -4957,7 +4962,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -4990,9 +4995,13 @@ export class GameScene extends Phaser.Scene {
     this.setTowerTrayShopVisible(false);
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? getTowerLevelExpCost(definition.cost, selectedTower.level) : 0;
+    const goldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower.level) : 0;
+    const upgradePriceLabel = `${cost} XP${goldCost > 0 ? ` + ${goldCost}g` : ""}`;
     const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower.level, definition.id) : 0;
     const ownsTower = selectedTower.ownerId === this.localSessionId;
-    const canUpgrade = ownsTower && selectedTower.level < 10 && (this.localPlayerSnapshot?.experience ?? 0) >= cost;
+    const canUpgrade = ownsTower && selectedTower.level < 10
+      && (this.localPlayerSnapshot?.experience ?? 0) >= cost
+      && (this.localPlayerSnapshot?.gold ?? 0) >= goldCost;
     const canSell = selectedTower.ownerId === this.localSessionId;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2"
@@ -5025,10 +5034,10 @@ export class GameScene extends Phaser.Scene {
         `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
         `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
       ] : []),
-      selectedTower.level < 10 ? `Sonraki gelistirme: ${cost} XP | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP` : "Sonraki gelistirme: maksimum level",
+      selectedTower.level < 10 ? `Sonraki gelistirme: ${upgradePriceLabel} | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP, ${Math.floor(this.localPlayerSnapshot?.gold ?? 0)}g` : "Sonraki gelistirme: maksimum level",
       canSell ? `Satis iadesi: ${sellRefund}g` : "Satis: sadece sahibi"
     ].join("\n"));
-    this.upgradeText?.setText(selectedTower.level < 10 ? `Gelistir ${cost} XP` : "Gelistirme yok");
+    this.upgradeText?.setText(selectedTower.level < 10 ? `Gelistir ${upgradePriceLabel}` : "Gelistirme yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
     this.sellText?.setText(canSell ? `Sat ${sellRefund}g` : "Satilamaz");
     this.sellButton?.setAlpha(canSell ? 1 : 0.42);

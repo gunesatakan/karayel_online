@@ -11,9 +11,9 @@ test("shop prices grow additively by purchase count", () => {
   assert.equal(getShopRerollPrice(2), 80);
 });
 
-test("catalog contains 37 valid, unique and numeric single-line items", () => {
-  assert.equal(shopCatalog.length, 38);
-  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 38);
+test("catalog contains 45 valid, unique and numeric single-line items", () => {
+  assert.equal(shopCatalog.length, 45);
+  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 45);
   for (const entry of shopCatalog) {
     assert.match(entry.description, /\d/);
     assert.equal(entry.description.includes("\n"), false);
@@ -22,6 +22,8 @@ test("catalog contains 37 valid, unique and numeric single-line items", () => {
 });
 
 for (const expectedId of [
+  "sogutucu-kanatlar", "madenci-eldiveni", "seri-cephane-hatti", "isci-botlari",
+  "hassas-servo", "balistik-itici", "ince-ayar",
   "namlu-yatagi", "nisangah", "hafif-muhimmat", "isi-emici", "kritik-sistem",
   "delici-cekirdek", "odak-mercegi", "agir-kundak", "yanki-odasi",
   "komuta-modulu", "buz-cekirdegi", "zirh-plakasi", "verim-hatti",

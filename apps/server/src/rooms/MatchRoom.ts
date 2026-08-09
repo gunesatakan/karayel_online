@@ -107,6 +107,7 @@ import {
   setTile,
   worldToGrid,
   getTowerLevelExpCost,
+  getTowerLevelGoldCost,
   getEnemyExp,
   towerAims,
   towerCatalog,
@@ -150,8 +151,8 @@ import {
   type TowerSnapshot
 } from "@karayel/shared";
 
-const TEAM_START_GOLD = 720;
-const MELIS_START_GOLD = 600;
+const TEAM_START_GOLD = 480;
+const MELIS_START_GOLD = 400;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const DEFAULT_PLAYER_TOWER_LIMIT = 10;
@@ -1644,7 +1645,9 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       const production = Math.min(
-        AMMO_FACTORY_RATE_PER_SECOND * seconds * getModifierMultiplier(this.getTowerRunModifiers(tower), "resourceProduction"),
+        AMMO_FACTORY_RATE_PER_SECOND * seconds
+          * getModifierMultiplier(this.getTowerRunModifiers(tower), "resourceProduction")
+          * getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoProduction"),
         tower.maxAmmo - tower.ammo,
         tower.energy / AMMO_FACTORY_ENERGY_PER_AMMO,
         tower.rawAmmo / AMMO_RAW_MATERIAL_PER_AMMO
@@ -1919,7 +1922,8 @@ export class MatchRoom extends Room<MatchState> {
     const length = Math.max(1, Math.hypot(dx, dy));
     const launchAngle = towerAims(sourceTower.definition.id) ? sourceTower.facing : Math.atan2(dy, dx);
     const hitType = sourceTower.definition.hitType ?? "impact";
-    const scaledSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType));
+    const scaledSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType))
+      * getModifierMultiplier(this.getTowerRunModifiers(sourceTower), "projectileSpeed");
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -2243,7 +2247,8 @@ export class MatchRoom extends Room<MatchState> {
       halfAngle: (options.angleRadians ?? KIN_WAVE_ANGLE_RADIANS) / 2,
       distance: 0,
       range: baseRange * rangeMultiplier,
-      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave")),
+      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave"))
+        * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
       slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80,
       pushbackDistance: options.pushbackDistance ?? 0,
@@ -2675,7 +2680,8 @@ export class MatchRoom extends Room<MatchState> {
       distanceOnSegment: initialDistance,
       x: initialHead.x,
       y: initialHead.y,
-      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED, "impact")),
+      speed: this.scaleWorldSpeed(getBallisticMovementSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED, "impact"))
+        * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
       damage: this.getTowerDamage(tower),
       abartiLevel,
       hitEnemyIds: []
@@ -2787,7 +2793,8 @@ export class MatchRoom extends Room<MatchState> {
     const length = Math.max(1, Math.hypot(dx, dy));
     const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
     const hitType = tower.definition.hitType ?? "projectile";
-    const projectileSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType));
+    const projectileSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType))
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed");
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -3564,7 +3571,9 @@ export class MatchRoom extends Room<MatchState> {
       worker.vy = 0;
       return true;
     }
-    const speed = this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED);
+    const playerModifiers = this.state?.players?.get(worker.ownerId)?.runModifiers ?? [];
+    const speed = this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
+      * getModifierMultiplier(playerModifiers, "workerSpeed");
     worker.vx = (dx / Math.max(1, distance)) * speed;
     worker.vy = (dy / Math.max(1, distance)) * speed;
     worker.x += worker.vx * seconds;
@@ -3707,7 +3716,7 @@ export class MatchRoom extends Room<MatchState> {
         const node = this.getCrystalNodes()
           .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))[0];
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000);
+          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
           worker.extractionRemainingMs = extraction.remainingMs;
           if (extraction.completed) {
             worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
@@ -3746,7 +3755,7 @@ export class MatchRoom extends Room<MatchState> {
         const node = this.getAmmoNodes()
           .sort((left, right) => distanceSq(factory.x, factory.y, left.x, left.y) - distanceSq(factory.x, factory.y, right.x, right.y))[0];
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000);
+          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
           worker.extractionRemainingMs = extraction.remainingMs;
           if (extraction.completed) {
             worker.cargo = Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo);
@@ -3835,6 +3844,11 @@ export class MatchRoom extends Room<MatchState> {
       worker.logisticsPhase = "pickup";
       worker.targetTowerId = "";
     }
+  }
+
+  private getWorkerGatherSpeedMultiplier(worker: DroneModel) {
+    const modifiers = this.state?.players?.get(worker.ownerId)?.runModifiers ?? [];
+    return getModifierMultiplier(modifiers, "workerGatherSpeed");
   }
 
   private getCrystalWorkerReactor(worker: DroneModel) {
@@ -4145,11 +4159,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const cost = getTowerLevelExpCost(tower.definition.cost, tower.level);
-    if (player.experience < cost) {
+    const goldCost = getTowerLevelGoldCost(tower.definition.cost, tower.level);
+    if (player.experience < cost || player.gold < goldCost) {
       return;
     }
 
     player.experience = Math.max(0, player.experience - cost);
+    player.gold -= goldCost;
+    player.goldSpent += goldCost;
     tower.level += 1;
   }
 

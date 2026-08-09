@@ -543,6 +543,13 @@ export function getTowerLevelExpCost(towerCost: number, currentLevel: number) {
   return getTowerBuildCost(towerCost) * safeLevel;
 }
 
+export function getTowerLevelGoldCost(towerCost: number, currentLevel: number) {
+  const nextLevel = Math.round(currentLevel) + 1;
+  if (nextLevel === 5) return getTowerBuildCost(towerCost);
+  if (nextLevel === 10) return getTowerBuildCost(towerCost) * 2;
+  return 0;
+}
+
 export function getEnemyExp(wave: number, enemyType: EnemyType, movementKind: MovementKind = "ground") {
   const typeMultiplier: Record<EnemyType, number> = {
     grunt: 1,

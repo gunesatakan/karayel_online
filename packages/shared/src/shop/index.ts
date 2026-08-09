@@ -77,6 +77,13 @@ const globalItem = (id: string, name: string, description: string, category: Sho
 });
 
 export const shopCatalog: ShopItem[] = [
+  globalItem("sogutucu-kanatlar", "Soğutucu Kanatlar", "Kule soğutma hızı +%25; en fazla 5 kez alınır.", "utility", 60, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("sogutucu-kanatlar", "cooling", 0.25)] }),
+  globalItem("madenci-eldiveni", "Madenci Eldiveni", "Kaynak çıkarma hızı +%20; en fazla 5 kez alınır.", "utility", 55, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("madenci-eldiveni", "workerGatherSpeed", 0.2)] }),
+  globalItem("seri-cephane-hatti", "Seri Cephane Hattı", "Cephane üretim hızı +%25; en fazla 5 kez alınır.", "utility", 65, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("seri-cephane-hatti", "ammoProduction", 0.25)] }),
+  globalItem("isci-botlari", "İşçi Botları", "Tüm lojistik işçilerinin hareket hızı +%15; en fazla 5 kez alınır.", "utility", 55, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("isci-botlari", "workerSpeed", 0.15)] }),
+  globalItem("hassas-servo", "Hassas Servo", "Kule dönüş hızı +%15; en fazla 5 kez alınır.", "power", 65, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("hassas-servo", "turnRate", 0.15)] }),
+  globalItem("balistik-itici", "Balistik İtici", "Projectile, wave ve impact hızı +%20; en fazla 5 kez alınır.", "power", 60, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, scope: { kind: "tagged", hitTypes: ["projectile", "wave", "impact"] }, effects: [effect("balistik-itici", "projectileSpeed", 0.2)] }),
+  globalItem("ince-ayar", "İnce Ayar", "Kule isabeti +%10; 15 derecelik ateş açısını azaltır ve en fazla 5 kez alınır.", "power", 65, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("ince-ayar", "accuracy", 0.1)] }),
   globalItem("namlu-yatagi", "Namlu Yatağı", "Kule dönüş hızı +%35; en fazla 2 kez alınır.", "power", 200, { repeatable: true, maxStacks: 2, effects: [effect("namlu-yatagi", "turnRate", 0.35)] }),
   globalItem("nisangah", "Nişangâh", "Kule isabeti +%30; en fazla 2 kez alınır.", "power", 190, { repeatable: true, maxStacks: 2, effects: [effect("nisangah", "accuracy", 0.3)] }),
   globalItem("hafif-muhimmat", "Hafif Mühimmat", "Mermi hızı +%40; en fazla 2 kez alınır.", "power", 170, { repeatable: true, maxStacks: 2, effects: [effect("hafif-muhimmat", "projectileSpeed", 0.4)] }),
