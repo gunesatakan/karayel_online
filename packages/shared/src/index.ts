@@ -111,6 +111,12 @@ export type EnemySnapshot = {
   isUndead?: boolean;
 };
 
+export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
+  "id" | "type" | "race" | "maxHp" | "attack" |
+  "healthRegenPerSecond" | "maxShield" | "movementKind"
+>> & Pick<EnemySnapshot, "pathId">;
+export type DynamicEnemySnapshot = Omit<EnemySnapshot, keyof StaticEnemySnapshot> & { id: string };
+
 export type TowerSnapshot = {
   id: string;
   ownerId: string;
@@ -162,6 +168,20 @@ export type TowerSnapshot = {
   targetingMode?: import("./characters/common/types.js").TowerTargetingMode;
 };
 
+export type StaticTowerSnapshot = Required<Pick<TowerSnapshot,
+  "id" | "ownerId" | "ownerName" | "characterId" | "definitionId" |
+  "name" | "x" | "y" | "color"
+>> & Pick<TowerSnapshot,
+  "orientation" | "ammoType" | "shotFuel" | "operatingEnergyPerSecond" |
+  "resourceProvider" | "coolingRate"
+>;
+export type DynamicTowerSnapshot = Omit<TowerSnapshot, keyof StaticTowerSnapshot> & { id: string };
+
+export type StaticSnapshot = {
+  enemies: StaticEnemySnapshot[];
+  towers: StaticTowerSnapshot[];
+};
+
 export type ProjectileSnapshot = {
   id: string;
   kind: ProjectileKind;
@@ -173,6 +193,9 @@ export type ProjectileSnapshot = {
   vx?: number;
   vy?: number;
 };
+
+export type ProjectileSpawnSnapshot = ProjectileSnapshot & { spawnedAt: number };
+export type ProjectileHitSnapshot = { id: string; x: number; y: number };
 
 export type DroneSnapshot = {
   id: string;
@@ -298,6 +321,13 @@ export type GameSnapshot = {
   setupReadyPlayerIds?: string[];
   perf?: ServerPerfSnapshot;
 };
+
+export type WireGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
+  enemies: DynamicEnemySnapshot[];
+  towers: DynamicTowerSnapshot[];
+};
+
+export { hydrateWireSnapshot, pruneStaticSnapshotCache } from "./snapshot/index.js";
 
 export { characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";

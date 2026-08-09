@@ -23,8 +23,10 @@ import {
   getShopItemPrice,
   getTile,
   gridToWorld,
+  hydrateWireSnapshot,
   isInsideMap,
   normalizeMapData,
+  pruneStaticSnapshotCache,
   worldToGrid,
   towerCatalog,
   type CharacterDefinition,
@@ -39,9 +41,14 @@ import {
   type BeamSnapshot,
   type GameSnapshot,
   type ProjectileSnapshot,
+  type ProjectileSpawnSnapshot,
   type ServerPerfSnapshot,
+  type StaticEnemySnapshot,
+  type StaticSnapshot,
+  type StaticTowerSnapshot,
   type TowerDefinition,
-  type TowerSnapshot
+  type TowerSnapshot,
+  type WireGameSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, setActiveLobbyRoom } from "../online-session";
@@ -116,13 +123,18 @@ type RenderMover = {
   armorBreakIcon?: Phaser.GameObjects.Image;
 };
 
+type HydratedGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
+  enemies: EnemySnapshot[];
+  towers: TowerSnapshot[];
+};
+
 type BufferedSnapshot = {
-  snapshot: GameSnapshot;
+  snapshot: HydratedGameSnapshot;
   receivedAt: number;
 };
 
 type PlaybackFrame = {
-  snapshot: GameSnapshot;
+  snapshot: HydratedGameSnapshot;
   alpha: number;
 };
 
@@ -238,6 +250,7 @@ export class GameScene extends Phaser.Scene {
   private enemies = new Map<string, RenderMover>();
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  private linearProjectileSnapshots = new Map<string, ProjectileSpawnSnapshot>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
@@ -257,6 +270,9 @@ export class GameScene extends Phaser.Scene {
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private towerSnapshots = new Map<string, TowerSnapshot>();
+  private staticEnemySnapshots = new Map<string, StaticEnemySnapshot>();
+  private staticTowerSnapshots = new Map<string, StaticTowerSnapshot>();
+  private lastFullSnapshotRequestAt = 0;
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
   private placementGrid?: Phaser.GameObjects.Graphics;
@@ -1708,6 +1724,7 @@ export class GameScene extends Phaser.Scene {
       this.localSessionId = this.room.sessionId;
       this.emitHudState({ status: `Oda: ${this.room.roomId}` });
       this.bindRoomHandlers(this.room);
+      this.room.send("snapshot:requestFull");
       this.room.send("card:sync");
       this.startPingLoop();
     } catch (error) {
@@ -1727,13 +1744,18 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private queueSnapshot(snapshot: GameSnapshot) {
+  private queueSnapshot(snapshot: WireGameSnapshot) {
     const receiveStart = performance.now();
     if (snapshot.result) {
       this.showMatchResult(snapshot.result, { wave: snapshot.team.wave, kills: snapshot.team.kills });
     }
+    const hydratedSnapshot = this.hydrateSnapshot(snapshot);
+    if (!hydratedSnapshot) {
+      this.requestFullStaticSnapshot();
+      return;
+    }
     const bufferedSnapshot = {
-      snapshot,
+      snapshot: hydratedSnapshot,
       receivedAt: performance.now()
     };
     this.snapshotBuffer.push(bufferedSnapshot);
@@ -1747,6 +1769,34 @@ export class GameScene extends Phaser.Scene {
       this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
     }
     this.recordClientPerfSection("snapshotRecv", performance.now() - receiveStart);
+  }
+
+  private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
+    const hydrated = hydrateWireSnapshot(snapshot, this.staticEnemySnapshots, this.staticTowerSnapshots);
+    if (!hydrated) return undefined;
+    pruneStaticSnapshotCache(this.staticEnemySnapshots, snapshot.enemies.map((enemy) => enemy.id));
+    pruneStaticSnapshotCache(this.staticTowerSnapshots, snapshot.towers.map((tower) => tower.id));
+    const linearProjectiles = Array.from(this.linearProjectileSnapshots.values()).map((projectile) => {
+      const elapsedSeconds = Math.max(0, snapshot.serverTime - projectile.spawnedAt) / 1000;
+      return {
+        ...projectile,
+        x: projectile.x + (projectile.vx ?? 0) * elapsedSeconds,
+        y: projectile.y + (projectile.vy ?? 0) * elapsedSeconds
+      };
+    });
+    return { ...hydrated, projectiles: [...hydrated.projectiles, ...linearProjectiles] };
+  }
+
+  private applyFullStaticSnapshot(snapshot: StaticSnapshot) {
+    this.staticEnemySnapshots = new Map(snapshot.enemies.map((enemy) => [enemy.id, enemy]));
+    this.staticTowerSnapshots = new Map(snapshot.towers.map((tower) => [tower.id, tower]));
+  }
+
+  private requestFullStaticSnapshot() {
+    const now = performance.now();
+    if (now - this.lastFullSnapshotRequestAt < 1000) return;
+    this.lastFullSnapshotRequestAt = now;
+    this.room?.send("snapshot:requestFull");
   }
 
   private renderPlaybackFrame(now: number) {
@@ -1827,7 +1877,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private interpolateSnapshot(previous: GameSnapshot, next: GameSnapshot, alpha: number): GameSnapshot {
+  private interpolateSnapshot(previous: HydratedGameSnapshot, next: HydratedGameSnapshot, alpha: number): HydratedGameSnapshot {
     const previousEnemies = new Map(previous.enemies.map((enemy) => [enemy.id, enemy]));
     const enemies = next.enemies.map((enemy) => {
       const oldEnemy = previousEnemies.get(enemy.id);
@@ -1883,7 +1933,7 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private renderSnapshotPayload(snapshot: GameSnapshot) {
+  private renderSnapshotPayload(snapshot: HydratedGameSnapshot) {
     const renderStart = performance.now();
     const now = performance.now();
 
@@ -1951,7 +2001,13 @@ export class GameScene extends Phaser.Scene {
 
   private bindRoomHandlers(room: Room) {
     room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
-    room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
+    room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
+    room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
+    room.onMessage("tower:remove", (message: { id: string }) => this.staticTowerSnapshots.delete(message.id));
+    room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => this.linearProjectileSnapshots.set(projectile.id, projectile));
+    room.onMessage("projectile:hit", (message: { id: string }) => this.linearProjectileSnapshots.delete(message.id));
+    room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
+    room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
@@ -1989,6 +2045,7 @@ export class GameScene extends Phaser.Scene {
         this.localSessionId = room.sessionId;
         setActiveLobbyRoom(room);
         this.bindRoomHandlers(room);
+        room.send("snapshot:requestFull");
         room.send("card:sync");
         this.reconnecting = false;
         this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");

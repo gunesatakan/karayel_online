@@ -132,12 +132,14 @@ import {
   type TowerTriggerEvent,
   type BeamSnapshot,
   type GameSnapshot,
+  type WireGameSnapshot,
   type HitType,
   type KillEventSnapshot,
   type LobbyStateSnapshot,
   type MapScale,
   type ModifierBreakdown,
   type ProjectileKind,
+  type ProjectileSpawnSnapshot,
   type RoomListingSnapshot,
   type RunModifiers,
   type ServerPerfSnapshot,
@@ -150,6 +152,11 @@ import {
   type TowerAuraDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
+import {
+  createFullStaticSnapshot,
+  createStaticEnemySnapshot,
+  createStaticTowerSnapshot
+} from "../snapshot/static-data.js";
 
 const TEAM_START_GOLD = 480;
 const MELIS_START_GOLD = 400;
@@ -968,6 +975,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
       this.chooseCard(client, message);
     });
+    this.onMessage("snapshot:requestFull", (client) => this.sendFullStaticSnapshot(client));
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
@@ -1084,6 +1092,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.ownerId === previousSessionId) {
         tower.ownerId = nextSessionId;
         tower.ownerName = player.name;
+        this.broadcastTowerSpawn(tower);
       }
     }
 
@@ -1373,7 +1382,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const now = performance.now();
     const shouldBroadcastSnapshot = now - this.lastSnapshotBroadcastAt >= SNAPSHOT_SEND_INTERVAL_MS;
-    let snapshot: GameSnapshot | undefined;
+    let snapshot: WireGameSnapshot | undefined;
     let snapshotBytes = 0;
     if (shouldBroadcastSnapshot) {
       sectionStart = performance.now();
@@ -1405,7 +1414,7 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private sendSnapshotWithBackpressure(snapshot: GameSnapshot) {
+  private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot) {
     let sent = false;
     for (const client of this.clients) {
       if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) continue;
@@ -1413,6 +1422,50 @@ export class MatchRoom extends Room<MatchState> {
       sent = true;
     }
     return sent;
+  }
+
+  private sendFullStaticSnapshot(client: Pick<Client, "send">) {
+    client.send("snapshot:full", createFullStaticSnapshot(this.enemies.values(), this.towers.values()));
+  }
+
+  private broadcastEnemySpawn(enemy: EnemyModel) {
+    this.broadcast("enemy:spawn", createStaticEnemySnapshot(enemy));
+  }
+
+  private broadcastTowerSpawn(tower: TowerModel) {
+    this.broadcast("tower:spawn", createStaticTowerSnapshot(tower, TOWER_COOLING_PER_SECOND));
+  }
+
+  private broadcastProjectileSpawn(projectile: ProjectileModel) {
+    if (!usesLinearBallistics(projectile.hitType)) return;
+    const bounds = this.getActiveWorldBounds();
+    const margin = this.scaleWorldDistance(80);
+    if (projectile.x < bounds.left - margin || projectile.x > bounds.right + margin ||
+        projectile.y < bounds.top - margin || projectile.y > bounds.bottom + margin) return;
+    const payload: ProjectileSpawnSnapshot = {
+      id: projectile.id,
+      kind: projectile.kind,
+      source: projectile.source,
+      definitionId: projectile.definitionId,
+      hitType: projectile.hitType,
+      x: roundNetworkNumber(projectile.x),
+      y: roundNetworkNumber(projectile.y),
+      vx: roundNetworkNumber(projectile.vx),
+      vy: roundNetworkNumber(projectile.vy),
+      spawnedAt: Date.now()
+    };
+    this.broadcast("projectile:spawn", payload);
+  }
+
+  private removeProjectile(id: string, projectile: ProjectileModel) {
+    this.projectiles.delete(id);
+    if (usesLinearBallistics(projectile.hitType)) {
+      this.broadcast("projectile:hit", {
+        id,
+        x: roundNetworkNumber(projectile.x),
+        y: roundNetworkNumber(projectile.y)
+      });
+    }
   }
 
   private updateSpawning(deltaTime: number) {
@@ -1658,6 +1711,7 @@ export class MatchRoom extends Room<MatchState> {
       activeMarkUntil: 0,
       pathId
     });
+    this.broadcastEnemySpawn(this.enemies.get(id)!);
   }
 
   private updateResourceFactories(seconds: number) {
@@ -1935,6 +1989,7 @@ export class MatchRoom extends Room<MatchState> {
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: []
     });
+    this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
 
   private spawnSpecialProjectile(sourceTower: TowerModel, definitionId: string, target: EnemyModel, damage: number, speed: number, aoeRadius: number, slowMs: number) {
@@ -1968,6 +2023,7 @@ export class MatchRoom extends Room<MatchState> {
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(sourceTower), "armorBreak"),
       piercedEnemyIds: []
     });
+    this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
 
   private updateBeams(deltaTime: number) {
@@ -2839,6 +2895,7 @@ export class MatchRoom extends Room<MatchState> {
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: []
     });
+    this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
 
   private addZeynepBurnLine(tower: TowerModel, x1: number, y1: number, x2: number, y2: number, damage: number, durationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS) {
@@ -3153,12 +3210,12 @@ export class MatchRoom extends Room<MatchState> {
           }
           projectile.piercedEnemyIds.push(collision.body.id);
           if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
-            this.projectiles.delete(id);
+            this.removeProjectile(id, projectile);
           }
           continue;
         }
         if (this.isProjectileOutOfBounds(projectile)) {
-          this.projectiles.delete(id);
+          this.removeProjectile(id, projectile);
         }
         continue;
       }
@@ -3169,7 +3226,7 @@ export class MatchRoom extends Room<MatchState> {
         this.updateProjectileAbartiModifier(projectile, previousX, previousY);
 
         if (this.isProjectileOutOfBounds(projectile)) {
-          this.projectiles.delete(id);
+          this.removeProjectile(id, projectile);
           continue;
         }
 
@@ -3179,13 +3236,13 @@ export class MatchRoom extends Room<MatchState> {
         }
 
         this.applyProjectileHit(projectile, pierceTarget);
-        this.projectiles.delete(id);
+        this.removeProjectile(id, projectile);
         continue;
       }
 
       const target = this.enemies.get(projectile.targetId);
       if (!target) {
-        this.projectiles.delete(id);
+        this.removeProjectile(id, projectile);
         continue;
       }
 
@@ -3209,7 +3266,7 @@ export class MatchRoom extends Room<MatchState> {
       this.updateProjectileAbartiModifier(projectile, previousX, previousY);
 
       if (this.isProjectileOutOfBounds(projectile)) {
-        this.projectiles.delete(id);
+        this.removeProjectile(id, projectile);
         continue;
       }
 
@@ -3223,7 +3280,7 @@ export class MatchRoom extends Room<MatchState> {
       projectile.piercedEnemyIds.push(target.id);
 
       if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
-        this.projectiles.delete(id);
+        this.removeProjectile(id, projectile);
       }
     }
   }
@@ -4162,6 +4219,7 @@ export class MatchRoom extends Room<MatchState> {
     };
 
     this.towers.set(tower.id, tower);
+    this.broadcastTowerSpawn(tower);
     this.registerMelisFavoriteTower(tower);
     player.gold -= buildCost;
     player.goldSpent += buildCost;
@@ -4208,6 +4266,7 @@ export class MatchRoom extends Room<MatchState> {
     player.towersBuilt = Math.max(0, player.towersBuilt - 1);
     this.removeTowerReferences(tower.id);
     this.towers.delete(tower.id);
+    this.broadcast("tower:remove", { id: tower.id });
   }
 
   private setTowerMode(client: Client, message: TowerModeMessage) {
@@ -4262,6 +4321,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.y = y;
     tower.cooldownMs = Math.min(tower.cooldownMs, 150);
     tower.rangeMemoryEnemyIds = [];
+    this.broadcastTowerSpawn(tower);
     return true;
   }
 
@@ -6256,6 +6316,7 @@ export class MatchRoom extends Room<MatchState> {
       activeMarkUntil: 0,
       pathId
     });
+    this.broadcastEnemySpawn(this.enemies.get(id)!);
   }
 
   private updateMelisUndead(enemy: EnemyModel, seconds: number, now: number) {
@@ -6451,7 +6512,7 @@ export class MatchRoom extends Room<MatchState> {
     return player.characterId === "warrior" ? amount * ATAKAN_ULTIMATE_CHARGE_MULTIPLIER : amount;
   }
 
-  private getSnapshot(): GameSnapshot {
+  private getSnapshot(): WireGameSnapshot {
     const now = Date.now();
     const worldBounds = this.getActiveWorldBounds();
     const projectileMargin = this.scaleWorldDistance(80);
@@ -6513,20 +6574,12 @@ export class MatchRoom extends Room<MatchState> {
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,
-        type: enemy.type,
-        race: enemy.race,
         x: roundNetworkNumber(enemy.x),
         y: roundNetworkNumber(enemy.y),
         hp: roundNetworkNumber(Math.max(0, enemy.hp)),
-        maxHp: enemy.maxHp,
         armor: enemy.armor,
-        attack: enemy.attack,
-        healthRegenPerSecond: enemy.healthRegenPerSecond,
         shield: roundNetworkNumber(Math.max(0, enemy.shield)),
-        maxShield: enemy.maxShield,
-        movementKind: enemy.movementKind,
         pathDistance: roundNetworkNumber(enemy.pathDistance),
-        pathId: enemy.pathId,
         trackingStacks: this.getTrackingStackCount(enemy, now),
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
         isFeared: enemy.fearUntil > now,
@@ -6541,37 +6594,23 @@ export class MatchRoom extends Room<MatchState> {
       })),
       towers: Array.from(this.towers.values()).map((tower) => ({
         id: tower.id,
-        ownerId: tower.ownerId,
-        ownerName: tower.ownerName,
-        characterId: tower.characterId,
-        definitionId: tower.definition.id,
-        name: tower.definition.name,
-        x: roundNetworkNumber(tower.x),
-        y: roundNetworkNumber(tower.y),
-        orientation: tower.orientation,
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
         range: roundNetworkNumber(this.getTowerRange(tower)),
-        color: tower.definition.color,
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
         armor: tower.armor,
         disabled: tower.hp <= 0,
-        ammoType: tower.ammoType,
         ammo: Math.floor(tower.ammo),
         maxAmmo: tower.maxAmmo,
         energy: Math.floor(tower.energy),
         maxEnergy: tower.maxEnergy,
-        shotFuel: tower.definition.engine?.resources.shotFuel,
-        operatingEnergyPerSecond: tower.definition.engine?.resources.operatingEnergyPerSecond,
         standby: tower.standby,
         wakeRemainingMs: Math.max(0, tower.wakeReadyAt - now),
         energyState: getTowerEnergyState(tower.energy, tower.energyDepletedAt, now),
-        resourceProvider: tower.definition.resourceProvider,
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
         temperature: Math.round(tower.temperature * 10) / 10,
         performance: Math.round(tower.performance * 100) / 100,
-        coolingRate: TOWER_COOLING_PER_SECOND,
         rawAmmo: Math.floor(tower.rawAmmo),
         maxRawAmmo: tower.maxRawAmmo,
         status: this.getTowerStatus(tower),
@@ -6589,7 +6628,8 @@ export class MatchRoom extends Room<MatchState> {
         ,targetingMode: tower.targetingMode
       })),
       projectiles: Array.from(this.projectiles.values())
-        .filter((projectile) => projectile.x >= worldBounds.left - projectileMargin && projectile.x <= worldBounds.right + projectileMargin
+        .filter((projectile) => !usesLinearBallistics(projectile.hitType)
+          && projectile.x >= worldBounds.left - projectileMargin && projectile.x <= worldBounds.right + projectileMargin
           && projectile.y >= worldBounds.top - projectileMargin && projectile.y <= worldBounds.bottom + projectileMargin)
         .map((projectile) => ({
         id: projectile.id,
