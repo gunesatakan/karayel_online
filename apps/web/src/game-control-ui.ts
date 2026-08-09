@@ -366,3 +366,70 @@ export function setupGameControlUi(game: Phaser.Game) {
   new ResizeObserver(syncCanvasBounds).observe(document.body);
   syncCanvasBounds();
 }
+
+export type HudState = {
+  status: string;
+  stats: string;
+  ping: string;
+  pingTone: "good" | "warn" | "bad";
+  continueVisible: boolean;
+  continueWaiting: boolean;
+  perfOpen: boolean;
+  perfText: string;
+  audioOpen: boolean;
+  musicVolume: number;
+  voiceVolume: number;
+};
+
+export function setupGameHudUi(game: Phaser.Game) {
+  const root = document.createElement("header");
+  root.id = "game-hud-root";
+  root.className = "game-hud game-hud--hidden";
+  document.body.append(root);
+
+  let state: HudState = {
+    status: "Sunucu kontrol ediliyor...", stats: "Gold 0  Can 100  Wave 1", ping: "-- ms", pingTone: "warn",
+    continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5
+  };
+
+  const dispatch = (action: string, value?: number) => window.dispatchEvent(new CustomEvent("karayel:control-action", { detail: { action, value } }));
+  const syncCanvasBounds = () => {
+    const rect = game.canvas?.getBoundingClientRect();
+    if (!rect) return;
+    root.style.left = `${rect.left}px`;
+    root.style.top = `${rect.top}px`;
+    root.style.width = `${rect.width}px`;
+  };
+  const render = (next: HudState) => {
+    state = next;
+    root.classList.remove("game-hud--hidden");
+    root.innerHTML = `
+      <div class="game-hud__brand"><strong>Karayel TD</strong><span>${state.status}</span><b>${state.stats}</b></div>
+      <div class="game-hud__actions">
+        <span class="game-hud__ping game-hud__ping--${state.pingTone}">${state.ping}</span>
+        <button data-hud="perf" aria-label="Performans bilgisi">i</button>
+        <button data-hud="audio">Ses</button>
+        ${state.continueVisible ? `<button class="game-hud__continue" data-hud="continue" ${state.continueWaiting ? "disabled" : ""}>${state.continueWaiting ? "Bekleniyor" : "Devam"}</button>` : ""}
+      </div>
+      ${state.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${state.perfText}</pre></section>` : ""}
+      ${state.audioOpen ? `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong><label>Müzik <input data-volume="music" type="range" min="0" max="1" step="0.01" value="${state.musicVolume}"></label><label>Seslendirme <input data-volume="voice" type="range" min="0" max="1" step="0.01" value="${state.voiceVolume}"></label></section>` : ""}
+    `;
+    root.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
+      event.stopPropagation();
+      const action = element.dataset.hud;
+      if (action === "continue") dispatch("continueWave");
+      if (action === "perf") dispatch("togglePerfHud");
+      if (action === "audio") dispatch("toggleAudioHud");
+    }));
+    root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
+      dispatch(input.dataset.volume === "music" ? "setMusicVolume" : "setVoiceVolume", Number(input.value));
+    }));
+  };
+
+  game.events.on("game:hud-state", render);
+  game.events.on("game:hud-hide", () => root.classList.add("game-hud--hidden"));
+  window.addEventListener("resize", syncCanvasBounds);
+  window.addEventListener("orientationchange", syncCanvasBounds);
+  new ResizeObserver(syncCanvasBounds).observe(document.body);
+  syncCanvasBounds();
+}

@@ -43,6 +43,7 @@ import {
 import { gameServerUrl, healthUrl } from "../config";
 import { clearActiveLobbyRoom, getActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
+import type { HudState } from "../game-control-ui";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -71,6 +72,11 @@ type ControlActionDetail = {
     | "closeShop"
     | "setTargeting"
     | "toggleAbartiOrientation"
+    | "continueWave"
+    | "togglePerfHud"
+    | "toggleAudioHud"
+    | "setMusicVolume"
+    | "setVoiceVolume"
     | "clearSelection";
   towerId?: string;
   slot?: number;
@@ -82,6 +88,7 @@ type ControlActionDetail = {
   targetingMode?: string;
   clientX?: number;
   clientY?: number;
+  value?: number;
 };
 
 type RenderTower = {
@@ -278,13 +285,20 @@ export class GameScene extends Phaser.Scene {
   private matchResultShown = false;
   private cardChoiceRoot?: HTMLElement;
   private cardChoices: CardDefinition[] = [];
-  private statusText?: Phaser.GameObjects.Text;
-  private topStatsText?: Phaser.GameObjects.Text;
-  private pingText?: Phaser.GameObjects.Text;
-  private continueButton?: Phaser.GameObjects.Rectangle;
-  private continueText?: Phaser.GameObjects.Text;
   private perfText?: Phaser.GameObjects.Text;
-  private perfInfoText?: Phaser.GameObjects.Text;
+  private hudState: HudState = {
+    status: "Sunucu kontrol ediliyor...",
+    stats: "Gold 0  Can 100  Wave 1",
+    ping: "-- ms",
+    pingTone: "warn",
+    continueVisible: false,
+    continueWaiting: false,
+    perfOpen: false,
+    perfText: "",
+    audioOpen: false,
+    musicVolume: DEFAULT_MUSIC_VOLUME,
+    voiceVolume: DEFAULT_VOICE_VOLUME
+  };
   private hintText?: Phaser.GameObjects.Text;
   private towerTrayItems: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
   private selectedTowerStatsText?: Phaser.GameObjects.Text;
@@ -383,7 +397,6 @@ export class GameScene extends Phaser.Scene {
     this.configureArenaCamera();
     this.createPlacementGrid();
     this.createHeader();
-    this.createAudioSettingsButton();
     window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
     this.createKillStreakAudio();
@@ -417,6 +430,7 @@ export class GameScene extends Phaser.Scene {
       this.hideCardChoices();
       this.backgroundMusic?.pause();
       this.game.events.emit("game:controls-state", { visible: false });
+      this.game.events.emit("game:hud-hide");
     });
 
     void this.connect();
@@ -483,48 +497,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createHeader() {
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, 40, GAME_WORLD_WIDTH, 80, 0x0f172a, 0.92).setDepth(20);
-    this.add.text(16, 12, "Karayel TD", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "22px",
-      fontStyle: "bold"
-    }).setDepth(21);
-    this.statusText = this.add.text(16, 42, "Sunucu kontrol ediliyor...", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "12px"
-    }).setDepth(21);
-    this.topStatsText = this.add.text(16, 60, "Gold 0  Can 100  Wave 1", {
-      color: "#facc15",
-      fontFamily: "Arial",
-      fontSize: "12px",
-      fontStyle: "bold"
-    }).setDepth(21);
-    this.pingText = this.add.text(GAME_WORLD_WIDTH - 42, 16, "-- ms", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "13px",
-      fontStyle: "bold"
-    }).setOrigin(1, 0).setDepth(21);
-    this.createPerfInfoButton();
-    this.continueButton = this.add.rectangle(GAME_WORLD_WIDTH - 78, 54, 96, 28, 0x15803d, 0.98)
-      .setStrokeStyle(1.5, 0x86efac, 0.9)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(64)
-      .setVisible(false);
-    this.continueText = this.add.text(GAME_WORLD_WIDTH - 78, 54, "Devam", {
-      color: "#f0fdf4",
-      fontFamily: "Arial",
-      fontSize: "12px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(65).setVisible(false);
-    const continueWave = () => {
-      this.room?.send("wave:continue");
-      this.ignoreMapPointerUntil = performance.now() + 220;
-    };
-    this.continueButton.on("pointerup", continueWave);
-    this.continueText.setInteractive({ useHandCursor: true }).on("pointerup", continueWave);
+    this.hudState.musicVolume = this.musicVolume;
+    this.hudState.voiceVolume = this.voiceVolume;
+    this.emitHudState();
+  }
+
+  private emitHudState(patch: Partial<HudState> = {}) {
+    const changed = Object.entries(patch).some(([key, value]) => this.hudState[key as keyof HudState] !== value);
+    if (!changed && Object.keys(patch).length > 0) {
+      return;
+    }
+    this.hudState = { ...this.hudState, ...patch };
+    this.game.events.emit("game:hud-state", { ...this.hudState });
   }
 
   private createPerfInfoButton() {
@@ -559,49 +543,9 @@ export class GameScene extends Phaser.Scene {
 
   private showPerfPopup() {
     this.hidePerfPopup();
+    this.audioSettingsOpen = false;
     this.perfPopupOpen = true;
-
-    const panelX = 24;
-    const panelY = 92;
-    const panelWidth = GAME_WORLD_WIDTH - 48;
-    const panelHeight = 690;
-    const background = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x020617, 0.96)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1.4, 0x38bdf8, 0.72)
-      .setInteractive({ useHandCursor: false })
-      .setDepth(86);
-    background.on("pointerdown", () => {
-      this.ignoreMapPointerUntil = performance.now() + 220;
-    });
-    background.on("pointerup", () => {
-      this.ignoreMapPointerUntil = performance.now() + 220;
-    });
-
-    const title = this.add.text(panelX + 14, panelY + 12, "Performans Profili", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "15px",
-      fontStyle: "bold"
-    }).setDepth(87);
-    const close = this.add.text(panelX + panelWidth - 18, panelY + 12, "x", {
-      color: "#bae6fd",
-      fontFamily: "Arial",
-      fontSize: "16px",
-      fontStyle: "bold"
-    }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true }).setDepth(88);
-    close.on("pointerup", () => {
-      this.ignoreMapPointerUntil = performance.now() + 220;
-      this.hidePerfPopup();
-    });
-
-    this.perfInfoText = this.add.text(panelX + 14, panelY + 42, this.getPerfPopupText(), {
-      color: "#cbd5e1",
-      fontFamily: "monospace",
-      fontSize: "9px",
-      lineSpacing: 2
-    }).setDepth(87);
-
-    this.perfPopupItems.push(background, title, close, this.perfInfoText);
+    this.emitHudState({ perfOpen: true, audioOpen: false, perfText: this.getPerfPopupText() });
   }
 
   private hidePerfPopup() {
@@ -609,8 +553,8 @@ export class GameScene extends Phaser.Scene {
       item.destroy();
     }
     this.perfPopupItems = [];
-    this.perfInfoText = undefined;
     this.perfPopupOpen = false;
+    this.emitHudState({ perfOpen: false });
   }
 
   private createAudioSettingsButton() {
@@ -645,34 +589,14 @@ export class GameScene extends Phaser.Scene {
 
   private showAudioSettingsPanel() {
     this.hideAudioSettingsPanel();
+    this.perfPopupOpen = false;
     this.audioSettingsOpen = true;
-
-    const panelX = GAME_WORLD_WIDTH - 174;
-    const panelY = 82;
-    const background = this.add.rectangle(panelX, panelY, 160, 104, 0x020617, 0.96)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x64748b, 0.72)
-      .setInteractive({ useHandCursor: false })
-      .setDepth(78);
-    background.on("pointerdown", () => {
-      this.ignoreMapPointerUntil = performance.now() + 180;
+    this.emitHudState({
+      audioOpen: true,
+      perfOpen: false,
+      musicVolume: this.musicVolume,
+      voiceVolume: this.voiceVolume
     });
-    background.on("pointerup", () => {
-      this.ignoreMapPointerUntil = performance.now() + 180;
-    });
-    const title = this.add.text(panelX + 12, panelY + 8, "Ses ayarlari", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "11px",
-      fontStyle: "bold"
-    }).setDepth(79);
-
-    this.audioSettingsItems.push(
-      background,
-      title,
-      ...this.createAudioVolumeSlider(panelX + 12, panelY + 34, "Muzik", "music"),
-      ...this.createAudioVolumeSlider(panelX + 12, panelY + 70, "Seslendirme", "voice")
-    );
   }
 
   private hideAudioSettingsPanel() {
@@ -681,6 +605,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.audioSettingsItems = [];
     this.audioSettingsOpen = false;
+    this.emitHudState({ audioOpen: false });
   }
 
   private createAudioVolumeSlider(x: number, y: number, label: string, channel: AudioVolumeChannel) {
@@ -944,6 +869,22 @@ export class GameScene extends Phaser.Scene {
     };
 
     switch (detail.action) {
+      case "continueWave":
+        this.room?.send("wave:continue");
+        this.ignoreMapPointerUntil = performance.now() + 220;
+        break;
+      case "togglePerfHud":
+        this.togglePerfPopup();
+        break;
+      case "toggleAudioHud":
+        this.toggleAudioSettingsPanel();
+        break;
+      case "setMusicVolume":
+        if (typeof detail.value === "number") this.setAudioVolume("music", detail.value);
+        break;
+      case "setVoiceVolume":
+        if (typeof detail.value === "number") this.setAudioVolume("voice", detail.value);
+        break;
       case "selectTower": {
         this.hideZeynepTierChoicesIfOpen();
         const tower = findTower();
@@ -1743,7 +1684,7 @@ export class GameScene extends Phaser.Scene {
   private async connect() {
     try {
       await this.checkServerHealth();
-      this.statusText?.setText("Odaya baglaniyor...");
+      this.emitHudState({ status: "Odaya bağlanıyor..." });
 
       const existingRoom = getActiveLobbyRoom();
       if (existingRoom) {
@@ -1758,7 +1699,7 @@ export class GameScene extends Phaser.Scene {
         });
       }
       this.localSessionId = this.room.sessionId;
-      this.statusText?.setText(`Oda: ${this.room.roomId}`);
+      this.emitHudState({ status: `Oda: ${this.room.roomId}` });
 
       this.room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
       this.room.onMessage("snapshot", (snapshot: GameSnapshot) => this.queueSnapshot(snapshot));
@@ -1775,7 +1716,7 @@ export class GameScene extends Phaser.Scene {
       this.startPingLoop();
     } catch (error) {
       console.error(error);
-      this.statusText?.setText(this.formatConnectionError(error));
+      this.emitHudState({ status: this.formatConnectionError(error) });
     }
   }
 
@@ -2135,12 +2076,14 @@ export class GameScene extends Phaser.Scene {
   private renderSetupPhase(snapshot: GameSnapshot) {
     const active = Boolean(snapshot.setupPhase);
     const localReady = Boolean(this.localSessionId && snapshot.setupReadyPlayerIds?.includes(this.localSessionId));
-    this.continueButton?.setVisible(active).setFillStyle(localReady ? 0x334155 : 0x15803d, 0.98);
-    this.continueText?.setVisible(active).setText(localReady ? "Bekleniyor" : "Devam");
+    const hudPatch: Partial<HudState> = { continueVisible: active, continueWaiting: localReady };
     if (active) {
       const readyCount = snapshot.setupReadyPlayerIds?.length ?? 0;
-      this.statusText?.setText(`Kurulum: ${readyCount}/${snapshot.players.length} oyuncu hazir`);
+      hudPatch.status = `Kurulum: ${readyCount}/${snapshot.players.length} oyuncu hazır`;
+    } else if (this.hudState.status.startsWith("Kurulum:")) {
+      hudPatch.status = `Oda: ${this.room?.roomId ?? "-"}`;
     }
+    this.emitHudState(hudPatch);
   }
 
   private handleArenaZoomTap(pointer: Phaser.Input.Pointer) {
@@ -2331,7 +2274,7 @@ export class GameScene extends Phaser.Scene {
     const resourceStats = `  E ${Math.floor(snapshot.team.energy ?? 0)}/${snapshot.team.maxEnergy ?? 0}  M ${Math.floor(ammunition.bullet)}  A ${Math.floor(ammunition.auraCrystal)}  G ${Math.floor(ammunition.powerCrystal)}`;
     const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  XP ${formatExperience(experience)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}`);
+      this.emitHudState({ stats: `Gold ${Math.floor(gold)}  XP ${formatExperience(experience)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}` });
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
@@ -5033,8 +4976,10 @@ export class GameScene extends Phaser.Scene {
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);
     const jitter = Math.max(...this.pingSamples) - Math.min(...this.pingSamples);
-    this.pingText?.setText(`${averagePing} ms ±${jitter}`);
-    this.pingText?.setColor(averagePing < 90 && jitter < 35 ? "#22c55e" : averagePing < 180 && jitter < 80 ? "#facc15" : "#fb7185");
+    this.emitHudState({
+      ping: `${averagePing} ms ±${jitter}`,
+      pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad"
+    });
   }
 
   private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
@@ -5086,12 +5031,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePerfPopupText() {
-    if (!this.perfPopupOpen || !this.perfInfoText) {
+    if (!this.perfPopupOpen) {
       return;
     }
-
-    this.perfInfoText.setText(this.getPerfPopupText());
-    this.perfInfoText.setColor(this.getPerfDiagnosis().color);
+    this.emitHudState({ perfText: this.getPerfPopupText() });
   }
 
   private getPerfPopupText() {
