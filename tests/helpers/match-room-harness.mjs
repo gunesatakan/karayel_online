@@ -132,14 +132,21 @@ export function simulateTowerAgainstMovingShieldedEnemy({
   // Hasarin canli dusman nesnesine mi yoksa bir kopyaya mi yazildigini say.
   let liveInstanceHits = 0;
   let detachedCopyHits = 0;
+  let trackedAppliedDamage = 0;
   const applyDamage = room.damageEnemy.bind(room);
   room.damageEnemy = function trackDamageTarget(target, ...rest) {
-    if (room.enemies.get(target.id) === target) {
+    const isLiveTarget = room.enemies.get(target.id) === target;
+    const effectiveHpBefore = target.hp + target.shield;
+    if (isLiveTarget) {
       liveInstanceHits += 1;
     } else {
       detachedCopyHits += 1;
     }
-    return applyDamage(target, ...rest);
+    const killed = applyDamage(target, ...rest);
+    if (isLiveTarget) {
+      trackedAppliedDamage += Math.max(0, effectiveHpBefore - (Math.max(0, target.hp) + Math.max(0, target.shield)));
+    }
+    return killed;
   };
 
   const seenDamageEventIds = new Set();
@@ -171,9 +178,7 @@ export function simulateTowerAgainstMovingShieldedEnemy({
     }
   }
 
-  const appliedDamage = killed
-    ? startingEffectiveHp
-    : startingEffectiveHp - (enemy.hp + enemy.shield);
+  const appliedDamage = trackedAppliedDamage;
 
   return {
     placed: true,

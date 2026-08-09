@@ -3551,8 +3551,8 @@ export class MatchRoom extends Room<MatchState> {
 
     if (worker.mode === "energyTransport") {
       if (worker.logisticsPhase === "pickup") {
-        const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy" && tower.energy > 0);
-        if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
+        const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy");
+        if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds) && reactor.energy > 0) {
           const loaded = Math.min(capacity, reactor.energy);
           reactor.energy -= loaded;
           worker.cargo = loaded;
@@ -3580,11 +3580,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (worker.logisticsPhase === "pickup") {
+      const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition");
+      if (!factory || !this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
+        return;
+      }
       const target = Array.from(this.towers.values())
         .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && !tower.definition.resourceProvider && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo)
         .sort((left, right) => left.ammo / Math.max(1, left.maxAmmo) - right.ammo / Math.max(1, right.maxAmmo))[0];
-      const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition" && tower.ammo > 0);
-      if (target && factory && this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
+      if (target && factory.ammo > 0) {
         const loaded = Math.min(capacity, factory.ammo);
         factory.ammo -= loaded;
         worker.cargo = loaded;
