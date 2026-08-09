@@ -35,6 +35,7 @@ import {
   calculateTowerShotEnergy,
   calculateTowerShotHeat,
   appendLegacyMultiplier,
+  advanceResourceExtraction,
   canAcceptTargetedCard,
   cardAppliesToTower,
   cardCatalog,
@@ -532,6 +533,7 @@ type DroneModel = DroneSnapshot & {
   repairAmount: number;
   ttlMs: number;
   logisticsPhase?: "pickup" | "deliver";
+  extractionRemainingMs?: number;
   cargoAmmoType?: AmmoType;
 };
 
@@ -3427,19 +3429,28 @@ export class MatchRoom extends Room<MatchState> {
       if (!reactor) {
         worker.vx = 0;
         worker.vy = 0;
+        worker.extractionRemainingMs = undefined;
         return;
       }
       if (worker.logisticsPhase === "pickup") {
         if (reactor.energy >= reactor.maxEnergy) {
           worker.vx = 0;
           worker.vy = 0;
+          worker.extractionRemainingMs = undefined;
           return;
         }
         const node = this.getCrystalNodes()
           .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))[0];
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
-          worker.logisticsPhase = "deliver";
+          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000);
+          worker.extractionRemainingMs = extraction.remainingMs;
+          if (extraction.completed) {
+            worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
+            worker.logisticsPhase = "deliver";
+            worker.extractionRemainingMs = undefined;
+          }
+        } else {
+          worker.extractionRemainingMs = undefined;
         }
         return;
       }
@@ -3457,19 +3468,28 @@ export class MatchRoom extends Room<MatchState> {
       if (!factory) {
         worker.vx = 0;
         worker.vy = 0;
+        worker.extractionRemainingMs = undefined;
         return;
       }
       if (worker.logisticsPhase === "pickup") {
         if (factory.rawAmmo >= factory.maxRawAmmo) {
           worker.vx = 0;
           worker.vy = 0;
+          worker.extractionRemainingMs = undefined;
           return;
         }
         const node = this.getAmmoNodes()
           .sort((left, right) => distanceSq(factory.x, factory.y, left.x, left.y) - distanceSq(factory.x, factory.y, right.x, right.y))[0];
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
-          worker.cargo = Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo);
-          worker.logisticsPhase = "deliver";
+          const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000);
+          worker.extractionRemainingMs = extraction.remainingMs;
+          if (extraction.completed) {
+            worker.cargo = Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo);
+            worker.logisticsPhase = "deliver";
+            worker.extractionRemainingMs = undefined;
+          }
+        } else {
+          worker.extractionRemainingMs = undefined;
         }
         return;
       }

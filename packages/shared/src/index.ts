@@ -356,6 +356,7 @@ export {
 } from "./aiming/index.js";
 export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, getBallisticMovementSpeed, usesLinearBallistics, findFirstLinearCollision } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
+export { RESOURCE_EXTRACTION_DURATION_MS, advanceResourceExtraction } from "./logistics/index.js";
 export {
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,
