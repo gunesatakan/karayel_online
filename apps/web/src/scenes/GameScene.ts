@@ -16,7 +16,7 @@ import {
   getTowerGridSpan,
   getTowerBuildCost,
   getTowerSellRefund,
-  getTowerUpgradeCost,
+  getTowerLevelExpCost,
   getTile,
   gridToWorld,
   isInsideMap,
@@ -2247,6 +2247,7 @@ export class GameScene extends Phaser.Scene {
     this.localPlayerSnapshot = player;
     const charge = player?.ultimateCharge ?? 0;
     const gold = player?.gold ?? 0;
+    const experience = player?.experience ?? 0;
     this.currentTeamGold = gold;
     this.currentUltimateCharge = charge;
     if (charge < 100 && this.ultimateChoiceOpen) {
@@ -2264,9 +2265,9 @@ export class GameScene extends Phaser.Scene {
     const stress = player?.stress ?? 0;
     const ammunition = snapshot.team.ammunition ?? { bullet: 0, auraCrystal: 0, powerCrystal: 0 };
     const resourceStats = `  E ${Math.floor(snapshot.team.energy ?? 0)}/${snapshot.team.maxEnergy ?? 0}  M ${Math.floor(ammunition.bullet)}  A ${Math.floor(ammunition.auraCrystal)}  G ${Math.floor(ammunition.powerCrystal)}`;
-    const hudKey = `${gold}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
+    const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
     if (this.lastHudKey !== hudKey) {
-      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}`);
+      this.topStatsText?.setText(`Gold ${Math.floor(gold)}  XP ${formatExperience(experience)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}`);
       this.ultimateText?.setText(`Ulti ${charge}%`);
       this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
@@ -4638,9 +4639,9 @@ export class GameScene extends Phaser.Scene {
     const definition = selectedTower
       ? towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId)
       : undefined;
-    const upgradeCost = definition ? getTowerUpgradeCost(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
+    const upgradeCost = definition ? getTowerLevelExpCost(definition.cost, selectedTower?.level ?? 1) : 0;
     const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
-    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10);
+    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10 && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost);
     const canSell = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId);
     const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
     const reputation = this.localPlayerSnapshot?.reputation ?? 0;
@@ -4722,7 +4723,7 @@ export class GameScene extends Phaser.Scene {
         cost: LOGISTICS_WORKER_INSTANT_REVIVE_COST
       } : undefined,
       upgrade: {
-        label: canUpgrade ? `Upgrade ${upgradeCost}g` : selectedTower ? "Max" : "Kule sec",
+        label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradeCost} XP` : "Kule sec",
         enabled: canUpgrade
       },
       sell: {
@@ -4742,7 +4743,7 @@ export class GameScene extends Phaser.Scene {
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
           `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
         ] : []),
-        canUpgrade ? `Sonraki: ${upgradeCost}g` : "Maksimum level",
+        selectedTower.level < 10 ? `Sonraki: ${upgradeCost} XP | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP` : "Maksimum level",
         canSell ? `Satis: ${sellRefund}g` : "Sadece sahibi satar"
       ] : undefined
     });
@@ -4751,7 +4752,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -4783,9 +4784,10 @@ export class GameScene extends Phaser.Scene {
 
     this.setTowerTrayShopVisible(false);
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
-    const cost = definition ? getTowerUpgradeCost(definition.cost, selectedTower.level, definition.id) : 0;
+    const cost = definition ? getTowerLevelExpCost(definition.cost, selectedTower.level) : 0;
     const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower.level, definition.id) : 0;
-    const canUpgrade = selectedTower.ownerId === this.localSessionId && selectedTower.level < 10;
+    const ownsTower = selectedTower.ownerId === this.localSessionId;
+    const canUpgrade = ownsTower && selectedTower.level < 10 && (this.localPlayerSnapshot?.experience ?? 0) >= cost;
     const canSell = selectedTower.ownerId === this.localSessionId;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2"
@@ -4816,10 +4818,10 @@ export class GameScene extends Phaser.Scene {
         `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
         `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
       ] : []),
-      canUpgrade ? `Sonraki upgrade: ${cost}g` : "Sonraki upgrade: maksimum level",
+      selectedTower.level < 10 ? `Sonraki gelistirme: ${cost} XP | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP` : "Sonraki gelistirme: maksimum level",
       canSell ? `Satis iadesi: ${sellRefund}g` : "Satis: sadece sahibi"
     ].join("\n"));
-    this.upgradeText?.setText(canUpgrade ? `Upgrade ${cost}g` : "Upgrade yok");
+    this.upgradeText?.setText(selectedTower.level < 10 ? `Gelistir ${cost} XP` : "Gelistirme yok");
     this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
     this.sellText?.setText(canSell ? `Sat ${sellRefund}g` : "Satilamaz");
     this.sellButton?.setAlpha(canSell ? 1 : 0.42);
@@ -5360,6 +5362,11 @@ function writeStoredVolume(key: string, value: number) {
 
 function formatVolumePercent(value: number) {
   return `${Math.round(Phaser.Math.Clamp(value, 0, 1) * 100)}%`;
+}
+
+function formatExperience(value: number) {
+  const rounded = Math.round(Math.max(0, value) * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 function roundClientMetric(value: number) {

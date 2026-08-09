@@ -9,7 +9,7 @@ import {
   getTowerBuildCost,
   getTowerAttackRadius,
   getTowerSlowDurationMs,
-  getTowerUpgradeCost,
+  getTowerLevelExpCost,
   getTile,
   normalizeMapData,
   scaleEditableMap,
@@ -1234,9 +1234,9 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     label: "Ekonomi",
     rows: [
       { label: "Kuruluş", value: `${getTowerBuildCost(tower.cost)} altın` },
-      { label: "2. seviye", value: `${getTowerUpgradeCost(tower.cost, 1, tower.id)} altın` },
-      { label: "3. seviye", value: `${getTowerUpgradeCost(tower.cost, 2, tower.id)} altın` },
-      { label: "4. seviye", value: `${getTowerUpgradeCost(tower.cost, 3, tower.id)} altın` }
+      { label: "2. seviye", value: `${getTowerLevelExpCost(tower.cost, 1)} XP` },
+      { label: "3. seviye", value: `${getTowerLevelExpCost(tower.cost, 2)} XP` },
+      { label: "4. seviye", value: `${getTowerLevelExpCost(tower.cost, 3)} XP` }
     ]
   });
 

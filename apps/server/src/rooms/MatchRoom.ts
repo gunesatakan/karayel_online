@@ -87,7 +87,8 @@ import {
   pathToWorldPoints,
   scaleEditableMap,
   worldToGrid,
-  getTowerUpgradeCost,
+  getTowerLevelExpCost,
+  getEnemyExp,
   towerAims,
   towerCatalog,
   type CharacterId,
@@ -281,6 +282,7 @@ class Player extends Schema {
   @type("boolean") connected = true;
   @type("number") gold = TEAM_START_GOLD;
   @type("number") goldSpent = 0;
+  @type("number") experience = 0;
   @type("number") towersBuilt = 0;
   @type("number") ultimateCharge = 0;
   @type("number") skill1CooldownMs = 0;
@@ -3452,6 +3454,18 @@ export class MatchRoom extends Room<MatchState> {
     return false;
   }
 
+  private awardEnemyExperience(enemy: EnemyModel) {
+    const players = Array.from(this.state.players.values());
+    if (players.length === 0) {
+      return;
+    }
+
+    const share = getEnemyExp(this.wave, enemy.type, enemy.movementKind) / players.length;
+    for (const player of players) {
+      player.experience = (player.experience ?? 0) + share;
+    }
+  }
+
   private reviveLogisticsWorker(ownerId: string) {
     const player = this.state.players.get(ownerId);
     if (!player || player.gold < LOGISTICS_WORKER_INSTANT_REVIVE_COST) {
@@ -3911,13 +3925,12 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const cost = getTowerUpgradeCost(tower.definition.cost, tower.level, tower.definition.id);
-    if (player.gold < cost) {
+    const cost = getTowerLevelExpCost(tower.definition.cost, tower.level);
+    if (player.experience < cost) {
       return;
     }
 
-    player.gold -= cost;
-    player.goldSpent += cost;
+    player.experience = Math.max(0, player.experience - cost);
     tower.level += 1;
   }
 
@@ -4895,6 +4908,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemies.delete(enemy.id);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     this.awardEnemyGold(enemy);
+    this.awardEnemyExperience(enemy);
     this.kills += 1;
     const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceTower) {
@@ -6203,6 +6217,7 @@ export class MatchRoom extends Room<MatchState> {
         characterId: player.characterId,
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
+        experience: Math.round(player.experience * 100) / 100,
         towersBuilt: player.towersBuilt,
         ultimateCharge: Math.round(player.ultimateCharge),
         skillCooldowns: [

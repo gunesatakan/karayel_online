@@ -30,6 +30,7 @@ function createRoom(characterId) {
     characterId,
     gold: 1_000_000,
     goldSpent: 0,
+    experience: 0,
     towersBuilt: 0,
     ultimateCharge: 0,
     skillCooldowns: [],

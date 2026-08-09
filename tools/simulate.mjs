@@ -6,8 +6,9 @@ import {
   drawCards,
   getEnemyCombatDefinition,
   getModifierMultiplier,
+  getEnemyExp,
   getTowerBuildCost,
-  getTowerUpgradeCost,
+  getTowerLevelExpCost,
   getWaveCompletionGold,
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
@@ -20,7 +21,7 @@ const ENEMY_REWARD_MULTIPLIER = 0.55;
 const enemyTypes = ["grunt", "grunt", "runner", "shooter", "brute"];
 
 export const botStrategies = {
-  balanced: { characterId: "warrior", axes: ["dps", "amplify"], buildBias: 1, upgradeBias: 1, combatSeconds: 54 },
+  balanced: { characterId: "warrior", axes: ["dps", "amplify"], buildBias: 1, upgradeBias: 1, combatSeconds: 20 },
   builder: { characterId: "warrior", axes: ["economy", "dps"], buildBias: 1.3, upgradeBias: 0.75, combatSeconds: 68 },
   upgrader: { characterId: "zeynep", axes: ["dps", "amplify"], buildBias: 0.75, upgradeBias: 1.3, combatSeconds: 64 }
 };
@@ -42,19 +43,25 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
   const ownedCardIds = [];
   const cardHistory = [];
   let gold = START_GOLD;
+  let experience = 0;
   let nexusHealth = 100;
   let reachedWave = 0;
 
   for (let wave = 1; wave <= FINAL_WAVE; wave += 1) {
     spendGold({ towers, definitions, playerModifiers, config, goldRef: { get value() { return gold; }, set value(value) { gold = value; } } });
+    spendExperience({ towers, config, experienceRef: { get value() { return experience; }, set value(value) { experience = value; } } });
     const count = getWaveEnemyCount(wave);
     let totalHealth = 0;
     let totalReward = 0;
+    let totalExperience = 0;
     for (let index = 0; index < count; index += 1) {
-      const enemy = getEnemyCombatDefinition(enemyTypes[Math.floor(random() * enemyTypes.length)]);
-      const airMultiplier = (wave === 5 || wave === 10 || ((wave === 15 || wave === 20) && index % 2 === 0)) ? 0.25 : 1;
+      const enemyType = enemyTypes[Math.floor(random() * enemyTypes.length)];
+      const enemy = getEnemyCombatDefinition(enemyType);
+      const isAir = wave === 5 || wave === 10 || ((wave === 15 || wave === 20) && index % 2 === 0);
+      const airMultiplier = isAir ? 0.25 : 1;
       totalHealth += getWaveEnemyMaxHp(enemy.maxHp, wave, airMultiplier) + Math.round(enemy.shield * airMultiplier);
       totalReward += Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
+      totalExperience += getEnemyExp(wave, enemyType, isAir ? "air" : "ground");
     }
     const execution = 0.82 + random() * 0.36;
     const damageBudget = towers.reduce((sum, tower) => sum + getTowerDps(tower, playerModifiers), 0) * config.combatSeconds * execution;
@@ -68,6 +75,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     }
     reachedWave = wave;
     gold += totalReward + (wave < FINAL_WAVE ? getWaveCompletionGold(wave) : 0);
+    experience += totalExperience;
     if (wave < FINAL_WAVE) {
       const choices = drawCards({ preferredAxes: config.axes, towers: definitions, ownedCardIds, random });
       const card = chooseCard(choices, config.axes, towers);
@@ -95,15 +103,26 @@ function spendGold({ towers, definitions, playerModifiers, config, goldRef }) {
   let safety = 40;
   while (safety-- > 0) {
     const build = definitions.map((definition) => ({ definition, cost: getTowerBuildCost(definition.cost), score: definition.damage / Math.max(1, definition.fireIntervalMs) / getTowerBuildCost(definition.cost) * config.buildBias })).filter(({ cost }) => cost <= goldRef.value && towers.length < capacity).sort((a, b) => b.score - a.score)[0];
-    const upgrade = towers.filter(({ level }) => level < 10).map((tower) => ({ tower, cost: getTowerUpgradeCost(tower.definition, tower.level), score: tower.definition.damage / Math.max(1, tower.definition.fireIntervalMs) / getTowerUpgradeCost(tower.definition, tower.level) * config.upgradeBias })).filter(({ cost }) => cost <= goldRef.value).sort((a, b) => b.score - a.score)[0];
-    if (!build && !upgrade) break;
-    if (build && (!upgrade || build.score >= upgrade.score)) {
-      towers.push({ id: `t${towers.length + 1}`, definition: build.definition, level: 1, modifiers: [], targetedCardIds: [], damageDealt: 0 });
-      goldRef.value -= build.cost;
-    } else {
-      upgrade.tower.level += 1;
-      goldRef.value -= upgrade.cost;
-    }
+    if (!build) break;
+    towers.push({ id: `t${towers.length + 1}`, definition: build.definition, level: 1, modifiers: [], targetedCardIds: [], damageDealt: 0 });
+    goldRef.value -= build.cost;
+  }
+}
+
+function spendExperience({ towers, config, experienceRef }) {
+  let safety = 90;
+  while (safety-- > 0) {
+    const upgrade = towers
+      .filter(({ level }) => level < 10)
+      .map((tower) => {
+        const cost = getTowerLevelExpCost(tower.definition.cost, tower.level);
+        return { tower, cost, score: tower.definition.damage / Math.max(1, tower.definition.fireIntervalMs) / Math.max(1, cost) * config.upgradeBias };
+      })
+      .filter(({ cost }) => cost <= experienceRef.value)
+      .sort((a, b) => b.score - a.score)[0];
+    if (!upgrade) break;
+    upgrade.tower.level += 1;
+    experienceRef.value -= upgrade.cost;
   }
 }
 

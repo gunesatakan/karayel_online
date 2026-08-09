@@ -38,6 +38,7 @@ export type PlayerSnapshot = {
   characterId: CharacterId;
   gold: number;
   goldSpent: number;
+  experience: number;
   towersBuilt: number;
   ultimateCharge: number;
   skillCooldowns: number[];
@@ -479,89 +480,37 @@ export const upgradeCosts: Record<UpgradeId, number> = {
   heal: 45
 };
 
-const TOWER_UPGRADE_COST_RATIO = 0.72;
 const TOWER_BUILD_COST_MULTIPLIER = 2;
 
 export function getTowerBuildCost(towerCost: number) {
   return Math.round(towerCost * TOWER_BUILD_COST_MULTIPLIER);
 }
 
-export function getTowerUpgradeCost(towerCost: number, currentLevel: number, towerId?: string) {
-  if (towerId === "warrior-2") {
-    return getServerTowerUpgradeCost(currentLevel);
+export function getTowerLevelExpCost(towerCost: number, currentLevel: number) {
+  if (currentLevel < 1 || currentLevel >= 10) {
+    return 0;
   }
-  if (towerId === "warrior-5") {
-    return getDebugLaserUpgradeCost(towerCost, currentLevel);
-  }
-  if (towerId === "warrior-6") {
-    return getUcubeUpgradeCost(towerCost, currentLevel);
-  }
-  if (towerId === "zeynep-7") {
-    return getZeynepSynthesisAmplifierUpgradeCost(currentLevel);
-  }
+  const safeLevel = Math.round(currentLevel);
+  return getTowerBuildCost(towerCost) * safeLevel;
+}
 
-  return getDefaultTowerUpgradeCost(towerCost, currentLevel);
+export function getEnemyExp(wave: number, enemyType: EnemyType, movementKind: MovementKind = "ground") {
+  const typeMultiplier: Record<EnemyType, number> = {
+    grunt: 1,
+    runner: 1,
+    shooter: 1.6,
+    brute: 2.5
+  };
+  const flyingMultiplier = movementKind === "air" ? 0.7 : 1;
+  return Math.round((4 + Math.max(0, Math.round(wave))) * typeMultiplier[enemyType] * flyingMultiplier * 100) / 100;
 }
 
 export function getTowerTotalInvestedGold(towerCost: number, currentLevel: number, towerId?: string) {
-  const safeLevel = Math.min(Math.max(Math.round(currentLevel), 1), 10);
-  let total = getTowerBuildCost(towerCost);
-  for (let level = 1; level < safeLevel; level += 1) {
-    total += getTowerUpgradeCost(towerCost, level, towerId);
-  }
-  return total;
+  void currentLevel;
+  void towerId;
+  return getTowerBuildCost(towerCost);
 }
 
 export function getTowerSellRefund(towerCost: number, currentLevel: number, towerId?: string) {
   return Math.floor(getTowerTotalInvestedGold(towerCost, currentLevel, towerId) / 2);
-}
-
-function getDefaultTowerUpgradeCost(towerCost: number, currentLevel: number) {
-  const targetLevel = currentLevel + 1;
-  const discount =
-    targetLevel === 2 ? 0.5 :
-      targetLevel === 3 ? 0.7 :
-        targetLevel === 4 ? 0.85 :
-          1;
-
-  return Math.round(towerCost * TOWER_UPGRADE_COST_RATIO * currentLevel * 1.35 * discount * 0.5);
-}
-
-function getServerTowerUpgradeCost(currentLevel: number) {
-  if (currentLevel < 1 || currentLevel >= 10) {
-    return 0;
-  }
-
-  return Math.round(20 + (currentLevel - 1) * ((200 - 20) / 8));
-}
-
-function getDebugLaserUpgradeCost(towerCost: number, currentLevel: number) {
-  const lateCosts: Record<number, number> = {
-    4: 113,
-    5: 158,
-    6: 203,
-    7: 248,
-    8: 293,
-    9: 338
-  };
-
-  return lateCosts[currentLevel] ?? getDefaultTowerUpgradeCost(towerCost, currentLevel);
-}
-
-function getUcubeUpgradeCost(towerCost: number, currentLevel: number) {
-  return Math.round(getDefaultTowerUpgradeCost(towerCost, currentLevel) * 0.6);
-}
-
-function getZeynepSynthesisAmplifierUpgradeCost(currentLevel: number) {
-  const costs: Record<number, number> = {
-    1: 300,
-    2: 200,
-    3: 100
-  };
-
-  if (currentLevel < 1 || currentLevel >= 10) {
-    return 0;
-  }
-
-  return costs[currentLevel] ?? 100;
 }
