@@ -851,7 +851,8 @@ export class GameScene extends Phaser.Scene {
     this.placementGhost?.destroy();
     // Matches the placed sprite: disc on the tile, frame slightly larger to hold
     // whatever overhangs it.
-    const previewSize = (this.getMapCellSize() * getTowerGridSpan(tower.id)) / TOWER_ART_DISC_RATIO;
+    const previewDiscSize = this.getMapCellSize() * getTowerGridSpan(tower.id);
+    const previewSize = tower.id === "warrior-1" ? previewDiscSize : previewDiscSize / TOWER_ART_DISC_RATIO;
     const ghostWidth = tower.id === "zeynep-8" ? (this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     const ghostHeight = tower.id === "zeynep-8" ? (this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, this.getTowerTextureKey(tower.id, 1))
@@ -2507,7 +2508,9 @@ export class GameScene extends Phaser.Scene {
       // and the sprite is sized larger only to make room for whatever the art
       // hangs outside the disc, such as Taht Muhru's barrel.
       const discSize = cellSize * getTowerGridSpan(tower.definitionId);
-      const spriteSize = discSize / TOWER_ART_DISC_RATIO;
+      // Takipçi artwork already fills its square frame. Applying the generic
+      // painted-art overhang would make its circular base spill into neighbours.
+      const spriteSize = tower.definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
 
       const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
