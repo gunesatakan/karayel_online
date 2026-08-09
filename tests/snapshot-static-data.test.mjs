@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CLIENT_PROJECTILE_MAX_LIFETIME_MS,
+  getLinearProjectilePosition,
   hydrateWireSnapshot,
+  isClientProjectileExpired,
   pruneStaticSnapshotCache,
   towerCatalog,
   usesLinearBallistics
@@ -88,6 +91,33 @@ test("doğrusal mermi spawn mesajına taşınır ve wire snapshottan çıkar", (
   assert.equal(room.getSnapshot().projectiles.some(({ id }) => id === projectile.id), false);
   room.projectiles.set("guided", { ...projectile, id: "guided", hitType: "focus" });
   assert.equal(room.getSnapshot().projectiles.some(({ id }) => id === "guided"), true);
+});
+
+test("istemci doğrusal mermiyi sunucu zamanıyla ilerletir ve ömür sınırında temizler", () => {
+  const projectile = {
+    id: "p1", kind: "tower", source: "tower", hitType: "projectile",
+    x: 10, y: 20, vx: 100, vy: -20, spawnedAt: 1_000
+  };
+  assert.deepEqual(getLinearProjectilePosition(projectile, 1_500), { x: 60, y: 10 });
+  assert.equal(isClientProjectileExpired(projectile, 1_000 + CLIENT_PROJECTILE_MAX_LIFETIME_MS - 1), false);
+  assert.equal(isClientProjectileExpired(projectile, 1_000 + CLIENT_PROJECTILE_MAX_LIFETIME_MS), true);
+});
+
+test("projectile:hit sunucunun yetkili son çarpma konumunu taşır", () => {
+  const { room, events } = setupRoom();
+  const tower = placeFirstTower(room);
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.x = tower.x + 2;
+  enemy.y = tower.y;
+  tower.facing = 0;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+  room.spawnTowerProjectile(tower, enemy);
+  room.updateProjectiles(0.1);
+  const hit = events.find((event) => event.type === "projectile:hit");
+  assert.ok(hit);
+  assert.equal(typeof hit.payload.x, "number");
+  assert.equal(typeof hit.payload.y, "number");
 });
 
 test("50 düşman ve 10 kule snapshotı sabit alan ayrımıyla en az yüzde 30 küçülür", () => {

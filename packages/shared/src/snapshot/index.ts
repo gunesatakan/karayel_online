@@ -4,8 +4,23 @@ import type {
   StaticEnemySnapshot,
   StaticTowerSnapshot,
   TowerSnapshot,
-  WireGameSnapshot
+  WireGameSnapshot,
+  ProjectileSpawnSnapshot
 } from "../index.js";
+
+export const CLIENT_PROJECTILE_MAX_LIFETIME_MS = 10_000;
+
+export function getLinearProjectilePosition(projectile: ProjectileSpawnSnapshot, serverTime: number) {
+  const elapsedSeconds = Math.max(0, serverTime - projectile.spawnedAt) / 1000;
+  return {
+    x: projectile.x + (projectile.vx ?? 0) * elapsedSeconds,
+    y: projectile.y + (projectile.vy ?? 0) * elapsedSeconds
+  };
+}
+
+export function isClientProjectileExpired(projectile: ProjectileSpawnSnapshot, serverTime: number) {
+  return serverTime - projectile.spawnedAt >= CLIENT_PROJECTILE_MAX_LIFETIME_MS;
+}
 
 export function hydrateWireSnapshot(
   snapshot: WireGameSnapshot,

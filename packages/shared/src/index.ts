@@ -327,7 +327,13 @@ export type WireGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
   towers: DynamicTowerSnapshot[];
 };
 
-export { hydrateWireSnapshot, pruneStaticSnapshotCache } from "./snapshot/index.js";
+export {
+  CLIENT_PROJECTILE_MAX_LIFETIME_MS,
+  getLinearProjectilePosition,
+  hydrateWireSnapshot,
+  isClientProjectileExpired,
+  pruneStaticSnapshotCache
+} from "./snapshot/index.js";
 
 export { characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";

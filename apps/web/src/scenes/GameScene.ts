@@ -14,6 +14,7 @@ import {
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
+  getLinearProjectilePosition,
   getTowerGridSpan,
   getTowerBuildCost,
   getTowerSellRefund,
@@ -25,6 +26,7 @@ import {
   gridToWorld,
   hydrateWireSnapshot,
   isInsideMap,
+  isClientProjectileExpired,
   normalizeMapData,
   pruneStaticSnapshotCache,
   worldToGrid,
@@ -251,6 +253,7 @@ export class GameScene extends Phaser.Scene {
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private linearProjectileSnapshots = new Map<string, ProjectileSpawnSnapshot>();
+  private terminalProjectileSnapshots = new Map<string, { projectile: ProjectileSnapshot; removeAfter: number }>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
@@ -1776,15 +1779,24 @@ export class GameScene extends Phaser.Scene {
     if (!hydrated) return undefined;
     pruneStaticSnapshotCache(this.staticEnemySnapshots, snapshot.enemies.map((enemy) => enemy.id));
     pruneStaticSnapshotCache(this.staticTowerSnapshots, snapshot.towers.map((tower) => tower.id));
-    const linearProjectiles = Array.from(this.linearProjectileSnapshots.values()).map((projectile) => {
-      const elapsedSeconds = Math.max(0, snapshot.serverTime - projectile.spawnedAt) / 1000;
-      return {
-        ...projectile,
-        x: projectile.x + (projectile.vx ?? 0) * elapsedSeconds,
-        y: projectile.y + (projectile.vy ?? 0) * elapsedSeconds
-      };
-    });
-    return { ...hydrated, projectiles: [...hydrated.projectiles, ...linearProjectiles] };
+    const linearProjectiles: ProjectileSnapshot[] = [];
+    for (const [id, projectile] of this.linearProjectileSnapshots) {
+      if (isClientProjectileExpired(projectile, snapshot.serverTime)) {
+        this.linearProjectileSnapshots.delete(id);
+        continue;
+      }
+      linearProjectiles.push({ ...projectile, ...getLinearProjectilePosition(projectile, snapshot.serverTime) });
+    }
+    const now = performance.now();
+    const terminalProjectiles: ProjectileSnapshot[] = [];
+    for (const [id, terminal] of this.terminalProjectileSnapshots) {
+      if (now >= terminal.removeAfter) {
+        this.terminalProjectileSnapshots.delete(id);
+        continue;
+      }
+      terminalProjectiles.push(terminal.projectile);
+    }
+    return { ...hydrated, projectiles: [...hydrated.projectiles, ...linearProjectiles, ...terminalProjectiles] };
   }
 
   private applyFullStaticSnapshot(snapshot: StaticSnapshot) {
@@ -2005,7 +2017,7 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
     room.onMessage("tower:remove", (message: { id: string }) => this.staticTowerSnapshots.delete(message.id));
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => this.linearProjectileSnapshots.set(projectile.id, projectile));
-    room.onMessage("projectile:hit", (message: { id: string }) => this.linearProjectileSnapshots.delete(message.id));
+    room.onMessage("projectile:hit", (message: { id: string; x: number; y: number }) => this.finishLinearProjectile(message));
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
@@ -2027,6 +2039,18 @@ export class GameScene extends Phaser.Scene {
     room.onLeave((code) => {
       if (this.room !== room) return;
       void this.reconnectRoom(room, code);
+    });
+  }
+
+  private finishLinearProjectile(message: { id: string; x: number; y: number }) {
+    const projectile = this.linearProjectileSnapshots.get(message.id);
+    this.linearProjectileSnapshots.delete(message.id);
+    if (!projectile) return;
+    this.terminalProjectileSnapshots.set(message.id, {
+      projectile: { ...projectile, x: message.x, y: message.y, vx: 0, vy: 0 },
+      // Keep the authoritative impact position through the interpolation delay,
+      // then let the normal projectile renderer remove it on the next frame.
+      removeAfter: performance.now() + this.playbackDelayMs + 50
     });
   }
 
