@@ -2687,6 +2687,17 @@ export class GameScene extends Phaser.Scene {
         this.drawSelectedTowerResources(tower, discSize);
       }
       this.renderTowerSpriteEffects(rendered.effect, tower);
+      if (tower.definitionId === "onur-1") {
+        rendered.range
+          .setRadius(tower.bladeLength ?? tower.range)
+          .setFillStyle(tower.color, 0)
+          .setStrokeStyle(5, tower.color, 0.38);
+      } else {
+        rendered.range
+          .setRadius(tower.range)
+          .setFillStyle(tower.color, 0.13)
+          .setStrokeStyle(2, tower.color, 0.7);
+      }
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
@@ -2812,6 +2823,7 @@ export class GameScene extends Phaser.Scene {
   private renderTowerSpriteEffects(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     graphics.clear();
     this.renderTowerPerformanceFlames(graphics, tower);
+    this.renderOrbitBlades(graphics, tower);
     if (tower.energyState && tower.energyState !== "powered") {
       const size = Math.max(5, this.getMapCellSize() * 0.14);
       graphics.fillStyle(0x7f1d1d, 0.94).fillCircle(tower.x + size * 1.9, tower.y - size * 1.9, size);
@@ -2826,6 +2838,25 @@ export class GameScene extends Phaser.Scene {
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private renderOrbitBlades(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.definitionId !== "onur-1" || tower.bladeAngle === undefined || tower.bladeLength === undefined) return;
+    const definition = towerCatalog.onur.find((candidate) => candidate.id === tower.definitionId);
+    const bladeCount = definition?.engine?.attack.bladeCount ?? 2;
+    const bladeWidth = Math.max(3, definition?.engine?.attack.width ?? 8);
+    for (let blade = 0; blade < bladeCount; blade += 1) {
+      const angle = tower.bladeAngle + blade * Math.PI * 2 / bladeCount;
+      const inner = this.getMapCellSize() * 0.18;
+      const x1 = tower.x + Math.cos(angle) * inner;
+      const y1 = tower.y + Math.sin(angle) * inner;
+      const x2 = tower.x + Math.cos(angle) * tower.bladeLength;
+      const y2 = tower.y + Math.sin(angle) * tower.bladeLength;
+      graphics.lineStyle(bladeWidth + 3, 0x07111f, 0.9).lineBetween(x1, y1, x2, y2);
+      graphics.lineStyle(bladeWidth, 0xcbd5e1, 0.98).lineBetween(x1, y1, x2, y2);
+      graphics.lineStyle(Math.max(1, bladeWidth * 0.24), 0x67e8f9, 0.9).lineBetween(x1, y1, x2, y2);
+      graphics.fillStyle(0xf8fafc, 1).fillCircle(x2, y2, bladeWidth * 0.62);
+    }
   }
 
   private renderTowerPerformanceFlames(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -5021,7 +5052,9 @@ export class GameScene extends Phaser.Scene {
         waking: (selectedTower.wakeRemainingMs ?? 0) > 0,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
-      targeting: selectedTower && !selectedTower.resourceProvider ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] } : undefined,
+      targeting: selectedTower && !selectedTower.resourceProvider && definition?.engine?.attack.shape !== "orbit"
+        ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] }
+        : undefined,
       goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot && (this.localPlayerSnapshot.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== this.latestPerfSnapshot.team.wave ? {
         gold: Math.floor(this.localPlayerSnapshot.gold),
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,

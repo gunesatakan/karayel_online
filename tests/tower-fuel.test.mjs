@@ -17,7 +17,7 @@ const tower = (id) => Object.values(towerCatalog).flat().find((definition) => de
 
 test("focus ve aura enerji, diğer vuruş türleri mühimmat yakar", () => {
   for (const definition of Object.values(towerCatalog).flat()) {
-    const expected = definition.hitType === "focus" || definition.hitType === "aura" ? "energy" : "ammo";
+    const expected = ["focus", "aura", "slash"].includes(definition.hitType) ? "energy" : "ammo";
     assert.equal(definition.engine.resources.shotFuel, expected, definition.id);
   }
 });

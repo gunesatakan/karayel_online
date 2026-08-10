@@ -152,6 +152,8 @@ export type TowerSnapshot = {
   misfortune?: number;
   luckyWindowRemainingMs?: number;
   lastLuckMultiplier?: number;
+  bladeAngle?: number;
+  bladeLength?: number;
   performance?: number;
   coolingRate?: number;
   rawAmmo?: number;
@@ -377,6 +379,9 @@ export {
   NON_FIRING_INTERVAL_MS,
   PASSIVE_AURA_TICK_INTERVAL_MS,
   AURA_REFRESH_DURATION_MULTIPLIER,
+  ORBIT_BLADE_LENGTH_MAX_MULTIPLIER,
+  ORBIT_CONTINUOUS_ENERGY_PER_SECOND,
+  ORBIT_CONTINUOUS_HEAT_PER_SECOND,
   ENERGY_OUTAGE_TRACKING_DELAY_MS,
   ENERGY_OUTAGE_AURA_DELAY_MS,
   TOWER_OPERATING_ENERGY_BY_HIT_TYPE,
@@ -389,6 +394,9 @@ export {
   getTowerPerformanceEnergyMultiplier,
   getTowerPerformanceFlameIntensity,
   calculateTowerShotHeat,
+  getOrbitRotationSpeed,
+  getOrbitBladeLength,
+  calculateOrbitContinuousCosts,
   calculateTowerShotEnergy,
   calculateTowerAmmoCost,
   calculateTowerShotEnergyCost,
@@ -484,6 +492,8 @@ export { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
+export { selectOrbitSweepTargets } from "./attacks/orbit.js";
+export type { OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export { getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";

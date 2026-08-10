@@ -11,6 +11,9 @@ export const PASSIVE_TOWER_INTERVAL_THRESHOLD_MS = 10000;
 export const NON_FIRING_INTERVAL_MS = 999999;
 export const PASSIVE_AURA_TICK_INTERVAL_MS = 2000;
 export const AURA_REFRESH_DURATION_MULTIPLIER = 2;
+export const ORBIT_BLADE_LENGTH_MAX_MULTIPLIER = 2.5;
+export const ORBIT_CONTINUOUS_ENERGY_PER_SECOND = 4.2;
+export const ORBIT_CONTINUOUS_HEAT_PER_SECOND = 9;
 export const ENERGY_OUTAGE_TRACKING_DELAY_MS = 1000;
 export const ENERGY_OUTAGE_AURA_DELAY_MS = 2000;
 export const TOWER_OPERATING_ENERGY_BY_HIT_TYPE: Record<HitType, number> = {
@@ -21,6 +24,7 @@ export const TOWER_OPERATING_ENERGY_BY_HIT_TYPE: Record<HitType, number> = {
   curse: 0.9,
   contamination: 0.9,
   focus: 1.4,
+  slash: 1.4,
   aura: 1.2
 };
 
@@ -30,7 +34,7 @@ export function getTowerFuelCostMultiplier(fireIntervalMs: number) {
 }
 
 export function getTowerShotFuel(hitType: HitType | undefined): "ammo" | "energy" {
-  return hitType === "focus" || hitType === "aura" ? "energy" : "ammo";
+  return hitType === "focus" || hitType === "aura" || hitType === "slash" ? "energy" : "ammo";
 }
 
 export function getTowerOperatingEnergyPerSecond(hitType: HitType | undefined) {
@@ -44,9 +48,29 @@ export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
   projectile: 7,
   focus: 2.5,
   aura: 1,
+  slash: 1.2,
   curse: 0.5,
   contamination: 0.5
 };
+
+export function getOrbitRotationSpeed(rotationSpeed: number, definedFireIntervalMs: number, effectiveFireIntervalMs: number) {
+  return Math.max(0, rotationSpeed) * Math.max(1, definedFireIntervalMs) / Math.max(1, effectiveFireIntervalMs);
+}
+
+export function getOrbitBladeLength(bladeLength: number, rangeMultiplier: number) {
+  return Math.min(
+    Math.max(0, bladeLength) * ORBIT_BLADE_LENGTH_MAX_MULTIPLIER,
+    Math.max(0, bladeLength) * Math.sqrt(Math.max(0, rangeMultiplier))
+  );
+}
+
+export function calculateOrbitContinuousCosts(rotationRatio: number, seconds: number) {
+  const scale = Math.max(0, rotationRatio) * Math.max(0, seconds);
+  return {
+    energy: ORBIT_CONTINUOUS_ENERGY_PER_SECOND * scale,
+    heat: ORBIT_CONTINUOUS_HEAT_PER_SECOND * scale
+  };
+}
 
 export const TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER: Record<DamageType, number> = {
   fire: 1.6,

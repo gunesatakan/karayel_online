@@ -32,5 +32,6 @@ export const hitTypeCodex: Record<HitType, CodexEntry> = {
   aura: { name: "Aura", text: "Alan etkisi; genellikle hedef seçmez." },
   contamination: { name: "Bulaşma", text: "Düşmandan düşmana yayılan etki." },
   curse: { name: "Lanet", text: "Anında hasar vermez, hedefte birikir." },
-  wave: { name: "Dalga", text: "Yayılarak ilerleyen etki; yol boyunca temas eder." }
+  wave: { name: "Dalga", text: "Yayılarak ilerleyen etki; yol boyunca temas eder." },
+  slash: { name: "Kesme", text: "Dönen veya savrulan bir bıçağın temas vuruşu." }
 };

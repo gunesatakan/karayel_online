@@ -42,6 +42,12 @@ const defaultEngine: TowerEngineConfig = {
 };
 
 const profiles: Record<string, EngineProfile> = {
+  "onur-1": {
+    targeting: undefined,
+    attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 3.2, width: 8 },
+    canHitAir: false,
+    resources: { shotFuel: "energy", operatingEnergyPerSecond: 1.4 }
+  },
   "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
   "warrior-2": { targeting: "first", attack: { shape: "circle", radius: 18 }, canHitAir: false },
   "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh" }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 0.48, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated", multiplierPerLevel: -0.026, minMultiplier: 0.25 }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },

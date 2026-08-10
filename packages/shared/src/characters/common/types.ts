@@ -5,7 +5,7 @@ export type AmmoType = "bullet" | "auraCrystal" | "powerCrystal";
 export type TowerResourceProvider = "ammunition" | "energy";
 export type TowerAxis = "amplify" | "dps" | "cc" | "economy" | "barricade";
 export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "closest" | "marked" | "random";
-export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam";
+export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam" | "orbit";
 export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "chill" | "curse" | "mark";
 export type TowerTriggerEvent = "kill" | "towerDeath" | "escape" | "overheat" | "ammoEmpty";
 export type TowerTriggerCondition = "targetMarked";
@@ -58,16 +58,19 @@ export type TowerLevelScalingDefinition = {
 };
 
 export type TowerEngineConfig = {
-  targeting: TowerTargetingMode;
+  targeting?: TowerTargetingMode;
   targetingByState?: Partial<Record<"approval" | "stress" | "balanced", TowerTargetingMode>>;
   attack: {
     shape: TowerAttackShape;
-    executor?: "ballistic" | "debug-laser" | "showcase-beam" | "synthesis" | "kin-wave" | "curse-burst" | "whisper-chorus";
+    executor?: "ballistic" | "debug-laser" | "showcase-beam" | "synthesis" | "kin-wave" | "curse-burst" | "whisper-chorus" | "orbit";
     width?: number;
     length?: number;
     angle?: number;
     radius?: number;
     pierceCount?: number;
+    bladeCount?: number;
+    bladeLength?: number;
+    rotationSpeed?: number;
   };
   statusEffects?: TowerStatusEffectDefinition[];
   stacks?: TowerStackDefinition[];

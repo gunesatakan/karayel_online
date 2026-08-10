@@ -44,6 +44,10 @@ import {
   shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
   calculateTowerShotHeat,
+  calculateOrbitContinuousCosts,
+  getOrbitRotationSpeed,
+  getOrbitBladeLength,
+  selectOrbitSweepTargets,
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
   advanceResourceExtraction,
@@ -500,6 +504,7 @@ type TowerModel = {
   misfortune: number;
   luckyWindowUntil: number;
   lastLuckMultiplier: number;
+  bladeAngle: number;
   performance: number;
   heatLocked: boolean;
   rawAmmo: number;
@@ -1814,7 +1819,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.standby) {
         continue;
       }
-      if (shouldConsumeTowerOperatingEnergy(tower.definition, this.setupPhase, tower.standby)) {
+      if (tower.performance > 0 && shouldConsumeTowerOperatingEnergy(tower.definition, this.setupPhase, tower.standby)) {
         const upkeep = calculateTowerOperatingEnergy(tower.definition, deltaTime / 1000, getModifierMultiplier(this.getTowerRunModifiers(tower), "operatingEnergyCost"));
         tower.energy = Math.max(0, tower.energy - upkeep);
         if (tower.energy <= 0 && tower.energyDepletedAt <= 0) tower.energyDepletedAt = now;
@@ -1835,6 +1840,11 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       if (tower.definition.resourceProvider) {
+        continue;
+      }
+
+      if (tower.definition.engine?.attack.executor === "orbit") {
+        this.updateOrbitTower(tower, deltaTime / 1000, now);
         continue;
       }
 
@@ -1928,6 +1938,52 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.updateServerLinks();
+  }
+
+  private updateOrbitTower(tower: TowerModel, seconds: number, now: number) {
+    const attack = tower.definition.engine?.attack;
+    if (!attack || attack.executor !== "orbit" || this.setupPhase || tower.performance <= 0 || tower.heatLocked || tower.energy <= 0) return;
+    const baseRotationSpeed = attack.rotationSpeed ?? 0;
+    const effectiveRotationSpeed = getOrbitRotationSpeed(baseRotationSpeed, tower.definition.fireIntervalMs, this.getTowerFireInterval(tower));
+    if (effectiveRotationSpeed <= 0) return;
+
+    const previousAngle = tower.bladeAngle;
+    tower.bladeAngle = previousAngle + effectiveRotationSpeed * Math.max(0, seconds);
+    const rotationRatio = effectiveRotationSpeed / Math.max(0.001, baseRotationSpeed);
+    const costs = calculateOrbitContinuousCosts(rotationRatio, seconds);
+    tower.energy = Math.max(0, tower.energy - costs.energy * getModifierMultiplier(this.getTowerRunModifiers(tower), "energyCost"));
+    tower.temperature = Math.min(100, tower.temperature + costs.heat * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat"));
+    if (tower.energy <= 0 && tower.energyDepletedAt <= 0) tower.energyDepletedAt = now;
+    if (tower.temperature >= 100) tower.heatLocked = true;
+
+    const bladeLength = this.getOrbitBladeLengthForTower(tower);
+    const candidates = this.getEnemiesNear(tower.x, tower.y, bladeLength + this.scaleWorldDistance(32));
+    const hits = selectOrbitSweepTargets({
+      x: tower.x,
+      y: tower.y,
+      previousAngle,
+      nextAngle: tower.bladeAngle,
+      bladeCount: attack.bladeCount ?? 1,
+      bladeLength,
+      bladeWidth: this.scaleWorldDistance(attack.width ?? 1),
+      canHitAir: tower.definition.engine?.canHitAir ?? false
+    }, candidates.map((enemy) => ({
+      ...enemy,
+      radius: getEnemyCollisionRadius(enemy)
+    })));
+    for (const hit of hits) {
+      const enemy = this.enemies.get(hit.id);
+      if (!enemy) continue;
+      this.prepareOnurGamblerShot(tower);
+      this.damageEnemyFromTower(tower, enemy, this.getTowerDamage(tower), 0);
+    }
+  }
+
+  private getOrbitBladeLengthForTower(tower: TowerModel) {
+    const baseRange = Math.max(1, this.scaleWorldDistance(tower.definition.range));
+    const rangeMultiplier = this.getTowerRange(tower) / baseRange;
+    const baseBladeLength = tower.definition.engine?.attack.bladeLength ?? tower.definition.range;
+    return getOrbitBladeLength(this.scaleWorldDistance(baseBladeLength), rangeMultiplier);
   }
 
   /**
@@ -3733,6 +3789,7 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId || !message.mode) return;
+    if (tower.definition.engine?.attack.shape === "orbit") return;
     const required = message.mode === "weakest" || message.mode === "random" ? "avci-protokolu" : message.mode === "closest" || message.mode === "last" ? "nobetci-protokolu" : "";
     if (required && !player.ownedShopItemIds.includes(required)) return;
     tower.targetingMode = message.mode;
@@ -4180,6 +4237,7 @@ export class MatchRoom extends Room<MatchState> {
       misfortune: 0,
       luckyWindowUntil: 0,
       lastLuckMultiplier: 1,
+      bladeAngle: 0,
       performance: 0.5,
       heatLocked: false,
       rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
@@ -6631,6 +6689,8 @@ export class MatchRoom extends Room<MatchState> {
         misfortune: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.misfortune * 10) / 10 : undefined,
         luckyWindowRemainingMs: tower.characterId === "onur" ? Math.max(0, tower.luckyWindowUntil - now) : undefined,
         lastLuckMultiplier: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.lastLuckMultiplier * 100) / 100 : undefined,
+        bladeAngle: tower.definition.engine?.attack.executor === "orbit" ? roundNetworkNumber(tower.bladeAngle) : undefined,
+        bladeLength: tower.definition.engine?.attack.executor === "orbit" ? roundNetworkNumber(this.getOrbitBladeLengthForTower(tower)) : undefined,
         performance: Math.round(tower.performance * 100) / 100,
         rawAmmo: Math.floor(tower.rawAmmo),
         maxRawAmmo: tower.maxRawAmmo,
@@ -6646,7 +6706,7 @@ export class MatchRoom extends Room<MatchState> {
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
         zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
-        ,targetingMode: tower.targetingMode
+        ,targetingMode: tower.definition.engine?.attack.executor === "orbit" ? undefined : tower.targetingMode
       })),
       projectiles: Array.from(this.projectiles.values())
         .filter((projectile) => !usesLinearBallistics(projectile.hitType)
@@ -7149,7 +7209,8 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.ammo < this.getTowerAmmoCost(tower)) {
       return "Muhimmat Yok";
     }
-    if (getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "powered" || tower.energy < this.getTowerEnergyCost(tower)) {
+    const minimumEnergy = tower.definition.engine?.attack.executor === "orbit" ? Number.EPSILON : this.getTowerEnergyCost(tower);
+    if (getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "powered" || tower.energy < minimumEnergy) {
       return "Enerji Yok";
     }
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
