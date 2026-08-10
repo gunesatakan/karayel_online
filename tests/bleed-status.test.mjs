@@ -26,6 +26,8 @@ test("Testere contact applies sourced bleed and bleed deals one percent true dam
   const tower = [...room.towers.values()][0];
   room.spawnEnemy();
   const enemy = [...room.enemies.values()][0];
+  enemy.maxHp = 10_000;
+  enemy.hp = enemy.maxHp;
   enemy.x = tower.x;
   enemy.y = tower.y;
   room.enemySpatialGrid.rebuild(room.enemies.values());

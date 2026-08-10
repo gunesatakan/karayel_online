@@ -32,7 +32,7 @@ test("Testere ortak orbit profilini ve enerji yakıtını kullanır", () => {
   const definition = towerCatalog.onur.find((tower) => tower.id === "onur-1");
   assert.equal(definition.name, "Testere");
   assert.equal(definition.cost, 75);
-  assert.equal(definition.damage, 16);
+  assert.equal(definition.damage, 32);
   assert.equal(getTowerBuildCost(definition.cost), 150);
   assert.equal(definition.engine.attack.shape, "orbit");
   assert.equal(definition.engine.attack.executor, "orbit");
@@ -63,6 +63,8 @@ test("aynı bıçak temas sürerken tekrar vurmaz ama diğer bıçak vurabilir",
   const { room, tower } = createSawRoom();
   room.spawnEnemy();
   const enemy = [...room.enemies.values()][0];
+  enemy.maxHp = 10_000;
+  enemy.hp = enemy.maxHp;
   enemy.x = tower.x + 30;
   enemy.y = tower.y;
   room.towerDamageRandom = () => 0.5;

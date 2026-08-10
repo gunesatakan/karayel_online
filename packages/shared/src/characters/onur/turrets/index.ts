@@ -41,7 +41,7 @@ export const onurTowers = towers.map((tower) => {
       cost: 75,
       fireIntervalMs: 450,
       range: 60,
-      damage: 16,
+      damage: 32,
       projectileSpeed: 0
     });
 });
