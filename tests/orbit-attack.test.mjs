@@ -35,6 +35,9 @@ test("Testere ortak orbit profilini ve enerji yakıtını kullanır", () => {
   assert.equal(definition.engine.attack.executor, "orbit");
   assert.equal(definition.engine.resources.shotFuel, "energy");
   assert.equal(definition.engine.targeting, undefined);
+  assert.deepEqual(definition.engine.statusEffects, [
+    { type: "bleed", magnitude: 0.01, durationMs: 3000, stacking: "refresh" }
+  ]);
 });
 
 test("dönüş hızı efektif atış aralığıyla ters orantılı ölçeklenir", () => {

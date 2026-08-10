@@ -2567,6 +2567,21 @@ export class MatchRoom extends Room<MatchState> {
         "aura"
       );
     }
+    if (outcomes.bleedMaxHealthRatioPerSecond > 0 && (enemy.statusTickAt.bleed ?? 0) <= now) {
+      const bleed = enemy.statusEffects.bleed;
+      enemy.statusTickAt.bleed = now + 1000;
+      this.damageEnemy(
+        enemy,
+        enemy.maxHp * outcomes.bleedMaxHealthRatioPerSecond,
+        0,
+        "status:bleed",
+        bleed?.sourceOwnerId ?? "",
+        "true",
+        0,
+        1,
+        bleed?.sourceTowerId ?? ""
+      );
+    }
     return this.enemies.has(enemy.id);
   }
 
@@ -5302,7 +5317,7 @@ export class MatchRoom extends Room<MatchState> {
       const sourceTower = this.towers.get(sourceTowerId);
       if (sourceTower) {
         for (const definition of sourceTower.definition.engine?.statusEffects ?? []) {
-          if (definition.type === "burn" || definition.type === "chill" || definition.type === "convert") {
+          if (definition.type === "burn" || definition.type === "bleed" || definition.type === "chill" || definition.type === "convert") {
             this.applyConfiguredTowerStatus(sourceTower, enemy, definition.type, now, { sourceOwnerId: sourceOwnerId || sourceTower.ownerId });
           }
         }

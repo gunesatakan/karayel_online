@@ -71,10 +71,12 @@ export function getTowerStatusOutcomes(
   now: number
 ) {
   const burn = getActiveStatusMagnitude(states.burn, now);
+  const bleed = getActiveStatusMagnitude(states.bleed, now);
   const chill = getActiveStatusMagnitude(states.chill, now);
   const convert = isStatusEffectActive(states.convert, now) ? states.convert : undefined;
   return {
     burnMaxHealthRatioPerSecond: burn,
+    bleedMaxHealthRatioPerSecond: bleed,
     speedMultiplier: Math.max(0, 1 - chill),
     converted: Boolean(convert),
     convertExpiresAt: convert?.expiresAt ?? 0,

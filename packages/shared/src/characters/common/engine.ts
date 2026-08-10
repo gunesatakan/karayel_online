@@ -46,6 +46,7 @@ const profiles: Record<string, EngineProfile> = {
     targeting: undefined,
     attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 1.6, width: 8 },
     canHitAir: false,
+    statusEffects: [{ type: "bleed", magnitude: 0.01, durationMs: 3000, stacking: "refresh" }],
     resources: { shotFuel: "energy", operatingEnergyPerSecond: 1.4 }
   },
   "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
