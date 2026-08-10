@@ -29,7 +29,7 @@ test("Jackpot uses physical projectiles, a three-cell range and a half-range dea
   assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 2);
   assert.equal(definition.damage, 60);
   assert.equal(calculateTowerScaledBaseDamage(definition, 1), 120);
-  assert.equal(definition.fireIntervalMs, 4400);
+  assert.equal(definition.fireIntervalMs, 6000);
   assert.equal(definition.projectileSpeed, 960);
 });
 
