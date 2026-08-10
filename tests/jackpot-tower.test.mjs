@@ -17,15 +17,15 @@ function createJackpotRoom() {
   return { room, tower: [...room.towers.values()][0], definition };
 }
 
-test("Jackpot uses physical projectiles, a two-cell range and a half-range dead zone", () => {
+test("Jackpot uses physical projectiles, a three-cell range and a half-range dead zone", () => {
   const { room, tower, definition } = createJackpotRoom();
   assert.equal(definition.name, "Jackpot");
   assert.equal(definition.hitType, "projectile");
   assert.equal(definition.damageType, "physical");
   assert.equal(definition.engine.attack.minimumRangeMultiplier, 0.5);
   assert.equal(definition.engine.attack.rangeStartsAtFootprint, true);
-  assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 2.5);
-  assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 1.5);
+  assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 3.5);
+  assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 2);
   const hiza = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-1");
   assert.equal(definition.damage, hiza.damage * 2);
   assert.equal(definition.fireIntervalMs, 4400);
@@ -48,10 +48,10 @@ test("Jackpot cannot select enemies inside its dead zone", () => {
   room.spawnEnemy();
   room.spawnEnemy();
   const [near, far] = [...room.enemies.values()];
-  near.x = tower.x + TOWER_GRID_SIZE * 0.75;
+  near.x = tower.x + TOWER_GRID_SIZE * 1.5;
   near.y = tower.y;
   near.pathDistance = 999;
-  far.x = tower.x + TOWER_GRID_SIZE * 1.5;
+  far.x = tower.x + TOWER_GRID_SIZE * 2;
   far.y = tower.y;
   far.pathDistance = 1;
   room.enemySpatialGrid.rebuild(room.enemies.values());
