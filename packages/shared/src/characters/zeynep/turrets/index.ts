@@ -22,6 +22,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       classType: "damage",
       damageType: "physical",
       hitType: "projectile",
+      fireIntervalMs: 660,
       aoeRadius: 0,
       slowMs: 0
     };

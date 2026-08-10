@@ -50,7 +50,7 @@ test("enerji ve mühimmat tüketim bantları tasarım değerlerine yakındır", 
   const hiza = tower("zeynep-1");
   assert.ok(Math.abs(calculateTowerShotEnergyCost(debug, 0.5) / (debug.fireIntervalMs / 1000) + debug.engine.resources.operatingEnergyPerSecond - 9.87) < 0.2);
   assert.ok(Math.abs(calculateTowerShotEnergyCost(kin, 0.5) / (kin.fireIntervalMs / 1000) + kin.engine.resources.operatingEnergyPerSecond - 5.15) < 0.3);
-  assert.ok(Math.abs(calculateTowerAmmoCost(hiza) / (hiza.fireIntervalMs / 1000) - 1.73) < 0.15);
+  assert.ok(Math.abs(calculateTowerAmmoCost(hiza) / (hiza.fireIntervalMs / 1000) - 1.45) < 0.15);
 });
 
 test("pasif aura çalışırken enerji harcar, lojistik binası harcamaz", () => {

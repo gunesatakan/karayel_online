@@ -122,6 +122,7 @@ test("ısı performans eğrisi yüzde 50'de 1x ve yüzde 100'de 4x", () => {
 test("temel hasar seviye 1-10 aralığına sabitleniyor", () => {
   const tower = towerCatalog.zeynep.find((candidate) => candidate.id === "zeynep-1");
   assert.ok(tower);
+  assert.equal(tower.fireIntervalMs, 660);
   assert.equal(calculateTowerScaledBaseDamage(tower, 0), 48);
   assert.equal(round(calculateTowerScaledBaseDamage(tower, 10)), 229.44);
   assert.equal(round(calculateTowerScaledBaseDamage(tower, 99)), 229.44);
