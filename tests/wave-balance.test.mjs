@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   ENEMY_COUNT_WAVE_MULTIPLIER,
   ENEMY_HP_WAVE_MULTIPLIER,
+  ENEMY_HP_BALANCE_MULTIPLIER,
   ENEMY_REWARD_MULTIPLIER,
   FINAL_WAVE,
   getEnemyCombatDefinition,
@@ -17,11 +18,12 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
   assert.equal(FINAL_WAVE, 20);
   assert.equal(ENEMY_COUNT_WAVE_MULTIPLIER, 1.11);
   assert.equal(ENEMY_HP_WAVE_MULTIPLIER, 1.22);
+  assert.ok(Math.abs(ENEMY_HP_BALANCE_MULTIPLIER - 1.1 * 4 / 3) < 1e-12);
   assert.equal(getWaveEnemyCount(20), 73);
 
   const gruntHp = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, 20);
-  assert.equal(gruntHp, 2213);
-  assert.equal(gruntHp * getWaveEnemyCount(20), 161_549);
+  assert.equal(gruntHp, 2951);
+  assert.equal(gruntHp * getWaveEnemyCount(20), 215_423);
 });
 
 test("düşman sayısı harita ölçeği ve oyuncu sayısıyla çarpılır", () => {

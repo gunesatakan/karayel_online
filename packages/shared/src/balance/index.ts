@@ -2,7 +2,7 @@ export const FINAL_WAVE = 20;
 export const BASE_WAVE_ENEMY_COUNT = 10;
 export const ENEMY_COUNT_WAVE_MULTIPLIER = 1.11;
 export const ENEMY_HP_WAVE_MULTIPLIER = 1.22;
-export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1;
+export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3;
 export const ENEMY_REWARD_MULTIPLIER = 1;
 
 export function getWaveEnemyCount(wave: number) {

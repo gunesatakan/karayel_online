@@ -12,7 +12,7 @@ test("başsız simülasyon aynı seed ile deterministiktir ve raporu eksiksizdir
   assert.ok(first.cardHistory.length <= 19);
 });
 
-test("makul dengeli bot 100 koşuda %40-%60 zafer bandındadır", () => {
+test("yüksek can dengesi bot zafer oranını %5-%10 bandında tutar", () => {
   const report = simulateMany({ runs: 100, seed: 1000, strategy: "balanced" });
-  assert.ok(report.winRate >= 0.4 && report.winRate <= 0.6, `zafer oranı ${report.winRate}`);
+  assert.ok(report.winRate >= 0.05 && report.winRate <= 0.1, `zafer oranı ${report.winRate}`);
 });

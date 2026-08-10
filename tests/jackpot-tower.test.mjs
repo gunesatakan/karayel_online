@@ -26,7 +26,8 @@ test("Jackpot uses physical projectiles, a two-cell range and a half-range dead 
   assert.equal(definition.engine.attack.rangeStartsAtFootprint, true);
   assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 2.5);
   assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 1.5);
-  assert.equal(definition.damage, 90);
+  const hiza = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-1");
+  assert.equal(definition.damage, hiza.damage * 2);
   assert.equal(definition.fireIntervalMs, 8800);
 });
 
