@@ -124,6 +124,7 @@ type RenderMover = {
   curseMarker?: Phaser.GameObjects.Text;
   doubtMarker?: Phaser.GameObjects.Text;
   armorBreakIcon?: Phaser.GameObjects.Image;
+  bleedEffect?: Phaser.GameObjects.Graphics;
 };
 
 type HydratedGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
@@ -2472,6 +2473,7 @@ export class GameScene extends Phaser.Scene {
         mover.healthBar?.destroy();
         mover.shieldHalo?.destroy();
         mover.armorBreakIcon?.destroy();
+        mover.bleedEffect?.destroy();
         this.enemies.delete(id);
       }
     }
@@ -2496,6 +2498,7 @@ export class GameScene extends Phaser.Scene {
           .setDepth(7.6)
           .setVisible(false);
         mover.healthBar = this.add.graphics().setDepth(16);
+        mover.bleedEffect = this.add.graphics().setDepth(7.9).setVisible(false);
         mover.marker = this.add.text(enemy.x, enemy.y - 22, "T", {
           color: "#fde047",
           fontFamily: "Arial",
@@ -2551,6 +2554,7 @@ export class GameScene extends Phaser.Scene {
       mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
       mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
       mover.shieldHalo?.setVisible(hasShield);
+      this.drawEnemyBleedEffect(mover.bleedEffect, enemy, displayedEnemySize);
       this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
@@ -2583,6 +2587,44 @@ export class GameScene extends Phaser.Scene {
       mover.armorBreakIcon?.setScale(this.getTowerEffectScale() * 0.62 * iconPulse);
       mover.armorBreakIcon?.setAlpha(enemy.isArmorBroken ? 0.96 : 0);
       mover.armorBreakIcon?.setVisible(Boolean(enemy.isArmorBroken));
+    }
+  }
+
+  private drawEnemyBleedEffect(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
+    if (!graphics) return;
+    graphics.clear();
+    if (!enemy.isBleeding) {
+      graphics.setVisible(false);
+      return;
+    }
+
+    graphics.setVisible(true);
+    graphics.setDepth(enemy.movementKind === "air" ? 8.9 : 7.9);
+    const radius = Math.max(8, displayedSize * 0.34);
+    const groundY = enemy.y + displayedSize * 0.34;
+    const phase = performance.now() / 520;
+    const pulse = 0.82 + Math.sin(phase * Math.PI * 2) * 0.12;
+    graphics.fillStyle(0x450a0a, 0.34 * pulse);
+    graphics.fillEllipse(enemy.x, groundY + 3, radius * 1.45, Math.max(3, radius * 0.3));
+    graphics.fillStyle(0x991b1b, 0.58 * pulse);
+    graphics.fillEllipse(enemy.x - radius * 0.18, groundY + 2, radius * 0.72, Math.max(2, radius * 0.18));
+
+    const offsets = [-0.42, 0.06, 0.38];
+    for (let index = 0; index < offsets.length; index += 1) {
+      const fall = (phase + index * 0.31) % 1;
+      const x = enemy.x + radius * offsets[index] + Math.sin(phase * 5 + index) * 1.2;
+      const y = enemy.y + displayedSize * 0.05 + fall * displayedSize * 0.34;
+      const dropRadius = Math.max(1.2, displayedSize * (0.035 + fall * 0.018));
+      graphics.fillStyle(index === 1 ? 0xef4444 : 0xdc2626, 0.9 - fall * 0.25);
+      graphics.fillCircle(x, y, dropRadius);
+      graphics.fillTriangle(
+        x,
+        y - dropRadius * 1.8,
+        x - dropRadius * 0.72,
+        y,
+        x + dropRadius * 0.72,
+        y
+      );
     }
   }
 

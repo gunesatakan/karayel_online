@@ -37,10 +37,16 @@ test("Testere contact applies sourced bleed and bleed deals one percent true dam
   assert.equal(bleed?.sourceTowerId, tower.id);
   assert.equal(bleed?.sourceOwnerId, tower.ownerId);
 
+  Object.assign(room.state.players.get("p1"), { ownedShopItemIds: [], shopOffers: [], shopRerolls: 0 });
+  assert.equal(room.getSnapshot().enemies.find(({ id }) => id === enemy.id)?.isBleeding, true);
+
   enemy.shield = 0;
   enemy.armor = 999;
   enemy.hp = enemy.maxHp;
   enemy.statusTickAt.bleed = 0;
   room.updateEnemyEngineStatusOutcomes(enemy, Date.now());
   assert.ok(Math.abs(enemy.hp - enemy.maxHp * 0.99) < 1e-9);
+
+  enemy.statusEffects.bleed.expiresAt = Date.now() - 1;
+  assert.equal(room.getSnapshot().enemies.find(({ id }) => id === enemy.id)?.isBleeding, false);
 });

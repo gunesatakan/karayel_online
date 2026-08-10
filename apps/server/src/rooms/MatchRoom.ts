@@ -6698,6 +6698,7 @@ export class MatchRoom extends Room<MatchState> {
         curseLoad: enemy.melisCurseUntil > now ? Math.round(enemy.melisCurseLoad) : 0,
         doubtStacks: enemy.melisDoubtUntil > now ? enemy.melisDoubtStacks : 0,
         isHesitating: enemy.melisDoubtHesitateUntil > now,
+        isBleeding: isStatusEffectActive(enemy.statusEffects.bleed, now),
         isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
         isUndead: enemy.melisUndeadUntil > now
       })),

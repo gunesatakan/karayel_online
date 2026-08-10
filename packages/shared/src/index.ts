@@ -107,6 +107,7 @@ export type EnemySnapshot = {
   curseLoad?: number;
   doubtStacks?: number;
   isHesitating?: boolean;
+  isBleeding?: boolean;
   isUnderworldLinked?: boolean;
   isUndead?: boolean;
 };
