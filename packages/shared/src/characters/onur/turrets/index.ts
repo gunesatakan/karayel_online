@@ -22,7 +22,7 @@ export const onurTowers = towers.map((tower) => {
       damageType: "physical",
       classType: "damage",
       axes: ["dps"],
-      cost: 150,
+      cost: 75,
       fireIntervalMs: 450,
       range: 60,
       damage: 8,
