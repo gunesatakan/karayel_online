@@ -1,7 +1,7 @@
 import type { MovementKind } from "../combat.js";
 import type { TowerAttackShape } from "../characters/common/types.js";
-export { selectOrbitSweepTargets } from "./orbit.js";
-export type { OrbitSweepQuery } from "./orbit.js";
+export { selectOrbitSweepContacts, selectOrbitSweepTargets } from "./orbit.js";
+export type { OrbitSweepContact, OrbitSweepQuery } from "./orbit.js";
 
 export type AttackShapeTarget = {
   id: string;

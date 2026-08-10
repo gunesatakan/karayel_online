@@ -496,8 +496,8 @@ export { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
-export { selectOrbitSweepTargets } from "./attacks/orbit.js";
-export type { OrbitSweepQuery } from "./attacks/orbit.js";
+export { selectOrbitSweepContacts, selectOrbitSweepTargets } from "./attacks/orbit.js";
+export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export { getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";

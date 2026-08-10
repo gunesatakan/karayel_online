@@ -58,11 +58,11 @@ test("süpürülen yay yüksek hızda arada kalan düşmanı kaçırmaz", () => 
   assert.deepEqual(hits.map(({ id }) => id), ["middle"]);
 });
 
-test("aynı düşman ardışık ticklerde yeniden vurulabilir", () => {
+test("aynı bıçak temas sürerken tekrar vurmaz ama diğer bıçak vurabilir", () => {
   const { room, tower } = createSawRoom();
   room.spawnEnemy();
   const enemy = [...room.enemies.values()][0];
-  enemy.x = tower.x;
+  enemy.x = tower.x + 30;
   enemy.y = tower.y;
   room.towerDamageRandom = () => 0.5;
   room.enemySpatialGrid.rebuild(room.enemies.values());
@@ -72,6 +72,11 @@ test("aynı düşman ardışık ticklerde yeniden vurulabilir", () => {
   room.enemySpatialGrid.rebuild(room.enemies.values());
   room.updateOrbitTower(tower, 0.02, Date.now());
   assert.ok(firstHp < startHp);
+  assert.equal(enemy.hp + enemy.shield, firstHp);
+
+  tower.bladeAngle = Math.PI - 0.01;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+  room.updateOrbitTower(tower, 0.02, Date.now());
   assert.ok(enemy.hp + enemy.shield < firstHp);
 });
 
@@ -117,7 +122,7 @@ test("aynı tickteki her temas ayrı Onur zarı atar", () => {
   room.spawnEnemy();
   room.spawnEnemy();
   for (const enemy of room.enemies.values()) {
-    enemy.x = tower.x;
+    enemy.x = tower.x + 30;
     enemy.y = tower.y;
   }
   let rolls = 0;
