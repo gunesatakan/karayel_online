@@ -110,6 +110,7 @@ type RenderTower = {
   halo: Phaser.GameObjects.Graphics;
   base: Phaser.GameObjects.Image;
   range: Phaser.GameObjects.Arc;
+  deadZone: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
   healthBar: Phaser.GameObjects.Graphics;
   key: string;
@@ -2615,6 +2616,7 @@ export class GameScene extends Phaser.Scene {
         tower.linkHighlight.destroy();
         tower.base.destroy();
         tower.range.destroy();
+        tower.deadZone.destroy();
         tower.isolation.destroy();
         tower.healthBar.destroy();
         this.towers.delete(id);
@@ -2639,6 +2641,10 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, tower.color, 0.7)
           .setVisible(false)
           .setDepth(5);
+        const deadZone = this.add.circle(tower.x, tower.y, tower.minimumRange ?? 0, 0x0f172a, 0.24)
+          .setStrokeStyle(2, 0xf97316, 0.85)
+          .setVisible(false)
+          .setDepth(5.2);
         const isolation = this.add.graphics()
           .setVisible(false)
           .setDepth(6);
@@ -2647,7 +2653,7 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        rendered = { effect, linkHighlight, halo, base, range, isolation, healthBar, key: "" };
+        rendered = { effect, linkHighlight, halo, base, range, deadZone, isolation, healthBar, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -2666,6 +2672,7 @@ export class GameScene extends Phaser.Scene {
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
+        rendered.deadZone.setPosition(tower.x, tower.y).setRadius(tower.minimumRange ?? 0);
         this.drawIsolationGrid(rendered.isolation, tower.x, tower.y);
         rendered.key = key;
       }
@@ -2699,6 +2706,7 @@ export class GameScene extends Phaser.Scene {
           .setStrokeStyle(2, tower.color, 0.7);
       }
       rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
+      rendered.deadZone.setVisible(tower.id === this.selectedPlacedTowerId && (tower.minimumRange ?? 0) > 0);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }

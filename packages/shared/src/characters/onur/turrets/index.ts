@@ -11,8 +11,24 @@ const towers = makeTowers("onur", 0x14b8a6, [
 ], { cost: 44, range: 124, damage: 18, fireIntervalMs: 620, projectileSpeed: 390 });
 
 export const onurTowers = towers.map((tower) => {
-  if (tower.id !== "onur-1") return tower;
+  if (tower.id !== "onur-1" && tower.id !== "onur-2") return tower;
   const { engine: _generatedEngine, ...definition } = tower;
+  if (tower.id === "onur-2") {
+    return attachTowerEngine({
+      ...definition,
+      name: "Jackpot",
+      role: "Uzak menzil niÅŸancÄ±",
+      description: "YavaÅŸ ama aÄŸÄ±r mermiler atar; yakÄ±nÄ±ndaki hedefleri vuramaz ve kanayan hedeflerde kritik ÅŸansÄ± kazanÄ±r.",
+      hitType: "projectile",
+      damageType: "physical",
+      classType: "damage",
+      axes: ["dps"],
+      range: 102,
+      damage: 45,
+      fireIntervalMs: 2200,
+      projectileSpeed: 480
+    });
+  }
   return attachTowerEngine({
       ...definition,
       name: "Testere",

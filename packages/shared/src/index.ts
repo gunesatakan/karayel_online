@@ -131,6 +131,7 @@ export type TowerSnapshot = {
   facing?: number;
   level: number;
   range: number;
+  minimumRange?: number;
   color: number;
   hp?: number;
   maxHp?: number;

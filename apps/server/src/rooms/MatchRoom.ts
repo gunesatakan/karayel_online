@@ -97,6 +97,7 @@ import {
   getTile,
   isInsideMap,
   inferTowerAmmoType,
+  isStatusEffectActive,
   isTowerAligned,
   getTowerFireAlignmentTolerance,
   shouldRetainAimTargetLock,
@@ -752,6 +753,7 @@ type ZeynepSynthesisComposition = {
 
 export class MatchRoom extends Room<MatchState> {
   towerDamageRandom: () => number = Math.random;
+  towerCriticalRandom: () => number = Math.random;
   static rooms = new Map<string, MatchRoom>();
   static publicRooms = new Map<string, MatchRoom>();
 
@@ -3276,6 +3278,7 @@ export class MatchRoom extends Room<MatchState> {
           { x: projectile.x, y: projectile.y },
           collisionCandidates
             .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
+            .filter((enemy) => !sourceTower || distanceSq(sourceTower.x, sourceTower.y, enemy.x, enemy.y) >= this.getTowerMinimumRange(sourceTower) ** 2)
             .map((enemy) => ({ id: enemy.id, x: enemy.x, y: enemy.y, radius: getEnemyCollisionRadius(enemy) })),
           getBallisticCollisionRadius(projectile.hitType),
           new Set(projectile.piercedEnemyIds)
@@ -5173,7 +5176,8 @@ export class MatchRoom extends Room<MatchState> {
       distance: Math.hypot(enemy.x - tower.x, enemy.y - tower.y),
       markScore: this.getTrackingStackCount(enemy, options.now),
       priorityScore: options.useTypePriority === false ? 0 : enemy.type === "brute" ? 1 : 0,
-      inRange: distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= options.range * options.range,
+      inRange: distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= options.range * options.range
+        && distanceSq(tower.x, tower.y, enemy.x, enemy.y) >= this.getTowerMinimumRange(tower) ** 2,
       eligible: this.canTowerTargetEnemy(tower, enemy),
       movementKind: enemy.movementKind
     })));
@@ -5270,8 +5274,14 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.type === "brute") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsBrute");
     if (damagePlayer?.ownedShopItemIds?.includes("kriyojen-hat") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (damagePlayer?.ownedShopItemIds?.includes("kan-bankasi")) shopDamageAdd += 0.2;
-    const critChance = Math.max(0, getModifierAdd(damageModifiers, "critChance"));
-    const critAdd = Math.random() < critChance ? Math.max(0, getModifierAdd(damageModifiers, "critDamage")) : 0;
+    const critical = damageSourceTower?.definition.engine?.critical;
+    const conditionalCritical = critical?.bonusChanceAgainstStatus;
+    const conditionalCritChance = conditionalCritical && isStatusEffectActive(enemy.statusEffects[conditionalCritical.type], now)
+      ? conditionalCritical.chance
+      : 0;
+    const critChance = Math.max(0, (critical?.baseChance ?? 0) + conditionalCritChance + getModifierAdd(damageModifiers, "critChance"));
+    const critDamageAdd = Math.max(0, (critical?.damageMultiplier ?? 1) - 1 + getModifierAdd(damageModifiers, "critDamage"));
+    const critAdd = this.towerCriticalRandom() < critChance ? critDamageAdd : 0;
     const result = calculateDamageTaken(
       { amount: damage * markMultiplier * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
       {
@@ -6688,6 +6698,7 @@ export class MatchRoom extends Room<MatchState> {
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
         range: roundNetworkNumber(this.getTowerRange(tower)),
+        minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
         armor: tower.armor,
@@ -6939,6 +6950,10 @@ export class MatchRoom extends Room<MatchState> {
     return applyRangeAura(this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER));
   }
 
+  private getTowerMinimumRange(tower: TowerModel) {
+    return this.getTowerRange(tower) * Math.max(0, tower.definition.engine?.attack.minimumRangeMultiplier ?? 0);
+  }
+
   private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {
     const sourceTowers = composition.copySourceTower
       ? [composition.copySourceTower, composition.copySourceTower]
@@ -6953,6 +6968,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerFireInterval(tower: TowerModel) {
+    if (tower.definition.engine?.fixedFireInterval) {
+      return tower.definition.fireIntervalMs;
+    }
     return this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower))
       / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
   }

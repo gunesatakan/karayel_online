@@ -71,6 +71,7 @@ export type TowerEngineConfig = {
     bladeCount?: number;
     bladeLength?: number;
     rotationSpeed?: number;
+    minimumRangeMultiplier?: number;
   };
   statusEffects?: TowerStatusEffectDefinition[];
   stacks?: TowerStackDefinition[];
@@ -96,6 +97,12 @@ export type TowerEngineConfig = {
   };
   canHitAir: boolean;
   locksTarget?: boolean;
+  fixedFireInterval?: boolean;
+  critical?: {
+    baseChance?: number;
+    damageMultiplier?: number;
+    bonusChanceAgainstStatus?: { type: TowerStatusEffectType; chance: number };
+  };
   resourceProvider?: TowerResourceProvider;
 };
 

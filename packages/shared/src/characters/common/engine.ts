@@ -49,6 +49,13 @@ const profiles: Record<string, EngineProfile> = {
     statusEffects: [{ type: "bleed", magnitude: 0.01, durationMs: 3000, stacking: "refresh" }],
     resources: { shotFuel: "energy", operatingEnergyPerSecond: 1.4 }
   },
+  "onur-2": {
+    targeting: "first",
+    attack: { shape: "single", executor: "ballistic", pierceCount: 1, minimumRangeMultiplier: 0.5 },
+    canHitAir: false,
+    fixedFireInterval: true,
+    critical: { damageMultiplier: 2, bonusChanceAgainstStatus: { type: "bleed", chance: 0.25 } }
+  },
   "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
   "warrior-2": { targeting: "first", attack: { shape: "circle", radius: 18 }, canHitAir: false },
   "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh" }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 0.48, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated", multiplierPerLevel: -0.026, minMultiplier: 0.25 }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
