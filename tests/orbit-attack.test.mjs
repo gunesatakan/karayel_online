@@ -37,8 +37,8 @@ test("Testere ortak orbit profilini ve enerji yakıtını kullanır", () => {
 });
 
 test("dönüş hızı efektif atış aralığıyla ters orantılı ölçeklenir", () => {
-  assert.equal(getOrbitRotationSpeed(3.2, 450, 450), 3.2);
-  assert.equal(getOrbitRotationSpeed(3.2, 450, 300), 4.8);
+  assert.equal(getOrbitRotationSpeed(1.6, 450, 450), 1.6);
+  assert.equal(getOrbitRotationSpeed(1.6, 450, 300), 2.4);
 });
 
 test("bıçak uzunluğu menzil çarpanının kareköküyle büyür ve tavana uyar", () => {

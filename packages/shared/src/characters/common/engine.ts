@@ -44,7 +44,7 @@ const defaultEngine: TowerEngineConfig = {
 const profiles: Record<string, EngineProfile> = {
   "onur-1": {
     targeting: undefined,
-    attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 3.2, width: 8 },
+    attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 1.6, width: 8 },
     canHitAir: false,
     resources: { shotFuel: "energy", operatingEnergyPerSecond: 1.4 }
   },

@@ -2848,14 +2848,39 @@ export class GameScene extends Phaser.Scene {
     for (let blade = 0; blade < bladeCount; blade += 1) {
       const angle = tower.bladeAngle + blade * Math.PI * 2 / bladeCount;
       const inner = this.getMapCellSize() * 0.18;
-      const x1 = tower.x + Math.cos(angle) * inner;
-      const y1 = tower.y + Math.sin(angle) * inner;
-      const x2 = tower.x + Math.cos(angle) * tower.bladeLength;
-      const y2 = tower.y + Math.sin(angle) * tower.bladeLength;
-      graphics.lineStyle(bladeWidth + 3, 0x07111f, 0.9).lineBetween(x1, y1, x2, y2);
-      graphics.lineStyle(bladeWidth, 0xcbd5e1, 0.98).lineBetween(x1, y1, x2, y2);
-      graphics.lineStyle(Math.max(1, bladeWidth * 0.24), 0x67e8f9, 0.9).lineBetween(x1, y1, x2, y2);
-      graphics.fillStyle(0xf8fafc, 1).fillCircle(x2, y2, bladeWidth * 0.62);
+      const forwardX = Math.cos(angle);
+      const forwardY = Math.sin(angle);
+      const rightX = -forwardY;
+      const rightY = forwardX;
+      const point = (distance: number, side: number) => new Phaser.Geom.Point(
+        tower.x + forwardX * distance + rightX * side,
+        tower.y + forwardY * distance + rightY * side
+      );
+      const rootLeft = point(inner, -bladeWidth * 0.34);
+      const rootRight = point(inner, bladeWidth * 0.34);
+      const spineTip = point(tower.bladeLength * 0.86, -bladeWidth * 0.48);
+      const cuttingTip = point(tower.bladeLength, bladeWidth * 0.05);
+      const heel = point(tower.bladeLength * 0.76, bladeWidth * 0.5);
+
+      graphics.fillStyle(0x050a12, 0.92).fillPoints([
+        point(inner - 1.5, -bladeWidth * 0.58),
+        point(inner - 1.5, bladeWidth * 0.58),
+        point(tower.bladeLength + 2, bladeWidth * 0.08),
+        point(tower.bladeLength * 0.87, -bladeWidth * 0.67)
+      ], true);
+      graphics.fillStyle(0x64748b, 1).fillPoints([rootLeft, rootRight, heel, cuttingTip, spineTip], true);
+      graphics.fillStyle(0xb8c4d1, 0.95).fillPoints([
+        point(inner + 1, -bladeWidth * 0.2),
+        point(inner + 1, bladeWidth * 0.2),
+        point(tower.bladeLength * 0.77, bladeWidth * 0.33),
+        cuttingTip,
+        point(tower.bladeLength * 0.83, -bladeWidth * 0.18)
+      ], true);
+      graphics.lineStyle(Math.max(1.2, bladeWidth * 0.18), 0xf8fafc, 1)
+        .lineBetween(rootRight.x, rootRight.y, cuttingTip.x, cuttingTip.y);
+      graphics.lineStyle(Math.max(0.8, bladeWidth * 0.1), 0x334155, 0.95)
+        .lineBetween(rootLeft.x, rootLeft.y, spineTip.x, spineTip.y);
+      graphics.fillStyle(0x0f172a, 1).fillCircle(rootLeft.x, rootLeft.y, bladeWidth * 0.22);
     }
   }
 
