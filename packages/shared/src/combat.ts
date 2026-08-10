@@ -40,6 +40,8 @@ export type DamageResult = {
   remainingShield: number;
 };
 
+export const SHIELD_DAMAGE_TAKEN_MULTIPLIER = 0.5;
+
 export const enemyRaceDefinitions = {
   meka: {
     damageResistances: {
@@ -208,8 +210,9 @@ export function calculateDamageTaken(
   const hitTypeResistance = packet.damageType !== "true" && packet.hitType ? target.hitTypeResistances?.[packet.hitType] ?? 0 : 0;
   const hitTypeResistanceMultiplier = Math.max(0, 1 - hitTypeResistance);
   const rawDamage = Math.max(0, packet.amount * armorMultiplier * resistanceMultiplier * hitTypeResistanceMultiplier);
-  const shieldDamage = Math.min(target.shield, rawDamage);
-  const hpDamage = rawDamage - shieldDamage;
+  const shieldDamage = Math.min(target.shield, rawDamage * SHIELD_DAMAGE_TAKEN_MULTIPLIER);
+  const rawDamageAbsorbedByShield = shieldDamage / SHIELD_DAMAGE_TAKEN_MULTIPLIER;
+  const hpDamage = Math.max(0, rawDamage - rawDamageAbsorbedByShield);
 
   return {
     rawDamage,

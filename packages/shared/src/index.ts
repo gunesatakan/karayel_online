@@ -6,7 +6,7 @@ export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
 export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
 export type { DamageType, EnemyRace, HitType, MovementKind, StatusEffectId } from "./combat.js";
-export { applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances } from "./combat.js";
+export { SHIELD_DAMAGE_TAKEN_MULTIPLIER, applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances } from "./combat.js";
 
 export const GAME_WORLD_WIDTH = 390;
 export const GAME_WORLD_HEIGHT = 844;
