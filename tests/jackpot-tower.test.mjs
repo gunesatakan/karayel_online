@@ -4,6 +4,7 @@ import {
   TOWER_BASE_CRITICAL_CHANCE,
   TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER,
   TOWER_GRID_SIZE,
+  calculateTowerScaledBaseDamage,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
@@ -26,8 +27,8 @@ test("Jackpot uses physical projectiles, a three-cell range and a half-range dea
   assert.equal(definition.engine.attack.rangeStartsAtFootprint, true);
   assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 3.5);
   assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 2);
-  const hiza = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-1");
-  assert.equal(definition.damage, hiza.damage * 2);
+  assert.equal(definition.damage, 60);
+  assert.equal(calculateTowerScaledBaseDamage(definition, 1), 120);
   assert.equal(definition.fireIntervalMs, 4400);
   assert.equal(definition.projectileSpeed, 960);
 });

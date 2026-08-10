@@ -24,7 +24,7 @@ export const onurTowers = towers.map((tower) => {
       classType: "damage",
       axes: ["dps"],
       range: 153,
-      damage: 48,
+      damage: 60,
       fireIntervalMs: 4400,
       projectileSpeed: 960
     });
@@ -41,7 +41,7 @@ export const onurTowers = towers.map((tower) => {
       cost: 75,
       fireIntervalMs: 450,
       range: 60,
-      damage: 32,
+      damage: 16,
       projectileSpeed: 0
     });
 });

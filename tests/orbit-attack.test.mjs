@@ -4,6 +4,7 @@ import {
   ORBIT_BLADE_LENGTH_MAX_MULTIPLIER,
   TOWER_HEAT_BY_HIT_TYPE,
   TOWER_OPERATING_ENERGY_BY_HIT_TYPE,
+  calculateTowerScaledBaseDamage,
   getTowerBuildCost,
   getOrbitBladeLength,
   getOrbitRotationSpeed,
@@ -33,7 +34,8 @@ test("Testere ortak orbit profilini ve enerji yakıtını kullanır", () => {
   const definition = towerCatalog.onur.find((tower) => tower.id === "onur-1");
   assert.equal(definition.name, "Testere");
   assert.equal(definition.cost, 75);
-  assert.equal(definition.damage, 32);
+  assert.equal(definition.damage, 16);
+  assert.equal(calculateTowerScaledBaseDamage(definition, 1), 32);
   assert.equal(getTowerBuildCost(definition.cost), 150);
   assert.equal(definition.engine.attack.shape, "orbit");
   assert.equal(definition.engine.attack.executor, "orbit");
