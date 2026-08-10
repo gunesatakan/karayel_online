@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TOWER_GRID_SIZE, towerCatalog } from "../packages/shared/dist/index.js";
+import {
+  TOWER_BASE_CRITICAL_CHANCE,
+  TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER,
+  TOWER_GRID_SIZE,
+  towerCatalog
+} from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 function createJackpotRoom() {
@@ -74,7 +79,44 @@ test("Jackpot gains exactly twenty-five percent critical chance against bleeding
   assert.equal(enemy.hp, 980);
 
   enemy.hp = 1000;
-  room.towerCriticalRandom = () => 0.25;
+  room.towerCriticalRandom = () => 0.26;
   room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
   assert.equal(enemy.hp, 990);
+});
+
+test("every tower has one percent base crit chance and double base crit damage", () => {
+  const { room, tower, definition } = createJackpotRoom();
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.maxHp = 1000;
+  enemy.shield = 0;
+  enemy.armor = 0;
+
+  assert.equal(TOWER_BASE_CRITICAL_CHANCE, 0.01);
+  assert.equal(TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER, 2);
+  enemy.hp = 1000;
+  room.towerCriticalRandom = () => 0.009;
+  room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
+  assert.equal(enemy.hp, 980);
+
+  enemy.hp = 1000;
+  room.towerCriticalRandom = () => 0.01;
+  room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
+  assert.equal(enemy.hp, 990);
+});
+
+test("crit modifiers add on top of base chance and double damage", () => {
+  const { room, tower, definition } = createJackpotRoom();
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.hp = enemy.maxHp = 1000;
+  enemy.shield = 0;
+  enemy.armor = 0;
+  tower.runModifiers.push(
+    { source: "test", scope: "tower", stat: "critChance", add: 0.12 },
+    { source: "test", scope: "tower", stat: "critDamage", add: 1 }
+  );
+  room.towerCriticalRandom = () => 0.12;
+  room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
+  assert.equal(enemy.hp, 970);
 });

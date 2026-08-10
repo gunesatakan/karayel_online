@@ -12,6 +12,8 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  TOWER_BASE_CRITICAL_CHANCE,
+  TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER,
   TOWER_TURN_RATE_RADIANS_PER_SECOND,
   createDefaultEditableMap,
   createOpenArenaMap,
@@ -5279,9 +5281,14 @@ export class MatchRoom extends Room<MatchState> {
     const conditionalCritChance = conditionalCritical && isStatusEffectActive(enemy.statusEffects[conditionalCritical.type], now)
       ? conditionalCritical.chance
       : 0;
-    const critChance = Math.max(0, (critical?.baseChance ?? 0) + conditionalCritChance + getModifierAdd(damageModifiers, "critChance"));
-    const critDamageAdd = Math.max(0, (critical?.damageMultiplier ?? 1) - 1 + getModifierAdd(damageModifiers, "critDamage"));
-    const critAdd = this.towerCriticalRandom() < critChance ? critDamageAdd : 0;
+    const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:"));
+    const critChance = canCrit
+      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + getModifierAdd(damageModifiers, "critChance"))
+      : 0;
+    const critDamageAdd = canCrit
+      ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
+      : 0;
+    const critAdd = critChance > 0 && this.towerCriticalRandom() < critChance ? critDamageAdd : 0;
     const result = calculateDamageTaken(
       { amount: damage * markMultiplier * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
       {

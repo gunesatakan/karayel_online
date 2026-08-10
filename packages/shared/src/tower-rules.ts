@@ -5,6 +5,8 @@ import { getModifierAdd, type Modifier } from "./modifiers/index.js";
 export const TOWER_BASE_AMMO_COST = 1;
 export const TOWER_BASE_ENERGY_COST = 4.1;
 export const TOWER_BASE_DAMAGE_MULTIPLIER = 2;
+export const TOWER_BASE_CRITICAL_CHANCE = 0.01;
+export const TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER = 2;
 export const FUEL_NORMALIZATION_INTERVAL_MS = 700;
 export const FUEL_NORMALIZATION_EXPONENT = 0.75;
 export const PASSIVE_TOWER_INTERVAL_THRESHOLD_MS = 10000;
