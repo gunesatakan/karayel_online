@@ -30,6 +30,7 @@ test("slash ısı, çalışma enerjisi ve enerji yakıtı tablolarına bağlıd�
 test("Testere ortak orbit profilini ve enerji yakıtını kullanır", () => {
   const definition = towerCatalog.onur.find((tower) => tower.id === "onur-1");
   assert.equal(definition.name, "Testere");
+  assert.equal(definition.cost, 150);
   assert.equal(definition.engine.attack.shape, "orbit");
   assert.equal(definition.engine.attack.executor, "orbit");
   assert.equal(definition.engine.resources.shotFuel, "energy");
