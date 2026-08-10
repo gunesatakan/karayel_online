@@ -28,7 +28,7 @@ import {
 } from "@karayel/shared";
 import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
-import { getSharedClient, setActiveLobbyRoom } from "./online-session";
+import { getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "./online-session";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary";
 
@@ -148,6 +148,7 @@ export function setupMenuUi(game: Phaser.Game) {
   let currentLobbyState: LobbyStateSnapshot | undefined;
   let lobbyError = "";
   let onlineGameStarting = false;
+  let onlineRoomRequestPending = false;
   let phaserReady = false;
   // The backdrop lives outside the render cycle: rebuilding it per view would
   // re-decode the splash and replay its fade on every navigation.
@@ -249,39 +250,47 @@ export function setupMenuUi(game: Phaser.Game) {
   };
 
   const createRoom = async () => {
+    if (onlineRoomRequestPending) return;
+    onlineRoomRequestPending = true;
     try {
       lobbyError = "";
       const roomNameInput = root.querySelector<HTMLInputElement>("[data-room-name-input]");
       const roomName = roomNameInput?.value.trim() || `${selectedCharacter.displayName} Odasi`;
       const client = getSharedClient(gameServerUrl);
-      const room = await client.create("match", {
+      const room = await retryExpiredSeatReservation(() => client.create("match", {
         playerName: getPlayerName(),
         characterId: selectedCharacter.id,
         roomName,
         mapScale: selectedMapScale,
         mapData: selectedMap
-      });
+      }));
       bindLobbyRoom(room);
       render("lobby");
     } catch (error) {
       lobbyError = formatUiError(error, "Oda kurulurken hata olustu.");
       render("online");
+    } finally {
+      onlineRoomRequestPending = false;
     }
   };
 
   const joinRoom = async (roomId: string) => {
+    if (onlineRoomRequestPending) return;
+    onlineRoomRequestPending = true;
     try {
       lobbyError = "";
       const client = getSharedClient(gameServerUrl);
-      const room = await client.joinById(roomId, {
+      const room = await retryExpiredSeatReservation(() => client.joinById(roomId, {
         playerName: getPlayerName(),
         characterId: selectedCharacter.id
-      });
+      }));
       bindLobbyRoom(room);
       render("lobby");
     } catch (error) {
       lobbyError = formatUiError(error, "Odaya katilinamadi.");
       render("online");
+    } finally {
+      onlineRoomRequestPending = false;
     }
   };
 

@@ -6,6 +6,7 @@ primary_region = "fra"
 
 [env]
   PORT = "2567"
+  COLYSEUS_SEAT_RESERVATION_TIME = "45"
 
 [[services]]
   internal_port = 2567

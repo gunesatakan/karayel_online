@@ -882,6 +882,9 @@ export class MatchRoom extends Room<MatchState> {
   };
 
   async onCreate(options: JoinOptions = {}) {
+    // Mobile networks and a waking/deploying Fly machine can take longer than
+    // Colyseus' 15-second default between matchmaking and WebSocket upgrade.
+    this.setSeatReservationTime(45);
     await MatchRoom.prepareSingleRoomSlot(this.roomId);
     MatchRoom.rooms.set(this.roomId, this);
 
