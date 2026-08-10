@@ -7,6 +7,7 @@ import {
   getTowerBuildCost,
   getOrbitBladeLength,
   getOrbitRotationSpeed,
+  getOrbitTargetHitCooldownMs,
   getTowerShotFuel,
   selectOrbitSweepTargets,
   towerCatalog
@@ -59,7 +60,7 @@ test("süpürülen yay yüksek hızda arada kalan düşmanı kaçırmaz", () => 
   assert.deepEqual(hits.map(({ id }) => id), ["middle"]);
 });
 
-test("aynı bıçak temas sürerken tekrar vurmaz ama diğer bıçak vurabilir", () => {
+test("aynı düşman soğuma süresinde tekrar vurulmaz, sıradaki bıçak geçişinde vurulabilir", () => {
   const { room, tower } = createSawRoom();
   room.spawnEnemy();
   const enemy = [...room.enemies.values()][0];
@@ -70,17 +71,61 @@ test("aynı bıçak temas sürerken tekrar vurmaz ama diğer bıçak vurabilir",
   room.towerDamageRandom = () => 0.5;
   room.enemySpatialGrid.rebuild(room.enemies.values());
   const startHp = enemy.hp + enemy.shield;
-  room.updateOrbitTower(tower, 0.02, Date.now());
+  const now = 1_000;
+  room.updateOrbitTower(tower, 0.02, now);
   const firstHp = enemy.hp + enemy.shield;
   room.enemySpatialGrid.rebuild(room.enemies.values());
-  room.updateOrbitTower(tower, 0.02, Date.now());
+  room.updateOrbitTower(tower, 0.02, now + 1);
   assert.ok(firstHp < startHp);
   assert.equal(enemy.hp + enemy.shield, firstHp);
 
   tower.bladeAngle = Math.PI - 0.01;
   room.enemySpatialGrid.rebuild(room.enemies.values());
-  room.updateOrbitTower(tower, 0.02, Date.now());
+  const cooldownMs = getOrbitTargetHitCooldownMs(2, 1.6);
+  room.updateOrbitTower(tower, 0.02, now + cooldownMs);
   assert.ok(enemy.hp + enemy.shield < firstHp);
+});
+
+test("sabit düşman mesafeden bağımsız olarak tam turda iki kez vurulur", () => {
+  for (const distance of [15, 25, 35, 45]) {
+    const { room, tower } = createSawRoom();
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()][0];
+    enemy.x = tower.x + distance;
+    enemy.y = tower.y;
+    enemy.maxHp = 100_000;
+    enemy.hp = enemy.maxHp;
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+
+    let hits = 0;
+    room.damageEnemyFromTower = () => { hits += 1; };
+    const tickSeconds = 1 / 60;
+    const fullRotationSeconds = Math.PI * 2 / 1.6;
+    const ticks = Math.floor(fullRotationSeconds / tickSeconds);
+    let now = 10_000;
+    for (let tick = 0; tick < ticks; tick += 1) {
+      room.updateOrbitTower(tower, tickSeconds, now);
+      now += tickSeconds * 1000;
+    }
+    assert.equal(hits, 2, `distance=${distance}`);
+  }
+});
+
+test("ölen düşmanın orbit vuruş kaydı temizlenir", () => {
+  const { room, tower } = createSawRoom();
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.x = tower.x + 30;
+  enemy.y = tower.y;
+  enemy.hp = enemy.maxHp = 10_000;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+  room.updateOrbitTower(tower, 0.02, 1_000);
+  assert.equal(tower.orbitLastHitAt.has(enemy.id), true);
+
+  room.enemies.delete(enemy.id);
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+  room.updateOrbitTower(tower, 0.02, 1_020);
+  assert.equal(tower.orbitLastHitAt.has(enemy.id), false);
 });
 
 test("düşman yokken taban hızda saniyede 2.4 enerji ve 9 ısı üretir", () => {

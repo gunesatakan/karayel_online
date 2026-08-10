@@ -16,6 +16,13 @@ export type OrbitSweepContact<T extends AttackShapeTarget> = {
   bladeIndex: number;
 };
 
+/** Minimum delay before the next blade may damage the same target. */
+export function getOrbitTargetHitCooldownMs(bladeCount: number, effectiveRotationSpeed: number) {
+  const count = Math.max(1, Math.round(bladeCount));
+  const speed = Math.max(0.001, effectiveRotationSpeed);
+  return Math.PI * 2 / (count * speed) * 1000;
+}
+
 /** Returns each blade-target pair touched by the complete angular area swept this tick. */
 export function selectOrbitSweepContacts<T extends AttackShapeTarget>(query: OrbitSweepQuery, targets: readonly T[]) {
   const count = Math.max(1, Math.round(query.bladeCount));

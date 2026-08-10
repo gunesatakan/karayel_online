@@ -49,6 +49,7 @@ import {
   calculateOrbitContinuousCosts,
   getOrbitRotationSpeed,
   getOrbitBladeLength,
+  getOrbitTargetHitCooldownMs,
   selectOrbitSweepContacts,
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
@@ -509,7 +510,7 @@ type TowerModel = {
   luckyWindowUntil: number;
   lastLuckMultiplier: number;
   bladeAngle: number;
-  orbitContactKeys: Set<string>;
+  orbitLastHitAt: Map<string, number>;
   performance: number;
   heatLocked: boolean;
   rawAmmo: number;
@@ -1950,6 +1951,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateOrbitTower(tower: TowerModel, seconds: number, now: number) {
+    for (const enemyId of tower.orbitLastHitAt.keys()) {
+      if (!this.enemies.has(enemyId)) tower.orbitLastHitAt.delete(enemyId);
+    }
     const attack = tower.definition.engine?.attack;
     if (!attack || attack.executor !== "orbit" || this.setupPhase || tower.performance <= 0 || tower.heatLocked || tower.energy <= 0) return;
     const baseRotationSpeed = attack.rotationSpeed ?? 0;
@@ -1982,20 +1986,16 @@ export class MatchRoom extends Room<MatchState> {
       radius: getEnemyCollisionRadius(enemy)
     }));
     const contacts = selectOrbitSweepContacts(sweepQuery, contactCandidates);
-    const previousContactKeys = tower.orbitContactKeys;
+    const hitCooldownMs = getOrbitTargetHitCooldownMs(attack.bladeCount ?? 1, effectiveRotationSpeed);
     for (const contact of contacts) {
-      const contactKey = `${contact.bladeIndex}:${contact.target.id}`;
-      if (previousContactKeys.has(contactKey)) continue;
+      const lastHitAt = tower.orbitLastHitAt.get(contact.target.id) ?? Number.NEGATIVE_INFINITY;
+      if (now - lastHitAt < hitCooldownMs) continue;
       const enemy = this.enemies.get(contact.target.id);
       if (!enemy) continue;
+      tower.orbitLastHitAt.set(enemy.id, now);
       this.prepareOnurGamblerShot(tower);
       this.damageEnemyFromTower(tower, enemy, this.getTowerDamage(tower), 0);
     }
-    tower.orbitContactKeys = new Set(
-      selectOrbitSweepContacts({ ...sweepQuery, previousAngle: tower.bladeAngle }, contactCandidates)
-        .filter(({ target }) => this.enemies.has(target.id))
-        .map(({ bladeIndex, target }) => `${bladeIndex}:${target.id}`)
-    );
   }
 
   private getOrbitBladeLengthForTower(tower: TowerModel) {
@@ -4273,7 +4273,7 @@ export class MatchRoom extends Room<MatchState> {
       luckyWindowUntil: 0,
       lastLuckMultiplier: 1,
       bladeAngle: 0,
-      orbitContactKeys: new Set(),
+      orbitLastHitAt: new Map(),
       performance: 0.5,
       heatLocked: false,
       rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
