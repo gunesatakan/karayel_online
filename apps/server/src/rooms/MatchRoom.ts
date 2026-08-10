@@ -8094,14 +8094,16 @@ function getTrackerFireInterval(level: number) {
 
 function getZeynepHizaFireInterval(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 500 - ((clampedLevel - 1) / 9) * 300;
+  return 1000 - ((clampedLevel - 1) / 9) * 600;
 }
 
 function getZeynepHizaDamageCompensation(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   const oldInterval = Math.max(80, 330 * (1 - (clampedLevel - 1) * 0.1));
-  const newInterval = getZeynepHizaFireInterval(clampedLevel);
-  return newInterval / oldInterval;
+  // Preserve the pre-nerf per-hit damage compensation. The doubled firing
+  // interval must lower DPS rather than silently doubling each projectile.
+  const compensatedInterval = 500 - ((clampedLevel - 1) / 9) * 300;
+  return compensatedInterval / oldInterval;
 }
 
 function getKinFireInterval(level: number) {
