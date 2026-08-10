@@ -149,6 +149,9 @@ export type TowerSnapshot = {
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   ammoLogisticsEnabled?: boolean;
   temperature?: number;
+  misfortune?: number;
+  luckyWindowRemainingMs?: number;
+  lastLuckMultiplier?: number;
   performance?: number;
   coolingRate?: number;
   rawAmmo?: number;
@@ -336,6 +339,12 @@ export {
 } from "./snapshot/index.js";
 
 export { characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
+export {
+  ONUR_LUCKY_WINDOW_MS,
+  ONUR_MISFORTUNE_MAX,
+  getOnurMisfortuneContribution,
+  resolveOnurGamblerShot
+} from "./characters/onur/passive/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {

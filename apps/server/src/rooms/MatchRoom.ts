@@ -44,6 +44,7 @@ import {
   shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
   calculateTowerShotHeat,
+  resolveOnurGamblerShot,
   appendLegacyMultiplier,
   advanceResourceExtraction,
   getLogisticsWorkerRespawnRemainingMs,
@@ -496,6 +497,9 @@ type TowerModel = {
   wakeReadyAt: number;
   ammoLogisticsEnabled: boolean;
   temperature: number;
+  misfortune: number;
+  luckyWindowUntil: number;
+  lastLuckMultiplier: number;
   performance: number;
   heatLocked: boolean;
   rawAmmo: number;
@@ -742,6 +746,7 @@ type ZeynepSynthesisComposition = {
 };
 
 export class MatchRoom extends Room<MatchState> {
+  towerDamageRandom: () => number = Math.random;
   static rooms = new Map<string, MatchRoom>();
   static publicRooms = new Map<string, MatchRoom>();
 
@@ -1795,6 +1800,10 @@ export class MatchRoom extends Room<MatchState> {
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
         tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling") * (deltaTime / 1000));
+        if (tower.luckyWindowUntil > 0 && tower.luckyWindowUntil <= now) {
+          tower.luckyWindowUntil = 0;
+          tower.misfortune = 0;
+        }
         if (tower.heatLocked && tower.temperature <= TOWER_HEAT_UNLOCK_THRESHOLD) {
           tower.heatLocked = false;
         }
@@ -4168,6 +4177,9 @@ export class MatchRoom extends Room<MatchState> {
       wakeReadyAt: 0,
       ammoLogisticsEnabled: true,
       temperature: 0,
+      misfortune: 0,
+      luckyWindowUntil: 0,
+      lastLuckMultiplier: 1,
       performance: 0.5,
       heatLocked: false,
       rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
@@ -6616,6 +6628,9 @@ export class MatchRoom extends Room<MatchState> {
         energyState: getTowerEnergyState(tower.energy, tower.energyDepletedAt, now),
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
         temperature: Math.round(tower.temperature * 10) / 10,
+        misfortune: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.misfortune * 10) / 10 : undefined,
+        luckyWindowRemainingMs: tower.characterId === "onur" ? Math.max(0, tower.luckyWindowUntil - now) : undefined,
+        lastLuckMultiplier: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.lastLuckMultiplier * 100) / 100 : undefined,
         performance: Math.round(tower.performance * 100) / 100,
         rawAmmo: Math.floor(tower.rawAmmo),
         maxRawAmmo: tower.maxRawAmmo,
@@ -6936,6 +6951,9 @@ export class MatchRoom extends Room<MatchState> {
       breakdown = appendLegacyMultiplier(breakdown, source, multiplier);
     };
     add("character:atakan-passive", this.getAtakanPassiveMultiplier(tower));
+    if (tower.characterId === "onur" && tower.definition.damage > 0) {
+      add("character:onur-gambler", tower.lastLuckMultiplier);
+    }
     add("tower:kill-streak", this.getTowerStreakDamageMultiplier(tower, now));
     add("character:zeynep-formation", getZeynepFormationDamageMultiplier(tower));
 
@@ -7441,6 +7459,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private prepareTowerShot(tower: TowerModel, target: EnemyModel) {
+    this.prepareOnurGamblerShot(tower);
     if (tower.definition.id === "archer-1" || tower.definition.id === "archer-2") {
       tower.focusTargetId = target.id;
       return;
@@ -7538,6 +7557,22 @@ export class MatchRoom extends Room<MatchState> {
         target.activeMarkUntil = 0;
       }
     }
+  }
+
+  private prepareOnurGamblerShot(tower: TowerModel) {
+    if (tower.characterId !== "onur" || tower.definition.damage <= 0 || tower.definition.resourceProvider) {
+      tower.lastLuckMultiplier = 1;
+      return;
+    }
+    const result = resolveOnurGamblerShot(
+      { misfortune: tower.misfortune, luckyWindowUntil: tower.luckyWindowUntil },
+      this.getTowerFireInterval(tower),
+      this.towerDamageRandom,
+      Date.now()
+    );
+    tower.misfortune = result.misfortune;
+    tower.luckyWindowUntil = result.luckyWindowUntil;
+    tower.lastLuckMultiplier = result.multiplier;
   }
 
   private getSkillCooldown(player: Player, slot: number) {

@@ -7,8 +7,8 @@ import { onurUltimate } from "./ultimate/index.js";
 export const onurCharacter: CharacterDefinition = {
   id: "onur",
   displayName: "Onur",
-  role: "Avci",
-  summary: "Guvenilir tek hedef hasari ve uzun menzil.",
+  role: "Kumarbaz",
+  summary: "Değişken hasar zarlarını şanssızlık biriktirerek yüksek riskli fırsat pencerelerine dönüştürür.",
   maxHp: 110,
   speed: 1.04,
   damage: 16,

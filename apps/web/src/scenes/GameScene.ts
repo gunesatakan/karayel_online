@@ -262,6 +262,7 @@ export class GameScene extends Phaser.Scene {
   private selectedAmmoText?: Phaser.GameObjects.Text;
   private selectedEnergyText?: Phaser.GameObjects.Text;
   private selectedTemperatureText?: Phaser.GameObjects.Text;
+  private selectedMisfortuneText?: Phaser.GameObjects.Text;
   private selectedPerformanceText?: Phaser.GameObjects.Text;
   private performanceSliderHitZone?: Phaser.GameObjects.Rectangle;
   private performanceSliderLeft = 0;
@@ -2603,6 +2604,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedAmmoText?.setVisible(false);
     this.selectedEnergyText?.setVisible(false);
     this.selectedTemperatureText?.setVisible(false);
+    this.selectedMisfortuneText?.setVisible(false);
     this.selectedPerformanceText?.setVisible(false);
     this.performanceSliderHitZone?.setVisible(false).disableInteractive();
 
@@ -3326,6 +3328,8 @@ export class GameScene extends Phaser.Scene {
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
     const temperatureRatio = Phaser.Math.Clamp((tower.temperature ?? 0) / 100, 0, 1);
+    const hasMisfortune = tower.characterId === "onur" && tower.misfortune !== undefined;
+    const misfortuneRatio = Phaser.Math.Clamp((tower.misfortune ?? 0) / 100, 0, 1);
     const rawAmmoRatio = Phaser.Math.Clamp((tower.rawAmmo ?? 0) / Math.max(1, tower.maxRawAmmo ?? 1), 0, 1);
     const isAmmoFactory = tower.resourceProvider === "ammunition";
     const serverPerformance = Phaser.Math.Clamp(tower.performance ?? 0.5, 0, 1);
@@ -3350,9 +3354,17 @@ export class GameScene extends Phaser.Scene {
     }
     graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
     graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
-    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, barWidth, barHeight, 3);
+    const splitBarWidth = (barWidth - 4) / 2;
+    const temperatureBarWidth = hasMisfortune ? splitBarWidth : barWidth;
+    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, temperatureBarWidth, barHeight, 3);
     graphics.fillStyle(isAmmoFactory ? 0x84cc16 : temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
-      .fillRoundedRect(barX, temperatureBarY, barWidth * (isAmmoFactory ? rawAmmoRatio : temperatureRatio), barHeight, 3);
+      .fillRoundedRect(barX, temperatureBarY, temperatureBarWidth * (isAmmoFactory ? rawAmmoRatio : temperatureRatio), barHeight, 3);
+    if (hasMisfortune) {
+      const misfortuneBarX = barX + splitBarWidth + 4;
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth, barHeight, 3);
+      graphics.fillStyle((tower.luckyWindowRemainingMs ?? 0) > 0 ? 0xfacc15 : 0xa855f7, 1)
+        .fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth * misfortuneRatio, barHeight, 3);
+    }
     if (hasPerformanceControl) {
       graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, performanceBarY, barWidth, barHeight, 3);
       graphics.fillStyle(0x22c55e, 1).fillRoundedRect(barX, performanceBarY, barWidth * performanceRatio, barHeight, 3);
@@ -3363,6 +3375,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedTemperatureText ??= this.add.text(0, 0, "", { color: "#fde68a", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
+    this.selectedMisfortuneText ??= this.add.text(0, 0, "", { color: "#e9d5ff", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedAmmoText
       .setText(usesAmmo ? `Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}` : "Mühimmat — KULLANMIYOR")
@@ -3374,8 +3387,14 @@ export class GameScene extends Phaser.Scene {
       .setText(isAmmoFactory
         ? `Hammadde ${Math.floor(tower.rawAmmo ?? 0)}/${tower.maxRawAmmo ?? 0}`
         : `Sıcaklık %${Math.round(tower.temperature ?? 0)}`)
-      .setPosition(labelCenterX, panelY + 46)
+      .setPosition(hasMisfortune ? barX + splitBarWidth / 2 : labelCenterX, panelY + 46)
       .setVisible(true);
+    this.selectedMisfortuneText
+      .setText((tower.luckyWindowRemainingMs ?? 0) > 0
+        ? `Şanslı ${(tower.luckyWindowRemainingMs! / 1000).toFixed(1)}sn`
+        : `Şans %${Math.round(tower.misfortune ?? 0)}`)
+      .setPosition(barX + splitBarWidth + 4 + splitBarWidth / 2, panelY + 46)
+      .setVisible(hasMisfortune);
     this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
     this.performanceSliderLeft = barX;
@@ -5034,6 +5053,7 @@ export class GameScene extends Phaser.Scene {
         ...(!selectedTower.resourceProvider ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
         ...(!selectedTower.resourceProvider && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
         ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+        ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
         ...(!selectedTower.resourceProvider ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
         ...(isUnderworldTower ? [
@@ -5049,7 +5069,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -5115,6 +5135,7 @@ export class GameScene extends Phaser.Scene {
       `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
       `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
       ...(!selectedTower.resourceProvider ? [`Sıcaklık: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+      ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
       ...(!selectedTower.resourceProvider ? [`Soğuma hızı: %${selectedTower.coolingRate ?? 0}/sn`] : []),
       ...(!selectedTower.resourceProvider ? [`Mühimmat akışı: ${selectedTower.ammoLogisticsEnabled === false ? "Kapalı" : "Açık"}`] : []),
       ...(selectedTower.definitionId === "archer-4" ? [
