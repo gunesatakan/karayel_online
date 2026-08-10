@@ -83,6 +83,20 @@ test("düşman yokken taban hızda saniyede 5.6 enerji ve 9 ısı üretir", () =
   assert.ok(Math.abs(tower.temperature - 9) < 0.001);
 });
 
+test("Testere enerji tüketimi performansla dönüş hızına göre ölçeklenir", () => {
+  const low = createSawRoom();
+  low.tower.performance = 0.25;
+  const lowStart = low.tower.energy;
+  low.room.updateTowers(1000);
+  assert.ok(Math.abs((lowStart - low.tower.energy) - 3.5) < 0.001);
+
+  const maximum = createSawRoom();
+  maximum.tower.performance = 1;
+  const maximumStart = maximum.tower.energy;
+  maximum.room.updateTowers(1000);
+  assert.ok(Math.abs((maximumStart - maximum.tower.energy) - 9.8) < 0.001);
+});
+
 test("standby Testere enerji ve ısı tüketmez", () => {
   const { room, tower } = createSawRoom();
   tower.standby = true;

@@ -28,7 +28,8 @@ test("Jackpot uses physical projectiles, a two-cell range and a half-range dead 
   assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 1.5);
   const hiza = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-1");
   assert.equal(definition.damage, hiza.damage * 2);
-  assert.equal(definition.fireIntervalMs, 8800);
+  assert.equal(definition.fireIntervalMs, 4400);
+  assert.equal(definition.projectileSpeed, 960);
 });
 
 test("Jackpot ignores every fire-rate increase and keeps its defined interval", () => {
