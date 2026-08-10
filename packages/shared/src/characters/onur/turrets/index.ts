@@ -24,8 +24,8 @@ export const onurTowers = towers.map((tower) => {
       classType: "damage",
       axes: ["dps"],
       range: 102,
-      damage: 45,
-      fireIntervalMs: 2200,
+      damage: 90,
+      fireIntervalMs: 8800,
       projectileSpeed: 480
     });
   }

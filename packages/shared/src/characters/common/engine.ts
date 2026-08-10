@@ -51,7 +51,7 @@ const profiles: Record<string, EngineProfile> = {
   },
   "onur-2": {
     targeting: "first",
-    attack: { shape: "single", executor: "ballistic", pierceCount: 1, minimumRangeMultiplier: 0.5 },
+    attack: { shape: "single", executor: "ballistic", pierceCount: 1, minimumRangeMultiplier: 0.5, rangeStartsAtFootprint: true },
     canHitAir: false,
     fixedFireInterval: true,
     critical: { damageMultiplier: 2, bonusChanceAgainstStatus: { type: "bleed", chance: 0.25 } }

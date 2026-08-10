@@ -72,6 +72,7 @@ export type TowerEngineConfig = {
     bladeLength?: number;
     rotationSpeed?: number;
     minimumRangeMultiplier?: number;
+    rangeStartsAtFootprint?: boolean;
   };
   statusEffects?: TowerStatusEffectDefinition[];
   stacks?: TowerStackDefinition[];

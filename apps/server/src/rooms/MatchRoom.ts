@@ -108,6 +108,7 @@ import {
   getTowerSellRefund,
   getTowerBuildCost,
   getTowerAttackRadius,
+  getTowerGridSpan,
   getTowerModeDamageType,
   getTowerSlowDurationMs,
   gridToWorld,
@@ -6954,11 +6955,21 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    return applyRangeAura(this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER));
+    const scaledRange = this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER);
+    if (tower.definition.engine?.attack.rangeStartsAtFootprint) {
+      const footprintRadius = this.scaleWorldDistance(TOWER_GRID_SIZE * getTowerGridSpan(tower.definition.id) / 2);
+      return footprintRadius + applyRangeAura(scaledRange);
+    }
+    return applyRangeAura(scaledRange);
   }
 
   private getTowerMinimumRange(tower: TowerModel) {
-    return this.getTowerRange(tower) * Math.max(0, tower.definition.engine?.attack.minimumRangeMultiplier ?? 0);
+    const multiplier = Math.max(0, tower.definition.engine?.attack.minimumRangeMultiplier ?? 0);
+    if (!tower.definition.engine?.attack.rangeStartsAtFootprint) {
+      return this.getTowerRange(tower) * multiplier;
+    }
+    const footprintRadius = this.scaleWorldDistance(TOWER_GRID_SIZE * getTowerGridSpan(tower.definition.id) / 2);
+    return footprintRadius + Math.max(0, this.getTowerRange(tower) - footprintRadius) * multiplier;
   }
 
   private getZeynepSynthesisBaseRange(composition: ZeynepSynthesisComposition) {

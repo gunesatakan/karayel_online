@@ -23,8 +23,11 @@ test("Jackpot uses physical projectiles, a two-cell range and a half-range dead 
   assert.equal(definition.hitType, "projectile");
   assert.equal(definition.damageType, "physical");
   assert.equal(definition.engine.attack.minimumRangeMultiplier, 0.5);
-  assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 2);
-  assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE);
+  assert.equal(definition.engine.attack.rangeStartsAtFootprint, true);
+  assert.equal(room.getTowerRange(tower), TOWER_GRID_SIZE * 2.5);
+  assert.equal(room.getTowerMinimumRange(tower), TOWER_GRID_SIZE * 1.5);
+  assert.equal(definition.damage, 90);
+  assert.equal(definition.fireIntervalMs, 8800);
 });
 
 test("Jackpot ignores every fire-rate increase and keeps its defined interval", () => {
@@ -61,6 +64,8 @@ test("Jackpot gains exactly twenty-five percent critical chance against bleeding
   enemy.hp = 1000;
   enemy.shield = 0;
   enemy.armor = 0;
+  enemy.damageResistances = {};
+  enemy.hitTypeResistances = {};
 
   room.towerCriticalRandom = () => 0.24;
   room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
@@ -91,6 +96,8 @@ test("every tower has one percent base crit chance and double base crit damage",
   enemy.maxHp = 1000;
   enemy.shield = 0;
   enemy.armor = 0;
+  enemy.damageResistances = {};
+  enemy.hitTypeResistances = {};
 
   assert.equal(TOWER_BASE_CRITICAL_CHANCE, 0.01);
   assert.equal(TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER, 2);
@@ -112,6 +119,8 @@ test("crit modifiers add on top of base chance and double damage", () => {
   enemy.hp = enemy.maxHp = 1000;
   enemy.shield = 0;
   enemy.armor = 0;
+  enemy.damageResistances = {};
+  enemy.hitTypeResistances = {};
   tower.runModifiers.push(
     { source: "test", scope: "tower", stat: "critChance", add: 0.12 },
     { source: "test", scope: "tower", stat: "critDamage", add: 1 }
