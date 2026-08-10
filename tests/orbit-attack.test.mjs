@@ -75,11 +75,11 @@ test("aynı düşman ardışık ticklerde yeniden vurulabilir", () => {
   assert.ok(enemy.hp + enemy.shield < firstHp);
 });
 
-test("düşman yokken taban hızda saniyede 5.6 enerji ve 9 ısı üretir", () => {
+test("düşman yokken taban hızda saniyede 2.4 enerji ve 9 ısı üretir", () => {
   const { room, tower } = createSawRoom();
   const startingEnergy = tower.energy;
   room.updateTowers(1000);
-  assert.ok(Math.abs((startingEnergy - tower.energy) - 5.6) < 0.001);
+  assert.ok(Math.abs((startingEnergy - tower.energy) - 2.4) < 0.001);
   assert.ok(Math.abs(tower.temperature - 9) < 0.001);
 });
 
@@ -88,13 +88,13 @@ test("Testere enerji tüketimi performansla dönüş hızına göre ölçeklenir
   low.tower.performance = 0.25;
   const lowStart = low.tower.energy;
   low.room.updateTowers(1000);
-  assert.ok(Math.abs((lowStart - low.tower.energy) - 3.5) < 0.001);
+  assert.ok(Math.abs((lowStart - low.tower.energy) - 1.9) < 0.001);
 
   const maximum = createSawRoom();
   maximum.tower.performance = 1;
   const maximumStart = maximum.tower.energy;
   maximum.room.updateTowers(1000);
-  assert.ok(Math.abs((maximumStart - maximum.tower.energy) - 9.8) < 0.001);
+  assert.ok(Math.abs((maximumStart - maximum.tower.energy) - 3.4) < 0.001);
 });
 
 test("standby Testere enerji ve ısı tüketmez", () => {
