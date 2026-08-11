@@ -38,7 +38,10 @@ Tek basina duran Atakan kuleleri daha verimli calisir. Dogru moduler kurulumla A
 **Mevcut uygulama:**
 
 - Atakan'a ait kule, Sunucu haricinde yalniz durumdaysa pasif aktif olur.
-- Yalniz sayilmasi icin 76 birim yakininda baska kule olmamasi gerekir.
+- Yalniz sayilmasi icin cevresindeki sekiz karenin bos olmasi gerekir. Olcum
+  mesafe degil kare komsulugudur, bu yuzden harita olcegiyle birlikte buyur.
+- Komsu sayimi kule sahibine bakmaz ve Sunucu'yu da komsu sayar; Sunucu yalnizca
+  bonusu kendisi almaz.
 - Pasif aktifken:
   - Kule hasari `x1.12` olur.
   - Kule atis araligi `x0.9` olur, yani daha hizli ates eder.

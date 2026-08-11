@@ -17,8 +17,8 @@ export const onurTowers = towers.map((tower) => {
     return attachTowerEngine({
       ...definition,
       name: "Jackpot",
-      role: "Uzak menzil niÅŸancÄ±",
-      description: "YavaÅŸ ama aÄŸÄ±r mermiler atar; yakÄ±nÄ±ndaki hedefleri vuramaz ve kanayan hedeflerde kritik ÅŸansÄ± kazanÄ±r.",
+      role: "Uzak menzil nişancı",
+      description: "Yavaş ama ağır mermiler atar; yakınındaki hedefleri vuramaz ve kanayan hedeflerde kritik şansı kazanır.",
       hitType: "projectile",
       damageType: "physical",
       classType: "damage",
@@ -30,18 +30,18 @@ export const onurTowers = towers.map((tower) => {
     });
   }
   return attachTowerEngine({
-      ...definition,
-      name: "Testere",
-      role: "Dönen temas hasarı",
-      description: "İki enerji bıçağı çevresinde dönerek temas eden düşmanları keser.",
-      hitType: "slash",
-      damageType: "physical",
-      classType: "damage",
-      axes: ["dps"],
-      cost: 75,
-      fireIntervalMs: 450,
-      range: 60,
-      damage: 16,
-      projectileSpeed: 0
-    });
+    ...definition,
+    name: "Testere",
+    role: "Dönen temas hasarı",
+    description: "İki enerji bıçağı çevresinde dönerek temas eden düşmanları keser.",
+    hitType: "slash",
+    damageType: "physical",
+    classType: "damage",
+    axes: ["dps"],
+    cost: 75,
+    fireIntervalMs: 450,
+    range: 60,
+    damage: 16,
+    projectileSpeed: 0
+  });
 });

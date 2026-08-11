@@ -10,6 +10,9 @@ function provider(id, resourceProvider, x, y) {
     x,
     y,
     definition: { resourceProvider },
+    // Isci hiz esyalari hizmet edilen binadan okundugu icin bina bir modifier
+    // listesi tasimak zorunda.
+    runModifiers: [],
     ammo: 0,
     maxAmmo: resourceProvider === "ammunition" ? 240 : 0,
     energy: 0,
@@ -38,7 +41,7 @@ function worker(mode, x = 20, y = 20) {
 
 test("cephane hammaddesi toplayıcısı 2, mühimmat taşıyıcısı 4 kapasiteyle doğar", () => {
   const room = new MatchRoom();
-  room.state = { players: new Map([["p1", { ownedShopItemIds: [] }]]) };
+  room.state = { players: new Map([["p1", { ownedShopItemIds: [], inventoryItemIds: [] }]]) };
   room.ensureLogisticsWorkers();
 
   const collector = room.drones.get("logistics-p1-ammoCollector");

@@ -7,7 +7,7 @@ function createPlayer() {
   return {
     name: "Test", characterId: "warrior", connected: true, gold: 1000, goldSpent: 0,
     experience: 0, towersBuilt: 0, ultimateCharge: 0, runModifiers: [], ownedCardIds: [],
-    ownedShopItemIds: [], shopOffers: [], shopRerolls: 0, nexusShieldCharges: 0
+    ownedShopItemIds: [], inventoryItemIds: [], shopOffers: [], shopRerolls: 0, nexusShieldCharges: 0
   };
 }
 

@@ -1,1 +1,1 @@
-export const onurUltimate = "Keskin Emir: En guclu dusmana agir hasar.";
+export const onurUltimate = "Sempati: 8 saniye boyunca sahadaki her kule kendisine en yakın kuleye bağlanır ve aralarında görülür bir bağ oluşur. Bu bağa değen kara düşmanlar bağı geçene kadar yarı hızda yürür ve her düşman en fazla bir kez olmak üzere 3 saniyelik kanama alır. Ağ her an yeniden hesaplandığı için ulti sırasında kurulan kuleler de bağa katılır.";

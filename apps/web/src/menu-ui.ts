@@ -8,6 +8,7 @@ import {
   getEnemyDamageResistances,
   getTowerBuildCost,
   getTowerAttackRadius,
+  getTowerDisplayStats,
   getTowerSlowDurationMs,
   getTowerLevelExpCost,
   getTile,
@@ -59,7 +60,6 @@ type SavedMapRecord = {
   savedAt: number;
 };
 
-const REAL_DPS_GAME_SPEED_MULTIPLIER = 0.8;
 const MAP_RECORDS_STORAGE_KEY = "karayel:custom-maps:v2";
 const enemyRaceOrder: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const enemyTypeOrder: EnemyType[] = ["grunt", "brute", "runner", "shooter"];
@@ -1217,12 +1217,17 @@ function skillToDetail(skill: SkillDefinition): DetailItem {
 }
 
 function towerToDetail(tower: TowerDefinition): DetailItem {
-  const isGlobalRange = tower.id === "warrior-2";
   const isPassiveTower = (tower.fireIntervalMs ?? 0) > 100000;
   const classType = tower.classType ?? "hybrid";
   const damageType = tower.damageType ?? "none";
   const hitType = tower.hitType ?? "impact";
   const blocks: DetailBlock[] = [{ kind: "brief", text: tower.description ?? tower.role }];
+
+  // Every number below comes from the shared tower-stats module, which is the
+  // same code the server runs. Reading the definition fields directly would
+  // show the authored value rather than the one the match applies.
+  const level1 = getTowerDisplayStats(tower, 1);
+  const level10 = getTowerDisplayStats(tower, 10);
 
   blocks.push({
     kind: "stats",
@@ -1231,8 +1236,32 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
       { label: "Sınıf", value: classTypeCodex[classType]?.name ?? classType, hint: classTypeCodex[classType]?.text },
       { label: "Hasar türü", value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
       { label: "Vuruş", value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
-      { label: "Menzil", value: isGlobalRange ? "Global" : String(tower.range) },
-      ...(isPassiveTower ? [] : [{ label: "Atış aralığı", value: `${(tower.fireIntervalMs / 1000).toFixed(2)} sn` }]),
+      {
+        label: "Menzil",
+        value: level1.hasGlobalRange ? "Global" : `${level1.range.toFixed(0)} → ${level10.range.toFixed(0)}`,
+        hint: level1.hasGlobalRange ? "Tüm haritayı görür." : "1. seviyeden 10. seviyeye."
+      },
+      ...(level1.minimumRange > 0
+        ? [{ label: "Ölü bölge", value: `${level1.minimumRange.toFixed(0)}`, hint: "Bu mesafeden yakındaki hedefleri vuramaz." }]
+        : []),
+      ...(isPassiveTower
+        ? []
+        : [{
+            label: "Atış aralığı",
+            value: level1.hasFixedFireInterval
+              ? `${(level1.realFireIntervalMs / 1000).toFixed(2)} sn (sabit)`
+              : `${(level1.realFireIntervalMs / 1000).toFixed(2)} → ${(level10.realFireIntervalMs / 1000).toFixed(2)} sn`,
+            hint: level1.hasFixedFireInterval
+              ? "Bu kule atış hızı artışlarından etkilenmez."
+              : "Gerçek saniye cinsinden, 1. seviyeden 10. seviyeye."
+          }]),
+      ...(tower.engine?.canHitAir !== undefined
+        ? [{
+            label: "Hava hedefi",
+            value: tower.engine.canHitAir ? "Vurabilir" : "Vuramaz",
+            hint: "Bazı dalgalarda düşmanların tamamı havacı gelir."
+          }]
+        : []),
       ...(getTowerAttackRadius(tower) > 0 ? [{ label: "Etki alanı", value: String(getTowerAttackRadius(tower)) }] : []),
       ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: "Yavaşlatma", value: `${(getTowerSlowDurationMs(tower) / 1000).toFixed(2)} sn` }] : [])
     ]
@@ -1254,8 +1283,10 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
       kind: "stats",
       label: "Güç",
       rows: [
-        { label: "1. seviye DPS", value: formatDps(getTowerLevelDamage(tower, 1), getTowerLevelInterval(tower, 1)) },
-        { label: "10. seviye DPS", value: formatDps(getTowerLevelDamage(tower, 10), getTowerLevelInterval(tower, 10)), hint: "Evrim, işaret ve dizilim bonusları hariç ham değer." }
+        { label: "1. seviye vuruş", value: level1.damage.toFixed(1) },
+        { label: "10. seviye vuruş", value: level10.damage.toFixed(1) },
+        { label: "1. seviye DPS", value: formatDps(tower, 1) },
+        { label: "10. seviye DPS", value: formatDps(tower, 10), hint: "Gerçek saniye başına hasar. Evrim, işaret ve dizilim bonusları hariç." }
       ]
     });
   }
@@ -1283,9 +1314,9 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
 function getTowerBalanceNote(towerId: string) {
   return {
     "warrior-2": "Uzun bağlantı ödülü: aynı kuleye 5 dalga bağlı kalırsa çarpma vuruşlu bağlı kule Sunucu seviyesine göre %12-30 ek hasar alır. 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının %0.1-0.5'i kadar ek hasar eklenir.",
-    "warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 425, 7. seviye 600, 8. seviye 750, 10. seviye 1000 DPS.",
+    "warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 850, 7. seviye 1200, 8. seviye 1500, 10. seviye 2000 DPS.",
     "warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Aşırı yükleme sırasında bu değerlerin yarısına iner.",
-    "warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 2114 DPS'ye ulaşır."
+    "warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 4228 DPS'ye ulaşır."
   }[towerId];
 }
 
@@ -1326,85 +1357,8 @@ function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
   return notes[tower.id] ?? [];
 }
 
-function formatDps(damage: number, intervalMs: number) {
-  if (damage <= 0 || intervalMs <= 0) {
-    return "0.0";
-  }
-  return ((damage / (intervalMs / 1000)) * REAL_DPS_GAME_SPEED_MULTIPLIER).toFixed(1);
-}
-
-function getTowerLevelDamage(tower: TowerDefinition, level: number) {
-  let damage = tower.damage * (1 + (level - 1) * 0.42);
-
-  if (tower.id === "warrior-4") {
-    damage *= getObsessionDamageMultiplier(level);
-  }
-
-  if (tower.id === "warrior-5") {
-    damage *= getDebugLaserDamageMultiplier(level);
-  }
-
-  if (tower.id === "warrior-6") {
-    damage *= getUcubeGrowthDamageMultiplier(level);
-  }
-
-  if (tower.hitType === "impact") {
-    damage *= getImpactLevelDamageCompensation(tower, level);
-  }
-
-  return damage;
-}
-
-function getTowerLevelInterval(tower: TowerDefinition, level: number) {
-  if (tower.id === "warrior-5") {
-    return getDebugLaserFireInterval(level, false);
-  }
-
-  if (tower.id === "warrior-1") {
-    return getTrackerFireInterval(level);
-  }
-
-  if (tower.hitType === "impact") {
-    return tower.fireIntervalMs;
-  }
-
-  const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
-  return Math.max(80, tower.fireIntervalMs * levelMultiplier);
-}
-
-function getImpactLevelDamageCompensation(tower: TowerDefinition, level: number) {
-  const levelMultiplier = tower.id === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
-  const previousInterval = Math.max(80, tower.fireIntervalMs * levelMultiplier);
-  return tower.fireIntervalMs / Math.max(1, previousInterval);
-}
-
-function getObsessionDamageMultiplier(level: number) {
-  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 1.085349, 0.94697, 1.05753, 1.144, 1.162];
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
-}
-
-function getDebugLaserDamageMultiplier(level: number) {
-  const multipliers = [1.3333, 1.6976, 2.1449, 2.7057, 3.0879, 3.3535, 3.6001, 3.8235, 4.0196, 4.1841];
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
-}
-
-function getDebugLaserFireInterval(level: number, overdrive: boolean) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  const normalRealMs = clampedLevel <= 5
-    ? 200 - (clampedLevel - 1) * 10
-    : 160 - (clampedLevel - 5) * 8;
-  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
-  return realMs * REAL_DPS_GAME_SPEED_MULTIPLIER;
-}
-
-function getTrackerFireInterval(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
-}
-
-function getUcubeGrowthDamageMultiplier(level: number) {
-  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
+function formatDps(tower: TowerDefinition, level: number) {
+  return getTowerDisplayStats(tower, level).dps.toFixed(1);
 }
 
 function initials(name: string) {

@@ -21,13 +21,23 @@ test("yeni ekonomik mağaza geliştirmeleri ortak modifier verisi taşır", () =
   assert.equal(effectFor("ince-ayar").stat, "accuracy");
 });
 
-test("işçi hız geliştirmeleri hareket ve kaynak çıkarma hızına uygulanır", () => {
-  const baseRoom = new MatchRoom();
-  baseRoom.state = { players: new Map([["p1", { runModifiers: [] }]]) };
-  const fastRoom = new MatchRoom();
-  fastRoom.state = { players: new Map([["p1", { runModifiers: [effectFor("isci-botlari"), effectFor("madenci-eldiveni")] }]]) };
-  const baseWorker = { ownerId: "p1", x: 0, y: 0, speed: 10 };
-  const fastWorker = { ownerId: "p1", x: 0, y: 0, speed: 10 };
+/**
+ * Isci esyalari artik oyuncuya degil bir ekonomi binasina takiliyor, o yuzden
+ * kazanci yalnizca o binaya hizmet eden isci aliyor. Testler de modifierlari
+ * kulenin uzerine koyar.
+ */
+function makeWorkerRoom(towerModifiers) {
+  const room = new MatchRoom();
+  room.state = { players: new Map([["p1", { runModifiers: [] }]]) };
+  room.towers = new Map([["reactor", { id: "reactor", ownerId: "p1", hp: 100, runModifiers: towerModifiers }]]);
+  return room;
+}
+
+test("işçi hız geliştirmeleri hizmet ettiği binadan gelir", () => {
+  const baseRoom = makeWorkerRoom([]);
+  const fastRoom = makeWorkerRoom([effectFor("isci-botlari"), effectFor("madenci-eldiveni")]);
+  const baseWorker = { ownerId: "p1", x: 0, y: 0, speed: 10, targetTowerId: "reactor" };
+  const fastWorker = { ownerId: "p1", x: 0, y: 0, speed: 10, targetTowerId: "reactor" };
 
   baseRoom.moveLogisticsWorker(baseWorker, 1000, 0, 1);
   fastRoom.moveLogisticsWorker(fastWorker, 1000, 0, 1);
@@ -36,10 +46,16 @@ test("işçi hız geliştirmeleri hareket ve kaynak çıkarma hızına uygulanı
   assert.equal(fastRoom.getWorkerGatherSpeedMultiplier(fastWorker), 1.2);
 });
 
-test("seri cephane hattı fabrikanın gerçek üretimini hızlandırır", () => {
-  const makeRoom = (runModifiers) => {
+test("başka binaya bağlı işçi o binanın eşyasından yararlanmaz", () => {
+  const room = makeWorkerRoom([effectFor("madenci-eldiveni")]);
+  const unboundWorker = { ownerId: "p1", x: 0, y: 0, speed: 10, targetTowerId: "" };
+  assert.equal(room.getWorkerGatherSpeedMultiplier(unboundWorker), 1);
+});
+
+test("seri cephane hattı takıldığı fabrikanın üretimini hızlandırır", () => {
+  const makeRoom = (towerModifiers) => {
     const room = new MatchRoom();
-    room.state = { players: new Map([["p1", { runModifiers }]]) };
+    room.state = { players: new Map([["p1", { runModifiers: [] }]]) };
     const tower = {
       ownerId: "p1",
       hp: 100,
@@ -48,7 +64,7 @@ test("seri cephane hattı fabrikanın gerçek üretimini hızlandırır", () => 
       rawAmmo: 100,
       ammo: 0,
       maxAmmo: 100,
-      runModifiers: []
+      runModifiers: towerModifiers
     };
     room.towers = new Map([["factory", tower]]);
     room.updateResourceFactories(1);

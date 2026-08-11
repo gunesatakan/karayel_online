@@ -247,6 +247,18 @@ canvas {
 .gold-shop__close { min-height: 34px !important; color: #dbeafe !important; background: rgba(30, 64, 175, .35) !important; }
 .game-controls__targeting { width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid rgba(125, 211, 252, .35); border-radius: 7px; color: #e0f2fe; background: #111827; }
 
+/* Envanter, altin magazasiyla ayni cekmece govdesini kullanir; yalnizca vurgu
+   rengi farklidir ki oyuncu satin alma ile takma arasinda karismasin. */
+.inventory { border-color: rgba(45, 212, 191, .45); }
+.inventory .gold-shop__actions { grid-template-columns: 1fr; }
+.inventory__empty { margin: 0; padding: 10px 4px; font-size: 11px; color: #94a3b8; text-align: center; }
+
+.tower-items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(148, 163, 184, .22); }
+.tower-items__header { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.tower-items__empty { font-size: 10px; color: #64748b; }
+.tower-items__chip { padding: 2px 7px; border: 1px solid rgba(45, 212, 191, .4); border-radius: 999px; font-size: 10px; color: #99f6e4; background: rgba(13, 148, 136, .18); }
+.game-controls__inventory-button { min-height: 26px !important; padding: 0 10px !important; font-size: 10px; color: #99f6e4 !important; background: rgba(13, 148, 136, .28) !important; }
+
 @media (max-width: 700px), (max-height: 560px) and (pointer: coarse) {
   .gold-shop {
     top: max(8px, env(safe-area-inset-top));

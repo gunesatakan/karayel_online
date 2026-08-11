@@ -21,7 +21,9 @@ import {
   getTowerLevelExpCost,
   getTowerLevelGoldCost,
   getTowerPerformanceFlameIntensity,
+  getShopItem,
   getShopItemPrice,
+  MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
   getTile,
   gridToWorld,
   hydrateWireSnapshot,
@@ -89,6 +91,10 @@ type ControlActionDetail = {
     | "toggleAudioHud"
     | "setMusicVolume"
     | "setVoiceVolume"
+    | "openInventory"
+    | "closeInventory"
+    | "selectInventoryItem"
+    | "cancelEquip"
     | "clearSelection";
   towerId?: string;
   slot?: number;
@@ -249,6 +255,9 @@ export class GameScene extends Phaser.Scene {
   private selectedCharacterId: CharacterId = "zeynep";
   private selectedCharacter: CharacterDefinition = characters[0];
   private selectedTowerDefinition: TowerDefinition = towerCatalog.zeynep[0];
+  private inventoryOpen = false;
+  /** Envanterden secilmis, kule bekleyen esya. */
+  private pendingEquipItemId?: string;
   private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
@@ -1027,11 +1036,46 @@ export class GameScene extends Phaser.Scene {
         this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
         this.updateSelectionUi();
         break;
+      case "openInventory":
+        this.inventoryOpen = true;
+        this.pendingEquipItemId = undefined;
+        this.emitControlState();
+        break;
+      case "closeInventory":
+        this.inventoryOpen = false;
+        this.emitControlState();
+        break;
+      case "selectInventoryItem":
+        // Esya secildi; panel kapanir ve oyuncu haritadan bir kule secer.
+        this.pendingEquipItemId = detail.itemId;
+        this.inventoryOpen = false;
+        this.emitControlState();
+        break;
+      case "cancelEquip":
+        this.pendingEquipItemId = undefined;
+        this.emitControlState();
+        break;
       case "clearSelection":
         this.hideZeynepTierChoicesIfOpen();
         this.clearPlacedTowerSelection();
         break;
     }
+  }
+
+  /**
+   * Envanterden bir esya secildikten sonra dokunulan kule hedef olur.
+   *
+   * Sunucu ayni kurallari yeniden dogruladigi icin burada engellemeye
+   * calismiyoruz; istek gonderilir, reddedilirse esya envanterde kalir.
+   */
+  private tryEquipPendingItem(towerId: string) {
+    if (!this.pendingEquipItemId) {
+      return false;
+    }
+
+    this.room?.send("equipShopItem", { itemId: this.pendingEquipItemId, towerId });
+    this.pendingEquipItemId = undefined;
+    return true;
   }
 
   private drawPlacementGrid(highlightX: number, highlightY: number, canPlace: boolean) {
@@ -1601,6 +1645,7 @@ export class GameScene extends Phaser.Scene {
       if (this.tryLinkServerTower(tower)) {
         return;
       }
+      this.tryEquipPendingItem(tower.id);
       this.selectedPlacedTowerId = tower.id;
       this.updateSelectionUi();
       return;
@@ -4334,6 +4379,8 @@ export class GameScene extends Phaser.Scene {
         this.drawSynthesisBurnTrail(beam, color);
       } else if (beam.definitionId === "warrior-6") {
         this.drawChainLightning(beam, color);
+      } else if (beam.definitionId === "onur-sympathy") {
+        this.drawSympathyLink(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
@@ -4524,6 +4571,31 @@ export class GameScene extends Phaser.Scene {
         beam.x1 + Math.cos(angle) * outer,
         beam.y1 + Math.sin(angle) * outer
       );
+    }
+  }
+
+  /**
+   * Sempati bagi. Bag bir vurus degil bir engel, bu yuzden sabit kalinlikta ve
+   * yavas nabizli cizilir; parlayip sonen bir lazer gibi degil, gorulebilir bir
+   * tel gibi durmasi gerekiyor.
+   */
+  private drawSympathyLink(beam: BeamSnapshot, color: number) {
+    if (!this.beamGraphics) {
+      return;
+    }
+
+    const scale = this.getTowerEffectScale();
+    const width = Math.max(2, beam.width * scale);
+    const pulse = 0.72 + Math.sin(Date.now() / 260) * 0.14;
+
+    this.beamGraphics.lineStyle(width, 0x0f172a, 0.5);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(Math.max(1, width * 0.55), color, pulse);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+
+    for (const [x, y] of [[beam.x1, beam.y1], [beam.x2, beam.y2]] as const) {
+      this.beamGraphics.fillStyle(color, pulse * 0.6);
+      this.beamGraphics.fillCircle(x, y, Math.max(1.5, width * 0.6));
     }
   }
 
@@ -5138,6 +5210,34 @@ export class GameScene extends Phaser.Scene {
           return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price };
         })
       } : undefined,
+      equippedItems: selectedTower?.equippedShopItemIds?.map((itemId) => {
+        const item = getShopItem(itemId);
+        return { id: itemId, name: item?.name ?? itemId, description: item?.description ?? "" };
+      }) ?? [],
+      equippedCapacity: MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
+      inventory: {
+        open: this.inventoryOpen,
+        pendingItemId: this.pendingEquipItemId,
+        // Ayni esyadan birden fazla olabilir; listede tek satirda sayilir.
+        items: Object.values(
+          (this.localPlayerSnapshot?.inventoryItemIds ?? []).reduce<Record<string, { id: string; name: string; description: string; category: string; count: number }>>((grouped, itemId) => {
+            const item = getShopItem(itemId);
+            const existing = grouped[itemId];
+            if (existing) {
+              existing.count += 1;
+              return grouped;
+            }
+            grouped[itemId] = {
+              id: itemId,
+              name: item?.name ?? itemId,
+              description: item?.description ?? "",
+              category: item?.category ?? "power",
+              count: 1
+            };
+            return grouped;
+          }, {})
+        )
+      },
       workerRevive: deadWorkers.length > 0 ? {
         count: deadWorkers.length,
         remainingSeconds: Math.min(...deadWorkers.map((worker) => worker.remainingSeconds)),

@@ -23,6 +23,15 @@ type ControlState = {
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   selectedStats?: string[];
+  /** Secili kuleye takili esyalar; parametre barlarinin hemen altinda listelenir. */
+  equippedItems?: Array<{ id: string; name: string; description: string }>;
+  equippedCapacity?: number;
+  inventory?: {
+    open: boolean;
+    /** Bir esya secildiyse oyuncu simdi kule bekliyor demektir. */
+    pendingItemId?: string;
+    items: Array<{ id: string; name: string; description: string; category: string; count: number }>;
+  };
   goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean }> };
   targeting?: { current: string; modes: string[] };
 };
@@ -132,6 +141,37 @@ export function setupGameControlUi(game: Phaser.Game) {
       root.append(drawer);
     }
 
+    if (state.inventory?.open) {
+      const drawer = document.createElement("section");
+      drawer.className = "gold-shop inventory";
+      const count = state.inventory.items.reduce((sum, entry) => sum + entry.count, 0);
+      drawer.innerHTML = `<header><span>ENVANTER</span><strong>${count} eşya</strong></header>`
+        + `<p>Bir eşyaya dokun, sonra takmak istediğin kuleyi seç. Takılan eşya sökülemez.</p>`
+        + `<div class="gold-shop__offers"></div>`;
+      const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
+      if (state.inventory.items.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "inventory__empty";
+        empty.textContent = "Envanterin boş. Mağazadan aldığın eşyalar burada birikir.";
+        list?.append(empty);
+      }
+      for (const item of state.inventory.items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `gold-shop__item gold-shop__item--${item.category}`;
+        button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small>`
+          + (item.count > 1 ? `<b>x${item.count}</b>` : "");
+        button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
+        list?.append(button);
+      }
+      const close = makeActionButton("Kapat", "gold-shop__close", true, () => dispatch({ action: "closeInventory" }));
+      const actions = document.createElement("div");
+      actions.className = "gold-shop__actions";
+      actions.append(close);
+      drawer.append(actions);
+      root.append(drawer);
+    }
+
     if (state.melisSpectrum) {
       root.append(makeMelisSpectrum(state.melisSpectrum));
     }
@@ -179,6 +219,32 @@ export function setupGameControlUi(game: Phaser.Game) {
       stats.className = "game-controls__stats";
       stats.textContent = state.selectedStats.join("  |  ");
       shop.append(stats);
+
+      // Takili esyalar parametre barlarinin hemen altinda: oyuncu hangi kuleye
+      // ne taktigini burada takip eder. Takilan esya sokulemedigi icin liste
+      // salt okunur.
+      const equipped = document.createElement("div");
+      equipped.className = "tower-items";
+      const capacity = state.equippedCapacity ?? 0;
+      const items = state.equippedItems ?? [];
+      const header = document.createElement("span");
+      header.className = "tower-items__header";
+      header.textContent = capacity > 0 ? `Eşyalar ${items.length}/${capacity}` : "Eşyalar";
+      equipped.append(header);
+      if (items.length === 0) {
+        const empty = document.createElement("span");
+        empty.className = "tower-items__empty";
+        empty.textContent = "Takılı eşya yok";
+        equipped.append(empty);
+      }
+      for (const item of items) {
+        const chip = document.createElement("span");
+        chip.className = "tower-items__chip";
+        chip.textContent = item.name;
+        chip.title = item.description;
+        equipped.append(chip);
+      }
+      shop.append(equipped);
       if (state.underworldMode) {
         const modeRow = document.createElement("div");
         modeRow.className = "game-controls__underworld-mode";
@@ -236,6 +302,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     hint.className = "game-controls__hint";
     hint.textContent = state.hint ?? "";
     footer.append(hint);
+
+    if (state.inventory) {
+      const inventory = state.inventory;
+      const total = inventory.items.reduce((sum, entry) => sum + entry.count, 0);
+      footer.append(inventory.pendingItemId
+        ? makeActionButton("Takmayı iptal et", "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" }))
+        : makeActionButton(`Envanter ${total}`, "game-controls__inventory-button", true, () => dispatch({ action: inventory.open ? "closeInventory" : "openInventory" })));
+    }
 
     if (state.zeynepChain) {
       const chain = document.createElement("span");

@@ -17,6 +17,26 @@ import {
   TOWER_TURN_RATE_RADIANS_PER_SECOND,
   createDefaultEditableMap,
   createOpenArenaMap,
+  GAME_SPEED_MULTIPLIER,
+  GLOBAL_TOWER_RANGE_MULTIPLIER,
+  SYMPATHY_BLEED_DURATION_MS,
+  SYMPATHY_BLEED_MAX_HEALTH_RATIO_PER_SECOND,
+  SYMPATHY_DURATION_MS,
+  SYMPATHY_LINK_HALF_WIDTH,
+  SYMPATHY_SLOW_MULTIPLIER,
+  ZEYNEP_SHOWCASE_BASE_LENGTH,
+  buildSympathyLinks,
+  selectSympathyContacts,
+  getDebugLaserDamageMultiplier,
+  getDebugLaserFireInterval,
+  getKinFireInterval,
+  getObsessionDamageMultiplier,
+  getTowerLevelIntervalMultiplier,
+  getTrackerFireInterval,
+  getUcubeGrowthDamageMultiplier,
+  getZeynepHizaDamageCompensation,
+  getZeynepHizaFireInterval,
+  getZeynepShowcaseBeamLength,
   applyStatusResistance,
   applyEnemyMark,
   applyTowerStatusEffect,
@@ -64,6 +84,8 @@ import {
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
   canAcceptTargetedCard,
+  canEquipShopItem,
+  isGlobalShopItem,
   cardAppliesToTower,
   cardCatalog,
   drawCards,
@@ -162,7 +184,8 @@ import {
   type TowerTargetingMode,
   type TowerAuraSource,
   type TowerAuraDefinition,
-  type TowerSnapshot
+  type TowerSnapshot,
+  type SympathyLink
 } from "@karayel/shared";
 import {
   createFullStaticSnapshot,
@@ -192,8 +215,6 @@ const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
-const GAME_SPEED_MULTIPLIER = 0.8;
-const GLOBAL_TOWER_RANGE_MULTIPLIER = 2 / 3;
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
 const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 256 * 1024;
 const PERF_SEND_INTERVAL_MS = 1000;
@@ -225,8 +246,6 @@ const ZEYNEP_REPUTATION_GAIN_MULTIPLIER = 1 / 3;
 const ZEYNEP_MAX_AUTHORITY_QUALITY = 15;
 const ZEYNEP_QUALITY_POWER_STEP = 0.035;
 const ZEYNEP_QUALITY_DURATION_STEP = 0.015;
-const ZEYNEP_SHOWCASE_BASE_LENGTH = 100;
-const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 const ZEYNEP_SHOWCASE_BEAM_RADIUS = 9;
 const ZEYNEP_SYNTHESIS_BEAM_RADIUS = 10;
 const ZEYNEP_SYNTHESIS_BURN_RADIUS = 34;
@@ -318,7 +337,10 @@ const MELIS_INITIAL_STRESS = 6;
 class Player extends Schema {
   runModifiers: RunModifiers = [];
   ownedCardIds: string[] = [];
+  /** Satin alinan her sey; fiyat artisi ve stok limiti bunun uzerinden isler. */
   ownedShopItemIds: string[] = [];
+  /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
+  inventoryItemIds: string[] = [];
   shopOffers: ShopItem[] = [];
   shopRerolls = 0;
   nexusShieldCharges = 0;
@@ -562,6 +584,8 @@ type TowerModel = {
   damageWindow: Array<{ dealtAt: number; amount: number }>;
   runModifiers: RunModifiers;
   targetedCardIds: string[];
+  /** Bu kuleye takilmis magaza esyalari. Takilan esya sokulemez. */
+  equippedShopItemIds: string[];
   targetingMode: TowerTargetingMode;
   shopKillStacks: number;
   shopWaveStacks: number;
@@ -570,6 +594,7 @@ type TowerModel = {
 type ChooseCardMessage = { cardId?: string; towerId?: string };
 type BuyShopItemMessage = { itemId?: string };
 type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
+type EquipShopItemMessage = { itemId?: string; towerId?: string };
 type PlaceShopMapItemMessage = { itemId?: "bariyer" | "ziftli-zemin"; x?: number; y?: number };
 
 type DebugOverdriveHeatSegment = {
@@ -838,6 +863,10 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowTier: ZeynepCommandTier = "small";
   private melisGothicNightmareUntil = 0;
   private melisGothicNightmareOwnerUntil = new Map<string, number>();
+  private sympathyUntil = 0;
+  private sympathyLinks: SympathyLink[] = [];
+  /** Sempati kanamasi dusman basina bir kez; ulti bitince liste sifirlanir. */
+  private sympathyBledEnemyIds = new Set<string>();
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
   private lobbyRoomName = "Yeni Oda";
@@ -930,6 +959,13 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.sellTower(client, message);
+    });
+
+    this.onMessage("equipShopItem", (client, message: EquipShopItemMessage) => {
+      if (!this.gameStarted) {
+        return;
+      }
+      this.equipShopItem(client, message);
     });
 
     this.onMessage("useSkill", (client, message: UseSkillMessage) => {
@@ -1377,6 +1413,7 @@ export class MatchRoom extends Room<MatchState> {
     this.enemySpatialGrid.rebuild(this.enemies.values());
     this.resetAuraSlows();
     this.updateTowers(gameDeltaTime);
+    this.updateSympathy();
     timings.towersMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -1631,8 +1668,8 @@ export class MatchRoom extends Room<MatchState> {
       this.setupPhase = false;
       this.setupReadyPlayerIds.clear();
       this.spawnCooldownMs = 350;
-      for (const player of this.state.players.values()) {
-        if (player.ownedShopItemIds.includes("kan-bankasi") && this.teamHealth > 5) this.teamHealth -= 5;
+      for (const playerId of this.state.players.keys()) {
+        if (this.ownerHasEquippedShopItem(playerId, "kan-bankasi") && this.teamHealth > 5) this.teamHealth -= 5;
       }
     }
   }
@@ -3755,9 +3792,8 @@ export class MatchRoom extends Room<MatchState> {
       worker.vy = 0;
       return true;
     }
-    const playerModifiers = this.state?.players?.get(worker.ownerId)?.runModifiers ?? [];
     const speed = this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
-      * getModifierMultiplier(playerModifiers, "workerSpeed");
+      * getModifierMultiplier(this.getWorkerTowerModifiers(worker), "workerSpeed");
     worker.vx = (dx / Math.max(1, distance)) * speed;
     worker.vy = (dy / Math.max(1, distance)) * speed;
     worker.x += worker.vx * seconds;
@@ -3795,15 +3831,16 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.ownedShopItemIds.push(item.id);
-    const healthAdd = item.effects.filter(({ stat }) => stat === "towerHealth").reduce((sum, modifier) => sum + modifier.add, 0);
-    if (healthAdd !== 0) {
-      for (const tower of this.towers.values()) {
-        if (tower.ownerId !== client.sessionId || !shopItemAppliesToTower(item, tower.definition)) continue;
-        const ratio = (1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth") + healthAdd) / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth"));
-        tower.maxHp *= ratio;
-        tower.hp *= ratio;
-      }
+
+    // Kuleye takilan esyalar satin alinca hicbir sey yapmaz; envantere girer ve
+    // etkisini ancak oyuncu bir kule sectiginde gosterir.
+    if (!isGlobalShopItem(item)) {
+      player.inventoryItemIds.push(item.id);
+      player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
+      client.send("shop:purchased", { itemId: item.id, price, toInventory: true });
+      return;
     }
+
     player.runModifiers.push(...item.effects);
     if (item.id === "nexus-kalkani") player.nexusShieldCharges += 3;
     if (item.id === "bariyer" || item.id === "ziftli-zemin") {
@@ -3820,13 +3857,55 @@ export class MatchRoom extends Room<MatchState> {
     client.send("shop:purchased", { itemId: item.id, price });
   }
 
+  /**
+   * Envanterdeki bir esyayi secilen kuleye takar.
+   *
+   * Takma geri alinamaz oldugu icin dogrulama tamamen sunucuda: sahiplik, esyanin
+   * gercekten envanterde olmasi, kulenin esyayla uyumlulugu ve 5'li tavan burada
+   * kontrol edilir. Arayuz ayni `canEquipShopItem` kuralini kullandigi icin
+   * normalde buraya reddedilecek bir istek gelmez.
+   */
+  private equipShopItem(client: Client, message: EquipShopItemMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const item = message.itemId ? getShopItem(message.itemId) : undefined;
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!player || !item || !tower || tower.ownerId !== client.sessionId) return;
+
+    const inventoryIndex = player.inventoryItemIds.indexOf(item.id);
+    if (inventoryIndex < 0) return;
+
+    const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
+    if (!check.ok) {
+      client.send("inventory:equip-rejected", { itemId: item.id, towerId: tower.id, reason: check.reason });
+      return;
+    }
+
+    player.inventoryItemIds.splice(inventoryIndex, 1);
+    tower.equippedShopItemIds.push(item.id);
+
+    // Can bonusu mevcut cana oranli uygulanmali, yoksa hasarli bir kule esya
+    // takildiginda tam cana donerdi.
+    const healthAdd = item.effects
+      .filter(({ stat }) => stat === "towerHealth")
+      .reduce((sum, modifier) => sum + modifier.add, 0);
+    if (healthAdd !== 0) {
+      const before = 1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth");
+      const ratio = (before + healthAdd) / Math.max(0.01, before);
+      tower.maxHp *= ratio;
+      tower.hp *= ratio;
+    }
+
+    tower.runModifiers.push(...item.effects);
+    client.send("inventory:equipped", { itemId: item.id, towerId: tower.id });
+  }
+
   private setTowerTargeting(client: Client, message: SetTowerTargetingMessage) {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId || !message.mode) return;
     if (tower.definition.engine?.attack.shape === "orbit") return;
     const required = message.mode === "weakest" || message.mode === "random" ? "avci-protokolu" : message.mode === "closest" || message.mode === "last" ? "nobetci-protokolu" : "";
-    if (required && !player.ownedShopItemIds.includes(required)) return;
+    if (required && !this.towerHasShopItem(tower, required)) return;
     tower.targetingMode = message.mode;
   }
 
@@ -4032,8 +4111,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getWorkerGatherSpeedMultiplier(worker: DroneModel) {
-    const modifiers = this.state?.players?.get(worker.ownerId)?.runModifiers ?? [];
-    return getModifierMultiplier(modifiers, "workerGatherSpeed");
+    return getModifierMultiplier(this.getWorkerTowerModifiers(worker), "workerGatherSpeed");
   }
 
   private getCrystalWorkerReactor(worker: DroneModel) {
@@ -4189,7 +4267,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
       this.runTowerTriggers(tower, "towerDeath");
-      if (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("enkaz-alani")) {
+      if (this.towerHasShopItem(tower, "enkaz-alani")) {
         const cell = worldToGrid(tower.x, tower.y, this.activeMap);
         this.debrisCells.set(`${cell.col}:${cell.row}`, Date.now() + 12000);
       }
@@ -4290,6 +4368,7 @@ export class MatchRoom extends Room<MatchState> {
       triggerCooldowns: {},
       runModifiers: [],
       targetedCardIds: [],
+      equippedShopItemIds: [],
       targetingMode: definition.engine?.targeting ?? "first",
       shopKillStacks: 0,
       shopWaveStacks: 0,
@@ -4798,10 +4877,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "onur") {
-      const enemy = Array.from(this.enemies.values()).sort((a, b) => b.hp - a.hp)[0];
-      if (enemy) {
-        this.damageEnemy(enemy, 220, 0, "ultimate", client.sessionId);
-      }
+      this.startSympathy();
       return;
     }
 
@@ -5180,7 +5256,7 @@ export class MatchRoom extends Room<MatchState> {
     const byId = new Map(enemies.map((enemy) => [enemy.id, enemy]));
     const selected = selectTowerTarget({
       mode,
-      canHitAir: tower.definition.engine?.canHitAir || this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("ucaksavar-kiti") || false,
+      canHitAir: Boolean(tower.definition.engine?.canHitAir) || this.towerHasShopItem(tower, "ucaksavar-kiti"),
       locksTarget: tower.definition.engine?.locksTarget,
       lockedTargetId: options.lockedTargetId,
       retainLockOutsideRange: options.retainLockOutsideRange,
@@ -5212,7 +5288,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    return Boolean(tower.definition.engine?.canHitAir || this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("ucaksavar-kiti"));
+    return Boolean(tower.definition.engine?.canHitAir) || this.towerHasShopItem(tower, "ucaksavar-kiti");
   }
 
   private getEnemiesNear(x: number, y: number, radius: number) {
@@ -5290,8 +5366,8 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.movementKind === "air") shopDamageAdd += getModifierAdd(damageModifiers, "airDamage");
     if (enemy.shield > 0) shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShielded");
     if (enemy.type === "brute") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsBrute");
-    if (damagePlayer?.ownedShopItemIds?.includes("kriyojen-hat") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
-    if (damagePlayer?.ownedShopItemIds?.includes("kan-bankasi")) shopDamageAdd += 0.2;
+    if (this.towerHasShopItem(damageSourceTower, "kriyojen-hat") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
+    if (this.towerHasShopItem(damageSourceTower, "kan-bankasi")) shopDamageAdd += 0.2;
     const critical = damageSourceTower?.definition.engine?.critical;
     const conditionalCritical = critical?.bonusChanceAgainstStatus;
     const conditionalCritChance = conditionalCritical && isStatusEffectActive(enemy.statusEffects[conditionalCritical.type], now)
@@ -5355,7 +5431,7 @@ export class MatchRoom extends Room<MatchState> {
           }
         }
       }
-      if (sourceTower && damagePlayer?.ownedShopItemIds?.includes("termal-funye") && damageType === "fire") {
+      if (sourceTower && this.towerHasShopItem(sourceTower, "termal-funye") && damageType === "fire") {
         this.applyEnemyStatusEffect(enemy, { type: "burn", magnitude: 0.015, durationMs: 4000, stacking: "refresh" }, now, { sourceTowerId, sourceOwnerId });
       }
     }
@@ -5376,8 +5452,8 @@ export class MatchRoom extends Room<MatchState> {
     const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceTower) {
       this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
-      if (damagePlayer?.ownedShopItemIds?.includes("zafer-serisi")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + 1);
-      if (damagePlayer?.ownedShopItemIds?.includes("ganimet-avcisi") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
+      if (this.towerHasShopItem(sourceTower, "zafer-serisi")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + 1);
+      if (this.towerHasShopItem(sourceTower, "ganimet-avcisi") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
     }
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
@@ -6675,6 +6751,7 @@ export class MatchRoom extends Room<MatchState> {
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
         ownedShopItemIds: [...player.ownedShopItemIds],
+        inventoryItemIds: [...player.inventoryItemIds],
         shopOffers: player.shopOffers,
         shopRerollPrice: getShopRerollPrice(player.shopRerolls),
         towersBuilt: player.towersBuilt,
@@ -6757,6 +6834,7 @@ export class MatchRoom extends Room<MatchState> {
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
         zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
         ,targetingMode: tower.definition.engine?.attack.executor === "orbit" ? undefined : tower.targetingMode
+        ,equippedShopItemIds: tower.equippedShopItemIds.length > 0 ? [...tower.equippedShopItemIds] : undefined
       })),
       projectiles: Array.from(this.projectiles.values())
         .filter((projectile) => !usesLinearBallistics(projectile.hitType)
@@ -6941,7 +7019,7 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerRange(tower: TowerModel) {
     const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range")
       * getModifierMultiplier(this.getTowerRunModifiers(tower), "range")
-      * (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("yalniz-kurt") && this.isTowerIsolated(tower) ? 1.15 : 1);
+      * (this.towerHasShopItem(tower, "yalniz-kurt") && this.isTowerIsolated(tower) ? 1.15 : 1);
     if (tower.definition.id === "warrior-2") {
       const bounds = this.getActiveWorldBounds();
       return applyRangeAura(Math.hypot(bounds.width, bounds.height));
@@ -7055,7 +7133,7 @@ export class MatchRoom extends Room<MatchState> {
       return getKinFireInterval(tower.level) * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier;
     }
 
-    const levelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
+    const levelMultiplier = getTowerLevelIntervalMultiplier(tower.definition.id, tower.level);
     const minimumInterval = 80;
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier * this.getMelisFavoriteFireIntervalMultiplier(tower) * this.getMelisEvolutionFireIntervalMultiplier(tower) * this.getMelisHedefciDoubtFireIntervalMultiplier(tower));
   }
@@ -7120,8 +7198,8 @@ export class MatchRoom extends Room<MatchState> {
     breakdown.mods.push({ source: "shop:zafer-serisi", scope: "player", stat: "damage", add: tower.shopKillStacks * 0.03 });
     breakdown.mods.push({ source: "shop:kidem", scope: "player", stat: "damage", add: tower.shopWaveStacks * 0.02 });
     const shopOwner = this.state.players.get(tower.ownerId);
-    if (shopOwner?.ownedShopItemIds?.includes("bitisik-devre")) breakdown.mods.push({ source: "shop:bitisik-devre", scope: "player", stat: "damage", add: Math.min(4, this.countAdjacentFriendlyTowers(tower)) * 0.08 });
-    if (shopOwner?.ownedShopItemIds?.includes("yalniz-kurt") && this.isTowerIsolated(tower)) breakdown.mods.push({ source: "shop:yalniz-kurt", scope: "player", stat: "damage", add: 0.25 });
+    if (this.towerHasShopItem(tower, "bitisik-devre")) breakdown.mods.push({ source: "shop:bitisik-devre", scope: "tower", stat: "damage", add: Math.min(4, this.countAdjacentFriendlyTowers(tower)) * 0.08 });
+    if (this.towerHasShopItem(tower, "yalniz-kurt") && this.isTowerIsolated(tower)) breakdown.mods.push({ source: "shop:yalniz-kurt", scope: "tower", stat: "damage", add: 0.25 });
 
     if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
       add("tower:warrior-6:wave-3", 1.2);
@@ -7166,6 +7244,31 @@ export class MatchRoom extends Room<MatchState> {
     ];
   }
 
+  /**
+   * Davranis acan esyalar artik oyuncunun degil kulenin uzerinde.
+   *
+   * Modifier'lar `tower.runModifiers` uzerinden zaten dogru kuleye gidiyor, ama
+   * "hava vurabilir", "kanatir", "seri biriktirir" gibi kilitler modifier degil
+   * kod dallari. Onlar da takili esya listesinden okunmali, yoksa bir kuleye
+   * takilan esya butun kuleleri etkilemeye devam ederdi.
+   */
+  private towerHasShopItem(tower: TowerModel | undefined, itemId: string) {
+    return Boolean(tower?.equippedShopItemIds.includes(itemId));
+  }
+
+  private ownerHasEquippedShopItem(ownerId: string, itemId: string) {
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId === ownerId && tower.equippedShopItemIds.includes(itemId)) return true;
+    }
+    return false;
+  }
+
+  /** Isci esyalari, iscinin o an hizmet ettigi binaya takili olanlardan gelir. */
+  private getWorkerTowerModifiers(worker: DroneModel) {
+    const tower = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    return tower && tower.ownerId === worker.ownerId ? tower.runModifiers : [];
+  }
+
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {
     return tower.streakDamageUntil > now ? tower.streakDamageMultiplier : 1;
   }
@@ -7183,7 +7286,7 @@ export class MatchRoom extends Room<MatchState> {
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
-    const previousLevelMultiplier = tower.definition.id === "warrior-4" ? 1 - (tower.level - 1) * 0.17 : 1 - (tower.level - 1) * 0.1;
+    const previousLevelMultiplier = getTowerLevelIntervalMultiplier(tower.definition.id, tower.level);
     const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
     const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
     return currentInterval / Math.max(1, previousInterval);
@@ -7553,11 +7656,80 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private startSympathy() {
+    this.sympathyUntil = Date.now() + scaleGameDuration(SYMPATHY_DURATION_MS);
+    this.sympathyBledEnemyIds.clear();
+    this.sympathyLinks = [];
+  }
+
+  /**
+   * Sempati agini her tick yeniden kurar ve baga degen dusmanlari isler.
+   *
+   * Ag her tick yeniden hesaplanir cunku ulti suresi boyunca kule kurulabilir,
+   * satilabilir veya yikilabilir; "en yakin kule" o anki sahaya gore gecerli
+   * olmali. Yavaslatma aura kanalindan gider: aura carpani her tickte 1'e
+   * donduruldugu icin dusman bagi gectigi anda yavaslama kendiliginden biter,
+   * ayrica bir sure takibi gerekmez.
+   */
+  private updateSympathy() {
+    const now = Date.now();
+    if (this.sympathyUntil <= now) {
+      if (this.sympathyLinks.length > 0) {
+        this.sympathyLinks = [];
+        this.sympathyBledEnemyIds.clear();
+      }
+      return;
+    }
+
+    this.sympathyLinks = buildSympathyLinks(Array.from(this.towers.values(), (tower) => ({
+      id: tower.id,
+      x: tower.x,
+      y: tower.y
+    })));
+
+    const halfWidth = this.scaleWorldDistance(SYMPATHY_LINK_HALF_WIDTH);
+    for (const link of this.sympathyLinks) {
+      this.beams.set(link.id, {
+        id: link.id,
+        definitionId: "onur-sympathy",
+        x1: link.x1,
+        y1: link.y1,
+        x2: link.x2,
+        y2: link.y2,
+        width: halfWidth * 2,
+        color: 0x2dd4bf,
+        ttlMs: Math.max(80, SNAPSHOT_SEND_INTERVAL_MS * 3)
+      });
+    }
+
+    const contacts = selectSympathyContacts(this.sympathyLinks, Array.from(this.enemies.values()), halfWidth);
+    for (const enemy of contacts) {
+      const resistedMultiplier = 1 - applyStatusResistance(
+        1 - SYMPATHY_SLOW_MULTIPLIER,
+        enemy.statusResistances.slow
+      );
+      enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+
+      if (this.sympathyBledEnemyIds.has(enemy.id)) continue;
+      this.sympathyBledEnemyIds.add(enemy.id);
+      this.applyEnemyStatusEffect(
+        enemy,
+        {
+          type: "bleed",
+          magnitude: SYMPATHY_BLEED_MAX_HEALTH_RATIO_PER_SECOND,
+          durationMs: SYMPATHY_BLEED_DURATION_MS,
+          stacking: "refresh"
+        },
+        now
+      );
+    }
+  }
+
   private advanceWaveGrowth() {
     const now = Date.now();
     for (const tower of this.towers.values()) {
       tower.shopKillStacks = 0;
-      if (this.state.players.get(tower.ownerId)?.ownedShopItemIds?.includes("kidem")) tower.shopWaveStacks += 1;
+      if (this.towerHasShopItem(tower, "kidem")) tower.shopWaveStacks += 1;
       for (const definition of tower.definition.engine?.stacks ?? []) {
         this.resetEngineStack(tower.stackStates, definition, "waveEnd");
       }
@@ -7959,11 +8131,6 @@ function getCharacterCardAxes(characterId: CharacterId): import("@karayel/shared
   return ["dps"];
 }
 
-function getObsessionDamageMultiplier(level: number) {
-  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 1.085349, 0.94697, 1.05753, 1.144, 1.162];
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
-}
-
 function getObsessionFearDurationMs(level: number) {
   if (level >= 10) {
     return 6000;
@@ -7976,27 +8143,6 @@ function getObsessionFearDurationMs(level: number) {
   }
 
   return 1500;
-}
-
-function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
-  const normalMultipliers = [1.3333, 1.6976, 2.1449, 2.7057, 3.0879, 3.3535, 3.6001, 3.8235, 4.0196, 4.1841];
-  const overdriveMultipliers = [1.92, 2.2001, 2.4709, 2.7273, 2.9643, 3.2194, 3.4561, 3.6706, 3.8589, 4.0167];
-  const multipliers = overdrive ? overdriveMultipliers : normalMultipliers;
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
-}
-
-function getDebugLaserFireInterval(level: number, overdrive: boolean) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  const normalRealMs = clampedLevel <= 5
-    ? 200 - (clampedLevel - 1) * 10
-    : 160 - (clampedLevel - 5) * 8;
-  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
-  return realMs * GAME_SPEED_MULTIPLIER;
-}
-
-function getUcubeGrowthDamageMultiplier(level: number) {
-  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
-  return multipliers[Math.min(Math.max(level, 1), 10) - 1] ?? 1;
 }
 
 function getUcubeWaveBonusLevel(completedWaves: number) {
@@ -8087,30 +8233,6 @@ function getZeynepCommandProfile(commandType: ZeynepCommandType, tier: ZeynepCom
   return scaleProfile(3000, chained ? 1.12 : 1.08);
 }
 
-function getTrackerFireInterval(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 720 - ((clampedLevel - 1) / 9) * (720 - 333);
-}
-
-function getZeynepHizaFireInterval(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 1000 - ((clampedLevel - 1) / 9) * 600;
-}
-
-function getZeynepHizaDamageCompensation(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  const oldInterval = Math.max(80, 330 * (1 - (clampedLevel - 1) * 0.1));
-  // Preserve the pre-nerf per-hit damage compensation. The doubled firing
-  // interval must lower DPS rather than silently doubling each projectile.
-  const compensatedInterval = 500 - ((clampedLevel - 1) / 9) * 300;
-  return compensatedInterval / oldInterval;
-}
-
-function getKinFireInterval(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 5000 - ((clampedLevel - 1) / 9) * 2000;
-}
-
 function getZeynepBaseRange(definition: TowerDefinition) {
   if (definition.id === "zeynep-2") {
     return ZEYNEP_SHOWCASE_BASE_LENGTH;
@@ -8137,10 +8259,6 @@ function getUcubeChainDamageMultiplier(tower: TowerModel) {
   if (tower.level >= 5) return 0.48;
   if (tower.level >= 4) return 0.46;
   return 0.42;
-}
-
-function getZeynepShowcaseBeamLength(level: number) {
-  return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
 }
 
 function getAbartiShowcaseRangeMultiplier(level: number) {

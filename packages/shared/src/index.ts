@@ -40,6 +40,8 @@ export type PlayerSnapshot = {
   goldSpent: number;
   experience: number;
   ownedShopItemIds?: string[];
+  /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
+  inventoryItemIds?: string[];
   shopOffers?: import("./shop/index.js").ShopItem[];
   shopRerollPrice?: number;
   towersBuilt: number;
@@ -173,6 +175,8 @@ export type TowerSnapshot = {
   zeynepFormationSize?: number;
   zeynepFormationLevel?: number;
   targetingMode?: import("./characters/common/types.js").TowerTargetingMode;
+  /** Bu kuleye takili magaza esyalari; takilan esya sokulemez. */
+  equippedShopItemIds?: string[];
 };
 
 export type StaticTowerSnapshot = Required<Pick<TowerSnapshot,
@@ -441,6 +445,10 @@ export {
   SHOP_REROLL_BASE_PRICE,
   SHOP_REROLL_PRICE_STEP,
   DEFAULT_SHOP_PRICE_GROWTH,
+  GLOBAL_SHOP_ITEM_IDS,
+  MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
+  canEquipShopItem,
+  isGlobalShopItem,
   shopItemAppliesToTower,
   getShopItemCount,
   getShopItemPrice,
@@ -450,7 +458,7 @@ export {
   drawShopOffers,
   shopCatalog
 } from "./shop/index.js";
-export type { ShopItem, ShopItemCategory, ShopState, ShopUnlock } from "./shop/index.js";
+export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
 export { applyEnemyMark, getMarkDamageMultiplier } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {
@@ -490,6 +498,46 @@ export {
   getWaveEnemyMaxHp,
   getWaveCompletionGold
 } from "./balance/index.js";
+export {
+  GAME_SPEED_MULTIPLIER,
+  GLOBAL_TOWER_RANGE_MULTIPLIER,
+  TOWER_RANGE_PER_LEVEL,
+  TOWER_MIN_FIRE_INTERVAL_MS,
+  ZEYNEP_SHOWCASE_BASE_LENGTH,
+  ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL,
+  getDebugLaserDamageMultiplier,
+  getDebugLaserFireInterval,
+  getKinFireInterval,
+  getObsessionDamageMultiplier,
+  getTowerBaseLevelDamage,
+  getTowerBaseLevelFireIntervalMs,
+  getTowerBaseLevelMinimumRange,
+  getTowerBaseLevelRange,
+  getTowerDisplayStats,
+  getTowerImpactDamageCompensation,
+  getTowerLevelIntervalMultiplier,
+  getTowerRealDps,
+  getTowerRealFireIntervalMs,
+  getTrackerFireInterval,
+  getUcubeGrowthDamageMultiplier,
+  getZeynepHizaDamageCompensation,
+  getZeynepHizaFireInterval,
+  getZeynepShowcaseBeamLength,
+  hasGlobalTowerRange
+} from "./tower-stats/index.js";
+export type { TowerDisplayStats } from "./tower-stats/index.js";
+export {
+  SYMPATHY_BLEED_DURATION_MS,
+  SYMPATHY_BLEED_MAX_HEALTH_RATIO_PER_SECOND,
+  SYMPATHY_DURATION_MS,
+  SYMPATHY_LINK_HALF_WIDTH,
+  SYMPATHY_SLOW_MULTIPLIER,
+  buildSympathyLinks,
+  getDistanceToSegment,
+  isTouchingSympathyLink,
+  selectSympathyContacts
+} from "./sympathy/index.js";
+export type { SympathyContactTarget, SympathyLink, SympathyTower } from "./sympathy/index.js";
 export { dispatchTowerTriggers } from "./triggers/index.js";
 export type { DispatchTowerTriggerOptions, TowerTriggerDispatchResult, TriggerCooldowns } from "./triggers/index.js";
 export { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier, isPointInsideTowerAura } from "./auras/index.js";

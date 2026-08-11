@@ -35,4 +35,4 @@ The web client expects the game server at `ws://localhost:2567` by default.
 - Vercel should use the root project with `vercel.json`.
 - Fly.io deploys the game server from `apps/server/fly.toml`.
 - Add `FLY_API_TOKEN` as a GitHub Actions secret before enabling automatic Fly deploys.
-- For production, set `VITE_GAME_SERVER_URL` to the Fly WebSocket URL, for example `wss://karayel-online-server.fly.dev`.
+- For production, set `VITE_GAME_SERVER_URL` to the Fly WebSocket URL. The Fly app is `karayel-online`, so that is `wss://karayel-online.fly.dev` — which is also the client's built-in production default.
