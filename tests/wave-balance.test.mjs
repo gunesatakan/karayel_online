@@ -14,6 +14,9 @@ import {
   getWaveEnemyMaxHp,
   getWaveHpMultiplier,
   getTowerRealDps,
+  getTowerBaseLevelDamage,
+  calculateDamageTaken,
+  EARLY_WAVE_CONVERGENCE_WAVE,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 
@@ -75,6 +78,86 @@ test("seviye egrisi diger guc kaynaklarini ezmez", () => {
       const ratio = getTowerRealDps(tower, 10) / getTowerRealDps(tower, 1);
       assert.ok(ratio <= 30, `${tower.id}: seviye egrisi x${ratio.toFixed(1)} ile cok dik`);
     }
+  }
+});
+
+/**
+ * Ilk dalgalarin referans hissi.
+ *
+ * Dalga egrisi her dalgada ayni oranda buyudugu icin 1. dalga dusmani bile taban
+ * caninin birkac kati canla geliyordu ve seviye 1 bir kule en zayif dusmani bile
+ * tek vurusta dusuremiyordu. Ilk dalgalar oyuncunun kurulusunu tanidigi yer;
+ * referans olarak seviye 1 Hiza Emri normal dusmani tek, zirhliyi iki vurusta
+ * oldurmeli.
+ *
+ * Egri, kule hasari ya da dusman statlari degistiginde bu his sessizce kayar,
+ * o yuzden sayilar degil hissin kendisi sabitleniyor.
+ */
+test("ilk üç dalgada seviye 1 Hiza Emri referans vuruş sayısını tutturur", () => {
+  const hiza = towerCatalog.zeynep.find((tower) => tower.id === "zeynep-1");
+  assert.ok(hiza);
+  const shotDamage = getTowerBaseLevelDamage(hiza, 1);
+
+  const hitsToKill = (enemyType, wave) => {
+    const enemy = getEnemyCombatDefinition(enemyType);
+    let hp = getWaveEnemyMaxHp(enemy.maxHp, wave);
+    // MatchRoom.spawnEnemy ile birebir: can denge carpanini alir, kalkan almaz.
+    let shield = Math.round(enemy.shield * getWaveHpMultiplier(wave));
+    let hits = 0;
+    while (hp > 0 && hits < 50) {
+      const result = calculateDamageTaken(
+        { amount: shotDamage, damageType: hiza.damageType, hitType: hiza.hitType },
+        {
+          armor: enemy.armor,
+          shield,
+          damageResistances: enemy.damageResistances,
+          hitTypeResistances: enemy.hitTypeResistances
+        }
+      );
+      shield = result.remainingShield;
+      hp -= result.hpDamage;
+      hits += 1;
+    }
+    return hits;
+  };
+
+  for (const wave of [1, 2, 3]) {
+    assert.equal(hitsToKill("grunt", wave), 1, `dalga ${wave}: grunt tek vurusta olmuyor`);
+    assert.equal(hitsToKill("runner", wave), 1, `dalga ${wave}: runner tek vurusta olmuyor`);
+    assert.equal(hitsToKill("shooter", wave), 2, `dalga ${wave}: shooter iki vurusta olmuyor`);
+    assert.equal(hitsToKill("brute", wave), 2, `dalga ${wave}: brute iki vurusta olmuyor`);
+  }
+});
+
+/**
+ * Yumusatma yalnizca erken dalgalari ilgilendirir.
+ *
+ * Rampa `EARLY_WAVE_CONVERGENCE_WAVE` dalgasinda mevcut egriye oturur; o dalgadan
+ * itibaren tek bir sayi bile degismemeli, yoksa gec oyun dengesi farkinda
+ * olmadan kayar.
+ */
+test("erken yumuşatma 10. dalgadan sonra hiçbir şeyi değiştirmez", () => {
+  for (let wave = EARLY_WAVE_CONVERGENCE_WAVE; wave <= FINAL_WAVE; wave += 1) {
+    const smoothed = getWaveHpMultiplier(wave);
+    const original = ENEMY_HP_WAVE_MULTIPLIER ** (wave - 1);
+    assert.ok(Math.abs(smoothed - original) < 1e-9, `dalga ${wave}: egri kaymis`);
+  }
+
+  // Ve rampa gercekten yumusatiyor: erken dalgalar duz egrinin altinda kalmali.
+  for (let wave = 1; wave < EARLY_WAVE_CONVERGENCE_WAVE; wave += 1) {
+    assert.ok(
+      getWaveHpMultiplier(wave) < ENEMY_HP_WAVE_MULTIPLIER ** (wave - 1),
+      `dalga ${wave}: yumusatma islememis`
+    );
+  }
+});
+
+test("dalga canı hiçbir dalgada geriye gitmez", () => {
+  for (let wave = 2; wave <= FINAL_WAVE; wave += 1) {
+    assert.ok(
+      getWaveHpMultiplier(wave) > getWaveHpMultiplier(wave - 1),
+      `dalga ${wave}: can carpani onceki dalgadan dusuk`
+    );
   }
 });
 

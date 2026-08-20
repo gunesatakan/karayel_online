@@ -45,8 +45,38 @@ export function getArenaWaveEnemyCount(wave: number, mapScale: number, playerCou
   return Math.max(1, Math.round(getWaveEnemyCount(wave) * safeMapScale * multiplayerMultiplier));
 }
 
+/**
+ * Erken dalgalarin yumusatilmasi.
+ *
+ * Egri her dalgada ayni oranda buyudugu icin 1. dalga dusmani bile taban
+ * caninin `ENEMY_HP_BALANCE_MULTIPLIER` kati kadar canla geliyordu; seviye 1
+ * bir Hiza Emri en zayif dusmani bile tek vurusta oldremiyordu. Ilk dalgalar
+ * oyuncunun kurulusunu tanidigi yer olmali, direnc gosterdigi yer degil.
+ *
+ * Rampa 1. dalgada mevcut egrinin `EARLY_WAVE_HP_RATIO` katindan basliyor ve
+ * hizlanarak `EARLY_WAVE_CONVERGENCE_WAVE` dalgasinda mevcut egriye tam olarak
+ * oturuyor. O dalgadan sonrasi hic degismiyor.
+ *
+ * Referans olarak seviye 1 Hiza Emri ilk uc dalgada normal dusmani tek,
+ * zirhliyi iki vurusta oldrmeli; `wave-balance` testi bunu sabitliyor. Tek bir
+ * geometrik egri bu sarti tutturamiyor -- 10. dalgaya yetismek icin gereken hiz
+ * 3. dalgayi zaten bandin disina tasiyor -- bu yuzden rampa ussel bir hizlanma
+ * tasiyor.
+ */
+export const EARLY_WAVE_HP_RATIO = 0.43;
+export const EARLY_WAVE_RAMP_EXPONENT = 2.3;
+export const EARLY_WAVE_CONVERGENCE_WAVE = 10;
+
 export function getWaveHpMultiplier(wave: number) {
-  return ENEMY_HP_WAVE_MULTIPLIER ** Math.max(0, wave - 1);
+  const safeWave = Math.max(1, wave);
+  const fullCurve = ENEMY_HP_WAVE_MULTIPLIER ** (safeWave - 1);
+  if (safeWave >= EARLY_WAVE_CONVERGENCE_WAVE) {
+    return fullCurve;
+  }
+
+  const convergence = ENEMY_HP_WAVE_MULTIPLIER ** (EARLY_WAVE_CONVERGENCE_WAVE - 1);
+  const progress = (safeWave - 1) / (EARLY_WAVE_CONVERGENCE_WAVE - 1);
+  return EARLY_WAVE_HP_RATIO * (convergence / EARLY_WAVE_HP_RATIO) ** (progress ** EARLY_WAVE_RAMP_EXPONENT);
 }
 
 export function getWaveEnemyMaxHp(baseHp: number, wave: number, healthMultiplier = 1) {
