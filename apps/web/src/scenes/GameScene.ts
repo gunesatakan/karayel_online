@@ -56,7 +56,7 @@ import {
   type WireGameSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
-import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, setActiveLobbyRoom } from "../online-session";
+import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
 import type { HudState } from "../game-control-ui";
 
@@ -1766,12 +1766,16 @@ export class GameScene extends Phaser.Scene {
         this.room = existingRoom;
       } else {
         const client = getSharedClient(gameServerUrl);
-        this.room = await client.create("match", {
+        // Lobiden gecmeden dogrudan baslatma yolu. Menudeki iki yol rezervasyon
+        // yeniden denemesini kullaniyordu ama burasi atlanmisti; oyunu dogrudan
+        // baslatan oyuncu, uyanan ya da deploy edilen sunucuda hatayi ham haliyle
+        // goruyordu.
+        this.room = await retryExpiredSeatReservation(() => client.create("match", {
           playerName: this.selectedCharacter.displayName,
           characterId: this.selectedCharacterId,
           mapData: this.selectedMapData,
           autoStart: true
-        });
+        }));
       }
       this.localSessionId = this.room.sessionId;
       this.emitHudState({ status: `Oda: ${this.room.roomId}` });
