@@ -27,16 +27,31 @@ export const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 
 const clampLevel = (level: number) => Math.min(Math.max(Math.round(level), 1), 10);
 
+const levelRatio = (level: number) => (clampLevel(level) - 1) / 9;
+
+/**
+ * Obsesyon'un seviye egrisi.
+ *
+ * Eskiden 1.0 civarinda salinan elle yazilmis bir tabloydu ve 6->7 gecisinde
+ * 1.085'ten 0.947'ye **duserek** kuleyi seviye atlayinca zayiflatiyordu. Asil
+ * gucu zaten ayni hedefte biriken `obsession` stacki (vurus basina +%20, tavan
+ * x3); seviye egrisinin isi tek hedef kimligini duz bir rampayla desteklemek.
+ */
 export function getObsessionDamageMultiplier(level: number) {
-  const multipliers = [1, 1.018, 1.036, 1.054, 1.072, 1.085349, 0.94697, 1.05753, 1.144, 1.162];
-  return multipliers[clampLevel(level) - 1] ?? 1;
+  return 1 + levelRatio(level) * 0.55;
 }
 
+/**
+ * Debug Lazer'in seviye egrisi.
+ *
+ * Onceki tablo 1->10 arasinda x3.14 buyuyordu; genel egri x48 iken bu makuldu,
+ * x12'ye inince kule tek basina asiri buyuk kaliyordu. Kimligi "cok sik, kucuk
+ * vurus" oldugu icin egri korunuyor ama buyume orani kisiliyor.
+ */
 export function getDebugLaserDamageMultiplier(level: number, overdrive: boolean) {
-  const normalMultipliers = [1.3333, 1.6976, 2.1449, 2.7057, 3.0879, 3.3535, 3.6001, 3.8235, 4.0196, 4.1841];
-  const overdriveMultipliers = [1.92, 2.2001, 2.4709, 2.7273, 2.9643, 3.2194, 3.4561, 3.6706, 3.8589, 4.0167];
-  const multipliers = overdrive ? overdriveMultipliers : normalMultipliers;
-  return multipliers[clampLevel(level) - 1] ?? 1;
+  const base = overdrive ? 1.92 : 1.3333;
+  const growth = overdrive ? 0.45 : 0.74;
+  return base * (1 + levelRatio(level) * growth);
 }
 
 export function getDebugLaserFireInterval(level: number, overdrive: boolean) {
@@ -48,9 +63,20 @@ export function getDebugLaserFireInterval(level: number, overdrive: boolean) {
   return realMs * GAME_SPEED_MULTIPLIER;
 }
 
+/**
+ * Ucube'nin seviye egrisi.
+ *
+ * Onceki tablo `[0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05]`
+ * hem monotonik degildi -- 6. seviyeden 7'ye gecmek DPS'i 59.8'den 48.5'e
+ * dusuruyordu, yani oyuncu altin ve deneyim harcayip kuleyi kotulestiriyordu --
+ * hem de odemenin tamamini 9. ve 10. seviyeye yigiyordu.
+ *
+ * Ucube'nin "zamanla buyur" kimligi zaten dalga basina isleyen `waveBonusLevel`
+ * mekaniginde; seviye egrisinin ayrica geciktirmesi gereksiz. Rampa dusuk
+ * basliyor ama duzgun tirmaniyor.
+ */
 export function getUcubeGrowthDamageMultiplier(level: number) {
-  const multipliers = [0.45, 0.4, 0.34, 0.34, 0.35, 0.42, 0.24, 0.25, 0.64, 1.05];
-  return multipliers[clampLevel(level) - 1] ?? 1;
+  return 0.5 + levelRatio(level) * 0.55;
 }
 
 export function getTrackerFireInterval(level: number) {
@@ -78,9 +104,25 @@ export function getZeynepShowcaseBeamLength(level: number) {
   return ZEYNEP_SHOWCASE_BASE_LENGTH + (Math.max(1, level) - 1) * ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL;
 }
 
-/** Obsesyon speeds up faster per level than everything else. */
-export function getTowerLevelIntervalMultiplier(definitionId: string, level: number) {
-  return definitionId === "warrior-4" ? 1 - (level - 1) * 0.17 : 1 - (level - 1) * 0.1;
+/**
+ * Seviye basina atis araligi kazanci.
+ *
+ * Hasar egrisiyle birlikte kisildi: -%10 iken 10. seviyede aralik taban degerin
+ * onda birine iniyordu ve hasar buyumesiyle carpilinca seviye tek basina her
+ * seyi belirliyordu. Detay icin `DAMAGE_PER_LEVEL`.
+ */
+export const FIRE_INTERVAL_PER_LEVEL = 0.06;
+
+/**
+ * Obsesyon'un ayri bir adimi vardi (-%17) ama bu hicbir zaman atis hizina
+ * donusmuyordu: `impact` kuleleri sabit aralikla ateS ediyor ve kazanilmayan
+ * hiz `getTowerImpactDamageCompensation` uzerinden hasara ceviriliyor. Yani ayri
+ * adim yalnizca gizli bir hasar carpani uretiyordu ve 10. seviyede kuleyi genel
+ * egrinin bes katina ciakriyordu. Kimlik artik gorunur yerde: ayni hedefte
+ * biriken stack.
+ */
+export function getTowerLevelIntervalMultiplier(_definitionId: string, level: number) {
+  return 1 - (level - 1) * FIRE_INTERVAL_PER_LEVEL;
 }
 
 /**

@@ -1,6 +1,7 @@
-import type { CardScope, CardTowerProfile } from "../cards/index.js";
+import type { CardScope, CardTowerProfile, Unlock } from "../cards/index.js";
 import { cardAppliesToTower } from "../cards/index.js";
 import type { TowerAxis } from "../characters/common/types.js";
+import type { TowerGrant } from "../grants/index.js";
 import type { Modifier } from "../modifiers/index.js";
 
 export type ShopItemCategory = "power" | "class" | "utility" | "map" | "risk";
@@ -19,20 +20,16 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   "nexus-kalkani",
   "riskli-yatirim",
   "bariyer",
-  "ziftli-zemin"
+  "ziftli-zemin",
+  // Ulti sarji oyuncunun, kulenin degil; bir kuleye takilmasi anlamsiz olurdu.
+  "sarj-kondansatoru"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */
 export const MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER = 5;
 
-export type ShopUnlock =
-  | "targeting:weakest" | "targeting:closest" | "targeting:last" | "targeting:random"
-  | "status:burn" | "status:chill"
-  | "canHitAir"
-  | "trigger:debrisOnDeath"
-  | "stack:kill" | "stack:wave"
-  | "adjacencyBonus" | "isolationBonus"
-  | "ammoDrop" | "goldInterest" | "nexusShield" | "bloodBank";
+/** Kilitler kartlarla ortak; tanim `cards` modulunde duruyor. */
+export type ShopUnlock = Unlock;
 
 export type ShopItem = {
   id: string;
@@ -50,6 +47,8 @@ export type ShopItem = {
   unlockWave?: number;
   effects: Modifier[];
   unlocks?: ShopUnlock[];
+  /** Kartlarla ayni motor dilbilgisi; takildigi kulenin motoruna eklenir. */
+  grants?: TowerGrant;
 };
 
 export type ShopState = {
@@ -116,9 +115,6 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("madenci-eldiveni", "Madenci Eldiveni", "Takıldığı binanın kaynak çıkarma hızı +%20; en fazla 5 kez alınır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("madenci-eldiveni", "workerGatherSpeed", 0.2)] }),
   defineItem("seri-cephane-hatti", "Seri Cephane Hattı", "Takıldığı binanın cephane üretim hızı +%25; en fazla 5 kez alınır.", "utility", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("seri-cephane-hatti", "ammoProduction", 0.25)] }),
   defineItem("isci-botlari", "İşçi Botları", "Takıldığı binaya hizmet eden işçilerin hareket hızı +%15; en fazla 5 kez alınır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("isci-botlari", "workerSpeed", 0.15)] }),
-  defineItem("hassas-servo", "Hassas Servo", "Kule dönüş hızı +%15; en fazla 5 kez alınır.", "power", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("hassas-servo", "turnRate", 0.15)] }),
-  defineItem("balistik-itici", "Balistik İtici", "Projectile, wave ve impact hızı +%20; en fazla 5 kez alınır.", "power", 30, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, scope: { kind: "tagged", hitTypes: ["projectile", "wave", "impact"] }, effects: [effect("balistik-itici", "projectileSpeed", 0.2)] }),
-  defineItem("ince-ayar", "İnce Ayar", "Kule isabeti +%10; 15 derecelik ateş açısını azaltır ve en fazla 5 kez alınır.", "power", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("ince-ayar", "accuracy", 0.1)] }),
   defineItem("namlu-yatagi", "Namlu Yatağı", "Kule dönüş hızı +%35; en fazla 2 kez alınır.", "power", 100, { repeatable: true, maxStacks: 2, effects: [effect("namlu-yatagi", "turnRate", 0.35)] }),
   defineItem("nisangah", "Nişangâh", "Kule isabeti +%30; en fazla 2 kez alınır.", "power", 95, { repeatable: true, maxStacks: 2, effects: [effect("nisangah", "accuracy", 0.3)] }),
   defineItem("hafif-muhimmat", "Hafif Mühimmat", "Mermi hızı +%40; en fazla 2 kez alınır.", "power", 85, { repeatable: true, maxStacks: 2, effects: [effect("hafif-muhimmat", "projectileSpeed", 0.4)] }),
@@ -164,6 +160,47 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("faiz-hesabi", "Faiz Hesabı", "Dalga sonunda altının %8'ini, en fazla 60 altın kazandırır.", "utility", 140, { unlocks: ["goldInterest"] }),
   defineItem("ganimet-avcisi", "Ganimet Avcısı", "Düşmanlar %20 ihtimalle 4 mühimmat düşürür.", "utility", 90, { unlocks: ["ammoDrop"] }),
 
+  // Saldiri sekline gore ayrisan esyalar. Sekil filtresi her kulede dolu oldugu
+  // icin hicbiri olu icerik degil; vurus ve hasar turu ise kulelerin yarisinda
+  // tanimsiz, o yuzden dar kapsamlar sekil uzerinden kuruluyor.
+  defineItem("koni-yayici", "Koni Yayıcı", "Koni saldıran kulelerin durum etkisi gücü +%45.", "class", 95, { axes: ["cc"], scope: { kind: "tagged", shapes: ["cone"] }, effects: [effect("koni-yayici", "statusMagnitude", 0.45)] }),
+  defineItem("hat-namlusu", "Hat Namlusu", "Hat saldıran kulelerin hasarı +%40.", "class", 100, { scope: { kind: "tagged", shapes: ["line"] }, effects: [effect("hat-namlusu", "damage", 0.4)] }),
+  defineItem("yorunge-rulmani", "Yörünge Rulmanı", "Yörünge kulelerinin hasarı +%40, ısısı +%20.", "class", 95, { scope: { kind: "tagged", shapes: ["orbit"] }, effects: [effect("yorunge-rulmani", "damage", 0.4), effect("yorunge-rulmani", "heat", 0.2)] }),
+  defineItem("isin-prizmasi", "Işın Prizması", "Işın kulelerinin hasarı +%45, soğuması -%15.", "class", 105, { scope: { kind: "tagged", shapes: ["beam"] }, effects: [effect("isin-prizmasi", "damage", 0.45), effect("isin-prizmasi", "cooling", -0.15)] }),
+
+  defineItem("ganimet-kesesi", "Ganimet Kesesi", "Düşman altını +%20.", "utility", 110, { effects: [effect("ganimet-kesesi", "goldGain", 0.2)] }),
+  defineItem("ikmal-hatti", "İkmal Hattı", "Takıldığı kulenin atış yakıtı tüketimi -%30.", "utility", 95, { effects: [effect("ikmal-hatti", "shotFuelCost", -0.3)] }),
+
+  // Motor esyalari. Esya tek bir kuleye kalici olarak takildigi icin grant
+  // dilbilgisi burada kartlardan daha da yerinde: verilen davranis o kulenin
+  // kimligi olur, butun kurulusa yayilmaz.
+  defineItem("sabir-modulu", "Sabır Modülü", "Aynı hedefe her vuruşta hasar +%5; hedef değişince sıfırlanır.", "power", 130, {
+    grants: { stacks: [{ id: "shop-sabir", trigger: "sameTarget", stat: "damage", perStack: 0.05, max: 10, resetOn: "targetChange" }] }
+  }),
+  defineItem("delici-uc", "Delici Uç", "Tek hedef ve hat saldıran kuleler 1 düşman daha deler.", "class", 120, {
+    scope: { kind: "tagged", shapes: ["single", "line"] },
+    grants: { attack: { pierceCount: 1 } }
+  }),
+  defineItem("ek-bicak-yuvasi", "Ek Bıçak Yuvası", "Yörünge kulelerine 1 bıçak ekler, yakıt tüketimi +%35.", "class", 135, {
+    scope: { kind: "tagged", shapes: ["orbit"] },
+    effects: [effect("ek-bicak-yuvasi", "shotFuelCost", 0.35)],
+    grants: { attack: { bladeCount: 1 } }
+  }),
+  defineItem("buz-serpintisi", "Buz Serpintisi", "Kulenin vuruşları 1,5 saniye %20 yavaşlatır.", "class", 125, {
+    axes: ["cc"],
+    grants: { statusEffects: [{ type: "chill", magnitude: 0.2, durationMs: 1500, stacking: "refresh" }] }
+  }),
+  defineItem("intikam-devresi", "İntikam Devresi", "Menzilinden düşman kaçan kule 8 saniye +%80 hasar verir.", "power", 115, {
+    grants: { triggers: [{ event: "escape", effect: "surge", cooldownMs: 8000 }] }
+  }),
+
+  // Isi ekseni esyalari kart karsiliklarindan daha keskin: tek kuleyi
+  // baglandiklari icin butun kurulusu riske atmazlar.
+  defineItem("kizil-namlu", "Kızıl Namlu", "Her sıcaklık derecesi için hasar +%0,6 ama kule 80 derecede kilitlenir.", "power", 140, { unlocks: ["heat:runHot"] }),
+  defineItem("kriyostat", "Kriyostat", "Sıcaklığı 20'nin altındayken kritik şansı +%25.", "power", 135, { unlocks: ["heat:coldCrit"] }),
+  defineItem("tahliye-valfi", "Tahliye Valfi", "Enerjisi biten kule 4 saniye mühimmatla ateş etmeyi sürdürür.", "utility", 120, { unlocks: ["energy:backupLine"] }),
+  defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
+
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),
   defineItem("kan-bankasi", "Kan Bankası", "Her dalga 5 nexus canı karşılığı kule hasarı +%20 olur.", "risk", 75, { unlocks: ["bloodBank"] })
 ];
@@ -184,8 +221,10 @@ export const shopCatalog: ShopItem[] = rawShopCatalog.map((item) => ({
   }))
 }));
 
+const shopItemsById = new Map(shopCatalog.map((item) => [item.id, item]));
+
 export function getShopItem(itemId: string) {
-  return shopCatalog.find((item) => item.id === itemId);
+  return shopItemsById.get(itemId);
 }
 
 export function isGlobalShopItem(item: ShopItem) {

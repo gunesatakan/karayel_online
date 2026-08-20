@@ -30,7 +30,11 @@ export type ModifierStat =
   | "airDamage"
   | "damageVsShielded"
   | "damageVsBrute"
-  | "targetLockMs";
+  | "targetLockMs"
+  /** Ulti sarj hizi carpani. Beceriler ve ulti roguelike katmanina bu iki statla baglanir. */
+  | "ultimateCharge"
+  /** Beceri bekleme suresi; negatif deger bekleme suresini kisaltir. */
+  | "skillCooldown";
 
 export type Modifier = {
   source: string;

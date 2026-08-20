@@ -47,6 +47,7 @@ import {
   type ProjectileSnapshot,
   type ProjectileSpawnSnapshot,
   type ServerPerfSnapshot,
+  hasUnlockBit,
   type StaticEnemySnapshot,
   type StaticSnapshot,
   type StaticTowerSnapshot,
@@ -5127,9 +5128,18 @@ export class GameScene extends Phaser.Scene {
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
     const deadWorkers = this.localPlayerSnapshot?.deadLogisticsWorkers ?? [];
     const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
+    // Hedefleme modlari artik kulenin acik kilitlerinden okunur; kilidi veren
+    // sey esya da olabilir kart da, ikisini de sunucu cozup gonderiyor.
+    const towerUnlockBits = selectedTower?.unlockBits;
     const targetModes = [definition?.engine?.targeting ?? "first"];
-    if (ownedShopItems.includes("avci-protokolu")) targetModes.push("weakest", "random");
-    if (ownedShopItems.includes("nobetci-protokolu")) targetModes.push("closest", "last");
+    for (const [unlock, mode] of [
+      ["targeting:weakest", "weakest"],
+      ["targeting:random", "random"],
+      ["targeting:closest", "closest"],
+      ["targeting:last", "last"]
+    ] as const) {
+      if (hasUnlockBit(towerUnlockBits, unlock) && !targetModes.includes(mode)) targetModes.push(mode);
+    }
 
     const orientationHint = !selectedTower && this.selectedTowerDefinition.id === "zeynep-8"
       ? ` | Yon: ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`

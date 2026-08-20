@@ -29,7 +29,10 @@ export const melisTowers: TowerDefinition[] = ([
     role: "Öfke patlaması",
     description: "Hedeflediği düşmanı menzilinden çıkana kadar öldüremezse öfkelenir ve çevresine iki katı alan hasarı ile yarım saniyelik korku dalgası salar. Yani öldüremediği her hedef bir patlamaya dönüşür. Stres baskınken bu patlama kendi alanındaki dost kuleleri de yarım saniye durdurur; güçlüdür ama kontrolsüzdür.",
     classType: "damage",
-    damageType: "psychic",
+    // Melis'in alti kulesi de psisikti: tek bir dusman direnci butun kurulusu
+    // birden zayiflatiyor, hasar turune kapsanan kartlarin hicbiri ise
+    // yaramiyordu. Parlama adiyla da ortusen isik hasarina alindi.
+    damageType: "light",
     hitType: "projectile",
     cost: 92,
     upgradeCost: 67,
@@ -48,7 +51,8 @@ export const melisTowers: TowerDefinition[] = ([
     role: "Biriken lanet yükü",
     description: "Alanındaki düşmanlara lanet yükler. Lanet doğrudan hasar vermez, sınırsız birikir; lanetli düşman öldüğünde biriktirdiği yük kadar çevresine psişik hasar patlatır. Yani asıl hasarı öldüren kule değil, ölen düşman verir. Kalabalık dalgalarda zincirleme patlama kurmak için kullanılır.",
     classType: "damage",
-    damageType: "psychic",
+    // Lanet curumedir; psisik yiginini kirmak icin hucresel hasara alindi.
+    damageType: "cellular",
     hitType: "curse",
     cost: 109,
     upgradeCost: 74,

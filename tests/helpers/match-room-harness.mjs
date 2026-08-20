@@ -37,6 +37,7 @@ export function createRoom(characterId) {
     runModifiers: [],
     ownedShopItemIds: [],
     inventoryItemIds: [],
+    ownedCardIds: [],
     reputation: 0,
     authorityChain: 0,
     authorityQuality: 0,

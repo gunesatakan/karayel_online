@@ -16,9 +16,16 @@ test("yeni ekonomik mağaza geliştirmeleri ortak modifier verisi taşır", () =
   assert.equal(effectFor("madenci-eldiveni").stat, "workerGatherSpeed");
   assert.equal(effectFor("seri-cephane-hatti").stat, "ammoProduction");
   assert.equal(effectFor("isci-botlari").stat, "workerSpeed");
-  assert.equal(effectFor("hassas-servo").stat, "turnRate");
-  assert.equal(effectFor("balistik-itici").stat, "projectileSpeed");
-  assert.equal(effectFor("ince-ayar").stat, "accuracy");
+});
+
+test("namlu geliştirmeleri tek seferlik ve güçlü kalır", () => {
+  // Ucuz ve tekrarlanabilir kucuk kademeler (hassas-servo, ince-ayar,
+  // balistik-itici) buyuk kardeslerinin kopyasiydi; katalogdan cikarildilar.
+  const strongFor = (id) => shopCatalog.find((candidate) => candidate.id === id);
+  assert.equal(strongFor("namlu-yatagi").effects[0].stat, "turnRate");
+  assert.equal(strongFor("nisangah").effects[0].stat, "accuracy");
+  assert.equal(strongFor("hafif-muhimmat").effects[0].stat, "projectileSpeed");
+  assert.equal(shopCatalog.filter((item) => item.id === "hassas-servo").length, 0);
 });
 
 /**

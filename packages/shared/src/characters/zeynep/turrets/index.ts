@@ -84,8 +84,11 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       classType: "support",
       damageType: "none",
       hitType: "aura",
-      cost: 400,
-      upgradeCost: 300,
+      // 400 altin, 10 kule kapasitesinde neredeyse hic alinamayacak bir fiyatti:
+      // kendisi ateS etmeyen ve yalnizca baska bir kulenin sentezini guclendiren
+      // bir yatirim icin iki hasar kulesinden vazgecmek gerekiyordu.
+      cost: 220,
+      upgradeCost: 150,
       range: 0,
       damage: 0,
       fireIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS,

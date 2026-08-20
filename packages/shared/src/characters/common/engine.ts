@@ -33,10 +33,30 @@ type EngineProfile = Omit<TowerEngineConfig, "resources" | "levelScaling"> & {
   levelScaling?: TowerEngineConfig["levelScaling"];
 };
 
+/**
+ * Seviye basina hasar buyumesi.
+ *
+ * Eskiden 0.42 idi ve seviye basina -%10 atis araligiyla birlesince bir kuleyi
+ * 1'den 10'a cikarmak DPS'i **48 katina** ciakriyordu. Kart katmaninin tamami bir
+ * kuleye en fazla 2-3 kat verirken, karakterlerin imza mekanikleri de +%24 ile
+ * +%32 arasindaydi. Yani oyunun butun ilginc kararlari -- Atakan'in yalnizlik
+ * yerlesimi, Zeynep'in dizilim geometrisi, kart secimleri -- tek bir sayinin
+ * golgesinde kaliyor, dogru oynanis "iki kuleyi maxla" oluyordu.
+ *
+ * Yeni degerlerle 1->10 araligi ~12 kata iner. Seviye hala en buyuk tek kaynak
+ * ama artik tek kaynak degil.
+ *
+ * Seviyenin katkisi ayni zamanda atis hizindan hasara kaydirildi: aralik adimi
+ * -%10'dan -%6'ya inerken hasar adimi 0.42'den 0.50'ye cikti. Boylece elle
+ * ayarlanmis aralik egrileri (Takipci 0.46, Hiza 0.40, Kin ve Debug 0.60) genel
+ * egriyle (0.46) ayni bantta bulusuyor; onceki -%10 ile hepsi ayri dunyadaydi.
+ */
+const DAMAGE_PER_LEVEL = 0.5;
+
 const defaultEngine: TowerEngineConfig = {
   targeting: "first",
   attack: { shape: "single", pierceCount: 1 },
-  levelScaling: [{ stat: "damage", perLevel: 0.42, source: "base" }],
+  levelScaling: [{ stat: "damage", perLevel: DAMAGE_PER_LEVEL, source: "base" }],
   resources: { ammoType: "bullet", shotFuel: "ammo", operatingEnergyPerSecond: 0.6, ammoCostMultiplier: 1, energyCostMultiplier: 1, heatMultiplier: 1 },
   canHitAir: false
 };

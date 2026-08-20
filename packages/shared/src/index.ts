@@ -177,6 +177,12 @@ export type TowerSnapshot = {
   targetingMode?: import("./characters/common/types.js").TowerTargetingMode;
   /** Bu kuleye takili magaza esyalari; takilan esya sokulemez. */
   equippedShopItemIds?: string[];
+  /**
+   * Kulenin acik davranis kilitleri, bit maskesi olarak. Sunucu cozup gonderir;
+   * istemci ayni cozumlemeyi tekrar yazarsa iki taraf kacinilmaz olarak ayrisir.
+   * Okumak icin `hasUnlockBit` veya `decodeUnlocks`.
+   */
+  unlockBits?: number;
 };
 
 export type StaticTowerSnapshot = Required<Pick<TowerSnapshot,
@@ -438,8 +444,27 @@ export {
   resolveModifierBreakdown
 } from "./modifiers/index.js";
 export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers } from "./modifiers/index.js";
-export { cardCatalog, cardAppliesToTower, drawCards } from "./cards/index.js";
-export type { CardDefinition, CardScope, CardTowerProfile } from "./cards/index.js";
+export {
+  ALL_UNLOCKS,
+  BACKUP_LINE_DURATION_MS,
+  CARD_RARITY_WEIGHT,
+  MAX_ENCODABLE_UNLOCKS,
+  decodeUnlocks,
+  encodeUnlocks,
+  hasUnlockBit,
+  COLD_CRIT_CHANCE,
+  COLD_CRIT_TEMPERATURE,
+  RUN_HOT_DAMAGE_PER_DEGREE,
+  RUN_HOT_HEAT_LOCK_THRESHOLD,
+  cardCatalog,
+  cardAppliesToTower,
+  drawCards,
+  getCardDefinition,
+  getCardRarity
+} from "./cards/index.js";
+export type { CardDefinition, CardRarity, CardScope, CardTowerProfile, Unlock } from "./cards/index.js";
+export { NEUTRAL_ATTACK_MULTIPLIERS, isEmptyTowerGrant, resolveTowerAttackMultipliers, resolveTowerEngine } from "./grants/index.js";
+export type { TowerAttackGrant, TowerAttackMultipliers, TowerGrant } from "./grants/index.js";
 export {
   SHOP_OFFER_COUNT,
   SHOP_REROLL_BASE_PRICE,
@@ -491,6 +516,7 @@ export {
   ENEMY_COUNT_WAVE_MULTIPLIER,
   ENEMY_HP_WAVE_MULTIPLIER,
   ENEMY_HP_BALANCE_MULTIPLIER,
+  PLAYER_POWER_COMPENSATION,
   ENEMY_REWARD_MULTIPLIER,
   getWaveEnemyCount,
   getArenaWaveEnemyCount,

@@ -11,9 +11,9 @@ test("shop prices grow additively by purchase count", () => {
   assert.equal(getShopRerollPrice(2), 80);
 });
 
-test("catalog contains 45 valid, unique and numeric single-line items", () => {
-  assert.equal(shopCatalog.length, 45);
-  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 45);
+test("catalog contains 57 valid, unique and numeric single-line items", () => {
+  assert.equal(shopCatalog.length, 57);
+  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 57);
   for (const entry of shopCatalog) {
     assert.match(entry.description, /\d/);
     assert.equal(entry.description.includes("\n"), false);
@@ -23,7 +23,6 @@ test("catalog contains 45 valid, unique and numeric single-line items", () => {
 
 for (const expectedId of [
   "sogutucu-kanatlar", "madenci-eldiveni", "seri-cephane-hatti", "isci-botlari",
-  "hassas-servo", "balistik-itici", "ince-ayar",
   "namlu-yatagi", "nisangah", "hafif-muhimmat", "isi-emici", "kritik-sistem",
   "delici-cekirdek", "odak-mercegi", "agir-kundak", "yanki-odasi",
   "komuta-modulu", "buz-cekirdegi", "zirh-plakasi", "verim-hatti",
@@ -36,7 +35,7 @@ for (const expectedId of [
   test(`mağaza öğesi ${expectedId} çalıştırılabilir veri taşır`, () => {
     const entry = shopCatalog.find(({ id }) => id === expectedId);
     assert.ok(entry);
-    assert.ok(entry.effects.length > 0 || entry.unlocks?.length > 0 || ["besinci-isci", "bariyer", "ziftli-zemin", "riskli-yatirim"].includes(entry.id));
+    assert.ok(entry.effects.length > 0 || entry.unlocks?.length > 0 || entry.grants !== undefined || ["besinci-isci", "bariyer", "ziftli-zemin", "riskli-yatirim"].includes(entry.id));
     assert.ok(entry.scope?.kind);
     assert.ok(entry.price >= 0);
   });
