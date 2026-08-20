@@ -56,6 +56,7 @@ import {
   type WireGameSnapshot
 } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
+import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
 import type { HudState } from "../game-control-ui";
@@ -379,7 +380,20 @@ export class GameScene extends Phaser.Scene {
   private lastPerfOverlayAt = 0;
   private lastShopEventAt = 0;
   private lastRenderedSnapshotServerTime = 0;
-  private serverTimeAnchor?: BufferedSnapshot;
+  /**
+   * Yerel saatten sunucu saatine donusum farki (serverTime - performance.now()).
+   *
+   * Eskiden bunun yerine "en son gelen snapshot" demir olarak tutuluyor ve
+   * oynatma zamani her pakette o paketin varis anina gore yeniden kuruluyordu.
+   * Boylece her paketin kendi ag jitteri dogrudan render saatine biniyordu:
+   * erken gelen paket zamani ileri, gec gelen geri itiyordu. Dusmanlar yol
+   * uzerinde ileri geri mikro sicramalar yapiyordu cunku bazi kareler zamanda
+   * geriye gidiyordu.
+   *
+   * Fark artik tek tek paketlere gore zipllamak yerine yumusatiliyor; gercek
+   * saat kaymasi yavas oldugu icin bu yeterince hizli, jitter icin fazlasiyla
+   * yavas.
+   */
   private droppedSnapshotCount = 0;
   private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
@@ -392,6 +406,7 @@ export class GameScene extends Phaser.Scene {
   private draggedTowerDefinition?: TowerDefinition;
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
+  private readonly playbackClock = new SnapshotPlaybackClock(this.playbackDelayMs);
   private readonly killStreakMaxWindowMs = 11000;
   private readonly dragPreviewOffsetY = 64;
   private readonly controlTop = 698;
@@ -1816,9 +1831,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.snapshotBuffer.push(bufferedSnapshot);
     this.snapshotBuffer.sort((a, b) => a.snapshot.serverTime - b.snapshot.serverTime);
-    if (!this.serverTimeAnchor || snapshot.serverTime >= this.serverTimeAnchor.snapshot.serverTime) {
-      this.serverTimeAnchor = bufferedSnapshot;
-    }
+    this.playbackClock.observe(snapshot.serverTime, bufferedSnapshot.receivedAt);
 
     if (this.snapshotBuffer.length > 120) {
       this.droppedSnapshotCount += this.snapshotBuffer.length - 120;
@@ -1893,11 +1906,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getPlaybackFrame(now: number): PlaybackFrame | undefined {
-    if (this.snapshotBuffer.length === 0 || !this.serverTimeAnchor) {
+    if (this.snapshotBuffer.length === 0 || !this.playbackClock.isReady()) {
       return undefined;
     }
 
-    const targetServerTime = this.serverTimeAnchor.snapshot.serverTime + (now - this.serverTimeAnchor.receivedAt) - this.playbackDelayMs;
+    const targetServerTime = this.playbackClock.getTargetServerTime(now);
     this.pruneSnapshotBuffer(targetServerTime);
 
     let previous = this.snapshotBuffer[0];

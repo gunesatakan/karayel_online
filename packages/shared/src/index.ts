@@ -349,7 +349,10 @@ export {
   getLinearProjectilePosition,
   hydrateWireSnapshot,
   isClientProjectileExpired,
-  pruneStaticSnapshotCache
+  pruneStaticSnapshotCache,
+  SERVER_CLOCK_RESYNC_THRESHOLD_MS,
+  SERVER_CLOCK_SMOOTHING,
+  SnapshotPlaybackClock
 } from "./snapshot/index.js";
 
 export { characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
