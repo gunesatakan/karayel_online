@@ -118,6 +118,10 @@ export type TowerDefinition = {
   hitType?: HitType;
   axes?: TowerAxis[];
   engine?: TowerEngineConfig;
+  /** Duvar gibi dayanikliliga oynayan yapilar icin taban can carpani. */
+  structureHealthMultiplier?: number;
+  /** Kalinlastirma: seviye basina eklenen can orani. */
+  structureHealthPerLevel?: number;
   cost: number;
   upgradeCost: number;
   range: number;

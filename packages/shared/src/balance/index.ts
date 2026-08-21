@@ -129,3 +129,28 @@ export function getStructureTravelCost(remainingHp: number) {
   const breakSeconds = Math.max(0, remainingHp) / REFERENCE_STRUCTURE_BREAK_DPS;
   return 1 + breakSeconds * WALL_COST_COEFFICIENT;
 }
+
+/**
+ * Onarim, yeniden insadan ucuz olmali.
+ *
+ * Yikilan duvar kendiliginden geri gelmez; oyuncu ya yeniden insa eder ya da
+ * yikilmadan once onarir. Onarimin ucuz olmasi dalga arasi bakimi anlamli bir
+ * karar yapar: duvari ayakta tutmak, dusmesini bekleyip yeniden dikmekten
+ * kazancli olsun.
+ */
+export const STRUCTURE_REPAIR_COST_RATIO = 0.6;
+
+/** Eksik cani kapatmanin altin bedeli. Yikilmis yapi onarilamaz. */
+export function getStructureRepairCost(buildCost: number, missingHealthRatio: number) {
+  const ratio = Math.max(0, Math.min(1, missingHealthRatio));
+  return Math.ceil(buildCost * STRUCTURE_REPAIR_COST_RATIO * ratio);
+}
+
+/**
+ * Gedik esigi: yapinin cani bu oranin altina dustugunde sunucu olay yayar.
+ *
+ * Sistemin asil degeri oyuncuyu dalga sirasinda mudahaleye zorlamasi. Gedigin
+ * nerede acildigini oyuncunun kendi gozuyle yakalamasini beklemek, haritanin
+ * obur ucuna bakan oyuncu icin gecikmis bir uyari demek.
+ */
+export const STRUCTURE_BREACH_HEALTH_RATIO = 0.3;

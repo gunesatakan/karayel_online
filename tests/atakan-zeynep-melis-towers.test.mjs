@@ -7,7 +7,9 @@ import {
   getTowerModeDamageType,
   inferTowerAmmoType,
   TOWER_BASE_AMMO_COST,
-  towerCatalog
+  towerCatalog,
+  getCharacterTowers,
+  WALL_TOWER_ID
 } from "../packages/shared/dist/index.js";
 
 const expectedProfiles = {
@@ -62,15 +64,15 @@ function profile(tower) {
 
 for (const [characterId, expected] of Object.entries(expectedProfiles)) {
   test(`${characterId} kulelerinin davranış profili değişmedi`, () => {
-    assert.deepEqual(towerCatalog[characterId].map(profile), expected);
+    assert.deepEqual(getCharacterTowers(characterId).map(profile), expected);
   });
 }
 
 test("Atakan, Zeynep ve Melis kule kimlikleri benzersiz ve mekanik tanımları dolu", () => {
   const towers = [
-    ...towerCatalog.warrior,
-    ...towerCatalog.zeynep,
-    ...towerCatalog.archer
+    ...getCharacterTowers("warrior"),
+    ...getCharacterTowers("zeynep"),
+    ...getCharacterTowers("archer")
   ];
   assert.equal(towers.length, 24);
   assert.equal(new Set(towers.map((tower) => tower.id)).size, towers.length);
@@ -83,7 +85,7 @@ test("Atakan, Zeynep ve Melis kule kimlikleri benzersiz ve mekanik tanımları d
 
 test("her karakterin bir cephane ve bir enerji sağlayıcısı var", () => {
   for (const characterId of ["warrior", "zeynep", "archer"]) {
-    const providers = towerCatalog[characterId]
+    const providers = getCharacterTowers(characterId)
       .map((tower) => tower.resourceProvider)
       .filter(Boolean)
       .sort();
@@ -129,7 +131,7 @@ test("temel hasar seviye 1-10 aralığına sabitleniyor", () => {
 });
 
 test("24 kulenin tamamı ortak motor profiline taşındı", () => {
-  const towers = [...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer];
+  const towers = [...getCharacterTowers("warrior"), ...getCharacterTowers("zeynep"), ...getCharacterTowers("archer")];
   for (const tower of towers) {
     assert.ok(tower.engine, `${tower.id}: ortak motor profili eksik`);
     assert.ok(tower.engine.attack.shape, `${tower.id}: saldırı şekli eksik`);
@@ -186,12 +188,15 @@ test("Atakan, Melis ve Zeynep kule eksenleri tasarım tablosuyla eşleşir", () 
     "zeynep-6": ["cc"], "zeynep-7": ["amplify"], "zeynep-8": ["amplify"],
     "zeynep-9": ["economy"], "zeynep-10": ["economy"]
   };
-  const towers = [...towerCatalog.warrior, ...towerCatalog.archer, ...towerCatalog.zeynep];
+  const towers = [...getCharacterTowers("warrior"), ...getCharacterTowers("archer"), ...getCharacterTowers("zeynep")];
   assert.deepEqual(Object.fromEntries(towers.map((tower) => [tower.id, tower.axes])), expected);
+
+  // Duvar kimsenin kiti degil ama herkesin listesinde; ekseni ayrica sabitlenir.
+  assert.deepEqual(towerCatalog.warrior.find((tower) => tower.id === WALL_TOWER_ID)?.axes, ["barricade"]);
 });
 
 test("kule tanımlarında eski mechanics etiketi bulunmuyor", () => {
-  const towers = [...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer];
+  const towers = [...getCharacterTowers("warrior"), ...getCharacterTowers("zeynep"), ...getCharacterTowers("archer")];
   for (const tower of towers) {
     assert.equal(Object.hasOwn(tower, "mechanics"), false, `${tower.id}: mechanics kaldırılmadı`);
   }
@@ -206,7 +211,7 @@ test("ortak motor hedefleme ve saldırı profilleri kule davranışlarını koru
     "archer-3": ["first", "circle", null, false],
     "archer-4": ["first", "beam", null, true]
   };
-  const towers = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower]));
+  const towers = Object.fromEntries([...getCharacterTowers("warrior"), ...getCharacterTowers("zeynep"), ...getCharacterTowers("archer")].map((tower) => [tower.id, tower]));
   for (const [id, profile] of Object.entries(expected)) {
     const engine = towers[id].engine;
     assert.deepEqual([engine.targeting, engine.attack.shape, engine.attack.pierceCount ?? null, engine.canHitAir], profile, id);
@@ -214,7 +219,7 @@ test("ortak motor hedefleme ve saldırı profilleri kule davranışlarını koru
 });
 
 test("özel saldırılar kule kimliği yerine ortak executor verisiyle yönlendirilir", () => {
-  const byId = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower.engine]));
+  const byId = Object.fromEntries([...getCharacterTowers("warrior"), ...getCharacterTowers("zeynep"), ...getCharacterTowers("archer")].map((tower) => [tower.id, tower.engine]));
   assert.equal(byId["warrior-5"].attack.executor, "debug-laser");
   assert.equal(byId["zeynep-2"].attack.executor, "showcase-beam");
   assert.equal(byId["zeynep-3"].attack.executor, "synthesis");
@@ -224,7 +229,7 @@ test("özel saldırılar kule kimliği yerine ortak executor verisiyle yönlendi
 });
 
 test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanımlı", () => {
-  const byId = Object.fromEntries([...towerCatalog.warrior, ...towerCatalog.zeynep, ...towerCatalog.archer].map((tower) => [tower.id, tower.engine]));
+  const byId = Object.fromEntries([...getCharacterTowers("warrior"), ...getCharacterTowers("zeynep"), ...getCharacterTowers("archer")].map((tower) => [tower.id, tower.engine]));
   assert.equal(byId["warrior-3"].statusEffects[0].type, "slow");
   assert.equal(byId["warrior-4"].stacks[0].trigger, "sameTarget");
   assert.equal(byId["warrior-1"].appliesMark.id, "tracking");

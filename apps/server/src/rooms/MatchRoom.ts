@@ -55,6 +55,11 @@ import {
   getPlacementFootprint,
   computeFlowField,
   getStructureTravelCost,
+  getStructureRepairCost,
+  STRUCTURE_BREACH_HEALTH_RATIO,
+  getStructureHealthMultiplier,
+  isWallDefinition,
+  WALL_TOWER_ID,
   getFlowNext,
   type FlowField,
   validateEdgePlacement,
@@ -644,12 +649,15 @@ type TowerModel = {
   grantCache?: { generation: number; engine?: TowerEngineConfig; attackMultipliers: TowerAttackMultipliers; unlocks: Set<Unlock> };
   /** `surge` trigger etkisinin bitis zamani. */
   surgeUntil?: number;
+  /** Gedik uyarisi yayildi mi; esik yukari asilinca duser. */
+  breachAnnounced?: boolean;
   /** Kart kaynakli `activeSecond` stackleri icin ayri kesintisiz atis sayaci. */
   grantActiveMs?: number;
   /** Kart kaynakli `sameTarget` stackleri icin ayri hedef hafizasi. */
   grantTargetId?: string;
 };
 
+type RepairStructureMessage = { towerId?: string };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
 type BuyShopItemMessage = { itemId?: string };
 type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
@@ -1171,6 +1179,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
+    this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
 
@@ -4574,6 +4583,59 @@ export class MatchRoom extends Room<MatchState> {
     return origin.y + this.activeMap.rows * getMapGridSize(this.activeMap);
   }
 
+  /**
+   * Gedik acildiginda oyuncuyu uyarir.
+   *
+   * Bir defa yayilir: esik asagi dogru gecildiginde. Her tick tekrar yaymak
+   * uyariyi gurultuye cevirir ve oyuncu onemli olani kacirir. Onarilan yapi
+   * esigin uzerine cikinca bayrak dusrer, yani ikinci kez kirilirsa yeniden
+   * uyarilir.
+   */
+  private announceStructureBreach(tower: TowerModel) {
+    const ratio = tower.maxHp > 0 ? tower.hp / tower.maxHp : 0;
+    if (ratio > STRUCTURE_BREACH_HEALTH_RATIO) {
+      tower.breachAnnounced = false;
+      return;
+    }
+    if (tower.breachAnnounced || tower.hp <= 0) return;
+
+    tower.breachAnnounced = true;
+    this.broadcast("structure:breach", {
+      towerId: tower.id,
+      ownerId: tower.ownerId,
+      definitionId: tower.definition.id,
+      x: Math.round(tower.x),
+      y: Math.round(tower.y),
+      healthRatio: Math.round(ratio * 100) / 100
+    });
+  }
+
+  /**
+   * Hasarli yapiyi onarir.
+   *
+   * Yikilmis yapi onarilamaz -- oyuncu onu yeniden insa etmek zorunda. Ayakta
+   * kalani onarmak yeniden insadan ucuz oldugu icin dalga arasi bakim anlamli
+   * bir karar olur.
+   */
+  private repairStructure(client: Client, message: RepairStructureMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!player || !tower || tower.ownerId !== client.sessionId) return;
+    if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
+
+    const missingRatio = 1 - tower.hp / tower.maxHp;
+    const cost = getStructureRepairCost(getTowerBuildCost(tower.definition.cost), missingRatio);
+    if (cost <= 0 || player.gold < cost) return;
+
+    player.gold -= cost;
+    player.goldSpent += cost;
+    tower.hp = tower.maxHp;
+    tower.breachAnnounced = false;
+    // Yol maliyeti kalan cana bagli: onarim akisi da degistirir.
+    this.markFlowFieldDirty();
+    client.send("structure:repaired", { towerId: tower.id, cost });
+  }
+
   private damageTower(tower: TowerModel, rawDamage: number) {
     if (tower.hp <= 0) {
       return;
@@ -4582,6 +4644,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
     // Yol maliyeti kalan cana bagli oldugu icin her hasar alani eskitir.
     this.markFlowFieldDirty();
+    this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
@@ -4642,7 +4705,12 @@ export class MatchRoom extends Room<MatchState> {
       const item = getShopItem(modifier.source.slice(5));
       return !item || item.scope.kind === "global" || shopItemAppliesToTower(item, definition);
     });
-    const towerHealth = TOWER_BASE_HP * getModifierMultiplier(applicableHealthModifiers, "towerHealth");
+    // Duvarin cani kule tabanindan yuksek ve kalinlastirmayla buyur; kart ve
+    // esya can bonuslari duvara da isler, yani duvar ormek roguelike katmaniyla
+    // gercek bir sinerji tasir.
+    const towerHealth = TOWER_BASE_HP
+      * getStructureHealthMultiplier(definition, 1)
+      * getModifierMultiplier(applicableHealthModifiers, "towerHealth");
     const tower: TowerModel = {
       id: `t${this.nextTowerId++}`,
       ownerId: client.sessionId,
@@ -4759,6 +4827,14 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= goldCost;
     player.goldSpent += goldCost;
     tower.level += 1;
+    // Kalinlastirma: duvarin can tavani seviyeyle buyur ve fark cana yansir.
+    const healthRatio = getStructureHealthMultiplier(tower.definition, tower.level)
+      / getStructureHealthMultiplier(tower.definition, tower.level - 1);
+    if (healthRatio !== 1) {
+      tower.maxHp *= healthRatio;
+      tower.hp *= healthRatio;
+      this.markFlowFieldDirty();
+    }
   }
 
   private sellTower(client: Client, message: SellTowerMessage) {

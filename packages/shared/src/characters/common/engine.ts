@@ -2,6 +2,7 @@ import type { TowerDefinition, TowerEngineConfig } from "./types.js";
 import { PASSIVE_AURA_TICK_INTERVAL_MS, getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
+  "wall-1": ["barricade"],
   "warrior-1": ["amplify", "dps"],
   "warrior-2": ["amplify", "dps"],
   "warrior-3": ["cc"],
@@ -62,6 +63,8 @@ const defaultEngine: TowerEngineConfig = {
 };
 
 const profiles: Record<string, EngineProfile> = {
+  // Duvar ates etmez; motor yalnizca yerlestirme ve kaynak hatti icin gerekli.
+  "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resources: { ammoType: "auraCrystal" } },
   "onur-1": {
     targeting: undefined,
     attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 1.6, width: 8 },
