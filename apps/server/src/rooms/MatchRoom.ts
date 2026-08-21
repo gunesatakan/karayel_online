@@ -55,6 +55,9 @@ import {
   getPlacementFootprint,
   computeFlowField,
   getStructureTravelCost,
+  SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
+  SIEGE_FIRST_WAVE,
+  SIEGE_SPAWN_RATIO,
   getStructureRepairCost,
   STRUCTURE_BREACH_HEALTH_RATIO,
   getStructureHealthMultiplier,
@@ -945,6 +948,8 @@ export class MatchRoom extends Room<MatchState> {
    */
   private flowField?: FlowField;
   private flowFieldDirty = true;
+  /** Surunun en son hangi hucrede yogunlastigi; kayma uyarisi buna bakar. */
+  private lastMainGate?: { col: number; row: number };
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
   private towerCellIndex = new Map<string, TowerModel>();
   private towerCellIndexDirty = true;
@@ -1008,7 +1013,81 @@ export class MatchRoom extends Room<MatchState> {
       getCost: (col, row) => this.getCellTravelCost(col, row)
     });
     this.flowFieldDirty = false;
+    this.announceFlowShift(this.flowField);
     return this.flowField;
+  }
+
+  /**
+   * Surunun ana kapisi degistiginde oyuncuyu uyarir.
+   *
+   * Gedik uyarisi tek bir yapiyi haber verir; bu ise kutlenin nereye aktigini.
+   * Hattin obur ucunda acilan bir delik butun dalgayi oraya cekebilir ve oyuncu
+   * kill box'ini bosa kurmus olur. Uyari sunucudan gelir; istemcinin akis alanini
+   * gormedigi icin bunu tahmin etmesi zaten mumkun degil.
+   *
+   * Ana kapi, ust siradaki her hucreden akisi izleyip cikis satirina en cok
+   * hangi sutundan varildigina bakarak bulunur -- 11 yuruyus, her biri en fazla
+   * 18 adim.
+   */
+  private announceFlowShift(field: FlowField) {
+    const gate = this.findMainGateCell(field);
+    const previous = this.lastMainGate;
+    this.lastMainGate = gate;
+
+    // Acik haritada yogunlasma noktasi yoktur; gosterecek bir yer olmadan
+    // uyari yaymak anlamsiz. Ilk huni olustugunda ise kayma gercektir.
+    if (!gate) return;
+    if (previous && previous.col === gate.col && previous.row === gate.row) return;
+
+    const world = gridToWorld(gate.col, gate.row, this.activeMap);
+    this.broadcast("flow:shift", {
+      from: previous ?? null,
+      to: gate,
+      x: Math.round(world.x),
+      y: Math.round(world.y)
+    });
+  }
+
+  /**
+   * Surunun yogunlastigi hucre.
+   *
+   * Cikis satirini olcmek ise yaramaz: butun yollar orada zaten birlesir, yani
+   * hangi gedikten gecildigini soylemez. Onun yerine ust siradan baslayan
+   * yuruyusler boyunca hucre ziyaretleri sayilir; bir huninin gedigi butun
+   * yollarin ustunden gectigi icin dogal olarak one cikar.
+   *
+   * Esitlikte satir-oncelikli dusuk indeks kazanir, boylece uyari belirlenimli.
+   */
+  private findMainGateCell(field: FlowField) {
+    const visits = new Map<string, { col: number; row: number; count: number }>();
+    const exitRow = this.activeMap.rows - 1;
+    const limit = this.activeMap.cols * this.activeMap.rows;
+
+    for (let col = 0; col < this.activeMap.cols; col += 1) {
+      let cell: { col: number; row: number } | undefined = { col, row: 0 };
+      for (let step = 0; step < limit && cell; step += 1) {
+        if (cell.row === exitRow) break;
+        // Baslangic satiri her yuruyuste farkli, cikis satiri her yuruyuste ayni;
+        // ikisi de nerede sikistigini soylemez.
+        if (cell.row > 0) {
+          const key = `${cell.col}:${cell.row}`;
+          const entry = visits.get(key) ?? { col: cell.col, row: cell.row, count: 0 };
+          entry.count += 1;
+          visits.set(key, entry);
+        }
+        cell = getFlowNext(field, cell.col, cell.row);
+      }
+    }
+
+    let best: { col: number; row: number } | undefined;
+    let bestCount = 1;
+    for (const entry of [...visits.values()].sort((a, b) => (a.row - b.row) || (a.col - b.col))) {
+      if (entry.count > bestCount) {
+        bestCount = entry.count;
+        best = { col: entry.col, row: entry.row };
+      }
+    }
+    return best;
   }
   private lobbyRoomName = "Yeni Oda";
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
@@ -1838,7 +1917,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private spawnEnemy() {
     const roll = Math.random();
-    const type: EnemyType = roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
+    // Kusatma dusmani erken dalgalarda yok: duvar meta'si once kurulsun, cezasi
+    // sonra gelsin.
+    const type: EnemyType = this.wave >= SIEGE_FIRST_WAVE && roll < SIEGE_SPAWN_RATIO
+      ? "siege"
+      : roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
     const definition = getEnemyCombatDefinition(type);
     const race = getEnemyRaceForWave(this.wave);
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
@@ -3974,7 +4057,11 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       if (route.targetTower && route.cells.length <= 1 && enemy.towerAttackCooldownMs <= 0) {
-        this.damageTower(route.targetTower, enemy.attack);
+        // Kusatma dusmani yapilara cok daha sert vurur; duvar ormenin cezasi bu.
+        const structureDamage = enemy.type === "siege"
+          ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
+          : enemy.attack;
+        this.damageTower(route.targetTower, structureDamage);
         enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
       }
     }

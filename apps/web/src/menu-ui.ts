@@ -74,7 +74,8 @@ const enemyTypeLabels: Record<EnemyType, string> = {
   grunt: "Sürü",
   brute: "Ezici",
   runner: "Koşucu",
-  shooter: "Atıcı"
+  shooter: "Atıcı",
+  siege: "Kuşatma"
 };
 
 const classColor: Record<CharacterId, string> = {
@@ -111,6 +112,12 @@ const enemyDossier: Record<EnemyType, {
     title: "Tank sınıfı kara hedefi",
     threat: "Yüksek",
     summary: "Yavaş ama dirençli ilerler. Zırhı, kalkanı ve yavaşlatma/korkuya direnci nedeniyle ham hasar testidir."
+  },
+  siege: {
+    name: "Kuşatma Koçu",
+    title: "Yapı kırıcı kara hedefi",
+    threat: "Yüksek",
+    summary: "Duvarlara ve kulelere normalin 4 katı hasar verir ama canı en düşük düşmanlardan biridir. Duvar örerek her şeyi çözmeye çalışan savunmanın cezası; arkasına ateş gücü koymayan hat kuşatma karşısında erir."
   },
   runner: {
     name: "Çatlak Koşucu",
@@ -1124,7 +1131,8 @@ function enemyColor(type: EnemyType) {
     grunt: "#ef4444",
     brute: "#b91c1c",
     runner: "#fb923c",
-    shooter: "#f97316"
+    shooter: "#f97316",
+    siege: "#78716c"
   }[type];
 }
 

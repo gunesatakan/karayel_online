@@ -18,7 +18,12 @@ import {
   getTowerBuildCost,
   isSharedStructure,
   towerCatalog,
-  wallTower
+  wallTower,
+  getEnemyCombatDefinition,
+  gridToWorld,
+  SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
+  SIEGE_FIRST_WAVE,
+  SIEGE_SPAWN_RATIO
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -153,4 +158,61 @@ test("onarılan duvar tekrar kırılırsa yeniden uyarır", () => {
   wall.hp = wall.maxHp * (STRUCTURE_BREACH_HEALTH_RATIO + 0.05);
   room.damageTower(wall, wall.maxHp * 0.1);
   assert.equal(events.length, 2, "onarim sonrasi ikinci gedik uyarilmadi");
+});
+
+test("kuşatma düşmanı yapılara çok daha sert vurur ama canı düşüktür", () => {
+  const siege = getEnemyCombatDefinition("siege");
+  const grunt = getEnemyCombatDefinition("grunt");
+  assert.ok(siege.maxHp < grunt.maxHp, "kusatma canı grunt'tan yuksek");
+  assert.ok(SIEGE_STRUCTURE_DAMAGE_MULTIPLIER > 1, "yapi hasar carpani yok");
+
+  // Turtle cezasi gercek olsun: kalin bir duvar kusatma karsisinda erimeli.
+  const wallHp = 250;
+  const normalHits = Math.ceil(wallHp / grunt.attack);
+  const siegeHits = Math.ceil(wallHp / (siege.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER));
+  assert.ok(siegeHits * 2 < normalHits, `kusatma yeterince hizli kirmiyor: ${siegeHits} / ${normalHits}`);
+});
+
+test("kuşatma düşmanı erken dalgalarda çıkmaz", () => {
+  assert.ok(SIEGE_FIRST_WAVE > 1, "kusatma 1. dalgada cikiyor");
+  assert.ok(SIEGE_SPAWN_RATIO > 0 && SIEGE_SPAWN_RATIO < 0.5, "kusatma orani makul degil");
+});
+
+test("akış ana kapısı değişince sunucu uyarı yayar", () => {
+  const room = createRoom("warrior");
+  room.state.players.get("p1").runModifiers.push({ source: "test", scope: "player", stat: "towerCapacity", add: 40 });
+  const events = [];
+  room.broadcast = (type, payload) => { if (type === "flow:shift") events.push(payload); };
+
+  // Acik haritada yogunlasma noktasi yok, dolayisiyla uyari da yok.
+  room.getFlowField();
+  assert.equal(events.length, 0, "acik haritada kayma uyarisi yayildi");
+
+  // Hatti bastan sona muhurle: her yol en ucuz duvardan gecmek zorunda.
+  const wallRow = 4;
+  const walls = [];
+  for (let col = 0; col < room.activeMap.cols; col += 1) {
+    const world = gridToWorld(col, wallRow, room.activeMap);
+    if (!room.canPlaceTower(world.x, world.y, WALL_TOWER_ID, "horizontal")) continue;
+    room.placeTower({ sessionId: "p1" }, { x: world.x, y: world.y, definitionId: WALL_TOWER_ID });
+    walls.push([...room.towers.values()].at(-1));
+  }
+  assert.ok(walls.length >= 4, "test icin yeterli duvar kurulamadi");
+
+  // Sol uctaki duvari ac: kutle oraya akar ve ilk huni olusur.
+  walls[0].hp = 0;
+  room.markFlowFieldDirty();
+  room.getFlowField();
+  assert.ok(events.length >= 1, "ilk huni olusunca uyarilmadi");
+  const firstGate = events.at(-1).to;
+
+  // Simdi sag uctaki duvari da ac ve solu kapat: kapi karsi uca kaymali.
+  walls[0].hp = walls[0].maxHp;
+  walls.at(-1).hp = 0;
+  room.markFlowFieldDirty();
+  room.getFlowField();
+
+  const lastEvent = events.at(-1);
+  assert.notDeepEqual(lastEvent.to, firstGate, "kapi karsi uca kaymadi");
+  assert.deepEqual(lastEvent.from, firstGate, "kayma nereden geldigini bildirmiyor");
 });

@@ -3,7 +3,7 @@ import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
-export type EnemyType = "grunt" | "brute" | "runner" | "shooter";
+export type EnemyType = "grunt" | "brute" | "runner" | "shooter" | "siege";
 export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
 export type { DamageType, EnemyRace, HitType, MovementKind, StatusEffectId } from "./combat.js";
 export { SHIELD_DAMAGE_TAKEN_MULTIPLIER, applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances } from "./combat.js";
@@ -527,6 +527,9 @@ export {
   WALL_COST_COEFFICIENT,
   REFERENCE_STRUCTURE_BREAK_DPS,
   getStructureTravelCost,
+  SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
+  SIEGE_FIRST_WAVE,
+  SIEGE_SPAWN_RATIO,
   getStructureRepairCost,
   STRUCTURE_REPAIR_COST_RATIO,
   STRUCTURE_BREACH_HEALTH_RATIO,
@@ -710,7 +713,8 @@ export function getEnemyExp(wave: number, enemyType: EnemyType, movementKind: Mo
     grunt: 1,
     runner: 1,
     shooter: 1.6,
-    brute: 2.5
+    brute: 2.5,
+    siege: 1.4
   };
   const flyingMultiplier = movementKind === "air" ? 0.7 : 1;
   return Math.round((4 + Math.max(0, Math.round(wave))) * typeMultiplier[enemyType] * flyingMultiplier * 100) / 100;

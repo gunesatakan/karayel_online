@@ -96,6 +96,27 @@ export const enemyCombatDefinitions = {
     hitTypeResistances: {},
     statusResistances: {}
   },
+  /**
+   * Kusatma: turtle stratejisinin cezasi.
+   *
+   * Yapilara belirgin sekilde artirilmis hasar verir ama canı dusuktur; duvar
+   * ormek her seye cozum olmasin diye var. Kuleler onu kolay dusurur, yani
+   * karsi-oyunu duvarin arkasina ates gucu koymak.
+   */
+  siege: {
+    race: "meka",
+    maxHp: 34,
+    armor: 8,
+    healthRegenPerSecond: 0,
+    speed: 42,
+    shield: 0,
+    movementKind: "ground",
+    reward: 15,
+    attack: 12,
+    damageResistances: {},
+    hitTypeResistances: {},
+    statusResistances: {}
+  },
   brute: {
     race: "meka",
     maxHp: 76,

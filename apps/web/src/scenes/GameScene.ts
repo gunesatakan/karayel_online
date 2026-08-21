@@ -5769,6 +5769,9 @@ function getBackgroundMusicPath(characterId: CharacterId) {
 function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
   const base = {
     grunt: 34,
+    // Kusatma kocu brute gorselini kullanir; boyutu araya oturuyor ki silueti
+    // brute ile karistirilmasin.
+    siege: 38,
     brute: 43.2,
     runner: 40,
     shooter: 38
@@ -5778,7 +5781,10 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {
-  return enemy.race === "meka" ? `enemy-${enemy.type}` : `enemy-${enemy.race}-${enemy.type}`;
+  // Kusatma kocunun kendi gorseli henuz yok; brute silueti en yakin duran.
+  // Boyut ve renk ayri veriliyor, yani sahada ikisi karistirilmiyor.
+  const artType = enemy.type === "siege" ? "brute" : enemy.type;
+  return enemy.race === "meka" ? `enemy-${artType}` : `enemy-${enemy.race}-${artType}`;
 }
 
 function getKillStreakRuleByTier(tier: KillStreakTier) {

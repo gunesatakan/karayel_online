@@ -154,3 +154,16 @@ export function getStructureRepairCost(buildCost: number, missingHealthRatio: nu
  * obur ucuna bakan oyuncu icin gecikmis bir uyari demek.
  */
 export const STRUCTURE_BREACH_HEALTH_RATIO = 0.3;
+
+/**
+ * Kusatma dusmaninin yapilara verdigi hasar carpani.
+ *
+ * Duvar ormeyi her derde deva olmaktan cikaran sey bu. Yeterince yuksek olmali
+ * ki kalin bir hat kusatma karsisinda erisin, ama kusatmanin cani dusuk oldugu
+ * icin arkasina ates gucu koyan oyuncu yine kazansin.
+ */
+export const SIEGE_STRUCTURE_DAMAGE_MULTIPLIER = 4;
+
+/** Kusatma dusmaninin dalgalarda gorunmeye basladigi nokta ve orani. */
+export const SIEGE_FIRST_WAVE = 4;
+export const SIEGE_SPAWN_RATIO = 0.18;
