@@ -54,6 +54,9 @@ import {
   SpatialGrid,
   getPlacementFootprint,
   hasOpenGridRoute,
+  computeFlowField,
+  getFlowNext,
+  type FlowField,
   validateEdgePlacement,
   validateTowerPlacement,
   resetTowerStack,
@@ -509,6 +512,14 @@ type EnemyModel = {
   reward: number;
   attack: number;
   towerAttackCooldownMs: number;
+  /**
+   * Kirmaya karar verilen yapi.
+   *
+   * Akis alani bir yapi hasar aldikca degisir; kilit olmasa dusman her tick
+   * yeniden karar verip iki gedik arasinda yalpalar ve hicbirini kiramaz.
+   * Kilit yalnizca yapi yikilinca ya da dusman o hucreden ayrilinca duser.
+   */
+  structureTargetId?: string;
   pathDistance: number;
   slowUntil: number;
   auraSlowMultiplier: number;
@@ -917,6 +928,75 @@ export class MatchRoom extends Room<MatchState> {
   private sympathyBledEnemyIds = new Set<string>();
   private activeMap: EditableMapData = createDefaultEditableMap();
   private activePaths: RuntimePath[] = buildRuntimePaths(this.activeMap);
+  /**
+   * Nexusa dogru tek akis alani.
+   *
+   * Once her dusman icin her tick ayri BFS kosuyordu ve her BFS dugumunde
+   * `getTowerAtCell` butun kuleleri dogrusal tariyordu; maliyet dusman sayisiyla
+   * carpiliyordu. Alan yapi degisince bir kez cozulur.
+   */
+  private flowField?: FlowField;
+  private flowFieldDirty = true;
+  /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
+  private towerCellIndex = new Map<string, TowerModel>();
+  private towerCellIndexDirty = true;
+
+  /** Yapi eklendi, yikildi, satildi ya da harita degisti. */
+  private markFlowFieldDirty() {
+    this.flowFieldDirty = true;
+    this.towerCellIndexDirty = true;
+  }
+
+  /**
+   * Hucre indeksi kendi kendini tazeler.
+   *
+   * Once yalnizca `getFlowField` icinde kuruluyordu; indeksi baska bir yerden
+   * okuyan kod bayat veri goruyordu. Tazelenmeyi okuma noktasina baglamak bu
+   * hata sinifini tumden kapatir.
+   */
+  private getTowerCellIndex() {
+    if (!this.towerCellIndexDirty) {
+      return this.towerCellIndex;
+    }
+
+    this.towerCellIndex.clear();
+    for (const tower of this.towers.values()) {
+      // Abarti kare kaplamaz, kenara oturur; hucre indeksine girmez.
+      if (tower.definition.id === "zeynep-8") continue;
+      for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) {
+        this.towerCellIndex.set(`${cell.col}:${cell.row}`, tower);
+      }
+    }
+    this.towerCellIndexDirty = false;
+    return this.towerCellIndex;
+  }
+
+  /**
+   * Bir hucreye girmenin maliyeti.
+   *
+   * Faz 1'de yapilar hala gecilmez (`Infinity`), yani yonlendirme davranisi eski
+   * BFS ile ayni kaliyor; degisen yalnizca nasil hesaplandigi. Duvarlarin
+   * "gecilebilir ama pahali" olmasi bu tek fonksiyonda acilacak.
+   */
+  private getCellTravelCost(col: number, row: number) {
+    return this.getTowerCellIndex().has(`${col}:${row}`) ? Number.POSITIVE_INFINITY : 1;
+  }
+
+  private getFlowField() {
+    if (this.flowField && !this.flowFieldDirty) {
+      return this.flowField;
+    }
+
+    const exitRow = this.activeMap.rows - 1;
+    this.flowField = computeFlowField({
+      cols: this.activeMap.cols,
+      rows: this.activeMap.rows,
+      goals: Array.from({ length: this.activeMap.cols }, (_, col) => ({ col, row: exitRow })),
+      getCost: (col, row) => this.getCellTravelCost(col, row)
+    });
+    this.flowFieldDirty = false;
+    return this.flowField;
+  }
   private lobbyRoomName = "Yeni Oda";
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
   private hostSessionId = "";
@@ -973,6 +1053,7 @@ export class MatchRoom extends Room<MatchState> {
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
+    this.markFlowFieldDirty();
     this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
@@ -1636,6 +1717,7 @@ export class MatchRoom extends Room<MatchState> {
     ][this.mapScale - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
+    this.markFlowFieldDirty();
     this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
   }
 
@@ -4105,6 +4187,8 @@ export class MatchRoom extends Room<MatchState> {
       if (!hasOpenGridRoute({ cols: this.activeMap.cols, rows: this.activeMap.rows }, blocked)) return;
       setTile(this.activeMap, cell.col, cell.row, "tower");
       this.activePaths = buildRuntimePaths(this.activeMap);
+    this.markFlowFieldDirty();
+      this.markFlowFieldDirty();
       this.broadcast("match:map", this.activeMap);
     }
     charges[message.itemId] -= 1;
@@ -4320,10 +4404,19 @@ export class MatchRoom extends Room<MatchState> {
     return factory;
   }
 
+  /**
+   * Dusmanin bu tick ne yapacagi: yurumek, saldirmak ya da cikisa varmak.
+   *
+   * Yol artik dusman basina aranmiyor; ortak akis alanindan tek hucrelik yon
+   * okunuyor. Alanin bilmedigi tek sey Abarti'nin kenar engeli: o kare kaplamaz,
+   * iki hucre arasindaki gecisi kapatir. Alan hucre tabanli oldugu icin bu
+   * durum adim atilirken ayrica kontrol ediliyor.
+   */
   private findEnemyRoute(enemy: EnemyModel) {
     const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
     if (start.row === this.activeMap.rows - 1) {
       const exitPoint = { x: enemy.x, y: this.getArenaBottom() + this.getMapCellRadius() };
+      enemy.structureTargetId = undefined;
       return {
         cells: [start],
         reachedBottom: enemy.y >= exitPoint.y - 0.01,
@@ -4331,47 +4424,54 @@ export class MatchRoom extends Room<MatchState> {
         exitPoint
       };
     }
-    const startTower = this.getTowerAtCell(start.col, start.row);
+
+    const field = this.getFlowField();
+    const startTower = this.getTowerCellIndex().get(`${start.col}:${start.row}`);
     if (startTower) {
+      // Yapinin ustunde duruyor: onu kirmadan ilerlemek yok.
       return { cells: [start], reachedBottom: false, targetTower: startTower.hp > 0 ? startTower : undefined };
     }
-    const queue = [start];
-    const visited = new Set<string>([`${start.col}:${start.row}`]);
-    const parent = new Map<string, { col: number; row: number }>();
-    let attackCell: { col: number; row: number } | undefined;
-    let targetTower: TowerModel | undefined;
 
-    for (let index = 0; index < queue.length; index += 1) {
-      const current = queue[index];
-      if (current.row === this.activeMap.rows - 1) {
-        const cells = this.reconstructGridRoute(current, start, parent);
-        return { cells, reachedBottom: false, targetTower: undefined, exitPoint: undefined };
-      }
+    // Kilitli hedef hala ayaktaysa ve komsuysa, karar yenilenmez.
+    const locked = enemy.structureTargetId ? this.towers.get(enemy.structureTargetId) : undefined;
+    if (locked && locked.hp > 0 && this.isStructureAdjacent(start, locked)) {
+      return { cells: [start], reachedBottom: false, targetTower: locked };
+    }
+    enemy.structureTargetId = undefined;
 
-      for (const next of this.getGridNeighbors(current.col, current.row)) {
-        const blockingTower = this.getBlockingTowerBetween(current, next);
-        if (blockingTower) {
-          if (!targetTower && blockingTower.hp > 0) {
-            targetTower = blockingTower;
-            attackCell = current;
-          }
-          continue;
-        }
-        const key = `${next.col}:${next.row}`;
-        if (visited.has(key)) {
-          continue;
-        }
-        visited.add(key);
-        parent.set(key, current);
-        queue.push(next);
-      }
+    const next = getFlowNext(field, start.col, start.row);
+    if (next && !this.getBlockingTowerBetween(start, next)) {
+      return { cells: [start, next], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
     }
 
-    return {
-      cells: attackCell ? this.reconstructGridRoute(attackCell, start, parent) : [start],
-      reachedBottom: false,
-      targetTower
-    };
+    // Akis yok (ya da kenar kapali): en ucuz komsu yapiyi hedefle ve kilitle.
+    const blocker = next ? this.getBlockingTowerBetween(start, next) : undefined;
+    const target = blocker ?? this.findCheapestAdjacentStructure(start);
+    if (target) {
+      enemy.structureTargetId = target.id;
+    }
+    return { cells: [start], reachedBottom: false, targetTower: target };
+  }
+
+  private isStructureAdjacent(cell: { col: number; row: number }, tower: TowerModel) {
+    return this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)
+      .some((footprint) => Math.abs(footprint.col - cell.col) + Math.abs(footprint.row - cell.row) <= 1);
+  }
+
+  /**
+   * Tikanan dusmanin kiracagi yapi.
+   *
+   * Komsular sabit sirada taranir ve ilk ayakta olan yapi secilir; esitlikte
+   * hangi yapinin secildigi belirlenimli olmak zorunda, aksi halde cok
+   * oyunculuda iki sunucu ayni durumdan farkli sonuca gider.
+   */
+  private findCheapestAdjacentStructure(cell: { col: number; row: number }) {
+    for (const neighbor of this.getGridNeighbors(cell.col, cell.row)) {
+      const tower = this.getTowerCellIndex().get(`${neighbor.col}:${neighbor.row}`)
+        ?? this.getBlockingTowerBetween(cell, neighbor);
+      if (tower && tower.hp > 0) return tower;
+    }
+    return undefined;
   }
 
   private reconstructGridRoute(end: { col: number; row: number }, start: { col: number; row: number }, parent: Map<string, { col: number; row: number }>) {
@@ -4590,6 +4690,7 @@ export class MatchRoom extends Room<MatchState> {
     };
 
     this.towers.set(tower.id, tower);
+    this.markFlowFieldDirty();
     this.broadcastTowerSpawn(tower);
     this.registerMelisFavoriteTower(tower);
     player.gold -= buildCost;
@@ -4637,6 +4738,7 @@ export class MatchRoom extends Room<MatchState> {
     player.towersBuilt = Math.max(0, player.towersBuilt - 1);
     this.removeTowerReferences(tower.id);
     this.towers.delete(tower.id);
+    this.markFlowFieldDirty();
     this.broadcast("tower:remove", { id: tower.id });
   }
 

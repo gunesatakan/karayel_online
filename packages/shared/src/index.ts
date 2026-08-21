@@ -581,6 +581,14 @@ export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export { getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
+export {
+  computeFlowField,
+  getFlowCost,
+  getFlowFieldIndex,
+  getFlowNext,
+  isInsideFlowField
+} from "./flow-field/index.js";
+export type { FlowField, FlowFieldCell } from "./flow-field/index.js";
 export type { EdgeOrientation, EdgeSegment, PlacementBoard, PlacementCell, PlacementFailureReason, PlacementValidation } from "./placement/index.js";
 export {
   MAP_GRID_COLS,
