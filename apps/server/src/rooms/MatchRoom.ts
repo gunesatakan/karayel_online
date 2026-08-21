@@ -53,8 +53,8 @@ import {
   selectTowerTarget,
   SpatialGrid,
   getPlacementFootprint,
-  hasOpenGridRoute,
   computeFlowField,
+  getStructureTravelCost,
   getFlowNext,
   type FlowField,
   validateEdgePlacement,
@@ -974,12 +974,17 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Bir hucreye girmenin maliyeti.
    *
-   * Faz 1'de yapilar hala gecilmez (`Infinity`), yani yonlendirme davranisi eski
-   * BFS ile ayni kaliyor; degisen yalnizca nasil hesaplandigi. Duvarlarin
-   * "gecilebilir ama pahali" olmasi bu tek fonksiyonda acilacak.
+   * Yapilar gecilmez degil pahalidir: bedel onlari kirmak icin gereken sureyle
+   * orantili. Boylece surus haritanin en zayif noktasina akar ve oyuncu labirent
+   * ormek yerine kasitli bir zayif kapi birakabilir. Yolu tamamen kapatmak
+   * gecerli bir strateji olur, sadece pahali.
    */
   private getCellTravelCost(col: number, row: number) {
-    return this.getTowerCellIndex().has(`${col}:${row}`) ? Number.POSITIVE_INFINITY : 1;
+    const tower = this.getTowerCellIndex().get(`${col}:${row}`);
+    if (!tower) return 1;
+    // Yikilmis yapi artik engel degil; alan onu bos hucre gibi gorur.
+    if (tower.hp <= 0) return 1;
+    return getStructureTravelCost(tower.hp);
   }
 
   private getFlowField() {
@@ -4182,9 +4187,8 @@ export class MatchRoom extends Room<MatchState> {
       if (this.tarredCells.has(key)) return;
       this.tarredCells.add(key);
     } else {
-      const blocked = Array.from(this.towers.values()).map((tower) => worldToGrid(tower.x, tower.y, this.activeMap));
-      blocked.push(cell);
-      if (!hasOpenGridRoute({ cols: this.activeMap.cols, rows: this.activeMap.rows }, blocked)) return;
+      // Tam kapatma artik yasak degil: yapilar gecilmez engel olmaktan cikip
+      // pahali hucreler oldu, yani kapatmanin bedelini dusmanlar kirarak oder.
       setTile(this.activeMap, cell.col, cell.row, "tower");
       this.activePaths = buildRuntimePaths(this.activeMap);
     this.markFlowFieldDirty();
@@ -4425,6 +4429,20 @@ export class MatchRoom extends Room<MatchState> {
       };
     }
 
+    // Ucanlar akis alanini tumden yok sayar ve nexusa dogru ucar. Duvar
+    // meta'sinin ana karsi-oyunu bu: yerde ne kadar kalin ordu olursa olsun
+    // havadan gelen dusman onu gormez. Yapiya saldirmazlar da.
+    if (enemy.movementKind === "air") {
+      const nexus = this.activePaths[0]?.points.at(-1);
+      const bounds = this.getActiveWorldBounds();
+      return {
+        cells: [start],
+        reachedBottom: false,
+        targetTower: undefined,
+        exitPoint: nexus ?? { x: bounds.left + bounds.width / 2, y: bounds.bottom }
+      };
+    }
+
     const field = this.getFlowField();
     const startTower = this.getTowerCellIndex().get(`${start.col}:${start.row}`);
     if (startTower) {
@@ -4440,17 +4458,30 @@ export class MatchRoom extends Room<MatchState> {
     enemy.structureTargetId = undefined;
 
     const next = getFlowNext(field, start.col, start.row);
-    if (next && !this.getBlockingTowerBetween(start, next)) {
-      return { cells: [start, next], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+    if (next) {
+      // Akis bir yapinin uzerinden geciyorsa dusman oraya yurumez: durur ve
+      // kirar. Hucre yine de gecilebilir sayildigi icin alan, kirmanin dolasmaya
+      // deger olup olmadigini zaten hesaba katmistir.
+      const standing = this.getTowerCellIndex().get(`${next.col}:${next.row}`);
+      const blocker = this.getBlockingTowerBetween(start, next) ?? (standing && standing.hp > 0 ? standing : undefined);
+      if (!blocker) {
+        return { cells: [start, next], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+      }
+      enemy.structureTargetId = blocker.id;
+      return { cells: [start], reachedBottom: false, targetTower: blocker };
     }
 
-    // Akis yok (ya da kenar kapali): en ucuz komsu yapiyi hedefle ve kilitle.
-    const blocker = next ? this.getBlockingTowerBetween(start, next) : undefined;
-    const target = blocker ?? this.findCheapestAdjacentStructure(start);
+    // Akis hic yok: en ucuz komsu yapiyi hedefle ve kilitle.
+    const target = this.findCheapestAdjacentStructure(start);
     if (target) {
       enemy.structureTargetId = target.id;
     }
     return { cells: [start], reachedBottom: false, targetTower: target };
+  }
+
+  /** Testlerin ve tanilamanin akisi hucre hucre izleyebilmesi icin. */
+  private getFlowNextCell(cell: { col: number; row: number }) {
+    return getFlowNext(this.getFlowField(), cell.col, cell.row);
   }
 
   private isStructureAdjacent(cell: { col: number; row: number }, tower: TowerModel) {
@@ -4505,9 +4536,16 @@ export class MatchRoom extends Room<MatchState> {
     ));
   }
 
+  /**
+   * Iki hucre arasindaki gecisi kapatan yapi.
+   *
+   * Yikilmis yapi engel degildir: cani sifira inen bir duvarin karesinden
+   * gecilebilir. Bunu atlamak dusmanlarin kirdiklari duvara saldirmaya devam
+   * etmesine yol aciyordu.
+   */
   private getBlockingTowerBetween(from: { col: number; row: number }, to: { col: number; row: number }) {
     const occupiedTower = this.getTowerAtCell(to.col, to.row);
-    if (occupiedTower) {
+    if (occupiedTower && occupiedTower.hp > 0) {
       return occupiedTower;
     }
 
@@ -4542,6 +4580,8 @@ export class MatchRoom extends Room<MatchState> {
     }
     const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
+    // Yol maliyeti kalan cana bagli oldugu icin her hasar alani eskitir.
+    this.markFlowFieldDirty();
     if (tower.hp <= 0) {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
