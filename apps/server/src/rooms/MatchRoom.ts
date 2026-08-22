@@ -54,6 +54,7 @@ import {
   SpatialGrid,
   getPlacementFootprint,
   computeFlowField,
+  getEdgeSegments,
   getStructureTravelCost,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
@@ -5675,33 +5676,17 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation, length = 2) {
-    const gridSize = getMapGridSize(this.activeMap);
-    const origin = getMapOrigin(this.activeMap);
-    /**
-     * Kenar segmentinin iki ekseni farkli sey olcer.
-     *
-     * Bir eksen cizginin kendisi (hangi izgara cizgisine oturuyor) ve
-     * yuvarlanir; digeri hucre sirasi (hangi karelerin yanindan geciyor) ve
-     * imlecin icinde bulundugu kareden baslar. Yapi imlecin iki yanina esit
-     * yayildigi icin baslangic yarim uzunluk geri kaydirilir.
-     *
-     * Tek formul her uzunlukta dogru sonucu verir: iki cizgilik Abarti'nin eski
-     * davranisi korunur, tek cizgilik duvar da isaret edilen kareye oturur.
-     */
-    const cellStart = (fraction: number) => Math.floor(fraction - (length - 1) / 2);
-    if (orientation === "vertical") {
-      const col = Math.max(0, Math.min(this.activeMap.cols, Math.round((x - origin.x) / gridSize)));
-      const row = Math.max(0, Math.min(this.activeMap.rows - length, cellStart((y - origin.y) / gridSize)));
-      return Array.from({ length }, (_, index) => ({ orientation, col, row: row + index }));
-    }
-
-    const col = Math.max(0, Math.min(this.activeMap.cols - length, cellStart((x - origin.x) / gridSize)));
-    const row = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - origin.y) / gridSize)));
-    return [
-      { orientation, col, row },
-      { orientation, col: col + 1, row }
-    ];
+    return getEdgeSegments({
+      x,
+      y,
+      orientation,
+      length,
+      gridSize: getMapGridSize(this.activeMap),
+      origin: getMapOrigin(this.activeMap),
+      board: { cols: this.activeMap.cols, rows: this.activeMap.rows }
+    });
   }
+
 
   private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
     if (segment.orientation === "vertical") {

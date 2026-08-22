@@ -11,6 +11,7 @@ import {
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
+  getEdgeSegments,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -866,7 +867,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const findTower = () => this.selectedCharacter.towers.find((tower) => tower.id === detail.towerId);
+    // Kurulabilir liste, karakterin kiti degil: duvar kimsenin kiti degil ama
+    // herkes kurabiliyor. Kiti aramak duvar butonunu tumden tepkisiz birakiyordu.
+    const findTower = () => towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === detail.towerId);
     const previewPoint = () => {
       if (detail.clientX === undefined || detail.clientY === undefined) {
         return undefined;
@@ -1158,8 +1161,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
-    if (definitionId === "zeynep-8") {
-      return this.canPlaceAbartiEdgePreview(x, y, this.getPlacementOrientation(definitionId), ignoreTowerId);
+    if (this.isEdgePlacedDefinition(definitionId)) {
+      return this.canPlaceEdgePreview(x, y, this.getPlacementOrientation(definitionId, x, y), ignoreTowerId, definitionId);
     }
 
     const footprint = this.getTowerPreviewFootprintCells(x, y);
@@ -1216,18 +1219,20 @@ export class GameScene extends Phaser.Scene {
     return isInsideMap(this.selectedMapData, gridPoint.col, gridPoint.row) ? [gridPoint] : [];
   }
 
-  private canPlaceAbartiEdgePreview(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
-    const segments = this.getAbartiEdgeSegments(x, y, orientation);
-    if (segments.length !== 2 || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+  private canPlaceEdgePreview(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "", definitionId = "zeynep-8") {
+    const length = this.getEdgeLength(definitionId);
+    const segments = this.getAbartiEdgeSegments(x, y, orientation, length);
+    if (segments.length !== length || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
       return false;
     }
 
     for (const tower of this.towerSnapshots.values()) {
-      if (tower.id === ignoreTowerId || tower.definitionId !== "zeynep-8") {
+      // Kenara oturan her yapi yeri kapatir, yalnizca Abarti degil.
+      if (tower.id === ignoreTowerId || !this.isEdgePlacedDefinition(tower.definitionId)) {
         continue;
       }
 
-      const existingSegments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal");
+      const existingSegments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", this.getEdgeLength(tower.definitionId));
       if (segments.some((segment) => existingSegments.some((existing) => (
         existing.orientation === segment.orientation &&
         existing.col === segment.col &&
@@ -1240,25 +1245,23 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
-    const gridSize = this.getMapCellSize();
-    const origin = getMapOrigin(this.selectedMapData);
-    if (orientation === "vertical") {
-      const col = Math.max(0, Math.min(this.selectedMapData.cols, Math.round((x - origin.x) / gridSize)));
-      const row = Math.max(0, Math.min(this.selectedMapData.rows - 2, Math.round((y - origin.y) / gridSize - 1)));
-      return [
-        { orientation, col, row },
-        { orientation, col, row: row + 1 }
-      ];
-    }
-
-    const col = Math.max(0, Math.min(this.selectedMapData.cols - 2, Math.round((x - origin.x) / gridSize - 1)));
-    const row = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - origin.y) / gridSize)));
-    return [
-      { orientation, col, row },
-      { orientation, col: col + 1, row }
-    ];
+  /** Yapinin kapladigi kenar cizgisi sayisi. Duvar tek, Abarti iki. */
+  private getEdgeLength(definitionId: string) {
+    return definitionId === WALL_TOWER_ID ? 1 : 2;
   }
+
+  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation, length = 2) {
+    return getEdgeSegments({
+      x,
+      y,
+      orientation,
+      length,
+      gridSize: this.getMapCellSize(),
+      origin: getMapOrigin(this.selectedMapData),
+      board: { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows }
+    });
+  }
+
 
   private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
     if (segment.orientation === "vertical") {

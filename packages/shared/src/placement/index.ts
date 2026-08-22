@@ -133,3 +133,55 @@ function cellKey(cell: PlacementCell) {
 function edgeKey(segment: EdgeSegment) {
   return `${segment.orientation}:${segment.col}:${segment.row}`;
 }
+
+/**
+ * Bir dunya noktasinin oturdugu kenar cizgileri.
+ *
+ * Bu geometri bir donem hem sunucuda hem istemcide ayri ayri yaziliydi ve ikisi
+ * de yalnizca iki cizgilik Abarti'yi taniyordu. Duvar tek cizgilik bir yapi
+ * olarak eklenince sunucu kopyasi guncellendi, istemci kopyasi geride kaldi ve
+ * duvar butonu sessizce tepkisiz kaldi. Tek kopya, iki tarafin ayrisamamasi
+ * demek.
+ *
+ * Segmentin iki ekseni farkli sey olcer: biri cizginin kendisi (yuvarlanir),
+ * digeri hucre sirasi (imlecin bulundugu kareden baslar). Yapi imlecin iki
+ * yanina esit yayildigi icin baslangic yarim uzunluk geri kaydirilir; tek
+ * formul her uzunlukta dogru sonucu verir.
+ */
+export function getEdgeSegments(options: {
+  x: number;
+  y: number;
+  orientation: EdgeOrientation;
+  length: number;
+  gridSize: number;
+  origin: { x: number; y: number };
+  board: PlacementBoard;
+}): EdgeSegment[] {
+  const { x, y, orientation, gridSize, origin, board } = options;
+  const length = Math.max(1, Math.floor(options.length));
+  const cellStart = (fraction: number) => Math.floor(fraction - (length - 1) / 2);
+
+  if (orientation === "vertical") {
+    const col = clamp(Math.round((x - origin.x) / gridSize), 0, board.cols);
+    const row = clamp(cellStart((y - origin.y) / gridSize), 0, Math.max(0, board.rows - length));
+    return Array.from({ length }, (_, index) => ({ orientation, col, row: row + index }));
+  }
+
+  const col = clamp(cellStart((x - origin.x) / gridSize), 0, Math.max(0, board.cols - length));
+  const row = clamp(Math.round((y - origin.y) / gridSize), 0, board.rows);
+  return Array.from({ length }, (_, index) => ({ orientation, col: col + index, row }));
+}
+
+/** Segmentlerin merkezi: kenar yapilarinin dunya konumu buraya oturur. */
+export function getEdgeSegmentsCenter(segments: EdgeSegment[], gridSize: number, origin: { x: number; y: number }) {
+  const [first] = segments;
+  if (!first) return undefined;
+  const length = segments.length;
+  return first.orientation === "vertical"
+    ? { x: origin.x + first.col * gridSize, y: origin.y + (first.row + length / 2) * gridSize }
+    : { x: origin.x + (first.col + length / 2) * gridSize, y: origin.y + first.row * gridSize };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}

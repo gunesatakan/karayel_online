@@ -589,7 +589,7 @@ export { getOrbitTargetHitCooldownMs, selectOrbitSweepContacts, selectOrbitSweep
 export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
-export { getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
+export { getEdgeSegments, getEdgeSegmentsCenter, getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
 export {
   computeFlowField,
   getFlowCost,

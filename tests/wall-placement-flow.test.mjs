@@ -16,7 +16,8 @@ import {
   WALL_TOWER_ID,
   getMapGridSize,
   getMapOrigin,
-  towerCatalog
+  towerCatalog,
+  getEdgeSegments
 } from "../packages/shared/dist/index.js";
 import { createRoom } from "./helpers/match-room-harness.mjs";
 
@@ -82,5 +83,60 @@ test("sunucu snap'i sonrası segment aynı kenarda kalır", () => {
     const before = room.getAbartiEdgeSegments(raw.x, raw.y, orientation, 1);
     const after = room.getAbartiEdgeSegments(snapped.x, snapped.y, orientation, 1);
     assert.deepEqual(after, before, `${orientation}: snap segmenti kaydiriyor`);
+  }
+});
+
+/**
+ * Duvar butonunun tepkisiz kalmasi tek bir sebepten degildi: istemcinin dort
+ * ayri yeri "kenar yapisi" derken yalnizca Abarti'yi kastediyordu. Bunlarin
+ * hicbiri sunucu testleriyle yakalanamiyordu cunku hepsi istemci tarafindaydi.
+ *
+ * Geometri artik `packages/shared` icinde tek kopya; buradaki testler o kopyanin
+ * iki uzunlukta da dogru davrandigini ve iki tarafin ayni sonucu urettigini
+ * sabitler.
+ */
+test("ortak kenar geometrisi tek ve çift uzunlukta doğru oturur", () => {
+  const room = createRoom("warrior");
+  const gridSize = getMapGridSize(room.activeMap);
+  const origin = getMapOrigin(room.activeMap);
+  const board = { cols: room.activeMap.cols, rows: room.activeMap.rows };
+
+  // Imlec 4. satirin ortasinda, 5. dikey cizginin uzerinde.
+  const x = origin.x + 5 * gridSize;
+  const y = origin.y + 4 * gridSize + gridSize / 2;
+
+  const single = getEdgeSegments({ x, y, orientation: "vertical", length: 1, gridSize, origin, board });
+  assert.deepEqual(single, [{ orientation: "vertical", col: 5, row: 4 }], "tek cizgi imlecin karesine oturmuyor");
+
+  const double = getEdgeSegments({ x, y, orientation: "vertical", length: 2, gridSize, origin, board });
+  assert.equal(double.length, 2);
+  assert.deepEqual(double[0], { orientation: "vertical", col: 5, row: 4 }, "cift cizgi kaymis");
+});
+
+test("sunucu ortak geometriyi kullanır", () => {
+  const room = createRoom("warrior");
+  const gridSize = getMapGridSize(room.activeMap);
+  const origin = getMapOrigin(room.activeMap);
+  const board = { cols: room.activeMap.cols, rows: room.activeMap.rows };
+  const x = origin.x + 5 * gridSize;
+  const y = origin.y + 4 * gridSize + gridSize / 2;
+
+  for (const length of [1, 2]) {
+    assert.deepEqual(
+      room.getAbartiEdgeSegments(x, y, "vertical", length),
+      getEdgeSegments({ x, y, orientation: "vertical", length, gridSize, origin, board }),
+      `uzunluk ${length}: sunucu ortak geometriden sapiyor`
+    );
+  }
+});
+
+test("duvar kurulabilir listede bulunur, kitte bulunmaz", () => {
+  // Butonun tepkisiz kalmasinin sebebi tam olarak buydu: tikama isleyicisi
+  // kuleyi kitte ariyordu.
+  for (const characterId of Object.keys(towerCatalog)) {
+    assert.ok(
+      towerCatalog[characterId].some((tower) => tower.id === WALL_TOWER_ID),
+      `${characterId}: duvar kurulabilir listede yok`
+    );
   }
 });
