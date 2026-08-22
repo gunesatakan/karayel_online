@@ -16,6 +16,7 @@ import {
   TOWER_BUILD_BOTTOM,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  createDefaultEditableMap,
   createOpenArenaMap,
   getArenaCameraView,
   getMapWorldBounds
@@ -149,4 +150,33 @@ test("harita ekranda yatay olarak ortalanir", () => {
     assert.ok(Math.abs(solPay - sagPay) < 0.001, `${size.cols}x${size.rows}: yatay paylar esit degil`);
     assert.ok(solPay >= -0.001, `${size.cols}x${size.rows}: sol kenar ekranin disinda`);
   }
+});
+
+test("odaya baglanmak haritayi cerceve disina tasiramaz", () => {
+  // Istemci once kendi varsayilan haritasini cizer (11 sutun, 374 px: dunya
+  // seridine zaten sigar), sunucunun arenasi ise 12 sutun. Kamera yalnizca ilk
+  // haritaya gore ayarlanirsa oyuncu "baglanana kadar sigiyordu, baglaninca
+  // iki yanindan tasti" der -- bildirilen hata tam olarak buydu.
+  const asamalar = [
+    { ad: "baglanmadan once", map: createDefaultEditableMap() },
+    { ad: "baglandiktan sonra", map: createOpenArenaMap(12, 18) }
+  ];
+
+  for (const asama of asamalar) {
+    const bounds = getMapWorldBounds(asama.map);
+    const view = getArenaCameraView(asama.map);
+    assert.ok(view.left <= bounds.left + 0.001, `${asama.ad}: sol kenar cerceve disinda`);
+    assert.ok(view.left + view.width >= bounds.right - 0.001, `${asama.ad}: sag kenar cerceve disinda`);
+
+    const world = configureArenaCamera(asama.map, 1);
+    assert.ok(world.left <= bounds.left, `${asama.ad}: sol kenar kirpiliyor`);
+    assert.ok(world.right >= bounds.right, `${asama.ad}: sag kenar kirpiliyor`);
+  }
+
+  // Ikinci asama daha genis oldugu icin olcegin kuculmesi sart: fit sabit
+  // kalirsa harita ancak kirpilarak sigar.
+  assert.ok(
+    getArenaCameraView(asamalar[1].map).fit < getArenaCameraView(asamalar[0].map).fit,
+    "genisleyen harita icin olcek kuculmemis"
+  );
 });
