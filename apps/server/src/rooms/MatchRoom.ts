@@ -92,6 +92,10 @@ import {
   advanceResourceExtraction,
   getLogisticsWorkerRespawnRemainingMs,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
+  MAX_HIRED_WORKERS,
+  type HirableWorkerRole,
+  getWorkerHireCost,
+  isHirableWorkerRole,
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_CAPACITY,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
@@ -396,6 +400,8 @@ class Player extends Schema {
   ownedShopItemIds: string[] = [];
   /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
   inventoryItemIds: string[] = [];
+  /** Altinla alinmis ek isciler; rolu alim aninda oyuncu secer. */
+  hiredWorkerRoles: HirableWorkerRole[] = [];
   shopOffers: ShopItem[] = [];
   shopRerolls = 0;
   nexusShieldCharges = 0;
@@ -665,6 +671,7 @@ type TowerModel = {
 };
 
 type RepairStructureMessage = { towerId?: string };
+type HireWorkerMessage = { role?: HirableWorkerRole };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
 type BuyShopItemMessage = { itemId?: string };
 type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
@@ -1308,6 +1315,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
+    this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
 
@@ -4144,9 +4152,16 @@ export class MatchRoom extends Room<MatchState> {
     const { gridSize } = getMapMetrics(this.activeMap);
     for (const ownerId of this.state.players.keys()) {
       const player = this.state.players.get(ownerId);
-      const workerModes = player?.ownedShopItemIds.includes("besinci-isci") ? [...baseWorkerModes, "ammoTransport" as const] : baseWorkerModes;
+      // Temel dort isciden sonrakiler: magazadan gelen besinci ve altinla
+      // alinanlar. Her birinin anahtari ayri olmali, yoksa ayni rolu iki kez
+      // alan oyuncunun ikinci iscisi birincisinin uzerine yazilirdi.
+      const extraModes: Array<DroneSnapshot["mode"]> = [
+        ...(player?.ownedShopItemIds.includes("besinci-isci") ? ["ammoTransport" as const] : []),
+        ...(player?.hiredWorkerRoles ?? [])
+      ];
+      const workerModes = [...baseWorkerModes, ...extraModes];
       for (const [index, mode] of workerModes.entries()) {
-        const suffix = index >= baseWorkerModes.length ? ":extra" : "";
+        const suffix = index >= baseWorkerModes.length ? `:extra${index - baseWorkerModes.length}` : "";
         const workerKey = `${ownerId}:${mode}${suffix}`;
         const respawnAt = this.deadLogisticsWorkers.get(workerKey);
         if (respawnAt !== undefined) {
@@ -4754,6 +4769,36 @@ export class MatchRoom extends Room<MatchState> {
    * kalani onarmak yeniden insadan ucuz oldugu icin dalga arasi bakim anlamli
    * bir karar olur.
    */
+  /**
+   * Isci alimi.
+   *
+   * Rol alim aninda secilir ve sonradan degismez: karar geri alinabilir olsaydi
+   * oyuncu her dalgada lojistigini bedava yeniden dagitir, secim de kararligini
+   * yitirirdi. Bedel alinan isci sayisiyla buyur.
+   */
+  private hireWorker(client: Client, message: HireWorkerMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !isHirableWorkerRole(message?.role)) {
+      return;
+    }
+    if (player.hiredWorkerRoles.length >= MAX_HIRED_WORKERS) {
+      return;
+    }
+
+    const cost = getWorkerHireCost(player.hiredWorkerRoles.length);
+    if (player.gold < cost) {
+      return;
+    }
+
+    player.gold -= cost;
+    player.goldSpent += cost;
+    player.hiredWorkerRoles.push(message.role);
+    // Isci hemen sahaya ciksin: bir sonraki dalgayi beklemek alimin etkisini
+    // oyuncunun goremedigi bir yere ertelerdi.
+    this.ensureLogisticsWorkers();
+    client.send("worker:hired", { role: message.role, cost });
+  }
+
   private repairStructure(client: Client, message: RepairStructureMessage) {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
@@ -7350,7 +7395,8 @@ export class MatchRoom extends Room<MatchState> {
           .map(([key, respawnAt]) => ({
             mode: key.slice(id.length + 1) as DroneSnapshot["mode"],
             remainingSeconds: Math.ceil(getLogisticsWorkerRespawnRemainingMs(respawnAt, now) / 1000)
-          }))
+          })),
+        hiredWorkerRoles: [...player.hiredWorkerRoles]
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({
         id: enemy.id,

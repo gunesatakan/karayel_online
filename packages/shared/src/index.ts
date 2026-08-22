@@ -95,6 +95,8 @@ export type PlayerSnapshot = {
   approval?: number;
   stress?: number;
   deadLogisticsWorkers?: Array<{ mode: DroneSnapshot["mode"]; remainingSeconds: number }>;
+  /** Satin alinmis ek isciler; siradaki bedel bu sayidan cikar. */
+  hiredWorkerRoles?: Array<import("./logistics/index.js").HirableWorkerRole>;
 };
 
 export type LobbyPlayerSnapshot = {
@@ -552,9 +554,19 @@ export {
   AMMO_FACTORY_INITIAL_ENERGY,
   LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
+  HIRABLE_WORKER_ROLES,
+  WORKER_ROLE_LABELS,
+  WORKER_ROLE_DESCRIPTIONS,
+  WORKER_HIRE_BASE_COST,
+  WORKER_HIRE_COST_GROWTH,
+  MAX_HIRED_WORKERS,
   advanceResourceExtraction,
-  getLogisticsWorkerRespawnRemainingMs
+  canHireWorker,
+  getLogisticsWorkerRespawnRemainingMs,
+  getWorkerHireCost,
+  isHirableWorkerRole
 } from "./logistics/index.js";
+export type { HirableWorkerRole } from "./logistics/index.js";
 export {
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,

@@ -342,3 +342,61 @@ test("duvar kurmak towersBuilt sayacını artırmaz", () => {
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
   assert.equal(player.towersBuilt, before + 1, "gercek kule sayaci artirmadi");
 });
+
+test("duvarin iki yanindaki karelere de kule kurulabilir", () => {
+  // Duvar kare degil cizgi kaplar. Cizgiyi komsu bir kareye yuvarlayan bir
+  // yerlesim testi duvarin bir yanini dolu, obur yanini bos gosterir; oyuncuya
+  // bu "bazen engelleniyor bazen engellenmiyor" diye yansiyor.
+  for (const orientation of ["vertical", "horizontal"]) {
+    const room = createRoom("warrior");
+    const spot = findEdgeSpot(room, orientation, WALL_TOWER_ID);
+    assert.ok(spot, `${orientation}: duvar icin kenar bulunamadi`);
+    room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: WALL_TOWER_ID });
+    const wall = [...room.towers.values()].find((tower) => tower.definition.id === WALL_TOWER_ID);
+    assert.ok(wall, `${orientation}: duvar kurulmadi`);
+
+    const gridSize = getMapGridSize(room.activeMap);
+    const kule = towerCatalog.warrior.find((tower) => tower.id === "warrior-1");
+    const komsular = orientation === "vertical"
+      ? [{ x: wall.x - gridSize / 2, y: wall.y }, { x: wall.x + gridSize / 2, y: wall.y }]
+      : [{ x: wall.x, y: wall.y - gridSize / 2 }, { x: wall.x, y: wall.y + gridSize / 2 }];
+
+    for (const [index, komsu] of komsular.entries()) {
+      assert.ok(
+        room.canPlaceTower(komsu.x, komsu.y, kule.id, "horizontal"),
+        `${orientation}: duvarin ${index === 0 ? "bir" : "obur"} yanindaki kare kapali`
+      );
+    }
+  }
+});
+
+test("yikilan duvar anlik goruntude devre disi isaretlenir", () => {
+  // Yikilan yapi haritadan silinmez, cunku onarilabilir olmasi kaydinin
+  // durmasina bagli. Istemcinin onu molozlasmis cizebilmesi icin anlik
+  // goruntude ayirt edilebilmesi gerekiyor.
+  const { room, wall } = buildWall("warrior", "vertical");
+  room.damageTower(wall, wall.maxHp + 999);
+  assert.equal(wall.hp, 0);
+  assert.ok(room.towers.has(wall.id), "yikilan duvar kaydi silinmemeli");
+
+  const snapshot = room.getSnapshot();
+  const wallSnapshot = snapshot.towers.find((tower) => tower.id === wall.id);
+  assert.ok(wallSnapshot, "yikilan duvar anlik goruntude yok");
+  assert.equal(wallSnapshot.disabled, true, "yikilan duvar devre disi isaretlenmemis");
+  assert.equal(wallSnapshot.hp, 0);
+});
+
+test("yikilan duvar satilarak kenar geri acilir", () => {
+  // Yikilan yapi onarilamaz ve yerini tutmaya devam eder -- kule enkazlariyla
+  // ayni kural. Oyuncunun cikis yolu enkazi satmak; bu yol kapaliysa kenar
+  // kalici olarak olu bir duvarla dolu kalirdi.
+  const { room, wall } = buildWall("warrior", "vertical");
+  const spot = { x: wall.x, y: wall.y };
+  room.damageTower(wall, wall.maxHp + 999);
+  assert.equal(wall.hp, 0);
+  assert.equal(room.canPlaceTower(spot.x, spot.y, WALL_TOWER_ID, "vertical"), false, "enkaz dururken kenar dolu olmali");
+
+  room.sellTower({ sessionId: "p1" }, { towerId: wall.id });
+  assert.equal(room.towers.has(wall.id), false, "enkaz satilamadi");
+  assert.equal(room.canPlaceTower(spot.x, spot.y, WALL_TOWER_ID, "vertical"), true, "kenar geri acilmadi");
+});

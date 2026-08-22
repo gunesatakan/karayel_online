@@ -4,7 +4,14 @@ import {
   characters,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
+  HIRABLE_WORKER_ROLES,
+  type HirableWorkerRole,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
+  MAX_HIRED_WORKERS,
+  WORKER_ROLE_DESCRIPTIONS,
+  WORKER_ROLE_LABELS,
+  getWorkerHireCost,
+  isHirableWorkerRole,
   TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
@@ -89,6 +96,9 @@ type ControlActionDetail = {
     | "toggleAmmoLogistics"
     | "toggleTowerStandby"
     | "reviveLogisticsWorker"
+    | "openWorkerHire"
+    | "closeWorkerHire"
+    | "hireWorker"
     | "setTowerPerformance"
     | "buyShopItem"
     | "rerollShop"
@@ -108,6 +118,7 @@ type ControlActionDetail = {
   towerId?: string;
   slot?: number;
   tier?: ZeynepCommandTier;
+  role?: string;
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
   performance?: number;
@@ -394,6 +405,8 @@ export class GameScene extends Phaser.Scene {
   private lastArenaTapX = 0;
   private lastArenaTapY = 0;
   private arenaZoomed = false;
+  /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
+  private workerHireOpen = false;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
@@ -782,16 +795,34 @@ export class GameScene extends Phaser.Scene {
     this.placementGhost?.destroy();
     // Matches the placed sprite: disc on the tile, frame slightly larger to hold
     // whatever overhangs it.
-    const previewDiscSize = this.getMapCellSize() * getTowerGridSpan(tower.id);
-    const previewSize = tower.id === "warrior-1" ? previewDiscSize : previewDiscSize / TOWER_ART_DISC_RATIO;
-    const ghostWidth = tower.id === "zeynep-8" ? (this.abartiOrientation === "horizontal" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
-    const ghostHeight = tower.id === "zeynep-8" ? (this.abartiOrientation === "vertical" ? previewSize * 1.7 : previewSize * 0.24) : previewSize;
+    const ghost = this.getGhostSize(tower.id, this.getPlacementOrientation(tower.id, previewPoint.x, previewPoint.y));
     this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, this.getTowerTextureKey(tower.id, 1))
-      .setDisplaySize(ghostWidth, ghostHeight)
+      .setDisplaySize(ghost.width, ghost.height)
       .setAlpha(0.78)
       .setDepth(28);
     this.updateTowerDragAt(previewPoint);
     this.updateSelectionUi();
+  }
+
+  /**
+   * Surukleme hayaletinin olcusu.
+   *
+   * Kenar yapilari kare kaplamaz. Duvari bu daldan gecirmemek onu tam kare bir
+   * disk olarak cizdiriyordu; yesil/kirmizi tint de disk bicimli oldugu icin
+   * oyuncunun gordugu sey bir kenar degil dairesel bir alan oluyordu.
+   */
+  private getGhostSize(definitionId: string, orientation: TowerOrientation) {
+    const discSize = this.getMapCellSize() * getTowerGridSpan(definitionId);
+    const size = definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
+    if (!this.isEdgePlacedDefinition(definitionId)) {
+      return { width: size, height: size };
+    }
+
+    const long = this.getEdgeLength(definitionId) === 1 ? 0.92 : 1.7;
+    return {
+      width: size * (orientation === "vertical" ? 0.24 : long),
+      height: size * (orientation === "vertical" ? long : 0.24)
+    };
   }
 
   private updateTowerDrag(pointer: Phaser.Input.Pointer) {
@@ -803,9 +834,13 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, this.draggedTowerDefinition.id);
+    const definitionId = this.draggedTowerDefinition.id;
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, definitionId);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
-    this.placementGhost?.setPosition(cell.x, cell.y).setTint(canPlace ? 0x86efac : 0xf87171);
+    const ghost = this.getGhostSize(definitionId, this.getPlacementOrientation(definitionId, previewPoint.x, previewPoint.y));
+    this.placementGhost?.setPosition(cell.x, cell.y)
+      .setDisplaySize(ghost.width, ghost.height)
+      .setTint(canPlace ? 0x86efac : 0xf87171);
     this.drawPlacementGrid(cell.x, cell.y, canPlace);
   }
 
@@ -992,6 +1027,21 @@ export class GameScene extends Phaser.Scene {
       case "reviveLogisticsWorker":
         this.room?.send("reviveLogisticsWorker");
         break;
+      case "openWorkerHire":
+        this.workerHireOpen = true;
+        this.updateSelectionUi();
+        break;
+      case "closeWorkerHire":
+        this.workerHireOpen = false;
+        this.updateSelectionUi();
+        break;
+      case "hireWorker":
+        if (isHirableWorkerRole(detail.role)) {
+          this.room?.send("worker:hire", { role: detail.role });
+          this.workerHireOpen = false;
+          this.updateSelectionUi();
+        }
+        break;
       case "setTowerPerformance":
         if (this.selectedPlacedTowerId && typeof detail.performance === "number") {
           this.room?.send("setTowerPerformance", { towerId: this.selectedPlacedTowerId, performance: detail.performance });
@@ -1070,7 +1120,8 @@ export class GameScene extends Phaser.Scene {
     const footprint = this.getTowerPreviewFootprintCells(highlightX, highlightY);
     grid.clear();
 
-    if ((this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id) === "zeynep-8") {
+    const previewDefinitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
+    if (this.isEdgePlacedDefinition(previewDefinitionId)) {
       grid.lineStyle(1, 0xe2e8f0, 0.16);
       for (let x = origin.x; x <= arenaRight + 0.01; x += cellSize) {
         grid.lineBetween(x, origin.y, x, arenaBottom);
@@ -1079,7 +1130,12 @@ export class GameScene extends Phaser.Scene {
         grid.lineBetween(origin.x, y, arenaRight, y);
       }
 
-      const segments = this.getAbartiEdgeSegments(highlightX, highlightY, this.getPlacementOrientation("zeynep-8"));
+      const segments = this.getAbartiEdgeSegments(
+        highlightX,
+        highlightY,
+        this.getPlacementOrientation(previewDefinitionId, highlightX, highlightY),
+        this.getEdgeLength(previewDefinitionId)
+      );
       grid.fillStyle(canPlace ? 0x22c55e : 0xef4444, 0.42);
       grid.lineStyle(2, canPlace ? 0x86efac : 0xfca5a5, 0.95);
       for (const segment of segments) {
@@ -1201,7 +1257,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getTowerFootprintCells(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
-    if (definitionId === "zeynep-8") {
+    // Kenar yapilari kare degil cizgi kaplar. Kare dondurmek duvarin oturdugu
+    // cizginin yuvarlandigi komsu kareyi dolu gosteriyordu: duvarin bir yanina
+    // kule kurulabiliyor, obur yanina kurulamiyordu.
+    if (this.isEdgePlacedDefinition(definitionId)) {
       return [];
     }
 
@@ -1317,6 +1376,30 @@ export class GameScene extends Phaser.Scene {
    * arayuzun kendi hesabini yazmasi iki tarafin kacinilmaz olarak ayrismasi
    * demek olurdu. Sunucu yine de son sozu soyluyor, burasi sadece gosterim.
    */
+  /**
+   * Isci alma paneli.
+   *
+   * Bedel ve kontenjan sunucudaki kuralin aynisindan hesaplanir; buradaki
+   * yalnizca dugmenin ne yazacagini belirler, gecerlilik kararini sunucu verir.
+   */
+  private getWorkerHireState() {
+    const hired = this.localPlayerSnapshot?.hiredWorkerRoles ?? [];
+    const cost = getWorkerHireCost(hired.length);
+    return {
+      open: this.workerHireOpen && hired.length < MAX_HIRED_WORKERS,
+      hired: hired.length,
+      max: MAX_HIRED_WORKERS,
+      cost,
+      affordable: (this.localPlayerSnapshot?.gold ?? 0) >= cost,
+      roles: HIRABLE_WORKER_ROLES.map((role) => ({
+        id: role,
+        label: WORKER_ROLE_LABELS[role],
+        description: WORKER_ROLE_DESCRIPTIONS[role],
+        owned: hired.filter((owned) => owned === role).length
+      }))
+    };
+  }
+
   private getRepairState(selectedTower: TowerSnapshot | undefined, definition: TowerDefinition | undefined) {
     if (!selectedTower || !definition || selectedTower.ownerId !== this.localSessionId) return undefined;
     const maxHp = selectedTower.maxHp ?? 0;
@@ -2009,6 +2092,9 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
+    room.onMessage("worker:hired", (message: { role: HirableWorkerRole; cost: number }) => {
+      this.showNotice(`${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
+    });
     room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
@@ -2707,10 +2793,11 @@ export class GameScene extends Phaser.Scene {
       // disc-to-frame ratio, so this lands the disc on the tile either way.
       const textureScale = spriteSize / Math.max(1, rendered.base.frame.width);
       rendered.base.setScale(selectionScale * textureScale * footprintScaleX, selectionScale * textureScale * footprintScaleY);
-      rendered.base.setVisible(tower.definitionId !== "zeynep-8");
+      const edgePlaced = this.isEdgePlacedDefinition(tower.definitionId);
+      rendered.base.setVisible(!edgePlaced);
       rendered.base.setTint(this.getTowerTint(tower));
       rendered.base.setAlpha(tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78);
-      rendered.halo.setVisible(tower.definitionId !== "zeynep-8" && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
+      rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
       this.drawTowerHealthBar(rendered.healthBar, tower, discSize);
       if (tower.id === this.selectedPlacedTowerId) {
         this.drawSelectedTowerResources(tower, discSize);
@@ -2980,6 +3067,9 @@ export class GameScene extends Phaser.Scene {
     const segments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", this.getEdgeLength(tower.definitionId));
     const phase = (performance.now() % 1200) / 1200;
     const selected = tower.id === this.selectedPlacedTowerId;
+    // Yikilan yapi haritadan silinmez -- onarilabilmesi buna bagli -- ama ayakta
+    // duruyormus gibi de gorunmemeli: govde sonuyor ve ortasindan aciliyor.
+    const broken = tower.disabled === true || (tower.hp !== undefined && tower.hp <= 0);
     const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.16;
     const thickness = Math.max(5, this.getMapCellSize() * 0.16);
     const glowWidth = thickness * (selected ? 4.2 : 3.2);
@@ -2992,6 +3082,26 @@ export class GameScene extends Phaser.Scene {
       const y1 = horizontal ? (rect.top + rect.bottom) / 2 : rect.top;
       const x2 = horizontal ? rect.right : (rect.left + rect.right) / 2;
       const y2 = horizontal ? (rect.top + rect.bottom) / 2 : rect.bottom;
+
+      if (broken) {
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        const stump = 0.34;
+        const ax = x1 + (midX - x1) * (1 - stump);
+        const ay = y1 + (midY - y1) * (1 - stump);
+        const bx = x2 + (midX - x2) * (1 - stump);
+        const by = y2 + (midY - y2) * (1 - stump);
+        graphics.lineStyle(thickness * 1.1, 0x1e1b4b, 0.55);
+        graphics.lineBetween(x1, y1, ax, ay);
+        graphics.lineBetween(x2, y2, bx, by);
+        graphics.lineStyle(coreWidth * 0.8, selected ? 0xcbd5f5 : 0x64748b, 0.5);
+        graphics.lineBetween(x1, y1, ax, ay);
+        graphics.lineBetween(x2, y2, bx, by);
+        graphics.fillStyle(0x475569, 0.5);
+        graphics.fillCircle(ax, ay, thickness * 0.3);
+        graphics.fillCircle(bx, by, thickness * 0.3);
+        continue;
+      }
 
       graphics.lineStyle(glowWidth, 0x7c3aed, selected ? 0.3 : 0.18);
       graphics.lineBetween(x1, y1, x2, y2);
@@ -4975,11 +5085,11 @@ export class GameScene extends Phaser.Scene {
 
   private findTowerAt(x: number, y: number) {
     const abartiHit = Array.from(this.towerSnapshots.values()).find((tower) => {
-      if (tower.definitionId !== "zeynep-8") {
+      if (!this.isEdgePlacedDefinition(tower.definitionId)) {
         return false;
       }
 
-      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal")
+      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", this.getEdgeLength(tower.definitionId))
         .some((segment) => {
           const rect = this.getAbartiEdgeSegmentRect(segment);
           return x >= rect.left - 4 && x <= rect.right + 4 && y >= rect.top - 4 && y <= rect.bottom + 4;
@@ -5000,6 +5110,7 @@ export class GameScene extends Phaser.Scene {
 
     const hitRadius = Math.max(10, this.getMapCellSize() * 0.62);
     return Array.from(this.towerSnapshots.values())
+      .filter((tower) => !this.isEdgePlacedDefinition(tower.definitionId))
       .map((tower) => ({
         tower,
         distanceSq: Phaser.Math.Distance.Squared(x, y, tower.x, tower.y)
@@ -5163,6 +5274,7 @@ export class GameScene extends Phaser.Scene {
           }, {})
         )
       },
+      workerHire: this.getWorkerHireState(),
       workerRevive: deadWorkers.length > 0 ? {
         count: deadWorkers.length,
         remainingSeconds: Math.min(...deadWorkers.map((worker) => worker.remainingSeconds)),

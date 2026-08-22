@@ -20,6 +20,15 @@ type ControlState = {
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
   workerRevive?: { count: number; remainingSeconds: number; enabled: boolean; cost: number };
+  /** Isci alimi; rol alim aninda secilir, sonradan degismez. */
+  workerHire?: {
+    open: boolean;
+    hired: number;
+    max: number;
+    cost: number;
+    affordable: boolean;
+    roles: Array<{ id: string; label: string; description: string; owned: number }>;
+  };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
   /** Hasarli yapiyi onarma; yikilan yapi onarilamaz, yeniden insa edilir. */
@@ -40,6 +49,7 @@ type ControlState = {
 
 type ControlAction = {
   action: string;
+  role?: string;
   towerId?: string;
   slot?: number;
   tier?: ZeynepTier;
@@ -170,6 +180,31 @@ export function setupGameControlUi(game: Phaser.Game) {
       const actions = document.createElement("div");
       actions.className = "gold-shop__actions";
       actions.append(close);
+      drawer.append(actions);
+      root.append(drawer);
+    }
+
+    if (state.workerHire?.open) {
+      const hire = state.workerHire;
+      const drawer = document.createElement("section");
+      drawer.className = "gold-shop inventory";
+      drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.cost} altın</strong></header>`
+        + `<p>İşçinin rolü alırken belirlenir ve sonradan değişmez. Alınan işçi: ${hire.hired}/${hire.max}.</p>`
+        + `<div class="gold-shop__offers"></div>`;
+      const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
+      for (const role of hire.roles) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "gold-shop__item gold-shop__item--utility";
+        button.disabled = !hire.affordable;
+        button.innerHTML = `<span>rol</span><strong>${role.label}</strong><small>${role.description}</small>`
+          + (role.owned > 0 ? `<b>x${role.owned}</b>` : "");
+        button.addEventListener("pointerup", () => dispatch({ action: "hireWorker", role: role.id }));
+        list?.append(button);
+      }
+      const actions = document.createElement("div");
+      actions.className = "gold-shop__actions";
+      actions.append(makeActionButton("Kapat", "gold-shop__close", true, () => dispatch({ action: "closeWorkerHire" })));
       drawer.append(actions);
       root.append(drawer);
     }
@@ -333,6 +368,17 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     if (state.showOrientationToggle) {
       footer.append(makeActionButton(state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
+    }
+
+    if (state.workerHire) {
+      const hire = state.workerHire;
+      const full = hire.hired >= hire.max;
+      footer.append(makeActionButton(
+        full ? `İşçi ${hire.hired}/${hire.max}` : `İşçi Al ${hire.cost}g`,
+        "game-controls__worker-hire",
+        !full,
+        () => dispatch({ action: hire.open ? "closeWorkerHire" : "openWorkerHire" })
+      ));
     }
 
     if (state.workerRevive) {

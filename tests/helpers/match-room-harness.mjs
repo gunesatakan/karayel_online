@@ -40,6 +40,7 @@ export function createRoom(characterId) {
     ownedShopItemIds: [],
     inventoryItemIds: [],
     ownedCardIds: [],
+    hiredWorkerRoles: [],
     reputation: 0,
     authorityChain: 0,
     authorityQuality: 0,
