@@ -1,4 +1,5 @@
 import type { EditableMapData, MapScale } from "./map.js";
+import { getMapWorldBounds } from "./map.js";
 import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
@@ -17,6 +18,47 @@ export const PATH_WIDTH = 54;
 export const TOWER_GRID_SIZE = 34;
 export const TOWER_BUILD_TOP = BATTLE_TOP;
 export const TOWER_BUILD_BOTTOM = 698;
+
+export type ArenaCameraView = {
+  fit: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * Kameranin gostermesi gereken dunya dikdortgeni.
+ *
+ * `fit`, haritayi ekrana sigdirmak icin gereken olcek. Genislik kisiti her
+ * haritaya isler: varsayilan arena 12 sutun x 34 px = 408 px, kameranin gordugu
+ * serit ise 390 px. Sigdirma yapilmazsa harita iki yanindan 9'ar piksel
+ * kirpilir; en soldaki karenin dis kenari ekranin disinda kalir.
+ *
+ * Harita yatayda ekranin ortasina, dikeyde ise ust cubuk ile kontrol paneli
+ * arasindaki yerlesim seridinin ortasina oturur. Dikey yerlesim ekran kesrine
+ * birakilirsa sigdirmadan artan pay tumuyle alta, harita ile kontrol panelinin
+ * arasina bosluk olarak dusuyor -- uzun haritalarda ise harita cerceveyi asiyor.
+ */
+export function getArenaCameraView(map: EditableMapData): ArenaCameraView {
+  const bounds = getMapWorldBounds(map);
+  const availableHeight = TOWER_BUILD_BOTTOM - TOWER_BUILD_TOP;
+  const fit = Math.min(1, GAME_WORLD_WIDTH / bounds.width, availableHeight / bounds.height);
+  const width = GAME_WORLD_WIDTH / fit;
+  const height = GAME_WORLD_HEIGHT / fit;
+  const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
+  // Haritanin merkezinin oturmasi gereken ekran noktalari.
+  const screenCenterX = GAME_WORLD_WIDTH / 2;
+  const screenCenterY = (TOWER_BUILD_TOP + TOWER_BUILD_BOTTOM) / 2;
+  return {
+    fit,
+    left: centerX - screenCenterX / fit,
+    top: centerY - screenCenterY / fit,
+    width,
+    height
+  };
+}
 
 export const MAP_PATH = [
   { x: 34, y: 104 },

@@ -14,6 +14,7 @@ import {
   getEdgeSegments,
   isEdgeSegmentInsideBoard,
   occupiesTowerSlot,
+  getArenaCameraView,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -2330,29 +2331,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getArenaFitFactor() {
-    const bounds = getMapWorldBounds(this.selectedMapData);
-    if (this.selectedMapData.cols < 15) return 1;
-    const availableHeight = this.controlTop - TOWER_BUILD_TOP;
-    return Math.min(1, GAME_WORLD_WIDTH / bounds.width, availableHeight / bounds.height);
+    return getArenaCameraView(this.selectedMapData).fit;
   }
 
   private configureArenaCamera() {
     const camera = this.cameras.main;
-    const bounds = getMapWorldBounds(this.selectedMapData);
-    const fit = this.getArenaFitFactor();
-    // Phaser scroll'u kamera sınırına sıkıştırır. Özellikle 4x haritada
-    // kesirli fit değeri ideal scroll'u birkaç alt piksel negatife taşıyabilir;
-    // sol sınır 0 olursa bu pay yalnız sağda görünür. Simetrik yarım hücrelik
-    // kamera payı haritanın görsel merkezini değiştirmeden clamp'e alan açar.
-    const horizontalCameraPadding = TOWER_GRID_SIZE / 2;
-    camera.setBounds(
-      bounds.left - horizontalCameraPadding,
-      0,
-      Math.max(GAME_WORLD_WIDTH, bounds.width + horizontalCameraPadding * 2),
-      Math.max(GAME_WORLD_HEIGHT, bounds.bottom)
-    );
-    camera.setZoom(RENDER_SCALE * fit);
-    camera.centerOn(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    const view = getArenaCameraView(this.selectedMapData);
+    // Phaser scroll'u kamera sınırına sıkıştırır ve kesirli fit değerlerinde
+    // ideal scroll birkaç alt piksel dışarı taşabilir. İstenen dikdörtgenin iki
+    // yanına da simetrik pay bırakılırsa clamp bu payı tek tarafa yaslayamaz;
+    // centerOn aralığın tam ortasına oturur.
+    const padding = TOWER_GRID_SIZE / 2;
+    camera.setBounds(view.left - padding, view.top - padding, view.width + padding * 2, view.height + padding * 2);
+    camera.setZoom(RENDER_SCALE * view.fit);
+    camera.centerOn(view.left + view.width / 2, view.top + view.height / 2);
     this.arenaZoomed = false;
   }
 
