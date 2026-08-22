@@ -55,6 +55,7 @@ import {
   getPlacementFootprint,
   computeFlowField,
   getEdgeSegments,
+  occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
   getStructureTravelCost,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
@@ -4823,9 +4824,15 @@ export class MatchRoom extends Room<MatchState> {
 
     const towerLimit = (player.characterId === "zeynep" ? ZEYNEP_TOWER_LIMIT : DEFAULT_PLAYER_TOWER_LIMIT)
       + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
-    const currentTowerCount = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId).length;
-    if (currentTowerCount >= towerLimit) {
-      return;
+    const requested = this.findTowerDefinition(player.characterId, message.definitionId);
+    // Duvar kontenjandan yer kapmaz; sinir yalnizca savas kuleleri icin.
+    if (requested && occupiesTowerSlot(requested)) {
+      const currentTowerCount = Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === client.sessionId && occupiesTowerSlot(tower.definition))
+        .length;
+      if (currentTowerCount >= towerLimit) {
+        return;
+      }
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
@@ -4943,7 +4950,9 @@ export class MatchRoom extends Room<MatchState> {
     this.registerMelisFavoriteTower(tower);
     player.gold -= buildCost;
     player.goldSpent += buildCost;
-    player.towersBuilt += 1;
+    if (occupiesTowerSlot(definition)) {
+      player.towersBuilt += 1;
+    }
   }
 
   private upgradeTower(client: Client, message: UpgradeTowerMessage) {
@@ -4991,7 +5000,9 @@ export class MatchRoom extends Room<MatchState> {
     const refund = getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id);
     player.gold += refund;
     player.goldSpent = Math.max(0, player.goldSpent - refund);
-    player.towersBuilt = Math.max(0, player.towersBuilt - 1);
+    if (occupiesTowerSlot(tower.definition)) {
+      player.towersBuilt = Math.max(0, player.towersBuilt - 1);
+    }
     this.removeTowerReferences(tower.id);
     this.towers.delete(tower.id);
     this.markFlowFieldDirty();

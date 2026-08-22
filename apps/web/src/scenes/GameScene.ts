@@ -13,6 +13,7 @@ import {
   getMapOrigin,
   getEdgeSegments,
   isEdgeSegmentInsideBoard,
+  occupiesTowerSlot,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -1156,12 +1157,13 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
+    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
     const towerLimit = this.localPlayerSnapshot?.characterId === "zeynep" ? 12 : 10;
-    if (!ignoreTowerId && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
+    // Duvar kontenjandan yer kapmadigi icin sinir dolu olsa da kurulabilir.
+    if (!ignoreTowerId && occupiesTowerSlot({ id: definitionId }) && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
       return false;
     }
 
-    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
     if (this.isEdgePlacedDefinition(definitionId)) {
       return this.canPlaceEdgePreview(x, y, this.getPlacementOrientation(definitionId, x, y), ignoreTowerId, definitionId);
     }

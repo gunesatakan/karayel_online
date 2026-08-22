@@ -61,3 +61,15 @@ export function isSharedStructure(definition: Pick<TowerDefinition, "id">) {
 export function getCharacterTowers(characterId: CharacterId): TowerDefinition[] {
   return towerCatalog[characterId].filter((tower) => !isSharedStructure(tower));
 }
+
+/**
+ * Yapi kule kontenjanindan yer kapiyor mu.
+ *
+ * Kontenjan savas kuleleri icindir: oyuncu on kule kurabilir ve hangi onunu
+ * kuracagi asil karardir. Duvar ise ucuz bir zemin araci; hattini ormek icin
+ * hasar kulesinden vazgecmek gerekseydi duvar sistemi hicbir zaman kullanilmazdi
+ * -- zaten bir duvar tek basina bir kulenin yerini tutmaz.
+ */
+export function occupiesTowerSlot(definition: Pick<TowerDefinition, "id">) {
+  return !isSharedStructure(definition);
+}

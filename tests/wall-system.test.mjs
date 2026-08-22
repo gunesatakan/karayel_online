@@ -17,6 +17,7 @@ import {
   getStructureTravelCost,
   getTowerBuildCost,
   isSharedStructure,
+  occupiesTowerSlot,
   towerCatalog,
   wallTower,
   getEnemyCombatDefinition,
@@ -280,4 +281,64 @@ test("yıkılan kenar duvarı geçişi serbest bırakır", () => {
     0,
     "yikilan duvar hala gecisi kapatiyor"
   );
+});
+
+/**
+ * Kule kontenjani savas kuleleri icindir.
+ *
+ * Duvar hattini ormek icin hasar kulesinden vazgecmek gerekseydi duvar sistemi
+ * hicbir zaman kullanilmazdi: bir duvar tek basina bir kulenin yerini tutmaz.
+ */
+test("duvar kule kontenjanından yer kapmaz", () => {
+  assert.equal(occupiesTowerSlot(wallTower), false);
+  for (const tower of getCharacterTowers("warrior")) {
+    assert.equal(occupiesTowerSlot(tower), true, `${tower.id} kontenjandan sayilmiyor`);
+  }
+});
+
+test("kontenjan dolduğunda duvar hâlâ kurulabilir", () => {
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+
+  // Kontenjani doldur.
+  let built = 0;
+  for (let attempt = 0; attempt < 40 && built < 12; attempt += 1) {
+    const spot = findBuildableSpot(room, "warrior-1");
+    if (!spot) break;
+    const before = room.towers.size;
+    room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
+    if (room.towers.size === before) break;
+    built += 1;
+  }
+  assert.ok(built > 0, "test icin kule kurulamadi");
+
+  // Bu noktada kontenjan dolu olmali: bir kule daha kurulmamali.
+  const towersBefore = room.towers.size;
+  const extra = findBuildableSpot(room, "warrior-1");
+  if (extra) {
+    room.placeTower({ sessionId: "p1" }, { x: extra.x, y: extra.y, definitionId: "warrior-1" });
+    assert.equal(room.towers.size, towersBefore, "kontenjan sinir uygulamiyor; test varsayimi gecersiz");
+  }
+
+  // Duvar yine de kurulabilmeli.
+  const edge = findEdgeSpot(room, "vertical", WALL_TOWER_ID);
+  assert.ok(edge, "duvar icin kenar bulunamadi");
+  room.placeTower({ sessionId: "p1" }, { x: edge.x, y: edge.y, definitionId: WALL_TOWER_ID });
+  assert.equal(room.towers.size, towersBefore + 1, "kontenjan dolu diye duvar reddedildi");
+});
+
+test("duvar kurmak towersBuilt sayacını artırmaz", () => {
+  // Istemci sinir kontrolunu bu sayidan yapiyor; duvar burayi kirletirse
+  // birkac duvar sonrasi gercek kuleler kurulamaz hale gelir.
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  const before = player.towersBuilt;
+
+  const edge = findEdgeSpot(room, "vertical", WALL_TOWER_ID);
+  room.placeTower({ sessionId: "p1" }, { x: edge.x, y: edge.y, definitionId: WALL_TOWER_ID });
+  assert.equal(player.towersBuilt, before, "duvar sayaci artirdi");
+
+  const spot = findBuildableSpot(room, "warrior-1");
+  room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
+  assert.equal(player.towersBuilt, before + 1, "gercek kule sayaci artirmadi");
 });
