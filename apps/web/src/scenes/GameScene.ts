@@ -48,6 +48,7 @@ import {
   type ProjectileSpawnSnapshot,
   type ServerPerfSnapshot,
   hasUnlockBit,
+  getStructureRepairCost,
   type StaticEnemySnapshot,
   type StaticSnapshot,
   type StaticTowerSnapshot,
@@ -78,6 +79,7 @@ type ControlActionDetail = {
     | "useUltimateMode"
     | "upgradeTower"
     | "sellTower"
+    | "repairStructure"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
     | "toggleTowerStandby"
@@ -198,7 +200,28 @@ const GUIDANCE_RADIUS = 78;
 
 type ZeynepCommandTier = "small" | "medium" | "big";
 type AudioVolumeChannel = "music" | "voice";
+/** Kule tepsisindeki sutun sayisi; satirlarin tepsiye sigmasini belirler. */
+const TOWER_TRAY_COLUMNS = 5;
+
 type TowerOrientation = NonNullable<TowerSnapshot["orientation"]>;
+
+/** Sunucunun yaydigi gedik uyarisi: hangi yapi, nerede, ne kadar cani kaldi. */
+type StructureBreachMessage = {
+  towerId: string;
+  ownerId: string;
+  definitionId: string;
+  x: number;
+  y: number;
+  healthRatio: number;
+};
+
+/** Surunun yogunlastigi nokta degistiginde gelen uyari. */
+type FlowShiftMessage = {
+  from: { col: number; row: number } | null;
+  to: { col: number; row: number };
+  x: number;
+  y: number;
+};
 
 const KILL_STREAK_RULES: KillStreakRule[] = [
   {
@@ -403,6 +426,8 @@ export class GameScene extends Phaser.Scene {
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
+  /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
+  private alertSound?: HTMLAudioElement;
   private draggedTowerDefinition?: TowerDefinition;
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
@@ -749,25 +774,30 @@ export class GameScene extends Phaser.Scene {
       fontSize: "11px"
     }).setDepth(26);
 
-    this.selectedCharacter.towers.forEach((tower, index) => {
-      const col = index % 4;
-      const row = Math.floor(index / 4);
-      const x = 9 + col * 94;
+    // Kitin disinda duran ortak yapilar da kurulabilir; tepsi "ne kurabilirim"
+    // sorusunu cevaplar, "kitimde ne var" sorusunu degil.
+    towerCatalog[this.selectedCharacter.id].forEach((tower, index) => {
+      // Tepsi 86px yuksek ve satirlar 33px: ucuncu satir disari tasar. Duvar
+      // listeye girince dort sutun yetmedigi icin bese cikildi; kartlar daraldi
+      // ama herkes iki satira sigiyor.
+      const col = index % TOWER_TRAY_COLUMNS;
+      const row = Math.floor(index / TOWER_TRAY_COLUMNS);
+      const x = 7 + col * 77;
       const y = this.trayTop + 22 + row * 33;
-      const button = this.add.rectangle(x, y, 88, this.towerCardHeight, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
+      const button = this.add.rectangle(x, y, 71, this.towerCardHeight, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
         .setOrigin(0, 0)
         .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
         .setInteractive({ useHandCursor: true })
         .setDepth(26);
       this.input.setDraggable(button);
-      const nameText = this.add.text(x + 7, y + 4, tower.name, {
+      const nameText = this.add.text(x + 5, y + 4, tower.name, {
         color: "#f8fafc",
         fontFamily: "Arial",
         fontSize: "9px",
         fontStyle: "bold",
-        wordWrap: { width: 74 }
+        wordWrap: { width: 60 }
       }).setDepth(27);
-      const costText = this.add.text(x + 7, y + 16, `${getTowerBuildCost(tower.cost)}g`, {
+      const costText = this.add.text(x + 5, y + 16, `${getTowerBuildCost(tower.cost)}g`, {
         color: "#facc15",
         fontFamily: "Arial",
         fontSize: "10px"
@@ -1002,6 +1032,11 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
         }
         break;
+      case "repairStructure":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("structure:repair", { towerId: this.selectedPlacedTowerId });
+        }
+        return;
       case "sellTower":
         this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId) {
@@ -1342,11 +1377,76 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  /**
+   * Secili yapinin onarim dugmesi durumu.
+   *
+   * Bedel sunucudaki `getStructureRepairCost` ile ayni fonksiyondan geliyor;
+   * arayuzun kendi hesabini yazmasi iki tarafin kacinilmaz olarak ayrismasi
+   * demek olurdu. Sunucu yine de son sozu soyluyor, burasi sadece gosterim.
+   */
+  private getRepairState(selectedTower: TowerSnapshot | undefined, definition: TowerDefinition | undefined) {
+    if (!selectedTower || !definition || selectedTower.ownerId !== this.localSessionId) return undefined;
+    const maxHp = selectedTower.maxHp ?? 0;
+    const hp = selectedTower.hp ?? 0;
+    if (maxHp <= 0) return undefined;
+    if (hp <= 0) return { label: "Yikildi", enabled: false };
+    if (hp >= maxHp) return { label: "Saglam", enabled: false };
+
+    const cost = getStructureRepairCost(getTowerBuildCost(definition.cost), 1 - hp / maxHp);
+    const affordable = (this.localPlayerSnapshot?.gold ?? 0) >= cost;
+    return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
+  }
+
   private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id): TowerOrientation {
     return definitionId === "zeynep-8" ? this.abartiOrientation : "horizontal";
   }
 
+  /**
+   * Gedik ve akis kaymasi uyarilari.
+   *
+   * Ikisi de sunucudan gelir; istemci akis alanini gormedigi icin bunlari
+   * tahmin edemez. Amaci oyuncuyu dalga ortasinda mudahaleye zorlamak, o yuzden
+   * uyari hem gorsel hem sesli: haritanin obur ucuna bakan oyuncu da fark etsin.
+   */
+  private showStructureBreach(message: StructureBreachMessage) {
+    this.pulseAlertMarker(message.x, message.y, 0xf97316);
+    this.hintText?.setText(`Gedik aciliyor! %${Math.round(message.healthRatio * 100)} can kaldi`);
+    this.playAlertSound();
+  }
+
+  private showFlowShift(message: FlowShiftMessage) {
+    this.pulseAlertMarker(message.x, message.y, 0x38bdf8);
+    this.hintText?.setText("Dusman akisi yeni bir kapiya kaydi");
+    this.playAlertSound();
+  }
+
+  /** Uyarilan noktayi kisa sure buyuyup sonen bir halka ile isaretler. */
+  private pulseAlertMarker(x: number, y: number, color: number) {
+    const marker = this.add.circle(x, y, 10, color, 0)
+      .setStrokeStyle(3, color, 0.95)
+      .setDepth(24);
+    this.tweens.add({
+      targets: marker,
+      radius: 34,
+      alpha: 0,
+      duration: 900,
+      ease: "Cubic.easeOut",
+      onComplete: () => marker.destroy()
+    });
+  }
+
+  private playAlertSound() {
+    if (!this.alertSound) return;
+    // Ust uste gelen uyarilarda sesi bastan baslat, yoksa ikincisi hic duyulmaz.
+    this.alertSound.currentTime = 0;
+    void this.alertSound.play().catch(() => undefined);
+  }
+
   private createKillStreakAudio() {
+    this.alertSound = new Audio("/audio/streak-granted.mp3");
+    this.alertSound.preload = "auto";
+    this.alertSound.volume = this.voiceVolume;
+
     this.killStreakSounds = {
       granted: [new Audio("/audio/streak-granted.mp3")],
       unstoppable: [new Audio("/audio/streak-unstopable.mp3")],
@@ -2086,6 +2186,8 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("projectile:hit", (message: { id: string; x: number; y: number }) => this.finishLinearProjectile(message));
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
+    room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
+    room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
@@ -5135,6 +5237,9 @@ export class GameScene extends Phaser.Scene {
       && (this.localPlayerSnapshot?.gold ?? 0) >= upgradeGoldCost);
     const upgradePriceLabel = `${upgradeCost} XP${upgradeGoldCost > 0 ? ` + ${upgradeGoldCost}g` : ""}`;
     const canSell = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId);
+    // Onarim yalnizca hasarli ve ayakta duran yapilarda anlamli: yikilan yapi
+    // geri gelmez, yeniden insa edilir. Bedel sunucudaki formulun aynisi.
+    const repairState = this.getRepairState(selectedTower, definition);
     const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
     const reputation = this.localPlayerSnapshot?.reputation ?? 0;
     const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
@@ -5279,6 +5384,7 @@ export class GameScene extends Phaser.Scene {
         label: canSell ? `Sat ${sellRefund}g` : "Sat",
         enabled: canSell
       },
+      repair: repairState,
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,

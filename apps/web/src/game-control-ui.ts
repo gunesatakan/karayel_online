@@ -22,6 +22,8 @@ type ControlState = {
   workerRevive?: { count: number; remainingSeconds: number; enabled: boolean; cost: number };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
+  /** Hasarli yapiyi onarma; yikilan yapi onarilamaz, yeniden insa edilir. */
+  repair?: { label: string; enabled: boolean };
   selectedStats?: string[];
   /** Secili kuleye takili esyalar; parametre barlarinin hemen altinda listelenir. */
   equippedItems?: Array<{ id: string; name: string; description: string }>;
@@ -210,6 +212,11 @@ export function setupGameControlUi(game: Phaser.Game) {
         makeActionButton(state.upgrade?.label ?? "Kule sec", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" })),
         makeActionButton(state.sell?.label ?? "Sat", "game-controls__action--sell", Boolean(state.sell?.enabled), () => dispatch({ action: "sellTower" }))
       );
+      if (state.repair) {
+        actionRow.append(
+          makeActionButton(state.repair.label, "game-controls__action--repair", state.repair.enabled, () => dispatch({ action: "repairStructure" }))
+        );
+      }
     }
 
     const shop = document.createElement("div");
