@@ -55,6 +55,7 @@ import {
   getPlacementFootprint,
   computeFlowField,
   getEdgeSegments,
+  isEdgeSegmentInsideBoard,
   getStructureTravelCost,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
@@ -5646,7 +5647,7 @@ export class MatchRoom extends Room<MatchState> {
       length,
       occupiedSegments
     });
-    if (!edgeValidation.valid || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+    if (!edgeValidation.valid || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment, definitionId))) {
       return false;
     }
     return true;
@@ -5688,20 +5689,26 @@ export class MatchRoom extends Room<MatchState> {
   }
 
 
-  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
-    if (segment.orientation === "vertical") {
-      if (segment.col < 0 || segment.col > this.activeMap.cols || segment.row < 0 || segment.row >= this.activeMap.rows) {
-        return false;
-      }
-
-      return this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row);
-    }
-
-    if (segment.col < 0 || segment.col >= this.activeMap.cols || segment.row < 0 || segment.row > this.activeMap.rows) {
+  /**
+   * Kenar segmenti gecerli mi.
+   *
+   * Abarti dost atislarini degistirdigi icin insa alaninin kenarina oturmak
+   * zorunda: en az bir yani `tower` karesi olmali. Duvarin isi ise dusmani
+   * yonlendirmek, yani onun dogal yeri dusmanin yurudugu zemin. Ayni sarti ona
+   * uygulamak, hic `tower` karesi olmayan arena haritasinda duvari tumden
+   * kurulamaz yapiyordu -- oyuncunun gordugu "her yer kirmizi" buydu.
+   */
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, definitionId = "zeynep-8") {
+    if (!isEdgeSegmentInsideBoard(segment, { cols: this.activeMap.cols, rows: this.activeMap.rows })) {
       return false;
     }
+    if (definitionId === WALL_TOWER_ID) {
+      return true;
+    }
 
-    return this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+    return segment.orientation === "vertical"
+      ? this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row)
+      : this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
   }
 
   private isTowerTile(col: number, row: number) {

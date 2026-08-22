@@ -17,7 +17,8 @@ import {
   getMapGridSize,
   getMapOrigin,
   towerCatalog,
-  getEdgeSegments
+  getEdgeSegments,
+  createOpenArenaMap
 } from "../packages/shared/dist/index.js";
 import { createRoom } from "./helpers/match-room-harness.mjs";
 
@@ -139,4 +140,53 @@ test("duvar kurulabilir listede bulunur, kitte bulunmaz", () => {
       `${characterId}: duvar kurulabilir listede yok`
     );
   }
+});
+
+/**
+ * Duvar dusmanin yurudugu zemine kurulur.
+ *
+ * Kenar kurali Abarti icin yazilmisti: o dost atislarini degistirdigi icin insa
+ * alaninin kenarina oturmak zorunda, yani en az bir yani `tower` karesi olmali.
+ * Ayni sarti duvara uygulamak, hic `tower` karesi olmayan arena haritasinda onu
+ * tumden kurulamaz yapiyordu -- oyuncunun gordugu "her yer kirmizi" buydu.
+ */
+test("duvar tower karesi olmayan haritada da kurulabilir", () => {
+  const room = createRoom("warrior");
+  room.activeMap = createOpenArenaMap(11, 18);
+  const gridSize = getMapGridSize(room.activeMap);
+  const origin = getMapOrigin(room.activeMap);
+
+  assert.equal(
+    room.activeMap.tiles.some((tile) => tile === "tower"),
+    false,
+    "arena haritasinda tower karesi varmis; test varsayimi gecersiz"
+  );
+
+  let placeable = 0;
+  for (let row = 1; row < room.activeMap.rows - 1; row += 1) {
+    for (let col = 1; col < room.activeMap.cols; col += 1) {
+      if (room.canPlaceTower(origin.x + col * gridSize, origin.y + row * gridSize + gridSize / 2, WALL_TOWER_ID, "vertical")) {
+        placeable += 1;
+      }
+    }
+  }
+  assert.ok(placeable > 100, `arena haritasinda yalnizca ${placeable} nokta gecerli`);
+});
+
+test("Abartı hâlâ inşa alanının kenarını ister", () => {
+  // Duvarin kurali gevsedi diye Abarti'nin kurali gevsememeli.
+  const room = createRoom("zeynep");
+  room.activeMap = createOpenArenaMap(11, 18);
+  const gridSize = getMapGridSize(room.activeMap);
+  const origin = getMapOrigin(room.activeMap);
+
+  let placeable = 0;
+  for (let row = 1; row < room.activeMap.rows - 2; row += 1) {
+    for (let col = 1; col < room.activeMap.cols; col += 1) {
+      if (room.canPlaceTower(origin.x + col * gridSize, origin.y + row * gridSize + gridSize / 2, "zeynep-8", "vertical")) {
+        placeable += 1;
+      }
+    }
+  }
+  assert.equal(placeable, 0, "Abarti tower karesi olmayan haritada kurulabiliyor");
 });

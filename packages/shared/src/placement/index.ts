@@ -185,3 +185,10 @@ export function getEdgeSegmentsCenter(segments: EdgeSegment[], gridSize: number,
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
+
+/** Kenar segmenti tahtanin icinde mi. Cizgi ekseni sinira esit olabilir. */
+export function isEdgeSegmentInsideBoard(segment: EdgeSegment, board: PlacementBoard) {
+  return segment.orientation === "vertical"
+    ? segment.col >= 0 && segment.col <= board.cols && segment.row >= 0 && segment.row < board.rows
+    : segment.col >= 0 && segment.col < board.cols && segment.row >= 0 && segment.row <= board.rows;
+}

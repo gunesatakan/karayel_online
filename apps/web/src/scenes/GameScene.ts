@@ -12,6 +12,7 @@ import {
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
   getEdgeSegments,
+  isEdgeSegmentInsideBoard,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -1222,7 +1223,7 @@ export class GameScene extends Phaser.Scene {
   private canPlaceEdgePreview(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "", definitionId = "zeynep-8") {
     const length = this.getEdgeLength(definitionId);
     const segments = this.getAbartiEdgeSegments(x, y, orientation, length);
-    if (segments.length !== length || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
+    if (segments.length !== length || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment, definitionId))) {
       return false;
     }
 
@@ -1263,20 +1264,18 @@ export class GameScene extends Phaser.Scene {
   }
 
 
-  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }) {
-    if (segment.orientation === "vertical") {
-      if (segment.col < 0 || segment.col > this.selectedMapData.cols || segment.row < 0 || segment.row >= this.selectedMapData.rows) {
-        return false;
-      }
-
-      return this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row);
-    }
-
-    if (segment.col < 0 || segment.col >= this.selectedMapData.cols || segment.row < 0 || segment.row > this.selectedMapData.rows) {
+  /** Sunucudaki kuralla ayni: duvar zemine, Abarti insa alaninin kenarina oturur. */
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, definitionId = "zeynep-8") {
+    if (!isEdgeSegmentInsideBoard(segment, { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows })) {
       return false;
     }
+    if (definitionId === WALL_TOWER_ID) {
+      return true;
+    }
 
-    return this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+    return segment.orientation === "vertical"
+      ? this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row)
+      : this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
   }
 
   private isTowerTile(col: number, row: number) {
@@ -2702,8 +2701,13 @@ export class GameScene extends Phaser.Scene {
       }
       this.applyTowerFacing(rendered, tower);
       const selectionScale = tower.id === this.selectedPlacedTowerId ? 1.18 : 1;
-      const footprintScaleX = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 0.24 : 1.7) : 1;
-      const footprintScaleY = tower.definitionId === "zeynep-8" ? (tower.orientation === "vertical" ? 1.7 : 0.24) : 1;
+      // Kenar yapilari kare kaplamaz; dairesel taban yerine ince bir cubuk
+      // olarak cizilirler. Duvar tek cizgi oldugu icin uzun eksende Abarti kadar
+      // uzamaz.
+      const edgeLength = this.isEdgePlacedDefinition(tower.definitionId) ? this.getEdgeLength(tower.definitionId) : 0;
+      const edgeLong = edgeLength === 1 ? 0.92 : 1.7;
+      const footprintScaleX = edgeLength > 0 ? (tower.orientation === "vertical" ? 0.24 : edgeLong) : 1;
+      const footprintScaleY = edgeLength > 0 ? (tower.orientation === "vertical" ? edgeLong : 0.24) : 1;
       // Derived from the frame rather than a constant: painted art and the
       // procedural glyphs ship at different sizes, but both reserve the same
       // disc-to-frame ratio, so this lands the disc on the tile either way.
@@ -2975,11 +2979,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderAbartiEdgeBody(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.definitionId !== "zeynep-8") {
+    if (!this.isEdgePlacedDefinition(tower.definitionId)) {
       return;
     }
 
-    const segments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal");
+    const segments = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", this.getEdgeLength(tower.definitionId));
     const phase = (performance.now() % 1200) / 1200;
     const selected = tower.id === this.selectedPlacedTowerId;
     const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.16;
@@ -3118,7 +3122,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderZeynepCommandTowerEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.definitionId === "zeynep-8" || tower.status === "Hararet" || tower.status === "Tukenmis") {
+    if (this.isEdgePlacedDefinition(tower.definitionId) || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;
     }
 
