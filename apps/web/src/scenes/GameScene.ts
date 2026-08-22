@@ -899,14 +899,19 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id);
+    // Yon ham noktadan turetilir: snap sonrasi nokta zaten cizgi uzerinde oldugu
+    // icin oradan yon okumak bilgiyi kaybeder.
+    const orientation = this.getPlacementOrientation(tower.id, previewPoint.x, previewPoint.y);
+    const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id, orientation);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
       this.room.send("placeTower", {
         definitionId: tower.id,
         x: cell.x,
         y: cell.y,
-        orientation: tower.id === "zeynep-8" ? this.abartiOrientation : undefined
+        orientation: tower.id === "zeynep-8" ? this.abartiOrientation : undefined,
+        // Duvarda yon sunucuda konumdan cozulur; buradaki yalnizca onizleme icin.
+      
       });
       this.hintText?.setText(`${tower.name} yerlestirme istegi gonderildi`);
     } else {
@@ -1183,24 +1188,30 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id, orientation = this.getPlacementOrientation(definitionId)) {
+  private snapToTowerGrid(x: number, y: number, definitionId = this.selectedTowerDefinition.id, orientation = this.getPlacementOrientation(definitionId, x, y)) {
     const gridPoint = worldToGrid(x, y, this.selectedMapData);
-    if (definitionId === "zeynep-8") {
+    // Kenara oturan her yapi buradan gecer, yalnizca Abarti degil. Duvari bu
+    // daldan gecirmemek onu kare merkezine oturtuyordu -- ve kare merkezinde
+    // yatay ile dikey cizgiye uzaklik esit oldugu icin her duvar dikey cikiyordu.
+    if (this.isEdgePlacedDefinition(definitionId)) {
       const gridSize = this.getMapCellSize();
       const origin = getMapOrigin(this.selectedMapData);
+      const length = definitionId === WALL_TOWER_ID ? 1 : 2;
+      // Sunucudaki ile ayni formul: bir eksen cizgi, digeri hucre sirasi.
+      const cellStart = (fraction: number) => Math.floor(fraction - (length - 1) / 2);
       if (orientation === "vertical") {
         const lineCol = Math.max(0, Math.min(this.selectedMapData.cols, Math.round((x - origin.x) / gridSize)));
-        const centerRow = Math.max(1, Math.min(this.selectedMapData.rows - 1, Math.round((y - origin.y) / gridSize)));
+        const startRow = Math.max(0, Math.min(this.selectedMapData.rows - length, cellStart((y - origin.y) / gridSize)));
         return {
           x: origin.x + lineCol * gridSize,
-          y: origin.y + centerRow * gridSize
+          y: origin.y + (startRow + length / 2) * gridSize
         };
       }
 
-      const centerCol = Math.max(1, Math.min(this.selectedMapData.cols - 1, Math.round((x - origin.x) / gridSize)));
+      const startCol = Math.max(0, Math.min(this.selectedMapData.cols - length, cellStart((x - origin.x) / gridSize)));
       const lineRow = Math.max(0, Math.min(this.selectedMapData.rows, Math.round((y - origin.y) / gridSize)));
       return {
-        x: origin.x + centerCol * gridSize,
+        x: origin.x + (startCol + length / 2) * gridSize,
         y: origin.y + lineRow * gridSize
       };
     }
@@ -1396,6 +1407,12 @@ export class GameScene extends Phaser.Scene {
     const cost = getStructureRepairCost(getTowerBuildCost(definition.cost), 1 - hp / maxHp);
     const affordable = (this.localPlayerSnapshot?.gold ?? 0) >= cost;
     return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
+  }
+
+  /** Kare degil kenar kaplayan tanimlar. */
+  private isEdgePlacedDefinition(definitionId: string) {
+    const definition = towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === definitionId);
+    return Boolean(definition?.engine?.placement?.requiresEdge);
   }
 
   private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id, x?: number, y?: number): TowerOrientation {
@@ -5290,7 +5307,9 @@ export class GameScene extends Phaser.Scene {
       selectedTowerDefinitionId: this.selectedTowerDefinition.id,
       showOrientationToggle: this.selectedTowerDefinition.id === "zeynep-8" && !selectedTower,
       orientation: this.abartiOrientation,
-      towers: this.selectedCharacter.towers.map((tower) => ({
+      // Panel "ne kurabilirim" sorusunu cevaplar, "kitimde ne var" sorusunu degil:
+      // duvar kimsenin kiti degil ama herkes kurabilir.
+      towers: towerCatalog[this.selectedCharacter.id].map((tower) => ({
         id: tower.id,
         name: tower.name,
         cost: getTowerBuildCost(tower.cost),
