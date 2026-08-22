@@ -355,7 +355,7 @@ export {
   SnapshotPlaybackClock
 } from "./snapshot/index.js";
 
-export { SHARED_STRUCTURE_IDS, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
+export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export {
   ONUR_LUCKY_WINDOW_MS,
   ONUR_MISFORTUNE_MAX,

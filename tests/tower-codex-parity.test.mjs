@@ -22,7 +22,7 @@ import {
   hasGlobalTowerRange,
   towerCatalog
 } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot, isDamageDealingTower } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, findEdgeSpot, isDamageDealingTower } from "./helpers/match-room-harness.mjs";
 
 const LEVELS = [1, 5, 10];
 const TOLERANCE = 1e-9;
@@ -47,7 +47,12 @@ function createNeutralRoom(characterId) {
 }
 
 function placeTower(room, definition) {
-  const spot = findBuildableSpot(room, definition.id);
+  // Kenara oturan yapilar kare kaplamaz; onlar icin izgara cizgisi uzerinde bir
+  // nokta gerekiyor. Ayrimi yapmazsak duvar gibi yapilar kunye dogrulamasindan
+  // sessizce dusuyor ve sayilari hic olculmuyor.
+  const spot = definition.engine?.placement?.requiresEdge
+    ? (findEdgeSpot(room, "vertical", definition.id) ?? findEdgeSpot(room, "horizontal", definition.id))
+    : findBuildableSpot(room, definition.id);
   if (!spot) return undefined;
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: definition.id });
   return [...room.towers.values()][0];

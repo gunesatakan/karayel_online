@@ -49,6 +49,7 @@ import {
   type ServerPerfSnapshot,
   hasUnlockBit,
   getStructureRepairCost,
+  WALL_TOWER_ID,
   type StaticEnemySnapshot,
   type StaticSnapshot,
   type StaticTowerSnapshot,
@@ -1397,7 +1398,18 @@ export class GameScene extends Phaser.Scene {
     return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
   }
 
-  private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id): TowerOrientation {
+  private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id, x?: number, y?: number): TowerOrientation {
+    // Duvarin yonu secilmez, birakildigi kenardan gelir: dikey bir cizgiye daha
+    // yakinsa dikey durur. Sunucu ayni hesabi tekrar yapar; buradaki yalnizca
+    // onizleme icin.
+    if (definitionId === WALL_TOWER_ID) {
+      if (x === undefined || y === undefined) return "horizontal";
+      const gridSize = getSharedMapGridSize(this.selectedMapData);
+      const origin = getMapOrigin(this.selectedMapData);
+      const toVertical = Math.abs((x - origin.x) / gridSize - Math.round((x - origin.x) / gridSize));
+      const toHorizontal = Math.abs((y - origin.y) / gridSize - Math.round((y - origin.y) / gridSize));
+      return toVertical <= toHorizontal ? "vertical" : "horizontal";
+    }
     return definitionId === "zeynep-8" ? this.abartiOrientation : "horizontal";
   }
 

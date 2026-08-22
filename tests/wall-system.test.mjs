@@ -21,18 +21,20 @@ import {
   wallTower,
   getEnemyCombatDefinition,
   gridToWorld,
+  getMapGridSize,
+  getMapOrigin,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO
 } from "../packages/shared/dist/index.js";
-import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
+import { createRoom, findBuildableSpot, findEdgeSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
 
-function buildWall(characterId = "warrior") {
+function buildWall(characterId = "warrior", orientation = "vertical") {
   const room = createRoom(characterId);
-  const spot = findBuildableSpot(room, WALL_TOWER_ID);
-  assert.ok(spot, "duvar icin kare bulunamadi");
+  const spot = findEdgeSpot(room, orientation, WALL_TOWER_ID);
+  assert.ok(spot, "duvar icin kenar bulunamadi");
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: WALL_TOWER_ID });
   const wall = [...room.towers.values()][0];
   assert.ok(wall, "duvar kurulamadi");
@@ -83,7 +85,7 @@ test("kurulan duvar normal kuleden daha çok can taşır ve yolu daha pahalı ya
   assert.ok(wall.maxHp > tower.maxHp, "duvar kuleden dayaniksiz");
   assert.ok(
     getStructureTravelCost(wall.hp) > getStructureTravelCost(tower.hp),
-    "duvar yolu kuleden daha pahali yapmiyor"
+    "duvar gecisi kuleden daha pahali yapmiyor"
   );
 });
 
@@ -91,7 +93,8 @@ test("towerHealth kartları duvara da işler", () => {
   // Karar bilincli: duvar ormek roguelike katmaniyla sinerji tasisin.
   const room = createRoom("warrior");
   room.state.players.get("p1").runModifiers.push({ source: "card:kalin-zirh", scope: "player", stat: "towerHealth", add: 0.8 });
-  const spot = findBuildableSpot(room, WALL_TOWER_ID);
+  const spot = findEdgeSpot(room, "vertical", WALL_TOWER_ID);
+  assert.ok(spot, "duvar icin kenar bulunamadi");
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: WALL_TOWER_ID });
   const buffed = [...room.towers.values()][0];
 
@@ -193,8 +196,8 @@ test("akış ana kapısı değişince sunucu uyarı yayar", () => {
   const walls = [];
   for (let col = 0; col < room.activeMap.cols; col += 1) {
     const world = gridToWorld(col, wallRow, room.activeMap);
-    if (!room.canPlaceTower(world.x, world.y, WALL_TOWER_ID, "horizontal")) continue;
-    room.placeTower({ sessionId: "p1" }, { x: world.x, y: world.y, definitionId: WALL_TOWER_ID });
+    if (!room.canPlaceTower(world.x, world.y, "warrior-1", "horizontal")) continue;
+    room.placeTower({ sessionId: "p1" }, { x: world.x, y: world.y, definitionId: "warrior-1" });
     walls.push([...room.towers.values()].at(-1));
   }
   assert.ok(walls.length >= 4, "test icin yeterli duvar kurulamadi");
@@ -215,4 +218,66 @@ test("akış ana kapısı değişince sunucu uyarı yayar", () => {
   const lastEvent = events.at(-1);
   assert.notDeepEqual(lastEvent.to, firstGate, "kapi karsi uca kaymadi");
   assert.deepEqual(lastEvent.from, firstGate, "kayma nereden geldigini bildirmiyor");
+});
+
+test("duvar 20 altına mal olur", () => {
+  assert.equal(getTowerBuildCost(wallTower.cost), 20);
+});
+
+test("duvarın yönü bırakıldığı kenardan gelir", () => {
+  // Oyuncu yon secmez: dikey bir cizgiye getirilen duvar dikey, yatay bir
+  // cizgiye getirilen yatay doner.
+  for (const orientation of ["vertical", "horizontal"]) {
+    const room = createRoom("warrior");
+    const spot = findEdgeSpot(room, orientation, WALL_TOWER_ID);
+    assert.ok(spot, `${orientation} kenar bulunamadi`);
+    room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: WALL_TOWER_ID });
+    const wall = [...room.towers.values()].at(-1);
+    assert.ok(wall, `${orientation} kenara duvar kurulamadi`);
+    assert.equal(wall.orientation, orientation);
+  }
+});
+
+test("istemciden gelen yön duvarda yok sayılır", () => {
+  // Yon konumdan turetildigi icin istemcinin gonderdigi deger baglayici degil;
+  // aksi halde arayuz ile sunucu ayrisabilirdi.
+  const room = createRoom("warrior");
+  const spot = findEdgeSpot(room, "vertical", WALL_TOWER_ID);
+  assert.ok(spot);
+  room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: WALL_TOWER_ID, orientation: "horizontal" });
+  assert.equal([...room.towers.values()].at(-1)?.orientation, "vertical");
+});
+
+test("kenardaki duvar hücreyi değil geçişi pahalılaştırır", () => {
+  const { room, wall } = buildWall("warrior", "vertical");
+  // Duvarin gercekte oturdugu kenari kendi segmentinden oku: konumu varsaymak
+  // testi haritanin sekline baglar.
+  const [segment] = room.getAbartiEdgeSegments(wall.x, wall.y, wall.orientation, 1);
+  assert.ok(segment);
+
+  // Iki yandaki hucreler bos kalmali: duvar kare kaplamaz.
+  assert.equal(room.getCellTravelCost(segment.col, segment.row), 1, "duvar hucreyi isgal etmis");
+  assert.equal(room.getCellTravelCost(segment.col - 1, segment.row), 1, "duvar komsu hucreyi isgal etmis");
+
+  // Ama o iki hucre arasindaki gecis pahali olmali.
+  const crossing = room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row);
+  assert.ok(crossing > 0, "kenar gecisi bedelsiz");
+  assert.equal(crossing, getStructureTravelCost(wall.hp) - 1);
+
+  // Duvarla ilgisi olmayan bir gecis bedelsiz kalmali.
+  assert.equal(room.getEdgeTravelCost(segment.col, segment.row, segment.col, segment.row + 1), 0);
+});
+
+test("yıkılan kenar duvarı geçişi serbest bırakır", () => {
+  const { room, wall } = buildWall("warrior", "vertical");
+  const [segment] = room.getAbartiEdgeSegments(wall.x, wall.y, wall.orientation, 1);
+
+  assert.ok(room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row) > 0);
+  wall.hp = 0;
+  room.markFlowFieldDirty();
+  assert.equal(
+    room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row),
+    0,
+    "yikilan duvar hala gecisi kapatiyor"
+  );
 });

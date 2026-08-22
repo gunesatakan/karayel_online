@@ -64,7 +64,9 @@ const defaultEngine: TowerEngineConfig = {
 
 const profiles: Record<string, EngineProfile> = {
   // Duvar ates etmez; motor yalnizca yerlestirme ve kaynak hatti icin gerekli.
-  "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resources: { ammoType: "auraCrystal" } },
+  // Duvar kare degil kenar kaplar: Abarti ile ayni yerlestirme yolu, ama tek
+  // cizgi uzunlugunda ve yonu getirildigi kenardan turetiliyor.
+  "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, placement: { requiresEdge: true }, resources: { ammoType: "auraCrystal" } },
   "onur-1": {
     targeting: undefined,
     attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 1.6, width: 8 },

@@ -29,13 +29,13 @@ export const wallTower: TowerDefinition = attachTowerEngine({
   characterId: "zeynep",
   name: "Duvar",
   role: "Yönlendirme",
-  description: "Ateş etmez. Düşmanlar duvarı aşılmaz bir engel olarak görmez; kırmanın maliyetini hesaplayıp haritanın en zayıf noktasına akarlar. Kalınlaştırmak canını ve dolayısıyla düşmanı uzaklaştırma gücünü artırır. Yıkılan duvar kendiliğinden geri gelmez; onarım tam yeniden inşadan ucuzdur.",
+  description: "Kare kaplamaz; iki karenin arasındaki çizgiye oturur ve o geçişi kapatır. Getirildiği kenar yataysa yatay, dikeyse dikey döner. Düşmanlar duvarı aşılmaz bir engel olarak görmez; kırmanın maliyetini hesaplayıp haritanın en zayıf noktasına akarlar. Kalınlaştırmak canını ve dolayısıyla yönlendirme gücünü artırır. Yıkılan duvar kendiliğinden geri gelmez; onarım tam yeniden inşadan ucuzdur.",
   classType: "support",
   damageType: "none",
   hitType: "none",
   axes: ["barricade"],
-  cost: 18,
-  upgradeCost: 14,
+  cost: 10,
+  upgradeCost: 8,
   range: 0,
   damage: 0,
   fireIntervalMs: NON_FIRING_INTERVAL_MS,
@@ -57,3 +57,6 @@ export function getStructureHealthMultiplier(definition: TowerDefinition, level:
 export function isWallDefinition(definition: Pick<TowerDefinition, "id">) {
   return definition.id === WALL_TOWER_ID;
 }
+
+/** Duvar tek bir kenar cizgisi kaplar; Abarti iki cizgi uzunlugundadir. */
+export const WALL_EDGE_LENGTH = 1;

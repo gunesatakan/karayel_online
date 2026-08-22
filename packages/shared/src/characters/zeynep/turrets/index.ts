@@ -129,7 +129,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       damageType: "none",
       hitType: "none",
       resourceProvider: providesAmmunition ? "ammunition" : "energy",
-      cost: providesAmmunition ? 95 : 105,
+      cost: providesAmmunition ? 48 : 53,
       range: 0,
       damage: 0,
       fireIntervalMs: NON_FIRING_INTERVAL_MS,

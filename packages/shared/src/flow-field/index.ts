@@ -85,8 +85,17 @@ export function computeFlowField(options: {
   rows: number;
   goals: readonly FlowFieldCell[];
   getCost: (col: number, row: number) => number;
+  /**
+   * Iki komsu hucre arasindaki gecisin ek bedeli.
+   *
+   * Bazi yapilar kare kaplamaz, iki karenin arasindaki cizgiye oturur; onlarin
+   * bedeli hucreye degil gecise aittir. Alan bunu bilmezse kenara kurulmus bir
+   * duvar yonlendirme hesabina hic girmez ve huni yalnizca kagit uzerinde olur.
+   */
+  getEdgeCost?: (fromCol: number, fromRow: number, toCol: number, toRow: number) => number;
 }): FlowField {
   const { cols, rows, goals, getCost } = options;
+  const getEdgeCost = options.getEdgeCost ?? (() => 0);
   const size = Math.max(0, cols * rows);
   const cost = new Float64Array(size).fill(Number.POSITIVE_INFINITY);
   const next = new Int32Array(size).fill(-1);
@@ -135,7 +144,11 @@ export function computeFlowField(options: {
       const neighborIndex = getFlowFieldIndex(field, neighborCol, neighborRow);
       if (settled[neighborIndex] === 1 || !Number.isFinite(enterCost[neighborIndex])) continue;
 
-      const candidate = currentCost + stepCost;
+      // Hareket komsudan bu hucreye dogru: kenar bedeli de o yonde okunur.
+      const edgeCost = getEdgeCost(neighborCol, neighborRow, col, row);
+      if (!Number.isFinite(edgeCost)) continue;
+
+      const candidate = currentCost + stepCost + Math.max(0, edgeCost);
       if (candidate < cost[neighborIndex]) {
         cost[neighborIndex] = candidate;
       }
@@ -165,7 +178,10 @@ export function computeFlowField(options: {
       // Dongu olmasin diye komsu kesinlikle daha yakin olmali.
       if (cost[neighborIndex] >= cost[index]) continue;
 
-      const total = enterCost[neighborIndex] + cost[neighborIndex];
+      const edgeCost = getEdgeCost(col, row, neighborCol, neighborRow);
+      if (!Number.isFinite(edgeCost)) continue;
+
+      const total = enterCost[neighborIndex] + cost[neighborIndex] + Math.max(0, edgeCost);
       if (total < bestTotal) {
         bestTotal = total;
         bestIndex = neighborIndex;

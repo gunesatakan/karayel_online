@@ -11,6 +11,8 @@
  */
 import { MatchRoom } from "../../apps/server/dist/rooms/MatchRoom.js";
 import {
+  getMapGridSize,
+  getMapOrigin,
   getPointAlongRuntimePath,
   gridToWorld,
   worldToGrid
@@ -200,4 +202,25 @@ export function simulateTowerAgainstMovingShieldedEnemy({
 /** Hasar veren kuleler: hasarsiz kontrol/lojistik kuleleri disarida kalir. */
 export function isDamageDealingTower(definition) {
   return !definition.resourceProvider && definition.damage > 0;
+}
+
+/**
+ * Kenara oturan yapilar icin nokta bulur.
+ *
+ * `findBuildableSpot` kare merkezleri dondurur; duvar gibi kare kaplamayan
+ * yapilar icin ise izgara cizgisi uzerinde bir nokta gerekiyor. Yon istenen
+ * kenardan turetildigi icin cagirana ayrica yon vermek dusmez.
+ */
+export function findEdgeSpot(room, orientation, definitionId) {
+  const gridSize = getMapGridSize(room.activeMap);
+  const origin = getMapOrigin(room.activeMap);
+  for (let row = 1; row < room.activeMap.rows - 1; row += 1) {
+    for (let col = 1; col < room.activeMap.cols - 1; col += 1) {
+      const point = orientation === "vertical"
+        ? { x: origin.x + col * gridSize, y: origin.y + row * gridSize + gridSize / 2 }
+        : { x: origin.x + col * gridSize + gridSize / 2, y: origin.y + row * gridSize };
+      if (room.canPlaceTower(point.x, point.y, definitionId, orientation)) return point;
+    }
+  }
+  return undefined;
 }

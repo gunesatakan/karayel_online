@@ -176,3 +176,51 @@ test("duvar yeterince ucuzsa akış dolaşmak yerine içinden geçer", () => {
   assert.deepEqual(getFlowNext(field, 1, 0), { col: 1, row: 1 }, "ucuz duvardan gecmedi");
   assert.equal(Math.round(getFlowCost(field, 1, 0) * 10) / 10, 2.2);
 });
+
+/**
+ * Kenar maliyeti.
+ *
+ * Bazi yapilar kare kaplamaz, iki karenin arasindaki cizgiye oturur. Bedelleri
+ * hucreye degil gecise aittir; alan bunu bilmezse kenara kurulmus bir duvar
+ * yonlendirme hesabina hic girmez.
+ */
+test("kenara konan engel geçişi kapatır, hücreleri boş bırakır", () => {
+  const blockedEdge = (fromCol, fromRow, toCol, toRow) =>
+    // 1. satirdan 2. satira gecisi kapat, ama hucreler bos kalsin.
+    fromRow === 1 && toRow === 2 ? Number.POSITIVE_INFINITY : 0;
+
+  const field = computeFlowField({
+    cols: 3,
+    rows: 4,
+    goals: [{ col: 0, row: 3 }, { col: 1, row: 3 }, { col: 2, row: 3 }],
+    getCost: () => 1,
+    getEdgeCost: blockedEdge
+  });
+
+  // Hucrelerin kendisi bos: maliyetleri sonlu olmali.
+  assert.ok(Number.isFinite(getFlowCost(field, 1, 2)), "hucre yanlislikla gecilmez sayilmis");
+  // Ama ustten asagi gecis kapali oldugu icin 1. satir hedefe varamaz.
+  assert.equal(getFlowCost(field, 1, 1), Number.POSITIVE_INFINITY, "kapali kenardan gecilmis");
+});
+
+test("pahalı kenar dolaşmaya değerse akış kenardan geçmez", () => {
+  const field = computeFlowField({
+    cols: 3,
+    rows: 3,
+    goals: [{ col: 0, row: 2 }, { col: 1, row: 2 }, { col: 2, row: 2 }],
+    getCost: () => 1,
+    // Yalnizca orta sutunda asagi inis pahali.
+    getEdgeCost: (fromCol, fromRow, toCol, toRow) =>
+      fromCol === 1 && toCol === 1 && toRow > fromRow ? 20 : 0
+  });
+
+  assert.notDeepEqual(getFlowNext(field, 1, 1), { col: 1, row: 2 }, "pahali kenardan gecti");
+  assert.equal(getFlowCost(field, 1, 1), 2, "dolasma maliyeti yanlis");
+});
+
+test("kenar maliyeti verilmezse davranış değişmez", () => {
+  const without = computeFlowField({ cols: 4, rows: 4, goals: [{ col: 0, row: 3 }], getCost: () => 1 });
+  const withZero = computeFlowField({ cols: 4, rows: 4, goals: [{ col: 0, row: 3 }], getCost: () => 1, getEdgeCost: () => 0 });
+  assert.deepEqual(Array.from(without.cost), Array.from(withZero.cost));
+  assert.deepEqual(Array.from(without.next), Array.from(withZero.next));
+});

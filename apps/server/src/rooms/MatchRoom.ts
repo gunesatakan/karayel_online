@@ -63,6 +63,7 @@ import {
   getStructureHealthMultiplier,
   isWallDefinition,
   WALL_TOWER_ID,
+  WALL_EDGE_LENGTH,
   getFlowNext,
   type FlowField,
   validateEdgePlacement,
@@ -953,11 +954,15 @@ export class MatchRoom extends Room<MatchState> {
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
   private towerCellIndex = new Map<string, TowerModel>();
   private towerCellIndexDirty = true;
+  /** Kenar -> yapi; kare kaplamayan yapilar burada tutulur. */
+  private edgeStructureIndex = new Map<string, TowerModel>();
+  private edgeStructureIndexDirty = true;
 
   /** Yapi eklendi, yikildi, satildi ya da harita degisti. */
   private markFlowFieldDirty() {
     this.flowFieldDirty = true;
     this.towerCellIndexDirty = true;
+    this.edgeStructureIndexDirty = true;
   }
 
   /**
@@ -974,8 +979,8 @@ export class MatchRoom extends Room<MatchState> {
 
     this.towerCellIndex.clear();
     for (const tower of this.towers.values()) {
-      // Abarti kare kaplamaz, kenara oturur; hucre indeksine girmez.
-      if (tower.definition.id === "zeynep-8") continue;
+      // Kenara oturan yapilar kare kaplamaz; hucre indeksine girmezler.
+      if (tower.definition.engine?.placement?.requiresEdge) continue;
       for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) {
         this.towerCellIndex.set(`${cell.col}:${cell.row}`, tower);
       }
@@ -1000,6 +1005,46 @@ export class MatchRoom extends Room<MatchState> {
     return getStructureTravelCost(tower.hp);
   }
 
+  /**
+   * Kenar -> yapi indeksi.
+   *
+   * Kenara oturan yapilarin bedeli hucreye degil gecise ait. Akis alani bunu
+   * bilmezse kenardaki duvar yonlendirme hesabina hic girmez ve huni yalnizca
+   * kagit uzerinde kalir.
+   */
+  private getEdgeStructureIndex() {
+    if (!this.edgeStructureIndexDirty) {
+      return this.edgeStructureIndex;
+    }
+
+    this.edgeStructureIndex.clear();
+    for (const tower of this.towers.values()) {
+      if (!tower.definition.engine?.placement?.requiresEdge || tower.hp <= 0) continue;
+      for (const segment of this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id))) {
+        this.edgeStructureIndex.set(`${segment.orientation}:${segment.col}:${segment.row}`, tower);
+      }
+    }
+    this.edgeStructureIndexDirty = false;
+    return this.edgeStructureIndex;
+  }
+
+  /** Iki komsu hucre arasindaki gecise oturmus yapi. */
+  private getEdgeStructure(from: { col: number; row: number }, to: { col: number; row: number }) {
+    const index = this.getEdgeStructureIndex();
+    if (from.row === to.row) {
+      return index.get(`vertical:${Math.max(from.col, to.col)}:${from.row}`);
+    }
+    if (from.col === to.col) {
+      return index.get(`horizontal:${from.col}:${Math.max(from.row, to.row)}`);
+    }
+    return undefined;
+  }
+
+  private getEdgeTravelCost(fromCol: number, fromRow: number, toCol: number, toRow: number) {
+    const structure = this.getEdgeStructure({ col: fromCol, row: fromRow }, { col: toCol, row: toRow });
+    return structure ? getStructureTravelCost(structure.hp) - 1 : 0;
+  }
+
   private getFlowField() {
     if (this.flowField && !this.flowFieldDirty) {
       return this.flowField;
@@ -1010,7 +1055,8 @@ export class MatchRoom extends Room<MatchState> {
       cols: this.activeMap.cols,
       rows: this.activeMap.rows,
       goals: Array.from({ length: this.activeMap.cols }, (_, col) => ({ col, row: exitRow })),
-      getCost: (col, row) => this.getCellTravelCost(col, row)
+      getCost: (col, row) => this.getCellTravelCost(col, row),
+      getEdgeCost: (fromCol, fromRow, toCol, toRow) => this.getEdgeTravelCost(fromCol, fromRow, toCol, toRow)
     });
     this.flowFieldDirty = false;
     this.announceFlowShift(this.flowField);
@@ -4646,10 +4692,11 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     return Array.from(this.towers.values()).find((tower) => {
-      if (tower.definition.id !== "zeynep-8") {
+      // Kenara oturan her yapi gecisi kapatir, yalnizca Abarti degil.
+      if (!tower.definition.engine?.placement?.requiresEdge || tower.hp <= 0) {
         return false;
       }
-      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation).some((segment) => {
+      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id)).some((segment) => {
         if (segment.orientation === "vertical" && from.row === to.row) {
           return segment.row === from.row && Math.max(from.col, to.col) === segment.col;
         }
@@ -4781,7 +4828,11 @@ export class MatchRoom extends Room<MatchState> {
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
     const buildCost = definition ? getTowerBuildCost(definition.cost) : Number.POSITIVE_INFINITY;
-    const orientation = getTowerPlacementOrientation(definition?.id, message.orientation);
+    // Duvarin yonu oyuncunun sectigi bir sey degil, birakildigi kenarin
+    // kendisi; istemciden gelen degere guvenmek yerine konumdan turetiliyor.
+    const orientation = definition?.id === WALL_TOWER_ID
+      ? this.getEdgeOrientationAt(message.x, message.y)
+      : getTowerPlacementOrientation(definition?.id, message.orientation);
     const placement = this.snapToTowerGrid(message.x, message.y, definition?.id, orientation);
     if (!definition || player.gold < buildCost || !this.canPlaceTower(placement.x, placement.y, definition.id, orientation)) {
       return;
@@ -5500,7 +5551,7 @@ export class MatchRoom extends Room<MatchState> {
   private canPlaceTower(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal", ignoreTowerId = "") {
     const definition = this.findTowerDefinitionById(definitionId);
     if (definition?.engine?.placement?.requiresEdge) {
-      return this.canPlaceAbartiEdge(x, y, orientation, ignoreTowerId);
+      return this.canPlaceAbartiEdge(x, y, orientation, ignoreTowerId, definitionId);
     }
 
     const footprint = this.getTowerFootprintCells(x, y, definitionId, orientation);
@@ -5529,23 +5580,19 @@ export class MatchRoom extends Room<MatchState> {
   private snapToTowerGrid(x: number, y: number, definitionId = "", orientation: TowerOrientation = "horizontal") {
     const gridPoint = worldToGrid(x, y, this.activeMap);
     if (this.findTowerDefinitionById(definitionId)?.engine?.placement?.requiresEdge) {
+      if (definitionId === WALL_TOWER_ID) orientation = this.getEdgeOrientationAt(x, y);
       const gridSize = getMapGridSize(this.activeMap);
       const origin = getMapOrigin(this.activeMap);
-      if (orientation === "vertical") {
-        const lineCol = Math.max(0, Math.min(this.activeMap.cols, Math.round((x - origin.x) / gridSize)));
-        const centerRow = Math.max(1, Math.min(this.activeMap.rows - 1, Math.round((y - origin.y) / gridSize)));
-        return {
-          x: origin.x + lineCol * gridSize,
-          y: origin.y + centerRow * gridSize
-        };
-      }
-
-      const centerCol = Math.max(1, Math.min(this.activeMap.cols - 1, Math.round((x - origin.x) / gridSize)));
-      const lineRow = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - origin.y) / gridSize)));
-      return {
-        x: origin.x + centerCol * gridSize,
-        y: origin.y + lineRow * gridSize
-      };
+      // Konum segmentlerden turetiliyor: snap ile dogrulamanin ayri formuller
+      // kullanmasi ikisinin ayrisabilecegi anlamina gelirdi ve tek cizgilik
+      // duvarda tam olarak bu oldu -- yapi isaret edilenin bir alt karesine
+      // oturuyordu. Merkez, kapladigi cizgilerin ortasidir.
+      const length = this.getEdgeLength(definitionId);
+      const [first] = this.getAbartiEdgeSegments(x, y, orientation, length);
+      if (!first) return { x, y };
+      return orientation === "vertical"
+        ? { x: origin.x + first.col * gridSize, y: origin.y + (first.row + length / 2) * gridSize }
+        : { x: origin.x + (first.col + length / 2) * gridSize, y: origin.y + first.row * gridSize };
     }
 
     // A 2x2 tower centres on a cell corner rather than a cell.
@@ -5581,12 +5628,13 @@ export class MatchRoom extends Room<MatchState> {
     return getPlacementFootprint({ ...gridPoint, span }, { cols: this.activeMap.cols, rows: this.activeMap.rows });
   }
 
-  private canPlaceAbartiEdge(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "") {
-    const segments = this.getAbartiEdgeSegments(x, y, orientation);
+  private canPlaceAbartiEdge(x: number, y: number, orientation: TowerOrientation, ignoreTowerId = "", definitionId = "zeynep-8") {
+    const length = this.getEdgeLength(definitionId);
+    const segments = this.getAbartiEdgeSegments(x, y, orientation, length);
     const occupiedSegments: EdgeSegment[] = [];
     for (const tower of this.towers.values()) {
       if (tower.id !== ignoreTowerId && tower.definition.engine?.placement?.requiresEdge) {
-        occupiedSegments.push(...this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation));
+        occupiedSegments.push(...this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id)));
       }
     }
     const edgeValidation = validateEdgePlacement({
@@ -5594,7 +5642,7 @@ export class MatchRoom extends Room<MatchState> {
       orientation,
       col: segments[0]?.col ?? -1,
       row: segments[0]?.row ?? -1,
-      length: 2,
+      length,
       occupiedSegments
     });
     if (!edgeValidation.valid || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment))) {
@@ -5603,19 +5651,51 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation) {
+  /** Yapinin kapladigi kenar cizgisi sayisi. Duvar tek, Abarti iki. */
+  private getEdgeLength(definitionId: string) {
+    return definitionId === WALL_TOWER_ID ? WALL_EDGE_LENGTH : 2;
+  }
+
+  /**
+   * Bir dunya noktasinin hangi kenara ait oldugunu soyler.
+   *
+   * Duvarin yonu oyuncu tarafindan secilmez, getirildigi kenardan turetilir:
+   * imlec dikey bir cizgiye yataydakinden daha yakinsa duvar dikey durur. Boylece
+   * yerlestirme "once yonu sec, sonra yere birak" degil, dogrudan "nereye
+   * birakirsan o" oluyor.
+   */
+  private getEdgeOrientationAt(x: number, y: number): TowerOrientation {
     const gridSize = getMapGridSize(this.activeMap);
     const origin = getMapOrigin(this.activeMap);
+    const colFraction = (x - origin.x) / gridSize;
+    const rowFraction = (y - origin.y) / gridSize;
+    const distanceToVerticalLine = Math.abs(colFraction - Math.round(colFraction));
+    const distanceToHorizontalLine = Math.abs(rowFraction - Math.round(rowFraction));
+    return distanceToVerticalLine <= distanceToHorizontalLine ? "vertical" : "horizontal";
+  }
+
+  private getAbartiEdgeSegments(x: number, y: number, orientation: TowerOrientation, length = 2) {
+    const gridSize = getMapGridSize(this.activeMap);
+    const origin = getMapOrigin(this.activeMap);
+    /**
+     * Kenar segmentinin iki ekseni farkli sey olcer.
+     *
+     * Bir eksen cizginin kendisi (hangi izgara cizgisine oturuyor) ve
+     * yuvarlanir; digeri hucre sirasi (hangi karelerin yanindan geciyor) ve
+     * imlecin icinde bulundugu kareden baslar. Yapi imlecin iki yanina esit
+     * yayildigi icin baslangic yarim uzunluk geri kaydirilir.
+     *
+     * Tek formul her uzunlukta dogru sonucu verir: iki cizgilik Abarti'nin eski
+     * davranisi korunur, tek cizgilik duvar da isaret edilen kareye oturur.
+     */
+    const cellStart = (fraction: number) => Math.floor(fraction - (length - 1) / 2);
     if (orientation === "vertical") {
       const col = Math.max(0, Math.min(this.activeMap.cols, Math.round((x - origin.x) / gridSize)));
-      const row = Math.max(0, Math.min(this.activeMap.rows - 2, Math.round((y - origin.y) / gridSize - 1)));
-      return [
-        { orientation, col, row },
-        { orientation, col, row: row + 1 }
-      ];
+      const row = Math.max(0, Math.min(this.activeMap.rows - length, cellStart((y - origin.y) / gridSize)));
+      return Array.from({ length }, (_, index) => ({ orientation, col, row: row + index }));
     }
 
-    const col = Math.max(0, Math.min(this.activeMap.cols - 2, Math.round((x - origin.x) / gridSize - 1)));
+    const col = Math.max(0, Math.min(this.activeMap.cols - length, cellStart((x - origin.x) / gridSize)));
     const row = Math.max(0, Math.min(this.activeMap.rows, Math.round((y - origin.y) / gridSize)));
     return [
       { orientation, col, row },

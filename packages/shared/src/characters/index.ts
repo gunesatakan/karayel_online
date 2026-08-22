@@ -41,7 +41,7 @@ export const towerCatalog: Record<CharacterId, TowerDefinition[]> = {
   onur: withWall(onurCharacter.towers)
 };
 
-export { WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower } from "./common/wall.js";
+export { WALL_EDGE_LENGTH, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower } from "./common/wall.js";
 
 /**
  * Her karakterin listesinde bulunan, kimseye ait olmayan yapilar.
