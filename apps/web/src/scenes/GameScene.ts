@@ -362,25 +362,19 @@ export class GameScene extends Phaser.Scene {
     musicVolume: DEFAULT_MUSIC_VOLUME,
     voiceVolume: DEFAULT_VOICE_VOLUME
   };
-  private hintText?: Phaser.GameObjects.Text;
-  private towerTrayItems: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
-  private selectedTowerStatsText?: Phaser.GameObjects.Text;
-  private selectedTowerStatsHelpText?: Phaser.GameObjects.Text;
+  /**
+   * Kisa omurlu bildirim.
+   *
+   * Panelin ipucu satiri her arayuz guncellemesinde secili kuleden bastan
+   * hesaplaniyor, yani gecici bir mesaji oraya yazmak bir sonraki karede siliyor.
+   * Bildirim ayri tutulup suresi dolana kadar ipucunun onune geciyor.
+   */
+  private transientNotice?: { text: string; until: number };
   private abartiOrientation: TowerOrientation = "horizontal";
-  private abartiOrientationButton?: Phaser.GameObjects.Rectangle;
-  private abartiOrientationText?: Phaser.GameObjects.Text;
-  private ultimateButton?: Phaser.GameObjects.Rectangle;
-  private ultimateText?: Phaser.GameObjects.Text;
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private ultimateChoiceOpen = false;
   private zeynepTierChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private pendingZeynepCommandSlot?: number;
-  private zeynepChainText?: Phaser.GameObjects.Text;
-  private zeynepChainEffect?: Phaser.GameObjects.Graphics;
-  private upgradeButton?: Phaser.GameObjects.Rectangle;
-  private upgradeText?: Phaser.GameObjects.Text;
-  private sellButton?: Phaser.GameObjects.Rectangle;
-  private sellText?: Phaser.GameObjects.Text;
   private skillButtons: Phaser.GameObjects.Rectangle[] = [];
   private skillTexts: Phaser.GameObjects.Text[] = [];
   private pingTimer?: Phaser.Time.TimerEvent;
@@ -426,7 +420,6 @@ export class GameScene extends Phaser.Scene {
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
-  private towerButtons = new Map<string, Phaser.GameObjects.Rectangle>();
   /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
   private alertSound?: HTMLAudioElement;
   private draggedTowerDefinition?: TowerDefinition;
@@ -437,9 +430,6 @@ export class GameScene extends Phaser.Scene {
   private readonly dragPreviewOffsetY = 64;
   private readonly controlTop = 698;
   private readonly skillRowY = 710;
-  private readonly actionRowY = 735;
-  private readonly trayTop = 758;
-  private readonly towerCardHeight = 28;
   private readonly handleControlAction = (event: Event) => {
     this.handleDomControlAction(event as CustomEvent<ControlActionDetail>);
   };
@@ -501,8 +491,6 @@ export class GameScene extends Phaser.Scene {
       this.placementGhost?.destroy();
       this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
-      this.zeynepChainEffect?.destroy();
-      this.zeynepChainText?.destroy();
       this.hideAudioSettingsPanel();
       this.hidePerfPopup();
       this.hideUltimateChoices();
@@ -580,6 +568,21 @@ export class GameScene extends Phaser.Scene {
     this.hudState.musicVolume = this.musicVolume;
     this.hudState.voiceVolume = this.voiceVolume;
     this.emitHudState();
+  }
+
+  /** Oyuncuya kisa bir mesaj gosterir; suresi dolunca ipucu geri gelir. */
+  private showNotice(text: string, durationMs = 3200) {
+    this.transientNotice = { text, until: performance.now() + durationMs };
+    this.emitControlState();
+  }
+
+  private getActiveNotice() {
+    if (!this.transientNotice) return undefined;
+    if (this.transientNotice.until <= performance.now()) {
+      this.transientNotice = undefined;
+      return undefined;
+    }
+    return this.transientNotice.text;
   }
 
   private emitHudState(patch: Partial<HudState> = {}) {
@@ -763,93 +766,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createTowerTray() {
-    const trayHeight = GAME_WORLD_HEIGHT - this.trayTop;
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, this.trayTop + trayHeight / 2, GAME_WORLD_WIDTH, trayHeight, 0x020617, 0.94)
-      .setStrokeStyle(1, 0x334155, 0.9)
-      .setDepth(25);
-
-    this.hintText = this.add.text(12, this.trayTop + 5, `${this.selectedCharacter.displayName}: kuleyi haritaya surukle`, {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "11px"
-    }).setDepth(26);
-
-    // Kitin disinda duran ortak yapilar da kurulabilir; tepsi "ne kurabilirim"
-    // sorusunu cevaplar, "kitimde ne var" sorusunu degil.
-    towerCatalog[this.selectedCharacter.id].forEach((tower, index) => {
-      // Tepsi 86px yuksek ve satirlar 33px: ucuncu satir disari tasar. Duvar
-      // listeye girince dort sutun yetmedigi icin bese cikildi; kartlar daraldi
-      // ama herkes iki satira sigiyor.
-      const col = index % TOWER_TRAY_COLUMNS;
-      const row = Math.floor(index / TOWER_TRAY_COLUMNS);
-      const x = 7 + col * 77;
-      const y = this.trayTop + 22 + row * 33;
-      const button = this.add.rectangle(x, y, 71, this.towerCardHeight, tower.id === this.selectedTowerDefinition.id ? 0x334155 : 0x1e293b, 1)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, tower.color, tower.id === this.selectedTowerDefinition.id ? 1 : 0.45)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(26);
-      this.input.setDraggable(button);
-      const nameText = this.add.text(x + 5, y + 4, tower.name, {
-        color: "#f8fafc",
-        fontFamily: "Arial",
-        fontSize: "9px",
-        fontStyle: "bold",
-        wordWrap: { width: 60 }
-      }).setDepth(27);
-      const costText = this.add.text(x + 5, y + 16, `${getTowerBuildCost(tower.cost)}g`, {
-        color: "#facc15",
-        fontFamily: "Arial",
-        fontSize: "10px"
-      }).setDepth(27);
-      button.on("pointerdown", () => {
-        this.selectedTowerDefinition = tower;
-        this.selectedPlacedTowerId = undefined;
-        this.updateSelectionUi();
-      });
-      button.on("dragstart", (pointer: Phaser.Input.Pointer) => this.startTowerDrag(tower, pointer));
-      button.on("drag", (pointer: Phaser.Input.Pointer) => this.updateTowerDrag(pointer));
-      button.on("dragend", (pointer: Phaser.Input.Pointer) => this.finishTowerDrag(pointer));
-      this.towerButtons.set(tower.id, button);
-      this.towerTrayItems.push(button, nameText, costText);
-    });
-
-    this.abartiOrientationButton = this.add.rectangle(GAME_WORLD_WIDTH - 56, this.trayTop + 13, 92, 22, 0x312e81, 0.92)
-      .setStrokeStyle(1, 0x67e8f9, 0.62)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(28)
-      .setVisible(false);
-    this.abartiOrientationText = this.add.text(GAME_WORLD_WIDTH - 56, this.trayTop + 13, "", {
-      color: "#cffafe",
-      fontFamily: "Arial",
-      fontSize: "10px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(29).setVisible(false);
-    const toggleAbartiOrientation = () => {
-      this.ignoreMapPointerUntil = performance.now() + 180;
-      this.abartiOrientation = this.abartiOrientation === "horizontal" ? "vertical" : "horizontal";
-      this.updateAbartiOrientationButton();
-      this.updateSelectionUi();
-    };
-    this.abartiOrientationButton.on("pointerup", toggleAbartiOrientation);
-    this.abartiOrientationText.setInteractive({ useHandCursor: true }).on("pointerup", toggleAbartiOrientation);
-
-    this.selectedTowerStatsText = this.add.text(14, this.trayTop + 20, "", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "11px",
-      fontStyle: "bold",
-      lineSpacing: 5,
-      wordWrap: { width: GAME_WORLD_WIDTH - 32 }
-    }).setDepth(27).setVisible(false);
-    this.selectedTowerStatsHelpText = this.add.text(14, this.trayTop + 82, "Haritaya dokun: dukkan alanina don", {
-      color: "#94a3b8",
-      fontFamily: "Arial",
-      fontSize: "10px"
-    }).setDepth(27).setVisible(false);
-  }
-
   private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
     this.startTowerDragAt(tower, this.getTowerDragPreviewPoint(pointer));
   }
@@ -913,9 +829,9 @@ export class GameScene extends Phaser.Scene {
         // Duvarda yon sunucuda konumdan cozulur; buradaki yalnizca onizleme icin.
       
       });
-      this.hintText?.setText(`${tower.name} yerlestirme istegi gonderildi`);
+      this.showNotice(`${tower.name} yerlestirme istegi gonderildi`);
     } else {
-      this.hintText?.setText("Bu kareye kule yerlestirilemez");
+      this.showNotice("Bu kareye kule yerlestirilemez");
     }
 
     this.draggedTowerDefinition = undefined;
@@ -1439,13 +1355,13 @@ export class GameScene extends Phaser.Scene {
    */
   private showStructureBreach(message: StructureBreachMessage) {
     this.pulseAlertMarker(message.x, message.y, 0xf97316);
-    this.hintText?.setText(`Gedik aciliyor! %${Math.round(message.healthRatio * 100)} can kaldi`);
+    this.showNotice(`Gedik aciliyor! %${Math.round(message.healthRatio * 100)} can kaldi`);
     this.playAlertSound();
   }
 
   private showFlowShift(message: FlowShiftMessage) {
     this.pulseAlertMarker(message.x, message.y, 0x38bdf8);
-    this.hintText?.setText("Dusman akisi yeni bir kapiya kaydi");
+    this.showNotice("Dusman akisi yeni bir kapiya kaydi");
     this.playAlertSound();
   }
 
@@ -1520,93 +1436,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private createActionButtons() {
-    this.add.rectangle(
-      GAME_WORLD_WIDTH / 2,
-      this.controlTop + (this.trayTop - this.controlTop) / 2,
-      GAME_WORLD_WIDTH,
-      this.trayTop - this.controlTop,
-      0x020617,
-      0.9
-    )
-      .setStrokeStyle(1, 0x334155, 0.88)
-      .setDepth(24);
-
-    this.selectedCharacter.skills.forEach((skill, index) => {
-      const x = 70 + index * 125;
-      const button = this.add.rectangle(x, this.skillRowY, 108, 28, 0x1e293b, 0.94)
-        .setStrokeStyle(1, 0x60a5fa, 0.55)
-        .setInteractive({ useHandCursor: true })
-        .setDepth(25);
-      const label = this.add.text(x, this.skillRowY, skill.name, {
-        color: "#dbeafe",
-        fontFamily: "Arial",
-        fontSize: "9px",
-        fontStyle: "bold",
-        align: "center",
-        wordWrap: { width: 98 }
-      }).setOrigin(0.5).setDepth(26);
-      button.on("pointerup", () => this.handleSkillButton(index));
-      this.skillButtons.push(button);
-      this.skillTexts.push(label);
-    });
-
-    this.zeynepChainEffect = this.add.graphics().setDepth(58).setVisible(false);
-    this.zeynepChainText = this.add.text(GAME_WORLD_WIDTH / 2, this.controlTop + 4, "", {
-      color: "#f9a8d4",
-      fontFamily: "Arial",
-      fontSize: "10px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(59).setVisible(false);
-
-    this.ultimateButton = this.add.rectangle(78, this.actionRowY, 128, 28, 0x7c3aed, 0.92)
-      .setStrokeStyle(1, 0xc4b5fd, 0.7)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(25);
-    this.ultimateText = this.add.text(78, this.actionRowY, "Ulti 0%", {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "11px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(26);
-    this.ultimateButton.on("pointerup", () => this.handleUltimateButton());
-
-    this.upgradeButton = this.add.rectangle(235, this.actionRowY, 106, 28, 0x1e293b, 0.92)
-      .setStrokeStyle(1, 0x94a3b8, 0.6)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(25);
-    this.upgradeText = this.add.text(235, this.actionRowY, "Kule sec", {
-      color: "#cbd5e1",
-      fontFamily: "Arial",
-      fontSize: "9px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(26);
-    this.upgradeButton.on("pointerup", () => {
-      if (this.selectedPlacedTowerId) {
-        this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
-      }
-    });
-
-    this.sellButton = this.add.rectangle(340, this.actionRowY, 76, 28, 0x450a0a, 0.88)
-      .setStrokeStyle(1, 0xfca5a5, 0.55)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(25);
-    this.sellText = this.add.text(340, this.actionRowY, "Sat", {
-      color: "#fecaca",
-      fontFamily: "Arial",
-      fontSize: "9px",
-      fontStyle: "bold",
-      align: "center"
-    }).setOrigin(0.5).setDepth(26);
-    this.sellButton.on("pointerup", () => {
-      if (this.selectedPlacedTowerId) {
-        this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
-        this.selectedPlacedTowerId = undefined;
-        this.updateSelectionUi();
-      }
-    });
-  }
-
   private handleUltimateButton() {
     if (!this.room) {
       return;
@@ -1616,7 +1445,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.currentUltimateCharge < 100) {
       this.hideUltimateChoices();
-      this.hintText?.setText("Ulti henuz hazir degil");
+      this.showNotice("Ulti henuz hazir degil");
       return;
     }
 
@@ -1639,21 +1468,6 @@ export class GameScene extends Phaser.Scene {
     this.emitControlState();
   }
 
-  private createUltimateChoiceButton(x: number, label: string, color: number, onSelect: () => void) {
-    const button = this.add.rectangle(x, this.actionRowY, x < 160 ? 128 : 148, 28, color, 0.96)
-      .setStrokeStyle(2, 0xf8fafc, 0.8)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(60);
-    const text = this.add.text(x, this.actionRowY, label, {
-      color: "#f8fafc",
-      fontFamily: "Arial",
-      fontSize: "11px",
-      fontStyle: "bold"
-    }).setOrigin(0.5).setDepth(61);
-    button.on("pointerup", onSelect);
-    return [button, text];
-  }
-
   private hideUltimateChoices() {
     for (const item of this.ultimateChoiceItems) {
       item.destroy();
@@ -1673,33 +1487,6 @@ export class GameScene extends Phaser.Scene {
     this.pendingZeynepCommandSlot = slot;
     void reputation;
     this.emitControlState();
-  }
-
-  private createZeynepTierChoiceButton(x: number, label: string, tier: ZeynepCommandTier, cost: number, reputation: number, color: number) {
-    const canUse = reputation >= cost;
-    const button = this.add.rectangle(x, this.actionRowY, 38, 26, canUse ? color : 0x0f172a, canUse ? 0.96 : 0.68)
-      .setStrokeStyle(1, canUse ? 0xf8fafc : 0x475569, canUse ? 0.78 : 0.5)
-      .setDepth(60);
-    const text = this.add.text(x, this.actionRowY, `${label}\n${cost}I`, {
-      color: canUse ? "#f8fafc" : "#64748b",
-      fontFamily: "Arial",
-      fontSize: "8px",
-      fontStyle: "bold",
-      align: "center"
-    }).setOrigin(0.5).setDepth(61);
-
-    if (canUse) {
-      button.setInteractive({ useHandCursor: true });
-      button.on("pointerup", () => {
-        if (this.pendingZeynepCommandSlot !== undefined) {
-          this.room?.send("useSkill", { slot: this.pendingZeynepCommandSlot, commandTier: tier });
-        }
-        this.hideZeynepTierChoices();
-        this.clearPlacedTowerSelection();
-      });
-    }
-
-    return [button, text];
   }
 
   private hideZeynepTierChoices() {
@@ -1726,7 +1513,7 @@ export class GameScene extends Phaser.Scene {
     this.isGuidanceDragging = true;
     this.hideUltimateChoices();
     this.drawGuidancePreview(pointer.worldX, pointer.worldY);
-    this.hintText?.setText("Yonlendirme: alani surukle, birakinca uygula");
+    this.showNotice("Yonlendirme: alani surukle, birakinca uygula");
   }
 
   private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
@@ -1751,7 +1538,7 @@ export class GameScene extends Phaser.Scene {
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
       this.clearGuidancePreview();
-      this.hintText?.setText("Yonlendirme alani gonderildi");
+      this.showNotice("Yonlendirme alani gonderildi");
       return;
     }
 
@@ -1768,7 +1555,7 @@ export class GameScene extends Phaser.Scene {
     this.hideZeynepTierChoicesIfOpen();
 
     if (this.pendingAction?.type === "guidance") {
-      this.hintText?.setText(this.selectedCharacterId === "archer" ? "Zorba icin alani surukle" : "Yonlendirme icin haritada basili tutup surukle");
+      this.showNotice(this.selectedCharacterId === "archer" ? "Zorba icin alani surukle" : "Yonlendirme icin haritada basili tutup surukle");
       return;
     }
 
@@ -1781,7 +1568,7 @@ export class GameScene extends Phaser.Scene {
       });
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
-      this.hintText?.setText("Refactor istegi gonderildi");
+      this.showNotice("Refactor istegi gonderildi");
       return;
     }
 
@@ -1808,7 +1595,7 @@ export class GameScene extends Phaser.Scene {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
       this.clearPlacedTowerSelection();
       this.showZeynepTierChoices(index, reputation);
-      this.hintText?.setText("Komut gucunu sec: dusuk, orta veya yuksek");
+      this.showNotice("Komut gucunu sec: dusuk, orta veya yuksek");
       return;
     }
 
@@ -1817,13 +1604,13 @@ export class GameScene extends Phaser.Scene {
       if (index === 0) {
         this.pendingAction = { type: "guidance" };
         this.clearPlacedTowerSelection();
-        this.hintText?.setText("Zorba: tank dusmanin oldugu alani surukle");
+        this.showNotice("Zorba: tank dusmanin oldugu alani surukle");
         return;
       }
       if (index === 1) {
         const towerId = this.selectedPlacedTowerId;
         if (!towerId) {
-          this.hintText?.setText("Olumcul Stres icin once kendi kuleni sec");
+          this.showNotice("Olumcul Stres icin once kendi kuleni sec");
           return;
         }
         this.room.send("useSkill", { slot: index, towerId });
@@ -1846,19 +1633,19 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
       this.pendingAction = { type: "guidance" };
       this.clearPlacedTowerSelection();
-      this.hintText?.setText("Yonlendirme: haritada basili tutup alani surukle");
+      this.showNotice("Yonlendirme: haritada basili tutup alani surukle");
       return;
     }
 
     if (index === 1) {
       const towerId = this.selectedPlacedTowerId;
       if (!towerId) {
-        this.hintText?.setText("Refactor icin once kendi kuleni sec");
+        this.showNotice("Refactor icin once kendi kuleni sec");
         return;
       }
       this.pendingAction = { type: "refactor", towerId };
       this.clearPlacedTowerSelection();
-      this.hintText?.setText("Refactor: yeni konuma dokun");
+      this.showNotice("Refactor: yeni konuma dokun");
       return;
     }
 
@@ -1886,7 +1673,7 @@ export class GameScene extends Phaser.Scene {
       serverTowerId: linkRequest.serverTowerId,
       targetTowerId: linkRequest.targetTowerId
     });
-    this.hintText?.setText(`${linkRequest.sourceName}: ${linkRequest.targetName} link istegi gonderildi`);
+    this.showNotice(`${linkRequest.sourceName}: ${linkRequest.targetName} link istegi gonderildi`);
     return true;
   }
 
@@ -2226,7 +2013,7 @@ export class GameScene extends Phaser.Scene {
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
-      this.hintText?.setText(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
+      this.showNotice(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
     });
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
@@ -2642,8 +2429,6 @@ export class GameScene extends Phaser.Scene {
     const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
     if (this.lastHudKey !== hudKey) {
       this.emitHudState({ stats: `Gold ${Math.floor(gold)}  XP ${formatExperience(experience)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}` });
-      this.ultimateText?.setText(`Ulti ${charge}%`);
-      this.ultimateButton?.setFillStyle(charge >= 100 ? 0x7c3aed : 0x312e81, charge >= 100 ? 0.98 : 0.64);
       this.lastHudKey = hudKey;
     }
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);
@@ -5222,35 +5007,11 @@ export class GameScene extends Phaser.Scene {
       .sort((left, right) => left.distanceSq - right.distanceSq)[0]?.tower;
   }
 
-  private setTowerTrayShopVisible(visible: boolean) {
-    for (const item of this.towerTrayItems) {
-      item.setVisible(visible);
-      if (item instanceof Phaser.GameObjects.Rectangle) {
-        if (visible) {
-          item.setInteractive({ useHandCursor: true });
-          this.input.setDraggable(item);
-        } else {
-          item.disableInteractive();
-        }
-      }
-    }
-    this.selectedTowerStatsText?.setVisible(!visible);
-    this.selectedTowerStatsHelpText?.setVisible(!visible);
-    this.updateAbartiOrientationButton(visible);
-  }
-
   private updateAbartiOrientationButton(shopVisible = !this.selectedPlacedTowerId) {
     const visible = shopVisible && this.selectedTowerDefinition.id === "zeynep-8" && !this.selectedPlacedTowerId;
-    this.abartiOrientationButton?.setVisible(visible);
-    this.abartiOrientationText?.setVisible(visible);
     if (visible) {
-      this.abartiOrientationButton?.setInteractive({ useHandCursor: true });
-      this.abartiOrientationText?.setInteractive({ useHandCursor: true });
     } else {
-      this.abartiOrientationButton?.disableInteractive();
-      this.abartiOrientationText?.disableInteractive();
     }
-    this.abartiOrientationText?.setText(this.abartiOrientation === "horizontal" ? "Yon: Yatay" : "Yon: Dikey");
   }
 
   private emitControlState() {
@@ -5302,7 +5063,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.emit("game:controls-state", {
       visible: true,
       characterName: this.selectedCharacter.displayName,
-      hint: towerHint,
+      hint: this.getActiveNotice() ?? towerHint,
       selectedPlacedTowerId: selectedTower?.id,
       selectedTowerDefinitionId: this.selectedTowerDefinition.id,
       showOrientationToggle: this.selectedTowerDefinition.id === "zeynep-8" && !selectedTower,
@@ -5451,27 +5212,14 @@ export class GameScene extends Phaser.Scene {
     this.lastSelectionKey = selectionKey;
     this.game.events.emit("tower:selected", selectedTower?.id);
 
-    for (const [id, button] of this.towerButtons) {
-      const selected = id === this.selectedTowerDefinition.id && !this.selectedPlacedTowerId;
-      button.setFillStyle(selected ? 0x334155 : 0x1e293b, 1);
-      button.setStrokeStyle(1, this.selectedCharacter.towers.find((tower) => tower.id === id)?.color ?? 0x94a3b8, selected ? 1 : 0.45);
-    }
-
     if (!selectedTower) {
-      this.setTowerTrayShopVisible(true);
-      const orientationHint = this.selectedTowerDefinition.id === "zeynep-8"
-        ? ` | ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
-        : "";
-      this.hintText?.setText(`${this.selectedTowerDefinition.name}: ${getTowerBuildCost(this.selectedTowerDefinition.cost)}g${orientationHint} | haritaya surukle`);
-      this.upgradeText?.setText("Kule sec");
-      this.upgradeButton?.setAlpha(0.6);
-      this.sellText?.setText("Sat");
-      this.sellButton?.setAlpha(0.42);
+      // Secili kule yokken gosterilecek metni panelin kendi ipucu satiri zaten
+      // ayni sekilde kuruyor; burada tekrar bildirim yaymak ayni yaziyi iki
+      // kanaldan gondermek olurdu.
       this.emitControlState();
       return;
     }
 
-    this.setTowerTrayShopVisible(false);
     const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
     const cost = definition ? getTowerLevelExpCost(definition.cost, selectedTower.level) : 0;
     const goldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower.level) : 0;
@@ -5502,25 +5250,7 @@ export class GameScene extends Phaser.Scene {
           ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
-    this.hintText?.setText(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
-    this.selectedTowerStatsText?.setText([
-      `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
-      `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
-      ...(!selectedTower.resourceProvider ? [`Sıcaklık: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
-      ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
-      ...(!selectedTower.resourceProvider ? [`Soğuma hızı: %${selectedTower.coolingRate ?? 0}/sn`] : []),
-      ...(!selectedTower.resourceProvider ? [`Mühimmat akışı: ${selectedTower.ammoLogisticsEnabled === false ? "Kapalı" : "Açık"}`] : []),
-      ...(selectedTower.definitionId === "archer-4" ? [
-        `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
-        `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
-      ] : []),
-      selectedTower.level < 10 ? `Sonraki gelistirme: ${upgradePriceLabel} | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP, ${Math.floor(this.localPlayerSnapshot?.gold ?? 0)}g` : "Sonraki gelistirme: maksimum level",
-      canSell ? `Satis iadesi: ${sellRefund}g` : "Satis: sadece sahibi"
-    ].join("\n"));
-    this.upgradeText?.setText(selectedTower.level < 10 ? `Gelistir ${upgradePriceLabel}` : "Gelistirme yok");
-    this.upgradeButton?.setAlpha(canUpgrade ? 1 : 0.5);
-    this.sellText?.setText(canSell ? `Sat ${sellRefund}g` : "Satilamaz");
-    this.sellButton?.setAlpha(canSell ? 1 : 0.42);
+    this.showNotice(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
     this.emitControlState();
   }
 
@@ -5533,9 +5263,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.lastSkillKey = skillKey;
-
-    this.updateZeynepChainPanel(player?.characterId === "zeynep", authorityChain);
-
     this.selectedCharacter.skills.forEach((skill, index) => {
       const cooldown = cooldowns[index] ?? 0;
       const zeynepCommand = player?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
@@ -5547,39 +5274,6 @@ export class GameScene extends Phaser.Scene {
       this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });
     this.emitControlState();
-  }
-
-  private updateZeynepChainPanel(isZeynep: boolean, authorityChain: number) {
-    this.zeynepChainEffect?.clear();
-    this.zeynepChainEffect?.setVisible(false);
-    this.zeynepChainText?.setVisible(false);
-
-    if (!isZeynep) {
-      return;
-    }
-
-    this.zeynepChainText?.setText(`Zincir ${authorityChain}/2`);
-    this.zeynepChainText?.setColor(authorityChain >= 2 ? "#fdf2f8" : "#f9a8d4");
-    this.zeynepChainText?.setVisible(true);
-
-    if (authorityChain < 2 || !this.zeynepChainEffect) {
-      return;
-    }
-
-    const graphics = this.zeynepChainEffect;
-    graphics.setVisible(true);
-    graphics.lineStyle(2, 0xfdf2f8, 0.86);
-    for (const [index] of this.selectedCharacter.skills.entries()) {
-      const x = 70 + index * 125;
-      const y = this.skillRowY;
-      graphics.strokeRoundedRect(x - 56, y - 17, 112, 34, 6);
-      for (let link = 0; link < 4; link += 1) {
-        const linkX = x - 42 + link * 28;
-        graphics.lineStyle(2, link % 2 === 0 ? 0xf9a8d4 : 0xfdf2f8, 0.78);
-        graphics.strokeEllipse(linkX, y - 20, 17, 7);
-        graphics.strokeEllipse(linkX + 10, y - 20, 17, 7);
-      }
-    }
   }
 
   private startPingLoop() {
