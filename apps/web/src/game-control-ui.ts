@@ -297,7 +297,13 @@ export function setupGameControlUi(game: Phaser.Game) {
     } else {
       const towerGrid = document.createElement("div");
       towerGrid.className = "game-controls__tower-grid";
-      for (const tower of state.towers ?? []) {
+      const towerList = state.towers ?? [];
+      // Dukkan alani iki satir yuksekliginde ve tasan satir kirpiliyor. Sutun
+      // sayisini sabit yazmak, katologa bir yapi eklendigi anda son butonu
+      // gorunmez yapiyor -- duvar eklenince tam olarak bu oldu. Sayiyi listeden
+      // turetmek kurali dogrudan ifade eder: kac kule olursa olsun iki satir.
+      towerGrid.style.gridTemplateColumns = `repeat(${Math.max(1, Math.ceil(towerList.length / 2))}, minmax(0, 1fr))`;
+      for (const tower of towerList) {
         towerGrid.append(makeTowerButton(tower));
       }
       shop.append(towerGrid);

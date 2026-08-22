@@ -580,7 +580,7 @@ canvas {
 .game-controls__actions,
 .game-controls__tower-grid {
   display: grid;
-  gap: 5px;
+  gap: 3px;
 }
 
 .game-controls__skills {
@@ -605,6 +605,7 @@ canvas {
 }
 
 .game-controls__tower-grid {
+  /* Sutun sayisi kule sayisindan turetiliyor; buradaki yalnizca yedek. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(17px, 1fr));
   grid-auto-rows: minmax(17px, 1fr);
@@ -709,7 +710,7 @@ canvas {
   align-content: center;
   justify-items: start;
   gap: 0;
-  padding: 2px 5px;
+  padding: 2px 3px;
   overflow: hidden;
   border-color: color-mix(in srgb, var(--tower-color, #60a5fa) 68%, transparent);
   background:
