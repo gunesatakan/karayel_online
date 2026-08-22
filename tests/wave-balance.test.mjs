@@ -30,13 +30,13 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
   // Taban egri degismedi; uzerine oyuncu tarafindaki guc degisimlerini karsilayan
   // telafi carpani bindi. Ikisi ayri tutuluyor ki hangi sayinin neden degistigi
   // sonradan okunabilsin.
-  assert.equal(PLAYER_POWER_COMPENSATION, 1.8);
+  assert.equal(PLAYER_POWER_COMPENSATION, 1.95);
   assert.ok(Math.abs(ENEMY_HP_BALANCE_MULTIPLIER - 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION) < 1e-12);
   assert.equal(getWaveEnemyCount(20), 142);
 
   const gruntHp = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, 20);
-  assert.equal(gruntHp, 2398);
-  assert.equal(gruntHp * getWaveEnemyCount(20), 340_516);
+  assert.equal(gruntHp, 2598);
+  assert.equal(gruntHp * getWaveEnemyCount(20), 368_916);
 });
 
 /**

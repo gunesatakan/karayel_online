@@ -16,11 +16,17 @@ import { NON_FIRING_INTERVAL_MS } from "../../tower-rules.js";
 export const WALL_TOWER_ID = "wall-1";
 
 /**
- * Duvarin cani kule tabanindan yuksek: gorevi hasar vermek degil, dusmani
- * oyalamak. Yol maliyeti kalan canla orantili oldugu icin bu carpan dogrudan
- * "duvar ne kadar iyi yonlendirir" demek.
+ * Duvarin cani kule tabanindan bir tik yuksek.
+ *
+ * Carpan WALL_COST_COEFFICIENT ile birlikte okunmali: katsayi 100 canli bir
+ * yapinin yol bedelinin harita genisligini biraz asmasina gore ayarlandi, yani
+ * huni tam olarak o civarda calisiyor. Cok daha yuksek bir can, bedeli harita
+ * genisliginin kat kat uzerine tasir ve dusman saglam duvari **hicbir zaman**
+ * kirmayi secmez; duvar o noktada oyalayici degil mutlak engel olur.
+ *
+ * Asil dayaniklilik kalinlastirmadan gelir: her seviye tabana ek can yazar.
  */
-export const WALL_HEALTH_MULTIPLIER = 2.5;
+export const WALL_HEALTH_MULTIPLIER = 1.2;
 /** Kalinlastirma: her seviye tabana bunun kadar ek can yazar. */
 export const WALL_HEALTH_PER_LEVEL = 0.6;
 

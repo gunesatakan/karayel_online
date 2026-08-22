@@ -25,12 +25,14 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  * - Dalga zorlugu kalinliktan kalabaliga kaydi.
  * - Simulator seviyenin atis hizina etkisini hic gormuyordu; duzeltilince bot
  *   gucunun gercek olcumu ortaya cikti.
+ * - Duvarlar simulatore eklendi: bot artik duvar kurup onariyor ve kazandigi
+ *   ates suresi olcume giriyor.
  *
  * Deger tek tek tahmin edilmez, `tools/simulate.mjs` ile %5-%10 zafer bandina
  * gore olculur. Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden
  * olculmesi gerekir.
  */
-export const PLAYER_POWER_COMPENSATION = 1.8;
+export const PLAYER_POWER_COMPENSATION = 1.95;
 export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION;
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
 export const ENEMY_REWARD_MULTIPLIER = 1.5;

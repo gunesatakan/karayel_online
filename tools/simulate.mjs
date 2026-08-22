@@ -24,6 +24,14 @@ import {
   getWaveCompletionGold,
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
+  getStructureTravelCost,
+  REFERENCE_STRUCTURE_BREAK_DPS,
+  getStructureRepairCost,
+  getStructureHealthMultiplier,
+  wallTower,
+  SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
+  SIEGE_FIRST_WAVE,
+  SIEGE_SPAWN_RATIO,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 
@@ -31,10 +39,89 @@ const START_GOLD = 360;
 const BASE_TOWER_CAPACITY = 10;
 const enemyTypes = ["grunt", "grunt", "runner", "shooter", "brute"];
 
+/**
+ * Duvar modeli.
+ *
+ * Simulatorde harita yok, dolayisiyla duvari yerlestirmek de yok. Modellenen sey
+ * duvarin ne yaptigi: dusmani oyalayip kulelere fazladan ates saniyesi
+ * kazandirmak. Bu kabaca ama dogru yonde bir olcum verir -- `WALL_COST_COEFFICIENT`
+ * ve duvar fiyati degistiginde zafer bandi gercekten kimildar.
+ *
+ * Modellenmeyenler acikca soylenmeli: duvarin nereye kuruldugu, huninin sekli,
+ * kill box yerlesimi ve ucan dusmanlarin duvari tumden atlamasi. Yani bu model
+ * duvarin **ust sinirini** degil, ortalama katkisini olcer.
+ */
+const MAP_WIDTH_CELLS = 11;
+const MAP_CELL_SIZE = 34;
+/** Grunt taban hizi; oyalama suresi bununla saniyeye cevrilir. */
+const REFERENCE_ENEMY_SPEED = 50;
+/** Bir dalgada duvarlarin ortalama ne kadarinin hasar aldigi. */
+const WALL_DAMAGE_PER_WAVE = 0.45;
+/**
+ * Bir duvara ayni anda kac dusmanin yuklendigi.
+ *
+ * Sabit bir sayi yanlis: hat tamken surus butun hat boyunca yayilir ve duvar
+ * basina dusen saldirgan sayisi dalganin buyuklugune baglidir. Bu, duvarin
+ * dogal omrunu belirler -- erken dalgada seyrek surus duvari zor kirar, gec
+ * dalgada kalabalik onu hizla ogutur. Turtle stratejisinin kendiliginden
+ * zayiflamasi buradan gelir.
+ */
+function getWallAttackersPerWall(enemyCount, wallCount) {
+  return Math.max(1, enemyCount / Math.max(1, wallCount));
+}
+
+/**
+ * Duvar hattinin dalgaya kazandirdigi ek ates suresi.
+ *
+ * Uc ayri sey karistirilmamali:
+ *
+ * 1. `getStructureTravelCost` bir **tercih agirligidir**, sure degil.
+ *    `WALL_COST_COEFFICIENT` dusmanin kirmak yerine dolasmayi ne kadar sectigini
+ *    belirler ve kasten sisirilmistir; dogrudan saniyeye cevirmek duvari
+ *    oldugundan kat kat guclu gosterir.
+ *
+ * 2. **Yarim hat oyalamaz.** Gedik varsa dusman oradan gecer; kazanilan sure
+ *    yalnizca gedige yanal yuruyus kadardir. Duvar sayisiyla dogru orantili bir
+ *    fayda varsaymak, uc duvarlik bir kutugu tam hat sanmak demektir.
+ *
+ * 3. **Hat tamsa** dolasmak diye bir sey kalmaz; sure duvarin kirilmasi kadardir
+ *    ve duvara ayni anda birden fazla dusman yuklenir.
+ *
+ * Ustune ucan dusmanlar duvari tumden atlar, yani katki dalganin kara payiyla
+ * olceklenir. 5. ve 10. dalgada bu sifirdir.
+ */
+function getWallDelaySeconds(wallCount, wallHp, groundRatio, enemyCount) {
+  if (wallCount <= 0 || wallHp <= 0 || groundRatio <= 0) return 0;
+  const secondsPerCell = MAP_CELL_SIZE / REFERENCE_ENEMY_SPEED;
+  const completeness = Math.min(1, wallCount / MAP_WIDTH_CELLS);
+
+  if (completeness >= 1) {
+    const attackers = getWallAttackersPerWall(enemyCount, wallCount);
+    const breakSeconds = wallHp / (REFERENCE_STRUCTURE_BREAK_DPS * attackers);
+    const detourSeconds = Math.min(MAP_WIDTH_CELLS, Math.max(0, getStructureTravelCost(wallHp) - 1)) * secondsPerCell;
+    return groundRatio * Math.min(detourSeconds, breakSeconds);
+  }
+
+  // Gedige ortalama yanal yuruyus: hat ne kadar genisse gedik o kadar uzakta.
+  const sidewaysCells = completeness * MAP_WIDTH_CELLS / 2;
+  return groundRatio * sidewaysCells * secondsPerCell;
+}
+
+/** Dalgadaki kusatma dusmanlarinin duvara verdigi ek asinma. */
+function getWallWearMultiplier(wave) {
+  return wave >= SIEGE_FIRST_WAVE
+    ? 1 + SIEGE_SPAWN_RATIO * (SIEGE_STRUCTURE_DAMAGE_MULTIPLIER - 1)
+    : 1;
+}
+
 export const botStrategies = {
-  balanced: { characterId: "warrior", axes: ["dps", "amplify"], buildBias: 1, upgradeBias: 1, combatSeconds: 20 },
-  builder: { characterId: "warrior", axes: ["economy", "dps"], buildBias: 1.3, upgradeBias: 0.75, combatSeconds: 68 },
-  upgrader: { characterId: "zeynep", axes: ["dps", "amplify"], buildBias: 0.75, upgradeBias: 1.3, combatSeconds: 64 }
+  // `wallBias`: her hazirlik fazinda duvara ayrilan altin payi. 0 duvarsiz
+  // oynayan bir botu, 1 ise hattini once oren bir botu tarif eder.
+  balanced: { characterId: "warrior", axes: ["dps", "amplify"], buildBias: 1, upgradeBias: 1, combatSeconds: 20, wallBias: 0.25 },
+  builder: { characterId: "warrior", axes: ["economy", "dps"], buildBias: 1.3, upgradeBias: 0.75, combatSeconds: 68, wallBias: 0.4 },
+  upgrader: { characterId: "zeynep", axes: ["dps", "amplify"], buildBias: 0.75, upgradeBias: 1.3, combatSeconds: 64, wallBias: 0.15 },
+  turtle: { characterId: "warrior", axes: ["barricade", "dps"], buildBias: 0.7, upgradeBias: 0.9, combatSeconds: 20, wallBias: 0.7 },
+  rusher: { characterId: "warrior", axes: ["dps", "amplify"], buildBias: 1.2, upgradeBias: 1.1, combatSeconds: 20, wallBias: 0 }
 };
 
 export function createSeededRandom(seed = 1) {
@@ -58,6 +145,10 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
   let experience = 0;
   let nexusHealth = 100;
   let reachedWave = 0;
+  // Duvarlar tek tek degil, ortak canli bir hat olarak tutulur: simulatorde
+  // konum olmadigi icin hangi duvarin nerede oldugu zaten anlamsiz.
+  let wallCount = 0;
+  let wallHealthRatio = 1;
 
   for (let wave = 1; wave <= FINAL_WAVE; wave += 1) {
     spendGold({ towers, definitions, playerModifiers, config, goldRef: { get value() { return gold; }, set value(value) { gold = value; } } });
@@ -95,22 +186,41 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
         playerModifiers.push(...purchase.item.effects);
       }
     }
+    const wallState = maintainWalls({
+      wave,
+      config,
+      playerModifiers,
+      wallCount,
+      wallHealthRatio,
+      goldRef: { get value() { return gold; }, set value(value) { gold = value; } }
+    });
+    wallCount = wallState.wallCount;
+    wallHealthRatio = wallState.wallHealthRatio;
+
     spendExperience({ towers, config, experienceRef: { get value() { return experience; }, set value(value) { experience = value; } } });
     const count = getWaveEnemyCount(wave);
     let totalHealth = 0;
     let totalReward = 0;
     let totalExperience = 0;
+    let groundCount = 0;
     for (let index = 0; index < count; index += 1) {
       const enemyType = enemyTypes[Math.floor(random() * enemyTypes.length)];
       const enemy = getEnemyCombatDefinition(enemyType);
       const isAir = wave === 5 || wave === 10 || ((wave === 15 || wave === 20) && index % 2 === 0);
       const airMultiplier = isAir ? 0.25 : 1;
+      if (!isAir) groundCount += 1;
       totalHealth += getWaveEnemyMaxHp(enemy.maxHp, wave, airMultiplier) + Math.round(enemy.shield * airMultiplier);
       totalReward += Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);
       totalExperience += getEnemyExp(wave, enemyType, isAir ? "air" : "ground");
     }
+    // Ucanlar duvari yok sayar; duvarin katkisi dalganin kara payi kadardir.
+    const groundRatio = count > 0 ? groundCount / count : 1;
     const execution = 0.82 + random() * 0.36;
-    const damageBudget = towers.reduce((sum, tower) => sum + getTowerDps(tower, playerModifiers, ownedCardIds), 0) * config.combatSeconds * execution;
+    // Duvarin tek katkisi budur: dusmani oyalayip kulelere fazladan ates
+    // saniyesi kazandirmak.
+    const wallHp = getWallHealth(playerModifiers) * wallHealthRatio;
+    const combatSeconds = config.combatSeconds + getWallDelaySeconds(wallCount, wallHp, groundRatio, count);
+    const damageBudget = towers.reduce((sum, tower) => sum + getTowerDps(tower, playerModifiers, ownedCardIds), 0) * combatSeconds * execution;
     const dealt = Math.min(totalHealth, damageBudget);
     distributeDamage(towers, dealt);
     if (damageBudget < totalHealth) {
@@ -119,6 +229,14 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
         return result(false, reachedWave, towers, cardHistory, nexusHealth, seed, strategy);
       }
     }
+    // Dalga duvari yipratir; kusatma dusmani bunu belirgin sekilde hizlandirir.
+    wallHealthRatio = Math.max(0, wallHealthRatio - WALL_DAMAGE_PER_WAVE * getWallWearMultiplier(wave));
+    if (wallHealthRatio <= 0) {
+      // Yikilan duvar kendiliginden geri gelmez; oyuncu yeniden insa etmeli.
+      wallCount = 0;
+      wallHealthRatio = 1;
+    }
+
     reachedWave = wave;
     gold += totalReward + (wave < FINAL_WAVE ? getWaveCompletionGold(wave) : 0);
     experience += totalExperience;
@@ -153,6 +271,50 @@ function spendGold({ towers, definitions, playerModifiers, config, goldRef }) {
     towers.push({ id: `t${towers.length + 1}`, definition: build.definition, level: 1, modifiers: [], targetedCardIds: [], equippedShopItemIds: [], damageDealt: 0 });
     goldRef.value -= build.cost;
   }
+}
+
+/** Duvarin can tavani: kart ve esya can bonuslari duvara da isler. */
+function getWallHealth(playerModifiers) {
+  const TOWER_BASE_HP = 100;
+  return TOWER_BASE_HP
+    * getStructureHealthMultiplier(wallTower, 1)
+    * getModifierMultiplier(playerModifiers, "towerHealth");
+}
+
+/**
+ * Duvar hattini kurar ve onarir.
+ *
+ * Once onarim, sonra yeni duvar: onarim ayni altin icin daha cok can geri
+ * getirdigi surece gercek oyuncu da once onu yapar. Duvara ayrilan pay
+ * stratejiden gelir, boylece "duvar ormeyen bot" ile "once hattini oren bot"
+ * ayni olcekte karsilastirilabilir.
+ */
+function maintainWalls({ wave, config, playerModifiers, wallCount, wallHealthRatio, goldRef }) {
+  const wallBias = config.wallBias ?? 0;
+  if (wallBias <= 0) return { wallCount, wallHealthRatio };
+
+  let budget = goldRef.value * wallBias;
+  const buildCost = getTowerBuildCost(wallTower.cost);
+
+  if (wallCount > 0 && wallHealthRatio < 1) {
+    const repairCost = getStructureRepairCost(buildCost, 1 - wallHealthRatio) * wallCount;
+    if (repairCost > 0 && repairCost <= budget) {
+      budget -= repairCost;
+      goldRef.value -= repairCost;
+      wallHealthRatio = 1;
+    }
+  }
+
+  // Hat harita genisligini gecince fazlasi ise yaramaz.
+  let safety = MAP_WIDTH_CELLS;
+  while (safety-- > 0 && wallCount < MAP_WIDTH_CELLS && buildCost <= budget) {
+    budget -= buildCost;
+    goldRef.value -= buildCost;
+    wallCount += 1;
+  }
+
+  void wave;
+  return { wallCount, wallHealthRatio };
 }
 
 function spendExperience({ towers, config, experienceRef }) {
