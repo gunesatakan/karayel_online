@@ -52,6 +52,7 @@ test("cephane hammaddesi toplayıcısı 2, mühimmat taşıyıcısı 4 kapasitey
 
 test("enerji tasiyicisi stok bosken reaktore donup bekler", () => {
   const room = new MatchRoom();
+  room.state = { players: new Map([["p1", { runModifiers: [] }]]) };
   const reactor = provider("reactor", "energy", 200, 200);
   room.towers = new Map([[reactor.id, reactor]]);
   const transporter = worker("energyTransport");
@@ -65,6 +66,7 @@ test("enerji tasiyicisi stok bosken reaktore donup bekler", () => {
 
 test("cephane tasiyicisi stok bosken fabrikaya donup bekler", () => {
   const room = new MatchRoom();
+  room.state = { players: new Map([["p1", { runModifiers: [] }]]) };
   const factory = provider("factory", "ammunition", 200, 200);
   room.towers = new Map([[factory.id, factory]]);
   const transporter = worker("ammoTransport");
@@ -78,6 +80,7 @@ test("cephane tasiyicisi stok bosken fabrikaya donup bekler", () => {
 
 test("tasiyicilar kaynak gelince bekledikleri binadan yukleme yapar", () => {
   const room = new MatchRoom();
+  room.state = { players: new Map([["p1", { runModifiers: [] }]]) };
   const reactor = provider("reactor", "energy", 100, 100);
   const factory = provider("factory", "ammunition", 200, 200);
   const target = {

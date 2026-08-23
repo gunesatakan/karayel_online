@@ -32,7 +32,7 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  * gore olculur. Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden
  * olculmesi gerekir.
  */
-export const PLAYER_POWER_COMPENSATION = 1.95;
+export const PLAYER_POWER_COMPENSATION = 1.87;
 export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION;
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
 export const ENEMY_REWARD_MULTIPLIER = 1.5;
@@ -185,3 +185,26 @@ export const ZEYNEP_COLUMN_ULTIMATE_SLOW_MS = 700;
 
 /** Patlamanin ekranda kaldigi sure. */
 export const ZEYNEP_COLUMN_ULTIMATE_BEAM_MS = 620;
+
+/**
+ * Taht Muhru sentez carpanlari.
+ *
+ * Muhrun kendi hasari yok; ne kadar vurdugu tamamen yanindaki iki kuleden
+ * geliyor. Uc kombinasyon da ayni taban hasari okudugu icin taban degeri
+ * yukseltmek hepsini birden buyutur, bu carpanlar ise kombinasyonlari
+ * birbirinden ayirir.
+ */
+
+/** Gosteri + Gosteri: yanan hat kulenin menzilinden daha uzaga uzanir. */
+export const ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER = 1.5;
+
+/** Gosteri + Hiza: seken isin her dusmani bir kez vurdugu icin agir vurur. */
+export const ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER = 2;
+
+/**
+ * Seken isinin govde uzunlugu.
+ *
+ * Kare olcusune bagli, cunku orantiyi belirleyen sey haritanin kendisi: sabit
+ * 92 piksel kulenin menzilinden bile uzun bir cubuk cizip ekrani doldurmustu.
+ */
+export const ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS = 1.4;

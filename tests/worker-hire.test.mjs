@@ -3,15 +3,15 @@
  *
  * Her oyuncu dort temel isciyle basliyor: her rolden bir tane. Satin alinan isci
  * bunlarin uzerine biner ve rolu alim aninda secilir. Testler uc seyi sabitliyor
- * -- bedelin her alimda buyudugu, kontenjanin ve altin kontrolunun sunucuda
- * uygulandigi, ve ayni rolu iki kez almanin iki ayri isci dogurdugu.
+ * -- bedelin her alimda buyudugu, sayida ust sinir olmadigi, ve ayni rolu iki
+ * kez almanin iki ayri isci dogurdugu.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
   HIRABLE_WORKER_ROLES,
-  MAX_HIRED_WORKERS,
   WORKER_HIRE_BASE_COST,
+  WORKER_HIRE_COST_GROWTH,
   canHireWorker,
   getWorkerHireCost,
   isHirableWorkerRole
@@ -33,12 +33,33 @@ function workersOf(room, ownerId = "p1") {
 
 test("ilk iscinin bedeli taban bedel, sonrakiler pahalilanir", () => {
   assert.equal(getWorkerHireCost(0), WORKER_HIRE_BASE_COST);
-  for (let count = 1; count < MAX_HIRED_WORKERS; count += 1) {
+  for (let count = 1; count < 25; count += 1) {
     assert.ok(
       getWorkerHireCost(count) > getWorkerHireCost(count - 1),
       `${count}. isci oncekinden ucuz olmamali`
     );
   }
+});
+
+test("isci sayisinda ust sinir yok", () => {
+  // Sinir yerine artan bedel var: kadro her zaman buyutulebilir ama her alim
+  // bir sonrakini pahalilastirir.
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  player.gold = 10_000_000;
+
+  for (let index = 0; index < 12; index += 1) {
+    room.hireWorker(client, { role: "crystalCollector" });
+  }
+
+  assert.equal(player.hiredWorkerRoles.length, 12, "isci alimi bir yerde durdu");
+  assert.equal(canHireWorker(12, 10_000_000), true, "kadro doluymus gibi davraniyor");
+});
+
+test("bedel her alimda ayni oranda artar", () => {
+  const ilk = getWorkerHireCost(0);
+  const onuncu = getWorkerHireCost(9);
+  assert.equal(Math.round(ilk * WORKER_HIRE_COST_GROWTH ** 9), onuncu);
 });
 
 test("rol dogrulamasi yalnizca bilinen rolleri gecirir", () => {
@@ -105,21 +126,6 @@ test("bedel altindan dusulur ve harcama sayacina yazilir", () => {
 
   assert.equal(player.gold, 1000 - bedel);
   assert.equal(player.goldSpent, oncekiHarcama + bedel);
-});
-
-test("kontenjan dolunca isci alinamaz", () => {
-  const room = createRoom("warrior");
-  for (let index = 0; index < MAX_HIRED_WORKERS; index += 1) {
-    hire(room, "crystalCollector");
-  }
-  const player = room.state.players.get("p1");
-  assert.equal(player.hiredWorkerRoles.length, MAX_HIRED_WORKERS);
-
-  const oncekiAltin = player.gold;
-  room.hireWorker(client, { role: "crystalCollector" });
-  assert.equal(player.hiredWorkerRoles.length, MAX_HIRED_WORKERS, "kontenjan asilmis");
-  assert.equal(player.gold, oncekiAltin, "kontenjan dolu iken altin harcanmis");
-  assert.equal(canHireWorker(MAX_HIRED_WORKERS, 999999), false);
 });
 
 test("gecersiz rol istegi yok sayilir", () => {

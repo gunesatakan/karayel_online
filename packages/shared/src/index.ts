@@ -559,7 +559,6 @@ export {
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_HIRE_BASE_COST,
   WORKER_HIRE_COST_GROWTH,
-  MAX_HIRED_WORKERS,
   advanceResourceExtraction,
   canHireWorker,
   getLogisticsWorkerRespawnRemainingMs,
@@ -568,6 +567,9 @@ export {
 } from "./logistics/index.js";
 export type { HirableWorkerRole } from "./logistics/index.js";
 export {
+  ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
+  ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
+  ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
   ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,

@@ -27,6 +27,8 @@ export type ModifierStat =
   | "ammoProduction"
   | "workerGatherSpeed"
   | "workerSpeed"
+  /** Iscinin tek seferde tasidigi yuk. */
+  | "workerCapacity"
   | "airDamage"
   | "damageVsShielded"
   | "damageVsBrute"

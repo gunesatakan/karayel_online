@@ -24,7 +24,6 @@ type ControlState = {
   workerHire?: {
     open: boolean;
     hired: number;
-    max: number;
     cost: number;
     affordable: boolean;
     roles: Array<{ id: string; label: string; description: string; owned: number }>;
@@ -189,7 +188,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop inventory";
       drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.cost} altın</strong></header>`
-        + `<p>İşçinin rolü alırken belirlenir ve sonradan değişmez. Alınan işçi: ${hire.hired}/${hire.max}.</p>`
+        + `<p>İşçinin rolü alırken belirlenir ve sonradan değişmez. Alınan işçi: ${hire.hired}. Her alım sonrakini pahalılaştırır.</p>`
         + `<div class="gold-shop__offers"></div>`;
       const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
       for (const role of hire.roles) {
@@ -372,11 +371,10 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     if (state.workerHire) {
       const hire = state.workerHire;
-      const full = hire.hired >= hire.max;
       footer.append(makeActionButton(
-        full ? `İşçi ${hire.hired}/${hire.max}` : `İşçi Al ${hire.cost}g`,
+        `İşçi Al ${hire.cost}g`,
         "game-controls__worker-hire",
-        !full,
+        true,
         () => dispatch({ action: hire.open ? "closeWorkerHire" : "openWorkerHire" })
       ));
     }

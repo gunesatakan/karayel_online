@@ -7,7 +7,6 @@ import {
   HIRABLE_WORKER_ROLES,
   type HirableWorkerRole,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
-  MAX_HIRED_WORKERS,
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_ROLE_LABELS,
   getWorkerHireCost,
@@ -1389,9 +1388,8 @@ export class GameScene extends Phaser.Scene {
     const hired = this.localPlayerSnapshot?.hiredWorkerRoles ?? [];
     const cost = getWorkerHireCost(hired.length);
     return {
-      open: this.workerHireOpen && hired.length < MAX_HIRED_WORKERS,
+      open: this.workerHireOpen,
       hired: hired.length,
-      max: MAX_HIRED_WORKERS,
       cost,
       affordable: (this.localPlayerSnapshot?.gold ?? 0) >= cost,
       roles: HIRABLE_WORKER_ROLES.map((role) => ({

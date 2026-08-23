@@ -34,9 +34,15 @@ export const WORKER_ROLE_DESCRIPTIONS: Record<HirableWorkerRole, string> = {
   ammoTransport: "Üretilen mühimmatı kulelere taşır."
 };
 
-export const WORKER_HIRE_BASE_COST = 120;
-export const WORKER_HIRE_COST_GROWTH = 1.7;
-export const MAX_HIRED_WORKERS = 3;
+export const WORKER_HIRE_BASE_COST = 100;
+
+/**
+ * Her alimin bir sonrakine ekledigi zam.
+ *
+ * Artis kucuk oldugu icin sayi sinirli degil: isci kadrosunu buyutmek her zaman
+ * mumkun, ama ucuncu isci ile onuncu isci arasindaki fark birikerek hissediliyor.
+ */
+export const WORKER_HIRE_COST_GROWTH = 1.05;
 
 /** Siradaki iscinin bedeli. Alinan her isci bir sonrakini pahalilastirir. */
 export function getWorkerHireCost(hiredCount: number) {
@@ -48,7 +54,7 @@ export function isHirableWorkerRole(value: unknown): value is HirableWorkerRole 
 }
 
 export function canHireWorker(hiredCount: number, gold: number) {
-  return hiredCount < MAX_HIRED_WORKERS && gold >= getWorkerHireCost(hiredCount);
+  return gold >= getWorkerHireCost(hiredCount);
 }
 
 export function advanceResourceExtraction(

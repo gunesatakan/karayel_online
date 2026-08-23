@@ -26,7 +26,7 @@ const expectedProfiles = {
   zeynep: [
     ["zeynep-1", "projectile", "physical", "bullet", 7, 48, 264, null],
     ["zeynep-2", "impact", "light", "powerCrystal", 24.2, 84, 462, null],
-    ["zeynep-3", "impact", "none", "powerCrystal", 22, 60, 330, null],
+    ["zeynep-3", "impact", "none", "powerCrystal", 22, 72, 396, null],
     ["zeynep-6", "aura", "none", "auraCrystal", 1, 0, 0, null],
     ["zeynep-7", "aura", "none", "auraCrystal", 1, 0, 0, null],
     ["zeynep-8", "aura", "none", "auraCrystal", 1, 0, 0, null],

@@ -93,7 +93,9 @@ import {
   advanceResourceExtraction,
   getLogisticsWorkerRespawnRemainingMs,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
-  MAX_HIRED_WORKERS,
+  ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
+  ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
+  ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
   ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,
   ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
@@ -290,7 +292,7 @@ const ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS = 16;
 const ZEYNEP_SYNTHESIS_BURN_DURATION_MS = 3000;
 const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 333;
 const ZEYNEP_SYNTHESIS_RAY_SPEED = 930;
-const ZEYNEP_SYNTHESIS_RAY_LENGTH = 92;
+const ZEYNEP_SYNTHESIS_RAY_LENGTH = TOWER_GRID_SIZE * ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS;
 const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
 // Dizilim oyundaki en zor yerlesim sarti: tam ikili ya da tam ucgen ucluk
 // kurulacak, gruba dorduncu kule girerse buff bozulacak. Karsiligi +%15 ve
@@ -2614,13 +2616,14 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private findBestZeynepShowcaseLine(tower: TowerModel) {
-    const enemies = this.getEnemiesNear(tower.x, tower.y, this.getTowerRange(tower) * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+  private findBestZeynepShowcaseLine(tower: TowerModel, rangeMultiplier = 1) {
+    const length = this.getTowerRange(tower) * rangeMultiplier;
+    // Arama yaricapi hattin kendisinden genis: hedef menzilin ucunda dursa bile
+    // hat onun uzerinden gecebilir.
+    const enemies = this.getEnemiesNear(tower.x, tower.y, length * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
     if (enemies.length === 0) {
       return undefined;
     }
-
-    const length = this.getTowerRange(tower);
     let best: { endX: number; endY: number; targets: EnemyModel[]; score: number; abartiLevel: number } | undefined;
 
     for (const enemy of enemies) {
@@ -3257,7 +3260,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisBurnImpact(tower: TowerModel, target: EnemyModel) {
-    const result = this.findBestZeynepShowcaseLine(tower);
+    const result = this.findBestZeynepShowcaseLine(tower, ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER);
     const endX = result?.endX ?? target.x;
     const endY = result?.endY ?? target.y;
     const targets = result?.targets ?? [target];
@@ -3317,7 +3320,7 @@ export class MatchRoom extends Room<MatchState> {
       y: initialHead.y,
       speed: this.scaleWorldSpeed(getBallisticMovementSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED, "impact"))
         * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
-      damage: this.getTowerDamage(tower),
+      damage: this.getTowerDamage(tower) * ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
       abartiLevel,
       hitEnemyIds: []
     };
@@ -4224,7 +4227,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
     const speed = this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
-      * getModifierMultiplier(this.getWorkerTowerModifiers(worker), "workerSpeed");
+      * getModifierMultiplier(this.getWorkerModifiers(worker), "workerSpeed");
     worker.vx = (dx / Math.max(1, distance)) * speed;
     worker.vy = (dy / Math.max(1, distance)) * speed;
     worker.x += worker.vx * seconds;
@@ -4400,7 +4403,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
-    const capacity = worker.capacity ?? LOGISTICS_WORKER_CAPACITY;
+    const capacity = this.getWorkerCapacity(worker);
     if (worker.mode === "crystalCollector") {
       const reactor = this.getCrystalWorkerReactor(worker);
       if (!reactor) {
@@ -4549,8 +4552,14 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /** Iscinin tek seferde tasidigi yuk; kart ve esyalarla buyur. */
+  private getWorkerCapacity(worker: DroneModel) {
+    const base = worker.capacity ?? LOGISTICS_WORKER_CAPACITY;
+    return Math.max(1, base * getModifierMultiplier(this.getWorkerModifiers(worker), "workerCapacity"));
+  }
+
   private getWorkerGatherSpeedMultiplier(worker: DroneModel) {
-    return getModifierMultiplier(this.getWorkerTowerModifiers(worker), "workerGatherSpeed");
+    return getModifierMultiplier(this.getWorkerModifiers(worker), "workerGatherSpeed");
   }
 
   private getCrystalWorkerReactor(worker: DroneModel) {
@@ -4792,10 +4801,6 @@ export class MatchRoom extends Room<MatchState> {
     if (!player || !isHirableWorkerRole(message?.role)) {
       return;
     }
-    if (player.hiredWorkerRoles.length >= MAX_HIRED_WORKERS) {
-      return;
-    }
-
     const cost = getWorkerHireCost(player.hiredWorkerRoles.length);
     if (player.gold < cost) {
       return;
@@ -8099,9 +8104,29 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Isci esyalari, iscinin o an hizmet ettigi binaya takili olanlardan gelir. */
-  private getWorkerTowerModifiers(worker: DroneModel) {
+  /**
+   * Isciye isleyen modifikatorler.
+   *
+   * Iki kaynak var: oyuncunun kuresel kartlari ve iscinin o an hizmet ettigi
+   * binaya takili esyalar. Yalnizca binaya bakmak iki seyi birden bozuyordu --
+   * kart katmani isciler icin tumden oluydu, ve bir hedefe baglanmamis isci
+   * (dugume yururken, yuk toplarken) hicbir buff gormuyordu.
+   */
+  private getWorkerModifiers(worker: DroneModel): RunModifiers {
+    const playerModifiers = worker.ownerId ? this.state.players.get(worker.ownerId)?.runModifiers ?? [] : [];
+    const globalModifiers = playerModifiers.filter((modifier) => {
+      const shopId = modifier.source.startsWith("shop:") ? modifier.source.slice(5) : "";
+      const shopItem = shopId ? shopCatalog.find((candidate) => candidate.id === shopId) : undefined;
+      if (shopItem) return shopItem.scope.kind === "global";
+      const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
+      const card = cardCatalog.find((candidate) => candidate.id === cardId);
+      return !card || card.scope.kind === "global";
+    });
+
     const tower = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
-    return tower && tower.ownerId === worker.ownerId ? tower.runModifiers : [];
+    return tower && tower.ownerId === worker.ownerId
+      ? [...globalModifiers, ...tower.runModifiers]
+      : globalModifiers;
   }
 
   private getTowerStreakDamageMultiplier(tower: TowerModel, now: number) {

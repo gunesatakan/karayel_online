@@ -51,6 +51,9 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
       classType: "hybrid",
       damageType: "none",
       hitType: "impact",
+      // Uc kombinasyon da bu degeri okuyor: muhrun agirligi tek yerden ayarlanir.
+      // Uc kulelik bir dizilimin karsiligi olarak tek kulelik hasar az kaliyordu.
+      damage: 36,
       fireIntervalMs: 2350,
       aoeRadius: 0,
       slowMs: 0,
