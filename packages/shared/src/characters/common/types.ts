@@ -70,7 +70,6 @@ export type TowerEngineConfig = {
     pierceCount?: number;
     bladeCount?: number;
     bladeLength?: number;
-    rotationSpeed?: number;
     minimumRangeMultiplier?: number;
     rangeStartsAtFootprint?: boolean;
   };

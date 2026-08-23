@@ -332,6 +332,7 @@ export class GameScene extends Phaser.Scene {
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
   private placementGrid?: Phaser.GameObjects.Graphics;
+  private ultimateColumnPreview?: Phaser.GameObjects.Graphics;
   private placementGhost?: Phaser.GameObjects.Image;
   private guidancePreview?: Phaser.GameObjects.Graphics;
   private isGuidanceDragging = false;
@@ -407,6 +408,8 @@ export class GameScene extends Phaser.Scene {
   private arenaZoomed = false;
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
+  /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
+  private pendingUltimateColumn = false;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
@@ -1524,6 +1527,37 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Dunya x'inin dustugu sutun; harita disi noktalar secilemez. */
+  private getUltimateColumnAt(worldX: number) {
+    const gridSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
+    const column = Math.floor((worldX - origin.x) / gridSize);
+    return column >= 0 && column < this.selectedMapData.cols ? column : undefined;
+  }
+
+  private drawUltimateColumnPreview(worldX: number) {
+    const column = this.getUltimateColumnAt(worldX);
+    const preview = this.ultimateColumnPreview ?? this.add.graphics().setDepth(56);
+    this.ultimateColumnPreview = preview;
+    preview.clear();
+    if (column === undefined) {
+      return;
+    }
+
+    const gridSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const left = origin.x + column * gridSize;
+    preview.fillStyle(0xfde68a, 0.18);
+    preview.fillRect(left, bounds.top, gridSize, bounds.height);
+    preview.lineStyle(2, 0xfef3c7, 0.85);
+    preview.strokeRect(left, bounds.top, gridSize, bounds.height);
+  }
+
+  private clearUltimateColumnPreview() {
+    this.ultimateColumnPreview?.clear();
+  }
+
   private handleUltimateButton() {
     if (!this.room) {
       return;
@@ -1534,6 +1568,15 @@ export class GameScene extends Phaser.Scene {
     if (this.currentUltimateCharge < 100) {
       this.hideUltimateChoices();
       this.showNotice("Ulti henuz hazir degil");
+      return;
+    }
+
+    // Zeynep ultisi hedefli: once sutun secilir, sonra patlar.
+    if (this.selectedCharacterId === "zeynep") {
+      this.pendingUltimateColumn = !this.pendingUltimateColumn;
+      this.clearUltimateColumnPreview();
+      this.showNotice(this.pendingUltimateColumn ? "Ulti: patlatilacak sutuna dokun" : "Ulti iptal edildi");
+      this.emitControlState();
       return;
     }
 
@@ -1605,6 +1648,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
+    if (this.pendingUltimateColumn) {
+      this.drawUltimateColumnPreview(pointer.worldX);
+    }
     if (!this.isGuidanceDragging) {
       return;
     }
@@ -1614,6 +1660,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
+      const column = this.getUltimateColumnAt(pointer.worldX);
+      if (column !== undefined) {
+        this.room?.send("useUltimate", { column });
+        this.pendingUltimateColumn = false;
+        this.clearUltimateColumnPreview();
+        this.emitControlState();
+        return;
+      }
+    }
     if (this.pendingShopPlacement && this.isBattlePointer(pointer)) {
       this.room?.send("shop:place", { itemId: this.pendingShopPlacement, x: pointer.worldX, y: pointer.worldY });
       this.pendingShopPlacement = undefined;
@@ -4424,12 +4480,44 @@ export class GameScene extends Phaser.Scene {
         this.drawSynthesisBurnTrail(beam, color);
       } else if (beam.definitionId === "warrior-6") {
         this.drawChainLightning(beam, color);
+      } else if (beam.definitionId === "zeynep-ultimate-column") {
+        this.drawZeynepColumnBurst(beam, color);
       } else if (beam.definitionId === "onur-sympathy") {
         this.drawSympathyLink(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
     }
+  }
+
+  /**
+   * Zeynep ultisi: sutunu bastan asagi yakan isik.
+   *
+   * Sutunun kendisi bir dikdortgen, ama patlama hissi kenarlardan geliyor:
+   * disa dogru sonen katmanlar ve merkezde ince bir parlak cekirdek.
+   */
+  private drawZeynepColumnBurst(beam: BeamSnapshot, color: number) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const width = Math.max(6, beam.width);
+    const centerX = (beam.x1 + beam.x2) / 2;
+    const top = Math.min(beam.y1, beam.y2);
+    const height = Math.abs(beam.y2 - beam.y1);
+    const phase = (performance.now() % 620) / 620;
+    const fade = 1 - phase;
+
+    for (const layer of [1.35, 1, 0.62]) {
+      graphics.fillStyle(color, 0.12 * fade * layer);
+      graphics.fillRect(centerX - (width * layer) / 2, top, width * layer, height);
+    }
+
+    graphics.fillStyle(0xfffbeb, 0.55 * fade);
+    graphics.fillRect(centerX - width * 0.12, top, width * 0.24, height);
+    graphics.lineStyle(2, 0xfef3c7, 0.7 * fade);
+    graphics.strokeRect(centerX - width / 2, top, width, height);
   }
 
   private drawMelisRageWave(beam: BeamSnapshot, color: number) {

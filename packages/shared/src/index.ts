@@ -568,6 +568,9 @@ export {
 } from "./logistics/index.js";
 export type { HirableWorkerRole } from "./logistics/index.js";
 export {
+  ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
+  ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
+  ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,
   FINAL_WAVE,
   BASE_WAVE_ENEMY_COUNT,
   ENEMY_COUNT_WAVE_MULTIPLIER,
@@ -639,7 +642,7 @@ export { applyTowerAuraModifier, evaluateTowerAuras, getTowerAuraLevelMultiplier
 export type { TowerAuraModifiers, TowerAuraSource, TowerAuraTarget } from "./auras/index.js";
 export { isTargetInsideAttackShape, selectAttackShapeTargets } from "./attacks/index.js";
 export type { AttackShapeQuery, AttackShapeTarget } from "./attacks/index.js";
-export { getOrbitTargetHitCooldownMs, selectOrbitSweepContacts, selectOrbitSweepTargets } from "./attacks/orbit.js";
+export { getOrbitRotationSpeedForInterval, getOrbitTargetHitCooldownMs, selectOrbitSweepContacts, selectOrbitSweepTargets } from "./attacks/orbit.js";
 export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";

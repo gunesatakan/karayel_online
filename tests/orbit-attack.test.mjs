@@ -8,6 +8,7 @@ import {
   getTowerBuildCost,
   getOrbitBladeLength,
   getOrbitRotationSpeed,
+  getOrbitRotationSpeedForInterval,
   getOrbitTargetHitCooldownMs,
   getTowerShotFuel,
   selectOrbitSweepTargets,
@@ -102,7 +103,13 @@ test("sabit düşman mesafeden bağımsız olarak tam turda iki kez vurulur", ()
     let hits = 0;
     room.damageEnemyFromTower = () => { hits += 1; };
     const tickSeconds = 1 / 60;
-    const fullRotationSeconds = Math.PI * 2 / 1.6;
+    // Tam tur suresi donme hizindan gelir; hiz ates araligindan turetildigi icin
+    // buraya sabit yazmak testi kulenin gercek hizindan koparirdi.
+    const rotationSpeed = getOrbitRotationSpeedForInterval(
+      tower.definition.engine.attack.bladeCount,
+      tower.definition.fireIntervalMs
+    );
+    const fullRotationSeconds = Math.PI * 2 / rotationSpeed;
     const ticks = Math.floor(fullRotationSeconds / tickSeconds);
     let now = 10_000;
     for (let tick = 0; tick < ticks; tick += 1) {
@@ -182,4 +189,71 @@ test("aynı tickteki her temas ayrı Onur zarı atar", () => {
   assert.equal(rolls, 2);
   assert.ok(tower.misfortune > 0);
   assert.equal(tower.lastLuckMultiplier, 1.5);
+});
+
+test("bicak gecis periyodu kulenin ates araligina esittir", () => {
+  // Yorunge kulesinde hasari veren sey ates araligi degil, bicagin hedefin
+  // uzerinden gecmesi. Ikisi ayri yazilirsa kule ilan ettigi hizda vurmaz ve
+  // kodeksin gosterdigi DPS gercek olmaz.
+  const definition = towerCatalog.onur.find((tower) => tower.id === "onur-1");
+  const bladeCount = definition.engine.attack.bladeCount;
+  const speed = getOrbitRotationSpeedForInterval(bladeCount, definition.fireIntervalMs);
+
+  assert.equal(
+    Math.round(getOrbitTargetHitCooldownMs(bladeCount, speed)),
+    definition.fireIntervalMs,
+    "bicak gecis periyodu ates araligindan sapiyor"
+  );
+});
+
+test("karttan gelen ek bicak vurus sikligini artirir", () => {
+  // Ek bicak hizi degistirmez, ayni hizda daha sik gecis demektir: kart gercek
+  // bir hasar artisi olmali, yalnizca kapsama genislemesi degil.
+  const definition = towerCatalog.onur.find((tower) => tower.id === "onur-1");
+  const speed = getOrbitRotationSpeedForInterval(definition.engine.attack.bladeCount, definition.fireIntervalMs);
+  const iki = getOrbitTargetHitCooldownMs(2, speed);
+  const uc = getOrbitTargetHitCooldownMs(3, speed);
+
+  assert.ok(uc < iki, "ucuncu bicak vurus araligini kisaltmiyor");
+  assert.ok(Math.abs(uc - iki * 2 / 3) < 0.001, "vurus araligi bicak sayisiyla ters orantili degil");
+});
+
+test("ayni dusman bicak her donusunde yeniden hasar alir", () => {
+  const { room, tower } = createSawRoom();
+  tower.maxEnergy = 100_000;
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.maxHp = 10_000_000;
+  enemy.hp = enemy.maxHp;
+
+  const step = 0.016;
+  const seconds = 10;
+  let now = Date.now();
+  let hits = 0;
+  let lastHp = enemy.hp;
+
+  for (let tick = 0; tick < seconds / step; tick += 1) {
+    now += step * 1000;
+    // Dusman bicak yolunda sabit dursun; olculen sey yalnizca vurus sikligi.
+    enemy.x = tower.x + 30;
+    enemy.y = tower.y;
+    tower.energy = tower.maxEnergy;
+    tower.temperature = 0;
+    tower.heatLocked = false;
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+    room.updateOrbitTower(tower, step, now);
+    if (enemy.hp < lastHp) {
+      hits += 1;
+      lastHp = enemy.hp;
+    }
+  }
+
+  assert.ok(hits > 1, "bicak ayni dusmana yalnizca bir kez vurdu");
+  // Vurus sikligi ates araligini takip etmeli; olcum tick kuantizasyonu yuzunden
+  // birkac vurus sapabilir.
+  const beklenen = (seconds * 1000) / tower.definition.fireIntervalMs;
+  assert.ok(
+    hits >= beklenen * 0.8,
+    `bicak ${seconds} saniyede yalnizca ${hits} kez vurdu, beklenen ~${beklenen.toFixed(0)}`
+  );
 });

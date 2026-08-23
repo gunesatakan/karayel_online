@@ -16,6 +16,21 @@ export type OrbitSweepContact<T extends AttackShapeTarget> = {
   bladeIndex: number;
 };
 
+/**
+ * Bicagin ayni hedefe geri donme hizi.
+ *
+ * Yorunge kulesinde hasari veren sey ates araligi degil, bicagin hedefin
+ * uzerinden gecmesi. Ikisi ayri yazilirsa kule ilan ettigi hizda vurmaz: testere
+ * 450 ms'lik ates araligi ilan ederken bicagi ayni dusmana ancak 1963 ms'de bir
+ * ugruyordu, yani kodeksin ve dengenin gordugu DPS gercegin 3.5 kati oluyordu.
+ * Hiz araliktan turetilince "ne kadar sik vurur" sorusunun tek bir cevabi olur.
+ */
+export function getOrbitRotationSpeedForInterval(bladeCount: number, fireIntervalMs: number) {
+  const count = Math.max(1, Math.round(bladeCount));
+  const intervalSeconds = Math.max(1, fireIntervalMs) / 1000;
+  return (Math.PI * 2) / (count * intervalSeconds);
+}
+
 /** Minimum delay before the next blade may damage the same target. */
 export function getOrbitTargetHitCooldownMs(bladeCount: number, effectiveRotationSpeed: number) {
   const count = Math.max(1, Math.round(bladeCount));

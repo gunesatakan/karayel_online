@@ -169,3 +169,19 @@ export const SIEGE_STRUCTURE_DAMAGE_MULTIPLIER = 4;
 /** Kusatma dusmaninin dalgalarda gorunmeye basladigi nokta ve orani. */
 export const SIEGE_FIRST_WAVE = 4;
 export const SIEGE_SPAWN_RATIO = 0.18;
+
+/**
+ * Zeynep ultisi: secilen sutunda patlayan isik.
+ *
+ * Hasar sabit bir sayi degil, "kac grunt canlik" olarak yaziliyor. Sabit hasarli
+ * bir ulti dalga 3'te haritayi siliyor, dalga 20'de hicbir sey yapmiyordu --
+ * dusman cani dalgayla katlanirken ulti yerinde saydigi icin. Dusmanla ayni
+ * egriden olculunce ultinin agirligi her dalgada ayni kaliyor.
+ */
+export const ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT = 3;
+
+/** Isik patlamasinin sutundaki dusmanlari yavaslattigi sure. */
+export const ZEYNEP_COLUMN_ULTIMATE_SLOW_MS = 700;
+
+/** Patlamanin ekranda kaldigi sure. */
+export const ZEYNEP_COLUMN_ULTIMATE_BEAM_MS = 620;

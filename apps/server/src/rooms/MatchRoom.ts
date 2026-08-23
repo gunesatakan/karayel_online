@@ -85,6 +85,7 @@ import {
   calculateOrbitContinuousCosts,
   getOrbitRotationSpeed,
   getOrbitBladeLength,
+  getOrbitRotationSpeedForInterval,
   getOrbitTargetHitCooldownMs,
   selectOrbitSweepContacts,
   resolveOnurGamblerShot,
@@ -93,6 +94,9 @@ import {
   getLogisticsWorkerRespawnRemainingMs,
   LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   MAX_HIRED_WORKERS,
+  ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,
+  ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
+  ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   type HirableWorkerRole,
   getWorkerHireCost,
   isHirableWorkerRole,
@@ -465,6 +469,8 @@ type UseSkillMessage = {
 
 type UseUltimateMessage = {
   mode?: "attack" | "repair";
+  /** Zeynep ultisinin patlayacagi sutun. */
+  column?: number;
 };
 
 type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
@@ -2325,7 +2331,12 @@ export class MatchRoom extends Room<MatchState> {
     }
     const attack = this.getTowerEngine(tower)?.attack;
     if (!attack || attack.executor !== "orbit" || this.setupPhase || tower.performance <= 0 || tower.heatLocked || tower.energy <= 0) return;
-    const baseRotationSpeed = attack.rotationSpeed ?? 0;
+    // Taban hiz kulenin kendi bicak sayisindan hesaplanir; karttan gelen ek
+    // bicaklar hizi degistirmez, ayni hizda daha sik gecis demektir.
+    const baseRotationSpeed = getOrbitRotationSpeedForInterval(
+      tower.definition.engine?.attack.bladeCount ?? 1,
+      tower.definition.fireIntervalMs
+    );
     const effectiveRotationSpeed = getOrbitRotationSpeed(baseRotationSpeed, tower.definition.fireIntervalMs, this.getTowerFireInterval(tower));
     if (effectiveRotationSpeed <= 0) return;
 
@@ -2690,7 +2701,7 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       for (const candidate of this.towers.values()) {
-        if (group.has(candidate.id) || candidate.definition.id === "zeynep-7" || candidate.definition.id === "zeynep-8") {
+        if (group.has(candidate.id) || !canJoinZeynepFormation(candidate)) {
           continue;
         }
 
@@ -5438,12 +5449,17 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    // Zeynep ultisi hedef ister. Dogrulama sarj harcanmadan once yapilir; aksi
+    // halde gecersiz bir sutun dokunusu ultiyi hicbir sey yapmadan yakardi.
+    const column = player.characterId === "zeynep" ? this.resolveUltimateColumn(message.column) : undefined;
+    if (player.characterId === "zeynep" && column === undefined) {
+      return;
+    }
+
     player.ultimateCharge = 0;
 
-    if (player.characterId === "zeynep") {
-      for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 120, 700, "ultimate", client.sessionId);
-      }
+    if (player.characterId === "zeynep" && column !== undefined) {
+      this.fireZeynepColumnUltimate(client.sessionId, column);
       return;
     }
 
@@ -5495,6 +5511,59 @@ export class MatchRoom extends Room<MatchState> {
     for (const enemy of this.enemies.values()) {
       this.damageEnemy(enemy, 25, 0, "ultimate", client.sessionId);
     }
+  }
+
+  private resolveUltimateColumn(column: number | undefined) {
+    if (typeof column !== "number" || !Number.isFinite(column)) {
+      return undefined;
+    }
+    const rounded = Math.round(column);
+    if (rounded < 0 || rounded >= this.activeMap.cols) {
+      return undefined;
+    }
+    return rounded;
+  }
+
+  /**
+   * Zeynep ultisi: secilen sutunun tamamini yakan isik patlamasi.
+   *
+   * Hasar dusman canini olcen egriden turetiliyor, sabit bir sayidan degil:
+   * sutun haritanin on ikide biri oldugu icin ulti yalnizca dogru anda dogru
+   * yere basildiginda odul veriyor, ama o odul her dalgada ayni agirlikta.
+   */
+  private fireZeynepColumnUltimate(ownerId: string, column: number) {
+    const gridSize = getMapGridSize(this.activeMap);
+    const origin = getMapOrigin(this.activeMap);
+    const bounds = getMapWorldBounds(this.activeMap);
+    const left = origin.x + column * gridSize;
+    const right = left + gridSize;
+    const damage = this.getZeynepColumnUltimateDamage();
+
+    for (const enemy of this.enemies.values()) {
+      if (enemy.x < left || enemy.x >= right) {
+        continue;
+      }
+      this.damageEnemy(enemy, damage, ZEYNEP_COLUMN_ULTIMATE_SLOW_MS, "ultimate", ownerId);
+    }
+
+    const id = `zeynep-ultimate-${this.nextBeamId++}`;
+    this.beams.set(id, {
+      id,
+      definitionId: "zeynep-ultimate-column",
+      x1: left + gridSize / 2,
+      y1: bounds.top,
+      x2: left + gridSize / 2,
+      y2: bounds.bottom,
+      width: gridSize,
+      color: 0xfde68a,
+      overdrive: false,
+      ttlMs: ZEYNEP_COLUMN_ULTIMATE_BEAM_MS
+    });
+  }
+
+  private getZeynepColumnUltimateDamage() {
+    const gruntHealth = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, this.wave, 1);
+    return Math.max(1, Math.round(gruntHealth * ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT));
   }
 
   private useAtakanUltimate(client: Client, mode: "attack" | "repair") {
@@ -5554,7 +5623,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private refreshZeynepFormations() {
     const allZeynepTowers = Array.from(this.towers.values()).filter((tower) => {
-      return tower.characterId === "zeynep" && tower.definition.id !== "zeynep-7" && tower.definition.id !== "zeynep-8";
+      return tower.characterId === "zeynep" && canJoinZeynepFormation(tower);
     });
     for (const tower of allZeynepTowers) {
       tower.zeynepFormationSize = 0;
@@ -9103,8 +9172,22 @@ function isCompleteZeynepFormation(group: TowerModel[], gridSize: number) {
   return true;
 }
 
+/**
+   * Yapi dizilime katilir mi.
+   *
+   * Duvar kule degil: kontenjandan yer kapmaz, hedef secmez, hasar vermez.
+   * Dizilime katilmasi yalnizca anlamsiz degil, zararli -- ucluye komsu bir
+   * duvar grubu dorde cikarip bonusu tumden dusuruyordu. Kural uc yerde birden
+   * geciyor, o yuzden tek yerde yaziliyor.
+   */
+function canJoinZeynepFormation(tower: TowerModel) {
+  return occupiesTowerSlot(tower.definition)
+    && tower.definition.id !== "zeynep-7"
+    && tower.definition.id !== "zeynep-8";
+}
+
 function isValidZeynepFormationGroup(group: TowerModel[], gridSize: number) {
-  if (!group.every((member) => member.characterId === "zeynep" && member.definition.id !== "zeynep-7" && member.definition.id !== "zeynep-8")) {
+  if (!group.every((member) => member.characterId === "zeynep" && canJoinZeynepFormation(member))) {
     return false;
   }
 

@@ -1,1 +1,1 @@
-export const zeynepUltimate = "Kurucu Fermanı: Haritadaki tüm düşmanlara aynı anda büyük hasar verir. Menzil, hedef sayısı ve dizilim şartı yoktur; hattın tamamen dolduğu ve kulelerin yetişemediği anda dalgayı kırmak için saklanır.";
+export const zeynepUltimate = "Kurucu Fermanı: Haritadan bir sütun seçilir ve o sütunun tamamı baştan aşağı ışıkla yakılır; içindeki her düşman ağır hasar alır ve kısa süre yavaşlar. Hasar dalgayla birlikte büyür, ama yalnızca doğru sütunu doğru anda seçen kazanır: hattın o kolda yığıldığı anı beklemek ultinin kendisi kadar önemlidir.";

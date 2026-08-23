@@ -69,7 +69,11 @@ const profiles: Record<string, EngineProfile> = {
   "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, placement: { requiresEdge: true }, resources: { ammoType: "auraCrystal" } },
   "onur-1": {
     targeting: undefined,
-    attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, rotationSpeed: 1.6, width: 8 },
+    // Donme hizi burada yazilmaz: bicagin gecis periyodu kulenin ates
+    // araligindan turetilir, boylece ilan edilen atis hizi gercekten vurdugu hiz
+    // olur. Karttan gelen ek bicak periyodu kisaltir, yani gercek bir hasar
+    // artisidir.
+    attack: { shape: "orbit", executor: "orbit", bladeCount: 2, bladeLength: 46, width: 8 },
     canHitAir: false,
     statusEffects: [{ type: "bleed", magnitude: 0.01, durationMs: 3000, stacking: "refresh" }],
     resources: { shotFuel: "energy", operatingEnergyPerSecond: 1.4 }
