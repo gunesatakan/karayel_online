@@ -91,8 +91,6 @@ import {
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
   advanceResourceExtraction,
-  getLogisticsWorkerRespawnRemainingMs,
-  LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
@@ -102,7 +100,6 @@ import {
   type HirableWorkerRole,
   getWorkerHireCost,
   isHirableWorkerRole,
-  LOGISTICS_WORKER_RESPAWN_DELAY_MS,
   LOGISTICS_WORKER_CAPACITY,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
   AMMO_LOGISTICS_WORKER_CAPACITY,
@@ -247,7 +244,6 @@ const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 480;
 const AMMO_RAW_MATERIAL_PER_AMMO = 1;
-const WORKER_ENEMY_COLLISION_RADIUS = 12;
 const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
@@ -908,7 +904,6 @@ export class MatchRoom extends Room<MatchState> {
   private towers = new Map<string, TowerModel>();
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
-  private deadLogisticsWorkers = new Map<string, number>();
   private beams = new Map<string, BeamModel>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
@@ -1292,12 +1287,6 @@ export class MatchRoom extends Room<MatchState> {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
       if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider && typeof message.performance === "number") {
         tower.performance = Math.max(0, Math.min(1, message.performance));
-      }
-    });
-
-    this.onMessage("reviveLogisticsWorker", (client) => {
-      if (this.gameStarted) {
-        this.reviveLogisticsWorker(client.sessionId);
       }
     });
 
@@ -1827,7 +1816,6 @@ export class MatchRoom extends Room<MatchState> {
       this.applyMelisWaveStress();
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
-      this.reviveAllLogisticsWorkers();
       if (this.wave >= FINAL_WAVE) {
         this.finishMatch("victory");
         return;
@@ -3954,15 +3942,9 @@ export class MatchRoom extends Room<MatchState> {
 
     for (const [id, drone] of this.drones) {
       if (drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
-        const collidedWithEnemy = Array.from(this.enemies.values()).some((enemy) => {
-          const collisionRadius = this.scaleWorldDistance(WORKER_ENEMY_COLLISION_RADIUS) + getEnemyCollisionRadius(enemy);
-          return distanceSq(drone.x, drone.y, enemy.x, enemy.y) <= collisionRadius * collisionRadius;
-        });
-        if (collidedWithEnemy) {
-          this.deadLogisticsWorkers.set(`${drone.ownerId}:${drone.mode}`, Date.now() + LOGISTICS_WORKER_RESPAWN_DELAY_MS);
-          this.drones.delete(id);
-          continue;
-        }
+        // Isciler dusmana carpinca olmez: lojistik hattinin dusman yolunu
+        // kesmesi kacinilmaz oldugu icin olum, oyuncunun engelleyemedigi bir
+        // sebeple ekonomisinin durmasi demekti.
         if (this.setupPhase) {
           drone.vx = 0;
           drone.vy = 0;
@@ -4176,14 +4158,6 @@ export class MatchRoom extends Room<MatchState> {
       const workerModes = [...baseWorkerModes, ...extraModes];
       for (const [index, mode] of workerModes.entries()) {
         const suffix = index >= baseWorkerModes.length ? `:extra${index - baseWorkerModes.length}` : "";
-        const workerKey = `${ownerId}:${mode}${suffix}`;
-        const respawnAt = this.deadLogisticsWorkers.get(workerKey);
-        if (respawnAt !== undefined) {
-          if (getLogisticsWorkerRespawnRemainingMs(respawnAt, Date.now()) > 0) {
-            continue;
-          }
-          this.deadLogisticsWorkers.delete(workerKey);
-        }
         const id = `logistics-${ownerId}-${mode}${suffix}`;
         const exists = this.drones.has(id);
         if (exists) {
@@ -4382,24 +4356,6 @@ export class MatchRoom extends Room<MatchState> {
     for (const player of players) {
       player.experience = (player.experience ?? 0) + share;
     }
-  }
-
-  private reviveLogisticsWorker(ownerId: string) {
-    const player = this.state.players.get(ownerId);
-    if (!player || player.gold < LOGISTICS_WORKER_INSTANT_REVIVE_COST) {
-      return;
-    }
-    const workerKey = Array.from(this.deadLogisticsWorkers.keys()).find((key) => key.startsWith(`${ownerId}:`));
-    if (!workerKey) {
-      return;
-    }
-    player.gold -= LOGISTICS_WORKER_INSTANT_REVIVE_COST;
-    player.goldSpent += LOGISTICS_WORKER_INSTANT_REVIVE_COST;
-    this.deadLogisticsWorkers.delete(workerKey);
-  }
-
-  private reviveAllLogisticsWorkers() {
-    this.deadLogisticsWorkers.clear();
   }
 
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
@@ -7464,12 +7420,6 @@ export class MatchRoom extends Room<MatchState> {
         authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined,
         approval: player.characterId === "archer" ? player.approval : undefined,
         stress: player.characterId === "archer" ? player.stress : undefined,
-        deadLogisticsWorkers: Array.from(this.deadLogisticsWorkers.entries())
-          .filter(([key]) => key.startsWith(`${id}:`))
-          .map(([key, respawnAt]) => ({
-            mode: key.slice(id.length + 1) as DroneSnapshot["mode"],
-            remainingSeconds: Math.ceil(getLogisticsWorkerRespawnRemainingMs(respawnAt, now) / 1000)
-          })),
         hiredWorkerRoles: [...player.hiredWorkerRoles]
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({

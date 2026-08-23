@@ -6,7 +6,6 @@ import {
   GAME_WORLD_WIDTH,
   HIRABLE_WORKER_ROLES,
   type HirableWorkerRole,
-  LOGISTICS_WORKER_INSTANT_REVIVE_COST,
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_ROLE_LABELS,
   getWorkerHireCost,
@@ -94,7 +93,6 @@ type ControlActionDetail = {
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
     | "toggleTowerStandby"
-    | "reviveLogisticsWorker"
     | "openWorkerHire"
     | "closeWorkerHire"
     | "hireWorker"
@@ -1025,9 +1023,6 @@ export class GameScene extends Phaser.Scene {
         if (this.selectedPlacedTowerId) {
           this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: "standby" });
         }
-        break;
-      case "reviveLogisticsWorker":
-        this.room?.send("reviveLogisticsWorker");
         break;
       case "openWorkerHire":
         this.workerHireOpen = true;
@@ -5236,7 +5231,6 @@ export class GameScene extends Phaser.Scene {
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
-    const deadWorkers = this.localPlayerSnapshot?.deadLogisticsWorkers ?? [];
     const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
     // Hedefleme modlari artik kulenin acik kilitlerinden okunur; kilidi veren
     // sey esya da olabilir kart da, ikisini de sunucu cozup gonderiyor.
@@ -5361,12 +5355,6 @@ export class GameScene extends Phaser.Scene {
         )
       },
       workerHire: this.getWorkerHireState(),
-      workerRevive: deadWorkers.length > 0 ? {
-        count: deadWorkers.length,
-        remainingSeconds: Math.min(...deadWorkers.map((worker) => worker.remainingSeconds)),
-        enabled: (this.localPlayerSnapshot?.gold ?? 0) >= LOGISTICS_WORKER_INSTANT_REVIVE_COST,
-        cost: LOGISTICS_WORKER_INSTANT_REVIVE_COST
-      } : undefined,
       upgrade: {
         label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradePriceLabel}` : "Kule sec",
         enabled: canUpgrade

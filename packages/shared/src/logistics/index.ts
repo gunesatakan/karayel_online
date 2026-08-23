@@ -5,9 +5,6 @@ export const AMMO_LOGISTICS_WORKER_CAPACITY = 4;
 export const AMMO_COLLECTOR_WORKER_CAPACITY = 2;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 export const AMMO_FACTORY_INITIAL_ENERGY = 20;
-export const LOGISTICS_WORKER_RESPAWN_DELAY_MS = 10000;
-export const LOGISTICS_WORKER_INSTANT_REVIVE_COST = 40;
-
 /**
  * Isci alimi.
  *
@@ -69,6 +66,3 @@ export function advanceResourceExtraction(
   };
 }
 
-export function getLogisticsWorkerRespawnRemainingMs(respawnAt: number, now: number) {
-  return Math.max(0, respawnAt - now);
-}

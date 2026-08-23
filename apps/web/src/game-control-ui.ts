@@ -19,7 +19,6 @@ type ControlState = {
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
-  workerRevive?: { count: number; remainingSeconds: number; enabled: boolean; cost: number };
   /** Isci alimi; rol alim aninda secilir, sonradan degismez. */
   workerHire?: {
     open: boolean;
@@ -376,15 +375,6 @@ export function setupGameControlUi(game: Phaser.Game) {
         "game-controls__worker-hire",
         true,
         () => dispatch({ action: hire.open ? "closeWorkerHire" : "openWorkerHire" })
-      ));
-    }
-
-    if (state.workerRevive) {
-      footer.append(makeActionButton(
-        `İşçi${state.workerRevive.count > 1 ? ` x${state.workerRevive.count}` : ""} ${state.workerRevive.remainingSeconds}s / ${state.workerRevive.cost}g`,
-        "game-controls__worker-revive",
-        state.workerRevive.enabled,
-        () => dispatch({ action: "reviveLogisticsWorker" })
       ));
     }
 
