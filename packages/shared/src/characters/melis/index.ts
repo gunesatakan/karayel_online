@@ -9,7 +9,7 @@ export const melisCharacter: CharacterDefinition = {
   displayName: "Melis",
   role: "Evrim Uzmanı",
   theme: "Onay ve stres dengesini kule evrimine çeviren baskı oyunu.",
-  summary: "Seri öldürmelerden onay, sessiz geçen dalgalardan stres toplar. İki değerin oranı yeterince açıldığında kulelerini bir sonraki evrime taşır. İlk kurduğu üç kule favori sayılır ve onay yükseldikçe güçlenir; stres baskınken aynı kuleler daha sert ama daha kontrolsüz çalışır.",
+  summary: "Seri öldürmelerden onay, sessiz geçen dalgalardan stres toplar. İki değerin oranı yeterince açıldığında kulelerini bir sonraki evrime taşır. İlk kurduğu üç kule favori sayılır ve onay yükseldikçe güçlenir; stres baskınken kuleler kontrolden çıkar ve tek karşılığı evrimdir.",
   maxHp: 85,
   speed: 1.12,
   damage: 7,
