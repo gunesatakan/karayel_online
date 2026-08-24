@@ -349,7 +349,6 @@ const MELIS_PARLAMA_STRESS_FRIENDLY_PAUSE_MS = 500;
 const MELIS_CURSE_NORMAL_DURATION_MS = 5000;
 const MELIS_CURSE_STRESS_DURATION_MS = 3000;
 const MELIS_CURSE_APPROVAL_DURATION_MS = 7000;
-const MELIS_CURSE_STRESS_AREA_MULTIPLIER = 1.45;
 const MELIS_CURSE_EVOLUTION_AREA_BONUS = 8;
 const MELIS_CURSE_DEATH_BURST_RADIUS = 58;
 const MELIS_CURSE_POOL_DURATION_MS = 3000;
@@ -361,6 +360,7 @@ const MELIS_DOUBT_STRESS_HASTE_MS = 500;
 const MELIS_DOUBT_STRESS_HASTE_MULTIPLIER = 1.5;
 const MELIS_DOUBT_SLOW_PER_STACK = 0.1;
 const MELIS_DOUBT_SPREAD_RADIUS = 56;
+const MELIS_DOUBT_TRIGGER_STACKS = 3;
 const MELIS_WHISPER_TURN_MS = 1000;
 const MELIS_WHISPER_TURN_ATTACK_RANGE = 92;
 const MELIS_WHISPER_TURN_ATTACK_DAMAGE = 28;
@@ -384,7 +384,6 @@ const MELIS_UNDERWORLD_UNDEAD_TTL_MS = 18000;
 const MELIS_BROKEN_MIRROR_BASE_CAPACITY = 180;
 const MELIS_BROKEN_MIRROR_CAPACITY_MULTIPLIER = 1.5;
 const MELIS_BROKEN_MIRROR_BASE_STORE_RATIO = 0.2;
-const MELIS_BROKEN_MIRROR_STRESS_STORE_RATIO = 0.24;
 const MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS = 0.04;
 const MELIS_BROKEN_MIRROR_TRUE_DAMAGE_RATIO = 0.25;
 const MELIS_BROKEN_MIRROR_DEATH_BURST_RATIO = 0.35;
@@ -6294,10 +6293,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getMelisBrokenMirrorStoreRatio(tower: TowerModel) {
-    const baseRatio = this.isMelisStressDominant(tower)
-      ? MELIS_BROKEN_MIRROR_STRESS_STORE_RATIO
-      : MELIS_BROKEN_MIRROR_BASE_STORE_RATIO;
-    return baseRatio + (tower.melisEvolutionLevel >= 1 ? MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS : 0);
+    return MELIS_BROKEN_MIRROR_BASE_STORE_RATIO + (tower.melisEvolutionLevel >= 1 ? MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS : 0);
   }
 
   private getTowerCurrentDps(tower: TowerModel, now = Date.now()) {
@@ -6726,8 +6722,7 @@ export class MatchRoom extends Room<MatchState> {
   private getMelisCurseAreaRadius(tower: TowerModel) {
     const evolutionBonus = tower.melisEvolutionLevel >= 1 ? MELIS_CURSE_EVOLUTION_AREA_BONUS : 0;
     const baseRadius = this.getTowerAoeRadius(tower) + (tower.level - 1) * 4 + evolutionBonus;
-    const stressMultiplier = this.isMelisStressDominant(tower) ? MELIS_CURSE_STRESS_AREA_MULTIPLIER : 1;
-    return this.scaleWorldDistance(baseRadius * stressMultiplier);
+    return this.scaleWorldDistance(baseRadius);
   }
 
   private fireMelisWhisperChorus(tower: TowerModel, target: EnemyModel) {
@@ -6750,8 +6745,7 @@ export class MatchRoom extends Room<MatchState> {
       enemy.melisDoubtStacks = state?.count ?? enemy.melisDoubtStacks;
     }
 
-    const triggerStacks = this.isMelisStressDominant(tower) ? 2 : 3;
-    if (enemy.melisDoubtStacks < triggerStacks) {
+    if (enemy.melisDoubtStacks < MELIS_DOUBT_TRIGGER_STACKS) {
       return;
     }
 
@@ -8294,6 +8288,16 @@ export class MatchRoom extends Room<MatchState> {
     return player ? getMelisSpectrumZone(player.approval, player.stress) : undefined;
   }
 
+  /**
+   * Stres baskin mi.
+   *
+   * Stres tarafi yalnizca bedel tasir: kisalan lanet suresi, rastgele ayna
+   * hedefi, cikmayan olum patlamasi, supheden sonra hizlanan dusman ve Parlama'nin
+   * dost kuleleri durdurmasi. Odulu kule etkilerinde degil, evrim kapisinda --
+   * stres/onay orani evrimin para birimi. Bu ayrimi bozan her "streste sunu da
+   * kazan" eklemesi, stresi biriktirmeyi kendi basina karli hale getirir ve
+   * mekanigi bir tercihten cikarip tek yonlu bir kaydiraga cevirir.
+   */
   private isMelisStressDominant(tower: TowerModel) {
     return this.getMelisSpectrumZoneFor(tower) === "stress";
   }
