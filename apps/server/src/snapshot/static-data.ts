@@ -1,4 +1,5 @@
 import type {
+  EditableMapData,
   StaticEnemySnapshot,
   StaticSnapshot,
   StaticTowerSnapshot
@@ -60,10 +61,12 @@ export function createStaticTowerSnapshot(tower: TowerStaticSource, coolingRate 
 
 export function createFullStaticSnapshot(
   enemies: Iterable<EnemyStaticSource>,
-  towers: Iterable<TowerStaticSource>
+  towers: Iterable<TowerStaticSource>,
+  map?: EditableMapData
 ): StaticSnapshot {
   return {
     enemies: Array.from(enemies, createStaticEnemySnapshot),
-    towers: Array.from(towers, (tower) => createStaticTowerSnapshot(tower))
+    towers: Array.from(towers, (tower) => createStaticTowerSnapshot(tower)),
+    map
   };
 }

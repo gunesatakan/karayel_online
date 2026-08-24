@@ -240,6 +240,16 @@ export type DynamicTowerSnapshot = Omit<TowerSnapshot, keyof StaticTowerSnapshot
 export type StaticSnapshot = {
   enemies: StaticEnemySnapshot[];
   towers: StaticTowerSnapshot[];
+  /**
+   * Sunucunun oynadigi arena.
+   *
+   * Harita `match:map` mesajiyla da gonderiliyor ama o mesaj `onJoin` icinde,
+   * yani istemci odaya baglanmayi bekleyip dinleyicilerini takmadan once
+   * cikiyor; kacirilirsa istemci menudeki haritayi cizmeye devam ediyor ve
+   * sunucunun simule ettiginden bambaska bir tahtaya bakiyor. Tam anlik goruntu
+   * istemcinin kendi istedigi an geldigi icin yaris barindirmaz.
+   */
+  map?: EditableMapData;
 };
 
 export type ProjectileSnapshot = {

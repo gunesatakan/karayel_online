@@ -1760,7 +1760,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private sendFullStaticSnapshot(client: Pick<Client, "send">) {
-    client.send("snapshot:full", createFullStaticSnapshot(this.enemies.values(), this.towers.values()));
+    client.send("snapshot:full", createFullStaticSnapshot(this.enemies.values(), this.towers.values(), this.activeMap));
   }
 
   private broadcastEnemySpawn(enemy: EnemyModel) {

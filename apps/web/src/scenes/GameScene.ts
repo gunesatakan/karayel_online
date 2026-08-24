@@ -1921,6 +1921,13 @@ export class GameScene extends Phaser.Scene {
   private applyFullStaticSnapshot(snapshot: StaticSnapshot) {
     this.staticEnemySnapshots = new Map(snapshot.enemies.map((enemy) => [enemy.id, enemy]));
     this.staticTowerSnapshots = new Map(snapshot.towers.map((tower) => [tower.id, tower]));
+    // Harita buradan da gelir: `match:map` mesaji dinleyiciler takilmadan once
+    // cikabildigi icin tek basina guvenilir degil. Yanlis haritayla oynayan
+    // istemci kareleri baska yere cizer, dokunuslari baska hucreye yazar ve
+    // sunucunun kullandigi sutunlari hic bilmez.
+    if (snapshot.map) {
+      this.syncMap(snapshot.map);
+    }
   }
 
   private requestFullStaticSnapshot() {

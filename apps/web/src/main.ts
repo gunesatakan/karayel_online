@@ -48,6 +48,22 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
   });
 }
 
+/**
+ * Tuval sinirini tazele.
+ *
+ * Phaser dokunus koordinatlarini onbellekteki tuval sinirindan ceviriyor. iOS
+ * Safari arac cubugunu acip kapatirken tuvalin sayfa uzerindeki yerini
+ * degistiriyor ama her zaman resize olayi uretmiyor; sinir eskidiginde dokunus
+ * haritanin baska bir yerine, hatta kamera goruntusunun tumden disina dusuyor ve
+ * hicbir sey secilemiyor.
+ */
+const refreshScaleBounds = () => game.scale.refresh();
+
+window.visualViewport?.addEventListener("resize", refreshScaleBounds);
+window.visualViewport?.addEventListener("scroll", refreshScaleBounds);
+window.addEventListener("orientationchange", refreshScaleBounds);
+window.addEventListener("pageshow", refreshScaleBounds);
+
 let hasRequestedFullscreen = false;
 
 function requestGameFullscreen() {
