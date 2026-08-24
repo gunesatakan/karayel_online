@@ -36,6 +36,59 @@ export function getMelisSpectrumZone(approval: number, stress: number): MelisSpe
   return "balanced";
 }
 
+/**
+ * Kulenin o anki ruh halinde ne yaptigi, oyuncunun okuyacagi halde.
+ *
+ * Onay/stres kule davranisini degistiriyor ama oyun icinde bunu soyleyen hicbir
+ * sey yoktu: oyuncu yalnizca renkli bir cubuk goruyordu. Metinler kurallarla
+ * ayni pakette duruyor cunku bu ikisi ayri yerlerde yasadiginda kacinilmaz
+ * olarak ayrisiyorlar -- karakter ozeti tam da boyle, kaldirilan bir buff'i
+ * anlatmaya devam etmisti.
+ *
+ * Yalnizca ruh haline gore degisen kuleler burada; digerleri icin satir yok.
+ */
+const MELIS_ZONE_EFFECTS: Record<string, Record<MelisSpectrumZone, string>> = {
+  // Hedefci: onayda kilidi menzil disina tasiyabiliyor.
+  "archer-1": {
+    approval: "Kilit menzil dışında da korunur",
+    balanced: "Kilit menzilden çıkınca kopar",
+    stress: "Kilit menzilden çıkınca kopar"
+  },
+  // Parlama: streste kendi komsularini susturuyor.
+  "archer-2": {
+    approval: "Öfke dalgası dost kuleleri etkilemez",
+    balanced: "Öfke dalgası dost kuleleri etkilemez",
+    stress: "Öfke dalgası çevredeki dost kuleleri 0,5 sn durdurur"
+  },
+  // Lanet: sure tamamen ruh haline bagli, evrim bu sayiya dokunmuyor.
+  "archer-3": {
+    approval: "Lanet 7 sn kalır",
+    balanced: "Lanet 5 sn kalır",
+    stress: "Lanet 3 sn kalır"
+  },
+  // Kirik Ayna: hedef secimi ve olum patlamasi.
+  "archer-5": {
+    approval: "Çıkışa en yakın düşmanı hedefler",
+    balanced: "Canı en yüksek düşmanı hedefler",
+    stress: "Rastgele hedefler, öldürdüğünde patlama saçmaz"
+  },
+  // Fisilti: onayda suphe uzuyor, streste dusman toparlanip hizlaniyor.
+  "archer-6": {
+    approval: "Şüphe 2 sn daha uzun kalır",
+    balanced: "Şüphe normal süresinde kalır",
+    stress: "Duraksama bitince düşman 0,5 sn hızlanır"
+  }
+};
+
+export function getMelisZoneEffectText(definitionId: string, zone: MelisSpectrumZone) {
+  return MELIS_ZONE_EFFECTS[definitionId]?.[zone];
+}
+
+/** Ruh haline gore davranisi degisen Melis kuleleri. */
+export function getMelisZoneAffectedTowerIds() {
+  return Object.keys(MELIS_ZONE_EFFECTS);
+}
+
 export type ArenaCameraView = {
   fit: number;
   left: number;

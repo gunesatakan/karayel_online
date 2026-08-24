@@ -21,6 +21,7 @@ import {
   occupiesTowerSlot,
   getArenaCameraView,
   getMelisSpectrumZone,
+  getMelisZoneEffectText,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -5239,6 +5240,13 @@ export class GameScene extends Phaser.Scene {
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
+    // Ruh hali kule davranisini degistiriyor; oyuncu bunu ancak secili kulenin
+    // panelinde, tam ihtiyaci oldugu anda okuyabilir.
+    const melisZone = getMelisSpectrumZone(approval, stress);
+    const melisZoneEffect = selectedTower?.characterId === "archer"
+      ? getMelisZoneEffectText(selectedTower.definitionId, melisZone)
+      : undefined;
+    const melisZoneLabel = melisZone === "approval" ? "Onay" : melisZone === "stress" ? "Stres" : "Denge";
     const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
     // Hedefleme modlari artik kulenin acik kilitlerinden okunur; kilidi veren
     // sey esya da olabilir kart da, ikisini de sunucu cozup gonderiyor.
@@ -5384,6 +5392,7 @@ export class GameScene extends Phaser.Scene {
         ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
         ...(!selectedTower.resourceProvider ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
+        ...(melisZoneEffect ? [`Ruh hali — ${melisZoneLabel}: ${melisZoneEffect}`] : []),
         ...(isUnderworldTower ? [
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
           `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
@@ -5397,7 +5406,7 @@ export class GameScene extends Phaser.Scene {
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${this.localPlayerSnapshot?.approval ?? 0}:${this.localPlayerSnapshot?.stress ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
