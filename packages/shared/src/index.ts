@@ -19,6 +19,23 @@ export const TOWER_GRID_SIZE = 34;
 export const TOWER_BUILD_TOP = BATTLE_TOP;
 export const TOWER_BUILD_BOTTOM = 698;
 
+export type MelisSpectrumZone = "approval" | "balanced" | "stress";
+
+/**
+ * Melis'in onay/stres bolgesi.
+ *
+ * Oyun icindeki her etki iki sayinin dogrudan karsilastirmasindan cikiyor:
+ * stres onaydan buyukse stres etkileri, onay stresten buyukse onay etkileri,
+ * esitse ikisi de degil. Gostergenin ayri bir esik kullanmasi oyuncuya yanlis
+ * bilgi veriyordu -- oran 0.55'te ekranda "dengeli" yazarken butun stres
+ * etkileri calisiyordu. Kural burada duruyor ki sunucu ile gosterge ayrisamasin.
+ */
+export function getMelisSpectrumZone(approval: number, stress: number): MelisSpectrumZone {
+  if (stress > approval) return "stress";
+  if (approval > stress) return "approval";
+  return "balanced";
+}
+
 export type ArenaCameraView = {
   fit: number;
   left: number;

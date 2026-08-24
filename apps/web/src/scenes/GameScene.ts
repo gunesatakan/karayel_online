@@ -20,6 +20,7 @@ import {
   isEdgeSegmentInsideBoard,
   occupiesTowerSlot,
   getArenaCameraView,
+  getMelisSpectrumZone,
   getMapWorldBounds,
   getMapPoints,
   getBallisticCollisionRadius,
@@ -5299,7 +5300,7 @@ export class GameScene extends Phaser.Scene {
         approval,
         stress,
         ratio: stressRatio,
-        zone: stressRatio < 0.32 ? "approval" : stressRatio > 0.68 ? "stress" : "balanced",
+        zone: getMelisSpectrumZone(approval, stress),
         intensity: approval + stress
       } : undefined,
       ultimate: {

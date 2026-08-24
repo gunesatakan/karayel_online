@@ -91,6 +91,7 @@ import {
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
   advanceResourceExtraction,
+  getMelisSpectrumZone,
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
@@ -8284,22 +8285,21 @@ export class MatchRoom extends Room<MatchState> {
     return tower.characterId === "archer" && (this.melisFavoriteTowerIds.get(tower.ownerId) ?? []).includes(tower.id);
   }
 
-  private isMelisStressDominant(tower: TowerModel) {
+  private getMelisSpectrumZoneFor(tower: TowerModel) {
     if (tower.characterId !== "archer") {
-      return false;
+      return undefined;
     }
 
     const player = this.state.players.get(tower.ownerId);
-    return Boolean(player && player.stress > player.approval);
+    return player ? getMelisSpectrumZone(player.approval, player.stress) : undefined;
+  }
+
+  private isMelisStressDominant(tower: TowerModel) {
+    return this.getMelisSpectrumZoneFor(tower) === "stress";
   }
 
   private isMelisApprovalDominant(tower: TowerModel) {
-    if (tower.characterId !== "archer") {
-      return false;
-    }
-
-    const player = this.state.players.get(tower.ownerId);
-    return Boolean(player && player.approval > player.stress);
+    return this.getMelisSpectrumZoneFor(tower) === "approval";
   }
 
   private getMelisFavoriteDamageMultiplier(tower: TowerModel) {

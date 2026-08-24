@@ -501,6 +501,9 @@ canvas {
   height: 5px;
   overflow: hidden;
   background:
+    /* Esik cizgisi: onay ile stres tam ortada yer degistiriyor. Gecis yumusak
+       oldugu icin donum noktasi gozle secilemiyordu. */
+    linear-gradient(90deg, transparent calc(50% - 1px), rgba(248, 250, 252, 0.92) calc(50% - 1px), rgba(248, 250, 252, 0.92) calc(50% + 1px), transparent calc(50% + 1px)),
     linear-gradient(90deg, #22d3ee 0%, #2dd4bf 24%, #facc15 50%, #fb7185 74%, #ef4444 100%);
   border: 1px solid rgba(226, 232, 240, 0.56);
   box-shadow:
