@@ -20,6 +20,7 @@ import {
   isEdgeSegmentInsideBoard,
   occupiesTowerSlot,
   getArenaCameraView,
+  MELIS_EVOLUTION_STRESS_COSTS,
   getMelisSpectrumZone,
   getMelisZoneEffectText,
   getMapWorldBounds,
@@ -98,6 +99,7 @@ type ControlActionDetail = {
     | "openWorkerHire"
     | "closeWorkerHire"
     | "hireWorker"
+    | "setMelisStance"
     | "setTowerPerformance"
     | "buyShopItem"
     | "rerollShop"
@@ -118,6 +120,7 @@ type ControlActionDetail = {
   slot?: number;
   tier?: ZeynepCommandTier;
   role?: string;
+  stance?: string;
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
   performance?: number;
@@ -1026,6 +1029,11 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("setTowerMode", { towerId: this.selectedPlacedTowerId, mode: "standby" });
         }
         break;
+      case "setMelisStance":
+        if (detail.stance === "approval" || detail.stance === "stress") {
+          this.room?.send("melis:stance", { stance: detail.stance });
+        }
+        break;
       case "openWorkerHire":
         this.workerHireOpen = true;
         this.updateSelectionUi();
@@ -1381,6 +1389,24 @@ export class GameScene extends Phaser.Scene {
    * Bedel ve kontenjan sunucudaki kuralin aynisindan hesaplanir; buradaki
    * yalnizca dugmenin ne yazacagini belirler, gecerlilik kararini sunucu verir.
    */
+  /**
+   * Siradaki evrimin bedeli.
+   *
+   * Oyuncunun bari surerken bilmesi gereken tek sayi bu: ne kadar stres
+   * biriktirmesi gerektigi. Sahadaki en az evrimlesmis kule hedef alinir, cunku
+   * bir sonraki "Olumcul Stres" onun icin kullanilir.
+   */
+  private getNextMelisEvolutionCost() {
+    const levels = Array.from(this.towerSnapshots.values())
+      .filter((tower) => tower.ownerId === this.localSessionId && tower.characterId === "archer")
+      .map((tower) => tower.melisEvolutionLevel ?? 0);
+    if (levels.length === 0) {
+      return MELIS_EVOLUTION_STRESS_COSTS[0];
+    }
+
+    return MELIS_EVOLUTION_STRESS_COSTS[Math.min(...levels)];
+  }
+
   private getWorkerHireState() {
     const hired = this.localPlayerSnapshot?.hiredWorkerRoles ?? [];
     const cost = getWorkerHireCost(hired.length);
@@ -5303,6 +5329,11 @@ export class GameScene extends Phaser.Scene {
       zeynepChain: this.localPlayerSnapshot?.characterId === "zeynep" ? {
         value: authorityChain,
         ready: authorityChain >= 2
+      } : undefined,
+      melisStance: this.localPlayerSnapshot?.characterId === "archer" ? {
+        current: this.localPlayerSnapshot.melisStance ?? "approval",
+        evolutionCost: this.getNextMelisEvolutionCost(),
+        stress
       } : undefined,
       melisSpectrum: this.localPlayerSnapshot?.characterId === "archer" ? {
         approval,

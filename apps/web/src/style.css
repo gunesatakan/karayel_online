@@ -849,6 +849,16 @@ canvas {
   font-size: 9px;
 }
 
+.game-controls__melis-stance {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 6px;
+  color: #fdf2f8;
+  border-color: rgba(244, 114, 182, 0.7);
+  background: rgba(112, 26, 74, 0.94);
+  font-size: 9px;
+}
+
 .game-controls__worker-hire {
   flex: 0 0 auto;
   height: 18px;

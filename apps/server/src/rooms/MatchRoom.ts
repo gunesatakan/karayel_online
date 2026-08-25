@@ -91,7 +91,9 @@ import {
   resolveOnurGamblerShot,
   appendLegacyMultiplier,
   advanceResourceExtraction,
+  getMelisEvolutionStressCost,
   getMelisSpectrumZone,
+  type MelisStance,
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
@@ -333,7 +335,18 @@ const MELIS_FAVORITE_DAMAGE_PER_APPROVAL = 0.015;
 const MELIS_FAVORITE_FIRE_INTERVAL_PER_APPROVAL = 0.00625;
 const MELIS_FAVORITE_FIRE_INTERVAL_FLOOR = 0.75;
 const MELIS_MAX_EVOLUTION_LEVEL = 3;
-const MELIS_EVOLUTION_RATIO_THRESHOLDS = [1.5, 2, 3];
+
+/**
+ * Onde giden tarafin her dalga erimesi.
+ *
+ * Hicbir uc park yeri olmamali: bir konumu korumak surekli eylem istemeli.
+ * Erime yalnizca onde olani geri ceker, geride olani bedavaya yukseltmez.
+ */
+const MELIS_SPECTRUM_LEAD_DECAY = 0.15;
+
+/** Seri yapmadan gecen dalganin ve dusen performansin stres bedeli. */
+const MELIS_QUIET_WAVE_STRESS = 2;
+const MELIS_DECLINE_WAVE_STRESS = 1;
 const MELIS_GOTHIC_NIGHTMARE_MS = 9000;
 const MELIS_GOTHIC_NIGHTMARE_DAMAGE_MULTIPLIER = 1.5;
 const MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER = 1.25;
@@ -426,7 +439,8 @@ class Player extends Schema {
   @type("number") stress = 0;
   @type("number") currentWaveApproval = 0;
   @type("number") lastWaveApproval = -1;
-  @type("number") sameApprovalWaveCount = 0;
+  /** Serilerin hangi tarafa yazilacagi; oyuncunun bari surdugu direksiyon. */
+  melisStance: MelisStance = "approval";
 }
 
 class MatchState extends Schema {
@@ -676,6 +690,7 @@ type TowerModel = {
 
 type RepairStructureMessage = { towerId?: string };
 type HireWorkerMessage = { role?: HirableWorkerRole };
+type SetMelisStanceMessage = { stance?: MelisStance };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
 type BuyShopItemMessage = { itemId?: string };
 type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
@@ -1313,6 +1328,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
+    this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
 
@@ -1489,7 +1505,6 @@ export class MatchRoom extends Room<MatchState> {
       player.stress = 0;
       player.currentWaveApproval = 0;
       player.lastWaveApproval = -1;
-      player.sameApprovalWaveCount = 0;
       return;
     }
 
@@ -5303,22 +5318,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     tower.melisEvolutionLevel += 1;
-    player.stress = player.approval;
+    player.stress = Math.max(0, player.stress - getMelisEvolutionStressCost(tower.melisEvolutionLevel));
     tower.cooldownMs = Math.min(tower.cooldownMs, 120);
     return true;
   }
 
   private canMelisEvolveNextLevel(player: Player, nextEvolutionLevel: number) {
-    const requiredRatio = MELIS_EVOLUTION_RATIO_THRESHOLDS[nextEvolutionLevel - 1];
-    if (!requiredRatio || player.stress <= player.approval) {
-      return false;
-    }
-
-    if (player.approval <= 0) {
-      return player.stress > 0;
-    }
-
-    return player.stress / player.approval >= requiredRatio;
+    const cost = getMelisEvolutionStressCost(nextEvolutionLevel);
+    return cost > 0 && player.stress >= cost;
   }
 
   private useMelisFocus(ownerId: string) {
@@ -6396,7 +6403,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    this.awardMelisApproval(ownerId, getMelisApprovalGain(rule.tier));
+    this.awardMelisSpectrum(ownerId, getMelisApprovalGain(rule.tier));
     this.applyKillStreakBuff(ownerId, rule, serverTime);
     return rule;
   }
@@ -6422,14 +6429,37 @@ export class MatchRoom extends Room<MatchState> {
     return locks;
   }
 
-  private awardMelisApproval(ownerId: string, amount: number) {
+  /**
+   * Seri kazancini oyuncunun sectigi tarafa yazar.
+   *
+   * `currentWaveApproval` yonlendirmeden bagimsiz olarak dalga icindeki
+   * hareketliligi olcer: dalga sonu cezasi "seri yaptin mi" sorusunun cevabi
+   * olmali, "kazanci nereye yazdin" sorusunun degil.
+   */
+  private awardMelisSpectrum(ownerId: string, amount: number) {
     const player = this.state.players.get(ownerId);
     if (!player || player.characterId !== "archer") {
       return;
     }
 
-    player.approval += amount;
     player.currentWaveApproval += amount;
+    if (player.melisStance === "stress") {
+      player.stress += amount;
+    } else {
+      player.approval += amount;
+    }
+  }
+
+  private setMelisStance(client: Client, message: SetMelisStanceMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.characterId !== "archer") {
+      return;
+    }
+    if (message?.stance !== "approval" && message?.stance !== "stress") {
+      return;
+    }
+
+    player.melisStance = message.stance;
   }
 
   private applyMelisWaveStress() {
@@ -6440,22 +6470,23 @@ export class MatchRoom extends Room<MatchState> {
 
       const approval = player.currentWaveApproval;
       if (approval <= 0) {
-        player.stress += 4;
-        player.sameApprovalWaveCount = 0;
+        player.stress += MELIS_QUIET_WAVE_STRESS;
       } else if (player.lastWaveApproval >= 0 && approval < player.lastWaveApproval) {
-        player.stress += 2;
-        player.sameApprovalWaveCount = 1;
-      } else if (player.lastWaveApproval >= 0 && approval === player.lastWaveApproval) {
-        player.sameApprovalWaveCount += 1;
-        if (player.sameApprovalWaveCount >= 2) {
-          player.stress += 1;
-        }
-      } else {
-        player.sameApprovalWaveCount = 1;
+        player.stress += MELIS_DECLINE_WAVE_STRESS;
       }
 
       player.lastWaveApproval = approval;
       player.currentWaveApproval = 0;
+      this.applyMelisSpectrumDecay(player);
+    }
+  }
+
+  /** Onde giden taraf her dalga bir miktar geri cekilir; uclar park yeri degil. */
+  private applyMelisSpectrumDecay(player: Player) {
+    if (player.approval > player.stress) {
+      player.approval = Math.max(player.stress, player.approval - (player.approval - player.stress) * MELIS_SPECTRUM_LEAD_DECAY);
+    } else if (player.stress > player.approval) {
+      player.stress = Math.max(player.approval, player.stress - (player.stress - player.approval) * MELIS_SPECTRUM_LEAD_DECAY);
     }
   }
 
@@ -7415,6 +7446,7 @@ export class MatchRoom extends Room<MatchState> {
         authorityQuality: player.characterId === "zeynep" ? player.authorityQuality : undefined,
         approval: player.characterId === "archer" ? player.approval : undefined,
         stress: player.characterId === "archer" ? player.stress : undefined,
+        melisStance: player.characterId === "archer" ? player.melisStance : undefined,
         hiredWorkerRoles: [...player.hiredWorkerRoles]
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => ({

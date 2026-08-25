@@ -15,6 +15,8 @@ type ControlState = {
   zeynepTier?: { slot: number; reputation: number; chainReady?: boolean };
   zeynepChain?: { value: number; ready: boolean };
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
+  /** Serilerin hangi tarafa yazilacagi ve siradaki evrimin bedeli. */
+  melisStance?: { current: "approval" | "stress"; evolutionCost?: number; stress: number };
   ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
@@ -48,6 +50,7 @@ type ControlState = {
 type ControlAction = {
   action: string;
   role?: string;
+  stance?: string;
   towerId?: string;
   slot?: number;
   tier?: ZeynepTier;
@@ -366,6 +369,20 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     if (state.showOrientationToggle) {
       footer.append(makeActionButton(state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
+    }
+
+    if (state.melisStance) {
+      const stance = state.melisStance;
+      const toStress = stance.current === "approval";
+      const bedel = stance.evolutionCost !== undefined
+        ? ` ${Math.floor(stance.stress)}/${stance.evolutionCost}`
+        : " tamam";
+      footer.append(makeActionButton(
+        `Seri→${stance.current === "stress" ? "Stres" : "Onay"} | Evrim${bedel}`,
+        "game-controls__melis-stance",
+        true,
+        () => dispatch({ action: "setMelisStance", stance: toStress ? "stress" : "approval" })
+      ));
     }
 
     if (state.workerHire) {

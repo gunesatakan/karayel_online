@@ -21,6 +21,23 @@ export const TOWER_BUILD_BOTTOM = 698;
 
 export type MelisSpectrumZone = "approval" | "balanced" | "stress";
 
+/** Melis'in serilerini hangi tarafa yazdigi; bari surdugu direksiyon. */
+export type MelisStance = "approval" | "stress";
+
+/**
+ * Evrimin bedeli: stresten dusulen sabit puan.
+ *
+ * Eskiden esik bir orandi (stres/onay >= 1.5) ve onay hicbir zaman azalmadigi
+ * icin payda buyudukce evrim erisilemez hale geliyordu -- iyi oynayan oyuncu 20
+ * dalgada tek evrim goremiyordu. Sabit bedel stresi bir para birimine cevirir:
+ * harcandiginda bar onaya dogru geri doner ve dongu kapanir.
+ */
+export const MELIS_EVOLUTION_STRESS_COSTS = [10, 16, 24];
+
+export function getMelisEvolutionStressCost(evolutionLevel: number) {
+  return MELIS_EVOLUTION_STRESS_COSTS[evolutionLevel - 1] ?? 0;
+}
+
 /**
  * Melis'in onay/stres bolgesi.
  *
@@ -164,6 +181,7 @@ export type PlayerSnapshot = {
   authorityQuality?: number;
   approval?: number;
   stress?: number;
+  melisStance?: import("./index.js").MelisStance;
   /** Satin alinmis ek isciler; siradaki bedel bu sayidan cikar. */
   hiredWorkerRoles?: Array<import("./logistics/index.js").HirableWorkerRole>;
 };
