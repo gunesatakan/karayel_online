@@ -63,6 +63,24 @@ window.visualViewport?.addEventListener("resize", refreshScaleBounds);
 window.visualViewport?.addEventListener("scroll", refreshScaleBounds);
 window.addEventListener("orientationchange", refreshScaleBounds);
 window.addEventListener("pageshow", refreshScaleBounds);
+window.addEventListener("resize", refreshScaleBounds);
+
+/**
+ * Tam ekrana girip cikmak tuvali yeniden olcmeyi gerektirir.
+ *
+ * Masaustunde ilk dokunusta tam ekran isteniyor ve gecis animasyonlu: Phaser
+ * gecis *sirasinda* bir ara boyutu olcup tuvali ona gore oturtuyor, gecis
+ * bitince ikinci bir olay gelmedigi icin tuval o ara boyutta cakili kaliyor.
+ * Sonuc, oyunun ekranin ortasinda kucucuk durmasi ve ustte altta siyah bant.
+ *
+ * Iki kez tazeliyoruz: biri olay aninda, digeri gecis bittikten sonra. Mobilde
+ * bu hic gorunmuyordu cunku orada `visualViewport resize` ateSleniyor ve
+ * yukaridaki dinleyici zaten yakaliyordu; masaustunde o olay gelmiyor.
+ */
+document.addEventListener("fullscreenchange", () => {
+  refreshScaleBounds();
+  window.setTimeout(refreshScaleBounds, 300);
+});
 
 let hasRequestedFullscreen = false;
 
