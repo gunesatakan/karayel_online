@@ -77,6 +77,7 @@ import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpired
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState } from "../game-control-ui";
+import { EMPTY_HUD_STATS } from "../game-control-ui";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -378,7 +379,7 @@ export class GameScene extends Phaser.Scene {
   private perfText?: Phaser.GameObjects.Text;
   private hudState: HudState = {
     status: "Sunucu kontrol ediliyor...",
-    stats: "Gold 0  Can 100  Wave 1",
+    stats: EMPTY_HUD_STATS,
     ping: "-- ms",
     pingTone: "warn",
     continueVisible: false,
@@ -2750,14 +2751,40 @@ export class GameScene extends Phaser.Scene {
     if (player?.characterId !== "zeynep") {
       this.hideZeynepTierChoices();
     }
-    const zeynepStats = player?.characterId === "zeynep" ? `  Itibar ${reputation}/100  Zincir ${authorityChain}/2  Kalite ${authorityQuality}/15` : "";
     const approval = player?.approval ?? 0;
     const stress = player?.stress ?? 0;
     const ammunition = snapshot.team.ammunition ?? { bullet: 0, auraCrystal: 0, powerCrystal: 0 };
-    const resourceStats = `  E ${Math.floor(snapshot.team.energy ?? 0)}/${snapshot.team.maxEnergy ?? 0}  M ${Math.floor(ammunition.bullet)}  A ${Math.floor(ammunition.auraCrystal)}  G ${Math.floor(ammunition.powerCrystal)}`;
-    const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${resourceStats}`;
+    // Karaktere ozel sayaclar barin sabit alanlarina girmez: her karakterde
+    // farkli sayida olduklari icin sabit bir yer ayirmak ya bosluk ya tasma
+    // uretirdi. Ikincil seride ek rozet olarak akiyorlar.
+    const extras = player?.characterId === "zeynep"
+      ? [
+        { label: "İTİBAR", value: `${reputation}/100` },
+        { label: "ZİNCİR", value: `${authorityChain}/2` },
+        { label: "KALİTE", value: `${authorityQuality}/15` }
+      ]
+      : player?.characterId === "archer"
+        ? [
+          { label: "ONAY", value: `${Math.round(approval)}` },
+          { label: "STRES", value: `${Math.round(stress)}` }
+        ]
+        : [];
+    const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${Math.floor(snapshot.team.energy ?? 0)}|${snapshot.team.maxEnergy ?? 0}|${Math.floor(ammunition.bullet)}|${Math.floor(ammunition.auraCrystal)}|${Math.floor(ammunition.powerCrystal)}`;
     if (this.lastHudKey !== hudKey) {
-      this.emitHudState({ stats: `Gold ${Math.floor(gold)}  XP ${formatExperience(experience)}  Can ${Math.round(snapshot.team.health)}/${snapshot.team.maxHealth}  Wave ${snapshot.team.wave}  Kalan ${snapshot.team.enemiesLeft}${resourceStats}${zeynepStats}` });
+      this.emitHudState({
+        stats: {
+          gold,
+          experience,
+          health: snapshot.team.health,
+          maxHealth: snapshot.team.maxHealth,
+          wave: snapshot.team.wave,
+          enemiesLeft: snapshot.team.enemiesLeft,
+          energy: snapshot.team.energy ?? 0,
+          maxEnergy: snapshot.team.maxEnergy ?? 0,
+          ammo: ammunition,
+          extras
+        }
+      });
       this.lastHudKey = hudKey;
     }
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);

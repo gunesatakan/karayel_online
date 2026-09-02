@@ -2770,11 +2770,17 @@ canvas {
 .game-hud {
   position: fixed;
   z-index: 70;
+  /*
+   * Bar tuvalin genisligini aliyor, sayfaninkini degil: masaustunde gorunum
+   * 1920 iken bar 390 olabiliyor. Bu yuzden daralma kurallari @media ile
+   * yazilamaz -- sayfa genis, bar dar oldugunda medya sorgusu hic tetiklenmez
+   * ve sayilar dugmelerin altina girer. Olcegi barin kendi genisligi belirlemeli.
+   */
+  container-type: inline-size;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 76px;
-  padding: 9px 12px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 10px 6px;
   box-sizing: border-box;
   color: #e2e8f0;
   background: linear-gradient(180deg, rgba(7, 15, 31, 0.97), rgba(10, 21, 41, 0.91));
@@ -2788,46 +2794,153 @@ canvas {
   display: none;
 }
 
-.game-hud__brand {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 12px;
+/* Birincil satir: her zaman tam okunur, hicbir kosulda kismayan tek satir. */
+.game-hud__row {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
-.game-hud__brand strong {
-  grid-row: 1 / 3;
-  color: #f8fafc;
-  font-size: clamp(16px, 2.4vw, 22px);
-  letter-spacing: -0.03em;
+.game-hud__vitals {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  /*
+   * Son care: gercekci hicbir cihazda buraya dusulmuyor, ama duSulurse sayilar
+   * dugmelerin altina girmek yerine kirpilir. Kirpilmis sayi okunmaz; ust uste
+   * binmis sayi ikisini birden okunmaz yapar.
+   */
+  overflow: hidden;
+}
+
+.game-hud__vital {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.game-hud__brand span {
+.game-hud__vital i {
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.game-hud__vital b {
+  font-size: clamp(15px, 4.2vw, 19px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.game-hud__vital--gold { color: #fbbf24; }
+.game-hud__vital--health { color: #fda4af; }
+.game-hud__vital--wave { color: #7dd3fc; }
+
+/* Can azaldikca uyari rengi; sayiya bakmadan da yakalanmali. */
+.game-hud[data-health="low"] .game-hud__vital--health { color: #fb923c; }
+.game-hud[data-health="critical"] .game-hud__vital--health {
+  color: #f87171;
+  animation: hud-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes hud-pulse {
+  50% { opacity: 0.55; }
+}
+
+/*
+ * Ikincil serit: tasarsa kayar, sarmaz, ust satirin uzerine binmez.
+ * Buradaki hicbir sey aninda karar gerektirmiyor, o yuzden gorunurlukten once
+ * birincil satirin butunlugu korunuyor.
+ */
+.game-hud__strip {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  /* Sondaki pay olmadan, serit sonuna kaydirildiginda son rozet solma
+     bandinin altinda kalir ve kalici olarak sonuk gorunur. */
+  padding-right: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  pointer-events: auto;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent);
+}
+
+.game-hud__strip::-webkit-scrollbar { display: none; }
+
+.game-hud__chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.game-hud__chip i {
+  color: #7c8aa3;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.game-hud__chip b {
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Ping oyun verisi degil tanilama: seritte durur, hicbir seyi ortmez. */
+.game-hud__chip--ping i { font-size: 7px; }
+.game-hud__chip--good i { color: #22c55e; }
+.game-hud__chip--warn i { color: #facc15; }
+.game-hud__chip--bad i { color: #fb7185; }
+
+.game-hud__status {
+  margin: 0;
   overflow: hidden;
   color: #94a3b8;
-  font-size: 11px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.game-hud__brand b {
-  overflow: hidden;
-  color: #facc15;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.game-hud__status[hidden] { display: none; }
 
 .game-hud__actions {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
-  margin-left: 10px;
+  gap: 6px;
   pointer-events: auto;
+}
+
+.game-hud__continue[hidden] { display: none; }
+
+/* Dar tuvalde once yazi kuculur, sayilar asla dugmelerin altina girmez. */
+@container (max-width: 360px) {
+  .game-hud__vitals { gap: 7px; }
+  .game-hud__vital b { font-size: 15px; }
+  .game-hud__vital i { font-size: 10px; }
+  .game-hud__actions { gap: 4px; }
+  .game-hud__actions button { min-width: 28px; min-height: 29px; padding: 0 6px; font-size: 10px; }
+  .game-hud .game-hud__continue { min-width: 62px; }
+}
+
+@container (max-width: 310px) {
+  .game-hud__vital b { font-size: 13px; }
+  .game-hud__vitals { gap: 5px; }
 }
 
 .game-hud button {
@@ -2853,17 +2966,6 @@ canvas {
   background: #15803d;
 }
 
-.game-hud__ping {
-  min-width: 64px;
-  font-size: 11px;
-  font-weight: 800;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.game-hud__ping--good { color: #22c55e; }
-.game-hud__ping--warn { color: #facc15; }
-.game-hud__ping--bad { color: #fb7185; }
 
 .game-hud__popup {
   position: absolute;
@@ -2893,13 +2995,10 @@ canvas {
 .game-hud__popup input[type="range"] { width: 100%; accent-color: #38bdf8; }
 
 @media (max-width: 620px) {
-  .game-hud { min-height: 72px; padding: 7px 8px; }
-  .game-hud__brand { column-gap: 7px; }
-  .game-hud__brand strong { font-size: 15px; }
-  .game-hud__brand span { font-size: 9px; }
-  .game-hud__brand b { max-width: 58vw; font-size: 10px; }
-  .game-hud__actions { gap: 4px; margin-left: 5px; }
+  .game-hud { gap: 4px; padding: 6px 8px; }
+  .game-hud__vitals { gap: 8px; }
+  .game-hud__actions { gap: 4px; }
   .game-hud__actions button { min-width: 30px; min-height: 30px; padding: 0 7px; font-size: 10px; }
-  .game-hud__ping { display: none; }
   .game-hud .game-hud__continue { min-width: 66px; }
+  .game-hud__chip { padding: 2px 6px; }
 }

@@ -469,9 +469,48 @@ export function setupGameControlUi(game: Phaser.Game) {
   syncCanvasBounds();
 }
 
+/**
+ * Ust bardaki sayilar.
+ *
+ * Eskiden tek bir hazir metindi ("Gold 0  Can 100  Wave 1  E 0/0  M 0 ..."):
+ * on ikiye kadar deger ayni satira diziliyordu ve tuval 390 piksel genis oldugu
+ * icin satir tasip marka yazisiyla ve ping ile ust uste biniyordu. Metin olarak
+ * gelen bir seyi duzgun yerlestirmek mumkun degil -- neyin onemli oldugunu,
+ * nerede kirilabilecegini, hangisinin gizlenebilecegini yerlesim bilemez. Bu
+ * yuzden bar artik yapisal veri aliyor ve onceligi kendisi kuruyor.
+ */
+export type HudAmmoCounts = { bullet: number; auraCrystal: number; powerCrystal: number };
+
+export type HudStats = {
+  gold: number;
+  experience: number;
+  health: number;
+  maxHealth: number;
+  wave: number;
+  enemiesLeft: number;
+  energy: number;
+  maxEnergy: number;
+  ammo: HudAmmoCounts;
+  /** Karaktere ozel sayaclar. Bos gelirse hic cizilmez. */
+  extras: Array<{ label: string; value: string }>;
+};
+
+export const EMPTY_HUD_STATS: HudStats = {
+  gold: 0,
+  experience: 0,
+  health: 0,
+  maxHealth: 0,
+  wave: 1,
+  enemiesLeft: 0,
+  energy: 0,
+  maxEnergy: 0,
+  ammo: { bullet: 0, auraCrystal: 0, powerCrystal: 0 },
+  extras: []
+};
+
 export type HudState = {
   status: string;
-  stats: string;
+  stats: HudStats;
   ping: string;
   pingTone: "good" | "warn" | "bad";
   continueVisible: boolean;
@@ -490,7 +529,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   document.body.append(root);
 
   let state: HudState = {
-    status: "Sunucu kontrol ediliyor...", stats: "Gold 0  Can 100  Wave 1", ping: "-- ms", pingTone: "warn",
+    status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5
   };
 
@@ -502,36 +541,154 @@ export function setupGameHudUi(game: Phaser.Game) {
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
   };
-  const render = (next: HudState) => {
-    state = next;
-    root.classList.remove("game-hud--hidden");
-    root.innerHTML = `
-      <div class="game-hud__brand"><strong>Karayel TD</strong><span>${state.status}</span><b>${state.stats}</b></div>
-      <div class="game-hud__actions">
-        <span class="game-hud__ping game-hud__ping--${state.pingTone}">${state.ping}</span>
-        <button data-hud="perf" aria-label="Performans bilgisi">i</button>
-        <button data-hud="audio">Ses</button>
-        ${state.continueVisible ? `<button class="game-hud__continue" data-hud="continue" ${state.continueWaiting ? "disabled" : ""}>${state.continueWaiting ? "Bekleniyor" : "Devam"}</button>` : ""}
+
+  /**
+   * Altin tam sayi olarak okunur, cunku oyuncu "su kuleyi alabilir miyim"
+   * sorusunu tam sayiyla cevaplar. Ancak on binden sonra basamak sayisi bari
+   * tasiracagi icin orada kisaltmaya geciyoruz.
+   */
+  const compactNumber = (value: number) => {
+    const amount = Math.floor(Math.max(0, value));
+    if (amount < 10_000) return String(amount);
+    if (amount < 1_000_000) return `${(amount / 1000).toFixed(amount < 100_000 ? 1 : 0)}B`;
+    return `${(amount / 1_000_000).toFixed(1)}M`;
+  };
+
+  const formatXp = (value: number) => {
+    const rounded = Math.round(Math.max(0, value) * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  };
+
+  // Yapi bir kez kuruluyor. Eskiden her altin degisiminde butun bar yeniden
+  // yazilip dinleyiciler bastan baglaniyordu; altin dalga boyunca surekli
+  // degistigi icin bu, saniyede onlarca kez DOM yikip yeniden kurmak demekti.
+  root.innerHTML = `
+    <div class="game-hud__row">
+      <div class="game-hud__vitals">
+        <span class="game-hud__vital game-hud__vital--gold" title="Altın"><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
+        <span class="game-hud__vital game-hud__vital--health" title="Üs canı"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
+        <span class="game-hud__vital game-hud__vital--wave" title="Dalga"><i aria-hidden="true">⚑</i><b data-hud-wave>1</b></span>
       </div>
-      ${state.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${state.perfText}</pre></section>` : ""}
-      ${state.audioOpen ? `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong><label>Müzik <input data-volume="music" type="range" min="0" max="1" step="0.01" value="${state.musicVolume}"></label><label>Seslendirme <input data-volume="voice" type="range" min="0" max="1" step="0.01" value="${state.voiceVolume}"></label></section>` : ""}
+      <div class="game-hud__actions">
+        <button data-hud="perf" aria-label="Performans bilgisi">i</button>
+        <button data-hud="audio" aria-label="Ses ayarları">♪</button>
+        <button class="game-hud__continue" data-hud="continue" hidden>Devam</button>
+      </div>
+    </div>
+    <div class="game-hud__strip" data-hud-strip></div>
+    <p class="game-hud__status" data-hud-status hidden></p>
+    <div data-hud-popups></div>
+  `;
+
+  const goldNode = root.querySelector<HTMLElement>("[data-hud-gold]")!;
+  const healthNode = root.querySelector<HTMLElement>("[data-hud-health]")!;
+  const waveNode = root.querySelector<HTMLElement>("[data-hud-wave]")!;
+  const stripNode = root.querySelector<HTMLElement>("[data-hud-strip]")!;
+  const statusNode = root.querySelector<HTMLElement>("[data-hud-status]")!;
+  const popupsNode = root.querySelector<HTMLElement>("[data-hud-popups]")!;
+  const continueButton = root.querySelector<HTMLButtonElement>(".game-hud__continue")!;
+
+  const setText = (node: HTMLElement, text: string) => {
+    if (node.textContent !== text) node.textContent = text;
+  };
+
+  root.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
+    event.stopPropagation();
+    const action = element.dataset.hud;
+    if (action === "continue") dispatch("continueWave");
+    if (action === "perf") dispatch("togglePerfHud");
+    if (action === "audio") dispatch("toggleAudioHud");
+  }));
+
+  /**
+   * Ikincil serit: tasarsa yatay kayar, sarmaz.
+   *
+   * Bu satirdaki hicbir sey bir kararin tam o anda beklemedigi bilgi -- XP,
+   * kaynak stoklari, karakter sayaclari. Tasma halinde birincil satirin uzerine
+   * binmesindense kaymasi dogru: hicbir sey kaybolmuyor, hicbir sey ortulmuyor.
+   */
+  let lastStripKey = "";
+  const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"]) => {
+    const chips: string[] = [
+      `<span class="game-hud__chip"><i>KALAN</i><b>${stats.enemiesLeft}</b></span>`,
+      `<span class="game-hud__chip"><i>XP</i><b>${formatXp(stats.experience)}</b></span>`,
+      `<span class="game-hud__chip"><i>ENERJİ</i><b>${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}</b></span>`,
+      `<span class="game-hud__chip"><i>MERMİ</i><b>${Math.floor(stats.ammo.bullet)}</b></span>`,
+      `<span class="game-hud__chip"><i>AURA</i><b>${Math.floor(stats.ammo.auraCrystal)}</b></span>`,
+      `<span class="game-hud__chip"><i>GÜÇ</i><b>${Math.floor(stats.ammo.powerCrystal)}</b></span>`,
+      ...stats.extras.map((extra) => `<span class="game-hud__chip"><i>${escapeHudText(extra.label)}</i><b>${escapeHudText(extra.value)}</b></span>`),
+      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
+    ];
+    const key = chips.join("");
+    if (key === lastStripKey) return;
+    lastStripKey = key;
+    stripNode.innerHTML = key;
+  };
+
+  let lastPopupKey = "";
+  const renderPopups = (next: HudState) => {
+    const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}` : ""}`;
+    if (key === lastPopupKey) return;
+    lastPopupKey = key;
+    popupsNode.innerHTML = `
+      ${next.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${escapeHudText(next.perfText)}</pre></section>` : ""}
+      ${next.audioOpen ? `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong><label>Müzik <input data-volume="music" type="range" min="0" max="1" step="0.01" value="${next.musicVolume}"></label><label>Seslendirme <input data-volume="voice" type="range" min="0" max="1" step="0.01" value="${next.voiceVolume}"></label></section>` : ""}
     `;
-    root.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
+    popupsNode.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
       event.stopPropagation();
-      const action = element.dataset.hud;
-      if (action === "continue") dispatch("continueWave");
-      if (action === "perf") dispatch("togglePerfHud");
-      if (action === "audio") dispatch("toggleAudioHud");
+      if (element.dataset.hud === "perf") dispatch("togglePerfHud");
+      if (element.dataset.hud === "audio") dispatch("toggleAudioHud");
     }));
-    root.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
+    popupsNode.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
       dispatch(input.dataset.volume === "music" ? "setMusicVolume" : "setVoiceVolume", Number(input.value));
     }));
   };
 
-  game.events.on("game:hud-state", render);
+  const render = (next: HudState) => {
+    state = next;
+    setText(goldNode, compactNumber(state.stats.gold));
+    setText(healthNode, `${Math.max(0, Math.round(state.stats.health))}`);
+    setText(waveNode, `${state.stats.wave}`);
+    // Can azaldikca renk isinir; sayiya bakmadan da fark edilmeli.
+    const healthRatio = state.stats.maxHealth > 0 ? state.stats.health / state.stats.maxHealth : 1;
+    root.dataset.health = healthRatio <= 0.25 ? "critical" : healthRatio <= 0.6 ? "low" : "ok";
+
+    renderStrip(state.stats, state.ping, state.pingTone);
+
+    // Durum satiri yalnizca soyleyecek bir sey varken yer kaplar.
+    const status = state.status.trim();
+    statusNode.hidden = status.length === 0;
+    setText(statusNode, status);
+
+    continueButton.hidden = !state.continueVisible;
+    continueButton.disabled = state.continueWaiting;
+    setText(continueButton, state.continueWaiting ? "Bekleniyor" : "Devam");
+
+    renderPopups(state);
+  };
+
+  // Gorunurluk yalnizca sahneden gelen olaya bagli: kurulumda cizmek barin
+  // menu ekraninin uzerinde belirmesine yol acardi.
+  game.events.on("game:hud-state", (next: HudState) => {
+    root.classList.remove("game-hud--hidden");
+    render(next);
+  });
   game.events.on("game:hud-hide", () => root.classList.add("game-hud--hidden"));
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);
   syncCanvasBounds();
+  // Baslangic degerlerini gizliyken yaz: ilk olay geldiginde bar dolu acilsin.
+  render(state);
+}
+
+/** Karakter sayaclari ve durum metni sunucudan geliyor; isaretleme olarak yorumlanmamali. */
+function escapeHudText(value: string) {
+  return value.replace(/[&<>"']/g, (character) => (
+    character === "&" ? "&amp;"
+      : character === "<" ? "&lt;"
+      : character === ">" ? "&gt;"
+      : character === "\"" ? "&quot;"
+      : "&#39;"
+  ));
 }
