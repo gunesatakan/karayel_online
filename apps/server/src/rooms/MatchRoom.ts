@@ -253,6 +253,16 @@ const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
+/**
+ * Kimlikten kule tanimina sabit zamanli erisim.
+ *
+ * Katalog calisma aninda hic degismiyor, ama tanim aramasi dusman yolu
+ * hesabinin en sicak noktasindan cagriliyordu ve her cagri yedi karakterin
+ * listesini bastan tariyordu. Tablo modul yuklenirken bir kez kuruluyor.
+ */
+const TOWER_DEFINITIONS_BY_ID = new Map(
+  Object.values(towerCatalog).flat().map((definition) => [definition.id, definition])
+);
 const SNAPSHOT_SEND_INTERVAL_MS = 33;
 const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 256 * 1024;
 const PERF_SEND_INTERVAL_MS = 1000;
@@ -4679,12 +4689,20 @@ export class MatchRoom extends Room<MatchState> {
     ].filter((cell) => isInsideMap(this.activeMap, cell.col, cell.row));
   }
 
+  /**
+   * Hucreyi kaplayan yapi.
+   *
+   * Cevap zaten `towerCellIndex`te duruyor ve ayni sozlugu `findEnemyRoute` de
+   * okuyor. Burasi ise her cagrida butun yapilari gezip her biri icin ayak izi
+   * uretiyordu; dusman basina bir kez cagrildigi icin maliyet dusman x yapi
+   * olarak buyuyordu.
+   *
+   * Kenara oturan yapilar indekse hic girmez -- kare kaplamadiklari icin bu
+   * sorunun cevabi olamazlar -- yani eski koddaki Abarti ayiklamasi da indeksin
+   * kendisinde karsilaniyor.
+   */
   private getTowerAtCell(col: number, row: number) {
-    return Array.from(this.towers.values()).find((tower) => (
-      tower.definition.id !== "zeynep-8" &&
-      this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)
-        .some((cell) => cell.col === col && cell.row === row)
-    ));
+    return this.getTowerCellIndex().get(`${col}:${row}`);
   }
 
   /**
@@ -4700,21 +4718,14 @@ export class MatchRoom extends Room<MatchState> {
       return occupiedTower;
     }
 
-    return Array.from(this.towers.values()).find((tower) => {
-      // Kenara oturan her yapi gecisi kapatir, yalnizca Abarti degil.
-      if (!tower.definition.engine?.placement?.requiresEdge || tower.hp <= 0) {
-        return false;
-      }
-      return this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id)).some((segment) => {
-        if (segment.orientation === "vertical" && from.row === to.row) {
-          return segment.row === from.row && Math.max(from.col, to.col) === segment.col;
-        }
-        if (segment.orientation === "horizontal" && from.col === to.col) {
-          return segment.col === from.col && Math.max(from.row, to.row) === segment.row;
-        }
-        return false;
-      });
-    });
+    // Kenara oturan her yapi gecisi kapatir, yalnizca Abarti degil. Bu esleme
+    // `edgeStructureIndex`te hazir: akis alani gecis maliyetini zaten oradan
+    // okuyor, dolayisiyla ayni soruyu burada yapilari tarayarak sormak ayni
+    // cevabi pahaliya uretmekti. Can kontrolu indekste de var; burada tekrar
+    // edilmesi gecersizlestirme atlanirsa yikik duvarin engel gorunmesini
+    // onler.
+    const edgeStructure = this.getEdgeStructure(from, to);
+    return edgeStructure && edgeStructure.hp > 0 ? edgeStructure : undefined;
   }
 
   private getMapCellRadius() {
@@ -7626,11 +7637,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findTowerDefinitionById(definitionId: string) {
-    for (const definitions of Object.values(towerCatalog)) {
-      const definition = definitions.find((candidate) => candidate.id === definitionId);
-      if (definition) return definition;
-    }
-    return undefined;
+    return TOWER_DEFINITIONS_BY_ID.get(definitionId);
   }
 
   private getTowerPlacementSpan(definitionId: string) {
