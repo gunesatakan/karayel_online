@@ -251,6 +251,18 @@ const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
+/**
+ * Son dusman oldukten sonra dalga sonunu bekletme suresi.
+ *
+ * Dalga, dusman sayaci sifirlanir sifirlanmaz kapaniyordu ve kart secimi ayni
+ * karede aciliyordu; oyuncu son olumu goremeden ekran ustune biniyordu. Olumun
+ * kendisi de aninda gorunmuyor -- mermi hala yolda olabiliyor, hasar yazisi ve
+ * olum efekti oynuyor, ustune istemci enterpolasyon tamponu kadar geriden
+ * cizyor. Bu bekleme o kuyrugun ekranda tamamlanmasi icin.
+ *
+ * Duvar saati cinsinden: oyuncunun bekledigi sure oyun hizindan bagimsiz olmali.
+ */
+const WAVE_CLEAR_PAUSE_MS = 2000;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
 const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 /**
@@ -954,6 +966,8 @@ export class MatchRoom extends Room<MatchState> {
   private wave = 1;
   private kills = 0;
   private waveSpawned = 0;
+  /** Dalganin temizlendigi an (duvar saati). 0 ise dalga henuz temiz degil. */
+  private waveClearedAt = 0;
   private waveTarget = getWaveEnemyCount(1);
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
@@ -1853,6 +1867,19 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (this.waveSpawned >= this.waveTarget && this.enemies.size === 0) {
+      // Bekleme burada, dalga kapanisinin hemen onunde duruyor: boylece hem kart
+      // secimi hem de son dalgadaki zafer ekrani ayni gecikmeyi aliyor. Ikisi de
+      // ayni ani paylasiyor -- oyuncunun son olumu gordugu an.
+      const clearedFor = Date.now() - this.waveClearedAt;
+      if (this.waveClearedAt === 0) {
+        this.waveClearedAt = Date.now();
+        return;
+      }
+      if (clearedFor < WAVE_CLEAR_PAUSE_MS) {
+        return;
+      }
+      this.waveClearedAt = 0;
+
       this.applyMelisWaveStress();
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
@@ -1875,6 +1902,12 @@ export class MatchRoom extends Room<MatchState> {
       this.offerWaveCards();
       return;
     }
+
+    // Dalga henuz temiz degil. Sayaci sifirlamak sart: Melis bir dusmani kendi
+    // tarafina cevirip geri koydugunda ya da son dusman bir sekilde yeniden
+    // ortaya ciktiginda, yarim kalmis bekleme bir sonraki temizlenmede aninda
+    // dolmus sayilirdi ve gecikme hic yasanmazdi.
+    this.waveClearedAt = 0;
 
     if (this.waveSpawned >= this.waveTarget) {
       return;
