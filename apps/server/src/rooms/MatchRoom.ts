@@ -136,6 +136,7 @@ import {
   getMarkDamageMultiplier,
   resolveModifierBreakdown,
   FINAL_WAVE,
+  PLAYER_TOWER_LIMIT,
   ENEMY_REWARD_MULTIPLIER,
   getWaveCompletionGold,
   getWaveEnemyCount,
@@ -237,8 +238,6 @@ const TEAM_START_GOLD = 480;
 const MELIS_START_GOLD = 400;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
-const DEFAULT_PLAYER_TOWER_LIMIT = 10;
-const ZEYNEP_TOWER_LIMIT = 12;
 const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
@@ -4875,14 +4874,22 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Oyuncunun kule kontenjani. Hem kuralin kendisi hem de istemciye giden
+   * anlik goruntu buradan okuyor; iki yerde ayri hesaplanirsa onizleme ile
+   * sunucu kurali ayrisir.
+   */
+  private getPlayerTowerLimit(player: Player) {
+    return PLAYER_TOWER_LIMIT + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
+  }
+
   private placeTower(client: Client, message: PlaceTowerMessage) {
     const player = this.state.players.get(client.sessionId);
     if (!player || typeof message.x !== "number" || typeof message.y !== "number" || !message.definitionId) {
       return;
     }
 
-    const towerLimit = (player.characterId === "zeynep" ? ZEYNEP_TOWER_LIMIT : DEFAULT_PLAYER_TOWER_LIMIT)
-      + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
+    const towerLimit = this.getPlayerTowerLimit(player);
     const requested = this.findTowerDefinition(player.characterId, message.definitionId);
     // Duvar kontenjandan yer kapmaz; sinir yalnizca savas kuleleri icin.
     if (requested && occupiesTowerSlot(requested)) {
@@ -7462,6 +7469,7 @@ export class MatchRoom extends Room<MatchState> {
         shopOffers: player.shopOffers,
         shopRerollPrice: getShopRerollPrice(player.shopRerolls),
         towersBuilt: player.towersBuilt,
+        towerLimit: this.getPlayerTowerLimit(player),
         ultimateCharge: Math.round(player.ultimateCharge),
         skillCooldowns: [
           Math.ceil(player.skill1CooldownMs / 1000),

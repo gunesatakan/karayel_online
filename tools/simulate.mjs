@@ -32,11 +32,12 @@ import {
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
-  towerCatalog
+  towerCatalog,
+  PLAYER_TOWER_LIMIT
 } from "../packages/shared/dist/index.js";
 
 const START_GOLD = 360;
-const BASE_TOWER_CAPACITY = 10;
+const BASE_TOWER_CAPACITY = PLAYER_TOWER_LIMIT;
 const enemyTypes = ["grunt", "grunt", "runner", "shooter", "brute"];
 
 /**

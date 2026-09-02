@@ -1,5 +1,18 @@
 export const FINAL_WAVE = 20;
 export const BASE_WAVE_ENEMY_COUNT = 10;
+
+/**
+ * Bir oyuncunun ayni anda ayakta tutabilecegi savas kulesi sayisi.
+ *
+ * Duvarlar buraya sayilmaz (`occupiesTowerSlot`); kontenjan hangi on bes kuleyi
+ * kuracagina dair karar icin var, zemin araclarini kisitlamak icin degil.
+ *
+ * Deger burada duruyor cunku iki yer birden okuyor: sunucu sinirlamayi
+ * uyguluyor, `tools/simulate.mjs` ise bot ayni kontenjanla oynamazsa olctugu
+ * zafer orani gercek oyunun orani olmuyor. Ikisi ayri sabit tasidigi surece
+ * denge olcumu sessizce yanlis dayanaga oturuyordu.
+ */
+export const PLAYER_TOWER_LIMIT = 15;
 /**
  * Dalga zorlugu artik kalinliktan kalabaliga kaydi.
  *
@@ -27,12 +40,24 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  *   gucunun gercek olcumu ortaya cikti.
  * - Duvarlar simulatore eklendi: bot artik duvar kurup onariyor ve kazandigi
  *   ates suresi olcume giriyor.
+ * - Kule kontenjani 10'dan (Zeynep 12) herkes icin 15'e cikti. Tek basina en
+ *   sert sicrama bu oldu: 1.87'de zafer orani %6'dan %27'ye firladi.
  *
  * Deger tek tek tahmin edilmez, `tools/simulate.mjs` ile %5-%10 zafer bandina
  * gore olculur. Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden
  * olculmesi gerekir.
+ *
+ * Egri bu civarda cok dik: 2.11 -> %9, 2.15 -> %5, 2.2 -> %4. Tek bir 100
+ * kosumluk olcum bu diklikte gurultulu kaldigi icin deger dort ayri ornekle
+ * secildi (100/seed1000, 300/seed1000, 200/seed7, 200/seed42):
+ *
+ *   2.12 -> %8.0 %10.3 %8.5 %10.0   (iki ornek bandin ustunde)
+ *   2.13 -> %8.0  %9.7 %8.0  %9.5   (hepsi bantta)
+ *   2.14 -> %6.0  %9.0 %7.5  %9.0   (hepsi bantta)
+ *
+ * 2.13 seciliyor: testin olctugu yapilandirmayi bandin ortasina koyuyor.
  */
-export const PLAYER_POWER_COMPENSATION = 1.87;
+export const PLAYER_POWER_COMPENSATION = 2.13;
 export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION;
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
 export const ENEMY_REWARD_MULTIPLIER = 1.5;
@@ -65,7 +90,16 @@ export function getArenaWaveEnemyCount(wave: number, mapScale: number, playerCou
  * 3. dalgayi zaten bandin disina tasiyor -- bu yuzden rampa ussel bir hizlanma
  * tasiyor.
  */
-export const EARLY_WAVE_HP_RATIO = 0.43;
+/*
+ * Deger telafi carpaniyla birlikte hareket etmek zorunda. Erken dalga cani
+ * `EARLY_WAVE_HP_RATIO * ENEMY_HP_BALANCE_MULTIPLIER` carpimindan cikiyor;
+ * kontenjan 15'e cikip telafi 1.87'den 2.13'e alininca bu carpim %14 buyudu ve
+ * zirhli dusman ilk dalgalarda iki yerine uc vurus istemeye basladi. Oran ayni
+ * anda 1.87/2.13 ile kisildi, boylece ilk dalgalarin mutlak cani yerinde kaldi;
+ * 10. dalgadaki yakinsama noktasi degismedigi icin gec oyunun zorlugu -- yani
+ * zafer oraninin olculdugu yer -- etkilenmiyor.
+ */
+export const EARLY_WAVE_HP_RATIO = 0.3775;
 export const EARLY_WAVE_RAMP_EXPONENT = 2.3;
 export const EARLY_WAVE_CONVERGENCE_WAVE = 10;
 

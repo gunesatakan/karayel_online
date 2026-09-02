@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  PLAYER_TOWER_LIMIT,
   STRUCTURE_BREACH_HEALTH_RATIO,
   WALL_TOWER_ID,
   getCharacterTowers,
@@ -300,9 +301,11 @@ test("kontenjan dolduğunda duvar hâlâ kurulabilir", () => {
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
 
-  // Kontenjani doldur.
+  // Kontenjani doldur. Sinir paylasilan sabitten okunuyor: elle yazilan bir
+  // sayi kontenjan degistiginde testi sessizce anlamsizlastiriyordu -- yeterince
+  // kule kurulmadigi icin "dolu" varsayimi tutmuyor ve test yanlis seyi olcuyor.
   let built = 0;
-  for (let attempt = 0; attempt < 40 && built < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 80 && built < PLAYER_TOWER_LIMIT; attempt += 1) {
     const spot = findBuildableSpot(room, "warrior-1");
     if (!spot) break;
     const before = room.towers.size;

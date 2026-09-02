@@ -30,6 +30,7 @@ import {
   getTowerGridSpan,
   getTowerTier,
   getTowerBuildCost,
+  PLAYER_TOWER_LIMIT,
   getTowerSellRefund,
   getTowerLevelExpCost,
   getTowerLevelGoldCost,
@@ -1232,7 +1233,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
-    const towerLimit = this.localPlayerSnapshot?.characterId === "zeynep" ? 12 : 10;
+    // Sinir sunucudan geliyor. Burada elle yazilan bir sayi duruyordu ve
+    // sunucununkiyle ayni kalmak zorundaydi; sunucu 15'e cikinca istemci hala
+    // 10'da onizlemeyi reddederdi. Sunucunun gonderdigi deger kapasite kartini
+    // da iceriyor -- elle yazilan sayi icermiyordu, yani "Ek Yuva Planı" alan
+    // oyuncu kazandigi yuvayi kullanamiyordu.
+    const towerLimit = this.localPlayerSnapshot?.towerLimit ?? PLAYER_TOWER_LIMIT;
     // Duvar kontenjandan yer kapmadigi icin sinir dolu olsa da kurulabilir.
     if (!ignoreTowerId && occupiesTowerSlot({ id: definitionId }) && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
       return false;

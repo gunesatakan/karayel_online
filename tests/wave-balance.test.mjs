@@ -5,6 +5,7 @@ import {
   ENEMY_HP_WAVE_MULTIPLIER,
   ENEMY_HP_BALANCE_MULTIPLIER,
   PLAYER_POWER_COMPENSATION,
+  PLAYER_TOWER_LIMIT,
   ENEMY_REWARD_MULTIPLIER,
   FINAL_WAVE,
   getEnemyCombatDefinition,
@@ -29,14 +30,26 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
   assert.equal(ENEMY_HP_WAVE_MULTIPLIER, 1.17);
   // Taban egri degismedi; uzerine oyuncu tarafindaki guc degisimlerini karsilayan
   // telafi carpani bindi. Ikisi ayri tutuluyor ki hangi sayinin neden degistigi
-  // sonradan okunabilsin.
-  assert.equal(PLAYER_POWER_COMPENSATION, 1.87);
+  // sonradan okunabilsin. 1.87 -> 2.13: kule kontenjani herkes icin 15 oldu ve
+  // bot zafer orani %6'dan %27'ye firlamisti.
+  assert.equal(PLAYER_POWER_COMPENSATION, 2.13);
   assert.ok(Math.abs(ENEMY_HP_BALANCE_MULTIPLIER - 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION) < 1e-12);
   assert.equal(getWaveEnemyCount(20), 142);
 
   const gruntHp = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, 20);
-  assert.equal(gruntHp, 2492);
-  assert.equal(gruntHp * getWaveEnemyCount(20), 353_864);
+  assert.equal(gruntHp, 2838);
+  assert.equal(gruntHp * getWaveEnemyCount(20), 402_996);
+});
+
+/**
+ * Kontenjan tek bir yerde yaziyor.
+ *
+ * Sunucu sinirlamayi uyguluyor, simulator ise bot ayni kontenjanla oynamazsa
+ * olctugu zafer orani gercek oyunun orani olmuyor. Iki sabit ayri yasadigi
+ * surece denge olcumu sessizce yanlis dayanaga oturuyordu.
+ */
+test("kule kontenjani herkes icin ayni ve paylasilan sabitten geliyor", () => {
+  assert.equal(PLAYER_TOWER_LIMIT, 15);
 });
 
 /**

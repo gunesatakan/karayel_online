@@ -175,6 +175,15 @@ export type PlayerSnapshot = {
   shopOffers?: import("./shop/index.js").ShopItem[];
   shopRerollPrice?: number;
   towersBuilt: number;
+  /**
+   * Oyuncunun su anki kule kontenjani, kapasite kartlari dahil.
+   *
+   * Istemci bunu kendi hesaplamiyor: kapasiteyi buyuten kartlar oyuncunun
+   * `runModifiers` listesinde duruyor ve o liste tele hic cikmiyor. Istemci
+   * elle yazilmis bir sayi tasidiginda sunucu sinirla ayrisiyordu -- sunucu
+   * izin verirken onizleme yerlestirmeyi reddediyordu.
+   */
+  towerLimit: number;
   ultimateCharge: number;
   skillCooldowns: number[];
   reputation?: number;
@@ -697,7 +706,8 @@ export {
   getArenaWaveEnemyCount,
   getWaveHpMultiplier,
   getWaveEnemyMaxHp,
-  getWaveCompletionGold
+  getWaveCompletionGold,
+  PLAYER_TOWER_LIMIT
 } from "./balance/index.js";
 export {
   GAME_SPEED_MULTIPLIER,
