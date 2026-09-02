@@ -1,6 +1,7 @@
 import type { EditableMapData, MapScale } from "./map.js";
 import { getMapWorldBounds } from "./map.js";
 import type { EnemyRace, HitType, MovementKind } from "./combat.js";
+import type { TowerTier } from "./tower-stats/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -350,10 +351,16 @@ export type ProjectileSnapshot = {
   y: number;
   vx?: number;
   vy?: number;
+  /**
+   * Atisi yapan kulenin gorsel kademesi. Kademe 1'de yazilmaz: snapshot zaten
+   * karenin en pahali parcasi ve mermilerin cogunlugu kademe 1. Okuyan taraf
+   * eksik alani 1 sayar.
+   */
+  tier?: TowerTier;
 };
 
 export type ProjectileSpawnSnapshot = ProjectileSnapshot & { spawnedAt: number };
-export type ProjectileHitSnapshot = { id: string; x: number; y: number };
+export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: TowerTier };
 
 export type DroneSnapshot = {
   id: string;
@@ -697,8 +704,11 @@ export {
   GLOBAL_TOWER_RANGE_MULTIPLIER,
   TOWER_RANGE_PER_LEVEL,
   TOWER_MIN_FIRE_INTERVAL_MS,
+  TOWER_TIER_2_LEVEL,
+  TOWER_TIER_3_LEVEL,
   ZEYNEP_SHOWCASE_BASE_LENGTH,
   ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL,
+  getTowerTier,
   getDebugLaserDamageMultiplier,
   getDebugLaserFireInterval,
   getKinFireInterval,
@@ -719,7 +729,7 @@ export {
   getZeynepShowcaseBeamLength,
   hasGlobalTowerRange
 } from "./tower-stats/index.js";
-export type { TowerDisplayStats } from "./tower-stats/index.js";
+export type { TowerDisplayStats, TowerTier } from "./tower-stats/index.js";
 export {
   SYMPATHY_BLEED_DURATION_MS,
   SYMPATHY_BLEED_MAX_HEALTH_RATIO_PER_SECOND,

@@ -33,6 +33,7 @@ import {
   getKinFireInterval,
   getObsessionDamageMultiplier,
   getTowerLevelIntervalMultiplier,
+  getTowerTier,
   getTrackerFireInterval,
   getUcubeGrowthDamageMultiplier,
   getZeynepHizaDamageCompensation,
@@ -1812,9 +1813,23 @@ export class MatchRoom extends Room<MatchState> {
       y: roundNetworkNumber(projectile.y),
       vx: roundNetworkNumber(projectile.vx),
       vy: roundNetworkNumber(projectile.vy),
+      tier: this.getProjectileTier(projectile),
       spawnedAt: Date.now()
     };
     this.broadcast("projectile:spawn", payload);
+  }
+
+  /**
+   * Merminin gorsel kademesi, atisi yapan kulenin seviyesinden.
+   *
+   * Kule satildiysa veya yikildiysa mermi havada kalabilir; o durumda kademe 1
+   * kabul edilir. Kademe 1 yazilmaz cunku tel uzerinde varsayilan odur.
+   */
+  private getProjectileTier(projectile: ProjectileModel) {
+    const tower = projectile.towerId ? this.towers.get(projectile.towerId) : undefined;
+    if (!tower) return undefined;
+    const tier = getTowerTier(tower.level);
+    return tier === 1 ? undefined : tier;
   }
 
   private removeProjectile(id: string, projectile: ProjectileModel) {
@@ -1823,7 +1838,8 @@ export class MatchRoom extends Room<MatchState> {
       this.broadcast("projectile:hit", {
         id,
         x: roundNetworkNumber(projectile.x),
-        y: roundNetworkNumber(projectile.y)
+        y: roundNetworkNumber(projectile.y),
+        tier: this.getProjectileTier(projectile)
       });
     }
   }
@@ -7537,7 +7553,8 @@ export class MatchRoom extends Room<MatchState> {
         x: roundNetworkNumber(projectile.x),
         y: roundNetworkNumber(projectile.y),
         vx: roundNetworkNumber(projectile.vx),
-        vy: roundNetworkNumber(projectile.vy)
+        vy: roundNetworkNumber(projectile.vy),
+        tier: this.getProjectileTier(projectile)
       })),
       drones: Array.from(this.drones.values()).map((drone) => ({
         id: drone.id,

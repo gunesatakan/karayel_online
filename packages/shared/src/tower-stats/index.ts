@@ -27,6 +27,32 @@ export const ZEYNEP_SHOWCASE_LENGTH_PER_LEVEL = 18;
 
 const clampLevel = (level: number) => Math.min(Math.max(Math.round(level), 1), 10);
 
+/**
+ * Gorsel kademe: on seviyenin uc esigi.
+ *
+ * Seviye on adimda buyuyor ama on ayri gorsel dil ne uretilebilir ne de 34
+ * pikselde ayirt edilebilir; iki komsu seviye arasindaki fark algi esiginin
+ * altinda kalir ve oyuncu "hep ayni sey" hisseder. Uc esik ise her birinin
+ * arasinda gercek bir siçrama birakir ve gecis anini kutlanacak bir olaya
+ * cevirir.
+ *
+ * Sinirlar Takipci'nin zaten uretilmis uc resmiyle ayni (1-4 / 5-9 / 10), yani
+ * bu bolme yeni bir kural degil, var olan boluntunun tek yerde adlandirilmasi.
+ * Sunucu mermiye hangi kademeyi yazacagini, istemci hangi dokuyu ve efekt
+ * buyuklugunu secegini buradan okur -- ikisi ayrilirsa seviye atlayan kule
+ * yanlis mermiyi atar.
+ */
+export type TowerTier = 1 | 2 | 3;
+
+export const TOWER_TIER_2_LEVEL = 5;
+export const TOWER_TIER_3_LEVEL = 10;
+
+export function getTowerTier(level: number): TowerTier {
+  const clamped = clampLevel(level);
+  if (clamped >= TOWER_TIER_3_LEVEL) return 3;
+  return clamped >= TOWER_TIER_2_LEVEL ? 2 : 1;
+}
+
 const levelRatio = (level: number) => (clampLevel(level) - 1) / 9;
 
 /**

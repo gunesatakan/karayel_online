@@ -28,6 +28,7 @@ import {
   getBallisticCollisionRadius,
   getLinearProjectilePosition,
   getTowerGridSpan,
+  getTowerTier,
   getTowerBuildCost,
   getTowerSellRefund,
   getTowerLevelExpCost,
@@ -58,6 +59,7 @@ import {
   type GameSnapshot,
   type ProjectileSnapshot,
   type ProjectileSpawnSnapshot,
+  type ProjectileHitSnapshot,
   type ServerPerfSnapshot,
   hasUnlockBit,
   getStructureRepairCost,
@@ -73,6 +75,7 @@ import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
+import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState } from "../game-control-ui";
 
 type GameSceneData = {
@@ -137,6 +140,12 @@ type RenderTower = {
   /** Level dial, drawn over the sprite. Replaces the old under-sprite halo. */
   halo: Phaser.GameObjects.Graphics;
   base: Phaser.GameObjects.Image;
+  /**
+   * Yukseltme nabzi. Ayri bir carpan olarak durur cunku `base`in olcegi her
+   * karede secim ve ayak izinden yeniden hesaplaniyor; dogrudan scaleX/scaleY
+   * tweenlemek bir sonraki karede silinirdi.
+   */
+  punch: { value: number };
   range: Phaser.GameObjects.Arc;
   deadZone: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
@@ -1492,6 +1501,149 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Atis ve isabet parlamalari icin halka havuzu.
+   *
+   * Uyari isaretcisi gibi olay basina `add.circle` + `destroy` yapilamaz: uyari
+   * dalgada birkac kez cikar, bunlar ise saniyede yuzlerce kez. Mobil tarayicida
+   * o kadar nesne dogurup oldurmek cop toplayiciyi tetikler ve tam kalabalik
+   * anda -- yani efektin en cok gerektigi anda -- kare atlatir.
+   *
+   * Havuz dolduysa efekt sessizce atlanir. Zaten ekranda otuz parlama varken
+   * otuz birincinin gorsel katkisi yok, ama maliyeti var.
+   */
+  private effectPool: Phaser.GameObjects.Arc[] = [];
+  private activeEffectCount = 0;
+  private static readonly MAX_CONCURRENT_EFFECTS = 28;
+
+  private spawnFlashRing(x: number, y: number, options: {
+    color: number;
+    startRadius: number;
+    endRadius: number;
+    durationMs: number;
+    thickness: number;
+    depth: number;
+    fill?: number;
+  }) {
+    if (this.activeEffectCount >= GameScene.MAX_CONCURRENT_EFFECTS) {
+      return;
+    }
+
+    const ring = this.effectPool.pop() ?? this.add.circle(0, 0, 1);
+    this.activeEffectCount += 1;
+
+    ring
+      .setPosition(x, y)
+      .setRadius(options.startRadius)
+      .setFillStyle(options.color, options.fill ?? 0)
+      .setStrokeStyle(options.thickness, options.color, 0.95)
+      .setDepth(options.depth)
+      .setAlpha(1)
+      .setActive(true)
+      .setVisible(true);
+
+    this.tweens.add({
+      targets: ring,
+      radius: options.endRadius,
+      alpha: 0,
+      duration: options.durationMs,
+      ease: "Cubic.easeOut",
+      onComplete: () => {
+        ring.setActive(false).setVisible(false);
+        this.activeEffectCount -= 1;
+        // Havuzu sinirli tut: bir kalabalik ani gecici olarak cok halka
+        // acabilir, hepsini sonsuza dek tutmanin anlami yok.
+        if (this.effectPool.length < GameScene.MAX_CONCURRENT_EFFECTS) {
+          this.effectPool.push(ring);
+        } else {
+          ring.destroy();
+        }
+      }
+    });
+  }
+
+  /**
+   * Gecikmeli efekt kuyrugu.
+   *
+   * Sunucu olaylari aninda gelir ama sahne interpolasyon gecikmesiyle cizilir.
+   * Parlamayi mesaj gelir gelmez oynatmak onu merminin bir adim onune atar:
+   * namlu, mermi daha ortada yokken patlar. Efekt de ayni gecikmeyi beklemeli.
+   */
+  private pendingEffects: Array<{ dueAt: number; play: () => void }> = [];
+
+  private queueDelayedEffect(play: () => void) {
+    // Kuyrugun kendisi de sinirli: bagalanti donarsa birikmis yuzlerce efekt
+    // cozuldugu anda hep birden patlamamali.
+    if (this.pendingEffects.length >= 96) {
+      return;
+    }
+    this.pendingEffects.push({ dueAt: performance.now() + this.playbackDelayMs, play });
+  }
+
+  private drainPendingEffects(now: number) {
+    if (this.pendingEffects.length === 0) {
+      return;
+    }
+    let index = 0;
+    while (index < this.pendingEffects.length && this.pendingEffects[index].dueAt <= now) {
+      this.pendingEffects[index].play();
+      index += 1;
+    }
+    if (index > 0) {
+      this.pendingEffects.splice(0, index);
+    }
+  }
+
+  /**
+   * Kademe rengi seviye kadraniyla ayni dili konusur: celikten altina, altindan
+   * beyaza. Boylece merminin rengi kulenin halkasindaki ipucunu tekrar eder.
+   */
+  private getTierColor(tier: number) {
+    if (tier >= 3) return 0xfff1f2;
+    return tier === 2 ? 0xfacc15 : 0x93c5fd;
+  }
+
+  /** Atis anindaki namlu parlamasi. Kademe yukseldikce genisler ve isinir. */
+  private playMuzzleFlash(x: number, y: number, tier: number, color: number) {
+    const scale = tier === 3 ? 1.8 : tier === 2 ? 1.35 : 1;
+    this.spawnFlashRing(x, y, {
+      color,
+      startRadius: 2 * scale,
+      endRadius: 9 * scale,
+      durationMs: 150 + tier * 20,
+      thickness: 1.5 + tier * 0.5,
+      depth: 11.5,
+      fill: 0.35
+    });
+  }
+
+  /**
+   * Isabet patlamasi. Kademe 3 ayrica ikinci bir dis halka atar -- carpma
+   * "daha buyuk" degil "daha agir" hissettirmeli.
+   */
+  private playImpactBurst(x: number, y: number, tier: number, color: number) {
+    const scale = tier === 3 ? 1.7 : tier === 2 ? 1.3 : 1;
+    this.spawnFlashRing(x, y, {
+      color,
+      startRadius: 3 * scale,
+      endRadius: 14 * scale,
+      durationMs: 200 + tier * 30,
+      thickness: 2 + tier * 0.4,
+      depth: 11.4,
+      fill: 0.22
+    });
+    if (tier >= 3) {
+      this.spawnFlashRing(x, y, {
+        color: 0xfff1f2,
+        startRadius: 6,
+        endRadius: 26,
+        durationMs: 300,
+        thickness: 1.5,
+        depth: 11.3
+      });
+    }
+  }
+
   private playAlertSound() {
     if (!this.alertSound) return;
     // Ust uste gelen uyarilarda sesi bastan baslat, yoksa ikincisi hic duyulmaz.
@@ -1967,6 +2119,9 @@ export class GameScene extends Phaser.Scene {
 
   private renderPlaybackFrame(now: number) {
     const frameStart = performance.now();
+    // Kare ciziminden once: efektler sahnenin gordugu ana yetismeli. Snapshot
+    // hazir olmasa bile calisir, yoksa bekleyen parlamalar orada takili kalir.
+    this.drainPendingEffects(now);
     const frame = this.getPlaybackFrame(now);
     if (!frame) {
       return;
@@ -2170,8 +2325,16 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
     room.onMessage("tower:remove", (message: { id: string }) => this.staticTowerSnapshots.delete(message.id));
-    room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => this.linearProjectileSnapshots.set(projectile.id, projectile));
-    room.onMessage("projectile:hit", (message: { id: string; x: number; y: number }) => this.finishLinearProjectile(message));
+    room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
+      this.linearProjectileSnapshots.set(projectile.id, projectile);
+      const tier = projectile.tier ?? 1;
+      this.queueDelayedEffect(() => this.playMuzzleFlash(projectile.x, projectile.y, tier, this.getTierColor(tier)));
+    });
+    room.onMessage("projectile:hit", (message: ProjectileHitSnapshot) => {
+      this.finishLinearProjectile(message);
+      const tier = message.tier ?? 1;
+      this.queueDelayedEffect(() => this.playImpactBurst(message.x, message.y, tier, this.getTierColor(tier)));
+    });
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
@@ -2798,6 +2961,8 @@ export class GameScene extends Phaser.Scene {
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
+        // Nabiz tween'i yikilan sprite'a yazmaya devam etmesin.
+        this.tweens.killTweensOf(tower.punch);
         tower.halo.destroy();
         tower.effect.destroy();
         tower.linkHighlight.destroy();
@@ -2807,6 +2972,9 @@ export class GameScene extends Phaser.Scene {
         tower.isolation.destroy();
         tower.healthBar.destroy();
         this.towers.delete(id);
+        // Seviye kaydi da gitmeli: ayni kimlik yeniden kullanilirsa eski seviye
+        // sahte bir yukseltme parlamasi uretirdi.
+        this.towerLevels.delete(id);
       }
     }
     if (this.selectedPlacedTowerId && !activeIds.has(this.selectedPlacedTowerId)) {
@@ -2840,7 +3008,7 @@ export class GameScene extends Phaser.Scene {
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        rendered = { effect, linkHighlight, halo, base, range, deadZone, isolation, healthBar, key: "" };
+        rendered = { effect, linkHighlight, halo, base, punch: { value: 1 }, range, deadZone, isolation, healthBar, key: "" };
         this.towers.set(tower.id, rendered);
       }
 
@@ -2851,6 +3019,8 @@ export class GameScene extends Phaser.Scene {
       // Takipçi artwork already fills its square frame. Applying the generic
       // painted-art overhang would make its circular base spill into neighbours.
       const spriteSize = tower.definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
+
+      this.playTowerLevelUpIfChanged(tower, discSize);
 
       const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
@@ -2876,7 +3046,11 @@ export class GameScene extends Phaser.Scene {
       // procedural glyphs ship at different sizes, but both reserve the same
       // disc-to-frame ratio, so this lands the disc on the tile either way.
       const textureScale = spriteSize / Math.max(1, rendered.base.frame.width);
-      rendered.base.setScale(selectionScale * textureScale * footprintScaleX, selectionScale * textureScale * footprintScaleY);
+      const punch = rendered.punch.value;
+      rendered.base.setScale(
+        selectionScale * textureScale * footprintScaleX * punch,
+        selectionScale * textureScale * footprintScaleY * punch
+      );
       const edgePlaced = this.isEdgePlacedDefinition(tower.definitionId);
       rendered.base.setVisible(!edgePlaced);
       rendered.base.setTint(this.getTowerTint(tower));
@@ -2955,6 +3129,72 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     rendered.base.setRotation(tower.facing);
+  }
+
+  /**
+   * Yukseltme anini gorunur kilar.
+   *
+   * Seviye atlamak simdiye kadar sessizdi: altin gidiyor, panelde bir sayi
+   * degisiyor, ekranda hicbir sey olmuyordu. Odul hissi harcamanin oldugu yerde
+   * verilmeli. Kademe atlandiginda -- 5 ve 10 -- daha buyugu oynanir, cunku o an
+   * kulenin mermisi ve carpmasi da degisiyor; anin bunu haber vermesi gerek.
+   */
+  private towerLevels = new Map<string, number>();
+
+  private playTowerLevelUpIfChanged(tower: TowerSnapshot, discSize: number) {
+    const previous = this.towerLevels.get(tower.id);
+    this.towerLevels.set(tower.id, tower.level);
+    // Ilk gorulus bir yukseltme degil: mac ortasinda katilan oyuncunun ekraninda
+    // butun kuleler birden parlamamali.
+    if (previous === undefined || tower.level <= previous) {
+      return;
+    }
+
+    const tier = getTowerTier(tower.level);
+    const crossedTier = getTowerTier(previous) !== tier;
+    const color = this.getTierColor(tier);
+
+    this.spawnFlashRing(tower.x, tower.y, {
+      color,
+      startRadius: discSize * 0.3,
+      endRadius: discSize * (crossedTier ? 1.5 : 0.95),
+      durationMs: crossedTier ? 620 : 380,
+      thickness: crossedTier ? 3 : 2,
+      depth: 13,
+      fill: crossedTier ? 0.2 : 0.1
+    });
+
+    if (crossedTier) {
+      // Ikinci, gecikmeli halka: tek halka "bir sey oldu" der, iki halka
+      // "onemli bir sey oldu" der.
+      this.spawnFlashRing(tower.x, tower.y, {
+        color: 0xffffff,
+        startRadius: discSize * 0.15,
+        endRadius: discSize * 1.05,
+        durationMs: 420,
+        thickness: 1.5,
+        depth: 13.1
+      });
+    }
+
+    const rendered = this.towers.get(tower.id);
+    if (rendered) {
+      // Kulenin kendisi de tepki versin: kisa bir nabiz, sonra normale doner.
+      // Tween carpanin uzerinde calisir, sprite'in olceginde degil -- olcek her
+      // karede yeniden hesaplandigi icin oraya yazilan bir deger silinirdi.
+      this.tweens.killTweensOf(rendered.punch);
+      rendered.punch.value = 1;
+      this.tweens.add({
+        targets: rendered.punch,
+        value: crossedTier ? 1.3 : 1.15,
+        duration: crossedTier ? 180 : 120,
+        ease: "Back.easeOut",
+        yoyo: true,
+        onComplete: () => {
+          rendered.punch.value = 1;
+        }
+      });
+    }
   }
 
   private getTowerTextureKey(definitionId: string, level: number) {
@@ -3478,6 +3718,24 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Merminin dokusu: once kulenin kendi cizimi, sonra kademe varyanti.
+   *
+   * Kademe varyanti yoksa taban dokuya duser -- yeni bir kule eklendiginde ya da
+   * doku uretimi atlandiginda mermi kaybolmaz, sadece kademesiz gorunur.
+   */
+  private getProjectileTextureKey(projectile: Pick<ProjectileSnapshot, "definitionId" | "kind" | "tier">) {
+    const base = projectile.definitionId && this.textures.exists(`projectile-${projectile.definitionId}`)
+      ? `projectile-${projectile.definitionId}`
+      : `projectile-${projectile.kind}`;
+    const tier = projectile.tier ?? 1;
+    if (tier <= 1) {
+      return base;
+    }
+    const tiered = `${base}--t${tier}`;
+    return this.textures.exists(tiered) ? tiered : base;
+  }
+
   private renderProjectiles(projectiles: ProjectileSnapshot[]) {
     const activeIds = new Set(projectiles.map((projectile) => projectile.id));
 
@@ -3493,9 +3751,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const projectile of projectiles) {
       let sprite = this.projectiles.get(projectile.id);
-      const texture = projectile.definitionId && this.textures.exists(`projectile-${projectile.definitionId}`)
-        ? `projectile-${projectile.definitionId}`
-        : `projectile-${projectile.kind}`;
+      const texture = this.getProjectileTextureKey(projectile);
 
       if (!sprite) {
         sprite = this.projectileGroup?.get(projectile.x, projectile.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
@@ -3513,8 +3769,11 @@ export class GameScene extends Phaser.Scene {
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
+      // Cerceve kademeyle buyudugu icin cap da ayni oranda buyumeli; yoksa
+      // `setDisplaySize` buyumeyi geri alir ve cekirdek kucuk gorunur.
+      const tierGrowth = getProjectileTierFrameGrowth(projectile.tier ?? 1);
       if (projectile.hitType === "projectile" || projectile.hitType === "impact") {
-        const diameter = getBallisticCollisionRadius(projectile.hitType) * 2;
+        const diameter = getBallisticCollisionRadius(projectile.hitType) * 2 * tierGrowth;
         sprite.setDisplaySize(diameter, diameter);
       } else {
         sprite.setScale(this.getTowerEffectScale());
