@@ -601,23 +601,32 @@ export function setupGameHudUi(game: Phaser.Game) {
   }));
 
   /**
-   * Ikincil serit: tasarsa yatay kayar, sarmaz.
+   * Ikincil serit.
    *
-   * Bu satirdaki hicbir sey bir kararin tam o anda beklemedigi bilgi -- XP,
-   * kaynak stoklari, karakter sayaclari. Tasma halinde birincil satirin uzerine
-   * binmesindense kaymasi dogru: hicbir sey kaybolmuyor, hicbir sey ortulmuyor.
+   * Bir donem bu serit tasinca yatay kayiyordu. Ortusmeyi cozuyordu ama daha
+   * kotusunu uretti: Zeynep'te icerik gorunen alanin iki kati oldugu icin
+   * itibar/zincir/kalite sagda tumden ekran disinda kaliyordu -- ki bunlar
+   * ultinin kademesini belirleyen sayaclar, yani oyunun ortasinda gorulmesi
+   * gereken seyler. Yatay kaydirma masaustunde zaten zahmetli, mobilde ise
+   * gizli bir hareket; oyuncunun kaydirmayi denemesi beklenemez.
+   *
+   * Bu yuzden serit artik sariyor ve icerik sikistirildi: mühimmat uc ayri
+   * rozet yerine tek rozette uc renkli sayi, enerji ise yazi yerine simge.
+   * Karakter sayaclari one alindi cunku genel kaynaklardan daha belirleyiciler.
    */
   let lastStripKey = "";
   const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"]) => {
     const chips: string[] = [
       `<span class="game-hud__chip"><i>KALAN</i><b>${stats.enemiesLeft}</b></span>`,
-      `<span class="game-hud__chip"><i>XP</i><b>${formatXp(stats.experience)}</b></span>`,
-      `<span class="game-hud__chip"><i>ENERJİ</i><b>${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}</b></span>`,
-      `<span class="game-hud__chip"><i>MERMİ</i><b>${Math.floor(stats.ammo.bullet)}</b></span>`,
-      `<span class="game-hud__chip"><i>AURA</i><b>${Math.floor(stats.ammo.auraCrystal)}</b></span>`,
-      `<span class="game-hud__chip"><i>GÜÇ</i><b>${Math.floor(stats.ammo.powerCrystal)}</b></span>`,
       ...stats.extras.map((extra) => `<span class="game-hud__chip"><i>${escapeHudText(extra.label)}</i><b>${escapeHudText(extra.value)}</b></span>`),
-      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
+      `<span class="game-hud__chip" title="Enerji"><i aria-hidden="true">⚡</i><b>${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}</b></span>`,
+      `<span class="game-hud__chip game-hud__chip--ammo" title="Mermi · Aura · Güç">`
+        + `<em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
+        + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
+        + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
+        + `</span>`,
+      `<span class="game-hud__chip"><i>XP</i><b>${formatXp(stats.experience)}</b></span>`,
+      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}" title="Gecikme"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
     ];
     const key = chips.join("");
     if (key === lastStripKey) return;
