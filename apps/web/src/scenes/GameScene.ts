@@ -523,6 +523,7 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
+    this.game.events.on("game:touch-probe", this.recordTouchProbe, this);
     this.input.on("pointerdown", this.handleMapPointerDown, this);
     this.input.on("pointermove", this.handleMapPointerMove, this);
     this.input.on("pointerup", this.handleMapPointer, this);
@@ -5973,6 +5974,15 @@ export class GameScene extends Phaser.Scene {
       extra
     ].filter(Boolean).join(" | ");
 
+    this.touchLog.unshift(line);
+    this.touchLog = this.touchLog.slice(0, 6);
+    if (this.hudState.perfOpen) {
+      this.emitHudState({ perfText: this.getPerfPopupText() });
+    }
+  }
+
+  /** Belge duzeyindeki sonda: dokunusun ustunde hangi eleman vardi. */
+  private recordTouchProbe(line: string) {
     this.touchLog.unshift(line);
     this.touchLog = this.touchLog.slice(0, 6);
     if (this.hudState.perfOpen) {

@@ -92,6 +92,34 @@ document.addEventListener("fullscreenchange", () => {
   window.setTimeout(refreshScaleBounds, 300);
 });
 
+/**
+ * Dokunusun hangi elemana dustugunu kaydeder.
+ *
+ * Sahnedeki kayit bos kaldi: olaylar Phaser'a hic ulasmiyor. Geriye iki
+ * ihtimal kaliyor -- tuvalin onunde bir HTML katmani duruyor, ya da olay
+ * tuvale ulasip Phaser icinde kayboluyor. Bu dinleyici yakalama evresinde ve
+ * document uzerinde oldugu icin her iki durumda da calisir; `elementFromPoint`
+ * o noktada en ustte duran elemani soyler, yani sorumluyu adiyla verir.
+ */
+function describeElement(element: Element | null) {
+  if (!element) {
+    return "yok";
+  }
+  const id = element.id ? `#${element.id}` : "";
+  const className = typeof element.className === "string" && element.className.trim()
+    ? `.${element.className.trim().split(/\s+/).slice(0, 2).join(".")}`
+    : "";
+  return `${element.tagName.toLowerCase()}${id}${className}`;
+}
+
+document.addEventListener("pointerdown", (event) => {
+  const top = document.elementFromPoint(event.clientX, event.clientY);
+  game.events.emit(
+    "game:touch-probe",
+    `HIT ${Math.round(event.clientX)},${Math.round(event.clientY)} ust ${describeElement(top)} hedef ${describeElement(event.target as Element)}`
+  );
+}, { capture: true, passive: true });
+
 let hasRequestedFullscreen = false;
 
 function requestGameFullscreen() {
