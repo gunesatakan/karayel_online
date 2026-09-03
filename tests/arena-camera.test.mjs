@@ -180,3 +180,46 @@ test("odaya baglanmak haritayi cerceve disina tasiramaz", () => {
     "genisleyen harita icin olcek kuculmemis"
   );
 });
+
+test("harita HTML kaplamalarin altinda kalmaz", () => {
+  // Ust cubuk ve kontrol paneli HTML: yukseklikleri iceriklerine ve cihaza gore
+  // degisiyor. iOS'ta tam ekran olmadigi icin tuval kisaliyor ve ayni cubuk
+  // tuvalin cok daha buyuk bir kismini ortuyor; serit sabit yazilirsa haritanin
+  // ustu cubugun altinda kaliyor -- bildirilen hata buydu.
+  const map = createOpenArenaMap(12, 18);
+  const bounds = getMapWorldBounds(map);
+
+  for (const chrome of [
+    { ad: "varsayilan", topRatio: 86 / 844, bottomRatio: 146 / 844 },
+    { ad: "uzun ust cubuk", topRatio: 0.19, bottomRatio: 0.21 },
+    { ad: "cok dar serit", topRatio: 0.3, bottomRatio: 0.3 }
+  ]) {
+    const view = getArenaCameraView(map, chrome);
+    const bandTop = view.top + view.height * chrome.topRatio;
+    const bandBottom = view.top + view.height * (1 - chrome.bottomRatio);
+
+    assert.ok(bounds.top >= bandTop - 0.001, `${chrome.ad}: haritanin ustu cubugun altinda kaliyor`);
+    assert.ok(bounds.bottom <= bandBottom + 0.001, `${chrome.ad}: haritanin alti panelin altinda kaliyor`);
+    assert.ok(view.left <= bounds.left + 0.001, `${chrome.ad}: sol kenar kirpiliyor`);
+    assert.ok(view.left + view.width >= bounds.right - 0.001, `${chrome.ad}: sag kenar kirpiliyor`);
+  }
+});
+
+test("kaplama buyudukce harita kucultulur, gizlenmez", () => {
+  const map = createOpenArenaMap(12, 18);
+  const genis = getArenaCameraView(map, { topRatio: 86 / 844, bottomRatio: 146 / 844 });
+  const dar = getArenaCameraView(map, { topRatio: 0.22, bottomRatio: 0.22 });
+
+  assert.ok(dar.fit < genis.fit, "serit daralinca harita kuculmuyor");
+  assert.ok(dar.fit > 0, "harita tumden kayboldu");
+});
+
+test("kaplama olculeri sacmaysa kamera yine de calisir", () => {
+  const map = createOpenArenaMap(12, 18);
+  const bounds = getMapWorldBounds(map);
+  for (const chrome of [{ topRatio: -1, bottomRatio: -1 }, { topRatio: 0.9, bottomRatio: 0.9 }]) {
+    const view = getArenaCameraView(map, chrome);
+    assert.ok(view.fit > 0 && Number.isFinite(view.fit), "fit gecersiz");
+    assert.ok(view.left <= bounds.left + 0.001, "sol kenar kirpiliyor");
+  }
+});

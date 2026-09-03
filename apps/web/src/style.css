@@ -3,7 +3,17 @@ body,
 #game,
 #menu-root {
   width: 100%;
-  height: 100dvh;
+  /*
+   * Yukseklik JS'ten gelen olculmus deger; 100dvh yalnizca yedek.
+   *
+   * iOS Safari tam ekrani desteklemiyor ve arac cubuklari gorunur alani
+   * kirpiyor. dvh bunu her zaman ve zamaninda yansitmadigi icin tuval gorunen
+   * alandan uzun olabiliyor; autoCenter onu ortaladigi icin de tasma ust ve alt
+   * arasinda paylasiliyor -- haritanin ustu ekranin disinda kaliyor. Ustelik
+   * Phaser dokunus koordinatlarini bu olcuden turettigi icin dokunuslar da
+   * kayiyor ve hicbir sey secilemiyor.
+   */
+  height: var(--app-height, 100dvh);
   margin: 0;
   overflow: hidden;
   background: #05060a;

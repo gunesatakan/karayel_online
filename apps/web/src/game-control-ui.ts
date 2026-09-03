@@ -88,6 +88,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
     root.style.height = `${rect.height}px`;
+    reportChrome(game, rect.height);
   };
 
   const clearActiveTowerDrag = () => {
@@ -508,6 +509,30 @@ export const EMPTY_HUD_STATS: HudStats = {
   extras: []
 };
 
+/**
+ * HTML kaplamalarin tuvalin ne kadarini ortugunu sahneye bildirir.
+ *
+ * Kamera haritayi bu iki serit arasina sigdiriyor. Yukseklikler sabit degil:
+ * stat seridi sarilinca ust cubuk uzuyor, iOS'ta tam ekran olmadigi icin tuval
+ * kisaliyor ve ayni HTML tuvalin daha buyuk bir kismini ortuyor. Olculmedigi
+ * surece harita cubugun altinda kaliyor.
+ */
+function reportChrome(game: Phaser.Game, canvasHeight: number) {
+  if (canvasHeight <= 0) {
+    return;
+  }
+
+  const hud = document.getElementById("game-hud-root");
+  const panel = document.querySelector<HTMLElement>(".game-controls__panel");
+  const hudHeight = hud && !hud.classList.contains("game-hud--hidden") ? hud.getBoundingClientRect().height : 0;
+  const panelHeight = panel ? panel.getBoundingClientRect().height : 0;
+
+  game.events.emit("game:chrome", {
+    topRatio: hudHeight / canvasHeight,
+    bottomRatio: panelHeight / canvasHeight
+  });
+}
+
 export type HudState = {
   status: string;
   stats: HudStats;
@@ -540,6 +565,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     root.style.left = `${rect.left}px`;
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
+    reportChrome(game, rect.height);
   };
 
   /**

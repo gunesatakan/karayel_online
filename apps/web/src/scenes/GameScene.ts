@@ -19,6 +19,8 @@ import {
   getEdgeSegments,
   isEdgeSegmentInsideBoard,
   occupiesTowerSlot,
+  DEFAULT_ARENA_CHROME,
+  type ArenaChrome,
   getArenaCameraView,
   MELIS_EVOLUTION_STRESS_COSTS,
   getMelisSpectrumZone,
@@ -419,6 +421,8 @@ export class GameScene extends Phaser.Scene {
   private lastArenaTapX = 0;
   private lastArenaTapY = 0;
   private arenaZoomed = false;
+  /** HTML kaplamalarin tuvali ne kadar ortugu; kamera seridi bundan cikar. */
+  private arenaChrome: ArenaChrome = DEFAULT_ARENA_CHROME;
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
@@ -509,6 +513,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyGroup = this.physics.add.group({ defaultKey: "enemy-grunt" });
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
+    this.game.events.on("game:chrome", this.applyArenaChrome, this);
     this.input.on("pointerdown", this.handleMapPointerDown, this);
     this.input.on("pointermove", this.handleMapPointerMove, this);
     this.input.on("pointerup", this.handleMapPointer, this);
@@ -2671,12 +2676,31 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getArenaFitFactor() {
-    return getArenaCameraView(this.selectedMapData).fit;
+    return getArenaCameraView(this.selectedMapData, this.arenaChrome).fit;
+  }
+
+  /**
+   * Kaplama olculeri degisince kamerayi yeniden kurar.
+   *
+   * Ust cubuk sarilip uzayabiliyor ve iOS'ta tuval kisaldikca ayni HTML tuvalin
+   * daha buyuk bir kismini ortuyor; serit sabit kalirsa harita altta kaliyor.
+   */
+  private applyArenaChrome(chrome: ArenaChrome) {
+    if (!Number.isFinite(chrome?.topRatio) || !Number.isFinite(chrome?.bottomRatio)) {
+      return;
+    }
+    if (Math.abs(chrome.topRatio - this.arenaChrome.topRatio) < 0.002
+      && Math.abs(chrome.bottomRatio - this.arenaChrome.bottomRatio) < 0.002) {
+      return;
+    }
+
+    this.arenaChrome = { topRatio: chrome.topRatio, bottomRatio: chrome.bottomRatio };
+    this.configureArenaCamera();
   }
 
   private configureArenaCamera() {
     const camera = this.cameras.main;
-    const view = getArenaCameraView(this.selectedMapData);
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
     // Phaser scroll'u kamera sınırına sıkıştırır ve kesirli fit değerlerinde
     // ideal scroll birkaç alt piksel dışarı taşabilir. İstenen dikdörtgenin iki
     // yanına da simetrik pay bırakılırsa clamp bu payı tek tarafa yaslayamaz;
@@ -4185,6 +4209,29 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Seri afisinin oturacagi nokta.
+   *
+   * Iki sey yanlisti. Yatayda dunya merkezi (195) kullaniliyordu ama kameranin
+   * gosterdigi sey haritanin merkezi (12 sutunluk arenada 204): afis dokuz
+   * piksel solda duruyordu. Dikeyde ise harita seridinin tam ustune, yani HTML
+   * ust cubugun bulundugu yere iniyordu ve cubugun arkasinda kaliyordu.
+   */
+  private getKillStreakAnchor() {
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const bandTop = view.top + view.height * this.arenaChrome.topRatio;
+    const bandBottom = view.top + view.height * (1 - this.arenaChrome.bottomRatio);
+    const band = Math.max(1, bandBottom - bandTop);
+    return {
+      x: bounds.left + bounds.width / 2,
+      // Seridin ust dilimi: cubugun altinda, ama haritanin ustunde.
+      restY: bandTop + band * 0.17,
+      enterY: bandTop - band * 0.2,
+      exitY: bandTop + band * 0.05
+    };
+  }
+
   private showKillStreakAnnouncement(player: GameSnapshot["players"][number] | undefined, rule: KillStreakRule) {
     this.rampageContainer?.destroy(true);
 
@@ -4202,7 +4249,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "27px" : "31px";
-    const container = this.add.container(GAME_WORLD_WIDTH / 2, -78).setDepth(80).setAlpha(0);
+    const anchor = this.getKillStreakAnchor();
+    const container = this.add.container(anchor.x, anchor.enterY).setDepth(80).setAlpha(0);
     const plate = this.add.graphics();
     const width = rule.chaos >= 4 ? 214 : rule.chaos >= 2 ? 196 : 178;
     const height = rule.chaos >= 4 ? 38 : 32;
@@ -4282,7 +4330,7 @@ export class GameScene extends Phaser.Scene {
 
     this.tweens.add({
       targets: container,
-      y: 86,
+      y: anchor.restY,
       alpha: 1,
       duration: Math.max(150, 260 - rule.chaos * 22),
       ease: "Back.easeOut"
@@ -4318,7 +4366,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.tweens.add({
       targets: container,
-      y: 56,
+      y: anchor.exitY,
       alpha: 0,
       delay: 2100 + rule.chaos * 260,
       duration: 500,
@@ -4334,7 +4382,8 @@ export class GameScene extends Phaser.Scene {
 
   private showCommandKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
     const fontSize = message.length > 21 ? "25px" : message.length > 17 ? "29px" : "33px";
-    const container = this.add.container(GAME_WORLD_WIDTH / 2, -104).setDepth(84).setAlpha(0);
+    const anchor = this.getKillStreakAnchor();
+    const container = this.add.container(anchor.x, anchor.enterY).setDepth(84).setAlpha(0);
     const plate = this.add.graphics();
     const width = rule.chaos >= 4 ? 232 : 214;
     const height = rule.chaos >= 4 ? 48 : 42;
@@ -4550,7 +4599,7 @@ export class GameScene extends Phaser.Scene {
     this.rampageContainer = container;
     this.tweens.add({
       targets: container,
-      y: 104,
+      y: anchor.restY,
       alpha: 1,
       duration: Math.max(150, 250 - rule.chaos * 18),
       ease: "Back.easeOut"
@@ -4593,7 +4642,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.tweens.add({
       targets: container,
-      y: 70,
+      y: anchor.exitY,
       alpha: 0,
       delay: 2200 + rule.chaos * 280,
       duration: 500,
@@ -4609,7 +4658,8 @@ export class GameScene extends Phaser.Scene {
 
   private showMelisKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
     const imageKey = theme.imageKey === undefined ? "melis-creepy" : theme.imageKey;
-    const container = this.add.container(GAME_WORLD_WIDTH / 2, -88).setDepth(82).setAlpha(0);
+    const anchor = this.getKillStreakAnchor();
+    const container = this.add.container(anchor.x, anchor.enterY).setDepth(82).setAlpha(0);
     const chaos = rule.chaos;
     const plate = this.add.graphics();
     const width = 188 + chaos * 16;
@@ -4712,7 +4762,7 @@ export class GameScene extends Phaser.Scene {
 
     this.tweens.add({
       targets: container,
-      y: 86,
+      y: anchor.restY,
       alpha: 1,
       duration: Math.max(140, 250 - chaos * 22),
       ease: "Back.easeOut"
@@ -4752,7 +4802,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.tweens.add({
       targets: container,
-      y: 58,
+      y: anchor.exitY,
       alpha: 0,
       delay: 2200 + chaos * 300,
       duration: 520,

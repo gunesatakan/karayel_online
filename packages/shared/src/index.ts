@@ -128,9 +128,36 @@ export type ArenaCameraView = {
  * birakilirsa sigdirmadan artan pay tumuyle alta, harita ile kontrol panelinin
  * arasina bosluk olarak dusuyor -- uzun haritalarda ise harita cerceveyi asiyor.
  */
-export function getArenaCameraView(map: EditableMapData): ArenaCameraView {
+/**
+ * Haritanin oturacagi serit.
+ *
+ * Ust cubuk ve kontrol paneli HTML; yukseklikleri iceriklerine ve cihaza gore
+ * degisiyor -- stat seridi sarilinca ust cubuk uzuyor, iOS'ta tam ekran
+ * olmadigi icin tuval kisaliyor ve ayni HTML tuvalin daha buyuk bir kismini
+ * ortuyor. Serit sabit yazilirsa harita bu durumda cubugun altinda kaliyor.
+ * Olculen degerler verilmediginde tasarim varsayilanlarina dusulur.
+ */
+export type ArenaChrome = {
+  /** Ust cubugun tuval yuksekligine orani. */
+  topRatio: number;
+  /** Kontrol panelinin tuval yuksekligine orani. */
+  bottomRatio: number;
+};
+
+export const DEFAULT_ARENA_CHROME: ArenaChrome = {
+  topRatio: TOWER_BUILD_TOP / GAME_WORLD_HEIGHT,
+  bottomRatio: (GAME_WORLD_HEIGHT - TOWER_BUILD_BOTTOM) / GAME_WORLD_HEIGHT
+};
+
+export function getArenaCameraView(map: EditableMapData, chrome: ArenaChrome = DEFAULT_ARENA_CHROME): ArenaCameraView {
   const bounds = getMapWorldBounds(map);
-  const availableHeight = TOWER_BUILD_BOTTOM - TOWER_BUILD_TOP;
+  // Serit, tuvalin HTML kaplamalardan arta kalan kismi.
+  const topRatio = Math.min(0.45, Math.max(0, chrome.topRatio));
+  const bottomRatio = Math.min(0.45, Math.max(0, chrome.bottomRatio));
+  const bandTop = GAME_WORLD_HEIGHT * topRatio;
+  const bandBottom = GAME_WORLD_HEIGHT * (1 - bottomRatio);
+  const availableHeight = Math.max(1, bandBottom - bandTop);
+
   const fit = Math.min(1, GAME_WORLD_WIDTH / bounds.width, availableHeight / bounds.height);
   const width = GAME_WORLD_WIDTH / fit;
   const height = GAME_WORLD_HEIGHT / fit;
@@ -138,7 +165,7 @@ export function getArenaCameraView(map: EditableMapData): ArenaCameraView {
   const centerY = bounds.top + bounds.height / 2;
   // Haritanin merkezinin oturmasi gereken ekran noktalari.
   const screenCenterX = GAME_WORLD_WIDTH / 2;
-  const screenCenterY = (TOWER_BUILD_TOP + TOWER_BUILD_BOTTOM) / 2;
+  const screenCenterY = (bandTop + bandBottom) / 2;
   return {
     fit,
     left: centerX - screenCenterX / fit,

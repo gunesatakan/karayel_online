@@ -57,7 +57,17 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
  * haritanin baska bir yerine, hatta kamera goruntusunun tumden disina dusuyor ve
  * hicbir sey secilemiyor.
  */
-const refreshScaleBounds = () => game.scale.refresh();
+const refreshScaleBounds = () => {
+  // Gorunur alanin gercek yuksekligi: iOS'ta arac cubuklarinin altinda kalan
+  // kisim buna dahil degil.
+  const height = window.visualViewport?.height ?? window.innerHeight;
+  if (height > 0) {
+    document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
+  }
+  game.scale.refresh();
+};
+
+refreshScaleBounds();
 
 window.visualViewport?.addEventListener("resize", refreshScaleBounds);
 window.visualViewport?.addEventListener("scroll", refreshScaleBounds);
