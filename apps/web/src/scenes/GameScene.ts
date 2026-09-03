@@ -1833,7 +1833,7 @@ export class GameScene extends Phaser.Scene {
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
     // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
     // yanlis yere dusuyorsa koordinatlar bunu gosterir.
-    this.recordTouch("DOWN", pointer);
+    this.recordTouch("DOWN", pointer, `ulti ${this.pendingUltimateColumn ? "acik" : "kapali"}`);
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
       return;
     }
@@ -1860,7 +1860,11 @@ export class GameScene extends Phaser.Scene {
     this.recordTouch(
       "UP",
       pointer,
-      `savas ${this.isBattlePointer(pointer) ? "evet" : "HAYIR"} | kule ${this.findTowerAt(pointer.worldX, pointer.worldY)?.definitionId ?? "-"}`
+      [
+        `savas ${this.isBattlePointer(pointer) ? "evet" : "HAYIR"}`,
+        `kule ${this.findTowerAt(pointer.worldX, pointer.worldY)?.definitionId ?? "-"}`,
+        `ulti ${this.pendingUltimateColumn ? `acik>sutun ${this.getUltimateColumnAt(pointer.worldX) ?? "-"}` : "kapali"}`
+      ].join(" | ")
     );
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
@@ -5958,10 +5962,8 @@ export class GameScene extends Phaser.Scene {
 
   /** Bir isaretci olayini teshis kaydina yazar. */
   private recordTouch(label: string, pointer: Phaser.Input.Pointer, extra = "") {
-    if (!this.hudState.perfOpen) {
-      return;
-    }
-
+    // Kayit her zaman tutulur: panel ekrani kapladigi icin acikken haritaya
+    // dokunulamiyor, yani "once dokun, sonra ac" tek kullanilabilir sira.
     const rect = this.game.canvas.getBoundingClientRect();
     const line = [
       label,
@@ -5972,8 +5974,10 @@ export class GameScene extends Phaser.Scene {
     ].filter(Boolean).join(" | ");
 
     this.touchLog.unshift(line);
-    this.touchLog = this.touchLog.slice(0, 4);
-    this.emitHudState({ perfText: this.getPerfPopupText() });
+    this.touchLog = this.touchLog.slice(0, 6);
+    if (this.hudState.perfOpen) {
+      this.emitHudState({ perfText: this.getPerfPopupText() });
+    }
   }
 
   private getTouchDiagnosticLines() {

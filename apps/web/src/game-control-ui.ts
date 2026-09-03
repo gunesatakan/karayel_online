@@ -91,6 +91,16 @@ export function setupGameControlUi(game: Phaser.Game) {
     reportChrome(game, rect.height);
   };
 
+  let lastChromeMeasureAt = 0;
+  const scheduleChromeMeasure = () => {
+    const now = performance.now();
+    if (now - lastChromeMeasureAt < 400) {
+      return;
+    }
+    lastChromeMeasureAt = now;
+    queueMicrotask(syncCanvasBounds);
+  };
+
   const clearActiveTowerDrag = () => {
     activeTowerId = "";
     activePointerId = -1;
@@ -117,6 +127,11 @@ export function setupGameControlUi(game: Phaser.Game) {
   };
 
   const render = (state: ControlState) => {
+    // Yalnizca acilista bildirmek yetmiyordu: sahne o an daha dinlemeye
+    // baslamamis oluyor, telefonda da resize hic gelmedigi icin kamera
+    // varsayilan seritte cakili kaliyordu. Cizim sik oldugu icin olcum
+    // kisitlanir -- getBoundingClientRect yerlesimi zorluyor.
+    scheduleChromeMeasure();
     latestState = state;
     const key = JSON.stringify(state);
     if (key === latestKey) {
