@@ -432,6 +432,10 @@ export class GameScene extends Phaser.Scene {
    * acikken tutulur, kapaliyken hicbir maliyeti yoktur.
    */
   private touchLog: string[] = [];
+  /** Phaser'in isaretci olaylari sahneye hic ulasti mi. */
+  private phaserPointerSeen = false;
+  /** Yedek yol devrede mi; yalnizca Phaser hic olay tasimadiysa acilir. */
+  private pointerBridgeActive = false;
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
@@ -524,11 +528,14 @@ export class GameScene extends Phaser.Scene {
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
     this.game.events.on("game:touch-probe", this.recordTouchProbe, this);
+    this.installPointerBridge();
+    this.input.on("pointerdown", this.markPhaserPointerAlive, this);
     this.input.on("pointerdown", this.handleMapPointerDown, this);
     this.input.on("pointermove", this.handleMapPointerMove, this);
     this.input.on("pointerup", this.handleMapPointer, this);
     this.input.once("pointerdown", () => this.unlockGameAudio());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off("pointerdown", this.markPhaserPointerAlive, this);
       this.input.off("pointerdown", this.handleMapPointerDown, this);
       this.input.off("pointermove", this.handleMapPointerMove, this);
       this.input.off("pointerup", this.handleMapPointer, this);
@@ -5982,6 +5989,68 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Belge duzeyindeki sonda: dokunusun ustunde hangi eleman vardi. */
+  private markPhaserPointerAlive() {
+    this.phaserPointerSeen = true;
+  }
+
+  /**
+   * Tuval olaylarini sahneye tasiyan yedek yol.
+   *
+   * Olcum sunu gosterdi: `touchstart` tuvale ulasiyor, Phaser'in yoneticisi ve
+   * sahne eklentisi acik, ama sahne isaretci olayini hic gormuyor. Zincirin
+   * nerede koptugu Phaser'in icinde kaliyor; disaridan kapatilabilir oldugu icin
+   * de kapatiliyor. Yol yalnizca Phaser'dan tek bir olay bile gelmediyse
+   * devreye girer, yani calisan platformlarda hicbir sey degismez.
+   */
+  private installPointerBridge() {
+    const canvas = this.game.canvas;
+
+    // Ilk dokunus gecikmeli dogrulanir: Phaser olayi ayni karede degil, bir
+    // sonraki adimda tasiyor. Hemen kopru kurmak calisan platformlarda ilk
+    // dokunusun iki kez islenmesi demek olurdu.
+    canvas.addEventListener("pointerdown", (event) => {
+      if (this.phaserPointerSeen || this.pointerBridgeActive) {
+        if (this.pointerBridgeActive && !this.phaserPointerSeen) {
+          this.handleMapPointerDown(this.createBridgePointer(event));
+        }
+        return;
+      }
+
+      const pending = this.createBridgePointer(event);
+      window.setTimeout(() => {
+        if (this.phaserPointerSeen) {
+          return;
+        }
+        this.pointerBridgeActive = true;
+        this.handleMapPointerDown(pending);
+      }, 60);
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      if (!this.pointerBridgeActive || this.phaserPointerSeen) {
+        return;
+      }
+      this.handleMapPointerMove(this.createBridgePointer(event));
+    });
+
+    canvas.addEventListener("pointerup", (event) => {
+      if (!this.pointerBridgeActive || this.phaserPointerSeen) {
+        return;
+      }
+      this.handleMapPointer(this.createBridgePointer(event));
+    });
+  }
+
+  /** Phaser'in kendi donusumunun aynisi: tuval kutusu, olcek, sonra kamera. */
+  private createBridgePointer(event: PointerEvent) {
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const x = rect.width > 0 ? (event.clientX - rect.left) * (canvas.width / rect.width) : 0;
+    const y = rect.height > 0 ? (event.clientY - rect.top) * (canvas.height / rect.height) : 0;
+    const world = this.cameras.main.getWorldPoint(x, y);
+    return { x, y, worldX: world.x, worldY: world.y, id: event.pointerId } as unknown as Phaser.Input.Pointer;
+  }
+
   private recordTouchProbe(line: string) {
     this.touchLog.unshift(line);
     this.touchLog = this.touchLog.slice(0, 6);
@@ -6002,6 +6071,8 @@ export class GameScene extends Phaser.Scene {
       `Surukleme       ${this.draggedTowerDefinition?.id ?? "-"}`,
       `Giris           mgr ${this.game.input.enabled ? "acik" : "KAPALI"} sahne ${this.input.enabled ? "acik" : "KAPALI"} isaretci ${this.game.input.pointers?.length ?? 0}`,
       `Dokunus motoru  ${this.game.device.input.touch ? "touch var" : "TOUCH YOK"} / ${this.game.input.touch?.enabled ? "acik" : "KAPALI"} / capture ${this.game.input.touch?.capture ? "acik" : "kapali"}`,
+      `Phaser olayi    ${this.phaserPointerSeen ? "geldi" : "gelmedi"} | kopru ${this.pointerBridgeActive ? "devrede" : "kapali"}`,
+      `Aktif isaretci  down ${Math.round(this.input.activePointer?.downX ?? -1)},${Math.round(this.input.activePointer?.downY ?? -1)} olay ${this.input.activePointer?.event?.type ?? "-"}`,
       ...(this.touchLog.length > 0 ? this.touchLog : ["Dokunus kaydi yok - ekrana dokun"])
     ];
   }
