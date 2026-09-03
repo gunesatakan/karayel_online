@@ -124,47 +124,13 @@ export function getWaveCompletionGold(completedWave: number) {
 }
 
 /**
- * Duvar ve kule hucrelerinin yol maliyeti.
- *
- * Yapilar gecilmez engel degil, pahali hucrelerdir: bir yapidan gecmenin bedeli
- * onu kirmak icin gereken sureyle orantilidir. Boylece dusman surusu haritanin
- * en zayif noktasina akar ve oyuncu labirent ormek yerine **kasitli zayif kapi**
- * birakip dusmani kill box'a yonlendirir. Yolu tamamen kapatmak serbesttir ve
- * gecerli bir stratejidir, ama pahalidir.
- *
- *   maliyet = 1 + (kalanCan / kirmaHizi) * WALL_COST_COEFFICIENT
- *
- * Katsayi oyunun en hassas ayaridir: dusukse duvarlar anlamsiz kalir, yuksekse
- * dusmanlar haritanin yarisini dolasir. Bir birim maliyet bir bos hucreye esit,
- * yani katsayi "bu duvari kirmak yerine kac hucre dolasmaya deger" sorusunun
- * cevabini olcekler.
- *
- * 1.5 su olcuye gore secildi: 100 canli bir yapinin bedeli ~11.6, haritanin
- * genisligi ise 11 hucre. Yani saglam bir duvar hattinin acik kapisina gitmek
- * her zaman kirmaktan ucuzdur -- huni calisir. Duvar yariya indiginde bedel
- * ~6.3 olur ve alti hucreden yakindaki dusmanlar kirmayi secmeye baslar: hasar
- * alan duvar kendiliginden yeni gedige donusur.
- */
-export const WALL_COST_COEFFICIENT = 1.5;
-
-/**
  * Yapi kirmada referans hasar hizi (saniyede).
  *
- * Akis alani tum surus icin bir kez cozuldugu icin maliyet tek bir referans
- * saldirganla hesaplanmak zorunda; aksi halde alanin dusman tipi basina
- * kopyalanmasi gerekirdi. Dusman saldirisi dalgayla olceklenmedigi (her tip 12
- * hasar, 850ms arayla) icin sabit bir referans dogru sonucu verir.
- *
- * `wave-balance` testi bu sayinin sunucudaki gercek degerlerle ayni kalmasini
- * sabitler.
+ * Dusman saldirisi dalgayla olceklenmiyor (her tip 12 hasar, 850ms arayla),
+ * yani bir yapinin ne kadar dayandigi tek bir referans saldirganla dogru
+ * hesaplanabiliyor. Denge simulatoru duvarin kazandirdigi sureyi bununla olcer.
  */
 export const REFERENCE_STRUCTURE_BREAK_DPS = 12 / 0.85;
-
-/** Bir yapinin kalan canina gore yol maliyeti. */
-export function getStructureTravelCost(remainingHp: number) {
-  const breakSeconds = Math.max(0, remainingHp) / REFERENCE_STRUCTURE_BREAK_DPS;
-  return 1 + breakSeconds * WALL_COST_COEFFICIENT;
-}
 
 /**
  * Onarim, yeniden insadan ucuz olmali.

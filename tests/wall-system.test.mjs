@@ -15,7 +15,6 @@ import {
   getCharacterTowers,
   getStructureHealthMultiplier,
   getStructureRepairCost,
-  getStructureTravelCost,
   getTowerBuildCost,
   isSharedStructure,
   occupiesTowerSlot,
@@ -77,18 +76,16 @@ test("duvarın canı kule tabanından yüksek ve kalınlaştırmayla büyür", (
   assert.equal(getStructureHealthMultiplier(tower, 10), 1);
 });
 
-test("kurulan duvar normal kuleden daha çok can taşır ve yolu daha pahalı yapar", () => {
+test("kurulan duvar normal kuleden daha çok can taşır", () => {
   const { wall } = buildWall();
   const other = createRoom("warrior");
   const spot = findBuildableSpot(other, "warrior-1");
   other.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
   const tower = [...other.towers.values()][0];
 
+  // Duvarin tek isi hatta durmak: dusman onu kirana kadar gecen sure kuleden
+  // uzun olmali, yoksa duvar ormenin kuleyi one dizmekten farki kalmaz.
   assert.ok(wall.maxHp > tower.maxHp, "duvar kuleden dayaniksiz");
-  assert.ok(
-    getStructureTravelCost(wall.hp) > getStructureTravelCost(tower.hp),
-    "duvar gecisi kuleden daha pahali yapmiyor"
-  );
 });
 
 test("towerHealth kartları duvara da işler", () => {
@@ -190,7 +187,7 @@ test("akış ana kapısı değişince sunucu uyarı yayar", () => {
   room.broadcast = (type, payload) => { if (type === "flow:shift") events.push(payload); };
 
   // Acik haritada yogunlasma noktasi yok, dolayisiyla uyari da yok.
-  room.getFlowField();
+  room.announceFlowShift();
   assert.equal(events.length, 0, "acik haritada kayma uyarisi yayildi");
 
   // Hatti bastan sona muhurle: her yol en ucuz duvardan gecmek zorunda.
@@ -206,16 +203,16 @@ test("akış ana kapısı değişince sunucu uyarı yayar", () => {
 
   // Sol uctaki duvari ac: kutle oraya akar ve ilk huni olusur.
   walls[0].hp = 0;
-  room.markFlowFieldDirty();
-  room.getFlowField();
+  room.markNavigationDirty();
+  room.announceFlowShift();
   assert.ok(events.length >= 1, "ilk huni olusunca uyarilmadi");
   const firstGate = events.at(-1).to;
 
   // Simdi sag uctaki duvari da ac ve solu kapat: kapi karsi uca kaymali.
   walls[0].hp = walls[0].maxHp;
   walls.at(-1).hp = 0;
-  room.markFlowFieldDirty();
-  room.getFlowField();
+  room.markNavigationDirty();
+  room.announceFlowShift();
 
   const lastEvent = events.at(-1);
   assert.notDeepEqual(lastEvent.to, firstGate, "kapi karsi uca kaymadi");
@@ -250,38 +247,38 @@ test("istemciden gelen yön duvarda yok sayılır", () => {
   assert.equal([...room.towers.values()].at(-1)?.orientation, "vertical");
 });
 
-test("kenardaki duvar hücreyi değil geçişi pahalılaştırır", () => {
+test("kenardaki duvar hücreyi değil geçişi kapatır", () => {
   const { room, wall } = buildWall("warrior", "vertical");
   // Duvarin gercekte oturdugu kenari kendi segmentinden oku: konumu varsaymak
   // testi haritanin sekline baglar.
   const [segment] = room.getAbartiEdgeSegments(wall.x, wall.y, wall.orientation, 1);
   assert.ok(segment);
+  const sag = { col: segment.col, row: segment.row };
+  const sol = { col: segment.col - 1, row: segment.row };
 
   // Iki yandaki hucreler bos kalmali: duvar kare kaplamaz.
-  assert.equal(room.getCellTravelCost(segment.col, segment.row), 1, "duvar hucreyi isgal etmis");
-  assert.equal(room.getCellTravelCost(segment.col - 1, segment.row), 1, "duvar komsu hucreyi isgal etmis");
+  assert.equal(room.getTowerCellIndex().get(`${sag.col}:${sag.row}`), undefined, "duvar hucreyi isgal etmis");
+  assert.equal(room.getTowerCellIndex().get(`${sol.col}:${sol.row}`), undefined, "duvar komsu hucreyi isgal etmis");
 
-  // Ama o iki hucre arasindaki gecis pahali olmali.
-  const crossing = room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row);
-  assert.ok(crossing > 0, "kenar gecisi bedelsiz");
-  assert.equal(crossing, getStructureTravelCost(wall.hp) - 1);
+  // Ama o iki hucre arasindaki gecis kapali olmali.
+  assert.equal(room.getBlockingTowerBetween(sol, sag)?.id, wall.id, "kenar gecisi acik kalmis");
+  assert.equal(room.isCellWalkable(sol, sag.col, sag.row), false, "dusman duvarin icinden geciyor");
 
-  // Duvarla ilgisi olmayan bir gecis bedelsiz kalmali.
-  assert.equal(room.getEdgeTravelCost(segment.col, segment.row, segment.col, segment.row + 1), 0);
+  // Duvarla ilgisi olmayan bir gecis serbest kalmali.
+  assert.equal(room.getBlockingTowerBetween(sag, { col: sag.col, row: sag.row + 1 }), undefined);
 });
 
 test("yıkılan kenar duvarı geçişi serbest bırakır", () => {
   const { room, wall } = buildWall("warrior", "vertical");
   const [segment] = room.getAbartiEdgeSegments(wall.x, wall.y, wall.orientation, 1);
+  const sag = { col: segment.col, row: segment.row };
+  const sol = { col: segment.col - 1, row: segment.row };
 
-  assert.ok(room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row) > 0);
+  assert.ok(room.getBlockingTowerBetween(sol, sag), "duvar gecisi kapatmiyor");
   wall.hp = 0;
-  room.markFlowFieldDirty();
-  assert.equal(
-    room.getEdgeTravelCost(segment.col - 1, segment.row, segment.col, segment.row),
-    0,
-    "yikilan duvar hala gecisi kapatiyor"
-  );
+  room.markNavigationDirty();
+  assert.equal(room.getBlockingTowerBetween(sol, sag), undefined, "yikilan duvar hala gecisi kapatiyor");
+  assert.equal(room.isCellWalkable(sol, sag.col, sag.row), true, "yikilan duvarin gecisi hala kapali");
 });
 
 /**

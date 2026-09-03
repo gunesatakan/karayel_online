@@ -797,9 +797,7 @@ export {
   EARLY_WAVE_CONVERGENCE_WAVE,
   PLAYER_POWER_COMPENSATION,
   ENEMY_REWARD_MULTIPLIER,
-  WALL_COST_COEFFICIENT,
   REFERENCE_STRUCTURE_BREAK_DPS,
-  getStructureTravelCost,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
@@ -867,14 +865,6 @@ export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export { getEdgeSegments, getEdgeSegmentsCenter, isEdgeSegmentInsideBoard, getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
-export {
-  computeFlowField,
-  getFlowCost,
-  getFlowFieldIndex,
-  getFlowNext,
-  isInsideFlowField
-} from "./flow-field/index.js";
-export type { FlowField, FlowFieldCell } from "./flow-field/index.js";
 export type { EdgeOrientation, EdgeSegment, PlacementBoard, PlacementCell, PlacementFailureReason, PlacementValidation } from "./placement/index.js";
 export {
   MAP_GRID_COLS,
@@ -1006,3 +996,12 @@ export function getTowerTotalInvestedGold(towerCost: number, currentLevel: numbe
 export function getTowerSellRefund(towerCost: number, currentLevel: number, towerId?: string) {
   return Math.floor(getTowerTotalInvestedGold(towerCost, currentLevel, towerId) / 2);
 }
+
+export {
+  BLIND_DIRECTIONS,
+
+  BLIND_PREFERRED_HEADING,
+  createBlindNavigatorState,
+  stepBlindNavigator
+} from "./navigation/index.js";
+export type { BlindHand, BlindHeading, BlindNavigatorState, BlindStepResult } from "./navigation/index.js";

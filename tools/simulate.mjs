@@ -24,7 +24,6 @@ import {
   getWaveCompletionGold,
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
-  getStructureTravelCost,
   REFERENCE_STRUCTURE_BREAK_DPS,
   getStructureRepairCost,
   getStructureHealthMultiplier,
@@ -45,8 +44,8 @@ const enemyTypes = ["grunt", "grunt", "runner", "shooter", "brute"];
  *
  * Simulatorde harita yok, dolayisiyla duvari yerlestirmek de yok. Modellenen sey
  * duvarin ne yaptigi: dusmani oyalayip kulelere fazladan ates saniyesi
- * kazandirmak. Bu kabaca ama dogru yonde bir olcum verir -- `WALL_COST_COEFFICIENT`
- * ve duvar fiyati degistiginde zafer bandi gercekten kimildar.
+ * kazandirmak. Bu kabaca ama dogru yonde bir olcum verir -- duvar cani ve
+ * fiyati degistiginde zafer bandi gercekten kimildar.
  *
  * Modellenmeyenler acikca soylenmeli: duvarin nereye kuruldugu, huninin sekli,
  * kill box yerlesimi ve ucan dusmanlarin duvari tumden atlamasi. Yani bu model
@@ -74,19 +73,21 @@ function getWallAttackersPerWall(enemyCount, wallCount) {
 /**
  * Duvar hattinin dalgaya kazandirdigi ek ates suresi.
  *
- * Uc ayri sey karistirilmamali:
+ * Dusman haritayi bilmiyor: cikisa dogru yuruyor, duvara toslayinca yanindan
+ * dolasip gedik ariyor. Yani duvarin kazandirdigi sure **her zaman** once
+ * yanal yuruyustur; kirmak ancak dolasmak tukendiginde gelir.
  *
- * 1. `getStructureTravelCost` bir **tercih agirligidir**, sure degil.
- *    `WALL_COST_COEFFICIENT` dusmanin kirmak yerine dolasmayi ne kadar sectigini
- *    belirler ve kasten sisirilmistir; dogrudan saniyeye cevirmek duvari
- *    oldugundan kat kat guclu gosterir.
- *
- * 2. **Yarim hat oyalamaz.** Gedik varsa dusman oradan gecer; kazanilan sure
+ * 1. **Yarim hat oyalamaz.** Gedik varsa dusman oradan gecer; kazanilan sure
  *    yalnizca gedige yanal yuruyus kadardir. Duvar sayisiyla dogru orantili bir
  *    fayda varsaymak, uc duvarlik bir kutugu tam hat sanmak demektir.
  *
- * 3. **Hat tamsa** dolasmak diye bir sey kalmaz; sure duvarin kirilmasi kadardir
- *    ve duvara ayni anda birden fazla dusman yuklenir.
+ * 2. **Hat tamsa** dolasacak yer yok. Ilk dusman hatti tarar, cikis olmadigini
+ *    anlar ve kirmaya baslar; kapanan cikis tur boyunca hatirlandigi icin
+ *    arkadan gelenler ayni turu bastan atmaz, dogrudan kirarlar. Yani tarama
+ *    bedeli dalgaya **bir kez** girer, kirma bedeli her dusmana.
+ *
+ *    Bunu atlamak duvari oldugundan cok guclu gosterir: her dusmanin ayri ayri
+ *    tur attigini varsaymak, tam hatti oyunun en guclu araci haline getirir.
  *
  * Ustune ucan dusmanlar duvari tumden atlar, yani katki dalganin kara payiyla
  * olceklenir. 5. ve 10. dalgada bu sifirdir.
@@ -96,16 +97,18 @@ function getWallDelaySeconds(wallCount, wallHp, groundRatio, enemyCount) {
   const secondsPerCell = MAP_CELL_SIZE / REFERENCE_ENEMY_SPEED;
   const completeness = Math.min(1, wallCount / MAP_WIDTH_CELLS);
 
-  if (completeness >= 1) {
-    const attackers = getWallAttackersPerWall(enemyCount, wallCount);
-    const breakSeconds = wallHp / (REFERENCE_STRUCTURE_BREAK_DPS * attackers);
-    const detourSeconds = Math.min(MAP_WIDTH_CELLS, Math.max(0, getStructureTravelCost(wallHp) - 1)) * secondsPerCell;
-    return groundRatio * Math.min(detourSeconds, breakSeconds);
+  // Gedige (ya da hattin ucuna) ortalama yanal yuruyus: hat ne kadar genisse
+  // o kadar uzun.
+  const sidewaysSeconds = completeness * (MAP_WIDTH_CELLS / 2) * secondsPerCell;
+  if (completeness < 1) {
+    return groundRatio * sidewaysSeconds;
   }
 
-  // Gedige ortalama yanal yuruyus: hat ne kadar genisse gedik o kadar uzakta.
-  const sidewaysCells = completeness * MAP_WIDTH_CELLS / 2;
-  return groundRatio * sidewaysCells * secondsPerCell;
+  // Tarama sutun basina bir kez oduleniyor; dalgaya dusen pay bu.
+  const scoutShare = Math.min(1, MAP_WIDTH_CELLS / Math.max(1, enemyCount));
+  const attackers = getWallAttackersPerWall(enemyCount, wallCount);
+  const breakSeconds = wallHp / (REFERENCE_STRUCTURE_BREAK_DPS * attackers);
+  return groundRatio * (sidewaysSeconds * scoutShare + breakSeconds);
 }
 
 /** Dalgadaki kusatma dusmanlarinin duvara verdigi ek asinma. */

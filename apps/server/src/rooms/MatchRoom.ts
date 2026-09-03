@@ -54,11 +54,13 @@ import {
   selectTowerTarget,
   SpatialGrid,
   getPlacementFootprint,
-  computeFlowField,
+  createBlindNavigatorState,
+  stepBlindNavigator,
+  type BlindHand,
+  type BlindNavigatorState,
   getEdgeSegments,
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
-  getStructureTravelCost,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
@@ -68,8 +70,6 @@ import {
   isWallDefinition,
   WALL_TOWER_ID,
   WALL_EDGE_LENGTH,
-  getFlowNext,
-  type FlowField,
   validateEdgePlacement,
   validateTowerPlacement,
   resetTowerStack,
@@ -580,6 +580,8 @@ type EnemyModel = {
    * Kilit yalnizca yapi yikilinca ya da dusman o hucreden ayrilinca duser.
    */
   structureTargetId?: string;
+  /** Kor gezinme hafizasi: tutulan el ve net donus sayaci. */
+  navigator?: BlindNavigatorState;
   pathDistance: number;
   slowUntil: number;
   auraSlowMultiplier: number;
@@ -1000,12 +1002,22 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Nexusa dogru tek akis alani.
    *
-   * Once her dusman icin her tick ayri BFS kosuyordu ve her BFS dugumunde
-   * `getTowerAtCell` butun kuleleri dogrusal tariyordu; maliyet dusman sayisiyla
-   * carpiliyordu. Alan yapi degisince bir kez cozulur.
+   * Yonlendirmenin kendisi artik dusmanin kafasinda (kor gezinme), ama uyari
+   * butun haritaya bakmak zorunda. Yapi degisince bir kez cozulur.
    */
-  private flowField?: FlowField;
-  private flowFieldDirty = true;
+  private mainGateDirty = true;
+  /**
+   * Turu kapanmis duvar girisleri; yapi degisince temizlenir.
+   *
+   * Bir hucreden duvari tutmaya baslayip ayni yere donen dusman, o hucreden
+   * asagi cikis olmadigini ogrenmis olur. Bu bilgi ortak: arkadan gelen ayni
+   * turu bastan atmaz, dogrudan kirmaya baslar.
+   *
+   * Hucreyi gecilmez isaretlemek olurdu **en yanlis** cozum: orasi acik zemin,
+   * kapali olan sey oradan baslayan yol. Kapatmak hayalet duvar yaratir ve
+   * dusmanlari hattan uzaklastirir.
+   */
+  private sealedCells = new Set<string>();
   /** Surunun en son hangi hucrede yogunlastigi; kayma uyarisi buna bakar. */
   private lastMainGate?: { col: number; row: number };
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
@@ -1016,16 +1028,19 @@ export class MatchRoom extends Room<MatchState> {
   private edgeStructureIndexDirty = true;
 
   /** Yapi eklendi, yikildi, satildi ya da harita degisti. */
-  private markFlowFieldDirty() {
-    this.flowFieldDirty = true;
+  private markNavigationDirty() {
+    this.mainGateDirty = true;
     this.towerCellIndexDirty = true;
     this.edgeStructureIndexDirty = true;
+    // Yapi degisti: kapali sanilan bir cikis acilmis olabilir. Hafizayi
+    // korumak, oyuncunun actigi gecidi dusmanlarin gormemesi demek olurdu.
+    this.sealedCells.clear();
   }
 
   /**
    * Hucre indeksi kendi kendini tazeler.
    *
-   * Once yalnizca `getFlowField` icinde kuruluyordu; indeksi baska bir yerden
+   * Once yalnizca akis alani icinde kuruluyordu; indeksi baska bir yerden
    * okuyan kod bayat veri goruyordu. Tazelenmeyi okuma noktasina baglamak bu
    * hata sinifini tumden kapatir.
    */
@@ -1044,22 +1059,6 @@ export class MatchRoom extends Room<MatchState> {
     }
     this.towerCellIndexDirty = false;
     return this.towerCellIndex;
-  }
-
-  /**
-   * Bir hucreye girmenin maliyeti.
-   *
-   * Yapilar gecilmez degil pahalidir: bedel onlari kirmak icin gereken sureyle
-   * orantili. Boylece surus haritanin en zayif noktasina akar ve oyuncu labirent
-   * ormek yerine kasitli bir zayif kapi birakabilir. Yolu tamamen kapatmak
-   * gecerli bir strateji olur, sadece pahali.
-   */
-  private getCellTravelCost(col: number, row: number) {
-    const tower = this.getTowerCellIndex().get(`${col}:${row}`);
-    if (!tower) return 1;
-    // Yikilmis yapi artik engel degil; alan onu bos hucre gibi gorur.
-    if (tower.hp <= 0) return 1;
-    return getStructureTravelCost(tower.hp);
   }
 
   /**
@@ -1097,29 +1096,6 @@ export class MatchRoom extends Room<MatchState> {
     return undefined;
   }
 
-  private getEdgeTravelCost(fromCol: number, fromRow: number, toCol: number, toRow: number) {
-    const structure = this.getEdgeStructure({ col: fromCol, row: fromRow }, { col: toCol, row: toRow });
-    return structure ? getStructureTravelCost(structure.hp) - 1 : 0;
-  }
-
-  private getFlowField() {
-    if (this.flowField && !this.flowFieldDirty) {
-      return this.flowField;
-    }
-
-    const exitRow = this.activeMap.rows - 1;
-    this.flowField = computeFlowField({
-      cols: this.activeMap.cols,
-      rows: this.activeMap.rows,
-      goals: Array.from({ length: this.activeMap.cols }, (_, col) => ({ col, row: exitRow })),
-      getCost: (col, row) => this.getCellTravelCost(col, row),
-      getEdgeCost: (fromCol, fromRow, toCol, toRow) => this.getEdgeTravelCost(fromCol, fromRow, toCol, toRow)
-    });
-    this.flowFieldDirty = false;
-    this.announceFlowShift(this.flowField);
-    return this.flowField;
-  }
-
   /**
    * Surunun ana kapisi degistiginde oyuncuyu uyarir.
    *
@@ -1128,12 +1104,12 @@ export class MatchRoom extends Room<MatchState> {
    * kill box'ini bosa kurmus olur. Uyari sunucudan gelir; istemcinin akis alanini
    * gormedigi icin bunu tahmin etmesi zaten mumkun degil.
    *
-   * Ana kapi, ust siradaki her hucreden akisi izleyip cikis satirina en cok
-   * hangi sutundan varildigina bakarak bulunur -- 11 yuruyus, her biri en fazla
-   * 18 adim.
+   * Ana kapi, ust siradaki her hucreden dusmanin kendi kuralini kosarak
+   * bulunur -- sutun basina iki yuruyus, her biri en fazla harita kadar adim.
    */
-  private announceFlowShift(field: FlowField) {
-    const gate = this.findMainGateCell(field);
+  private announceFlowShift() {
+    this.mainGateDirty = false;
+    const gate = this.findMainGateCell();
     const previous = this.lastMainGate;
     this.lastMainGate = gate;
 
@@ -1154,36 +1130,47 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Surunun yogunlastigi hucre.
    *
-   * Cikis satirini olcmek ise yaramaz: butun yollar orada zaten birlesir, yani
-   * hangi gedikten gecildigini soylemez. Onun yerine ust siradan baslayan
-   * yuruyusler boyunca hucre ziyaretleri sayilir; bir huninin gedigi butun
-   * yollarin ustunden gectigi icin dogal olarak one cikar.
+   * Kor gezinmede "en kisa yol" diye bir sey yok, ama huni yine olusur: bir
+   * duvarin tek gedigi, iki yandan gelen yuruyuslerin ortak noktasidir. Bunu
+   * bulmanin tek durust yolu dusmanin kendi kuralini kosmak -- her sutundan,
+   * iki elle de yurutup hangi hucrenin en cok cignendigine bakmak. Alani
+   * cozup "surunun oraya akmasi gerekirdi" demek artik yalan olurdu.
    *
    * Esitlikte satir-oncelikli dusuk indeks kazanir, boylece uyari belirlenimli.
    */
-  private findMainGateCell(field: FlowField) {
+  private findMainGateCell() {
     const visits = new Map<string, { col: number; row: number; count: number }>();
     const exitRow = this.activeMap.rows - 1;
     const limit = this.activeMap.cols * this.activeMap.rows;
+    const hands: BlindHand[] = ["left", "right"];
 
     for (let col = 0; col < this.activeMap.cols; col += 1) {
-      let cell: { col: number; row: number } | undefined = { col, row: 0 };
-      for (let step = 0; step < limit && cell; step += 1) {
-        if (cell.row === exitRow) break;
-        // Baslangic satiri her yuruyuste farkli, cikis satiri her yuruyuste ayni;
-        // ikisi de nerede sikistigini soylemez.
-        if (cell.row > 0) {
-          const key = `${cell.col}:${cell.row}`;
-          const entry = visits.get(key) ?? { col: cell.col, row: cell.row, count: 0 };
-          entry.count += 1;
-          visits.set(key, entry);
+      for (const hand of hands) {
+        let cell = { col, row: 0 };
+        let state = createBlindNavigatorState(hand);
+        for (let step = 0; step < limit; step += 1) {
+          if (cell.row === exitRow) break;
+          // Baslangic satiri her yuruyuste farkli, cikis satiri her yuruyuste ayni;
+          // ikisi de nerede sikistigini soylemez.
+          if (cell.row > 0) {
+            const key = `${cell.col}:${cell.row}`;
+            const entry = visits.get(key) ?? { col: cell.col, row: cell.row, count: 0 };
+            entry.count += 1;
+            visits.set(key, entry);
+          }
+
+          const result = stepBlindNavigator(cell, state, (c, r) => this.isCellWalkable(cell, c, r), () => hand);
+          state = result.state;
+          if (result.kind !== "move") break;
+          cell = { col: result.col, row: result.row };
         }
-        cell = getFlowNext(field, cell.col, cell.row);
       }
     }
 
     let best: { col: number; row: number } | undefined;
-    let bestCount = 1;
+    // Bos haritada her hucreyi yalnizca kendi sutununun iki yuruyusu ciger;
+    // esik bu yuzden el sayisi. Altinda kalan sey huni degil, duz inis.
+    let bestCount = hands.length;
     for (const entry of [...visits.values()].sort((a, b) => (a.row - b.row) || (a.col - b.col))) {
       if (entry.count > bestCount) {
         bestCount = entry.count;
@@ -1248,7 +1235,7 @@ export class MatchRoom extends Room<MatchState> {
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
@@ -1942,7 +1929,7 @@ export class MatchRoom extends Room<MatchState> {
     ][this.mapScale - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
   }
 
@@ -4086,6 +4073,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateEnemies(seconds: number) {
+    // Yapi degistiyse ana kapiyi bir kez yeniden olc: yonlendirme artik alani
+    // sormadigi icin bunu tetikleyecek baska bir yer kalmadi.
+    if (this.mainGateDirty) {
+      this.announceFlowShift();
+    }
     const now = Date.now();
     for (const [id, enemy] of this.enemies) {
       if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
@@ -4418,8 +4410,8 @@ export class MatchRoom extends Room<MatchState> {
       // pahali hucreler oldu, yani kapatmanin bedelini dusmanlar kirarak oder.
       setTile(this.activeMap, cell.col, cell.row, "tower");
       this.activePaths = buildRuntimePaths(this.activeMap);
-    this.markFlowFieldDirty();
-      this.markFlowFieldDirty();
+    this.markNavigationDirty();
+      this.markNavigationDirty();
       this.broadcast("match:map", this.activeMap);
     }
     charges[message.itemId] -= 1;
@@ -4658,12 +4650,12 @@ export class MatchRoom extends Room<MatchState> {
       };
     }
 
-    const field = this.getFlowField();
     const startTower = this.getTowerCellIndex().get(`${start.col}:${start.row}`);
-    if (startTower) {
+    if (startTower && startTower.hp > 0) {
       // Yapinin ustunde duruyor: onu kirmadan ilerlemek yok.
-      return { cells: [start], reachedBottom: false, targetTower: startTower.hp > 0 ? startTower : undefined };
+      return { cells: [start], reachedBottom: false, targetTower: startTower };
     }
+    // Yikilan yapinin hucresi artik bos: dusman ne saldirir ne de orada donar.
 
     // Kilitli hedef hala ayaktaysa ve komsuysa, karar yenilenmez.
     const locked = enemy.structureTargetId ? this.towers.get(enemy.structureTargetId) : undefined;
@@ -4672,31 +4664,84 @@ export class MatchRoom extends Room<MatchState> {
     }
     enemy.structureTargetId = undefined;
 
-    const next = getFlowNext(field, start.col, start.row);
-    if (next) {
-      // Akis bir yapinin uzerinden geciyorsa dusman oraya yurumez: durur ve
-      // kirar. Hucre yine de gecilebilir sayildigi icin alan, kirmanin dolasmaya
-      // deger olup olmadigini zaten hesaba katmistir.
-      const standing = this.getTowerCellIndex().get(`${next.col}:${next.row}`);
-      const blocker = this.getBlockingTowerBetween(start, next) ?? (standing && standing.hp > 0 ? standing : undefined);
-      if (!blocker) {
-        return { cells: [start, next], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
-      }
-      enemy.structureTargetId = blocker.id;
-      return { cells: [start], reachedBottom: false, targetTower: blocker };
+    // Bu hucrenin turu daha once kapanmissa dolasmanin anlami yok: onceki
+    // dusman oradan cikis olmadigini ogrendi ve haber verdi.
+    if (this.sealedCells.has(`${start.col}:${start.row}`)) {
+      return this.breakThrough(enemy, start, { col: start.col, row: start.row + 1 });
     }
 
-    // Akis hic yok: en ucuz komsu yapiyi hedefle ve kilitle.
-    const target = this.findCheapestAdjacentStructure(start);
+    // Kor gezinme: dusman haritayi bilmiyor, cikisa dogru yuruyup onune
+    // cikani duvar tutarak dolasiyor.
+    enemy.navigator ??= createBlindNavigatorState(this.pickNavigatorHand());
+    const result = stepBlindNavigator(
+      start,
+      enemy.navigator,
+      (col, row) => this.isCellWalkable(start, col, row),
+      () => this.pickNavigatorHand()
+    );
+    enemy.navigator = result.state;
+
+    if (result.kind === "move") {
+      return { cells: [start, { col: result.col, row: result.row }], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+    }
+
+    // Cevrim kapandi ya da dort yan da kapali: bu yoldan cikis yok.
+    this.rememberSealedCell(enemy.navigator);
+    return this.breakThrough(enemy, start, { col: result.col, row: result.row });
+  }
+
+  /**
+   * Dolasmak bitti, kirma basliyor.
+   *
+   * Once onundeki yapiyi, yoksa herhangi bir komsu yapiyi hedefler ve kilitler.
+   * Kilit yalpalamayi onler: hedef her tick yeniden secilseydi hasar aldikca
+   * secim degisir ve dusman hicbir duvari bitiremezdi.
+   */
+  private breakThrough(enemy: EnemyModel, start: { col: number; row: number }, ahead: { col: number; row: number }) {
+    const blocker = this.getBlockingTowerBetween(start, ahead)
+      ?? this.getTowerCellIndex().get(`${ahead.col}:${ahead.row}`)
+      ?? this.findCheapestAdjacentStructure(start);
+    const target = blocker && blocker.hp > 0 ? blocker : undefined;
     if (target) {
       enemy.structureTargetId = target.id;
     }
-    return { cells: [start], reachedBottom: false, targetTower: target };
+    return { cells: [start], reachedBottom: false, targetTower: target, exitPoint: undefined };
   }
 
-  /** Testlerin ve tanilamanin akisi hucre hucre izleyebilmesi icin. */
-  private getFlowNextCell(cell: { col: number; row: number }) {
-    return getFlowNext(this.getFlowField(), cell.col, cell.row);
+  /**
+   * Hucre yurunebilir mi.
+   *
+   * Gezinme acisindan tahta disi, yapiyla dolu ve tur boyunca kapali isaretlenmis
+   * hucreler ayni sey: gecilemez. Kenara oturan yapilar hucreyi doldurmadigi
+   * icin ayrica iki hucre arasindaki gecis de sorulur.
+   */
+  private isCellWalkable(from: { col: number; row: number }, col: number, row: number) {
+    if (col < 0 || col >= this.activeMap.cols || row < 0 || row >= this.activeMap.rows) {
+      return false;
+    }
+    const standing = this.getTowerCellIndex().get(`${col}:${row}`);
+    if (standing && standing.hp > 0) {
+      return false;
+    }
+    return !this.getBlockingTowerBetween(from, { col, row });
+  }
+
+  /** Ilk temasta el secimi: yarisi saga, yarisi sola. */
+  private pickNavigatorHand(): BlindHand {
+    return Math.random() < 0.5 ? "left" : "right";
+  }
+
+  /**
+   * Kapali cikis hafizasi.
+   *
+   * Cevrimi kapatan dusman, girdigi hucreyi tur boyunca kapali isaretler ve
+   * arkadan gelenler ayni turu bastan atmaz. Oyuncu hatti acinca hafiza
+   * temizlenir ve dusmanlar yeniden iki yana esit dagilir.
+   */
+  private rememberSealedCell(state: BlindNavigatorState) {
+    if (state.mode === "wall" && state.entryCol >= 0 && state.entryRow >= 0) {
+      this.sealedCells.add(`${state.entryCol}:${state.entryRow}`);
+    }
   }
 
   private isStructureAdjacent(cell: { col: number; row: number }, tower: TowerModel) {
@@ -4894,7 +4939,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.hp = tower.maxHp;
     tower.breachAnnounced = false;
     // Yol maliyeti kalan cana bagli: onarim akisi da degistirir.
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     client.send("structure:repaired", { towerId: tower.id, cost });
   }
 
@@ -4905,7 +4950,7 @@ export class MatchRoom extends Room<MatchState> {
     const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
     // Yol maliyeti kalan cana bagli oldugu icin her hasar alani eskitir.
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
       tower.cooldownMs = 0;
@@ -5078,7 +5123,7 @@ export class MatchRoom extends Room<MatchState> {
     };
 
     this.towers.set(tower.id, tower);
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     this.broadcastTowerSpawn(tower);
     this.registerMelisFavoriteTower(tower);
     player.gold -= buildCost;
@@ -5119,7 +5164,7 @@ export class MatchRoom extends Room<MatchState> {
     if (healthRatio !== 1) {
       tower.maxHp *= healthRatio;
       tower.hp *= healthRatio;
-      this.markFlowFieldDirty();
+      this.markNavigationDirty();
     }
   }
 
@@ -5142,7 +5187,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     this.removeTowerReferences(tower.id);
     this.towers.delete(tower.id);
-    this.markFlowFieldDirty();
+    this.markNavigationDirty();
     this.broadcast("tower:remove", { id: tower.id });
   }
 

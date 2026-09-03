@@ -1,9 +1,11 @@
 /**
  * Dusman yonlendirmesi.
  *
- * Yol bulma dusman basina BFS'ten ortak akis alanina tasindi. Buradaki testler
- * sunucu tarafindaki iki sozu tutar: yonlendirme hala nexusa goturur, ve
- * tikanan dusman bir yapiyi hedef aldiginda o karari her tick yeniden vermez.
+ * Yonlendirme ortak akis alanindan kor gezinmeye tasindi: dusman haritanin
+ * tamamini bilmiyor, cikisa dogru yuruyup onune cikani duvar tutarak dolasiyor.
+ * Buradaki testler sunucu tarafindaki uc sozu tutar: yuruyus hala nexusa
+ * goturur, gercekten kapali hat kirilir, ve tikanan dusman bir yapiyi hedef
+ * aldiginda o karari her tick yeniden vermez.
  *
  * Yalpalama bu sistemin en kritik detayi: kilit olmasa yapi hasar aldikca alan
  * degisir, dusman iki gedik arasinda gidip gelir ve hicbirini kiramaz.
@@ -11,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
-import { worldToGrid, gridToWorld, getStructureTravelCost } from "../packages/shared/dist/index.js";
+import { worldToGrid, gridToWorld } from "../packages/shared/dist/index.js";
 
 function roomWithEnemy() {
   const room = createRoom("warrior");
@@ -31,51 +33,44 @@ test("engelsiz haritada akış düşmanı aşağı, çıkışa doğru götürür
   assert.ok(route.cells[1].row > before.row, "akis nexusa dogru inmeli");
 });
 
-test("akış alanı yapı değişene kadar yeniden hesaplanmaz", () => {
+test("kule indeksi yapı değişene kadar yeniden kurulmaz", () => {
+  // Kor gezinme her adimda "bu hucre acik mi" diye soruyor; o sorunun cevabi
+  // dogrusal kule taramasi olsaydi maliyet dusman sayisiyla carpilirdi.
   const { room } = roomWithEnemy();
-  const first = room.getFlowField();
-  assert.equal(room.getFlowField(), first, "degisiklik yokken alan yeniden kurulmus");
+  const first = room.getTowerCellIndex();
+  assert.equal(room.getTowerCellIndex(), first, "degisiklik yokken indeks yeniden kurulmus");
 
   const spot = findBuildableSpot(room, "warrior-1");
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
-  assert.notEqual(room.getFlowField(), first, "kule kurulunca alan tazelenmemis");
+  const cell = worldToGrid(spot.x, spot.y, room.activeMap);
+  assert.ok(room.getTowerCellIndex().get(`${cell.col}:${cell.row}`), "kule kurulunca indeks tazelenmemis");
 });
 
 /**
- * Yapilar gecilmez engel olmaktan cikip pahali hucreler oldu.
+ * Yapilar dusman icin gecilmez engeldir, ama yalnizca ayaktayken.
  *
- * Once bu hucrenin maliyeti `Infinity` idi ve dusman ancak tamamen cevrelenince
- * saldiriyordu. Artik bedel kirma suresiyle orantili: surus haritanin en zayif
- * noktasina akar, tam kapatmak da gecerli ama pahali bir strateji olur.
+ * Bir ara yapilar "gecilebilir ama pahali" hucrelerdi: akis alani kirmanin
+ * dolasmaya deger olup olmadigini hesaplardi. Kor gezinmede boyle bir tartma
+ * yok -- dusman bedeli bilmiyor, yalnizca onunun acik olup olmadigini biliyor.
  */
-test("kule hücresi geçilebilir ama canıyla orantılı olarak pahalıdır", () => {
+test("ayakta duran yapı hücreyi kapatır, yıkılan yapı serbest bırakır", () => {
   const { room } = roomWithEnemy();
   const spot = findBuildableSpot(room, "warrior-1");
   room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
   const cell = worldToGrid(spot.x, spot.y, room.activeMap);
   const tower = [...room.towers.values()][0];
+  const ust = { col: cell.col, row: cell.row - 1 };
 
-  const cost = room.getCellTravelCost(cell.col, cell.row);
-  assert.ok(Number.isFinite(cost), "yapi hala gecilmez sayiliyor");
-  assert.equal(cost, getStructureTravelCost(tower.hp));
-  assert.ok(cost > 1, "yapinin bedeli bos hucreden yuksek olmali");
-  assert.equal(room.getCellTravelCost(cell.col, 0), 1, "bos hucre bedelsiz kalmali");
-});
+  assert.equal(room.isCellWalkable(ust, cell.col, cell.row), false, "yapi hucresi acik sayiliyor");
+  assert.equal(room.isCellWalkable(ust, cell.col, 0), true, "bos hucre kapali sayiliyor");
 
-test("hasar alan yapı ucuzlar, yıkılan yapı bedelsiz olur", () => {
-  const { room } = roomWithEnemy();
-  const spot = findBuildableSpot(room, "warrior-1");
-  room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
-  const cell = worldToGrid(spot.x, spot.y, room.activeMap);
-  const tower = [...room.towers.values()][0];
-
-  const full = room.getCellTravelCost(cell.col, cell.row);
+  // Hasar yolu acmaz: yalnizca yikilmak acar. Aksi halde dusman yarilanmis
+  // duvarin icinden gecerdi.
   tower.hp *= 0.25;
-  const damaged = room.getCellTravelCost(cell.col, cell.row);
-  assert.ok(damaged < full, "hasarli yapi hala tam bedelli");
+  assert.equal(room.isCellWalkable(ust, cell.col, cell.row), false, "hasarli yapi yolu acmis");
 
   tower.hp = 0;
-  assert.equal(room.getCellTravelCost(cell.col, cell.row), 1, "yikilan yapi hala engel");
+  assert.equal(room.isCellWalkable(ust, cell.col, cell.row), true, "yikilan yapi hala engel");
 });
 
 /**
@@ -151,54 +146,123 @@ function sealRow(room, row, gapCol) {
   return built;
 }
 
-test("tek zayıf kapı bırakılınca akış duvarı kırmak yerine kapıya yönelir", () => {
+/**
+ * Dusmani gercek yonlendirmeyle adim adim yurutur.
+ *
+ * Kor gezinmede tek bir cagri artik hicbir sey soylemiyor: dusman duvari
+ * tutup dolasirken her adimda "saldirmiyorum" der. Anlamli olan sorunun
+ * cevabi ancak yuruyusun sonunda cikar -- gedigi buldu mu, yoksa turu
+ * kapatip kirmaya mi basladi.
+ */
+function driveEnemy(room, enemy, { maxTicks = 400 } = {}) {
+  for (let tick = 1; tick <= maxTicks; tick += 1) {
+    const route = room.findEnemyRoute(enemy);
+    if (route.targetTower) {
+      return { outcome: "attack", tick, tower: route.targetTower, cell: worldToGrid(enemy.x, enemy.y, room.activeMap) };
+    }
+
+    const next = route.cells[1];
+    if (!next) {
+      return { outcome: "stuck", tick, cell: worldToGrid(enemy.x, enemy.y, room.activeMap) };
+    }
+
+    const world = gridToWorld(next.col, next.row, room.activeMap);
+    enemy.x = world.x;
+    enemy.y = world.y;
+    if (next.row >= room.activeMap.rows - 1) {
+      return { outcome: "exit", tick, cell: next };
+    }
+  }
+  return { outcome: "loop", tick: maxTicks, cell: worldToGrid(enemy.x, enemy.y, room.activeMap) };
+}
+
+/** Verilen hucreye yerlestirilmis taze bir dusman. */
+function enemyAt(room, col, row) {
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()].at(-1);
+  const world = gridToWorld(col, row, room.activeMap);
+  enemy.x = world.x;
+  enemy.y = world.y;
+  return enemy;
+}
+
+test("gedik birakilinca dusman duvari kirmadan gedigi bulur", () => {
   const room = createRoom("warrior");
   unlockCapacity(room);
   const wallRow = 4;
   const gapCol = 8;
   sealRow(room, wallRow, gapCol);
 
-  // Duvarin ustundeki her hucreden akisi izle: hepsi gedige varmali.
+  // Hangi sutundan gelirse gelsin: duvari kirmadan asagi inebilmeli. Kor
+  // gezinmenin butun mesele ettigi sey bu -- en kisa yol degil, **bir** yol.
   for (let col = 0; col < room.activeMap.cols; col += 1) {
-    let cell = { col, row: wallRow - 1 };
-    let steps = 0;
-    while (cell.row < wallRow && steps < 60) {
-      const next = room.getFlowNextCell(cell);
-      assert.ok(next, `${col}: akis kesildi`);
-      cell = next;
-      steps += 1;
-    }
-    assert.equal(cell.col, gapCol, `${col}. sutundaki dusman duvari kirmayi secti`);
+    const enemy = enemyAt(room, col, wallRow - 1);
+    const sonuc = driveEnemy(room, enemy);
+    assert.equal(sonuc.outcome, "exit", `${col}. sutun: ${sonuc.outcome}`);
   }
 });
 
-test("kapı kapatılınca akış en ucuz duvarı hedefler ve düşman sıkışmaz", () => {
+test("hat bastan basa orulunce dusman dolasir, sonra kirar ve hedefini kilitler", () => {
   const room = createRoom("warrior");
   unlockCapacity(room);
   const wallRow = 4;
   sealRow(room, wallRow, -1);
 
-  // Bir duvar hasarli: en ucuz gecis noktasi orasi olmali.
-  const towers = [...room.towers.values()].sort((a, b) => a.x - b.x);
-  assert.ok(towers.length >= 3, "test icin yeterli duvar kurulamadi");
-  const weakest = towers[2];
-  weakest.hp = Math.max(1, weakest.hp * 0.1);
-  room.markFlowFieldDirty();
+  const enemy = enemyAt(room, 3, wallRow - 1);
+  const sonuc = driveEnemy(room, enemy);
 
-  const weakCell = worldToGrid(weakest.x, weakest.y, room.activeMap);
-  const above = gridToWorld(weakCell.col, wallRow - 1, room.activeMap);
-  room.spawnEnemy();
-  const enemy = [...room.enemies.values()][0];
-  enemy.x = above.x;
-  enemy.y = above.y;
+  assert.equal(sonuc.outcome, "attack", `orulu hattan gecildi: ${sonuc.outcome}`);
+  assert.ok(sonuc.cell.row < wallRow, "dusman duvarin altina inmis");
+  assert.equal(enemy.structureTargetId, sonuc.tower.id, "hedef kilitlenmedi");
 
-  const route = room.findEnemyRoute(enemy);
-  assert.ok(route.targetTower, "tamamen kapali haritada dusman saldirmali");
-  assert.equal(route.targetTower.id, weakest.id, "en ucuz duvar hedeflenmedi");
-  assert.equal(enemy.structureTargetId, weakest.id, "hedef kilitlenmedi");
+  // Kilit hasarla bozulmamali: yalpalarsa dusman hicbir duvari kiramaz.
+  sonuc.tower.hp *= 0.4;
+  for (let tick = 0; tick < 5; tick += 1) {
+    assert.equal(room.findEnemyRoute(enemy).targetTower?.id, sonuc.tower.id, `tick ${tick}: hedef degisti`);
+  }
 });
 
-test("duvar yıkılınca akış yeni boşluktan geçer", () => {
+/**
+ * Cikmaz sokak haberi.
+ *
+ * Turu kapatan dusman ogrendigini paylasir; arkadan gelen ayni turu bastan
+ * atmaz. Bu yalnizca hiz meselesi degil, denge meselesi: her dusmanin ayri
+ * ayri butun hatti taramasi, orulu hatti oyunun en guclu araci yapardi.
+ */
+test("kapanan cikis tur boyunca hatirlanir, hat acilinca unutulur", () => {
+  const room = createRoom("warrior");
+  unlockCapacity(room);
+  sealRow(room, 4, -1);
+
+  const oncu = driveEnemy(room, enemyAt(room, 3, 3));
+  assert.equal(oncu.outcome, "attack");
+  assert.ok(oncu.tick > 1, "oncu hic dolasmadan kirmaya basladi");
+  assert.ok(room.sealedCells.size > 0, "kapanan tur hatirlanmadi");
+
+  // Ayni yerden gelen ikinci dusman dolasmadan kirmali.
+  const takipci = driveEnemy(room, enemyAt(room, 3, 3));
+  assert.equal(takipci.outcome, "attack");
+  assert.equal(takipci.tick, 1, `takipci turu bastan atti (${takipci.tick} adim)`);
+
+  // Oyuncu hatti acinca hafiza gecersiz: yeni gedik denenmeli.
+  room.markNavigationDirty();
+  assert.equal(room.sealedCells.size, 0, "hat degisince hafiza temizlenmedi");
+});
+
+test("hatirlanan hucre hayalet duvara donusmez", () => {
+  // Hafiza "buradan cikis yok" der, "burasi kapali" demez. Hucreyi gecilmez
+  // isaretlemek dusmanlari acik zeminden kacirir ve hattan uzaklastirirdi.
+  const room = createRoom("warrior");
+  unlockCapacity(room);
+  sealRow(room, 4, -1);
+  driveEnemy(room, enemyAt(room, 3, 3));
+
+  const [key] = [...room.sealedCells];
+  const [col, row] = key.split(":").map(Number);
+  assert.equal(room.isCellWalkable({ col, row: row - 1 }, col, row), true, "hatirlanan hucre kapatilmis");
+});
+
+test("duvar yikilinca dusman acilan bosluktan gecer", () => {
   const room = createRoom("warrior");
   unlockCapacity(room);
   const wallRow = 4;
@@ -207,14 +271,13 @@ test("duvar yıkılınca akış yeni boşluktan geçer", () => {
   const towers = [...room.towers.values()].sort((a, b) => a.x - b.x);
   const broken = towers[1];
   const brokenCell = worldToGrid(broken.x, broken.y, room.activeMap);
-
   broken.hp = 0;
-  room.markFlowFieldDirty();
+  room.markNavigationDirty();
 
-  const above = { col: brokenCell.col, row: wallRow - 1 };
-  const next = room.getFlowNextCell(above);
-  assert.deepEqual(next, brokenCell, "akis acilan bosluktan gecmiyor");
-  assert.equal(room.getCellTravelCost(brokenCell.col, brokenCell.row), 1);
+  const enemy = enemyAt(room, brokenCell.col, wallRow - 1);
+  const sonuc = driveEnemy(room, enemy);
+
+  assert.equal(sonuc.outcome, "exit", `acilan bosluktan gecilemedi: ${sonuc.outcome}`);
 });
 
 test("uçan düşmanlar duvarları tamamen yok sayar", () => {
@@ -235,17 +298,14 @@ test("uçan düşmanlar duvarları tamamen yok sayar", () => {
   assert.ok(route.exitPoint.y > enemy.y, "ucan dusman nexusa dogru yonelmiyor");
 });
 
-test("kara düşman aynı hatta hâlâ duvara takılır", () => {
+test("kara düşman aynı hatta hâlâ takılır", () => {
   // Ucan dali kara davranisini bozmamali: karsi-oyun yalnizca havaya ait.
   const room = createRoom("warrior");
   unlockCapacity(room);
   sealRow(room, 4, -1);
 
-  room.spawnEnemy();
-  const enemy = [...room.enemies.values()][0];
-  const above = gridToWorld(0, 3, room.activeMap);
-  enemy.x = above.x;
-  enemy.y = above.y;
+  const sonuc = driveEnemy(room, enemyAt(room, 0, 3));
 
-  assert.ok(room.findEnemyRoute(enemy).targetTower, "kara dusman duvari gormezden geldi");
+  assert.equal(sonuc.outcome, "attack", "kara dusman orulu hattan gecti");
+  assert.ok(sonuc.cell.row < 4, "kara dusman duvarin altina inmis");
 });

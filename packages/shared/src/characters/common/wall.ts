@@ -18,11 +18,11 @@ export const WALL_TOWER_ID = "wall-1";
 /**
  * Duvarin cani kule tabanindan bir tik yuksek.
  *
- * Carpan WALL_COST_COEFFICIENT ile birlikte okunmali: katsayi 100 canli bir
- * yapinin yol bedelinin harita genisligini biraz asmasina gore ayarlandi, yani
- * huni tam olarak o civarda calisiyor. Cok daha yuksek bir can, bedeli harita
- * genisliginin kat kat uzerine tasir ve dusman saglam duvari **hicbir zaman**
- * kirmayi secmez; duvar o noktada oyalayici degil mutlak engel olur.
+ * Dusman artik kirmanin bedelini tartmiyor: haritayi bilmedigi icin once
+ * dolasmayi dener, ancak hat baska cikis birakmiyorsa kirar. Yani can, "kirmayi
+ * secer mi" sorusunu degil "kirarken oyuncuya ne kadar zaman kazandirir"
+ * sorusunu ayarliyor. Tabana yakin kalmasinin sebebi bu: ilk duvar oyalayici
+ * olmali, mutlak engel degil.
  *
  * Asil dayaniklilik kalinlastirmadan gelir: her seviye tabana ek can yazar.
  */
@@ -35,7 +35,7 @@ export const wallTower: TowerDefinition = attachTowerEngine({
   characterId: "zeynep",
   name: "Duvar",
   role: "Yönlendirme",
-  description: "Kare kaplamaz; iki karenin arasındaki çizgiye oturur ve o geçişi kapatır. Getirildiği kenar yataysa yatay, dikeyse dikey döner. Düşmanlar duvarı aşılmaz bir engel olarak görmez; kırmanın maliyetini hesaplayıp haritanın en zayıf noktasına akarlar. Kalınlaştırmak canını ve dolayısıyla yönlendirme gücünü artırır. Yıkılan duvar kendiliğinden geri gelmez; onarım tam yeniden inşadan ucuzdur.",
+  description: "Kare kaplamaz; iki karenin arasındaki çizgiye oturur ve o geçişi kapatır. Getirildiği kenar yataysa yatay, dikeyse dikey döner. Düşmanlar haritayı bilmez: çıkışa doğru yürür, duvara toslayınca yanından dolaşıp açık bir geçit ararlar. Hat baştan sona örülüyse dolaşmayı bırakıp önlerindeki duvarı kırarlar. Kalınlaştırmak canını ve dolayısıyla ne kadar oyaladığını artırır. Yıkılan duvar kendiliğinden geri gelmez; onarım tam yeniden inşadan ucuzdur.",
   classType: "support",
   damageType: "none",
   hitType: "none",
