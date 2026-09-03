@@ -423,15 +423,6 @@ export class GameScene extends Phaser.Scene {
   private arenaZoomed = false;
   /** HTML kaplamalarin tuvali ne kadar ortugu; kamera seridi bundan cikar. */
   private arenaChrome: ArenaChrome = DEFAULT_ARENA_CHROME;
-  /**
-   * Son dokunuslarin kaydi.
-   *
-   * Dokunmanin neden islemedigi cihaz elde olmadan anlasilamiyor: olay hic
-   * gelmiyor da olabilir, yanlis dunya noktasina donusuyor da. Performans
-   * penceresi bunu telefonda okunabilir kiliyor -- kayit yalnizca pencere
-   * acikken tutulur, kapaliyken hicbir maliyeti yoktur.
-   */
-  private touchLog: string[] = [];
   /** Phaser'in isaretci olaylari sahneye hic ulasti mi. */
   private phaserPointerSeen = false;
   /** Yedek yol devrede mi; yalnizca Phaser hic olay tasimadiysa acilir. */
@@ -527,15 +518,16 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
-    this.game.events.on("game:touch-probe", this.recordTouchProbe, this);
     this.installPointerBridge();
     this.input.on("pointerdown", this.markPhaserPointerAlive, this);
+    this.input.on("pointerup", this.markPhaserPointerAlive, this);
     this.input.on("pointerdown", this.handleMapPointerDown, this);
     this.input.on("pointermove", this.handleMapPointerMove, this);
     this.input.on("pointerup", this.handleMapPointer, this);
     this.input.once("pointerdown", () => this.unlockGameAudio());
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.input.off("pointerdown", this.markPhaserPointerAlive, this);
+      this.input.off("pointerup", this.markPhaserPointerAlive, this);
       this.input.off("pointerdown", this.handleMapPointerDown, this);
       this.input.off("pointermove", this.handleMapPointerMove, this);
       this.input.off("pointerup", this.handleMapPointer, this);
@@ -1841,7 +1833,6 @@ export class GameScene extends Phaser.Scene {
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
     // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
     // yanlis yere dusuyorsa koordinatlar bunu gosterir.
-    this.recordTouch("DOWN", pointer, `ulti ${this.pendingUltimateColumn ? "acik" : "kapali"}`);
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
       return;
     }
@@ -1865,15 +1856,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
-    this.recordTouch(
-      "UP",
-      pointer,
-      [
-        `savas ${this.isBattlePointer(pointer) ? "evet" : "HAYIR"}`,
-        `kule ${this.findTowerAt(pointer.worldX, pointer.worldY)?.definitionId ?? "-"}`,
-        `ulti ${this.pendingUltimateColumn ? `acik>sutun ${this.getUltimateColumnAt(pointer.worldX) ?? "-"}` : "kapali"}`
-      ].join(" | ")
-    );
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
@@ -5968,26 +5950,6 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState({ perfText: this.getPerfPopupText() });
   }
 
-  /** Bir isaretci olayini teshis kaydina yazar. */
-  private recordTouch(label: string, pointer: Phaser.Input.Pointer, extra = "") {
-    // Kayit her zaman tutulur: panel ekrani kapladigi icin acikken haritaya
-    // dokunulamiyor, yani "once dokun, sonra ac" tek kullanilabilir sira.
-    const rect = this.game.canvas.getBoundingClientRect();
-    const line = [
-      label,
-      `ekran ${Math.round(pointer.x)},${Math.round(pointer.y)}`,
-      `dunya ${Math.round(pointer.worldX)},${Math.round(pointer.worldY)}`,
-      `tuval ${Math.round(rect.width)}x${Math.round(rect.height)}@${Math.round(rect.left)},${Math.round(rect.top)}`,
-      extra
-    ].filter(Boolean).join(" | ");
-
-    this.touchLog.unshift(line);
-    this.touchLog = this.touchLog.slice(0, 6);
-    if (this.hudState.perfOpen) {
-      this.emitHudState({ perfText: this.getPerfPopupText() });
-    }
-  }
-
   /** Belge duzeyindeki sonda: dokunusun ustunde hangi eleman vardi. */
   private markPhaserPointerAlive() {
     this.phaserPointerSeen = true;
@@ -5996,11 +5958,15 @@ export class GameScene extends Phaser.Scene {
   /**
    * Tuval olaylarini sahneye tasiyan yedek yol.
    *
-   * Olcum sunu gosterdi: `touchstart` tuvale ulasiyor, Phaser'in yoneticisi ve
-   * sahne eklentisi acik, ama sahne isaretci olayini hic gormuyor. Zincirin
-   * nerede koptugu Phaser'in icinde kaliyor; disaridan kapatilabilir oldugu icin
-   * de kapatiliyor. Yol yalnizca Phaser'dan tek bir olay bile gelmediyse
-   * devreye girer, yani calisan platformlarda hicbir sey degismez.
+   * iOS'ta olculdu: `touchstart` tuvale ulasiyor, Phaser'in yoneticisi, sahne
+   * eklentisi ve dokunus motoru acik gorunuyor, ama sahne tek bir isaretci
+   * olayi almiyor. Kopukluk Phaser'in icinde ve disaridan kapatilamiyor, o
+   * yuzden olaylar kisa yoldan tasiniyor: tuval kutusu, olcek, sonra kamera --
+   * Phaser'in kendi donusumunun aynisi. Cihazda dogrulandi, bir piksel sapma
+   * yok.
+   *
+   * Yol yalnizca Phaser hicbir olay tasimadiysa acilir; tasidigi anda geri
+   * cekilir. Calisan platformlarda hicbir sey degismez.
    */
   private installPointerBridge() {
     const canvas = this.game.canvas;
@@ -6051,30 +6017,18 @@ export class GameScene extends Phaser.Scene {
     return { x, y, worldX: world.x, worldY: world.y, id: event.pointerId } as unknown as Phaser.Input.Pointer;
   }
 
-  private recordTouchProbe(line: string) {
-    this.touchLog.unshift(line);
-    this.touchLog = this.touchLog.slice(0, 6);
-    if (this.hudState.perfOpen) {
-      this.emitHudState({ perfText: this.getPerfPopupText() });
+  /**
+   * Girisin hangi yoldan geldigi.
+   *
+   * iOS'ta Phaser sahneye tek bir isaretci olayi tasimiyor; oyun oradaki
+   * dokunuslari yedek yoldan aliyor. Hangi yolun calistigini gormek, bir daha
+   * "dokunma calismiyor" denildiginde aramayi tek satira indiriyor.
+   */
+  private getInputPathLine() {
+    if (this.phaserPointerSeen) {
+      return "Giris yolu      Phaser";
     }
-  }
-
-  private getTouchDiagnosticLines() {
-    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
-    const camera = this.cameras.main;
-    return [
-      "TOUCH",
-      `Harita          ${this.selectedMapData.cols}x${this.selectedMapData.rows}`,
-      `Kaplama         ust %${(this.arenaChrome.topRatio * 100).toFixed(1)} alt %${(this.arenaChrome.bottomRatio * 100).toFixed(1)}`,
-      `Kamera          zoom ${camera.zoom.toFixed(3)} fit ${view.fit.toFixed(3)}`,
-      `Gorunen dunya   x ${Math.round(camera.worldView.x)}..${Math.round(camera.worldView.right)} y ${Math.round(camera.worldView.y)}..${Math.round(camera.worldView.bottom)}`,
-      `Surukleme       ${this.draggedTowerDefinition?.id ?? "-"}`,
-      `Giris           mgr ${this.game.input.enabled ? "acik" : "KAPALI"} sahne ${this.input.enabled ? "acik" : "KAPALI"} isaretci ${this.game.input.pointers?.length ?? 0}`,
-      `Dokunus motoru  ${this.game.device.input.touch ? "touch var" : "TOUCH YOK"} / ${this.game.input.touch?.enabled ? "acik" : "KAPALI"} / capture ${this.game.input.touch?.capture ? "acik" : "kapali"}`,
-      `Phaser olayi    ${this.phaserPointerSeen ? "geldi" : "gelmedi"} | kopru ${this.pointerBridgeActive ? "devrede" : "kapali"}`,
-      `Aktif isaretci  down ${Math.round(this.input.activePointer?.downX ?? -1)},${Math.round(this.input.activePointer?.downY ?? -1)} olay ${this.input.activePointer?.event?.type ?? "-"}`,
-      ...(this.touchLog.length > 0 ? this.touchLog : ["Dokunus kaydi yok - ekrana dokun"])
-    ];
+    return this.pointerBridgeActive ? "Giris yolu      kopru (Phaser tasimiyor)" : "Giris yolu      henuz dokunulmadi";
   }
 
   private getPerfPopupText() {
@@ -6138,7 +6092,7 @@ export class GameScene extends Phaser.Scene {
     // Teshis blogu basta: panel uzun ve telefonda kaydirmak zor, en cok
     // ihtiyac duyulan satirlar once gelmeli.
     return [
-      ...this.getTouchDiagnosticLines(),
+      this.getInputPathLine(),
       "",
       `STATUS: ${diagnosis.level}`,
       `BOTTLENECK: ${diagnosis.reason}`,
