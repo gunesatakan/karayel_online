@@ -24,6 +24,7 @@ import {
   getArenaCameraView,
   MELIS_EVOLUTION_STRESS_COSTS,
   getMelisSpectrumZone,
+  getUcubePerkTier,
   getMelisZoneEffectText,
   getMapWorldBounds,
   getMapPoints,
@@ -2363,6 +2364,7 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
+    room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
     room.onMessage("worker:hired", (message: { role: HirableWorkerRole; cost: number }) => {
       this.showNotice(`${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
     });
@@ -2537,6 +2539,48 @@ export class GameScene extends Phaser.Scene {
       button.addEventListener("click", () => this.submitCardChoice({ cardId: card.id, towerId: tower.id }));
       list?.append(button);
     });
+  }
+
+  /**
+   * Ucube seviye secimi.
+   *
+   * Kart secim cekmecesinin ayni kabugu kullaniliyor: oyuncu bu ekrani zaten
+   * taniyor ve secim akisi ayni -- iki secenek, biri aliniyor, digeri geri
+   * gelmiyor.
+   */
+  private showUcubeChoice(message: { towerId: string; level: number }) {
+    const tier = getUcubePerkTier(message.level);
+    const root = document.querySelector<HTMLElement>("#card-root");
+    if (!tier || !root) {
+      return;
+    }
+
+    this.cardChoiceRoot = root;
+    root.className = "card-draft card-draft--visible";
+    root.innerHTML = `
+      <div class="card-draft__veil"></div>
+      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Ucube seçimi">
+        <header class="card-draft__header">
+          <span class="card-draft__eyebrow">UCUBE SEVİYE ${message.level}</span>
+          <h2>Bir yükseltme seç</h2>
+          <span class="card-draft__status">Seçilmeyen seçenek geri gelmez.</span>
+        </header>
+        <div class="card-draft__grid"></div>
+      </section>`;
+
+    const grid = root.querySelector<HTMLElement>(".card-draft__grid");
+    for (const option of tier.options) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "run-card";
+      button.innerHTML = `<span>ucube</span><strong>${option.name}</strong><small>${option.description}</small>`;
+      button.addEventListener("pointerup", () => {
+        this.room?.send("ucube:choose", { towerId: message.towerId, perkId: option.id });
+        this.hideCardChoices();
+        this.showNotice(`${option.name} seçildi`);
+      });
+      grid?.append(button);
+    }
   }
 
   private hideCardChoices() {
@@ -3092,7 +3136,7 @@ export class GameScene extends Phaser.Scene {
       this.playTowerLevelUpIfChanged(tower, discSize);
 
       const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
-      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.waveBonusLevel ?? 0}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
@@ -3757,19 +3801,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    const bonusLevel = tower.waveBonusLevel ?? 0;
-    if (tower.definitionId !== "warrior-6" || bonusLevel < 4 || tower.status === "Hararet" || tower.status === "Tukenmis") {
+    // Halkalar secilen ozellik sayisini gosterir: oyuncu kulenin ne kadar
+    // ilerledigini haritadan okuyabilsin.
+    const perkCount = tower.ucubePerks?.length ?? 0;
+    if (tower.definitionId !== "warrior-6" || perkCount < 2 || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;
     }
 
-    const waveCount = bonusLevel >= 5 ? 4 : 2;
+    const waveCount = perkCount >= 3 ? 4 : 2;
     const phase = (Date.now() % 900) / 900;
     const effectScale = this.getTowerEffectScale();
     for (let waveIndex = 0; waveIndex < waveCount; waveIndex += 1) {
       const radius = (11.5 + waveIndex * 1.6) * effectScale;
       const segments = 10 + waveIndex * 2;
       const offset = phase * Math.PI * 2 + waveIndex * 0.85;
-      graphics.lineStyle((waveIndex % 2 === 0 ? 1.5 : 1) * effectScale, 0xffffff, bonusLevel >= 5 ? 0.86 : 0.66);
+      graphics.lineStyle((waveIndex % 2 === 0 ? 1.5 : 1) * effectScale, 0xffffff, perkCount >= 3 ? 0.86 : 0.66);
       graphics.beginPath();
       for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
         const angle = offset + (pointIndex / segments) * Math.PI * 2;

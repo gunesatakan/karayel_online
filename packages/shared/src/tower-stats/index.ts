@@ -97,9 +97,9 @@ export function getDebugLaserFireInterval(level: number, overdrive: boolean) {
  * dusuruyordu, yani oyuncu altin ve deneyim harcayip kuleyi kotulestiriyordu --
  * hem de odemenin tamamini 9. ve 10. seviyeye yigiyordu.
  *
- * Ucube'nin "zamanla buyur" kimligi zaten dalga basina isleyen `waveBonusLevel`
- * mekaniginde; seviye egrisinin ayrica geciktirmesi gereksiz. Rampa dusuk
- * basliyor ama duzgun tirmaniyor.
+ * Ucube'nin "buyuyerek degisir" kimligi seviye seciminde: 4, 6, 8 ve 10.
+ * seviyelerde oyuncunun onune iki secenek cikiyor. Hasar egrisinin ayrica
+ * geciktirmesi gereksiz; rampa dusuk basliyor ama duzgun tirmaniyor.
  */
 export function getUcubeGrowthDamageMultiplier(level: number) {
   return 0.5 + levelRatio(level) * 0.55;

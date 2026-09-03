@@ -20,6 +20,80 @@ export const TOWER_GRID_SIZE = 34;
 export const TOWER_BUILD_TOP = BATTLE_TOP;
 export const TOWER_BUILD_BOTTOM = 698;
 
+/**
+ * Ucube'nin seviye secimleri.
+ *
+ * Digerlerinden farkli olarak Ucube kuruldugu haliyle kalmiyor: belirli
+ * seviyelerde oyuncunun onune iki secenek cikiyor ve yalnizca biri aliniyor.
+ * Sekiz ozellik dortlu kademeye bolundugu icin bir Ucube bunlarin ancak
+ * yarisini tasiyabilir -- hangi yarisi, oyuncunun kurdugu duzene bagli.
+ *
+ * Eskiden bu sekiz ozellik dalga gectikce kendiliginden aciliyordu; secim
+ * olmadigi icin de her Ucube ayni Ucube oluyordu.
+ */
+export type UcubePerkId =
+  | "chain"
+  | "pushback"
+  | "damage-step"
+  | "stacks-15"
+  | "range-hull"
+  | "endurance"
+  | "damage-double"
+  | "stacks-20";
+
+export type UcubePerk = {
+  id: UcubePerkId;
+  name: string;
+  description: string;
+};
+
+export type UcubePerkTier = {
+  /** Secimin acildigi kule seviyesi. */
+  level: number;
+  options: [UcubePerk, UcubePerk];
+};
+
+export const UCUBE_PERK_TIERS: UcubePerkTier[] = [
+  {
+    level: 4,
+    options: [
+      { id: "chain", name: "Zincir", description: "Vurdugu hedefin arkasindaki dusmana da sicrar; sicrama hasari kule seviyesiyle buyur." },
+      { id: "pushback", name: "Geri Itme", description: "Vurdugu dusmani yolda geri atar, boylece menzilde daha uzun kalir." }
+    ]
+  },
+  {
+    level: 6,
+    options: [
+      { id: "damage-step", name: "Kalibrasyon", description: "Hasar %20 artar." },
+      { id: "stacks-15", name: "Genis Sarj", description: "Atis hizi yigin tavani 10'dan 15'e cikar." }
+    ]
+  },
+  {
+    level: 8,
+    options: [
+      { id: "range-hull", name: "Genis Govde", description: "Menzil iki katina cikar, azami can iki katina cikar ve can dolar." },
+      { id: "endurance", name: "Sogukkanlilik", description: "20 saniyelik zorunlu kapanma kalkar ve yuksek seviyelerde ek hasar carpani kazanir." }
+    ]
+  },
+  {
+    level: 10,
+    options: [
+      { id: "damage-double", name: "Asiri Yuk", description: "Hasar iki katina cikar." },
+      { id: "stacks-20", name: "Derin Sarj", description: "Atis hizi yigin tavani 20'ye cikar." }
+    ]
+  }
+];
+
+export const UCUBE_PERK_LEVELS = UCUBE_PERK_TIERS.map((tier) => tier.level);
+
+export function getUcubePerkTier(level: number) {
+  return UCUBE_PERK_TIERS.find((tier) => tier.level === level);
+}
+
+export function isUcubePerkOption(level: number, perkId: string) {
+  return Boolean(getUcubePerkTier(level)?.options.some((option) => option.id === perkId));
+}
+
 export type MelisSpectrumZone = "approval" | "balanced" | "stress";
 
 /** Melis'in serilerini hangi tarafa yazdigi; bari surdugu direksiyon. */
@@ -337,7 +411,10 @@ export type TowerSnapshot = {
   isMelisFavorite?: boolean;
   melisUnderworldMode?: "approval" | "stress";
   melisUnderworldPullCount?: number;
-  waveBonusLevel?: number;
+  /** Ucube'nin sectigi seviye ozellikleri. */
+  ucubePerks?: import("./index.js").UcubePerkId[];
+  /** Secim bekleyen seviye; yalnizca kule sahibine anlamli. */
+  ucubePendingLevel?: number;
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];
   zeynepFormationSize?: number;

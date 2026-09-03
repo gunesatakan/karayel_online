@@ -93,6 +93,9 @@ import {
   appendLegacyMultiplier,
   advanceResourceExtraction,
   getMelisEvolutionStressCost,
+  getUcubePerkTier,
+  isUcubePerkOption,
+  type UcubePerkId,
   getMelisSpectrumZone,
   type MelisStance,
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
@@ -287,7 +290,6 @@ const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
 const TOWER_DPS_WINDOW_MS = 5000;
-const UCUBE_WAVE_BONUS_THRESHOLDS = [2, 4, 6, 8, 10, 12, 15, 17];
 const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
 const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
@@ -668,8 +670,10 @@ type TowerModel = {
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
-  waveBonusLevel: number;
-  waveBonusProgress: number;
+  /** Secilen seviye ozellikleri. */
+  ucubePerks: UcubePerkId[];
+  /** Secim bekleyen seviye; 0 ise bekleyen yok. */
+  ucubePendingLevel: number;
   linkedTowerIds: string[];
   linkedTowerWaveAges: Record<string, number>;
   rangeMemoryEnemyIds: string[];
@@ -712,6 +716,7 @@ type TowerModel = {
 
 type RepairStructureMessage = { towerId?: string };
 type HireWorkerMessage = { role?: HirableWorkerRole };
+type ChooseUcubePerkMessage = { towerId?: string; perkId?: UcubePerkId };
 type SetMelisStanceMessage = { stance?: MelisStance };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
 type BuyShopItemMessage = { itemId?: string };
@@ -1352,6 +1357,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
+    this.onMessage("ucube:choose", (client, message: ChooseUcubePerkMessage) => this.chooseUcubePerk(client, message));
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
@@ -4826,6 +4832,34 @@ export class MatchRoom extends Room<MatchState> {
    * oyuncu her dalgada lojistigini bedava yeniden dagitir, secim de kararligini
    * yitirirdi. Bedel alinan isci sayisiyla buyur.
    */
+  /**
+   * Ucube seviye secimi.
+   *
+   * Secim kule basina: ayni oyuncunun iki Ucube'si ayri duzenler tasiyabilir.
+   * Bekleyen seviye disindaki istekler yok sayilir, yani bir kademe iki kez
+   * alinamaz ve secilmeyen secenek sonradan geri gelmez.
+   */
+  private chooseUcubePerk(client: Client, message: ChooseUcubePerkMessage) {
+    const tower = message?.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!tower || tower.ownerId !== client.sessionId || tower.definition.id !== "warrior-6") {
+      return;
+    }
+    if (tower.ucubePendingLevel <= 0 || !message.perkId) {
+      return;
+    }
+    if (!isUcubePerkOption(tower.ucubePendingLevel, message.perkId)) {
+      return;
+    }
+
+    tower.ucubePerks.push(message.perkId);
+    tower.ucubePendingLevel = 0;
+
+    if (message.perkId === "range-hull") {
+      tower.maxHp *= 2;
+      tower.hp = tower.maxHp;
+    }
+  }
+
   private hireWorker(client: Client, message: HireWorkerMessage) {
     const player = this.state.players.get(client.sessionId);
     if (!player || !isHirableWorkerRole(message?.role)) {
@@ -5018,8 +5052,8 @@ export class MatchRoom extends Room<MatchState> {
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],
       linkBurstCooldownMs: 0,
-      waveBonusLevel: 0,
-      waveBonusProgress: 0,
+      ucubePerks: [],
+      ucubePendingLevel: 0,
       linkedTowerIds: [],
       linkedTowerWaveAges: {},
       rangeMemoryEnemyIds: [],
@@ -5075,6 +5109,10 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= goldCost;
     player.goldSpent += goldCost;
     tower.level += 1;
+    if (tower.definition.id === "warrior-6" && getUcubePerkTier(tower.level)) {
+      tower.ucubePendingLevel = tower.level;
+      client.send("ucube:choice", { towerId: tower.id, level: tower.level });
+    }
     // Kalinlastirma: duvarin can tavani seviyeyle buyur ve fark cana yansir.
     const healthRatio = getStructureHealthMultiplier(tower.definition, tower.level)
       / getStructureHealthMultiplier(tower.definition, tower.level - 1);
@@ -7572,7 +7610,8 @@ export class MatchRoom extends Room<MatchState> {
         isMelisFavorite: tower.characterId === "archer" ? this.isMelisFavoriteTower(tower) : undefined,
         melisUnderworldMode: tower.definition.id === "archer-4" ? tower.melisUnderworldMode : undefined,
         melisUnderworldPullCount: tower.definition.id === "archer-4" ? tower.melisUnderworldPullCount : undefined,
-        waveBonusLevel: tower.definition.id === "warrior-6" ? tower.waveBonusLevel : undefined,
+        ucubePerks: tower.definition.id === "warrior-6" ? [...tower.ucubePerks] : undefined,
+        ucubePendingLevel: tower.definition.id === "warrior-6" && tower.ucubePendingLevel > 0 ? tower.ucubePendingLevel : undefined,
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
@@ -7770,7 +7809,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
-    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 5) {
+    if (hasUcubePerk(tower, "range-hull")) {
       return applyRangeAura(this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
     }
 
@@ -7966,16 +8005,16 @@ export class MatchRoom extends Room<MatchState> {
     if (this.towerHasUnlock(tower, "adjacencyBonus")) breakdown.mods.push({ source: "shop:bitisik-devre", scope: "tower", stat: "damage", add: Math.min(4, this.countAdjacentFriendlyTowers(tower)) * 0.08 });
     if (this.towerHasUnlock(tower, "isolationBonus") && this.isTowerIsolated(tower)) breakdown.mods.push({ source: "shop:yalniz-kurt", scope: "tower", stat: "damage", add: 0.25 });
 
-    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 3) {
-      add("tower:warrior-6:wave-3", 1.2);
+    if (hasUcubePerk(tower, "damage-step")) {
+      add("tower:warrior-6:damage-step", 1.2);
     }
 
-    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 6) {
-      add("tower:warrior-6:wave-6", getUcubeLateDamageMultiplier(tower.level));
+    if (hasUcubePerk(tower, "endurance")) {
+      add("tower:warrior-6:endurance", getUcubeLateDamageMultiplier(tower.level));
     }
 
-    if (tower.definition.id === "warrior-6" && tower.waveBonusLevel >= 7) {
-      add("tower:warrior-6:wave-7", 2);
+    if (hasUcubePerk(tower, "damage-double")) {
+      add("tower:warrior-6:damage-double", 2);
     }
 
     if (tower.definition.hitType === "impact") {
@@ -8486,7 +8525,7 @@ export class MatchRoom extends Room<MatchState> {
 
     tower.activeMs += deltaTime;
     tower.focusTargetId = target.id;
-    const stackLimit = tower.waveBonusLevel >= 8 ? 20 : tower.waveBonusLevel >= 4 ? 15 : 10;
+    const stackLimit = hasUcubePerk(tower, "stacks-20") ? 20 : hasUcubePerk(tower, "stacks-15") ? 15 : 10;
     const desiredStacks = Math.min(stackLimit, Math.floor(tower.activeMs / 1000));
     const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === "ucube-fire-rate");
     if (definition) {
@@ -8499,7 +8538,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.focusStacks = desiredStacks;
     }
 
-    if (tower.waveBonusLevel < 6 && tower.activeMs >= 20000) {
+    if (!hasUcubePerk(tower, "endurance") && tower.activeMs >= 20000) {
       tower.overheatMs = 10000;
       tower.activeMs = 0;
       tower.focusStacks = 0;
@@ -8656,17 +8695,6 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    for (const tower of this.towers.values()) {
-      if (tower.definition.id === "warrior-6") {
-        const previousLevel = tower.waveBonusLevel;
-        tower.waveBonusProgress += 1;
-        tower.waveBonusLevel = getUcubeWaveBonusLevel(tower.waveBonusProgress);
-        if (previousLevel < 5 && tower.waveBonusLevel >= 5) {
-          tower.maxHp *= 2;
-          tower.hp = tower.maxHp;
-        }
-      }
-    }
   }
 
   private prepareTowerShot(tower: TowerModel, target: EnemyModel) {
@@ -8726,7 +8754,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    if (tower.waveBonusLevel >= 1) {
+    if (hasUcubePerk(tower, "chain")) {
       const chainedEnemies = Array.from(this.enemies.values())
         .filter((enemy) => {
           this.perfCounters.chainChecks += 1;
@@ -8740,7 +8768,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    if (tower.waveBonusLevel >= 2 && this.enemies.has(target.id)) {
+    if (hasUcubePerk(tower, "pushback") && this.enemies.has(target.id)) {
       target.pathDistance = Math.max(0, target.pathDistance - this.scaleWorldDistance(18));
     }
   }
@@ -9058,8 +9086,8 @@ function getObsessionFearDurationMs(level: number) {
   return 1500;
 }
 
-function getUcubeWaveBonusLevel(completedWaves: number) {
-  return UCUBE_WAVE_BONUS_THRESHOLDS.filter((threshold) => completedWaves >= threshold).length;
+function hasUcubePerk(tower: TowerModel, perkId: UcubePerkId) {
+  return tower.definition.id === "warrior-6" && tower.ucubePerks.includes(perkId);
 }
 
 function getUcubeStackIntervalMultiplier(stacks: number) {
@@ -9163,7 +9191,7 @@ function getUcubeLateDamageMultiplier(level: number) {
 }
 
 function getUcubeChainDamageMultiplier(tower: TowerModel) {
-  if (tower.waveBonusLevel < 1) return 0;
+  if (!hasUcubePerk(tower, "chain")) return 0;
   if (tower.level >= 10) return 1;
   if (tower.level >= 9) return 0.93;
   if (tower.level >= 8) return 0.85;
