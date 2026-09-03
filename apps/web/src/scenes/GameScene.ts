@@ -6064,7 +6064,11 @@ export class GameScene extends Phaser.Scene {
       "Veri bekleniyor"
     ];
 
+    // Teshis blogu basta: panel uzun ve telefonda kaydirmak zor, en cok
+    // ihtiyac duyulan satirlar once gelmeli.
     return [
+      ...this.getTouchDiagnosticLines(),
+      "",
       `STATUS: ${diagnosis.level}`,
       `BOTTLENECK: ${diagnosis.reason}`,
       "",
@@ -6073,8 +6077,6 @@ export class GameScene extends Phaser.Scene {
       ...deviceLines,
       "",
       ...clientLines,
-      "",
-      ...this.getTouchDiagnosticLines(),
       "",
       ...serverLines
     ].join("\n");

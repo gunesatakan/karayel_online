@@ -3016,7 +3016,21 @@ canvas {
 }
 
 .game-hud__popup > strong { display: block; margin-bottom: 14px; }
-.game-hud__popup pre { max-height: min(68vh, 620px); margin: 0; overflow: auto; font: 10px/1.45 ui-monospace, monospace; white-space: pre-wrap; }
+.game-hud__popup {
+  max-height: calc(var(--app-height, 100dvh) - 24px);
+  overflow: hidden;
+}
+
+.game-hud__popup pre {
+  max-height: calc(var(--app-height, 100dvh) - 210px);
+  margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  font: 10px/1.45 ui-monospace, monospace;
+  white-space: pre-wrap;
+}
 .game-hud__popup label { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; margin-top: 14px; font-size: 12px; font-weight: 700; }
 .game-hud__popup input[type="range"] { width: 100%; accent-color: #38bdf8; }
 
