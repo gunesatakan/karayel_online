@@ -589,7 +589,7 @@ export {
   getTowerFuelCostMultiplier,
   getTowerShotFuel,
   getTowerOperatingEnergyPerSecond,
-  TOWER_HEAT_PER_SECOND_BY_HIT_TYPE,
+  TOWER_HEAT_BY_HIT_TYPE,
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
   getTowerPerformanceHeatMultiplier,
   getTowerPerformanceEnergyMultiplier,

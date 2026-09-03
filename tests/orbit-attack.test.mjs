@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ORBIT_BLADE_LENGTH_MAX_MULTIPLIER,
-  TOWER_HEAT_PER_SECOND_BY_HIT_TYPE,
+  TOWER_HEAT_BY_HIT_TYPE,
   TOWER_OPERATING_ENERGY_BY_HIT_TYPE,
   calculateTowerScaledBaseDamage,
   getTowerBuildCost,
@@ -26,7 +26,7 @@ function createSawRoom() {
 }
 
 test("slash ısı, çalışma enerjisi ve enerji yakıtı tablolarına bağlıdır", () => {
-  assert.equal(TOWER_HEAT_PER_SECOND_BY_HIT_TYPE.slash, 8);
+  assert.equal(TOWER_HEAT_BY_HIT_TYPE.slash, 1.2);
   assert.equal(TOWER_OPERATING_ENERGY_BY_HIT_TYPE.slash, 1.4);
   assert.equal(getTowerShotFuel("slash"), "energy");
 });

@@ -2218,15 +2218,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerShotHeat(tower: TowerModel) {
-    // Kulenin o anki temposu verilir: isi hizi tipten geldigi icin atis basina
-    // dusen pay araliga gore olceklenir ve seviye ya da hizlandirma isi hizini
-    // kendiliginden degistirmez.
-    return calculateTowerShotHeat(
-      tower.definition,
-      tower.performance,
-      this.getTowerSpecialHeatMultiplier(tower),
-      this.getTowerFireInterval(tower)
-    ) * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
+    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower))
+      * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
   }
 
   private getTowerSpecialHeatMultiplier(_tower: TowerModel) {

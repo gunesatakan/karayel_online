@@ -44,30 +44,26 @@ export function getTowerOperatingEnergyPerSecond(hitType: HitType | undefined) {
 }
 
 /**
- * Surekli ates sirasindaki isi hizi: saniyede kac derece, varsayilan
- * performansta.
+ * Atis basina isi.
  *
- * Isi eskiden atis basina sabitti, yani isi hizi tamamen atis araligina
- * bagliydi ve tip icinde bile tutarsizdi: ayni `focus` tipindeki Debug Lazer
- * 0.2 saniyede bir atesledigi icin 6 saniyede kilitleniyor, Oluler Bagi 1.7
- * saniyede bir atesledigi icin hic isinmiyordu. Hiza Emri de 38 saniye kesintisiz
- * ates gerektirdigi icin pratikte hic isinmiyordu.
+ * Isi vurus basina odenir: hizli atesleyen kule daha cabuk isinir, cunku isiyi
+ * ureten sey atisin kendisidir. Sogutma saniyede 3 derece, yani bir kulenin
+ * kilitlenip kilitlenmedigini bu sayinin atis araligina bolumu belirler.
  *
- * Oran olarak yazilinca isi kulenin ne kadar hizli atesledigine degil, ne
- * yaptigina bagli olur. Sogutma saniyede 3 derece; buradaki her sayi ondan ne
- * kadar buyukse kule o kadar cabuk kilitlenir. Performans kadrani carpani ayri
- * uygulandigi icin "iki kat atis hizi, dort kat isi" pazarligi aynen durur.
+ * `focus` degeri digerlerinin yaninda kasitli olarak cok dusuk: bu tipteki
+ * kuleler saniyede birkac kez vurdugu icin normal bir atis isisi onlari
+ * saniyeler icinde kilitler -- Debug Lazer 0.2 saniyede bir atesliyor.
  */
-export const TOWER_HEAT_PER_SECOND_BY_HIT_TYPE: Record<HitType, number> = {
+export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
   none: 0,
-  impact: 10,
-  wave: 9,
-  projectile: 9,
-  focus: 9,
-  aura: 2,
-  slash: 8,
-  curse: 4,
-  contamination: 4
+  impact: 22,
+  wave: 20,
+  projectile: 10,
+  focus: 1,
+  aura: 1,
+  slash: 1.2,
+  curse: 0.5,
+  contamination: 0.5
 };
 
 export function getOrbitRotationSpeed(rotationSpeed: number, definedFireIntervalMs: number, effectiveFireIntervalMs: number) {
@@ -121,25 +117,10 @@ export function getTowerPerformanceFlameIntensity(performance: number) {
   return 0.08 + ((safePerformance - 0.5) / 0.5) * 0.92;
 }
 
-/**
- * Tek atisin isisi.
- *
- * Isi hizi tip tarafindan belirlendigi icin atis basina dusen pay, atisin
- * kapladigi sureye esittir: hizli atesleyen kule her atista daha az isinir ve
- * saniyedeki toplam ayni kalir. Aralik verilmezse kulenin yazili temposu
- * kullanilir.
- */
-export function calculateTowerShotHeat(
-  definition: TowerDefinition,
-  performance: number,
-  towerSpecialMultiplier = 1,
-  fireIntervalMs = definition.fireIntervalMs
-) {
+export function calculateTowerShotHeat(definition: TowerDefinition, performance: number, towerSpecialMultiplier = 1) {
   const hitType = definition.hitType ?? "projectile";
   const damageType = definition.damageType ?? "physical";
-  const intervalSeconds = Math.max(0, fireIntervalMs) / 1000;
-  return TOWER_HEAT_PER_SECOND_BY_HIT_TYPE[hitType]
-    * intervalSeconds
+  return TOWER_HEAT_BY_HIT_TYPE[hitType]
     * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[damageType]
     * getTowerPerformanceHeatMultiplier(performance)
     * towerSpecialMultiplier
