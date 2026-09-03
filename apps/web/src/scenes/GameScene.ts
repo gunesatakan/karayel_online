@@ -6000,6 +6000,8 @@ export class GameScene extends Phaser.Scene {
       `Kamera          zoom ${camera.zoom.toFixed(3)} fit ${view.fit.toFixed(3)}`,
       `Gorunen dunya   x ${Math.round(camera.worldView.x)}..${Math.round(camera.worldView.right)} y ${Math.round(camera.worldView.y)}..${Math.round(camera.worldView.bottom)}`,
       `Surukleme       ${this.draggedTowerDefinition?.id ?? "-"}`,
+      `Giris           mgr ${this.game.input.enabled ? "acik" : "KAPALI"} sahne ${this.input.enabled ? "acik" : "KAPALI"} isaretci ${this.game.input.pointers?.length ?? 0}`,
+      `Dokunus motoru  ${this.game.device.input.touch ? "touch var" : "TOUCH YOK"} / ${this.game.input.touch?.enabled ? "acik" : "KAPALI"} / capture ${this.game.input.touch?.capture ? "acik" : "kapali"}`,
       ...(this.touchLog.length > 0 ? this.touchLog : ["Dokunus kaydi yok - ekrana dokun"])
     ];
   }

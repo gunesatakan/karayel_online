@@ -116,7 +116,22 @@ document.addEventListener("pointerdown", (event) => {
   const top = document.elementFromPoint(event.clientX, event.clientY);
   game.events.emit(
     "game:touch-probe",
-    `HIT ${Math.round(event.clientX)},${Math.round(event.clientY)} ust ${describeElement(top)} hedef ${describeElement(event.target as Element)}`
+    `PD ${Math.round(event.clientX)},${Math.round(event.clientY)} ust ${describeElement(top)} hedef ${describeElement(event.target as Element)}`
+  );
+}, { capture: true, passive: true });
+
+/**
+ * Phaser dokunusu `touchstart` ile dinliyor, isaretci olaylariyla degil.
+ *
+ * Isaretci olayi tuvale ulastigi halde sahne hicbir sey gormuyor. Geriye tek
+ * ayrim kaldi: tarayici bu dokunus icin `touchstart` uretiyor mu? Uretmiyorsa
+ * Phaser'in girisi tumden kordur ve cozum baska yerdedir.
+ */
+document.addEventListener("touchstart", (event) => {
+  const touch = event.touches[0];
+  game.events.emit(
+    "game:touch-probe",
+    `TS ${touch ? `${Math.round(touch.clientX)},${Math.round(touch.clientY)}` : "-"} hedef ${describeElement(event.target as Element)}`
   );
 }, { capture: true, passive: true });
 
