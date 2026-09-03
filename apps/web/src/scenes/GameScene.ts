@@ -423,6 +423,15 @@ export class GameScene extends Phaser.Scene {
   private arenaZoomed = false;
   /** HTML kaplamalarin tuvali ne kadar ortugu; kamera seridi bundan cikar. */
   private arenaChrome: ArenaChrome = DEFAULT_ARENA_CHROME;
+  /**
+   * Son dokunuslarin kaydi.
+   *
+   * Dokunmanin neden islemedigi cihaz elde olmadan anlasilamiyor: olay hic
+   * gelmiyor da olabilir, yanlis dunya noktasina donusuyor da. Performans
+   * penceresi bunu telefonda okunabilir kiliyor -- kayit yalnizca pencere
+   * acikken tutulur, kapaliyken hicbir maliyeti yoktur.
+   */
+  private touchLog: string[] = [];
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
@@ -1822,6 +1831,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
+    // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
+    // yanlis yere dusuyorsa koordinatlar bunu gosterir.
+    this.recordTouch("DOWN", pointer);
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
       return;
     }
@@ -1845,6 +1857,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    this.recordTouch(
+      "UP",
+      pointer,
+      `savas ${this.isBattlePointer(pointer) ? "evet" : "HAYIR"} | kule ${this.findTowerAt(pointer.worldX, pointer.worldY)?.definitionId ?? "-"}`
+    );
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
@@ -5939,6 +5956,40 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState({ perfText: this.getPerfPopupText() });
   }
 
+  /** Bir isaretci olayini teshis kaydina yazar. */
+  private recordTouch(label: string, pointer: Phaser.Input.Pointer, extra = "") {
+    if (!this.hudState.perfOpen) {
+      return;
+    }
+
+    const rect = this.game.canvas.getBoundingClientRect();
+    const line = [
+      label,
+      `ekran ${Math.round(pointer.x)},${Math.round(pointer.y)}`,
+      `dunya ${Math.round(pointer.worldX)},${Math.round(pointer.worldY)}`,
+      `tuval ${Math.round(rect.width)}x${Math.round(rect.height)}@${Math.round(rect.left)},${Math.round(rect.top)}`,
+      extra
+    ].filter(Boolean).join(" | ");
+
+    this.touchLog.unshift(line);
+    this.touchLog = this.touchLog.slice(0, 4);
+    this.emitHudState({ perfText: this.getPerfPopupText() });
+  }
+
+  private getTouchDiagnosticLines() {
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
+    const camera = this.cameras.main;
+    return [
+      "TOUCH",
+      `Harita          ${this.selectedMapData.cols}x${this.selectedMapData.rows}`,
+      `Kaplama         ust %${(this.arenaChrome.topRatio * 100).toFixed(1)} alt %${(this.arenaChrome.bottomRatio * 100).toFixed(1)}`,
+      `Kamera          zoom ${camera.zoom.toFixed(3)} fit ${view.fit.toFixed(3)}`,
+      `Gorunen dunya   x ${Math.round(camera.worldView.x)}..${Math.round(camera.worldView.right)} y ${Math.round(camera.worldView.y)}..${Math.round(camera.worldView.bottom)}`,
+      `Surukleme       ${this.draggedTowerDefinition?.id ?? "-"}`,
+      ...(this.touchLog.length > 0 ? this.touchLog : ["Dokunus kaydi yok - ekrana dokun"])
+    ];
+  }
+
   private getPerfPopupText() {
     const snapshot = this.latestPerfSnapshot;
     const serverPerf = snapshot?.perf;
@@ -6006,6 +6057,8 @@ export class GameScene extends Phaser.Scene {
       ...deviceLines,
       "",
       ...clientLines,
+      "",
+      ...this.getTouchDiagnosticLines(),
       "",
       ...serverLines
     ].join("\n");
