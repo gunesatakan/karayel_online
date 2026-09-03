@@ -14,32 +14,32 @@ import {
 
 const expectedProfiles = {
   warrior: [
-    ["warrior-1", "projectile", "physical", "bullet", 7, 24, 132, null],
-    ["warrior-2", "impact", "electric", "bullet", 28.6, 0, 0, null],
-    ["warrior-3", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["warrior-4", "impact", "psychic", "bullet", 8.8, 36, 198, null],
-    ["warrior-5", "focus", "fire", "powerCrystal", 4, 10, 55, null],
-    ["warrior-6", "impact", "electric", "bullet", 28.6, 27, 148.5, null],
+    ["warrior-1", "projectile", "physical", "bullet", 6.48, 24, 132, null],
+    ["warrior-2", "impact", "electric", "bullet", 12.74, 0, 0, null],
+    ["warrior-3", "aura", "none", "auraCrystal", 1.24, 0, 0, null],
+    ["warrior-4", "impact", "psychic", "bullet", 3.04, 36, 198, null],
+    ["warrior-5", "focus", "fire", "powerCrystal", 2.304, 10, 55, null],
+    ["warrior-6", "impact", "electric", "bullet", 12.22, 27, 148.5, null],
     ["warrior-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
     ["warrior-8", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ],
   zeynep: [
-    ["zeynep-1", "projectile", "physical", "bullet", 7, 48, 264, null],
-    ["zeynep-2", "impact", "light", "powerCrystal", 24.2, 84, 462, null],
-    ["zeynep-3", "impact", "none", "powerCrystal", 22, 72, 396, null],
-    ["zeynep-6", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["zeynep-7", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["zeynep-8", "aura", "none", "auraCrystal", 1, 0, 0, null],
+    ["zeynep-1", "projectile", "physical", "bullet", 9, 48, 264, null],
+    ["zeynep-2", "impact", "light", "powerCrystal", 25.85, 84, 462, null],
+    ["zeynep-3", "impact", "none", "powerCrystal", 23.5, 72, 396, null],
+    ["zeynep-6", "aura", "none", "auraCrystal", 6.4, 0, 0, null],
+    ["zeynep-7", "aura", "none", "auraCrystal", 4, 0, 0, null],
+    ["zeynep-8", "aura", "none", "auraCrystal", 4, 0, 0, null],
     ["zeynep-9", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
     ["zeynep-10", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ],
   archer: [
-    ["archer-1", "projectile", "psychic", "bullet", 2.8, 64, 352, null],
-    ["archer-2", "projectile", "light", "bullet", 7.7, 44, 242, null],
-    ["archer-3", "curse", "cellular", "auraCrystal", 0.15, 30, 165, null],
-    ["archer-4", "focus", "psychic", "powerCrystal", 1, 0, 0, null],
-    ["archer-5", "impact", "psychic", "bullet", 8.8, 20, 110, null],
-    ["archer-6", "wave", "psychic", "auraCrystal", 8, 10, 55, null],
+    ["archer-1", "projectile", "psychic", "bullet", 2.952, 64, 352, null],
+    ["archer-2", "projectile", "light", "bullet", 9.405, 44, 242, null],
+    ["archer-3", "curse", "cellular", "auraCrystal", 1.416, 30, 165, null],
+    ["archer-4", "focus", "psychic", "powerCrystal", 4.86, 0, 0, null],
+    ["archer-5", "impact", "psychic", "bullet", 7, 20, 110, null],
+    ["archer-6", "wave", "psychic", "auraCrystal", 4.86, 10, 55, null],
     ["archer-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
     ["archer-8", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ]
@@ -116,9 +116,23 @@ test("performans enerji maliyeti ara değerleri dahil karakterize edildi", () =>
 test("ısı performans eğrisi yüzde 50'de 1x ve yüzde 100'de 4x", () => {
   const projectile = towerCatalog.warrior.find((tower) => tower.id === "warrior-1");
   assert.ok(projectile);
+  const taban = calculateTowerShotHeat(projectile, 0.5);
+  assert.ok(taban > 0);
   assert.equal(calculateTowerShotHeat(projectile, 0), 0);
-  assert.equal(calculateTowerShotHeat(projectile, 0.5), 7);
-  assert.equal(calculateTowerShotHeat(projectile, 1), 28);
+  assert.ok(Math.abs(calculateTowerShotHeat(projectile, 1) - taban * 4) < 1e-9, "tam performans dort kat isitmali");
+});
+
+test("ısı hızı atış aralığından bağımsızdır", () => {
+  // Isi eskiden atis basina sabitti, yani ayni tipteki hizli kule yavas olandan
+  // kat kat cabuk kilitleniyordu: Debug Lazer 6 saniyede, Oluler Bagi hicbir
+  // zaman. Isi hizi tipten geldigi icin artik ikisi ayni bandda olmali.
+  const hizli = towerCatalog.warrior.find((tower) => tower.id === "warrior-1");
+  const yavas = { ...hizli, fireIntervalMs: hizli.fireIntervalMs * 4 };
+
+  const hizliPerSec = calculateTowerShotHeat(hizli, 0.5) / (hizli.fireIntervalMs / 1000);
+  const yavasPerSec = calculateTowerShotHeat(yavas, 0.5) / (yavas.fireIntervalMs / 1000);
+
+  assert.ok(Math.abs(hizliPerSec - yavasPerSec) < 1e-9, `isi hizi araliga bagli: ${hizliPerSec} vs ${yavasPerSec}`);
 });
 
 test("temel hasar seviye 1-10 aralığına sabitleniyor", () => {

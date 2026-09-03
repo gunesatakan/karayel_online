@@ -1254,7 +1254,8 @@ export class GameScene extends Phaser.Scene {
     // oyuncu kazandigi yuvayi kullanamiyordu.
     const towerLimit = this.localPlayerSnapshot?.towerLimit ?? PLAYER_TOWER_LIMIT;
     // Duvar kontenjandan yer kapmadigi icin sinir dolu olsa da kurulabilir.
-    if (!ignoreTowerId && occupiesTowerSlot({ id: definitionId }) && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
+    const placedDefinition = towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === definitionId);
+    if (!ignoreTowerId && placedDefinition && occupiesTowerSlot(placedDefinition) && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
       return false;
     }
 

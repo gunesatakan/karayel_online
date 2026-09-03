@@ -2218,8 +2218,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerShotHeat(tower: TowerModel) {
-    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower))
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
+    // Kulenin o anki temposu verilir: isi hizi tipten geldigi icin atis basina
+    // dusen pay araliga gore olceklenir ve seviye ya da hizlandirma isi hizini
+    // kendiliginden degistirmez.
+    return calculateTowerShotHeat(
+      tower.definition,
+      tower.performance,
+      this.getTowerSpecialHeatMultiplier(tower),
+      this.getTowerFireInterval(tower)
+    ) * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
   }
 
   private getTowerSpecialHeatMultiplier(_tower: TowerModel) {
@@ -9257,9 +9264,9 @@ function isCompleteZeynepFormation(group: TowerModel[], gridSize: number) {
    * geciyor, o yuzden tek yerde yaziliyor.
    */
 function canJoinZeynepFormation(tower: TowerModel) {
-  return occupiesTowerSlot(tower.definition)
-    && tower.definition.id !== "zeynep-7"
-    && tower.definition.id !== "zeynep-8";
+  // Abarti icin ayrica ad yazmaya gerek yok: kenara oturdugu icin kule
+  // kontenjanindan da yer kapmiyor, ikisi ayni kuralin sonucu.
+  return occupiesTowerSlot(tower.definition) && tower.definition.id !== "zeynep-7";
 }
 
 function isValidZeynepFormationGroup(group: TowerModel[], gridSize: number) {

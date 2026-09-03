@@ -65,11 +65,12 @@ export function getCharacterTowers(characterId: CharacterId): TowerDefinition[] 
 /**
  * Yapi kule kontenjanindan yer kapiyor mu.
  *
- * Kontenjan savas kuleleri icindir: oyuncu on kule kurabilir ve hangi onunu
- * kuracagi asil karardir. Duvar ise ucuz bir zemin araci; hattini ormek icin
- * hasar kulesinden vazgecmek gerekseydi duvar sistemi hicbir zaman kullanilmazdi
- * -- zaten bir duvar tek basina bir kulenin yerini tutmaz.
+ * Kontenjan savas kuleleri icindir: oyuncu belli sayida kule kurabilir ve hangi
+ * kuleleri kuracagi asil karardir. Kenara oturan yapilar bu karara girmez --
+ * duvar da Abarti da kare degil cizgi kaplar, kendi basina ates etmez ve bir
+ * kulenin yerini tutmaz. Hattini ormek icin hasar kulesinden vazgecmek
+ * gerekseydi bu yapilar hicbir zaman kullanilmazdi.
  */
-export function occupiesTowerSlot(definition: Pick<TowerDefinition, "id">) {
-  return !isSharedStructure(definition);
+export function occupiesTowerSlot(definition: Pick<TowerDefinition, "id" | "engine">) {
+  return !isSharedStructure(definition) && !definition.engine?.placement?.requiresEdge;
 }
