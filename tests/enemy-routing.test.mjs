@@ -176,6 +176,35 @@ function driveEnemy(room, enemy, { maxTicks = 400 } = {}) {
   return { outcome: "loop", tick: maxTicks, cell: worldToGrid(enemy.x, enemy.y, room.activeMap) };
 }
 
+/**
+ * Dusmani gercek hiziyla, gercek tick temposunda yurutur.
+ *
+ * `driveEnemy` her cagrida bir hucre atlatir; yani hucre basina tam bir karar.
+ * Oyunda oyle degil: dusman bir hucreyi gecmek icin onlarca tick yuruyor ve
+ * yonlendirme her tick soruluyor. Gezinme "bir hucre = bir adim" varsaydigi
+ * icin aradaki fark bir hata sinifi aciyor -- ayni hucrede tekrar tekrar
+ * adimlanan gezgin kendi cikisini kaybediyor. Isinlanan surucu bunu goremez.
+ */
+function driveEnemyRealtime(room, enemy, { maxTicks = 3000, tickSeconds = 0.05 } = {}) {
+  const baslangic = worldToGrid(enemy.x, enemy.y, room.activeMap);
+  const gezilen = new Set([`${baslangic.col}:${baslangic.row}`]);
+  for (let tick = 1; tick <= maxTicks; tick += 1) {
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+    const route = room.findEnemyRoute(enemy);
+    const cell = worldToGrid(enemy.x, enemy.y, room.activeMap);
+    gezilen.add(`${cell.col}:${cell.row}`);
+    if (route.targetTower) {
+      return { outcome: "attack", tick, tower: route.targetTower, cell, baslangic, gezilen: gezilen.size };
+    }
+
+    room.updateEnemies(tickSeconds);
+    if (!room.enemies.has(enemy.id)) {
+      return { outcome: "exit", tick, cell, baslangic, gezilen: gezilen.size };
+    }
+  }
+  return { outcome: "loop", tick: maxTicks, cell: worldToGrid(enemy.x, enemy.y, room.activeMap), baslangic, gezilen: gezilen.size };
+}
+
 /** Verilen hucreye yerlestirilmis taze bir dusman. */
 function enemyAt(room, col, row) {
   room.spawnEnemy();
@@ -308,4 +337,40 @@ test("kara düşman aynı hatta hâlâ takılır", () => {
 
   assert.equal(sonuc.outcome, "attack", "kara dusman orulu hattan gecti");
   assert.ok(sonuc.cell.row < 4, "kara dusman duvarin altina inmis");
+});
+
+/**
+ * Gercek tempoda gezinme.
+ *
+ * Bu testlerin varlik sebebi somut bir hata: karar her tick yeniden verilince
+ * dusman duvara toslar toslamaz, daha tek adim atmadan onundeki duvari kirmaya
+ * basliyordu. Hucre basina isinlanan surucu bunu goremiyordu cunku orada her
+ * hucre zaten tam bir karara denk geliyor.
+ */
+test("gercek tempoda gedik aranir, ilk duvara saldirilmaz", () => {
+  const room = createRoom("warrior");
+  unlockCapacity(room);
+  const wallRow = 4;
+  sealRow(room, wallRow, 8);
+
+  for (const col of [0, 3, 8, 10]) {
+    const sonuc = driveEnemyRealtime(room, enemyAt(room, col, wallRow - 1));
+    assert.equal(sonuc.outcome, "exit", `${col}. sutun: ${sonuc.outcome}`);
+  }
+});
+
+test("gercek tempoda orulu hat once taranir, sonra kirilir", () => {
+  const room = createRoom("warrior");
+  unlockCapacity(room);
+  const wallRow = 4;
+  sealRow(room, wallRow, -1);
+
+  const sonuc = driveEnemyRealtime(room, enemyAt(room, 3, wallRow - 1));
+
+  assert.equal(sonuc.outcome, "attack", `orulu hattan gecildi: ${sonuc.outcome}`);
+  // Asil sart bu: kirmadan once hatti gercekten taramis olmali. Cevrim kendi
+  // basladigi hucrede kapandigi icin **konum** basa doner; yurunup yurunmedigini
+  // soyleyen sey gezilen hucre sayisi.
+  assert.ok(sonuc.gezilen > 1, `dusman hic yurumeden onundeki duvara saldirdi (${sonuc.gezilen} hucre)`);
+  assert.ok(sonuc.gezilen >= room.activeMap.cols, `hat taranmadan kirildi (${sonuc.gezilen} hucre)`);
 });

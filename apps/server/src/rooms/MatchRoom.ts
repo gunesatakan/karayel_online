@@ -580,8 +580,10 @@ type EnemyModel = {
    * Kilit yalnizca yapi yikilinca ya da dusman o hucreden ayrilinca duser.
    */
   structureTargetId?: string;
-  /** Kor gezinme hafizasi: tutulan el ve net donus sayaci. */
+  /** Kor gezinme hafizasi: tutulan el ve bakilan yon. */
   navigator?: BlindNavigatorState;
+  /** Bu hucre icin verilmis karar; hucre degisene kadar tekrarlanir. */
+  navigatorStep?: { fromCol: number; fromRow: number; toCol: number; toRow: number };
   pathDistance: number;
   slowUntil: number;
   auraSlowMultiplier: number;
@@ -4677,9 +4679,27 @@ export class MatchRoom extends Room<MatchState> {
     }
     enemy.structureTargetId = undefined;
 
+    // Karar hucre basina bir kez verilir.
+    //
+    // Dusman bir hucreyi gecmek icin onlarca tick yuruyor, ama yonlendirme her
+    // tick soruluyor. Her seferinde yeniden adimlamak gezgini ayni hucrede
+    // dondurur: duvari tutmaya baslanan kareden bir sonraki tick yine ayni yon
+    // secilir, cevrim tespiti "buraya ayni yonle geri donuldu" der ve dusman
+    // daha kimildamadan onundeki duvari kirmaya baslar. Algoritma bir hucre =
+    // bir adim varsayiyor; karari saklamak o varsayimi geri veriyor.
+    const committed = enemy.navigatorStep;
+    if (committed && committed.fromCol === start.col && committed.fromRow === start.row) {
+      if (this.isCellWalkable(start, committed.toCol, committed.toRow)) {
+        return { cells: [start, { col: committed.toCol, row: committed.toRow }], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+      }
+      // Oyuncu tam o araliga yapi kurmus: karar gecersiz.
+      enemy.navigatorStep = undefined;
+    }
+
     // Bu hucrenin turu daha once kapanmissa dolasmanin anlami yok: onceki
     // dusman oradan cikis olmadigini ogrendi ve haber verdi.
     if (this.sealedCells.has(`${start.col}:${start.row}`)) {
+      enemy.navigatorStep = undefined;
       return this.breakThrough(enemy, start, { col: start.col, row: start.row + 1 });
     }
 
@@ -4695,10 +4715,12 @@ export class MatchRoom extends Room<MatchState> {
     enemy.navigator = result.state;
 
     if (result.kind === "move") {
+      enemy.navigatorStep = { fromCol: start.col, fromRow: start.row, toCol: result.col, toRow: result.row };
       return { cells: [start, { col: result.col, row: result.row }], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
     }
 
     // Cevrim kapandi ya da dort yan da kapali: bu yoldan cikis yok.
+    enemy.navigatorStep = undefined;
     this.rememberSealedCell(enemy.navigator);
     return this.breakThrough(enemy, start, { col: result.col, row: result.row });
   }
