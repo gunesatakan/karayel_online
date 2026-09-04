@@ -22,7 +22,16 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   "bariyer",
   "ziftli-zemin",
   // Ulti sarji oyuncunun, kulenin degil; bir kuleye takilmasi anlamsiz olurdu.
-  "sarj-kondansatoru"
+  "sarj-kondansatoru",
+  // Asagidakiler de oyuncunun: bir kuleye takildiklarinda hicbir sey
+  // yapmiyorlardi, cunku vaat ettikleri seyi kule katmanindan okuyan kimse
+  // yok. Altin kazanci oyuncunun listesinden hesaplaniyor; isci bonuslari ise
+  // ya oyuncunun kuresel listesinden ya da iscinin hizmet ettigi binadan
+  // okunuyor, ve bu ikisi kaynak binalarina takilamadigi icin hicbir isciye
+  // ulasamiyorlardi.
+  "ganimet-kesesi",
+  "vardiya-amiri",
+  "seyyar-depo"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */

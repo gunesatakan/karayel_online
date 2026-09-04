@@ -6228,13 +6228,20 @@ export class MatchRoom extends Room<MatchState> {
     const activeMark = sourceDefinitionId === "warrior-1" && enemy.activeMarkId === "tracking" ? undefined : {
       id: enemy.activeMarkId, add: enemy.activeMarkAdd, expiresAt: enemy.activeMarkUntil
     };
-    const markMultiplier = getMarkDamageMultiplier(activeMark, this.state.players.get(sourceOwnerId)?.runModifiers ?? [], now);
     if (enemy.melisUnderworldVulnerableUntil <= now) {
       enemy.melisUnderworldDamageTakenMultiplier = 1;
     }
     const damageSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     const damagePlayer = this.state.players.get(sourceOwnerId);
     const damageModifiers = damageSourceTower ? this.getTowerRunModifiers(damageSourceTower) : [];
+    // Isaret gucu vuran kulenin listesinden okunur.
+    //
+    // Yalnizca oyuncunun listesine bakmak, bir kuleye takilan Komuta Modulu'nu
+    // sessizce olu birakiyordu: esyanin degistiricisi kulenin uzerinde duruyor
+    // ve oradan kimse okumuyordu. Kule listesi oyuncunun kartlarini zaten
+    // icerdigi icin kart tarafinda hicbir sey degismiyor.
+    const markModifiers = damageSourceTower ? damageModifiers : damagePlayer?.runModifiers ?? [];
+    const markMultiplier = getMarkDamageMultiplier(activeMark, markModifiers, now);
     let shopDamageAdd = 0;
     if (enemy.movementKind === "air") shopDamageAdd += getModifierAdd(damageModifiers, "airDamage");
     if (enemy.shield > 0) shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShielded");
