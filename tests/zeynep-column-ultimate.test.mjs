@@ -3,17 +3,18 @@
  *
  * Ulti artik haritayi bastan silmiyor, bir sutun seciyor. Bu ucunu birden
  * sabitlemek gerekiyor: yalnizca secilen sutunun vurulmasi, gecersiz bir secimin
- * sarji yakmamasi, ve hasarin dusman caniyla ayni egriden buyumesi -- sabit
- * hasarli bir ulti dalga 3'te haritayi siler, dalga 20'de hicbir sey yapmaz.
+ * sarji yakmamasi, ve hasarin dalgadan bagimsiz olmasi.
+ *
+ * Hasar bir ara dusman caniyla ayni egriden buyuyordu; ulti kendiliginden
+ * olceklendigi icin oyuncunun ustunde hicbir sozu yoktu. Artik sayi sabit ve
+ * buyumesi altinla alinan ulti gucu kademelerine bagli.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
+  ZEYNEP_COLUMN_ULTIMATE_DAMAGE,
   getMapGridSize,
-  getMapOrigin,
-  getWaveEnemyMaxHp,
-  getEnemyCombatDefinition
+  getMapOrigin
 } from "../packages/shared/dist/index.js";
 import { createRoom } from "./helpers/match-room-harness.mjs";
 
@@ -122,34 +123,34 @@ test("sarj dolu degilse ulti calismaz", () => {
   assert.equal(enemies[1].enemy.hp, enemies[1].enemy.maxHp);
 });
 
-test("hasar dusman caniyla ayni egriden buyur", () => {
-  // Sabit hasar dalga 20'de anlamsizlasirdi: grunt cani orada dalga 3'tekinin
-  // 40 katindan fazla.
-  const olculen = [];
-  for (const wave of [3, 10, 20]) {
-    const room = createRoom("zeynep");
-    room.wave = wave;
-    const enemies = fillColumns(room);
-    readyUltimate(room);
-    room.useUltimate(client, { column: 6 });
+/** Secilen sutundaki hedefin aldigi hasar. */
+function sutunHasari(wave, ultimatePower = 0) {
+  const room = createRoom("zeynep");
+  room.wave = wave;
+  const enemies = fillColumns(room);
+  const player = readyUltimate(room);
+  player.ultimatePower = ultimatePower;
+  room.useUltimate(client, { column: 6 });
 
-    const hedef = enemies.find((entry) => entry.column === 6).enemy;
-    const verilen = hedef.maxHp - hedef.hp;
-    const gruntCani = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, wave, 1);
-    olculen.push({ wave, verilen, gruntCani });
+  const hedef = enemies.find((entry) => entry.column === 6).enemy;
+  return hedef.maxHp - hedef.hp;
+}
 
-    // Zirh hasari biraz kirpar; olcu grunt caninin katina yakin durmali.
-    const oran = verilen / gruntCani;
-    assert.ok(
-      oran > ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT * 0.7,
-      `dalga ${wave}: ulti grunt caninin ${oran.toFixed(2)} katini vurdu, beklenen ~${ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT}`
-    );
-  }
+test("hasar dalgayla degismez", () => {
+  const olculen = new Set([3, 10, 20].map((wave) => sutunHasari(wave)));
 
-  for (let index = 1; index < olculen.length; index += 1) {
-    assert.ok(
-      olculen[index].verilen > olculen[index - 1].verilen,
-      `dalga ${olculen[index].wave} hasari onceki dalgadan buyuk degil`
+  assert.equal(olculen.size, 1, `hasar dalgayla degisti: ${[...olculen].join(", ")}`);
+  assert.equal([...olculen][0], ZEYNEP_COLUMN_ULTIMATE_DAMAGE);
+});
+
+test("hasar ulti gucu kademeleriyle ikiye katlanir", () => {
+  // Ultinin gec dalgalarda anlamli kalmasi artik bu yatirima bagli; egri
+  // kopurse ulti dalga 20'de yine sifira duser.
+  for (const [kademe, carpan] of [[0, 1], [1, 2], [3, 8], [5, 32]]) {
+    assert.equal(
+      sutunHasari(10, kademe),
+      ZEYNEP_COLUMN_ULTIMATE_DAMAGE * carpan,
+      `${kademe}. kademede hasar x${carpan} degil`
     );
   }
 });

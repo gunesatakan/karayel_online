@@ -102,7 +102,11 @@ import {
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
   ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,
-  ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
+  ZEYNEP_COLUMN_ULTIMATE_DAMAGE,
+  ATAKAN_ULTIMATE_DRONE_DAMAGE,
+  ULTIMATE_POWER_MAX_LEVEL,
+  getUltimatePowerMultiplier,
+  getUltimatePowerUpgradeCost,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   type HirableWorkerRole,
   getWorkerHireCost,
@@ -453,6 +457,8 @@ class Player extends Schema {
   @type("number") experience = 0;
   @type("number") towersBuilt = 0;
   @type("number") ultimateCharge = 0;
+  /** Altinla alinmis ulti gucu kademesi; hasar carpani buradan cikar. */
+  @type("number") ultimatePower = 0;
   @type("number") skill1CooldownMs = 0;
   @type("number") skill2CooldownMs = 0;
   @type("number") skill3CooldownMs = 0;
@@ -1346,6 +1352,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
+    this.onMessage("ultimate:upgrade", (client) => this.upgradeUltimatePower(client));
     this.onMessage("ucube:choose", (client, message: ChooseUcubePerkMessage) => this.chooseUcubePerk(client, message));
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
@@ -5616,9 +5623,13 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    // Asagidaki sabit hasarlar da ayni kademeyle buyur: ulti gucu karakterin
+    // degil oyuncunun yatirimi.
+    const ultimatePower = this.getUltimatePowerMultiplierFor(client.sessionId);
+
     if (player.characterId === "mage") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 85, 0, "ultimate", client.sessionId);
+        this.damageEnemy(enemy, 85 * ultimatePower, 0, "ultimate", client.sessionId);
       }
       return;
     }
@@ -5634,7 +5645,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (player.characterId === "tank") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 35, 3200, "ultimate", client.sessionId);
+        this.damageEnemy(enemy, 35 * ultimatePower, 3200, "ultimate", client.sessionId);
       }
       return;
     }
@@ -5662,7 +5673,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     for (const enemy of this.enemies.values()) {
-      this.damageEnemy(enemy, 25, 0, "ultimate", client.sessionId);
+      this.damageEnemy(enemy, 25 * ultimatePower, 0, "ultimate", client.sessionId);
     }
   }
 
@@ -5680,9 +5691,9 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Zeynep ultisi: secilen sutunun tamamini yakan isik patlamasi.
    *
-   * Hasar dusman canini olcen egriden turetiliyor, sabit bir sayidan degil:
-   * sutun haritanin on ikide biri oldugu icin ulti yalnizca dogru anda dogru
-   * yere basildiginda odul veriyor, ama o odul her dalgada ayni agirlikta.
+   * Sutun haritanin on ikide biri: ulti yalnizca dogru anda dogru yere
+   * basildiginda odul veriyor. Hasar sabit, buyumesi ulti gucu yatirimina
+   * bagli.
    */
   private fireZeynepColumnUltimate(ownerId: string, column: number) {
     const gridSize = getMapGridSize(this.activeMap);
@@ -5690,7 +5701,7 @@ export class MatchRoom extends Room<MatchState> {
     const bounds = getMapWorldBounds(this.activeMap);
     const left = origin.x + column * gridSize;
     const right = left + gridSize;
-    const damage = this.getZeynepColumnUltimateDamage();
+    const damage = this.getZeynepColumnUltimateDamage(ownerId);
 
     for (const enemy of this.enemies.values()) {
       if (enemy.x < left || enemy.x >= right) {
@@ -5714,15 +5725,14 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private getZeynepColumnUltimateDamage() {
-    const gruntHealth = getWaveEnemyMaxHp(getEnemyCombatDefinition("grunt").maxHp, this.wave, 1);
-    return Math.max(1, Math.round(gruntHealth * ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT));
+  private getZeynepColumnUltimateDamage(ownerId: string) {
+    return Math.max(1, Math.round(ZEYNEP_COLUMN_ULTIMATE_DAMAGE * this.getUltimatePowerMultiplierFor(ownerId)));
   }
 
   private useAtakanUltimate(client: Client, mode: "attack" | "repair") {
     const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
     const repairNexus = mode === "repair";
-    const droneDamage = this.getAtakanDroneDamage();
+    const droneDamage = this.getAtakanDroneDamage(client.sessionId);
 
     for (const tower of ownTowers) {
       this.spawnAtakanDrone(tower, repairNexus, droneDamage);
@@ -5765,8 +5775,36 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
-  private getAtakanDroneDamage() {
-    return Math.max(1, Math.round(this.wave ** 3));
+  private getAtakanDroneDamage(ownerId: string) {
+    return Math.max(1, Math.round(ATAKAN_ULTIMATE_DRONE_DAMAGE * this.getUltimatePowerMultiplierFor(ownerId)));
+  }
+
+  /** Oyuncunun aldigi ulti gucu kademelerinin hasar carpani. */
+  private getUltimatePowerMultiplierFor(ownerId: string) {
+    return getUltimatePowerMultiplier(this.state.players.get(ownerId)?.ultimatePower ?? 0);
+  }
+
+  /**
+   * Ulti gucunu bir kademe buyutur.
+   *
+   * Kademe tur boyunca kalici: ulti barinin doldugu her sefere isliyor. Bedeli
+   * pesin almanin sebebi de bu -- yatirim, bir sonraki ultiye degil butun tura.
+   */
+  private upgradeUltimatePower(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || player.ultimatePower >= ULTIMATE_POWER_MAX_LEVEL) {
+      return;
+    }
+
+    const cost = getUltimatePowerUpgradeCost(player.ultimatePower);
+    if (cost === undefined || player.gold < cost) {
+      return;
+    }
+
+    player.gold -= cost;
+    player.goldSpent += cost;
+    player.ultimatePower += 1;
+    client.send("ultimate:upgraded", { level: player.ultimatePower, cost });
   }
 
   private findNearestEnemy(x: number, y: number) {
@@ -7622,6 +7660,7 @@ export class MatchRoom extends Room<MatchState> {
         towersBuilt: player.towersBuilt,
         towerLimit: this.getPlayerTowerLimit(player),
         ultimateCharge: Math.round(player.ultimateCharge),
+        ultimatePower: player.ultimatePower,
         skillCooldowns: [
           Math.ceil(player.skill1CooldownMs / 1000),
           Math.ceil(player.skill2CooldownMs / 1000),

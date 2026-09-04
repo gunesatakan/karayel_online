@@ -24,6 +24,8 @@ import {
   getArenaCameraView,
   MELIS_EVOLUTION_STRESS_COSTS,
   getMelisSpectrumZone,
+  getUltimatePowerMultiplier,
+  getUltimatePowerUpgradeCost,
   getUcubePerkTier,
   getMelisZoneEffectText,
   getMapWorldBounds,
@@ -98,6 +100,7 @@ type ControlActionDetail = {
     | "useZeynepTier"
     | "useUltimate"
     | "useUltimateMode"
+    | "upgradeUltimatePower"
     | "upgradeTower"
     | "sellTower"
     | "repairStructure"
@@ -1019,6 +1022,9 @@ export class GameScene extends Phaser.Scene {
         }
         this.hideUltimateChoices();
         this.clearPlacedTowerSelection();
+        break;
+      case "upgradeUltimatePower":
+        this.room?.send("ultimate:upgrade", {});
         break;
       case "upgradeTower":
         this.hideZeynepTierChoicesIfOpen();
@@ -5663,6 +5669,8 @@ export class GameScene extends Phaser.Scene {
     const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
     const approval = this.localPlayerSnapshot?.approval ?? 0;
     const stress = this.localPlayerSnapshot?.stress ?? 0;
+    const ultimatePower = this.localPlayerSnapshot?.ultimatePower ?? 0;
+    const ultimatePowerCost = getUltimatePowerUpgradeCost(ultimatePower);
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
@@ -5746,7 +5754,11 @@ export class GameScene extends Phaser.Scene {
         charge: this.currentUltimateCharge,
         ready: this.currentUltimateCharge >= 100,
         choiceOpen: this.ultimateChoiceOpen,
-        needsChoice: this.selectedCharacterId === "warrior"
+        needsChoice: this.selectedCharacterId === "warrior",
+        power: ultimatePower,
+        powerMultiplier: getUltimatePowerMultiplier(ultimatePower),
+        upgradeCost: ultimatePowerCost,
+        canUpgrade: ultimatePowerCost !== undefined && Math.floor(this.localPlayerSnapshot?.gold ?? 0) >= ultimatePowerCost
       },
       underworldMode: isUnderworldTower ? {
         current: selectedTower.melisUnderworldMode ?? "approval",

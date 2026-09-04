@@ -171,14 +171,63 @@ export const SIEGE_FIRST_WAVE = 4;
 export const SIEGE_SPAWN_RATIO = 0.18;
 
 /**
- * Zeynep ultisi: secilen sutunda patlayan isik.
+ * Ulti gucu.
  *
- * Hasar sabit bir sayi degil, "kac grunt canlik" olarak yaziliyor. Sabit hasarli
- * bir ulti dalga 3'te haritayi siliyor, dalga 20'de hicbir sey yapmiyordu --
- * dusman cani dalgayla katlanirken ulti yerinde saydigi icin. Dusmanla ayni
- * egriden olculunce ultinin agirligi her dalgada ayni kaliyor.
+ * Ulti hasari dalgayla birlikte kendiliginden buyuyordu. Oyuncunun ustunde
+ * hicbir sozu yoktu: ulti 1. dalgada gulunc kadar zayif, 20. dalgada bedava
+ * temizlikciydi ve ikisi de bir karar sonucu degildi. Artik hasar sabit ve
+ * buyumesi altina bagli -- ulti, altinin gidebilecegi yerlerden biri.
+ *
+ * Guc bedelden hizli buyuyor (kademe basina x2 hasara karsi %50 zam), ama bu
+ * kademeleri almayi otomatik dogru yapmiyor: ayni altin kule, yukseltme ve
+ * isci demek. Ulti tek seferlik bir patlama, kule ise her dalga calisan bir
+ * gelir kalemi; secim burada.
  */
-export const ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT = 3;
+export const ULTIMATE_POWER_MAX_LEVEL = 5;
+export const ULTIMATE_POWER_BASE_COST = 100;
+export const ULTIMATE_POWER_COST_GROWTH = 1.5;
+export const ULTIMATE_POWER_DAMAGE_STEP = 2;
+
+/** Alinan kademelerin hasara carpani. */
+export function getUltimatePowerMultiplier(level: number) {
+  const safeLevel = Math.max(0, Math.min(ULTIMATE_POWER_MAX_LEVEL, Math.floor(level || 0)));
+  return ULTIMATE_POWER_DAMAGE_STEP ** safeLevel;
+}
+
+/** Siradaki kademenin bedeli; hepsi alinmissa `undefined`. */
+export function getUltimatePowerUpgradeCost(level: number) {
+  const safeLevel = Math.max(0, Math.floor(level || 0));
+  if (safeLevel >= ULTIMATE_POWER_MAX_LEVEL) {
+    return undefined;
+  }
+  return Math.round(ULTIMATE_POWER_BASE_COST * ULTIMATE_POWER_COST_GROWTH ** safeLevel);
+}
+
+export function canUpgradeUltimatePower(level: number, gold: number) {
+  const cost = getUltimatePowerUpgradeCost(level);
+  return cost !== undefined && gold >= cost;
+}
+
+/**
+ * Atakan ultisinin drone basina hasari.
+ *
+ * Olcu ultinin kendi sozu: "her drone hedefini tek atar".
+ *
+ * Ilk dalganin en dayanikli dusmani brute: 90 can + 7 kalkan. Ama kalkan yarim
+ * oranda soguruyor -- bir kalkan puani iki hasara mal oluyor -- yani onu
+ * dusurmek 104 hasar istiyor, 97 degil. Can ile kalkani toplayip gecmek bu
+ * yuzden yanlis hesap: drone gider, brute dort canla ayakta kalir.
+ */
+export const ATAKAN_ULTIMATE_DRONE_DAMAGE = 110;
+
+/**
+ * Zeynep sutun ultisinin dusman basina hasari.
+ *
+ * Once "uc grunt canlik" diye yaziliyordu ve dalgayla buyuyordu; sabit deger
+ * o formulun 1. dalgadaki karsiligi, yani ulti ilk turda oldugu gibi kaliyor.
+ * Sonraki dalgalarda agirligini korumak artik ulti gucu yatirimina bagli.
+ */
+export const ZEYNEP_COLUMN_ULTIMATE_DAMAGE = 160;
 
 /** Isik patlamasinin sutundaki dusmanlari yavaslattigi sure. */
 export const ZEYNEP_COLUMN_ULTIMATE_SLOW_MS = 700;

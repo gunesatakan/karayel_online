@@ -17,7 +17,18 @@ type ControlState = {
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
   /** Serilerin hangi tarafa yazilacagi ve siradaki evrimin bedeli. */
   melisStance?: { current: "approval" | "stress"; evolutionCost?: number; stress: number };
-  ultimate?: { charge: number; ready: boolean; choiceOpen: boolean; needsChoice: boolean };
+  ultimate?: {
+    charge: number;
+    ready: boolean;
+    choiceOpen: boolean;
+    needsChoice: boolean;
+    /** Alinmis guc kademesi ve hasar carpani. */
+    power: number;
+    powerMultiplier: number;
+    /** Siradaki kademenin bedeli; hepsi alinmissa yok. */
+    upgradeCost?: number;
+    canUpgrade: boolean;
+  };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
@@ -408,6 +419,21 @@ export function setupGameControlUi(game: Phaser.Game) {
         "game-controls__worker-hire",
         true,
         () => dispatch({ action: hire.open ? "closeWorkerHire" : "openWorkerHire" })
+      ));
+    }
+
+    // Ulti gucu: mevcut carpan ve siradaki bedel ayni dugmede. Oyuncunun
+    // karsilastirdigi sey bu ikisi -- "su an ne kadar vuruyorum, bir katini
+    // daha almak kaca".
+    if (state.ultimate) {
+      const ulti = state.ultimate;
+      footer.append(makeActionButton(
+        ulti.upgradeCost === undefined
+          ? `Ulti Gücü ×${ulti.powerMultiplier} (tam)`
+          : `Ulti Gücü ×${ulti.powerMultiplier} → ×${ulti.powerMultiplier * 2} ${ulti.upgradeCost}g`,
+        "game-controls__ultimate-power",
+        ulti.canUpgrade,
+        () => dispatch({ action: "upgradeUltimatePower" })
       ));
     }
 

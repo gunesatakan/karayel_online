@@ -286,6 +286,8 @@ export type PlayerSnapshot = {
    */
   towerLimit: number;
   ultimateCharge: number;
+  /** Altinla alinmis ulti gucu kademesi; hasar carpani buradan cikar. */
+  ultimatePower?: number;
   skillCooldowns: number[];
   reputation?: number;
   authorityChain?: number;
@@ -784,7 +786,15 @@ export {
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
-  ZEYNEP_COLUMN_ULTIMATE_GRUNT_EQUIVALENT,
+  ULTIMATE_POWER_MAX_LEVEL,
+  ULTIMATE_POWER_BASE_COST,
+  ULTIMATE_POWER_COST_GROWTH,
+  ULTIMATE_POWER_DAMAGE_STEP,
+  getUltimatePowerMultiplier,
+  getUltimatePowerUpgradeCost,
+  canUpgradeUltimatePower,
+  ATAKAN_ULTIMATE_DRONE_DAMAGE,
+  ZEYNEP_COLUMN_ULTIMATE_DAMAGE,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   ZEYNEP_COLUMN_ULTIMATE_BEAM_MS,
   FINAL_WAVE,

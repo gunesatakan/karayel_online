@@ -35,6 +35,7 @@ export function createRoom(characterId) {
     experience: 0,
     towersBuilt: 0,
     ultimateCharge: 0,
+    ultimatePower: 0,
     skillCooldowns: [],
     runModifiers: [],
     ownedShopItemIds: [],
