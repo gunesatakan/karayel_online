@@ -2316,14 +2316,20 @@ export class MatchRoom extends Room<MatchState> {
       tower.linkBurstCooldownMs = Math.max(0, tower.linkBurstCooldownMs - deltaTime);
 
       if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+        // Vurus ani burada kararlasir ve supurmeye bildirilir. Supurme kendi
+        // sayacina bakarsa hicbir zaman hasar vermez: sayac hemen yukarida
+        // sifirlaniyor, yani asagida her zaman dolu gorunuyor. Kiris cizilir,
+        // dusmanlar yurumeye devam eder.
+        let firesThisTick = false;
         if (tower.cooldownMs <= 0) {
           if (!this.canTowerFire(tower)) {
             continue;
           }
           this.consumeTowerResources(tower);
           tower.cooldownMs = this.adjustIntervalForPerformanceAndHeat(tower, 220);
+          firesThisTick = true;
         }
-        this.updateDebugLaserSweep(tower);
+        this.updateDebugLaserSweep(tower, firesThisTick);
         continue;
       }
 
@@ -3617,7 +3623,15 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private updateDebugLaserSweep(tower: TowerModel) {
+  /**
+   * Asiri yukleme kirisi.
+   *
+   * `firesThisTick` cagiran yerden gelir: kiris her karede ciziliyor ama hasar
+   * yalnizca ates sayacinin doldugu karede uygulaniyor. Iki kare arasinda
+   * taranan yay atlanmasin diye vurus testi onceki aciyla su anki aci arasini
+   * birlikte olcer.
+   */
+  private updateDebugLaserSweep(tower: TowerModel, firesThisTick = false) {
     const now = Date.now();
     if (this.updateDebugLaserOverdriveHeat(tower, now)) {
       return;
@@ -3642,7 +3656,7 @@ export class MatchRoom extends Room<MatchState> {
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
 
     this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
-    if (tower.cooldownMs > 0) {
+    if (!firesThisTick) {
       if (finishedSweep) {
         tower.debugOverdriveUntil = now;
       }
@@ -3666,7 +3680,6 @@ export class MatchRoom extends Room<MatchState> {
         this.damageEnemyFromTower(tower, enemy, damage, 0);
       }
     }
-    tower.cooldownMs = this.getTowerFireInterval(tower);
     tower.debugSweepLastDamageAt = now;
     if (finishedSweep) {
       tower.debugOverdriveUntil = now;
