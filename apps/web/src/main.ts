@@ -109,3 +109,18 @@ function requestGameFullscreen() {
 
 document.addEventListener("pointerup", requestGameFullscreen, { passive: true });
 document.addEventListener("touchend", requestGameFullscreen, { passive: true });
+
+/**
+ * Gelistirme derlemesinde sahneye tutamak.
+ *
+ * Gorsel bir degisikligi -- bir efektin kademesi, bir isinin cizimi -- ancak
+ * gorerek dogrulayabiliyoruz, ama o efekti oyunda gormek icin dogru kuleyi
+ * dogru seviyede sahaya cikarmak gerekiyor. Bu kanca sahneyi konsola acar,
+ * boylece tek bir isin uydurup ciziminin nasil gorundugune bakilabilir.
+ *
+ * `import.meta.env.DEV` kosulu uretim paketinde bu satirin tamamen elenmesini
+ * saglar; yayinlanan oyunda boyle bir global yoktur.
+ */
+if (import.meta.env.DEV) {
+  (window as unknown as { __karayel?: Phaser.Game }).__karayel = game;
+}

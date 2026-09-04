@@ -1632,45 +1632,155 @@ export class GameScene extends Phaser.Scene {
     return tier === 2 ? 0xfacc15 : 0x93c5fd;
   }
 
-  /** Atis anindaki namlu parlamasi. Kademe yukseldikce genisler ve isinir. */
+  /**
+   * Kademe efektlerinin tek kurali: **buyume yok**.
+   *
+   * Once kademe basina her sey olcekleniyordu; seviye 10 kulenin atisi ekranda
+   * daha genis bir leke birakiyordu, o kadar. Buyutmek gucu degil kabaligi
+   * anlatir. Simdi disa dogru sinir ayni kaliyor, kademe ise katman, incelik ve
+   * zamanlama kazandiriyor: karsit yonde kapanan bir halka, gecikmeli bir yanki,
+   * uzun sonen bir tortu. Ayni yerde daha az yer kaplayan ama daha islenmis bir
+   * sey gorunuyor.
+   */
   private playMuzzleFlash(x: number, y: number, tier: number, color: number) {
-    const scale = tier === 3 ? 1.8 : tier === 2 ? 1.35 : 1;
+    // Dis sinir uc kademede de ayni. Degisen sey cizginin inceligi.
     this.spawnFlashRing(x, y, {
       color,
-      startRadius: 2 * scale,
-      endRadius: 9 * scale,
-      durationMs: 150 + tier * 20,
-      thickness: 1.5 + tier * 0.5,
+      startRadius: 2,
+      endRadius: 9,
+      durationMs: 150 + tier * 25,
+      thickness: tier >= 2 ? 1.2 : 1.8,
       depth: 11.5,
-      fill: 0.35
+      fill: tier >= 2 ? 0.22 : 0.35
     });
+
+    if (tier >= 2) {
+      // Iceri kapanan karsit halka: namludan cikan degil, namluya toplanan bir
+      // hareket. Ayni cerceve icinde iki yonlu okundugu icin daha derli toplu.
+      this.spawnFlashRing(x, y, {
+        color: 0xffffff,
+        startRadius: 9,
+        endRadius: 2.5,
+        durationMs: 130,
+        thickness: 0.9,
+        depth: 11.55
+      });
+    }
+
+    if (tier >= 3) {
+      // Tortu: ayni yaricapa cok yavas varan, neredeyse gorunmez bir hale.
+      this.spawnFlashRing(x, y, {
+        color,
+        startRadius: 4,
+        endRadius: 9.5,
+        durationMs: 420,
+        thickness: 0.6,
+        depth: 11.45
+      });
+    }
   }
 
   /**
-   * Isabet patlamasi. Kademe 3 ayrica ikinci bir dis halka atar -- carpma
-   * "daha buyuk" degil "daha agir" hissettirmeli.
+   * Isabet patlamasi.
+   *
+   * Carpma "daha buyuk" degil "daha agir" hissettirmeli: kademe yankiyi ve
+   * sonusu uzatiyor, yaricapi degil.
    */
   private playImpactBurst(x: number, y: number, tier: number, color: number) {
-    const scale = tier === 3 ? 1.7 : tier === 2 ? 1.3 : 1;
     this.spawnFlashRing(x, y, {
       color,
-      startRadius: 3 * scale,
-      endRadius: 14 * scale,
-      durationMs: 200 + tier * 30,
-      thickness: 2 + tier * 0.4,
+      startRadius: 3,
+      endRadius: 14,
+      durationMs: 200 + tier * 25,
+      thickness: tier >= 2 ? 1.5 : 2.2,
       depth: 11.4,
-      fill: 0.22
+      fill: tier >= 2 ? 0.14 : 0.22
     });
+
+    if (tier >= 2) {
+      // Yanki: ayni sinira biraz gecikmeyle varan ince ikinci halka.
+      this.queueDelayedEffect(() => this.spawnFlashRing(x, y, {
+        color: 0xffffff,
+        startRadius: 5,
+        endRadius: 13,
+        durationMs: 260,
+        thickness: 0.9,
+        depth: 11.35
+      }));
+    }
+
     if (tier >= 3) {
+      // Sonus: kil kalinliginda, uzun ve sessiz. Buyuklugu degil sureyi ekler.
       this.spawnFlashRing(x, y, {
-        color: 0xfff1f2,
-        startRadius: 6,
-        endRadius: 26,
-        durationMs: 300,
-        thickness: 1.5,
+        color,
+        startRadius: 8,
+        endRadius: 14.5,
+        durationMs: 520,
+        thickness: 0.6,
         depth: 11.3
       });
     }
+  }
+
+  /**
+   * Isinlarin kademe vurgusu.
+   *
+   * Mermilerin kademesi vardi, isinlarin yoktu: isinla vuran kuleler seviye
+   * atladikca ekranda hicbir sey degistirmiyordu. Vurgu isini kalinlastirmaz --
+   * ayni genisligin **icinde** daha ince ve daha parlak bir cekirdek acar,
+   * kenarina kil gibi raylar cizer ve boyunca ilerleyen kucuk bir dugum tasir.
+   * Sabit bir cizgiye hareket katmak, onu kalinlastirmaktan daha pahali bir
+   * gorunum verir.
+   */
+  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { rails?: boolean } = {}) {
+    const tier = beam.tier ?? 1;
+    const graphics = this.beamGraphics;
+    if (!graphics || tier < 2) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+
+    const nx = -uy;
+    const ny = ux;
+
+    if (options.rails !== false) {
+      // Kademe 2: isinin **disina** cizilen iki kil hat. Isin govdesi zaten
+      // beyaz, o yuzden ustune beyaz eklemek hicbir sey soylemiyordu; kenarin
+      // hemen disina cekilen renkli bir cizgi ise isini kalinlastirmadan ona
+      // isli bir sinir veriyor.
+      const edge = beam.width * 0.5 + 1.6;
+      graphics.lineStyle(0.8, color, 0.6);
+      graphics.lineBetween(beam.x1 + nx * edge, beam.y1 + ny * edge, beam.x2 + nx * edge, beam.y2 + ny * edge);
+      graphics.lineBetween(beam.x1 - nx * edge, beam.y1 - ny * edge, beam.x2 - nx * edge, beam.y2 - ny * edge);
+    }
+
+    if (tier < 3) {
+      return;
+    }
+
+    if (options.rails !== false) {
+      // Kademe 3: isin boyunca duzenli araliklarla dik kil cizgiler. Kafes
+      // hissi veriyor -- ayni genislikte, ama islenmis. Buyume yerine dokusu
+      // degistirmenin en okunakli yolu bu cikti.
+      const step = 22;
+      const reach = beam.width * 0.46;
+      graphics.lineStyle(0.7, 0xffffff, 0.5);
+      for (let along = step * 0.5; along < length; along += step) {
+        const px = beam.x1 + ux * along;
+        const py = beam.y1 + uy * along;
+        graphics.lineBetween(px + nx * reach, py + ny * reach, px - nx * reach, py - ny * reach);
+      }
+    }
+
+    // Ilerleyen dugum: isin duruyorken bile calisiyor gorunsun.
+    const travel = ((this.time.now % 620) / 620) * length;
+    graphics.fillStyle(0xffffff, 0.9);
+    graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(1.4, beam.width * 0.24));
   }
 
   private playAlertSound() {
@@ -5335,6 +5445,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
     this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
+    this.drawBeamTierAccent(beam, color);
   }
 
   private drawKinConeWave(beam: BeamSnapshot, color: number) {
@@ -5437,6 +5548,10 @@ export class GameScene extends Phaser.Scene {
       this.beamGraphics.fillStyle(0xfff1f2, 0.52 * life);
       this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(5, halfWidth * 0.12));
     }
+
+    // Koni disa dogru genisledigi icin kenar raylari yanlis yere duserdi;
+    // yalnizca eksen filamani ve ilerleyen dugum kalir.
+    this.drawBeamTierAccent(beam, color, { rails: false });
   }
 
   private drawKinShowcaseLight(beam: BeamSnapshot, color: number) {
@@ -5481,6 +5596,8 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, Math.max(5, coreWidth * 0.7));
     this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(8, spread * 0.08));
+    // Kin gosterisi de disa acilir: eksen filamani evet, kenar raylari hayir.
+    this.drawBeamTierAccent(beam, color, { rails: false });
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {
@@ -5505,6 +5622,8 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.moveTo(beam.x1, beam.y1);
     this.beamGraphics.lineTo(beam.x2, beam.y2);
     this.beamGraphics.strokePath();
+    // Yanik izi sonup giden bir tortu: raysiz, yalnizca ince bir cekirdek.
+    this.drawBeamTierAccent(beam, color, { rails: false });
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {
@@ -5547,10 +5666,25 @@ export class GameScene extends Phaser.Scene {
     strokeJagged((beam.width + 10) * visualScale, color, 0.16);
     strokeJagged((beam.width + 4) * visualScale, 0xffffff, 0.58);
     strokeJagged(Math.max(1.5, (beam.width - 1) * visualScale), 0x93c5fd, 0.98);
+
+    // Kademe vurgusu kirikli yolun kendisini izler: duz bir eksen cizgisi
+    // simsegin icinden gecerdi ve zincir kirikli olmaktan cikardi.
+    const tier = beam.tier ?? 1;
+    if (tier >= 2) {
+      strokeJagged(Math.max(0.7, beam.width * 0.28 * visualScale), 0xffffff, tier >= 3 ? 0.95 : 0.78);
+    }
+
     this.beamGraphics.fillStyle(0x67e8f9, 0.72);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 5 * visualScale);
     this.beamGraphics.fillStyle(0xffffff, 0.92);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4 * visualScale);
+
+    if (tier >= 3) {
+      // Carpma noktasinda kil kalinliginda bir halka: zincirin nerede
+      // kapandigini buyutmeden isaret eder.
+      this.beamGraphics.lineStyle(0.7, 0xffffff, 0.6);
+      this.beamGraphics.strokeCircle(beam.x2, beam.y2, 7 * visualScale);
+    }
   }
 
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
@@ -5568,6 +5702,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
     this.beamGraphics.fillStyle(color, 0.22);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
+    this.drawBeamTierAccent(beam, color);
   }
 
   private drawOverdriveBeam(beam: BeamSnapshot, color: number) {
@@ -5587,6 +5722,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
     this.beamGraphics.fillStyle(color, 0.58);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
+    this.drawBeamTierAccent(beam, color);
   }
 
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {

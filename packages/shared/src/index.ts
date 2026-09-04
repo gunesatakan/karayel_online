@@ -504,6 +504,14 @@ export type AmmoNodeSnapshot = {
 export type BeamSnapshot = {
   id: string;
   definitionId: string;
+  /**
+   * Isini yaratan kulenin gorsel kademesi; mermideki alanla ayni dil.
+   *
+   * Kademe 1 yazilmaz. Bir sure yalnizca mermilerde vardi ve isinla vuran
+   * kuleler seviye atladikca hicbir sey degismiyordu -- Zeynep'in bes saldiri
+   * kulesinin dordu bu yuzden hep ayni goruyordu.
+   */
+  tier?: import("./tower-stats/index.js").TowerTier;
   x1: number;
   y1: number;
   x2: number;

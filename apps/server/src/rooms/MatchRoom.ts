@@ -1840,6 +1840,19 @@ export class MatchRoom extends Room<MatchState> {
    * Kule satildiysa veya yikildiysa mermi havada kalabilir; o durumda kademe 1
    * kabul edilir. Kademe 1 yazilmaz cunku tel uzerinde varsayilan odur.
    */
+  /**
+   * Isinin gorsel kademesi.
+   *
+   * Mermideki kuralla ayni: kademe 1 yazilmaz, cunku telde varsayilan odur.
+   * Kule satilmis olabilir -- o durumda kademe yok, isin sade cizilir.
+   */
+  private getBeamTier(towerId: string | undefined) {
+    const tower = towerId ? this.towers.get(towerId) : undefined;
+    if (!tower) return undefined;
+    const tier = getTowerTier(tower.level);
+    return tier === 1 ? undefined : tier;
+  }
+
   private getProjectileTier(projectile: ProjectileModel) {
     const tower = projectile.towerId ? this.towers.get(projectile.towerId) : undefined;
     if (!tower) return undefined;
@@ -2635,7 +2648,8 @@ export class MatchRoom extends Room<MatchState> {
       width: overdrive ? 8 : 4,
       color: overdrive ? 0xfbbf24 : 0xfb7185,
       overdrive,
-      ttlMs
+      ttlMs,
+      tier: this.getBeamTier(tower.id)
     });
   }
 
@@ -2644,6 +2658,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(id, {
       id,
       definitionId: "warrior-6",
+      tier: this.getBeamTier(projectile.towerId),
       x1: from.x,
       y1: from.y,
       x2: to.x,
@@ -2674,6 +2689,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(id, {
       id,
       definitionId: definitionIdOverride ?? tower.definition.id,
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: result.endX,
@@ -3219,6 +3235,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(`kin-wave-${wave.id}`, {
       id: `kin-wave-${wave.id}`,
       definitionId: wave.sourceDefinitionId,
+      tier: this.getBeamTier(wave.towerId),
       x1: wave.x,
       y1: wave.y,
       x2,
@@ -3256,6 +3273,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "zeynep-3-kin-showcase",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: result.endX,
@@ -3344,6 +3362,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(trailId, {
       id: trailId,
       definitionId: "zeynep-3-burn-trail",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: endX,
@@ -3359,6 +3378,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(id, {
       id,
       definitionId: "zeynep-3-burn",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: endX,
@@ -3483,6 +3503,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(id, {
       id,
       definitionId: "zeynep-3-ray",
+      tier: this.getBeamTier(ray.towerId),
       x1: segment.x1,
       y1: segment.y1,
       x2: segment.x2,
