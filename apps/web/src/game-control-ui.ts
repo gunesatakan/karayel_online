@@ -102,6 +102,73 @@ export function setupGameControlUi(game: Phaser.Game) {
     reportChrome(game, rect.height);
   };
 
+  /**
+   * Panelin yapisini belirleyen anahtar.
+   *
+   * Once butun durum oldugu gibi metne cevriliyordu ve o metin degisince panel
+   * bastan kuruluyordu. Sorun, durumdaki sayilarin ekranda gorunenden cok daha
+   * ince olmasi: secili kulenin cani, isisi, muhimmati her anlik goruntude
+   * kimildiyor, ama ekranda ayni satir yaziyor. Panel gorunmeyen degisiklikler
+   * icin surekli yikiliyordu.
+   *
+   * Anahtar artik yalnizca **yapiyi** tarif ediyor: hangi dugmeler var, ne
+   * yaziyorlar, acik mi kapali mi. Canli sayilar anahtarin disinda kaliyor ve
+   * yerinde guncelleniyor.
+   */
+  const buildStructureKey = (state: ControlState) => {
+    return JSON.stringify(state, (fieldName, value) => {
+      if (fieldName === "selectedStats") {
+        // Icerigi degil varligi onemli: bar satiri var mi, yok mu.
+        return Array.isArray(value) ? value.length : value;
+      }
+      // Kesirli sayilar ekranda yuvarlanarak gosteriliyor; anahtarda tam
+      // hallerini tutmak, gozle gorulmeyen bir oynamayi yeniden kurma
+      // sebebine cevirirdi.
+      return typeof value === "number" ? Math.round(value) : value;
+    });
+  };
+
+  /** Yalnizca canli sayi satirini tazeler; panelin geri kalanina dokunmaz. */
+  const syncLiveStats = () => {
+    const line = root.querySelector<HTMLElement>(".game-controls__stats");
+    if (!line || !latestState?.selectedStats) {
+      return;
+    }
+    const text = latestState.selectedStats.join("  |  ");
+    if (line.textContent !== text) {
+      line.textContent = text;
+    }
+  };
+
+  // Panel uzerinde basili duran parmaklar. Bos oldugu anda bekleyen yeniden
+  // kurma varsa hemen yapilir.
+  const pressedPointers = new Set<number>();
+  let rebuildDeferred = false;
+
+  const releasePointer = (event: PointerEvent) => {
+    if (!pressedPointers.delete(event.pointerId) || pressedPointers.size > 0) {
+      return;
+    }
+    if (rebuildDeferred && latestState) {
+      // Dokunusun kendisi once bitsin: `pointerup` dinleyicileri bu olayin
+      // ardindan calisiyor, paneli simdi kurarsak yine ayni tuzaga duseriz.
+      queueMicrotask(() => {
+        if (rebuildDeferred && latestState && pressedPointers.size === 0) {
+          latestKey = "";
+          render(latestState);
+        }
+      });
+    }
+  };
+
+  root.addEventListener("pointerdown", (event: PointerEvent) => {
+    pressedPointers.add(event.pointerId);
+  });
+  root.addEventListener("pointerup", releasePointer);
+  root.addEventListener("pointercancel", releasePointer);
+  window.addEventListener("pointerup", releasePointer);
+  window.addEventListener("pointercancel", releasePointer);
+
   let lastChromeMeasureAt = 0;
   const scheduleChromeMeasure = () => {
     const now = performance.now();
@@ -144,10 +211,30 @@ export function setupGameControlUi(game: Phaser.Game) {
     // kisitlanir -- getBoundingClientRect yerlesimi zorluyor.
     scheduleChromeMeasure();
     latestState = state;
-    const key = JSON.stringify(state);
+
+    // Canli sayilar paneli yeniden kurmaz, yerinde yazilir.
+    syncLiveStats();
+
+    const key = buildStructureKey(state);
     if (key === latestKey) {
       return;
     }
+
+    // Parmak panelin uzerindeyken yeniden kurmak dokunusu yutuyor.
+    //
+    // Dugmeler islerini `pointerup` ile yapiyor ve her yeniden kurma o
+    // dugmeleri yok edip yenilerini yaratiyor. Basma ile birakma arasinda
+    // panel bir kez bile yenilenirse `pointerup` artik var olmayan bir
+    // elemana gidiyor ve dokunus hic olmamis sayiliyor. Insan basisi
+    // 80-150 ms surerken panel saniyede onlarca kez yenilendigi icin bu
+    // "ara sira" degil, cogu zaman oluyordu. Bekletmek guvenli: parmak
+    // kalkar kalkmaz en guncel durumla kuruluyor.
+    if (pressedPointers.size > 0) {
+      rebuildDeferred = true;
+      return;
+    }
+
+    rebuildDeferred = false;
     latestKey = key;
     root.classList.toggle("game-controls--hidden", !state.visible);
     root.classList.toggle("game-controls--tower-selected", Boolean(state.selectedStats));
