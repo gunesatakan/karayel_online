@@ -220,3 +220,87 @@ test("cok sayida cepli haritada takilmaz", () => {
 
   assert.notEqual(sonuc.outcome, "loop", "cepler arasinda salindi");
 });
+
+/**
+ * Duvara toslama ani.
+ *
+ * Dusman asagi inip duvara carptiginda iki yan varsa yari yariya ayrilmali,
+ * yanlardan biri kapaliysa **tamami** acik olana donmeli. El kurali bunu tek
+ * basina vermiyordu: secilen yan kapali oldugunda siradaki secenegi yukariydi
+ * ve surunun yarisi cikistan uzaklasip geri tirmaniyordu.
+ */
+function firstContact(rows, hand) {
+  const grid = rows.map((row) => row.split(""));
+  let start;
+  for (let row = 0; row < grid.length; row += 1) {
+    for (let col = 0; col < grid[row].length; col += 1) {
+      if (grid[row][col] === "S") {
+        start = { col, row };
+        grid[row][col] = ".";
+      }
+    }
+  }
+  assert.ok(start, "baslangic (S) yok");
+
+  const isOpen = (col, row) =>
+    col >= 0 && col < grid[0].length && row >= 0 && row < grid.length && grid[row][col] !== "#";
+  const result = stepBlindNavigator(start, createBlindNavigatorState(hand), isOpen, () => hand);
+  if (result.kind !== "move") return "saldiri";
+  if (result.col > start.col) return "sag";
+  if (result.col < start.col) return "sol";
+  return result.row < start.row ? "yukari" : "asagi";
+}
+
+test("duvara toslayinca sol kapaliysa tamami saga doner", () => {
+  const harita = [
+    "..........",
+    "..#S......",
+    "..########",
+    ".........."
+  ];
+
+  for (const hand of ["left", "right"]) {
+    assert.equal(firstContact(harita, hand), "sag", `${hand} eliyle saga donmedi`);
+  }
+});
+
+test("duvara toslayinca sag kapaliysa tamami sola doner", () => {
+  const harita = [
+    "..........",
+    "...S#.....",
+    "..########",
+    ".........."
+  ];
+
+  for (const hand of ["left", "right"]) {
+    assert.equal(firstContact(harita, hand), "sol", `${hand} eliyle sola donmedi`);
+  }
+});
+
+test("iki yan da acikken el secimi yonu belirler", () => {
+  // Bolunme burada olmali: iki taraf da esitse yari yariya ayrilsinlar.
+  const harita = [
+    "..........",
+    "...S......",
+    "..########",
+    ".........."
+  ];
+
+  assert.equal(firstContact(harita, "left"), "sol");
+  assert.equal(firstContact(harita, "right"), "sag");
+});
+
+test("iki yan da kapaliyken yukari cikmak hala serbest", () => {
+  // Tek cikis yukarisiysa tirmanmak dogru cevap; kural yalnizca acik bir yan
+  // varken yukariyi engelliyor.
+  const harita = [
+    "..........",
+    "..#S#.....",
+    "..########",
+    ".........."
+  ];
+
+  for (const hand of ["left", "right"]) {
+    assert.equal(firstContact(harita, hand), "yukari", `${hand}: tek cikis yukari iken tirmanmadi`);
+  }
+});

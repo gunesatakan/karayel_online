@@ -88,6 +88,20 @@ function handTurn(hand: BlindHand) {
  * dusman ic koseyi kesmeden dolanir. Sag el bunun aynasi. Sira her zaman
  * "ele dogru, duz, ters ele, geri".
  */
+function flipHand(hand: BlindHand): BlindHand {
+  return hand === "left" ? "right" : "left";
+}
+
+/** Ilk temasta o elin baktigi yan acik mi. */
+function isSideOpen(
+  from: { col: number; row: number },
+  hand: BlindHand,
+  isOpen: (col: number, row: number) => boolean
+) {
+  const side = step(from, turn(BLIND_PREFERRED_HEADING, -handTurn(hand)));
+  return isOpen(side.col, side.row);
+}
+
 function wallFollowOrder(heading: BlindHeading, hand: BlindHand): BlindHeading[] {
   const toHand = handTurn(hand);
   return [turn(heading, toHand), heading, turn(heading, -toHand), turn(heading, 2)];
@@ -119,7 +133,18 @@ export function stepBlindNavigator(
     // Duvar ele denk gelecek sekilde donulur. Bu yapilmazsa "once ele dogru
     // dene" kurali ilk adimda duvardan uzaklasan yone bakar ve dusman duvari
     // takip etmek yerine yanindan savrulur.
-    const hand = pickHand();
+    //
+    // Secilen yan kapaliysa el degistirilir.
+    //
+    // El kuralinin siradaki secenegi **yukari**: duvari sol elle tutan ve solu
+    // kapali bulan dusman saga degil geriye tirmaniyordu. Yani duvara toslayan
+    // surunun yarisi cikistan uzaklasiyordu, oysa acik olan tek yan sagdi.
+    // Yukari cikmak duvari dolasmanin mesru bir parcasi, ama daha ilk temasta
+    // degil: o an yanlardan biri aciksa dogru cevap her zaman o yan.
+    let hand = pickHand();
+    if (!isSideOpen(from, hand, isOpen) && isSideOpen(from, flipHand(hand), isOpen)) {
+      hand = flipHand(hand);
+    }
     const entryHeading = turn(BLIND_PREFERRED_HEADING, -handTurn(hand));
     const wallState: BlindNavigatorState = {
       mode: "wall",
