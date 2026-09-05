@@ -207,7 +207,7 @@ export const cardCatalog: CardDefinition[] = [
   // ayni cumlenin uc cesitlemesi olurdu, o yuzden yalnizca ilki sayi buyutuyor.
   { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
   { id: "radyator", name: "Radyatör", description: "Kule ne kadar sıcaksa o kadar hızlı soğur; 100 derecede soğuması iki katına çıkar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:radiator"] },
-  { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%25.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.25)], unlocks: ["heat:quickRelease"] },
+  { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.15)], unlocks: ["heat:quickRelease"] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
