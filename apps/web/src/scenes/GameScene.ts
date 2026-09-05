@@ -1732,7 +1732,7 @@ export class GameScene extends Phaser.Scene {
    * Sabit bir cizgiye hareket katmak, onu kalinlastirmaktan daha pahali bir
    * gorunum verir.
    */
-  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { rails?: boolean } = {}) {
+  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { rails?: boolean; outerWidth?: number } = {}) {
     const tier = beam.tier ?? 1;
     const graphics = this.beamGraphics;
     if (!graphics || tier < 2) {
@@ -1748,12 +1748,21 @@ export class GameScene extends Phaser.Scene {
     const nx = -uy;
     const ny = ux;
 
+    // Vurgu, isinin **cizilen** genisligine gore olculur.
+    //
+    // Once beam.width kullaniliyordu, ama cizim fonksiyonlari govdenin ustune
+    // hale katmanlari koyuyor: Debug Lazer 4 birimlik bir isin bildirirken
+    // ekranda 12 birim yer kapliyor. Vurgu o yuzden isinin **icine** dusuyor ve
+    // hicbir kademede gorunmuyordu. Taban deger de sart: ince isinlarda oranla
+    // olculen her sey birkac pikselin altina inip kayboluyor.
+    const outerHalf = Math.max(3, (options.outerWidth ?? beam.width) * 0.5);
+
     if (options.rails !== false) {
       // Kademe 2: isinin **disina** cizilen iki kil hat. Isin govdesi zaten
       // beyaz, o yuzden ustune beyaz eklemek hicbir sey soylemiyordu; kenarin
       // hemen disina cekilen renkli bir cizgi ise isini kalinlastirmadan ona
       // isli bir sinir veriyor.
-      const edge = beam.width * 0.5 + 1.6;
+      const edge = outerHalf + 2;
       graphics.lineStyle(0.8, color, 0.6);
       graphics.lineBetween(beam.x1 + nx * edge, beam.y1 + ny * edge, beam.x2 + nx * edge, beam.y2 + ny * edge);
       graphics.lineBetween(beam.x1 - nx * edge, beam.y1 - ny * edge, beam.x2 - nx * edge, beam.y2 - ny * edge);
@@ -1768,7 +1777,7 @@ export class GameScene extends Phaser.Scene {
       // hissi veriyor -- ayni genislikte, ama islenmis. Buyume yerine dokusu
       // degistirmenin en okunakli yolu bu cikti.
       const step = 22;
-      const reach = beam.width * 0.46;
+      const reach = outerHalf + 1.5;
       graphics.lineStyle(0.7, 0xffffff, 0.5);
       for (let along = step * 0.5; along < length; along += step) {
         const px = beam.x1 + ux * along;
@@ -1780,7 +1789,7 @@ export class GameScene extends Phaser.Scene {
     // Ilerleyen dugum: isin duruyorken bile calisiyor gorunsun.
     const travel = ((this.time.now % 620) / 620) * length;
     graphics.fillStyle(0xffffff, 0.9);
-    graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(1.4, beam.width * 0.24));
+    graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(2, outerHalf * 0.5));
   }
 
   private playAlertSound() {
@@ -5702,7 +5711,8 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
     this.beamGraphics.fillStyle(color, 0.22);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
-    this.drawBeamTierAccent(beam, color);
+    // Dis hale govdeden 8 birim genis; vurgu onun disina oturmali.
+    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 8 });
   }
 
   private drawOverdriveBeam(beam: BeamSnapshot, color: number) {
@@ -5722,7 +5732,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
     this.beamGraphics.fillStyle(color, 0.58);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
-    this.drawBeamTierAccent(beam, color);
+    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14 });
   }
 
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
