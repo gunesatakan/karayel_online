@@ -344,6 +344,7 @@ export class GameScene extends Phaser.Scene {
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
+  private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private staticEnemySnapshots = new Map<string, StaticEnemySnapshot>();
   private staticTowerSnapshots = new Map<string, StaticTowerSnapshot>();
@@ -514,6 +515,8 @@ export class GameScene extends Phaser.Scene {
     this.createHeader();
     window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
+    // Mermi izleri mermilerin (11) hemen altinda: iz cekirdegi ortmemeli.
+    this.projectileTrailGraphics = this.add.graphics().setDepth(10.9);
     this.createKillStreakAudio();
     this.createBackgroundMusic();
     this.emitControlState();
@@ -3976,7 +3979,52 @@ export class GameScene extends Phaser.Scene {
     return this.textures.exists(tiered) ? tiered : base;
   }
 
+  /**
+   * Kademeli mermilerin arkasinda birakigi iz.
+   *
+   * Merminin kademesi zaten dokusunda ve atis/carpma halkalarinda vardi, ama
+   * ikisi de ya cok kucuk ya cok kisa: namlu alevi 150 ms suruyor, doku farki
+   * birkac piksel. Iz, merminin **ucusu boyunca** duruyor -- seviye farkinin
+   * gercekten goze carptigi tek yer bu oldu.
+   *
+   * Mermiyi buyutmuyor: uzunluk merminin arkasina dogru gidiyor, capina
+   * dokunmuyor.
+   */
+  private renderProjectileTrails(projectiles: ProjectileSnapshot[]) {
+    const graphics = this.projectileTrailGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.clear();
+    for (const projectile of projectiles) {
+      const tier = projectile.tier ?? 1;
+      if (tier < 2) continue;
+
+      const vx = projectile.vx ?? 0;
+      const vy = projectile.vy ?? 0;
+      const speed = Math.hypot(vx, vy);
+      if (speed < 0.01) continue;
+
+      const ux = vx / speed;
+      const uy = vy / speed;
+      const length = tier >= 3 ? 20 : 12;
+      const color = this.getTierColor(tier);
+
+      graphics.lineStyle(tier >= 3 ? 2.4 : 1.8, color, 0.4);
+      graphics.lineBetween(projectile.x, projectile.y, projectile.x - ux * length, projectile.y - uy * length);
+
+      if (tier >= 3) {
+        // Ucuncu kademede izin icinde bir de parlak cekirdek: uzunluk degil
+        // katman ekleniyor.
+        graphics.lineStyle(1, 0xffffff, 0.8);
+        graphics.lineBetween(projectile.x, projectile.y, projectile.x - ux * (length * 0.55), projectile.y - uy * (length * 0.55));
+      }
+    }
+  }
+
   private renderProjectiles(projectiles: ProjectileSnapshot[]) {
+    this.renderProjectileTrails(projectiles);
     const activeIds = new Set(projectiles.map((projectile) => projectile.id));
 
     for (const [id, sprite] of this.projectiles) {
