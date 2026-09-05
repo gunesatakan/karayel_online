@@ -220,9 +220,9 @@ export const cardCatalog: CardDefinition[] = [
   // oduniyor -- yavaslatma kurmak, kuleleri yan yana dizmek, enerji hattini
   // ayakta tutmak, mermiyi bilerek tuketmek. Isi boylece ayri bir kaynak
   // olmaktan cikip zaten verilen kararlarin sonucu oluyor.
-  { id: "soguk-zincir", name: "Soğuk Zincir", description: "Menzilinde yavaşlatılmış düşman varken kule +%80 hızlı soğur.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chillVent"] },
+  { id: "soguk-zincir", name: "Soğuk Zincir", description: "Menzilinde yavaşlatılmış düşman varken kule +%50 hızlı soğur.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chillVent"] },
   { id: "isi-degisimi", name: "Isı Değişimi", description: "Bitişik kuleler ısılarını paylaşır: saniyede 8 dereceye kadar sıcak olandan soğuk olana akar.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:exchange"] },
-  { id: "buz-akusu", name: "Buz Aküsü", description: "Soğuma enerjiye bağlanır: enerji tamken 2 katı, %50'deyken normal, 0 enerjide soğuma durur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
+  { id: "buz-akusu", name: "Buz Aküsü", description: "Enerjisi %70'in üzerinde olan kule +%50 hızlı soğur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
   { id: "namlu-molasi", name: "Namlu Molası", description: "Mühimmatı biten kule 3 kat hızlı soğur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:emptyVent"] },
 
   // --- Motor kartlari ---

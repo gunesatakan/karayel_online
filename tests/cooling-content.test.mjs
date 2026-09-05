@@ -252,8 +252,8 @@ test("Soğuk Zincir yalnızca yavaşlatılmış düşman varken soğutur", () =>
   enemyInRange(kartli.room, kartli.tower, { slowed: true });
   const yavasli = coolOneSecond(kartli.room, kartli.tower, 80);
   assert.ok(
-    Math.abs(yavasli / yavassizSade - 1.8) < 0.1,
-    `beklenen x1.8, olculen x${(yavasli / yavassizSade).toFixed(2)}`
+    Math.abs(yavasli / yavassizSade - 1.5) < 0.1,
+    `beklenen x1.5, olculen x${(yavasli / yavassizSade).toFixed(2)}`
   );
 });
 
@@ -297,29 +297,40 @@ test("Isı Değişimi salınmaz: bir adımda farkın en fazla yarısı taşını
   assert.ok(tower.temperature >= other.temperature, "kuleler yer degistirdi, salinim var");
 });
 
-test("Buz Aküsü soğumayı enerjiye bağlar", () => {
+/**
+ * Buz Akusu bir esik karti, oran karti degil.
+ *
+ * Ilk hali sogumayi enerji oraniyla surekli olcekliyor ve tepesini tam doluya
+ * koyuyordu. Kule oyunda neredeyse hic tam dolu olmadigi icin o tepeye
+ * ulasilamiyordu; geriye yalnizca tabandaki ceza kaliyordu, yani kart pratikte
+ * bir dezavantajdi. Esik, odulu kulenin gercekten gezdigi bolgeye tasiyor.
+ */
+test("Buz Aküsü enerji %70 üzerindeyken soğutur", () => {
   const sade = towerRoom();
   const sadeDusus = coolOneSecond(sade.room, sade.tower, 80);
 
   const dolu = towerRoom(["buz-akusu"]);
-  dolu.tower.energy = dolu.tower.maxEnergy;
-  const doluDusus = coolOneSecond(dolu.room, dolu.tower, 80);
+  dolu.tower.energy = dolu.tower.maxEnergy * 0.8;
   assert.ok(
-    Math.abs(doluDusus / sadeDusus - 2) < 0.1,
-    `dolu enerjide iki kat olmali: x${(doluDusus / sadeDusus).toFixed(2)}`
+    Math.abs(coolOneSecond(dolu.room, dolu.tower, 80) / sadeDusus - 1.5) < 0.1,
+    "esigin ustunde +%50 olmali"
   );
 
-  const yarim = towerRoom(["buz-akusu"]);
-  yarim.tower.energy = yarim.tower.maxEnergy / 2;
-  const yarimDusus = coolOneSecond(yarim.room, yarim.tower, 80);
+  // Esigin tam ustu degil altinda: sinir kapsayici olmamali.
+  const sinirda = towerRoom(["buz-akusu"]);
+  sinirda.tower.energy = sinirda.tower.maxEnergy * 0.7;
   assert.ok(
-    Math.abs(yarimDusus / sadeDusus - 1) < 0.1,
-    `yarim enerjide normal olmali: x${(yarimDusus / sadeDusus).toFixed(2)}`
+    Math.abs(coolOneSecond(sinirda.room, sinirda.tower, 80) / sadeDusus - 1) < 0.05,
+    "tam esikte odul verilmemeli"
   );
 
+  // Ceza yok: esigin altinda kule normal soguyor, cezalanmiyor.
   const bos = towerRoom(["buz-akusu"]);
   bos.tower.energy = 0;
-  assert.equal(coolOneSecond(bos.room, bos.tower, 80), 0, "enerjisi bitince soguma durmali");
+  assert.ok(
+    Math.abs(coolOneSecond(bos.room, bos.tower, 80) / sadeDusus - 1) < 0.05,
+    "esigin altinda ceza uygulanmis"
+  );
 });
 
 test("Namlu Molası yalnızca mühimmat bittiğinde soğutur", () => {
@@ -341,4 +352,23 @@ test("Namlu Molası yalnızca mühimmat bittiğinde soğutur", () => {
     Math.abs(bosDusus / sadeDusus - 3) < 0.15,
     `beklenen x3, olculen x${(bosDusus / sadeDusus).toFixed(2)}`
   );
+});
+
+test("Isı Değişimi eşit sıcaklıktaki kuleler arasında hiçbir şey yapmaz", () => {
+  // Akis farktan doguyor: fark yoksa tasinacak sey de yok. Kural bu yonde
+  // yazilmasaydi esit iki kule birbirine isi atip durur, ikisi de gereksiz yere
+  // kimildardi.
+  const { room, tower } = towerRoom(["isi-degisimi"]);
+  const komsu = findBuildableSpot(room, "warrior-1");
+  room.placeTower(client, { ...komsu, definitionId: "warrior-1" });
+  const other = [...room.towers.values()].find((entry) => entry.id !== tower.id);
+  other.x = tower.x + 1;
+  other.y = tower.y + 1;
+
+  tower.temperature = 45;
+  other.temperature = 45;
+  room.updateHeatExchange(1);
+
+  assert.equal(tower.temperature, 45, "esit sicaklikta isi hareket etti");
+  assert.equal(other.temperature, 45, "esit sicaklikta isi hareket etti");
 });

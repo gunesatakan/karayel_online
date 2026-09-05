@@ -269,9 +269,17 @@ const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
 /** Buhar tahliyesi: her oldurme kuleyi bu kadar derece sogutur. */
 const KILL_VENT_HEAT = 4;
 /** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
-const CHILL_VENT_COOLING_BONUS = 0.8;
-/** Buz akusu: enerji tam doluyken sogumanin carpani; bos iken sifir. */
-const CHARGED_COOLING_MAX_MULTIPLIER = 2;
+const CHILL_VENT_COOLING_BONUS = 0.5;
+/**
+ * Buz akusu: enerji bu oranin uzerindeyken sogumaya eklenen pay.
+ *
+ * Once oranla surekli olceklenip tam doluda iki kata cikiyordu. Oyunda kule
+ * neredeyse hic tam dolu olmadigi icin egrinin tepesine ulasilamiyor, tabanindaki
+ * ceza ise surekli isliyordu -- yani kart pratikte yalnizca cezaydi. Esik, kartin
+ * gercekten gorulen bolgede calismasini sagliyor.
+ */
+const CHARGED_COOLING_ENERGY_RATIO = 0.7;
+const CHARGED_COOLING_BONUS = 0.5;
 /** Namlu molasi: muhimmati biten kulenin sogutma carpani. */
 const EMPTY_VENT_COOLING_MULTIPLIER = 3;
 /** Isi degisimi: bitisik kuleler arasinda saniyede tasinabilecek derece. */
@@ -2309,12 +2317,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (this.towerHasUnlock(tower, "heat:chargedCooling")) {
-      // Soguma enerjiye baglanir. Yarim depo hicbir sey degistirmez; asagisi
-      // ceza, yukarisi odul. Enerji hatti zaten ayakta tutulan bir sey oldugu
-      // icin bu kart lojistige verilen emegi isi tarafinda da odetir.
+      // Soguma enerjiye baglanir: depo dolu tutuldugu surece odul, altina
+      // dusuldugunde yalnizca odulun kesilmesi. Enerji hatti zaten ayakta
+      // tutulan bir sey oldugu icin bu kart lojistige verilen emegi isi
+      // tarafinda da odetir.
       const capacity = Math.max(1, tower.maxEnergy);
-      const ratio = this.clamp(tower.energy / capacity, 0, 1);
-      cooling *= CHARGED_COOLING_MAX_MULTIPLIER * ratio;
+      if (tower.energy / capacity > CHARGED_COOLING_ENERGY_RATIO) {
+        cooling *= 1 + CHARGED_COOLING_BONUS;
+      }
     }
 
     if (this.towerHasUnlock(tower, "heat:emptyVent") && tower.ammo <= 0) {
