@@ -86,7 +86,7 @@ export const atakanTowers: TowerDefinition[] = ([
     characterId: "warrior",
     name: "Debug Lazer",
     role: "Sürekli hasar",
-    description: "Çok sık ve küçük vuran bir odak lazeri; tek başına zayıf, Takipçi ile birlikte yıkıcıdır. Takipte işaretli düşmanları önceliklendirir. Kesintisiz ateş ettikçe ısınır: 20 saniyelik pencerede 10 saniyeyi doldurursa 5 saniye aşırı ısınıp susar. Hava hedeflerini vuramaz.",
+    description: "Çok sık ve küçük vuran bir odak lazeri; tek başına zayıf, Takipçi ile birlikte yıkıcıdır. Takipte işaretli düşmanları önceliklendirir. İşaretli bir düşmanı öldürdüğünde 2 saniyeliğine haritanın kenarına uzanan bir kirişe dönüşür: en yakın düşmana nişan alır, oradan sıradaki en yakına döner ve geçtiği herkesi vurur. Kesintisiz ateş ettikçe ısınır: 20 saniyelik pencerede 10 saniyeyi doldurursa 5 saniye aşırı ısınıp susar. Hava hedeflerini vuramaz.",
     classType: "damage",
     damageType: "fire",
     hitType: "focus",

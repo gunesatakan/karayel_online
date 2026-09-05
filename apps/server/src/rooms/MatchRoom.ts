@@ -679,9 +679,16 @@ type TowerModel = {
   offlineUntil: number;
   debugOverdriveUntil: number;
   debugSweepStartedAt: number;
-  debugSweepPathId: number;
-  debugSweepStartDistance: number;
-  debugSweepEndDistance: number;
+  /**
+   * Supurmenin ugrayacagi dusmanlar, kuleye yakinliga gore sirali.
+   *
+   * Once yol mesafesi tutuluyordu: kiris, olen hedefin yol uzerindeki
+   * noktasindan arkadaki dusmanin noktasina donuyordu. Dusmanlar sabit bir yol
+   * izlemeyi birakip korlemesine yurumeye baslayinca o mesafenin kime karsilik
+   * geldigi belirsizlesti ve kiris bosluga donmeye basladi. Artik zincir
+   * dusmanlarin kendisi.
+   */
+  debugSweepTargetIds: string[];
   debugSweepLastDamageAt: number;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
@@ -2363,7 +2370,7 @@ export class MatchRoom extends Room<MatchState> {
 
       if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
         tower.debugSweepStartedAt = 0;
-        tower.debugSweepPathId = 0;
+        tower.debugSweepTargetIds = [];
         tower.debugSweepLastDamageAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
       }
@@ -2631,9 +2638,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private startDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, now: number) {
     tower.debugSweepStartedAt = now;
-    tower.debugSweepPathId = target.pathId;
-    tower.debugSweepStartDistance = target.pathDistance;
-    tower.debugSweepEndDistance = this.getRearMostEnemyDistance(target.pathDistance, target.pathId);
+    tower.debugSweepTargetIds = this.getDebugLaserSweepTargetIds(tower);
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = now;
     tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
@@ -3678,15 +3683,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const elapsedSeconds = this.clamp((now - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
-    const sweepPath = this.activePaths[tower.debugSweepPathId] ?? this.activePaths[0];
-    const currentAngle = getDebugLaserPathSweepAngle(
-      sweepPath,
-      tower.x,
-      tower.y,
-      tower.debugSweepStartDistance,
-      tower.debugSweepEndDistance,
-      elapsedSeconds
-    );
+    const sweepAngles = this.getDebugLaserSweepAngles(tower);
+    const currentAngle = getDebugLaserChainSweepAngle(sweepAngles, elapsedSeconds, tower.facing);
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle, this.getActiveWorldBounds());
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
@@ -3702,14 +3700,7 @@ export class MatchRoom extends Room<MatchState> {
     const damage = this.getTowerDamage(tower);
     const previousDamageAt = tower.debugSweepLastDamageAt > 0 ? tower.debugSweepLastDamageAt : Math.max(tower.debugSweepStartedAt, now - 50);
     const previousElapsedSeconds = this.clamp((previousDamageAt - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
-    const previousAngle = getDebugLaserPathSweepAngle(
-      sweepPath,
-      tower.x,
-      tower.y,
-      tower.debugSweepStartDistance,
-      tower.debugSweepEndDistance,
-      previousElapsedSeconds
-    );
+    const previousAngle = getDebugLaserChainSweepAngle(sweepAngles, previousElapsedSeconds, tower.facing);
 
     for (const enemy of Array.from(this.enemies.values())) {
       if (didDebugLaserSweepHitEnemy(tower, enemy, previousAngle, currentAngle, end.x, end.y, this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS))) {
@@ -3768,19 +3759,43 @@ export class MatchRoom extends Room<MatchState> {
     tower.overheatMs = Math.max(tower.overheatMs, DEBUG_LASER_OVERHEAT_MS);
     tower.debugOverdriveUntil = 0;
     tower.debugSweepStartedAt = 0;
-    tower.debugSweepPathId = 0;
+    tower.debugSweepTargetIds = [];
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = 0;
     tower.debugOverdriveHeatSegments = [];
     this.beams.delete(`beam-${tower.id}`);
   }
 
-  private getRearMostEnemyDistance(startDistance: number, pathId: number) {
-    const behindEnemies = Array.from(this.enemies.values())
-      .filter((enemy) => enemy.pathId === pathId && enemy.pathDistance < startDistance)
-      .sort((a, b) => a.pathDistance - b.pathDistance);
+  /**
+   * Supurmenin ugrak sirasi: en yakin dusmandan baslayip uzaga dogru.
+   *
+   * Kiris menzil tanimadigi icin liste kulenin menziliyle degil sahadaki
+   * dusmanlarla sinirli. Sira baslangicta bir kez donduruluyor; her karede
+   * yeniden siralamak, dusmanlar birbirini gectikce kirisi ileri geri
+   * sicratirdi.
+   */
+  private getDebugLaserSweepTargetIds(tower: TowerModel) {
+    return Array.from(this.enemies.values())
+      .map((enemy) => ({ id: enemy.id, distance: distanceSq(tower.x, tower.y, enemy.x, enemy.y) }))
+      .sort((a, b) => a.distance - b.distance)
+      .map((entry) => entry.id);
+  }
 
-    return behindEnemies[0]?.pathDistance ?? Math.max(0, startDistance - this.scaleWorldDistance(260));
+  /**
+   * Zincirin su anki acilari.
+   *
+   * Sira sabit ama acilar canli: hedefler yuruyor, kiris de onlari takip
+   * etsin. Olen hedefler listeden dusuyor -- iki saniyelik supurmede surunun
+   * yarisi olebilir ve olulere nisan almak kirisi bosluga cevirirdi.
+   */
+  private getDebugLaserSweepAngles(tower: TowerModel) {
+    const angles: number[] = [];
+    for (const id of tower.debugSweepTargetIds) {
+      const enemy = this.enemies.get(id);
+      if (!enemy) continue;
+      angles.push(Math.atan2(enemy.y - tower.y, enemy.x - tower.x));
+    }
+    return angles;
   }
   private updateServerLinks() {
     const now = Date.now();
@@ -5159,9 +5174,7 @@ export class MatchRoom extends Room<MatchState> {
       offlineUntil: 0,
       debugOverdriveUntil: 0,
       debugSweepStartedAt: 0,
-      debugSweepPathId: 0,
-      debugSweepStartDistance: 0,
-      debugSweepEndDistance: 0,
+      debugSweepTargetIds: [],
       debugSweepLastDamageAt: 0,
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],
@@ -9495,45 +9508,43 @@ function degreesToRadians(degrees: number) {
   return (degrees * Math.PI) / 180;
 }
 
-function getAngleToPathDistance(path: RuntimePath | undefined, x: number, y: number, pathDistance: number) {
-  const point = getPointAlongRuntimePath(path, pathDistance);
-  return Math.atan2(point.y - y, point.x - x);
-}
-
 function getSignedShortestAngleDelta(angleA: number, angleB: number) {
   return Math.atan2(Math.sin(angleB - angleA), Math.cos(angleB - angleA));
 }
 
-function getDebugLaserPathSweepAngle(path: RuntimePath | undefined, x: number, y: number, startDistance: number, endDistance: number, elapsedSeconds: number) {
-  let remainingAngle = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * elapsedSeconds;
-  const totalDistance = Math.abs(startDistance - endDistance);
-  if (totalDistance <= 0 || remainingAngle <= 0) {
-    return getAngleToPathDistance(path, x, y, startDistance);
+/**
+ * Zincir boyunca donen kirisin su anki acisi.
+ *
+ * Aci listesi ugrak sirasi: birinciye nisan alinir, oradan ikinciye, ikinciden
+ * ucuncuye donulur. Donus acisal hizla sinirli oldugu icin iki saniyede zincirin
+ * ancak bir kismi kat edilebilir; kalan sure bittiginde kiris nerede kaldiysa
+ * orada durur.
+ *
+ * Liste bossa -- supurme sirasinda butun dusmanlar oldu ya da baslarken hic yoktu
+ * -- kule kendi nisan acisini korur. Bir seye nisan almak, hicbir seye nisan
+ * almaktan daha iyi.
+ */
+function getDebugLaserChainSweepAngle(angles: readonly number[], elapsedSeconds: number, fallbackAngle: number) {
+  if (angles.length === 0) {
+    return fallbackAngle;
   }
 
-  const direction = Math.sign(endDistance - startDistance) || -1;
-  const sampleStep = 8;
-  let previousAngle = getAngleToPathDistance(path, x, y, startDistance);
+  let remainingAngle = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * Math.max(0, elapsedSeconds);
+  let currentAngle = angles[0];
 
-  for (let distanceOffset = sampleStep; distanceOffset <= totalDistance + sampleStep; distanceOffset += sampleStep) {
-    const pathDistance = startDistance + direction * Math.min(distanceOffset, totalDistance);
-    const nextAngle = getAngleToPathDistance(path, x, y, pathDistance);
-    const angleDelta = getSignedShortestAngleDelta(previousAngle, nextAngle);
+  for (let index = 1; index < angles.length; index += 1) {
+    const angleDelta = getSignedShortestAngleDelta(currentAngle, angles[index]);
     const angleStep = Math.abs(angleDelta);
 
     if (remainingAngle <= angleStep) {
-      return previousAngle + Math.sign(angleDelta) * remainingAngle;
+      return currentAngle + Math.sign(angleDelta) * remainingAngle;
     }
 
     remainingAngle -= angleStep;
-    previousAngle += angleDelta;
-
-    if (distanceOffset >= totalDistance) {
-      break;
-    }
+    currentAngle += angleDelta;
   }
 
-  return previousAngle;
+  return currentAngle;
 }
 
 function distanceSq(ax: number, ay: number, bx: number, by: number) {
