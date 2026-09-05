@@ -345,6 +345,18 @@ export class GameScene extends Phaser.Scene {
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
+  private impactGraphics?: Phaser.GameObjects.Graphics;
+  /**
+   * Kuleye ozgu carpma izleri.
+   *
+   * Halka havuzu yalnizca daire cizebiliyor; buradaki imzalar cizgi istiyor
+   * (ic ice kapanan halka, kivilcim kollari, cam kirigi yelpazesi). Kisa
+   * omurlu oldugu icin ayri bir liste tutuluyor ve her karede yasina gore
+   * soluyor.
+   */
+  private impactMarks: Array<{ x: number; y: number; definitionId: string; tier: number; angle: number; bornAt: number }> = [];
+  private static readonly MAX_IMPACT_MARKS = 48;
+  private static readonly IMPACT_MARK_MS = 260;
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private staticEnemySnapshots = new Map<string, StaticEnemySnapshot>();
   private staticTowerSnapshots = new Map<string, StaticTowerSnapshot>();
@@ -517,6 +529,8 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics = this.add.graphics().setDepth(10);
     // Mermi izleri mermilerin (11) hemen altinda: iz cekirdegi ortmemeli.
     this.projectileTrailGraphics = this.add.graphics().setDepth(10.9);
+    // Carpma imzalari halkalarin ustunde: halka zemin, imza kulenin kimligi.
+    this.impactGraphics = this.add.graphics().setDepth(11.6);
     this.createKillStreakAudio();
     this.createBackgroundMusic();
     this.emitControlState();
@@ -561,6 +575,7 @@ export class GameScene extends Phaser.Scene {
   update() {
     const now = performance.now();
     this.renderPlaybackFrame(now);
+    this.renderImpactMarks(now);
   }
 
   private drawMap() {
@@ -1795,6 +1810,113 @@ export class GameScene extends Phaser.Scene {
     graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(2, outerHalf * 0.5));
   }
 
+  /**
+   * Carpma imzasini kuyruga alir.
+   *
+   * Yalnizca imzasi tanimli kuleler icin: digerlerinde halka zaten yeterli ve
+   * her mermi icin bos bir kayit tutmanin anlami yok.
+   */
+  private addImpactMark(x: number, y: number, definitionId: string, tier: number, angle: number) {
+    if (!IMPACT_MARK_STYLES[definitionId]) {
+      return;
+    }
+    if (this.impactMarks.length >= GameScene.MAX_IMPACT_MARKS) {
+      this.impactMarks.shift();
+    }
+    this.impactMarks.push({ x, y, definitionId, tier, angle, bornAt: performance.now() });
+  }
+
+  /**
+   * Kuleye ozgu carpma imzalari.
+   *
+   * Uc kule de çarpma vuruyor ama uc ayri sey yapiyor; imza da onu soylemeli.
+   * Ortak kural yine ayni: kademe buyutmez, katman ekler.
+   */
+  private renderImpactMarks(now: number) {
+    const graphics = this.impactGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.clear();
+    let writeIndex = 0;
+    for (const mark of this.impactMarks) {
+      const age = (now - mark.bornAt) / GameScene.IMPACT_MARK_MS;
+      if (age >= 1) {
+        continue;
+      }
+      this.impactMarks[writeIndex] = mark;
+      writeIndex += 1;
+      this.drawImpactMark(graphics, mark, age);
+    }
+    this.impactMarks.length = writeIndex;
+  }
+
+  private drawImpactMark(
+    graphics: Phaser.GameObjects.Graphics,
+    mark: { x: number; y: number; definitionId: string; tier: number; angle: number },
+    age: number
+  ) {
+    const style = IMPACT_MARK_STYLES[mark.definitionId];
+    if (!style) {
+      return;
+    }
+
+    const fade = 1 - age;
+    const color = this.getTierColor(mark.tier);
+
+    if (style === "collapse") {
+      // Obsesyon: halka disari degil **iceri** kapanir. Kule ayni hedefe
+      // kilitlendikce guclendigi icin imzasi da toplanmayi anlatiyor.
+      const radius = 15 - 13 * age;
+      graphics.lineStyle(1.4, color, 0.85 * fade);
+      graphics.strokeCircle(mark.x, mark.y, radius);
+      if (mark.tier >= 3) {
+        const second = Math.max(0, (age - 0.3) / 0.7);
+        if (second > 0) {
+          graphics.lineStyle(0.9, 0xffffff, 0.7 * (1 - second));
+          graphics.strokeCircle(mark.x, mark.y, 15 - 13 * second);
+        }
+      }
+      return;
+    }
+
+    if (style === "spark") {
+      // Ucube: elektrik. Kollar kirikli, cunku kulenin zinciri de kirikli.
+      const arms = mark.tier >= 3 ? 5 : 3;
+      const reach = 4 + 10 * age;
+      graphics.lineStyle(mark.tier >= 3 ? 1.3 : 1, color, 0.9 * fade);
+      for (let index = 0; index < arms; index += 1) {
+        const armAngle = mark.angle + (index / arms) * Math.PI * 2;
+        const midAngle = armAngle + 0.35;
+        graphics.beginPath();
+        graphics.moveTo(mark.x, mark.y);
+        graphics.lineTo(mark.x + Math.cos(midAngle) * reach * 0.55, mark.y + Math.sin(midAngle) * reach * 0.55);
+        graphics.lineTo(mark.x + Math.cos(armAngle) * reach, mark.y + Math.sin(armAngle) * reach);
+        graphics.strokePath();
+      }
+      return;
+    }
+
+    // Kirik Ayna: cam kirigi yelpazesi, merminin geldigi yone dogru acilir.
+    const shards = mark.tier >= 3 ? 5 : 3;
+    // Yelpaze disa dogru actigi icin ayni sayilarla halka ve kivilcimdan daha
+    // sonuk kaliyordu; erisim ve parlaklik onlarla ayni agirliga getirildi.
+    const reach = 4 + 15 * age;
+    graphics.lineStyle(mark.tier >= 3 ? 1.5 : 1.1, color, 0.95 * fade);
+    for (let index = 0; index < shards; index += 1) {
+      const spread = ((index / Math.max(1, shards - 1)) - 0.5) * 1.1;
+      const shardAngle = mark.angle + spread;
+      const inner = reach * 0.3;
+      graphics.lineBetween(
+        mark.x + Math.cos(shardAngle) * inner,
+        mark.y + Math.sin(shardAngle) * inner,
+        mark.x + Math.cos(shardAngle) * reach,
+        mark.y + Math.sin(shardAngle) * reach
+      );
+    }
+  }
+
   private playAlertSound() {
     if (!this.alertSound) return;
     // Ust uste gelen uyarilarda sesi bastan baslat, yoksa ikincisi hic duyulmaz.
@@ -2484,9 +2606,19 @@ export class GameScene extends Phaser.Scene {
       this.queueDelayedEffect(() => this.playMuzzleFlash(projectile.x, projectile.y, tier, this.getTierColor(tier)));
     });
     room.onMessage("projectile:hit", (message: ProjectileHitSnapshot) => {
+      // Kimlik ve yon, mermi listeden silinmeden once okunmali: imza hangi
+      // kuleden geldigini bilmeden secilemez ve telde bu alanlar yok.
+      const hitProjectile = this.linearProjectileSnapshots.get(message.id);
+      const definitionId = hitProjectile?.definitionId ?? "";
+      const angle = hitProjectile && (hitProjectile.vx || hitProjectile.vy)
+        ? Math.atan2(hitProjectile.vy ?? 0, hitProjectile.vx ?? 0)
+        : 0;
       this.finishLinearProjectile(message);
       const tier = message.tier ?? 1;
-      this.queueDelayedEffect(() => this.playImpactBurst(message.x, message.y, tier, this.getTierColor(tier)));
+      this.queueDelayedEffect(() => {
+        this.playImpactBurst(message.x, message.y, tier, this.getTierColor(tier));
+        this.addImpactMark(message.x, message.y, definitionId, tier, angle);
+      });
     });
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
@@ -6783,3 +6915,19 @@ function getZeynepSlowTextColor(tierLevel: number) {
 function toCssColor(color: number) {
   return `#${color.toString(16).padStart(6, "0")}`;
 }
+
+/**
+ * Carpma vuran kulelerin imzalari.
+ *
+ * Tablo burada, cizim fonksiyonunun disinda: yeni bir carpma kulesi eklendiginde
+ * degistirilecek tek yer bu satirlar olsun. Listede olmayan kule eski davranisi
+ * korur -- katmanli halka zaten herkese ait ortak zemin.
+ */
+const IMPACT_MARK_STYLES: Record<string, "collapse" | "spark" | "shard"> = {
+  // Obsesyon: ayni hedefte biriken kule; halkasi iceri kapanir.
+  "warrior-4": "collapse",
+  // Ucube: elektrik zinciri; kirikli kivilcim kollari.
+  "warrior-6": "spark",
+  // Kirik Ayna: cam kirigi yelpazesi.
+  "archer-5": "shard"
+};
