@@ -49,7 +49,7 @@ test("20 dalgalık kazanılabilirlik eğrisini sabitler", () => {
  * surece denge olcumu sessizce yanlis dayanaga oturuyordu.
  */
 test("kule kontenjani herkes icin ayni ve paylasilan sabitten geliyor", () => {
-  assert.equal(PLAYER_TOWER_LIMIT, 15);
+  assert.equal(PLAYER_TOWER_LIMIT, 20);
 });
 
 /**

@@ -4,7 +4,7 @@ export const BASE_WAVE_ENEMY_COUNT = 10;
 /**
  * Bir oyuncunun ayni anda ayakta tutabilecegi savas kulesi sayisi.
  *
- * Duvarlar buraya sayilmaz (`occupiesTowerSlot`); kontenjan hangi on bes kuleyi
+ * Duvarlar buraya sayilmaz (`occupiesTowerSlot`); kontenjan hangi yirmi kuleyi
  * kuracagina dair karar icin var, zemin araclarini kisitlamak icin degil.
  *
  * Deger burada duruyor cunku iki yer birden okuyor: sunucu sinirlamayi
@@ -12,7 +12,7 @@ export const BASE_WAVE_ENEMY_COUNT = 10;
  * zafer orani gercek oyunun orani olmuyor. Ikisi ayri sabit tasidigi surece
  * denge olcumu sessizce yanlis dayanaga oturuyordu.
  */
-export const PLAYER_TOWER_LIMIT = 15;
+export const PLAYER_TOWER_LIMIT = 20;
 /**
  * Dalga zorlugu artik kalinliktan kalabaliga kaydi.
  *
@@ -42,10 +42,15 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  *   ates suresi olcume giriyor.
  * - Kule kontenjani 10'dan (Zeynep 12) herkes icin 15'e cikti. Tek basina en
  *   sert sicrama bu oldu: 1.87'de zafer orani %6'dan %27'ye firladi.
+ * - Kontenjan 15'ten 20'ye cikti ve zafer orani %9'dan %29'a firladi. Bu sefer
+ *   egri **duzeltilmedi**: oyunun kasitli olarak kolaylasmasi istendi, o yuzden
+ *   asagidaki deger yerinde kaldi ve hedef band tasindi.
  *
- * Deger tek tek tahmin edilmez, `tools/simulate.mjs` ile %5-%10 zafer bandina
- * gore olculur. Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden
- * olculmesi gerekir.
+ * Deger tek tek tahmin edilmez, `tools/simulate.mjs` ile zafer bandina gore
+ * olculur; band `tests/simulation.test.mjs` icinde yaziyor ve su an %25-%35.
+ * Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden olculmesi
+ * gerekir -- olcum ya bu degeri ya da bandi kimildatir, hangisinin dogru
+ * oldugu bir tasarim karari.
  *
  * Egri bu civarda cok dik: 2.11 -> %9, 2.15 -> %5, 2.2 -> %4. Tek bir 100
  * kosumluk olcum bu diklikte gurultulu kaldigi icin deger dort ayri ornekle
