@@ -136,7 +136,7 @@ test("Buhar Tahliyesi öldürdüğü her düşman için ısı atar", () => {
 
   const oldu = room.damageEnemy(enemy, 1000, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
   assert.equal(oldu, true, "dusman olmedi");
-  assert.equal(tower.temperature, 64, "oldurme isiyi atmadi");
+  assert.equal(tower.temperature, 66, "oldurme isiyi atmadi");
 });
 
 test("Buhar Tahliyesi kilitli kuleyi kurtarabilir", () => {
@@ -157,13 +157,13 @@ test("Buhar Tahliyesi kilitli kuleyi kurtarabilir", () => {
   enemy.statusResistances = {};
   room.damageEnemy(enemy, 1000, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
 
-  assert.equal(tower.temperature, 27);
+  assert.equal(tower.temperature, 29);
   assert.equal(tower.heatLocked, false, "tahliye kilidi kaldirmadi");
 });
 
-test("Kurşun Radyatör kart karşılığıyla aynı davranışı tek kuleye verir", () => {
+test("Dökme Radyatör kart karşılığıyla aynı davranışı tek kuleye verir", () => {
   // Esya ile kart ayni kilidi paylasiyor: fark kapsamda, davranista degil.
-  const { room, tower } = towerRoom([], ["kursun-radyator"]);
+  const { room, tower } = towerRoom([], ["dokme-radyator"]);
   const sade = towerRoom();
 
   const sicak = coolOneSecond(room, tower, 100);

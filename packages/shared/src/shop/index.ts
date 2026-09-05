@@ -215,8 +215,8 @@ const rawShopCatalog: ShopItem[] = [
   // kartla butun kurulusun isi davranisi degisir, esyayla yalnizca en cok
   // isinan kule.
   defineItem("sogutma-sivisi", "Soğutma Sıvısı", "Takıldığı kulenin soğuması +%35; en fazla 3 kez alınır.", "utility", 45, { repeatable: true, maxStacks: 3, priceGrowth: 1.25, effects: [effect("sogutma-sivisi", "cooling", 0.35)] }),
-  defineItem("kursun-radyator", "Kurşun Radyatör", "Kule ne kadar sıcaksa o kadar hızlı soğur; 100 derecede soğuması iki katına çıkar.", "power", 130, { unlocks: ["heat:radiator"] }),
-  defineItem("buhar-tahliyesi", "Buhar Tahliyesi", "Öldürdüğü her düşman kuleyi 6 derece soğutur.", "power", 120, { unlocks: ["heat:killVent"] }),
+  defineItem("dokme-radyator", "Dökme Radyatör", "Takıldığı kule ne kadar sıcaksa o kadar hızlı soğur: 50 derecede soğuması %50 artar, 100 derecede iki katına çıkar.", "power", 130, { unlocks: ["heat:radiator"] }),
+  defineItem("buhar-tahliyesi", "Buhar Tahliyesi", "Öldürdüğü her düşman kuleyi 4 derece soğutur.", "power", 120, { unlocks: ["heat:killVent"] }),
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),

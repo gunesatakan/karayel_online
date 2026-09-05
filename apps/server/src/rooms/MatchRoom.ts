@@ -267,7 +267,7 @@ const RADIATOR_COOLING_BONUS_AT_MAX = 1;
 /** Soguk dus: kilit bu sicaklikta acilir, varsayilan 30 yerine. */
 const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
 /** Buhar tahliyesi: her oldurme kuleyi bu kadar derece sogutur. */
-const KILL_VENT_HEAT = 6;
+const KILL_VENT_HEAT = 4;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 /**
