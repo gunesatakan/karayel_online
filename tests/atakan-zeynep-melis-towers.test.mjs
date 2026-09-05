@@ -17,7 +17,7 @@ const expectedProfiles = {
     ["warrior-1", "projectile", "physical", "bullet", 10, 24, 132, null],
     ["warrior-2", "impact", "electric", "bullet", 28.6, 0, 0, null],
     ["warrior-3", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["warrior-4", "impact", "psychic", "bullet", 8.8, 36, 198, null],
+    ["warrior-4", "impact", "psychic", "bullet", 8.8, 54, 297, null],
     ["warrior-5", "focus", "fire", "powerCrystal", 1.6, 10, 55, null],
     ["warrior-6", "impact", "electric", "bullet", 28.6, 27, 148.5, null],
     ["warrior-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],

@@ -45,12 +45,14 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  * - Kontenjan 15'ten 20'ye cikti ve zafer orani %9'dan %29'a firladi. Bu sefer
  *   egri **duzeltilmedi**: oyunun kasitli olarak kolaylasmasi istendi, o yuzden
  *   asagidaki deger yerinde kaldi ve hedef band tasindi.
+ * - Obsesyon hasari 1.5 katina cikti, Debug Lazer fiyati 150g'ye indi ve olcum
+ *   %100'e oturdu. Ikisi de tek baslarina yeterliydi; fiyat dususu, 480 altinlik
+ *   baslangicta ucuncu bir lazerin sigmasi demek oldugu icin esik atladi.
+ *   Zafer oraninin bir hedef olmamasina karar verildi ve band emekliye ayrildi.
  *
- * Deger tek tek tahmin edilmez, `tools/simulate.mjs` ile zafer bandina gore
- * olculur; band `tests/simulation.test.mjs` icinde yaziyor ve su an %25-%35.
- * Oyuncu tarafinda guc degistiren her degisiklikten sonra yeniden olculmesi
- * gerekir -- olcum ya bu degeri ya da bandi kimildatir, hangisinin dogru
- * oldugu bir tasarim karari.
+ * Asagidaki deger hala `tools/simulate.mjs` ile olculebilir ama artik ona
+ * bakilarak secilmiyor: tutturulacak bir zafer orani yok. Zorluk hedefi geri
+ * konursa olcum yeniden bu degerin dayanagi olur.
  *
  * Egri bu civarda cok dik: 2.11 -> %9, 2.15 -> %5, 2.2 -> %4. Tek bir 100
  * kosumluk olcum bu diklikte gurultulu kaldigi icin deger dort ayri ornekle

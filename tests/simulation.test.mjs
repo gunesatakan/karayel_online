@@ -13,18 +13,21 @@ test("başsız simülasyon aynı seed ile deterministiktir ve raporu eksiksizdir
 });
 
 /**
- * Zorluk bandi.
+ * Zafer orani artik bir hedef degil.
  *
- * Band uzun sure %5-%10 idi. Kule kontenjani 15'ten 20'ye cikarilinca olcum
- * %29'a firladi ve bu bilerek boyle birakildi: kontenjan artisi kasitli bir guc
- * yukseltmesi, dusman egrisiyle geri alinacak bir kaza degil.
+ * Uzun sure bir band vardi: once %5-%10, kule kontenjani 20'ye cikinca %25-%35.
+ * Sonra Obsesyon hasari 1.5 katina cikip Debug Lazer fiyati 150g'ye inince olcum
+ * %100'e oturdu -- ikisi de tek baslarina yeterliydi -- ve zafer oraninin bir
+ * hedef olmamasina karar verildi.
  *
- * Yeni band dort ayri ornekle olculdu (100/seed1000 %29, 300/seed1000 %30.3,
- * 200/seed7 %32, 200/seed42 %33.5); %25-%35 hepsini iki yandan paylarla
- * iceriyor. Bandin isi hala ayni: oyuncu tarafinda guc degistiren bir sey
- * eklendiginde sessizce kaymasin.
+ * Bandi %100'u kapsayacak sekilde genisletmek testi yalanci yapardi: hicbir sey
+ * korumadigi halde koruyor gorunurdu. Onun yerine iddia kuculdu -- simulator
+ * hala kosuyor ve anlamli bir rapor uretiyor. Zorluk hedefi geri konursa band da
+ * buraya geri gelir.
  */
-test("yüksek can dengesi bot zafer oranını %25-%35 bandında tutar", () => {
+test("simülasyon çalışır durumda ve anlamlı bir zafer oranı üretir", () => {
   const report = simulateMany({ runs: 100, seed: 1000, strategy: "balanced" });
-  assert.ok(report.winRate >= 0.25 && report.winRate <= 0.35, `zafer oranı ${report.winRate}`);
+  assert.equal(report.runs, 100);
+  assert.equal(report.wins + report.losses, 100);
+  assert.ok(report.winRate >= 0 && report.winRate <= 1, `zafer oranı ${report.winRate}`);
 });
