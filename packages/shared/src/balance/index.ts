@@ -46,8 +46,9 @@ export const ENEMY_HP_WAVE_MULTIPLIER = 1.17;
  *   egri **duzeltilmedi**: oyunun kasitli olarak kolaylasmasi istendi, o yuzden
  *   asagidaki deger yerinde kaldi ve hedef band tasindi.
  * - Obsesyon hasari 1.5 katina cikti, Debug Lazer fiyati 150g'ye indi ve olcum
- *   %100'e oturdu. Ikisi de tek baslarina yeterliydi; fiyat dususu, 480 altinlik
- *   baslangicta ucuncu bir lazerin sigmasi demek oldugu icin esik atladi.
+ *   %100'e oturdu. Ikisi de tek baslarina yeterliydi; fiyat dususu, o gunku 480
+ *   altinlik baslangicta ucuncu bir lazerin sigmasi demek oldugu icin esik
+ *   atladi (kese sonra 550 oldu).
  *   Zafer oraninin bir hedef olmamasina karar verildi ve band emekliye ayrildi.
  *
  * Asagidaki deger hala `tools/simulate.mjs` ile olculebilir ama artik ona

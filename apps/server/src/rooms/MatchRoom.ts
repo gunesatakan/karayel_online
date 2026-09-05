@@ -241,8 +241,14 @@ import {
   createStaticTowerSnapshot
 } from "../snapshot/static-data.js";
 
-const TEAM_START_GOLD = 480;
-const MELIS_START_GOLD = 400;
+/**
+ * Baslangic kesesi. Herkes icin ayni.
+ *
+ * Melis bir sure 400 ile basliyordu, digerleri 480 ile. Fark artik yok: acilis
+ * kesesi karakter dengesinin ayari olmaktan cikti, herkes ayni parayla ayni
+ * kararlari veriyor.
+ */
+const PLAYER_START_GOLD = 550;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 const TOWER_BASE_HP = 100;
@@ -452,7 +458,7 @@ class Player extends Schema {
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
   @type("boolean") connected = true;
-  @type("number") gold = TEAM_START_GOLD;
+  @type("number") gold = PLAYER_START_GOLD;
   @type("number") goldSpent = 0;
   @type("number") experience = 0;
   @type("number") towersBuilt = 0;
@@ -9381,8 +9387,9 @@ function getMelisApprovalGain(tier: KillStreakTier) {
   return 1;
 }
 
-export function getPlayerStartGold(characterId: CharacterId) {
-  return characterId === "archer" ? MELIS_START_GOLD : TEAM_START_GOLD;
+/** Karakterden bagimsiz; imza cagri yerlerini bozmamak icin duruyor. */
+export function getPlayerStartGold(_characterId: CharacterId) {
+  return PLAYER_START_GOLD;
 }
 
 export function getClientBufferedAmount(client: Pick<Client, "ref">) {
