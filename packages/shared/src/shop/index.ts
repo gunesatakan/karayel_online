@@ -210,6 +210,13 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("kizil-namlu", "Kızıl Namlu", "Her sıcaklık derecesi için hasar +%0,6 ama kule 80 derecede kilitlenir.", "power", 140, { unlocks: ["heat:runHot"] }),
   defineItem("kriyostat", "Kriyostat", "Sıcaklığı 20'nin altındayken kritik şansı +%25.", "power", 135, { unlocks: ["heat:coldCrit"] }),
   defineItem("tahliye-valfi", "Tahliye Valfi", "Enerjisi biten kule 4 saniye mühimmatla ateş etmeyi sürdürür.", "utility", 120, { unlocks: ["energy:backupLine"] }),
+
+  // Sogutma esyalari. Kart karsiliklarindan farklari tek kuleye baglanmalari:
+  // kartla butun kurulusun isi davranisi degisir, esyayla yalnizca en cok
+  // isinan kule.
+  defineItem("sogutma-sivisi", "Soğutma Sıvısı", "Takıldığı kulenin soğuması +%35; en fazla 3 kez alınır.", "utility", 45, { repeatable: true, maxStacks: 3, priceGrowth: 1.25, effects: [effect("sogutma-sivisi", "cooling", 0.35)] }),
+  defineItem("kursun-radyator", "Kurşun Radyatör", "Kule ne kadar sıcaksa o kadar hızlı soğur; 100 derecede soğuması iki katına çıkar.", "power", 130, { unlocks: ["heat:radiator"] }),
+  defineItem("buhar-tahliyesi", "Buhar Tahliyesi", "Öldürdüğü her düşman kuleyi 6 derece soğutur.", "power", 120, { unlocks: ["heat:killVent"] }),
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),

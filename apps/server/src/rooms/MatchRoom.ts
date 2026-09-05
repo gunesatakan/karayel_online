@@ -262,6 +262,12 @@ const RESOURCE_PROVIDER_CAPACITY = 480;
 const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
+/** Radyator: 100 derecede sogutma iki katina cikar, 0 derecede degismez. */
+const RADIATOR_COOLING_BONUS_AT_MAX = 1;
+/** Soguk dus: kilit bu sicaklikta acilir, varsayilan 30 yerine. */
+const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
+/** Buhar tahliyesi: her oldurme kuleyi bu kadar derece sogutur. */
+const KILL_VENT_HEAT = 6;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 /**
@@ -2279,6 +2285,33 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Kulenin kilitlenme sicakligi. Kizgin Namlu hasari isiya baglar ve esigi indirir. */
+  /**
+   * Saniyede kac derece atiliyor.
+   *
+   * Radyator sicakla hizlanir: kule ne kadar isindiysa o kadar cok atar. Duz
+   * bir sogutma artisindan farki, kisa patlamalari serbest birakip surekli
+   * atesi yine cezalandirmasi -- egrinin sekli degisiyor, seviyesi degil.
+   */
+  private getTowerCoolingPerSecond(tower: TowerModel) {
+    const base = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling");
+    if (!this.towerHasUnlock(tower, "heat:radiator")) {
+      return base;
+    }
+    return base * (1 + (Math.max(0, tower.temperature) / 100) * RADIATOR_COOLING_BONUS_AT_MAX);
+  }
+
+  /**
+   * Kilitlenen kulenin hangi sicaklikta acildigi.
+   *
+   * Kilit esigiyle karistirilmamali: o, kulenin ne zaman kilitlendigini soyler.
+   * Bu ise kilidin ne zaman kalktigini, yani cezanin ne kadar surdugunu.
+   */
+  private getTowerHeatReleaseThreshold(tower: TowerModel) {
+    return this.towerHasUnlock(tower, "heat:quickRelease")
+      ? QUICK_RELEASE_HEAT_RELEASE_THRESHOLD
+      : TOWER_HEAT_UNLOCK_THRESHOLD;
+  }
+
   private getTowerHeatLockThreshold(tower: TowerModel) {
     return this.towerHasUnlock(tower, "heat:runHot") ? RUN_HOT_HEAT_LOCK_THRESHOLD : 100;
   }
@@ -2293,12 +2326,12 @@ export class MatchRoom extends Room<MatchState> {
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
-        tower.temperature = Math.max(0, tower.temperature - TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling") * (deltaTime / 1000));
+        tower.temperature = Math.max(0, tower.temperature - this.getTowerCoolingPerSecond(tower) * (deltaTime / 1000));
         if (tower.luckyWindowUntil > 0 && tower.luckyWindowUntil <= now) {
           tower.luckyWindowUntil = 0;
           tower.misfortune = 0;
         }
-        if (tower.heatLocked && tower.temperature <= TOWER_HEAT_UNLOCK_THRESHOLD) {
+        if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) {
           tower.heatLocked = false;
         }
       }
@@ -6421,6 +6454,14 @@ export class MatchRoom extends Room<MatchState> {
       this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
       if (this.towerHasUnlock(sourceTower, "stack:kill")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + 1);
       if (this.towerHasUnlock(sourceTower, "ammoDrop") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
+      if (this.towerHasUnlock(sourceTower, "heat:killVent")) {
+        // Oldurme isiyi atar. Kilitli bir kule de yanik hasariyla oldurebilir,
+        // o yuzden esik burada da yeniden bakiliyor: tahliye kilidi kaldirabilir.
+        sourceTower.temperature = Math.max(0, sourceTower.temperature - KILL_VENT_HEAT);
+        if (sourceTower.heatLocked && sourceTower.temperature <= this.getTowerHeatReleaseThreshold(sourceTower)) {
+          sourceTower.heatLocked = false;
+        }
+      }
     }
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);

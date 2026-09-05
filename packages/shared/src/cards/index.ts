@@ -35,7 +35,10 @@ export type Unlock =
   // atis hizi dusmeye baslar, 100'de kule kilitlenir. Bu kilitler o egriyi
   // pazarlik konusu yapar; birbirinin tersine cekmeleri kasitlidir.
   | "heat:runHot" | "heat:coldCrit" | "heat:thermalMass" | "heat:overheatBurst"
-  | "energy:backupLine" | "ammo:emptyBleed";
+  | "energy:backupLine" | "ammo:emptyBleed"
+  // Sogutma kolu: ilk dordu isiyi **ne zaman** urettigini pazarlik konusu
+  // yapiyordu, bu ucu isiyi nasil attigini.
+  | "heat:radiator" | "heat:quickRelease" | "heat:killVent";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -47,7 +50,10 @@ export const ALL_UNLOCKS: Unlock[] = [
   "adjacencyBonus", "isolationBonus",
   "ammoDrop", "goldInterest", "nexusShield", "bloodBank",
   "heat:runHot", "heat:coldCrit", "heat:thermalMass", "heat:overheatBurst",
-  "energy:backupLine", "ammo:emptyBleed"
+  "energy:backupLine", "ammo:emptyBleed",
+  // Yeni kilitler sona eklenir: sira bit maskesini belirliyor ve ortaya
+  // ekleme yapmak eski istemcilerde baska bir kilidi acardi.
+  "heat:radiator", "heat:quickRelease", "heat:killVent"
 ];
 
 /**
@@ -194,6 +200,14 @@ export const cardCatalog: CardDefinition[] = [
   { id: "asiri-isinma-patlamasi", name: "Aşırı Isınma Patlaması", description: "Kilitlenen kule çevresindeki düşmanlara 40 hasar verir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:overheatBurst"] },
   { id: "yedek-hat", name: "Yedek Hat", description: "Enerjisi biten kule 4 saniye boyunca mühimmatla ateş etmeyi sürdürür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["energy:backupLine"] },
   { id: "bosalan-sarjor", name: "Boşalan Şarjör", description: "Mühimmatı biten kule menzilindeki düşmanları 5 saniye kanatır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["ammo:emptyBleed"] },
+
+  // --- Sogutma kolu ---
+  // Isi egrisinin obur ucu. Yukaridaki kartlar isinin ne zaman ureticegini
+  // ayarliyor; bunlar birikeni nasil attigini. Ucu de duz "soguma +%X" olsaydi
+  // ayni cumlenin uc cesitlemesi olurdu, o yuzden yalnizca ilki sayi buyutuyor.
+  { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
+  { id: "radyator", name: "Radyatör", description: "Kule ne kadar sıcaksa o kadar hızlı soğur; 100 derecede soğuması iki katına çıkar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:radiator"] },
+  { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%25.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.25)], unlocks: ["heat:quickRelease"] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri

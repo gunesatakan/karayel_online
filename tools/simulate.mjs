@@ -374,6 +374,11 @@ const UNLOCK_DAMAGE_ADD = {
   "heat:coldCrit": 0.12,
   "heat:thermalMass": 0.15,
   "heat:overheatBurst": 0.05,
+  // Sogutma kilitleri hasari dogrudan buyutmez, kulenin ates edebildigi
+  // sureyi uzatir; kaba karsiliklari o yuzden mutevazi.
+  "heat:radiator": 0.12,
+  "heat:quickRelease": 0.08,
+  "heat:killVent": 0.1,
   "energy:backupLine": 0.06,
   "ammo:emptyBleed": 0.05,
   "stack:kill": 0.2,
