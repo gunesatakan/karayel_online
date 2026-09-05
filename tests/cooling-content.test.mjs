@@ -47,10 +47,19 @@ function towerRoom(cardIds = [], itemIds = []) {
   return { room, tower, player };
 }
 
-/** Verilen sicakliktan bir saniye sogutur ve kac derece dustugunu doner. */
+/**
+ * Verilen sicakliktan bir saniye sogutur ve kac derece dustugunu doner.
+ *
+ * Kule beklemeye alinir: menzilde dusman varken ates de ederdi ve olculen dusus
+ * "soguma eksi uretilen isi" olurdu. Bekleme atesi kesip sogumayi surdurdugu
+ * icin olcum yalnizca soguma kalir.
+ */
 function coolOneSecond(room, tower, startTemperature) {
+  const oncekiBekleme = tower.standby;
+  tower.standby = true;
   tower.temperature = startTemperature;
   room.updateTowers(1000);
+  tower.standby = oncekiBekleme;
   return startTemperature - tower.temperature;
 }
 
@@ -202,4 +211,134 @@ test("soğutma içeriği hem kartta hem mağazada var", () => {
 
   assert.ok(kartlar.length >= 6, `sogutma karti az: ${kartlar.length}`);
   assert.ok(esyalar.length >= 6, `sogutma esyasi az: ${esyalar.length}`);
+});
+
+/**
+ * Sogumayi baska kollara baglayan kartlar.
+ *
+ * Buradaki dordunun ortak yani sogumanin kendi basina bir sayi olmamasi:
+ * degeri, oyuncunun **baska** bir yerde verdigi karara bagli. Testlerin isi da
+ * bu yuzden "soguma degisti mi" degil, "dogru kosulda degisti mi": kosul
+ * saglanmadan da calisan bir kart, aslinda duz bir soguma karti demektir.
+ */
+
+/** Kuleye menzil icinde bir dusman koyar; istege gore yavaslatir. */
+function enemyInRange(room, tower, { slowed }) {
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()].at(-1);
+  enemy.x = tower.x + 10;
+  enemy.y = tower.y;
+  enemy.slowUntil = slowed ? Date.now() + 5000 : 0;
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+  return enemy;
+}
+
+test("Soğuk Zincir yalnızca yavaşlatılmış düşman varken soğutur", () => {
+  const kartli = towerRoom(["soguk-zincir"]);
+  const sade = towerRoom();
+
+  // Yavaslatilmamis dusman: kart hicbir sey yapmamali.
+  enemyInRange(kartli.room, kartli.tower, { slowed: false });
+  enemyInRange(sade.room, sade.tower, { slowed: false });
+  const yavassiz = coolOneSecond(kartli.room, kartli.tower, 80);
+  const yavassizSade = coolOneSecond(sade.room, sade.tower, 80);
+  assert.ok(
+    Math.abs(yavassiz / yavassizSade - 1) < 0.05,
+    `kosul yokken de calisiyor: x${(yavassiz / yavassizSade).toFixed(2)}`
+  );
+
+  // Yavaslatilmis dusman: soguma +%80.
+  kartli.room.enemies.clear();
+  enemyInRange(kartli.room, kartli.tower, { slowed: true });
+  const yavasli = coolOneSecond(kartli.room, kartli.tower, 80);
+  assert.ok(
+    Math.abs(yavasli / yavassizSade - 1.8) < 0.1,
+    `beklenen x1.8, olculen x${(yavasli / yavassizSade).toFixed(2)}`
+  );
+});
+
+test("Isı Değişimi bitişik kuleler arasında ısıyı taşır", () => {
+  const { room, tower, player } = towerRoom(["isi-degisimi"]);
+
+  // Yanina ikinci bir kule kur: bitisik olmasi icin komsu kareyi kullan.
+  const komsu = findBuildableSpot(room, "warrior-1");
+  assert.ok(komsu, "ikinci kule icin yer yok");
+  room.placeTower(client, { ...komsu, definitionId: "warrior-1" });
+  const other = [...room.towers.values()].find((entry) => entry.id !== tower.id);
+  assert.ok(other, "ikinci kule kurulamadi");
+  // Bitisiklik konumdan cikiyor; ikinci kuleyi birincinin yanina tasi.
+  other.x = tower.x + 1;
+  other.y = tower.y + 1;
+  assert.ok(room.countAdjacentFriendlyTowers(tower) > 0, "kuleler bitisik degil");
+
+  tower.temperature = 90;
+  other.temperature = 10;
+  room.updateHeatExchange(1);
+
+  assert.ok(tower.temperature < 90, "sicak kule sogumadi");
+  assert.ok(other.temperature > 10, "soguk kule isinmadi");
+  // Toplam isi korunur: tasima, yok etme degil.
+  assert.ok(Math.abs((tower.temperature + other.temperature) - 100) < 0.001, "isi kaybolmus");
+});
+
+test("Isı Değişimi salınmaz: bir adımda farkın en fazla yarısı taşınır", () => {
+  const { room, tower } = towerRoom(["isi-degisimi"]);
+  const komsu = findBuildableSpot(room, "warrior-1");
+  room.placeTower(client, { ...komsu, definitionId: "warrior-1" });
+  const other = [...room.towers.values()].find((entry) => entry.id !== tower.id);
+  other.x = tower.x + 1;
+  other.y = tower.y + 1;
+
+  tower.temperature = 100;
+  other.temperature = 0;
+  // Buyuk bir adim: sinir olmasa sicak kule soguk olanin altina duserdi.
+  room.updateHeatExchange(10);
+
+  assert.ok(tower.temperature >= other.temperature, "kuleler yer degistirdi, salinim var");
+});
+
+test("Buz Aküsü soğumayı enerjiye bağlar", () => {
+  const sade = towerRoom();
+  const sadeDusus = coolOneSecond(sade.room, sade.tower, 80);
+
+  const dolu = towerRoom(["buz-akusu"]);
+  dolu.tower.energy = dolu.tower.maxEnergy;
+  const doluDusus = coolOneSecond(dolu.room, dolu.tower, 80);
+  assert.ok(
+    Math.abs(doluDusus / sadeDusus - 2) < 0.1,
+    `dolu enerjide iki kat olmali: x${(doluDusus / sadeDusus).toFixed(2)}`
+  );
+
+  const yarim = towerRoom(["buz-akusu"]);
+  yarim.tower.energy = yarim.tower.maxEnergy / 2;
+  const yarimDusus = coolOneSecond(yarim.room, yarim.tower, 80);
+  assert.ok(
+    Math.abs(yarimDusus / sadeDusus - 1) < 0.1,
+    `yarim enerjide normal olmali: x${(yarimDusus / sadeDusus).toFixed(2)}`
+  );
+
+  const bos = towerRoom(["buz-akusu"]);
+  bos.tower.energy = 0;
+  assert.equal(coolOneSecond(bos.room, bos.tower, 80), 0, "enerjisi bitince soguma durmali");
+});
+
+test("Namlu Molası yalnızca mühimmat bittiğinde soğutur", () => {
+  const sade = towerRoom();
+  const sadeDusus = coolOneSecond(sade.room, sade.tower, 80);
+
+  const dolu = towerRoom(["namlu-molasi"]);
+  dolu.tower.ammo = dolu.tower.maxAmmo;
+  const doluDusus = coolOneSecond(dolu.room, dolu.tower, 80);
+  assert.ok(
+    Math.abs(doluDusus / sadeDusus - 1) < 0.05,
+    `muhimmat doluyken de calisiyor: x${(doluDusus / sadeDusus).toFixed(2)}`
+  );
+
+  const bos = towerRoom(["namlu-molasi"]);
+  bos.tower.ammo = 0;
+  const bosDusus = coolOneSecond(bos.room, bos.tower, 80);
+  assert.ok(
+    Math.abs(bosDusus / sadeDusus - 3) < 0.15,
+    `beklenen x3, olculen x${(bosDusus / sadeDusus).toFixed(2)}`
+  );
 });

@@ -268,6 +268,14 @@ const RADIATOR_COOLING_BONUS_AT_MAX = 1;
 const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
 /** Buhar tahliyesi: her oldurme kuleyi bu kadar derece sogutur. */
 const KILL_VENT_HEAT = 4;
+/** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
+const CHILL_VENT_COOLING_BONUS = 0.8;
+/** Buz akusu: enerji tam doluyken sogumanin carpani; bos iken sifir. */
+const CHARGED_COOLING_MAX_MULTIPLIER = 2;
+/** Namlu molasi: muhimmati biten kulenin sogutma carpani. */
+const EMPTY_VENT_COOLING_MULTIPLIER = 3;
+/** Isi degisimi: bitisik kuleler arasinda saniyede tasinabilecek derece. */
+const HEAT_EXCHANGE_PER_SECOND = 8;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 /**
@@ -1764,6 +1772,7 @@ export class MatchRoom extends Room<MatchState> {
     this.resetAuraSlows();
     this.updateTowers(gameDeltaTime);
     this.updateSympathy();
+    this.updateHeatExchange(gameDeltaTime / 1000);
     timings.towersMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -2293,11 +2302,71 @@ export class MatchRoom extends Room<MatchState> {
    * atesi yine cezalandirmasi -- egrinin sekli degisiyor, seviyesi degil.
    */
   private getTowerCoolingPerSecond(tower: TowerModel) {
-    const base = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling");
-    if (!this.towerHasUnlock(tower, "heat:radiator")) {
-      return base;
+    let cooling = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling");
+
+    if (this.towerHasUnlock(tower, "heat:radiator")) {
+      cooling *= 1 + (Math.max(0, tower.temperature) / 100) * RADIATOR_COOLING_BONUS_AT_MAX;
     }
-    return base * (1 + (Math.max(0, tower.temperature) / 100) * RADIATOR_COOLING_BONUS_AT_MAX);
+
+    if (this.towerHasUnlock(tower, "heat:chargedCooling")) {
+      // Soguma enerjiye baglanir. Yarim depo hicbir sey degistirmez; asagisi
+      // ceza, yukarisi odul. Enerji hatti zaten ayakta tutulan bir sey oldugu
+      // icin bu kart lojistige verilen emegi isi tarafinda da odetir.
+      const capacity = Math.max(1, tower.maxEnergy);
+      const ratio = this.clamp(tower.energy / capacity, 0, 1);
+      cooling *= CHARGED_COOLING_MAX_MULTIPLIER * ratio;
+    }
+
+    if (this.towerHasUnlock(tower, "heat:emptyVent") && tower.ammo <= 0) {
+      // Muhimmat bitince kule zaten susuyor; bu kart o olu zamani sogutmaya
+      // cevirir ve "bilerek bosalt" diye bir oynanis acar.
+      cooling *= EMPTY_VENT_COOLING_MULTIPLIER;
+    }
+
+    // Menzil sorgusu pahali oldugu icin en sona ve kilidin arkasina konuyor:
+    // karti almamis bir kule bunun bedelini hic odemez.
+    if (this.towerHasUnlock(tower, "heat:chillVent") && this.hasSlowedEnemyInRange(tower)) {
+      cooling *= 1 + CHILL_VENT_COOLING_BONUS;
+    }
+
+    return cooling;
+  }
+
+  private hasSlowedEnemyInRange(tower: TowerModel) {
+    const now = Date.now();
+    for (const enemy of this.enemySpatialGrid.queryCircle(tower.x, tower.y, this.getTowerRange(tower))) {
+      if (enemy.slowUntil > now) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Bitisik kuleler arasinda isi tasir.
+   *
+   * Sogutma gecisinden **sonra** ayri bir tur olarak calisir: cift halinde is
+   * gordugu icin kule dongusunun ortasinda yapilirsa sonuc kulelerin islenme
+   * sirasina baglanirdi.
+   *
+   * Bir adimda farkin en fazla yarisi tasinir; bu, iki kulenin birbirine isi
+   * atip salinmasini imkansiz kilar. Iki kule de karti tasiyorsa alisveris iki
+   * kez isler, yani hat ne kadar cok degistiriciyle orulurse o kadar hizli
+   * esitlenir.
+   */
+  private updateHeatExchange(deltaSeconds: number) {
+    const budget = HEAT_EXCHANGE_PER_SECOND * Math.max(0, deltaSeconds);
+    if (budget <= 0) return;
+
+    for (const tower of this.towers.values()) {
+      if (tower.definition.resourceProvider || !this.towerHasUnlock(tower, "heat:exchange")) continue;
+      for (const other of this.getAdjacentFriendlyTowers(tower)) {
+        if (other.definition.resourceProvider) continue;
+        const gap = tower.temperature - other.temperature;
+        if (gap === 0) continue;
+        const moved = Math.sign(gap) * Math.min(budget, Math.abs(gap) / 2);
+        tower.temperature = Math.max(0, Math.min(100, tower.temperature - moved));
+        other.temperature = Math.max(0, Math.min(100, other.temperature + moved));
+      }
+    }
   }
 
   /**
@@ -8810,14 +8879,19 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private countAdjacentFriendlyTowers(tower: TowerModel) {
+    return this.getAdjacentFriendlyTowers(tower).length;
+  }
+
+  /** Ayni oyuncunun bir kare mesafedeki kuleleri; kosegenler dahil. */
+  private getAdjacentFriendlyTowers(tower: TowerModel) {
     const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
-    let count = 0;
+    const neighbours: TowerModel[] = [];
     for (const other of this.towers.values()) {
       if (other.id === tower.id || other.ownerId !== tower.ownerId) continue;
       const otherCell = worldToGrid(other.x, other.y, this.activeMap);
-      if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) count += 1;
+      if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) neighbours.push(other);
     }
-    return count;
+    return neighbours;
   }
 
   private applyTowerEnemyAuras(tower: TowerModel, activeAuras = this.getActiveTowerAuras(tower)) {

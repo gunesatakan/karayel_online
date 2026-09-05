@@ -38,7 +38,11 @@ export type Unlock =
   | "energy:backupLine" | "ammo:emptyBleed"
   // Sogutma kolu: ilk dordu isiyi **ne zaman** urettigini pazarlik konusu
   // yapiyordu, bu ucu isiyi nasil attigini.
-  | "heat:radiator" | "heat:quickRelease" | "heat:killVent";
+  | "heat:radiator" | "heat:quickRelease" | "heat:killVent"
+  // Sogumayi baska sistemlere baglayanlar: kontrol, yerlesim, enerji, muhimmat.
+  // Yukaridakiler isi kolunun kendi icinde pazarlik ediyordu; bunlar isiyi
+  // oyuncunun zaten verdigi baska kararlarin sonucu haline getiriyor.
+  | "heat:chillVent" | "heat:exchange" | "heat:chargedCooling" | "heat:emptyVent";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -53,7 +57,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   "energy:backupLine", "ammo:emptyBleed",
   // Yeni kilitler sona eklenir: sira bit maskesini belirliyor ve ortaya
   // ekleme yapmak eski istemcilerde baska bir kilidi acardi.
-  "heat:radiator", "heat:quickRelease", "heat:killVent"
+  "heat:radiator", "heat:quickRelease", "heat:killVent",
+  "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent"
 ];
 
 /**
@@ -208,6 +213,17 @@ export const cardCatalog: CardDefinition[] = [
   { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
   { id: "radyator", name: "Radyatör", description: "Tüm kuleler ne kadar sıcaksa o kadar hızlı soğur: 50 derecede soğuma %50 artar, 100 derecede iki katına çıkar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:radiator"] },
   { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.15)], unlocks: ["heat:quickRelease"] },
+
+  // --- Sogumayi baska kollara baglayanlar ---
+  // Buraya kadarki isi kartlari kendi iclerinde pazarlik ediyordu: daha cok
+  // hasar mi, daha cok soguma mi. Asagidakilerin bedeli baska bir yerde
+  // oduniyor -- yavaslatma kurmak, kuleleri yan yana dizmek, enerji hattini
+  // ayakta tutmak, mermiyi bilerek tuketmek. Isi boylece ayri bir kaynak
+  // olmaktan cikip zaten verilen kararlarin sonucu oluyor.
+  { id: "soguk-zincir", name: "Soğuk Zincir", description: "Menzilinde yavaşlatılmış düşman varken kule +%80 hızlı soğur.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chillVent"] },
+  { id: "isi-degisimi", name: "Isı Değişimi", description: "Bitişik kuleler ısılarını paylaşır: saniyede 8 dereceye kadar sıcak olandan soğuk olana akar.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:exchange"] },
+  { id: "buz-akusu", name: "Buz Aküsü", description: "Soğuma enerjiye bağlanır: enerji tamken 2 katı, %50'deyken normal, 0 enerjide soğuma durur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
+  { id: "namlu-molasi", name: "Namlu Molası", description: "Mühimmatı biten kule 3 kat hızlı soğur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:emptyVent"] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
