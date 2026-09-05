@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ENEMY_EXP_MULTIPLIER,
   getEnemyExp,
   getTowerBuildCost,
   getTowerLevelExpCost,
@@ -22,12 +23,19 @@ test("satis iadesi XP seviyelerinden etkilenmez", () => {
   assert.equal(getTowerSellRefund(80, 10), getTowerBuildCost(80) / 2);
 });
 
-test("dusman XP formulu tip ve ucus carpanlarini uygular", () => {
-  assert.equal(getEnemyExp(6, "grunt"), 10);
-  assert.equal(getEnemyExp(6, "runner"), 10);
-  assert.equal(getEnemyExp(6, "shooter"), 16);
-  assert.equal(getEnemyExp(6, "brute"), 25);
-  assert.equal(getEnemyExp(6, "brute", "air"), 17.5);
+/**
+ * XP formulu: (4 + dalga) x tip x ucus x genel carpan.
+ *
+ * Sayilar 6. dalgadan okunuyor, yani taban 10. Genel carpan altin tarafindaki
+ * gibi ayri bir sabit: egrinin sekli tipte ve dalgada, seviyesi tek yerde.
+ */
+test("dusman XP formulu tip, ucus ve genel carpani uygular", () => {
+  assert.equal(ENEMY_EXP_MULTIPLIER, 1.5);
+  assert.equal(getEnemyExp(6, "grunt"), 15);
+  assert.equal(getEnemyExp(6, "runner"), 15);
+  assert.equal(getEnemyExp(6, "shooter"), 24);
+  assert.equal(getEnemyExp(6, "brute"), 37.5);
+  assert.equal(getEnemyExp(6, "brute", "air"), 26.25);
 });
 
 test("dusman XP'si multiplayer havuzlarina esit dagitilir", () => {
@@ -39,8 +47,8 @@ test("dusman XP'si multiplayer havuzlarina esit dagitilir", () => {
 
   room.awardEnemyExperience({ type: "shooter", movementKind: "ground" });
 
-  assert.equal(first.experience, 8);
-  assert.equal(second.experience, 8);
+  assert.equal(first.experience, 12);
+  assert.equal(second.experience, 12);
 });
 
 test("kule gelistirme XP harcar ve altini degistirmez", () => {

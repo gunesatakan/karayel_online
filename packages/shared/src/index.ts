@@ -2,6 +2,9 @@ import type { EditableMapData, MapScale } from "./map.js";
 import { getMapWorldBounds } from "./map.js";
 import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 import type { TowerTier } from "./tower-stats/index.js";
+// getEnemyExp bu dosyada tanimli oldugu icin deger yeniden disa aktarmanin yaninda
+// buraya da alinmali; re-export yalnizca disariya acar, iceride goruntu vermez.
+import { ENEMY_EXP_MULTIPLIER } from "./balance/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -814,6 +817,7 @@ export {
   EARLY_WAVE_RAMP_EXPONENT,
   EARLY_WAVE_CONVERGENCE_WAVE,
   PLAYER_POWER_COMPENSATION,
+  ENEMY_EXP_MULTIPLIER,
   ENEMY_REWARD_MULTIPLIER,
   REFERENCE_STRUCTURE_BREAK_DPS,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
@@ -1002,7 +1006,8 @@ export function getEnemyExp(wave: number, enemyType: EnemyType, movementKind: Mo
     siege: 1.4
   };
   const flyingMultiplier = movementKind === "air" ? 0.7 : 1;
-  return Math.round((4 + Math.max(0, Math.round(wave))) * typeMultiplier[enemyType] * flyingMultiplier * 100) / 100;
+  const base = (4 + Math.max(0, Math.round(wave))) * typeMultiplier[enemyType] * flyingMultiplier;
+  return Math.round(base * ENEMY_EXP_MULTIPLIER * 100) / 100;
 }
 
 export function getTowerTotalInvestedGold(towerCost: number, currentLevel: number, towerId?: string) {

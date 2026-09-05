@@ -4511,7 +4511,6 @@ export class MatchRoom extends Room<MatchState> {
       // pahali hucreler oldu, yani kapatmanin bedelini dusmanlar kirarak oder.
       setTile(this.activeMap, cell.col, cell.row, "tower");
       this.activePaths = buildRuntimePaths(this.activeMap);
-    this.markNavigationDirty();
       this.markNavigationDirty();
       this.broadcast("match:map", this.activeMap);
     }

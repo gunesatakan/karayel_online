@@ -70,6 +70,14 @@ export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATI
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
 export const ENEMY_REWARD_MULTIPLIER = 1.5;
 
+/**
+ * Dusman oldurmenin deneyim odulu.
+ *
+ * Altin carpaninin deneyim tarafindaki karsiligi: egrinin sekli dusman tipinde
+ * ve dalgada duruyor, bu sayi ise butun kazancin seviyesini tek yerden ceviriyor.
+ */
+export const ENEMY_EXP_MULTIPLIER = 1.5;
+
 export function getWaveEnemyCount(wave: number) {
   return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
 }
