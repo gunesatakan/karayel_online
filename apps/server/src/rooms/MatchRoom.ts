@@ -689,6 +689,20 @@ type TowerModel = {
    * dusmanlarin kendisi.
    */
   debugSweepTargetIds: string[];
+  /**
+   * Kirisin en son **cizildigi** aci ve o anin zamani.
+   *
+   * Hedef acisini hesaplamak yetmiyor: zincirin acilari canli okundugu icin
+   * ilk halka olunce baslangic noktasi degisiyor ve hesaplanan aci bir karede
+   * siciriyordu. Donus hizi sinirini gercekten tutmak icin cizilen acinin
+   * kendisi hatirlanmali; sinir hesaplanan degere degil, ekranda goze gorunen
+   * harekete konuyor.
+   */
+  debugSweepAngle: number;
+  debugSweepAngleAt: number;
+  /** Son hasar karesinde kirisin durdugu aci; taranan yayin bir ucu. */
+  debugSweepDamageAngle: number;
+  debugSweepDamageAngleAt: number;
   debugSweepLastDamageAt: number;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
@@ -2371,6 +2385,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
         tower.debugSweepStartedAt = 0;
         tower.debugSweepTargetIds = [];
+        tower.debugSweepAngleAt = 0;
         tower.debugSweepLastDamageAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
       }
@@ -2639,6 +2654,11 @@ export class MatchRoom extends Room<MatchState> {
   private startDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, now: number) {
     tower.debugSweepStartedAt = now;
     tower.debugSweepTargetIds = this.getDebugLaserSweepTargetIds(tower);
+    // Ilk kare bir donus degil, dogus: kiris zincirin basinda aciliyor.
+    tower.debugSweepAngle = this.getDebugLaserSweepAngles(tower)[0] ?? tower.facing;
+    tower.debugSweepAngleAt = now;
+    tower.debugSweepDamageAngle = tower.debugSweepAngle;
+    tower.debugSweepDamageAngleAt = 0;
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = now;
     tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
@@ -3684,7 +3704,20 @@ export class MatchRoom extends Room<MatchState> {
 
     const elapsedSeconds = this.clamp((now - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
     const sweepAngles = this.getDebugLaserSweepAngles(tower);
-    const currentAngle = getDebugLaserChainSweepAngle(sweepAngles, elapsedSeconds, tower.facing);
+    const desiredAngle = getDebugLaserChainSweepAngle(sweepAngles, elapsedSeconds, tower.facing);
+
+    // Donus hizi tavani cizilen acinin uzerinde.
+    //
+    // Zincirin toplam yayini sureye gore kismak, kare basina hareketi kismiyor:
+    // acilar canli okundugu icin ilk halka oldugunde hesap bir anda zincirin
+    // ikinci halkasindan baslar ve kiris o farki tek karede kapatir. Sinir
+    // burada, gercekten donen sey uzerinde uygulaniyor -- altinda kalabilir,
+    // ustune cikamaz.
+    const previousAngle = tower.debugSweepAngleAt > 0 ? tower.debugSweepAngle : desiredAngle;
+    const sinceLastFrame = tower.debugSweepAngleAt > 0 ? Math.max(0, now - tower.debugSweepAngleAt) / 1000 : 0;
+    const currentAngle = rotateTowerTowards(previousAngle, desiredAngle, sinceLastFrame, DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND);
+    tower.debugSweepAngle = currentAngle;
+    tower.debugSweepAngleAt = now;
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle, this.getActiveWorldBounds());
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
     const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
@@ -3698,12 +3731,15 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const damage = this.getTowerDamage(tower);
-    const previousDamageAt = tower.debugSweepLastDamageAt > 0 ? tower.debugSweepLastDamageAt : Math.max(tower.debugSweepStartedAt, now - 50);
-    const previousElapsedSeconds = this.clamp((previousDamageAt - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
-    const previousAngle = getDebugLaserChainSweepAngle(sweepAngles, previousElapsedSeconds, tower.facing);
+    // Taranan yay artik yeniden hesaplanmiyor: kirisin bir onceki karede
+    // gercekten durdugu aci ile su anki acisi arasi. Hesaplanan degerden yay
+    // cikarmak, sinirin kirptigi hareketi de vurulmus saymak olurdu.
+    const sweptFromAngle = tower.debugSweepDamageAngleAt > 0 ? tower.debugSweepDamageAngle : previousAngle;
+    tower.debugSweepDamageAngle = currentAngle;
+    tower.debugSweepDamageAngleAt = now;
 
     for (const enemy of Array.from(this.enemies.values())) {
-      if (didDebugLaserSweepHitEnemy(tower, enemy, previousAngle, currentAngle, end.x, end.y, this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS))) {
+      if (didDebugLaserSweepHitEnemy(tower, enemy, sweptFromAngle, currentAngle, end.x, end.y, this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS))) {
         this.damageEnemyFromTower(tower, enemy, damage, 0);
       }
     }
@@ -3760,6 +3796,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugOverdriveUntil = 0;
     tower.debugSweepStartedAt = 0;
     tower.debugSweepTargetIds = [];
+    tower.debugSweepAngleAt = 0;
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = 0;
     tower.debugOverdriveHeatSegments = [];
@@ -5175,6 +5212,10 @@ export class MatchRoom extends Room<MatchState> {
       debugOverdriveUntil: 0,
       debugSweepStartedAt: 0,
       debugSweepTargetIds: [],
+      debugSweepAngle: 0,
+      debugSweepAngleAt: 0,
+      debugSweepDamageAngle: 0,
+      debugSweepDamageAngleAt: 0,
       debugSweepLastDamageAt: 0,
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],

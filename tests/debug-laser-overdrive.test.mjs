@@ -246,3 +246,53 @@ test("dönüş hızı sınırı korunuyor", () => {
     assert.ok(donus <= tavan + 2, `kiris hiz sinirini asti: ${donus.toFixed(1)} > ${tavan}`);
   });
 });
+
+/**
+ * Kare basina donus sinirinin gercek sinavi.
+ *
+ * Zincirin acilari canli okundugu icin ilk halka olunce hesap bir anda ikinci
+ * halkadan baslar. Sinir yalnizca "sureye gore toplam yay" olarak konursa kiris
+ * o farki tek karede kapatiyor ve ekranda isinlanmis gibi gorunuyordu -- toplam
+ * yay hala tavanin altinda oldugu icin de kimse fark etmiyordu.
+ *
+ * Bu test aciyi her karede olcer: iki kare arasindaki fark, gecen sureye dusen
+ * donus payini asamaz. Altinda kalabilir; ustune cikamaz.
+ */
+test("kiriş kare başına dönüş hızını aşamaz", () => {
+  withClock((ilerlet) => {
+    const { room, tower, enemies } = overdriveScene([
+      { degrees: 0, distance: 60 },
+      { degrees: 50, distance: 200 }
+    ]);
+
+    const paySn = (MAX_SWEEP_DEGREES_PER_SECOND * TICK_MS) / 1000;
+    let oncekiAci = beamAngle(room, tower);
+    let enBuyukSicrama = 0;
+
+    for (let elapsed = 0; elapsed < OVERDRIVE_MS; elapsed += TICK_MS) {
+      // Yarida zincirin **ilk** halkasini sahadan cikar: hesap ikinci halkadan
+      // baslamak zorunda kalir, yani sicrama tam burada olusur.
+      if (elapsed === TICK_MS * 6) {
+        room.enemies.delete(enemies[0].id);
+        room.enemySpatialGrid.rebuild(room.enemies.values());
+      }
+
+      runTicks(room, ilerlet, TICK_MS);
+      const aci = beamAngle(room, tower);
+      if (aci === undefined || oncekiAci === undefined) {
+        oncekiAci = aci;
+        continue;
+      }
+
+      const adim = Math.abs(degrees(shortestAngleDelta(oncekiAci, aci)));
+      enBuyukSicrama = Math.max(enBuyukSicrama, adim);
+      assert.ok(
+        adim <= paySn + 0.5,
+        `kiris bir karede ${adim.toFixed(1)} derece dondu, tavan ${paySn.toFixed(1)}`
+      );
+      oncekiAci = aci;
+    }
+
+    assert.ok(enBuyukSicrama > 0, "kiris hic donmedi, test bir sey olcmemis olur");
+  });
+});
