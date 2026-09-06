@@ -103,6 +103,7 @@ type ControlActionDetail = {
     | "upgradeUltimatePower"
     | "upgradeTower"
     | "sellTower"
+    | "clearTowerSelection"
     | "repairStructure"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
@@ -251,6 +252,8 @@ type TapLogEntry = {
   sonuc: string;
 };
 
+/** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
+const SELL_BUTTON_HEIGHT = 20;
 const GUIDANCE_RADIUS = 78;
 // Fast enough that the muzzle is on target before the projectile leaves it,
 // slow enough to read as a sweep rather than a snap.
@@ -467,6 +470,9 @@ export class GameScene extends Phaser.Scene {
   private canvasGestureCount = 0;
   /** Son dokunuslarin ne oldugu; performans kutusunda gorunur. */
   private tapLog: TapLogEntry[] = [];
+  /** Kule panelindeki satis dugmesinin dunya dikdortgeni; yoksa satilamaz. */
+  private sellButtonRect?: { x: number; y: number; width: number; height: number };
+  private selectedSellText?: Phaser.GameObjects.Text;
   /** Dunya kadar buyuk zemin; olcu degisince birlikte buyur. */
   private backdrop?: Phaser.GameObjects.Rectangle;
   /** Tuvalin son saglam olcusu; hic olculmediyse yok. */
@@ -1131,6 +1137,9 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("structure:repair", { towerId: this.selectedPlacedTowerId });
         }
         return;
+      case "clearTowerSelection":
+        this.clearPlacedTowerSelection();
+        break;
       case "sellTower":
         this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId) {
@@ -2186,6 +2195,7 @@ export class GameScene extends Phaser.Scene {
    * sey olmadi" sikayetinin sebebini cihazda tek satirda gormek.
    */
   private describeTapOutcome(pointer: Phaser.Input.Pointer) {
+    if (this.hitSellButton(pointer)) return "sat dugmesi";
     if (this.draggedTowerDefinition) return "YARIM SURUKLEME";
     if (performance.now() < this.ignoreMapPointerUntil) return "beklemede";
     if (this.pendingUltimateColumn) return this.isBattlePointer(pointer) ? "ulti sutunu" : "ULTI: ARENA DISI";
@@ -2240,8 +2250,42 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Kule oyuncunun mu; baskasinin kulesi satilamaz. */
+  private canSellSelectedTower(tower: TowerSnapshot) {
+    return tower.id === this.selectedPlacedTowerId && tower.ownerId === this.localSessionId;
+  }
+
+  /** Satistan donecek altin; dugmenin uzerinde yaziyor. */
+  private getSelectedTowerRefund(tower: TowerSnapshot) {
+    const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
+    return definition ? getTowerSellRefund(definition.cost, tower.level, definition.id) : 0;
+  }
+
+  /**
+   * Satis dugmesine mi basildi.
+   *
+   * Dugme Phaser ile ciziliyor ama tiklamasi Phaser'in giris sisteminden
+   * gecmiyor: haritanin girdisi tek yoldan yurutuluyor ve o yol dunya
+   * koordinatini zaten hesapliyor. Ayni yoldan gecmek, dugmenin haritanin
+   * geri kalaniyla ayni guvenilirlikte olmasi demek.
+   */
+  private hitSellButton(pointer: Phaser.Input.Pointer) {
+    const rect = this.sellButtonRect;
+    if (!rect || !this.selectedPlacedTowerId) {
+      return false;
+    }
+    return pointer.worldX >= rect.x && pointer.worldX <= rect.x + rect.width
+      && pointer.worldY >= rect.y && pointer.worldY <= rect.y + rect.height;
+  }
+
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
     this.logTap(pointer, this.describeTapOutcome(pointer));
+    if (this.hitSellButton(pointer)) {
+      this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
+      this.selectedPlacedTowerId = undefined;
+      this.updateSelectionUi();
+      return;
+    }
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
@@ -3482,6 +3526,11 @@ export class GameScene extends Phaser.Scene {
     this.selectedMisfortuneText?.setVisible(false);
     this.selectedPerformanceText?.setVisible(false);
     this.performanceSliderHitZone?.setVisible(false).disableInteractive();
+    // Satis dugmesi de panelle birlikte gider: kule satildiginda dugmenin
+    // haritada asili kalmasi hem yanlis gorunur hem de olmayan bir kuleyi
+    // isaret eder.
+    this.selectedSellText?.setVisible(false);
+    this.sellButtonRect = undefined;
 
     for (const [id, tower] of this.towers) {
       if (!activeIds.has(id)) {
@@ -4433,6 +4482,11 @@ export class GameScene extends Phaser.Scene {
     const energyBarY = panelY + 38;
     const temperatureBarY = panelY + 60;
     const performanceBarY = panelY + 82;
+    // Satis kulenin oldugu yerde: alt bar tek satira indigi icin oradan cikti,
+    // ve zaten dogru yer burasi -- oyuncu hangi kuleyi sattigini gorerek basiyor.
+    this.sellButtonRect = this.canSellSelectedTower(tower)
+      ? { x: panelX + 10, y: panelY + panelHeight + 4, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
+      : undefined;
     const hasPerformanceControl = !tower.resourceProvider;
     const usesAmmo = tower.resourceProvider === "ammunition" || tower.shotFuel !== "energy";
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
@@ -4481,6 +4535,12 @@ export class GameScene extends Phaser.Scene {
       graphics.fillStyle(0xf8fafc, 1).fillCircle(barX + barWidth * performanceRatio, performanceBarY + barHeight / 2, 5);
     }
 
+    const sell = this.sellButtonRect;
+    if (sell) {
+      graphics.fillStyle(0x2a1220, 0.96).fillRoundedRect(sell.x, sell.y, sell.width, sell.height, 4);
+      graphics.lineStyle(1, 0xfb7185, 0.85).strokeRoundedRect(sell.x, sell.y, sell.width, sell.height, 4);
+    }
+
     const labelCenterX = barX + barWidth / 2;
     this.selectedAmmoText ??= this.add.text(0, 0, "", { color: "#fef3c7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedEnergyText ??= this.add.text(0, 0, "", { color: "#cffafe", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
@@ -4506,6 +4566,17 @@ export class GameScene extends Phaser.Scene {
       .setPosition(barX + splitBarWidth + 4 + splitBarWidth / 2, panelY + 46)
       .setVisible(hasMisfortune);
     this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
+
+    this.selectedSellText = this.selectedSellText ?? this.add.text(0, 0, "", {
+      fontFamily: "Rajdhani, Arial",
+      fontSize: "13px",
+      fontStyle: "bold",
+      color: "#fecdd3"
+    }).setOrigin(0.5).setDepth(67);
+    this.selectedSellText
+      .setText(sell ? `Sat  +${this.getSelectedTowerRefund(tower)}g` : "")
+      .setPosition(sell ? sell.x + sell.width / 2 : 0, sell ? sell.y + sell.height / 2 : 0)
+      .setVisible(Boolean(sell));
 
     this.performanceSliderLeft = barX;
     this.performanceSliderRight = barX + barWidth;

@@ -233,6 +233,287 @@ export function setupGameControlUi(game: Phaser.Game) {
     clearActiveTowerDrag();
   };
 
+  /**
+   * Alt bar: tek satir uc dugme, uzerinde acilan bir cekmece.
+   *
+   * Panel bir donem her seyi ayni anda gosteriyordu -- beceriler, ulti, kule
+   * izgarasi, envanter, isci alimi, ulti gucu ve secili kulenin butun ayarlari.
+   * Dort satir ediyordu, yaklasik 136 piksel. Haritanin boyunu belirleyen tek
+   * sey ust cubuk ile panelin geriye biraktigi piksel oldugu icin harita bunun
+   * bedelini oduyordu: 393 piksellik bir ekranda 325 piksel kaliyordu.
+   *
+   * Icerik uc cekmeceye ayrildi ve yalnizca acilan gorunuyor. Kule secilince
+   * kendi cekmecesi kendiliginden aciliyor, cunku oyuncu o an onunla ilgileniyor.
+   * Satis dugmesi burada degil: haritada kulenin altinda zaten acilan panelin
+   * icinde, yani kulenin oldugu yerde.
+   */
+  type DrawerId = "towers" | "skills" | "inventory";
+  let openDrawer: DrawerId | undefined;
+
+  const toggleDrawer = (next: DrawerId) => {
+    openDrawer = openDrawer === next ? undefined : next;
+    if (latestState) {
+      latestKey = "";
+      render(latestState);
+    }
+  };
+
+  /** Cekmece kabugu: baslik satiri ve icerik. */
+  const makeDrawer = (title: string, body: HTMLElement[], onClose: () => void) => {
+    const drawer = document.createElement("div");
+    drawer.className = "game-controls__drawer";
+    const header = document.createElement("div");
+    header.className = "game-controls__drawer-header";
+    const label = document.createElement("span");
+    label.textContent = title;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "game-controls__drawer-close";
+    close.setAttribute("aria-label", "Kapat");
+    close.textContent = "×";
+    close.addEventListener("pointerup", onClose);
+    header.append(label, close);
+    drawer.append(header, ...body);
+    return drawer;
+  };
+
+  /** Bir satirlik dugme grubu. */
+  const makeRow = (children: HTMLElement[], className = "game-controls__row") => {
+    const row = document.createElement("div");
+    row.className = className;
+    row.append(...children);
+    return row;
+  };
+
+  const buildTowersDrawer = (state: ControlState) => {
+    const grid = document.createElement("div");
+    grid.className = "game-controls__tower-grid";
+    for (const tower of state.towers ?? []) {
+      grid.append(makeTowerButton(tower));
+    }
+    return [grid];
+  };
+
+  const buildSkillsDrawer = (state: ControlState) => {
+    const body: HTMLElement[] = [];
+
+    const skills = (state.skills ?? []).map((skill) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}`;
+      button.disabled = skill.disabled;
+      button.textContent = skill.label;
+      button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
+      return button;
+    });
+    if (skills.length > 0) {
+      body.push(makeRow(skills, "game-controls__skills"));
+    }
+
+    // Ulti: kip secimi ya da Zeynep kademesi acikken onun yerini aliyor.
+    if (state.ultimate?.choiceOpen && state.ultimate.needsChoice) {
+      body.push(makeRow([
+        makeActionButton("Saldiri", "game-controls__action--attack", true, () => dispatch({ action: "useUltimateMode", mode: "attack" })),
+        makeActionButton("Tamir", "game-controls__action--repair", true, () => dispatch({ action: "useUltimateMode", mode: "repair" }))
+      ]));
+    } else if (state.zeynepTier) {
+      body.push(makeRow([
+        makeTierButton("Dusuk", "small", 10, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton("Orta", "medium", 40, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
+      ]));
+    } else if (state.ultimate) {
+      body.push(makeRow([
+        makeActionButton(`Ulti ${state.ultimate.charge}%`, "game-controls__action--ultimate", state.ultimate.ready, () => dispatch({ action: "useUltimate" }))
+      ]));
+    }
+
+    // Surekli gorunen gostergeler de burada: alt barin tek satir kalmasi icin
+    // her biri bir cekmecede durmali.
+    const indicators: HTMLElement[] = [];
+    if (state.zeynepChain) {
+      const chain = document.createElement("span");
+      chain.className = `game-controls__chain${state.zeynepChain.ready ? " game-controls__chain--ready" : ""}`;
+      chain.textContent = `Zincir ${state.zeynepChain.value}/2`;
+      indicators.push(chain);
+    }
+    if (state.showOrientationToggle) {
+      indicators.push(makeActionButton(
+        state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay",
+        "game-controls__orientation",
+        true,
+        () => dispatch({ action: "toggleAbartiOrientation" })
+      ));
+    }
+    if (state.melisStance) {
+      const stance = state.melisStance;
+      const toStress = stance.current === "approval";
+      const bedel = stance.evolutionCost !== undefined ? ` ${Math.floor(stance.stress)}/${stance.evolutionCost}` : " tamam";
+      indicators.push(makeActionButton(
+        `Seri→${stance.current === "stress" ? "Stres" : "Onay"} | Evrim${bedel}`,
+        "game-controls__melis-stance",
+        true,
+        () => dispatch({ action: "setMelisStance", stance: toStress ? "stress" : "approval" })
+      ));
+    }
+    if (indicators.length > 0) {
+      body.push(makeRow(indicators));
+    }
+    if (state.melisSpectrum) {
+      body.push(makeMelisSpectrum(state.melisSpectrum));
+    }
+
+    return body;
+  };
+
+  const buildInventoryDrawer = (state: ControlState) => {
+    const body: HTMLElement[] = [];
+    const items = state.inventory?.items ?? [];
+
+    const list = document.createElement("div");
+    list.className = "game-controls__inventory-list";
+    if (items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "inventory__empty";
+      empty.textContent = "Envanterin boş. Mağazadan aldığın eşyalar burada birikir.";
+      list.append(empty);
+    }
+    for (const item of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `gold-shop__item gold-shop__item--${item.category}`;
+      button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small>`
+        + (item.count > 1 ? `<b>x${item.count}</b>` : "");
+      button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
+      list.append(button);
+    }
+    body.push(list);
+
+    const actions: HTMLElement[] = [];
+    if (state.inventory?.pendingItemId) {
+      actions.push(makeActionButton("Takmayı iptal et", "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
+    }
+    if (state.workerHire) {
+      actions.push(makeActionButton(`İşçi Al ${state.workerHire.cost}g`, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
+    }
+    // Ulti gucu: mevcut carpan ve siradaki bedel ayni dugmede. Oyuncunun
+    // karsilastirdigi sey bu ikisi.
+    if (state.ultimate) {
+      const ulti = state.ultimate;
+      actions.push(makeActionButton(
+        ulti.upgradeCost === undefined
+          ? `Ulti Gücü ×${ulti.powerMultiplier} (tam)`
+          : `Ulti Gücü ×${ulti.powerMultiplier} → ×${ulti.powerMultiplier * 2} ${ulti.upgradeCost}g`,
+        "game-controls__ultimate-power",
+        ulti.canUpgrade,
+        () => dispatch({ action: "upgradeUltimatePower" })
+      ));
+    }
+    if (actions.length > 0) {
+      body.push(makeRow(actions));
+    }
+    return body;
+  };
+
+  const buildTowerDrawer = (state: ControlState) => {
+    const body: HTMLElement[] = [];
+
+    const stats = document.createElement("div");
+    stats.className = "game-controls__stats";
+    stats.textContent = (state.selectedStats ?? []).join("  |  ");
+    body.push(stats);
+
+    // Takili esyalar: takilan esya sokulemedigi icin liste salt okunur.
+    const equipped = document.createElement("div");
+    equipped.className = "tower-items";
+    const capacity = state.equippedCapacity ?? 0;
+    const items = state.equippedItems ?? [];
+    const header = document.createElement("span");
+    header.className = "tower-items__header";
+    header.textContent = capacity > 0 ? `Eşyalar ${items.length}/${capacity}` : "Eşyalar";
+    equipped.append(header);
+    if (items.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "tower-items__empty";
+      empty.textContent = "Takılı eşya yok";
+      equipped.append(empty);
+    }
+    for (const item of items) {
+      const chip = document.createElement("span");
+      chip.className = "tower-items__chip";
+      chip.textContent = item.name;
+      chip.title = item.description;
+      equipped.append(chip);
+    }
+    body.push(equipped);
+
+    // Yukseltme ve onarim burada; satis haritadaki kule panelinde.
+    const actions: HTMLElement[] = [
+      makeActionButton(state.upgrade?.label ?? "Yükselt", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" }))
+    ];
+    if (state.repair) {
+      actions.push(makeActionButton(state.repair.label, "game-controls__action--repair", state.repair.enabled, () => dispatch({ action: "repairStructure" })));
+    }
+    body.push(makeRow(actions));
+
+    if (state.underworldMode) {
+      body.push(makeRow([
+        makeUnderworldModeButton("Onay", "approval", state.underworldMode),
+        makeUnderworldModeButton("Stres", "stress", state.underworldMode)
+      ], "game-controls__underworld-mode"));
+    }
+    if (state.ammoLogistics) {
+      body.push(makeRow([makeActionButton(
+        state.ammoLogistics.enabled ? "Mühimmat Akışı: Açık" : "Mühimmat Akışı: Kapalı",
+        "game-controls__underworld-mode-button",
+        state.ammoLogistics.canEdit,
+        () => dispatch({ action: "toggleAmmoLogistics" })
+      )], "game-controls__underworld-mode"));
+    }
+    if (state.standby) {
+      const standby = state.standby;
+      body.push(makeRow([makeActionButton(
+        standby.active ? "Kuleyi Ac" : standby.waking ? "Kule Isiniyor..." : "Beklemeye Al",
+        "game-controls__underworld-mode-button",
+        standby.canEdit && !standby.waking,
+        () => dispatch({ action: "toggleTowerStandby" })
+      )], "game-controls__underworld-mode"));
+    }
+    if (state.targeting) {
+      const select = document.createElement("select");
+      select.className = "game-controls__targeting";
+      for (const mode of state.targeting.modes) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = ({ first: "İlk", strongest: "En güçlü", weakest: "En zayıf", closest: "En yakın", last: "Son", random: "Rastgele" } as Record<string, string>)[mode] ?? mode;
+        option.selected = mode === state.targeting.current;
+        select.append(option);
+      }
+      select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
+      body.push(select);
+    }
+
+    return body;
+  };
+
+  const buildLauncher = (state: ControlState) => {
+    const makeLaunchButton = (label: string, id: DrawerId) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `game-controls__launch${openDrawer === id ? " game-controls__launch--open" : ""}`;
+      button.textContent = label;
+      button.addEventListener("pointerup", () => toggleDrawer(id));
+      return button;
+    };
+
+    const total = (state.inventory?.items ?? []).reduce((sum, entry) => sum + entry.count, 0);
+    return makeRow([
+      makeLaunchButton("Kuleler", "towers"),
+      makeLaunchButton("Beceriler", "skills"),
+      makeLaunchButton(`Envanter ${total}`, "inventory")
+    ], "game-controls__launcher");
+  };
+
   const render = (state: ControlState) => {
     // Yalnizca acilista bildirmek yetmiyordu: sahne o an daha dinlemeye
     // baslamamis oluyor, telefonda da resize hic gelmedigi icin kamera
@@ -244,7 +525,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     // Canli sayilar paneli yeniden kurmaz, yerinde yazilir.
     syncLiveStats();
 
-    const key = buildStructureKey(state);
+    const key = `${buildStructureKey(state)}|${openDrawer ?? ""}`;
     if (key === latestKey) {
       return;
     }
@@ -274,6 +555,8 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     root.replaceChildren();
 
+    // Tam ekran cekmeceler kendi kapatma dugmeleriyle geliyor; alt barla
+    // iliskileri yok.
     if (state.goldShop) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop";
@@ -293,37 +576,6 @@ export function setupGameControlUi(game: Phaser.Game) {
       const actions = document.createElement("div");
       actions.className = "gold-shop__actions";
       actions.append(reroll, close);
-      drawer.append(actions);
-      root.append(drawer);
-    }
-
-    if (state.inventory?.open) {
-      const drawer = document.createElement("section");
-      drawer.className = "gold-shop inventory";
-      const count = state.inventory.items.reduce((sum, entry) => sum + entry.count, 0);
-      drawer.innerHTML = `<header><span>ENVANTER</span><strong>${count} eşya</strong></header>`
-        + `<p>Bir eşyaya dokun, sonra takmak istediğin kuleyi seç. Takılan eşya sökülemez.</p>`
-        + `<div class="gold-shop__offers"></div>`;
-      const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
-      if (state.inventory.items.length === 0) {
-        const empty = document.createElement("p");
-        empty.className = "inventory__empty";
-        empty.textContent = "Envanterin boş. Mağazadan aldığın eşyalar burada birikir.";
-        list?.append(empty);
-      }
-      for (const item of state.inventory.items) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `gold-shop__item gold-shop__item--${item.category}`;
-        button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small>`
-          + (item.count > 1 ? `<b>x${item.count}</b>` : "");
-        button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
-        list?.append(button);
-      }
-      const close = makeActionButton("Kapat", "gold-shop__close", true, () => dispatch({ action: "closeInventory" }));
-      const actions = document.createElement("div");
-      actions.className = "gold-shop__actions";
-      actions.append(close);
       drawer.append(actions);
       root.append(drawer);
     }
@@ -353,207 +605,21 @@ export function setupGameControlUi(game: Phaser.Game) {
       root.append(drawer);
     }
 
-    if (state.melisSpectrum) {
-      root.append(makeMelisSpectrum(state.melisSpectrum));
-    }
-
     const panel = document.createElement("section");
     panel.className = `game-controls__panel${state.selectedStats ? " game-controls__panel--tower-selected" : ""}`;
 
-    const skillRow = document.createElement("div");
-    skillRow.className = "game-controls__skills";
-    for (const skill of state.skills ?? []) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}`;
-      button.disabled = skill.disabled;
-      button.textContent = skill.label;
-      button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
-      skillRow.append(button);
-    }
-
-    const actionRow = document.createElement("div");
-    actionRow.className = "game-controls__actions";
-    if (state.ultimate?.choiceOpen && state.ultimate.needsChoice) {
-      actionRow.append(
-        makeActionButton("Saldiri", "game-controls__action--attack", true, () => dispatch({ action: "useUltimateMode", mode: "attack" })),
-        makeActionButton("Tamir", "game-controls__action--repair", true, () => dispatch({ action: "useUltimateMode", mode: "repair" }))
-      );
-    } else if (state.zeynepTier) {
-      actionRow.append(
-        makeTierButton("Dusuk", "small", 10, state.zeynepTier.reputation, state.zeynepTier.chainReady),
-        makeTierButton("Orta", "medium", 40, state.zeynepTier.reputation, state.zeynepTier.chainReady),
-        makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
-      );
-    } else {
-      actionRow.append(
-        makeActionButton(`Ulti ${state.ultimate?.charge ?? 0}%`, "game-controls__action--ultimate", Boolean(state.ultimate?.ready), () => dispatch({ action: "useUltimate" })),
-        makeActionButton(state.upgrade?.label ?? "Kule sec", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" })),
-        makeActionButton(state.sell?.label ?? "Sat", "game-controls__action--sell", Boolean(state.sell?.enabled), () => dispatch({ action: "sellTower" }))
-      );
-      if (state.repair) {
-        actionRow.append(
-          makeActionButton(state.repair.label, "game-controls__action--repair", state.repair.enabled, () => dispatch({ action: "repairStructure" }))
-        );
-      }
-    }
-
-    const shop = document.createElement("div");
-    shop.className = "game-controls__shop";
+    // Kule secildiginde kendi cekmecesi her seyin onune geciyor.
     if (state.selectedStats) {
-      const stats = document.createElement("div");
-      stats.className = "game-controls__stats";
-      stats.textContent = state.selectedStats.join("  |  ");
-      shop.append(stats);
-
-      // Takili esyalar parametre barlarinin hemen altinda: oyuncu hangi kuleye
-      // ne taktigini burada takip eder. Takilan esya sokulemedigi icin liste
-      // salt okunur.
-      const equipped = document.createElement("div");
-      equipped.className = "tower-items";
-      const capacity = state.equippedCapacity ?? 0;
-      const items = state.equippedItems ?? [];
-      const header = document.createElement("span");
-      header.className = "tower-items__header";
-      header.textContent = capacity > 0 ? `Eşyalar ${items.length}/${capacity}` : "Eşyalar";
-      equipped.append(header);
-      if (items.length === 0) {
-        const empty = document.createElement("span");
-        empty.className = "tower-items__empty";
-        empty.textContent = "Takılı eşya yok";
-        equipped.append(empty);
-      }
-      for (const item of items) {
-        const chip = document.createElement("span");
-        chip.className = "tower-items__chip";
-        chip.textContent = item.name;
-        chip.title = item.description;
-        equipped.append(chip);
-      }
-      shop.append(equipped);
-      if (state.underworldMode) {
-        const modeRow = document.createElement("div");
-        modeRow.className = "game-controls__underworld-mode";
-        modeRow.append(
-          makeUnderworldModeButton("Onay", "approval", state.underworldMode),
-          makeUnderworldModeButton("Stres", "stress", state.underworldMode)
-        );
-        shop.append(modeRow);
-      }
-      if (state.ammoLogistics) {
-        const logisticsRow = document.createElement("div");
-        logisticsRow.className = "game-controls__underworld-mode";
-        logisticsRow.append(makeActionButton(
-          state.ammoLogistics.enabled ? "Mühimmat Akışı: Açık" : "Mühimmat Akışı: Kapalı",
-          "game-controls__underworld-mode-button",
-          state.ammoLogistics.canEdit,
-          () => dispatch({ action: "toggleAmmoLogistics" })
-        ));
-        shop.append(logisticsRow);
-      }
-      if (state.standby) {
-        const standby = state.standby;
-        shop.append(makeActionButton(
-          standby.active ? "Kuleyi Ac" : standby.waking ? "Kule Isiniyor..." : "Beklemeye Al",
-          "game-controls__underworld-mode-button",
-          standby.canEdit && !standby.waking,
-          () => dispatch({ action: "toggleTowerStandby" })
-        ));
-      }
-      if (state.targeting) {
-        const select = document.createElement("select");
-        select.className = "game-controls__targeting";
-        for (const mode of state.targeting.modes) {
-          const option = document.createElement("option");
-          option.value = mode;
-          option.textContent = ({ first: "İlk", strongest: "En güçlü", weakest: "En zayıf", closest: "En yakın", last: "Son", random: "Rastgele" } as Record<string, string>)[mode] ?? mode;
-          option.selected = mode === state.targeting.current;
-          select.append(option);
-        }
-        select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
-        shop.append(select);
-      }
-    } else {
-      const towerGrid = document.createElement("div");
-      towerGrid.className = "game-controls__tower-grid";
-      const towerList = state.towers ?? [];
-      // Dukkan alani iki satir yuksekliginde ve tasan satir kirpiliyor. Sutun
-      // sayisini sabit yazmak, katologa bir yapi eklendigi anda son butonu
-      // gorunmez yapiyor -- duvar eklenince tam olarak bu oldu. Sayiyi listeden
-      // turetmek kurali dogrudan ifade eder: kac kule olursa olsun iki satir.
-      towerGrid.style.gridTemplateColumns = `repeat(${Math.max(1, Math.ceil(towerList.length / 2))}, minmax(0, 1fr))`;
-      for (const tower of towerList) {
-        towerGrid.append(makeTowerButton(tower));
-      }
-      shop.append(towerGrid);
+      panel.append(makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" })));
+    } else if (openDrawer === "towers") {
+      panel.append(makeDrawer("Kuleler", buildTowersDrawer(state), () => toggleDrawer("towers")));
+    } else if (openDrawer === "skills") {
+      panel.append(makeDrawer("Beceriler", buildSkillsDrawer(state), () => toggleDrawer("skills")));
+    } else if (openDrawer === "inventory") {
+      panel.append(makeDrawer("Envanter", buildInventoryDrawer(state), () => toggleDrawer("inventory")));
     }
 
-    const footer = document.createElement("div");
-    footer.className = "game-controls__footer";
-    const hint = document.createElement("span");
-    hint.className = "game-controls__hint";
-    hint.textContent = state.hint ?? "";
-    footer.append(hint);
-
-    if (state.inventory) {
-      const inventory = state.inventory;
-      const total = inventory.items.reduce((sum, entry) => sum + entry.count, 0);
-      footer.append(inventory.pendingItemId
-        ? makeActionButton("Takmayı iptal et", "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" }))
-        : makeActionButton(`Envanter ${total}`, "game-controls__inventory-button", true, () => dispatch({ action: inventory.open ? "closeInventory" : "openInventory" })));
-    }
-
-    if (state.zeynepChain) {
-      const chain = document.createElement("span");
-      chain.className = `game-controls__chain${state.zeynepChain.ready ? " game-controls__chain--ready" : ""}`;
-      chain.textContent = `Zincir ${state.zeynepChain.value}/2`;
-      footer.append(chain);
-    }
-
-    if (state.showOrientationToggle) {
-      footer.append(makeActionButton(state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay", "game-controls__orientation", true, () => dispatch({ action: "toggleAbartiOrientation" })));
-    }
-
-    if (state.melisStance) {
-      const stance = state.melisStance;
-      const toStress = stance.current === "approval";
-      const bedel = stance.evolutionCost !== undefined
-        ? ` ${Math.floor(stance.stress)}/${stance.evolutionCost}`
-        : " tamam";
-      footer.append(makeActionButton(
-        `Seri→${stance.current === "stress" ? "Stres" : "Onay"} | Evrim${bedel}`,
-        "game-controls__melis-stance",
-        true,
-        () => dispatch({ action: "setMelisStance", stance: toStress ? "stress" : "approval" })
-      ));
-    }
-
-    if (state.workerHire) {
-      const hire = state.workerHire;
-      footer.append(makeActionButton(
-        `İşçi Al ${hire.cost}g`,
-        "game-controls__worker-hire",
-        true,
-        () => dispatch({ action: hire.open ? "closeWorkerHire" : "openWorkerHire" })
-      ));
-    }
-
-    // Ulti gucu: mevcut carpan ve siradaki bedel ayni dugmede. Oyuncunun
-    // karsilastirdigi sey bu ikisi -- "su an ne kadar vuruyorum, bir katini
-    // daha almak kaca".
-    if (state.ultimate) {
-      const ulti = state.ultimate;
-      footer.append(makeActionButton(
-        ulti.upgradeCost === undefined
-          ? `Ulti Gücü ×${ulti.powerMultiplier} (tam)`
-          : `Ulti Gücü ×${ulti.powerMultiplier} → ×${ulti.powerMultiplier * 2} ${ulti.upgradeCost}g`,
-        "game-controls__ultimate-power",
-        ulti.canUpgrade,
-        () => dispatch({ action: "upgradeUltimatePower" })
-      ));
-    }
-
-    panel.append(skillRow, actionRow, shop, footer);
+    panel.append(buildLauncher(state));
     root.append(panel);
   };
 

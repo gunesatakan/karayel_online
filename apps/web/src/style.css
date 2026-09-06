@@ -212,7 +212,12 @@ canvas {
 }
 
 .game-controls {
-  --game-controls-panel-height: clamp(136px, 17.3%, 150px);
+  /*
+   * Kapali barin yuksekligi. Bar artik dort satirlik sabit bir izgara degil,
+   * tek satir dugme; bu deger yalnizca barin uzerine konumlanan seyler icin
+   * kaba bir yedek.
+   */
+  --game-controls-panel-height: 48px;
   position: fixed;
   z-index: 4;
   pointer-events: none;
@@ -335,15 +340,22 @@ canvas {
   .gold-shop__item > small { font-size: 8px; line-height: 1.15; }
 }
 
+/*
+ * Alt bar kapaliyken tek satir.
+ *
+ * Eskiden dort satirlik sabit bir izgaraydi ve ekranin yaklasik besde birini
+ * kapliyordu. Haritanin boyunu belirleyen tek sey ust cubuk ile panelin geriye
+ * biraktigi piksel oldugu icin bedeli harita oduyordu. Yukseklik artik
+ * icerikten geliyor: kapaliyken yalnizca uc dugme, acikken uzerine bir cekmece.
+ */
 .game-controls__panel {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  display: grid;
-  grid-template-rows: 28px 30px 1fr 18px;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
-  height: var(--game-controls-panel-height);
   padding: 5px 6px max(5px, env(safe-area-inset-bottom));
   box-sizing: border-box;
   pointer-events: auto;
@@ -589,41 +601,82 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
-.game-controls__skills,
-.game-controls__actions,
-.game-controls__tower-grid {
+/* Barin kendisi: uc esit dugme, tek satir. */
+.game-controls__launcher {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
 }
 
-.game-controls__skills {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.game-controls__launch {
+  padding: 9px 4px;
+  font-size: clamp(11px, 3.2vw, 13px);
 }
 
-.game-controls__actions {
-  grid-template-columns: 1.15fr 1fr 0.82fr;
+.game-controls__launch--open {
+  border-color: rgba(56, 189, 248, 0.9);
+  color: #e0f2fe;
+  background: linear-gradient(180deg, rgba(14, 116, 144, 0.95), rgba(8, 47, 73, 0.98));
 }
 
-.game-controls__shop {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.game-controls__panel--tower-selected .game-controls__shop {
-  overflow-x: hidden;
+/*
+ * Cekmece: barin uzerinde acilir ve haritanin yarisindan fazlasini kapatmaz.
+ * Icerik sigmazsa kaydirilir -- bar yine tek satir kalir.
+ */
+.game-controls__drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(44vh, 300px);
+  padding: 6px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  background: rgba(2, 6, 23, 0.97);
   scrollbar-width: thin;
   scrollbar-color: rgba(56, 189, 248, 0.55) rgba(15, 23, 42, 0.5);
 }
 
+.game-controls__drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #7dd3fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.game-controls__drawer-close {
+  padding: 2px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.game-controls__row,
+.game-controls__skills,
+.game-controls__actions,
+.game-controls__underworld-mode {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.game-controls__inventory-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 4px;
+}
+
+/* Cekmecede yer bol: kuleler kendi genisliginde, tasarsa alt satira gecer. */
 .game-controls__tower-grid {
-  /* Sutun sayisi kule sayisindan turetiliyor; buradaki yalnizca yedek. */
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(17px, 1fr));
-  grid-auto-rows: minmax(17px, 1fr);
-  height: 100%;
-  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 3px;
 }
 
 .game-controls button {
@@ -819,17 +872,10 @@ canvas {
   box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.22), 0 0 14px rgba(45, 212, 191, 0.18);
 }
 
-.game-controls__footer {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: #94a3b8;
-  font-size: clamp(8px, 2.35vw, 10px);
-  font-weight: 700;
-  background: rgba(2, 6, 23, 0.96);
+/* Melis olcegi artik cekmecenin icinde akiyor, panelin uzerinde degil. */
+.game-controls__drawer .game-controls__melis-spectrum {
+  position: static;
+  width: auto;
 }
 
 .game-controls__hint {
