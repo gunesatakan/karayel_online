@@ -2,6 +2,9 @@ import type Phaser from "phaser";
 
 type ZeynepTier = "small" | "medium" | "big";
 
+/** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
+const BUTTON_PRESS_FLASH_MS = 140;
+
 type ControlState = {
   visible: boolean;
   characterName?: string;
@@ -161,8 +164,26 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
   };
 
+  /**
+   * Basilan dugmeyi kisa bir sure isaretler.
+   *
+   * `:active` tek basina yetmiyor: dugmeler islerini `pointerup` ile yapiyor ve
+   * hizli bir dokunusta basili durum bir kareden az surup gozden kaciyor.
+   * Oyuncunun bastigini anlamasinin baska bir yolu yok -- sonuc gecikirse ya da
+   * dugme bir sey yapmiyorsa geri bildirim hic gelmiyor.
+   */
+  const markButtonPressed = (target: EventTarget | null) => {
+    const button = target instanceof Element ? target.closest("button") : undefined;
+    if (!button || button.disabled) {
+      return;
+    }
+    button.classList.add("is-pressed");
+    window.setTimeout(() => button.classList.remove("is-pressed"), BUTTON_PRESS_FLASH_MS);
+  };
+
   root.addEventListener("pointerdown", (event: PointerEvent) => {
     pressedPointers.add(event.pointerId);
+    markButtonPressed(event.target);
   });
   root.addEventListener("pointerup", releasePointer);
   root.addEventListener("pointercancel", releasePointer);

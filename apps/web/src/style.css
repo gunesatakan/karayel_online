@@ -662,11 +662,16 @@ canvas {
   text-transform: uppercase;
 }
 
-.game-controls__drawer-close {
+/*
+ * Ozgulluk kasitli: taban kural `.game-controls button` (0,1,1) burayi (0,1,0)
+ * yener ve `min-width: 0` kapatma dugmesini 22 piksele dusururdu.
+ */
+.game-controls button.game-controls__drawer-close {
+  min-width: 44px;
   padding: 2px 9px;
   border: 1px solid rgba(148, 163, 184, 0.4);
   color: #cbd5e1;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -693,8 +698,22 @@ canvas {
   gap: 3px;
 }
 
+/*
+ * Dokunma hedefi.
+ *
+ * Panel bir donem sabit satirli bir izgaraydi (28px 30px 1fr 18px) ve
+ * dugmelerin yuksekligini o izgara veriyordu. Izgara kalkinca dugmeler
+ * iceriklerine gore buzuldu: ulti dugmesi 367x15 piksele dustu -- ince, uzun ve
+ * isabet ettirmesi zor. Yukseklik artik dugmenin kendi kurali, yerlesime bagli
+ * degil. 44 piksel, dokunmatikte guvenilir isabet icin kabul gormus alt sinir.
+ */
 .game-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
+  min-height: 44px;
+  padding: 4px 6px;
   border: 1px solid rgba(96, 165, 250, 0.42);
   border-radius: 0;
   color: #e0f2fe;
@@ -703,9 +722,33 @@ canvas {
   font-family: Rajdhani, "Exo 2", Arial, sans-serif;
   font-weight: 800;
   letter-spacing: 0;
+  text-align: center;
   text-transform: none;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
   touch-action: none;
+  transition: background-color 90ms ease, border-color 90ms ease, transform 90ms ease;
+}
+
+/*
+ * Basildigini gosteren tek sey.
+ *
+ * Dugmeler islerini `pointerup` ile yapiyor ve arada hicbir gorsel degisiklik
+ * yoktu: oyuncu bastigini ancak sonucundan anlayabiliyordu, sonuc gecikirse ya
+ * da hicbir sey olmuyorsa hic anlayamiyordu.
+ *
+ * `is-pressed` sinifi JS'ten geliyor ve kisa bir sure duruyor: cok hizli bir
+ * dokunusta `:active` bir kareden az surer ve gozden kacar.
+ */
+.game-controls button:active:not(:disabled),
+.game-controls button.is-pressed:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.95);
+  background: linear-gradient(180deg, rgba(14, 116, 144, 0.98), rgba(8, 47, 73, 0.98));
+  transform: scale(0.97);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+.game-controls button:disabled {
+  opacity: 0.45;
 }
 
 .game-controls button:disabled {
@@ -716,8 +759,8 @@ canvas {
 
 .game-controls__skill {
   white-space: pre-line;
-  font-size: clamp(9px, 2.65vw, 11px);
-  line-height: 0.95;
+  font-size: clamp(10px, 2.8vw, 12px);
+  line-height: 1.05;
 }
 
 .game-controls__skill--chain-ready {
@@ -733,8 +776,14 @@ canvas {
 }
 
 .game-controls__action {
-  font-size: clamp(10px, 2.8vw, 12px);
-  line-height: 1;
+  font-size: clamp(11px, 3vw, 13px);
+  line-height: 1.1;
+}
+
+/* Ulti tek basina bir satir kapliyor; rengi de oyle olsun. */
+.game-controls__action--ultimate:not(:disabled) {
+  border-color: rgba(250, 204, 21, 0.6);
+  color: #fde68a;
 }
 
 .game-controls__action--ultimate {
@@ -900,9 +949,20 @@ canvas {
   white-space: nowrap;
 }
 
+/*
+ * Olcusu kendi kuralinda.
+ *
+ * Bu yazi eskiden alt satirin icindeydi ve boyutunu oradan miras aliyordu.
+ * Satir kalkinca miras da kalkti ve sayac cekmecenin en buyuk yazisi oldu --
+ * bir sayacin hak ettiginden cok daha bagirgan.
+ */
 .game-controls__chain {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
   color: #f9a8d4;
+  font-size: clamp(10px, 2.8vw, 12px);
+  font-weight: 800;
 }
 
 .game-controls__chain--ready {
@@ -3010,6 +3070,12 @@ canvas {
  * kirpilan o olsun.
  */
 .game-hud__chip--ping { flex-shrink: 4; }
+/* Ust cubuktaki dugmeler de basildigini gostersin. */
+.game-hud__actions button:active:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.95);
+  transform: scale(0.94);
+}
+
 .game-hud__chip--good i { color: #22c55e; }
 .game-hud__chip--warn i { color: #facc15; }
 .game-hud__chip--bad i { color: #fb7185; }
