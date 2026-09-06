@@ -6,7 +6,17 @@ import type { Modifier } from "../modifiers/index.js";
 export type CardScope =
   | { kind: "global" }
   | { kind: "targeted" }
-  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[] };
+  /**
+   * `hasAreaRadius`, sekil etiketinin yapamadigi ayrimi yapar.
+   *
+   * `shape: "circle"` veride iki ayri isi goruyor: gercekten bir alana vuran
+   * kuleler (Lanet Kulesi, Baransel'in altisi) ve sekli hic onemli olmayan
+   * yapilar -- duvar, ambar, aura binasi, tek hedefe atan Parlama. Ikinci grup
+   * `radius` yazmadan `circle` kaliyor. Alani buyuten bir kart sekle bakarsa
+   * duvara da "uyar" gorunur ve yaricapi olmayan bir kule karttan yalnizca
+   * hasar cezasini alir; bu yuzden olcut sekil degil, alanin kendisi.
+   */
+  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean };
 
 /**
  * Katalog buyudukce her kartin ayni sikligta cikmasi oyunu kotulestirir: oyuncu
@@ -235,7 +245,11 @@ export const cardCatalog: CardDefinition[] = [
   { id: "delici-cekirdek-plani", name: "Delici Çekirdek", description: "Tek hedef ve hat saldıran kuleler 1 düşman daha deler.", axes: ["dps"], scope: { kind: "tagged", shapes: ["single", "line"] }, stackable: false, rarity: "rare", effects: [], grants: { attack: { pierceCount: 1 } } },
   { id: "ikinci-bicak", name: "İkinci Bıçak", description: "Yörünge kulelerine 1 bıçak ekler, yakıt tüketimi +%40.", axes: ["dps"], scope: { kind: "tagged", shapes: ["orbit"] }, stackable: false, rarity: "rare", effects: [effect("ikinci-bicak", "shotFuelCost", 0.4)], grants: { attack: { bladeCount: 1 } } },
   { id: "genis-koni", name: "Geniş Koni", description: "Koni saldıran kulelerin açısı %50 artar, hasarı -%20 olur.", axes: ["cc"], scope: { kind: "tagged", shapes: ["cone"] }, stackable: false, rarity: "uncommon", effects: [effect("genis-koni", "damage", -0.2)], grants: { attack: { angleMultiplier: 1.5 } } },
-  { id: "genis-halka", name: "Geniş Halka", description: "Halka saldıran kulelerin yarıçapı %35 artar, hasarı -%15 olur.", axes: ["dps"], scope: { kind: "tagged", shapes: ["circle"] }, stackable: false, rarity: "uncommon", effects: [effect("genis-halka", "damage", -0.15)], grants: { attack: { radiusMultiplier: 1.35 } } },
+  // "Halka saldiran kuleler" kimseye bir sey anlatmiyordu: oyuncu sekil
+  // etiketini hicbir yerde gormuyor. Kule paneli ayni sayiyi "Etki alani"
+  // diye yaziyor, kart da artik onu soyluyor -- ve kapsam tam olarak o sayiya
+  // bakiyor, boylece metin ile davranis ayni cumle.
+  { id: "genis-halka", name: "Geniş Halka", description: "Etki alanı olan kulelerin yarıçapı %35 artar, hasarı -%15 olur.", axes: ["dps"], scope: { kind: "tagged", hasAreaRadius: true }, stackable: false, rarity: "uncommon", effects: [effect("genis-halka", "damage", -0.15)], grants: { attack: { radiusMultiplier: 1.35 } } },
   { id: "ofke-nobeti", name: "Öfke Nöbeti", description: "Menzilinden düşman kaçan kule 8 saniye +%80 hasar verir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { triggers: [{ event: "escape", effect: "surge", cooldownMs: 6000 }] } },
 
   // --- Beceri ve ulti ---
@@ -266,17 +280,27 @@ export function getCardDefinition(cardId: string) {
   return cardsById.get(cardId);
 }
 
-export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider"> & { engine?: TowerDefinition["engine"] };
+export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider" | "aoeRadius"> & { engine?: TowerDefinition["engine"] };
+
+/**
+ * Kulenin alan yaricapi. `getTowerAttackRadius` ile ayni kural: motor degeri
+ * yazmissa o, yoksa eski tanim alani. Ikisinden biri okunmadan birakilirsa
+ * kapsam kulelerin bir kismini gormezden gelir.
+ */
+function getCardTowerAreaRadius(tower: CardTowerProfile) {
+  return tower.engine?.attack.radius ?? tower.aoeRadius ?? 0;
+}
 
 export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
   if (tower.resourceProvider) return false;
   if (card.scope.kind !== "tagged") return true;
-  const { axes, hitTypes, damageTypes, shapes, ammoTypes } = card.scope;
+  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius } = card.scope;
   return (!axes?.length || axes.some((axis) => tower.axes?.includes(axis)))
     && (!hitTypes?.length || (!!tower.hitType && hitTypes.includes(tower.hitType)))
     && (!damageTypes?.length || (!!tower.damageType && damageTypes.includes(tower.damageType)))
     && (!shapes?.length || (!!tower.engine?.attack.shape && shapes.includes(tower.engine.attack.shape)))
-    && (!ammoTypes?.length || (!!tower.engine?.resources.ammoType && ammoTypes.includes(tower.engine.resources.ammoType)));
+    && (!ammoTypes?.length || (!!tower.engine?.resources.ammoType && ammoTypes.includes(tower.engine.resources.ammoType)))
+    && (!hasAreaRadius || getCardTowerAreaRadius(tower) > 0);
 }
 
 export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; random?: () => number }) {
