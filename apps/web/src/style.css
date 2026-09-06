@@ -2934,6 +2934,12 @@ canvas {
 
 /* Ping oyun verisi degil tanilama: seritte durur, hicbir seyi ortmez. */
 .game-hud__chip--ping i { font-size: 7px; }
+/*
+ * Sayi sabit genislikte bir kutuda: "12 ms ±3" ile "480 ms ±90" ayni yeri
+ * kaplar. Ping saniyede bir degistigi icin buyuyup kuculen bir rozet seridin
+ * sarma noktasini oynatiyor, cubugu uzatiyor ve haritayi yeniden olcekletiyordu.
+ */
+.game-hud__chip--ping b { min-width: 12ch; text-align: right; }
 .game-hud__chip--good i { color: #22c55e; }
 .game-hud__chip--warn i { color: #facc15; }
 .game-hud__chip--bad i { color: #fb7185; }

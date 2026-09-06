@@ -96,6 +96,7 @@ type ControlActionDetail = {
     | "towerDragStart"
     | "towerDragMove"
     | "towerDragEnd"
+    | "towerDragCancel"
     | "useSkill"
     | "useZeynepTier"
     | "useUltimate"
@@ -229,6 +230,28 @@ type KillStreakVisualTheme = {
 };
 
 const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+/** Tani icin saklanan dokunus sayisi; performans kutusuna sigacak kadar. */
+const TAP_LOG_SIZE = 6;
+
+/**
+ * Bir dokunusun ne oldugunun kaydi.
+ *
+ * "Dokunmatik gitti" sikayetini uzaktan kovalamak mumkun degil: dokunusun
+ * ulasip ulasmadigini, dogru dunya noktasina dustugunu, ustunde bir kaplama
+ * olup olmadigini ve hangi kapida durduruldugunu bilmek gerekiyor. Bunlarin
+ * hepsi dokunus aninda okunur, sonradan uretilemez.
+ */
+type TapLogEntry = {
+  atMs: number;
+  clientX: number;
+  clientY: number;
+  worldX: number;
+  worldY: number;
+  arenaIcinde: boolean;
+  ustEleman: string;
+  sonuc: string;
+};
+
 const GUIDANCE_RADIUS = 78;
 // Fast enough that the muzzle is on target before the projectile leaves it,
 // slow enough to read as a sweep rather than a snap.
@@ -402,6 +425,7 @@ export class GameScene extends Phaser.Scene {
     stats: EMPTY_HUD_STATS,
     ping: "-- ms",
     pingTone: "warn",
+    pingDetail: "",
     continueVisible: false,
     continueWaiting: false,
     perfOpen: false,
@@ -440,10 +464,16 @@ export class GameScene extends Phaser.Scene {
   private arenaZoomed = false;
   /** HTML kaplamalarin tuvali ne kadar ortugu; kamera seridi bundan cikar. */
   private arenaChrome: ArenaChrome = DEFAULT_ARENA_CHROME;
-  /** Phaser'in isaretci olaylari sahneye hic ulasti mi. */
-  private phaserPointerSeen = false;
-  /** Yedek yol devrede mi; yalnizca Phaser hic olay tasimadiysa acilir. */
-  private pointerBridgeActive = false;
+  /** Tuvale inen dokunus sayisi. */
+  private canvasGestureCount = 0;
+  /** Son dokunuslarin ne oldugu; performans kutusunda gorunur. */
+  private tapLog: TapLogEntry[] = [];
+  /** Tuvalin son saglam olcusu; hic olculmediyse yok. */
+  private lastUsableCanvasRect?: { left: number; top: number; width: number; height: number };
+  /** Kac kez tuval olcusu 0x0 okundu; tani satirinda gorunur. */
+  private degenerateCanvasRectCount = 0;
+  /** Sahne kuruldugundan beri gecen sureyi okumak icin baslangic ani. */
+  private readonly sceneStartedAt = performance.now();
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
@@ -481,6 +511,8 @@ export class GameScene extends Phaser.Scene {
   /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
   private alertSound?: HTMLAudioElement;
   private draggedTowerDefinition?: TowerDefinition;
+  /** Kac kez yarim kalmis surukleme temizlendi; tani satirinda gorunur. */
+  private strandedTowerDragCount = 0;
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
   private readonly playbackClock = new SnapshotPlaybackClock(this.playbackDelayMs);
@@ -539,19 +571,8 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
-    this.installPointerBridge();
-    this.input.on("pointerdown", this.markPhaserPointerAlive, this);
-    this.input.on("pointerup", this.markPhaserPointerAlive, this);
-    this.input.on("pointerdown", this.handleMapPointerDown, this);
-    this.input.on("pointermove", this.handleMapPointerMove, this);
-    this.input.on("pointerup", this.handleMapPointer, this);
-    this.input.once("pointerdown", () => this.unlockGameAudio());
+    this.installMapPointerInput();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.input.off("pointerdown", this.markPhaserPointerAlive, this);
-      this.input.off("pointerup", this.markPhaserPointerAlive, this);
-      this.input.off("pointerdown", this.handleMapPointerDown, this);
-      this.input.off("pointermove", this.handleMapPointerMove, this);
-      this.input.off("pointerup", this.handleMapPointer, this);
       window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
       this.placementGrid?.destroy();
@@ -933,6 +954,46 @@ export class GameScene extends Phaser.Scene {
     this.updateSelectionUi();
   }
 
+  /**
+   * Yerlestirmeden vazgecer.
+   *
+   * `finishTowerDragAt`'in sunucuya istek gondermeyen hali. Surukleme yalnizca
+   * parmagin birakma olayiyla bitiyordu; o olay gelmezse `draggedTowerDefinition`
+   * kalici olarak dolu kaliyor ve **butun harita kapaniyor**: `isBattlePointer`
+   * false donuyor, `handleMapPointer` ilk kapida donuyor. Disaridan gorunen sey
+   * ne kulelere ne haritaya tiklanabilmesi, ulti sutununun da secilememesi.
+   */
+  private cancelTowerDrag() {
+    if (!this.draggedTowerDefinition) {
+      return;
+    }
+    this.draggedTowerDefinition = undefined;
+    this.placementGrid?.clear().setVisible(false);
+    this.placementGhost?.destroy();
+    this.placementGhost = undefined;
+    this.updateSelectionUi();
+  }
+
+  /**
+   * Haritaya inen parmak, acik kalmis bir suruklemeyi gecersiz kilar.
+   *
+   * Panelden baslayan bir surukleme tuvale `pointerdown` uretmez -- basma
+   * dugmenin uzerinde olur, hareketler pencereden akar. Dolayisiyla tuvale yeni
+   * bir parmak inerken hala acik duran bir surukleme, birakma olayini kaybetmis
+   * demektir. Bedeli, surukleme sirasinda ikinci bir parmakla haritaya dokunma
+   * gibi gercekte kullanilmayan bir hareketin suruklemeyi iptal etmesi; karsiligi
+   * ise hangi sebeple takilirsa takilsin bir sonraki dokunusta kendini
+   * toparlamasi.
+   */
+  private releaseStrandedTowerDrag() {
+    if (!this.draggedTowerDefinition) {
+      return;
+    }
+    this.strandedTowerDragCount += 1;
+    this.cancelTowerDrag();
+    this.showNotice("Yarim kalan yerlestirme iptal edildi");
+  }
+
   private getTowerDragPreviewPoint(pointer: Phaser.Input.Pointer) {
     return {
       x: pointer.worldX,
@@ -1016,9 +1077,16 @@ export class GameScene extends Phaser.Scene {
         const point = previewPoint();
         if (point) {
           this.finishTowerDragAt(point);
+        } else {
+          // Nokta okunamadiysa yerlestirme yapilamaz, ama surukleme de acik
+          // birakilamaz: acik surukleme haritayi tumden kapatiyor.
+          this.cancelTowerDrag();
         }
         break;
       }
+      case "towerDragCancel":
+        this.cancelTowerDrag();
+        break;
       case "useSkill":
         this.handleSkillButton(detail.slot ?? 0);
         break;
@@ -1951,6 +2019,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private unlockGameAudio() {
+    // Bir kez yeter. Eskiden `input.once` ile baglanmisti; artik her dokunustan
+    // cagriliyor cunku ilk gercek kullanici hareketini yakalamanin tek guvenilir
+    // yolu tuvalin kendi olayi. Nobet burada duruyor.
+    if (this.gameAudioUnlocked) {
+      return;
+    }
     this.gameAudioUnlocked = true;
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       const originalVolume = audio.volume;
@@ -2083,6 +2157,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
+    this.releaseStrandedTowerDrag();
     // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
     // yanlis yere dusuyorsa koordinatlar bunu gosterir.
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
@@ -2093,6 +2168,24 @@ export class GameScene extends Phaser.Scene {
     this.hideUltimateChoices();
     this.drawGuidancePreview(pointer.worldX, pointer.worldY);
     this.showNotice("Yonlendirme: alani surukle, birakinca uygula");
+  }
+
+  /**
+   * Dokunusun hangi kapida durduruldugu.
+   *
+   * `handleMapPointer` icindeki dallarin aynisini okur ama hicbirini
+   * uygulamaz. Ayni kosullari iki yerde tutmanin bedeli var; karsiligi, "hicbir
+   * sey olmadi" sikayetinin sebebini cihazda tek satirda gormek.
+   */
+  private describeTapOutcome(pointer: Phaser.Input.Pointer) {
+    if (this.draggedTowerDefinition) return "YARIM SURUKLEME";
+    if (performance.now() < this.ignoreMapPointerUntil) return "beklemede";
+    if (this.pendingUltimateColumn) return this.isBattlePointer(pointer) ? "ulti sutunu" : "ULTI: ARENA DISI";
+    if (this.pendingShopPlacement) return this.isBattlePointer(pointer) ? "esya yerlestirme" : "ESYA: ARENA DISI";
+    if (this.isGuidanceDragging) return "yonlendirme";
+    if (!this.isBattlePointer(pointer)) return "ARENA DISI";
+    if (this.findTowerAt(pointer.worldX, pointer.worldY)) return "kule secimi";
+    return "bos kare";
   }
 
   private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
@@ -2107,7 +2200,40 @@ export class GameScene extends Phaser.Scene {
     this.drawGuidancePreview(point.x, point.y);
   }
 
+  /**
+   * Dokunusun ne oldugunu kaydeder.
+   *
+   * Cihazda hata ayiklamanin tek yolu bu: oyuncunun elindeki telefonda dokunus
+   * dusuyorsa, dusme sebebini ancak dokunus aninda okunan degerler soyleyebilir
+   * -- dunya noktasi, arena icinde olup olmadigi, ustunde duran eleman ve hangi
+   * kapida durduruldugu.
+   */
+  private logTap(pointer: Phaser.Input.Pointer, sonuc: string) {
+    const event = (pointer as unknown as { domEvent?: PointerEvent }).domEvent;
+    const clientX = event?.clientX ?? -1;
+    const clientY = event?.clientY ?? -1;
+    let ustEleman = "-";
+    if (clientX >= 0) {
+      const element = document.elementFromPoint(clientX, clientY);
+      ustEleman = element ? `${element.tagName.toLowerCase()}${element.id ? "#" + element.id : ""}${typeof element.className === "string" && element.className ? "." + element.className.trim().split(/\s+/)[0] : ""}` : "yok";
+    }
+    this.tapLog.push({
+      atMs: performance.now() - this.sceneStartedAt,
+      clientX: Math.round(clientX),
+      clientY: Math.round(clientY),
+      worldX: Math.round(pointer.worldX),
+      worldY: Math.round(pointer.worldY),
+      arenaIcinde: this.isBattlePointer(pointer),
+      ustEleman,
+      sonuc
+    });
+    if (this.tapLog.length > TAP_LOG_SIZE) {
+      this.tapLog.shift();
+    }
+  }
+
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    this.logTap(pointer, this.describeTapOutcome(pointer));
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
@@ -6273,9 +6399,20 @@ export class GameScene extends Phaser.Scene {
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);
     const jitter = Math.max(...this.pingSamples) - Math.min(...this.pingSamples);
+    // Rozet basamak kazandikca genisleyemez.
+    //
+    // Ping saniyede bir degisiyor ve seritteki rozet onunla birlikte buyuyup
+    // kuculuyordu. Serit sardigi icin birkac piksel sarma noktasini kaydirmaya
+    // yetiyor; cubuk bir satir uzuyor, kamera da haritayi cubugun altina
+    // sigdirdigi icin harita gozle gorulur bicimde yeniden olcekleniyordu.
+    // Sayilar bu yuzden bir tavanda duruyor: tavani asan deger gizlenmiyor,
+    // yalnizca "+" ile bildiriliyor ve metnin uzunlugu sabit kaliyor.
+    const queueKb = Math.ceil((message.bufferedAmount ?? 0) / 1024);
     this.emitHudState({
-      ping: `${averagePing} ms ±${jitter}${(message.bufferedAmount ?? 0) > 0 ? ` q${Math.ceil((message.bufferedAmount ?? 0) / 1024)}K` : ""}`,
-      pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad"
+      ping: `${averagePing > 999 ? "999+" : averagePing} ms ±${jitter > 99 ? "99+" : jitter}`,
+      pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad",
+      // Kuyruk nadir ama uzun; metinden cikip ipucunda duruyor.
+      pingDetail: queueKb > 0 ? `Gecikme ${averagePing} ms, sapma ${jitter} ms, kuyruk ${queueKb}K` : `Gecikme ${averagePing} ms, sapma ${jitter} ms`
     });
   }
 
@@ -6335,71 +6472,131 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState({ perfText: this.getPerfPopupText() });
   }
 
-  /** Belge duzeyindeki sonda: dokunusun ustunde hangi eleman vardi. */
-  private markPhaserPointerAlive() {
-    this.phaserPointerSeen = true;
-  }
-
   /**
-   * Tuval olaylarini sahneye tasiyan yedek yol.
+   * Haritanin girdisi: tek yol, dogrudan tuvalden.
    *
-   * iOS'ta olculdu: `touchstart` tuvale ulasiyor, Phaser'in yoneticisi, sahne
-   * eklentisi ve dokunus motoru acik gorunuyor, ama sahne tek bir isaretci
-   * olayi almiyor. Kopukluk Phaser'in icinde ve disaridan kapatilamiyor, o
-   * yuzden olaylar kisa yoldan tasiniyor: tuval kutusu, olcek, sonra kamera --
-   * Phaser'in kendi donusumunun aynisi. Cihazda dogrulandi, bir piksel sapma
-   * yok.
+   * Burasi bir donem **iki** yoldu. Phaser'in kendi giris sistemi asildi ve
+   * yaninda, o sussa devreye giren bir yedek duruyordu; hangisinin gecerli
+   * oldugu her dokunusta yeniden kararlastiriliyordu. Iki yolun yarismasi
+   * kendi basina bir hata kaynagiydi: bir jestin basmasi bir yoldan, birakmasi
+   * otekinden gelebiliyor ve arada kalan durum takiliyordu.
    *
-   * Yol yalnizca Phaser hicbir olay tasimadiysa acilir; tasidigi anda geri
-   * cekilir. Calisan platformlarda hicbir sey degismez.
+   * Daha onemlisi, Phaser dunya koordinatini kendi onbellekledigi tuval
+   * olcusunden turetiyor. iOS'ta arac cubugu acilip kapandiginda o olcu
+   * eskiyor ve olay **ulassa bile** yanlis dunya noktasina dusuyor -- dokunus
+   * arenanin disinda sayilip sessizce dusuruluyor. Disaridan gorunen sey
+   * "dokunmatik kendiliginden gitti".
+   *
+   * Simdi tek yol var ve koordinat her dokunusta tuvalin **o anki** kutusundan
+   * hesaplaniyor; eskiyecek bir onbellek yok. Isaretci yakalamasi da jestin
+   * parmagi tuvalden ciksa bile ayni yoldan bitmesini garantiliyor.
    */
-  private installPointerBridge() {
+  private installMapPointerInput() {
     const canvas = this.game.canvas;
 
-    // Ilk dokunus gecikmeli dogrulanir: Phaser olayi ayni karede degil, bir
-    // sonraki adimda tasiyor. Hemen kopru kurmak calisan platformlarda ilk
-    // dokunusun iki kez islenmesi demek olurdu.
     canvas.addEventListener("pointerdown", (event) => {
-      if (this.phaserPointerSeen || this.pointerBridgeActive) {
-        if (this.pointerBridgeActive && !this.phaserPointerSeen) {
-          this.handleMapPointerDown(this.createBridgePointer(event));
-        }
-        return;
+      this.canvasGestureCount += 1;
+      // Parmagi yakala: jest tuvalin disina tasarsa bile hareket ve birakma
+      // buraya gelir. Yakalanmazsa panele kayan bir parmagin birakmasi hic
+      // gelmiyor ve yarim kalan surukleme kaliciyor.
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // Desteklenmiyorsa jest yine calisir, yalnizca tuvalin disina tasamaz.
       }
-
-      const pending = this.createBridgePointer(event);
-      window.setTimeout(() => {
-        if (this.phaserPointerSeen) {
-          return;
-        }
-        this.pointerBridgeActive = true;
-        this.handleMapPointerDown(pending);
-      }, 60);
+      this.unlockGameAudio();
+      const pointer = this.createBridgePointer(event);
+      if (pointer) {
+        this.handleMapPointerDown(pointer);
+      }
     });
 
     canvas.addEventListener("pointermove", (event) => {
-      if (!this.pointerBridgeActive || this.phaserPointerSeen) {
-        return;
+      const pointer = this.createBridgePointer(event);
+      if (pointer) {
+        this.handleMapPointerMove(pointer);
       }
-      this.handleMapPointerMove(this.createBridgePointer(event));
     });
 
     canvas.addEventListener("pointerup", (event) => {
-      if (!this.pointerBridgeActive || this.phaserPointerSeen) {
-        return;
+      const pointer = this.createBridgePointer(event);
+      if (pointer) {
+        this.handleMapPointer(pointer);
       }
-      this.handleMapPointer(this.createBridgePointer(event));
     });
+
+    // iOS bir dokunusu kendi jestine devralabiliyor; o durumda birakma olayi
+    // hic gelmiyor. Yakalamanin kaybi da ayni anlama geliyor. Ikisi de yarim
+    // kalan suruklemeyi kapatmali, yoksa harita kalici olarak kilitleniyor.
+    const abandon = () => this.abandonMapGesture();
+    canvas.addEventListener("pointercancel", abandon);
+    canvas.addEventListener("lostpointercapture", abandon);
   }
 
-  /** Phaser'in kendi donusumunun aynisi: tuval kutusu, olcek, sonra kamera. */
+  /**
+   * Birakilmadan dusen bir dokunusu geri alir.
+   *
+   * Surukleme bayragi yalnizca birakma olayinda iniyor. O olay gelmezse harita
+   * kalici olarak "yonlendirme surukleniyor" durumunda kaliyor ve sonraki
+   * dokunuslar kule secmek yerine beceri gonderiyor.
+   */
+  private abandonMapGesture() {
+    if (!this.isGuidanceDragging) {
+      return;
+    }
+    this.isGuidanceDragging = false;
+    this.clearGuidancePreview();
+  }
+
+  /**
+   * Tuvalin ekrandaki kutusu.
+   *
+   * Kutu her dokunusta yeniden okunuyor: onbelleklenmis bir olcu iOS'ta arac
+   * cubugu acilip kapandiginda eskiyor ve dokunus dogru geldigi halde yanlis
+   * dunya noktasina dusuyor.
+   *
+   * Ama okuma bazen **0x0** donuyor -- sayfa arka plandayken, gorunurluk
+   * degisiminin ortasinda, ya da yerlesim henuz oturmamisken. Eski kod bu
+   * durumda koordinati sifira dusuruyordu: dokunus kayboluyordu ki bu gorunmez
+   * bir ariza. Ekranin sol ust kosesi arenanin disinda oldugu icin her dokunus
+   * "arena disi" sayilip sessizce dusuyor -- disaridan tam olarak "dokunmatik
+   * kendiliginden gitti".
+   *
+   * Bu yuzden son saglam olcu saklaniyor. Bozuk bir olcu geldiginde onu
+   * kullaniyor ve olcegi tazelemesi icin Phaser'a haber veriyoruz; boylece
+   * dokunus kaybolmak yerine bir onceki dogru cerceveye gore cozuluyor.
+   */
+  private getCanvasRect() {
+    const rect = this.game.canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.lastUsableCanvasRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      return this.lastUsableCanvasRect;
+    }
+
+    this.degenerateCanvasRectCount += 1;
+    // Olcu bir daha kendiliginden duzelmeyebilir; Phaser'a yeniden olcmesini soyle.
+    this.scale.refresh();
+    return this.lastUsableCanvasRect;
+  }
+
+  /**
+   * DOM olayindan sahne isaretcisi.
+   *
+   * Ham olay da tasiniyor: tani gunlugu ekran koordinatini ve o noktadaki
+   * elemani ondan okuyor.
+   */
   private createBridgePointer(event: PointerEvent) {
     const canvas = this.game.canvas;
-    const rect = canvas.getBoundingClientRect();
-    const x = rect.width > 0 ? (event.clientX - rect.left) * (canvas.width / rect.width) : 0;
-    const y = rect.height > 0 ? (event.clientY - rect.top) * (canvas.height / rect.height) : 0;
+    const rect = this.getCanvasRect();
+    if (!rect) {
+      // Tuvalin nerede oldugunu bilmiyoruz. Uydurulmus bir nokta dokunusu
+      // haritanin baska bir yerine goturur; hicbir sey yapmamak dogrusu.
+      return undefined;
+    }
+    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
     const world = this.cameras.main.getWorldPoint(x, y);
-    return { x, y, worldX: world.x, worldY: world.y, id: event.pointerId } as unknown as Phaser.Input.Pointer;
+    return { x, y, worldX: world.x, worldY: world.y, id: event.pointerId, domEvent: event } as unknown as Phaser.Input.Pointer;
   }
 
   /**
@@ -6410,10 +6607,37 @@ export class GameScene extends Phaser.Scene {
    * "dokunma calismiyor" denildiginde aramayi tek satira indiriyor.
    */
   private getInputPathLine() {
-    if (this.phaserPointerSeen) {
-      return "Giris yolu      Phaser";
+    const canvas = this.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const durum = [
+      `dokunus ${this.canvasGestureCount}`,
+      `yarim ${this.strandedTowerDragCount}`,
+      this.draggedTowerDefinition ? `SURUKLEME ACIK (${this.draggedTowerDefinition.id})` : undefined,
+      this.isGuidanceDragging ? "YONLENDIRME ACIK" : undefined
+    ].filter(Boolean).join(", ");
+
+    const satirlar = [
+      `Giris           ${durum}`,
+      `Tuval           ${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)} · ic ${canvas.width}x${canvas.height}`
+        + (this.degenerateCanvasRectCount > 0 ? ` · BOZUK OLCUM ${this.degenerateCanvasRectCount}` : ""),
+      `Arena           ${Math.round(bounds.left)},${Math.round(bounds.top)} - ${Math.round(bounds.right)},${Math.round(bounds.bottom)} · zoom ${this.cameras.main.zoom.toFixed(2)}`
+    ];
+
+    if (this.tapLog.length === 0) {
+      satirlar.push("Dokunuslar      henuz yok");
+      return satirlar.join("\n");
     }
-    return this.pointerBridgeActive ? "Giris yolu      kopru (Phaser tasimiyor)" : "Giris yolu      henuz dokunulmadi";
+
+    satirlar.push(`Dokunuslar (son ${TAP_LOG_SIZE})`);
+    for (const tap of this.tapLog) {
+      satirlar.push(
+        `  ${(tap.atMs / 1000).toFixed(1)}s ekran ${tap.clientX},${tap.clientY}`
+          + ` -> dunya ${tap.worldX},${tap.worldY}`
+          + ` ${tap.arenaIcinde ? "ic" : "DIS"} · ${tap.ustEleman} · ${tap.sonuc}`
+      );
+    }
+    return satirlar.join("\n");
   }
 
   private getPerfPopupText() {

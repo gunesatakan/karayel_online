@@ -185,7 +185,36 @@ export function setupGameControlUi(game: Phaser.Game) {
     window.removeEventListener("pointermove", handleTowerDragMove);
     window.removeEventListener("pointerup", handleTowerDragEnd);
     window.removeEventListener("pointercancel", handleTowerDragEnd);
+    window.removeEventListener("lostpointercapture", handleTowerDragLost);
   };
+
+  /**
+   * Surukleme parmagini kaybettiysek yerlestirmeyi iptal ettir.
+   *
+   * Sahne tarafinda surukleme yalnizca `towerDragEnd` ile kapaniyor ve o da
+   * parmagin birakma olayina bagli. iOS uygulamayi arka plana aldiginda ya da
+   * dokunusu kendi jestine devraldiginda o olay hic gelmiyor. Acik kalan
+   * surukleme haritayi tumden kapatiyor: kule secilemiyor, ulti sutunu
+   * secilemiyor, haritaya yapilan her dokunus dusuyor.
+   *
+   * `lostpointercapture` tarayicinin garantisi: parmak hangi sebeple elimizden
+   * cikarsa ciksin geliyor. Normal birakmadan sonra da geliyor, ama o sirada
+   * surukleme zaten kapanmis oluyor ve bu dal bos geciyor.
+   */
+  const handleTowerDragLost = () => {
+    if (!activeTowerId) {
+      return;
+    }
+    dispatch({ action: "towerDragCancel", towerId: activeTowerId });
+    clearActiveTowerDrag();
+  };
+
+  window.addEventListener("blur", handleTowerDragLost);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      handleTowerDragLost();
+    }
+  });
 
   const handleTowerDragMove = (event: PointerEvent) => {
     if (!activeTowerId || event.pointerId !== activePointerId) {
@@ -567,9 +596,18 @@ export function setupGameControlUi(game: Phaser.Game) {
       clearActiveTowerDrag();
       activeTowerId = tower.id;
       activePointerId = event.pointerId;
+      // Parmagi yakalamak, kaybedildiginde haber almanin tek guvenilir yolu:
+      // panel yeniden kurulup dugme DOM'dan cikarsa ya da isletim sistemi
+      // dokunusu devralirsa `lostpointercapture` yine de geliyor.
+      try {
+        button.setPointerCapture(event.pointerId);
+      } catch {
+        // Yakalama desteklenmiyorsa asagidaki pencere dinleyicileri yeterli.
+      }
       window.addEventListener("pointermove", handleTowerDragMove, { passive: false });
       window.addEventListener("pointerup", handleTowerDragEnd, { passive: false });
       window.addEventListener("pointercancel", handleTowerDragEnd, { passive: false });
+      window.addEventListener("lostpointercapture", handleTowerDragLost, { passive: false });
       dispatch({ action: "selectTower", towerId: tower.id });
       dispatch({ action: "towerDragStart", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
     });
@@ -666,6 +704,8 @@ export type HudState = {
   stats: HudStats;
   ping: string;
   pingTone: "good" | "warn" | "bad";
+  /** Rozete sigmayan tani ayrintisi; ipucunda durur. */
+  pingDetail: string;
   continueVisible: boolean;
   continueWaiting: boolean;
   perfOpen: boolean;
@@ -682,7 +722,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   document.body.append(root);
 
   let state: HudState = {
-    status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn",
+    status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5
   };
 
@@ -755,6 +795,25 @@ export function setupGameHudUi(game: Phaser.Game) {
   }));
 
   /**
+   * Seridin ayrilmis yuksekligi.
+   *
+   * Serit sariyor: bir rozet birkac piksel buyudugunde sarma noktasi kayiyor ve
+   * cubuk bir satir uzuyor. Kamera haritayi cubugun altina sigdirdigi icin bu,
+   * oyunun ortasinda haritanin gozle gorulur bicimde buyuyup kuculmesi demek --
+   * en sik degisen deger ping oldugu icin saniyede bir olabiliyordu.
+   *
+   * Yeri onceden ayirmak cozum degil: tek satirla yetinen karakterlerde kalici
+   * bos serit demek olurdu. Serit bunun yerine bir kez uzadiginda kisalmiyor --
+   * en fazla birkac kez buyuyor, harita bir kez oturuyor ve bir daha oynamiyor.
+   */
+  let reservedStripHeight = 0;
+  const reserveStripHeight = () => {
+    stripNode.style.minHeight = "";
+    reservedStripHeight = Math.max(reservedStripHeight, stripNode.getBoundingClientRect().height);
+    stripNode.style.minHeight = `${reservedStripHeight}px`;
+  };
+
+  /**
    * Ikincil serit.
    *
    * Bir donem bu serit tasinca yatay kayiyordu. Ortusmeyi cozuyordu ama daha
@@ -769,7 +828,7 @@ export function setupGameHudUi(game: Phaser.Game) {
    * Karakter sayaclari one alindi cunku genel kaynaklardan daha belirleyiciler.
    */
   let lastStripKey = "";
-  const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"]) => {
+  const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string) => {
     const chips: string[] = [
       `<span class="game-hud__chip"><i>KALAN</i><b>${stats.enemiesLeft}</b></span>`,
       ...stats.extras.map((extra) => `<span class="game-hud__chip"><i>${escapeHudText(extra.label)}</i><b>${escapeHudText(extra.value)}</b></span>`),
@@ -780,12 +839,13 @@ export function setupGameHudUi(game: Phaser.Game) {
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
         + `</span>`,
       `<span class="game-hud__chip"><i>XP</i><b>${formatXp(stats.experience)}</b></span>`,
-      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}" title="Gecikme"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
+      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}" title="${escapeHudText(pingDetail || "Gecikme")}"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
     ];
     const key = chips.join("");
     if (key === lastStripKey) return;
     lastStripKey = key;
     stripNode.innerHTML = key;
+    reserveStripHeight();
   };
 
   let lastPopupKey = "";
@@ -816,7 +876,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     const healthRatio = state.stats.maxHealth > 0 ? state.stats.health / state.stats.maxHealth : 1;
     root.dataset.health = healthRatio <= 0.25 ? "critical" : healthRatio <= 0.6 ? "low" : "ok";
 
-    renderStrip(state.stats, state.ping, state.pingTone);
+    renderStrip(state.stats, state.ping, state.pingTone, state.pingDetail);
 
     // Durum satiri yalnizca soyleyecek bir sey varken yer kaplar.
     const status = state.status.trim();
@@ -836,7 +896,12 @@ export function setupGameHudUi(game: Phaser.Game) {
     root.classList.remove("game-hud--hidden");
     render(next);
   });
-  game.events.on("game:hud-hide", () => root.classList.add("game-hud--hidden"));
+  game.events.on("game:hud-hide", () => {
+    root.classList.add("game-hud--hidden");
+    // Sonraki tur baska bir karakterle baslayabilir; ayrilan yeri tasima.
+    reservedStripHeight = 0;
+    stripNode.style.minHeight = "";
+  });
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);
