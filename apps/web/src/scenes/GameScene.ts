@@ -630,14 +630,20 @@ export class GameScene extends Phaser.Scene {
     const tileRows = this.selectedMapData.rows;
     const bounds = getMapWorldBounds(this.selectedMapData);
 
-    // Zemin duz siyah. Uzerine gelen her sey -- bulutsu, yildiz, giris ve cikis
-    // seridi -- dusuk saydamlikla biniyor, boylece arka plan siyah kaliyor ve
-    // kuleler, dusmanlar, mermiler onun onunde ayrisiyor.
+    // Uzay arenanin disinda da suruyor.
+    //
+    // Yildizlar bir donem yalnizca harita dikdortgenine ciziliyordu. Ekran
+    // orani haritaninkiyle ayni oldugunda fark etmiyor -- arena zaten her yeri
+    // dolduruyor. Ama uzun ekranlarda arena genisligi doldurup dikeyde yer
+    // birakiyor (olculdu: 360x780'lik bir Android'de 113 piksel) ve o yer duz
+    // siyah kaliyordu: uzayin bittigi degil, cizimin bittigi yer gibi
+    // gorunuyordu. Arka plan artik kameranin gorebilecegi her yeri kapliyor.
+    const sky = this.getSkyBounds();
     graphics.fillStyle(0x000000, 1);
-    graphics.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
+    graphics.fillRect(sky.left, sky.top, sky.width, sky.height);
 
-    this.drawNebula(graphics, bounds);
-    this.drawStarField(graphics, bounds);
+    this.drawNebula(graphics, sky);
+    this.drawStarField(graphics, sky);
 
     // Kare izgarasi kaldirildi: dama tahtasi da hucre cizgileri de tumuyle
     // sustu, hicbir oyun bilgisi tasimiyorlardi. Giris ve cikis ise tasiyor --
@@ -656,8 +662,27 @@ export class GameScene extends Phaser.Scene {
 
     // Arenanin siniri: izgara gidince oyun alaninin nerede bittigi baska hicbir
     // seyden okunmuyor.
-    graphics.lineStyle(1, 0x38bdf8, 0.22);
+    // Uzay artik arenanin disinda da surdugu icin sinir biraz daha belirgin:
+    // oyun alaninin nerede bittigini soyleyen tek sey bu.
+    graphics.lineStyle(1, 0x38bdf8, 0.34);
     graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
+  }
+
+  /**
+   * Gokyuzunun kaplayacagi alan: kameranin gorebilecegi her yer.
+   *
+   * `configureArenaCamera` ile ayni dikdortgen, ayni paylarla. Ikisi ayrisirsa
+   * kameranin gidebildigi ama yildizin cizilmedigi bir serit kalir.
+   */
+  private getSkyBounds() {
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
+    const padding = TOWER_GRID_SIZE;
+    return {
+      left: view.left - padding,
+      top: view.top - padding,
+      width: view.width + padding * 2,
+      height: view.height + padding * 2
+    };
   }
 
   /**
@@ -3292,6 +3317,8 @@ export class GameScene extends Phaser.Scene {
     configureHiDpiCamera(this);
     this.backdrop?.setPosition(world.width / 2, world.height / 2).setSize(world.width, world.height);
     this.configureArenaCamera();
+    // Gokyuzu kameranin gordugu alani kapliyor; o alan degistiyse yeniden cizilmeli.
+    this.drawMap();
   }
 
   private getArenaFitFactor() {
@@ -3316,6 +3343,8 @@ export class GameScene extends Phaser.Scene {
 
     this.arenaChrome = { topRatio: chrome.topRatio, bottomRatio: chrome.bottomRatio };
     this.configureArenaCamera();
+    // Serit kaydi: kameranin gordugu alan da kaydi, gokyuzu onu izlemeli.
+    this.drawMap();
   }
 
   private configureArenaCamera() {
