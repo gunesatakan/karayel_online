@@ -561,11 +561,14 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     configureHiDpiCamera(this);
-    this.cameras.main.setBackgroundColor("#0f172a");
+    // Haritanin disinda kalan her sey de siyah: arenanin kenarinda ton degisimi
+    // olursa oyun alani bir kutunun icinde duruyormus gibi gorunuyor, oysa
+    // istenen sey uzayin kesintisiz devam etmesi.
+    this.cameras.main.setBackgroundColor("#000000");
     const world = this.getWorldSize();
     // Zemin dunya kadar: yukseklik cihaza gore degistigi icin sabit bir
     // dikdortgen uzun ekranlarda altta bosluk birakirdi.
-    this.backdrop = this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0x101827);
+    this.backdrop = this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0x000000);
     this.drawMap();
     this.configureArenaCamera();
     this.createPlacementGrid();
@@ -627,44 +630,95 @@ export class GameScene extends Phaser.Scene {
     const tileRows = this.selectedMapData.rows;
     const bounds = getMapWorldBounds(this.selectedMapData);
 
-    graphics.fillGradientStyle(0x020617, 0x071426, 0x0b1024, 0x020617, 1);
+    // Zemin duz siyah. Uzerine gelen her sey -- bulutsu, yildiz, giris ve cikis
+    // seridi -- dusuk saydamlikla biniyor, boylece arka plan siyah kaliyor ve
+    // kuleler, dusmanlar, mermiler onun onunde ayrisiyor.
+    graphics.fillStyle(0x000000, 1);
     graphics.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
 
-    // Deterministic star field: the map stays stable across snapshot redraws.
-    for (let index = 0; index < 92; index += 1) {
-      const starX = bounds.left + ((index * 137 + 29) % Math.max(1, bounds.width));
-      const starY = bounds.top + ((index * 83 + 47) % Math.max(1, bounds.height));
-      const radius = index % 13 === 0 ? 1.45 : index % 5 === 0 ? 0.9 : 0.45;
-      graphics.fillStyle(index % 7 === 0 ? 0x67e8f9 : index % 11 === 0 ? 0xc4b5fd : 0xf8fafc, index % 4 === 0 ? 0.8 : 0.42);
-      graphics.fillCircle(starX, starY, radius);
-    }
-    graphics.fillStyle(0x4338ca, 0.055);
-    graphics.fillCircle(bounds.left + bounds.width * 0.18, bounds.top + bounds.height * 0.3, 150);
-    graphics.fillStyle(0x0891b2, 0.045);
-    graphics.fillCircle(bounds.left + bounds.width * 0.82, bounds.top + bounds.height * 0.7, 190);
+    this.drawNebula(graphics, bounds);
+    this.drawStarField(graphics, bounds);
 
-    for (let row = 0; row < tileRows; row += 1) {
-      for (let col = 0; col < tileColumns; col += 1) {
-        const x = origin.x + col * cellSize;
-        const y = origin.y + row * cellSize;
-        const tileHeight = cellSize;
-        const isEntry = row === 0;
-        const isExit = row === tileRows - 1;
-        const fill = isEntry ? 0x063c45 : isExit ? 0x451a3a : (row + col) % 2 === 0 ? 0x0b1428 : 0x0d172d;
+    // Kare izgarasi kaldirildi: dama tahtasi da hucre cizgileri de tumuyle
+    // sustu, hicbir oyun bilgisi tasimiyorlardi. Giris ve cikis ise tasiyor --
+    // dusmanin nereden gelip nereye gittigi -- o yuzden onlar kaldi, ama artik
+    // hucre hucre degil, tek bir yumusak serit olarak.
+    const bandHeight = cellSize;
+    graphics.fillStyle(0x22d3ee, 0.09);
+    graphics.fillRect(bounds.left, bounds.top, bounds.width, bandHeight);
+    graphics.lineStyle(1, 0x67e8f9, 0.34);
+    graphics.lineBetween(bounds.left, bounds.top + bandHeight, bounds.right, bounds.top + bandHeight);
 
-        graphics.fillStyle(fill, isEntry || isExit ? 0.74 : 0.58);
-        graphics.fillRect(x, y, cellSize, tileHeight);
-        graphics.lineStyle(1, isEntry ? 0x22d3ee : isExit ? 0xf472b6 : 0x38bdf8, isEntry || isExit ? 0.5 : 0.14);
-        graphics.strokeRect(x + 0.5, y + 0.5, cellSize - 1, Math.max(1, tileHeight - 1));
-        if (isEntry || isExit) {
-          graphics.lineStyle(1, isEntry ? 0x67e8f9 : 0xf9a8d4, 0.18);
-          graphics.strokeCircle(x + cellSize / 2, y + tileHeight / 2, Math.max(3, Math.min(cellSize, tileHeight) * 0.28));
-        }
+    graphics.fillStyle(0xf472b6, 0.09);
+    graphics.fillRect(bounds.left, bounds.bottom - bandHeight, bounds.width, bandHeight);
+    graphics.lineStyle(1, 0xf9a8d4, 0.34);
+    graphics.lineBetween(bounds.left, bounds.bottom - bandHeight, bounds.right, bounds.bottom - bandHeight);
+
+    // Arenanin siniri: izgara gidince oyun alaninin nerede bittigi baska hicbir
+    // seyden okunmuyor.
+    graphics.lineStyle(1, 0x38bdf8, 0.22);
+    graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
+  }
+
+  /**
+   * Deterministik rastgelelik.
+   *
+   * Yildizlar her harita cizimde yeniden uretiliyor; \`Math.random\` ile her
+   * anlik goruntude yer degistirir ve gokyuzu titrerdi. Ayni tohum ayni yildizi
+   * verdigi icin gokyuzu duruyor.
+   */
+  private spaceNoise(seed: number) {
+    const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+    return value - Math.floor(value);
+  }
+
+  /**
+   * Bulutsu: ic ice, gitgide sonen daireler.
+   *
+   * Graphics radyal gecis cizemiyor, o yuzden yumusaklik katmanla elde ediliyor.
+   * Saydamliklar cok dusuk cunku istenen sey renk degil, siyahin icinde zar zor
+   * secilen bir derinlik.
+   */
+  private drawNebula(graphics: Phaser.GameObjects.Graphics, bounds: { left: number; top: number; width: number; height: number }) {
+    const clouds = [
+      { x: 0.2, y: 0.26, radius: Math.max(bounds.width, bounds.height) * 0.34, color: 0x3b1d7a },
+      { x: 0.84, y: 0.62, radius: Math.max(bounds.width, bounds.height) * 0.3, color: 0x0b4a63 },
+      { x: 0.46, y: 0.88, radius: Math.max(bounds.width, bounds.height) * 0.24, color: 0x5b1e4a }
+    ];
+
+    for (const cloud of clouds) {
+      const centerX = bounds.left + bounds.width * cloud.x;
+      const centerY = bounds.top + bounds.height * cloud.y;
+      for (let layer = 5; layer >= 1; layer -= 1) {
+        graphics.fillStyle(cloud.color, 0.02);
+        graphics.fillCircle(centerX, centerY, (cloud.radius * layer) / 5);
       }
     }
+  }
 
-    graphics.lineStyle(2, 0x38bdf8, 0.34);
-    graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
+  /** Uc parlaklik kademesinde dagilmis yildizlar; en parlak birkacinda hale var. */
+  private drawStarField(graphics: Phaser.GameObjects.Graphics, bounds: { left: number; top: number; width: number; height: number }) {
+    // Sayi alana bagli: sabit bir sayi buyuk haritada seyrek, kucukte kalabalik
+    // kalirdi.
+    const count = Math.round((bounds.width * bounds.height) / 900);
+    for (let index = 0; index < count; index += 1) {
+      const x = bounds.left + this.spaceNoise(index * 2 + 1) * bounds.width;
+      const y = bounds.top + this.spaceNoise(index * 2 + 2) * bounds.height;
+      const roll = this.spaceNoise(index * 2 + 3);
+
+      if (roll > 0.965) {
+        // Nadir parlak yildiz: kucuk bir hale ve serttin bir cekirdek.
+        graphics.fillStyle(0xbae6fd, 0.14);
+        graphics.fillCircle(x, y, 2.6);
+        graphics.fillStyle(0xffffff, 0.95);
+        graphics.fillCircle(x, y, 0.95);
+        continue;
+      }
+
+      const tint = roll > 0.9 ? 0x93c5fd : roll > 0.82 ? 0xfcd9b6 : 0xffffff;
+      graphics.fillStyle(tint, 0.2 + roll * 0.45);
+      graphics.fillCircle(x, y, roll > 0.6 ? 0.7 : 0.42);
+    }
   }
 
   private createPlacementGrid() {
