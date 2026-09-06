@@ -834,6 +834,7 @@ export function setupGameHudUi(game: Phaser.Game) {
         <span class="game-hud__vital game-hud__vital--health" title="Üs canı"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
         <span class="game-hud__vital game-hud__vital--wave" title="Dalga"><i aria-hidden="true">⚑</i><b data-hud-wave>1</b></span>
       </div>
+      <p class="game-hud__status" data-hud-status hidden></p>
       <div class="game-hud__actions">
         <button data-hud="perf" aria-label="Performans bilgisi">i</button>
         <button data-hud="audio" aria-label="Ses ayarları">♪</button>
@@ -841,7 +842,6 @@ export function setupGameHudUi(game: Phaser.Game) {
       </div>
     </div>
     <div class="game-hud__strip" data-hud-strip></div>
-    <p class="game-hud__status" data-hud-status hidden></p>
     <div data-hud-popups></div>
   `;
 

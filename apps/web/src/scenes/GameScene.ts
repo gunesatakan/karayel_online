@@ -423,7 +423,7 @@ export class GameScene extends Phaser.Scene {
   private reconnecting = false;
   private perfText?: Phaser.GameObjects.Text;
   private hudState: HudState = {
-    status: "Sunucu kontrol ediliyor...",
+    status: "Bağlanıyor",
     stats: EMPTY_HUD_STATS,
     ping: "-- ms",
     pingTone: "warn",
@@ -2460,7 +2460,7 @@ export class GameScene extends Phaser.Scene {
   private async connect() {
     try {
       await this.checkServerHealth();
-      this.emitHudState({ status: "Odaya bağlanıyor..." });
+      this.emitHudState({ status: "Bağlanıyor" });
 
       const existingRoom = getActiveLobbyRoom();
       if (existingRoom) {
@@ -2479,7 +2479,7 @@ export class GameScene extends Phaser.Scene {
         }));
       }
       this.localSessionId = this.room.sessionId;
-      this.emitHudState({ status: `Oda: ${this.room.roomId}` });
+      this.emitHudState({ status: `#${this.room.roomId}` });
       this.bindRoomHandlers(this.room);
       this.room.send("snapshot:requestFull");
       this.room.send("card:sync");
@@ -2844,7 +2844,7 @@ export class GameScene extends Phaser.Scene {
     if (this.reconnecting) return;
     this.reconnecting = true;
     this.setCardChoicePending(true, "Bağlantı yenileniyor…");
-    this.emitHudState({ status: "Bağlantı koptu, yeniden bağlanılıyor…" });
+    this.emitHudState({ status: "Yeniden bağlanılıyor" });
     const client = getSharedClient(gameServerUrl);
     const deadline = Date.now() + 18_000;
 
@@ -2859,7 +2859,7 @@ export class GameScene extends Phaser.Scene {
         room.send("card:sync");
         this.reconnecting = false;
         this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
-        this.emitHudState({ status: `Oda: ${room.roomId}` });
+        this.emitHudState({ status: `#${room.roomId}` });
         return;
       } catch {
         await new Promise((resolve) => window.setTimeout(resolve, 1200));
@@ -2869,7 +2869,7 @@ export class GameScene extends Phaser.Scene {
     this.reconnecting = false;
     clearActiveLobbyRoom(disconnectedRoom.roomId);
     this.setCardChoicePending(false, "Bağlantı kurulamadı. Oyuna yeniden girmen gerekiyor.");
-    this.emitHudState({ status: `Bağlantı kesildi (${code})` });
+    this.emitHudState({ status: `Koptu (${code})` });
   }
 
   private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number }) {
@@ -3078,9 +3078,9 @@ export class GameScene extends Phaser.Scene {
     const hudPatch: Partial<HudState> = { continueVisible: active, continueWaiting: localReady };
     if (active) {
       const readyCount = snapshot.setupReadyPlayerIds?.length ?? 0;
-      hudPatch.status = `Kurulum: ${readyCount}/${snapshot.players.length} oyuncu hazır`;
-    } else if (this.hudState.status.startsWith("Kurulum:")) {
-      hudPatch.status = `Oda: ${this.room?.roomId ?? "-"}`;
+      hudPatch.status = `Kurulum ${readyCount}/${snapshot.players.length}`;
+    } else if (this.hudState.status.startsWith("Kurulum")) {
+      hudPatch.status = `#${this.room?.roomId ?? "-"}`;
     }
     this.emitHudState(hudPatch);
   }
@@ -6904,15 +6904,19 @@ export class GameScene extends Phaser.Scene {
     this.perfText?.setColor(fps >= 50 && serverPerf.tickMs < 8 ? "#86efac" : fps >= 35 && serverPerf.tickMs < 14 ? "#fde047" : "#fb7185");
   }
 
+  /**
+   * Hatanin cubuga sigan hali.
+   *
+   * Metin birincil satirda, altin ve can ile ayni yerde duruyor; kendine satir
+   * acamaz. Uzun bir hata orada ya tasar ya da butonlari iter, o yuzden
+   * kirpiliyor. Tamami zaten konsolda ve "i" kutusunda duruyor.
+   */
   private formatConnectionError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const shortMessage = message.length > 42 ? `${message.slice(0, 39)}...` : message;
-
-    if (message.startsWith("Health")) {
-      return `HTTP hata: ${shortMessage}`;
-    }
-
-    return `Oda/WebSocket hatasi: ${shortMessage}`;
+    // "Hata:" gibi bir on ek yer yiyor ve hicbir sey soylemiyor -- yazi zaten
+    // yalnizca bir sey ters gittiginde cikiyor. Butonlarin yaninda kalan en dar
+    // alan 22 harf kadar; sinir oradan.
+    return message.length > 22 ? `${message.slice(0, 21)}…` : message;
   }
 }
 

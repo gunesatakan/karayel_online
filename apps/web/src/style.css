@@ -3000,7 +3000,18 @@ canvas {
 .game-hud__chip--warn i { color: #facc15; }
 .game-hud__chip--bad i { color: #fb7185; }
 
+/*
+ * Durum yazisi birincil satirin icinde, altin/can/dalga ile butonlarin arasinda.
+ *
+ * Bir donem kendi satiriydi ve yalnizca soyleyecek bir sey varken beliriyordu.
+ * Ama belirmesi cubugu uzatiyor, uzayan cubuk kamerayi haritayi yeniden
+ * sigdirmaya zorluyordu: "Kurulum 0/1" yazisi ekrandaki haritanin boyunu
+ * degistiriyordu. Satirin icinde hicbir seyi itmiyor -- yer daralinca kendisi
+ * kirpiliyor.
+ */
 .game-hud__status {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   color: #94a3b8;
