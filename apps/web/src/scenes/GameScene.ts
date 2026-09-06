@@ -252,6 +252,14 @@ type TapLogEntry = {
   sonuc: string;
 };
 
+/** Onuncu seviye asiri yuklemede kiris boyunca kosan parlama sayisi. */
+const OVERDRIVE_FLARE_COUNT = 7;
+/** Kirisin kenarindan dokulen kivilcim sayisi. */
+const OVERDRIVE_SPARK_COUNT = 10;
+/** Halenin kac katmanda sondugu; az katman duz kenarli bir bant birakiyor. */
+const OVERDRIVE_HALO_LAYERS = 6;
+/** Bir kivilcimin dogup sonme suresi. */
+const OVERDRIVE_SPARK_LIFE_MS = 520;
 /** Uyari tonunun suresi. Kisa: uyari, muzik degil. */
 const ALERT_TONE_SECONDS = 0.24;
 /**
@@ -6412,7 +6420,131 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
     this.beamGraphics.fillStyle(color, 0.58);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
-    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14 });
+    // Kademe 3'te ray ve kafes kapali: ikisi de kirisin **uzerine** cizilen
+    // duzenli cizgiler ve genis bir asiri yukleme kirisinde birlesince ortaya
+    // demiryolu rayi gibi bir sey cikiyordu. O yerin sahibi artik parlamalar.
+    const tier = beam.tier ?? 1;
+    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14, rails: tier < 3 });
+    if (tier >= 3) {
+      this.drawOverdriveFlare(beam);
+    }
+  }
+
+  /**
+   * Onuncu seviyede asiri yuklemenin cevresine dokulen parlamalar.
+   *
+   * Kural yine ayni: kiris kalinlasmiyor. Eklenen sey **cevresi** -- govdenin
+   * disina tasan hale, uzerinde kosan parlamalar ve kenardan dokulen kivilcimlar.
+   * Kalinlik buyutmek gucu degil kabaligi anlatiyor; asil "en ust seviye" hissi
+   * ayni cizginin daha canli, daha katmanli olmasindan geliyor.
+   *
+   * Hicbirinin durumu tutulmuyor: her sey saatten ve indeksten tureyen
+   * deterministik bir gurultuyle ciziliyor. Kiris saniyede yirmi kez yeniden
+   * geldigi ve supurme sirasinda acisi degistigi icin, kare kare tasinan bir
+   * parcacik listesi kirisle birlikte kaymak yerine geride kalirdi.
+   */
+  private drawOverdriveFlare(beam: BeamSnapshot) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    const now = this.time.now;
+
+    // Hale: disa dogru sonen katmanlar.
+    //
+    // Tek bir genis cizgi denendi ve ise yaramadi: `lineStyle` duz kenarli bir
+    // kapsul ciziyor, yani ortaya yumusak bir parlama degil kirisi cerceveleyen
+    // gri bir dikdortgen cikiyor. Ust uste binen birkac katman gecisi taklit
+    // ediyor -- kirisin govdesinin zaten yaptigi sey.
+    const breath = 0.5 + Math.sin(now / 180) * 0.5;
+    // Katman sayisi yuksek ve araliklar dar: uc kalin katman denendi ve kenari
+    // hala duz bir bant gibi gorunuyordu. Gecisi yapan sey katmanin kalinligi
+    // degil, sayisi.
+    for (let layer = OVERDRIVE_HALO_LAYERS; layer >= 1; layer -= 1) {
+      const spread = beam.width + 6 + layer * (3.4 + breath * 0.8);
+      graphics.lineStyle(spread, 0xbae6fd, 0.016 + breath * 0.006);
+      graphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    }
+
+    // Kiris boyunca kosan parlamalar: her biri kucuk bir yildiz cakmasi.
+    for (let index = 0; index < OVERDRIVE_FLARE_COUNT; index += 1) {
+      // Baslangic noktalari esit araliklarla dagitiliyor, uzerine kucuk bir
+      // sapma biniyor. Tumuyle rastgele birakildiginda parlamalar kumeleniyor
+      // ve kirisin ortasinda taramaya benzeyen bir yigin olusturuyorlardi.
+      const speed = 0.35 + this.spaceNoise(index * 3 + 1) * 0.5;
+      const offset = index / OVERDRIVE_FLARE_COUNT + this.spaceNoise(index * 3 + 2) * 0.08;
+      const along = (((now / 1000) * speed + offset) % 1) * length;
+      const px = beam.x1 + ux * along;
+      const py = beam.y1 + uy * along;
+      // Kenarlara yaklasirken sonuyor: parlamalar hictten belirip hicte kayboluyor.
+      const edge = Math.min(along, length - along) / Math.max(1, length * 0.18);
+      const fade = Math.min(1, Math.max(0, edge));
+      if (fade <= 0) continue;
+
+      // Kol boyu kiris boyunca degil **disa** dogru uzun: yildiz cakmasi
+      // hissini veren sey dik eksen, cunku kirisin kendi ekseni zaten parlak.
+      const arm = 10 + this.spaceNoise(index * 3 + 3) * 8;
+      graphics.lineStyle(1.4, 0xffffff, 0.85 * fade);
+      graphics.lineBetween(px - nx * arm, py - ny * arm, px + nx * arm, py + ny * arm);
+      graphics.lineStyle(1, 0xffffff, 0.5 * fade);
+      graphics.lineBetween(px - ux * arm * 0.7, py - uy * arm * 0.7, px + ux * arm * 0.7, py + uy * arm * 0.7);
+      graphics.fillStyle(0xbae6fd, 0.4 * fade);
+      graphics.fillCircle(px, py, 4.5);
+      graphics.fillStyle(0xffffff, 1 * fade);
+      graphics.fillCircle(px, py, 2.2);
+    }
+
+    // Kenardan dokulen kivilcimlar.
+    //
+    // Her kivilcimin yeri **omru boyunca sabit**: yalnizca disari aciliyor ve
+    // soluyor. Ilk halinde yer her karede yeniden cekiliyordu ve on dort
+    // kivilcim ayri ayri sicramak yerine kirisin iki yaninda titreyen tekduze
+    // bir tuye donusuyordu -- kum gibi, kivilcim gibi degil.
+    for (let index = 0; index < OVERDRIVE_SPARK_COUNT; index += 1) {
+      const durationMs = OVERDRIVE_SPARK_LIFE_MS * (0.7 + this.spaceNoise(index * 7 + 1) * 0.6);
+      const phase = now / durationMs + this.spaceNoise(index * 7 + 2) * 10;
+      const generation = Math.floor(phase);
+      const life = phase - generation;
+      // Kusak numarasi tohuma giriyor: her dogusta baska bir yerden cikiyor,
+      // ama o dogusun icinde yerini birakmiyor.
+      const seed = index * 7 + generation * 131;
+      const along = this.spaceNoise(seed) * length;
+      const side = this.spaceNoise(seed + 1) > 0.5 ? 1 : -1;
+      const drift = this.spaceNoise(seed + 2) * 0.5 - 0.25;
+
+      const spread = beam.width * 0.5 + 4 + life * 22;
+      const px = beam.x1 + ux * (along + life * length * 0.02 * drift) + nx * side * spread;
+      const py = beam.y1 + uy * (along + life * length * 0.02 * drift) + ny * side * spread;
+      const tail = 4 + this.spaceNoise(seed + 3) * 6;
+      // Once parlayip sonra sonuyor: duz sonme, cakma hissini vermiyor.
+      const glow = life < 0.15 ? life / 0.15 : 1 - (life - 0.15) / 0.85;
+      graphics.lineStyle(1.1, 0xfffbeb, 0.8 * glow);
+      graphics.lineBetween(px, py, px - nx * side * tail, py - ny * side * tail);
+    }
+
+    // Namludaki cakma: kirisin dogdugu yer en parlak nokta olmali.
+    const muzzlePulse = 0.6 + Math.sin(now / 90) * 0.4;
+    graphics.lineStyle(1.2, 0xffffff, 0.5 + muzzlePulse * 0.35);
+    for (let index = 0; index < 4; index += 1) {
+      const angle = (index / 4) * Math.PI + now / 700;
+      const reach = 16 + muzzlePulse * 7;
+      graphics.lineBetween(
+        beam.x1 - Math.cos(angle) * reach,
+        beam.y1 - Math.sin(angle) * reach,
+        beam.x1 + Math.cos(angle) * reach,
+        beam.y1 + Math.sin(angle) * reach
+      );
+    }
+    graphics.fillStyle(0xffffff, 0.9);
+    graphics.fillCircle(beam.x1, beam.y1, 3 + muzzlePulse * 1.6);
   }
 
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
