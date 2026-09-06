@@ -252,6 +252,8 @@ type TapLogEntry = {
   sonuc: string;
 };
 
+/** Uyari tonunun suresi. Kisa: uyari, muzik degil. */
+const ALERT_TONE_SECONDS = 0.24;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
 const GUIDANCE_RADIUS = 78;
@@ -516,7 +518,8 @@ export class GameScene extends Phaser.Scene {
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
-  private alertSound?: HTMLAudioElement;
+  /** Uyari tonlari icin tek baglam; ilk dokunusta aciliyor. */
+  private alertAudioContext?: AudioContext;
   private draggedTowerDefinition?: TowerDefinition;
   /** Kac kez yarim kalmis surukleme temizlendi; tani satirinda gorunur. */
   private strandedTowerDragCount = 0;
@@ -868,6 +871,9 @@ export class GameScene extends Phaser.Scene {
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       audio.volume = this.voiceVolume;
     }
+    // Uyari tonu burada yok cunku seviyeyi her calista kendisi okuyor. Onceki
+    // uyari sesi bir HTMLAudioElement'ti ve seviyesi yalnizca kurulusta bir kez
+    // yaziliyordu -- listeye eklenmedigi icin ayarlardan kisilamiyordu.
   }
 
   private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
@@ -1609,13 +1615,13 @@ export class GameScene extends Phaser.Scene {
   private showStructureBreach(message: StructureBreachMessage) {
     this.pulseAlertMarker(message.x, message.y, 0xf97316);
     this.showNotice(`Gedik aciliyor! %${Math.round(message.healthRatio * 100)} can kaldi`);
-    this.playAlertSound();
+    this.playAlertSound("breach");
   }
 
   private showFlowShift(message: FlowShiftMessage) {
     this.pulseAlertMarker(message.x, message.y, 0x38bdf8);
     this.showNotice("Dusman akisi yeni bir kapiya kaydi");
-    this.playAlertSound();
+    this.playAlertSound("flow");
   }
 
   /** Uyarilan noktayi kisa sure buyuyup sonen bir halka ile isaretler. */
@@ -2002,18 +2008,60 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private playAlertSound() {
-    if (!this.alertSound) return;
-    // Ust uste gelen uyarilarda sesi bastan baslat, yoksa ikincisi hic duyulmaz.
-    this.alertSound.currentTime = 0;
-    void this.alertSound.play().catch(() => undefined);
+  /**
+   * Uyari sesi.
+   *
+   * Bu ses bir donem `streak-granted.mp3` idi -- yani kill-streak anonsunun ta
+   * kendisi. Ayni dosya iki isi goruyordu ve ikisinin birbiriyle ilgisi yoktu:
+   * duvar dikmek dusman akisini kaydirdigi icin oyuncu her duvarda ortada hicbir
+   * seri yokken "COMMAND GRANTED" anonsunu duyuyordu.
+   *
+   * Uyarinin artik kendi sesi var ve dosya gerektirmiyor: iki kisa ton. Ikisi
+   * ayni da degil, cunku iki uyari ayni sey degil -- gedik alcalan bir ton
+   * (kotu, hemen bak), akis kaymasi yukselen (bilgi, kurulusunu gozden gecir).
+   *
+   * Ses seviyesi her calista okunuyor. Eskiden yalnizca kurulusta bir kez
+   * yaziliyordu, o yuzden ayarlardan kisilmasi hicbir sey degistirmiyordu.
+   */
+  private playAlertSound(kind: "breach" | "flow") {
+    if (this.voiceVolume <= 0) {
+      return;
+    }
+
+    const context = this.getAlertAudioContext();
+    if (!context) {
+      return;
+    }
+    if (context.state === "suspended") {
+      void context.resume().catch(() => undefined);
+    }
+
+    const now = context.currentTime;
+    const [fromHz, toHz] = kind === "breach" ? [820, 400] : [500, 760];
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(fromHz, now);
+    oscillator.frequency.exponentialRampToValueAtTime(toHz, now + ALERT_TONE_SECONDS * 0.7);
+    // Ussel rampa sifira inemez; duyulmayan bir tabandan basliyor ve oraya donuyor.
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.2 * this.voiceVolume, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + ALERT_TONE_SECONDS);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + ALERT_TONE_SECONDS + 0.02);
+  }
+
+  /** Tek bir baglam; her uyaride yenisini acmak iOS'ta sessizlikle sonuclanir. */
+  private getAlertAudioContext() {
+    if (!this.alertAudioContext) {
+      const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      this.alertAudioContext = Context ? new Context() : undefined;
+    }
+    return this.alertAudioContext;
   }
 
   private createKillStreakAudio() {
-    this.alertSound = new Audio("/audio/streak-granted.mp3");
-    this.alertSound.preload = "auto";
-    this.alertSound.volume = this.voiceVolume;
-
     this.killStreakSounds = {
       granted: [new Audio("/audio/streak-granted.mp3")],
       unstoppable: [new Audio("/audio/streak-unstopable.mp3")],
@@ -2036,6 +2084,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private unlockGameAudio() {
+    // Uyari baglami da burada aciliyor: iOS ses baglamini yalnizca gercek bir
+    // kullanici hareketi icinde baslatiyor, sonra istedigi zaman calabiliyor.
+    const alertContext = this.getAlertAudioContext();
+    if (alertContext?.state === "suspended") {
+      void alertContext.resume().catch(() => undefined);
+    }
+
     // Bir kez yeter. Eskiden `input.once` ile baglanmisti; artik her dokunustan
     // cagriliyor cunku ilk gercek kullanici hareketini yakalamanin tek guvenilir
     // yolu tuvalin kendi olayi. Nobet burada duruyor.
