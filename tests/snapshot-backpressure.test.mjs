@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getClientBufferedAmount, MatchRoom, roundNetworkNumber, SNAPSHOT_BACKPRESSURE_LIMIT_BYTES, stripWireDefaults } from "../apps/server/dist/rooms/MatchRoom.js";
+import { getClientBufferedAmount, MatchRoom, roundNetworkNumber, SNAPSHOT_BACKPRESSURE_LIMIT_BYTES, stripWireDefaults, idleSnapshotSignature } from "../apps/server/dist/rooms/MatchRoom.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 test("WebSocket bufferedAmount farklı taşıma şekillerinden okunur", () => {
@@ -85,5 +85,101 @@ test("kuyruk sınırı birkaç snapshotluk kalır", () => {
   assert.ok(
     SNAPSHOT_BACKPRESSURE_LIMIT_BYTES <= 64 * 1024,
     `kuyruk siniri fazla buyuk: ${SNAPSHOT_BACKPRESSURE_LIMIT_BYTES}`
+  );
+});
+
+/**
+ * Dalga arasi sessizligi.
+ *
+ * Oyuncunun kart sectigi an, kuyrugunun bosalmasi gereken tek an. Oysa dalga
+ * arasinda oyun dursa da snapshot yayini durmuyordu: 20 kuleyle saniyede
+ * 175 KB, ve altmis karenin elli sekizi `serverTime` disinda bire bir ayni
+ * veri. Kart teklifi ve oyuncunun cevabi o birikintinin arkasinda bekliyordu.
+ */
+
+/** Oda saati `performance.now` okuyor; ikisini birden ilerletmeden olculemez. */
+function driveRoom(room, seconds) {
+  const realDate = Date.now;
+  const realPerf = performance.now.bind(performance);
+  let dateMs = realDate();
+  let perfMs = realPerf();
+  Date.now = () => dateMs;
+  performance.now = () => perfMs;
+  try {
+    for (let elapsed = 0; elapsed < seconds * 1000; elapsed += 50) {
+      dateMs += 50;
+      perfMs += 50;
+      room.update(50);
+    }
+  } finally {
+    Date.now = realDate;
+    performance.now = realPerf;
+  }
+}
+
+function countingRoom(towerCount) {
+  const room = createRoom("warrior");
+  room.wave = 15;
+  let sent = 0;
+  room.clients = [{
+    sessionId: "p1",
+    ref: { bufferedAmount: 0 },
+    send: (type) => { if (type === "snapshot") sent += 1; }
+  }];
+  room.broadcast = () => {};
+  for (let index = 0; index < towerCount; index += 1) {
+    const spot = findBuildableSpot(room, "warrior-1");
+    if (!spot) break;
+    room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
+  }
+  return { room, sent: () => sent };
+}
+
+test("duran tahtada aynı snapshot tekrar gönderilmez", () => {
+  const { room, sent } = countingRoom(20);
+  room.setupPhase = true;
+  room.enemies.clear();
+
+  driveRoom(room, 5);
+
+  // Bes saniyede yirmi Hz yuz snapshot ederdi; geriye yalnizca nabiz kalmali.
+  assert.ok(sent() <= 15, `duraklamada ${sent()} snapshot gitti, nabizdan fazla`);
+});
+
+test("duran tahtada nabız yine de atar", () => {
+  // Tumden susmak olmaz: istemcinin oynatma saati ve tamponu taze kalmali,
+  // arada yeniden baglanan biri de guncel durumu gormeli.
+  const { room, sent } = countingRoom(20);
+  room.setupPhase = true;
+  room.enemies.clear();
+
+  driveRoom(room, 5);
+
+  assert.ok(sent() >= 5, `duraklamada yalnizca ${sent()} snapshot gitti, nabiz durmus`);
+});
+
+test("dalga sırasında hiçbir snapshot atlanmaz", () => {
+  const { room, sent } = countingRoom(20);
+  room.setupPhase = false;
+  for (let index = 0; index < 30; index += 1) {
+    room.spawnEnemy();
+  }
+
+  driveRoom(room, 5);
+
+  // 50 ms araliktan bes saniyede yaklasik yuz kare.
+  assert.ok(sent() >= 90, `dalga sirasinda yalnizca ${sent()} snapshot gitti`);
+});
+
+test("imza zaman damgasını saymaz", () => {
+  // Ayni tahta, farkli an: gonderilecek yeni bir bilgi yok.
+  const snapshot = { serverTime: 1000, enemies: [], towers: [{ id: "t1", hp: 5 }] };
+  assert.equal(
+    idleSnapshotSignature(snapshot),
+    idleSnapshotSignature({ ...snapshot, serverTime: 9999 })
+  );
+  assert.notEqual(
+    idleSnapshotSignature(snapshot),
+    idleSnapshotSignature({ ...snapshot, towers: [{ id: "t1", hp: 4 }] })
   );
 });

@@ -338,6 +338,13 @@ const SNAPSHOT_SEND_INTERVAL_MS = 50;
  * telafi edemiyor. Bu sinir birkac snapshotluk, yani onda birkac saniyelik.
  */
 export const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 48 * 1024;
+/**
+ * Duran tahtada, icerik degismese bile en fazla bu kadar sessiz kalinir.
+ *
+ * Istemcinin oynatma saati ve tamponu icin bir nabiz; ayrica bu arada yeniden
+ * baglanan biri guncel durumu en gec bu kadar sonra goruyor.
+ */
+const SNAPSHOT_IDLE_HEARTBEAT_MS = 500;
 const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
@@ -1276,6 +1283,9 @@ export class MatchRoom extends Room<MatchState> {
   private autoStartOnFirstJoin = false;
   private serverLinkWaveAgeCache = new Map<string, number>();
   private lastSnapshotBroadcastAt = 0;
+  /** Duran tahtada en son gonderilen snapshotin icerigi ve ani. */
+  private lastIdleSnapshotSignature = "";
+  private lastIdleSnapshotSentAt = 0;
   private lastPerfBroadcastAt = 0;
   private lastSnapshotSizeSampleAt = 0;
   private snapshotBroadcastTimes: number[] = [];
@@ -1845,6 +1855,10 @@ export class MatchRoom extends Room<MatchState> {
         this.lastSnapshotSizeSampleAt = now;
       }
       this.lastSnapshotBroadcastAt = now;
+
+      if (this.isBoardIdle() && this.isRepeatOfLastIdleSnapshot(snapshot, now)) {
+        snapshot = undefined;
+      }
     }
     const tickMs = performance.now() - frameStart;
 
@@ -1864,6 +1878,46 @@ export class MatchRoom extends Room<MatchState> {
       this.broadcast("perf:snapshot", this.latestPerfSnapshot);
       this.lastPerfBroadcastAt = now;
     }
+  }
+
+  /**
+   * Dunya duruyor mu.
+   *
+   * Dalga arasi ve kurulum evresi: dusman yok, mermi yok, kimse kimildamiyor.
+   * Oyuncunun kart sectigi an tam olarak bu.
+   */
+  private isBoardIdle() {
+    return this.setupPhase || this.waveClearedAt !== 0;
+  }
+
+  /**
+   * Duran bir tahtada ayni snapshotu tekrar gondermeyi engeller.
+   *
+   * Dalga arasinda oyun duruyor ama snapshot yayini durmuyordu: 20 kuleyle
+   * saniyede 175 KB, ve olculdu -- altmis karenin elli sekizi `serverTime`
+   * disinda **bire bir ayni** veriyi tasiyor. Yani kuyrugun bosalmasi gereken
+   * tek an, kuyrugun degismemis veriyle doldurulduğu andi. Kart teklifi ve
+   * oyuncunun cevabi o yigin birikintinin arkasinda bekliyordu.
+   *
+   * Karsilastirma yalnizca tahta dururken yapiliyor: dalga sirasinda zaten her
+   * kare farkli, kiyaslamak bosuna is olurdu. Yine de belirli araliklarla bir
+   * kare geciyor -- istemcinin oynatma saati ve tamponu taze kalsin, arada
+   * yeniden baglanan biri de guncel durumu gorsun diye.
+   */
+  private isRepeatOfLastIdleSnapshot(snapshot: WireGameSnapshot, now: number) {
+    if (now - this.lastIdleSnapshotSentAt >= SNAPSHOT_IDLE_HEARTBEAT_MS) {
+      this.lastIdleSnapshotSignature = idleSnapshotSignature(snapshot);
+      this.lastIdleSnapshotSentAt = now;
+      return false;
+    }
+
+    const signature = idleSnapshotSignature(snapshot);
+    if (signature === this.lastIdleSnapshotSignature) {
+      return true;
+    }
+    this.lastIdleSnapshotSignature = signature;
+    this.lastIdleSnapshotSentAt = now;
+    return false;
   }
 
   private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot) {
@@ -9635,6 +9689,16 @@ export function getClientBufferedAmount(client: Pick<Client, "ref">) {
  * duser -- `hp` icin bu, olmek uzere olan bir dusmani dogdugu canla gostermek
  * demek olurdu.
  */
+/**
+ * Bir snapshotin **iceriginin** imzasi; zaman damgasi disarida.
+ *
+ * `serverTime` her karede degistigi icin snapshotlar hicbir zaman birebir ayni
+ * olmuyor, oysa duran bir tahtada tasidiklari bilgi ayni.
+ */
+export function idleSnapshotSignature(snapshot: WireGameSnapshot) {
+  return JSON.stringify({ ...snapshot, serverTime: 0 });
+}
+
 export function stripWireDefaults<T extends Record<string, unknown>>(entity: T): T {
   const trimmed: Record<string, unknown> = {};
   for (const key of Object.keys(entity)) {
