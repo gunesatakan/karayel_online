@@ -6811,6 +6811,30 @@ export class GameScene extends Phaser.Scene {
    * dokunuslari yedek yoldan aliyor. Hangi yolun calistigini gormek, bir daha
    * "dokunma calismiyor" denildiginde aramayi tek satira indiriyor.
    */
+  /**
+   * Olcek uyusmazligini gosteren satir.
+   *
+   * Harita ile kaplamalar arasinda ust/alt bant kaliyorsa sebep tek bir sey
+   * olabilir: Phaser'in FIT olcegi tuvali `#game` kutusuna sigdirirken oyunun
+   * orani o kutunun oraniyla tutmuyordur. Iki orani yan yana yazmak, hangi
+   * cihazda ne kadar ayristiklarini uzaktan gormenin tek yolu -- Android'de
+   * bunun oldugu bildirildi ama burada uretilemiyor.
+   */
+  private getScaleDiagnosticLine() {
+    const host = document.getElementById("game")?.getBoundingClientRect();
+    const oyun = this.scale.gameSize;
+    const kutuOrani = host && host.height > 0 ? host.width / host.height : 0;
+    const oyunOrani = oyun.height > 0 ? oyun.width / oyun.height : 0;
+    const sapma = kutuOrani > 0 ? Math.abs(oyunOrani - kutuOrani) / kutuOrani : 0;
+    const vv = window.visualViewport;
+    return `Olcek           kutu ${Math.round(host?.width ?? 0)}x${Math.round(host?.height ?? 0)} (${kutuOrani.toFixed(4)})`
+      + ` · oyun ${Math.round(oyun.width)}x${Math.round(oyun.height)} (${oyunOrani.toFixed(4)})`
+      + ` · sapma %${(sapma * 100).toFixed(2)}${sapma > 0.005 ? " BANT VAR" : ""}`
+      + ` · dpr ${(window.devicePixelRatio || 1).toFixed(2)} rs ${RENDER_SCALE}`
+      + ` · vv ${Math.round(vv?.width ?? 0)}x${Math.round(vv?.height ?? 0)}@${(vv?.scale ?? 1).toFixed(2)}`
+      + ` · inner ${window.innerWidth}x${window.innerHeight}`;
+  }
+
   private getInputPathLine() {
     const canvas = this.game.canvas;
     const rect = canvas.getBoundingClientRect();
@@ -6826,7 +6850,8 @@ export class GameScene extends Phaser.Scene {
       `Giris           ${durum}`,
       `Tuval           ${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)} · ic ${canvas.width}x${canvas.height}`
         + (this.degenerateCanvasRectCount > 0 ? ` · BOZUK OLCUM ${this.degenerateCanvasRectCount}` : ""),
-      `Arena           ${Math.round(bounds.left)},${Math.round(bounds.top)} - ${Math.round(bounds.right)},${Math.round(bounds.bottom)} · zoom ${this.cameras.main.zoom.toFixed(2)}`
+      `Arena           ${Math.round(bounds.left)},${Math.round(bounds.top)} - ${Math.round(bounds.right)},${Math.round(bounds.bottom)} · zoom ${this.cameras.main.zoom.toFixed(2)}`,
+      this.getScaleDiagnosticLine()
     ];
 
     if (this.tapLog.length === 0) {

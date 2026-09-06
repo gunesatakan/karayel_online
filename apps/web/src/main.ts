@@ -67,12 +67,29 @@ const refreshScaleBounds = () => {
     document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
   }
 
-  // Tuvalin orani ekranin oranini izlemeli. Izlemezse FIT olcegi farki siyah
-  // bant olarak birakiyor: iPhone'da Safari tam ekran olamadigi icin gorunur
-  // alan tasarim oranindan daha genis kaliyor ve bant iki yandan yiyor.
+  // `--app-height` yeni yazildi; tuvalin sigacagi kutu ancak yerlesim yeniden
+  // hesaplandiktan sonra dogru olculur. Olcuyu ondan aliyoruz, o yuzden once
+  // yazip sonra okumak gerekiyor.
   const canvas = getCanvasSize();
-  if (game.scale.gameSize.width !== canvas.width || game.scale.gameSize.height !== canvas.height) {
+  // Olculer artik kesirli: tam esitlik aramak her karede yeniden boyutlandirmak
+  // demek olurdu. Yarim pikselin altindaki fark zaten gorunmuyor.
+  const degisti = Math.abs(game.scale.gameSize.width - canvas.width) > 0.5
+    || Math.abs(game.scale.gameSize.height - canvas.height) > 0.5;
+  if (degisti) {
     game.scale.resize(canvas.width, canvas.height);
+
+    /*
+     * FIT olcegi tuvali `displaySize`in **kilitli** en/boy oranina gore
+     * sigdiriyor ve `resize` o kilidi acmiyor: oran acilista ne olculduyse orada
+     * kaliyor. Yani oyunun olcusunu degistirmek tuvalin oranini degistirmiyor.
+     *
+     * iPhone'da fark edilmiyordu cunku Safari'de acilisda olculen oran zaten
+     * dogru oran. Android'de ise Chrome adres cubugunu acilistan hemen sonra
+     * topluyor, gorunur alan degisiyor ve oyun yeniden boyutlaniyor -- ama tuval
+     * acilistaki orana gore sigdirilmaya devam ediyor. Sonuc, haritanin ustunde
+     * ve altinda kalan bant.
+     */
+    game.scale.displaySize.setAspectRatio(canvas.width / canvas.height);
   }
   game.scale.refresh();
 };
