@@ -4,14 +4,16 @@ import { PreloaderScene } from "./scenes/PreloaderScene";
 import { GameScene } from "./scenes/GameScene";
 import { setupGameControlUi, setupGameHudUi } from "./game-control-ui";
 import { setupMenuUi } from "./menu-ui";
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./rendering";
+import { getCanvasSize } from "./rendering";
 import "./style.css";
+
+const initialCanvas = getCanvasSize();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: CANVAS_WIDTH,
-  height: CANVAS_HEIGHT,
+  width: initialCanvas.width,
+  height: initialCanvas.height,
   render: {
     antialias: true,
     antialiasGL: true,
@@ -63,6 +65,14 @@ const refreshScaleBounds = () => {
   const height = window.visualViewport?.height ?? window.innerHeight;
   if (height > 0) {
     document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
+  }
+
+  // Tuvalin orani ekranin oranini izlemeli. Izlemezse FIT olcegi farki siyah
+  // bant olarak birakiyor: iPhone'da Safari tam ekran olamadigi icin gorunur
+  // alan tasarim oranindan daha genis kaliyor ve bant iki yandan yiyor.
+  const canvas = getCanvasSize();
+  if (game.scale.gameSize.width !== canvas.width || game.scale.gameSize.height !== canvas.height) {
+    game.scale.resize(canvas.width, canvas.height);
   }
   game.scale.refresh();
 };

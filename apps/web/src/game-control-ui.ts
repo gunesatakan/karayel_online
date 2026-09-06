@@ -658,8 +658,13 @@ export type HudStats = {
   energy: number;
   maxEnergy: number;
   ammo: HudAmmoCounts;
-  /** Karaktere ozel sayaclar. Bos gelirse hic cizilmez. */
-  extras: Array<{ label: string; value: string }>;
+  /**
+   * Karaktere ozel sayaclar. Bos gelirse hic cizilmez.
+   *
+   * Simge zorunlu: serit tek satir ve yazili etiketler ("İTİBAR", "KALİTE")
+   * genisligin yarisini yiyordu. Ad yalnizca ipucunda duruyor.
+   */
+  extras: Array<{ label: string; icon: string; value: string }>;
 };
 
 export const EMPTY_HUD_STATS: HudStats = {
@@ -795,57 +800,40 @@ export function setupGameHudUi(game: Phaser.Game) {
   }));
 
   /**
-   * Seridin ayrilmis yuksekligi.
+   * Ikincil serit: tek satir, yalnizca simge ve sayi.
    *
-   * Serit sariyor: bir rozet birkac piksel buyudugunde sarma noktasi kayiyor ve
-   * cubuk bir satir uzuyor. Kamera haritayi cubugun altina sigdirdigi icin bu,
-   * oyunun ortasinda haritanin gozle gorulur bicimde buyuyup kuculmesi demek --
-   * en sik degisen deger ping oldugu icin saniyede bir olabiliyordu.
+   * Serit bir donem sariyordu. Sarma bir gorunum tercihi degil, oyunun ortasinda
+   * haritanin boyunu degistiren bir seydi: bir rozet birkac piksel buyudugunde
+   * sarma noktasi kayiyor, cubuk bir satir uzuyor ve kamera haritayi yeniden
+   * olcekliyordu. Ping saniyede bir degistigi icin bu surekli oluyordu.
    *
-   * Yeri onceden ayirmak cozum degil: tek satirla yetinen karakterlerde kalici
-   * bos serit demek olurdu. Serit bunun yerine bir kez uzadiginda kisalmiyor --
-   * en fazla birkac kez buyuyor, harita bir kez oturuyor ve bir daha oynamiyor.
-   */
-  let reservedStripHeight = 0;
-  const reserveStripHeight = () => {
-    stripNode.style.minHeight = "";
-    reservedStripHeight = Math.max(reservedStripHeight, stripNode.getBoundingClientRect().height);
-    stripNode.style.minHeight = `${reservedStripHeight}px`;
-  };
-
-  /**
-   * Ikincil serit.
-   *
-   * Bir donem bu serit tasinca yatay kayiyordu. Ortusmeyi cozuyordu ama daha
-   * kotusunu uretti: Zeynep'te icerik gorunen alanin iki kati oldugu icin
-   * itibar/zincir/kalite sagda tumden ekran disinda kaliyordu -- ki bunlar
-   * ultinin kademesini belirleyen sayaclar, yani oyunun ortasinda gorulmesi
-   * gereken seyler. Yatay kaydirma masaustunde zaten zahmetli, mobilde ise
-   * gizli bir hareket; oyuncunun kaydirmayi denemesi beklenemez.
-   *
-   * Bu yuzden serit artik sariyor ve icerik sikistirildi: mühimmat uc ayri
-   * rozet yerine tek rozette uc renkli sayi, enerji ise yazi yerine simge.
-   * Karakter sayaclari one alindi cunku genel kaynaklardan daha belirleyiciler.
+   * Cozum genisligi geri kazanmak. Yazili etiketler ("KALAN", "İTİBAR",
+   * "KALİTE") seridin yarisini yiyordu; hepsi simgeye indi ve adlari ipucunda
+   * duruyor. Kalan sekiz rozet tek satira siginca sarma ihtimali kalmiyor --
+   * ve satir yine de dolarsa rozetler kirpiliyor, alt satir acilmiyor.
    */
   let lastStripKey = "";
   const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string) => {
+    const chip = (icon: string, value: string, title: string, extraClass = "") =>
+      `<span class="game-hud__chip ${extraClass}" title="${escapeHudText(title)}">`
+        + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${escapeHudText(value)}</b></span>`;
+
     const chips: string[] = [
-      `<span class="game-hud__chip"><i>KALAN</i><b>${stats.enemiesLeft}</b></span>`,
-      ...stats.extras.map((extra) => `<span class="game-hud__chip"><i>${escapeHudText(extra.label)}</i><b>${escapeHudText(extra.value)}</b></span>`),
-      `<span class="game-hud__chip" title="Enerji"><i aria-hidden="true">⚡</i><b>${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}</b></span>`,
+      chip("☠", String(stats.enemiesLeft), "Kalan düşman"),
+      ...stats.extras.map((extra) => chip(extra.icon, extra.value, extra.label)),
+      chip("⚡", `${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}`, "Enerji"),
       `<span class="game-hud__chip game-hud__chip--ammo" title="Mermi · Aura · Güç">`
         + `<em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
         + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
         + `</span>`,
-      `<span class="game-hud__chip"><i>XP</i><b>${formatXp(stats.experience)}</b></span>`,
-      `<span class="game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}" title="${escapeHudText(pingDetail || "Gecikme")}"><i aria-hidden="true">●</i><b>${escapeHudText(ping)}</b></span>`
+      chip("★", formatXp(stats.experience), "Deneyim"),
+      chip("●", ping, pingDetail || "Gecikme", `game-hud__chip--ping game-hud__chip--${pingTone}`)
     ];
     const key = chips.join("");
     if (key === lastStripKey) return;
     lastStripKey = key;
     stripNode.innerHTML = key;
-    reserveStripHeight();
   };
 
   let lastPopupKey = "";
@@ -896,12 +884,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     root.classList.remove("game-hud--hidden");
     render(next);
   });
-  game.events.on("game:hud-hide", () => {
-    root.classList.add("game-hud--hidden");
-    // Sonraki tur baska bir karakterle baslayabilir; ayrilan yeri tasima.
-    reservedStripHeight = 0;
-    stripNode.style.minHeight = "";
-  });
+  game.events.on("game:hud-hide", () => root.classList.add("game-hud--hidden"));
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);

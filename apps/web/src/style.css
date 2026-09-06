@@ -2879,24 +2879,33 @@ canvas {
  * birincil satirin butunlugu korunuyor.
  */
 /*
- * Serit sarar, kaymaz. Kaydirilan bir seritte sagdaki rozetler ekran disinda
- * kalir ve oyuncu onlari aramaz; sarma ise yalnizca birkac piksel yukseklik
- * maliyetiyle her seyi gorunur tutar.
+ * Serit tek satir, asla sarmaz.
+ *
+ * Sarma bir gorunum tercihi degildi: cubuk bir satir uzayinca kamera haritayi
+ * cubugun altina yeniden sigdiriyor, yani harita oyunun ortasinda buyuyup
+ * kuculuyordu. Ping saniyede bir degistigi icin bu surekli oluyordu.
+ *
+ * Genislik etiketleri atarak kazanildi -- rozetlerde yalnizca simge ve sayi
+ * var, ad ipucunda. Yine de sigmazsa rozetler kirpilir; alt satir acilmaz.
  */
 .game-hud__strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 3px;
   min-width: 0;
+  overflow: hidden;
   pointer-events: auto;
 }
 
 .game-hud__chip {
   display: inline-flex;
-  flex: 0 0 auto;
+  /* Once kendi genisligi, sikisirsa kirpilir; hicbir kosulda alt satira inmez. */
+  flex: 0 1 auto;
   align-items: baseline;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 6px;
+  overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.6);
@@ -2905,11 +2914,13 @@ canvas {
 }
 
 .game-hud__chip i {
+  flex: 0 0 auto;
   color: #7c8aa3;
-  font-size: 8px;
+  /* Simge artik etiketin yerini tuttugu icin okunur olmali. */
+  font-size: 10px;
   font-style: normal;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .game-hud__chip b {
@@ -2935,11 +2946,10 @@ canvas {
 /* Ping oyun verisi degil tanilama: seritte durur, hicbir seyi ortmez. */
 .game-hud__chip--ping i { font-size: 7px; }
 /*
- * Sayi sabit genislikte bir kutuda: "12 ms ±3" ile "480 ms ±90" ayni yeri
- * kaplar. Ping saniyede bir degistigi icin buyuyup kuculen bir rozet seridin
- * sarma noktasini oynatiyor, cubugu uzatiyor ve haritayi yeniden olcekletiyordu.
+ * Ping rozeti seritteki en degisken ve en az acil olan sey: yer daralinca ilk
+ * kirpilan o olsun.
  */
-.game-hud__chip--ping b { min-width: 12ch; text-align: right; }
+.game-hud__chip--ping { flex-shrink: 4; }
 .game-hud__chip--good i { color: #22c55e; }
 .game-hud__chip--warn i { color: #facc15; }
 .game-hud__chip--bad i { color: #fb7185; }

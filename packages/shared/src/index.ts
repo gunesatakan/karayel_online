@@ -226,22 +226,39 @@ export const DEFAULT_ARENA_CHROME: ArenaChrome = {
   bottomRatio: (GAME_WORLD_HEIGHT - TOWER_BUILD_BOTTOM) / GAME_WORLD_HEIGHT
 };
 
-export function getArenaCameraView(map: EditableMapData, chrome: ArenaChrome = DEFAULT_ARENA_CHROME): ArenaCameraView {
+/**
+ * Tuvalin dunya birimindeki olcusu.
+ *
+ * Genislik her cihazda ayni, yukseklik degil: tuval ekranin oranini aldigi icin
+ * (yoksa iki yanda siyah bant kaliyor) yukseklik cihazdan cihaza degisiyor.
+ * Sabit yazilirsa serit hesabi tuvalden baska bir seyi olcer.
+ */
+export type ArenaWorldSize = { width: number; height: number };
+
+export const DEFAULT_ARENA_WORLD: ArenaWorldSize = { width: GAME_WORLD_WIDTH, height: GAME_WORLD_HEIGHT };
+
+export function getArenaCameraView(
+  map: EditableMapData,
+  chrome: ArenaChrome = DEFAULT_ARENA_CHROME,
+  world: ArenaWorldSize = DEFAULT_ARENA_WORLD
+): ArenaCameraView {
   const bounds = getMapWorldBounds(map);
+  const worldWidth = Math.max(1, world.width);
+  const worldHeight = Math.max(1, world.height);
   // Serit, tuvalin HTML kaplamalardan arta kalan kismi.
   const topRatio = Math.min(0.45, Math.max(0, chrome.topRatio));
   const bottomRatio = Math.min(0.45, Math.max(0, chrome.bottomRatio));
-  const bandTop = GAME_WORLD_HEIGHT * topRatio;
-  const bandBottom = GAME_WORLD_HEIGHT * (1 - bottomRatio);
+  const bandTop = worldHeight * topRatio;
+  const bandBottom = worldHeight * (1 - bottomRatio);
   const availableHeight = Math.max(1, bandBottom - bandTop);
 
-  const fit = Math.min(1, GAME_WORLD_WIDTH / bounds.width, availableHeight / bounds.height);
-  const width = GAME_WORLD_WIDTH / fit;
-  const height = GAME_WORLD_HEIGHT / fit;
+  const fit = Math.min(1, worldWidth / bounds.width, availableHeight / bounds.height);
+  const width = worldWidth / fit;
+  const height = worldHeight / fit;
   const centerX = bounds.left + bounds.width / 2;
   const centerY = bounds.top + bounds.height / 2;
   // Haritanin merkezinin oturmasi gereken ekran noktalari.
-  const screenCenterX = GAME_WORLD_WIDTH / 2;
+  const screenCenterX = worldWidth / 2;
   const screenCenterY = (bandTop + bandBottom) / 2;
   return {
     fit,

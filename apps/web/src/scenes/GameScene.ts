@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import { Room } from "colyseus.js";
 import {
   characters,
-  GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
   HIRABLE_WORKER_ROLES,
   type HirableWorkerRole,
@@ -468,6 +467,8 @@ export class GameScene extends Phaser.Scene {
   private canvasGestureCount = 0;
   /** Son dokunuslarin ne oldugu; performans kutusunda gorunur. */
   private tapLog: TapLogEntry[] = [];
+  /** Dunya kadar buyuk zemin; olcu degisince birlikte buyur. */
+  private backdrop?: Phaser.GameObjects.Rectangle;
   /** Tuvalin son saglam olcusu; hic olculmediyse yok. */
   private lastUsableCanvasRect?: { left: number; top: number; width: number; height: number };
   /** Kac kez tuval olcusu 0x0 okundu; tani satirinda gorunur. */
@@ -552,7 +553,10 @@ export class GameScene extends Phaser.Scene {
   create() {
     configureHiDpiCamera(this);
     this.cameras.main.setBackgroundColor("#0f172a");
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x101827);
+    const world = this.getWorldSize();
+    // Zemin dunya kadar: yukseklik cihaza gore degistigi icin sabit bir
+    // dikdortgen uzun ekranlarda altta bosluk birakirdi.
+    this.backdrop = this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0x101827);
     this.drawMap();
     this.configureArenaCamera();
     this.createPlacementGrid();
@@ -571,8 +575,12 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
+    // Cihaz donunce ya da arac cubugu acilip kapaninca tuvalin orani degisiyor;
+    // kamera o anki olcuden kuruldugu icin yeniden kurulmasi gerekiyor.
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
     this.installMapPointerInput();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
       window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
       this.placementGrid?.destroy();
@@ -2827,22 +2835,23 @@ export class GameScene extends Phaser.Scene {
     this.matchResultShown = true;
     const victory = result === "victory";
     const depth = 1000;
-    this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2, GAME_WORLD_WIDTH, GAME_WORLD_HEIGHT, 0x020617, 0.88)
+    const world = this.getWorldSize();
+    this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0x020617, 0.88)
       .setScrollFactor(0)
       .setDepth(depth);
-    this.add.text(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 - 72, victory ? "ZAFER" : "YENİLGİ", {
+    this.add.text(world.width / 2, world.height / 2 - 72, victory ? "ZAFER" : "YENİLGİ", {
       fontFamily: "Arial Black, Arial",
       fontSize: "58px",
       color: victory ? "#facc15" : "#fb7185",
       stroke: "#020617",
       strokeThickness: 8
     }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    this.add.text(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 + 2, `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
+    this.add.text(world.width / 2, world.height / 2 + 2, `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
       fontFamily: "Arial",
       fontSize: "24px",
       color: "#e2e8f0"
     }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    const button = this.add.rectangle(GAME_WORLD_WIDTH / 2, GAME_WORLD_HEIGHT / 2 + 82, 230, 52, 0x1e293b)
+    const button = this.add.rectangle(world.width / 2, world.height / 2 + 82, 230, 52, 0x1e293b)
       .setStrokeStyle(2, victory ? 0xfacc15 : 0xfb7185)
       .setInteractive({ useHandCursor: true })
       .setScrollFactor(0)
@@ -3117,8 +3126,23 @@ export class GameScene extends Phaser.Scene {
     this.configureArenaCamera();
   }
 
+  /** Tuvalin dunya birimindeki olcusu; cihazin oranina gore degisir. */
+  private getWorldSize() {
+    return {
+      width: this.scale.gameSize.width / RENDER_SCALE,
+      height: this.scale.gameSize.height / RENDER_SCALE
+    };
+  }
+
+  private handleScaleResize() {
+    const world = this.getWorldSize();
+    configureHiDpiCamera(this);
+    this.backdrop?.setPosition(world.width / 2, world.height / 2).setSize(world.width, world.height);
+    this.configureArenaCamera();
+  }
+
   private getArenaFitFactor() {
-    return getArenaCameraView(this.selectedMapData, this.arenaChrome).fit;
+    return getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize()).fit;
   }
 
   /**
@@ -3128,6 +3152,7 @@ export class GameScene extends Phaser.Scene {
    * daha buyuk bir kismini ortuyor; serit sabit kalirsa harita altta kaliyor.
    */
   private applyArenaChrome(chrome: ArenaChrome) {
+
     if (!Number.isFinite(chrome?.topRatio) || !Number.isFinite(chrome?.bottomRatio)) {
       return;
     }
@@ -3142,7 +3167,7 @@ export class GameScene extends Phaser.Scene {
 
   private configureArenaCamera() {
     const camera = this.cameras.main;
-    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
     // Phaser scroll'u kamera sınırına sıkıştırır ve kesirli fit değerlerinde
     // ideal scroll birkaç alt piksel dışarı taşabilir. İstenen dikdörtgenin iki
     // yanına da simetrik pay bırakılırsa clamp bu payı tek tarafa yaslayamaz;
@@ -3231,14 +3256,14 @@ export class GameScene extends Phaser.Scene {
     // uretirdi. Ikincil seride ek rozet olarak akiyorlar.
     const extras = player?.characterId === "zeynep"
       ? [
-        { label: "İTİBAR", value: `${reputation}/100` },
-        { label: "ZİNCİR", value: `${authorityChain}/2` },
-        { label: "KALİTE", value: `${authorityQuality}/15` }
+        { label: "İtibar", icon: "✦", value: `${reputation}/100` },
+        { label: "Zincir", icon: "⛓", value: `${authorityChain}/2` },
+        { label: "Kalite", icon: "◈", value: `${authorityQuality}/15` }
       ]
       : player?.characterId === "archer"
         ? [
-          { label: "ONAY", value: `${Math.round(approval)}` },
-          { label: "STRES", value: `${Math.round(stress)}` }
+          { label: "Onay", icon: "☺", value: `${Math.round(approval)}` },
+          { label: "Stres", icon: "☹", value: `${Math.round(stress)}` }
         ]
         : [];
     const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${Math.floor(snapshot.team.energy ?? 0)}|${snapshot.team.maxEnergy ?? 0}|${Math.floor(ammunition.bullet)}|${Math.floor(ammunition.auraCrystal)}|${Math.floor(ammunition.powerCrystal)}`;
@@ -4707,7 +4732,7 @@ export class GameScene extends Phaser.Scene {
    * ust cubugun bulundugu yere iniyordu ve cubugun arkasinda kaliyordu.
    */
   private getKillStreakAnchor() {
-    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome);
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
     const bounds = getMapWorldBounds(this.selectedMapData);
     const bandTop = view.top + view.height * this.arenaChrome.topRatio;
     const bandBottom = view.top + view.height * (1 - this.arenaChrome.bottomRatio);

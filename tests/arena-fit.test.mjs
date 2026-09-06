@@ -96,6 +96,94 @@ test("yükseklik bağladığında harita ekranı yanlardan doldurur", () => {
   }
 });
 
+/**
+ * Dunya yuksekligi artik cihazdan geliyor.
+ *
+ * Tuval ekranin oranini aliyor -- almazsa Phaser'in FIT olcegi farki iki yanda
+ * siyah bant olarak birakiyor. Yani serit her cihazda baska oranda ve hicbir
+ * sabit harita orani hepsini birden dolduramaz.
+ *
+ * Testin tuttugu soz o yuzden "bosluk yok" degil: kademeler arasinda **fark
+ * yok**. Oyuncunun sikayeti zaten buydu -- 1x tam oturup 2x'in oturmamasi.
+ */
+test("cihaz oranı ne olursa olsun kademeler arasında fark yok", () => {
+  const chrome = { topRatio: 0.126, bottomRatio: 0.19 };
+  // Sirasiyla: tasarim orani, iPhone'da Safari (kisa), genis bir tablet.
+  for (const world of [{ width: 390, height: 844 }, { width: 390, height: 709 }, { width: 390, height: 560 }]) {
+    const olculer = SCALES.map((scale) => {
+      const map = arenaForScale(scale);
+      const bounds = getMapWorldBounds(map);
+      const view = getArenaCameraView(map, chrome, world);
+      return { scale, genislik: bounds.width * view.fit, yukseklik: bounds.height * view.fit };
+    });
+
+    const ilk = olculer[0];
+    for (const olcu of olculer) {
+      assert.ok(
+        Math.abs(olcu.genislik - ilk.genislik) < 1 && Math.abs(olcu.yukseklik - ilk.yukseklik) < 1,
+        `dünya ${world.height}: ${olcu.scale}x ekranda ${olcu.genislik.toFixed(1)}x${olcu.yukseklik.toFixed(1)}, `
+          + `1x ise ${ilk.genislik.toFixed(1)}x${ilk.yukseklik.toFixed(1)}`
+      );
+    }
+  }
+});
+
+/**
+ * Haritanin buyuklugunu dunyanin yuksekligi belirlemiyor.
+ *
+ * Bunu yanlis kurmustum: tuvali ekrana yaymanin haritayi da buyutecegini
+ * sandim. Buyutmuyor. Dunya kisaldiginda serit dunya biriminde daralir ama
+ * ayni birim ekranda o oranda **buyur**; ikisi birbirini goturur.
+ *
+ * Yani tuvali yaymanin kazanci siyah bantlarin gitmesi -- ust cubuk ve panel
+ * artik ekranin tamamini kullaniyor. Haritanin buyumesi baska bir seye bagli:
+ * kaplamanin kisalmasina.
+ */
+test("dünya yüksekliği haritanın ekrandaki boyunu değiştirmez", () => {
+  const chrome = { topRatio: 0.126, bottomRatio: 0.19 };
+  const map = arenaForScale(1);
+  const bounds = getMapWorldBounds(map);
+  const EKRAN_YUKSEKLIK = 714;
+
+  /**
+   * Dunya birimini ekran pikseline cevirir.
+   *
+   * Cevrim yatay genislikten yapilamaz: tuval eskiden ekrani doldurmuyordu
+   * (330px yerine 393px) ve iki durumu ayni carpanla olcmek yanlis cikariyor --
+   * bu testi ilk yazdigimda tam olarak bu hataya dustum. Dikeyde ise tuval her
+   * iki durumda da ekrani kapliyor, yani dogru carpan bu.
+   */
+  const ekrandaPiksel = (world) => {
+    const view = getArenaCameraView(map, chrome, world);
+    return bounds.width * view.fit * (EKRAN_YUKSEKLIK / world.height);
+  };
+
+  const uzun = ekrandaPiksel({ width: 390, height: 844 });
+  const kisa = ekrandaPiksel({ width: 390, height: 709 });
+  assert.ok(
+    Math.abs(uzun - kisa) < 1,
+    `dünya yüksekliği ekrandaki boyu değiştirdi: ${uzun.toFixed(1)}px vs ${kisa.toFixed(1)}px`
+  );
+});
+
+test("kaplama kısaldıkça harita büyür", () => {
+  // Oyuncunun "harita minicik" dedigi seyin tek caresi bu: ust cubuk ve alt
+  // panel ne kadar kisalirsa haritaya o kadar yer kaliyor.
+  const world = { width: 390, height: 709 };
+  const map = arenaForScale(1);
+  const bounds = getMapWorldBounds(map);
+  const genislik = (chrome) => bounds.width * getArenaCameraView(map, chrome, world).fit;
+
+  // Ust cubuk iki satirdan tek satira indi (109px -> 90px), panel ise henuz
+  // ayni. Sonraki adim paneli tek satira indirmek.
+  const ikiSatirlikCubuk = genislik({ topRatio: 0.1527, bottomRatio: 0.19 });
+  const tekSatirlikCubuk = genislik({ topRatio: 0.126, bottomRatio: 0.19 });
+  const tekSatirlikPanel = genislik({ topRatio: 0.126, bottomRatio: 0.08 });
+
+  assert.ok(tekSatirlikCubuk > ikiSatirlikCubuk, `çubuk kısalınca harita büyümedi: ${tekSatirlikCubuk.toFixed(1)} <= ${ikiSatirlikCubuk.toFixed(1)}`);
+  assert.ok(tekSatirlikPanel > tekSatirlikCubuk, `panel kısalınca harita büyümedi: ${tekSatirlikPanel.toFixed(1)} <= ${tekSatirlikCubuk.toFixed(1)}`);
+});
+
 test("kademeler büyümeyi sürdürür", () => {
   // Oran esitlemesi olculeri degistirdi; kademelerin hala buyudugunu ve
   // kabaca eski alanlarda kaldigini burada tutuyoruz.
