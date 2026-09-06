@@ -8083,7 +8083,11 @@ export class MatchRoom extends Room<MatchState> {
           width: roundNetworkNumber(beam.width),
           color: beam.color,
           overdrive: beam.overdrive,
-          ttlMs: Math.max(0, Math.round(beam.ttlMs))
+          ttlMs: Math.max(0, Math.round(beam.ttlMs)),
+          // Kademe telde yoktu: `setBeam` onu isin nesnesine yaziyordu ama bu
+          // liste alanlari tek tek saydigi icin sunucudan hic cikmiyordu. Sekiz
+          // ayri yerde hesaplanan deger, hicbir isin kulesinde ekrana ulasmadi.
+          tier: beam.tier
         })),
       damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
         id: event.id,

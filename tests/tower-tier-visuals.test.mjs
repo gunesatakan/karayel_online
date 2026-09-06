@@ -69,7 +69,14 @@ function fireTower(characterId, definitionId, level) {
     room.updateZeynepRays(0.05);
     room.updateKinWaves(0.05);
     room.updateBeams(50);
-    for (const beam of room.beams.values()) isinKademeleri.add(beam.tier ?? 1);
+    // Kademe **telden** okunuyor, `room.beams`ten degil.
+    //
+    // Bu test bir donem model nesnesine bakiyordu ve gecerken kademenin
+    // snapshota hic girmedigini goremiyordu: `getSnapshot` isinlarin alanlarini
+    // tek tek sayiyor ve `tier` listede yoktu. Sunucuda dogru hesaplanan sayi
+    // istemciye hicbir zaman ulasmadi, testler de yesil kaldi. Olcum artik
+    // istemcinin gercekten aldigi seyin uzerinde.
+    for (const beam of room.getSnapshot().beams) isinKademeleri.add(beam.tier ?? 1);
   }
 
   return { mermiKademeleri, isinKademeleri, atesEtti: mermiKademeleri.size > 0 || isinKademeleri.size > 0 };
