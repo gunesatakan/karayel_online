@@ -310,8 +310,34 @@ const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimension
 const TOWER_DEFINITIONS_BY_ID = new Map(
   Object.values(towerCatalog).flat().map((definition) => [definition.id, definition])
 );
-const SNAPSHOT_SEND_INTERVAL_MS = 33;
-const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 256 * 1024;
+/**
+ * Snapshot araligi.
+ *
+ * 33 ms (30 Hz) idi. Istemci zaten yarim saniyelik bir oynatma tamponu tutuyor
+ * ve iki snapshot arasini aradegerliyor, yani 30 Hz'in verdigi fazladan
+ * puruzsuzlugu kimse gormuyordu -- karsiliginda her istemciye giden bant bir
+ * kat buyuktu. 50 ms'de tampon hala on snapshot tutuyor.
+ *
+ * Bu, zayif baglantidaki oyuncu icin dogrudan kazanc: gonderilen her bayt onun
+ * kuyruguna giriyor ve kuyruktaki her bayt kendi girdisinin gecikmesi demek.
+ */
+const SNAPSHOT_SEND_INTERVAL_MS = 50;
+/**
+ * Bir istemcinin cikis kuyrugu bu kadari asarsa ona snapshot gonderilmez.
+ *
+ * Sinir 256 KB idi ve fazlaligi tek basina bir hataydi: kuyruktaki her bayt o
+ * istemciye giden **her seyin** gecikmesi demek -- ping cevabi, kart teklifi,
+ * kendi bastigi ultinin sonucu. 23 KB'lik bir snapshotla 256 KB, on bir
+ * snapshot, yani zayif bir baglantida saniyelerce kuyruk. Iki kisilik odada bir
+ * oyuncunun pingi 999+ oluyordu ve kendi hareketini karsi taraf aninda goruyor,
+ * kendisi gec goruyordu: komut yukari gidiyor, sonuc kuyrugun arkasinda
+ * bekliyordu.
+ *
+ * Gercek zamanli bir oyunda snapshot **atmak**, biriktirmekten her zaman
+ * iyidir: istemci zaten iki snapshot arasini aradegerliyor, ama biriken kuyrugu
+ * telafi edemiyor. Bu sinir birkac snapshotluk, yani onda birkac saniyelik.
+ */
+export const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 48 * 1024;
 const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
@@ -7895,7 +7921,7 @@ export class MatchRoom extends Room<MatchState> {
         melisStance: player.characterId === "archer" ? player.melisStance : undefined,
         hiredWorkerRoles: [...player.hiredWorkerRoles]
       })),
-      enemies: Array.from(this.enemies.values()).map((enemy) => ({
+      enemies: Array.from(this.enemies.values()).map((enemy) => stripWireDefaults({
         id: enemy.id,
         x: roundNetworkNumber(enemy.x),
         y: roundNetworkNumber(enemy.y),
@@ -7916,7 +7942,7 @@ export class MatchRoom extends Room<MatchState> {
         isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
         isUndead: enemy.melisUndeadUntil > now
       })),
-      towers: Array.from(this.towers.values()).map((tower) => ({
+      towers: Array.from(this.towers.values()).map((tower) => stripWireDefaults({
         id: tower.id,
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
@@ -9591,6 +9617,34 @@ export function getClientBufferedAmount(client: Pick<Client, "ref">) {
   };
   const amount = transport.bufferedAmount ?? transport._socket?.bufferedAmount ?? 0;
   return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+/**
+ * Kapali bayraklari ve bos dizileri telden dusurur.
+ *
+ * JSON'da bedeli odeten sey deger degil **anahtar adi**:
+ * `"isUnderworldLinked":false` 26 bayt ve dusmanlarin cogunda bu bayraklarin
+ * hepsi kapali. Olculdu -- 20 kule, 46 dusman: snapshot 23.2 KB, yalnizca kapali
+ * bayraklar ve bos diziler dusunce 13.9 KB.
+ *
+ * Atlamak guvenli, cunku istemci alanlari statik snapshotla birlestiriyor
+ * (`{ ...statik, ...telden }`) ve bu bayraklarin hicbiri statik snapshotta yok:
+ * eksik alan `undefined` kaliyor, o da `false` ile ayni sekilde falsy.
+ *
+ * Sayilar bilerek disarida. Eksik bir sayi istemcide statik snapshottaki degere
+ * duser -- `hp` icin bu, olmek uzere olan bir dusmani dogdugu canla gostermek
+ * demek olurdu.
+ */
+export function stripWireDefaults<T extends Record<string, unknown>>(entity: T): T {
+  const trimmed: Record<string, unknown> = {};
+  for (const key of Object.keys(entity)) {
+    const value = entity[key];
+    if (value === false || (Array.isArray(value) && value.length === 0)) {
+      continue;
+    }
+    trimmed[key] = value;
+  }
+  return trimmed as T;
 }
 
 export function roundNetworkNumber(value: number) {

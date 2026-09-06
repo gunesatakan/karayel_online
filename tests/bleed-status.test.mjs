@@ -49,6 +49,10 @@ test("Testere contact applies sourced bleed and bleed deals one percent true dam
   room.updateEnemyEngineStatusOutcomes(enemy, Date.now());
   assert.ok(Math.abs(enemy.hp - enemy.maxHp * 0.99) < 1e-9);
 
+  // Kanama bitince bayrak telde hic yer almiyor: kapali bayraklar snapshottan
+  // dusuruluyor cunku JSON'da bedeli anahtar adi odetiyor. Istemci tarafinda
+  // eksik alan `false` ile ayni sekilde falsy, o yuzden sorulan sey "kapali mi"
+  // olmali, "tam olarak false mu" degil.
   enemy.statusEffects.bleed.expiresAt = Date.now() - 1;
-  assert.equal(room.getSnapshot().enemies.find(({ id }) => id === enemy.id)?.isBleeding, false);
+  assert.ok(!room.getSnapshot().enemies.find(({ id }) => id === enemy.id)?.isBleeding);
 });
