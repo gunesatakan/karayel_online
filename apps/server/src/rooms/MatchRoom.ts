@@ -366,6 +366,7 @@ const DEBUG_LASER_OVERHEAT_MS = 5000;
  * gibi okunsun, rastgele bir renk degil.
  */
 const DEBUG_LASER_TIER_COLORS: Record<number, { beam: number; overdrive: number }> = {
+  1: { beam: 0xef4444, overdrive: 0xfbbf24 },
   2: { beam: 0x60a5fa, overdrive: 0x60a5fa },
   3: { beam: 0xffffff, overdrive: 0xffffff }
 };

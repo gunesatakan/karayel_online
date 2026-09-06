@@ -6384,18 +6384,39 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Cekirdegin rengi: govde renginin beyaza cekilmis hali.
+   *
+   * Tumuyle beyaz bir cekirdek isini beyaz gosteriyor; tumuyle renkli bir
+   * cekirdek ise sicakligi kaybediyor. Aradaki karisim ikisini de veriyor --
+   * kirmizi isinin ortasi acik kirmizi, mavininki acik mavi, beyazinki beyaz.
+   */
+  private getBeamCoreColor(color: number, whiteness = 0.5) {
+    const lift = (channel: number) => Math.round(channel + (255 - channel) * whiteness);
+    return (lift((color >> 16) & 0xff) << 16) | (lift((color >> 8) & 0xff) << 8) | lift(color & 0xff);
+  }
+
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
     }
 
-    this.beamGraphics.lineStyle(beam.width + 8, color, 0.12);
+    // Rengi tasiyan katman govdenin kendisi.
+    //
+    // Once yalnizca hale renkliydi: cekirdek sabit beyaz ve neredeyse tam
+    // genislikteydi, govde katmanlari ise 0.12 ve 0.34 alfayla neredeyse
+    // gorunmezdi. Sonuc, kule rengi ne olursa olsun beyaz gorunen bir isindi --
+    // seviye rengi degistiginde yalnizca cevresindeki hare degisiyordu.
+    //
+    // Cekirdek hala var ve hala sicak, ama ince: govde renk, cekirdek isi.
+    this.beamGraphics.lineStyle(beam.width + 8, color, 0.14);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(beam.width + 3, color, 0.34);
+    this.beamGraphics.lineStyle(Math.max(2, beam.width), color, 0.92);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(2, beam.width), 0xfef2f2, 0.92);
+    const core = this.getBeamCoreColor(color);
+    this.beamGraphics.lineStyle(Math.max(1, beam.width * 0.42), core, 0.95);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(0xfef2f2, 0.95);
+    this.beamGraphics.fillStyle(core, 0.95);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
     this.beamGraphics.fillStyle(color, 0.22);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
@@ -6408,15 +6429,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const core = this.getBeamCoreColor(color);
     this.beamGraphics.lineStyle(beam.width + 14, color, 0.14);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(beam.width + 6, color, 0.46);
+    this.beamGraphics.lineStyle(beam.width + 6, color, 0.5);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), 0xfffbeb, 0.98);
+    this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), color, 0.95);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.beamGraphics.lineStyle(Math.max(1.5, beam.width * 0.4), core, 0.98);
     this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     this.beamGraphics.lineStyle(1, color, 0.65);
     this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
-    this.beamGraphics.fillStyle(0xfffbeb, 1);
+    this.beamGraphics.fillStyle(core, 1);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
     this.beamGraphics.fillStyle(color, 0.58);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);

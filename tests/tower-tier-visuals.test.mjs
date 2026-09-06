@@ -200,8 +200,8 @@ function debugLaserBeam(level) {
 }
 
 test("Debug Lazer 5'te maviye, 10'da beyaza döner", () => {
-  assert.equal(debugLaserBeam(1).color, 0xfb7185);
-  assert.equal(debugLaserBeam(4).color, 0xfb7185);
+  assert.equal(debugLaserBeam(1).color, 0xef4444);
+  assert.equal(debugLaserBeam(4).color, 0xef4444);
   assert.equal(debugLaserBeam(5).color, 0x60a5fa);
   assert.equal(debugLaserBeam(9).color, 0x60a5fa);
   assert.equal(debugLaserBeam(10).color, 0xffffff);
@@ -214,7 +214,7 @@ test("renk kademeyle birlikte değişir, ayrı bir eşikle değil", () => {
     const beam = debugLaserBeam(level);
     const tier = beam.tier ?? 1;
     assert.equal(tier, getTowerTier(level), `seviye ${level} kademesi tutmuyor`);
-    const beklenen = tier === 3 ? 0xffffff : tier === 2 ? 0x60a5fa : 0xfb7185;
+    const beklenen = tier === 3 ? 0xffffff : tier === 2 ? 0x60a5fa : 0xef4444;
     assert.equal(beam.color, beklenen, `seviye ${level} rengi kademesiyle uyusmuyor`);
   }
 });
