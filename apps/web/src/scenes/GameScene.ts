@@ -254,6 +254,16 @@ type TapLogEntry = {
 
 /** Uyari tonunun suresi. Kisa: uyari, muzik degil. */
 const ALERT_TONE_SECONDS = 0.24;
+/**
+ * Yerel yankinin en fazla ne kadar ayakta kalacagi.
+ *
+ * Sunucu komutlara onay ya da ret gondermiyor -- kartlar disinda hepsi
+ * ateSle-unut. Yani bir tahminin dogru cikip cikmadigi ancak yetkili durumun
+ * kendisinden anlasilir, o da gelmezse tahmin sonsuza kadar asili kalirdi.
+ * Bu sure normal gidis-gelisin cok ustunde, tikanmis bir baglantinin ise
+ * altinda: yaniliyorsa kisa surede kendini toparliyor.
+ */
+const LOCAL_ECHO_TIMEOUT_MS = 2500;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
 const GUIDANCE_RADIUS = 78;
@@ -461,6 +471,24 @@ export class GameScene extends Phaser.Scene {
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
+  /**
+   * Ulti basildi, sunucu daha onaylamadi.
+   *
+   * Sunucudan gelen sarj, komut isleninceye kadar hala 100 goruyor. Bu bayrak
+   * olmadan dugme basildiktan sonra bir sure daha "hazir" duruyor: oyuncu
+   * bastigini anlamiyor ve kotu baglantida ustune bir daha basiyor.
+   */
+  private ultimateEchoUntil = 0;
+  /**
+   * Gonderilmis ama sahada henuz gorunmeyen yerlestirme.
+   *
+   * Kule ancak sunucu onaylayip `tower:spawn` gonderince beliriyordu; arada
+   * harita bos kaliyor ve oyuncu ya bastigini saniyor ya da tekrar deniyor.
+   */
+  private pendingPlacement?: { x: number; y: number; definitionId: string; until: number };
+  private pendingPlacementGhost?: Phaser.GameObjects.Image;
+  /** Yerelde baslatilan beceri sogumalari; sunucununki gelene kadar gecerli. */
+  private skillEchoUntil: number[] = [0, 0, 0];
   private arenaPlayerCount = 1;
   private lastArenaTapAt = 0;
   private lastArenaTapX = 0;
@@ -617,6 +645,7 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
     this.renderPlaybackFrame(now);
     this.renderImpactMarks(now);
+    this.resolvePendingPlacement();
   }
 
   private drawMap() {
@@ -1040,7 +1069,7 @@ export class GameScene extends Phaser.Scene {
         // Duvarda yon sunucuda konumdan cozulur; buradaki yalnizca onizleme icin.
       
       });
-      this.showNotice(`${tower.name} yerlestirme istegi gonderildi`);
+      this.echoPlacement(cell.x, cell.y, tower.id);
     } else {
       this.showNotice("Bu kareye kule yerlestirilemez");
     }
@@ -1091,6 +1120,67 @@ export class GameScene extends Phaser.Scene {
     this.strandedTowerDragCount += 1;
     this.cancelTowerDrag();
     this.showNotice("Yarim kalan yerlestirme iptal edildi");
+  }
+
+  /**
+   * Gonderilen yerlestirmeyi sahada hemen gosterir.
+   *
+   * Kule, sunucu onaylayip `tower:spawn` gonderene kadar hic gorunmuyordu.
+   * Iyi baglantida bu bir goz kirpmasi, kotusunde saniyeler: oyuncu kareye
+   * bakip bir sey olmadigini gorunce ya tekrar deniyor ya vazgeciyor.
+   *
+   * Hayalet gercek kuleden ayirt edilebilir kaliyor (soluk ve solup parliyor):
+   * gosterilen sey "kuruldu" degil, "istek yolda".
+   */
+  private echoPlacement(x: number, y: number, definitionId: string) {
+    this.clearPendingPlacement();
+    this.pendingPlacement = { x, y, definitionId, until: performance.now() + LOCAL_ECHO_TIMEOUT_MS };
+
+    const span = this.getGhostSize(definitionId, this.getPlacementOrientation(definitionId, x, y));
+    this.pendingPlacementGhost = this.add.image(x, y, this.getTowerTextureKey(definitionId, 1))
+      .setDisplaySize(span.width, span.height)
+      .setAlpha(0.5)
+      .setDepth(27);
+    this.tweens.add({
+      targets: this.pendingPlacementGhost,
+      alpha: 0.24,
+      duration: 420,
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
+  private clearPendingPlacement() {
+    if (this.pendingPlacementGhost) {
+      this.tweens.killTweensOf(this.pendingPlacementGhost);
+      this.pendingPlacementGhost.destroy();
+      this.pendingPlacementGhost = undefined;
+    }
+    this.pendingPlacement = undefined;
+  }
+
+  /**
+   * Bekleyen yerlestirme gerceklestiyse ya da zaman asimina ugradiysa birakir.
+   *
+   * Gerceklesme olcutu, hedeflenen karede o oyuncuya ait bir kulenin belirmesi.
+   * Sunucu onay mesaji gondermedigi icin tek kanit bu.
+   */
+  private resolvePendingPlacement() {
+    const pending = this.pendingPlacement;
+    if (!pending) {
+      return;
+    }
+    if (performance.now() >= pending.until) {
+      this.clearPendingPlacement();
+      return;
+    }
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.ownerId !== this.localSessionId) continue;
+      if (Math.abs(tower.x - pending.x) < 1 && Math.abs(tower.y - pending.y) < 1) {
+        this.clearPendingPlacement();
+        return;
+      }
+    }
   }
 
   private getTowerDragPreviewPoint(pointer: Phaser.Input.Pointer) {
@@ -1204,6 +1294,7 @@ export class GameScene extends Phaser.Scene {
         this.hideZeynepTierChoicesIfOpen();
         if (detail.mode) {
           this.room?.send("useUltimate", { mode: detail.mode });
+          this.echoUltimateCast();
         }
         this.hideUltimateChoices();
         this.clearPlacedTowerSelection();
@@ -2229,6 +2320,48 @@ export class GameScene extends Phaser.Scene {
     this.ultimateColumnPreview?.clear();
   }
 
+  /**
+   * Ulti basildigini aninda gosterir.
+   *
+   * Gosterilen sey **komutun gittigi**, sonucu degil: sarj sifirlaniyor ve
+   * kisa bir parlama veriyor. Patlamanin kendisi yetkili tarafta kaliyor --
+   * hasari yerelde uydurmak, sunucu reddettiginde olmamis bir olumu gostermek
+   * olurdu. Kotu baglantida hissedilen fark bunun buyuk kismi zaten: oyuncu
+   * bastigini bilmek istiyor.
+   */
+  private echoUltimateCast() {
+    this.ultimateEchoUntil = performance.now() + LOCAL_ECHO_TIMEOUT_MS;
+    this.currentUltimateCharge = 0;
+    this.emitControlState();
+    this.playUltimateCastFlash();
+  }
+
+  /** Ekranin kisa bir parlamasi: dokunusun kayitli oldugunu haritada da soyler. */
+  private playUltimateCastFlash() {
+    const world = this.getWorldSize();
+    const flash = this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0xbae6fd, 0.16)
+      .setScrollFactor(0)
+      .setDepth(900);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 220, onComplete: () => flash.destroy() });
+  }
+
+  /**
+   * Sunucunun sarji yetisti mi.
+   *
+   * Sarj dustuyse komut islenmis demektir, yanki birakilir. Sure dolduysa
+   * komut ya kayboldu ya reddedildi; yankiyi birakmak dugmeyi geri veriyor.
+   */
+  private resolveUltimateEcho(serverCharge: number) {
+    if (this.ultimateEchoUntil === 0) {
+      return serverCharge;
+    }
+    if (serverCharge < 100 || performance.now() >= this.ultimateEchoUntil) {
+      this.ultimateEchoUntil = 0;
+      return serverCharge;
+    }
+    return 0;
+  }
+
   private handleUltimateButton() {
     if (!this.room) {
       return;
@@ -2253,6 +2386,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.selectedCharacterId !== "warrior") {
       this.room.send("useUltimate", {});
+      this.echoUltimateCast();
       return;
     }
 
@@ -2424,6 +2558,7 @@ export class GameScene extends Phaser.Scene {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
         this.room?.send("useUltimate", { column });
+        this.echoUltimateCast();
         this.pendingUltimateColumn = false;
         this.clearUltimateColumnPreview();
         this.emitControlState();
@@ -2438,6 +2573,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isGuidanceDragging) {
       const point = this.getClampedGuidancePoint(pointer);
       this.room?.send("useSkill", { slot: 0, x: point.x, y: point.y });
+      this.echoSkillUse(0);
       this.isGuidanceDragging = false;
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
@@ -2518,10 +2654,12 @@ export class GameScene extends Phaser.Scene {
           return;
         }
         this.room.send("useSkill", { slot: index, towerId });
+        this.echoSkillUse(index);
         this.clearPlacedTowerSelection();
         return;
       }
       this.room.send("useSkill", { slot: index });
+      this.echoSkillUse(index);
       this.clearPlacedTowerSelection();
       return;
     }
@@ -2529,6 +2667,7 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedCharacterId !== "warrior") {
       this.hideZeynepTierChoices();
       this.room.send("useSkill", { slot: index });
+      this.echoSkillUse(index);
       this.clearPlacedTowerSelection();
       return;
     }
@@ -2555,6 +2694,7 @@ export class GameScene extends Phaser.Scene {
 
     this.hideZeynepTierChoices();
     this.room.send("useSkill", { slot: index });
+    this.echoSkillUse(index);
     this.clearPlacedTowerSelection();
   }
 
@@ -3419,7 +3559,7 @@ export class GameScene extends Phaser.Scene {
     const gold = player?.gold ?? 0;
     const experience = player?.experience ?? 0;
     this.currentTeamGold = gold;
-    this.currentUltimateCharge = charge;
+    this.currentUltimateCharge = this.resolveUltimateEcho(charge);
     if (charge < 100 && this.ultimateChoiceOpen) {
       this.hideUltimateChoices();
     }
@@ -6334,6 +6474,40 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Basilan beceriyi sunucu duyana kadar mesgul gosterir.
+   *
+   * Soguma sunucudan geliyor ve komut islenene kadar hala sifir: dugme
+   * basildiktan sonra bir sure daha hazir duruyordu. Kotu baglantida oyuncu
+   * bunu "islemedi" diye okuyup ustune basiyor -- ikinci basis da bosa gidiyor
+   * cunku sunucu ilkini zaten islemis oluyor.
+   *
+   * Uydurma bir geri sayim gostermiyoruz: beceri sureleri sunucunun bilgisi.
+   * Gosterilen sey yalnizca "gitti, bekleniyor" -- sunucunun sogumasi gelince
+   * onun yerini aliyor.
+   */
+  private resolveSkillEcho(serverCooldowns: number[]) {
+    const now = performance.now();
+    return serverCooldowns.map((cooldown, slot) => {
+      const echoUntil = this.skillEchoUntil[slot] ?? 0;
+      if (echoUntil === 0) {
+        return cooldown;
+      }
+      if (cooldown > 0 || now >= echoUntil) {
+        this.skillEchoUntil[slot] = 0;
+        return cooldown;
+      }
+      // Sifirdan buyuk herhangi bir deger dugmeyi mesgul yapar; sure sunucudan
+      // gelince gercek sayiyla degisiyor.
+      return cooldown || 1;
+    });
+  }
+
+  private echoSkillUse(slot: number) {
+    this.skillEchoUntil[slot] = performance.now() + LOCAL_ECHO_TIMEOUT_MS;
+    this.emitControlState();
+  }
+
   private emitControlState() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const definition = selectedTower
@@ -6350,7 +6524,7 @@ export class GameScene extends Phaser.Scene {
     // Onarim yalnizca hasarli ve ayakta duran yapilarda anlamli: yikilan yapi
     // geri gelmez, yeniden insa edilir. Bedel sunucudaki formulun aynisi.
     const repairState = this.getRepairState(selectedTower, definition);
-    const cooldowns = this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0];
+    const cooldowns = this.resolveSkillEcho(this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0]);
     const reputation = this.localPlayerSnapshot?.reputation ?? 0;
     const authorityChain = this.localPlayerSnapshot?.authorityChain ?? 0;
     const approval = this.localPlayerSnapshot?.approval ?? 0;
