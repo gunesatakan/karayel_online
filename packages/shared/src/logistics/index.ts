@@ -36,10 +36,15 @@ export const WORKER_HIRE_BASE_COST = 100;
 /**
  * Her alimin bir sonrakine ekledigi zam.
  *
- * Artis kucuk oldugu icin sayi sinirli degil: isci kadrosunu buyutmek her zaman
- * mumkun, ama ucuncu isci ile onuncu isci arasindaki fark birikerek hissediliyor.
+ * Artis bir donem %5'ti ve pratikte hicbir sey ifade etmiyordu: sekizinci isci
+ * 141 altina geliyordu, yani kadroyu buyutmenin bir bedeli yoktu ve dogru
+ * oynanis her zaman "daha fazla isci" oluyordu.
+ *
+ * Yarim kat, sayiyi sert bir duvara dayamak yerine kendiliginden sinirliyor --
+ * altinci isci 759, sekizinci 1709. Kac isci alacagi artik oyuncunun bir
+ * karari; kaci alinabilecegi degil.
  */
-export const WORKER_HIRE_COST_GROWTH = 1.05;
+export const WORKER_HIRE_COST_GROWTH = 1.5;
 
 /** Siradaki iscinin bedeli. Alinan her isci bir sonrakini pahalilastirir. */
 export function getWorkerHireCost(hiredCount: number) {

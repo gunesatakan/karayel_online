@@ -1007,10 +1007,19 @@ export function getTowerLevelExpCost(towerCost: number, currentLevel: number) {
   return getTowerBuildCost(towerCost) * safeLevel;
 }
 
+/**
+ * Seviye atlamanin altin bedeli.
+ *
+ * Seviyelerin cogu yalnizca deneyim istiyor; altin iki esikte devreye giriyor.
+ * Bu iki esik artik gercek birer karar noktasi: besinci seviye kulenin insa
+ * bedelinin on kati, onuncu seviye kirk kati. Yani bir kuleyi sonuna kadar
+ * goturmek, yenilerini kurmaktan cok daha pahali -- derinlesmek ile yayilmak
+ * arasindaki secim buradan cikiyor.
+ */
 export function getTowerLevelGoldCost(towerCost: number, currentLevel: number) {
   const nextLevel = Math.round(currentLevel) + 1;
-  if (nextLevel === 5) return getTowerBuildCost(towerCost);
-  if (nextLevel === 10) return getTowerBuildCost(towerCost) * 2;
+  if (nextLevel === 5) return getTowerBuildCost(towerCost) * 10;
+  if (nextLevel === 10) return getTowerBuildCost(towerCost) * 40;
   return 0;
 }
 

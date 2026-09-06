@@ -89,15 +89,29 @@ test("yetersiz XP kule seviyesini degistirmez", () => {
   assert.equal(player.experience, 10);
 });
 
+/**
+ * Iki altin esigi.
+ *
+ * Seviyelerin cogu yalnizca deneyim istiyor. Altin iki yerde devreye giriyor ve
+ * bedeller kasten agir: bes insa bedeli degil **on** katı, on ise **kirk**.
+ * Boylece bir kuleyi sonuna goturmek yenilerini kurmaktan pahali kaliyor --
+ * derinlesmek ile yayilmak arasindaki secim buradan cikiyor. Sayilar burada
+ * yaziyor cunku degistiklerinde bu secimin kendisi degisir.
+ */
 test("5. ve 10. seviyeler XP yanında altın ister", () => {
   assert.equal(getTowerLevelGoldCost(80, 3), 0);
-  assert.equal(getTowerLevelGoldCost(80, 4), getTowerBuildCost(80));
-  assert.equal(getTowerLevelGoldCost(80, 9), getTowerBuildCost(80) * 2);
+  assert.equal(getTowerLevelGoldCost(80, 4), getTowerBuildCost(80) * 10);
+  assert.equal(getTowerLevelGoldCost(80, 9), getTowerBuildCost(80) * 40);
+  // Onuncu, besincinin dort kati: son adim gercek bir yatirim karari.
+  assert.equal(getTowerLevelGoldCost(80, 9), getTowerLevelGoldCost(80, 4) * 4);
 });
 
 test("eşik yükseltmesi XP ve altını birlikte harcar", () => {
   const room = new MatchRoom();
-  const player = { experience: 1000, gold: 500, goldSpent: 20 };
+  // Cuzdan bedelden turetiliyor: sabit bir sayi yazmak, bedel her degistiginde
+  // testi "yetersiz altin" yuzunden kirardi -- olcmek istedigi sey o degil.
+  const gold = getTowerLevelGoldCost(80, 4) + 25;
+  const player = { experience: 1000, gold, goldSpent: 20 };
   const tower = { id: "tower", ownerId: "p1", level: 4, definition: { cost: 80, id: "test-tower" } };
   room.state = { players: new Map([["p1", player]]) };
   room.towers = new Map([[tower.id, tower]]);
@@ -106,8 +120,8 @@ test("eşik yükseltmesi XP ve altını birlikte harcar", () => {
 
   assert.equal(tower.level, 5);
   assert.equal(player.experience, 1000 - getTowerLevelExpCost(80, 4));
-  assert.equal(player.gold, 500 - getTowerBuildCost(80));
-  assert.equal(player.goldSpent, 20 + getTowerBuildCost(80));
+  assert.equal(player.gold, 25);
+  assert.equal(player.goldSpent, 20 + getTowerLevelGoldCost(80, 4));
 });
 
 test("eşik altını yetersizse yükseltme yapılmaz", () => {
