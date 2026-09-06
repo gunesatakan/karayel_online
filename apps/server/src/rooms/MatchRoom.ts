@@ -1992,12 +1992,26 @@ export class MatchRoom extends Room<MatchState> {
     this.spawnCooldownMs = Math.max(310, 980 - this.wave * 34);
   }
 
+  /**
+   * Arena olculeri: her kademe ayni en/boy oraninda.
+   *
+   * Kamera haritayi ekrana sigdirirken iki kisittan dar olani baglar; artan pay
+   * obur eksende bosluga gider. 12x18 (2:3) tuvalin kaplamalardan artan seridiyle
+   * neredeyse birebir ayni oranda oldugu icin 1x ekrani iki yandan tam dolduruyor,
+   * oysa eski 15x27 (5:9) belirgin olarak daha uzundu: yukseklik bagliyor ve
+   * harita iki yanindan 32'ser piksel iceri cekiliyordu. Oran her kademede ayni
+   * tutulunca buyuk haritalar da kucugu gibi oturuyor.
+   *
+   * Sutun ve satirlar 12/18'in tam katlari: 16x24, 20x30, 24x36. Alanlar eski
+   * degerlere yakin (405 -> 384, 640 -> 600, 828 -> 864), yani kademelerin
+   * buyume hissi degismiyor.
+   */
   private configureArenaForScale() {
     const dimensions = [
       { cols: 12, rows: 18 },
-      { cols: 15, rows: 27 },
-      { cols: 20, rows: 32 },
-      { cols: 23, rows: 36 }
+      { cols: 16, rows: 24 },
+      { cols: 20, rows: 30 },
+      { cols: 24, rows: 36 }
     ][this.mapScale - 1];
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
