@@ -159,3 +159,83 @@ test("kule yıkılmışsa ışın sade çizilir", () => {
   assert.equal(room.getBeamTier(undefined), undefined);
   assert.equal(room.getBeamTier("yok-boyle-bir-kule"), undefined);
 });
+
+/**
+ * Debug Lazerin rengi kademeyle isiniyor.
+ *
+ * Kenar hatti ve kafes yakindan bakinca okunuyor; renk haritanin obur ucundan
+ * da okunuyor. Kademe 1 kendi kimlik rengini koruyor ki degisim bir gelisme
+ * gibi gorunsun, rastgele bir renk degil.
+ */
+function debugLaserBeam(level) {
+  const room = createRoom("warrior");
+  const spot = findBuildableSpot(room, "warrior-5");
+  assert.ok(spot, "Debug Lazer icin yer bulunamadi");
+  room.placeTower(client, { x: spot.x, y: spot.y, definitionId: "warrior-5" });
+  const tower = [...room.towers.values()][0];
+  tower.level = level;
+  tower.ammo = tower.maxAmmo;
+  tower.energy = tower.maxEnergy;
+
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  enemy.x = tower.x + 20;
+  enemy.y = tower.y;
+  enemy.hp = 10_000_000;
+  enemy.maxHp = enemy.hp;
+  enemy.shield = 0;
+  enemy.armor = 0;
+  enemy.damageResistances = {};
+  enemy.hitTypeResistances = {};
+  enemy.statusResistances = {};
+  room.enemySpatialGrid.rebuild(room.enemies.values());
+
+  for (let tick = 0; tick < 40; tick += 1) {
+    room.resetAuraSlows();
+    room.updateTowers(50);
+  }
+  const beam = room.getSnapshot().beams.find((entry) => entry.id === `beam-${tower.id}`);
+  assert.ok(beam, `seviye ${level} icin isin cizilmedi`);
+  return beam;
+}
+
+test("Debug Lazer 5'te maviye, 10'da beyaza döner", () => {
+  assert.equal(debugLaserBeam(1).color, 0xfb7185);
+  assert.equal(debugLaserBeam(4).color, 0xfb7185);
+  assert.equal(debugLaserBeam(5).color, 0x60a5fa);
+  assert.equal(debugLaserBeam(9).color, 0x60a5fa);
+  assert.equal(debugLaserBeam(10).color, 0xffffff);
+});
+
+test("renk kademeyle birlikte değişir, ayrı bir eşikle değil", () => {
+  // Renk ile vurgu ayni sayidan cikmali: ayri esikler tutulursa biri 5'te,
+  // digeri 6'da donerdi ve kimse fark etmezdi.
+  for (const level of [1, 4, 5, 9, 10]) {
+    const beam = debugLaserBeam(level);
+    const tier = beam.tier ?? 1;
+    assert.equal(tier, getTowerTier(level), `seviye ${level} kademesi tutmuyor`);
+    const beklenen = tier === 3 ? 0xffffff : tier === 2 ? 0x60a5fa : 0xfb7185;
+    assert.equal(beam.color, beklenen, `seviye ${level} rengi kademesiyle uyusmuyor`);
+  }
+});
+
+test("diğer ışın kuleleri kendi renginde kalır", () => {
+  // Isinma yalnizca Debug Lazere ait; obur kuleler kimlik renklerini koruyor.
+  const room = createRoom("zeynep");
+  const spot = findBuildableSpot(room, "zeynep-2");
+  assert.ok(spot, "Zeynep isin kulesi icin yer bulunamadi");
+  room.placeTower(client, { x: spot.x, y: spot.y, definitionId: "zeynep-2" });
+  const tower = [...room.towers.values()][0];
+  const definition = towerCatalog.zeynep.find((entry) => entry.id === "zeynep-2");
+
+  for (const level of [1, 5, 10]) {
+    tower.level = level;
+    assert.notEqual(
+      room.getDebugLaserBeamColor(tower, false),
+      0xffffff,
+      `zeynep-2 seviye ${level}'te Debug Lazer rengine kaydi`
+    );
+    assert.equal(room.getDebugLaserBeamColor(tower, false), 0xfb7185);
+  }
+  assert.ok(definition, "zeynep-2 katalogda yok");
+});

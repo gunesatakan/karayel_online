@@ -354,6 +354,21 @@ const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
+
+/**
+ * Debug Lazerin kademeye gore rengi: yildiz sicakligi gibi.
+ *
+ * Seviye atlamanin ilk kademesi zaten kirisin kenarina hat, ikincisi kafes
+ * ekliyordu -- ikisi de yakindan bakinca goruluyor. Renk uzaktan da okunuyor:
+ * oyuncu haritanin obur ucundan hangi lazerin olgunlastigini goruyor.
+ *
+ * Sicak uc beyaz. Kademe 1 kendi kimlik rengini koruyor ki degisim bir gelisme
+ * gibi okunsun, rastgele bir renk degil.
+ */
+const DEBUG_LASER_TIER_COLORS: Record<number, { beam: number; overdrive: number }> = {
+  2: { beam: 0x60a5fa, overdrive: 0x60a5fa },
+  3: { beam: 0xffffff, overdrive: 0xffffff }
+};
 const TOWER_DPS_WINDOW_MS = 5000;
 const UCUBE_STACK_INTERVAL_REDUCTION = (1 - 300 / 940) / 15;
 const ATAKAN_ULTIMATE_EXHAUSTION_MS = 3000;
@@ -2871,6 +2886,24 @@ export class MatchRoom extends Room<MatchState> {
     this.updateDebugLaserSweep(tower);
   }
 
+  /**
+   * Isinin rengi.
+   *
+   * Yalnizca Debug Lazer kademeyle isiniyor; obur kuleler kendi kimlik
+   * renklerinde kaliyor. Kademe yoksa ya da baska bir kuleyse eski renkler.
+   */
+  private getDebugLaserBeamColor(tower: TowerModel, overdrive: boolean) {
+    const fallback = overdrive ? 0xfbbf24 : 0xfb7185;
+    if (tower.definition.id !== "warrior-5") {
+      return fallback;
+    }
+    const tierColors = DEBUG_LASER_TIER_COLORS[getTowerTier(tower.level)];
+    if (!tierColors) {
+      return fallback;
+    }
+    return overdrive ? tierColors.overdrive : tierColors.beam;
+  }
+
   private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number) {
     const ttlMs = overdrive ? Math.max(180, this.getTowerFireInterval(tower) + 90) : Math.max(260, this.getTowerFireInterval(tower) + 90);
     this.beams.set(`beam-${tower.id}`, {
@@ -2883,7 +2916,7 @@ export class MatchRoom extends Room<MatchState> {
       scanX,
       scanY,
       width: overdrive ? 8 : 4,
-      color: overdrive ? 0xfbbf24 : 0xfb7185,
+      color: this.getDebugLaserBeamColor(tower, overdrive),
       overdrive,
       ttlMs,
       tier: this.getBeamTier(tower.id)
