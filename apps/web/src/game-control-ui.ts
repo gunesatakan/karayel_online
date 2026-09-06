@@ -762,6 +762,9 @@ function reportChrome(game: Phaser.Game, canvasHeight: number) {
   const hud = document.getElementById("game-hud-root");
   const panel = document.querySelector<HTMLElement>(".game-controls__panel");
   const hudHeight = hud && !hud.classList.contains("game-hud--hidden") ? hud.getBoundingClientRect().height : 0;
+  // Yalnizca kapali barin yuksekligi olculur. Acilan cekmece kasten akisin
+  // disinda duruyor: akista olsaydi buradan gecip kamerayi tetikler ve harita
+  // her cekmece acilisinda kuculurdu.
   const panelHeight = panel ? panel.getBoundingClientRect().height : 0;
 
   game.events.emit("game:chrome", {

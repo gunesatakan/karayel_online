@@ -620,19 +620,33 @@ canvas {
 }
 
 /*
- * Cekmece: barin uzerinde acilir ve haritanin yarisindan fazlasini kapatmaz.
- * Icerik sigmazsa kaydirilir -- bar yine tek satir kalir.
+ * Cekmece haritanin **uzerine** aciliyor, barin icine degil.
+ *
+ * Akista dursaydi barin yuksekligini buyuturdu ve kamera haritayi barin
+ * uzerine sigdirdigi icin harita her acilista kuculurdu: olculdu, panel
+ * 47px'den 173px'e cikiyor ve zoom 1.91'den 1.52'ye dusuyordu. Cekmece
+ * gecici bir kaplama; haritanin olcegini degistirmemeli.
+ *
+ * Akistan cikinca barin olculen yuksekligi 47px'de sabit kaliyor.
  */
 .game-controls__drawer {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 100%;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   gap: 4px;
   max-height: min(44vh, 300px);
+  margin-bottom: 4px;
   padding: 6px;
+  box-sizing: border-box;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid rgba(96, 165, 250, 0.32);
   background: rgba(2, 6, 23, 0.97);
+  box-shadow: 0 -12px 30px rgba(2, 6, 23, 0.62);
   scrollbar-width: thin;
   scrollbar-color: rgba(56, 189, 248, 0.55) rgba(15, 23, 42, 0.5);
 }
