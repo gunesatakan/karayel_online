@@ -59,6 +59,7 @@ import {
   type BlindHand,
   type BlindNavigatorState,
   getEdgeSegments,
+  countsAsTower,
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
@@ -9609,10 +9610,18 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Kulenin bir kare cevresinde baska kule yok mu.
+   *
+   * Duvar sayilmaz. Duvar bir kule degil, bir cizgi: kenara oturuyor,
+   * kare kaplamiyor, ates etmiyor. Yalnizligi bozan sey komsu bir kule
+   * olmali -- yoksa Izolasyon Kulesi'nin onune cekilen bir duvar hatti
+   * kulenin kendi yetenegini kapatirdi.
+   */
   private isTowerIsolated(tower: TowerModel) {
     const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
     for (const other of this.towers.values()) {
-      if (other.id === tower.id) {
+      if (other.id === tower.id || !countsAsTower(other.definition)) {
         continue;
       }
 
@@ -9629,12 +9638,18 @@ export class MatchRoom extends Room<MatchState> {
     return this.getAdjacentFriendlyTowers(tower).length;
   }
 
-  /** Ayni oyuncunun bir kare mesafedeki kuleleri; kosegenler dahil. */
+  /**
+   * Ayni oyuncunun bir kare mesafedeki kuleleri; kosegenler dahil.
+   *
+   * Duvar komsu sayilmaz -- yalnizligin aynasi burasi. Sayilsaydi 10
+   * altinlik duvarlarla kuleyi cevrelemek "Bitisik Devre"nin tam bonusunu
+   * bedavaya verirdi.
+   */
   private getAdjacentFriendlyTowers(tower: TowerModel) {
     const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
     const neighbours: TowerModel[] = [];
     for (const other of this.towers.values()) {
-      if (other.id === tower.id || other.ownerId !== tower.ownerId) continue;
+      if (other.id === tower.id || other.ownerId !== tower.ownerId || !countsAsTower(other.definition)) continue;
       const otherCell = worldToGrid(other.x, other.y, this.activeMap);
       if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) neighbours.push(other);
     }
@@ -9699,11 +9714,13 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    this.sympathyLinks = buildSympathyLinks(Array.from(this.towers.values(), (tower) => ({
-      id: tower.id,
-      x: tower.x,
-      y: tower.y
-    })));
+    // Duvar bagin ucu olamaz: ag kuleler arasinda kuruluyor ve 10 altinlik
+    // bir cizgi "en yakin kule"yi degistirerek agi sekillendirmemeli.
+    this.sympathyLinks = buildSympathyLinks(
+      Array.from(this.towers.values())
+        .filter((tower) => countsAsTower(tower.definition))
+        .map((tower) => ({ id: tower.id, x: tower.x, y: tower.y }))
+    );
 
     const halfWidth = this.scaleWorldDistance(SYMPATHY_LINK_HALF_WIDTH);
     for (const link of this.sympathyLinks) {

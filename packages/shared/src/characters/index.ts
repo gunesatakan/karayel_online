@@ -6,7 +6,7 @@ import { melisCharacter } from "./melis/index.js";
 import { omerCharacter } from "./omer/index.js";
 import { onurCharacter } from "./onur/index.js";
 import { ulkuCharacter } from "./ulku/index.js";
-import { WALL_TOWER_ID, wallTower } from "./common/wall.js";
+import { WALL_TOWER_ID, isWallDefinition, wallTower } from "./common/wall.js";
 import { zeynepCharacter } from "./zeynep/index.js";
 
 export type { CharacterDefinition, SkillDefinition, TowerDefinition };
@@ -71,6 +71,22 @@ export function getCharacterTowers(characterId: CharacterId): TowerDefinition[] 
  * kulenin yerini tutmaz. Hattini ormek icin hasar kulesinden vazgecmek
  * gerekseydi bu yapilar hicbir zaman kullanilmazdi.
  */
+/**
+ * Yapi kural duzeyinde kule sayilir mi.
+ *
+ * Duvar depolamada bir kule varyanti -- yerlestirme, can, hasar, onarim ve
+ * satis hatti oldugu gibi calissin diye. Ama kurallarin dilinde kule
+ * degil: ates etmez, hedef almaz, komsuluk kurmaz, bir kulenin
+ * yalnizligini bozmaz. Konum ve sayim soran her kural bu olcutten gecmeli.
+ *
+ * `occupiesTowerSlot` ile karistirilmamali: o kontenjan sorusu ve Abarti'yi
+ * da eler, oysa Abarti gercek bir kule -- kenara oturuyor olmasi onu
+ * komsuluktan ya da yalnizliktan muaf tutmaz.
+ */
+export function countsAsTower(definition: Pick<TowerDefinition, "id">) {
+  return !isWallDefinition(definition);
+}
+
 export function occupiesTowerSlot(definition: Pick<TowerDefinition, "id" | "engine">) {
   return !isSharedStructure(definition) && !definition.engine?.placement?.requiresEdge;
 }
