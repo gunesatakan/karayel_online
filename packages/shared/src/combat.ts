@@ -216,6 +216,28 @@ export function calculateArmorDamageMultiplier(armor: number) {
   return 2 - 100 / (100 - armor);
 }
 
+/**
+ * Direnci oyuncunun icerigine gore yeniden sekillendirir.
+ *
+ * Pozitif deger direnc, negatif deger zaaf. Delme yalnizca direnci,
+ * buyutme yalnizca zaafi tutuyor: tek bir sayi ikisini birden kaydirsaydi
+ * direnc delen bir kart, zaafi da kortelterek dogru hasar tipini
+ * cezalandirirdi.
+ */
+export function shapeEnemyResistance(
+  resistance: number,
+  shaping: { resistancePierce?: number; weaknessBonus?: number } = {}
+) {
+  if (resistance > 0) {
+    const pierce = Math.max(0, Math.min(1, shaping.resistancePierce ?? 0));
+    return resistance * (1 - pierce);
+  }
+  if (resistance < 0) {
+    return resistance * (1 + Math.max(0, shaping.weaknessBonus ?? 0));
+  }
+  return 0;
+}
+
 export function calculateDamageTaken(
   packet: DamagePacket,
   target: {
@@ -223,12 +245,14 @@ export function calculateDamageTaken(
     shield: number;
     damageResistances?: ResistanceTable<DamageType>;
     hitTypeResistances?: ResistanceTable<HitType>;
-  }
+  },
+  shaping: { resistancePierce?: number; weaknessBonus?: number } = {}
 ): DamageResult {
   const armorMultiplier = packet.damageType === "true" ? 1 : calculateArmorDamageMultiplier(target.armor);
-  const resistance = target.damageResistances?.[packet.damageType] ?? 0;
+  const resistance = shapeEnemyResistance(target.damageResistances?.[packet.damageType] ?? 0, shaping);
   const resistanceMultiplier = Math.max(0, 1 - resistance);
-  const hitTypeResistance = packet.damageType !== "true" && packet.hitType ? target.hitTypeResistances?.[packet.hitType] ?? 0 : 0;
+  const rawHitTypeResistance = packet.damageType !== "true" && packet.hitType ? target.hitTypeResistances?.[packet.hitType] ?? 0 : 0;
+  const hitTypeResistance = shapeEnemyResistance(rawHitTypeResistance, shaping);
   const hitTypeResistanceMultiplier = Math.max(0, 1 - hitTypeResistance);
   const rawDamage = Math.max(0, packet.amount * armorMultiplier * resistanceMultiplier * hitTypeResistanceMultiplier);
   const shieldDamage = Math.min(target.shield, rawDamage * SHIELD_DAMAGE_TAKEN_MULTIPLIER);

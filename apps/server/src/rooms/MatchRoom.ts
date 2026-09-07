@@ -6917,6 +6917,10 @@ export class MatchRoom extends Room<MatchState> {
         shield: enemy.shield,
         damageResistances: enemy.damageResistances,
         hitTypeResistances: enemy.hitTypeResistances
+      },
+      {
+        resistancePierce: getModifierAdd(damageModifiers, "resistancePierce"),
+        weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus")
       }
     );
     enemy.shield = result.remainingShield;

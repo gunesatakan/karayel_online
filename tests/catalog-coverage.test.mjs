@@ -33,7 +33,7 @@ const ALL_STATS = [
   "markAmplification", "goldGain", "towerCapacity", "cooling", "armorBreak",
   "statusDuration", "statusMagnitude", "ammoEmptyDamage", "turnRate",
   "projectileSpeed", "resourceProduction", "ammoProduction", "workerGatherSpeed",
-  "performanceCost",
+  "performanceCost", "resistancePierce", "weaknessBonus",
   "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs"
 ];
 

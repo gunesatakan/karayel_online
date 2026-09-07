@@ -220,6 +220,8 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),
+  defineItem("direnc-sokucu", "Direnç Sökücü", "Takıldığı kulenin vuruşlarında düşman dirençlerinin %40’ı yok sayılır.", "power", 125, { axes: ["dps"], effects: [effect("direnc-sokucu", "resistancePierce", 0.4)] }),
+  defineItem("zaaf-mercegi", "Zaaf Merceği", "Takıldığı kule düşmanın zayıf olduğu hasar tipinden %50 daha çok yararlanır.", "power", 115, { axes: ["dps"], effects: [effect("zaaf-mercegi", "weaknessBonus", 0.5)] }),
   defineItem("asiri-surucu", "Aşırı Sürücü", "Takıldığı kulenin performans kolu yarısı üstündeki ısı ve enerji bedeli -%50.", "power", 130, { axes: ["dps"], effects: [effect("asiri-surucu", "performanceCost", -0.5)] }),
   defineItem("kan-bankasi", "Kan Bankası", "Takıldığı kulenin hasarı +%20 olur; karşılığında her dalga 5 nexus canı gider.", "risk", 75, { unlocks: ["bloodBank"] })
 ];

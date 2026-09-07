@@ -233,6 +233,16 @@ export const cardCatalog: CardDefinition[] = [
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
 
+  // --- Dusman direnci ekseni ---
+  // Her irkin bir hasar tipine direnci, bir digerine zaafi var ve dalga
+  // ilerledikce irk degisiyor. Ama kule dizilimi dalga arasinda
+  // degistirilemedigi icin yanlis hasar tipiyle yakalanmak bir karar degil
+  // kazaydi: kurulu sistem vardi, oyuncunun ona karsi oynayabilecegi hicbir
+  // kol yoktu. Iki kart iki cevap veriyor -- biri dalgayi okumayi gereksiz
+  // kiliyor, obru okumayi daha degerli yapiyor.
+  { id: "evrensel-kalibrasyon", name: "Evrensel Kalibrasyon", description: "Düşman dirençlerinin %50’si yok sayılır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("evrensel-kalibrasyon", "resistancePierce", 0.5)] },
+  { id: "zaaf-okumasi", name: "Zaaf Okuması", description: "Düşmanın zayıf olduğu hasar tipinden %40 daha çok yararlanılır.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("zaaf-okumasi", "weaknessBonus", 0.4)] },
+
   // --- Performans kolu ---
   // Kol oyunun her dalga elle cektigi tek surekli degisken ve uzun sure
   // hicbir icerik ona dokunmuyordu. Iki kart iki ucu tutuyor: biri ust

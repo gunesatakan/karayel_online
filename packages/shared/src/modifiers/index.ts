@@ -46,7 +46,25 @@ export type ModifierStat =
    * bedeli daha ucuza oduyor. Duz bir `heat` indirimi ayni sey degil --
    * o egrinin seviyesini indirir, bu egrinin **egimini**.
    */
-  | "performanceCost";
+  | "performanceCost"
+  /**
+   * Dusman direncinin ne kadarinin yok sayilacagi (0-1).
+   *
+   * Her dusman irkinin bir hasar tipine karsi direnci, bir digerine karsi
+   * zaafi var ve dalga ilerledikce irk degisiyor. Oyuncunun elindeki kule
+   * dizilimi ise dalga arasinda degistirilemiyor, yani yanlis hasar tipiyle
+   * yakalanmak bir karar degil bir kazaydi. Bu stat o kazaya karsi
+   * oynanabilir bir cevap veriyor.
+   */
+  | "resistancePierce"
+  /**
+   * Zaafin ne kadar buyutulecegi.
+   *
+   * Delmenin tersi: dogru hasar tipini tutturmus oyuncuyu odullendiriyor.
+   * Ikisi bilerek ayri -- biri dalgayi okumayi gereksiz kilar, obru okumayi
+   * daha degerli yapar, ve ayni oyunda ikisini birden almak bosa yatirim.
+   */
+  | "weaknessBonus";
 
 export type Modifier = {
   source: string;
