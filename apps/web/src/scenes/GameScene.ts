@@ -305,6 +305,16 @@ const ALERT_TONE_SECONDS = 0.24;
 const LOCAL_ECHO_TIMEOUT_MS = 2500;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
+
+/**
+ * Besgenin cevrel yaricapi, gizlenen govdenin genisliginin kati.
+ *
+ * Yarim degil: isci dokusu kare cercevesinin icinde bosluk birakiyor, yani
+ * gorunen disk cercevenin tamami degil. Yarim alinsaydi besgen normal isciden
+ * gozle secilecek kadar buyuk dururdu -- oysa iki kademe ayni olcude olmali,
+ * ayrimi sekil tasiyor.
+ */
+const ADVANCED_WORKER_BODY_RADIUS_RATIO = 0.42;
 const GUIDANCE_RADIUS = 78;
 // Fast enough that the muzzle is on target before the projectile leaves it,
 // slow enough to read as a sweep rather than a snap.
@@ -403,10 +413,10 @@ export class GameScene extends Phaser.Scene {
   private terminalProjectileSnapshots = new Map<string, { projectile: ProjectileSnapshot; removeAfter: number }>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
   /**
-   * Gelismis iscilerin altindaki halka.
+   * Gelismis iscilerin govdesi.
    *
    * Isci basina bir nesne degil, hepsi icin tek bir cizim yuzeyi: her karede
-   * temizlenip yeniden ciziliyor, boylece olen isciyle birlikte halkasini
+   * temizlenip yeniden ciziliyor, boylece olen isciyle birlikte sekli
    * temizlemeyi unutmak diye bir hata kalmiyor.
    */
   private advancedWorkerGraphics?: Phaser.GameObjects.Graphics;
@@ -4886,8 +4896,10 @@ export class GameScene extends Phaser.Scene {
 
     const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
     const mapEntityScale = this.getMapCellSize() / TOWER_GRID_SIZE;
-    const halkalar = this.advancedWorkerGraphics ?? (this.advancedWorkerGraphics = this.add.graphics().setDepth(41));
-    halkalar.clear();
+    // Gizlenen govdeyle ayni derinlikte: besgen govdenin yerini aliyor, altina
+    // konan bir sus degil.
+    const govdeler = this.advancedWorkerGraphics ?? (this.advancedWorkerGraphics = this.add.graphics().setDepth(42));
+    govdeler.clear();
     for (const drone of drones) {
       const texture = drone.mode === "repair" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
@@ -4909,47 +4921,50 @@ export class GameScene extends Phaser.Scene {
       }
       sprite.setPosition(drone.x, drone.y);
       const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
-      // Gelismis isci belirgin sekilde iri: uc katlik isi tek bedende
-      // yaptigini bir bakista soylemesi gereken sey boyut.
-      const workerScale = isLogisticsWorker && drone.advanced ? 1.18 : isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38;
+      const workerScale = isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff;
       sprite.setTint(tint);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
+      // Gelismis isci ayni boyutta ama baska bir sekil: yuvarlak govde
+      // yerine besgen. Ayirt edici olan olcu degil siluet oldugu icin yuk
+      // tasirken buyuyup kuculmesi kademeyi bulanistirmiyor.
+      sprite.setVisible(!drone.advanced);
       if (drone.advanced) {
-        this.drawAdvancedWorkerRing(halkalar, drone, tint, mapEntityScale);
+        this.drawAdvancedWorkerBody(govdeler, drone, tint, sprite.displayWidth * ADVANCED_WORKER_BODY_RADIUS_RATIO, sprite.rotation);
       }
     }
   }
 
   /**
-   * Gelismis iscinin altina donen bir halka cizer.
+   * Gelismis isciyi besgen olarak cizer.
    *
-   * Yalnizca boyut yetmiyordu: yuk tasiyan isci zaten buyuyup kuculuyor ve
-   * uzaktan bakan oyuncu iki kademeyi ayirt edemiyordu. Donme, boyuttan
-   * bagimsiz bir isaret -- duran bir sey donmez.
+   * Govdenin yerini aliyor, ustune eklenmiyor: iki kademe ayni olcude
+   * durdugu icin ayrimi tasiyan tek sey siluet. Yaricap gizlenen govdenin
+   * kendi genisliginden okunuyor, boylece iki kademe her harita olceginde
+   * ayni yeri kapliyor ve yuk nabzi ikisinde de ayni.
+   *
+   * Bir kose yurune yone bakiyor: besgen dairenin aksine yonunu
+   * gosterebilir, yani sekil hem kademeyi hem gidisi anlatiyor.
    */
-  private drawAdvancedWorkerRing(
+  private drawAdvancedWorkerBody(
     graphics: Phaser.GameObjects.Graphics,
     drone: DroneSnapshot,
     tint: number,
-    mapEntityScale: number
+    radius: number,
+    rotation: number
   ) {
-    const radius = 9 * mapEntityScale;
-    const spin = (Date.now() / 620) % (Math.PI * 2);
-    graphics.lineStyle(1.4 * mapEntityScale, tint, 0.5);
-    graphics.strokeCircle(drone.x, drone.y, radius);
-    // Uc uydu, uc kati anlatan tek isaret.
-    graphics.fillStyle(tint, 0.85);
-    for (let i = 0; i < 3; i += 1) {
-      const angle = spin + (i * Math.PI * 2) / 3;
-      graphics.fillCircle(
-        drone.x + Math.cos(angle) * radius,
-        drone.y + Math.sin(angle) * radius,
-        1.7 * mapEntityScale
-      );
+    const points: Phaser.Geom.Point[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const angle = rotation + (i * Math.PI * 2) / 5;
+      points.push(new Phaser.Geom.Point(drone.x + Math.cos(angle) * radius, drone.y + Math.sin(angle) * radius));
     }
+    graphics.fillStyle(tint, 0.92);
+    graphics.fillPoints(points, true);
+    // Ince beyaz kontur: rol rengi koyu zeminde erirken silueti tutan sey.
+    graphics.lineStyle(Math.max(1, radius * 0.18), 0xffffff, 0.7);
+    graphics.strokePoints(points, true, true);
   }
 
   private drawTowerHealthBar(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot, discSize: number) {
