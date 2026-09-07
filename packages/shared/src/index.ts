@@ -670,6 +670,8 @@ export type GameSnapshot = {
   team: TeamSnapshot;
   setupPhase?: boolean;
   setupReadyPlayerIds?: string[];
+  /** Yaratici mod acik: istemci serbest kurulum panelini gosterir. */
+  creative?: boolean;
   perf?: ServerPerfSnapshot;
 };
 

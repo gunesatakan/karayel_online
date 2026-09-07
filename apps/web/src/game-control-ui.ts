@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { FINAL_WAVE, cardCatalog, getCardRarity, isGlobalShopItem, shopCatalog } from "@karayel/shared";
 
 type ZeynepTier = "small" | "medium" | "big";
 
@@ -59,6 +60,22 @@ type ControlState = {
   };
   goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean }> };
   targeting?: { current: string; modes: string[] };
+  /**
+   * Yaratici mod paneli.
+   *
+   * Katalogun kendisi burada, modulun icinde duruyor; durumdan yalnizca
+   * hangilerinin acik oldugu geliyor. 74 kart ile 40 esyayi her cizimde
+   * durumun icinde tasimanin bir anlami yok.
+   */
+  creative?: {
+    wave: number;
+    cardIds: string[];
+    itemIds: string[];
+    selectedTowerId?: string;
+    selectedTowerLevel?: number;
+    selectedTowerCardIds: string[];
+    selectedTowerItemIds: string[];
+  };
 };
 
 type ControlAction = {
@@ -75,6 +92,11 @@ type ControlAction = {
   targetingMode?: string;
   clientX?: number;
   clientY?: number;
+  level?: number;
+  cardId?: string;
+  wave?: number;
+  count?: number;
+  on?: boolean;
 };
 
 export function setupGameControlUi(game: Phaser.Game) {
@@ -268,8 +290,10 @@ export function setupGameControlUi(game: Phaser.Game) {
    * Satis dugmesi burada degil: haritada kulenin altinda zaten acilan panelin
    * icinde, yani kulenin oldugu yerde.
    */
-  type DrawerId = "towers" | "skills" | "inventory";
+  type DrawerId = "towers" | "skills" | "inventory" | "creative";
   let openDrawer: DrawerId | undefined;
+  /** Yaratici cekmecenin acik sekmesi; cekmece kapansa da hatirlaniyor. */
+  let creativeTab: "cards" | "items" | "wave" = "cards";
 
   const toggleDrawer = (next: DrawerId) => {
     openDrawer = openDrawer === next ? undefined : next;
@@ -439,6 +463,22 @@ export function setupGameControlUi(game: Phaser.Game) {
   const buildTowerDrawer = (state: ControlState) => {
     const body: HTMLElement[] = [];
 
+    // Yaratici modda seviye bir dugme dizisi: yukseltme yolu tek tek ilerliyor
+    // ve bedel istiyor, burasi dogrudan yaziyor.
+    if (state.creative && state.selectedPlacedTowerId) {
+      const levels = document.createElement("div");
+      levels.className = "creative__levels";
+      for (let level = 1; level <= 10; level += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `creative__level${state.creative.selectedTowerLevel === level ? " creative__level--active" : ""}`;
+        button.textContent = String(level);
+        button.addEventListener("pointerup", () => dispatch({ action: "creativeLevel", level }));
+        levels.append(button);
+      }
+      body.push(levels);
+    }
+
     const stats = document.createElement("div");
     stats.className = "game-controls__stats";
     stats.textContent = (state.selectedStats ?? []).join("  |  ");
@@ -517,6 +557,150 @@ export function setupGameControlUi(game: Phaser.Game) {
     return body;
   };
 
+  /**
+   * Yaratici mod cekmecesi.
+   *
+   * Kule koymak ve seviye vermek buraya girmiyor: ikisi de zaten var olan
+   * akislarin icinde -- kule listesi normal yerinde duruyor ve bedelsiz
+   * kanaldan gidiyor, seviye satiri da secili kulenin kendi cekmecesinde.
+   * Burada yalnizca sahada karsiligi olmayan seyler var: kart, esya, dalga.
+   */
+  const buildCreativeDrawer = (state: ControlState) => {
+    const creative = state.creative;
+    if (!creative) return [];
+    const body: HTMLElement[] = [];
+
+    const makeTab = (label: string, id: typeof creativeTab) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `creative__tab${creativeTab === id ? " creative__tab--active" : ""}`;
+      button.textContent = label;
+      button.addEventListener("pointerup", () => {
+        creativeTab = id;
+        latestKey = "";
+        render(latestState);
+      });
+      return button;
+    };
+    const hedef = document.createElement("div");
+    hedef.className = "creative__target";
+    hedef.textContent = creative.selectedTowerId
+      ? `Seçili kule: ${creative.selectedTowerId} · seviye ${creative.selectedTowerLevel ?? 1}`
+      : "Kule seçili değil — hedefli kartlar ve kuleye takılan eşyalar kapalı";
+    body.push(hedef);
+    body.push(makeRow([makeTab("Kart", "cards"), makeTab("Eşya", "items"), makeTab("Dalga", "wave")], "creative__tabs"));
+
+    const list = document.createElement("div");
+    list.className = "creative__list";
+
+    if (creativeTab === "cards") {
+      const owned = new Map<string, number>();
+      for (const id of creative.cardIds) owned.set(id, (owned.get(id) ?? 0) + 1);
+      for (const card of cardCatalog) {
+        const targeted = card.scope.kind === "targeted";
+        const count = targeted
+          ? creative.selectedTowerCardIds.filter((id) => id === card.id).length
+          : owned.get(card.id) ?? 0;
+        const needsTower = targeted && !creative.selectedTowerId;
+        list.append(makeCreativeRow({
+          name: card.name,
+          detail: card.description,
+          badge: targeted ? "kule" : getCardRarity(card),
+          count,
+          disabled: needsTower,
+          disabledHint: "Önce bir kule seç",
+          onToggle: (on) => dispatch({ action: "creativeCard", cardId: card.id, on })
+        }));
+      }
+    } else if (creativeTab === "items") {
+      const owned = new Map<string, number>();
+      for (const id of creative.itemIds) owned.set(id, (owned.get(id) ?? 0) + 1);
+      for (const item of shopCatalog) {
+        const global = isGlobalShopItem(item);
+        const count = global
+          ? owned.get(item.id) ?? 0
+          : creative.selectedTowerItemIds.filter((id) => id === item.id).length;
+        const needsTower = !global && !creative.selectedTowerId;
+        list.append(makeCreativeRow({
+          name: item.name,
+          detail: item.description,
+          badge: global ? "genel" : "kule",
+          count,
+          disabled: needsTower,
+          disabledHint: "Önce bir kule seç",
+          onToggle: (on) => dispatch({ action: "creativeItem", itemId: item.id, on })
+        }));
+      }
+    } else {
+      const waves = document.createElement("div");
+      waves.className = "creative__waves";
+      for (let wave = 1; wave <= FINAL_WAVE; wave += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `creative__wave${creative.wave === wave ? " creative__wave--active" : ""}`;
+        button.textContent = String(wave);
+        button.addEventListener("pointerup", () => dispatch({ action: "creativeWave", wave }));
+        waves.append(button);
+      }
+      list.append(waves);
+
+      const spawn = document.createElement("div");
+      spawn.className = "creative__spawn";
+      for (const count of [1, 5, 10, 25]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "creative__spawn-button";
+        button.textContent = `${count} düşman`;
+        button.addEventListener("pointerup", () => dispatch({ action: "creativeSpawn", count }));
+        spawn.append(button);
+      }
+      list.append(spawn);
+    }
+
+    body.push(list);
+    return body;
+  };
+
+  /** Kart ve esya listelerinin ortak satiri: ad, aciklama ve iki dugme. */
+  const makeCreativeRow = (options: {
+    name: string;
+    detail: string;
+    badge: string;
+    count: number;
+    disabled: boolean;
+    disabledHint: string;
+    onToggle: (on: boolean) => void;
+  }) => {
+    const row = document.createElement("div");
+    row.className = `creative__row${options.count > 0 ? " creative__row--owned" : ""}`;
+    row.title = options.disabled ? options.disabledHint : options.detail;
+
+    const text = document.createElement("span");
+    text.className = "creative__row-text";
+    const name = document.createElement("strong");
+    name.textContent = options.count > 1 ? `${options.name} ×${options.count}` : options.name;
+    const badge = document.createElement("small");
+    badge.textContent = options.badge;
+    text.append(name, badge);
+
+    const makeStep = (label: string, on: boolean, enabled: boolean) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "creative__step";
+      button.disabled = !enabled;
+      button.textContent = label;
+      button.addEventListener("pointerup", () => options.onToggle(on));
+      return button;
+    };
+
+    const actions = document.createElement("div");
+    actions.className = "creative__row-actions";
+    actions.append(makeStep("−", false, !options.disabled && options.count > 0), makeStep("+", true, !options.disabled));
+
+    row.append(text, actions);
+    return row;
+  };
+
   const buildLauncher = (state: ControlState) => {
     const makeLaunchButton = (label: string, id: DrawerId) => {
       const button = document.createElement("button");
@@ -528,11 +712,13 @@ export function setupGameControlUi(game: Phaser.Game) {
     };
 
     const total = (state.inventory?.items ?? []).reduce((sum, entry) => sum + entry.count, 0);
-    return makeRow([
+    const buttons = [
       makeLaunchButton("Kuleler", "towers"),
       makeLaunchButton("Beceriler", "skills"),
       makeLaunchButton(`Envanter ${total}`, "inventory")
-    ], "game-controls__launcher");
+    ];
+    if (state.creative) buttons.push(makeLaunchButton("Yaratıcı", "creative"));
+    return makeRow(buttons, "game-controls__launcher");
   };
 
   const render = (state: ControlState) => {
@@ -629,8 +815,12 @@ export function setupGameControlUi(game: Phaser.Game) {
     const panel = document.createElement("section");
     panel.className = `game-controls__panel${state.selectedStats ? " game-controls__panel--tower-selected" : ""}`;
 
-    // Kule secildiginde kendi cekmecesi her seyin onune geciyor.
-    if (state.selectedStats) {
+    // Yaratici cekmece kule cekmecesinin de onune geciyor. Sirasi tersine
+    // olsaydi hedefli kart hicbir kuleye takilamazdi: kart listesi bir kule
+    // secili olmasini istiyor ama kule secmek listeyi kapatiyordu.
+    if (openDrawer === "creative" && state.creative) {
+      panel.append(makeDrawer("Yaratıcı mod", buildCreativeDrawer(state), () => toggleDrawer("creative")));
+    } else if (state.selectedStats) {
       panel.append(makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" })));
     } else if (openDrawer === "towers") {
       panel.append(makeDrawer("Kuleler", buildTowersDrawer(state), () => toggleDrawer("towers")));

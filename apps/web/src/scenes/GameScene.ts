@@ -87,6 +87,15 @@ import { EMPTY_HUD_STATS } from "../game-control-ui";
 type GameSceneData = {
   characterId?: CharacterId;
   mapData?: EditableMapData;
+  creative?: boolean;
+};
+
+/** Sunucunun yaratici modda yolladigi o anki kurulum. */
+type CreativeLoadout = {
+  wave: number;
+  cardIds: string[];
+  itemIds: string[];
+  towers: Array<{ id: string; definitionId: string; level: number; cardIds: string[]; itemIds: string[] }>;
 };
 
 type ControlActionDetail = {
@@ -102,6 +111,11 @@ type ControlActionDetail = {
     | "useUltimateMode"
     | "upgradeUltimatePower"
     | "upgradeTower"
+    | "creativeLevel"
+    | "creativeCard"
+    | "creativeItem"
+    | "creativeWave"
+    | "creativeSpawn"
     | "sellTower"
     | "clearTowerSelection"
     | "repairStructure"
@@ -140,6 +154,11 @@ type ControlActionDetail = {
   targetingMode?: string;
   clientX?: number;
   clientY?: number;
+  level?: number;
+  cardId?: string;
+  wave?: number;
+  count?: number;
+  on?: boolean;
   value?: number;
 };
 
@@ -479,6 +498,11 @@ export class GameScene extends Phaser.Scene {
   private snapshotCount = 0;
   private currentTeamGold = 0;
   private currentUltimateCharge = 0;
+  /** Menude yaratici mod secildi mi; odayi kurarken sunucuya gidiyor. */
+  private creativeRequested = false;
+  /** Sunucu bayragi acti mi; panel ve bedava yerlestirme buna bakiyor. */
+  private creativeMode = false;
+  private creativeLoadout?: CreativeLoadout;
   /**
    * Ulti basildi, sunucu daha onaylamadi.
    *
@@ -579,6 +603,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
+    this.creativeRequested = data.creative === true;
   }
 
   private getMapCellSize() {
@@ -1069,7 +1094,9 @@ export class GameScene extends Phaser.Scene {
     const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id, orientation);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
-      this.room.send("placeTower", {
+      // Yaratici modda ayni yerlestirme akisi bedelsiz kanaldan gidiyor;
+      // suruklemenin, onizlemenin ve yonun tekrar yazilmasi gerekmiyor.
+      this.room.send(this.creativeMode ? "creative:tower" : "placeTower", {
         definitionId: tower.id,
         x: cell.x,
         y: cell.y,
@@ -1315,6 +1342,29 @@ export class GameScene extends Phaser.Scene {
         if (this.selectedPlacedTowerId) {
           this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
         }
+        break;
+      case "creativeLevel":
+        if (this.selectedPlacedTowerId && typeof detail.level === "number") {
+          this.room?.send("creative:level", { towerId: this.selectedPlacedTowerId, level: detail.level });
+        }
+        break;
+      case "creativeCard":
+        if (detail.cardId) {
+          this.room?.send("creative:card", { cardId: detail.cardId, towerId: this.selectedPlacedTowerId, on: detail.on });
+        }
+        break;
+      case "creativeItem":
+        if (detail.itemId) {
+          this.room?.send("creative:item", { itemId: detail.itemId, towerId: this.selectedPlacedTowerId, on: detail.on });
+        }
+        break;
+      case "creativeWave":
+        if (typeof detail.wave === "number") {
+          this.room?.send("creative:wave", { wave: detail.wave });
+        }
+        break;
+      case "creativeSpawn":
+        this.room?.send("creative:spawn", { count: detail.count ?? 1 });
         break;
       case "repairStructure":
         if (this.selectedPlacedTowerId) {
@@ -1730,6 +1780,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     return MELIS_EVOLUTION_STRESS_COSTS[Math.min(...levels)];
+  }
+
+  /**
+   * Yaratici panelin okudugu durum.
+   *
+   * Katalogun kendisi panelde duruyor; buradan yalnizca **hangilerinin acik**
+   * oldugu gidiyor. Kart ve esya listeleri her kare yeniden cizilen bir
+   * durumun icinde tasinacak kadar buyuk.
+   */
+  private getCreativeControlState() {
+    if (!this.creativeMode) return undefined;
+    const selected = this.creativeLoadout?.towers.find(({ id }) => id === this.selectedPlacedTowerId);
+    return {
+      wave: this.creativeLoadout?.wave ?? 1,
+      cardIds: this.creativeLoadout?.cardIds ?? [],
+      itemIds: this.creativeLoadout?.itemIds ?? [],
+      selectedTowerId: this.selectedPlacedTowerId,
+      selectedTowerLevel: selected?.level,
+      selectedTowerCardIds: selected?.cardIds ?? [],
+      selectedTowerItemIds: selected?.itemIds ?? []
+    };
   }
 
   private getWorkerHireState() {
@@ -2757,7 +2828,8 @@ export class GameScene extends Phaser.Scene {
           playerName: this.selectedCharacter.displayName,
           characterId: this.selectedCharacterId,
           mapData: this.selectedMapData,
-          autoStart: true
+          autoStart: true,
+          creative: this.creativeRequested
         }));
       }
       this.localSessionId = this.room.sessionId;
@@ -3057,6 +3129,10 @@ export class GameScene extends Phaser.Scene {
 
   private bindRoomHandlers(room: Room) {
     room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
+    room.onMessage("creative:loadout", (loadout: CreativeLoadout) => {
+      this.creativeLoadout = loadout;
+      this.emitControlState();
+    });
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
     room.onMessage("tower:remove", (message: { id: string }) => this.staticTowerSnapshots.delete(message.id));
@@ -6831,6 +6907,7 @@ export class GameScene extends Phaser.Scene {
         )
       },
       workerHire: this.getWorkerHireState(),
+      creative: this.getCreativeControlState(),
       upgrade: {
         label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradePriceLabel}` : "Kule sec",
         enabled: canUpgrade
@@ -6984,6 +7061,13 @@ export class GameScene extends Phaser.Scene {
   private recordClientPerf(snapshot: GameSnapshot, renderMs: number) {
     snapshot.perf = this.latestServerPerf;
     this.latestPerfSnapshot = snapshot;
+    // Bayrak sunucudan geliyor; istemcinin istegi tek basina yetmiyor ki
+    // reddedilen bir istek panelin acik gorunmesine yol acmasin.
+    if (Boolean(snapshot.creative) !== this.creativeMode) {
+      this.creativeMode = Boolean(snapshot.creative);
+      if (this.creativeMode) this.room?.send("creative:sync", {});
+      this.emitControlState();
+    }
     this.snapshotCount += 1;
     this.renderMsSamples.push(renderMs);
     this.renderMsSamples = this.renderMsSamples.slice(-30);

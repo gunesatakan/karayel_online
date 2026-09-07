@@ -195,6 +195,15 @@ export function setupMenuUi(game: Phaser.Game) {
     bindUi(view);
   };
 
+  /**
+   * Yaratici mod istegi.
+   *
+   * Sahneye tasiniyor, oradan odaya. Sunucu bayragi yalnizca dogrudan
+   * baslatilan tek kisilik odada kabul ediyor, o yuzden online yol bunu
+   * hicbir zaman goturmez.
+   */
+  let creativeRequested = false;
+
   const startGame = (mode: "solo" | "online" = "solo") => {
     if (!phaserReady || onlineGameStarting) {
       return;
@@ -205,8 +214,10 @@ export function setupMenuUi(game: Phaser.Game) {
     game.scene.stop("preloader");
     game.scene.start("game", {
       characterId: selectedCharacter.id,
-      mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap
+      mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap,
+      creative: mode === "solo" && creativeRequested
     });
+    creativeRequested = false;
   };
 
   const bindLobbyRoom = (room: Room) => {
@@ -332,6 +343,13 @@ export function setupMenuUi(game: Phaser.Game) {
         }
         selectedDetail = detail;
         render("detail");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-start-creative]").forEach((button) => {
+      button.addEventListener("click", () => {
+        creativeRequested = true;
+        startGame("solo");
       });
     });
 
@@ -617,6 +635,7 @@ function renderHome(selectedCharacter: CharacterDefinition) {
           <small>Tek kişilik savunma</small>
         </button>
         <div class="home-actions__grid">
+          <button class="command command--ghost" data-start-creative>Yaratıcı</button>
           <button class="command command--ghost" data-view="online">Online</button>
           <button class="command command--ghost" data-view="archive">Operatör</button>
           <button class="command command--ghost" data-view="bestiary">Düşman</button>

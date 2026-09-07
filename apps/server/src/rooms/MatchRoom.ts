@@ -251,6 +251,8 @@ import {
 const PLAYER_START_GOLD = 550;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
+/** Tek komutta gonderilebilecek en fazla dusman; yaratici mod da olsa oda kilitlenmemeli. */
+const CREATIVE_MAX_SPAWN_BURST = 40;
 const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
@@ -561,6 +563,7 @@ type JoinOptions = {
   mapScale?: MapScale;
   mapData?: EditableMapData;
   autoStart?: boolean;
+  creative?: boolean;
 };
 
 type PlaceTowerMessage = {
@@ -831,6 +834,19 @@ type BuyShopItemMessage = { itemId?: string };
 type SetTowerTargetingMessage = { towerId?: string; mode?: TowerTargetingMode };
 type EquipShopItemMessage = { itemId?: string; towerId?: string };
 type PlaceShopMapItemMessage = { itemId?: "bariyer" | "ziftli-zemin"; x?: number; y?: number };
+
+/**
+ * Yaratici mod komutlari.
+ *
+ * Hepsi bedelsiz ve dogrulamasi gevsek; bu yuzden `getCreativePlayer`
+ * kapisindan gecmeyen hicbiri is yapmiyor.
+ */
+type CreativeTowerMessage = { definitionId?: string; x?: number; y?: number; orientation?: TowerOrientation };
+type CreativeLevelMessage = { towerId?: string; level?: number };
+type CreativeCardMessage = { cardId?: string; towerId?: string; on?: boolean };
+type CreativeItemMessage = { itemId?: string; towerId?: string; on?: boolean };
+type CreativeWaveMessage = { wave?: number };
+type CreativeSpawnMessage = { count?: number };
 
 type DebugOverdriveHeatSegment = {
   startedAt: number;
@@ -1290,6 +1306,13 @@ export class MatchRoom extends Room<MatchState> {
   private hostSessionId = "";
   private gameStarted = false;
   private setupPhase = true;
+  /**
+   * Yaratici mod: bedava kule, serbest seviye, kart ve esya anahtarlari.
+   *
+   * Yalnizca dogrudan baslatilan tek kisilik odada aciliyor. Lobiden gecen bir
+   * oda `autoStart` almadigi icin bayragi hicbir zaman alamaz.
+   */
+  private creativeMode = false;
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private pendingCardChoices = new Map<string, CardDefinition[]>();
@@ -1340,6 +1363,8 @@ export class MatchRoom extends Room<MatchState> {
     this.setState(new MatchState());
     this.lobbyRoomName = this.getRoomName(options.roomName);
     this.autoStartOnFirstJoin = options.autoStart === true;
+    // Yaratici bayragi lobi yoluna sizmasin diye dogrudan baslatmaya bagli.
+    this.creativeMode = options.creative === true && options.autoStart === true;
     const baseMap = normalizeMapData(options.mapData);
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
@@ -1458,6 +1483,17 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
+
+    this.onMessage("creative:sync", (client) => {
+      if (!this.getCreativePlayer(client)) return;
+      this.sendCreativeLoadout(client);
+    });
+    this.onMessage("creative:tower", (client, message: CreativeTowerMessage) => this.creativePlaceTower(client, message));
+    this.onMessage("creative:level", (client, message: CreativeLevelMessage) => this.creativeSetTowerLevel(client, message));
+    this.onMessage("creative:card", (client, message: CreativeCardMessage) => this.creativeToggleCard(client, message));
+    this.onMessage("creative:item", (client, message: CreativeItemMessage) => this.creativeToggleItem(client, message));
+    this.onMessage("creative:wave", (client, message: CreativeWaveMessage) => this.creativeSetWave(client, message));
+    this.onMessage("creative:spawn", (client, message: CreativeSpawnMessage) => this.creativeSpawnEnemies(client, message));
 
     this.syncRoomRegistry();
   }
@@ -5355,7 +5391,7 @@ export class MatchRoom extends Room<MatchState> {
     return PLAYER_TOWER_LIMIT + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
   }
 
-  private placeTower(client: Client, message: PlaceTowerMessage) {
+  private placeTower(client: Client, message: PlaceTowerMessage, options: { free?: boolean; ignoreLimit?: boolean } = {}) {
     const player = this.state.players.get(client.sessionId);
     if (!player || typeof message.x !== "number" || typeof message.y !== "number" || !message.definitionId) {
       return;
@@ -5364,7 +5400,7 @@ export class MatchRoom extends Room<MatchState> {
     const towerLimit = this.getPlayerTowerLimit(player);
     const requested = this.findTowerDefinition(player.characterId, message.definitionId);
     // Duvar kontenjandan yer kapmaz; sinir yalnizca savas kuleleri icin.
-    if (requested && occupiesTowerSlot(requested)) {
+    if (!options.ignoreLimit && requested && occupiesTowerSlot(requested)) {
       const currentTowerCount = Array.from(this.towers.values())
         .filter((tower) => tower.ownerId === client.sessionId && occupiesTowerSlot(tower.definition))
         .length;
@@ -5374,7 +5410,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const definition = this.findTowerDefinition(player.characterId, message.definitionId);
-    const buildCost = definition ? getTowerBuildCost(definition.cost) : Number.POSITIVE_INFINITY;
+    const buildCost = options.free ? 0 : definition ? getTowerBuildCost(definition.cost) : Number.POSITIVE_INFINITY;
     // Duvarin yonu oyuncunun sectigi bir sey degil, birakildigi kenarin
     // kendisi; istemciden gelen degere guvenmek yerine konumdan turetiliyor.
     const orientation = definition?.id === WALL_TOWER_ID
@@ -5385,11 +5421,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const applicableHealthModifiers = player.runModifiers.filter((modifier) => {
-      if (!modifier.source.startsWith("shop:")) return true;
-      const item = getShopItem(modifier.source.slice(5));
-      return !item || item.scope.kind === "global" || shopItemAppliesToTower(item, definition);
-    });
+    const applicableHealthModifiers = this.getStructureHealthModifiers(player, definition);
     // Duvarin cani kule tabanindan yuksek ve kalinlastirmayla buyur; kart ve
     // esya can bonuslari duvara da isler, yani duvar ormek roguelike katmaniyla
     // gercek bir sinerji tasir.
@@ -5551,6 +5583,267 @@ export class MatchRoom extends Room<MatchState> {
     this.towers.delete(tower.id);
     this.markNavigationDirty();
     this.broadcast("tower:remove", { id: tower.id });
+  }
+
+
+  /**
+   * Yaratici mod komutlari icin ortak kapi.
+   *
+   * Iki kosul birden araniyor. Oda yaratici olarak kurulmus olmali: bayrak
+   * yalnizca dogrudan baslatilan tek kisilik odada aciliyor, lobiden gecen bir
+   * oda hicbir zaman alamiyor. Ve odada tek oyuncu bulunmali -- bayrak tek
+   * basina yeterli degil, cunku bir sekilde ikinci bir oyuncu girerse
+   * karsisinda bedava kule koyan biri olurdu.
+   */
+  private getCreativePlayer(client: Client) {
+    if (!this.creativeMode || this.state.players.size > 1) return undefined;
+    return this.state.players.get(client.sessionId);
+  }
+
+  /**
+   * Kule cani icin oyuncudan gelen carpanlar.
+   *
+   * Esya kapsami burada suzuluyor: "yalnizca isin kulelerinde" yazan bir
+   * esyanin can bonusu her kuleye islememeli. Kartlarda ayni suzgec yok; mevcut
+   * davranis bu ve degistirmek yaratici modun isi degil.
+   */
+  private getStructureHealthModifiers(player: Player, definition: TowerDefinition): RunModifiers {
+    return player.runModifiers.filter((modifier) => {
+      if (!modifier.source.startsWith("shop:")) return true;
+      const item = getShopItem(modifier.source.slice(5));
+      return !item || item.scope.kind === "global" || shopItemAppliesToTower(item, definition);
+    });
+  }
+
+  /**
+   * Kart ve esya etkilerini kimlik listelerinden sifirdan kurar.
+   *
+   * Normal oyunda **eklemek** yetiyor: modifier listeye itiliyor, can farki o
+   * anki degere oranlaniyor. Yaratici modda cikarmak da gerekiyor ve cikarma o
+   * yolun tersi degil -- oranla buyutulmus bir can, oran geri bolununce ayni
+   * sayiya donmuyor ve modifier listesinde hangi girdinin hangi karttan geldigi
+   * de yalnizca sirayla belli. Bu yuzden ekleme de cikarma da buradan geciyor:
+   * kimlik listeleri tek dogru kaynak, sayisal katman her seferinde onlardan
+   * yeniden turuyor.
+   *
+   * Kilitler ve motor ekleri zaten kimlik listelerinden okunuyor
+   * (`collectTowerGrants`), burada yalnizca modifier listeleri ve can tavani
+   * yeniden kuruluyor.
+   */
+  private rebuildCreativeLoadout(sessionId: string) {
+    const player = this.state.players.get(sessionId);
+    if (!player) return;
+
+    const playerModifiers: RunModifiers = [];
+    for (const cardId of player.ownedCardIds) {
+      const card = getCardDefinition(cardId);
+      if (card && card.scope.kind !== "targeted") playerModifiers.push(...card.effects);
+    }
+    for (const itemId of player.ownedShopItemIds) {
+      const item = getShopItem(itemId);
+      if (item && isGlobalShopItem(item)) playerModifiers.push(...item.effects);
+    }
+    player.runModifiers = playerModifiers;
+
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== sessionId) continue;
+      const towerModifiers: RunModifiers = [];
+      for (const cardId of tower.targetedCardIds) {
+        const card = getCardDefinition(cardId);
+        if (card) towerModifiers.push(...card.effects);
+      }
+      for (const itemId of tower.equippedShopItemIds) {
+        const item = getShopItem(itemId);
+        if (item) towerModifiers.push(...item.effects);
+      }
+      tower.runModifiers = towerModifiers;
+
+      // Hasar orani korunuyor: yarim canla duran bir kule kart eklenince tam
+      // cana donmemeli.
+      const damageRatio = tower.maxHp > 0 ? Math.min(1, tower.hp / tower.maxHp) : 1;
+      tower.maxHp = TOWER_BASE_HP
+        * getStructureHealthMultiplier(tower.definition, tower.level)
+        * getModifierMultiplier([...this.getStructureHealthModifiers(player, tower.definition), ...towerModifiers], "towerHealth");
+      tower.hp = tower.maxHp * damageRatio;
+    }
+
+    this.invalidateTowerGrants();
+    this.markNavigationDirty();
+  }
+
+  /** Arayuzun kutucuklari isaretleyebilmesi icin o anki yaratici durum. */
+  private getCreativeLoadout(sessionId: string) {
+    const player = this.state.players.get(sessionId);
+    return {
+      wave: this.wave,
+      cardIds: [...(player?.ownedCardIds ?? [])],
+      itemIds: [...(player?.ownedShopItemIds ?? [])],
+      towers: Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === sessionId)
+        .map((tower) => ({
+          id: tower.id,
+          definitionId: tower.definition.id,
+          level: tower.level,
+          cardIds: [...tower.targetedCardIds],
+          itemIds: [...tower.equippedShopItemIds]
+        }))
+    };
+  }
+
+  private sendCreativeLoadout(client: Client) {
+    client.send("creative:loadout", this.getCreativeLoadout(client.sessionId));
+  }
+
+  private creativePlaceTower(client: Client, message: CreativeTowerMessage) {
+    if (!this.getCreativePlayer(client)) return;
+    this.placeTower(client, message, { free: true, ignoreLimit: true });
+    this.sendCreativeLoadout(client);
+  }
+
+  /**
+   * Kuleyi dogrudan istenen seviyeye tasir.
+   *
+   * Yukseltme yolu tek tek ilerliyor ve her adimda tecrube ile altin yakiyor;
+   * burasi ikisini de atlayip seviyeyi yaziyor. Can tavani yeniden kurulumdan
+   * cikiyor, cunku yapi carpani seviyeye bagli.
+   *
+   * Ucube'nin perk secimi yalnizca **varilan** seviye icin aciliyor, aradaki
+   * kademeler atlaniyor. Hepsini gormek isteyen seviyeyi birer birer verebilir.
+   */
+  private creativeSetTowerLevel(client: Client, message: CreativeLevelMessage) {
+    const player = this.getCreativePlayer(client);
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!player || !tower || tower.ownerId !== client.sessionId) return;
+    const level = Math.max(1, Math.min(MAX_TOWER_LEVEL, Math.round(message.level ?? tower.level)));
+    if (level === tower.level) return;
+    tower.level = level;
+    if (tower.definition.id === "warrior-6" && getUcubePerkTier(level)) {
+      tower.ucubePendingLevel = level;
+      client.send("ucube:choice", { towerId: tower.id, level });
+    }
+    this.rebuildCreativeLoadout(client.sessionId);
+    this.sendCreativeLoadout(client);
+  }
+
+  private countOwned(ids: string[], id: string) {
+    return ids.reduce((total, candidate) => candidate === id ? total + 1 : total, 0);
+  }
+
+  private creativeToggleCard(client: Client, message: CreativeCardMessage) {
+    const player = this.getCreativePlayer(client);
+    const card = message.cardId ? getCardDefinition(message.cardId) : undefined;
+    if (!player || !card) return;
+
+    if (card.scope.kind === "targeted") {
+      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+      if (!tower || tower.ownerId !== client.sessionId) return;
+      const index = tower.targetedCardIds.indexOf(card.id);
+      if (message.on === false) {
+        if (index < 0) return;
+        tower.targetedCardIds.splice(index, 1);
+      } else {
+        if (index >= 0) return;
+        tower.targetedCardIds.push(card.id);
+      }
+    }
+
+    const owned = player.ownedCardIds.indexOf(card.id);
+    if (message.on === false) {
+      if (owned >= 0) player.ownedCardIds.splice(owned, 1);
+    } else if (owned < 0 || (card.stackable && this.countOwned(player.ownedCardIds, card.id) < (card.maxStacks ?? Infinity))) {
+      player.ownedCardIds.push(card.id);
+    }
+
+    this.rebuildCreativeLoadout(client.sessionId);
+    this.sendCreativeLoadout(client);
+  }
+
+  /**
+   * Esyayi takar ya da cikarir.
+   *
+   * Kuresel esyalar dogrudan oyuncuya yaziliyor. Kuleye takilanlarda
+   * `canEquipShopItem` kurali korunuyor: bes esyalik tavan ve uyumluluk gercek
+   * oyun kurallari ve onlari delmek, geri kalan kodun beklemedigi bir kule
+   * uretirdi.
+   */
+  private creativeToggleItem(client: Client, message: CreativeItemMessage) {
+    const player = this.getCreativePlayer(client);
+    const item = message.itemId ? getShopItem(message.itemId) : undefined;
+    if (!player || !item) return;
+    const adding = message.on !== false;
+
+    if (isGlobalShopItem(item)) {
+      const owned = player.ownedShopItemIds.indexOf(item.id);
+      if (adding) {
+        if (owned >= 0 && !item.repeatable) return;
+        if (item.repeatable && this.countOwned(player.ownedShopItemIds, item.id) >= (item.maxStacks ?? Infinity)) return;
+        player.ownedShopItemIds.push(item.id);
+      } else {
+        if (owned < 0) return;
+        player.ownedShopItemIds.splice(owned, 1);
+      }
+      this.rebuildCreativeLoadout(client.sessionId);
+      this.sendCreativeLoadout(client);
+      return;
+    }
+
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!tower || tower.ownerId !== client.sessionId) return;
+    const equipped = tower.equippedShopItemIds.indexOf(item.id);
+    if (adding) {
+      if (equipped >= 0) return;
+      const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
+      if (!check.ok) {
+        client.send("inventory:equip-rejected", { itemId: item.id, towerId: tower.id, reason: check.reason });
+        return;
+      }
+      tower.equippedShopItemIds.push(item.id);
+      player.ownedShopItemIds.push(item.id);
+    } else {
+      if (equipped < 0) return;
+      tower.equippedShopItemIds.splice(equipped, 1);
+      const owned = player.ownedShopItemIds.indexOf(item.id);
+      if (owned >= 0) player.ownedShopItemIds.splice(owned, 1);
+    }
+    this.rebuildCreativeLoadout(client.sessionId);
+    this.sendCreativeLoadout(client);
+  }
+
+  /**
+   * Dalga numarasini dogrudan yazar.
+   *
+   * Dusman gucu tamamen `this.wave` uzerinden turedigi icin (can, kalkan, hiz,
+   * irk, ucan orani) sayiyi degistirmek o dalganin dusmanlarini getirmeye
+   * yetiyor; birikmis bir buyume durumu yok.
+   */
+  private creativeSetWave(client: Client, message: CreativeWaveMessage) {
+    if (!this.getCreativePlayer(client)) return;
+    const wave = Math.max(1, Math.min(FINAL_WAVE, Math.round(message.wave ?? this.wave)));
+    this.wave = wave;
+    this.waveSpawned = 0;
+    this.waveTarget = this.getScaledWaveEnemyCount(wave);
+    this.waveClearedAt = 0;
+    this.sendCreativeLoadout(client);
+  }
+
+  /**
+   * Istenen sayida dusman gonderir.
+   *
+   * Kurulum evresinden cikmak sart: evre acikken `updateSpawning` erken donuyor
+   * ve gonderilen dusman yerinde duruyor. Hedef sayaci da buyutuluyor, yoksa
+   * dalga "zaten dolmus" sayilip bir sonrakine gecerdi.
+   */
+  private creativeSpawnEnemies(client: Client, message: CreativeSpawnMessage) {
+    if (!this.getCreativePlayer(client)) return;
+    const count = Math.max(1, Math.min(CREATIVE_MAX_SPAWN_BURST, Math.round(message.count ?? 1)));
+    this.setupPhase = false;
+    this.setupReadyPlayerIds.clear();
+    this.waveClearedAt = 0;
+    this.waveTarget = Math.max(this.waveTarget, this.waveSpawned + count);
+    for (let index = 0; index < count; index += 1) {
+      this.spawnEnemy();
+      this.waveSpawned += 1;
+    }
   }
 
   private setTowerMode(client: Client, message: TowerModeMessage) {
@@ -8140,6 +8433,7 @@ export class MatchRoom extends Room<MatchState> {
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
       result: this.matchResult,
       setupPhase: this.setupPhase,
+      creative: this.creativeMode || undefined,
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,
