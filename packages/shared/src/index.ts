@@ -686,6 +686,7 @@ export {
   CLIENT_PROJECTILE_MAX_LIFETIME_MS,
   getLinearProjectilePosition,
   hydrateWireSnapshot,
+  mergeDynamicEnemySnapshots,
   mergeDynamicTowerSnapshots,
   isClientProjectileExpired,
   pruneStaticSnapshotCache,

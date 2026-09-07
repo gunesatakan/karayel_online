@@ -1360,6 +1360,15 @@ export class MatchRoom extends Room<MatchState> {
    */
   private lastSentTowerWire = new Map<string, Record<string, unknown>>();
   /**
+   * Her dusmana en son gonderilen tam kayit.
+   *
+   * Kuleye gore daha az sabit alan var: 132 baytin 50'si degismiyor
+   * (kimlik, zirh, lanet yuku, suphe yigini), gerisi -- konum, yol mesafesi,
+   * can, kalkan -- her karede degisiyor. Yine de 18. dalgada dusmanlar telin
+   * %63'unu kapladigi icin bu %38 en buyuk tek kalemden kesiliyor.
+   */
+  private lastSentEnemyWire = new Map<string, Record<string, unknown>>();
+  /**
    * Bir sonraki kare delta degil tam gitmeli.
    *
    * Delta yalnizca istemci onceki kareyi aldiysa dogru. Tikanma yuzunden bir
@@ -1997,9 +2006,9 @@ export class MatchRoom extends Room<MatchState> {
       // Delta burada uygulaniyor, `getSnapshot` icinde degil: o yontem hem
       // testlerden hem baska yollardan cagriliyor ve yan etkili olmasi,
       // okuyanin tam kayit sandigi yerde delta almasina yol acardi.
-      const { wire, baseline } = this.applyTowerWireDelta(snapshot);
+      const { wire, towerBaseline, enemyBaseline } = this.applyWireDelta(snapshot);
       if (this.sendSnapshotWithBackpressure(wire)) {
-        this.commitTowerWireBaseline(baseline);
+        this.commitWireBaseline(towerBaseline, enemyBaseline);
         this.recordSnapshotBroadcast(now);
       }
     }
@@ -2060,16 +2069,30 @@ export class MatchRoom extends Room<MatchState> {
    * Yeni taban dondurulyor ama yazilmiyor; yazma isi gonderim basarili
    * olunca `commitTowerWireBaseline` ile yapiliyor.
    */
-  private applyTowerWireDelta(snapshot: WireGameSnapshot) {
+  /**
+   * Bir kayit dizisini yalnizca degisen alanlara indirir.
+   *
+   * `id` her zaman kaliyor: dizi ayni zamanda **hangi varliklarin hayatta**
+   * oldugunu soyluyor, o yuzden hic degismemis bir kayit listeden dusemez.
+   * Bir alan bu karede kayboldiysa istemcideki eski degeri asili birakmamak
+   * icin acikca `null` gonderiliyor.
+   *
+   * Yeni taban dondurulyor ama yazilmiyor; yazma isi gonderim basarili
+   * olunca yapiliyor.
+   */
+  private toWireDelta<T extends { id: string }>(
+    records: readonly T[],
+    previousWire: Map<string, Record<string, unknown>>,
+    full: boolean
+  ) {
     const baseline = new Map<string, Record<string, unknown>>();
-    const full = this.towerWireNeedsFullResend;
-    const towers = snapshot.towers.map((tower) => {
-      const record = tower as unknown as Record<string, unknown>;
-      baseline.set(tower.id, record);
-      const previous = full ? undefined : this.lastSentTowerWire.get(tower.id);
-      if (!previous) return tower;
+    const wire = records.map((entry) => {
+      const record = entry as unknown as Record<string, unknown>;
+      baseline.set(entry.id, record);
+      const previous = full ? undefined : previousWire.get(entry.id);
+      if (!previous) return entry;
 
-      const delta: Record<string, unknown> = { id: tower.id };
+      const delta: Record<string, unknown> = { id: entry.id };
       for (const key of Object.keys(record)) {
         if (key === "id") continue;
         if (JSON.stringify(record[key]) !== JSON.stringify(previous[key])) delta[key] = record[key];
@@ -2077,13 +2100,28 @@ export class MatchRoom extends Room<MatchState> {
       for (const key of Object.keys(previous)) {
         if (key !== "id" && !(key in record)) delta[key] = null;
       }
-      return delta as unknown as typeof tower;
+      return delta as unknown as T;
     });
-    return { wire: { ...snapshot, towers }, baseline };
+    return { wire, baseline };
   }
 
-  private commitTowerWireBaseline(baseline: Map<string, Record<string, unknown>>) {
-    this.lastSentTowerWire = baseline;
+  private applyWireDelta(snapshot: WireGameSnapshot) {
+    const full = this.towerWireNeedsFullResend;
+    const towers = this.toWireDelta(snapshot.towers, this.lastSentTowerWire, full);
+    const enemies = this.toWireDelta(snapshot.enemies, this.lastSentEnemyWire, full);
+    return {
+      wire: { ...snapshot, towers: towers.wire, enemies: enemies.wire },
+      towerBaseline: towers.baseline,
+      enemyBaseline: enemies.baseline
+    };
+  }
+
+  private commitWireBaseline(
+    towerBaseline: Map<string, Record<string, unknown>>,
+    enemyBaseline: Map<string, Record<string, unknown>>
+  ) {
+    this.lastSentTowerWire = towerBaseline;
+    this.lastSentEnemyWire = enemyBaseline;
     this.towerWireNeedsFullResend = false;
   }
 

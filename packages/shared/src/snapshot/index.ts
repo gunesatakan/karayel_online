@@ -1,4 +1,5 @@
 import type {
+  DynamicEnemySnapshot,
   DynamicTowerSnapshot,
   EnemySnapshot,
   GameSnapshot,
@@ -38,23 +39,44 @@ export function isClientProjectileExpired(projectile: ProjectileSpawnSnapshot, s
  * Snapshotlar tamponda gecikmeli oynatiliyor ve delta zinciri gelis
  * sirasina bagli; oynatma anina birakilsa zincir bozulurdu.
  */
+function mergeDynamicRecords<T extends { id: string }>(
+  cache: Map<string, T>,
+  records: readonly T[]
+): T[] {
+  const merged: T[] = [];
+  for (const incoming of records) {
+    const previous = cache.get(incoming.id);
+    const record: Record<string, unknown> = previous ? { ...previous } : {};
+    for (const [key, value] of Object.entries(incoming)) {
+      if (value === null) delete record[key];
+      else record[key] = value;
+    }
+    const full = record as unknown as T;
+    cache.set(incoming.id, full);
+    merged.push(full);
+  }
+  return merged;
+}
+
 export function mergeDynamicTowerSnapshots(
   cache: Map<string, DynamicTowerSnapshot>,
   towers: readonly DynamicTowerSnapshot[]
 ): DynamicTowerSnapshot[] {
-  const merged: DynamicTowerSnapshot[] = [];
-  for (const tower of towers) {
-    const previous = cache.get(tower.id);
-    const record: Record<string, unknown> = previous ? { ...previous } : {};
-    for (const [key, value] of Object.entries(tower)) {
-      if (value === null) delete record[key];
-      else record[key] = value;
-    }
-    const full = record as unknown as DynamicTowerSnapshot;
-    cache.set(tower.id, full);
-    merged.push(full);
-  }
-  return merged;
+  return mergeDynamicRecords(cache, towers);
+}
+
+/**
+ * Dusman kayitlari da delta olarak geliyor.
+ *
+ * Kule kadar buyuk bir kazanc degil -- 132 baytin yalnizca 50'si sabit,
+ * cunku konum ve can her karede degisiyor. Ama 18. dalgada dusmanlar telin
+ * %63'u oldugu icin o %38 yine de en buyuk tek kalemi kirpiyor.
+ */
+export function mergeDynamicEnemySnapshots(
+  cache: Map<string, DynamicEnemySnapshot>,
+  enemies: readonly DynamicEnemySnapshot[]
+): DynamicEnemySnapshot[] {
+  return mergeDynamicRecords(cache, enemies);
 }
 
 export function hydrateWireSnapshot(
