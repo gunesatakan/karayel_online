@@ -252,6 +252,23 @@ export const cardCatalog: CardDefinition[] = [
   { id: "regulator", name: "Regülatör", description: "Performans kolunun yarısı üstündeki ısı ve enerji bedeli -%35.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("regulator", "performanceCost", -0.35)] },
   { id: "rolanti-avantaji", name: "Rölanti Avantajı", description: "Performans kolu yarısının altında olan kulelerin hasarı +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["performance:idleEdge"] },
 
+  // --- Kapsanmayan etiketler ---
+  // Kimlik kartlari uzun sure sahadaki etiketlerin yalnizca bir kismina
+  // bakiyordu. Olculdugunde eksik olanlar sunlardi: fiziksel ve hucresel hasar,
+  // lanet/dalga/kesme vurus tipleri, dairesel yapilar, aura kristali ve dps
+  // ekseni. Sonuncusu en carpicisiydi -- 37 kuleyle en kalabalik etiketti ve
+  // etiketli tek bir karti yoktu.
+  //
+  // Dairesel kart bilerek can veriyor, alan degil: `circle` sekli duvarlari ve
+  // kaynak binalarini da kapsiyor ve onlarin yaricapi yok. Alani buyuten bir
+  // kart o gruba uyar gorunup hicbir sey yapmazdi -- `hasAreaRadius`
+  // kapsaminin varlik sebebi de bu.
+  { id: "sertlestirilmis-celik", name: "Sertleştirilmiş Çelik", description: "Fiziksel kulelerin hasarı +%45.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["physical"] }, stackable: false, effects: [effect("sertlestirilmis-celik", "damage", 0.45)] },
+  { id: "hucre-cozucu", name: "Hücre Çözücü", description: "Hücresel kulelerin hasarı +%50.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["cellular"] }, stackable: false, rarity: "rare", effects: [effect("hucre-cozucu", "damage", 0.5)] },
+  { id: "bileme-tasi", name: "Bileme Taşı", description: "Kesme kulelerinin hasarı +%40, ısısı +%15.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["slash"] }, stackable: false, effects: [effect("bileme-tasi", "damage", 0.4), effect("bileme-tasi", "heat", 0.15)] },
+  { id: "yuvarlak-temel", name: "Yuvarlak Temel", description: "Dairesel yapıların canı +%60.", axes: ["barricade"], scope: { kind: "tagged", shapes: ["circle"] }, stackable: false, effects: [effect("yuvarlak-temel", "towerHealth", 0.6)] },
+  { id: "aura-damitimi", name: "Aura Damıtımı", description: "Aura kristali kullanan kulelerin mühimmat tüketimi -%45.", axes: ["economy"], scope: { kind: "tagged", ammoTypes: ["auraCrystal"] }, stackable: false, rarity: "rare", effects: [effect("aura-damitimi", "ammoCost", -0.45)] },
+
   // --- Isi ve enerji ekseni ---
   // Performans kolu zaten atis hizini isi ve enerjiyle takas ediyor ama hicbir
   // kart o kola dokunmuyordu. Bu alti kart egrinin sartlarini degistirir;

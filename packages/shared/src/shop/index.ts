@@ -220,6 +220,9 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),
+  defineItem("lanet-fitili", "Lanet Fitili", "Takıldığı kulenin durum etkisi süresi +%50; yalnızca lanet kulelerine takılır.", "class", 105, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["curse"] }, effects: [effect("lanet-fitili", "statusDuration", 0.5)] }),
+  defineItem("rezonans-odasi", "Rezonans Odası", "Takıldığı kulenin menzili +%25; yalnızca dalga kulelerine takılır.", "class", 100, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["wave"] }, effects: [effect("rezonans-odasi", "range", 0.25)] }),
+  defineItem("atis-denetleyicisi", "Atış Denetleyicisi", "Takıldığı kulenin atış hızı +%25, ısısı +%20; yalnızca dps kulelerine takılır.", "class", 115, { axes: ["dps"], scope: { kind: "tagged", axes: ["dps"] }, effects: [effect("atis-denetleyicisi", "fireRate", 0.25), effect("atis-denetleyicisi", "heat", 0.2)] }),
   defineItem("direnc-sokucu", "Direnç Sökücü", "Takıldığı kulenin vuruşlarında düşman dirençlerinin %40’ı yok sayılır.", "power", 125, { axes: ["dps"], effects: [effect("direnc-sokucu", "resistancePierce", 0.4)] }),
   defineItem("zaaf-mercegi", "Zaaf Merceği", "Takıldığı kule düşmanın zayıf olduğu hasar tipinden %50 daha çok yararlanır.", "power", 115, { axes: ["dps"], effects: [effect("zaaf-mercegi", "weaknessBonus", 0.5)] }),
   defineItem("asiri-surucu", "Aşırı Sürücü", "Takıldığı kulenin performans kolu yarısı üstündeki ısı ve enerji bedeli -%50.", "power", 130, { axes: ["dps"], effects: [effect("asiri-surucu", "performanceCost", -0.5)] }),

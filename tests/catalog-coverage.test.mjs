@@ -165,6 +165,40 @@ test("kuleye takilan esyalar aciklamasinda kuleye takildigini soyler", () => {
   }
 });
 
+/**
+ * Sahadaki her etiketin bir karsiligi olmali.
+ *
+ * "Kartlar her kapsam filtresini kullanir" testi filtrenin **turunun**
+ * kullanildigini soyluyordu, degerlerinin degil: katalog `hitTypes` kapsamini
+ * kullaniyor diye lanet, dalga ve kesme kulelerinin bir karti oldugu anlamina
+ * gelmiyordu. Olculdugunde sekiz etiket bostu ve en kalabaligi dps ekseniydi
+ * -- 37 kule, etiketli sifir icerik.
+ *
+ * `none` disarida: saldirisi olmayan yapilarin (duvar, kaynak binasi) vurus ve
+ * hasar tipi bu ve onlari etiketten kapsamak anlamsiz. O grubun karsiligi
+ * sekil ve eksen tarafinda duruyor.
+ */
+test("sahadaki her etiketin en az bir karti ya da esyasi var", () => {
+  const kapsamlar = [...cardCatalog, ...shopCatalog]
+    .filter((entry) => entry.scope.kind === "tagged")
+    .map((entry) => entry.scope);
+  const topla = (anahtar) => new Set(kapsamlar.flatMap((scope) => scope[anahtar] ?? []));
+  const sahada = (secici) => new Set(allTowers.map(secici).filter(Boolean));
+
+  const olcumler = [
+    ["vurus tipi", sahada((tower) => tower.hitType), topla("hitTypes")],
+    ["hasar tipi", sahada((tower) => tower.damageType), topla("damageTypes")],
+    ["saldiri sekli", sahada((tower) => tower.engine?.attack?.shape), topla("shapes")],
+    ["muhimmat", sahada((tower) => tower.engine?.resources?.ammoType), topla("ammoTypes")],
+    ["eksen", new Set(allTowers.flatMap((tower) => tower.axes ?? [])), topla("axes")]
+  ];
+
+  for (const [ad, sahadakiler, kapsananlar] of olcumler) {
+    const eksik = [...sahadakiler].filter((deger) => deger !== "none" && !kapsananlar.has(deger));
+    assert.deepEqual(eksik, [], `${ad}: sahada var ama hicbir kart/esya kapsamiyor -> ${eksik.join(", ")}`);
+  }
+});
+
 test("kart ve esya kimlikleri benzersiz", () => {
   const cardIds = cardCatalog.map((card) => card.id);
   assert.equal(new Set(cardIds).size, cardIds.length, "yinelenen kart kimligi var");
