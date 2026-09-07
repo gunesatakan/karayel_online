@@ -22,6 +22,12 @@ function kur(cardId, definitionId = "warrior-1") {
   assert.ok(spot);
   room.placeTower(client, { ...spot, definitionId });
   const tower = [...room.towers.values()][0];
+  // Kritik zari kapatiliyor.
+  //
+  // Hasar okumasi kritikle birlikte rastgele: iki cagriyi karsilastiran bir
+  // test, ikisinden birinde kritik cikinca sebepsiz düşüyordu. Olculen sey
+  // bonusun kendisi, sansin degil.
+  room.towerCriticalRandom = () => 1;
   const player = room.state.players.get("p1");
   if (cardId) {
     const card = cardCatalog.find((candidate) => candidate.id === cardId);

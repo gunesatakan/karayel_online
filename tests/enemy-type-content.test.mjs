@@ -42,6 +42,12 @@ function vurus(tur, modifiers) {
   assert.ok(spot);
   room.placeTower(client, { ...spot, definitionId });
   const tower = [...room.towers.values()][0];
+  // Kritik zari kapatiliyor.
+  //
+  // Hasar okumasi kritikle birlikte rastgele: iki cagriyi karsilastiran bir
+  // test, ikisinden birinde kritik cikinca sebepsiz düşüyordu. Olculen sey
+  // bonusun kendisi, sansin degil.
+  room.towerCriticalRandom = () => 1;
   room.state.players.get("p1").runModifiers = modifiers;
   room.invalidateTowerGrants();
 

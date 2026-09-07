@@ -282,6 +282,16 @@ const COLD_START_DAMAGE = 0.6;
 const SELF_SUFFICIENT_DAMAGE = 0.25;
 /** Dalga sonunda nexusa yazilan can. */
 const NEXUS_MEND_HEAL = 4;
+/**
+ * Ucube'nin elektriginin atlayabilecegi en uzak mesafe (dunya birimi).
+ *
+ * Kule izgarasinin iki kare kadari. Sinirsiz birakildiginda sekme
+ * "yakindakine atlayan elektrik" olmaktan cikip haritanin herhangi bir
+ * yerine uzanan bir baglantiya donusuyordu.
+ */
+const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 2;
+/** Tek vurusta kac dusmana sekiyor. */
+const UCUBE_CHAIN_TARGETS = 2;
 /** Genis arama acikken gosterilen kart sayisi. */
 const WIDE_SEARCH_CARD_COUNT = 4;
 /** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
@@ -2872,7 +2882,17 @@ export class MatchRoom extends Room<MatchState> {
       vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * speed : (dy / length) * speed,
       damage: this.getTowerDamage(tower),
       maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
-      aoeRadius: this.scaleWorldDistance(this.getTowerAoeRadius(tower) + (tower.level - 1) * 5),
+      // Seviye buyumesi yalnizca **zaten alani olan** kuleye isliyor.
+      //
+      // Buyume kosulsuz eklenirken tek hedefe atan bir kule seviye atladikca
+      // sessizce alan silahina donusuyordu: Hiza Emri tanimda 0 yaricap
+      // bildirdigi halde mermisi 2. seviyede 5, 10. seviyede 45 birimlik bir
+      // patlama tasiyordu -- kule izgarasinin bir buçuk karesi. Delip iki
+      // dusmana carpmasi gereken bir mermi surunun ortasina dustugunde
+      // hepsini birden oldurüyordu.
+      aoeRadius: this.getTowerAoeRadius(tower) > 0
+        ? this.scaleWorldDistance(this.getTowerAoeRadius(tower) + (tower.level - 1) * 5)
+        : 0,
       slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 90,
       pierceLimit: this.getTowerEngine(tower)?.attack.pierceCount ?? 1,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
@@ -9608,13 +9628,27 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (hasUcubePerk(tower, "chain")) {
+      // Sekme yakinliga bakiyor, yolun sirasina degil.
+      //
+      // Once yalnizca hedefin **arkasindaki** dusmanlar seciliyordu ve
+      // mesafe hic bakilmiyordu. Iki sonucu vardi: kule surunun en
+      // gerisindeki dusmani vurdugunda hicbir sey sekmiyordu -- oyuncunun
+      // gordugu "bazen calisiyor bazen calismiyor" buydu -- ve sektiginde
+      // haritanin obur ucundaki bir dusmana da sekebiliyordu.
+      //
+      // Yakinlik olcutu ayrica sekmenin ne oldugunu anlatiyor: elektrik
+      // atliyor, siraya girmiyor.
+      const chainRadius = this.scaleWorldDistance(UCUBE_CHAIN_RADIUS);
+      const chainRadiusSq = chainRadius * chainRadius;
       const chainedEnemies = Array.from(this.enemies.values())
-        .filter((enemy) => {
+        .map((enemy) => {
           this.perfCounters.chainChecks += 1;
-          return enemy.id !== target.id && enemy.pathDistance < target.pathDistance;
+          return { enemy, distanceSq: distanceSq(enemy.x, enemy.y, target.x, target.y) };
         })
-        .sort((a, b) => b.pathDistance - a.pathDistance)
-        .slice(0, 2);
+        .filter((entry) => entry.enemy.id !== target.id && entry.distanceSq <= chainRadiusSq)
+        .sort((a, b) => a.distanceSq - b.distanceSq)
+        .slice(0, UCUBE_CHAIN_TARGETS)
+        .map((entry) => entry.enemy);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
         this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id, projectile.hitType);
