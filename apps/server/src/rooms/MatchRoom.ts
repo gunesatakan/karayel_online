@@ -177,6 +177,7 @@ import {
   shouldRetainAimTargetLock,
   usesLinearBallistics,
   rotateTowerTowards,
+  canRefundTowerPurchase,
   getTowerSellRefund,
   getTowerBuildCost,
   getTowerAttackRadius,
@@ -755,6 +756,10 @@ type TowerModel = {
   ownerName: string;
   characterId: CharacterId;
   definition: TowerDefinition;
+  /** Kurulurken odenen altin; kurulum icinde geri alinirsa bu iade ediliyor. */
+  buildGold: number;
+  /** Kuruldugu kurulum arasi; dalga sirasinda kurulduysa yok. */
+  builtInSetupSession?: number;
   x: number;
   y: number;
   orientation: TowerOrientation;
@@ -1390,6 +1395,15 @@ export class MatchRoom extends Room<MatchState> {
   private stage = 1;
   private setupPhase = true;
   /**
+   * Kacinci kurulum arasindayiz.
+   *
+   * Her kurulum evresi acildiginda artiyor. Dalga numarasini kullanmak
+   * yeterli gorunuyor ama degil: yaratici mod kurulum evresini dalga
+   * numarasina dokunmadan kapatip acabiliyor, ve o durumda onceki aranin
+   * kuleleri yeni arada geri alinabilir hale gelirdi.
+   */
+  private setupSession = 1;
+  /**
    * Yaratici mod: bedava kule, serbest seviye, kart ve esya anahtarlari.
    *
    * Yalnizca dogrudan baslatilan tek kisilik odada aciliyor. Lobiden gecen bir
@@ -1791,6 +1805,7 @@ export class MatchRoom extends Room<MatchState> {
     this.configureArenaForScale();
     this.gameStarted = true;
     this.setupPhase = true;
+    this.setupSession += 1;
     this.setupReadyPlayerIds.clear();
     this.syncRoomRegistry();
     this.broadcastLobbyState();
@@ -2265,6 +2280,7 @@ export class MatchRoom extends Room<MatchState> {
         if (this.playerHasUnlock(playerId, "goldInterest")) player.gold += Math.min(60, Math.floor(player.gold * 0.08));
       }
       this.setupPhase = true;
+      this.setupSession += 1;
       this.setupReadyPlayerIds.clear();
       for (const player of this.state.players.values()) player.shopOffers = [];
       this.offerWaveCards();
@@ -5677,6 +5693,8 @@ export class MatchRoom extends Room<MatchState> {
       ownerName: player.name,
       characterId: player.characterId,
       definition,
+      buildGold: buildCost,
+      builtInSetupSession: this.setupPhase ? this.setupSession : undefined,
       x: placement.x,
       y: placement.y,
       orientation,
@@ -5816,10 +5834,17 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const refund = Math.floor(
-      getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id)
-        * getModifierMultiplier(this.getTowerRunModifiers(tower), "sellRefund")
-    );
+    // Ayni kurulum arasinda kurulmus kule alim bedeliyle geri doner ve
+    // iade carpani **islemez**. Isleseydi "Hurda Pazari" ile kur-sat
+    // dongusu bedelin %150'sini basardi; kurulum arasi bir plan kurma ani
+    // olmaktan cikip altin makinesine donerdi.
+    const undoable = canRefundTowerPurchase(tower, this.setupPhase, this.setupSession);
+    const refund = undoable
+      ? tower.buildGold
+      : Math.floor(
+        getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id)
+          * getModifierMultiplier(this.getTowerRunModifiers(tower), "sellRefund")
+      );
     player.gold += refund;
     player.goldSpent = Math.max(0, player.goldSpent - refund);
     if (occupiesTowerSlot(tower.definition)) {
@@ -8712,6 +8737,7 @@ export class MatchRoom extends Room<MatchState> {
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
       result: this.matchResult,
       setupPhase: this.setupPhase,
+      setupSession: this.setupSession,
       creative: this.creativeMode || undefined,
       stage: this.stage,
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),

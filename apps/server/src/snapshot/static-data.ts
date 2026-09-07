@@ -16,6 +16,8 @@ type TowerStaticSource = {
   y: number;
   orientation?: StaticTowerSnapshot["orientation"];
   ammoType?: StaticTowerSnapshot["ammoType"];
+  buildGold?: number;
+  builtInSetupSession?: number;
   definition: {
     id: string;
     name: string;
@@ -50,6 +52,8 @@ export function createStaticTowerSnapshot(tower: TowerStaticSource, coolingRate 
     x: tower.x,
     y: tower.y,
     orientation: tower.orientation,
+    buildGold: tower.buildGold,
+    builtInSetupSession: tower.builtInSetupSession,
     color: tower.definition.color,
     ammoType: tower.ammoType,
     shotFuel: tower.definition.engine?.resources.shotFuel,

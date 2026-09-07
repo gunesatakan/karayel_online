@@ -36,6 +36,7 @@ import {
   getTowerTier,
   getTowerBuildCost,
   PLAYER_TOWER_LIMIT,
+  canRefundTowerPurchase,
   getTowerSellRefund,
   getTowerLevelExpCost,
   getTowerLevelGoldCost,
@@ -2632,10 +2633,27 @@ export class GameScene extends Phaser.Scene {
     return tower.id === this.selectedPlacedTowerId && tower.ownerId === this.localSessionId;
   }
 
-  /** Satistan donecek altin; dugmenin uzerinde yaziyor. */
-  private getSelectedTowerRefund(tower: TowerSnapshot) {
+  /**
+   * Satistan donecek altin ve bunun bir geri alim olup olmadigi.
+   *
+   * Tek yerden hesaplaniyor cunku ayni sayi uc ayri yerde yaziyor -- kule
+   * uzerindeki dugme, cekmecedeki dugme ve istatistik satiri. Ucu ayri
+   * hesaplasaydi biri gunun birinde otekinden farkli bir sayi gosterirdi.
+   */
+  private getTowerRefundState(tower: TowerSnapshot) {
+    const undoable = canRefundTowerPurchase(
+      tower,
+      this.latestPerfSnapshot?.setupPhase,
+      this.latestPerfSnapshot?.setupSession
+    );
+    if (undoable) {
+      return { amount: Math.max(0, Math.round(tower.buildGold ?? 0)), undoable: true };
+    }
     const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
-    return definition ? getTowerSellRefund(definition.cost, tower.level, definition.id) : 0;
+    return {
+      amount: definition ? getTowerSellRefund(definition.cost, tower.level, definition.id) : 0,
+      undoable: false
+    };
   }
 
   /**
@@ -5032,6 +5050,7 @@ export class GameScene extends Phaser.Scene {
       .setVisible(hasMisfortune);
     this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
+    const refundState = this.getTowerRefundState(tower);
     this.selectedSellText = this.selectedSellText ?? this.add.text(0, 0, "", {
       fontFamily: "Rajdhani, Arial",
       fontSize: "13px",
@@ -5039,7 +5058,7 @@ export class GameScene extends Phaser.Scene {
       color: "#fecdd3"
     }).setOrigin(0.5).setDepth(67);
     this.selectedSellText
-      .setText(sell ? `Sat  +${this.getSelectedTowerRefund(tower)}g` : "")
+      .setText(sell ? `${refundState.undoable ? "Geri Al" : "Sat"}  +${refundState.amount}g` : "")
       .setPosition(sell ? sell.x + sell.width / 2 : 0, sell ? sell.y + sell.height / 2 : 0)
       .setVisible(Boolean(sell));
 
@@ -6982,7 +7001,8 @@ export class GameScene extends Phaser.Scene {
       : undefined;
     const upgradeCost = definition ? getTowerLevelExpCost(definition.cost, selectedTower?.level ?? 1) : 0;
     const upgradeGoldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower?.level ?? 1) : 0;
-    const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
+    const refundState = selectedTower ? this.getTowerRefundState(selectedTower) : undefined;
+    const sellRefund = refundState?.amount ?? 0;
     const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10
       && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost
       && (this.localPlayerSnapshot?.gold ?? 0) >= upgradeGoldCost);
@@ -7147,7 +7167,10 @@ export class GameScene extends Phaser.Scene {
         enabled: canUpgrade
       },
       sell: {
-        label: canSell ? `Sat ${sellRefund}g` : "Sat",
+        // "Geri Al" ve "Sat" ayni dugme ama ayni sey degil: biri alimi
+        // iptal ediyor, digeri zarara satiyor. Oyuncunun hangisini
+        // yaptigini basmadan once bilmesi gerekiyor.
+        label: canSell ? `${refundState?.undoable ? "Geri Al" : "Sat"} ${sellRefund}g` : "Sat",
         enabled: canSell
       },
       repair: repairState,
@@ -7169,7 +7192,7 @@ export class GameScene extends Phaser.Scene {
           `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
         ] : []),
         selectedTower.level < 10 ? `Sonraki: ${upgradePriceLabel} | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP, ${Math.floor(this.localPlayerSnapshot?.gold ?? 0)}g` : "Maksimum level",
-        canSell ? `Satis: ${sellRefund}g` : "Sadece sahibi satar"
+        canSell ? `${refundState?.undoable ? "Kurulum iadesi" : "Satis"}: ${sellRefund}g` : "Sadece sahibi satar"
       ] : undefined
     });
   }
@@ -7199,7 +7222,7 @@ export class GameScene extends Phaser.Scene {
     const cost = definition ? getTowerLevelExpCost(definition.cost, selectedTower.level) : 0;
     const goldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower.level) : 0;
     const upgradePriceLabel = `${cost} XP${goldCost > 0 ? ` + ${goldCost}g` : ""}`;
-    const sellRefund = definition ? getTowerSellRefund(definition.cost, selectedTower.level, definition.id) : 0;
+    const sellRefund = this.getTowerRefundState(selectedTower).amount;
     const ownsTower = selectedTower.ownerId === this.localSessionId;
     const canUpgrade = ownsTower && selectedTower.level < 10
       && (this.localPlayerSnapshot?.experience ?? 0) >= cost

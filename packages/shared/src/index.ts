@@ -437,6 +437,23 @@ export type TowerSnapshot = {
   x: number;
   y: number;
   orientation?: "horizontal" | "vertical";
+  /**
+   * Kule kurulurken odenen altin.
+   *
+   * Formulden yeniden hesaplanmiyor, odenen sayi tasiniyor: kurulum
+   * icinde geri alinan kule tam olarak odenen kadar iade ediyor ve
+   * bedava kurulan kule (yaratici mod) sifir iade ediyor. Tureterek
+   * hesaplasaydik ikisi de yanlis olurdu.
+   */
+  buildGold?: number;
+  /**
+   * Kulenin kuruldugu kurulum oturumu; dalga arasinda kurulmadiysa yok.
+   *
+   * Dalga numarasi degil ayri bir sayac, cunku onemli olan "hangi ara"
+   * oldugu; yaratici mod kurulum evresini elle acip kapatabiliyor ve
+   * dalga numarasi ayni kalabiliyor.
+   */
+  builtInSetupSession?: number;
   /** Radians toward the current target. Only sent for towers that aim. */
   facing?: number;
   level: number;
@@ -500,7 +517,7 @@ export type StaticTowerSnapshot = Required<Pick<TowerSnapshot,
   "name" | "x" | "y" | "color"
 >> & Pick<TowerSnapshot,
   "orientation" | "ammoType" | "shotFuel" | "operatingEnergyPerSecond" |
-  "resourceProvider" | "coolingRate"
+  "resourceProvider" | "coolingRate" | "buildGold" | "builtInSetupSession"
 >;
 export type DynamicTowerSnapshot = Omit<TowerSnapshot, keyof StaticTowerSnapshot> & { id: string };
 
@@ -671,6 +688,8 @@ export type GameSnapshot = {
   result?: "victory" | "defeat";
   team: TeamSnapshot;
   setupPhase?: boolean;
+  /** Su anki kurulum arasinin sayaci; kule iadesi bununla karsilastiriliyor. */
+  setupSession?: number;
   setupReadyPlayerIds?: string[];
   /** Yaratici mod acik: istemci serbest kurulum panelini gosterir. */
   creative?: boolean;
@@ -1109,6 +1128,27 @@ export function getTowerTotalInvestedGold(towerCost: number, currentLevel: numbe
 
 export function getTowerSellRefund(towerCost: number, currentLevel: number, towerId?: string) {
   return Math.floor(getTowerTotalInvestedGold(towerCost, currentLevel, towerId) / 2);
+}
+
+/**
+ * Kule alimi geri alinabilir mi.
+ *
+ * Dalga arasinda kurulan kule, **ayni ara icinde** tam bedeliyle geri
+ * verilebiliyor. Kurulum bir plan kurma ani; yanlis kareye birakilan bir
+ * kulenin bedeli yarim altin olmamali. Dalga basladigi anda karar
+ * baglaniyor: artik satis, alimin geri alinmasi degil, kayipla elden
+ * cikarma.
+ *
+ * Onceki aradan kalan kule muaf: sayac esitligi tam da bunu tutuyor.
+ */
+export function canRefundTowerPurchase(
+  tower: { builtInSetupSession?: number },
+  setupPhase: boolean | undefined,
+  setupSession: number | undefined
+) {
+  return Boolean(setupPhase)
+    && tower.builtInSetupSession !== undefined
+    && tower.builtInSetupSession === setupSession;
 }
 
 export {
