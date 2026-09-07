@@ -417,6 +417,23 @@ function getCardTowerAreaRadius(tower: CardTowerProfile) {
   return tower.engine?.attack.radius ?? tower.aoeRadius ?? 0;
 }
 
+/**
+ * Hedefli kart bu yapiya takilabilir mi.
+ *
+ * Hedefli kartlarin hepsi savas istatistigi: hasar, atis hizi, isabet,
+ * donus hizi, menzil, hedef kilitleme. Hicbiri hic ates etmeyen bir yapida
+ * bir sey yapmaz. Duvar secim listesinde durdugu surece oyuncu kartini bir
+ * hicligin uzerine harciyor ve bunu ancak is islendikten sonra anliyor --
+ * kart kuleye kalici bagli, geri alinmiyor.
+ *
+ * Olcut "duvar mi" degil "vurusu var mi". Ileride ates etmeyen baska bir
+ * yapi eklenirse kural onu da kapsar; kimsenin bu satiri hatirlamasi
+ * gerekmez. Kaynak binalari zaten ayni olcutten eleniyor.
+ */
+export function canTowerHoldTargetedCard(tower: CardTowerProfile) {
+  return tower.hitType !== "none" && !tower.resourceProvider;
+}
+
 export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
   if (tower.resourceProvider) return false;
   if (card.scope.kind !== "tagged") return true;

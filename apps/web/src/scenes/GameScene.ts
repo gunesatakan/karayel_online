@@ -54,6 +54,7 @@ import {
   normalizeMapData,
   pruneStaticSnapshotCache,
   worldToGrid,
+  canTowerHoldTargetedCard,
   towerCatalog,
   type CharacterDefinition,
   type CardDefinition,
@@ -3391,10 +3392,23 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Kule hedefli kart tasiyabilir mi.
+   *
+   * Olcut sunucudakiyle ayni fonksiyondan geliyor. Arayuzun de suzmesi
+   * sart: sunucu zaten reddediyor ama oyuncunun once secip sonra
+   * reddedilmesi, listede hic gormemesinden cok daha kotu.
+   */
+  private canTowerHoldCard(tower: TowerSnapshot) {
+    const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
+    return definition ? canTowerHoldTargetedCard(definition) : false;
+  }
+
   private showTargetedTowerChoices(card: CardDefinition) {
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     if (!root) return;
-    const towers = (this.latestPerfSnapshot?.towers ?? []).filter((tower) => tower.ownerId === this.localSessionId && !tower.resourceProvider);
+    const towers = (this.latestPerfSnapshot?.towers ?? [])
+      .filter((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(tower));
     const panel = root.querySelector<HTMLElement>(".card-draft__panel");
     if (!panel) return;
     panel.classList.add("card-draft__panel--targets");
@@ -3410,6 +3424,14 @@ export class GameScene extends Phaser.Scene {
     const currentChoices = [...this.cardChoices];
     panel.querySelector(".card-draft__back")?.addEventListener("click", () => this.showCardChoices(currentChoices));
     const list = panel.querySelector<HTMLElement>(".tower-choice-list");
+    if (towers.length === 0) {
+      // Cikmaz sokak birakmamak icin: elinde yalnizca duvar ve kaynak
+      // binasi olan oyuncu bos bir listeye bakip ne yapacagini bilemezdi.
+      const empty = document.createElement("p");
+      empty.className = "tower-choice-empty";
+      empty.textContent = "Bu kartı taşıyabilecek bir kulen yok. Duvarlar ve kaynak binaları savaş kartı alamaz — geri dön ve başka bir kart seç.";
+      list?.append(empty);
+    }
     towers.forEach((tower) => {
       const button = document.createElement("button");
       button.type = "button";

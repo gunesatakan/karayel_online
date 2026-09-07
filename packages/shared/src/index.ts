@@ -833,6 +833,7 @@ export {
   RUN_HOT_DAMAGE_PER_DEGREE,
   RUN_HOT_HEAT_LOCK_THRESHOLD,
   cardCatalog,
+  canTowerHoldTargetedCard,
   cardAppliesToTower,
   drawCards,
   getCardDefinition,

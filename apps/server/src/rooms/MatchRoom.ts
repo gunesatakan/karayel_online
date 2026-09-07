@@ -131,6 +131,7 @@ import {
   canAcceptTargetedCard,
   canEquipShopItem,
   isGlobalShopItem,
+  canTowerHoldTargetedCard,
   cardAppliesToTower,
   cardCatalog,
   drawCards,
@@ -2383,7 +2384,11 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (card.scope.kind === "targeted") {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-      if (!tower || tower.ownerId !== client.sessionId || tower.definition.resourceProvider || !canAcceptTargetedCard(tower.targetedCardIds)) {
+      // Kaynak binasi ve duvar ayni olcutle eleniyor: ates etmeyen yapi
+      // savas karti tasiyamaz.
+      if (!tower || tower.ownerId !== client.sessionId
+        || !canTowerHoldTargetedCard(tower.definition)
+        || !canAcceptTargetedCard(tower.targetedCardIds)) {
         client.send("card:rejected", { reason: "Seçilen kule bu kartı alamıyor. Başka bir kule seç." });
         client.send("card:choices", choices);
         return;
