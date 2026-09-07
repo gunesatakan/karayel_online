@@ -58,7 +58,13 @@ export type Unlock =
   // ust yari atis hizini ikiye katlarken isiyi dorde katliyor ve bu egim
   // pazarlik konusu degildi. Bu kilit alt yariya bir odul veriyor, yani
   // kolu asagida tutmak da bir secim oluyor.
-  | "performance:idleEdge";
+  | "performance:idleEdge"
+  // --- Elle cekilen ama karsiligi olmayan kollar ---
+  // Nexus cani yalnizca harcanabiliyordu, bekleme modunun tek karsiligi
+  // dusuk enerjiydi, muhimmat lojistigi anahtarinin iki tarafi arasinda fark
+  // yoktu ve kart secimi her zaman uc secenekti. Dordu de oyuncunun eline
+  // verilmis kollardi ama hicbiri bir seye baglanmiyordu.
+  | "nexus:mend" | "tower:coldStart" | "logistics:selfSufficient" | "card:wideSearch";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -75,7 +81,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   // ekleme yapmak eski istemcilerde baska bir kilidi acardi.
   "heat:radiator", "heat:quickRelease", "heat:killVent",
   "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent",
-  "performance:idleEdge"
+  "performance:idleEdge",
+  "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch"
 ];
 
 /**
@@ -89,18 +96,35 @@ export const ALL_UNLOCKS: Unlock[] = [
  * Sira `ALL_UNLOCKS` tarafindan belirlenir; listenin ortasina ekleme yapmak eski
  * istemcilerle uyumu bozar, o yuzden yeni kilitler sona eklenir.
  */
-export const MAX_ENCODABLE_UNLOCKS = 31;
+/**
+ * Maskeye sigan en fazla kilit sayisi.
+ *
+ * Tavan bir donem 31'di cunku kodlama `1 << index` kullaniyordu: JavaScript'te
+ * bit islemleri sayiyi 32 bitlik isaretli tam sayiya kirpiyor ve 31. bit isaret
+ * biti. Liste 34'e cikinca sondaki kilitler sessizce kaybolacakti -- test tam
+ * bunu yakalamak icin yazilmisti ve yakaladi.
+ *
+ * Cozum tel bicimini degistirmeden geldi: bit islemi yerine `2 ** index` ve
+ * bolme. Alan yine tek bir sayi, ama tavan artik tam sayilarin bozulmadan
+ * tutuldugu sinir, yani 53 kilit. Bu yol yalnizca kilit **sayisi** azken degil
+ * her zaman dogru; bit islemine geri donmek sessiz veri kaybini geri getirir.
+ */
+export const MAX_ENCODABLE_UNLOCKS = 53;
 
-const unlockBitByName = new Map(ALL_UNLOCKS.map((unlock, index) => [unlock, 1 << index]));
+const unlockBitByName = new Map(ALL_UNLOCKS.map((unlock, index) => [unlock, 2 ** index]));
 
 export function encodeUnlocks(unlocks: Iterable<Unlock>) {
+  // Her kilidin degeri ayri bir ikinin kuvveti oldugu icin toplama, bit
+  // birlestirmesiyle ayni sonucu veriyor -- ama 32 bitte kirpilmiyor.
   let bits = 0;
-  for (const unlock of unlocks) bits |= unlockBitByName.get(unlock) ?? 0;
+  for (const unlock of new Set(unlocks)) bits += unlockBitByName.get(unlock) ?? 0;
   return bits;
 }
 
 export function hasUnlockBit(bits: number | undefined, unlock: Unlock) {
-  return ((bits ?? 0) & (unlockBitByName.get(unlock) ?? 0)) !== 0;
+  const bit = unlockBitByName.get(unlock);
+  if (!bit) return false;
+  return Math.floor((bits ?? 0) / bit) % 2 === 1;
 }
 
 export function decodeUnlocks(bits: number | undefined) {
@@ -232,6 +256,17 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.05)] },
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
+
+  // --- Elle cekilen kollar ---
+  // Dordu de oyuncunun elinde duran ama hicbir seye baglanmayan anahtarlardi.
+  // Ikisi anahtarin **az kullanilan** tarafini oduluyor: bekleme modu ve
+  // lojistigi kapatmak. Bir anahtarin iki tarafi da bir sey vermiyorsa o
+  // anahtar bir karar degil, bir sustur.
+  { id: "nexus-tamiri", name: "Nexus Tamiri", description: "Her dalga sonunda nexus 4 can yeniler.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["nexus:mend"] },
+  { id: "soguk-kalkis", name: "Soğuk Kalkış", description: "Beklemeden uyanan kule 4 saniye boyunca +%60 hasar verir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["tower:coldStart"] },
+  { id: "kendi-kendine-yeten", name: "Kendi Kendine Yeten", description: "Mühimmat lojistiği kapalı kulelerin hasarı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["logistics:selfSufficient"] },
+  { id: "genis-arama", name: "Geniş Arama", description: "Kart seçiminde 3 yerine 4 seçenek görünür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["card:wideSearch"] },
+  { id: "tezgah-iliskisi", name: "Tezgâh İlişkisi", description: "Mağaza yenileme bedeli -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("tezgah-iliskisi", "shopRerollCost", -0.4)] },
 
   // --- Ilerleme ve bakim ---
   // Bu bes kol oyunun her turunda cekiliyor ama hicbiri icerige bagli

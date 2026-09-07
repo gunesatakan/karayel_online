@@ -60,6 +60,8 @@ export type ModifierStat =
   | "workerHireCost"
   /** Ultinin hasar carpani. Sarj hizinin karsiligi vardi, gucun yoktu. */
   | "ultimateDamage"
+  /** Magaza yenileme bedeli; negatif deger ucuzlatir. */
+  | "shopRerollCost"
   | "targetLockMs"
   /** Ulti sarj hizi carpani. Beceriler ve ulti roguelike katmanina bu iki statla baglanir. */
   | "ultimateCharge"

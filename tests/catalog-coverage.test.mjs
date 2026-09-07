@@ -36,7 +36,8 @@ const ALL_STATS = [
   "performanceCost", "resistancePierce", "weaknessBonus",
   "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs",
   "damageVsGrunt", "damageVsRunner", "damageVsShooter", "damageVsSiege",
-  "experienceGain", "repairCost", "sellRefund", "workerHireCost", "ultimateDamage"
+  "experienceGain", "repairCost", "sellRefund", "workerHireCost", "ultimateDamage",
+  "shopRerollCost"
 ];
 
 /**

@@ -56,6 +56,32 @@ test("kilitler bit maskesine sigar ve maske tur kaybetmeden gidip gelir", () => 
   }
 });
 
+/**
+ * Maske 32. bitin otesinde de calisiyor.
+ *
+ * Kodlama bir donem `1 << index` kullaniyordu ve JavaScript bit islemlerini 32
+ * bitlik isaretli tam sayiya kirpiyor: 31. sirada duran kilit isaret bitine
+ * dusuyor, sonrakiler tumden kayboluyordu. Sessiz bir kayipti -- hicbir yerde
+ * hata vermeden kule kilitleri eksik gorunurdu.
+ *
+ * Bu test listenin **sonundaki** kilitleri ayrica sinamak icin var: liste
+ * kisayken uctaki bitler hic denenmiyordu.
+ */
+test("maske otuz ikinci bitin otesinde de kilit tasir", () => {
+  const sondakiler = ALL_UNLOCKS.slice(-4);
+  assert.ok(ALL_UNLOCKS.length > 31, `liste henuz eski tavanin altinda: ${ALL_UNLOCKS.length}`);
+
+  const bits = encodeUnlocks(sondakiler);
+  assert.ok(Number.isSafeInteger(bits), `maske guvenli tam sayi araligini asti: ${bits}`);
+  assert.deepEqual(decodeUnlocks(bits), sondakiler);
+  for (const unlock of ALL_UNLOCKS) {
+    assert.equal(hasUnlockBit(bits, unlock), sondakiler.includes(unlock), `${unlock} maskede yanlis`);
+  }
+
+  // Tam liste de bozulmadan gidip gelmeli: en pahali durum bu.
+  assert.ok(Number.isSafeInteger(encodeUnlocks(ALL_UNLOCKS)));
+});
+
 test("kilit listesi tip birlesimiyle ayni", () => {
   assert.equal(new Set(ALL_UNLOCKS).size, ALL_UNLOCKS.length, "yinelenen kilit var");
   const declared = new Set();

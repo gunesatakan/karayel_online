@@ -273,6 +273,15 @@ const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
 const KILL_VENT_HEAT = 4;
 /** Rolanti odulunun hasar payi: kol yarinin altindayken. */
 const PERFORMANCE_IDLE_EDGE_DAMAGE = 0.3;
+/** Beklemeden uyanan kulenin hasar penceresi ve payi. */
+const COLD_START_WINDOW_MS = 4000;
+const COLD_START_DAMAGE = 0.6;
+/** Lojistigi kapali kulenin hasar payi. */
+const SELF_SUFFICIENT_DAMAGE = 0.25;
+/** Dalga sonunda nexusa yazilan can. */
+const NEXUS_MEND_HEAL = 4;
+/** Genis arama acikken gosterilen kart sayisi. */
+const WIDE_SEARCH_CARD_COUNT = 4;
 /** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
 const CHILL_VENT_COOLING_BONUS = 0.5;
 /**
@@ -2169,7 +2178,12 @@ export class MatchRoom extends Room<MatchState> {
   private offerWaveCards() {
     for (const [playerId, player] of this.state.players.entries()) {
       const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
-      const choices = drawCards({ preferredAxes: getCharacterCardAxes(player.characterId), towers, ownedCardIds: player.ownedCardIds });
+      const choices = drawCards({
+        preferredAxes: getCharacterCardAxes(player.characterId),
+        towers,
+        ownedCardIds: player.ownedCardIds,
+        count: this.playerHasUnlock(playerId, "card:wideSearch") ? WIDE_SEARCH_CARD_COUNT : undefined
+      });
       if (choices.length === 0) {
         this.openPlayerSetupShop(playerId, player);
         continue;
@@ -2234,6 +2248,9 @@ export class MatchRoom extends Room<MatchState> {
       this.spawnCooldownMs = 350;
       for (const playerId of this.state.players.keys()) {
         if (this.ownerHasTowerUnlock(playerId, "bloodBank") && this.teamHealth > 5) this.teamHealth -= 5;
+        if (this.playerHasUnlock(playerId, "nexus:mend")) {
+          this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + NEXUS_MEND_HEAL);
+        }
       }
     }
   }
@@ -4692,7 +4709,7 @@ export class MatchRoom extends Room<MatchState> {
   private rerollShop(client: Client) {
     const player = this.state.players.get(client.sessionId);
     if (!player || !this.setupPhase) return;
-    const price = getShopRerollPrice(player.shopRerolls);
+    const price = Math.ceil(getShopRerollPrice(player.shopRerolls) * getModifierMultiplier(player.runModifiers, "shopRerollCost"));
     if (player.gold < price) return;
     player.gold -= price;
     player.goldSpent += price;
@@ -6907,6 +6924,21 @@ export class MatchRoom extends Room<MatchState> {
     if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "performance:idleEdge") && isTowerPerformanceIdle(damageSourceTower.performance)) {
       shopDamageAdd += PERFORMANCE_IDLE_EDGE_DAMAGE;
     }
+    // Soguk kalkis: bekleme modundan cikan kulenin ilk saniyeleri.
+    //
+    // Ayri bir zaman damgasi tutulmuyor -- `wakeReadyAt` zaten uyanma anini
+    // tasiyor ve bir sonraki beklemeye kadar orada duruyor. Sifir olmasi
+    // kulenin o an beklemede oldugu anlamina geliyor, o yuzden pencere
+    // yalnizca pozitif degerde aciliyor.
+    if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "tower:coldStart")
+      && damageSourceTower.wakeReadyAt > 0 && now < damageSourceTower.wakeReadyAt + COLD_START_WINDOW_MS) {
+      shopDamageAdd += COLD_START_DAMAGE;
+    }
+    // Kendi kendine yeten: lojistigi kapatmak bir karar olsun. Anahtarin bir
+    // tarafi hicbir sey vermiyorsa o anahtar bir karar degil, bir sustur.
+    if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "logistics:selfSufficient") && !damageSourceTower.ammoLogisticsEnabled) {
+      shopDamageAdd += SELF_SUFFICIENT_DAMAGE;
+    }
     const critical = damageSourceTower ? this.getTowerEngine(damageSourceTower)?.critical : undefined;
     // Soguk Celik: kule sogukken nisan alma sansi artar. Kizgin Namlu ile
     // kasten ters yonde calisir; ikisini birden almak kendi kendini bozar.
@@ -8334,7 +8366,7 @@ export class MatchRoom extends Room<MatchState> {
         ownedShopItemIds: [...player.ownedShopItemIds],
         inventoryItemIds: [...player.inventoryItemIds],
         shopOffers: player.shopOffers,
-        shopRerollPrice: getShopRerollPrice(player.shopRerolls),
+        shopRerollPrice: Math.ceil(getShopRerollPrice(player.shopRerolls) * getModifierMultiplier(player.runModifiers, "shopRerollCost")),
         towersBuilt: player.towersBuilt,
         towerLimit: this.getPlayerTowerLimit(player),
         ultimateCharge: Math.round(player.ultimateCharge),
