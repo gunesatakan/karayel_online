@@ -285,11 +285,14 @@ const NEXUS_MEND_HEAL = 4;
 /**
  * Ucube'nin elektriginin atlayabilecegi en uzak mesafe (dunya birimi).
  *
- * Kule izgarasinin iki kare kadari. Sinirsiz birakildiginda sekme
- * "yakindakine atlayan elektrik" olmaktan cikip haritanin herhangi bir
- * yerine uzanan bir baglantiya donusuyordu.
+ * Deger olculdu, secilmedi. Sahada bir dusmanin en yakin komsusuna uzakligi
+ * ortancada 1,8 kare; iki karelik bir yaricap dusmanlarin ancak yarisini
+ * yakaliyor ve sekme oyuncuya duzensiz gorunuyordu. Uc kare ucte ikisini
+ * yakaliyor ve hala arenanin dortte biri kadar -- sinirsiz birakildiginda
+ * ise sekme "yakindakine atlayan elektrik" olmaktan cikip haritanin obur
+ * ucuna uzanan bir baglantiya donusuyor.
  */
-const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 2;
+const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 /** Tek vurusta kac dusmana sekiyor. */
 const UCUBE_CHAIN_TARGETS = 2;
 /** Genis arama acikken gosterilen kart sayisi. */
@@ -2893,7 +2896,14 @@ export class MatchRoom extends Room<MatchState> {
       aoeRadius: this.getTowerAoeRadius(tower) > 0
         ? this.scaleWorldDistance(this.getTowerAoeRadius(tower) + (tower.level - 1) * 5)
         : 0,
-      slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 90,
+      // Yavaslatma da alan gibi kosullu: bildirmeyen kule seviyeyle
+      // kazanmiyor. Buyume kosulsuzken yavaslatmasi olmayan 22 kule 10.
+      // seviyede her vurusta 810 ms yavaslatiyordu -- Baransel'in meteoru,
+      // Omer'in kuleleri, Ucube. Kimsenin aciklamasinda yazmayan bir kontrol
+      // etkisiydi ve kontrol kulelerinin kimligini de bosa cikariyordu.
+      slowMs: getTowerSlowDurationMs(tower.definition) > 0
+        ? getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 90
+        : 0,
       pierceLimit: this.getTowerEngine(tower)?.attack.pierceCount ?? 1,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
       piercedEnemyIds: []
@@ -3261,7 +3271,9 @@ export class MatchRoom extends Room<MatchState> {
       speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave"))
         * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
-      slowMs: getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80,
+      slowMs: getTowerSlowDurationMs(tower.definition) > 0
+        ? getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80
+        : 0,
       pushbackDistance: options.pushbackDistance ?? 0,
       abartiLevel,
       tipHoldSeconds: (options.pushbackDistance ?? 0) > 0 ? KIN_SYNTHESIS_TIP_HOLD_SECONDS : 0,

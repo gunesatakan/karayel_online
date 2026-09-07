@@ -17,7 +17,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TOWER_GRID_SIZE, towerCatalog } from "../packages/shared/dist/index.js";
+import { TOWER_GRID_SIZE, getTowerSlowDurationMs, towerCatalog } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -89,6 +89,57 @@ test("alani olan kule seviyeyle buyumeye devam ediyor", () => {
   assert.ok(onuncu > birinci, `${definitionId} seviyeyle buyumuyor: ${birinci} -> ${onuncu}`);
 });
 
+
+/** Bir atis uretip merminin yavaslatma suresini dondurur. */
+function merminintYavaslatmasi(characterId, definitionId, level) {
+  const { room, tower } = kuleKur(characterId, definitionId, level);
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  room.spawnTowerProjectile(tower, enemy);
+  return [...room.projectiles.values()].at(-1).slowMs;
+}
+
+test("yavaslatmasi olmayan kule seviye atlayinca yavaslatma kazanmaz", () => {
+  // Alan hatasinin ikizi, ayni satirin iki alt satirinda duruyordu. Buyume
+  // kosulsuzken yavaslatma bildirmeyen 22 kule 10. seviyede her vurusta 810 ms
+  // yavaslatiyordu: kimsenin aciklamasinda yazmayan bir kontrol etkisi, ve
+  // gercek kontrol kulelerinin kimligini bosa cikaran bir sey.
+  const yavaslatmasizlar = Object.entries(towerCatalog).flatMap(([characterId, list]) =>
+    list
+      .filter((tower) => !tower.resourceProvider
+        && getTowerSlowDurationMs(tower) === 0
+        && (tower.engine?.attack?.executor ?? "ballistic") === "ballistic"
+        && tower.hitType !== "none")
+      .map((tower) => [characterId, tower.id])
+  );
+  assert.ok(yavaslatmasizlar.length > 0, "yavaslatmasiz mermi kulesi bulunamadi");
+
+  for (const [characterId, definitionId] of yavaslatmasizlar) {
+    for (const level of [1, 5, 10]) {
+      assert.equal(
+        merminintYavaslatmasi(characterId, definitionId, level),
+        0,
+        `${definitionId} ${level}. seviyede yavaslatma kazandi`
+      );
+    }
+  }
+});
+
+test("yavaslatmasi olan kule seviyeyle buyumeye devam ediyor", () => {
+  const yavaslatan = Object.entries(towerCatalog).flatMap(([characterId, list]) =>
+    list
+      .filter((tower) => getTowerSlowDurationMs(tower) > 0
+        && (tower.engine?.attack?.executor ?? "ballistic") === "ballistic")
+      .map((tower) => [characterId, tower.id])
+  )[0];
+  assert.ok(yavaslatan, "yavaslatan mermi kulesi bulunamadi");
+
+  const [characterId, definitionId] = yavaslatan;
+  const birinci = merminintYavaslatmasi(characterId, definitionId, 1);
+  const onuncu = merminintYavaslatmasi(characterId, definitionId, 10);
+  assert.ok(birinci > 0);
+  assert.ok(onuncu > birinci, `${definitionId} seviyeyle buyumuyor: ${birinci} -> ${onuncu}`);
+});
 /** Ucube kurar, cevresine istenen noktalarda dusman koyar ve sekmeleri sayar. */
 function sekmeSayisi(hedefNokta, komsuNoktalari) {
   const { room, tower } = kuleKur("warrior", "warrior-6");
@@ -136,10 +187,10 @@ test("uzaktaki dusmana sekmiyor", () => {
   // Sinir kule izgarasinin iki karesi. Haritanin obur ucundaki bir dusmana
   // uzanan bir baglanti sekme degil, baska bir sey olurdu.
   const hedef = { x: 200, y: 300 };
-  const uzak = [{ x: 200 + TOWER_GRID_SIZE * 4, y: 300 }];
+  const uzak = [{ x: 200 + TOWER_GRID_SIZE * 6, y: 300 }];
   assert.equal(sekmeSayisi(hedef, uzak), 0);
 
-  const sinirIcinde = [{ x: 200 + TOWER_GRID_SIZE * 1.5, y: 300 }];
+  const sinirIcinde = [{ x: 200 + TOWER_GRID_SIZE * 2.5, y: 300 }];
   assert.equal(sekmeSayisi(hedef, sinirIcinde), 1);
 });
 
