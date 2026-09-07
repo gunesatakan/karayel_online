@@ -220,6 +220,8 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına 1 kez 10 nexus canı karşılığı 200 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),
+  defineItem("egitim-sahasi", "Eğitim Sahası", "Takıldığı kulenin öldürdüğü düşmanlardan gelen tecrübe +%50.", "utility", 130, { axes: ["economy"], effects: [effect("egitim-sahasi", "experienceGain", 0.5)] }),
+  defineItem("kaynak-makinesi", "Kaynak Makinesi", "Takıldığı yapının onarım bedeli -%60.", "utility", 85, { axes: ["barricade"], effects: [effect("kaynak-makinesi", "repairCost", -0.6)] }),
   defineItem("karsi-ates-modulu", "Karşı Ateş Modülü", "Takıldığı kulenin nişancı düşmanlara hasarı +%50.", "power", 100, { axes: ["dps"], effects: [effect("karsi-ates-modulu", "damageVsShooter", 0.5)] }),
   defineItem("tuzak-agi", "Tuzak Ağı", "Takıldığı kulenin koşucu düşmanlara hasarı +%45.", "power", 95, { axes: ["dps"], effects: [effect("tuzak-agi", "damageVsRunner", 0.45)] }),
   defineItem("lanet-fitili", "Lanet Fitili", "Takıldığı kulenin durum etkisi süresi +%50; yalnızca lanet kulelerine takılır.", "class", 105, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["curse"] }, effects: [effect("lanet-fitili", "statusDuration", 0.5)] }),

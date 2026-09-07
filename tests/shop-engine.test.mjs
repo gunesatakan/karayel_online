@@ -11,9 +11,9 @@ test("shop prices grow additively by purchase count", () => {
   assert.equal(getShopRerollPrice(2), 80);
 });
 
-test("catalog contains 70 valid, unique and numeric single-line items", () => {
-  assert.equal(shopCatalog.length, 70);
-  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 70);
+test("catalog contains 72 valid, unique and numeric single-line items", () => {
+  assert.equal(shopCatalog.length, 72);
+  assert.equal(new Set(shopCatalog.map(({ id }) => id)).size, 72);
   for (const entry of shopCatalog) {
     assert.match(entry.description, /\d/);
     assert.equal(entry.description.includes("\n"), false);

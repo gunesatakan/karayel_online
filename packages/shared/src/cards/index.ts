@@ -233,6 +233,20 @@ export const cardCatalog: CardDefinition[] = [
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
 
+  // --- Ilerleme ve bakim ---
+  // Bu bes kol oyunun her turunda cekiliyor ama hicbiri icerige bagli
+  // degildi: tecrube kazanci sabitti, onarim ve isci fiyati sabitti, satis
+  // hep yarisini geri veriyordu ve ultinin gucu yalnizca altinla
+  // buyuyordu. Sarj hizinin bir karsiligi vardi, gucun yoktu.
+  //
+  // Ucu bedelli, ikisi degil: bedelsiz olanlar (onarim, isci) zaten
+  // harcamayi azalttiklari icin kendi bedellerini tasiyorlar.
+  { id: "saha-egitimi", name: "Saha Eğitimi", description: "Tecrübe kazancı +%35 ama tüm kulelerin canı -%15.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("saha-egitimi", "experienceGain", 0.35), effect("saha-egitimi", "towerHealth", -0.15)] },
+  { id: "tamir-takimi", name: "Tamir Takımı", description: "Onarım bedeli -%40.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("tamir-takimi", "repairCost", -0.4)] },
+  { id: "hurda-pazari", name: "Hurda Pazarı", description: "Kule satış iadesi +%50.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("hurda-pazari", "sellRefund", 0.5)] },
+  { id: "isci-pazarligi", name: "İşçi Pazarlığı", description: "İşçi alım bedeli -%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("isci-pazarligi", "workerHireCost", -0.3)] },
+  { id: "yikim-emri", name: "Yıkım Emri", description: "Ulti hasarı +%45 ama ulti şarj hızı -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "rare", effects: [effect("yikim-emri", "ultimateDamage", 0.45), effect("yikim-emri", "ultimateCharge", -0.15)] },
+
   // --- Dusman turleri ---
   // Icerik uzun sure yalnizca uc hedefi taniyordu: brute, kalkanli ve ucan.
   // Piyade, kosucu, nisanci ve kusatma hicbir kartta ya da esyada

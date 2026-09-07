@@ -44,6 +44,22 @@ export type ModifierStat =
   | "damageVsRunner"
   | "damageVsShooter"
   | "damageVsSiege"
+  /**
+   * Seviye atlamayi besleyen tecrube kazanci.
+   *
+   * Seviye oyunun ana ilerlemesi ve tecrube ondan geciyor, ama tecrube
+   * kazanci hicbir icerikle degistirilemiyordu: ne hizlandiran vardi ne de
+   * baska bir sey karsiliginda takas eden.
+   */
+  | "experienceGain"
+  /** Onarim bedeli; negatif deger ucuzlatir. Yapiyi ayakta tutmanin fiyati. */
+  | "repairCost"
+  /** Satis iadesi; kuleyi sokup baskasini kurmanin bedelini degistirir. */
+  | "sellRefund"
+  /** Isci alim bedeli; negatif deger ucuzlatir. */
+  | "workerHireCost"
+  /** Ultinin hasar carpani. Sarj hizinin karsiligi vardi, gucun yoktu. */
+  | "ultimateDamage"
   | "targetLockMs"
   /** Ulti sarj hizi carpani. Beceriler ve ulti roguelike katmanina bu iki statla baglanir. */
   | "ultimateCharge"

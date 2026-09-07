@@ -4824,7 +4824,9 @@ export class MatchRoom extends Room<MatchState> {
 
     const share = getEnemyExp(this.wave, enemy.type, enemy.movementKind) / players.length;
     for (const player of players) {
-      player.experience = (player.experience ?? 0) + share;
+      // Kazanc oyuncu basina olceklenir: tecrube kartlari oyuncunun kendi
+      // ilerlemesini hizlandirmali, odadaki herkesinkini degil.
+      player.experience = (player.experience ?? 0) + share * getModifierMultiplier(player.runModifiers ?? [], "experienceGain");
     }
   }
 
@@ -5329,7 +5331,10 @@ export class MatchRoom extends Room<MatchState> {
     if (!player || !isHirableWorkerRole(message?.role)) {
       return;
     }
-    const cost = getWorkerHireCost(player.hiredWorkerRoles.length);
+    const cost = Math.ceil(
+      getWorkerHireCost(player.hiredWorkerRoles.length)
+        * getModifierMultiplier(player.runModifiers, "workerHireCost")
+    );
     if (player.gold < cost) {
       return;
     }
@@ -5350,7 +5355,10 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
 
     const missingRatio = 1 - tower.hp / tower.maxHp;
-    const cost = getStructureRepairCost(getTowerBuildCost(tower.definition.cost), missingRatio);
+    const cost = Math.ceil(
+      getStructureRepairCost(getTowerBuildCost(tower.definition.cost), missingRatio)
+        * getModifierMultiplier(this.getTowerRunModifiers(tower), "repairCost")
+    );
     if (cost <= 0 || player.gold < cost) return;
 
     player.gold -= cost;
@@ -5596,7 +5604,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const refund = getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id);
+    const refund = Math.floor(
+      getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id)
+        * getModifierMultiplier(this.getTowerRunModifiers(tower), "sellRefund")
+    );
     player.gold += refund;
     player.goldSpent = Math.max(0, player.goldSpent - refund);
     if (occupiesTowerSlot(tower.definition)) {
@@ -6417,7 +6428,9 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Oyuncunun aldigi ulti gucu kademelerinin hasar carpani. */
   private getUltimatePowerMultiplierFor(ownerId: string) {
-    return getUltimatePowerMultiplier(this.state.players.get(ownerId)?.ultimatePower ?? 0);
+    const player = this.state.players.get(ownerId);
+    return getUltimatePowerMultiplier(player?.ultimatePower ?? 0)
+      * getModifierMultiplier(player?.runModifiers ?? [], "ultimateDamage");
   }
 
   /**
