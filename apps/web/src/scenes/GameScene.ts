@@ -272,6 +272,8 @@ type TapLogEntry = {
 };
 
 /** Onuncu seviye asiri yuklemede kiris boyunca kosan parlama sayisi. */
+/** Onuncu seviyede Zeynep isinindan dokulen zerre sayisi. */
+const SHOWCASE_MOTE_COUNT = 9;
 const OVERDRIVE_FLARE_COUNT = 7;
 /** Kirisin kenarindan dokulen kivilcim sayisi. */
 const OVERDRIVE_SPARK_COUNT = 10;
@@ -6127,6 +6129,67 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Zeynep'in kademe dili: renk degil, **rutbe**.
+   *
+   * Debug Lazer'in rampasi fiziksel bir sey anlatiyor -- yildiz sicakligi,
+   * kirmizidan maviye, maviden beyaza. Zeynep'in kuleleri o dili konusamaz:
+   * hepsi saray imgesi tasiyor (Hiza Emri, Gosteri Kulesi, Taht Muhru, Saray
+   * Arsivi). Bu yuzden onun kademesi isinma degil **toren**: 5'te isik
+   * altina donuyor, 10'da beyaz altina. Oyunun seviye kadraninin zaten
+   * konustugu dil de bu -- celikten altina, altindan beyaza.
+   */
+  private getZeynepTierPalette(tier: number, base: number) {
+    if (tier >= 3) return { band: 0xfde68a, mid: 0xfef3c7, inner: 0xfffbeb, core: 0xffffff, shard: 0xfffbeb };
+    if (tier >= 2) return { band: 0xf59e0b, mid: 0xfcd34d, inner: 0xfef3c7, core: 0xffffff, shard: 0xfde68a };
+    return { band: base, mid: 0xf0abfc, inner: 0xfdf2f8, core: 0xffffff, shard: 0xfdf2f8 };
+  }
+
+  /**
+   * Onuncu seviyede isindan dokulen zerreler.
+   *
+   * Kademeyi anlatmanin yolu olarak cizgi ve cerceve elendi: isinin yanina
+   * cekilen her duzenli geometri onu bir borunun icinde gosteriyor. Zerreler
+   * duzensiz ve **hareketli** -- isin sonerken disari acilip kayboluyorlar,
+   * yani gozun okudugu sey bir sinir degil bir dokulme.
+   *
+   * Durum tutulmuyor: konumlar isinin kimliginden ve omrunden tureyen
+   * sabit bir gurultuyle cikiyor. Kare kare tasinan bir parcacik listesi,
+   * saniyede birkac kez yeniden gelen bir isinla birlikte kaymak yerine
+   * geride kalirdi.
+   */
+  private drawShowcaseMotes(beam: BeamSnapshot, tone: number, life: number) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
+    // Isin sonerken zerreler aciliyor: omur 1'den 0'a inerken acilma 0'dan 1'e.
+    const drift = 1 - life;
+    const scale = this.getTowerEffectScale();
+
+    for (let index = 0; index < SHOWCASE_MOTE_COUNT; index += 1) {
+      const seed = Math.sin((beam.id.length + index * 31.7) * 12.9898) * 43758.5453;
+      const a = seed - Math.floor(seed);
+      const seed2 = Math.sin((beam.id.length + index * 57.3 + 11) * 78.233) * 43758.5453;
+      const b = seed2 - Math.floor(seed2);
+      const along = (0.06 + a * 0.88) * length;
+      const side = index % 2 === 0 ? 1 : -1;
+      const spread = beam.width * (0.4 + b * 0.34) + drift * (9 + b * 15) * scale;
+      const x = beam.x1 + ux * along + nx * side * spread;
+      const y = beam.y1 + uy * along + ny * side * spread;
+      graphics.fillStyle(index % 3 === 0 ? 0xffffff : tone, 0.7 * life * (1 - drift * 0.45));
+      graphics.fillCircle(x, y, Math.max(0.7, 1.9 * (1 - drift * 0.5) * scale));
+    }
+  }
+
   private drawShowcaseBeam(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
@@ -6169,10 +6232,25 @@ export class GameScene extends Phaser.Scene {
       this.beamGraphics?.fillCircle(endX, endY, halfEnd);
     };
 
-    fillBeamBand(beam.width, color, 0.2 * afterglow);
-    fillBeamBand(beam.width * 0.74, 0xf0abfc, 0.36 * afterglow, 2);
-    fillBeamBand(beam.width * 0.48, 0xfdf2f8, 0.62 * flash + 0.18 * afterglow, 5);
-    fillBeamBand(beam.width * 0.24, 0xffffff, 0.96 * flash, 8);
+    const tier = beam.tier ?? 1;
+    const palette = this.getZeynepTierPalette(tier, color);
+
+    // Kademe 5: gosterinin ikinci perdesi.
+    //
+    // Ilk vurus sonmeye baslarken arkasindan daha genis ve cok daha soluk bir
+    // bant geciyor -- ayni isin degil, ayni isin bir daha. Kademeyi zamanla
+    // anlatmak, isini kalinlastirmadan ona bir agirlik veriyor.
+    if (tier >= 2) {
+      const encore = Phaser.Math.Clamp((0.74 - life) / 0.52, 0, 1) * Phaser.Math.Clamp(life / 0.22, 0, 1);
+      if (encore > 0) {
+        fillBeamBand(beam.width * (1 + 0.3 * encore), palette.band, 0.24 * encore);
+      }
+    }
+
+    fillBeamBand(beam.width, palette.band, 0.2 * afterglow);
+    fillBeamBand(beam.width * 0.74, palette.mid, 0.36 * afterglow, 2);
+    fillBeamBand(beam.width * 0.48, palette.inner, 0.62 * flash + 0.18 * afterglow, 5);
+    fillBeamBand(beam.width * 0.24, palette.core, 0.96 * flash, 8);
 
     for (let index = 0; index < 7; index += 1) {
       const t = (index + 1) / 8;
@@ -6184,7 +6262,7 @@ export class GameScene extends Phaser.Scene {
       const halfHeight = beam.width * (0.18 + normalizedHash * 0.18);
       const halfLength = 3 + normalizedHash * 7;
       const offset = side * Math.min(beam.width * 0.28, beam.width * (0.12 + normalizedHash * 0.16));
-      this.beamGraphics.fillStyle(index % 3 === 0 ? 0xffffff : 0xfdf2f8, 0.5 * flash);
+      this.beamGraphics.fillStyle(index % 3 === 0 ? palette.core : palette.shard, 0.5 * flash);
       this.beamGraphics.fillPoints([
         new Phaser.Geom.Point(centerX - ux * halfLength + nx * offset, centerY - uy * halfLength + ny * offset),
         new Phaser.Geom.Point(centerX + nx * (offset + side * halfHeight), centerY + ny * (offset + side * halfHeight)),
@@ -6193,17 +6271,31 @@ export class GameScene extends Phaser.Scene {
       ], true);
     }
 
-    this.beamGraphics.fillStyle(0xffffff, 0.88 * flash);
+    this.beamGraphics.fillStyle(palette.core, 0.88 * flash);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
-    this.beamGraphics.fillStyle(0xfdf2f8, 0.42 * afterglow);
+    this.beamGraphics.fillStyle(palette.shard, 0.42 * afterglow);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
+    if (tier >= 3) {
+      this.drawShowcaseMotes(beam, palette.band, afterglow);
+    }
     this.drawBeamTierAccent(beam, color);
   }
 
-  private drawKinConeWave(beam: BeamSnapshot, color: number) {
+  private drawKinConeWave(beam: BeamSnapshot, kinColor: number) {
     if (!this.beamGraphics) {
       return;
     }
+
+    // Kin dalgasi da ayni torene bagli: 5'te altin, 10'da beyaz altin. Dalganin
+    // kendi geometrisine dokunulmuyor, degisen yalnizca rengi ve 10'da
+    // cevresine dokulen zerreler.
+    const kinTier = beam.tier ?? 1;
+    const kinPalette = this.getZeynepTierPalette(kinTier, kinColor);
+    // Dalganin govdesi genis ve dusuk alfayla doluyor: karanlik uzerinde
+    // dogurgan olan sey doygunluk degil parlaklik. Kademe 3'te soluk altini
+    // (band) kullanmak dalgayi kademe 2'den **daha sonuk** gosteriyordu ve
+    // ilerleme tersine donuyordu; o yuzden en ust kademe beyaza cikiyor.
+    const color = kinTier >= 3 ? kinPalette.inner : kinTier >= 2 ? kinPalette.band : kinColor;
 
     const dx = beam.x2 - beam.x1;
     const dy = beam.y2 - beam.y1;
@@ -6246,7 +6338,7 @@ export class GameScene extends Phaser.Scene {
       for (let band = 0; band < 3; band += 1) {
         const radius = Math.max(1, outerRadius - band * waveDepth * 0.34);
         const alpha = (0.72 - band * 0.18) * life;
-        this.beamGraphics.lineStyle(Math.max(1.5, (4 - band) * this.getTowerEffectScale()), band === 0 ? 0xffe4e6 : color, alpha);
+        this.beamGraphics.lineStyle(Math.max(1.5, (4 - band) * this.getTowerEffectScale()), band === 0 ? (kinTier >= 3 ? 0xffffff : kinPalette.inner) : color, alpha);
         this.beamGraphics.beginPath();
         for (let index = 0; index <= steps; index += 1) {
           const t = index / steps;
@@ -6262,8 +6354,11 @@ export class GameScene extends Phaser.Scene {
         }
         this.beamGraphics.strokePath();
       }
-      this.beamGraphics.fillStyle(0x7f1d1d, 0.2 * life);
+      this.beamGraphics.fillStyle(kinTier >= 2 ? kinPalette.mid : 0x7f1d1d, 0.2 * life);
       this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(3, halfWidth * 0.08));
+      if (kinTier >= 3) {
+        this.drawShowcaseMotes(beam, kinPalette.band, life);
+      }
       return;
     }
 
