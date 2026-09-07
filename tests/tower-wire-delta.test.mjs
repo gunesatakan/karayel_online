@@ -24,7 +24,7 @@ const TICK = 16;
 function ikiKisilikOda(kulePerOyuncu = 10) {
   const room = createRoom("warrior");
   const p1 = room.state.players.get("p1");
-  room.state.players.set("p2", { ...p1, id: "p2", runModifiers: [], ownedCardIds: [], ownedShopItemIds: [], inventoryItemIds: [], hiredWorkerRoles: [] });
+  room.state.players.set("p2", { ...p1, id: "p2", runModifiers: [], ownedCardIds: [], ownedShopItemIds: [], inventoryItemIds: [], hiredWorkers: [] });
   room.clients = [
     { sessionId: "p1", ref: { bufferedAmount: 0 }, send() {} },
     { sessionId: "p2", ref: { bufferedAmount: 0 }, send() {} }

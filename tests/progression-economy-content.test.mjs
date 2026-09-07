@@ -81,7 +81,7 @@ test("satis iadesi icerige bagli", () => {
 test("isci alim bedeli icerige bagli", () => {
   const { room, player } = odaVeKule();
   player.gold = 1_000_000;
-  const tam = getWorkerHireCost(player.hiredWorkerRoles.length);
+  const tam = getWorkerHireCost(player.hiredWorkers.length);
 
   player.runModifiers = [mod("workerHireCost", -0.5)];
   const oncekiAltin = player.gold;

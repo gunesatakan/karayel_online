@@ -941,6 +941,21 @@ canvas {
   border-color: rgba(248, 113, 113, 0.64);
 }
 
+.game-controls__worker-tier-button--normal {
+  border-color: rgba(148, 163, 184, 0.64);
+}
+
+.game-controls__worker-tier-button--advanced {
+  border-color: rgba(251, 191, 36, 0.72);
+}
+
+/* Gelismis isci karti kehribar; cekmecede hangi kademeyi aldigini yaziya
+   bakmadan gorunsun. */
+.game-controls .gold-shop__item--advanced-worker {
+  border-color: rgba(251, 191, 36, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+}
+
 .game-controls__underworld-mode-button.is-active {
   color: #f8fafc;
   box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.22), 0 0 14px rgba(45, 212, 191, 0.18);

@@ -359,7 +359,7 @@ export type PlayerSnapshot = {
   stress?: number;
   melisStance?: import("./index.js").MelisStance;
   /** Satin alinmis ek isciler; siradaki bedel bu sayidan cikar. */
-  hiredWorkerRoles?: Array<import("./logistics/index.js").HirableWorkerRole>;
+  hiredWorkers?: Array<import("./logistics/index.js").HiredWorker>;
 };
 
 export type LobbyPlayerSnapshot = {
@@ -550,6 +550,8 @@ export type DroneSnapshot = {
   capacity?: number;
   speed?: number;
   targetTowerId?: string;
+  /** Gelismis isci: istemci onu ayirt edilebilir cizsin diye telde. */
+  advanced?: boolean;
 };
 
 export type CrystalNodeSnapshot = {
@@ -865,13 +867,14 @@ export {
   WORKER_ROLE_LABELS,
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_HIRE_BASE_COST,
+  ADVANCED_WORKER_MULTIPLIER,
   WORKER_HIRE_COST_GROWTH,
   advanceResourceExtraction,
   canHireWorker,
   getWorkerHireCost,
   isHirableWorkerRole
 } from "./logistics/index.js";
-export type { HirableWorkerRole } from "./logistics/index.js";
+export type { HirableWorkerRole, HiredWorker } from "./logistics/index.js";
 export {
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,

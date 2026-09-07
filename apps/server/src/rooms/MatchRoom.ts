@@ -109,6 +109,8 @@ import {
   getUltimatePowerUpgradeCost,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   type HirableWorkerRole,
+  type HiredWorker,
+  ADVANCED_WORKER_MULTIPLIER,
   getWorkerHireCost,
   isHirableWorkerRole,
   LOGISTICS_WORKER_CAPACITY,
@@ -555,7 +557,14 @@ class Player extends Schema {
   /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
   inventoryItemIds: string[] = [];
   /** Altinla alinmis ek isciler; rolu alim aninda oyuncu secer. */
-  hiredWorkerRoles: HirableWorkerRole[] = [];
+  /**
+   * Alinmis isciler; rolu ve kademesiyle.
+   *
+   * Tek liste tutuluyor cunku fiyat sayaci **ortak**: normal ya da gelismis,
+   * her alim bir sonrakini pahalilastiriyor. Ayri listeler tutmak gelismis
+   * isciyi normal alimlarla ucuza getirmenin yolunu acardi.
+   */
+  hiredWorkers: HiredWorker[] = [];
   shopOffers: ShopItem[] = [];
   shopRerolls = 0;
   nexusShieldCharges = 0;
@@ -859,7 +868,7 @@ type TowerModel = {
 };
 
 type RepairStructureMessage = { towerId?: string };
-type HireWorkerMessage = { role?: HirableWorkerRole };
+type HireWorkerMessage = { role?: HirableWorkerRole; advanced?: boolean };
 type ChooseUcubePerkMessage = { towerId?: string; perkId?: UcubePerkId };
 type SetMelisStanceMessage = { stance?: MelisStance };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
@@ -4808,12 +4817,16 @@ export class MatchRoom extends Room<MatchState> {
       // Temel dort isciden sonrakiler: magazadan gelen besinci ve altinla
       // alinanlar. Her birinin anahtari ayri olmali, yoksa ayni rolu iki kez
       // alan oyuncunun ikinci iscisi birincisinin uzerine yazilirdi.
-      const extraModes: Array<DroneSnapshot["mode"]> = [
-        ...(player?.ownedShopItemIds.includes("besinci-isci") ? ["ammoTransport" as const] : []),
-        ...(player?.hiredWorkerRoles ?? [])
+      const extraWorkers: HiredWorker[] = [
+        ...(player?.ownedShopItemIds.includes("besinci-isci") ? [{ role: "ammoTransport" as const }] : []),
+        ...(player?.hiredWorkers ?? [])
       ];
-      const workerModes = [...baseWorkerModes, ...extraModes];
-      for (const [index, mode] of workerModes.entries()) {
+      const workers: HiredWorker[] = [
+        ...baseWorkerModes.map((role) => ({ role: role as HirableWorkerRole })),
+        ...extraWorkers
+      ];
+      for (const [index, worker] of workers.entries()) {
+        const mode = worker.role as DroneSnapshot["mode"];
         const suffix = index >= baseWorkerModes.length ? `:extra${index - baseWorkerModes.length}` : "";
         const id = `logistics-${ownerId}-${mode}${suffix}`;
         const exists = this.drones.has(id);
@@ -4833,14 +4846,18 @@ export class MatchRoom extends Room<MatchState> {
           ttlMs: Number.POSITIVE_INFINITY,
           logisticsPhase: "pickup",
           cargo: 0,
-          capacity: mode === "ammoTransport"
+          // Gelismis isci uc kat tasiyor ve uc kat hizli yuruyor. Toplama
+          // hizi burada degil, tasima sirasinda carpiliyor (bkz.
+          // `getWorkerGatherSpeedMultiplier`).
+          capacity: (mode === "ammoTransport"
             ? AMMO_LOGISTICS_WORKER_CAPACITY
             : mode === "ammoCollector"
               ? AMMO_COLLECTOR_WORKER_CAPACITY
             : mode === "crystalCollector" || mode === "energyTransport"
               ? ENERGY_LOGISTICS_WORKER_CAPACITY
-              : LOGISTICS_WORKER_CAPACITY,
-          speed: LOGISTICS_WORKER_SPEED
+              : LOGISTICS_WORKER_CAPACITY) * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
+          speed: LOGISTICS_WORKER_SPEED * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
+          advanced: worker.advanced
         });
       }
     }
@@ -5172,8 +5189,16 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(1, base * getModifierMultiplier(this.getWorkerModifiers(worker), "workerCapacity"));
   }
 
+  /**
+   * Iscinin toplama hizi carpani.
+   *
+   * Kart ve esya carpani her isci icin ayni; gelismis isci onun uzerine kendi
+   * uc katini koyuyor. Ikisi carpiliyor, toplanmiyor: normal isciyi
+   * hizlandiran bir kart gelismis isciyi de ayni oranda hizlandirmali.
+   */
   private getWorkerGatherSpeedMultiplier(worker: DroneModel) {
-    return getModifierMultiplier(this.getWorkerModifiers(worker), "workerGatherSpeed");
+    return getModifierMultiplier(this.getWorkerModifiers(worker), "workerGatherSpeed")
+      * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1);
   }
 
   private getCrystalWorkerReactor(worker: DroneModel) {
@@ -5517,8 +5542,9 @@ export class MatchRoom extends Room<MatchState> {
     if (!player || !isHirableWorkerRole(message?.role)) {
       return;
     }
+    const advanced = message.advanced === true;
     const cost = Math.ceil(
-      getWorkerHireCost(player.hiredWorkerRoles.length)
+      getWorkerHireCost(player.hiredWorkers.length, advanced)
         * getModifierMultiplier(player.runModifiers, "workerHireCost")
     );
     if (player.gold < cost) {
@@ -5527,11 +5553,11 @@ export class MatchRoom extends Room<MatchState> {
 
     player.gold -= cost;
     player.goldSpent += cost;
-    player.hiredWorkerRoles.push(message.role);
+    player.hiredWorkers.push({ role: message.role, advanced: advanced || undefined });
     // Isci hemen sahaya ciksin: bir sonraki dalgayi beklemek alimin etkisini
     // oyuncunun goremedigi bir yere ertelerdi.
     this.ensureLogisticsWorkers();
-    client.send("worker:hired", { role: message.role, cost });
+    client.send("worker:hired", { role: message.role, advanced, cost });
   }
 
   private repairStructure(client: Client, message: RepairStructureMessage) {
@@ -8551,7 +8577,7 @@ export class MatchRoom extends Room<MatchState> {
         approval: player.characterId === "archer" ? player.approval : undefined,
         stress: player.characterId === "archer" ? player.stress : undefined,
         melisStance: player.characterId === "archer" ? player.melisStance : undefined,
-        hiredWorkerRoles: [...player.hiredWorkerRoles]
+        hiredWorkers: player.hiredWorkers.map((worker) => ({ ...worker }))
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => stripWireDefaults({
         id: enemy.id,
@@ -8643,7 +8669,9 @@ export class MatchRoom extends Room<MatchState> {
         cargo: drone.cargo,
         capacity: drone.capacity,
         speed: drone.speed,
-        targetTowerId: drone.targetTowerId
+        targetTowerId: drone.targetTowerId,
+        // Istemci iki kademeyi ancak buradan ayirt ediyor.
+        advanced: drone.advanced
       })),
       crystalNodes: this.getCrystalNodes(),
       ammoNodes: this.getAmmoNodes(),

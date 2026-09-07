@@ -131,6 +131,7 @@ type ControlActionDetail = {
     | "toggleTowerStandby"
     | "openWorkerHire"
     | "closeWorkerHire"
+    | "setWorkerTier"
     | "hireWorker"
     | "setMelisStance"
     | "setTowerPerformance"
@@ -399,6 +400,14 @@ export class GameScene extends Phaser.Scene {
   private linearProjectileSnapshots = new Map<string, ProjectileSpawnSnapshot>();
   private terminalProjectileSnapshots = new Map<string, { projectile: ProjectileSnapshot; removeAfter: number }>();
   private drones = new Map<string, Phaser.Physics.Arcade.Sprite>();
+  /**
+   * Gelismis iscilerin altindaki halka.
+   *
+   * Isci basina bir nesne degil, hepsi icin tek bir cizim yuzeyi: her karede
+   * temizlenip yeniden ciziliyor, boylece olen isciyle birlikte halkasini
+   * temizlemeyi unutmak diye bir hata kalmiyor.
+   */
+  private advancedWorkerGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
   private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
@@ -566,6 +575,15 @@ export class GameScene extends Phaser.Scene {
   private readonly sceneStartedAt = performance.now();
   /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
   private workerHireOpen = false;
+  /**
+   * Isci alma cekmecesinde secili kademe.
+   *
+   * Kademe rolun yanina degil ustune konuyor: dort rolun her biri icin iki
+   * ayri dugme sekiz dugme demekti ve telefonda cekmece tasiyordu. Ustelik
+   * kademe rolden bagimsiz bir karar -- once "ne kadar harcayacagim", sonra
+   * "ne is yapacak".
+   */
+  private workerHireAdvanced = false;
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
   private pendingUltimateColumn = false;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
@@ -1433,9 +1451,13 @@ export class GameScene extends Phaser.Scene {
         this.workerHireOpen = false;
         this.updateSelectionUi();
         break;
+      case "setWorkerTier":
+        this.workerHireAdvanced = detail.on === true;
+        this.updateSelectionUi();
+        break;
       case "hireWorker":
         if (isHirableWorkerRole(detail.role)) {
-          this.room?.send("worker:hire", { role: detail.role });
+          this.room?.send("worker:hire", { role: detail.role, advanced: this.workerHireAdvanced });
           this.workerHireOpen = false;
           this.updateSelectionUi();
         }
@@ -1826,18 +1848,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getWorkerHireState() {
-    const hired = this.localPlayerSnapshot?.hiredWorkerRoles ?? [];
+    const hired = this.localPlayerSnapshot?.hiredWorkers ?? [];
+    // Iki bedel de gonderiliyor: oyuncu kademeyi secmeden once ikisini de
+    // gormeli, yoksa secim ancak deneyerek ogrenilen bir sey olur.
     const cost = getWorkerHireCost(hired.length);
+    const advancedCost = getWorkerHireCost(hired.length, true);
+    const gold = this.localPlayerSnapshot?.gold ?? 0;
+    const advanced = this.workerHireAdvanced;
     return {
       open: this.workerHireOpen,
       hired: hired.length,
       cost,
-      affordable: (this.localPlayerSnapshot?.gold ?? 0) >= cost,
+      advancedCost,
+      advanced,
+      affordable: gold >= (advanced ? advancedCost : cost),
       roles: HIRABLE_WORKER_ROLES.map((role) => ({
         id: role,
         label: WORKER_ROLE_LABELS[role],
         description: WORKER_ROLE_DESCRIPTIONS[role],
-        owned: hired.filter((owned) => owned === role).length
+        owned: hired.filter((owned) => owned.role === role && !owned.advanced).length,
+        ownedAdvanced: hired.filter((owned) => owned.role === role && owned.advanced).length
       }))
     };
   }
@@ -3174,8 +3204,9 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
-    room.onMessage("worker:hired", (message: { role: HirableWorkerRole; cost: number }) => {
-      this.showNotice(`${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
+    room.onMessage("worker:hired", (message: { role: HirableWorkerRole; advanced?: boolean; cost: number }) => {
+      const kademe = message.advanced ? "Gelismis " : "";
+      this.showNotice(`${kademe}${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
     });
     room.onMessage("match:victory", (message: { wave: number; kills: number; stage?: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
@@ -4815,6 +4846,8 @@ export class GameScene extends Phaser.Scene {
 
     const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
     const mapEntityScale = this.getMapCellSize() / TOWER_GRID_SIZE;
+    const halkalar = this.advancedWorkerGraphics ?? (this.advancedWorkerGraphics = this.add.graphics().setDepth(41));
+    halkalar.clear();
     for (const drone of drones) {
       const texture = drone.mode === "repair" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
@@ -4836,10 +4869,46 @@ export class GameScene extends Phaser.Scene {
       }
       sprite.setPosition(drone.x, drone.y);
       const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
-      sprite.setScale((isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38) * mapEntityScale * pulse);
+      // Gelismis isci belirgin sekilde iri: uc katlik isi tek bedende
+      // yaptigini bir bakista soylemesi gereken sey boyut.
+      const workerScale = isLogisticsWorker && drone.advanced ? 1.18 : isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38;
+      sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
-      sprite.setTint(drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff);
+      const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff;
+      sprite.setTint(tint);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
+      if (drone.advanced) {
+        this.drawAdvancedWorkerRing(halkalar, drone, tint, mapEntityScale);
+      }
+    }
+  }
+
+  /**
+   * Gelismis iscinin altina donen bir halka cizer.
+   *
+   * Yalnizca boyut yetmiyordu: yuk tasiyan isci zaten buyuyup kuculuyor ve
+   * uzaktan bakan oyuncu iki kademeyi ayirt edemiyordu. Donme, boyuttan
+   * bagimsiz bir isaret -- duran bir sey donmez.
+   */
+  private drawAdvancedWorkerRing(
+    graphics: Phaser.GameObjects.Graphics,
+    drone: DroneSnapshot,
+    tint: number,
+    mapEntityScale: number
+  ) {
+    const radius = 9 * mapEntityScale;
+    const spin = (Date.now() / 620) % (Math.PI * 2);
+    graphics.lineStyle(1.4 * mapEntityScale, tint, 0.5);
+    graphics.strokeCircle(drone.x, drone.y, radius);
+    // Uc uydu, uc kati anlatan tek isaret.
+    graphics.fillStyle(tint, 0.85);
+    for (let i = 0; i < 3; i += 1) {
+      const angle = spin + (i * Math.PI * 2) / 3;
+      graphics.fillCircle(
+        drone.x + Math.cos(angle) * radius,
+        drone.y + Math.sin(angle) * radius,
+        1.7 * mapEntityScale
+      );
     }
   }
 

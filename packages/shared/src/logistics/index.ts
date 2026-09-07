@@ -40,23 +40,45 @@ export const WORKER_HIRE_BASE_COST = 100;
  * 141 altina geliyordu, yani kadroyu buyutmenin bir bedeli yoktu ve dogru
  * oynanis her zaman "daha fazla isci" oluyordu.
  *
- * %20 yumusak bir egri ciziyor: altinci isci 249, sekizinci 358, onuncu 516.
- * Kadroyu buyutmenin bir bedeli var ama yol kapanmiyor -- kac isci alacagi
- * oyuncunun karari, kaci alinabilecegi degil.
+ * %10 cok yumusak bir egri: altinci isci 161, onuncu 236. Zam kadroyu
+ * sinirlamiyor, yalnizca sonsuz bir kadroyu bedelsiz kilmiyor.
  */
-export const WORKER_HIRE_COST_GROWTH = 1.2;
+export const WORKER_HIRE_COST_GROWTH = 1.1;
 
-/** Siradaki iscinin bedeli. Alinan her isci bir sonrakini pahalilastirir. */
-export function getWorkerHireCost(hiredCount: number) {
-  return Math.round(WORKER_HIRE_BASE_COST * WORKER_HIRE_COST_GROWTH ** Math.max(0, hiredCount));
+/**
+ * Gelismis iscinin her seyi normalin uc kati: toplama hizi, tasima
+ * kapasitesi, yurume hizi -- ve bedeli.
+ *
+ * Tek sayi, cunku takas duz olmali: uc iscinin isini bir bedenle yapiyor.
+ * Fark yer kaplamada -- bir gelismis isci, uc normal isciden daha az yol
+ * tikaniklığı ve daha az takip edilecek beden demek.
+ */
+export const ADVANCED_WORKER_MULTIPLIER = 3;
+
+/** Alinmis bir isci: rolu ve kademesi. */
+export type HiredWorker = { role: HirableWorkerRole; advanced?: boolean };
+
+/**
+ * Siradaki iscinin bedeli.
+ *
+ * Sayac **ortak**: normal ya da gelismis, alinan her isci bir sonrakinin
+ * fiyatini yukseltiyor. Iki ayri sayac tutmak, gelismis isciyi normal
+ * alimlarla ucuza getirmenin yolunu acardi.
+ */
+export function getWorkerHireCost(hiredCount: number, advanced = false) {
+  // Yuvarlama once yapiliyor, sonra carpiliyor. Tersi olsaydi cekmecede yan
+  // yana duran iki sayi birbirini tutmazdi: 146 ve 439 gibi. Oyuncunun
+  // gordugu bedel her zaman gordugu digerinin tam uc kati olmali.
+  const normal = Math.round(WORKER_HIRE_BASE_COST * WORKER_HIRE_COST_GROWTH ** Math.max(0, hiredCount));
+  return advanced ? normal * ADVANCED_WORKER_MULTIPLIER : normal;
 }
 
 export function isHirableWorkerRole(value: unknown): value is HirableWorkerRole {
   return typeof value === "string" && (HIRABLE_WORKER_ROLES as readonly string[]).includes(value);
 }
 
-export function canHireWorker(hiredCount: number, gold: number) {
-  return gold >= getWorkerHireCost(hiredCount);
+export function canHireWorker(hiredCount: number, gold: number, advanced = false) {
+  return gold >= getWorkerHireCost(hiredCount, advanced);
 }
 
 export function advanceResourceExtraction(

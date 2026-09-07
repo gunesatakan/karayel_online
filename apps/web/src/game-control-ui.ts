@@ -36,13 +36,19 @@ type ControlState = {
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
-  /** Isci alimi; rol alim aninda secilir, sonradan degismez. */
+  /** Isci alimi; rol ve kademe alim aninda secilir, sonradan degismez. */
   workerHire?: {
     open: boolean;
     hired: number;
+    /** Normal iscinin bedeli. */
     cost: number;
+    /** Gelismis iscinin bedeli; normalin uc kati. */
+    advancedCost: number;
+    /** Cekmecede su an secili kademe. */
+    advanced: boolean;
+    /** Secili kademe icin. */
     affordable: boolean;
-    roles: Array<{ id: string; label: string; description: string; owned: number }>;
+    roles: Array<{ id: string; label: string; description: string; owned: number; ownedAdvanced: number }>;
   };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
@@ -791,17 +797,31 @@ export function setupGameControlUi(game: Phaser.Game) {
       const hire = state.workerHire;
       const drawer = document.createElement("section");
       drawer.className = "gold-shop inventory";
-      drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.cost} altın</strong></header>`
-        + `<p>İşçinin rolü alırken belirlenir ve sonradan değişmez. Alınan işçi: ${hire.hired}. Her alım sonrakini pahalılaştırır.</p>`
+      drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.advanced ? hire.advancedCost : hire.cost} altın</strong></header>`
+        + `<p>İşçinin rolü ve kademesi alırken belirlenir, sonradan değişmez. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
+        + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
         + `<div class="gold-shop__offers"></div>`;
+
+      // Kademe secimi rollerin ustunde: once ne kadar harcanacagi, sonra ne
+      // is yapacagi seciliyor.
+      const tiers = drawer.querySelector<HTMLElement>(".game-controls__worker-tier");
+      tiers?.append(
+        makeWorkerTierButton(`Normal ${hire.cost}g`, false, hire),
+        makeWorkerTierButton(`Gelişmiş ${hire.advancedCost}g`, true, hire)
+      );
+
       const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
       for (const role of hire.roles) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "gold-shop__item gold-shop__item--utility";
+        button.className = `gold-shop__item gold-shop__item--utility${hire.advanced ? " gold-shop__item--advanced-worker" : ""}`;
         button.disabled = !hire.affordable;
-        button.innerHTML = `<span>rol</span><strong>${role.label}</strong><small>${role.description}</small>`
-          + (role.owned > 0 ? `<b>x${role.owned}</b>` : "");
+        const detay = hire.advanced
+          ? `${role.description} Toplama, taşıma ve yürüyüş üç kat.`
+          : role.description;
+        const sayac = [role.owned > 0 ? `x${role.owned}` : "", role.ownedAdvanced > 0 ? `★${role.ownedAdvanced}` : ""].filter(Boolean).join(" ");
+        button.innerHTML = `<span>${hire.advanced ? "gelişmiş" : "rol"}</span><strong>${role.label}</strong><small>${detay}</small>`
+          + (sayac ? `<b>${sayac}</b>` : "");
         button.addEventListener("pointerup", () => dispatch({ action: "hireWorker", role: role.id }));
         list?.append(button);
       }
@@ -848,6 +868,17 @@ export function setupGameControlUi(game: Phaser.Game) {
     const button = makeActionButton(`${label} ${cost}I`, `game-controls__tier game-controls__tier--${tier}${chainReady && reputation >= cost ? " game-controls__tier--chain-ready" : ""}`, reputation >= cost, () => {
       dispatch({ action: "useZeynepTier", tier });
     });
+    return button;
+  };
+
+  const makeWorkerTierButton = (label: string, advanced: boolean, hire: NonNullable<ControlState["workerHire"]>) => {
+    const button = makeActionButton(
+      `${label}${hire.advanced === advanced ? " ✓" : ""}`,
+      `game-controls__underworld-mode-button game-controls__worker-tier-button--${advanced ? "advanced" : "normal"}`,
+      true,
+      () => dispatch({ action: "setWorkerTier", on: advanced })
+    );
+    button.classList.toggle("is-active", hire.advanced === advanced);
     return button;
   };
 
