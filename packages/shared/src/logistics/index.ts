@@ -46,14 +46,24 @@ export const WORKER_HIRE_BASE_COST = 100;
 export const WORKER_HIRE_COST_GROWTH = 1.1;
 
 /**
- * Gelismis iscinin her seyi normalin uc kati: toplama hizi, tasima
- * kapasitesi, yurume hizi -- ve bedeli.
+ * Gelismis iscinin isi normalin uc kati: toplama hizi, tasima kapasitesi,
+ * yurume hizi.
  *
- * Tek sayi, cunku takas duz olmali: uc iscinin isini bir bedenle yapiyor.
- * Fark yer kaplamada -- bir gelismis isci, uc normal isciden daha az yol
- * tikaniklığı ve daha az takip edilecek beden demek.
+ * Uc iscinin isini bir bedenle yapiyor. Kazanc yer kaplamada -- bir
+ * gelismis isci, uc normal isciden daha az yol tikanikligi ve daha az
+ * takip edilecek beden demek.
  */
 export const ADVANCED_WORKER_MULTIPLIER = 3;
+
+/**
+ * Gelismis iscinin bedeli normalin dort kati: ilk gelismis isci 400 altin.
+ *
+ * Isten (uc kat) ayri bir sayi, cunku takas artik duz degil: gelismis isci
+ * uc iscinin isini yapiyor ama dordunun parasini istiyor. Aradaki fark
+ * yerin bedeli -- bir beden, bir yol, takip edilecek tek hedef. Iki sayiyi
+ * tek sabitte tutmak, birini ayarlarken otekini sessizce bozmak demekti.
+ */
+export const ADVANCED_WORKER_COST_MULTIPLIER = 4;
 
 /** Alinmis bir isci: rolu ve kademesi. */
 export type HiredWorker = { role: HirableWorkerRole; advanced?: boolean };
@@ -67,10 +77,10 @@ export type HiredWorker = { role: HirableWorkerRole; advanced?: boolean };
  */
 export function getWorkerHireCost(hiredCount: number, advanced = false) {
   // Yuvarlama once yapiliyor, sonra carpiliyor. Tersi olsaydi cekmecede yan
-  // yana duran iki sayi birbirini tutmazdi: 146 ve 439 gibi. Oyuncunun
-  // gordugu bedel her zaman gordugu digerinin tam uc kati olmali.
+  // yana duran iki sayi birbirini tutmazdi: 146 ve 585 gibi. Oyuncunun
+  // gordugu bedel her zaman gordugu digerinin tam kati olmali.
   const normal = Math.round(WORKER_HIRE_BASE_COST * WORKER_HIRE_COST_GROWTH ** Math.max(0, hiredCount));
-  return advanced ? normal * ADVANCED_WORKER_MULTIPLIER : normal;
+  return advanced ? normal * ADVANCED_WORKER_COST_MULTIPLIER : normal;
 }
 
 export function isHirableWorkerRole(value: unknown): value is HirableWorkerRole {

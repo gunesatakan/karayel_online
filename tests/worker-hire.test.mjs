@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ADVANCED_WORKER_COST_MULTIPLIER,
   ADVANCED_WORKER_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
   WORKER_HIRE_BASE_COST,
@@ -158,12 +159,16 @@ test("alinan isciler anlik goruntuye yazilir", () => {
  * takasin kendisini bozar.
  */
 
-test("gelismis iscinin bedeli ayni sayacta normalin uc kati", () => {
+test("gelismis iscinin bedeli ayni sayacta normalin bedel katı", () => {
+  // Bedel ile is ayri sabitler: gelismis isci uc iscinin isini yapiyor ama
+  // dordunun parasini istiyor. Test ikisini karistirmasin diye bedel
+  // sabitini okuyor.
+  assert.equal(getWorkerHireCost(0, true), 400, "ilk gelismis isci 400 altin olmali");
   for (let count = 0; count < 15; count += 1) {
     assert.equal(
       getWorkerHireCost(count, true),
-      Math.round(getWorkerHireCost(count) * ADVANCED_WORKER_MULTIPLIER),
-      `${count}. isci: gelismis bedel normalin uc kati degil`
+      getWorkerHireCost(count) * ADVANCED_WORKER_COST_MULTIPLIER,
+      `${count}. isci: gelismis bedel normalin bedel katinda degil`
     );
   }
 });
