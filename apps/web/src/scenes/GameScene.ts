@@ -6462,7 +6462,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Cekirdegin rengi: govde renginin beyaza cekilmis hali.
+   * Govde renginin beyaza cekilmis hali.
    *
    * Tumuyle beyaz bir cekirdek isini beyaz gosteriyor; tumuyle renkli bir
    * cekirdek ise sicakligi kaybediyor. Aradaki karisim ikisini de veriyor --
@@ -6473,28 +6473,50 @@ export class GameScene extends Phaser.Scene {
     return (lift((color >> 16) & 0xff) << 16) | (lift((color >> 8) & 0xff) << 8) | lift(color & 0xff);
   }
 
+  /**
+   * Isinin kesiti: disdan ice daralan ve parlayan katmanlar.
+   *
+   * Yumusaklik tek bir cizgiden gelmiyor, katman **sayisindan** geliyor. Bir
+   * ara katmani dusurmek yetmisti: hale ile govde arasinda gecis kalmayinca
+   * isin keskin kenarli duz bir seride donusmustu. Bes kademe, disarida soluk
+   * renkten iceride beyaz bir file kadar surekli bir dusus veriyor.
+   *
+   * Renk bes kademenin ucunde birden tasiniyor, beyaz olan yalnizca en icteki
+   * ince file. Boylece seviye rengi okunuyor ama merkez yine de sicak: eskiden
+   * cekirdek neredeyse tam genislikte ve sabit beyazdi, o yuzden hangi seviye
+   * olursa olsun isin beyaz gorunuyordu.
+   */
+  private strokeBeamProfile(beam: BeamSnapshot, color: number, options: { spread: number; body: number }) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
+      return;
+    }
+    const { spread, body } = options;
+    const cizgi = (width: number, tone: number, alpha: number) => {
+      graphics.lineStyle(Math.max(0.6, width), tone, alpha);
+      graphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    };
+
+    cizgi(body + spread, color, 0.1);
+    cizgi(body + spread * 0.62, color, 0.24);
+    cizgi(body + spread * 0.28, color, 0.46);
+    cizgi(body, color, 0.82);
+    cizgi(body * 0.52, this.getBeamCoreColor(color, 0.45), 0.9);
+    cizgi(body * 0.2, this.getBeamCoreColor(color, 0.86), 0.96);
+  }
+
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
     }
 
-    // Rengi tasiyan katman govdenin kendisi.
-    //
-    // Once yalnizca hale renkliydi: cekirdek sabit beyaz ve neredeyse tam
-    // genislikteydi, govde katmanlari ise 0.12 ve 0.34 alfayla neredeyse
-    // gorunmezdi. Sonuc, kule rengi ne olursa olsun beyaz gorunen bir isindi --
-    // seviye rengi degistiginde yalnizca cevresindeki hare degisiyordu.
-    //
-    // Cekirdek hala var ve hala sicak, ama ince: govde renk, cekirdek isi.
-    this.beamGraphics.lineStyle(beam.width + 8, color, 0.14);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(2, beam.width), color, 0.92);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    const core = this.getBeamCoreColor(color);
-    this.beamGraphics.lineStyle(Math.max(1, beam.width * 0.42), core, 0.95);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    this.strokeBeamProfile(beam, color, { spread: 8, body: Math.max(2, beam.width) });
+    // Carpma noktasi kirisin en sicak yeri: orada beyaz, cevresinde renk.
+    const core = this.getBeamCoreColor(color, 0.86);
+    this.beamGraphics.fillStyle(color, 0.3);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 7);
     this.beamGraphics.fillStyle(core, 0.95);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4);
     this.beamGraphics.fillStyle(color, 0.22);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
     // Dis hale govdeden 8 birim genis; vurgu onun disina oturmali.
@@ -6506,21 +6528,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const core = this.getBeamCoreColor(color);
-    this.beamGraphics.lineStyle(beam.width + 14, color, 0.14);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(beam.width + 6, color, 0.5);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(3, beam.width - 2), color, 0.95);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(1.5, beam.width * 0.4), core, 0.98);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
+    const core = this.getBeamCoreColor(color, 0.86);
+    this.strokeBeamProfile(beam, color, { spread: 14, body: Math.max(3, beam.width) });
     this.beamGraphics.lineStyle(1, color, 0.65);
     this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
+    this.beamGraphics.fillStyle(color, 0.35);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 11);
     this.beamGraphics.fillStyle(core, 1);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 6);
-    this.beamGraphics.fillStyle(color, 0.58);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 5);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5);
+    this.beamGraphics.fillStyle(color, 0.4);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 8);
+    this.beamGraphics.fillStyle(core, 0.9);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
     // Kademe 3'te ray ve kafes kapali: ikisi de kirisin **uzerine** cizilen
     // duzenli cizgiler ve genis bir asiri yukleme kirisinde birlesince ortaya
     // demiryolu rayi gibi bir sey cikiyordu. O yerin sahibi artik parlamalar.
