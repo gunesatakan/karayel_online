@@ -79,7 +79,7 @@ import {
 import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
-import { configureHiDpiCamera, RENDER_SCALE } from "../rendering";
+import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
@@ -3390,7 +3390,7 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.panEffect.reset();
     camera.zoomEffect.reset();
-    camera.setZoom(RENDER_SCALE);
+    camera.setZoom(getSceneRenderScale(this));
     camera.centerOn(pointer.worldX, pointer.worldY);
     this.arenaZoomed = true;
     return false;
@@ -3454,9 +3454,10 @@ export class GameScene extends Phaser.Scene {
 
   /** Tuvalin dunya birimindeki olcusu; cihazin oranina gore degisir. */
   private getWorldSize() {
+    const scale = getSceneRenderScale(this);
     return {
-      width: this.scale.gameSize.width / RENDER_SCALE,
-      height: this.scale.gameSize.height / RENDER_SCALE
+      width: this.scale.gameSize.width / scale,
+      height: this.scale.gameSize.height / scale
     };
   }
 
@@ -3504,7 +3505,7 @@ export class GameScene extends Phaser.Scene {
     // centerOn aralığın tam ortasına oturur.
     const padding = TOWER_GRID_SIZE / 2;
     camera.setBounds(view.left - padding, view.top - padding, view.width + padding * 2, view.height + padding * 2);
-    camera.setZoom(RENDER_SCALE * view.fit);
+    camera.setZoom(getSceneRenderScale(this) * view.fit);
     camera.centerOn(view.left + view.width / 2, view.top + view.height / 2);
     this.arenaZoomed = false;
   }
@@ -7189,7 +7190,7 @@ export class GameScene extends Phaser.Scene {
     return `Olcek           kutu ${Math.round(host?.width ?? 0)}x${Math.round(host?.height ?? 0)} (${kutuOrani.toFixed(4)})`
       + ` · oyun ${Math.round(oyun.width)}x${Math.round(oyun.height)} (${oyunOrani.toFixed(4)})`
       + ` · sapma %${(sapma * 100).toFixed(2)}${sapma > 0.005 ? " BANT VAR" : ""}`
-      + ` · dpr ${(window.devicePixelRatio || 1).toFixed(2)} rs ${RENDER_SCALE}`
+      + ` · dpr ${(window.devicePixelRatio || 1).toFixed(2)} rs ${getSceneRenderScale(this).toFixed(2)}`
       + ` · vv ${Math.round(vv?.width ?? 0)}x${Math.round(vv?.height ?? 0)}@${(vv?.scale ?? 1).toFixed(2)}`
       + ` · inner ${window.innerWidth}x${window.innerHeight}`;
   }

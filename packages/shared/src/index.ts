@@ -269,6 +269,49 @@ export function getArenaCameraView(
   };
 }
 
+/**
+ * Dokunmatik cihazlarda cizim olceginin tavani.
+ *
+ * Deger korunuyor: telefonlarda doldurma hizi darbogaz ve bu tavan bilerek
+ * indirilmisti. Fare kullanan cihazlar bu tavana tabi degil.
+ */
+export const MAX_TOUCH_RENDER_SCALE = 2;
+
+/** Fare kullanan cihazlarda tuvalin cihaz pikseli cinsinden en genis hali. */
+export const MAX_RENDER_CANVAS_WIDTH = 2560;
+
+/**
+ * Tuvalin dunya birimi basina kac cihaz pikseli cizecegi.
+ *
+ * Deger bir donem `min(devicePixelRatio, 2)` sabitiydi. Bu sabit "cihaz
+ * pikseli / CSS pikseli" oranini "cihaz pikseli / dunya birimi" yerine
+ * koyuyordu. Telefonda ikisi ayni sey: gorunur alan ~390 CSS pikseli
+ * genisliginde ve dunya da 390 birim. Masaustunde degil -- 1440 piksellik bir
+ * pencerede ayni 390 birim dort kat genise yayiliyor, tuval 390 piksel kalip
+ * 1440'a geriliyor ve goruntu bulaniyor.
+ *
+ * `finePointer` yalnizca fare ya da izleme yuzeyi olan cihazlarda dogru.
+ * Telefon ve tabletler -- her iki yonde de -- eski hesabin **aynisini**
+ * aliyor: ekrani birebir kaplamak oralarda cizim yukunu artirmak demek.
+ */
+export function getRenderScale(options: {
+  hostWidth: number;
+  devicePixelRatio: number;
+  finePointer: boolean;
+  worldWidth?: number;
+  maxCanvasWidth?: number;
+}) {
+  const pixelRatio = Math.max(1, options.devicePixelRatio || 1);
+  const touchScale = Math.min(pixelRatio, MAX_TOUCH_RENDER_SCALE);
+  if (!options.finePointer) return touchScale;
+  const worldWidth = Math.max(1, options.worldWidth ?? GAME_WORLD_WIDTH);
+  const maxCanvasWidth = Math.max(worldWidth, options.maxCanvasWidth ?? MAX_RENDER_CANVAS_WIDTH);
+  // Ekrani birebir kaplayan olcek: tuvalin cihaz pikseli sayisi ekranin cihaz
+  // pikseli sayisina esitlenir. Asagi dogru asla eski degerin altina inmiyor.
+  const coverScale = (Math.max(1, options.hostWidth) * pixelRatio) / worldWidth;
+  return Math.min(Math.max(touchScale, coverScale), maxCanvasWidth / worldWidth);
+}
+
 export const MAP_PATH = [
   { x: 34, y: 104 },
   { x: 326, y: 104 },

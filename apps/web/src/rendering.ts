@@ -1,7 +1,41 @@
 import Phaser from "phaser";
-import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH } from "@karayel/shared";
+import { GAME_WORLD_HEIGHT, GAME_WORLD_WIDTH, getRenderScale } from "@karayel/shared";
 
-export const RENDER_SCALE = Math.min(window.devicePixelRatio || 1, 2);
+/**
+ * Cihazin birincil isaretcisi hassas mi (fare, izleme yuzeyi).
+ *
+ * Telefon ve tabletlerde -- yatay ya da dikey, fark etmez -- yanlis; olcek
+ * hesabi bu yuzden onlarda eski yoluna dusuyor.
+ */
+function hasFinePointer() {
+  return typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches;
+}
+
+/**
+ * Tuvalin dunya birimi basina cizecegi cihaz pikseli.
+ *
+ * Sabit degil: pencere buyudukce ayni dunya daha genise yayiliyor ve tuvalin
+ * de o kadar pikseli olmasi gerekiyor. Boyut degistiginde yeniden okunmali.
+ */
+export function getRenderScaleNow() {
+  return getRenderScale({
+    hostWidth: getHostSize().width,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    finePointer: hasFinePointer()
+  });
+}
+
+/**
+ * Sahnenin **su anki** tuvalinin olcegi.
+ *
+ * Yeniden hesaplamak yerine tuvalden geri okunuyor: tuval her zaman
+ * `GAME_WORLD_WIDTH * olcek` genisliginde kuruluyor, dolayisiyla bolme tam
+ * sonucu veriyor. Yeniden hesaplamak, boyutlandirmanin ortasinda kamerayi
+ * tuvalin kurulmadigi bir olcege gore ayarlama riski tasirdi.
+ */
+export function getSceneRenderScale(scene: Phaser.Scene) {
+  return Math.max(1e-3, scene.scale.gameSize.width / GAME_WORLD_WIDTH);
+}
 
 /**
  * Tuvalin sigdirilacagi kutu.
@@ -53,9 +87,10 @@ export function getWorldSize() {
 /** Tuvalin piksel olcusu: dunya olcusunun cihaz cozunurlugune tasinmis hali. */
 export function getCanvasSize() {
   const world = getWorldSize();
+  const scale = getRenderScaleNow();
   return {
-    width: world.width * RENDER_SCALE,
-    height: world.height * RENDER_SCALE
+    width: world.width * scale,
+    height: world.height * scale
   };
 }
 
@@ -69,8 +104,9 @@ export function getCanvasSize() {
 export function configureHiDpiCamera(scene: Phaser.Scene) {
   const camera = scene.cameras.main;
   const { width, height } = scene.scale.gameSize;
+  const scale = getSceneRenderScale(scene);
   camera.setViewport(0, 0, width, height);
-  camera.setZoom(RENDER_SCALE);
+  camera.setZoom(scale);
   camera.setScroll(0, 0);
-  camera.setBounds(0, 0, width / RENDER_SCALE, height / RENDER_SCALE);
+  camera.setBounds(0, 0, width / scale, height / scale);
 }
