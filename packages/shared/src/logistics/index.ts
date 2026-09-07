@@ -40,11 +40,11 @@ export const WORKER_HIRE_BASE_COST = 100;
  * 141 altina geliyordu, yani kadroyu buyutmenin bir bedeli yoktu ve dogru
  * oynanis her zaman "daha fazla isci" oluyordu.
  *
- * Ucte bir, sayiyi sert bir duvara dayamak yerine kendiliginden sinirliyor --
- * altinci isci 371, sekizinci 627. Kac isci alacagi artik oyuncunun bir
- * karari; kaci alinabilecegi degil.
+ * %20 yumusak bir egri ciziyor: altinci isci 249, sekizinci 358, onuncu 516.
+ * Kadroyu buyutmenin bir bedeli var ama yol kapanmiyor -- kac isci alacagi
+ * oyuncunun karari, kaci alinabilecegi degil.
  */
-export const WORKER_HIRE_COST_GROWTH = 1.3;
+export const WORKER_HIRE_COST_GROWTH = 1.2;
 
 /** Siradaki iscinin bedeli. Alinan her isci bir sonrakini pahalilastirir. */
 export function getWorkerHireCost(hiredCount: number) {
