@@ -32,6 +32,7 @@ import {
   getBallisticCollisionRadius,
   getLinearProjectilePosition,
   getTowerGridSpan,
+  getStage,
   getTowerTier,
   getTowerBuildCost,
   PLAYER_TOWER_LIMIT,
@@ -80,6 +81,7 @@ import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
+import { markStageCleared } from "../stage-progress";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
@@ -88,6 +90,7 @@ type GameSceneData = {
   characterId?: CharacterId;
   mapData?: EditableMapData;
   creative?: boolean;
+  stage?: number;
 };
 
 /** Sunucunun yaratici modda yolladigi o anki kurulum. */
@@ -502,6 +505,8 @@ export class GameScene extends Phaser.Scene {
   private currentUltimateCharge = 0;
   /** Menude yaratici mod secildi mi; odayi kurarken sunucuya gidiyor. */
   private creativeRequested = false;
+  /** Oynanan asama; dusman irki sunucuda buradan cikiyor. */
+  private selectedStage = 1;
   /** Sunucu bayragi acti mi; panel ve bedava yerlestirme buna bakiyor. */
   private creativeMode = false;
   private creativeLoadout?: CreativeLoadout;
@@ -606,6 +611,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
     this.creativeRequested = data.creative === true;
+    this.selectedStage = getStage(data.stage).id;
   }
 
   private getMapCellSize() {
@@ -2809,7 +2815,8 @@ export class GameScene extends Phaser.Scene {
           characterId: this.selectedCharacterId,
           mapData: this.selectedMapData,
           autoStart: true,
-          creative: this.creativeRequested
+          creative: this.creativeRequested,
+          stage: this.selectedStage
         }));
       }
       this.localSessionId = this.room.sessionId;
@@ -3144,7 +3151,7 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("worker:hired", (message: { role: HirableWorkerRole; cost: number }) => {
       this.showNotice(`${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
     });
-    room.onMessage("match:victory", (message: { wave: number; kills: number }) => this.showMatchResult("victory", message));
+    room.onMessage("match:victory", (message: { wave: number; kills: number; stage?: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
     room.onMessage("card:applied", () => this.hideCardChoices());
@@ -3210,39 +3217,59 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState({ status: `Koptu (${code})` });
   }
 
-  private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number }) {
+  private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number; stage?: number }) {
     if (this.matchResultShown) {
       return;
     }
     this.matchResultShown = true;
     const victory = result === "victory";
+    // Ilerleme zaferle birlikte yaziliyor. Asama sunucudan geliyor: istemcinin
+    // kendi sectigi degeri yazmasi, reddedilmis bir istekten sonra olmayan bir
+    // asamayi acardi.
+    const stageResult = victory ? markStageCleared(getStage(summary.stage ?? this.selectedStage).id) : undefined;
     const depth = 1000;
-    const world = this.getWorldSize();
-    this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0x020617, 0.88)
-      .setScrollFactor(0)
-      .setDepth(depth);
-    this.add.text(world.width / 2, world.height / 2 - 72, victory ? "ZAFER" : "YENİLGİ", {
+    // Ekran kameranin **gordugu** dikdortgene kuruluyor, dunya olcusune degil.
+    //
+    // Kaydirma carpani sifir olan nesneler kamerayi izliyor gorunuyor ama
+    // konumlari yine yakinlastirmayla olcekleniyor: arena kamerasi yakinlastirdigi
+    // icin dunyanin ortasina konan bir baslik ekranin ortasina dusmuyordu, sola
+    // ve yukari kaciyordu. Zafer ekrani basarimin gorundugu yer -- oyuncunun
+    // asamayi bitirdigini ogrendigi tek an -- yani kayacak son yer orasi.
+    const view = this.cameras.main.worldView;
+    const centerX = view.centerX;
+    const centerY = view.centerY;
+    this.add.rectangle(centerX, centerY, view.width, view.height, 0x020617, 0.88).setDepth(depth);
+    this.add.text(centerX, centerY - 72, victory ? "ZAFER" : "YENİLGİ", {
       fontFamily: "Arial Black, Arial",
       fontSize: "58px",
       color: victory ? "#facc15" : "#fb7185",
       stroke: "#020617",
       strokeThickness: 8
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    this.add.text(world.width / 2, world.height / 2 + 2, `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
+    }).setOrigin(0.5).setDepth(depth + 1);
+    const stage = getStage(summary.stage ?? this.selectedStage);
+    this.add.text(centerX, centerY + 2, victory
+      ? `${stage.id}. Aşama: ${stage.name}  •  ${summary.kills} düşman`
+      : `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
       fontFamily: "Arial",
-      fontSize: "24px",
+      fontSize: "20px",
       color: "#e2e8f0"
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 1);
-    const button = this.add.rectangle(world.width / 2, world.height / 2 + 82, 230, 52, 0x1e293b)
+    }).setOrigin(0.5).setDepth(depth + 1);
+    if (stageResult?.unlockedStage) {
+      this.add.text(centerX, centerY + 34, `${stageResult.unlockedStage}. aşama açıldı`, {
+        fontFamily: "Arial",
+        fontSize: "18px",
+        color: "#4ade80"
+      }).setOrigin(0.5).setDepth(depth + 1);
+    }
+    const button = this.add.rectangle(centerX, centerY + 82, 230, 52, 0x1e293b)
       .setStrokeStyle(2, victory ? 0xfacc15 : 0xfb7185)
       .setInteractive({ useHandCursor: true })
-      .setScrollFactor(0)
       .setDepth(depth + 1);
     this.add.text(button.x, button.y, "ANA MENÜ", {
       fontFamily: "Arial Black, Arial",
       fontSize: "20px",
       color: "#f8fafc"
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(depth + 2);
+    }).setOrigin(0.5).setDepth(depth + 2);
     button.on("pointerup", () => window.location.reload());
   }
 

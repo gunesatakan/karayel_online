@@ -672,6 +672,8 @@ export type GameSnapshot = {
   setupReadyPlayerIds?: string[];
   /** Yaratici mod acik: istemci serbest kurulum panelini gosterir. */
   creative?: boolean;
+  /** Odanin asamasi; dusman irki buradan cikiyor. */
+  stage?: number;
   perf?: ServerPerfSnapshot;
 };
 
@@ -699,6 +701,17 @@ export {
   resolveOnurGamblerShot
 } from "./characters/onur/passive/index.js";
 export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
+export {
+  STAGE_COUNT,
+  WAVES_PER_STAGE,
+  getHighestUnlockedStage,
+  getStage,
+  getStageDamageProfile,
+  getStageRace,
+  isStageUnlocked,
+  stageCatalog
+} from "./stages/index.js";
+export type { StageDefinition } from "./stages/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,

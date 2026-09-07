@@ -4,6 +4,12 @@ import {
   characters,
   MAP_STORAGE_KEY,
   createDefaultEditableMap,
+  STAGE_COUNT,
+  WAVES_PER_STAGE,
+  getStage,
+  getStageDamageProfile,
+  isStageUnlocked,
+  stageCatalog,
   enemyCombatDefinitions,
   getEnemyDamageResistances,
   getTowerBuildCost,
@@ -28,6 +34,7 @@ import {
   type TowerDefinition
 } from "@karayel/shared";
 import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
+import { getClearedStages, getDefaultStage } from "./stage-progress";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "./online-session";
 
@@ -190,7 +197,8 @@ export function setupMenuUi(game: Phaser.Game) {
       savedMaps,
       activeSavedMapId,
       selectedMapName,
-      lobbyError
+      lobbyError,
+      stageState
     );
     bindUi(view);
   };
@@ -203,6 +211,15 @@ export function setupMenuUi(game: Phaser.Game) {
    * hicbir zaman goturmez.
    */
   let creativeRequested = false;
+  /**
+   * Secili asama ve tamamlananlar.
+   *
+   * Depo yalnizca acilista okunuyor ve bu yetiyor: zafer ekranindaki "Ana Menu"
+   * dugmesi sayfayi bastan yukluyor, yani menu her donusunde ilerlemeyi zaten
+   * yeniden okumus oluyor. Ayrica bir tazeleme yolu koymak, hicbir zaman
+   * calismayan bir dal birakirdi.
+   */
+  let stageState = { cleared: getClearedStages(), selected: getDefaultStage() };
 
   const startGame = (mode: "solo" | "online" = "solo") => {
     if (!phaserReady || onlineGameStarting) {
@@ -215,7 +232,8 @@ export function setupMenuUi(game: Phaser.Game) {
     game.scene.start("game", {
       characterId: selectedCharacter.id,
       mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap,
-      creative: mode === "solo" && creativeRequested
+      creative: mode === "solo" && creativeRequested,
+      stage: stageState.selected
     });
     creativeRequested = false;
   };
@@ -343,6 +361,15 @@ export function setupMenuUi(game: Phaser.Game) {
         }
         selectedDetail = detail;
         render("detail");
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-stage-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = Number(button.dataset.stageId);
+        if (!isStageUnlocked(id, stageState.cleared)) return;
+        stageState = { ...stageState, selected: id };
+        render(view);
       });
     });
 
@@ -516,6 +543,51 @@ export function setupMenuUi(game: Phaser.Game) {
   render("home");
 }
 
+/**
+ * Asama tahtasi.
+ *
+ * Her asama kendi irkini ve o irkin zayif/direncli hasar tiplerini yaziyor,
+ * cunku asamanin tamami tek bir irkla geciyor: oyuncu girmeden once neyle
+ * karsilasacagini bilmeli ki dizilimi ona gore kursun. Zayiflik listesi elle
+ * yazilmiyor, direnc tablosundan tureiyor -- metinle saha ayrilirsa oyuncuya
+ * yalan soylenmis olur.
+ */
+function renderStageBoard(stageState: StageState) {
+  const rows = stageCatalog.map((stage) => {
+    const unlocked = isStageUnlocked(stage.id, stageState.cleared);
+    const cleared = stageState.cleared.includes(stage.id);
+    const profile = getStageDamageProfile(stage.id);
+    const classes = [
+      "stage",
+      stage.id === stageState.selected ? "is-active" : "",
+      unlocked ? "" : "is-locked",
+      cleared ? "is-cleared" : ""
+    ].filter(Boolean).join(" ");
+    const detail = unlocked
+      ? `${escapeHtml(stage.raceName)} · ${WAVES_PER_STAGE} tur`
+      : "Önceki aşamayı tamamla";
+    const profileLine = unlocked
+      ? `<em>Zayıf: ${profile.weakTo.map((type) => damageTypeCodex[type].name).join(", ")} · Dirençli: ${profile.resistantTo.map((type) => damageTypeCodex[type].name).join(", ")}</em>`
+      : "";
+    return `
+      <button class="${classes}" data-stage-id="${stage.id}"${unlocked ? "" : " disabled"}>
+        <span class="stage__index">${stage.id}</span>
+        <span class="stage__body">
+          <strong>${escapeHtml(stage.name)}</strong>
+          <small>${detail}</small>
+          ${profileLine}
+        </span>
+        <span class="stage__mark">${cleared ? "✓" : unlocked ? "" : "🔒"}</span>
+      </button>`;
+  }).join("");
+
+  return `
+    <section class="stages" aria-label="Aşamalar">
+      <p class="section-label">Aşamalar <b>${stageState.cleared.length}/${STAGE_COUNT}</b></p>
+      <div class="stages__grid">${rows}</div>
+    </section>`;
+}
+
 function renderBackdrop() {
   return `
     <div class="menu-backdrop" aria-hidden="true">
@@ -573,12 +645,13 @@ function renderShell(
   savedMaps: SavedMapRecord[] = [],
   activeSavedMapId = "",
   selectedMapName = "Harita 1",
-  lobbyError = ""
+  lobbyError = "",
+  stageState: StageState = { cleared: [], selected: 1 }
 ) {
   return `
     <main class="menu-shell">
       <section class="menu-stage">
-        ${view === "home" ? renderHome(selectedCharacter) : ""}
+        ${view === "home" ? renderHome(selectedCharacter, stageState) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "bestiary" ? renderBestiary() : ""}
@@ -590,7 +663,10 @@ function renderShell(
   `;
 }
 
-function renderHome(selectedCharacter: CharacterDefinition) {
+/** Menunun asama hakkinda bildigi her sey; `renderHome` disaridan aliyor. */
+type StageState = { cleared: number[]; selected: number };
+
+function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState) {
   return `
     <div class="screen screen--home">
       <header class="brand">
@@ -629,10 +705,12 @@ function renderHome(selectedCharacter: CharacterDefinition) {
         </div>
       </section>
 
+      ${renderStageBoard(stageState)}
+
       <footer class="home-actions">
         <button class="command command--hero" data-start-game>
           <span>Savaşa Gir</span>
-          <small>Tek kişilik savunma</small>
+          <small>${stageState.selected}. Aşama · ${escapeHtml(getStage(stageState.selected).name)}</small>
         </button>
         <div class="home-actions__grid">
           <button class="command command--ghost" data-start-creative>Yaratıcı</button>

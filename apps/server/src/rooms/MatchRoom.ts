@@ -169,6 +169,8 @@ import {
   isStatusEffectActive,
   isTowerAligned,
   isTowerPerformanceIdle,
+  getStage,
+  getStageRace,
   getTowerFireAlignmentTolerance,
   shouldRetainAimTargetLock,
   usesLinearBallistics,
@@ -313,7 +315,6 @@ const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
  */
 const WAVE_CLEAR_PAUSE_MS = 2000;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
-const ENEMY_RACE_WAVE_ORDER: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 /**
  * Kimlikten kule tanimina sabit zamanli erisim.
  *
@@ -576,6 +577,7 @@ type JoinOptions = {
   mapData?: EditableMapData;
   autoStart?: boolean;
   creative?: boolean;
+  stage?: number;
 };
 
 type PlaceTowerMessage = {
@@ -1317,6 +1319,14 @@ export class MatchRoom extends Room<MatchState> {
   private mapScale: MapScale = DEFAULT_MAP_SCALE;
   private hostSessionId = "";
   private gameStarted = false;
+  /**
+   * Odanin asamasi. Dusman irki tumuyle buradan cikiyor.
+   *
+   * Irk bir donem dalga dalga donuyordu ve oyuncu dizilimini ona gore
+   * kuramiyordu -- dalga arasinda kule degistirmenin yolu yok. Asama basina
+   * tek irk, o secimi girmeden once alinan bir karara ceviriyor.
+   */
+  private stage = 1;
   private setupPhase = true;
   /**
    * Yaratici mod: bedava kule, serbest seviye, kart ve esya anahtarlari.
@@ -1377,6 +1387,9 @@ export class MatchRoom extends Room<MatchState> {
     this.autoStartOnFirstJoin = options.autoStart === true;
     // Yaratici bayragi lobi yoluna sizmasin diye dogrudan baslatmaya bagli.
     this.creativeMode = options.creative === true && options.autoStart === true;
+    // Gecersiz kimlik ilk asamaya duser; eksik veri odanin kurulmasini
+    // engellememeli.
+    this.stage = getStage(options.stage).id;
     const baseMap = normalizeMapData(options.mapData);
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
@@ -2269,7 +2282,7 @@ export class MatchRoom extends Room<MatchState> {
     this.matchResult = result;
     this.setupPhase = false;
     this.setupReadyPlayerIds.clear();
-    this.broadcast(`match:${result}`, { result, wave: this.wave, kills: this.kills });
+    this.broadcast(`match:${result}`, { result, wave: this.wave, kills: this.kills, stage: this.stage });
   }
 
   private spawnEnemy() {
@@ -2280,7 +2293,7 @@ export class MatchRoom extends Room<MatchState> {
       ? "siege"
       : roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
     const definition = getEnemyCombatDefinition(type);
-    const race = getEnemyRaceForWave(this.wave);
+    const race = getStageRace(this.stage);
     const isFlyingEnemy = shouldSpawnFlyingEnemy(this.wave, this.waveSpawned);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
@@ -8516,6 +8529,7 @@ export class MatchRoom extends Room<MatchState> {
       result: this.matchResult,
       setupPhase: this.setupPhase,
       creative: this.creativeMode || undefined,
+      stage: this.stage,
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,
@@ -10352,9 +10366,6 @@ function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel,
   return currentDistanceSq > previousDistanceSq && previousDistanceSq <= traveledSq + hitRadius * hitRadius;
 }
 
-function getEnemyRaceForWave(wave: number): EnemyRace {
-  return ENEMY_RACE_WAVE_ORDER[Math.max(0, wave - 1) % ENEMY_RACE_WAVE_ORDER.length];
-}
 
 function getEnemyCollisionRadius(enemy: EnemyModel) {
   return enemy.type === "brute" ? 19 : enemy.type === "runner" ? 13 : 15;

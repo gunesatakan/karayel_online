@@ -3363,3 +3363,85 @@ canvas {
   color: #94a3b8;
   margin-bottom: 6px;
 }
+
+/*
+ * Asama tahtasi.
+ *
+ * Ana ekranda operator kadrosuyla savas dugmesi arasinda duruyor: oyuncu once
+ * kimle, sonra neyle savasacagini seciyor. Kilitli asama tiklanamaz ve
+ * gorunuste de sonuk, cunku kilidin sebebi de karttan okunuyor.
+ */
+.stages {
+  margin: 14px 0 6px;
+}
+
+.stages__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  text-align: left;
+}
+
+.stage.is-active {
+  border-color: rgba(250, 204, 21, 0.85);
+  background: rgba(113, 63, 18, 0.35);
+}
+
+.stage.is-cleared .stage__mark {
+  color: #4ade80;
+}
+
+.stage.is-locked {
+  opacity: 0.45;
+}
+
+.stage__index {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  font-size: 12px;
+}
+
+.stage__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.stage__body strong {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.stage__body small {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.stage__body em {
+  font-style: normal;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.stage__mark {
+  flex: none;
+  font-size: 14px;
+}
