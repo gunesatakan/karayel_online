@@ -139,6 +139,31 @@ test("hicbir esya sahada karsiligi olmayan bir ozellige kapsanmaz", () => {
   }
 });
 
+/**
+ * Kuleye takilan esya, kuleye takildigini soylemeli.
+ *
+ * Katalogda "Tum kulelerin calisma enerjisi tuketimi -%25" yazan bir esya
+ * vardi ve tek bir kuleye takiliyordu; onlarca esya da sinif adiyla cogul
+ * yazilmisti ("Projectile kulelerinin hasari +%20"), yani oyuncuya butun
+ * sinifi guclendirdigini soyluyordu. Bir esyanin kac kuleyi etkiledigi satin
+ * alma kararinin tamami oldugu icin bu kucuk bir dil hatasi degil.
+ *
+ * Olcut tek kelime: kuleye takilan her esya "Takildigi" demeli, hicbir kuresel
+ * esya dememeli. Cumleyi kurma bicimini serbest birakip yalnizca oznesini
+ * sabitliyor.
+ */
+test("kuleye takilan esyalar aciklamasinda kuleye takildigini soyler", () => {
+  for (const item of shopCatalog) {
+    const takilir = item.target === "tower";
+    const soyluyor = item.description.includes("Takıldığı");
+    if (takilir) {
+      assert.ok(soyluyor, `${item.id} kuleye takiliyor ama aciklamasi soylemiyor: ${item.description}`);
+    } else {
+      assert.ok(!soyluyor, `${item.id} kuresel ama takilir gibi yaziyor: ${item.description}`);
+    }
+  }
+});
+
 test("kart ve esya kimlikleri benzersiz", () => {
   const cardIds = cardCatalog.map((card) => card.id);
   assert.equal(new Set(cardIds).size, cardIds.length, "yinelenen kart kimligi var");
