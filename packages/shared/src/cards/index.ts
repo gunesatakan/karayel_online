@@ -171,8 +171,10 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sogutma-sistemi", name: "Soğutma Sistemi", description: "Tüm kulelerin soğuması +%50.", axes: ["economy"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("sogutma-sistemi", "cooling", 0.5)] },
   { id: "kalin-zirh", name: "Kalın Zırh", description: "Tüm kulelerin canı +%80.", axes: ["barricade"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("kalin-zirh", "towerHealth", 0.8)] },
   { id: "keskin-goz", name: "Keskin Göz", description: "Tüm kulelerin kritik şansı +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("keskin-goz", "critChance", 0.08)] },
-  // Isabet, donus hizi ve mermi hizi ayri ayri birer kart olduklarinda hicbiri
-  // tek basina secilmeye deger degildi; namlu bakimi tek kartta toplandi.
+  // Bir donem isabet, donus hizi ve mermi hizi ayri ayri kartlardi ve hicbiri
+  // tek basina secilmeye deger degildi; ucu burada toplandi. Nisan alma ekseni
+  // asagida yeniden acildi ama duz sayi olarak degil (bkz. o bolum); bu kart
+  // o eksenin ucunu birden kapsayan tek genel secenek olarak kaliyor.
   { id: "nisan-takimi", name: "Nişan Takımı", description: "Tüm kulelerin isabeti +%15, dönüş hızı +%20, mermi hızı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("nisan-takimi", "accuracy", 0.15), effect("nisan-takimi", "turnRate", 0.2), effect("nisan-takimi", "projectileSpeed", 0.25)] },
   { id: "verimli-namlu", name: "Verimli Yakıt", description: "Tüm kulelerin atış yakıtı tüketimi -%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("verimli-namlu", "shotFuelCost", -0.3)] },
   { id: "uyku-modu", name: "Uyku Modu", description: "Kulelerin çalışma enerjisi tüketimi -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, effects: [effect("uyku-modu", "operatingEnergyCost", -0.4)] },
@@ -203,6 +205,26 @@ export const cardCatalog: CardDefinition[] = [
   { id: "kristal-ekonomisi", name: "Kristal Ekonomisi", description: "Güç kristali yakan kulelerin atış enerjisi -%60.", axes: ["economy"], scope: { kind: "tagged", ammoTypes: ["powerCrystal"] }, stackable: false, rarity: "rare", effects: [effect("kristal-ekonomisi", "energyCost", -0.6)] },
   { id: "kursun-fabrikasi", name: "Kurşun Fabrikası", description: "Kurşun kullanan kulelerin mühimmat tüketimi -%50.", axes: ["economy"], scope: { kind: "tagged", ammoTypes: ["bullet"] }, stackable: false, rarity: "rare", effects: [effect("kursun-fabrikasi", "ammoCost", -0.5)] },
   { id: "agir-carpma", name: "Ağır Çarpma", description: "Çarpma kulelerinin hasarı +%40, dönüş hızı -%15.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["impact"] }, stackable: false, effects: [effect("agir-carpma", "damage", 0.4), effect("agir-carpma", "turnRate", -0.15)] },
+
+  // --- Nisan alma ekseni ---
+  // Donus hizi ve ates konisi tek bir kartta (Nisan Takimi) sikismisti, oysa
+  // ikisi birbirinin bedeli: koniyi daraltmak kuleyi daha gec atesletir, hizli
+  // donen bir namlu ise daralan koniyi tasiyabilir. Kartlar bu gerilimi acikca
+  // pazarlik konusu yapiyor, ucer ucer ayrilmalari da bunun icin.
+  //
+  // Uc uyari: (a) her iki stat da yalnizca nisan alan 12 kulede is goruyor,
+  // o yuzden genel olanlar kucuk sayilarla ve bir bedelle geliyor; (b) isabet
+  // eksiye cekilemiyor -- bonus [0,1] araligina kirpiliyor -- bu yuzden hicbir
+  // kartin cezasi "isabet -%X" degil; (c) isabet 1.0`da doyuyor ve ustu bosa
+  // gidiyor, bu yuzden ucunun toplami (0,15x2 + 0,25 + 0,40 = 0,95) kasten
+  // tavanin hemen altinda kaliyor -- oyuncu ucunu de alsa hicbir secimi
+  // bosa gitmesin.
+  { id: "hafif-kizak", name: "Hafif Kızak", description: "Tüm kulelerin dönüş hızı +%30, canı -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("hafif-kizak", "turnRate", 0.3), effect("hafif-kizak", "towerHealth", -0.15)] },
+  { id: "denge-agirligi", name: "Denge Ağırlığı", description: "Çarpma kulelerinin dönüş hızı +%70.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["impact"] }, stackable: false, rarity: "uncommon", effects: [effect("denge-agirligi", "turnRate", 0.7)] },
+  { id: "serbest-yatak", name: "Serbest Yatak", description: "Bir kulenin dönüş hızı +%120, hasarı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("serbest-yatak", "turnRate", 1.2, "tower"), effect("serbest-yatak", "damage", -0.2, "tower")] },
+  { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%10.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.1)] },
+  { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
+  { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.2, "tower")] },
 
   // --- Isi ve enerji ekseni ---
   // Performans kolu zaten atis hizini isi ve enerjiyle takas ediyor ama hicbir

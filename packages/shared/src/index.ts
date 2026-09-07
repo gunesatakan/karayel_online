@@ -783,6 +783,7 @@ export type { ActiveMark } from "./marks/index.js";
 export {
   TOWER_TURN_RATE_RADIANS_PER_SECOND,
   TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS,
+  TOWER_FIRE_ALIGNMENT_MIN_RADIANS,
   getTowerFireAlignmentTolerance,
   shouldRetainAimTargetLock,
   shortestAngleDelta,

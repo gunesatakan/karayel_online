@@ -22,6 +22,7 @@ import {
   resolveTowerEngine,
   shopCatalog,
   shopItemAppliesToTower,
+  towerAims,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 
@@ -89,6 +90,45 @@ test("hicbir kart sahada karsiligi olmayan bir ozellige kapsanmaz", () => {
     const matches = allTowers.filter((tower) => cardAppliesToTower(card, tower));
     assert.ok(matches.length > 0, `${card.id} hicbir kuleye uymuyor, olu icerik`);
   }
+});
+
+/**
+ * Nisan alma statlari yalnizca nisan alan kulelerde is goruyor.
+ *
+ * "Hicbir kuleye uymuyor" testi bunu yakalamaz: isabeti auralara kapsayan bir
+ * kart 12 kuleye uyar ama hicbirinde bir sey yapmaz, cunku aimTowerAt o kuleler
+ * icin hic calismiyor. Olu icerigin bu turu ancak stat ile kulenin nisan alip
+ * almadigi birlikte sorulunca gorunur.
+ */
+test("isabet ve donus hizi kartlari nisan alan en az bir kuleye ulasir", () => {
+  const aimingStats = new Set(["accuracy", "turnRate"]);
+  for (const entry of cardCatalog) {
+    if (!entry.effects.some((modifier) => aimingStats.has(modifier.stat))) continue;
+    const reached = allTowers.filter((tower) => towerAims(tower.id) && cardAppliesToTower(entry, tower));
+    assert.ok(reached.length > 0, entry.id + " nisan alan hicbir kuleye ulasmiyor, olu icerik");
+  }
+  for (const entry of shopCatalog) {
+    if (!entry.effects.some((modifier) => aimingStats.has(modifier.stat))) continue;
+    const reached = allTowers.filter((tower) => towerAims(tower.id) && shopItemAppliesToTower(entry, tower));
+    assert.ok(reached.length > 0, entry.id + " nisan alan hicbir kuleye ulasmiyor, olu icerik");
+  }
+});
+
+/**
+ * Isabet bonusu 1.0 degerinde doyuyor: ustundeki her sey bosa gidiyor. Yeni
+ * isabet kartlari kasten toplami tavanin altinda kalacak sekilde ayarlandi ki
+ * oyuncu ucunu de alsa hicbir secimi bosa gitmesin.
+ */
+test("yeni isabet kartlarinin toplami isabet tavanini asmaz", () => {
+  const ids = ["sabit-kundak", "uzun-namlu", "atis-kontrol-birimi"];
+  let total = 0;
+  for (const id of ids) {
+    const card = cardCatalog.find((candidate) => candidate.id === id);
+    assert.ok(card, id + " katalogda yok");
+    const add = card.effects.filter((modifier) => modifier.stat === "accuracy").reduce((sum, modifier) => sum + modifier.add, 0);
+    total += add * (card.stackable ? (card.maxStacks ?? 1) : 1);
+  }
+  assert.ok(total < 1, "yeni isabet kartlari toplami " + total.toFixed(2) + ", tavan 1.0");
 });
 
 test("hicbir esya sahada karsiligi olmayan bir ozellige kapsanmaz", () => {
