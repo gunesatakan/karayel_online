@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getClientBufferedAmount, MatchRoom, roundNetworkNumber, SNAPSHOT_BACKPRESSURE_LIMIT_BYTES, stripWireDefaults, idleSnapshotSignature } from "../apps/server/dist/rooms/MatchRoom.js";
+import { getClientBufferedAmount, MatchRoom, roundNetworkNumber, SNAPSHOT_BACKPRESSURE_LIMIT_BYTES, SNAPSHOT_SEND_INTERVAL_MS, stripWireDefaults, idleSnapshotSignature } from "../apps/server/dist/rooms/MatchRoom.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 test("WebSocket bufferedAmount farklı taşıma şekillerinden okunur", () => {
@@ -98,6 +98,16 @@ test("kuyruk sınırı birkaç snapshotluk kalır", () => {
  */
 
 /** Oda saati `performance.now` okuyor; ikisini birden ilerletmeden olculemez. */
+/**
+ * Sunucunun kendi tik hizi: Colyseus varsayilani 60 Hz.
+ *
+ * Yardimci bir donem 50 ms'lik tiklerle suruyordu ve bu, gonderim sikligini
+ * olcen testleri sessizce yanlis dayanaga oturtuyordu: aralik tik sinirlarinda
+ * kontrol edildigi icin gercek hiz tik boyutuna yuvarlaniyor. 50 ms'lik tikle
+ * 60 ms'lik aralik 10 kare/sn veriyor, uretimde ise 15.
+ */
+const SERVER_TICK_MS = 1000 / 60;
+
 function driveRoom(room, seconds) {
   const realDate = Date.now;
   const realPerf = performance.now.bind(performance);
@@ -106,10 +116,10 @@ function driveRoom(room, seconds) {
   Date.now = () => dateMs;
   performance.now = () => perfMs;
   try {
-    for (let elapsed = 0; elapsed < seconds * 1000; elapsed += 50) {
-      dateMs += 50;
-      perfMs += 50;
-      room.update(50);
+    for (let elapsed = 0; elapsed < seconds * 1000; elapsed += SERVER_TICK_MS) {
+      dateMs += SERVER_TICK_MS;
+      perfMs += SERVER_TICK_MS;
+      room.update(SERVER_TICK_MS);
     }
   } finally {
     Date.now = realDate;
@@ -167,8 +177,11 @@ test("dalga sırasında hiçbir snapshot atlanmaz", () => {
 
   driveRoom(room, 5);
 
-  // 50 ms araliktan bes saniyede yaklasik yuz kare.
-  assert.ok(sent() >= 90, `dalga sirasinda yalnizca ${sent()} snapshot gitti`);
+  // Beklenen sayi sabitten turetiliyor, elle yazilmiyor: aralik degistiginde
+  // testin anlami degismemeli. Tuttugu soz "dalga sirasinda kare atlanmaz",
+  // "saniyede yirmi kare gider" degil.
+  const beklenen = (5000 / SNAPSHOT_SEND_INTERVAL_MS) * 0.9;
+  assert.ok(sent() >= beklenen, `dalga sirasinda yalnizca ${sent()} snapshot gitti, beklenen ${Math.round(beklenen)}`);
 });
 
 test("imza zaman damgasını saymaz", () => {

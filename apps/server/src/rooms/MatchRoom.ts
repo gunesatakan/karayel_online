@@ -339,17 +339,23 @@ const TOWER_DEFINITIONS_BY_ID = new Map(
   Object.values(towerCatalog).flat().map((definition) => [definition.id, definition])
 );
 /**
- * Snapshot araligi.
+ * Snapshot araligi: 15 kare/sn.
  *
  * 33 ms (30 Hz) idi. Istemci zaten yarim saniyelik bir oynatma tamponu tutuyor
  * ve iki snapshot arasini aradegerliyor, yani 30 Hz'in verdigi fazladan
  * puruzsuzlugu kimse gormuyordu -- karsiliginda her istemciye giden bant bir
- * kat buyuktu. 50 ms'de tampon hala on snapshot tutuyor.
+ * kat buyuktu.
+ *
+ * Deger **60**, 66,67 degil. Aralik tik sinirlarinda kontrol ediliyor ve
+ * sunucu 60 Hz kosuyor, yani gercek hiz her zaman bir tik katina yuvarlaniyor:
+ * 50 ms uc tike (20 kare/sn), 60 ms dort tike (15 kare/sn), 66,67 ms ise bes
+ * tike duserek 12 kare/sn veriyor. Istenen sayiyi yazmak istenen sayiyi
+ * vermiyor; kat secmek gerekiyor.
  *
  * Bu, zayif baglantidaki oyuncu icin dogrudan kazanc: gonderilen her bayt onun
  * kuyruguna giriyor ve kuyruktaki her bayt kendi girdisinin gecikmesi demek.
  */
-const SNAPSHOT_SEND_INTERVAL_MS = 50;
+export const SNAPSHOT_SEND_INTERVAL_MS = 60;
 /**
  * Bir istemcinin cikis kuyrugu bu kadari asarsa ona snapshot gonderilmez.
  *
