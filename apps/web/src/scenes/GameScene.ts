@@ -6511,10 +6511,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.strokeBeamProfile(beam, color, { spread: 8, body: Math.max(2, beam.width) });
-    // Carpma noktasi kirisin en sicak yeri: orada beyaz, cevresinde renk.
+    // Carpma noktasi kirisin en sicak yeri, ama yalnizca nokta: cevresine
+    // renkli bir bulut konmuyor. Bulut kirisin ucunu kalinlastirip vurusun
+    // nereye dustugunu bulaniklastiriyordu.
     const core = this.getBeamCoreColor(color, 0.86);
-    this.beamGraphics.fillStyle(color, 0.3);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 7);
     this.beamGraphics.fillStyle(core, 0.95);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4);
     this.beamGraphics.fillStyle(color, 0.22);
@@ -6536,8 +6536,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 11);
     this.beamGraphics.fillStyle(core, 1);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5);
-    this.beamGraphics.fillStyle(color, 0.4);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 8);
+    // Ucta hare yok, yalnizca sicak nokta; kural asiri yuklemede de ayni.
     this.beamGraphics.fillStyle(core, 0.9);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
     // Kademe 3'te ray ve kafes kapali: ikisi de kirisin **uzerine** cizilen
