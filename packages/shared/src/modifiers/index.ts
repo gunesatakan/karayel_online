@@ -32,6 +32,18 @@ export type ModifierStat =
   | "airDamage"
   | "damageVsShielded"
   | "damageVsBrute"
+  /**
+   * Kalan dusman turlerine karsi hasar.
+   *
+   * Uzun sure yalnizca brute, kalkanli ve ucan hedefin karsiligi vardi;
+   * piyade, kosucu, nisanci ve kusatma hicbir icerikte gecmiyordu. Dordu de
+   * ayri stat cunku tehditleri ayri: piyade sayiyla, kosucu hizla, nisanci
+   * menzille, kusatma ise duvari yikarak geliyor.
+   */
+  | "damageVsGrunt"
+  | "damageVsRunner"
+  | "damageVsShooter"
+  | "damageVsSiege"
   | "targetLockMs"
   /** Ulti sarj hizi carpani. Beceriler ve ulti roguelike katmanina bu iki statla baglanir. */
   | "ultimateCharge"

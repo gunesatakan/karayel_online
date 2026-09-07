@@ -34,7 +34,8 @@ const ALL_STATS = [
   "statusDuration", "statusMagnitude", "ammoEmptyDamage", "turnRate",
   "projectileSpeed", "resourceProduction", "ammoProduction", "workerGatherSpeed",
   "performanceCost", "resistancePierce", "weaknessBonus",
-  "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs"
+  "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs",
+  "damageVsGrunt", "damageVsRunner", "damageVsShooter", "damageVsSiege"
 ];
 
 /**

@@ -6882,6 +6882,10 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.movementKind === "air") shopDamageAdd += getModifierAdd(damageModifiers, "airDamage");
     if (enemy.shield > 0) shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShielded");
     if (enemy.type === "brute") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsBrute");
+    if (enemy.type === "grunt") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsGrunt");
+    if (enemy.type === "runner") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsRunner");
+    if (enemy.type === "shooter") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShooter");
+    if (enemy.type === "siege") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsSiege");
     if (this.towerHasUnlock(damageSourceTower, "status:chill") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (this.towerHasUnlock(damageSourceTower, "bloodBank")) shopDamageAdd += 0.2;
     // Rolanti odulu: kolu asagida tutmak da bir karar olsun. Kolun ust

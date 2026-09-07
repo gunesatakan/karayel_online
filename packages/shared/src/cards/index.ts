@@ -233,6 +233,18 @@ export const cardCatalog: CardDefinition[] = [
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
 
+  // --- Dusman turleri ---
+  // Icerik uzun sure yalnizca uc hedefi taniyordu: brute, kalkanli ve ucan.
+  // Piyade, kosucu, nisanci ve kusatma hicbir kartta ya da esyada
+  // gecmiyordu, oysa dalgayi tasiyan cogunluk onlar.
+  //
+  // Dordu ayni cumlenin dort cesitlemesi olmasin diye ikiser ikiser
+  // grupladim ve gruplar tehdidin cinsine gore: sayiyla gelen ikisi (piyade,
+  // kosucu) bir kartta, yapiya saldiran ikisi (nisanci, kusatma) bir bedelle
+  // obur kartta. Kule basina keskinlestirmek isteyen icin ayrica iki esya var.
+  { id: "kalabalik-bastirma", name: "Kalabalık Bastırma", description: "Piyade ve koşucu düşmanlara hasar +%40.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("kalabalik-bastirma", "damageVsGrunt", 0.4), effect("kalabalik-bastirma", "damageVsRunner", 0.4)] },
+  { id: "karsi-batarya", name: "Karşı Batarya", description: "Nişancı ve kuşatma düşmanlarına hasar +%55 ama menzil -%10.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("karsi-batarya", "damageVsShooter", 0.55), effect("karsi-batarya", "damageVsSiege", 0.55), effect("karsi-batarya", "range", -0.1)] },
+
   // --- Dusman direnci ekseni ---
   // Her irkin bir hasar tipine direnci, bir digerine zaafi var ve dalga
   // ilerledikce irk degisiyor. Ama kule dizilimi dalga arasinda
