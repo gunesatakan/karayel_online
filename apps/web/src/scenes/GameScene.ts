@@ -2090,10 +2090,23 @@ export class GameScene extends Phaser.Scene {
    * Sabit bir cizgiye hareket katmak, onu kalinlastirmaktan daha pahali bir
    * gorunum verir.
    */
-  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { rails?: boolean; outerWidth?: number } = {}) {
-    const tier = beam.tier ?? 1;
+  /**
+   * Kademe vurgusu: yalnizca onuncu seviyede, isin boyunca kosan tek bir dugum.
+   *
+   * Burada bir donem iki sey daha vardi ve ikisi de ayni hatayi yapiyordu.
+   * Kademe 2'de isinin iki yanina cekilen paralel kil hatlar, kademe 3'te ise
+   * boyunca dizilen dik kil cizgiler. Ikisi birlikte -- ve tek baslarina --
+   * kirisi bir borunun ya da rayin icinden geciyormus gibi gosteriyordu: goz
+   * once o duzenli geometriyi okuyor, isini sonra. Kademeyi zaten renk
+   * soyluyor (kirmizi, mavi, beyaz) ve rengin uzerine cizilen bir cerceve o
+   * bilgiyi tekrar etmekten baska bir sey yapmiyordu.
+   *
+   * Geriye kalan dugum bir cerceve degil, bir hareket: isin duruyorken bile
+   * icinden bir sey akiyor gorunuyor.
+   */
+  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { outerWidth?: number } = {}) {
     const graphics = this.beamGraphics;
-    if (!graphics || tier < 2) {
+    if (!graphics || (beam.tier ?? 1) < 3) {
       return;
     }
 
@@ -2103,48 +2116,13 @@ export class GameScene extends Phaser.Scene {
     const ux = dx / length;
     const uy = dy / length;
 
-    const nx = -uy;
-    const ny = ux;
-
-    // Vurgu, isinin **cizilen** genisligine gore olculur.
+    // Dugum, isinin **cizilen** genisligine gore olculur.
     //
     // Once beam.width kullaniliyordu, ama cizim fonksiyonlari govdenin ustune
     // hale katmanlari koyuyor: Debug Lazer 4 birimlik bir isin bildirirken
-    // ekranda 12 birim yer kapliyor. Vurgu o yuzden isinin **icine** dusuyor ve
-    // hicbir kademede gorunmuyordu. Taban deger de sart: ince isinlarda oranla
+    // ekranda 12 birim yer kapliyor. Taban deger de sart: ince isinlarda oranla
     // olculen her sey birkac pikselin altina inip kayboluyor.
     const outerHalf = Math.max(3, (options.outerWidth ?? beam.width) * 0.5);
-
-    if (options.rails !== false) {
-      // Kademe 2: isinin **disina** cizilen iki kil hat. Isin govdesi zaten
-      // beyaz, o yuzden ustune beyaz eklemek hicbir sey soylemiyordu; kenarin
-      // hemen disina cekilen renkli bir cizgi ise isini kalinlastirmadan ona
-      // isli bir sinir veriyor.
-      const edge = outerHalf + 2;
-      graphics.lineStyle(0.8, color, 0.6);
-      graphics.lineBetween(beam.x1 + nx * edge, beam.y1 + ny * edge, beam.x2 + nx * edge, beam.y2 + ny * edge);
-      graphics.lineBetween(beam.x1 - nx * edge, beam.y1 - ny * edge, beam.x2 - nx * edge, beam.y2 - ny * edge);
-    }
-
-    if (tier < 3) {
-      return;
-    }
-
-    if (options.rails !== false) {
-      // Kademe 3: isin boyunca duzenli araliklarla dik kil cizgiler. Kafes
-      // hissi veriyor -- ayni genislikte, ama islenmis. Buyume yerine dokusu
-      // degistirmenin en okunakli yolu bu cikti.
-      const step = 22;
-      const reach = outerHalf + 1.5;
-      graphics.lineStyle(0.7, 0xffffff, 0.5);
-      for (let along = step * 0.5; along < length; along += step) {
-        const px = beam.x1 + ux * along;
-        const py = beam.y1 + uy * along;
-        graphics.lineBetween(px + nx * reach, py + ny * reach, px - nx * reach, py - ny * reach);
-      }
-    }
-
-    // Ilerleyen dugum: isin duruyorken bile calisiyor gorunsun.
     const travel = ((this.time.now % 620) / 620) * length;
     graphics.fillStyle(0xffffff, 0.9);
     graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(2, outerHalf * 0.5));
@@ -6325,7 +6303,7 @@ export class GameScene extends Phaser.Scene {
 
     // Koni disa dogru genisledigi icin kenar raylari yanlis yere duserdi;
     // yalnizca eksen filamani ve ilerleyen dugum kalir.
-    this.drawBeamTierAccent(beam, color, { rails: false });
+    this.drawBeamTierAccent(beam, color);
   }
 
   private drawKinShowcaseLight(beam: BeamSnapshot, color: number) {
@@ -6371,7 +6349,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(8, spread * 0.08));
     // Kin gosterisi de disa acilir: eksen filamani evet, kenar raylari hayir.
-    this.drawBeamTierAccent(beam, color, { rails: false });
+    this.drawBeamTierAccent(beam, color);
   }
 
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {
@@ -6397,7 +6375,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.lineTo(beam.x2, beam.y2);
     this.beamGraphics.strokePath();
     // Yanik izi sonup giden bir tortu: raysiz, yalnizca ince bir cekirdek.
-    this.drawBeamTierAccent(beam, color, { rails: false });
+    this.drawBeamTierAccent(beam, color);
   }
 
   private drawChainLightning(beam: BeamSnapshot, color: number) {
@@ -6474,35 +6452,57 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Isinin kesiti: disdan ice daralan ve parlayan katmanlar.
+   * Isinin kesiti. Kademe yukseldikce yumusuyor ve genisliyor.
    *
-   * Yumusaklik tek bir cizgiden gelmiyor, katman **sayisindan** geliyor. Bir
-   * ara katmani dusurmek yetmisti: hale ile govde arasinda gecis kalmayinca
-   * isin keskin kenarli duz bir seride donusmustu. Bes kademe, disarida soluk
-   * renkten iceride beyaz bir file kadar surekli bir dusus veriyor.
+   * Uc kademe uc ayri karakter tasiyor, cunku seviye atlamasinin **hissedilmesi**
+   * icin arada gorulecek bir fark olmasi gerekiyor. Kirmizi duz: kenardan
+   * merkeze hicbir gecis yok, tek renk bir serit. Mavide hare aciliyor ve
+   * merkez isinmaya basliyor. Beyazda ayni hare belirgin sekilde daha genise
+   * yayiliyor. Kirmizinin da gradyani olsaydi ucu de ayni seyin daha parlak
+   * hali olurdu ve gecis yalnizca bir renk degisimi olarak kalirdi.
    *
-   * Renk bes kademenin ucunde birden tasiniyor, beyaz olan yalnizca en icteki
-   * ince file. Boylece seviye rengi okunuyor ama merkez yine de sicak: eskiden
-   * cekirdek neredeyse tam genislikte ve sabit beyazdi, o yuzden hangi seviye
-   * olursa olsun isin beyaz gorunuyordu.
+   * Yumusaklik tek bir cizgiden degil katman **sayisindan** geliyor. Bir ara
+   * katmani dusurmek yetmisti: hale ile govde arasinda gecis kalmayinca isin
+   * keskin kenarli duz bir seride donusmustu. Beyazda mesafe buyudugu icin
+   * omuz sayisi da artiyor, yoksa genisleyen hare basamakli gorunurdu.
+   *
+   * Rengi omuzlar ve govde tasiyor, beyaz olan yalnizca en icteki ince file.
+   * Boylece seviye rengi okunuyor ama merkez yine de sicak: eskiden cekirdek
+   * neredeyse tam genislikte ve sabit beyazdi, o yuzden hangi seviye olursa
+   * olsun isin beyaz gorunuyordu.
    */
   private strokeBeamProfile(beam: BeamSnapshot, color: number, options: { spread: number; body: number }) {
     const graphics = this.beamGraphics;
     if (!graphics) {
       return;
     }
-    const { spread, body } = options;
+    const { body } = options;
     const cizgi = (width: number, tone: number, alpha: number) => {
       graphics.lineStyle(Math.max(0.6, width), tone, alpha);
       graphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
     };
 
-    cizgi(body + spread, color, 0.1);
-    cizgi(body + spread * 0.62, color, 0.24);
-    cizgi(body + spread * 0.28, color, 0.46);
+    const tier = beam.tier ?? 1;
+    if (tier < 2) {
+      cizgi(body, color, 0.95);
+      return;
+    }
+
+    const spread = tier >= 3 ? options.spread * 1.8 : options.spread;
+    const omuzlar: Array<[number, number]> = tier >= 3
+      ? [[1, 0.07], [0.74, 0.13], [0.5, 0.22], [0.28, 0.4]]
+      : [[1, 0.1], [0.62, 0.24], [0.28, 0.46]];
+    for (const [olcek, alfa] of omuzlar) {
+      cizgi(body + spread * olcek, color, alfa);
+    }
     cizgi(body, color, 0.82);
     cizgi(body * 0.52, this.getBeamCoreColor(color, 0.45), 0.9);
     cizgi(body * 0.2, this.getBeamCoreColor(color, 0.86), 0.96);
+  }
+
+  /** Vurus noktasinin rengi: kirmizi kademede duz govde rengi, ustunde sicak. */
+  private getBeamImpactColor(beam: BeamSnapshot, color: number) {
+    return (beam.tier ?? 1) < 2 ? color : this.getBeamCoreColor(color, 0.86);
   }
 
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
@@ -6514,8 +6514,10 @@ export class GameScene extends Phaser.Scene {
     // Carpma noktasi kirisin en sicak yeri, ama yalnizca nokta: cevresine
     // renkli bir bulut konmuyor. Bulut kirisin ucunu kalinlastirip vurusun
     // nereye dustugunu bulaniklastiriyordu.
-    const core = this.getBeamCoreColor(color, 0.86);
-    this.beamGraphics.fillStyle(core, 0.95);
+    //
+    // Kirmizi kademede nokta da duz: govdenin gradyani yokken ucunda beyaz bir
+    // parlama olsa, kaldirilan gecis oradan geri girerdi.
+    this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.95);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4);
     this.beamGraphics.fillStyle(color, 0.22);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
@@ -6537,13 +6539,10 @@ export class GameScene extends Phaser.Scene {
     this.beamGraphics.fillStyle(core, 1);
     this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5);
     // Ucta hare yok, yalnizca sicak nokta; kural asiri yuklemede de ayni.
-    this.beamGraphics.fillStyle(core, 0.9);
+    this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.9);
     this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
-    // Kademe 3'te ray ve kafes kapali: ikisi de kirisin **uzerine** cizilen
-    // duzenli cizgiler ve genis bir asiri yukleme kirisinde birlesince ortaya
-    // demiryolu rayi gibi bir sey cikiyordu. O yerin sahibi artik parlamalar.
     const tier = beam.tier ?? 1;
-    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14, rails: tier < 3 });
+    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14 });
     if (tier >= 3) {
       this.drawOverdriveFlare(beam);
     }
