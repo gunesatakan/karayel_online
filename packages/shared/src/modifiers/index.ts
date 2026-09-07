@@ -36,7 +36,17 @@ export type ModifierStat =
   /** Ulti sarj hizi carpani. Beceriler ve ulti roguelike katmanina bu iki statla baglanir. */
   | "ultimateCharge"
   /** Beceri bekleme suresi; negatif deger bekleme suresini kisaltir. */
-  | "skillCooldown";
+  | "skillCooldown"
+  /**
+   * Performans kolunun **ust yarisinin** bedeli.
+   *
+   * Kol yarinin ustunde atis hizini iki katina cikarirken isiyi dorde,
+   * enerjiyi uce katliyor. Bu stat yalnizca o fazlaligi olcekliyor: kolu
+   * asagida tutan bir kule hicbir sey hissetmiyor, yukari iten kule ise
+   * bedeli daha ucuza oduyor. Duz bir `heat` indirimi ayni sey degil --
+   * o egrinin seviyesini indirir, bu egrinin **egimini**.
+   */
+  | "performanceCost";
 
 export type Modifier = {
   source: string;

@@ -96,18 +96,36 @@ export const TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER: Record<DamageType, number> = {
   none: 1
 };
 
-export function getTowerPerformanceHeatMultiplier(performance: number) {
+/**
+ * Performans kolunun isi bedeli.
+ *
+ * Alt yari duz: kol kapaliyken isi yok, yarida bir birim. Ust yari dik --
+ * kol sonuna kadar acildiginda atis hizi ikiye katlanirken isi dorde
+ * katlaniyor. Oyunun her dalga pazarlik ettigi takas bu egim.
+ *
+ * `overdriveCost` yalnizca **ust yarinin** egimini olcekliyor. Alt yariya
+ * dokunmamasi kasitli: kolu asagida tutan bir kuleye indirim vermek, kolu
+ * yukari itmeyi ucuzlatmak degil, kule basina duz bir isi indirimi olurdu
+ * -- onu zaten `heat` stati yapiyor.
+ */
+export function getTowerPerformanceHeatMultiplier(performance: number, overdriveCost = 1) {
   const safePerformance = Math.max(0, Math.min(1, performance));
   return safePerformance <= 0.5
     ? safePerformance * 2
-    : 1 + (safePerformance - 0.5) * 6;
+    : 1 + (safePerformance - 0.5) * 6 * Math.max(0, overdriveCost);
 }
 
-export function getTowerPerformanceEnergyMultiplier(performance: number) {
+/** Kolun enerji bedeli; isiyla ayni sekil, daha yumusak egim. */
+export function getTowerPerformanceEnergyMultiplier(performance: number, overdriveCost = 1) {
   const safePerformance = Math.max(0, Math.min(1, performance));
   return safePerformance <= 0.5
     ? safePerformance * 2
-    : 1 + (safePerformance - 0.5) * 4;
+    : 1 + (safePerformance - 0.5) * 4 * Math.max(0, overdriveCost);
+}
+
+/** Kol yarinin altinda mi; rolanti odulu veren kilitler buna bakiyor. */
+export function isTowerPerformanceIdle(performance: number) {
+  return Math.max(0, Math.min(1, performance)) < 0.5;
 }
 
 /** Visual intensity for the high-performance flame, including a faint 50% pilot glow. */
@@ -117,18 +135,18 @@ export function getTowerPerformanceFlameIntensity(performance: number) {
   return 0.08 + ((safePerformance - 0.5) / 0.5) * 0.92;
 }
 
-export function calculateTowerShotHeat(definition: TowerDefinition, performance: number, towerSpecialMultiplier = 1) {
+export function calculateTowerShotHeat(definition: TowerDefinition, performance: number, towerSpecialMultiplier = 1, overdriveCost = 1) {
   const hitType = definition.hitType ?? "projectile";
   const damageType = definition.damageType ?? "physical";
   return TOWER_HEAT_BY_HIT_TYPE[hitType]
     * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[damageType]
-    * getTowerPerformanceHeatMultiplier(performance)
+    * getTowerPerformanceHeatMultiplier(performance, overdriveCost)
     * towerSpecialMultiplier
     * (definition.engine?.resources.heatMultiplier ?? 1);
 }
 
-export function calculateTowerShotEnergy(performance: number, energyCostMultiplier = 1) {
-  return TOWER_BASE_ENERGY_COST * getTowerPerformanceEnergyMultiplier(performance) * energyCostMultiplier;
+export function calculateTowerShotEnergy(performance: number, energyCostMultiplier = 1, overdriveCost = 1) {
+  return TOWER_BASE_ENERGY_COST * getTowerPerformanceEnergyMultiplier(performance, overdriveCost) * energyCostMultiplier;
 }
 
 export function calculateTowerAmmoCost(definition: TowerDefinition, modifierMultiplier = 1) {
@@ -136,9 +154,9 @@ export function calculateTowerAmmoCost(definition: TowerDefinition, modifierMult
   return TOWER_BASE_AMMO_COST * (definition.engine.resources.ammoCostMultiplier ?? 1) * modifierMultiplier;
 }
 
-export function calculateTowerShotEnergyCost(definition: TowerDefinition, performance: number, modifierMultiplier = 1) {
+export function calculateTowerShotEnergyCost(definition: TowerDefinition, performance: number, modifierMultiplier = 1, overdriveCost = 1) {
   if (definition.engine?.resources.shotFuel !== "energy") return 0;
-  return calculateTowerShotEnergy(performance, definition.engine.resources.energyCostMultiplier ?? 1) * modifierMultiplier;
+  return calculateTowerShotEnergy(performance, definition.engine.resources.energyCostMultiplier ?? 1, overdriveCost) * modifierMultiplier;
 }
 
 export function getTowerShotFuelModifierMultiplier(modifiers: readonly Modifier[], specific: "ammoCost" | "energyCost") {

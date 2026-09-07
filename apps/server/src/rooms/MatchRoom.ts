@@ -168,6 +168,7 @@ import {
   inferTowerAmmoType,
   isStatusEffectActive,
   isTowerAligned,
+  isTowerPerformanceIdle,
   getTowerFireAlignmentTolerance,
   shouldRetainAimTargetLock,
   usesLinearBallistics,
@@ -270,6 +271,8 @@ const RADIATOR_COOLING_BONUS_AT_MAX = 1;
 const QUICK_RELEASE_HEAT_RELEASE_THRESHOLD = 60;
 /** Buhar tahliyesi: her oldurme kuleyi bu kadar derece sogutur. */
 const KILL_VENT_HEAT = 4;
+/** Rolanti odulunun hasar payi: kol yarinin altindayken. */
+const PERFORMANCE_IDLE_EDGE_DAMAGE = 0.3;
 /** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
 const CHILL_VENT_COOLING_BONUS = 0.5;
 /**
@@ -2423,14 +2426,34 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Performans kolunun ust yarisinin bedel carpani.
+   *
+   * Yalnizca kol yarinin ustundeyken is goruyor; asagida kalan bir kule
+   * icin sonuc degismiyor. Sifirin altina inmiyor: bedeli negatife cekmek
+   * kolu actikca **sogutan** bir kule uretirdi.
+   */
+  private getTowerPerformanceCostMultiplier(tower: TowerModel) {
+    return getModifierMultiplier(this.getTowerRunModifiers(tower), "performanceCost");
+  }
+
   private getTowerEnergyCost(tower: TowerModel) {
     const modifiers = this.getTowerRunModifiers(tower);
-    return calculateTowerShotEnergyCost(tower.definition, tower.performance, getTowerShotFuelModifierMultiplier(modifiers, "energyCost"));
+    return calculateTowerShotEnergyCost(
+      tower.definition,
+      tower.performance,
+      getTowerShotFuelModifierMultiplier(modifiers, "energyCost"),
+      this.getTowerPerformanceCostMultiplier(tower)
+    );
   }
 
   private getTowerShotHeat(tower: TowerModel) {
-    return calculateTowerShotHeat(tower.definition, tower.performance, this.getTowerSpecialHeatMultiplier(tower))
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
+    return calculateTowerShotHeat(
+      tower.definition,
+      tower.performance,
+      this.getTowerSpecialHeatMultiplier(tower),
+      this.getTowerPerformanceCostMultiplier(tower)
+    ) * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
   }
 
   private getTowerSpecialHeatMultiplier(_tower: TowerModel) {
@@ -6861,6 +6884,12 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.type === "brute") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsBrute");
     if (this.towerHasUnlock(damageSourceTower, "status:chill") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (this.towerHasUnlock(damageSourceTower, "bloodBank")) shopDamageAdd += 0.2;
+    // Rolanti odulu: kolu asagida tutmak da bir karar olsun. Kolun ust
+    // yarisi zaten atis hizi veriyor; alt yarinin tek karsiligi dusuk isi
+    // ve enerjiydi, yani secim degil fedakarlikti.
+    if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "performance:idleEdge") && isTowerPerformanceIdle(damageSourceTower.performance)) {
+      shopDamageAdd += PERFORMANCE_IDLE_EDGE_DAMAGE;
+    }
     const critical = damageSourceTower ? this.getTowerEngine(damageSourceTower)?.critical : undefined;
     // Soguk Celik: kule sogukken nisan alma sansi artar. Kizgin Namlu ile
     // kasten ters yonde calisir; ikisini birden almak kendi kendini bozar.

@@ -744,6 +744,7 @@ export {
   TOWER_HEAT_BY_HIT_TYPE,
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
   getTowerPerformanceHeatMultiplier,
+  isTowerPerformanceIdle,
   getTowerPerformanceEnergyMultiplier,
   getTowerPerformanceFlameIntensity,
   calculateTowerShotHeat,

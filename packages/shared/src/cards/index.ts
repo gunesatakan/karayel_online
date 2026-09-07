@@ -52,7 +52,13 @@ export type Unlock =
   // Sogumayi baska sistemlere baglayanlar: kontrol, yerlesim, enerji, muhimmat.
   // Yukaridakiler isi kolunun kendi icinde pazarlik ediyordu; bunlar isiyi
   // oyuncunun zaten verdigi baska kararlarin sonucu haline getiriyor.
-  | "heat:chillVent" | "heat:exchange" | "heat:chargedCooling" | "heat:emptyVent";
+  | "heat:chillVent" | "heat:exchange" | "heat:chargedCooling" | "heat:emptyVent"
+  // --- Performans kolu ---
+  // Kol her dalga elle cekilen bir sey ama hicbir kart ona dokunmuyordu:
+  // ust yari atis hizini ikiye katlarken isiyi dorde katliyor ve bu egim
+  // pazarlik konusu degildi. Bu kilit alt yariya bir odul veriyor, yani
+  // kolu asagida tutmak da bir secim oluyor.
+  | "performance:idleEdge";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -68,7 +74,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   // Yeni kilitler sona eklenir: sira bit maskesini belirliyor ve ortaya
   // ekleme yapmak eski istemcilerde baska bir kilidi acardi.
   "heat:radiator", "heat:quickRelease", "heat:killVent",
-  "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent"
+  "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent",
+  "performance:idleEdge"
 ];
 
 /**
@@ -225,6 +232,15 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.05)] },
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
   { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
+
+  // --- Performans kolu ---
+  // Kol oyunun her dalga elle cektigi tek surekli degisken ve uzun sure
+  // hicbir icerik ona dokunmuyordu. Iki kart iki ucu tutuyor: biri ust
+  // yarinin egimini ucuzlatiyor, obru alt yariyi odullendiriyor. Ayni
+  // oyunda ikisini birden almak kotu bir karar -- biri kolu yukari, obru
+  // asagi cagiriyor.
+  { id: "regulator", name: "Regülatör", description: "Performans kolunun yarısı üstündeki ısı ve enerji bedeli -%35.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("regulator", "performanceCost", -0.35)] },
+  { id: "rolanti-avantaji", name: "Rölanti Avantajı", description: "Performans kolu yarısının altında olan kulelerin hasarı +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["performance:idleEdge"] },
 
   // --- Isi ve enerji ekseni ---
   // Performans kolu zaten atis hizini isi ve enerjiyle takas ediyor ama hicbir
