@@ -46,6 +46,7 @@ import {
   getTile,
   gridToWorld,
   hydrateWireSnapshot,
+  mergeDynamicTowerSnapshots,
   isInsideMap,
   isClientProjectileExpired,
   normalizeMapData,
@@ -72,6 +73,7 @@ import {
   WALL_TOWER_ID,
   type StaticEnemySnapshot,
   type StaticSnapshot,
+  type DynamicTowerSnapshot,
   type StaticTowerSnapshot,
   type TowerDefinition,
   type TowerSnapshot,
@@ -429,6 +431,14 @@ export class GameScene extends Phaser.Scene {
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private staticEnemySnapshots = new Map<string, StaticEnemySnapshot>();
   private staticTowerSnapshots = new Map<string, StaticTowerSnapshot>();
+  /**
+   * Her kulenin en son bilinen tam dinamik kaydi.
+   *
+   * Sunucu yalnizca degiseni yolladigi icin tam hal burada birikiyor.
+   * Statik onbellekten ayri duruyor: statikler kule kurulunca bir kez
+   * geliyor, bu ise her karede tazeleniyor.
+   */
+  private dynamicTowerSnapshots = new Map<string, DynamicTowerSnapshot>();
   private lastFullSnapshotRequestAt = 0;
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
@@ -2868,10 +2878,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
-    const hydrated = hydrateWireSnapshot(snapshot, this.staticEnemySnapshots, this.staticTowerSnapshots);
+    // Delta once tamamlaniyor: hidratlama tam kayit bekliyor.
+    const towers = mergeDynamicTowerSnapshots(this.dynamicTowerSnapshots, snapshot.towers);
+    const hydrated = hydrateWireSnapshot({ ...snapshot, towers }, this.staticEnemySnapshots, this.staticTowerSnapshots);
     if (!hydrated) return undefined;
     pruneStaticSnapshotCache(this.staticEnemySnapshots, snapshot.enemies.map((enemy) => enemy.id));
     pruneStaticSnapshotCache(this.staticTowerSnapshots, snapshot.towers.map((tower) => tower.id));
+    pruneStaticSnapshotCache(this.dynamicTowerSnapshots, snapshot.towers.map((tower) => tower.id));
     const linearProjectiles: ProjectileSnapshot[] = [];
     for (const [id, projectile] of this.linearProjectileSnapshots) {
       if (isClientProjectileExpired(projectile, snapshot.serverTime)) {
@@ -2895,6 +2908,9 @@ export class GameScene extends Phaser.Scene {
   private applyFullStaticSnapshot(snapshot: StaticSnapshot) {
     this.staticEnemySnapshots = new Map(snapshot.enemies.map((enemy) => [enemy.id, enemy]));
     this.staticTowerSnapshots = new Map(snapshot.towers.map((tower) => [tower.id, tower]));
+    // Tam statik istegi sunucuda delta tabanini da sifirliyor; buradaki
+    // birikimi de birakmak gerekiyor ki eski alanlar yeni kayda sizmasin.
+    this.dynamicTowerSnapshots.clear();
     // Harita buradan da gelir: `match:map` mesaji dinleyiciler takilmadan once
     // cikabildigi icin tek basina guvenilir degil. Yanlis haritayla oynayan
     // istemci kareleri baska yere cizer, dokunuslari baska hucreye yazar ve
@@ -3122,7 +3138,10 @@ export class GameScene extends Phaser.Scene {
     });
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
-    room.onMessage("tower:remove", (message: { id: string }) => this.staticTowerSnapshots.delete(message.id));
+    room.onMessage("tower:remove", (message: { id: string }) => {
+      this.staticTowerSnapshots.delete(message.id);
+      this.dynamicTowerSnapshots.delete(message.id);
+    });
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
       this.linearProjectileSnapshots.set(projectile.id, projectile);
       const tier = projectile.tier ?? 1;

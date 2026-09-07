@@ -1,4 +1,5 @@
 import type {
+  DynamicTowerSnapshot,
   EnemySnapshot,
   GameSnapshot,
   StaticEnemySnapshot,
@@ -20,6 +21,40 @@ export function getLinearProjectilePosition(projectile: ProjectileSpawnSnapshot,
 
 export function isClientProjectileExpired(projectile: ProjectileSpawnSnapshot, serverTime: number) {
   return serverTime - projectile.spawnedAt >= CLIENT_PROJECTILE_MAX_LIFETIME_MS;
+}
+
+/**
+ * Kule kayitlarinin delta halini tam hale getirir.
+ *
+ * Sunucu artik kule basina yalnizca **degisen** alanlari yolluyor: kaydin
+ * 375 baytinin 286'si kareler arasinda hic degismiyordu ve saniyede 20 kez
+ * tekrarlaniyordu. Onbellek her kulenin en son bilinen tam halini tutuyor,
+ * gelen delta onun uzerine yaziliyor.
+ *
+ * `null` gelen alan "bu alan artik yok" demek ve siliniyor: eski deger
+ * asili kalirsa, orneginin biten bir durum etkisi ekranda kalir.
+ *
+ * Birlestirme **gelis sirasinda** yapilmali, oynatma sirasinda degil.
+ * Snapshotlar tamponda gecikmeli oynatiliyor ve delta zinciri gelis
+ * sirasina bagli; oynatma anina birakilsa zincir bozulurdu.
+ */
+export function mergeDynamicTowerSnapshots(
+  cache: Map<string, DynamicTowerSnapshot>,
+  towers: readonly DynamicTowerSnapshot[]
+): DynamicTowerSnapshot[] {
+  const merged: DynamicTowerSnapshot[] = [];
+  for (const tower of towers) {
+    const previous = cache.get(tower.id);
+    const record: Record<string, unknown> = previous ? { ...previous } : {};
+    for (const [key, value] of Object.entries(tower)) {
+      if (value === null) delete record[key];
+      else record[key] = value;
+    }
+    const full = record as unknown as DynamicTowerSnapshot;
+    cache.set(tower.id, full);
+    merged.push(full);
+  }
+  return merged;
 }
 
 export function hydrateWireSnapshot(

@@ -1339,6 +1339,30 @@ export class MatchRoom extends Room<MatchState> {
    * kuramiyordu -- dalga arasinda kule degistirmenin yolu yok. Asama basina
    * tek irk, o secimi girmeden once alinan bir karara ceviriyor.
    */
+  /**
+   * Her kuleye en son **gonderilmis** tam kayit.
+   *
+   * Kule kaydinin 375 baytinin 286'si kareler arasinda hic degismiyor:
+   * menzil, can tavani, muhimmat tavani, hedefleme kipi, performans kolu.
+   * Saniyede 20 kez tekrarlandiginda bu, 40 kulelik bir sahada istemci
+   * basina 223 KB/sn saf tekrar demek. Burasi neyin gittigini hatirliyor ki
+   * yalnizca degiseni gonderelim.
+   *
+   * Yalnizca **gonderim basarili olunca** guncelleniyor. Taban gonderilmemis
+   * bir kareye kayarsa istemcinin elindeki kayit bir daha asla
+   * tamamlanmazdi.
+   */
+  private lastSentTowerWire = new Map<string, Record<string, unknown>>();
+  /**
+   * Bir sonraki kare delta degil tam gitmeli.
+   *
+   * Delta yalnizca istemci onceki kareyi aldiysa dogru. Tikanma yuzunden bir
+   * gonderim atlandiginda, odaya yeni biri katildiginda ya da tam kayit
+   * istendiginde bayrak kalkiyor. Yayindan tek kopya cikttigi icin kime tam
+   * gerektigini ayirmanin bedeli, ara sira herkese bir tam kare
+   * gondermekten yuksek.
+   */
+  private towerWireNeedsFullResend = true;
   private stage = 1;
   private setupPhase = true;
   /**
@@ -1510,7 +1534,11 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
       this.chooseCard(client, message);
     });
-    this.onMessage("snapshot:requestFull", (client) => this.sendFullStaticSnapshot(client));
+    this.onMessage("snapshot:requestFull", (client) => {
+      // Statikleri isteyen istemcinin dinamik tarafi da eksik olabilir.
+      this.markTowerWireStale();
+      this.sendFullStaticSnapshot(client);
+    });
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
@@ -1960,7 +1988,12 @@ export class MatchRoom extends Room<MatchState> {
     });
 
     if (snapshot) {
-      if (this.sendSnapshotWithBackpressure(snapshot)) {
+      // Delta burada uygulaniyor, `getSnapshot` icinde degil: o yontem hem
+      // testlerden hem baska yollardan cagriliyor ve yan etkili olmasi,
+      // okuyanin tam kayit sandigi yerde delta almasina yol acardi.
+      const { wire, baseline } = this.applyTowerWireDelta(snapshot);
+      if (this.sendSnapshotWithBackpressure(wire)) {
+        this.commitTowerWireBaseline(baseline);
         this.recordSnapshotBroadcast(now);
       }
     }
@@ -2010,10 +2043,57 @@ export class MatchRoom extends Room<MatchState> {
     return false;
   }
 
+  /**
+   * Kule kayitlarini yalnizca degisen alanlara indirir.
+   *
+   * `id` her zaman kaliyor: dizi ayni zamanda **hangi kulelerin hayatta**
+   * oldugunu soyluyor, o yuzden hic degismemis bir kule listeden dusemez.
+   * Bir alan bu karede kayboldiysa istemcideki eski degeri asili birakmamak
+   * icin acikca `null` gonderiliyor.
+   *
+   * Yeni taban dondurulyor ama yazilmiyor; yazma isi gonderim basarili
+   * olunca `commitTowerWireBaseline` ile yapiliyor.
+   */
+  private applyTowerWireDelta(snapshot: WireGameSnapshot) {
+    const baseline = new Map<string, Record<string, unknown>>();
+    const full = this.towerWireNeedsFullResend;
+    const towers = snapshot.towers.map((tower) => {
+      const record = tower as unknown as Record<string, unknown>;
+      baseline.set(tower.id, record);
+      const previous = full ? undefined : this.lastSentTowerWire.get(tower.id);
+      if (!previous) return tower;
+
+      const delta: Record<string, unknown> = { id: tower.id };
+      for (const key of Object.keys(record)) {
+        if (key === "id") continue;
+        if (JSON.stringify(record[key]) !== JSON.stringify(previous[key])) delta[key] = record[key];
+      }
+      for (const key of Object.keys(previous)) {
+        if (key !== "id" && !(key in record)) delta[key] = null;
+      }
+      return delta as unknown as typeof tower;
+    });
+    return { wire: { ...snapshot, towers }, baseline };
+  }
+
+  private commitTowerWireBaseline(baseline: Map<string, Record<string, unknown>>) {
+    this.lastSentTowerWire = baseline;
+    this.towerWireNeedsFullResend = false;
+  }
+
+  /** Bir sonraki kare tam gitsin: elindeki kayit eksik olabilecek biri var. */
+  private markTowerWireStale() {
+    this.towerWireNeedsFullResend = true;
+  }
+
   private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot) {
     let sent = false;
     for (const client of this.clients) {
-      if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) continue;
+      if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) {
+        // Atlanan istemci bu deltayi kacirdi; bir daha yakalayamaz.
+        this.markTowerWireStale();
+        continue;
+      }
       client.send("snapshot", snapshot);
       sent = true;
     }
