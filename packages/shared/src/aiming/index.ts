@@ -10,14 +10,14 @@
 export const TOWER_TURN_RATE_RADIANS_PER_SECOND = 1.2;
 
 /**
- * Ates konisi: namlu hedefin bu kadar yakinina gelince tetik dusuyor, 12 derece.
+ * Ates konisi: namlu hedefin bu kadar yakinina gelince tetik dusuyor, 20 derece.
  *
  * Bu bir isabet **sansi** degil. impact/wave/projectile mermileri namlunun
  * baktigi yone firlatiliyor, yani konideki sapma dogrudan merminin yoluna
  * geciyor -- iskalar oradan cikiyor. Obur vurus tiplerinde mermi hedefin
  * konumuna gidiyor, konu yalnizca ne zaman ates edilecegini belirliyor.
  */
-export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 15;
+export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 9;
 
 /**
  * Koninin inebilecegi en dar aci.
@@ -31,7 +31,7 @@ export const TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS = Math.PI / 15;
  */
 export const TOWER_FIRE_ALIGNMENT_MIN_RADIANS = 0.5 * Math.PI / 180;
 
-/** Isabet bonusu koniyi daraltir: +%20 bonus 12 dereceyi 9,6 dereceye indirir. */
+/** Isabet bonusu koniyi daraltir: +%20 bonus 20 dereceyi 16 dereceye indirir. */
 export function getTowerFireAlignmentTolerance(accuracyBonus = 0) {
   // Negatif bonus yok sayilir; koniyi genisletmek icin bir yol yok, o yuzden
   // hicbir karta "isabet -%X" yazilmamali -- yazilsa sessizce hicbir sey yapar.

@@ -219,12 +219,12 @@ export const cardCatalog: CardDefinition[] = [
   // gidiyor, bu yuzden ucunun toplami (0,15x2 + 0,25 + 0,40 = 0,95) kasten
   // tavanin hemen altinda kaliyor -- oyuncu ucunu de alsa hicbir secimi
   // bosa gitmesin.
-  { id: "hafif-kizak", name: "Hafif Kızak", description: "Tüm kulelerin dönüş hızı +%30, canı -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("hafif-kizak", "turnRate", 0.3), effect("hafif-kizak", "towerHealth", -0.15)] },
+  { id: "hafif-kizak", name: "Hafif Kızak", description: "Tüm kulelerin dönüş hızı +%30, canı -%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("hafif-kizak", "turnRate", 0.3), effect("hafif-kizak", "towerHealth", -0.08)] },
   { id: "denge-agirligi", name: "Denge Ağırlığı", description: "Çarpma kulelerinin dönüş hızı +%70.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["impact"] }, stackable: false, rarity: "uncommon", effects: [effect("denge-agirligi", "turnRate", 0.7)] },
-  { id: "serbest-yatak", name: "Serbest Yatak", description: "Bir kulenin dönüş hızı +%120, hasarı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("serbest-yatak", "turnRate", 1.2, "tower"), effect("serbest-yatak", "damage", -0.2, "tower")] },
-  { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%10.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.1)] },
+  { id: "serbest-yatak", name: "Serbest Yatak", description: "Bir kulenin dönüş hızı +%120, hasarı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("serbest-yatak", "turnRate", 1.2, "tower"), effect("serbest-yatak", "damage", -0.1, "tower")] },
+  { id: "sabit-kundak", name: "Sabit Kundak", description: "Tüm kulelerin isabeti +%15, dönüş hızı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sabit-kundak", "accuracy", 0.15), effect("sabit-kundak", "turnRate", -0.05)] },
   { id: "uzun-namlu", name: "Uzun Namlu", description: "Mermi kulelerinin isabeti +%25, menzili +%10.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("uzun-namlu", "accuracy", 0.25), effect("uzun-namlu", "range", 0.1)] },
-  { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.2, "tower")] },
+  { id: "atis-kontrol-birimi", name: "Atış Kontrol Birimi", description: "Bir kulenin isabeti +%40, atış hızı -%10.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("atis-kontrol-birimi", "accuracy", 0.4, "tower"), effect("atis-kontrol-birimi", "fireRate", -0.1, "tower")] },
 
   // --- Isi ve enerji ekseni ---
   // Performans kolu zaten atis hizini isi ve enerjiyle takas ediyor ama hicbir

@@ -26,16 +26,16 @@ test("kule hedefe doğru sınırlı adımla döner ve hedefi geçmez", () => {
 test("açı sınırı geçilmeden ateş hizalı sayılmaz", () => {
   assert.equal(isTowerAligned(0, Math.PI / 4), false);
   assert.equal(isTowerAligned(0, Math.PI / 72), true);
-  assert.equal(TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS, Math.PI / 15);
-  assert.equal(isTowerAligned(0, 12.01 * Math.PI / 180), false);
-  assert.equal(isTowerAligned(0, 12 * Math.PI / 180), true);
+  assert.equal(TOWER_FIRE_ALIGNMENT_TOLERANCE_RADIANS, Math.PI / 9);
+  assert.equal(isTowerAligned(0, 20.01 * Math.PI / 180), false);
+  assert.equal(isTowerAligned(0, 20 * Math.PI / 180), true);
 });
 
-test("yüzde 20 isabet bonusu ateş açısını 12 dereceden 9,6 dereceye indirir", () => {
+test("yüzde 20 isabet bonusu ateş açısını 20 dereceden 16 dereceye indirir", () => {
   const tolerance = getTowerFireAlignmentTolerance(0.2);
-  assert.ok(Math.abs(tolerance - 9.6 * Math.PI / 180) < 1e-12);
-  assert.equal(isTowerAligned(0, 9.61 * Math.PI / 180, tolerance), false);
-  assert.equal(isTowerAligned(0, 9.6 * Math.PI / 180, tolerance), true);
+  assert.ok(Math.abs(tolerance - 16 * Math.PI / 180) < 1e-12);
+  assert.equal(isTowerAligned(0, 16.01 * Math.PI / 180, tolerance), false);
+  assert.equal(isTowerAligned(0, 16 * Math.PI / 180, tolerance), true);
 });
 
 test("eksi isabet bonusu koniyi genisletmez", () => {
