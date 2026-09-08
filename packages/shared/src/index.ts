@@ -4,7 +4,7 @@ import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 import type { TowerTier } from "./tower-stats/index.js";
 // getEnemyExp bu dosyada tanimli oldugu icin deger yeniden disa aktarmanin yaninda
 // buraya da alinmali; re-export yalnizca disariya acar, iceride goruntu vermez.
-import { ENEMY_EXP_MULTIPLIER } from "./balance/index.js";
+import { ENEMY_EXP_MULTIPLIER, getStructureRepairCost } from "./balance/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -455,6 +455,22 @@ export type TowerSnapshot = {
    * hesaplasaydik ikisi de yanlis olurdu.
    */
   buildGold?: number;
+  /**
+   * Onarim bedelinin kart ve esya carpani.
+   *
+   * Carpani doguran degistirici listesi tele hic cikmiyor, yani istemci
+   * indirimi kendi bulamaz -- "Kaynak Makinesi" takili bir kulede sunucu
+   * ucuza onariyor ama dugmede eski sayi duruyordu.
+   *
+   * 1 olsa bile yaziliyor: kule kayitlari delta ile gidiyor ve delta bir
+   * alanin **silinmesini** ancak alan kayittan tumuyle cikinca
+   * bildirebiliyor. Bazen yazip bazen atlamak, carpan 1'e dondugunde
+   * istemcide eski degerin asili kalmasi demekti. Hep yazildiginda delta
+   * degismeyen kareleri zaten atiyor, yani bedeli yok.
+   */
+  repairCostMultiplier?: number;
+  /** Satis iadesinin kart ve esya carpani; onarimla ayni sebeple hep yazilir. */
+  sellRefundMultiplier?: number;
   /**
    * Kulenin kuruldugu kurulum oturumu; dalga arasinda kurulmadiysa yok.
    *
@@ -1119,6 +1135,39 @@ export function getTowerLevelGoldCost(towerCost: number, currentLevel: number) {
   return 0;
 }
 
+/**
+ * Kule satisindan donecek altin ve bunun bir geri alim olup olmadigi.
+ *
+ * Satis kuralinin tamami burada: kurulum arasi geri alimi, iade carpani,
+ * ve geri alimin carpandan muaf olusu. Once sunucu kendi hesabini yapiyor,
+ * istemci de kendi kopyasini tasiyordu; ayni kural iki yerde durdugu
+ * surece bir gun ayrisir, ve ayristigini kimse fark etmez cunku ikisi de
+ * makul sayilar uretir.
+ */
+export function resolveTowerRefund(
+  tower: {
+    cost: number;
+    level: number;
+    definitionId?: string;
+    buildGold?: number;
+    builtInSetupSession?: number;
+  },
+  context: { setupPhase?: boolean; setupSession?: number; refundMultiplier?: number }
+): { amount: number; undoable: boolean } {
+  if (canRefundTowerPurchase(tower, context.setupPhase, context.setupSession)) {
+    // Geri alima carpan **islemez**: isleseydi "Hurda Pazari" ile kur-sat
+    // dongusu bedelin uzerine cikardi.
+    return { amount: Math.max(0, Math.round(tower.buildGold ?? 0)), undoable: true };
+  }
+  return {
+    amount: Math.floor(
+      getTowerSellRefund(tower.cost, tower.level, tower.definitionId)
+        * Math.max(0, context.refundMultiplier ?? 1)
+    ),
+    undoable: false
+  };
+}
+
 export function getEnemyExp(wave: number, enemyType: EnemyType, movementKind: MovementKind = "ground") {
   const typeMultiplier: Record<EnemyType, number> = {
     grunt: 1,
@@ -1153,6 +1202,21 @@ export function getTowerSellRefund(towerCost: number, currentLevel: number, towe
  *
  * Onceki aradan kalan kule muaf: sayac esitligi tam da bunu tutuyor.
  */
+/**
+ * Kartlar ve esyalar isledikten sonra onarim bedeli.
+ *
+ * Iki taraf da bunu cagiriyor: sunucu tahsil ederken, arayuz dugmeye
+ * yazarken. Ayri formuller yazmak, gorulen sayiyla odenen sayinin
+ * ayrilmasi demekti -- gorulmeyen bir indirim oyuncu icin yoktur.
+ */
+export function getStructureRepairCostWithModifiers(
+  buildCost: number,
+  missingHealthRatio: number,
+  costMultiplier = 1
+) {
+  return Math.ceil(getStructureRepairCost(buildCost, missingHealthRatio) * Math.max(0, costMultiplier));
+}
+
 export function canRefundTowerPurchase(
   tower: { builtInSetupSession?: number },
   setupPhase: boolean | undefined,

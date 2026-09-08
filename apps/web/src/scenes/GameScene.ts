@@ -36,8 +36,7 @@ import {
   getTowerTier,
   getTowerBuildCost,
   PLAYER_TOWER_LIMIT,
-  canRefundTowerPurchase,
-  getTowerSellRefund,
+  resolveTowerRefund,
   getTowerLevelExpCost,
   getTowerLevelGoldCost,
   getTowerPerformanceFlameIntensity,
@@ -72,7 +71,7 @@ import {
   type ProjectileHitSnapshot,
   type ServerPerfSnapshot,
   hasUnlockBit,
-  getStructureRepairCost,
+  getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
   type StaticEnemySnapshot,
   type StaticSnapshot,
@@ -1895,7 +1894,13 @@ export class GameScene extends Phaser.Scene {
     if (hp <= 0) return { label: "Yikildi", enabled: false };
     if (hp >= maxHp) return { label: "Saglam", enabled: false };
 
-    const cost = getStructureRepairCost(getTowerBuildCost(definition.cost), 1 - hp / maxHp);
+    // Carpan sunucudan geliyor: onu doguran kart ve esya listesi tele
+    // cikmiyor, yani istemci indirimi kendi bulamaz. Eksikse 1.
+    const cost = getStructureRepairCostWithModifiers(
+      getTowerBuildCost(definition.cost),
+      1 - hp / maxHp,
+      selectedTower.repairCostMultiplier ?? 1
+    );
     const affordable = (this.localPlayerSnapshot?.gold ?? 0) >= cost;
     return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
   }
@@ -2655,19 +2660,19 @@ export class GameScene extends Phaser.Scene {
    * hesaplasaydi biri gunun birinde otekinden farkli bir sayi gosterirdi.
    */
   private getTowerRefundState(tower: TowerSnapshot) {
-    const undoable = canRefundTowerPurchase(
-      tower,
-      this.latestPerfSnapshot?.setupPhase,
-      this.latestPerfSnapshot?.setupSession
-    );
-    if (undoable) {
-      return { amount: Math.max(0, Math.round(tower.buildGold ?? 0)), undoable: true };
-    }
     const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
-    return {
-      amount: definition ? getTowerSellRefund(definition.cost, tower.level, definition.id) : 0,
-      undoable: false
-    };
+    if (!definition) return { amount: 0, undoable: false };
+    // Kuralin tamami paylasilan fonksiyonda; burada yalnizca cagriliyor.
+    // Kendi kopyasini tasidigi surece bir gun sunucudan ayrisirdi ve
+    // ayristigini kimse fark etmezdi -- iki taraf da makul sayilar uretir.
+    return resolveTowerRefund(
+      { ...tower, cost: definition.cost, definitionId: definition.id },
+      {
+        setupPhase: this.latestPerfSnapshot?.setupPhase,
+        setupSession: this.latestPerfSnapshot?.setupSession,
+        refundMultiplier: tower.sellRefundMultiplier ?? 1
+      }
+    );
   }
 
   /**

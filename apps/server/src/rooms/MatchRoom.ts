@@ -65,7 +65,7 @@ import {
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
-  getStructureRepairCost,
+  getStructureRepairCostWithModifiers,
   STRUCTURE_BREACH_HEALTH_RATIO,
   getStructureHealthMultiplier,
   isWallDefinition,
@@ -180,6 +180,7 @@ import {
   usesLinearBallistics,
   rotateTowerTowards,
   canRefundTowerPurchase,
+  resolveTowerRefund,
   getTowerSellRefund,
   getTowerBuildCost,
   getTowerAttackRadius,
@@ -863,7 +864,15 @@ type TowerModel = {
   shopKillStacks: number;
   shopWaveStacks: number;
   /** Cozulmus motor ve kilitler; `grantGeneration` degisince yeniden hesaplanir. */
-  grantCache?: { generation: number; engine?: TowerEngineConfig; attackMultipliers: TowerAttackMultipliers; unlocks: Set<Unlock> };
+  grantCache?: {
+    generation: number;
+    engine?: TowerEngineConfig;
+    attackMultipliers: TowerAttackMultipliers;
+    /** Onarim ve satis carpanlari; ikisi de kart/esya degisince yeniden cozulur. */
+    repairCostMultiplier: number;
+    sellRefundMultiplier: number;
+    unlocks: Set<Unlock>;
+  };
   /** `surge` trigger etkisinin bitis zamani. */
   surgeUntil?: number;
   /** Gedik uyarisi yayildi mi; esik yukari asilinca duser. */
@@ -5595,9 +5604,10 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
 
     const missingRatio = 1 - tower.hp / tower.maxHp;
-    const cost = Math.ceil(
-      getStructureRepairCost(getTowerBuildCost(tower.definition.cost), missingRatio)
-        * getModifierMultiplier(this.getTowerRunModifiers(tower), "repairCost")
+    const cost = getStructureRepairCostWithModifiers(
+      getTowerBuildCost(tower.definition.cost),
+      missingRatio,
+      this.getTowerRepairCostMultiplier(tower)
     );
     if (cost <= 0 || player.gold < cost) return;
 
@@ -5846,17 +5856,18 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    // Ayni kurulum arasinda kurulmus kule alim bedeliyle geri doner ve
-    // iade carpani **islemez**. Isleseydi "Hurda Pazari" ile kur-sat
-    // dongusu bedelin %150'sini basardi; kurulum arasi bir plan kurma ani
-    // olmaktan cikip altin makinesine donerdi.
-    const undoable = canRefundTowerPurchase(tower, this.setupPhase, this.setupSession);
-    const refund = undoable
-      ? tower.buildGold
-      : Math.floor(
-        getTowerSellRefund(tower.definition.cost, tower.level, tower.definition.id)
-          * getModifierMultiplier(this.getTowerRunModifiers(tower), "sellRefund")
-      );
+    // Kuralin tamami paylasilan `resolveTowerRefund` icinde: kurulum arasi
+    // geri alimi, iade carpani, ve geri alimin carpandan muaf olusu.
+    // Arayuz ayni fonksiyonu cagiriyor, yani dugmede yazan sayi ile burada
+    // odenen sayi ayrisamaz.
+    const { amount: refund } = resolveTowerRefund(
+      { ...tower, cost: tower.definition.cost, definitionId: tower.definition.id },
+      {
+        setupPhase: this.setupPhase,
+        setupSession: this.setupSession,
+        refundMultiplier: this.getTowerSellRefundMultiplier(tower)
+      }
+    );
     player.gold += refund;
     player.goldSpent = Math.max(0, player.goldSpent - refund);
     if (occupiesTowerSlot(tower.definition)) {
@@ -8646,6 +8657,10 @@ export class MatchRoom extends Room<MatchState> {
         id: tower.id,
         facing: towerAims(tower.definition.id) ? Math.round(tower.facing * 1000) / 1000 : undefined,
         level: tower.level,
+        // Onbellekten geliyorlar: cozumleme kart/esya degistiginde bir kez
+        // kosuyor, her karede degil. Delta degismeyen kareleri atiyor.
+        repairCostMultiplier: this.getTowerRepairCostMultiplier(tower),
+        sellRefundMultiplier: this.getTowerSellRefundMultiplier(tower),
         range: roundNetworkNumber(this.getTowerRange(tower)),
         minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
@@ -9169,10 +9184,19 @@ export class MatchRoom extends Room<MatchState> {
       if (card.scope.kind === "global" || cardAppliesToTower(card, tower.definition)) takeCard(card);
     }
 
+    // Altin carpanlari da burada cozuluyor.
+    //
+    // Ikisi de her karede kule basina anlik goruntuye yaziliyor ve
+    // `getTowerRunModifiers` her cagrisinda katalogda arama yapiyor.
+    // Onbellek zaten tam dogru anda -- kart secildiginde, esya alinip
+    // takildiginda -- atiliyor, yani carpanlarin yeri burasi.
+    const goldModifiers = this.getTowerRunModifiers(tower);
     return {
       generation: this.grantGeneration,
       engine: resolveTowerEngine(tower.definition.engine, grants),
       attackMultipliers: resolveTowerAttackMultipliers(grants),
+      repairCostMultiplier: getModifierMultiplier(goldModifiers, "repairCost"),
+      sellRefundMultiplier: getModifierMultiplier(goldModifiers, "sellRefund"),
       unlocks
     };
   }
@@ -9194,6 +9218,16 @@ export class MatchRoom extends Room<MatchState> {
    */
   private getTowerEngine(tower: TowerModel) {
     return this.getTowerGrantState(tower).engine;
+  }
+
+  /** Onarim bedelinin kart ve esya carpani. */
+  private getTowerRepairCostMultiplier(tower: TowerModel) {
+    return this.getTowerGrantState(tower).repairCostMultiplier;
+  }
+
+  /** Satis iadesinin kart ve esya carpani. */
+  private getTowerSellRefundMultiplier(tower: TowerModel) {
+    return this.getTowerGrantState(tower).sellRefundMultiplier;
   }
 
   /**
