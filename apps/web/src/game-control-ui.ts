@@ -55,6 +55,8 @@ type ControlState = {
   /** Hasarli yapiyi onarma; yikilan yapi onarilamaz, yeniden insa edilir. */
   repair?: { label: string; enabled: boolean };
   selectedStats?: string[];
+  /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
+  selectedTowerId?: string;
   /** Secili kuleye takili esyalar; parametre barlarinin hemen altinda listelenir. */
   equippedItems?: Array<{ id: string; name: string; description: string }>;
   equippedCapacity?: number;
@@ -218,6 +220,8 @@ export function setupGameControlUi(game: Phaser.Game) {
   window.addEventListener("pointerup", releasePointer);
   window.addEventListener("pointercancel", releasePointer);
 
+  /** Bir onceki karede secili olan kule; secim degisimini yakalamak icin. */
+  let lastSelectedTowerId: string | undefined;
   let lastChromeMeasureAt = 0;
   const scheduleChromeMeasure = () => {
     const now = performance.now();
@@ -514,12 +518,18 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
     body.push(equipped);
 
-    // Yukseltme ve onarim burada; satis haritadaki kule panelinde.
+    // Satis haritadaki kule panelinde de duruyor ama tek yeri orasi
+    // olamaz: cekmece tuvalin alt yarisini kapliyor ve haritanin alt
+    // sirasindaki bir kulenin paneli tam onun altina dusuyor. Oyuncu
+    // kuleyi seciyor, satis dugmesi hic gorunmuyordu.
     const actions: HTMLElement[] = [
       makeActionButton(state.upgrade?.label ?? "Yükselt", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" }))
     ];
     if (state.repair) {
       actions.push(makeActionButton(state.repair.label, "game-controls__action--repair", state.repair.enabled, () => dispatch({ action: "repairStructure" })));
+    }
+    if (state.sell) {
+      actions.push(makeActionButton(state.sell.label, "game-controls__action--sell", state.sell.enabled, () => dispatch({ action: "sellTower" })));
     }
     body.push(makeRow(actions));
 
@@ -735,6 +745,19 @@ export function setupGameControlUi(game: Phaser.Game) {
     scheduleChromeMeasure();
     latestState = state;
 
+    // Son yapilan kazanir.
+    //
+    // Yeni bir kule secmek acik cekmeceyi kapatiyor, boylece kuleye
+    // dokunan oyuncu kule panelini goruyor. Bunun karsiliginda asagida
+    // acik cekmece kule panelinin onune geciyor: kule secili while bir
+    // cekmece acmak da isliyor. Ikisi olmadan Atakan'in Refaktor'u
+    // yapilamiyordu -- beceri once kule secilmesini istiyor ama kule
+    // secili oldugunda beceri cekmecesi hic acilamiyordu.
+    if (state.selectedTowerId !== lastSelectedTowerId) {
+      lastSelectedTowerId = state.selectedTowerId;
+      if (state.selectedTowerId) openDrawer = undefined;
+    }
+
     // Canli sayilar paneli yeniden kurmaz, yerinde yazilir.
     syncLiveStats();
 
@@ -835,19 +858,21 @@ export function setupGameControlUi(game: Phaser.Game) {
     const panel = document.createElement("section");
     panel.className = `game-controls__panel${state.selectedStats ? " game-controls__panel--tower-selected" : ""}`;
 
-    // Yaratici cekmece kule cekmecesinin de onune geciyor. Sirasi tersine
-    // olsaydi hedefli kart hicbir kuleye takilamazdi: kart listesi bir kule
-    // secili olmasini istiyor ama kule secmek listeyi kapatiyordu.
+    // Elle acilan cekmece, secimle kendiliginden gelen kule panelinin onune
+    // geciyor. Yukaridaki "yeni secim cekmeceyi kapatir" kuralinin obur
+    // yarisi: ikisi birlikte "son yapilan kazanir" demek. Tek yonlu
+    // olsaydi kule secili hicbir cekmece acilamaz, ters yonlu olsaydi
+    // kuleye dokunmak panelini getirmezdi.
     if (openDrawer === "creative" && state.creative) {
       panel.append(makeDrawer("Yaratıcı mod", buildCreativeDrawer(state), () => toggleDrawer("creative")));
-    } else if (state.selectedStats) {
-      panel.append(makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" })));
     } else if (openDrawer === "towers") {
       panel.append(makeDrawer("Kuleler", buildTowersDrawer(state), () => toggleDrawer("towers")));
     } else if (openDrawer === "skills") {
       panel.append(makeDrawer("Beceriler", buildSkillsDrawer(state), () => toggleDrawer("skills")));
     } else if (openDrawer === "inventory") {
       panel.append(makeDrawer("Envanter", buildInventoryDrawer(state), () => toggleDrawer("inventory")));
+    } else if (state.selectedStats) {
+      panel.append(makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" })));
     }
 
     panel.append(buildLauncher(state));

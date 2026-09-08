@@ -7214,6 +7214,7 @@ export class GameScene extends Phaser.Scene {
         enabled: canSell
       },
       repair: repairState,
+      selectedTowerId: this.selectedPlacedTowerId,
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
