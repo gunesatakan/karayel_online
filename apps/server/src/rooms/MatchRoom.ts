@@ -112,7 +112,7 @@ import {
   type HirableWorkerRole,
   type HiredWorker,
   ADVANCED_WORKER_MULTIPLIER,
-  getWorkerHireCost,
+  getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
   LOGISTICS_WORKER_CAPACITY,
   ENERGY_LOGISTICS_WORKER_CAPACITY,
@@ -5565,9 +5565,10 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     const advanced = message.advanced === true;
-    const cost = Math.ceil(
-      getWorkerHireCost(player.hiredWorkers.length, advanced)
-        * getModifierMultiplier(player.runModifiers, "workerHireCost")
+    const cost = getWorkerHireCostWithModifiers(
+      player.hiredWorkers.length,
+      advanced,
+      this.getWorkerHireCostMultiplier(player)
     );
     if (player.gold < cost) {
       return;
@@ -5580,6 +5581,11 @@ export class MatchRoom extends Room<MatchState> {
     // oyuncunun goremedigi bir yere ertelerdi.
     this.ensureLogisticsWorkers();
     client.send("worker:hired", { role: message.role, advanced, cost });
+  }
+
+  /** Isci alim bedelinin kart ve esya carpani. */
+  private getWorkerHireCostMultiplier(player: Player) {
+    return getModifierMultiplier(player.runModifiers ?? [], "workerHireCost");
   }
 
   private repairStructure(client: Client, message: RepairStructureMessage) {
@@ -8608,7 +8614,12 @@ export class MatchRoom extends Room<MatchState> {
         approval: player.characterId === "archer" ? player.approval : undefined,
         stress: player.characterId === "archer" ? player.stress : undefined,
         melisStance: player.characterId === "archer" ? player.melisStance : undefined,
-        hiredWorkers: player.hiredWorkers.map((worker) => ({ ...worker }))
+        hiredWorkers: player.hiredWorkers.map((worker) => ({ ...worker })),
+        // 1 ise yazilmiyor: indirimsiz oyunda her karede bir sayi
+        // gondermenin karsiligi yok, okuyan taraf eksik alani 1 sayiyor.
+        workerHireCostMultiplier: this.getWorkerHireCostMultiplier(player) === 1
+          ? undefined
+          : this.getWorkerHireCostMultiplier(player)
       })),
       enemies: Array.from(this.enemies.values()).map((enemy) => stripWireDefaults({
         id: enemy.id,

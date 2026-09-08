@@ -360,6 +360,15 @@ export type PlayerSnapshot = {
   melisStance?: import("./index.js").MelisStance;
   /** Satin alinmis ek isciler; siradaki bedel bu sayidan cikar. */
   hiredWorkers?: Array<import("./logistics/index.js").HiredWorker>;
+  /**
+   * Isci alim bedelinin kart ve esya carpani; 1 ise yazilmaz.
+   *
+   * `towerLimit` ile ayni sebeple telde: carpani doguran `runModifiers`
+   * listesi hic gonderilmiyor, yani istemci indirimi kendi bulamaz.
+   * Bedelin kendisi degil carpan gonderiliyor cunku normal ve gelismis
+   * kademe icin iki ayri sayi olurdu ve sayac her alimda degisiyor.
+   */
+  workerHireCostMultiplier?: number;
 };
 
 export type LobbyPlayerSnapshot = {
@@ -893,6 +902,7 @@ export {
   advanceResourceExtraction,
   canHireWorker,
   getWorkerHireCost,
+  getWorkerHireCostWithModifiers,
   isHirableWorkerRole
 } from "./logistics/index.js";
 export type { HirableWorkerRole, HiredWorker } from "./logistics/index.js";

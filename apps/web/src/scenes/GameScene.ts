@@ -7,7 +7,7 @@ import {
   type HirableWorkerRole,
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_ROLE_LABELS,
-  getWorkerHireCost,
+  getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
   TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
@@ -1861,10 +1861,13 @@ export class GameScene extends Phaser.Scene {
 
   private getWorkerHireState() {
     const hired = this.localPlayerSnapshot?.hiredWorkers ?? [];
+    // Indirim carpani sunucudan geliyor: onu doguran kart listesi tele
+    // cikmiyor, yani istemci indirimi kendi bulamaz. Eksikse 1.
+    const costMultiplier = this.localPlayerSnapshot?.workerHireCostMultiplier ?? 1;
     // Iki bedel de gonderiliyor: oyuncu kademeyi secmeden once ikisini de
     // gormeli, yoksa secim ancak deneyerek ogrenilen bir sey olur.
-    const cost = getWorkerHireCost(hired.length);
-    const advancedCost = getWorkerHireCost(hired.length, true);
+    const cost = getWorkerHireCostWithModifiers(hired.length, false, costMultiplier);
+    const advancedCost = getWorkerHireCostWithModifiers(hired.length, true, costMultiplier);
     const gold = this.localPlayerSnapshot?.gold ?? 0;
     const advanced = this.workerHireAdvanced;
     return {

@@ -83,6 +83,23 @@ export function getWorkerHireCost(hiredCount: number, advanced = false) {
   return advanced ? normal * ADVANCED_WORKER_COST_MULTIPLIER : normal;
 }
 
+/**
+ * Kartlar ve esyalar isledikten sonra siradaki iscinin bedeli.
+ *
+ * Iki taraf da bu fonksiyonu cagiriyor. Once sunucu kendi hesabini yapiyor,
+ * arayuz de kendi formulunu yaziyordu; "Isci Pazarligi" alindiginda sunucu
+ * indirimli tahsil ediyor ama cekmecede eski sayi duruyordu. Indirimi
+ * gormek, indirimin kendisi kadar onemli -- gorulmeyen bir kartin alinmasi
+ * icin bir sebep yok.
+ */
+export function getWorkerHireCostWithModifiers(
+  hiredCount: number,
+  advanced = false,
+  costMultiplier = 1
+) {
+  return Math.ceil(getWorkerHireCost(hiredCount, advanced) * Math.max(0, costMultiplier));
+}
+
 export function isHirableWorkerRole(value: unknown): value is HirableWorkerRole {
   return typeof value === "string" && (HIRABLE_WORKER_ROLES as readonly string[]).includes(value);
 }

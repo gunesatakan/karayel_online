@@ -10,6 +10,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ADVANCED_WORKER_COST_MULTIPLIER,
+  cardCatalog,
+  getWorkerHireCostWithModifiers,
   ADVANCED_WORKER_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
   WORKER_HIRE_BASE_COST,
@@ -274,4 +276,82 @@ test("gelismis istegi bedeli karsilanmiyorsa normal isciye dusmuyor", () => {
   assert.deepEqual(player.hiredWorkers, [], "bedeli karsilanmayan gelismis isci alinmis");
   assert.equal(canHireWorker(0, player.gold, true), false);
   assert.equal(canHireWorker(0, player.gold), true, "normal isci hala alinabilmeliydi");
+});
+
+/**
+ * "Isci Pazarligi" (-%30) ve arayuzun gordugu sayi.
+ *
+ * Hata sunucuda degildi: sunucu indirimi hep uyguluyordu, ama cekmece kendi
+ * formulunu yazdigi icin eski sayiyi gosteriyordu. Oyuncu karti aliyor, fiyat
+ * degismemis gorunuyor, kartin ise yaramadigini saniyordu.
+ *
+ * Testin tuttugu sey tam olarak bu: **gorulen sayi ile tahsil edilen sayinin
+ * ayni olmasi**. Indirimin uygulanmasi tek basina yeterli degil -- gorunmeyen
+ * bir indirim, oyuncu icin olmayan bir indirimdir.
+ */
+function pazarlikKartiniAl(room, client = { sessionId: "p1", send() {} }) {
+  const kart = cardCatalog.find((card) => card.id === "isci-pazarligi");
+  room.pendingCardChoices = new Map([["p1", [kart]]]);
+  room.broadcast = () => {};
+  room.chooseCard(client, { cardId: kart.id });
+  return kart;
+}
+
+test("isci pazarligi bedeli hem dusuruyor hem cekmecede gorunuyor", () => {
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  pazarlikKartiniAl(room);
+
+  const carpan = room.getWorkerHireCostMultiplier(player);
+  assert.equal(Math.round(carpan * 100) / 100, 0.7, "kart carpani islemedi");
+
+  // Arayuzun yazacagi sayi.
+  const gorunen = getWorkerHireCostWithModifiers(player.hiredWorkers.length, false, carpan);
+  assert.equal(gorunen, Math.ceil(WORKER_HIRE_BASE_COST * 0.7));
+
+  const oncekiAltin = player.gold;
+  room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector" });
+  assert.equal(oncekiAltin - player.gold, gorunen, "tahsil edilen bedel gorunenden farkli");
+});
+
+test("indirim gelismis isciye de isliyor ve iki sayi da tutuyor", () => {
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  pazarlikKartiniAl(room);
+  const carpan = room.getWorkerHireCostMultiplier(player);
+
+  const gorunen = getWorkerHireCostWithModifiers(player.hiredWorkers.length, true, carpan);
+  assert.ok(gorunen < getWorkerHireCost(0, true), "gelismis bedel indirimden etkilenmedi");
+
+  const oncekiAltin = player.gold;
+  room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector", advanced: true });
+  assert.equal(oncekiAltin - player.gold, gorunen);
+});
+
+test("carpan sayac ilerledikce de gorunenle tahsil edileni ayni tutuyor", () => {
+  // Sayac her alimda degistigi icin tek bir bedel gondermek yetmezdi; telden
+  // carpan geciyor ve iki taraf ayni fonksiyonu cagiriyor.
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  pazarlikKartiniAl(room);
+  const carpan = room.getWorkerHireCostMultiplier(player);
+
+  for (let i = 0; i < 6; i += 1) {
+    const gelismis = i % 2 === 1;
+    const gorunen = getWorkerHireCostWithModifiers(player.hiredWorkers.length, gelismis, carpan);
+    const oncekiAltin = player.gold;
+    room.hireWorker({ sessionId: "p1", send() {} }, { role: "crystalCollector", advanced: gelismis });
+    assert.equal(oncekiAltin - player.gold, gorunen, `${i}. alimda gorunen ile tahsil edilen ayrildi`);
+  }
+});
+
+test("carpan anlik goruntuye yaziliyor, indirim yokken yazilmiyor", () => {
+  // 1 iken yazilmiyor: indirimsiz oyunda her karede bir sayi gondermenin
+  // karsiligi yok, okuyan taraf eksik alani 1 sayiyor.
+  const room = createRoom("warrior");
+  const oyuncuKaydi = () => room.getSnapshot().players.find((entry) => entry.id === "p1");
+  assert.equal(oyuncuKaydi().workerHireCostMultiplier, undefined, "indirim yokken carpan gonderilmis");
+
+  pazarlikKartiniAl(room);
+  assert.equal(Math.round(oyuncuKaydi().workerHireCostMultiplier * 100) / 100, 0.7);
 });
