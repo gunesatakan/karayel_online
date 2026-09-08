@@ -809,7 +809,10 @@ canvas {
   background: linear-gradient(180deg, rgba(127, 29, 29, 0.92), rgba(69, 10, 10, 0.94));
 }
 
-.game-controls__action--sell { color: #fecdd3; border-color: rgba(244, 63, 94, .5); background: rgba(76, 5, 25, .38); }
+.game-controls__performance { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; margin-top: 6px; }
+.game-controls__performance-label { color: #cbd5f5; font-size: 11px; white-space: nowrap; }
+.game-controls__performance-slider { width: 100%; min-height: 28px; accent-color: #38bdf8; touch-action: none; }
+.game-controls__performance-slider:disabled { opacity: .45; }
 
 .game-controls__action--repair {
   border-color: rgba(45, 212, 191, 0.72);

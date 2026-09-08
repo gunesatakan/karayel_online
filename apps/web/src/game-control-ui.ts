@@ -54,6 +54,8 @@ type ControlState = {
   sell?: { label: string; enabled: boolean };
   /** Hasarli yapiyi onarma; yikilan yapi onarilamaz, yeniden insa edilir. */
   repair?: { label: string; enabled: boolean };
+  /** Performans kolu; kaynak binalarinda yok. Deger yuzde. */
+  performance?: { percent: number; canEdit: boolean };
   selectedStats?: string[];
   /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
   selectedTowerId?: string;
@@ -533,6 +535,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
     body.push(makeRow(actions));
 
+    if (state.performance) {
+      body.push(makePerformanceSlider(state.performance));
+    }
+
     if (state.underworldMode) {
       body.push(makeRow([
         makeUnderworldModeButton("Onay", "approval", state.underworldMode),
@@ -894,6 +900,36 @@ export function setupGameControlUi(game: Phaser.Game) {
       dispatch({ action: "useZeynepTier", tier });
     });
     return button;
+  };
+
+  /**
+   * Performans kolu.
+   *
+   * `input` olayinda yolluyor, `change` degil: haritadaki kol da
+   * suruklenirken yolluyor ve isinin gercek zamanli tepki vermesi kolun
+   * anlami. Panel surukleme boyunca yeniden kurulmuyor -- parmak
+   * basiliyken yeniden kurma zaten erteleniyor.
+   */
+  const makePerformanceSlider = (performance: NonNullable<ControlState["performance"]>) => {
+    const row = document.createElement("div");
+    row.className = "game-controls__performance";
+    const label = document.createElement("span");
+    label.className = "game-controls__performance-label";
+    label.textContent = `Performans %${performance.percent}`;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "100";
+    slider.step = "1";
+    slider.value = String(performance.percent);
+    slider.disabled = !performance.canEdit;
+    slider.className = "game-controls__performance-slider";
+    slider.addEventListener("input", () => {
+      label.textContent = `Performans %${slider.value}`;
+      dispatch({ action: "setTowerPerformance", performance: Number(slider.value) / 100 });
+    });
+    row.append(label, slider);
+    return row;
   };
 
   const makeWorkerTierButton = (label: string, advanced: boolean, hire: NonNullable<ControlState["workerHire"]>) => {

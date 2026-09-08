@@ -1886,6 +1886,33 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  /**
+   * Performans kolunun cekmecedeki hali.
+   *
+   * Kol haritadaki kule panelinde de duruyor ama tek yeri orasi olamaz:
+   * cekmece tuvalin alt yarisini kapliyor ve haritanin alt sirasindaki bir
+   * kulenin paneli tam onun altina dusuyor. O kulenin performansi hic
+   * ayarlanamiyordu -- satis dugmesiyle ayni hata, ayni cozum.
+   *
+   * Deger yuzde olarak tasiniyor: panelin yeniden kurulup kurulmayacagina
+   * karar veren anahtar sayilari yuvarliyor, 0-1 arasi bir oran orada
+   * 0 ya da 1'e duserdi ve kol ekranda kimildamazdi.
+   *
+   * Iyimser deger burada da okunuyor: iki kol ayni sayiyi gostermeli,
+   * yoksa suruklerken biri digerinin gerisinde kalir.
+   */
+  private getPerformanceControlState(selectedTower: TowerSnapshot | undefined) {
+    if (!selectedTower || selectedTower.resourceProvider) return undefined;
+    const server = Phaser.Math.Clamp(selectedTower.performance ?? 0.5, 0, 1);
+    const value = this.optimisticPerformance?.towerId === selectedTower.id
+      ? this.optimisticPerformance.value
+      : server;
+    return {
+      percent: Math.round(Phaser.Math.Clamp(value, 0, 1) * 100),
+      canEdit: selectedTower.ownerId === this.localSessionId
+    };
+  }
+
   private getRepairState(selectedTower: TowerSnapshot | undefined, definition: TowerDefinition | undefined) {
     if (!selectedTower || !definition || selectedTower.ownerId !== this.localSessionId) return undefined;
     const maxHp = selectedTower.maxHp ?? 0;
@@ -7219,6 +7246,7 @@ export class GameScene extends Phaser.Scene {
         enabled: canSell
       },
       repair: repairState,
+      performance: this.getPerformanceControlState(selectedTower),
       selectedTowerId: this.selectedPlacedTowerId,
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
