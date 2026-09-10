@@ -7545,6 +7545,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         // yavaslatma gucu hicbir yerde yazmiyordu: Izolasyon Kulesi'ni
         // kuran oyuncu ne kadar yavaslattigini ancak dusmanlara bakarak
         // tahmin edebiliyordu.
+        // Etki araligi ayri yaziliyor: saldiri hizi ona islemiyor ve
+        // oyuncunun bunu kart almadan once gormesi gerekiyor.
+        ...(selectedTower.effectIntervalMs !== undefined ? [
+          `Etki araligi: ${(selectedTower.effectIntervalMs / 1000).toFixed(2)} sn (atis hizindan etkilenmez)`
+        ] : []),
         ...(selectedTower.auraSlowMultiplier !== undefined ? [
           `Aura: ${Math.round(selectedTower.range)} yariçap | hiz -%${Math.round((1 - selectedTower.auraSlowMultiplier) * 100)}`
         ] : []),

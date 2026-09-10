@@ -168,6 +168,25 @@ export function calculateTowerOperatingEnergy(definition: TowerDefinition, secon
   return Math.max(0, definition.engine?.resources.operatingEnergyPerSecond ?? 0) * Math.max(0, seconds) * modifierMultiplier;
 }
 
+/**
+ * Kulenin ritmi bir **etki araligi** mi, yoksa atis mi.
+ *
+ * Ikisi ayni sey degil ve saldiri hizi yalnizca atisa isler. Etki araligi
+ * kulenin alanini ne siklikta tazeledigi: Izolasyon Kulesi'nin aurasi,
+ * Saray Arsivi'nin ve Abarti'nin tazeleme tiki, focus kulelerinin surekli
+ * kirisi. Bunlarin hizlanmasi diye bir sey yok -- alan zaten hep orada.
+ *
+ * Olcut iki sey: focus vurusu ya da motorunda dusmana/kuleye isleyen bir
+ * aura. Kin Kulesi disarida kaliyor: `hitType` alani "aura" ama motorunda
+ * aura yok, her tetikte bir dalga firlatiyor -- o bir atis, ve atislar
+ * hizlanabilir.
+ */
+export function usesEffectInterval(definition: TowerDefinition) {
+  if (definition.resourceProvider) return false;
+  if (definition.hitType === "focus") return true;
+  return Boolean(definition.engine?.auras?.length);
+}
+
 export function isPeriodicTowerAura(definition: TowerDefinition) {
   return !definition.resourceProvider
     && Boolean(definition.engine?.auras?.length);

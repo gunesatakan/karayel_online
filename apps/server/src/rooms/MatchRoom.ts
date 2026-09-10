@@ -184,6 +184,7 @@ import {
   rotateTowerTowards,
   SLOW_STATUS_SPEED_MULTIPLIER,
   canRefundTowerPurchase,
+  usesEffectInterval,
   resolveTowerRefund,
   getTowerSellRefund,
   getTowerBuildCost,
@@ -8801,6 +8802,9 @@ export class MatchRoom extends Room<MatchState> {
         auraActive: tower.auraActive,
         repairCostMultiplier: this.getTowerRepairCostMultiplier(tower),
         sellRefundMultiplier: this.getTowerSellRefundMultiplier(tower),
+        effectIntervalMs: usesEffectInterval(tower.definition)
+          ? Math.round(this.getTowerEffectInterval(tower))
+          : undefined,
         auraSlowMultiplier: this.getTowerAuraSlowMultiplier(tower),
         slowSpeedMultiplier: this.getTowerSlowStatus(tower)?.speedMultiplier,
         slowSpeedMultiplierFar: this.getTowerSlowStatus(tower)?.farSpeedMultiplier,
@@ -9016,10 +9020,16 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  /**
+   * Auranin tazeleme araligi.
+   *
+   * Saldiri hizi burada okunmuyor: bu bir atis degil, alanin kendini
+   * tazelemesi. Performans kolu isliyor cunku o kolun anlami kulenin ne
+   * kadar zorlandigi -- isi ve enerji karsiliginda daha sik tazeleme.
+   */
   private getTowerAuraTickInterval(tower: TowerModel, auras = this.getActiveTowerAuras(tower)) {
     const baseInterval = Math.min(...auras.map((aura) => aura.tickIntervalMs ?? tower.definition.fireIntervalMs));
-    const adjustedInterval = this.adjustIntervalForPerformanceAndHeat(tower, baseInterval);
-    return adjustedInterval / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
+    return this.adjustIntervalForPerformanceAndHeat(tower, baseInterval);
   }
 
   private isTowerAuraPowered(tower: TowerModel) {
@@ -9099,8 +9109,15 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.engine?.fixedFireInterval) {
       return tower.definition.fireIntervalMs;
     }
-    return this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower))
-      / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
+    const interval = this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower));
+    // Etki araligi saldiri hizindan etkilenmez.
+    //
+    // Ritmi bir alan tazelemesi olan kulede "daha hizli atis" diye bir sey
+    // yok; alan zaten surekli orada. Bolme burada kalsaydi Debug Lazer
+    // kartla hizlanir, Izolasyon Kulesi'nin aurasi da 220 ms yerine 183 ms'de
+    // tazelenirdi -- ikisi de kuralin disi.
+    if (usesEffectInterval(tower.definition)) return interval;
+    return interval / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
   }
 
   /**
@@ -9995,6 +10012,18 @@ export class MatchRoom extends Room<MatchState> {
       if (value >= 0.05) stats[key] = Math.round(value * 10) / 10;
     }
     return Object.keys(stats).length > 0 ? stats : undefined;
+  }
+
+  /**
+   * Etki araliginin uzunlugu.
+   *
+   * Aurasi olan kulede auranin tazeleme tiki, focus kulesinde ritmin kendisi.
+   * Ikisi de sahada isleyen fonksiyondan geciyor, yani panelde yazan sayi ile
+   * gercekten olan sey ayni.
+   */
+  private getTowerEffectInterval(tower: TowerModel) {
+    const auras = this.getActiveTowerAuras(tower);
+    return auras.length > 0 ? this.getTowerAuraTickInterval(tower, auras) : this.getTowerFireInterval(tower);
   }
 
   /**

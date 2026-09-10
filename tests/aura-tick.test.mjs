@@ -43,11 +43,49 @@ test("Saray Arşivi ve Abartı gerçek aura tick aralığı kullanır", () => {
   }
 });
 
-test("fireRate modifierı aura yenileme aralığını değiştirir", () => {
+/**
+ * Bu test bir donem tam tersini tutuyordu: saldiri hizi aura araligini
+ * kisaltiyordu ve o davranisin bir gerekcesi yaziliydi degildi. Kural
+ * degisti -- etki araligi bir atis degil, alanin kendini tazelemesi; alan
+ * zaten surekli orada, "daha hizli" diye bir hali yok.
+ *
+ * Test cift tarafli: aura kulesi kimildamiyor, atis kulesi kimildiyor.
+ * Yalnizca birincisi olsaydi saldiri hizini butun kulelerde kapatan bir
+ * degisiklik de gecerdi.
+ */
+test("saldırı hızı etki aralığına işlemez, atış aralığına işler", () => {
   const { room, tower } = placeAuraTower();
-  const baseInterval = room.getTowerFireInterval(tower);
+  const auras = room.getActiveTowerAuras(tower);
+  const auraBefore = room.getTowerAuraTickInterval(tower, auras);
+  const fireBefore = room.getTowerFireInterval(tower);
   tower.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 0.2 });
-  assert.ok(Math.abs(room.getTowerFireInterval(tower) - baseInterval / 1.2) < 1e-9);
+  assert.equal(room.getTowerAuraTickInterval(tower, auras), auraBefore, "aura aralığı saldırı hızından etkilendi");
+  assert.equal(room.getTowerFireInterval(tower), fireBefore, "aura kulesinin ritmi saldırı hızından etkilendi");
+
+  const atis = createRoom("warrior");
+  const spot = findBuildableSpot(atis, "warrior-1");
+  atis.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
+  const takipci = [...atis.towers.values()][0];
+  const oncekiAtis = atis.getTowerFireInterval(takipci);
+  takipci.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 0.2 });
+  assert.ok(
+    Math.abs(atis.getTowerFireInterval(takipci) - oncekiAtis / 1.2) < 1e-9,
+    "atış kulesi saldırı hızından etkilenmeli"
+  );
+});
+
+test("focus kuleleri de etki aralığı kullanır", () => {
+  // Kullanicinin koydugu kural: focus kulesinin ritmi bir etki araligi,
+  // Izolasyon Kulesi'nin aurasi gibi.
+  for (const [ch, id] of [["warrior", "warrior-5"], ["archer", "archer-4"]]) {
+    const room = createRoom(ch);
+    const spot = findBuildableSpot(room, id);
+    room.placeTower({ sessionId: "p1" }, { x: spot.x, y: spot.y, definitionId: id });
+    const tower = [...room.towers.values()][0];
+    const once = room.getTowerFireInterval(tower);
+    tower.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 0.5 });
+    assert.equal(room.getTowerFireInterval(tower), once, `${id} saldırı hızından etkilendi`);
+  }
 });
 
 test("aura ticki enerji ve ısı tüketir, yakıt bitince yenileme düşer", () => {

@@ -497,6 +497,13 @@ export type TowerSnapshot = {
    * Izolasyon Kulesi'nin ne kadar yavaslattigi hicbir yerde yazmiyordu.
    * Seviyeyle ve kartlarla degistigi icin istemci kendi hesaplayamaz.
    */
+  /**
+   * Kulenin ritmi bir etki araligiysa, o araligin uzunlugu.
+   *
+   * Ayri bir alan cunku anlami ayri: saldiri hizi buna islemiyor ve panelde
+   * bunu gormek, isabet etmeyen bir karti almamanin tek yolu.
+   */
+  effectIntervalMs?: number;
   auraSlowMultiplier?: number;
   /**
    * Kulenin vuruslarinin dusman hizina birakacagi carpan ve suresi.
@@ -861,6 +868,7 @@ export {
   getTowerShotFuelModifierMultiplier,
   calculateTowerOperatingEnergy,
   isPeriodicTowerAura,
+  usesEffectInterval,
   calculateTowerEnergyPerSecond,
   shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
