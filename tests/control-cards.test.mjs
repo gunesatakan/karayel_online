@@ -1,18 +1,20 @@
 /**
- * Buz ekseni: sogumadan yavaslatmaya, yavaslatmadan donmaya, donmadan kritige.
+ * Kontrol ve nisan kartlari.
  *
- * Dort kart bir zincir kuruyor ve zincirin degeri halkalarin **birbirine
- * gecmesinde**. Testler tek tek etkileri degil, o gecisleri tutuyor:
- *   - Sogutma Kanali sogumayi okuyor mu (yani sogutma kartlari buna da yariyor mu),
- *   - Derin Dondurma kimin yavaslattigina bakmadan donduruyor mu,
- *   - donmus dusman gercekten duruyor mu,
- *   - Kirilgan Buz o donmayi kritige ceviriyor mu.
+ * Bes kart, bes ayri sey. Hicbiri otekini gerektirmiyor: her biri sahada
+ * zaten olan bir seye baginiyor -- kulenin soguma hizina, kendi kritigine,
+ * dusmanin o anki hizina, yerinde durup durmadigina. Testler de bu
+ * bagimsizligi tutuyor, ozellikle "Sabit Hedef donma olmadan da calisiyor"
+ * olani: o kart bir donem yalnizca donmaya bakiyordu ve donmayi oyunda
+ * baska hicbir sey uretmedigi icin Derin Dondurma cekilmeden bos bir
+ * secimdi.
  *
- * Ayrica iki tehlikeli koseyi tutuyorlar: sogutma yavaslatmasi kendisiyle
- * yigilmamali (yoksa hizli atan bir kule dusmani tek basina durdurur) ve donma
- * kendini beslememeli (donmus dusmanin hizi sifir, yani esigin altinda).
- */
-import test from "node:test";
+ * Iki tehlikeli kose ayrica tutuluyor: sogutma yavaslatmasi kendisiyle
+ * yigilmamali (yoksa hizli atan bir kule dusmani tek basina durdurur) ama
+ * baska yavaslatmalarin **ustune binmeli** (bir donem `min` icindeydi ve
+ * guclu bir yavaslatmanin yaninda hicbir sey yapmiyordu), ve donma kendini
+ * beslememeli (donmus dusmanin hizi sifir, yani esigin altinda).
+ */import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEEP_FREEZE_DURATION_MS,
@@ -233,11 +235,11 @@ test("donmus dusmanin hizi sifir", () => {
 
 // --------------------------------------------------------------- Kritik bagi
 
-test("kirilgan buz donmus hedefte kritik ihtimalini buyutuyor", () => {
+test("sabit hedef yerinde duran dusmanda kritik ihtimalini buyutuyor", () => {
   const room = oda();
   const tower = kur(room);
   kartAl(room, "derin-dondurma", tower.id);
-  kartAl(room, "kirilgan-buz");
+  kartAl(room, "sabit-hedef");
   const enemy = dusmanKoy(room, tower);
   const now = Date.now();
 
@@ -324,4 +326,83 @@ test("sure esyalari her kuleye takilabiliyor", () => {
     room.equipShopItem(client, { itemId, towerId: tower.id });
     assert.ok(tower.equippedShopItemIds.includes(itemId), `${itemId} sade bir kuleye takilamadi`);
   }
+});
+
+// --------------------------------------------------- Yigilma ve bagimsizlik
+
+test("sogutma yavaslatmasi baska bir yavaslatmanin uzerine biniyor", () => {
+  // Kartin metni "baska yavaslatmalarla birlikte durabilir" diyor. Onceden
+  // `min` icindeydi ve durmuyordu: 0,48'lik bir yavaslatmanin yaninda
+  // 0,91 hic gorunmuyordu, yani kart o durumda tamamen etkisizdi.
+  const yol = (sogutmali) => {
+    const room = oda();
+    const tower = kur(room);
+    if (sogutmali) kartAl(room, "sogutma-kanali", tower.id);
+    // Dusman dogdugu yerde birakiliyor ve hizi sabitleniyor.
+    //
+    // Elle tasinan bir dusmanin yolu olmuyor ve hic yurumuyor; dusman turu de
+    // rastgele seciliyor. Ikisi sabitlenmezse olculen sey carpan degil gurultu
+    // olur -- ilk yazdigim halde tam bu oldu ve olcum yanlis cikti.
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()].at(-1);
+    enemy.hp = enemy.maxHp = 100000;
+    enemy.statusResistances = {};
+    enemy.speed = 100;
+    const now = Date.now();
+    // Siradan bir yavaslatma: hiz carpanini 0,48'e cekiyor.
+    room.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.5, durationMs: 5000, stacking: "refresh" }, now);
+    if (sogutmali) room.applyCoolantSlow(tower, enemy, now);
+    const onceX = enemy.x;
+    const onceY = enemy.y;
+    // Kisa tik: uzun bir aralikta dusman yolun donusunu aliyor ve alinan
+    // mesafe hizla orantili olmaktan cikiyor.
+    room.updateEnemies(0.02);
+    return Math.hypot(enemy.x - onceX, enemy.y - onceY) / (100 * 0.02);
+  };
+
+  const sade = yol(false);
+  const sogutmali = yol(true);
+  // Siradan yavaslatma tek basina 0,48; ustune sogutma binince 0,437.
+  assert.ok(Math.abs(sade - 0.48) < 0.01, `siradan yavaslatma 0,48 vermedi: ${sade.toFixed(3)}`);
+  assert.ok(Math.abs(sogutmali - 0.48 * 0.91) < 0.01, `sogutma ustune binmedi: ${sogutmali.toFixed(3)}`);
+});
+
+test("sabit hedef donma olmadan da calisiyor", () => {
+  // Kartin bagimsiz olmasinin somut karsiligi: Derin Dondurma hic
+  // cekilmemisken bile ise yariyor. Korku ve sersemleme oyunda zaten var.
+  for (const [ad, hazirla] of [
+    ["korku", (enemy, now) => { enemy.fearUntil = now + 3000; }],
+    ["sersemleme", (enemy, now) => { enemy.melisDoubtHesitateUntil = now + 3000; }]
+  ]) {
+    const room = oda();
+    const tower = kur(room);
+    kartAl(room, "sabit-hedef");
+    const enemy = dusmanKoy(room, tower);
+    // Zar %30'un altinda ama taban kritigin ustunde: fark yalnizca karttan
+    // gelebilir.
+    room.towerCriticalRandom = () => 0.25;
+
+    const oncekiCan = enemy.hp;
+    room.damageEnemyFromTower(tower, enemy, 100, 0);
+    const hareketli = oncekiCan - enemy.hp;
+
+    hazirla(enemy, Date.now());
+    const duranOnce = enemy.hp;
+    room.damageEnemyFromTower(tower, enemy, 100, 0);
+    const duran = duranOnce - enemy.hp;
+
+    assert.ok(duran > hareketli, `${ad} durumunda kritik gelmedi: ${duran} / ${hareketli}`);
+  }
+});
+
+test("baglanmis dusman sabit sayilmiyor", () => {
+  // Oluler Bagi hedefi isaretliyor ama yurumesini kesmiyor; orada duran bir
+  // hedef yok, yani kart da islememeli.
+  const room = oda();
+  const tower = kur(room);
+  kartAl(room, "sabit-hedef");
+  const enemy = dusmanKoy(room, tower);
+  const now = Date.now();
+  room.applyEnemyStatusEffect(enemy, { type: "bind", magnitude: 1, durationMs: 3000, stacking: "refresh" }, now);
+  assert.equal(room.isEnemyImmobile(enemy, now), false, "baglanma sabit sayildi");
 });

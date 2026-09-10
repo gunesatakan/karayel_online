@@ -326,8 +326,8 @@ const COOLANT_SLOW_DURATION_MS = 1500;
 /** Kritik gelen yavaslatma bu kadar derinlesir. */
 const SLOW_CRIT_MULTIPLIER = 1.5;
 
-/** Donmus hedefe nisan alma kolayligi. */
-const FROZEN_CRIT_CHANCE = 0.3;
+/** Yerinde duran hedefe nisan alma kolayligi. */
+const IMMOBILE_CRIT_CHANCE = 0.3;
 
 const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 /** Tek vurusta kac dusmana sekiyor. */
@@ -4855,7 +4855,14 @@ export class MatchRoom extends Room<MatchState> {
       const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, coolantSlowMultiplier, tarMultiplier, debrisMultiplier) * doubtHasteMultiplier;
+        // Sogutma yavaslatmasi `min` icinde degil, sonucun **carpani**.
+        //
+        // Oyunun oteki yavaslatmalari birbiriyle yarisir ve en gucluse
+        // birakir; sogutma ise kartin kendi metninde yazdigi gibi
+        // ustlerine biner. Icerde olsaydi %9'luk bir yavaslatma, %52'lik
+        // bir yavaslatmanin yaninda hicbir sey yapmazdi -- olcup gorduk:
+        // 0,48 varken 0,91 hic gorunmuyordu.
+        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
       // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
       // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
       // sozu bu -- kule yavaslatmayi kendi yapmak zorunda degil, yalnizca
@@ -7282,16 +7289,19 @@ export class MatchRoom extends Room<MatchState> {
       ? conditionalCritical.chance
       : 0;
     const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:"));
-    // Kirilgan Buz: donmus hedef kacamaz, o yuzden nisan almak kolay.
-    // Derin Dondurma ile ayni destede olmasi kasitli -- biri digerinin
-    // yarattigi durumu odullendiriyor.
-    const frozenCritChance = damageSourceTower
-      && this.towerHasUnlock(damageSourceTower, "crit:vsFrozen")
-      && isStatusEffectActive(enemy.statusEffects.freeze, now)
-      ? FROZEN_CRIT_CHANCE
+    // Sabit Hedef: yerinde duran dusmana nisan almak kolay.
+    //
+    // Yalnizca donmayi saymiyor. Sayaydi kart Derin Dondurma'ya bagli
+    // olurdu: donma durumunu oyunda baska hicbir sey uretmiyor, yani o
+    // kart cekilmeden bu kart bos bir secim olurdu. Hareketsizligin uc
+    // kaynagi da sayiliyor ve ucu de birbirinden bagimsiz.
+    const immobileCritChance = damageSourceTower
+      && this.towerHasUnlock(damageSourceTower, "crit:vsImmobile")
+      && this.isEnemyImmobile(enemy, now)
+      ? IMMOBILE_CRIT_CHANCE
       : 0;
     const critChance = canCrit
-      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + getModifierAdd(damageModifiers, "critChance"))
+      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + immobileCritChance + getModifierAdd(damageModifiers, "critChance"))
       : 0;
     const critDamageAdd = canCrit
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
@@ -9941,6 +9951,23 @@ export class MatchRoom extends Room<MatchState> {
     if (critical) {
       this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
     }
+  }
+
+  /**
+   * Dusman yerinde duruyor mu.
+   *
+   * Uc ayri kaynak, ucu de birbirinden bagimsiz: donma (Derin Dondurma),
+   * sersemleme (Fisilti Korosu) ve korku (Parlama). Uc farkli karakterin
+   * uc farkli kulesi, yani "Sabit Hedef" kartini ise yarar kilan sey
+   * oyuncunun sahada ne kurdugu -- belli bir baska kart degil.
+   *
+   * Baglanma (`bind`) sayilmiyor: Oluler Bagi hedefi isaretliyor ama
+   * yurumesini kesmiyor, yani orada duran bir hedef yok.
+   */
+  private isEnemyImmobile(enemy: EnemyModel, now: number) {
+    return isStatusEffectActive(enemy.statusEffects.freeze, now)
+      || enemy.melisDoubtHesitateUntil > now
+      || enemy.fearUntil > now;
   }
 
   private resetAuraSlows() {
