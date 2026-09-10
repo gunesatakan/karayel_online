@@ -6285,6 +6285,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.drawZeynepColumnBurst(beam, color);
       } else if (beam.definitionId === "onur-sympathy") {
         this.drawSympathyLink(beam, color);
+      } else if (beam.definitionId === "enemy-shot") {
+        this.drawEnemyShot(beam, color);
       } else {
         this.drawLaserConnection(beam, color);
       }
@@ -7101,6 +7103,42 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   /** Vurus noktasinin rengi: kirmizi kademede duz govde rengi, ustunde sicak. */
   private getBeamImpactColor(beam: BeamSnapshot, color: number) {
     return (beam.tier ?? 1) < 2 ? color : this.getBeamCoreColor(color, 0.86);
+  }
+
+  /**
+   * Menzilli dusmanin yapiya attigi atisin izi.
+   *
+   * Kule kirislerinden bilerek ayri duruyor: hale yok, kademe vurgusu yok,
+   * kalinlik yok. Kesik kesik ince bir cizgi -- oyuncunun ekranindaki her
+   * parlak sey onun kendi ates gucu, bu degil.
+   */
+  private drawEnemyShot(beam: BeamSnapshot, color: number) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
+      return;
+    }
+    const dx = beam.x2 - beam.x1;
+    const dy = beam.y2 - beam.y1;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) {
+      return;
+    }
+    const stepLength = 9;
+    const steps = Math.max(1, Math.floor(length / stepLength));
+    graphics.lineStyle(Math.max(1, beam.width), color, 0.85);
+    for (let i = 0; i < steps; i += 2) {
+      const from = i / steps;
+      const to = Math.min(1, (i + 1) / steps);
+      graphics.lineBetween(
+        beam.x1 + dx * from,
+        beam.y1 + dy * from,
+        beam.x1 + dx * to,
+        beam.y1 + dy * to
+      );
+    }
+    // Carpma noktasi: hasarin nereye dustugunu tek isaret eden sey.
+    graphics.fillStyle(color, 0.9);
+    graphics.fillCircle(beam.x2, beam.y2, 3);
   }
 
   private drawLaserConnection(beam: BeamSnapshot, color: number) {

@@ -15,7 +15,22 @@ export type EnemyCombatDefinition = {
   shield: number;
   movementKind: MovementKind;
   reward: number;
+  /**
+   * Yapilara vurusun gucu.
+   *
+   * Tek bir sayi cunku dusmanin hedefi ne olursa olsun -- kule, duvar,
+   * isci -- ayni kolu sallıyor. Yapida zirh dusuluyor, iscide dusulmuyor:
+   * iscinin zirhi yok.
+   */
   attack: number;
+  /**
+   * Menzilli vurus mesafesi. Yazilmayan dusman yalnizca bitisigine vurur.
+   *
+   * Kule menzilleriyle ayni olcekte (cogu kule 104-134): menzilli dusman
+   * kuleye biraz daha yakindan vurur, yani duello kulenin lehine acilir
+   * ama dusman bedava hedef degildir.
+   */
+  attackRange?: number;
   damageResistances?: ResistanceTable<DamageType>;
   hitTypeResistances?: ResistanceTable<HitType>;
   statusResistances?: ResistanceTable<StatusEffectId>;
@@ -112,7 +127,7 @@ export const enemyCombatDefinitions = {
     shield: 0,
     movementKind: "ground",
     reward: 15,
-    attack: 12,
+    attack: 10,
     damageResistances: {},
     hitTypeResistances: {},
     statusResistances: {}
@@ -126,7 +141,7 @@ export const enemyCombatDefinitions = {
     shield: 18,
     movementKind: "ground",
     reward: 18,
-    attack: 12,
+    attack: 24,
     damageResistances: {
       physical: 0.08,
       fire: -0.08
@@ -151,7 +166,7 @@ export const enemyCombatDefinitions = {
     shield: 0,
     movementKind: "ground",
     reward: 11,
-    attack: 12,
+    attack: 6,
     damageResistances: {
       electric: -0.08
     },
@@ -173,7 +188,8 @@ export const enemyCombatDefinitions = {
     shield: 30,
     movementKind: "ground",
     reward: 14,
-    attack: 12,
+    attack: 9,
+    attackRange: 108,
     damageResistances: {
       psychic: 0.08
     },

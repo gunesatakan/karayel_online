@@ -1027,6 +1027,9 @@ function renderBestiary() {
           const dossier = enemyDossier[type];
           const movementKind = definition.movementKind as string;
           const abilities = "abilities" in definition ? [...definition.abilities] : [];
+          // Menzil yalnizca menzilli dusmanda yaziliyor: sifir yazmak
+          // "uzaktan vurur ama sifir kadar" gibi okunurdu.
+          const attackRange = "attackRange" in definition ? definition.attackRange : 0;
           return `
             <article class="bestiary-card bestiary-card--${type}" style="--enemy: ${enemyColor(type)}">
               <div class="bestiary-card__visual" aria-hidden="true">
@@ -1043,6 +1046,8 @@ function renderBestiary() {
                 ${renderBestiaryStat("Kalkan", definition.shield)}
                 ${renderBestiaryStat("Regen", `${definition.healthRegenPerSecond}/sn`)}
                 ${renderBestiaryStat("Hız", definition.speed)}
+                ${renderBestiaryStat("Saldırı", definition.attack)}
+                ${attackRange ? renderBestiaryStat("Menzil", attackRange) : ""}
                 ${renderBestiaryStat("Altın", definition.reward)}
               </dl>
               <div class="bestiary-tags">

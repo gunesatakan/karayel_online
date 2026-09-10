@@ -355,6 +355,13 @@ const HEAT_EXCHANGE_PER_SECOND = 8;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 /**
+ * Menzilli dusman vurusunun izi.
+ *
+ * Isin kimliginin kule kimligi olmadigi tek yer: istemci bunu gorunce
+ * kule kademesi aramaz, kirmizi bir izleyici cizer.
+ */
+const ENEMY_SHOT_BEAM_ID = "enemy-shot";
+/**
  * Son dusman oldukten sonra dalga sonunu bekletme suresi.
  *
  * Dalga, dusman sayaci sifirlanir sifirlanmaz kapaniyordu ve kart secimi ayni
@@ -736,6 +743,8 @@ type EnemyModel = {
   speed: number;
   reward: number;
   attack: number;
+  /** Sifirsa yalnizca bitisigine vurur. Dunya olceginde. */
+  attackRange: number;
   towerAttackCooldownMs: number;
   /**
    * Kirmaya karar verilen yapi.
@@ -2573,6 +2582,7 @@ export class MatchRoom extends Room<MatchState> {
       speed,
       reward: definition.reward,
       attack: definition.attack,
+      attackRange: this.scaleWorldDistance(definition.attackRange ?? 0),
       towerAttackCooldownMs: 0,
       pathDistance: 0,
       slowUntil: 0,
@@ -4923,15 +4933,72 @@ export class MatchRoom extends Room<MatchState> {
         enemy.pathDistance += movement;
       }
 
-      if (route.targetTower && route.cells.length <= 1 && enemy.towerAttackCooldownMs <= 0) {
-        // Kusatma dusmani yapilara cok daha sert vurur; duvar ormenin cezasi bu.
-        const structureDamage = enemy.type === "siege"
-          ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
-          : enemy.attack;
-        this.damageTower(route.targetTower, structureDamage);
-        enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
+      if (enemy.towerAttackCooldownMs <= 0) {
+        // Bitisikteki hedef menzillinin onunde gelir: duvara yaslanmis bir
+        // nisanci arkadaki kuleyi vurup onundeki duvari birakmamalı.
+        const target = (route.targetTower && route.cells.length <= 1 ? route.targetTower : undefined)
+          ?? this.findRangedStructureTarget(enemy);
+        if (target) {
+          this.strikeStructure(enemy, target);
+        }
       }
     }
+  }
+
+  /**
+   * Dusmanin yapiya vurusu.
+   *
+   * Menzilli ve bitisik vurus ayni yerden geciyor: ikisi de ayni kolun
+   * sallanmasi, tek fark mesafe. Kusatma carpani da burada, yoksa menzilli
+   * hatta unutulurdu.
+   */
+  private strikeStructure(enemy: EnemyModel, tower: TowerModel) {
+    const structureDamage = enemy.type === "siege"
+      ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
+      : enemy.attack;
+    if (enemy.attackRange > 0) {
+      this.spawnEnemyShotBeam(enemy, tower);
+    }
+    this.damageTower(tower, structureDamage);
+    enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
+  }
+
+  /**
+   * Menzilli dusmanin vuracagi yapi.
+   *
+   * En yakin olan seciliyor, kule/duvar ayrimi yok: nisanci onundeki neyse
+   * ona atar. Duvar da hedef -- oyuncunun duvari nisancinin menzili disinda
+   * tutmasi gereken bir sey, dokunulmaz bir zemin degil.
+   */
+  private findRangedStructureTarget(enemy: EnemyModel) {
+    if (enemy.attackRange <= 0) return undefined;
+    const rangeSq = enemy.attackRange * enemy.attackRange;
+    let best: TowerModel | undefined;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0) continue;
+      const distance = distanceSq(enemy.x, enemy.y, tower.x, tower.y);
+      if (distance > rangeSq || distance >= bestDistanceSq) continue;
+      best = tower;
+      bestDistanceSq = distance;
+    }
+    return best;
+  }
+
+  /** Menzilli vurusun izi; hasar zaten dusmustur, bu yalnizca gorunen kismi. */
+  private spawnEnemyShotBeam(enemy: EnemyModel, tower: TowerModel) {
+    const id = `enemy-shot-${this.nextBeamId++}`;
+    this.beams.set(id, {
+      id,
+      definitionId: ENEMY_SHOT_BEAM_ID,
+      x1: enemy.x,
+      y1: enemy.y,
+      x2: tower.x,
+      y2: tower.y,
+      width: 2,
+      color: 0xf87171,
+      ttlMs: 140
+    });
   }
 
   private getCrystalNodes() {
@@ -8466,6 +8533,9 @@ export class MatchRoom extends Room<MatchState> {
       speed: this.scaleWorldSpeed(Math.max(42, definition.speed * 0.72) * ENEMY_MOVEMENT_SPEED_MULTIPLIER),
       reward: 0,
       attack: definition.attack,
+      // Dirilen dusman menzilini kaybeder: Melis'in ordusu oyuncunun
+      // yapilarina degil, yoldaki dusmanlara duvar olsun diye var.
+      attackRange: 0,
       towerAttackCooldownMs: 0,
       pathDistance,
       slowUntil: 0,
