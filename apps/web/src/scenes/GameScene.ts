@@ -456,6 +456,8 @@ export class GameScene extends Phaser.Scene {
    * temizlemeyi unutmak diye bir hata kalmiyor.
    */
   private advancedWorkerGraphics?: Phaser.GameObjects.Graphics;
+  /** Cani eksilmis isciler; olumu harita degisiminden ayirmak icin. */
+  private readonly hasarliIsciler = new Set<string>();
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
   private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
@@ -5214,9 +5216,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     for (const [id, sprite] of this.drones) {
       if (!activeIds.has(id)) {
+        // Yaralanmisken kaybolan isci oldu; sagligi yerindeyken kaybolan
+        // ise haritanin ya da odanin degismesiyle silinmistir. Ikisini
+        // ayirmadan patlatmak, her dalga sonunda ekrani patlatirdi.
+        if (this.hasarliIsciler.has(id)) {
+          this.showWorkerDeathBurst(sprite.x, sprite.y);
+        }
         sprite.destroy();
         this.drones.delete(id);
       }
+    }
+    for (const id of this.hasarliIsciler) {
+      if (!activeIds.has(id)) this.hasarliIsciler.delete(id);
     }
 
     const pulse = 1 + Math.sin(Date.now() / 90) * 0.08;
@@ -5259,7 +5270,55 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (drone.advanced) {
         this.drawAdvancedWorkerBody(govdeler, drone, tint, sprite.displayWidth * ADVANCED_WORKER_BODY_RADIUS_RATIO, sprite.rotation);
       }
+      // Can cubugu yalnizca yaralida: her iscinin ustunde duran dolu bir
+      // cubuk, dolu olmayan tek cubugu gorunmez kilardi.
+      const maxHp = drone.maxHp ?? 0;
+      const hp = drone.hp ?? maxHp;
+      if (maxHp > 0 && hp < maxHp) {
+        this.hasarliIsciler.add(drone.id);
+        this.drawWorkerHealthBar(govdeler, drone, hp / maxHp, sprite.displayWidth);
+      } else {
+        this.hasarliIsciler.delete(drone.id);
+      }
     }
+  }
+
+  /** Yarali iscinin ustundeki ince cubuk. */
+  private drawWorkerHealthBar(
+    graphics: Phaser.GameObjects.Graphics,
+    drone: DroneSnapshot,
+    ratio: number,
+    bodyWidth: number
+  ) {
+    const width = Math.max(12, bodyWidth * 0.9);
+    const height = 2;
+    const x = drone.x - width / 2;
+    const y = drone.y - bodyWidth * 0.7;
+    const clamped = Phaser.Math.Clamp(ratio, 0, 1);
+    graphics.fillStyle(0x020617, 0.9).fillRect(x - 1, y - 1, width + 2, height + 2);
+    graphics.fillStyle(clamped > 0.5 ? 0x22c55e : clamped > 0.25 ? 0xf59e0b : 0xef4444, 1)
+      .fillRect(x, y, width * clamped, height);
+  }
+
+  /**
+   * Olen iscinin yerinde kalan kisa isaret.
+   *
+   * Isci sessizce kayboluyordu ve oyuncu lojistigin neden durdugunu ancak
+   * kule yakiti bitince fark ediyordu. Patlama kucuk ve kirmizi: bu bir
+   * kayip, bir efekt degil.
+   */
+  private showWorkerDeathBurst(x: number, y: number) {
+    const ring = this.add.circle(x, y, 6, 0xef4444, 0)
+      .setStrokeStyle(2, 0xfca5a5, 0.9)
+      .setDepth(43);
+    this.tweens.add({
+      targets: ring,
+      radius: 18,
+      alpha: 0,
+      duration: 320,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy()
+    });
   }
 
   /**

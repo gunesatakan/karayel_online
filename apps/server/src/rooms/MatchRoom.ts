@@ -112,6 +112,8 @@ import {
   type HirableWorkerRole,
   type HiredWorker,
   ADVANCED_WORKER_MULTIPLIER,
+  WORKER_MAX_HP,
+  WORKER_RESPAWN_MS,
   getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
   LOGISTICS_WORKER_CAPACITY,
@@ -272,6 +274,14 @@ const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
 const LOGISTICS_WORKER_SPEED = 82;
+/**
+ * Iscinin "temas" mesafesi.
+ *
+ * Iki bedenin yaricapi kadar: isci dusmanin icinden gecerken hasar alsin,
+ * yanindan gecerken almasin. Buyutmek isciyi dusman yolundan uzak durmaya
+ * degil, hic cikmamaya iterdi.
+ */
+const WORKER_CONTACT_RADIUS = 16;
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 480;
@@ -1192,6 +1202,14 @@ export class MatchRoom extends Room<MatchState> {
   private projectiles = new Map<string, ProjectileModel>();
   private drones = new Map<string, DroneModel>();
   private beams = new Map<string, BeamModel>();
+  /**
+   * Olen iscinin hangi ana kadar sahada olmayacagi; anahtar isci kimligi.
+   *
+   * Kadro `ensureLogisticsWorkers` tarafindan her tick yeniden kuruluyor,
+   * yani olen isciyi silmek yetmez -- bir sonraki tick geri gelirdi. Sayac
+   * o yeniden kurmayi geciktiren tek sey.
+   */
+  private workerRespawnAt = new Map<string, number>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
   private burnZones = new Map<string, BurnZoneModel>();
@@ -4747,6 +4765,9 @@ export class MatchRoom extends Room<MatchState> {
           drone.vy = 0;
           continue;
         }
+        if (this.damageWorkerOnEnemyContact(drone, seconds)) {
+          continue;
+        }
         this.updateLogisticsWorker(drone, seconds);
         continue;
       }
@@ -5024,6 +5045,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private ensureLogisticsWorkers() {
+    // Kurulumda kadro tam baslar: olum bir dalganin cezasi, kalici kayip degil.
+    if (this.setupPhase) this.workerRespawnAt.clear();
+    const now = Date.now();
     const baseWorkerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "ammoCollector", "energyTransport"];
     const origin = getMapOrigin(this.activeMap);
     const { gridSize } = getMapMetrics(this.activeMap);
@@ -5044,9 +5068,13 @@ export class MatchRoom extends Room<MatchState> {
         const mode = worker.role as DroneSnapshot["mode"];
         const suffix = index >= baseWorkerModes.length ? `:extra${index - baseWorkerModes.length}` : "";
         const id = `logistics-${ownerId}-${mode}${suffix}`;
-        const exists = this.drones.has(id);
-        if (exists) {
+        if (this.drones.has(id)) {
           continue;
+        }
+        const respawnAt = this.workerRespawnAt.get(id);
+        if (respawnAt !== undefined) {
+          if (respawnAt > now) continue;
+          this.workerRespawnAt.delete(id);
         }
         this.drones.set(id, {
           id,
@@ -5072,10 +5100,45 @@ export class MatchRoom extends Room<MatchState> {
               ? ENERGY_LOGISTICS_WORKER_CAPACITY
               : LOGISTICS_WORKER_CAPACITY) * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
           speed: LOGISTICS_WORKER_SPEED * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
+          // Can da uc kat: gelismis isci her eksende uc normal isci
+          // ediyor, dayaniklilikta ayrı tutulsaydi uc katlik yatirim tek
+          // bir sizmayla silinirdi.
+          hp: WORKER_MAX_HP * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
+          maxHp: WORKER_MAX_HP * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
           advanced: worker.advanced
         });
       }
     }
+  }
+
+  /**
+   * Dusmanla temas eden isciye saniyelik hasar.
+   *
+   * Temastaki her dusman ayri ayri vuruyor, en gucluye birakilmiyor: isci
+   * kalabaligin icinde kalmisken tek bir dusmanin karsisindaymis gibi
+   * dayanmasi, kalabaligi hicbir sey yapmayan bir dekora cevirirdi.
+   *
+   * Zirh yok: iscinin zirhi yok. Dusmanin `attack` degeri oldugu gibi iniyor.
+   *
+   * `true` donerse isci o tick olmustur ve artik yurumez.
+   */
+  private damageWorkerOnEnemyContact(worker: DroneModel, seconds: number) {
+    if (worker.maxHp === undefined) return false;
+    const contactRadius = this.scaleWorldDistance(WORKER_CONTACT_RADIUS);
+    let damagePerSecond = 0;
+    for (const enemy of this.enemySpatialGrid.queryCircle(worker.x, worker.y, contactRadius)) {
+      damagePerSecond += enemy.attack;
+    }
+    if (damagePerSecond <= 0) return false;
+
+    worker.hp = Math.max(0, (worker.hp ?? worker.maxHp) - damagePerSecond * seconds);
+    if (worker.hp > 0) return false;
+
+    // Tasidigi yuk de gidiyor: olumun bedeli yalnizca eksik beden degil,
+    // o seferin kendisi.
+    this.drones.delete(worker.id);
+    this.workerRespawnAt.set(worker.id, Date.now() + WORKER_RESPAWN_MS);
+    return true;
   }
 
   private moveLogisticsWorker(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
@@ -8946,7 +9009,9 @@ export class MatchRoom extends Room<MatchState> {
         speed: drone.speed,
         targetTowerId: drone.targetTowerId,
         // Istemci iki kademeyi ancak buradan ayirt ediyor.
-        advanced: drone.advanced
+        advanced: drone.advanced,
+        hp: drone.hp === undefined ? undefined : Math.round(drone.hp),
+        maxHp: drone.maxHp === undefined ? undefined : Math.round(drone.maxHp)
       })),
       crystalNodes: this.getCrystalNodes(),
       ammoNodes: this.getAmmoNodes(),

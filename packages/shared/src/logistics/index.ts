@@ -4,6 +4,28 @@ export const ENERGY_LOGISTICS_WORKER_CAPACITY = 12;
 export const AMMO_LOGISTICS_WORKER_CAPACITY = 4;
 export const AMMO_COLLECTOR_WORKER_CAPACITY = 2;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
+
+/**
+ * Iscinin cani.
+ *
+ * Isci dusmanla temas ettigi her saniye onun saldiri gucu kadar hasar alir;
+ * yani bu sayi "kac saniye dayanir" demek. 60, en yaygin dusman olan grunt'in
+ * (12) karsisinda bes saniye: kacirilan bir sizmayi fark edip yol degistirmeye
+ * yetecek kadar, yol uzerinde durmayi bedava kilmayacak kadar.
+ */
+export const WORKER_MAX_HP = 60;
+
+/**
+ * Olen iscinin geri gelme suresi.
+ *
+ * Olum kalici degil ve bu bilincli: isciler oyuncunun tikladigi birimler
+ * degil, kendi kendine yuruyen bir hat. Kalici kayip, oyuncunun
+ * engelleyemedigi bir sebeple ekonomisinin durmasi olurdu -- olum bir donem
+ * tam bu yuzden kaldirilmisti. Ceza sure: yirmi saniye eksik lojistik.
+ *
+ * Kurulum asamasinda sayaclar temizlenir, yani her dalga tam kadro baslar.
+ */
+export const WORKER_RESPAWN_MS = 20_000;
 export const AMMO_FACTORY_INITIAL_ENERGY = 20;
 /**
  * Isci alimi.

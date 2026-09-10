@@ -37,11 +37,16 @@ test("kaynak çıkarma toplam sekiz saniyede tamamlanır", () => {
   assert.equal(remainingMs, 0);
 });
 
-test("isci dusmana carpinca olmez", () => {
-  // Lojistik hatti dusman yolunu kesmek zorunda: isciler dugumlerle binalar
-  // arasinda gidip gelirken temas kacinilmaz. Olum, oyuncunun engelleyemedigi
-  // bir sebeple ekonomisinin durmasi demekti; onunla birlikte yeniden dogma
-  // beklemesi ve altinla canlandirma da kalkti.
+/**
+ * Bu test bir donem tam tersini tutuyordu: isci dusmana carpinca olmezdi.
+ * Gerekcesi de yaziliydi -- lojistik hatti dusman yolunu kesmek zorunda,
+ * yani olum oyuncunun engelleyemedigi bir sebeple ekonomisinin durmasi
+ * demekti. Kural degisti; itiraz ise kaybi **sureli** yaparak karsilandi.
+ *
+ * Kuralin tamami `worker-death.test.mjs` icinde. Burada duran, o dosyayi
+ * gormeden eski davranisa donmeye calisan birinin carpacagi tek satir.
+ */
+test("isci dusmana carpinca olur", () => {
   const room = createRoom("warrior");
   room.ensureLogisticsWorkers();
   const worker = [...room.drones.values()].find((drone) => drone.mode === "crystalCollector");
@@ -53,7 +58,9 @@ test("isci dusmana carpinca olmez", () => {
   enemy.y = worker.y;
   room.enemySpatialGrid.rebuild(room.enemies.values());
 
-  room.updateDrones(0.05, 50);
+  room.updateDrones(50, 0.05);
+  assert.ok(worker.hp < worker.maxHp, "temas eden isci hasar almadi");
 
-  assert.ok(room.drones.has(worker.id), "isci dusmana carpinca oldu");
+  room.updateDrones(20_000, 20);
+  assert.equal(room.drones.has(worker.id), false, "isci dusmanin icinde sonsuza kadar durdu");
 });

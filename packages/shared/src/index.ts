@@ -632,6 +632,9 @@ export type DroneSnapshot = {
   targetTowerId?: string;
   /** Gelismis isci: istemci onu ayirt edilebilir cizsin diye telde. */
   advanced?: boolean;
+  /** Lojistik iscisinin cani. Savasci dronlarda yok. */
+  hp?: number;
+  maxHp?: number;
 };
 
 export type CrystalNodeSnapshot = {
@@ -970,6 +973,8 @@ export {
   ADVANCED_WORKER_COST_MULTIPLIER,
   ADVANCED_WORKER_MULTIPLIER,
   WORKER_HIRE_COST_GROWTH,
+  WORKER_MAX_HP,
+  WORKER_RESPAWN_MS,
   advanceResourceExtraction,
   canHireWorker,
   getWorkerHireCost,
