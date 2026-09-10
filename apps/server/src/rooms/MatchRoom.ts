@@ -112,7 +112,9 @@ import {
   type HirableWorkerRole,
   type HiredWorker,
   ADVANCED_WORKER_MULTIPLIER,
+  HIRABLE_WORKER_ROLES,
   WORKER_MAX_HP,
+  WORKER_REPAIR_PER_SECOND,
   WORKER_RESPAWN_MS,
   getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
@@ -282,6 +284,17 @@ const LOGISTICS_WORKER_SPEED = 82;
  * degil, hic cikmamaya iterdi.
  */
 const WORKER_CONTACT_RADIUS = 16;
+
+/**
+ * Bu mod bir lojistik iscisi mi.
+ *
+ * Dron listesi hem savasci dronlari hem isci hattini tasiyor ve ayrim uc
+ * ayri yerde elle yazilmisti; besinci rol eklendiginde biri unutulmustu.
+ * Tek soru, tek yer.
+ */
+function isLogisticsWorkerMode(mode: DroneSnapshot["mode"]) {
+  return (HIRABLE_WORKER_ROLES as readonly string[]).includes(mode);
+}
 const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
 const RESOURCE_PROVIDER_CAPACITY = 480;
@@ -4756,7 +4769,7 @@ export class MatchRoom extends Room<MatchState> {
     const nexusY = nexus?.y ?? bounds.bottom - getMapGridSize(this.activeMap) / 2;
 
     for (const [id, drone] of this.drones) {
-      if (drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport") {
+      if (isLogisticsWorkerMode(drone.mode)) {
         // Isciler dusmana carpinca olmez: lojistik hattinin dusman yolunu
         // kesmesi kacinilmaz oldugu icin olum, oyuncunun engelleyemedigi bir
         // sebeple ekonomisinin durmasi demekti.
@@ -5313,6 +5326,10 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateLogisticsWorker(worker: DroneModel, seconds: number) {
     const capacity = this.getWorkerCapacity(worker);
+    if (worker.mode === "repairer") {
+      this.updateRepairWorker(worker, seconds);
+      return;
+    }
     if (worker.mode === "crystalCollector") {
       const reactor = this.getCrystalWorkerReactor(worker);
       if (!reactor) {
@@ -5459,6 +5476,72 @@ export class MatchRoom extends Room<MatchState> {
       worker.logisticsPhase = "pickup";
       worker.targetTowerId = "";
     }
+  }
+
+  /**
+   * Tamirci.
+   *
+   * Hattin altin harcamayan onarim yolu: hasarli yapiya yuruyup saniyede
+   * sabit bir can yaziyor. Yikilan yapiyi diriltmiyor -- altinla onarim da
+   * diriltmiyor, o bir yeniden insa isi ve iki yolun ayni seyi soylemesi
+   * gerekiyor.
+   *
+   * Hedef kilitleniyor. Kilit olmasa "en hasarli yapi" her tick yeniden
+   * secilirdi: tamirci bir duvari onardikca o duvar listede geri duser,
+   * secim baskasina kayar ve tamirci iki yapi arasinda gidip gelirken
+   * hicbirini bitiremezdi. Dusmanin kirma hedefini kilitlemesiyle ayni
+   * sebep.
+   */
+  private updateRepairWorker(worker: DroneModel, seconds: number) {
+    const target = this.getRepairWorkerTarget(worker);
+    if (!target) {
+      worker.vx = 0;
+      worker.vy = 0;
+      return;
+    }
+    worker.targetTowerId = target.id;
+    if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
+      return;
+    }
+    target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
+    // Yol maliyeti kalan cana bagli: onarim da akisi degistirir.
+    this.markNavigationDirty();
+    if (target.hp >= target.maxHp) {
+      target.breachAnnounced = false;
+      worker.targetTowerId = "";
+    }
+  }
+
+  /**
+   * Tamircinin onaracagi yapi.
+   *
+   * Kilitli hedef hala hasarliysa ona devam edilir. Yeni secimde olcut can
+   * **orani**: oyuncunun kaygisi "hangisi dusmeye en yakin", eksik can
+   * miktari degil. Esitlik mesafeyle bozuluyor ki secim belirlenimli olsun.
+   */
+  private getRepairWorkerTarget(worker: DroneModel) {
+    const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    if (locked && locked.ownerId === worker.ownerId && locked.hp > 0 && locked.hp < locked.maxHp) {
+      return locked;
+    }
+    let best: TowerModel | undefined;
+    let bestRatio = Number.POSITIVE_INFINITY;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || tower.hp >= tower.maxHp) continue;
+      const ratio = tower.hp / Math.max(1, tower.maxHp);
+      const distance = distanceSq(worker.x, worker.y, tower.x, tower.y);
+      if (ratio > bestRatio || (ratio === bestRatio && distance >= bestDistanceSq)) continue;
+      best = tower;
+      bestRatio = ratio;
+      bestDistanceSq = distance;
+    }
+    return best;
+  }
+
+  /** Tamircinin saniyelik onarimi; gelismis kademe uc kati. */
+  private getWorkerRepairPerSecond(worker: DroneModel) {
+    return WORKER_REPAIR_PER_SECOND * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1);
   }
 
   /** Iscinin tek seferde tasidigi yuk; kart ve esyalarla buyur. */

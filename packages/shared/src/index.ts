@@ -622,7 +622,12 @@ export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: T
 
 export type DroneSnapshot = {
   id: string;
-  mode: "attack" | "repair" | "crystalCollector" | "ammoCollector" | "energyTransport" | "ammoTransport";
+  /**
+   * "repair" Atakan ultisinin nexusa giden dronu; "repairer" ise sahada
+   * yapi onaran isci. Ikisi ayri: biri bir kerelik bir yuk tasir, oteki
+   * saniyede onarir.
+   */
+  mode: "attack" | "repair" | "repairer" | "crystalCollector" | "ammoCollector" | "energyTransport" | "ammoTransport";
   x: number;
   y: number;
   ownerId?: string;
@@ -974,6 +979,7 @@ export {
   ADVANCED_WORKER_MULTIPLIER,
   WORKER_HIRE_COST_GROWTH,
   WORKER_MAX_HP,
+  WORKER_REPAIR_PER_SECOND,
   WORKER_RESPAWN_MS,
   advanceResourceExtraction,
   canHireWorker,

@@ -16,6 +16,18 @@ export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 export const WORKER_MAX_HP = 60;
 
 /**
+ * Tamircinin saniyede onardigi can.
+ *
+ * Bu isci hattin tek altin harcamayan onarim yolu, yani hizi bilerek yavas:
+ * altinla onarim aninda biter, tamirci beklemek ister. En ucuz duvar
+ * (taban 40 civari can) yaklasik yedi saniyede tamamen doluyor -- bir
+ * dalganin ortasinda hissedilen, iki dalga arasinda yetisen bir hiz.
+ *
+ * Gelismis tamirci uc kati: her eksende oldugu gibi.
+ */
+export const WORKER_REPAIR_PER_SECOND = 6;
+
+/**
  * Olen iscinin geri gelme suresi.
  *
  * Olum kalici degil ve bu bilincli: isciler oyuncunun tikladigi birimler
@@ -35,7 +47,7 @@ export const AMMO_FACTORY_INITIAL_ENERGY = 20;
  * toplayiciyi ikiye mi katlamak? Bedel her alimda buyur, cunku ayni rolu ust
  * uste almak lojistigi tek eksende katlar.
  */
-export const HIRABLE_WORKER_ROLES = ["crystalCollector", "energyTransport", "ammoCollector", "ammoTransport"] as const;
+export const HIRABLE_WORKER_ROLES = ["crystalCollector", "energyTransport", "ammoCollector", "ammoTransport", "repairer"] as const;
 
 export type HirableWorkerRole = (typeof HIRABLE_WORKER_ROLES)[number];
 
@@ -43,14 +55,16 @@ export const WORKER_ROLE_LABELS: Record<HirableWorkerRole, string> = {
   crystalCollector: "Kristal Toplayıcı",
   energyTransport: "Enerji Taşıyıcı",
   ammoCollector: "Mühimmat Toplayıcı",
-  ammoTransport: "Mühimmat Taşıyıcı"
+  ammoTransport: "Mühimmat Taşıyıcı",
+  repairer: "Tamirci"
 };
 
 export const WORKER_ROLE_DESCRIPTIONS: Record<HirableWorkerRole, string> = {
   crystalCollector: "Kristal düğümlerinden ham enerji toplar.",
   energyTransport: "Toplanan enerjiyi kulelere dağıtır.",
   ammoCollector: "Mühimmat düğümlerinden ham madde toplar.",
-  ammoTransport: "Üretilen mühimmatı kulelere taşır."
+  ammoTransport: "Üretilen mühimmatı kulelere taşır.",
+  repairer: `Hasarlı yapıları altın harcamadan onarır: saniyede ${WORKER_REPAIR_PER_SECOND} can. Yıkılan yapıyı diriltemez.`
 };
 
 export const WORKER_HIRE_BASE_COST = 100;

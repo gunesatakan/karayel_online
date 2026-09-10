@@ -5237,7 +5237,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const govdeler = this.advancedWorkerGraphics ?? (this.advancedWorkerGraphics = this.add.graphics().setDepth(42));
     govdeler.clear();
     for (const drone of drones) {
-      const texture = drone.mode === "repair" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
+      const texture = drone.mode === "repair" || drone.mode === "repairer" || drone.mode === "crystalCollector" || drone.mode === "energyTransport" ? "drone-repair" : "drone-attack";
       let sprite = this.drones.get(drone.id);
       if (!sprite) {
         sprite = this.physics.add.sprite(drone.x, drone.y, texture);
@@ -5256,11 +5256,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         sprite.setRotation(angle);
       }
       sprite.setPosition(drone.x, drone.y);
-      const isLogisticsWorker = drone.mode === "crystalCollector" || drone.mode === "ammoCollector" || drone.mode === "energyTransport" || drone.mode === "ammoTransport";
+      const isLogisticsWorker = (HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode);
       const workerScale = isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
-      const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : 0xffffff;
+      const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : drone.mode === "repairer" ? 0xf472b6 : 0xffffff;
       sprite.setTint(tint);
       sprite.setBlendMode(Phaser.BlendModes.ADD);
       // Gelismis isci ayni boyutta ama baska bir sekil: yuvarlak govde
