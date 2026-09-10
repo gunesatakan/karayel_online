@@ -62,6 +62,7 @@ import {
   countsAsTower,
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
+  ATAKAN_ISOLATION_MULTIPLIER,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
@@ -9582,7 +9583,10 @@ export class MatchRoom extends Room<MatchState> {
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const zeynepFormationMultiplier = getZeynepFormationFireIntervalMultiplier(tower);
-    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
+    // Atis araligi carpanin **tersi**: menzil ve hasar 1,5 kat buyurken
+    // aralik 1,5 kat kisaliyor. Ayri bir sayi olsaydi pasifin uc ekseni
+    // birbirinden habersiz kayardi -- bir donem tam bu olmustu (1,12 ve 0,9).
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_MULTIPLIER : 1;
     const melisNightmareHasteMultiplier = this.isMelisGothicNightmareActiveForTower(tower, now) ? 1 / MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER : 1;
     const melisFocusKillHasteMultiplier = tower.characterId === "archer" && tower.melisFocusKillHasteUntil > now ? 1 / MELIS_FOCUS_KILL_HASTE_MULTIPLIER : 1;
 
@@ -9936,7 +9940,10 @@ export class MatchRoom extends Room<MatchState> {
     const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks)) : 1;
     const hasteMultiplier = this.damageHasteUntil > Date.now() && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
-    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 0.9 : 1;
+    // Atis araligi carpanin **tersi**: menzil ve hasar 1,5 kat buyurken
+    // aralik 1,5 kat kisaliyor. Ayri bir sayi olsaydi pasifin uc ekseni
+    // birbirinden habersiz kayardi -- bir donem tam bu olmustu (1,12 ve 0,9).
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_MULTIPLIER : 1;
     const previousLevelMultiplier = getTowerLevelIntervalMultiplier(tower.definition.id, tower.level);
     const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
     const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * hasteMultiplier * zeynepHasteMultiplier * passiveMultiplier);
@@ -10113,7 +10120,9 @@ export class MatchRoom extends Room<MatchState> {
    */
   private getAtakanPassiveMultiplier(tower: TowerModel) {
     if (!countsAsTower(tower.definition)) return 1;
-    return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower) ? 1.12 : 1;
+    return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower)
+      ? ATAKAN_ISOLATION_MULTIPLIER
+      : 1;
   }
 
   private registerMelisFavoriteTower(tower: TowerModel) {

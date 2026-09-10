@@ -182,6 +182,22 @@ export const STRUCTURE_BREACH_HEALTH_RATIO = 0.3;
  */
 export const SIEGE_STRUCTURE_DAMAGE_MULTIPLIER = 4;
 
+/**
+ * Atakan'in yalnizlik pasifinin carpani.
+ *
+ * Tek sayi, uc eksen: menzil ve hasar bununla carpiliyor, atis araligi
+ * bunun tersine boluniyor. Yani "her sey 1,5 kat" cumlesi kodda da bir
+ * cumle.
+ *
+ * Once iki ayri sayi vardi -- hasar icin 1,12 ve aralik icin 0,9 -- ve
+ * birbirini tutmuyorlardi (1/0,9 = 1,111). Ikisi ayri ayri ayarlanmis, biri
+ * digerinden habersiz kalmisti; tek sayi o ayrismayi imkansiz kiliyor.
+ *
+ * Yalnizlik **kuleyle** olculur: duvar bozmaz (bkz. `countsAsTower`).
+ * Duvarla cevrelemek pasifi kapatmaz, cunku duvar kule degil.
+ */
+export const ATAKAN_ISOLATION_MULTIPLIER = 1.5;
+
 /** Kusatma dusmaninin dalgalarda gorunmeye basladigi nokta ve orani. */
 export const SIEGE_FIRST_WAVE = 4;
 export const SIEGE_SPAWN_RATIO = 0.18;
