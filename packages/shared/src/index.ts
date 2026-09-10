@@ -426,6 +426,10 @@ export type EnemySnapshot = {
   doubtStacks?: number;
   isHesitating?: boolean;
   isBleeding?: boolean;
+  /** Sogutma Kanali yavaslatmasi altinda; ince bir kirag ciziliyor. */
+  isChilled?: boolean;
+  /** Derin Dondurma ile durdurulmus; kalin buz kabugu ciziliyor. */
+  isFrozen?: boolean;
   isUnderworldLinked?: boolean;
   isUndead?: boolean;
 };
@@ -479,6 +483,14 @@ export type TowerSnapshot = {
    * dalga numarasi ayni kalabiliyor.
    */
   builtInSetupSession?: number;
+  /**
+   * Kulenin aurasi su an calisiyor mu.
+   *
+   * Izolasyon Kulesi'nin aurasi yalnizca kule yalnizken aciliyor ve bu
+   * karar tamamen sunucuda. Istemci bilmeden ciziyor olsaydi ya hic
+   * cizmezdi ya da kapaliyken de cizip yalan soylerdi.
+   */
+  auraActive?: boolean;
   /** Radians toward the current target. Only sent for towers that aim. */
   facing?: number;
   level: number;

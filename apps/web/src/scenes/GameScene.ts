@@ -199,6 +199,8 @@ type RenderMover = {
   doubtMarker?: Phaser.GameObjects.Text;
   armorBreakIcon?: Phaser.GameObjects.Image;
   bleedEffect?: Phaser.GameObjects.Graphics;
+  /** Kirag ve buz kabugu ayni yuzeyde: ikisi de ayni sogugun iki siddeti. */
+  frostEffect?: Phaser.GameObjects.Graphics;
 };
 
 type HydratedGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
@@ -1973,6 +1975,64 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Uyarilan noktayi kisa sure buyuyup sonen bir halka ile isaretler. */
+  /**
+   * Donma ani.
+   *
+   * Halka **iceri** kapaniyor, disari acilmiyor. Oyundaki butun oteki
+   * patlamalar disari aciliyor ve donma onlarin tersi bir sey: bir seyi
+   * yaymiyor, bir seyi topluyor. Ic donen halka o ani tek basina anlatiyor.
+   */
+  private showFreezeBurst(x: number, y: number) {
+    const ring = this.add.circle(x, y, 34, 0x67e8f9, 0)
+      .setStrokeStyle(3, 0xe0f2fe, 0.95)
+      .setDepth(24);
+    this.tweens.add({
+      targets: ring,
+      radius: 9,
+      alpha: 0,
+      duration: 260,
+      ease: "Cubic.easeIn",
+      onComplete: () => ring.destroy()
+    });
+
+    // Kapanmanin bittigi yerde kisa bir parlama: buz tuttu.
+    const flash = this.add.circle(x, y, 4, 0xe0f2fe, 0.9).setDepth(24.1).setScale(0.4);
+    this.tweens.add({
+      targets: flash,
+      scale: 2.2,
+      alpha: 0,
+      delay: 220,
+      duration: 320,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy()
+    });
+  }
+
+  /**
+   * Kritik yavaslatma.
+   *
+   * Kucuk ve keskin: kritik hasarin kendi parlamasi zaten var ve bu onunla
+   * yarismamali. Uc kiymik disari firliyor, yani "bir sey kirildi" diyor
+   * ama sahneyi kaplamiyor -- yavaslatma her vurusta olabilen bir sey.
+   */
+  private showSlowCritBurst(x: number, y: number) {
+    for (let i = 0; i < 3; i += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const shard = this.add.rectangle(x, y, 2, 9, 0xa5f3fc, 0.95)
+        .setDepth(24)
+        .setRotation(angle);
+      this.tweens.add({
+        targets: shard,
+        x: x + Math.cos(angle) * 22,
+        y: y + Math.sin(angle) * 22,
+        alpha: 0,
+        duration: 300,
+        ease: "Quad.easeOut",
+        onComplete: () => shard.destroy()
+      });
+    }
+  }
+
   private pulseAlertMarker(x: number, y: number, color: number) {
     const marker = this.add.circle(x, y, 10, color, 0)
       .setStrokeStyle(3, color, 0.95)
@@ -3266,6 +3326,8 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
+room.onMessage("enemy:frozen", (message: { x: number; y: number }) => this.showFreezeBurst(message.x, message.y));
+room.onMessage("slow:critical", (message: { x: number; y: number }) => this.showSlowCritBurst(message.x, message.y));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
     room.onMessage("worker:hired", (message: { role: HirableWorkerRole; advanced?: boolean; cost: number }) => {
@@ -3862,6 +3924,7 @@ export class GameScene extends Phaser.Scene {
         mover.shieldHalo?.destroy();
         mover.armorBreakIcon?.destroy();
         mover.bleedEffect?.destroy();
+        mover.frostEffect?.destroy();
         this.enemies.delete(id);
       }
     }
@@ -3887,6 +3950,7 @@ export class GameScene extends Phaser.Scene {
           .setVisible(false);
         mover.healthBar = this.add.graphics().setDepth(16);
         mover.bleedEffect = this.add.graphics().setDepth(7.9).setVisible(false);
+        mover.frostEffect = this.add.graphics().setDepth(8.1).setVisible(false);
         mover.marker = this.add.text(enemy.x, enemy.y - 22, "T", {
           color: "#fde047",
           fontFamily: "Arial",
@@ -3943,6 +4007,7 @@ export class GameScene extends Phaser.Scene {
       mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
       mover.shieldHalo?.setVisible(hasShield);
       this.drawEnemyBleedEffect(mover.bleedEffect, enemy, displayedEnemySize);
+      this.drawEnemyFrostEffect(mover.frostEffect, enemy, displayedEnemySize);
       this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
@@ -3975,6 +4040,77 @@ export class GameScene extends Phaser.Scene {
       mover.armorBreakIcon?.setScale(this.getTowerEffectScale() * 0.62 * iconPulse);
       mover.armorBreakIcon?.setAlpha(enemy.isArmorBroken ? 0.96 : 0);
       mover.armorBreakIcon?.setVisible(Boolean(enemy.isArmorBroken));
+    }
+  }
+
+  /**
+   * Kirag ve buz kabugu.
+   *
+   * Iki durum tek yuzeyde ciziliyor cunku ikisi ayni sogugun iki siddeti:
+   * Sogutma Kanali kiragi birakiyor, Derin Dondurma onu kabuga ceviriyor.
+   * Ayri ayri cizilseydi ikisi ayni anda oldugunda ust uste biner ve
+   * dusman iki kez donmus gorunurdu.
+   *
+   * Kabuk **donuyor**, kirag titriyor. Hareket ayrimin kendisi: donmus
+   * dusman zaten yerinde duruyor, yani duran bir govdenin uzerinde donen
+   * bir kabuk uzaktan da okunuyor.
+   */
+  private drawEnemyFrostEffect(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
+    if (!graphics) return;
+    graphics.clear();
+    if (!enemy.isChilled && !enemy.isFrozen) {
+      graphics.setVisible(false);
+      return;
+    }
+
+    graphics.setVisible(true);
+    graphics.setDepth(enemy.movementKind === "air" ? 9.1 : 8.1);
+    const radius = Math.max(7, displayedSize * 0.46);
+    const now = performance.now();
+
+    if (enemy.isFrozen) {
+      // Kabuk: alti kenarli bir buz zarfi, yavasca donuyor.
+      const spin = now / 1400;
+      const points: Phaser.Geom.Point[] = [];
+      for (let i = 0; i < 6; i += 1) {
+        const angle = spin + (i * Math.PI * 2) / 6;
+        // Kenarlar esit degil: duzgun bir altigen kristal degil rozet gibi
+        // duruyordu. Kucuk bir dalga onu kirilmis buza ceviriyor.
+        const r = radius * (i % 2 === 0 ? 1.12 : 0.86);
+        points.push(new Phaser.Geom.Point(enemy.x + Math.cos(angle) * r, enemy.y + Math.sin(angle) * r));
+      }
+      graphics.fillStyle(0x67e8f9, 0.2);
+      graphics.fillPoints(points, true);
+      graphics.lineStyle(Math.max(1.2, radius * 0.13), 0xe0f2fe, 0.9);
+      graphics.strokePoints(points, true, true);
+
+      // Ic catlaklar: merkezden kenarlara uc kirik.
+      graphics.lineStyle(Math.max(1, radius * 0.09), 0xa5f3fc, 0.75);
+      for (let i = 0; i < 3; i += 1) {
+        const angle = -spin * 1.6 + (i * Math.PI * 2) / 3;
+        graphics.lineBetween(
+          enemy.x + Math.cos(angle) * radius * 0.18,
+          enemy.y + Math.sin(angle) * radius * 0.18,
+          enemy.x + Math.cos(angle) * radius * 0.96,
+          enemy.y + Math.sin(angle) * radius * 0.96
+        );
+      }
+      return;
+    }
+
+    // Kirag: govdenin cevresinde birkac kristal tozu. Kabuktan cok daha
+    // sonuk, cunku yavaslatma durdurmak degil.
+    const pulse = 0.62 + Math.sin(now / 260) * 0.16;
+    graphics.lineStyle(Math.max(1, radius * 0.1), 0x7dd3fc, 0.42 * pulse);
+    graphics.strokeCircle(enemy.x, enemy.y, radius * 0.92);
+    graphics.fillStyle(0xbae6fd, 0.7 * pulse);
+    for (let i = 0; i < 4; i += 1) {
+      const angle = now / 900 + (i * Math.PI * 2) / 4;
+      graphics.fillCircle(
+        enemy.x + Math.cos(angle) * radius * 0.92,
+        enemy.y + Math.sin(angle) * radius * 0.92,
+        Math.max(0.9, radius * 0.11)
+      );
     }
   }
 
@@ -4364,6 +4500,70 @@ export class GameScene extends Phaser.Scene {
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+    this.renderIsolationAura(graphics, tower);
+  }
+
+  /**
+   * Izolasyon Kulesi'nin yalnizlik alani.
+   *
+   * Kulenin aurasi yalnizca komsusu yokken aciliyor ve o ana kadar bunun
+   * ekranda hicbir karsiligi yoktu: oyuncu kuleyi kuruyor, calisip
+   * calismadigini ancak dusmanlarin yavaslamasindan cikariyordu. Yanina
+   * baska bir kule konunca da sessizce susuyordu.
+   *
+   * Iki halka ters yonde donuyor. Ters yon bilerek: tek yonde donen bir
+   * cift halka bir tekerlek gibi okunuyor, ters yonde donenler ise
+   * birbirini iten iki alan gibi -- kulenin yaptigi is de bu.
+   *
+   * Menzil `tower.range` uzerinden geliyor, sabit degil: aura yaricapi
+   * kartlarla ve seviyeyle buyuyor ve cizimin o buyumeyi gostermesi
+   * gerekiyor, yoksa halka menzilin yalan soyleyen bir suslemesi olur.
+   */
+  private renderIsolationAura(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.definitionId !== "warrior-3" || !tower.auraActive) return;
+
+    const radius = Math.max(12, tower.range);
+    const now = performance.now();
+    const breath = 0.86 + Math.sin(now / 900) * 0.14;
+
+    // Zemin: alanin nereye kadar ulastigini soyleyen sonuk disk.
+    graphics.fillStyle(0x0ea5e9, 0.05 * breath);
+    graphics.fillCircle(tower.x, tower.y, radius);
+    graphics.lineStyle(Math.max(1, radius * 0.012), 0x38bdf8, 0.34 * breath);
+    graphics.strokeCircle(tower.x, tower.y, radius);
+
+    // Iki dis halka: sekiz ve alti dilim, ters yonde.
+    this.strokeIsolationRing(graphics, tower, radius * 0.94, now / 2600, 8, 0.16, 0x7dd3fc, 0.6 * breath);
+    this.strokeIsolationRing(graphics, tower, radius * 0.72, -now / 1900, 6, 0.2, 0x38bdf8, 0.46 * breath);
+
+    // Merkezdeki cekirdek: alanin kaynagi burasi oldugu icin en parlak yer.
+    const coreRadius = Math.max(3, radius * 0.09) * breath;
+    graphics.fillStyle(0xe0f2fe, 0.5);
+    graphics.fillCircle(tower.x, tower.y, coreRadius);
+    graphics.lineStyle(Math.max(1, coreRadius * 0.3), 0x38bdf8, 0.75);
+    graphics.strokeCircle(tower.x, tower.y, coreRadius * 2.1);
+  }
+
+  /** Kesik kesik, donen bir halka; dilim sayisi ve yonu cagirandan gelir. */
+  private strokeIsolationRing(
+    graphics: Phaser.GameObjects.Graphics,
+    tower: TowerSnapshot,
+    radius: number,
+    spin: number,
+    segments: number,
+    gapRatio: number,
+    color: number,
+    alpha: number
+  ) {
+    const step = (Math.PI * 2) / segments;
+    const arc = step * (1 - gapRatio);
+    graphics.lineStyle(Math.max(1.2, radius * 0.022), color, alpha);
+    for (let i = 0; i < segments; i += 1) {
+      const start = spin + i * step;
+      graphics.beginPath();
+      graphics.arc(tower.x, tower.y, radius, start, start + arc, false);
+      graphics.strokePath();
+    }
   }
 
   private renderOrbitBlades(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {

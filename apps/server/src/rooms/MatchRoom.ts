@@ -838,6 +838,8 @@ type TowerModel = {
   level: number;
   cooldownMs: number;
   auraExpiresAt: number;
+  /** Aurasi acik mi; her tik yazilir, anlik goruntu buradan okur. */
+  auraActive: boolean;
   focusTargetId: string;
   aimTargetId: string;
   aimTargetLockUntil: number;
@@ -2933,6 +2935,9 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const activeAuras = this.getActiveTowerAuras(tower);
+      // Tik basina bir kez yaziliyor: anlik goruntunun ayrica hesaplamasi,
+      // kule basina yalnizlik taramasi demekti.
+      tower.auraActive = activeAuras.length > 0;
       if (activeAuras.length > 0) {
         if (!this.setupPhase && tower.cooldownMs <= 0 && this.canTowerFire(tower)) {
           this.consumeTowerResources(tower);
@@ -5828,6 +5833,7 @@ export class MatchRoom extends Room<MatchState> {
       level: 1,
       cooldownMs: 150,
       auraExpiresAt: 0,
+      auraActive: false,
       focusTargetId: "",
       aimTargetId: "",
       aimTargetLockUntil: 0,
@@ -8748,6 +8754,8 @@ export class MatchRoom extends Room<MatchState> {
         doubtStacks: enemy.melisDoubtUntil > now ? enemy.melisDoubtStacks : 0,
         isHesitating: enemy.melisDoubtHesitateUntil > now,
         isBleeding: isStatusEffectActive(enemy.statusEffects.bleed, now),
+        isChilled: enemy.coolantSlowUntil > now,
+        isFrozen: isStatusEffectActive(enemy.statusEffects.freeze, now),
         isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
         isUndead: enemy.melisUndeadUntil > now
       })),
@@ -8757,6 +8765,7 @@ export class MatchRoom extends Room<MatchState> {
         level: tower.level,
         // Onbellekten geliyorlar: cozumleme kart/esya degistiginde bir kez
         // kosuyor, her karede degil. Delta degismeyen kareleri atiyor.
+        auraActive: tower.auraActive,
         repairCostMultiplier: this.getTowerRepairCostMultiplier(tower),
         sellRefundMultiplier: this.getTowerSellRefundMultiplier(tower),
         range: roundNetworkNumber(this.getTowerRange(tower)),
