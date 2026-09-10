@@ -182,6 +182,7 @@ import {
   shouldRetainAimTargetLock,
   usesLinearBallistics,
   rotateTowerTowards,
+  SLOW_STATUS_SPEED_MULTIPLIER,
   canRefundTowerPurchase,
   resolveTowerRefund,
   getTowerSellRefund,
@@ -920,6 +921,9 @@ type TowerModel = {
     /** Onarim ve satis carpanlari; ikisi de kart/esya degisince yeniden cozulur. */
     repairCostMultiplier: number;
     sellRefundMultiplier: number;
+    /** Durum etkisi gucu ve suresi; panelde gosterilen sayilar buradan. */
+    statusMagnitudeMultiplier: number;
+    statusDurationMultiplier: number;
     unlocks: Set<Unlock>;
   };
   /** `surge` trigger etkisinin bitis zamani. */
@@ -1453,6 +1457,17 @@ export class MatchRoom extends Room<MatchState> {
    */
   private towerWireNeedsFullResend = true;
   private stage = 1;
+  /**
+   * Etki basina biriken is: hasar ya da saniye.
+   *
+   * Oda genelinde tutuluyor, oyuncu basina degil. Yavaslatma ve durdurma
+   * bircok kaynagin en gucluse birakan bir zincirinden cikiyor; o zincirde
+   * "kimin yavaslattigi" diye tek bir cevap yok. Hasarda cevap var ama
+   * ikisini ayri kapsamda tutmak paneli yalanci yapardi -- bir sekme
+   * takimin, otekisi senin olurdu.
+   */
+  private effectStats = new Map<string, number>();
+
   private setupPhase = true;
   /**
    * Kacinci kurulum arasindayiz.
@@ -4862,12 +4877,20 @@ export class MatchRoom extends Room<MatchState> {
         // ustlerine biner. Icerde olsaydi %9'luk bir yavaslatma, %52'lik
         // bir yavaslatmanin yaninda hicbir sey yapmazdi -- olcup gorduk:
         // 0,48 varken 0,91 hic gorunmuyordu.
-        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
+        : Math.min(isSlowed ? SLOW_STATUS_SPEED_MULTIPLIER : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
       // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
       // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
       // sozu bu -- kule yavaslatmayi kendi yapmak zorunda degil, yalnizca
       // yavaslamis dusmani menzilinde tutmak zorunda.
       if (deepFreezeTowers.length > 0) this.tryDeepFreeze(enemy, speedMultiplier, deepFreezeTowers, now);
+      // Kontrolun "isi": engellenen yuruyus. Yavaslatma icin kaybedilen
+      // hiz oraniyla, durdurma icin gecen surenin tamamiyla olculuyor --
+      // ikisi ayri kalem cunku oyuncunun kafasinda da ayri seyler.
+      if (speedMultiplier <= 0) {
+        this.addEffectStat("stopped", seconds);
+      } else if (speedMultiplier < 1) {
+        this.addEffectStat("slowed", (1 - speedMultiplier) * seconds);
+      }
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
       const route = this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
@@ -7327,6 +7350,7 @@ export class MatchRoom extends Room<MatchState> {
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
+    this.recordEffectDamage(sourceDefinitionId, dealtAmount, { critAdd, shopDamageAdd, markMultiplier });
     this.addDamageEvent(enemy, dealtAmount);
     const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceDefinitionId === "warrior-1") {
@@ -8777,6 +8801,10 @@ export class MatchRoom extends Room<MatchState> {
         auraActive: tower.auraActive,
         repairCostMultiplier: this.getTowerRepairCostMultiplier(tower),
         sellRefundMultiplier: this.getTowerSellRefundMultiplier(tower),
+        auraSlowMultiplier: this.getTowerAuraSlowMultiplier(tower),
+        slowSpeedMultiplier: this.getTowerSlowStatus(tower)?.speedMultiplier,
+        slowSpeedMultiplierFar: this.getTowerSlowStatus(tower)?.farSpeedMultiplier,
+        slowDurationMs: this.getTowerSlowStatus(tower)?.durationMs,
         range: roundNetworkNumber(this.getTowerRange(tower)),
         minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
@@ -8884,6 +8912,7 @@ export class MatchRoom extends Room<MatchState> {
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
       result: this.matchResult,
+      effectStats: this.getEffectStatsSnapshot(),
       setupPhase: this.setupPhase,
       setupSession: this.setupSession,
       creative: this.creativeMode || undefined,
@@ -9313,6 +9342,8 @@ export class MatchRoom extends Room<MatchState> {
       attackMultipliers: resolveTowerAttackMultipliers(grants),
       repairCostMultiplier: getModifierMultiplier(goldModifiers, "repairCost"),
       sellRefundMultiplier: getModifierMultiplier(goldModifiers, "sellRefund"),
+      statusMagnitudeMultiplier: getModifierMultiplier(goldModifiers, "statusMagnitude"),
+      statusDurationMultiplier: getModifierMultiplier(goldModifiers, "statusDuration"),
       unlocks
     };
   }
@@ -9949,6 +9980,83 @@ export class MatchRoom extends Room<MatchState> {
     enemy.coolantSlowUntil = Math.max(enemy.coolantSlowUntil, now + scaleGameDuration(applyStatusResistance(duration, enemy.statusResistances.slow)));
     if (critical) {
       this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
+    }
+  }
+
+  /**
+   * Panelde gosterilecek etki ozeti.
+   *
+   * Sifir kalemler atiliyor ve sayilar yuvarlaniyor: kayit her karede
+   * gidiyor ve "Kanama 0" satiri ne oyuncuya ne de tele bir sey katiyor.
+   */
+  private getEffectStatsSnapshot() {
+    const stats: Record<string, number> = {};
+    for (const [key, value] of this.effectStats) {
+      if (value >= 0.05) stats[key] = Math.round(value * 10) / 10;
+    }
+    return Object.keys(stats).length > 0 ? stats : undefined;
+  }
+
+  /**
+   * Kulenin aurasinin dusman hizina uyguladigi carpan.
+   *
+   * Yalnizca gosterim icin: sahada uygulanan deger `applyTowerEnemyAuras`
+   * icinde ayni fonksiyondan cikiyor, yani panelde yazan sayi ile sahada
+   * isleyen sayi ayni.
+   */
+  private getTowerAuraSlowMultiplier(tower: TowerModel) {
+    const aura = this.getActiveTowerAuras(tower)
+      .find((definition) => definition.affects === "enemies" && definition.stat === "slow");
+    if (!aura) return undefined;
+    return Math.round(getTowerAuraLevelMultiplier(aura, tower.level) * 1000) / 1000;
+  }
+
+  /**
+   * Kulenin vuruslarinin dusman hizina yapacagi sey.
+   *
+   * Durumun `magnitude` degeri degil gercek carpan donuyor. Ikisi ayni sey
+   * degil: yavaslatma aktifken hiz duz bir tavana iniyor ve gucun hiza
+   * hicbir etkisi olmuyor. Mesafeye gore olcekleniyorsa iki uc da
+   * donuyor, cunku o kulelerde tek bir sayi yalan olurdu.
+   */
+  private getTowerSlowStatus(tower: TowerModel) {
+    const definition = this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === "slow");
+    if (!definition) return undefined;
+    const durationMs = Math.round(definition.durationMs * this.getTowerGrantState(tower).statusDurationMultiplier);
+    if (definition.scaling === "distance") {
+      return { speedMultiplier: KIN_SLOW_NEAR_MULTIPLIER, farSpeedMultiplier: KIN_SLOW_FAR_MULTIPLIER, durationMs };
+    }
+    return { speedMultiplier: SLOW_STATUS_SPEED_MULTIPLIER, durationMs };
+  }
+
+  private addEffectStat(key: string, amount: number) {
+    if (!(amount > 0)) return;
+    this.effectStats.set(key, (this.effectStats.get(key) ?? 0) + amount);
+  }
+
+  /**
+   * Bir hasar olayini etki kalemlerine dagitir.
+   *
+   * Kritigin ve isaretin payi orantiyla cikariliyor: zincirin geri kalani
+   * (zirh, direnc, kalkan) carpansal oldugu icin "kritik olmasaydi ne
+   * olurdu" sorusunun cevabi tam olarak bu oran.
+   */
+  private recordEffectDamage(
+    sourceDefinitionId: string,
+    dealtAmount: number,
+    parts: { critAdd: number; shopDamageAdd: number; markMultiplier: number }
+  ) {
+    if (!(dealtAmount > 0)) return;
+    if (sourceDefinitionId.startsWith("status:")) {
+      this.addEffectStat(sourceDefinitionId.slice(7), dealtAmount);
+      return;
+    }
+    const toplamCarpan = 1 + parts.shopDamageAdd + parts.critAdd;
+    if (parts.critAdd > 0 && toplamCarpan > 0) {
+      this.addEffectStat("crit", dealtAmount * (parts.critAdd / toplamCarpan));
+    }
+    if (parts.markMultiplier > 1) {
+      this.addEffectStat("mark", dealtAmount * (1 - 1 / parts.markMultiplier));
     }
   }
 

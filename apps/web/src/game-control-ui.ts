@@ -1087,6 +1087,13 @@ export type HudState = {
   continueWaiting: boolean;
   perfOpen: boolean;
   perfText: string;
+  /** Istatistik paneli ve acik sekmesi. */
+  statsOpen: boolean;
+  statsTab: "damage" | "dps" | "effects";
+  /** Kule satirlari; panelin ilk iki sekmesi ayni listeyi farkli siralar. */
+  statsTowers: Array<{ id: string; name: string; level: number; damage: number; dps: number }>;
+  /** Etki kalemleri: ad, deger ve degerin birimi. */
+  statsEffects: Array<{ label: string; value: number; unit: "damage" | "seconds" }>;
   audioOpen: boolean;
   musicVolume: number;
   voiceVolume: number;
@@ -1100,7 +1107,8 @@ export function setupGameHudUi(game: Phaser.Game) {
 
   let state: HudState = {
     status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
-    continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5
+    continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5,
+    statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: []
   };
 
   const dispatch = (action: string, value?: number) => window.dispatchEvent(new CustomEvent("karayel:control-action", { detail: { action, value } }));
@@ -1143,6 +1151,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       <p class="game-hud__status" data-hud-status hidden></p>
       <div class="game-hud__actions">
         <button data-hud="perf" aria-label="Performans bilgisi">i</button>
+        <button data-hud="stats" aria-label="İstatistikler">▤</button>
         <button data-hud="audio" aria-label="Ses ayarları">♪</button>
         <button class="game-hud__continue" data-hud="continue" hidden>Devam</button>
       </div>
@@ -1169,6 +1178,10 @@ export function setupGameHudUi(game: Phaser.Game) {
     if (action === "continue") dispatch("continueWave");
     if (action === "perf") dispatch("togglePerfHud");
     if (action === "audio") dispatch("toggleAudioHud");
+    if (action === "stats") dispatch("toggleStatsHud");
+    if (action === "stats-damage") dispatch("setStatsTab", 0);
+    if (action === "stats-dps") dispatch("setStatsTab", 1);
+    if (action === "stats-effects") dispatch("setStatsTab", 2);
   }));
 
   /**
@@ -1208,19 +1221,91 @@ export function setupGameHudUi(game: Phaser.Game) {
     stripNode.innerHTML = key;
   };
 
+  const formatStatValue = (value: number) => (value >= 10000 ? `${(value / 1000).toFixed(1)}k` : String(Math.round(value)));
+
+  /**
+   * Istatistik panelinin govdesi.
+   *
+   * Ilk iki sekme ayni kule listesini iki ayri olcute gore siraliyor: toplam
+   * hasar kosun tamamini, anlik DPS su ani anlatiyor. Ayri sorular -- dalga
+   * boyunca hicbir sey yapmayan ama toplamda onde gorunen bir kule ancak
+   * ikisini yan yana koyunca yakalaniyor.
+   *
+   * Ucuncu sekme etkileri gosteriyor, cunku sikayet tam oradaydi: kulenin
+   * hasari zaten goruluyordu, kanamanin ya da yavaslatmanin ne is yaptigi
+   * hicbir yerde yazmiyordu.
+   */
+  const renderStatsRows = (next: HudState) => {
+    if (next.statsTab === "effects") {
+      if (next.statsEffects.length === 0) {
+        return "<p class=\"game-hud__stats-empty\">Henüz ölçülecek bir etki yok.</p>";
+      }
+      return next.statsEffects
+        .map((entry) => {
+          const value = entry.unit === "seconds" ? `${entry.value.toFixed(1)} sn` : formatStatValue(entry.value);
+          return `<li><span class="game-hud__stats-name">${escapeHudText(entry.label)}</span><b>${escapeHudText(value)}</b></li>`;
+        })
+        .join("");
+    }
+
+    if (next.statsTowers.length === 0) {
+      return "<p class=\"game-hud__stats-empty\">Sahada kule yok.</p>";
+    }
+
+    const byDps = next.statsTab === "dps";
+    const rows = [...next.statsTowers].sort((a, b) => (byDps ? b.dps - a.dps : b.damage - a.damage));
+    // Cubugun boyu en buyuge gore: sayilari tek tek okumadan siralamayi
+    // gormek icin.
+    const peak = Math.max(1, ...rows.map((tower) => (byDps ? tower.dps : tower.damage)));
+    return rows
+      .map((tower, index) => {
+        const value = byDps ? tower.dps : tower.damage;
+        const ratio = Math.max(0, Math.min(1, value / peak)) * 100;
+        const shown = byDps ? value.toFixed(1) : formatStatValue(value);
+        return `<li><span class="game-hud__stats-rank">${index + 1}</span>`
+          + `<span class="game-hud__stats-name">${escapeHudText(tower.name)} <em>lv${tower.level}</em></span>`
+          + `<span class="game-hud__stats-bar"><i style="width:${ratio.toFixed(1)}%"></i></span>`
+          + `<b>${escapeHudText(shown)}</b></li>`;
+      })
+      .join("");
+  };
+
+  const renderStatsPopup = (next: HudState) => {
+    if (!next.statsOpen) return "";
+    const tab = (id: string, label: string, active: boolean) =>
+      `<button data-hud="stats-${id}" class="${active ? "is-active" : ""}">${escapeHudText(label)}</button>`;
+    return `<section class="game-hud__popup game-hud__popup--stats"><button data-hud="stats">×</button>`
+      + `<strong>İstatistikler</strong>`
+      + `<nav class="game-hud__stats-tabs">`
+      + tab("damage", "Toplam hasar", next.statsTab === "damage")
+      + tab("dps", "Anlık DPS", next.statsTab === "dps")
+      + tab("effects", "Etkiler", next.statsTab === "effects")
+      + `</nav><ul class="game-hud__stats-list">${renderStatsRows(next)}</ul></section>`;
+  };
+
   let lastPopupKey = "";
   const renderPopups = (next: HudState) => {
-    const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}` : ""}`;
+    const statsKey = next.statsOpen
+      ? `stats:${next.statsTab}:${next.statsTowers.map((t) => `${t.id}:${Math.round(t.damage)}:${t.dps.toFixed(1)}`).join(",")}`
+        + `:${next.statsEffects.map((e) => `${e.label}:${e.value.toFixed(1)}`).join(",")}`
+      : "";
+    const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}` : ""}|${statsKey}`;
     if (key === lastPopupKey) return;
     lastPopupKey = key;
     popupsNode.innerHTML = `
       ${next.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${escapeHudText(next.perfText)}</pre></section>` : ""}
       ${next.audioOpen ? `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong><label>Müzik <input data-volume="music" type="range" min="0" max="1" step="0.01" value="${next.musicVolume}"></label><label>Seslendirme <input data-volume="voice" type="range" min="0" max="1" step="0.01" value="${next.voiceVolume}"></label></section>` : ""}
+      ${renderStatsPopup(next)}
     `;
     popupsNode.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
       event.stopPropagation();
-      if (element.dataset.hud === "perf") dispatch("togglePerfHud");
-      if (element.dataset.hud === "audio") dispatch("toggleAudioHud");
+      const action = element.dataset.hud;
+      if (action === "perf") dispatch("togglePerfHud");
+      if (action === "audio") dispatch("toggleAudioHud");
+      if (action === "stats") dispatch("toggleStatsHud");
+      if (action === "stats-damage") dispatch("setStatsTab", 0);
+      if (action === "stats-dps") dispatch("setStatsTab", 1);
+      if (action === "stats-effects") dispatch("setStatsTab", 2);
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
       dispatch(input.dataset.volume === "music" ? "setMusicVolume" : "setVoiceVolume", Number(input.value));

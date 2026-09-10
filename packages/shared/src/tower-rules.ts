@@ -193,6 +193,17 @@ export function getTowerEnergyState(energy: number, depletedAt: number, now: num
   return "offline";
 }
 
+/**
+ * Yavaslatma durumu altindaki dusmanin hiz tavani.
+ *
+ * Yavaslatmanin `magnitude` degeri hiza **islemiyor**: durum aktifse hiz
+ * duz olarak buraya iniyor, gucu ne olursa olsun. Sabit burada duruyor ki
+ * arayuz de ayni sayiyi okusun -- kule panelinde bir donem `magnitude`
+ * yaziyordu ve "-%100 yavaslatma" gibi gercekte olmayan bir sey
+ * gosteriyordu.
+ */
+export const SLOW_STATUS_SPEED_MULTIPLIER = 0.48;
+
 export function calculateTowerScaledBaseDamage(definition: TowerDefinition, level: number) {
   const safeLevel = Math.max(1, Math.min(10, Math.round(level)));
   const damagePerLevel = definition.engine?.levelScaling

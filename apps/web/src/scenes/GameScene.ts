@@ -143,6 +143,8 @@ type ControlActionDetail = {
     | "toggleAbartiOrientation"
     | "continueWave"
     | "togglePerfHud"
+    | "toggleStatsHud"
+    | "setStatsTab"
     | "toggleAudioHud"
     | "setMusicVolume"
     | "setVoiceVolume"
@@ -306,6 +308,39 @@ const ALERT_TONE_SECONDS = 0.24;
 const LOCAL_ECHO_TIMEOUT_MS = 2500;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
+
+/**
+ * Etki kalemlerinin ekranda okunacak adlari.
+ *
+ * Sunucu ham anahtar gonderiyor (`bleed`, `slowed`, ...) ve cevirisi burada
+ * duruyor: dil istemcinin isi, sunucunun degil. Listede olmayan bir anahtar
+ * ham haliyle gosteriliyor -- yeni bir etki eklendiginde panel bos kalmasin.
+ */
+const EFFECT_STAT_LABELS: Record<string, string> = {
+  burn: "Yanma hasarı",
+  bleed: "Kanama hasarı",
+  crit: "Kritik fazlası",
+  mark: "İşaret fazlası",
+  slowed: "Engellenen yürüyüş",
+  stopped: "Tam durdurma"
+};
+
+/**
+ * Yavaslatmayi yuzde olarak yazar.
+ *
+ * Mesafeye gore degisen kuleler icin iki uc da yaziliyor: Kin Kulesi
+ * dibinde hic yavaslatmiyor, kenarinda %40 yavaslatiyor. Tek bir sayi
+ * yazmak o kulede yanlis olurdu.
+ */
+function formatSlowRange(near: number, far?: number) {
+  const yuzde = (value: number) => Math.round((1 - value) * 100);
+  if (far === undefined || far === near) return `hiz -%${yuzde(near)}`;
+  const [az, cok] = yuzde(near) <= yuzde(far) ? [yuzde(near), yuzde(far)] : [yuzde(far), yuzde(near)];
+  return `hiz -%${az}…-%${cok} (uzaklikla)`;
+}
+
+/** Degeri saniye olan kalemler; gerisi hasar. */
+const SECOND_VALUED_EFFECT_STATS = new Set(["slowed", "stopped"]);
 
 /**
  * Besgenin cevrel yaricapi, gizlenen govdenin genisliginin kati.
@@ -514,7 +549,11 @@ export class GameScene extends Phaser.Scene {
     perfText: "",
     audioOpen: false,
     musicVolume: DEFAULT_MUSIC_VOLUME,
-    voiceVolume: DEFAULT_VOICE_VOLUME
+    voiceVolume: DEFAULT_VOICE_VOLUME,
+    statsOpen: false,
+    statsTab: "damage",
+    statsTowers: [],
+    statsEffects: []
   };
   /**
    * Kisa omurlu bildirim.
@@ -884,6 +923,41 @@ export class GameScene extends Phaser.Scene {
       return undefined;
     }
     return this.transientNotice.text;
+  }
+
+  /**
+   * Istatistik panelinin verisi.
+   *
+   * Yalnizca panel acikken hesaplaniyor: kapaliyken her karede kule
+   * listesi kurup etki tablosu cevirmenin karsiligi yok.
+   *
+   * Kuleler oyuncunun kendi kuleleri, etkiler ise odanin tamami. Ikisi
+   * farkli kapsamda cunku yavaslatma ve durdurma bircok kaynagin
+   * birlestigi bir zincirden cikiyor; orada "kim yavaslatti" diye tek bir
+   * cevap yok. Etkiler sekmesinin basligi da bunu soyluyor.
+   */
+  private getStatsHudPatch(): Partial<HudState> {
+    if (!this.hudState.statsOpen) return {};
+    const towers = [...this.towerSnapshots.values()]
+      .filter((tower) => tower.ownerId === this.localSessionId)
+      .map((tower) => ({
+        id: tower.id,
+        name: tower.name,
+        level: tower.level,
+        damage: tower.damageDealt ?? 0,
+        dps: tower.currentDps ?? 0
+      }));
+
+    const stats = this.latestPerfSnapshot?.effectStats ?? {};
+    const effects = Object.entries(stats)
+      .map(([key, value]) => ({
+        label: EFFECT_STAT_LABELS[key] ?? key,
+        value,
+        unit: SECOND_VALUED_EFFECT_STATS.has(key) ? ("seconds" as const) : ("damage" as const)
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    return { statsTowers: towers, statsEffects: effects };
   }
 
   private emitHudState(patch: Partial<HudState> = {}) {
@@ -1313,6 +1387,20 @@ export class GameScene extends Phaser.Scene {
       case "togglePerfHud":
         this.togglePerfPopup();
         break;
+      case "toggleStatsHud":
+        this.emitHudState({
+          statsOpen: !this.hudState.statsOpen,
+          perfOpen: false,
+          audioOpen: false,
+          ...this.getStatsHudPatch()
+        });
+        break;
+      case "setStatsTab": {
+        const sekmeler = ["damage", "dps", "effects"] as const;
+        const sekme = sekmeler[detail.value ?? 0] ?? "damage";
+        this.emitHudState({ statsTab: sekme, ...this.getStatsHudPatch() });
+        break;
+      }
       case "toggleAudioHud":
         this.toggleAudioSettingsPanel();
         break;
@@ -3902,6 +3990,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
       this.lastHudKey = hudKey;
     }
+    // Panel acikken sayilar akmali: kapaliyken hicbir sey hesaplanmiyor.
+    if (this.hudState.statsOpen) this.emitHudState(this.getStatsHudPatch());
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);
     this.updateSelectionUi();
   }
@@ -7451,6 +7541,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       selectedStats: selectedTower ? [
         `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
         `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+        // Kulenin ne yaptigini soyleyen satirlar. Aura yaricapi ve
+        // yavaslatma gucu hicbir yerde yazmiyordu: Izolasyon Kulesi'ni
+        // kuran oyuncu ne kadar yavaslattigini ancak dusmanlara bakarak
+        // tahmin edebiliyordu.
+        ...(selectedTower.auraSlowMultiplier !== undefined ? [
+          `Aura: ${Math.round(selectedTower.range)} yariçap | hiz -%${Math.round((1 - selectedTower.auraSlowMultiplier) * 100)}`
+        ] : []),
+        ...(selectedTower.slowSpeedMultiplier !== undefined ? [
+          `Vurus yavaslatmasi: ${formatSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar)} · ${((selectedTower.slowDurationMs ?? 0) / 1000).toFixed(1)} sn`
+        ] : []),
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),

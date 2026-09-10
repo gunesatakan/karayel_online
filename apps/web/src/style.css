@@ -3229,6 +3229,39 @@ canvas {
 .game-hud__popup label { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; margin-top: 14px; font-size: 12px; font-weight: 700; }
 .game-hud__popup input[type="range"] { width: 100%; accent-color: #38bdf8; }
 
+/* Istatistik paneli: sekmeler ve siralanmis liste. */
+.game-hud__popup--stats { min-width: min(420px, 86vw); }
+.game-hud__stats-tabs { display: grid; grid-auto-flow: column; gap: 6px; margin-bottom: 10px; }
+.game-hud__stats-tabs button {
+  min-height: 28px;
+  padding: 0 8px;
+  color: #cbd5f5;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, .72);
+  border: 1px solid rgba(100, 116, 139, .4);
+  border-radius: 8px;
+}
+.game-hud__stats-tabs button.is-active { color: #e0f2fe; border-color: rgba(56, 189, 248, .7); background: rgba(12, 74, 110, .5); }
+.game-hud__stats-list {
+  max-height: calc(var(--app-height, 100dvh) - 260px);
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.game-hud__stats-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr) 70px 58px; gap: 8px; align-items: center; padding: 4px 0; font-size: 11px; }
+/* Etkiler sekmesinde sira ve cubuk yok: yalnizca ad ve deger. */
+.game-hud__stats-list li:not(:has(.game-hud__stats-rank)) { grid-template-columns: minmax(0, 1fr) 72px; }
+.game-hud__stats-rank { color: #64748b; font-size: 10px; text-align: right; }
+.game-hud__stats-name { overflow: hidden; color: #e2e8f0; text-overflow: ellipsis; white-space: nowrap; }
+.game-hud__stats-name em { color: #64748b; font-size: 10px; font-style: normal; }
+.game-hud__stats-bar { height: 6px; overflow: hidden; background: rgba(30, 41, 59, .9); border-radius: 3px; }
+.game-hud__stats-bar i { display: block; height: 100%; background: linear-gradient(90deg, rgba(56, 189, 248, .9), rgba(129, 140, 248, .9)); }
+.game-hud__stats-list b { color: #f8fafc; font-size: 11px; text-align: right; }
+.game-hud__stats-empty { margin: 0; padding: 12px 0; color: #94a3b8; font-size: 11px; text-align: center; }
+
 @media (max-width: 620px) {
   .game-hud { gap: 4px; padding: 6px 8px; }
   .game-hud__vitals { gap: 8px; }

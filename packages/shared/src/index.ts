@@ -491,6 +491,25 @@ export type TowerSnapshot = {
    * cizmezdi ya da kapaliyken de cizip yalan soylerdi.
    */
   auraActive?: boolean;
+  /**
+   * Kulenin aurasinin dusman hizina uyguladigi carpan.
+   *
+   * Izolasyon Kulesi'nin ne kadar yavaslattigi hicbir yerde yazmiyordu.
+   * Seviyeyle ve kartlarla degistigi icin istemci kendi hesaplayamaz.
+   */
+  auraSlowMultiplier?: number;
+  /**
+   * Kulenin vuruslarinin dusman hizina birakacagi carpan ve suresi.
+   *
+   * Durumun `magnitude` degeri degil, sahada gercekten olusan hiz. Ikisi
+   * ayni sey degil: yavaslatma durumunun gucu hiza islemiyor, aktifse hiz
+   * duz bir tavana iniyor. Panelde `magnitude` yazdigi surece kule
+   * "-%100 yavaslatiyorum" diyordu, oysa yaptigi -%52'ydi.
+   */
+  slowSpeedMultiplier?: number;
+  /** Mesafeyle degisen yavaslatmalarda uzaktaki deger; yoksa tek bir sayi. */
+  slowSpeedMultiplierFar?: number;
+  slowDurationMs?: number;
   /** Radians toward the current target. Only sent for towers that aim. */
   facing?: number;
   level: number;
@@ -724,6 +743,18 @@ export type GameSnapshot = {
   melisGothicNightmareActive?: boolean;
   result?: "victory" | "defeat";
   team: TeamSnapshot;
+  /**
+   * Etkilerin o ana kadar yaptigi is.
+   *
+   * Oyuncunun sikayeti dogrudan buydu: kart ve esya aliyor ama karsiligini
+   * goremiyor, para bosa gidiyormus gibi hissediyor. Anahtar etki adi,
+   * deger ise ya toplam hasar ya da saniye -- hangisi oldugunu okuyan
+   * taraf biliyor.
+   *
+   * Sifir olan kalem hic yazilmiyor: hic kanama olmayan bir kosuda
+   * "Kanama 0" satiri gostermenin karsiligi yok.
+   */
+  effectStats?: Record<string, number>;
   setupPhase?: boolean;
   /** Su anki kurulum arasinin sayaci; kule iadesi bununla karsilastiriliyor. */
   setupSession?: number;
@@ -834,6 +865,7 @@ export {
   shouldConsumeTowerOperatingEnergy,
   getTowerEnergyState,
   type TowerEnergyState,
+  SLOW_STATUS_SPEED_MULTIPLIER,
   calculateTowerScaledBaseDamage,
   inferTowerAmmoType
 } from "./tower-rules.js";
