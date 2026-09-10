@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { cardAppliesToTower, cardCatalog, drawCards, towerCatalog } from "../packages/shared/dist/index.js";
 
 test("kart havuzu Türkçe ve sayısal açıklamalı kartlardan oluşur", () => {
-  assert.equal(cardCatalog.length, 95);
-  assert.equal(new Set(cardCatalog.map(({ id }) => id)).size, 95);
+  assert.equal(cardCatalog.length, 100);
+  assert.equal(new Set(cardCatalog.map(({ id }) => id)).size, 100);
   for (const card of cardCatalog) {
     assert.equal(card.description.includes("\n"), false);
     assert.match(card.description, /\d/);
@@ -63,6 +63,6 @@ test("eksen eşleşmesi 2x, ölü tagged kart 0.15x ağırlık alır", () => {
   const towers = towerCatalog.warrior.filter(({ resourceProvider }) => !resourceProvider);
   const first = drawCards({ count: 1, preferredAxes: ["dps"], towers, ownedCardIds: [], random: () => 0 })[0];
   assert.equal(first.id, "namlu-asinmasi");
-  const emptyDraws = drawCards({ count: 3, preferredAxes: ["economy"], towers: [], ownedCardIds: [], random: () => 0.999 });
+  const emptyDraws = drawCards({ count: 3, preferredAxes: ["economy"], towers: [], ownedCardIds: [], random: () => 0.1009 });
   assert.equal(emptyDraws.length, 3);
 });

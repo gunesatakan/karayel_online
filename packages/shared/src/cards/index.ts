@@ -64,7 +64,16 @@ export type Unlock =
   // dusuk enerjiydi, muhimmat lojistigi anahtarinin iki tarafi arasinda fark
   // yoktu ve kart secimi her zaman uc secenekti. Dordu de oyuncunun eline
   // verilmis kollardi ama hicbiri bir seye baglanmiyordu.
-  | "nexus:mend" | "tower:coldStart" | "logistics:selfSufficient" | "card:wideSearch";
+  | "nexus:mend" | "tower:coldStart" | "logistics:selfSufficient" | "card:wideSearch"
+  // --- Buz ekseni ---
+  // Yavaslatma oyunun en eski mekanigi ama yalnizca bir sayiydi: hizi
+  // carpip biterdi. Bu bes kilit onu bir zincire ceviriyor -- sogutma
+  // yavaslatmaya, yavaslatma donmaya, donma da kritige baglaniyor. Her biri
+  // tek basina kucuk; birlikte alindiklarinda bir oynanis kuruyorlar.
+  | "status:coolantSlow" | "status:slowCrit" | "control:deepFreeze" | "crit:vsFrozen"
+  // Iki mermi tek tetikte: en nadir kart, cunku kulenin her seyini
+  // ikiye katliyor -- hasari da, muhimmat ve isi bedelini de.
+  | "attack:doubleShot";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -82,7 +91,9 @@ export const ALL_UNLOCKS: Unlock[] = [
   "heat:radiator", "heat:quickRelease", "heat:killVent",
   "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent",
   "performance:idleEdge",
-  "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch"
+  "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch",
+  "status:coolantSlow", "status:slowCrit", "control:deepFreeze", "crit:vsFrozen",
+  "attack:doubleShot"
 ];
 
 /**
@@ -267,6 +278,17 @@ export const cardCatalog: CardDefinition[] = [
   { id: "kendi-kendine-yeten", name: "Kendi Kendine Yeten", description: "Mühimmat lojistiği kapalı kulelerin hasarı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["logistics:selfSufficient"] },
   { id: "genis-arama", name: "Geniş Arama", description: "Kart seçiminde 3 yerine 4 seçenek görünür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["card:wideSearch"] },
   { id: "tezgah-iliskisi", name: "Tezgâh İlişkisi", description: "Mağaza yenileme bedeli -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("tezgah-iliskisi", "shopRerollCost", -0.4)] },
+
+  // --- Buz ekseni ---
+  // Yavaslatma en eski mekanik ama uzun sure yalnizca bir sayiydi: hizi
+  // carpip biterdi. Bu dort kart onu bir zincire ceviriyor -- sogutma
+  // yavaslatmayi doguruyor, yavaslatma donmayi, donma da kritigi. Her biri
+  // tek basina kucuk; birlikte alindiklarinda bir oynanis kuruyorlar.
+  { id: "derin-dondurma", name: "Derin Dondurma", description: "Bir kulenin menzilinde hızı yarıya inen düşmanlar 3 saniye donar. Kimin yavaşlattığı fark etmez.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["control:deepFreeze"] },
+  { id: "sogutma-kanali", name: "Soğutma Kanalı", description: "Takıldığı kulenin vuruşları, saniyedeki soğumasının %3'ü kadar yavaşlatır. Aura kuleleri her etki aralığında uygular. Kendisiyle yığılmaz.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["status:coolantSlow"] },
+  { id: "buz-kirigi", name: "Buz Kırığı", description: "Yavaşlatmalar kritik gelebilir; kulenin kritik ihtimalini kullanır ve kritik yavaşlatma %50 daha derindir.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["status:slowCrit"] },
+  { id: "kirilgan-buz", name: "Kırılgan Buz", description: "Donmuş düşmanlara kritik vuruş ihtimali +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsFrozen"] },
+  { id: "cifte-namlu", name: "Çifte Namlu", description: "Bir kule her atışta 2 mermi çıkarır. Mühimmat ve ısı bedeli de 2 katına çıkar.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["attack:doubleShot"] },
 
   // --- Ilerleme ve bakim ---
   // Bu bes kol oyunun her turunda cekiliyor ama hicbiri icerige bagli

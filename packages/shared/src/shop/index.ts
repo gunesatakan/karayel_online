@@ -137,6 +137,15 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("agir-kundak", "Ağır Kundak", "Takıldığı kulenin hasarı +%20, dönüş hızı -%10; yalnızca impact kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["impact"] }, effects: [effect("agir-kundak", "damage", 0.2), effect("agir-kundak", "turnRate", -0.1)] }),
   defineItem("yanki-odasi", "Yankı Odası", "Takıldığı kulenin durum etkisi gücü +%25; yalnızca aura kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["aura"] }, effects: [effect("yanki-odasi", "statusMagnitude", 0.25)] }),
 
+  // Sure uzatan esyalar. Oyunda dort tane vardi ve dordu de dar kapsamliydi:
+  // yalnizca cc, yalnizca psisik, yalnizca aura, yalnizca lanet. Yani sureyi
+  // uzatmak bir secim degil, dogru kuleye sahip olma sansiydi. Bu ucu her
+  // kuleye takiliyor ve sureyi gercek bir eksen haline getiriyor -- kanama,
+  // yanma, yavaslatma, korku, lanet, hepsi ayni statta bulusuyor.
+  defineItem("uzun-fitil", "Uzun Fitil", "Takıldığı kulenin bütün durum etkilerinin süresi +%35.", "class", 95, { axes: ["cc"], effects: [effect("uzun-fitil", "statusDuration", 0.35)] }),
+  defineItem("agir-metabolizma", "Ağır Metabolizma", "Takıldığı kulenin durum etkileri %70 daha uzun sürer ama %25 daha zayıftır.", "class", 110, { axes: ["cc"], effects: [effect("agir-metabolizma", "statusDuration", 0.7), effect("agir-metabolizma", "statusMagnitude", -0.25)] }),
+  defineItem("kalici-iz", "Kalıcı İz", "Takıldığı kulenin durum etkilerinin süresi +%15; en fazla 4 kez alınır.", "class", 45, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, axes: ["cc"], effects: [effect("kalici-iz", "statusDuration", 0.15)] }),
+
   defineItem("komuta-modulu", "Komuta Modülü", "Takıldığı kulenin işaret gücü +%30; yalnızca amplify kulelerine takılır.", "class", 110, { axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, effects: [effect("komuta-modulu", "markAmplification", 0.3)] }),
   defineItem("buz-cekirdegi", "Buz Çekirdeği", "Takıldığı kulenin durum etkisi gücü +%40; yalnızca CC kulelerine takılır.", "class", 100, { axes: ["cc"], scope: { kind: "tagged", axes: ["cc"] }, effects: [effect("buz-cekirdegi", "statusMagnitude", 0.4)] }),
   defineItem("zirh-plakasi", "Zırh Plakası", "Takıldığı kulenin canı +%80; yalnızca barricade kulelerine takılır.", "class", 95, { axes: ["barricade"], scope: { kind: "tagged", axes: ["barricade"] }, effects: [effect("zirh-plakasi", "towerHealth", 0.8)] }),

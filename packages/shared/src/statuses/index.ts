@@ -5,6 +5,28 @@ export const STATUS_EFFECTS = {
   fear: { id: "fear", durationMs: 3000 }
 } as const;
 
+/**
+ * Donma esigi: hiz carpani bunun altina inen dusman donar.
+ *
+ * Yarim, cunku oyunun kendi yavaslatma tabani zaten 0.48 -- yani "tek bir
+ * tam yavaslatma yemis" dusman esigin hemen altinda kaliyor. Daha asagi bir
+ * esik donmayi yalnizca yavaslatma yiginlarinda gorulen bir sey yapardi;
+ * daha yukarisi ise her yavaslatmayi donmaya cevirirdi.
+ */
+export const DEEP_FREEZE_SPEED_THRESHOLD = 0.5;
+
+/** Donmanin suresi. */
+export const DEEP_FREEZE_DURATION_MS = 3000;
+
+/**
+ * Ayni dusmanin yeniden donmasi icin beklemesi gereken sure.
+ *
+ * Olmasa donma kalici olurdu: donmus dusmanin hizi sifir, yani esigin
+ * altinda; cozuldugu karede yeniden donardi ve yavaslatma kuran oyuncu
+ * dusmanlari sonsuza kadar durdururdu.
+ */
+export const DEEP_FREEZE_COOLDOWN_MS = 5000;
+
 export type StatusEffectRuntimeState = {
   type: TowerStatusEffectType;
   magnitude: number;
@@ -74,10 +96,14 @@ export function getTowerStatusOutcomes(
   const bleed = getActiveStatusMagnitude(states.bleed, now);
   const chill = getActiveStatusMagnitude(states.chill, now);
   const convert = isStatusEffectActive(states.convert, now) ? states.convert : undefined;
+  // Donma hiz carpanini sifira cekiyor: yavaslatmayla ayni kanaldan gecse
+  // de sonucu farkli, cunku carpan degil kesme.
+  const frozen = isStatusEffectActive(states.freeze, now);
   return {
     burnMaxHealthRatioPerSecond: burn,
     bleedMaxHealthRatioPerSecond: bleed,
-    speedMultiplier: Math.max(0, 1 - chill),
+    frozen,
+    speedMultiplier: frozen ? 0 : Math.max(0, 1 - chill),
     converted: Boolean(convert),
     convertExpiresAt: convert?.expiresAt ?? 0,
     convertOwnerId: convert?.sourceOwnerId ?? ""

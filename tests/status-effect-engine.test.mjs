@@ -67,6 +67,7 @@ test("convert kaynak sahibi ve bitiş süresiyle yürütülür", () => {
   assert.deepEqual(getTowerStatusOutcomes({ convert }, 200), {
     burnMaxHealthRatioPerSecond: 0,
     bleedMaxHealthRatioPerSecond: 0,
+    frozen: false,
     speedMultiplier: 1,
     converted: true,
     convertExpiresAt: 2600,

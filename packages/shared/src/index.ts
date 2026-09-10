@@ -826,6 +826,9 @@ export {
   inferTowerAmmoType
 } from "./tower-rules.js";
 export {
+  DEEP_FREEZE_COOLDOWN_MS,
+  DEEP_FREEZE_DURATION_MS,
+  DEEP_FREEZE_SPEED_THRESHOLD,
   STATUS_EFFECTS,
   applyTowerStatusEffect,
   getActiveStatusMagnitude,

@@ -170,6 +170,9 @@ import {
   getTile,
   isInsideMap,
   inferTowerAmmoType,
+  DEEP_FREEZE_COOLDOWN_MS,
+  DEEP_FREEZE_DURATION_MS,
+  DEEP_FREEZE_SPEED_THRESHOLD,
   isStatusEffectActive,
   isTowerAligned,
   isTowerPerformanceIdle,
@@ -298,6 +301,34 @@ const NEXUS_MEND_HEAL = 4;
  * ise sekme "yakindakine atlayan elektrik" olmaktan cikip haritanin obur
  * ucuna uzanan bir baglantiya donusuyor.
  */
+/**
+ * Sogutma Kanali: saniyedeki soguma basina yavaslatma.
+ *
+ * Taban soguma 3/sn, yani karti alan sade bir kule %9 yavaslatiyor. Kucuk
+ * bir sayi ve oyle olmali: kart tek basina bir kontrol kulesi yaratmiyor,
+ * sogutmaya yapilan yatirimi kontrole ceviriyor. Sogutmayi ikiye katlayan
+ * bir oyuncu ayni anda yavaslatmasini da ikiye katlamis oluyor.
+ */
+const COOLANT_SLOW_PER_COOLING = 0.03;
+
+/**
+ * Sogutma yavaslatmasinin tavani.
+ *
+ * Soguma kartlarla katlanabiliyor ve tavansiz birakilirsa yeterince
+ * sogutan bir kule dusmani tamamen durdururdu. Durdurmak Derin
+ * Dondurma'nin isi; bu kartin isi yavaslatmak.
+ */
+const COOLANT_SLOW_MAX = 0.6;
+
+/** Sogutma yavaslatmasinin suresi; her vurusta yenilenir. */
+const COOLANT_SLOW_DURATION_MS = 1500;
+
+/** Kritik gelen yavaslatma bu kadar derinlesir. */
+const SLOW_CRIT_MULTIPLIER = 1.5;
+
+/** Donmus hedefe nisan alma kolayligi. */
+const FROZEN_CRIT_CHANCE = 0.3;
+
 const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 /** Tek vurusta kac dusmana sekiyor. */
 const UCUBE_CHAIN_TARGETS = 2;
@@ -718,6 +749,22 @@ type EnemyModel = {
   navigatorStep?: { fromCol: number; fromRow: number; toCol: number; toRow: number };
   pathDistance: number;
   slowUntil: number;
+  /**
+   * Bu dusmanin yeniden donabilecegi an.
+   *
+   * Donmus dusmanin hizi sifir, yani donma esiginin altinda. Bekleme
+   * olmasaydi cozuldugu karede yeniden donar ve bir daha hic yurumezdi.
+   */
+  freezeReadyAt: number;
+  /**
+   * Sogutma Kanali'nin kendi yavaslatma kanali.
+   *
+   * Ayri kanal, cunku kartin sozu "kendisiyle stacklenmez ama baska
+   * yavaslatmalarla birlikte durabilir". Ortak `slow` yuvasina yazsaydi
+   * kulenin kendi yavaslatmasinin uzerine biner ve onu ezerdi.
+   */
+  coolantSlowUntil: number;
+  coolantSlowMultiplier: number;
   auraSlowMultiplier: number;
   kinSlowUntil: number;
   kinSlowMultiplier: number;
@@ -2511,6 +2558,9 @@ export class MatchRoom extends Room<MatchState> {
       towerAttackCooldownMs: 0,
       pathDistance: 0,
       slowUntil: 0,
+      freezeReadyAt: 0,
+      coolantSlowUntil: 0,
+      coolantSlowMultiplier: 1,
       auraSlowMultiplier: 1,
       kinSlowUntil: 0,
       kinSlowMultiplier: 1,
@@ -2890,6 +2940,16 @@ export class MatchRoom extends Room<MatchState> {
           const refreshMultiplier = Math.max(...activeAuras.map((aura) => aura.refreshDurationMultiplier ?? AURA_REFRESH_DURATION_MULTIPLIER));
           tower.cooldownMs = interval;
           tower.auraExpiresAt = now + interval * refreshMultiplier;
+          // Vurus yapmayan kulenin "vurusu" bu: etki araligi. Sogutma
+          // Kanali burada uygulaniyor, yani aura kulesi de karti her
+          // tikta bir kez kullaniyor -- her karede degil.
+          if (this.towerHasUnlock(tower, "status:coolantSlow")) {
+            const range = this.getTowerRange(tower);
+            for (const enemy of this.getEnemiesNear(tower.x, tower.y, range)) {
+              if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > range * range) continue;
+              this.applyCoolantSlow(tower, enemy, now);
+            }
+          }
         }
         this.applyTowerEnemyAuras(tower, activeAuras);
         continue;
@@ -2916,6 +2976,14 @@ export class MatchRoom extends Room<MatchState> {
 
       this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
+      // Cifte Namlu: ikinci mermi de ayni tetikten cikiyor ama kaynagi
+      // ayrica tuketiyor. Bedava olsaydi kart hasari iki katina cikaran
+      // sade bir carpan olurdu; boyle oldugunda muhimmat hatti ve isi
+      // butcesi de ikiye katlaniyor, yani karsiligi var.
+      if (this.towerHasUnlock(tower, "attack:doubleShot") && this.canTowerFire(tower)) {
+        this.consumeTowerResources(tower);
+        this.spawnTowerProjectile(tower, target);
+      }
       if (tower.aimTargetId === target.id) {
         tower.aimTargetHasFired = true;
       }
@@ -3581,7 +3649,13 @@ export class MatchRoom extends Room<MatchState> {
     const modifiers = this.getTowerRunModifiers(tower);
     return this.applyEnemyStatusEffect(enemy, definition, now, {
       durationMs: (overrides.durationMs ?? definition.durationMs) * getModifierMultiplier(modifiers, "statusDuration"),
-      magnitude: (overrides.magnitude ?? definition.magnitude) * getModifierMultiplier(modifiers, "statusMagnitude"),
+      // Buz Kirigi yalnizca yavaslatmaya bakiyor: yanma ya da lanet kritik
+      // gelseydi kart "durum etkileri kritik gelebilir" olurdu ve o baska
+      // bir kart. Zar burada atiliyor cunku butun yapilandirilmis
+      // yavaslatmalar bu kapidan geciyor.
+      magnitude: (overrides.magnitude ?? definition.magnitude)
+        * getModifierMultiplier(modifiers, "statusMagnitude")
+        * (definition.type === "slow" && this.rollSlowCrit(tower) ? SLOW_CRIT_MULTIPLIER : 1),
       scalingFactor: overrides.scalingFactor,
       sourceTowerId: tower.id,
       sourceOwnerId: overrides.sourceOwnerId ?? tower.ownerId
@@ -4699,6 +4773,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateEnemies(seconds: number) {
+    const deepFreezeTowers = this.collectDeepFreezeTowers();
     // Yapi degistiyse ana kapiyi bir kez yeniden olc: yonlendirme artik alani
     // sormadigi icin bunu tetikleyecek baska bir yer kalmadi.
     if (this.mainGateDirty) {
@@ -4757,6 +4832,7 @@ export class MatchRoom extends Room<MatchState> {
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
       const doubtSlowMultiplier = enemy.melisDoubtUntil > now ? Math.max(0.1, 1 - Math.min(3, enemy.melisDoubtStacks) * MELIS_DOUBT_SLOW_PER_STACK) : 1;
       const doubtHasteMultiplier = enemy.melisDoubtHasteUntil > now ? MELIS_DOUBT_STRESS_HASTE_MULTIPLIER : 1;
+      const coolantSlowMultiplier = enemy.coolantSlowUntil > now ? enemy.coolantSlowMultiplier : 1;
       const undeadBlocker = this.getBlockingMelisUndead(enemy);
       const whisperBlocker = this.getBlockingMelisWhisperTurned(enemy);
       if (undeadBlocker) {
@@ -4774,7 +4850,12 @@ export class MatchRoom extends Room<MatchState> {
       const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * doubtHasteMultiplier;
+        : Math.min(isSlowed ? 0.48 : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, coolantSlowMultiplier, tarMultiplier, debrisMultiplier) * doubtHasteMultiplier;
+      // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
+      // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
+      // sozu bu -- kule yavaslatmayi kendi yapmak zorunda degil, yalnizca
+      // yavaslamis dusmani menzilinde tutmak zorunda.
+      if (deepFreezeTowers.length > 0) this.tryDeepFreeze(enemy, speedMultiplier, deepFreezeTowers, now);
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
       const route = this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
@@ -7195,8 +7276,16 @@ export class MatchRoom extends Room<MatchState> {
       ? conditionalCritical.chance
       : 0;
     const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:"));
+    // Kirilgan Buz: donmus hedef kacamaz, o yuzden nisan almak kolay.
+    // Derin Dondurma ile ayni destede olmasi kasitli -- biri digerinin
+    // yarattigi durumu odullendiriyor.
+    const frozenCritChance = damageSourceTower
+      && this.towerHasUnlock(damageSourceTower, "crit:vsFrozen")
+      && isStatusEffectActive(enemy.statusEffects.freeze, now)
+      ? FROZEN_CRIT_CHANCE
+      : 0;
     const critChance = canCrit
-      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + getModifierAdd(damageModifiers, "critChance"))
+      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + getModifierAdd(damageModifiers, "critChance"))
       : 0;
     const critDamageAdd = canCrit
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
@@ -7258,6 +7347,12 @@ export class MatchRoom extends Room<MatchState> {
       }
       if (sourceTower && this.towerHasUnlock(sourceTower, "status:burn") && damageType === "fire") {
         this.applyEnemyStatusEffect(enemy, { type: "burn", magnitude: 0.015, durationMs: 4000, stacking: "refresh" }, now, { sourceTowerId, sourceOwnerId });
+      }
+      // Vurus yapan kule icin burasi: patlamanin ve delmenin degdigi her
+      // dusman ayri ayri buradan geciyor, yani kart "vuruslarin ve varsa
+      // patlama etkilerinin" hepsini kapsiyor.
+      if (sourceTower && this.towerHasUnlock(sourceTower, "status:coolantSlow")) {
+        this.applyCoolantSlow(sourceTower, enemy, now);
       }
     }
 
@@ -8334,6 +8429,9 @@ export class MatchRoom extends Room<MatchState> {
       towerAttackCooldownMs: 0,
       pathDistance,
       slowUntil: 0,
+      freezeReadyAt: 0,
+      coolantSlowUntil: 0,
+      coolantSlowMultiplier: 1,
       auraSlowMultiplier: 1,
       kinSlowUntil: 0,
       kinSlowMultiplier: 1,
@@ -9725,6 +9823,114 @@ export class MatchRoom extends Room<MatchState> {
           enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
         }
       }
+    }
+  }
+
+  /**
+   * Derin Dondurma karti takili, calisir durumdaki kuleler.
+   *
+   * Tik basina bir kez toplaniyor: dusman dongusunun icinde her dusman icin
+   * butun kuleleri taramak, sahada bir tane bile boyle kule yokken bile
+   * bedel odemek olurdu.
+   */
+  private collectDeepFreezeTowers() {
+    const towers: TowerModel[] = [];
+    for (const tower of this.towers.values()) {
+      if (!this.towerHasUnlock(tower, "control:deepFreeze")) continue;
+      if (tower.hp <= 0 || tower.standby || tower.heatLocked) continue;
+      towers.push(tower);
+    }
+    return towers;
+  }
+
+  /**
+   * Yeterince yavaslamis dusmani dondurur.
+   *
+   * Donma yavaslatmanin daha fazlasi degil, baskasi: hareketi tumden
+   * kesiyor. Bu yuzden kendi durum kanalindan geciyor ve kendi beklemesi
+   * var -- yoksa donmus dusmanin sifir hizi onu sonsuza kadar dondururdu.
+   */
+  private tryDeepFreeze(enemy: EnemyModel, speedMultiplier: number, towers: TowerModel[], now: number) {
+    if (speedMultiplier >= DEEP_FREEZE_SPEED_THRESHOLD) return;
+    if (enemy.freezeReadyAt > now) return;
+    if (isStatusEffectActive(enemy.statusEffects.freeze, now)) return;
+
+    const source = towers.find((tower) => {
+      const range = this.getTowerRange(tower);
+      return distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= range * range;
+    });
+    if (!source) return;
+
+    this.applyEnemyStatusEffect(
+      enemy,
+      { type: "freeze", magnitude: 1, durationMs: DEEP_FREEZE_DURATION_MS, stacking: "refresh" },
+      now,
+      {
+        durationMs: DEEP_FREEZE_DURATION_MS * getModifierMultiplier(this.getTowerRunModifiers(source), "statusDuration"),
+        sourceTowerId: source.id,
+        sourceOwnerId: source.ownerId
+      }
+    );
+    enemy.freezeReadyAt = now + scaleGameDuration(DEEP_FREEZE_DURATION_MS + DEEP_FREEZE_COOLDOWN_MS);
+    this.broadcast("enemy:frozen", { enemyId: enemy.id, towerId: source.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
+  }
+
+  /**
+   * Kulenin kritik ihtimali.
+   *
+   * Hasar yolundaki hesabin kartlara acik olan parcasi. Kosula bagli
+   * olanlar (soguk namlu, donmus hedef, isaretli hedef) burada yok: onlar
+   * bir **hedefe** bakiyor, bu ise kulenin kendi degeri -- "Buz Kirigi"nin
+   * okudugu sayi da bu.
+   */
+  private getTowerCritChance(tower: TowerModel) {
+    const critical = this.getTowerEngine(tower)?.critical;
+    return Math.max(0, TOWER_BASE_CRITICAL_CHANCE
+      + (critical?.baseChance ?? 0)
+      + getModifierAdd(this.getTowerRunModifiers(tower), "critChance"));
+  }
+
+  /**
+   * Yavaslatma kritik geldi mi.
+   *
+   * Buz Kirigi yavaslatmayi hasar gibi ele aliyor: ayni zar, ayni ihtimal.
+   * Kritik gelen yavaslatma daha derin -- suresi degil gucu buyuyor, cunku
+   * sure zaten kartlarla ayri ayri uzatilabiliyor ve ikisini birden
+   * buyutmek tek kartta iki kart olurdu.
+   */
+  private rollSlowCrit(tower: TowerModel) {
+    if (!this.towerHasUnlock(tower, "status:slowCrit")) return false;
+    return this.towerCriticalRandom() < this.getTowerCritChance(tower);
+  }
+
+  /**
+   * Sogutma Kanali: kulenin sogumasini yavaslatmaya cevirir.
+   *
+   * Sogumaya baglanmasi kartin butun anlami: isiyi atma hizi o ana kadar
+   * yalnizca "ne siklikta ates edebilirim" sorusuydu, simdi ayni sayi
+   * sahada bir kontrol degeri. Sogutma kartlari ve esyalari boylece
+   * kendiliginden bu karta da yariyor.
+   */
+  private applyCoolantSlow(tower: TowerModel, enemy: EnemyModel, now: number) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    const critical = this.rollSlowCrit(tower);
+    const magnitude = Math.min(
+      COOLANT_SLOW_MAX,
+      this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING
+        * getModifierMultiplier(modifiers, "statusMagnitude")
+        * (critical ? SLOW_CRIT_MULTIPLIER : 1)
+    );
+    if (magnitude <= 0) return;
+
+    // Yenileniyor, uzerine eklenmiyor: kart kendisiyle stacklenmiyor.
+    // Aktifken gelen daha zayif bir vurus guclu olani zayiflatmasin diye
+    // de guclu olan tutuluyor.
+    const active = enemy.coolantSlowUntil > now;
+    enemy.coolantSlowMultiplier = Math.min(active ? enemy.coolantSlowMultiplier : 1, 1 - magnitude);
+    const duration = COOLANT_SLOW_DURATION_MS * getModifierMultiplier(modifiers, "statusDuration");
+    enemy.coolantSlowUntil = Math.max(enemy.coolantSlowUntil, now + scaleGameDuration(applyStatusResistance(duration, enemy.statusResistances.slow)));
+    if (critical) {
+      this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
     }
   }
 

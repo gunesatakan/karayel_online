@@ -6,7 +6,13 @@ export type TowerResourceProvider = "ammunition" | "energy";
 export type TowerAxis = "amplify" | "dps" | "cc" | "economy" | "barricade";
 export type TowerTargetingMode = "first" | "last" | "strongest" | "weakest" | "closest" | "marked" | "random";
 export type TowerAttackShape = "single" | "line" | "cone" | "circle" | "beam" | "orbit";
-export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "bleed" | "chill" | "curse" | "mark";
+/**
+ * `freeze` yavaslatmanin sonu degil baskasi: yavaslatma hizi carpar, donma
+ * hareketi tumden keser. Ayri bir tip olmasinin sebebi tam da bu -- "cok
+ * yavaslamis" ile "durmus" ayni sey olsaydi kritik kosulu, direnc tablosu
+ * ve gorsel de ayrilamazdi.
+ */
+export type TowerStatusEffectType = "slow" | "stun" | "fear" | "bind" | "convert" | "burn" | "bleed" | "chill" | "curse" | "mark" | "freeze";
 export type TowerTriggerEvent = "kill" | "towerDeath" | "escape" | "overheat" | "ammoEmpty";
 export type TowerTriggerCondition = "targetMarked";
 export type TowerTriggerDefinition = {
