@@ -30,7 +30,8 @@ export type TowerStatusEffectDefinition = {
   scaling?: "none" | "distance";
 };
 export type TowerStackTrigger = "hit" | "kill" | "wave" | "sameTarget" | "activeSecond";
-export type TowerStackStat = "damage" | "fireRate" | "slow" | "storedDamage";
+/** fireRate is attack-speed gain; fireIntervalReduction explicitly shortens the interval. */
+export type TowerStackStat = "damage" | "fireRate" | "fireIntervalReduction" | "slow" | "storedDamage";
 export type TowerStackResetReason = "targetChange" | "noTarget" | "waveEnd";
 export type TowerStackDefinition = {
   id: string;

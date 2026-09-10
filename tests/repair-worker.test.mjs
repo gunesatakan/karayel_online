@@ -93,6 +93,20 @@ test("tamirci canı tavana çıkarınca durur", () => {
   assert.equal(duvar.hp, duvar.maxHp, "can tavani asilmis ya da doldurulmamis");
 });
 
+test("kaynak efekti yalnızca gerçek onarım sırasında etkinleşir", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  tower.hp = 1;
+  const worker = tamirciTut(room);
+  onart(room, worker, tower, 0.1);
+  assert.equal(worker.repairing, true);
+  assert.equal(room.getSnapshot().drones.find(d => d.id === worker.id).repairing, true);
+  tower.hp = tower.maxHp;
+  room.updateRepairWorker(worker, 0.1);
+  assert.equal(worker.repairing, undefined);
+  assert.equal(room.getSnapshot().drones.find(d => d.id === worker.id).repairing, undefined);
+});
+
 test("tamirci yıkılan yapıyı diriltmez", () => {
   // Altinla onarim da diriltmiyor: yikilan yapi yeniden insa isi. Iki yolun
   // ayni seyi soylemesi gerek, yoksa tamirci altinla yapilamayani yapardi.

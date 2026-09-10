@@ -633,6 +633,8 @@ export type ProjectileSnapshot = {
 
 export type ProjectileSpawnSnapshot = ProjectileSnapshot & { spawnedAt: number };
 export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: TowerTier };
+/** Every physical contact, including intermediate pierces; removal is a separate event. */
+export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: string; angle: number };
 
 export type DroneSnapshot = {
   id: string;
@@ -649,6 +651,8 @@ export type DroneSnapshot = {
   capacity?: number;
   speed?: number;
   targetTowerId?: string;
+  /** Yalnizca tamirci gercekten can onarirken gonderilir; yolculukta efekt yok. */
+  repairing?: boolean;
   /** Gelismis isci: istemci onu ayirt edilebilir cizsin diye telde. */
   advanced?: boolean;
   /** Lojistik iscisinin cani. Savasci dronlarda yok. */

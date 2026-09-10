@@ -3894,8 +3894,14 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getEngineStackStatMultiplier(tower: TowerModel, stat: TowerStackDefinition["stat"], now = Date.now()) {
-    return (this.getTowerEngine(tower)?.stacks ?? [])
-      .filter((definition) => definition.stat === stat)
+    const definitions = (this.getTowerEngine(tower)?.stacks ?? [])
+      .filter((definition) => definition.stat === stat);
+    if (stat === "fireRate") {
+      const speedAdd = definitions.reduce((sum, definition) =>
+        sum + 1 / getTowerStackMultiplier(tower.stackStates[definition.id], definition, now) - 1, 0);
+      return 1 / Math.max(0.01, 1 + speedAdd);
+    }
+    return definitions
       .reduce((multiplier, definition) => multiplier * getTowerStackMultiplier(tower.stackStates[definition.id], definition, now), 1);
   }
 
@@ -4810,6 +4816,14 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyProjectileHit(projectile: ProjectileModel, target: EnemyModel) {
+    this.broadcast("projectile:contact", {
+      id: projectile.id,
+      definitionId: projectile.definitionId,
+      x: roundNetworkNumber(projectile.x),
+      y: roundNetworkNumber(projectile.y),
+      angle: Math.atan2(projectile.vy, projectile.vx),
+      tier: this.getProjectileTier(projectile)
+    });
     const projectileTower = this.towers.get(projectile.towerId);
     const projectileOwnerId = projectileTower?.ownerId ?? "";
     const projectileTowerLevel = projectileTower?.level ?? 1;
@@ -5232,7 +5246,7 @@ export class MatchRoom extends Room<MatchState> {
           // bir sizmayla silinirdi. Kart ve esya carpani okuma aninda
           // biniyor (bkz. `getWorkerMaxHp`), yani kosu ortasinda alinan
           // bir can karti sahadaki isciye de isliyor.
-          hp: this.getWorkerBaseMaxHp(worker.advanced),
+          hp: this.getWorkerBaseMaxHp(worker.advanced, ownerId),
           maxHp: this.getWorkerBaseMaxHp(worker.advanced),
           advanced: worker.advanced
         });
@@ -5278,8 +5292,8 @@ export class MatchRoom extends Room<MatchState> {
    * kullanilamaz -- dusman haritayi bilmiyor, isci biliyor; duvari oren
    * zaten oyuncunun kendisi. Bu yuzden isci gercek en kisa yolu buluyor.
    *
-   * Hedef bir yapinin uzerindeyse varis yapinin **dibi**: isci kulenin
-   * icine girmiyor, bitisik kareden teslim ediyor.
+   * Sevkiyat iscisi kendi hedef yapisinin merkezine girer. Tamirci gibi
+   * yapiya giris izni olmayan isciler bitisik erisilebilir karede durur.
    */
   private moveLogisticsWorker(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
     const approach = this.getWorkerApproachPoint(worker, targetX, targetY);
@@ -5325,6 +5339,12 @@ export class MatchRoom extends Room<MatchState> {
     const goal = worldToGrid(targetX, targetY, this.activeMap);
     const goalOpen = this.isWorkerCellOpen(goal.col, goal.row, worker)
       && !this.isWorkerCellBanned(worker, goal.col, goal.row);
+    // Sevkiyat hedefinin icine girilmeden yuk bosaltilmaz. Yasakli hedef
+    // karesine komsu olmak da teslimat sayilmaz.
+    const deliveryTarget = worker.logisticsPhase === "deliver"
+      && (worker.mode === "energyTransport" || worker.mode === "ammoTransport")
+      ? this.towers.get(worker.targetTowerId ?? "") : undefined;
+    if (deliveryTarget && targetX === deliveryTarget.x && targetY === deliveryTarget.y && !goalOpen) return undefined;
 
     if (goalOpen) {
       if (start.col === goal.col && start.row === goal.row) {
@@ -5768,6 +5788,7 @@ export class MatchRoom extends Room<MatchState> {
    * sebep.
    */
   private updateRepairWorker(worker: DroneModel, seconds: number) {
+    worker.repairing = undefined;
     const target = this.getRepairWorkerTarget(worker);
     if (!target) {
       // Bosta: merkeze don. Merkez yoksa oldugu yerde bekler -- iscinin
@@ -5788,7 +5809,9 @@ export class MatchRoom extends Room<MatchState> {
     }
     // Eskitme yok: onarim yikilan yapiyi diriltmiyor, yani gecilebilirlik
     // degismiyor. Her tick eskitmek cikmaz sokak hafizasini surekli silerdi.
+    const previousHp = target.hp;
     target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
+    worker.repairing = target.hp > previousHp || undefined;
     // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
     target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
     // Kalibrasyon Turu dokunmayla veriliyor ve dalga numarasiyla suruyor.
@@ -6074,12 +6097,14 @@ export class MatchRoom extends Room<MatchState> {
    * dokunmuyordu. Bir de o an yuk aldigi bina: hangi yapi olursa olsun,
    * yukleme yaptigi yere girebilir.
    *
-   * Savas kuleleri disarida: isci onlara dibinden teslim ediyor. Namlunun
-   * icinde durmasinin bir anlami yok ve kuleyi kalkan gibi kullanmasinin da.
+   * Sevkiyat iscisi yalnizca kendi teslimat hedefine girer; diger savas
+   * kulelerini kestirme yol olarak kullanamaz. Tamirci disaridan calisir.
    */
   private canWorkerEnterStructure(worker: DroneModel | undefined, tower: TowerModel) {
     if (tower.definition.resourceProvider || isRepairDepotDefinition(tower.definition)) return true;
-    return Boolean(worker) && worker!.logisticsPhase === "pickup" && worker!.targetTowerId === tower.id;
+    if (!worker || worker.ownerId !== tower.ownerId || worker.targetTowerId !== tower.id) return false;
+    return worker.logisticsPhase === "pickup"
+      || (worker.logisticsPhase === "deliver" && (worker.mode === "energyTransport" || worker.mode === "ammoTransport"));
   }
 
   private isCellWalkable(from: { col: number; row: number }, col: number, row: number) {
@@ -9620,6 +9645,7 @@ export class MatchRoom extends Room<MatchState> {
         capacity: drone.capacity,
         speed: drone.speed,
         targetTowerId: drone.targetTowerId,
+        repairing: drone.repairing,
         // Istemci iki kademeyi ancak buradan ayirt ediyor.
         advanced: drone.advanced,
         hp: drone.hp === undefined ? undefined : Math.round(drone.hp),
@@ -9864,7 +9890,10 @@ export class MatchRoom extends Room<MatchState> {
     // kartla hizlanir, Izolasyon Kulesi'nin aurasi da 220 ms yerine 183 ms'de
     // tazelenirdi -- ikisi de kuralin disi.
     if (usesEffectInterval(tower.definition)) return interval;
-    return interval / Math.max(0.01, getModifierMultiplier(this.getTowerRunModifiers(tower), "fireRate"));
+    // Kart/esya ve yigin hiz bonuslari ayni toplamsal havuzdur. Karaktere
+    // ozel atis dallarindan sonra uygulanir; hicbir dal bonusu atlayamaz.
+    const stackSpeedAdd = 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1;
+    return interval / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "fireRate") + stackSpeedAdd);
   }
 
   /**
@@ -9887,7 +9916,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerRawFireInterval(tower: TowerModel) {
     const now = Date.now();
-    const stackMultiplier = this.getEngineStackStatMultiplier(tower, "fireRate", now);
+    const stackMultiplier = this.getEngineStackStatMultiplier(tower, "fireIntervalReduction", now);
     const hasteMultiplier = this.damageHasteUntil > now && tower.definition.classType === "damage" ? 1 / 3 : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
@@ -10027,11 +10056,13 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.ammo <= 0) {
       add("card:son-atis", 1 + getModifierAdd(this.getTowerRunModifiers(tower), "ammoEmptyDamage"));
     }
-    const playerModifiers = this.getTowerRunModifiers(tower).filter((modifier) => modifier.scope === "player");
-    breakdown.mods.push(
-      ...playerModifiers.filter((modifier) => modifier.stat === "damage"),
-      ...tower.runModifiers.filter((modifier) => modifier.stat === "damage")
-    );
+    // Kart/esya bonuslari kendi aralarinda toplanir, karakter ve motor
+    // etkileriyle cozulmus hasari carpar. Her kaynak yalnizca bir kez sayilir;
+    // takili esyanin scope alani player olsa da liste zaten kuleyi icerir.
+    const damageMultiplier = getModifierMultiplier(breakdown.mods, "damage", {});
+    breakdown.mods.push(...this.getTowerRunModifiers(tower)
+      .filter((modifier) => modifier.stat === "damage")
+      .map((modifier) => ({ ...modifier, add: modifier.add * damageMultiplier })));
     return breakdown;
   }
 

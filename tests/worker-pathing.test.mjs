@@ -108,7 +108,7 @@ test("yıkılan kapılı duvar kimseyi tutmaz", () => {
   assert.equal(room.getBlockingTowerBetween(sol, sag), undefined);
 });
 
-test("işçi kulenin içinden geçemez ama dibinden teslim eder", () => {
+test("teslimat hedefi olmayan işçi kuleyi geçiş yolu olarak kullanamaz", () => {
   const room = oda();
   const { sol, sag } = bosKomsuIkili(room);
   room.placeTower(client, { ...gridToWorld(sag.col, sag.row, room.activeMap), definitionId: "warrior-1" });
@@ -117,7 +117,7 @@ test("işçi kulenin içinden geçemez ama dibinden teslim eder", () => {
 
   assert.equal(room.isWorkerCellOpen(sag.col, sag.row), false, "kule karesi isciye acik kaldi");
 
-  // Kulenin bitisigindeki isci, kulenin karesine girmeden teslim etmeli.
+  // Teslimat hedefi atanmamis isci yalnizca kulenin dibine yaklasabilir.
   const isci = isciKoy(room, sol);
   assert.equal(room.moveLogisticsWorker(isci, kule.x, kule.y, 0.2), true, "bitisikten teslim edilemedi");
   const durdugu = worldToGrid(isci.x, isci.y, room.activeMap);

@@ -32,6 +32,18 @@ ayrı `+%25 hasar` kartı `%56` değil `%50` verir. Yeni bir stat gerekiyorsa
 `ModifierStat` birleşimine ekle ve **okuyucusunu da yaz** — okunmayan stat ölü
 içeriktir ve `catalog-coverage` testi bunu yakalar.
 
+Hasar kartları ve takılı eşya bonusları tek havuzda toplanır; bu havuz karakter
+pasifi ve motor etkileriyle hesaplanmış hasarı çarpar. Örneğin yalnız Takipçi
+36 vururken tek bir `+%40 hasar` kartı sonucu 50,4 yapar. İkinci bir `+%25`
+kartıyla toplam bonus %65 olur; kartlar birbirlerini çarpmaz. Takılı eşyanın
+değiştiricisi yalnızca bir kez sayılır.
+
+`fireRate` hem normal değiştiricide hem yığında saldırı hızı artışıdır.
+Bonuslar toplanır ve aralık `aralık / (1 + toplam bonus)` olarak hesaplanır.
+Focus ve aura etki aralıkları bu hız bonuslarını almaz. Ucube'nin özel ritmi
+ayrı `fireIntervalReduction` yığın statıdır; mevcut aralık azaltma eğrisini
+korur ve normal hız bonuslarıyla karıştırılmaz.
+
 ## 2. Kilit (`unlocks`)
 
 Sayıyla ifade edilemeyen davranışlar. `Unlock` birleşimine ekle, `ALL_UNLOCKS`

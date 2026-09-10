@@ -66,7 +66,10 @@ export function getTowerStackMultiplier(
   if (definition.stat === "damage") {
     return 1 + state.value;
   }
-  if (definition.stat === "fireRate" || definition.stat === "slow") {
+  if (definition.stat === "fireRate") {
+    return 1 / Math.max(0.01, 1 + state.value);
+  }
+  if (definition.stat === "fireIntervalReduction" || definition.stat === "slow") {
     return Math.max(0, 1 - state.value);
   }
   return state.value;

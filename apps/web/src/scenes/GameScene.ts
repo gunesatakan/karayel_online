@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { Room } from "colyseus.js";
+import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, shotStyle } from "../vfx/combat-vfx";
+import type { ProjectileContactSnapshot } from "@karayel/shared";
 import {
   characters,
   GAME_WORLD_WIDTH,
@@ -482,6 +484,7 @@ export class GameScene extends Phaser.Scene {
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
   private impactGraphics?: Phaser.GameObjects.Graphics;
+  private combatVfx?: CombatVfx;
   /**
    * Kuleye ozgu carpma izleri.
    *
@@ -740,6 +743,7 @@ export class GameScene extends Phaser.Scene {
     this.projectileTrailGraphics = this.add.graphics().setDepth(10.9);
     // Carpma imzalari halkalarin ustunde: halka zemin, imza kulenin kimligi.
     this.impactGraphics = this.add.graphics().setDepth(11.6);
+    this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
     this.createKillStreakAudio();
     this.createBackgroundMusic();
     this.emitControlState();
@@ -778,6 +782,7 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
     this.renderPlaybackFrame(now);
     this.renderImpactMarks(now);
+    this.combatVfx?.render(now, this.getTowerEffectScale());
     this.resolvePendingPlacement();
   }
 
@@ -3436,7 +3441,15 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
       this.linearProjectileSnapshots.set(projectile.id, projectile);
       const tier = projectile.tier ?? 1;
-      this.queueDelayedEffect(() => this.playMuzzleFlash(projectile.x, projectile.y, tier, this.getTierColor(tier)));
+      this.queueDelayedEffect(() => {
+        if (shotStyle(projectile.definitionId)) {
+          this.combatVfx?.emit({ x: projectile.x, y: projectile.y, tier, definitionId: projectile.definitionId!,
+            angle: Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1), bornAt: performance.now(), muzzle: true });
+        } else this.playMuzzleFlash(projectile.x, projectile.y, tier, this.getTierColor(tier));
+      });
+    });
+    room.onMessage("projectile:contact", (message: ProjectileContactSnapshot) => {
+      this.queueDelayedEffect(() => this.combatVfx?.emit({ ...message, tier: message.tier ?? 1, bornAt: performance.now() }));
     });
     room.onMessage("projectile:hit", (message: ProjectileHitSnapshot) => {
       // Kimlik ve yon, mermi listeden silinmeden once okunmali: imza hangi
@@ -3447,6 +3460,8 @@ export class GameScene extends Phaser.Scene {
         ? Math.atan2(hitProjectile.vy ?? 0, hitProjectile.vx ?? 0)
         : 0;
       this.finishLinearProjectile(message);
+      // Custom contacts arrive independently, also when a projectile keeps piercing.
+      if (shotStyle(definitionId)) return;
       const tier = message.tier ?? 1;
       this.queueDelayedEffect(() => {
         this.playImpactBurst(message.x, message.y, tier, this.getTierColor(tier));
@@ -5193,6 +5208,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     graphics.clear();
     for (const projectile of projectiles) {
+      if (drawCombatProjectile(graphics, projectile, performance.now(), this.getTowerEffectScale())) continue;
       const tier = projectile.tier ?? 1;
       if (tier < 2) continue;
 
@@ -5252,6 +5268,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         sprite.setTexture(texture);
       }
       sprite.setPosition(projectile.x, projectile.y);
+      sprite.setVisible(!shotStyle(projectile.definitionId));
       // Cerceve kademeyle buyudugu icin cap da ayni oranda buyumeli; yoksa
       // `setDisplaySize` buyumeyi geri alir ve cekirdek kucuk gorunur.
       const tierGrowth = getProjectileTierFrameGrowth(projectile.tier ?? 1);
@@ -5339,6 +5356,55 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       } else {
         this.hasarliIsciler.delete(drone.id);
       }
+      if (drone.mode === "repairer" && drone.repairing && drone.targetTowerId) {
+        const target = this.towerSnapshots.get(drone.targetTowerId);
+        if (target && (target.hp ?? 1) > 0) this.drawWorkerWelding(govdeler, drone, target, mapEntityScale);
+      }
+    }
+  }
+
+  /** Kaynak noktasinda beyaz-mavi ark, metal yansimasi ve sicrayan kivilcimlar. */
+  private drawWorkerWelding(
+    graphics: Phaser.GameObjects.Graphics,
+    worker: DroneSnapshot,
+    target: TowerSnapshot,
+    scale: number
+  ) {
+    const seed = [...worker.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const time = this.time.now;
+    const angle = Math.atan2(target.y - worker.y, target.x - worker.x);
+    const distance = Math.hypot(target.x - worker.x, target.y - worker.y);
+    const reach = Math.max(0, distance - 8 * scale);
+    const x = worker.x + Math.cos(angle) * reach;
+    const y = worker.y + Math.sin(angle) * reach;
+    const flicker = 0.65 + 0.35 * Math.sin(time / 23 + seed) ** 2;
+    graphics.fillStyle(0x38bdf8, 0.12 * flicker);
+    graphics.fillCircle(x, y, 12 * scale);
+    graphics.fillStyle(0xbae6fd, 0.25 * flicker);
+    graphics.fillEllipse(x + Math.cos(angle) * 4 * scale, y + Math.sin(angle) * 4 * scale, 13 * scale, 7 * scale);
+    const startX = x - Math.cos(angle) * 7 * scale;
+    const startY = y - Math.sin(angle) * 7 * scale;
+    const jitter = Math.sin(time / 17 + seed) * 2.5 * scale;
+    for (const [width, color, alpha] of [[3, 0x38bdf8, 0.45], [1, 0xe0f2fe, 0.95]]) {
+      graphics.lineStyle(width * scale, color, alpha * flicker);
+      graphics.beginPath();
+      graphics.moveTo(startX, startY);
+      graphics.lineTo((startX + x) / 2 - Math.sin(angle) * jitter, (startY + y) / 2 + Math.cos(angle) * jitter);
+      graphics.lineTo(x, y);
+      graphics.strokePath();
+    }
+    graphics.fillStyle(0xffffff, flicker);
+    graphics.fillCircle(x, y, 2 * scale);
+    // Analitik parcaciklar: her karede yeni obje/tween olusturmadan kisa,
+    // yercekimiyle kivrilan metal capaklari. Her isci farkli fazda parlar.
+    for (let i = 0; i < 7; i++) {
+      const age = ((time + seed * 13 + i * 47) % 360) / 360;
+      const direction = angle + Math.PI + Math.sin(seed + i * 2.4) * 1.9;
+      const speed = (12 + i * 2) * scale;
+      const sx = x + Math.cos(direction) * speed * age;
+      const sy = y + Math.sin(direction) * speed * age + 12 * scale * age * age;
+      graphics.lineStyle((i % 2 ? 1 : 1.4) * scale, i % 3 ? 0xfbbf24 : 0xe0f2fe, (1 - age) * flicker);
+      graphics.lineBetween(sx, sy, sx - Math.cos(direction) * 2.5 * scale, sy - Math.sin(direction) * 2.5 * scale);
     }
   }
 
@@ -6424,7 +6490,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (beam.overdrive) {
         this.drawOverdriveBeam(beam, color);
       } else if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave") {
-        this.drawKinConeWave(beam, color);
+        drawPressureWave(this.beamGraphics, beam, performance.now(), this.getTowerEffectScale());
       } else if (beam.definitionId === "zeynep-3-kin-showcase") {
         this.drawKinShowcaseLight(beam, color);
       } else if (beam.definitionId === "archer-2-rage") {
@@ -6441,7 +6507,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.drawMelisUnderworldLink(beam, color);
       } else if (beam.definitionId === "archer-5-mirror") {
         this.drawMelisBrokenMirrorBurst(beam, color);
-      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray" || beam.definitionId === "zeynep-3-burn") {
+      } else if (beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
+        drawSynthesisRay(this.beamGraphics, beam, performance.now(), this.getTowerEffectScale());
+      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3-burn") {
         this.drawShowcaseBeam(beam, color);
       } else if (beam.definitionId === "zeynep-3-burn-trail") {
         this.drawSynthesisBurnTrail(beam, color);
