@@ -326,8 +326,8 @@ const COOLANT_SLOW_DURATION_MS = 1500;
 /** Kritik gelen yavaslatma bu kadar derinlesir. */
 const SLOW_CRIT_MULTIPLIER = 1.5;
 
-/** Yerinde duran hedefe nisan alma kolayligi. */
-const IMMOBILE_CRIT_CHANCE = 0.3;
+/** Donmus hedefe nisan alma kolayligi. */
+const FROZEN_CRIT_CHANCE = 0.3;
 
 const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 /** Tek vurusta kac dusmana sekiyor. */
@@ -7289,19 +7289,18 @@ export class MatchRoom extends Room<MatchState> {
       ? conditionalCritical.chance
       : 0;
     const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:"));
-    // Sabit Hedef: yerinde duran dusmana nisan almak kolay.
+    // Kirilgan Buz: donmus hedefe nisan almak kolay.
     //
-    // Yalnizca donmayi saymiyor. Sayaydi kart Derin Dondurma'ya bagli
-    // olurdu: donma durumunu oyunda baska hicbir sey uretmiyor, yani o
-    // kart cekilmeden bu kart bos bir secim olurdu. Hareketsizligin uc
-    // kaynagi da sayiliyor ve ucu de birbirinden bagimsiz.
-    const immobileCritChance = damageSourceTower
-      && this.towerHasUnlock(damageSourceTower, "crit:vsImmobile")
-      && this.isEnemyImmobile(enemy, now)
-      ? IMMOBILE_CRIT_CHANCE
+    // Yalnizca gercekten donmus olana bakiyor -- sersemleme, korku ve
+    // baglanma sayilmiyor. Kart bir donem hepsini sayiyordu; kapsam
+    // bilerek daraltildi.
+    const frozenCritChance = damageSourceTower
+      && this.towerHasUnlock(damageSourceTower, "crit:vsFrozen")
+      && isStatusEffectActive(enemy.statusEffects.freeze, now)
+      ? FROZEN_CRIT_CHANCE
       : 0;
     const critChance = canCrit
-      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + immobileCritChance + getModifierAdd(damageModifiers, "critChance"))
+      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + getModifierAdd(damageModifiers, "critChance"))
       : 0;
     const critDamageAdd = canCrit
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
@@ -9951,23 +9950,6 @@ export class MatchRoom extends Room<MatchState> {
     if (critical) {
       this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
     }
-  }
-
-  /**
-   * Dusman yerinde duruyor mu.
-   *
-   * Uc ayri kaynak, ucu de birbirinden bagimsiz: donma (Derin Dondurma),
-   * sersemleme (Fisilti Korosu) ve korku (Parlama). Uc farkli karakterin
-   * uc farkli kulesi, yani "Sabit Hedef" kartini ise yarar kilan sey
-   * oyuncunun sahada ne kurdugu -- belli bir baska kart degil.
-   *
-   * Baglanma (`bind`) sayilmiyor: Oluler Bagi hedefi isaretliyor ama
-   * yurumesini kesmiyor, yani orada duran bir hedef yok.
-   */
-  private isEnemyImmobile(enemy: EnemyModel, now: number) {
-    return isStatusEffectActive(enemy.statusEffects.freeze, now)
-      || enemy.melisDoubtHesitateUntil > now
-      || enemy.fearUntil > now;
   }
 
   private resetAuraSlows() {

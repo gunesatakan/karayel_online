@@ -59,6 +59,11 @@ function dusmanKoy(room, tower, offset = 8) {
   // Direncler sifirlaniyor: dusman turu rastgele seciliyor ve sure
   // karsilastiran testler yoksa iki ayri direncin farkini olcerdi.
   enemy.statusResistances = {};
+  // Kalkan da sifirlaniyor: kalkan ayri bir carpanla eriyor, yani ayni
+  // dusmana pes pese iki vurus yapan bir olcumde ikinci vurus kalkan
+  // bittigi icin daha cok hasar veriyor ve fark kartin sanilirdi.
+  enemy.shield = 0;
+  enemy.maxShield = 0;
   return enemy;
 }
 
@@ -235,11 +240,11 @@ test("donmus dusmanin hizi sifir", () => {
 
 // --------------------------------------------------------------- Kritik bagi
 
-test("sabit hedef yerinde duran dusmanda kritik ihtimalini buyutuyor", () => {
+test("kirilgan buz donmus hedefte kritik ihtimalini buyutuyor", () => {
   const room = oda();
   const tower = kur(room);
   kartAl(room, "derin-dondurma", tower.id);
-  kartAl(room, "sabit-hedef");
+  kartAl(room, "kirilgan-buz");
   const enemy = dusmanKoy(room, tower);
   const now = Date.now();
 
@@ -367,42 +372,42 @@ test("sogutma yavaslatmasi baska bir yavaslatmanin uzerine biniyor", () => {
   assert.ok(Math.abs(sogutmali - 0.48 * 0.91) < 0.01, `sogutma ustune binmedi: ${sogutmali.toFixed(3)}`);
 });
 
-test("sabit hedef donma olmadan da calisiyor", () => {
-  // Kartin bagimsiz olmasinin somut karsiligi: Derin Dondurma hic
-  // cekilmemisken bile ise yariyor. Korku ve sersemleme oyunda zaten var.
-  for (const [ad, hazirla] of [
-    ["korku", (enemy, now) => { enemy.fearUntil = now + 3000; }],
-    ["sersemleme", (enemy, now) => { enemy.melisDoubtHesitateUntil = now + 3000; }]
-  ]) {
+test("kirilgan buz yalnizca gercekten donmus hedefi sayiyor", () => {
+  // Kapsam bilerek dar: sersemleme, korku ve baglanma sayilmiyor.
+  //
+  // Olcum tek dusman uzerinde, once ve sonra: dusman turu her dogusta
+  // rastgele seciliyor ve turlerin zirhi farkli, yani iki ayri dusmani
+  // karsilastirmak kartin etkisini degil zirh farkini olcerdi.
+  const fark = (hazirla) => {
     const room = oda();
     const tower = kur(room);
-    kartAl(room, "sabit-hedef");
+    kartAl(room, "kirilgan-buz");
+    kartAl(room, "derin-dondurma", tower.id);
     const enemy = dusmanKoy(room, tower);
-    // Zar %30'un altinda ama taban kritigin ustunde: fark yalnizca karttan
-    // gelebilir.
+    // Zar %30'un altinda ama taban kritigin ustunde: fark yalnizca karttan.
     room.towerCriticalRandom = () => 0.25;
 
     const oncekiCan = enemy.hp;
     room.damageEnemyFromTower(tower, enemy, 100, 0);
-    const hareketli = oncekiCan - enemy.hp;
+    const sade = oncekiCan - enemy.hp;
 
-    hazirla(enemy, Date.now());
-    const duranOnce = enemy.hp;
+    hazirla(room, enemy, Date.now());
+    const ikinciOnce = enemy.hp;
     room.damageEnemyFromTower(tower, enemy, 100, 0);
-    const duran = duranOnce - enemy.hp;
+    return { sade, sonra: ikinciOnce - enemy.hp };
+  };
 
-    assert.ok(duran > hareketli, `${ad} durumunda kritik gelmedi: ${duran} / ${hareketli}`);
+  const donmus = fark((room, enemy, now) => {
+    room.tryDeepFreeze(enemy, 0.1, room.collectDeepFreezeTowers(), now);
+  });
+  assert.ok(donmus.sonra > donmus.sade, `donmus hedefe kritik gelmedi: ${donmus.sonra} / ${donmus.sade}`);
+
+  for (const [ad, hazirla] of [
+    ["korku", (room, enemy, now) => { enemy.fearUntil = now + 3000; }],
+    ["sersemleme", (room, enemy, now) => { enemy.melisDoubtHesitateUntil = now + 3000; }],
+    ["baglanma", (room, enemy, now) => room.applyEnemyStatusEffect(enemy, { type: "bind", magnitude: 1, durationMs: 3000, stacking: "refresh" }, now)]
+  ]) {
+    const olcum = fark(hazirla);
+    assert.equal(olcum.sonra, olcum.sade, `${ad} durumu kritige sayildi`);
   }
-});
-
-test("baglanmis dusman sabit sayilmiyor", () => {
-  // Oluler Bagi hedefi isaretliyor ama yurumesini kesmiyor; orada duran bir
-  // hedef yok, yani kart da islememeli.
-  const room = oda();
-  const tower = kur(room);
-  kartAl(room, "sabit-hedef");
-  const enemy = dusmanKoy(room, tower);
-  const now = Date.now();
-  room.applyEnemyStatusEffect(enemy, { type: "bind", magnitude: 1, durationMs: 3000, stacking: "refresh" }, now);
-  assert.equal(room.isEnemyImmobile(enemy, now), false, "baglanma sabit sayildi");
 });
