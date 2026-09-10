@@ -59,6 +59,11 @@ export type Unlock =
   // pazarlik konusu degildi. Bu kilit alt yariya bir odul veriyor, yani
   // kolu asagida tutmak da bir secim oluyor.
   | "performance:idleEdge"
+  // --- Tamirci ekseni ---
+  // Onarim uzun sure yalnizca "kule yikilmasin" isiydi. Bu uc kilit onu bir
+  // **pencere**ye ceviriyor: Tamircinin dokundugu kule o an baska bir sey de
+  // kazaniyor, yani onarimi yonetmek savasin bir parcasi oluyor.
+  | "repair:damageBoost" | "repair:coolingBoost"
   // --- Elle cekilen ama karsiligi olmayan kollar ---
   // Nexus cani yalnizca harcanabiliyordu, bekleme modunun tek karsiligi
   // dusuk enerjiydi, muhimmat lojistigi anahtarinin iki tarafi arasinda fark
@@ -90,6 +95,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   "heat:radiator", "heat:quickRelease", "heat:killVent",
   "heat:chillVent", "heat:exchange", "heat:chargedCooling", "heat:emptyVent",
   "performance:idleEdge",
+  "repair:damageBoost",
+  "repair:coolingBoost",
   "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch",
   "status:coolantSlow", "status:slowCrit", "control:deepFreeze", "crit:vsFrozen",
   "attack:doubleShot"
@@ -371,6 +378,19 @@ export const cardCatalog: CardDefinition[] = [
   // asagi cagiriyor.
   { id: "regulator", name: "Regülatör", description: "Performans kolunun yarısı üstündeki ısı ve enerji bedeli -%35.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("regulator", "performanceCost", -0.35)] },
   { id: "rolanti-avantaji", name: "Rölanti Avantajı", description: "Performans kolu yarısının altında olan kulelerin hasarı +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["performance:idleEdge"] },
+
+  // --- Tamirci ---
+  //
+  // Onarim hizi once: Tamirci hattin altin harcamayan onarim yolu ve hizi
+  // bilerek yavas. Bu iki kart o yavasligi pazarlik konusu yapiyor.
+  { id: "usta-cirak", name: "Usta Çırak", description: "Tamircilerin onarım hızı +%60.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("usta-cirak", "workerRepairRate", 0.6)] },
+  { id: "seri-kaynak", name: "Seri Kaynak", description: "Tamircilerin onarım hızı +%130 ama yürüme hızı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("seri-kaynak", "workerRepairRate", 1.3), effect("seri-kaynak", "workerSpeed", -0.2)] },
+
+  // Onarim penceresi: Tamircinin o an dokundugu kule baska bir sey de
+  // kazaniyor. Ikisi de oyuncuyu onarimi **yonetmeye** itiyor -- hangi
+  // kulenin ne zaman onarilacagi artik yalnizca can meselesi degil.
+  { id: "tamir-atesi", name: "Tamir Ateşi", description: "Tamircinin onardığı kulenin hasarı, onarım sürdüğü sürece +%45.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["repair:damageBoost"] },
+  { id: "sogutmali-kaynak", name: "Soğutmalı Kaynak", description: "Tamircinin onardığı kulenin soğuması, onarım sürdüğü sürece +%120.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["repair:coolingBoost"] },
 
   // --- Kapsanmayan etiketler ---
   // Kimlik kartlari uzun sure sahadaki etiketlerin yalnizca bir kismina

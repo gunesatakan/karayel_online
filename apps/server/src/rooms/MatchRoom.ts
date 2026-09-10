@@ -289,6 +289,19 @@ const LOGISTICS_WORKER_SPEED = 82;
 const WORKER_CONTACT_RADIUS = 16;
 
 /**
+ * Onarim penceresinin kuyrugu.
+ *
+ * Tamirci her tick onariyor ama tikler arasinda bosluk var; pencere bu kadar
+ * sarkmasa onarim odulleri karede bir yanip sonerdi. Kisa tutuluyor ki
+ * Tamirci ayrildiginda odul de hemen bitsin.
+ */
+const REPAIR_WINDOW_LINGER_MS = 400;
+/** Tamir Atesi: onarim suresince hasar. */
+const REPAIR_DAMAGE_BONUS = 0.45;
+/** Sogutmali Kaynak: onarim suresince soguma. */
+const REPAIR_COOLING_BONUS = 1.2;
+
+/**
  * Bu mod bir lojistik iscisi mi.
  *
  * Dron listesi hem savasci dronlari hem isci hattini tasiyor ve ayrim uc
@@ -864,6 +877,15 @@ type TowerModel = {
   ammoLogisticsEnabled: boolean;
   /** Duvara acilmis kapi: isci gecer, dusman gecmez. */
   gate: boolean;
+  /**
+   * Tamircinin bu kuleye en son dokundugu andan kisa bir sure sonrasi.
+   *
+   * Onarim tik tik ilerledigi icin "su anda onariliyor mu" sorusu tek bir
+   * ana bakarak cevaplanamaz: iki tik arasinda cevap hep hayir olurdu ve
+   * pencereye bagli her odul karede bir yanip sonerdi. Kisa bir kuyruk
+   * cevabi surekli kiliyor.
+   */
+  repairedUntil: number;
   temperature: number;
   misfortune: number;
   luckyWindowUntil: number;
@@ -2819,8 +2841,17 @@ export class MatchRoom extends Room<MatchState> {
    * bir sogutma artisindan farki, kisa patlamalari serbest birakip surekli
    * atesi yine cezalandirmasi -- egrinin sekli degisiyor, seviyesi degil.
    */
+  /** Tamirci su anda bu kuleye dokunuyor mu; onarim odulleri buna bakiyor. */
+  private isTowerUnderRepair(tower: TowerModel) {
+    return tower.repairedUntil > Date.now();
+  }
+
   private getTowerCoolingPerSecond(tower: TowerModel) {
     let cooling = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling");
+
+    if (this.isTowerUnderRepair(tower) && this.towerHasUnlock(tower, "repair:coolingBoost")) {
+      cooling *= 1 + REPAIR_COOLING_BONUS;
+    }
 
     if (this.towerHasUnlock(tower, "heat:radiator")) {
       cooling *= 1 + (Math.max(0, tower.temperature) / 100) * RADIATOR_COOLING_BONUS_AT_MAX;
@@ -5707,6 +5738,8 @@ export class MatchRoom extends Room<MatchState> {
     // Eskitme yok: onarim yikilan yapiyi diriltmiyor, yani gecilebilirlik
     // degismiyor. Her tick eskitmek cikmaz sokak hafizasini surekli silerdi.
     target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
+    // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
+    target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
     if (target.hp >= target.maxHp) {
       target.breachAnnounced = false;
       worker.targetTowerId = "";
@@ -5780,9 +5813,18 @@ export class MatchRoom extends Room<MatchState> {
     return best;
   }
 
-  /** Tamircinin saniyelik onarimi; gelismis kademe uc kati. */
+  /**
+   * Tamircinin saniyelik onarimi; gelismis kademe uc kati.
+   *
+   * Carpan iscinin canindaki gibi yalnizca kuresel listeden okunuyor.
+   * Tamircinin "hizmet ettigi bina" her an onardigi kule oldugu icin
+   * binadan okumak, hizin hedef degistikce ziplamasi olurdu.
+   */
   private getWorkerRepairPerSecond(worker: DroneModel) {
-    return WORKER_REPAIR_PER_SECOND * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1);
+    const runModifiers = worker.ownerId ? this.state.players.get(worker.ownerId)?.runModifiers ?? [] : [];
+    return WORKER_REPAIR_PER_SECOND
+      * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1)
+      * getModifierMultiplier(runModifiers, "workerRepairRate");
   }
 
   /**
@@ -6421,6 +6463,7 @@ export class MatchRoom extends Room<MatchState> {
       wakeReadyAt: 0,
       ammoLogisticsEnabled: true,
       gate: false,
+      repairedUntil: 0,
       temperature: 0,
       misfortune: 0,
       luckyWindowUntil: 0,
@@ -7870,6 +7913,12 @@ export class MatchRoom extends Room<MatchState> {
     // ve enerjiydi, yani secim degil fedakarlikti.
     if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "performance:idleEdge") && isTowerPerformanceIdle(damageSourceTower.performance)) {
       shopDamageAdd += PERFORMANCE_IDLE_EDGE_DAMAGE;
+    }
+    // Tamir Atesi: onarim penceresi acikken hasar. Odulu "hasar almis"
+    // olmaya degil **onariliyor** olmaya baglamak kasitli -- birincisi
+    // oyuncunun kacinmaya calistigi bir durum, ikincisi verdigi bir karar.
+    if (damageSourceTower && this.towerHasUnlock(damageSourceTower, "repair:damageBoost") && this.isTowerUnderRepair(damageSourceTower)) {
+      shopDamageAdd += REPAIR_DAMAGE_BONUS;
     }
     // Soguk kalkis: bekleme modundan cikan kulenin ilk saniyeleri.
     //

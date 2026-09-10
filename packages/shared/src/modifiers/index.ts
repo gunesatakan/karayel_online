@@ -37,6 +37,14 @@ export type ModifierStat =
    * isci her hedef degistirdiginde ziplardi.
    */
   | "workerHealth"
+  /**
+   * Tamircinin saniyede yazdigi can.
+   *
+   * Can gibi bu da kuresel listeden okunuyor. Tamircinin "hizmet ettigi
+   * bina" her an onardigi kule oldugu icin binadan okumak, carpanin hedef
+   * degistikce ziplamasi demek olurdu.
+   */
+  | "workerRepairRate"
   | "airDamage"
   | "damageVsShielded"
   | "damageVsBrute"

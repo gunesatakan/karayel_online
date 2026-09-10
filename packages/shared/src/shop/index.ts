@@ -35,7 +35,12 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   // Isci cani da oyuncunun: iscinin dayanikliligi hizmet ettigi binaya
   // degil kendisine ait, o yuzden kuresel listeden okunuyor.
   "celik-yelek",
-  "sahra-reviri"
+  "sahra-reviri",
+  // Onarim hizi da iscinin kendisine ait, takildigi kuleye degil. Ayni adli
+  // "Kaynak Makinesi" bir **kule** esyasi ve onarim bedelini indiriyor; bu
+  // ikisi ayri seyler, o yuzden yeni esyanin adi Pnomatik Anahtar.
+  "pnomatik-anahtar",
+  "yedek-parca-sandigi"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */
@@ -134,6 +139,10 @@ const rawShopCatalog: ShopItem[] = [
   // toplama hizindan odiyor.
   defineItem("celik-yelek", "Çelik Yelek", "Tüm işçilerin canı +%45; en fazla 4 kez alınır.", "utility", 55, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, axes: ["economy"], effects: [effect("celik-yelek", "workerHealth", 0.45)] }),
   defineItem("sahra-reviri", "Sahra Revi̇ri", "Tüm işçilerin canı +%120 ama toplama hızı -%15.", "utility", 140, { axes: ["economy"], effects: [effect("sahra-reviri", "workerHealth", 1.2), effect("sahra-reviri", "workerGatherSpeed", -0.15)] }),
+  // Onarim hizi: biri merdiven, biri tek buyuk adim -- can esyalariyla ayni
+  // sekil, cunku ikisi de ayni soruyu soruyor: bu kule ayakta kalsin mi.
+  defineItem("pnomatik-anahtar", "Pnömatik Anahtar", "Tüm tamircilerin onarım hızı +%40; en fazla 4 kez alınır.", "utility", 48, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, axes: ["economy"], effects: [effect("pnomatik-anahtar", "workerRepairRate", 0.4)] }),
+  defineItem("yedek-parca-sandigi", "Yedek Parça Sandığı", "Tüm tamircilerin onarım hızı +%110 ama taşıma kapasitesi -%20.", "utility", 130, { axes: ["economy"], effects: [effect("yedek-parca-sandigi", "workerRepairRate", 1.1), effect("yedek-parca-sandigi", "workerCapacity", -0.2)] }),
   defineItem("isci-botlari", "İşçi Botları", "Takıldığı binaya hizmet eden işçilerin hareket hızı +%15; en fazla 5 kez alınır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("isci-botlari", "workerSpeed", 0.15)] }),
   defineItem("namlu-yatagi", "Namlu Yatağı", "Takıldığı kulenin dönüş hızı +%35; en fazla 2 kez alınır.", "power", 100, { repeatable: true, maxStacks: 2, effects: [effect("namlu-yatagi", "turnRate", 0.35)] }),
   defineItem("nisangah", "Nişangâh", "Takıldığı kulenin isabeti +%30; en fazla 2 kez alınır.", "power", 95, { repeatable: true, maxStacks: 2, effects: [effect("nisangah", "accuracy", 0.3)] }),
