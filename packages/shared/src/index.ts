@@ -806,7 +806,7 @@ export {
   SnapshotPlaybackClock
 } from "./snapshot/index.js";
 
-export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, countsAsTower, occupiesTowerSlot, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
+export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower, countsAsTower, occupiesTowerSlot, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export {
   ONUR_LUCKY_WINDOW_MS,
   ONUR_MISFORTUNE_MAX,
@@ -882,6 +882,7 @@ export {
   calculateTowerShotEnergyCost,
   getTowerShotFuelModifierMultiplier,
   calculateTowerOperatingEnergy,
+  isOperationalTower,
   isPeriodicTowerAura,
   usesEffectInterval,
   calculateTowerEnergyPerSecond,

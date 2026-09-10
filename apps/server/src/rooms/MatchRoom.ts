@@ -60,6 +60,8 @@ import {
   type BlindNavigatorState,
   getEdgeSegments,
   countsAsTower,
+  isOperationalTower,
+  isRepairDepotDefinition,
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
   ATAKAN_ISOLATION_MULTIPLIER,
@@ -5582,7 +5584,7 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       const energyTargets = Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && countsAsTower(tower.definition) && tower.energy < tower.maxEnergy);
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy);
       const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * AMMO_LOGISTICS_WORKER_CAPACITY;
       const underpoweredAmmoFactory = energyTargets.find((tower) => (
         tower.definition.resourceProvider === "ammunition" && tower.energy < factoryMinimumEnergy
@@ -5656,8 +5658,16 @@ export class MatchRoom extends Room<MatchState> {
   private updateRepairWorker(worker: DroneModel, seconds: number) {
     const target = this.getRepairWorkerTarget(worker);
     if (!target) {
-      worker.vx = 0;
-      worker.vy = 0;
+      // Bosta: merkeze don. Merkez yoksa oldugu yerde bekler -- iscinin
+      // haritanin ortasinda durdugu yer bir karar degil, sadece son isinin
+      // bittigi yer; merkez o keyfiligi oyuncunun karari haline getiriyor.
+      const depot = this.getRepairDepot(worker);
+      if (depot) {
+        this.moveLogisticsWorker(worker, depot.x, depot.y, seconds);
+      } else {
+        worker.vx = 0;
+        worker.vy = 0;
+      }
       return;
     }
     worker.targetTowerId = target.id;
@@ -5679,22 +5689,62 @@ export class MatchRoom extends Room<MatchState> {
    * Kilitli hedef hala hasarliysa ona devam edilir. Yeni secimde olcut can
    * **orani**: oyuncunun kaygisi "hangisi dusmeye en yakin", eksik can
    * miktari degil. Esitlik mesafeyle bozuluyor ki secim belirlenimli olsun.
+   *
+   * Merkez varsa once onun cemberine bakiliyor. Cember bir **oncelik**,
+   * bir sinir degil: icerisi temizse isci haritanin geri kalanina bakar.
+   * Sinir olsaydi merkezi yanlis koseye kuran oyuncunun iscisi bosa alinmis
+   * olurdu; oncelik olunca merkez "onarim nereye yogunlassin" sorusunun
+   * cevabi oluyor.
    */
   private getRepairWorkerTarget(worker: DroneModel) {
     const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
     if (locked && locked.ownerId === worker.ownerId && locked.hp > 0 && locked.hp < locked.maxHp) {
       return locked;
     }
+    const depot = this.getRepairDepot(worker);
+    return (depot && this.findWorstStructure(worker, depot)) ?? this.findWorstStructure(worker);
+  }
+
+  /**
+   * En kotu durumdaki onarilabilir yapi.
+   *
+   * `depot` verilirse yalnizca onun cemberindekiler sayilir ve mesafe de
+   * merkezden olculur -- cemberin icinde "yakin" demek iscinin o anda
+   * nerede durdugu degil, merkeze ne kadar yakin oldugu demek.
+   */
+  private findWorstStructure(worker: DroneModel, depot?: TowerModel) {
+    const origin = depot ?? worker;
+    const rangeSq = depot ? this.getTowerRange(depot) ** 2 : Number.POSITIVE_INFINITY;
     let best: TowerModel | undefined;
     let bestRatio = Number.POSITIVE_INFINITY;
     let bestDistanceSq = Number.POSITIVE_INFINITY;
     for (const tower of this.towers.values()) {
       if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || tower.hp >= tower.maxHp) continue;
+      const distance = distanceSq(origin.x, origin.y, tower.x, tower.y);
+      if (distance > rangeSq) continue;
       const ratio = tower.hp / Math.max(1, tower.maxHp);
-      const distance = distanceSq(worker.x, worker.y, tower.x, tower.y);
       if (ratio > bestRatio || (ratio === bestRatio && distance >= bestDistanceSq)) continue;
       best = tower;
       bestRatio = ratio;
+      bestDistanceSq = distance;
+    }
+    return best;
+  }
+
+  /**
+   * Iscinin bagli oldugu Tamir Merkezi: ayaktakilerin en yakini.
+   *
+   * Yikilan merkez us sayilmaz; iscinin enkazda beklemesinin bir anlami yok.
+   */
+  private getRepairDepot(worker: DroneModel) {
+    let best: TowerModel | undefined;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== worker.ownerId || tower.hp <= 0) continue;
+      if (!isRepairDepotDefinition(tower.definition)) continue;
+      const distance = distanceSq(worker.x, worker.y, tower.x, tower.y);
+      if (distance >= bestDistanceSq) continue;
+      best = tower;
       bestDistanceSq = distance;
     }
     return best;
@@ -6246,22 +6296,22 @@ export class MatchRoom extends Room<MatchState> {
       maxHp: towerHealth,
       armor: TOWER_BASE_ARMOR,
       ammoType: inferTowerAmmoType(definition),
-      // Duvarin deposu yok -- ne dolu ne bos, hic. Kapasitesi olsaydi
-      // isciler ona ates etmeyecegi mühimmati ve harcamayacagi enerjiyi
-      // tasirdi; tasiyorlardi da.
+      // Yakitla calismayan yapinin deposu yok -- ne dolu ne bos, hic.
+      // Kapasitesi olsaydi isciler ona ates etmeyecegi mühimmati ve
+      // harcamayacagi enerjiyi tasirdi; duvara tasiyorlardi da.
       ammo: definition.resourceProvider
         ? RESOURCE_PROVIDER_INITIAL_STOCK
-        : countsAsTower(definition) ? TOWER_BASE_AMMO : 0,
+        : isOperationalTower(definition) ? TOWER_BASE_AMMO : 0,
       maxAmmo: definition.resourceProvider === "ammunition"
         ? RESOURCE_PROVIDER_CAPACITY
-        : definition.resourceProvider || !countsAsTower(definition) ? 0 : TOWER_BASE_AMMO,
+        : definition.resourceProvider || !isOperationalTower(definition) ? 0 : TOWER_BASE_AMMO,
       energy: definition.resourceProvider === "ammunition"
         ? AMMO_FACTORY_INITIAL_ENERGY
         : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK
-        : countsAsTower(definition) ? TOWER_BASE_ENERGY : 0,
+        : isOperationalTower(definition) ? TOWER_BASE_ENERGY : 0,
       maxEnergy: definition.resourceProvider
         ? RESOURCE_PROVIDER_CAPACITY
-        : countsAsTower(definition) ? TOWER_BASE_ENERGY : 0,
+        : isOperationalTower(definition) ? TOWER_BASE_ENERGY : 0,
       energyDepletedAt: 0,
       standby: false,
       wakeReadyAt: 0,
@@ -6709,7 +6759,7 @@ export class MatchRoom extends Room<MatchState> {
    * Duvar kule degil. Tek soru, tek yer.
    */
   private acceptsTowerOperation(tower: TowerModel) {
-    return !tower.definition.resourceProvider && countsAsTower(tower.definition);
+    return isOperationalTower(tower.definition);
   }
 
   private removeTowerReferences(towerId: string) {

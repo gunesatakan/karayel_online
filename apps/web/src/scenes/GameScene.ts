@@ -73,7 +73,7 @@ import {
   hasUnlockBit,
   getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
-  countsAsTower,
+  isOperationalTower,
   type StaticEnemySnapshot,
   type StaticSnapshot,
   type DynamicEnemySnapshot,
@@ -2004,15 +2004,15 @@ export class GameScene extends Phaser.Scene {
    * Bu yapi bir **kule islemine** dahil olur mu.
    *
    * Sunucudaki `acceptsTowerOperation` ile ayni cumle, ayni sebep: mühimmat
-   * akisi, performans kolu, beklemeye alma, hedefleme -- hepsi bir seyi
-   * vuran bir sey icin var. Duvar vurmaz. Olcut `!resourceProvider`
-   * oldugunda duvar butun bunlari miras aliyordu ve cekmecede bir duvarin
-   * altinda performans kolu duruyordu.
+   * akisi, performans kolu, beklemeye alma, hedefleme -- hepsi yakitla
+   * calisan bir yapi icin var. Duvar ve Tamir Merkezi calismaz. Olcut bir
+   * donem `!resourceProvider` idi ve duvar butun bunlari miras aliyordu:
+   * cekmecede bir duvarin altinda performans kolu duruyordu.
    */
   private acceptsTowerOperation(selectedTower: TowerSnapshot | undefined) {
-    return Boolean(selectedTower)
-      && !selectedTower!.resourceProvider
-      && countsAsTower({ id: selectedTower!.definitionId });
+    if (!selectedTower) return false;
+    const definition = towerCatalog[selectedTower.characterId]?.find((tower) => tower.id === selectedTower.definitionId);
+    return Boolean(definition) && isOperationalTower(definition!);
   }
 
   private getPerformanceControlState(selectedTower: TowerSnapshot | undefined) {

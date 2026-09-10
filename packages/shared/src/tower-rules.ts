@@ -181,6 +181,23 @@ export function calculateTowerOperatingEnergy(definition: TowerDefinition, secon
  * aura yok, her tetikte bir dalga firlatiyor -- o bir atis, ve atislar
  * hizlanabilir.
  */
+/**
+ * Yapi yakitla mi calisiyor: ates ediyor ya da bir aura yurutuyor mu.
+ *
+ * Mühimmat akisi, performans kolu, beklemeye alma, hedefleme, depo -- hepsi
+ * yalnizca bunun icin var. Olcut bir donem "kaynak binasi degilse" idi ve
+ * duvar oradan sizip butun kule islemlerini miras almisti: isciler ona ates
+ * etmeyecegi mühimmati tasiyor, oyuncu ona performans kolu cekiyordu. Tamir
+ * Merkezi eklenince ayni tuzak ikinci kez kuruldu.
+ *
+ * `NON_FIRING_INTERVAL_MS` bu ayrimi tam yapiyor: duvar, Tamir Merkezi ve
+ * alti lojistik binasi oradadir; Abarti ile Saray Arsivi degildir, cunku
+ * auralari gercekten enerji yakiyor.
+ */
+export function isOperationalTower(definition: Pick<TowerDefinition, "fireIntervalMs">) {
+  return definition.fireIntervalMs !== NON_FIRING_INTERVAL_MS;
+}
+
 export function usesEffectInterval(definition: TowerDefinition) {
   if (definition.resourceProvider) return false;
   if (definition.hitType === "focus") return true;

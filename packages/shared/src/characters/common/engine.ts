@@ -3,6 +3,7 @@ import { PASSIVE_AURA_TICK_INTERVAL_MS, getTowerFuelCostMultiplier, getTowerOper
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
   "wall-1": ["barricade"],
+  "repair-depot-1": ["economy"],
   "warrior-1": ["amplify", "dps"],
   "warrior-2": ["amplify", "dps"],
   "warrior-3": ["cc"],
@@ -67,6 +68,9 @@ const profiles: Record<string, EngineProfile> = {
   // Duvar kare degil kenar kaplar: Abarti ile ayni yerlestirme yolu, ama tek
   // cizgi uzunlugunda ve yonu getirildigi kenardan turetiliyor.
   "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, placement: { requiresEdge: true }, resources: { ammoType: "auraCrystal" } },
+  // Kareyi kaplar, ates etmez. `requiresEdge` yok: kontenjandan yer yemesi
+  // buna bagli ve oyle olmali -- bir hasar kulesinden vazgecmek asil karar.
+  "repair-depot-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resources: { ammoType: "auraCrystal" } },
   "onur-1": {
     targeting: undefined,
     // Donme hizi burada yazilmaz: bicagin gecis periyodu kulenin ates

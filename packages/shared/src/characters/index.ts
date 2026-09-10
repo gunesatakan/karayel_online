@@ -6,6 +6,7 @@ import { melisCharacter } from "./melis/index.js";
 import { omerCharacter } from "./omer/index.js";
 import { onurCharacter } from "./onur/index.js";
 import { ulkuCharacter } from "./ulku/index.js";
+import { REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower } from "./common/repair-depot.js";
 import { WALL_TOWER_ID, isWallDefinition, wallTower } from "./common/wall.js";
 import { zeynepCharacter } from "./zeynep/index.js";
 
@@ -23,25 +24,30 @@ export const characters: CharacterDefinition[] = [
 ];
 
 /**
- * Duvar her karakterin listesine ekleniyor.
+ * Ortak yapilar her karakterin listesine ekleniyor.
  *
- * Duvar bir karakterin kiti degil, herkesin kullandigi bir zemin araci; kule
- * arama yollari karakter kimligine gore calistigi icin listeye girmesi gerek.
- * Katalog yine de kule listesi: duvarin kendisi bir kule varyanti.
+ * Ikisi de bir karakterin kiti degil, herkesin kullandigi zemin araclari;
+ * kule arama yollari karakter kimligine gore calistigi icin listeye girmeleri
+ * gerek. Katalog yine de kule listesi: ikisi de birer kule varyanti.
+ *
+ * Tamir Merkezi'nin yedi ayri kopyasi yazilabilirdi -- kaynak binalari oyle
+ * yazilmis -- ama Tamirci bir karakter yetenegi degil, herkesin alabildigi
+ * bir isci rolu. Ussunun de kimseye ait olmamasi gerekiyor.
  */
-const withWall = (towers: TowerDefinition[]) => [...towers, wallTower];
+const withSharedStructures = (towers: TowerDefinition[]) => [...towers, wallTower, repairDepotTower];
 
 export const towerCatalog: Record<CharacterId, TowerDefinition[]> = {
-  zeynep: withWall(zeynepCharacter.towers),
-  warrior: withWall(atakanCharacter.towers),
-  archer: withWall(melisCharacter.towers),
-  mage: withWall(baranselCharacter.towers),
-  healer: withWall(ulkuCharacter.towers),
-  tank: withWall(omerCharacter.towers),
-  onur: withWall(onurCharacter.towers)
+  zeynep: withSharedStructures(zeynepCharacter.towers),
+  warrior: withSharedStructures(atakanCharacter.towers),
+  archer: withSharedStructures(melisCharacter.towers),
+  mage: withSharedStructures(baranselCharacter.towers),
+  healer: withSharedStructures(ulkuCharacter.towers),
+  tank: withSharedStructures(omerCharacter.towers),
+  onur: withSharedStructures(onurCharacter.towers)
 };
 
 export { WALL_EDGE_LENGTH, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower } from "./common/wall.js";
+export { REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower } from "./common/repair-depot.js";
 
 /**
  * Her karakterin listesinde bulunan, kimseye ait olmayan yapilar.
@@ -51,7 +57,7 @@ export { WALL_EDGE_LENGTH, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDe
  * testleri, kodeks, tasarim tablolari -- kiti sormak ister, kurulabilirler
  * listesini degil. Ayrim burada aciktir.
  */
-export const SHARED_STRUCTURE_IDS: readonly string[] = [WALL_TOWER_ID];
+export const SHARED_STRUCTURE_IDS: readonly string[] = [WALL_TOWER_ID, REPAIR_DEPOT_TOWER_ID];
 
 export function isSharedStructure(definition: Pick<TowerDefinition, "id">) {
   return SHARED_STRUCTURE_IDS.includes(definition.id);
@@ -65,11 +71,16 @@ export function getCharacterTowers(characterId: CharacterId): TowerDefinition[] 
 /**
  * Yapi kule kontenjanindan yer kapiyor mu.
  *
- * Kontenjan savas kuleleri icindir: oyuncu belli sayida kule kurabilir ve hangi
- * kuleleri kuracagi asil karardir. Kenara oturan yapilar bu karara girmez --
- * duvar da Abarti da kare degil cizgi kaplar, kendi basina ates etmez ve bir
- * kulenin yerini tutmaz. Hattini ormek icin hasar kulesinden vazgecmek
- * gerekseydi bu yapilar hicbir zaman kullanilmazdi.
+ * Olcut tek: yapi bir **kare** kapliyor mu. Kenara oturan yapilar -- duvar ve
+ * Abarti -- kare degil cizgi kaplar, yani bir kulenin yerini tutmazlar.
+ * Hattini ormek icin hasar kulesinden vazgecmek gerekseydi bu yapilar hicbir
+ * zaman kullanilmazdi.
+ *
+ * Soru bir donem "ortak yapi mi" diye de soruluyordu, ama o fazlaligti:
+ * tek ortak yapi duvardi ve duvar zaten kenara oturuyor. Fazlalik Tamir
+ * Merkezi gelince zarar vermeye basladi -- o da ortak, ama kareyi kapliyor
+ * ve kontenjandan yemesi gerek. Bir hasar kulesinden vazgecip onarim
+ * altyapisi kurmak asil karar; bedava olsaydi karar olmazdi.
  */
 /**
  * Yapi kural duzeyinde kule sayilir mi.
@@ -88,5 +99,5 @@ export function countsAsTower(definition: Pick<TowerDefinition, "id">) {
 }
 
 export function occupiesTowerSlot(definition: Pick<TowerDefinition, "id" | "engine">) {
-  return !isSharedStructure(definition) && !definition.engine?.placement?.requiresEdge;
+  return !definition.engine?.placement?.requiresEdge;
 }
