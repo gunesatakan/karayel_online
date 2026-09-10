@@ -131,6 +131,7 @@ type ControlActionDetail = {
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
     | "toggleWallGate"
+    | "toggleWorkerBanMode"
     | "toggleTowerStandby"
     | "openWorkerHire"
     | "closeWorkerHire"
@@ -460,6 +461,7 @@ export class GameScene extends Phaser.Scene {
   private advancedWorkerGraphics?: Phaser.GameObjects.Graphics;
   /** Cani eksilmis isciler; olumu harita degisiminden ayirmak icin. */
   private readonly hasarliIsciler = new Set<string>();
+  private workerBanGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
   private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
@@ -670,6 +672,8 @@ export class GameScene extends Phaser.Scene {
   private latestPerfSnapshot?: GameSnapshot;
   private latestServerPerf?: ServerPerfSnapshot;
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
+  /** Isci yol yasagi kipi acik mi; acikken haritaya basmak kare kapatir. */
+  private workerBanMode = false;
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
@@ -1542,6 +1546,11 @@ export class GameScene extends Phaser.Scene {
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleWallGate", { towerId: this.selectedPlacedTowerId });
         }
+        break;
+      case "toggleWorkerBanMode":
+        this.workerBanMode = !this.workerBanMode;
+        this.showNotice(this.workerBanMode ? "İşçilere kapatılacak kareye bas" : "Yasak kipi kapandı");
+        this.emitControlState();
         break;
       case "toggleTowerStandby":
         if (this.selectedPlacedTowerId) {
@@ -2796,6 +2805,7 @@ export class GameScene extends Phaser.Scene {
     if (performance.now() < this.ignoreMapPointerUntil) return "beklemede";
     if (this.pendingUltimateColumn) return this.isBattlePointer(pointer) ? "ulti sutunu" : "ULTI: ARENA DISI";
     if (this.pendingShopPlacement) return this.isBattlePointer(pointer) ? "esya yerlestirme" : "ESYA: ARENA DISI";
+    if (this.workerBanMode) return this.isBattlePointer(pointer) ? "isci yasagi" : "YASAK: ARENA DISI";
     if (this.isGuidanceDragging) return "yonlendirme";
     if (!this.isBattlePointer(pointer)) return "ARENA DISI";
     if (this.findTowerAt(pointer.worldX, pointer.worldY)) return "kule secimi";
@@ -2913,6 +2923,13 @@ export class GameScene extends Phaser.Scene {
     if (this.pendingShopPlacement && this.isBattlePointer(pointer)) {
       this.room?.send("shop:place", { itemId: this.pendingShopPlacement, x: pointer.worldX, y: pointer.worldY });
       this.pendingShopPlacement = undefined;
+      return;
+    }
+    // Yasak kipi kule secmeden once bakiliyor: kip acikken haritaya basmanin
+    // tek anlami kare kapatmak olmali, yoksa kulenin ustundeki kareler
+    // yasaklanamazdi.
+    if (this.workerBanMode && this.isBattlePointer(pointer)) {
+      this.room?.send("worker:banCell", { x: pointer.worldX, y: pointer.worldY });
       return;
     }
     if (this.isGuidanceDragging) {
@@ -3216,6 +3233,7 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("enemies", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
+    this.renderWorkerBannedCells();
     this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
     this.renderAmmoNodes(frame.snapshot.ammoNodes ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
@@ -5321,6 +5339,40 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       } else {
         this.hasarliIsciler.delete(drone.id);
       }
+    }
+  }
+
+  /**
+   * Iscilere kapatilan kareler.
+   *
+   * Gorunmeyen bir yasak kullanilamaz: oyuncu hangi kareyi kapattigini
+   * hatirlamak zorunda kalirdi ve ikinci kez basip yanlislikla acardi.
+   *
+   * Cizim yalnizca oyuncunun kendi yasaklarini gosteriyor -- yasak zaten
+   * oyuncu basina ve baskasinin tercihini haritada gormek kafa karistirirdi.
+   */
+  private renderWorkerBannedCells() {
+    const graphics = this.workerBanGraphics ?? (this.workerBanGraphics = this.add.graphics().setDepth(9.6));
+    graphics.clear();
+    const cells = this.localPlayerSnapshot?.workerBannedCells ?? [];
+    if (cells.length === 0) return;
+
+    const cellSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
+    const inset = cellSize * 0.18;
+    for (const key of cells) {
+      const [col, row] = key.split(":").map(Number);
+      if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+      const left = origin.x + col * cellSize;
+      const top = origin.y + row * cellSize;
+      graphics.fillStyle(0xf43f5e, 0.16);
+      graphics.fillRect(left, top, cellSize, cellSize);
+      graphics.lineStyle(1.5, 0xfb7185, 0.75);
+      graphics.strokeRect(left + 1, top + 1, cellSize - 2, cellSize - 2);
+      // Capraz: kareyi kapali okutan sey renk degil sekil.
+      graphics.lineStyle(2, 0xfb7185, 0.85);
+      graphics.lineBetween(left + inset, top + inset, left + cellSize - inset, top + cellSize - inset);
+      graphics.lineBetween(left + cellSize - inset, top + inset, left + inset, top + cellSize - inset);
     }
   }
 
@@ -7631,6 +7683,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       } : undefined,
       // Kapi yalnizca duvarda. Baska yapilarda "gecis" diye bir sey yok:
       // kule kareyi kapliyor, duvar iki kare arasindaki cizgiyi.
+      workerBan: {
+        active: this.workerBanMode,
+        count: this.localPlayerSnapshot?.workerBannedCells?.length ?? 0
+      },
       gate: selectedTower && selectedTower.definitionId === WALL_TOWER_ID ? {
         open: selectedTower.gate === true,
         canEdit: selectedTower.ownerId === this.localSessionId

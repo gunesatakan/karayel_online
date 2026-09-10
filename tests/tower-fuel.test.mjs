@@ -8,6 +8,7 @@ import {
   ENERGY_LOGISTICS_WORKER_CAPACITY,
   getTowerEnergyState,
   getTowerShotFuelModifierMultiplier,
+  LOGISTICS_WORKER_CAPACITY,
   cardCatalog,
   shouldConsumeTowerOperatingEnergy,
   towerCatalog
@@ -23,7 +24,8 @@ test("focus ve aura enerji, diğer vuruş türleri mühimmat yakar", () => {
 });
 
 test("enerji lojistiği de standart işçi kapasitesini kullanır", () => {
-  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, 12);
+  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, LOGISTICS_WORKER_CAPACITY);
+  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, 6);
 });
 
 test("enerji kesintisi atış, takip ve aura sırasıyla ilerler", () => {

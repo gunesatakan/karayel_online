@@ -361,6 +361,13 @@ export type PlayerSnapshot = {
   /** Satin alinmis ek isciler; siradaki bedel bu sayidan cikar. */
   hiredWorkers?: Array<import("./logistics/index.js").HiredWorker>;
   /**
+   * Oyuncunun iscilerine yasakladigi kareler; "col:row" bicminde.
+   *
+   * Oyuncu basina, cunku yasak bir yonlendirme tercihi: bir oyuncunun
+   * hattini duzenlemesi otekinin iscilerini baglamamali.
+   */
+  workerBannedCells?: string[];
+  /**
    * Isci alim bedelinin kart ve esya carpani; 1 ise yazilmaz.
    *
    * `towerLimit` ile ayni sebeple telde: carpani doguran `runModifiers`

@@ -1084,6 +1084,11 @@ type DroneModel = DroneSnapshot & {
   cargoAmmoType?: AmmoType;
 };
 
+type WorkerBanCellMessage = {
+  x?: number;
+  y?: number;
+};
+
 type ToggleWallGateMessage = {
   towerId?: string;
 };
@@ -1362,6 +1367,18 @@ export class MatchRoom extends Room<MatchState> {
    * dusman iceri hic girmiyor.
    */
   private deadEndCells = new Set<string>();
+  /**
+   * Oyuncunun iscilerine kapattigi kareler.
+   *
+   * Cikmaz sokak hafizasindan farki: bu bir **karar**, kesif degil. Oyuncu
+   * hattinin nereden gecmesini istemedigini soyluyor ve isciler o kareyi
+   * gecmeyen bir yol bulmak zorunda. Yol kalmazsa isci bekler -- kendi
+   * hattini kapatmak da oyuncunun hakki.
+   *
+   * Oyuncu basina tutuluyor: bir oyuncunun tercihi otekinin iscilerini
+   * baglamaz.
+   */
+  private workerBannedCells = new Map<string, Set<string>>();
   /** Surunun en son hangi hucrede yogunlastigi; kayma uyarisi buna bakar. */
   private lastMainGate?: { col: number; row: number };
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
@@ -1767,6 +1784,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
     this.onMessage("tower:targeting", (client, message: SetTowerTargetingMessage) => this.setTowerTargeting(client, message));
     this.onMessage("shop:place", (client, message: PlaceShopMapItemMessage) => this.placeShopMapItem(client, message));
+    this.onMessage("worker:banCell", (client, message: WorkerBanCellMessage) => this.toggleWorkerBannedCell(client, message));
 
     this.onMessage("creative:sync", (client) => {
       if (!this.getCreativePlayer(client)) return;
@@ -5305,7 +5323,8 @@ export class MatchRoom extends Room<MatchState> {
   private getWorkerApproachPoint(worker: DroneModel, targetX: number, targetY: number) {
     const start = worldToGrid(worker.x, worker.y, this.activeMap);
     const goal = worldToGrid(targetX, targetY, this.activeMap);
-    const goalOpen = this.isWorkerCellOpen(goal.col, goal.row);
+    const goalOpen = this.isWorkerCellOpen(goal.col, goal.row, worker)
+      && !this.isWorkerCellBanned(worker, goal.col, goal.row);
 
     if (goalOpen) {
       if (start.col === goal.col && start.row === goal.row) {
@@ -5324,11 +5343,12 @@ export class MatchRoom extends Room<MatchState> {
     return { x: point.x, y: point.y, final: false };
   }
 
-  /** Isci hucreye girebilir mi: ayakta yapi yok. */
-  private isWorkerCellOpen(col: number, row: number) {
+  /** Isci hucreye girebilir mi: ayakta yapi yok ya da o yapi isciye acik. */
+  private isWorkerCellOpen(col: number, row: number, worker?: DroneModel) {
     if (!isInsideMap(this.activeMap, col, row)) return false;
     const standing = this.getTowerCellIndex().get(`${col}:${row}`);
-    return !standing || standing.hp <= 0;
+    if (!standing || standing.hp <= 0) return true;
+    return this.canWorkerEnterStructure(worker, standing);
   }
 
   /**
@@ -5344,8 +5364,9 @@ export class MatchRoom extends Room<MatchState> {
     return edge.gate === true;
   }
 
-  private canWorkerEnter(from: { col: number; row: number }, to: { col: number; row: number }) {
-    return this.isWorkerCellOpen(to.col, to.row) && this.isWorkerEdgeOpen(from, to);
+  private canWorkerEnter(from: { col: number; row: number }, to: { col: number; row: number }, worker?: DroneModel) {
+    if (this.isWorkerCellBanned(worker, to.col, to.row)) return false;
+    return this.isWorkerCellOpen(to.col, to.row, worker) && this.isWorkerEdgeOpen(from, to);
   }
 
   /**
@@ -5384,12 +5405,12 @@ export class MatchRoom extends Room<MatchState> {
       cached
       && cached.fromCol === start.col && cached.fromRow === start.row
       && cached.goalCol === goal.col && cached.goalRow === goal.row
-      && this.canWorkerEnter(start, { col: cached.toCol, row: cached.toRow })
+      && this.canWorkerEnter(start, { col: cached.toCol, row: cached.toRow }, worker)
     ) {
       return { col: cached.toCol, row: cached.toRow };
     }
 
-    const step = this.searchWorkerStep(start, goal, goalOpen);
+    const step = this.searchWorkerStep(worker, start, goal, goalOpen);
     worker.routeStep = step
       ? { fromCol: start.col, fromRow: start.row, goalCol: goal.col, goalRow: goal.row, toCol: step.col, toRow: step.row }
       : undefined;
@@ -5397,6 +5418,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private searchWorkerStep(
+    worker: DroneModel,
     start: { col: number; row: number },
     goal: { col: number; row: number },
     goalOpen: boolean
@@ -5416,7 +5438,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       for (const neighbor of this.getGridNeighbors(cell.col, cell.row)) {
         const key = `${neighbor.col}:${neighbor.row}`;
-        if (seen.has(key) || !this.canWorkerEnter(cell, neighbor)) continue;
+        if (seen.has(key) || !this.canWorkerEnter(cell, neighbor, worker)) continue;
         seen.add(key);
         firstStep.set(key, firstStep.get(cellKey) ?? neighbor);
         queue.push(neighbor);
@@ -6043,6 +6065,23 @@ export class MatchRoom extends Room<MatchState> {
    * hucreler ayni sey: gecilemez. Kenara oturan yapilar hucreyi doldurmadigi
    * icin ayrica iki hucre arasindaki gecis de sorulur.
    */
+  /**
+   * Isci bu yapinin karesine girebilir mi.
+   *
+   * Lojistik binalari -- cephane, enerji ve Tamir Merkezi -- isciye acik.
+   * Isci onlarin **icinde** calisiyor; disarida durup teslim etmesi, hattin
+   * kaynaktan dogrudan kuleye gittigi izlenimini veriyordu, cunku binaya hic
+   * dokunmuyordu. Bir de o an yuk aldigi bina: hangi yapi olursa olsun,
+   * yukleme yaptigi yere girebilir.
+   *
+   * Savas kuleleri disarida: isci onlara dibinden teslim ediyor. Namlunun
+   * icinde durmasinin bir anlami yok ve kuleyi kalkan gibi kullanmasinin da.
+   */
+  private canWorkerEnterStructure(worker: DroneModel | undefined, tower: TowerModel) {
+    if (tower.definition.resourceProvider || isRepairDepotDefinition(tower.definition)) return true;
+    return Boolean(worker) && worker!.logisticsPhase === "pickup" && worker!.targetTowerId === tower.id;
+  }
+
   private isCellWalkable(from: { col: number; row: number }, col: number, row: number) {
     if (!this.isCellPassable(from, col, row)) {
       return false;
@@ -6336,6 +6375,38 @@ export class MatchRoom extends Room<MatchState> {
     if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
     if (!this.acceptsTowerOperation(tower) || typeof message.performance !== "number") return;
     tower.performance = Math.max(0, Math.min(1, message.performance));
+  }
+
+  /**
+   * Bir kareyi iscilere kapatir ya da acar.
+   *
+   * Ayni kareye ikinci kez basmak yasagi kaldiriyor: yasak geri alinamaz
+   * olsaydi yanlis kareye basmak kalici bir hata olurdu.
+   *
+   * Kurulum sarti yok. Yasak bir yapi degil bir yonlendirme tercihi; dalga
+   * ortasinda hattin yanlis yerden gectigini goren oyuncu o an duzeltebilmeli.
+   */
+  private toggleWorkerBannedCell(client: Client, message: WorkerBanCellMessage) {
+    if (!this.gameStarted || typeof message?.x !== "number" || typeof message?.y !== "number") return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    const cell = worldToGrid(message.x, message.y, this.activeMap);
+    if (!isInsideMap(this.activeMap, cell.col, cell.row)) return;
+
+    const banned = this.workerBannedCells.get(client.sessionId) ?? new Set<string>();
+    const key = `${cell.col}:${cell.row}`;
+    if (banned.has(key)) banned.delete(key);
+    else banned.add(key);
+    this.workerBannedCells.set(client.sessionId, banned);
+    // Saklanan adim bu karari bilmiyor: bir sonraki tick yeniden aransin.
+    for (const drone of this.drones.values()) {
+      if (drone.ownerId === client.sessionId) drone.routeStep = undefined;
+    }
+  }
+
+  private isWorkerCellBanned(worker: DroneModel | undefined, col: number, row: number) {
+    if (!worker?.ownerId) return false;
+    return this.workerBannedCells.get(worker.ownerId)?.has(`${col}:${row}`) === true;
   }
 
   private toggleWallGate(client: Client, message: ToggleWallGateMessage) {
@@ -9436,6 +9507,7 @@ export class MatchRoom extends Room<MatchState> {
         stress: player.characterId === "archer" ? player.stress : undefined,
         melisStance: player.characterId === "archer" ? player.melisStance : undefined,
         hiredWorkers: player.hiredWorkers.map((worker) => ({ ...worker })),
+        workerBannedCells: [...(this.workerBannedCells.get(id) ?? [])],
         // 1 ise yazilmiyor: indirimsiz oyunda her karede bir sayi
         // gondermenin karsiligi yok, okuyan taraf eksik alani 1 sayiyor.
         workerHireCostMultiplier: this.getWorkerHireCostMultiplier(player) === 1

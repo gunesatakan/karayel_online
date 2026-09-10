@@ -1,8 +1,17 @@
-export const RESOURCE_EXTRACTION_DURATION_MS = 8000;
-export const LOGISTICS_WORKER_CAPACITY = 12;
-export const ENERGY_LOGISTICS_WORKER_CAPACITY = 12;
-export const AMMO_LOGISTICS_WORKER_CAPACITY = 4;
-export const AMMO_COLLECTOR_WORKER_CAPACITY = 2;
+/**
+ * Bir yuk cikarmanin suresi.
+ *
+ * Ikiye katlandi: toplama hizi yariya indi. Kapasitelerle birlikte lojistik
+ * hatti bastan asagi yarilandi, yani ayni ates gucunu beslemek iki kat emek
+ * istiyor. Isci alimi, gelismis isci ve isci kartlari bu yeni tabanin
+ * uzerine biniyor -- hepsi carpan oldugu icin oranlar korunuyor.
+ */
+export const RESOURCE_EXTRACTION_DURATION_MS = 16000;
+/** Kapasiteler de yarilandi; bkz. `RESOURCE_EXTRACTION_DURATION_MS`. */
+export const LOGISTICS_WORKER_CAPACITY = 6;
+export const ENERGY_LOGISTICS_WORKER_CAPACITY = 6;
+export const AMMO_LOGISTICS_WORKER_CAPACITY = 2;
+export const AMMO_COLLECTOR_WORKER_CAPACITY = 1;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 
 /**
@@ -19,13 +28,15 @@ export const WORKER_MAX_HP = 60;
  * Tamircinin saniyede onardigi can.
  *
  * Bu isci hattin tek altin harcamayan onarim yolu, yani hizi bilerek yavas:
- * altinla onarim aninda biter, tamirci beklemek ister. En ucuz duvar
- * (taban 40 civari can) yaklasik yedi saniyede tamamen doluyor -- bir
- * dalganin ortasinda hissedilen, iki dalga arasinda yetisen bir hiz.
+ * altinla onarim aninda biter, tamirci beklemek ister.
+ *
+ * Yarilandi (6 -> 3): en ucuz duvar (taban 40 civari can) artik yaklasik on
+ * dort saniyede doluyor. Onarim hizi kartlari ve gelismis kademe bu tabanin
+ * uzerine biniyor, yani onlari almanin degeri arttı.
  *
  * Gelismis tamirci uc kati: her eksende oldugu gibi.
  */
-export const WORKER_REPAIR_PER_SECOND = 6;
+export const WORKER_REPAIR_PER_SECOND = 3;
 
 /**
  * Olen iscinin geri gelme suresi.

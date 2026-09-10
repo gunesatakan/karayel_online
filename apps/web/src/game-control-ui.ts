@@ -58,6 +58,8 @@ type ControlState = {
   performance?: { percent: number; canEdit: boolean };
   /** Kapi yalnizca duvarda cikar: gecisi olmayan yapida kapi da yok. */
   gate?: { open: boolean; canEdit: boolean };
+  /** Isci yol yasagi kipi; acikken haritaya basmak kareyi kapatir/acar. */
+  workerBan?: { active: boolean; count: number };
   selectedStats?: string[];
   /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
   selectedTowerId?: string;
@@ -454,6 +456,15 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
     if (state.workerHire) {
       actions.push(makeActionButton(`İşçi Al ${state.workerHire.cost}g`, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
+    }
+    if (state.workerBan) {
+      const ban = state.workerBan;
+      actions.push(makeActionButton(
+        ban.active ? "Yasak: kare seç" : `İşçi Yolu Yasakla${ban.count > 0 ? ` (${ban.count})` : ""}`,
+        "game-controls__worker-ban",
+        true,
+        () => dispatch({ action: "toggleWorkerBanMode" })
+      ));
     }
     // Ulti gucu: mevcut carpan ve siradaki bedel ayni dugmede. Oyuncunun
     // karsilastirdigi sey bu ikisi.
