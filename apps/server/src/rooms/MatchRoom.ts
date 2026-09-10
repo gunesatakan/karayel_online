@@ -300,6 +300,15 @@ const REPAIR_WINDOW_LINGER_MS = 400;
 const REPAIR_DAMAGE_BONUS = 0.45;
 /** Sogutmali Kaynak: onarim suresince soguma. */
 const REPAIR_COOLING_BONUS = 1.2;
+/**
+ * Kalibrasyon Turu: performans kolunun cikisi bu kadar katlanir.
+ *
+ * Kol yine %100'de duruyor; katlanan sey kolun **verdigi** carpan, yani tam
+ * acikken x2 yerine x4. Isi ve enerji bedeli kolun kendi konumundan
+ * hesaplandigi icin degismiyor -- takasin bir yanini agirlastiran degil,
+ * oteki yanini bedava buyuten bir kart.
+ */
+const REPAIR_PERFORMANCE_MULTIPLIER = 2;
 
 /**
  * Bu mod bir lojistik iscisi mi.
@@ -886,6 +895,14 @@ type TowerModel = {
    * cevabi surekli kiliyor.
    */
   repairedUntil: number;
+  /**
+   * Kalibrasyon Turu'nun verildigi dalga.
+   *
+   * Sure bir zaman damgasi degil bir **dalga numarasi**: "o tur boyunca"
+   * dendiginde kastedilen sure bu ve dalga uzunlugu sabit degil. Damga
+   * tutulsaydi kisa dalgada uzun, uzun dalgada kisa surerdi.
+   */
+  repairPerformanceWave: number;
   temperature: number;
   misfortune: number;
   luckyWindowUntil: number;
@@ -2824,7 +2841,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerPerformanceAttackMultiplier(tower: TowerModel) {
-    const performanceMultiplier = tower.performance * 2;
+    const performanceMultiplier = tower.performance * 2
+      * (this.hasRepairPerformanceBoost(tower) ? REPAIR_PERFORMANCE_MULTIPLIER : 1);
     // Termal Kutle yumusak tavani kaldirir: 50 derecenin ustunde atis hizi
     // dusmez. Karsiliginda kart sogumayi %60 kirptigi icin kule kilide daha
     // hizli kosar; takas gercek.
@@ -2844,6 +2862,17 @@ export class MatchRoom extends Room<MatchState> {
   /** Tamirci su anda bu kuleye dokunuyor mu; onarim odulleri buna bakiyor. */
   private isTowerUnderRepair(tower: TowerModel) {
     return tower.repairedUntil > Date.now();
+  }
+
+  /**
+   * Kalibrasyon Turu bu kulede hala gecerli mi.
+   *
+   * Dalga numarasi karsilastirmasi kendini temizliyor: yeni dalga basladigi
+   * anda esitlik bozuluyor, ayrica bir sifirlama gezintisi gerekmiyor.
+   */
+  private hasRepairPerformanceBoost(tower: TowerModel) {
+    return tower.repairPerformanceWave === this.wave
+      && this.towerHasUnlock(tower, "repair:performanceCeiling");
   }
 
   private getTowerCoolingPerSecond(tower: TowerModel) {
@@ -5740,6 +5769,10 @@ export class MatchRoom extends Room<MatchState> {
     target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
     // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
     target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
+    // Kalibrasyon Turu dokunmayla veriliyor ve dalga numarasiyla suruyor.
+    if (this.towerHasUnlock(target, "repair:performanceCeiling")) {
+      target.repairPerformanceWave = this.wave;
+    }
     if (target.hp >= target.maxHp) {
       target.breachAnnounced = false;
       worker.targetTowerId = "";
@@ -6464,6 +6497,7 @@ export class MatchRoom extends Room<MatchState> {
       ammoLogisticsEnabled: true,
       gate: false,
       repairedUntil: 0,
+      repairPerformanceWave: 0,
       temperature: 0,
       misfortune: 0,
       luckyWindowUntil: 0,

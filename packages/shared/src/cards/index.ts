@@ -63,7 +63,7 @@ export type Unlock =
   // Onarim uzun sure yalnizca "kule yikilmasin" isiydi. Bu uc kilit onu bir
   // **pencere**ye ceviriyor: Tamircinin dokundugu kule o an baska bir sey de
   // kazaniyor, yani onarimi yonetmek savasin bir parcasi oluyor.
-  | "repair:damageBoost" | "repair:coolingBoost"
+  | "repair:damageBoost" | "repair:coolingBoost" | "repair:performanceCeiling"
   // --- Elle cekilen ama karsiligi olmayan kollar ---
   // Nexus cani yalnizca harcanabiliyordu, bekleme modunun tek karsiligi
   // dusuk enerjiydi, muhimmat lojistigi anahtarinin iki tarafi arasinda fark
@@ -97,6 +97,7 @@ export const ALL_UNLOCKS: Unlock[] = [
   "performance:idleEdge",
   "repair:damageBoost",
   "repair:coolingBoost",
+  "repair:performanceCeiling",
   "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch",
   "status:coolantSlow", "status:slowCrit", "control:deepFreeze", "crit:vsFrozen",
   "attack:doubleShot"
@@ -391,6 +392,10 @@ export const cardCatalog: CardDefinition[] = [
   // kulenin ne zaman onarilacagi artik yalnizca can meselesi degil.
   { id: "tamir-atesi", name: "Tamir Ateşi", description: "Tamircinin onardığı kulenin hasarı, onarım sürdüğü sürece +%45.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["repair:damageBoost"] },
   { id: "sogutmali-kaynak", name: "Soğutmalı Kaynak", description: "Tamircinin onardığı kulenin soğuması, onarım sürdüğü sürece +%120.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["repair:coolingBoost"] },
+  // Bu ucuncusu otekilerden ayri: odul onarim bitince degil **dalga**
+  // bitince kalkiyor. Tamircinin o dalga icinde dokundugu her kule sonuna
+  // kadar tasiyor, yani kart onarimi bir ana degil bir yatirima ceviriyor.
+  { id: "kalibrasyon-turu", name: "Kalibrasyon Turu", description: "Tamircinin onardığı kulenin performans kolu çarpanı, dalga sonuna kadar iki katına çıkar: tam açıkken x2 yerine x4. Isı ve enerji bedeli değişmez.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["repair:performanceCeiling"] },
 
   // --- Kapsanmayan etiketler ---
   // Kimlik kartlari uzun sure sahadaki etiketlerin yalnizca bir kismina

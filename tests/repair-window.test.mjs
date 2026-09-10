@@ -16,7 +16,14 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cardCatalog, getShopItem, towerCatalog, REPAIR_DEPOT_TOWER_ID } from "../packages/shared/dist/index.js";
+import {
+  cardCatalog,
+  getShopItem,
+  getTowerPerformanceEnergyMultiplier,
+  getTowerPerformanceHeatMultiplier,
+  towerCatalog,
+  REPAIR_DEPOT_TOWER_ID
+} from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -207,4 +214,78 @@ test("tamir merkezi hâlâ her karakterin listesinde", () => {
   for (const [karakter, liste] of Object.entries(towerCatalog)) {
     assert.ok(liste.some((tower) => tower.id === REPAIR_DEPOT_TOWER_ID), `${karakter}: merkez listede yok`);
   }
+});
+
+/**
+ * Kalibrasyon Turu: oteki iki karttan ayri bir sure.
+ *
+ * Tamir Atesi ve Sogutmali Kaynak yalnizca onarim surerken isliyor; bu kart
+ * dokunuldugu anda veriliyor ve **dalga** bitene kadar duruyor. Sure bir zaman
+ * damgasi degil dalga numarasi: dalga uzunlugu sabit degil, damga tutulsaydi
+ * kisa dalgada uzun, uzun dalgada kisa surerdi.
+ */
+test("Kalibrasyon Turu performans çarpanını ikiye katlar", () => {
+  const room = oda();
+  const kule = kur(room, "warrior-1");
+  kule.performance = 1;
+  assert.equal(room.getTowerPerformanceAttackMultiplier(kule), 2, "taban carpan degismis");
+
+  kartAl(room, "kalibrasyon-turu");
+  assert.equal(room.getTowerPerformanceAttackMultiplier(kule), 2, "onarilmadan odul verildi");
+
+  kule.repairPerformanceWave = room.wave;
+  assert.equal(room.getTowerPerformanceAttackMultiplier(kule), 4, "carpan ikiye katlanmadi");
+});
+
+test("Kalibrasyon Turu ısı ve enerji bedelini değiştirmez", () => {
+  // Kolun bedeli kendi konumundan hesaplaniyor; kart yalnizca cikisi buyutuyor.
+  const room = oda();
+  const kule = kur(room, "warrior-1");
+  kule.performance = 1;
+  kartAl(room, "kalibrasyon-turu");
+
+  const isiOnce = getTowerPerformanceHeatMultiplier(kule.performance);
+  const enerjiOnce = getTowerPerformanceEnergyMultiplier(kule.performance);
+  kule.repairPerformanceWave = room.wave;
+  assert.equal(getTowerPerformanceHeatMultiplier(kule.performance), isiOnce, "isi bedeli degisti");
+  assert.equal(getTowerPerformanceEnergyMultiplier(kule.performance), enerjiOnce, "enerji bedeli degisti");
+});
+
+test("Kalibrasyon Turu dalga bitince düşer", () => {
+  const room = oda();
+  const kule = kur(room, "warrior-1");
+  kule.performance = 1;
+  kartAl(room, "kalibrasyon-turu");
+  kule.repairPerformanceWave = room.wave;
+  assert.equal(room.getTowerPerformanceAttackMultiplier(kule), 4);
+
+  room.wave += 1;
+  assert.equal(room.getTowerPerformanceAttackMultiplier(kule), 2, "odul dalga sonrasi da surdu");
+});
+
+test("Kalibrasyon Turu tamirci dokunduğunda veriliyor", () => {
+  // Uctan uca: kart + Tamirci + hasarli kule -> odul kulede.
+  const room = oda();
+  const kule = kur(room, "warrior-1");
+  kule.hp = kule.maxHp * 0.5;
+  kartAl(room, "kalibrasyon-turu");
+  const tamirci = tamirciTut(room);
+  tamirci.x = kule.x;
+  tamirci.y = kule.y;
+
+  assert.notEqual(kule.repairPerformanceWave, room.wave, "onarilmadan verilmis");
+  room.updateDrones(16, 0.016);
+  assert.equal(kule.repairPerformanceWave, room.wave, "onarim odulu vermedi");
+});
+
+test("kartsız tamirci ödülü vermez", () => {
+  const room = oda();
+  const kule = kur(room, "warrior-1");
+  kule.hp = kule.maxHp * 0.5;
+  const tamirci = tamirciTut(room);
+  tamirci.x = kule.x;
+  tamirci.y = kule.y;
+
+  room.updateDrones(16, 0.016);
+  assert.notEqual(kule.repairPerformanceWave, room.wave, "kart yokken odul verildi");
 });
