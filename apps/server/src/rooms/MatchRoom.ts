@@ -1673,19 +1673,8 @@ export class MatchRoom extends Room<MatchState> {
 
     this.onMessage("toggleWallGate", (client, message: ToggleWallGateMessage) => this.toggleWallGate(client, message));
 
-    this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => {
-      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-      if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider) {
-        tower.ammoLogisticsEnabled = !tower.ammoLogisticsEnabled;
-      }
-    });
-
-    this.onMessage("setTowerPerformance", (client, message: SetTowerPerformanceMessage) => {
-      const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-      if (this.gameStarted && tower && tower.ownerId === client.sessionId && !tower.definition.resourceProvider && typeof message.performance === "number") {
-        tower.performance = Math.max(0, Math.min(1, message.performance));
-      }
-    });
+    this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => this.toggleAmmoLogistics(client, message));
+    this.onMessage("setTowerPerformance", (client, message: SetTowerPerformanceMessage) => this.setTowerPerformance(client, message));
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
       const serverAt = Date.now();
@@ -5450,6 +5439,7 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId || !message.mode) return;
+    if (!this.acceptsTowerOperation(tower)) return;
     if (tower.definition.engine?.attack.shape === "orbit") return;
     // Ilk, en guclu ve isaretli modlari her kulede aciktir; digerleri kilit ister.
     const requiredUnlock = message.mode === "first" || message.mode === "strongest" || message.mode === "marked"
@@ -5591,7 +5581,7 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       const energyTargets = Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy);
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && countsAsTower(tower.definition) && tower.energy < tower.maxEnergy);
       const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * AMMO_LOGISTICS_WORKER_CAPACITY;
       const underpoweredAmmoFactory = energyTargets.find((tower) => (
         tower.definition.resourceProvider === "ammunition" && tower.energy < factoryMinimumEnergy
@@ -5620,7 +5610,7 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       const target = Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && !tower.definition.resourceProvider && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo)
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo)
         .sort((left, right) => left.ammo / Math.max(1, left.maxAmmo) - right.ammo / Math.max(1, right.maxAmmo))[0];
       if (target && factory.ammo > 0) {
         const loaded = Math.min(capacity, factory.ammo);
@@ -6107,6 +6097,20 @@ export class MatchRoom extends Room<MatchState> {
    * Bedeli yok. Duvarin isciyi de tutmasi zaten oyuncunun odedigi bedel;
    * kapi o bedeli kaldirmiyor, nereye kaldirilacagina karar verdiriyor.
    */
+  private toggleAmmoLogistics(client: Client, message: ToggleAmmoLogisticsMessage) {
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
+    if (!this.acceptsTowerOperation(tower)) return;
+    tower.ammoLogisticsEnabled = !tower.ammoLogisticsEnabled;
+  }
+
+  private setTowerPerformance(client: Client, message: SetTowerPerformanceMessage) {
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
+    if (!this.acceptsTowerOperation(tower) || typeof message.performance !== "number") return;
+    tower.performance = Math.max(0, Math.min(1, message.performance));
+  }
+
   private toggleWallGate(client: Client, message: ToggleWallGateMessage) {
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
@@ -6241,12 +6245,22 @@ export class MatchRoom extends Room<MatchState> {
       maxHp: towerHealth,
       armor: TOWER_BASE_ARMOR,
       ammoType: inferTowerAmmoType(definition),
-      ammo: definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_AMMO,
-      maxAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : definition.resourceProvider ? 0 : TOWER_BASE_AMMO,
+      // Duvarin deposu yok -- ne dolu ne bos, hic. Kapasitesi olsaydi
+      // isciler ona ates etmeyecegi mühimmati ve harcamayacagi enerjiyi
+      // tasirdi; tasiyorlardi da.
+      ammo: definition.resourceProvider
+        ? RESOURCE_PROVIDER_INITIAL_STOCK
+        : countsAsTower(definition) ? TOWER_BASE_AMMO : 0,
+      maxAmmo: definition.resourceProvider === "ammunition"
+        ? RESOURCE_PROVIDER_CAPACITY
+        : definition.resourceProvider || !countsAsTower(definition) ? 0 : TOWER_BASE_AMMO,
       energy: definition.resourceProvider === "ammunition"
         ? AMMO_FACTORY_INITIAL_ENERGY
-        : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK : TOWER_BASE_ENERGY,
-      maxEnergy: definition.resourceProvider ? RESOURCE_PROVIDER_CAPACITY : TOWER_BASE_ENERGY,
+        : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK
+        : countsAsTower(definition) ? TOWER_BASE_ENERGY : 0,
+      maxEnergy: definition.resourceProvider
+        ? RESOURCE_PROVIDER_CAPACITY
+        : countsAsTower(definition) ? TOWER_BASE_ENERGY : 0,
       energyDepletedAt: 0,
       standby: false,
       wakeReadyAt: 0,
@@ -6670,7 +6684,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (message.mode === "standby") {
-      if (tower.definition.resourceProvider) return;
+      if (!this.acceptsTowerOperation(tower)) return;
       tower.standby = !tower.standby;
       tower.wakeReadyAt = tower.standby ? 0 : Date.now() + 3500;
       return;
@@ -6679,6 +6693,22 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.definition.id !== "archer-4") return;
 
     tower.melisUnderworldMode = message.mode;
+  }
+
+  /**
+   * Bu yapi bir **kule islemine** dahil olur mu.
+   *
+   * Uc kol var ve ucu de ayni cumleyi soyluyor: mühimmat akisi, performans
+   * kolu, beklemeye alma, hedefleme modu. Hepsi bir seyi vuran bir sey icin
+   * anlamli. Kaynak binasi vurmaz -- zaten disariydi. Duvar da vurmaz, ama
+   * `!resourceProvider` testinden geciyordu ve boylece kule islemlerinin
+   * tamamini miras aliyordu: isciler ona mühimmat tasiyor, oyuncu ona
+   * performans kolu cekiyordu.
+   *
+   * Duvar kule degil. Tek soru, tek yer.
+   */
+  private acceptsTowerOperation(tower: TowerModel) {
+    return !tower.definition.resourceProvider && countsAsTower(tower.definition);
   }
 
   private removeTowerReferences(towerId: string) {
@@ -10073,7 +10103,16 @@ export class MatchRoom extends Room<MatchState> {
     return "";
   }
 
+  /**
+   * Atakan'in yalnizlik pasifi.
+   *
+   * Duvar disarida. Pasif bir **kule** buffi: yalniz duran kuleye hasar
+   * yaziyor. Duvar hicbir sey vurmadigi icin sayi hicbir yere islemiyordu
+   * ama panelde duvarin durumu "Pasif" yaziyordu -- oyuncuya duvarinin bir
+   * seyler kazandigini soyleyen bir yalan.
+   */
   private getAtakanPassiveMultiplier(tower: TowerModel) {
+    if (!countsAsTower(tower.definition)) return 1;
     return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower) ? 1.12 : 1;
   }
 

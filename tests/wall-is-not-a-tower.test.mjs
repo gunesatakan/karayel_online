@@ -132,3 +132,86 @@ test("sempati agi duvari bagin ucu yapmiyor", () => {
     assert.ok(!link.id.includes(duvar.id), `duvar bagin ucu olmus: ${link.id}`);
   }
 });
+
+/**
+ * Duvarin kule **islemlerine** hic girmemesi.
+ *
+ * Yukaridakiler "duvar bir kulenin yanindaymis gibi sayilmasin" diyor. Burasi
+ * ayni kuralin ikinci ve daha sinsi yuzu: duvarin kendisi bir kuleymis gibi
+ * islem gormesin. Olcut her yerde `!resourceProvider` idi ve duvar kaynak
+ * binasi olmadigi icin butun kule islemlerini miras aliyordu -- cekmecede bir
+ * duvarin altinda performans kolu duruyor, isciler ona hic ates etmeyecegi
+ * mühimmati tasiyordu.
+ *
+ * Her testin kontrolu var: ayni islem gercek bir kulede hala calisiyor. Onlar
+ * olmadan "islemi herkese kapat" duzeltmesi de gecerdi.
+ */
+
+test("duvarin mühimmat ve enerji deposu yok", () => {
+  // Kapasitesi oldugu surece isciler onu bir teslimat hedefi olarak goruyordu.
+  const room = oda("warrior");
+  const duvar = kur(room, "wall-1");
+  assert.equal(duvar.maxAmmo, 0, "duvarin mühimmat deposu var");
+  assert.equal(duvar.maxEnergy, 0, "duvarin enerji deposu var");
+  assert.equal(duvar.ammo, 0);
+  assert.equal(duvar.energy, 0);
+
+  const kule = kur(room, "warrior-1");
+  assert.ok(kule.maxAmmo > 0, "kulenin mühimmat deposu kaybolmus");
+  assert.ok(kule.maxEnergy > 0, "kulenin enerji deposu kaybolmus");
+});
+
+test("boş depolu duvar yine de hiçbir durum yazısına düşmüyor", () => {
+  // Sifir enerji "Enerji Yok" diye okunabilirdi. Duvar hicbir sey harcamadigi
+  // icin o esikler onu yakalamamali.
+  const room = oda("warrior");
+  const duvar = kur(room, "wall-1");
+  assert.equal(room.getTowerStatus(duvar), "", `duvarin durumu: ${room.getTowerStatus(duvar)}`);
+});
+
+test("işçiler duvarı teslimat hedefi saymaz", () => {
+  const room = oda("warrior");
+  const duvar = kur(room, "wall-1");
+  const kule = kur(room, "warrior-1");
+  kule.ammo = 0;
+  kule.energy = 0;
+
+  assert.equal(room.acceptsTowerOperation(duvar), false, "duvar kule islemine giriyor");
+  assert.equal(room.acceptsTowerOperation(kule), true, "kule kule islemine girmiyor");
+
+  // Enerji tasiyicisinin hedef listesi bu olcutten geciyor.
+  const enerjiHedefleri = [...room.towers.values()].filter((tower) => (
+    tower.ownerId === "p1" && tower.hp > 0 && room.acceptsTowerOperation(tower) && tower.energy < tower.maxEnergy
+  ));
+  assert.ok(enerjiHedefleri.some((tower) => tower.id === kule.id), "kule enerji hedefi degil");
+  assert.ok(!enerjiHedefleri.some((tower) => tower.id === duvar.id), "duvar enerji hedefi olmus");
+});
+
+test("duvarda mühimmat akışı, performans, bekleme ve hedefleme yok", () => {
+  const room = oda("warrior");
+  const duvar = kur(room, "wall-1");
+  const kule = kur(room, "warrior-1");
+
+  const akisOncesi = duvar.ammoLogisticsEnabled;
+  room.toggleAmmoLogistics(client, { towerId: duvar.id });
+  assert.equal(duvar.ammoLogisticsEnabled, akisOncesi, "duvarda mühimmat akisi degisti");
+  room.toggleAmmoLogistics(client, { towerId: kule.id });
+  assert.notEqual(kule.ammoLogisticsEnabled, akisOncesi, "kulede mühimmat akisi degismedi");
+
+  const performansOncesi = duvar.performance;
+  room.setTowerPerformance(client, { towerId: duvar.id, performance: 1 });
+  assert.equal(duvar.performance, performansOncesi, "duvarda performans kolu cekildi");
+  room.setTowerPerformance(client, { towerId: kule.id, performance: 1 });
+  assert.equal(kule.performance, 1, "kulede performans kolu cekilemedi");
+
+  room.setTowerMode(client, { towerId: duvar.id, mode: "standby" });
+  assert.equal(duvar.standby, false, "duvar beklemeye alindi");
+  room.setTowerMode(client, { towerId: kule.id, mode: "standby" });
+  assert.equal(kule.standby, true, "kule beklemeye alinamadi");
+
+  const duvarModu = duvar.targetingMode;
+  room.setTowerTargeting(client, { towerId: duvar.id, mode: "strongest" });
+  assert.equal(duvar.targetingMode, duvarModu, "duvarin hedefleme modu degisti");
+  room.setTowerTargeting(client, { towerId: kule.id, mode: "strongest" });
+  assert.equal(kule.targetingMode, "strongest", "kulenin hedefleme modu degismedi");
+});

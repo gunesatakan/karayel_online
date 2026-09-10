@@ -73,6 +73,7 @@ import {
   hasUnlockBit,
   getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
+  countsAsTower,
   type StaticEnemySnapshot,
   type StaticSnapshot,
   type DynamicEnemySnapshot,
@@ -1999,8 +2000,23 @@ export class GameScene extends Phaser.Scene {
    * Iyimser deger burada da okunuyor: iki kol ayni sayiyi gostermeli,
    * yoksa suruklerken biri digerinin gerisinde kalir.
    */
+  /**
+   * Bu yapi bir **kule islemine** dahil olur mu.
+   *
+   * Sunucudaki `acceptsTowerOperation` ile ayni cumle, ayni sebep: mühimmat
+   * akisi, performans kolu, beklemeye alma, hedefleme -- hepsi bir seyi
+   * vuran bir sey icin var. Duvar vurmaz. Olcut `!resourceProvider`
+   * oldugunda duvar butun bunlari miras aliyordu ve cekmecede bir duvarin
+   * altinda performans kolu duruyordu.
+   */
+  private acceptsTowerOperation(selectedTower: TowerSnapshot | undefined) {
+    return Boolean(selectedTower)
+      && !selectedTower!.resourceProvider
+      && countsAsTower({ id: selectedTower!.definitionId });
+  }
+
   private getPerformanceControlState(selectedTower: TowerSnapshot | undefined) {
-    if (!selectedTower || selectedTower.resourceProvider) return undefined;
+    if (!this.acceptsTowerOperation(selectedTower) || !selectedTower) return undefined;
     const server = Phaser.Math.Clamp(selectedTower.performance ?? 0.5, 0, 1);
     const value = this.optimisticPerformance?.towerId === selectedTower.id
       ? this.optimisticPerformance.value
@@ -5388,12 +5404,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       .fillRoundedRect(x, y, width * ratio, height, 1);
   }
 
+  /**
+   * Secili yapinin haritadaki paneli.
+   *
+   * Duvarda kaynak paneli **cizilmiyor**: mühimmat, enerji, isi ve
+   * performans cubuklarinin dordu de duvarda anlamsiz. Panel yok ama satis
+   * tusu duruyor -- haritada satmanin tek yeri orasi. Panel yuksekligi
+   * sifira inince tus kulenin hemen altina oturuyor.
+   */
   private drawSelectedTowerResources(tower: TowerSnapshot, discSize: number) {
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
+    const showsResources = this.acceptsTowerOperation(tower) || Boolean(tower.resourceProvider);
     const panelWidth = Math.max(147, Math.min(169, discSize * 1.6));
-    const panelHeight = 98;
+    const panelHeight = showsResources ? 98 : 0;
     const bounds = getMapWorldBounds(this.selectedMapData);
     const panelCenterX = Phaser.Math.Clamp(tower.x, bounds.left + panelWidth / 2 + 4, bounds.right - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
@@ -5416,7 +5441,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.sellButtonRect = this.canSellSelectedTower(tower)
       ? { x: panelX + 10, y: panelY + panelHeight + 4, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
       : undefined;
-    const hasPerformanceControl = !tower.resourceProvider;
+    const hasPerformanceControl = this.acceptsTowerOperation(tower);
     const usesAmmo = tower.resourceProvider === "ammunition" || tower.shotFuel !== "energy";
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
@@ -5434,34 +5459,39 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       0,
       1
     );
-    graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
-    graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
-    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
-    if (usesAmmo) {
-      graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
-    } else {
-      graphics.fillStyle(0x475569, 0.9).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
-      graphics.lineStyle(2, 0xf87171, 0.95);
-      graphics.lineBetween(barX + 2, ammoBarY + 1, barX + barWidth - 2, ammoBarY + barHeight - 1);
-      graphics.lineBetween(barX + 2, ammoBarY + barHeight - 1, barX + barWidth - 2, ammoBarY + 1);
-    }
-    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
-    graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
+    // Cubuk blogunun disinda da okunuyor: sicaklik ve sans etiketleri bu
+    // yarim genislige gore yerlesiyor.
     const splitBarWidth = (barWidth - 4) / 2;
-    const temperatureBarWidth = hasMisfortune ? splitBarWidth : barWidth;
-    graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, temperatureBarWidth, barHeight, 3);
-    graphics.fillStyle(isAmmoFactory ? 0x84cc16 : temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
-      .fillRoundedRect(barX, temperatureBarY, temperatureBarWidth * (isAmmoFactory ? rawAmmoRatio : temperatureRatio), barHeight, 3);
-    if (hasMisfortune) {
-      const misfortuneBarX = barX + splitBarWidth + 4;
-      graphics.fillStyle(0x172033, 1).fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth, barHeight, 3);
-      graphics.fillStyle((tower.luckyWindowRemainingMs ?? 0) > 0 ? 0xfacc15 : 0xa855f7, 1)
-        .fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth * misfortuneRatio, barHeight, 3);
-    }
-    if (hasPerformanceControl) {
-      graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, performanceBarY, barWidth, barHeight, 3);
-      graphics.fillStyle(0x22c55e, 1).fillRoundedRect(barX, performanceBarY, barWidth * performanceRatio, barHeight, 3);
-      graphics.fillStyle(0xf8fafc, 1).fillCircle(barX + barWidth * performanceRatio, performanceBarY + barHeight / 2, 5);
+    // Cubuklarin tamami kule isi. Duvarda hicbiri cizilmiyor.
+    if (showsResources) {
+      graphics.fillStyle(0x020617, 0.96).fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
+      graphics.lineStyle(1.5, 0x64748b, 0.9).strokeRoundedRect(panelX, panelY, panelWidth, panelHeight, 6);
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
+      if (usesAmmo) {
+        graphics.fillStyle(0xf59e0b, 1).fillRoundedRect(barX, ammoBarY, barWidth * ammoRatio, barHeight, 3);
+      } else {
+        graphics.fillStyle(0x475569, 0.9).fillRoundedRect(barX, ammoBarY, barWidth, barHeight, 3);
+        graphics.lineStyle(2, 0xf87171, 0.95);
+        graphics.lineBetween(barX + 2, ammoBarY + 1, barX + barWidth - 2, ammoBarY + barHeight - 1);
+        graphics.lineBetween(barX + 2, ammoBarY + barHeight - 1, barX + barWidth - 2, ammoBarY + 1);
+      }
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, energyBarY, barWidth, barHeight, 3);
+      graphics.fillStyle(0x22d3ee, 1).fillRoundedRect(barX, energyBarY, barWidth * energyRatio, barHeight, 3);
+      const temperatureBarWidth = hasMisfortune ? splitBarWidth : barWidth;
+      graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, temperatureBarY, temperatureBarWidth, barHeight, 3);
+      graphics.fillStyle(isAmmoFactory ? 0x84cc16 : temperatureRatio > 0.75 ? 0xef4444 : temperatureRatio > 0.5 ? 0xf97316 : 0xfacc15, 1)
+        .fillRoundedRect(barX, temperatureBarY, temperatureBarWidth * (isAmmoFactory ? rawAmmoRatio : temperatureRatio), barHeight, 3);
+      if (hasMisfortune) {
+        const misfortuneBarX = barX + splitBarWidth + 4;
+        graphics.fillStyle(0x172033, 1).fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth, barHeight, 3);
+        graphics.fillStyle((tower.luckyWindowRemainingMs ?? 0) > 0 ? 0xfacc15 : 0xa855f7, 1)
+          .fillRoundedRect(misfortuneBarX, temperatureBarY, splitBarWidth * misfortuneRatio, barHeight, 3);
+      }
+      if (hasPerformanceControl) {
+        graphics.fillStyle(0x172033, 1).fillRoundedRect(barX, performanceBarY, barWidth, barHeight, 3);
+        graphics.fillStyle(0x22c55e, 1).fillRoundedRect(barX, performanceBarY, barWidth * performanceRatio, barHeight, 3);
+        graphics.fillStyle(0xf8fafc, 1).fillCircle(barX + barWidth * performanceRatio, performanceBarY + barHeight / 2, 5);
+      }
     }
 
     const sell = this.sellButtonRect;
@@ -5480,14 +5510,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       .setText(usesAmmo ? `Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}` : "Mühimmat — KULLANMIYOR")
       .setColor(usesAmmo ? "#fef3c7" : "#fecaca")
       .setPosition(labelCenterX, panelY + 2)
-      .setVisible(true);
-    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(true);
+      .setVisible(showsResources);
+    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(showsResources);
     this.selectedTemperatureText
       .setText(isAmmoFactory
         ? `Hammadde ${Math.floor(tower.rawAmmo ?? 0)}/${tower.maxRawAmmo ?? 0}`
         : `Sıcaklık %${Math.round(tower.temperature ?? 0)}`)
       .setPosition(hasMisfortune ? barX + splitBarWidth / 2 : labelCenterX, panelY + 46)
-      .setVisible(true);
+      .setVisible(showsResources);
     this.selectedMisfortuneText
       .setText((tower.luckyWindowRemainingMs ?? 0) > 0
         ? `Şanslı ${(tower.luckyWindowRemainingMs! / 1000).toFixed(1)}sn`
@@ -7505,6 +7535,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const spectrumTotal = Math.max(1, approval + stress);
     const stressRatio = Phaser.Math.Clamp(stress / spectrumTotal, 0, 1);
     const isUnderworldTower = selectedTower?.definitionId === "archer-4";
+    // Kule islemleri (mühimmat, isi, performans, hedefleme) tek olcutten
+    // geciyor: bunlarin hepsi vuran bir yapi icin var.
+    const towerOperations = this.acceptsTowerOperation(selectedTower);
     // Ruh hali kule davranisini degistiriyor; oyuncu bunu ancak secili kulenin
     // panelinde, tam ihtiyaci oldugu anda okuyabilir.
     const melisZone = getMelisSpectrumZone(approval, stress);
@@ -7602,16 +7635,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         open: selectedTower.gate === true,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
-      ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
+      ammoLogistics: selectedTower && towerOperations ? {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
-      standby: selectedTower && !selectedTower.resourceProvider ? {
+      standby: selectedTower && towerOperations ? {
         active: selectedTower.standby === true,
         waking: (selectedTower.wakeRemainingMs ?? 0) > 0,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
-      targeting: selectedTower && !selectedTower.resourceProvider && definition?.engine?.attack.shape !== "orbit"
+      targeting: selectedTower && towerOperations && definition?.engine?.attack.shape !== "orbit"
         ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] }
         : undefined,
       goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot && (this.localPlayerSnapshot.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== this.latestPerfSnapshot.team.wave ? {
@@ -7667,8 +7700,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       performance: this.getPerformanceControlState(selectedTower),
       selectedTowerId: this.selectedPlacedTowerId,
       selectedStats: selectedTower ? [
-        `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
-        `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`,
+        // Hasar ve DPS yalnizca vuran yapida. Duvarin ikisi de her zaman
+        // sifir ve o sifirlar bir bilgi degil, gurultu.
+        ...(towerOperations ? [
+          `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
+          `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`
+        ] : []),
         // Kulenin ne yaptigini soyleyen satirlar. Aura yaricapi ve
         // yavaslatma gucu hicbir yerde yazmiyordu: Izolasyon Kulesi'ni
         // kuran oyuncu ne kadar yavaslattigini ancak dusmanlara bakarak
@@ -7686,13 +7723,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ] : []),
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(!selectedTower.resourceProvider ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(!selectedTower.resourceProvider ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
-        ...(!selectedTower.resourceProvider && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
-        ...(!selectedTower.resourceProvider ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+        ...(towerOperations ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
+        ...(towerOperations ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
+        ...(towerOperations && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
+        ...(towerOperations ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
         ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
-        ...(!selectedTower.resourceProvider ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
-        ...(!selectedTower.resourceProvider ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
+        ...(towerOperations ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
+        ...(towerOperations ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
+        // Duvarin kendine ait tek satiri: kapi acik mi.
+        ...(selectedTower.definitionId === WALL_TOWER_ID ? [`Kapi: ${selectedTower.gate ? "Acik (isciler gecer)" : "Kapali"}`] : []),
         ...(melisZoneEffect ? [`Ruh hali — ${melisZoneLabel}: ${melisZoneEffect}`] : []),
         ...(isUnderworldTower ? [
           `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
