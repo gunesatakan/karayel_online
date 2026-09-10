@@ -1309,6 +1309,20 @@ export class MatchRoom extends Room<MatchState> {
    * dusmanlari hattan uzaklastirir.
    */
   private sealedCells = new Set<string>();
+  /**
+   * Ortak cikmaz sokak hafizasi.
+   *
+   * Bir dusman bir hucreyi cikmaz sokak olarak gordugunde buraya yaziliyor ve
+   * o andan itibaren **butun** dusmanlar o hucreyi kapali sayiyor -- oraya hic
+   * gitmemis olanlar da. Dusmanlar haritayi bilmiyor ama birbirlerine haber
+   * veriyorlar; kesif hala kesif, yalnizca bir kez yapiliyor.
+   *
+   * Hafiza kendi uzerine yigiliyor: bir hucre kapandiginda komsusunun acik
+   * yan sayisi duser ve o da cikmaz sokak olabilir. Boylece kor bir sokagin
+   * yalnizca ucu degil tamami zamanla haritadan dusuyor ve agzina gelen
+   * dusman iceri hic girmiyor.
+   */
+  private deadEndCells = new Set<string>();
   /** Surunun en son hangi hucrede yogunlastigi; kayma uyarisi buna bakar. */
   private lastMainGate?: { col: number; row: number };
   /** Hucre -> kule; dogrusal `getTowerAtCell` taramasinin yerine gecer. */
@@ -1326,6 +1340,9 @@ export class MatchRoom extends Room<MatchState> {
     // Yapi degisti: kapali sanilan bir cikis acilmis olabilir. Hafizayi
     // korumak, oyuncunun actigi gecidi dusmanlarin gormemesi demek olurdu.
     this.sealedCells.clear();
+    // Cikmaz sokak hafizasi da ayni sebeple: yigilarak kuruldugu icin tek bir
+    // hucreyi tek tek dogrulamak yetmez, tamami yeniden kesfedilmeli.
+    this.deadEndCells.clear();
   }
 
   /**
@@ -5674,9 +5691,9 @@ export class MatchRoom extends Room<MatchState> {
     if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
       return;
     }
+    // Eskitme yok: onarim yikilan yapiyi diriltmiyor, yani gecilebilirlik
+    // degismiyor. Her tick eskitmek cikmaz sokak hafizasini surekli silerdi.
     target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
-    // Yol maliyeti kalan cana bagli: onarim da akisi degistirir.
-    this.markNavigationDirty();
     if (target.hp >= target.maxHp) {
       target.breachAnnounced = false;
       worker.targetTowerId = "";
@@ -5920,6 +5937,21 @@ export class MatchRoom extends Room<MatchState> {
    * icin ayrica iki hucre arasindaki gecis de sorulur.
    */
   private isCellWalkable(from: { col: number; row: number }, col: number, row: number) {
+    if (!this.isCellPassable(from, col, row)) {
+      return false;
+    }
+    // Cikmaz sokaktan **cikmak** her zaman serbest: kural iceri girmeyi
+    // yasakliyor, iceride kalmis bir dusmani hapsetmeyi degil. Aksi halde
+    // sokak haritalanmadan once iceri girmis dusman, yuruyerek cikabilecekken
+    // duvar kirmaya baslardi.
+    if (this.deadEndCells.has(`${from.col}:${from.row}`)) {
+      return true;
+    }
+    return !this.isDeadEnd(col, row);
+  }
+
+  /** Yapi ve harita siniri acisindan gecilebilirlik; cikmaz sokak hafizasi haric. */
+  private isCellPassable(from: { col: number; row: number }, col: number, row: number) {
     if (col < 0 || col >= this.activeMap.cols || row < 0 || row >= this.activeMap.rows) {
       return false;
     }
@@ -5928,6 +5960,43 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
     return !this.getBlockingTowerBetween(from, { col, row });
+  }
+
+  /**
+   * Bu hucre cikmaz sokak mi -- ve oyleyse hafizaya yaz.
+   *
+   * Olcut: dort yanindan ucu kapali, yani icinden **gecilemiyor**. Boyle bir
+   * hucreye giren dusman ayni yandan geri cikmak zorunda; oraya gitmenin
+   * hicbir karsiligi yok.
+   *
+   * Kapalilik sayilirken hafizadaki oteki cikmaz sokaklar da kapali sayiliyor:
+   * yigilma buradan geliyor. Yigilmanin gecerli bir yolu kapatmasi mumkun
+   * degil, cunku her adimda yalnizca **icinden gecilemeyen** bir hucre
+   * eleniyor -- eleme, gecen hicbir yolu kisaltmaz.
+   *
+   * Tek istisna cikis satiri: orasi hedefin kendisi. Cikisa dar bir koridorun
+   * ucundan variliyorsa o hucrenin uc yani kapalidir ve elenmesi oyunu
+   * kazanilmaz kilardi.
+   */
+  private isDeadEnd(col: number, row: number) {
+    const key = `${col}:${row}`;
+    if (this.deadEndCells.has(key)) {
+      return true;
+    }
+    if (row === this.activeMap.rows - 1) {
+      return false;
+    }
+    const cell = { col, row };
+    let open = 0;
+    for (const neighbor of this.getGridNeighbors(col, row)) {
+      if (!this.isCellPassable(cell, neighbor.col, neighbor.row)) continue;
+      if (this.deadEndCells.has(`${neighbor.col}:${neighbor.row}`)) continue;
+      open += 1;
+      if (open > 1) return false;
+    }
+    // Gorulen sokak haber verilir: bundan sonra butun dusmanlar biliyor.
+    this.deadEndCells.add(key);
+    return true;
   }
 
   /** Ilk temasta el secimi: yarisi saga, yarisi sola. */
@@ -6185,10 +6254,10 @@ export class MatchRoom extends Room<MatchState> {
 
     player.gold -= cost;
     player.goldSpent += cost;
+    // Eskitme yok: onarim yalnizca ayakta duran yapiya isliyor (hp <= 0
+    // reddediliyor), yani hicbir hucrenin gecilebilirligi degismiyor.
     tower.hp = tower.maxHp;
     tower.breachAnnounced = false;
-    // Yol maliyeti kalan cana bagli: onarim akisi da degistirir.
-    this.markNavigationDirty();
     client.send("structure:repaired", { towerId: tower.id, cost });
   }
 
@@ -6198,10 +6267,13 @@ export class MatchRoom extends Room<MatchState> {
     }
     const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
-    // Yol maliyeti kalan cana bagli oldugu icin her hasar alani eskitir.
-    this.markNavigationDirty();
     this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
+      // Eskitme yalnizca burada: gecilebilirlik canin kendisine degil,
+      // **sifira inmesine** bagli. Her vurusta eskitmek akis alani
+      // donemindeki yol maliyetinden kalmaydi ve artik hicbir sey okumuyor;
+      // dahasi zararliydi -- cikmaz sokak hafizasi her vurusta silinirdi.
+      this.markNavigationDirty();
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
