@@ -291,3 +291,40 @@ test("motor eklentileri cozulmus motora gercekten giriyor", () => {
     );
   }
 });
+
+/**
+ * Yapi cani, kritik sansi ve kritik hasari icin gercek secenek olmali.
+ *
+ * Ucu de katalogda "geciyordu" ama secenek yoktu: kritik sansinin tek karti ve
+ * tek esyasi vardi, kritik hasarinin da -- ustelik ikisinin esyasi ayni esyaydi.
+ * Yapi cani daha kotusuydu; bes kartin ucunde can bir **ceza** olarak geciyordu,
+ * yani "can arayan oyuncu" katalogda tek bir kart buluyordu.
+ *
+ * Olcut bu yuzden sayma degil, **artiya sayma**: cani dusuren bir kart o eksene
+ * icerik saymaz. Aksi halde uc ceza karti eksigi kapatiyormus gibi gorunurdu.
+ */
+const SECENEK_ISTEYEN_STATLAR = ["towerHealth", "critChance", "critDamage"];
+
+function artiyaVerenler(catalog, stat) {
+  return catalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === stat && modifier.add > 0));
+}
+
+test("can ve kritik eksenlerinin her birinde en az iki kart, iki esya var", () => {
+  for (const stat of SECENEK_ISTEYEN_STATLAR) {
+    const kartlar = artiyaVerenler(cardCatalog, stat);
+    const esyalar = artiyaVerenler(shopCatalog, stat);
+    assert.ok(kartlar.length >= 2, `${stat}: yalnizca ${kartlar.length} kart (${kartlar.map((k) => k.id).join(", ")})`);
+    assert.ok(esyalar.length >= 2, `${stat}: yalnizca ${esyalar.length} esya (${esyalar.map((e) => e.id).join(", ")})`);
+  }
+});
+
+test("kritik esyalari tek bir esyanin iki yuzu degil", () => {
+  // Bir donem kritik sansinin da kritik hasarinin da tek esyasi vardi ve o
+  // esya ayni esyaydi: "iki secenek" gorunup tek karar olan bir durum.
+  const sansEsyalari = artiyaVerenler(shopCatalog, "critChance").map((item) => item.id);
+  const hasarEsyalari = artiyaVerenler(shopCatalog, "critDamage").map((item) => item.id);
+  const yalnizSans = sansEsyalari.filter((id) => !hasarEsyalari.includes(id));
+  const yalnizHasar = hasarEsyalari.filter((id) => !sansEsyalari.includes(id));
+  assert.ok(yalnizSans.length >= 1, "kritik sansi yalnizca kritik hasariyla birlikte geliyor");
+  assert.ok(yalnizHasar.length >= 1, "kritik hasari yalnizca kritik sansiyla birlikte geliyor");
+});

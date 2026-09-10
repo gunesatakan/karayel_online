@@ -212,6 +212,34 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sogutma-sistemi", name: "Soğutma Sistemi", description: "Tüm kulelerin soğuması +%50.", axes: ["economy"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("sogutma-sistemi", "cooling", 0.5)] },
   { id: "kalin-zirh", name: "Kalın Zırh", description: "Tüm kulelerin canı +%80.", axes: ["barricade"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("kalin-zirh", "towerHealth", 0.8)] },
   { id: "keskin-goz", name: "Keskin Göz", description: "Tüm kulelerin kritik şansı +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("keskin-goz", "critChance", 0.08)] },
+
+  // --- Yapi cani ---
+  //
+  // Bu eksen uzun sure olu bir yatirimdi: dusmanlar yalnizca onlerini kesen
+  // yapiya vuruyordu, yani cani buyutmek "duvar orersen ise yarar" demekti.
+  // Nisancilar menzilden kuleye atmaya baslayinca hat gerisindeki kule de
+  // hedef oldu ve can bir tercih haline geldi. Ucu de bedelini baska bir
+  // eksenden odiyor -- menzil, atis hizi, onarim -- cunku bedelsiz can
+  // yalnizca "her zaman al" olurdu.
+  { id: "takviyeli-temel", name: "Takviyeli Temel", description: "Tüm kulelerin canı +%50, menzili -%8.", axes: ["barricade"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("takviyeli-temel", "towerHealth", 0.5), effect("takviyeli-temel", "range", -0.08)] },
+  { id: "zirhli-govde", name: "Zırhlı Gövde", description: "Bir kulenin canı +%180, atış hızı -%15.", axes: ["barricade"], scope: { kind: "targeted" }, stackable: true, maxStacks: 2, rarity: "rare", effects: [effect("zirhli-govde", "towerHealth", 1.8, "tower"), effect("zirhli-govde", "fireRate", -0.15, "tower")] },
+
+  // --- Kritik sansi ---
+  //
+  // Taban kritik sansi %1: yani bu statin tamami kart ve esyadan geliyor,
+  // uzerine bindigi bir temel yok. Kucuk sayilar burada gercekten kucuk
+  // kaliyor, o yuzden ikisi de kayda deger adimlar atiyor ve karsiliginda
+  // ya atis hizi ya da kapsam daraligi istiyor.
+  { id: "tetik-disiplini", name: "Tetik Disiplini", description: "Tüm kulelerin kritik şansı +%10, atış hızı -%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("tetik-disiplini", "critChance", 0.1), effect("tetik-disiplini", "fireRate", -0.08)] },
+  { id: "avci-gozu", name: "Avcı Gözü", description: "Mermili kulelerin kritik şansı +%18.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("avci-gozu", "critChance", 0.18)] },
+
+  // --- Kritik hasari ---
+  //
+  // Taban kritik carpani 2x, yani buradaki her yuzde o carpanin ustune
+  // biniyor. Kritik sansi dusukken tek basina alinan kritik hasari bosa
+  // gider; ikisinin ayni kosuda bulusmasi gereken bir bahis olmasi kasitli.
+  { id: "kirici-cekirdek", name: "Kırıcı Çekirdek", description: "Tüm kulelerin kritik hasarı +%80, canı -%10.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("kirici-cekirdek", "critDamage", 0.8), effect("kirici-cekirdek", "towerHealth", -0.1)] },
+  { id: "oldurucu-nokta", name: "Öldürücü Nokta", description: "Bir kulenin kritik hasarı +%200, atış hızı -%25.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("oldurucu-nokta", "critDamage", 2), effect("oldurucu-nokta", "fireRate", -0.25, "tower")] },
   // Bir donem isabet, donus hizi ve mermi hizi ayri ayri kartlardi ve hicbiri
   // tek basina secilmeye deger degildi; ucu burada toplandi. Nisan alma ekseni
   // asagida yeniden acildi ama duz sayi olarak degil (bkz. o bolum); bu kart

@@ -131,6 +131,17 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("hafif-muhimmat", "Hafif Mühimmat", "Takıldığı kulenin mermi hızı +%40; en fazla 2 kez alınır.", "power", 85, { repeatable: true, maxStacks: 2, effects: [effect("hafif-muhimmat", "projectileSpeed", 0.4)] }),
   defineItem("isi-emici", "Isı Emici", "Takıldığı kulenin atış başına ısısı -%25; en fazla 2 kez alınır.", "power", 105, { repeatable: true, maxStacks: 2, effects: [effect("isi-emici", "heat", -0.25)] }),
   defineItem("kritik-sistem", "Kritik Sistem", "Takıldığı kulenin kritik şansı +%12, kritik hasarı +%100.", "power", 150, { effects: [effect("kritik-sistem", "critChance", 0.12), effect("kritik-sistem", "critDamage", 1)] }),
+  // Kritik sansi: biri merdiven, biri tek buyuk adim. Tekrarlanabilir olan
+  // ucuz basliyor ve zamla buyuyor; tek seferlik olan ayni yere bir hamlede
+  // goturuyor ama menzil odiyor. Ikisini de almak mumkun, ama ikisi de ayni
+  // kuleye takiliyor ve yuva sayisi sinirli.
+  defineItem("hassas-tetik", "Hassas Tetik", "Takıldığı kulenin kritik şansı +%7; en fazla 4 kez alınır.", "power", 45, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, effects: [effect("hassas-tetik", "critChance", 0.07)] }),
+  defineItem("sans-mercegi", "Şans Merceği", "Takıldığı kulenin kritik şansı +%25 ama menzili -%20.", "power", 125, { effects: [effect("sans-mercegi", "critChance", 0.25), effect("sans-mercegi", "range", -0.2)] }),
+  // Kritik hasari: ikisi de kritik sansi olan bir kulede anlamli. Isi
+  // odeyen olan daha buyuk, cunku isi performans koluyla zaten pazarlik
+  // konusu -- kolu asagi cekmeyi bilen oyuncu bedeli kucultebilir.
+  defineItem("agir-cekirdek", "Ağır Çekirdek", "Takıldığı kulenin kritik hasarı +%120; en fazla 2 kez alınır.", "power", 105, { repeatable: true, maxStacks: 2, priceGrowth: 1.3, effects: [effect("agir-cekirdek", "critDamage", 1.2)] }),
+  defineItem("infilak-basligi", "İnfilak Başlığı", "Takıldığı kulenin kritik hasarı +%180 ama ısısı +%30.", "power", 130, { effects: [effect("infilak-basligi", "critDamage", 1.8), effect("infilak-basligi", "heat", 0.3)] }),
 
   defineItem("delici-cekirdek", "Delici Çekirdek", "Takıldığı kulenin hasarı +%20; yalnızca projectile kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["projectile"] }, effects: [effect("delici-cekirdek", "damage", 0.2)] }),
   defineItem("odak-mercegi", "Odak Merceği", "Takıldığı kulenin hasarı +%25; yalnızca focus kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["focus"] }, effects: [effect("odak-mercegi", "damage", 0.25)] }),
@@ -149,6 +160,13 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("komuta-modulu", "Komuta Modülü", "Takıldığı kulenin işaret gücü +%30; yalnızca amplify kulelerine takılır.", "class", 110, { axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, effects: [effect("komuta-modulu", "markAmplification", 0.3)] }),
   defineItem("buz-cekirdegi", "Buz Çekirdeği", "Takıldığı kulenin durum etkisi gücü +%40; yalnızca CC kulelerine takılır.", "class", 100, { axes: ["cc"], scope: { kind: "tagged", axes: ["cc"] }, effects: [effect("buz-cekirdegi", "statusMagnitude", 0.4)] }),
   defineItem("zirh-plakasi", "Zırh Plakası", "Takıldığı kulenin canı +%80; yalnızca barricade kulelerine takılır.", "class", 95, { axes: ["barricade"], scope: { kind: "tagged", axes: ["barricade"] }, effects: [effect("zirh-plakasi", "towerHealth", 0.8)] }),
+  // Can esyalari her kuleye takilir; Zirh Plakasi barricade ile sinirli ve
+  // oyle kalmali. Hat gerisindeki bir atis kulesi de nisancinin hedefi
+  // oldugu icin can artik yalnizca duvarcinin isi degil.
+  defineItem("celik-dokum", "Çelik Döküm", "Takıldığı kulenin canı +%55; en fazla 3 kez alınır.", "utility", 50, { repeatable: true, maxStacks: 3, priceGrowth: 1.25, effects: [effect("celik-dokum", "towerHealth", 0.55)] }),
+  // Can ve onarim bedeli ayni esyada: ikisi de "bu kule ayakta kalsin"
+  // sorusunun cevabi ve Tamirci iscisiyle ayni yone bakiyorlar.
+  defineItem("tampon-katman", "Tampon Katman", "Takıldığı kulenin canı +%90 ve onarım bedeli -%35.", "utility", 110, { effects: [effect("tampon-katman", "towerHealth", 0.9), effect("tampon-katman", "repairCost", -0.35)] }),
   defineItem("verim-hatti", "Verim Hattı", "Takıldığı binanın üretim hızı +%35; yalnızca economy binalarına takılır.", "class", 100, { axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("verim-hatti", "resourceProduction", 0.35)] }),
 
   defineItem("termal-funye", "Termal Fünye", "Takıldığı kule 4 saniye boyunca saniyede %1,5 yakar; yalnızca fire kulelerine takılır.", "class", 120, { scope: { kind: "tagged", damageTypes: ["fire"] }, unlocks: ["status:burn"] }),
