@@ -129,6 +129,7 @@ type ControlActionDetail = {
     | "repairStructure"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "toggleWallGate"
     | "toggleTowerStandby"
     | "openWorkerHire"
     | "closeWorkerHire"
@@ -1534,6 +1535,11 @@ export class GameScene extends Phaser.Scene {
       case "toggleAmmoLogistics":
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
+        }
+        break;
+      case "toggleWallGate":
+        if (this.selectedPlacedTowerId) {
+          this.room?.send("toggleWallGate", { towerId: this.selectedPlacedTowerId });
         }
         break;
       case "toggleTowerStandby":
@@ -4804,18 +4810,37 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         continue;
       }
 
-      graphics.lineStyle(glowWidth, 0x7c3aed, selected ? 0.3 : 0.18);
-      graphics.lineBetween(x1, y1, x2, y2);
-      graphics.lineStyle(thickness * 1.45, 0x2e1065, 0.94);
-      graphics.lineBetween(x1, y1, x2, y2);
-      graphics.lineStyle(thickness * 0.9, 0x6d28d9, 0.94);
-      graphics.lineBetween(x1, y1, x2, y2);
-      graphics.lineStyle(coreWidth, selected ? 0xfdf2f8 : 0xc4b5fd, pulse);
-      graphics.lineBetween(x1, y1, x2, y2);
+      // Kapili duvar ortasindan aciliyor: govde iki yana cekiliyor ve
+      // aradaki bosluk kehribar rengi iki sovele isaretleniyor. Yikilan
+      // duvarin acilisindan rengiyle ayriliyor -- biri kayip, oteki karar.
+      const gateRatio = tower.gate === true ? 0.34 : 0;
+      const gx1 = x1 + (x2 - x1) * (0.5 - gateRatio / 2);
+      const gy1 = y1 + (y2 - y1) * (0.5 - gateRatio / 2);
+      const gx2 = x1 + (x2 - x1) * (0.5 + gateRatio / 2);
+      const gy2 = y1 + (y2 - y1) * (0.5 + gateRatio / 2);
+      const halves: Array<[number, number, number, number]> = gateRatio > 0
+        ? [[x1, y1, gx1, gy1], [gx2, gy2, x2, y2]]
+        : [[x1, y1, x2, y2]];
+
+      for (const [ax, ay, bx, by] of halves) {
+        graphics.lineStyle(glowWidth, 0x7c3aed, selected ? 0.3 : 0.18);
+        graphics.lineBetween(ax, ay, bx, by);
+        graphics.lineStyle(thickness * 1.45, 0x2e1065, 0.94);
+        graphics.lineBetween(ax, ay, bx, by);
+        graphics.lineStyle(thickness * 0.9, 0x6d28d9, 0.94);
+        graphics.lineBetween(ax, ay, bx, by);
+        graphics.lineStyle(coreWidth, selected ? 0xfdf2f8 : 0xc4b5fd, pulse);
+        graphics.lineBetween(ax, ay, bx, by);
+      }
 
       graphics.fillStyle(selected ? 0xfdf2f8 : 0xa78bfa, selected ? 0.9 : 0.72);
       graphics.fillCircle(x1, y1, thickness * 0.55);
       graphics.fillCircle(x2, y2, thickness * 0.55);
+      if (gateRatio > 0) {
+        graphics.fillStyle(0xf59e0b, 0.95);
+        graphics.fillCircle(gx1, gy1, thickness * 0.42);
+        graphics.fillCircle(gx2, gy2, thickness * 0.42);
+      }
     }
   }
 
@@ -7571,6 +7596,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         pullCount: selectedTower.melisUnderworldPullCount ?? 0,
         canEdit: selectedTower.ownerId === this.localSessionId
       } : undefined,
+      // Kapi yalnizca duvarda. Baska yapilarda "gecis" diye bir sey yok:
+      // kule kareyi kapliyor, duvar iki kare arasindaki cizgiyi.
+      gate: selectedTower && selectedTower.definitionId === WALL_TOWER_ID ? {
+        open: selectedTower.gate === true,
+        canEdit: selectedTower.ownerId === this.localSessionId
+      } : undefined,
       ammoLogistics: selectedTower && !selectedTower.resourceProvider ? {
         enabled: selectedTower.ammoLogisticsEnabled !== false,
         canEdit: selectedTower.ownerId === this.localSessionId
@@ -7676,7 +7707,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${this.localPlayerSnapshot?.approval ?? 0}:${this.localPlayerSnapshot?.stress ?? 0}|${selectedTower.ammoLogisticsEnabled}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${this.localPlayerSnapshot?.approval ?? 0}:${this.localPlayerSnapshot?.stress ?? 0}|${selectedTower.ammoLogisticsEnabled}|${selectedTower.gate === true}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();

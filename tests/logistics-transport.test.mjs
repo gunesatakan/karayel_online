@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MatchRoom } from "../apps/server/dist/rooms/MatchRoom.js";
 
+/**
+ * Isci artik duz cizgide yurumuyor: yapilarin icinden ve duvarlardan
+ * gecemedigi icin hucre hucre yol ariyor. Yani "x buyudu mu" diye sormak
+ * artik yanlis soru -- isci hedefe once asagi, sonra saga gidebilir.
+ * Dogru soru mesafenin kapanip kapanmadigi.
+ */
+const uzaklik = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
 function provider(id, resourceProvider, x, y) {
   return {
     id,
@@ -57,10 +65,10 @@ test("enerji tasiyicisi stok bosken reaktore donup bekler", () => {
   room.towers = new Map([[reactor.id, reactor]]);
   const transporter = worker("energyTransport");
 
+  const once = uzaklik(transporter, reactor);
   room.updateLogisticsWorker(transporter, 0.1);
 
-  assert.ok(transporter.x > 20);
-  assert.ok(transporter.y > 20);
+  assert.ok(uzaklik(transporter, reactor) < once, "tasiyici reaktore yaklasmadi");
   assert.equal(transporter.logisticsPhase, "pickup");
 });
 
@@ -71,10 +79,10 @@ test("cephane tasiyicisi stok bosken fabrikaya donup bekler", () => {
   room.towers = new Map([[factory.id, factory]]);
   const transporter = worker("ammoTransport");
 
+  const once = uzaklik(transporter, factory);
   room.updateLogisticsWorker(transporter, 0.1);
 
-  assert.ok(transporter.x > 20);
-  assert.ok(transporter.y > 20);
+  assert.ok(uzaklik(transporter, factory) < once, "tasiyici fabrikaya yaklasmadi");
   assert.equal(transporter.logisticsPhase, "pickup");
 });
 

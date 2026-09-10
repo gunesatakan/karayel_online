@@ -46,8 +46,12 @@ test("işçi hız geliştirmeleri hizmet ettiği binadan gelir", () => {
   const baseWorker = { ownerId: "p1", x: 0, y: 0, speed: 10, targetTowerId: "reactor" };
   const fastWorker = { ownerId: "p1", x: 0, y: 0, speed: 10, targetTowerId: "reactor" };
 
-  baseRoom.moveLogisticsWorker(baseWorker, 1000, 0, 1);
-  fastRoom.moveLogisticsWorker(fastWorker, 1000, 0, 1);
+  // Adimin kendisi olculuyor, yol arama degil: esya hizi `stepWorkerToward`
+  // icinde okunuyor ve testin konusu o carpan. `moveLogisticsWorker`
+  // uzerinden olcmek, sentetik bir haritada yol bulmayi da testin konusu
+  // haline getirirdi.
+  baseRoom.stepWorkerToward(baseWorker, 1000, 0, 1);
+  fastRoom.stepWorkerToward(fastWorker, 1000, 0, 1);
 
   assert.ok(fastWorker.x > baseWorker.x);
   assert.equal(fastRoom.getWorkerGatherSpeedMultiplier(fastWorker), 1.2);

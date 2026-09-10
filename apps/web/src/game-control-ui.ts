@@ -56,6 +56,8 @@ type ControlState = {
   repair?: { label: string; enabled: boolean };
   /** Performans kolu; kaynak binalarinda yok. Deger yuzde. */
   performance?: { percent: number; canEdit: boolean };
+  /** Kapi yalnizca duvarda cikar: gecisi olmayan yapida kapi da yok. */
+  gate?: { open: boolean; canEdit: boolean };
   selectedStats?: string[];
   /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
   selectedTowerId?: string;
@@ -544,6 +546,15 @@ export function setupGameControlUi(game: Phaser.Game) {
         makeUnderworldModeButton("Onay", "approval", state.underworldMode),
         makeUnderworldModeButton("Stres", "stress", state.underworldMode)
       ], "game-controls__underworld-mode"));
+    }
+    if (state.gate) {
+      const gate = state.gate;
+      body.push(makeRow([makeActionButton(
+        gate.open ? "Kapıyı Ör" : "Kapı Yap",
+        "game-controls__underworld-mode-button",
+        gate.canEdit,
+        () => dispatch({ action: "toggleWallGate" })
+      )], "game-controls__underworld-mode"));
     }
     if (state.ammoLogistics) {
       body.push(makeRow([makeActionButton(

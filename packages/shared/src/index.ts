@@ -539,6 +539,13 @@ export type TowerSnapshot = {
   energyState?: import("./tower-rules.js").TowerEnergyState;
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   ammoLogisticsEnabled?: boolean;
+  /**
+   * Duvara acilmis kapi.
+   *
+   * Isciler bu kenardan gecer, dusmanlar gecemez. Yalnizca duvarda anlamli:
+   * kare kaplayan yapilarda gecis diye bir sey yok, yapinin kendisi var.
+   */
+  gate?: boolean;
   temperature?: number;
   misfortune?: number;
   luckyWindowRemainingMs?: number;

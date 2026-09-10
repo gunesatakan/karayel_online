@@ -859,6 +859,8 @@ type TowerModel = {
   standby: boolean;
   wakeReadyAt: number;
   ammoLogisticsEnabled: boolean;
+  /** Duvara acilmis kapi: isci gecer, dusman gecmez. */
+  gate: boolean;
   temperature: number;
   misfortune: number;
   luckyWindowUntil: number;
@@ -1028,8 +1030,20 @@ type DroneModel = DroneSnapshot & {
   repairAmount: number;
   ttlMs: number;
   logisticsPhase?: "pickup" | "deliver";
+  /**
+   * Bir hucre boyunca saklanan adim.
+   *
+   * Yol arama hucre basina bir kez kosuyor; her tick kosmasi ayni cevabi
+   * onlarca kez uretmek olurdu. Adim gecersizlestiginde (oyuncu tam o
+   * araliga duvar ordu) yeniden araniyor.
+   */
+  routeStep?: { fromCol: number; fromRow: number; goalCol: number; goalRow: number; toCol: number; toRow: number };
   extractionRemainingMs?: number;
   cargoAmmoType?: AmmoType;
+};
+
+type ToggleWallGateMessage = {
+  towerId?: string;
 };
 
 type ToggleAmmoLogisticsMessage = {
@@ -1656,6 +1670,8 @@ export class MatchRoom extends Room<MatchState> {
       }
       this.setTowerMode(client, message);
     });
+
+    this.onMessage("toggleWallGate", (client, message: ToggleWallGateMessage) => this.toggleWallGate(client, message));
 
     this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
@@ -5154,7 +5170,32 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
+  /**
+   * Iscinin hedefe dogru bir tick yurumesi. `true` donerse varmistir.
+   *
+   * Isci artik duz cizgide gitmiyor: yapilarin icinden ve duvarlardan
+   * gecemiyor, yani yol aranmasi gerek. Dusmanin kor gezinmesi burada
+   * kullanilamaz -- dusman haritayi bilmiyor, isci biliyor; duvari oren
+   * zaten oyuncunun kendisi. Bu yuzden isci gercek en kisa yolu buluyor.
+   *
+   * Hedef bir yapinin uzerindeyse varis yapinin **dibi**: isci kulenin
+   * icine girmiyor, bitisik kareden teslim ediyor.
+   */
   private moveLogisticsWorker(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
+    const approach = this.getWorkerApproachPoint(worker, targetX, targetY);
+    if (!approach) {
+      // Kapali hat: isci bekler. Kendini duvara yaslayip titremesindense
+      // durmasi, oyuncuya sorunun nerede oldugunu daha iyi gosteriyor.
+      worker.vx = 0;
+      worker.vy = 0;
+      return false;
+    }
+    const reached = this.stepWorkerToward(worker, approach.x, approach.y, seconds);
+    return reached && approach.final;
+  }
+
+  /** Tek bir noktaya duz yuruyus; hucreler arasi adimin kendisi. */
+  private stepWorkerToward(worker: DroneModel, targetX: number, targetY: number, seconds: number) {
     const dx = targetX - worker.x;
     const dy = targetY - worker.y;
     const distance = Math.hypot(dx, dy);
@@ -5173,6 +5214,135 @@ export class MatchRoom extends Room<MatchState> {
     worker.y += worker.vy * seconds;
     return false;
   }
+
+  /**
+   * Iscinin bu tick yonelecegi nokta ve orasinin son durak olup olmadigi.
+   *
+   * `undefined` donerse hedefe hicbir yol yok.
+   */
+  private getWorkerApproachPoint(worker: DroneModel, targetX: number, targetY: number) {
+    const start = worldToGrid(worker.x, worker.y, this.activeMap);
+    const goal = worldToGrid(targetX, targetY, this.activeMap);
+    const goalOpen = this.isWorkerCellOpen(goal.col, goal.row);
+
+    if (goalOpen) {
+      if (start.col === goal.col && start.row === goal.row) {
+        return { x: targetX, y: targetY, final: true };
+      }
+    } else if (this.isWorkerDeliveryReach(start, goal)) {
+      // Yapinin dibindeyiz: daha ileri gitmek onun icine girmek olurdu.
+      worker.vx = 0;
+      worker.vy = 0;
+      return { x: worker.x, y: worker.y, final: true };
+    }
+
+    const step = this.findWorkerStep(worker, start, goal, goalOpen);
+    if (!step) return undefined;
+    const point = gridToWorld(step.col, step.row, this.activeMap);
+    return { x: point.x, y: point.y, final: false };
+  }
+
+  /** Isci hucreye girebilir mi: ayakta yapi yok. */
+  private isWorkerCellOpen(col: number, row: number) {
+    if (!isInsideMap(this.activeMap, col, row)) return false;
+    const standing = this.getTowerCellIndex().get(`${col}:${row}`);
+    return !standing || standing.hp <= 0;
+  }
+
+  /**
+   * Iki komsu hucre arasindaki gecis isciye acik mi.
+   *
+   * Dusmandan tek farki burasi: kapisi olan duvar isciye acik. Kapinin
+   * `getBlockingTowerBetween` tarafinda karsiligi **yok** -- dusman kapidan
+   * gecmez, kapinin butun anlami bu.
+   */
+  private isWorkerEdgeOpen(from: { col: number; row: number }, to: { col: number; row: number }) {
+    const edge = this.getEdgeStructure(from, to);
+    if (!edge || edge.hp <= 0) return true;
+    return edge.gate === true;
+  }
+
+  private canWorkerEnter(from: { col: number; row: number }, to: { col: number; row: number }) {
+    return this.isWorkerCellOpen(to.col, to.row) && this.isWorkerEdgeOpen(from, to);
+  }
+
+  /**
+   * Isci yapiya teslim edebilecek kadar yakin mi.
+   *
+   * Bitisik kare yeter, ama arada duvar olmamali: duvarin oteki yanindan
+   * teslim etmek kapinin butun anlamini bosa cikarirdi.
+   *
+   * Yapinin **kendi** karesi de sayiliyor. Isci oraya dusebiliyor -- oyuncu
+   * tam ustune kule kurdugunda, ya da kadro haritanin degistigi bir anda
+   * dogdugunda. O isci teslim edemeseydi, cikip geri gelir ve ayni kareye
+   * dusup sonsuza kadar gidip gelirdi.
+   */
+  private isWorkerDeliveryReach(cell: { col: number; row: number }, goal: { col: number; row: number }) {
+    const distance = Math.abs(cell.col - goal.col) + Math.abs(cell.row - goal.row);
+    if (distance === 0) return true;
+    if (distance !== 1) return false;
+    return this.isWorkerEdgeOpen(cell, goal);
+  }
+
+  /**
+   * Hedefe giden yolun ilk adimi.
+   *
+   * Genislik oncelikli arama: isci haritayi biliyor, yani en kisa yolu
+   * bulmali. Adim hucre boyunca saklaniyor; her tick yeniden aramak ayni
+   * cevabi onlarca kez uretmek olurdu.
+   */
+  private findWorkerStep(
+    worker: DroneModel,
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean
+  ) {
+    const cached = worker.routeStep;
+    if (
+      cached
+      && cached.fromCol === start.col && cached.fromRow === start.row
+      && cached.goalCol === goal.col && cached.goalRow === goal.row
+      && this.canWorkerEnter(start, { col: cached.toCol, row: cached.toRow })
+    ) {
+      return { col: cached.toCol, row: cached.toRow };
+    }
+
+    const step = this.searchWorkerStep(start, goal, goalOpen);
+    worker.routeStep = step
+      ? { fromCol: start.col, fromRow: start.row, goalCol: goal.col, goalRow: goal.row, toCol: step.col, toRow: step.row }
+      : undefined;
+    return step;
+  }
+
+  private searchWorkerStep(
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean
+  ) {
+    const startKey = `${start.col}:${start.row}`;
+    // Isci yapinin icinde kalmis olabilir (kule tam ustune kuruldu):
+    // aramanin baslangici yine de gecerli sayiliyor, yoksa cikamazdi.
+    const firstStep = new Map<string, { col: number; row: number }>();
+    const queue: Array<{ col: number; row: number }> = [start];
+    const seen = new Set<string>([startKey]);
+
+    for (let head = 0; head < queue.length; head += 1) {
+      const cell = queue[head];
+      const cellKey = `${cell.col}:${cell.row}`;
+      if (goalOpen ? cell.col === goal.col && cell.row === goal.row : this.isWorkerDeliveryReach(cell, goal)) {
+        return firstStep.get(cellKey);
+      }
+      for (const neighbor of this.getGridNeighbors(cell.col, cell.row)) {
+        const key = `${neighbor.col}:${neighbor.row}`;
+        if (seen.has(key) || !this.canWorkerEnter(cell, neighbor)) continue;
+        seen.add(key);
+        firstStep.set(key, firstStep.get(cellKey) ?? neighbor);
+        queue.push(neighbor);
+      }
+    }
+    return undefined;
+  }
+
 
   private getPlayerTowerDefinitions(playerId: string) {
     return Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
@@ -5927,6 +6097,23 @@ export class MatchRoom extends Room<MatchState> {
     return getModifierMultiplier(player.runModifiers ?? [], "workerHireCost");
   }
 
+  /**
+   * Duvara kapi acar ya da kapatir.
+   *
+   * Kapi yalnizca duvarda. Kare kaplayan bir yapida "gecis" diye bir sey
+   * yok -- kule karenin kendisi, duvar iki kare arasindaki cizgi. Kapi o
+   * cizgide bir aciklik, yani ancak cizgisi olan yapida anlamli.
+   *
+   * Bedeli yok. Duvarin isciyi de tutmasi zaten oyuncunun odedigi bedel;
+   * kapi o bedeli kaldirmiyor, nereye kaldirilacagina karar verdiriyor.
+   */
+  private toggleWallGate(client: Client, message: ToggleWallGateMessage) {
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
+    if (!isWallDefinition(tower.definition)) return;
+    tower.gate = !tower.gate;
+  }
+
   private repairStructure(client: Client, message: RepairStructureMessage) {
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
@@ -6064,6 +6251,7 @@ export class MatchRoom extends Room<MatchState> {
       standby: false,
       wakeReadyAt: 0,
       ammoLogisticsEnabled: true,
+      gate: false,
       temperature: 0,
       misfortune: 0,
       luckyWindowUntil: 0,
@@ -9039,6 +9227,7 @@ export class MatchRoom extends Room<MatchState> {
         wakeRemainingMs: Math.max(0, tower.wakeReadyAt - now),
         energyState: getTowerEnergyState(tower.energy, tower.energyDepletedAt, now),
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
+        gate: tower.gate,
         temperature: Math.round(tower.temperature * 10) / 10,
         misfortune: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.misfortune * 10) / 10 : undefined,
         luckyWindowRemainingMs: tower.characterId === "onur" ? Math.max(0, tower.luckyWindowUntil - now) : undefined,
