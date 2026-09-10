@@ -29,6 +29,14 @@ export type ModifierStat =
   | "workerSpeed"
   /** Iscinin tek seferde tasidigi yuk. */
   | "workerCapacity"
+  /**
+   * Iscinin cani.
+   *
+   * Yalnizca oyuncunun kuresel listesinden okunuyor, hizmet ettigi binadan
+   * degil: bir iscinin dayanikliligi kendisine ait. Binadan okunsaydi tavani
+   * isci her hedef degistirdiginde ziplardi.
+   */
+  | "workerHealth"
   | "airDamage"
   | "damageVsShielded"
   | "damageVsBrute"

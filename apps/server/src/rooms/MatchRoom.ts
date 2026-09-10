@@ -5084,7 +5084,18 @@ export class MatchRoom extends Room<MatchState> {
 
   private ensureLogisticsWorkers() {
     // Kurulumda kadro tam baslar: olum bir dalganin cezasi, kalici kayip degil.
-    if (this.setupPhase) this.workerRespawnAt.clear();
+    //
+    // Yaralar da burada kapaniyor. Iscinin kendiliginden iyilesmesi yok ve
+    // Tamirci yapilari onariyor, iscileri degil; boyle olmasaydi ucuncu
+    // dalgada 59 hasar yiyen isci sonsuza kadar 1 canla dolasir ve dorduncu
+    // dalgada aninda olurdu. Can karti da o iscide hicbir sey ifade etmezdi.
+    if (this.setupPhase) {
+      this.workerRespawnAt.clear();
+      for (const drone of this.drones.values()) {
+        if (drone.maxHp === undefined) continue;
+        drone.hp = this.getWorkerMaxHp(drone);
+      }
+    }
     const now = Date.now();
     const baseWorkerModes: Array<DroneSnapshot["mode"]> = ["ammoTransport", "crystalCollector", "ammoCollector", "energyTransport"];
     const origin = getMapOrigin(this.activeMap);
@@ -5140,9 +5151,11 @@ export class MatchRoom extends Room<MatchState> {
           speed: LOGISTICS_WORKER_SPEED * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
           // Can da uc kat: gelismis isci her eksende uc normal isci
           // ediyor, dayaniklilikta ayrı tutulsaydi uc katlik yatirim tek
-          // bir sizmayla silinirdi.
-          hp: WORKER_MAX_HP * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
-          maxHp: WORKER_MAX_HP * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
+          // bir sizmayla silinirdi. Kart ve esya carpani okuma aninda
+          // biniyor (bkz. `getWorkerMaxHp`), yani kosu ortasinda alinan
+          // bir can karti sahadaki isciye de isliyor.
+          hp: this.getWorkerBaseMaxHp(worker.advanced),
+          maxHp: this.getWorkerBaseMaxHp(worker.advanced),
           advanced: worker.advanced
         });
       }
@@ -5169,7 +5182,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (damagePerSecond <= 0) return false;
 
-    worker.hp = Math.max(0, (worker.hp ?? worker.maxHp) - damagePerSecond * seconds);
+    worker.hp = Math.max(0, Math.min(this.getWorkerMaxHp(worker), worker.hp ?? worker.maxHp) - damagePerSecond * seconds);
     if (worker.hp > 0) return false;
 
     // Tasidigi yuk de gidiyor: olumun bedeli yalnizca eksik beden degil,
@@ -5770,6 +5783,25 @@ export class MatchRoom extends Room<MatchState> {
   /** Tamircinin saniyelik onarimi; gelismis kademe uc kati. */
   private getWorkerRepairPerSecond(worker: DroneModel) {
     return WORKER_REPAIR_PER_SECOND * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1);
+  }
+
+  /**
+   * Iscinin can tavani.
+   *
+   * Carpan yalnizca oyuncunun **kuresel** listesinden okunuyor, iscinin
+   * hizmet ettigi binadan degil. Bir iscinin dayanikliligi kendisine ait;
+   * binadan okunsaydi tavan isci her hedef degistirdiginde ziplardi ve
+   * kaynak dugumune giden isci yolda birden dayaniksizlasirdi.
+   */
+  private getWorkerMaxHp(worker: DroneModel) {
+    return this.getWorkerBaseMaxHp(worker.advanced, worker.ownerId);
+  }
+
+  private getWorkerBaseMaxHp(advanced?: boolean, ownerId?: string) {
+    const runModifiers = ownerId ? this.state.players.get(ownerId)?.runModifiers ?? [] : [];
+    return Math.max(1, WORKER_MAX_HP
+      * (advanced ? ADVANCED_WORKER_MULTIPLIER : 1)
+      * getModifierMultiplier(runModifiers, "workerHealth"));
   }
 
   /** Iscinin tek seferde tasidigi yuk; kart ve esyalarla buyur. */
@@ -9436,7 +9468,7 @@ export class MatchRoom extends Room<MatchState> {
         // Istemci iki kademeyi ancak buradan ayirt ediyor.
         advanced: drone.advanced,
         hp: drone.hp === undefined ? undefined : Math.round(drone.hp),
-        maxHp: drone.maxHp === undefined ? undefined : Math.round(drone.maxHp)
+        maxHp: drone.maxHp === undefined ? undefined : Math.round(this.getWorkerMaxHp(drone))
       })),
       crystalNodes: this.getCrystalNodes(),
       ammoNodes: this.getAmmoNodes(),

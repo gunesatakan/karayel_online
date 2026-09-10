@@ -31,7 +31,11 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   // ulasamiyorlardi.
   "ganimet-kesesi",
   "vardiya-amiri",
-  "seyyar-depo"
+  "seyyar-depo",
+  // Isci cani da oyuncunun: iscinin dayanikliligi hizmet ettigi binaya
+  // degil kendisine ait, o yuzden kuresel listeden okunuyor.
+  "celik-yelek",
+  "sahra-reviri"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */
@@ -125,6 +129,11 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("seri-cephane-hatti", "Seri Cephane Hattı", "Takıldığı binanın cephane üretim hızı +%25; en fazla 5 kez alınır.", "utility", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("seri-cephane-hatti", "ammoProduction", 0.25)] }),
   defineItem("vardiya-amiri", "Vardiya Amiri", "Tüm işçilerin toplama hızı +%20 ve yürüme hızı +%20; en fazla 3 kez alınır.", "utility", 120, { repeatable: true, maxStacks: 3, priceGrowth: 1.35, axes: ["economy"], effects: [effect("vardiya-amiri", "workerGatherSpeed", 0.2), effect("vardiya-amiri", "workerSpeed", 0.2)] }),
   defineItem("seyyar-depo", "Seyyar Depo", "Tüm işçilerin taşıma kapasitesi +%40; en fazla 2 kez alınır.", "utility", 135, { repeatable: true, maxStacks: 2, priceGrowth: 1.4, axes: ["economy"], effects: [effect("seyyar-depo", "workerCapacity", 0.4)] }),
+  // Can esyalari: biri merdiven, biri tek buyuk adim. Merdiven ucuz basliyor
+  // ve zamla buyuyor; buyuk adim ayni yere bir hamlede goturuyor ama
+  // toplama hizindan odiyor.
+  defineItem("celik-yelek", "Çelik Yelek", "Tüm işçilerin canı +%45; en fazla 4 kez alınır.", "utility", 55, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, axes: ["economy"], effects: [effect("celik-yelek", "workerHealth", 0.45)] }),
+  defineItem("sahra-reviri", "Sahra Revi̇ri", "Tüm işçilerin canı +%120 ama toplama hızı -%15.", "utility", 140, { axes: ["economy"], effects: [effect("sahra-reviri", "workerHealth", 1.2), effect("sahra-reviri", "workerGatherSpeed", -0.15)] }),
   defineItem("isci-botlari", "İşçi Botları", "Takıldığı binaya hizmet eden işçilerin hareket hızı +%15; en fazla 5 kez alınır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("isci-botlari", "workerSpeed", 0.15)] }),
   defineItem("namlu-yatagi", "Namlu Yatağı", "Takıldığı kulenin dönüş hızı +%35; en fazla 2 kez alınır.", "power", 100, { repeatable: true, maxStacks: 2, effects: [effect("namlu-yatagi", "turnRate", 0.35)] }),
   defineItem("nisangah", "Nişangâh", "Takıldığı kulenin isabeti +%30; en fazla 2 kez alınır.", "power", 95, { repeatable: true, maxStacks: 2, effects: [effect("nisangah", "accuracy", 0.3)] }),

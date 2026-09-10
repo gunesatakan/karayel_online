@@ -157,3 +157,79 @@ test("kurulum aşaması kadroyu tamamlar", () => {
   tikla(room, 0.016);
   assert.ok(room.drones.has(kimlik), "kurulumda kadro tamamlanmadi");
 });
+
+/**
+ * Isci cani kart ve esyalarla buyur.
+ *
+ * Olum geri geldiginden beri bu bir eksen: lojistik hatti dusman yolunu kesmek
+ * zorunda, yani "isci ne kadar dayanir" oyuncunun uzerinde soz sahibi oldugu
+ * bir sey olmali.
+ *
+ * Iki sey ayri ayri tutuluyor. Carpan **okuma aninda** biniyor, yani kosu
+ * ortasinda alinan kart sahadaki isciye de isliyor -- dogarken hesaplansaydi
+ * kart yalnizca bir sonraki iscide gorunurdu. Ve yaralar kurulumda kapaniyor;
+ * iscinin kendiliginden iyilesmesi yok ve Tamirci yapilari onariyor, iscileri
+ * degil.
+ */
+import { cardCatalog, getShopItem } from "../packages/shared/dist/index.js";
+
+const canKarti = (id) => {
+  const kart = cardCatalog.find((candidate) => candidate.id === id);
+  assert.ok(kart, `${id} katalogda yok`);
+  return kart;
+};
+
+test("işçi canı kartları ve eşyaları katalogda", () => {
+  for (const id of ["zirhli-tulum", "agir-vardiya"]) {
+    const kart = canKarti(id);
+    assert.ok(kart.effects.some((m) => m.stat === "workerHealth" && m.add > 0), `${id}: can vermiyor`);
+  }
+  for (const id of ["celik-yelek", "sahra-reviri"]) {
+    const esya = getShopItem(id);
+    assert.ok(esya, `${id} katalogda yok`);
+    assert.ok(esya.effects.some((m) => m.stat === "workerHealth" && m.add > 0), `${id}: can vermiyor`);
+    // Isci esyasi kuresel olmali: iscinin dayanikliligi bir binaya takilmaz.
+    assert.equal(esya.target, "global", `${id} kuleye takiliyor`);
+  }
+});
+
+test("koşu ortasında alınan can kartı sahadaki işçiye de işler", () => {
+  const room = oda();
+  const isci = isciler(room)[0];
+  const once = room.getWorkerMaxHp(isci);
+
+  room.state.players.get("p1").runModifiers.push(...canKarti("zirhli-tulum").effects);
+  const sonra = room.getWorkerMaxHp(isci);
+  assert.ok(
+    Math.abs(sonra - once * 1.75) < 1e-6,
+    `tavan ${once} -> ${sonra}, beklenen ${once * 1.75}`
+  );
+});
+
+test("can kartı işçiyi gerçekten daha uzun ayakta tutar", () => {
+  const olcum = (kartli) => {
+    const room = oda();
+    if (kartli) room.state.players.get("p1").runModifiers.push(...canKarti("agir-vardiya").effects);
+    const isci = isciler(room)[0];
+    isci.hp = room.getWorkerMaxHp(isci);
+    temasEttir(room, isci, { type: "brute" });
+    let saniye = 0;
+    while (room.drones.has(isci.id) && saniye < 60) {
+      tikla(room, 0.1);
+      saniye += 0.1;
+    }
+    return saniye;
+  };
+  const kartsiz = olcum(false);
+  const kartli = olcum(true);
+  assert.ok(kartli > kartsiz + 0.05, `kartsiz ${kartsiz.toFixed(1)}sn, kartli ${kartli.toFixed(1)}sn`);
+});
+
+test("kurulum aşaması yaralı işçiyi de iyileştirir", () => {
+  const room = oda();
+  const isci = isciler(room)[0];
+  isci.hp = 3;
+  room.setupPhase = true;
+  tikla(room, 0.016);
+  assert.equal(isci.hp, room.getWorkerMaxHp(isci), "kurulumda yara kapanmadi");
+});

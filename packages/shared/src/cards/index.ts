@@ -224,6 +224,15 @@ export const cardCatalog: CardDefinition[] = [
   { id: "takviyeli-temel", name: "Takviyeli Temel", description: "Tüm kulelerin canı +%50, menzili -%8.", axes: ["barricade"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("takviyeli-temel", "towerHealth", 0.5), effect("takviyeli-temel", "range", -0.08)] },
   { id: "zirhli-govde", name: "Zırhlı Gövde", description: "Bir kulenin canı +%180, atış hızı -%15.", axes: ["barricade"], scope: { kind: "targeted" }, stackable: true, maxStacks: 2, rarity: "rare", effects: [effect("zirhli-govde", "towerHealth", 1.8, "tower"), effect("zirhli-govde", "fireRate", -0.15, "tower")] },
 
+  // --- Isci cani ---
+  //
+  // Isci olumu geri geldiginden beri gercek bir eksen: lojistik hatti dusman
+  // yolunu kesmek zorunda ve temas eden isci saniyede dusmanin saldiri gucu
+  // kadar yiyor. Ikisi de bedelini ekonominin kendisinden odiyor -- bedava
+  // dayaniklilik "her zaman al" olurdu.
+  { id: "zirhli-tulum", name: "Zırhlı Tulum", description: "Tüm işçilerin canı +%75, yürüme hızı -%10.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("zirhli-tulum", "workerHealth", 0.75), effect("zirhli-tulum", "workerSpeed", -0.1)] },
+  { id: "agir-vardiya", name: "Ağır Vardiya", description: "Tüm işçilerin canı +%140 ama taşıma kapasitesi -%25.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-vardiya", "workerHealth", 1.4), effect("agir-vardiya", "workerCapacity", -0.25)] },
+
   // --- Kritik sansi ---
   //
   // Taban kritik sansi %1: yani bu statin tamami kart ve esyadan geliyor,
