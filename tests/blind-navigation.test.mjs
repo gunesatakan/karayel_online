@@ -304,3 +304,117 @@ test("iki yan da kapaliyken yukari cikmak hala serbest", () => {
     assert.equal(firstContact(harita, hand), "yukari", `${hand}: tek cikis yukari iken tirmanmadi`);
   }
 });
+
+/**
+ * Cikistan uzaklastiran yon her zaman son care.
+ *
+ * Kural ilk temasta zaten vardi ("iki yan da kapaliyken yukari cikmak hala
+ * serbest") ama yalnizca ilk adimda. Sonraki adimlarda el kurali "duz"
+ * secenegini yanlardan once deniyordu: yukari giden bir dusman sagi ya da solu
+ * acikken tirmanmaya devam ediyordu. Oyuncu bunu gorup surunun tamamini yukari
+ * bir cebe yollayabiliyordu.
+ *
+ * Asagidaki iki test kuralin iki yuzu: yan acikken tirmanmamali, yan yokken
+ * tirmanabilmeli. Yalnizca birincisi olsaydi "yukariyi tumden kapat"
+ * degisikligi de gecerdi ve kapali cebe giren dusman hic cikamazdi.
+ */
+
+/** Duvari tutarken verilen yonle giden bir dusmanin sonraki adimi. */
+function wallStep(rows, { hand = "left", heading }) {
+  const grid = rows.map((row) => row.split(""));
+  let start;
+  for (let row = 0; row < grid.length; row += 1) {
+    for (let col = 0; col < grid[row].length; col += 1) {
+      if (grid[row][col] === "S") {
+        start = { col, row };
+        grid[row][col] = ".";
+      }
+    }
+  }
+  assert.ok(start, "baslangic (S) yok");
+  const isOpen = (col, row) =>
+    col >= 0 && col < grid[0].length && row >= 0 && row < grid.length && grid[row][col] !== "#";
+
+  // `entryRow` haritanin altinda: birakma sarti ("giris satirinin altina in")
+  // hic saglanmasin, yani gercekten duvar tutma adimi olculsun.
+  const state = {
+    mode: "wall",
+    hand,
+    heading,
+    entryCol: start.col,
+    entryRow: grid.length + 1,
+    entryHeading: heading
+  };
+  const result = stepBlindNavigator(start, state, isOpen, () => hand);
+  if (result.kind !== "move") return "saldiri";
+  if (result.col > start.col) return "sag";
+  if (result.col < start.col) return "sol";
+  return result.row < start.row ? "yukari" : "asagi";
+}
+
+test("yukari giden dusman yan acikken tirmanmayi birakir", () => {
+  // Yukari acik, ama saga da donulebilir. Eski sira "duz"u yanlardan once
+  // deniyordu ve dusman tirmanmaya devam ediyordu.
+  const harita = [
+    "..........",
+    "....#.....",
+    "...#S.....",
+    "....#.....",
+    ".........."
+  ];
+
+  for (const hand of ["left", "right"]) {
+    assert.notEqual(wallStep(harita, { hand, heading: 2 }), "yukari", `${hand}: yan acikken tirmandi`);
+  }
+});
+
+test("yan kapaliyken yukari cikmak hala tek cikis", () => {
+  // Dar bir dikey koridor: iki yan da duvar. Tirmanmak mesru ve tek secenek.
+  const harita = [
+    "..........",
+    "...#.#....",
+    "...#S#....",
+    "...#.#....",
+    ".........."
+  ];
+
+  for (const hand of ["left", "right"]) {
+    assert.equal(wallStep(harita, { hand, heading: 2 }), "yukari", `${hand}: koridorda tirmanmadi`);
+  }
+});
+
+test("koridordan cikan dusman acik alanda tirmanmaya devam etmez", () => {
+  // Kullanicinin tarif ettigi tuzak: cikisa giden yol kapali oldugu icin
+  // dusman dikey koridoru tirmaniyor, ama koridorun agzinda acik alana
+  // vardiginda yukari gitmeyi surdurmemeli -- orasi cikistan uzaklasmak.
+  //
+  // Agzin **sol** yani kapali, sagi acik ve sol elle yuruyoruz: yani el
+  // kurali dusmani yana cagirmiyor. Eski sirada bu tam olarak "duz devam"
+  // demekti ve dusman tavana kadar tirmaniyordu. Harita bilerek boyle:
+  // iki yani da acik bir agiz eski sirayla da yana donerdi ve test hicbir
+  // sey sinamadan gecerdi.
+  const harita = [
+    "..........",
+    "..........",
+    "..#.......",
+    "###.######",
+    "###.######",
+    "###S######",
+    "##########",
+    ".........."
+  ];
+
+  const sonuc = walk(harita, { hand: "left", maxSteps: 400 });
+  // Agizdan sonraki adim: yana mi, yukari mi. Olcut haritanin tamaminda "hic
+  // tirmanmasin" olamaz -- sag kenarda yukari gercekten tek ileri secenek ve
+  // orada tirmanmak dogru. Olculen sey agizdaki karar.
+  const agiz = sonuc.visited.indexOf("3:2");
+  assert.ok(agiz >= 0, "dusman koridorun agzina hic varmadi");
+  const sonraki = sonuc.visited[agiz + 1];
+  assert.ok(sonraki, "agizdan sonra adim atilmadi");
+  assert.equal(Number(sonraki.split(":")[1]), 2, `agizda tirmandi: ${sonraki}`);
+
+  // Ve bu harita kapali: hicbir yol asagi inmiyor. Dusman sonsuza kadar
+  // donmemeli, kirmaya baslamali.
+  assert.equal(sonuc.outcome, "attack", `beklenen saldiri, gelen ${sonuc.outcome}`);
+});

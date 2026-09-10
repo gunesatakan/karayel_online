@@ -52,10 +52,30 @@ export type BlindNavigatorState = {
   mode: "seek" | "wall";
   hand: BlindHand;
   heading: BlindHeading;
-  /** Duvari tutmaya baslanan hucre ve yon; cevrim tespiti bu ciftin tekrari. */
+  /** Duvari tutmaya baslanan hucre; kapali cikis hafizasi bunu kullanir. */
   entryCol: number;
   entryRow: number;
   entryHeading: BlindHeading;
+  /**
+   * Bu duvar turunda gorulen (hucre, yon) ciftleri.
+   *
+   * Cevrim tespiti buradan okunuyor: ayni hucreye ayni yonle ikinci kez
+   * varmak, sonrasinin birebir tekrar edecegi anlamina gelir -- durum
+   * (hucre, yon) ciftinden ibaret oldugu icin bu kesin.
+   *
+   * Once yalnizca **giris** cifti sorulurdu ve bu, gezginin engelin cevresini
+   * eksiksiz dolastigi varsayimina dayaniyordu: el kurali bunu garanti eder,
+   * cunku duvari hic birakmaz. Yon siralamasi "cikistan uzaklastiran yon en
+   * geriye" kuralini alinca o garanti dustu -- gezgin bir kosede duvari
+   * birakip baska bir cevrime girebiliyor ve giris hucresine hic donmuyordu.
+   * Olculdu: kapali bir haritada eski sira 31 adimda kirmaya basliyordu,
+   * yeni sira 400 adim sonra hala donuyordu.
+   *
+   * Cift kumesi varsayimdan bagimsiz: hangi yoldan olursa olsun kapanan her
+   * cevrim yakalanir. Kume duvar turuyla birlikte dogar ve duvar birakilinca
+   * olur; buyuklugu hucre sayisinin dort katiyla sinirli.
+   */
+  seen?: Set<string>;
 };
 
 export type BlindStepResult =
@@ -102,9 +122,37 @@ function isSideOpen(
   return isOpen(side.col, side.row);
 }
 
+/** Cikistan uzaklastiran tek yon: tercih yonunun tersi. */
+const BLIND_RECEDING_HEADING: BlindHeading = turn(BLIND_PREFERRED_HEADING, 2);
+
+/**
+ * Duvari tutarken denenecek yonlerin sirasi.
+ *
+ * Taban sira el kuralinin kendisi: "ele dogru, duz, ters ele, geri".
+ *
+ * Uzerine tek bir kural biniyor: **cikistan uzaklastiran yon en geriye.**
+ * Bu kural ilk temasta zaten vardi -- duvara toslayan dusman yanlardan biri
+ * acikken yukari tirmanmiyordu -- ama yalnizca ilk adimda. Sonraki adimlarda
+ * el kurali "duz" secenegini yanlardan once deniyordu, yani yukari giden bir
+ * dusman sagi ya da solu acikken tirmanmaya devam ediyordu. Oyuncu bunu
+ * gorup surunun tamamini yukari dogru bir cebe yollayabiliyordu.
+ *
+ * Yukari cikmak hala mesru: acik hicbir yan yokken tek cikis odur.
+ *
+ * Siralama yalnizca **ilk uc** secenek arasinda yapiliyor; geri donus her
+ * zaman en sonda kaliyor. Geri donusu one almak salinimin ta kendisi olurdu:
+ * dar bir dikey koridorda yukari giden dusman, yukarisi acikken bile
+ * geldigi yere doner, oradan yine yukari cikar ve iki kare arasinda sonsuza
+ * kadar gidip gelir. Olculdu: koridor testi tam bu yuzden dustu.
+ */
 function wallFollowOrder(heading: BlindHeading, hand: BlindHand): BlindHeading[] {
   const toHand = handTurn(hand);
-  return [turn(heading, toHand), heading, turn(heading, -toHand), turn(heading, 2)];
+  const forward: BlindHeading[] = [turn(heading, toHand), heading, turn(heading, -toHand)];
+  return [
+    ...forward.filter((candidate) => candidate !== BLIND_RECEDING_HEADING),
+    ...forward.filter((candidate) => candidate === BLIND_RECEDING_HEADING),
+    turn(heading, 2)
+  ];
 }
 
 /**
@@ -152,7 +200,8 @@ export function stepBlindNavigator(
       heading: entryHeading,
       entryCol: from.col,
       entryRow: from.row,
-      entryHeading
+      entryHeading,
+      seen: new Set()
     };
     // Giris adiminda cevrim aranmaz: cift zaten burada kuruluyor. Cift, umut
     // edilen yonle degil **fiilen secilen** yonle kurulur; kenardan baslayan
@@ -171,7 +220,9 @@ export function stepBlindNavigator(
       kind: "move",
       col: preferred.col,
       row: preferred.row,
-      state: { ...state, mode: "seek", heading: BLIND_PREFERRED_HEADING }
+      // Duvar birakildi: tur bitti, hafizasi da bitmeli. Tasinsaydi bir
+      // sonraki turun mesru adimlari cevrim sanilirdi.
+      state: { ...state, mode: "seek", heading: BLIND_PREFERRED_HEADING, seen: undefined }
     };
   }
 
@@ -185,7 +236,7 @@ function followWall(
   preferred: { col: number; row: number },
   justEntered: boolean
 ): BlindStepResult {
-  const atEntry = from.col === state.entryCol && from.row === state.entryRow;
+  const seen = state.seen ?? new Set<string>();
 
   for (const heading of wallFollowOrder(state.heading, state.hand)) {
     const target = step(from, heading);
@@ -193,13 +244,16 @@ function followWall(
       continue;
     }
 
-    const next: BlindNavigatorState = { ...state, mode: "wall", heading };
+    const next: BlindNavigatorState = { ...state, mode: "wall", heading, seen };
+    const key = `${target.col}:${target.row}:${heading}`;
 
-    // Cevrim kapandi: basladigi hucreden ayni yone ikinci kez cikiliyor.
-    if (!justEntered && atEntry && heading === state.entryHeading) {
+    // Cevrim kapandi: ayni hucreye ayni yonle ikinci kez variliyor, yani
+    // bundan sonrasi birebir tekrar edecek. Bu yoldan cikis yok, kirmali.
+    if (!justEntered && seen.has(key)) {
       return { kind: "attack", col: preferred.col, row: preferred.row, state: next };
     }
 
+    seen.add(key);
     return { kind: "move", col: target.col, row: target.row, state: next };
   }
 
