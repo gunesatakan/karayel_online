@@ -973,6 +973,199 @@ canvas {
   width: auto;
 }
 
+/* İşçi gelişim ağacı: beş uzmanlık kökten ayrılır, her dolu hücre iki kola
+   çatallanır. Viewport içindeki canvas pointer ile taşınır; büyük ağaçlarda
+   yatay kaydırma çubuğu yerine haritanın dokunma hissi korunur. */
+.worker-development__intro,
+.worker-development__hint {
+  display: block;
+  margin: 2px 4px;
+  color: #9fb4cc;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.worker-development__viewport {
+  position: relative;
+  height: min(46vh, 330px);
+  min-height: 240px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  border: 1px solid rgba(96, 165, 250, .34);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(14, 116, 144, .18), transparent 46%),
+    linear-gradient(135deg, rgba(8, 18, 38, .98), rgba(2, 6, 23, .98));
+}
+
+.worker-development__viewport.is-dragging { cursor: grabbing; }
+
+.worker-development__tree {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(5, 224px);
+  gap: 14px;
+  width: max-content;
+  min-height: 620px;
+  padding: 42px 20px 24px;
+  transform: translateX(-50%);
+  transform-origin: top center;
+}
+
+.worker-development__origin {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  transform: translateX(-50%);
+  border: 2px solid #facc15;
+  border-radius: 50%;
+  color: #fef3c7;
+  background: #172554;
+  box-shadow: 0 0 0 5px rgba(250, 204, 21, .08), 0 0 22px rgba(250, 204, 21, .3);
+  font: 800 8px/1.05 "Share Tech Mono", monospace;
+  letter-spacing: .08em;
+  text-align: center;
+}
+
+.worker-development__role {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding-top: 18px;
+}
+
+.worker-development__role::before {
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  width: 1px;
+  height: 42px;
+  content: "";
+  background: linear-gradient(#facc15, rgba(56, 189, 248, .45));
+}
+
+.worker-development__role::after {
+  position: absolute;
+  top: 17px;
+  right: -15px;
+  left: -15px;
+  height: 1px;
+  content: "";
+  background: rgba(56, 189, 248, .22);
+}
+
+.worker-development__role > strong {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 7px 5px;
+  border: 1px solid rgba(56, 189, 248, .45);
+  border-radius: 8px;
+  color: #bae6fd;
+  background: rgba(8, 47, 73, .92);
+  font-size: 11px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.worker-development__path {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.worker-development__path::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 16px;
+  width: 2px;
+  content: "";
+  background: linear-gradient(rgba(56, 189, 248, .72), rgba(56, 189, 248, .1));
+}
+
+.worker-development__cell {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+  gap: 5px;
+}
+
+.worker-development__marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid rgba(125, 211, 252, .55);
+  border-radius: 50%;
+  color: #bae6fd;
+  background: #0f2741;
+  font: 700 10px "Share Tech Mono", monospace;
+}
+
+.worker-development__cell--empty .worker-development__marker {
+  border-style: dashed;
+  color: #64748b;
+  background: rgba(15, 23, 42, .7);
+}
+
+.worker-development__empty-label {
+  color: #475569;
+  font: 9px "Share Tech Mono", monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.worker-development__fork {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.worker-development__fork::before {
+  position: absolute;
+  top: 50%;
+  left: -5px;
+  width: 6px;
+  height: 1px;
+  content: "";
+  background: rgba(56, 189, 248, .65);
+}
+
+.game-controls .game-controls__worker-development {
+  min-width: 0;
+  min-height: 35px;
+  padding: 4px 3px;
+  overflow: hidden;
+  border-color: rgba(45, 212, 191, .42);
+  color: #ccfbf1;
+  font-size: 9px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.game-controls .game-controls__worker-development:disabled {
+  opacity: .42;
+}
+
 .game-controls__hint {
   flex: 1;
   min-width: 0;

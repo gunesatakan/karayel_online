@@ -23,6 +23,10 @@ export type RepairWorkerSkillId =
 
 export type WorkerSkillChoice = { id: WorkerSkillId; name: string; description: string };
 export type WorkerSkillPair = readonly [WorkerSkillChoice, WorkerSkillChoice];
+export type WorkerDevelopmentCell = {
+  readonly tier: number;
+  readonly options?: WorkerSkillPair;
+};
 
 /**
  * Isci gelisim agacinda kademe acma bedeli. Secim isciye degil oyuncunun
@@ -112,6 +116,14 @@ export const WORKER_SKILL_TIERS: Readonly<Record<HirableWorkerRole, readonly Wor
   ammoTransport: AMMO_TRANSPORT_WORKER_SKILL_TIERS,
   repairer: REPAIR_WORKER_SKILL_TIERS
 };
+
+/** 9 hucrelik gorunum: 3/6/9 secimleri mevcut gamechanger ciftleridir. */
+export const WORKER_DEVELOPMENT_CELLS: Readonly<Record<HirableWorkerRole, readonly WorkerDevelopmentCell[]>> = Object.fromEntries(
+  Object.entries(WORKER_SKILL_TIERS).map(([role, tiers]) => [role, Array.from({ length: 9 }, (_, tier) => ({
+    tier,
+    options: tier % 3 === 2 ? tiers[Math.floor(tier / 3)] : undefined
+  }))])
+) as unknown as Record<HirableWorkerRole, readonly WorkerDevelopmentCell[]>;
 
 export const WORKER_SPECIALIZATION_CHOICES = [
   { id: "crystalCollector" as const, name: "Kristal Toplayıcı", description: "Reaktörün enerji rezervini ve enerji krizlerini yönetir." },

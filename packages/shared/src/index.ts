@@ -1044,6 +1044,7 @@ export {
   WORKER_SKILL_TIERS,
   WORKER_SPECIALIZATION_CHOICES,
   WORKER_DEVELOPMENT_XP_COSTS,
+  WORKER_DEVELOPMENT_CELLS,
   getWorkerSkillTiers,
   isWorkerSkillId,
   isWorkerSkillForRole,
@@ -1060,7 +1061,8 @@ export type {
   RepairWorkerSkillId,
   WorkerSkillChoice,
   WorkerSkillPair,
-  WorkerDevelopmentTree
+  WorkerDevelopmentTree,
+  WorkerDevelopmentCell
 } from "./worker-skills.js";
 export {
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,

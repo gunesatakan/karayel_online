@@ -131,6 +131,7 @@ import {
   AMMO_FACTORY_INITIAL_ENERGY,
   WORKER_SPECIALIZATION_CHOICES,
   WORKER_DEVELOPMENT_XP_COSTS,
+  WORKER_DEVELOPMENT_CELLS,
   getWorkerSkillTiers,
   isWorkerSkillForRole,
   isWorkerSkillId,
@@ -6774,7 +6775,7 @@ export class MatchRoom extends Room<MatchState> {
       costs: [...WORKER_DEVELOPMENT_XP_COSTS],
       trees: HIRABLE_WORKER_ROLES.map((role) => ({
         role,
-        tiers: getWorkerSkillTiers(role),
+        cells: WORKER_DEVELOPMENT_CELLS[role],
         selectedSkillIds: (player.workerSkillIds ?? []).filter((skill) => isWorkerSkillForRole(role, skill))
       }))
     };
@@ -6789,8 +6790,9 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     if (!player || !isHirableWorkerRole(message?.role) || !message.skillId) return;
     if (!isWorkerSkillForRole(message.role, message.skillId) || (player.workerSkillIds ?? []).includes(message.skillId)) return;
-    const tiers = getWorkerSkillTiers(message.role);
-    const tier = tiers.findIndex((pair) => pair.some((skill) => skill.id === message.skillId));
+    const cells = WORKER_DEVELOPMENT_CELLS[message.role];
+    const cellIndex = cells.findIndex((cell) => cell.options?.some((skill) => skill.id === message.skillId));
+    const tier = cellIndex < 0 ? -1 : Math.floor(cellIndex / 3);
     if (tier < 0 || (player.workerSkillIds ?? []).filter((skill) => isWorkerSkillForRole(message.role!, skill)).length !== tier) return;
     const cost = WORKER_DEVELOPMENT_XP_COSTS[tier];
     if (cost === undefined || player.experience < cost) return;

@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { FINAL_WAVE, HIRABLE_WORKER_ROLES, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, WORKER_SKILL_TIERS, cardCatalog, getCardRarity, isGlobalShopItem, shopCatalog } from "@karayel/shared";
+import { FINAL_WAVE, HIRABLE_WORKER_ROLES, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardRarity, isGlobalShopItem, shopCatalog } from "@karayel/shared";
 
 type ZeynepTier = "small" | "medium" | "big";
 
@@ -446,28 +446,86 @@ export function setupGameControlUi(game: Phaser.Game) {
     const development = state.workerDevelopment;
     if (!development) return [];
     const intro = document.createElement("p");
+    intro.className = "worker-development__intro";
     intro.textContent = `Ortak işçi ağacı · ${Math.floor(development.experience)} XP. Açılan hücreler aynı uzmanlıktaki tüm işçilere uygulanır.`;
-    const body: HTMLElement[] = [intro];
+    const viewport = document.createElement("div");
+    viewport.className = "worker-development__viewport";
+    viewport.title = "Ağacı sürükleyerek gez";
+    const canvas = document.createElement("div");
+    canvas.className = "worker-development__tree";
+    const origin = document.createElement("div");
+    origin.className = "worker-development__origin";
+    origin.innerHTML = "<span>İŞÇİ<br>AĞACI</span>";
+    canvas.append(origin);
     for (const role of HIRABLE_WORKER_ROLES) {
-      const section = document.createElement("div");
-      section.className = "worker-development__role";
+      const section = document.createElement("section");
+      section.className = `worker-development__role worker-development__role--${role}`;
       const heading = document.createElement("strong");
       heading.textContent = WORKER_ROLE_LABELS[role];
       section.append(heading);
-      WORKER_SKILL_TIERS[role].forEach((pair, tier) => {
+      const path = document.createElement("div");
+      path.className = "worker-development__path";
+      WORKER_DEVELOPMENT_CELLS[role].forEach((cell, index) => {
         const row = document.createElement("div");
-        row.className = "worker-development__tier";
-        pair.forEach((option) => {
-          const selected = development.selectedSkillIds.includes(option.id);
-          const button = makeActionButton(`${option.name}${selected ? " ✓" : ""} · ${WORKER_DEVELOPMENT_XP_COSTS[tier]} XP`, "game-controls__worker-development", !selected && (development.experience >= WORKER_DEVELOPMENT_XP_COSTS[tier]), () => dispatch({ action: "unlockWorkerDevelopment", role, skillId: option.id }));
-          button.title = option.description;
-          row.append(button);
-        });
-        section.append(row);
+        row.className = `worker-development__cell${cell.options ? " worker-development__cell--choice" : " worker-development__cell--empty"}`;
+        const marker = document.createElement("span");
+        marker.className = "worker-development__marker";
+        marker.textContent = String(index + 1);
+        row.append(marker);
+        if (!cell.options) {
+          const empty = document.createElement("span");
+          empty.className = "worker-development__empty-label";
+          empty.textContent = "boş hücre";
+          row.append(empty);
+        } else {
+          const fork = document.createElement("div");
+          fork.className = "worker-development__fork";
+          cell.options.forEach((option) => {
+            const selected = development.selectedSkillIds.includes(option.id);
+            const button = makeActionButton(`${option.name}${selected ? " ✓" : ""}`, "game-controls__worker-development", !selected && development.experience >= WORKER_DEVELOPMENT_XP_COSTS[Math.floor(index / 3)], () => dispatch({ action: "unlockWorkerDevelopment", role, skillId: option.id }));
+            button.title = `${option.description} · ${WORKER_DEVELOPMENT_XP_COSTS[Math.floor(index / 3)]} XP`;
+            fork.append(button);
+          });
+          row.append(fork);
+        }
+        path.append(row);
       });
-      body.push(section);
+      section.append(path);
+      canvas.append(section);
     }
-    return body;
+    viewport.append(canvas);
+    let dragX = 0;
+    let dragY = 0;
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    const applyTransform = () => { canvas.style.transform = `translate(${dragX}px, ${dragY}px)`; };
+    viewport.addEventListener("pointerdown", (event) => {
+      if (event.target instanceof Element && event.target.closest("button")) return;
+      dragging = true;
+      startX = event.clientX - dragX;
+      startY = event.clientY - dragY;
+      viewport.setPointerCapture(event.pointerId);
+      viewport.classList.add("is-dragging");
+    });
+    viewport.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      dragX = event.clientX - startX;
+      dragY = event.clientY - startY;
+      applyTransform();
+    });
+    const release = (event: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      viewport.releasePointerCapture?.(event.pointerId);
+      viewport.classList.remove("is-dragging");
+    };
+    viewport.addEventListener("pointerup", release);
+    viewport.addEventListener("pointercancel", release);
+    const hint = document.createElement("small");
+    hint.className = "worker-development__hint";
+    hint.textContent = "Ağacı dokunup sürükleyerek gezebilirsin · 3 / 6 / 9 gamechanger hücreleri";
+    return [intro, viewport, hint];
   };
 
   const buildInventoryDrawer = (state: ControlState) => {
