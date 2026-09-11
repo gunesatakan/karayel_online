@@ -1132,6 +1132,30 @@ canvas {
   text-transform: uppercase;
 }
 
+.worker-development__fork--empty .worker-development__empty-branch {
+  position: relative;
+  display: grid;
+  min-height: 30px;
+  place-items: center;
+  border: 1px dashed rgba(100, 116, 139, .65);
+  border-radius: 6px;
+  color: #64748b;
+  background: rgba(15, 23, 42, .72);
+  font: 8px "Share Tech Mono", monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.worker-development__fork--empty .worker-development__empty-branch::before {
+  position: absolute;
+  top: 50%;
+  left: -5px;
+  width: 5px;
+  height: 1px;
+  content: "";
+  background: rgba(100, 116, 139, .7);
+}
+
 .worker-development__fork {
   position: relative;
   display: grid;

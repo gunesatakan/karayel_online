@@ -473,10 +473,15 @@ export function setupGameControlUi(game: Phaser.Game) {
         marker.textContent = String(index + 1);
         row.append(marker);
         if (!cell.options) {
-          const empty = document.createElement("span");
-          empty.className = "worker-development__empty-label";
-          empty.textContent = "boş hücre";
-          row.append(empty);
+          const fork = document.createElement("div");
+          fork.className = "worker-development__fork worker-development__fork--empty";
+          for (let branch = 0; branch < 2; branch += 1) {
+            const empty = document.createElement("span");
+            empty.className = "worker-development__empty-branch";
+            empty.textContent = "boş";
+            fork.append(empty);
+          }
+          row.append(fork);
         } else {
           const fork = document.createElement("div");
           fork.className = "worker-development__fork";
