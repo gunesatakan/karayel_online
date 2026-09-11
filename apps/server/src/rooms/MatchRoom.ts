@@ -130,6 +130,7 @@ import {
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
   WORKER_SPECIALIZATION_CHOICES,
+  WORKER_DEVELOPMENT_XP_COSTS,
   getWorkerSkillTiers,
   isWorkerSkillForRole,
   isWorkerSkillId,
@@ -665,6 +666,8 @@ class Player extends Schema {
    * isciyi normal alimlarla ucuza getirmenin yolunu acardi.
    */
   hiredWorkers: HiredWorker[] = [];
+  /** XP ile acilan ortak isci gelisim agaci; tum ayni rol hucrelerine uygulanir. */
+  workerSkillIds: WorkerSkillId[] = [];
   shopOffers: ShopItem[] = [];
   shopRerolls = 0;
   nexusShieldCharges = 0;
@@ -1058,6 +1061,7 @@ type RepairStructureMessage = { towerId?: string };
 type HireWorkerMessage = { role?: HirableWorkerRole; advanced?: boolean };
 type ChooseWorkerSpecializationMessage = { workerId?: string; role?: HirableWorkerRole };
 type ChooseWorkerSkillMessage = { workerId?: string; skillId?: WorkerSkillId };
+type WorkerDevelopmentMessage = { role?: HirableWorkerRole; skillId?: WorkerSkillId };
 type ChooseUcubePerkMessage = { towerId?: string; perkId?: UcubePerkId };
 type SetMelisStanceMessage = { stance?: MelisStance };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
@@ -1845,6 +1849,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
     this.onMessage("worker:specialization", (client, message: ChooseWorkerSpecializationMessage) => this.chooseWorkerSpecialization(client, message));
     this.onMessage("worker:skill", (client, message: ChooseWorkerSkillMessage) => this.chooseWorkerSkill(client, message));
+    this.onMessage("worker:development", (client, message: WorkerDevelopmentMessage) => this.unlockWorkerDevelopment(client, message));
     this.onMessage("ultimate:upgrade", (client) => this.upgradeUltimatePower(client));
     this.onMessage("ucube:choose", (client, message: ChooseUcubePerkMessage) => this.chooseUcubePerk(client, message));
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
@@ -1998,7 +2003,14 @@ export class MatchRoom extends Room<MatchState> {
     client.send("match:map", this.activeMap);
     client.send("lobby:started", { roomId: this.roomId });
     this.sendPendingCardChoices(client);
-    const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => !worker.role || (worker.skillIds?.length ?? 0) < (worker.role ? getWorkerSkillTiers(worker.role).length : 0));
+    this.sendWorkerDevelopmentState(client);
+    const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => {
+      if (!worker.role) return true;
+      // Rol belirtilerek alınan eski API işçileri per-worker seçim akışını
+      // korur; yeni genel işçiler global gelişim ağacını kullanır.
+      return Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix)
+        && (worker.skillIds?.length ?? 0) < getWorkerSkillTiers(worker.role).length;
+    });
     if (pending?.id) {
       if (pending.role) this.sendWorkerSkillChoice(client, pending.id, pending.skillIds?.length ?? 0);
       else this.sendWorkerSpecializationChoice(client, pending.id);
@@ -5914,7 +5926,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private hasWorkerSkill(worker: DroneModel, skill: WorkerSkillId) {
-    return (worker.skillIds ?? []).includes(skill);
+    if ((worker.skillIds ?? []).includes(skill)) return true;
+    const player = this.state.players.get(worker.ownerId);
+    return Boolean(player?.workerSkillIds?.includes(skill));
   }
 
   private hasWorkerSkillForOwner(ownerId: string, role: HirableWorkerRole, skill: WorkerSkillId) {
@@ -6750,7 +6764,43 @@ export class MatchRoom extends Room<MatchState> {
       client.send("worker:skill-complete", { workerId, role: hired?.role });
       return;
     }
-    client.send("worker:skill-choice", { workerId, tier, role: hired.role, options: pair });
+    client.send("worker:skill-choice", { workerId, tier, role: hired.role, options: pair, legacy: true });
+  }
+
+  private getWorkerDevelopmentState(player: Player) {
+    return {
+      experience: Math.floor(player.experience),
+      selectedSkillIds: [...(player.workerSkillIds ?? [])],
+      costs: [...WORKER_DEVELOPMENT_XP_COSTS],
+      trees: HIRABLE_WORKER_ROLES.map((role) => ({
+        role,
+        tiers: getWorkerSkillTiers(role),
+        selectedSkillIds: (player.workerSkillIds ?? []).filter((skill) => isWorkerSkillForRole(role, skill))
+      }))
+    };
+  }
+
+  private sendWorkerDevelopmentState(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    if (player) client.send("worker:development-state", this.getWorkerDevelopmentState(player));
+  }
+
+  private unlockWorkerDevelopment(client: Client, message: WorkerDevelopmentMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !isHirableWorkerRole(message?.role) || !message.skillId) return;
+    if (!isWorkerSkillForRole(message.role, message.skillId) || (player.workerSkillIds ?? []).includes(message.skillId)) return;
+    const tiers = getWorkerSkillTiers(message.role);
+    const tier = tiers.findIndex((pair) => pair.some((skill) => skill.id === message.skillId));
+    if (tier < 0 || (player.workerSkillIds ?? []).filter((skill) => isWorkerSkillForRole(message.role!, skill)).length !== tier) return;
+    const cost = WORKER_DEVELOPMENT_XP_COSTS[tier];
+    if (cost === undefined || player.experience < cost) return;
+    player.experience -= cost;
+    (player.workerSkillIds ??= []).push(message.skillId);
+    // Tum ayni rol hucreleri bunu kullanir; drone kopyalari yalnizca eski
+    // per-worker API ile tutulan secimleri gostermeye devam eder.
+    client.send("worker:development-unlocked", { role: message.role, skillId: message.skillId, cost });
+    this.sendWorkerDevelopmentState(client);
+    this.broadcast("lobby:state", this.getLobbyState());
   }
 
   private chooseWorkerSpecialization(client: Client, message: ChooseWorkerSpecializationMessage) {
@@ -6759,6 +6809,8 @@ export class MatchRoom extends Room<MatchState> {
     if (!player || !hired || hired.role || !isHirableWorkerRole(message.role)) return;
     hired.role = message.role;
     this.ensureLogisticsWorkers();
+    // Eski istemci/test protokolu icin secim olayi gonderilebilir; yeni UI bu
+    // legacy isaretli olayi gostermez. Gelisim agaci secimi ayri ve globaldir.
     this.sendWorkerSkillChoice(client, hired.id!, 0);
   }
 
@@ -10203,6 +10255,7 @@ export class MatchRoom extends Room<MatchState> {
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
+        workerSkillIds: [...(player.workerSkillIds ?? [])],
         ownedShopItemIds: [...player.ownedShopItemIds],
         inventoryItemIds: [...player.inventoryItemIds],
         shopOffers: player.shopOffers,

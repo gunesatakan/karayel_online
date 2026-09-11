@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { FINAL_WAVE, cardCatalog, getCardRarity, isGlobalShopItem, shopCatalog } from "@karayel/shared";
+import { FINAL_WAVE, HIRABLE_WORKER_ROLES, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, WORKER_SKILL_TIERS, cardCatalog, getCardRarity, isGlobalShopItem, shopCatalog } from "@karayel/shared";
 
 type ZeynepTier = "small" | "medium" | "big";
 
@@ -53,6 +53,11 @@ type ControlState = {
     /** İşçinin uzmanlığı sonraki pencerede seçilecek. */
     generic?: boolean;
     roles: Array<{ id: string; label: string; description: string; owned: number; ownedAdvanced: number }>;
+  };
+  workerDevelopment?: {
+    experience: number;
+    selectedSkillIds: string[];
+    open: boolean;
   };
   upgrade?: { label: string; enabled: boolean };
   sell?: { label: string; enabled: boolean };
@@ -117,6 +122,7 @@ type ControlAction = {
   wave?: number;
   count?: number;
   on?: boolean;
+  skillId?: string;
 };
 
 export function setupGameControlUi(game: Phaser.Game) {
@@ -315,7 +321,7 @@ export function setupGameControlUi(game: Phaser.Game) {
    * Satis dugmesi burada degil: haritada kulenin altinda zaten acilan panelin
    * icinde, yani kulenin oldugu yerde.
    */
-  type DrawerId = "towers" | "skills" | "inventory" | "creative";
+  type DrawerId = "towers" | "skills" | "inventory" | "creative" | "workerDevelopment";
   let openDrawer: DrawerId | undefined;
   /** Yaratici cekmecenin acik sekmesi; cekmece kapansa da hatirlaniyor. */
   let creativeTab: "cards" | "items" | "wave" = "cards";
@@ -433,6 +439,34 @@ export function setupGameControlUi(game: Phaser.Game) {
       body.push(makeMelisSpectrum(state.melisSpectrum));
     }
 
+    return body;
+  };
+
+  const buildWorkerDevelopmentDrawer = (state: ControlState) => {
+    const development = state.workerDevelopment;
+    if (!development) return [];
+    const intro = document.createElement("p");
+    intro.textContent = `Ortak işçi ağacı · ${Math.floor(development.experience)} XP. Açılan hücreler aynı uzmanlıktaki tüm işçilere uygulanır.`;
+    const body: HTMLElement[] = [intro];
+    for (const role of HIRABLE_WORKER_ROLES) {
+      const section = document.createElement("div");
+      section.className = "worker-development__role";
+      const heading = document.createElement("strong");
+      heading.textContent = WORKER_ROLE_LABELS[role];
+      section.append(heading);
+      WORKER_SKILL_TIERS[role].forEach((pair, tier) => {
+        const row = document.createElement("div");
+        row.className = "worker-development__tier";
+        pair.forEach((option) => {
+          const selected = development.selectedSkillIds.includes(option.id);
+          const button = makeActionButton(`${option.name}${selected ? " ✓" : ""} · ${WORKER_DEVELOPMENT_XP_COSTS[tier]} XP`, "game-controls__worker-development", !selected && (development.experience >= WORKER_DEVELOPMENT_XP_COSTS[tier]), () => dispatch({ action: "unlockWorkerDevelopment", role, skillId: option.id }));
+          button.title = option.description;
+          row.append(button);
+        });
+        section.append(row);
+      });
+      body.push(section);
+    }
     return body;
   };
 
@@ -787,6 +821,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     const buttons = [
       makeLaunchButton("Kuleler", "towers"),
       makeLaunchButton("Beceriler", "skills"),
+      makeLaunchButton("İşçi Ağacı", "workerDevelopment"),
       makeLaunchButton(`Envanter ${total}`, "inventory")
     ];
     if (state.creative) buttons.push(makeLaunchButton("Yaratıcı", "creative"));
@@ -921,6 +956,8 @@ export function setupGameControlUi(game: Phaser.Game) {
       panel.append(makeDrawer("Beceriler", buildSkillsDrawer(state), () => toggleDrawer("skills")));
     } else if (openDrawer === "inventory") {
       panel.append(makeDrawer("Envanter", buildInventoryDrawer(state), () => toggleDrawer("inventory")));
+    } else if (openDrawer === "workerDevelopment") {
+      panel.append(makeDrawer("İşçi Gelişim Ağacı", buildWorkerDevelopmentDrawer(state), () => toggleDrawer("workerDevelopment")));
     } else if (state.selectedStats) {
       panel.append(makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" })));
     }

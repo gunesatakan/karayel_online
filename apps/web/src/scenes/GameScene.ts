@@ -144,6 +144,7 @@ type ControlActionDetail = {
     | "closeWorkerHire"
     | "setWorkerTier"
     | "hireWorker"
+    | "unlockWorkerDevelopment"
     | "setMelisStance"
     | "setTowerPerformance"
     | "buyShopItem"
@@ -168,6 +169,7 @@ type ControlActionDetail = {
   slot?: number;
   tier?: ZeynepCommandTier;
   role?: string;
+  skillId?: string;
   stance?: string;
   mode?: "attack" | "repair";
   underworldMode?: "approval" | "stress";
@@ -1601,6 +1603,11 @@ export class GameScene extends Phaser.Scene {
         this.room?.send("worker:hire", { role: isHirableWorkerRole(detail.role) ? detail.role : undefined, advanced: this.workerHireAdvanced });
         this.workerHireOpen = false;
         this.updateSelectionUi();
+        break;
+      case "unlockWorkerDevelopment":
+        if (isHirableWorkerRole(detail.role) && detail.skillId) {
+          this.room?.send("worker:development", { role: detail.role, skillId: detail.skillId });
+        }
         break;
       case "setTowerPerformance":
         if (this.selectedPlacedTowerId && typeof detail.performance === "number") {
@@ -3525,7 +3532,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         actions?.append(button);
       }
     });
-    room.onMessage("worker:skill-choice", (message: { workerId: string; tier: number; role: HirableWorkerRole; options: readonly [WorkerSkillChoice, WorkerSkillChoice] }) => {
+    room.onMessage("worker:skill-choice", (message: { workerId: string; tier: number; role: HirableWorkerRole; options: readonly [WorkerSkillChoice, WorkerSkillChoice]; legacy?: boolean }) => {
+      if (message.legacy) return;
       const [first, second] = message.options;
       const dialog = openDefenseDialog(`${WORKER_ROLE_LABELS[message.role]} · kalıcı uzmanlık ${message.tier + 1}/3`, [
         "Bu seçim geri alınamaz. İşçinin temel verimliliği değişmez; lojistik hattının kriz, savunma veya saldırı davranışı değişir.",
@@ -7878,6 +7886,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         )
       },
       workerHire: this.getWorkerHireState(),
+      workerDevelopment: {
+        experience: this.localPlayerSnapshot?.experience ?? 0,
+        selectedSkillIds: [...(this.localPlayerSnapshot?.workerSkillIds ?? [])],
+        open: false
+      },
       creative: this.getCreativeControlState(),
       upgrade: {
         label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradePriceLabel}` : "Kule sec",

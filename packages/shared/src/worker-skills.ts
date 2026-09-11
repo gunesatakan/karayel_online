@@ -23,6 +23,13 @@ export type RepairWorkerSkillId =
 
 export type WorkerSkillChoice = { id: WorkerSkillId; name: string; description: string };
 export type WorkerSkillPair = readonly [WorkerSkillChoice, WorkerSkillChoice];
+
+/**
+ * Isci gelisim agacinda kademe acma bedeli. Secim isciye degil oyuncunun
+ * agacina yazilir; bu nedenle bir kez odendiginde ayni role ait tum hucreler
+ * bu yetenegi kullanir.
+ */
+export const WORKER_DEVELOPMENT_XP_COSTS = [120, 280, 560] as const;
 export const ENERGY_WORKER_SKILL_TIERS: readonly WorkerSkillPair[] = [
   [
     { id: "energy-relay", name: "Röle Mimarı", description: "Teslim edilen kule 8 sn boyunca komşu kulelere enerji kaynağı olur. Ağ menzili 1 kare." },
@@ -113,6 +120,12 @@ export const WORKER_SPECIALIZATION_CHOICES = [
   { id: "ammoTransport" as const, name: "Mühimmat Taşıyıcı", description: "Mühimmatın kuleler arasında nasıl dağıtıldığını ve saldırı pencerelerini belirler." },
   { id: "repairer" as const, name: "Tamirci", description: "Tamirin kuleyi koruma, yeniden kurma ve nexus savunma biçimini belirler." }
 ] as const;
+
+export type WorkerDevelopmentTree = {
+  role: HirableWorkerRole;
+  tiers: readonly WorkerSkillPair[];
+  selectedSkillIds: readonly WorkerSkillId[];
+};
 
 export function getWorkerSkillTiers(role: HirableWorkerRole) {
   return WORKER_SKILL_TIERS[role];

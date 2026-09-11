@@ -5,7 +5,8 @@ import {
   AMMO_TRANSPORT_WORKER_SKILL_TIERS,
   CRYSTAL_WORKER_SKILL_TIERS,
   REPAIR_WORKER_SKILL_TIERS,
-  WORKER_SPECIALIZATION_CHOICES
+  WORKER_SPECIALIZATION_CHOICES,
+  WORKER_DEVELOPMENT_XP_COSTS
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -36,6 +37,22 @@ test("every non-energy specialization exposes three binary choices", () => {
     assert.equal(tiers.length, 3);
     for (const pair of tiers) assert.equal(pair.length, 2);
   }
+});
+
+test("worker development tree spends XP once and applies to every role cell", () => {
+  const room = createRoom("warrior");
+  const player = room.state.players.get("p1");
+  player.experience = WORKER_DEVELOPMENT_XP_COSTS[0] + 10;
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: "repair-bulwark" });
+  assert.equal(player.experience, 10);
+  assert.deepEqual(player.workerSkillIds, ["repair-bulwark"]);
+  room.hireWorker(client, { advanced: false });
+  const hired = player.hiredWorkers.at(-1);
+  room.chooseWorkerSpecialization(client, { workerId: hired.id, role: "repairer" });
+  room.ensureLogisticsWorkers();
+  const repairers = [...room.drones.values()].filter((worker) => worker.ownerId === "p1" && worker.mode === "repairer");
+  assert.ok(repairers.length > 0);
+  assert.ok(repairers.every((worker) => room.hasWorkerSkill(worker, "repair-bulwark")));
 });
 
 test("crystal reserve and conduit change reactor failure and tower topology", () => {

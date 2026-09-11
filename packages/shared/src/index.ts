@@ -333,6 +333,8 @@ export type PlayerSnapshot = {
   gold: number;
   goldSpent: number;
   experience: number;
+  /** XP ile acilan, oyuncunun tum isci hucrelerine uygulanan global beceriler. */
+  workerSkillIds?: import("./worker-skills.js").WorkerSkillId[];
   ownedShopItemIds?: string[];
   /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
   inventoryItemIds?: string[];
@@ -1041,6 +1043,7 @@ export {
   REPAIR_WORKER_SKILL_TIERS,
   WORKER_SKILL_TIERS,
   WORKER_SPECIALIZATION_CHOICES,
+  WORKER_DEVELOPMENT_XP_COSTS,
   getWorkerSkillTiers,
   isWorkerSkillId,
   isWorkerSkillForRole,
@@ -1056,7 +1059,8 @@ export type {
   AmmoTransportWorkerSkillId,
   RepairWorkerSkillId,
   WorkerSkillChoice,
-  WorkerSkillPair
+  WorkerSkillPair,
+  WorkerDevelopmentTree
 } from "./worker-skills.js";
 export {
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
