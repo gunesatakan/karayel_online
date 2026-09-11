@@ -1,17 +1,25 @@
 /**
  * Bir yuk cikarmanin suresi.
  *
- * Ikiye katlandi: toplama hizi yariya indi. Kapasitelerle birlikte lojistik
- * hatti bastan asagi yarilandi, yani ayni ates gucunu beslemek iki kat emek
- * istiyor. Isci alimi, gelismis isci ve isci kartlari bu yeni tabanin
- * uzerine biniyor -- hepsi carpan oldugu icin oranlar korunuyor.
+ * Once yarilandi (8 sn -> 16 sn), sonra fazla dusuk bulunup 1,5 kat geri
+ * cekildi: 16 / 1,5 = 10,67 sn. Net sonuc ilk tabanin %75'i -- ayni ates
+ * gucunu beslemek eskisinden bir tik fazla emek istiyor ama hat artik
+ * nefessiz degil. Kapasiteler ayni yolu izledi (12 -> 6 -> 9).
+ *
+ * Isci alimi, gelismis isci ve isci kartlari bu tabanin uzerine biniyor;
+ * hepsi carpan oldugu icin oranlar korunuyor.
  */
-export const RESOURCE_EXTRACTION_DURATION_MS = 16000;
-/** Kapasiteler de yarilandi; bkz. `RESOURCE_EXTRACTION_DURATION_MS`. */
-export const LOGISTICS_WORKER_CAPACITY = 6;
-export const ENERGY_LOGISTICS_WORKER_CAPACITY = 6;
-export const AMMO_LOGISTICS_WORKER_CAPACITY = 2;
-export const AMMO_COLLECTOR_WORKER_CAPACITY = 1;
+export const RESOURCE_EXTRACTION_DURATION_MS = 10_667;
+/** Kapasiteler de ayni yolu izledi; bkz. `RESOURCE_EXTRACTION_DURATION_MS`. */
+export const LOGISTICS_WORKER_CAPACITY = 9;
+export const ENERGY_LOGISTICS_WORKER_CAPACITY = 9;
+export const AMMO_LOGISTICS_WORKER_CAPACITY = 3;
+/**
+ * Kesirli: 1'in 1,5 kati. Kesirli kapasite oyunda zaten olagan -- kart ve
+ * esya carpanlari (orn. Seyyar Depo x1,4) her kapasiteyi kesirli yapiyor;
+ * gosterim tabana yuvarliyor.
+ */
+export const AMMO_COLLECTOR_WORKER_CAPACITY = 1.5;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 
 /**
@@ -30,13 +38,13 @@ export const WORKER_MAX_HP = 60;
  * Bu isci hattin tek altin harcamayan onarim yolu, yani hizi bilerek yavas:
  * altinla onarim aninda biter, tamirci beklemek ister.
  *
- * Yarilandi (6 -> 3): en ucuz duvar (taban 40 civari can) artik yaklasik on
- * dort saniyede doluyor. Onarim hizi kartlari ve gelismis kademe bu tabanin
- * uzerine biniyor, yani onlari almanin degeri arttı.
+ * Yarilandi (6 -> 3), sonra fazla dusuk bulunup 1,5 kat geri cekildi (3 ->
+ * 4,5): en ucuz duvar (taban 40 civari can) yaklasik dokuz saniyede doluyor.
+ * Onarim hizi kartlari ve gelismis kademe bu tabanin uzerine biniyor.
  *
  * Gelismis tamirci uc kati: her eksende oldugu gibi.
  */
-export const WORKER_REPAIR_PER_SECOND = 3;
+export const WORKER_REPAIR_PER_SECOND = 4.5;
 
 /**
  * Olen iscinin geri gelme suresi.
@@ -75,7 +83,7 @@ export const WORKER_ROLE_DESCRIPTIONS: Record<HirableWorkerRole, string> = {
   energyTransport: "Toplanan enerjiyi kulelere dağıtır.",
   ammoCollector: "Mühimmat düğümlerinden ham madde toplar.",
   ammoTransport: "Üretilen mühimmatı kulelere taşır.",
-  repairer: `Hasarlı yapıları altın harcamadan onarır: saniyede ${WORKER_REPAIR_PER_SECOND} can. Yıkılan yapıyı diriltemez.`
+  repairer: `Hasarlı yapıları altın harcamadan onarır: saniyede ${String(WORKER_REPAIR_PER_SECOND).replace(".", ",")} can. Yıkılan yapıyı diriltemez.`
 };
 
 export const WORKER_HIRE_BASE_COST = 100;

@@ -25,7 +25,7 @@ test("focus ve aura enerji, diğer vuruş türleri mühimmat yakar", () => {
 
 test("enerji lojistiği de standart işçi kapasitesini kullanır", () => {
   assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, LOGISTICS_WORKER_CAPACITY);
-  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, 6);
+  assert.equal(ENERGY_LOGISTICS_WORKER_CAPACITY, 9);
 });
 
 test("enerji kesintisi atış, takip ve aura sırasıyla ilerler", () => {

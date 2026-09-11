@@ -77,7 +77,7 @@ Kaynaklar: `packages/shared/src/cards/index.ts`, `packages/shared/src/shop/index
 
 Oyuncu dört temel rolle başlıyor: kristal toplama, enerji taşıma, mühimmat hammaddesi toplama ve mühimmat taşıma. Tamirci ayrıca alınabiliyor. Zincir; düğüm → depo/üretim binası → kule olarak çalışıyor. Enerji sevkiyatında yetersiz enerjili mühimmat fabrikasına öncelik verilmesi zincirin kilitlenmesini önlemeye yardımcı oluyor.
 
-Taban toplama süresi 16.000 simülasyon ms; kapasiteler enerji/kristalde 6, mühimmat taşımada 2, hammaddede 1. Normal işçinin canı 60; tamirci simülasyon saniyesi başına 3 can onarıyor. Ölüm yükü kaybettiriyor ve 20 saniyelik yeniden doğma beklemesi oluşturuyor. Kurulum evresi kadroyu ve canları tamamlıyor.
+Taban toplama süresi 10.667 simülasyon ms (yarılamanın ardından 1,5 kat geri çekildi; ilk tabanın %75'i); kapasiteler enerji/kristalde 9, mühimmat taşımada 3, hammaddede 1,5. Normal işçinin canı 60; tamirci simülasyon saniyesi başına 4,5 can onarıyor. Ölüm yükü kaybettiriyor ve 20 saniyelik yeniden doğma beklemesi oluşturuyor. Kurulum evresi kadroyu ve canları tamamlıyor.
 
 İşçiler yapı ve duvarları dikkate alan yol araması kullanıyor; yasak hücre ve teslimat erişimi kuralları mevcut. İşçi kapasitesi/toplama/hareket bonusları ile oyuncuya ait can/tamir bonuslarının ayrılması doğru bir sahiplik kararı.
 
