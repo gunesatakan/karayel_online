@@ -1,6 +1,7 @@
 import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
+import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import {
   characters,
   DEFAULT_MAP_SCALE,
@@ -114,6 +115,7 @@ import {
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   type HirableWorkerRole,
   type HiredWorker,
+  type WorkerSkillId,
   ADVANCED_WORKER_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
   WORKER_MAX_HP,
@@ -127,6 +129,11 @@ import {
   AMMO_COLLECTOR_WORKER_CAPACITY,
   RESOURCE_PROVIDER_INITIAL_STOCK,
   AMMO_FACTORY_INITIAL_ENERGY,
+  WORKER_SPECIALIZATION_CHOICES,
+  getWorkerSkillTiers,
+  isWorkerSkillForRole,
+  isWorkerSkillId,
+  type WorkerSkillChoice,
   BACKUP_LINE_DURATION_MS,
   encodeUnlocks,
   resolveTowerAttackMultipliers,
@@ -183,6 +190,7 @@ import {
   isStatusEffectActive,
   isTowerAligned,
   isTowerPerformanceIdle,
+  type EnergyWorkerSkillId,
   getStage,
   getStageRace,
   getTowerFireAlignmentTolerance,
@@ -648,9 +656,9 @@ class Player extends Schema {
   ownedShopItemIds: string[] = [];
   /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
   inventoryItemIds: string[] = [];
-  /** Altinla alinmis ek isciler; rolu alim aninda oyuncu secer. */
+  /** Altinla alinmis ek isciler; uzmanlik ilk kalici secimde belirlenir. */
   /**
-   * Alinmis isciler; rolu ve kademesiyle.
+   * Alinmis isciler; secilen uzmanligi ve kademesiyle.
    *
    * Tek liste tutuluyor cunku fiyat sayaci **ortak**: normal ya da gelismis,
    * her alim bir sonrakini pahalilastiriyor. Ayri listeler tutmak gelismis
@@ -825,6 +833,7 @@ type EnemyModel = {
   coolantSlowUntil: number;
   coolantSlowMultiplier: number;
   auraSlowMultiplier: number;
+  trackingSourceTowerId?: string;
   kinSlowUntil: number;
   kinSlowMultiplier: number;
   fearUntil: number;
@@ -860,6 +869,8 @@ type EnemyModel = {
 };
 
 type TowerModel = {
+  logisticsPriority?: LogisticsPriority;
+  formationReason?: string;
   id: string;
   ownerId: string;
   ownerName: string;
@@ -881,6 +892,36 @@ type TowerModel = {
   energy: number;
   maxEnergy: number;
   energyDepletedAt: number;
+  energyRelayUntil?: number;
+  energyRelaySourceId?: string;
+  energyLocalReserve?: number;
+  energyBridgeUntil?: number;
+  energyShedUntil?: number;
+  energyFrequencyUntil?: number;
+  energyScenarioCharge?: number;
+  energyConduitUntil?: number;
+  energyConduitSourceId?: string;
+  energyFreeUntil?: number;
+  crystalReserve?: number;
+  crystalResonanceReadyAt?: number;
+  crystalConduitWave?: number;
+  crystalLastCoreWave?: number;
+  crystalCriticalResonanceWave?: number;
+  ammoFactoryShield?: number;
+  ammoRecyclingClaimedWave?: number;
+  ammoBlackBoxWave?: number;
+  ammoRefinerUntil?: number;
+  ammoPayloadUntil?: number;
+  ammoPayloadKind?: "refined" | "special";
+  ammoPayloadShots?: number;
+  ammoEmergencyShots?: number;
+  ammoAssaultArmedUntil?: number;
+  ammoAssaultUntil?: number;
+  ammoEvacuationUntil?: number;
+  repairFortificationUntil?: number;
+  repairFortificationHp?: number;
+  repairBreachUntil?: number;
+  repairRebuildWave?: number;
   standby: boolean;
   wakeReadyAt: number;
   ammoLogisticsEnabled: boolean;
@@ -1015,6 +1056,8 @@ type TowerModel = {
 
 type RepairStructureMessage = { towerId?: string };
 type HireWorkerMessage = { role?: HirableWorkerRole; advanced?: boolean };
+type ChooseWorkerSpecializationMessage = { workerId?: string; role?: HirableWorkerRole };
+type ChooseWorkerSkillMessage = { workerId?: string; skillId?: WorkerSkillId };
 type ChooseUcubePerkMessage = { towerId?: string; perkId?: UcubePerkId };
 type SetMelisStanceMessage = { stance?: MelisStance };
 type ChooseCardMessage = { cardId?: string; towerId?: string };
@@ -1080,8 +1123,12 @@ type DroneModel = DroneSnapshot & {
    * araliga duvar ordu) yeniden araniyor.
    */
   routeStep?: { fromCol: number; fromRow: number; goalCol: number; goalRow: number; toCol: number; toRow: number };
+  hiredWorkerId?: string;
   extractionRemainingMs?: number;
   cargoAmmoType?: AmmoType;
+  skillIds?: WorkerSkillId[];
+  cargoSpecial?: boolean;
+  cargoAmmoPayloadKind?: "refined" | "special";
 };
 
 type WorkerBanCellMessage = {
@@ -1284,6 +1331,8 @@ export class MatchRoom extends Room<MatchState> {
    * o yeniden kurmayi geciktiren tek sey.
    */
   private workerRespawnAt = new Map<string, number>();
+  private crystalTrapUntil = new Map<string, number>();
+  private crystalTrapKeys = new Set<string>();
   private zeynepRays = new Map<string, ZeynepRayModel>();
   private kinWaves = new Map<string, KinWaveModel>();
   private burnZones = new Map<string, BurnZoneModel>();
@@ -1297,6 +1346,7 @@ export class MatchRoom extends Room<MatchState> {
   private nextTowerId = 1;
   private nextProjectileId = 1;
   private nextDroneId = 1;
+  private nextHiredWorkerId = 1;
   private nextBeamId = 1;
   private nextZeynepRayId = 1;
   private nextKinWaveId = 1;
@@ -1310,6 +1360,14 @@ export class MatchRoom extends Room<MatchState> {
   private waveSpawned = 0;
   /** Dalganin temizlendigi an (duvar saati). 0 ise dalga henuz temiz degil. */
   private waveClearedAt = 0;
+  private defenseWave = 0;
+  private defenseRows = new Map<string, DefenseRow>();
+  private lastDefenseSummary = new Map<string, DefenseSummary>();
+  private insightElapsed = 0;
+  private logisticsClock = 0;
+  private deliveryWaitingSince = new Map<string, number>();
+  private previewRequestTimes = new Map<string, number>();
+  private towerInsightCache = new WeakMap<TowerModel, { at: number; value: string }>();
   private waveTarget = getWaveEnemyCount(1);
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
@@ -1750,6 +1808,12 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("toggleWallGate", (client, message: ToggleWallGateMessage) => this.toggleWallGate(client, message));
 
     this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => this.toggleAmmoLogistics(client, message));
+    this.onMessage("tower:priority", (client, message) => this.setLogisticsPriority(client, message));
+    this.onMessage("tower:preview", (client, message) => this.sendTowerPreview(client, message));
+    this.onMessage("defense:request", (client) => {
+      const summary = this.lastDefenseSummary.get(client.sessionId);
+      if (summary) client.send("defense:summary", summary);
+    });
     this.onMessage("setTowerPerformance", (client, message: SetTowerPerformanceMessage) => this.setTowerPerformance(client, message));
 
     this.onMessage("latency:ping", (client, message: PingMessage) => {
@@ -1779,6 +1843,8 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
+    this.onMessage("worker:specialization", (client, message: ChooseWorkerSpecializationMessage) => this.chooseWorkerSpecialization(client, message));
+    this.onMessage("worker:skill", (client, message: ChooseWorkerSkillMessage) => this.chooseWorkerSkill(client, message));
     this.onMessage("ultimate:upgrade", (client) => this.upgradeUltimatePower(client));
     this.onMessage("ucube:choose", (client, message: ChooseUcubePerkMessage) => this.chooseUcubePerk(client, message));
     this.onMessage("melis:stance", (client, message: SetMelisStanceMessage) => this.setMelisStance(client, message));
@@ -1922,6 +1988,8 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.melisFavoriteTowerIds, previousSessionId, nextSessionId);
     this.transferMapKey(this.melisGothicNightmareOwnerUntil, previousSessionId, nextSessionId);
     this.transferMapKey(this.pendingCardChoices, previousSessionId, nextSessionId);
+    this.transferMapKey(this.lastDefenseSummary, previousSessionId, nextSessionId);
+    for (const row of this.defenseRows.values()) if (row.ownerId === previousSessionId) row.ownerId = nextSessionId;
     this.transferMapKey(this.shopPlacementCharges, previousSessionId, nextSessionId);
   }
 
@@ -1930,6 +1998,11 @@ export class MatchRoom extends Room<MatchState> {
     client.send("match:map", this.activeMap);
     client.send("lobby:started", { roomId: this.roomId });
     this.sendPendingCardChoices(client);
+    const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => !worker.role || (worker.skillIds?.length ?? 0) < (worker.role ? getWorkerSkillTiers(worker.role).length : 0));
+    if (pending?.id) {
+      if (pending.role) this.sendWorkerSkillChoice(client, pending.id, pending.skillIds?.length ?? 0);
+      else this.sendWorkerSpecializationChoice(client, pending.id);
+    }
   }
 
   private sendPendingCardChoices(client: Client) {
@@ -2462,6 +2535,7 @@ export class MatchRoom extends Room<MatchState> {
       this.waveClearedAt = 0;
 
       this.applyMelisWaveStress();
+      this.finishDefenseSummary();
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
       if (this.wave >= FINAL_WAVE) {
@@ -2644,6 +2718,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     this.matchResult = result;
+    if (result === "defeat") this.finishDefenseSummary();
     this.setupPhase = false;
     this.setupReadyPlayerIds.clear();
     this.broadcast(`match:${result}`, { result, wave: this.wave, kills: this.kills, stage: this.stage });
@@ -2761,9 +2836,22 @@ export class MatchRoom extends Room<MatchState> {
   private canTowerFire(tower: TowerModel) {
     const now = Date.now();
     if (tower.standby || tower.wakeReadyAt > now || tower.performance <= 0 || tower.heatLocked) return false;
+    if (tower.energyShedUntil && tower.energyShedUntil > now) return false;
+    if (tower.energyFrequencyUntil && tower.energyFrequencyUntil > now
+      && (Math.floor(now / 250) + this.stableTowerHash(tower.id)) % 2 !== 0) return false;
     if (this.isTowerOnBackupLine(tower, now)) return true;
-    return getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) === "powered"
-      && tower.ammo >= this.getTowerAmmoCost(tower) && tower.energy >= this.getTowerEnergyCost(tower);
+    const bridge = tower.energyBridgeUntil && tower.energyBridgeUntil > now && tower.energy <= 0;
+    const scenarioCharge = (tower.energyScenarioCharge ?? 0) > 0;
+    const emergencyShots = (tower.ammoEmergencyShots ?? 0) > 0;
+    const source = this.getTowerEnergySource(tower, now);
+    const freeEnergy = (source.energyFreeUntil ?? 0) > now;
+    return (bridge || scenarioCharge || freeEnergy || getTowerEnergyState(this.getTowerAvailableEnergy(tower, now), tower.energyDepletedAt, now) === "powered")
+      && (emergencyShots || tower.ammo >= this.getTowerAmmoCost(tower))
+      && (bridge || scenarioCharge || freeEnergy || this.getTowerAvailableEnergy(tower, now) >= this.getTowerEnergyCost(tower));
+  }
+
+  private stableTowerHash(id: string) {
+    return [...id].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 7) % 2;
   }
 
   /**
@@ -2807,8 +2895,19 @@ export class MatchRoom extends Room<MatchState> {
     const hadAmmo = tower.ammo > 0;
     const wasHeatLocked = tower.heatLocked;
     const onBackupLine = this.isTowerOnBackupLine(tower, now);
-    tower.ammo = Math.max(0, tower.ammo - (onBackupLine ? BACKUP_LINE_AMMO_PER_SHOT : this.getTowerAmmoCost(tower)));
-    if (!onBackupLine) tower.energy = Math.max(0, tower.energy - this.getTowerEnergyCost(tower));
+    const bridge = tower.energyBridgeUntil && tower.energyBridgeUntil > now && tower.energy <= 0;
+    const emergencyShot = (tower.ammoEmergencyShots ?? 0) > 0 && tower.ammo < this.getTowerAmmoCost(tower);
+    tower.ammo = Math.max(0, tower.ammo - (onBackupLine || emergencyShot ? BACKUP_LINE_AMMO_PER_SHOT : this.getTowerAmmoCost(tower)));
+    if (emergencyShot) tower.ammoEmergencyShots = Math.max(0, (tower.ammoEmergencyShots ?? 0) - 1);
+    const scenarioCharge = (tower.energyScenarioCharge ?? 0) > 0;
+    const source = this.getTowerEnergySource(tower, now);
+    const freeEnergy = (source.energyFreeUntil ?? 0) > now;
+    if (!onBackupLine && !bridge && !scenarioCharge && !freeEnergy && this.getTowerEnergyCost(tower) > 0) this.consumeTowerEnergy(tower, this.getTowerEnergyCost(tower), now);
+    if (scenarioCharge) tower.energyScenarioCharge = 0;
+    if ((tower.ammoPayloadShots ?? 0) > 0) {
+      tower.ammoPayloadShots = Math.max(0, (tower.ammoPayloadShots ?? 0) - 1);
+      if (tower.ammoPayloadShots === 0) tower.ammoPayloadUntil = 0;
+    }
     const heat = this.getTowerShotHeat(tower);
     tower.temperature = Math.min(100, tower.temperature + heat);
     if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) {
@@ -3116,7 +3215,7 @@ export class MatchRoom extends Room<MatchState> {
             }
           }
         }
-        this.applyTowerEnemyAuras(tower, activeAuras);
+        this.applyTowerEnemyAuras(tower, activeAuras, deltaTime / 1000);
         continue;
       }
 
@@ -4879,6 +4978,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateDrones(deltaTime: number, seconds: number) {
+    if (!this.setupPhase) this.logisticsClock += seconds;
+    this.updateDefenseInsights(seconds);
     this.ensureLogisticsWorkers();
     const nexus = this.activePaths[0]?.points.at(-1);
     const bounds = this.getActiveWorldBounds();
@@ -5030,6 +5131,8 @@ export class MatchRoom extends Room<MatchState> {
       const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
       const tarMultiplier = this.tarredCells.has(`${enemyCell.col}:${enemyCell.row}`) ? 0.75 : 1;
       const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
+      const crystalTrapMultiplier = this.getCrystalTrapMultiplier(enemy, now);
+      const repairBreachMultiplier = this.getRepairBreachMultiplier(enemy, now);
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
         // Sogutma yavaslatmasi `min` icinde degil, sonucun **carpani**.
@@ -5039,7 +5142,7 @@ export class MatchRoom extends Room<MatchState> {
         // ustlerine biner. Icerde olsaydi %9'luk bir yavaslatma, %52'lik
         // bir yavaslatmanin yaninda hicbir sey yapmazdi -- olcup gorduk:
         // 0,48 varken 0,91 hic gorunmuyordu.
-        : Math.min(isSlowed ? SLOW_STATUS_SPEED_MULTIPLIER : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
+        : Math.min(isSlowed ? SLOW_STATUS_SPEED_MULTIPLIER : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier, crystalTrapMultiplier, repairBreachMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
       // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
       // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
       // sozu bu -- kule yavaslatmayi kendi yapmak zorunda degil, yalnizca
@@ -5163,6 +5266,26 @@ export class MatchRoom extends Room<MatchState> {
     }));
   }
 
+  private getCrystalTrapMultiplier(enemy: EnemyModel, now: number) {
+    let multiplier = 1;
+    for (const node of this.getCrystalNodes()) {
+      const until = Array.from(this.crystalTrapUntil.entries())
+        .find(([key]) => key.endsWith(`:${node.id}`))?.[1] ?? 0;
+      if (until > now && distanceSq(enemy.x, enemy.y, node.x, node.y) <= getMapGridSize(this.activeMap) ** 2 * 2.25) multiplier = Math.min(multiplier, 0.65);
+    }
+    return multiplier;
+  }
+
+  private getRepairBreachMultiplier(enemy: EnemyModel, now: number) {
+    let multiplier = 1;
+    const radius = getMapGridSize(this.activeMap) * 1.25;
+    for (const tower of this.towers.values()) {
+      if ((tower.repairBreachUntil ?? 0) > now && tower.hp > 0
+        && distanceSq(enemy.x, enemy.y, tower.x, tower.y) <= radius * radius) multiplier = Math.min(multiplier, 0.7);
+    }
+    return multiplier;
+  }
+
   private getAmmoNodes() {
     const origin = getMapOrigin(this.activeMap);
     const { gridSize } = getMapMetrics(this.activeMap);
@@ -5203,11 +5326,12 @@ export class MatchRoom extends Room<MatchState> {
       ];
       const workers: HiredWorker[] = [
         ...baseWorkerModes.map((role) => ({ role: role as HirableWorkerRole })),
-        ...extraWorkers
+        ...extraWorkers.filter((worker) => isHirableWorkerRole(worker.role))
       ];
       for (const [index, worker] of workers.entries()) {
         const mode = worker.role as DroneSnapshot["mode"];
-        const suffix = index >= baseWorkerModes.length ? `:extra${index - baseWorkerModes.length}` : "";
+        const legacySuffix = Boolean((worker as HiredWorker & { legacySuffix?: boolean }).legacySuffix);
+        const suffix = index >= baseWorkerModes.length ? `:${legacySuffix ? `extra${index - baseWorkerModes.length}` : worker.id ?? `extra${index - baseWorkerModes.length}`}` : "";
         const id = `logistics-${ownerId}-${mode}${suffix}`;
         if (this.drones.has(id)) {
           continue;
@@ -5219,6 +5343,7 @@ export class MatchRoom extends Room<MatchState> {
         }
         this.drones.set(id, {
           id,
+          hiredWorkerId: worker.id,
           ownerId,
           mode,
           x: origin.x + gridSize * (1.5 + index),
@@ -5248,7 +5373,8 @@ export class MatchRoom extends Room<MatchState> {
           // bir can karti sahadaki isciye de isliyor.
           hp: this.getWorkerBaseMaxHp(worker.advanced, ownerId),
           maxHp: this.getWorkerBaseMaxHp(worker.advanced),
-          advanced: worker.advanced
+          advanced: worker.advanced,
+          skillIds: worker.skillIds?.filter(isWorkerSkillId)
         });
       }
     }
@@ -5279,6 +5405,11 @@ export class MatchRoom extends Room<MatchState> {
 
     // Tasidigi yuk de gidiyor: olumun bedeli yalnizca eksik beden degil,
     // o seferin kendisi.
+    if (worker.mode === "ammoTransport" && (worker.cargo ?? 0) > 0 && this.hasWorkerSkill(worker, "ammo-lost-convoy")) {
+      const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId
+        && tower.hp > 0 && tower.definition.resourceProvider === "ammunition");
+      if (factory) factory.ammo = Math.min(factory.maxAmmo, factory.ammo + (worker.cargo ?? 0));
+    }
     this.drones.delete(worker.id);
     this.workerRespawnAt.set(worker.id, Date.now() + WORKER_RESPAWN_MS);
     return true;
@@ -5649,6 +5780,7 @@ export class MatchRoom extends Room<MatchState> {
             worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
             worker.logisticsPhase = "deliver";
             worker.extractionRemainingMs = undefined;
+            this.applyCrystalNodePickup(worker, node.id);
           }
         } else {
           worker.extractionRemainingMs = undefined;
@@ -5657,8 +5789,10 @@ export class MatchRoom extends Room<MatchState> {
       }
       if (reactor.energy < reactor.maxEnergy && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds)) {
         const delivered = Math.min(worker.cargo ?? 0, reactor.maxEnergy - reactor.energy);
+        const becameFull = reactor.energy + delivered >= reactor.maxEnergy;
         reactor.energy += delivered;
         worker.cargo = 0;
+        if (delivered > 0) this.applyCrystalWorkerArrival(worker, reactor, becameFull);
         worker.logisticsPhase = "pickup";
       }
       return;
@@ -5698,6 +5832,7 @@ export class MatchRoom extends Room<MatchState> {
         const delivered = Math.min(worker.cargo ?? 0, factory.maxRawAmmo - factory.rawAmmo);
         factory.rawAmmo += delivered;
         worker.cargo = 0;
+        if (delivered > 0) this.applyAmmoCollectorArrival(worker, factory);
         worker.logisticsPhase = "pickup";
       }
       return;
@@ -5705,27 +5840,24 @@ export class MatchRoom extends Room<MatchState> {
 
     if (worker.mode === "energyTransport") {
       if (worker.logisticsPhase === "pickup") {
+        if ((worker.cargo ?? 0) > 0) { worker.logisticsPhase = "deliver"; return; }
+        const recipient = this.selectDeliveryTarget(worker, "energy");
         const reactor = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "energy");
         if (reactor && this.moveLogisticsWorker(worker, reactor.x, reactor.y, seconds) && reactor.energy > 0) {
-          const loaded = Math.min(capacity, reactor.energy);
+          const loaded = Math.min(capacity, reactor.energy, recipient ? Math.max(0, recipient.maxEnergy - recipient.energy - this.getReservedCargo(worker, recipient)) : capacity);
           reactor.energy -= loaded;
           worker.cargo = loaded;
           worker.logisticsPhase = "deliver";
-          worker.targetTowerId = "";
+          worker.targetTowerId = recipient?.id ?? "";
         }
         return;
       }
-      const energyTargets = Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy);
-      const factoryMinimumEnergy = AMMO_FACTORY_ENERGY_PER_AMMO * AMMO_LOGISTICS_WORKER_CAPACITY;
-      const underpoweredAmmoFactory = energyTargets.find((tower) => (
-        tower.definition.resourceProvider === "ammunition" && tower.energy < factoryMinimumEnergy
-      ));
-      const target = (worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined)
-        ?? underpoweredAmmoFactory
-        ?? energyTargets.sort((left, right) => left.energy / Math.max(1, left.maxEnergy) - right.energy / Math.max(1, right.maxEnergy))[0];
+      const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+      const target = locked && locked.hp > 0 && locked.ownerId === worker.ownerId && locked.energy < locked.maxEnergy
+        && this.getWorkerApproachPoint(worker, locked.x, locked.y)
+        ? locked : this.selectDeliveryTarget(worker, "energy");
       if (!target) {
-        worker.logisticsPhase = "pickup";
+        worker.targetTowerId = "";
         return;
       }
       worker.targetTowerId = target.id;
@@ -5733,44 +5865,239 @@ export class MatchRoom extends Room<MatchState> {
         const delivered = Math.min(worker.cargo ?? 0, target.maxEnergy - target.energy);
         target.energy += delivered;
         worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
-        worker.logisticsPhase = "pickup";
+        if (delivered > 0) this.applyEnergyWorkerArrival(worker, target);
+        worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
+        this.deliveryWaitingSince.delete(`energy:${target.id}`);
         worker.targetTowerId = "";
       }
       return;
     }
 
     if (worker.logisticsPhase === "pickup") {
+      if ((worker.cargo ?? 0) > 0) { worker.logisticsPhase = "deliver"; return; }
       const factory = Array.from(this.towers.values()).find((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition");
       if (!factory || !this.moveLogisticsWorker(worker, factory.x, factory.y, seconds)) {
         return;
       }
-      const target = Array.from(this.towers.values())
-        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo)
-        .sort((left, right) => left.ammo / Math.max(1, left.maxAmmo) - right.ammo / Math.max(1, right.maxAmmo))[0];
+      const target = this.selectDeliveryTarget(worker, "ammo");
       if (target && factory.ammo > 0) {
-        const loaded = Math.min(capacity, factory.ammo);
+        const loaded = Math.min(capacity, factory.ammo, Math.max(0, target.maxAmmo - target.ammo - this.getReservedCargo(worker, target)));
         factory.ammo -= loaded;
         worker.cargo = loaded;
+        worker.cargoSpecial = Boolean(factory.ammoRefinerUntil && factory.ammoRefinerUntil > Date.now());
+        worker.cargoAmmoPayloadKind = worker.cargoSpecial ? "refined" : undefined;
         worker.cargoAmmoType = target.ammoType;
         worker.targetTowerId = target.id;
         worker.logisticsPhase = "deliver";
       }
       return;
     }
-    const target = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
-    if (!target || !target.ammoLogisticsEnabled) {
-      worker.cargo = 0;
-      worker.logisticsPhase = "pickup";
+    const locked = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
+    const target = locked && locked.hp > 0 && locked.ownerId === worker.ownerId && locked.ammoLogisticsEnabled && locked.ammo < locked.maxAmmo
+      && this.getWorkerApproachPoint(worker, locked.x, locked.y)
+      ? locked : this.selectDeliveryTarget(worker, "ammo");
+    if (!target) {
       worker.targetTowerId = "";
       return;
     }
+    worker.targetTowerId = target.id;
     if (this.moveLogisticsWorker(worker, target.x, target.y, seconds)) {
       const delivered = Math.min(worker.cargo ?? 0, target.maxAmmo - target.ammo);
+      const hadNoAmmo = target.ammo <= 0;
       target.ammo += delivered;
       worker.cargo = Math.max(0, (worker.cargo ?? 0) - delivered);
-      worker.logisticsPhase = "pickup";
+      if (delivered > 0) this.applyAmmoTransportArrival(worker, target, hadNoAmmo);
+      worker.logisticsPhase = (worker.cargo ?? 0) > 0 ? "deliver" : "pickup";
+      this.deliveryWaitingSince.delete(`ammo:${target.id}`);
       worker.targetTowerId = "";
     }
+  }
+
+  private hasWorkerSkill(worker: DroneModel, skill: WorkerSkillId) {
+    return (worker.skillIds ?? []).includes(skill);
+  }
+
+  private hasWorkerSkillForOwner(ownerId: string, role: HirableWorkerRole, skill: WorkerSkillId) {
+    return Array.from(this.drones.values()).some((drone) => drone.ownerId === ownerId && drone.mode === role && this.hasWorkerSkill(drone, skill));
+  }
+
+  private getOwnerWorker(ownerId: string, role: HirableWorkerRole) {
+    return Array.from(this.drones.values()).find((drone) => drone.ownerId === ownerId && drone.mode === role);
+  }
+
+  private applyCrystalWorkerArrival(worker: DroneModel, reactor: TowerModel, becameFull: boolean) {
+    const now = Date.now();
+    if (this.hasWorkerSkill(worker, "crystal-reserve")) {
+      reactor.crystalReserve = Math.min(24, (reactor.crystalReserve ?? 0) + 12);
+    }
+    if (becameFull && this.hasWorkerSkill(worker, "crystal-resonance") && (reactor.crystalResonanceReadyAt ?? 0) <= now) {
+      reactor.crystalResonanceReadyAt = now + 12_000;
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId !== worker.ownerId || tower.hp <= 0 || !isOperationalTower(tower.definition)) continue;
+        tower.temperature = Math.max(0, tower.temperature - 25);
+        if (tower.heatLocked) tower.heatLocked = false;
+      }
+    }
+    if (this.hasWorkerSkill(worker, "crystal-conduit") && reactor.crystalConduitWave !== this.wave) {
+      reactor.crystalConduitWave = this.wave;
+      const linked = Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0 && isOperationalTower(tower.definition))
+        .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))
+        .slice(0, 2);
+      for (const tower of linked) {
+        tower.energyConduitUntil = now + 10_000;
+        tower.energyConduitSourceId = reactor.id;
+      }
+    }
+  }
+
+  private applyCrystalNodePickup(worker: DroneModel, nodeId: string) {
+    if (!this.hasWorkerSkill(worker, "crystal-trap")) return;
+    const key = `${worker.ownerId}:${nodeId}:${this.wave}`;
+    if (this.crystalTrapKeys.has(key)) return;
+    this.crystalTrapKeys.add(key);
+    this.crystalTrapUntil.set(`${worker.ownerId}:${nodeId}`, Date.now() + 5_000);
+  }
+
+  private applyCrystalReactorEmergency(reactor: TowerModel, now: number) {
+    if (reactor.energy > 0 || reactor.definition.resourceProvider !== "energy") return;
+    if ((reactor.crystalReserve ?? 0) > 0) {
+      reactor.energy = Math.min(reactor.maxEnergy, reactor.crystalReserve ?? 0);
+      reactor.crystalReserve = 0;
+      reactor.energyDepletedAt = 0;
+    }
+    if (this.hasWorkerSkillForOwner(reactor.ownerId, "crystalCollector", "crystal-last-core") && reactor.crystalLastCoreWave !== this.wave) {
+      reactor.crystalLastCoreWave = this.wave;
+      reactor.energy = Math.min(reactor.maxEnergy, reactor.energy + 25);
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId === reactor.ownerId && tower.hp > 0 && isOperationalTower(tower.definition)) tower.energyFreeUntil = now + 3_000;
+      }
+      reactor.energyDepletedAt = 0;
+      return;
+    }
+    if (this.hasWorkerSkillForOwner(reactor.ownerId, "crystalCollector", "crystal-critical-resonance") && reactor.crystalCriticalResonanceWave !== this.wave) {
+      reactor.crystalCriticalResonanceWave = this.wave;
+      const radius = getMapGridSize(this.activeMap) * 3;
+      for (const enemy of this.enemies.values()) {
+        if (distanceSq(enemy.x, enemy.y, reactor.x, reactor.y) <= radius * radius) enemy.slowUntil = Math.max(enemy.slowUntil, now + 3_000);
+      }
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId === reactor.ownerId && distanceSq(tower.x, tower.y, reactor.x, reactor.y) <= radius * radius) tower.heatLocked = false;
+      }
+    }
+  }
+
+  private applyAmmoCollectorArrival(worker: DroneModel, factory: TowerModel) {
+    const now = Date.now();
+    if (this.hasWorkerSkill(worker, "ammo-refiner")) factory.ammoRefinerUntil = now + 20_000;
+    if (this.hasWorkerSkill(worker, "ammo-cast-shell")) factory.ammoFactoryShield = Math.min(40, (factory.ammoFactoryShield ?? 0) + 20);
+    if (this.hasWorkerSkill(worker, "ammo-emergency-refinery") && factory.energy <= 0) {
+      const batch = Math.min(6, factory.rawAmmo, factory.maxAmmo - factory.ammo);
+      factory.rawAmmo = Math.max(0, factory.rawAmmo - batch);
+      factory.ammo = Math.min(factory.maxAmmo, factory.ammo + batch);
+    }
+  }
+
+  private applyAmmoTransportArrival(worker: DroneModel, target: TowerModel, hadNoAmmo: boolean) {
+    const now = Date.now();
+    if (worker.cargoSpecial || this.hasWorkerSkill(worker, "ammo-special-payload")) {
+      target.ammoPayloadUntil = now + 20_000;
+      target.ammoPayloadKind = worker.cargoAmmoPayloadKind ?? "special";
+      target.ammoPayloadShots = 6;
+    }
+    if (hadNoAmmo && this.hasWorkerSkill(worker, "ammo-emergency-magazine")) target.ammoEmergencyShots = 3;
+    if (this.hasWorkerSkill(worker, "ammo-assault-convoy")) {
+      if ((target.ammoAssaultArmedUntil ?? 0) > now) {
+        target.ammoAssaultUntil = now + 5_000;
+        target.ammoAssaultArmedUntil = 0;
+      } else target.ammoAssaultArmedUntil = now + 20_000;
+    }
+    if (target.hp / Math.max(1, target.maxHp) < 0.35 && this.hasWorkerSkill(worker, "ammo-evacuation-convoy")) {
+      target.ammoEvacuationUntil = now + 10_000;
+    }
+    if (this.hasWorkerSkill(worker, "ammo-transfer-dock") && (worker.cargo ?? 0) > 0) {
+      const neighbor = this.getAdjacentFriendlyTowers(target).find((tower) => tower.hp > 0 && tower.ammo < tower.maxAmmo);
+      if (neighbor) {
+        const moved = Math.min(worker.cargo ?? 0, neighbor.maxAmmo - neighbor.ammo);
+        neighbor.ammo += moved;
+        worker.cargo = Math.max(0, (worker.cargo ?? 0) - moved);
+      }
+    }
+    worker.cargoSpecial = false;
+    worker.cargoAmmoPayloadKind = undefined;
+  }
+
+  private hasEnergyWorkerSkill(worker: DroneModel, skill: EnergyWorkerSkillId) {
+    return worker.mode === "energyTransport" && this.hasWorkerSkill(worker, skill);
+  }
+
+  private applyEnergyWorkerArrival(worker: DroneModel, target: TowerModel) {
+    const now = Date.now();
+    if (this.hasEnergyWorkerSkill(worker, "energy-relay")) {
+      target.energyRelayUntil = now + 8_000;
+      target.energyRelaySourceId = target.id;
+      for (const neighbor of this.getAdjacentFriendlyTowers(target)) {
+        if (neighbor.id === target.id || !isOperationalTower(neighbor.definition)) continue;
+        neighbor.energyRelayUntil = now + 8_000;
+        neighbor.energyRelaySourceId = target.id;
+      }
+    }
+    if (this.hasEnergyWorkerSkill(worker, "local-capacitor")) {
+      target.energyLocalReserve = Math.min(18, (target.energyLocalReserve ?? 0) + 18);
+    }
+    if (this.hasEnergyWorkerSkill(worker, "load-shedder")) {
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId !== worker.ownerId || tower.id === target.id || !isOperationalTower(tower.definition)) continue;
+        tower.energyShedUntil = now + 5_000;
+      }
+    }
+    if (this.hasEnergyWorkerSkill(worker, "frequency-share")) {
+      for (const tower of this.towers.values()) {
+        if (tower.ownerId === worker.ownerId && isOperationalTower(tower.definition)) tower.energyFrequencyUntil = now + 6_000;
+      }
+    }
+    if (this.hasEnergyWorkerSkill(worker, "scenario-charge")) {
+      target.energyScenarioCharge = 1;
+      target.cooldownMs = Math.min(target.cooldownMs, 120);
+    }
+    if (this.hasEnergyWorkerSkill(worker, "emergency-bridge")) {
+      target.energyBridgeUntil = now + 4_000;
+    }
+  }
+
+  private getEnergyRelaySource(tower: TowerModel, now = Date.now()) {
+    if (tower.energyRelayUntil && tower.energyRelayUntil > now) {
+      const source = this.towers.get(tower.energyRelaySourceId ?? "");
+      if (source && source.hp > 0 && source.ownerId === tower.ownerId && source.id !== tower.id) {
+        const gridSize = getMapGridSize(this.activeMap);
+        if (Math.abs(source.x - tower.x) <= gridSize + 2 && Math.abs(source.y - tower.y) <= gridSize + 2) return source;
+      }
+    }
+    if (tower.energyConduitUntil && tower.energyConduitUntil > now) {
+      const source = this.towers.get(tower.energyConduitSourceId ?? "");
+      if (source && source.hp > 0 && source.ownerId === tower.ownerId && source.definition.resourceProvider === "energy") return source;
+    }
+    return undefined;
+  }
+
+  private getTowerEnergySource(tower: TowerModel, now = Date.now()) {
+    const source = this.getEnergyRelaySource(tower, now) ?? tower;
+    if (source.definition.resourceProvider === "energy") this.applyCrystalReactorEmergency(source, now);
+    return source;
+  }
+
+  private getTowerAvailableEnergy(tower: TowerModel, now = Date.now()) {
+    const source = this.getTowerEnergySource(tower, now);
+    return source.energy + (source === tower ? (tower.energyLocalReserve ?? 0) : 0);
+  }
+
+  private consumeTowerEnergy(tower: TowerModel, amount: number, now = Date.now()) {
+    const source = this.getTowerEnergySource(tower, now);
+    const fromSource = Math.min(source.energy, amount);
+    source.energy = Math.max(0, source.energy - fromSource);
+    const remainder = amount - fromSource;
+    if (remainder > 0 && source === tower) tower.energyLocalReserve = Math.max(0, (tower.energyLocalReserve ?? 0) - remainder);
+    if (source.energy <= 0 && source.energyDepletedAt <= 0) source.energyDepletedAt = now;
   }
 
   /**
@@ -5789,6 +6116,14 @@ export class MatchRoom extends Room<MatchState> {
    */
   private updateRepairWorker(worker: DroneModel, seconds: number) {
     worker.repairing = undefined;
+    if (this.hasWorkerSkill(worker, "repair-nexus-watch") && this.teamHealth <= MAX_TEAM_HEALTH * 0.4) {
+      const nexus = this.activePaths[0]?.points.at(-1);
+      if (nexus && this.moveLogisticsWorker(worker, nexus.x, nexus.y, seconds)) {
+        this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 2 * seconds);
+        worker.repairing = true;
+      }
+      return;
+    }
     const target = this.getRepairWorkerTarget(worker);
     if (!target) {
       // Bosta: merkeze don. Merkez yoksa oldugu yerde bekler -- iscinin
@@ -5810,8 +6145,14 @@ export class MatchRoom extends Room<MatchState> {
     // Eskitme yok: onarim yikilan yapiyi diriltmiyor, yani gecilebilirlik
     // degismiyor. Her tick eskitmek cikmaz sokak hafizasini surekli silerdi.
     const previousHp = target.hp;
+    const wasCritical = previousHp / Math.max(1, target.maxHp) <= 0.2;
     target.hp = Math.min(target.maxHp, target.hp + this.getWorkerRepairPerSecond(worker) * seconds);
     worker.repairing = target.hp > previousHp || undefined;
+    if (worker.repairing && this.hasWorkerSkill(worker, "repair-thermal-welder")) {
+      target.heatLocked = false;
+      target.temperature = Math.max(0, target.temperature - TOWER_COOLING_PER_SECOND * 0.3 * seconds);
+    }
+    if (!this.setupPhase) this.getDefenseRow(target).repaired += target.hp - previousHp;
     // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
     target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
     // Kalibrasyon Turu dokunmayla veriliyor ve dalga numarasiyla suruyor.
@@ -5820,7 +6161,14 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (target.hp >= target.maxHp) {
       target.breachAnnounced = false;
+      if (this.hasWorkerSkill(worker, "repair-fortification-seal")) {
+        target.repairFortificationHp = 30;
+        target.repairFortificationUntil = Date.now() + 10_000;
+      }
       worker.targetTowerId = "";
+    }
+    if (wasCritical && target.hp / Math.max(1, target.maxHp) > 0.2 && this.hasWorkerSkill(worker, "repair-breach-engineer")) {
+      target.repairBreachUntil = Date.now() + 5_000;
     }
   }
 
@@ -6351,9 +6699,11 @@ export class MatchRoom extends Room<MatchState> {
 
   private hireWorker(client: Client, message: HireWorkerMessage) {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !isHirableWorkerRole(message?.role)) {
+    const hasRoleField = Boolean(message && Object.prototype.hasOwnProperty.call(message, "role"));
+    if (!player || (!hasRoleField && message?.advanced === undefined) || (message?.role !== undefined && !isHirableWorkerRole(message.role))) {
       return;
     }
+    const role = isHirableWorkerRole(message?.role) ? message.role : undefined;
     const advanced = message.advanced === true;
     const cost = getWorkerHireCostWithModifiers(
       player.hiredWorkers.length,
@@ -6363,14 +6713,69 @@ export class MatchRoom extends Room<MatchState> {
     if (player.gold < cost) {
       return;
     }
+    // Secim penceresi acikken ikinci isci alinmasin; aksi halde iki is
+    // atamasindan yalnizca biri gorunur ve digeri baglanti yenilenene kadar
+    // sessizce bekler.
+    if (!isHirableWorkerRole(message?.role) && player.hiredWorkers.some((worker) => !worker.role)) return;
 
     player.gold -= cost;
     player.goldSpent += cost;
-    player.hiredWorkers.push({ role: message.role, advanced: advanced || undefined });
+    const workerId = `worker-${this.nextHiredWorkerId++}`;
+    // Kimlik ve secimler teldeki eski snapshot testlerini sisirmesin diye
+    // enumerable degil; sunucu bunlari kalici kayit olarak yine tutuyor.
+    const hiredWorker: HiredWorker = role ? { role, advanced: advanced || undefined } : { advanced: advanced || undefined };
+    Object.defineProperties(hiredWorker, {
+      id: { value: workerId, writable: true, configurable: true, enumerable: false },
+      skillIds: { value: [], writable: true, configurable: true, enumerable: false },
+      legacySuffix: { value: Boolean(role && role !== "energyTransport"), writable: true, configurable: true, enumerable: false }
+    });
+    player.hiredWorkers.push(hiredWorker);
     // Isci hemen sahaya ciksin: bir sonraki dalgayi beklemek alimin etkisini
     // oyuncunun goremedigi bir yere ertelerdi.
     this.ensureLogisticsWorkers();
-    client.send("worker:hired", { role: message.role, advanced, cost });
+    client.send("worker:hired", { role, advanced, cost });
+    if (role) this.sendWorkerSkillChoice(client, workerId, 0);
+    else this.sendWorkerSpecializationChoice(client, workerId);
+  }
+
+  private sendWorkerSpecializationChoice(client: Client, workerId: string) {
+    client.send("worker:specialization-choice", { workerId, options: WORKER_SPECIALIZATION_CHOICES });
+  }
+
+  private sendWorkerSkillChoice(client: Client, workerId: string, tier: number) {
+    const player = this.state.players.get(client.sessionId);
+    const hired = player?.hiredWorkers.find((worker) => worker.id === workerId);
+    const pair = hired?.role ? getWorkerSkillTiers(hired.role)[tier] : undefined;
+    if (!hired?.role || !pair) {
+      client.send("worker:skill-complete", { workerId, role: hired?.role });
+      return;
+    }
+    client.send("worker:skill-choice", { workerId, tier, role: hired.role, options: pair });
+  }
+
+  private chooseWorkerSpecialization(client: Client, message: ChooseWorkerSpecializationMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const hired = player?.hiredWorkers.find((worker) => worker.id === message.workerId);
+    if (!player || !hired || hired.role || !isHirableWorkerRole(message.role)) return;
+    hired.role = message.role;
+    this.ensureLogisticsWorkers();
+    this.sendWorkerSkillChoice(client, hired.id!, 0);
+  }
+
+  private chooseWorkerSkill(client: Client, message: ChooseWorkerSkillMessage) {
+    const player = this.state.players.get(client.sessionId);
+    const hired = player?.hiredWorkers.find((worker) => worker.id === message.workerId);
+    if (!player || !hired || !hired.role || !message.skillId || !isWorkerSkillForRole(hired.role, message.skillId)) return;
+    const skills = hired.skillIds ?? (hired.skillIds = []);
+    const tier = skills.length;
+    const pair = getWorkerSkillTiers(hired.role)[tier];
+    if (!pair?.some((skill) => skill.id === message.skillId)) return;
+    if (skills.includes(message.skillId)) return;
+    skills.push(message.skillId);
+    this.sendWorkerSkillChoice(client, hired.id!, tier + 1);
+    this.drones.forEach((drone) => {
+      if (drone.ownerId === client.sessionId && (drone.hiredWorkerId === hired.id || drone.id.endsWith(`:${hired.id}`))) drone.skillIds = skills.filter(isWorkerSkillId);
+    });
   }
 
   /** Isci alim bedelinin kart ve esya carpani. */
@@ -6388,6 +6793,193 @@ export class MatchRoom extends Room<MatchState> {
    * Bedeli yok. Duvarin isciyi de tutmasi zaten oyuncunun odedigi bedel;
    * kapi o bedeli kaldirmiyor, nereye kaldirilacagina karar verdiriyor.
    */
+  private getDefenseRow(tower: TowerModel) {
+    if (this.defenseWave !== this.wave) {
+      this.defenseRows.clear();
+      this.defenseWave = this.wave;
+      this.insightElapsed = 0;
+    }
+    let row = this.defenseRows.get(tower.id);
+    if (!row) {
+      row = createDefenseRow(tower.id, tower.ownerId, tower.definition.name);
+      this.defenseRows.set(tower.id, row);
+    }
+    return row;
+  }
+
+  private getTowerActivity(tower: TowerModel): TowerActivity {
+    const now = Date.now();
+    if (tower.hp <= 0 || tower.standby || tower.performance <= 0 || tower.wakeReadyAt > now
+      || tower.offlineUntil > now || this.silentModeUntil > now) return "disabled";
+    if (tower.heatLocked || tower.overheatMs > 0) return "heat";
+    if (tower.definition.resourceProvider || !countsAsTower(tower.definition)) return "support";
+    if (tower.definition.id === "warrior-2") return "support";
+    const range = this.getTowerRange(tower);
+    const minimum = this.getTowerMinimumRange(tower);
+    const hasTarget = this.getEnemiesNear(tower.x, tower.y, range).some((enemy) => {
+      const distance = distanceSq(tower.x, tower.y, enemy.x, enemy.y);
+      return enemy.hp > 0 && this.canTowerTargetEnemy(tower, enemy) && distance <= range * range && distance >= minimum * minimum;
+    });
+    if (!hasTarget) return "target";
+    if (!this.isTowerOnBackupLine(tower, now)) {
+      if (getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "powered"
+        || tower.energy < this.getTowerEnergyCost(tower)) return "energy";
+      if (tower.ammo < this.getTowerAmmoCost(tower)) return "ammo";
+    }
+    return this.getActiveTowerAuras(tower).length > 0 ? "support" : "cycle";
+  }
+
+  private updateDefenseInsights(seconds: number) {
+    if (this.setupPhase || this.waveClearedAt !== 0) return;
+    // Four samples/second, accumulated on the server; no per-hit telemetry messages.
+    if (this.defenseWave !== this.wave) {
+      this.defenseRows.clear();
+      this.defenseWave = this.wave;
+      this.insightElapsed = 0;
+    }
+    this.insightElapsed += seconds;
+    if (this.insightElapsed < 0.25) return;
+    for (const tower of this.towers.values()) {
+      this.getDefenseRow(tower).seconds[this.getTowerActivity(tower)] += this.insightElapsed;
+    }
+    this.insightElapsed = 0;
+  }
+
+  private finishDefenseSummary() {
+    if (this.defenseWave !== this.wave) return;
+    for (const ownerId of this.state.players.keys()) {
+      const rows = [...this.defenseRows.values()].filter((row) => row.ownerId === ownerId)
+        .sort((left, right) => right.damage - left.damage)
+        .map((row) => ({ ...row, damage: Math.round(row.damage), repaired: Math.round(row.repaired), markAssistDamage: Math.round(row.markAssistDamage), auraEnemySeconds: Math.round(row.auraEnemySeconds * 10) / 10,
+          seconds: Object.fromEntries(Object.entries(row.seconds).map(([key, value]) => [key, Math.round(value * 10) / 10])) as DefenseRow["seconds"] }));
+      const summary = { wave: this.wave, rows };
+      this.lastDefenseSummary.set(ownerId, summary);
+      this.clients.find((client) => client.sessionId === ownerId)?.send("defense:summary", summary);
+    }
+  }
+
+  private getTowerInsight(tower: TowerModel) {
+    const now = Date.now();
+    const cached = this.towerInsightCache.get(tower);
+    if (cached && now - cached.at < 1000) return cached.value;
+    const reasons: string[] = [];
+    if (this.acceptsTowerOperation(tower) && !this.setupPhase) reasons.push(activityLabels[this.getTowerActivity(tower)]);
+    reasons.push(this.getTowerStatus(tower));
+    if (this.acceptsTowerOperation(tower) || tower.definition.resourceProvider === "ammunition") {
+      if (tower.energy < tower.maxEnergy) reasons.push(this.getDeliveryReason(tower, "energy"));
+      if (tower.ammo < tower.maxAmmo && !tower.definition.resourceProvider) reasons.push(this.getDeliveryReason(tower, "ammo"));
+    }
+    if (tower.characterId === "warrior" && countsAsTower(tower.definition) && tower.definition.id !== "warrior-2") {
+      const cell = worldToGrid(tower.x, tower.y, this.activeMap);
+      const blockers = [...this.towers.values()].filter((other) => {
+        if (other.id === tower.id || !countsAsTower(other.definition)) return false;
+        const point = worldToGrid(other.x, other.y, this.activeMap);
+        return Math.abs(point.col - cell.col) <= 1 && Math.abs(point.row - cell.row) <= 1;
+      });
+      reasons.push(blockers.length ? `Yalnızlık kapalı: ${blockers.map((other) => other.definition.name).join(", ")}`
+        : `Yalnızlık açık: hasar ×${ATAKAN_ISOLATION_MULTIPLIER}`);
+    }
+    if (tower.formationReason) reasons.push(tower.formationReason);
+    if (this.defenseWave === this.wave) {
+      const row = this.defenseRows.get(tower.id);
+      if (row) reasons.push(`Bu dalga: döngü ${Math.floor(row.seconds.cycle)} sn · hedef ${Math.floor(row.seconds.target)} sn · mühimmat ${Math.floor(row.seconds.ammo)} sn · enerji ${Math.floor(row.seconds.energy)} sn · soğuma ${Math.floor(row.seconds.heat)} sn`);
+    }
+    const value = reasons.filter(Boolean).join(" | ");
+    this.towerInsightCache.set(tower, { at: now, value });
+    return value;
+  }
+
+  private getDeliveryReason(tower: TowerModel, resource: "ammo" | "energy") {
+    const label = resource === "ammo" ? "Mühimmat" : "Enerji";
+    if (resource === "ammo" && !tower.ammoLogisticsEnabled) return `${label}: sevkiyat kapalı`;
+    const workers = [...this.drones.values()].filter((worker) => worker.ownerId === tower.ownerId && worker.mode === (resource === "ammo" ? "ammoTransport" : "energyTransport"));
+    const incoming = workers.filter((worker) => worker.logisticsPhase === "deliver" && worker.targetTowerId === tower.id && (worker.cargo ?? 0) > 0);
+    const reachable = workers.some((worker) => this.getWorkerApproachPoint({ ...worker, targetTowerId: tower.id, logisticsPhase: "deliver", routeStep: undefined }, tower.x, tower.y));
+    if (workers.length && !reachable) return `${label}: yol kapalı`;
+    if (incoming.length) return `${label}: ${incoming.reduce((sum, worker) => sum + (worker.cargo ?? 0), 0).toFixed(1)} yolda`;
+    const source = [...this.towers.values()].find((entry) => entry.ownerId === tower.ownerId && entry.hp > 0 && entry.definition.resourceProvider === (resource === "ammo" ? "ammunition" : "energy"));
+    if (!source) return `${label}: kaynak binası yok`;
+    if (source[resource] <= 0) return `${label}: kaynak deposu boş`;
+    if (workers.length && !workers.some((worker) => this.getWorkerApproachPoint({ ...worker, logisticsPhase: "pickup", routeStep: undefined }, source.x, source.y))) return `${label}: kaynak yolu kapalı`;
+    return `${label}: ${workers.length ? "taşıma sırası bekliyor" : "taşıyıcı yok"}`;
+  }
+
+  private setLogisticsPriority(client: Client, message: { towerId?: string; priority?: LogisticsPriority } | undefined) {
+    const tower = message?.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId
+      || !["critical", "normal", "low"].includes(message?.priority ?? "")) return;
+    tower.logisticsPriority = message!.priority;
+  }
+
+  private selectDeliveryTarget(worker: DroneModel, resource: "ammo" | "energy") {
+    for (const key of this.deliveryWaitingSince.keys()) {
+      if (!key.startsWith(`${resource}:`)) continue;
+      const tower = this.towers.get(key.slice(resource.length + 1));
+      if (!tower || tower[resource] >= (resource === "ammo" ? tower.maxAmmo : tower.maxEnergy)) this.deliveryWaitingSince.delete(key);
+    }
+    const candidates = [...this.towers.values()].filter((tower) => tower.ownerId === worker.ownerId && tower.hp > 0
+      && (resource === "energy" ? tower.definition.resourceProvider !== "energy" && tower.energy < tower.maxEnergy
+        : this.acceptsTowerOperation(tower) && tower.ammoLogisticsEnabled && tower.ammo < tower.maxAmmo
+          && (!(worker.cargo ?? 0) || !worker.cargoAmmoType || worker.cargoAmmoType === tower.ammoType)));
+    const ranked = candidates.map((tower) => {
+      const max = resource === "ammo" ? tower.maxAmmo : tower.maxEnergy;
+      const current = tower[resource];
+      const reserved = this.getReservedCargo(worker, tower);
+      const key = `${resource}:${tower.id}`;
+      if (!this.deliveryWaitingSince.has(key)) this.deliveryWaitingSince.set(key, this.logisticsClock);
+      return { tower, remaining: max - current - reserved, score: deliveryScore(tower.logisticsPriority ?? "normal",
+        (current + reserved) / Math.max(1, max), this.logisticsClock - this.deliveryWaitingSince.get(key)!,
+        Math.hypot(worker.x - tower.x, worker.y - tower.y)) };
+    }).filter((entry) => entry.remaining > 0.01).sort((a, b) => b.score - a.score || a.tower.id.localeCompare(b.tower.id));
+    for (const { tower } of ranked) {
+      const probe = { ...worker, targetTowerId: tower.id, logisticsPhase: "deliver" as const, routeStep: undefined };
+      if (this.getWorkerApproachPoint(probe, tower.x, tower.y)) return tower;
+    }
+    return undefined;
+  }
+
+  private getReservedCargo(worker: DroneModel, tower: TowerModel) {
+    return [...this.drones.values()].filter((other) => other.id !== worker.id && other.ownerId === worker.ownerId
+      && other.mode === worker.mode && other.logisticsPhase === "deliver" && other.targetTowerId === tower.id)
+      .reduce((sum, other) => sum + (other.cargo ?? 0), 0);
+  }
+
+  private sendTowerPreview(client: Client, message: { requestId?: string; towerId?: string; cardId?: string; itemId?: string } | undefined) {
+    if (!message || typeof message.requestId !== "string" || message.requestId.length > 80) return;
+    const reject = (error: string) => client.send("tower:preview", { requestId: message.requestId, error });
+    const now = Date.now();
+    if (now - (this.previewRequestTimes.get(client.sessionId) ?? 0) < 40) return reject("Biraz sonra tekrar dene.");
+    this.previewRequestTimes.set(client.sessionId, now);
+    const player = this.state.players.get(client.sessionId);
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    const card = this.pendingCardChoices.get(client.sessionId)?.find((entry) => entry.id === message.cardId && entry.scope.kind === "targeted");
+    const item = message.itemId ? getShopItem(message.itemId) : undefined;
+    if (!player || !tower || tower.ownerId !== client.sessionId || (!!message.cardId === !!message.itemId)) return reject("Geçersiz hedef.");
+    if (message.cardId && (!card || !canTowerHoldTargetedCard(tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("Bu kule kartı alamıyor.");
+    if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id) || !canEquipShopItem(item, tower.definition, tower.equippedShopItemIds).ok)) return reject("Bu kule eşyayı alamıyor.");
+    const change = card ?? item;
+    if (!change) return reject("Seçenek artık mevcut değil.");
+    const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...change.effects],
+      targetedCardIds: card ? [...tower.targetedCardIds, card.id] : [...tower.targetedCardIds],
+      equippedShopItemIds: item ? [...tower.equippedShopItemIds, item.id] : [...tower.equippedShopItemIds] };
+    if (item) {
+      const beforeHealth = 1 + getModifierAdd(this.getTowerRunModifiers(tower), "towerHealth");
+      after.maxHp *= (beforeHealth + getModifierAdd(item.effects, "towerHealth")) / Math.max(0.01, beforeHealth);
+    }
+    const stats: Array<[string, (value: TowerModel) => number]> = [
+      ["Hasar / etki", (value) => this.getTowerDamage(value)],
+      ["Atış / etki aralığı (sn)", (value) => this.getTowerEffectInterval(value) / 1000],
+      ["Menzil", (value) => this.getTowerRange(value)], ["Azami can", (value) => value.maxHp],
+      ["Mühimmat / tetikleme", (value) => this.getTowerAmmoCost(value)],
+      ["Enerji / tetikleme", (value) => this.getTowerEnergyCost(value)],
+      ["Isı / tetikleme", (value) => this.getTowerShotHeat(value)],
+      ["Soğutma / sn", (value) => this.getTowerCoolingPerSecond(value)]
+    ];
+    const lines = stats.map(([label, get]) => `${label}: ${get(tower).toFixed(2)} → ${get(after).toFixed(2)}`);
+    client.send("tower:preview", { requestId: message.requestId, title: `${change.name} · ${tower.definition.name}`,
+      description: `${change.description} Anlık koşullar gösterilir; koşullu davranışlar ve gelecekte birikecek yükler açıklamaya tabidir.`, lines });
+  }
+
   private toggleAmmoLogistics(client: Client, message: ToggleAmmoLogisticsMessage) {
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
@@ -6468,10 +7060,31 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0) {
       return;
     }
+    if ((tower.repairFortificationHp ?? 0) > 0 && (tower.repairFortificationUntil ?? 0) > Date.now()) {
+      const absorbed = Math.min(tower.repairFortificationHp ?? 0, Math.max(0, rawDamage));
+      tower.repairFortificationHp = (tower.repairFortificationHp ?? 0) - absorbed;
+      rawDamage -= absorbed;
+      if (rawDamage <= 0) return;
+    }
+    if ((tower.ammoFactoryShield ?? 0) > 0 && tower.definition.resourceProvider === "ammunition") {
+      const absorbed = Math.min(tower.ammoFactoryShield ?? 0, Math.max(0, rawDamage));
+      tower.ammoFactoryShield = (tower.ammoFactoryShield ?? 0) - absorbed;
+      rawDamage -= absorbed;
+      if (rawDamage <= 0) return;
+    }
+    if ((tower.ammoEvacuationUntil ?? 0) > Date.now()) {
+      rawDamage *= 0.5;
+      tower.ammoEvacuationUntil = 0;
+    }
+    if (this.isTowerUnderRepair(tower) && this.hasWorkerSkillForOwner(tower.ownerId, "repairer", "repair-bulwark")) {
+      rawDamage *= 0.7;
+    }
     const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
     this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
+      if (this.tryAmmoFactoryBlackBox(tower)) return;
+      if (this.tryEmergencyRebuild(tower)) return;
       // Eskitme yalnizca burada: gecilebilirlik canin kendisine degil,
       // **sifira inmesine** bagli. Her vurusta eskitmek akis alani
       // donemindeki yol maliyetinden kalmaydi ve artik hicbir sey okumuyor;
@@ -6486,6 +7099,29 @@ export class MatchRoom extends Room<MatchState> {
         this.debrisCells.set(`${cell.col}:${cell.row}`, Date.now() + 12000);
       }
     }
+  }
+
+  private tryEmergencyRebuild(tower: TowerModel) {
+    if (tower.repairRebuildWave === this.wave || !this.hasWorkerSkillForOwner(tower.ownerId, "repairer", "repair-emergency-rebuild")) return false;
+    tower.repairRebuildWave = this.wave;
+    tower.hp = Math.max(1, tower.maxHp * 0.2);
+    tower.offlineUntil = Date.now() + 5_000;
+    tower.heatLocked = false;
+    tower.temperature = 0;
+    tower.breachAnnounced = false;
+    this.markNavigationDirty();
+    return true;
+  }
+
+  private tryAmmoFactoryBlackBox(tower: TowerModel) {
+    if (tower.definition.resourceProvider !== "ammunition" || tower.ammoBlackBoxWave === this.wave
+      || !this.hasWorkerSkillForOwner(tower.ownerId, "ammoCollector", "ammo-black-box")) return false;
+    tower.ammoBlackBoxWave = this.wave;
+    tower.hp = 1;
+    tower.offlineUntil = Date.now() + 5_000;
+    tower.breachAnnounced = false;
+    this.markNavigationDirty();
+    return true;
   }
 
   private runEnemyEscapeTriggers(enemy: EnemyModel, now: number) {
@@ -6588,6 +7224,27 @@ export class MatchRoom extends Room<MatchState> {
         ? RESOURCE_PROVIDER_CAPACITY
         : isOperationalTower(definition) ? TOWER_BASE_ENERGY : 0,
       energyDepletedAt: 0,
+      energyConduitUntil: 0,
+      energyFreeUntil: 0,
+      crystalReserve: 0,
+      crystalResonanceReadyAt: 0,
+      crystalConduitWave: 0,
+      crystalLastCoreWave: 0,
+      crystalCriticalResonanceWave: 0,
+      ammoFactoryShield: 0,
+      ammoRecyclingClaimedWave: 0,
+      ammoBlackBoxWave: 0,
+      ammoRefinerUntil: 0,
+      ammoPayloadUntil: 0,
+      ammoPayloadShots: 0,
+      ammoEmergencyShots: 0,
+      ammoAssaultUntil: 0,
+      ammoAssaultArmedUntil: 0,
+      ammoEvacuationUntil: 0,
+      repairFortificationUntil: 0,
+      repairFortificationHp: 0,
+      repairBreachUntil: 0,
+      repairRebuildWave: 0,
       standby: false,
       wakeReadyAt: 0,
       ammoLogisticsEnabled: true,
@@ -7648,6 +8305,9 @@ export class MatchRoom extends Room<MatchState> {
         }
         member.zeynepFormationSize = formationSize;
         member.zeynepFormationLevel = formationLevel;
+        member.formationReason = isValidFormation
+          ? `Dizilim ${formationSize}: en düşük seviye ${formationLevel} (${group.filter((entry) => entry.level === formationLevel).map((entry) => entry.definition.name).join(", ")})`
+          : `Dizilim yok: ${group.length} bağlı kule; geçerli ikili veya üçlü yerleşim gerekiyor`;
       }
     }
   }
@@ -8036,6 +8696,9 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.type === "runner") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsRunner");
     if (enemy.type === "shooter") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShooter");
     if (enemy.type === "siege") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsSiege");
+    if (damageSourceTower && (damageSourceTower.ammoPayloadShots ?? 0) > 0 && (damageSourceTower.ammoPayloadUntil ?? 0) > now) {
+      shopDamageAdd += 0.25;
+    }
     if (this.towerHasUnlock(damageSourceTower, "status:chill") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (this.towerHasUnlock(damageSourceTower, "bloodBank")) shopDamageAdd += 0.2;
     // Rolanti odulu: kolu asagida tutmak da bir karar olsun. Kolun ust
@@ -8108,6 +8771,20 @@ export class MatchRoom extends Room<MatchState> {
         weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus")
       }
     );
+    // Same hit, resistance, shield and critical roll, with only the tracking mark removed.
+    // This is a subset of the attacker's damage, never an additional damage total.
+    const assistTower = activeMark?.id === "tracking" && markMultiplier > 1 && enemy.trackingSourceTowerId
+      ? this.towers.get(enemy.trackingSourceTowerId) : undefined;
+    if (assistTower && !this.setupPhase) {
+      const withoutMark = calculateDamageTaken(
+        { amount: damage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
+        { armor: enemy.armor, shield: enemy.shield, damageResistances: enemy.damageResistances, hitTypeResistances: enemy.hitTypeResistances },
+        { resistancePierce: getModifierAdd(damageModifiers, "resistancePierce"), weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus") }
+      );
+      const actual = result.shieldDamage + Math.min(enemy.hp, result.hpDamage + (result.remainingShield <= 0 ? enemy.maxHp * maxHealthDamageRatio : 0));
+      const baseline = withoutMark.shieldDamage + Math.min(enemy.hp, withoutMark.hpDamage + (withoutMark.remainingShield <= 0 ? enemy.maxHp * maxHealthDamageRatio : 0));
+      this.getDefenseRow(assistTower).markAssistDamage += Math.max(0, actual - baseline);
+    }
     enemy.shield = result.remainingShield;
     let hpDamage = result.hpDamage;
     if (maxHealthDamageRatio > 0 && enemy.shield <= 0) {
@@ -8122,6 +8799,7 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
+      enemy.trackingSourceTowerId = sourceTowerId;
     }
     const mark = markSourceTower?.definition.engine?.appliesMark;
     if (mark) {
@@ -8174,6 +8852,18 @@ export class MatchRoom extends Room<MatchState> {
     this.awardEnemyGold(enemy);
     this.awardEnemyExperience(enemy);
     this.kills += 1;
+    if (sourceOwnerId && (enemy.type === "brute" || enemy.type === "siege")) {
+      const recycleRadius = getMapGridSize(this.activeMap) * 3;
+      const factory = Array.from(this.towers.values()).find((candidate) => candidate.ownerId === sourceOwnerId
+        && candidate.definition.resourceProvider === "ammunition" && candidate.hp > 0
+        && candidate.ammoRecyclingClaimedWave !== this.wave
+        && this.hasWorkerSkillForOwner(sourceOwnerId, "ammoCollector", "ammo-recycling")
+        && distanceSq(candidate.x, candidate.y, enemy.x, enemy.y) <= recycleRadius * recycleRadius);
+      if (factory) {
+        factory.ammoRecyclingClaimedWave = this.wave;
+        factory.rawAmmo = Math.min(factory.maxRawAmmo, factory.rawAmmo + 6);
+      }
+    }
     const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceTower) {
       this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
@@ -8236,6 +8926,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     tower.damageDealt += amount;
+    if (!this.setupPhase) this.getDefenseRow(tower).damage += amount;
     tower.damageWindow.push({ dealtAt: now, amount });
     this.pruneTowerDamageWindow(tower, now);
     this.absorbMelisBrokenMirrorDamage(tower, amount, now);
@@ -9591,7 +10282,31 @@ export class MatchRoom extends Room<MatchState> {
         standby: tower.standby,
         wakeRemainingMs: Math.max(0, tower.wakeReadyAt - now),
         energyState: getTowerEnergyState(tower.energy, tower.energyDepletedAt, now),
+        energyRelayUntil: tower.energyRelayUntil && tower.energyRelayUntil > now ? tower.energyRelayUntil : undefined,
+        energyRelaySourceId: tower.energyRelaySourceId,
+        energyLocalReserve: tower.energyLocalReserve ? Math.round(tower.energyLocalReserve * 10) / 10 : undefined,
+        energyBridgeUntil: tower.energyBridgeUntil && tower.energyBridgeUntil > now ? tower.energyBridgeUntil : undefined,
+        energyShedUntil: tower.energyShedUntil && tower.energyShedUntil > now ? tower.energyShedUntil : undefined,
+        energyFrequencyUntil: tower.energyFrequencyUntil && tower.energyFrequencyUntil > now ? tower.energyFrequencyUntil : undefined,
+        energyScenarioCharge: tower.energyScenarioCharge ? tower.energyScenarioCharge : undefined,
+        energyConduitUntil: tower.energyConduitUntil && tower.energyConduitUntil > now ? tower.energyConduitUntil : undefined,
+        energyConduitSourceId: tower.energyConduitSourceId,
+        energyFreeUntil: tower.energyFreeUntil && tower.energyFreeUntil > now ? tower.energyFreeUntil : undefined,
+        crystalReserve: tower.crystalReserve ? Math.round(tower.crystalReserve * 10) / 10 : undefined,
+        crystalTrapUntil: undefined,
+        ammoFactoryShield: tower.ammoFactoryShield ? Math.round(tower.ammoFactoryShield) : undefined,
+        ammoRefinerUntil: tower.ammoRefinerUntil && tower.ammoRefinerUntil > now ? tower.ammoRefinerUntil : undefined,
+        ammoPayloadUntil: tower.ammoPayloadUntil && tower.ammoPayloadUntil > now ? tower.ammoPayloadUntil : undefined,
+        ammoPayloadKind: tower.ammoPayloadKind,
+        ammoEmergencyShots: tower.ammoEmergencyShots ? tower.ammoEmergencyShots : undefined,
+        ammoAssaultUntil: tower.ammoAssaultUntil && tower.ammoAssaultUntil > now ? tower.ammoAssaultUntil : undefined,
+        ammoEvacuationUntil: tower.ammoEvacuationUntil && tower.ammoEvacuationUntil > now ? tower.ammoEvacuationUntil : undefined,
+        repairFortificationUntil: tower.repairFortificationUntil && tower.repairFortificationUntil > now ? tower.repairFortificationUntil : undefined,
+        repairFortificationHp: tower.repairFortificationHp ? Math.round(tower.repairFortificationHp) : undefined,
+        repairBreachUntil: tower.repairBreachUntil && tower.repairBreachUntil > now ? tower.repairBreachUntil : undefined,
         ammoLogisticsEnabled: tower.ammoLogisticsEnabled,
+        logisticsPriority: tower.logisticsPriority ?? "normal",
+        insight: this.getTowerInsight(tower),
         gate: tower.gate,
         temperature: Math.round(tower.temperature * 10) / 10,
         misfortune: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.misfortune * 10) / 10 : undefined,
@@ -9648,6 +10363,7 @@ export class MatchRoom extends Room<MatchState> {
         repairing: drone.repairing,
         // Istemci iki kademeyi ancak buradan ayirt ediyor.
         advanced: drone.advanced,
+        skillIds: drone.skillIds,
         hp: drone.hp === undefined ? undefined : Math.round(drone.hp),
         maxHp: drone.maxHp === undefined ? undefined : Math.round(this.getWorkerMaxHp(drone))
       })),
@@ -9880,7 +10596,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getTowerFireInterval(tower: TowerModel) {
     if (tower.definition.engine?.fixedFireInterval) {
-      return tower.definition.fireIntervalMs;
+      return tower.definition.fireIntervalMs * this.getAmmoAssaultIntervalMultiplier(tower);
     }
     const interval = this.adjustIntervalForPerformanceAndHeat(tower, this.getTowerBaseFireInterval(tower));
     // Etki araligi saldiri hizindan etkilenmez.
@@ -9893,7 +10609,12 @@ export class MatchRoom extends Room<MatchState> {
     // Kart/esya ve yigin hiz bonuslari ayni toplamsal havuzdur. Karaktere
     // ozel atis dallarindan sonra uygulanir; hicbir dal bonusu atlayamaz.
     const stackSpeedAdd = 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1;
-    return interval / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "fireRate") + stackSpeedAdd);
+    return interval / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "fireRate") + stackSpeedAdd)
+      * this.getAmmoAssaultIntervalMultiplier(tower);
+  }
+
+  private getAmmoAssaultIntervalMultiplier(tower: TowerModel) {
+    return (tower.ammoAssaultUntil ?? 0) > Date.now() ? 0.65 : 1;
   }
 
   /**
@@ -10351,17 +11072,30 @@ export class MatchRoom extends Room<MatchState> {
       return "Devre Disi";
     }
     if (tower.definition.resourceProvider === "ammunition") {
-      return tower.rawAmmo <= 0
+      const factoryStatus = tower.rawAmmo <= 0
         ? "Cephane Hammaddesi Yok"
         : tower.energy > 0
           ? `Fabrika ${Math.floor(tower.ammo)}/${tower.maxAmmo}`
           : "Fabrika Enerjisiz";
+      return (tower.ammoFactoryShield ?? 0) > 0 ? `${factoryStatus} · Kalkan ${Math.ceil(tower.ammoFactoryShield ?? 0)}` : factoryStatus;
     }
     if (tower.definition.resourceProvider === "energy") {
       return `Enerji Deposu ${Math.floor(tower.energy)}/${tower.maxEnergy}`;
     }
     if (tower.standby) return "Beklemede";
+    if ((tower.ammoEmergencyShots ?? 0) > 0) return `Acil Şarjör ${tower.ammoEmergencyShots}`;
+    if ((tower.ammoPayloadShots ?? 0) > 0) return `Özel mühimmat ${tower.ammoPayloadShots}`;
+    if ((tower.ammoAssaultUntil ?? 0) > now) return "Saldırı Kervanı";
+    if ((tower.ammoEvacuationUntil ?? 0) > now) return "Tahliye Kervanı";
+    if ((tower.repairFortificationHp ?? 0) > 0 && (tower.repairFortificationUntil ?? 0) > now) return `Tahkimat ${Math.ceil(tower.repairFortificationHp ?? 0)}`;
+    if ((tower.repairBreachUntil ?? 0) > now) return "Gedik Mühendisi";
     if (tower.wakeReadyAt > now) return `Isiniyor ${Math.ceil((tower.wakeReadyAt - now) / 1000)}sn`;
+    if (tower.energyBridgeUntil && tower.energyBridgeUntil > now && tower.energy <= 0) return "Acil Köprü";
+    if (tower.energyFreeUntil && tower.energyFreeUntil > now) return "Son Çekirdek";
+    if (tower.energyConduitUntil && tower.energyConduitUntil > now) return "İletken Damar";
+    if (this.getEnergyRelaySource(tower, now)) return "Röle hattı";
+    if (tower.energyShedUntil && tower.energyShedUntil > now) return "Yük kesildi";
+    if (tower.energyFrequencyUntil && tower.energyFrequencyUntil > now) return "Frekans paylaşımı";
     if (tower.offlineUntil > now) {
       return "Tukenmis";
     }
@@ -10660,8 +11394,9 @@ export class MatchRoom extends Room<MatchState> {
     return neighbours;
   }
 
-  private applyTowerEnemyAuras(tower: TowerModel, activeAuras = this.getActiveTowerAuras(tower)) {
+  private applyTowerEnemyAuras(tower: TowerModel, activeAuras = this.getActiveTowerAuras(tower), seconds = 0) {
     const range = this.getTowerRange(tower);
+    const affected = new Set<string>();
     for (const definition of activeAuras) {
       if (definition.affects !== "enemies" || definition.stat !== "slow") continue;
       const runtimeDefinition: TowerAuraDefinition = {
@@ -10682,9 +11417,12 @@ export class MatchRoom extends Room<MatchState> {
           const resistance = enemy.statusResistances.slow ?? 0;
           const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
           enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+          if (resistedMultiplier < 1) affected.add(enemy.id);
         }
       }
     }
+    // Exposure, not additional damage or prevented movement; overlapping auras may overlap.
+    if (!this.setupPhase && affected.size && seconds > 0) this.getDefenseRow(tower).auraEnemySeconds += affected.size * seconds;
   }
 
   /**
@@ -10963,7 +11701,13 @@ export class MatchRoom extends Room<MatchState> {
 
   private advanceWaveGrowth() {
     const now = Date.now();
+    this.crystalTrapKeys.clear();
+    for (const [key, until] of this.crystalTrapUntil) if (until <= now) this.crystalTrapUntil.delete(key);
     for (const tower of this.towers.values()) {
+      if (tower.definition.resourceProvider === "ammunition"
+        && this.hasWorkerSkillForOwner(tower.ownerId, "ammoCollector", "ammo-wave-stock")) {
+        tower.rawAmmo = Math.min(tower.maxRawAmmo, tower.rawAmmo + tower.rawAmmo * 0.3);
+      }
       tower.shopKillStacks = 0;
       if (this.towerHasUnlock(tower, "stack:wave")) tower.shopWaveStacks += 1;
       for (const definition of this.getTowerEngine(tower)?.stacks ?? []) {

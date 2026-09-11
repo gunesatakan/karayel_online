@@ -16,7 +16,8 @@
     "build:server": "npm run build --workspace @karayel/shared && npm run build --workspace @karayel/server",
     "typecheck": "npm run build --workspace @karayel/shared && npm run typecheck --workspace @karayel/server && npm run typecheck --workspace @karayel/web",
     "test": "npm run build --workspace @karayel/shared && npm run build --workspace @karayel/server && node --test tests/*.test.mjs",
-    "simulate": "npm run build --workspace @karayel/shared && node tools/simulate.mjs"
+    "simulate": "npm run build --workspace @karayel/shared && node tools/simulate.mjs",
+    "compare:builds": "npm run build:server && node tools/compare-builds.mjs"
   },
   "devDependencies": {
     "typescript": "^5.8.3"

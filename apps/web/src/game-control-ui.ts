@@ -35,8 +35,10 @@ type ControlState = {
   };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
+  logisticsPriority?: { value: "critical" | "normal" | "low"; canEdit: boolean };
+  defenseSummaryAvailable?: boolean;
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
-  /** Isci alimi; rol ve kademe alim aninda secilir, sonradan degismez. */
+  /** Isci alimi; uzmanlik ilk secimde, kademe secimleri kalici belirlenir. */
   workerHire?: {
     open: boolean;
     hired: number;
@@ -48,6 +50,8 @@ type ControlState = {
     advanced: boolean;
     /** Secili kademe icin. */
     affordable: boolean;
+    /** İşçinin uzmanlığı sonraki pencerede seçilecek. */
+    generic?: boolean;
     roles: Array<{ id: string; label: string; description: string; owned: number; ownedAdvanced: number }>;
   };
   upgrade?: { label: string; enabled: boolean };
@@ -61,6 +65,7 @@ type ControlState = {
   /** Isci yol yasagi kipi; acikken haritaya basmak kareyi kapatir/acar. */
   workerBan?: { active: boolean; count: number };
   selectedStats?: string[];
+  selectedInsight?: string;
   /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
   selectedTowerId?: string;
   /** Secili kuleye takili esyalar; parametre barlarinin hemen altinda listelenir. */
@@ -93,6 +98,7 @@ type ControlState = {
 };
 
 type ControlAction = {
+  priority?: "critical" | "normal" | "low";
   action: string;
   role?: string;
   stance?: string;
@@ -156,6 +162,7 @@ export function setupGameControlUi(game: Phaser.Game) {
    */
   const buildStructureKey = (state: ControlState) => {
     return JSON.stringify(state, (fieldName, value) => {
+      if (fieldName === "selectedInsight") return Boolean(value);
       if (fieldName === "selectedStats") {
         // Icerigi degil varligi onemli: bar satiri var mi, yok mu.
         return Array.isArray(value) ? value.length : value;
@@ -169,6 +176,8 @@ export function setupGameControlUi(game: Phaser.Game) {
 
   /** Yalnizca canli sayi satirini tazeler; panelin geri kalanina dokunmaz. */
   const syncLiveStats = () => {
+    const insight = root.querySelector<HTMLElement>(".game-controls__insight");
+    if (insight) insight.textContent = latestState.selectedInsight ?? "";
     const line = root.querySelector<HTMLElement>(".game-controls__stats");
     if (!line || !latestState?.selectedStats) {
       return;
@@ -504,6 +513,13 @@ export function setupGameControlUi(game: Phaser.Game) {
       body.push(levels);
     }
 
+    if (state.selectedInsight) {
+      const insight = document.createElement("p");
+      insight.className = "game-controls__insight";
+      insight.style.cssText = "margin:0;padding:8px 10px;line-height:1.5;font-size:12px;color:#c9e6ee;white-space:normal;max-height:6em;overflow:auto;border-left:2px solid #4b91a6;background:#132532";
+      insight.textContent = state.selectedInsight;
+      body.push(insight);
+    }
     const stats = document.createElement("div");
     stats.className = "game-controls__stats";
     stats.textContent = (state.selectedStats ?? []).join("  |  ");
@@ -574,6 +590,18 @@ export function setupGameControlUi(game: Phaser.Game) {
         state.ammoLogistics.canEdit,
         () => dispatch({ action: "toggleAmmoLogistics" })
       )], "game-controls__underworld-mode"));
+    }
+    if (state.logisticsPriority) {
+      const label = document.createElement("span");
+      label.textContent = "Sevkiyat önceliği";
+      label.className = "tower-items__header";
+      body.push(label);
+      const priority = state.logisticsPriority;
+      body.push(makeRow((["critical", "normal", "low"] as const).map((value) => makeActionButton(
+          `${priority.value === value ? "● " : ""}${{ critical: "Kritik", normal: "Normal", low: "Düşük" }[value]}`,
+          "game-controls__underworld-mode-button", priority.canEdit,
+          () => dispatch({ action: "setLogisticsPriority", priority: value })
+      )), "game-controls__underworld-mode"));
     }
     if (state.standby) {
       const standby = state.standby;
@@ -762,6 +790,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       makeLaunchButton(`Envanter ${total}`, "inventory")
     ];
     if (state.creative) buttons.push(makeLaunchButton("Yaratıcı", "creative"));
+    if (state.defenseSummaryAvailable) buttons.push(makeActionButton("Savunma Özeti", "game-controls__launch", true, () => dispatch({ action: "showDefenseSummary" })));
     return makeRow(buttons, "game-controls__launcher");
   };
 
@@ -849,7 +878,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop inventory";
       drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.advanced ? hire.advancedCost : hire.cost} altın</strong></header>`
-        + `<p>İşçinin rolü ve kademesi alırken belirlenir, sonradan değişmez. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
+        + `<p>Tek tip işçi alırsın; uzmanlığını sonraki kalıcı seçimde belirlersin. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
         + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
         + `<div class="gold-shop__offers"></div>`;
 
@@ -862,20 +891,13 @@ export function setupGameControlUi(game: Phaser.Game) {
       );
 
       const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
-      for (const role of hire.roles) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = `gold-shop__item gold-shop__item--utility${hire.advanced ? " gold-shop__item--advanced-worker" : ""}`;
-        button.disabled = !hire.affordable;
-        const detay = hire.advanced
-          ? `${role.description} Toplama, taşıma ve yürüyüş üç kat.`
-          : role.description;
-        const sayac = [role.owned > 0 ? `x${role.owned}` : "", role.ownedAdvanced > 0 ? `★${role.ownedAdvanced}` : ""].filter(Boolean).join(" ");
-        button.innerHTML = `<span>${hire.advanced ? "gelişmiş" : "rol"}</span><strong>${role.label}</strong><small>${detay}</small>`
-          + (sayac ? `<b>${sayac}</b>` : "");
-        button.addEventListener("pointerup", () => dispatch({ action: "hireWorker", role: role.id }));
-        list?.append(button);
-      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `gold-shop__item gold-shop__item--utility${hire.advanced ? " gold-shop__item--advanced-worker" : ""}`;
+      button.disabled = !hire.affordable;
+      button.innerHTML = `<span>${hire.advanced ? "gelişmiş" : "işçi"}</span><strong>Yeni işçi al</strong><small>İlk seçimde uzmanlık dalını seçersin; sonraki seçimler kalıcı gamechanger becerilerdir.</small>`;
+      button.addEventListener("pointerup", () => dispatch({ action: "hireWorker" }));
+      list?.append(button);
       const actions = document.createElement("div");
       actions.className = "gold-shop__actions";
       actions.append(makeActionButton("Kapat", "gold-shop__close", true, () => dispatch({ action: "closeWorkerHire" })));

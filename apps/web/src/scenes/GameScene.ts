@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { openDefenseDialog, defenseSummaryLines } from "../defense-ui";
+import type { DefenseSummary, TowerPreview, LogisticsPriority } from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, shotStyle } from "../vfx/combat-vfx";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
@@ -85,6 +87,7 @@ import {
   type TowerSnapshot,
   type WireGameSnapshot
 } from "@karayel/shared";
+import type { WorkerSkillChoice } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
@@ -132,6 +135,8 @@ type ControlActionDetail = {
     | "repairStructure"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "setLogisticsPriority"
+    | "showDefenseSummary"
     | "toggleWallGate"
     | "toggleWorkerBanMode"
     | "toggleTowerStandby"
@@ -159,6 +164,7 @@ type ControlActionDetail = {
     | "cancelEquip"
     | "clearSelection";
   towerId?: string;
+  priority?: LogisticsPriority;
   slot?: number;
   tier?: ZeynepCommandTier;
   role?: string;
@@ -445,6 +451,9 @@ export class GameScene extends Phaser.Scene {
   private inventoryOpen = false;
   /** Envanterden secilmis, kule bekleyen esya. */
   private pendingEquipItemId?: string;
+  private latestDefenseSummary?: DefenseSummary;
+  private pendingPreview?: { requestId: string; apply: () => void; dialog: HTMLDialogElement };
+  private previewSequence = 0;
   private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
@@ -757,6 +766,9 @@ export class GameScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
     this.installMapPointerInput();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.querySelector("#defense-dialog")?.remove();
+      this.pendingPreview = undefined;
+      this.latestDefenseSummary = undefined;
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
       window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
@@ -1547,6 +1559,12 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
         }
         break;
+      case "setLogisticsPriority":
+        this.room?.send("tower:priority", { towerId: this.selectedPlacedTowerId, priority: detail.priority });
+        break;
+      case "showDefenseSummary":
+        if (this.latestDefenseSummary) openDefenseDialog(`Dalga ${this.latestDefenseSummary.wave} · Savunma özeti`, defenseSummaryLines(this.latestDefenseSummary));
+        break;
       case "toggleWallGate":
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleWallGate", { towerId: this.selectedPlacedTowerId });
@@ -1580,11 +1598,9 @@ export class GameScene extends Phaser.Scene {
         this.updateSelectionUi();
         break;
       case "hireWorker":
-        if (isHirableWorkerRole(detail.role)) {
-          this.room?.send("worker:hire", { role: detail.role, advanced: this.workerHireAdvanced });
-          this.workerHireOpen = false;
-          this.updateSelectionUi();
-        }
+        this.room?.send("worker:hire", { role: isHirableWorkerRole(detail.role) ? detail.role : undefined, advanced: this.workerHireAdvanced });
+        this.workerHireOpen = false;
+        this.updateSelectionUi();
         break;
       case "setTowerPerformance":
         if (this.selectedPlacedTowerId && typeof detail.performance === "number") {
@@ -1646,9 +1662,24 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
-    this.room?.send("equipShopItem", { itemId: this.pendingEquipItemId, towerId });
-    this.pendingEquipItemId = undefined;
+    const itemId = this.pendingEquipItemId;
+    this.previewTowerChange({ itemId, towerId }, () => {
+      this.room?.send("equipShopItem", { itemId, towerId });
+      this.pendingEquipItemId = undefined;
+    });
     return true;
+  }
+
+  private previewTowerChange(change: { towerId: string; cardId?: string; itemId?: string }, apply: () => void) {
+    const requestId = String(++this.previewSequence);
+    const dialog = openDefenseDialog("Değişiklik önizlemesi", ["Sunucudan güncel değerler alınıyor…"]);
+    this.pendingPreview = { requestId, apply, dialog };
+    this.room?.send("tower:preview", { ...change, requestId });
+    this.time.delayedCall(8000, () => {
+      if (this.pendingPreview?.requestId !== requestId || !dialog.isConnected) return;
+      this.pendingPreview = undefined;
+      openDefenseDialog("Önizleme alınamadı", ["Bağlantıyı kontrol edip yeniden dene."]);
+    });
   }
 
   private drawPlacementGrid(highlightX: number, highlightY: number, canPlace: boolean) {
@@ -1989,6 +2020,7 @@ export class GameScene extends Phaser.Scene {
       advancedCost,
       advanced,
       affordable: gold >= (advanced ? advancedCost : cost),
+      generic: true,
       roles: HIRABLE_WORKER_ROLES.map((role) => ({
         id: role,
         label: WORKER_ROLE_LABELS[role],
@@ -3475,13 +3507,51 @@ room.onMessage("enemy:frozen", (message: { x: number; y: number }) => this.showF
 room.onMessage("slow:critical", (message: { x: number; y: number }) => this.showSlowCritBurst(message.x, message.y));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
-    room.onMessage("worker:hired", (message: { role: HirableWorkerRole; advanced?: boolean; cost: number }) => {
+    room.onMessage("worker:hired", (message: { role?: HirableWorkerRole; advanced?: boolean; cost: number }) => {
       const kademe = message.advanced ? "Gelismis " : "";
-      this.showNotice(`${kademe}${WORKER_ROLE_LABELS[message.role]} ise alindi (${message.cost}g)`);
+      this.showNotice(`${kademe}${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçi"} alındı (${message.cost}g). Uzmanlığını seç.`);
     });
+    room.onMessage("worker:specialization-choice", (message: { workerId: string; options: readonly { id: HirableWorkerRole; name: string; description: string }[] }) => {
+      const dialog = openDefenseDialog("İşçi uzmanlığı · kalıcı seçim", [
+        "Bu seçim işçinin yapacağı işi belirler ve geri alınamaz. Sonraki üç kademede uzmanlık yetenekleri seçilecektir."
+      ]);
+      const actions = dialog.querySelector("div:last-child");
+      for (const option of message.options) {
+        const button = document.createElement("button");
+        button.textContent = option.name;
+        button.title = option.description;
+        button.style.cssText = "padding:10px 18px;color:#fff;background:#244664;border:1px solid #5c8dad;border-radius:8px;cursor:pointer";
+        button.onclick = () => { dialog.close(); this.room?.send("worker:specialization", { workerId: message.workerId, role: option.id }); };
+        actions?.append(button);
+      }
+    });
+    room.onMessage("worker:skill-choice", (message: { workerId: string; tier: number; role: HirableWorkerRole; options: readonly [WorkerSkillChoice, WorkerSkillChoice] }) => {
+      const [first, second] = message.options;
+      const dialog = openDefenseDialog(`${WORKER_ROLE_LABELS[message.role]} · kalıcı uzmanlık ${message.tier + 1}/3`, [
+        "Bu seçim geri alınamaz. İşçinin temel verimliliği değişmez; lojistik hattının kriz, savunma veya saldırı davranışı değişir.",
+        `\n${first.name}\n${first.description}\n\n${second.name}\n${second.description}`
+      ]);
+      const actions = dialog.querySelector("div:last-child");
+      for (const option of [first, second]) {
+        const button = document.createElement("button");
+        button.textContent = option.name;
+        button.style.cssText = "padding:10px 18px;color:#fff;background:#244664;border:1px solid #5c8dad;border-radius:8px;cursor:pointer";
+        button.onclick = () => { dialog.close(); this.room?.send("worker:skill", { workerId: message.workerId, skillId: option.id }); };
+        actions?.append(button);
+      }
+    });
+    room.onMessage("worker:skill-complete", (message: { role?: HirableWorkerRole }) => this.showNotice(`${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçinin"} uzmanlığı kalıcı olarak tamamlandı.`));
     room.onMessage("match:victory", (message: { wave: number; kills: number; stage?: number }) => this.showMatchResult("victory", message));
     room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
+    room.onMessage("tower:preview", (preview: TowerPreview) => {
+      const pending = this.pendingPreview;
+      if (!pending || pending.requestId !== preview.requestId || !pending.dialog.isConnected) return;
+      this.pendingPreview = undefined;
+      openDefenseDialog(preview.title ?? "Önizleme", preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply);
+    });
+    room.onMessage("defense:summary", (summary: DefenseSummary) => { this.latestDefenseSummary = summary; this.emitControlState(); });
+    room.send("defense:request");
     room.onMessage("card:applied", () => this.hideCardChoices());
     room.onMessage("card:rejected", (message: { reason?: string }) => {
       this.setCardChoicePending(false, message.reason ?? "Kart seçimi uygulanamadı. Tekrar dene.");
@@ -3689,7 +3759,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       button.type = "button";
       button.className = "tower-choice";
       button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${tower.name}</strong><small>Seviye ${tower.level} • ${Math.round(tower.damageDealt ?? 0)} hasar</small></span><span class="tower-choice__arrow">→</span>`;
-      button.addEventListener("click", () => this.submitCardChoice({ cardId: card.id, towerId: tower.id }));
+      button.addEventListener("click", () => this.previewTowerChange({ cardId: card.id, towerId: tower.id }, () => this.submitCardChoice({ cardId: card.id, towerId: tower.id })));
       list?.append(button);
     });
   }
@@ -7823,6 +7893,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       repair: repairState,
       performance: this.getPerformanceControlState(selectedTower),
       selectedTowerId: this.selectedPlacedTowerId,
+      defenseSummaryAvailable: Boolean(this.latestDefenseSummary),
+      selectedInsight: selectedTower?.insight,
+      logisticsPriority: selectedTower ? { value: selectedTower.logisticsPriority ?? "normal", canEdit: selectedTower.ownerId === this.localSessionId } : undefined,
       selectedStats: selectedTower ? [
         // Hasar ve DPS yalnizca vuran yapida. Duvarin ikisi de her zaman
         // sifir ve o sifirlar bir bilgi degil, gurultu.

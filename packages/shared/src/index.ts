@@ -544,8 +544,32 @@ export type TowerSnapshot = {
   standby?: boolean;
   wakeRemainingMs?: number;
   energyState?: import("./tower-rules.js").TowerEnergyState;
+  energyRelayUntil?: number;
+  energyRelaySourceId?: string;
+  energyLocalReserve?: number;
+  energyBridgeUntil?: number;
+  energyShedUntil?: number;
+  energyFrequencyUntil?: number;
+  energyScenarioCharge?: number;
+  energyConduitUntil?: number;
+  energyConduitSourceId?: string;
+  energyFreeUntil?: number;
+  crystalReserve?: number;
+  crystalTrapUntil?: number;
+  ammoFactoryShield?: number;
+  ammoRefinerUntil?: number;
+  ammoPayloadUntil?: number;
+  ammoPayloadKind?: "refined" | "special";
+  ammoEmergencyShots?: number;
+  ammoAssaultUntil?: number;
+  ammoEvacuationUntil?: number;
+  repairFortificationUntil?: number;
+  repairFortificationHp?: number;
+  repairBreachUntil?: number;
   resourceProvider?: import("./characters/common/types.js").TowerResourceProvider;
   ammoLogisticsEnabled?: boolean;
+  logisticsPriority?: import("./defense-insights.js").LogisticsPriority;
+  insight?: string;
   /**
    * Duvara acilmis kapi.
    *
@@ -655,6 +679,8 @@ export type DroneSnapshot = {
   repairing?: boolean;
   /** Gelismis isci: istemci onu ayirt edilebilir cizsin diye telde. */
   advanced?: boolean;
+  /** Kalıcı işçi uzmanlık seçimleri; yalnızca sahibine gösterilir. */
+  skillIds?: import("./worker-skills.js").WorkerSkillId[];
   /** Lojistik iscisinin cani. Savasci dronlarda yok. */
   hp?: number;
   maxHp?: number;
@@ -1008,6 +1034,31 @@ export {
 } from "./logistics/index.js";
 export type { HirableWorkerRole, HiredWorker } from "./logistics/index.js";
 export {
+  ENERGY_WORKER_SKILL_TIERS,
+  CRYSTAL_WORKER_SKILL_TIERS,
+  AMMO_COLLECTOR_WORKER_SKILL_TIERS,
+  AMMO_TRANSPORT_WORKER_SKILL_TIERS,
+  REPAIR_WORKER_SKILL_TIERS,
+  WORKER_SKILL_TIERS,
+  WORKER_SPECIALIZATION_CHOICES,
+  getWorkerSkillTiers,
+  isWorkerSkillId,
+  isWorkerSkillForRole,
+  isEnergyWorkerSkillId,
+  getWorkerSkill,
+  getEnergyWorkerSkill
+} from "./worker-skills.js";
+export type {
+  WorkerSkillId,
+  EnergyWorkerSkillId,
+  CrystalWorkerSkillId,
+  AmmoCollectorWorkerSkillId,
+  AmmoTransportWorkerSkillId,
+  RepairWorkerSkillId,
+  WorkerSkillChoice,
+  WorkerSkillPair
+} from "./worker-skills.js";
+export {
   ZEYNEP_BURN_SYNTHESIS_RANGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
   ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS,
@@ -1321,3 +1372,5 @@ export {
   stepBlindNavigator
 } from "./navigation/index.js";
 export type { BlindHand, BlindHeading, BlindNavigatorState, BlindStepResult } from "./navigation/index.js";
+export * from "./defense-insights.js";
+export * from "./worker-skills.js";

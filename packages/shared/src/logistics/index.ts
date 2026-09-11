@@ -120,8 +120,8 @@ export const ADVANCED_WORKER_MULTIPLIER = 3;
  */
 export const ADVANCED_WORKER_COST_MULTIPLIER = 4;
 
-/** Alinmis bir isci: rolu ve kademesi. */
-export type HiredWorker = { role: HirableWorkerRole; advanced?: boolean };
+/** Alinmis bir isci: uzmanligi ilk agac seciminden sonra kesinlesir. */
+export type HiredWorker = { role?: HirableWorkerRole; advanced?: boolean; id?: string; skillIds?: import("../worker-skills.js").WorkerSkillId[] };
 
 /**
  * Siradaki iscinin bedeli.
@@ -174,4 +174,3 @@ export function advanceResourceExtraction(
     completed: nextRemainingMs === 0
   };
 }
-
