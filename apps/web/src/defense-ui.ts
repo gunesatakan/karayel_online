@@ -28,7 +28,9 @@ export function openDefenseDialog(title: string, lines: string[], confirm?: () =
     content.textContent = lines.join("\n");
   }
   const actions = document.createElement("div");
-  actions.style.cssText = "display:flex;gap:12px;margin-top:20px;justify-content:flex-end";
+  // Satir kaydirilmali: tasan sag yasli satir sola, kaydirilamayan alana
+  // itiliyordu ve telefonda Kapat ile ilk secenekler hic gorunmuyordu.
+  actions.style.cssText = "display:flex;flex-wrap:wrap;gap:12px;margin-top:20px;justify-content:flex-end";
   const button = (label: string, action: () => void) => {
     const element = document.createElement("button");
     element.textContent = label;
@@ -42,6 +44,50 @@ export function openDefenseDialog(title: string, lines: string[], confirm?: () =
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
+  return dialog;
+}
+
+/**
+ * Kalici bir secim icin secenekleri alt alta, aciklamalariyla listeler.
+ *
+ * Secenekler eylem satirina dugme olarak eklendiginde telefonda satir
+ * tasiyordu ve aciklama yalnizca `title` icindeydi -- dokunmatikte hic
+ * okunamiyordu. Burada her secenek tam genislikte ve aciklamasi gorunur.
+ * `onDismiss` secim yapilmadan kapanista cagrilir.
+ */
+export function openChoiceDialog<T extends string>(
+  title: string,
+  lines: string[],
+  options: readonly { id: T; name: string; description: string }[],
+  onChoose: (id: T) => void,
+  onDismiss?: () => void
+) {
+  const dialog = openDefenseDialog(title, lines);
+  let chosen = false;
+  const list = document.createElement("div");
+  list.style.cssText = "display:grid;gap:8px;margin-top:16px";
+  for (const option of options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.style.cssText = "display:grid;gap:2px;width:100%;padding:12px 14px;text-align:left;color:#fff;background:#244664;border:1px solid #5c8dad;border-radius:8px;cursor:pointer";
+    const name = document.createElement("strong");
+    name.textContent = option.name;
+    const description = document.createElement("small");
+    description.style.cssText = "color:#bcd0e2;font-size:13px;line-height:1.4";
+    description.textContent = option.description;
+    button.append(name, description);
+    button.onclick = () => {
+      chosen = true;
+      dialog.close();
+      onChoose(option.id);
+    };
+    list.append(button);
+  }
+  dialog.lastElementChild?.before(list);
+  // showModal odagi o an tek dugme olan Kapat'a verdi; secenekler ondan once
+  // eklendigi icin okuyucu ve klavye sirasi sondan basliyordu.
+  list.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  if (onDismiss) dialog.addEventListener("close", () => { if (!chosen) onDismiss(); });
   return dialog;
 }
 

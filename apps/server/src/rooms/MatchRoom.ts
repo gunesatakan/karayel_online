@@ -6896,6 +6896,15 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     const role = isHirableWorkerRole(message?.role) ? message.role : undefined;
+    // Secim penceresi acikken ikinci isci alinmasin; aksi halde iki is
+    // atamasindan yalnizca biri gorunur ve digeri baglanti yenilenene kadar
+    // sessizce bekler. Pencere secimsiz kapandiysa istek sessizce dusmesin:
+    // bekleyen iscinin secimi yeniden acilir, altin harcanmaz.
+    const pending = role ? undefined : player.hiredWorkers.find((worker) => !worker.role);
+    if (pending) {
+      if (pending.id) this.sendWorkerSpecializationChoice(client, pending.id);
+      return;
+    }
     const advanced = message.advanced === true;
     const cost = getWorkerHireCostWithModifiers(
       player.hiredWorkers.length,
@@ -6905,10 +6914,6 @@ export class MatchRoom extends Room<MatchState> {
     if (player.gold < cost) {
       return;
     }
-    // Secim penceresi acikken ikinci isci alinmasin; aksi halde iki is
-    // atamasindan yalnizca biri gorunur ve digeri baglanti yenilenene kadar
-    // sessizce bekler.
-    if (!isHirableWorkerRole(message?.role) && player.hiredWorkers.some((worker) => !worker.role)) return;
 
     player.gold -= cost;
     player.goldSpent += cost;

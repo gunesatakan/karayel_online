@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { openDefenseDialog, defenseSummaryLines } from "../defense-ui";
+import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import type { DefenseSummary, TowerPreview, LogisticsPriority } from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, shotStyle } from "../vfx/combat-vfx";
@@ -2122,6 +2122,8 @@ export class GameScene extends Phaser.Scene {
       advanced,
       affordable: gold >= (advanced ? advancedCost : cost),
       generic: true,
+      // Rolu secilmemis isci varken sunucu yeni alim yerine secimi yeniden acar.
+      pendingSpecialization: hired.some((worker) => !worker.role),
       roles: HIRABLE_WORKER_ROLES.map((role) => ({
         id: role,
         label: WORKER_ROLE_LABELS[role],
@@ -3613,18 +3615,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.showNotice(`${kademe}${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçi"} alındı (${message.cost}g). Uzmanlığını seç.`);
     });
     room.onMessage("worker:specialization-choice", (message: { workerId: string; options: readonly { id: HirableWorkerRole; name: string; description: string }[] }) => {
-      const dialog = openDefenseDialog("İşçi uzmanlığı · kalıcı seçim", [
-        "Bu seçim işçinin yapacağı işi belirler ve geri alınamaz. Sonraki üç kademede uzmanlık yetenekleri seçilecektir."
-      ]);
-      const actions = dialog.querySelector("div:last-child");
-      for (const option of message.options) {
-        const button = document.createElement("button");
-        button.textContent = option.name;
-        button.title = option.description;
-        button.style.cssText = "padding:10px 18px;color:#fff;background:#244664;border:1px solid #5c8dad;border-radius:8px;cursor:pointer";
-        button.onclick = () => { dialog.close(); this.room?.send("worker:specialization", { workerId: message.workerId, role: option.id }); };
-        actions?.append(button);
-      }
+      openChoiceDialog(
+        "İşçi uzmanlığı · kalıcı seçim",
+        ["Bu seçim işçinin yapacağı işi belirler ve geri alınamaz."],
+        message.options,
+        (role) => this.room?.send("worker:specialization", { workerId: message.workerId, role }),
+        // Rolsuz isci yeni alimi kilitliyor; oyuncu nereden devam edecegini bilmeli.
+        () => this.showNotice("Uzmanlık seçilmedi. Envanter › İşçi Al'dan seçebilirsin.", 4200)
+      );
     });
     room.onMessage("worker:skill-choice", (message: { workerId: string; tier: number; role: HirableWorkerRole; options: readonly [WorkerSkillChoice, WorkerSkillChoice]; legacy?: boolean }) => {
       if (message.legacy) return;

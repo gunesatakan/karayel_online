@@ -57,6 +57,8 @@ type ControlState = {
     affordable: boolean;
     /** İşçinin uzmanlığı sonraki pencerede seçilecek. */
     generic?: boolean;
+    /** Alinmis ama rolu secilmemis isci var; dugme secimi yeniden acar. */
+    pendingSpecialization?: boolean;
     roles: Array<{ id: string; label: string; description: string; owned: number; ownedAdvanced: number }>;
   };
   workerDevelopment?: {
@@ -678,7 +680,8 @@ export function setupGameControlUi(game: Phaser.Game) {
       actions.push(makeActionButton("Takmayı iptal et", "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
     }
     if (state.workerHire) {
-      actions.push(makeActionButton(`İşçi Al ${state.workerHire.cost}g`, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
+      const hireLabel = state.workerHire.pendingSpecialization ? "İşçi Al · seçim bekliyor" : `İşçi Al ${state.workerHire.cost}g`;
+      actions.push(makeActionButton(hireLabel, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
     }
     if (state.workerBan) {
       const ban = state.workerBan;
@@ -1122,7 +1125,9 @@ export function setupGameControlUi(game: Phaser.Game) {
       makeLaunchButton("Kuleler", "towers"),
       makeLaunchButton("Beceriler", "skills"),
       makeLaunchButton("İşçi Ağacı", "workerDevelopment"),
-      makeLaunchButton(`Envanter ${total}`, "inventory")
+      // Rolsuz isci yeni alimi kilitliyor; bildirim kart secimi gibi bir
+      // ortunun altinda kalabilir, bu isaret kalici.
+      makeLaunchButton(`Envanter ${total}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "inventory")
     ];
     if (state.creative) buttons.push(makeLaunchButton("Yaratıcı", "creative"));
     if (state.defenseSummaryAvailable) buttons.push(makeActionButton("Savunma Özeti", "game-controls__launch", true, () => dispatch({ action: "showDefenseSummary" })));
@@ -1218,12 +1223,20 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     if (state.workerHire?.open) {
       const hire = state.workerHire;
+      // Bekleyen secim bir satin alma degil: sunucu bedel almadan secimi
+      // yeniden aciyor, kademeye de bakmiyor. Fiyat ve kademe gostermek
+      // oyuncuya altin harcanacakmis gibi soyluyordu.
+      const pending = Boolean(hire.pendingSpecialization);
       const drawer = document.createElement("section");
       drawer.className = "gold-shop inventory";
-      drawer.innerHTML = `<header><span>İŞÇİ AL</span><strong>${hire.advanced ? hire.advancedCost : hire.cost} altın</strong></header>`
-        + `<p>Tek tip işçi alırsın; uzmanlığını sonraki kalıcı seçimde belirlersin. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
-        + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
-        + `<div class="gold-shop__offers"></div>`;
+      drawer.innerHTML = pending
+        ? `<header><span>İŞÇİ AL</span><strong>Seçim bekliyor · ücretsiz</strong></header>`
+          + `<p>Önceki işçinin uzmanlığı seçilmedi. Seçim ücretsiz; seçtikten sonra yeni işçi alabilirsin.</p>`
+          + `<div class="gold-shop__offers"></div>`
+        : `<header><span>İŞÇİ AL</span><strong>${hire.advanced ? hire.advancedCost : hire.cost} altın</strong></header>`
+          + `<p>Tek tip işçi alırsın; uzmanlığını sonraki kalıcı seçimde belirlersin. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
+          + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
+          + `<div class="gold-shop__offers"></div>`;
 
       // Kademe secimi rollerin ustunde: once ne kadar harcanacagi, sonra ne
       // is yapacagi seciliyor.
@@ -1236,9 +1249,11 @@ export function setupGameControlUi(game: Phaser.Game) {
       const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `gold-shop__item gold-shop__item--utility${hire.advanced ? " gold-shop__item--advanced-worker" : ""}`;
-      button.disabled = !hire.affordable;
-      button.innerHTML = `<span>${hire.advanced ? "gelişmiş" : "işçi"}</span><strong>Yeni işçi al</strong><small>İlk seçimde uzmanlık dalını seçersin; sonraki seçimler kalıcı gamechanger becerilerdir.</small>`;
+      button.className = `gold-shop__item gold-shop__item--utility${hire.advanced && !pending ? " gold-shop__item--advanced-worker" : ""}`;
+      button.disabled = !hire.affordable && !pending;
+      button.innerHTML = pending
+        ? `<span>bekliyor</span><strong>Uzmanlığını seç</strong><small>Kristal, enerji, mühimmat veya tamir işlerinden birini seç.</small>`
+        : `<span>${hire.advanced ? "gelişmiş" : "işçi"}</span><strong>Yeni işçi al</strong><small>İlk seçimde uzmanlık dalını seçersin; sonraki seçimler kalıcı gamechanger becerilerdir.</small>`;
       button.addEventListener("pointerup", () => dispatch({ action: "hireWorker" }));
       list?.append(button);
       const actions = document.createElement("div");

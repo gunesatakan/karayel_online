@@ -32,6 +32,33 @@ test("generic worker chooses one specialization before its three permanent tiers
   assert.deepEqual(drone.skillIds, worker.skillIds);
 });
 
+test("hiring again while a worker has no specialization reopens its choice instead of charging", () => {
+  const room = createRoom("warrior");
+  const messages = [];
+  const choiceClient = { sessionId: "p1", send(type, value) { messages.push({ type, value }); } };
+  const player = room.state.players.get("p1");
+  room.hireWorker(choiceClient, { advanced: false });
+  const pending = player.hiredWorkers.at(-1);
+  const goldAfterFirstHire = player.gold;
+  const hiredCount = player.hiredWorkers.length;
+
+  // Pencere secim yapilmadan kapandi; oyuncu Isci Al'a tekrar basiyor.
+  room.hireWorker(choiceClient, { advanced: false });
+  assert.equal(player.gold, goldAfterFirstHire);
+  assert.equal(player.hiredWorkers.length, hiredCount);
+  assert.equal(messages.at(-1).type, "worker:specialization-choice");
+  assert.equal(messages.at(-1).value.workerId, pending.id);
+  assert.ok(messages.at(-1).value.options.some((option) => option.id === "energyTransport"));
+
+  // Altini yetmese bile secim yeniden acilabilmeli.
+  player.gold = 0;
+  room.hireWorker(choiceClient, { advanced: true });
+  assert.equal(messages.at(-1).type, "worker:specialization-choice");
+
+  room.chooseWorkerSpecialization(choiceClient, { workerId: pending.id, role: "energyTransport" });
+  assert.equal(pending.role, "energyTransport");
+});
+
 test("every non-energy specialization exposes three binary choices", () => {
   for (const tiers of [CRYSTAL_WORKER_SKILL_TIERS, AMMO_COLLECTOR_WORKER_SKILL_TIERS, AMMO_TRANSPORT_WORKER_SKILL_TIERS, REPAIR_WORKER_SKILL_TIERS]) {
     assert.equal(tiers.length, 3);
