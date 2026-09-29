@@ -162,7 +162,10 @@ canvas {
 .run-card__axis { margin-top: auto; color: var(--card-accent); font: 700 11px/1 Rajdhani, sans-serif; letter-spacing: .16em; }
 .run-card strong { margin: 11px 0 8px; font: 800 clamp(23px, 3vw, 31px)/.95 Rajdhani, sans-serif; }
 .run-card__description { min-height: 54px; color: #cbd5e1; font-size: 16px; line-height: 1.25; }
-.run-card__scope { margin-top: 18px; padding: 6px 10px; color: #e0f2fe; background: rgba(2, 6, 23, .48); border: 1px solid rgba(148, 163, 184, .22); border-radius: 999px; font-size: 12px; font-weight: 700; }
+.run-card__scope { margin-top: 18px; padding: 6px 10px; color: #e0f2fe; background: rgba(2, 6, 23, .48); border: 1px solid rgba(148, 163, 184, .22); border-radius: 999px; font-size: 12px; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Kartin su anki kulelerine erisimi. Sifirda kart gizlenmiyor, satir sonuklesiyor. */
+.run-card__reach { margin-top: 8px; color: color-mix(in srgb, var(--card-accent) 45%, #f1f5f9); font: 700 14px/1.2 Rajdhani, sans-serif; letter-spacing: .02em; }
+.run-card__reach--muted { color: #7f93a8; font-weight: 600; }
 
 .card-draft__back {
   position: absolute;
@@ -197,10 +200,11 @@ canvas {
   .card-draft__header p { font-size: 13px; }
   .card-draft__grid { grid-template-columns: 1fr; gap: 9px; }
   .run-card { min-height: 142px; padding: 15px 16px; }
-  .run-card__axis { margin-top: 18px; }
+  .run-card__axis { margin-top: 12px; }
   .run-card strong { margin: 7px 0 5px; font-size: 23px; }
   .run-card__description { min-height: 0; font-size: 14px; }
-  .run-card__scope { position: absolute; right: 13px; top: 12px; margin: 0; font-size: 10px; }
+  .run-card__scope { position: absolute; right: 13px; top: 12px; max-width: calc(100% - 64px); margin: 0; font-size: 10px; }
+  .run-card__reach { margin-top: 6px; font-size: 13px; }
   .tower-choice-list { grid-template-columns: 1fr; }
 }
 
@@ -272,7 +276,26 @@ canvas {
 .tower-items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(148, 163, 184, .22); }
 .tower-items__header { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
 .tower-items__empty { font-size: 10px; color: #64748b; }
-.tower-items__chip { padding: 2px 7px; border: 1px solid rgba(45, 212, 191, .4); border-radius: 999px; font-size: 10px; color: #99f6e4; background: rgba(13, 148, 136, .18); }
+
+/* "Bu kuleye etki edenler". Baslik ve kalemler dugme, cunku aciklama
+   dokununca aciliyor; `title` dokunmatikte hic gorunmuyordu. Ozgulluk
+   kasitli: taban `.game-controls button` kurali 44 piksellik yukseklik ve
+   kaydirmayi kapatan `touch-action: none` veriyor. Kalemler cekmecenin icinde
+   durdugu icin ustlerinden surukleyince cekmece kaymali. */
+.tower-effects { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+.game-controls button.tower-effects__toggle { justify-content: flex-start; min-height: 34px; padding: 2px 8px; color: #cbd5e1; font-size: 11px; text-align: left; }
+.tower-effects__group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.game-controls button.tower-effects__chip { min-height: 30px; padding: 2px 9px; border: 1px solid rgba(45, 212, 191, .4); border-radius: 999px; color: #99f6e4; background: rgba(13, 148, 136, .18); font-size: 11px; touch-action: pan-y; }
+.game-controls button.tower-effects__chip.is-active { border-color: rgba(253, 230, 138, .85); color: #fde68a; }
+.tower-effects__detail { margin: 0; padding: 5px 8px; border-left: 2px solid rgba(45, 212, 191, .55); color: #c9e6ee; background: #132532; font-size: 11px; line-height: 1.35; }
+
+/* Envanterdeki kart listesi. Satirlar dugme degil ve aciklama hep acik:
+   liste uzayabiliyor, parmak ustunden gecince cekmece kaymali. */
+.owned-cards { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(148, 163, 184, .22); }
+.owned-cards__card { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 5px 8px; border: 1px solid rgba(148, 163, 184, .22); background: rgba(15, 23, 42, .84); }
+.owned-cards__card > strong { min-width: 0; color: #eaf2ff; font-size: 12px; line-height: 1.2; }
+.owned-cards__tags { align-self: center; color: #7dd3fc; font-size: 9px; letter-spacing: .06em; white-space: nowrap; }
+.owned-cards__card > small { grid-column: 1 / -1; margin-top: 2px; color: #aab7cc; font-size: 10px; line-height: 1.3; }
 .game-controls__inventory-button { min-height: 26px !important; padding: 0 10px !important; font-size: 10px; color: #99f6e4 !important; background: rgba(13, 148, 136, .28) !important; }
 
 @media (max-width: 700px), (max-height: 560px) and (pointer: coarse) {
@@ -1190,12 +1213,46 @@ canvas {
   opacity: .42;
 }
 
-.game-controls__hint {
-  flex: 1;
-  min-width: 0;
+/*
+ * Gecici bildirim (toast).
+ *
+ * Alt barin, acik bir cekmece varsa onun hemen ustunde duruyor; `bottom` JS'ten
+ * olculup geliyor, buradaki yalnizca olcumden onceki yedek. Dokunuslari
+ * yutmuyor: yerlestirme reddi gibi mesajlar oyuncu haritaya basarken cikiyor.
+ * Zemin koyu ve neredeyse opak, yoksa yildiz alaninin ustunde okunmuyor.
+ * En fazla iki satir; tasan kisim uc noktayla kesiliyor.
+ */
+.game-controls__notice {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--game-controls-panel-height) + 8px);
+  z-index: 50;
+  display: -webkit-box;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 6px 12px;
+  box-sizing: border-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  border: 1px solid rgba(96, 165, 250, 0.55);
+  border-radius: 8px;
+  color: #e0f2fe;
+  background: rgba(2, 6, 23, 0.92);
+  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.6);
+  font: 700 clamp(11px, 3.2vw, 13px)/1.3 Rajdhani, "Exo 2", Arial, sans-serif;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Yalnizca belirirken yumusak; kaybolurken metin de bosaltildigi icin aninda. */
+.game-controls__notice--visible {
+  opacity: 1;
+  transition: opacity 160ms ease;
 }
 
 /*
@@ -3243,6 +3300,77 @@ canvas {
 }
 
 /*
+ * Hava etiketi: dalga numarasinin yaninda ve kurulum ongorusunde.
+ *
+ * Mor, cunku cubuktaki hicbir sayiyla karismamali (altin sari, can pembe,
+ * dalga mavi). Tam hava dolu, karisik hava yalnizca cerceveli; havayi vuran
+ * kule yoksa ikisi de uyari kirmizisina geciyor.
+ */
+.game-hud__air {
+  display: inline-block;
+  align-self: center;
+  padding: 1px 4px;
+  border: 1px solid #a78bfa;
+  border-radius: 4px;
+  color: #1e1b4b;
+  background: #a78bfa;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.game-hud__air[hidden] { display: none; }
+.game-hud__air--mixed { color: #ddd6fe; background: rgba(167, 139, 250, 0.16); }
+.game-hud__air--danger { border-color: #f87171; color: #fff1f2; background: #dc2626; }
+.game-hud__air--mixed.game-hud__air--danger { color: #fecaca; background: rgba(220, 38, 38, 0.24); }
+
+/*
+ * Kurulumdaki dalga ongorusu.
+ *
+ * Cubugun altina asili ve akisin disinda: yuksekligi cubugun olculen boyuna
+ * girmiyor, yani belirip kaybolmasi kamerayi haritayi yeniden sigdirmaya
+ * zorlamiyor ("Kurulum 0/1" yazisinin bir donem yaptigi gibi). Dokunusu
+ * tutmuyor, altindaki kareye kule kurulabiliyor; acilir pencereler (z 2)
+ * ustune biniyor.
+ */
+.game-hud__forecast {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  z-index: 1;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 4px 10px;
+  box-sizing: border-box;
+  border: 1px solid rgba(167, 139, 250, 0.5);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.86);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.45);
+  text-align: center;
+  pointer-events: none;
+}
+
+.game-hud__forecast--danger { border-color: rgba(248, 113, 113, 0.8); }
+
+.game-hud__forecast p {
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-hud__forecast-line { color: #cbd5e1; }
+.game-hud__forecast-line b { color: #f8fafc; font-weight: 800; }
+.game-hud__forecast-line .game-hud__air { margin-left: 6px; vertical-align: 1px; }
+.game-hud__forecast-warning { color: #fca5a5; font-weight: 800; }
+
+/*
  * Ikincil serit: tasarsa kayar, sarmaz, ust satirin uzerine binmez.
  * Buradaki hicbir sey aninda karar gerektirmiyor, o yuzden gorunurlukten once
  * birincil satirin butunlugu korunuyor.
@@ -3337,9 +3465,13 @@ canvas {
  * sigdirmaya zorluyordu: "Kurulum 0/1" yazisi ekrandaki haritanin boyunu
  * degistiriyordu. Satirin icinde hicbir seyi itmiyor -- yer daralinca kendisi
  * kirpiliyor.
+ *
+ * Kisilma payinin neredeyse tamami burada: esit payla sayilar da kisilir ve
+ * dar ekranda dalga numarasinin yanindaki hava etiketi durum yazisindan once
+ * kirpilirdi.
  */
 .game-hud__status {
-  flex: 1 1 auto;
+  flex: 1 1000 auto;
   min-width: 0;
   margin: 0;
   overflow: hidden;
@@ -3715,4 +3847,20 @@ canvas {
 .stage__mark {
   flex: none;
   font-size: 14px;
+}
+
+/*
+ * Degisiklik onizlemesi.
+ *
+ * Sekiz satirin cogu karttan etkilenmiyor; hepsi ayni agirlikta yazilinca
+ * tek kazanc aralarinda kayboluyordu. Degisen satir parlak ve kalin,
+ * degismeyen soluk. Renk tek basina tasimasin diye kalinlik da degisiyor.
+ */
+#defense-dialog .defense-dialog__line--changed {
+  color: #fde68a;
+  font-weight: 700;
+}
+
+#defense-dialog .defense-dialog__line--same {
+  color: #7f93a8;
 }

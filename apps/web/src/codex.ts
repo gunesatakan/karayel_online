@@ -1,4 +1,4 @@
-import type { DamageType, HitType } from "@karayel/shared";
+import type { AmmoType, CardRarity, DamageType, HitType, TowerAttackShape, TowerAxis } from "@karayel/shared";
 
 /** Typed player-facing combat terminology. */
 export type CodexEntry = {
@@ -34,4 +34,43 @@ export const hitTypeCodex: Record<HitType, CodexEntry> = {
   curse: { name: "Lanet", text: "Anında hasar vermez, hedefte birikir." },
   wave: { name: "Dalga", text: "Yayılarak ilerleyen etki; yol boyunca temas eder." },
   slash: { name: "Kesme", text: "Dönen veya savrulan bir bıçağın temas vuruşu." }
+};
+
+/**
+ * Kart kapsam etiketinin kalan adlari. Hasar ve vurus adlari yukaridaki
+ * kodeksten okunuyor; bu uc alanin oyuncuya donuk bir adi yoktu. Adlar kart
+ * metinlerindekiyle ayni ("Kursun kullanan", "Isin kuleleri"), ki etiket
+ * hemen ustundeki aciklamayla baska bir dil konusmasin.
+ */
+export const towerAxisLabels: Record<TowerAxis, string> = {
+  dps: "Hasar",
+  cc: "Kontrol",
+  amplify: "Büyütme",
+  economy: "Ekonomi",
+  barricade: "Barikat"
+};
+
+/**
+ * Kart nadirliginin oyuncuya donuk adi. Kimlik ("uncommon") Envanter'de
+ * ham haliyle Turkce arayuzun ortasinda Ingilizce kaliyordu.
+ */
+export const cardRarityLabels: Record<CardRarity, string> = {
+  common: "yaygın",
+  uncommon: "seyrek",
+  rare: "nadir"
+};
+
+export const attackShapeLabels: Record<TowerAttackShape, string> = {
+  single: "Tek hedef",
+  line: "Hat",
+  cone: "Koni",
+  circle: "Daire",
+  beam: "Işın",
+  orbit: "Yörünge"
+};
+
+export const ammoTypeLabels: Record<AmmoType, string> = {
+  bullet: "Kurşun",
+  auraCrystal: "Aura kristali",
+  powerCrystal: "Güç kristali"
 };

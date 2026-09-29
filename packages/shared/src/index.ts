@@ -335,6 +335,16 @@ export type PlayerSnapshot = {
   experience: number;
   /** XP ile acilan, oyuncunun tum isci hucrelerine uygulanan global beceriler. */
   workerSkillIds?: import("./worker-skills.js").WorkerSkillId[];
+  /**
+   * Secilmis kartlar; yigilan kart her alimda bir kez yazilir. Hic kart
+   * yoksa alan gonderilmez.
+   *
+   * Kartlar bir donem tele hic cikmiyordu ve oyuncu secim ekranindan sonra
+   * ne sectigini bir daha goremiyordu. Hedefli kartlar da burada: sunucu
+   * onlari hem kuleye hem oyuncuya yaziyor. Hangi kuleye bagli olduklari
+   * kulenin `targetedCardIds` alaninda.
+   */
+  ownedCardIds?: string[];
   ownedShopItemIds?: string[];
   /** Alinmis ama henuz bir kuleye takilmamis esyalar. */
   inventoryItemIds?: string[];
@@ -378,6 +388,16 @@ export type PlayerSnapshot = {
    * kademe icin iki ayri sayi olurdu ve sayac her alimda degisiyor.
    */
   workerHireCostMultiplier?: number;
+  /**
+   * Kurulumda, siradaki dalgada ucan varken oyuncunun ayakta hicbir kulesi
+   * havayi vuramiyorsa `true`; baska her durumda alan yok.
+   *
+   * Sunucu savasin hedef secerken sordugu soruyu soruyor: tanimdaki bayrak ya
+   * da kart/esya kilidi. Istemci ayni kurali kendi yazsa bir kilit bir tarafta
+   * acilip obur tarafta acilmayabilirdi. Takim arkadasinin kuleleri sayilmiyor:
+   * uyari oyuncunun kendi kurulumu icin.
+   */
+  noAirDefense?: boolean;
 };
 
 export type LobbyPlayerSnapshot = {
@@ -580,6 +600,15 @@ export type TowerSnapshot = {
    */
   gate?: boolean;
   temperature?: number;
+  /**
+   * Isinin izin verdigi surekli tetikleme hizi, oyun saniyesi basina.
+   *
+   * Yalnizca isi baglayan kulede, yani sogutma tam hizi karsilayamiyorsa
+   * geliyor; yoksa alan hic yok. Sunucu savasin kullandigi fonksiyonlarla
+   * hesapliyor (atis isisi, sogutma, isisiz aralik): istemci kural yazsa
+   * kartlar ve kol bir tarafta degisip obur tarafta degismezdi.
+   */
+  sustainedAttacksPerSecond?: number;
   misfortune?: number;
   luckyWindowRemainingMs?: number;
   lastLuckMultiplier?: number;
@@ -607,6 +636,8 @@ export type TowerSnapshot = {
   targetingMode?: import("./characters/common/types.js").TowerTargetingMode;
   /** Bu kuleye takili magaza esyalari; takilan esya sokulemez. */
   equippedShopItemIds?: string[];
+  /** Bu kuleye baglanmis hedefli kartlar; yigilan kart her alimda bir kez. */
+  targetedCardIds?: string[];
   /**
    * Kulenin acik davranis kilitleri, bit maskesi olarak. Sunucu cozup gonderir;
    * istemci ayni cozumlemeyi tekrar yazarsa iki taraf kacinilmaz olarak ayrisir.
@@ -751,6 +782,17 @@ export type TeamSnapshot = {
   maxHealth: number;
   gold: number;
   wave: number;
+  /**
+   * `wave` dalgasinin toplam dusman sayisi: sunucunun dogurmayi planladigi
+   * kadar (`waveTarget`).
+   *
+   * Kurulumda `wave` siradaki dalga ve sayac onun icin kurulmus oluyor, yani
+   * orada bu siradaki dalganin ongorusu. Dalga sirasinda ayni dalganin
+   * toplami; kalani `enemiesLeft` soyluyor.
+   */
+  waveEnemyCount?: number;
+  /** `wave` dalgasindaki ucanlar (`getWaveAirMode`); hic ucan yoksa alan yok. */
+  waveAirMode?: Exclude<import("./balance/index.js").WaveAirMode, "none">;
   enemiesLeft: number;
   kills: number;
   energy: number;
@@ -908,6 +950,7 @@ export {
   getTowerOperatingEnergyPerSecond,
   TOWER_HEAT_BY_HIT_TYPE,
   TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER,
+  TOWER_HEAT_BRAKE_TEMPERATURE,
   getTowerPerformanceHeatMultiplier,
   isTowerPerformanceIdle,
   getTowerPerformanceEnergyMultiplier,
@@ -970,11 +1013,14 @@ export {
   cardCatalog,
   canTowerHoldTargetedCard,
   cardAppliesToTower,
+  cardReachesTower,
   drawCards,
   getCardDefinition,
-  getCardRarity
+  getCardRarity,
+  getCardTowerReach,
+  ownedCardAppliesToTower
 } from "./cards/index.js";
-export type { CardDefinition, CardRarity, CardScope, CardTowerProfile, Unlock } from "./cards/index.js";
+export type { CardDefinition, CardRarity, CardScope, CardTowerProfile, CardTowerReach, Unlock } from "./cards/index.js";
 export { NEUTRAL_ATTACK_MULTIPLIERS, isEmptyTowerGrant, resolveTowerAttackMultipliers, resolveTowerEngine } from "./grants/index.js";
 export type { TowerAttackGrant, TowerAttackMultipliers, TowerGrant } from "./grants/index.js";
 export {
@@ -996,7 +1042,7 @@ export {
   shopCatalog
 } from "./shop/index.js";
 export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
-export { applyEnemyMark, getMarkDamageMultiplier } from "./marks/index.js";
+export { applyEnemyMark, getMarkDamageMultiplier, isMarkOnlyChoice } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {
   TOWER_TURN_RATE_RADIANS_PER_SECOND,
@@ -1103,8 +1149,11 @@ export {
   getWaveHpMultiplier,
   getWaveEnemyMaxHp,
   getWaveCompletionGold,
+  getWaveAirMode,
+  isFlyingWaveSpawn,
   PLAYER_TOWER_LIMIT
 } from "./balance/index.js";
+export type { WaveAirMode } from "./balance/index.js";
 export {
   GAME_SPEED_MULTIPLIER,
   GLOBAL_TOWER_RANGE_MULTIPLIER,

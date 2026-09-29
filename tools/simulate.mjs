@@ -24,6 +24,7 @@ import {
   getWaveCompletionGold,
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
+  isFlyingWaveSpawn,
   REFERENCE_STRUCTURE_BREAK_DPS,
   getStructureRepairCost,
   getStructureHealthMultiplier,
@@ -210,7 +211,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     for (let index = 0; index < count; index += 1) {
       const enemyType = enemyTypes[Math.floor(random() * enemyTypes.length)];
       const enemy = getEnemyCombatDefinition(enemyType);
-      const isAir = wave === 5 || wave === 10 || ((wave === 15 || wave === 20) && index % 2 === 0);
+      const isAir = isFlyingWaveSpawn(wave, index);
       const airMultiplier = isAir ? 0.25 : 1;
       if (!isAir) groundCount += 1;
       totalHealth += getWaveEnemyMaxHp(enemy.maxHp, wave, airMultiplier) + Math.round(enemy.shield * airMultiplier);

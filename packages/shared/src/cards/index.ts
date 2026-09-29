@@ -1,7 +1,8 @@
 import type { DamageType, HitType } from "../combat.js";
 import type { AmmoType, TowerAttackShape, TowerAxis, TowerDefinition } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
-import type { Modifier } from "../modifiers/index.js";
+import type { Modifier, ModifierStat } from "../modifiers/index.js";
+import { isMarkOnlyChoice } from "../marks/index.js";
 
 export type CardScope =
   | { kind: "global" }
@@ -217,7 +218,11 @@ export const cardCatalog: CardDefinition[] = [
   { id: "namlu-asinmasi", name: "Namlu Aşınması", description: "Hasar +%25, ısı +%20.", axes: ["dps"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("namlu-asinmasi", "damage", 0.25), effect("namlu-asinmasi", "heat", 0.2)] },
   { id: "kalibre-artisi", name: "Kalibre Artışı", description: "Bir kulenin hasarı +%40, atış hızı -%15.", axes: ["dps"], scope: { kind: "targeted" }, stackable: true, rarity: "common", effects: [effect("kalibre-artisi", "damage", 0.4, "tower"), effect("kalibre-artisi", "fireRate", -0.15, "tower")] },
   { id: "seri-atis", name: "Seri Atış", description: "Bir kulenin atış hızı +%20, yakıt tüketimi +%35.", axes: ["dps"], scope: { kind: "targeted" }, stackable: true, rarity: "common", effects: [effect("seri-atis", "fireRate", 0.2, "tower"), effect("seri-atis", "shotFuelCost", 0.35, "tower")] },
-  { id: "sogutma-sistemi", name: "Soğutma Sistemi", description: "Tüm kulelerin soğuması +%50.", axes: ["economy"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("sogutma-sistemi", "cooling", 0.5)] },
+  // Ana etkisi soguma olan kartlar "dps" de tasiyor: 50 derecenin ustunde isi
+  // atis hizini kesiyor, yani soguma surekli atis hizi demek. Yalnizca
+  // "economy" iken secim rengi onlari ekonomi karti gibi gosteriyor ve
+  // cekiliste atis hizi kartlarinin yari agirligiyla cikiyorlardi.
+  { id: "sogutma-sistemi", name: "Soğutma Sistemi", description: "Tüm kulelerin soğuması +%50.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("sogutma-sistemi", "cooling", 0.5)] },
   { id: "kalin-zirh", name: "Kalın Zırh", description: "Tüm kulelerin canı +%80.", axes: ["barricade"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("kalin-zirh", "towerHealth", 0.8)] },
   { id: "keskin-goz", name: "Keskin Göz", description: "Tüm kulelerin kritik şansı +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("keskin-goz", "critChance", 0.08)] },
 
@@ -333,7 +338,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "sogutma-kanali", name: "Soğutma Kanalı", description: "Takıldığı kulenin vuruşları, saniyedeki soğumasının %3'ü kadar yavaşlatır. Aura kuleleri her etki aralığında uygular. Kendisiyle yığılmaz.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["status:coolantSlow"] },
   { id: "buz-kirigi", name: "Buz Kırığı", description: "Yavaşlatmalar kritik gelebilir; kulenin kritik ihtimalini kullanır ve kritik yavaşlatma %50 daha derindir.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["status:slowCrit"] },
   { id: "kirilgan-buz", name: "Kırılgan Buz", description: "Donmuş düşmanlara kritik vuruş ihtimali +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsFrozen"] },
-  { id: "cifte-namlu", name: "Çifte Namlu", description: "Bir kule her atışta 2 mermi çıkarır. Mühimmat ve ısı bedeli de 2 katına çıkar.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["attack:doubleShot"] },
+  { id: "cifte-namlu", name: "Çifte Namlu", description: "Bir kule her atışta 2 mermi çıkarır. Mühimmat, enerji ve ısı bedeli de 2 katına çıkar. Yörünge ve aura kulelerinde, Sunucu'da ve Ölüler Bağı'nda işlemez.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["attack:doubleShot"] },
 
   // --- Ilerleme ve bakim ---
   // Bu bes kol oyunun her turunda cekiliyor ama hicbiri icerige bagli
@@ -391,7 +396,7 @@ export const cardCatalog: CardDefinition[] = [
   // kazaniyor. Ikisi de oyuncuyu onarimi **yonetmeye** itiyor -- hangi
   // kulenin ne zaman onarilacagi artik yalnizca can meselesi degil.
   { id: "tamir-atesi", name: "Tamir Ateşi", description: "Tamircinin onardığı kulenin hasarı, onarım sürdüğü sürece +%45.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["repair:damageBoost"] },
-  { id: "sogutmali-kaynak", name: "Soğutmalı Kaynak", description: "Tamircinin onardığı kulenin soğuması, onarım sürdüğü sürece +%120.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["repair:coolingBoost"] },
+  { id: "sogutmali-kaynak", name: "Soğutmalı Kaynak", description: "Tamircinin onardığı kulenin soğuması, onarım sürdüğü sürece +%120.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["repair:coolingBoost"] },
   // Bu ucuncusu otekilerden ayri: odul onarim bitince degil **dalga**
   // bitince kalkiyor. Tamircinin o dalga icinde dokundugu her kule sonuna
   // kadar tasiyor, yani kart onarimi bir ana degil bir yatirima ceviriyor.
@@ -430,7 +435,7 @@ export const cardCatalog: CardDefinition[] = [
   // Isi egrisinin obur ucu. Yukaridaki kartlar isinin ne zaman ureticegini
   // ayarliyor; bunlar birikeni nasil attigini. Ucu de duz "soguma +%X" olsaydi
   // ayni cumlenin uc cesitlemesi olurdu, o yuzden yalnizca ilki sayi buyutuyor.
-  { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
+  { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
   { id: "radyator", name: "Radyatör", description: "Tüm kuleler ne kadar sıcaksa o kadar hızlı soğur: 50 derecede soğuma %50 artar, 100 derecede iki katına çıkar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:radiator"] },
   { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.15)], unlocks: ["heat:quickRelease"] },
 
@@ -440,10 +445,10 @@ export const cardCatalog: CardDefinition[] = [
   // oduniyor -- yavaslatma kurmak, kuleleri yan yana dizmek, enerji hattini
   // ayakta tutmak, mermiyi bilerek tuketmek. Isi boylece ayri bir kaynak
   // olmaktan cikip zaten verilen kararlarin sonucu oluyor.
-  { id: "soguk-zincir", name: "Soğuk Zincir", description: "Menzilinde yavaşlatılmış düşman varken kule +%50 hızlı soğur.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chillVent"] },
+  { id: "soguk-zincir", name: "Soğuk Zincir", description: "Menzilinde yavaşlatılmış düşman varken kule +%50 hızlı soğur.", axes: ["dps", "cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chillVent"] },
   { id: "isi-degisimi", name: "Isı Değişimi", description: "Bitişik kuleler ısılarını paylaşır: saniyede 8 dereceye kadar sıcak olandan soğuk olana akar.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:exchange"] },
-  { id: "buz-akusu", name: "Buz Aküsü", description: "Enerjisi %70'in üzerinde olan kule +%50 hızlı soğur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
-  { id: "namlu-molasi", name: "Namlu Molası", description: "Mühimmatı biten kule 3 kat hızlı soğur.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:emptyVent"] },
+  { id: "buz-akusu", name: "Buz Aküsü", description: "Enerjisi %70'in üzerinde olan kule +%50 hızlı soğur.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
+  { id: "namlu-molasi", name: "Namlu Molası", description: "Mühimmatı biten kule 3 kat hızlı soğur.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:emptyVent"] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -530,7 +535,123 @@ export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile
     && (!hasAreaRadius || getCardTowerAreaRadius(tower) > 0);
 }
 
-export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; random?: () => number }) {
+/**
+ * Oyuncunun destesindeki bir kart bu kuleye isliyor mu.
+ *
+ * Hedefli kart desteden sayilmaz: kuleye bagli ve kulenin kendi listesinden
+ * okunuyor. Genel kart her yapiya isler -- kaynak binasina da, cunku sunucu
+ * genel kartin modifier ve motor eklerini kapsama bakmadan dagitiyor.
+ * Etiketli kart yalnizca uyan kuleye isler. Sunucunun modifier ve motor
+ * cozumlemesi bu kurali okuyor. Arayuzun "bu kuleye etki edenler" listesi
+ * ise ustune bir suzgec daha koyan `cardReachesTower`'i okuyor: kural bir
+ * karti isletip kulede hicbir sey degistirmiyorsa (duvarda hasar karti)
+ * liste onu gostermez, ama isleyen bir karti da hicbir zaman saklamaz.
+ */
+export function ownedCardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
+  if (card.scope.kind === "targeted") return false;
+  return card.scope.kind === "global" || cardAppliesToTower(card, tower);
+}
+
+/**
+ * Kartin etkileri nereye dokunuyor.
+ *
+ * Kapsam "kart hangi yapiya isler" sorusunu cevapliyor, bu ise "isledigi
+ * yapida bir sey degistirir mi" sorusunu. Ikisi ayri: genel kart her yapiya
+ * isliyor ama "Dusman altini +%15" hicbir kulede bir sey degistirmiyor,
+ * "Hasar +%25" de ates etmeyen duvarda. Kart secimi "N kulene etki eder"
+ * derken bu ayrimi yapmasaydi ekonomi kartina kule sayisi, hasar kartina
+ * duvar sayisi yazardi.
+ *
+ * - `none`: kuleye dokunan etkisi yok (altin, isci, beceri, fiyatlar).
+ * - `combat`: yalnizca vurusu olan kulede bir sey yapiyor.
+ * - `structure`: ates etmeyen yapida da bir sey yapiyor (can, enkaz).
+ */
+export type CardTowerReach = "none" | "combat" | "structure";
+
+/**
+ * Tam kayit bilerek: yeni bir stat eklendiginde derleyici burada bir karar
+ * istiyor. Varsayilan olsaydi yeni bir ekonomi stati sessizce "kuleye etki
+ * eder" sayilir ve secim ekrani yine yanlis sayi yazardi.
+ */
+const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
+  damage: "combat", fireRate: "combat", range: "combat", heat: "combat", cooling: "combat",
+  ammoCost: "combat", energyCost: "combat", shotFuelCost: "combat", operatingEnergyCost: "combat",
+  critChance: "combat", critDamage: "combat", accuracy: "combat", turnRate: "combat", projectileSpeed: "combat",
+  markAmplification: "combat", armorBreak: "combat", statusDuration: "combat", statusMagnitude: "combat",
+  ammoEmptyDamage: "combat", targetLockMs: "combat", performanceCost: "combat",
+  airDamage: "combat", damageVsShielded: "combat", damageVsBrute: "combat", damageVsGrunt: "combat",
+  damageVsRunner: "combat", damageVsShooter: "combat", damageVsSiege: "combat",
+  resistancePierce: "combat", weaknessBonus: "combat",
+  // Can her yapida var; uretim ise ates etmeyen kaynak binasinin isi.
+  towerHealth: "structure", resourceProduction: "structure", ammoProduction: "structure",
+  // Oyuncunun hesabina isleyenler. Onarim ve satis bedeli kule basina
+  // cozuluyor ama kulenin yaptigi hicbir seyi degistirmiyor, yalnizca
+  // oyuncunun odedigi altini.
+  goldGain: "none", towerCapacity: "none", experienceGain: "none", repairCost: "none", sellRefund: "none",
+  workerGatherSpeed: "none", workerSpeed: "none", workerCapacity: "none", workerHealth: "none", workerRepairRate: "none",
+  workerHireCost: "none", shopRerollCost: "none", ultimateDamage: "none", ultimateCharge: "none", skillCooldown: "none"
+};
+
+/**
+ * Kilitlerin neredeyse hepsi kulenin davranisini degistiriyor, o yuzden
+ * varsayilan `combat` ve burada yalnizca istisnalar duruyor: sunucunun
+ * oyuncu uzerinden okudugu kilitler (`playerHasUnlock`) ve yikilan her
+ * yapida -- duvarda da -- calisan enkaz.
+ */
+const UNLOCK_REACH: Partial<Record<Unlock, CardTowerReach>> = {
+  goldInterest: "none",
+  nexusShield: "none",
+  "nexus:mend": "none",
+  "card:wideSearch": "none",
+  "trigger:debrisOnDeath": "structure"
+};
+
+const CARD_REACH_RANK: Record<CardTowerReach, number> = { none: 0, combat: 1, structure: 2 };
+
+/**
+ * Kartin en genis erisimi. Cani da hasari da degistiren bir kart duvara
+ * da dokunuyor, yani en genis etki kazaniyor. Motor ekleri (stack, aura,
+ * durum, saldiri geometrisi) vurus uzerinden calistigi icin `combat`.
+ */
+export function getCardTowerReach(card: CardDefinition): CardTowerReach {
+  let reach: CardTowerReach = card.grants ? "combat" : "none";
+  const widen = (next: CardTowerReach) => {
+    if (CARD_REACH_RANK[next] > CARD_REACH_RANK[reach]) reach = next;
+  };
+  for (const modifier of card.effects) widen(MODIFIER_STAT_REACH[modifier.stat]);
+  for (const unlock of card.unlocks ?? []) widen(UNLOCK_REACH[unlock] ?? "combat");
+  return reach;
+}
+
+/**
+ * Oyuncunun destesindeki genel ya da etiketli kart bu yapida bir sey
+ * degistiriyor mu.
+ *
+ * Temel `ownedCardAppliesToTower` -- sunucunun modifier ve motor eklerini
+ * dagittigi kural -- ve ustune tek bir suzgec: yalnizca vurusu olan kulede
+ * is goren kart, vurusu olmayan yapiyi saymaz. "Vurusu var mi" olcutu hedefli
+ * kartlarinkiyle ayni (`canTowerHoldTargetedCard`). Yani bu fonksiyon kuralin
+ * isletmedigi bir yapiyi hicbir zaman saymaz; yalnizca kuralin isletip
+ * hicbir sey degistirmedigi yapiyi eler.
+ *
+ * Kart secim ekraninin "N kulene etki eder" satiri ve sunucunun secimden
+ * sonra parlattigi kule listesi buradan okuyor; ayri yazilsalar ekran bir
+ * sayi soyleyip baska sayida kule parlatirdi. Hedefli kart burada false:
+ * hangi kuleye gidecegini oyuncu seciyor.
+ */
+export function cardReachesTower(card: CardDefinition, tower: CardTowerProfile) {
+  if (!ownedCardAppliesToTower(card, tower)) return false;
+  const reach = getCardTowerReach(card);
+  return reach === "structure" || (reach === "combat" && canTowerHoldTargetedCard(tower));
+}
+
+/**
+ * `marksAvailable`: takimda dusmani isaretleyebilecek bir kaynak var mi.
+ * Isaret dusmanin uzerinde durdugu ve kimin kulesi vurursa vursun isledigi
+ * icin bunu kule listesi degil sunucu bilir. Verilmezse bilinmiyor sayilir ve
+ * cekilis eskisi gibi davranir.
+ */
+export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; marksAvailable?: boolean; random?: () => number }) {
   const count = options.count ?? 3;
   const random = options.random ?? Math.random;
   const ownedCounts = new Map<string, number>();
@@ -540,7 +661,8 @@ export function drawCards(options: { count?: number; preferredAxes: TowerAxis[];
   while (result.length < count && pool.length > 0) {
     const weights = pool.map((card) => {
       const axisWeight = card.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
-      const deadWeight = card.scope.kind === "tagged" && !options.towers.some((tower) => cardAppliesToTower(card, tower)) ? 0.15 : 1;
+      const deadWeight = (card.scope.kind === "tagged" && !options.towers.some((tower) => cardAppliesToTower(card, tower)))
+        || (options.marksAvailable === false && isMarkOnlyChoice(card)) ? 0.15 : 1;
       return axisWeight * deadWeight * CARD_RARITY_WEIGHT[getCardRarity(card)];
     });
     let roll = random() * weights.reduce((sum, weight) => sum + weight, 0);

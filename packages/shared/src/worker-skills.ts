@@ -34,14 +34,31 @@ export type WorkerDevelopmentCell = {
  * bu yetenegi kullanir.
  */
 export const WORKER_DEVELOPMENT_XP_COSTS = [120, 280, 560] as const;
+
+/**
+ * Yuk Kesici ve Frekans Paylastirici esikleri.
+ *
+ * Ikisi bir donem her teslimatta sahibin butun kulelerine dokunuyordu: Yuk
+ * Kesici kriz olsun olmasin teslim alan disindaki her kuleyi 5 sn susturuyor,
+ * Frekans Paylastirici dolu kuleleri de donusumlu calistiriyordu. Metin "kriz",
+ * "dusuk oncelik" ve "enerjisi azalan" diyordu; sayilar burada, metin de ayni
+ * sayilari yaziyor -- biri degisirse oburu de degismeli.
+ */
+/** Sahibin herhangi bir savas kulesinin enerjisi bu oranin altindaysa kriz var. */
+export const LOAD_SHEDDER_CRISIS_ENERGY_RATIO = 0.25;
+export const LOAD_SHEDDER_DURATION_MS = 5_000;
+/** Teslimat aninda enerjisi bu oranin altinda olan kuleler donusumlu calisir. */
+export const FREQUENCY_SHARE_ENERGY_RATIO = 0.5;
+export const FREQUENCY_SHARE_DURATION_MS = 6_000;
+
 export const ENERGY_WORKER_SKILL_TIERS: readonly WorkerSkillPair[] = [
   [
     { id: "energy-relay", name: "Röle Mimarı", description: "Teslim edilen kule 8 sn boyunca komşu kulelere enerji kaynağı olur. Ağ menzili 1 kare." },
     { id: "local-capacitor", name: "Yerel Akücü", description: "Her teslimat kulede 18 enerjilik yerel akü bırakır. Ana hat kesilse de yalnızca bu kule çalışır." }
   ],
   [
-    { id: "load-shedder", name: "Yük Kesici", description: "Enerji krizi başladığında düşük öncelikli kuleleri kapatır; seçili öncelikli kuleler enerji almayı sürdürür." },
-    { id: "frequency-share", name: "Frekans Paylaştırıcı", description: "Enerjisi azalan kuleleri dönüşümlü çalıştırır; aynı anda daha az kule ateş eder ama hat daha geç çöker." }
+    { id: "load-shedder", name: "Yük Kesici", description: "Teslimat anında kulelerinden birinin enerjisi %25'in altındaysa sevkiyat önceliği Düşük olan kuleler 5 sn ateş etmez; çalışma enerjisi harcamaya devam eder. Kritik, Normal ve teslimatı alan kule hiç durmaz." },
+    { id: "frequency-share", name: "Frekans Paylaştırıcı", description: "Teslimat anında enerjisi %50'nin altında olan kuleler 6 sn dönüşümlü çalışır: zamanın yarısında ateş etmez; enerjiyle ateş eden kulelerin enerjisi daha geç biter." }
   ],
   [
     { id: "scenario-charge", name: "Senaryo Şarjı", description: "Teslim edilen kule bir sonraki özel saldırısını hazırlar. Bir kulede aynı anda tek şarj tutulur." },

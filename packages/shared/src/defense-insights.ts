@@ -7,7 +7,8 @@ export type DefenseRow = {
   seconds: Record<TowerActivity, number>;
 };
 export type DefenseSummary = { wave: number; rows: DefenseRow[] };
-export type TowerPreview = { requestId: string; title?: string; description?: string; lines?: string[]; error?: string };
+/** `changed[i]`, `lines[i]` satirindaki degerin degisip degismedigini soyler. */
+export type TowerPreview = { requestId: string; title?: string; description?: string; lines?: string[]; changed?: boolean[]; error?: string };
 
 /** In-flight cargo is deducted before ranking. Aging eventually overrides priority. */
 export function deliveryScore(priority: LogisticsPriority, ratio: number, waitingSeconds: number, distance: number) {

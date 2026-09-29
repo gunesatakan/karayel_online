@@ -10,9 +10,11 @@ Yerel Akücü her başarılı teslimatta hedef kulede 18 birim yerel enerji bır
 
 ## Yük Kesici / Frekans Paylaştırıcı
 
-Yük Kesici teslimattan sonra aynı sahibin diğer operasyon kulelerini beş saniyeliğine enerji kesme durumuna alır. Teslim alan kritik kule çalışır; oyuncu öncelikleriyle hangi kuleyi koruyacağını belirler. Bu bir hasar bonusu değil, kontrollü kapasite paylaşımıdır.
+Yük Kesici yalnızca enerji krizinde çalışır. Kriz, teslimat anında aynı sahibin ayakta duran savaş kulelerinden en az birinin kendi enerjisinin azami enerjisinin %25'inin altında olmasıdır (enerjisi tamamen bitmiş kule de bu eşiğin altındadır). Kriz varsa, sevkiyat önceliği **Düşük** olan kuleler beş saniyeliğine enerji kesme durumuna alınır ve bu sürede ateş etmez. Teslimatı alan kule ile önceliği **Kritik** veya **Normal** olan kuleler hiçbir koşulda kapanmaz; Düşük öncelikli kule yoksa hiçbir şey kapanmaz. Kriz yoksa teslimat hiçbir kuleyi kapatmaz. Oyuncu hangi kulelerin feda edileceğini öncelik seçimiyle belirler; bu bir hasar bonusu değil, kontrollü kapasite paylaşımıdır.
 
-Frekans Paylaştırıcı teslimat sonrası altı saniyelik dönüşümlü çalışma penceresi açar. Aynı ağdaki kuleler 250 ms fazları paylaşır ve aynı anda enerji çekmez. Anlık hasar yoğunluğu azalabilir, fakat enerji hattı daha geç tükenir.
+Frekans Paylaştırıcı teslimat anında enerjisi azami enerjisinin %50'sinin altında olan savaş kulelerine altı saniyelik dönüşümlü çalışma penceresi açar (teslimatı alan kule de teslimattan sonraki enerjisi bu eşiğin altındaysa dahildir). Bu kuleler 250 ms'lik fazlarla sırayla çalışır ve zamanın yarısında ateş etmez; enerjisi %50 ve üzerinde olan kuleler etkilenmez. Anlık hasar yoğunluğu azalabilir, fakat enerji hattı daha geç tükenir.
+
+Eşikler (`LOAD_SHEDDER_CRISIS_ENERGY_RATIO`, `FREQUENCY_SHARE_ENERGY_RATIO`) ve süreler `packages/shared/src/worker-skills.ts` içinde tanımlıdır; oyun içi metin aynı sayıları yazar.
 
 ## Senaryo Şarjı / Acil Köprü
 

@@ -140,6 +140,34 @@ export function getWaveCompletionGold(completedWave: number) {
 }
 
 /**
+ * Dalgadaki ucanlar: 5. ve 10. dalga tamamen havadan, 15. ve 20. dalga yari
+ * yariya geliyor.
+ *
+ * Kural bir donem yalnizca sunucunun icindeydi ve ekran dalganin sadece
+ * numarasini gosteriyordu: havayi vuramayan bir kurulum 5. dalgada tam canla,
+ * hicbir uyari gormeden siliniyordu. Sunucunun dogurdugu dusman, istemcinin
+ * gosterdigi ongoru ve denge simulatoru ayni kurali okusun diye burada.
+ */
+export type WaveAirMode = "none" | "all" | "mixed";
+
+export function getWaveAirMode(wave: number): WaveAirMode {
+  if (wave === 5 || wave === 10) return "all";
+  if (wave === 15 || wave === 20) return "mixed";
+  return "none";
+}
+
+/**
+ * Dalganin sifirdan sayilan `spawnIndex`. dusmani ucuyor mu.
+ *
+ * Karisik dalgada ciftler ucuyor, yani ilk dusman havadan geliyor ve sayi
+ * tek oldugunda ucanlar bir fazla.
+ */
+export function isFlyingWaveSpawn(wave: number, spawnIndex: number) {
+  const mode = getWaveAirMode(wave);
+  return mode === "all" || (mode === "mixed" && spawnIndex % 2 === 0);
+}
+
+/**
  * Yapi kirmada referans hasar hizi (saniyede).
  *
  * Dusman saldirisi dalgayla olceklenmiyor (her tip 12 hasar, 850ms arayla),

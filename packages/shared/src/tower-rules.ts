@@ -66,6 +66,16 @@ export const TOWER_HEAT_BY_HIT_TYPE: Record<HitType, number> = {
   contamination: 0.5
 };
 
+/**
+ * Isi freni: bu sicakligin ustunde atis hizi dogrusal duser, 100 derecede
+ * sifira iner.
+ *
+ * Sabit burada duruyor ki kule panelindeki kural satiri da ayni sayiyi
+ * okusun; fren uzun sure hicbir yerde yazmiyordu ve oyuncu isiyi yalnizca
+ * kilit sanip atis hizi kartlarini sogutmanin onune koyuyordu.
+ */
+export const TOWER_HEAT_BRAKE_TEMPERATURE = 50;
+
 export function getOrbitRotationSpeed(rotationSpeed: number, definedFireIntervalMs: number, effectiveFireIntervalMs: number) {
   return Math.max(0, rotationSpeed) * Math.max(1, definedFireIntervalMs) / Math.max(1, effectiveFireIntervalMs);
 }

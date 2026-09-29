@@ -1,7 +1,13 @@
 import { activityLabels, type DefenseSummary, type TowerActivity } from "@karayel/shared";
 
-/** Native modal traps keyboard focus and prevents accidental clicks on the map. */
-export function openDefenseDialog(title: string, lines: string[], confirm?: () => void) {
+/**
+ * Native modal traps keyboard focus and prevents accidental clicks on the map.
+ *
+ * `changed` verilirse ilk `changed.length` satir tek tek yazilir: degisen
+ * satir one cikar, degismeyen geri cekilir. Onizlemede sekiz satirin cogu
+ * ayni kaliyordu ve tek kazanc aralarinda kayboluyordu.
+ */
+export function openDefenseDialog(title: string, lines: string[], confirm?: () => void, changed?: readonly boolean[]) {
   document.querySelector("#defense-dialog")?.remove();
   const dialog = document.createElement("dialog");
   dialog.id = "defense-dialog";
@@ -10,7 +16,17 @@ export function openDefenseDialog(title: string, lines: string[], confirm?: () =
   heading.textContent = title;
   const content = document.createElement("div");
   content.style.whiteSpace = "pre-wrap";
-  content.textContent = lines.join("\n");
+  if (changed?.length) {
+    for (const [index, line] of lines.entries()) {
+      const row = document.createElement("div");
+      // Bos satir ayirac; bos bir div yuksekliksiz kalip ayiraci yutardi.
+      row.textContent = line || "\u00a0";
+      if (index < changed.length) row.className = `defense-dialog__line defense-dialog__line--${changed[index] ? "changed" : "same"}`;
+      content.append(row);
+    }
+  } else {
+    content.textContent = lines.join("\n");
+  }
   const actions = document.createElement("div");
   actions.style.cssText = "display:flex;gap:12px;margin-top:20px;justify-content:flex-end";
   const button = (label: string, action: () => void) => {

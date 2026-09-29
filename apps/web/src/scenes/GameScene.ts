@@ -57,7 +57,12 @@ import {
   normalizeMapData,
   pruneStaticSnapshotCache,
   worldToGrid,
+  canAcceptTargetedCard,
   canTowerHoldTargetedCard,
+  cardReachesTower,
+  getCardDefinition,
+  getCardTowerReach,
+  MAX_TARGETED_CARDS_PER_TOWER,
   towerCatalog,
   type CharacterDefinition,
   type CardDefinition,
@@ -75,6 +80,7 @@ import {
   type ProjectileHitSnapshot,
   type ServerPerfSnapshot,
   hasUnlockBit,
+  TOWER_HEAT_BRAKE_TEMPERATURE,
   getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
   isOperationalTower,
@@ -93,6 +99,7 @@ import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
 import { markStageCleared } from "../stage-progress";
+import { ammoTypeLabels, attackShapeLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
@@ -352,6 +359,15 @@ function formatSlowRange(near: number, far?: number) {
   return `hiz -%${az}…-%${cok} (uzaklikla)`;
 }
 
+/** Iki kimlik listesi ayni sirada ayni mi; karsilastirma icin kopya uretmez. */
+function haveSameIds(a: readonly string[], b: readonly string[]) {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+}
+
 /** Degeri saniye olan kalemler; gerisi hasar. */
 const SECOND_VALUED_EFFECT_STATS = new Set(["slowed", "stopped"]);
 
@@ -573,16 +589,31 @@ export class GameScene extends Phaser.Scene {
     statsOpen: false,
     statsTab: "damage",
     statsTowers: [],
-    statsEffects: []
+    statsEffects: [],
+    forecastEnemyCount: 0,
+    airWarning: false
   };
+  /**
+   * Hava uyarisinin toast olarak soylendigi kurulum arasi.
+   *
+   * Uyari kutusu kurulum boyunca duruyor; toast ise ara basina bir kez
+   * cikiyor, yoksa her kule kurulusunda yeniden belirip ekrani doldururdu.
+   */
+  private airWarningSetupSession = -1;
   /**
    * Kisa omurlu bildirim.
    *
-   * Panelin ipucu satiri her arayuz guncellemesinde secili kuleden bastan
-   * hesaplaniyor, yani gecici bir mesaji oraya yazmak bir sonraki karede siliyor.
-   * Bildirim ayri tutulup suresi dolana kadar ipucunun onune geciyor.
+   * Eskiden kalici ipucu satiriyla ayni alandan gidiyordu; o satirin cizimi
+   * kalkinca bildirimler de sessizce kayboldu. Artik kendi alani var ve
+   * arayuz onu ayri bir toast olarak gosteriyor.
    */
-  private transientNotice?: { text: string; until: number };
+  private transientNotice?: { id: number; text: string; durationMs: number; until: number };
+  /**
+   * Bildirim kimligi sahneden bagimsiz artiyor: yeni macta sahne yeniden
+   * kurulunca sayac sifirlansaydi arayuz ayni kimligi "zaten gosterildi"
+   * sanip mesaji yutardi.
+   */
+  private static noticeSequence = 0;
   private abartiOrientation: TowerOrientation = "horizontal";
   private ultimateChoiceItems: Phaser.GameObjects.GameObject[] = [];
   private ultimateChoiceOpen = false;
@@ -659,10 +690,29 @@ export class GameScene extends Phaser.Scene {
   /** Zeynep ultisi sutun bekliyor mu; haritaya dokunulunca cozulur. */
   private pendingUltimateColumn = false;
   private localPlayerSnapshot?: GameSnapshot["players"][number];
+  /**
+   * Son karedeki butun oyuncular. Takim arkadasinin kulesi secildiginde o
+   * kuleye etki eden kartlar kule sahibinin destesinden okunuyor.
+   */
+  private playerSnapshots: GameSnapshot["players"] = [];
+  /**
+   * Secili kuleye isleyen deste kartlarinin onbellegi.
+   *
+   * Kontrol durumu her anlik goruntude yeniden kuruluyor ve oyuncu kayitlari
+   * her karede yeni dizilerle geliyor, oysa deste yalnizca kart secilince
+   * degisiyor. Girdi ayni kaldikca suzme tekrarlanmiyor ve ayni dizi donuyor.
+   */
+  private towerCardsCache?: { definitionId: string; source: string[]; applied: string[] };
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
+  /**
+   * Secili kule toast'unun anahtari: yalnizca kule, seviye ve sahip.
+   * Canli sayilar her anlik goruntude degisiyor; onlar toast'u da
+   * tetikleseydi okuma hic kaybolmaz ve gedik/akis uyarilarini ezerdi.
+   */
+  private lastSelectionNoticeKey = "";
   private lastPerfOverlayAt = 0;
   private lastShopEventAt = 0;
   private lastRenderedSnapshotServerTime = 0;
@@ -937,9 +987,16 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState();
   }
 
-  /** Oyuncuya kisa bir mesaj gosterir; suresi dolunca ipucu geri gelir. */
+  /**
+   * Oyuncuya kisa bir mesaj gosterir.
+   *
+   * Durum hemen yollaniyor; toast'u kapatan arayuzun kendi zamanlayicisi,
+   * cunku dalga aralarinda anlik goruntu akisi susuyor ve sahne suresi dolan
+   * bildirim icin yeni durum yollamayabiliyor.
+   */
   private showNotice(text: string, durationMs = 3200) {
-    this.transientNotice = { text, until: performance.now() + durationMs };
+    GameScene.noticeSequence += 1;
+    this.transientNotice = { id: GameScene.noticeSequence, text, durationMs, until: performance.now() + durationMs };
     this.emitControlState();
   }
 
@@ -949,7 +1006,8 @@ export class GameScene extends Phaser.Scene {
       this.transientNotice = undefined;
       return undefined;
     }
-    return this.transientNotice.text;
+    const { id, text, durationMs } = this.transientNotice;
+    return { id, text, durationMs };
   }
 
   /**
@@ -1260,7 +1318,7 @@ export class GameScene extends Phaser.Scene {
       });
       this.echoPlacement(cell.x, cell.y, tower.id);
     } else {
-      this.showNotice("Bu kareye kule yerlestirilemez");
+      this.showNotice("Bu kareye kule yerleştirilemez");
     }
 
     this.draggedTowerDefinition = undefined;
@@ -1308,7 +1366,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.strandedTowerDragCount += 1;
     this.cancelTowerDrag();
-    this.showNotice("Yarim kalan yerlestirme iptal edildi");
+    this.showNotice("Yarım kalan yerleştirme iptal edildi");
   }
 
   /**
@@ -1589,10 +1647,12 @@ export class GameScene extends Phaser.Scene {
         break;
       case "openWorkerHire":
         this.workerHireOpen = true;
+        this.refreshSetupForecast();
         this.updateSelectionUi();
         break;
       case "closeWorkerHire":
         this.workerHireOpen = false;
+        this.refreshSetupForecast();
         this.updateSelectionUi();
         break;
       case "setWorkerTier":
@@ -1602,6 +1662,7 @@ export class GameScene extends Phaser.Scene {
       case "hireWorker":
         this.room?.send("worker:hire", { role: isHirableWorkerRole(detail.role) ? detail.role : undefined, advanced: this.workerHireAdvanced });
         this.workerHireOpen = false;
+        this.refreshSetupForecast();
         this.updateSelectionUi();
         break;
       case "unlockWorkerDevelopment":
@@ -1622,6 +1683,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "closeShop":
         this.shopDismissedWave = this.latestPerfSnapshot?.team.wave ?? 0;
+        this.refreshSetupForecast();
         this.emitControlState();
         break;
       case "setTargeting":
@@ -2009,6 +2071,38 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  /**
+   * Secili kuleye etki eden kartlar.
+   *
+   * Yalnizca kule sahibinin kartlari: kart sahibinin kulelerine isliyor, baska
+   * oyuncunun destesi bu kuleye dokunmuyor. Sahibi odadan ayrildiysa destesi
+   * de yok; kuleye bagli hedefli kartlar yine gorunuyor. Deste suzmesi kart
+   * secim ekraninin "N kulene etki eder" satiri ve `card:applied` listesiyle
+   * ayni fonksiyondan (`cardReachesTower`) geciyor: duvara hasar karti,
+   * her kuleye altin karti yazan bir liste secim ekraniyla celisirdi.
+   */
+  private getTowerCardState(tower: TowerSnapshot | undefined, definition: TowerDefinition | undefined) {
+    if (!tower) return undefined;
+    const ownerCardIds = this.playerSnapshots.find((player) => player.id === tower.ownerId)?.ownedCardIds ?? [];
+    return {
+      targetedCardIds: tower.targetedCardIds ?? [],
+      ownerCardIds: definition ? this.getOwnerCardsForTower(definition, ownerCardIds) : []
+    };
+  }
+
+  private getOwnerCardsForTower(definition: TowerDefinition, ownerCardIds: readonly string[]) {
+    const cached = this.towerCardsCache;
+    if (cached && cached.definitionId === definition.id && haveSameIds(cached.source, ownerCardIds)) {
+      return cached.applied;
+    }
+    const applied = ownerCardIds.filter((cardId) => {
+      const card = getCardDefinition(cardId);
+      return card ? cardReachesTower(card, definition) : false;
+    });
+    this.towerCardsCache = { definitionId: definition.id, source: [...ownerCardIds], applied };
+    return applied;
+  }
+
   private getWorkerHireState() {
     const hired = this.localPlayerSnapshot?.hiredWorkers ?? [];
     // Indirim carpani sunucudan geliyor: onu doguran kart listesi tele
@@ -2129,13 +2223,13 @@ export class GameScene extends Phaser.Scene {
    */
   private showStructureBreach(message: StructureBreachMessage) {
     this.pulseAlertMarker(message.x, message.y, 0xf97316);
-    this.showNotice(`Gedik aciliyor! %${Math.round(message.healthRatio * 100)} can kaldi`);
+    this.showNotice(`Gedik açılıyor! %${Math.round(message.healthRatio * 100)} can kaldı`);
     this.playAlertSound("breach");
   }
 
   private showFlowShift(message: FlowShiftMessage) {
     this.pulseAlertMarker(message.x, message.y, 0x38bdf8);
-    this.showNotice("Dusman akisi yeni bir kapiya kaydi");
+    this.showNotice("Düşman akışı yeni bir kapıya kaydı");
     this.playAlertSound("flow");
   }
 
@@ -2752,7 +2846,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.currentUltimateCharge < 100) {
       this.hideUltimateChoices();
-      this.showNotice("Ulti henuz hazir degil");
+      this.showNotice("Ulti henüz hazır değil");
       return;
     }
 
@@ -2760,7 +2854,7 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedCharacterId === "zeynep") {
       this.pendingUltimateColumn = !this.pendingUltimateColumn;
       this.clearUltimateColumnPreview();
-      this.showNotice(this.pendingUltimateColumn ? "Ulti: patlatilacak sutuna dokun" : "Ulti iptal edildi");
+      this.showNotice(this.pendingUltimateColumn ? "Ulti: patlatılacak sütuna dokun" : "Ulti iptal edildi");
       this.emitControlState();
       return;
     }
@@ -2833,7 +2927,7 @@ export class GameScene extends Phaser.Scene {
     this.isGuidanceDragging = true;
     this.hideUltimateChoices();
     this.drawGuidancePreview(pointer.worldX, pointer.worldY);
-    this.showNotice("Yonlendirme: alani surukle, birakinca uygula");
+    this.showNotice("Yönlendirme: alanı sürükle, bırakınca uygula");
   }
 
   /**
@@ -2984,7 +3078,7 @@ export class GameScene extends Phaser.Scene {
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
       this.clearGuidancePreview();
-      this.showNotice("Yonlendirme alani gonderildi");
+      this.showNotice("Yönlendirme alanı gönderildi");
       return;
     }
 
@@ -3001,7 +3095,7 @@ export class GameScene extends Phaser.Scene {
     this.hideZeynepTierChoicesIfOpen();
 
     if (this.pendingAction?.type === "guidance") {
-      this.showNotice(this.selectedCharacterId === "archer" ? "Zorba icin alani surukle" : "Yonlendirme icin haritada basili tutup surukle");
+      this.showNotice(this.selectedCharacterId === "archer" ? "Zorba için alanı sürükle" : "Yönlendirme için haritada basılı tutup sürükle");
       return;
     }
 
@@ -3014,7 +3108,7 @@ export class GameScene extends Phaser.Scene {
       });
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
-      this.showNotice("Refactor istegi gonderildi");
+      this.showNotice("Refactor isteği gönderildi");
       return;
     }
 
@@ -3041,7 +3135,7 @@ export class GameScene extends Phaser.Scene {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
       this.clearPlacedTowerSelection();
       this.showZeynepTierChoices(index, reputation);
-      this.showNotice("Komut gucunu sec: dusuk, orta veya yuksek");
+      this.showNotice("Komut gücünü seç: düşük, orta veya yüksek");
       return;
     }
 
@@ -3050,13 +3144,13 @@ export class GameScene extends Phaser.Scene {
       if (index === 0) {
         this.pendingAction = { type: "guidance" };
         this.clearPlacedTowerSelection();
-        this.showNotice("Zorba: tank dusmanin oldugu alani surukle");
+        this.showNotice("Zorba: tank düşmanın olduğu alanı sürükle");
         return;
       }
       if (index === 1) {
         const towerId = this.selectedPlacedTowerId;
         if (!towerId) {
-          this.showNotice("Olumcul Stres icin once kendi kuleni sec");
+          this.showNotice("Ölümcül Stres için önce kendi kuleni seç");
           return;
         }
         this.room.send("useSkill", { slot: index, towerId });
@@ -3082,14 +3176,14 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
       this.pendingAction = { type: "guidance" };
       this.clearPlacedTowerSelection();
-      this.showNotice("Yonlendirme: haritada basili tutup alani surukle");
+      this.showNotice("Yönlendirme: haritada basılı tutup alanı sürükle");
       return;
     }
 
     if (index === 1) {
       const towerId = this.selectedPlacedTowerId;
       if (!towerId) {
-        this.showNotice("Refactor icin once kendi kuleni sec");
+        this.showNotice("Refactor için önce kendi kuleni seç");
         return;
       }
       this.pendingAction = { type: "refactor", towerId };
@@ -3123,7 +3217,7 @@ export class GameScene extends Phaser.Scene {
       serverTowerId: linkRequest.serverTowerId,
       targetTowerId: linkRequest.targetTowerId
     });
-    this.showNotice(`${linkRequest.sourceName}: ${linkRequest.targetName} link istegi gonderildi`);
+    this.showNotice(`${linkRequest.sourceName}: ${linkRequest.targetName} link isteği gönderildi`);
     return true;
   }
 
@@ -3515,7 +3609,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
     room.onMessage("worker:hired", (message: { role?: HirableWorkerRole; advanced?: boolean; cost: number }) => {
-      const kademe = message.advanced ? "Gelismis " : "";
+      const kademe = message.advanced ? "Gelişmiş " : "";
       this.showNotice(`${kademe}${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçi"} alındı (${message.cost}g). Uzmanlığını seç.`);
     });
     room.onMessage("worker:specialization-choice", (message: { workerId: string; options: readonly { id: HirableWorkerRole; name: string; description: string }[] }) => {
@@ -3556,11 +3650,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const pending = this.pendingPreview;
       if (!pending || pending.requestId !== preview.requestId || !pending.dialog.isConnected) return;
       this.pendingPreview = undefined;
-      openDefenseDialog(preview.title ?? "Önizleme", preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply);
+      openDefenseDialog(preview.title ?? "Önizleme", preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply, preview.error ? undefined : preview.changed);
     });
     room.onMessage("defense:summary", (summary: DefenseSummary) => { this.latestDefenseSummary = summary; this.emitControlState(); });
     room.send("defense:request");
-    room.onMessage("card:applied", () => this.hideCardChoices());
+    room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.handleCardApplied(message));
     room.onMessage("card:rejected", (message: { reason?: string }) => {
       this.setCardChoicePending(false, message.reason ?? "Kart seçimi uygulanamadı. Tekrar dene.");
     });
@@ -3699,8 +3793,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         <div class="card-draft__grid"></div>
       </section>`;
     const grid = root.querySelector<HTMLElement>(".card-draft__grid");
+    const localTowers = this.getLocalTowerProfiles();
     cards.forEach((card, index) => {
       const scope = this.getCardScopeLabel(card);
+      const reach = this.getCardReach(card, localTowers);
       const accent = this.getCardAccent(card);
       const button = document.createElement("button");
       button.type = "button";
@@ -3709,10 +3805,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       button.innerHTML = `
         <span class="run-card__index">0${index + 1}</span>
         <span class="run-card__glow"></span>
-        <span class="run-card__axis">${card.axes.map((axis) => axis.toLocaleUpperCase("tr-TR")).join(" • ")}</span>
+        <span class="run-card__axis">${card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ")}</span>
         <strong>${card.name}</strong>
         <span class="run-card__description">${card.description}</span>
-        <span class="run-card__scope">${scope}</span>`;
+        <span class="run-card__scope">${scope}</span>
+        <span class="run-card__reach${reach.muted ? " run-card__reach--muted" : ""}">${reach.text}</span>`;
       button.addEventListener("click", () => {
         if (this.cardChoicePending) return;
         if (card.scope.kind === "targeted") this.showTargetedTowerChoices(card);
@@ -3725,13 +3822,50 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   /**
    * Kule hedefli kart tasiyabilir mi.
    *
-   * Olcut sunucudakiyle ayni fonksiyondan geliyor. Arayuzun de suzmesi
-   * sart: sunucu zaten reddediyor ama oyuncunun once secip sonra
-   * reddedilmesi, listede hic gormemesinden cok daha kotu.
+   * Olcut sunucudakiyle ayni fonksiyonlardan geliyor: vurusu olan kule ve
+   * dolmamis hedefli kart yuvasi. Arayuzun de suzmesi sart: sunucu zaten
+   * reddediyor ama oyuncunun once secip sonra reddedilmesi, listede hic
+   * gormemesinden cok daha kotu. Kart ekranindaki "N kule tasiyabilir"
+   * sayisi da buradan geciyor, yani sayi ile hedef listesi ayni kuleler.
    */
   private canTowerHoldCard(tower: TowerSnapshot) {
     const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
-    return definition ? canTowerHoldTargetedCard(definition) : false;
+    return definition ? canTowerHoldTargetedCard(definition) && canAcceptTargetedCard(tower.targetedCardIds ?? []) : false;
+  }
+
+  /** Yerel oyuncunun kuleleri tanimlariyla birlikte; kart erisimi tanimdan okunuyor. */
+  private getLocalTowerProfiles() {
+    const profiles: Array<{ tower: TowerSnapshot; definition: TowerDefinition }> = [];
+    for (const tower of this.latestPerfSnapshot?.towers ?? []) {
+      if (tower.ownerId !== this.localSessionId) continue;
+      const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
+      if (definition) profiles.push({ tower, definition });
+    }
+    return profiles;
+  }
+
+  /**
+   * Kart secim ekranindaki erisim satiri.
+   *
+   * Tek dokunusla alinan kart bir donem hangi kuleye isleyecegini hic
+   * soylemiyordu. Sayi sunucunun secimden sonra parlattigi listeyle ayni
+   * fonksiyondan (`cardReachesTower`) geliyor. Sifirda kart gizlenmiyor --
+   * oyuncu kuleyi sonra kuracak olabilir -- ama bunu bilerek almali.
+   */
+  private getCardReach(card: CardDefinition, towers: ReadonlyArray<{ tower: TowerSnapshot; definition: TowerDefinition }>) {
+    if (card.scope.kind === "targeted") {
+      const count = towers.filter(({ tower }) => this.canTowerHoldCard(tower)).length;
+      return count > 0
+        ? { text: `${count} kule taşıyabilir`, muted: false }
+        : { text: "Şu an taşıyabilecek kulen yok", muted: true };
+    }
+    if (getCardTowerReach(card) === "none") {
+      return { text: "Kulelere değil, sana etki eder", muted: false };
+    }
+    const count = towers.filter(({ definition }) => cardReachesTower(card, definition)).length;
+    return count > 0
+      ? { text: `${count} kulene etki eder`, muted: false }
+      : { text: "Şu an hiçbir kulene etki etmez", muted: true };
   }
 
   private showTargetedTowerChoices(card: CardDefinition) {
@@ -3759,7 +3893,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // binasi olan oyuncu bos bir listeye bakip ne yapacagini bilemezdi.
       const empty = document.createElement("p");
       empty.className = "tower-choice-empty";
-      empty.textContent = "Bu kartı taşıyabilecek bir kulen yok. Duvarlar ve kaynak binaları savaş kartı alamaz — geri dön ve başka bir kart seç.";
+      empty.textContent = `Bu kartı taşıyabilecek bir kulen yok. Duvarlar ve kaynak binaları savaş kartı alamaz, bir kule en fazla ${MAX_TARGETED_CARDS_PER_TOWER} hedefli kart taşır — geri dön ve başka bir kart seç.`;
       list?.append(empty);
     }
     towers.forEach((tower) => {
@@ -3814,6 +3948,34 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Secilen kartin karsiligi.
+   *
+   * Kart ekrani bir donem yalnizca kapaniyordu; oyuncu karti aldigini ve
+   * nereye isledigini hicbir yerde goremiyordu. Kule listesi sunucudan
+   * geliyor -- secim ekranindaki sayiyla ayni kural -- ve hedefli kartta
+   * yalnizca secilen kule. Halka yukseltmeyle ayni dil, rengi kartin.
+   */
+  private handleCardApplied(message: { cardId?: string; towerIds?: string[] }) {
+    this.hideCardChoices();
+    const card = message.cardId ? getCardDefinition(message.cardId) : undefined;
+    if (!card) return;
+    const towerIds = new Set(message.towerIds ?? []);
+    const color = Number.parseInt(this.getCardAccent(card).slice(1), 16);
+    const cellSize = this.getMapCellSize();
+    for (const tower of this.latestPerfSnapshot?.towers ?? []) {
+      if (!towerIds.has(tower.id)) continue;
+      this.playTowerPulse(tower, cellSize * getTowerGridSpan(tower.definitionId), color, card.scope.kind === "targeted");
+    }
+    if (card.scope.kind !== "targeted" && getCardTowerReach(card) === "none") {
+      this.showNotice(`${card.name} alındı`);
+    } else if (towerIds.size > 0) {
+      this.showNotice(`${card.name} alındı · ${towerIds.size} kuleye etki etti`);
+    } else {
+      this.showNotice(`${card.name} alındı · şu an hiçbir kulene etki etmiyor`);
+    }
+  }
+
   private hideCardChoices() {
     this.clearCardChoiceTimeout();
     this.cardChoicePending = false;
@@ -3854,10 +4016,28 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Kartin kapsam etiketi, kartin gercek suzgecinden.
+   *
+   * Etiket bir donem yalnizca eksene bakiyordu ve etiketli kartlarin cogunu
+   * "Kontrol kuleleri" diye yaziyordu -- ates, mermi ya da yorunge kartini
+   * da. Artik suzgecin her alani okunuyor; hasar ve vurus adlari kodeksle
+   * ayni. Ayni alandaki degerlerden biri yeter ("/"), farkli alanlarin
+   * hepsi birden saglanmali (" · "). Kuleye dokunmayan genel kart "Genel".
+   */
   private getCardScopeLabel(card: CardDefinition) {
-    if (card.scope.kind === "global") return "Tüm kuleler";
-    if (card.scope.kind === "targeted") return "Bir kule seç";
-    return card.scope.axes?.includes("amplify") ? "Büyütme kuleleri" : "Kontrol kuleleri";
+    const scope = card.scope;
+    if (scope.kind === "global") return getCardTowerReach(card) === "none" ? "Genel" : "Tüm kuleler";
+    if (scope.kind === "targeted") return "Bir kule seç";
+    const parts = [
+      scope.axes?.length ? `${scope.axes.map((axis) => towerAxisLabels[axis]).join(" / ")} kuleleri` : "",
+      scope.hitTypes?.length ? `${scope.hitTypes.map((type) => hitTypeCodex[type].name).join(" / ")} kuleleri` : "",
+      scope.damageTypes?.length ? `${scope.damageTypes.map((type) => damageTypeCodex[type].name).join(" / ")} hasarlı kuleler` : "",
+      scope.shapes?.length ? `${scope.shapes.map((shape) => attackShapeLabels[shape]).join(" / ")} kuleleri` : "",
+      scope.ammoTypes?.length ? `${scope.ammoTypes.map((ammo) => ammoTypeLabels[ammo]).join(" / ")} kullanan kuleler` : "",
+      scope.hasAreaRadius ? "Etki alanı olan kuleler" : ""
+    ].filter(Boolean);
+    return parts.join(" · ") || "Tüm kuleler";
   }
 
   private getCardAccent(card: CardDefinition) {
@@ -3867,7 +4047,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private renderSetupPhase(snapshot: GameSnapshot) {
     const active = Boolean(snapshot.setupPhase);
     const localReady = Boolean(this.localSessionId && snapshot.setupReadyPlayerIds?.includes(this.localSessionId));
-    const hudPatch: Partial<HudState> = { continueVisible: active, continueWaiting: localReady };
+    // Kart secimi acikken ongoru kutusu cizilmiyor: cubugun altina asili kutu
+    // secim penceresinin basligini ortuyordu. Magaza ve isci alma perdesi de
+    // ayni: telefonda ust kenara yapisiyorlar ve HUD katmani onlarin ustunde,
+    // kutu ilk teklifin adini (ornegin Ucaksavar Kiti'ni) ortuyordu. Hava
+    // etiketi o sirada dalga numarasinin yaninda duruyor, yani gorunur kaliyor.
+    const localPlayer = snapshot.players.find((player) => player.id === this.localSessionId);
+    const choosingCard = this.cardChoiceRoot !== undefined;
+    const forecastVisible = active && !choosingCard && !this.isGoldShopOpen(snapshot, localPlayer) && !this.workerHireOpen;
+    const airWarning = active && Boolean(localPlayer?.noAirDefense);
+    const hudPatch: Partial<HudState> = {
+      continueVisible: active,
+      continueWaiting: localReady,
+      waveAirMode: snapshot.team.waveAirMode,
+      forecastEnemyCount: forecastVisible ? snapshot.team.waveEnemyCount ?? 0 : 0,
+      airWarning
+    };
     if (active) {
       const readyCount = snapshot.setupReadyPlayerIds?.length ?? 0;
       hudPatch.status = `Kurulum ${readyCount}/${snapshot.players.length}`;
@@ -3875,6 +4070,46 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       hudPatch.status = `#${this.room?.roomId ?? "-"}`;
     }
     this.emitHudState(hudPatch);
+    // Toast kutuya bagli degil: bildirim kontrollerin icinde magazanin
+    // ustunde ciziliyor, magaza kapanmayi beklemesine gerek yok.
+    if (active && !choosingCard) this.announceMissingAirDefense(snapshot, airWarning);
+  }
+
+  /**
+   * Magaza ya da isci perdesi acilip kapaninca ongoru kutusunu hemen
+   * gunceller: kurulumda tahta durunca anlik goruntu akisi susuyor ve kutu
+   * bir sonraki goruntuyu beklese perde kapandiktan sonra da gizli kalirdi.
+   */
+  private refreshSetupForecast() {
+    if (this.latestPerfSnapshot) this.renderSetupPhase(this.latestPerfSnapshot);
+  }
+
+  /**
+   * Kurulum magazasi ekranda mi. Kontrol durumu ve ongoru kutusu ayni
+   * kurali okuyor; ayri yazilsalar kutu acik magazanin ustune dusebilirdi.
+   */
+  private isGoldShopOpen(snapshot: Pick<GameSnapshot, "setupPhase" | "team"> | undefined, player: GameSnapshot["players"][number] | undefined) {
+    return Boolean(snapshot?.setupPhase && player && (player.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== snapshot.team.wave);
+  }
+
+  /**
+   * Hava uyarisini kurulum arasi basina bir kez toast olarak da soyler.
+   *
+   * Kart secimi kapanana kadar bekliyor (cagiran taraf): toast secim
+   * perdesinin altinda kaliyor ve suresi orada doluyordu. Ekranda baska bir
+   * bildirim varsa onun bitmesini bekliyor -- kart secilince gelen "alindi"
+   * bildirimi ayni anda dusuyor ve biri digerini silerdi. Ara acildiginda
+   * uyari yoksa ara kapanmis sayiliyor: sonradan kule satilirsa kutu zaten
+   * uyariyor, toast "kurulum basinda" sozunu asmiyor.
+   */
+  private announceMissingAirDefense(snapshot: GameSnapshot, airWarning: boolean) {
+    const session = snapshot.setupSession ?? 0;
+    if (this.airWarningSetupSession === session) return;
+    if (airWarning && this.getActiveNotice()) return;
+    this.airWarningSetupSession = session;
+    if (!airWarning) return;
+    const share = snapshot.team.waveAirMode === "mixed" ? "yarısı" : "tamamı";
+    this.showNotice(`Kulelerin havadaki düşmanı vuramıyor! Sonraki dalganın ${share} uçuyor.`, 5000);
   }
 
   private handleArenaZoomTap(pointer: Phaser.Input.Pointer) {
@@ -4074,6 +4309,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private renderHud(snapshot: GameSnapshot) {
     const player = snapshot.players.find((candidate) => candidate.id === this.localSessionId);
     this.localPlayerSnapshot = player;
+    this.playerSnapshots = snapshot.players;
     const charge = player?.ultimateCharge ?? 0;
     const gold = player?.gold ?? 0;
     const experience = player?.experience ?? 0;
@@ -4469,7 +4705,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.playTowerLevelUpIfChanged(tower, discSize);
 
       const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
-      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.status}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
+      // Durum anahtarda yok: asagidaki blok onu okumuyor, "Isı freni %X" ise
+      // savasta neredeyse her anlik goruntude degisip halkayi ve izgarayi
+      // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
@@ -4598,19 +4837,27 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const tier = getTowerTier(tower.level);
     const crossedTier = getTowerTier(previous) !== tier;
-    const color = this.getTierColor(tier);
+    this.playTowerPulse(tower, discSize, this.getTierColor(tier), crossedTier);
+  }
 
+  /**
+   * Kulenin uzerinde parlama halkasi ve kisa bir nabiz.
+   *
+   * Yukseltme ve kart secimi ayni dili konusuyor: "bu kule az once guclendi".
+   * `strong` buyuk ani isaretler -- kademe atlamak, tek kuleye baglanan kart.
+   */
+  private playTowerPulse(tower: Pick<TowerSnapshot, "id" | "x" | "y">, discSize: number, color: number, strong: boolean) {
     this.spawnFlashRing(tower.x, tower.y, {
       color,
       startRadius: discSize * 0.3,
-      endRadius: discSize * (crossedTier ? 1.5 : 0.95),
-      durationMs: crossedTier ? 620 : 380,
-      thickness: crossedTier ? 3 : 2,
+      endRadius: discSize * (strong ? 1.5 : 0.95),
+      durationMs: strong ? 620 : 380,
+      thickness: strong ? 3 : 2,
       depth: 13,
-      fill: crossedTier ? 0.2 : 0.1
+      fill: strong ? 0.2 : 0.1
     });
 
-    if (crossedTier) {
+    if (strong) {
       // Ikinci, gecikmeli halka: tek halka "bir sey oldu" der, iki halka
       // "onemli bir sey oldu" der.
       this.spawnFlashRing(tower.x, tower.y, {
@@ -4632,8 +4879,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.punch.value = 1;
       this.tweens.add({
         targets: rendered.punch,
-        value: crossedTier ? 1.3 : 1.15,
-        duration: crossedTier ? 180 : 120,
+        value: strong ? 1.3 : 1.15,
+        duration: strong ? 180 : 120,
         ease: "Back.easeOut",
         yoyo: true,
         onComplete: () => {
@@ -7757,17 +8004,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (hasUnlockBit(towerUnlockBits, unlock) && !targetModes.includes(mode)) targetModes.push(mode);
     }
 
-    const orientationHint = !selectedTower && this.selectedTowerDefinition.id === "zeynep-8"
-      ? ` | Yon: ${this.abartiOrientation === "horizontal" ? "Yatay" : "Dikey"}`
-      : "";
-    const towerHint = selectedTower
-      ? `${selectedTower.name} Lv.${selectedTower.level} | Hasar ${Math.round(selectedTower.damageDealt ?? 0)} | DPS ${(selectedTower.currentDps ?? 0).toFixed(1)}`
-      : `${this.selectedTowerDefinition.name}: ${getTowerBuildCost(this.selectedTowerDefinition.cost)}g${orientationHint} | haritaya surukle`;
-
     this.game.events.emit("game:controls-state", {
       visible: true,
       characterName: this.selectedCharacter.displayName,
-      hint: this.getActiveNotice() ?? towerHint,
+      // Kalici ipucu satiri yok: icindeki canli DPS her anlik goruntude
+      // degisip paneli bastan kurduruyordu ve cizimi zaten kalkmisti.
+      notice: this.getActiveNotice(),
       selectedPlacedTowerId: selectedTower?.id,
       selectedTowerDefinitionId: this.selectedTowerDefinition.id,
       showOrientationToggle: this.selectedTowerDefinition.id === "zeynep-8" && !selectedTower,
@@ -7849,7 +8091,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       targeting: selectedTower && towerOperations && definition?.engine?.attack.shape !== "orbit"
         ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] }
         : undefined,
-      goldShop: this.latestPerfSnapshot?.setupPhase && this.localPlayerSnapshot && (this.localPlayerSnapshot.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== this.latestPerfSnapshot.team.wave ? {
+      goldShop: this.isGoldShopOpen(this.latestPerfSnapshot, this.localPlayerSnapshot) && this.localPlayerSnapshot ? {
         gold: Math.floor(this.localPlayerSnapshot.gold),
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
@@ -7862,6 +8104,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         return { id: itemId, name: item?.name ?? itemId, description: item?.description ?? "" };
       }) ?? [],
       equippedCapacity: MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
+      // Kimlikler gidiyor, metin degil: ad ve aciklama arayuzun kendi
+      // katalogundan okunuyor. Dizi icerigi ayni kaldikca panel anahtari da
+      // ayni kaliyor, yani deste her karede yeniden kurma sebebi olmuyor.
+      ownedCardIds: this.localPlayerSnapshot?.ownedCardIds ?? [],
+      towerCards: this.getTowerCardState(selectedTower, definition),
       inventory: {
         open: this.inventoryOpen,
         pendingItemId: this.pendingEquipItemId,
@@ -7937,8 +8184,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ...(towerOperations ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
         ...(towerOperations && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
         ...(towerOperations ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
+        // Kural ve surekli hiz tek parca: ayri parca olsalardi fren girip
+        // ciktikca parca sayisi degisir ve panel bastan kurulurdu. Sunucu
+        // hic tetiklemiyor; sunucu da onu frenden ve butceden cikariyor.
+        // Istisna kuleye sabit, parca sayisi oyun icinde degismiyor.
+        ...(towerOperations && selectedTower.definitionId !== "warrior-2" ? [this.getHeatBrakeLine(selectedTower, definition)] : []),
         ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
-        ...(towerOperations ? [`Soguma hizi: %${selectedTower.coolingRate ?? 0}/sn`] : []),
+        // Kurulumda bir kez gelen sabit taban: kart, esya ve Radyator ona
+        // islemiyor. "Temel" demezse surekli hizla bolunup dogrulanmaya
+        // calisilir ve tutmaz.
+        ...(towerOperations ? [`Temel soğuma: %${selectedTower.coolingRate ?? 0}/sn`] : []),
         ...(towerOperations ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
         // Duvarin kendine ait tek satiri: kapi acik mi.
         ...(selectedTower.definitionId === WALL_TOWER_ID ? [`Kapi: ${selectedTower.gate ? "Acik (isciler gecer)" : "Kapali"}`] : []),
@@ -7951,6 +8206,31 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         canSell ? `${refundState?.undoable ? "Kurulum iadesi" : "Satis"}: ${sellRefund}g` : "Sadece sahibi satar"
       ] : undefined
     });
+  }
+
+  /**
+   * Kule panelindeki isi freni parcasi.
+   *
+   * Kural hep yaziyor: fren uzun sure hicbir yerde gorunmuyordu ve oyuncu
+   * isiyi yalnizca kilit sanip atis hizi kartini sogutmanin onune koyuyordu.
+   * Surekli hiz sunucudan geliyor ve yalnizca isi tam hizi kisiyorsa var;
+   * burada hesaplanmiyor, kartlar ve kol yalnizca sunucuda cozuluyor.
+   */
+  private getHeatBrakeLine(tower: TowerSnapshot, definition: TowerDefinition | undefined) {
+    // Etki araligiyla calisan kulede atis yok ama fren o araligi da uzatiyor.
+    const rate = tower.effectIntervalMs !== undefined ? "etki" : "atış";
+    // Esik panelin sicaklik birimiyle ("Sicaklik: %X") yaziliyor; "°C"
+    // panelde baska hicbir yerde gecmiyordu ve oyuncu ikisini eslestiremiyordu.
+    const rule = hasUnlockBit(tower.unlockBits, "heat:thermalMass")
+      ? "Isı freni yok (Termal Kütle)"
+      : definition?.engine?.fixedFireInterval
+        ? "Isı freni yok (sabit atış aralığı)"
+        : `Isı freni: sıcaklık %${TOWER_HEAT_BRAKE_TEMPERATURE} üstünde ${rate} hızı düşer`;
+    // Sayi tetikleme basina: Cifte Namlu'da bir tetik iki mermi, "atis"
+    // deseydi kart surekli atisi yariya indiriyor gorunurdu.
+    return tower.sustainedAttacksPerSecond === undefined
+      ? rule
+      : `${rule} · Sürekli ${tower.effectIntervalMs !== undefined ? "etki" : "tetikleme"} ${tower.sustainedAttacksPerSecond.toFixed(2)}/sn (ısı sınırlı)`;
   }
 
   private updateSelectionUi() {
@@ -7967,9 +8247,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.game.events.emit("tower:selected", selectedTower?.id);
 
     if (!selectedTower) {
-      // Secili kule yokken gosterilecek metni panelin kendi ipucu satiri zaten
-      // ayni sekilde kuruyor; burada tekrar bildirim yaymak ayni yaziyi iki
-      // kanaldan gondermek olurdu.
+      // Secili kule yokken bildirim yok: kurulacak kulenin adi ve bedeli
+      // Kuleler cekmecesinde zaten yaziyor, her secim degisiminde toast
+      // cikarmak ayni bilgiyi gurultuye cevirirdi.
+      // Ayni kule yeniden secilince okuma tekrar ciksin diye sifirlaniyor.
+      this.lastSelectionNoticeKey = "";
       this.emitControlState();
       return;
     }
@@ -7986,9 +8268,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const canSell = selectedTower.ownerId === this.localSessionId;
     const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
     const linkHint = selectedTower.definitionId === "warrior-2"
-      ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 icin kuleye dokun`
+      ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 için kuleye dokun`
       : selectedTower.definitionId === "zeynep-3"
-        ? " | Sentez icin 3'lu ucgen dizilim kur"
+        ? " | Sentez için 3'lü üçgen dizilim kur"
         : "";
     const hpText = selectedTower.hp !== undefined && selectedTower.maxHp !== undefined
       ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp} Zırh ${selectedTower.armor ?? 0}`
@@ -8004,7 +8286,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
         : "";
     const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
-    this.showNotice(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
+    // selectionKey canli sayilarla her anlik goruntude degisiyor; toast
+    // yalnizca secim, seviye ya da sahip degisince cikmali. Canli degerler
+    // Secili kule cekmecesinde zaten guncelleniyor.
+    const noticeKey = `${selectedTower.id}|${selectedTower.level}|${selectedTower.ownerId}`;
+    if (noticeKey !== this.lastSelectionNoticeKey) {
+      this.lastSelectionNoticeKey = noticeKey;
+      this.showNotice(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
+    }
     this.emitControlState();
   }
 

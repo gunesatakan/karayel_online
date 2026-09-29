@@ -1,5 +1,6 @@
 import type { CardScope, CardTowerProfile, Unlock } from "../cards/index.js";
 import { cardAppliesToTower } from "../cards/index.js";
+import { isMarkOnlyChoice } from "../marks/index.js";
 import type { TowerAxis } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
 import type { Modifier } from "../modifiers/index.js";
@@ -175,7 +176,7 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("agir-metabolizma", "Ağır Metabolizma", "Takıldığı kulenin durum etkileri %70 daha uzun sürer ama %25 daha zayıftır.", "class", 110, { axes: ["cc"], effects: [effect("agir-metabolizma", "statusDuration", 0.7), effect("agir-metabolizma", "statusMagnitude", -0.25)] }),
   defineItem("kalici-iz", "Kalıcı İz", "Takıldığı kulenin durum etkilerinin süresi +%15; en fazla 4 kez alınır.", "class", 45, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, axes: ["cc"], effects: [effect("kalici-iz", "statusDuration", 0.15)] }),
 
-  defineItem("komuta-modulu", "Komuta Modülü", "Takıldığı kulenin işaret gücü +%30; yalnızca amplify kulelerine takılır.", "class", 110, { axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, effects: [effect("komuta-modulu", "markAmplification", 0.3)] }),
+  defineItem("komuta-modulu", "Komuta Modülü", "Takıldığı kulenin işaretli düşmanlara hasarı +%30; yalnızca amplify kulelerine takılır.", "class", 110, { axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, effects: [effect("komuta-modulu", "markAmplification", 0.3)] }),
   defineItem("buz-cekirdegi", "Buz Çekirdeği", "Takıldığı kulenin durum etkisi gücü +%40; yalnızca CC kulelerine takılır.", "class", 100, { axes: ["cc"], scope: { kind: "tagged", axes: ["cc"] }, effects: [effect("buz-cekirdegi", "statusMagnitude", 0.4)] }),
   defineItem("zirh-plakasi", "Zırh Plakası", "Takıldığı kulenin canı +%80; yalnızca barricade kulelerine takılır.", "class", 95, { axes: ["barricade"], scope: { kind: "tagged", axes: ["barricade"] }, effects: [effect("zirh-plakasi", "towerHealth", 0.8)] }),
   // Can esyalari her kuleye takilir; Zirh Plakasi barricade ile sinirli ve
@@ -328,14 +329,16 @@ export function canEquipShopItem(
   return { ok: true };
 }
 
-export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedItemIds: string[]; count?: number; random?: () => number }) {
+/** `marksAvailable` kart cekilisindekiyle ayni anlamda; bkz. `drawCards`. */
+export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedItemIds: string[]; marksAvailable?: boolean; count?: number; random?: () => number }) {
   const random = options.random ?? Math.random;
   const pool = shopCatalog.filter((item) => isShopItemAvailable(item, options.wave, options.ownedItemIds));
   const result: ShopItem[] = [];
   while (result.length < (options.count ?? SHOP_OFFER_COUNT) && pool.length > 0) {
     const weights = pool.map((item) => {
       const axisWeight = item.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
-      const deadWeight = item.scope.kind === "tagged" && !options.towers.some((tower) => shopItemAppliesToTower(item, tower)) ? 0.15 : 1;
+      const deadWeight = (item.scope.kind === "tagged" && !options.towers.some((tower) => shopItemAppliesToTower(item, tower)))
+        || (options.marksAvailable === false && isMarkOnlyChoice(item)) ? 0.15 : 1;
       return axisWeight * deadWeight;
     });
     let roll = random() * weights.reduce((sum, value) => sum + value, 0);

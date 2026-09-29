@@ -108,6 +108,89 @@ test("preview uses actual card stats without mutating the tower", () => {
   assert.ok(preview.lines[0].endsWith(room.getTowerDamage(tower).toFixed(2)));
 });
 
+/** "Etiket: once -> sonra" satirindan iki sayi. */
+function previewValues(preview, label) {
+  const line = preview.lines.find((entry) => entry.startsWith(`${label}:`));
+  assert.ok(line, `${label} satiri yok: ${preview.lines.join(" | ")}`);
+  const [, before, after] = line.match(/: (-?[\d.]+) → (-?[\d.]+)$/);
+  return { before: Number(before), after: Number(after), changed: preview.changed[preview.lines.indexOf(line)] };
+}
+
+function requestPreview(room, change) {
+  let preview;
+  room.previewRequestTimes.clear();
+  room.sendTowerPreview({ sessionId: "p1", send: (_type, value) => { preview = value; } }, { ...change, requestId: "1" });
+  assert.equal(preview.error, undefined);
+  return preview;
+}
+
+test("preview includes Kan Bankası's hit-time damage and marks only changed lines", () => {
+  const { room, towers: [tower] } = setup();
+  room.state.players.get("p1").inventoryItemIds.push("kan-bankasi");
+  const preview = requestPreview(room, { towerId: tower.id, itemId: "kan-bankasi" });
+  const damage = previewValues(preview, "Hasar / etki");
+  assert.ok(Math.abs(damage.after - damage.before * 1.2) < 0.02, `Kan Bankasi onizlemede gorunmuyor: ${damage.before} -> ${damage.after}`);
+  assert.equal(damage.changed, true);
+  assert.equal(preview.changed.length, preview.lines.length);
+  assert.equal(preview.changed.filter(Boolean).length, 1, "yalnizca hasar satiri degismeli");
+  assert.ok(!preview.lines.some((line) => line.startsWith("Mermi / tetikleme")), "tek mermili kulede mermi satiri gurultu");
+
+  // Onizleme ile savastaki sayi ayni: esya takilinca kulenin vurusu da +%20.
+  room.equipShopItem(client, { itemId: "kan-bankasi", towerId: tower.id });
+  assert.equal(room.getTowerHitDamageAdd(tower), 0.2);
+  assert.ok(Math.abs(room.getTowerDamage(tower) * (1 + room.getTowerHitDamageAdd(tower)) - damage.after) < 0.01);
+});
+
+test("preview doubles Çifte Namlu's ammo, energy and heat per trigger", () => {
+  const { room, towers: [tower] } = setup();
+  room.pendingCardChoices.set("p1", [cardCatalog.find((entry) => entry.id === "cifte-namlu")]);
+  const preview = requestPreview(room, { towerId: tower.id, cardId: "cifte-namlu" });
+  const shots = previewValues(preview, "Mermi / tetikleme");
+  assert.deepEqual([shots.before, shots.after, shots.changed], [1, 2, true]);
+  for (const label of ["Mühimmat / tetikleme", "Isı / tetikleme", "Enerji / tetikleme"]) {
+    const value = previewValues(preview, label);
+    assert.ok(Math.abs(value.after - value.before * 2) < 0.02, `${label} iki katina cikmadi: ${value.before} -> ${value.after}`);
+  }
+  assert.ok(previewValues(preview, "Mühimmat / tetikleme").before > 0, "olcum bos: kule muhimmat harcamiyor");
+  assert.ok(previewValues(preview, "Isı / tetikleme").before > 0, "olcum bos: kule isinmiyor");
+  const damage = previewValues(preview, "Hasar / etki");
+  assert.equal(damage.changed, false, "mermi basina hasar degismez");
+});
+
+test("Çifte Namlu metni ikinci merminin cikmadigi kuleleri adlandiriyor", () => {
+  // Kart kuleye kalici bagli; Sunucu gibi kendi dongusu olan kulede ikinci
+  // mermi hic cikmiyor. Metin bunu soylemeli, onizleme de mermi satiri
+  // gostermemeli.
+  const card = cardCatalog.find((entry) => entry.id === "cifte-namlu");
+  for (const name of ["Yörünge", "aura", "Sunucu", "Ölüler Bağı"]) {
+    assert.ok(card.description.includes(name), `metin ${name} istisnasini soylemiyor: ${card.description}`);
+  }
+  const room = createRoom("warrior");
+  room.placeTower(client, { ...findBuildableSpot(room, "warrior-2"), definitionId: "warrior-2" }, { free: true, ignoreLimit: true });
+  const sunucu = [...room.towers.values()].at(-1);
+  assert.equal(sunucu.definition.id, "warrior-2");
+  room.pendingCardChoices.set("p1", [card]);
+  const preview = requestPreview(room, { towerId: sunucu.id, cardId: card.id });
+  assert.ok(!preview.lines.some((line) => line.startsWith("Mermi / tetikleme")), `Sunucu'da mermi satiri cikti: ${preview.lines.join(" | ")}`);
+  assert.equal(preview.changed.some(Boolean), false, "Sunucu'da Çifte Namlu bir seyi degistiriyor gorunuyor");
+});
+
+test("Zırhlı Gövde grows the tower's max health and keeps the damage ratio", () => {
+  const { room, towers: [tower] } = setup();
+  const card = cardCatalog.find((entry) => entry.id === "zirhli-govde");
+  room.pendingCardChoices.set("p1", [card]);
+  tower.hp = tower.maxHp / 2;
+  const maxHpBefore = tower.maxHp;
+  const preview = requestPreview(room, { towerId: tower.id, cardId: card.id });
+  room.chooseCard(client, { towerId: tower.id, cardId: card.id });
+  assert.ok(tower.targetedCardIds.includes(card.id));
+  assert.ok(Math.abs(tower.maxHp - maxHpBefore * 2.8) < 1e-9, `can tavani ${maxHpBefore} -> ${tower.maxHp}, beklenen x2.8`);
+  assert.ok(Math.abs(tower.hp / tower.maxHp - 0.5) < 1e-9, "hasar orani korunmadi");
+  const health = previewValues(preview, "Azami can");
+  assert.ok(Math.abs(health.after - tower.maxHp) < 0.01, `onizleme ${health.after}, gercek ${tower.maxHp}`);
+  assert.equal(health.changed, true);
+});
+
 test("preview rejects other players' towers and unoffered cards", () => {
   const { room, towers: [tower] } = setup();
   let preview;
