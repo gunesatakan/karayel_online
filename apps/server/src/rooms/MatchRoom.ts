@@ -2,6 +2,7 @@ import { Client, Room } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
+import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
 import {
   characters,
   DAMAGE_EVENT_NO_OWNER,
@@ -1352,13 +1353,17 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (room.getConnectedPlayerCount() > 0) {
+      // Bitmis oda aktif degil: icinde yalnizca bir rapor okunuyor. Rapor
+      // istemcide DOM, soket kapaninca da ekranda kaliyor ve sonuc zaten
+      // kaydedildi. Raporunu okuyan bir takim arkadasi, "Tekrar" ile yeni oda
+      // kuran oyuncuyu (ya da sunucudaki baska birini) bekletmemeli.
+      if (room.getConnectedPlayerCount() > 0 && !room.matchResult) {
         throw new Error("Zaten aktif bir oda var.");
       }
     }
 
     const emptyRooms = Array.from(MatchRoom.rooms.values()).filter((room) => {
-      return room.roomId !== nextRoomId && room.getConnectedPlayerCount() === 0;
+      return room.roomId !== nextRoomId && (room.getConnectedPlayerCount() === 0 || room.matchResult !== undefined);
     });
     await Promise.all(emptyRooms.map((room) => room.disconnect()));
   }
@@ -1411,6 +1416,20 @@ export class MatchRoom extends Room<MatchState> {
   private defenseWave = 0;
   private defenseRows = new Map<string, DefenseRow>();
   private lastDefenseSummary = new Map<string, DefenseSummary>();
+  /**
+   * Kosu izi: sizinti, temiz dalga serisi, oyuncu basina oldurme ve hasar,
+   * MVP kule, en yuksek seri, ilk onuncu seviye.
+   *
+   * Dalga karnesi, kosu raporu ve istemcideki rekorlar ayni defterden
+   * besleniyor; her biri kendi sayacini tutsaydi birbirini yalanlardi.
+   * Oyuncular oturum kimligiyle degil yuvayla yaziliyor, o yuzden yeniden
+   * baglanmada tasinacak bir sey yok.
+   */
+  private runLedger = new RunLedger();
+  /** Kosunun kimligi; ayni rapor yeniden baglanmada gelince istemci ikinci kez kaydetmesin. */
+  private runId = createRunId();
+  /** Gonderilmis sonuc mesaji; yeniden baglanan oyuncu raporu buradan aliyor. */
+  private matchResultPayload?: MatchResultPayload;
   private insightElapsed = 0;
   private logisticsClock = 0;
   private deliveryWaitingSince = new Map<string, number>();
@@ -1894,6 +1913,7 @@ export class MatchRoom extends Room<MatchState> {
       this.sendFullStaticSnapshot(client);
     });
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
+    this.onMessage("run:sync", (client) => this.sendRunState(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
@@ -1986,6 +2006,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private joinStartedMatch(client: Client, options: JoinOptions) {
+    // Bitmis maca giris yok. Rapor ve kayit o kosuyu oynayanlarin: yeni gelen
+    // bitmis bir kosunun raporunu kendi rekoru diye yazardi, kopan birinin
+    // yuvasini devralan da onun kosusunu ve destesini miras alirdi. Kopan
+    // oyuncunun kendisi yeniden baglanmayla (`allowReconnection`) donuyor,
+    // o yol buraya ugramiyor.
+    if (this.matchResult) {
+      throw new Error("Maç bitti.");
+    }
+
     const disconnectedEntry = Array.from(this.state.players.entries()).find(([, player]) => !player.connected);
     if (disconnectedEntry) {
       const [previousSessionId, player] = disconnectedEntry;
@@ -2080,6 +2109,9 @@ export class MatchRoom extends Room<MatchState> {
     this.sendLobbyState(client);
     client.send("match:map", this.activeMap);
     client.send("lobby:started", { roomId: this.roomId });
+    // Kart seciminden once: normal akista da karne ve ozet kartlardan once
+    // geliyor, secim ekraninin basligi onlari okuyor.
+    this.sendRunState(client);
     this.sendPendingCardChoices(client);
     this.sendWorkerDevelopmentState(client);
     const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => {
@@ -2098,6 +2130,23 @@ export class MatchRoom extends Room<MatchState> {
   private sendPendingCardChoices(client: Client) {
     const choices = this.pendingCardChoices.get(client.sessionId);
     if (choices) client.send("card:choices", choices);
+  }
+
+  /**
+   * Kosu izinin son hali: son dalga karnesi, oyuncunun kendi savunma ozeti ve
+   * mac bittiyse sonuc raporu.
+   *
+   * Yeniden baglanmada kendiliginden gidiyor; `run:sync` ile de isteniyor,
+   * cunku sayfasi yeniden acilan istemci dinleyicilerini kurmadan gelen mesaji
+   * kaybediyor (kart secimindeki `card:sync` ile ayni sebep). Sonuc raporu
+   * ayni kimlikle geliyor, istemci ikinci kez kaydetmiyor.
+   */
+  private sendRunState(client: Client) {
+    const latestWave = this.runLedger.latestWave;
+    if (latestWave) client.send("wave:report", latestWave);
+    const defense = this.lastDefenseSummary.get(client.sessionId);
+    if (defense) client.send("defense:summary", defense);
+    if (this.matchResult && this.matchResultPayload) client.send(`match:${this.matchResult}`, this.matchResultPayload);
   }
 
   onDispose() {
@@ -2242,6 +2291,12 @@ export class MatchRoom extends Room<MatchState> {
 
   private hasJoinableSeat() {
     if (this.state.players.size === 0) {
+      return false;
+    }
+
+    // Bitmis mac katilinabilir gorunmemeli: listede "Devam ediyor" diye
+    // duran oda, girene baskasinin kosusunun raporunu verirdi.
+    if (this.matchResult) {
       return false;
     }
 
@@ -2644,6 +2699,7 @@ export class MatchRoom extends Room<MatchState> {
 
       this.applyMelisWaveStress();
       this.finishDefenseSummary();
+      this.closeRunWave(false);
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
       if (this.wave >= FINAL_WAVE) {
@@ -2848,20 +2904,77 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     this.matchResult = result;
-    if (result === "defeat") this.finishDefenseSummary();
+    // Oda listeden hemen dussun; bir sonraki lobi yayinini beklemesin.
+    this.syncRoomRegistry();
+    if (result === "defeat") {
+      this.finishDefenseSummary();
+      // Olunen dalga da karneye giriyor: raporun dalga seridi yenilginin
+      // nerede geldigini gostermeli. Zaferde son dalga temizlenirken kapandi.
+      this.closeRunWave(true);
+    }
     this.setupPhase = false;
     this.setupReadyPlayerIds.clear();
+    // Mac bitti; bekleyen kart eli artik bir sey degistirmiyor. Kopup geri
+    // donen oyuncuya yeniden gonderilirse raporun altinda bir kart perdesi
+    // kurulur, sesleri calar ve hic gorunmeyen kartlar gorulmus sayilirdi.
+    // Bagli bir oyuncu burada el tutamaz: yenilgi yalnizca dalgada gelir,
+    // dalga da ancak bagli herkes secimini yapinca basliyor.
+    this.pendingCardChoices.clear();
     // Sonuc mesaji kendi basina yetsin: istemci kaydi (asama, ileride rekor)
     // bu mesajdan yaziyor ve yaratici kosu hic yazmamali. Bayrak yalnizca
     // aciksa gidiyor: `creative: undefined` anahtari yine telde yaziyor
     // (msgpack), o yuzden kosullu yayma.
-    this.broadcast(`match:${result}`, {
+    const payload: MatchResultPayload = {
       result,
       wave: this.wave,
       kills: this.kills,
       stage: this.stage,
-      ...(this.creativeMode ? { creative: true } : {})
+      ...(this.creativeMode ? { creative: true } : {}),
+      run: this.buildRunSummary(result)
+    };
+    this.matchResultPayload = payload;
+    this.broadcast(`match:${result}`, payload);
+  }
+
+  /**
+   * Dalgayi kosu defterinde kapatir ve karnesini herkese bir kez yollar.
+   *
+   * Karne takimin: sizinti ve temiz seri ortak, oldurme yuva basina. Kart
+   * seciminden once gidiyor ki secim ekraninin basligi onu gosterebilsin;
+   * savunma ozeti gibi sahibine ozel degil, o yuzden ayri bir mesaj.
+   */
+  private closeRunWave(died: boolean) {
+    const record = this.runLedger.closeWave(this.wave, { died, slots: this.getRunSlots() });
+    this.broadcast("wave:report", record);
+  }
+
+  private buildRunSummary(result: "victory" | "defeat") {
+    return this.runLedger.summarize({
+      id: this.runId,
+      result,
+      stage: this.stage,
+      wave: this.wave,
+      creative: this.creativeMode,
+      mapKey: getRunMapKey(this.mapScale),
+      players: Array.from(this.state.players.values(), (player) => ({
+        slot: player.slot ?? 0,
+        name: player.name,
+        characterId: player.characterId,
+        cards: player.ownedCardIds ?? []
+      }))
     });
+  }
+
+  /** Odadaki oyuncularin yuvalari; karnede hic oldurmeyen oyuncu da 0 olarak gorunsun. */
+  private getRunSlots() {
+    return Array.from(this.state.players.values(), (player) => player.slot ?? 0);
+  }
+
+  /** Oturumun yuvasi; oyuncu yoksa yok (sahipsiz oldurme takima yaziliyor). */
+  private getPlayerSlot(sessionId: string | undefined) {
+    if (!sessionId) return undefined;
+    const player = this.state.players.get(sessionId);
+    return player ? player.slot ?? 0 : undefined;
   }
 
   private spawnEnemy() {
@@ -5418,8 +5531,17 @@ export class MatchRoom extends Room<MatchState> {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
           const shieldOwner = Array.from(this.state.players.values()).find((player) => player.nexusShieldCharges > 0);
+          const healthBefore = this.teamHealth;
           if (shieldOwner) shieldOwner.nexusShieldCharges -= 1;
           else this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          // Kalkanin tuttugu dusman da sizinti: temiz dalga ve yildiz candan
+          // degil kacan dusmandan sayiliyor. Yenilgiden once yaziliyor ki
+          // olunen dalganin karnesi olduren sizintiyi da icersin.
+          this.runLedger.recordLeak({
+            air: enemy.movementKind === "air",
+            absorbed: Boolean(shieldOwner),
+            hpLost: healthBefore - this.teamHealth
+          });
           if (this.teamHealth === 0) {
             this.finishMatch("defeat");
           }
@@ -7731,6 +7853,9 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= goldCost;
     player.goldSpent += goldCost;
     tower.level += 1;
+    // Yalnizca oynanarak varilan seviye an sayiliyor; yaratici seviye yazmak
+    // (`creativeSetTowerLevel`) bir an degil, buraya ugramiyor.
+    this.runLedger.recordTowerLevel(tower, player.slot ?? 0, this.wave);
     if (tower.definition.id === "warrior-6" && getUcubePerkTier(tower.level)) {
       tower.ucubePendingLevel = tower.level;
       client.send("ucube:choice", { towerId: tower.id, level: tower.level });
@@ -9416,6 +9541,8 @@ export class MatchRoom extends Room<MatchState> {
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
+    // Oyuncunun kosu hasari yalnizca kuleler degil: yetenek ve ulti de onun.
+    if (damagePlayer) this.runLedger.recordPlayerDamage(damagePlayer.slot ?? 0, dealtAmount);
     this.recordEffectDamage(sourceDefinitionId, dealtAmount, { critAdd, shopDamageAdd, markMultiplier });
     // Kritik ve son vurus burada biliniyor, istemcide bilinemiyor: sayinin
     // kendisi ikisini de anlatmiyor (son vurusta kalan can kadar).
@@ -9487,6 +9614,7 @@ export class MatchRoom extends Room<MatchState> {
     const ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
     this.awardEnemyExperience(enemy);
     this.kills += 1;
+    this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
     if (sourceOwnerId && (enemy.type === "brute" || enemy.type === "siege")) {
       const recycleRadius = getMapGridSize(this.activeMap) * 3;
       const factory = Array.from(this.towers.values()).find((candidate) => candidate.ownerId === sourceOwnerId
@@ -9561,6 +9689,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     tower.damageDealt += amount;
+    // Kule silinse de defterde kaliyor: MVP butun kosunun toplami.
+    this.runLedger.recordTowerDamage(tower, this.getPlayerSlot(tower.ownerId), amount);
     if (!this.setupPhase) this.getDefenseRow(tower).damage += amount;
     tower.damageWindow.push({ dealtAt: now, amount });
     this.pruneTowerDamageWindow(tower, now);
@@ -9767,6 +9897,7 @@ export class MatchRoom extends Room<MatchState> {
   private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0) {
     const now = Date.now();
     const streakRule = this.recordPlayerKillStreak(ownerId, now);
+    if (streakRule) this.runLedger.recordStreak(this.getPlayerSlot(ownerId), streakRule.tier, this.wave);
     const id = `k${this.nextKillEventId++}`;
     // Tabana yuvarli tam sayi: HUD altini da tabana yuvarli ve hasar sayisi
     // gibi dunyadaki "+N" gercekte kazanilandan fazlasini soylememeli (21.6

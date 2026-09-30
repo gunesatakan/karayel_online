@@ -1130,6 +1130,181 @@ export {
   stageCatalog
 } from "./stages/index.js";
 export type { ProgressRecordSource, StageDefinition } from "./stages/index.js";
+export {
+  RUN_SUMMARY_VERSION,
+  RUN_WAVE_HISTORY_LIMIT,
+  RunLedger,
+  createRunId,
+  getKillStreakTierRank,
+  getRunMapKey,
+  isCleanWave
+} from "./run-trace/index.js";
+export type {
+  MatchResultPayload,
+  RunLeak,
+  RunLedgerPlayer,
+  RunLedgerTower,
+  RunLevelMoment,
+  RunPlayerSummary,
+  RunStreakMoment,
+  RunSummary,
+  RunSummaryContext,
+  RunTowerSummary,
+  WaveRecord
+} from "./run-trace/index.js";
+export {
+  AIR_CHECKPOINT_WAVES,
+  EMPTY_STAGE_RECORD,
+  MAX_RECORD_BOOK_ENTRIES,
+  MAX_RECORD_PLAYER_COUNT,
+  MAX_STAGE_STARS,
+  RECORD_BOOK_VERSION,
+  RUN_LOG_LIMIT,
+  RUN_LOG_VERSION,
+  THREE_STAR_CLEAN_WAVES,
+  TWO_STAR_CLEAN_WAVES,
+  appendRunLog,
+  applyRunToBook,
+  checkRunRecordable,
+  computeStars,
+  createRunLogEntry,
+  describeRecordChange,
+  formatStars,
+  getAirCheckpoints,
+  getNextStarCleanWaves,
+  getRecordChangeParts,
+  getRunReachedWave,
+  getRunRecordKey,
+  isRecordCharacterId,
+  mergeRecord,
+  nextGoal,
+  parseRecordKey,
+  recordKey,
+  resolveRunCharacter,
+  sanitizeRecordBook,
+  sanitizeRunLog,
+  sanitizeRunLogEntry,
+  sanitizeStageRecord,
+  serializeRecordBook,
+  serializeRunLog
+} from "./progress/records.js";
+export type {
+  AirCheckpoint,
+  RecordBook,
+  RecordImprovements,
+  RecordKeyParts,
+  RecordChangeParts,
+  RecordMerge,
+  RecordableRun,
+  RunLogEntry,
+  RunRecordGate,
+  RunRecordLocal,
+  RunRecordSkipReason,
+  StageRecord,
+  StageStars,
+  StoredRecordBook,
+  StoredRunLog
+} from "./progress/records.js";
+export {
+  KILL_STREAK_TIER_LABELS,
+  MatchResultLatch,
+  QUICK_START_MAX_AGE_MS,
+  QUICK_START_VERSION,
+  RUN_REPORT_ACTIONABLE_AFTER_MS,
+  RUN_REPORT_BADGE_DELAY_MS,
+  RUN_ROLE_TITLES,
+  buildPlayerLines,
+  buildRunDeck,
+  buildRunReportHero,
+  buildRunReportView,
+  buildWaveStrip,
+  createQuickStartIntent,
+  describeRunMvp,
+  describeRunTotals,
+  formatRunCount,
+  getRunReportCues,
+  getRunReportHeading,
+  isFinaleClear,
+  parseQuickStartIntent,
+  pickBetterUltimate,
+  pickRunMoment,
+  planRunReportActions,
+  resolveLocalRunSlot,
+  resolveQuickStartStage,
+  scoreUltimateMoment
+} from "./progress/run-report.js";
+export type {
+  MatchResultStep,
+  QuickStartIntent,
+  QuickStartMode,
+  RunDeck,
+  RunDeckCard,
+  RunMoment,
+  RunMomentKind,
+  RunPlayerLine,
+  RunReportAction,
+  RunReportActions,
+  RunReportBadge,
+  RunReportCue,
+  RunReportHeading,
+  RunReportHero,
+  RunReportInput,
+  RunReportTone,
+  RunReportView,
+  RunRoleTitleKind,
+  RunUltimateMoment,
+  RunWaveCell,
+  RunWaveCellState
+} from "./progress/run-report.js";
+export {
+  CLEAN_STREAK_MILESTONE_STEP,
+  NEAR_MISS_HEALTH_RATIO,
+  WaveReportTracker,
+  buildWaveReportCard,
+  isCleanStreakMilestone,
+  pickWaveReportHighlight,
+  sanitizeWaveRecord
+} from "./progress/wave-report.js";
+export type {
+  WaveClearCapture,
+  WaveReportCard,
+  WaveReportCardInput,
+  WaveReportChip,
+  WaveReportChipKind,
+  WaveReportHealth,
+  WaveReportHighlight,
+  WaveReportHighlightKind
+} from "./progress/wave-report.js";
+export {
+  ARCHIVE_RARITY_LABELS,
+  ARCHIVE_RUN_ID_LIMIT,
+  ArchiveOfferLatch,
+  CARD_ARCHIVE_VERSION,
+  MAX_ARCHIVE_IDS,
+  SHOP_CATEGORY_LABELS,
+  buildCardArchiveView,
+  createEmptyCardArchive,
+  findUnseenArchiveIds,
+  formatArchiveProgress,
+  getArchivePercent,
+  getArchiveProgress,
+  getArchiveRun,
+  markArchiveSeen,
+  recordArchiveRun,
+  sanitizeCardArchive,
+  serializeCardArchive
+} from "./progress/archive.js";
+export type {
+  ArchiveEntryView,
+  ArchiveGroupView,
+  ArchiveKind,
+  ArchiveProgress,
+  ArchiveRun,
+  ArchiveSectionView,
+  CardArchive,
+  CardArchiveView,
+  StoredCardArchive
+} from "./progress/archive.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,

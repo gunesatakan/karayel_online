@@ -6,9 +6,17 @@ import {
   createDefaultEditableMap,
   STAGE_COUNT,
   WAVES_PER_STAGE,
+  buildCardArchiveView,
+  createEmptyCardArchive,
+  formatArchiveProgress,
+  formatStars,
+  getArchiveProgress,
+  getAirCheckpoints,
+  getRunMapKey,
   getStage,
   getStageDamageProfile,
   isStageUnlocked,
+  resolveQuickStartStage,
   stageCatalog,
   enemyCombatDefinitions,
   getEnemyDamageResistances,
@@ -21,6 +29,10 @@ import {
   normalizeMapData,
   scaleEditableMap,
   setTile,
+  type ArchiveGroupView,
+  type ArchiveKind,
+  type ArchiveSectionView,
+  type CardArchive,
   type CharacterDefinition,
   type CharacterId,
   type EditableMapData,
@@ -31,15 +43,25 @@ import {
   type MapTileKind,
   type RoomListingSnapshot,
   type SkillDefinition,
+  type StageRecord,
   type TowerDefinition
 } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS } from "./character-colors";
 import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
 import { getClearedStages, getDefaultStage } from "./stage-progress";
+import { getRecordBook, getStageRecord } from "./run-records";
+import { takeQuickStartIntent } from "./quick-start";
+import { readCardArchive } from "./card-archive";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "./online-session";
 
-type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary";
+type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive";
+
+/**
+ * Kart Arsivi ekraninin bildigi her sey: depodaki arsiv, deponun calisip
+ * calismadigi ve acik sekme.
+ */
+type CardArchiveState = { archive: CardArchive; available: boolean; tab: ArchiveKind };
 
 // The dossier used to be one long newline-joined string. Splitting it into
 // typed blocks lets the panel show a readable brief, a stat table and an
@@ -192,7 +214,8 @@ export function setupMenuUi(game: Phaser.Game) {
       activeSavedMapId,
       selectedMapName,
       lobbyError,
-      stageState
+      withStageRecords(stageState),
+      { ...cardArchive, tab: archiveTab }
     );
     bindUi(view);
   };
@@ -214,6 +237,55 @@ export function setupMenuUi(game: Phaser.Game) {
    * calismayan bir dal birakirdi.
    */
   let stageState = { cleared: getClearedStages(), selected: getDefaultStage() };
+  /**
+   * Rekorlar da yalnizca acilista okunuyor; sonuc ekranindan menuye donus
+   * sayfayi bastan yukluyor.
+   */
+  const recordBook = getRecordBook();
+  /**
+   * Kart Arsivi de yalnizca acilista okunuyor: arsiv kart seciminde ve
+   * magazada buyuyor, menuye donus de sayfayi bastan yukluyor.
+   */
+  const cardArchive = readCardArchive();
+  let archiveTab: ArchiveKind = "cards";
+
+  /**
+   * Kosu raporunun "Tekrar" / "Sonraki aşama" niyeti.
+   *
+   * Rapor sayfayi yeniden yukluyor ve buraya ayni operator, asama, harita
+   * olcegi ve kiple bir not birakiyor. Not okunur okunmaz siliniyor (bir
+   * sonraki elle yenileme oyunu kendiliginden baslatmasin). Asama bu
+   * tarayicida kilitliyse acik olan en yuksek asamaya dusuluyor: menu kilitli
+   * asamayi secemez, not da secmemeli. Harita olcegi kayit anahtarinin parcasi;
+   * tekrar ayni rekor satirina yazsin diye secili harita o olcege cevriliyor.
+   */
+  const quickStart = takeQuickStartIntent();
+  if (quickStart) {
+    const character = characters.find((candidate) => candidate.id === quickStart.characterId);
+    if (character) {
+      selectedCharacter = character;
+      selectedDetail = getDetailItems(character)[0];
+    }
+    stageState = { ...stageState, selected: resolveQuickStartStage(quickStart, stageState.cleared) };
+    if (selectedMap.scale !== quickStart.mapScale) selectedMap = scaleEditableMap(selectedMap, quickStart.mapScale);
+    selectedMapScale = quickStart.mapScale;
+    if (quickStart.mode === "online") onlineTab = "create";
+  }
+
+  /**
+   * Asama tahtasinin rekorlari: secili operatorun **solo** kaydi, siradaki
+   * solo kosunun oynanacagi harita olcegiyle. Sunucu haritayi olcekteki acik
+   * arenaya ceviriyor, anahtar da ondan (`getRunMapKey`). Co-op ve baska
+   * olcekteki kosular kendi anahtarinda; bu satira karismiyor.
+   */
+  const withStageRecords = (state: StageState): StageState => {
+    const mapKey = getRunMapKey(selectedMap.scale);
+    const records: Partial<Record<number, StageRecord>> = {};
+    for (const stage of stageCatalog) {
+      records[stage.id] = getStageRecord(recordBook, stage.id, selectedCharacter.id, 1, mapKey);
+    }
+    return { ...state, records };
+  };
 
   const startGame = (mode: "solo" | "online" = "solo") => {
     if (!phaserReady || onlineGameStarting) {
@@ -337,6 +409,15 @@ export function setupMenuUi(game: Phaser.Game) {
           void refreshRoomListings();
         }
         render(nextView);
+      });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-archive-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tab = button.dataset.archiveTab;
+        if (tab !== "cards" && tab !== "items") return;
+        archiveTab = tab;
+        render("cardArchive");
       });
     });
 
@@ -539,7 +620,32 @@ export function setupMenuUi(game: Phaser.Game) {
     phaserReady = true;
     root.classList.remove("menu-root--loading");
   }, { once: true });
-  render("home");
+  // Co-op grubu yeniden yuklemede bir arada tutulamiyor: co-op tekrari ayni
+  // ayarlarla oda kurma ekraninda aciliyor. Solo ve yaratici hemen basliyor --
+  // Phaser hazir oldugunda, normal "Başla" yoluyla (yukaridaki dinleyiciden
+  // sonra kayitli, yani hazir bayragi o an acik).
+  render(quickStart?.mode === "online" ? "online" : "home");
+  if (quickStart && quickStart.mode !== "online") {
+    // Oyuncu Phaser hazir olmadan menuye dokunursa kontrol onda: gec gelen
+    // kendiliginden baslatma onun kurdugu bir lobi odasinin (sahne onu oyun
+    // odasi sanardi), actigi arsivin ya da harita duzenleyicinin ustune
+    // binmesin. Menuyu kilitlemek yerine iptal: hazir sinyali hic gelmezse
+    // kilit kendi zaman asimini isterdi. Oda kuran her dokunus once buraya
+    // ugradigi icin lobi yoluna ayrica kanca gerekmiyor.
+    const cancel = () => window.removeEventListener("karayel:phaser-ready", launch);
+    const launch = () => {
+      root.removeEventListener("pointerdown", cancel, true);
+      root.removeEventListener("keydown", cancel, true);
+      creativeRequested = quickStart.mode === "creative";
+      startGame("solo");
+    };
+    if (phaserReady) launch();
+    else {
+      window.addEventListener("karayel:phaser-ready", launch, { once: true });
+      root.addEventListener("pointerdown", cancel, { capture: true, once: true });
+      root.addEventListener("keydown", cancel, { capture: true, once: true });
+    }
+  }
 }
 
 /**
@@ -554,6 +660,7 @@ export function setupMenuUi(game: Phaser.Game) {
 function renderStageBoard(stageState: StageState) {
   const rows = stageCatalog.map((stage) => {
     const unlocked = isStageUnlocked(stage.id, stageState.cleared);
+    const record = stageState.records?.[stage.id];
     const cleared = stageState.cleared.includes(stage.id);
     const profile = getStageDamageProfile(stage.id);
     const classes = [
@@ -575,6 +682,7 @@ function renderStageBoard(stageState: StageState) {
           <strong>${escapeHtml(stage.name)}</strong>
           <small>${detail}</small>
           ${profileLine}
+          ${unlocked ? renderStageRecord(record) : ""}
         </span>
         <span class="stage__mark">${cleared ? "✓" : unlocked ? "" : "🔒"}</span>
       </button>`;
@@ -585,6 +693,34 @@ function renderStageBoard(stageState: StageState) {
       <p class="section-label">Aşamalar <b>${stageState.cleared.length}/${STAGE_COUNT}</b></p>
       <div class="stages__grid">${rows}</div>
     </section>`;
+}
+
+/**
+ * Asama satirinin rekor seridi: 20 dalgalik cubuk en iyi dalgaya kadar dolu,
+ * hava dalgalari (5/10/15/20) uzerinde kucuk isaretler; kayit varsa yaninda
+ * "En iyi 13/20" ve yildizlar.
+ *
+ * Asama tek bir hep-ya-hic hedef olmaktan cikiyor: 13. dalgada biten kosu da
+ * burada iz birakiyor. Hava dalgalari asamanin dogal kontrol noktalari;
+ * gecilen isaret dolu. Hic oynanmamis asamada yalnizca cubuk ve isaretler var,
+ * "rekor yok" gibi bir eksiklik yazilmiyor. Tek satir, 375 px'e sigiyor.
+ */
+function renderStageRecord(record: StageRecord | undefined) {
+  const bestWave = record?.bestWave ?? 0;
+  const checkpoints = getAirCheckpoints(record);
+  const pips = checkpoints.map((checkpoint) => {
+    const left = ((checkpoint.wave - 0.5) / WAVES_PER_STAGE) * 100;
+    const label = `${checkpoint.wave}. dalga: ${checkpoint.mode === "all" ? "hava" : "karışık hava"}${checkpoint.passed ? " · geçildi" : ""}`;
+    return `<i class="stage__pip stage__pip--${checkpoint.mode}${checkpoint.passed ? " is-passed" : ""}" style="left: ${left.toFixed(1)}%" title="${label}"></i>`;
+  }).join("");
+  const trackLabel = `${record ? `En iyi ${bestWave}/${WAVES_PER_STAGE}; ` : ""}hava dalgaları ${checkpoints.map((checkpoint) => checkpoint.wave).join(", ")}`;
+  const fill = Math.min(100, Math.max(0, (bestWave / WAVES_PER_STAGE) * 100));
+  return `
+          <span class="stage__record">
+            <span class="stage__track" role="img" aria-label="${trackLabel}"><b style="width: ${fill.toFixed(1)}%"></b>${pips}</span>
+            ${record ? `<span class="stage__best">En iyi ${bestWave}/${WAVES_PER_STAGE}</span>
+            <span class="stage__stars" aria-label="${record.bestStars} yıldız">${formatStars(record.bestStars)}</span>` : ""}
+          </span>`;
 }
 
 function renderBackdrop() {
@@ -645,15 +781,17 @@ function renderShell(
   activeSavedMapId = "",
   selectedMapName = "Harita 1",
   lobbyError = "",
-  stageState: StageState = { cleared: [], selected: 1 }
+  stageState: StageState = { cleared: [], selected: 1 },
+  cardArchive: CardArchiveState = { archive: createEmptyCardArchive(), available: true, tab: "cards" }
 ) {
   return `
     <main class="menu-shell">
       <section class="menu-stage">
-        ${view === "home" ? renderHome(selectedCharacter, stageState) : ""}
+        ${view === "home" ? renderHome(selectedCharacter, stageState, cardArchive.archive) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "bestiary" ? renderBestiary() : ""}
+        ${view === "cardArchive" ? renderCardArchive(cardArchive) : ""}
         ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus, savedMaps, activeSavedMapId, selectedMapName) : ""}
         ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError, stageState.selected) : ""}
         ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
@@ -662,10 +800,15 @@ function renderShell(
   `;
 }
 
-/** Menunun asama hakkinda bildigi her sey; `renderHome` disaridan aliyor. */
-type StageState = { cleared: number[]; selected: number };
+/**
+ * Menunun asama hakkinda bildigi her sey; `renderHome` disaridan aliyor.
+ * `records` secili operatorun solo rekorlari, asama kimligiyle.
+ */
+type StageState = { cleared: number[]; selected: number; records?: Partial<Record<number, StageRecord>> };
 
-function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState) {
+function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState, cardArchive: CardArchive) {
+  // Dugmede yalnizca kart sayaci ("64/113"); esyalar arsiv ekraninda.
+  const cardProgress = formatArchiveProgress(getArchiveProgress(cardArchive, "cards"));
   return `
     <div class="screen screen--home">
       <header class="brand">
@@ -717,6 +860,10 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           <button class="command command--ghost" data-view="archive">Operatör</button>
           <button class="command command--ghost" data-view="bestiary">Düşman</button>
           <button class="command command--ghost" data-view="map">Harita</button>
+          <button class="command command--ghost command--count" data-view="cardArchive" aria-label="Kart Arşivi, ${cardProgress} kart görüldü">
+            <span>Kart Arşivi</span>
+            <small>${cardProgress}</small>
+          </button>
         </div>
       </footer>
 
@@ -1103,6 +1250,101 @@ function renderBestiaryStat(label: string, value: string | number) {
       <dt>${escapeHtml(label)}</dt>
       <dd>${escapeHtml(String(value))}</dd>
     </div>
+  `;
+}
+
+/**
+ * Kart Arsivi: dusman arsivinin deseni, gorulen kartlar ve magaza esyalari.
+ *
+ * Gorulen satirda ad, nadirlik (esyada kategori), aciklama ve kartin kac
+ * kosuda secildigi; gorulmemis olan yalnizca nadirligini soyleyen bir siluet.
+ * Ad ve aciklama gorunum nesnesinde hic yok, yani HTML'e de sizamiyor.
+ *
+ * Tamamlanma bir sayac ve yuzde, bir hedef degil: %100 arsiv olcumde 75-125
+ * kosu surdu ve hicbir sey acmiyor. Metin bunu acikca soyluyor.
+ */
+function renderCardArchive(state: CardArchiveState) {
+  const view = buildCardArchiveView(state.archive);
+  const section = state.tab === "items" ? view.items : view.cards;
+  const empty = view.cards.seen === 0 && view.items.seen === 0;
+  return `
+    <div class="screen screen--card-archive">
+      <header class="screen-topbar">
+        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <div>
+          <p class="eyebrow">Keşif Kaydı</p>
+          <h1>Kart Arşivi</h1>
+        </div>
+      </header>
+
+      <section class="card-archive__summary selected-dossier frame">
+        <div class="card-archive__meters">
+          ${renderArchiveMeter(view.cards)}
+          ${renderArchiveMeter(view.items)}
+        </div>
+        <p>${empty
+          ? "Henüz bir şey görmedin: dalga ödülündeki kartlar ve kurulum mağazasındaki eşyalar görüldükçe buraya yazılır."
+          : "Kart seçiminde ve altın mağazasında gördüğün her şey buraya yazılır."} Arşiv yalnızca bir kayıttır, güç vermez; yaratıcı mod sayılmaz.</p>
+        ${state.available ? "" : `<p class="card-archive__warning">Bu tarayıcıda kayıt saklanamıyor; arşiv boş görünür.</p>`}
+      </section>
+
+      <div class="card-archive__tabs" role="tablist" aria-label="Arşiv bölümü">
+        ${renderArchiveTab(view.cards, state.tab)}
+        ${renderArchiveTab(view.items, state.tab)}
+      </div>
+
+      <section class="card-archive__groups" role="tabpanel" aria-label="${escapeHtml(section.label)}">
+        ${section.groups.map((group) => renderArchiveGroup(section.kind, group)).join("")}
+      </section>
+    </div>
+  `;
+}
+
+function renderArchiveMeter(section: ArchiveSectionView) {
+  return `
+    <div class="card-archive__meter">
+      <p><span>${escapeHtml(section.label)}</span><b>${section.seen}/${section.total}</b><small>%${section.percent}</small></p>
+      <i style="--fill: ${section.percent}%" aria-hidden="true"></i>
+    </div>
+  `;
+}
+
+function renderArchiveTab(section: ArchiveSectionView, active: ArchiveKind) {
+  const selected = section.kind === active;
+  return `
+    <button class="card-archive__tab${selected ? " is-active" : ""}" type="button" role="tab" aria-selected="${selected}" data-archive-tab="${section.kind}">
+      ${escapeHtml(section.label)} <b>${section.seen}/${section.total}</b>
+    </button>
+  `;
+}
+
+/** Bir nadirlik ya da kategori: once gorulenler, sonra siluetler. */
+function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
+  const unit = kind === "cards" ? "kart" : "eşya";
+  const locked = group.total - group.seen;
+  const entries = group.entries.map((entry) => entry.seen
+    ? `
+      <article class="card-archive__entry">
+        <header>
+          <strong>${escapeHtml(entry.name)}</strong>
+          <span>${escapeHtml(entry.tag)}</span>
+        </header>
+        <p>${escapeHtml(entry.description)}</p>
+        ${entry.picks > 0 ? `<small>${entry.picks} koşuda seçildi</small>` : ""}
+      </article>
+    `
+    : "").join("");
+  // Siluetler tek bir resim gibi okunuyor: ekran okuyucu her birini tek tek
+  // "Nadir" diye saymasin, grubun sayisini bir kez soylesin.
+  const silhouettes = group.entries.map((entry) => entry.seen
+    ? ""
+    : `<span class="card-archive__silhouette"><b>?</b><small>${escapeHtml(entry.tag)}</small></span>`).join("");
+  return `
+    <section class="card-archive__group card-archive__group--${group.key}">
+      <p class="section-label">${escapeHtml(group.label)} <b>${group.seen}/${group.total}</b></p>
+      ${entries}
+      ${locked > 0 ? `<div class="card-archive__locked" role="img" aria-label="${escapeHtml(`${group.label}: ${locked} ${unit} henüz görülmedi`)}">${silhouettes}</div>` : ""}
+    </section>
   `;
 }
 

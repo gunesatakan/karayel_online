@@ -1,6 +1,21 @@
 import Phaser from "phaser";
 import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
-import type { DefenseSummary, TowerPreview, LogisticsPriority } from "@karayel/shared";
+import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
+import {
+  ArchiveOfferLatch,
+  DEFAULT_MAP_SCALE,
+  MatchResultLatch,
+  RUN_REPORT_ACTIONABLE_AFTER_MS,
+  buildRunReportView,
+  getArchiveRun,
+  getRunReportCues,
+  isFinaleClear,
+  pickBetterUltimate,
+  planRunReportActions,
+  resolveLocalRunSlot,
+  CARD_PICKABLE_AFTER_MS,
+  WaveReportTracker
+} from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, readTextureAccent, shotStyle } from "../vfx/combat-vfx";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
@@ -167,7 +182,12 @@ import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
-import { markStageCleared } from "../stage-progress";
+import { getClearedStages, markStageCleared } from "../stage-progress";
+import { recordRun, type RunRecordOutcome } from "../run-records";
+import { markArchiveOffered, recordArchiveRunResult } from "../card-archive";
+import { removeRunReport, renderRunReport, type RunReportChoice, type RunReportNote } from "../run-report-ui";
+import { saveQuickStartIntent } from "../quick-start";
+import { createWaveReportElement, getWaveReportKey } from "../wave-report-ui";
 import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
@@ -193,6 +213,22 @@ type MatchResultSummary = {
   kills: number;
   stage?: number;
   creative?: boolean;
+  /** Kosu raporu; yalnizca `match:*` mesajinda var, snapshot'ta yok. */
+  run?: RunSummary;
+};
+
+/**
+ * Acik kosu raporunun durumu. Asama, yaratici bayragi ve asama kaydi ekran
+ * acilirken bir kez sabitleniyor; rapor sonradan gelirse yalnizca `run`
+ * dolup ekran yeniden ciziliyor.
+ */
+type MatchReportState = {
+  result: "victory" | "defeat";
+  summary: MatchResultSummary;
+  run?: RunSummary;
+  creative: boolean;
+  stage?: number;
+  stageResult?: ReturnType<typeof markStageCleared>;
 };
 
 /** Sunucunun yaratici modda yolladigi o anki kurulum. */
@@ -341,6 +377,13 @@ type RemovedEnemyTrace = {
   type: EnemyType;
   air: boolean;
 };
+
+/**
+ * Rapor dugmesine kosunun raporu gelmeden basildiginda yeniden yuklemenin en
+ * fazla bekledigi sure. `run:sync` cevabi normalde bir gidis-donus; sinir olu
+ * bir baglantinin oyuncuyu raporda tutmasini engelliyor.
+ */
+const RUN_REPORT_RELOAD_WAIT_MS = 1500;
 
 /** Takim arkadasinin oldurmesinin patlamasi: gorunsun ama seninkiyle yarismasin. */
 const TEAMMATE_DEATH_BURST_INTENSITY = 0.5;
@@ -839,6 +882,48 @@ export class GameScene extends Phaser.Scene {
   private perfPopupOpen = false;
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private matchResultShown = false;
+  /**
+   * Kosunun rekor kaydinin sonucu; kosu raporu "YENİ REKOR" ve siradaki
+   * hedef satirini buradan yaziyor. Kayit yalnizca raporlu mesajla yapiliyor.
+   */
+  private runRecordOutcome?: RunRecordOutcome;
+  /**
+   * Sonucun kapisi: ekran bir kez aciliyor, kayit kosu basina bir kez
+   * yaziliyor, rapor ekrandan sonra gelirse ekran bir kez tazeleniyor.
+   * Sahne yeniden baslatilmiyor (Tekrar sayfayi yeniliyor), alan baslaticisi yeter.
+   */
+  private readonly matchResultLatch = new MatchResultLatch();
+  private matchReport?: MatchReportState;
+  /** Sonuc snapshot'tan geldi ama rapor gelmedi; `run:sync` bir kez isteniyor. */
+  private runSyncRequested = false;
+  /** Kendi ultilerinin en iyisi; raporun "en iyi an" adaylarindan. Takim arkadasininki bu istemciye gelmiyor. */
+  private bestOwnUltimate?: RunUltimateMoment;
+  /** Oda lobiden geldi: rapordaki "Tekrar" oda kurma ekranini aciyor. */
+  private startedFromLobby = false;
+  private runReportCueTimers: number[] = [];
+  private runReportRecordCuePlayed = false;
+  /**
+   * Raporun ilk acildigi an; dugmeler bundan `RUN_REPORT_ACTIONABLE_AFTER_MS`
+   * sonra dokunusu kabul ediyor. Tazelemede degismiyor.
+   */
+  private runReportOpenedAt = 0;
+  /**
+   * Rapor dugmesine basildi ama kosunun raporu henuz gelmedi: yeniden yukleme
+   * rapor gelip kaydedilene kadar (en fazla kisa bir sure) bekliyor.
+   */
+  private runReportReloadPending = false;
+  /**
+   * Bu sahne sonucsuz bir snapshot gordu, yani maci oynarken buradaydi. Ilk
+   * snapshot zaten sonucu tasiyorsa istemci odaya mac bittikten sonra girmis
+   * demek: o kosunun rekoru, asama ilerlemesi ve arsiv sayaci onun degil.
+   */
+  private liveSnapshotSeen = false;
+  /**
+   * Kosunun oynandigi harita olcegi; Tekrar ayni olcekte baslasin ve ayni rekor
+   * satirina yazsin. Sunucunun arenasi olcegi tasimiyor (acik arena hep 1
+   * yaziyor), o yuzden `syncMap`den once, sahneye verilen haritadan okunuyor.
+   */
+  private runMapScale: MapScale = DEFAULT_MAP_SCALE;
   private cardChoiceRoot?: HTMLElement;
   private cardChoices: CardDefinition[] = [];
   private cardChoicePending = false;
@@ -846,11 +931,25 @@ export class GameScene extends Phaser.Scene {
   /** Dalga temizlenmesini yakalayan saf kural; dalganin tabanini kurulumda aliyor. */
   private readonly waveClearWatch = new WaveClearWatch();
   /**
+   * Dalga karnesinin parcalari dalgasina bagli: sunucunun karnesi, o dalganin
+   * kendi ultisi, damganin altini ve nexus cani. Karne kart perdesinin basliginda.
+   */
+  private readonly waveReports = new WaveReportTracker();
+  /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
+  private cardDraftWave?: number;
+  /**
    * Dagitilmis elin kimligi (dalga + kartlar). Ayni el yeniden acildiginda
    * (hedef listesinden geri, sunucunun yeniden gondermesi) kartlar yeniden
    * dagitilmiyor: oyuncu ayni eli ikinci kez "kazanmiyor".
    */
   private cardDealKey = "";
+  /**
+   * Kart Arsivi'nin "YENİ" etiketleri; kart eli ve magaza vitrini icin ayri.
+   * Kimlik sunulur sunulmaz gorulmus yaziliyor, etiket ise ayni sunum ekranda
+   * kaldikca (hedef listesinden donus, magazanin yeniden kurulmasi) kaliyor.
+   */
+  private readonly cardArchiveLatch = new ArchiveOfferLatch();
+  private readonly shopArchiveLatch = new ArchiveOfferLatch();
   private cardDealStartedAt = 0;
   /** Kart acilisinin ses zamanlayicilari; perde kapaninca iptal. */
   private cardDealTimers: number[] = [];
@@ -1064,6 +1163,11 @@ export class GameScene extends Phaser.Scene {
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
+    // Olcek burada yetkili: solo oda olcegi bu haritadan aliyor, online'da
+    // menu haritayi lobinin olcegine cevirip veriyor. `syncMap` sonra
+    // `selectedMapData`yi sunucunun arenasiyla degistiriyor ve arena olcegi
+    // tasimiyor (`createOpenArenaMap` hep 1 yaziyor).
+    this.runMapScale = this.selectedMapData.scale;
     this.creativeRequested = data.creative === true;
     this.selectedStage = getStage(data.stage).id;
   }
@@ -1122,6 +1226,8 @@ export class GameScene extends Phaser.Scene {
     this.coinCarry = { amount: 0, at: 0 };
     this.goldShopWasOpen = false;
     this.waveClearWatch.reset();
+    this.waveReports.reset();
+    this.cardDraftWave = undefined;
     this.ultimateReadyWatch.reset();
     this.ultimateReadyPulseAt = undefined;
     this.ultimateZoomPunch = undefined;
@@ -1148,6 +1254,9 @@ export class GameScene extends Phaser.Scene {
     this.installMapPointerInput();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.querySelector("#defense-dialog")?.remove();
+      removeRunReport();
+      for (const timer of this.runReportCueTimers) window.clearTimeout(timer);
+      this.runReportCueTimers = [];
       this.pendingPreview = undefined;
       this.latestDefenseSummary = undefined;
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
@@ -3326,7 +3435,18 @@ export class GameScene extends Phaser.Scene {
    * kalirdi.
    */
   private receiveUltimateResult(message: UltimateResultMessage) {
-    if (!message || typeof message.kind !== "string" || this.matchResultShown) {
+    if (!message || typeof message.kind !== "string") {
+      return;
+    }
+    // Raporun "en iyi an"i icin kendi ultilerinin en iyisi tutuluyor; mesaj
+    // basina bir karsilastirma, sicak yolda degil.
+    this.bestOwnUltimate = pickBetterUltimate(this.bestOwnUltimate, message);
+    // Dalga karnesinin one cikan satiri: bu dalganin karnesi gelince ona
+    // yaziliyor. Suresi dalga bitince dolan ulti (Kabus, Sempati, drone)
+    // kurulumda raporlaniyor; o zaman az once biten dalganin karnesine gidiyor
+    // ve o dalganin perdesi aciksa serit tazeleniyor.
+    if (this.waveReports.noteUltimate(message)) this.refreshWaveReportCard();
+    if (this.matchResultShown) {
       return;
     }
     const stamp: UltimateStampEvent = { ...getUltimateStampText(message), color: getCharacterColorCss(this.selectedCharacterId) };
@@ -3780,6 +3900,7 @@ export class GameScene extends Phaser.Scene {
       const existingRoom = getActiveLobbyRoom();
       if (existingRoom) {
         this.room = existingRoom;
+        this.startedFromLobby = true;
       } else {
         const client = getSharedClient(gameServerUrl);
         // Lobiden gecmeden dogrudan baslatma yolu. Menudeki iki yol rezervasyon
@@ -3820,22 +3941,43 @@ export class GameScene extends Phaser.Scene {
 
   private queueSnapshot(snapshot: WireGameSnapshot) {
     const receiveStart = performance.now();
+    // Sonucsuz bir snapshot: bu sahne maci oynarken odadaydi. Ilk snapshot
+    // zaten sonucu tasiyorsa istemci mac bittikten sonra girmis demek; o
+    // kosunun kaydi ve ilerlemesi onun degil (`recordRunResult`).
+    if (!snapshot.result) this.liveSnapshotSeen = true;
     if (snapshot.stage !== undefined) this.roomStage = snapshot.stage;
     if (snapshot.result) {
       // Sonuc mesaji kacirildiysa (kopma, yeniden baglanma) ekran buradan
       // aciliyor; asama ve yaratici bayragi da ayni snapshot'tan gelmeli ki
-      // kayit menudeki secime dusmesin.
-      this.showMatchResult(snapshot.result, {
+      // kayit menudeki secime dusmesin. Mac bittikten sonra her snapshot
+      // sonucu tasiyor; kapi ikinci geliste hicbir sey yapmiyor.
+      this.handleMatchResult(snapshot.result, {
         wave: snapshot.team.wave,
         kills: snapshot.team.kills,
         stage: snapshot.stage,
         creative: snapshot.creative
       });
+      // Snapshot kosu raporunu tasimiyor; rekor yalnizca rapordan yaziliyor.
+      // Mesaj kacirildiysa bir kez isteniyor, ayni kosu kimligiyle geliyor ve
+      // kayit kimlige baktigi icin ikinci kez yazilmiyor.
+      if (this.matchResultLatch.awaitingRun && !this.runSyncRequested) {
+        this.runSyncRequested = true;
+        this.room?.send("run:sync");
+      }
     }
     const hydratedSnapshot = this.hydrateSnapshot(snapshot);
     if (!hydratedSnapshot) {
       this.requestFullStaticSnapshot();
       return;
+    }
+    // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
+    // ayni soketten, ayni sirayla geliyor (oynatma saati ise ~500 ms geride,
+    // o yuzden oynatilan snapshot degil). Karnesi gelmis dalgadan baska bir
+    // dalga savasta: sonraki ulti sonuclari o dalganin. Esitsizlik (buyuktur
+    // degil): yaratici mod dalgayi geri sarabiliyor.
+    const latestReportedWave = this.waveReports.latestWave;
+    if (latestReportedWave !== undefined && !hydratedSnapshot.setupPhase && hydratedSnapshot.team.wave !== latestReportedWave) {
+      this.waveReports.noteWaveStarted();
     }
     const bufferedSnapshot = {
       snapshot: hydratedSnapshot,
@@ -4200,8 +4342,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
     });
     room.onMessage("worker:skill-complete", (message: { role?: HirableWorkerRole }) => this.showNotice(`${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçinin"} uzmanlığı kalıcı olarak tamamlandı.`));
-    room.onMessage("match:victory", (message: MatchResultSummary) => this.showMatchResult("victory", message));
-    room.onMessage("match:defeat", (message: MatchResultSummary) => this.showMatchResult("defeat", message));
+    room.onMessage("match:victory", (message: MatchResultSummary) => this.handleMatchResult("victory", message));
+    room.onMessage("match:defeat", (message: MatchResultSummary) => this.handleMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
     room.onMessage("tower:preview", (preview: TowerPreview) => {
       const pending = this.pendingPreview;
@@ -4209,7 +4351,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.pendingPreview = undefined;
       openDefenseDialog(preview.title ?? "Önizleme", preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply, preview.error ? undefined : preview.changed);
     });
-    room.onMessage("defense:summary", (summary: DefenseSummary) => { this.latestDefenseSummary = summary; this.emitControlState(); });
+    room.onMessage("defense:summary", (summary: DefenseSummary) => {
+      this.latestDefenseSummary = summary;
+      this.emitControlState();
+      this.refreshWaveReportCard();
+    });
+    // Takimin dalga karnesi: kart seciminden hemen once, dalga basina bir kez
+    // (yeniden baglanmada tekrar). Karne kart perdesinin basliginda.
+    room.onMessage("wave:report", (record: unknown) => {
+      if (this.waveReports.receiveReport(record)) this.refreshWaveReportCard();
+    });
     room.send("defense:request");
     room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
     room.onMessage("card:rejected", (message: { reason?: string }) => {
@@ -4245,6 +4396,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     room.onLeave((code) => {
       if (this.room !== room) return;
+      // Rapor ekranda ve kosunun raporu gelip islendi: bitmis odaya 18 sn
+      // yeniden baglanmaya calismanin bir getirisi yok (sunucu yeni bir oda
+      // kurulurken bitmis odayi kapatiyor). Rapor DOM'da, kapanan soketten
+      // etkilenmiyor. Rapor henuz gelmediyse baglanti yine deneniyor.
+      if (this.matchResultShown && this.matchReport?.run) {
+        clearActiveLobbyRoom(room.roomId);
+        return;
+      }
       void this.reconnectRoom(room, code);
     });
   }
@@ -4293,87 +4452,228 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.emitHudState({ status: `Koptu (${code})` });
   }
 
-  private showMatchResult(result: "victory" | "defeat", summary: MatchResultSummary) {
+  /**
+   * Sonuc: once rekor kaydi, sonra kosu raporu.
+   *
+   * Sonuc uc yoldan geliyor -- raporlu `match:*` mesaji, sonucu tasiyan her
+   * snapshot ve yeniden baglanmada ya da `run:sync` ile tekrar gelen mesaj.
+   * Kapi (`MatchResultLatch`) ekrani bir kez aciyor, kaydi kosu basina bir kez
+   * yazdiriyor ve rapor ekrandan sonra geldiyse acik ekrani bir kez tazeliyor.
+   * Kayit modulunun kendi kimlik kontrolu de var; ikisi birlikte ayni kosunun
+   * iki kez sayilmasini engelliyor.
+   */
+  private handleMatchResult(result: "victory" | "defeat", summary: MatchResultSummary) {
+    const step = this.matchResultLatch.receive({ run: summary.run });
+    if (step.record) this.recordRunResult(summary);
+    // Dugmeye rapor gelmeden basilmisti: kayit yukarida (esanli) yazildi,
+    // bekleyen yeniden yukleme simdi. Tazelemeden once, yoksa yeniden cizim
+    // basilmis dugmeyi yeniden acardi.
+    if (this.runReportReloadPending && !this.matchResultLatch.awaitingRun) {
+      window.location.reload();
+      return;
+    }
+    if (step.open) {
+      this.openRunReport(result, summary);
+    } else if (step.refresh && this.matchReport && summary.run) {
+      this.matchReport.run = summary.run;
+      // Bayrak yalnizca acilabiliyor, kapanmiyor: rapor yaratici diyorsa
+      // ekran da yildizsiz ve "kaydedilmez" satiriyla ciziliyor.
+      if (summary.creative === true || summary.run.creative === true) this.matchReport.creative = true;
+      this.renderMatchReport(false);
+    }
+  }
+
+  /**
+   * Kosu raporunu acar; Phaser katmanindaki eski sonuc ekraninin yerinde.
+   *
+   * Ilerleme zaferle birlikte yaziliyor. Asama sunucudan geliyor: istemcinin
+   * kendi sectigi degeri yazmasi, reddedilmis bir istekten sonra olmayan bir
+   * asamayi, baskasinin odasinda ise yanlis asamayi acardi. Menudeki secime
+   * bilerek dusulmuyor; asama bilinmiyorsa kayit hic yazilmiyor.
+   *
+   * Yaratici bayragi uc kaynaktan birlestiriliyor ve biri acik diyorsa acik
+   * sayiliyor: yanlislikla yazilmis bir kayit geri alinamaz.
+   */
+  private openRunReport(result: "victory" | "defeat", summary: MatchResultSummary) {
     if (this.matchResultShown) {
       return;
     }
     this.matchResultShown = true;
+    this.runReportOpenedAt = performance.now();
     this.hideArenaHudOverlays();
-    const victory = result === "victory";
-    // Ilerleme zaferle birlikte yaziliyor. Asama sunucudan geliyor: istemcinin
-    // kendi sectigi degeri yazmasi, reddedilmis bir istekten sonra olmayan bir
-    // asamayi, baskasinin odasinda ise yanlis asamayi acardi. Menudeki secime
-    // bilerek dusulmuyor; asama bilinmiyorsa kayit hic yazilmiyor.
-    //
-    // Yaratici bayragi iki kaynaktan birlestiriliyor ve biri acik diyorsa
-    // acik sayiliyor: yanlislikla yazilmis bir kayit geri alinamaz.
-    const roomStage = this.roomStage ?? summary.stage;
-    const creativeRun = summary.creative === true || this.creativeMode;
-    const stageResult = victory ? markStageCleared({ creative: creativeRun, stage: roomStage }) : undefined;
-    const depth = 1000;
-    // Ekran kameranin **gordugu** dikdortgene kuruluyor, dunya olcusune degil.
-    //
-    // Kaydirma carpani sifir olan nesneler kamerayi izliyor gorunuyor ama
-    // konumlari yine yakinlastirmayla olcekleniyor: arena kamerasi yakinlastirdigi
-    // icin dunyanin ortasina konan bir baslik ekranin ortasina dusmuyordu, sola
-    // ve yukari kaciyordu. Zafer ekrani basarimin gorundugu yer -- oyuncunun
-    // asamayi bitirdigini ogrendigi tek an -- yani kayacak son yer orasi.
-    const view = this.cameras.main.worldView;
-    const centerX = view.centerX;
-    const centerY = view.centerY;
-    this.add.rectangle(centerX, centerY, view.width, view.height, 0x020617, 0.88).setDepth(depth);
-    this.add.text(centerX, centerY - 72, victory ? "ZAFER" : "YENİLGİ", {
-      fontFamily: "Arial Black, Arial",
-      fontSize: "58px",
-      color: victory ? "#facc15" : "#fb7185",
-      stroke: "#020617",
-      strokeThickness: 8
-    }).setOrigin(0.5).setDepth(depth + 1);
-    // Asama bilinmiyorsa satir asamasiz yaziliyor; menudeki secimi odanin
-    // asamasiymis gibi gostermek, katilan oyuncuya yanlis bir zafer soylerdi.
-    const stage = roomStage !== undefined ? getStage(roomStage) : undefined;
-    this.add.text(centerX, centerY + 2, victory
-      ? `${stage ? `${stage.id}. Aşama: ${stage.name}  •  ` : ""}${summary.kills} düşman`
-      : `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
-      fontFamily: "Arial",
-      fontSize: "20px",
-      color: "#e2e8f0"
-    }).setOrigin(0.5).setDepth(depth + 1);
-    if (stageResult?.unlockedStage) {
-      this.add.text(centerX, centerY + 34, `${stageResult.unlockedStage}. aşama açıldı`, {
-        fontFamily: "Arial",
-        fontSize: "18px",
-        color: "#4ade80"
-      }).setOrigin(0.5).setDepth(depth + 1);
-    } else if (victory && creativeRun) {
-      // Yaratici zafer sessizce kaydedilmiyor olsaydi oyuncu acilis bekleyip
-      // bulamazdi; nedenini soluk bir satir soyluyor.
-      this.add.text(centerX, centerY + 34, "Yaratıcı mod: ilerleme kaydedilmez", {
-        fontFamily: "Arial",
-        fontSize: "16px",
-        color: "#94a3b8"
-      }).setOrigin(0.5).setDepth(depth + 1);
-    } else if (stageResult?.locked) {
-      // Co-op'ta katilan oyuncunun henuz acmadigi asama: kayit yazilmadi,
-      // oyuncu acilis bekleyip bulamasin diye nedeni soluk bir satirda.
-      this.add.text(centerX, centerY + 34, "Bu aşama sende henüz açık değil: ilerleme kaydedilmez", {
-        fontFamily: "Arial",
-        fontSize: "14px",
-        color: "#94a3b8",
-        align: "center",
-        wordWrap: { width: Math.max(160, Math.min(view.width - 32, 300)) }
-      }).setOrigin(0.5).setDepth(depth + 1);
+    // Acik bir kart perdesi raporun altinda kalip zamanlayicilarini
+    // surdurmesin; mac bitti, secim artik bir sey degistirmiyor.
+    this.hideCardChoices();
+    const stage = this.roomStage ?? summary.stage;
+    const creative = summary.creative === true || summary.run?.creative === true || this.creativeMode;
+    // Mac bittikten sonra giren istemci (ilk snapshot sonucu tasiyordu) bu
+    // zaferi oynamadi: asama onun yolunda acilmamali.
+    const stageResult = result === "victory" && this.liveSnapshotSeen ? markStageCleared({ creative, stage }) : undefined;
+    this.matchReport = { result, summary, run: summary.run, creative, stage, stageResult };
+    this.renderMatchReport(true);
+  }
+
+  /**
+   * Kosuyu rekorlara ve kosu kaydina yazar; sayfada bir kez.
+   *
+   * Kapi (yaratici, asama, kilitli asama) kayit modulunde. Asama ve yaratici
+   * bayragi asama ilerlemesiyle ayni kaynaktan: odanin asamasi ve iki
+   * kaynaktan birlesmis bayrak.
+   *
+   * Sahne maci hic sonucsuz gormediyse (ilk snapshot sonucu tasiyordu)
+   * istemci odaya mac bittikten sonra girdi: ne rekor ne arsiv sayaci. Sunucu
+   * bitmis maca girisi zaten reddediyor; bu ikinci savunma hatti.
+   */
+  private recordRunResult(message: MatchResultSummary) {
+    if (!message.run || this.runRecordOutcome || !this.liveSnapshotSeen) return;
+    const run = message.run;
+    const creative = message.creative === true || run.creative === true || this.creativeMode;
+    const slot = this.getRunLocalSlot(run);
+    this.runRecordOutcome = recordRun(
+      run,
+      { creative, stage: this.roomStage ?? message.stage },
+      { slot, characterId: this.selectedCharacterId }
+    );
+    // Arsivin "kac kosuda secildi" sayaci rekor kapisina bagli degil: co-op'ta
+    // kilitli asamada da kartlari sen sectin. Yalnizca yaratici kosu disarida.
+    recordArchiveRunResult(getArchiveRun(run, { slot, creative: creative || this.isArchiveSandbox() }));
+  }
+
+  /**
+   * Arsive yazilmayan kosu: menude yaratici istendi ya da sunucu bayragi acik.
+   * Biri acik diyorsa acik; yanlislikla gorulmus yazilan kart geri alinamaz.
+   */
+  private isArchiveSandbox() {
+    return this.creativeRequested || this.creativeMode;
+  }
+
+  /** Raporda yerel oyuncunun yuvasi: snapshot'taki, yoksa operatorden. */
+  private getRunLocalSlot(run: RunSummary | undefined) {
+    const local = this.playerSnapshots.find((player) => player.id === this.localSessionId);
+    return resolveLocalRunSlot(run, { hasSnapshot: Boolean(local), snapshotSlot: local?.slot, characterId: this.selectedCharacterId });
+  }
+
+  /** Tekrar niyetinin kipi: yaratici, lobiden gelen oda (co-op) ya da solo. */
+  private getQuickStartMode(creative: boolean): QuickStartMode {
+    if (creative) return "creative";
+    return this.startedFromLobby ? "online" : "solo";
+  }
+
+  /**
+   * Raporu ciz. Ilk cizimde (hareket azaltma kapaliysa) canlaniyor ve acilis
+   * sesi caliyor; rapor sonradan gelirse ayni kart hareketsiz yeniden
+   * ciziliyor ve yalnizca rekor rozeti yeniyse onun kisa tinisi caliyor.
+   */
+  private renderMatchReport(first: boolean) {
+    const report = this.matchReport;
+    if (!report) return;
+    const outcome = this.runRecordOutcome;
+    // Depoya yazilamayan kayit kutlanmiyor: bos deftere karsi yapilan
+    // birlestirme her kosuda ayni "ilk temizleme"yi yeniden kutlardi. Kosunun
+    // olgulari (yildizlar temiz dalgadan) ve "saklanamadı" satiri kaliyor.
+    const merge = outcome?.status === "recorded" && outcome.saved ? outcome.merge : undefined;
+    const cleared = getClearedStages();
+    const reducedMotion = this.feedback?.reducedMotion ?? false;
+    const view = buildRunReportView({
+      result: report.result,
+      wave: report.summary.wave,
+      kills: report.summary.kills,
+      stage: report.stage,
+      creative: report.creative,
+      run: report.run,
+      localSlot: this.getRunLocalSlot(report.run),
+      merge,
+      ultimate: this.bestOwnUltimate,
+      finale: isFinaleClear({ result: report.result, stage: report.stage, creative: report.creative, clearedStageIds: cleared }),
+      fallbackCardIds: this.localPlayerSnapshot?.ownedCardIds
+    });
+    const actions = planRunReportActions({
+      result: report.result,
+      stage: report.stage,
+      mode: this.getQuickStartMode(report.creative),
+      characterId: this.selectedCharacterId,
+      // `selectedMapData` burada sunucunun arenasi ve olcegi hep 1; oynanan
+      // olcek sahneye verilen haritadan saklandi.
+      mapScale: this.runMapScale,
+      clearedStageIds: cleared,
+      now: Date.now()
+    });
+    const notes: RunReportNote[] = [];
+    if (report.stageResult?.unlockedStage) {
+      notes.push({ tone: "unlock", text: `${report.stageResult.unlockedStage}. aşama açıldı` });
     }
-    const button = this.add.rectangle(centerX, centerY + 82, 230, 52, 0x1e293b)
-      .setStrokeStyle(2, victory ? 0xfacc15 : 0xfb7185)
-      .setInteractive({ useHandCursor: true })
-      .setDepth(depth + 1);
-    this.add.text(button.x, button.y, "ANA MENÜ", {
-      fontFamily: "Arial Black, Arial",
-      fontSize: "20px",
-      color: "#f8fafc"
-    }).setOrigin(0.5).setDepth(depth + 2);
-    button.on("pointerup", () => window.location.reload());
+    if (report.creative) {
+      // Yaratici kosu sessizce kaydedilmiyor olsaydi oyuncu acilis ya da rekor
+      // bekleyip bulamazdi; nedenini soluk bir satir soyluyor.
+      notes.push({ tone: "dim", text: "Yaratıcı mod: ilerleme kaydedilmez" });
+    } else if (!this.liveSnapshotSeen) {
+      // Rapor baskasinin kosusu: sessizce kaydedilmiyor olsaydi oyuncu rekorunu arardi.
+      notes.push({ tone: "dim", text: "Bu koşuya bitince katıldın: ilerleme kaydedilmez" });
+    } else if (report.stageResult?.locked || (outcome?.status === "skipped" && outcome.reason === "locked")) {
+      // Co-op'ta katilan oyuncunun henuz acmadigi asama: kayit yazilmadi.
+      // Yenilgide asama isaretlenmiyor; kilidi rekor kapisi soyluyor.
+      notes.push({ tone: "dim", text: "Bu aşama sende henüz açık değil: ilerleme kaydedilmez" });
+    } else if (outcome?.status === "recorded" && !outcome.saved) {
+      notes.push({ tone: "dim", text: "Kayıt bu tarayıcıda saklanamadı" });
+    }
+    const summary = this.latestDefenseSummary;
+    renderRunReport({
+      view,
+      actions,
+      notes,
+      animate: first && !reducedMotion,
+      // Odak hareketten bagimsiz: hareket azaltan ekran okuyucu kullanicisi
+      // da diyaloga tasinmali. Tazelemede odak oldugu yerde kaliyor.
+      focus: first,
+      // Rapor kendiliginden aciliyor; HUD'a yapilan son dokunus dugmeye
+      // inmesin. Hareket ayarindan bagimsiz: kaza dokunusu canlanmayla ilgili degil.
+      actionableAt: this.runReportOpenedAt + RUN_REPORT_ACTIONABLE_AFTER_MS,
+      onChoice: (choice) => this.chooseRunReportAction(choice),
+      onDefenseSummary: summary
+        ? () => openDefenseDialog(`Dalga ${summary.wave} · Savunma özeti`, defenseSummaryLines(summary))
+        : undefined
+    });
+
+    const celebrated = view.badge?.celebrated === true;
+    for (const cue of getRunReportCues({ result: report.result, celebrated, reducedMotion })) {
+      if (cue.kind === "reportRecord") {
+        if (this.runReportRecordCuePlayed) continue;
+        this.runReportRecordCuePlayed = true;
+      } else if (!first) {
+        continue;
+      }
+      // Tazelemede rozet hareketsiz ve hemen gorunuyor; tini da beklemiyor.
+      const delay = first ? cue.atMs : 0;
+      const timer = window.setTimeout(() => {
+        this.runReportCueTimers = this.runReportCueTimers.filter((entry) => entry !== timer);
+        this.feedback?.playSfx(cue.kind);
+      }, delay);
+      this.runReportCueTimers.push(timer);
+    }
+  }
+
+  /**
+   * Raporun dugmeleri. Hepsi sayfayi yeniden yukluyor; Tekrar ve Sonraki
+   * asama menuye bir niyet birakiyor, menu acilista onu okuyup oyunu hemen
+   * baslatiyor. Sahne yeniden baslatilmiyor: durumunun cogu alan
+   * baslaticilarinda ve restart onlari yeniden calistirmazdi. Niyetin zamani
+   * dokunus aninda: rapor uzun sure acik kalsa da niyet taze.
+   *
+   * Ekran snapshot'tan acildi ve kosunun raporu (`run:sync`) hala yoldaysa
+   * yeniden yukleme odadan cikar ve kosu hic kaydedilmezdi: rekor, yildiz,
+   * kosu kaydi ve arsiv sayaci kalici olarak kaybolurdu. O zaman rapor
+   * gelene kadar bekleniyor (gelince `handleMatchResult` yukluyor). Bekleme
+   * sinirli: olu bir baglanti oyuncuyu raporda tutmasin. Basilan dugme bu
+   * arada kapali (bekleme imleci) kaliyor.
+   */
+  private chooseRunReportAction(choice: RunReportChoice) {
+    if (choice !== "menu") saveQuickStartIntent({ ...choice.intent, at: Date.now() });
+    if (this.matchResultLatch.awaitingRun) {
+      this.runReportReloadPending = true;
+      window.setTimeout(() => window.location.reload(), RUN_REPORT_RELOAD_WAIT_MS);
+      return;
+    }
+    window.location.reload();
   }
 
   /**
@@ -4391,10 +4691,23 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * donus ve parlama yok; kartlar hemen yuzu acik, sesler kaliyor.
    */
   private showCardChoices(cards: CardDefinition[]) {
+    // Mac bitti: rapor ekranda. Yeniden baglanmada eski bir el gelebilir;
+    // raporun altinda perde kurulmasin, dagitim sesi calmasin ve hic
+    // gorunmeyen kartlar arsive gorulmus yazilmasin.
+    if (this.matchResultShown) return;
     const latest = this.latestPerfSnapshot;
     const draftWave = getCardDraftWave(latest ? { wave: latest.team.wave, setupPhase: latest.setupPhase } : undefined);
     const dealKey = `${draftWave ?? "-"}:${cards.map((card) => card.id).join(",")}`;
     const deal = dealKey !== this.cardDealKey;
+    // Kart Arsivi: elin kartlari sunuldugu an gorulmus sayiliyor; hic
+    // gorulmemis olanlar bu el boyunca sessiz bir "YENİ" etiketi tasiyor.
+    // Etiket yalnizca bir etiket -- ne bonus ne siralama -- ki secimi
+    // yeniligin cekimine kaptirmasin. Yaratici kosu arsive yazmiyor.
+    const fresh = this.cardArchiveLatch.resolve(dealKey, () => markArchiveOffered(
+      "cards",
+      cards.map((card) => card.id),
+      { creative: this.isArchiveSandbox() }
+    ));
     this.hideCardChoices();
     // Damga HUD'da, yani kart perdesinin ustunde: perde acilinca kalkmali.
     this.hideArenaHudOverlays();
@@ -4413,7 +4726,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     root.innerHTML = `
       <div class="card-draft__veil"></div>
       <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Kart seçimi">
-        <header class="card-draft__header">
+        <header class="card-draft__header" data-wave-report-slot>
           <span class="card-draft__eyebrow">${getCardDraftTitle(draftWave)}</span>
           <h2>Rotanı güçlendir</h2>
           <p>Koşu boyunca kalacak bir kart seç</p>
@@ -4421,6 +4734,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         </header>
         <div class="card-draft__grid"></div>
       </section>`;
+    this.cardDraftWave = draftWave;
+    const header = root.querySelector<HTMLElement>("[data-wave-report-slot]");
+    if (header) this.mountWaveReportCard(header, animate);
     const grid = root.querySelector<HTMLElement>(".card-draft__grid");
     const localTowers = this.getLocalTowerProfiles();
     const rarities: CardRarity[] = [];
@@ -4433,7 +4749,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rarities.push(rarity);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `run-card run-card--${rarity}${animate ? " run-card--deal" : ""}${animate && rarity === "rare" ? " run-card--shine" : ""}`;
+      const isNew = fresh.has(card.id);
+      button.className = `run-card run-card--${rarity}${isNew ? " run-card--new" : ""}${animate ? " run-card--deal" : ""}${animate && rarity === "rare" ? " run-card--shine" : ""}`;
       button.dataset.cardId = card.id;
       button.style.setProperty("--card-accent", accent);
       if (animate) {
@@ -4446,7 +4763,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         : `<span class="run-card__rarity">${cardRarityLabels[rarity].toLocaleUpperCase("tr-TR")}</span>`;
       button.innerHTML = `
         <span class="run-card__back" aria-hidden="true"></span>
-        <span class="run-card__index">0${index + 1}</span>
+        <span class="run-card__index">0${index + 1}${isNew ? `<span class="run-card__new">YENİ</span>` : ""}</span>
         <span class="run-card__glow"></span>
         <span class="run-card__axis">${card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ")}${rarityTag}</span>
         <strong>${card.name}</strong>
@@ -4462,6 +4779,64 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       grid?.append(button);
     });
     if (deal) this.scheduleCardRevealCues(rarities, reducedMotion);
+  }
+
+  /**
+   * Dalga karnesi, kart perdesinin basliginda: yeni bir pencere degil, zaten
+   * acilan molanin ilk satiri.
+   *
+   * Co-op'ta karne senin: yuvanin oldurmesi, kendi kulen, kendi altinin.
+   * Seride dokunmak o dalganin Savunma Ozeti'ni aciyor; perde kendiliginden
+   * acildigi icin haritaya yapilan son dokunus seridi de "basmamali" -- kartlarla
+   * ayni koruma suresi. Dar ekranda karne alt basligin yerini aliyor (CSS):
+   * kartlar ekrandan asagi itilmesin.
+   */
+  private mountWaveReportCard(header: HTMLElement, animate: boolean) {
+    const card = this.buildWaveReportCard();
+    const summary = card && this.latestDefenseSummary?.wave === card.wave ? this.latestDefenseSummary : undefined;
+    header.querySelector(".wave-report")?.remove();
+    header.classList.toggle("card-draft__header--report", Boolean(card));
+    if (!card) return;
+    const element = createWaveReportElement(card, {
+      animate,
+      onOpen: summary
+        ? () => {
+          if (performance.now() < this.cardDealStartedAt + CARD_PICKABLE_AFTER_MS) return;
+          openDefenseDialog(`Dalga ${summary.wave} · Savunma özeti`, defenseSummaryLines(summary));
+        }
+        : undefined
+    });
+    header.querySelector(".card-draft__eyebrow")?.after(element);
+  }
+
+  /** Kart perdesinin karnesi: acik perdenin dalgasi icin, elde ne varsa. */
+  private buildWaveReportCard() {
+    const local = this.playerSnapshots.find((player) => player.id === this.localSessionId);
+    const team = this.latestPerfSnapshot?.team;
+    return this.waveReports.build({
+      wave: this.cardDraftWave,
+      localSlot: local?.slot ?? 0,
+      coop: this.playerSnapshots.length > 1,
+      creative: this.creativeMode,
+      defense: this.latestDefenseSummary,
+      health: team ? { health: team.health, maxHealth: team.maxHealth } : undefined
+    });
+  }
+
+  /**
+   * Perde acikken gec gelen parca (karne, ozet, damganin altini) karneyi
+   * tazeliyor. Normalde hepsi perdeden once geliyor; ag gecikmesinde perde
+   * damgadan once acilabiliyor. Icerik degismediyse dokunulmuyor ki parilti
+   * yarida kesilmesin. Hedef kule listesinde ve ucube seciminde karne yok.
+   */
+  private refreshWaveReportCard() {
+    const header = this.cardChoiceRoot?.querySelector<HTMLElement>("[data-wave-report-slot]");
+    if (!header) return;
+    const card = this.buildWaveReportCard();
+    const tappable = Boolean(card && this.latestDefenseSummary?.wave === card.wave);
+    const current = header.querySelector<HTMLElement>(".wave-report")?.dataset.waveReportKey ?? "";
+    if (current === getWaveReportKey(card, tappable)) return;
+    this.mountWaveReportCard(header, false);
   }
 
   /** Kart acilisinin sesleri: yuzu gorunen her kartta cevirme, nadirde bir kez tini. */
@@ -4743,6 +5118,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (root) root.className = "";
     this.cardChoiceRoot = undefined;
     this.cardChoices = [];
+    this.cardDraftWave = undefined;
   }
 
   private submitCardChoice(message: { cardId: string; towerId?: string }) {
@@ -4875,6 +5251,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private isGoldShopOpen(snapshot: Pick<GameSnapshot, "setupPhase" | "team"> | undefined, player: GameSnapshot["players"][number] | undefined) {
     return Boolean(snapshot?.setupPhase && player && (player.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== snapshot.team.wave);
+  }
+
+  /**
+   * Acik magaza vitrininin "YENİ" etiketleri. Esya, magaza ekrandayken
+   * gorulmus sayiliyor; kurulumda hic acilmayan vitrin arsive yazilmiyor.
+   *
+   * Sunumun kimligi dalga ve yenileme bedeli, vitrinin kimlikleri degil.
+   * Satin alinan esya vitrinden dusuyor ama bu yeni bir sunum degil: kalan
+   * esyalar acilista zaten gorulmus yazildi, yeniden hesap butun etiketleri
+   * ayni vitrin ekrandayken silerdi. Yenileme bedeli bir kurulumda sabit ve
+   * her yenilemede artiyor (magaza kart seciminden sonra aciliyor, bedeli
+   * degistiren tek sey bir kart), yani yenileme yeni bir kapsam. Kapsam ayni
+   * ve kimlikler ilk vitrinin alt kumesiyse kalanlarin etiketi yerinde
+   * (`resolveNarrowing`); panel her anlik goruntude yeniden kurulabiliyor,
+   * depo yalnizca yeni vitrinde okunuyor.
+   */
+  private resolveShopNovelty(): ReadonlySet<string> {
+    const ids = (this.localPlayerSnapshot?.shopOffers ?? []).map((item) => item.id);
+    const scope = `${this.latestPerfSnapshot?.team.wave ?? "-"}:${this.localPlayerSnapshot?.shopRerollPrice ?? "-"}`;
+    return this.shopArchiveLatch.resolveNarrowing(scope, ids, () => markArchiveOffered("items", ids, { creative: this.isArchiveSandbox() }));
   }
 
   /**
@@ -7617,6 +8013,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       kills: snapshot.team.kills,
       earned: player ? (player.gold ?? 0) + (player.goldSpent ?? 0) : undefined
     });
+    if (summary) {
+      // Karne ayni sayilari kullaniyor: damga "+412 ◆" dediyse karne de ayni
+      // altini yaziyor. Can temizlenme anindan; "Kıl payı" o ana bakiyor.
+      this.waveReports.noteClear({
+        wave: summary.wave,
+        gold: summary.gold,
+        kills: summary.kills,
+        health: snapshot.team.health,
+        maxHealth: snapshot.team.maxHealth
+      });
+      // Perde damgadan once acildiysa (ag gecikmesi) karne simdi tamamlaniyor.
+      if (this.cardChoiceRoot) this.refreshWaveReportCard();
+    }
     if (!summary || this.cardChoiceRoot) {
       return;
     }
@@ -9659,6 +10068,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.game.events.emit("game:hud-gold-settle");
     }
     this.goldShopWasOpen = goldShopOpen;
+    const shopFresh = goldShopOpen ? this.resolveShopNovelty() : undefined;
 
     this.game.events.emit("game:controls-state", {
       visible: true,
@@ -9753,7 +10163,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
           const price = getShopItemPrice(item, ownedShopItems);
-          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price };
+          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true };
         })
       } : undefined,
       equippedItems: selectedTower?.equippedShopItemIds?.map((itemId) => {

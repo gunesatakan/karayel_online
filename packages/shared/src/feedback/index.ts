@@ -42,7 +42,10 @@ export type FeedbackKind =
   | "equip"
   | "repair"
   | "upgrade"
-  | "jackpot";
+  | "jackpot"
+  | "reportWin"
+  | "reportLoss"
+  | "reportRecord";
 
 export type FeedbackPriority = 0 | 1 | 2 | 3;
 
@@ -120,7 +123,14 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // Onur jackpot damgasi ("JACKPOT ×1.9"): kendi kritiginin ustunde kisa bir
   // dunya etiketi. Sayiyi sisirmek yerine zarin buyuk geldigini soyluyor.
   // Sesi yok (kritik citirtisi zaten caliyor), takim arkadasinda hic yok.
-  jackpot: { ownPriority: 1, channel: "label", visualMs: 1000, visualGapMs: 0, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 }
+  jackpot: { ownPriority: 1, channel: "label", visualMs: 1000, visualGapMs: 0, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Kosu raporunun acilisi: sonuc tinisi ve rekor rozetinin tinisi. Macta bir
+  // kez, oyuncunun kendi ekraninda; dalga bittigi icin butcede rakip yok.
+  // Aralik uzun: rapor yeniden cizilse de (rapor ekrandan sonra geldi) ikinci
+  // kez calmasin. Sarsinti ve titresim yok -- ekran zaten durdu.
+  reportWin: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 1100, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  reportLoss: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 900, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  reportRecord: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 700, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 }
 };
 
 export const FEEDBACK_LIMITS = {

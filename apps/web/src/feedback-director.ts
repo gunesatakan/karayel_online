@@ -176,7 +176,32 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
       { wave: "triangle", from: NOTE.G5 * p, at: 0.17, dur: 0.12, gain: 0.08 },
       { wave: "triangle", from: NOTE.D6 * p, at: 0.25, dur: 0.28, gain: 0.08 }
     ];
-  }
+  },
+  // Kosu raporu. Zafer: yukselen C-E-G-C ve altta tok bir bas; dalga
+  // akorundan (hepsi ayni anda) ayri okunsun diye notalar arka arkaya.
+  reportWin: () => [
+    { wave: "sine", from: NOTE.C3, to: 110, at: 0, dur: 0.7, gain: 0.2 },
+    { wave: "triangle", from: NOTE.C5, at: 0, dur: 0.18, gain: 0.09 },
+    { wave: "triangle", from: NOTE.E5, at: 0.11, dur: 0.18, gain: 0.09 },
+    { wave: "triangle", from: NOTE.G5, at: 0.22, dur: 0.2, gain: 0.09 },
+    { wave: "triangle", from: NOTE.C6, at: 0.33, dur: 0.7, gain: 0.08 },
+    { wave: "sine", from: NOTE.E6, at: 0.33, dur: 0.6, gain: 0.03 }
+  ],
+  // Yenilgi: inen iki yumusak nota, sonunda kok nota. Ceza gibi degil:
+  // rapor yenilgiyi de ilerleme olarak anlatiyor, ses kapiyi carpmamali.
+  reportLoss: () => [
+    { wave: "sine", from: NOTE.G5, at: 0, dur: 0.26, gain: 0.08 },
+    { wave: "sine", from: NOTE.E5, at: 0.2, dur: 0.3, gain: 0.08 },
+    { wave: "triangle", from: NOTE.C5, at: 0.42, dur: 0.46, gain: 0.07 },
+    { wave: "sine", from: NOTE.C3, at: 0.42, dur: 0.46, gain: 0.12 }
+  ],
+  // Rekor rozeti: kisa, parlak iki nota (G6-C7). Nadir kart tinisindan
+  // (uc nota, uzun kuyruk) kisa; ikisi karismasin.
+  reportRecord: () => [
+    { wave: "sine", from: NOTE.G6, at: 0, dur: 0.12, gain: 0.06 },
+    { wave: "sine", from: NOTE.C7, at: 0.08, dur: 0.34, gain: 0.07 },
+    { wave: "triangle", from: NOTE.C6, at: 0.08, dur: 0.3, gain: 0.03 }
+  ]
 };
 
 export type FeedbackDirectorOptions = {

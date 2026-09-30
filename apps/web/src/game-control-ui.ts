@@ -1,8 +1,17 @@
 import type Phaser from "phaser";
-import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 
 type ZeynepTier = "small" | "medium" | "big";
+
+/**
+ * Magaza ve envanter satirinin kategori etiketi. Kimlik ("utility") Turkce
+ * arayuzun ortasinda Ingilizce kaliyordu; ad Kart Arsivi'ndekiyle ayni.
+ * Bilinmeyen kategori ham haliyle kaliyor, satir bos gorunmesin.
+ */
+function formatShopCategory(category: string) {
+  return SHOP_CATEGORY_LABELS[category as ShopItemCategory] ?? category;
+}
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
@@ -137,7 +146,7 @@ type ControlState = {
     pendingItemId?: string;
     items: Array<{ id: string; name: string; description: string; category: string; count: number }>;
   };
-  goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean }> };
+  goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean; fresh?: boolean }> };
   targeting?: { current: string; modes: string[] };
   /**
    * Yaratici mod paneli.
@@ -720,7 +729,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `gold-shop__item gold-shop__item--${item.category}`;
-      button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small>`
+      button.innerHTML = `<span>${formatShopCategory(item.category)}</span><strong>${item.name}</strong><small>${item.description}</small>`
         + (item.count > 1 ? `<b>x${item.count}</b>` : "");
       button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
       list.append(button);
@@ -1267,7 +1276,9 @@ export function setupGameControlUi(game: Phaser.Game) {
         button.type = "button";
         button.className = `gold-shop__item gold-shop__item--${item.category}`;
         button.disabled = !item.affordable;
-        button.innerHTML = `<span>${item.category}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
+        // "YENİ": bu tarayicida ilk kez gorulen esya (Kart Arsivi). Fiyat ve
+        // cerceve ayni kaliyor; etiket sessiz, secimi one cekmesin.
+        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">YENİ</i>` : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
         button.addEventListener("pointerup", () => dispatch({ action: "buyShopItem", itemId: item.id }));
         offers?.append(button);
       }
