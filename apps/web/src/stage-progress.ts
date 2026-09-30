@@ -1,4 +1,11 @@
-import { STAGE_COUNT, getHighestUnlockedStage, isStageUnlocked } from "@karayel/shared";
+import {
+  STAGE_COUNT,
+  canRecordProgress,
+  getHighestUnlockedStage,
+  isStageUnlocked,
+  shouldRecordStageClear,
+  type ProgressRecordSource
+} from "@karayel/shared";
 
 /**
  * Asama ilerlemesi tarayicida duruyor.
@@ -46,12 +53,31 @@ export function getClearedStages(): number[] {
  * Yeni bir asama acildiysa `unlockedStage` doner; menu basarim ekranini buna
  * bakarak gosteriyor. Zaten tamamlanmis bir asamayi tekrar bitirmek yeni bir
  * acilis uretmez -- oyuncu ayni ekrani her tekrar oynayista gormemeli.
+ *
+ * Asama numarasi degil, sunucudan gelen kaynak aliniyor ve kapi burada, depoya
+ * yazan tek yerde. Cagiran taraf kontrolu unutsa bile yaratici bir kosu ya da
+ * asamasi bilinmeyen bir sonuc ilerlemeye dokunamaz; o durumda `undefined`
+ * doner ve ekranda acilis satiri cikmaz.
+ *
+ * Bu oyuncuda henuz acik olmayan asama (co-op'ta ev sahibinin asamasi) da
+ * yazilmiyor: `locked` doner, acilis yok. Yazmak `stage + 1`i acar ve aradaki
+ * kilitli asamalari atlatirdi (`shouldRecordStageClear`).
  */
-export function markStageCleared(stage: number): { alreadyCleared: boolean; unlockedStage?: number } {
+export function markStageCleared(
+  source: ProgressRecordSource
+): { alreadyCleared: boolean; unlockedStage?: number; locked?: boolean } | undefined {
+  if (!canRecordProgress(source)) return undefined;
+  const stage = source.stage;
   const cleared = getClearedStages();
   const alreadyCleared = cleared.includes(stage);
   if (alreadyCleared) {
     return { alreadyCleared: true };
+  }
+  // Co-op'ta katilan oyuncu kendisinde henuz acik olmayan bir asamayi
+  // kazanabiliyor; yazmak aradaki kilitli asamalari atlatirdi. Solo menude
+  // kilitli asama secilemedigi icin yalnizca bu durum etkileniyor.
+  if (!shouldRecordStageClear(stage, cleared)) {
+    return { alreadyCleared: false, locked: true };
   }
 
   const next = [...cleared, stage].sort((a, b) => a - b);

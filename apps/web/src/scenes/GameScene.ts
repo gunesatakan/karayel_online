@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import type { DefenseSummary, TowerPreview, LogisticsPriority } from "@karayel/shared";
 import { Room } from "colyseus.js";
-import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, shotStyle } from "../vfx/combat-vfx";
+import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, readTextureAccent, shotStyle } from "../vfx/combat-vfx";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
 import {
   characters,
@@ -61,6 +61,7 @@ import {
   canTowerHoldTargetedCard,
   cardReachesTower,
   getCardDefinition,
+  getCardRarity,
   getCardTowerReach,
   MAX_TARGETED_CARDS_PER_TOWER,
   towerCatalog,
@@ -68,6 +69,74 @@ import {
   type CardDefinition,
   type CharacterId,
   type DamageEventSnapshot,
+  FEEDBACK_KIND_RULES,
+  getDamageEventOwnerSlot,
+  RecentEnemyTraces,
+  COIN_CARRY_MS,
+  UPGRADE_READY_FLASH_GAP_MS,
+  getLumpGoldGain,
+  getUpgradeReadyTowerIds,
+  getDeathBurstShape,
+  getKillFeedbackWeight,
+  isEnemyHitFlashActive,
+  shouldStartEnemyHitFlash,
+  tintAccentColor,
+  CARD_PICK_STAMP_MS,
+  WAVE_CLEAR_STAMP_MS,
+  WaveClearWatch,
+  getCardDealTiming,
+  getCardDraftTitle,
+  getCardDraftWave,
+  getCardRevealCues,
+  getWaveClearStampText,
+  countEquippableTowers,
+  getInventoryEquipCue,
+  getInventoryEquipRejectedCue,
+  getShopPurchaseCue,
+  getStructureRepairCue,
+  getUltimateUpgradeCue,
+  getWorkerDevelopmentCue,
+  KillComboWatch,
+  STREAK_BANNER_HANDOFF_MS,
+  StreakBannerQueue,
+  getComboWindowMs,
+  getKillStreakBuffRealMs,
+  getKillStreakBuffText,
+  getStreakBuffedTowerIds,
+  getStreakGlowAlpha,
+  isStaleKillEvent,
+  FreshTowerSpawns,
+  TIER_CEREMONY_MS,
+  TIER_CEREMONY_SHARDS,
+  TOWER_LANDING_DUST_MS,
+  TOWER_LANDING_MS,
+  getTowerLandingScale,
+  getTowerLevelCeremony,
+  type TowerLevelCeremony,
+  ULTIMATE_CAST_ZOOM_MS,
+  ULTIMATE_SHOCKWAVE_MS,
+  ULTIMATE_STAMP_LAG_MS,
+  ULTIMATE_STAMP_MS,
+  UltimateReadyWatch,
+  getUltimateCastZoom,
+  getUltimateColumnSpan,
+  getUltimateResultKind,
+  getUltimateStampText,
+  getUltimateTeamChipText,
+  type UltimateCastMessage,
+  type UltimateResultMessage,
+  type KillStreakTier,
+  type ConfirmationPulseStyle,
+  type InventoryEquipRejectedMessage,
+  type InventoryEquippedMessage,
+  type ServerConfirmationCue,
+  type ShopPurchasedMessage,
+  type StructureRepairedMessage,
+  type UltimateUpgradedMessage,
+  type WorkerDevelopmentUnlockedMessage,
+  type CardRarity,
+  type EnemyType,
+  type KillEventSnapshot,
   type CrystalNodeSnapshot,
   type AmmoNodeSnapshot,
   type DroneSnapshot,
@@ -99,16 +168,31 @@ import { SnapshotPlaybackClock } from "@karayel/shared";
 import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
 import { markStageCleared } from "../stage-progress";
-import { ammoTypeLabels, attackShapeLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
+import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
-import type { HudState } from "../game-control-ui";
+import type { HudState, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
+import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
+import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
+import { WorldLabelPool } from "../vfx/world-labels";
+import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 
 type GameSceneData = {
   characterId?: CharacterId;
   mapData?: EditableMapData;
   creative?: boolean;
   stage?: number;
+};
+
+/**
+ * Sonuc ekraninin girdisi: `match:*` mesaji ya da sonucu tasiyan snapshot.
+ * Asama ve yaratici bayragi kaydin kapisina gidiyor; ikisi de sunucudan.
+ */
+type MatchResultSummary = {
+  wave: number;
+  kills: number;
+  stage?: number;
+  creative?: boolean;
 };
 
 /** Sunucunun yaratici modda yolladigi o anki kurulum. */
@@ -166,6 +250,8 @@ type ControlActionDetail = {
     | "toggleAudioHud"
     | "setMusicVolume"
     | "setVoiceVolume"
+    | "setSfxVolume"
+    | "setVibration"
     | "openInventory"
     | "closeInventory"
     | "selectInventoryItem"
@@ -201,10 +287,19 @@ type RenderTower = {
   base: Phaser.GameObjects.Image;
   /**
    * Yukseltme nabzi. Ayri bir carpan olarak durur cunku `base`in olcegi her
-   * karede secim ve ayak izinden yeniden hesaplaniyor; dogrudan scaleX/scaleY
-   * tweenlemek bir sonraki karede silinirdi.
+   * snapshot'ta secim ve ayak izinden yeniden hesaplaniyor; dogrudan
+   * scaleX/scaleY tweenlemek bir sonraki snapshot'ta silinirdi.
    */
   punch: { value: number };
+  /**
+   * Nabiz ve inis haric olcek: son snapshot'ta secim, doku ve ayak izinden.
+   * Karede yalnizca carpan degisiyor; kurulumda snapshot 500 ms'de bir
+   * gelebildigi icin carpan oraya birakilsa 150 ms'lik inis hic gorunmezdi.
+   */
+  scaleX: number;
+  scaleY: number;
+  /** Yerlestirme inisinin basladigi an; inis bitince yok. */
+  landingAt?: number;
   range: Phaser.GameObjects.Arc;
   deadZone: Phaser.GameObjects.Arc;
   isolation: Phaser.GameObjects.Graphics;
@@ -223,6 +318,84 @@ type RenderMover = {
   bleedEffect?: Phaser.GameObjects.Graphics;
   /** Kirag ve buz kabugu ayni yuzeyde: ikisi de ayni sogugun iki siddeti. */
   frostEffect?: Phaser.GameObjects.Graphics;
+  /** Son karede cizilen tur ve hareket bicimi; kaldirilinca olum patlamasina iz oluyor. */
+  type?: EnemyType;
+  air?: boolean;
+  /** Son karedeki ekran boyu (dunya px). */
+  displaySize?: number;
+  /** Flas haric taban ton; patlamanin rengi flasin beyazini almasin. */
+  baseTint?: number;
+  /** Bir onceki karedeki can + kalkan; dusus vurus demek. */
+  lastEffectiveHp?: number;
+  /** Son vurus flasinin basladigi an; hiz siniri da buradan. */
+  hitFlashAt?: number;
+};
+
+/** Kaldirilan dusmanin izi: oldurme olayi patlamayi buradan ciziyor. */
+type RemovedEnemyTrace = {
+  x: number;
+  y: number;
+  size: number;
+  texture: string;
+  tint: number;
+  type: EnemyType;
+  air: boolean;
+};
+
+/** Takim arkadasinin oldurmesinin patlamasi: gorunsun ama seninkiyle yarismasin. */
+const TEAMMATE_DEATH_BURST_INTENSITY = 0.5;
+/** Takim arkadasinin kademe sutunu ve inis tozu: ayni kural, soluk. */
+const TEAMMATE_TOWER_MOMENT_INTENSITY = 0.5;
+/**
+ * Seviye etiketinin kulenin diskinin ustunden yuksekligi (dunya px): can
+ * cubugunun (disk ustu - 8) ve "yukseltme hazir" ▲'inin (disk ustu - 11)
+ * ustunde, ikisini ortmesin.
+ */
+const LEVEL_LABEL_LIFT_PX = 26;
+/**
+ * Etiket boyu: kademe siradan seviyeden buyuk, takim arkadasininki en kucuk ve
+ * soluk. Kademe etiketi uzun ("SV 5 · KADEME 2", arenanin ~%30'u); daha
+ * buyugu dalga ortasinda yolu ortuyordu, vurguyu renk ve pop veriyor.
+ */
+const LEVEL_LABEL_FONT_PX = 12;
+const TIER_LABEL_FONT_PX = 13;
+const TEAMMATE_LEVEL_LABEL_FONT_PX = 11;
+const TEAMMATE_LEVEL_LABEL_ALPHA = 0.55;
+const LEVEL_LABEL_STROKE = "#0f172a";
+/**
+ * Onur jackpot damgasi: kritik sayinin (15 px x 1.5) hemen ustunde, sayiyla
+ * birlikte yukseliyor. Renk kritik turuncusunun altini: "!" sayinin, damga
+ * zarin; ikisi ayni ani anlatiyor ama sayi sisirilmiyor.
+ */
+const JACKPOT_LABEL_LIFT_PX = 18;
+const JACKPOT_LABEL_FONT_PX = 11;
+const JACKPOT_LABEL_FILL = "#fde047";
+const JACKPOT_LABEL_STROKE = "#431407";
+/**
+ * "Yukseltme hazir" isareti: kule sprite'larinin (12) ve can cubugunun (16)
+ * ustunde, yuzen sayilarin (30) ve secili kule panelinin (66) altinda.
+ */
+const UPGRADE_READY_MARKER_DEPTH = 16.5;
+/** Yesil: "yukari/hazir" okunuyor ve haritadaki hicbir durum rengiyle karismiyor. */
+const UPGRADE_READY_MARKER_FILL = 0x4ade80;
+const UPGRADE_READY_MARKER_STROKE = 0x052e16;
+/** Salinim: en fazla 3 px yukari, yaklasik 1.1 sn'de bir. */
+const UPGRADE_READY_BOB_PX = 3;
+const UPGRADE_READY_BOB_RATE = 1 / 180;
+/** Doygun rengi olmayan doku (tas golem) icin patlama rengi. */
+const ENEMY_ACCENT_FALLBACK = 0xd6d3d1;
+const ENEMY_HIT_FLASH_COLOR = 0xffffff;
+/**
+ * Sunucu onayi atimlarinin renkleri.
+ *
+ * Takma turuncu: kademe halkasinin (mavi / altin / beyaz) ve kart eksenlerinin
+ * hicbirine denk gelmiyor, "seviye atladi" ya da "kart islendi" diye
+ * okunmasin. Onarim, can cubugunun dolu yesili: halka cubukla ayni anda
+ * doluyor.
+ */
+const CONFIRMATION_PULSE_COLORS: Readonly<Record<ConfirmationPulseStyle, number>> = {
+  equip: 0xfb923c,
+  repair: 0x22c55e
 };
 
 type HydratedGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
@@ -250,13 +423,14 @@ type PendingAction =
   | { type: "refactor"; towerId: string }
   | undefined;
 
-type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
-
+/**
+ * Seri afisinin gorunumu. Esik ve guc burada degil: seriyi yalnizca sunucu
+ * veriyor (`KillEventSnapshot.streakTier`), buff'i afise paylasilan tablo
+ * (`getKillStreakBuffText`) yaziyor.
+ */
 type KillStreakRule = {
   tier: KillStreakTier;
   label: string;
-  windowMs: number;
-  kills: number;
   primary: number;
   secondary: number;
   accent: number;
@@ -264,10 +438,51 @@ type KillStreakRule = {
   chaos: number;
 };
 
-type KillStreakLock = {
-  unlockAt: number;
-  wave: number;
+/** Sirada bekleyen ya da ekrandaki kendi seri afisin. */
+type StreakBannerItem = {
+  characterId: CharacterId;
+  rule: KillStreakRule;
 };
+
+/** Seri buff'i suren sahibin kuleleri; gercek sure boyunca parliyor. */
+type StreakGlow = {
+  ownerId: string;
+  own: boolean;
+  towerIds: string[];
+  startedAt: number;
+  until: number;
+};
+
+/** Takim arkadasinin serisi: soluk parlama, kisik ses, kendi kuleleri. */
+const TEAMMATE_STREAK_GLOW_INTENSITY = 0.45;
+/** Takim arkadasinin seri klibi seslendirme seviyesinin bu kadari. */
+const TEAMMATE_STREAK_VOICE_GAIN = 0.35;
+let mediaVolumeSettable: boolean | undefined;
+/**
+ * Medya ogesinin sesi yazilabiliyor mu.
+ *
+ * iOS Safari `HTMLAudioElement.volume` yazmayi yok sayiyor (okuma hep 1).
+ * Takim arkadasinin seri klibi yalnizca bu seviyeyle kisiliyor; orada tam
+ * sesle calip senin sesini ele gecirirdi. Bir kez olculuyor.
+ */
+function canSetMediaVolume() {
+  if (mediaVolumeSettable === undefined) {
+    try {
+      const probe = new Audio();
+      probe.volume = 0.5;
+      mediaVolumeSettable = Math.abs(probe.volume - 0.5) < 0.01;
+    } catch {
+      mediaVolumeSettable = false;
+    }
+  }
+  return mediaVolumeSettable;
+}
+/** Seri parlamasi zeminde: dusmanlar ve mermiler ustunden gecer, kule govdesi ortuyor. */
+const STREAK_GLOW_DEPTH = 4.6;
+/** Parlamanin nabzi (rad/ms): ~0.7 sn'de bir; hareket azaltmada sabit. */
+const STREAK_GLOW_PULSE_RATE = (Math.PI * 2) / 700;
+/** Melis afisinin kendi titremesi; genligi yonetmen 3 px ile sinirliyor. */
+const MELIS_STREAK_VIBRATE_MS = 15;
 
 type KillStreakVisualTheme = {
   style: "brutal" | "command" | "creepy" | "precision" | "arcane" | "sanctuary" | "bulwark" | "storm";
@@ -281,7 +496,6 @@ type KillStreakVisualTheme = {
   imageKey?: string | null;
 };
 
-const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 /** Tani icin saklanan dokunus sayisi; performans kutusuna sigacak kadar. */
 const TAP_LOG_SIZE = 6;
 
@@ -314,8 +528,6 @@ const OVERDRIVE_SPARK_COUNT = 10;
 const OVERDRIVE_HALO_LAYERS = 6;
 /** Bir kivilcimin dogup sonme suresi. */
 const OVERDRIVE_SPARK_LIFE_MS = 520;
-/** Uyari tonunun suresi. Kisa: uyari, muzik degil. */
-const ALERT_TONE_SECONDS = 0.24;
 /**
  * Yerel yankinin en fazla ne kadar ayakta kalacagi.
  *
@@ -326,6 +538,11 @@ const ALERT_TONE_SECONDS = 0.24;
  * altinda: yaniliyorsa kisa surede kendini toparliyor.
  */
 const LOCAL_ECHO_TIMEOUT_MS = 2500;
+/**
+ * Atakan ultisinde sok dalgasi drone'larin kalktigi kulelerde; kalabalik bir
+ * kurulumda hepsine halka cizmek dalgayi gurultuye cevirirdi.
+ */
+const CAST_WAVE_TOWER_LIMIT = 8;
 /** Kule panelinin altindaki satis dugmesinin yuksekligi (dunya birimi). */
 const SELL_BUTTON_HEIGHT = 20;
 
@@ -385,7 +602,7 @@ const GUIDANCE_RADIUS = 78;
 // slow enough to read as a sweep rather than a snap.
 
 type ZeynepCommandTier = "small" | "medium" | "big";
-type AudioVolumeChannel = "music" | "voice";
+type AudioVolumeChannel = "music" | "voice" | "sfx";
 /** Kule tepsisindeki sutun sayisi; satirlarin tepsiye sigmasini belirler. */
 const TOWER_TRAY_COLUMNS = 5;
 
@@ -413,8 +630,6 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "legendary",
     label: "LEGENDARY",
-    windowMs: 11000,
-    kills: 22,
     primary: 0xfacc15,
     secondary: 0xff2d55,
     accent: 0xf8fafc,
@@ -424,8 +639,6 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "rampage",
     label: "RAMPAGE",
-    windowMs: 8000,
-    kills: 16,
     primary: 0xef4444,
     secondary: 0x22d3ee,
     accent: 0xfacc15,
@@ -435,8 +648,6 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "unstoppable",
     label: "UNSTOPPABLE",
-    windowMs: 5000,
-    kills: 10,
     primary: 0x8b5cf6,
     secondary: 0x38bdf8,
     accent: 0xfb7185,
@@ -446,8 +657,6 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
   {
     tier: "granted",
     label: "GRANTED",
-    windowMs: 2000,
-    kills: 5,
     primary: 0x22c55e,
     secondary: 0xa7f3d0,
     accent: 0xf8fafc,
@@ -457,8 +666,15 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
 ];
 const MUSIC_VOLUME_STORAGE_KEY = "karayel.musicVolume";
 const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
+const SFX_VOLUME_STORAGE_KEY = "karayel.sfxVolume";
+const VIBRATION_STORAGE_KEY = "karayel.vibration";
 const DEFAULT_MUSIC_VOLUME = 0.34;
 const DEFAULT_VOICE_VOLUME = 0.82;
+/**
+ * Efekt sesleri seslendirmeden kisik basliyor: onlar saniyede birkac kez
+ * caliyor, seri anonsu dalgada bir. Ayni seviyede baslasa muzigi boguyordu.
+ */
+const DEFAULT_SFX_VOLUME = 0.6;
 
 export class GameScene extends Phaser.Scene {
   private room?: Room;
@@ -475,6 +691,16 @@ export class GameScene extends Phaser.Scene {
   private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
+  /**
+   * Bu karede kaldirilan dusmanlarin izi.
+   *
+   * Sprite `renderEnemies`te hemen havuza donuyor, oldurme olayi ise ayni
+   * karede ama sonra isleniyor. Iz tek kullanimlik ve kisa omurlu: sizintinin
+   * oldurme olayi yok, izi kimse almiyor ve siliniyor.
+   */
+  private readonly removedEnemyTraces = new RecentEnemyTraces<RemovedEnemyTrace>();
+  /** Doku basina vurgu rengi; bir kez okunuyor. */
+  private readonly enemyAccentColors = new Map<string, number>();
   private towers = new Map<string, RenderTower>();
   private projectiles = new Map<string, Phaser.Physics.Arcade.Sprite>();
   private linearProjectileSnapshots = new Map<string, ProjectileSpawnSnapshot>();
@@ -512,6 +738,19 @@ export class GameScene extends Phaser.Scene {
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
   private impactGraphics?: Phaser.GameObjects.Graphics;
   private combatVfx?: CombatVfx;
+  /** Yuzen hasar sayilarinin sabit havuzu; kac tanesinin gorunecegini yonetmen soyluyor. */
+  private damageNumbers?: DamageNumberPool;
+  /** "SV 3", "SV 5 · KADEME 2" etiketlerinin havuzu; yonetmenin etiket butcesi kadar. */
+  private levelLabels?: WorldLabelPool;
+  /** Sunucunun onayladigi (`tower:spawn`) ama oynatmada henuz cizilmemis kuleler. */
+  private readonly freshTowerSpawns = new FreshTowerSpawns();
+  /**
+   * Kuleler en az bir kez cizildi mi. Ilk karedeki kuleler (katilma, sayfa
+   * yenileme) inmez: onlar oyuncunun gozunun onunde kurulmadi.
+   */
+  private towersPrimed = false;
+  /** Olcegi snapshot'lar arasinda degisen kuleler (nabiz ya da inis); karede yalnizca bunlar. */
+  private readonly animatedTowers = new Set<RenderTower>();
   /**
    * Kuleye ozgu carpma izleri.
    *
@@ -548,20 +787,53 @@ export class GameScene extends Phaser.Scene {
   private seenDamageEventSet = new Set<string>();
   private seenKillEventIds: string[] = [];
   private seenKillEventSet = new Set<string>();
-  private killStreakTimesByOwner = new Map<string, number[]>();
-  private killStreakLocksByOwner = new Map<string, Map<KillStreakTier, KillStreakLock>>();
+  /** Son islenen snapshotta ilk kez gorulen oldurme olayi; cipteki "+N" icin. */
+  private newKillEventsInSnapshot = 0;
+  /** Bir onceki snapshottaki altin; ilk snapshotta yok, o zaman etiket de yok. */
+  private lastSnapshotGold?: number;
+  /** Dunyadaki altin sayisina eklenemeyen altin; bir sonraki sayiya tasiniyor. */
+  private coinCarry = { amount: 0, at: 0 };
+  /** Sonraki seviyesi odenebilen en ucuz yerel kuleler ve isaretlerinin yeri. */
+  private upgradeReadyAnchors: Array<{ id: string; x: number; y: number }> = [];
+  private upgradeReadyMarkers: Phaser.GameObjects.Graphics[] = [];
+  private upgradeReadyMarkerHalfWidth = 0;
+  /** Hazir kule sayisi; ilk hesapta yok, yeniden baglanmada ★ parlamasin diye. */
+  private upgradeReadyCount?: number;
+  private lastUpgradeReadyFlashAt = Number.NEGATIVE_INFINITY;
+  private goldShopWasOpen = false;
+  /** Kozmetik kombo: kendi oldurme zincirin ve takimin ortak zinciri. */
+  private readonly killCombo = new KillComboWatch();
   private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
     granted: [],
     unstoppable: [],
     rampage: [],
     legendary: []
   };
+  /**
+   * Su an calan seri klibi ve kimin serisi. Takim arkadasininki calan bir
+   * klibi kesmiyor, yeniden baslatmiyor; seninki onunkini kesebiliyor.
+   */
+  private streakVoice?: { audio: HTMLAudioElement; own: boolean };
   private rampageContainer?: Phaser.GameObjects.Container;
+  /** Ekrandaki afisin cikis tween'i; siradaki afis bekliyorsa one cekiliyor. */
+  private rampageExit?: { tween: Phaser.Tweens.Tween; exitY: number; startsAt: number };
+  /** Kendi seri afislerin: silinmiyor, sirayla geliyor. */
+  private readonly streakBanners = new StreakBannerQueue<StreakBannerItem>();
+  private streakGlows: StreakGlow[] = [];
+  private streakGlowGraphics?: Phaser.GameObjects.Graphics;
   private backgroundMusic?: HTMLAudioElement;
   private backgroundMusicPath = "";
   private gameAudioUnlocked = false;
   private musicVolume = readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
   private voiceVolume = readStoredVolume(VOICE_VOLUME_STORAGE_KEY, DEFAULT_VOICE_VOLUME);
+  private sfxVolume = readStoredVolume(SFX_VOLUME_STORAGE_KEY, DEFAULT_SFX_VOLUME);
+  /** Titresim ayari; cihaz desteklemiyorsa ayar gorunmuyor ama deger kaliyor. */
+  private vibrationEnabled = readStoredFlag(VIBRATION_STORAGE_KEY, true);
+  /**
+   * Odul geri bildiriminin tek kapisi: sentez sesi, sarsinti, titresim ve
+   * ekran butcesi. Sahneyle kuruluyor, sahneyle kapaniyor.
+   */
+  private feedback?: FeedbackDirector;
   private audioSettingsOpen = false;
   private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
   private perfPopupOpen = false;
@@ -571,6 +843,20 @@ export class GameScene extends Phaser.Scene {
   private cardChoices: CardDefinition[] = [];
   private cardChoicePending = false;
   private cardChoiceTimeout?: number;
+  /** Dalga temizlenmesini yakalayan saf kural; dalganin tabanini kurulumda aliyor. */
+  private readonly waveClearWatch = new WaveClearWatch();
+  /**
+   * Dagitilmis elin kimligi (dalga + kartlar). Ayni el yeniden acildiginda
+   * (hedef listesinden geri, sunucunun yeniden gondermesi) kartlar yeniden
+   * dagitilmiyor: oyuncu ayni eli ikinci kez "kazanmiyor".
+   */
+  private cardDealKey = "";
+  private cardDealStartedAt = 0;
+  /** Kart acilisinin ses zamanlayicilari; perde kapaninca iptal. */
+  private cardDealTimers: number[] = [];
+  /** Secim damgasinin bittigi an; kule atimi ve toast bundan once baslamiyor. */
+  private cardPickStampUntil = 0;
+  private cardAppliedTimer?: number;
   private reconnecting = false;
   private perfText?: Phaser.GameObjects.Text;
   private hudState: HudState = {
@@ -586,12 +872,15 @@ export class GameScene extends Phaser.Scene {
     audioOpen: false,
     musicVolume: DEFAULT_MUSIC_VOLUME,
     voiceVolume: DEFAULT_VOICE_VOLUME,
+    sfxVolume: DEFAULT_SFX_VOLUME,
+    vibration: true,
     statsOpen: false,
     statsTab: "damage",
     statsTowers: [],
     statsEffects: [],
     forecastEnemyCount: 0,
-    airWarning: false
+    airWarning: false,
+    upgradeReady: false
   };
   /**
    * Hava uyarisinin toast olarak soylendigi kurulum arasi.
@@ -635,6 +924,13 @@ export class GameScene extends Phaser.Scene {
   private selectedStage = 1;
   /** Sunucu bayragi acti mi; panel ve bedava yerlestirme buna bakiyor. */
   private creativeMode = false;
+  /**
+   * Odanin gercek asamasi, her snapshot'ta sunucudan.
+   *
+   * `selectedStage` menudeki secim; baskasinin odasina katilan oyuncuda odanin
+   * asamasiyla ayni olmak zorunda degil. Sonuc ekrani ve kayit buna bakiyor.
+   */
+  private roomStage?: number;
   private creativeLoadout?: CreativeLoadout;
   /**
    * Ulti basildi, sunucu daha onaylamadi.
@@ -644,6 +940,12 @@ export class GameScene extends Phaser.Scene {
    * bastigini anlamiyor ve kotu baglantida ustune bir daha basiyor.
    */
   private ultimateEchoUntil = 0;
+  /** Ulti sarjinin "hazir" gecisi; ilk gozlem gecis sayilmiyor. */
+  private readonly ultimateReadyWatch = new UltimateReadyWatch();
+  /** Hazir atiminin basladigi an; panel yeniden kurulsa da atim kaldigi yerden suruyor. */
+  private ultimateReadyPulseAt?: number;
+  /** Atisin yerel zoomu: kameranin kendi yakinlastirmasi (`base`) uzerine carpan. */
+  private ultimateZoomPunch?: { startedAt: number; base: number; last: number };
   /**
    * Gonderilmis ama sahada henuz gorunmeyen yerlestirme.
    *
@@ -740,16 +1042,12 @@ export class GameScene extends Phaser.Scene {
   private workerBanMode = false;
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
-  /** Gedik ve akis kaymasi uyarilarinin ortak sesi. */
-  /** Uyari tonlari icin tek baglam; ilk dokunusta aciliyor. */
-  private alertAudioContext?: AudioContext;
   private draggedTowerDefinition?: TowerDefinition;
   /** Kac kez yarim kalmis surukleme temizlendi; tani satirinda gorunur. */
   private strandedTowerDragCount = 0;
   private ignoreMapPointerUntil = 0;
   private readonly playbackDelayMs = 500;
   private readonly playbackClock = new SnapshotPlaybackClock(this.playbackDelayMs);
-  private readonly killStreakMaxWindowMs = 11000;
   private readonly dragPreviewOffsetY = 64;
   private readonly controlTop = 698;
   private readonly skillRowY = 710;
@@ -797,6 +1095,11 @@ export class GameScene extends Phaser.Scene {
     this.drawMap();
     this.configureArenaCamera();
     this.createPlacementGrid();
+    this.feedback = new FeedbackDirector({
+      sfxVolume: this.sfxVolume,
+      vibration: this.vibrationEnabled,
+      getCamera: () => this.cameras.main
+    });
     this.createHeader();
     window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
@@ -805,6 +1108,32 @@ export class GameScene extends Phaser.Scene {
     // Carpma imzalari halkalarin ustunde: halka zemin, imza kulenin kimligi.
     this.impactGraphics = this.add.graphics().setDepth(11.6);
     this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
+    this.damageNumbers = new DamageNumberPool(this, 30);
+    // Sayilarin hemen ustunde: seviye etiketi seyrek ve oyuncunun satin aldigi an.
+    this.levelLabels = new WorldLabelPool(this, 30.5);
+    // Sahne ayni nesneyle yeniden baslarsa alan baslaticilari yeniden
+    // calismiyor; ilk snapshot yine "ilk" sayilsin, ★ ve etiket yanlis cikmasin.
+    this.freshTowerSpawns.clear();
+    this.towersPrimed = false;
+    this.animatedTowers.clear();
+    this.lastSnapshotGold = undefined;
+    this.upgradeReadyCount = undefined;
+    this.upgradeReadyAnchors = [];
+    this.coinCarry = { amount: 0, at: 0 };
+    this.goldShopWasOpen = false;
+    this.waveClearWatch.reset();
+    this.ultimateReadyWatch.reset();
+    this.ultimateReadyPulseAt = undefined;
+    this.ultimateZoomPunch = undefined;
+    this.cardDealKey = "";
+    this.cardPickStampUntil = 0;
+    this.killCombo.reset();
+    this.streakBanners.clear();
+    this.streakGlows = [];
+    this.streakVoice = undefined;
+    this.rampageExit = undefined;
+    // Zemin katmani: kule govdesinin altinda, dusmanlarin altinda.
+    this.streakGlowGraphics = this.add.graphics().setDepth(STREAK_GLOW_DEPTH);
     this.createKillStreakAudio();
     this.createBackgroundMusic();
     this.emitControlState();
@@ -829,12 +1158,33 @@ export class GameScene extends Phaser.Scene {
       this.placementGhost?.destroy();
       this.guidancePreview?.destroy();
       this.rampageContainer?.destroy(true);
+      this.rampageContainer = undefined;
+      this.rampageExit = undefined;
+      this.streakBanners.clear();
+      this.streakGlows = [];
+      this.streakGlowGraphics?.destroy();
+      this.streakGlowGraphics = undefined;
+      this.streakVoice?.audio.pause();
+      this.streakVoice = undefined;
       this.hideAudioSettingsPanel();
       this.hidePerfPopup();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
       this.hideCardChoices();
+      window.clearTimeout(this.cardAppliedTimer);
+      this.cardAppliedTimer = undefined;
       this.backgroundMusic?.pause();
+      this.feedback?.destroy();
+      this.feedback = undefined;
+      this.damageNumbers?.destroy();
+      this.damageNumbers = undefined;
+      this.levelLabels?.destroy();
+      this.levelLabels = undefined;
+      this.animatedTowers.clear();
+      this.freshTowerSpawns.clear();
+      for (const marker of this.upgradeReadyMarkers) marker.destroy();
+      this.upgradeReadyMarkers = [];
+      this.upgradeReadyAnchors = [];
       this.game.events.emit("game:controls-state", { visible: false });
       this.game.events.emit("game:hud-hide");
     });
@@ -847,6 +1197,12 @@ export class GameScene extends Phaser.Scene {
     this.renderPlaybackFrame(now);
     this.renderImpactMarks(now);
     this.combatVfx?.render(now, this.getTowerEffectScale());
+    this.damageNumbers?.update(now);
+    this.levelLabels?.update(now);
+    this.updateAnimatedTowers(now);
+    this.updateUltimateZoomPunch(now);
+    this.updateUpgradeReadyMarkers(now);
+    this.renderStreakGlows(now);
     this.resolvePendingPlacement();
   }
 
@@ -984,6 +1340,8 @@ export class GameScene extends Phaser.Scene {
   private createHeader() {
     this.hudState.musicVolume = this.musicVolume;
     this.hudState.voiceVolume = this.voiceVolume;
+    this.hudState.sfxVolume = this.sfxVolume;
+    this.hudState.vibration = this.vibrationEnabled;
     this.emitHudState();
   }
 
@@ -1134,11 +1492,14 @@ export class GameScene extends Phaser.Scene {
     this.hideAudioSettingsPanel();
     this.perfPopupOpen = false;
     this.audioSettingsOpen = true;
+    // Istatistik acikken panel her snapshotta yeniden ciziliyor ve kaydiricilar
+    // acilistaki eski degerlerle kurulup suruklemeyi koparirdi; iki pencere,
+    // `toggleStatsHud`in sesi kapattigi gibi, birbirini disliyor.
     this.emitHudState({
       audioOpen: true,
       perfOpen: false,
-      musicVolume: this.musicVolume,
-      voiceVolume: this.voiceVolume
+      statsOpen: false,
+      ...this.getAudioHudPatch()
     });
   }
 
@@ -1201,7 +1562,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getAudioVolume(channel: AudioVolumeChannel) {
-    return channel === "music" ? this.musicVolume : this.voiceVolume;
+    if (channel === "music") return this.musicVolume;
+    if (channel === "sfx") return this.sfxVolume;
+    return this.voiceVolume;
+  }
+
+  /**
+   * Ses paneline giden degerlerin tamami.
+   *
+   * Kaydiricilar surulurken durum yollanmiyor (panel yeniden cizilir ve
+   * surukleme kopar). Panel baska bir nedenle yeniden cizildiginde -- titresim
+   * kutusu -- eski degerle cizilmesin diye hepsi birlikte gidiyor.
+   */
+  private getAudioHudPatch(): Partial<HudState> {
+    return {
+      musicVolume: this.musicVolume,
+      voiceVolume: this.voiceVolume,
+      sfxVolume: this.sfxVolume,
+      vibration: this.vibrationEnabled
+    };
   }
 
   private setAudioVolume(channel: AudioVolumeChannel, value: number) {
@@ -1209,11 +1588,38 @@ export class GameScene extends Phaser.Scene {
     if (channel === "music") {
       this.musicVolume = volume;
       writeStoredVolume(MUSIC_VOLUME_STORAGE_KEY, volume);
+    } else if (channel === "sfx") {
+      this.sfxVolume = volume;
+      writeStoredVolume(SFX_VOLUME_STORAGE_KEY, volume);
     } else {
       this.voiceVolume = volume;
       writeStoredVolume(VOICE_VOLUME_STORAGE_KEY, volume);
     }
     this.applyAudioVolumes();
+    if (channel === "sfx") {
+      // Onizleme: oyuncu kaydiriciyi surerken yeni seviyeyi duysun. Altin
+      // tinisinin hiz siniri (saniyede 4) surukleme boyunca da gecerli.
+      // Kaydirici bir dokunus oldugu icin baglam burada acilabiliyor; ilk
+      // hareketin onizlemesi yonetmende bir an tutulup baglam acilinca caliyor.
+      this.feedback?.unlockAudio();
+      this.feedback?.playSfx("coin", { own: true });
+    }
+  }
+
+  /**
+   * Titresim ayari.
+   *
+   * Acilinca bir kez kisa titriyor: oyuncu ayarin ise yaradigini o an
+   * hissetsin. Kapaliyken yonetmen hicbir olayda titretmiyor.
+   */
+  private setVibrationEnabled(on: boolean) {
+    this.vibrationEnabled = on;
+    writeStoredFlag(VIBRATION_STORAGE_KEY, on);
+    this.feedback?.setVibration(on);
+    if (on) {
+      this.feedback?.vibrate(12);
+    }
+    this.emitHudState(this.getAudioHudPatch());
   }
 
   private applyAudioVolumes() {
@@ -1222,8 +1628,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
-      audio.volume = this.voiceVolume;
+      // Calan takim arkadasi klibi kisik kalir; kaydirici onu tam sese cekmesin.
+      const teammate = this.streakVoice?.audio === audio && !this.streakVoice.own;
+      audio.volume = this.voiceVolume * (teammate ? TEAMMATE_STREAK_VOICE_GAIN : 1);
     }
+    this.feedback?.setSfxVolume(this.sfxVolume);
     // Uyari tonu burada yok cunku seviyeyi her calista kendisi okuyor. Onceki
     // uyari sesi bir HTMLAudioElement'ti ve seviyesi yalnizca kurulusta bir kez
     // yaziliyordu -- listeye eklenmedigi icin ayarlardan kisilamiyordu.
@@ -1306,6 +1715,9 @@ export class GameScene extends Phaser.Scene {
     const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id, orientation);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
     if (this.room && canPlace) {
+      // Inisin tok sesi onay donunce caliyor; birakis bir kullanici hareketi,
+      // oyuncu tuvale hic dokunmadan (kule tepsisinden) surukleyebiliyor.
+      this.feedback?.unlockAudio();
       // Yaratici modda ayni yerlestirme akisi bedelsiz kanaldan gidiyor;
       // suruklemenin, onizlemenin ve yonun tekrar yazilmasi gerekmiyor.
       this.room.send(this.creativeMode ? "creative:tower" : "placeTower", {
@@ -1453,6 +1865,13 @@ export class GameScene extends Phaser.Scene {
     if (!detail) {
       return;
     }
+    // Her HUD eylemi bir pointerup/change/input isleyicisinden eszamanli
+    // geliyor, yani bir kullanici etkinlestirmesinin icinde: askidaki ses
+    // baglami (arka plandan donus, iOS kesintisi) burada surdurulsun. Surukleme
+    // hareketi pointermove'dan geliyor, etkinlestirme sayilmiyor; atlaniyor.
+    if (detail.action !== "towerDragMove") {
+      this.feedback?.unlockAudio();
+    }
 
     // Kurulabilir liste, karakterin kiti degil: duvar kimsenin kiti degil ama
     // herkes kurabiliyor. Kiti aramak duvar butonunu tumden tepkisiz birakiyordu.
@@ -1494,6 +1913,12 @@ export class GameScene extends Phaser.Scene {
         break;
       case "setVoiceVolume":
         if (typeof detail.value === "number") this.setAudioVolume("voice", detail.value);
+        break;
+      case "setSfxVolume":
+        if (typeof detail.value === "number") this.setAudioVolume("sfx", detail.value);
+        break;
+      case "setVibration":
+        this.setVibrationEnabled(detail.value === 1);
         break;
       case "selectTower": {
         this.hideZeynepTierChoicesIfOpen();
@@ -1555,22 +1980,29 @@ export class GameScene extends Phaser.Scene {
         this.hideZeynepTierChoicesIfOpen();
         if (detail.mode) {
           this.room?.send("useUltimate", { mode: detail.mode });
-          this.echoUltimateCast();
+          this.echoUltimateCast({});
         }
         this.hideUltimateChoices();
         this.clearPlacedTowerSelection();
         break;
       case "upgradeUltimatePower":
+        // Onayin sesi sunucudan donunce caliyor ve dokunusun disinda baglam
+        // acilamiyor; oyuncu tuvale hic dokunmadiysa baglam burada acilsin.
+        this.feedback?.unlockAudio();
         this.room?.send("ultimate:upgrade", {});
         break;
       case "upgradeTower":
         this.hideZeynepTierChoicesIfOpen();
         if (this.selectedPlacedTowerId) {
+          // Seviye tinisi snapshot'ta seviye degisince caliyor; baglam ancak
+          // dokunusun icinde acilabiliyor.
+          this.feedback?.unlockAudio();
           this.room?.send("upgradeTower", { towerId: this.selectedPlacedTowerId });
         }
         break;
       case "creativeLevel":
         if (this.selectedPlacedTowerId && typeof detail.level === "number") {
+          this.feedback?.unlockAudio();
           this.room?.send("creative:level", { towerId: this.selectedPlacedTowerId, level: detail.level });
         }
         break;
@@ -1594,6 +2026,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "repairStructure":
         if (this.selectedPlacedTowerId) {
+          this.feedback?.unlockAudio();
           this.room?.send("structure:repair", { towerId: this.selectedPlacedTowerId });
         }
         return;
@@ -1667,6 +2100,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "unlockWorkerDevelopment":
         if (isHirableWorkerRole(detail.role) && detail.skillId) {
+          this.feedback?.unlockAudio();
           this.room?.send("worker:development", { role: detail.role, skillId: detail.skillId });
         }
         break;
@@ -1676,7 +2110,10 @@ export class GameScene extends Phaser.Scene {
         }
         break;
       case "buyShopItem":
-        if (detail.itemId) this.room?.send("shop:buy", { itemId: detail.itemId });
+        if (detail.itemId) {
+          this.feedback?.unlockAudio();
+          this.room?.send("shop:buy", { itemId: detail.itemId });
+        }
         break;
       case "rerollShop":
         this.room?.send("shop:reroll");
@@ -1733,6 +2170,8 @@ export class GameScene extends Phaser.Scene {
 
     const itemId = this.pendingEquipItemId;
     this.previewTowerChange({ itemId, towerId }, () => {
+      // Onizlemenin "uygula" dugmesi bir dokunus: takma sesinin baglami burada acilabilir.
+      this.feedback?.unlockAudio();
       this.room?.send("equipShopItem", { itemId, towerId });
       this.pendingEquipItemId = undefined;
     });
@@ -2272,8 +2711,9 @@ export class GameScene extends Phaser.Scene {
   /**
    * Kritik yavaslatma.
    *
-   * Kucuk ve keskin: kritik hasarin kendi parlamasi zaten var ve bu onunla
-   * yarismamali. Uc kiymik disari firliyor, yani "bir sey kirildi" diyor
+   * Kucuk ve keskin: kritik hasarin kendi isareti var (turuncu, "!" ve pop
+   * yapan sayi; bkz. `showDamageNumber`) ve bu onunla yarismamali. Uc kiymik
+   * disari firliyor, yani "bir sey kirildi" diyor
    * ama sahneyi kaplamiyor -- yavaslatma her vurusta olabilen bir sey.
    */
   private showSlowCritBurst(x: number, y: number) {
@@ -2671,41 +3111,9 @@ export class GameScene extends Phaser.Scene {
    * yaziliyordu, o yuzden ayarlardan kisilmasi hicbir sey degistirmiyordu.
    */
   private playAlertSound(kind: "breach" | "flow") {
-    if (this.voiceVolume <= 0) {
-      return;
-    }
-
-    const context = this.getAlertAudioContext();
-    if (!context) {
-      return;
-    }
-    if (context.state === "suspended") {
-      void context.resume().catch(() => undefined);
-    }
-
-    const now = context.currentTime;
-    const [fromHz, toHz] = kind === "breach" ? [820, 400] : [500, 760];
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "triangle";
-    oscillator.frequency.setValueAtTime(fromHz, now);
-    oscillator.frequency.exponentialRampToValueAtTime(toHz, now + ALERT_TONE_SECONDS * 0.7);
-    // Ussel rampa sifira inemez; duyulmayan bir tabandan basliyor ve oraya donuyor.
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.2 * this.voiceVolume, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + ALERT_TONE_SECONDS);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start(now);
-    oscillator.stop(now + ALERT_TONE_SECONDS + 0.02);
-  }
-
-  /** Tek bir baglam; her uyaride yenisini acmak iOS'ta sessizlikle sonuclanir. */
-  private getAlertAudioContext() {
-    if (!this.alertAudioContext) {
-      const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      this.alertAudioContext = Context ? new Context() : undefined;
-    }
-    return this.alertAudioContext;
+    // Tonlar geri bildirim yonetmeninde sentezleniyor; efekt sesleriyle ayni
+    // tek baglami kullaniyor ama seviyesi seslendirme kanalindan geliyor.
+    this.feedback?.playAlert(kind, this.voiceVolume);
   }
 
   private createKillStreakAudio() {
@@ -2731,12 +3139,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private unlockGameAudio() {
-    // Uyari baglami da burada aciliyor: iOS ses baglamini yalnizca gercek bir
-    // kullanici hareketi icinde baslatiyor, sonra istedigi zaman calabiliyor.
-    const alertContext = this.getAlertAudioContext();
-    if (alertContext?.state === "suspended") {
-      void alertContext.resume().catch(() => undefined);
-    }
+    // Uyari ve efekt sesinin ortak baglami da burada aciliyor: iOS ses
+    // baglamini yalnizca gercek bir kullanici hareketi icinde baslatiyor,
+    // sonra istedigi zaman calabiliyor.
+    this.feedback?.unlockAudio();
 
     // Bir kez yeter. Eskiden `input.once` ile baglanmisti; artik her dokunustan
     // cagriliyor cunku ilk gercek kullanici hareketini yakalamanin tek guvenilir
@@ -2800,26 +3206,159 @@ export class GameScene extends Phaser.Scene {
   /**
    * Ulti basildigini aninda gosterir.
    *
-   * Gosterilen sey **komutun gittigi**, sonucu degil: sarj sifirlaniyor ve
-   * kisa bir parlama veriyor. Patlamanin kendisi yetkili tarafta kaliyor --
+   * Gosterilen sey **komutun gittigi**, sonucu degil: sarj sifirlaniyor, sok
+   * dalgasi ve bas vurusu geliyor. Patlamanin kendisi yetkili tarafta kaliyor --
    * hasari yerelde uydurmak, sunucu reddettiginde olmamis bir olumu gostermek
    * olurdu. Kotu baglantida hissedilen fark bunun buyuk kismi zaten: oyuncu
    * bastigini bilmek istiyor.
    */
-  private echoUltimateCast() {
+  private echoUltimateCast(cast: { column?: number; y?: number }) {
     this.ultimateEchoUntil = performance.now() + LOCAL_ECHO_TIMEOUT_MS;
     this.currentUltimateCharge = 0;
     this.emitControlState();
-    this.playUltimateCastFlash();
+    this.playUltimateCastFeedback(cast);
   }
 
-  /** Ekranin kisa bir parlamasi: dokunusun kayitli oldugunu haritada da soyler. */
-  private playUltimateCastFlash() {
-    const world = this.getWorldSize();
-    const flash = this.add.rectangle(world.width / 2, world.height / 2, world.width, world.height, 0xbae6fd, 0.16)
-      .setScrollFactor(0)
-      .setDepth(900);
-    this.tweens.add({ targets: flash, alpha: 0, duration: 220, onComplete: () => flash.destroy() });
+  /**
+   * Dokunusun haritadaki karsiligi: karakter renginde sok dalgasi, bas vurusu
+   * ve kucuk bir yerel zoom (1.03, 120 ms).
+   *
+   * Eskiden 220 ms'lik soluk bir ekran tonuydu. Dalga ultinin gercekten
+   * vurdugu yeri gosteriyor: Zeynep'te secilen sutun, Atakan'da drone'larin
+   * kalktigi kuleler, butun sahaya vuran ultilerde arenanin ortasindan her
+   * yere. Yalnizca atanin ekraninda; takim arkadasi kenardan cip goruyor.
+   * Zoom gercek hit-stop degil, oyun saati durmuyor. Hareket azaltmada dalga
+   * yayilmadan yerinde soner, zoom hic yok.
+   */
+  private playUltimateCastFeedback(cast: { column?: number; y?: number }) {
+    // Dokunusun icindeyiz: baglam askidaysa burada surduruluyor. Surdurme
+    // hemen bitmiyor; bas vurusu yonetmende bir an tutulup baglam acilir
+    // acilmaz caliyor.
+    this.feedback?.unlockAudio();
+    this.feedback?.playSfx("ultimate");
+    const still = this.feedback?.reducedMotion ?? false;
+    const now = performance.now();
+    const color = getCharacterColorValue(this.selectedCharacterId);
+    const cellSize = this.getMapCellSize();
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const wave = { color, durationMs: ULTIMATE_SHOCKWAVE_MS, still, bornAt: now };
+
+    if (cast.column !== undefined) {
+      const span = getUltimateColumnSpan(getMapOrigin(this.selectedMapData).x, cellSize, cast.column);
+      this.combatVfx?.emitCastWave({
+        ...wave, shape: "column", x: (span.left + span.right) / 2,
+        y: Phaser.Math.Clamp(cast.y ?? bounds.top + bounds.height / 2, bounds.top, bounds.bottom),
+        width: cellSize, top: bounds.top, bottom: bounds.bottom, radius: 0
+      });
+    } else {
+      const launchers = getUltimateResultKind(this.selectedCharacterId) === "drones"
+        ? [...this.towerSnapshots.values()].filter((tower) => tower.ownerId === this.localSessionId && tower.characterId === "warrior")
+        : [];
+      if (launchers.length > 0) {
+        for (const tower of launchers.slice(0, CAST_WAVE_TOWER_LIMIT)) {
+          this.combatVfx?.emitCastWave({ ...wave, shape: "ring", x: tower.x, y: tower.y, radius: cellSize * 1.6 });
+        }
+      } else {
+        this.combatVfx?.emitCastWave({
+          ...wave, shape: "ring", x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2,
+          radius: Math.hypot(bounds.width, bounds.height) / 2
+        });
+      }
+    }
+
+    if (!still) {
+      this.startUltimateZoomPunch(now);
+    }
+  }
+
+  /**
+   * Atisin yerel zoomu: 120 ms'de 1.03'e ve geri.
+   *
+   * Kameranin kendi yakinlastirmasi (arena sigdirma, kalabalik haritada cift
+   * dokunus) baska yerde kuruluyor; burasi onu yalnizca carpanla oynatip tam
+   * haline geri koyuyor. Arada kamera yeniden kurulursa (ekran dondu, arena
+   * yakinlasti) zoom birakiliyor: yeni kurulum kazanir.
+   */
+  private startUltimateZoomPunch(now: number) {
+    const camera = this.cameras.main;
+    const base = this.ultimateZoomPunch?.base ?? camera.zoom;
+    this.ultimateZoomPunch = { startedAt: now, base, last: camera.zoom };
+  }
+
+  private updateUltimateZoomPunch(now: number) {
+    const punch = this.ultimateZoomPunch;
+    if (!punch) {
+      return;
+    }
+    const camera = this.cameras.main;
+    if (Math.abs(camera.zoom - punch.last) > 1e-6) {
+      this.ultimateZoomPunch = undefined;
+      return;
+    }
+    const elapsed = now - punch.startedAt;
+    const done = elapsed >= ULTIMATE_CAST_ZOOM_MS;
+    camera.setZoom(done ? punch.base : punch.base * getUltimateCastZoom(elapsed));
+    punch.last = camera.zoom;
+    if (done) {
+      this.ultimateZoomPunch = undefined;
+    }
+  }
+
+  /**
+   * Ulti hazir: dugme (ve kapaliysa Beceriler cekmecesinin dugmesi) bir kez
+   * atiyor, kisa bir "hazir" sesi caliyor. Atimin baslangici panelde
+   * tutuluyor; panel saniyede birkac kez yeniden kurulsa da atim kaldigi
+   * yerden suruyor.
+   */
+  private signalUltimateReady() {
+    this.ultimateReadyPulseAt = performance.now();
+    this.feedback?.playSfx("ultimateReady");
+    this.emitControlState();
+  }
+
+  /**
+   * Kendi ultinin karnesi.
+   *
+   * Sunucu sonucu sahnedeki patlamadan once yolluyor (istemci 500 ms geriden
+   * oynatiyor); karne patlama gorunduktan kisa sure sonra iniyor. Yonetmenin
+   * P0 etiket butcesine giriyor ama sessiz: bas vurusu atista caldi. Kart
+   * perdesi ya da sonuc ekrani acildiysa karne yok -- HUD perdenin ustunde
+   * kalirdi.
+   */
+  private receiveUltimateResult(message: UltimateResultMessage) {
+    if (!message || typeof message.kind !== "string" || this.matchResultShown) {
+      return;
+    }
+    const stamp: UltimateStampEvent = { ...getUltimateStampText(message), color: getCharacterColorCss(this.selectedCharacterId) };
+    this.time.delayedCall(this.playbackDelayMs + ULTIMATE_STAMP_LAG_MS, () => {
+      if (this.matchResultShown || this.cardChoiceRoot || !this.feedback) {
+        return;
+      }
+      this.feedback.emit("ultimate", { own: true, silent: true, weight: 0, lifetimeMs: ULTIMATE_STAMP_MS });
+      this.game.events.emit("game:hud-ultimate", stamp);
+    });
+  }
+
+  /**
+   * Takim arkadasinin ultisi: kenarda, onun renginde tek satirlik cip
+   * ("Zeynep ULTİ · 4 öldü"). Senin kamerana, sesine ve karnene dokunmuyor.
+   */
+  private receiveTeamUltimate(message: UltimateCastMessage) {
+    if (!message || message.ownerId === this.localSessionId || this.matchResultShown) {
+      return;
+    }
+    const owner = this.playerSnapshots.find((player) => player.id === message.ownerId);
+    const character = owner ? characters.find((candidate) => candidate.id === owner.characterId) : undefined;
+    const chip: TeamUltimateChip = {
+      text: getUltimateTeamChipText(character?.displayName ?? "Takım arkadaşın", message),
+      color: getCharacterColorCss(owner?.characterId)
+    };
+    this.time.delayedCall(this.playbackDelayMs + ULTIMATE_STAMP_LAG_MS, () => {
+      if (this.matchResultShown || this.cardChoiceRoot) {
+        return;
+      }
+      this.game.events.emit("game:hud-team-ultimate", chip);
+    });
   }
 
   /**
@@ -2863,7 +3402,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.selectedCharacterId !== "warrior") {
       this.room.send("useUltimate", {});
-      this.echoUltimateCast();
+      this.echoUltimateCast({});
       return;
     }
 
@@ -3053,7 +3592,7 @@ export class GameScene extends Phaser.Scene {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
         this.room?.send("useUltimate", { column });
-        this.echoUltimateCast();
+        this.echoUltimateCast({ column, y: pointer.worldY });
         this.pendingUltimateColumn = false;
         this.clearUltimateColumnPreview();
         this.emitControlState();
@@ -3281,8 +3820,17 @@ export class GameScene extends Phaser.Scene {
 
   private queueSnapshot(snapshot: WireGameSnapshot) {
     const receiveStart = performance.now();
+    if (snapshot.stage !== undefined) this.roomStage = snapshot.stage;
     if (snapshot.result) {
-      this.showMatchResult(snapshot.result, { wave: snapshot.team.wave, kills: snapshot.team.kills });
+      // Sonuc mesaji kacirildiysa (kopma, yeniden baglanma) ekran buradan
+      // aciliyor; asama ve yaratici bayragi da ayni snapshot'tan gelmeli ki
+      // kayit menudeki secime dusmesin.
+      this.showMatchResult(snapshot.result, {
+        wave: snapshot.team.wave,
+        kills: snapshot.team.kills,
+        stage: snapshot.stage,
+        creative: snapshot.creative
+      });
     }
     const hydratedSnapshot = this.hydrateSnapshot(snapshot);
     if (!hydratedSnapshot) {
@@ -3515,10 +4063,12 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("beams", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderKillEvents(snapshot);
-    this.renderDamageEvents(snapshot.damageEvents);
+    this.renderDamageEvents(snapshot);
     this.recordClientPerfSection("events", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderHud(snapshot);
+    this.watchWaveClear(snapshot);
+    this.refreshUpgradeReady(snapshot);
     this.recordClientPerfSection("hud", performance.now() - sectionStart);
     if (now - this.lastShopEventAt > 250) {
       sectionStart = performance.now();
@@ -3568,10 +4118,19 @@ export class GameScene extends Phaser.Scene {
       this.emitControlState();
     });
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
-    room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => this.staticTowerSnapshots.set(tower.id, tower));
+    room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => {
+      this.staticTowerSnapshots.set(tower.id, tower);
+      // Sunucunun yerlestirme onayi: kule oynatmada belirince inecek. Zaten
+      // cizili kule (Refactor ile tasima, yeniden baglananin kuleleri)
+      // yeniden kurulmadi; o inmez.
+      if (!this.towers.has(tower.id)) {
+        this.freshTowerSpawns.note(tower.id, performance.now());
+      }
+    });
     room.onMessage("tower:remove", (message: { id: string }) => {
       this.staticTowerSnapshots.delete(message.id);
       this.dynamicTowerSnapshots.delete(message.id);
+      this.freshTowerSpawns.forget(message.id);
     });
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
       this.linearProjectileSnapshots.set(projectile.id, projectile);
@@ -3641,8 +4200,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
     });
     room.onMessage("worker:skill-complete", (message: { role?: HirableWorkerRole }) => this.showNotice(`${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçinin"} uzmanlığı kalıcı olarak tamamlandı.`));
-    room.onMessage("match:victory", (message: { wave: number; kills: number; stage?: number }) => this.showMatchResult("victory", message));
-    room.onMessage("match:defeat", (message: { wave: number; kills: number }) => this.showMatchResult("defeat", message));
+    room.onMessage("match:victory", (message: MatchResultSummary) => this.showMatchResult("victory", message));
+    room.onMessage("match:defeat", (message: MatchResultSummary) => this.showMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
     room.onMessage("tower:preview", (preview: TowerPreview) => {
       const pending = this.pendingPreview;
@@ -3652,7 +4211,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     room.onMessage("defense:summary", (summary: DefenseSummary) => { this.latestDefenseSummary = summary; this.emitControlState(); });
     room.send("defense:request");
-    room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.handleCardApplied(message));
+    room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
     room.onMessage("card:rejected", (message: { reason?: string }) => {
       this.setCardChoicePending(false, message.reason ?? "Kart seçimi uygulanamadı. Tekrar dene.");
     });
@@ -3660,6 +4219,25 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.pendingShopPlacement = message.itemId;
       this.showNotice(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
     });
+    // Sunucu bu onaylari yalnizca yapan oyuncuya yolluyor; hepsi ayni
+    // yoldan geciyor: toast, yonetmen sesi, kule varsa atim.
+    room.onMessage("shop:purchased", (message: ShopPurchasedMessage) => this.confirmServerAction(getShopPurchaseCue(message, {
+      equippableTowers: message?.toInventory ? this.countEquippableLocalTowers(message.itemId) : 0,
+      // Kare isteyen esyanin talimati onaydan hemen once geldi; onay onu ezmesin.
+      placementPending: Boolean(message?.itemId) && this.pendingShopPlacement === message.itemId
+    })));
+    room.onMessage("inventory:equipped", (message: InventoryEquippedMessage) => {
+      this.confirmServerAction(getInventoryEquipCue(message, this.findTowerName(message?.towerId)));
+    });
+    room.onMessage("inventory:equip-rejected", (message: InventoryEquipRejectedMessage) => this.confirmServerAction(getInventoryEquipRejectedCue(message, { creative: this.creativeMode })));
+    room.onMessage("structure:repaired", (message: StructureRepairedMessage) => {
+      this.confirmServerAction(getStructureRepairCue(message, this.findTowerName(message?.towerId)));
+    });
+    room.onMessage("ultimate:upgraded", (message: UltimateUpgradedMessage) => this.confirmServerAction(getUltimateUpgradeCue(message)));
+    // Ulti karnesi yalnizca atana; takim arkadaslarina tek satirlik cip.
+    room.onMessage("ultimate:result", (message: UltimateResultMessage) => this.receiveUltimateResult(message));
+    room.onMessage("ultimate:cast", (message: UltimateCastMessage) => this.receiveTeamUltimate(message));
+    room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
       this.latestServerPerf = perf;
@@ -3715,16 +4293,23 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.emitHudState({ status: `Koptu (${code})` });
   }
 
-  private showMatchResult(result: "victory" | "defeat", summary: { wave: number; kills: number; stage?: number }) {
+  private showMatchResult(result: "victory" | "defeat", summary: MatchResultSummary) {
     if (this.matchResultShown) {
       return;
     }
     this.matchResultShown = true;
+    this.hideArenaHudOverlays();
     const victory = result === "victory";
     // Ilerleme zaferle birlikte yaziliyor. Asama sunucudan geliyor: istemcinin
     // kendi sectigi degeri yazmasi, reddedilmis bir istekten sonra olmayan bir
-    // asamayi acardi.
-    const stageResult = victory ? markStageCleared(getStage(summary.stage ?? this.selectedStage).id) : undefined;
+    // asamayi, baskasinin odasinda ise yanlis asamayi acardi. Menudeki secime
+    // bilerek dusulmuyor; asama bilinmiyorsa kayit hic yazilmiyor.
+    //
+    // Yaratici bayragi iki kaynaktan birlestiriliyor ve biri acik diyorsa
+    // acik sayiliyor: yanlislikla yazilmis bir kayit geri alinamaz.
+    const roomStage = this.roomStage ?? summary.stage;
+    const creativeRun = summary.creative === true || this.creativeMode;
+    const stageResult = victory ? markStageCleared({ creative: creativeRun, stage: roomStage }) : undefined;
     const depth = 1000;
     // Ekran kameranin **gordugu** dikdortgene kuruluyor, dunya olcusune degil.
     //
@@ -3744,9 +4329,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       stroke: "#020617",
       strokeThickness: 8
     }).setOrigin(0.5).setDepth(depth + 1);
-    const stage = getStage(summary.stage ?? this.selectedStage);
+    // Asama bilinmiyorsa satir asamasiz yaziliyor; menudeki secimi odanin
+    // asamasiymis gibi gostermek, katilan oyuncuya yanlis bir zafer soylerdi.
+    const stage = roomStage !== undefined ? getStage(roomStage) : undefined;
     this.add.text(centerX, centerY + 2, victory
-      ? `${stage.id}. Aşama: ${stage.name}  •  ${summary.kills} düşman`
+      ? `${stage ? `${stage.id}. Aşama: ${stage.name}  •  ` : ""}${summary.kills} düşman`
       : `Dalga ${summary.wave}  •  ${summary.kills} düşman`, {
       fontFamily: "Arial",
       fontSize: "20px",
@@ -3757,6 +4344,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         fontFamily: "Arial",
         fontSize: "18px",
         color: "#4ade80"
+      }).setOrigin(0.5).setDepth(depth + 1);
+    } else if (victory && creativeRun) {
+      // Yaratici zafer sessizce kaydedilmiyor olsaydi oyuncu acilis bekleyip
+      // bulamazdi; nedenini soluk bir satir soyluyor.
+      this.add.text(centerX, centerY + 34, "Yaratıcı mod: ilerleme kaydedilmez", {
+        fontFamily: "Arial",
+        fontSize: "16px",
+        color: "#94a3b8"
+      }).setOrigin(0.5).setDepth(depth + 1);
+    } else if (stageResult?.locked) {
+      // Co-op'ta katilan oyuncunun henuz acmadigi asama: kayit yazilmadi,
+      // oyuncu acilis bekleyip bulamasin diye nedeni soluk bir satirda.
+      this.add.text(centerX, centerY + 34, "Bu aşama sende henüz açık değil: ilerleme kaydedilmez", {
+        fontFamily: "Arial",
+        fontSize: "14px",
+        color: "#94a3b8",
+        align: "center",
+        wordWrap: { width: Math.max(160, Math.min(view.width - 32, 300)) }
       }).setOrigin(0.5).setDepth(depth + 1);
     }
     const button = this.add.rectangle(centerX, centerY + 82, 230, 52, 0x1e293b)
@@ -3771,19 +4376,45 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     button.on("pointerup", () => window.location.reload());
   }
 
+  /**
+   * Dalga odulu: kart secimi.
+   *
+   * Baslik hangi dalganin odulu oldugunu soyluyor ("DALGA 7 ÖDÜLÜ"). Kartlar
+   * 80 ms arayla ters gelip donuyor, her biri yuzu gorundugunde kisa bir
+   * cevirme sesi. Nadirlik kenarda: yaygin duz, seyrek gumus, nadir altin;
+   * nadir kart bir kez parliyor ve kendi tinisini caliyor -- yaklasik her uc
+   * secimden birinde nadir var, gelmesi kendi basina kucuk bir odul.
+   *
+   * Kart ancak dagitimi baslayali 250 ms olunca secilebiliyor: ekran dalga
+   * sonunda kendiliginden aciliyor ve haritaya yapilan son dokunus bir karti
+   * secmemeli. Ayni el yeniden acildiginda dagitim yok. Hareket azaltmada
+   * donus ve parlama yok; kartlar hemen yuzu acik, sesler kaliyor.
+   */
   private showCardChoices(cards: CardDefinition[]) {
+    const latest = this.latestPerfSnapshot;
+    const draftWave = getCardDraftWave(latest ? { wave: latest.team.wave, setupPhase: latest.setupPhase } : undefined);
+    const dealKey = `${draftWave ?? "-"}:${cards.map((card) => card.id).join(",")}`;
+    const deal = dealKey !== this.cardDealKey;
     this.hideCardChoices();
+    // Damga HUD'da, yani kart perdesinin ustunde: perde acilinca kalkmali.
+    this.hideArenaHudOverlays();
     this.cardChoicePending = false;
     this.cardChoices = cards;
     const root = document.querySelector<HTMLElement>("#card-root");
     if (!root) return;
     this.cardChoiceRoot = root;
+    const reducedMotion = this.feedback?.reducedMotion ?? false;
+    if (deal) {
+      this.cardDealKey = dealKey;
+      this.cardDealStartedAt = performance.now();
+    }
+    const animate = deal && !reducedMotion;
     root.className = "card-draft card-draft--visible";
     root.innerHTML = `
       <div class="card-draft__veil"></div>
       <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Kart seçimi">
         <header class="card-draft__header">
-          <span class="card-draft__eyebrow">DALGA TAMAMLANDI</span>
+          <span class="card-draft__eyebrow">${getCardDraftTitle(draftWave)}</span>
           <h2>Rotanı güçlendir</h2>
           <p>Koşu boyunca kalacak bir kart seç</p>
           <span class="card-draft__status" role="status" aria-live="polite"></span>
@@ -3792,29 +4423,61 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       </section>`;
     const grid = root.querySelector<HTMLElement>(".card-draft__grid");
     const localTowers = this.getLocalTowerProfiles();
+    const rarities: CardRarity[] = [];
     cards.forEach((card, index) => {
       const scope = this.getCardScopeLabel(card);
       const reach = this.getCardReach(card, localTowers);
       const accent = this.getCardAccent(card);
+      const rarity = getCardRarity(card);
+      const timing = getCardDealTiming(index, reducedMotion);
+      rarities.push(rarity);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "run-card";
+      button.className = `run-card run-card--${rarity}${animate ? " run-card--deal" : ""}${animate && rarity === "rare" ? " run-card--shine" : ""}`;
+      button.dataset.cardId = card.id;
       button.style.setProperty("--card-accent", accent);
+      if (animate) {
+        button.style.setProperty("--deal-delay", `${timing.delayMs}ms`);
+        button.style.setProperty("--shine-delay", `${timing.faceUpMs}ms`);
+      }
+      // Yaygin kart etiketsiz ("duz"); digerlerinde renk tek isaret olmasin.
+      const rarityTag = rarity === "common"
+        ? ""
+        : `<span class="run-card__rarity">${cardRarityLabels[rarity].toLocaleUpperCase("tr-TR")}</span>`;
       button.innerHTML = `
+        <span class="run-card__back" aria-hidden="true"></span>
         <span class="run-card__index">0${index + 1}</span>
         <span class="run-card__glow"></span>
-        <span class="run-card__axis">${card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ")}</span>
+        <span class="run-card__axis">${card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ")}${rarityTag}</span>
         <strong>${card.name}</strong>
         <span class="run-card__description">${card.description}</span>
         <span class="run-card__scope">${scope}</span>
         <span class="run-card__reach${reach.muted ? " run-card__reach--muted" : ""}">${reach.text}</span>`;
       button.addEventListener("click", () => {
         if (this.cardChoicePending) return;
+        if (performance.now() < this.cardDealStartedAt + timing.pickableAtMs) return;
         if (card.scope.kind === "targeted") this.showTargetedTowerChoices(card);
         else this.submitCardChoice({ cardId: card.id });
       });
       grid?.append(button);
     });
+    if (deal) this.scheduleCardRevealCues(rarities, reducedMotion);
+  }
+
+  /** Kart acilisinin sesleri: yuzu gorunen her kartta cevirme, nadirde bir kez tini. */
+  private scheduleCardRevealCues(rarities: readonly CardRarity[], reducedMotion: boolean) {
+    for (const cue of getCardRevealCues(rarities, reducedMotion)) {
+      const timer = window.setTimeout(() => {
+        this.cardDealTimers = this.cardDealTimers.filter((entry) => entry !== timer);
+        this.feedback?.playSfx(cue.kind);
+      }, cue.atMs);
+      this.cardDealTimers.push(timer);
+    }
+  }
+
+  private clearCardDealTimers() {
+    for (const timer of this.cardDealTimers) window.clearTimeout(timer);
+    this.cardDealTimers = [];
   }
 
   /**
@@ -3898,6 +4561,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const button = document.createElement("button");
       button.type = "button";
       button.className = "tower-choice";
+      button.dataset.towerId = tower.id;
       button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${tower.name}</strong><small>Seviye ${tower.level} • ${Math.round(tower.damageDealt ?? 0)} hasar</small></span><span class="tower-choice__arrow">→</span>`;
       button.addEventListener("click", () => this.previewTowerChange({ cardId: card.id, towerId: tower.id }, () => this.submitCardChoice({ cardId: card.id, towerId: tower.id })));
       list?.append(button);
@@ -3918,6 +4582,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
 
+    // Ayni perde: HUD'daki dalga damgasi perdenin ustunde kalmasin.
+    this.hideArenaHudOverlays();
     this.cardChoiceRoot = root;
     root.className = "card-draft card-draft--visible";
     root.innerHTML = `
@@ -3956,6 +4622,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private handleCardApplied(message: { cardId?: string; towerIds?: string[] }) {
     this.hideCardChoices();
+    // El kapandi: siradaki kart ekrani yeniden dagitilsin.
+    this.cardDealKey = "";
+    this.cardPickStampUntil = 0;
     const card = message.cardId ? getCardDefinition(message.cardId) : undefined;
     if (!card) return;
     const towerIds = new Set(message.towerIds ?? []);
@@ -3974,8 +4643,100 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Sunucu karti uyguladi. Secim damgasi (150 ms) henuz bitmediyse kule atimi
+   * ve toast onu bekliyor: yerel sunucuda cevap damgadan once gelebiliyor ve
+   * perde damga gorunmeden kapanirdi. Sira hep damga -> atim -> toast.
+   */
+  private receiveCardApplied(message: { cardId?: string; towerIds?: string[] }) {
+    window.clearTimeout(this.cardAppliedTimer);
+    this.cardAppliedTimer = undefined;
+    const wait = this.cardPickStampUntil - performance.now();
+    if (wait > 0) {
+      this.cardAppliedTimer = window.setTimeout(() => {
+        this.cardAppliedTimer = undefined;
+        this.handleCardApplied(message);
+      }, wait);
+      return;
+    }
+    this.handleCardApplied(message);
+  }
+
+  /**
+   * Sunucu onayinin karsiligi: toast, yonetmen sesi, kule varsa atim.
+   *
+   * `handleCardApplied`'in magaza, takma, onarim, ulti gucu ve isci agacina
+   * genellenmis hali. Metin ve ses tarifi paylasilan modulde
+   * (feedback/confirmations), burasi yalnizca yurutuyor. Kule atiminin
+   * halkasi CombatVfx tamponunda ciziliyor, 28 slotluk halka havuzunda degil;
+   * ses `playSfx` ile yonetmenin butcesinden geciyor.
+   */
+  private confirmServerAction(cue: ServerConfirmationCue | undefined) {
+    if (!cue) return;
+    this.showNotice(cue.text, cue.durationMs);
+    if (cue.sfx) this.feedback?.playSfx(cue.sfx, { step: cue.step });
+    if (cue.pulse) this.pulseConfirmedTower(cue.pulse.towerId, cue.pulse.style);
+  }
+
+  /**
+   * Onaylanan kulenin atimi.
+   *
+   * Onarim atimi oynatma gecikmesini bekliyor: can cubugu sahneyle birlikte
+   * 500 ms geriden doluyor ve halka once oynarsa "onarildi" diyen halka hala
+   * yarim cana bakan bir cubugun ustunde patlar. Takma kart atimi gibi hemen:
+   * kulede o an gorunen bir sey degismiyor, bekletmek yalnizca dokunusu
+   * gecikmis hissettirirdi. Ses ikisinde de hemen, dokunusun cevabi o.
+   * Konum oynatma aninda okunuyor; arada satilan kulede halka acilmiyor.
+   *
+   * Halka CombatVfx'in sinirli tamponunda (kule anlari, 12'lik tavan): 28
+   * slotluk halka havuzu kalabalik dalgada atis ve carpma parlamalariyla
+   * dolu; onay halkasi orada ya kendisi dusuyor ya da onlari itiyordu. Katman
+   * kule govdesinin altinda, halka sprite'in altindan yayiliyor. Kulenin
+   * nabzi ayni, hareket azaltmada yok.
+   */
+  private pulseConfirmedTower(towerId: string, style: ConfirmationPulseStyle) {
+    const play = () => {
+      const tower = this.latestPerfSnapshot?.towers.find((entry) => entry.id === towerId);
+      if (!tower) return;
+      const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
+      const strong = style === "equip";
+      const still = this.feedback?.reducedMotion ?? false;
+      this.combatVfx?.emitTowerMoment({
+        kind: "confirm",
+        x: tower.x,
+        y: tower.y,
+        size: discSize,
+        color: CONFIRMATION_PULSE_COLORS[style],
+        shards: 0,
+        strong,
+        durationMs: strong ? 620 : 380,
+        intensity: 1,
+        still,
+        bornAt: performance.now()
+      });
+      if (!still) this.punchTower(tower.id, strong);
+    };
+    if (style === "repair") this.queueDelayedEffect(play);
+    else play();
+  }
+
+  /** Esyanin su an takilabilecegi yerel kule sayisi; sunucunun takma kuraliyla. */
+  private countEquippableLocalTowers(itemId?: string) {
+    const item = itemId ? getShopItem(itemId) : undefined;
+    if (!item) return 0;
+    return countEquippableTowers(item, this.getLocalTowerProfiles().map(({ tower, definition }) => ({
+      definition,
+      equippedItemIds: tower.equippedShopItemIds
+    })));
+  }
+
+  private findTowerName(towerId?: string) {
+    return towerId ? this.latestPerfSnapshot?.towers.find((tower) => tower.id === towerId)?.name : undefined;
+  }
+
   private hideCardChoices() {
     this.clearCardChoiceTimeout();
+    this.clearCardDealTimers();
     this.cardChoicePending = false;
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     root?.replaceChildren();
@@ -3986,11 +4747,35 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private submitCardChoice(message: { cardId: string; towerId?: string }) {
     if (!this.room || this.cardChoicePending) return;
+    this.stampPickedChoice(message);
     this.setCardChoicePending(true, "Kart uygulanıyor…");
     this.room.send("card:choose", message);
     this.cardChoiceTimeout = window.setTimeout(() => {
       this.setCardChoicePending(false, "Sunucudan yanıt alınamadı. Tekrar deneyebilirsin.");
     }, 4500);
+  }
+
+  /**
+   * Secim damgasi: secilen kart (hedefli kartta secilen kule) 150 ms'de bir
+   * kez basiliyor, "SEÇİLDİ" iniyor ve damga sesi caliyor. Istek hemen
+   * gidiyor; beklemeyi `receiveCardApplied` yapiyor, yani damga gecikme
+   * eklemiyor. Secilen kart bekleme boyunca parlak kaliyor, digerleri
+   * sonukleserek geri cekiliyor.
+   */
+  private stampPickedChoice(message: { cardId: string; towerId?: string }) {
+    const buttons = this.cardChoiceRoot?.querySelectorAll<HTMLElement>(message.towerId ? ".tower-choice" : ".run-card");
+    const picked = Array.from(buttons ?? []).find((button) => (message.towerId
+      ? button.dataset.towerId === message.towerId
+      : button.dataset.cardId === message.cardId));
+    // Dagitim sinifi secilen karttan kalkiyor: kalirsa ret ya da zaman
+    // asiminda `is-picked` silininca dagitim animasyonu yeniden basliyor,
+    // kart gecikmesi kadar kaybolup arka yuzu olmadan bir daha donuyordu.
+    // Kart ancak yuzu acildiktan sonra secilebildigi icin gorunen bir sey
+    // kesilmiyor. Parilti (`run-card--shine`) kaliyor, secimden bagimsiz.
+    picked?.classList.remove("run-card--deal");
+    picked?.classList.add("is-picked");
+    this.cardPickStampUntil = performance.now() + CARD_PICK_STAMP_MS;
+    this.feedback?.playSfx("cardPick");
   }
 
   private setCardChoicePending(pending: boolean, status = "") {
@@ -3999,6 +4784,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
     root?.querySelectorAll<HTMLButtonElement>(".run-card, .tower-choice").forEach((button) => {
       button.disabled = pending;
+      // Reddedilen ya da zaman asimina ugrayan secimin damgasi kalkiyor.
+      if (!pending) button.classList.remove("is-picked");
     });
     const statusElement = root?.querySelector<HTMLElement>(".card-draft__status");
     if (statusElement) {
@@ -4316,6 +5103,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (charge < 100 && this.ultimateChoiceOpen) {
       this.hideUltimateChoices();
     }
+    // Dugmenin gosterdigi sarjdan: basildiktan sonra yanki sifir tutuyor, yani
+    // atis "hazir" sayilmiyor; sunucu reddederse dugme geri dolunca yine hazir.
+    if (this.ultimateReadyWatch.observe(this.currentUltimateCharge, { over: Boolean(snapshot.result) || this.matchResultShown })) {
+      this.signalUltimateReady();
+    }
 
     const reputation = player?.reputation ?? 0;
     const authorityChain = player?.authorityChain ?? 0;
@@ -4359,6 +5151,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
       this.lastHudKey = hudKey;
     }
+    this.announceLumpGold(player ? gold : undefined);
     // Panel acikken sayilar akmali: kapaliyken hicbir sey hesaplanmiyor.
     if (this.hudState.statsOpen) this.emitHudState(this.getStatsHudPatch());
     this.updateSkillButtons(player?.skillCooldowns ?? [0, 0, 0], player);
@@ -4369,9 +5162,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const activeIds = new Set(enemies.map((enemy) => enemy.id));
     const slowCommand = this.zeynepCommandEffects?.slow;
     const slowTierLevel = slowCommand ? getZeynepCommandTierLevel(slowCommand.tier) : 0;
+    const now = performance.now();
+    this.removedEnemyTraces.prune(now);
 
     for (const [id, mover] of this.enemies) {
       if (!activeIds.has(id)) {
+        // Olmus mu sizmis mi burada bilinmiyor; iz ikisinde de birakiliyor,
+        // patlamayi yalnizca oldurme olayi baslatiyor (`playKillConfirmation`).
+        if (mover.type && mover.displaySize !== undefined) {
+          this.removedEnemyTraces.remember(id, {
+            x: mover.sprite.x,
+            y: mover.sprite.y,
+            size: mover.displaySize,
+            texture: mover.sprite.texture.key,
+            tint: mover.baseTint ?? 0xffffff,
+            type: mover.type,
+            air: Boolean(mover.air)
+          }, now);
+        }
         this.enemyGroup?.killAndHide(mover.sprite);
         if (mover.sprite.body) {
           mover.sprite.body.enable = false;
@@ -4453,10 +5261,30 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
-      mover.sprite.setTint(enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff);
+      const baseTint = enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff;
+      // Vurus flasi burada, tonun her karede yeniden yazildigi yerde: baska
+      // bir yerde verilse bir sonraki kare onu silerdi. Kaynak dusmanin kendi
+      // can + kalkan dususu. Melis'in olu ve cevrilmis birlikleri haric: yolu
+      // tutarken her kare can kaybediyorlar, flas durmadan yanardi. Hareket
+      // azaltmada duz beyaz flas hic yok: can cubugu vurusu zaten gosteriyor.
+      const effectiveHp = enemy.hp + enemy.shield;
+      if (!enemy.isUndead && !enemy.isWhisperTurned && !this.feedback?.reducedMotion
+        && shouldStartEnemyHitFlash(mover.lastEffectiveHp, effectiveHp, mover.hitFlashAt, now)) {
+        mover.hitFlashAt = now;
+      }
+      mover.lastEffectiveHp = effectiveHp;
+      mover.baseTint = baseTint;
+      if (isEnemyHitFlashActive(mover.hitFlashAt, now)) {
+        mover.sprite.setTintFill(ENEMY_HIT_FLASH_COLOR);
+      } else {
+        mover.sprite.setTint(baseTint);
+      }
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
       const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
+      mover.type = enemy.type;
+      mover.air = enemy.movementKind === "air";
+      mover.displaySize = displayedEnemySize;
       const shieldRadius = displayedEnemySize * 0.48;
       const statusYOffset = Math.max(18, displayedEnemySize * 0.42);
       mover.shieldHalo?.setPosition(enemy.x, enemy.y);
@@ -4643,6 +5471,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (!activeIds.has(id)) {
         // Nabiz tween'i yikilan sprite'a yazmaya devam etmesin.
         this.tweens.killTweensOf(tower.punch);
+        this.animatedTowers.delete(tower);
         tower.halo.destroy();
         tower.effect.destroy();
         tower.linkHighlight.destroy();
@@ -4662,8 +5491,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.updateSelectionUi();
     }
 
+    const now = performance.now();
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
+      let landing = false;
       if (!rendered) {
         // Above the sprite, not under it: an opaque tower would hide the ring.
         const halo = this.add.graphics().setDepth(12.6);
@@ -4688,8 +5519,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
-        rendered = { effect, linkHighlight, halo, base, punch: { value: 1 }, range, deadZone, isolation, healthBar, key: "" };
+        rendered = { effect, linkHighlight, halo, base, punch: { value: 1 }, scaleX: 1, scaleY: 1, range, deadZone, isolation, healthBar, key: "" };
         this.towers.set(tower.id, rendered);
+        // Yalnizca sunucunun az once onayladigi kule iner; ilk karedeki kuleler
+        // (katilma, sayfa yenileme) zaten oradaydi.
+        landing = this.towersPrimed && this.freshTowerSpawns.take(tower.id, now);
       }
 
       // The disc covers exactly the tile it sits on -- 2x2 towers cover four --
@@ -4701,6 +5535,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const spriteSize = tower.definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
 
       this.playTowerLevelUpIfChanged(tower, discSize);
+      if (landing) {
+        this.playTowerLanding(tower, rendered, discSize, now);
+      }
 
       const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
       // Durum anahtarda yok: asagidaki blok onu okumuyor, "Isı freni %X" ise
@@ -4729,11 +5566,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // procedural glyphs ship at different sizes, but both reserve the same
       // disc-to-frame ratio, so this lands the disc on the tile either way.
       const textureScale = spriteSize / Math.max(1, rendered.base.frame.width);
-      const punch = rendered.punch.value;
-      rendered.base.setScale(
-        selectionScale * textureScale * footprintScaleX * punch,
-        selectionScale * textureScale * footprintScaleY * punch
-      );
+      rendered.scaleX = selectionScale * textureScale * footprintScaleX;
+      rendered.scaleY = selectionScale * textureScale * footprintScaleY;
+      this.applyTowerScale(rendered, now);
       const edgePlaced = this.isEdgePlacedDefinition(tower.definitionId);
       rendered.base.setVisible(!edgePlaced);
       rendered.base.setTint(this.getTowerTint(tower));
@@ -4760,6 +5595,75 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }
+    this.towersPrimed = true;
+  }
+
+  /**
+   * Kulenin olcegi: snapshot'taki taban olcek, nabiz ve inis carpaniyla.
+   *
+   * Taban olcek snapshot'ta hesaplaniyor; nabiz ve inis karede degisiyor.
+   * Ikisi ayri tutuluyor ki gelen snapshot suren bir inisi sifirlamasin.
+   */
+  private applyTowerScale(rendered: RenderTower, now: number) {
+    const landing = rendered.landingAt === undefined ? 1 : getTowerLandingScale(now - rendered.landingAt);
+    const multiplier = rendered.punch.value * landing;
+    rendered.base.setScale(rendered.scaleX * multiplier, rendered.scaleY * multiplier);
+  }
+
+  /**
+   * Karede yalnizca olcegi degisen kuleler (nabiz ya da inis) yeniden olcekleniyor.
+   *
+   * Eskiden nabiz yalnizca snapshot geldiginde uygulaniyordu: dalga sirasinda
+   * 60 ms'de bir, kurulumda tahta durunca 500 ms'de bir. 120-180 ms'lik nabiz
+   * de 150 ms'lik inis de ya birkac kareye bolunuyor ya hic gorunmuyordu.
+   * Kume genelde bos; doluyken bir iki kule.
+   */
+  private updateAnimatedTowers(now: number) {
+    if (this.animatedTowers.size === 0) {
+      return;
+    }
+    for (const rendered of this.animatedTowers) {
+      if (rendered.landingAt !== undefined && now - rendered.landingAt >= TOWER_LANDING_MS) {
+        rendered.landingAt = undefined;
+      }
+      this.applyTowerScale(rendered, now);
+      if (rendered.landingAt === undefined && !this.tweens.isTweening(rendered.punch)) {
+        this.animatedTowers.delete(rendered);
+      }
+    }
+  }
+
+  /**
+   * Yerlestirme inisi: kule 150 ms'de 1.25'ten yerine basiyor, altindan toz
+   * halkasi yayiliyor, "tok" sesi.
+   *
+   * Yalnizca sunucu onayladiginda (`tower:spawn`) ve kule oynatmada ilk kez
+   * cizildiginde: hayalet (`echoPlacement`) "istek yolda" diyordu, inis
+   * "kuruldu" diyor. Reddedilen yerlestirmenin inisi yok. Tok ses yalnizca
+   * kendi kulende (yonetmen: takim arkadasinin yerlestirmesi sessiz); takim
+   * arkadasinin kulesi de iniyor ama tozu soluk. Hareket azaltmada basma yok,
+   * toz halkasi yerinde soner.
+   */
+  private playTowerLanding(tower: TowerSnapshot, rendered: RenderTower, discSize: number, now: number) {
+    const own = tower.ownerId === this.localSessionId;
+    const decision = this.feedback?.emit("place", { own, x: tower.x, y: tower.y });
+    const still = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
+    if (!still) {
+      rendered.landingAt = now;
+      this.animatedTowers.add(rendered);
+    }
+    this.combatVfx?.emitTowerMoment({
+      kind: "landing",
+      x: tower.x,
+      y: tower.y,
+      size: discSize,
+      color: 0,
+      shards: 0,
+      durationMs: TOWER_LANDING_DUST_MS,
+      intensity: own ? 1 : TEAMMATE_TOWER_MOMENT_INTENSITY,
+      still,
+      bornAt: now
+    });
   }
 
   /**
@@ -4799,6 +5703,39 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     graphics.beginPath();
     graphics.arc(x, y, radius, start, start + sweep);
     graphics.strokePath();
+
+    const tier = getTowerTier(level);
+    if (tier >= 2) {
+      this.drawTowerTierBadge(graphics, x, y + radius, tier, radius);
+    }
+  }
+
+  /**
+   * Kalici kademe rozeti: kadranin altinda, kademe renginde nokta sayisi.
+   *
+   * Seviyeye bagli sanat yalnizca Takipci'de var; diger kulelerde 5 ve 10
+   * kalici hicbir iz birakmiyordu. Rozet kadranla ayni Graphics'e, kadran
+   * yeniden cizildiginde (seviye degisince) bir kez ciziliyor: karede maliyeti
+   * yok, yeni sprite yok. Nokta sayisi etiketteki kademe ("KADEME 2" iki
+   * nokta), renk mermi ve sutunla ayni; renk tek basina bilgi tasimiyor.
+   * Seviye 5'te kadranin yayi tam rozetin oldugu yere, alta variyor.
+   */
+  private drawTowerTierBadge(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, tier: number, radius: number) {
+    const color = this.getTierColor(tier);
+    const pip = Math.max(1.5, radius * 0.1);
+    const gap = pip * 2.6;
+    const width = gap * (tier - 1) + pip * 4.4;
+    const height = pip * 3.8;
+    const left = cx - width / 2;
+    const top = cy - height / 2;
+    graphics.fillStyle(0x020617, 0.9);
+    graphics.fillRoundedRect(left, top, width, height, height / 2);
+    graphics.lineStyle(1, color, 0.9);
+    graphics.strokeRoundedRect(left, top, width, height, height / 2);
+    graphics.fillStyle(color, 1);
+    for (let index = 0; index < tier; index += 1) {
+      graphics.fillCircle(cx - (gap * (tier - 1)) / 2 + gap * index, cy, pip);
+    }
   }
 
   /**
@@ -4828,14 +5765,79 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const previous = this.towerLevels.get(tower.id);
     this.towerLevels.set(tower.id, tower.level);
     // Ilk gorulus bir yukseltme degil: mac ortasinda katilan oyuncunun ekraninda
-    // butun kuleler birden parlamamali.
-    if (previous === undefined || tower.level <= previous) {
+    // butun kuleler birden parlamamali. Kural `getTowerLevelCeremony`de.
+    const ceremony = getTowerLevelCeremony(previous, tower.level);
+    if (!ceremony) {
       return;
     }
 
-    const tier = getTowerTier(tower.level);
-    const crossedTier = getTowerTier(previous) !== tier;
-    this.playTowerPulse(tower, discSize, this.getTierColor(tier), crossedTier);
+    this.playTowerPulse(tower, discSize, this.getTierColor(ceremony.tier), ceremony.kind === "tier");
+    this.playTowerLevelCeremony(tower, discSize, ceremony);
+  }
+
+  /**
+   * Seviye toreni: "SV 3" etiketi ve iki notali tini; 5 ve 10'da yaklasik
+   * 1 sn'lik isik sutunu, ice donen 12 kiymik, "SV 5 · KADEME 2", uc nota ve bas.
+   *
+   * Halka ve nabiz `playTowerPulse`ta (var olan); yeni gorseller 28 slotluk
+   * halka havuzuna degil CombatVfx tamponuna ciziliyor, kalabalik dalgada
+   * atis halkalari onlari dusurmesin. Etiket, ses, sarsinti ve titresim
+   * yonetmenden: kendi kademen P0 (hic dusmez; en fazla 3 px sarsinti ve
+   * 15 ms titresim), kendi seviyen P2. Takim arkadasininki P3: soluk sutun,
+   * kucuk soluk etiket, kisik ses, kamerana ve telefonuna hic dokunmuyor.
+   * Kisa ve engelsiz: yukseltme dalga ortasinda da yapilabiliyor.
+   */
+  private playTowerLevelCeremony(tower: TowerSnapshot, discSize: number, ceremony: TowerLevelCeremony) {
+    const now = performance.now();
+    const own = tower.ownerId === this.localSessionId;
+    const tierMoment = ceremony.kind === "tier";
+    const labelY = tower.y - discSize / 2 - LEVEL_LABEL_LIFT_PX;
+    const decision = this.feedback?.emit(ceremony.kind, { own, x: tower.x, y: labelY, lifetimeMs: ceremony.labelMs });
+    const still = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
+    const tierColor = this.getTierColor(ceremony.tier);
+
+    if (tierMoment) {
+      this.combatVfx?.emitTowerMoment({
+        kind: "tier",
+        x: tower.x,
+        y: tower.y,
+        size: discSize,
+        color: tierColor,
+        shards: TIER_CEREMONY_SHARDS,
+        durationMs: TIER_CEREMONY_MS,
+        intensity: own ? 1 : TEAMMATE_TOWER_MOMENT_INTENSITY,
+        still,
+        bornAt: now
+      });
+    }
+
+    const labels = this.levelLabels;
+    if (!labels || (decision && !decision.show && !decision.merge)) {
+      return;
+    }
+    // Siradan seviyede etiket kadranin o seviyedeki renginde; kademede sutun
+    // ve mermiyle ayni kademe renginde.
+    const fill = toCssColor(tierMoment ? tierColor : getTowerLevelStyle(ceremony.level).color);
+    const key = `level:${tower.id}`;
+    if (decision?.merge) {
+      labels.merge(key, ceremony.label, fill, LEVEL_LABEL_STROKE);
+      return;
+    }
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    labels.spawn({
+      key,
+      text: ceremony.label,
+      x: tower.x,
+      y: labelY,
+      fill,
+      stroke: LEVEL_LABEL_STROKE,
+      fontPx: own ? (tierMoment ? TIER_LABEL_FONT_PX : LEVEL_LABEL_FONT_PX) : TEAMMATE_LEVEL_LABEL_FONT_PX,
+      alpha: own ? 1 : TEAMMATE_LEVEL_LABEL_ALPHA,
+      pop: own && tierMoment,
+      lifetimeMs: ceremony.labelMs,
+      still,
+      bounds
+    }, now, decision?.recycle ?? false);
   }
 
   /**
@@ -4845,6 +5847,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * `strong` buyuk ani isaretler -- kademe atlamak, tek kuleye baglanan kart.
    */
   private playTowerPulse(tower: Pick<TowerSnapshot, "id" | "x" | "y">, discSize: number, color: number, strong: boolean) {
+    // Hareket azaltma: halka buyumeden yerinde soner, kule nabiz atmaz. Renk
+    // ve an -- yani bilgi -- kaliyor, yalnizca hareket kalkiyor.
+    if (this.feedback?.reducedMotion) {
+      const radius = discSize * (strong ? 0.75 : 0.6);
+      this.spawnFlashRing(tower.x, tower.y, {
+        color,
+        startRadius: radius,
+        endRadius: radius,
+        durationMs: strong ? 620 : 380,
+        thickness: strong ? 3 : 2,
+        depth: 13,
+        fill: strong ? 0.2 : 0.1
+      });
+      return;
+    }
+
     this.spawnFlashRing(tower.x, tower.y, {
       color,
       startRadius: discSize * 0.3,
@@ -4868,11 +5886,20 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
     }
 
-    const rendered = this.towers.get(tower.id);
+    this.punchTower(tower.id, strong);
+  }
+
+  /**
+   * Kulenin kendisinin kisa nabzi; halka cagiranda (halka havuzu ya da
+   * CombatVfx tamponu). Hareket azaltmada cagrilmamali.
+   */
+  private punchTower(towerId: string, strong: boolean) {
+    const rendered = this.towers.get(towerId);
     if (rendered) {
       // Kulenin kendisi de tepki versin: kisa bir nabiz, sonra normale doner.
       // Tween carpanin uzerinde calisir, sprite'in olceginde degil -- olcek her
-      // karede yeniden hesaplandigi icin oraya yazilan bir deger silinirdi.
+      // snapshot'ta yeniden hesaplandigi icin oraya yazilan bir deger silinirdi.
+      // Carpani karede `updateAnimatedTowers` uyguluyor.
       this.tweens.killTweensOf(rendered.punch);
       rendered.punch.value = 1;
       this.tweens.add({
@@ -4885,6 +5912,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           rendered.punch.value = 1;
         }
       });
+      this.animatedTowers.add(rendered);
     }
   }
 
@@ -6076,8 +7104,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
-  private renderDamageEvents(events: DamageEventSnapshot[]) {
-    for (const event of events) {
+  private renderDamageEvents(snapshot: GameSnapshot) {
+    // Yuva her karede snapshottan: yeniden baglanma ya da ilk kare HUD'dan
+    // once gelebiliyor ve `localPlayerSnapshot` o an eski olabiliyor.
+    const localSlot = snapshot.players.find((player) => player.id === this.localSessionId)?.slot ?? 0;
+    const now = performance.now();
+    for (const event of snapshot.damageEvents) {
       if (this.seenDamageEventSet.has(event.id)) {
         continue;
       }
@@ -6091,34 +7123,141 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         }
       }
 
-      const text = this.add.text(event.x, event.y, `-${event.amount}`, {
-        color: "#ef4444",
-        fontFamily: "Arial",
-        fontSize: event.amount >= 100 ? "15px" : "13px",
-        fontStyle: "bold",
-        stroke: "#450a0a",
-        strokeThickness: 3
-      }).setOrigin(0.5).setDepth(30);
-
-      this.tweens.add({
-        targets: text,
-        y: event.y - 28,
-        x: event.x + Phaser.Math.Between(-8, 8),
-        alpha: 0,
-        scale: event.amount >= 100 ? 1.28 : 1.12,
-        duration: 720,
-        ease: "Cubic.easeOut",
-        onComplete: () => text.destroy()
-      });
+      this.showDamageNumber(event, localSlot, now);
     }
   }
 
+  /**
+   * Tek hasar sayisi.
+   *
+   * Sayi hep gercekte inen hasar; hiyerarsi renk, boyut ve isaretle kuruluyor.
+   * Kendi vurusun parlak, takim arkadasininki gri ve kucuk; kritik turuncu,
+   * 1.5 kat, "!" ile ve kisa bir popla; son vurus altin ve "✕" ile ama
+   * buyutulmeden. Boyut hasarin dusmanin toplam canina oranindan (sunucunun
+   * kovasi), sabit bir esikten degil.
+   *
+   * Gorunup gorunmeyecegine yonetmen karar veriyor: kendi kritigin ve son
+   * vurusun hic dusmez, siradan vurusun 12 sayida, takim arkadasininki ekranda
+   * 6 sayi varken duser. Kritik citirtisi da oradan, yalnizca senin kritiginde.
+   * Birlesen sayi bayraklari da birlestiriyor (oldurucu kritik "✕" tasir);
+   * birlesecek sayi coktan baska sayiya gectiyse kendi kritigin ya da son
+   * vurusun yeni sayi aciyor. Kendi kritik son vurusun kisa titresim, Onur
+   * zarinin jackpot'u sayinin ustunde damga (`showJackpotStamp`).
+   */
+  private showDamageNumber(event: DamageEventSnapshot, localSlot: number, now: number) {
+    const pool = this.damageNumbers;
+    if (!pool) {
+      return;
+    }
+
+    const own = getDamageEventOwnerSlot(event) === localSlot;
+    const crit = event.c === 1;
+    const killingBlow = event.k === 1;
+    if (own && crit && killingBlow) {
+      // Oldurme olayi kritik bayragi tasimiyor; kritik son vurus yalnizca
+      // burada biliniyor. Titresimin araligini ve ayarini yonetmen tutuyor.
+      this.feedback?.vibrate(FEEDBACK_KIND_RULES.kill.vibrateMs);
+    }
+    const kind: FeedbackKind = crit ? "crit" : killingBlow ? "lastHit" : "hit";
+    const lifetimeMs = FEEDBACK_KIND_RULES[kind].visualMs;
+    const key = own ? kind : `${kind}:team`;
+    const decision = this.feedback?.emit(kind, { own, x: event.x, y: event.y, lifetimeMs });
+    if (own && crit && event.j) {
+      this.showJackpotStamp(event);
+    }
+    let recycle = decision?.recycle ?? false;
+    if (decision?.merge) {
+      if (pool.merge(key, event.amount, { crit, killingBlow })) {
+        return;
+      }
+      // Birlesilecek sayinin yuvasi baska sayiya gecmis. Kendi kritigin ya da
+      // son vurusun hic dusmemeli: yeni sayi en eski canli sayinin yerine.
+      if (!own || !(crit || killingBlow)) {
+        return;
+      }
+      recycle = true;
+    } else if (decision && !decision.show) {
+      return;
+    }
+
+    pool.spawn({
+      key,
+      x: event.x,
+      y: event.y,
+      amount: event.amount,
+      own,
+      crit,
+      killingBlow,
+      bucket: event.r ?? 0,
+      lifetimeMs,
+      still: decision?.reducedMotion ?? false
+    }, now, recycle);
+  }
+
+  /**
+   * Onur jackpot damgasi: kendi kritiginde zar esigin ustundeyse kritik
+   * sayinin hemen ustunde "JACKPOT ×1.9".
+   *
+   * Sayi yine gercekte inen hasar; damga yalnizca o hasarin neden buyuk
+   * oldugunu (zarin) soyluyor. Carpan sunucudan (`j`, on kati), istemci
+   * zari bilmiyor. Etiket butcesinden (P1) ve dunya etiket havuzundan: yeni
+   * Text acilmiyor. Hareket azaltmada yukselmeden yerinde soner.
+   */
+  private showJackpotStamp(event: DamageEventSnapshot) {
+    const labels = this.levelLabels;
+    const luck = (event.j ?? 0) / 10;
+    if (!labels || !(luck > 0)) {
+      return;
+    }
+    const now = performance.now();
+    const y = event.y - JACKPOT_LABEL_LIFT_PX;
+    const lifetimeMs = FEEDBACK_KIND_RULES.jackpot.visualMs;
+    const text = `JACKPOT ×${luck.toFixed(1)}`;
+    const decision = this.feedback?.emit("jackpot", { own: true, x: event.x, y, lifetimeMs });
+    if (decision?.merge) {
+      labels.merge("jackpot", text, JACKPOT_LABEL_FILL, JACKPOT_LABEL_STROKE);
+      return;
+    }
+    if (decision && !decision.show) {
+      return;
+    }
+    labels.spawn({
+      key: "jackpot",
+      text,
+      x: event.x,
+      y,
+      fill: JACKPOT_LABEL_FILL,
+      stroke: JACKPOT_LABEL_STROKE,
+      fontPx: JACKPOT_LABEL_FONT_PX,
+      alpha: 1,
+      pop: false,
+      lifetimeMs,
+      still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
+      bounds: getMapWorldBounds(this.selectedMapData)
+    }, now, decision?.recycle ?? false);
+  }
+
   private renderKillEvents(snapshot: GameSnapshot) {
+    this.newKillEventsInSnapshot = 0;
+    const comboWindowMs = getComboWindowMs(snapshot.team.wave);
+    let comboTouched = false;
+    // Kritik oldurme: oldurme olayi kritik bayragi tasimiyor, ama oldurucu
+    // hasar olayi (`c:1, k:1`) ayni snapshot'ta geliyor. Bu kontrol oldurme
+    // olaylarinin hasar olaylarindan ONCE islenmesine dayaniyor
+    // (`renderSnapshotPayload`): hasar olayi henuz "gorulmemis" olmali.
+    // Snapshot duzeyi yeter; durtme ve titresim konumsuz ve yonetmen onlari
+    // 400/300 ms'de bire indiriyor.
+    const localSlot = snapshot.players.find((player) => player.id === this.localSessionId)?.slot ?? 0;
+    const ownCritKill = snapshot.damageEvents.some((damage) => damage.c === 1
+      && damage.k === 1
+      && !this.seenDamageEventSet.has(damage.id)
+      && getDamageEventOwnerSlot(damage) === localSlot);
     for (const event of snapshot.killEvents) {
       if (this.seenKillEventSet.has(event.id)) {
         continue;
       }
 
+      this.newKillEventsInSnapshot += 1;
       this.seenKillEventSet.add(event.id);
       this.seenKillEventIds.push(event.id);
       if (this.seenKillEventIds.length > 240) {
@@ -6128,68 +7267,493 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         }
       }
 
-      if (!event.ownerId) {
-        continue;
+      // Kombo sunucunun oldurme anindan sayiliyor; bayat olay (yeniden
+      // baglanma, arka plandan donus) sayilmiyor, perde de yonetmenin kendi
+      // zincirine kaliyor. Ayni kural patlamayi, sesi ve altin sayisini da
+      // susturuyor (`playKillConfirmation`).
+      const own = Boolean(event.ownerId) && event.ownerId === this.localSessionId;
+      const stale = isStaleKillEvent(event.serverTime, snapshot.serverTime);
+      let comboStep: number | undefined;
+      if (event.ownerId && !stale) {
+        const ownCount = this.killCombo.record(event.serverTime, own, comboWindowMs);
+        comboStep = ownCount !== undefined ? ownCount - 1 : undefined;
+        comboTouched = true;
       }
 
-      const ownerKillTimes = [
-        ...(this.killStreakTimesByOwner.get(event.ownerId) ?? []),
-        event.serverTime
-      ].filter((time) => event.serverTime - time <= this.killStreakMaxWindowMs);
-      this.killStreakTimesByOwner.set(event.ownerId, ownerKillTimes);
+      this.playKillConfirmation(event, comboStep, stale, ownCritKill);
 
-      const streakRule = event.streakTier
-        ? getKillStreakRuleByTier(event.streakTier)
-        : this.getTriggeredKillStreakRule(event.ownerId, event.serverTime, snapshot.team.wave);
-      if (streakRule) {
-        const ownerLocks = this.getKillStreakLocks(event.ownerId);
-        for (const rule of KILL_STREAK_RULES) {
-          if (rule.kills <= streakRule.kills) {
-            ownerLocks.set(rule.tier, {
-              unlockAt: event.serverTime + KILL_STREAK_RETRIGGER_LOCK_MS,
-              wave: snapshot.team.wave
-            });
-          }
+      if (!event.ownerId || !event.streakTier) {
+        continue;
+      }
+      // Seri yalnizca sunucudan: istemci eskiden oldurme zamanlarindan kendi
+      // serisini de hesapliyordu. Yeniden baglanan istemcide kilitler
+      // bilinmedigi icin sunucunun vermedigi bir seriyi -- ve artik afisin
+      // yazdigi buff'i -- gosterebilirdi.
+      this.announceKillStreak(snapshot, event, event.streakTier);
+    }
+
+    if (comboTouched) {
+      this.presentKillCombo(snapshot, comboWindowMs);
+    }
+  }
+
+  /**
+   * Kozmetik kombo hapi (HUD'da, arenanin sag ustunde).
+   *
+   * Yalnizca gosterge: oyuna, seriye ve esiklere hic dokunmuyor. Kendi
+   * serinin afisi ekrandayken hap yok -- hap afise "donusmus" oluyor; afis
+   * kalkinca kombo suruyorsa bir sonraki oldurmede geri geliyor. Kart
+   * perdesi, sonuc ekrani ve mac sonu da hapi kaldiriyor.
+   */
+  private presentKillCombo(snapshot: GameSnapshot, windowMs: number) {
+    const state = this.killCombo.getHudState(snapshot.serverTime, windowMs, snapshot.players.length > 1);
+    if (!state || this.rampageContainer || this.cardChoiceRoot || this.matchResultShown || snapshot.result) {
+      this.game.events.emit("game:hud-combo-hide");
+      return;
+    }
+    this.game.events.emit("game:hud-combo", state);
+  }
+
+  /**
+   * Sunucunun verdigi seri.
+   *
+   * Sahibinin ates eden kuleleri buff'in gercek suresi boyunca parliyor
+   * (3000 oyun-ms = 3.75 sn); olay gec geldiyse (yeniden baglanma) kalan
+   * sure kadar. Kendi serin: temali afis siraya giriyor; ses klibi, sarsinti
+   * ve titresim afis gercekten ekrana gelince (`showKillStreakAnnouncement`),
+   * yoksa siradaki afisin klibi ekrandakinin klibini keser ve henuz
+   * gorunmeyen kademeyi soylerdi. Takim arkadasinin serisi: kendi renginde
+   * kucuk bir yan toast, soluk parlama, kisik ses -- kamerana, afisine ve
+   * calan klibe dokunmuyor. Kart/Ucube perdesi acikken ondan yalnizca soluk
+   * parlama kaliyor.
+   */
+  private announceKillStreak(snapshot: GameSnapshot, event: KillEventSnapshot, tier: KillStreakTier) {
+    const rule = getKillStreakRuleByTier(tier);
+    if (!rule) {
+      return;
+    }
+    const remainingMs = getKillStreakBuffRealMs() - Math.max(0, snapshot.serverTime - event.serverTime);
+    // Sonuc ekraninda (son dalganin son oldurmesi) afis ve toast yok; buff da bitti sayilir.
+    if (remainingMs <= 0 || this.matchResultShown) {
+      return;
+    }
+
+    const own = event.ownerId === this.localSessionId;
+    const owner = snapshot.players.find((candidate) => candidate.id === event.ownerId);
+    this.startStreakGlow(snapshot, event.ownerId, own, remainingMs);
+
+    if (!own) {
+      // Kart/Ucube perdesi acikken takim arkadasinin toast'u ve sesi yok: HUD
+      // perdenin ustunde kalir, baskasinin olayi senin secimine girerdi;
+      // soluk parlama yeter.
+      if (this.cardChoiceRoot) {
+        return;
+      }
+      this.playKillStreakAnnouncement(rule, false);
+      const characterId = owner?.characterId;
+      const character = characterId ? characters.find((candidate) => candidate.id === characterId) : undefined;
+      const toast: TeamStreakToast = {
+        name: character?.displayName ?? "Takım arkadaşın",
+        label: rule.label,
+        buff: getKillStreakBuffText(tier),
+        color: (characterId && CHARACTER_CLASS_COLORS[characterId]) || "#94a3b8"
+      };
+      this.game.events.emit("game:hud-team-streak", toast);
+      return;
+    }
+
+    this.game.events.emit("game:hud-combo-hide");
+    const item: StreakBannerItem = { characterId: owner?.characterId ?? this.selectedCharacterId, rule };
+    if (this.streakBanners.offer(item, performance.now()) === "show") {
+      this.showKillStreakAnnouncement(item);
+    } else {
+      this.hastenStreakBanner();
+    }
+  }
+
+  /**
+   * Sahibinin kulelerine parlama. Ayni sahibin yeni serisi eskisinin yerini
+   * aliyor (sunucu da sureyi yeni seriden yaziyor); kule listesi seri
+   * anindaki -- sonradan kurulan kule buff almiyor, parlamiyor.
+   */
+  private startStreakGlow(snapshot: GameSnapshot, ownerId: string, own: boolean, remainingMs: number) {
+    const towerIds = getStreakBuffedTowerIds(snapshot.towers, ownerId);
+    if (towerIds.length === 0) {
+      return;
+    }
+    const now = performance.now();
+    const previous = this.streakGlows.find((glow) => glow.ownerId === ownerId && glow.until > now);
+    this.streakGlows = this.streakGlows.filter((glow) => glow.ownerId !== ownerId);
+    this.streakGlows.push({ ownerId, own, towerIds, startedAt: previous?.startedAt ?? now, until: now + remainingMs });
+  }
+
+  /**
+   * Seri parlamasi: tek Graphics, yalnizca parlama varken ciziliyor.
+   *
+   * Kulenin altinda altin bir hale -- govde ortasini ortuyor, kenardan tasan
+   * kisim "bu kule su an guclu" diyor. Seviye halkasina, kule rengine ve
+   * durum renklerine dokunmuyor; onlar oyun bilgisi tasiyor. Hareket
+   * azaltmada nabiz yok, parlama sabit durup soner.
+   */
+  private renderStreakGlows(now: number) {
+    const graphics = this.streakGlowGraphics;
+    if (!graphics) {
+      return;
+    }
+    if (this.streakGlows.length === 0) {
+      if (graphics.visible) {
+        graphics.clear().setVisible(false);
+      }
+      return;
+    }
+
+    this.streakGlows = this.streakGlows.filter((glow) => glow.until > now);
+    graphics.clear().setVisible(true);
+    const cellSize = this.getMapCellSize();
+    const still = this.feedback?.reducedMotion ?? false;
+    const pulse = still ? 1 : 0.82 + Math.sin(now * STREAK_GLOW_PULSE_RATE) * 0.18;
+    for (const glow of this.streakGlows) {
+      const alpha = getStreakGlowAlpha(now - glow.startedAt, glow.until - now)
+        * (glow.own ? 1 : TEAMMATE_STREAK_GLOW_INTENSITY)
+        * pulse;
+      if (alpha <= 0) {
+        continue;
+      }
+      for (const id of glow.towerIds) {
+        const tower = this.towerSnapshots.get(id);
+        if (!tower) {
+          continue;
         }
-        const ownerPlayer = snapshot.players.find((candidate) => candidate.id === event.ownerId);
-        this.playKillStreakAnnouncement(streakRule);
-        this.showKillStreakAnnouncement(ownerPlayer, streakRule);
+        const radius = (cellSize * getTowerGridSpan(tower.definitionId)) / 2;
+        graphics.fillStyle(0xfacc15, 0.12 * alpha);
+        graphics.fillCircle(tower.x, tower.y, radius * 1.34);
+        graphics.fillStyle(0xfde68a, 0.2 * alpha);
+        graphics.fillCircle(tower.x, tower.y, radius * 1.08);
+        graphics.lineStyle(2, 0xfbbf24, 0.85 * alpha);
+        graphics.strokeCircle(tower.x, tower.y, radius * 1.16);
       }
     }
   }
 
-  private getTriggeredKillStreakRule(ownerId: string, serverTime: number, wave: number) {
-    const ownerKillTimes = this.killStreakTimesByOwner.get(ownerId) ?? [];
-    const ownerLocks = this.getKillStreakLocks(ownerId);
-    return KILL_STREAK_RULES.find((rule) => {
-      const lock = ownerLocks.get(rule.tier);
-      if (lock && lock.wave === wave && serverTime < lock.unlockAt) {
-        return false;
-      }
+  /**
+   * Oldurme onayi: olum patlamasi, oldurme sesi, agir dusmanda ya da kritik
+   * oldurmede kucuk durtme.
+   *
+   * Yalnizca oldurme olayindan: sizintinin olayi yok, o sessizce kaybolmaya
+   * devam ediyor. Iz yoksa dusman bu istemcide hic cizilmedi (yeniden
+   * baglanmada gelen eski olay, iki snapshot arasinda dogup olen dusman);
+   * o zaman ses de yok, yoksa baglaninca bir yigin oldurme sesi patlardi.
+   *
+   * Bayat olay (`stale`, kombonun 400 ms kurali): arka plandan donuste ilk
+   * kare aradaki butun olen dusmanlari kaldiriyor ve her biri icin eski
+   * konumunda iz birakiyor; son 2.2 sn'nin oldurme olaylari o izleri ayni
+   * karede buluyor, TTL korumuyor. Iz yine aliniyor (bir daha patlamasin)
+   * ama patlama, ses, durtme ve altin sayisi yok -- olmayan bir yerde
+   * cikarlardi. HUD altini zaten dogru.
+   *
+   * Kendi oldurmen parlak ve sesli; takim arkadasininki soluk, sesi yonetmende
+   * kisik ve seyrek, kamerana hic dokunmuyor. Durtme ve titresimi de yonetmen
+   * veriyor: yalnizca senin agir dusman ya da kritik oldurmende
+   * (`ownCritKill`: bu snapshot'ta senin kritik son vurusun var). Kritik son
+   * vurus ayrica `showDamageNumber`da titretiyor; iz bulunmasa da. Altinin
+   * "+N"i da yalnizca senin oldurmende (`playKillCoin`).
+   */
+  private playKillConfirmation(event: KillEventSnapshot, comboStep?: number, stale = false, ownCritKill = false) {
+    const now = performance.now();
+    const trace = this.removedEnemyTraces.take(event.enemyId, now);
+    if (!trace || stale) {
+      return;
+    }
 
-      return ownerKillTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
+    const own = Boolean(event.ownerId) && event.ownerId === this.localSessionId;
+    const shape = getDeathBurstShape(trace.type);
+    // Perde kombo hapiyla ayni sayidan: hap "×5" derken ses de besinci basamakta.
+    const decision = this.feedback?.emit("kill", {
+      own,
+      x: trace.x,
+      y: trace.y,
+      weight: getKillFeedbackWeight(trace.type, own && ownCritKill),
+      step: own ? comboStep : undefined
+    });
+    if (own) {
+      this.playKillCoin(event, trace, decision?.step, now);
+    }
+    if (decision && !decision.show) {
+      return;
+    }
+
+    this.combatVfx?.emitDeath({
+      x: trace.x,
+      y: trace.y,
+      size: trace.size,
+      color: tintAccentColor(this.getEnemyAccentColor(trace.texture), trace.tint),
+      shards: shape.shards,
+      // Ucan dusmanin altinda zemin yok; toz halkasi yalnizca yerdeki agir govdede.
+      dustRing: shape.dustRing && !trace.air,
+      durationMs: shape.durationMs,
+      intensity: own ? 1 : TEAMMATE_DEATH_BURST_INTENSITY,
+      still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
+      bornAt: now
     });
   }
 
-  private getKillStreakLocks(ownerId: string) {
-    let locks = this.killStreakLocksByOwner.get(ownerId);
-    if (!locks) {
-      locks = new Map<KillStreakTier, KillStreakLock>();
-      this.killStreakLocksByOwner.set(ownerId, locks);
+  /**
+   * Kendi oldurmenin altini: govdenin ustunden kucuk bir "+18◆".
+   *
+   * Sayi sunucunun oldurme olayina yazdigi gercek altin (senin carpaninla,
+   * tabana yuvarli). Saniyede en fazla 3 sayi; arada gelen altin yonetmenin
+   * kararina gore canli onceki sayiya ekleniyor, o da yoksa bir sonrakine
+   * tasiniyor -- gosterilen toplam gercekten kazanilani hic asmiyor (kesir
+   * kismi HUD sayiminda). Takim arkadasinin oldurmesi
+   * buraya hic gelmiyor: senin de payin var ama o HUD sayiminda goruluyor,
+   * dunyada senin gozunu cekmiyor.
+   *
+   * Tini yonetmenden: saniyede en fazla 4, perdesi oldurme zinciriyle
+   * yukseliyor (bir oktavla sinirli).
+   */
+  private playKillCoin(event: KillEventSnapshot, trace: { x: number; y: number; size: number }, step: number | undefined, now: number) {
+    const gold = event.g ?? 0;
+    const pool = this.damageNumbers;
+    if (!(gold > 0) || !pool) {
+      return;
     }
-    return locks;
+
+    const x = trace.x;
+    const y = trace.y - trace.size * COIN_LIFT_RATIO;
+    const decision = this.feedback?.emit("coin", { own: true, x, y, step });
+    if (decision?.merge) {
+      const total = gold + this.takeCarriedCoin(now);
+      if (!pool.merge("coin", total)) {
+        this.carryCoin(total, now);
+      }
+      return;
+    }
+    if (decision && !decision.show) {
+      this.carryCoin(gold, now);
+      return;
+    }
+
+    pool.spawn({
+      key: "coin",
+      x,
+      y,
+      amount: gold + this.takeCarriedCoin(now),
+      own: true,
+      crit: false,
+      killingBlow: false,
+      bucket: 0,
+      lifetimeMs: FEEDBACK_KIND_RULES.coin.visualMs,
+      still: decision?.reducedMotion ?? false,
+      coin: true
+    }, now, decision?.recycle ?? false);
   }
 
-  private playKillStreakAnnouncement(rule: KillStreakRule) {
+  private carryCoin(gold: number, now: number) {
+    const carry = this.coinCarry;
+    carry.amount = (now - carry.at <= COIN_CARRY_MS ? carry.amount : 0) + gold;
+    carry.at = now;
+  }
+
+  /** Tasinan altin; bayatsa (`COIN_CARRY_MS`) atiliyor, HUD sayimi yine dogru. */
+  private takeCarriedCoin(now: number) {
+    const carry = this.coinCarry;
+    const amount = now - carry.at <= COIN_CARRY_MS ? carry.amount : 0;
+    carry.amount = 0;
+    return amount;
+  }
+
+  /**
+   * Oldurmeyle gelmeyen altin cipin yaninda "+N" (dalga bonusu, faiz, satis,
+   * beceri altini). Oldurme altini dunyada ve HUD sayiminda zaten goruluyor;
+   * ayirma kurali `getLumpGoldGain`de. Oyuncu kaydi yoksa bir sonraki
+   * snapshot yine "ilk" sayiliyor, arada birikmis fark etiket olmasin.
+   */
+  private announceLumpGold(gold: number | undefined) {
+    if (gold === undefined) {
+      this.lastSnapshotGold = undefined;
+      return;
+    }
+    const lump = getLumpGoldGain(this.lastSnapshotGold, gold, this.newKillEventsInSnapshot);
+    this.lastSnapshotGold = gold;
+    if (lump > 0) {
+      this.game.events.emit("game:hud-gold-gain", lump);
+    }
+  }
+
+  /**
+   * HUD kart perdesinin ve sonuc ekraninin ustunde duruyor: perde acilinca
+   * arenanin ustundeki damgalar (dalga, ulti), kombo hapi ve takim toast'u
+   * hemen kalkmali.
+   */
+  private hideArenaHudOverlays() {
+    this.game.events.emit("game:hud-wave-clear-hide");
+    this.game.events.emit("game:hud-combo-hide");
+    this.game.events.emit("game:hud-team-streak-hide");
+    this.game.events.emit("game:hud-ultimate-hide");
+  }
+
+  /**
+   * Dalga temizleme damgasi ve akoru.
+   *
+   * Temizlenme istemcide yakalaniyor: kurulum disinda kalan dusman sifira
+   * iniyor -- sunucu tam o an 2 sn'lik molayi baslatiyor, kart ekrani molanin
+   * sonunda geliyor. Kural ve sayilar `WaveClearWatch`ta: dusman takimin bu
+   * dalgadaki oldurmesi, altin senin bu dalgada kazandigin (harcama ve satis
+   * haric), bonus sunucunun molanin sonunda yazacagi dalga bonusu. Son dalgada
+   * damga yok, sonuc ekrani konusuyor.
+   *
+   * Kart ekrani zaten aciksa (ag gecikmesiyle kartlar oynatmadan once geldi)
+   * damga da akor da yok: baslik o ani "DALGA N ÖDÜLÜ" diye anlatiyor ve HUD
+   * perdenin ustunde kalirdi. Akor yonetmenden (P1, etiket butcesi); dalga
+   * takimin ortak ani, her oyuncu kendi ekraninda goruyor ve duyuyor.
+   */
+  private watchWaveClear(snapshot: GameSnapshot) {
+    const player = this.localPlayerSnapshot;
+    const summary = this.waveClearWatch.observe({
+      wave: snapshot.team.wave,
+      enemiesLeft: snapshot.team.enemiesLeft,
+      setupPhase: Boolean(snapshot.setupPhase),
+      over: Boolean(snapshot.result) || this.matchResultShown,
+      kills: snapshot.team.kills,
+      earned: player ? (player.gold ?? 0) + (player.goldSpent ?? 0) : undefined
+    });
+    if (!summary || this.cardChoiceRoot) {
+      return;
+    }
+    this.feedback?.emit("waveClear", { own: true, lifetimeMs: WAVE_CLEAR_STAMP_MS });
+    this.game.events.emit("game:hud-wave-clear", getWaveClearStampText(summary));
+  }
+
+  /**
+   * "Yukseltme hazir": XP ve altin bir kulenin sonraki seviyesine yettiginde
+   * en ucuz 3 yerel kulenin ustunde sallanan kucuk bir ▲, ★ cipi de bir kez
+   * parliyor.
+   *
+   * Bu an dalganin ortasinda geliyor ve eskiden hicbir yerde gorunmuyordu:
+   * odenebilirlik yalnizca secili kule icin hesaplaniyordu. Hesap snapshot
+   * basina bir kez (kule sayisi kadar kucuk bir dongu); karede yalnizca uc
+   * isaretin konumu yaziliyor.
+   *
+   * Parlama yalnizca "hic yoktu -> var" gecisinde ve iki saniyede en fazla
+   * bir kez. Ilk hesap gecis sayilmiyor: yeniden baglanan oyuncunun cipi
+   * aninda yanmasin. Isaret mac bitince kalkiyor; sonuc ekraninda
+   * yukseltilecek bir sey yok.
+   */
+  private refreshUpgradeReady(snapshot: GameSnapshot) {
+    const player = this.localPlayerSnapshot;
+    const ids = player && !snapshot.result
+      ? getUpgradeReadyTowerIds(snapshot.towers, this.localSessionId, { gold: player.gold ?? 0, experience: player.experience ?? 0 })
+      : [];
+    const cellSize = this.getMapCellSize();
+    this.upgradeReadyAnchors = ids.flatMap((id) => {
+      const tower = this.towerSnapshots.get(id);
+      if (!tower) {
+        return [];
+      }
+      // Can cubugunun (disk ustu - 8 px) hemen ustu.
+      const discSize = cellSize * getTowerGridSpan(tower.definitionId);
+      return [{ id, x: tower.x, y: tower.y - discSize / 2 - 11 }];
+    });
+
+    const previous = this.upgradeReadyCount;
+    this.upgradeReadyCount = ids.length;
+    this.emitHudState({ upgradeReady: ids.length > 0 });
+    const now = performance.now();
+    if (previous === 0 && ids.length > 0 && now - this.lastUpgradeReadyFlashAt >= UPGRADE_READY_FLASH_GAP_MS) {
+      this.lastUpgradeReadyFlashAt = now;
+      this.game.events.emit("game:hud-upgrade-ready");
+    }
+  }
+
+  /** Karede yalnizca konum: ucgenler bir kez ciziliyor, havuzda uc Graphics var. */
+  private updateUpgradeReadyMarkers(now: number) {
+    const anchors = this.upgradeReadyAnchors;
+    if (anchors.length === 0 && this.upgradeReadyMarkers.every((marker) => !marker.visible)) {
+      return;
+    }
+
+    const halfWidth = Math.max(4, this.getMapCellSize() * 0.15);
+    if (halfWidth !== this.upgradeReadyMarkerHalfWidth) {
+      this.upgradeReadyMarkerHalfWidth = halfWidth;
+      for (const marker of this.upgradeReadyMarkers) {
+        this.drawUpgradeReadyGlyph(marker, halfWidth);
+      }
+    }
+    const still = this.feedback?.reducedMotion ?? false;
+    const bob = still ? 0 : (Math.sin(now * UPGRADE_READY_BOB_RATE) * 0.5 + 0.5) * UPGRADE_READY_BOB_PX;
+    for (let index = 0; index < Math.max(anchors.length, this.upgradeReadyMarkers.length); index += 1) {
+      const anchor = anchors[index];
+      let marker = this.upgradeReadyMarkers[index];
+      if (!anchor) {
+        marker?.setVisible(false);
+        continue;
+      }
+      if (!marker) {
+        marker = this.add.graphics().setDepth(UPGRADE_READY_MARKER_DEPTH);
+        this.drawUpgradeReadyGlyph(marker, halfWidth);
+        this.upgradeReadyMarkers.push(marker);
+      }
+      marker.setPosition(anchor.x, anchor.y - bob).setVisible(true);
+    }
+  }
+
+  /** Ucu yukarida kucuk bir ucgen; tabani (0, 0) noktasinda. */
+  private drawUpgradeReadyGlyph(graphics: Phaser.GameObjects.Graphics, halfWidth: number) {
+    const height = halfWidth * 1.35;
+    graphics.clear();
+    graphics.fillStyle(UPGRADE_READY_MARKER_FILL, 1);
+    graphics.fillTriangle(-halfWidth, 0, halfWidth, 0, 0, -height);
+    graphics.lineStyle(1.5, UPGRADE_READY_MARKER_STROKE, 0.95);
+    graphics.strokeTriangle(-halfWidth, 0, halfWidth, 0, 0, -height);
+  }
+
+  private getEnemyAccentColor(textureKey: string) {
+    let color = this.enemyAccentColors.get(textureKey);
+    if (color === undefined) {
+      const source = this.textures.exists(textureKey) ? this.textures.get(textureKey).getSourceImage() : undefined;
+      color = readTextureAccent(source, ENEMY_ACCENT_FALLBACK);
+      this.enemyAccentColors.set(textureKey, color);
+    }
+    return color;
+  }
+
+  /**
+   * Seri klibi.
+   *
+   * Klipler paylasiliyor (kademe basina tek HTMLAudioElement) ve eskiden her
+   * seri calan klibi durdurup bastan baslatiyordu: takim arkadasinin serisi
+   * seninkini yarida kesiyordu. Artik takim arkadasininki yalnizca bir klip
+   * calmiyorken ve kisik caliyor; seninki gerekirse onunkini kesiyor.
+   *
+   * Kisiklik yalnizca medya ogesinin `volume`u ile; iOS Safari onu yok
+   * sayiyor. Orada takim arkadasinin klibi hic calmiyor (toast ve soluk
+   * parlama kaliyor), yoksa tam sesle senin sesini ele gecirirdi. Ayni
+   * nedenle seslendirme kaydiricisi sifirdayken hicbir klip baslamiyor.
+   */
+  private playKillStreakAnnouncement(rule: KillStreakRule, own: boolean) {
     const sounds = this.killStreakSounds[rule.tier];
-    if (sounds.length === 0) {
+    if (sounds.length === 0 || this.voiceVolume <= 0) {
+      return;
+    }
+    if (!own && !canSetMediaVolume()) {
+      return;
+    }
+
+    const playing = this.streakVoice && !this.streakVoice.audio.paused && !this.streakVoice.audio.ended
+      ? this.streakVoice
+      : undefined;
+    if (!own && playing) {
       return;
     }
 
     const audio = Phaser.Utils.Array.GetRandom(sounds);
+    if (playing && playing.audio !== audio) {
+      playing.audio.pause();
+    }
     audio.pause();
     audio.currentTime = 0;
-    audio.volume = this.voiceVolume;
+    audio.volume = this.voiceVolume * (own ? 1 : TEAMMATE_STREAK_VOICE_GAIN);
+    this.streakVoice = { audio, own };
     void audio.play().catch(() => {
       // Mobile browsers may block audio until the first real touch; the next streak can retry.
     });
@@ -6218,14 +7782,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     };
   }
 
-  private showKillStreakAnnouncement(player: GameSnapshot["players"][number] | undefined, rule: KillStreakRule) {
-    this.rampageContainer?.destroy(true);
-
-    const characterId = player?.characterId ?? this.selectedCharacterId;
+  /**
+   * Kendi serinin afisi. Ekrandaki afisi artik silmiyor: sira
+   * `streakBanners`ta, bu yalnizca siradakini gosteriyor.
+   *
+   * Ses klibi burada, afis ekrana geldigi an: sirada bekleyen afisin klibi
+   * ekrandaki afisin klibini kesmesin ve gorunmeyen kademeyi soylemesin.
+   * Bayatlayip dusen afis sessiz kaliyor. Sarsinti ve titresim yonetmenden
+   * (yalnizca kendi serin, en fazla 3 px, hareket azaltmada yok). Melis
+   * temasi kendi uzun titremesini istiyor; onun genligi de ayni sinirdan
+   * geciyor. Hareket azaltmada afis son yerinde belirip soner
+   * (`settleStreakBannerStill`).
+   */
+  private showKillStreakAnnouncement(item: StreakBannerItem) {
+    const { characterId, rule } = item;
+    this.playKillStreakAnnouncement(rule, true);
     const characterName = characters.find((character) => character.id === characterId)?.displayName ?? this.selectedCharacter.displayName;
     const message = `${characterName}! ${rule.label}!`;
     const theme = getKillStreakVisualTheme(characterId, rule);
     if (theme.style === "command") {
+      this.feedback?.emit("streak", { own: true });
       this.showCommandKillStreakAnnouncement(message, rule, theme);
       return;
     }
@@ -6233,6 +7809,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.showMelisKillStreakAnnouncement(message, rule, theme);
       return;
     }
+    this.feedback?.emit("streak", { own: true });
 
     const fontSize = message.length > 21 ? "24px" : message.length > 17 ? "27px" : "31px";
     const anchor = this.getKillStreakAnchor();
@@ -6285,19 +7862,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       stroke: theme.strokeColor,
       strokeThickness: 8
     };
-    const cyanGhost = this.add.text(4 + rule.chaos, 3, message, {
+    // Yazi ikinci satira (buff) yer acmak icin biraz yukarida; plaka ayni.
+    const textY = -5;
+    const cyanGhost = this.add.text(4 + rule.chaos, textY + 3, message, {
       ...baseStyle,
       color: toCssColor(theme.secondary),
       stroke: "#111827",
       strokeThickness: 5
     }).setOrigin(0.5).setAngle(-2 - rule.chaos * 0.45).setAlpha(0.68 + rule.chaos * 0.04);
-    const redGhost = this.add.text(-4 - rule.chaos, -2, message, {
+    const redGhost = this.add.text(-4 - rule.chaos, textY - 2, message, {
       ...baseStyle,
       color: toCssColor(theme.primary),
       stroke: "#450a0a",
       strokeThickness: 5
     }).setOrigin(0.5).setAngle(1.5 + rule.chaos * 0.5).setAlpha(0.74 + rule.chaos * 0.04);
-    const mainText = this.add.text(0, 0, message, {
+    const mainText = this.add.text(0, textY, message, {
       ...baseStyle,
       color: theme.textColor,
       stroke: toCssColor(theme.fill),
@@ -6312,7 +7891,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }).setOrigin(0, 0.5).setAlpha(0.78);
 
     container.add([plate, cyanGhost, redGhost, mainText, motifText]);
+    this.addStreakBuffLine(container, rule, height - 9);
     this.rampageContainer = container;
+    if (this.feedback?.reducedMotion) {
+      this.settleStreakBannerStill(container, anchor.restY, 2100 + rule.chaos * 260, 500);
+      return;
+    }
 
     this.tweens.add({
       targets: container,
@@ -6350,20 +7934,98 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ease: "Sine.easeInOut"
       });
     }
-    this.tweens.add({
+    this.scheduleStreakBannerExit(container, anchor.exitY, 2100 + rule.chaos * 260, 500);
+  }
+
+  /**
+   * Afisin ikinci satiri: serinin gercekten verdigi guc ("+%20 hasar · 3 sn").
+   *
+   * Metin paylasilan kademe tablosundan, yani sunucunun uyguladigi buff'in
+   * kendisi. Renk kulelerin parlamasiyla ayni altin: "bu yazi o parlama".
+   * Afis basina bir Text; afis dalgada 0-3 kez cikiyor.
+   */
+  private addStreakBuffLine(container: Phaser.GameObjects.Container, rule: KillStreakRule, y: number) {
+    const text = getKillStreakBuffText(rule.tier);
+    if (!text) {
+      return;
+    }
+    container.add(this.add.text(0, y, text, {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "12px",
+      color: "#fde68a",
+      stroke: "#020617",
+      strokeThickness: 4
+    }).setOrigin(0.5));
+  }
+
+  /**
+   * Hareket azaltma: afis son yerinde belirip soner; kayma, sallanma,
+   * parazit ve titreme yok, yazi ve buff satiri bilgiyi tasiyor. Cikis da
+   * yerinde (`exitY === restY`), yani `hastenStreakBanner`in hizli cikisi da
+   * yerinde bir sonme.
+   */
+  private settleStreakBannerStill(container: Phaser.GameObjects.Container, restY: number, holdMs: number, exitMs: number) {
+    container.setY(restY).setAngle(0);
+    this.tweens.add({ targets: container, alpha: 1, duration: 160, ease: "Linear" });
+    this.scheduleStreakBannerExit(container, restY, holdMs, exitMs);
+  }
+
+  /**
+   * Afisin cikisi. Tween saklaniyor: siradaki afis beklerken
+   * `hastenStreakBanner` onu one cekiyor. Bitince siradaki afis geliyor.
+   */
+  private scheduleStreakBannerExit(container: Phaser.GameObjects.Container, exitY: number, delay: number, duration: number) {
+    const tween = this.tweens.add({
       targets: container,
-      y: anchor.exitY,
+      y: exitY,
       alpha: 0,
-      delay: 2100 + rule.chaos * 260,
-      duration: 500,
+      delay,
+      duration,
       ease: "Cubic.easeIn",
-      onComplete: () => {
-        container.destroy(true);
-        if (this.rampageContainer === container) {
-          this.rampageContainer = undefined;
-        }
-      }
+      onComplete: () => this.finishStreakBanner(container)
     });
+    if (this.rampageContainer === container) {
+      this.rampageExit = { tween, exitY, startsAt: performance.now() + delay };
+    }
+  }
+
+  /**
+   * Siradaki afis bekliyor: ekrandaki en az `STREAK_BANNER_MIN_VISIBLE_MS`
+   * kaldiktan sonra hizli bir cikisla yer aciyor. Silinmiyor -- okunmadan
+   * kaybolan afis eskiden yeni afisin kendisi kadar gurultuydu.
+   */
+  private hastenStreakBanner() {
+    const container = this.rampageContainer;
+    const exit = this.rampageExit;
+    const handoffAt = this.streakBanners.handoffAt();
+    const now = performance.now();
+    if (!container || !exit || handoffAt === undefined || exit.startsAt <= now) {
+      return;
+    }
+    const delay = Math.max(0, handoffAt - now);
+    if (now + delay >= exit.startsAt) {
+      return;
+    }
+    exit.tween.stop();
+    this.scheduleStreakBannerExit(container, exit.exitY, delay, STREAK_BANNER_HANDOFF_MS);
+  }
+
+  /** Afis bitti: nesneler ve tween'leri gidiyor, siradaki (bayatlamamis) afis geliyor. */
+  private finishStreakBanner(container: Phaser.GameObjects.Container) {
+    // Hizlanan cikis ic tween'ler bitmeden gelebiliyor; yikilan nesneye yazmasinlar.
+    this.tweens.killTweensOf([container, ...container.list]);
+    container.destroy(true);
+    if (this.rampageContainer !== container) {
+      return;
+    }
+    this.rampageContainer = undefined;
+    this.rampageExit = undefined;
+    const next = this.streakBanners.finish(performance.now());
+    if (next) {
+      this.showKillStreakAnnouncement(next);
+      // Arkasinda hala bekleyen varsa bu da tam suresini beklemesin.
+      this.hastenStreakBanner();
+    }
   }
 
   private showCommandKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
@@ -6582,7 +8244,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }).setOrigin(0.5).setAlpha(0.72);
 
     container.add([plate, handsImage, cyanGhost, pinkGhost, mainText, commandText, crownText]);
+    this.addStreakBuffLine(container, rule, height - 10);
     this.rampageContainer = container;
+    if (this.feedback?.reducedMotion) {
+      this.settleStreakBannerStill(container, anchor.restY, 2200 + rule.chaos * 280, 500);
+      return;
+    }
     this.tweens.add({
       targets: container,
       y: anchor.restY,
@@ -6626,20 +8293,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ease: "Sine.easeInOut"
       });
     }
-    this.tweens.add({
-      targets: container,
-      y: anchor.exitY,
-      alpha: 0,
-      delay: 2200 + rule.chaos * 280,
-      duration: 500,
-      ease: "Cubic.easeIn",
-      onComplete: () => {
-        container.destroy(true);
-        if (this.rampageContainer === container) {
-          this.rampageContainer = undefined;
-        }
-      }
-    });
+    this.scheduleStreakBannerExit(container, anchor.exitY, 2200 + rule.chaos * 280, 500);
   }
 
   private showMelisKillStreakAnnouncement(message: string, rule: KillStreakRule, theme: KillStreakVisualTheme) {
@@ -6743,8 +8397,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     container.add([plate, coldText, hotText, mainText, ...glitches, ...imageObjects]);
+    // En ustte: parazit cubuklari ve ADD resimler okunurlugu bozmasin.
+    this.addStreakBuffLine(container, rule, height - 11);
     this.rampageContainer = container;
-    this.cameras.main.shake(130 + chaos * 180, 0.002 + chaos * chaos * 0.00125);
+    // Temanin uzun titremesi kaliyor ama yonetmenden: yalnizca kendi serin (bu
+    // afis zaten yalnizca onda), genlik en fazla 3 px, hareket azaltmada yok.
+    // Eskiden efsanede ~9 px'e cikiyor ve herkesin kamerasini salliyordu.
+    this.feedback?.shakeCamera({ own: true, priority: 0, px: Math.min(3, 1 + chaos * 0.5), durationMs: 130 + chaos * 180 });
+    this.feedback?.vibrate(MELIS_STREAK_VIBRATE_MS);
+    if (this.feedback?.reducedMotion) {
+      this.settleStreakBannerStill(container, anchor.restY, 2200 + chaos * 300, 520);
+      return;
+    }
 
     this.tweens.add({
       targets: container,
@@ -6786,20 +8450,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       duration: 66,
       ease: "Sine.easeInOut"
     });
-    this.tweens.add({
-      targets: container,
-      y: anchor.exitY,
-      alpha: 0,
-      delay: 2200 + chaos * 300,
-      duration: 520,
-      ease: "Cubic.easeIn",
-      onComplete: () => {
-        container.destroy(true);
-        if (this.rampageContainer === container) {
-          this.rampageContainer = undefined;
-        }
-      }
-    });
+    this.scheduleStreakBannerExit(container, anchor.exitY, 2200 + chaos * 300, 520);
   }
 
   private renderBeams(beams: BeamSnapshot[]) {
@@ -8001,6 +9652,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     ] as const) {
       if (hasUnlockBit(towerUnlockBits, unlock) && !targetModes.includes(mode)) targetModes.push(mode);
     }
+    // Magaza acilinca HUD'daki altin sayimi beklemeden gercek degere oturuyor:
+    // magazanin basligi gercek altini yaziyor, cip bir an bile farkli okunmasin.
+    const goldShopOpen = this.isGoldShopOpen(this.latestPerfSnapshot, this.localPlayerSnapshot);
+    if (goldShopOpen && !this.goldShopWasOpen) {
+      this.game.events.emit("game:hud-gold-settle");
+    }
+    this.goldShopWasOpen = goldShopOpen;
 
     this.game.events.emit("game:controls-state", {
       visible: true,
@@ -8060,7 +9718,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         power: ultimatePower,
         powerMultiplier: getUltimatePowerMultiplier(ultimatePower),
         upgradeCost: ultimatePowerCost,
-        canUpgrade: ultimatePowerCost !== undefined && Math.floor(this.localPlayerSnapshot?.gold ?? 0) >= ultimatePowerCost
+        canUpgrade: ultimatePowerCost !== undefined && Math.floor(this.localPlayerSnapshot?.gold ?? 0) >= ultimatePowerCost,
+        readyPulseAt: this.currentUltimateCharge >= 100 ? this.ultimateReadyPulseAt : undefined
       },
       underworldMode: isUnderworldTower ? {
         current: selectedTower.melisUnderworldMode ?? "approval",
@@ -8089,7 +9748,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       targeting: selectedTower && towerOperations && definition?.engine?.attack.shape !== "orbit"
         ? { current: selectedTower.targetingMode ?? definition?.engine?.targeting ?? "first", modes: [...new Set(targetModes)] }
         : undefined,
-      goldShop: this.isGoldShopOpen(this.latestPerfSnapshot, this.localPlayerSnapshot) && this.localPlayerSnapshot ? {
+      goldShop: goldShopOpen && this.localPlayerSnapshot ? {
         gold: Math.floor(this.localPlayerSnapshot.gold),
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
@@ -8468,6 +10127,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
 
     canvas.addEventListener("pointerup", (event) => {
+      // Dokunmatik pointerdown kullanici etkinlestirmesi sayilmiyor; iOS
+      // baglami ancak birakmada surduruyor. Arka plandan donuste de burada.
+      this.feedback?.unlockAudio();
       const pointer = this.createBridgePointer(event);
       if (pointer) {
         this.handleMapPointer(pointer);
@@ -8614,6 +10276,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     return satirlar.join("\n");
   }
 
+  private getFeedbackBudgetLine() {
+    const usage = this.feedback?.getBudgetUsage();
+    if (!usage) {
+      return "Feedback        --";
+    }
+    const motion = usage.reducedMotion ? " / az hareket" : "";
+    return `Feedback        num ${usage.numbers}/${usage.limits.numbers} | lbl ${usage.labels}/${usage.limits.labels} | sfx ${usage.voices}/${usage.limits.sounds}${motion}`;
+  }
+
   private getPerfPopupText() {
     const snapshot = this.latestPerfSnapshot;
     const serverPerf = snapshot?.perf;
@@ -8651,7 +10322,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       `Events          ${roundClientMetric(this.getClientPerfAverage("events"))} ms`,
       `Shop sync       ${roundClientMetric(this.getClientPerfAverage("shop"))} ms`,
       `Inbound avg     ${roundClientMetric(averageKb)} KB`,
-      `Buffer          q${this.snapshotBuffer.length} / alpha ${this.lastPlaybackAlpha.toFixed(2)} / drop ${this.droppedSnapshotCount}`
+      `Buffer          q${this.snapshotBuffer.length} / alpha ${this.lastPlaybackAlpha.toFixed(2)} / drop ${this.droppedSnapshotCount}`,
+      // Odul geri bildiriminin butce dolulugu: telefonda sinirin tuttugu
+      // buradan okunuyor (sayi 12, etiket 3, ses 6).
+      this.getFeedbackBudgetLine()
     ];
     const serverLines = serverPerf ? [
       "SERVER",
@@ -9012,6 +10686,23 @@ function readStoredVolume(key: string, fallback: number) {
 function writeStoredVolume(key: string, value: number) {
   try {
     window.localStorage.setItem(key, String(Phaser.Math.Clamp(value, 0, 1)));
+  } catch {
+    // Storage can be unavailable in private browser contexts.
+  }
+}
+
+function readStoredFlag(key: string, fallback: boolean) {
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    return storedValue === null ? fallback : storedValue === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredFlag(key: string, value: boolean) {
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
   } catch {
     // Storage can be unavailable in private browser contexts.
   }

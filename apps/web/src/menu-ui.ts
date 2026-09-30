@@ -33,6 +33,7 @@ import {
   type SkillDefinition,
   type TowerDefinition
 } from "@karayel/shared";
+import { CHARACTER_CLASS_COLORS } from "./character-colors";
 import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
 import { getClearedStages, getDefaultStage } from "./stage-progress";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
@@ -85,15 +86,8 @@ const enemyTypeLabels: Record<EnemyType, string> = {
   siege: "Kuşatma"
 };
 
-const classColor: Record<CharacterId, string> = {
-  zeynep: "#ec4899",
-  warrior: "#22c55e",
-  archer: "#38bdf8",
-  mage: "#a78bfa",
-  healer: "#f9a8d4",
-  tank: "#facc15",
-  onur: "#14b8a6"
-};
+// Oyun ici takim toast'u da ayni rengi kullaniyor; tek kaynak orada.
+const classColor = CHARACTER_CLASS_COLORS;
 
 // Portraits that exist as real art; everyone else falls back to an engraved mark.
 const characterArt: Partial<Record<CharacterId, string>> = {
@@ -233,7 +227,9 @@ export function setupMenuUi(game: Phaser.Game) {
       characterId: selectedCharacter.id,
       mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap,
       creative: mode === "solo" && creativeRequested,
-      stage: stageState.selected
+      // Online oyunda asama odanindir: katilan oyuncunun menudeki secimi
+      // kurucununkinden farkli olabilir.
+      stage: mode === "online" && currentLobbyState?.stage !== undefined ? currentLobbyState.stage : stageState.selected
     });
     creativeRequested = false;
   };
@@ -298,7 +294,10 @@ export function setupMenuUi(game: Phaser.Game) {
         characterId: selectedCharacter.id,
         roomName,
         mapScale: selectedMapScale,
-        mapData: selectedMap
+        mapData: selectedMap,
+        // Asama gitmezse sunucu ilk asamaya dusuyor ve co-op zaferi hep 1.
+        // asamayi isaretliyordu; kurucunun sectigi asama odanin asamasi.
+        stage: stageState.selected
       }));
       bindLobbyRoom(room);
       render("lobby");
@@ -656,7 +655,7 @@ function renderShell(
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "bestiary" ? renderBestiary() : ""}
         ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus, savedMaps, activeSavedMapId, selectedMapName) : ""}
-        ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError) : ""}
+        ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError, stageState.selected) : ""}
         ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
       </section>
     </main>
@@ -734,8 +733,10 @@ function renderOnline(
   onlineTab: OnlineTab,
   roomListings: RoomListingSnapshot[],
   selectedMapScale: MapScale,
-  lobbyError: string
+  lobbyError: string,
+  selectedStage: number
 ) {
+  const stage = getStage(selectedStage);
   return `
     <div class="screen">
       <header class="screen-topbar detail-topbar">
@@ -772,6 +773,7 @@ function renderOnline(
             </div>
           </div>
           <p class="online-note">1x–4x seçenekleri aynı alandaki grid yoğunluğunu belirler; ölçek büyüdükçe kule kareleri küçülür.</p>
+          <p class="online-note">Aşama: <b>${stage.id}. ${escapeHtml(stage.name)}</b> · ana ekranda seçilir; zafer bu aşamayı işaretler.</p>
           <button class="command command--primary" data-create-room>Odayı Kur</button>
         </section>
       ` : `
@@ -785,7 +787,7 @@ function renderOnline(
               <span class="archive-card__mark">${room.mapScale}x</span>
               <span class="archive-card__body">
                 <strong>${escapeHtml(room.roomName)}</strong>
-                <small>${escapeHtml(room.hostName)} · ${room.playerCount}/${room.maxPlayers} oyuncu · ${room.started ? "Devam ediyor" : "Lobi"}</small>
+                <small>${escapeHtml(room.hostName)}${room.stage !== undefined ? ` · ${getStage(room.stage).id}. Aşama` : ""} · ${room.playerCount}/${room.maxPlayers} oyuncu · ${room.started ? "Devam ediyor" : "Lobi"}</small>
               </span>
             </button>
           `).join("") : `
@@ -825,7 +827,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
       <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="online" aria-label="Online">‹</button>
         <div>
-          <p class="eyebrow">Room Lobby</p>
+          <p class="eyebrow">Room Lobby${lobbyState.stage !== undefined ? ` · ${getStage(lobbyState.stage).id}. Aşama` : ""}</p>
           <h1>${escapeHtml(lobbyState.roomName)}</h1>
         </div>
         <span class="status-pill">${lobbyState.mapScale}x Grid</span>

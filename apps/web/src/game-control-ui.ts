@@ -1,11 +1,45 @@
 import type Phaser from "phaser";
-import { FINAL_WAVE, HIRABLE_WORKER_ROLES, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 
 type ZeynepTier = "small" | "medium" | "big";
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
+/**
+ * Dalga damgasinin dikey yeri: cubukla alt panel arasindaki seridin bu orani.
+ * Seri afisi %17'de; damga ondan asagida, haritanin ust yarisinda.
+ */
+const WAVE_CLEAR_BAND_RATIO = 0.32;
+/** Damga satirlari basligin inisi bittikten sonra belirmeye basliyor. */
+const WAVE_CLEAR_LINE_DELAY_MS = 220;
+/**
+ * Takim arkadasinin seri toast'u: kisa, en fazla iki tane ust uste. Seri
+ * dalgada 0-3 kez cikiyor; ucuncusu gelirse en eskisi yer aciyor.
+ */
+const TEAM_STREAK_TOAST_MS = 2600;
+const TEAM_STREAK_TOAST_LIMIT = 2;
+
+/** Takim arkadasinin serisi: kim, hangi kademe, kulelerine ne verdi, hangi renkte. */
+export type TeamStreakToast = {
+  name: string;
+  label: string;
+  buff: string;
+  color: string;
+};
+
+/**
+ * Ulti karnesinin dikey yeri: seridin bu orani. Seri afisi %17'de, dalga
+ * damgasi %32'de; ulti cogu zaman bir seri de actigi (ve bazen dalgayi
+ * bitirdigi) icin karne ikisinin de altinda, kendi yerinde.
+ */
+const ULTIMATE_STAMP_BAND_RATIO = 0.56;
+
+/** Kendi ultinin karnesi: sunucunun sayilarindan metin, karakterin rengi. */
+export type UltimateStampEvent = UltimateStampText & { color: string };
+
+/** Takim arkadasinin ulti cipi: tek satir, onun renginde. */
+export type TeamUltimateChip = { text: string; color: string };
 
 type ControlState = {
   visible: boolean;
@@ -37,6 +71,8 @@ type ControlState = {
     /** Siradaki kademenin bedeli; hepsi alinmissa yok. */
     upgradeCost?: number;
     canUpgrade: boolean;
+    /** Sarjin 100'e gectigi an (performance.now); dugme o andan bir kez atiyor. */
+    readyPulseAt?: number;
   };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
@@ -472,6 +508,22 @@ export function setupGameControlUi(game: Phaser.Game) {
     return drawer;
   };
 
+  /**
+   * Ulti hazir atimi: sarj 100'e gectigi an bir kez.
+   *
+   * Panel sarj sayisi yuzunden saniyede birkac kez yeniden kuruluyor. Yeni
+   * dugme atima bastan baslasa ayni an birkac kez atardi, hic baslamasa atim
+   * yarida kesilirdi. Negatif gecikme animasyonu kaldigi yerden surduruyor;
+   * sure dolunca yeni dugme hic atmiyor.
+   */
+  const applyUltimateReadyPulse = (button: HTMLElement, pulseAt?: number) => {
+    if (pulseAt === undefined) return;
+    const elapsed = performance.now() - pulseAt;
+    if (!(elapsed >= 0) || elapsed >= ULTIMATE_READY_PULSE_MS) return;
+    button.classList.add("is-ult-pulse");
+    button.style.animationDelay = `${-Math.round(elapsed)}ms`;
+  };
+
   /** Bir satirlik dugme grubu. */
   const makeRow = (children: HTMLElement[], className = "game-controls__row") => {
     const row = document.createElement("div");
@@ -518,9 +570,9 @@ export function setupGameControlUi(game: Phaser.Game) {
         makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
       ]));
     } else if (state.ultimate) {
-      body.push(makeRow([
-        makeActionButton(`Ulti ${state.ultimate.charge}%`, "game-controls__action--ultimate", state.ultimate.ready, () => dispatch({ action: "useUltimate" }))
-      ]));
+      const ultimateButton = makeActionButton(`Ulti ${state.ultimate.charge}%`, "game-controls__action--ultimate", state.ultimate.ready, () => dispatch({ action: "useUltimate" }));
+      applyUltimateReadyPulse(ultimateButton, state.ultimate.readyPulseAt);
+      body.push(makeRow([ultimateButton]));
     }
 
     // Surekli gorunen gostergeler de burada: alt barin tek satir kalmasi icin
@@ -1121,9 +1173,16 @@ export function setupGameControlUi(game: Phaser.Game) {
     };
 
     const total = (state.inventory?.items ?? []).reduce((sum, entry) => sum + entry.count, 0);
+    // Ulti dugmesi Beceriler cekmecesinin icinde; cekmece kapaliyken "hazir"
+    // bilgisi ancak buradan gorunuyor. Kenar rengi kalici, atim bir kez.
+    const skillsButton = makeLaunchButton("Beceriler", "skills");
+    if (state.ultimate?.ready) {
+      skillsButton.classList.add("game-controls__launch--ult-ready");
+      applyUltimateReadyPulse(skillsButton, state.ultimate.readyPulseAt);
+    }
     const buttons = [
       makeLaunchButton("Kuleler", "towers"),
-      makeLaunchButton("Beceriler", "skills"),
+      skillsButton,
       makeLaunchButton("İşçi Ağacı", "workerDevelopment"),
       // Rolsuz isci yeni alimi kilitliyor; bildirim kart secimi gibi bir
       // ortunun altinda kalabilir, bu isaret kalici.
@@ -1541,6 +1600,10 @@ export type HudState = {
   audioOpen: boolean;
   musicVolume: number;
   voiceVolume: number;
+  /** Sentez efekt seslerinin seviyesi (oldurme, altin, kritik, kart...). */
+  sfxVolume: number;
+  /** Titresim acik mi; kutu yalnizca destekleyen cihazda gorunuyor. */
+  vibration: boolean;
   /**
    * `stats.wave` dalgasindaki ucanlar; yoksa alan yok. Kurulumda o numara
    * siradaki dalga, yani etiket de onu anlatiyor.
@@ -1553,6 +1616,12 @@ export type HudState = {
   forecastEnemyCount: number;
   /** Siradaki dalgada ucan var ve oyuncunun hicbir kulesi havayi vuramiyor. */
   airWarning: boolean;
+  /**
+   * XP ve altin en az bir yerel kulenin sonraki seviyesine yetiyor. ★ cipi
+   * bu surece sabit bir yesil tasiyor; haritadaki ▲ isaretleriyle ayni haber,
+   * hareket azaltmada da okunuyor.
+   */
+  upgradeReady: boolean;
 };
 
 export function setupGameHudUi(game: Phaser.Game) {
@@ -1564,7 +1633,9 @@ export function setupGameHudUi(game: Phaser.Game) {
   let state: HudState = {
     status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5,
-    statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: [], forecastEnemyCount: 0, airWarning: false
+    sfxVolume: 0.5, vibration: true,
+    statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: [], forecastEnemyCount: 0, airWarning: false,
+    upgradeReady: false
   };
 
   const dispatch = (action: string, value?: number) => window.dispatchEvent(new CustomEvent("karayel:control-action", { detail: { action, value } }));
@@ -1600,9 +1671,9 @@ export function setupGameHudUi(game: Phaser.Game) {
   root.innerHTML = `
     <div class="game-hud__row">
       <div class="game-hud__vitals">
-        <span class="game-hud__vital game-hud__vital--gold" title="Altın"><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
+        <span class="game-hud__vital game-hud__vital--gold" title="Altın" data-hud-gold-vital><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
         <span class="game-hud__vital game-hud__vital--health" title="Üs canı"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
-        <span class="game-hud__vital game-hud__vital--wave" title="Dalga"><i aria-hidden="true">⚑</i><b data-hud-wave>1</b><em class="game-hud__air" data-hud-air hidden>HAVA</em></span>
+        <span class="game-hud__vital game-hud__vital--wave" title="Dalga 1/${FINAL_WAVE}" data-hud-wave-vital><i aria-hidden="true">⚑</i><span class="game-hud__wave-word" aria-hidden="true">Dalga</span><b data-hud-wave>1</b><small class="game-hud__wave-total">/${FINAL_WAVE}</small><em class="game-hud__air" data-hud-air hidden>HAVA</em></span>
       </div>
       <p class="game-hud__status" data-hud-status hidden></p>
       <div class="game-hud__actions">
@@ -1612,23 +1683,45 @@ export function setupGameHudUi(game: Phaser.Game) {
         <button class="game-hud__continue" data-hud="continue" hidden>Devam</button>
       </div>
     </div>
-    <div class="game-hud__strip" data-hud-strip></div>
+    <div class="game-hud__strip" data-hud-strip>
+      <span class="game-hud__strip-group" data-hud-strip-dynamic></span>
+      <span class="game-hud__chip game-hud__chip--xp" data-hud-xp title="Deneyim"><i aria-hidden="true">★</i><b data-hud-xp-value>0</b></span>
+      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping title="Gecikme"><i aria-hidden="true">●</i><b data-hud-ping-value>-- ms</b></span>
+    </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
       <p class="game-hud__forecast-line">Sonraki dalga: <b data-hud-forecast-count>0</b> düşman<em class="game-hud__air" data-hud-forecast-air hidden></em></p>
       <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden>Kulelerin havadaki düşmanı vuramıyor!</p>
     </div>
     <div data-hud-popups></div>
+    <span class="game-hud__gain" data-hud-gold-gain aria-hidden="true" hidden></span>
+    <div class="game-hud__wave-clear" data-hud-wave-clear role="status" aria-live="polite" hidden></div>
+    <div class="game-hud__ultimate" data-hud-ultimate role="status" aria-live="polite" hidden></div>
+    <div class="game-hud__combo" data-hud-combo data-heat="0" aria-hidden="true" hidden><b data-hud-combo-count></b><em data-hud-combo-multi hidden></em></div>
+    <div class="game-hud__team-streaks" data-hud-team-streaks role="status" aria-live="polite"></div>
   `;
 
   const goldNode = root.querySelector<HTMLElement>("[data-hud-gold]")!;
+  const goldVitalNode = root.querySelector<HTMLElement>("[data-hud-gold-vital]")!;
+  const goldGainNode = root.querySelector<HTMLElement>("[data-hud-gold-gain]")!;
   const healthNode = root.querySelector<HTMLElement>("[data-hud-health]")!;
   const waveNode = root.querySelector<HTMLElement>("[data-hud-wave]")!;
+  const waveVitalNode = root.querySelector<HTMLElement>("[data-hud-wave-vital]")!;
+  const waveClearNode = root.querySelector<HTMLElement>("[data-hud-wave-clear]")!;
+  const ultimateNode = root.querySelector<HTMLElement>("[data-hud-ultimate]")!;
+  const comboNode = root.querySelector<HTMLElement>("[data-hud-combo]")!;
+  const comboCountNode = root.querySelector<HTMLElement>("[data-hud-combo-count]")!;
+  const comboMultiNode = root.querySelector<HTMLElement>("[data-hud-combo-multi]")!;
+  const teamStreaksNode = root.querySelector<HTMLElement>("[data-hud-team-streaks]")!;
   const waveAirNode = root.querySelector<HTMLElement>("[data-hud-air]")!;
   const forecastNode = root.querySelector<HTMLElement>("[data-hud-forecast]")!;
   const forecastCountNode = root.querySelector<HTMLElement>("[data-hud-forecast-count]")!;
   const forecastAirNode = root.querySelector<HTMLElement>("[data-hud-forecast-air]")!;
   const forecastWarningNode = root.querySelector<HTMLElement>("[data-hud-forecast-warning]")!;
-  const stripNode = root.querySelector<HTMLElement>("[data-hud-strip]")!;
+  const stripDynamicNode = root.querySelector<HTMLElement>("[data-hud-strip-dynamic]")!;
+  const xpChipNode = root.querySelector<HTMLElement>("[data-hud-xp]")!;
+  const xpValueNode = root.querySelector<HTMLElement>("[data-hud-xp-value]")!;
+  const pingChipNode = root.querySelector<HTMLElement>("[data-hud-ping]")!;
+  const pingValueNode = root.querySelector<HTMLElement>("[data-hud-ping-value]")!;
   const statusNode = root.querySelector<HTMLElement>("[data-hud-status]")!;
   const popupsNode = root.querySelector<HTMLElement>("[data-hud-popups]")!;
   const continueButton = root.querySelector<HTMLButtonElement>(".game-hud__continue")!;
@@ -1664,6 +1757,10 @@ export function setupGameHudUi(game: Phaser.Game) {
       : "game-hud__air";
     setHidden(waveAirNode, !air || forecastVisible);
     setClass(waveAirNode, airClass);
+    // Kurulumda "Devam" dugmesi ve hava etiketi birlikteyken dar cubukta yer
+    // kalmiyor; o zaman "/20" cekiliyor (CSS), hava haberi kirpilmasin.
+    const crowded = Boolean(air) && !forecastVisible && next.continueVisible;
+    if (waveVitalNode.classList.contains("is-crowded") !== crowded) waveVitalNode.classList.toggle("is-crowded", crowded);
 
     setHidden(forecastNode, !forecastVisible);
     if (!forecastVisible) return;
@@ -1699,9 +1796,19 @@ export function setupGameHudUi(game: Phaser.Game) {
    * "KALİTE") seridin yarisini yiyordu; hepsi simgeye indi ve adlari ipucunda
    * duruyor. Kalan sekiz rozet tek satira siginca sarma ihtimali kalmiyor --
    * ve satir yine de dolarsa rozetler kirpiliyor, alt satir acilmiyor.
+   *
+   * ★ ve ping rozetleri sabit dugum: seridin geri kalani degistikce
+   * `innerHTML` ile yeniden kuruluyor ve kurulan dugumdeki animasyon (★'in
+   * "yukseltme hazir" parlamasi) yarida siliniyordu. Ping saniyede bir
+   * degistigi icin bu, parlamanin hic gorunmemesi demekti; sabit dugumde
+   * ping de artik seridi yeniden kurdurmuyor. Degisken rozetler
+   * `display: contents` bir kabin icinde, yani esnek dizilim ayni.
    */
   let lastStripKey = "";
-  const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string) => {
+  const setTitle = (node: HTMLElement, title: string) => {
+    if (node.title !== title) node.title = title;
+  };
+  const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string, upgradeReady: boolean) => {
     const chip = (icon: string, value: string, title: string, extraClass = "") =>
       `<span class="game-hud__chip ${extraClass}" title="${escapeHudText(title)}">`
         + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${escapeHudText(value)}</b></span>`;
@@ -1714,14 +1821,350 @@ export function setupGameHudUi(game: Phaser.Game) {
         + `<em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
         + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
-        + `</span>`,
-      chip("★", formatXp(stats.experience), "Deneyim"),
-      chip("●", ping, pingDetail || "Gecikme", `game-hud__chip--ping game-hud__chip--${pingTone}`)
+        + `</span>`
     ];
     const key = chips.join("");
-    if (key === lastStripKey) return;
-    lastStripKey = key;
-    stripNode.innerHTML = key;
+    if (key !== lastStripKey) {
+      lastStripKey = key;
+      stripDynamicNode.innerHTML = key;
+    }
+
+    setText(xpValueNode, formatXp(stats.experience));
+    if (xpChipNode.classList.contains("is-ready") !== upgradeReady) xpChipNode.classList.toggle("is-ready", upgradeReady);
+    setTitle(xpChipNode, upgradeReady ? "Deneyim · yükseltme hazır" : "Deneyim");
+
+    setText(pingValueNode, ping);
+    setClass(pingChipNode, `game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}`);
+    setTitle(pingChipNode, pingDetail || "Gecikme");
+  };
+
+  /**
+   * CSS animasyonunu yerlesim zorlamadan bastan baslatir.
+   *
+   * Ayni kareler iki adla tanimli (`-a`/`-b`) ve sinif aralarinda gidip
+   * geliyor; animasyon adi degisince tarayici animasyonu yeniden baslatiyor.
+   * Sinifi silip ekleyerek yeniden baslatmak araya bir `offsetWidth`
+   * okumasi, yani her seferinde yerlesim hesabi isterdi -- altin saniyede
+   * birkac kez artiyor.
+   */
+  const replayAnimation = (node: HTMLElement, base: string) => {
+    const useB = node.classList.contains(`${base}-a`);
+    node.classList.remove(`${base}-${useB ? "a" : "b"}`);
+    node.classList.add(`${base}-${useB ? "b" : "a"}`);
+  };
+  const clearAnimation = (node: HTMLElement, base: string) => {
+    node.classList.remove(`${base}-a`, `${base}-b`);
+  };
+
+  /**
+   * Altin cipi: artista 300 ms icinde sayarak yetisiyor ve bir kez atiyor
+   * (1 -> 1.18 -> 1). Harcamada beklemeden iniyor. Gosterilen deger hicbir
+   * zaman gercek altini asmiyor (`CountUpValue`): oyuncu harcayamayacagi bir
+   * sayi gormuyor. Oldurme altini saniyede birkac kez gelebildigi icin
+   * surmekte olan atim yeniden baslatilmiyor, bitmesi bekleniyor; sayim ise
+   * her artista o anki degerden devam ediyor.
+   *
+   * Kare dongusu yalnizca sayim surerken calisiyor.
+   */
+  const goldCounter = new CountUpValue(GOLD_COUNT_UP_MS);
+  let goldFrame = 0;
+  let lastGoldPulseAt = Number.NEGATIVE_INFINITY;
+  const drawGold = (now: number) => setText(goldNode, compactNumber(goldCounter.valueAt(now)));
+  const tickGold = () => {
+    goldFrame = 0;
+    const now = performance.now();
+    drawGold(now);
+    if (!goldCounter.isSettled(now)) goldFrame = requestAnimationFrame(tickGold);
+  };
+  const syncGold = (gold: number) => {
+    const now = performance.now();
+    if (goldCounter.set(gold, now) && now - lastGoldPulseAt >= GOLD_COUNT_UP_MS) {
+      lastGoldPulseAt = now;
+      replayAnimation(goldVitalNode, "is-pulse");
+    }
+    drawGold(now);
+    if (!goldCounter.isSettled(now) && goldFrame === 0) goldFrame = requestAnimationFrame(tickGold);
+  };
+  const settleGold = () => {
+    goldCounter.settle();
+    drawGold(performance.now());
+  };
+
+  /**
+   * Topluca gelen altin (dalga bonusu, satis, beceri): cipin hemen altinda
+   * 800 ms "+N". Akisin disinda, bardaki hicbir seyi itmiyor ve cubugun
+   * boyunu degistirmiyor (kamera haritayi yeniden sigdirmasin). Gorunurken
+   * ikinci bir toplu artis gelirse etiket ikisinin toplamini yaziyor.
+   *
+   * Hareket azaltmada etiket kipirdamadan duruyor ve sure dolunca kalkiyor;
+   * bilgi tasidigi icin hic gostermemek yanlis olurdu.
+   */
+  let goldGainTimer = 0;
+  let goldGainShown = 0;
+  const hideGoldGain = () => {
+    window.clearTimeout(goldGainTimer);
+    goldGainTimer = 0;
+    goldGainShown = 0;
+    goldGainNode.hidden = true;
+    clearAnimation(goldGainNode, "is-show");
+  };
+  const showGoldGain = (amount: number) => {
+    if (!(amount > 0) || root.classList.contains("game-hud--hidden")) return;
+    const rootRect = root.getBoundingClientRect();
+    const vitalRect = goldVitalNode.getBoundingClientRect();
+    goldGainNode.style.left = `${Math.round(vitalRect.left - rootRect.left)}px`;
+    goldGainNode.style.top = `${Math.round(vitalRect.bottom - rootRect.top + 2)}px`;
+    goldGainShown = (goldGainNode.hidden ? 0 : goldGainShown) + amount;
+    goldGainNode.textContent = `+${compactNumber(goldGainShown)}`;
+    goldGainNode.hidden = false;
+    replayAnimation(goldGainNode, "is-show");
+    window.clearTimeout(goldGainTimer);
+    goldGainTimer = window.setTimeout(hideGoldGain, GOLD_GAIN_LABEL_MS);
+  };
+
+  /** ★ bir kez parliyor: "hic yoktu -> artik bir kuleyi yukseltebilirsin". */
+  const flashUpgradeReady = () => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    replayAnimation(xpChipNode, "is-flash");
+  };
+
+  /**
+   * Dalga temizleme damgasi: "DALGA 7/20 TEMİZLENDİ", altinda 150 ms arayla
+   * dusman, altin ve dalga bonusu satirlari.
+   *
+   * Sunucunun zaten bekledigi 2 sn'lik molada, haritanin ust yarisinda;
+   * dokunusu tutmuyor ve akisin disinda, yani cubugun boyu (ve kamera)
+   * degismiyor. Seri afisi seridin ust dilimine (%17) iniyor; damga ondan
+   * asagida ki son oldurmenin serisiyle ust uste binmesin. HUD kart
+   * perdesinin ustunde durdugu icin kart ekrani acilinca sahne damgayi hemen
+   * kaldiriyor.
+   *
+   * Ic kisim her damgada yeniden kuruluyor: yeni dugumun animasyonlari
+   * bastan basliyor, yerlesim zorlamaya gerek yok (dalga basina bir kez).
+   * Metin `textContent` ile yaziliyor. Hareket azaltmada damga kipirdamadan
+   * duruyor ve suresi dolunca kalkiyor.
+   */
+  let waveClearTimer = 0;
+  const hideWaveClear = () => {
+    window.clearTimeout(waveClearTimer);
+    waveClearTimer = 0;
+    if (!waveClearNode.hidden) waveClearNode.hidden = true;
+    if (waveClearNode.firstChild) waveClearNode.replaceChildren();
+  };
+  /**
+   * Damgayi cubukla alt panel arasindaki seridin `ratio`suna koyar. Olcu
+   * yalnizca damga acilirken okunuyor (dalga ya da ulti basina bir kez).
+   */
+  const placeInArenaBand = (node: HTMLElement, ratio: number) => {
+    const rootRect = root.getBoundingClientRect();
+    const canvasHeight = game.canvas?.getBoundingClientRect().height ?? 0;
+    const panel = document.querySelector<HTMLElement>(".game-controls__panel");
+    const band = Math.max(0, canvasHeight - rootRect.height - (panel ? panel.getBoundingClientRect().height : 0));
+    node.style.top = `${Math.round(rootRect.height + band * ratio)}px`;
+  };
+  const showWaveClear = (stamp: WaveClearStampText) => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    placeInArenaBand(waveClearNode, WAVE_CLEAR_BAND_RATIO);
+
+    const card = document.createElement("div");
+    card.className = "game-hud__wave-clear-card";
+    const title = document.createElement("strong");
+    title.className = "game-hud__wave-clear-title";
+    title.textContent = stamp.title;
+    card.append(title);
+    if (stamp.lines.length > 0) {
+      const lines = document.createElement("p");
+      lines.className = "game-hud__wave-clear-lines";
+      stamp.lines.forEach(({ kind, text }, index) => {
+        const line = document.createElement("span");
+        line.className = `is-${kind}`;
+        line.textContent = text;
+        line.style.animationDelay = `${WAVE_CLEAR_LINE_DELAY_MS + index * WAVE_CLEAR_LINE_STAGGER_MS}ms`;
+        lines.append(line);
+      });
+      card.append(lines);
+    }
+    waveClearNode.replaceChildren(card);
+    waveClearNode.hidden = false;
+    window.clearTimeout(waveClearTimer);
+    waveClearTimer = window.setTimeout(hideWaveClear, WAVE_CLEAR_STAMP_MS);
+  };
+
+  /**
+   * Ulti karnesi: "SÜTUN · 6 isabet · 4 öldü", sutunda altinda nisanin
+   * derecesi ("MÜKEMMEL NİŞAN" / "İyi nişan · 5/6" / en kalabalik sutun).
+   *
+   * Dalga damgasiyla ayni kurallar: dokunusu tutmuyor, akisin disinda (cubuk
+   * ve kamera oynamiyor), metin `textContent` ile, ic kisim her karnede
+   * yeniden kuruluyor ki animasyon bastan baslasin. Kenar karakterin renginde.
+   * Derece yalnizca renkle soylenmiyor: metni zaten farkli.
+   */
+  let ultimateTimer = 0;
+  const hideUltimateStamp = () => {
+    window.clearTimeout(ultimateTimer);
+    ultimateTimer = 0;
+    if (!ultimateNode.hidden) ultimateNode.hidden = true;
+    if (ultimateNode.firstChild) ultimateNode.replaceChildren();
+  };
+  const showUltimateStamp = (stamp: UltimateStampEvent) => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    placeInArenaBand(ultimateNode, ULTIMATE_STAMP_BAND_RATIO);
+    ultimateNode.style.setProperty("--ult-color", stamp.color);
+
+    const card = document.createElement("div");
+    card.className = "game-hud__ultimate-card";
+    const title = document.createElement("strong");
+    title.className = "game-hud__ultimate-title";
+    title.textContent = stamp.title;
+    card.append(title);
+    if (stamp.grade) {
+      const grade = document.createElement("span");
+      grade.className = `game-hud__ultimate-grade is-${stamp.grade.tier}`;
+      grade.textContent = stamp.grade.text;
+      card.append(grade);
+    }
+    ultimateNode.replaceChildren(card);
+    ultimateNode.hidden = false;
+    // Ulti Beceriler cekmecesinden ataniyor ve cekmece acik kaliyor (oyuncu
+    // hemen bir beceri kullanabilir, Zeynep sutunu onunla nisanliyor). Damga
+    // seridin %56'sinda cekmecenin ustune biniyor ve dugmelerini ortuyordu;
+    // acik cekmece varsa damga onun ustunde duruyor. Olcu yine damga
+    // acilirken bir kez.
+    const drawer = document.querySelector<HTMLElement>(".game-controls__drawer");
+    if (drawer) {
+      const rootRect = root.getBoundingClientRect();
+      const drawerTop = drawer.getBoundingClientRect().top - rootRect.top;
+      const height = ultimateNode.offsetHeight;
+      const currentTop = parseFloat(ultimateNode.style.top) || 0;
+      if (currentTop + height > drawerTop - 6) {
+        ultimateNode.style.top = `${Math.round(Math.max(rootRect.height + 4, drawerTop - 6 - height))}px`;
+      }
+    }
+    window.clearTimeout(ultimateTimer);
+    ultimateTimer = window.setTimeout(hideUltimateStamp, ULTIMATE_STAMP_MS);
+  };
+
+  /**
+   * Kozmetik kombo hapi: arenanin sag ustunde, cubugun hemen altinda.
+   *
+   * Yalnizca gosterge -- sayi senin gercek oldurme zincirin, oyuna hicbir
+   * etkisi yok. ×3'te belirip ×8'e kadar isiniyor ve buyuyor (renk ve boy
+   * orada doyuyor, sayi dogru kalmaya devam ediyor). "ÇİFT!" / "ÜÇLÜ!" kendi
+   * kisa suresiyle yaninda. Takimin soluk varyanti ("EKİP ×N") yalnizca
+   * senin kombon yokken ve atmadan.
+   *
+   * Konum CSS'te (`top: calc(100% + ...)`): kombo saniyede birkac kez
+   * guncellenebiliyor, her seferinde olcu okumak yerlesim zorlardi. Sicaklik
+   * `data-heat`te ve takim bayragi `classList`te: sinif adini toptan yazmak
+   * atim animasyonunun (-a/-b) yeniden baslamasini bozardi. Hareket
+   * azaltmada atim yok, renk ve sayi ayni.
+   */
+  let comboTimer = 0;
+  let comboMultiTimer = 0;
+  const hideComboMulti = () => {
+    window.clearTimeout(comboMultiTimer);
+    comboMultiTimer = 0;
+    if (!comboMultiNode.hidden) comboMultiNode.hidden = true;
+    clearAnimation(comboMultiNode, "is-show");
+  };
+  const hideCombo = () => {
+    window.clearTimeout(comboTimer);
+    comboTimer = 0;
+    if (!comboNode.hidden) comboNode.hidden = true;
+    clearAnimation(comboNode, "is-bump");
+    hideComboMulti();
+  };
+  const showCombo = (combo: ComboHudState) => {
+    if (root.classList.contains("game-hud--hidden") || !(combo.durationMs > 0)) return;
+    setText(comboCountNode, combo.team ? `EKİP ×${combo.count}` : `×${combo.count}`);
+    const heat = String(combo.heat);
+    if (comboNode.dataset.heat !== heat) comboNode.dataset.heat = heat;
+    if (comboNode.classList.contains("is-team") !== combo.team) comboNode.classList.toggle("is-team", combo.team);
+    const appearing = comboNode.hidden;
+    comboNode.hidden = false;
+    if (combo.pop || (appearing && !combo.team)) replayAnimation(comboNode, "is-bump");
+    if (combo.team) {
+      hideComboMulti();
+    } else if (combo.multi) {
+      setText(comboMultiNode, combo.multi);
+      comboMultiNode.hidden = false;
+      replayAnimation(comboMultiNode, "is-show");
+      window.clearTimeout(comboMultiTimer);
+      comboMultiTimer = window.setTimeout(hideComboMulti, Math.max(0, combo.multiMs ?? 0));
+    }
+    window.clearTimeout(comboTimer);
+    comboTimer = window.setTimeout(hideCombo, combo.durationMs);
+  };
+
+  /**
+   * Takim arkadasinin serisi: arenanin sol ustunde, onun renginde kucuk bir
+   * toast. Afis ekranin ortasini kaplayan senin anin; arkadasinki kenardan
+   * haber veriyor, senin afisini silmiyor ve kamerani oynatmiyor. En fazla
+   * iki tane ust uste, en eskisi yer aciyor.
+   */
+  const teamStreakTimers = new Map<HTMLElement, number>();
+  const removeTeamStreak = (item: HTMLElement) => {
+    window.clearTimeout(teamStreakTimers.get(item));
+    teamStreakTimers.delete(item);
+    item.remove();
+  };
+  const hideTeamStreaks = () => {
+    for (const item of [...teamStreakTimers.keys()]) removeTeamStreak(item);
+    if (teamStreaksNode.firstChild) teamStreaksNode.replaceChildren();
+  };
+  /** Yigina bir toast ekler; en fazla iki tane, en eskisi yer aciyor. */
+  const pushTeamToast = (item: HTMLElement) => {
+    teamStreaksNode.append(item);
+    while (teamStreaksNode.childElementCount > TEAM_STREAK_TOAST_LIMIT) {
+      const oldest = teamStreaksNode.firstElementChild;
+      if (!(oldest instanceof HTMLElement)) break;
+      removeTeamStreak(oldest);
+    }
+    teamStreakTimers.set(item, window.setTimeout(() => removeTeamStreak(item), TEAM_STREAK_TOAST_MS));
+  };
+  const showTeamStreak = (toast: TeamStreakToast) => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    const item = document.createElement("p");
+    item.className = "game-hud__team-streak";
+    item.style.setProperty("--team-color", toast.color);
+    const title = document.createElement("b");
+    title.textContent = `${toast.name}: ${toast.label}!`;
+    item.append(title);
+    if (toast.buff) {
+      const buff = document.createElement("span");
+      buff.textContent = toast.buff;
+      item.append(buff);
+    }
+    pushTeamToast(item);
+  };
+  /**
+   * Takim arkadasinin ultisi: ayni yigin, tek satir ("Zeynep ULTİ · 4 öldü").
+   * Arkadasin ultisi eskiden hic duyulmuyordu; simdi kenardan, sessiz.
+   */
+  const showTeamUltimate = (chip: TeamUltimateChip) => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    const item = document.createElement("p");
+    item.className = "game-hud__team-streak game-hud__team-streak--ultimate";
+    item.style.setProperty("--team-color", chip.color);
+    const title = document.createElement("b");
+    title.textContent = chip.text;
+    item.append(title);
+    pushTeamToast(item);
+  };
+
+  /** Mac kapaninca: sayim ve animasyonlar bir sonraki maca tasinmasin. */
+  const resetRewardFeel = () => {
+    goldCounter.reset();
+    if (goldFrame !== 0) cancelAnimationFrame(goldFrame);
+    goldFrame = 0;
+    lastGoldPulseAt = Number.NEGATIVE_INFINITY;
+    clearAnimation(goldVitalNode, "is-pulse");
+    clearAnimation(xpChipNode, "is-flash");
+    hideGoldGain();
+    hideWaveClear();
+    hideUltimateStamp();
+    hideCombo();
+    hideTeamStreaks();
   };
 
   const formatStatValue = (value: number) => (value >= 10000 ? `${(value / 1000).toFixed(1)}k` : String(Math.round(value)));
@@ -1786,18 +2229,43 @@ export function setupGameHudUi(game: Phaser.Game) {
       + `</nav><ul class="game-hud__stats-list">${renderStatsRows(next)}</ul></section>`;
   };
 
+  /**
+   * Ses paneli.
+   *
+   * Uc kaydirici: muzik, seslendirme (seri anonslari ve uyarilar) ve efektler
+   * (sentez odul sesleri). Titresim kutusu yalnizca destekleyen cihazda: iOS
+   * Safari titresimi hic desteklemiyor ve orada ise yaramayan bir kutu
+   * oyuncuyu yaniltirdi.
+   */
+  const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+  const volumeSlider = (label: string, channel: string, value: number) =>
+    `<label>${escapeHudText(label)} <input data-volume="${channel}" type="range" min="0" max="1" step="0.01" value="${value}"></label>`;
+  const renderAudioPopup = (next: HudState) => {
+    if (!next.audioOpen) return "";
+    return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong>`
+      + volumeSlider("Müzik", "music", next.musicVolume)
+      + volumeSlider("Seslendirme", "voice", next.voiceVolume)
+      + volumeSlider("Efektler", "sfx", next.sfxVolume)
+      + (canVibrate
+        ? `<label>Titreşim <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
+        : "")
+      + `</section>`;
+  };
+  const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume" };
+
   let lastPopupKey = "";
   const renderPopups = (next: HudState) => {
     const statsKey = next.statsOpen
       ? `stats:${next.statsTab}:${next.statsTowers.map((t) => `${t.id}:${Math.round(t.damage)}:${t.dps.toFixed(1)}`).join(",")}`
         + `:${next.statsEffects.map((e) => `${e.label}:${e.value.toFixed(1)}`).join(",")}`
       : "";
-    const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}` : ""}|${statsKey}`;
+    const audioKey = next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}:${next.sfxVolume}:${next.vibration}` : "";
+    const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${audioKey}|${statsKey}`;
     if (key === lastPopupKey) return;
     lastPopupKey = key;
     popupsNode.innerHTML = `
       ${next.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${escapeHudText(next.perfText)}</pre></section>` : ""}
-      ${next.audioOpen ? `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong><label>Müzik <input data-volume="music" type="range" min="0" max="1" step="0.01" value="${next.musicVolume}"></label><label>Seslendirme <input data-volume="voice" type="range" min="0" max="1" step="0.01" value="${next.voiceVolume}"></label></section>` : ""}
+      ${renderAudioPopup(next)}
       ${renderStatsPopup(next)}
     `;
     popupsNode.querySelectorAll<HTMLElement>("[data-hud]").forEach((element) => element.addEventListener("pointerup", (event) => {
@@ -1811,21 +2279,34 @@ export function setupGameHudUi(game: Phaser.Game) {
       if (action === "stats-effects") dispatch("setStatsTab", 2);
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
-      dispatch(input.dataset.volume === "music" ? "setMusicVolume" : "setVoiceVolume", Number(input.value));
+      const action = volumeActions[input.dataset.volume ?? ""];
+      if (action) dispatch(action, Number(input.value));
+    }));
+    popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"vibration\"]").forEach((input) => input.addEventListener("change", () => {
+      dispatch("setVibration", input.checked ? 1 : 0);
     }));
   };
 
   const render = (next: HudState) => {
     state = next;
-    setText(goldNode, compactNumber(state.stats.gold));
+    // Sahnenin ilk durumu bos istatistik nesnesinin kendisi (henuz snapshot
+    // yok). Onu gercek deger sanmak baslangic altinini sifirdan saydirir ve
+    // "kazanilmis" gibi gosterirdi; ilk gercek deger sayimsiz yaziliyor.
+    if (state.stats === EMPTY_HUD_STATS) {
+      goldCounter.reset();
+      setText(goldNode, compactNumber(state.stats.gold));
+    } else {
+      syncGold(state.stats.gold);
+    }
     setText(healthNode, `${Math.max(0, Math.round(state.stats.health))}`);
     setText(waveNode, `${state.stats.wave}`);
+    setTitle(waveVitalNode, `Dalga ${state.stats.wave}/${FINAL_WAVE}`);
     renderWaveAir(state);
     // Can azaldikca renk isinir; sayiya bakmadan da fark edilmeli.
     const healthRatio = state.stats.maxHealth > 0 ? state.stats.health / state.stats.maxHealth : 1;
     root.dataset.health = healthRatio <= 0.25 ? "critical" : healthRatio <= 0.6 ? "low" : "ok";
 
-    renderStrip(state.stats, state.ping, state.pingTone, state.pingDetail);
+    renderStrip(state.stats, state.ping, state.pingTone, state.pingDetail, state.upgradeReady);
 
     // Durum satiri yalnizca soyleyecek bir sey varken yer kaplar.
     const status = state.status.trim();
@@ -1845,7 +2326,22 @@ export function setupGameHudUi(game: Phaser.Game) {
     root.classList.remove("game-hud--hidden");
     render(next);
   });
-  game.events.on("game:hud-hide", () => root.classList.add("game-hud--hidden"));
+  game.events.on("game:hud-hide", () => {
+    root.classList.add("game-hud--hidden");
+    resetRewardFeel();
+  });
+  game.events.on("game:hud-gold-gain", (amount: number) => showGoldGain(amount));
+  game.events.on("game:hud-gold-settle", settleGold);
+  game.events.on("game:hud-upgrade-ready", flashUpgradeReady);
+  game.events.on("game:hud-wave-clear", showWaveClear);
+  game.events.on("game:hud-wave-clear-hide", hideWaveClear);
+  game.events.on("game:hud-combo", showCombo);
+  game.events.on("game:hud-combo-hide", hideCombo);
+  game.events.on("game:hud-team-streak", showTeamStreak);
+  game.events.on("game:hud-team-streak-hide", hideTeamStreaks);
+  game.events.on("game:hud-ultimate", showUltimateStamp);
+  game.events.on("game:hud-ultimate-hide", hideUltimateStamp);
+  game.events.on("game:hud-team-ultimate", showTeamUltimate);
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);

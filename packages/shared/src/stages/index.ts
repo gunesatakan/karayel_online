@@ -121,6 +121,18 @@ export function isStageUnlocked(id: number, clearedStageIds: readonly number[]):
   return clearedStageIds.includes(id - 1);
 }
 
+/**
+ * Kazanilan asama bu tarayicinin kaydina yazilsin mi.
+ *
+ * Co-op'ta katilan oyuncu kendisinde henuz acik olmayan bir asamayi (ev
+ * sahibinin asamasi) kazanabiliyor. Yazmak `stage + 1`i acar ve aradaki
+ * kilitli asamalari atlatirdi -- `isStageUnlocked`in korudugu zincir. Solo
+ * menude kilitli asama secilemedigi icin yalnizca bu durum etkileniyor.
+ */
+export function shouldRecordStageClear(stage: number, clearedStageIds: readonly number[]): boolean {
+  return isStageUnlocked(stage, clearedStageIds);
+}
+
 /** Acik olan en yuksek asama; menu acilista burayi seciyor. */
 export function getHighestUnlockedStage(clearedStageIds: readonly number[]): number {
   let highest = 1;
@@ -128,4 +140,37 @@ export function getHighestUnlockedStage(clearedStageIds: readonly number[]): num
     if (isStageUnlocked(id, clearedStageIds)) highest = id;
   }
   return highest;
+}
+
+/**
+ * Kalici kayda bakan bilgi: snapshot ya da mac sonucu mesaji.
+ *
+ * Ikisi de sunucudan geliyor ve ayni iki alani tasiyor; kapi hangisinin
+ * elde oldugunu bilmek zorunda kalmasin diye yalnizca bu iki alan isteniyor.
+ */
+export type ProgressRecordSource = {
+  creative?: boolean;
+  stage?: number;
+};
+
+/**
+ * Bu kosu kalici bir kayda yazabilir mi: asama ilerlemesi ve ileride gelecek
+ * rekor, yildiz ya da nisan.
+ *
+ * Yaratici kosu hic yazmaz. Orada dalga, kule seviyesi ve kartlar elle
+ * ayarlaniyor; oradan gelen bir zafer oynanmis bir kosuyu temsil etmez ve
+ * gercek kayitlarin anlamini bosaltir.
+ *
+ * Asamasi bilinmeyen sonuc da yazmaz. Istemcinin menude sectigi asamaya
+ * dusmek, baskasinin odasina katilan oyuncuda yanlis asamayi isaretlerdi --
+ * yanlis kayit, eksik kayittan kotu.
+ *
+ * Her kayit yolu bu kapidan gecmeli ki kural tek yerde kalsin.
+ */
+export function canRecordProgress(
+  source: ProgressRecordSource | undefined
+): source is ProgressRecordSource & { stage: number } {
+  if (!source || source.creative) return false;
+  const stage = source.stage;
+  return typeof stage === "number" && Number.isInteger(stage) && stage >= 1 && stage <= STAGE_COUNT;
 }

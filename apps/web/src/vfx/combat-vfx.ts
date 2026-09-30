@@ -1,11 +1,89 @@
 import type Phaser from "phaser";
-import type { BeamSnapshot, ProjectileSnapshot } from "@karayel/shared";
+import {
+  TIER_COLUMN_HEIGHT_RATIO,
+  getUltimateShockwavePose,
+  getDeathBurstPose,
+  getTierCeremonyPose,
+  getTierShardOrbit,
+  pickAccentColor,
+  type BeamSnapshot,
+  type ProjectileSnapshot
+} from "@karayel/shared";
 
 type Graphics = Phaser.GameObjects.Graphics;
 export type ShotStyle = "tracker" | "pierce" | "psychic" | "server" | "electric" | "synthesis";
 export type ShotEffect = {
   x: number; y: number; angle: number; tier: number;
   definitionId: string; bornAt: number; seed: number; muzzle?: boolean;
+};
+/**
+ * Olum patlamasi ("death" turu): basilan govde, kiymiklar, agir dusmanda toz
+ * halkasi. Sprite yok; tek Graphics yuzeyinde, yasina gore her karede yeniden.
+ */
+export type DeathBurst = {
+  x: number; y: number;
+  /** Dusmanin ekrandaki boyu (dunya px). */
+  size: number;
+  /** Dusmanin kendi rengi: dokunun vurgusu, sprite'in tonuyla. */
+  color: number;
+  shards: number;
+  dustRing: boolean;
+  durationMs: number;
+  /** Kendi oldurmen 1, takim arkadasininki soluk. */
+  intensity: number;
+  /** Hareket azaltma: basma, kiymik ve halka yok; govde yerinde soner. */
+  still: boolean;
+  bornAt: number;
+  seed: number;
+};
+/**
+ * Kule ani ("tower" turu): kademe toreni, yerlestirmenin inisi ya da sunucu
+ * onayinin halkasi.
+ *
+ * "tier": kademe renginde isik sutunu ve kuleye donerek akan kiymiklar.
+ * "landing": inen kulenin kaldirdigi toz halkasi. "confirm": takma ya da
+ * onarim onaylaninca kuleden yayilan halka. Hicbiri sprite ve tween acmiyor;
+ * olum patlamasi gibi tek Graphics yuzeyinde, yasina gore ciziliyor.
+ */
+export type TowerMoment = {
+  kind: "tier" | "landing" | "confirm";
+  /** "confirm": buyuk an (takma) -- daha genis halka ve ikinci beyaz halka. */
+  strong?: boolean;
+  x: number; y: number;
+  /** Kulenin disk boyu (dunya px); 2x2 kulede dort kare. */
+  size: number;
+  /** Kademe rengi; toz halkasinda kullanilmiyor. */
+  color: number;
+  /** Kiymik sayisi ("tier"). */
+  shards: number;
+  durationMs: number;
+  /** Kendi kulen 1, takim arkadasininki soluk. */
+  intensity: number;
+  /** Hareket azaltma: yukselme, kiymik ve yayilma yok; yerinde soner. */
+  still: boolean;
+  bornAt: number;
+  seed: number;
+};
+/**
+ * Ulti atisinin sok dalgasi ("cast" turu), karakterin renginde.
+ *
+ * "ring": merkezden disa acilan halka -- butun sahaya vuran ultide arenanin
+ * ortasindan, Atakan'da drone'larin kalktigi kulelerden. "column": Zeynep'in
+ * secilen sutunu; dalga dokunulan noktadan sutun boyunca yukari ve asagi
+ * kosuyor, sutunun disina tasmiyor -- ulti de tasmiyor.
+ */
+export type CastWave = {
+  shape: "ring" | "column";
+  x: number; y: number;
+  /** Halkanin azami yaricapi (dunya px); sutunda kullanilmiyor. */
+  radius: number;
+  /** Sutunun genisligi ve dikey siniri. */
+  width?: number; top?: number; bottom?: number;
+  color: number;
+  durationMs: number;
+  /** Hareket azaltma: yayilma yok, son boyunda belirip yerinde soner. */
+  still: boolean;
+  bornAt: number;
 };
 const colors: Record<ShotStyle, number> = {
   tracker: 0x4dffbd, pierce: 0xffbd62, psychic: 0xcb79ff,
@@ -241,9 +319,300 @@ export function drawSynthesisRay(g: Graphics, beam: BeamSnapshot, now: number, s
   glow(g, beam.x2, beam.y2, 3 * scale, 0xd6faff, 0.65);
 }
 
+/** Toz halkasinin rengi: dusmanin degil zeminin; agir govde yere iniyor. */
+const DUST_COLOR = 0xd6c7a8;
+/** Beyaza dogru acilmis ton; kiymiklarin bir kismi parlasin, hepsi degil. */
+function lighten(color: number, amount: number) {
+  const mix = (shift: number) => {
+    const channel = (color >> shift) & 255;
+    return Math.round(channel + (255 - channel) * amount) << shift;
+  };
+  return mix(16) | mix(8) | mix(0);
+}
+
+/**
+ * Olum patlamasi: govde basilip soner, kiymiklar dusmanin renginde sacilir.
+ *
+ * Govde bir elips: Graphics doku cizemiyor ve dusman sprite'i zaten havuza
+ * dondu. Elips dusmanin boyunda ve renginde, beyaz bir cekirdekle basliyor;
+ * ilk an "vurus", gerisi sonme. Kiymiklar merminin degil olumun: yone bagli
+ * degil, cevreye esit dagiliyor.
+ */
+export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scale: number) {
+  const t = clamp((now - burst.bornAt) / burst.durationMs);
+  const pose = getDeathBurstPose(t, burst.still);
+  const { x, y, color, intensity, seed } = burst;
+  const radius = burst.size * 0.34;
+  if (pose.alpha > 0) {
+    g.fillStyle(color, clamp(pose.alpha * 0.8 * intensity));
+    g.fillEllipse(x, y, radius * 2 * pose.scaleX, radius * 2 * pose.scaleY, 18);
+  }
+  if (pose.flash > 0) {
+    g.fillStyle(0xffffff, clamp(pose.flash * 0.9 * intensity));
+    g.fillEllipse(x, y, radius * 1.3 * pose.scaleX, radius * 1.3 * pose.scaleY, 14);
+  }
+  if (burst.still) return;
+
+  if (burst.dustRing) {
+    // Yere yatik ve govdenin altindan: agir govdenin iniste kaldirdigi toz.
+    const spread = Math.pow(t, 0.55);
+    const rx = radius * (1.1 + spread * 1.5);
+    g.lineStyle(Math.max(0.6, (2.4 - spread * 1.6) * scale), DUST_COLOR, clamp(0.55 * (1 - t) * intensity));
+    g.strokeEllipse(x, y + radius * 0.35, rx * 2, rx * 1.1, 20);
+  }
+
+  const fade = clamp(Math.pow(1 - t, 1.3) * intensity);
+  if (fade <= 0) return;
+  const reach = (burst.dustRing ? 24 : 18) * scale;
+  for (let i = 0; i < burst.shards; i++) {
+    const a = (i / burst.shards) * Math.PI * 2 + (noise(seed + i) - 0.5) * 0.9;
+    const ux = Math.cos(a), uy = Math.sin(a);
+    const travel = radius * 0.45 + Math.sqrt(t) * reach * (0.65 + noise(seed + i + 20) * 0.6);
+    // Hafif dusus: kiymik havada asili kalmasin.
+    const px = x + ux * travel, py = y + uy * travel + t * t * 6 * scale;
+    const length = (2.6 + noise(seed + i + 40) * 2.4) * scale * (1 - t * 0.6);
+    const half = (i % 3 === 0 ? 1.2 : 0.8) * scale;
+    g.fillStyle(i % 4 === 0 ? lighten(color, 0.55) : color, fade);
+    g.fillTriangle(px + ux * length, py + uy * length,
+      px - uy * half, py + ux * half, px + uy * half, py - ux * half);
+  }
+}
+
+/**
+ * Sutunun katmanlari: genislik (disk boyunun kati), opaklik, beyaza acilma.
+ * Uc katman ust uste binince ortasi parlak, kenari yumusak bir isik oluyor;
+ * postFX ya da bloom yok.
+ */
+const TIER_COLUMN_LAYERS = [[0.9, 0.12, 0], [0.5, 0.2, 0.2], [0.16, 0.5, 0.65]] as const;
+/** Sutun yukari dogru bu kadar dilimde soner; tek dikdortgen sert bir kutu gibi dururdu. */
+const TIER_COLUMN_SEGMENTS = 5;
+
+/**
+ * Kademe toreni: kulenin arkasindan yukselen isik sutunu, ice donen kiymiklar.
+ *
+ * Yuzey kule sprite'larinin (12) altinda: sutun kulenin arkasindan yukseliyor
+ * ve kule onunde siluet gibi okunuyor, kiymiklar kulenin govdesine girip
+ * kayboluyor. Kule gorunur kaliyor; savasin ortasinda yukseltilen kulenin
+ * ne yaptigi ortulmemeli.
+ */
+export function drawTierCeremony(g: Graphics, moment: TowerMoment, now: number) {
+  const t = clamp((now - moment.bornAt) / moment.durationMs);
+  const pose = getTierCeremonyPose(t, moment.still);
+  const { x, y, size, color, intensity, seed } = moment;
+  const baseY = y + size * 0.2;
+
+  if (pose.columnAlpha > 0) {
+    const height = size * TIER_COLUMN_HEIGHT_RATIO * pose.columnHeight;
+    for (const [widthRatio, alpha, lift] of TIER_COLUMN_LAYERS) {
+      const width = size * widthRatio * pose.columnWidth;
+      const tone = lift > 0 ? lighten(color, lift) : color;
+      for (let i = 0; i < TIER_COLUMN_SEGMENTS; i++) {
+        const segment = height / TIER_COLUMN_SEGMENTS;
+        g.fillStyle(tone, clamp(alpha * pose.columnAlpha * intensity * (1 - i / TIER_COLUMN_SEGMENTS)));
+        g.fillRect(x - width / 2, baseY - segment * (i + 1), width, segment);
+      }
+    }
+    // Sutunun dibinde zemine vuran isik.
+    g.fillStyle(color, clamp(0.28 * pose.columnAlpha * intensity));
+    g.fillEllipse(x, baseY, size * 1.5 * pose.columnWidth, size * 0.5, 18);
+  }
+
+  if (pose.shardAlpha <= 0) return;
+  const alpha = clamp(pose.shardAlpha * intensity);
+  const length = size * 0.17, half = size * 0.045;
+  for (let i = 0; i < moment.shards; i++) {
+    const orbit = getTierShardOrbit(i, moment.shards, pose.shardTravel);
+    // Kucuk bir sapma: on iki kiymik cetvelle dizilmis gibi durmasin.
+    const a = orbit.angle + (noise(seed + i) - 0.5) * 0.35;
+    const r = orbit.radius * size;
+    const ux = Math.cos(a), uy = Math.sin(a);
+    const px = x + ux * r, py = y + uy * r;
+    // Uc kuleye bakiyor: kiymik disari degil iceri akiyor.
+    g.fillStyle(i % 3 === 0 ? lighten(color, 0.6) : color, alpha);
+    g.fillTriangle(px - ux * length, py - uy * length,
+      px - uy * half, py + ux * half, px + uy * half, py - ux * half);
+  }
+}
+
+/**
+ * Yerlestirme inisi: kulenin altindan yere yayilan toz halkasi.
+ *
+ * Halka kulenin gobeginden basliyor; sprite'in altinda kaldigi icin once
+ * gorunmuyor, kule yere oturunca kenarindan disari tasiyor. Renk zeminin,
+ * kulenin degil.
+ */
+export function drawTowerLanding(g: Graphics, moment: TowerMoment, now: number, scale: number) {
+  const t = clamp((now - moment.bornAt) / moment.durationMs);
+  const { x, y, size, intensity, seed } = moment;
+  const groundY = y + size * 0.22;
+  if (moment.still) {
+    const rx = size * 0.72;
+    g.lineStyle(Math.max(0.6, 1.4 * scale), DUST_COLOR, clamp(0.45 * (1 - t) * intensity));
+    g.strokeEllipse(x, groundY, rx * 2, rx * 0.9, 22);
+    return;
+  }
+
+  const spread = 1 - (1 - t) ** 2;
+  const rx = size * (0.5 + 0.55 * spread);
+  g.lineStyle(Math.max(0.6, (2.2 - 1.5 * t) * scale), DUST_COLOR, clamp(0.6 * (1 - t) * intensity));
+  g.strokeEllipse(x, groundY, rx * 2, rx * 0.9, 22);
+  // Halkadan kopan birkac toz topagi; yere yatik elipsin uzerinde disari kayiyor.
+  const puff = size * 0.07 * (1 - t * 0.5);
+  g.fillStyle(DUST_COLOR, clamp(0.35 * (1 - t) * intensity));
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + (noise(seed + i) - 0.5) * 0.8;
+    const reach = rx * (1.02 + noise(seed + i + 10) * 0.12);
+    g.fillCircle(x + Math.cos(a) * reach, groundY + Math.sin(a) * reach * 0.45, puff);
+  }
+}
+
+/**
+ * Sunucu onayinin halkasi: kuleden disa yayilan, onay renginde.
+ *
+ * Eskiden 28 slotluk halka havuzundan (`spawnFlashRing`) aciliyordu; kalabalik
+ * dalgada havuz atis parlamalariyla dolu oldugu icin ya onay halkasi dusuyor
+ * ya da atislari itiyordu. Burada kule anlarinin kendi tavaninda. Takmada
+ * (strong) ikinci, beyaz ve kisa bir halka: tek halka "bir sey oldu", iki
+ * halka "onemli bir sey oldu". Hareket azaltmada halka buyumeden yerinde soner.
+ */
+const CONFIRM_ECHO_MS = 420;
+export function drawTowerConfirm(g: Graphics, moment: TowerMoment, now: number, scale: number) {
+  const age = now - moment.bornAt;
+  const t = clamp(age / moment.durationMs);
+  const { x, y, size, color, intensity } = moment;
+  const strong = Boolean(moment.strong);
+  const fade = 1 - t;
+  const fill = (strong ? 0.2 : 0.1) * fade * intensity;
+
+  if (moment.still) {
+    const radius = size * (strong ? 0.75 : 0.6);
+    g.fillStyle(color, clamp(fill));
+    g.fillCircle(x, y, radius);
+    g.lineStyle(Math.max(0.6, (strong ? 3 : 2) * scale), color, clamp(0.95 * fade * intensity));
+    g.strokeCircle(x, y, radius);
+    return;
+  }
+
+  const eased = 1 - (1 - t) ** 3;
+  const radius = size * (0.3 + (strong ? 1.2 : 0.65) * eased);
+  g.fillStyle(color, clamp(fill));
+  g.fillCircle(x, y, radius);
+  g.lineStyle(Math.max(0.6, (strong ? 3 : 2) * scale), color, clamp(0.95 * fade * intensity));
+  g.strokeCircle(x, y, radius);
+
+  if (strong && age < CONFIRM_ECHO_MS) {
+    const echo = clamp(age / CONFIRM_ECHO_MS);
+    const echoEased = 1 - (1 - echo) ** 3;
+    g.lineStyle(Math.max(0.6, 1.5 * scale), 0xffffff, clamp(0.9 * (1 - echo) * intensity));
+    g.strokeCircle(x, y, size * (0.15 + 0.9 * echoEased));
+  }
+}
+
+/**
+ * Ulti sok dalgasi: karakterin renginde, dokunulan yerden disa.
+ *
+ * Uc katman: genis soluk bir hale, rengin kendisi ve beyaza acilmis ince bir
+ * on kenar. postFX ya da parcacik yok; tek Graphics yuzeyinde, yasina gore.
+ * Sutun seklinde dalga sutunun kenarlarini da ciziyor: ulti o sinirin
+ * disina tasmiyor, efekt de tasmamali.
+ */
+export function drawCastWave(g: Graphics, wave: CastWave, now: number, scale: number) {
+  const t = clamp((now - wave.bornAt) / wave.durationMs);
+  const pose = getUltimateShockwavePose(t, wave.still);
+  if (pose.alpha <= 0) return;
+  const { color } = wave;
+  const edge = lighten(color, 0.6);
+  const width = Math.max(0.8, 2.4 * pose.width * scale);
+  const edgeWidth = Math.max(0.6, width * 0.45);
+
+  if (wave.shape === "column") {
+    const top = wave.top ?? wave.y;
+    const bottom = wave.bottom ?? wave.y;
+    const columnWidth = wave.width ?? 0;
+    const left = wave.x - columnWidth / 2;
+    const right = left + columnWidth;
+    const upY = wave.y - (wave.y - top) * pose.reach;
+    const downY = wave.y + (bottom - wave.y) * pose.reach;
+    // Dalganin gectigi kisim hafifce boyaniyor; on kenarlar sutun boyunca kosuyor.
+    g.fillStyle(color, clamp(0.16 * pose.alpha));
+    g.fillRect(left, upY, columnWidth, downY - upY);
+    for (const y of [upY, downY]) {
+      line(g, left, y, right, y, width * 3, color, 0.18 * pose.alpha);
+      line(g, left, y, right, y, width, color, 0.9 * pose.alpha);
+      line(g, left, y, right, y, edgeWidth, edge, pose.alpha);
+    }
+    line(g, left, upY, left, downY, Math.max(0.6, 1.2 * scale), color, 0.55 * pose.alpha);
+    line(g, right, upY, right, downY, Math.max(0.6, 1.2 * scale), color, 0.55 * pose.alpha);
+    return;
+  }
+
+  const radius = Math.max(1, wave.radius * pose.reach);
+  g.lineStyle(width * 3.2, color, clamp(0.16 * pose.alpha));
+  g.strokeCircle(wave.x, wave.y, radius);
+  g.lineStyle(width, color, clamp(0.85 * pose.alpha));
+  g.strokeCircle(wave.x, wave.y, radius);
+  g.lineStyle(edgeWidth, edge, clamp(pose.alpha));
+  g.strokeCircle(wave.x, wave.y, radius * 0.985);
+}
+
+/**
+ * Dokunun vurgu rengi; oldurme basina degil, doku basina bir kez okunur.
+ *
+ * Kucuk bir tuvale kucultulup piksel okunuyor (32x32, 1 ms'nin altinda).
+ * Okunamazsa (tarayici tuvali kirletilmis sayarsa) `fallback`.
+ */
+const ACCENT_SAMPLE_PX = 32;
+let accentCanvas: HTMLCanvasElement | undefined;
+export function readTextureAccent(source: unknown, fallback: number) {
+  if (typeof document === "undefined" || !(source instanceof HTMLImageElement || source instanceof HTMLCanvasElement)) {
+    return fallback;
+  }
+  try {
+    accentCanvas ??= document.createElement("canvas");
+    accentCanvas.width = ACCENT_SAMPLE_PX;
+    accentCanvas.height = ACCENT_SAMPLE_PX;
+    const context = accentCanvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return fallback;
+    context.clearRect(0, 0, ACCENT_SAMPLE_PX, ACCENT_SAMPLE_PX);
+    context.drawImage(source, 0, 0, ACCENT_SAMPLE_PX, ACCENT_SAMPLE_PX);
+    return pickAccentColor(context.getImageData(0, 0, ACCENT_SAMPLE_PX, ACCENT_SAMPLE_PX).data, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Canli olum patlamasi siniri.
+ *
+ * Tepede saniyede 3-6 oldurme, patlama 190-220 ms: normalde 1-2 canli.
+ * Ulti tek karede onlarca dusman oldurebiliyor; sinir o anki cizim yukunu
+ * bagliyor. Mermi temaslarindan ayri tutuluyor ki kalabalik bir atis olumu,
+ * olum de atisi silmesin.
+ */
+const MAX_DEATH_BURSTS = 40;
+/**
+ * Canli kule ani siniri.
+ *
+ * Kademe toreni macta birkac kez, inis kurulumda dakikada birkac kez geliyor,
+ * onay halkasi (takma, onarim) yalnizca oyuncunun kendi ekraninda ve altin
+ * harcadigi icin seyrek; 4 oyuncu ayni anda yerlestirse bile 4-8 canli. Sinir yaratici modun toplu
+ * seviye atlatmasina karsi. Olumlerden ve atislardan ayri: kalabalik bir
+ * dalga oyuncunun satin aldigi ani silmesin.
+ */
+const MAX_TOWER_MOMENTS = 12;
+/**
+ * Canli ulti dalgasi siniri. Ulti macta birkac kez; tek atis en fazla birkac
+ * halka aciyor (Atakan'da kule basina bir). Ayri liste: kalabalik bir
+ * dalganin olumleri oyuncunun kendi anini silmesin.
+ */
+const MAX_CAST_WAVES = 8;
+
 /** Bounded event buffer; no per-particle sprites or tweens. */
 export class CombatVfx {
   private events: ShotEffect[] = [];
+  private deaths: DeathBurst[] = [];
+  private moments: TowerMoment[] = [];
+  private casts: CastWave[] = [];
   private seed = 0;
   constructor(private graphics: Graphics) {}
   emit(effect: Omit<ShotEffect, "seed">) {
@@ -251,9 +620,50 @@ export class CombatVfx {
     if (this.events.length >= 160) this.events.shift();
     this.events.push({ ...effect, seed: ++this.seed });
   }
+  /** "death" turu: yalnizca oldurme olayindan; sizinti buraya hic gelmez. */
+  emitDeath(burst: Omit<DeathBurst, "seed">) {
+    if (this.deaths.length >= MAX_DEATH_BURSTS) this.deaths.shift();
+    this.deaths.push({ ...burst, seed: ++this.seed });
+  }
+  /** "tower" turu: kademe toreni, yerlestirme inisi ya da onay halkasi. */
+  emitTowerMoment(moment: Omit<TowerMoment, "seed">) {
+    if (this.moments.length >= MAX_TOWER_MOMENTS) this.moments.shift();
+    this.moments.push({ ...moment, seed: ++this.seed });
+  }
+  /** "cast" turu: ulti atisinin sok dalgasi; yalnizca atanin ekraninda. */
+  emitCastWave(wave: CastWave) {
+    if (this.casts.length >= MAX_CAST_WAVES) this.casts.shift();
+    this.casts.push({ ...wave });
+  }
   render(now: number, scale: number) {
     this.graphics.clear();
+    // Kule anlari en altta: sutun ve toz zemine ait, olum ve temas ustlerinden gecer.
     let write = 0;
+    for (const moment of this.moments) {
+      if (now - moment.bornAt >= moment.durationMs) continue;
+      this.moments[write++] = moment;
+      if (moment.kind === "tier") drawTierCeremony(this.graphics, moment, now);
+      else if (moment.kind === "confirm") drawTowerConfirm(this.graphics, moment, now, scale);
+      else drawTowerLanding(this.graphics, moment, now, scale);
+    }
+    this.moments.length = write;
+    // Ulti dalgasi da zeminde: dusmanin olumu ve mermi temasi onun ustunde okunmali.
+    write = 0;
+    for (const wave of this.casts) {
+      if (now - wave.bornAt >= wave.durationMs) continue;
+      this.casts[write++] = wave;
+      drawCastWave(this.graphics, wave, now, scale);
+    }
+    this.casts.length = write;
+    // Olumler once: ayni yerdeki mermi temasi ustte kalsin.
+    write = 0;
+    for (const burst of this.deaths) {
+      if (now - burst.bornAt >= burst.durationMs) continue;
+      this.deaths[write++] = burst;
+      drawDeathBurst(this.graphics, burst, now, scale);
+    }
+    this.deaths.length = write;
+    write = 0;
     for (const effect of this.events) {
       if (now - effect.bornAt >= effectDuration(effect)) continue;
       this.events[write++] = effect;

@@ -4,7 +4,10 @@ import { performance } from "node:perf_hooks";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import {
   characters,
+  DAMAGE_EVENT_NO_OWNER,
   DEFAULT_MAP_SCALE,
+  getDamageSizeBucket,
+  ONUR_JACKPOT_MIN_LUCK,
   GAME_WORLD_HEIGHT,
   GAME_WORLD_WIDTH,
   MAP_PATH,
@@ -113,6 +116,11 @@ import {
   ULTIMATE_POWER_MAX_LEVEL,
   getUltimatePowerMultiplier,
   getUltimatePowerUpgradeCost,
+  getBestUltimateColumnHits,
+  getUltimateResultKind,
+  type UltimateCastMessage,
+  type UltimateResultKind,
+  type UltimateResultMessage,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
   type HirableWorkerRole,
   type HiredWorker,
@@ -173,6 +181,12 @@ import {
   PLAYER_TOWER_LIMIT,
   ENEMY_REWARD_MULTIPLIER,
   getWaveCompletionGold,
+  getWaveSpawnIntervalMs,
+  KILL_STREAK_BUFF_DURATION_MS,
+  KILL_STREAK_RETRIGGER_LOCK_MS,
+  KILL_STREAK_RULES,
+  type KillStreakRule,
+  type KillStreakTier,
   getWaveEnemyCount,
   getArenaWaveEnemyCount,
   getWaveEnemyMaxHp,
@@ -524,8 +538,8 @@ const ATAKAN_DRONE_REPAIR_AMOUNT = 3;
 const ATAKAN_DRONE_ATTACK_SPEED = 180;
 const ATAKAN_DRONE_REPAIR_SPEED = 150;
 const ATAKAN_ULTIMATE_CHARGE_MULTIPLIER = 1 / 3;
-const KILL_STREAK_BUFF_DURATION_MS = 3000;
-const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+// Seri kademeleri, buff suresi ve kilit @karayel/shared'de: istemcinin afisi
+// buff'i ayni tablodan yaziyor, iki kopya birbirinden kaymasin.
 const PROJECTILE_GUIDANCE_RADIUS = 78;
 const PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER = 1.3;
 const ZEYNEP_MAX_REPUTATION = 100;
@@ -681,6 +695,13 @@ class Player extends Schema {
   shopOffers: ShopItem[] = [];
   shopRerolls = 0;
   nexusShieldCharges = 0;
+  /**
+   * Odadaki sabit yuva (0-3); katilista bos olan en kucuk sayi.
+   *
+   * Hasar olayi vuranini bununla soyluyor. Kayitla birlikte yasiyor: yeniden
+   * baglanan oyuncu ayni kaydi, dolayisiyla ayni yuvayi aliyor.
+   */
+  slot = 0;
   @type("string") name = "";
   @type("string") characterId: CharacterId = "warrior";
   @type("boolean") ready = false;
@@ -750,28 +771,36 @@ type UseUltimateMessage = {
   column?: number;
 };
 
-type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
-
-type KillStreakRule = {
-  tier: KillStreakTier;
-  windowMs: number;
+/**
+ * Bir ultinin karnesi: ne kadar dusmana indi, kacini oldurdu.
+ *
+ * Aninda sonuclanan ulti (sutun, meteor, kilit alan, can dalgasi) atis aninda
+ * raporlaniyor. Drone'lu ve sureli olanlar acik kaliyor ve etki bitince
+ * raporlaniyor; atisi hicbir sey beklemiyor.
+ */
+type UltimateReport = {
+  ownerId: string;
+  kind: UltimateResultKind;
+  hits: number;
   kills: number;
-  damageMultiplier: number;
-  hasteMultiplier: number;
-  fearAllMs: number;
+  /** Zeynep sutunu: atis aninda en kalabalik sutunun yakalayacagi dusman. */
+  best?: number;
+  /** Zeynep sutunu: atis aninda secilen sutunda vurulabilir dusman (nisan). */
+  aim?: number;
+  /** Tamir ve can dalgasi: usse gercekten donen can. */
+  heal?: number;
+  /** Atakan: bu atisin henuz dusmeyen drone'lari; hepsi bitince rapor gidiyor. */
+  droneIds?: Set<string>;
+  /** Sureli ulti (Kabus, Sempati): bu andan sonra rapor gidiyor. */
+  until?: number;
+  /** Sempati: baga takilip kanayan dusmanlar; olumler bunlardan sayiliyor. */
+  markedIds?: Set<string>;
 };
 
 type KillStreakLock = {
   unlockAt: number;
   wave: number;
 };
-
-const KILL_STREAK_RULES: KillStreakRule[] = [
-  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 3000 },
-  { tier: "rampage", windowMs: 8000, kills: 16, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
-  { tier: "unstoppable", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
-  { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
-];
 
 const ARMOR_BREAK_MARKER_MS = 3000;
 
@@ -1118,6 +1147,11 @@ type ProjectileModel = {
   pierceLimit: number;
   armorBreakAmount: number;
   piercedEnemyIds: string[];
+  /**
+   * Onur kulesinin atista zarladigi sans carpani. Mermi ucarken kule yeniden
+   * zar atabiliyor; jackpot damgasi (`j`) bu mermiyi atan zardan okunmali.
+   */
+  luck?: number;
 };
 
 type DroneModel = DroneSnapshot & {
@@ -1400,6 +1434,13 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowTier: ZeynepCommandTier = "small";
   private melisGothicNightmareUntil = 0;
   private melisGothicNightmareOwnerUntil = new Map<string, number>();
+  /** Sonucu henuz belli olmayan ultiler (drone, Kabus, Sempati); bitince raporlaniyor. */
+  private openUltimateReports: UltimateReport[] = [];
+  /**
+   * Bagisiklik kapisini gecen her vurusta artiyor. `damageEnemy` inmeyen
+   * vurusu da "olmedi" diye donduruyor; ulti karnesi isabeti bununla ayiriyor.
+   */
+  private landedHitCount = 0;
   private sympathyUntil = 0;
   private sympathyLinks: SympathyLink[] = [];
   /** Sempati kanamasi dusman basina bir kez; ulti bitince liste sifirlanir. */
@@ -1893,6 +1934,7 @@ export class MatchRoom extends Room<MatchState> {
     player.ready = false;
     player.connected = true;
     player.gold = getPlayerStartGold(player.characterId);
+    player.slot = this.getFreePlayerSlot();
     this.initializeMelisSpectrum(player);
 
     this.state.players.set(client.sessionId, player);
@@ -1963,6 +2005,7 @@ export class MatchRoom extends Room<MatchState> {
     player.ready = true;
     player.connected = true;
     player.gold = getPlayerStartGold(player.characterId);
+    player.slot = this.getFreePlayerSlot();
     this.initializeMelisSpectrum(player);
     this.state.players.set(client.sessionId, player);
     this.sendLobbyState(client);
@@ -1997,6 +2040,12 @@ export class MatchRoom extends Room<MatchState> {
         drone.ownerId = nextSessionId;
       }
     }
+    // Havadaki drone'larin karnesi yeni oturuma gitmeli; eskisine giden rapor kaybolurdu.
+    for (const report of this.openUltimateReports) {
+      if (report.ownerId === previousSessionId) {
+        report.ownerId = nextSessionId;
+      }
+    }
 
     this.transferMapKey(this.playerKillStreakTimes, previousSessionId, nextSessionId);
     this.transferMapKey(this.playerKillStreakLocks, previousSessionId, nextSessionId);
@@ -2006,6 +2055,25 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.lastDefenseSummary, previousSessionId, nextSessionId);
     for (const row of this.defenseRows.values()) if (row.ownerId === previousSessionId) row.ownerId = nextSessionId;
     this.transferMapKey(this.shopPlacementCharges, previousSessionId, nextSessionId);
+  }
+
+  /**
+   * Bos olan en kucuk oyuncu yuvasi.
+   *
+   * Sayac degil: lobiden cikan oyuncunun yuvasi bir sonrakine kaliyor, yoksa
+   * gir-cik yapan bir lobi yuvayi 0-3 disina tasirdi. Yuvasi yazilmamis kayit
+   * 0 sayiliyor; testlerin elle kurdugu oyuncu da boyle.
+   */
+  private getFreePlayerSlot() {
+    const used = new Set<number>();
+    for (const player of this.state.players.values()) {
+      used.add(player.slot ?? 0);
+    }
+    let slot = 0;
+    while (used.has(slot)) {
+      slot += 1;
+    }
+    return slot;
   }
 
   private sendMatchResumeState(client: Client) {
@@ -2129,6 +2197,7 @@ export class MatchRoom extends Room<MatchState> {
       mapScale: this.mapScale,
       started: this.gameStarted,
       maxPlayers: this.maxClients,
+      stage: this.stage,
       players: Array.from(this.state.players.entries()).map(([id, player]) => ({
         id,
         name: player.name,
@@ -2149,7 +2218,8 @@ export class MatchRoom extends Room<MatchState> {
       playerCount: this.getConnectedPlayerCount(),
       maxPlayers: this.maxClients,
       mapScale: this.mapScale,
-      started: this.gameStarted
+      started: this.gameStarted,
+      stage: this.stage
     };
   }
 
@@ -2223,16 +2293,31 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private awardEnemyGold(enemy: EnemyModel) {
-    const players = Array.from(this.state.players.values());
-    if (players.length === 0) {
-      return;
+  /**
+   * Oldurme altini: odadaki herkes tam payi aliyor.
+   *
+   * Donen deger oldurenin bu oldurmeden aldigi altin (kendi kart ve esya
+   * carpaniyla). Oldurme olayina o yaziliyor ki istemci dunyada "+N"
+   * gosterebilsin; oldurenin disindakiler kendi paylarini HUD'da goruyor,
+   * o yuzden baskasinin carpani tele cikmiyor.
+   */
+  private awardEnemyGold(enemy: EnemyModel, ownerId?: string) {
+    if (this.state.players.size === 0) {
+      return 0;
     }
 
     const share = Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
-    for (const player of players) {
-      player.gold += share * getModifierMultiplier(player.runModifiers, "goldGain");
+    let ownerGain = 0;
+    // Anahtar oturum kimligi: yeniden baglanan oyuncunun kaydi yeni anahtara
+    // tasiniyor, oldurme olayinin sahibi de o anahtar.
+    for (const [playerId, player] of this.state.players.entries()) {
+      const gain = share * getModifierMultiplier(player.runModifiers, "goldGain");
+      player.gold += gain;
+      if (playerId === ownerId) {
+        ownerGain = gain;
+      }
     }
+    return ownerGain;
   }
 
   private update(deltaTime: number) {
@@ -2290,6 +2375,7 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.chargeUltimates(seconds);
+    this.settleUltimateReports();
     timings.ultimatesMs = performance.now() - sectionStart;
 
     const now = performance.now();
@@ -2602,7 +2688,8 @@ export class MatchRoom extends Room<MatchState> {
 
     this.spawnEnemy();
     this.waveSpawned += 1;
-    this.spawnCooldownMs = Math.max(310, 980 - this.wave * 34);
+    // Formul paylasilan pakette: istemcinin kombo penceresi ayni aralikla sayiyor.
+    this.spawnCooldownMs = getWaveSpawnIntervalMs(this.wave);
   }
 
   /**
@@ -2764,7 +2851,17 @@ export class MatchRoom extends Room<MatchState> {
     if (result === "defeat") this.finishDefenseSummary();
     this.setupPhase = false;
     this.setupReadyPlayerIds.clear();
-    this.broadcast(`match:${result}`, { result, wave: this.wave, kills: this.kills, stage: this.stage });
+    // Sonuc mesaji kendi basina yetsin: istemci kaydi (asama, ileride rekor)
+    // bu mesajdan yaziyor ve yaratici kosu hic yazmamali. Bayrak yalnizca
+    // aciksa gidiyor: `creative: undefined` anahtari yine telde yaziyor
+    // (msgpack), o yuzden kosullu yayma.
+    this.broadcast(`match:${result}`, {
+      result,
+      wave: this.wave,
+      kills: this.kills,
+      stage: this.stage,
+      ...(this.creativeMode ? { creative: true } : {})
+    });
   }
 
   private spawnEnemy() {
@@ -3544,7 +3641,8 @@ export class MatchRoom extends Room<MatchState> {
         : 0,
       pierceLimit: this.getTowerEngine(tower)?.attack.pierceCount ?? 1,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
-      piercedEnemyIds: []
+      piercedEnemyIds: [],
+      luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
@@ -3578,7 +3676,8 @@ export class MatchRoom extends Room<MatchState> {
       slowMs,
       pierceLimit: 1,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(sourceTower), "armorBreak"),
-      piercedEnemyIds: []
+      piercedEnemyIds: [],
+      luck: sourceTower.characterId === "onur" ? sourceTower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
@@ -4586,7 +4685,8 @@ export class MatchRoom extends Room<MatchState> {
       slowMs: 0,
       pierceLimit,
       armorBreakAmount: getModifierAdd(this.getTowerRunModifiers(tower), "armorBreak"),
-      piercedEnemyIds: []
+      piercedEnemyIds: [],
+      luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
   }
@@ -5083,14 +5183,14 @@ export class MatchRoom extends Room<MatchState> {
       }, Array.from(this.enemies.values()), false);
       for (const enemy of areaTargets) {
         this.perfCounters.aoeChecks += 1;
-        const killed = this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
+        const killed = this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType, projectile.luck);
         if (projectile.definitionId === "archer-6-whisper" && !killed && projectileTower) {
           this.applyMelisDoubt(projectileTower, enemy, Date.now());
         }
         this.applyKinProjectileSlow(projectile, enemy);
       }
     } else {
-      this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType);
+      this.damageEnemy(target, this.getProjectileDamage(projectile), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType, projectile.luck);
       this.applyKinProjectileSlow(projectile, target);
     }
     this.applyPostHitEffects(projectile, target);
@@ -5168,7 +5268,12 @@ export class MatchRoom extends Room<MatchState> {
 
         const hitRadius = this.scaleWorldDistance(18);
         if (distanceSq(drone.x, drone.y, target.x, target.y) <= hitRadius * hitRadius) {
-          this.damageEnemy(target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
+          const report = this.findDroneUltimateReport(id);
+          if (report) {
+            this.strikeForUltimate(report, target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
+          } else {
+            this.damageEnemy(target, drone.damage, 0, "warrior-ultimate-drone", drone.ownerId);
+          }
           this.drones.delete(id);
         }
         if (drone.ttlMs <= 0) {
@@ -5188,7 +5293,13 @@ export class MatchRoom extends Room<MatchState> {
 
       const repairRadius = this.scaleWorldDistance(18);
       if (distanceSq(drone.x, drone.y, nexusX, nexusY) <= repairRadius * repairRadius) {
+        const healthBefore = this.teamHealth;
         this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + drone.repairAmount);
+        // Karneye usse gercekten donen can: tavanda kirpilan kisim yazilmiyor.
+        const report = this.findDroneUltimateReport(id);
+        if (report) {
+          report.heal = (report.heal ?? 0) + (this.teamHealth - healthBefore);
+        }
         this.drones.delete(id);
       }
       if (drone.ttlMs <= 0) {
@@ -8335,9 +8446,13 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     player.ultimateCharge = 0;
+    const mode = message.mode === "repair" ? "repair" : "attack";
+    // Karne: ultinin ne yaptigini sunucu sayiyor, istemci yalnizca soyluyor.
+    const report: UltimateReport = { ownerId: client.sessionId, kind: getUltimateResultKind(player.characterId, mode), hits: 0, kills: 0 };
 
     if (player.characterId === "zeynep" && column !== undefined) {
-      this.fireZeynepColumnUltimate(client.sessionId, column);
+      this.fireZeynepColumnUltimate(client.sessionId, column, report);
+      this.finishUltimateReport(report);
       return;
     }
 
@@ -8347,29 +8462,37 @@ export class MatchRoom extends Room<MatchState> {
 
     if (player.characterId === "mage") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 85 * ultimatePower, 0, "ultimate", client.sessionId);
+        this.strikeForUltimate(report, enemy, 85 * ultimatePower, 0);
       }
+      this.finishUltimateReport(report);
       return;
     }
 
     if (player.characterId === "healer") {
+      const healthBefore = this.teamHealth;
       this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + 28);
+      // Tavanda kirpilan can karneye yazilmiyor: usse donmeyen can soylenmemeli.
+      report.heal = this.teamHealth - healthBefore;
       for (const enemy of this.enemies.values()) {
         const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
         enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + scaleGameDuration(duration));
+        report.hits += 1;
       }
+      this.finishUltimateReport(report);
       return;
     }
 
     if (player.characterId === "tank") {
       for (const enemy of this.enemies.values()) {
-        this.damageEnemy(enemy, 35 * ultimatePower, 3200, "ultimate", client.sessionId);
+        this.strikeForUltimate(report, enemy, 35 * ultimatePower, 3200);
       }
+      this.finishUltimateReport(report);
       return;
     }
 
     if (player.characterId === "onur") {
       this.startSympathy();
+      this.openTimedUltimateReport(report, this.sympathyUntil);
       return;
     }
 
@@ -8382,17 +8505,140 @@ export class MatchRoom extends Room<MatchState> {
           tower.cooldownMs = Math.min(tower.cooldownMs, 80);
         }
       }
+      this.openTimedUltimateReport(report, this.melisGothicNightmareOwnerUntil.get(client.sessionId) ?? until);
       return;
     }
 
     if (player.characterId === "warrior") {
-      this.useAtakanUltimate(client, message.mode === "repair" ? "repair" : "attack");
+      this.useAtakanUltimate(client, mode, report);
       return;
     }
 
     for (const enemy of this.enemies.values()) {
-      this.damageEnemy(enemy, 25 * ultimatePower, 0, "ultimate", client.sessionId);
+      this.strikeForUltimate(report, enemy, 25 * ultimatePower, 0);
     }
+    this.finishUltimateReport(report);
+  }
+
+  /**
+   * Ultinin tek vurusu; karneye isler.
+   *
+   * `damageEnemy` inmeyen vurusu da (bagisik dusman) "olmedi" diye donduruyor;
+   * isabet inen vurus sayacindan ayriliyor. Olum ayni cagrinin cevabi:
+   * zincirleme patlamalarin oldurdugu sayilmiyor, yalnizca ultinin kendi vurusu.
+   */
+  private strikeForUltimate(report: UltimateReport, enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "ultimate", ownerId = report.ownerId) {
+    const landedBefore = this.landedHitCount;
+    const killed = this.damageEnemy(enemy, damage, slowMs, sourceDefinitionId, ownerId);
+    if (this.landedHitCount !== landedBefore) {
+      report.hits += 1;
+    }
+    if (killed) {
+      report.kills += 1;
+    }
+    return killed;
+  }
+
+  /**
+   * Sureli ulti (Kabus, Sempati) etki bitene kadar sayiyor.
+   *
+   * Ayni turden acik bir karne varsa (ulti suresi bitmeden yeniden atildi)
+   * o simdiye kadarki sayilariyla raporlaniyor; sonrasi yeni atisin.
+   */
+  private openTimedUltimateReport(report: UltimateReport, until: number) {
+    for (const open of [...this.openUltimateReports]) {
+      if (open.ownerId === report.ownerId && open.kind === report.kind) {
+        this.finishUltimateReport(open);
+      }
+    }
+    report.until = until;
+    if (report.kind === "sympathy") {
+      report.markedIds = new Set();
+    }
+    this.openUltimateReports.push(report);
+  }
+
+  /**
+   * Sureli ultilerin sayaci; `damageEnemy` inen her vurusta cagiriyor.
+   *
+   * Kabus: sahibinin Melis kulelerinin suredeki kendi vuruslari -- ultinin
+   * guclendirdigi sey tam olarak bu. Durum tikleri (kanama, yanma) ne gercek
+   * hasara geciyor ne hizlaniyor; sayilmiyor, sayi sisirilmesin.
+   * Sempati: baga takilip kanayan dusmanlardan suredeki olumler.
+   */
+  private tallyTimedUltimateHit(enemy: EnemyModel, sourceDefinitionId: string, sourceTower: TowerModel | undefined, killed: boolean, now: number) {
+    for (const report of this.openUltimateReports) {
+      if (report.until === undefined || now >= report.until) {
+        continue;
+      }
+      if (report.kind === "nightmare") {
+        if (!sourceTower || sourceTower.ownerId !== report.ownerId || sourceTower.characterId !== "archer" || sourceDefinitionId.startsWith("status:")) {
+          continue;
+        }
+        report.hits += 1;
+        if (killed) {
+          report.kills += 1;
+        }
+      } else if (report.kind === "sympathy" && killed && report.markedIds?.has(enemy.id)) {
+        report.kills += 1;
+      }
+    }
+  }
+
+  /** Drone'lari dusen ve suresi biten karneler her tick burada raporlaniyor. */
+  private settleUltimateReports() {
+    if (this.openUltimateReports.length === 0) {
+      return;
+    }
+    const now = Date.now();
+    for (const report of [...this.openUltimateReports]) {
+      const dronesDone = report.droneIds !== undefined && ![...report.droneIds].some((id) => this.drones.has(id));
+      const timeUp = report.until !== undefined && now >= report.until;
+      if (dronesDone || timeUp) {
+        this.finishUltimateReport(report);
+      }
+    }
+  }
+
+  private findDroneUltimateReport(droneId: string) {
+    return this.openUltimateReports.find((report) => report.droneIds?.has(droneId));
+  }
+
+  /**
+   * Karneyi yollar: sahibine sayilarin tamami (`ultimate:result`), odanin
+   * geri kalanina tek satirlik cip icin ozet (`ultimate:cast`).
+   *
+   * Sahibi odadan ciktiysa rapor sessizce birakiliyor. Ikisi de atis basina
+   * bir kez gidiyor; bos alan yazilmiyor.
+   */
+  private finishUltimateReport(report: UltimateReport) {
+    const index = this.openUltimateReports.indexOf(report);
+    if (index >= 0) {
+      this.openUltimateReports.splice(index, 1);
+    }
+    if (!this.state.players.has(report.ownerId)) {
+      return;
+    }
+
+    const hits = Math.max(0, Math.round(report.hits));
+    const kills = Math.max(0, Math.round(report.kills));
+    const heal = report.heal === undefined ? undefined : Math.max(0, Math.round(report.heal));
+    // Nisan yalnizca isabetten farkliysa: cogu atista ayni sayi, varsayilan
+    // (isabet) yazilmiyor. Yalnizca atana giden karnede; takim cipinde yok.
+    const aim = report.aim === undefined ? undefined : Math.max(0, Math.round(report.aim));
+    const result: UltimateResultMessage = {
+      kind: report.kind,
+      hits,
+      kills,
+      ...(report.best !== undefined ? { best: report.best } : {}),
+      ...(aim !== undefined && aim !== hits ? { aim } : {}),
+      ...(heal !== undefined ? { heal } : {})
+    };
+    const owner = this.clients.find((client) => client.sessionId === report.ownerId);
+    owner?.send("ultimate:result", result);
+
+    const cast: UltimateCastMessage = { ownerId: report.ownerId, kind: report.kind, hits, kills, ...(heal ? { heal } : {}) };
+    this.broadcast("ultimate:cast", cast, owner ? { except: owner } : undefined);
   }
 
   private resolveUltimateColumn(column: number | undefined) {
@@ -8412,8 +8658,12 @@ export class MatchRoom extends Room<MatchState> {
    * Sutun haritanin on ikide biri: ulti yalnizca dogru anda dogru yere
    * basildiginda odul veriyor. Hasar sabit, buyumesi ulti gucu yatirimina
    * bagli.
+   *
+   * Karneye en iyi sutun da yaziliyor: atis anindaki sahada en kalabalik
+   * sutunun yakalayacagi dusman. Nisanin derecesi bununla olculuyor, o yuzden
+   * vurusla ayni kurali (bagisik dusman sayilmaz, sol <= x < sag) kullaniyor.
    */
-  private fireZeynepColumnUltimate(ownerId: string, column: number) {
+  private fireZeynepColumnUltimate(ownerId: string, column: number, report: UltimateReport) {
     const gridSize = getMapGridSize(this.activeMap);
     const origin = getMapOrigin(this.activeMap);
     const bounds = getMapWorldBounds(this.activeMap);
@@ -8421,11 +8671,27 @@ export class MatchRoom extends Room<MatchState> {
     const right = left + gridSize;
     const damage = this.getZeynepColumnUltimateDamage(ownerId);
 
+    const now = Date.now();
+    const reachable: number[] = [];
+    // Nisan: secilen sutunda atis anindaki vurulabilir dusman, en iyi sutunla
+    // ayni kural. Isabetle kiyaslamak zincir olumlerde (Melis lanet patlamasi
+    // sutundaki komsuyu sirasi gelmeden olduruyor) mukemmel nisani
+    // imkansiz kiliyordu; olen komsuyu isabet saymak da sayiyi sisirirdi.
+    let aimed = 0;
+    for (const enemy of this.enemies.values()) {
+      if (!this.isEnemyDominatedAgainst(enemy, "ultimate", now)) {
+        reachable.push(enemy.x);
+        if (enemy.x >= left && enemy.x < right) aimed += 1;
+      }
+    }
+    report.best = getBestUltimateColumnHits(reachable, origin.x, gridSize, this.activeMap.cols);
+    report.aim = aimed;
+
     for (const enemy of this.enemies.values()) {
       if (enemy.x < left || enemy.x >= right) {
         continue;
       }
-      this.damageEnemy(enemy, damage, ZEYNEP_COLUMN_ULTIMATE_SLOW_MS, "ultimate", ownerId);
+      this.strikeForUltimate(report, enemy, damage, ZEYNEP_COLUMN_ULTIMATE_SLOW_MS, "ultimate", ownerId);
     }
 
     const id = `zeynep-ultimate-${this.nextBeamId++}`;
@@ -8447,25 +8713,46 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(1, Math.round(ZEYNEP_COLUMN_ULTIMATE_DAMAGE * this.getUltimatePowerMultiplierFor(ownerId)));
   }
 
-  private useAtakanUltimate(client: Client, mode: "attack" | "repair") {
+  /**
+   * Atakan ultisi: her Atakan kulesinden bir drone.
+   *
+   * Drone'lar zamanla sonuclaniyor; atis hicbir seyi beklemiyor. Karne bu
+   * atisin drone'larini tutuyor ve sonuncusu dusunce (vurdu, hedefsiz kaldi ya
+   * da suresi bitti) raporlaniyor. Hic drone cikmadiysa hemen.
+   */
+  private useAtakanUltimate(client: Client, mode: "attack" | "repair", report: UltimateReport) {
     const ownTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === client.sessionId && tower.characterId === "warrior");
     const repairNexus = mode === "repair";
     const droneDamage = this.getAtakanDroneDamage(client.sessionId);
 
+    const droneIds = new Set<string>();
     for (const tower of ownTowers) {
-      this.spawnAtakanDrone(tower, repairNexus, droneDamage);
+      const droneId = this.spawnAtakanDrone(tower, repairNexus, droneDamage);
+      if (droneId) {
+        droneIds.add(droneId);
+      }
     }
 
     const now = Date.now();
     for (const tower of ownTowers) {
       tower.offlineUntil = Math.max(tower.offlineUntil, now + ATAKAN_ULTIMATE_EXHAUSTION_MS);
     }
+
+    if (repairNexus) {
+      report.heal = 0;
+    }
+    if (droneIds.size === 0) {
+      this.finishUltimateReport(report);
+      return;
+    }
+    report.droneIds = droneIds;
+    this.openUltimateReports.push(report);
   }
 
   private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number) {
     const target = repairNexus ? undefined : this.findNearestEnemy(tower.x, tower.y);
     if (!repairNexus && !target) {
-      return;
+      return undefined;
     }
 
     const nexus = this.activePaths[0]?.points.at(-1);
@@ -8491,6 +8778,7 @@ export class MatchRoom extends Room<MatchState> {
       repairAmount: ATAKAN_DRONE_REPAIR_AMOUNT,
       ttlMs: repairNexus ? 6500 : 8500
     });
+    return id;
   }
 
   private getAtakanDroneDamage(ownerId: string) {
@@ -9007,16 +9295,26 @@ export class MatchRoom extends Room<MatchState> {
     return add;
   }
 
-  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "", hitType?: HitType) {
+  /**
+   * Hukmedilen dusman (Melis'in zorbasi) yalnizca zorbanin kendisinden ve
+   * durum tiklerinden hasar alir. Kapi tek yerde: ulti karnesindeki "en iyi
+   * sutun" da bagisik dusmani ayni kuralla disarida birakmali.
+   */
+  private isEnemyDominatedAgainst(enemy: EnemyModel, sourceDefinitionId: string, now: number) {
+    return enemy.dominatedUntil > now && sourceDefinitionId !== "archer-skill-bully" && !sourceDefinitionId.startsWith("status:");
+  }
+
+  private damageEnemy(enemy: EnemyModel, damage: number, slowMs: number, sourceDefinitionId = "", sourceOwnerId = "", damageType: DamageType = "true", maxHealthDamageRatio = 0, sourceTowerLevel = 1, sourceTowerId = "", hitType?: HitType, luckMultiplier?: number) {
     if (!this.enemies.has(enemy.id)) {
       return false;
     }
 
-    if (enemy.dominatedUntil > Date.now() && sourceDefinitionId !== "archer-skill-bully" && !sourceDefinitionId.startsWith("status:")) {
+    if (this.isEnemyDominatedAgainst(enemy, sourceDefinitionId, Date.now())) {
       return false;
     }
 
     this.perfCounters.damageEvents += 1;
+    this.landedHitCount += 1;
     const now = Date.now();
     if (this.isEnemyInProjectileGuidance(enemy, now)) {
       this.setEnemyMark(enemy, "guidance", PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER - 1, now + 100);
@@ -9119,7 +9417,15 @@ export class MatchRoom extends Room<MatchState> {
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
     this.recordEffectDamage(sourceDefinitionId, dealtAmount, { critAdd, shopDamageAdd, markMultiplier });
-    this.addDamageEvent(enemy, dealtAmount);
+    // Kritik ve son vurus burada biliniyor, istemcide bilinemiyor: sayinin
+    // kendisi ikisini de anlatmiyor (son vurusta kalan can kadar).
+    //
+    // Sans carpani mermide atistaki zardan geliyor (mermi ucarken kule yeniden
+    // zar atabiliyor). Mermisiz vurusta `prepareOnurGamblerShot` hemen once
+    // kostugu icin kulenin son zari bu vurusun zari.
+    const luck = luckMultiplier
+      ?? (damageSourceTower?.characterId === "onur" ? damageSourceTower.lastLuckMultiplier : undefined);
+    this.addDamageEvent(enemy, dealtAmount, { crit: critAdd > 0, killingBlow: enemy.hp <= 0, ownerId: sourceOwnerId, luck });
     const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
@@ -9164,6 +9470,10 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
+    if (this.openUltimateReports.length > 0) {
+      this.tallyTimedUltimateHit(enemy, sourceDefinitionId, damageSourceTower, enemy.hp <= 0, now);
+    }
+
     if (enemy.hp > 0) {
       return false;
     }
@@ -9174,7 +9484,7 @@ export class MatchRoom extends Room<MatchState> {
     this.triggerMelisCurseDeathBurst(enemy, now);
     this.enemies.delete(enemy.id);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
-    this.awardEnemyGold(enemy);
+    const ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
     this.awardEnemyExperience(enemy);
     this.kills += 1;
     if (sourceOwnerId && (enemy.type === "brute" || enemy.type === "siege")) {
@@ -9208,7 +9518,7 @@ export class MatchRoom extends Room<MatchState> {
       if (player?.characterId === "zeynep") {
         this.awardZeynepReputation(player, enemy.type);
       }
-      this.addKillEvent(sourceOwnerId, enemy.id);
+      this.addKillEvent(sourceOwnerId, enemy.id, ownerGold);
     }
     for (const player of this.state.players.values()) {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7));
@@ -9454,16 +9764,21 @@ export class MatchRoom extends Room<MatchState> {
     return projectile.damage * damageMultiplier;
   }
 
-  private addKillEvent(ownerId: string, enemyId: string) {
+  private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0) {
     const now = Date.now();
     const streakRule = this.recordPlayerKillStreak(ownerId, now);
     const id = `k${this.nextKillEventId++}`;
+    // Tabana yuvarli tam sayi: HUD altini da tabana yuvarli ve hasar sayisi
+    // gibi dunyadaki "+N" gercekte kazanilandan fazlasini soylememeli (21.6
+    // "+22" degil "+21"). Tek baytlik tam sayi kesirli sayinin dokuz baytina karsi.
+    const gold = Math.floor(ownerGold);
     this.killEvents.set(id, {
       id,
       ownerId,
       enemyId,
       serverTime: now,
       streakTier: streakRule?.tier,
+      g: gold > 0 ? gold : undefined,
       ttlMs: 2200
     });
 
@@ -9613,22 +9928,48 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private addDamageEvent(enemy: EnemyModel, amount: number) {
+  private addDamageEvent(enemy: EnemyModel, amount: number, flags: { crit?: boolean; killingBlow?: boolean; ownerId?: string; luck?: number } = {}) {
     if (amount <= 0) {
       return;
     }
 
     const id = `d${this.nextDamageEventId++}`;
-    this.damageEvents.set(id, {
+    // Floating combat text must not claim more damage than was actually
+    // applied. Rounding every hit up can accumulate into a visible total
+    // larger than the enemy's real shield/HP loss.
+    const shownAmount = Math.max(1, Math.floor(amount));
+    const event: DamageEventModel = {
       id,
       x: enemy.x + (Math.random() - 0.5) * 14,
       y: enemy.y - 16 + (Math.random() - 0.5) * 8,
-      // Floating combat text must not claim more damage than was actually
-      // applied. Rounding every hit up can accumulate into a visible total
-      // larger than the enemy's real shield/HP loss.
-      amount: Math.max(1, Math.floor(amount)),
+      amount: shownAmount,
       ttlMs: 900
-    });
+    };
+    // Varsayilanlar kayda hic yazilmiyor: telde anahtar olarak da gitmesinler
+    // (bkz. `toDamageEventWire`).
+    if (flags.crit) {
+      event.c = 1;
+    }
+    if (flags.killingBlow) {
+      event.k = 1;
+    }
+    const owner = flags.ownerId ? this.state.players.get(flags.ownerId) : undefined;
+    const ownerSlot = owner ? owner.slot ?? 0 : DAMAGE_EVENT_NO_OWNER;
+    if (ownerSlot !== 0) {
+      event.o = ownerSlot;
+    }
+    // Boyut gosterilen sayidan: son vurusta kalan can kucukse sayi da kucuk
+    // kaliyor; o vurusu isaretle ayirmak istemcinin isi, sayiyi buyutmek degil.
+    const bucket = getDamageSizeBucket(shownAmount, enemy.maxHp + enemy.maxShield);
+    if (bucket !== 0) {
+      event.r = bucket;
+    }
+    // Jackpot yalnizca kritikte ve esigin ustundeki zarda; carpan onda bir
+    // hassasiyetle tamsayi (1.9 -> 19), telde tek kucuk sayi.
+    if (flags.crit && flags.luck !== undefined && flags.luck >= ONUR_JACKPOT_MIN_LUCK) {
+      event.j = Math.round(flags.luck * 10);
+    }
+    this.damageEvents.set(id, event);
 
     if (this.damageEvents.size > 120) {
       const oldestId = this.damageEvents.keys().next().value;
@@ -10529,6 +10870,8 @@ export class MatchRoom extends Room<MatchState> {
         id,
         name: player.name,
         characterId: player.characterId,
+        // 0. yuva yazilmiyor; `slot: undefined` bile msgpack'te anahtar tasirdi.
+        ...(player.slot > 0 ? { slot: player.slot } : {}),
         gold: Math.floor(player.gold),
         goldSpent: player.goldSpent,
         experience: Math.round(player.experience * 100) / 100,
@@ -10542,7 +10885,10 @@ export class MatchRoom extends Room<MatchState> {
         shopRerollPrice: Math.ceil(getShopRerollPrice(player.shopRerolls) * getModifierMultiplier(player.runModifiers, "shopRerollCost")),
         towersBuilt: player.towersBuilt,
         towerLimit: this.getPlayerTowerLimit(player),
-        ultimateCharge: Math.round(player.ultimateCharge),
+        // Tabana: telde 100 "sunucu atisi kabul eder" demek. Yuvarlamada 99.5
+        // hazir gorunuyor, hazir sesi caliyor ve atis sessizce reddediliyordu.
+        // Sarj Math.min(100, ...) ile kirpildigi icin gercek esikte yine 100.
+        ultimateCharge: Math.floor(player.ultimateCharge),
         ultimatePower: player.ultimatePower,
         skillCooldowns: [
           Math.ceil(player.skill1CooldownMs / 1000),
@@ -10729,26 +11075,17 @@ export class MatchRoom extends Room<MatchState> {
           // ayri yerde hesaplanan deger, hicbir isin kulesinde ekrana ulasmadi.
           tier: beam.tier
         })),
-      damageEvents: Array.from(this.damageEvents.values()).map((event) => ({
-        id: event.id,
-        x: roundNetworkNumber(event.x),
-        y: roundNetworkNumber(event.y),
-        amount: roundNetworkNumber(event.amount)
-      })),
-      killEvents: Array.from(this.killEvents.values()).map((event) => ({
-        id: event.id,
-        ownerId: event.ownerId,
-        enemyId: event.enemyId,
-        serverTime: event.serverTime,
-        streakTier: event.streakTier
-      })),
+      damageEvents: Array.from(this.damageEvents.values()).map(toDamageEventWire),
+      killEvents: Array.from(this.killEvents.values()).map(toKillEventWire),
       zeynepCommands: this.getZeynepCommandEffectsSnapshot(now),
       melisGothicNightmareActive: this.melisGothicNightmareUntil > now,
       result: this.matchResult,
       effectStats: this.getEffectStatsSnapshot(),
       setupPhase: this.setupPhase,
       setupSession: this.setupSession,
-      creative: this.creativeMode || undefined,
+      // Yalnizca yaratici odada: `undefined` degerli anahtar msgpack'te yine
+      // yaziliyor ve her snapshotta her istemciye ~12 bayt demek.
+      ...(this.creativeMode ? { creative: true as const } : {}),
       stage: this.stage,
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
@@ -12043,6 +12380,8 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const contacts = selectSympathyContacts(this.sympathyLinks, Array.from(this.enemies.values()), halfWidth);
+    // Karne: baga takilip kanayan her dusman bir "baglandi"; olumler bunlardan sayiliyor.
+    const report = this.openUltimateReports.find((entry) => entry.kind === "sympathy");
     for (const enemy of contacts) {
       const resistedMultiplier = 1 - applyStatusResistance(
         1 - SYMPATHY_SLOW_MULTIPLIER,
@@ -12052,6 +12391,10 @@ export class MatchRoom extends Room<MatchState> {
 
       if (this.sympathyBledEnemyIds.has(enemy.id)) continue;
       this.sympathyBledEnemyIds.add(enemy.id);
+      if (report?.markedIds && !report.markedIds.has(enemy.id)) {
+        report.markedIds.add(enemy.id);
+        report.hits += 1;
+      }
       this.applyEnemyStatusEffect(
         enemy,
         {
@@ -12174,7 +12517,7 @@ export class MatchRoom extends Room<MatchState> {
         .map((entry) => entry.enemy);
       for (const enemy of chainedEnemies) {
         this.setUcubeChainBeam(projectile, target, enemy);
-        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id, projectile.hitType);
+        this.damageEnemy(enemy, this.getProjectileDamage(projectile, getUcubeChainDamageMultiplier(tower)), 0, projectile.definitionId, tower.ownerId, projectile.damageType, projectile.maxHealthDamageRatio, tower.level, tower.id, projectile.hitType, projectile.luck);
       }
     }
 
@@ -12686,6 +13029,49 @@ export function stripWireDefaults<T extends Record<string, unknown>>(entity: T):
 
 export function roundNetworkNumber(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+/**
+ * Oldurme olayinin tel bicimi.
+ *
+ * Olay 2.2 sn boyunca her snapshotta (60 ms) yeniden gidiyor, yani anahtar
+ * basina bedel otuz kati. Seri kademesi cogu olayda yok; eskiden yine de
+ * `undefined` degerle yaziliyordu ve msgpack anahtari yine gonderiyordu
+ * (on bir baytlik ad + bos deger). Yok olan alan artik anahtar olarak da
+ * yok. Model alanlari (ttlMs) disarida kaliyor.
+ */
+export function toKillEventWire(event: KillEventSnapshot): KillEventSnapshot {
+  const wire: KillEventSnapshot = {
+    id: event.id,
+    ownerId: event.ownerId,
+    enemyId: event.enemyId,
+    serverTime: event.serverTime
+  };
+  if (event.streakTier) wire.streakTier = event.streakTier;
+  if (event.g !== undefined && event.g > 0) wire.g = event.g;
+  return wire;
+}
+
+/**
+ * Hasar olayinin tel hali.
+ *
+ * Bayraklar yalnizca varsa kopyalaniyor. `c: event.c` gibi bir atama degeri
+ * `undefined` olsa bile anahtari tasiyor ve msgpack onu da yaziyor; olay
+ * telde ~19 kez gittigi icin bu her olayda bayrak basina birkac bayt demek.
+ */
+export function toDamageEventWire(event: DamageEventSnapshot): DamageEventSnapshot {
+  const wire: DamageEventSnapshot = {
+    id: event.id,
+    x: roundNetworkNumber(event.x),
+    y: roundNetworkNumber(event.y),
+    amount: roundNetworkNumber(event.amount)
+  };
+  if (event.c) wire.c = 1;
+  if (event.k) wire.k = 1;
+  if (event.o !== undefined && event.o !== 0) wire.o = event.o;
+  if (event.r) wire.r = event.r;
+  if (event.j) wire.j = event.j;
+  return wire;
 }
 
 function getTowerPlacementOrientation(definitionId?: string, orientation?: TowerOrientation): TowerOrientation {

@@ -193,6 +193,142 @@ canvas {
 @keyframes card-veil-in { from { opacity: 0; } }
 @keyframes card-panel-in { from { opacity: 0; transform: translateY(18px) scale(.98); } }
 
+/*
+ * Kart acilisi: kartlar 80 ms arayla ters gelip donuyor.
+ *
+ * Donus tek bir donusum animasyonu: ilk yarida kart sirtini gostererek kenara
+ * donuyor, %45'te yuzu gorunuyor. Sirt gercek bir cocuk dugum (ikinci sozde
+ * oge nadir parlamasina, ucuncusu secim damgasina ayrildi). Doldurma yalnizca
+ * geriye dogru: animasyon bitince kart normal stiline donuyor, uzerine gelme
+ * ve basma donusumleri calismaya devam ediyor. Gecikme JS'ten (`--deal-delay`).
+ * Yalnizca opaklik ve donusum; telefonda yerlesim hesabi yok. Sureler
+ * paylasilan sabitlerle ayni: `CARD_FLIP_MS` (340), `CARD_FLIP_FACE_UP_RATIO`
+ * (%45; cevirme sesi o anda), `CARD_RARE_SHIMMER_MS` (1200), `CARD_PICK_STAMP_MS` (150).
+ */
+.run-card__back {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  background:
+    repeating-linear-gradient(45deg, rgba(125, 211, 252, 0.12) 0 6px, transparent 6px 12px),
+    linear-gradient(155deg, #16264a, #070d1d 70%);
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.3);
+  opacity: 0;
+  pointer-events: none;
+}
+.run-card--deal {
+  animation: run-card-deal 340ms cubic-bezier(.2, .8, .2, 1) backwards;
+  animation-delay: var(--deal-delay, 0ms);
+}
+.run-card--deal .run-card__back {
+  animation: run-card-back 340ms linear backwards;
+  animation-delay: var(--deal-delay, 0ms);
+}
+@keyframes run-card-deal {
+  0% { opacity: 0; transform: perspective(900px) translateY(-18px) rotateY(0deg) scale(.95); }
+  12% { opacity: 1; }
+  44.9% { opacity: 1; transform: perspective(900px) translateY(-7px) rotateY(88deg) scale(.97); }
+  45% { opacity: 1; transform: perspective(900px) translateY(-7px) rotateY(-88deg) scale(.97); }
+  100% { opacity: 1; transform: perspective(900px) translateY(0) rotateY(0deg) scale(1); }
+}
+@keyframes run-card-back {
+  0%, 44.9% { opacity: 1; }
+  45%, 100% { opacity: 0; }
+}
+
+/*
+ * Nadirlik cercevesi: yaygin duz, seyrek gumus kenar, nadir altin kenar.
+ *
+ * Eksen rengi kartin ici, parlamasi ve eksen yazisinda kaliyor; nadirlik
+ * yalnizca kenarda ve eksen satirindaki kucuk etikette. Renk tek isaret
+ * degil: "SEYREK"/"NADİR" yazisi da var.
+ */
+.run-card--uncommon {
+  border-color: rgba(203, 213, 225, 0.8);
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+.run-card--uncommon:hover,
+.run-card--uncommon:focus-visible { border-color: #e2e8f0; }
+.run-card--rare {
+  border-color: #fbbf24;
+  box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.4), 0 0 22px rgba(251, 191, 36, 0.2), 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+.run-card--rare:hover,
+.run-card--rare:focus-visible {
+  border-color: #fde68a;
+  box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.5), 0 0 30px rgba(251, 191, 36, 0.3), 0 18px 45px rgba(0, 0, 0, 0.35);
+}
+.run-card__rarity::before {
+  content: "\B7";
+  margin: 0 7px;
+  color: rgba(148, 163, 184, 0.7);
+}
+.run-card--uncommon .run-card__rarity { color: #e2e8f0; }
+.run-card--rare .run-card__rarity { color: #fbbf24; }
+
+/*
+ * Nadir kartin tek parlamasi (1.2 sn): yuzu gorundugu an kartin ustunden
+ * capraz bir isik geciyor. Baslangic ve bitis kartin disinda, varsayilan
+ * saydam: animasyon yoksa hicbir sey gorunmuyor.
+ */
+.run-card--shine::before {
+  content: "";
+  position: absolute;
+  inset: -20% -60%;
+  z-index: 2;
+  background: linear-gradient(105deg, transparent 40%, rgba(253, 230, 138, 0.34) 50%, transparent 60%);
+  opacity: 0;
+  transform: translateX(-70%);
+  pointer-events: none;
+  animation: run-card-shimmer 1200ms ease-in-out both;
+  animation-delay: var(--shine-delay, 0ms);
+}
+@keyframes run-card-shimmer {
+  0% { opacity: 1; transform: translateX(-70%); }
+  100% { opacity: 1; transform: translateX(70%); }
+}
+
+/*
+ * Secim damgasi: 150 ms'de kart bir kez basiliyor ve "SEÇİLDİ" damgasi
+ * iniyor; kule atimi ve toast bundan sonra. Secilen kart bekleme sirasinda
+ * sonuklesmiyor, digerleri sonukleserek geri cekiliyor.
+ */
+.run-card.is-picked,
+.tower-choice.is-picked {
+  position: relative;
+  animation: run-card-pick 150ms ease-out;
+}
+.run-card.is-picked:disabled,
+.tower-choice.is-picked:disabled { opacity: 1; }
+.run-card.is-picked::after,
+.tower-choice.is-picked::after {
+  /* "SEÇİLDİ": kacisli yaziliyor, CSS dosyasi hangi kodlamayla sunulursa sunulsun bozulmasin. */
+  content: "SE\C7\130LD\130";
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  padding: 4px 9px 3px;
+  border: 2px solid currentColor;
+  border-radius: 6px;
+  color: #4ade80;
+  background: rgba(2, 6, 23, 0.86);
+  font: 800 13px/1 Rajdhani, sans-serif;
+  letter-spacing: .14em;
+  transform: rotate(-8deg);
+  pointer-events: none;
+  animation: run-card-stamp 150ms cubic-bezier(.2, 1.3, .4, 1) both;
+}
+.tower-choice.is-picked::after { top: 50%; bottom: auto; margin-top: -11px; }
+@keyframes run-card-pick {
+  45% { transform: scale(.965); }
+}
+@keyframes run-card-stamp {
+  0% { opacity: 0; transform: rotate(-14deg) scale(1.8); }
+  100% { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
 @media (max-width: 620px) {
   .card-draft__panel { inset-inline: 8px; width: calc(100% - 16px); padding: 17px 13px; border-radius: 22px; }
   .card-draft__header { margin-bottom: 14px; }
@@ -652,6 +788,29 @@ canvas {
   border-color: rgba(56, 189, 248, 0.9);
   color: #e0f2fe;
   background: linear-gradient(180deg, rgba(14, 116, 144, 0.95), rgba(8, 47, 73, 0.98));
+}
+
+/*
+ * Ulti hazir: dugmesi Beceriler cekmecesinin icinde, cekmece kapaliyken
+ * bilgi ancak cekmecenin dugmesinden gorunuyor. Kenar rengi ulti dugmesinin
+ * hazir rengiyle ayni ve kalici; atim yalnizca sarjin doldugu an, bir kez.
+ * Atim dolgu birakmiyor (fill yok): bitince basili dugmenin kendi donusumu
+ * geri geliyor. Hareket azaltmada atim yok, kenar rengi kaliyor. Ozgulluk
+ * kasitli: taban `.game-controls button` (0,1,1) tek sinifi ezerdi; basili
+ * hal (0,3,1) ise bunu ezmeli.
+ */
+.game-controls button.game-controls__launch--ult-ready {
+  border-color: rgba(250, 204, 21, 0.75);
+  color: #fde68a;
+}
+.game-controls__launch.is-ult-pulse,
+.game-controls__action--ultimate.is-ult-pulse {
+  animation: ult-ready-pulse 900ms ease-out;
+}
+@keyframes ult-ready-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+  22% { transform: scale(1.06); box-shadow: 0 0 0 5px rgba(250, 204, 21, 0.4); }
+  100% { transform: scale(1); box-shadow: 0 0 0 11px rgba(250, 204, 21, 0); }
 }
 
 /*
@@ -1584,6 +1743,64 @@ canvas {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/*
+ * Oyun ici arayuz de hareket azaltmaya uyuyor: kart acilisi, cekmece ve toast
+ * gecisleri aninda bitiyor, sonraki odul efektleri (altin cipi, kart cevirme,
+ * dalga damgasi) de buradan miras aliyor. Bilgi tasiyan durumlar (kritik can
+ * rengi, zincir hazir parlamasi) sabit halleriyle kaliyor, yalnizca
+ * kipirdamiyor. Tuvaldeki sarsinti ve zoom'u geri bildirim yonetmeni ayni
+ * sorgudan kapatiyor.
+ */
+@media (prefers-reduced-motion: reduce) {
+  #game-hud-root *,
+  #game-hud-root *::before,
+  #game-hud-root *::after,
+  #game-controls-root *,
+  #game-controls-root *::before,
+  #game-controls-root *::after,
+  .card-draft,
+  .card-draft *,
+  .card-draft *::before,
+  .card-draft *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  /*
+   * Topluca gelen altinin "+N"i bilgi: kipirdamadan duruyor, suresi dolunca
+   * JS kaldiriyor. Aninda biten animasyon son karede (saydam) kalirdi.
+   */
+  #game-hud-root .game-hud__gain {
+    animation-name: none !important;
+  }
+
+  /*
+   * Dalga damgasi da bilgi: inis ve solma yok, oldugu yerde duruyor ve
+   * suresi dolunca JS kaldiriyor (animasyonun son karesi saydam).
+   */
+  #game-hud-root .game-hud__wave-clear *,
+  #game-hud-root .game-hud__wave-clear *::before {
+    animation-name: none !important;
+  }
+
+  /* Ulti karnesi de bilgi: damga ve muhur inmiyor, yerinde duruyor. */
+  #game-hud-root .game-hud__ultimate * {
+    animation-name: none !important;
+  }
+
+  /*
+   * Kart acilisi: dagitim ve donus yok, kartlar hemen yuzu acik (JS de
+   * dagitim sinifini hic eklemiyor; bu yalnizca guvence). Kartin sirti ve
+   * nadir parlamasi animasyon disinda gorunmuyor.
+   */
+  .card-draft .run-card,
+  .card-draft .run-card__back,
+  .card-draft .run-card::before {
+    animation-name: none !important;
   }
 }
 
@@ -3260,6 +3477,12 @@ canvas {
    * binmis sayi ikisini birden okunmaz yapar.
    */
   overflow: hidden;
+  /*
+   * Altin cipinin atimi (x1.18) icin dikeyde pay: kirpma kutusu 3 px buyuyor,
+   * eksi kenar boslugu onu geri aliyor. Satirin olculen boyu degismiyor.
+   */
+  padding-block: 3px;
+  margin-block: -3px;
 }
 
 .game-hud__vital {
@@ -3287,6 +3510,388 @@ canvas {
 .game-hud__vital--gold { color: #fbbf24; }
 .game-hud__vital--health { color: #fda4af; }
 .game-hud__vital--wave { color: #7dd3fc; }
+
+/*
+ * Dalga "7/20": kacinci dalgada oldugun kadar kac dalga kaldigi da okunsun.
+ * "/20" kucuk ve soluk, bosluksuz: telefonda satirin tek yeni yuku ~18 px.
+ * "Dalga" sozcugu yalnizca genis cubukta bayragin yerini aliyor; 375 px'te
+ * kurulumdaki "Devam" dugmesiyle birlikte sigmaz ve satir kirpilirdi.
+ * Tam adi ipucunda ("Dalga 7/20").
+ */
+.game-hud__vital--wave .game-hud__wave-total {
+  margin-left: -4px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.62;
+}
+.game-hud__wave-word {
+  display: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+/*
+ * Altin artinca cip bir kez atiyor: 1 -> 1.18 -> 1, 300 ms. Sol kenardan
+ * buyuyor; cip satirin basinda ve satirin tasma kirpmasi sola buyumeyi
+ * keserdi. Ayni kareler iki adla tanimli: sinif aralarinda gidip geldikce
+ * animasyon yerlesim zorlamadan bastan basliyor.
+ */
+.game-hud__vital--gold { transform-origin: left center; }
+.game-hud__vital--gold.is-pulse-a { animation: hud-gold-pulse-a 300ms ease-out; }
+.game-hud__vital--gold.is-pulse-b { animation: hud-gold-pulse-b 300ms ease-out; }
+@keyframes hud-gold-pulse-a { 35% { transform: scale(1.18); } }
+@keyframes hud-gold-pulse-b { 35% { transform: scale(1.18); } }
+
+/*
+ * Topluca gelen altinin "+N" etiketi (dalga bonusu, satis, beceri): cipin
+ * hemen altinda, akisin disinda. Belirip kaybolmasi cubugun boyunu
+ * degistirmiyor; alttan cipe dogru kayip soner. 800 ms sonunda JS kaldiriyor.
+ */
+.game-hud__gain {
+  position: absolute;
+  z-index: 2;
+  padding: 1px 6px;
+  border: 1px solid rgba(251, 191, 36, 0.7);
+  border-radius: 999px;
+  color: #fde68a;
+  background: rgba(59, 29, 5, 0.94);
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.game-hud__gain[hidden] { display: none; }
+.game-hud__gain.is-show-a { animation: hud-gold-gain-a 800ms ease-out both; }
+.game-hud__gain.is-show-b { animation: hud-gold-gain-b 800ms ease-out both; }
+@keyframes hud-gold-gain-a {
+  0% { opacity: 0; transform: translateY(5px); }
+  15%, 70% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+@keyframes hud-gold-gain-b {
+  0% { opacity: 0; transform: translateY(5px); }
+  15%, 70% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+
+/*
+ * Dalga temizleme damgasi: "DALGA 7/20 TEMİZLENDİ" ve altinda satirlar.
+ *
+ * Yalnizca mevcut 2 sn'lik molada, 1.3 sn (`WAVE_CLEAR_STAMP_MS`). Akisin disinda ve dokunusu
+ * tutmuyor; dikey yerini JS seridin %32'sine yaziyor (seri afisinin altina).
+ * Baslik bir damga gibi iniyor (buyukten, egikten), satirlar 150 ms arayla
+ * geliyor, hepsi birlikte soluyor. Yalnizca opaklik ve donusum: telefonda
+ * yerlesim ya da boyama hesabi istemiyor. Renkler cubugunkiler: dalga mavisi,
+ * altin sarisi.
+ */
+.game-hud__wave-clear {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  /* Acik ses/istatistik paneli (z 2) oyuncunun actigi sey: damga altinda kalir. */
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.game-hud__wave-clear[hidden] { display: none; }
+.game-hud__wave-clear-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  animation: hud-wave-clear-life 1300ms linear both;
+}
+@keyframes hud-wave-clear-life {
+  0% { opacity: 0; }
+  4%, 84% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.game-hud__wave-clear-title {
+  display: block;
+  max-width: 100%;
+  padding: 7px 14px 5px;
+  box-sizing: border-box;
+  border: 2px solid #7dd3fc;
+  border-radius: 6px;
+  color: #e0f2fe;
+  background: rgba(2, 6, 23, 0.86);
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.55), inset 0 0 0 1px rgba(125, 211, 252, 0.28);
+  font-family: Rajdhani, "Arial Black", sans-serif;
+  font-size: 21px;
+  font-size: clamp(18px, 5.6cqw, 25px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  transform: rotate(-2deg);
+  animation: hud-wave-clear-slam 220ms cubic-bezier(.2, 1.3, .4, 1) both;
+}
+@keyframes hud-wave-clear-slam {
+  0% { opacity: 0; transform: rotate(-7deg) scale(1.7); }
+  55% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(-2deg) scale(1); }
+}
+.game-hud__wave-clear-lines {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 11px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  color: #cbd5e1;
+  background: rgba(2, 6, 23, 0.74);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+.game-hud__wave-clear-lines span {
+  white-space: nowrap;
+  animation: hud-wave-clear-line 180ms ease-out both;
+}
+.game-hud__wave-clear-lines span + span::before {
+  content: "\B7";
+  margin: 0 6px;
+  color: #64748b;
+}
+.game-hud__wave-clear-lines .is-gold { color: #fbbf24; }
+.game-hud__wave-clear-lines .is-bonus { color: #fde68a; }
+@keyframes hud-wave-clear-line {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+/*
+ * Kozmetik kombo hapi: arenanin sag ustu, cubugun hemen altinda. Konum CSS'te
+ * (JS olcu okumuyor); akisin disinda, cubugun boyu degismiyor. Sicaklik
+ * `data-heat` 0-5 (×3 ... ×8): renk sarimtiraktan kirmiziya isiniyor ve hap
+ * biraz buyuyor. Yalnizca opaklik ve donusum. Takimin varyanti soluk, gri ve
+ * kucuk -- senin olmayan bir sayi goz cekmesin.
+ */
+.game-hud__combo {
+  --combo-ink: #fef3c7;
+  --combo-edge: rgba(252, 211, 77, 0.75);
+  --combo-scale: 1;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 8px;
+  border: 1.5px solid var(--combo-edge);
+  border-radius: 999px;
+  color: var(--combo-ink);
+  background: rgba(2, 6, 23, 0.84);
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.45);
+  font-family: Rajdhani, "Arial Black", sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+  transform: scale(var(--combo-scale));
+  transform-origin: 100% 0;
+  pointer-events: none;
+}
+.game-hud__combo[hidden] { display: none; }
+.game-hud__combo b { font-weight: 800; letter-spacing: 0.02em; }
+.game-hud__combo[data-heat="1"] { --combo-ink: #fde68a; --combo-edge: rgba(251, 191, 36, 0.8); --combo-scale: 1.05; }
+.game-hud__combo[data-heat="2"] { --combo-ink: #fcd34d; --combo-edge: rgba(245, 158, 11, 0.85); --combo-scale: 1.1; }
+.game-hud__combo[data-heat="3"] { --combo-ink: #fdba74; --combo-edge: rgba(249, 115, 22, 0.9); --combo-scale: 1.15; }
+.game-hud__combo[data-heat="4"] { --combo-ink: #fb923c; --combo-edge: rgba(234, 88, 12, 0.95); --combo-scale: 1.2; }
+.game-hud__combo[data-heat="5"] {
+  --combo-ink: #fca5a5;
+  --combo-edge: #ef4444;
+  --combo-scale: 1.26;
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.45), 0 0 12px rgba(239, 68, 68, 0.55);
+}
+.game-hud__combo.is-team {
+  --combo-ink: #cbd5e1;
+  --combo-edge: rgba(148, 163, 184, 0.5);
+  --combo-scale: 0.9;
+  opacity: 0.72;
+  box-shadow: none;
+  font-size: 13px;
+}
+.game-hud__combo.is-bump-a { animation: hud-combo-bump-a 220ms ease-out; }
+.game-hud__combo.is-bump-b { animation: hud-combo-bump-b 220ms ease-out; }
+@keyframes hud-combo-bump-a { 30% { transform: scale(calc(var(--combo-scale) * 1.22)); } }
+@keyframes hud-combo-bump-b { 30% { transform: scale(calc(var(--combo-scale) * 1.22)); } }
+/* Patlama etiketi: kendi suresi JS'te; animasyon yalnizca inis, son karesi gorunur. */
+.game-hud__combo em {
+  padding: 0 5px;
+  border-radius: 4px;
+  color: #1c1917;
+  background: #fde047;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+}
+.game-hud__combo em[hidden] { display: none; }
+.game-hud__combo em.is-show-a { animation: hud-combo-multi-a 200ms cubic-bezier(.2, 1.3, .4, 1) both; }
+.game-hud__combo em.is-show-b { animation: hud-combo-multi-b 200ms cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes hud-combo-multi-a { from { opacity: 0; transform: scale(1.6) rotate(-6deg); } }
+@keyframes hud-combo-multi-b { from { opacity: 0; transform: scale(1.6) rotate(-6deg); } }
+
+/*
+ * Takim arkadasinin seri toast'u: arenanin sol ustu, onun sinif renginde
+ * ince bir kenar. Afis ortada ve senin; bu yalnizca kenardan haber veriyor.
+ * En fazla iki tane, JS kaldiriyor.
+ */
+.game-hud__team-streaks {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 10px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 52%;
+  pointer-events: none;
+}
+.game-hud__team-streak {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 9px 3px 7px;
+  box-sizing: border-box;
+  border-left: 3px solid var(--team-color, #94a3b8);
+  border-radius: 4px 10px 10px 4px;
+  color: #cbd5e1;
+  background: rgba(2, 6, 23, 0.82);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  animation: hud-team-streak-in 200ms ease-out both;
+}
+.game-hud__team-streak b,
+.game-hud__team-streak span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-hud__team-streak b {
+  color: var(--team-color, #e2e8f0);
+  font-size: 11px;
+  font-weight: 800;
+}
+.game-hud__team-streak span { color: #94a3b8; }
+@keyframes hud-team-streak-in {
+  from { opacity: 0; transform: translateX(-8px); }
+}
+/*
+ * Kurulumda ongoru kutusu ayni satirda (cubugun hemen alti); takim
+ * arkadasinin toast'u ve ulti cipi kutunun ustune binmesin, altina insin.
+ * Kutu tek satirla ~26 px, hava uyarisiyla ~41 px; ustune 6 px pay ve bosluk.
+ */
+.game-hud__forecast:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 38px); }
+.game-hud__forecast--danger:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 54px); }
+
+/*
+ * Ulti karnesi: seridin %56'si, ortada; seri afisinin (%17) ve dalga
+ * damgasinin (%32) altinda. Kenar karakterin renginde (`--ult-color`, JS).
+ * Baslik tek damga; sutunda altinda nisanin derecesi. Mukemmel nisan altin
+ * ve egik bir muhur, iyi nisan yesil, notr gri -- metinleri de farkli, renk
+ * tek isaret degil. Yalnizca opaklik ve donusum.
+ */
+.game-hud__ultimate {
+  --ult-color: #fde68a;
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.game-hud__ultimate[hidden] { display: none; }
+.game-hud__ultimate-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  animation: hud-ultimate-life 1600ms linear both;
+}
+@keyframes hud-ultimate-life {
+  0% { opacity: 0; }
+  5%, 86% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.game-hud__ultimate-title {
+  display: block;
+  max-width: 100%;
+  padding: 6px 12px 5px;
+  box-sizing: border-box;
+  border: 2px solid var(--ult-color);
+  border-radius: 6px;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.86);
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.5), inset 0 0 0 1px rgba(248, 250, 252, 0.12);
+  font-family: Rajdhani, "Arial Black", sans-serif;
+  font-size: 17px;
+  font-size: clamp(15px, 4.4cqw, 20px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-align: center;
+  text-wrap: balance;
+  animation: hud-ultimate-slam 200ms cubic-bezier(.2, 1.3, .4, 1) both;
+}
+@keyframes hud-ultimate-slam {
+  0% { opacity: 0; transform: scale(1.35); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.game-hud__ultimate-grade {
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #94a3b8;
+  background: rgba(2, 6, 23, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  animation: hud-ultimate-grade 180ms ease-out 180ms both;
+}
+.game-hud__ultimate-grade.is-good { color: #86efac; }
+.game-hud__ultimate-grade.is-perfect {
+  padding: 3px 12px;
+  border: 2px solid #facc15;
+  border-radius: 5px;
+  color: #fde047;
+  background: rgba(66, 32, 6, 0.9);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.45);
+  font-family: Rajdhani, "Arial Black", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  transform: rotate(-3deg);
+  animation: hud-ultimate-perfect 240ms cubic-bezier(.2, 1.3, .4, 1) 180ms both;
+}
+@keyframes hud-ultimate-grade {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@keyframes hud-ultimate-perfect {
+  0% { opacity: 0; transform: rotate(-9deg) scale(1.8); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(-3deg) scale(1); }
+}
 
 /* Can azaldikca uyari rengi; sayiya bakmadan da yakalanmali. */
 .game-hud[data-health="low"] .game-hud__vital--health { color: #fb923c; }
@@ -3394,6 +3999,12 @@ canvas {
   pointer-events: auto;
 }
 
+/*
+ * Degisken rozetlerin kabi kendi kutusunu uretmiyor: rozetler seridin esnek
+ * ogeleri olarak kaliyor, sabit ★ ve ping rozetleriyle ayni dizilimde.
+ */
+.game-hud__strip-group { display: contents; }
+
 .game-hud__chip {
   display: inline-flex;
   /* Once kendi genisligi, sikisirsa kirpilir; hicbir kosulda alt satira inmez. */
@@ -3451,6 +4062,23 @@ canvas {
 .game-hud__actions button:active:not(:disabled) {
   border-color: rgba(125, 211, 252, 0.95);
   transform: scale(0.94);
+}
+
+/*
+ * ★ cipi: XP ve altin bir kuleyi yukseltmeye yettigi surece sabit yesil
+ * (haritadaki ▲ ile ayni renk); yeterli hale geldigi an bir kez parliyor.
+ * Parlama iceriden: serit tasmayi kirpiyor, distaki golge kesilirdi. Hareket
+ * azaltmada parlama aninda bitiyor, sabit yesil yine ayni haberi veriyor.
+ */
+.game-hud__chip--xp.is-ready { border-color: rgba(74, 222, 128, 0.6); }
+.game-hud__chip--xp.is-ready i { color: #4ade80; }
+.game-hud__chip--xp.is-flash-a { animation: hud-xp-ready-a 700ms ease-out; }
+.game-hud__chip--xp.is-flash-b { animation: hud-xp-ready-b 700ms ease-out; }
+@keyframes hud-xp-ready-a {
+  0%, 30% { background-color: rgba(74, 222, 128, 0.5); box-shadow: inset 0 0 0 1px rgba(187, 247, 208, 0.95); }
+}
+@keyframes hud-xp-ready-b {
+  0%, 30% { background-color: rgba(74, 222, 128, 0.5); box-shadow: inset 0 0 0 1px rgba(187, 247, 208, 0.95); }
 }
 
 .game-hud__chip--good i { color: #22c55e; }
@@ -3511,6 +4139,20 @@ canvas {
 @container (max-width: 310px) {
   .game-hud__vital b { font-size: 13px; }
   .game-hud__vitals { gap: 5px; }
+}
+
+/* Genis cubukta dalga sozcugu bayragin yerine: "Dalga 7/20". */
+@container (min-width: 440px) {
+  .game-hud__vital--wave > i { display: none; }
+  .game-hud__wave-word { display: inline; }
+}
+
+/*
+ * Dar cubukta kurulum dugmesi ve hava etiketi birlikteyken "/20" cekiliyor:
+ * satir kirpilmaya baslarsa ilk giden hava uyarisi olurdu, oysa o daha acil.
+ */
+@container (max-width: 420px) {
+  .game-hud__vital--wave.is-crowded .game-hud__wave-total { display: none; }
 }
 
 .game-hud button {
@@ -3577,6 +4219,8 @@ canvas {
 }
 .game-hud__popup label { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 10px; margin-top: 14px; font-size: 12px; font-weight: 700; }
 .game-hud__popup input[type="range"] { width: 100%; accent-color: #38bdf8; }
+/* Titresim kutusu kaydiricilarla ayni izgarada; satiri doldurmuyor, etiketin tamami dokunma alani. */
+.game-hud__popup input[type="checkbox"] { justify-self: start; width: 20px; height: 20px; margin: 0; accent-color: #38bdf8; }
 
 /* Istatistik paneli: sekmeler ve siralanmis liste. */
 .game-hud__popup--stats { min-width: min(420px, 86vw); }

@@ -140,6 +140,64 @@ export function getWaveCompletionGold(completedWave: number) {
 }
 
 /**
+ * Dalga icinde iki dusman dogumu arasi (oyun zamani, ms).
+ *
+ * Formul eskiden yalnizca sunucunun dogurma dongusundeydi. Istemcinin kozmetik
+ * kombo sayaci "iki dogum araliginin iki kati icinde gelen oldurme" diye
+ * sayiyor; iki ayri kopya olsaydi biri dengelenince oburu sessizce kayardi ve
+ * kombo artik oyunun temposunu olcmezdi. Deger aynen tasindi, degismedi.
+ *
+ * Oyun zamani: sunucu bunu `GAME_SPEED_MULTIPLIER` ile yavaslatilmis adimdan
+ * dusuyor, yani gercek saatte `/ GAME_SPEED_MULTIPLIER` kadar uzun.
+ */
+export const WAVE_SPAWN_INTERVAL_BASE_MS = 980;
+export const WAVE_SPAWN_INTERVAL_STEP_MS = 34;
+export const WAVE_SPAWN_INTERVAL_MIN_MS = 310;
+
+export function getWaveSpawnIntervalMs(wave: number) {
+  return Math.max(WAVE_SPAWN_INTERVAL_MIN_MS, WAVE_SPAWN_INTERVAL_BASE_MS - wave * WAVE_SPAWN_INTERVAL_STEP_MS);
+}
+
+/**
+ * Oldurme serisi kademeleri ve verdikleri guc.
+ *
+ * Esikler ve carpanlar sunucudan aynen tasindi: istemci serinin afisinde
+ * odulu ("+%20 hasar · 3 sn") ve kulelerin parlamasini buradan okuyor.
+ * Sunucu tek basina tutsaydi afis bir gun dengelenmis bir buff'i eski
+ * sayiyla anlatirdi. Sira onemli: sunucu en yuksek kademeden asagi dogru
+ * ilk tutani seciyor.
+ *
+ * Esikleri dusurmek afisi sik yapmaz, gercek bir hasar ve hiz buff'ini sik
+ * yapar -- degistirilecekse denge testiyle.
+ */
+export type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
+
+export type KillStreakRule = {
+  tier: KillStreakTier;
+  windowMs: number;
+  kills: number;
+  damageMultiplier: number;
+  hasteMultiplier: number;
+  fearAllMs: number;
+};
+
+export const KILL_STREAK_RULES: readonly KillStreakRule[] = [
+  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 3000 },
+  { tier: "rampage", windowMs: 8000, kills: 16, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
+  { tier: "unstoppable", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
+  { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
+];
+
+/** Seri buff'inin suresi (oyun zamani, ms); gercek saatte `/ GAME_SPEED_MULTIPLIER`. */
+export const KILL_STREAK_BUFF_DURATION_MS = 3000;
+/** Tetiklenen kademe ve altindakiler ayni dalgada bu kadar kilitli kaliyor. */
+export const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
+
+export function getKillStreakRule(tier: KillStreakTier) {
+  return KILL_STREAK_RULES.find((rule) => rule.tier === tier);
+}
+
+/**
  * Dalgadaki ucanlar: 5. ve 10. dalga tamamen havadan, 15. ve 20. dalga yari
  * yariya geliyor.
  *

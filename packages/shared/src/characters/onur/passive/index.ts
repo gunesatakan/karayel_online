@@ -2,6 +2,13 @@ export const onurPassive = "Kumarbazın Rüyası: Saldırı kuleleri 0.5×–1.5
 
 export const ONUR_MISFORTUNE_MAX = 100;
 export const ONUR_LUCKY_WINDOW_MS = 10_000;
+/**
+ * Kritik vurusta "JACKPOT" damgasinin esigi. Yalnizca gosterim: zarin
+ * kendisine dokunmuyor. Normal zar (0.5-1.5) buraya ulasamiyor, yalnizca
+ * sans penceresinin (0.95-2.0) ust ucu; damga zarin gercekten buyuk
+ * geldigini anlatiyor.
+ */
+export const ONUR_JACKPOT_MIN_LUCK = 1.8;
 
 export type OnurGamblerState = {
   misfortune: number;

@@ -32,6 +32,10 @@ function oda() {
   const room = createRoom("warrior");
   room.broadcast = () => {};
   room.clients = [client];
+  // Hasar karsilastiran testler iki vurusu kiyasliyor; %1'lik temel kritik
+  // zari birinde tutarsa fark karttan degil zardan gelir ve test ara sira
+  // dusuyordu. Bu dosyada kritik olculmuyor.
+  room.towerCriticalRandom = () => 1;
   return room;
 }
 

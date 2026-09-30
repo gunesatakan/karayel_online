@@ -330,6 +330,14 @@ export type PlayerSnapshot = {
   id: string;
   name: string;
   characterId: CharacterId;
+  /**
+   * Odadaki sabit oyuncu yuvasi (0-3); 0 ise alan yok.
+   *
+   * Hasar olayi vuranin oturum kimligini degil bu yuvayi tasiyor: kimlik her
+   * olayda 9-20 karakter olurdu, yuva tek hane. Yuva maci boyunca degismiyor,
+   * yeniden baglanan oyuncu da ayni oyuncu kaydini ve yuvayi aliyor.
+   */
+  slot?: number;
   gold: number;
   goldSpent: number;
   experience: number;
@@ -417,6 +425,11 @@ export type LobbyStateSnapshot = {
   started: boolean;
   players: LobbyPlayerSnapshot[];
   maxPlayers: number;
+  /**
+   * Odanin asamasi; kurucunun menude sectigi. Katilan oyuncu hangi irka
+   * karsi oynayacagini lobide gormeli. Eski bir sunucu gondermeyebilir.
+   */
+  stage?: number;
 };
 
 export type RoomListingSnapshot = {
@@ -427,6 +440,8 @@ export type RoomListingSnapshot = {
   maxPlayers: number;
   mapScale: MapScale;
   started: boolean;
+  /** Odanin asamasi; katilmadan once gorulsun. */
+  stage?: number;
 };
 
 export type EnemySnapshot = {
@@ -754,11 +769,41 @@ export type BeamSnapshot = {
   ttlMs?: number;
 };
 
+/**
+ * Yuzen hasar sayisi.
+ *
+ * Tek harfli, istege bagli alanlar bilerek: olay 900 ms oyun zamani (0.8
+ * hizla ~1.1 sn) yasiyor ve her snapshotta (60 ms'de bir) yeniden gidiyor,
+ * yani bir olay telde ~19 kez. Varsayilan deger hic yazilmiyor -- `undefined`
+ * bile yazilmiyor, cunku msgpack anahtari yine tasiyor.
+ */
 export type DamageEventSnapshot = {
   id: string;
   x: number;
   y: number;
+  /**
+   * Gercekten inen hasar (kalkan + can). Son vurusta dusmanin kalan cani
+   * kadar: fazlasi hicbir seye inmedi, sayi sisirilmiyor.
+   */
   amount: number;
+  /** Kritik vurus; degilse alan yok. */
+  c?: 1;
+  /** Son vurus: dusman bu vurusla oldu; degilse alan yok. */
+  k?: 1;
+  /**
+   * Vuranin oyuncu yuvasi (`PlayerSnapshot.slot`). 0. yuva yazilmiyor;
+   * sahipsiz vurusta `DAMAGE_EVENT_NO_OWNER` (-1).
+   */
+  o?: number;
+  /** Boyut kovasi (`getDamageSizeBucket`); 0 ise alan yok. */
+  r?: 1 | 2;
+  /**
+   * Onur jackpot'u: kritik vurusta kulenin sans carpani
+   * `ONUR_JACKPOT_MIN_LUCK`in ustundeyse carpanin on kati (1.9 -> 19);
+   * degilse alan yok. Yalnizca kritikte ve nadir oldugu icin telde neredeyse
+   * hic yer tutmuyor; istemci "JACKPOT ×1.9" damgasini buradan yaziyor.
+   */
+  j?: number;
 };
 
 export type KillEventSnapshot = {
@@ -766,7 +811,14 @@ export type KillEventSnapshot = {
   ownerId: string;
   enemyId: string;
   serverTime: number;
-  streakTier?: "granted" | "unstoppable" | "rampage" | "legendary";
+  streakTier?: import("./balance/index.js").KillStreakTier;
+  /**
+   * Oldurenin bu oldurmeden aldigi altin (kendi carpaniyla, tabana
+   * yuvarli: gercekte kazanilandan fazlasini soylemesin); yoksa alan yok. Yalnizca oldurenin ekraninda dunyada "+N"
+   * olarak cikiyor: odadaki herkes ayni payi aliyor ama takim arkadasinin
+   * oldurmesi senin ekraninda pop yapmiyor, HUD sayiminda goruluyor.
+   */
+  g?: number;
 };
 
 export type ZeynepCommandTier = "small" | "medium" | "big";
@@ -886,9 +938,179 @@ export {
   SERVER_CLOCK_SMOOTHING,
   SnapshotPlaybackClock
 } from "./snapshot/index.js";
+export {
+  DAMAGE_EVENT_NO_OWNER,
+  DAMAGE_SIZE_BUCKET_RATIOS,
+  FEEDBACK_KIND_RULES,
+  FEEDBACK_LIMITS,
+  FEEDBACK_MAX_PITCH_STEP,
+  FeedbackGovernor,
+  getDamageEventOwnerSlot,
+  getDamageSizeBucket,
+  getFeedbackPitchRatio,
+  getFeedbackPriority
+} from "./feedback/index.js";
+export type {
+  DamageSizeBucket,
+  FeedbackChannel,
+  FeedbackDecision,
+  FeedbackInput,
+  FeedbackKind,
+  FeedbackKindRule,
+  FeedbackPriority
+} from "./feedback/index.js";
+export {
+  DEATH_BURST_SQUASH,
+  DEATH_BURST_SQUASH_END,
+  ENEMY_HIT_FLASH_GAP_MS,
+  ENEMY_HIT_FLASH_MS,
+  ENEMY_TRACE_CAPACITY,
+  ENEMY_TRACE_TTL_MS,
+  RecentEnemyTraces,
+  getDeathBurstPose,
+  getDeathBurstShape,
+  getKillFeedbackWeight,
+  isEnemyHitFlashActive,
+  isHeavyEnemyType,
+  pickAccentColor,
+  shouldStartEnemyHitFlash,
+  tintAccentColor
+} from "./feedback/kill-confirm.js";
+export type { DeathBurstPose, DeathBurstShape } from "./feedback/kill-confirm.js";
+export {
+  COIN_CARRY_MS,
+  CountUpValue,
+  GOLD_COUNT_UP_MS,
+  GOLD_GAIN_LABEL_MS,
+  UPGRADE_READY_FLASH_GAP_MS,
+  UPGRADE_READY_MARKER_LIMIT,
+  getLumpGoldGain,
+  getUpgradeReadyTowerIds
+} from "./feedback/resource-feel.js";
+export type { UpgradeReadyTower, UpgradeReadyWallet } from "./feedback/resource-feel.js";
+export {
+  CARD_DEAL_STAGGER_MS,
+  CARD_FLIP_FACE_UP_RATIO,
+  CARD_FLIP_MS,
+  CARD_PICKABLE_AFTER_MS,
+  CARD_PICK_STAMP_MS,
+  CARD_RARE_SHIMMER_MS,
+  WAVE_CLEAR_LINE_STAGGER_MS,
+  WAVE_CLEAR_STAMP_MS,
+  WaveClearWatch,
+  getCardDealTiming,
+  getCardDraftTitle,
+  getCardDraftWave,
+  getCardRevealCues,
+  getWaveClearStampText
+} from "./feedback/wave-reward.js";
+export type {
+  CardDealTiming,
+  CardRevealCue,
+  WaveClearObservation,
+  WaveClearStampLine,
+  WaveClearStampText,
+  WaveClearSummary
+} from "./feedback/wave-reward.js";
+export {
+  COMBO_HEAT_MAX,
+  COMBO_STALE_EVENT_MS,
+  COMBO_VISIBLE_MIN,
+  COMBO_WINDOW_SPAWN_INTERVALS,
+  KillComboWatch,
+  MULTI_KILL_LABEL_MS,
+  MULTI_KILL_WINDOW_MS,
+  STREAK_BANNER_HANDOFF_MS,
+  STREAK_BANNER_MIN_VISIBLE_MS,
+  STREAK_BANNER_QUEUE_LIMIT,
+  STREAK_GLOW_FADE_IN_MS,
+  STREAK_GLOW_FADE_OUT_MS,
+  StreakBannerQueue,
+  getComboHeat,
+  getComboWindowMs,
+  getKillStreakBuffRealMs,
+  getKillStreakBuffText,
+  getMultiKillLabel,
+  getStreakBuffedTowerIds,
+  getStreakGlowAlpha,
+  getWaveSpawnIntervalRealMs,
+  isStaleKillEvent
+} from "./feedback/streak.js";
+export type { ComboHudState, StreakBuffTower } from "./feedback/streak.js";
+export {
+  CONFIRMATION_INSTRUCTION_MS,
+  CONFIRMATION_NOTICE_MS,
+  countEquippableTowers,
+  getInventoryEquipCue,
+  getInventoryEquipRejectedCue,
+  getShopPurchaseCue,
+  getStructureRepairCue,
+  getUltimateUpgradeCue,
+  getWorkerDevelopmentCue
+} from "./feedback/confirmations.js";
+export type {
+  ConfirmationPulseStyle,
+  ConfirmationSfxKind,
+  InventoryEquipRejectedMessage,
+  InventoryEquippedMessage,
+  ServerConfirmationCue,
+  ShopPurchasedMessage,
+  StructureRepairedMessage,
+  UltimateUpgradedMessage,
+  WorkerDevelopmentUnlockedMessage
+} from "./feedback/confirmations.js";
+export {
+  FRESH_TOWER_SPAWN_CAPACITY,
+  FRESH_TOWER_SPAWN_TTL_MS,
+  FreshTowerSpawns,
+  TIER_CEREMONY_MS,
+  TIER_CEREMONY_SHARDS,
+  TIER_COLUMN_HEIGHT_RATIO,
+  TIER_SHARD_END_RADIUS,
+  TIER_SHARD_START_RADIUS,
+  TOWER_LANDING_DUST_MS,
+  TOWER_LANDING_FROM_SCALE,
+  TOWER_LANDING_MS,
+  getTierCeremonyPose,
+  getTierShardOrbit,
+  getTowerLandingScale,
+  getTowerLevelCeremony,
+  getTowerLevelLabel
+} from "./feedback/tower-ceremony.js";
+export type { TierCeremonyPose, TowerLevelCeremony } from "./feedback/tower-ceremony.js";
+export {
+  ULTIMATE_CAST_ZOOM,
+  ULTIMATE_CAST_ZOOM_MS,
+  ULTIMATE_GOOD_AIM_RATIO,
+  ULTIMATE_PERFECT_MIN_HITS,
+  ULTIMATE_READY_CHARGE,
+  ULTIMATE_READY_PULSE_MS,
+  ULTIMATE_RESULT_LABELS,
+  ULTIMATE_SHOCKWAVE_MS,
+  ULTIMATE_STAMP_LAG_MS,
+  ULTIMATE_STAMP_MS,
+  UltimateReadyWatch,
+  getBestUltimateColumnHits,
+  getUltimateAimTier,
+  getUltimateCastZoom,
+  getUltimateColumnSpan,
+  getUltimateResultKind,
+  getUltimateShockwavePose,
+  getUltimateStampText,
+  getUltimateTeamChipText
+} from "./feedback/ultimate.js";
+export type {
+  UltimateAimTier,
+  UltimateCastMessage,
+  UltimateResultKind,
+  UltimateResultMessage,
+  UltimateShockwavePose,
+  UltimateStampText
+} from "./feedback/ultimate.js";
 
 export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower, countsAsTower, occupiesTowerSlot, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export {
+  ONUR_JACKPOT_MIN_LUCK,
   ONUR_LUCKY_WINDOW_MS,
   ONUR_MISFORTUNE_MAX,
   getOnurMisfortuneContribution,
@@ -898,14 +1120,16 @@ export { SpatialGrid, type SpatialPoint } from "./spatial/index.js";
 export {
   STAGE_COUNT,
   WAVES_PER_STAGE,
+  canRecordProgress,
   getHighestUnlockedStage,
   getStage,
   getStageDamageProfile,
   getStageRace,
   isStageUnlocked,
+  shouldRecordStageClear,
   stageCatalog
 } from "./stages/index.js";
-export type { StageDefinition } from "./stages/index.js";
+export type { ProgressRecordSource, StageDefinition } from "./stages/index.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,
@@ -1151,9 +1375,17 @@ export {
   getWaveCompletionGold,
   getWaveAirMode,
   isFlyingWaveSpawn,
-  PLAYER_TOWER_LIMIT
+  PLAYER_TOWER_LIMIT,
+  WAVE_SPAWN_INTERVAL_BASE_MS,
+  WAVE_SPAWN_INTERVAL_STEP_MS,
+  WAVE_SPAWN_INTERVAL_MIN_MS,
+  getWaveSpawnIntervalMs,
+  KILL_STREAK_RULES,
+  KILL_STREAK_BUFF_DURATION_MS,
+  KILL_STREAK_RETRIGGER_LOCK_MS,
+  getKillStreakRule
 } from "./balance/index.js";
-export type { WaveAirMode } from "./balance/index.js";
+export type { KillStreakRule, KillStreakTier, WaveAirMode } from "./balance/index.js";
 export {
   GAME_SPEED_MULTIPLIER,
   GLOBAL_TOWER_RANGE_MULTIPLIER,
