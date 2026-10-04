@@ -815,6 +815,12 @@ export type DamageEventSnapshot = {
    * hic yer tutmuyor; istemci "JACKPOT ×1.9" damgasini buradan yaziyor.
    */
   j?: number;
+  /**
+   * Bicak vurusu: hasar yorunge bicaginin dogrudan temasindan (Testere).
+   * Degilse alan yok. Bicagin temas mesaji yok; istemci kesme sesini buradan
+   * caliyor. Kanama tiki, yakindaki baska kule ve alan tikleri tasimiyor.
+   */
+  b?: 1;
 };
 
 export type KillEventSnapshot = {
@@ -1529,6 +1535,8 @@ export {
   PASSIVE_TOWER_INTERVAL_THRESHOLD_MS,
   NON_FIRING_INTERVAL_MS,
   PASSIVE_AURA_TICK_INTERVAL_MS,
+  ZEYNEP_SYNTHESIS_BURN_TICK_MS,
+  MELIS_CURSE_POOL_TICK_MS,
   AURA_REFRESH_DURATION_MULTIPLIER,
   ORBIT_BLADE_LENGTH_MAX_MULTIPLIER,
   ORBIT_CONTINUOUS_ENERGY_PER_SECOND,

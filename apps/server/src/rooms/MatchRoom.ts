@@ -41,6 +41,8 @@ import {
   ZEYNEP_SHOWCASE_BASE_LENGTH,
   buildSympathyLinks,
   selectSympathyContacts,
+  ZEYNEP_SYNTHESIS_BURN_TICK_MS,
+  MELIS_CURSE_POOL_TICK_MS,
   getDebugLaserDamageMultiplier,
   getDebugLaserFireInterval,
   getKinFireInterval,
@@ -591,7 +593,6 @@ const ZEYNEP_SYNTHESIS_BEAM_RADIUS = 10;
 const ZEYNEP_SYNTHESIS_BURN_RADIUS = 34;
 const ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS = 16;
 const ZEYNEP_SYNTHESIS_BURN_DURATION_MS = 3000;
-const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 333;
 const ZEYNEP_SYNTHESIS_RAY_SPEED = 930;
 const ZEYNEP_SYNTHESIS_RAY_LENGTH = TOWER_GRID_SIZE * ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS;
 const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
@@ -661,7 +662,6 @@ const MELIS_CURSE_APPROVAL_DURATION_MS = 7000;
 const MELIS_CURSE_EVOLUTION_AREA_BONUS = 8;
 const MELIS_CURSE_DEATH_BURST_RADIUS = 58;
 const MELIS_CURSE_POOL_DURATION_MS = 3000;
-const MELIS_CURSE_POOL_TICK_MS = 500;
 const MELIS_DOUBT_BASE_DURATION_MS = 4000;
 const MELIS_DOUBT_APPROVAL_BONUS_MS = 2000;
 const MELIS_DOUBT_HESITATION_BASE_MS = 500;
@@ -1449,6 +1449,13 @@ export class MatchRoom extends Room<MatchState> {
   private nextBurnZoneId = 1;
   private nextMelisCursePoolId = 1;
   private nextDamageEventId = 1;
+  /**
+   * Siradaki hasar bir yorunge bicaginin dogrudan temasi: kule ve dusman.
+   * `updateOrbitTower` vurustan hemen once yaziyor, `damageEnemy` ilk eslesen
+   * vurusta tuketiyor; o vurusun ic etkileri (kanama tiki, baska kule)
+   * bayragi tasimiyor. Yalnizca istemcinin kesme sesi icin, oyuna etkisi yok.
+   */
+  private pendingOrbitHit?: { towerId: string; enemyId: string };
   private nextKillEventId = 1;
   private teamHealth = MAX_TEAM_HEALTH;
   private wave = 1;
@@ -3861,7 +3868,12 @@ export class MatchRoom extends Room<MatchState> {
       if (!enemy) continue;
       tower.orbitLastHitAt.set(enemy.id, now);
       this.prepareOnurGamblerShot(tower);
-      this.damageEnemyFromTower(tower, enemy, this.getTowerDamage(tower), 0);
+      this.pendingOrbitHit = { towerId: tower.id, enemyId: enemy.id };
+      try {
+        this.damageEnemyFromTower(tower, enemy, this.getTowerDamage(tower), 0);
+      } finally {
+        this.pendingOrbitHit = undefined;
+      }
     }
   }
 
@@ -9809,7 +9821,13 @@ export class MatchRoom extends Room<MatchState> {
     // kostugu icin kulenin son zari bu vurusun zari.
     const luck = luckMultiplier
       ?? (damageSourceTower?.characterId === "onur" ? damageSourceTower.lastLuckMultiplier : undefined);
-    this.addDamageEvent(enemy, dealtAmount, { crit: critAdd > 0, killingBlow: enemy.hp <= 0, ownerId: sourceOwnerId, luck });
+    const pendingOrbitHit = this.pendingOrbitHit;
+    const orbit = Boolean(pendingOrbitHit
+      && pendingOrbitHit.towerId === sourceTowerId
+      && pendingOrbitHit.enemyId === enemy.id
+      && !sourceDefinitionId.startsWith("status:"));
+    if (orbit) this.pendingOrbitHit = undefined;
+    this.addDamageEvent(enemy, dealtAmount, { crit: critAdd > 0, killingBlow: enemy.hp <= 0, ownerId: sourceOwnerId, luck, orbit });
     // Co-op asisti oldurucu vurusun kendi yazimlarindan once okunuyor: asagidaki
     // takip, isaret ve yavaslatma yazimlari kaynagi oldurenle degistiriyor ve
     // takim arkadasinin yavaslatma / isaret asistini siliyordu. Oyuna etkisi yok.
@@ -10491,7 +10509,7 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private addDamageEvent(enemy: EnemyModel, amount: number, flags: { crit?: boolean; killingBlow?: boolean; ownerId?: string; luck?: number } = {}) {
+  private addDamageEvent(enemy: EnemyModel, amount: number, flags: { crit?: boolean; killingBlow?: boolean; ownerId?: string; luck?: number; orbit?: boolean } = {}) {
     if (amount <= 0) {
       return;
     }
@@ -10531,6 +10549,10 @@ export class MatchRoom extends Room<MatchState> {
     // hassasiyetle tamsayi (1.9 -> 19), telde tek kucuk sayi.
     if (flags.crit && flags.luck !== undefined && flags.luck >= ONUR_JACKPOT_MIN_LUCK) {
       event.j = Math.round(flags.luck * 10);
+    }
+    // Bicak temasi: istemcinin kesme sesi. Kanama tiki tasimiyor.
+    if (flags.orbit) {
+      event.b = 1;
     }
     this.damageEvents.set(id, event);
 
@@ -13736,6 +13758,7 @@ export function toDamageEventWire(event: DamageEventSnapshot): DamageEventSnapsh
   if (event.o !== undefined && event.o !== 0) wire.o = event.o;
   if (event.r) wire.r = event.r;
   if (event.j) wire.j = event.j;
+  if (event.b) wire.b = 1;
   return wire;
 }
 

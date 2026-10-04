@@ -9,6 +9,16 @@ import {
   type FeedbackPriority
 } from "@karayel/shared";
 
+import {
+  HIT_SOUND_LIMITS,
+  HitSoundGovernor,
+  getHitPitchRatio,
+  getHitVoiceDuration,
+  getHitVoiceRecipe,
+  type HitVoiceId
+} from "./hit-sounds";
+import { fnvUnit } from "./vfx/kit";
+
 export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } from "@karayel/shared";
 
 /**
@@ -26,6 +36,8 @@ export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } 
  *
  * Kanal ayrimi:
  * - Efektler: bu dosyanin sentez sesleri, kendi kaydiricisi var.
+ *   - Vurus sesleri (hit-sounds.ts) efekt kanalinin icinde kendi seviyesiyle:
+ *     "Vurus sesleri" kaydiricisi Efektler'in altinda carpan.
  * - Seslendirme: seri klipleri ve uyari tonlari; uyari burada caliniyor ama
  *   seviyesini cagiran veriyor, efekt kanalina girmiyor.
  */
@@ -34,6 +46,20 @@ export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } 
 type Tone = { wave: OscillatorType; from: number; to?: number; at: number; dur: number; gain: number };
 
 type Voice = { endsAt: number; gain: GainNode; sources: OscillatorNode[] };
+
+/**
+ * Vurus sesinin yuvasi. Yuvalar sabit ve diziler yeniden kullaniliyor:
+ * vurus basina yalnizca ses dugumlerinin kendisi uretiliyor. Biten sesin
+ * dugumleri bir sonraki vurusta ayriliyor (`onended` kapanisi yok).
+ */
+type HitVoiceHandle = { endsAt: number; gain?: GainNode; nodes: AudioNode[]; sources: AudioScheduledSourceNode[] };
+
+/** Paylasilan beyaz gurultu tamponunun uzunlugu (sn); vuruslar farkli yerinden baslar. */
+const HIT_NOISE_SECONDS = 1;
+/** Kaldirilan vurus sesinin sonme suresi (sn); aniden kesilen ses tik yapar. */
+const HIT_STEAL_FADE_SECONDS = 0.025;
+/** Kaydirici onizlemesinin en kisa araligi (ms): surukleme saniyede ~14 deger yolluyor. */
+export const HIT_PREVIEW_GAP_MS = 250;
 
 /** Takim arkadasinin sesi: duyulsun ama seninkinin ustune binmesin. */
 const TEAMMATE_SFX_GAIN = 0.35;
@@ -229,8 +255,21 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
   ]
 };
 
+/**
+ * Odul ve arayuz seslerinin tarif adlari ve tonlari (adim 0). Vurus
+ * seslerinin bunlardan ayri durdugunu soyleyen test icin.
+ */
+export function getFeedbackSfxTones(): Array<{ kind: FeedbackKind; tones: Tone[] }> {
+  return (Object.keys(SFX_RECIPES) as FeedbackKind[]).map((kind) => ({ kind, tones: SFX_RECIPES[kind]!(1) }));
+}
+
 export type FeedbackDirectorOptions = {
   sfxVolume: number;
+  /**
+   * Vurus seslerinin seviyesi (0-1), Efektler'in ustune carpan. 0 ise
+   * vurus icin hicbir ses dugumu kurulmuyor. Verilmezse 0.5.
+   */
+  hitVolume?: number;
   vibration: boolean;
   /** Sarsilacak kamera; sahne kurulmadan once yok olabilir. */
   getCamera: () => Phaser.Cameras.Scene2D.Camera | undefined;
@@ -243,6 +282,17 @@ export class FeedbackDirector {
   private sfxBus?: GainNode;
   private voices: Voice[] = [];
   private sfxVolume: number;
+  private hitVolume: number;
+  private hitBus?: GainNode;
+  private noiseBuffer?: AudioBuffer;
+  private readonly hitGovernor = new HitSoundGovernor();
+  private readonly hitSlots: HitVoiceHandle[] = [];
+  /** Kaldirilan (sonen) vurus seslerinin dugumleri; ayrilmayi bekliyor. */
+  private readonly hitGraveyard: HitVoiceHandle[] = [];
+  private graveCursor = 0;
+  /** Onizlemenin kendi yuvasi: oyunun vurus butcesinden ayri. */
+  private readonly previewHandle: HitVoiceHandle = { endsAt: 0, nodes: [], sources: [] };
+  private lastPreviewAt = Number.NEGATIVE_INFINITY;
   /** Son `resume` istegi; bekleyen ses yalnizca bunun hemen ardindan tutuluyor. */
   private resumeRequestedAt?: number;
   /**
@@ -257,6 +307,11 @@ export class FeedbackDirector {
 
   constructor(options: FeedbackDirectorOptions) {
     this.sfxVolume = clampVolume(options.sfxVolume);
+    this.hitVolume = clampVolume(options.hitVolume ?? 0.5);
+    for (let index = 0; index < this.hitGovernor.capacity; index += 1) {
+      this.hitSlots.push({ endsAt: 0, nodes: [], sources: [] });
+      this.hitGraveyard.push({ endsAt: 0, nodes: [], sources: [] });
+    }
     this.getCamera = options.getCamera;
     this.motionQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -369,6 +424,149 @@ export class FeedbackDirector {
     }
   }
 
+  /** "Vurus sesleri" kaydiricisi; Efektler'in ustune carpan. */
+  setHitVolume(value: number) {
+    this.hitVolume = clampVolume(value);
+    if (this.context && this.hitBus) {
+      this.hitBus.gain.setTargetAtTime(this.hitVolume, this.context.currentTime, 0.015);
+    }
+  }
+
+  /**
+   * Tek vurus sesi: carpmanin cizildigi anda cagriliyor.
+   *
+   * `voice` vurus turu ya da siluet sesi (`resolveHitVoice`), `tier` kulenin
+   * gorsel kademesi (1-3), `key` olayin kimligi (perde kaymasinin tohumu),
+   * `tick` surekli isinin nabzi ya da sizinti tiki (150 ms'de bir birlesir).
+   *
+   * Hicbir sey kurmadan donuyor: seviye 0, baglam acik degil (ilk dokunustan
+   * once ya da askida -- vuruslar kuyruga girmiyor), sekme gizli. Butceyi
+   * `HitSoundGovernor` tutuyor; dolu butcede takim arkadasinin sesi kisilip
+   * yer aciliyor ya da gelen ses dusuyor.
+   */
+  playHit(voice: HitVoiceId, tier: number | undefined, own: boolean, key?: string, tick = false) {
+    if (this.hitVolume <= 0 || this.sfxVolume <= 0) {
+      return false;
+    }
+    const context = this.context;
+    if (!context || context.state !== "running") {
+      return false;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+    const recipe = getHitVoiceRecipe(voice, tier);
+    if (recipe.length === 0) {
+      return false;
+    }
+    const duration = getHitVoiceDuration(voice, tier);
+    const slot = this.hitGovernor.admit(voice, own, tick, duration * 1000 + HIT_SOUND_LIMITS.tailMs, performance.now());
+    if (slot < 0) {
+      return false;
+    }
+
+    const now = context.currentTime;
+    this.sweepHitVoices(now);
+    this.synthesizeHit(context, this.hitSlots[slot], voice, tier, own, key, this.hitGovernor.stole);
+    return true;
+  }
+
+  /**
+   * Kaydirici onizlemesi: oyunun vurus butcesinin disinda, kendi yuvasinda.
+   *
+   * Savasin ortasinda butce dolu olsa da duyuluyor; surukleme saniyede onlarca
+   * deger yolladigi icin en fazla `HIT_PREVIEW_GAP_MS`'de bir. Seviye, baglam
+   * ve sekme kurallari ayni: seviye 0 ise dugum yok.
+   */
+  previewHit(voice: HitVoiceId = "projectile", tier = 1, own = true) {
+    if (this.hitVolume <= 0 || this.sfxVolume <= 0) {
+      return false;
+    }
+    const context = this.context;
+    if (!context || context.state !== "running") {
+      return false;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+    const at = performance.now();
+    if (at - this.lastPreviewAt < HIT_PREVIEW_GAP_MS) {
+      return false;
+    }
+    this.lastPreviewAt = at;
+    this.sweepHitVoices(context.currentTime);
+    this.synthesizeHit(context, this.previewHandle, voice, tier, own, undefined, false);
+    return true;
+  }
+
+  /**
+   * Yuvaya bir vurus sesi kur. Yuvadaki eski ses hala caliyorsa (butceden
+   * calindi ya da iki saat ayristi: yonetmen `performance.now`, ses baglamin
+   * saati; iOS askidan donunce ayrisiyor) once sonduruluyor -- kesilen ses tik
+   * yapar. Bitmisse dugumleri hemen ayriliyor.
+   */
+  private synthesizeHit(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, tier: number | undefined, own: boolean, key: string | undefined, stole: boolean) {
+    const recipe = getHitVoiceRecipe(voice, tier);
+    const now = context.currentTime;
+    if (handle.gain) {
+      if (stole || handle.endsAt > now) {
+        this.retireHitVoice(handle, now);
+      } else {
+        this.releaseHitVoice(handle);
+      }
+    }
+
+    const ratio = getHitPitchRatio(key);
+    const noiseOffset = key ? fnvUnit(key, 0x9e) * (HIT_NOISE_SECONDS - 0.3) : 0;
+    const voiceGain = context.createGain();
+    voiceGain.gain.value = own ? 1 : HIT_SOUND_LIMITS.teammateGain;
+    voiceGain.connect(this.getHitBus(context));
+    handle.gain = voiceGain;
+    let endsAt = now;
+    for (const layer of recipe) {
+      const start = now + layer.at;
+      const stop = start + layer.dur;
+      const attack = Math.min(layer.attack ?? 0.002, layer.dur * 0.4);
+      const envelope = context.createGain();
+      envelope.gain.setValueAtTime(0.0001, start);
+      envelope.gain.exponentialRampToValueAtTime(layer.gain, start + attack);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, stop);
+      envelope.connect(voiceGain);
+      let source: AudioScheduledSourceNode;
+      if (layer.type === "osc") {
+        const oscillator = context.createOscillator();
+        oscillator.type = layer.wave;
+        oscillator.frequency.setValueAtTime(layer.from * ratio, start);
+        if (layer.to !== undefined) {
+          oscillator.frequency.exponentialRampToValueAtTime(layer.to * ratio, start + layer.dur * 0.85);
+        }
+        oscillator.connect(envelope);
+        oscillator.start(start);
+        source = oscillator;
+      } else {
+        const noise = context.createBufferSource();
+        noise.buffer = this.getNoiseBuffer(context);
+        const filter = context.createBiquadFilter();
+        filter.type = layer.filter;
+        filter.Q.value = layer.q;
+        filter.frequency.setValueAtTime(layer.from * ratio, start);
+        if (layer.to !== undefined) {
+          filter.frequency.exponentialRampToValueAtTime(layer.to * ratio, start + layer.dur * 0.85);
+        }
+        noise.connect(filter).connect(envelope);
+        noise.start(start, noiseOffset);
+        handle.nodes.push(filter);
+        source = noise;
+      }
+      source.stop(stop + 0.01);
+      handle.nodes.push(envelope, source);
+      handle.sources.push(source);
+      endsAt = Math.max(endsAt, stop + 0.01);
+    }
+    handle.endsAt = endsAt;
+    return true;
+  }
+
   setVibration(on: boolean) {
     this.governor.setVibration(on);
   }
@@ -380,6 +578,7 @@ export class FeedbackDirector {
       numbers: this.governor.liveCount("number", now),
       labels: this.governor.liveCount("label", now),
       voices: this.governor.activeVoices(now),
+      hitVoices: this.hitGovernor.activeVoices(now),
       reducedMotion: this.governor.isReducedMotion(),
       limits: FEEDBACK_LIMITS
     };
@@ -453,6 +652,12 @@ export class FeedbackDirector {
     }
     this.governor.reset();
     this.voices = [];
+    for (const handle of this.hitSlots) this.releaseHitVoice(handle);
+    for (const handle of this.hitGraveyard) this.releaseHitVoice(handle);
+    this.releaseHitVoice(this.previewHandle);
+    this.hitGovernor.reset();
+    this.hitBus = undefined;
+    this.noiseBuffer = undefined;
     this.pendingSfx = undefined;
     this.resumeRequestedAt = undefined;
     this.sfxBus = undefined;
@@ -492,6 +697,99 @@ export class FeedbackDirector {
       this.sfxBus = bus;
     }
     return this.sfxBus;
+  }
+
+  /** Vurus seslerinin kanali: kendi seviyesi, sonra Efektler ve sikistirici. */
+  private getHitBus(context: AudioContext) {
+    if (!this.hitBus) {
+      const bus = context.createGain();
+      bus.gain.value = this.hitVolume;
+      bus.connect(this.getSfxBus(context));
+      this.hitBus = bus;
+    }
+    return this.hitBus;
+  }
+
+  /**
+   * Paylasilan beyaz gurultu: baglam basina bir kez, bir saniye.
+   *
+   * `Math.random` yok: sabit tohumlu xorshift. Her vurus tamponun farkli bir
+   * yerinden basliyor (olay kimliginden), tampon yine tek.
+   */
+  private getNoiseBuffer(context: AudioContext) {
+    if (!this.noiseBuffer) {
+      const length = Math.max(1, Math.floor(context.sampleRate * HIT_NOISE_SECONDS));
+      const buffer = context.createBuffer(1, length, context.sampleRate);
+      const data = buffer.getChannelData(0);
+      let state = 0x9e3779b9;
+      for (let index = 0; index < length; index += 1) {
+        state ^= state << 13;
+        state ^= state >>> 17;
+        state ^= state << 5;
+        data[index] = ((state >>> 0) / 4294967296) * 2 - 1;
+      }
+      this.noiseBuffer = buffer;
+    }
+    return this.noiseBuffer;
+  }
+
+  /** Biten vurus seslerinin dugumlerini ayir; grafikte asili kalmasinlar. */
+  private sweepHitVoices(now: number) {
+    for (const handle of this.hitSlots) {
+      if (handle.gain && handle.endsAt <= now) this.releaseHitVoice(handle);
+    }
+    for (const handle of this.hitGraveyard) {
+      if (handle.gain && handle.endsAt <= now) this.releaseHitVoice(handle);
+    }
+    if (this.previewHandle.gain && this.previewHandle.endsAt <= now) this.releaseHitVoice(this.previewHandle);
+  }
+
+  /**
+   * Yuvasi alinan (takim arkadasinin) sesi kis ve durdur. Dugumleri mezarliga
+   * tasiniyor: sonme bitince bir sonraki vurusta ayriliyor.
+   */
+  private retireHitVoice(handle: HitVoiceHandle, now: number) {
+    const gain = handle.gain;
+    if (!gain) return;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.linearRampToValueAtTime(0, now + HIT_STEAL_FADE_SECONDS);
+    for (const source of handle.sources) {
+      try {
+        source.stop(now + HIT_STEAL_FADE_SECONDS + 0.01);
+      } catch {
+        // Zaten durmus kaynak ikinci kez durdurulamiyor; zarari yok.
+      }
+    }
+    const grave = this.hitGraveyard[this.graveCursor];
+    this.graveCursor = (this.graveCursor + 1) % this.hitGraveyard.length;
+    this.releaseHitVoice(grave);
+    grave.gain = gain;
+    grave.endsAt = now + HIT_STEAL_FADE_SECONDS + 0.02;
+    for (const node of handle.nodes) grave.nodes.push(node);
+    for (const source of handle.sources) grave.sources.push(source);
+    handle.gain = undefined;
+    handle.nodes.length = 0;
+    handle.sources.length = 0;
+  }
+
+  private releaseHitVoice(handle: HitVoiceHandle) {
+    if (!handle.gain) return;
+    for (const node of handle.nodes) {
+      try {
+        node.disconnect();
+      } catch {
+        // Ayrilmis dugum; zarari yok.
+      }
+    }
+    try {
+      handle.gain.disconnect();
+    } catch {
+      // Ayni.
+    }
+    handle.gain = undefined;
+    handle.nodes.length = 0;
+    handle.sources.length = 0;
   }
 
   private isSfxReady(kind: FeedbackKind) {

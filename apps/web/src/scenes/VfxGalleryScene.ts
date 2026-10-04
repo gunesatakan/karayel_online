@@ -16,7 +16,9 @@ import {
   type ScenarioTower,
   type ScenarioWalker
 } from "../vfx/vfx-scenario";
-import { getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
+import { getVfxProfile, getVfxTier, type VfxDelivery } from "../vfx/vfx-profiles";
+import { FeedbackDirector } from "../feedback-director";
+import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -31,8 +33,18 @@ import { getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
  * (%70), yuk testi (20 kademe-3 kule, 60 dusman ve olcum katmani). Saat
  * sanal: yavas cekim ve duraklatma butun efektleri birlikte yavaslatiyor.
  * 375 px'lik telefonda satirlar sayfalara bolunuyor.
+ *
+ * Vurus sesleri: ilk dokunus ses baglamini aciyor, sonra her temas oyundaki
+ * gibi caliyor (ayni yonetmen, ayni butce). Bir hucreye dokunmak yalnizca o
+ * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
+ * aciyor. "Ses" dugmesi galeride sesi kapatiyor; secici ve Sv 1 / 5 / 10
+ * dugmeleri her vurus sesini -- hicbir kulenin kullanmadigi Bulasma dahil --
+ * dogrudan caliyor.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
+/** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
+const BEAM_SOUNDED_DELIVERIES: ReadonlySet<VfxDelivery> = new Set<VfxDelivery>(["laser", "showcase", "curse", "kin", "underworld"]);
+const COLUMN_WIDTH = 130;
 const HEADER = 40;
 const FOOTER = 64;
 const ROW_HEIGHT = 84;
@@ -65,6 +77,15 @@ export class VfxGalleryScene extends Phaser.Scene {
   private controls?: HTMLElement;
   private frameMsEma = 16.7;
   private vfxMsEma = 0;
+  private feedback?: FeedbackDirector;
+  private beamHitTracker?: BeamHitTracker;
+  private muted = false;
+  /** Yalnizca bu kulenin sesi (hucreye dokunuldu); yoksa herkes. */
+  private soloTowerId?: string;
+  private soloMarker?: Phaser.GameObjects.Graphics;
+  private auditionVoice: HitVoiceId = HIT_VOICE_IDS[0];
+  /** Galeri yuruyucularinin karedeki konumlari: alan isinlarinin sesi icin, yeniden kullaniliyor. */
+  private readonly walkerSpots: Array<{ x: number; y: number }> = [];
 
   constructor() {
     super("vfx-gallery");
@@ -91,12 +112,34 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.perfText = this.add.text(6, HEADER + 2, "", { fontFamily: "monospace", fontSize: "9px", color: "#a7f3d0", backgroundColor: "#020617cc" })
       .setDepth(40)
       .setVisible(false);
+    this.soloMarker = this.add.graphics().setDepth(13.5);
+    // Galeri oyunun seviyelerini kullaniyor; biri sifirsa dinleme sayfasi
+    // sessiz kalmasin diye varsayilan.
+    this.feedback = new FeedbackDirector({
+      sfxVolume: readGalleryVolume("karayel.sfxVolume", 0.6),
+      hitVolume: readGalleryVolume("karayel.hitVolume", 0.5),
+      vibration: false,
+      getCamera: () => this.cameras.main
+    });
+    this.beamHitTracker = new BeamHitTracker((beam, voice, tick) => {
+      if (!this.isAudible(beam.id)) return;
+      this.feedback?.playHit(voice, beam.tier, this.isOwnKey(beam.id), beam.id, tick);
+    });
+    // Tuvalde parmagin kalkmasi: ses baglamini ac (iOS yalnizca dokunusun
+    // icinde aciyor), izgarada hucreyi tek basina dinlet.
+    this.input.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      this.feedback?.unlockAudio();
+      this.toggleSolo(pointer.worldX, pointer.worldY);
+    });
     this.createControls();
     this.buildScene();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.controls?.remove();
       this.flashPool?.destroy();
       this.stamps?.destroy();
+      this.feedback?.destroy();
+      this.beamHitTracker?.clear();
+      this.feedback = undefined;
     });
   }
 
@@ -111,11 +154,7 @@ export class VfxGalleryScene extends Phaser.Scene {
 
     const start = performance.now();
     const frame = scenario.frame(this.now, step > 0 ? since : this.now);
-    const ownOf = (key: string) => {
-      if (this.teammate) return false;
-      const towerId = /^(?:beam-|melis-curse-|melis-underworld-link-)?(.*?)(?:-[pb]\d+.*)?$/.exec(key)?.[1] ?? key;
-      return this.towerOwn.get(towerId) ?? true;
-    };
+    const ownOf = (key: string) => this.isOwnKey(key);
     for (const event of frame.events) {
       const own = this.teammate ? false : event.own;
       const input = { x: event.x, y: event.y, angle: event.angle, definitionId: event.definitionId, tier: event.tier, own, key: event.key, bornAt: event.at };
@@ -124,11 +163,13 @@ export class VfxGalleryScene extends Phaser.Scene {
       else if (event.type === "contact") {
         this.attackVfx.emitImpact({ ...input, radius: event.radius });
         this.walkerHitAt[event.walker] = this.now;
+        this.playContactSound(event.definitionId, event.tier, own, event.key);
       }
     }
     this.attackVfx.renderProjectiles(frame.projectiles, this.now, 1, (projectile) => ownOf(projectile.id));
     this.syncProjectileSprites(frame.projectiles);
     this.beamRenderer.render(frame.beams, { now: this.now, sceneNow: this.now, scale: 1, isOwn: (beam: BeamSnapshot) => ownOf(beam.id) });
+    this.beamHitTracker?.update(frame.beams, this.now, this.collectWalkerSpots(scenario.walkers));
     this.attackVfx.render(this.now, 1);
     this.flashPool?.update(this.now);
     const vfxMs = performance.now() - start;
@@ -160,6 +201,9 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.walkerSprites = [];
     this.labels = [];
     this.attackVfx?.clear();
+    this.beamHitTracker?.clear();
+    this.soloTowerId = undefined;
+    this.drawSoloMarker();
     this.scenario = this.mode === "stress" ? createStressScenario(390, HEADER + 30, this.worldHeight - HEADER - FOOTER - 30) : this.createGridScenario();
     this.lod.force(this.mode === "stress" ? undefined : 0);
     this.towerOwn.clear();
@@ -189,10 +233,13 @@ export class VfxGalleryScene extends Phaser.Scene {
       ids.forEach((id, row) => {
         const definition = Object.values(towerCatalog).flat().find((tower) => tower.id === id);
         const y = HEADER + row * ROW_HEIGHT + 4;
-        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
+        const voice = resolveHitVoice(id);
+        const sound = voice ? ` · ses: ${HIT_VOICE_LABELS[voice]}` : "";
+        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}${sound}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
       });
+      this.labels.push(this.add.text(4, 1, "Dokun: ses açılır · hücreye dokun: tek kule", { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#94a3b8" }).setDepth(13));
       COLUMN_LEVELS.forEach((level, column) => {
-        this.labels.push(this.add.text(column * 130 + 65, 14, `Sv ${level}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" })
+        this.labels.push(this.add.text(column * COLUMN_WIDTH + 65, 14, `Sv ${level}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" })
           .setOrigin(0.5, 0)
           .setDepth(13));
       });
@@ -216,7 +263,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.pageIds().forEach((definitionId, row) => {
       const y = HEADER + row * ROW_HEIGHT + 48;
       COLUMN_LEVELS.forEach((level, column) => {
-        const cellX = column * 130;
+        const cellX = column * COLUMN_WIDTH;
         const walker = walkers.length;
         walkers.push({ id: `w-${definitionId}-${level}`, cx: cellX + 86, cy: y, rx: 22, ry: 13, periodMs: 3400, phase: row * 0.7 + column * 1.9 });
         towers.push({
@@ -233,6 +280,89 @@ export class VfxGalleryScene extends Phaser.Scene {
       });
     });
     return new VfxScenario(towers, walkers);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Vurus sesleri                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Temasin sesi. Isinla vuran kulelerin temasi galeride yalnizca cizim
+   * icin: oyunda o kulelerin temas mesaji yok, sesleri isindan geliyor.
+   */
+  private playContactSound(definitionId: string, tier: number, own: boolean, key: string) {
+    if (!this.isAudible(key)) return;
+    if (BEAM_SOUNDED_DELIVERIES.has(getVfxProfile(definitionId).delivery)) return;
+    const voice = resolveHitVoice(definitionId);
+    if (voice) this.feedback?.playHit(voice, tier, own, key);
+  }
+
+  /** Mermi ya da isin kimliginden kulenin sahibi; arkadas kipi hepsini arkadasin sayar. */
+  private isOwnKey(key: string) {
+    if (this.teammate) return false;
+    const towerId = /^(?:beam-|melis-curse-|melis-underworld-link-)?(.*?)(?:-[pb]\d+.*)?$/.exec(key)?.[1] ?? key;
+    return this.towerOwn.get(towerId) ?? true;
+  }
+
+  /** Ses kapali degil ve (hucre secildiyse) olay o kulenin. */
+  private isAudible(key: string) {
+    if (this.muted) return false;
+    return !this.soloTowerId || belongsToTower(key, this.soloTowerId);
+  }
+
+  /** Izgarada hucreye dokunus: o kuleyi tek basina dinlet; ayni hucre geri acar. */
+  private toggleSolo(worldX: number, worldY: number) {
+    if (this.mode !== "grid") return;
+    const row = Math.floor((worldY - HEADER) / ROW_HEIGHT);
+    const column = Math.floor(worldX / COLUMN_WIDTH);
+    const ids = this.pageIds();
+    if (row < 0 || row >= ids.length || column < 0 || column >= COLUMN_LEVELS.length) return;
+    const towerId = `g-${ids[row]}-${COLUMN_LEVELS[column]}`;
+    this.soloTowerId = this.soloTowerId === towerId ? undefined : towerId;
+    this.drawSoloMarker();
+  }
+
+  private drawSoloMarker() {
+    const marker = this.soloMarker;
+    if (!marker) return;
+    marker.clear();
+    const towerId = this.soloTowerId;
+    if (!towerId || this.mode !== "grid") return;
+    this.pageIds().forEach((id, row) => {
+      COLUMN_LEVELS.forEach((level, column) => {
+        if (towerId !== `g-${id}-${level}`) return;
+        marker.lineStyle(1, 0x38bdf8, 0.9);
+        marker.strokeRect(column * COLUMN_WIDTH + 2, HEADER + row * ROW_HEIGHT + 2, COLUMN_WIDTH - 4, ROW_HEIGHT - 4);
+      });
+    });
+  }
+
+  /**
+   * Secili sesi dogrudan cal: onizleme yolundan, yani sahnenin vurus
+   * butcesinden bagimsiz. Dokunusun icinde; baglam aciliyorsa kisa bir an
+   * sonra bir kez daha.
+   */
+  private audition(level: number) {
+    const feedback = this.feedback;
+    if (!feedback || this.muted) return;
+    feedback.unlockAudio();
+    const voice = this.auditionVoice;
+    const own = !this.teammate;
+    if (!feedback.previewHit(voice, levelToTier(level), own)) {
+      window.setTimeout(() => this.feedback?.previewHit(voice, levelToTier(level), own), 160);
+    }
+  }
+
+  private collectWalkerSpots(walkers: readonly ScenarioWalker[]) {
+    const spots = this.walkerSpots;
+    spots.length = walkers.length;
+    walkers.forEach((walker, index) => {
+      const position = walkerPosition(walker, this.now);
+      const spot = spots[index] ?? (spots[index] = { x: 0, y: 0 });
+      spot.x = position.x;
+      spot.y = position.y;
+    });
+    return spots;
   }
 
   private updateWalkers(walkers: readonly ScenarioWalker[]) {
@@ -326,6 +456,30 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.mode = this.mode === "stress" ? "grid" : "stress";
       this.buildScene();
     }, "stress");
+    button("Ses açık", () => {
+      this.muted = !this.muted;
+      if (!this.muted) this.feedback?.unlockAudio();
+    }, "mute");
+    // Dogrudan dinleme: secili vurus sesi, sv 1 / 5 / 10.
+    const select = document.createElement("select");
+    select.dataset.vfx = "voice";
+    select.setAttribute("aria-label", "Vuruş sesi");
+    select.style.cssText = "min-height:36px;max-width:120px;padding:4px 6px;color:#f8fafc;background:#0f172a;border:1px solid #334155;border-radius:8px;font:inherit";
+    for (const voice of HIT_VOICE_IDS) {
+      const option = document.createElement("option");
+      option.value = voice;
+      option.textContent = HIT_VOICE_LABELS[voice];
+      select.append(option);
+    }
+    select.addEventListener("change", () => {
+      this.auditionVoice = (HIT_VOICE_IDS as readonly string[]).includes(select.value) ? select.value as HitVoiceId : HIT_VOICE_IDS[0];
+    });
+    bar.append(select);
+    for (const level of COLUMN_LEVELS) {
+      button(`Sv ${level}`, () => this.audition(level), `audition-${level}`);
+    }
+    // Her dugme bir dokunus: ses baglami burada da aciliyor.
+    bar.addEventListener("pointerup", () => this.feedback?.unlockAudio());
     document.body.append(bar);
     this.controls = bar;
   }
@@ -351,6 +505,37 @@ export class VfxGalleryScene extends Phaser.Scene {
     set("pause", this.paused, this.paused ? "Oynat" : "Duraklat");
     set("mate", this.teammate);
     set("stress", this.mode === "stress");
+    set("mute", this.muted, this.muted ? "Sessiz" : "Ses açık");
+  }
+}
+
+/**
+ * Olay ya da isin kimligi bu galeri kulesinin mi. Kule kimligi kimligin
+ * icinde bir tireyle (ya da sonla) bitmeli: "g-warrior-6-1" sv 10'un
+ * "g-warrior-6-10-p3" kimligiyle eslesmemeli.
+ */
+function belongsToTower(key: string, towerId: string) {
+  let index = key.indexOf(towerId);
+  while (index >= 0) {
+    const before = index === 0 ? "-" : key[index - 1];
+    const after = key[index + towerId.length];
+    if (before === "-" && (after === undefined || after === "-")) return true;
+    index = key.indexOf(towerId, index + 1);
+  }
+  return false;
+}
+
+function levelToTier(level: number) {
+  return level >= 10 ? 3 : level >= 5 ? 2 : 1;
+}
+
+/** Oyunun kayitli seviyesi; okunamazsa ya da sifirsa varsayilan. */
+function readGalleryVolume(key: string, fallback: number) {
+  try {
+    const value = Number(window.localStorage.getItem(key));
+    return Number.isFinite(value) && value > 0 ? Math.min(1, value) : fallback;
+  } catch {
+    return fallback;
   }
 }
 

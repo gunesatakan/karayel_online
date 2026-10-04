@@ -1635,6 +1635,8 @@ export type HudState = {
   voiceVolume: number;
   /** Sentez efekt seslerinin seviyesi (oldurme, altin, kritik, kart...). */
   sfxVolume: number;
+  /** Kule vurus seslerinin seviyesi; Efektler'in ustune carpan. */
+  hitVolume: number;
   /** Titresim acik mi; kutu yalnizca destekleyen cihazda gorunuyor. */
   vibration: boolean;
   /**
@@ -1672,7 +1674,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   let state: HudState = {
     status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5,
-    sfxVolume: 0.5, vibration: true,
+    sfxVolume: 0.5, hitVolume: 0.5, vibration: true,
     statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: [], forecastEnemyCount: 0, airWarning: false,
     upgradeReady: false
   };
@@ -2356,26 +2358,33 @@ export function setupGameHudUi(game: Phaser.Game) {
   /**
    * Ses paneli.
    *
-   * Uc kaydirici: muzik, seslendirme (seri anonslari ve uyarilar) ve efektler
-   * (sentez odul sesleri). Titresim kutusu yalnizca destekleyen cihazda: iOS
-   * Safari titresimi hic desteklemiyor ve orada ise yaramayan bir kutu
-   * oyuncuyu yaniltirdi.
+   * Dort kaydirici: muzik, seslendirme (seri anonslari ve uyarilar), efektler
+   * (sentez odul sesleri) ve vurus sesleri (kulelerin carpma sesi; Efektler'in
+   * altinda carpan, oyunun en sik sesi oldugu icin ayri kisilabiliyor).
+   * Efektler 0 iken vurus sesleri de duyulmuyor; kaydiricinin altindaki not
+   * bunu soyluyor (Efektler surulurken canli aciliyor ve kapaniyor).
+   *
+   * Titresim kutusu yalnizca destekleyen cihazda: iOS Safari titresimi hic
+   * desteklemiyor ve orada ise yaramayan bir kutu oyuncuyu yaniltirdi.
    */
   const canVibrate = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
-  const volumeSlider = (label: string, channel: string, value: number) =>
-    `<label>${escapeHudText(label)} <input data-volume="${channel}" type="range" min="0" max="1" step="0.01" value="${value}"></label>`;
+  const volumeSlider = (label: string, channel: string, value: number, extra = "") =>
+    `<label>${escapeHudText(label)} <input data-volume="${channel}" type="range" min="0" max="1" step="0.01" value="${value}"${extra}></label>`;
   const renderAudioPopup = (next: HudState) => {
     if (!next.audioOpen) return "";
     return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong>`
       + volumeSlider("Müzik", "music", next.musicVolume)
       + volumeSlider("Seslendirme", "voice", next.voiceVolume)
       + volumeSlider("Efektler", "sfx", next.sfxVolume)
+      + volumeSlider("Vuruş sesleri", "hit", next.hitVolume, ` aria-describedby="game-hud-hit-note"`)
+      + `<p id="game-hud-hit-note" class="game-hud__popup-note" data-hit-note${next.sfxVolume > 0 ? " hidden" : ""}>`
+      + `Efektler kapalı: vuruş sesleri de duyulmaz (Efektler ile birlikte ölçeklenir).</p>`
       + (canVibrate
         ? `<label>Titreşim <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
         : "")
       + `</section>`;
   };
-  const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume" };
+  const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
 
   let lastPopupKey = "";
   const renderPopups = (next: HudState) => {
@@ -2383,7 +2392,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       ? `stats:${next.statsTab}:${next.statsTowers.map((t) => `${t.id}:${Math.round(t.damage)}:${t.dps.toFixed(1)}`).join(",")}`
         + `:${next.statsEffects.map((e) => `${e.label}:${e.value.toFixed(1)}`).join(",")}`
       : "";
-    const audioKey = next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}:${next.sfxVolume}:${next.vibration}` : "";
+    const audioKey = next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}:${next.sfxVolume}:${next.hitVolume}:${next.vibration}` : "";
     const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${audioKey}|${statsKey}`;
     if (key === lastPopupKey) return;
     lastPopupKey = key;
@@ -2402,9 +2411,12 @@ export function setupGameHudUi(game: Phaser.Game) {
       if (action === "stats-dps") dispatch("setStatsTab", 1);
       if (action === "stats-effects") dispatch("setStatsTab", 2);
     }));
+    const hitNote = popupsNode.querySelector<HTMLElement>("[data-hit-note]");
     popupsNode.querySelectorAll<HTMLInputElement>("[data-volume]").forEach((input) => input.addEventListener("input", () => {
       const action = volumeActions[input.dataset.volume ?? ""];
       if (action) dispatch(action, Number(input.value));
+      // Surukleme sirasinda panel yeniden cizilmiyor; not burada canli.
+      if (hitNote && input.dataset.volume === "sfx") hitNote.hidden = Number(input.value) > 0;
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"vibration\"]").forEach((input) => input.addEventListener("change", () => {
       dispatch("setVibration", input.checked ? 1 : 0);

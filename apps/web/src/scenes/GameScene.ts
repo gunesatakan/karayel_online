@@ -234,6 +234,7 @@ import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, h
 import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
+import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
@@ -329,6 +330,7 @@ type ControlActionDetail = {
     | "setMusicVolume"
     | "setVoiceVolume"
     | "setSfxVolume"
+    | "setHitVolume"
     | "setVibration"
     | "openInventory"
     | "closeInventory"
@@ -727,7 +729,9 @@ const GUIDANCE_RADIUS = 78;
 // slow enough to read as a sweep rather than a snap.
 
 type ZeynepCommandTier = "small" | "medium" | "big";
-type AudioVolumeChannel = "music" | "voice" | "sfx";
+type AudioVolumeChannel = "music" | "voice" | "sfx" | "hit";
+/** Testere'nin (onur-1) vurus sesi: katalogdaki vurus turu, kesme. */
+const BLADE_HIT_VOICE: HitVoiceId = resolveHitVoice(BLADE_TOWER_ID) ?? "slash";
 /** Kule tepsisindeki sutun sayisi; satirlarin tepsiye sigmasini belirler. */
 const TOWER_TRAY_COLUMNS = 5;
 
@@ -792,6 +796,7 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
 const MUSIC_VOLUME_STORAGE_KEY = "karayel.musicVolume";
 const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
 const SFX_VOLUME_STORAGE_KEY = "karayel.sfxVolume";
+const HIT_VOLUME_STORAGE_KEY = "karayel.hitVolume";
 const VIBRATION_STORAGE_KEY = "karayel.vibration";
 const DEFAULT_MUSIC_VOLUME = 0.34;
 const DEFAULT_VOICE_VOLUME = 0.82;
@@ -800,6 +805,11 @@ const DEFAULT_VOICE_VOLUME = 0.82;
  * caliyor, seri anonsu dalgada bir. Ayni seviyede baslasa muzigi boguyordu.
  */
 const DEFAULT_SFX_VOLUME = 0.6;
+/**
+ * Vurus sesleri Efektler'in ustune carpan ve orta seviyede basliyor: oyunun
+ * en sik sesi, odul seslerinin (oldurme, altin) altinda kalmali.
+ */
+const DEFAULT_HIT_VOLUME = 0.5;
 
 export class GameScene extends Phaser.Scene {
   private room?: Room;
@@ -982,6 +992,11 @@ export class GameScene extends Phaser.Scene {
   private musicVolume = readStoredVolume(MUSIC_VOLUME_STORAGE_KEY, DEFAULT_MUSIC_VOLUME);
   private voiceVolume = readStoredVolume(VOICE_VOLUME_STORAGE_KEY, DEFAULT_VOICE_VOLUME);
   private sfxVolume = readStoredVolume(SFX_VOLUME_STORAGE_KEY, DEFAULT_SFX_VOLUME);
+  private hitVolume = readStoredVolume(HIT_VOLUME_STORAGE_KEY, DEFAULT_HIT_VOLUME);
+  /** Isinlarin vurus ani: cizildigi karede, oynatma gecikmesinden sonra. */
+  private readonly beamHitTracker = new BeamHitTracker((beam, voice, tick) => {
+    this.feedback?.playHit(voice, beam.tier, this.isOwnBeam(beam), beam.id, tick);
+  });
   /** Titresim ayari; cihaz desteklemiyorsa ayar gorunmuyor ama deger kaliyor. */
   private vibrationEnabled = readStoredFlag(VIBRATION_STORAGE_KEY, true);
   /**
@@ -1101,6 +1116,7 @@ export class GameScene extends Phaser.Scene {
     musicVolume: DEFAULT_MUSIC_VOLUME,
     voiceVolume: DEFAULT_VOICE_VOLUME,
     sfxVolume: DEFAULT_SFX_VOLUME,
+    hitVolume: DEFAULT_HIT_VOLUME,
     vibration: true,
     statsOpen: false,
     statsTab: "damage",
@@ -1344,6 +1360,7 @@ export class GameScene extends Phaser.Scene {
     this.createPlacementGrid();
     this.feedback = new FeedbackDirector({
       sfxVolume: this.sfxVolume,
+      hitVolume: this.hitVolume,
       vibration: this.vibrationEnabled,
       getCamera: () => this.cameras.main
     });
@@ -1355,6 +1372,7 @@ export class GameScene extends Phaser.Scene {
     this.beamGlowGraphics = this.add.graphics().setDepth(10.05).setBlendMode(Phaser.BlendModes.ADD);
     this.beamRenderer = new BeamRenderer(this.beamGraphics, this.beamGlowGraphics, this.vfxLod);
     this.beamInterpolator.clear();
+    this.beamHitTracker.clear();
     // Mermi izleri mermilerin (11) hemen altinda: iz cekirdegi ortmemeli.
     this.projectileTrailGraphics = this.add.graphics().setDepth(10.9);
     const projectileGlow = this.add.graphics().setDepth(10.85).setBlendMode(Phaser.BlendModes.ADD);
@@ -1465,6 +1483,7 @@ export class GameScene extends Phaser.Scene {
       this.backgroundMusic?.pause();
       this.feedback?.destroy();
       this.feedback = undefined;
+      this.beamHitTracker.clear();
       this.flashPool?.destroy();
       this.flashPool = undefined;
       this.glowStamps?.destroy();
@@ -1651,6 +1670,7 @@ export class GameScene extends Phaser.Scene {
     this.hudState.musicVolume = this.musicVolume;
     this.hudState.voiceVolume = this.voiceVolume;
     this.hudState.sfxVolume = this.sfxVolume;
+    this.hudState.hitVolume = this.hitVolume;
     this.hudState.vibration = this.vibrationEnabled;
     this.emitHudState();
   }
@@ -1874,6 +1894,7 @@ export class GameScene extends Phaser.Scene {
   private getAudioVolume(channel: AudioVolumeChannel) {
     if (channel === "music") return this.musicVolume;
     if (channel === "sfx") return this.sfxVolume;
+    if (channel === "hit") return this.hitVolume;
     return this.voiceVolume;
   }
 
@@ -1889,6 +1910,7 @@ export class GameScene extends Phaser.Scene {
       musicVolume: this.musicVolume,
       voiceVolume: this.voiceVolume,
       sfxVolume: this.sfxVolume,
+      hitVolume: this.hitVolume,
       vibration: this.vibrationEnabled
     };
   }
@@ -1901,6 +1923,9 @@ export class GameScene extends Phaser.Scene {
     } else if (channel === "sfx") {
       this.sfxVolume = volume;
       writeStoredVolume(SFX_VOLUME_STORAGE_KEY, volume);
+    } else if (channel === "hit") {
+      this.hitVolume = volume;
+      writeStoredVolume(HIT_VOLUME_STORAGE_KEY, volume);
     } else {
       this.voiceVolume = volume;
       writeStoredVolume(VOICE_VOLUME_STORAGE_KEY, volume);
@@ -1913,6 +1938,12 @@ export class GameScene extends Phaser.Scene {
       // hareketin onizlemesi yonetmende bir an tutulup baglam acilinca caliyor.
       this.feedback?.unlockAudio();
       this.feedback?.playSfx("coin", { own: true });
+    } else if (channel === "hit") {
+      // Onizleme: kendi mermi vurusun, sv 1. Oyunun vurus butcesinin disinda
+      // (savas ortasinda da duyulur) ve 250 ms'de bir; baglam bu dokunusta
+      // aciliyorsa ilk hareket sessiz.
+      this.feedback?.unlockAudio();
+      this.feedback?.previewHit();
     }
   }
 
@@ -1943,6 +1974,7 @@ export class GameScene extends Phaser.Scene {
       audio.volume = this.voiceVolume * (teammate ? TEAMMATE_STREAK_VOICE_GAIN : 1);
     }
     this.feedback?.setSfxVolume(this.sfxVolume);
+    this.feedback?.setHitVolume(this.hitVolume);
     // Uyari tonu burada yok cunku seviyeyi her calista kendisi okuyor. Onceki
     // uyari sesi bir HTMLAudioElement'ti ve seviyesi yalnizca kurulusta bir kez
     // yaziliyordu -- listeye eklenmedigi icin ayarlardan kisilamiyordu.
@@ -2240,6 +2272,9 @@ export class GameScene extends Phaser.Scene {
         break;
       case "setSfxVolume":
         if (typeof detail.value === "number") this.setAudioVolume("sfx", detail.value);
+        break;
+      case "setHitVolume":
+        if (typeof detail.value === "number") this.setAudioVolume("hit", detail.value);
         break;
       case "setVibration":
         this.setVibrationEnabled(detail.value === 1);
@@ -4459,7 +4494,7 @@ export class GameScene extends Phaser.Scene {
     // (Gosteri'nin ikinci perdesi, Ucube zinciri, Melis patlamalari)
     // basamakli oynuyordu.
     sectionStart = performance.now();
-    this.renderBeamFrame(frame.snapshot.beams, now);
+    this.renderBeamFrame(frame.snapshot.beams, now, frame.snapshot.enemies);
     const beamsMs = performance.now() - sectionStart;
     this.recordClientPerfSection("beams", beamsMs);
     this.vfxFrameCost += beamsMs;
@@ -4587,13 +4622,16 @@ export class GameScene extends Phaser.Scene {
    * (tests/vfx-kit-laser-identity.test.mjs); degisen yalnizca ne siklikla
    * cizildigi.
    */
-  private renderBeamFrame(beams: readonly BeamSnapshot[], now: number) {
+  private renderBeamFrame(beams: readonly BeamSnapshot[], now: number, enemies: readonly { x: number; y: number }[]) {
     const options = this.beamRenderOptions;
     options.now = now;
     options.sceneNow = this.time.now;
     options.scale = this.getTowerEffectScale();
     options.reducedMotion = this.feedback?.reducedMotion ?? false;
     this.beamRenderer?.render(beams, options);
+    // Isinin vurus sesi cizimle ayni karede: tek atis isini dogusunda,
+    // surekli isin (lazer) nabizla, alan isini icinde dusman varken tikle.
+    this.beamHitTracker.update(beams, now, enemies);
   }
 
   /**
@@ -4721,6 +4759,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindRoomHandlers(room: Room) {
+    // Yeni oda (ilk baglanti ya da yeniden baglanma): eski odanin isin
+    // kimlikleri yeni odada baska isinlar olabilir.
+    this.beamHitTracker.clear();
     room.onMessage("match:map", (map: EditableMapData) => this.syncMap(map));
     room.onMessage("creative:loadout", (loadout: CreativeLoadout) => {
       this.creativeLoadout = loadout;
@@ -4768,17 +4809,28 @@ export class GameScene extends Phaser.Scene {
     // ortak bir halka aliyordu.
     room.onMessage("projectile:contact", (message: ProjectileContactSnapshot) => {
       const own = this.projectileOwnership.get(message.id) ?? true;
-      this.queueDelayedEffect(() => this.attackVfx?.emitImpact({
-        x: message.x,
-        y: message.y,
-        angle: message.angle,
-        definitionId: message.definitionId,
-        tier: message.tier,
-        own,
-        key: `${message.id}@${message.x}:${message.y}`,
-        radius: message.r,
-        bornAt: performance.now()
-      }));
+      const key = `${message.id}@${message.x}:${message.y}`;
+      const voice = resolveHitVoice(message.definitionId);
+      const receivedAt = performance.now();
+      this.queueDelayedEffect(() => {
+        this.attackVfx?.emitImpact({
+          x: message.x,
+          y: message.y,
+          angle: message.angle,
+          definitionId: message.definitionId,
+          tier: message.tier,
+          own,
+          key,
+          radius: message.r,
+          bornAt: performance.now()
+        });
+        // Vurus sesi carpmanin cizildigi anda; mesajin geldigi anda degil.
+        // Sekme gizliyken biriken kuyruk donuste hep birden bosaliyor: o
+        // gec carpmalar cizilir ama sessiz kalir.
+        if (voice && isHitSoundFresh(receivedAt, performance.now(), this.playbackDelayMs)) {
+          this.feedback?.playHit(voice, message.tier, own, key);
+        }
+      });
     });
     room.onMessage("projectile:hit", (message: ProjectileHitSnapshot) => {
       // Kaldirma ayri bir olay: carpma temastan cizildi, menzil sonunda bosa
@@ -8263,7 +8315,33 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
 
       this.showDamageNumber(event, localSlot, now);
+      if (event.b === 1) {
+        this.playBladeHitSound(event, snapshot, localSlot);
+      }
     }
+  }
+
+  /**
+   * Testere'nin kesme sesi.
+   *
+   * Bicagin temas mesaji yok; sunucu bicagin dogrudan temasindan dogan hasar
+   * olayini `b` ile isaretliyor (kanama tiki, yakindaki baska kule ve alan
+   * tikleri isaretsiz). Ses olay sayisiyla ayni anda, oynatma gecikmesinden
+   * sonra. Sahiplik olayin vuran yuvasindan; kademe vuranin en yakin
+   * Testere'sinden.
+   */
+  private playBladeHitSound(event: DamageEventSnapshot, snapshot: GameSnapshot, localSlot: number) {
+    const slot = getDamageEventOwnerSlot(event);
+    let ownerId: string | undefined;
+    for (const player of snapshot.players) {
+      if ((player.slot ?? 0) === slot) {
+        ownerId = player.id;
+        break;
+      }
+    }
+    const tier = getBladeHitTier(event, this.towerSnapshots.values(), ownerId);
+    if (tier === undefined) return;
+    this.feedback?.playHit(BLADE_HIT_VOICE, tier, slot === localSlot, event.id);
   }
 
   /**

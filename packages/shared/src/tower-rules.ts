@@ -12,6 +12,13 @@ export const FUEL_NORMALIZATION_EXPONENT = 0.75;
 export const PASSIVE_TOWER_INTERVAL_THRESHOLD_MS = 10000;
 export const NON_FIRING_INTERVAL_MS = 999999;
 export const PASSIVE_AURA_TICK_INTERVAL_MS = 2000;
+/**
+ * Alan isinlarinin tik araliklari (oyun zamani). Sunucu hasari bu aralikla
+ * uyguluyor, istemci alanin vurus sesini ayni ritimle caliyor; ikisi tek
+ * yerden okunsun diye burada.
+ */
+export const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 333;
+export const MELIS_CURSE_POOL_TICK_MS = 500;
 export const AURA_REFRESH_DURATION_MULTIPLIER = 2;
 export const ORBIT_BLADE_LENGTH_MAX_MULTIPLIER = 2.5;
 export const ORBIT_CONTINUOUS_ENERGY_PER_SECOND = 1;
