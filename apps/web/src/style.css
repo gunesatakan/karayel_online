@@ -4467,6 +4467,8 @@ button.wave-report:active { transform: scale(0.99); }
 .game-hud__forecast-line { color: #cbd5e1; }
 .game-hud__forecast-line b { color: #f8fafc; font-weight: 800; }
 .game-hud__forecast-line .game-hud__air { margin-left: 6px; vertical-align: 1px; }
+/* Agir dalga: kirmizi-turuncu, hava etiketinin yaninda okunacak kadar ayri ama uyari kutusu kadar bagirmiyor. */
+.game-hud__forecast-line .game-hud__heavy { margin-left: 6px; color: #fdba74; font-style: normal; font-weight: 800; white-space: nowrap; }
 .game-hud__forecast-warning { color: #fca5a5; font-weight: 800; }
 
 /*

@@ -19,7 +19,13 @@ import {
   getComboStampText,
   getSynergyCulpritNotice,
   sanitizeComboStampMessage,
-  type ComboStampMessage
+  type ComboStampMessage,
+  CHAMPION_LABEL,
+  CHAMPION_SPRITE_SCALE,
+  getChampionDownText,
+  getHeavyWaveHpStep,
+  sanitizeChampionDownMessage,
+  type ChampionDownMessage
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, readTextureAccent, shotStyle } from "../vfx/combat-vfx";
@@ -384,6 +390,8 @@ type RenderMover = {
   lastEffectiveHp?: number;
   /** Son vurus flasinin basladigi an; hiz siniri da buradan. */
   hitFlashAt?: number;
+  /** Sampiyonun taci; normal dusmanda yok. */
+  crown?: Phaser.GameObjects.Text;
 };
 
 /** Kaldirilan dusmanin izi: oldurme olayi patlamayi buradan ciziyor. */
@@ -471,6 +479,16 @@ const COMBO_LABEL_LIFT_PX = LEVEL_LABEL_LIFT_PX + 14;
 const COMBO_OVERDRIVE_FILL = "#fdba74";
 const COMBO_OVERDRIVE_STROKE = "#431407";
 const COMBO_LUCKY_FILL = "#fde047";
+/**
+ * Sampiyon: tac, etiket ve can cubugu ayni altin tonunda; dunyadaki hicbir
+ * durum isaretiyle (sari T takip, mor lanet) karismasin diye koyu kahve
+ * konturla. Tac can cubugunun (16) hemen ustunde, etiketlerin (30.5) altinda.
+ */
+const CHAMPION_FILL = "#fbbf24";
+const CHAMPION_STROKE = "#422006";
+const CHAMPION_BAR_FRAME = 0xfbbf24;
+const CHAMPION_CROWN_DEPTH = 16.2;
+const CHAMPION_LABEL_LIFT_PX = 16;
 /**
  * "Yukseltme hazir" isareti: kule sprite'larinin (12) ve can cubugunun (16)
  * ustunde, yuzen sayilarin (30) ve secili kule panelinin (66) altinda.
@@ -1000,6 +1018,8 @@ export class GameScene extends Phaser.Scene {
   private readonly waveReports = new WaveReportTracker();
   /** Kombo damgalarinin kapisi: tur + sahip basina 4 sn, ekranda en fazla iki. */
   private readonly comboStamps = new ComboStampGate();
+  /** Dogus etiketi gosterilmis sampiyonlar: etiket dusman basina bir kez. */
+  private readonly announcedChampionIds = new Set<string>();
   /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
   private cardDraftWave?: number;
   /**
@@ -1317,6 +1337,7 @@ export class GameScene extends Phaser.Scene {
     this.waveClearWatch.reset();
     this.waveReports.reset();
     this.comboStamps.reset();
+    this.announcedChampionIds.clear();
     this.cardDraftWave = undefined;
     this.ultimateReadyWatch.reset();
     this.ultimateReadyPulseAt = undefined;
@@ -3877,6 +3898,70 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Sampiyon dogdu: govdenin ustunde kisa bir "SAMPIYON". Oynatma aninda
+   * cagriliyor (dusman ekrana o an geliyor), dusman basina bir kez; etiket
+   * butcesi ve hiz siniri yonetmende. Kart perdesi ya da rapor ekrandaysa
+   * an gecmis sayiliyor.
+   */
+  private announceChampion(enemy: EnemySnapshot, displayedSize: number) {
+    const labels = this.levelLabels;
+    if (!labels || this.matchResultShown || this.cardChoiceRoot) return;
+    const x = enemy.x;
+    const y = enemy.y - displayedSize / 2 - CHAMPION_LABEL_LIFT_PX;
+    const lifetimeMs = FEEDBACK_KIND_RULES.champion.visualMs;
+    const decision = this.feedback?.emit("champion", { own: true, x, y, lifetimeMs });
+    if (decision && !decision.show) return;
+    const reducedMotion = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
+    labels.spawn({
+      key: `champion:${enemy.id}`,
+      text: CHAMPION_LABEL,
+      x,
+      y,
+      fill: CHAMPION_FILL,
+      stroke: CHAMPION_STROKE,
+      fontPx: LEVEL_LABEL_FONT_PX,
+      alpha: 1,
+      pop: !reducedMotion,
+      lifetimeMs,
+      still: reducedMotion,
+      bounds: this.getWorldLabelBoundsAboveBottomBar()
+    }, performance.now(), decision?.recycle ?? false);
+  }
+
+  /**
+   * Sampiyon devrildi: "SAMPIYON DEVRILDI - 10,6 sn (onceki 12,1)". Sunucu
+   * bir kez yolluyor; oldurme olayi kadar gecikmeyle (oynatma gecikmesi)
+   * dusmanin son yerinde. Oldurme kredisi ve asist zaten oldurme olayinda.
+   */
+  private receiveChampionDown(raw: ChampionDownMessage) {
+    const message = sanitizeChampionDownMessage(raw);
+    if (!message || this.matchResultShown) return;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      const labels = this.levelLabels;
+      if (!labels || this.matchResultShown || this.cardChoiceRoot) return;
+      const y = message.y - CHAMPION_LABEL_LIFT_PX;
+      const lifetimeMs = FEEDBACK_KIND_RULES.championDown.visualMs;
+      const decision = this.feedback?.emit("championDown", { own: true, x: message.x, y, lifetimeMs });
+      if (decision && !decision.show) return;
+      const reducedMotion = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
+      labels.spawn({
+        key: `champion:${message.enemyId}`,
+        text: getChampionDownText(message),
+        x: message.x,
+        y,
+        fill: CHAMPION_FILL,
+        stroke: CHAMPION_STROKE,
+        fontPx: LEVEL_LABEL_FONT_PX,
+        alpha: 1,
+        pop: !reducedMotion,
+        lifetimeMs,
+        still: reducedMotion,
+        bounds: this.getWorldLabelBoundsAboveBottomBar()
+      }, performance.now(), decision?.recycle ?? false);
+    });
+  }
+
+  /**
    * Dunya etiketinin siniri: arena, ama alt cubugun ustu. Alt cubuk (HTML)
    * tuvalin altini ortuyor; kamera haritayi iki serit arasina sigdirsa da
    * haritanin alt sirasindaki bir kulenin damgasi cubugun arkasina dusebilir.
@@ -4804,6 +4889,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("link:matured", (message: ServerLinkMaturedMessage) => this.receiveServerLinkMatured(message));
     // Sonucu degistiren kombolar: tek seferlik mesaj, damga kulenin ustunde.
     room.onMessage("combo:stamp", (message: ComboStampMessage) => this.receiveComboStamp(message));
+    room.onMessage("champion:down", (message: ChampionDownMessage) => this.receiveChampionDown(message));
     room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
@@ -5659,6 +5745,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       continueWaiting: localReady,
       waveAirMode: snapshot.team.waveAirMode,
       forecastEnemyCount: forecastVisible ? snapshot.team.waveEnemyCount ?? 0 : 0,
+      // Kurulumda `wave` siradaki dalga: adim onu bir onceki kara dalgasiyla kiyasliyor.
+      forecastHpStep: forecastVisible ? getHeavyWaveHpStep(snapshot.team.wave) : undefined,
       airWarning
     };
     if (active) {
@@ -6025,6 +6113,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         mover.armorBreakIcon?.destroy();
         mover.bleedEffect?.destroy();
         mover.frostEffect?.destroy();
+        mover.crown?.destroy();
+        this.announcedChampionIds.delete(id);
         this.enemies.delete(id);
       }
     }
@@ -6079,6 +6169,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setOrigin(0.5)
           .setDepth(15)
           .setVisible(false);
+        if (enemy.champion) {
+          mover.crown = this.add.text(enemy.x, enemy.y - 24, "♛", {
+            color: CHAMPION_FILL,
+            fontFamily: "Arial",
+            fontSize: "14px",
+            fontStyle: "bold",
+            stroke: CHAMPION_STROKE,
+            strokeThickness: 3
+          }).setOrigin(0.5).setDepth(CHAMPION_CROWN_DEPTH);
+        }
         this.enemies.set(enemy.id, mover);
       }
 
@@ -6091,7 +6191,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
       mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY, mover.sprite.rotation));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
-      const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) / 512;
+      // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin.
+      const championScale = enemy.champion ? CHAMPION_SPRITE_SCALE : 1;
+      const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale / 512;
       mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       const baseTint = enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff;
@@ -6114,7 +6216,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       const hasShield = enemy.shield > 0 && enemy.maxShield > 0;
       const shieldRatio = hasShield ? Phaser.Math.Clamp(enemy.shield / enemy.maxShield, 0, 1) : 0;
-      const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
+      const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
       mover.type = enemy.type;
       mover.air = enemy.movementKind === "air";
       mover.displaySize = displayedEnemySize;
@@ -6129,6 +6231,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.drawEnemyBleedEffect(mover.bleedEffect, enemy, displayedEnemySize);
       this.drawEnemyFrostEffect(mover.frostEffect, enemy, displayedEnemySize);
       this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
+      if (mover.crown) {
+        // Tac govdenin ustunde hafifce sallaniyor; hareket azaltmada sabit.
+        const bob = this.feedback?.reducedMotion ? 0 : Math.sin(now / 320) * 1.5;
+        mover.crown.setPosition(enemy.x, enemy.y - displayedEnemySize * 0.5 - 6 + bob);
+        mover.crown.setScale(Math.max(0.8, displayedEnemySize / 44));
+      }
+      if (enemy.champion && !this.announcedChampionIds.has(enemy.id)) {
+        this.announcedChampionIds.add(enemy.id);
+        this.announceChampion(enemy, displayedEnemySize);
+      }
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
@@ -7947,13 +8059,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (!graphics) {
       return;
     }
-    const width = Math.max(17, Math.min(38, displayedSize * 0.68));
-    const height = 2;
+    // Sampiyonun cubugu genis, kalin ve altin cerceveli: erimesi okunsun,
+    // "bu sefer ne kadar surdu" sorusu cubuktan da izlenebilsin.
+    const champion = Boolean(enemy.champion);
+    const width = champion ? Math.max(30, Math.min(58, displayedSize * 0.95)) : Math.max(17, Math.min(38, displayedSize * 0.68));
+    const height = champion ? 3 : 2;
     const x = enemy.x - width / 2;
     const y = enemy.y + displayedSize * 0.5 + 5;
     const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
     graphics.clear();
     graphics.fillStyle(0x020617, 0.92).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
+    if (champion) graphics.lineStyle(1, CHAMPION_BAR_FRAME, 0.95).strokeRoundedRect(x - 1.5, y - 1.5, width + 3, height + 3, 2);
     graphics.fillStyle(0xef4444, 1).fillRoundedRect(x, y, width * hpRatio, height, 1);
     if (enemy.maxShield > 0) {
       const shieldRatio = Phaser.Math.Clamp(enemy.shield / Math.max(1, enemy.maxShield), 0, 1);

@@ -18,6 +18,7 @@ import {
   FINAL_WAVE,
   PLAYER_TOWER_LIMIT,
   cardCatalog,
+  getWaveSpawnCount,
   isGlobalShopItem,
   shopCatalog
 } from "../packages/shared/dist/index.js";
@@ -213,7 +214,9 @@ test("dalga numarasi yazilir ve dusman gucu onunla gelir", () => {
 
   assert.equal(room.wave, 15);
   assert.equal(room.waveSpawned, 0);
-  assert.equal(room.waveTarget, room.getScaledWaveEnemyCount(15));
+  // Hedef gercekten dogacak sayi: 15. dalganin sampiyonu birkac dogumun
+  // yerine geciyor ve bir dusman sayiliyor.
+  assert.equal(room.waveTarget, getWaveSpawnCount(15, room.getScaledWaveEnemyCount(15)));
 
   // Guc dalgadan turedigi icin ayni tur, 1. dalgada belirgin sekilde zayif
   // olmali. Tur rastgele seciliyor, o yuzden karsilastirma tur basina.

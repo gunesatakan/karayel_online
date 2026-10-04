@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 
 type ZeynepTier = "small" | "medium" | "big";
@@ -1647,6 +1647,12 @@ export type HudState = {
    * suruyor ya da kart secimi acik.
    */
   forecastEnemyCount: number;
+  /**
+   * Siradaki dalganin dusman basina can adimi, esigi asiyorsa
+   * (`getHeavyWaveHpStep`); yoksa alan yok. Kutu "Can ×1,49" yaziyor:
+   * 6-9. ve 11. dalgada can bir bucuk katina sicriyor ve sayi bunu soylemiyordu.
+   */
+  forecastHpStep?: number;
   /** Siradaki dalgada ucan var ve oyuncunun hicbir kulesi havayi vuramiyor. */
   airWarning: boolean;
   /**
@@ -1722,7 +1728,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping title="Gecikme"><i aria-hidden="true">●</i><b data-hud-ping-value>-- ms</b></span>
     </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
-      <p class="game-hud__forecast-line">Sonraki dalga: <b data-hud-forecast-count>0</b> düşman<em class="game-hud__air" data-hud-forecast-air hidden></em></p>
+      <p class="game-hud__forecast-line">Sonraki dalga: <b data-hud-forecast-count>0</b> düşman<em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
       <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden>Kulelerin havadaki düşmanı vuramıyor!</p>
     </div>
     <div data-hud-popups></div>
@@ -1757,6 +1763,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   const forecastNode = root.querySelector<HTMLElement>("[data-hud-forecast]")!;
   const forecastCountNode = root.querySelector<HTMLElement>("[data-hud-forecast-count]")!;
   const forecastAirNode = root.querySelector<HTMLElement>("[data-hud-forecast-air]")!;
+  const forecastHeavyNode = root.querySelector<HTMLElement>("[data-hud-forecast-heavy]")!;
   const forecastWarningNode = root.querySelector<HTMLElement>("[data-hud-forecast-warning]")!;
   const stripDynamicNode = root.querySelector<HTMLElement>("[data-hud-strip-dynamic]")!;
   const xpChipNode = root.querySelector<HTMLElement>("[data-hud-xp]")!;
@@ -1807,6 +1814,11 @@ export function setupGameHudUi(game: Phaser.Game) {
     if (!forecastVisible) return;
     setClass(forecastNode, `game-hud__forecast${next.airWarning ? " game-hud__forecast--danger" : ""}`);
     setText(forecastCountNode, String(next.forecastEnemyCount));
+    // Agir dalga: sayinin hemen yaninda, hava etiketinden once. Ayni kisa
+    // satirda kaliyor; kutu yuksekligi ve cubugun olcusu degismiyor.
+    const heavy = next.forecastHpStep;
+    setHidden(forecastHeavyNode, heavy === undefined);
+    if (heavy !== undefined) setText(forecastHeavyNode, formatWaveHpStep(heavy));
     setHidden(forecastAirNode, !air);
     setClass(forecastAirNode, airClass);
     setText(forecastAirNode, air === "mixed" ? "KARIŞIK HAVA" : "HAVA");

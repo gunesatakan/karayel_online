@@ -1,3 +1,5 @@
+import type { EnemyType } from "../index.js";
+
 export const FINAL_WAVE = 20;
 export const BASE_WAVE_ENEMY_COUNT = 10;
 
@@ -133,6 +135,46 @@ export function getWaveHpMultiplier(wave: number) {
 
 export function getWaveEnemyMaxHp(baseHp: number, wave: number, healthMultiplier = 1) {
   return Math.max(1, Math.round(baseHp * getWaveHpMultiplier(wave) * healthMultiplier * ENEMY_HP_BALANCE_MULTIPLIER));
+}
+
+/**
+ * Agir dalga uyarisinin esigi: dusman basina can bir onceki kara dalgasina
+ * gore bu oranin ustunde buyuyorsa kurulum ongorusu "Can ×1,49" yaziyor.
+ *
+ * Erken rampa 10. dalgada tam egriye yetismek icin 6-9. dalgalarda dusman
+ * basina cani x1.38-1.62 buyutuyor (6. dalga 4'e gore, 11. dalga 9'a gore
+ * daha da sert). Oyuncu bunu dalga numarasindan okuyamiyordu: kurulum hep
+ * "N dusman" yaziyordu, canin bir anda bir bucuk katina ciktigini degil.
+ * Tam egride adim 1.17; esik onu ve erken dalgalarin yumusak adimlarini
+ * disarida birakip yalnizca gercek sicramalari isaretliyor.
+ */
+export const HEAVY_WAVE_HP_STEP = 1.35;
+
+/**
+ * Dalganin dusman basina can adimi, bir onceki **kara** dalgasina gore.
+ *
+ * Tam hava dalgasi (5, 10) olcu disi: ucanlar ceyrek canla geliyor, onlarla
+ * kiyaslamak hem o dalgayi hem ardindakini yalanci gosterirdi. Tam hava
+ * dalgasinin kendisi icin de adim yok: ongoru orada zaten "HAVA" diyor.
+ */
+export function getWaveHpStep(wave: number): number | undefined {
+  const safeWave = Math.floor(wave);
+  if (!Number.isFinite(safeWave) || safeWave <= 1 || getWaveAirMode(safeWave) === "all") return undefined;
+  let previous = safeWave - 1;
+  while (previous >= 1 && getWaveAirMode(previous) === "all") previous -= 1;
+  if (previous < 1) return undefined;
+  return getWaveHpMultiplier(safeWave) / getWaveHpMultiplier(previous);
+}
+
+/** Esigi asan adim; asmiyorsa `undefined` (ongoruye hicbir sey yazilmiyor). */
+export function getHeavyWaveHpStep(wave: number): number | undefined {
+  const step = getWaveHpStep(wave);
+  return step !== undefined && step > HEAVY_WAVE_HP_STEP ? step : undefined;
+}
+
+/** "Can ×1,49": iki basamak, Turkce ondalik virgulu. */
+export function formatWaveHpStep(step: number) {
+  return `Can ×${step.toFixed(2).replace(".", ",")}`;
 }
 
 export function getWaveCompletionGold(completedWave: number) {
@@ -287,6 +329,55 @@ export const ATAKAN_ISOLATION_MULTIPLIER = 1.5;
 /** Kusatma dusmaninin dalgalarda gorunmeye basladigi nokta ve orani. */
 export const SIEGE_FIRST_WAVE = 4;
 export const SIEGE_SPAWN_RATIO = 0.18;
+
+/**
+ * Dalganin dusman karisimi: tek zar, esikler.
+ *
+ * Esikler sunucunun dogurma kodundan aynen tasindi. Sampiyon butcesi ayni
+ * karisimin beklenen degerinden hesaplaniyor (`getWaveEnemyTypeWeights`);
+ * zar sunucuda, agirliklar ayri bir kopyada kalsaydi butce bir gun sessizce
+ * karisimdan ayrisirdi. Zar `[0, 1)` araliginda; kusatma kendi payini
+ * grunt'un diliminden aliyor.
+ */
+export const ENEMY_MIX_SHOOTER_FROM = 0.48;
+export const ENEMY_MIX_RUNNER_FROM = 0.66;
+export const ENEMY_MIX_BRUTE_FROM = 0.88;
+
+export function pickWaveEnemyType(wave: number, roll: number): EnemyType {
+  if (wave >= SIEGE_FIRST_WAVE && roll < SIEGE_SPAWN_RATIO) return "siege";
+  return roll > ENEMY_MIX_BRUTE_FROM ? "brute"
+    : roll > ENEMY_MIX_RUNNER_FROM ? "runner"
+      : roll > ENEMY_MIX_SHOOTER_FROM ? "shooter"
+        : "grunt";
+}
+
+/** `pickWaveEnemyType`in olasiliklari; toplam 1. Sira sabit (deterministik toplamlar icin). */
+export function getWaveEnemyTypeWeights(wave: number): ReadonlyArray<{ type: EnemyType; weight: number }> {
+  const siege = wave >= SIEGE_FIRST_WAVE ? SIEGE_SPAWN_RATIO : 0;
+  const weights: Array<{ type: EnemyType; weight: number }> = [
+    { type: "grunt", weight: ENEMY_MIX_SHOOTER_FROM - siege },
+    { type: "shooter", weight: ENEMY_MIX_RUNNER_FROM - ENEMY_MIX_SHOOTER_FROM },
+    { type: "runner", weight: ENEMY_MIX_BRUTE_FROM - ENEMY_MIX_RUNNER_FROM },
+    { type: "brute", weight: 1 - ENEMY_MIX_BRUTE_FROM }
+  ];
+  if (siege > 0) weights.push({ type: "siege", weight: siege });
+  return weights;
+}
+
+/** Ucan dusmanin can ve kalkan carpani; sunucu, ongoru ve simulator ayni sayiyi okusun. */
+export const AIR_ENEMY_HEALTH_MULTIPLIER = 0.25;
+
+/**
+ * Nexus'a ulasan dusmanin verdigi hasar. Agir govde (brute) daha cok
+ * vuruyor. Sunucudan tasindi: sampiyonun sizinti hasari yerine gectigi
+ * dogumlarin beklenen toplami ve o toplam bu sayilardan geliyor.
+ */
+export const ENEMY_LEAK_DAMAGE = 8;
+export const HEAVY_ENEMY_LEAK_DAMAGE = 14;
+
+export function getEnemyLeakDamage(type: EnemyType) {
+  return type === "brute" ? HEAVY_ENEMY_LEAK_DAMAGE : ENEMY_LEAK_DAMAGE;
+}
 
 /**
  * Ulti gucu.

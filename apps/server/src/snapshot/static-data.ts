@@ -27,8 +27,10 @@ type TowerStaticSource = {
   };
 };
 
-export function createStaticEnemySnapshot(enemy: EnemyStaticSource): StaticEnemySnapshot {
-  return {
+type EnemyStaticModel = Omit<EnemyStaticSource, "champion"> & { champion?: unknown };
+
+export function createStaticEnemySnapshot(enemy: EnemyStaticModel): StaticEnemySnapshot {
+  const snapshot: StaticEnemySnapshot = {
     id: enemy.id,
     type: enemy.type,
     race: enemy.race,
@@ -39,6 +41,11 @@ export function createStaticEnemySnapshot(enemy: EnemyStaticSource): StaticEnemy
     movementKind: enemy.movementKind,
     pathId: enemy.pathId
   };
+  // Bayrak yalnizca sampiyonda: `champion: undefined` anahtari msgpack'te yine
+  // yaziliyor, o yuzden kosullu. Sunucu modelinde alan butce kaydini tasiyor;
+  // tele yalnizca "var" bilgisi cikiyor.
+  if (enemy.champion) snapshot.champion = true;
+  return snapshot;
 }
 
 export function createStaticTowerSnapshot(tower: TowerStaticSource, coolingRate = 3): StaticTowerSnapshot {
@@ -64,7 +71,7 @@ export function createStaticTowerSnapshot(tower: TowerStaticSource, coolingRate 
 }
 
 export function createFullStaticSnapshot(
-  enemies: Iterable<EnemyStaticSource>,
+  enemies: Iterable<EnemyStaticModel>,
   towers: Iterable<TowerStaticSource>,
   map?: EditableMapData
 ): StaticSnapshot {

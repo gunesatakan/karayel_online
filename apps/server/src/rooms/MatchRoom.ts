@@ -87,8 +87,6 @@ import {
   receivesAtakanIsolationBonus,
   resolveZeynepFormations,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
-  SIEGE_FIRST_WAVE,
-  SIEGE_SPAWN_RATIO,
   getStructureRepairCostWithModifiers,
   STRUCTURE_BREACH_HEALTH_RATIO,
   getStructureHealthMultiplier,
@@ -217,6 +215,14 @@ import {
   getWaveHpMultiplier,
   getWaveAirMode,
   isFlyingWaveSpawn,
+  pickWaveEnemyType,
+  getEnemyLeakDamage,
+  AIR_ENEMY_HEALTH_MULTIPLIER,
+  getWaveChampionPlan,
+  splitChampionLeakDamage,
+  getEnemyZeynepReputationGain,
+  type WaveChampionPlan,
+  type ChampionDownMessage,
   calculateDamageTaken,
   findPathToNearestNexus,
   findFirstLinearCollision,
@@ -935,6 +941,15 @@ type EnemyModel = {
   activeMarkAdd: number;
   activeMarkUntil: number;
   pathId: number;
+  /**
+   * Dalganin sampiyonu: yerine gectigi normal dogumlarin butcesi.
+   *
+   * Altin, deneyim, sizinti ve ulti sarji normal dusmanda turden ve dalgadan
+   * turetiliyor; sampiyonda bu kayittan okunuyor, cunku dalganin toplami
+   * yerine gecilen dogumlarin beklenen toplamina esit kalmali
+   * (`getWaveChampionPlan`). `spawnedAt` devrilme suresi icin (duvar saati).
+   */
+  champion?: { replaced: number; gold: number; exp: number; leakDamage: number; reputation: number; spawnedAt: number };
 };
 
 type TowerModel = {
@@ -1485,6 +1500,26 @@ export class MatchRoom extends Room<MatchState> {
   private previewRequestTimes = new Map<string, number>();
   private towerInsightCache = new WeakMap<TowerModel, { at: number; value: string }>();
   private waveTarget = getWaveEnemyCount(1);
+  /**
+   * Sampiyon plani ve dogum sirasindaki kayma.
+   *
+   * Hava kurali (`isFlyingWaveSpawn`) dalganin **orijinal** dogum sirasini
+   * okuyor; sampiyon birkac dogumun yerine gectigi icin ondan sonraki dogumlar
+   * o kadar ileri kayiyor. Kayma sampiyon dogana kadar 0, yani sampiyonsuz
+   * dalgada sira `waveSpawned`in kendisi -- eski davranisin aynisi.
+   */
+  private waveChampionPlan?: WaveChampionPlan;
+  private waveSlotOffset = 0;
+  /** Bu dalganin sampiyonu dogdu mu; yaratici patlamasi sirayi atlasa da bir kez dogsun. */
+  private waveChampionSpawned = false;
+  /**
+   * Sampiyon kurali acik mi. Yalnizca olcum icin: denge karsilastirmasi ayni
+   * odayi sampiyonsuz kosturup oncesini olcebilsin diye (bkz. rapor). Oyunda
+   * hep acik.
+   */
+  private championsEnabled = true;
+  /** Bu kosuda en son devrilen sampiyonun suresi (oyun ms); damganin "onceki" sayisi. */
+  private lastChampionKillMs?: number;
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
   private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
@@ -1875,7 +1910,7 @@ export class MatchRoom extends Room<MatchState> {
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
-    this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
+    this.planWaveSpawns(this.wave);
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
     this.onMessage("lobby:setCharacter", (client, message: { characterId?: CharacterId }) => {
@@ -2423,6 +2458,48 @@ export class MatchRoom extends Room<MatchState> {
     return getArenaWaveEnemyCount(wave, this.mapScale, this.state.players.size);
   }
 
+  /**
+   * Dalganin dogum planini kurar: orijinal sayi, sampiyon ve gercek hedef.
+   *
+   * `waveTarget` gercekten dogacak dusman sayisi -- sampiyon bir dusman,
+   * yerine gectigi dogumlar yok. Kurulum ongorusu ve "kalan" sayaci bunu
+   * okuyor; orijinal sayiyi yazsalardi dalga hic gelmeyecek dusmanlari
+   * sayardi.
+   */
+  private planWaveSpawns(wave: number) {
+    const slotCount = this.getScaledWaveEnemyCount(wave);
+    this.waveChampionPlan = this.championsEnabled ? getWaveChampionPlan(wave, slotCount) : undefined;
+    this.waveSlotOffset = 0;
+    this.waveChampionSpawned = false;
+    this.waveTarget = slotCount - (this.waveChampionPlan ? this.waveChampionPlan.replaced - 1 : 0);
+  }
+
+  /**
+   * Siradaki dogumun sampiyon olup olmadigi.
+   *
+   * Sira `>=` ile: yaratici moddaki dusman patlamasi sampiyonun sirasini tek
+   * hamlede gecebiliyor; esitlik arasaydi sampiyon hic dogmaz, hedef sayac ise
+   * onu bekleyerek zaten kucuk kalirdi. Plan baska bir dalganin olabilir
+   * (testler ve olcum araclari sayaclari elle yaziyor); o zaman normal dogum.
+   */
+  private getPendingChampion() {
+    const plan = this.waveChampionPlan;
+    if (!plan || plan.wave !== this.wave || this.waveChampionSpawned) return undefined;
+    return this.waveSpawned + this.waveSlotOffset >= plan.slot ? plan : undefined;
+  }
+
+  /** Bir dusman dogurur (sirasi geldiyse sampiyonu) ve sayaclari ilerletir; dogan sampiyonsa planini dondurur. */
+  private spawnNextWaveEnemy() {
+    const champion = this.getPendingChampion();
+    this.spawnEnemy(champion);
+    this.waveSpawned += 1;
+    if (champion) {
+      this.waveChampionSpawned = true;
+      this.waveSlotOffset += champion.replaced - 1;
+    }
+    return champion;
+  }
+
   private getActiveWorldBounds() {
     return getMapWorldBounds(this.activeMap);
   }
@@ -2451,7 +2528,8 @@ export class MatchRoom extends Room<MatchState> {
       return 0;
     }
 
-    const share = Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
+    // Sampiyonun payi yerine gectigi dogumlarin beklenen toplami.
+    const share = enemy.champion?.gold ?? Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
     let ownerGain = 0;
     // Anahtar oturum kimligi: yeniden baglanan oyuncunun kaydi yeni anahtara
     // tasiniyor, oldurme olayinin sahibi de o anahtar.
@@ -2801,7 +2879,7 @@ export class MatchRoom extends Room<MatchState> {
       const completedWave = this.wave;
       this.wave += 1;
       this.waveSpawned = 0;
-      this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
+      this.planWaveSpawns(this.wave);
       this.spawnCooldownMs = 950;
       this.awardGoldToPlayers(getWaveCompletionGold(completedWave));
       for (const [playerId, player] of this.state.players.entries()) {
@@ -2834,10 +2912,16 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    this.spawnEnemy();
-    this.waveSpawned += 1;
+    // Sampiyon orijinal sirada kendi dogumuna gelince doguyor.
+    const champion = this.spawnNextWaveEnemy();
     // Formul paylasilan pakette: istemcinin kombo penceresi ayni aralikla sayiyor.
-    this.spawnCooldownMs = getWaveSpawnIntervalMs(this.wave);
+    //
+    // Sampiyon yerine gectigi dogumlarin araliklarini bosaltiyor: dalganin
+    // suresi ayni kaliyor ve sampiyon sahnede bir sure tek basina. Boslugun
+    // `leadSlots` kadari sampiyondan once, gerisi sonra.
+    const next = champion ? undefined : this.getPendingChampion();
+    const slots = champion ? champion.replaced - champion.leadSlots : next ? 1 + next.leadSlots : 1;
+    this.spawnCooldownMs = getWaveSpawnIntervalMs(this.wave) * slots;
   }
 
   /**
@@ -2864,7 +2948,7 @@ export class MatchRoom extends Room<MatchState> {
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
-    this.waveTarget = this.getScaledWaveEnemyCount(this.wave);
+    this.planWaveSpawns(this.wave);
   }
 
   private markSetupReady(client: Client) {
@@ -3069,21 +3153,23 @@ export class MatchRoom extends Room<MatchState> {
     return player ? player.slot ?? 0 : undefined;
   }
 
-  private spawnEnemy() {
+  private spawnEnemy(champion?: WaveChampionPlan) {
     const roll = Math.random();
     // Kusatma dusmani erken dalgalarda yok: duvar meta'si once kurulsun, cezasi
-    // sonra gelsin.
-    const type: EnemyType = this.wave >= SIEGE_FIRST_WAVE && roll < SIEGE_SPAWN_RATIO
-      ? "siege"
-      : roll > 0.88 ? "brute" : roll > 0.66 ? "runner" : roll > 0.48 ? "shooter" : "grunt";
+    // sonra gelsin. Karisim paylasilan pakette: sampiyon butcesi ayni
+    // agirliklardan hesaplaniyor. Sampiyonun turu zardan degil plandan.
+    const type: EnemyType = champion?.type ?? pickWaveEnemyType(this.wave, roll);
     const definition = getEnemyCombatDefinition(type);
     const race = getStageRace(this.stage);
-    const isFlyingEnemy = isFlyingWaveSpawn(this.wave, this.waveSpawned);
+    // Sampiyon her zaman karada; karisik dalgada da (bkz. `getWaveChampionPlan`).
+    const isFlyingEnemy = !champion && isFlyingWaveSpawn(this.wave, this.waveSpawned + this.waveSlotOffset);
     const waveScale = getWaveHpMultiplier(this.wave);
-    const airHealthMultiplier = isFlyingEnemy ? 0.25 : 1;
+    const airHealthMultiplier = isFlyingEnemy ? AIR_ENEMY_HEALTH_MULTIPLIER : 1;
+    // Normal dusmanda 1: carpim degeri degistirmiyor, eski sayilar bire bir ayni.
+    const championMultiplier = champion?.hpMultiple ?? 1;
     const multiplayerHealth = 1 + Math.max(0, this.state.players.size - 1) * 0.45;
-    const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier) * multiplayerHealth;
-    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * multiplayerHealth);
+    const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier * championMultiplier) * multiplayerHealth;
+    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
     const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
@@ -3101,7 +3187,8 @@ export class MatchRoom extends Room<MatchState> {
       hp: maxHp,
       maxHp,
       armor: definition.armor,
-      healthRegenPerSecond: definition.healthRegenPerSecond * waveScale,
+      // Yenilenme de kalinlikla carpiliyor: oransal yenilenme normal dusmanla ayni.
+      healthRegenPerSecond: definition.healthRegenPerSecond * waveScale * championMultiplier,
       shield: maxShield,
       maxShield,
       movementKind: isFlyingEnemy ? "air" : definition.movementKind,
@@ -3154,7 +3241,17 @@ export class MatchRoom extends Room<MatchState> {
       activeMarkId: "",
       activeMarkAdd: 0,
       activeMarkUntil: 0,
-      pathId
+      pathId,
+      ...(champion ? {
+        champion: {
+          replaced: champion.replaced,
+          gold: champion.gold,
+          exp: champion.exp,
+          leakDamage: champion.leakDamage,
+          reputation: champion.reputation,
+          spawnedAt: Date.now()
+        }
+      } : {})
     });
     this.broadcastEnemySpawn(this.enemies.get(id)!);
   }
@@ -5601,16 +5698,32 @@ export class MatchRoom extends Room<MatchState> {
         } else {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
-          const shieldOwner = Array.from(this.state.players.values()).find((player) => player.nexusShieldCharges > 0);
           const healthBefore = this.teamHealth;
-          if (shieldOwner) shieldOwner.nexusShieldCharges -= 1;
-          else this.teamHealth = Math.max(0, this.teamHealth - (enemy.type === "brute" ? 14 : 8));
+          // Sampiyon yerine gectigi dogumlar kadar birim: her birim kendi
+          // kalkan sarjini yiyor ya da kendi payini vuruyor. Tek birim gibi
+          // davransaydi bir kalkan sarji bes dusmanlik sizintiyi yutardi.
+          const leakParts = enemy.champion
+            ? splitChampionLeakDamage(enemy.champion.leakDamage, enemy.champion.replaced)
+            : [getEnemyLeakDamage(enemy.type)];
+          // Kalkan tuttu sayilmasi icin her birimi tutmus olmali: nexus can
+          // kaybettiyse sizinti kalkanda kalmadi.
+          let absorbedParts = 0;
+          for (const part of leakParts) {
+            const shieldOwner = Array.from(this.state.players.values()).find((player) => player.nexusShieldCharges > 0);
+            if (shieldOwner) {
+              shieldOwner.nexusShieldCharges -= 1;
+              absorbedParts += 1;
+            } else {
+              this.teamHealth = Math.max(0, this.teamHealth - part);
+            }
+          }
           // Kalkanin tuttugu dusman da sizinti: temiz dalga ve yildiz candan
           // degil kacan dusmandan sayiliyor. Yenilgiden once yaziliyor ki
-          // olunen dalganin karnesi olduren sizintiyi da icersin.
+          // olunen dalganin karnesi olduren sizintiyi da icersin. Sampiyon
+          // tek dusman, tek sizinti.
           this.runLedger.recordLeak({
             air: enemy.movementKind === "air",
-            absorbed: Boolean(shieldOwner),
+            absorbed: absorbedParts === leakParts.length,
             hpLost: healthBefore - this.teamHealth
           });
           if (this.teamHealth === 0) {
@@ -6214,7 +6327,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const share = getEnemyExp(this.wave, enemy.type, enemy.movementKind) / players.length;
+    const share = (enemy.champion?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind)) / players.length;
     for (const player of players) {
       // Kazanc oyuncu basina olceklenir: tecrube kartlari oyuncunun kendi
       // ilerlemesini hizlandirmali, odadaki herkesinkini degil.
@@ -8222,7 +8335,7 @@ export class MatchRoom extends Room<MatchState> {
     const wave = Math.max(1, Math.min(FINAL_WAVE, Math.round(message.wave ?? this.wave)));
     this.wave = wave;
     this.waveSpawned = 0;
-    this.waveTarget = this.getScaledWaveEnemyCount(wave);
+    this.planWaveSpawns(wave);
     this.waveClearedAt = 0;
     this.sendCreativeLoadout(client);
   }
@@ -8241,10 +8354,8 @@ export class MatchRoom extends Room<MatchState> {
     this.setupReadyPlayerIds.clear();
     this.waveClearedAt = 0;
     this.waveTarget = Math.max(this.waveTarget, this.waveSpawned + count);
-    for (let index = 0; index < count; index += 1) {
-      this.spawnEnemy();
-      this.waveSpawned += 1;
-    }
+    // Ayni dogum yolu: patlama sampiyonun sirasini gecerse sampiyon da gelir.
+    for (let index = 0; index < count; index += 1) this.spawnNextWaveEnemy();
   }
 
   private setTowerMode(client: Client, message: TowerModeMessage) {
@@ -9749,6 +9860,31 @@ export class MatchRoom extends Room<MatchState> {
       this.resolveMelisUnderworldLinkedDeath(enemy, now);
     }
     this.triggerMelisCurseDeathBurst(enemy, now);
+    this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists });
+    return true;
+  }
+
+  /**
+   * Oldurmenin odul kuyrugu: dusmani siler, altin, deneyim, sayac, kule
+   * tetikleri, itibar, oldurme olayi, ulti sarji ve sampiyon damgasi.
+   *
+   * `damageEnemy` disinda Melis'in cevrilmis sampiyonu da buradan oluyor:
+   * sampiyon yerine gectigi dogumlarin butcesini tasiyor ve sessizce silinmesi
+   * o butceyi dalgadan dusururdu.
+   */
+  private finishEnemyKill(enemy: EnemyModel, context: {
+    sourceOwnerId: string;
+    sourceTowerId: string;
+    sourceDefinitionId: string;
+    now: number;
+    killAssists?: KillAssist[];
+  }) {
+    const { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists } = context;
+    const damagePlayer = this.state.players.get(sourceOwnerId);
+    // Sampiyon yerine gectigi dogumlar kadar oldurme sayiliyor: seri, kule
+    // yiginlari ve ulti sarji (dalganin toplami ayni kalsin). Oldurme sayaci,
+    // defter ve mermi dusurme sansi dusman basina.
+    const killUnits = enemy.champion?.replaced ?? 1;
     this.enemies.delete(enemy.id);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     const ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
@@ -9772,8 +9908,8 @@ export class MatchRoom extends Room<MatchState> {
     }
     const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceTower) {
-      this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
-      if (this.towerHasUnlock(sourceTower, "stack:kill")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + 1);
+      for (let unit = 0; unit < killUnits; unit += 1) this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
+      if (this.towerHasUnlock(sourceTower, "stack:kill")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + killUnits);
       if (this.towerHasUnlock(sourceTower, "ammoDrop") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
       if (this.towerHasUnlock(sourceTower, "heat:killVent")) {
         // Oldurme isiyi atar. Kilitli bir kule de yanik hasariyla oldurebilir,
@@ -9787,16 +9923,36 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceOwnerId) {
       const player = this.state.players.get(sourceOwnerId);
       if (player?.characterId === "zeynep") {
-        this.awardZeynepReputation(player, enemy.type);
+        // Sampiyonun itibari yerine gectigi dogumlarin turlerinden beklenen toplam.
+        this.awardZeynepReputation(player, enemy.champion?.reputation ?? getEnemyZeynepReputationGain(enemy.type));
       }
       const assists = killAssists ?? this.resolveEnemyKillAssists(enemy, sourceOwnerId, sourceTowerId, sourceDefinitionId, now);
       for (const assist of assists) this.runLedger.recordAssist(assist.slot, assist.kind);
-      this.addKillEvent(sourceOwnerId, enemy.id, ownerGold, assists);
+      this.addKillEvent(sourceOwnerId, enemy.id, ownerGold, assists, killUnits);
     }
     for (const player of this.state.players.values()) {
-      player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7));
+      player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7 * killUnits));
     }
-    return true;
+    if (enemy.champion) this.announceChampionDown(enemy, now);
+  }
+
+  /**
+   * Sampiyon devrildi: dogumdan olume oyun suresi ve bir oncekinin suresi,
+   * bir kez. Oldurme kredisi ve asistler normal oldurme olayinda; bu mesaj
+   * yalnizca "guc buyudu mu" sorusunun cevabi.
+   */
+  private announceChampionDown(enemy: EnemyModel, now: number) {
+    if (!enemy.champion) return;
+    const ms = Math.max(0, Math.round((now - enemy.champion.spawnedAt) * GAME_SPEED_MULTIPLIER));
+    const message: ChampionDownMessage = {
+      enemyId: enemy.id,
+      ms,
+      x: roundNetworkNumber(enemy.x),
+      y: roundNetworkNumber(enemy.y)
+    };
+    if (this.lastChampionKillMs !== undefined) message.prevMs = this.lastChampionKillMs;
+    this.lastChampionKillMs = ms;
+    this.broadcast("champion:down", message);
   }
 
   private applyMelisFocusLastHitBuff(towerId: string, now: number) {
@@ -10051,8 +10207,8 @@ export class MatchRoom extends Room<MatchState> {
     return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= radius * radius;
   }
 
-  private awardZeynepReputation(player: Player, enemyType: EnemyType) {
-    const baseGain = enemyType === "brute" ? 4 : enemyType === "shooter" ? 3 : 2;
+  /** `baseGain` tur kazanci (`getEnemyZeynepReputationGain`) ya da sampiyonun toplami. */
+  private awardZeynepReputation(player: Player, baseGain: number) {
     const gain = baseGain * ZEYNEP_REPUTATION_GAIN_MULTIPLIER;
     player.reputation = Math.min(ZEYNEP_MAX_REPUTATION, player.reputation + gain);
   }
@@ -10148,9 +10304,9 @@ export class MatchRoom extends Room<MatchState> {
     return resolveKillAssists(killerSlot, candidates);
   }
 
-  private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0, assists: readonly KillAssist[] = []) {
+  private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0, assists: readonly KillAssist[] = [], kills = 1) {
     const now = Date.now();
-    const streakRule = this.recordPlayerKillStreak(ownerId, now);
+    const streakRule = this.recordPlayerKillStreak(ownerId, now, kills);
     if (streakRule) this.runLedger.recordStreak(this.getPlayerSlot(ownerId), streakRule.tier, this.wave);
     const id = `k${this.nextKillEventId++}`;
     // Tabana yuvarli tam sayi: HUD altini da tabana yuvarli ve hasar sayisi
@@ -10176,8 +10332,9 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private recordPlayerKillStreak(ownerId: string, serverTime: number) {
-    const killTimes = [...(this.playerKillStreakTimes.get(ownerId) ?? []), serverTime]
+  /** `kills`: bu andaki oldurme sayisi; sampiyon yerine gectigi dogumlar kadar sayiyor. */
+  private recordPlayerKillStreak(ownerId: string, serverTime: number, kills = 1) {
+    const killTimes = [...(this.playerKillStreakTimes.get(ownerId) ?? []), ...Array.from({ length: Math.max(1, Math.floor(kills)) }, () => serverTime)]
       .filter((time) => serverTime - time <= Math.max(...KILL_STREAK_RULES.map((rule) => rule.windowMs)));
     this.playerKillStreakTimes.set(ownerId, killTimes);
 
@@ -10744,8 +10901,25 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (enemy.hp <= 0) {
-      this.enemies.delete(enemy.id);
+      this.removeMelisWhisperTurnedEnemy(enemy);
     }
+  }
+
+  /**
+   * Cevrilmis dusmanin sonu. Normal dusman oldugu gibi siliniyor (cevrilen
+   * dusman odul vermiyor, eski kural). Sampiyon ise yerine gectigi dogumlarin
+   * butcesini tasiyor: odul kuyrugundan geciyor, kredi onu ceviren oyuncuya;
+   * oyuncu ayrildiysa sahipsiz oldurme (altin ve deneyim yine herkese).
+   */
+  private removeMelisWhisperTurnedEnemy(enemy: EnemyModel) {
+    if (!this.enemies.has(enemy.id)) return;
+    if (!enemy.champion) {
+      this.enemies.delete(enemy.id);
+      return;
+    }
+    const ownerId = this.state.players.has(enemy.melisWhisperTurnedOwnerId) ? enemy.melisWhisperTurnedOwnerId : "";
+    const towerId = this.towers.has(enemy.melisWhisperTurnedSourceTowerId) ? enemy.melisWhisperTurnedSourceTowerId : "";
+    this.finishEnemyKill(enemy, { sourceOwnerId: ownerId, sourceTowerId: towerId, sourceDefinitionId: "archer-6-whisper-turned", now: Date.now() });
   }
 
   private explodeMelisWhisperTurnedEnemy(enemy: EnemyModel) {
@@ -10781,7 +10955,7 @@ export class MatchRoom extends Room<MatchState> {
       overdrive: false,
       ttlMs: 380
     });
-    this.enemies.delete(enemy.id);
+    this.removeMelisWhisperTurnedEnemy(enemy);
   }
 
   private updateMelisUnderworldLink(tower: TowerModel, now: number, deltaSeconds: number) {

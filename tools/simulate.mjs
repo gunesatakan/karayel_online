@@ -25,6 +25,10 @@ import {
   getWaveEnemyCount,
   getWaveEnemyMaxHp,
   isFlyingWaveSpawn,
+  AIR_ENEMY_HEALTH_MULTIPLIER,
+  getWaveChampionPlan,
+  getWaveSpawnCount,
+  getEnemySpawnHealth,
   REFERENCE_STRUCTURE_BREAK_DPS,
   getStructureRepairCost,
   getStructureHealthMultiplier,
@@ -203,16 +207,34 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     wallHealthRatio = wallState.wallHealthRatio;
 
     spendExperience({ towers, config, experienceRef: { get value() { return experience; }, set value(value) { experience = value; } } });
-    const count = getWaveEnemyCount(wave);
+    // Orijinal dogum sayisi; sampiyon bunun ortasindaki birkac dogumun yerine
+    // geciyor (sunucuyla ayni kural, `getWaveChampionPlan`).
+    const slotCount = getWaveEnemyCount(wave);
+    const champion = getWaveChampionPlan(wave, slotCount);
+    const count = getWaveSpawnCount(wave, slotCount, champion);
     let totalHealth = 0;
     let totalReward = 0;
     let totalExperience = 0;
     let groundCount = 0;
-    for (let index = 0; index < count; index += 1) {
+    for (let index = 0; index < slotCount; index += 1) {
+      // Zar yerine gecilen dogumda da atiliyor: kart ve magaza zarlari
+      // sampiyonlu ve sampiyonsuz kosuda ayni kalsin, fark yalnizca sampiyondan.
       const enemyType = enemyTypes[Math.floor(random() * enemyTypes.length)];
+      if (champion && index >= champion.slot && index < champion.slot + champion.replaced) {
+        if (index === champion.slot) {
+          // Sampiyon karada; cani ve kalkani sunucunun dogurdugu sayilar,
+          // altin ve deneyimi yerine gectigi dogumlarin beklenen toplami.
+          const health = getEnemySpawnHealth(champion.type, wave, champion.hpMultiple);
+          groundCount += 1;
+          totalHealth += health.maxHp + health.maxShield;
+          totalReward += champion.gold;
+          totalExperience += champion.exp;
+        }
+        continue;
+      }
       const enemy = getEnemyCombatDefinition(enemyType);
       const isAir = isFlyingWaveSpawn(wave, index);
-      const airMultiplier = isAir ? 0.25 : 1;
+      const airMultiplier = isAir ? AIR_ENEMY_HEALTH_MULTIPLIER : 1;
       if (!isAir) groundCount += 1;
       totalHealth += getWaveEnemyMaxHp(enemy.maxHp, wave, airMultiplier) + Math.round(enemy.shield * airMultiplier);
       totalReward += Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER);

@@ -476,12 +476,18 @@ export type EnemySnapshot = {
   isFrozen?: boolean;
   isUnderworldLinked?: boolean;
   isUndead?: boolean;
+  /**
+   * Dalganin sampiyonu (`getWaveChampionPlan`): tac, buyuk govde, kalin can
+   * cubugu. Normal dusmanda alan hic yok. Statik kayitta tasiniyor: dogumda
+   * bir kez gidiyor, karelerde hic.
+   */
+  champion?: true;
 };
 
 export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
   "id" | "type" | "race" | "maxHp" | "attack" |
   "healthRegenPerSecond" | "maxShield" | "movementKind"
->> & Pick<EnemySnapshot, "pathId">;
+>> & Pick<EnemySnapshot, "pathId" | "champion">;
 export type DynamicEnemySnapshot = Omit<EnemySnapshot, keyof StaticEnemySnapshot> & { id: string };
 
 export type TowerSnapshot = {
@@ -1619,6 +1625,19 @@ export {
   getWaveCompletionGold,
   getWaveAirMode,
   isFlyingWaveSpawn,
+  HEAVY_WAVE_HP_STEP,
+  getWaveHpStep,
+  getHeavyWaveHpStep,
+  formatWaveHpStep,
+  ENEMY_MIX_SHOOTER_FROM,
+  ENEMY_MIX_RUNNER_FROM,
+  ENEMY_MIX_BRUTE_FROM,
+  pickWaveEnemyType,
+  getWaveEnemyTypeWeights,
+  AIR_ENEMY_HEALTH_MULTIPLIER,
+  ENEMY_LEAK_DAMAGE,
+  HEAVY_ENEMY_LEAK_DAMAGE,
+  getEnemyLeakDamage,
   PLAYER_TOWER_LIMIT,
   WAVE_SPAWN_INTERVAL_BASE_MS,
   WAVE_SPAWN_INTERVAL_STEP_MS,
@@ -1630,6 +1649,31 @@ export {
   getKillStreakRule
 } from "./balance/index.js";
 export type { KillStreakRule, KillStreakTier, WaveAirMode } from "./balance/index.js";
+export {
+  CHAMPION_FIRST_WAVE,
+  CHAMPION_HP_MULTIPLE,
+  CHAMPION_MIN_REPLACED,
+  CHAMPION_MAX_SHARE,
+  CHAMPION_TYPE_ROTATION,
+  CHAMPION_WAVE_POSITION,
+  CHAMPION_LEAD_SHARE,
+  CHAMPION_SPRITE_SCALE,
+  CHAMPION_LABEL,
+  getEnemyKillGold,
+  getEnemyZeynepReputationGain,
+  getEnemySpawnHealth,
+  getEffectiveHp,
+  getWaveSlotExpectation,
+  hasWaveChampion,
+  getWaveChampionType,
+  getWaveChampionPlan,
+  getWaveSpawnCount,
+  splitChampionLeakDamage,
+  sanitizeChampionDownMessage,
+  formatChampionSeconds,
+  getChampionDownText
+} from "./balance/champion.js";
+export type { WaveChampionPlan, WaveChampionOptions, ChampionDownMessage } from "./balance/champion.js";
 export {
   GAME_SPEED_MULTIPLIER,
   GLOBAL_TOWER_RANGE_MULTIPLIER,

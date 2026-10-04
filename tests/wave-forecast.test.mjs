@@ -18,7 +18,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FINAL_WAVE, getArenaWaveEnemyCount, getWaveAirMode, isFlyingWaveSpawn } from "../packages/shared/dist/index.js";
+import { FINAL_WAVE, getArenaWaveEnemyCount, getWaveAirMode, getWaveSpawnCount, isFlyingWaveSpawn } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -113,7 +113,9 @@ test("kurulumda takim kaydi siradaki dalganin sayisini ve hava kipini tasiyor", 
     assert.equal(team.wave, wave);
     assert.equal(team.waveAirMode, mode, `${wave}. dalganin kipi`);
     assert.equal(team.waveEnemyCount, room.waveTarget);
-    assert.equal(team.waveEnemyCount, getArenaWaveEnemyCount(wave, room.mapScale, 1));
+    // Sampiyon (15. dalga) yerine gectigi dogumlari dusuruyor ve bir dusman
+    // sayiliyor; tam hava dalgasinda (5) sampiyon yok, sayi aynen.
+    assert.equal(team.waveEnemyCount, getWaveSpawnCount(wave, getArenaWaveEnemyCount(wave, room.mapScale, 1)));
     // Kurulumda henuz dusman dogmadi: kalan sayaci da ayni sayiyi soyluyor.
     assert.equal(team.enemiesLeft, team.waveEnemyCount);
   }

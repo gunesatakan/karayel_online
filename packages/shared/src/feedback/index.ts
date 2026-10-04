@@ -52,7 +52,9 @@ export type FeedbackKind =
   | "linkJoined"
   | "linkMatured"
   | "combo"
-  | "assist";
+  | "assist"
+  | "champion"
+  | "championDown";
 
 export type FeedbackPriority = 0 | 1 | 2 | 3;
 
@@ -167,7 +169,17 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // ekraninda, HUD yigininda soluk bir satir. P2, sessiz, sarsintisiz: oldurmenin
   // kendi sesi zaten caldi, bu onun dipnotu. Cift basina 5 sn siniri
   // `AssistToastGate`te; takim arkadasinin asisti hic gorsel acmiyor.
-  assist: { ownPriority: 2, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 }
+  assist: { ownPriority: 2, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 },
+  // Sampiyon dogdu ("ŞAMPİYON") ve devrildi ("ŞAMPİYON DEVRİLDİ · 10,6 sn
+  // (önceki 12,1)"). Takimin ortak ani, yani herkeste "kendi" olay (P1):
+  // kalabalik dalgada etiket butcesi doldu diye dusmemeli. Dogus etiketinin
+  // arasi 3 sn: dalgada bir sampiyon var, ama yeniden baglanma ya da ust uste
+  // gelen kare ayni haberi iki kez acmasin. Devrilme damgasi ayri tur, cunku
+  // hizli bir oldurmede dogus etiketinin araligina takilip dusmemeli; sampiyon
+  // basina tek mesaj geldigi icin araligi yok. Ikisi de sessiz ve sarsintisiz:
+  // oldurme sesi zaten caliyor, etiket onun ne demek oldugunu yaziyor.
+  champion: { ownPriority: 1, channel: "label", visualMs: 1400, visualGapMs: 3000, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  championDown: { ownPriority: 1, channel: "label", visualMs: 2400, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 }
 };
 
 export const FEEDBACK_LIMITS = {
