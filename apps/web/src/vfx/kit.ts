@@ -48,6 +48,12 @@ export interface VfxGraphics {
 
 export type VfxTier = 1 | 2 | 3;
 
+/**
+ * Takim arkadasinin kademe 3 eklentileri bu alfada; kendi kulen tam. Tek
+ * kaynak: saldiri, isin, Atakan ve Zeynep imzalari ayni sayiyi okuyor.
+ */
+export const TEAMMATE_EXTRA_ALPHA = 0.7;
+
 export const clamp01 = (value: number) => (value <= 0 ? 0 : value >= 1 ? 1 : value);
 
 export function toTier(tier: number | undefined): VfxTier {

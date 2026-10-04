@@ -30,6 +30,7 @@ import { findIsolationBlockers, towerCatalog, type EnemySnapshot, type SynergyMa
 import {
   ATAKAN_ACCENT,
   LASER_GLINTS,
+  TEAMMATE_EXTRA_ALPHA,
   clamp01,
   darken,
   drawBracketCorners,
@@ -52,8 +53,6 @@ import {
 import { VfxLod } from "./lod";
 import { getSignatureTier, getVfxProfile, type VfxProfile, type VfxSignatureTier } from "./vfx-profiles";
 
-/** Takim arkadasinin kademe 3 eklentileri bu alfada. */
-const TEAMMATE_EXTRA_ALPHA = 0.7;
 /** Obsesyon yiginin tavani (engine.ts: `max: 10`). */
 export const OBSESSION_MAX_STACK = 10;
 /** Ucube yigin tavaninin varsayilani; sunucu yalnizca 15 ve 20'yi yaziyor. */

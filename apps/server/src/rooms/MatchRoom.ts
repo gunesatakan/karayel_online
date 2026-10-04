@@ -3,6 +3,8 @@ import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
+// Zeynep atislarinin geometrisi paylasilan pakette: istemcinin imzalari ayni kurali cagiriyor.
+import { KIN_WAVE_BAND_DEPTH, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getEnemyTypeCollisionRadius, isAbartiArmorBreakProjectile } from "@karayel/shared";
 import {
   ComboStampThrottle,
   DEBUG_SWEEP_STAMP_MIN_KILLS,
@@ -601,7 +603,6 @@ const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
 const KIN_WAVE_ANGLE_RADIANS = degreesToRadians(60);
 const KIN_SYNTHESIS_WAVE_ANGLE_RADIANS = degreesToRadians(90);
 const KIN_WAVE_SPEED = 104;
-const KIN_WAVE_BAND_DEPTH = 30;
 /** `surge` trigger etkisinin suresi ve hasar bonusu. */
 const SURGE_DURATION_MS = 8000;
 const SURGE_DAMAGE_ADD = 0.8;
@@ -4816,7 +4817,8 @@ export class MatchRoom extends Room<MatchState> {
       x2: endX,
       y2: endY,
       width: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BURN_LINE_RADIUS * 2),
-      color: 0x7c2d12,
+      // Yanigin camgobegi kor: flasla ayni kimlik (eskiden kahverengi bir serit).
+      color: 0x0e7490,
       overdrive: false,
       ttlMs: scaleGameDuration(burnDurationMs),
       delayMs: scaleGameDuration(500)
@@ -4914,12 +4916,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private getZeynepRayVisibleSegment(ray: ZeynepRayModel) {
     const headDistance = getRayAbsoluteDistance(ray.segments, ray.segmentIndex, ray.distanceOnSegment);
-    const tail = getPointOnRaySegments(ray.segments, Math.max(0, headDistance - this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH)));
+    const tailDistance = Math.max(0, headDistance - this.scaleWorldDistance(ZEYNEP_SYNTHESIS_RAY_LENGTH));
+    const tail = getPointOnRaySegments(ray.segments, tailDistance);
     return {
       x1: tail.x,
       y1: tail.y,
       x2: ray.x,
-      y2: ray.y
+      y2: ray.y,
+      // Gorunen parca bir sekmeyi asiyorsa koseleri: istemci isini kirik ciziyor.
+      bounces: getRayBounceVertices(ray.segments, tailDistance, headDistance)
     };
   }
 
@@ -4946,8 +4951,11 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private setZeynepRayBeam(ray: ZeynepRayModel, segment: { x1: number; y1: number; x2: number; y2: number }) {
+  private setZeynepRayBeam(ray: ZeynepRayModel, segment: { x1: number; y1: number; x2: number; y2: number; bounces?: number[] }) {
     const id = `zeynep-ray-${ray.id}`;
+    // Sekmeden sonraki renk Taht leylagi: eski 0xfdf2f8 beyazdan ayirt edilmiyordu
+    // ve kademe 3'te isin tumuyle beyaz okunuyordu.
+    const baseColor = ray.segmentIndex === 0 ? 0xe879f9 : 0xf0abfc;
     this.beams.set(id, {
       id,
       definitionId: "zeynep-3-ray",
@@ -4957,9 +4965,11 @@ export class MatchRoom extends Room<MatchState> {
       x2: segment.x2,
       y2: segment.y2,
       width: this.scaleWorldDistance(ZEYNEP_SYNTHESIS_BEAM_RADIUS * 2),
-      color: ray.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8, ray.abartiLevel) : ray.segmentIndex === 0 ? 0xe879f9 : 0xfdf2f8,
+      color: ray.abartiLevel > 0 ? this.getAbartiDarkenedBeamColor(baseColor, ray.abartiLevel) : baseColor,
       overdrive: false,
-      ttlMs: ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS
+      ttlMs: ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS,
+      // Yalnizca sekme gorunurken; yoksa anahtar hic yazilmiyor.
+      ...(segment.bounces ? { b: segment.bounces } : {})
     });
   }
 
@@ -5040,23 +5050,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getAbartiRect(tower: TowerModel) {
-    const gridSize = getMapGridSize(this.activeMap);
-    const thickness = Math.max(5, gridSize * 0.16);
-    if (tower.orientation === "vertical") {
-      return {
-        left: tower.x - thickness / 2,
-        right: tower.x + thickness / 2,
-        top: tower.y - gridSize,
-        bottom: tower.y + gridSize
-      };
-    }
-
-    return {
-      left: tower.x - gridSize,
-      right: tower.x + gridSize,
-      top: tower.y - thickness / 2,
-      bottom: tower.y + thickness / 2
-    };
+    // Paylasilan dikdortgen: istemcinin gecis nabzi da ayni yerde.
+    return getAbartiRailRect(tower.x, tower.y, tower.orientation, getMapGridSize(this.activeMap));
   }
 
   private getAbartiDarkenedBeamColor(color: number, level: number) {
@@ -11690,7 +11685,9 @@ export class MatchRoom extends Room<MatchState> {
           // Kademe telde yoktu: `setBeam` onu isin nesnesine yaziyordu ama bu
           // liste alanlari tek tek saydigi icin sunucudan hic cikmiyordu. Sekiz
           // ayri yerde hesaplanan deger, hicbir isin kulesinde ekrana ulasmadi.
-          tier: beam.tier
+          tier: beam.tier,
+          // Ayna isininin sekme koseleri: yalnizca sekme gorunurken, yoksa anahtar yok.
+          ...(beam.b ? { b: beam.b } : {})
         })),
       damageEvents: Array.from(this.damageEvents.values()).map(toDamageEventWire),
       killEvents: Array.from(this.killEvents.values()).map(toKillEventWire),
@@ -13667,20 +13664,9 @@ function getUcubeChainDamageMultiplier(tower: TowerModel) {
   return 0.42;
 }
 
-function getAbartiShowcaseRangeMultiplier(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 1.1 + ((clampedLevel - 1) / 9) * 0.9;
-}
-
 function getAbartiArmorBreak(level: number) {
   const clampedLevel = Math.min(Math.max(level, 1), 10);
   return Math.round(10 + ((clampedLevel - 1) / 9) * 20);
-}
-
-function isAbartiArmorBreakProjectile(definitionId: string) {
-  return definitionId === "zeynep-1" ||
-    definitionId === "zeynep-3" ||
-    definitionId === "zeynep-3-kin-projectile";
 }
 
 function getAbartiRayDamageGrowth(level: number) {
@@ -13956,7 +13942,7 @@ function didProjectileHitTarget(projectile: ProjectileModel, target: EnemyModel,
 
 
 function getEnemyCollisionRadius(enemy: EnemyModel) {
-  return enemy.type === "brute" ? 19 : enemy.type === "runner" ? 13 : 15;
+  return getEnemyTypeCollisionRadius(enemy.type);
 }
 
 function didDebugLaserSweepHitEnemy(
@@ -14041,6 +14027,23 @@ function getRayAbsoluteDistance(segments: RaySegment[], segmentIndex: number, di
     distance += segments[index]?.length ?? 0;
   }
   return distance;
+}
+
+/**
+ * Kuyruk ile bas arasindaki sekme koseleri, duz `[x, y, ...]` (yuvarlanmis);
+ * aralikta sekme yoksa `undefined` (telde anahtar yok).
+ */
+function getRayBounceVertices(segments: RaySegment[], tailDistance: number, headDistance: number) {
+  let vertices: number[] | undefined;
+  let travelled = 0;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    travelled += segments[index].length;
+    if (travelled <= tailDistance) continue;
+    if (travelled >= headDistance) break;
+    vertices ??= [];
+    vertices.push(roundNetworkNumber(segments[index].x2), roundNetworkNumber(segments[index].y2));
+  }
+  return vertices;
 }
 
 function getPointOnRaySegments(segments: RaySegment[], distance: number) {

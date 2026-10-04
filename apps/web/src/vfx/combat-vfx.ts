@@ -8,10 +8,12 @@ import {
   type BeamSnapshot,
   type ProjectileSnapshot
 } from "@karayel/shared";
-import { clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, strokeProfile, type VfxGraphics } from "./kit";
+import { clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, type VfxGraphics } from "./kit";
 
 type Graphics = VfxGraphics;
-export type ShotStyle = "tracker" | "pierce" | "psychic" | "server" | "electric" | "synthesis";
+// Zeynep'in mermileri (Hiza, Taht) artik ferman mizragi (zeynep-signatures);
+// burada yalnizca Atakan'in hareketli govdeleri kaldi.
+export type ShotStyle = "tracker" | "psychic" | "server" | "electric";
 /**
  * Olum patlamasi ("death" turu): basilan govde, kiymiklar, agir dusmanda toz
  * halkasi. Sprite yok; tek Graphics yuzeyinde, yasina gore her karede yeniden.
@@ -82,8 +84,8 @@ export type CastWave = {
   bornAt: number;
 };
 const colors: Record<ShotStyle, number> = {
-  tracker: 0x4dffbd, pierce: 0xffbd62, psychic: 0xcb79ff,
-  server: 0x58d9ff, electric: 0xadf765, synthesis: 0xf39dff
+  tracker: 0x4dffbd, psychic: 0xcb79ff,
+  server: 0x58d9ff, electric: 0xadf765
 };
 const noise = hashNoise;
 const clamp = clamp01;
@@ -92,8 +94,6 @@ export function shotStyle(id = ""): ShotStyle | undefined {
   if (id === "warrior-2") return "server";
   if (id === "warrior-4") return "psychic";
   if (id === "warrior-6") return "electric";
-  if (id === "zeynep-1") return "pierce";
-  if (id.startsWith("zeynep-3")) return "synthesis";
   return undefined;
 }
 
@@ -138,7 +138,7 @@ export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, now: nu
   const angle = Math.atan2(p.vy ?? 0, p.vx ?? 1), ux = Math.cos(angle), uy = Math.sin(angle);
   const nx = -uy, ny = ux;
   const seed = fnvHash(p.id) % 997;
-  const length = (style === "pierce" || style === "synthesis" ? 16 + tier * 5 : 10 + tier * 4) * scale;
+  const length = (10 + tier * 4) * scale;
   if (style === "electric" || style === "server") {
     const radius = (style === "server" ? 4.2 : 2.7) * scale;
     const phase = Math.floor(now / 45) + seed;
@@ -168,7 +168,7 @@ export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, now: nu
       (1 + (1 - t) * 2) * scale, color, (1 - t * 0.82) * 0.3);
   }
   if (style !== "psychic") {
-    const tip = 4 * scale, half = (style === "tracker" ? 1.5 : 2) * scale;
+    const tip = 4 * scale, half = 1.5 * scale;
     g.fillStyle(color, 0.95);
     g.fillTriangle(p.x + ux * tip, p.y + uy * tip, p.x - ux * 6 * scale + nx * half,
       p.y - uy * 6 * scale + ny * half, p.x - ux * 6 * scale - nx * half, p.y - uy * 6 * scale - ny * half);
@@ -183,8 +183,8 @@ export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, now: nu
  * aydinlatiliyor: oran korundugu icin Abarti'nin karartmasi (carpimsal) ve
  * Taht'in daha acik kizili ayni farkla okunuyor.
  */
-const PRESSURE_WAVE_GAIN = 1.72;
-function gainColor(color: number, gain: number) {
+export const PRESSURE_WAVE_GAIN = 1.72;
+export function gainColor(color: number, gain: number) {
   const channel = (shift: number) => Math.min(255, Math.round(((color >> shift) & 0xff) * gain));
   return (channel(16) << 16) | (channel(8) << 8) | channel(0);
 }
@@ -219,7 +219,8 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
   // Dense leading edge, trailing fractures: the front actually advances with server geometry.
   for (let band = 4; band >= 0; band--) {
     const r = Math.max(1, radius - band * 2.5 * scale);
-    g.lineStyle((band === 0 ? 1.6 : 2.5) * scale, band === 0 ? trim : color, (band === 0 ? 0.9 : 0.14 * (1 - band / 6)) * life);
+    // Arka yaylar 0.12'nin altindaydi, siyah zeminde gorunmuyordu.
+    g.lineStyle((band === 0 ? 1.6 : 2.5) * scale, band === 0 ? trim : color, (band === 0 ? 0.9 : 0.3 * (1 - band / 6)) * life);
     g.beginPath();
     for (let i = 0; i <= 24; i++) {
       const a = heading - halfAngle + halfAngle * 2 * i / 24;
@@ -249,29 +250,6 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
       fillDisc(g, beam.x1 + Math.cos(a) * (radius - back), beam.y1 + Math.sin(a) * (radius - back), Math.max(0.7, 1.2 * scale));
     }
   }
-}
-
-/**
- * Taht'in ayna isini: tek eksen, rengi isinin kendisi.
- *
- * Eski cizim iki yana iki sabit renkli ray cekiyordu (boru gorunumu) ve
- * Abarti'nin karartmasini yok sayiyordu. Simdi lazerin kesiti: kademe
- * 1 duz, 2 omuzlu ve beyaza cekilmis cekirdekli, 3 genis omuzlu. Kosan
- * oklar Zeynep'in rutbe trimiyle.
- */
-export function drawSynthesisRay(g: Graphics, beam: BeamSnapshot, now: number, scale: number) {
-  const dx = beam.x2 - beam.x1, dy = beam.y2 - beam.y1, length = Math.max(1, Math.hypot(dx, dy));
-  const nx = -dy / length, ny = dx / length, tier = beam.tier ?? 1;
-  const color = beam.color ?? 0xe879f9;
-  const trim = getZeynepTrim(tier, color);
-  strokeProfile(g, beam.x1, beam.y1, beam.x2, beam.y2, color, tier, { body: Math.max(1.6, 2.2 * scale), spread: 3 * scale });
-  for (let i = 0; i < tier + 1; i++) {
-    const t = (now / 750 + i / (tier + 1)) % 1;
-    const x = beam.x1 + dx * t, y = beam.y1 + dy * t, r = (2 + tier * 0.5) * scale;
-    g.fillStyle(i % 2 ? trim : liftToWhite(color, 0.6), 0.75);
-    g.fillTriangle(x - dx / length * r * 2, y - dy / length * r * 2, x + nx * r, y + ny * r, x - nx * r, y - ny * r);
-  }
-  glow(g, beam.x2, beam.y2, 3 * scale, liftToWhite(color, 0.7), 0.65);
 }
 
 /** Toz halkasinin rengi: dusmanin degil zeminin; agir govde yere iniyor. */

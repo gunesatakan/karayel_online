@@ -1,11 +1,14 @@
-import type { BeamSnapshot } from "@karayel/shared";
-import { drawPressureWave, drawSynthesisRay, getZeynepTrim } from "./combat-vfx";
+import { GAME_SPEED_MULTIPLIER, ZEYNEP_SYNTHESIS_BURN_TICK_MS, type BeamSnapshot } from "@karayel/shared";
+import { drawPressureWave, getZeynepTrim } from "./combat-vfx";
+import { drawChevron, drawCrownSigil, drawWaxSeal, fillRayPath } from "./zeynep-signatures";
+import { getCourtTier } from "./vfx-profiles";
 import {
   ATAKAN_ACCENT,
   LASER_CORONA,
   LASER_GLINTS,
   LASER_MUZZLE,
   LASER_SPARKS,
+  TEAMMATE_EXTRA_ALPHA,
   clamp01,
   drawBracketCorners,
   drawCodeSparks,
@@ -44,8 +47,8 @@ const OVERDRIVE_HALO_LAYERS = 6;
 /** Bir kivilcimin dogup sonme suresi. */
 const OVERDRIVE_SPARK_LIFE_MS = 520;
 
-/** Takim arkadasinin kademe 3 eklentileri bu alfada. */
-const TEAMMATE_TRIM_ALPHA = 0.7;
+/** Takim arkadasinin kademe 3 eklentileri bu alfada (kit'in tek kaynagi). */
+const TEAMMATE_TRIM_ALPHA = TEAMMATE_EXTRA_ALPHA;
 
 /**
  * Lazerin asiri yukleme sayilari kitin `LASER_*` degerleri; karede nesne
@@ -78,6 +81,18 @@ export const CHAIN_RESEED_MS = 60;
 const CHAIN_LIFE_MS = 190;
 /** Zeynep sutununun ic ice katmanlari (genislik orani). */
 const COLUMN_LAYERS = [1.35, 1, 0.62] as const;
+/** Ayna mizraginin yolu: kuyruk, sekmeler, bas (havuzlu noktalar). */
+const RAY_POINTS: Array<{ x: number; y: number }> = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
+const SPEAR_PROFILE = { body: 0, spread: 0 };
+const SPEAR_GLINTS = { ...LASER_GLINTS, count: 2, armBase: 3, armRange: 2, armWidth: 0.9, crossWidth: 0.7, haloRadius: 2.2, coreRadius: 1, cheapDiscs: true };
+const BURN_MOTES = { seed: 0, count: 4, radius: 0, color: 0, size: 0, alpha: 0, lifeMs: 900 };
+/** Yanik izinin hasar tiki (gercek saat): hit-sounds `AREA_BEAM_TICK_MS` ile ayni sabit. */
+const BURN_TICK_MS = ZEYNEP_SYNTHESIS_BURN_TICK_MS / GAME_SPEED_MULTIPLIER;
+/** Kin gosterisinin iki kenari ve kenardaki seritlerin yerleri (karede dizi yok). */
+const CONE_SIDES = [1, -1] as const;
+const CONE_CHEVRON_STOPS = [0.4, 0.68, 0.94] as const;
+/** Kin dalgasinin sonme suresi: sunucu dalgayi son karede siliyor, istemci son halini sonduruyor. */
+export const KIN_WAVE_FADE_MS = 200;
 
 export type BeamRenderOptions = {
   /** Efekt saati (ms). */
@@ -116,6 +131,10 @@ export class BeamRenderer {
   /** fillPoints icin yeniden kullanilan nokta dizileri; karede nesne uretilmiyor. */
   private readonly pointLists: Array<Array<{ x: number; y: number }>> = [];
   private pointCursor = 0;
+  /** Kin dalgalarinin son hali (kimlikle, havuzlu): kaybolunca sonduruluyor. */
+  private readonly kinLast = new Map<string, { beam: BeamSnapshot; seenAt: number; frame: number }>();
+  private readonly kinPool: Array<{ beam: BeamSnapshot; seenAt: number; frame: number }> = [];
+  private renderFrame = 0;
 
   constructor(
     protected readonly beamGraphics: (VfxGraphics & { clear(): unknown }) | undefined,
@@ -136,9 +155,59 @@ export class BeamRenderer {
     this.still = options.reducedMotion ?? false;
     this.pointCursor = 0;
 
+    this.renderFrame += 1;
     for (const beam of beams) {
       this.ownBeam = options.isOwn ? options.isOwn(beam) : true;
       this.drawBeam(beam);
+      if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave") this.rememberKinWave(beam, this.ownBeam);
+    }
+    this.fadeVanishedKinWaves();
+  }
+
+  /** Kin dalgasinin son hali: alanlar havuzdaki kendi nesnesine kopyalaniyor. */
+  private rememberKinWave(beam: BeamSnapshot, own: boolean) {
+    let entry = this.kinLast.get(beam.id);
+    if (!entry) {
+      entry = this.kinPool.pop() ?? { beam: { ...beam }, seenAt: 0, frame: 0 };
+      this.kinLast.set(beam.id, entry);
+    }
+    const copy = entry.beam;
+    copy.id = beam.id;
+    copy.definitionId = beam.definitionId;
+    copy.tier = beam.tier;
+    copy.x1 = beam.x1;
+    copy.y1 = beam.y1;
+    copy.x2 = beam.x2;
+    copy.y2 = beam.y2;
+    copy.width = beam.width;
+    copy.color = beam.color;
+    copy.overdrive = own;
+    entry.seenAt = this.now;
+    entry.frame = this.renderFrame;
+  }
+
+  /**
+   * Kin dalgasi sonmeden kayboluyordu: sunucu dalgayi menzilin ucunda siliyor
+   * ve son karede omur hala doluydu. Kaybolan dalga son halinde 200 ms'de
+   * soner (omur `drawPressureWave`in son 40 ms'lik sonmesine esleniyor).
+   * Hareket azaltmada da soner: sonme hareket degil.
+   */
+  private fadeVanishedKinWaves() {
+    for (const [id, entry] of this.kinLast) {
+      if (entry.frame === this.renderFrame) continue;
+      const since = this.now - entry.seenAt;
+      if (since >= KIN_WAVE_FADE_MS || since < 0) {
+        this.kinLast.delete(id);
+        this.kinPool.push(entry);
+        continue;
+      }
+      const ghost = entry.beam;
+      const own = Boolean(ghost.overdrive);
+      ghost.overdrive = false;
+      ghost.ttlMs = 40 * (1 - since / KIN_WAVE_FADE_MS);
+      this.ownBeam = own;
+      drawPressureWave(this.beamGraphics!, ghost, this.now, this.getTowerEffectScale());
+      ghost.overdrive = own;
     }
   }
 
@@ -202,7 +271,7 @@ export class BeamRenderer {
       this.drawMelisBrokenMirrorBurst(beam, color);
       this.drawBeamTierTrim(beam, color);
     } else if (beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
-      drawSynthesisRay(this.beamGraphics!, beam, this.now, this.getTowerEffectScale());
+      this.drawMirrorSpear(beam, color);
     } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3-burn") {
       this.drawShowcaseBeam(beam, color);
     } else if (beam.definitionId === "zeynep-3-burn-trail") {
@@ -787,6 +856,18 @@ export class BeamRenderer {
     this.drawBeamTierAccent(beam, color, ACCENT_AXIS);
   }
 
+  /**
+   * Taht'in Kin gosterisi: gercek 60 derecelik koni.
+   *
+   * Eskiden koni ~52 derece cizilip 60 derecede vuruyordu ve kademe 5'te
+   * hicbir sey degismiyordu. Simdi yari genislik isinin genisliginin yarisi
+   * (sunucu genisligi koninin gercek acisindan yaziyor). Kizil govde kaliyor:
+   * - Ferman (1): kizil koni ve bes isik cizgisi.
+   * - Nisan (2): koninin iki kenarinda disa bakan altin seritler ve
+   *   gecikmeli altin ikinci kenar (encore).
+   * - Regalya (3): koninin ucunda mum muhur, yaldiz zerreler, eksen dugumu.
+   * Hattaki her dusmanin spot isigi `ZeynepSignatureVfx`te.
+   */
   private drawKinShowcaseLight(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
@@ -801,23 +882,15 @@ export class BeamRenderer {
     const ny = ux;
     const life = clampRange((beam.ttlMs ?? 260) / 260, 0, 1);
     const flash = clampRange((life - 0.18) / 0.82, 0, 1);
-    const spread = Math.min(beam.width * 0.42, length * 0.5);
+    // Gercek koni: yari genislik isinin genisliginin yarisi.
+    const spread = beam.width / 2;
     const coreWidth = Math.max(5, Math.min(18, beam.width * 0.18));
-    const pulse = 0.92 + Math.sin(this.now / 30) * 0.08;
-
-    for (let index = -2; index <= 2; index += 1) {
-      const ratio = index / 2;
-      const endX = beam.x2 + nx * spread * ratio;
-      const endY = beam.y2 + ny * spread * ratio;
-      const width = coreWidth * (index === 0 ? 1.35 : 0.72);
-      const alpha = (index === 0 ? 0.88 : 0.42) * flash * pulse;
-      this.beamGraphics.lineStyle(width + 10, color, 0.13 * life);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-      this.beamGraphics.lineStyle(width + 4, color, 0.34 * life);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-      this.beamGraphics.lineStyle(Math.max(2, width), index === 0 ? 0xfff1f2 : 0xfca5a5, alpha);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-    }
+    const pulse = this.still ? 1 : 0.92 + Math.sin(this.now / 30) * 0.08;
+    const tier = beam.tier ?? 1;
+    const trim = getZeynepTrim(tier, color);
+    const court = getCourtTier(getBeamVfxProfile(beam.definitionId, color), tier);
+    const extra = this.ownBeam ? 1 : TEAMMATE_TRIM_ALPHA;
+    const scale = this.getTowerEffectScale();
 
     const cone = this.points(3);
     BeamRenderer.setPoint(cone, 0, beam.x1, beam.y1);
@@ -825,10 +898,62 @@ export class BeamRenderer {
     BeamRenderer.setPoint(cone, 2, beam.x2 - nx * spread, beam.y2 - ny * spread);
     this.beamGraphics.fillStyle(color, 0.18 * life);
     this.beamGraphics.fillPoints(cone, true);
+
+    for (let index = -2; index <= 2; index += 1) {
+      const ratio = index / 2;
+      const endX = beam.x2 + nx * spread * ratio * 0.92;
+      const endY = beam.y2 + ny * spread * ratio * 0.92;
+      const width = coreWidth * (index === 0 ? 1.35 : 0.72);
+      const alpha = (index === 0 ? 0.88 : 0.42) * flash * pulse;
+      this.beamGraphics.lineStyle(width + 4, color, 0.3 * life);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
+      this.beamGraphics.lineStyle(Math.max(2, width), index === 0 ? 0xfff1f2 : 0xfca5a5, alpha);
+      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
+    }
+    // Koninin kenarlari: vurdugu alan tam bu.
+    this.beamGraphics.lineStyle(Math.max(1, 1.4 * scale), liftToWhite(color, 0.35), 0.85 * life);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2 + nx * spread, beam.y2 + ny * spread);
+    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2 - nx * spread, beam.y2 - ny * spread);
+
+    if (court?.chevrons) {
+      // Nisan: kenarlarda disa bakan altin seritler.
+      for (const side of CONE_SIDES) {
+        const ex = beam.x2 + nx * spread * side;
+        const ey = beam.y2 + ny * spread * side;
+        const edgeAngle = Math.atan2(ey - beam.y1, ex - beam.x1);
+        const out = edgeAngle + side * Math.PI / 2;
+        for (const t of CONE_CHEVRON_STOPS) {
+          drawChevron(this.beamGraphics, beam.x1 + (ex - beam.x1) * t, beam.y1 + (ey - beam.y1) * t, out, Math.max(3, 3.6 * scale), Math.max(1, 1.1 * scale), trim, 0.95 * life);
+        }
+      }
+      if (court.encore && this.lod.secondBeatRing && life < 0.7) {
+        // Ikinci perde: biraz daha genis, soluk altin kenar.
+        const encore = clamp01((0.7 - life) / 0.5) * clamp01(life / 0.2);
+        const wide = spread * 1.12;
+        const glow = this.glowGraphics ?? this.beamGraphics;
+        glow.lineStyle(Math.max(1, 1.6 * scale), trim, 0.5 * encore);
+        glow.lineBetween(beam.x1, beam.y1, beam.x2 + nx * wide, beam.y2 + ny * wide);
+        glow.lineBetween(beam.x1, beam.y1, beam.x2 - nx * wide, beam.y2 - ny * wide);
+      }
+    }
+
     this.beamGraphics.fillStyle(0xfff1f2, 0.86 * flash);
     fillDisc(this.beamGraphics, beam.x1, beam.y1, Math.max(5, coreWidth * 0.7));
-    this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
-    fillDisc(this.beamGraphics, beam.x2, beam.y2, Math.max(8, spread * 0.08));
+    if (court?.seal) {
+      // Regalya: koninin ucunda muhur; yaldiz zerreler koninin icinde.
+      drawWaxSeal(this.beamGraphics, beam.x2, beam.y2, 3 * scale, darkenColor(color), trim, life * extra);
+      if (this.lod.sparks && !this.still) {
+        TRIM_MOTES.seed = fnvHash(beam.id) % 9973;
+        TRIM_MOTES.radius = spread * 0.6;
+        TRIM_MOTES.color = trim;
+        TRIM_MOTES.size = Math.max(0.8, 1 * scale);
+        TRIM_MOTES.alpha = 0.85 * life * extra;
+        drawMotes(this.glowGraphics ?? this.beamGraphics, beam.x1 + dx * 0.7, beam.y1 + dy * 0.7, this.now, TRIM_MOTES);
+      }
+    } else {
+      this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
+      fillDisc(this.beamGraphics, beam.x2, beam.y2, Math.max(4, Math.min(8, spread * 0.08)));
+    }
     // Kin gosterisi de disa acilir: eksen filamani evet, kenar raylari hayir.
     // Dugum koninin genisligine degil eksen cizgisine gore: eskiden 20-30
     // birimlik beyaz bir disk oluyordu.
@@ -837,32 +962,208 @@ export class BeamRenderer {
     this.drawBeamTierAccent(beam, color, ACCENT_AXIS);
   }
 
+  /**
+   * Taht'in ayna mizragi: sekmesi gorunen, gercek genislikte.
+   *
+   * Eskiden kuyruktan basa duz bir kiris ciziliyordu: isin kosede sektiginde
+   * kiris koseyi kesiyordu ve sekme hic gorunmuyordu; govde ~6 birimdi, isin
+   * 10 + dusman yaricapi icinde vuruyor. Simdi yol kuyruk -> sunucunun sekme
+   * koseleri (`b`) -> bas; govdenin zarfi isinin genisliginde (vurdugu bant),
+   * ucta mizrak basi. Isinin rengi sunucudan (Abarti koyulastirmasi dahil).
+   * - Ferman (1): duz govde, zarf ve mizrak basi.
+   * - Nisan (2): omuzlar ADD'de, govde boyunca basa kosan altin seritler.
+   * - Regalya (3): beyaza cekilmis file (ton omuzlarda), kosan parlamalar.
+   * Sekmenin kendi isareti (duvarda parlama, nisan, muhur) `ZeynepSignatureVfx`te.
+   */
+  private drawMirrorSpear(beam: BeamSnapshot, color: number) {
+    const g = this.beamGraphics;
+    if (!g) return;
+    const glow = this.glowGraphics ?? g;
+    const tier = beam.tier ?? 1;
+    const scale = this.getTowerEffectScale();
+    const extra = this.ownBeam ? 1 : TEAMMATE_TRIM_ALPHA;
+    const trim = getZeynepTrim(tier, color);
+    const count = fillRayPath(beam, RAY_POINTS);
+    const width = Math.max(4, beam.width);
+    SPEAR_PROFILE.body = Math.max(1.6, width * 0.3);
+    SPEAR_PROFILE.spread = width * 0.45;
+    let total = 0;
+    for (let index = 0; index + 1 < count; index += 1) {
+      const a = RAY_POINTS[index];
+      const b = RAY_POINTS[index + 1];
+      total += Math.hypot(b.x - a.x, b.y - a.y);
+      // Zarf: isinin gercek genisligi, soluk.
+      g.lineStyle(width, color, 0.14);
+      g.lineBetween(a.x, a.y, b.x, b.y);
+      strokeProfile(g, a.x, a.y, b.x, b.y, color, tier, SPEAR_PROFILE, glow);
+    }
+    // Sekme koselerinde birlesme: kirik cizgi kopuk durmasin.
+    g.fillStyle(color, 0.82);
+    for (let index = 1; index + 1 < count; index += 1) fillDisc(g, RAY_POINTS[index].x, RAY_POINTS[index].y, SPEAR_PROFILE.body * 0.5);
+
+    // Mizrak basi: son parcanin yonunde.
+    const head = RAY_POINTS[count - 1];
+    const neck = RAY_POINTS[count - 2];
+    const hx = head.x - neck.x;
+    const hy = head.y - neck.y;
+    const hl = Math.max(1, Math.hypot(hx, hy));
+    const ux = hx / hl;
+    const uy = hy / hl;
+    const tip = width * 0.85;
+    const half = width * 0.42;
+    g.fillStyle(tier >= 2 ? liftToWhite(color, 0.45) : liftToWhite(color, 0.2), 0.95);
+    g.fillTriangle(head.x + ux * tip, head.y + uy * tip, head.x - uy * half, head.y + ux * half, head.x + uy * half, head.y - ux * half);
+
+    if (tier >= 2 && total > 4) {
+      // Nisan: govde boyunca basa kosan altin seritler (hareket azaltmada yerinde).
+      const chevrons = 3;
+      for (let index = 0; index < chevrons; index += 1) {
+        const phase = this.still ? (index + 0.5) / chevrons : (index / chevrons + this.now / 600) % 1;
+        const point = this.pointAlong(count, total * phase);
+        drawChevron(g, point.x, point.y, point.angle, Math.max(3, width * 0.45), Math.max(1, 1.1 * scale), trim, 0.9);
+      }
+    }
+    if (tier >= 3 && !this.still && this.lod.corona) {
+      SPEAR_GLINTS.haloColor = color;
+      SPEAR_GLINTS.armBase = 3 * scale;
+      SPEAR_GLINTS.armRange = 2 * scale;
+      SPEAR_GLINTS.seedOffset = fnvHash(beam.id) % 997;
+      for (let index = 0; index + 1 < count; index += 1) {
+        drawRunningGlints(glow, RAY_POINTS[index].x, RAY_POINTS[index].y, RAY_POINTS[index + 1].x, RAY_POINTS[index + 1].y, this.now, SPEAR_GLINTS, extra);
+      }
+    }
+  }
+
+  /** Mizrak yolunda `distance` uzakliktaki nokta ve yon; karede nesne yok. */
+  private readonly along = { x: 0, y: 0, angle: 0 };
+  private pointAlong(count: number, distance: number) {
+    let remaining = distance;
+    for (let index = 0; index + 1 < count; index += 1) {
+      const a = RAY_POINTS[index];
+      const b = RAY_POINTS[index + 1];
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      if (remaining <= length || index + 2 === count) {
+        const t = length > 0 ? Math.min(1, remaining / length) : 0;
+        this.along.x = a.x + (b.x - a.x) * t;
+        this.along.y = a.y + (b.y - a.y) * t;
+        this.along.angle = Math.atan2(b.y - a.y, b.x - a.x);
+        return this.along;
+      }
+      remaining -= length;
+    }
+    this.along.x = RAY_POINTS[0].x;
+    this.along.y = RAY_POINTS[0].y;
+    this.along.angle = 0;
+    return this.along;
+  }
+
+  /**
+   * Taht'in yanik izi: duz bir serit degil, yanan bir hat.
+   *
+   * Eskiden kahverengi uc cizgilik sabit bir seritti ve tek degisimi
+   * sv 10'da uzerinde kayan beyaz bir topti. Govde yanigin camgobegi
+   * (sunucunun rengi), hasar tikiyle (333 oyun ms) nefes aliyor; hat
+   * boyunca korlar akiyor. Zarf yanigin gercek yaricapinda.
+   * - Ferman (1): camgobegi govde, tikle parlayan cekirdek, akan korlar.
+   * - Nisan (2): iki kenarda altin seritler; tikte ikinci parlama.
+   * - Regalya (3): iki ucta mum muhur, yaldiz zerreler; son 320 ms'de hat
+   *   uclarindan ortasina kapanir (ferman muhurlenir).
+   * Hareket azaltma: kor akmiyor, nefes yok, kapanma yok; yalnizca soner.
+   */
   private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
+    const g = this.beamGraphics;
+    if (!g) {
       return;
     }
 
-    const life = clampRange((beam.ttlMs ?? 0) / 3000, 0, 1);
+    const remaining = beam.ttlMs ?? 0;
+    const life = clampRange(remaining / 3000, 0, 1);
+    const fadeIn = clampRange(life / 0.08, 0, 1);
+    const tier = beam.tier ?? 1;
+    const court = getCourtTier(getBeamVfxProfile(beam.definitionId, color), tier);
+    const trim = getZeynepTrim(tier, color);
+    const extra = this.ownBeam ? 1 : TEAMMATE_TRIM_ALPHA;
+    const scale = this.getTowerEffectScale();
+    const seed = fnvHash(beam.id) % 997;
+    let x1 = beam.x1;
+    let y1 = beam.y1;
+    let x2 = beam.x2;
+    let y2 = beam.y2;
+    // Regalya: son 320 ms'de hat uclarindan ortasina kapaniyor.
+    const snap = court?.snap && !this.still ? clamp01(1 - remaining / 320) : 0;
+    if (snap > 0) {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const k = snap * snap;
+      x1 += (mx - x1) * k;
+      y1 += (my - y1) * k;
+      x2 += (mx - x2) * k;
+      y2 += (my - y2) * k;
+    }
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nx = -uy;
+    const ny = ux;
     const width = Math.max(5, beam.width * 0.34);
-    this.beamGraphics.lineStyle(width + 5, 0x1c0703, 0.28 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(width, color, 0.36 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(Math.max(2, width * 0.42), 0xf97316, 0.22 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    // Yanik izi sonup giden bir tortu: raysiz, yalnizca ince bir cekirdek.
-    ACCENT_AXIS.axisWidth = width * 0.42;
-    ACCENT_AXIS.lifeMs = 3000;
-    this.drawBeamTierAccent(beam, color, ACCENT_AXIS);
+    // Tik nabzi: hasar tiki ritminde parlayip soner. Ortak saat: N iz ayni anda
+    // nabiz atiyor (saniyede ~2.4), her izin kendi fazinda 2.4N degil.
+    const tick = this.still ? 0 : Math.pow(1 - ((this.now % BURN_TICK_MS) / BURN_TICK_MS), 3);
+    const alpha = fadeIn * Math.max(0.25, life);
+
+    // Zarf: yanigin gercek alani (soluk).
+    g.lineStyle(Math.max(width, beam.width * 0.9), color, 0.07 * alpha);
+    g.lineBetween(x1, y1, x2, y2);
+    g.lineStyle(width + 4, 0x082f49, 0.32 * alpha);
+    g.lineBetween(x1, y1, x2, y2);
+    g.lineStyle(width, color, (0.5 + tick * 0.2) * alpha);
+    g.lineBetween(x1, y1, x2, y2);
+    g.lineStyle(Math.max(1.5, width * 0.38), liftToWhite(color, 0.55), (0.35 + tick * 0.45) * alpha);
+    g.lineBetween(x1, y1, x2, y2);
+
+    if (this.lod.corona) {
+      // Akan korlar: hat boyunca ileri kayan kisa cizgiler.
+      const embers = 6;
+      g.lineStyle(Math.max(0.8, 1.1 * scale), liftToWhite(color, 0.75), 0.7 * alpha);
+      for (let index = 0; index < embers; index += 1) {
+        const phase = this.still ? (index + 0.5) / embers : (index / embers + hashNoise(seed + index) * 0.08 + this.now / 1600) % 1;
+        const along = phase * length;
+        const side = (hashNoise(seed + index * 3 + 1) - 0.5) * width * 0.7;
+        const px = x1 + ux * along + nx * side;
+        const py = y1 + uy * along + ny * side;
+        g.lineBetween(px, py, px - ux * 4 * scale, py - uy * 4 * scale);
+      }
+    }
+
+    if (court?.chevrons) {
+      // Nisan: iki kenarda altin seritler; tikte ikinci parlama.
+      const count = Math.max(2, Math.min(8, Math.floor(length / 22)));
+      const edge = width * 0.5 + 3 * scale;
+      const chevronAlpha = (0.75 + (court.encore ? tick * 0.25 : 0)) * alpha;
+      const angle = Math.atan2(uy, ux);
+      for (let index = 0; index < count; index += 1) {
+        const t = (index + 0.5) / count;
+        const px = x1 + dx * t;
+        const py = y1 + dy * t;
+        drawChevron(g, px + nx * edge, py + ny * edge, angle, Math.max(3, 3.4 * scale), Math.max(1, 1 * scale), trim, chevronAlpha);
+        drawChevron(g, px - nx * edge, py - ny * edge, angle, Math.max(3, 3.4 * scale), Math.max(1, 1 * scale), trim, chevronAlpha);
+      }
+    }
+    if (court?.seal) {
+      const sealAlpha = alpha * extra;
+      drawWaxSeal(g, x1, y1, 3 * scale, darkenColor(color), trim, sealAlpha);
+      drawWaxSeal(g, x2, y2, 3 * scale, darkenColor(color), trim, sealAlpha);
+      if (this.lod.sparks && !this.still) {
+        BURN_MOTES.seed = seed;
+        BURN_MOTES.radius = Math.min(length * 0.45, 40 * scale);
+        BURN_MOTES.color = trim;
+        BURN_MOTES.size = Math.max(0.7, 0.9 * scale);
+        BURN_MOTES.alpha = 0.8 * sealAlpha;
+        drawMotes(this.glowGraphics ?? g, (x1 + x2) / 2, (y1 + y2) / 2, this.now, BURN_MOTES);
+      }
+    }
   }
 
   /**
@@ -1129,6 +1430,12 @@ export class BeamRenderer {
   }
 }
 
+/** Mumun rengi: kombonun tonu koyulastirilmis (muhur hicbir zaman beyaz bir disk degil). */
+function darkenColor(color: number) {
+  const channel = (shift: number) => Math.round(((color >> shift) & 0xff) * 0.55);
+  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
+
 /** Isinlarin sunucudaki ttl'si: omur orani bununla. */
 const BEAM_LIFE_BASE_MS: Record<string, number> = {
   "archer-2-rage": 380,
@@ -1186,6 +1493,9 @@ export class BeamInterpolator {
       beam.overdrive = target.overdrive;
       beam.scanX = target.scanX;
       beam.scanY = target.scanY;
+      // Ayna isininin sekme koseleri: sabit dunya noktalari, ara deger yok. Havuzdaki
+      // nesne baska bir isindan kose tasiyabilir; yoksa silinmeli.
+      beam.b = target.b;
       const from = this.previousById.get(target.id);
       if (from && alpha < 1 && !BeamInterpolator.shouldSnap(from, target)) {
         const sameOrigin = Math.abs(from.x1 - target.x1) + Math.abs(from.y1 - target.y1) < 0.5;

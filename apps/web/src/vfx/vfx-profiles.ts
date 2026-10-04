@@ -44,6 +44,11 @@ export type VfxSilhouette =
   | "cell"
   /** Kirikli kivilcim oku: kendi kendini yeniden cizen simsek (Ucube). */
   | "arc"
+  /**
+   * Zeynep'in fermani: ince uzun mizrak ve sivri uc; Taht'ta kuyrugunda
+   * dizilimin muhru (uc nokta, uyelerin renginde).
+   */
+  | "lance"
   /** Mermi yok; isin, dalga ya da yorunge. */
   | "none";
 
@@ -70,7 +75,13 @@ export type VfxImpactStyle =
   /** Yukari baglanti: gercek yaricapta halka ve gokten inen sutun (Sunucu). */
   | "uplink"
   /** Hedefin cevresinde kapanan altigen kafes (Izolasyon). */
-  | "contain";
+  | "contain"
+  /**
+   * Ferman kertigi (Zeynep'in delen mermileri): govdeyi ucus yonune dik
+   * kesen bir cizgi; her delinen dusmanda bir tane, yani kertik sayisi
+   * delinen dusman sayisi.
+   */
+  | "decree";
 
 /** Sunucunun saldiriyi nasil teslim ettigi; galeri ve olcum bunu taklit ediyor. */
 export type VfxDelivery =
@@ -83,7 +94,9 @@ export type VfxDelivery =
   | "curse"
   | "whisper"
   | "underworld"
-  | "orbit";
+  | "orbit"
+  /** Ates etmeyen ray: atis yolunu degistiriyor (Abarti). */
+  | "rail";
 
 export type VfxTierRecipe = {
   tier: VfxTier;
@@ -179,6 +192,61 @@ export type VfxSignature = {
   tiers: readonly [VfxSignatureTier, VfxSignatureTier, VfxSignatureTier];
 };
 
+/**
+ * Zeynep'in saray dili: ferman -> nisan -> regalya.
+ *
+ * Rampa pembe -> altin -> beyaz altin ve **rutbe trimi** olarak calisiyor:
+ * govde kulenin (ya da kombonun: Kin kizili, yanik camgobegi, Abarti'nin
+ * koyulastirmasi) renginde kaliyor, kademe kenara rutbe ekliyor.
+ *
+ * - Ferman (sv 1-4): temiz bir eflatun mizrak ya da cizgi; trim govdenin
+ *   beyaza cekilmis hali.
+ * - Nisan (sv 5-9): altin seritler (chevron), ikinci perde (encore) ve
+ *   paralel raylar yerine "gecit toreni": hayalet kopyalar dizilimde.
+ * - Regalya (sv 10): tac ve muhur isaretleri, yaldiz zerreler, mum muhur
+ *   damgalari ve kapanan ferman cizgisi. Hicbir zaman tumuyle beyaz degil;
+ *   ton omuzlarda.
+ */
+export type VfxCourtAct = "decree" | "insignia" | "regalia";
+
+export type VfxCourtTier = {
+  act: VfxCourtAct;
+  /** Rutbe trimi: govdenin beyaza cekilmis hali (1), altin (2), beyaz altin (3). */
+  trim: number;
+  /** Altin seritler (chevron): nisanin isareti. */
+  chevrons: boolean;
+  /** Ikinci perde: ayni seyin gecikmeli, soluk bir tekrari. */
+  encore: boolean;
+  /** Gecit toreni: hayalet kopyalar dizilimde (raylarin yerine). */
+  parade: boolean;
+  /** Mum muhur damgasi. */
+  seal: boolean;
+  /** Tac isareti. */
+  crown: boolean;
+  /** Yaldiz zerreler (LOD ilk bunu kesiyor). */
+  giltMotes: boolean;
+  /** Ferman cizgisinin kapanmasi: uclarindan muhre cekiliyor. */
+  snap: boolean;
+};
+
+/** Zeynep kulesinin mekanigini gosteren imza. */
+export type VfxCourtMechanic =
+  /** Hiza: delinen dusmanlari birlestiren ferman cizgisi ve dusman basina kertik. */
+  | "pierce-line"
+  /** Gosteri: hattaki her dusmana spot isigi. */
+  | "spotlight"
+  /** Taht: dizilimin muhru (mizrakta ve atis aninda dizilimin kendisi). */
+  | "formation-seal"
+  /** Kin: vurulan dusmanda damga; yavaslatmanin gucu kadar serit. */
+  | "brand"
+  /** Abarti: atis rayi gectiginde nabiz. */
+  | "crossing-pulse";
+
+export type VfxCourtSignature = {
+  mechanic: VfxCourtMechanic;
+  tiers: readonly [VfxCourtTier, VfxCourtTier, VfxCourtTier];
+};
+
 export type VfxProfile = {
   id: string;
   character: string;
@@ -195,6 +263,8 @@ export type VfxProfile = {
   tiers: readonly [VfxTierRecipe, VfxTierRecipe, VfxTierRecipe];
   /** Karakter imzasi (Atakan); yoksa yalnizca genel uc perde. */
   signature?: VfxSignature;
+  /** Zeynep'in saray imzasi; Atakan'in `signature`indan ayri (yesil aksan yok). */
+  court?: VfxCourtSignature;
 };
 
 /* ------------------------------------------------------------------ */
@@ -292,6 +362,7 @@ const SILHOUETTE_SIZE: Record<VfxSilhouette, number> = {
   packet: 14,
   cell: 13,
   arc: 14,
+  lance: 15,
   none: 12
 };
 
@@ -352,6 +423,7 @@ type ProfileSeed = {
   heavy?: boolean;
   aoe?: boolean;
   signature?: { mechanic: VfxMechanic; trail: "scan" | "packets"; decal: "grid" | "hex" };
+  court?: VfxCourtMechanic;
 };
 
 /**
@@ -388,9 +460,24 @@ const UCUBE_RAMP = [0xadf765, 0x5eea8a, liftToWhite(0xbef264, 0.55)] as const;
  * yanigin camgobegi govdede kaliyor (isin rengi sunucudan, hep okunuyor);
  * rampa onlarda trim olarak calisiyor.
  */
-const ZEYNEP_GOLD = 0xf59e0b;
-const ZEYNEP_WHITE_GOLD = 0xfde68a;
+export const ZEYNEP_GOLD = 0xf59e0b;
+export const ZEYNEP_WHITE_GOLD = 0xfde68a;
 const zeynepRamp = (base: number) => [base, ZEYNEP_GOLD, ZEYNEP_WHITE_GOLD] as const;
+
+/**
+ * Zeynep imzasinin uc perdesi: ferman, nisan, regalya. Trim kademe 1'de
+ * govdenin beyaza cekilmis hali (combat-vfx `getZeynepTrim` ile ayni kural).
+ */
+function courtSignature(mechanic: VfxCourtMechanic, base: number): VfxCourtSignature {
+  return {
+    mechanic,
+    tiers: [
+      { act: "decree", trim: liftToWhite(base, 0.72), chevrons: false, encore: false, parade: false, seal: false, crown: false, giltMotes: false, snap: false },
+      { act: "insignia", trim: ZEYNEP_GOLD, chevrons: true, encore: true, parade: true, seal: false, crown: false, giltMotes: false, snap: false },
+      { act: "regalia", trim: ZEYNEP_WHITE_GOLD, chevrons: true, encore: true, parade: true, seal: true, crown: true, giltMotes: true, snap: true }
+    ]
+  };
+}
 
 /** Melis: menekse -> orkide/kizil -> menekse-beyaz kenar; olum ve alt dunya camgobegi. */
 const melisRamp = (base: number, second: number) => [base, second, liftToWhite(mixColor(base, 0xc4b5fd, 0.5), 0.62)] as const;
@@ -427,10 +514,14 @@ const PROFILE_SEEDS: Record<string, ProfileSeed> = {
     signature: { mechanic: "stack-gauge", trail: "scan", decal: "grid" }
   },
 
-  "zeynep-1": { character: "zeynep", delivery: "ballistic", silhouette: "combat", impact: "fragments", base: 0xec4899, ramp: zeynepRamp(0xec4899) },
-  "zeynep-2": { character: "zeynep", delivery: "showcase", silhouette: "none", impact: "fragments", base: 0xf9a8d4, ramp: zeynepRamp(0xf9a8d4) },
-  "zeynep-3": { character: "zeynep", delivery: "synthesis", silhouette: "combat", impact: "fragments", base: 0xf0abfc, ramp: zeynepRamp(0xf0abfc) },
-  "zeynep-6": { character: "zeynep", delivery: "kin", silhouette: "none", impact: "ripple", base: 0xdc466d, ramp: [0xdc466d, ZEYNEP_GOLD, ZEYNEP_WHITE_GOLD] },
+  // Zeynep: ferman mizragi ve kertik (Hiza, Taht), spot isigi (Gosteri), damga
+  // (Kin), gecis nabzi (Abarti). Govde kulenin renginde, rampa rutbe trimi.
+  "zeynep-1": { character: "zeynep", delivery: "ballistic", silhouette: "lance", impact: "decree", base: 0xec4899, ramp: zeynepRamp(0xec4899), court: "pierce-line" },
+  "zeynep-2": { character: "zeynep", delivery: "showcase", silhouette: "none", impact: "fragments", base: 0xf9a8d4, ramp: zeynepRamp(0xf9a8d4), court: "spotlight" },
+  "zeynep-3": { character: "zeynep", delivery: "synthesis", silhouette: "lance", impact: "decree", base: 0xf0abfc, ramp: zeynepRamp(0xf0abfc), court: "formation-seal" },
+  "zeynep-6": { character: "zeynep", delivery: "kin", silhouette: "none", impact: "ripple", base: 0xdc466d, ramp: [0xdc466d, ZEYNEP_GOLD, ZEYNEP_WHITE_GOLD], court: "brand" },
+  // Abarti ates etmiyor (saldiri sayilmiyor); profili gecis nabzinin rampasi icin.
+  "zeynep-8": { character: "zeynep", delivery: "rail", silhouette: "none", impact: "ripple", base: 0x7c3aed, ramp: zeynepRamp(0x7c3aed), court: "crossing-pulse" },
 
   "archer-1": { character: "archer", delivery: "ballistic", silhouette: "sprite", impact: "brackets", base: 0x8b5cf6, ramp: melisRamp(0x8b5cf6, 0xd946ef) },
   "archer-2": { character: "archer", delivery: "ballistic", silhouette: "sprite", impact: "shatter", base: 0xdb2777, ramp: melisRamp(0xdb2777, 0xe11d48) },
@@ -489,8 +580,16 @@ function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
     heavy: Boolean(seed.heavy),
     aoe: Boolean(seed.aoe),
     tiers: makeTiers(ramp, seed.silhouette, Boolean(seed.heavy)),
-    ...(seed.signature ? { signature: atakanSignature(seed.signature) } : {})
+    ...(seed.signature ? { signature: atakanSignature(seed.signature) } : {}),
+    ...(seed.court ? { court: courtSignature(seed.court, seed.base) } : {})
   };
+}
+
+/** Profilin bu kademedeki saray perdesi (Zeynep); imzasiz profilde `undefined`. */
+export function getCourtTier(profile: VfxProfile, tier: number | undefined) {
+  if (!profile.court) return undefined;
+  const index = tier !== undefined && tier >= 3 ? 2 : tier !== undefined && tier >= 2 ? 1 : 0;
+  return profile.court.tiers[index];
 }
 
 /** Profilin bu kademedeki imza perdesi; imzasiz profilde `undefined`. */

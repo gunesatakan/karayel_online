@@ -8,16 +8,21 @@ import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
 import { liftToWhite, toTier } from "../vfx/kit";
 import { VfxLod } from "../vfx/lod";
 import {
+  GALLERY_COURT_CELL,
+  ScenarioCourtFeed,
   VfxScenario,
   createStressScenario,
-  getAttackingDefinitionIds,
+  getCourtLanceMode,
+  getGalleryRows,
   getScenarioColor,
   getScenarioIntervalMs,
   walkerPosition,
+  type GalleryRow,
   type ScenarioTower,
   type ScenarioWalker
 } from "../vfx/vfx-scenario";
-import { getVfxProfile, getVfxTier, type VfxDelivery, type VfxMechanic } from "../vfx/vfx-profiles";
+import { getVfxProfile, getVfxTier, type VfxCourtMechanic, type VfxDelivery, type VfxMechanic } from "../vfx/vfx-profiles";
+import { ZeynepSignatureVfx, type CourtFrame } from "../vfx/zeynep-signatures";
 import { FeedbackDirector } from "../feedback-director";
 import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 
@@ -41,6 +46,14 @@ import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type 
  * Obsesyon yigini 13 atista 0 -> 10 yukselip hedef degisince kopuyor, Ucube
  * yigini sutuna gore 10 / 15 / 20 tavanina yukselip asiri isiniyor.
  *
+ * Zeynep satirlari mekanigi gosteren sahnelerde (ZeynepSignatureVfx ve
+ * ZeynepReceiptTracker, oyunla ayni siniflar): Hiza sira halindeki iki
+ * dusmani deliyor, Gosteri hattaki uc dusmana spot isigi, Taht'in mizraklari
+ * dizilim kipleriyle (cift Hiza, Kin, kopya) ve bozulan dizilimle, ayna isini
+ * hucrenin kenarindan sekiyor, yanik izi yanip kapaniyor, Kin gosterisi
+ * gercek 60 derecede, Kin dalgasi yakin/orta/uzak dusmani 1/2/3 seritle
+ * damgaliyor, Abarti rayindan gecen atis nabiz atiyor.
+ *
  * Vurus sesleri: ilk dokunus ses baglamini aciyor, sonra her temas oyundaki
  * gibi caliyor (ayni yonetmen, ayni butce). Bir hucreye dokunmak yalnizca o
  * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
@@ -62,6 +75,17 @@ const ROW_HEIGHT = 84;
 const GALLERY_ENEMY_SIZE = 30;
 /** Galerinin harita karesi: Izolasyon karantinasi ve Ucube gostergesi bununla. */
 const GALLERY_CELL = 22;
+/** Zeynep imzasinin satir etiketindeki adi. */
+const COURT_LABELS: Record<VfxCourtMechanic, string> = {
+  "pierce-line": "ferman çizgisi",
+  spotlight: "spot ışığı",
+  "formation-seal": "dizilim mührü",
+  brand: "Kin damgası",
+  "crossing-pulse": "Abartı geçişi"
+};
+/** Taht mizrak sahnesinin kip yazisi. */
+const LANCE_MODE_LABELS = { dual: "kip: çift Hiza", kin: "kip: Hiza + Kin", copy: "kip: kopya", broken: "dizilim bozuk" } as const;
+
 /** Imzanin satir etiketindeki adi. */
 const MECHANIC_LABELS: Record<VfxMechanic, string> = {
   "mark-reticle": "işaret nişangâhı",
@@ -86,6 +110,15 @@ export class VfxGalleryScene extends Phaser.Scene {
   private readonly lod = new VfxLod();
   private attackVfx?: AttackVfx;
   private signatures?: AtakanSignatureVfx;
+  /** Zeynep imzalari ve oyundaki turetme yolu (izleyici); oyunla ayni siniflar. */
+  private court?: ZeynepSignatureVfx;
+  private courtFeed?: ScenarioCourtFeed;
+  private readonly courtFrame: CourtFrame = { enemies: [], now: 0, scale: 1, enemySize: () => GALLERY_ENEMY_SIZE };
+  /** Abarti rayi ve ayna isininin duvari: sahnenin sabit cizimi. */
+  private courtStage?: Phaser.GameObjects.Graphics;
+  /** Taht mizrak satirinin kip yazilari (degisince yaziliyor). */
+  private readonly lanceLabels: Phaser.GameObjects.Text[] = [];
+  private lanceMode = "";
   /** Imza karesinin girdisi; karede yerinde yaziliyor. */
   private readonly signatureFrame: SignatureFrame = {
     towers: [],
@@ -139,8 +172,20 @@ export class VfxGalleryScene extends Phaser.Scene {
     const signatureLinks = this.add.graphics().setDepth(10.4);
     const signatureGlow = this.add.graphics().setDepth(10.42).setBlendMode(Phaser.BlendModes.ADD);
     const signatureMarks = this.add.graphics().setDepth(13.2);
-    this.surfaces = [beamGraphics, beamGlow, body, glow, events, signatureGround, signatureLinks, signatureGlow, signatureMarks];
+    // Zeynep imzalari oyundaki derinliklerde (GameScene ile ayni).
+    const courtGround = this.add.graphics().setDepth(7.45);
+    const courtLinks = this.add.graphics().setDepth(10.41);
+    const courtGlow = this.add.graphics().setDepth(10.43).setBlendMode(Phaser.BlendModes.ADD);
+    const courtMarks = this.add.graphics().setDepth(13.25);
+    this.courtStage = this.add.graphics().setDepth(7.2);
+    this.surfaces = [beamGraphics, beamGlow, body, glow, events, signatureGround, signatureLinks, signatureGlow, signatureMarks, courtGround, courtLinks, courtGlow, courtMarks];
     this.signatures = new AtakanSignatureVfx(signatureGround, signatureLinks, signatureGlow, signatureMarks, { lod: this.lod });
+    this.court = new ZeynepSignatureVfx(courtGround, courtLinks, courtGlow, courtMarks, { lod: this.lod });
+    this.courtFeed = new ScenarioCourtFeed(this.court, {
+      gridSize: GALLERY_CELL,
+      worldScale: GALLERY_CELL / 34,
+      isOwnOwner: (ownerId) => !this.teammate && ownerId === undefined
+    });
     this.flashPool = new FlashPool(this, 12.5);
     this.stamps = new GlowStampPool(this, 10.86);
     this.beamRenderer = new BeamRenderer(beamGraphics, beamGlow, this.lod);
@@ -197,6 +242,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     const frame = scenario.frame(this.now, step > 0 ? since : this.now);
     const ownOf = (key: string) => this.isOwnKey(key);
     for (const event of frame.events) {
+      // Saray olaylari (Zeynep) imza besleyicisinde.
+      if (event.type === "court") continue;
       const own = this.teammate ? false : event.own;
       const input = { x: event.x, y: event.y, angle: event.angle, definitionId: event.definitionId, tier: event.tier, own, key: event.key, bornAt: event.at };
       if (event.type === "anticipation") this.attackVfx.emitAnticipation(input);
@@ -217,6 +264,12 @@ export class VfxGalleryScene extends Phaser.Scene {
     signatureFrame.enemies = frame.signatureEnemies;
     signatureFrame.now = this.now;
     this.signatures?.render(signatureFrame);
+    this.courtFeed?.feed(frame, this.now);
+    const courtFrame = this.courtFrame;
+    courtFrame.enemies = frame.signatureEnemies;
+    courtFrame.now = this.now;
+    this.court?.render(courtFrame);
+    this.updateLanceLabels();
     this.flashPool?.update(this.now);
     const vfxMs = performance.now() - start;
     this.lod.note(vfxMs, frameMs, time);
@@ -236,7 +289,7 @@ export class VfxGalleryScene extends Phaser.Scene {
   }
 
   private get pageCount() {
-    return Math.max(1, Math.ceil(getAttackingDefinitionIds().length / this.rowsPerPage));
+    return Math.max(1, Math.ceil(getGalleryRows().length / this.rowsPerPage));
   }
 
   private buildScene() {
@@ -249,6 +302,12 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.labels = [];
     this.attackVfx?.clear();
     this.signatures?.clear();
+    this.court?.clear();
+    this.courtFeed?.clear();
+    this.courtStage?.clear();
+    for (const label of this.lanceLabels) label.destroy();
+    this.lanceLabels.length = 0;
+    this.lanceMode = "";
     for (const sprite of this.anchorSprites.values()) sprite.destroy();
     this.anchorSprites.clear();
     this.beamHitTracker?.clear();
@@ -264,6 +323,8 @@ export class VfxGalleryScene extends Phaser.Scene {
       const key = this.textures.exists(`tower-${tower.definitionId}`) ? `tower-${tower.definitionId}` : "projectile-tower";
       const sprite = this.add.image(tower.x, tower.y, key).setDepth(12);
       sprite.setDisplaySize(30, 30);
+      // Abarti kare kaplamiyor: govdesi sahnenin cizdigi ray.
+      if (tower.court === "abarti") sprite.setVisible(false);
       this.towerSprites.push(sprite);
       if (this.mode === "grid") {
         this.labels.push(this.add.text(tower.x, tower.y + 17, `sv ${tower.level}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: tierCss(tower) })
@@ -279,16 +340,26 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.walkerHitAt = this.scenario.walkers.map(() => -Infinity);
 
     if (this.mode === "grid") {
-      const ids = this.pageIds();
-      ids.forEach((id, row) => {
+      const rows = this.pageRows();
+      rows.forEach((entry, row) => {
+        const id = entry.definitionId;
         const definition = Object.values(towerCatalog).flat().find((tower) => tower.id === id);
         const y = HEADER + row * ROW_HEIGHT + 4;
         const voice = resolveHitVoice(id);
         const sound = voice ? ` · ses: ${HIT_VOICE_LABELS[voice]}` : "";
-        const mechanic = getVfxProfile(id).signature?.mechanic;
-        const signature = mechanic ? ` · imza: ${MECHANIC_LABELS[mechanic]}` : "";
-        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}${signature}${sound}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
+        const profile = getVfxProfile(id);
+        const mechanic = profile.signature?.mechanic;
+        const court = profile.court?.mechanic;
+        const signature = mechanic ? ` · imza: ${MECHANIC_LABELS[mechanic]}` : court ? ` · imza: ${COURT_LABELS[court]}` : "";
+        const variant = entry.label ? ` (${entry.label})` : "";
+        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}${variant}${signature}${sound}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
+        if (entry.court === "lances") {
+          COLUMN_LEVELS.forEach((_, column) => {
+            this.lanceLabels.push(this.add.text(column * COLUMN_WIDTH + 64, HEADER + row * ROW_HEIGHT + 70, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#f5d0fe" }).setDepth(13));
+          });
+        }
       });
+      this.drawCourtStage();
       this.labels.push(this.add.text(4, 1, "Dokun: ses açılır · hücreye dokun: tek kule", { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#94a3b8" }).setDepth(13));
       COLUMN_LEVELS.forEach((level, column) => {
         this.labels.push(this.add.text(column * COLUMN_WIDTH + 65, 14, `Sv ${level}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" })
@@ -301,32 +372,83 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.refreshControls();
   }
 
-  private pageIds() {
-    const ids = getAttackingDefinitionIds();
+  /** Bu sayfanin satirlari (Zeynep'in Taht kipleri ve Abarti dahil). */
+  private pageRows(): GalleryRow[] {
+    const rows = getGalleryRows();
     const per = this.rowsPerPage;
     this.page = Math.min(this.page, this.pageCount - 1);
-    return ids.slice(this.page * per, this.page * per + per);
+    return rows.slice(this.page * per, this.page * per + per);
   }
 
-  /** Satir basina bir kule tanimi, sutun basina bir seviye; her hucrede bir yuruyucu. */
+  /** Satir anahtarlari (`zeynep-3:ayna` gibi); kule kimligi `g-<anahtar>-<sv>`. */
+  private pageIds() {
+    return this.pageRows().map((row) => row.key);
+  }
+
+  /**
+   * Sahnenin sabit cizimi: Abarti rayi (menekse cizgi, oyundaki kalinlikta) ve
+   * ayna isininin sektigi hucre kenari (soluk cizgi).
+   */
+  private drawCourtStage() {
+    const g = this.courtStage;
+    if (!g || !this.scenario) return;
+    g.clear();
+    for (const tower of this.scenario.towers) {
+      if (tower.court === "abarti") {
+        const thickness = Math.max(5, GALLERY_CELL * 0.16);
+        g.lineStyle(thickness * 1.6, 0x7c3aed, 0.25);
+        g.lineBetween(tower.x, tower.y - GALLERY_CELL, tower.x, tower.y + GALLERY_CELL);
+        g.lineStyle(Math.max(2, thickness * 0.42), 0xc4b5fd, 0.85);
+        g.lineBetween(tower.x, tower.y - GALLERY_CELL, tower.x, tower.y + GALLERY_CELL);
+      } else if (tower.court === "ray" && tower.bounds) {
+        const { left, right, top, bottom } = tower.bounds;
+        g.lineStyle(1, 0x64748b, 0.55);
+        g.strokeRect(left, top, right - left, bottom - top);
+      }
+    }
+  }
+
+  /** Taht mizrak satirinin kip yazisi: dongu degisince bir kez yaziliyor. */
+  private updateLanceLabels() {
+    if (this.lanceLabels.length === 0) return;
+    const mode = getCourtLanceMode(this.now);
+    if (mode === this.lanceMode) return;
+    this.lanceMode = mode;
+    for (const label of this.lanceLabels) {
+      label.setText(LANCE_MODE_LABELS[mode]);
+      label.setColor(mode === "broken" ? "#fca5a5" : "#f5d0fe");
+    }
+  }
+
+  /**
+   * Satir basina bir kule tanimi, sutun basina bir seviye; her hucrede bir
+   * yuruyucu. Zeynep sahneleri kendi duzeninde (`createCourtCell`).
+   */
   private createGridScenario() {
     const towers: ScenarioTower[] = [];
     const walkers: ScenarioWalker[] = [];
-    this.pageIds().forEach((definitionId, row) => {
+    this.pageRows().forEach((entry, row) => {
+      const definitionId = entry.definitionId;
       const y = HEADER + row * ROW_HEIGHT + 48;
       COLUMN_LEVELS.forEach((level, column) => {
         const cellX = column * COLUMN_WIDTH;
+        if (entry.court) {
+          towers.push(createCourtCell(entry, level, cellX, y, HEADER + row * ROW_HEIGHT, row, column, walkers));
+          return;
+        }
         const walker = walkers.length;
         walkers.push({ id: `w-${definitionId}-${level}`, cx: cellX + 86, cy: y, rx: 22, ry: 13, periodMs: 3400, phase: row * 0.7 + column * 1.9 });
+        const lineup = definitionId === "zeynep-2" ? spawnLineup(walkers, `${entry.key}-${level}`, cellX + 70, y, 3, row, column) : undefined;
         towers.push({
-          id: `g-${definitionId}-${level}`,
+          id: `g-${entry.key}-${level}`,
           definitionId,
           level,
           x: cellX + 28,
           y,
           color: getScenarioColor(definitionId),
           own: true,
-          walker,
+          // Gosteri: hattin ortasindaki dusmana nisan; hat uc dusmani da kesiyor.
+          walker: lineup ? lineup[1] : walker,
           intervalMs: getScenarioIntervalMs(definitionId),
           // Izolasyon alani hucreye sigan boyda; Sunucu ve Izolasyon'un yan
           // kulesi hucrenin sag altinda (bag) ya da kulenin yaninda (komsu).
@@ -595,6 +717,75 @@ function belongsToTower(key: string, towerId: string) {
     index = key.indexOf(towerId, index + 1);
   }
   return false;
+}
+
+/**
+ * Sira halinde dusmanlar: ayni periyot ve fazda, yalnizca dikey salinan,
+ * yatay bir hatta (delinecek, Gosteri'nin hattinda yanacak). Indisleri doner.
+ */
+function spawnLineup(walkers: ScenarioWalker[], key: string, startX: number, y: number, count: number, row: number, column: number, spacing = 16) {
+  const indices: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    indices.push(walkers.length);
+    walkers.push({ id: `w-${key}-${index}`, cx: startX + index * spacing, cy: y, rx: 0, ry: 11, periodMs: 3600, phase: row * 0.7 + column * 1.9 });
+  }
+  return indices;
+}
+
+/** Zeynep sahnesinin hucresi: kule, dusmanlar ve (gerekirse) yan yapilar. */
+function createCourtCell(entry: GalleryRow, level: number, cellX: number, y: number, rowTop: number, row: number, column: number, walkers: ScenarioWalker[]): ScenarioTower {
+  const key = `${entry.key}-${level}`;
+  const base: ScenarioTower = {
+    id: `g-${key}`,
+    definitionId: entry.definitionId,
+    level,
+    x: cellX + 28,
+    y,
+    color: getScenarioColor(entry.definitionId),
+    own: true,
+    walker: 0,
+    intervalMs: getScenarioIntervalMs(entry.definitionId),
+    court: entry.court
+  };
+  switch (entry.court) {
+    case "pierce": {
+      const line = spawnLineup(walkers, key, cellX + 66, y, 3, row, column);
+      return { ...base, walker: line[0], walkers: line, intervalMs: 1000 };
+    }
+    case "lances": {
+      const first = walkers.length;
+      walkers.push({ id: `w-${key}-0`, cx: cellX + 82, cy: y - 4, rx: 10, ry: 9, periodMs: 3400, phase: row + column });
+      walkers.push({ id: `w-${key}-1`, cx: cellX + 100, cy: y + 14, rx: 8, ry: 6, periodMs: 3000, phase: row * 2 + column });
+      return { ...base, walker: first, walkers: [first, first + 1], intervalMs: 1300 };
+    }
+    case "ray": {
+      const first = walkers.length;
+      walkers.push({ id: `w-${key}-0`, cx: cellX + 66, cy: y + 20, rx: 10, ry: 3, periodMs: 3200, phase: row + column });
+      return { ...base, walker: first, walkers: [first], intervalMs: 1400, bounds: { left: cellX + 4, right: cellX + COLUMN_WIDTH - 4, top: rowTop + 16, bottom: rowTop + ROW_HEIGHT - 2 } };
+    }
+    case "burn": {
+      const line = spawnLineup(walkers, key, cellX + 62, y, 3, row, column);
+      return { ...base, walker: line[1], walkers: line, intervalMs: 4200 };
+    }
+    case "kin-showcase": {
+      const first = walkers.length;
+      walkers.push({ id: `w-${key}-0`, cx: cellX + 66, cy: y - 10, rx: 4, ry: 5, periodMs: 3000, phase: row + column });
+      walkers.push({ id: `w-${key}-1`, cx: cellX + 84, cy: y + 4, rx: 4, ry: 6, periodMs: 3400, phase: row + column + 1 });
+      walkers.push({ id: `w-${key}-2`, cx: cellX + 96, cy: y - 6, rx: 3, ry: 5, periodMs: 3800, phase: row + column + 2 });
+      return { ...base, walker: first + 1, walkers: [first, first + 1, first + 2], intervalMs: 1600 };
+    }
+    case "kin": {
+      // Yakin, orta, uzak: menzil 88 icinde ucte bir dilimler (1/2/3 serit).
+      const line = spawnLineup(walkers, key, cellX + 28 + 22, y, 3, row, column, 26);
+      return { ...base, walker: line[1], walkers: line, displayRange: 88 };
+    }
+    case "abarti": {
+      const line = spawnLineup(walkers, key, cellX + 84, y, 2, row, column);
+      return { ...base, x: cellX + 46, walker: line[0], walkers: line, intervalMs: 1100, anchor: { x: cellX + 14, y } };
+    }
+    default:
+      return base;
+  }
 }
 
 function levelToTier(level: number) {

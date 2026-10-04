@@ -10,11 +10,18 @@
  *
  * Gercek oyundaki cizicilere (AttackVfx, BeamRenderer) besleniyor; galeri
  * yeni bir cizim yazmiyor, oyunun kendi cizimini gosteriyor.
+ *
+ * Zeynep sahneleri (`court`): galeride Zeynep satirlari mekanigi gosteren
+ * duzende -- delinecek bir dusman sirasi, kurulup bozulan dizilim, ayna
+ * isininin sektigi duvar, yanik izi, Kin dalgasinin yakin/orta/uzak
+ * dusmanlari, Abarti rayi. Spot isigi, damga, gecis, dizilim ve sekme
+ * olaylari oyundaki gibi `ZeynepReceiptTracker`dan turuyor (`ScenarioCourtFeed`).
  */
-import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot } from "@karayel/shared";
+import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot, type TowerSnapshot } from "@karayel/shared";
 import type { SignatureEnemy, SignatureTower } from "./atakan-signatures";
 import { fnvUnit, toTier, type VfxTier } from "./kit";
 import { getVfxProfile, getVfxTier, isAttackingDefinition, type VfxDelivery } from "./vfx-profiles";
+import { TAHT_COPY_ID, ZeynepReceiptTracker, type CourtEventInput, type ReceiptContext, type ZeynepSignatureVfx } from "./zeynep-signatures";
 
 export type ScenarioTower = {
   id: string;
@@ -32,7 +39,22 @@ export type ScenarioTower = {
   displayRange?: number;
   /** Sunucu bagi ve Izolasyon komsusu icin hucre ici yan kule konumu. */
   anchor?: { x: number; y: number };
+  /**
+   * Zeynep sahnesi (galeri): mekanigi gosteren duzen. Yoksa teslim profilden.
+   * - pierce: Hiza, sira halindeki dusmanlari deliyor.
+   * - lances: Taht, dizilim kipleri (cift Hiza, Kin, kopya) ve bozulan dizilim.
+   * - ray / burn / kin-showcase: Taht'in ayna, yanik ve Kin gosterisi kipleri.
+   * - kin: Kin dalgasi yakin, orta ve uzak dusmanda.
+   * - abarti: Abarti rayi; yardimci Hiza rayin icinden atiyor.
+   */
+  court?: CourtScene;
+  /** Sahnenin dusmanlari (yuruyucu sirasi); ilk eleman hedef. */
+  walkers?: number[];
+  /** Ayna isininin sektigi hucre siniri. */
+  bounds?: { left: number; right: number; top: number; bottom: number };
 };
+
+export type CourtScene = "pierce" | "lances" | "ray" | "burn" | "kin-showcase" | "kin" | "abarti";
 
 export type ScenarioWalker = {
   id: string;
@@ -47,7 +69,13 @@ export type ScenarioWalker = {
 
 export type ScenarioEvent =
   | { type: "anticipation" | "muzzle"; x: number; y: number; angle: number; definitionId: string; tier: VfxTier; own: boolean; key: string; at: number }
-  | { type: "contact"; x: number; y: number; angle: number; definitionId: string; tier: VfxTier; own: boolean; key: string; at: number; radius?: number; walker: number };
+  | {
+    type: "contact"; x: number; y: number; angle: number; definitionId: string; tier: VfxTier; own: boolean; key: string; at: number; radius?: number; walker: number;
+    /** Delen merminin kimligi: ayni merminin temaslari tek ferman cizgisi. */
+    projectile?: string;
+  }
+  /** Dogrudan saray olayi (yuk testi: butun dusmanlar Kin damgali). */
+  | { type: "court"; input: CourtEventInput; at: number };
 
 export type ScenarioFrame = {
   projectiles: ProjectileSnapshot[];
@@ -90,7 +118,11 @@ export class VfxScenario {
    * @param options.teamMarkEvery Yuk testi: her N. yuruyucu takimin Takipci'leriyle
    *   uc yigin isaretli (4 oyunculu macta 2-3 Takipci ~15 dusmani isaretli tutuyor).
    */
-  constructor(readonly towers: readonly ScenarioTower[], readonly walkers: readonly ScenarioWalker[], readonly options: { teamMarkEvery?: number } = {}) {}
+  /**
+   * @param options.kinBrandEvery Yuk testi: her N. yuruyucu Kin damgali (1 = hepsi,
+   *   kalabalik dalgada iki Kin kulesinin gercekci en kotu durumu).
+   */
+  constructor(readonly towers: readonly ScenarioTower[], readonly walkers: readonly ScenarioWalker[], readonly options: { teamMarkEvery?: number; kinBrandEvery?: number } = {}) {}
 
   /** `now` anindaki mermi ve isinlar, ve (since, now] araligindaki olaylar. */
   frame(now: number, since: number): ScenarioFrame {
@@ -108,10 +140,37 @@ export class VfxScenario {
       const tier = toTier(levelTier(tower.level));
       const walker = this.walkers[tower.walker % this.walkers.length];
       const phase = fnvUnit(tower.id) * tower.intervalMs;
+      if (tower.court) {
+        this.deliverCourt(tower, tier, phase, now, since, frame);
+        continue;
+      }
       const lastContact = this.deliver(profile.delivery, tower, tier, walker, phase, now, since, frame);
       this.signature(tower, tier, phase, now, lastContact, frame);
     }
+    this.brandAll(now, since, frame);
     return frame;
+  }
+
+  /**
+   * Yuk testi: her N. yuruyucu saniyede bir yeniden Kin damgasi aliyor
+   * (1.3 sn omurlu; damga hic dusmuyor). Guc yuruyucunun sirasindan (1-3).
+   */
+  private brandAll(now: number, since: number, frame: ScenarioFrame) {
+    const every = this.options.kinBrandEvery ?? 0;
+    if (every <= 0) return;
+    this.walkers.forEach((walker, index) => {
+      if (index % every !== 0) return;
+      const offset = fnvUnit(walker.id, 9) * 1000;
+      const beat = Math.floor((now + offset) / 1000);
+      const at = beat * 1000 - offset;
+      if (!(at > since && at <= now)) return;
+      const position = walkerPosition(walker, at);
+      frame.events.push({
+        type: "court",
+        at,
+        input: { kind: "brand", key: walker.id, x: position.x, y: position.y, color: 0x7f1d1d, tier: 3, own: index % 4 !== 0, durationMs: 1300, strength: (index % 3) + 1, angle: 0 }
+      });
+    });
   }
 
   /** Izolasyon kulesi su an yalniz mi (alan acik, atis yok). */
@@ -264,7 +323,17 @@ export class VfxScenario {
         frame.events.push({
           type: "contact", x: aim.x, y: aim.y, angle, definitionId, tier, own: tower.own, key, at: arrivesAt,
           radius: profile.aoe ? 26 + (tower.level - 1) * 3 : undefined,
-          walker: tower.walker
+          walker: tower.walker,
+          projectile: key
+        });
+      }
+      // Hiza deliyor: ayni dogrultuda bir dusman daha (ferman cizgisi olculsun).
+      const pierceAt = arrivesAt + (16 / SCENARIO_PROJECTILE_SPEED) * 1000;
+      if (tower.definitionId === "zeynep-1" && pierceAt > since && pierceAt <= now) {
+        frame.events.push({
+          type: "contact", x: aim.x + (dx / length) * 16, y: aim.y + (dy / length) * 16, angle, definitionId, tier, own: tower.own, key: `${key}-2`, at: pierceAt,
+          walker: tower.walker,
+          projectile: key
         });
       }
       if (now >= firedAt && now < arrivesAt) {
@@ -313,6 +382,221 @@ export class VfxScenario {
       color: 0xadf765,
       overdrive: false,
       ttlMs: 190 - age
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Zeynep sahneleri                                                    */
+  /* ---------------------------------------------------------------- */
+
+  private deliverCourt(tower: ScenarioTower, tier: VfxTier, phase: number, now: number, since: number, frame: ScenarioFrame) {
+    const state: SignatureTower & { characterId?: TowerSnapshot["characterId"]; orientation?: "horizontal" | "vertical" } = {
+      id: tower.id, definitionId: tower.definitionId, x: tower.x, y: tower.y, level: tower.level, ownerId: tower.own ? undefined : "teammate", characterId: "zeynep"
+    };
+    frame.signatureTowers.push(state);
+    const walkers = (tower.walkers ?? [tower.walker]).map((index) => this.walkers[index % this.walkers.length]);
+    switch (tower.court) {
+      case "pierce":
+        this.courtPierce(tower, tier, walkers, phase, now, since, frame, tower.definitionId, tower.x, tower.y);
+        return;
+      case "lances":
+        this.courtLances(tower, tier, walkers, phase, now, since, frame);
+        return;
+      case "ray":
+        this.courtPartners(tower, frame, ["zeynep-1", "zeynep-2"]);
+        this.courtRay(tower, tier, walkers[0], phase, now, frame);
+        return;
+      case "burn":
+        this.courtPartners(tower, frame, ["zeynep-2", "zeynep-2"]);
+        this.courtBurn(tower, tier, walkers, phase, now, frame);
+        return;
+      case "kin-showcase":
+        this.courtPartners(tower, frame, ["zeynep-2", "zeynep-6"]);
+        this.courtKinShowcase(tower, tier, walkers, phase, now, frame);
+        return;
+      case "kin":
+        state.range = tower.displayRange ?? 88;
+        this.deliverBeams("kin", tower, tier, walkers[Math.min(1, walkers.length - 1)], phase, now, since, frame);
+        return;
+      case "abarti": {
+        // Ray dikey; yardimci Hiza rayin solunda, sabit seviyede (nabzin kademesi Abarti'nin).
+        state.orientation = "vertical";
+        const helper = { ...tower, id: `${tower.id}-hiza`, definitionId: "zeynep-1", level: 1, x: tower.anchor?.x ?? tower.x - 22, y: tower.anchor?.y ?? tower.y, court: "pierce" as const };
+        frame.signatureTowers.push({ id: helper.id, definitionId: "zeynep-1", x: helper.x, y: helper.y, level: 1, ownerId: state.ownerId, characterId: "zeynep" } as SignatureTower);
+        this.courtPierce(helper, 1, walkers, phase, now, since, frame, "zeynep-1", helper.x, helper.y);
+        return;
+      }
+      default:
+    }
+  }
+
+  /** Dizilim uyeleri: Taht'in ust ve sag ustunde (galerinin karesi 22). */
+  private courtPartners(tower: ScenarioTower, frame: ScenarioFrame, ids: readonly string[]) {
+    const cell = GALLERY_COURT_CELL;
+    const spots = [{ x: tower.x, y: tower.y - cell }, { x: tower.x + cell, y: tower.y - cell }];
+    ids.forEach((definitionId, index) => {
+      frame.signatureTowers.push({
+        id: `${tower.id}-uye${index}`, definitionId, x: spots[index].x, y: spots[index].y, level: tower.level,
+        ownerId: tower.own ? undefined : "teammate", characterId: "zeynep"
+      } as SignatureTower);
+    });
+  }
+
+  /**
+   * Delen atis: ilk dusmana nisan, ayni dogrultuda arkasindaki dusmani da
+   * deliyor (Hiza 2 dusman), ikinci temasta mermi bitiyor.
+   */
+  private courtPierce(tower: ScenarioTower, tier: VfxTier, walkers: readonly ScenarioWalker[], phase: number, now: number, since: number, frame: ScenarioFrame, definitionId: string, originX: number, originY: number, salvo = 0) {
+    const recipe = getVfxTier(getVfxProfile(definitionId), tier);
+    const interval = tower.intervalMs;
+    const latest = Math.floor((now + recipe.muzzle.anticipationMs - phase) / interval);
+    for (let shot = latest; shot >= latest - 4 && shot >= 0; shot -= 1) {
+      const firedAt = phase + shot * interval;
+      const first = walkerPosition(walkers[0], firedAt + 200);
+      const dx = first.x - originX;
+      const dy = first.y - originY;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const ux = dx / length;
+      const uy = dy / length;
+      const angle = Math.atan2(dy, dx);
+      const key = `${tower.id}-p${shot}${salvo ? `s${salvo}` : ""}`;
+      // Temaslar: ilk dusman ve dogrultudaki ikinci (izdusumu).
+      const hits: Array<{ along: number; walker: number }> = [{ along: length, walker: this.walkers.indexOf(walkers[0]) }];
+      if (walkers.length > 1) {
+        const second = walkerPosition(walkers[1], firedAt + 200);
+        const along = (second.x - originX) * ux + (second.y - originY) * uy;
+        if (along > length + 4) hits.push({ along, walker: this.walkers.indexOf(walkers[1]) });
+      }
+      const end = hits[hits.length - 1].along;
+      const endAt = firedAt + (end / SCENARIO_PROJECTILE_SPEED) * 1000;
+      if (endAt < since - 1) break;
+      const tierField = tier === 1 ? undefined : tier;
+      const anticipateAt = firedAt - recipe.muzzle.anticipationMs;
+      if (recipe.muzzle.anticipationMs > 0 && anticipateAt > since && anticipateAt <= now) {
+        frame.events.push({ type: "anticipation", x: originX, y: originY, angle, definitionId, tier, own: tower.own, key, at: anticipateAt });
+      }
+      if (firedAt > since && firedAt <= now) {
+        frame.events.push({ type: "muzzle", x: originX, y: originY, angle, definitionId, tier, own: tower.own, key, at: firedAt });
+      }
+      hits.forEach((hit, index) => {
+        const at = firedAt + (hit.along / SCENARIO_PROJECTILE_SPEED) * 1000;
+        if (at > since && at <= now) {
+          frame.events.push({
+            type: "contact", x: originX + ux * hit.along, y: originY + uy * hit.along, angle, definitionId, tier, own: tower.own,
+            key: `${key}-c${index}`, at, walker: hit.walker, projectile: key
+          });
+        }
+      });
+      if (now >= firedAt && now < endAt) {
+        const travelled = ((now - firedAt) / 1000) * SCENARIO_PROJECTILE_SPEED;
+        frame.projectiles.push({
+          id: key, kind: "tower", source: "tower", definitionId, hitType: "projectile",
+          x: originX + ux * travelled, y: originY + uy * travelled,
+          vx: ux * SCENARIO_PROJECTILE_SPEED, vy: uy * SCENARIO_PROJECTILE_SPEED, tier: tierField
+        });
+      }
+    }
+  }
+
+  /**
+   * Taht'in mizraklari: 16 sn'lik dongu. Cift Hiza (iki mizrak), Hiza + Kin
+   * (Kin mizragi), iki Taht + Hiza (kopya), sonra dizilim bozuluyor (uye
+   * gidiyor, Taht susuyor).
+   */
+  private courtLances(tower: ScenarioTower, tier: VfxTier, walkers: readonly ScenarioWalker[], phase: number, now: number, since: number, frame: ScenarioFrame) {
+    const mode = getCourtLanceMode(now);
+    if (mode === "broken") {
+      this.courtPartners(tower, frame, ["zeynep-1"]);
+      return;
+    }
+    const partners = mode === "dual" ? ["zeynep-1", "zeynep-1"] : mode === "kin" ? ["zeynep-1", "zeynep-6"] : ["zeynep-3", "zeynep-1"];
+    this.courtPartners(tower, frame, partners);
+    const definitionId = mode === "dual" ? "zeynep-3" : mode === "kin" ? "zeynep-3-kin-projectile" : TAHT_COPY_ID;
+    // Atislar yalnizca bu kipin araliginda (kip degisince eski mizrak yolda biter).
+    const start = Math.floor(now / COURT_LANCE_CYCLE_MS) * COURT_LANCE_CYCLE_MS + COURT_LANCE_MODES.indexOf(mode) * COURT_LANCE_PHASE_MS;
+    const local = Math.max(phase, start);
+    this.courtPierce(tower, tier, walkers.slice(0, 1), local, now, Math.max(since, start), frame, definitionId, tower.x, tower.y);
+    if (mode === "dual" && walkers.length > 1) {
+      this.courtPierce(tower, tier, walkers.slice(1, 2), local, now, Math.max(since, start), frame, definitionId, tower.x, tower.y, 2);
+    }
+  }
+
+  /** Ayna isini: hucrenin kenarindan sekiyor; gorunen parca kuyruk -> sekme -> bas. */
+  private courtRay(tower: ScenarioTower, tier: VfxTier, walker: ScenarioWalker, phase: number, now: number, frame: ScenarioFrame) {
+    const interval = tower.intervalMs;
+    const shot = Math.floor((now - phase) / interval);
+    if (shot < 0) return;
+    const firedAt = phase + shot * interval;
+    const bounds = tower.bounds ?? { left: tower.x - 30, right: tower.x + 100, top: tower.y - 30, bottom: tower.y + 34 };
+    const target = walkerPosition(walker, firedAt);
+    const segments = getCourtRaySegments(tower.x, tower.y, target.x, target.y, 2, bounds);
+    let total = 0;
+    for (const segment of segments) total += segment.length;
+    const head = ((now - firedAt) / 1000) * COURT_RAY_SPEED;
+    if (head > total) return;
+    const tail = Math.max(0, head - COURT_RAY_LENGTH);
+    const headPoint = pointOnSegments(segments, head);
+    const tailPoint = pointOnSegments(segments, tail);
+    const bounces: number[] = [];
+    let travelled = 0;
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      travelled += segments[index].length;
+      if (travelled > tail && travelled < head) bounces.push(Math.round(segments[index].x2 * 100) / 100, Math.round(segments[index].y2 * 100) / 100);
+    }
+    frame.beams.push({
+      id: `zeynep-ray-${tower.id}-${shot}`,
+      definitionId: "zeynep-3-ray",
+      tier: tier === 1 ? undefined : tier,
+      x1: tailPoint.x, y1: tailPoint.y, x2: headPoint.x, y2: headPoint.y,
+      width: 14,
+      color: headPoint.segment === 0 ? 0xe879f9 : 0xf0abfc,
+      overdrive: false,
+      ttlMs: 140,
+      ...(bounces.length > 0 ? { b: bounces } : {})
+    });
+  }
+
+  /** Yanik: flas hattin uzerinde, iz 500 ms sonra; iz 3 sn yaniyor. */
+  private courtBurn(tower: ScenarioTower, tier: VfxTier, walkers: readonly ScenarioWalker[], phase: number, now: number, frame: ScenarioFrame) {
+    const interval = tower.intervalMs;
+    const tierField = tier === 1 ? undefined : tier;
+    for (let shot = Math.floor((now - phase) / interval); shot >= 0 && shot >= Math.floor((now - phase) / interval) - 1; shot -= 1) {
+      const firedAt = phase + shot * interval;
+      const age = now - firedAt;
+      const aim = walkerPosition(walkers[Math.min(1, walkers.length - 1)], firedAt);
+      const angle = Math.atan2(aim.y - tower.y, aim.x - tower.x);
+      const reach = 88;
+      const x2 = tower.x + Math.cos(angle) * reach;
+      const y2 = tower.y + Math.sin(angle) * reach;
+      if (age >= 0 && age < 260) {
+        frame.beams.push({ id: `zeynep-burn-${tower.id}-${shot}`, definitionId: "zeynep-3-burn", tier: tierField, x1: tower.x, y1: tower.y, x2, y2, width: 18, color: 0x22d3ee, overdrive: false, ttlMs: 260 - age });
+      }
+      if (age >= 500 && age < 3500) {
+        frame.beams.push({ id: `zeynep-burn-trail-${tower.id}-${shot}`, definitionId: "zeynep-3-burn-trail", tier: tierField, x1: tower.x, y1: tower.y, x2, y2, width: 22, color: 0x0e7490, overdrive: false, ttlMs: 3500 - age });
+      }
+    }
+  }
+
+  /** Taht'in Kin gosterisi: gercek 60 derecelik koni, dusman kumesinin uzerinde. */
+  private courtKinShowcase(tower: ScenarioTower, tier: VfxTier, walkers: readonly ScenarioWalker[], phase: number, now: number, frame: ScenarioFrame) {
+    const interval = tower.intervalMs;
+    const shot = Math.floor((now - phase) / interval);
+    if (shot < 0) return;
+    const firedAt = phase + shot * interval;
+    const age = now - firedAt;
+    if (age >= 260) return;
+    const aim = walkerPosition(walkers[Math.min(1, walkers.length - 1)], firedAt);
+    const angle = Math.atan2(aim.y - tower.y, aim.x - tower.x);
+    const range = 76;
+    frame.beams.push({
+      id: `kin-showcase-${tower.id}-${shot}`,
+      definitionId: "zeynep-3-kin-showcase",
+      tier: tier === 1 ? undefined : tier,
+      x1: tower.x, y1: tower.y, x2: tower.x + Math.cos(angle) * range, y2: tower.y + Math.sin(angle) * range,
+      width: Math.tan(Math.PI / 6) * range * 2,
+      color: 0xef4444,
+      overdrive: false,
+      ttlMs: 260 - age
     });
   }
 
@@ -375,8 +659,136 @@ export class VfxScenario {
   }
 }
 
-function levelTier(level: number) {
+export function levelTier(level: number) {
   return level >= 10 ? 3 : level >= 5 ? 2 : 1;
+}
+
+/** Galerinin harita karesi (VfxGalleryScene `GALLERY_CELL`): dizilim komsulugu bununla. */
+export const GALLERY_COURT_CELL = 22;
+/** Taht mizrak sahnesinin dongusu: dort kip, her biri 4 sn. */
+export const COURT_LANCE_PHASE_MS = 4000;
+export const COURT_LANCE_MODES = ["dual", "kin", "copy", "broken"] as const;
+export const COURT_LANCE_CYCLE_MS = COURT_LANCE_PHASE_MS * COURT_LANCE_MODES.length;
+/** Galerideki ayna isini: gorunen boy ve hiz (oyunda 4 kare, 930 birim/sn). */
+const COURT_RAY_LENGTH = 36;
+const COURT_RAY_SPEED = 260;
+
+export function getCourtLanceMode(now: number) {
+  return COURT_LANCE_MODES[Math.floor((((now % COURT_LANCE_CYCLE_MS) + COURT_LANCE_CYCLE_MS) % COURT_LANCE_CYCLE_MS) / COURT_LANCE_PHASE_MS)];
+}
+
+type CourtRaySegment = { x1: number; y1: number; x2: number; y2: number; length: number };
+
+/** Sunucunun `getMirrorBeamSegments`i: hucre sinirindan sekme. */
+function getCourtRaySegments(x1: number, y1: number, tx: number, ty: number, bounces: number, bounds: { left: number; right: number; top: number; bottom: number }) {
+  const length = Math.max(1, Math.hypot(tx - x1, ty - y1));
+  let nx = (tx - x1) / length;
+  let ny = (ty - y1) / length;
+  let sx = x1;
+  let sy = y1;
+  const segments: CourtRaySegment[] = [];
+  for (let index = 0; index <= bounces; index += 1) {
+    const tX = nx > 0 ? (bounds.right - sx) / nx : nx < 0 ? (bounds.left - sx) / nx : Number.POSITIVE_INFINITY;
+    const tY = ny > 0 ? (bounds.bottom - sy) / ny : ny < 0 ? (bounds.top - sy) / ny : Number.POSITIVE_INFINITY;
+    const t = Math.max(0, Math.min(tX, tY));
+    const ex = sx + nx * t;
+    const ey = sy + ny * t;
+    segments.push({ x1: sx, y1: sy, x2: ex, y2: ey, length: Math.hypot(ex - sx, ey - sy) });
+    if (tX < tY) nx = -nx;
+    else ny = -ny;
+    sx = ex + nx * 0.01;
+    sy = ey + ny * 0.01;
+  }
+  return segments;
+}
+
+function pointOnSegments(segments: readonly CourtRaySegment[], distance: number) {
+  let remaining = Math.max(0, distance);
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (remaining <= segment.length) {
+      const t = segment.length > 0 ? remaining / segment.length : 1;
+      return { x: segment.x1 + (segment.x2 - segment.x1) * t, y: segment.y1 + (segment.y2 - segment.y1) * t, segment: index };
+    }
+    remaining -= segment.length;
+  }
+  const last = segments[segments.length - 1];
+  return { x: last.x2, y: last.y2, segment: segments.length - 1 };
+}
+
+/** Galeri satiri: bir kule tanimi ve (Zeynep'te) gosterdigi sahne. */
+export type GalleryRow = { key: string; definitionId: string; court?: CourtScene; label?: string };
+
+/**
+ * Galerinin satirlari: saldiran kuleler katalog sirasiyla; Zeynep'in Taht'i
+ * kiplerine bolunuyor (mizrak + dizilim, ayna, yanik, Kin gosterisi) ve
+ * Abarti (ates etmiyor, saldiri sayilmiyor) gecis nabziyla ekleniyor.
+ */
+export function getGalleryRows(): GalleryRow[] {
+  const rows: GalleryRow[] = [];
+  for (const id of getAttackingDefinitionIds()) {
+    switch (id) {
+      case "zeynep-1":
+        rows.push({ key: id, definitionId: id, court: "pierce" });
+        break;
+      case "zeynep-2":
+        rows.push({ key: id, definitionId: id });
+        break;
+      case "zeynep-3":
+        rows.push({ key: id, definitionId: id, court: "lances", label: "mızrak + dizilim" });
+        rows.push({ key: `${id}:ayna`, definitionId: id, court: "ray", label: "ayna sekmesi" });
+        rows.push({ key: `${id}:yanik`, definitionId: id, court: "burn", label: "yanık izi" });
+        rows.push({ key: `${id}:kin`, definitionId: id, court: "kin-showcase", label: "Kin gösterisi" });
+        break;
+      case "zeynep-6":
+        rows.push({ key: id, definitionId: id, court: "kin" });
+        rows.push({ key: "zeynep-8", definitionId: "zeynep-8", court: "abarti", label: "geçiş nabzı" });
+        break;
+      default:
+        rows.push({ key: id, definitionId: id });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Senaryonun Zeynep olaylarini oyundaki yoldan geciriyor: temas -> ferman
+ * cizgisi, atis -> dizilim ve Abarti gecisi (`noteProjectileSpawn`), kare ->
+ * spot isigi, damga, gecis ve sekme (`noteSnapshot`). Galeri ve olcum ayni
+ * besleyiciyi kullaniyor; gecikme yok (galeride "alindigi an" karenin ani).
+ */
+export class ScenarioCourtFeed {
+  readonly tracker: ZeynepReceiptTracker;
+  private at = 0;
+
+  constructor(private readonly vfx: ZeynepSignatureVfx, private readonly context: ReceiptContext) {
+    this.tracker = new ZeynepReceiptTracker((event, delayMs) => this.vfx.emit(event, this.at + delayMs));
+  }
+
+  feed(frame: ScenarioFrame, now: number) {
+    for (const event of frame.events) {
+      if (event.type === "court") {
+        this.vfx.emit(event.input, event.at);
+        continue;
+      }
+      if (getVfxProfile(event.definitionId).silhouette !== "lance") continue;
+      if (event.type === "muzzle") {
+        this.at = event.at;
+        this.tracker.noteProjectileSpawn({
+          id: event.key, definitionId: event.definitionId, x: event.x, y: event.y,
+          vx: Math.cos(event.angle) * SCENARIO_PROJECTILE_SPEED, vy: Math.sin(event.angle) * SCENARIO_PROJECTILE_SPEED, tier: event.tier
+        }, frame.signatureTowers, this.context, event.at);
+      } else if (event.type === "contact") {
+        this.vfx.emit({ kind: "pierce", key: event.projectile ?? event.key, x: event.x, y: event.y, angle: event.angle, definitionId: event.definitionId, tier: event.tier, own: event.own }, event.at);
+      }
+    }
+    this.at = now;
+    this.tracker.noteSnapshot(frame.beams, frame.signatureEnemies, frame.signatureTowers, this.context, now);
+  }
+
+  clear() {
+    this.tracker.clear();
+  }
 }
 
 /** Galeri ve olcum: katalogdaki saldiran kuleler, katalog sirasiyla. */
@@ -418,7 +830,7 @@ export function getScenarioColor(definitionId: string) {
  * (soluk eklentiler de olculsun). Galerinin yuk kipi ve `tools/vfx-bench.mjs`
  * ayni sahneyi kullaniyor.
  */
-export function createStressScenario(width = 390, top = 90, height = 640, options: { teamMarkEvery?: number } = {}) {
+export function createStressScenario(width = 390, top = 90, height = 640, options: { teamMarkEvery?: number; kinBrandEvery?: number } = {}) {
   const ids = getAttackingDefinitionIds();
   const towers: ScenarioTower[] = [];
   const walkers: ScenarioWalker[] = [];
@@ -470,5 +882,5 @@ export function createStressScenario(width = 390, top = 90, height = 640, option
       anchor: definitionId === "warrior-2" ? { x: x + 70, y: y + 50 } : definitionId === "warrior-3" ? { x: x + 26, y } : undefined
     });
   }
-  return new VfxScenario(towers, walkers, { teamMarkEvery: options.teamMarkEvery ?? 4 });
+  return new VfxScenario(towers, walkers, { teamMarkEvery: options.teamMarkEvery ?? 4, kinBrandEvery: options.kinBrandEvery ?? 0 });
 }

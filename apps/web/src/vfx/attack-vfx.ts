@@ -21,6 +21,7 @@ import type { ProjectileSnapshot } from "@karayel/shared";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
   ATAKAN_ACCENT,
+  TEAMMATE_EXTRA_ALPHA,
   clamp01,
   darken,
   drawBracketCorners,
@@ -51,10 +52,20 @@ import {
 } from "./kit";
 import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
-import { getSignatureTier, getVfxProfile, getVfxTier, type VfxImpactStyle, type VfxProfile, type VfxSignatureTier, type VfxTierRecipe } from "./vfx-profiles";
+import { getCourtTier, getSignatureTier, getVfxProfile, getVfxTier, type VfxImpactStyle, type VfxProfile, type VfxSignatureTier, type VfxTierRecipe } from "./vfx-profiles";
+import {
+  COURT_FLASH_GAP_MS,
+  LANCE_OPTIONS,
+  drawDecreeInsignia,
+  drawDecreeSeal,
+  drawDecreeTick,
+  drawZeynepLance,
+  getLanceMode,
+  getZeynepBodyColor
+} from "./zeynep-signatures";
 
-/** Takim arkadasinin kademe 3 eklentileri bu alfada; kendi kulen tam. */
-export const TEAMMATE_EXTRA_ALPHA = 0.7;
+/** Takim arkadasinin kademe 3 eklentileri (tek kaynak kit'te). */
+export { TEAMMATE_EXTRA_ALPHA };
 /** Canli olay ust siniri; dolunca en eski olay yerini veriyor. */
 export const MAX_ATTACK_EVENTS = 192;
 /** Ikinci vurusun gecikmesi: sahne saatinde, oynatma gecikmesinden bagimsiz. */
@@ -81,6 +92,15 @@ type AttackEvent = {
   own: boolean;
   /** Alan hasarinin gercek yaricapi; yoksa 0. */
   radius: number;
+  /** Ferman kertiginin beyaz cekirdegi bu olayda mi (saniyede en fazla 3; hareket azaltmada hic). */
+  flash: boolean;
+  /** Vurulan dusmanin ekrandaki capi (Zeynep kertigi govdeyi sariyor); yoksa 0. */
+  size: number;
+  /**
+   * Govde rengi: Zeynep'te kipin rengi (rampa yalnizca trim), digerlerinde
+   * kademenin rampa duragi.
+   */
+  body: number;
 };
 
 export type AttackEventInput = {
@@ -94,6 +114,8 @@ export type AttackEventInput = {
   /** Tohum kaynagi: olayin kimligi (mermi kimligi). */
   key?: string;
   radius?: number;
+  /** Vurulan dusmanin ekrandaki capi (sprite'in tam boyu); Zeynep kertigi icin. */
+  size?: number;
   /** Bilinmeyen kimlikte profilin rengi. */
   fallbackColor?: number;
 };
@@ -200,6 +222,8 @@ export class AttackVfx {
   private signaturesThisFrame = 0;
   /** Son beyaz igne ucu (olay saati); genel 3/sn siniri icin. */
   private lastPinpointAt = Number.NEGATIVE_INFINITY;
+  /** Son ferman kertigi cekirdegi (olay saati); ayni 3/sn siniri. */
+  private lastDecreeFlashAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly body: VfxGraphics & { clear(): unknown },
@@ -250,14 +274,19 @@ export class AttackVfx {
       const moving = Math.abs(vx) + Math.abs(vy) > 0.01;
       const angle = moving ? Math.atan2(vy, vx) : 0;
 
+      // Zeynep: govde ve iz kipin renginde, rampa yalnizca trim (cekirdek).
+      // Eskiden kademe 5'te Hiza'nin iziyle mizragi altina boyaniyordu.
+      const court = profile.court ? getCourtTier(profile, tier) : undefined;
+      const bodyColor = court ? getZeynepBodyColor(projectile.definitionId, profile.base) : recipe.color;
+
       // Iz: en son dusen ayrinti, ama tamamen degil (en az iki nokta).
       const entry = this.trails.record(projectile.id, projectile.x, projectile.y);
       if (entry && moving) {
-        RIBBON.color = recipe.color;
+        RIBBON.color = bodyColor;
         RIBBON.width = recipe.trail.width * scale;
         RIBBON.alpha = tier === 1 ? 0.5 : 0.62;
         RIBBON.maxPoints = Math.max(2, Math.round(recipe.trail.points * lod.trailScale));
-        RIBBON_CORE.color = recipe.core;
+        RIBBON_CORE.color = court ? liftToWhite(court.trim, 0.3) : recipe.core;
         RIBBON.core = recipe.trail.hotCore ? RIBBON_CORE : undefined;
         drawTaperedRibbon(this.body, entry, this.trails.bufferCapacity, projectile.x, projectile.y, RIBBON);
         if (signature && signature.trailMotif !== "plain") {
@@ -274,7 +303,21 @@ export class AttackVfx {
       }
 
       const radius = (recipe.silhouette / 2) * scale;
-      if (profile.silhouette === "combat") {
+      if (profile.silhouette === "lance") {
+        // Ferman mizragi (zeynep-signatures): kip rengi, Taht'ta dizilim muhru,
+        // kademe 2'de gecit toreni (LOD 2'de dusuyor), 3'te muhur halkasi.
+        LANCE_OPTIONS.mode = getLanceMode(projectile.definitionId);
+        LANCE_OPTIONS.tier = tier;
+        LANCE_OPTIONS.court = court;
+        LANCE_OPTIONS.radius = radius;
+        LANCE_OPTIONS.scale = scale;
+        LANCE_OPTIONS.extra = extra;
+        LANCE_OPTIONS.parade = lod.corona;
+        drawZeynepLance(this.body, shoulders, projectile.x, projectile.y, angle, LANCE_OPTIONS);
+        if (stamps && recipe.shoulders > 0) {
+          stamps.stamp(projectile.x, projectile.y, bodyColor, radius * (tier >= 3 ? 4 : 3), tier >= 3 ? 0.6 : 0.5);
+        }
+      } else if (profile.silhouette === "combat") {
         // combat-vfx'in hareketli govdesi: kelime ayni, olcek 1.4 kat, renk profilden.
         drawCombatProjectile(this.body, projectile, now, scale * 1.4, recipe.color);
         if (recipe.shoulders > 0) {
@@ -324,13 +367,14 @@ export class AttackVfx {
 
       if (tier >= 3) {
         if (lod.corona && !still && stamps) {
-          // Nefes alan hale: tek damga, boyu ve alfasi nefesle.
+          // Nefes alan hale: tek damga, boyu ve alfasi nefesle. Zeynep'te
+          // hale govdenin tonunda (ton omuzlarda; beyaz altin yalnizca trim).
           const breath = 0.5 + Math.sin(now / 160 + hashNoise(fnvHash(projectile.id) % 997) * 6) * 0.5;
-          stamps.stamp(projectile.x, projectile.y, recipe.color, radius * (5 + breath * 1.4), (0.22 + breath * 0.12) * extra);
+          stamps.stamp(projectile.x, projectile.y, bodyColor, radius * (5 + breath * 1.4), (0.22 + breath * 0.12) * extra);
         } else if (lod.corona && !still) {
           CORONA.radius = radius * 0.8;
           CORONA.step = radius * 0.3;
-          CORONA.color = recipe.color;
+          CORONA.color = bodyColor;
           CORONA.alpha = 0.05 * extra;
           CORONA.phase = hashNoise(fnvHash(projectile.id) % 997);
           drawPointCorona(this.glow, projectile.x, projectile.y, now, CORONA);
@@ -473,7 +517,8 @@ export class AttackVfx {
     const event = this.push("muzzle", input);
     if (!event) return;
     const recipe = event.recipe;
-    const lifted = liftToWhite(recipe.color, 0.55);
+    // Zeynep: parlama govdenin tonunda (beyaz altin yalnizca trim; tumuyle beyaz cakma yok).
+    const lifted = event.profile.court ? liftToWhite(event.body, 0.45) : liftToWhite(recipe.color, 0.55);
     this.flashes.flash({
       x: input.x,
       y: input.y,
@@ -503,11 +548,17 @@ export class AttackVfx {
     const recipe = event.recipe;
     const extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const still = this.still;
+    if (event.profile.impact === "decree" && !still && input.bornAt - this.lastDecreeFlashAt >= COURT_FLASH_GAP_MS) {
+      // Hiza saniyede ~6 dusman deliyor: beyaz cekirdek yalnizca saniyede 3 kez.
+      event.flash = true;
+      this.lastDecreeFlashAt = input.bornAt;
+    }
     this.flashes.flash({
       x: input.x,
       y: input.y,
       texture: "glow",
-      tint: recipe.color,
+      // Zeynep: carpma parlamasi govdenin tonunda; kademe 3'te beyaz bir top degil.
+      tint: event.profile.court ? event.body : recipe.color,
       alpha: 0.75,
       sizeFrom: 14 + event.tier * 4,
       sizeTo: still ? 14 + event.tier * 4 : 22 + event.tier * 6,
@@ -623,6 +674,9 @@ export class AttackVfx {
     event.seed = input.key ? fnvHash(input.key) % 100003 : fnvHash(`${Math.round(input.x)}:${Math.round(input.y)}:${Math.round(input.bornAt)}`) % 100003;
     event.own = input.own ?? true;
     event.radius = input.radius ?? 0;
+    event.size = input.size ?? 0;
+    event.flash = false;
+    event.body = profile.court ? getZeynepBodyColor(input.definitionId, profile.base) : recipe.color;
     return event;
   }
 
@@ -641,12 +695,15 @@ export class AttackVfx {
     const fade = 1 - age;
     const ux = Math.cos(event.angle);
     const uy = Math.sin(event.angle);
-    const lifted = liftToWhite(recipe.color, 0.55);
+    // Zeynep: alev dili govdenin tonunda, diken patlamasi rutbe trimiyle.
+    const court = event.profile.court ? getCourtTier(event.profile, event.tier) : undefined;
+    const flame = court ? event.body : recipe.color;
+    const lifted = court ? liftToWhite(court.trim, 0.3) : liftToWhite(recipe.color, 0.55);
     // Namlunun en parlak noktasi: ileri dogru kisa bir alev dili.
     const reach = (9 + event.tier * 3) * scale * (still ? 1 : 1 - age * 0.6);
     LINE_PROFILE.body = (2.6 - age * 1.6) * scale;
     LINE_PROFILE.spread = 3 * scale;
-    strokeProfile(g, event.x, event.y, event.x + ux * reach, event.y + uy * reach, recipe.color, event.tier, LINE_PROFILE, undefined, fade);
+    strokeProfile(g, event.x, event.y, event.x + ux * reach, event.y + uy * reach, flame, event.tier, LINE_PROFILE, undefined, fade);
     g.fillStyle(lifted, 0.95 * fade);
     fillDisc(g, event.x, event.y, (2.2 + event.tier * 0.5) * scale * (1 - age * 0.4));
     if (recipe.muzzle.burst) {
@@ -674,6 +731,11 @@ export class AttackVfx {
     const extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const s = scale * recipe.impact.scale;
     drawImpulse(g, event.profile.impact, event, age, s, still);
+    if (event.profile.impact === "decree" && event.tier >= 2) {
+      // Nisan: cikista altin serit; gecikmeli ikinci kertik (LOD 2'de dusuyor).
+      const court = getCourtTier(event.profile, event.tier);
+      drawDecreeInsignia(g, event.x, event.y, event.angle, decreeSize(event, scale), court?.trim ?? recipe.color, age, elapsed, event.durationMs, scale, still, lod.secondBeatRing);
+    }
 
     // Ikinci vurus: ayni tonda, gecikmeli bir yanki halkasi (kademe 2+).
     if (recipe.impact.secondBeat && lod.secondBeatRing && elapsed >= SECOND_BEAT_DELAY_MS) {
@@ -727,6 +789,11 @@ export class AttackVfx {
 /* Carpma dili (combat-vfx'in kelimeleri, olcekli ve renkli)              */
 /* -------------------------------------------------------------------- */
 
+/** Kertigin boyu: dusmanin ekrandaki capi; bilinmiyorsa grunt (34 * olcek). */
+function decreeSize(event: AttackEvent, scale: number) {
+  return event.size > 0 ? event.size : 34 * scale;
+}
+
 function line(g: VfxGraphics, x1: number, y1: number, x2: number, y2: number, width: number, color: number, alpha: number) {
   if (alpha <= 0 || width <= 0) return;
   g.lineStyle(width, color, clamp01(alpha));
@@ -766,6 +833,11 @@ function drawImpulse(g: VfxGraphics, style: VfxImpactStyle, event: AttackEvent, 
   const motion = still ? 0 : 1;
 
   switch (style) {
+    case "decree": {
+      // Ferman kertigi: govdeyi kesen cizgi, dusmanin ekrandaki capinda.
+      drawDecreeTick(g, x, y, angle, decreeSize(event, s / event.recipe.impact.scale), event.body, age, s / event.recipe.impact.scale, still, event.flash);
+      return;
+    }
     case "uplink": {
       // Sunucu: gercek yaricapta acilan halka ve yukaridan inen kisa bir
       // paket cizgisi -- vurus "yukaridan" geliyor. Yaricap sunucunun `r`si;
@@ -927,6 +999,13 @@ function drawSignature(g: VfxGraphics, event: AttackEvent, age: number, s: numbe
   const core = event.recipe.core;
   const fade = (1 - age) * extra;
   switch (event.profile.impact) {
+    case "decree": {
+      // Regalya: cikis tarafinda basilan mum muhur (takim arkadasininki %70).
+      const scale = s / event.recipe.impact.scale;
+      const trim = getCourtTier(event.profile, event.tier)?.trim ?? color;
+      drawDecreeSeal(g, x, y, angle, decreeSize(event, scale), event.body, trim, age, scale, still, extra);
+      return;
+    }
     case "uplink": {
       // Gokten inen baglanti sutunu: lazerin kademe 3 kesiti dikey, beyaz-
       // sicak cekirdek, ton omuzlarda. Gercek yaricapta ikinci halka.

@@ -659,3 +659,108 @@ test("galeri senaryosu yığın alanlarını besliyor: Obsesyon yükseliyor, Ucu
   assert.ok(marked > 0, "Takipci sv 10 yuruyucuyu uc yiginla isaretlemeli");
   assert.deepEqual([...isolation].sort(), [false, true], "Izolasyon yalniz ve komsulu evreler");
 });
+
+/* ------------------------------------------------------------------ */
+/* Zeynep imzalari: ferman -> nisan -> regalya                          */
+/* ------------------------------------------------------------------ */
+
+const zeynep = await importWebModule("apps/web/src/vfx/zeynep-signatures.ts");
+const GOLD = 0xf59e0b;
+const WHITE_GOLD = 0xfde68a;
+const ZEYNEP_SIGNED = ["zeynep-1", "zeynep-2", "zeynep-3", "zeynep-6", "zeynep-8"];
+const allColors = (...recorders) => new Set(recorders.flatMap((recorder) => recorder.calls
+  .filter(([name]) => name === "lineStyle" || name === "fillStyle")
+  .map(([name, a, b]) => (name === "lineStyle" ? b : a))));
+
+test("Zeynep imzalarının üç kademesi türde ayrışıyor: ferman, nişan, regalya", () => {
+  const mechanics = new Set();
+  for (const id of ZEYNEP_SIGNED) {
+    const profile = profiles.getVfxProfile(id);
+    assert.equal(profile.signature, undefined, `${id} Atakan imzasi (yesil aksan) almamali`);
+    assert.ok(profile.court, `${id} saray imzasi yok`);
+    mechanics.add(profile.court.mechanic);
+    const [decree, insignia, regalia] = profile.court.tiers;
+    assert.deepEqual([decree.act, insignia.act, regalia.act], ["decree", "insignia", "regalia"]);
+    // Ferman: temiz bir mizrak / cizgi; nisan ve regalya bayraklarinin hicbiri yok.
+    assert.deepEqual([decree.chevrons, decree.encore, decree.parade, decree.seal, decree.crown, decree.giltMotes, decree.snap], [false, false, false, false, false, false, false]);
+    // Nisan: altin serit, ikinci perde, gecit toreni; regalya yok.
+    assert.deepEqual([insignia.chevrons, insignia.encore, insignia.parade], [true, true, true]);
+    assert.deepEqual([insignia.seal, insignia.crown, insignia.giltMotes, insignia.snap], [false, false, false, false]);
+    // Regalya: muhur, tac, yaldiz, kapanan ferman.
+    assert.deepEqual([regalia.seal, regalia.crown, regalia.giltMotes, regalia.snap], [true, true, true, true]);
+    // Rutbe trimi: govdenin acigi -> altin -> beyaz altin (hicbiri tumuyle beyaz degil).
+    assert.equal(insignia.trim, GOLD);
+    assert.equal(regalia.trim, WHITE_GOLD);
+    assert.ok(distance(decree.trim, insignia.trim) > 40 && distance(insignia.trim, regalia.trim) > 40);
+  }
+  assert.equal(mechanics.size, ZEYNEP_SIGNED.length, "her kulenin kendi mekanik imzasi olmali");
+  // Abarti saldiri sayilmiyor ama imzasi var.
+  assert.ok(!attacking.some((tower) => tower.id === "zeynep-8"));
+});
+
+test("Zeynep mızrağı çizimde türde ayrışıyor: gövde kipin renginde, altın kademe 2'de, beyaz altın 3'te", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  const draw = (definitionId, tier) => {
+    const body = createRecorder();
+    const glow = createRecorder();
+    const vfx = new AttackVfx(body, glow, createRecorder(), undefined, { lod });
+    for (let frame = 0; frame < 6; frame += 1) {
+      vfx.renderProjectiles([{ id: "p1", kind: "tower", source: "tower", definitionId, x: 100 + frame * 4, y: 200, vx: 240, vy: 0, tier: tier === 1 ? undefined : tier }], 1000 + frame * 16, 1);
+    }
+    return { body, glow, colors: allColors(body, glow), calls: body.calls.length + glow.calls.length };
+  };
+  for (const [definitionId, bodyColor] of [["zeynep-1", 0xec4899], ["zeynep-3", 0xe879f9], ["zeynep-3-kin-projectile", 0xdc2626], [zeynep.TAHT_COPY_ID, 0xec4899]]) {
+    const [t1, t2, t3] = [1, 2, 3].map((tier) => draw(definitionId, tier));
+    for (const drawn of [t1, t2, t3]) assert.ok(drawn.colors.has(bodyColor), `${definitionId} govdesi kipin renginde olmali`);
+    assert.ok(!t1.colors.has(GOLD) && !t1.colors.has(WHITE_GOLD), `${definitionId} ferman: rutbe yok`);
+    assert.ok(t2.colors.has(GOLD), `${definitionId} nisan: altin serit`);
+    assert.ok(t3.colors.has(WHITE_GOLD), `${definitionId} regalya: beyaz altin`);
+    assert.ok(t1.calls < t2.calls && t2.calls < t3.calls, `${definitionId} cagrilar ${t1.calls} / ${t2.calls} / ${t3.calls}`);
+  }
+  // Taht'in muhru: uyelerin renginde uc isaret; Hiza'da muhur yok.
+  const sigil = (definitionId) => draw(definitionId, 1).body.calls.filter(([name]) => name === "fillStyle").map(([, color]) => color);
+  assert.ok(sigil("zeynep-3-kin-projectile").includes(0xdc2626) && sigil("zeynep-3-kin-projectile").includes(0xec4899), "Kin kipi: Hiza ve Kin isaretleri");
+  assert.ok(!sigil("zeynep-1").includes(0xe879f9), "Hiza'nin muhru olmamali");
+  assert.deepEqual(zeynep.getLanceSigil("copy"), [0xe879f9, 0xe879f9, 0xec4899], "kopya: iki Taht ve Hiza");
+  // Gecit toreni (hayalet kopyalar) LOD 2'de dusuyor; govde ve renk kaliyor.
+  lod.force(2);
+  const shed = draw("zeynep-1", 2);
+  lod.force(0);
+  assert.ok(shed.calls < draw("zeynep-1", 2).calls, "LOD 2 hayaletleri dusurmeli");
+  assert.ok(shed.colors.has(0xec4899) && shed.colors.has(GOLD));
+});
+
+test("Zeynep olay imzaları çizimde türde ayrışıyor ve LOD sırayla döküyor", () => {
+  const enemies = [{ id: "e1", x: 100, y: 100 }, { id: "e2", x: 140, y: 100 }];
+  const inputs = [
+    { kind: "spotlight", key: "e1", x: 100, y: 100, color: 0xf9a8d4 },
+    { kind: "brand", key: "e2", x: 140, y: 100, color: 0x7f1d1d, durationMs: 1200, strength: 3 },
+    { kind: "crossing", x: 60, y: 100, vertical: true, railHalf: 34, color: 0x7c3aed },
+    { kind: "formation", key: "t3", x: 20, y: 20, members: [{ x: 20, y: -14, definitionId: "zeynep-1" }, { x: 54, y: -14, definitionId: "zeynep-2" }] },
+    { kind: "bounce", key: "r1@0,0", x: 30, y: 200, angle: Math.PI / 2, color: 0xe879f9 }
+  ];
+  const draw = (tier, level = 0, at = 160) => {
+    const lod = new VfxLod();
+    lod.force(level);
+    const surfaces = [createRecorder(), createRecorder(), createRecorder(), createRecorder()];
+    const vfx = new zeynep.ZeynepSignatureVfx(...surfaces, { lod });
+    for (const input of inputs) vfx.emit({ ...input, tier }, 0);
+    vfx.emit({ kind: "pierce", key: "p1", x: 100, y: 100, angle: 0, definitionId: "zeynep-1", tier }, 0);
+    vfx.emit({ kind: "pierce", key: "p1", x: 140, y: 100, angle: 0, definitionId: "zeynep-1", tier }, 20);
+    vfx.render({ enemies, now: at, scale: 1, enemySize: () => 34 });
+    return { colors: allColors(...surfaces), calls: surfaces.reduce((sum, surface) => sum + surface.calls.length, 0) };
+  };
+  const [t1, t2, t3] = [1, 2, 3].map((tier) => draw(tier));
+  assert.ok(!t1.colors.has(GOLD) && !t1.colors.has(WHITE_GOLD), "ferman: rutbe trimi govdenin acigi");
+  assert.ok(t2.colors.has(GOLD) && !t2.colors.has(WHITE_GOLD), "nisan: altin");
+  assert.ok(t3.colors.has(WHITE_GOLD), "regalya: beyaz altin");
+  assert.ok(t1.calls < t2.calls && t2.calls < t3.calls, `cagrilar ${t1.calls} / ${t2.calls} / ${t3.calls}`);
+  // Kombo kimligi govdede: Gosteri pembesi (spot havuzu), Abarti menekse, dizilim
+  // uyelerinin renkleri kademe 3'te de cizili; rutbe yalnizca trim.
+  for (const color of [0xf9a8d4, 0x7c3aed, 0xec4899]) assert.ok(t3.colors.has(color), `govde rengi ${color.toString(16)} kademe 3'te kayboldu`);
+  // LOD: once zerre, sonra ikinci perde, en son serit seridi; renk hic.
+  const costs = [0, 1, 2, 3].map((level) => draw(3, level).calls);
+  assert.ok(costs[0] > costs[1] && costs[1] > costs[2] && costs[2] >= costs[3], `LOD ${costs.join(" / ")}`);
+  assert.ok(draw(3, 3).colors.has(WHITE_GOLD), "LOD 3'te de kademe rengi");
+});

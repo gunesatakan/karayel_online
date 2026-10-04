@@ -41,6 +41,7 @@ import {
 import { Room } from "colyseus.js";
 import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
+import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
@@ -64,6 +65,7 @@ import {
   TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
+  GAME_SPEED_MULTIPLIER,
   createDefaultEditableMap,
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
@@ -896,6 +898,29 @@ export class GameScene extends Phaser.Scene {
     isOwn: (tower) => tower.ownerId === undefined || tower.ownerId === this.localSessionId,
     enemySize: (enemy) => getEnemySpriteDisplaySize(enemy as EnemySnapshot, this.getMapCellSize())
   };
+  /**
+   * Zeynep imzalari: ferman cizgisi, spot isigi, Kin damgasi, Abarti gecisi,
+   * Taht atisinda dizilim, ayna sekmesi. Olaylar gelen snapshot'tan ve
+   * mesajlardan turuyor (`zeynepReceipt`), oynatmaya siralanip cizilyor.
+   */
+  private zeynepSignatures?: ZeynepSignatureVfx;
+  private readonly zeynepReceipt = new ZeynepReceiptTracker((event, delayMs) => this.queueCourtEvent(event, delayMs));
+  /** Bu snapshot'tan turuyen gecikmesiz olaylar: tek gecikmeli efektle oynatiliyor. */
+  private courtBatch?: CourtEventInput[];
+  private readonly courtContext: ReceiptContext = {
+    gridSize: 34,
+    worldScale: 1,
+    isOwnOwner: (ownerId) => ownerId === undefined || ownerId === this.localSessionId,
+    // Sunucu mermiyi oyun hiziyla yurutuyor: raya varis gercek saatte bu kadar uzun.
+    timeScale: 1 / GAME_SPEED_MULTIPLIER
+  };
+  private readonly courtFrame: CourtFrame = {
+    enemies: [],
+    now: 0,
+    scale: 1,
+    // Sprite'in gercek boyu (sampiyon, hava ve yavaslama nabzi dahil): isaretler govdeyi sariyor.
+    enemySize: (enemy) => this.enemies.get(enemy.id)?.displaySize ?? getEnemySpriteDisplaySize(enemy as EnemySnapshot, this.getMapCellSize())
+  };
   /** Kisa omurlu ADD parlamalari (en fazla 64 canli). */
   private flashPool?: FlashPool;
   /** Mermi omuzlari ve haleleri: karede tek dortgenlik ADD damgalar. */
@@ -1418,6 +1443,18 @@ export class GameScene extends Phaser.Scene {
       { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
     );
     this.signatureTowers = [];
+    // Zeynep imzalari: spot isiginin havuzu dusmanlarin altinda (7.45), ferman
+    // ve dizilim cizgileri mermilerin altinda (10.41, ADD ikinci perdeler
+    // 10.43), halka, damga ve muhur dusman govdesinin ustunde, can cubugunun
+    // (16) altinda (13.25).
+    this.zeynepSignatures = new ZeynepSignatureVfx(
+      this.add.graphics().setDepth(7.45),
+      this.add.graphics().setDepth(10.41),
+      this.add.graphics().setDepth(10.43).setBlendMode(Phaser.BlendModes.ADD),
+      this.add.graphics().setDepth(13.25),
+      { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
+    );
+    this.zeynepReceipt.clear();
     this.projectileOwnership.clear();
     this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
     this.damageNumbers = new DamageNumberPool(this, 30);
@@ -1520,6 +1557,8 @@ export class GameScene extends Phaser.Scene {
       this.attackVfx?.clear();
       this.atakanSignatures?.clear();
       this.signatureTowers = [];
+      this.zeynepSignatures?.clear();
+      this.zeynepReceipt.clear();
       this.beamInterpolator.clear();
       this.projectileOwnership.clear();
       this.damageNumbers?.destroy();
@@ -4378,6 +4417,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.noteBadgeSnapshot(hydratedSnapshot);
     this.noteProjectileOwnership(hydratedSnapshot.projectiles, hydratedSnapshot.towers);
+    this.noteZeynepReceipt(hydratedSnapshot);
     // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
     // ayni soketten, ayni sirayla geliyor (oynatma saati ise ~500 ms geride,
     // o yuzden oynatilan snapshot degil). Karnesi gelmis dalgadan baska bir
@@ -4443,6 +4483,69 @@ export class GameScene extends Phaser.Scene {
   }
 
   private readonly ownershipSeen = new Set<string>();
+
+  /**
+   * Zeynep olaylari gelen snapshot'tan: isinlar, dusmanlar ve kuleler ayni
+   * andan (oynatilan snapshot ~500 ms geride; yeni Gosteri hattinin dusmanlari
+   * ve yeni kurulan Abarti orada yok). Turuyen olaylar tek gecikmeli efektle
+   * oynatmaya siralaniyor.
+   */
+  private noteZeynepReceipt(snapshot: HydratedGameSnapshot) {
+    const context = this.updateCourtContext();
+    this.courtBatch = [];
+    this.zeynepReceipt.noteSnapshot(snapshot.beams, snapshot.enemies, snapshot.towers, context, performance.now());
+    const batch = this.courtBatch;
+    this.courtBatch = undefined;
+    if (batch.length > 0) {
+      this.queueDelayedEffect(() => {
+        const now = performance.now();
+        for (const event of batch) this.zeynepSignatures?.emit(event, now);
+      });
+    }
+  }
+
+  private updateCourtContext() {
+    const cell = this.getMapCellSize();
+    this.courtContext.gridSize = cell;
+    this.courtContext.worldScale = cell / TOWER_GRID_SIZE;
+    return this.courtContext;
+  }
+
+  /**
+   * Izleyicinin olayi: gecikmesizler snapshot'in toplu efektinde. Gecikmeli
+   * olan (merminin Abarti rayina varisi) dogrudan imza havuzuna, oynatma
+   * saatinde ileri tarihli: havuz dogmamis olayi cizmiyor, mermi raya
+   * varmadan durursa `projectile:hit` onu iptal ediyor. Paylasilan efekt
+   * kuyrugunu 1.6 sn mesgul etmiyor, yan kayit da gerekmiyor.
+   */
+  private queueCourtEvent(event: CourtEventInput, delayMs: number) {
+    if (delayMs <= 0 && this.courtBatch) {
+      this.courtBatch.push(event);
+      return;
+    }
+    this.zeynepSignatures?.emit(event, performance.now() + this.playbackDelayMs + Math.max(0, delayMs));
+  }
+
+  /**
+   * Temas noktasindaki dusmanin ekrandaki capi: gelen snapshot'in en yakin
+   * dusmani (temas mesaji snapshot'la ayni soketten geliyor). Bulunamazsa
+   * `undefined`: kertik grunt boyunda.
+   */
+  private getEnemyBodySizeNear(x: number, y: number) {
+    const latest = this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot;
+    if (!latest) return undefined;
+    let best = 26 * 26;
+    let found: EnemySnapshot | undefined;
+    for (const enemy of latest.enemies) {
+      const gap = (enemy.x - x) ** 2 + (enemy.y - y) ** 2;
+      if (gap < best) {
+        best = gap;
+        found = enemy;
+      }
+    }
+    if (!found) return undefined;
+    return this.enemies.get(found.id)?.displaySize ?? getEnemySpriteDisplaySize(found, this.getMapCellSize());
+  }
 
   /**
    * Gudumlu atisin namlusu (Izolasyon Kulesi): sunucu gudumlu mermi icin
@@ -4563,6 +4666,7 @@ export class GameScene extends Phaser.Scene {
     this.renderTowerOverlays();
     sectionStart = performance.now();
     this.renderAtakanSignatures(frame.snapshot.enemies, now);
+    this.renderZeynepSignatures(frame.snapshot.enemies, now);
     const signaturesMs = performance.now() - sectionStart;
     this.recordClientPerfSection("signatures", signaturesMs);
     this.vfxFrameCost += signaturesMs;
@@ -4730,6 +4834,17 @@ export class GameScene extends Phaser.Scene {
     signatures.render(frame);
   }
 
+  /** Zeynep imzalari: karedeki (ara degerlenmis) dusmanlar; girdi nesnesi yeniden kullaniliyor. */
+  private renderZeynepSignatures(enemies: readonly EnemySnapshot[], now: number) {
+    const signatures = this.zeynepSignatures;
+    if (!signatures) return;
+    const frame = this.courtFrame;
+    frame.enemies = enemies;
+    frame.now = now;
+    frame.scale = this.getTowerEffectScale();
+    signatures.render(frame);
+  }
+
   /**
    * Konumun en yakin kulesinin sahibi; `reach` icinde kule yoksa `undefined`.
    * Kule sayisi en fazla birkac duzine: duz tarama.
@@ -4867,6 +4982,14 @@ export class GameScene extends Phaser.Scene {
       this.freshTowerSpawns.forget(message.id);
     });
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
+      // Zeynep: Taht'in atisi (dizilim), kopyalanan Hiza mermisi (istemci
+      // kimligi, kendi mizragi) ve Abarti rayina varis. Kuleler gelen son
+      // snapshot'tan.
+      const latestTowers = this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.towers;
+      if (latestTowers) {
+        const remapped = this.zeynepReceipt.noteProjectileSpawn(projectile, latestTowers, this.updateCourtContext(), performance.now());
+        if (remapped) projectile.definitionId = remapped;
+      }
       this.linearProjectileSnapshots.set(projectile.id, projectile);
       // Sahiplik atis aninda kulenin konumundan: takim arkadasinin kademe 3
       // eklentileri soluk, kendi kulen tam.
@@ -4896,18 +5019,28 @@ export class GameScene extends Phaser.Scene {
       const key = `${message.id}@${message.x}:${message.y}`;
       const voice = resolveHitVoice(message.definitionId);
       const receivedAt = performance.now();
+      // Zeynep'in delen mermileri: kertik dusmanin boyunda, temaslar tek ferman
+      // cizgisinde. Kopyalanan Hiza mermisi Taht'in mizragi olarak.
+      const linear = this.linearProjectileSnapshots.get(message.id);
+      const definitionId = linear?.definitionId === TAHT_COPY_ID && message.definitionId === "zeynep-1" ? TAHT_COPY_ID : message.definitionId;
+      const pierce = getVfxProfile(definitionId).silhouette === "lance";
+      const size = pierce ? this.getEnemyBodySizeNear(message.x, message.y) : undefined;
       this.queueDelayedEffect(() => {
         this.attackVfx?.emitImpact({
           x: message.x,
           y: message.y,
           angle: message.angle,
-          definitionId: message.definitionId,
+          definitionId,
           tier: message.tier,
           own,
           key,
           radius: message.r,
+          size,
           bornAt: performance.now()
         });
+        if (pierce) {
+          this.zeynepSignatures?.emit({ kind: "pierce", key: message.id, x: message.x, y: message.y, angle: message.angle, definitionId, tier: message.tier, own }, performance.now());
+        }
         // Vurus sesi carpmanin cizildigi anda; mesajin geldigi anda degil.
         // Sekme gizliyken biriken kuyruk donuste hep birden bosaliyor: o
         // gec carpmalar cizilir ama sessiz kalir.
@@ -4921,6 +5054,8 @@ export class GameScene extends Phaser.Scene {
       // giden mermi carpma cizmiyor.
       this.finishLinearProjectile(message);
       this.projectileOwnership.delete(message.id);
+      // Mermi durdu: raya henuz varmadiysa (nabiz kaldirmadan sonraya tarihli) gecis yok.
+      this.zeynepSignatures?.cancelCrossing(message.id, performance.now() + this.playbackDelayMs);
     });
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));

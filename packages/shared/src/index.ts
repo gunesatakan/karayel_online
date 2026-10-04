@@ -802,6 +802,14 @@ export type BeamSnapshot = {
   color: number;
   overdrive?: boolean;
   ttlMs?: number;
+  /**
+   * Taht'in ayna isininin gorunen parcasindaki sekme koseleri, kuyruktan
+   * basa sirayla duz `[x, y, x, y...]` (yuvarlanmis). Yalnizca kuyruk ile bas
+   * farkli kenar parcalarindayken yaziliyor; yoksa anahtar hic yok. Istemci
+   * isini kuyruk -> sekme -> bas diye kirik ciziyor; eskiden koseyi kesen
+   * duz bir kiris (chord) ciziliyordu ve sekme hic gorunmuyordu.
+   */
+  b?: number[];
 };
 
 /**
@@ -2100,3 +2108,4 @@ export type { BlindHand, BlindHeading, BlindNavigatorState, BlindStepResult } fr
 export * from "./defense-insights.js";
 export * from "./worker-skills.js";
 export * from "./synergy/index.js";
+export * from "./zeynep-shots/index.js";

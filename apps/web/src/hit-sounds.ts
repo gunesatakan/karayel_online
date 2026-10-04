@@ -316,7 +316,8 @@ export function getProfileHitVoice(profile: Pick<VfxProfile, "silhouette" | "imp
     case "orb": return "orb";
     case "ball": return "ball";
     case "ring": return "ring";
-    case "dart": return "dart";
+    case "dart":
+    case "lance": return "dart";
     default:
   }
   switch (profile.impact) {
@@ -331,6 +332,7 @@ export function getProfileHitVoice(profile: Pick<VfxProfile, "silhouette" | "imp
     case "curse": return "curse";
     case "brackets":
     case "fragments":
+    case "decree":
     default: return "dart";
   }
 }
