@@ -320,8 +320,10 @@ export function getProfileHitVoice(profile: Pick<VfxProfile, "silhouette" | "imp
     default:
   }
   switch (profile.impact) {
-    case "splash": return "orb";
-    case "ripple": return "ring";
+    case "splash":
+    case "uplink": return "orb";
+    case "ripple":
+    case "contain": return "ring";
     case "collapse": return "ball";
     case "bolt": return "focus";
     case "shatter":

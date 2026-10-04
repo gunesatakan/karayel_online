@@ -462,6 +462,12 @@ export type EnemySnapshot = {
   pathId?: number;
   isTracked?: boolean;
   trackingStacks?: number;
+  /**
+   * Takipci isaretini koyan kulenin kimligi (Atakan imzasi); yalnizca isaret
+   * varken. Istemci nisangahi o kulenin kademesinde ve sahibinin (takim
+   * arkadasi %70) alfasinda ciziyor; yigin sayisi yalnizca darlik ve kertik.
+   */
+  k?: string;
   isFeared?: boolean;
   isArmorBroken?: boolean;
   isDominated?: boolean;
@@ -650,6 +656,24 @@ export type TowerSnapshot = {
   ucubePerks?: import("./index.js").UcubePerkId[];
   /** Secim bekleyen seviye; yalnizca kule sahibine anlamli. */
   ucubePendingLevel?: number;
+  /**
+   * Atakan imzalarinin durumu: tek harfli, varsayilanda hic yazilmiyor.
+   *
+   * Istemci bu mekanikleri baska yerden ogrenemiyor ve ekranda yoktular.
+   * Kule kayitlari delta ile gittigi icin her biri yalnizca degistiginde
+   * telde: Obsesyon vurus basina bir, Ucube saniyede bir.
+   *
+   * - `o`: Obsesyon yigini (1-10; vurus basina +%20). 0'da yok.
+   * - `t`: Obsesyon hedefi (dusman kimligi); yigin varken. Hedef degisince
+   *   sunucu yigini sifirliyor, `o` ve `t` birlikte dusuyor.
+   * - `u`: Ucube atis hizi yigini. 0'da yok.
+   * - `m`: Ucube yigin tavani; varsayilan 10 yazilmiyor (15 / 20 seviye
+   *   ozelliginden).
+   */
+  o?: number;
+  t?: string;
+  u?: number;
+  m?: number;
   serverLinkWaveAge?: number;
   linkedTowerIds?: string[];
   zeynepFormationSize?: number;

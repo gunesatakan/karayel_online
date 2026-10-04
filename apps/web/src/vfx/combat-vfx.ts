@@ -8,7 +8,7 @@ import {
   type BeamSnapshot,
   type ProjectileSnapshot
 } from "@karayel/shared";
-import { clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, strokeProfile, strokeRing, type VfxGraphics } from "./kit";
+import { clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, strokeProfile, type VfxGraphics } from "./kit";
 
 type Graphics = VfxGraphics;
 export type ShotStyle = "tracker" | "pierce" | "psychic" | "server" | "electric" | "synthesis";
@@ -248,26 +248,6 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
       g.fillStyle(i % 2 ? trim : 0xffffff, 0.75 * life);
       fillDisc(g, beam.x1 + Math.cos(a) * (radius - back), beam.y1 + Math.sin(a) * (radius - back), Math.max(0.7, 1.2 * scale));
     }
-  }
-}
-
-/**
- * Izolasyon alani: yaricap dogru, ice dogru agir bir surukleme.
- *
- * Kademe: 1'de seyrek cizgiler, 2'de yogunlasan ve kenari acilan alan,
- * 3'te merkeze akan parlak tanecikler. Renk alanin kendi camgobegi.
- */
-export function drawIsolationField(g: Graphics, x: number, y: number, radius: number, tier: number, now: number, scale: number) {
-  g.fillStyle(0x196175, 0.035 + tier * 0.012); fillDisc(g, x, y, radius);
-  g.lineStyle(0.8 * scale, 0x7fe5e8, 0.2 + tier * 0.06); strokeRing(g, x, y, radius);
-  // Slow inward drift makes the field feel viscous; the radius stays truthful.
-  for (let i = 0; i < 12 + tier * 7; i++) {
-    const a = noise(i + 5) * Math.PI * 2;
-    const phase = (now / (2600 + noise(i) * 1500) + noise(i + 10)) % 1;
-    const r = radius * (1 - phase * 0.65), length = (2 + tier) * scale;
-    const alpha = Math.sin(phase * Math.PI) * 0.38;
-    line(g, x + Math.cos(a) * r, y + Math.sin(a) * r,
-      x + Math.cos(a) * (r - length), y + Math.sin(a) * (r - length), 0.8 * scale, tier >= 3 && i % 4 === 0 ? 0xf0fdfa : 0xb6f9ef, alpha);
   }
 }
 

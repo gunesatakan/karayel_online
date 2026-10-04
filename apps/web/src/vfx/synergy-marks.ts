@@ -77,7 +77,7 @@ const PREVIEW_GAIN_FILL = "#86efac";
 const PREVIEW_BLOCKED_FILL = "#fcd34d";
 const PREVIEW_WARNING_FILL = "#fca5a5";
 
-/** Yalnizlik rengi: Izolasyon alaninin turkuazi (combat-vfx `drawIsolationField`). */
+/** Yalnizlik rengi: Izolasyon Kulesi'nin turkuazi (atakan-signatures profil tabani). */
 const ISOLATION_COLOR = 0x7fe5e8;
 /** Dizilim rengi: Zeynep sentez isininin pembesi; sunucu baginin sarisiyla karismasin. */
 const FORMATION_COLOR = 0xf9a8d4;

@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot } from "@karayel/shared";
 import { configureHiDpiCamera } from "../rendering";
 import { AttackVfx } from "../vfx/attack-vfx";
+import { AtakanSignatureVfx, type SignatureFrame, type SignatureTower } from "../vfx/atakan-signatures";
 import { BeamRenderer } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
 import { liftToWhite, toTier } from "../vfx/kit";
@@ -16,7 +17,7 @@ import {
   type ScenarioTower,
   type ScenarioWalker
 } from "../vfx/vfx-scenario";
-import { getVfxProfile, getVfxTier, type VfxDelivery } from "../vfx/vfx-profiles";
+import { getVfxProfile, getVfxTier, type VfxDelivery, type VfxMechanic } from "../vfx/vfx-profiles";
 import { FeedbackDirector } from "../feedback-director";
 import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 
@@ -34,6 +35,12 @@ import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type 
  * sanal: yavas cekim ve duraklatma butun efektleri birlikte yavaslatiyor.
  * 375 px'lik telefonda satirlar sayfalara bolunuyor.
  *
+ * Atakan satirlari kulenin durumunu da gosteriyor (AtakanSignatureVfx, oyunla
+ * ayni sinif): Takipci isareti yuruyucunun uzerinde, Sunucu hucredeki yan
+ * kuleye bagli, Izolasyon 3 sn yalniz (alan) 3 sn komsulu (atis ve ihlal),
+ * Obsesyon yigini 13 atista 0 -> 10 yukselip hedef degisince kopuyor, Ucube
+ * yigini sutuna gore 10 / 15 / 20 tavanina yukselip asiri isiniyor.
+ *
  * Vurus sesleri: ilk dokunus ses baglamini aciyor, sonra her temas oyundaki
  * gibi caliyor (ayni yonetmen, ayni butce). Bir hucreye dokunmak yalnizca o
  * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
@@ -48,6 +55,21 @@ const COLUMN_WIDTH = 130;
 const HEADER = 40;
 const FOOTER = 64;
 const ROW_HEIGHT = 84;
+/**
+ * Galerideki dusmanin capi: oyundaki grunt'a (34 birim) yakin, hucreye sigan.
+ * Takipci nisangahi ve kertikleri oyundaki boyda okunsun.
+ */
+const GALLERY_ENEMY_SIZE = 30;
+/** Galerinin harita karesi: Izolasyon karantinasi ve Ucube gostergesi bununla. */
+const GALLERY_CELL = 22;
+/** Imzanin satir etiketindeki adi. */
+const MECHANIC_LABELS: Record<VfxMechanic, string> = {
+  "mark-reticle": "işaret nişangâhı",
+  "uplink-column": "bağ + sütun",
+  containment: "kapatma alanı",
+  tether: "saplantı ipi",
+  "stack-gauge": "yığın göstergesi"
+};
 
 type Mode = "grid" | "stress";
 
@@ -63,6 +85,19 @@ export class VfxGalleryScene extends Phaser.Scene {
   private readonly towerOwn = new Map<string, boolean>();
   private readonly lod = new VfxLod();
   private attackVfx?: AttackVfx;
+  private signatures?: AtakanSignatureVfx;
+  /** Imza karesinin girdisi; karede yerinde yaziliyor. */
+  private readonly signatureFrame: SignatureFrame = {
+    towers: [],
+    enemies: [],
+    now: 0,
+    scale: 1,
+    cellSize: GALLERY_CELL,
+    isOwn: (tower) => !this.teammate && tower.ownerId === undefined,
+    enemySize: () => GALLERY_ENEMY_SIZE
+  };
+  /** Sunucu bagi ve Izolasyon komsusu: soluk yan kule sprite'lari, kimlikle. */
+  private readonly anchorSprites = new Map<string, Phaser.GameObjects.Image>();
   private beamRenderer?: BeamRenderer;
   private flashPool?: FlashPool;
   private stamps?: GlowStampPool;
@@ -99,7 +134,13 @@ export class VfxGalleryScene extends Phaser.Scene {
     const body = this.add.graphics().setDepth(10.9);
     const glow = this.add.graphics().setDepth(10.85).setBlendMode(Phaser.BlendModes.ADD);
     const events = this.add.graphics().setDepth(12.45);
-    this.surfaces = [beamGraphics, beamGlow, body, glow, events];
+    // Atakan imzalari oyundaki derinliklerde (GameScene ile ayni).
+    const signatureGround = this.add.graphics().setDepth(7.4);
+    const signatureLinks = this.add.graphics().setDepth(10.4);
+    const signatureGlow = this.add.graphics().setDepth(10.42).setBlendMode(Phaser.BlendModes.ADD);
+    const signatureMarks = this.add.graphics().setDepth(13.2);
+    this.surfaces = [beamGraphics, beamGlow, body, glow, events, signatureGround, signatureLinks, signatureGlow, signatureMarks];
+    this.signatures = new AtakanSignatureVfx(signatureGround, signatureLinks, signatureGlow, signatureMarks, { lod: this.lod });
     this.flashPool = new FlashPool(this, 12.5);
     this.stamps = new GlowStampPool(this, 10.86);
     this.beamRenderer = new BeamRenderer(beamGraphics, beamGlow, this.lod);
@@ -171,10 +212,16 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.beamRenderer.render(frame.beams, { now: this.now, sceneNow: this.now, scale: 1, isOwn: (beam: BeamSnapshot) => ownOf(beam.id) });
     this.beamHitTracker?.update(frame.beams, this.now, this.collectWalkerSpots(scenario.walkers));
     this.attackVfx.render(this.now, 1);
+    const signatureFrame = this.signatureFrame;
+    signatureFrame.towers = frame.signatureTowers;
+    signatureFrame.enemies = frame.signatureEnemies;
+    signatureFrame.now = this.now;
+    this.signatures?.render(signatureFrame);
     this.flashPool?.update(this.now);
     const vfxMs = performance.now() - start;
     this.lod.note(vfxMs, frameMs, time);
     this.updateWalkers(scenario.walkers);
+    this.syncAnchorSprites(frame.signatureTowers);
     this.updatePerf(vfxMs, frameMs, frame.projectiles.length, frame.beams.length);
   }
 
@@ -201,6 +248,9 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.walkerSprites = [];
     this.labels = [];
     this.attackVfx?.clear();
+    this.signatures?.clear();
+    for (const sprite of this.anchorSprites.values()) sprite.destroy();
+    this.anchorSprites.clear();
     this.beamHitTracker?.clear();
     this.soloTowerId = undefined;
     this.drawSoloMarker();
@@ -223,7 +273,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     }
     for (const walker of this.scenario.walkers) {
       const sprite = this.add.image(walker.cx, walker.cy, "enemy-grunt").setDepth(8);
-      sprite.setDisplaySize(16, 16);
+      sprite.setDisplaySize(GALLERY_ENEMY_SIZE, GALLERY_ENEMY_SIZE);
       this.walkerSprites.push(sprite);
     }
     this.walkerHitAt = this.scenario.walkers.map(() => -Infinity);
@@ -235,7 +285,9 @@ export class VfxGalleryScene extends Phaser.Scene {
         const y = HEADER + row * ROW_HEIGHT + 4;
         const voice = resolveHitVoice(id);
         const sound = voice ? ` · ses: ${HIT_VOICE_LABELS[voice]}` : "";
-        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}${sound}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
+        const mechanic = getVfxProfile(id).signature?.mechanic;
+        const signature = mechanic ? ` · imza: ${MECHANIC_LABELS[mechanic]}` : "";
+        this.labels.push(this.add.text(6, y, `${id} · ${definition?.name ?? ""}${signature}${sound}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
       });
       this.labels.push(this.add.text(4, 1, "Dokun: ses açılır · hücreye dokun: tek kule", { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#94a3b8" }).setDepth(13));
       COLUMN_LEVELS.forEach((level, column) => {
@@ -275,7 +327,11 @@ export class VfxGalleryScene extends Phaser.Scene {
           color: getScenarioColor(definitionId),
           own: true,
           walker,
-          intervalMs: getScenarioIntervalMs(definitionId)
+          intervalMs: getScenarioIntervalMs(definitionId),
+          // Izolasyon alani hucreye sigan boyda; Sunucu ve Izolasyon'un yan
+          // kulesi hucrenin sag altinda (bag) ya da kulenin yaninda (komsu).
+          displayRange: definitionId === "warrior-3" ? 34 : undefined,
+          anchor: definitionId === "warrior-2" ? { x: cellX + 114, y: y + 22 } : definitionId === "warrior-3" ? { x: cellX + 28 + GALLERY_CELL, y } : undefined
         });
       });
     });
@@ -376,6 +432,22 @@ export class VfxGalleryScene extends Phaser.Scene {
       if (hit) sprite.setTintFill(0xffffff);
       else if (sprite.isTinted) sprite.clearTint();
     });
+  }
+
+  /** Senaryonun yan kuleleri (bag ve komsu): soluk sprite, belirip kayboluyor. */
+  private syncAnchorSprites(towers: readonly SignatureTower[]) {
+    for (const sprite of this.anchorSprites.values()) sprite.setVisible(false);
+    for (const tower of towers) {
+      if (this.towerOwn.has(tower.id)) continue;
+      let sprite = this.anchorSprites.get(tower.id);
+      if (!sprite) {
+        const key = this.textures.exists(`tower-${tower.definitionId}`) ? `tower-${tower.definitionId}` : "projectile-tower";
+        sprite = this.add.image(tower.x, tower.y, key).setDepth(12).setAlpha(0.55);
+        sprite.setDisplaySize(18, 18);
+        this.anchorSprites.set(tower.id, sprite);
+      }
+      sprite.setVisible(true);
+    }
   }
 
   /** Kendi cizilmis dokusu olan mermiler (Melis): oyundaki gibi profil boyunda sprite. */

@@ -1,11 +1,16 @@
 import type { BeamSnapshot } from "@karayel/shared";
 import { drawPressureWave, drawSynthesisRay, getZeynepTrim } from "./combat-vfx";
 import {
+  ATAKAN_ACCENT,
   LASER_CORONA,
   LASER_GLINTS,
   LASER_MUZZLE,
   LASER_SPARKS,
   clamp01,
+  drawBracketCorners,
+  drawCodeSparks,
+  fillJaggedPath,
+  strokePolyline,
   drawCorona,
   drawLineSparks,
   drawMotes,
@@ -64,6 +69,13 @@ const TRIM_CORONA = { radius: 0, layers: 3, step: 0, color: 0, alpha: 0, period:
 const TRIM_MOTES = { seed: 0, count: 6, radius: 0, color: 0, size: 0, alpha: 0, lifeMs: 520 };
 const ACCENT_OUTER = { outerWidth: 0 };
 const ACCENT_AXIS = { axisWidth: 0, lifeMs: 260 };
+/** Ucube zincirinin kosan parlamalari ve kod kivilcimlari (kademe 3). */
+const CHAIN_GLINTS = { ...LASER_GLINTS, count: 2, armBase: 3, armRange: 2, armWidth: 0.9, crossWidth: 0.7, haloRadius: 2.2, coreRadius: 1, cheapDiscs: true };
+const CHAIN_CODE = { seed: 0, count: 4, radius: 0, rise: 0, color: 0, accent: ATAKAN_ACCENT, size: 0, alpha: 0, lifeMs: 380 };
+/** Zincirin yeniden tohumlanma araligi: simsek her 60 ms'de baska yoldan. */
+export const CHAIN_RESEED_MS = 60;
+/** Sunucudaki zincir omru (setUcubeChainBeam). */
+const CHAIN_LIFE_MS = 190;
 /** Zeynep sutununun ic ice katmanlari (genislik orani). */
 const COLUMN_LAYERS = [1.35, 1, 0.62] as const;
 
@@ -853,64 +865,85 @@ export class BeamRenderer {
     this.drawBeamTierAccent(beam, color, ACCENT_AXIS);
   }
 
-  /** Kirikli yolun tek bir kati. */
-  private strokeJagged(points: ReadonlyArray<{ x: number; y: number }>, width: number, strokeColor: number, alpha: number) {
-    const graphics = this.beamGraphics;
-    if (!graphics) return;
-    graphics.lineStyle(width, strokeColor, alpha);
-    graphics.beginPath();
-    graphics.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) {
-      graphics.lineTo(points[index].x, points[index].y);
-    }
-    graphics.strokePath();
-  }
-
+  /**
+   * Ucube'nin zinciri: tek ton ailesinde (limon -> yesil -> beyaza yakin
+   * limon), her 60 ms'de yeniden tohumlanan simsek.
+   *
+   * Eskiden govdesi gok mavisi ve beyazdi (mermi limon, kule mavi-siyah:
+   * uc ayri kimlik). Govde isinin kendi rengi (sunucu Ucube limonunu
+   * gonderiyor); kademe trim ekliyor:
+   * - Ham (sv 1-4): tek duz kirikli yol, uc noktasi.
+   * - Derlenmis (sv 5-9): rampanin ikinci duraginda omuzlar (ADD), beyaza
+   *   cekilmis cekirdek yol, bir catal ve ucta terminal yesili ayraclar.
+   * - Asiri yukleme (sv 10): beyaz-sicak cekirdek, yol boyunca kosan
+   *   parlamalar ve uctan dokulen kod kivilcimlari.
+   *
+   * Hareket azaltmada simsek yeniden tohumlanmiyor; tohum yalnizca kimlikten.
+   */
   private drawChainLightning(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
+    const graphics = this.beamGraphics;
+    if (!graphics) {
       return;
     }
 
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / length;
-    const ny = dx / length;
     const segments = 7;
     const points = this.points(segments + 1);
     // Tohum kimligin FNV ozeti ve 60 ms'lik bir kusak: eskiden tohum
     // `beam.id.length` idi ve her zincir ayni sabit zikzagi ciziyordu.
-    const seed = (fnvHash(beam.id) % 9973) + Math.floor(this.now / 60) * 17;
-
-    for (let index = 0; index <= segments; index += 1) {
-      const t = index / segments;
-      const offset = index === 0 || index === segments ? 0 : (hashNoise(seed + index * 13) - 0.5) * 13;
-      BeamRenderer.setPoint(points, index, beam.x1 + dx * t + nx * offset, beam.y1 + dy * t + ny * offset);
-    }
-
-
+    const seed = (fnvHash(beam.id) % 9973) + (this.still ? 0 : Math.floor(this.now / CHAIN_RESEED_MS) * 17);
     const visualScale = this.getTowerEffectScale();
-    this.strokeJagged(points, (beam.width + 10) * visualScale, color, 0.16);
-    this.strokeJagged(points, (beam.width + 4) * visualScale, 0xffffff, 0.58);
-    this.strokeJagged(points, Math.max(1.5, (beam.width - 1) * visualScale), 0x93c5fd, 0.98);
+    fillJaggedPath(points, beam.x1, beam.y1, beam.x2, beam.y2, segments, seed, 13 * Math.max(0.6, visualScale));
 
-    // Kademe vurgusu kirikli yolun kendisini izler: duz bir eksen cizgisi
-    // simsegin icinden gecerdi ve zincir kirikli olmaktan cikardi.
     const tier = beam.tier ?? 1;
+    const profile = getBeamVfxProfile(beam.definitionId, color);
+    const recipe = getVfxTier(profile, tier);
+    const extra = this.ownBeam ? 1 : TEAMMATE_TRIM_ALPHA;
+    const life = clamp01((beam.ttlMs ?? CHAIN_LIFE_MS) / 60);
+    const glow = this.glowGraphics ?? graphics;
+    const body = Math.max(1.2, (beam.width - 1) * visualScale);
+
     if (tier >= 2) {
-      this.strokeJagged(points, Math.max(0.7, beam.width * 0.28 * visualScale), 0xffffff, tier >= 3 ? 0.95 : 0.78);
+      // Omuzlar ADD katmaninda, rampanin duraginda: tek renk ailesi.
+      strokePolyline(glow, points, segments + 1, body + 7 * visualScale, recipe.color, 0.14 * life);
+      strokePolyline(glow, points, segments + 1, body + 3 * visualScale, recipe.color, 0.3 * life);
+    }
+    strokePolyline(graphics, points, segments + 1, body, color, 0.95 * life);
+    if (tier >= 2) {
+      strokePolyline(graphics, points, segments + 1, Math.max(0.6, body * 0.36), liftToWhite(recipe.color, tier >= 3 ? 0.9 : 0.6), 0.95 * life);
+      // Catal: yolun ortasindan kisa bir kol, ayni tohumdan.
+      const fork = points[3];
+      const side = hashNoise(seed + 41) > 0.5 ? 1 : -1;
+      const dx = beam.x2 - beam.x1;
+      const dy = beam.y2 - beam.y1;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const reach = Math.min(18, length * 0.35) * Math.max(0.6, visualScale);
+      graphics.lineStyle(Math.max(0.6, body * 0.5), recipe.color, 0.8 * life);
+      graphics.lineBetween(fork.x, fork.y, fork.x + (dx / length) * reach * 0.6 - (dy / length) * reach * side, fork.y + (dy / length) * reach * 0.6 + (dx / length) * reach * side);
+      drawBracketCorners(graphics, beam.x2, beam.y2, 5 * visualScale, 5 * visualScale, 2.2 * visualScale, Math.max(0.6, 0.8 * visualScale), ATAKAN_ACCENT, 0.85 * life);
     }
 
-    this.beamGraphics.fillStyle(0x67e8f9, 0.72);
-    fillDisc(this.beamGraphics, beam.x1, beam.y1, 5 * visualScale);
-    this.beamGraphics.fillStyle(0xffffff, 0.92);
-    fillDisc(this.beamGraphics, beam.x2, beam.y2, 4 * visualScale);
+    graphics.fillStyle(tier >= 2 ? liftToWhite(recipe.color, 0.6) : color, 0.9 * life);
+    fillDisc(graphics, beam.x2, beam.y2, (tier >= 3 ? 3.4 : 2.8) * visualScale);
 
-    if (tier >= 3) {
-      // Carpma noktasinda kil kalinliginda bir halka: zincirin nerede
-      // kapandigini buyutmeden isaret eder.
-      this.beamGraphics.lineStyle(0.7, 0xffffff, 0.6);
-      strokeRing(this.beamGraphics, beam.x2, beam.y2, 7 * visualScale);
+    if (tier >= 3 && !this.still) {
+      if (this.lod.corona) {
+        CHAIN_GLINTS.armBase = 3 * visualScale;
+        CHAIN_GLINTS.armRange = 2 * visualScale;
+        CHAIN_GLINTS.haloColor = recipe.color;
+        CHAIN_GLINTS.haloRadius = 2.2 * visualScale;
+        CHAIN_GLINTS.coreRadius = 1 * visualScale;
+        CHAIN_GLINTS.seedOffset = fnvHash(beam.id) % 997;
+        drawRunningGlints(graphics, beam.x1, beam.y1, beam.x2, beam.y2, this.now, CHAIN_GLINTS, life * extra);
+      }
+      if (this.lod.sparks) {
+        CHAIN_CODE.seed = fnvHash(beam.id) % 7919;
+        CHAIN_CODE.radius = 6 * visualScale;
+        CHAIN_CODE.rise = 7 * visualScale;
+        CHAIN_CODE.color = recipe.color;
+        CHAIN_CODE.size = Math.max(0.8, 1.3 * visualScale);
+        CHAIN_CODE.alpha = 0.9 * life * extra;
+        drawCodeSparks(glow, beam.x2, beam.y2, this.now, CHAIN_CODE);
+      }
     }
   }
 

@@ -4119,7 +4119,8 @@ export class MatchRoom extends Room<MatchState> {
       x2: to.x,
       y2: to.y,
       width: 5,
-      color: 0x38bdf8,
+      // Ucube'nin limonu: mermisi ve zinciri ayni ton ailesinde (eskiden gok mavisi).
+      color: 0xadf765,
       overdrive: false,
       ttlMs: 190
     });
@@ -11531,6 +11532,10 @@ export class MatchRoom extends Room<MatchState> {
         pathDistance: roundNetworkNumber(enemy.pathDistance),
         trackingStacks: this.getTrackingStackCount(enemy, now),
         isTracked: this.getTrackingStackCount(enemy, now) > 0,
+        // Isareti koyan kule (Atakan imzasi `k`): istemci nisangahi kulenin
+        // kademesinde ve sahibinin alfasinda ciziyor. Yalnizca isaret varken;
+        // delta yuzunden yalnizca isaretleyen kule degisince telde.
+        ...this.getTrackingSourceWire(enemy, now),
         isFeared: enemy.fearUntil > now,
         isArmorBroken: enemy.armorBrokenUntil > now,
         isDominated: enemy.dominatedUntil > now,
@@ -11618,6 +11623,7 @@ export class MatchRoom extends Room<MatchState> {
         melisUnderworldPullCount: tower.definition.id === "archer-4" ? tower.melisUnderworldPullCount : undefined,
         ucubePerks: tower.definition.id === "warrior-6" ? [...tower.ucubePerks] : undefined,
         ucubePendingLevel: tower.definition.id === "warrior-6" && tower.ucubePendingLevel > 0 ? tower.ucubePendingLevel : undefined,
+        ...this.getAtakanStackWire(tower),
         serverLinkWaveAge: this.getServerLinkWaveAge(tower),
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
@@ -12304,8 +12310,34 @@ export class MatchRoom extends Room<MatchState> {
     return currentInterval / Math.max(1, previousInterval);
   }
 
+  private getTrackingSourceWire(enemy: EnemyModel, now: number): { k: string } | undefined {
+    if (!enemy.trackingSourceTowerId || this.getTrackingStackCount(enemy, now) <= 0) return undefined;
+    return { k: enemy.trackingSourceTowerId };
+  }
+
   private getServerLinkWaveAge(tower: TowerModel) {
     return this.serverLinkWaveAgeCache.get(tower.id) ?? 0;
+  }
+
+  /**
+   * Atakan imzalarinin tel alanlari (`o`, `t`, `u`, `m`): yalnizca
+   * Obsesyon ve Ucube'de, varsayilanda hic yok.
+   *
+   * Anahtar yazilmiyor -- `undefined` bile degil: tam karede msgpack
+   * anahtari tasirdi. Deger kaybolunca delta `null` gonderiyor, istemci
+   * siliyor (yigin sifirlandi). Yigin tamamen sunucuda; bu yalnizca okuma.
+   */
+  private getAtakanStackWire(tower: TowerModel): { o?: number; t?: string; u?: number; m?: number } | undefined {
+    if (tower.definition.id === "warrior-4") {
+      if (tower.focusStacks <= 0 || !tower.focusTargetId) return undefined;
+      return { o: tower.focusStacks, t: tower.focusTargetId };
+    }
+    if (tower.definition.id === "warrior-6") {
+      const limit = getUcubeStackLimit(tower);
+      if (tower.focusStacks <= 0) return limit === UCUBE_DEFAULT_STACK_LIMIT ? undefined : { m: limit };
+      return limit === UCUBE_DEFAULT_STACK_LIMIT ? { u: tower.focusStacks } : { u: tower.focusStacks, m: limit };
+    }
+    return undefined;
   }
 
   private refreshServerLinkWaveAgeCache() {
@@ -12642,7 +12674,7 @@ export class MatchRoom extends Room<MatchState> {
 
     tower.activeMs += deltaTime;
     tower.focusTargetId = target.id;
-    const stackLimit = hasUcubePerk(tower, "stacks-20") ? 20 : hasUcubePerk(tower, "stacks-15") ? 15 : 10;
+    const stackLimit = getUcubeStackLimit(tower);
     const desiredStacks = Math.min(stackLimit, Math.floor(tower.activeMs / 1000));
     const definition = tower.definition.engine?.stacks?.find((stack) => stack.id === "ucube-fire-rate");
     if (definition) {
@@ -13515,6 +13547,12 @@ function getObsessionFearDurationMs(level: number) {
 
 function hasUcubePerk(tower: TowerModel, perkId: UcubePerkId) {
   return tower.definition.id === "warrior-6" && tower.ucubePerks.includes(perkId);
+}
+
+/** Ucube atis hizi yiginin tavani; seviye ozellikleri 15 ve 20'ye cikariyor. */
+const UCUBE_DEFAULT_STACK_LIMIT = 10;
+function getUcubeStackLimit(tower: TowerModel) {
+  return hasUcubePerk(tower, "stacks-20") ? 20 : hasUcubePerk(tower, "stacks-15") ? 15 : UCUBE_DEFAULT_STACK_LIMIT;
 }
 
 function getUcubeStackIntervalMultiplier(stacks: number) {

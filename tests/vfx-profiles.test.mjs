@@ -22,7 +22,9 @@ import { createCountingGraphics, createRecorder, importWebModule } from "./helpe
 const profiles = await importWebModule("apps/web/src/vfx/vfx-profiles.ts");
 const { AttackVfx } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
 const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
-const { BeamInterpolator } = await importWebModule("apps/web/src/vfx/beam-renderer.ts");
+const { BeamInterpolator, BeamRenderer } = await importWebModule("apps/web/src/vfx/beam-renderer.ts");
+const signatures = await importWebModule("apps/web/src/vfx/atakan-signatures.ts");
+const { VfxScenario } = await importWebModule("apps/web/src/vfx/vfx-scenario.ts");
 
 const attacking = [...new Map(Object.values(towerCatalog).flat().map((tower) => [tower.id, tower])).values()]
   .filter((tower) => profiles.isAttackingDefinition(tower));
@@ -287,4 +289,373 @@ test("yük testi bütçesi: 20 kademe-3 kule ve 60 düşmanda karede çizim sın
   assert.ok(full.flashQuadsLive <= 64 && full.glowStampQuads <= 192);
   assert.ok(shed.callsPerFrame < full.callsPerFrame, "LOD cizimi azaltmali");
   assert.ok(shed.verticesPerFrame <= full.verticesPerFrame);
+});
+
+/* ------------------------------------------------------------------ */
+/* Atakan imzalari: ham sinyal -> derlenmis -> asiri yukleme            */
+/* ------------------------------------------------------------------ */
+
+const ACCENT = 0x22c55e;
+const ATAKAN_SIGNED = ["warrior-1", "warrior-2", "warrior-3", "warrior-4", "warrior-6"];
+const lineColors = (recorder) => new Set(recorder.calls.filter(([name]) => name === "lineStyle").map(([, , color]) => color));
+const fillColors = (recorder) => new Set(recorder.calls.filter(([name]) => name === "fillStyle").map(([, color]) => color));
+
+test("Atakan imzalarının üç kademesi türde ayrışıyor; Debug Lazer'e dokunulmadı", () => {
+  assert.equal(profiles.getVfxProfile("warrior-5").signature, undefined, "lazerin profili imza almamali");
+  const mechanics = new Set();
+  for (const id of ATAKAN_SIGNED) {
+    const signature = profiles.getVfxProfile(id).signature;
+    assert.ok(signature, `${id} imzasi yok`);
+    mechanics.add(signature.mechanic);
+    const [raw, compiled, overdrive] = signature.tiers;
+    assert.deepEqual([raw.act, compiled.act, overdrive.act], ["raw", "compiled", "overdrive"]);
+    // Ham: duz serit, aksan yok, cikartma yok.
+    assert.equal(raw.trailMotif, "plain");
+    assert.equal(raw.accent, false);
+    assert.equal(raw.decal, "none");
+    // Derlenmis: motifli iz, terminal yesili, izgara/altigen; asiri yukleme yok.
+    assert.notEqual(compiled.trailMotif, "plain", `${id} derlenmis iz motifi yok`);
+    assert.equal(compiled.accent, true);
+    assert.notEqual(compiled.decal, "none");
+    assert.deepEqual([compiled.whiteCore, compiled.glints, compiled.codeSparks], [false, false, false]);
+    // Asiri yukleme: beyaz-sicak cekirdek, kosan parlama, kod kivilcimi.
+    assert.deepEqual([overdrive.whiteCore, overdrive.glints, overdrive.codeSparks], [true, true, true]);
+  }
+  assert.equal(mechanics.size, ATAKAN_SIGNED.length, "her kulenin kendi mekanik imzasi olmali");
+  // Ucube artik Sunucu'nun yeniden boyanmis simsegi degil.
+  assert.notEqual(profiles.getVfxProfile("warrior-6").silhouette, profiles.getVfxProfile("warrior-2").silhouette);
+  assert.notEqual(profiles.getVfxProfile("warrior-6").impact, profiles.getVfxProfile("warrior-2").impact);
+});
+
+test("Atakan imzası çizimde de türde ayrışıyor: yeşil aksan kademe 2'de, kod bitleri kademe 3'te", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  for (const id of ATAKAN_SIGNED) {
+    const drawn = [1, 2, 3].map((tier) => {
+      const body = createRecorder();
+      const glow = createRecorder();
+      const events = createRecorder();
+      const vfx = new AttackVfx(body, glow, events, undefined, { lod });
+      for (let frame = 0; frame < 6; frame += 1) {
+        vfx.renderProjectiles([{ id: "p1", kind: "tower", source: "tower", definitionId: id, x: 100 + frame * 4, y: 200, vx: 240, vy: 0, tier: tier === 1 ? undefined : tier }], 1000 + frame * 16, 1);
+      }
+      vfx.emitMuzzle({ x: 0, y: 0, angle: 0, definitionId: id, tier, bornAt: 2000, key: "m1" });
+      vfx.emitImpact({ x: 50, y: 50, angle: 0.3, definitionId: id, tier, bornAt: 2000, key: "c1" });
+      vfx.render(2040, 1);
+      vfx.render(2150, 1);
+      const all = [...body.calls, ...glow.calls, ...events.calls];
+      return {
+        accentLines: all.some(([name, , color]) => name === "lineStyle" && color === ACCENT),
+        accentFills: all.some(([name, color]) => name === "fillStyle" && color === ACCENT),
+        calls: all.length
+      };
+    });
+    assert.equal(drawn[0].accentLines || drawn[0].accentFills, false, `${id} kademe 1 ham sinyal: aksan olmamali`);
+    assert.ok(drawn[1].accentLines, `${id} kademe 2 derlenmis aksan cizmiyor`);
+    assert.equal(drawn[1].accentFills, false, `${id} kademe 2 kod biti dokmemeli`);
+    assert.ok(drawn[2].accentFills, `${id} kademe 3 kod kivilcimi yok`);
+    assert.ok(drawn[0].calls < drawn[1].calls && drawn[1].calls < drawn[2].calls, `${id} cagrilar ${drawn.map((entry) => entry.calls).join(" / ")}`);
+  }
+});
+
+test("Sunucu çarpması gerçek yarıçapta: halka sunucunun r'sinde", () => {
+  const events = createRecorder();
+  const vfx = new AttackVfx(createRecorder(), createRecorder(), events, undefined, { lod: new VfxLod() });
+  vfx.emitImpact({ x: 100, y: 100, angle: 0, definitionId: "warrior-2", tier: 1, bornAt: 0, key: "s", radius: 40 });
+  vfx.render(200, 1);
+  const ringPoint = events.calls.find(([name, x, y]) => name === "moveTo" && Math.abs(Math.hypot(x - 100, y - 100) - 40) < 0.5);
+  assert.ok(ringPoint, "Sunucu halkasi 40 birimlik alani cizmeli");
+});
+
+test("Takipçi nişangâhı gövdeyi sarıyor, yığın başına daralıyor, kertikler okunur ve yazının yolunda değil", () => {
+  // Girdi dusmanin ekrandaki capi: grunt 34, iri brute ~56 birim.
+  const GRUNT = 34;
+  assert.ok(signatures.getMarkReticleHalf(GRUNT, 1) > signatures.getMarkReticleHalf(GRUNT, 2));
+  assert.ok(signatures.getMarkReticleHalf(GRUNT, 2) > signatures.getMarkReticleHalf(GRUNT, 3));
+  // Govdeyi sariyor: 1 yiginda bile sprite'in yari boyunu (17) asmiyor; iri brute'ta da.
+  assert.ok(signatures.getMarkReticleHalf(GRUNT, 1) <= GRUNT / 2);
+  assert.ok(signatures.getMarkReticleHalf(56, 1) <= 56 / 2);
+  const lod = new VfxLod();
+  const extents = [];
+  for (const stacks of [1, 2, 3]) {
+    lod.force(0);
+    const marks = createRecorder();
+    const glow = createRecorder();
+    const vfx = new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), glow, marks, { lod, reducedMotion: () => true });
+    vfx.render({ towers: [], enemies: [{ id: "e1", x: 100, y: 100, trackingStacks: stacks }], now: 500, scale: 1, cellSize: 34, enemySize: () => GRUNT });
+    const lines = [...marks.calls, ...glow.calls].filter(([name]) => name === "lineBetween");
+    extents.push(Math.max(...lines.map(([, x1, y1]) => Math.max(Math.abs(x1 - 100), Math.abs(y1 - 100)))));
+    const half = signatures.getMarkReticleHalf(GRUNT, stacks);
+    // Kertikler nisangahin solunda; durum yazisinin (ust) ve can cubugunun (alt) bandinda degil.
+    const pips = marks.calls.filter(([name, x]) => name === "fillRect" && x < 100 - half);
+    assert.equal(pips.length, stacks, `${stacks} yiginda ${pips.length} kertik`);
+    for (const [, , y, w, h] of pips) {
+      assert.ok(w >= signatures.MARK_PIP_SIZE && h >= signatures.MARK_PIP_SIZE, `kertik ${w}x${h}`);
+      assert.ok(y >= 100 - half && y + h <= 100 + half, "kertik nisangahin dikey araliginda kalmali");
+    }
+    const ys = pips.map(([, , y]) => y).sort((a, b) => a - b);
+    for (let index = 1; index < ys.length; index += 1) {
+      assert.ok(ys[index] - ys[index - 1] - signatures.MARK_PIP_SIZE >= signatures.MARK_PIP_GAP, "kertik araligi en az 2 birim");
+    }
+    // LOD 3: tek dikdortgenlik serit, boyu yigini soyluyor.
+    lod.force(3);
+    const shed = createRecorder();
+    new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), shed, { lod, reducedMotion: () => true })
+      .render({ towers: [], enemies: [{ id: "e1", x: 100, y: 100, trackingStacks: stacks }], now: 500, scale: 1, cellSize: 34, enemySize: () => GRUNT });
+    const strip = shed.calls.filter(([name]) => name === "fillRect");
+    assert.equal(strip.length, 1);
+    assert.equal(strip[0][4], stacks * signatures.MARK_PIP_SIZE + (stacks - 1) * signatures.MARK_PIP_GAP);
+  }
+  assert.ok(extents[0] > extents[1] && extents[1] > extents[2], `nisangah daralmali: ${extents.join(" / ")}`);
+  // Isaretsiz dusmanda hicbir sey yok.
+  lod.force(0);
+  const empty = createRecorder();
+  new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), empty, { lod }).render({ towers: [], enemies: [{ id: "e2", x: 0, y: 0 }], now: 0, scale: 1, cellSize: 34 });
+  assert.equal(empty.calls.filter(([name]) => name !== "clear").length, 0);
+});
+
+test("Takipçi nişangâhı: renk ve perde işaretleyen kulenin kademesinden, yığın yalnızca darlık", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  const ramp = profiles.getVfxProfile("warrior-1").ramp;
+  const towers = [
+    { id: "t-l1", definitionId: "warrior-1", x: 0, y: 0, level: 2, ownerId: "me" },
+    { id: "t-l10", definitionId: "warrior-1", x: 0, y: 0, level: 10, ownerId: "me" },
+    { id: "t-mate", definitionId: "warrior-1", x: 0, y: 0, level: 10, ownerId: "mate" }
+  ];
+  const draw = (k, stacks) => {
+    const marks = createRecorder();
+    const glow = createRecorder();
+    new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), glow, marks, { lod, reducedMotion: () => true })
+      .render({ towers, enemies: [{ id: "e", x: 50, y: 50, trackingStacks: stacks, k }], now: 0, scale: 1, cellSize: 34, enemySize: () => 34, isOwn: (tower) => tower.ownerId === "me" });
+    return { marks, glow, colors: new Set([...lineColors(marks), ...lineColors(glow)]) };
+  };
+  // Sv 10 Takipci'nin isareti Debug Lazer'in tukettigi tek yiginda bile kademe 3 renginde.
+  assert.ok(draw("t-l10", 1).colors.has(ramp[2]));
+  assert.ok(!draw("t-l10", 1).colors.has(ramp[0]));
+  // Kaynak bilinmiyor: ham kademe, notr ilk durak; 3 yigin rengi degistirmiyor.
+  assert.ok(draw(undefined, 3).colors.has(ramp[0]));
+  assert.ok(draw("t-l1", 3).colors.has(ramp[0]));
+  // Kademe 3 eklentileri (beyaz kose dugumleri) takim arkadasinin isaretinde %70.
+  const nodeAlpha = (k) => draw(k, 3).marks.calls.filter(([name, color]) => name === "fillStyle" && color !== 0x22c55e).map(([, , alpha]) => alpha);
+  assert.ok(Math.min(...nodeAlpha("t-mate")) < Math.min(...nodeAlpha("t-l10")), "arkadasin eklentileri soluk olmali");
+});
+
+test("Takipçi nişangâhı LOD'da gerçekten azalıyor: 2'de iç kertik ve düğüm, 3'te yalnızca ayraç ve şerit", () => {
+  const lod = new VfxLod();
+  const towers = [{ id: "t", definitionId: "warrior-1", x: 0, y: 0, level: 10 }];
+  const enemies = Array.from({ length: 60 }, (_, index) => ({ id: `e${index}`, x: (index % 10) * 40, y: Math.floor(index / 10) * 40, trackingStacks: 3, k: "t" }));
+  const cost = (level) => {
+    lod.force(level);
+    const surfaces = [createCountingGraphics(), createCountingGraphics(), createCountingGraphics(), createCountingGraphics()];
+    new signatures.AtakanSignatureVfx(...surfaces, { lod }).render({ towers, enemies, now: 300, scale: 1, cellSize: 34, enemySize: () => 34 });
+    return surfaces.reduce((sum, surface) => ({ calls: sum.calls + surface.stats.calls, vertices: sum.vertices + surface.stats.vertices }), { calls: 0, vertices: 0 });
+  };
+  const full = cost(0);
+  const mid = cost(2);
+  const shed = cost(3);
+  assert.ok(mid.calls < full.calls * 0.7, `LOD 2 cagrilar ${mid.calls} / ${full.calls}`);
+  assert.ok(shed.calls <= full.calls * 0.5, `LOD 3 cagrilar ${shed.calls} / ${full.calls}`);
+  assert.ok(shed.vertices <= full.vertices * 0.6, `LOD 3 kose ${shed.vertices} / ${full.vertices}`);
+});
+
+test("Obsesyon ipi yığınla kalınlaşıyor, hedef değişince kopup sıfırdan başlıyor", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  const tower = (o, t, level = 1) => ({ id: "t4", definitionId: "warrior-4", x: 0, y: 0, level, o, t });
+  const enemies = [{ id: "e1", x: 80, y: 0 }, { id: "e2", x: 0, y: 90 }];
+  const bodyWidth = (stack) => {
+    const links = createRecorder();
+    const vfx = new signatures.AtakanSignatureVfx(createRecorder(), links, createRecorder(), createRecorder(), { lod, reducedMotion: () => true });
+    vfx.render({ towers: [tower(stack, "e1")], enemies, now: 100, scale: 1, cellSize: 28 });
+    return links.calls.find(([name]) => name === "lineStyle")[1];
+  };
+  assert.ok(bodyWidth(2) < bodyWidth(6) && bodyWidth(6) < bodyWidth(10), `ip kalinligi ${[2, 6, 10].map(bodyWidth).join(" / ")}`);
+  assert.ok(signatures.getTetherWidth(10, 1) > signatures.getTetherWidth(1, 1));
+
+  // Hedef degisimi: onceki ip kopuyor (iki yari), yeni ip ince basliyor.
+  const links = createRecorder();
+  const vfx = new signatures.AtakanSignatureVfx(createRecorder(), links, createRecorder(), createRecorder(), { lod });
+  vfx.render({ towers: [tower(8, "e1")], enemies, now: 1000, scale: 1, cellSize: 28 });
+  assert.equal(vfx.liveTethers, 1);
+  links.calls.length = 0;
+  vfx.render({ towers: [tower(undefined, undefined)], enemies, now: 1060, scale: 1, cellSize: 28 });
+  const snapLines = links.calls.filter(([name]) => name === "lineBetween");
+  assert.equal(snapLines.length, 2, "kopan ip iki yari olarak cizilmeli");
+  // Yarilar geri cekiliyor: ikisi de eski ipin (80 birim) yarisindan kisa.
+  for (const [, x1, y1, x2, y2] of snapLines) assert.ok(Math.hypot(x2 - x1, y2 - y1) < 40);
+  vfx.render({ towers: [tower(undefined, undefined)], enemies, now: 1060 + signatures.TETHER_SNAP_MS + 1, scale: 1, cellSize: 28 });
+  assert.equal(vfx.liveTethers, 0, "kopma bitince kayit havuza donmeli");
+  links.calls.length = 0;
+  vfx.render({ towers: [tower(1, "e2")], enemies, now: 1500, scale: 1, cellSize: 28 });
+  const fresh = links.calls.find(([name]) => name === "lineStyle");
+  assert.ok(fresh[1] < bodyWidth(8), "yeni hedefte ip ince baslamali");
+  const toNewTarget = links.calls.find(([name, , , x2, y2]) => name === "lineBetween" && x2 === 0 && y2 === 90);
+  assert.ok(toNewTarget, "ip yeni hedefe gitmeli");
+});
+
+test("Ucube göstergesi tavan kadar dilim, yığın kadar yanık dilim çiziyor", () => {
+  const lod = new VfxLod();
+  lod.force(3);
+  for (const [u, m] of [[4, undefined], [9, 15], [20, 20]]) {
+    const marks = createRecorder();
+    const vfx = new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), marks, { lod, reducedMotion: () => true });
+    vfx.render({ towers: [{ id: "u1", definitionId: "warrior-6", x: 0, y: 0, level: 1, u, m }], enemies: [], now: 0, scale: 1, cellSize: 28 });
+    const segments = marks.calls.filter(([name]) => name === "lineBetween").length;
+    assert.equal(segments, m ?? 10, `tavan ${m ?? 10}, dilim ${segments}`);
+    let litAlpha = 0;
+    let lit = 0;
+    for (const call of marks.calls) {
+      if (call[0] === "lineStyle") litAlpha = call[3];
+      else if (call[0] === "lineBetween" && litAlpha > 0.9) lit += 1;
+    }
+    assert.equal(lit, u, `yigin ${u}`);
+  }
+});
+
+test("Ucube zinciri tek ton ailesinde ve zamanla yeniden tohumlanıyor; hareket azaltmada sabit", () => {
+  const chain = { id: "chain-p9-3", definitionId: "warrior-6", x1: 0, y1: 0, x2: 60, y2: 20, width: 5, color: 0xadf765, ttlMs: 150 };
+  const pathAt = (now, reducedMotion = false) => {
+    const recorder = createRecorder();
+    new BeamRenderer(recorder).render([chain], { now, sceneNow: now, scale: 1, reducedMotion });
+    return { recorder, points: recorder.calls.filter(([name]) => name === "lineTo").map(([, x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ") };
+  };
+  assert.notEqual(pathAt(0).points, pathAt(130).points, "zincir yeniden tohumlanmali");
+  assert.equal(pathAt(0, true).points, pathAt(130, true).points, "hareket azaltmada zincir sabit");
+  for (const tier of [undefined, 2, 3]) {
+    const recorder = createRecorder();
+    new BeamRenderer(recorder).render([{ ...chain, tier }], { now: 40, sceneNow: 40, scale: 1 });
+    const colors = new Set([...lineColors(recorder), ...fillColors(recorder)]);
+    for (const old of [0x93c5fd, 0x67e8f9, 0x38bdf8]) assert.ok(!colors.has(old), `kademe ${tier ?? 1}: eski gok mavisi ${old.toString(16)}`);
+  }
+});
+
+test("İzolasyon: yalnızken kapatma alanı ve mühürlü kare, komşu varken ihlal işareti", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  const draw = (auraActive, level, neighbour) => {
+    const ground = createRecorder();
+    const marks = createRecorder();
+    const vfx = new signatures.AtakanSignatureVfx(ground, createRecorder(), createRecorder(), marks, { lod, reducedMotion: () => true });
+    const towers = [{ id: "i1", definitionId: "warrior-3", x: 100, y: 100, level, range: 60, auraActive }];
+    if (neighbour) towers.push({ id: "n1", definitionId: "warrior-1", x: 128, y: 100, level: 1 });
+    vfx.render({ towers, enemies: [], now: 0, scale: 1, cellSize: 28 });
+    return { ground, marks };
+  };
+  const raw = draw(true, 1);
+  const compiled = draw(true, 5);
+  assert.ok(raw.ground.calls.some(([name]) => name === "strokePath"), "alanin siniri cizilmeli");
+  // Derlenmis sinir altigen: alti kose dugumu terminal yesilinde.
+  assert.ok(!fillColors(raw.ground).has(ACCENT));
+  assert.ok(fillColors(compiled.ground).has(ACCENT), "kademe 2 altigen dugumleri");
+  // Muhurlu kare yalnizken; komsu varken alan yok, kehribar ihlal var.
+  const breached = draw(false, 5, true);
+  assert.equal(breached.ground.calls.filter(([name]) => name !== "clear").length, 0, "komsu varken alan cizilmemeli");
+  assert.ok(lineColors(breached.marks).has(0xf59e0b), "komsuya ihlal isareti");
+  assert.ok(!lineColors(compiled.marks).has(0xf59e0b), "yalnizken ihlal yok");
+});
+
+test("güdümlü atışın namlusu: gelen snapshot'taki kendi kulesinden, yalnızca güdümlü profilde", async () => {
+  const { findHomingMuzzleOrigin } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
+  const shot = { id: "p1", source: "tower", definitionId: "warrior-3", x: 112, y: 100 };
+  // Yeni (gelen) snapshot: kule Refactor ile (100, 100)'e tasindi; eski yeri (300, 300).
+  const fresh = [
+    { id: "i1", definitionId: "warrior-3", x: 100, y: 100 },
+    { id: "i2", definitionId: "warrior-3", x: 180, y: 100 },
+    { id: "x1", definitionId: "warrior-1", x: 110, y: 100 }
+  ];
+  const stale = [{ id: "i1", definitionId: "warrior-3", x: 300, y: 300 }];
+  assert.equal(findHomingMuzzleOrigin(shot, fresh, 68), fresh[0], "en yakin ayni tanimli kule");
+  assert.equal(findHomingMuzzleOrigin(shot, stale, 68), undefined, "eski konumdaki kule namlu vermemeli");
+  // Kulesinden uzakta ilk kez gorulen mermi (yeniden baglanma): namlu yok.
+  assert.equal(findHomingMuzzleOrigin({ ...shot, x: 400 }, fresh, 68), undefined);
+  // Gudumlu olmayan profil (Melis, Takipci) ve dusman mermisi: dokunulmuyor.
+  assert.equal(findHomingMuzzleOrigin({ ...shot, definitionId: "warrior-1" }, fresh, 68), undefined);
+  assert.equal(findHomingMuzzleOrigin({ ...shot, definitionId: "archer-1" }, fresh, 68), undefined);
+  assert.equal(findHomingMuzzleOrigin({ ...shot, source: "enemy" }, fresh, 68), undefined);
+});
+
+test("Obsesyon ipi hedef ölünce kopuyor; kule kaldırılınca iz bırakmadan bırakılıyor", () => {
+  const lod = new VfxLod();
+  lod.force(0);
+  const tower = { id: "t4", definitionId: "warrior-4", x: 0, y: 0, level: 5, o: 7, t: "e1" };
+  const alive = [{ id: "e1", x: 80, y: 0 }];
+  const links = createRecorder();
+  const vfx = new signatures.AtakanSignatureVfx(createRecorder(), links, createRecorder(), createRecorder(), { lod });
+  vfx.render({ towers: [tower], enemies: alive, now: 1000, scale: 1, cellSize: 34 });
+  // Hedef oldu: sunucu yigini henuz sifirlamadi (o, t duruyor) ama dusman listede yok.
+  links.calls.length = 0;
+  vfx.render({ towers: [tower], enemies: [], now: 1060, scale: 1, cellSize: 34 });
+  assert.equal(links.calls.filter(([name]) => name === "lineBetween").length, 2, "olen hedefte ip iki yari olarak kopmali");
+  vfx.render({ towers: [tower], enemies: [], now: 1060 + signatures.TETHER_SNAP_MS + 1, scale: 1, cellSize: 34 });
+  assert.equal(vfx.liveTethers, 0);
+
+  // Kule kaldirildi (satildi, yikildi): ip ve kaydi hemen gidiyor, kopma cizilmiyor.
+  vfx.render({ towers: [tower], enemies: alive, now: 2000, scale: 1, cellSize: 34 });
+  assert.equal(vfx.liveTethers, 1);
+  links.calls.length = 0;
+  vfx.render({ towers: [], enemies: alive, now: 2016, scale: 1, cellSize: 34 });
+  assert.equal(vfx.liveTethers, 0, "kaldirilan kulenin kaydi havuza donmeli");
+  assert.equal(links.calls.filter(([name]) => name !== "clear").length, 0, "kaldirilan kulenin ipi cizilmemeli");
+});
+
+test("İzolasyon ihlal işareti sunucunun kuralıyla aynı: kenar ve 2x2 yapı yanlış ihlal vermiyor", async () => {
+  const shared = await import("../packages/shared/dist/index.js");
+  const map = shared.createDefaultEditableMap();
+  const size = shared.getMapGridSize(map);
+  const cell = (col, row) => shared.gridToWorld(col, row, map);
+  const center = cell(5, 5);
+  const towers = [
+    { id: "iso", definitionId: "warrior-3", ...center, level: 5, auraActive: false },
+    // Gercek komsu: kosegendeki kare.
+    { id: "near", definitionId: "warrior-1", ...cell(6, 6), level: 1 },
+    // 2x2 yapi: merkezi kare kosesinde, bir kare otede (merkez mesafesi 1.5 kare).
+    { id: "big", definitionId: "zeynep-7", x: center.x + size * 1.5, y: center.y + size * 1.5, level: 1 },
+    // Kenar yapisi: dikey kenarda, bir kare otede (merkez mesafesi 1.5 kare).
+    { id: "edge", definitionId: "zeynep-8", x: center.x + size * 1.5, y: center.y, level: 1 },
+    // Duvar sayilmiyor.
+    { id: "wall", definitionId: "wall-1", ...cell(4, 5), level: 1 }
+  ];
+  const definitions = new Map(Object.values(shared.towerCatalog).flat().map((definition) => [definition.id, definition]));
+  const expected = shared.findIsolationBlockers(towers[0], towers.map((tower) => ({ ...tower, definition: definitions.get(tower.definitionId) })), map).map((entry) => entry.id);
+  assert.deepEqual(expected, ["near"], "sunucunun kurali: yalnizca kosegendeki kule");
+
+  const marks = createRecorder();
+  const vfx = new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), marks, { lod: new VfxLod(), reducedMotion: () => true });
+  vfx.render({ towers, enemies: [], now: 0, scale: 1, cellSize: size, map });
+  const breaches = marks.calls.filter(([name, , color]) => name === "lineStyle" && color === 0xf59e0b).length;
+  assert.equal(breaches, expected.length, "istemcinin ihlal isareti sunucunun komsu listesiyle ayni");
+  const crossAt = marks.calls.filter(([name, x1]) => name === "lineBetween" && Math.abs(x1 - (cell(6, 6).x - 2.4)) < 0.01);
+  assert.ok(crossAt.length >= 1, "ihlal carpisi gercek komsunun uzerinde");
+});
+
+test("galeri senaryosu yığın alanlarını besliyor: Obsesyon yükseliyor, Ucube tavana çıkıyor, Takipçi işaretliyor", () => {
+  const towers = [
+    { id: "g-warrior-1-10", definitionId: "warrior-1", level: 10, x: 20, y: 50, color: 0x22c55e, own: true, walker: 0, intervalMs: 720 },
+    { id: "g-warrior-4-5", definitionId: "warrior-4", level: 5, x: 20, y: 150, color: 0x22c55e, own: true, walker: 1, intervalMs: 760 },
+    { id: "g-warrior-6-10", definitionId: "warrior-6", level: 10, x: 20, y: 250, color: 0x22c55e, own: true, walker: 2, intervalMs: 940 },
+    { id: "g-warrior-3-1", definitionId: "warrior-3", level: 1, x: 20, y: 350, color: 0x22c55e, own: true, walker: 3, intervalMs: 620, displayRange: 34, anchor: { x: 42, y: 350 } }
+  ];
+  const walkers = [0, 1, 2, 3].map((index) => ({ id: `w${index}`, cx: 100, cy: 50 + index * 100, rx: 20, ry: 10, periodMs: 3400, phase: 0 }));
+  const scenario = new VfxScenario(towers, walkers);
+  const stacks = [];
+  const gauge = [];
+  let marked = 0;
+  const isolation = new Set();
+  for (let now = 0; now <= 12000; now += 100) {
+    const frame = scenario.frame(now, now - 100);
+    const obsession = frame.signatureTowers.find((tower) => tower.id === "g-warrior-4-5");
+    stacks.push(obsession.o ?? 0);
+    if (obsession.o) assert.equal(obsession.t, "w1");
+    const ucube = frame.signatureTowers.find((tower) => tower.id === "g-warrior-6-10");
+    gauge.push(ucube.u ?? 0);
+    assert.equal(ucube.m, 20);
+    if ((frame.signatureEnemies[0].trackingStacks ?? 0) === 3) marked += 1;
+    isolation.add(frame.signatureTowers.find((tower) => tower.id === "g-warrior-3-1").auraActive);
+  }
+  assert.equal(Math.max(...stacks), 10, "Obsesyon yigini tavana cikmali");
+  assert.ok(stacks.some((value, index) => index > 0 && value < stacks[index - 1]), "hedef degisimiyle sifirlanmali");
+  assert.equal(Math.max(...gauge), 20, "Ucube sv 10 tavani 20");
+  assert.ok(marked > 0, "Takipci sv 10 yuruyucuyu uc yiginla isaretlemeli");
+  assert.deepEqual([...isolation].sort(), [false, true], "Izolasyon yalniz ve komsulu evreler");
 });

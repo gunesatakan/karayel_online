@@ -36,8 +36,14 @@ export type VfxSilhouette =
   | "ring"
   /** Kulenin kendi cizilmis dokusu (Melis). */
   | "sprite"
-  /** combat-vfx'in hareketli govdesi (Takipci, Sunucu, Obsesyon, Ucube, Hiza, Taht). */
+  /** combat-vfx'in hareketli govdesi (Takipci, Obsesyon, Hiza, Taht). */
   | "combat"
+  /** Veri paketi: koseli bir elmas govde (Sunucu'nun agir atisi). */
+  | "packet"
+  /** Altigen hucre: kapatma alaninin kucuk hali (Izolasyon). */
+  | "cell"
+  /** Kirikli kivilcim oku: kendi kendini yeniden cizen simsek (Ucube). */
+  | "arc"
   /** Mermi yok; isin, dalga ya da yorunge. */
   | "none";
 
@@ -60,7 +66,11 @@ export type VfxImpactStyle =
   /** Yayilan dalga. */
   | "ripple"
   /** Bicak kesigi. */
-  | "slash";
+  | "slash"
+  /** Yukari baglanti: gercek yaricapta halka ve gokten inen sutun (Sunucu). */
+  | "uplink"
+  /** Hedefin cevresinde kapanan altigen kafes (Izolasyon). */
+  | "contain";
 
 /** Sunucunun saldiriyi nasil teslim ettigi; galeri ve olcum bunu taklit ediyor. */
 export type VfxDelivery =
@@ -127,6 +137,48 @@ export type VfxTierRecipe = {
   shake: boolean;
 };
 
+/**
+ * Atakan'in uc perdesi: ham sinyal -> derlenmis -> asiri yukleme / uretim.
+ *
+ * Genel uc perde (duz -> acilmis -> canli) her kulede; bu, ustune binen
+ * karakter dili. Debug Lazer'in kirmizi -> mavi -> beyaz rampasi sablon.
+ */
+export type VfxAct = "raw" | "compiled" | "overdrive";
+
+export type VfxSignatureTier = {
+  act: VfxAct;
+  /** Izin motifi: ham kademede duz serit; derlenmiste tarama cizgisi ya da veri paketi. */
+  trailMotif: "plain" | "scan" | "packets";
+  /** Terminal yesili aksan: nisangah ayraci, izgara kertigi. */
+  accent: boolean;
+  /** Carpmada ve alanda kalan cikartma. */
+  decal: "none" | "grid" | "hex";
+  /** Beyaz-sicak cekirdek; ton omuzlarda kaliyor. */
+  whiteCore: boolean;
+  /** Govde boyunca kosan parlamalar (ip, bag, zincir, gosterge). */
+  glints: boolean;
+  /** Dokulen kod kivilcimlari. */
+  codeSparks: boolean;
+};
+
+/** Kulenin mekanigini gosteren dunya ici imza. */
+export type VfxMechanic =
+  /** Takipci: dusmanin uzerinde yigin basina daralan isaret nisangahi. */
+  | "mark-reticle"
+  /** Sunucu: gercek yaricapta yukari baglanti sutunu ve gorunen bag. */
+  | "uplink-column"
+  /** Izolasyon: kapatma alani ve yalnizlik karesi. */
+  | "containment"
+  /** Obsesyon: yiginla kalinlasan, hedef degisince kopan ip. */
+  | "tether"
+  /** Ucube: tavanini gosteren yigin gostergesi. */
+  | "stack-gauge";
+
+export type VfxSignature = {
+  mechanic: VfxMechanic;
+  tiers: readonly [VfxSignatureTier, VfxSignatureTier, VfxSignatureTier];
+};
+
 export type VfxProfile = {
   id: string;
   character: string;
@@ -141,6 +193,8 @@ export type VfxProfile = {
   /** Alan hasari: carpma gercek yaricapta halka. */
   aoe: boolean;
   tiers: readonly [VfxTierRecipe, VfxTierRecipe, VfxTierRecipe];
+  /** Karakter imzasi (Atakan); yoksa yalnizca genel uc perde. */
+  signature?: VfxSignature;
 };
 
 /* ------------------------------------------------------------------ */
@@ -235,6 +289,9 @@ const SILHOUETTE_SIZE: Record<VfxSilhouette, number> = {
   ring: 13,
   sprite: 16,
   combat: 14,
+  packet: 14,
+  cell: 13,
+  arc: 14,
   none: 12
 };
 
@@ -294,7 +351,37 @@ type ProfileSeed = {
   shift?: number;
   heavy?: boolean;
   aoe?: boolean;
+  signature?: { mechanic: VfxMechanic; trail: "scan" | "packets"; decal: "grid" | "hex" };
 };
+
+/**
+ * Atakan imzasinin uc perdesi.
+ *
+ * - Ham sinyal (sv 1-4): duz serit, ciplak paket, duz ok; aksan yok.
+ * - Derlenmis (sv 5-9): tarama cizgisi ya da veri paketi izi, terminal
+ *   yesili ayraclar, izgara/altigen cikartma.
+ * - Asiri yukleme (sv 10): beyaz-sicak cekirdek (ton omuzlarda), kosan
+ *   parlamalar, dokulen kod kivilcimlari.
+ */
+function atakanSignature(seed: NonNullable<ProfileSeed["signature"]>): VfxSignature {
+  return {
+    mechanic: seed.mechanic,
+    tiers: [
+      { act: "raw", trailMotif: "plain", accent: false, decal: "none", whiteCore: false, glints: false, codeSparks: false },
+      { act: "compiled", trailMotif: seed.trail, accent: true, decal: seed.decal, whiteCore: false, glints: false, codeSparks: false },
+      { act: "overdrive", trailMotif: seed.trail, accent: true, decal: seed.decal, whiteCore: true, glints: true, codeSparks: true }
+    ]
+  };
+}
+
+/**
+ * Ucube'nin tek ton ailesi: limon -> elektrik yesili -> beyaza yakin limon.
+ *
+ * Eskiden mermisi limon, zinciri gok mavisi, kulesi mavi-siyahti; turetilmis
+ * rampa da limondan kehribara ve kirmiziya kayiyordu. Artik ucu de ayni
+ * aileden: sicaklik degisiyor (sari-yesil -> yesil -> beyaz), aile degil.
+ */
+const UCUBE_RAMP = [0xadf765, 0x5eea8a, liftToWhite(0xbef264, 0.55)] as const;
 
 /**
  * Zeynep'in rutbe dili: pembe -> altin -> beyaz altin. Kin'in kizili ve
@@ -316,14 +403,29 @@ const onurRamp = (base: number) => [base, mixColor(base, 0xfacc15, 0.55), liftTo
  * gercek kimligi saldirisinin renginde. Taban bu renkler, rampa onlardan.
  */
 const PROFILE_SEEDS: Record<string, ProfileSeed> = {
-  "warrior-1": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "brackets", base: 0x4dffbd, shift: 40 },
-  "warrior-2": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "bolt", base: 0x58d9ff, shift: 36, heavy: true, aoe: true },
-  "warrior-3": { character: "warrior", delivery: "homing", silhouette: "orb", impact: "ripple", base: 0x7fe5e8, shift: 30 },
-  "warrior-4": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "collapse", base: 0xcb79ff, shift: -34 },
+  "warrior-1": {
+    character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "brackets", base: 0x4dffbd, shift: 40,
+    signature: { mechanic: "mark-reticle", trail: "scan", decal: "grid" }
+  },
+  "warrior-2": {
+    character: "warrior", delivery: "ballistic", silhouette: "packet", impact: "uplink", base: 0x58d9ff, shift: 36, heavy: true, aoe: true,
+    signature: { mechanic: "uplink-column", trail: "packets", decal: "hex" }
+  },
+  "warrior-3": {
+    character: "warrior", delivery: "homing", silhouette: "cell", impact: "contain", base: 0x7fe5e8, shift: 30,
+    signature: { mechanic: "containment", trail: "scan", decal: "hex" }
+  },
+  "warrior-4": {
+    character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "collapse", base: 0xcb79ff, shift: -34,
+    signature: { mechanic: "tether", trail: "packets", decal: "grid" }
+  },
   // Lazerin rampasi sunucudaki DEBUG_LASER_TIER_COLORS: kirmizi, mavi, beyaz.
   // Isin kendi cizimini koruyor; rampa yalnizca kule halkasi ve galeri icin.
   "warrior-5": { character: "warrior", delivery: "laser", silhouette: "none", impact: "fragments", base: 0xef4444, ramp: [0xef4444, 0x60a5fa, 0xe0f2fe] },
-  "warrior-6": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "bolt", base: 0xadf765, shift: -48 },
+  "warrior-6": {
+    character: "warrior", delivery: "ballistic", silhouette: "arc", impact: "bolt", base: UCUBE_RAMP[0], ramp: UCUBE_RAMP,
+    signature: { mechanic: "stack-gauge", trail: "scan", decal: "grid" }
+  },
 
   "zeynep-1": { character: "zeynep", delivery: "ballistic", silhouette: "combat", impact: "fragments", base: 0xec4899, ramp: zeynepRamp(0xec4899) },
   "zeynep-2": { character: "zeynep", delivery: "showcase", silhouette: "none", impact: "fragments", base: 0xf9a8d4, ramp: zeynepRamp(0xf9a8d4) },
@@ -386,8 +488,16 @@ function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
     ramp,
     heavy: Boolean(seed.heavy),
     aoe: Boolean(seed.aoe),
-    tiers: makeTiers(ramp, seed.silhouette, Boolean(seed.heavy))
+    tiers: makeTiers(ramp, seed.silhouette, Boolean(seed.heavy)),
+    ...(seed.signature ? { signature: atakanSignature(seed.signature) } : {})
   };
+}
+
+/** Profilin bu kademedeki imza perdesi; imzasiz profilde `undefined`. */
+export function getSignatureTier(profile: VfxProfile, tier: number | undefined) {
+  if (!profile.signature) return undefined;
+  const index = tier !== undefined && tier >= 3 ? 2 : tier !== undefined && tier >= 2 ? 1 : 0;
+  return profile.signature.tiers[index];
 }
 
 /**

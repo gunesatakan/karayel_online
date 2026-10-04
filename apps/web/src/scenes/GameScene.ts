@@ -39,8 +39,9 @@ import {
   type ChampionDownMessage
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
-import { CombatVfx, drawIsolationField, readTextureAccent } from "../vfx/combat-vfx";
-import { AttackVfx } from "../vfx/attack-vfx";
+import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
+import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
+import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
 import { liftToWhite, toTier } from "../vfx/kit";
@@ -878,6 +879,23 @@ export class GameScene extends Phaser.Scene {
   private readonly beamInterpolator = new BeamInterpolator();
   /** Profil gudumlu mermi, namlu ve carpma cizimi. */
   private attackVfx?: AttackVfx;
+  /**
+   * Atakan kulelerinin dunya ici imzalari: isaret nisangahi, Sunucu bagi,
+   * kapatma alani, Obsesyon ipi, Ucube gostergesi. Her karede.
+   */
+  private atakanSignatures?: AtakanSignatureVfx;
+  /** Son cizilen snapshot'in kuleleri (dizi): imzalar karede bundan okuyor. */
+  private signatureTowers: readonly TowerSnapshot[] = [];
+  /** Imza karesinin girdisi: bir kez kuruluyor, karede yerinde yaziliyor. */
+  private readonly signatureFrame: SignatureFrame = {
+    towers: [],
+    enemies: [],
+    now: 0,
+    scale: 1,
+    cellSize: 28,
+    isOwn: (tower) => tower.ownerId === undefined || tower.ownerId === this.localSessionId,
+    enemySize: (enemy) => getEnemySpriteDisplaySize(enemy as EnemySnapshot, this.getMapCellSize())
+  };
   /** Kisa omurlu ADD parlamalari (en fazla 64 canli). */
   private flashPool?: FlashPool;
   /** Mermi omuzlari ve haleleri: karede tek dortgenlik ADD damgalar. */
@@ -1389,6 +1407,17 @@ export class GameScene extends Phaser.Scene {
       // yonetmenin mikro sarsintisi. Aralik, ust sinir ve hareket azaltma orada.
       onHeavyImpact: () => this.feedback?.shakeCamera({ own: true, priority: 1, px: 1.5, durationMs: 90 })
     });
+    // Atakan imzalari: alan dusmanlarin altinda (7.4), bag ve ip mermilerin
+    // altinda (10.4, ADD omuzlari 10.42), nisangah ve gosterge dusman ve kule
+    // govdesinin ustunde, can cubugunun (16) altinda (13.2).
+    this.atakanSignatures = new AtakanSignatureVfx(
+      this.add.graphics().setDepth(7.4),
+      this.add.graphics().setDepth(10.4),
+      this.add.graphics().setDepth(10.42).setBlendMode(Phaser.BlendModes.ADD),
+      this.add.graphics().setDepth(13.2),
+      { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
+    );
+    this.signatureTowers = [];
     this.projectileOwnership.clear();
     this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
     this.damageNumbers = new DamageNumberPool(this, 30);
@@ -1489,6 +1518,8 @@ export class GameScene extends Phaser.Scene {
       this.glowStamps?.destroy();
       this.glowStamps = undefined;
       this.attackVfx?.clear();
+      this.atakanSignatures?.clear();
+      this.signatureTowers = [];
       this.beamInterpolator.clear();
       this.projectileOwnership.clear();
       this.damageNumbers?.destroy();
@@ -4346,7 +4377,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.noteBadgeSnapshot(hydratedSnapshot);
-    this.noteProjectileOwnership(hydratedSnapshot.projectiles);
+    this.noteProjectileOwnership(hydratedSnapshot.projectiles, hydratedSnapshot.towers);
     // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
     // ayni soketten, ayni sirayla geliyor (oynatma saati ise ~500 ms geride,
     // o yuzden oynatilan snapshot degil). Karnesi gelmis dalgadan baska bir
@@ -4396,13 +4427,15 @@ export class GameScene extends Phaser.Scene {
    * (oynatmadan ~500 ms once) mermi henuz kulesinin yanindayken. Gorulmeyen
    * kayitlar siliniyor; dogrusal mermiler kendi atis/isabet mesajlariyla.
    */
-  private noteProjectileOwnership(projectiles: readonly ProjectileSnapshot[]) {
+  private noteProjectileOwnership(projectiles: readonly ProjectileSnapshot[], towers: readonly TowerSnapshot[]) {
     const seen = this.ownershipSeen;
     seen.clear();
     for (const projectile of projectiles) {
       seen.add(projectile.id);
       if (projectile.source !== "tower" || this.projectileOwnership.has(projectile.id)) continue;
-      this.projectileOwnership.set(projectile.id, this.isOwnShotFrom(projectile.x, projectile.y));
+      const own = this.isOwnShotFrom(projectile.x, projectile.y);
+      this.projectileOwnership.set(projectile.id, own);
+      this.emitHomingMuzzle(projectile, own, towers);
     }
     for (const id of this.projectileOwnership.keys()) {
       if (!seen.has(id) && !this.linearProjectileSnapshots.has(id)) this.projectileOwnership.delete(id);
@@ -4410,6 +4443,35 @@ export class GameScene extends Phaser.Scene {
   }
 
   private readonly ownershipSeen = new Set<string>();
+
+  /**
+   * Gudumlu atisin namlusu (Izolasyon Kulesi): sunucu gudumlu mermi icin
+   * `projectile:spawn` gondermiyor, mermi ilk kez snapshot'ta goruluyor.
+   * Goruldugu an (oynatmadan ~500 ms once) atan kulenin yaninda; namlu ve
+   * kademe 2+ hazirlik vurusu kulenin kendi konumundan, oynatmaya siralaniyor.
+   * Yalnizca profili gudumlu teslim olan kuleler: Melis'in odak ve lanet
+   * mermileri kendi dilinde, dokunulmuyor. Ek tel yok.
+   *
+   * Kuleler mermiyle ayni (gelen) snapshot'tan: oynatilan snapshot ~500 ms
+   * geride, yeni kurulan ya da Refactor ile tasinan kule orada yok/eski yerde.
+   */
+  private emitHomingMuzzle(projectile: ProjectileSnapshot, own: boolean, towers: readonly TowerSnapshot[]) {
+    const origin = findHomingMuzzleOrigin(projectile, towers, this.getMapCellSize() * 2);
+    if (!origin) return;
+    const definitionId = projectile.definitionId ?? "";
+    const originX = origin.x;
+    const originY = origin.y;
+    const angle = Math.atan2(projectile.vy ?? projectile.y - originY, projectile.vx ?? projectile.x - originX);
+    const recipe = getVfxTier(getVfxProfile(definitionId), projectile.tier);
+    if (recipe.muzzle.anticipationMs > 0) {
+      this.queueDelayedEffect(() => this.attackVfx?.emitAnticipation({
+        x: originX, y: originY, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+      }), recipe.muzzle.anticipationMs);
+    }
+    this.queueDelayedEffect(() => this.attackVfx?.emitMuzzle({
+      x: originX, y: originY, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+    }));
+  }
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
     // Delta once tamamlaniyor: hidratlama tam kayit bekliyor.
@@ -4499,6 +4561,11 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("beams", beamsMs);
     this.vfxFrameCost += beamsMs;
     this.renderTowerOverlays();
+    sectionStart = performance.now();
+    this.renderAtakanSignatures(frame.snapshot.enemies, now);
+    const signaturesMs = performance.now() - sectionStart;
+    this.recordClientPerfSection("signatures", signaturesMs);
+    this.vfxFrameCost += signaturesMs;
     this.lastPlaybackAlpha = frame.alpha;
 
     if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
@@ -4644,6 +4711,23 @@ export class GameScene extends Phaser.Scene {
       const tower = this.towerSnapshots.get(id);
       if (tower) this.renderTowerSpriteEffects(rendered.effect, tower);
     }
+  }
+
+  /**
+   * Atakan imzalari: karedeki (ara degerlenmis) dusmanlar ve son snapshot'in
+   * kuleleri. Girdi nesnesi yeniden kullaniliyor.
+   */
+  private renderAtakanSignatures(enemies: readonly EnemySnapshot[], now: number) {
+    const signatures = this.atakanSignatures;
+    if (!signatures) return;
+    const frame = this.signatureFrame;
+    frame.towers = this.signatureTowers;
+    frame.enemies = enemies;
+    frame.now = now;
+    frame.scale = this.getTowerEffectScale();
+    frame.cellSize = this.getMapCellSize();
+    frame.map = this.selectedMapData;
+    signatures.render(frame);
   }
 
   /**
@@ -6347,22 +6431,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.announceChampion(enemy, displayedEnemySize);
       }
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
-      const trackingStacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       const curseLoad = enemy.curseLoad ?? 0;
       const isCursed = curseLoad > 0;
       const doubtStacks = enemy.doubtStacks ?? 0;
       const hasDoubt = doubtStacks > 0 || Boolean(enemy.isHesitating);
       const hasUnderworld = Boolean(enemy.isUnderworldLinked || enemy.isUndead);
       const hasSeparateMelisMarker = isCursed || hasDoubt;
-      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isWhisperTurned || enemy.isFeared || hasUnderworld || trackingStacks > 0);
+      // Takipci isareti artik yazi degil, dusmanin uzerinde nisangah
+      // (atakan-signatures): yigin kadar kertik, yiginla daralan ayraclar.
+      // Eski "T/T2/T3" etiketi burada yok; kertik sayisi renk gormeden de okunuyor.
+      const hasCombatMarker = Boolean(enemy.isDominated || enemy.isWhisperTurned || enemy.isFeared || hasUnderworld);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
       mover.marker?.setPosition(enemy.x, enemy.y - statusYOffset - (hasSeparateMelisMarker ? 11 : 4));
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isWhisperTurned ? "DÖN" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
+      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isWhisperTurned ? "DÖN" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : slowLabel || "AIR");
       // Renk ve punto yalnizca degistiginde: Phaser ikisinde de metnin tuvalini
       // yeniden ciziyor (punto olcumleri de yeniden hesapliyor) ve bu her karede
       // her dusmanda iki etiket demekti.
       if (mover.marker) {
-        setTextColorIfChanged(mover.marker, enemy.isDominated ? "#f0abfc" : enemy.isWhisperTurned ? "#c4b5fd" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+        setTextColorIfChanged(mover.marker, enemy.isDominated ? "#f0abfc" : enemy.isWhisperTurned ? "#c4b5fd" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
         setFontSizeIfChanged(mover.marker, enemy.isDominated ? 9 : enemy.isWhisperTurned ? 10 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
       }
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
@@ -6508,6 +6594,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const activeIds = new Set(towers.map((tower) => tower.id));
     this.refreshSilentTowers(performance.now());
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
+    this.signatureTowers = towers;
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
     this.selectedResourceGraphics?.clear().setVisible(false);
@@ -7175,71 +7262,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
-    this.renderIsolationAura(graphics, tower);
     this.renderSilentModeTowerMark(graphics, tower);
-  }
-
-  /**
-   * Izolasyon Kulesi'nin yalnizlik alani.
-   *
-   * Kulenin aurasi yalnizca komsusu yokken aciliyor ve o ana kadar bunun
-   * ekranda hicbir karsiligi yoktu: oyuncu kuleyi kuruyor, calisip
-   * calismadigini ancak dusmanlarin yavaslamasindan cikariyordu. Yanina
-   * baska bir kule konunca da sessizce susuyordu.
-   *
-   * Iki halka ters yonde donuyor. Ters yon bilerek: tek yonde donen bir
-   * cift halka bir tekerlek gibi okunuyor, ters yonde donenler ise
-   * birbirini iten iki alan gibi -- kulenin yaptigi is de bu.
-   *
-   * Menzil `tower.range` uzerinden geliyor, sabit degil: aura yaricapi
-   * kartlarla ve seviyeyle buyuyor ve cizimin o buyumeyi gostermesi
-   * gerekiyor, yoksa halka menzilin yalan soyleyen bir suslemesi olur.
-   */
-  private renderIsolationAura(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.definitionId !== "warrior-3" || !tower.auraActive) return;
-
-    const radius = Math.max(12, tower.range);
-    const now = performance.now();
-    const breath = 0.86 + Math.sin(now / 900) * 0.14;
-
-    // Zemin ve ice akan agir surukleme: kademeli alan (combat-vfx). Kademe
-    // alanin yogunlugunu ve kenarini aciyor; yaricap hep dogru.
-    drawIsolationField(graphics, tower.x, tower.y, radius, getTowerTier(tower.level), now, this.getTowerEffectScale());
-    graphics.lineStyle(Math.max(1, radius * 0.012), 0x38bdf8, 0.34 * breath);
-    graphics.strokeCircle(tower.x, tower.y, radius);
-
-    // Iki dis halka: sekiz ve alti dilim, ters yonde.
-    this.strokeIsolationRing(graphics, tower, radius * 0.94, now / 2600, 8, 0.16, 0x7dd3fc, 0.6 * breath);
-    this.strokeIsolationRing(graphics, tower, radius * 0.72, -now / 1900, 6, 0.2, 0x38bdf8, 0.46 * breath);
-
-    // Merkezdeki cekirdek: alanin kaynagi burasi oldugu icin en parlak yer.
-    const coreRadius = Math.max(3, radius * 0.09) * breath;
-    graphics.fillStyle(0xe0f2fe, 0.5);
-    graphics.fillCircle(tower.x, tower.y, coreRadius);
-    graphics.lineStyle(Math.max(1, coreRadius * 0.3), 0x38bdf8, 0.75);
-    graphics.strokeCircle(tower.x, tower.y, coreRadius * 2.1);
-  }
-
-  /** Kesik kesik, donen bir halka; dilim sayisi ve yonu cagirandan gelir. */
-  private strokeIsolationRing(
-    graphics: Phaser.GameObjects.Graphics,
-    tower: TowerSnapshot,
-    radius: number,
-    spin: number,
-    segments: number,
-    gapRatio: number,
-    color: number,
-    alpha: number
-  ) {
-    const step = (Math.PI * 2) / segments;
-    const arc = step * (1 - gapRatio);
-    graphics.lineStyle(Math.max(1.2, radius * 0.022), color, alpha);
-    for (let i = 0; i < segments; i += 1) {
-      const start = spin + i * step;
-      graphics.beginPath();
-      graphics.arc(tower.x, tower.y, radius, start, start + arc, false);
-      graphics.strokePath();
-    }
   }
 
   /**
@@ -10773,16 +10796,23 @@ function getBackgroundMusicPath(characterId: CharacterId) {
   return characterId === "zeynep" || characterId === "archer" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
 }
 
+/**
+ * Dusman tipinin ekrandaki capi (TOWER_GRID_SIZE karesinde). Modul sabiti:
+ * fonksiyon her karede her dusman (ve isaretli dusmanin nisangahi) icin
+ * cagriliyor; tablo cagri basina yeniden kurulmasin.
+ */
+const ENEMY_DISPLAY_SIZE: Readonly<Record<string, number>> = {
+  grunt: 34,
+  // Kusatma kocu brute gorselini kullanir; boyutu araya oturuyor ki silueti
+  // brute ile karistirilmasin.
+  siege: 38,
+  brute: 43.2,
+  runner: 40,
+  shooter: 38
+};
+
 function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
-  const base = {
-    grunt: 34,
-    // Kusatma kocu brute gorselini kullanir; boyutu araya oturuyor ki silueti
-    // brute ile karistirilmasin.
-    siege: 38,
-    brute: 43.2,
-    runner: 40,
-    shooter: 38
-  }[enemy.type] ?? 34;
+  const base = ENEMY_DISPLAY_SIZE[enemy.type] ?? 34;
   const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : enemy.race === "fallen" && enemy.type === "brute" ? 1.1 : 1;
   return base * raceMultiplier * (cellSize / TOWER_GRID_SIZE);
 }
@@ -10990,16 +11020,6 @@ function getTowerLevelStyle(level: number) {
     // Hale kademe sinirinda aciliyor (5), bir seviye sonra degil.
     glow: normalizedLevel >= 5
   };
-}
-
-function getTrackingMarkerColor(stacks: number) {
-  if (stacks >= 3) {
-    return "#d8b4fe";
-  }
-  if (stacks >= 2) {
-    return "#67e8f9";
-  }
-  return "#fde047";
 }
 
 function getZeynepCommandTierLevel(tier: "small" | "medium" | "big") {

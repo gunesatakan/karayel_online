@@ -12,6 +12,7 @@
  * yeni bir cizim yazmiyor, oyunun kendi cizimini gosteriyor.
  */
 import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot } from "@karayel/shared";
+import type { SignatureEnemy, SignatureTower } from "./atakan-signatures";
 import { fnvUnit, toTier, type VfxTier } from "./kit";
 import { getVfxProfile, getVfxTier, isAttackingDefinition, type VfxDelivery } from "./vfx-profiles";
 
@@ -27,6 +28,10 @@ export type ScenarioTower = {
   walker: number;
   /** Atis araligi (ms). */
   intervalMs: number;
+  /** Galeride gosterilen menzil/alan yaricapi (Izolasyon alani); oyunun menzili hucreye sigmiyor. */
+  displayRange?: number;
+  /** Sunucu bagi ve Izolasyon komsusu icin hucre ici yan kule konumu. */
+  anchor?: { x: number; y: number };
 };
 
 export type ScenarioWalker = {
@@ -48,7 +53,24 @@ export type ScenarioFrame = {
   projectiles: ProjectileSnapshot[];
   beams: BeamSnapshot[];
   events: ScenarioEvent[];
+  /**
+   * Kule durumlari (Atakan imzalari): Takipci isareti, Sunucu bagi, Izolasyon
+   * alani, Obsesyon yigini, Ucube yigini ve tavani -- sunucunun snapshot'ta
+   * gonderdigi alanlarin aynisi, zamanin saf fonksiyonu. Yan kuleler (bag ve
+   * komsu) de burada; galeri onlari soluk sprite olarak ciziyor.
+   */
+  signatureTowers: SignatureTower[];
+  signatureEnemies: SignatureEnemy[];
 };
+
+/** Izolasyon dongusu: once yalniz (alan acik, atis yok), sonra komsulu (atis var). */
+export const ISOLATION_CYCLE_MS = 6000;
+/** Obsesyon dongusu: 13 atista bir hedef degisiyor (yigin 0 -> 10, tavanda bekliyor). */
+export const OBSESSION_CYCLE_SHOTS = 13;
+/** Galerideki Ucube yigin hizi (sn basina): oyunda 1, galeride tavan gorulsun diye 2.5. */
+export const GALLERY_UCUBE_STACKS_PER_SECOND = 2.5;
+/** Takipci isaretinin galerideki omru (son temastan). */
+export const GALLERY_MARK_MS = 2600;
 
 /** Galerideki mermi hizi (dunya birimi / sn): ucus gorulecek kadar yavas. */
 export const SCENARIO_PROJECTILE_SPEED = 230;
@@ -64,22 +86,109 @@ export function walkerPosition(walker: ScenarioWalker, now: number) {
 }
 
 export class VfxScenario {
-  constructor(readonly towers: readonly ScenarioTower[], readonly walkers: readonly ScenarioWalker[]) {}
+  /**
+   * @param options.teamMarkEvery Yuk testi: her N. yuruyucu takimin Takipci'leriyle
+   *   uc yigin isaretli (4 oyunculu macta 2-3 Takipci ~15 dusmani isaretli tutuyor).
+   */
+  constructor(readonly towers: readonly ScenarioTower[], readonly walkers: readonly ScenarioWalker[], readonly options: { teamMarkEvery?: number } = {}) {}
 
   /** `now` anindaki mermi ve isinlar, ve (since, now] araligindaki olaylar. */
   frame(now: number, since: number): ScenarioFrame {
-    const frame: ScenarioFrame = { projectiles: [], beams: [], events: [] };
+    const frame: ScenarioFrame = { projectiles: [], beams: [], events: [], signatureTowers: [], signatureEnemies: [] };
+    const markEvery = this.options.teamMarkEvery ?? 0;
+    // Takimin isaretleri sahnedeki ilk Takipci'den (kademesi ve sahibi oradan).
+    const marker = this.towers.find((tower) => tower.definitionId === "warrior-1")?.id;
+    this.walkers.forEach((walker, index) => {
+      const position = walkerPosition(walker, now);
+      const marked = markEvery > 0 && index % markEvery === 0;
+      frame.signatureEnemies.push({ id: walker.id, x: position.x, y: position.y, trackingStacks: marked ? 3 : undefined, k: marked ? marker : undefined });
+    });
     for (const tower of this.towers) {
       const profile = getVfxProfile(tower.definitionId, tower.color);
       const tier = toTier(levelTier(tower.level));
       const walker = this.walkers[tower.walker % this.walkers.length];
       const phase = fnvUnit(tower.id) * tower.intervalMs;
-      this.deliver(profile.delivery, tower, tier, walker, phase, now, since, frame);
+      const lastContact = this.deliver(profile.delivery, tower, tier, walker, phase, now, since, frame);
+      this.signature(tower, tier, phase, now, lastContact, frame);
     }
     return frame;
   }
 
-  private deliver(delivery: VfxDelivery, tower: ScenarioTower, tier: VfxTier, walker: ScenarioWalker, phase: number, now: number, since: number, frame: ScenarioFrame) {
+  /** Izolasyon kulesi su an yalniz mi (alan acik, atis yok). */
+  isIsolated(tower: ScenarioTower, at: number) {
+    if (tower.definitionId !== "warrior-3") return false;
+    const phase = fnvUnit(tower.id, 7) * ISOLATION_CYCLE_MS;
+    return ((at + phase) % ISOLATION_CYCLE_MS) < ISOLATION_CYCLE_MS / 2;
+  }
+
+  /**
+   * Kulenin snapshot durumu: sunucunun gonderecegi alanlar.
+   *
+   * - Takipci: hedef yuruyucu son temastan 2.6 sn isaretli; `k` isaretleyen
+   *   kule. Yigin sunucudaki canli yuva sayisi: sv 1-4 Takipci vurusta 1,
+   *   5-9 iki, 10 uc yuvayi doldurur (Debug Lazer tuketince oyunda duser).
+   * - Sunucu: hucredeki yan kuleye bagli.
+   * - Izolasyon: yalnizken `auraActive`, komsuluyken yan kule hucrede.
+   * - Obsesyon: son atisa gore yigin (`o`) ve hedef (`t`); 13 atista bir
+   *   hedef degisiyor ve yigin sifirlaniyor.
+   * - Ucube: yigin saniyede 2.5 artiyor, tavanda 2 sn bekliyor, asiri isinip
+   *   1 sn sifirda kaliyor. Tavan sutuna gore 10 / 15 / 20 (`m`).
+   */
+  private signature(tower: ScenarioTower, tier: VfxTier, phase: number, now: number, lastContact: number, frame: ScenarioFrame) {
+    const state: SignatureTower = { id: tower.id, definitionId: tower.definitionId, x: tower.x, y: tower.y, level: tower.level, ownerId: tower.own ? undefined : "teammate" };
+    frame.signatureTowers.push(state);
+    const walker = this.walkers[tower.walker % this.walkers.length];
+    switch (tower.definitionId) {
+      case "warrior-1": {
+        if (now - lastContact >= GALLERY_MARK_MS) return;
+        const enemy = frame.signatureEnemies[this.walkers.indexOf(walker)];
+        if (enemy) {
+          enemy.trackingStacks = Math.max(enemy.trackingStacks ?? 0, tier);
+          enemy.k = tower.id;
+        }
+        return;
+      }
+      case "warrior-2": {
+        if (!tower.anchor) return;
+        const anchorId = `${tower.id}-bag`;
+        state.linkedTowerIds = [anchorId];
+        frame.signatureTowers.push({ id: anchorId, definitionId: "warrior-1", x: tower.anchor.x, y: tower.anchor.y, level: 1 });
+        return;
+      }
+      case "warrior-3": {
+        state.range = tower.displayRange ?? 34;
+        state.auraActive = this.isIsolated(tower, now);
+        if (!state.auraActive && tower.anchor) {
+          frame.signatureTowers.push({ id: `${tower.id}-komsu`, definitionId: "warrior-1", x: tower.anchor.x, y: tower.anchor.y, level: 1 });
+        }
+        return;
+      }
+      case "warrior-4": {
+        const shot = Math.floor((now - phase) / tower.intervalMs);
+        if (shot < 0) return;
+        const stack = Math.min(10, shot % OBSESSION_CYCLE_SHOTS);
+        if (stack > 0) {
+          state.o = stack;
+          state.t = walker.id;
+        }
+        return;
+      }
+      case "warrior-6": {
+        const cap = tower.level >= 10 ? 20 : tower.level >= 5 ? 15 : 10;
+        const riseMs = (cap / GALLERY_UCUBE_STACKS_PER_SECOND) * 1000;
+        const cycle = riseMs + 3000;
+        const t = (now + phase * 3) % cycle;
+        const stack = t < riseMs ? Math.floor((t / 1000) * GALLERY_UCUBE_STACKS_PER_SECOND) : t < riseMs + 2000 ? cap : 0;
+        if (stack > 0) state.u = stack;
+        if (cap !== 10) state.m = cap;
+        return;
+      }
+      default:
+    }
+  }
+
+  /** Teslim; donen deger son temasin ani (mermili teslimlerde), yoksa -Infinity. */
+  private deliver(delivery: VfxDelivery, tower: ScenarioTower, tier: VfxTier, walker: ScenarioWalker, phase: number, now: number, since: number, frame: ScenarioFrame): number {
     const target = walkerPosition(walker, now);
     const tierField = tier === 1 ? undefined : tier;
     switch (delivery) {
@@ -107,7 +216,7 @@ export class VfxScenario {
           overdrive,
           ttlMs: 260
         });
-        return;
+        return Number.NEGATIVE_INFINITY;
       }
       case "showcase":
       case "curse":
@@ -115,14 +224,15 @@ export class VfxScenario {
       case "underworld":
       case "orbit":
         this.deliverBeams(delivery, tower, tier, walker, phase, now, since, frame);
-        return;
+        return Number.NEGATIVE_INFINITY;
       default:
-        this.deliverProjectiles(tower, tier, walker, phase, now, since, frame);
+        return this.deliverProjectiles(tower, tier, walker, phase, now, since, frame);
     }
   }
 
   /** Dogrusal mermiler: atis anindaki hedefe, sabit hizla; temasi ucusun sonunda. */
   private deliverProjectiles(tower: ScenarioTower, tier: VfxTier, walker: ScenarioWalker, phase: number, now: number, since: number, frame: ScenarioFrame) {
+    let lastContact = Number.NEGATIVE_INFINITY;
     const profile = getVfxProfile(tower.definitionId, tower.color);
     const recipe = getVfxTier(profile, tier);
     const definitionId = tower.definitionId === "archer-6" ? "archer-6-whisper" : tower.definitionId;
@@ -136,6 +246,9 @@ export class VfxScenario {
       const length = Math.max(1, Math.hypot(dx, dy));
       const flightMs = (length / SCENARIO_PROJECTILE_SPEED) * 1000;
       const arrivesAt = firedAt + flightMs;
+      // Yalniz Izolasyon Kulesi atmiyor: alan acik.
+      if (this.isIsolated(tower, firedAt)) continue;
+      if (arrivesAt <= now && arrivesAt > lastContact) lastContact = arrivesAt;
       if (arrivesAt < since - 1) break;
       const angle = Math.atan2(dy, dx);
       const key = `${tower.id}-p${shot}`;
@@ -181,6 +294,7 @@ export class VfxScenario {
         }
       }
     }
+    return lastContact;
   }
 
   private pushChain(tower: ScenarioTower, tier: VfxTier, from: { x: number; y: number }, shot: number, age: number, frame: ScenarioFrame) {
@@ -195,7 +309,8 @@ export class VfxScenario {
       x2: from.x + Math.cos(angle) * 34,
       y2: from.y + Math.sin(angle) * 34,
       width: 5,
-      color: 0x38bdf8,
+      // Sunucunun zincir rengi: Ucube limonu.
+      color: 0xadf765,
       overdrive: false,
       ttlMs: 190 - age
     });
@@ -303,7 +418,7 @@ export function getScenarioColor(definitionId: string) {
  * (soluk eklentiler de olculsun). Galerinin yuk kipi ve `tools/vfx-bench.mjs`
  * ayni sahneyi kullaniyor.
  */
-export function createStressScenario(width = 390, top = 90, height = 640) {
+export function createStressScenario(width = 390, top = 90, height = 640, options: { teamMarkEvery?: number } = {}) {
   const ids = getAttackingDefinitionIds();
   const towers: ScenarioTower[] = [];
   const walkers: ScenarioWalker[] = [];
@@ -349,8 +464,11 @@ export function createStressScenario(width = 390, top = 90, height = 640) {
       color: getScenarioColor(definitionId),
       own: index % 4 !== 0,
       walker,
-      intervalMs: getScenarioIntervalMs(definitionId)
+      intervalMs: getScenarioIntervalMs(definitionId),
+      // Sunucu bir kuleye bagli, Izolasyon alani menzilinde (sahneye sigan boyda).
+      displayRange: definitionId === "warrior-3" ? 70 : undefined,
+      anchor: definitionId === "warrior-2" ? { x: x + 70, y: y + 50 } : definitionId === "warrior-3" ? { x: x + 26, y } : undefined
     });
   }
-  return new VfxScenario(towers, walkers);
+  return new VfxScenario(towers, walkers, { teamMarkEvery: options.teamMarkEvery ?? 4 });
 }

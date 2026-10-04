@@ -20,8 +20,16 @@
 import type { ProjectileSnapshot } from "@karayel/shared";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
+  ATAKAN_ACCENT,
   clamp01,
   darken,
+  drawBracketCorners,
+  drawCodeSparks,
+  drawGridTicks,
+  drawTrailMotif,
+  fillJaggedPath,
+  strokeHex,
+  strokePolyline,
   drawHotDot,
   drawMotes,
   drawMuzzleBurst,
@@ -43,7 +51,7 @@ import {
 } from "./kit";
 import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
-import { getVfxProfile, getVfxTier, type VfxImpactStyle, type VfxProfile, type VfxTierRecipe } from "./vfx-profiles";
+import { getSignatureTier, getVfxProfile, getVfxTier, type VfxImpactStyle, type VfxProfile, type VfxSignatureTier, type VfxTierRecipe } from "./vfx-profiles";
 
 /** Takim arkadasinin kademe 3 eklentileri bu alfada; kendi kulen tam. */
 export const TEAMMATE_EXTRA_ALPHA = 0.7;
@@ -64,6 +72,8 @@ type AttackEvent = {
   angle: number;
   profile: VfxProfile;
   recipe: VfxTierRecipe;
+  /** Karakter imzasinin bu kademedeki perdesi (Atakan); yoksa `undefined`. */
+  signature: VfxSignatureTier | undefined;
   tier: VfxTier;
   bornAt: number;
   durationMs: number;
@@ -109,6 +119,37 @@ const SWALLOW: VfxGraphics = {
 };
 
 /**
+ * Gudumlu atisin namlusu nereden cikiyor.
+ *
+ * Sunucu gudumlu mermi (Izolasyon Kulesi) icin atis mesaji gondermiyor;
+ * istemci mermiyi ilk kez snapshot'ta goruyor, kulesinin birkac birim
+ * onunde. Namlu o snapshot'taki, ayni tanimdan, `reach` icindeki en yakin
+ * kulede. Profili gudumlu olmayan mermide ya da kulesinden uzakta ilk kez
+ * gorulen mermide (yeniden baglanma) `undefined`: namlu yok. Kule nesnesinin
+ * kendisini donduruyor; nesne uretmiyor.
+ */
+export function findHomingMuzzleOrigin<T extends { definitionId: string; x: number; y: number }>(
+  projectile: Pick<ProjectileSnapshot, "x" | "y" | "definitionId" | "source">,
+  towers: readonly T[],
+  reach: number
+): T | undefined {
+  if (projectile.source !== "tower") return undefined;
+  const profile = getVfxProfile(projectile.definitionId);
+  if (profile.delivery !== "homing") return undefined;
+  let best = reach * reach;
+  let origin: T | undefined;
+  for (const tower of towers) {
+    if (tower.definitionId !== profile.id) continue;
+    const gap = (tower.x - projectile.x) ** 2 + (tower.y - projectile.y) ** 2;
+    if (gap <= best) {
+      best = gap;
+      origin = tower;
+    }
+  }
+  return origin;
+}
+
+/**
  * Halkanin hafif kesiti: tek ince ve parlak govde. Halkanin yumusak omzu
  * ADD parlama havuzunun halka dokusu (tek dortgen); burada 6 daire yerine 1.
  */
@@ -143,6 +184,13 @@ const SPARKS: { seed: number; count: number; reach: number; color: number; width
   seed: 0, count: 0, reach: 0, color: 0, width: 0, alpha: 0, heading: undefined, fan: 1.6, gravity: 0, tail: 0
 };
 const SIGNS = [-1, 1] as const;
+const MOTIF = { motif: "scan" as "scan" | "packets", color: 0, size: 0, width: 0, alpha: 0, maxPoints: 0 };
+const CODE_SPARKS = { seed: 0, count: 0, radius: 0, rise: 0, color: 0, accent: ATAKAN_ACCENT, size: 0, alpha: 0, lifeMs: 520 };
+/** Ucube'nin kirikli govdesi: bes nokta, karede yeniden yaziliyor. */
+const ARC_SEGMENTS = 4;
+const ARC_POINTS: Array<{ x: number; y: number }> = Array.from({ length: ARC_SEGMENTS + 1 }, () => ({ x: 0, y: 0 }));
+/** Ucube govdesinin yeniden tohumlanma araligi (ms): simsek kendini yeniden ciziyor. */
+export const ARC_RESEED_MS = 50;
 
 export class AttackVfx {
   private readonly trails = new TrailBuffer(8, 320);
@@ -194,6 +242,7 @@ export class AttackVfx {
       if (profile.silhouette === "none") continue;
       const tier = toTier(projectile.tier);
       const recipe = getVfxTier(profile, tier);
+      const signature = getSignatureTier(profile, tier);
       const own = isOwn ? isOwn(projectile) : true;
       const extra = own ? 1 : TEAMMATE_EXTRA_ALPHA;
       const vx = projectile.vx ?? 0;
@@ -211,6 +260,17 @@ export class AttackVfx {
         RIBBON_CORE.color = recipe.core;
         RIBBON.core = recipe.trail.hotCore ? RIBBON_CORE : undefined;
         drawTaperedRibbon(this.body, entry, this.trails.bufferCapacity, projectile.x, projectile.y, RIBBON);
+        if (signature && signature.trailMotif !== "plain") {
+          // Derlenmis iz: seridin ustune tarama cizgileri ya da veri paketleri.
+          // Iz uzunluguyla ayni LOD'a bagli; renk ve govde hic kesilmiyor.
+          MOTIF.motif = signature.trailMotif;
+          MOTIF.color = signature.trailMotif === "scan" ? liftToWhite(recipe.color, 0.25) : recipe.color;
+          MOTIF.size = (signature.trailMotif === "scan" ? recipe.silhouette * 0.32 : recipe.silhouette * 0.2) * scale;
+          MOTIF.width = Math.max(0.6, 0.9 * scale);
+          MOTIF.alpha = 0.8;
+          MOTIF.maxPoints = RIBBON.maxPoints;
+          drawTrailMotif(this.body, entry, this.trails.bufferCapacity, projectile.x, projectile.y, MOTIF);
+        }
       }
 
       const radius = (recipe.silhouette / 2) * scale;
@@ -237,10 +297,29 @@ export class AttackVfx {
           fillDisc(this.glow, projectile.x, projectile.y, radius * 0.9);
         }
       } else {
-        this.drawSilhouette(profile, recipe, tier, projectile.x, projectile.y, angle, radius, shoulders);
+        // Tohum yalnizca kirikli govdede (Ucube) gerekiyor: her mermiyi her karede ozetlemek bosa is.
+        const arcSeed = profile.silhouette === "arc" ? fnvHash(projectile.id) % 997 + (still ? 0 : Math.floor(now / ARC_RESEED_MS) * 7) : 0;
+        this.drawSilhouette(profile, recipe, tier, projectile.x, projectile.y, angle, radius, shoulders, arcSeed);
         if (stamps && recipe.shoulders > 0) {
           stamps.stamp(projectile.x, projectile.y, recipe.color, radius * (tier >= 3 ? 4 : 3), tier >= 3 ? 0.7 : 0.55);
         }
+      }
+
+      if (signature?.whiteCore) {
+        // Asiri yukleme: beyaz-sicak cekirdek; ton govdede ve omuzlarda kaliyor.
+        drawHotDot(this.body, projectile.x, projectile.y, liftToWhite(recipe.color, 0.9), Math.max(0.8, radius * 0.24), 0.95);
+      }
+      if (signature?.codeSparks && lod.sparks && !still) {
+        // Dokulen kod kivilcimlari: merminin ardinda kalan bitler (LOD ilk bunu kesiyor).
+        CODE_SPARKS.seed = fnvHash(projectile.id) % 7919;
+        CODE_SPARKS.count = 3;
+        CODE_SPARKS.radius = radius * 1.5;
+        CODE_SPARKS.rise = 6 * scale;
+        CODE_SPARKS.color = recipe.color;
+        CODE_SPARKS.size = Math.max(0.8, 1.3 * scale);
+        CODE_SPARKS.alpha = 0.9 * extra;
+        CODE_SPARKS.lifeMs = 460;
+        drawCodeSparks(this.glow, projectile.x, projectile.y, now, CODE_SPARKS);
       }
 
       if (tier >= 3) {
@@ -276,7 +355,7 @@ export class AttackVfx {
    * Ok kisa bir lazer kesiti ve ucgen bir uc: kademe 2'de omuzlar ADD
    * katmanina, cekirdek ve file govdeye; kademe 3'te omuzlar genisliyor.
    */
-  private drawSilhouette(profile: VfxProfile, recipe: VfxTierRecipe, tier: VfxTier, x: number, y: number, angle: number, radius: number, shoulders: VfxGraphics) {
+  private drawSilhouette(profile: VfxProfile, recipe: VfxTierRecipe, tier: VfxTier, x: number, y: number, angle: number, radius: number, shoulders: VfxGraphics, seed = 0) {
     const g = this.body;
     const ux = Math.cos(angle);
     const uy = Math.sin(angle);
@@ -284,6 +363,63 @@ export class AttackVfx {
     const ny = ux;
     const color = recipe.color;
     switch (profile.silhouette) {
+      case "packet": {
+        // Veri paketi: ucus yonune donuk koseli bir elmas, icinde beyaza
+        // cekilmis kare cekirdek. Kademe 2'de omuzlar (ADD) ve paketi saran
+        // ayraclar: paket "derlendi". Kademe 3'te ayraclar terminal yesili.
+        POINT_PROFILE.radius = radius * 0.5;
+        POINT_PROFILE.spread = radius * 0.65;
+        if (tier >= 2) strokePointProfile(shoulders, x, y, color, tier, POINT_PROFILE, shoulders, 0.6);
+        const r = radius * 0.78;
+        g.fillStyle(color, 0.95);
+        g.fillTriangle(x + ux * r, y + uy * r, x + nx * r * 0.72, y + ny * r * 0.72, x - nx * r * 0.72, y - ny * r * 0.72);
+        g.fillTriangle(x - ux * r * 0.8, y - uy * r * 0.8, x + nx * r * 0.72, y + ny * r * 0.72, x - nx * r * 0.72, y - ny * r * 0.72);
+        const core = radius * (tier >= 2 ? 0.3 : 0.22);
+        g.fillStyle(tier >= 2 ? recipe.core : liftToWhite(color, 0.5), 0.95);
+        g.fillRect(x - core, y - core, core * 2, core * 2);
+        if (tier >= 2) {
+          drawBracketCorners(g, x, y, radius * 0.95, radius * 0.95, radius * 0.38, Math.max(0.6, radius * 0.13), tier >= 3 ? ATAKAN_ACCENT : liftToWhite(color, 0.3), 0.85);
+        }
+        return;
+      }
+      case "cell": {
+        // Kapatma hucresi: altigen kabuk ve cekirdek. Kademe 1 ciplak
+        // altigen, 2'de omuzlar ve icte ters donuk ikinci altigen, 3'te
+        // beyaz-sicak cekirdek (asagida, imza bayragiyla).
+        POINT_PROFILE.radius = radius * 0.34;
+        POINT_PROFILE.spread = radius * 0.6;
+        strokePointProfile(g, x, y, color, tier, POINT_PROFILE, shoulders);
+        g.lineStyle(Math.max(0.7, radius * 0.16), tier >= 2 ? liftToWhite(color, 0.3) : color, 0.9);
+        strokeHex(g, x, y, radius * 0.86, angle);
+        if (tier >= 2) {
+          g.lineStyle(Math.max(0.6, radius * 0.1), ATAKAN_ACCENT, 0.75);
+          strokeHex(g, x, y, radius * 0.56, angle + Math.PI / 6);
+        }
+        return;
+      }
+      case "arc": {
+        // Ucube: kendi kendini yeniden cizen kirikli kivilcim oku. Govde
+        // limon ailesinde; kademe 2'de beyaza cekilmis cekirdek yol ve uc
+        // omuzlari, kademe 3'te ikinci (catallanan) kol.
+        const tailX = x - ux * radius * 1.6;
+        const tailY = y - uy * radius * 1.6;
+        fillJaggedPath(ARC_POINTS, tailX, tailY, x, y, ARC_SEGMENTS, seed, radius * 0.9);
+        strokePolyline(g, ARC_POINTS, ARC_SEGMENTS + 1, radius * (tier >= 2 ? 0.34 : 0.28), color, 0.95);
+        if (tier >= 2) strokePolyline(g, ARC_POINTS, ARC_SEGMENTS + 1, radius * 0.12, recipe.core, 0.95);
+        if (tier >= 3) {
+          const fork = ARC_POINTS[2];
+          const side = hashNoise(seed + 5) > 0.5 ? 1 : -1;
+          g.lineStyle(Math.max(0.6, radius * 0.14), liftToWhite(color, 0.4), 0.85);
+          g.lineBetween(fork.x, fork.y, fork.x - ux * radius * 0.6 + nx * side * radius * 0.7, fork.y - uy * radius * 0.6 + ny * side * radius * 0.7);
+        }
+        POINT_PROFILE.radius = radius * 0.32;
+        POINT_PROFILE.spread = radius * 0.55;
+        strokePointProfile(g, x, y, color, tier, POINT_PROFILE, shoulders);
+        const tip = radius * 0.7;
+        g.fillStyle(tier >= 2 ? recipe.core : color, 0.96);
+        g.fillTriangle(x + ux * tip, y + uy * tip, x + nx * radius * 0.3, y + ny * radius * 0.3, x - nx * radius * 0.3, y - ny * radius * 0.3);
+        return;
+      }
       case "dart": {
         const tailX = x - ux * radius * 1.1;
         const tailY = y - uy * radius * 1.1;
@@ -480,6 +616,7 @@ export class AttackVfx {
     event.angle = input.angle;
     event.profile = profile;
     event.recipe = recipe;
+    event.signature = getSignatureTier(profile, recipe.tier);
     event.tier = recipe.tier;
     event.bornAt = input.bornAt;
     event.durationMs = durationOverride ?? (kind === "muzzle" ? MUZZLE_MS + recipe.tier * 20 : recipe.impact.durationMs);
@@ -524,6 +661,11 @@ export class AttackVfx {
       MUZZLE.corePulse = 0.8 * scale;
       drawMuzzleBurst(g, event.x, event.y, clock, MUZZLE, fade * (event.own || event.tier < 3 ? 1 : TEAMMATE_EXTRA_ALPHA));
     }
+    if (event.signature?.accent) {
+      // Derlenmis namlu: terminal yesili ayraclar atisin uzerine kilitleniyor.
+      const half = (still ? 7 : 10 - age * 4) * scale;
+      drawBracketCorners(g, event.x, event.y, half, half, 3 * scale, Math.max(0.7, 0.9 * scale), ATAKAN_ACCENT, 0.85 * fade);
+    }
   }
 
   private drawImpact(g: VfxGraphics, event: AttackEvent, age: number, elapsed: number, now: number, scale: number, still: boolean) {
@@ -541,9 +683,29 @@ export class AttackVfx {
       softRing(g, event.x, event.y, outer * (0.35 + 0.65 * eased), recipe.color, Math.max(0.8, 1.2 * scale), (1 - beat) * 0.85);
     }
 
+    // Atakan'in derlenmis cikartmasi: ikinci vurusla birlikte, terminal
+    // yesilinde izgara ya da altigen; ikinci vurus halkasiyla ayni LOD.
+    const signature = event.signature;
+    if (signature && signature.decal !== "none" && lod.secondBeatRing && elapsed >= SECOND_BEAT_DELAY_MS * 0.5) {
+      drawCompiledDecal(g, event, signature.decal, age, s, still, signature.whiteCore ? extra : 1);
+    }
+
     if (recipe.impact.signature && this.signaturesThisFrame < lod.signatureCap) {
       this.signaturesThisFrame += 1;
       drawSignature(g, event, age, s, still, extra, now);
+    }
+
+    if (signature?.codeSparks && lod.sparks && !still) {
+      // Asiri yukleme: carpmadan dokulen kod bitleri.
+      CODE_SPARKS.seed = event.seed % 7919;
+      CODE_SPARKS.count = 5;
+      CODE_SPARKS.radius = 9 * s * 0.6;
+      CODE_SPARKS.rise = 10 * scale;
+      CODE_SPARKS.color = recipe.color;
+      CODE_SPARKS.size = Math.max(0.9, 1.5 * scale);
+      CODE_SPARKS.alpha = 0.95 * extra * (1 - age);
+      CODE_SPARKS.lifeMs = event.durationMs * 0.6;
+      drawCodeSparks(g, event.x, event.y, elapsed, CODE_SPARKS);
     }
 
     if (recipe.impact.sparks > 0 && lod.sparks && !still) {
@@ -604,6 +766,33 @@ function drawImpulse(g: VfxGraphics, style: VfxImpactStyle, event: AttackEvent, 
   const motion = still ? 0 : 1;
 
   switch (style) {
+    case "uplink": {
+      // Sunucu: gercek yaricapta acilan halka ve yukaridan inen kisa bir
+      // paket cizgisi -- vurus "yukaridan" geliyor. Yaricap sunucunun `r`si;
+      // eski 14-22 birimlik kivrim 160-4000'lik vurusu ve alanini yalanliyordu.
+      const outer = event.radius > 0 ? event.radius : 14 * s;
+      const grow = still ? 1 : 1 - Math.pow(1 - clamp01(age * 2.4), 3);
+      g.fillStyle(color, 0.12 * fade);
+      fillDisc(g, x, y, outer * grow);
+      g.lineStyle(Math.max(1, 1.5 * s * 0.6), color, 0.9 * fade);
+      strokeRing(g, x, y, outer * grow);
+      const drop = (still ? 1 : clamp01(age * 5)) * 22 * s * 0.6;
+      line(g, x, y - 22 * s * 0.6, x, y - 22 * s * 0.6 + drop, 1.4 * s * 0.6, liftToWhite(color, 0.6), fade);
+      g.fillStyle(liftToWhite(color, 0.8), flash);
+      fillDisc(g, x, y, (3 + tier) * s * 0.45);
+      return;
+    }
+    case "contain": {
+      // Izolasyon: hedefin cevresinde kapanan altigen kafes.
+      const close = still ? 0.5 : Math.pow(1 - clamp01(age / 0.6), 2);
+      const r = (5 + close * 9) * s * 0.7;
+      const spin = hashNoise(seed) * Math.PI;
+      g.lineStyle(Math.max(0.8, 1.3 * s * 0.6), color, 0.9 * fade);
+      strokeHex(g, x, y, r, spin);
+      g.fillStyle(liftToWhite(color, 0.75), flash);
+      fillDisc(g, x, y, 2.2 * s);
+      return;
+    }
     case "collapse": {
       // Ice kapanan catlaklar, sonra kopma: hedef sikistiriliyormus gibi.
       const collapse = Math.pow(1 - clamp01(age / 0.55), 2);
@@ -738,6 +927,31 @@ function drawSignature(g: VfxGraphics, event: AttackEvent, age: number, s: numbe
   const core = event.recipe.core;
   const fade = (1 - age) * extra;
   switch (event.profile.impact) {
+    case "uplink": {
+      // Gokten inen baglanti sutunu: lazerin kademe 3 kesiti dikey, beyaz-
+      // sicak cekirdek, ton omuzlarda. Gercek yaricapta ikinci halka.
+      const top = y - 64 * s * 0.6;
+      const life = Math.pow(1 - age, 1.3) * extra;
+      LINE_PROFILE.body = 2.4 * s * 0.6 * (still ? 1 : 1 - age * 0.5);
+      LINE_PROFILE.spread = 4 * s * 0.6;
+      strokeProfile(g, x, top, x, y, color, 3, LINE_PROFILE, undefined, life);
+      const outer = event.radius > 0 ? event.radius : 18 * s;
+      softRing(g, x, y, outer * (still ? 1 : 0.7 + 0.3 * clamp01(age * 2)), color, 1.2 * s * 0.6, life);
+      return;
+    }
+    case "contain": {
+      // Kilitlenen kafes: altigen kapanmis kaliyor, koselerinde beyaz dugum.
+      const r = 6 * s * 0.7;
+      const spin = hashNoise(event.seed) * Math.PI;
+      g.lineStyle(Math.max(0.8, 1.1 * s * 0.6), core, 0.9 * fade);
+      strokeHex(g, x, y, r, spin);
+      g.fillStyle(0xffffff, 0.9 * fade);
+      for (let i = 0; i < 6; i += 2) {
+        const a = spin + (i / 6) * Math.PI * 2;
+        fillDisc(g, x + Math.cos(a) * r, y + Math.sin(a) * r, Math.max(0.6, 0.7 * s * 0.6));
+      }
+      return;
+    }
     case "brackets": {
       // Kilitlenen nisangah: ayraclar kapanmis kaliyor, ortada arti.
       const r = 9 * s * 0.6;
@@ -805,5 +1019,35 @@ function drawSignature(g: VfxGraphics, event: AttackEvent, age: number, s: numbe
       softRing(g, x, y, (5 + 15 * grow) * s * 0.6, color, 1.2 * s * 0.6, (1 - age) * extra);
       drawHotDot(g, x, y, core, 2.4 * s * 0.6 * (1 - age), fade);
     }
+  }
+}
+
+/**
+ * Atakan'in derlenmis cikartmasi (kademe 2+): carpmanin ikinci vurusunda
+ * terminal yesilinde bir izgara kadrani ya da altigen.
+ *
+ * Alan hasarinda (Sunucu) gercek yaricapta: oyuncu alanin nereye kadar
+ * vurdugunu cikartmadan okuyor. Kademe 3'te cikartma ikiye katlaniyor
+ * (dis cizgi + ters donuk ic altigen / ikinci kertik halkasi).
+ */
+function drawCompiledDecal(g: VfxGraphics, event: AttackEvent, decal: "grid" | "hex", age: number, s: number, still: boolean, extra: number) {
+  const { x, y, seed } = event;
+  const outer = event.radius > 0 ? event.radius : 11 * s * 0.6;
+  const settle = still ? 1 : 0.82 + 0.18 * (1 - Math.pow(1 - clamp01(age * 2), 2));
+  const alpha = Math.pow(1 - age, 1.2) * 0.85 * extra;
+  const width = Math.max(0.7, 0.9 * s * 0.6);
+  const spin = hashNoise(seed + 3) * Math.PI;
+  if (decal === "hex") {
+    g.lineStyle(width, ATAKAN_ACCENT, clamp01(alpha));
+    strokeHex(g, x, y, outer * settle, spin);
+    if (event.tier >= 3) {
+      g.lineStyle(width * 0.8, liftToWhite(event.recipe.color, 0.5), clamp01(alpha * 0.8));
+      strokeHex(g, x, y, outer * settle * 0.62, spin + Math.PI / 6);
+    }
+    return;
+  }
+  drawGridTicks(g, x, y, outer * settle, 8, 3 * s * 0.6, spin, width, ATAKAN_ACCENT, alpha);
+  if (event.tier >= 3) {
+    drawGridTicks(g, x, y, outer * settle * 0.6, 4, 2 * s * 0.6, spin + Math.PI / 4, width, liftToWhite(event.recipe.color, 0.5), alpha * 0.8);
   }
 }

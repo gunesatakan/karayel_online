@@ -778,3 +778,253 @@ export function drawTaperedRibbon(
     previousY = y;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Atakan'in dili: sinyal -> derlenmis -> asiri yukleme.                 */
+/* Lazer bunlarin hicbirini kullanmiyor; lazerin sayilari degismedi.     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Atakan'in ortak aksani: terminal yesili.
+ *
+ * Her Atakan kulesi kendi tonunu tasiyor; bu renk yalnizca nisangah
+ * ayraclarinda, izgara/altigen cikartmalarinda ve kod kivilcimlarinda.
+ * Katalogdaki kule rengiyle ayni (0x22c55e).
+ */
+export const ATAKAN_ACCENT = 0x22c55e;
+
+const CORNER_SIGNS = [-1, 1] as const;
+
+/**
+ * Dort kose ayraci: nisangahin govdesi.
+ *
+ * `halfWidth`/`halfHeight` kutunun yari boyu, `arm` kose kolunun boyu.
+ * Sekiz cizgi; daire yok.
+ */
+export function drawBracketCorners(
+  g: VfxGraphics,
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  arm: number,
+  width: number,
+  color: number,
+  alpha: number
+) {
+  if (alpha <= 0 || width <= 0) return;
+  g.lineStyle(width, color, clamp01(alpha));
+  for (const sx of CORNER_SIGNS) {
+    for (const sy of CORNER_SIGNS) {
+      const cx = x + sx * halfWidth;
+      const cy = y + sy * halfHeight;
+      g.lineBetween(cx, cy, cx - sx * arm, cy);
+      g.lineBetween(cx, cy, cx, cy - sy * arm);
+    }
+  }
+}
+
+const HEX_COS = new Float32Array(6);
+const HEX_SIN = new Float32Array(6);
+for (let index = 0; index < 6; index += 1) {
+  HEX_COS[index] = Math.cos((index / 6) * Math.PI * 2);
+  HEX_SIN[index] = Math.sin((index / 6) * Math.PI * 2);
+}
+
+/** Altigenin `index`. kosesinin bir ekseni (0: x, 1: y); `rotation` radyan. */
+export function hexCorner(x: number, y: number, radius: number, rotation: number, index: number, axis: 0 | 1) {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const corner = index % 6;
+  return axis === 0
+    ? x + (HEX_COS[corner] * cos - HEX_SIN[corner] * sin) * radius
+    : y + (HEX_SIN[corner] * cos + HEX_COS[corner] * sin) * radius;
+}
+
+/** Altigen cizgi: derlenmis kademenin halkasi ve kapanan hucre. Tek yol. */
+export function strokeHex(g: VfxGraphics, x: number, y: number, radius: number, rotation: number) {
+  if (!(radius > 0.5)) return;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  g.beginPath();
+  for (let index = 0; index < 6; index += 1) {
+    const px = x + (HEX_COS[index] * cos - HEX_SIN[index] * sin) * radius;
+    const py = y + (HEX_SIN[index] * cos + HEX_COS[index] * sin) * radius;
+    if (index === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.strokePath();
+}
+
+/**
+ * Izgara halkasi: halkanin uzerinde esit aralikli kisa kertikler.
+ *
+ * Derlenmis kademenin olcu cetveli: yuvarlak bir halka yerine dijital bir
+ * kadran. `ticks` kertik sayisi, `length` iceri uzunlugu.
+ */
+export function drawGridTicks(g: VfxGraphics, x: number, y: number, radius: number, ticks: number, length: number, rotation: number, width: number, color: number, alpha: number) {
+  if (alpha <= 0 || ticks <= 0) return;
+  g.lineStyle(width, color, clamp01(alpha));
+  for (let index = 0; index < ticks; index += 1) {
+    const angle = rotation + (index / ticks) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    g.lineBetween(x + cos * radius, y + sin * radius, x + cos * (radius - length), y + sin * (radius - length));
+  }
+}
+
+export type CodeSparkOptions = {
+  seed: number;
+  count: number;
+  /** Dogdugu yerin yaricapi. */
+  radius: number;
+  /** Omru boyunca yukari kayma. */
+  rise: number;
+  /** Bitlerin ucte biri kulenin tonunda, gerisi aksan (terminal yesili). */
+  color: number;
+  accent: number;
+  /** Bitin boyu (dunya birimi). */
+  size: number;
+  alpha: number;
+  lifeMs: number;
+};
+
+/**
+ * Dokulen kod kivilcimlari: bir ve sifir gibi okunan kucuk dikdortgen bitler.
+ *
+ * Kademe 3'un (asiri yukleme / uretim) imzasi. Durumsuz ve tohumlu: her
+ * bitin yeri kusak numarasindan, kusak icinde sabit; yalnizca yukari kayip
+ * soner. Daire yok, her bit tek `fillRect` (iki ucgen).
+ */
+export function drawCodeSparks(g: VfxGraphics, x: number, y: number, now: number, options: CodeSparkOptions) {
+  for (let index = 0; index < options.count; index += 1) {
+    const durationMs = options.lifeMs * (0.7 + hashNoise(options.seed + index * 11 + 1) * 0.6);
+    const phase = now / durationMs + hashNoise(options.seed + index * 11 + 2) * 10;
+    const generation = Math.floor(phase);
+    const life = phase - generation;
+    const seed = options.seed + index * 11 + generation * 89;
+    const angle = hashNoise(seed) * Math.PI * 2;
+    const reach = options.radius * (0.35 + hashNoise(seed + 1) * 0.65);
+    const px = x + Math.cos(angle) * reach;
+    const py = y + Math.sin(angle) * reach - life * options.rise;
+    const glow = sparkGlow(life);
+    if (glow <= 0) continue;
+    const size = options.size;
+    g.fillStyle(index % 3 === 0 ? options.color : options.accent, clamp01(options.alpha * glow));
+    if (hashNoise(seed + 2) > 0.5) g.fillRect(px - size * 0.22, py - size * 0.8, size * 0.44, size * 1.6);
+    else g.fillRect(px - size * 0.55, py - size * 0.55, size * 1.1, size * 1.1);
+  }
+}
+
+export type PacketOptions = {
+  count: number;
+  /** Paketin kenari. */
+  size: number;
+  color: number;
+  alpha: number;
+  /** Yolu saniyede kac kez katediyor. */
+  speed: number;
+  seed: number;
+  /** Hareket azaltma: paketler yerinde, esit aralikli. */
+  still?: boolean;
+};
+
+/**
+ * Bir dogru boyunca kayan veri paketleri (kucuk kareler): derlenmis bag.
+ *
+ * Yonu x1 -> x2. Uclarda sonuyorlar; sayisi ve hizi cagirandan (yigin
+ * buyudukce artiyor). Her paket tek `fillRect`.
+ */
+export function drawDataPackets(g: VfxGraphics, x1: number, y1: number, x2: number, y2: number, now: number, options: PacketOptions) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const half = options.size / 2;
+  for (let index = 0; index < options.count; index += 1) {
+    const offset = index / options.count + hashNoise(options.seed + index * 5) * 0.06;
+    const t = options.still ? (index + 0.5) / options.count : ((((now / 1000) * options.speed + offset) % 1) + 1) % 1;
+    const fade = clamp01(Math.min(t, 1 - t) / 0.12);
+    if (fade <= 0) continue;
+    g.fillStyle(options.color, clamp01(options.alpha * fade));
+    g.fillRect(x1 + dx * t - half, y1 + dy * t - half, options.size, options.size);
+  }
+}
+
+export type TrailMotifOptions = {
+  /** "scan": harekete dik tarama cizgileri; "packets": kuculen kareler. */
+  motif: "scan" | "packets";
+  color: number;
+  /** Tarama cizgisinin yari boyu ya da paketin kenari. */
+  size: number;
+  width: number;
+  alpha: number;
+  maxPoints: number;
+};
+
+/**
+ * Derlenmis iz: seridin ustune tarama cizgileri ya da veri paketleri.
+ *
+ * `TrailBuffer` kaydindan; en yeni noktadan eskiye boy ve alfa azaliyor.
+ * Tarama cizgisi iki komsu noktanin dogrultusuna dik.
+ */
+export function drawTrailMotif(g: VfxGraphics, entry: TrailEntry, capacity: number, headX: number, headY: number, options: TrailMotifOptions) {
+  const count = Math.min(entry.count, options.maxPoints);
+  if (count < 1) return;
+  let previousX = headX;
+  let previousY = headY;
+  for (let step = 0; step < count; step += 1) {
+    const index = (entry.head - 1 - step + capacity * 2) % capacity;
+    const x = entry.xs[index];
+    const y = entry.ys[index];
+    const t = 1 - step / (count + 1);
+    if (options.motif === "scan") {
+      const dx = previousX - x;
+      const dy = previousY - y;
+      const length = Math.hypot(dx, dy);
+      if (length > 0.01) {
+        const nx = -dy / length;
+        const ny = dx / length;
+        const half = options.size * t;
+        g.lineStyle(Math.max(0.5, options.width), options.color, clamp01(options.alpha * t));
+        g.lineBetween(x - nx * half, y - ny * half, x + nx * half, y + ny * half);
+      }
+    } else {
+      const side = Math.max(0.6, options.size * t);
+      g.fillStyle(options.color, clamp01(options.alpha * t));
+      g.fillRect(x - side / 2, y - side / 2, side, side);
+    }
+    previousX = x;
+    previousY = y;
+  }
+}
+
+/**
+ * Tohumlu kirikli yol (simsek): noktalari cagiranin dizisine yaziyor.
+ *
+ * `segments`+1 nokta; uclar sabit, aradakiler dogruya dik `jitter` kadar
+ * sapiyor. Dizi cagirandan: karede nesne uretilmiyor.
+ */
+export function fillJaggedPath(points: Array<{ x: number; y: number }>, x1: number, y1: number, x2: number, y2: number, segments: number, seed: number, jitter: number) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / length;
+  const ny = dx / length;
+  for (let index = 0; index <= segments; index += 1) {
+    const t = index / segments;
+    const offset = index === 0 || index === segments ? 0 : (hashNoise(seed + index * 13) - 0.5) * jitter;
+    const point = points[index];
+    point.x = x1 + dx * t + nx * offset;
+    point.y = y1 + dy * t + ny * offset;
+  }
+}
+
+/** Nokta dizisinin ilk `count` noktasindan tek kirikli cizgi. */
+export function strokePolyline(g: VfxGraphics, points: ReadonlyArray<{ x: number; y: number }>, count: number, width: number, color: number, alpha: number) {
+  if (count < 2 || alpha <= 0) return;
+  g.lineStyle(Math.max(0.5, width), color, clamp01(alpha));
+  g.beginPath();
+  g.moveTo(points[0].x, points[0].y);
+  for (let index = 1; index < count; index += 1) g.lineTo(points[index].x, points[index].y);
+  g.strokePath();
+}
