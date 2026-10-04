@@ -14,12 +14,21 @@ import {
   planRunReportActions,
   resolveLocalRunSlot,
   CARD_PICKABLE_AFTER_MS,
-  WaveReportTracker
+  ComboStampGate,
+  WaveReportTracker,
+  getComboStampText,
+  getSynergyCulpritNotice,
+  sanitizeComboStampMessage,
+  type ComboStampMessage
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, readTextureAccent, shotStyle } from "../vfx/combat-vfx";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
 import {
+  AssistToastGate,
+  decodeKillAssists,
+  getKillAssistText,
+  pickLocalKillAssist,
   characters,
   GAME_WORLD_WIDTH,
   HIRABLE_WORKER_ROLES,
@@ -139,6 +148,15 @@ import {
   getUltimateStampText,
   getUltimateTeamChipText,
   type UltimateCastMessage,
+  getServerLinkJoinedText,
+  getServerLinkMaturedText,
+  getSilentModeNoticeText,
+  getSilentModePhase,
+  toLocalSilentModeTimeline,
+  type ServerLinkJoinedMessage,
+  type ServerLinkMaturedMessage,
+  type SilentModeMessage,
+  type SilentModeTimeline,
   type UltimateResultMessage,
   type KillStreakTier,
   type ConfirmationPulseStyle,
@@ -190,11 +208,12 @@ import { saveQuickStartIntent } from "../quick-start";
 import { createWaveReportElement, getWaveReportKey } from "../wave-report-ui";
 import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
-import type { HudState, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
+import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
+import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 
 type GameSceneData = {
@@ -404,6 +423,34 @@ const LEVEL_LABEL_FONT_PX = 12;
 const TIER_LABEL_FONT_PX = 13;
 const TEAMMATE_LEVEL_LABEL_FONT_PX = 11;
 const TEAMMATE_LEVEL_LABEL_ALPHA = 0.55;
+/**
+ * Sinerji damgasinin renkleri: yalnizlik Izolasyon alaninin turkuazi, dizilim
+ * sentez isininin pembesi, bozulma ise hayaletin "konamaz" kirmizisinin acigi.
+ * Kazanc ve kayip bakmadan ayrilsin.
+ */
+const SYNERGY_ISOLATION_FILL = "#7fe5e8";
+const SYNERGY_FORMATION_FILL = "#f9a8d4";
+const SYNERGY_LOST_FILL = "#fca5a5";
+/** Takim arkadasi sinerjini bozdu bildirimi: kisa, ve ust uste kurulumda bir kez. */
+const SYNERGY_NOTICE_MS = 2600;
+const SYNERGY_NOTICE_GAP_MS = 4000;
+/**
+ * Sessiz Mod'da susan kulenin rengi: soguk bir lavanta. Isi ve tukenmenin
+ * grisinden, enerjisizligin kirmizisindan ayri okunmali -- bu kule bozuk
+ * degil, bilerek susturuldu.
+ */
+const SILENT_TOWER_TINT = 0xc7d2fe;
+const SILENT_TOWER_MARK_COLOR = 0x818cf8;
+/** Sunucu baginin renkleri: kulede kod yagmuruyla ayni (5 dalga turkuaz, 10 dalga mor). */
+const SERVER_LINK_JOIN_COLOR = 0x22d3ee;
+const SERVER_LINK_MATURE_5_FILL = "#67e8f9";
+const SERVER_LINK_MATURE_10_FILL = "#d8b4fe";
+const SERVER_LINK_MATURE_5_COLOR = 0x67e8f9;
+const SERVER_LINK_MATURE_10_COLOR = 0xd8b4fe;
+/** Kart perdesi kapanana kadar bekleyen bag anlari; dalga sonunda birkac tane birikebiliyor. */
+const PENDING_LINK_MOMENT_LIMIT = 4;
+/** Perde kapandiktan sonra anin oynamasi icin kisa bekleme; perdenin cikis gecisi bitsin. */
+const LINK_MOMENT_AFTER_CURTAIN_MS = 320;
 const LEVEL_LABEL_STROKE = "#0f172a";
 /**
  * Onur jackpot damgasi: kritik sayinin (15 px x 1.5) hemen ustunde, sayiyla
@@ -414,6 +461,16 @@ const JACKPOT_LABEL_LIFT_PX = 18;
 const JACKPOT_LABEL_FONT_PX = 11;
 const JACKPOT_LABEL_FILL = "#fde047";
 const JACKPOT_LABEL_STROKE = "#431407";
+/**
+ * Kombo damgalari: Debug Lazer'in isaretli oldurmeden asiri yuklemesi ve
+ * supurme sonucu lazerin kirmizi-turuncusunda, Onur'un sans penceresi jackpot
+ * altininda (ayni zarin hikayesi). Kulenin seviye etiketinin biraz ustunde;
+ * ikisi ayni anda gelirse ust uste binmesin.
+ */
+const COMBO_LABEL_LIFT_PX = LEVEL_LABEL_LIFT_PX + 14;
+const COMBO_OVERDRIVE_FILL = "#fdba74";
+const COMBO_OVERDRIVE_STROKE = "#431407";
+const COMBO_LUCKY_FILL = "#fde047";
 /**
  * "Yukseltme hazir" isareti: kule sprite'larinin (12) ve can cubugunun (16)
  * ustunde, yuzen sayilarin (30) ve secili kule panelinin (66) altinda.
@@ -785,6 +842,10 @@ export class GameScene extends Phaser.Scene {
   private damageNumbers?: DamageNumberPool;
   /** "SV 3", "SV 5 · KADEME 2" etiketlerinin havuzu; yonetmenin etiket butcesi kadar. */
   private levelLabels?: WorldLabelPool;
+  /** Yalnizlik ve dizilim: surukleme onizlemesi, kalici isaret ve damga verisi. */
+  private synergyMarks?: SynergyMarks;
+  /** Takim arkadasi bildiriminin son ani; ust uste kurulumlar bildirimi bogmasin. */
+  private synergyNoticeAt = Number.NEGATIVE_INFINITY;
   /** Sunucunun onayladigi (`tower:spawn`) ama oynatmada henuz cizilmemis kuleler. */
   private readonly freshTowerSpawns = new FreshTowerSpawns();
   /**
@@ -846,6 +907,8 @@ export class GameScene extends Phaser.Scene {
   private goldShopWasOpen = false;
   /** Kozmetik kombo: kendi oldurme zincirin ve takimin ortak zinciri. */
   private readonly killCombo = new KillComboWatch();
+  /** Co-op asist bildirimi: ayni iki oyuncu arasinda 5 sn'de bir. */
+  private readonly assistToasts = new AssistToastGate();
   private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
     granted: [],
     unstoppable: [],
@@ -935,6 +998,8 @@ export class GameScene extends Phaser.Scene {
    * kendi ultisi, damganin altini ve nexus cani. Karne kart perdesinin basliginda.
    */
   private readonly waveReports = new WaveReportTracker();
+  /** Kombo damgalarinin kapisi: tur + sahip basina 4 sn, ekranda en fazla iki. */
+  private readonly comboStamps = new ComboStampGate();
   /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
   private cardDraftWave?: number;
   /**
@@ -1105,6 +1170,20 @@ export class GameScene extends Phaser.Scene {
    */
   private towerCardsCache?: { definitionId: string; source: string[]; applied: string[] };
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
+  /**
+   * Suren Sessiz Mod, istemcinin saatinde (performance.now). Sunucu yalnizca
+   * atildiginda (ve yeniden baglanmada) tek mesaj yolluyor; susan kulelerin
+   * rengi ve HUD geri sayimi bundan.
+   */
+  private silentModeTimeline?: SilentModeTimeline;
+  /** HUD'a son yollanan geri sayim; perde kapaninca suruyorsa geri getiriliyor. */
+  private silentModeHudEvent?: SilentModeHudEvent;
+  /** Ayni atisin ikinci kez gelen mesaji (yeniden baglanma + `silent:sync`) bildirimi tekrarlamasin. */
+  private silentModeCastAt = 0;
+  /** Bu karede kuleler susturulmus mu; kule basina yeniden hesaplanmasin. */
+  private silentTowersNow = false;
+  /** Kart perdesi acikken gelen bag anlari; perde kapaninca oynuyor. */
+  private pendingLinkMoments: Array<() => void> = [];
   private lastHudKey = "";
   private lastSkillKey = "";
   private lastSelectionKey = "";
@@ -1215,6 +1294,16 @@ export class GameScene extends Phaser.Scene {
     this.damageNumbers = new DamageNumberPool(this, 30);
     // Sayilarin hemen ustunde: seviye etiketi seyrek ve oyuncunun satin aldigi an.
     this.levelLabels = new WorldLabelPool(this, 30.5);
+    // Isaretler kule govdesinin (12) ve seviye halkasinin (12.6) hemen ustunde,
+    // can cubugunun (16) altinda; onizleme hayaletin (28) ustunde.
+    this.synergyMarks = new SynergyMarks(this, { glyph: 12.8, preview: 29 });
+    this.synergyNoticeAt = Number.NEGATIVE_INFINITY;
+    // Onceki macin Sessiz Mod'u ve bekleyen bag anlari yeni maca tasinmasin.
+    this.silentModeTimeline = undefined;
+    this.silentModeHudEvent = undefined;
+    this.silentModeCastAt = 0;
+    this.silentTowersNow = false;
+    this.pendingLinkMoments = [];
     // Sahne ayni nesneyle yeniden baslarsa alan baslaticilari yeniden
     // calismiyor; ilk snapshot yine "ilk" sayilsin, ★ ve etiket yanlis cikmasin.
     this.freshTowerSpawns.clear();
@@ -1227,6 +1316,7 @@ export class GameScene extends Phaser.Scene {
     this.goldShopWasOpen = false;
     this.waveClearWatch.reset();
     this.waveReports.reset();
+    this.comboStamps.reset();
     this.cardDraftWave = undefined;
     this.ultimateReadyWatch.reset();
     this.ultimateReadyPulseAt = undefined;
@@ -1234,6 +1324,7 @@ export class GameScene extends Phaser.Scene {
     this.cardDealKey = "";
     this.cardPickStampUntil = 0;
     this.killCombo.reset();
+    this.assistToasts.reset();
     this.streakBanners.clear();
     this.streakGlows = [];
     this.streakVoice = undefined;
@@ -1279,6 +1370,8 @@ export class GameScene extends Phaser.Scene {
       this.hidePerfPopup();
       this.hideUltimateChoices();
       this.hideZeynepTierChoices();
+      // Perdeyi kapatmak bekleyen bag anlarini oynatirdi; kapanan sahnede degil.
+      this.pendingLinkMoments = [];
       this.hideCardChoices();
       window.clearTimeout(this.cardAppliedTimer);
       this.cardAppliedTimer = undefined;
@@ -1289,6 +1382,11 @@ export class GameScene extends Phaser.Scene {
       this.damageNumbers = undefined;
       this.levelLabels?.destroy();
       this.levelLabels = undefined;
+      this.synergyMarks?.destroy();
+      this.synergyMarks = undefined;
+      this.silentModeTimeline = undefined;
+      this.silentModeHudEvent = undefined;
+      this.game.events.emit("game:hud-silent-mode-hide");
       this.animatedTowers.clear();
       this.freshTowerSpawns.clear();
       for (const marker of this.upgradeReadyMarkers) marker.destroy();
@@ -1806,6 +1904,18 @@ export class GameScene extends Phaser.Scene {
       .setDisplaySize(ghost.width, ghost.height)
       .setTint(canPlace ? 0x86efac : 0xf87171);
     this.drawPlacementGrid(cell.x, cell.y, canPlace);
+    // Kare degismedikce yeniden hesaplanmiyor (onizleme kendi anahtarini tutuyor).
+    this.synergyMarks?.preview({
+      definition: this.draggedTowerDefinition,
+      characterId: this.selectedCharacter.id,
+      x: cell.x,
+      y: cell.y,
+      canPlace,
+      localSessionId: this.localSessionId,
+      map: this.selectedMapData,
+      cellSize: this.getMapCellSize(),
+      bounds: getMapWorldBounds(this.selectedMapData)
+    });
   }
 
   private finishTowerDrag(pointer: Phaser.Input.Pointer) {
@@ -1844,6 +1954,7 @@ export class GameScene extends Phaser.Scene {
 
     this.draggedTowerDefinition = undefined;
     this.ignoreMapPointerUntil = performance.now() + 180;
+    this.synergyMarks?.clearPreview();
     this.placementGrid?.clear().setVisible(false);
     this.placementGhost?.destroy();
     this.placementGhost = undefined;
@@ -1864,6 +1975,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.draggedTowerDefinition = undefined;
+    this.synergyMarks?.clearPreview();
     this.placementGrid?.clear().setVisible(false);
     this.placementGhost?.destroy();
     this.placementGhost = undefined;
@@ -3481,6 +3593,301 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Oyuncunun karakter adi ve rengi; bildirimler ulti cipiyle ayni dili konussun. */
+  private describePlayer(playerId: string) {
+    const owner = this.playerSnapshots.find((player) => player.id === playerId);
+    const character = owner ? characters.find((candidate) => candidate.id === owner.characterId) : undefined;
+    return { name: character?.displayName, color: getCharacterColorCss(owner?.characterId) };
+  }
+
+  /**
+   * Sessiz Mod atildi: herkesin kulesi susuyor, sonra hasar kuleleri hizlaniyor.
+   *
+   * Eskiden yalnizca atan biliyordu; takim arkadasi kulelerinin bir anda
+   * sustugunu goruyor ve oyunu bozuk saniyordu. Simdi herkeste ayni geri sayim
+   * (once sessizlik, sonra 3x ates), susan kulelerde soguk bir renk ve atan
+   * disindakilere adini veren tek satir. Atana bildirim yok: dugmeye kendisi
+   * basti, geri sayim yeter.
+   *
+   * Ayni atisin ikinci mesaji (yeniden baglanma ile `silent:sync` ikisi de
+   * yollar) geri sayimi tazeler ama bildirimi tekrarlamaz. Bildirim ve tini
+   * dunyayla ayni anda: istemci sunucunun yarim saniye gerisinden oynuyor.
+   */
+  private receiveSilentMode(message: SilentModeMessage) {
+    if (!message || typeof message.casterId !== "string" || this.matchResultShown) {
+      return;
+    }
+    const timeline = toLocalSilentModeTimeline(message, performance.now(), this.playbackDelayMs);
+    if (!timeline) {
+      return;
+    }
+    const repeat = message.castAt === this.silentModeCastAt;
+    this.silentModeCastAt = message.castAt;
+    this.silentModeTimeline = timeline;
+    const caster = this.describePlayer(message.casterId);
+    const notice = getSilentModeNoticeText(caster.name);
+    const hudEvent: SilentModeHudEvent = { timeline, title: notice.title, color: caster.color };
+    this.silentModeHudEvent = hudEvent;
+    this.game.events.emit("game:hud-silent-mode", hudEvent);
+    if (repeat) {
+      return;
+    }
+    const own = message.casterId === this.localSessionId;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown || !this.feedback) {
+        return;
+      }
+      const decision = this.feedback.emit("silentMode", { own });
+      // Kart perdesi acikken HUD perdenin ustunde kalirdi; geri sayim yine suruyor.
+      if (own || !decision.show || this.cardChoiceRoot) {
+        return;
+      }
+      const toast: TeamNoticeToast = { ...notice, color: caster.color };
+      this.game.events.emit("game:hud-team-notice", toast);
+    });
+  }
+
+  /** Bu kule su an Sessiz Mod yuzunden mi susuyor; kaynak yapilari ve duvarlar atis yapmiyor zaten. */
+  private isTowerSilenced(tower: TowerSnapshot) {
+    return this.silentTowersNow
+      && !tower.disabled
+      && !tower.standby
+      && !tower.resourceProvider
+      && !this.isEdgePlacedDefinition(tower.definitionId);
+  }
+
+  /** Karenin basinda bir kez: sessizlik suruyor mu; bittiyse cizelge birakiliyor. */
+  private refreshSilentTowers(now: number) {
+    const phase = getSilentModePhase(this.silentModeTimeline, now);
+    if (!phase) {
+      this.silentModeTimeline = undefined;
+    }
+    this.silentTowersNow = phase?.phase === "silent";
+  }
+
+  /**
+   * Susan kulenin isareti: sol ustte kucuk bir "duraklat" rozeti. Renk tek
+   * basina "bozuk" ile "bilerek susturuldu"yu ayirmaya yetmeyebilir (renk
+   * korlugu, soluk takim arkadasi kulesi); sekil de soylesin.
+   */
+  private renderSilentModeTowerMark(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (!this.isTowerSilenced(tower)) {
+      return;
+    }
+    const size = Math.max(4.5, this.getMapCellSize() * 0.13);
+    const x = tower.x - size * 1.9;
+    const y = tower.y - size * 1.9;
+    graphics.fillStyle(0x1e1b4b, 0.92).fillCircle(x, y, size);
+    graphics.lineStyle(Math.max(1, size * 0.22), SILENT_TOWER_MARK_COLOR, 1).strokeCircle(x, y, size);
+    const barWidth = Math.max(1, size * 0.28);
+    const barHeight = size * 0.95;
+    graphics.fillStyle(0xe0e7ff, 1);
+    graphics.fillRect(x - size * 0.42, y - barHeight / 2, barWidth, barHeight);
+    graphics.fillRect(x + size * 0.42 - barWidth, y - barHeight / 2, barWidth, barHeight);
+  }
+
+  /**
+   * Bag anlarini oynatir; kart perdesi acikken perde kapanana kadar bekletir.
+   *
+   * Bag yasi dalga bittiginde artiyor, yani olgunlasma tam kart perdesinin
+   * acildigi ana denk geliyor; o an oynasa perdenin altinda kaybolurdu.
+   */
+  private queueLinkMoment(play: () => void) {
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown) {
+        return;
+      }
+      if (this.cardChoiceRoot) {
+        this.pendingLinkMoments.push(play);
+        if (this.pendingLinkMoments.length > PENDING_LINK_MOMENT_LIMIT) {
+          this.pendingLinkMoments.shift();
+        }
+        return;
+      }
+      play();
+    });
+  }
+
+  private flushLinkMoments() {
+    if (this.pendingLinkMoments.length === 0) {
+      return;
+    }
+    const moments = this.pendingLinkMoments;
+    this.pendingLinkMoments = [];
+    this.time.delayedCall(LINK_MOMENT_AFTER_CURTAIN_MS, () => {
+      if (this.matchResultShown || this.cardChoiceRoot) {
+        return;
+      }
+      for (const play of moments) {
+        play();
+      }
+    });
+  }
+
+  /**
+   * Takim arkadasinin Sunucusu senin kulene baglandi: adini veren tek satir
+   * ve kulende turkuaz bir nabiz. Sunucu bu mesaji yalnizca kulenin sahibine
+   * yolluyor; yani hep "senin" anin.
+   */
+  private receiveServerLinkJoined(message: ServerLinkJoinedMessage) {
+    if (!message || typeof message.targetTowerId !== "string" || this.matchResultShown) {
+      return;
+    }
+    this.queueLinkMoment(() => {
+      const tower = this.towerSnapshots.get(message.targetTowerId);
+      if (!tower) {
+        return;
+      }
+      const decision = this.feedback?.emit("linkJoined", { own: true, x: tower.x, y: tower.y });
+      if (decision && !decision.show) {
+        return;
+      }
+      const owner = this.describePlayer(message.serverOwnerId);
+      const toast: TeamNoticeToast = { ...getServerLinkJoinedText(owner.name), color: owner.color };
+      this.game.events.emit("game:hud-team-notice", toast);
+      this.playTowerPulse(tower, this.getMapCellSize() * getTowerGridSpan(tower.definitionId), SERVER_LINK_JOIN_COLOR, false);
+    });
+  }
+
+  /**
+   * Bag olgunlasti (5 ya da 10 dalga): bagli kulenin ustunde kisa bir etiket
+   * ve iki kulede nabiz. Iki sahibe de gidiyor; etiket seviye etiketiyle ayni
+   * havuzda, butceyi yonetmen tutuyor.
+   */
+  private receiveServerLinkMatured(message: ServerLinkMaturedMessage) {
+    if (!message || (message.waves !== 5 && message.waves !== 10) || this.matchResultShown) {
+      return;
+    }
+    this.queueLinkMoment(() => {
+      const target = this.towerSnapshots.get(message.targetTowerId);
+      if (!target) {
+        return;
+      }
+      const cellSize = this.getMapCellSize();
+      const discSize = cellSize * getTowerGridSpan(target.definitionId);
+      const labelY = target.y - discSize / 2 - LEVEL_LABEL_LIFT_PX;
+      const lifetimeMs = FEEDBACK_KIND_RULES.linkMatured.visualMs;
+      const decision = this.feedback?.emit("linkMatured", { own: true, x: target.x, y: labelY, lifetimeMs });
+      const strong = message.waves >= 10;
+      const fill = strong ? SERVER_LINK_MATURE_10_FILL : SERVER_LINK_MATURE_5_FILL;
+      const pulseColor = strong ? SERVER_LINK_MATURE_10_COLOR : SERVER_LINK_MATURE_5_COLOR;
+      this.playTowerPulse(target, discSize, pulseColor, strong);
+      const server = this.towerSnapshots.get(message.serverTowerId);
+      if (server) {
+        this.playTowerPulse(server, cellSize * getTowerGridSpan(server.definitionId), pulseColor, false);
+      }
+
+      const labels = this.levelLabels;
+      if (!labels || (decision && !decision.show && !decision.merge)) {
+        return;
+      }
+      const text = getServerLinkMaturedText(message.waves);
+      const key = `link:${message.targetTowerId}`;
+      if (decision?.merge) {
+        labels.merge(key, text, fill, LEVEL_LABEL_STROKE);
+        return;
+      }
+      labels.spawn({
+        key,
+        text,
+        x: target.x,
+        y: labelY,
+        fill,
+        stroke: LEVEL_LABEL_STROKE,
+        fontPx: LEVEL_LABEL_FONT_PX,
+        alpha: 1,
+        pop: false,
+        lifetimeMs,
+        still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
+        bounds: getMapWorldBounds(this.selectedMapData)
+      }, performance.now(), decision?.recycle ?? false);
+    });
+  }
+
+  /**
+   * Kombo damgasi: "İŞARET → OVERDRIVE", "Tarama: 3 öldü", "ŞANS PENCERESİ
+   * 10 sn". Kulenin ustunde, oynatma gecikmesi kadar sonra (supurme ekrana o
+   * zaman geliyor).
+   *
+   * Kapi (`ComboStampGate`) tur + sahip basina 4 sn'de bir ve ekranda en
+   * fazla iki damga birakiyor; etiket butcesini yonetmen tutuyor. Kendi
+   * kulenin damgasi parlak, takim arkadasininki kucuk ve soluk; sans penceresi
+   * yalnizca senin. Damga alt cubugun altina dusmuyor. Kart perdesi aciksa ya
+   * da rapor ekrandaysa an gecmis sayiliyor: bekletilmiyor.
+   */
+  private receiveComboStamp(raw: ComboStampMessage) {
+    const message = sanitizeComboStampMessage(raw);
+    if (!message || this.matchResultShown) {
+      return;
+    }
+    const own = message.ownerId === this.localSessionId;
+    if (message.kind === "luckyWindow" && !own) {
+      return;
+    }
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown || this.cardChoiceRoot) {
+        return;
+      }
+      this.showComboStamp(message, own);
+    });
+  }
+
+  private showComboStamp(message: ComboStampMessage, own: boolean) {
+    const labels = this.levelLabels;
+    const text = getComboStampText(message);
+    if (!labels || !text) {
+      return;
+    }
+    const now = performance.now();
+    if (!this.comboStamps.admit(message.kind, message.ownerId, now)) {
+      return;
+    }
+    const tower = this.towerSnapshots.get(message.towerId);
+    const x = tower?.x ?? message.x;
+    const discSize = this.getMapCellSize() * getTowerGridSpan(tower?.definitionId ?? "");
+    const y = (tower?.y ?? message.y) - discSize / 2 - COMBO_LABEL_LIFT_PX;
+    const lifetimeMs = FEEDBACK_KIND_RULES.combo.visualMs;
+    const decision = this.feedback?.emit("combo", { own, x, y, lifetimeMs });
+    const lucky = message.kind === "luckyWindow";
+    const fill = lucky ? COMBO_LUCKY_FILL : COMBO_OVERDRIVE_FILL;
+    const stroke = lucky ? JACKPOT_LABEL_STROKE : COMBO_OVERDRIVE_STROKE;
+    const key = `combo:${message.kind}:${message.towerId}`;
+    if (decision?.merge) {
+      labels.merge(key, text, fill, stroke);
+      return;
+    }
+    if (decision && !decision.show) {
+      return;
+    }
+    this.comboStamps.commit(now, lifetimeMs);
+    labels.spawn({
+      key,
+      text,
+      x,
+      y,
+      fill,
+      stroke,
+      fontPx: own ? LEVEL_LABEL_FONT_PX : TEAMMATE_LEVEL_LABEL_FONT_PX,
+      alpha: own ? 1 : TEAMMATE_LEVEL_LABEL_ALPHA,
+      pop: false,
+      lifetimeMs,
+      still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
+      bounds: this.getWorldLabelBoundsAboveBottomBar()
+    }, now, decision?.recycle ?? false);
+  }
+
+  /**
+   * Dunya etiketinin siniri: arena, ama alt cubugun ustu. Alt cubuk (HTML)
+   * tuvalin altini ortuyor; kamera haritayi iki serit arasina sigdirsa da
+   * haritanin alt sirasindaki bir kulenin damgasi cubugun arkasina dusebilir.
+   */
+  private getWorldLabelBoundsAboveBottomBar() {
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
+    const bandBottom = view.top + view.height * (1 - this.arenaChrome.bottomRatio);
+    return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: Math.min(bounds.bottom, bandBottom) };
+  }
+
   /**
    * Sunucunun sarji yetisti mi.
    *
@@ -3921,6 +4328,8 @@ export class GameScene extends Phaser.Scene {
       this.bindRoomHandlers(this.room);
       this.room.send("snapshot:requestFull");
       this.room.send("card:sync");
+      // Mac ortasina (sayfa yenileme) donuldu: suren Sessiz Mod'un geri sayimi.
+      this.room.send("silent:sync");
       this.startPingLoop();
     } catch (error) {
       console.error(error);
@@ -4388,6 +4797,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Ulti karnesi yalnizca atana; takim arkadaslarina tek satirlik cip.
     room.onMessage("ultimate:result", (message: UltimateResultMessage) => this.receiveUltimateResult(message));
     room.onMessage("ultimate:cast", (message: UltimateCastMessage) => this.receiveTeamUltimate(message));
+    // Takimi etkileyen sessiz kararlar: Sessiz Mod herkesin kulesini susturuyor,
+    // Sunucu baska birinin kulesine baglanabiliyor. Ikisi de tek seferlik mesaj.
+    room.onMessage("silent:mode", (message: SilentModeMessage) => this.receiveSilentMode(message));
+    room.onMessage("link:joined", (message: ServerLinkJoinedMessage) => this.receiveServerLinkJoined(message));
+    room.onMessage("link:matured", (message: ServerLinkMaturedMessage) => this.receiveServerLinkMatured(message));
+    // Sonucu degistiren kombolar: tek seferlik mesaj, damga kulenin ustunde.
+    room.onMessage("combo:stamp", (message: ComboStampMessage) => this.receiveComboStamp(message));
     room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
@@ -4437,6 +4853,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.bindRoomHandlers(room);
         room.send("snapshot:requestFull");
         room.send("card:sync");
+        room.send("silent:sync");
         this.reconnecting = false;
         this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
         this.emitHudState({ status: `#${room.roomId}` });
@@ -5119,6 +5536,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.cardChoiceRoot = undefined;
     this.cardChoices = [];
     this.cardDraftWave = undefined;
+    this.flushLinkMoments();
+    this.restoreSilentModeCountdown();
+  }
+
+  /**
+   * Perde (kart, Ucube) acilinca HUD'daki geri sayim da kalkiyor; perde
+   * kapandiginda Sessiz Mod hala suruyorsa geri geliyor. Ucube secimi dalga
+   * ortasinda acilabiliyor, sayim kaybolup geri gelmeseydi oyuncu sessizligin
+   * ne zaman bittigini bilemezdi.
+   */
+  private restoreSilentModeCountdown() {
+    const event = this.silentModeHudEvent;
+    if (!event || this.matchResultShown) {
+      return;
+    }
+    if (!getSilentModePhase(event.timeline, performance.now())) {
+      this.silentModeHudEvent = undefined;
+      return;
+    }
+    this.game.events.emit("game:hud-silent-mode", event);
   }
 
   private submitCardChoice(message: { cardId: string; towerId?: string }) {
@@ -5847,6 +6284,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private renderTowers(towers: TowerSnapshot[]) {
     const activeIds = new Set(towers.map((tower) => tower.id));
+    this.refreshSilentTowers(performance.now());
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
@@ -5991,7 +6429,61 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);
     }
+    // Ilk goruntu olay degil: katilan oyuncunun ekraninda butun yalnizliklar
+    // birden "kuruldu" demesin.
+    const synergyAnnouncements = this.synergyMarks?.sync(towers, this.selectedMapData, this.localSessionId, cellSize, this.towersPrimed) ?? [];
+    for (const announcement of synergyAnnouncements) {
+      this.showSynergyStamp(announcement);
+    }
     this.towersPrimed = true;
+  }
+
+  /**
+   * Yerlesim sinerjisinin tek seferlik damgasi: "Yalnız ×2,25", "Yalnızlık
+   * bozuldu", "Dizilim kuruldu", "Dizilim bozuldu".
+   *
+   * Seviye etiketiyle ayni havuz ve ayni dil: kendi kulen parlak, takim
+   * arkadasininki kucuk ve soluk, butceyi yonetmen tutuyor. Takim arkadasinin
+   * kurulumu senin sinerjini bozduysa adini veren kisa bir bildirim; bozulan
+   * seyi ekranda ararken kimin yaptigini da bil.
+   */
+  private showSynergyStamp(announcement: SynergyAnnouncement) {
+    const now = performance.now();
+    if (announcement.culprit && now - this.synergyNoticeAt >= SYNERGY_NOTICE_GAP_MS) {
+      this.synergyNoticeAt = now;
+      const kind = announcement.kind === "isolationLost" ? "isolationLost" : "formationBroken";
+      this.showNotice(getSynergyCulpritNotice(kind, announcement.culprit), SYNERGY_NOTICE_MS);
+    }
+
+    const labels = this.levelLabels;
+    const own = announcement.own;
+    const y = announcement.y - LEVEL_LABEL_LIFT_PX;
+    const lifetimeMs = FEEDBACK_KIND_RULES.synergy.visualMs;
+    const decision = this.feedback?.emit("synergy", { own, x: announcement.x, y, lifetimeMs });
+    if (!labels || (decision && !decision.show && !decision.merge)) {
+      return;
+    }
+    const lost = announcement.kind === "isolationLost" || announcement.kind === "formationBroken";
+    const fill = lost ? SYNERGY_LOST_FILL : announcement.kind === "formationFormed" ? SYNERGY_FORMATION_FILL : SYNERGY_ISOLATION_FILL;
+    const key = `synergy:${announcement.anchorId}`;
+    if (decision?.merge) {
+      labels.merge(key, announcement.text, fill, LEVEL_LABEL_STROKE);
+      return;
+    }
+    labels.spawn({
+      key,
+      text: announcement.text,
+      x: announcement.x,
+      y,
+      fill,
+      stroke: LEVEL_LABEL_STROKE,
+      fontPx: own ? LEVEL_LABEL_FONT_PX : TEAMMATE_LEVEL_LABEL_FONT_PX,
+      alpha: own ? 1 : TEAMMATE_LEVEL_LABEL_ALPHA,
+      pop: false,
+      lifetimeMs,
+      still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
+      bounds: getMapWorldBounds(this.selectedMapData)
+    }, now, decision?.recycle ?? false);
   }
 
   /**
@@ -6350,6 +6842,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (tower.status === "Hararet" || tower.status === "Tukenmis" || tower.disabled) {
       return 0x94a3b8;
     }
+    // Sessizlik enerjisizlikten once: kule o an zaten ates edemiyor ve sebebi bu.
+    if (this.isTowerSilenced(tower)) {
+      return SILENT_TOWER_TINT;
+    }
     if (tower.energyState && tower.energyState !== "powered") {
       return 0xf87171;
     }
@@ -6395,6 +6891,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
     this.renderIsolationAura(graphics, tower);
+    this.renderSilentModeTowerMark(graphics, tower);
   }
 
   /**
@@ -7677,6 +8174,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
 
       this.playKillConfirmation(event, comboStep, stale, ownCritKill);
+      if (!stale && event.a) {
+        this.presentKillAssist(snapshot, event, localSlot);
+      }
 
       if (!event.ownerId || !event.streakTier) {
         continue;
@@ -7691,6 +8191,43 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (comboTouched) {
       this.presentKillCombo(snapshot, comboWindowMs);
     }
+  }
+
+  /**
+   * Co-op asisti: "Atakan işaretledi → Zeynep bitirdi".
+   *
+   * Yalnizca iki tarafin ekraninda (oldurensen ilk asist, asist verdiysen
+   * seninki); ucuncu oyuncu hicbir sey gormuyor. HUD yigininda soluk tek
+   * satir: ses, sarsinti ve titresim yok -- oldurmenin kendi sesi zaten caldi.
+   * Ayni iki oyuncu arasinda 5 sn'de en fazla bir kez; zaman sunucunun oldurme
+   * ani, oynatma gecikmesi araligi bozmasin. Kart perdesi ve sonuc ekrani
+   * acikken yok: perde HUD'un ustunde, satir gorulmeden kaybolurdu.
+   */
+  private presentKillAssist(snapshot: GameSnapshot, event: KillEventSnapshot, localSlot: number) {
+    if (snapshot.players.length < 2 || this.cardChoiceRoot || this.matchResultShown || snapshot.result) {
+      return;
+    }
+    const killer = snapshot.players.find((player) => player.id === event.ownerId);
+    if (!killer) {
+      return;
+    }
+    const killerSlot = killer.slot ?? 0;
+    const assist = pickLocalKillAssist(killerSlot, decodeKillAssists(event.a), localSlot);
+    const assister = assist ? snapshot.players.find((player) => (player.slot ?? 0) === assist.slot) : undefined;
+    if (!assist || !assister || !this.assistToasts.allow(killerSlot, assist.slot, event.serverTime)) {
+      return;
+    }
+    const decision = this.feedback?.emit("assist", { own: true });
+    if (decision && !decision.show) {
+      return;
+    }
+    // Kenar rengi karsi tarafin: satir "kiminle" sorusunu renkle de soylesin.
+    const partner = killer.id === this.localSessionId ? assister : killer;
+    const toast: TeamAssistToast = {
+      text: getKillAssistText(assist.kind, this.describePlayer(assister.id).name, this.describePlayer(killer.id).name),
+      color: this.describePlayer(partner.id).color
+    };
+    this.game.events.emit("game:hud-assist", toast);
   }
 
   /**
@@ -7982,6 +8519,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * hemen kalkmali.
    */
   private hideArenaHudOverlays() {
+    // Geri sayim da perdenin ustunde kalirdi; perde kapaninca suruyorsa geri geliyor.
+    this.game.events.emit("game:hud-silent-mode-hide");
     this.game.events.emit("game:hud-wave-clear-hide");
     this.game.events.emit("game:hud-combo-hide");
     this.game.events.emit("game:hud-team-streak-hide");

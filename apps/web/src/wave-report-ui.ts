@@ -52,7 +52,7 @@ export function createWaveReportElement(card: WaveReportCard, options: WaveRepor
       line.append(separator, " ");
     }
     const element = document.createElement("span");
-    element.className = `wave-report__chip wave-report__chip--${chip.kind}${chip.milestone ? " is-milestone" : ""}`;
+    element.className = `wave-report__chip wave-report__chip--${chip.kind}${chip.milestone ? " is-milestone" : ""}${chip.title ? ` is-${chip.title}` : ""}`;
     element.textContent = chip.text;
     line.append(element);
   });
@@ -66,7 +66,7 @@ export function createWaveReportElement(card: WaveReportCard, options: WaveRepor
 
   if (card.highlight) {
     const highlight = document.createElement("span");
-    highlight.className = `wave-report__highlight wave-report__highlight--${card.highlight.kind}${card.highlight.tier ? ` is-${card.highlight.tier}` : ""}`;
+    highlight.className = `wave-report__highlight wave-report__highlight--${card.highlight.kind}${card.highlight.tier ? ` is-${card.highlight.tier}` : ""}${card.highlight.share ? ` is-${card.highlight.share}` : ""}`;
     highlight.setAttribute("aria-hidden", "true");
     highlight.textContent = card.highlight.text;
     // Dar ekranda satir tek satirda kesiliyor; tam metin basili tutunca.

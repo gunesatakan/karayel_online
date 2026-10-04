@@ -402,6 +402,17 @@ button.wave-report:active { transform: scale(0.99); }
 .wave-report__chip--kills { color: #e2e8f0; }
 .wave-report__chip--gold { color: #fbbf24; }
 .wave-report__chip--mvp { color: #e0f2fe; }
+/* Co-op rol unvani: kendi rengiyle ince bir hap; sayilardan ayri okunsun. */
+.wave-report__chip--title {
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: #fde68a;
+}
+.wave-report__chip--title.is-assist { color: #a5f3fc; }
+.wave-report__chip--title.is-command { color: #c4b5fd; }
+.wave-report__chip--title.is-repair { color: #86efac; }
+.wave-report__chip--title.is-kills { color: #fca5a5; }
 .wave-report__more { color: #67e8f9; font-weight: 800; }
 .wave-report__highlight {
   display: block;
@@ -416,6 +427,9 @@ button.wave-report:active { transform: scale(0.99); }
 .wave-report__highlight--ultimate.is-perfect { color: #fde68a; }
 .wave-report__highlight--nearMiss { color: #fda4af; }
 .wave-report__highlight--assist { color: #a7f3d0; }
+/* Karar payi: sinerji damgasiyla ayni renkler (yalnizlik turkuaz, dizilim pembe). */
+.wave-report__highlight--synergyShare.is-isolation { color: #7fe5e8; }
+.wave-report__highlight--synergyShare.is-formation { color: #f9a8d4; }
 
 /*
  * Temiz seri 5/10/15/20: cip altin kenarla duruyor (hareket azaltmada da,
@@ -4174,6 +4188,23 @@ button.wave-report:active { transform: scale(0.99); }
   font-weight: 800;
 }
 .game-hud__team-streak span { color: #94a3b8; }
+/*
+ * Co-op asisti: dipnot kadar soluk. Kenar karsi tarafin renginde ama ince;
+ * metin serinin basligindan kucuk ve kisik, gozu kendine cekmiyor.
+ */
+.game-hud__team-streak--assist {
+  border-left-width: 2px;
+  background: rgba(2, 6, 23, 0.6);
+  opacity: 0.85;
+}
+.game-hud__team-streak--assist span {
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-hud__team-streak--assist { animation: none; }
+}
 @keyframes hud-team-streak-in {
   from { opacity: 0; transform: translateX(-8px); }
 }
@@ -4184,6 +4215,85 @@ button.wave-report:active { transform: scale(0.99); }
  */
 .game-hud__forecast:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 38px); }
 .game-hud__forecast--danger:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 54px); }
+
+/*
+ * Sessiz Mod geri sayimi: arenanin sag ustu (takim toast'lari solda).
+ * Sessizlikte soguk lavanta -- susan kulelerin rengi --, 3x ateste sicak
+ * amber; renk tek isaret degil, etiket de degisiyor. Kenar atanin renginde
+ * (`--silent-color`, JS). Cubugun kaymasi `transform` ile; hareket azaltmada
+ * HUD'un genel kurali gecisi aninda bitiriyor, sayi yine iniyor.
+ *
+ * Kombo hapiyla ayni kose: cip hapin altina yigiliyor. Hap ~26 px, en sicak
+ * olcekte (x1.26) ~33 px; 6 px ust pay + 34 px hap yuvasi + 4 px bosluk = 44.
+ * Yuva hap gizliyken de ayrili: hap her belirip kayboldugunda cip ziplamasin.
+ */
+.game-hud__silent {
+  --silent-color: #a5b4fc;
+  --silent-accent: #a5b4fc;
+  position: absolute;
+  top: calc(100% + 44px);
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 104px;
+  padding: 4px 8px 5px;
+  box-sizing: border-box;
+  border: 1px solid rgba(165, 180, 252, 0.45);
+  border-left: 3px solid var(--silent-color);
+  border-radius: 4px 10px 10px 4px;
+  background: rgba(2, 6, 23, 0.86);
+  color: #e0e7ff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.game-hud__silent[data-phase="burst"] {
+  --silent-accent: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.5);
+  border-left-color: var(--silent-color);
+  color: #fef3c7;
+}
+.game-hud__silent-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.game-hud__silent-row b { color: var(--silent-accent); font-size: 11px; font-weight: 800; }
+.game-hud__silent-row em { margin-left: auto; font-style: normal; font-variant-numeric: tabular-nums; }
+/* Duraklat rozeti: kuledeki isaretle ayni sekil. 3x ateste ok ucuna donuyor. */
+.game-hud__silent-icon {
+  width: 8px;
+  height: 9px;
+  flex: none;
+  background:
+    linear-gradient(var(--silent-accent), var(--silent-accent)) left / 3px 100% no-repeat,
+    linear-gradient(var(--silent-accent), var(--silent-accent)) right / 3px 100% no-repeat;
+}
+.game-hud__silent[data-phase="burst"] .game-hud__silent-icon {
+  background: var(--silent-accent);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.game-hud__silent-bar {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(148, 163, 184, 0.25);
+}
+.game-hud__silent-bar i {
+  display: block;
+  height: 100%;
+  background: var(--silent-accent);
+  transform-origin: left center;
+  transition: transform 200ms linear;
+}
+/* Ongoru kutusunun altina da insin: hap yuvasi (44) ile kutunun boyunun buyugu. */
+.game-hud__forecast:not([hidden]) ~ .game-hud__silent { top: calc(100% + 44px); }
+.game-hud__forecast--danger:not([hidden]) ~ .game-hud__silent { top: calc(100% + 54px); }
 
 /*
  * Ulti karnesi: seridin %56'si, ortada; seri afisinin (%17) ve dalga

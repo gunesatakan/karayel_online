@@ -201,6 +201,25 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
     { wave: "sine", from: NOTE.G6, at: 0, dur: 0.12, gain: 0.06 },
     { wave: "sine", from: NOTE.C7, at: 0.08, dur: 0.34, gain: 0.07 },
     { wave: "triangle", from: NOTE.C6, at: 0.08, dur: 0.3, gain: 0.03 }
+  ],
+  // Sessiz Mod: asagi kayan yumusak bir "sus" ve altta kisa bir bas. Uyari
+  // tonu degil -- kuleler bilerek susuyor; takim arkadasinda kisik caliyor.
+  silentMode: () => [
+    { wave: "sine", from: NOTE.E5, to: NOTE.C4, at: 0, dur: 0.36, gain: 0.07 },
+    { wave: "triangle", from: NOTE.A5, to: NOTE.E5, at: 0.02, dur: 0.22, gain: 0.03 },
+    { wave: "sine", from: 140, to: 70, at: 0, dur: 0.3, gain: 0.14 }
+  ],
+  // Kulene bag kuruldu: iki kisa dijital tik (kod), sonra baglanti notasi.
+  linkJoined: () => [
+    { wave: "square", from: 1800, to: 1500, at: 0, dur: 0.02, gain: 0.03 },
+    { wave: "square", from: 2200, to: 1800, at: 0.05, dur: 0.02, gain: 0.03 },
+    { wave: "sine", from: NOTE.G5, at: 0.09, dur: 0.2, gain: 0.07 }
+  ],
+  // Bag olgunlasti: baglanti notasinin devami, yukselen uclu (G5-C6-E6).
+  linkMatured: () => [
+    { wave: "triangle", from: NOTE.G5, at: 0, dur: 0.12, gain: 0.07 },
+    { wave: "triangle", from: NOTE.C6, at: 0.08, dur: 0.12, gain: 0.07 },
+    { wave: "sine", from: NOTE.E6, at: 0.16, dur: 0.22, gain: 0.07 }
   ]
 };
 

@@ -32,8 +32,11 @@ export type WorldLabelSpec = {
   lifetimeMs: number;
   /** Hareket azaltma: pop ve yukselme yok, yerinde soner. */
   still: boolean;
-  /** Etiketin tasmamasi gereken dunya siniri (arena). */
-  bounds?: { left: number; right: number; top: number };
+  /**
+   * Etiketin tasmamasi gereken dunya siniri (arena). `bottom` verilirse
+   * etiket onun ustunde kaliyor: alt cubugun arkasina dusen damga okunmuyor.
+   */
+  bounds?: { left: number; right: number; top: number; bottom?: number };
 };
 
 type Slot = {
@@ -101,6 +104,7 @@ export class WorldLabelPool {
       const halfWidth = (slot.text.width * slot.scale) / 2 + EDGE_PAD_PX;
       const halfHeight = (slot.text.height * slot.scale) / 2 + EDGE_PAD_PX;
       x = Math.max(spec.bounds.left + halfWidth, Math.min(spec.bounds.right - halfWidth, x));
+      if (spec.bounds.bottom !== undefined) y = Math.min(spec.bounds.bottom - halfHeight, y);
       y = Math.max(spec.bounds.top + halfHeight, y);
     }
     slot.x = x;

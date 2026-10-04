@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 
 type ZeynepTier = "small" | "medium" | "big";
@@ -49,6 +49,28 @@ export type UltimateStampEvent = UltimateStampText & { color: string };
 
 /** Takim arkadasinin ulti cipi: tek satir, onun renginde. */
 export type TeamUltimateChip = { text: string; color: string };
+
+/**
+ * Takimi etkileyen bir karar: Sessiz Mod, kulene baglanan Sunucu. Iki satir,
+ * cunku yigin ekranin yarisi kadar dar ve tek satir "Atakan Sessiz Mod: 5 sn
+ * sessizlik → 3x ateş" 375 px'te kesiliyordu.
+ */
+export type TeamNoticeToast = { title: string; detail: string; color: string };
+
+/** Co-op asisti: tek soluk satir, karsi tarafin renginde. */
+export type TeamAssistToast = { text: string; color: string };
+
+/**
+ * Sessiz Mod geri sayimi. Cizelge istemcinin saatinde (performance.now);
+ * HUD evreyi kendisi yuruyor, sahne her karede bir sey yollamiyor.
+ */
+export type SilentModeHudEvent = { timeline: SilentModeTimeline; title: string; color: string };
+
+/**
+ * Geri sayimin tazelenme araligi. Yazi tam saniye, cubuk CSS gecisiyle bu
+ * aralikta kayiyor; daha sik yazmak yalnizca DOM'u yorar.
+ */
+const SILENT_MODE_TICK_MS = 200;
 
 type ControlState = {
   visible: boolean;
@@ -1709,6 +1731,10 @@ export function setupGameHudUi(game: Phaser.Game) {
     <div class="game-hud__ultimate" data-hud-ultimate role="status" aria-live="polite" hidden></div>
     <div class="game-hud__combo" data-hud-combo data-heat="0" aria-hidden="true" hidden><b data-hud-combo-count></b><em data-hud-combo-multi hidden></em></div>
     <div class="game-hud__team-streaks" data-hud-team-streaks role="status" aria-live="polite"></div>
+    <div class="game-hud__silent" data-hud-silent data-phase="silent" role="timer" aria-live="off" hidden>
+      <span class="game-hud__silent-row"><i class="game-hud__silent-icon" aria-hidden="true"></i><b data-hud-silent-label>Sessizlik</b><em data-hud-silent-time>5 sn</em></span>
+      <span class="game-hud__silent-bar" aria-hidden="true"><i data-hud-silent-fill></i></span>
+    </div>
   `;
 
   const goldNode = root.querySelector<HTMLElement>("[data-hud-gold]")!;
@@ -1723,6 +1749,10 @@ export function setupGameHudUi(game: Phaser.Game) {
   const comboCountNode = root.querySelector<HTMLElement>("[data-hud-combo-count]")!;
   const comboMultiNode = root.querySelector<HTMLElement>("[data-hud-combo-multi]")!;
   const teamStreaksNode = root.querySelector<HTMLElement>("[data-hud-team-streaks]")!;
+  const silentNode = root.querySelector<HTMLElement>("[data-hud-silent]")!;
+  const silentLabelNode = root.querySelector<HTMLElement>("[data-hud-silent-label]")!;
+  const silentTimeNode = root.querySelector<HTMLElement>("[data-hud-silent-time]")!;
+  const silentFillNode = root.querySelector<HTMLElement>("[data-hud-silent-fill]")!;
   const waveAirNode = root.querySelector<HTMLElement>("[data-hud-air]")!;
   const forecastNode = root.querySelector<HTMLElement>("[data-hud-forecast]")!;
   const forecastCountNode = root.querySelector<HTMLElement>("[data-hud-forecast-count]")!;
@@ -2163,6 +2193,76 @@ export function setupGameHudUi(game: Phaser.Game) {
     pushTeamToast(item);
   };
 
+  /**
+   * Takim bildirimi (Sessiz Mod, kulene baglanan Sunucu): ayni yigin, iki
+   * satir. Ust satir kim ve ne, alt satir sonucu.
+   */
+  const showTeamNotice = (toast: TeamNoticeToast) => {
+    if (root.classList.contains("game-hud--hidden")) return;
+    const item = document.createElement("p");
+    item.className = "game-hud__team-streak game-hud__team-streak--notice";
+    item.style.setProperty("--team-color", toast.color);
+    const title = document.createElement("b");
+    title.textContent = toast.title;
+    const detail = document.createElement("span");
+    detail.textContent = toast.detail;
+    item.append(title, detail);
+    pushTeamToast(item);
+  };
+
+  /**
+   * Co-op asisti ("Atakan işaretledi → Zeynep bitirdi"): ayni yigin, tek
+   * satir, soluk. Bir dipnot; serinin ve ultinin toast'larindan geride durmali.
+   */
+  const showTeamAssist = (toast: TeamAssistToast) => {
+    if (root.classList.contains("game-hud--hidden") || typeof toast?.text !== "string") return;
+    const item = document.createElement("p");
+    item.className = "game-hud__team-streak game-hud__team-streak--assist";
+    item.style.setProperty("--team-color", toast.color);
+    const text = document.createElement("span");
+    text.textContent = toast.text;
+    item.append(text);
+    pushTeamToast(item);
+  };
+
+  /**
+   * Sessiz Mod geri sayimi: arenanin sag ustunde kucuk bir cip. Once
+   * "Sessizlik" (butun kuleler susuyor), sonra "3x ateş" (hasar kuleleri
+   * hizli); cubuk evrenin kalanini gosteriyor. Herkeste ayni, atanda da.
+   * Evre bitince kendiliginden kapaniyor; zamanlayici yalnizca acikken calisiyor.
+   */
+  let silentTimeline: SilentModeTimeline | undefined;
+  let silentTimer = 0;
+  const hideSilentMode = () => {
+    window.clearInterval(silentTimer);
+    silentTimer = 0;
+    silentTimeline = undefined;
+    setHidden(silentNode, true);
+  };
+  const tickSilentMode = () => {
+    const phase = getSilentModePhase(silentTimeline, performance.now());
+    if (!phase || root.classList.contains("game-hud--hidden")) {
+      hideSilentMode();
+      return;
+    }
+    if (silentNode.dataset.phase !== phase.phase) silentNode.dataset.phase = phase.phase;
+    setText(silentLabelNode, SILENT_MODE_PHASE_LABELS[phase.phase]);
+    setText(silentTimeNode, formatSilentModeSeconds(phase.remainingMs));
+    silentFillNode.style.transform = `scaleX(${phase.fraction.toFixed(3)})`;
+    setHidden(silentNode, false);
+  };
+  const showSilentMode = (event: SilentModeHudEvent) => {
+    if (root.classList.contains("game-hud--hidden") || !event?.timeline) return;
+    silentTimeline = event.timeline;
+    silentNode.style.setProperty("--silent-color", event.color);
+    silentNode.title = event.title;
+    silentNode.setAttribute("aria-label", event.title);
+    tickSilentMode();
+    if (silentTimeline && silentTimer === 0) {
+      silentTimer = window.setInterval(tickSilentMode, SILENT_MODE_TICK_MS);
+    }
+  };
+
   /** Mac kapaninca: sayim ve animasyonlar bir sonraki maca tasinmasin. */
   const resetRewardFeel = () => {
     goldCounter.reset();
@@ -2176,6 +2276,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     hideUltimateStamp();
     hideCombo();
     hideTeamStreaks();
+    hideSilentMode();
   };
 
   const formatStatValue = (value: number) => (value >= 10000 ? `${(value / 1000).toFixed(1)}k` : String(Math.round(value)));
@@ -2353,6 +2454,10 @@ export function setupGameHudUi(game: Phaser.Game) {
   game.events.on("game:hud-ultimate", showUltimateStamp);
   game.events.on("game:hud-ultimate-hide", hideUltimateStamp);
   game.events.on("game:hud-team-ultimate", showTeamUltimate);
+  game.events.on("game:hud-team-notice", showTeamNotice);
+  game.events.on("game:hud-assist", showTeamAssist);
+  game.events.on("game:hud-silent-mode", showSilentMode);
+  game.events.on("game:hud-silent-mode-hide", hideSilentMode);
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);

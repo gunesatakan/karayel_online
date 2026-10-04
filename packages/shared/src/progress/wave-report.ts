@@ -2,7 +2,16 @@ import { FINAL_WAVE } from "../balance/index.js";
 import type { DefenseRow, DefenseSummary } from "../defense-insights.js";
 import { getUltimateStampText, type UltimateAimTier } from "../feedback/ultimate.js";
 import type { WaveRecord } from "../run-trace/index.js";
+import {
+  SYNERGY_SHARE_WAVE_FLOOR,
+  SYNERGY_SHARE_WAVE_RATIO_FLOOR,
+  getSynergyShareLabel,
+  pickLargerSynergyShare,
+  roundSynergyShare,
+  type SynergyShareKind
+} from "../synergy/index.js";
 import { formatRunCount, pickBetterUltimate, scoreUltimateMoment, type RunUltimateMoment } from "./run-report.js";
+import { ROLE_TITLE_LABELS, getWaveRoleFacts, pickRoleTitles, type RoleTitleKind } from "./role-titles.js";
 
 /**
  * Dalga karnesi: kart secim perdesinin basligindaki serit.
@@ -50,7 +59,7 @@ export function isCleanStreakMilestone(streak: number) {
   return Number.isInteger(streak) && streak > 0 && streak <= FINAL_WAVE && streak % CLEAN_STREAK_MILESTONE_STEP === 0;
 }
 
-export type WaveReportChipKind = "clean" | "leak" | "kills" | "gold" | "mvp";
+export type WaveReportChipKind = "clean" | "leak" | "kills" | "gold" | "mvp" | "title";
 
 export type WaveReportChip = {
   kind: WaveReportChipKind;
@@ -60,15 +69,19 @@ export type WaveReportChip = {
   label: string;
   /** Temiz seri 5/10/15/20'de: cip bir kez parliyor. */
   milestone?: true;
+  /** Yalnizca unvan cipi: hangi unvan (renk icin). */
+  title?: RoleTitleKind;
 };
 
-export type WaveReportHighlightKind = "ultimate" | "nearMiss" | "assist";
+export type WaveReportHighlightKind = "ultimate" | "synergyShare" | "nearMiss" | "assist";
 
 export type WaveReportHighlight = {
   kind: WaveReportHighlightKind;
   text: string;
   /** Yalnizca sutun ultisi: nisanin derecesi (renk icin). */
   tier?: UltimateAimTier;
+  /** Yalnizca karar payi: hangi kural (renk icin). */
+  share?: SynergyShareKind;
 };
 
 export type WaveReportCard = {
@@ -128,8 +141,15 @@ function pickTopDefenseRow(rows: readonly DefenseRow[]): DefenseRow | undefined 
  *
  * 1. Bu dalgadaki kendi ultinin sonucu ve (sutunda) nisan derecesi. Iskalanan
  *    ulti an degil; raporun "en iyi an"i ile ayni olcu (`scoreUltimateMoment`).
- * 2. "Kıl payı": dalga can goturdu ve nexus %30'un altinda bitirdi.
- * 3. Yalnizca co-op'ta: takip isaretinin takima kattigi hasar
+ * 2. Karar payi: yalnizligin ya da dizilimin bu dalgaya kattigi tahmini hasar
+ *    ("Yalnızlık payı: ~2.110 hasar"). Ultiden sonra, cunku ulti tek bir anin
+ *    sonucu ve derecesi var; kil payindan once, cunku kil payi olani anlatiyor,
+ *    pay ise oyuncunun **neden** dayandigini -- kurulumdaki kararini. Yalnizca
+ *    kendi kulelerinin payi (ozet sahibine gidiyor) ve tabanin ustundeyse
+ *    (`SYNERGY_SHARE_WAVE_FLOOR`, kule hasarinin %15'i); yoksa her dalga ayni
+ *    kucuk sayiyi tekrar ederdi.
+ * 3. "Kıl payı": dalga can goturdu ve nexus %30'un altinda bitirdi.
+ * 4. Yalnizca co-op'ta: takip isaretinin takima kattigi hasar
  *    (`markAssistDamage`). Sunucu Takipci disindaki her kulenin isaretli
  *    dusmana vurusunu sayiyor, oyuncunun kendi kuleleri de dahil. Soloda bu
  *    satir neredeyse her dalga ayni seyi (kendi kulelerinin kendi isaretinden
@@ -155,6 +175,9 @@ export function pickWaveReportHighlight(input: {
     return highlight;
   }
 
+  const share = pickSynergyShareHighlight(input.defense);
+  if (share) return share;
+
   const health = input.health;
   if (input.record && toCount(input.record.h) > 0 && health && health.maxHealth > 0 && health.health > 0) {
     const ratio = health.health / health.maxHealth;
@@ -171,6 +194,27 @@ export function pickWaveReportHighlight(input: {
     return { kind: "assist", text: `Takip işaretin takıma +${formatRunCount(assist)} hasar kattı` };
   }
   return undefined;
+}
+
+/**
+ * Karar payi satiri; tabanin altindaysa yok.
+ *
+ * Oransal taban oyuncunun kendi kule hasarina gore: ozetin satirlari zaten
+ * yalnizca onun kuleleri. Satir yoksa (eski sunucu) yalnizca mutlak taban.
+ */
+function pickSynergyShareHighlight(defense: DefenseSummary | undefined): WaveReportHighlight | undefined {
+  const best = pickLargerSynergyShare(defense);
+  if (!best) return undefined;
+  const amount = roundSynergyShare(best.amount);
+  if (amount < SYNERGY_SHARE_WAVE_FLOOR) return undefined;
+  const towerDamage = (defense?.rows ?? []).reduce((sum, row) => sum + toCount(row?.damage), 0);
+  if (towerDamage > 0 && best.amount < towerDamage * SYNERGY_SHARE_WAVE_RATIO_FLOOR) return undefined;
+  return { kind: "synergyShare", share: best.kind, text: formatSynergyShareText(best.kind, amount) };
+}
+
+/** "Yalnızlık payı: ~2.110 hasar": tahmin oldugu icin "~" ve onluga yuvarli. */
+export function formatSynergyShareText(kind: SynergyShareKind, amount: number) {
+  return `${getSynergyShareLabel(kind)}: ~${formatRunCount(roundSynergyShare(amount))} hasar`;
 }
 
 /**
@@ -231,10 +275,21 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
     chips.push({ kind: "gold", text: `◆ +${formatRunCount(gold)}`, label: `+${formatRunCount(gold)} altın` });
   }
 
-  const top = defense ? pickTopDefenseRow(defense.rows ?? []) : undefined;
+  // Co-op rol unvani: yalnizca senin unvanin. Takim arkadasinin unvani burada
+  // yok -- karne senin; herkesinki kosu raporunda yan yana.
+  //
+  // Unvan varsa MVP cipinin yerini aliyor: ikisi birden seridi 375 px'te
+  // ucuncu satira itiyordu. Unvan o dalgadaki rolunu anlatiyor, en iyi kulen
+  // savunma ozetinde duruyor.
+  const title = input.coop && record ? pickWaveRoleTitle(record, input.localSlot) : undefined;
+  const top = defense && !title ? pickTopDefenseRow(defense.rows ?? []) : undefined;
   if (top) {
     const damage = formatRunCount(top.damage);
     chips.push({ kind: "mvp", text: `MVP ${top.name} ${damage}`, label: `en iyi kulen ${top.name}, ${damage} hasar` });
+  }
+  if (title) {
+    const name = ROLE_TITLE_LABELS[title];
+    chips.push({ kind: "title", title, text: `Unvanın: ${name}`, label: `bu dalgadaki unvanın ${name}` });
   }
 
   if (chips.length === 0) return undefined;
@@ -254,6 +309,30 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
 }
 
 /**
+ * Karnenin co-op olgularindan yerel oyuncunun unvani; unvani yoksa ya da karne
+ * solo ise (olgu dizisi yok) yok. Odadaki yuvalar oldurme dizisinin boyundan:
+ * sunucu hic oldurmeyen oyuncuyu da 0 olarak yaziyor.
+ */
+export function pickWaveRoleTitle(record: WaveRecord, localSlot: number): RoleTitleKind | undefined {
+  if (!Number.isInteger(localSlot) || localSlot < 0) return undefined;
+  const slots = Array.from({ length: Array.isArray(record.p) ? record.p.length : 0 }, (_, index) => index);
+  if (slots.length < 2 || localSlot >= slots.length) return undefined;
+  return pickRoleTitles(getWaveRoleFacts(record, slots)).get(localSlot);
+}
+
+/** Telden gelen yuva dizisi: en fazla 16 yuva, sayi olmayan 0. Bos ya da hepsi 0 ise yok. */
+function sanitizeSlotCounts(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const counts = value.slice(0, 16).map(toCount);
+  return counts.some((count) => count > 0) ? counts : undefined;
+}
+
+function isSameSlotCounts(left: readonly number[] | undefined, right: readonly number[] | undefined) {
+  if (!left || !right) return left === right;
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/**
  * Telden gelen karneyi dogrular ve kopyalar; bozuk karne yok sayiliyor.
  * Sunucunun kendi yuku ama istemci ona guvenip dizi indeksliyor.
  */
@@ -269,13 +348,19 @@ export function sanitizeWaveRecord(raw: unknown): WaveRecord | undefined {
   if (toCount(source.h) > 0) record.h = toCount(source.h);
   if (source.m === "all" || source.m === "mixed") record.m = source.m;
   if (source.d === 1) record.d = 1;
+  for (const key of ["n", "z", "r", "t"] as const) {
+    const counts = sanitizeSlotCounts(source[key]);
+    if (counts) record[key] = counts;
+  }
   return record;
 }
 
 function isSameWaveRecord(left: WaveRecord, right: WaveRecord) {
   return left.w === right.w && left.l === right.l && left.k === right.k && left.c === right.c
     && left.a === right.a && left.s === right.s && left.h === right.h && left.m === right.m && left.d === right.d
-    && left.p.length === right.p.length && left.p.every((value, index) => value === right.p[index]);
+    && left.p.length === right.p.length && left.p.every((value, index) => value === right.p[index])
+    && isSameSlotCounts(left.n, right.n) && isSameSlotCounts(left.z, right.z)
+    && isSameSlotCounts(left.r, right.r) && isSameSlotCounts(left.t, right.t);
 }
 
 /** Dalga temizlendigi an istemcinin gordugu: damganin sayilari ve nexus cani. */

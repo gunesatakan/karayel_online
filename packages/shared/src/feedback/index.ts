@@ -14,7 +14,8 @@
  * Oncelikler:
  * - P0: kendi kademe atlaman, ulti sonucu, serin.
  * - P1: kendi kritigin, son vurusun, dalga temizleme, kart acilisi, ulti hazir,
- *   dokunusunun sunucu onayi (alim, takma, onarim, gelisim).
+ *   dokunusunun sunucu onayi (alim, takma, onarim, gelisim), Sessiz Mod ve
+ *   kulene baglanan / olgunlasan Sunucu bagi, sonucu degistiren kombo damgasi.
  * - P2: kendi vurusun, altinin, seviyen, yerlestirmen.
  * - P3: takim arkadasinin her olayi.
  *
@@ -45,7 +46,13 @@ export type FeedbackKind =
   | "jackpot"
   | "reportWin"
   | "reportLoss"
-  | "reportRecord";
+  | "reportRecord"
+  | "synergy"
+  | "silentMode"
+  | "linkJoined"
+  | "linkMatured"
+  | "combo"
+  | "assist";
 
 export type FeedbackPriority = 0 | 1 | 2 | 3;
 
@@ -130,7 +137,37 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // kez calmasin. Sarsinti ve titresim yok -- ekran zaten durdu.
   reportWin: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 1100, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
   reportLoss: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 900, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
-  reportRecord: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 700, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 }
+  reportRecord: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 700, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Yerlesim sinerjisi damgasi ("Yalnız ×2,25", "Dizilim bozuldu"): kurulum,
+  // satis ya da yukseltmeden sonra bir kez. P2 ve sessiz: yerlestirmenin tok
+  // sesi zaten caliyor, ikinci bir ses ayni dokunusu iki kez anlatirdi. Takim
+  // arkadasininki soluk; etiket butcesi kalabalik bir kurulum aninda dusuruyor.
+  synergy: { ownPriority: 2, channel: "label", visualMs: 1300, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Sessiz Mod: butun kuleleri (herkesinkini) susturan beceri. Bildirim HUD
+  // yigininda, dunyada degil; etiket butcesine girmiyor. Takim arkadasinda
+  // da gorunur ve kisik bir tini calar -- haberin kendisi bu, arkadasin
+  // kulelerinin neden sustugunu bilmesi gerek. Arasi 1.5 sn: ust uste gelen
+  // ikinci yayin (uzatma, yeniden baglanma) ayni haberi tekrar vermesin.
+  silentMode: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 1500, teammateVisual: true, soundMs: 420, soundGapMs: 1500, teammateSound: true, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Takim arkadasinin Sunucusu kulene baglandi: yalnizca kulenin sahibine
+  // gidiyor, yani hep "senin". Bildirim yiginda, kulede nabiz. Arasi uzun:
+  // bag dokunusla acilip kapaniyor, ac-kapa ekrani bildirime bogmasin.
+  linkJoined: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 2000, teammateVisual: false, soundMs: 320, soundGapMs: 2000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Bag olgunlasti (5 / 10 dalga): kulenin ustunde kisa bir etiket. Dalga
+  // sonunda birkac bag ayni anda olgunlasabiliyor; etiket butcesi ve tek
+  // tini (hiz siniri) onlari tek ana topluyor.
+  linkMatured: { ownPriority: 1, channel: "label", visualMs: 1600, visualGapMs: 0, teammateVisual: true, soundMs: 380, soundGapMs: 1000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Kombo damgasi ("İŞARET → OVERDRIVE", "Tarama: 3 öldü", "ŞANS PENCERESİ
+  // 10 sn"): yalnizca sonucu degistiren uc etkilesim. Hiz siniri ve "ekranda
+  // en fazla iki" kurali `ComboStampGate`te (tur + sahip basina 4 sn); burasi
+  // etiket butcesi. Sessiz: supurmenin ve sans zarinin kendi sesi/isigi var,
+  // damga onlarin ne demek oldugunu yaziyor. Takim arkadasininki soluk.
+  combo: { ownPriority: 1, channel: "label", visualMs: 1600, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Co-op asisti ("Atakan işaretledi → Zeynep bitirdi"): yalnizca iki tarafin
+  // ekraninda, HUD yigininda soluk bir satir. P2, sessiz, sarsintisiz: oldurmenin
+  // kendi sesi zaten caldi, bu onun dipnotu. Cift basina 5 sn siniri
+  // `AssistToastGate`te; takim arkadasinin asisti hic gorsel acmiyor.
+  assist: { ownPriority: 2, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 }
 };
 
 export const FEEDBACK_LIMITS = {
@@ -448,12 +485,21 @@ export class FeedbackGovernor {
     if (!own && !rule.teammateVisual) {
       return { show: false, recycle: false, merge: false };
     }
+    const key = own ? kind : `${kind}:team`;
+    const last = this.lastVisual.get(key);
     if (rule.channel === "none") {
+      // Butcesiz turler yine de kendi araligina uyuyor (bildirim yigini gibi):
+      // araligi 0 olanlar (oldurme, kart) eskisi gibi hep gecer, kayit da tutulmaz.
+      if (rule.visualGapMs <= 0) {
+        return { show: true, recycle: false, merge: false };
+      }
+      if (last && now - last.at < rule.visualGapMs) {
+        return { show: false, recycle: false, merge: true };
+      }
+      this.lastVisual.set(key, { at: now, x: input.x, y: input.y });
       return { show: true, recycle: false, merge: false };
     }
 
-    const key = own ? kind : `${kind}:team`;
-    const last = this.lastVisual.get(key);
     if (last && now - last.at < FEEDBACK_LIMITS.mergeWindowMs && isNear(last, input)) {
       return { show: false, recycle: false, merge: true };
     }

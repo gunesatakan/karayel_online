@@ -4,6 +4,14 @@ import { performance } from "node:perf_hooks";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
 import {
+  ComboStampThrottle,
+  DEBUG_SWEEP_STAMP_MIN_KILLS,
+  getAtakanIsolationShare,
+  getZeynepFormationShare,
+  type ComboStampKind,
+  type ComboStampMessage
+} from "@karayel/shared";
+import {
   characters,
   DAMAGE_EVENT_NO_OWNER,
   DEFAULT_MAP_SCALE,
@@ -70,6 +78,14 @@ import {
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
   ATAKAN_ISOLATION_MULTIPLIER,
+  collectZeynepSynthesisGroup,
+  findIsolationBlockers,
+  getZeynepFormationDamageMultiplier,
+  getZeynepFormationFireIntervalMultiplier,
+  isStructureIsolated,
+  isValidZeynepFormationGroup,
+  receivesAtakanIsolationBonus,
+  resolveZeynepFormations,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
@@ -120,6 +136,13 @@ import {
   getBestUltimateColumnHits,
   getUltimateResultKind,
   type UltimateCastMessage,
+  SERVER_LINK_NOTICE_COOLDOWN_MS,
+  SILENT_MODE_HASTE_GAME_MS,
+  SILENT_MODE_SILENCE_GAME_MS,
+  getServerLinkMaturity,
+  type ServerLinkJoinedMessage,
+  type ServerLinkMaturedMessage,
+  type SilentModeMessage,
   type UltimateResultKind,
   type UltimateResultMessage,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
@@ -213,6 +236,10 @@ import {
   DEEP_FREEZE_COOLDOWN_MS,
   DEEP_FREEZE_DURATION_MS,
   DEEP_FREEZE_SPEED_THRESHOLD,
+  encodeKillAssists,
+  resolveKillAssists,
+  type KillAssist,
+  type KillAssistCandidate,
   isStatusEffectActive,
   isTowerAligned,
   isTowerPerformanceIdle,
@@ -560,14 +587,8 @@ const ZEYNEP_SYNTHESIS_BURN_TICK_MS = 333;
 const ZEYNEP_SYNTHESIS_RAY_SPEED = 930;
 const ZEYNEP_SYNTHESIS_RAY_LENGTH = TOWER_GRID_SIZE * ZEYNEP_RAY_SYNTHESIS_LENGTH_CELLS;
 const ZEYNEP_SYNTHESIS_RAY_TRAIL_TTL_MS = 140;
-// Dizilim oyundaki en zor yerlesim sarti: tam ikili ya da tam ucgen ucluk
-// kurulacak, gruba dorduncu kule girerse buff bozulacak. Karsiligi +%15 ve
-// +%32 idi, yani tek bir kule seviyesinden azdi; oyunun en derin karar agaci
-// en az odullendiren mekanikti. Ucluk artik neredeyse iki katina cikariyor.
-const ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER = 1.2;
-const ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER = 1.45;
-const ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER = 0.88;
-const ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER = 0.76;
+// Dizilim carpanlari ve kurali paylasilan pakette (`synergy`): istemci
+// yerlestirme onizlemesinde ayni hesabi yapiyor, iki kopya ayrisirdi.
 const KIN_WAVE_ANGLE_RADIANS = degreesToRadians(60);
 const KIN_SYNTHESIS_WAVE_ANGLE_RADIANS = degreesToRadians(90);
 const KIN_WAVE_SPEED = 104;
@@ -875,6 +896,11 @@ type EnemyModel = {
    */
   coolantSlowUntil: number;
   coolantSlowMultiplier: number;
+  /**
+   * Sogutma kanalini son kuran kulenin sahibi: co-op asisti icin
+   * (`resolveEnemyKillAssists`). Yalnizca taninma; yavaslatmayi etkilemiyor.
+   */
+  coolantSlowOwnerId?: string;
   auraSlowMultiplier: number;
   trackingSourceTowerId?: string;
   kinSlowUntil: number;
@@ -1417,6 +1443,29 @@ export class MatchRoom extends Room<MatchState> {
   private defenseRows = new Map<string, DefenseRow>();
   private lastDefenseSummary = new Map<string, DefenseSummary>();
   /**
+   * Bu dalgada sahip basina karar payi: yalnizligin ve dizilimin kattigi
+   * tahmini hasar (`estimateSynergyShare`). Savunma ozetiyle ayni dalgaya
+   * bagli ve onunla birlikte, dalgada bir kez gidiyor; tick'te veri yok.
+   */
+  private synergyShareWave = 0;
+  private readonly synergyShares = new Map<string, { isolation: number; formation: number }>();
+  /**
+   * Karar payi icin kule -> yalniz mi, yalnizca `update` suresince. Payin her
+   * vurusta butun kuleleri taramasini onluyor. Yalnizlik yalnizca kule
+   * yerlesimine bagli ve yerlesim (kur, sat, tasi) istemci mesajlariyla, yani
+   * tick'ler arasinda degisiyor: tick icinde onbellek her zaman dogru. Tick
+   * disindaki cagrilar (testler, mesajlar) onbellegi kullanmiyor.
+   */
+  private synergyIsolationCache?: Map<string, boolean>;
+  /**
+   * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
+   * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
+   * isaretli oldurmeyle baslayan supurmede aciliyor.
+   */
+  private readonly debugSweepRuns = new Map<string, { ownerId: string; kills: number }>();
+  /** Kombo damgalarinin tur + sahip basina hiz siniri (4 sn). */
+  private readonly comboStampThrottle = new ComboStampThrottle();
+  /**
    * Kosu izi: sizinti, temiz dalga serisi, oyuncu basina oldurme ve hasar,
    * MVP kule, en yuksek seri, ilk onuncu seviye.
    *
@@ -1442,8 +1491,26 @@ export class MatchRoom extends Room<MatchState> {
   private projectileGuidanceY = GAME_WORLD_HEIGHT / 2;
   private silentModeUntil = 0;
   private damageHasteUntil = 0;
+  /**
+   * Son Sessiz Mod'un atildigi an ve atan. Yalnizca bildirim icin: kural
+   * `silentModeUntil` / `damageHasteUntil`. Yeniden baglanan istemci geri
+   * sayimi bunlardan yeniden kuruyor.
+   */
+  private silentModeCastAt = 0;
+  private silentModeCasterId = "";
+  /** Sunucu-kule cifti basina son "baglandi" bildirimi; ac-kapa bildirim yagdirmasin. */
+  private readonly serverLinkNoticeAt = new Map<string, number>();
   private zeynepHasteUntil = 0;
   private zeynepHasteMultiplier = 1;
+  /*
+   * Acik komutu veren oyuncu (hiz / menzil / yavaslatma). Komut butun sahaya
+   * isliyor ve kimin verdigi oyunda hicbir seyi degistirmiyor; yalnizca
+   * co-op asistinin "kim komut verdi" sorusu icin. Daha guclu komut eskisinin
+   * yerine gecince sahibi de degisiyor, yalnizca uzatan komut sahibini birakiyor.
+   */
+  private zeynepHasteOwnerId = "";
+  private zeynepRangeOwnerId = "";
+  private zeynepSlowOwnerId = "";
   private zeynepHasteTier: ZeynepCommandTier = "small";
   private zeynepRangeUntil = 0;
   private zeynepRangeMultiplier = 1;
@@ -1914,6 +1981,7 @@ export class MatchRoom extends Room<MatchState> {
     });
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
     this.onMessage("run:sync", (client) => this.sendRunState(client));
+    this.onMessage("silent:sync", (client) => this.sendSilentModeState(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
@@ -2069,6 +2137,24 @@ export class MatchRoom extends Room<MatchState> {
         drone.ownerId = nextSessionId;
       }
     }
+    // Suren Sessiz Mod'un atani yeni oturumla anilsin: istemci adi ve "senin
+    // miydi" sorusunu bu kimlikten okuyor.
+    if (this.silentModeCasterId === previousSessionId) {
+      this.silentModeCasterId = nextSessionId;
+    }
+    // Acik Zeynep komutunun asisti yeni oturumun yuvasina yazilsin.
+    if (this.zeynepHasteOwnerId === previousSessionId) this.zeynepHasteOwnerId = nextSessionId;
+    if (this.zeynepRangeOwnerId === previousSessionId) this.zeynepRangeOwnerId = nextSessionId;
+    if (this.zeynepSlowOwnerId === previousSessionId) this.zeynepSlowOwnerId = nextSessionId;
+    // Dusmandaki durumlarin ve soguma yavaslatmasinin kaynagi yeni oturuma:
+    // yoksa yeniden baglanan oyuncunun isaret / yavaslatma / donma asisti
+    // eski kimlige yaziliyor ve yuvasi bulunamadigi icin kayboluyordu.
+    for (const enemy of this.enemies.values()) {
+      for (const state of Object.values(enemy.statusEffects)) {
+        if (state?.sourceOwnerId === previousSessionId) state.sourceOwnerId = nextSessionId;
+      }
+      if (enemy.coolantSlowOwnerId === previousSessionId) enemy.coolantSlowOwnerId = nextSessionId;
+    }
     // Havadaki drone'larin karnesi yeni oturuma gitmeli; eskisine giden rapor kaybolurdu.
     for (const report of this.openUltimateReports) {
       if (report.ownerId === previousSessionId) {
@@ -2083,6 +2169,9 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.pendingCardChoices, previousSessionId, nextSessionId);
     this.transferMapKey(this.lastDefenseSummary, previousSessionId, nextSessionId);
     for (const row of this.defenseRows.values()) if (row.ownerId === previousSessionId) row.ownerId = nextSessionId;
+    // Dalganin karar payi da yeni oturumun ozetine gitsin.
+    this.transferMapKey(this.synergyShares, previousSessionId, nextSessionId);
+    for (const run of this.debugSweepRuns.values()) if (run.ownerId === previousSessionId) run.ownerId = nextSessionId;
     this.transferMapKey(this.shopPlacementCharges, previousSessionId, nextSessionId);
   }
 
@@ -2114,6 +2203,7 @@ export class MatchRoom extends Room<MatchState> {
     this.sendRunState(client);
     this.sendPendingCardChoices(client);
     this.sendWorkerDevelopmentState(client);
+    this.sendSilentModeState(client);
     const pending = this.state.players.get(client.sessionId)?.hiredWorkers?.find((worker) => {
       if (!worker.role) return true;
       // Rol belirtilerek alınan eski API işçileri per-worker seçim akışını
@@ -2384,6 +2474,7 @@ export class MatchRoom extends Room<MatchState> {
     const gameDeltaTime = deltaTime * GAME_SPEED_MULTIPLIER;
     const seconds = gameDeltaTime / 1000;
     const frameStart = performance.now();
+    this.synergyIsolationCache = new Map();
     const timings = {
       spawnMs: 0,
       towersMs: 0,
@@ -2451,6 +2542,7 @@ export class MatchRoom extends Room<MatchState> {
         snapshot = undefined;
       }
     }
+    this.synergyIsolationCache = undefined;
     const tickMs = performance.now() - frameStart;
 
     this.recordPerfFrame({
@@ -3440,6 +3532,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateTowers(deltaTime: number) {
     const now = Date.now();
+    this.settleDebugSweepRuns(now);
     this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
     for (const tower of this.towers.values()) {
@@ -4018,31 +4111,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getZeynepFormationGroup(tower: TowerModel) {
-    const group = new Map<string, TowerModel>([[tower.id, tower]]);
-    const queue = [tower];
-    const gridSize = getMapGridSize(this.activeMap);
-
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) {
-        continue;
-      }
-
-      for (const candidate of this.towers.values()) {
-        if (group.has(candidate.id) || !canJoinZeynepFormation(candidate)) {
-          continue;
-        }
-
-        if (!areZeynepFormationNeighbors(current, candidate, gridSize)) {
-          continue;
-        }
-
-        group.set(candidate.id, candidate);
-        queue.push(candidate);
-      }
-    }
-
-    return Array.from(group.values());
+    // Kural paylasilan pakette: istemci onizlemesi ayni zinciri kuruyor.
+    return collectZeynepSynthesisGroup(tower, this.towers.values(), getMapGridSize(this.activeMap));
   }
 
   private fireZeynepSynthesis(tower: TowerModel, target: EnemyModel) {
@@ -4461,6 +4531,7 @@ export class MatchRoom extends Room<MatchState> {
         this.triggerMelisRageWave(tower);
       } else if (effect === "marked-overdrive" && context.target) {
         this.startDebugLaserOverdrive(tower, context.target, context.now ?? Date.now());
+        this.noteMarkedOverdriveStarted(tower, context.now ?? Date.now());
       }
     }
     return result.effects;
@@ -6577,7 +6648,11 @@ export class MatchRoom extends Room<MatchState> {
       target.heatLocked = false;
       target.temperature = Math.max(0, target.temperature - TOWER_COOLING_PER_SECOND * 0.3 * seconds);
     }
-    if (!this.setupPhase) this.getDefenseRow(target).repaired += target.hp - previousHp;
+    if (!this.setupPhase) {
+      this.getDefenseRow(target).repaired += target.hp - previousHp;
+      // Tamirci unvani onarani sayiyor: iscinin sahibi, kulenin sahibi degil.
+      this.runLedger.recordRepair(this.getPlayerSlot(worker.ownerId), target.hp - previousHp);
+    }
     // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
     target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
     // Kalibrasyon Turu dokunmayla veriliyor ve dalga numarasiyla suruyor.
@@ -7321,7 +7396,13 @@ export class MatchRoom extends Room<MatchState> {
         .sort((left, right) => right.damage - left.damage)
         .map((row) => ({ ...row, damage: Math.round(row.damage), repaired: Math.round(row.repaired), markAssistDamage: Math.round(row.markAssistDamage), auraEnemySeconds: Math.round(row.auraEnemySeconds * 10) / 10,
           seconds: Object.fromEntries(Object.entries(row.seconds).map(([key, value]) => [key, Math.round(value * 10) / 10])) as DefenseRow["seconds"] }));
-      const summary = { wave: this.wave, rows };
+      const summary: DefenseSummary = { wave: this.wave, rows };
+      // Karar payi: yalnizca bu dalganin ve yalnizca bu sahibin kulelerinin.
+      const shares = this.synergyShareWave === this.wave ? this.synergyShares.get(ownerId) : undefined;
+      const isolationShare = Math.round(shares?.isolation ?? 0);
+      if (isolationShare > 0) summary.isolationShare = isolationShare;
+      const formationShare = Math.round(shares?.formation ?? 0);
+      if (formationShare > 0) summary.formationShare = formationShare;
       this.lastDefenseSummary.set(ownerId, summary);
       this.clients.find((client) => client.sessionId === ownerId)?.send("defense:summary", summary);
     }
@@ -7338,13 +7419,8 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.energy < tower.maxEnergy) reasons.push(this.getDeliveryReason(tower, "energy"));
       if (tower.ammo < tower.maxAmmo && !tower.definition.resourceProvider) reasons.push(this.getDeliveryReason(tower, "ammo"));
     }
-    if (tower.characterId === "warrior" && countsAsTower(tower.definition) && tower.definition.id !== "warrior-2") {
-      const cell = worldToGrid(tower.x, tower.y, this.activeMap);
-      const blockers = [...this.towers.values()].filter((other) => {
-        if (other.id === tower.id || !countsAsTower(other.definition)) return false;
-        const point = worldToGrid(other.x, other.y, this.activeMap);
-        return Math.abs(point.col - cell.col) <= 1 && Math.abs(point.row - cell.row) <= 1;
-      });
+    if (receivesAtakanIsolationBonus(tower)) {
+      const blockers = findIsolationBlockers(tower, this.towers.values(), this.activeMap);
       reasons.push(blockers.length ? `Yalnızlık kapalı: ${blockers.map((other) => other.definition.name).join(", ")}`
         : `Yalnızlık açık: hasar ×${ATAKAN_ISOLATION_MULTIPLIER}`);
     }
@@ -8276,6 +8352,58 @@ export class MatchRoom extends Room<MatchState> {
     serverTower.linkedTowerIds.push(targetTower.id);
     serverTower.linkedTowerWaveAges[targetTower.id] = serverTower.linkedTowerWaveAges[targetTower.id] ?? 0;
     targetTower.rangeMemoryEnemyIds = [];
+    this.notifyServerLinkJoined(serverTower, targetTower);
+  }
+
+  /**
+   * Takim arkadasinin kulesine bag kuruldu: kulenin sahibine tek satir.
+   *
+   * Bag o kuleye bonus veriyor ama sahibi bunu hic gormuyordu. Kendi kulene
+   * kurdugun bag icin bildirim yok (dokunus zaten senin). Ayni cift icin
+   * kisa surede ikinci bildirim yok: bag dokunusla ac-kapa yapilabiliyor.
+   */
+  private notifyServerLinkJoined(serverTower: TowerModel, targetTower: TowerModel) {
+    if (targetTower.ownerId === serverTower.ownerId) {
+      return;
+    }
+    const recipient = this.clients.find((candidate) => candidate.sessionId === targetTower.ownerId);
+    if (!recipient) {
+      return;
+    }
+    const now = Date.now();
+    const key = `${serverTower.id}>${targetTower.id}`;
+    const last = this.serverLinkNoticeAt.get(key);
+    if (last !== undefined && now - last < SERVER_LINK_NOTICE_COOLDOWN_MS) {
+      return;
+    }
+    this.serverLinkNoticeAt.set(key, now);
+    const message: ServerLinkJoinedMessage = {
+      serverTowerId: serverTower.id,
+      targetTowerId: targetTower.id,
+      serverOwnerId: serverTower.ownerId
+    };
+    recipient.send("link:joined", message);
+  }
+
+  /**
+   * Bag 5 ya da 10 dalgaya ulasti: iki sahibe de tek mesaj (ayni kisiyse bir
+   * kez). Bonus o dalgada aciliyor; bunu soyleyen bir an yoktu.
+   */
+  private notifyServerLinkMatured(serverTower: TowerModel, targetTower: TowerModel, previousAge: number, nextAge: number) {
+    const waves = getServerLinkMaturity(previousAge, nextAge);
+    if (!waves) {
+      return;
+    }
+    const message: ServerLinkMaturedMessage = {
+      serverTowerId: serverTower.id,
+      targetTowerId: targetTower.id,
+      serverOwnerId: serverTower.ownerId,
+      targetOwnerId: targetTower.ownerId,
+      waves
+    };
+    for (const ownerId of new Set([serverTower.ownerId, targetTower.ownerId])) {
+      this.clients.find((candidate) => candidate.sessionId === ownerId)?.send("link:matured", message);
+    }
   }
 
   private canLinkTower(sourceTower: TowerModel, targetTower: TowerModel) {
@@ -8309,7 +8437,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "zeynep") {
-      const didUseCommand = this.useZeynepCommand(player, slot, message);
+      const didUseCommand = this.useZeynepCommand(player, slot, message, client.sessionId);
       if (!didUseCommand) {
         this.setSkillCooldown(player, slot, 0);
       }
@@ -8372,12 +8500,42 @@ export class MatchRoom extends Room<MatchState> {
       return this.refactorTower(client, message);
     }
 
-    this.silentModeUntil = Math.max(this.silentModeUntil, now + scaleGameDuration(5000));
-    this.damageHasteUntil = Math.max(this.damageHasteUntil, now + scaleGameDuration(10000));
+    this.silentModeUntil = Math.max(this.silentModeUntil, now + scaleGameDuration(SILENT_MODE_SILENCE_GAME_MS));
+    this.damageHasteUntil = Math.max(this.damageHasteUntil, now + scaleGameDuration(SILENT_MODE_HASTE_GAME_MS));
+    // Sessizlik herkesin kulesini durduruyor; yalnizca atan biliyordu ve takim
+    // arkadasi kulelerinin bozuldugunu saniyordu. Tek seferlik yayin: geri
+    // sayimi her istemci kendi saatiyle yurutuyor, tick'te veri yok.
+    this.silentModeCastAt = now;
+    this.silentModeCasterId = client.sessionId;
+    this.broadcast("silent:mode", this.createSilentModeMessage(now));
     return true;
   }
 
-  private useZeynepCommand(player: Player, slot: number, message: UseSkillMessage) {
+  private createSilentModeMessage(now: number): SilentModeMessage {
+    return {
+      casterId: this.silentModeCasterId,
+      castAt: this.silentModeCastAt,
+      silentUntil: this.silentModeUntil,
+      burstUntil: Math.max(this.silentModeUntil, this.damageHasteUntil),
+      serverTime: now
+    };
+  }
+
+  /**
+   * Suren Sessiz Mod'u tek istemciye yeniden yollar: yeniden baglanma ve
+   * istemcinin kendi istegi (`silent:sync`). Ikincisi gerekli, cunku sayfasi
+   * yeniden acilan istemci dinleyicilerini kurmadan gelen mesaji kaybediyor
+   * (`card:sync` ile ayni sebep). Bittiyse hicbir sey gitmiyor.
+   */
+  private sendSilentModeState(client: Pick<Client, "send">) {
+    const now = Date.now();
+    if (this.silentModeCastAt <= 0 || Math.max(this.silentModeUntil, this.damageHasteUntil) <= now) {
+      return;
+    }
+    client.send("silent:mode", this.createSilentModeMessage(now));
+  }
+
+  private useZeynepCommand(player: Player, slot: number, message: UseSkillMessage, ownerId = "") {
     const now = Date.now();
     const commandType = getZeynepCommandType(slot);
     const isFinisher = player.authorityChain >= 2;
@@ -8388,7 +8546,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     player.reputation = Math.max(0, player.reputation - cost);
-    this.applyZeynepCommand(commandType, tier, isFinisher, player.authorityQuality, now);
+    this.applyZeynepCommand(commandType, tier, isFinisher, player.authorityQuality, now, ownerId);
 
     if (isFinisher) {
       player.authorityQuality = Math.min(ZEYNEP_MAX_AUTHORITY_QUALITY, player.authorityQuality + 1);
@@ -8400,17 +8558,17 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number, now: number) {
+  private applyZeynepCommand(commandType: ZeynepCommandType, tier: ZeynepCommandTier, chained: boolean, authorityQuality: number, now: number, ownerId = "") {
     const profile = getZeynepCommandProfile(commandType, tier, chained, authorityQuality);
     if (commandType === "haste") {
-      this.applyZeynepHaste(profile.durationMs, profile.multiplier, tier, now);
+      this.applyZeynepHaste(profile.durationMs, profile.multiplier, tier, now, ownerId);
       return;
     }
     if (commandType === "range") {
-      this.applyZeynepRange(profile.durationMs, profile.multiplier, tier, now);
+      this.applyZeynepRange(profile.durationMs, profile.multiplier, tier, now, ownerId);
       return;
     }
-    this.applyZeynepSlow(profile.durationMs, profile.multiplier, tier, now);
+    this.applyZeynepSlow(profile.durationMs, profile.multiplier, tier, now, ownerId);
   }
 
   private useMelisSkill(client: Client, player: Player, slot: number, message: UseSkillMessage) {
@@ -8499,34 +8657,37 @@ export class MatchRoom extends Room<MatchState> {
     return lockedCount > 0;
   }
 
-  private applyZeynepHaste(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
+  private applyZeynepHaste(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number, ownerId = "") {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepHasteUntil <= now || multiplier >= this.zeynepHasteMultiplier) {
       this.zeynepHasteUntil = until;
       this.zeynepHasteMultiplier = multiplier;
       this.zeynepHasteTier = tier;
+      this.zeynepHasteOwnerId = ownerId;
     } else {
       this.zeynepHasteUntil = Math.max(this.zeynepHasteUntil, until);
     }
   }
 
-  private applyZeynepRange(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
+  private applyZeynepRange(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number, ownerId = "") {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepRangeUntil <= now || multiplier >= this.zeynepRangeMultiplier) {
       this.zeynepRangeUntil = until;
       this.zeynepRangeMultiplier = multiplier;
       this.zeynepRangeTier = tier;
+      this.zeynepRangeOwnerId = ownerId;
     } else {
       this.zeynepRangeUntil = Math.max(this.zeynepRangeUntil, until);
     }
   }
 
-  private applyZeynepSlow(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number) {
+  private applyZeynepSlow(durationMs: number, multiplier: number, tier: ZeynepCommandTier, now: number, ownerId = "") {
     const until = now + scaleGameDuration(durationMs);
     if (this.zeynepSlowUntil <= now || multiplier <= this.zeynepSlowMultiplier) {
       this.zeynepSlowUntil = until;
       this.zeynepSlowMultiplier = multiplier;
       this.zeynepSlowTier = tier;
+      this.zeynepSlowOwnerId = ownerId;
     } else {
       this.zeynepSlowUntil = Math.max(this.zeynepSlowUntil, until);
     }
@@ -8945,59 +9106,23 @@ export class MatchRoom extends Room<MatchState> {
       .sort((a, b) => distanceSq(x, y, a.x, a.y) - distanceSq(x, y, b.x, b.y))[0];
   }
 
+  /**
+   * Dizilim gruplarini yeniden cozer ve kulelere yazar.
+   *
+   * Kural paylasilan pakette (`resolveZeynepFormations`): istemci yerlestirme
+   * onizlemesinde ayni fonksiyonu cagiriyor, iki kopya ayrisamasin diye.
+   * Gruba yalnizca dizilime katilabilen Zeynep yapilari giriyor; Abarti ve
+   * zeynep-7 orada eleniyor, burada ayrica ad yazmaya gerek yok.
+   */
   private refreshZeynepFormations() {
-    const allZeynepTowers = Array.from(this.towers.values()).filter((tower) => {
-      return tower.characterId === "zeynep" && canJoinZeynepFormation(tower);
-    });
-    for (const tower of allZeynepTowers) {
-      tower.zeynepFormationSize = 0;
-      tower.zeynepFormationLevel = 0;
-    }
-
-    const towers = allZeynepTowers;
-    const gridSize = getMapGridSize(this.activeMap);
-    const visited = new Set<string>();
-    for (const tower of towers) {
-      if (visited.has(tower.id)) {
-        continue;
-      }
-
-      const group: TowerModel[] = [];
-      const queue = [tower];
-      visited.add(tower.id);
-
-      while (queue.length > 0) {
-        const current = queue.shift();
-        if (!current) {
-          continue;
-        }
-
-        group.push(current);
-        for (const candidate of towers) {
-          if (visited.has(candidate.id)) {
-            continue;
-          }
-          if (!areZeynepFormationNeighbors(current, candidate, gridSize)) {
-            continue;
-          }
-
-          visited.add(candidate.id);
-          queue.push(candidate);
-        }
-      }
-
-      const isValidFormation = isValidZeynepFormationGroup(group, gridSize);
-      const formationSize = isValidFormation ? group.length : 0;
-      const formationLevel = isValidFormation ? Math.min(...group.map((member) => member.level)) : 0;
-      for (const member of group) {
-        if (member.characterId !== "zeynep" || member.definition.id === "zeynep-7" || member.definition.id === "zeynep-8") {
-          continue;
-        }
-        member.zeynepFormationSize = formationSize;
-        member.zeynepFormationLevel = formationLevel;
-        member.formationReason = isValidFormation
-          ? `Dizilim ${formationSize}: en düşük seviye ${formationLevel} (${group.filter((entry) => entry.level === formationLevel).map((entry) => entry.definition.name).join(", ")})`
-          : `Dizilim yok: ${group.length} bağlı kule; geçerli ikili veya üçlü yerleşim gerekiyor`;
+    const groups = resolveZeynepFormations(this.towers.values(), getMapGridSize(this.activeMap));
+    for (const group of groups) {
+      for (const member of group.members) {
+        member.zeynepFormationSize = group.size;
+        member.zeynepFormationLevel = group.level;
+        member.formationReason = group.valid
+          ? `Dizilim ${group.size}: en düşük seviye ${group.level} (${group.members.filter((entry) => entry.level === group.level).map((entry) => entry.definition.name).join(", ")})`
+          : `Dizilim yok: ${group.members.length} bağlı kule; geçerli ikili veya üçlü yerleşim gerekiyor`;
       }
     }
   }
@@ -9541,6 +9666,8 @@ export class MatchRoom extends Room<MatchState> {
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
+    // Yanik ve kanama tikleri kulenin carpanlarini tasimiyor; pay yalnizca vuruslarda.
+    if (!sourceDefinitionId.startsWith("status:")) this.recordSynergyShare(sourceTowerId, dealtAmount);
     // Oyuncunun kosu hasari yalnizca kuleler degil: yetenek ve ulti de onun.
     if (damagePlayer) this.runLedger.recordPlayerDamage(damagePlayer.slot ?? 0, dealtAmount);
     this.recordEffectDamage(sourceDefinitionId, dealtAmount, { critAdd, shopDamageAdd, markMultiplier });
@@ -9553,6 +9680,12 @@ export class MatchRoom extends Room<MatchState> {
     const luck = luckMultiplier
       ?? (damageSourceTower?.characterId === "onur" ? damageSourceTower.lastLuckMultiplier : undefined);
     this.addDamageEvent(enemy, dealtAmount, { crit: critAdd > 0, killingBlow: enemy.hp <= 0, ownerId: sourceOwnerId, luck });
+    // Co-op asisti oldurucu vurusun kendi yazimlarindan once okunuyor: asagidaki
+    // takip, isaret ve yavaslatma yazimlari kaynagi oldurenle degistiriyor ve
+    // takim arkadasinin yavaslatma / isaret asistini siliyordu. Oyuna etkisi yok.
+    const killAssists = enemy.hp <= 0 && sourceOwnerId
+      ? this.resolveEnemyKillAssists(enemy, sourceOwnerId, sourceTowerId, sourceDefinitionId, now)
+      : undefined;
     const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceDefinitionId === "warrior-1") {
       const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
@@ -9561,7 +9694,11 @@ export class MatchRoom extends Room<MatchState> {
     }
     const mark = markSourceTower?.definition.engine?.appliesMark;
     if (mark) {
-      this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now);
+      // Kaynak yalnizca co-op asisti icin yaziliyor; isaretin gucunu degistirmiyor.
+      this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now, {
+        sourceTowerId: markSourceTower?.id,
+        sourceOwnerId: markSourceTower?.ownerId
+      });
     }
     if (slowMs > 0) {
       const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
@@ -9573,7 +9710,10 @@ export class MatchRoom extends Room<MatchState> {
         stacking: "refresh"
       }, now, {
         durationMs: slowMs * getModifierMultiplier(modifiers, "statusDuration"),
-        magnitude: 0.52 * getModifierMultiplier(modifiers, "statusMagnitude")
+        magnitude: 0.52 * getModifierMultiplier(modifiers, "statusMagnitude"),
+        // Kaynak yalnizca co-op asisti icin; yavaslatmanin kendisi ayni.
+        sourceTowerId: sourceTower?.id,
+        sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
       });
     }
 
@@ -9615,6 +9755,9 @@ export class MatchRoom extends Room<MatchState> {
     this.awardEnemyExperience(enemy);
     this.kills += 1;
     this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
+    // Supurmenin kendi oldurmesi: suren supurmede o kulenin vurusu (durum tiki degil).
+    const sweepRun = sourceTowerId && !sourceDefinitionId.startsWith("status:") ? this.debugSweepRuns.get(sourceTowerId) : undefined;
+    if (sweepRun) sweepRun.kills += 1;
     if (sourceOwnerId && (enemy.type === "brute" || enemy.type === "siege")) {
       const recycleRadius = getMapGridSize(this.activeMap) * 3;
       const factory = Array.from(this.towers.values()).find((candidate) => candidate.ownerId === sourceOwnerId
@@ -9646,7 +9789,9 @@ export class MatchRoom extends Room<MatchState> {
       if (player?.characterId === "zeynep") {
         this.awardZeynepReputation(player, enemy.type);
       }
-      this.addKillEvent(sourceOwnerId, enemy.id, ownerGold);
+      const assists = killAssists ?? this.resolveEnemyKillAssists(enemy, sourceOwnerId, sourceTowerId, sourceDefinitionId, now);
+      for (const assist of assists) this.runLedger.recordAssist(assist.slot, assist.kind);
+      this.addKillEvent(sourceOwnerId, enemy.id, ownerGold, assists);
     }
     for (const player of this.state.players.values()) {
       player.ultimateCharge = Math.min(100, player.ultimateCharge + this.getUltimateChargeGain(player, 7));
@@ -9695,6 +9840,59 @@ export class MatchRoom extends Room<MatchState> {
     tower.damageWindow.push({ dealtAt: now, amount });
     this.pruneTowerDamageWindow(tower, now);
     this.absorbMelisBrokenMirrorDamage(tower, amount, now);
+  }
+
+  /**
+   * Vurusun yerlesim kararina dusen tahmini payi (yalnizlik ya da dizilim).
+   *
+   * Bonus vurus aninda aciksa sayiliyor: yalnizlik kulenin su an yalniz durup
+   * durmadigina, dizilim kulenin bu tick'teki dizilim durumuna bakiyor
+   * (`refreshZeynepFormations`). Formul ve sinirlari `estimateSynergyShare`ta;
+   * "dealt" hasar sayilariyla ayni, asiri oldurme disarida. Kurulumda hasar
+   * sayilmiyor (savunma ozetiyle ayni kural).
+   */
+  private recordSynergyShare(towerId: string, dealt: number) {
+    if (this.setupPhase || !towerId || !(dealt > 0)) {
+      return;
+    }
+    const tower = this.towers.get(towerId);
+    if (!tower) {
+      return;
+    }
+    // Asiri yukleme supurmesi sabit 220 ms'lik ritimle atiyor; atis hizi
+    // carpani orada uygulanmiyor, pay yalnizca hasar ekseninden.
+    const cadenceApplies = !(tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0 && tower.debugOverdriveUntil > 0);
+    const isolation = receivesAtakanIsolationBonus(tower)
+      ? getAtakanIsolationShare(dealt, this.isTowerIsolatedForShare(tower), cadenceApplies)
+      : 0;
+    const formation = tower.zeynepFormationSize > 0 ? getZeynepFormationShare(dealt, tower, cadenceApplies) : 0;
+    if (isolation <= 0 && formation <= 0) {
+      return;
+    }
+    if (this.synergyShareWave !== this.wave) {
+      this.synergyShares.clear();
+      this.synergyShareWave = this.wave;
+    }
+    let entry = this.synergyShares.get(tower.ownerId);
+    if (!entry) {
+      entry = { isolation: 0, formation: 0 };
+      this.synergyShares.set(tower.ownerId, entry);
+    }
+    entry.isolation += isolation;
+    entry.formation += formation;
+    const slot = this.getPlayerSlot(tower.ownerId);
+    if (isolation > 0) this.runLedger.recordSynergyShare(slot, "isolation", isolation);
+    if (formation > 0) this.runLedger.recordSynergyShare(slot, "formation", formation);
+  }
+
+  /** `getAtakanPassiveMultiplier(tower) > 1`, tick icinde kule basina bir kez. */
+  private isTowerIsolatedForShare(tower: TowerModel) {
+    const cache = this.synergyIsolationCache;
+    const cached = cache?.get(tower.id);
+    if (cached !== undefined) return cached;
+    const isolated = this.getAtakanPassiveMultiplier(tower) > 1;
+    cache?.set(tower.id, isolated);
+    return isolated;
   }
 
   private absorbMelisBrokenMirrorDamage(sourceTower: TowerModel, amount: number, now: number) {
@@ -9894,7 +10092,63 @@ export class MatchRoom extends Room<MatchState> {
     return projectile.damage * damageMultiplier;
   }
 
-  private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0) {
+  /**
+   * Co-op asisti: oldurme aninda dusmanin uzerindeki, oldurenden farkli
+   * oyunculara ait katkilar.
+   *
+   * Yalnizca zaten tutulan veriye bakiyor: Takipci'nin isareti (yigin suresi
+   * ve koyan kule), isaret durumu, acik Zeynep komutu, donma / yavaslatma /
+   * soguma durumunun kaynagi. Hicbiri oyuna geri donmuyor; altin, XP ve ulti
+   * sarji eskisi gibi oldurene ve herkese.
+   *
+   * Hiz ve menzil komutu kuleyi buyutuyor, yani yalnizca kulenin kendi
+   * vurusuyla gelen oldurmede asist (durum tiki komuttan buyumuyor).
+   * Yavaslatma komutu dusmani tutuyor; her oldurmede asist.
+   *
+   * Soloda hic calismiyor: tek oyuncu kendine asist yapamaz, hesap da
+   * yapilmasin.
+   */
+  private resolveEnemyKillAssists(enemy: EnemyModel, killerId: string, sourceTowerId: string, sourceDefinitionId: string, now: number): KillAssist[] {
+    if (this.state.players.size < 2) return [];
+    const killerSlot = this.getPlayerSlot(killerId);
+    if (killerSlot === undefined) return [];
+    const candidates: KillAssistCandidate[] = [];
+    // Yigin sayisi, ilk yuva degil: isaret tuketen kule (warrior-5) once en
+    // erken biten yuvayi -- cogunlukla 0'i -- siliyor, kalan yiginlar suruyor.
+    if (enemy.trackingSourceTowerId && this.getTrackingStackCount(enemy, now) > 0) {
+      const tracker = this.towers.get(enemy.trackingSourceTowerId);
+      if (tracker) candidates.push({ slot: this.getPlayerSlot(tracker.ownerId), kind: "mark" });
+    }
+    const mark = enemy.statusEffects.mark;
+    if (isStatusEffectActive(mark, now) && mark?.sourceOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(mark.sourceOwnerId), kind: "mark" });
+    }
+    const towerKill = Boolean(sourceTowerId) && !sourceDefinitionId.startsWith("status:");
+    if (towerKill && this.zeynepHasteUntil > now && this.zeynepHasteOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(this.zeynepHasteOwnerId), kind: "command" });
+    }
+    if (towerKill && this.zeynepRangeUntil > now && this.zeynepRangeOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(this.zeynepRangeOwnerId), kind: "command" });
+    }
+    if (this.zeynepSlowUntil > now && this.zeynepSlowOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(this.zeynepSlowOwnerId), kind: "command" });
+    }
+    const freeze = enemy.statusEffects.freeze;
+    if (isStatusEffectActive(freeze, now) && freeze?.sourceOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(freeze.sourceOwnerId), kind: "freeze" });
+    }
+    for (const state of [enemy.statusEffects.slow, enemy.statusEffects.chill]) {
+      if (isStatusEffectActive(state, now) && state?.sourceOwnerId) {
+        candidates.push({ slot: this.getPlayerSlot(state.sourceOwnerId), kind: "slow" });
+      }
+    }
+    if (enemy.coolantSlowUntil > now && enemy.coolantSlowOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(enemy.coolantSlowOwnerId), kind: "slow" });
+    }
+    return resolveKillAssists(killerSlot, candidates);
+  }
+
+  private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0, assists: readonly KillAssist[] = []) {
     const now = Date.now();
     const streakRule = this.recordPlayerKillStreak(ownerId, now);
     if (streakRule) this.runLedger.recordStreak(this.getPlayerSlot(ownerId), streakRule.tier, this.wave);
@@ -9910,6 +10164,7 @@ export class MatchRoom extends Room<MatchState> {
       serverTime: now,
       streakTier: streakRule?.tier,
       g: gold > 0 ? gold : undefined,
+      a: encodeKillAssists(assists),
       ttlMs: 2200
     });
 
@@ -12027,8 +12282,9 @@ export class MatchRoom extends Room<MatchState> {
    * seyler kazandigini soyleyen bir yalan.
    */
   private getAtakanPassiveMultiplier(tower: TowerModel) {
-    if (!countsAsTower(tower.definition)) return 1;
-    return tower.characterId === "warrior" && tower.definition.id !== "warrior-2" && this.isTowerIsolated(tower)
+    // Kimin odul alacagi paylasilan kuralda; yalnizlik sorusu metotta kaliyor
+    // cunku testler onu degistirip pasifi kapatabiliyor.
+    return receivesAtakanIsolationBonus(tower) && this.isTowerIsolated(tower)
       ? ATAKAN_ISOLATION_MULTIPLIER
       : 1;
   }
@@ -12191,19 +12447,8 @@ export class MatchRoom extends Room<MatchState> {
    * kulenin kendi yetenegini kapatirdi.
    */
   private isTowerIsolated(tower: TowerModel) {
-    const towerCell = worldToGrid(tower.x, tower.y, this.activeMap);
-    for (const other of this.towers.values()) {
-      if (other.id === tower.id || !countsAsTower(other.definition)) {
-        continue;
-      }
-
-      const otherCell = worldToGrid(other.x, other.y, this.activeMap);
-      if (Math.abs(otherCell.col - towerCell.col) <= 1 && Math.abs(otherCell.row - towerCell.row) <= 1) {
-        return false;
-      }
-    }
-
-    return true;
+    // Kural paylasilan pakette: istemci yerlestirme onizlemesi ayni soruyu soruyor.
+    return isStructureIsolated(tower, this.towers.values(), this.activeMap);
   }
 
   private countAdjacentFriendlyTowers(tower: TowerModel) {
@@ -12362,6 +12607,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.coolantSlowMultiplier = Math.min(active ? enemy.coolantSlowMultiplier : 1, 1 - magnitude);
     const duration = COOLANT_SLOW_DURATION_MS * getModifierMultiplier(modifiers, "statusDuration");
     enemy.coolantSlowUntil = Math.max(enemy.coolantSlowUntil, now + scaleGameDuration(applyStatusResistance(duration, enemy.statusResistances.slow)));
+    enemy.coolantSlowOwnerId = tower.ownerId;
     if (critical) {
       this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
     }
@@ -12560,7 +12806,10 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.definition.id === "warrior-2") {
         tower.linkedTowerIds = tower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));
         for (const linkedTowerId of tower.linkedTowerIds) {
-          tower.linkedTowerWaveAges[linkedTowerId] = (tower.linkedTowerWaveAges[linkedTowerId] ?? 0) + 1;
+          const previousAge = tower.linkedTowerWaveAges[linkedTowerId] ?? 0;
+          tower.linkedTowerWaveAges[linkedTowerId] = previousAge + 1;
+          const linkedTower = this.towers.get(linkedTowerId);
+          if (linkedTower) this.notifyServerLinkMatured(tower, linkedTower, previousAge, previousAge + 1);
         }
       }
     }
@@ -12689,15 +12938,94 @@ export class MatchRoom extends Room<MatchState> {
       tower.lastLuckMultiplier = 1;
       return;
     }
+    const now = Date.now();
+    const windowWasOpen = tower.luckyWindowUntil > now;
     const result = resolveOnurGamblerShot(
       { misfortune: tower.misfortune, luckyWindowUntil: tower.luckyWindowUntil },
       this.getTowerFireInterval(tower),
       this.towerDamageRandom,
-      Date.now()
+      now
     );
     tower.misfortune = result.misfortune;
     tower.luckyWindowUntil = result.luckyWindowUntil;
     tower.lastLuckMultiplier = result.multiplier;
+    // Kotu sans sayaci doldu, pencere bu atista acildi: yalnizca sahibine,
+    // kulenin ustunde. Kural degismedi; damga yalnizca olani soyluyor.
+    if (!windowWasOpen && result.luckyWindowUntil > now) {
+      this.sendComboStamp("luckyWindow", tower, { ownerOnly: true });
+    }
+  }
+
+  /**
+   * Isaretli oldurme Debug Lazer'i asiri yuklemeye gecirdi: "İŞARET →
+   * OVERDRIVE" ve supurmenin oldurmelerini saymaya basla.
+   *
+   * Asiri yukleme hemen isindan kesildiyse (isi siniri asilmis) supurme yok,
+   * damga da yok. Supurme surerken yeniden tetiklenirse onceki supurmenin
+   * sonucu once kapatiliyor; iki supurmenin oldurmesi birbirine karismasin.
+   */
+  private noteMarkedOverdriveStarted(tower: TowerModel, now: number) {
+    if (this.debugSweepRuns.has(tower.id)) {
+      this.finishDebugSweepRun(tower.id);
+    }
+    if (tower.debugOverdriveUntil <= now) {
+      return;
+    }
+    this.debugSweepRuns.set(tower.id, { ownerId: tower.ownerId, kills: 0 });
+    this.sendComboStamp("markOverdrive", tower);
+  }
+
+  /**
+   * Biten supurmeleri kapatir: tick basinda bir kez. Supurme kendi sonunu
+   * `debugOverdriveUntil`i simdiye cekerek isaretliyor, isi kesintisi onu
+   * sifirliyor, satilan kule haritadan kalkiyor; ucu de burada yakalaniyor.
+   */
+  private settleDebugSweepRuns(now: number) {
+    if (this.debugSweepRuns.size === 0) {
+      return;
+    }
+    for (const towerId of Array.from(this.debugSweepRuns.keys())) {
+      const tower = this.towers.get(towerId);
+      if (tower && tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+        continue;
+      }
+      this.finishDebugSweepRun(towerId);
+    }
+  }
+
+  /** "Tarama: N öldü": yalnizca en az iki oldurmede; tek oldurme normal atisin isi. */
+  private finishDebugSweepRun(towerId: string) {
+    const run = this.debugSweepRuns.get(towerId);
+    this.debugSweepRuns.delete(towerId);
+    const tower = this.towers.get(towerId);
+    if (!run || !tower || run.kills < DEBUG_SWEEP_STAMP_MIN_KILLS) {
+      return;
+    }
+    this.sendComboStamp("sweepKills", tower, { kills: run.kills });
+  }
+
+  /**
+   * Kombo damgasini yollar; tur + sahip basina 4 sn'de en fazla bir kez.
+   *
+   * Tek seferlik mesaj, tick'te veri yok. Herkese gidiyor (takim arkadasinda
+   * soluk ciziliyor), `ownerOnly` ise yalnizca sahibine. Istemci basina
+   * `send`: yayin ile ayni sonuc, ama kendi istemci listesiyle surulen
+   * testlerde de calisiyor.
+   */
+  private sendComboStamp(kind: ComboStampKind, tower: TowerModel, options: { kills?: number; ownerOnly?: boolean } = {}) {
+    if (!this.comboStampThrottle.admit(kind, tower.ownerId, Date.now())) {
+      return false;
+    }
+    const message: ComboStampMessage = { kind, ownerId: tower.ownerId, towerId: tower.id, x: Math.round(tower.x), y: Math.round(tower.y) };
+    if (options.kills !== undefined) {
+      message.kills = options.kills;
+    }
+    for (const client of this.clients) {
+      if (!options.ownerOnly || client.sessionId === tower.ownerId) {
+        client.send("combo:stamp", message);
+      }
+    }
+    return true;
   }
 
   private getSkillCooldown(player: Player, slot: number) {
@@ -13180,6 +13508,7 @@ export function toKillEventWire(event: KillEventSnapshot): KillEventSnapshot {
   };
   if (event.streakTier) wire.streakTier = event.streakTier;
   if (event.g !== undefined && event.g > 0) wire.g = event.g;
+  if (event.a && event.a.length > 0) wire.a = event.a;
   return wire;
 }
 
@@ -13211,75 +13540,6 @@ function getTowerPlacementOrientation(definitionId?: string, orientation?: Tower
   }
 
   return orientation === "vertical" ? "vertical" : "horizontal";
-}
-
-function areZeynepFormationNeighbors(towerA: TowerModel, towerB: TowerModel, gridSize: number) {
-  const dx = Math.abs(towerA.x - towerB.x);
-  const dy = Math.abs(towerA.y - towerB.y);
-  return dx <= gridSize + 2 && dy <= gridSize + 2 && dx + dy > 2;
-}
-
-function isCompleteZeynepFormation(group: TowerModel[], gridSize: number) {
-  for (let firstIndex = 0; firstIndex < group.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < group.length; secondIndex += 1) {
-      if (!areZeynepFormationNeighbors(group[firstIndex], group[secondIndex], gridSize)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-/**
-   * Yapi dizilime katilir mi.
-   *
-   * Duvar kule degil: kontenjandan yer kapmaz, hedef secmez, hasar vermez.
-   * Dizilime katilmasi yalnizca anlamsiz degil, zararli -- ucluye komsu bir
-   * duvar grubu dorde cikarip bonusu tumden dusuruyordu. Kural uc yerde birden
-   * geciyor, o yuzden tek yerde yaziliyor.
-   */
-function canJoinZeynepFormation(tower: TowerModel) {
-  // Abarti icin ayrica ad yazmaya gerek yok: kenara oturdugu icin kule
-  // kontenjanindan da yer kapmiyor, ikisi ayni kuralin sonucu.
-  return occupiesTowerSlot(tower.definition) && tower.definition.id !== "zeynep-7";
-}
-
-function isValidZeynepFormationGroup(group: TowerModel[], gridSize: number) {
-  if (!group.every((member) => member.characterId === "zeynep" && canJoinZeynepFormation(member))) {
-    return false;
-  }
-
-  return group.length === 2 || (group.length === 3 && isCompleteZeynepFormation(group, gridSize));
-}
-
-function getZeynepFormationLevelRatio(tower: TowerModel) {
-  if (tower.zeynepFormationLevel <= 0) {
-    return 0;
-  }
-
-  return Math.min(Math.max(tower.zeynepFormationLevel, 1), 10) / 10;
-}
-
-function getZeynepFormationDamageMultiplier(tower: TowerModel) {
-  const levelRatio = getZeynepFormationLevelRatio(tower);
-  if (tower.zeynepFormationSize === 3) {
-    return 1 + (ZEYNEP_FORMATION_TRIO_DAMAGE_MULTIPLIER - 1) * levelRatio;
-  }
-  if (tower.zeynepFormationSize === 2) {
-    return 1 + (ZEYNEP_FORMATION_PAIR_DAMAGE_MULTIPLIER - 1) * levelRatio;
-  }
-  return 1;
-}
-
-function getZeynepFormationFireIntervalMultiplier(tower: TowerModel) {
-  const levelRatio = getZeynepFormationLevelRatio(tower);
-  if (tower.zeynepFormationSize === 3) {
-    return 1 - (1 - ZEYNEP_FORMATION_TRIO_FIRE_INTERVAL_MULTIPLIER) * levelRatio;
-  }
-  if (tower.zeynepFormationSize === 2) {
-    return 1 - (1 - ZEYNEP_FORMATION_PAIR_FIRE_INTERVAL_MULTIPLIER) * levelRatio;
-  }
-  return 1;
 }
 
 function getMelisBrokenMirrorReleaseMultiplier(level: number) {

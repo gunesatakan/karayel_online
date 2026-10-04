@@ -6,7 +6,14 @@ export type DefenseRow = {
   markAssistDamage: number;
   seconds: Record<TowerActivity, number>;
 };
-export type DefenseSummary = { wave: number; rows: DefenseRow[] };
+/**
+ * Sahibine giden dalga ozeti.
+ *
+ * `isolationShare` / `formationShare`: sahibin kulelerinde vurus anindaki
+ * yalnizlik ve dizilim bonusunun bu dalgaya kattigi tahmini hasar
+ * (`estimateSynergyShare`). Sifirsa alan yok; dalgada bir kez gidiyor.
+ */
+export type DefenseSummary = { wave: number; rows: DefenseRow[]; isolationShare?: number; formationShare?: number };
 /** `changed[i]`, `lines[i]` satirindaki degerin degisip degismedigini soyler. */
 export type TowerPreview = { requestId: string; title?: string; description?: string; lines?: string[]; changed?: boolean[]; error?: string };
 

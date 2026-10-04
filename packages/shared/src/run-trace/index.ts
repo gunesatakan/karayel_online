@@ -1,4 +1,5 @@
 import { FINAL_WAVE, KILL_STREAK_RULES, getWaveAirMode, type KillStreakTier } from "../balance/index.js";
+import type { KillAssistKind } from "../feedback/assists.js";
 import type { CharacterId } from "../index.js";
 import { TOWER_TIER_3_LEVEL } from "../tower-stats/index.js";
 
@@ -67,6 +68,19 @@ export type WaveRecord = {
   c: number;
   /** Kosu bu dalgada bitti (nexus dustu); yoksa alan yok. */
   d?: 1;
+  /*
+   * Co-op rol unvaninin olgulari (`pickRoleTitles`), yuva sirasiyla. Yalnizca
+   * odada birden cok oyuncu varken ve dizide sifirdan buyuk bir deger varsa
+   * yaziliyor; solo karne eskisiyle bayt bayt ayni kaliyor.
+   */
+  /** Isaret, donma ve yavaslatma asisti: `n[slot]`. */
+  n?: number[];
+  /** Zeynep komutunun asisti: `z[slot]`. */
+  z?: number[];
+  /** Iscilerin onardigi can (yuvarli): `r[slot]`. */
+  r?: number[];
+  /** Kule hasari (yuvarli): `t[slot]`. */
+  t?: number[];
 };
 
 export type RunTowerSummary = {
@@ -95,6 +109,24 @@ export type RunPlayerSummary = {
   bestStreakTier?: KillStreakTier;
   /** Oyuncunun en cok hasar veren kulesi; co-op satiri icin. */
   topTower?: RunTowerSummary;
+  /*
+   * Co-op rol unvaninin kosu olgulari; yalnizca co-op raporunda ve sifirdan
+   * buyukse yaziliyor. Unvan istemcide degil bu sayilardan seciliyor.
+   */
+  /** Isaret, donma ve yavaslatma asisti. */
+  assists?: number;
+  /** Zeynep komutunun takim arkadasinin oldurmesindeki asisti. */
+  commandAssists?: number;
+  /** Iscilerin onardigi can (yuvarli). */
+  repaired?: number;
+  /** Kulelerin toplam hasari (yuvarli); `damage` yetenek ve ultiyi de sayiyor. */
+  towerDamage?: number;
+  /**
+   * Kosu boyunca yalnizligin ve dizilimin kattigi tahmini hasar
+   * (`estimateSynergyShare`); sifirsa alan yok. Raporun "en iyi an"i icin.
+   */
+  isolationShare?: number;
+  formationShare?: number;
 };
 
 /** Kosunun en yuksek seri ani: kademe, sahibi ve dalgasi. */
@@ -230,7 +262,32 @@ function isRunSlot(slot: number | undefined): slot is number {
   return typeof slot === "number" && Number.isInteger(slot) && slot >= 0 && slot < MAX_RUN_SLOTS;
 }
 
-type RunPlayerStats = { kills: number; damage: number; bestStreakTier?: KillStreakTier };
+type RunPlayerStats = {
+  kills: number;
+  damage: number;
+  bestStreakTier?: KillStreakTier;
+  isolationShare?: number;
+  formationShare?: number;
+  assists?: number;
+  commandAssists?: number;
+  repaired?: number;
+};
+
+/** Yuva dizisine ekler; yuva zaten dogrulanmis olmali (seyrek dizi acmasin). */
+function addAt(values: number[], slot: number, amount: number) {
+  for (let index = values.length; index < slot; index += 1) values[index] = 0;
+  values[slot] = (values[slot] ?? 0) + amount;
+}
+
+/** Karnenin derin kopyasi: rapordaki dizi defterin dizisini paylasmasin. */
+function copyWaveRecord(record: WaveRecord): WaveRecord {
+  const copy: WaveRecord = { ...record, p: [...record.p] };
+  if (record.n) copy.n = [...record.n];
+  if (record.z) copy.z = [...record.z];
+  if (record.r) copy.r = [...record.r];
+  if (record.t) copy.t = [...record.t];
+  return copy;
+}
 
 /** En cok hasar veren kule; esitlikte once hasar yazan kazaniyor (Map sirasi). */
 function pickTopTower(towers: Iterable<RunTowerSummary>): RunTowerSummary | undefined {
@@ -256,6 +313,10 @@ export class RunLedger {
   private waveHpLost = 0;
   private waveKills = 0;
   private waveKillsBySlot: number[] = [];
+  private waveAssistsBySlot: number[] = [];
+  private waveCommandAssistsBySlot: number[] = [];
+  private waveRepairBySlot: number[] = [];
+  private waveTowerDamageBySlot: number[] = [];
   private readonly history: WaveRecord[] = [];
   private cleanStreak = 0;
   private bestCleanStreak = 0;
@@ -291,6 +352,41 @@ export class RunLedger {
   }
 
   /**
+   * Co-op asisti: oldurmeyi baskasi yapti, bu yuva hazirladi. Komut asisti
+   * ayri sayiliyor (Komutan unvani), geri kalani birlikte (Nişancı Ortağı).
+   */
+  recordAssist(slot: number | undefined, kind: KillAssistKind) {
+    if (!isRunSlot(slot)) return;
+    const stats = this.getPlayerStats(slot);
+    if (kind === "command") {
+      addAt(this.waveCommandAssistsBySlot, slot, 1);
+      stats.commandAssists = (stats.commandAssists ?? 0) + 1;
+    } else {
+      addAt(this.waveAssistsBySlot, slot, 1);
+      stats.assists = (stats.assists ?? 0) + 1;
+    }
+  }
+
+  /** Iscinin onardigi can; iscinin sahibine yaziliyor (onaran o, kulenin sahibi degil). */
+  recordRepair(slot: number | undefined, amount: number) {
+    if (!isRunSlot(slot) || !(amount > 0) || !Number.isFinite(amount)) return;
+    addAt(this.waveRepairBySlot, slot, amount);
+    const stats = this.getPlayerStats(slot);
+    stats.repaired = (stats.repaired ?? 0) + amount;
+  }
+
+  /**
+   * Yerlesim kararinin bir vurustaki tahmini payi (yalnizlik ya da dizilim).
+   * Vurus basina cagriliyor; sifir pay hicbir sey acmiyor.
+   */
+  recordSynergyShare(slot: number | undefined, kind: "isolation" | "formation", amount: number) {
+    if (!isRunSlot(slot) || !(amount > 0) || !Number.isFinite(amount)) return;
+    const stats = this.getPlayerStats(slot);
+    if (kind === "isolation") stats.isolationShare = (stats.isolationShare ?? 0) + amount;
+    else stats.formationShare = (stats.formationShare ?? 0) + amount;
+  }
+
+  /**
    * Kulenin verdigi hasar; MVP buradan.
    *
    * Kule kaydi kule silinince de kaliyor: MVP butun dalgalarin toplami, satilan
@@ -313,6 +409,7 @@ export class RunLedger {
     }
     entry.damage += amount;
     entry.level = tower.level;
+    if (isRunSlot(slot)) addAt(this.waveTowerDamageBySlot, slot, amount);
   }
 
   /** Tetiklenen seri kademesi. Esit kademede ilk an kaliyor: "ilk kez ulastigin an". */
@@ -367,6 +464,22 @@ export class RunLedger {
     const airMode = getWaveAirMode(wave);
     if (airMode !== "none") record.m = airMode;
     if (options.died) record.d = 1;
+    // Rol olgulari yalnizca co-op'ta: soloda unvan yok, karne de buyumesin.
+    const coopSlots = new Set((options.slots ?? []).filter(isRunSlot));
+    if (coopSlots.size > 1) {
+      const pack = (values: readonly number[]) => {
+        const rounded = Array.from({ length: size }, (_, index) => Math.max(0, Math.round(values[index] ?? 0)));
+        return rounded.some((value) => value > 0) ? rounded : undefined;
+      };
+      const assists = pack(this.waveAssistsBySlot);
+      if (assists) record.n = assists;
+      const commands = pack(this.waveCommandAssistsBySlot);
+      if (commands) record.z = commands;
+      const repaired = pack(this.waveRepairBySlot);
+      if (repaired) record.r = repaired;
+      const towerDamage = pack(this.waveTowerDamageBySlot);
+      if (towerDamage) record.t = towerDamage;
+    }
 
     this.history.push(record);
     if (this.history.length > RUN_WAVE_HISTORY_LIMIT) this.history.shift();
@@ -376,6 +489,10 @@ export class RunLedger {
     this.waveHpLost = 0;
     this.waveKills = 0;
     this.waveKillsBySlot = [];
+    this.waveAssistsBySlot = [];
+    this.waveCommandAssistsBySlot = [];
+    this.waveRepairBySlot = [];
+    this.waveTowerDamageBySlot = [];
     return record;
   }
 
@@ -390,6 +507,7 @@ export class RunLedger {
 
   /** Kosunun raporu. Defteri degistirmiyor; ayni an icin iki kez cagrilabilir. */
   summarize(context: RunSummaryContext): RunSummary {
+    const coop = context.players.length > 1;
     const players = [...context.players]
       .sort((left, right) => left.slot - right.slot)
       .map((player) => {
@@ -403,8 +521,24 @@ export class RunLedger {
           cards: [...player.cards]
         };
         if (stats?.bestStreakTier) row.bestStreakTier = stats.bestStreakTier;
-        const topTower = pickTopTower([...this.towerStats.values()].filter((tower) => tower.slot === player.slot));
+        const isolationShare = Math.round(stats?.isolationShare ?? 0);
+        if (isolationShare > 0) row.isolationShare = isolationShare;
+        const formationShare = Math.round(stats?.formationShare ?? 0);
+        if (formationShare > 0) row.formationShare = formationShare;
+        const ownTowers = [...this.towerStats.values()].filter((tower) => tower.slot === player.slot);
+        const topTower = pickTopTower(ownTowers);
         if (topTower) row.topTower = topTower;
+        if (coop) {
+          // Rol unvaninin olgulari: solo rapor eskisiyle ayni kalsin diye yalnizca co-op'ta.
+          const assists = Math.round(stats?.assists ?? 0);
+          if (assists > 0) row.assists = assists;
+          const commandAssists = Math.round(stats?.commandAssists ?? 0);
+          if (commandAssists > 0) row.commandAssists = commandAssists;
+          const repaired = Math.round(stats?.repaired ?? 0);
+          if (repaired > 0) row.repaired = repaired;
+          const towerDamage = Math.round(ownTowers.reduce((sum, tower) => sum + tower.damage, 0));
+          if (towerDamage > 0) row.towerDamage = towerDamage;
+        }
         return row;
       });
     const summary: RunSummary = {
@@ -421,7 +555,7 @@ export class RunLedger {
       cleanWaves: this.cleanWaves,
       cleanStreak: this.cleanStreak,
       bestCleanStreak: this.bestCleanStreak,
-      waves: this.history.map((record) => ({ ...record, p: [...record.p] })),
+      waves: this.history.map(copyWaveRecord),
       players
     };
     if (context.creative) summary.creative = true;

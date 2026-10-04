@@ -8,6 +8,8 @@ import type { MapScale } from "../map.js";
 import { getKillStreakTierRank, type RunSummary, type RunTowerSummary, type WaveRecord } from "../run-trace/index.js";
 import { STAGE_COUNT, getHighestUnlockedStage, getStage, isStageUnlocked, stageCatalog } from "../stages/index.js";
 import { TOWER_TIER_3_LEVEL } from "../tower-stats/index.js";
+import { SYNERGY_SHARE_RUN_FLOOR, getSynergyShareLabel, pickLargerSynergyShare, roundSynergyShare } from "../synergy/index.js";
+import { ROLE_TITLE_LABELS, pickRoleTitles, type RoleTitleKind } from "./role-titles.js";
 import {
   computeStars,
   formatStars,
@@ -177,7 +179,7 @@ export function pickBetterUltimate(current: RunUltimateMoment | undefined, next:
   return toCount(next.hits) > toCount(current.hits) ? { ...next } : current;
 }
 
-export type RunMomentKind = "level10" | "streak" | "ultimate";
+export type RunMomentKind = "level10" | "streak" | "ultimate" | "synergy";
 
 export type RunMoment = {
   kind: RunMomentKind;
@@ -196,6 +198,12 @@ const MOMENT_SCORE_LEVEL10 = 6;
 function streakMomentScore(tier: KillStreakTier) {
   return getKillStreakTierRank(tier) + 1;
 }
+/**
+ * Karar payinin agirligi: oldurmeli bir ultinin (1) ustunde, ilk seri
+ * kademesinin (GRANTED 2) altinda. Pay bir an degil kosu boyu bir karar; ancak
+ * raporda daha parlak bir an yoksa basligi aliyor.
+ */
+const MOMENT_SCORE_SYNERGY = 1.5;
 
 /**
  * Raporun tek "en iyi an" satiri.
@@ -205,7 +213,8 @@ function streakMomentScore(tier: KillStreakTier) {
  * almasin. Kendi anlari arasinda: ilk onuncu seviye, seri kademesi, ulti
  * derecesi (sutunda mukemmel nisan UNSTOPPABLE'in ustunde, RAMPAGE'in altinda).
  * Takim arkadasinin ultisi bu istemciye gelmiyor, o yuzden ekipte yalnizca
- * onuncu seviye ve seri var.
+ * onuncu seviye ve seri var. Kendi karar payin (yalnizlik ya da dizilim,
+ * kosu toplami `SYNERGY_SHARE_RUN_FLOOR` ustunde) en alttaki aday.
  */
 export function pickRunMoment(
   run: Pick<RunSummary, "players" | "bestStreak" | "firstLevel10"> | undefined,
@@ -260,6 +269,19 @@ export function pickRunMoment(
     });
   }
 
+  // Yalnizca kendi payin: takim arkadasinin payi bu istemcinin olcmedigi bir
+  // tahmin, basliga baskasinin karari yazilmasin.
+  const ownPlayer = players.find((player) => player.slot === options.localSlot);
+  const share = pickLargerSynergyShare(ownPlayer);
+  if (share && share.amount >= SYNERGY_SHARE_RUN_FLOOR) {
+    candidates.push({
+      kind: "synergy",
+      own: true,
+      score: MOMENT_SCORE_SYNERGY,
+      text: `${getSynergyShareLabel(share.kind)} · ~${formatRunCount(roundSynergyShare(share.amount))} hasar`
+    });
+  }
+
   let best: (RunMoment & { score: number }) | undefined;
   for (const candidate of candidates) {
     if (!best || (candidate.own && !best.own) || (candidate.own === best.own && candidate.score > best.score)) best = candidate;
@@ -267,8 +289,11 @@ export function pickRunMoment(
   return best ? { kind: best.kind, own: best.own, text: best.text } : undefined;
 }
 
-/** Co-op satirindaki unvanin kaynagi; `role` operatorun kendi rolu. */
-export type RunRoleTitleKind = "level10" | "streak" | "kills" | "role";
+/**
+ * Co-op satirindaki unvanin kaynagi: bes rol olcusu (`RoleTitleKind`), kosunun
+ * iki ani (ilk onuncu seviye, en yuksek seri) ve `role` operatorun kendi rolu.
+ */
+export type RunRoleTitleKind = RoleTitleKind | "level10" | "streak" | "role";
 
 export type RunPlayerLine = {
   slot: number;
@@ -284,11 +309,11 @@ export type RunPlayerLine = {
   detail: string;
 };
 
-/** Rol unvanlari; hepsi kosunun gercek bir olgusu, hicbiri hasar yarisi degil. */
+/** Rol unvanlari; hepsi kosunun gercek bir olgusu, hicbiri tek basina hasar yarisi degil. */
 export const RUN_ROLE_TITLES = {
+  ...ROLE_TITLE_LABELS,
   level10: "Kule Ustası",
-  streak: "Seri Ustası",
-  kills: "Kasap"
+  streak: "Seri Ustası"
 } as const;
 
 /**
@@ -296,36 +321,49 @@ export const RUN_ROLE_TITLES = {
  *
  * Yalnizca hasara bakan bir MVP ondeki oyuncuya gider: arkadaki oyuncu 3-8.
  * dalgalarda oldurmelerin %0'ini aliyor ama yolu o tutuyor. Burada her oyuncu
- * bir unvan aliyor. Once kosunun olgulari -- ilk onuncu seviye kulesi (Kule
- * Ustası), kosunun en yuksek serisi (Seri Ustası), tek basina en cok oldurme
- * (Kasap; esitlikte kimse) -- sonra operatorun kendi rolu ("Destek",
- * "Tank"). Bir oyuncu birden cok olguyu tasiyorsa yalnizca ilki yaziliyor;
- * digerleri baskasina aktarilmiyor, cunku unvan baskasi icin dogru degil.
- * Hasar hicbir unvanin olcusu degil. Yerel oyuncu once, sonra yuva sirasi.
+ * bir unvan aliyor. Once dalga karnesiyle ayni bes rol olcusu, kosunun
+ * toplamindan (`pickRoleTitles`): Kasap, Nişancı Ortağı, Komutan, Tamirci,
+ * Kule Ustası -- her oyuncu en fazla birini aliyor ve unvan yalnizca o olcude
+ * ondeki oyuncuya gidiyor; ondeki baska unvan aldiysa olcu siradakine dusmuyor. Kule hasari bes olcunun yalnizca biri.
+ * Olcuden unvan alamayan oyuncuya kosunun anlari: ilk onuncu seviye (Kule
+ * Ustası, o unvan baskasinda degilse) ve kosunun en yuksek serisi (Seri
+ * Ustası). Hicbiri yoksa operatorun kendi rolu ("Destek", "Tank").
+ * Yerel oyuncu once, sonra yuva sirasi.
  */
 export function buildPlayerLines(run: Pick<RunSummary, "players" | "firstLevel10" | "bestStreak">, localSlot: number): RunPlayerLine[] {
   const players = Array.isArray(run.players) ? run.players : [];
-  const topKills = players.reduce((max, player) => Math.max(max, toCount(player.kills)), 0);
-  const killLeaders = players.filter((player) => toCount(player.kills) === topKills);
-  const killLeaderSlot = topKills > 0 && killLeaders.length === 1 ? killLeaders[0].slot : undefined;
+  // Eski rapor (rol olgulari yok): kule hasari icin en iyi kulesi, digerleri 0.
+  const roleTitles = pickRoleTitles(players.map((player) => ({
+    slot: player.slot,
+    kills: toCount(player.kills),
+    assists: toCount(player.assists),
+    commandAssists: toCount(player.commandAssists),
+    repaired: toCount(player.repaired),
+    towerDamage: toCount(player.towerDamage ?? player.topTower?.damage)
+  })));
+  const towerTitleTaken = [...roleTitles.values()].includes("tower");
   return players
     .map((player): RunPlayerLine => {
       const character = characters.find((candidate) => candidate.id === player.characterId);
       const operator = character?.displayName ?? "Operatör";
       let titleKind: RunRoleTitleKind = "role";
-      let title = character?.role ?? "Operatör";
-      if (run.firstLevel10 && run.firstLevel10.slot === player.slot) {
+      let title: string = character?.role ?? "Operatör";
+      const roleTitle = roleTitles.get(player.slot);
+      if (roleTitle) {
+        titleKind = roleTitle;
+        title = RUN_ROLE_TITLES[roleTitle];
+      } else if (!towerTitleTaken && run.firstLevel10 && run.firstLevel10.slot === player.slot) {
         titleKind = "level10";
         title = RUN_ROLE_TITLES.level10;
       } else if (run.bestStreak && run.bestStreak.slot === player.slot) {
         titleKind = "streak";
         title = RUN_ROLE_TITLES.streak;
-      } else if (killLeaderSlot === player.slot) {
-        titleKind = "kills";
-        title = RUN_ROLE_TITLES.kills;
       }
       const kills = toCount(player.kills);
       const parts = [`${formatRunCount(kills)} öldürme`];
+      // Asist oldurmenin hemen yaninda: arkadaki oyuncunun katkisi da bir sayi.
+      const assists = toCount(player.assists) + toCount(player.commandAssists);
+      if (assists > 0) parts.push(`${formatRunCount(assists)} asist`);
       parts.push(player.topTower ? `${player.topTower.name} ${getTowerLevelLabel(player.topTower.level, false)}` : "kule hasarı yok");
       if (player.bestStreakTier && KILL_STREAK_TIER_LABELS[player.bestStreakTier]) parts.push(KILL_STREAK_TIER_LABELS[player.bestStreakTier]);
       return {

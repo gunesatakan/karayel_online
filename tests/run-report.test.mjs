@@ -235,7 +235,7 @@ test("ulti: iskalanan ulti an degil, derece oldurmenin ustunde, esitlikte ilk ka
   assert.equal(pickBetterUltimate(best, { kind: "column", hits: 4, kills: 1, best: 4 }).kind, "column", "mukemmel nisan oldurmenin ustunde");
 });
 
-test("co-op: her oyuncu bir satir ve bir unvan; unvan olgudan, hasardan degil", () => {
+test("co-op: her oyuncu bir satir ve bir unvan; unvan olgulardan, hasar yarisi degil", () => {
   const run = defterRaporu({
     waves: 6,
     died: true,
@@ -252,8 +252,9 @@ test("co-op: her oyuncu bir satir ve bir unvan; unvan olgudan, hasardan degil", 
   const unvan = Object.fromEntries(lines.map((line) => [line.name, line.title]));
   assert.equal(unvan.Ece, RUN_ROLE_TITLES.kills, "tek basina en cok oldurme: Kasap");
   assert.equal(unvan.Onur, RUN_ROLE_TITLES.streak, "kosunun en yuksek serisi");
-  // En cok hasari veren Ali hicbir olcuyu hasardan almiyor: operatorun kendi rolu.
-  assert.equal(unvan.Ali, characters.find((character) => character.id === "zeynep").role);
+  // Kule hasari bes rol olcusunden biri (Kule Ustası): en cok hasari veren Ali
+  // onu aliyor, ama yalnizca onu -- Kasap oldurmede onde olan Ece'de kaliyor.
+  assert.equal(unvan.Ali, RUN_ROLE_TITLES.tower);
   assert.equal(unvan.Can, characters.find((character) => character.id === "healer").role);
   assert.ok(lines.every((line) => line.title.length > 0), "herkesin bir unvani var");
   assert.equal(lines.find((line) => line.name === "Ece").detail, "30 öldürme · Takipçi SV 4");
@@ -261,12 +262,24 @@ test("co-op: her oyuncu bir satir ve bir unvan; unvan olgudan, hasardan degil", 
   assert.equal(lines.find((line) => line.name === "Onur").detail, "0 öldürme · kule hasarı yok · GRANTED");
   assert.equal(lines.some((line) => /\d hasar/.test(line.detail)), false, "satirda hasar sayisi yok");
 
-  // Esit oldurmede Kasap kimsede yok; unvan ikisinden birine keyfi gitmiyor.
+  // Esit oldurmede Kasap ikisinde birden: unvan yuvaya gore keyfi birine gitmiyor.
   const esit = buildPlayerLines({ players: [
     { slot: 0, name: "A", characterId: "zeynep", kills: 5, damage: 0, cards: [] },
     { slot: 1, name: "B", characterId: "tank", kills: 5, damage: 0, cards: [] }
   ] }, 0);
-  assert.equal(esit.some((line) => line.titleKind === "kills"), false);
+  assert.deepEqual(esit.map((line) => line.titleKind), ["kills", "kills"]);
+
+  // Rapor olgulari: asist ve komut asisti satirda, Nişancı Ortağı ve Komutan unvaninda.
+  const destek = buildPlayerLines({ players: [
+    { slot: 0, name: "A", characterId: "warrior", kills: 40, damage: 9000, towerDamage: 9000, cards: [] },
+    { slot: 1, name: "B", characterId: "zeynep", kills: 4, damage: 300, commandAssists: 12, cards: [] },
+    { slot: 2, name: "C", characterId: "archer", kills: 6, damage: 500, assists: 9, repaired: 400, cards: [] }
+  ] }, 0);
+  const destekUnvan = Object.fromEntries(destek.map((line) => [line.name, line.titleKind]));
+  assert.equal(destekUnvan.B, "command");
+  assert.equal(destekUnvan.C, "assist", "assist ve onarimin ikisinde de tek; once destek unvani");
+  assert.ok(["kills", "tower"].includes(destekUnvan.A));
+  assert.equal(destek.find((line) => line.name === "B").detail, "4 öldürme · 12 asist · kule hasarı yok");
 
   // Co-op raporunda kosu capinda hasar MVP'si yok; oyuncu satirlari var.
   const view = buildRunReportView({ result: "defeat", wave: 6, kills: run.kills, stage: 1, creative: false, run, localSlot: 2, finale: false });

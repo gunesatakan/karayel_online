@@ -819,6 +819,12 @@ export type KillEventSnapshot = {
    * oldurmesi senin ekraninda pop yapmiyor, HUD sayiminda goruluyor.
    */
   g?: number;
+  /**
+   * Co-op asisti: oldurenden farkli oyuncularin katkisi, her biri
+   * `yuva*4+tur` (`encodeKillAssists`). Asist yoksa (ve soloda hep) alan yok;
+   * olay telde otuz kez gittigi icin tek kucuk tam sayi.
+   */
+  a?: number[];
 };
 
 export type ZeynepCommandTier = "small" | "medium" | "big";
@@ -1107,6 +1113,67 @@ export type {
   UltimateShockwavePose,
   UltimateStampText
 } from "./feedback/ultimate.js";
+export {
+  SERVER_LINK_MATURITY_WAVES,
+  SERVER_LINK_NOTICE_COOLDOWN_MS,
+  SILENT_MODE_BURST_MULTIPLIER,
+  SILENT_MODE_HASTE_GAME_MS,
+  SILENT_MODE_PHASE_LABELS,
+  SILENT_MODE_SILENCE_GAME_MS,
+  formatSilentModeSeconds,
+  getServerLinkJoinedText,
+  getServerLinkMaturedText,
+  getServerLinkMaturity,
+  getSilentModeNoticeText,
+  getSilentModePhase,
+  getTurkishGenitive,
+  toLocalSilentModeTimeline
+} from "./feedback/team-signals.js";
+export type {
+  ServerLinkJoinedMessage,
+  ServerLinkMaturedMessage,
+  ServerLinkMaturityWave,
+  SilentModeMessage,
+  SilentModePhase,
+  SilentModePhaseKind,
+  SilentModeTimeline,
+  TeamSignalText
+} from "./feedback/team-signals.js";
+export {
+  COMBO_STAMP_GAP_MS,
+  COMBO_STAMP_KINDS,
+  COMBO_STAMP_LIFETIME_MS,
+  COMBO_STAMP_MAX_LIVE,
+  ComboStampGate,
+  ComboStampThrottle,
+  DEBUG_SWEEP_STAMP_MIN_KILLS,
+  getComboStampText,
+  getLuckyWindowSeconds,
+  sanitizeComboStampMessage
+} from "./feedback/combo-stamps.js";
+export type { ComboStampKind, ComboStampMessage } from "./feedback/combo-stamps.js";
+export {
+  ASSIST_TOAST_PAIR_GAP_MS,
+  AssistToastGate,
+  KILL_ASSIST_KINDS,
+  KILL_ASSIST_LIMIT,
+  decodeKillAssists,
+  encodeKillAssists,
+  getKillAssistText,
+  pickLocalKillAssist,
+  resolveKillAssists
+} from "./feedback/assists.js";
+export type { KillAssist, KillAssistCandidate, KillAssistKind } from "./feedback/assists.js";
+export {
+  ROLE_TITLE_FLOORS,
+  ROLE_TITLE_KILL_SHARE_FLOOR,
+  ROLE_TITLE_LABELS,
+  ROLE_TITLE_ORDER,
+  getRoleTitleFloor,
+  getWaveRoleFacts,
+  pickRoleTitles
+} from "./progress/role-titles.js";
+export type { RoleTitleFacts, RoleTitleKind } from "./progress/role-titles.js";
 
 export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower, countsAsTower, occupiesTowerSlot, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
 export {
@@ -1261,8 +1328,10 @@ export {
   NEAR_MISS_HEALTH_RATIO,
   WaveReportTracker,
   buildWaveReportCard,
+  formatSynergyShareText,
   isCleanStreakMilestone,
   pickWaveReportHighlight,
+  pickWaveRoleTitle,
   sanitizeWaveRecord
 } from "./progress/wave-report.js";
 export type {
@@ -1836,3 +1905,4 @@ export {
 export type { BlindHand, BlindHeading, BlindNavigatorState, BlindStepResult } from "./navigation/index.js";
 export * from "./defense-insights.js";
 export * from "./worker-skills.js";
+export * from "./synergy/index.js";
