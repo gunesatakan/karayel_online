@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CLIENT_PROJECTILE_MAX_LIFETIME_MS,
+  GAME_SPEED_MULTIPLIER,
   getLinearProjectilePosition,
   hydrateWireSnapshot,
   isClientProjectileExpired,
@@ -98,9 +99,37 @@ test("istemci doğrusal mermiyi sunucu zamanıyla ilerletir ve ömür sınırın
     id: "p1", kind: "tower", source: "tower", hitType: "projectile",
     x: 10, y: 20, vx: 100, vy: -20, spawnedAt: 1_000
   };
-  assert.deepEqual(getLinearProjectilePosition(projectile, 1_500), { x: 60, y: 10 });
+  // vx/vy oyun saatinde: 500 ms duvar saati = 0.4 s oyun saati.
+  const position = getLinearProjectilePosition(projectile, 1_500);
+  assert.ok(Math.abs(position.x - (10 + 100 * 0.5 * GAME_SPEED_MULTIPLIER)) < 1e-9);
+  assert.ok(Math.abs(position.y - (20 - 20 * 0.5 * GAME_SPEED_MULTIPLIER)) < 1e-9);
   assert.equal(isClientProjectileExpired(projectile, 1_000 + CLIENT_PROJECTILE_MAX_LIFETIME_MS - 1), false);
   assert.equal(isClientProjectileExpired(projectile, 1_000 + CLIENT_PROJECTILE_MAX_LIFETIME_MS), true);
+});
+
+test("istemcinin çizdiği doğrusal mermi sunucunun yetkili konumunun önüne geçmez", () => {
+  const { room, events } = setupRoom();
+  const tower = placeFirstTower(room);
+  room.spawnEnemy();
+  const enemy = [...room.enemies.values()][0];
+  room.spawnTowerProjectile(tower, enemy);
+  const projectile = [...room.projectiles.values()][0];
+  const spawn = events.find((event) => event.type === "projectile:spawn").payload;
+  // Yalnizca ucus: carpacak dusman, yeni dogum ya da yeni atis yok.
+  room.enemies.clear();
+  room.towers.clear();
+  room.updateSpawning = () => {};
+
+  const realMs = 250;
+  for (let elapsed = 0; elapsed < realMs; elapsed += 50) room.update(50);
+  assert.equal(room.projectiles.get(projectile.id), projectile, "mermi ucusta kalmali");
+
+  const drawn = getLinearProjectilePosition(spawn, spawn.spawnedAt + realMs);
+  const travelled = Math.hypot(projectile.x - spawn.x, projectile.y - spawn.y);
+  assert.ok(travelled > 1, "sunucu mermiyi yurutmeli");
+  // Ag yuvarlamasi (vx, vy, x, y) disinda ayni nokta.
+  assert.ok(Math.abs(drawn.x - projectile.x) < 0.5, `x: istemci ${drawn.x}, sunucu ${projectile.x}`);
+  assert.ok(Math.abs(drawn.y - projectile.y) < 0.5, `y: istemci ${drawn.y}, sunucu ${projectile.y}`);
 });
 
 test("projectile:hit sunucunun yetkili son çarpma konumunu taşır", () => {
