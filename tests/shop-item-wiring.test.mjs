@@ -93,6 +93,8 @@ test("Komuta Modülü takıldığı kulenin işaret gücünü artırır", () => 
   // Isaretli dusmana inen hasar gercekten buyumeli.
   const olc = (kuleyle) => {
     const hedefRoom = createRoom(uygunKule.characterId);
+    // Kritik zari sabit: yoksa esyasiz olcum kritik vurup esyaliyi gecebiliyordu.
+    hedefRoom.towerCriticalRandom = () => 1;
     const hedefSpot = findBuildableSpot(hedefRoom, uygunKule.id);
     hedefRoom.placeTower(client, { x: hedefSpot.x, y: hedefSpot.y, definitionId: uygunKule.id });
     const hedefTower = [...hedefRoom.towers.values()].find((entry) => entry.definition.id === uygunKule.id);
