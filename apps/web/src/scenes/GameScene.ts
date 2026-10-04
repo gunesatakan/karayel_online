@@ -4769,7 +4769,8 @@ export class GameScene extends Phaser.Scene {
         };
       }
 
-      const remainingSeconds = snapshotDeltaSeconds * (1 - alpha);
+      // vx/vy oyun saatinde; snapshot araligi duvar saati.
+      const remainingSeconds = snapshotDeltaSeconds * (1 - alpha) * GAME_SPEED_MULTIPLIER;
       return {
         ...projectile,
         x: projectile.x - (projectile.vx ?? 0) * remainingSeconds,

@@ -9,11 +9,20 @@ import type {
   WireGameSnapshot,
   ProjectileSpawnSnapshot
 } from "../index.js";
+import { GAME_SPEED_MULTIPLIER } from "../tower-stats/index.js";
 
 export const CLIENT_PROJECTILE_MAX_LIFETIME_MS = 10_000;
 
+/**
+ * Dogrusal merminin `serverTime` anindaki konumu.
+ *
+ * `vx`/`vy` oyun saatinde (birim / oyun saniyesi): sunucu mermiyi
+ * `GAME_SPEED_MULTIPLIER` ile yavaslatilmis adimla yurutuyor. `spawnedAt` ve
+ * `serverTime` ise duvar saati, o yuzden gecen sure oyun saatine cevriliyor;
+ * yoksa cizilen mermi sunucudakinin onune gecip hedefi/rayi erken asiyor.
+ */
 export function getLinearProjectilePosition(projectile: ProjectileSpawnSnapshot, serverTime: number) {
-  const elapsedSeconds = Math.max(0, serverTime - projectile.spawnedAt) / 1000;
+  const elapsedSeconds = Math.max(0, serverTime - projectile.spawnedAt) / 1000 * GAME_SPEED_MULTIPLIER;
   return {
     x: projectile.x + (projectile.vx ?? 0) * elapsedSeconds,
     y: projectile.y + (projectile.vy ?? 0) * elapsedSeconds
