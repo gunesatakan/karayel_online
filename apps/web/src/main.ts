@@ -40,9 +40,28 @@ const game = new Phaser.Game({
   }
 });
 
-setupMenuUi(game);
-setupGameControlUi(game);
-setupGameHudUi(game);
+/**
+ * VFX galerisi (`?vfx-gallery`): menu, sunucu ve oda yok. Sahne yalnizca bu
+ * adreste yukleniyor (ayri parca); oyunun kendi cizicilerini sahte ama
+ * deterministik bir savasla besliyor. Ayrinti: scenes/VfxGalleryScene.ts.
+ */
+const vfxGallery = new URLSearchParams(window.location.search).has("vfx-gallery");
+if (vfxGallery) {
+  const launchGallery = async () => {
+    const { VfxGalleryScene } = await import("./scenes/VfxGalleryScene");
+    if (!game.scene.getScene("vfx-gallery")) game.scene.add("vfx-gallery", VfxGalleryScene, false);
+    game.scene.stop("preloader");
+    game.scene.start("vfx-gallery");
+  };
+  window.addEventListener("karayel:phaser-ready", () => void launchGallery(), { once: true });
+  // Ileride ekran goruntusu karsilastirmasi (Playwright) oyunu buradan
+  // adim adim surebilsin; yalnizca galeri adresinde.
+  (window as unknown as { __karayelVfxGallery?: Phaser.Game }).__karayelVfxGallery = game;
+} else {
+  setupMenuUi(game);
+  setupGameControlUi(game);
+  setupGameHudUi(game);
+}
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {

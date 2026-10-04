@@ -403,6 +403,17 @@ export function getUltimatePowerMultiplier(level: number) {
   return ULTIMATE_POWER_DAMAGE_STEP ** safeLevel;
 }
 
+/**
+ * Ultinin gorsel kademesi: kulelerin 1-4 / 5-9 / 10 sinirlarinin ulti
+ * gucundeki karsiligi. Guc 0-2 kademe 1, 3-4 kademe 2, 5 (tam) kademe 3.
+ * Isinlara `tier` olarak yaziliyor; kademe 1 telde hic yazilmiyor.
+ */
+export function getUltimateVisualTier(level: number): 1 | 2 | 3 {
+  const safeLevel = Math.max(0, Math.min(ULTIMATE_POWER_MAX_LEVEL, Math.floor(level || 0)));
+  if (safeLevel >= ULTIMATE_POWER_MAX_LEVEL) return 3;
+  return safeLevel >= 3 ? 2 : 1;
+}
+
 /** Siradaki kademenin bedeli; hepsi alinmissa `undefined`. */
 export function getUltimatePowerUpgradeCost(level: number) {
   const safeLevel = Math.max(0, Math.floor(level || 0));

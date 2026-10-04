@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { towerCatalog, type TowerDefinition } from "@karayel/shared";
+import { bakeFlashTextures } from "../vfx/flash-pool";
+import { darken, liftToWhite } from "../vfx/kit";
 
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
@@ -12,29 +14,11 @@ const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
  * a tile sprite but an edge rail, drawn segment by segment in
  * GameScene.renderAbartiEdgeBody, so swapping it in needs that renderer reworked
  * rather than just a texture swap.
- */
-/**
- * Kademe dokularinin geometrisi.
  *
- * Hem doku uretimi hem cizim bu tablodan okur. Ayrilirlarsa mermi sessizce
- * bozulur: `setDisplaySize` cerceveyi sabit bir capa oturttugu icin, cerceve
- * buyuyup cap buyumezse kademe 3 mermisinin cekirdegi kademe 1'den *kucuk*
- * gorunur -- yani yukseltme kuleyi zayiflatmis gibi durur.
- *
- * `sprite`: taban cizimin cerceve icindeki buyumesi. `margin`: hale ve isinlarin
- * tastigi pay. Cerceve ikisinin toplami kadar buyur.
+ * Mermi dokularinin kademe varyantlari (--t2/--t3, genel bir hale ve dort
+ * isin) emekli: kademe artik profilin kesitinden, izinden ve rampasindan
+ * (vfx/vfx-profiles.ts) geliyor. Yaklasik 110 tuval de acilista uretilmiyor.
  */
-export const PROJECTILE_TIER_GEOMETRY = {
-  2: { sprite: 1.18, margin: 0.42 },
-  3: { sprite: 1.42, margin: 0.72 }
-} as const;
-
-/** Kademe dokusunun cercevesi tabana gore kac kat buyuk. */
-export function getProjectileTierFrameGrowth(tier: number) {
-  const geometry = PROJECTILE_TIER_GEOMETRY[tier as 2 | 3];
-  return geometry ? geometry.sprite + geometry.margin : 1;
-}
-
 const PAINTED_TOWER_IDS = [
   "zeynep-1",
   "zeynep-2",
@@ -88,18 +72,8 @@ export class PreloaderScene extends Phaser.Scene {
     this.createCircleTexture("projectile-tower", 0xf8fafc, 4);
     this.createDroneTexture("drone-attack", 0xfb7185, 0xfacc15);
     this.createDroneTexture("drone-repair", 0x22d3ee, 0x86efac);
-    // Kule tanimi olmayan jenerik mermiler de kademelenmeli: bir kule kendi
-    // dokusunu tasimiyorsa istemci bunlara duser ve kademe orada kaybolurdu.
-    for (const [kind, color] of [
-      ["arrow", 0xbae6fd],
-      ["bolt", 0x86efac],
-      ["orb", 0xc4b5fd],
-      ["light", 0xfbcfe8],
-      ["chain", 0xfef08a],
-      ["tower", 0xf8fafc]
-    ] as const) {
-      this.createProjectileTierTextures(`projectile-${kind}`, color);
-    }
+    // Efekt kitinin pisirilmis dokulari (2 kat): yumusak hale, kivilcim, halka.
+    bakeFlashTextures(this);
     this.createProceduralTowerTextures();
     window.dispatchEvent(new CustomEvent("karayel:phaser-ready"));
   }
@@ -164,86 +138,7 @@ export class PreloaderScene extends Phaser.Scene {
       for (const tower of towers) {
         this.createTowerTexture(tower);
         this.createProjectileTexture(tower);
-        this.createProjectileTierTextures(`projectile-${tower.id}`, getVisualPalette(tower).glow);
       }
-    }
-  }
-
-  /**
-   * Merminin kademe 2 ve 3 varyantlari.
-   *
-   * Taban dokunun uzerine turetiliyor, yeniden cizilmiyor: her kulenin kendi
-   * mermi cizimi var (Sunucu patlamasi, Melis laneti, jenerik daire...) ve
-   * bunlarin uc kopyasini elle yazmak hem 55 kule icin surdurulemez hem de her
-   * yeni kulede unutulacak bir adim olurdu. Boylece bir kule kendi mermisini
-   * nasil cizerse cizsin -- hatta ileride boyanmis bir dokuya gecse bile --
-   * kademeleri kendiliginden olusur.
-   *
-   * Buyutme tek basina yeterli degil: "ayni sey ama daha buyuk" tam olarak
-   * sikici gelen sey. Bu yuzden siluet de degisiyor -- kademe 2 arkasina bir
-   * hale, kademe 3 ayrica disari uzanan dort isin aliyor. 34 piksellik bir
-   * ekranda okunan sey dis hat, ic detay degil.
-   */
-  private createProjectileTierTextures(baseKey: string, glowColor: number) {
-    if (!this.textures.exists(baseKey)) {
-      return;
-    }
-
-    const source = this.textures.get(baseKey).getSourceImage() as CanvasImageSource & { width: number; height: number };
-    const baseWidth = source.width;
-    const baseHeight = source.height;
-    if (!baseWidth || !baseHeight) {
-      return;
-    }
-
-    for (const tier of [2, 3] as const) {
-      const key = `${baseKey}--t${tier}`;
-      if (this.textures.exists(key)) {
-        this.textures.remove(key);
-      }
-
-      const { sprite: spriteScale, margin } = PROJECTILE_TIER_GEOMETRY[tier];
-      const width = Math.ceil(baseWidth * (spriteScale + margin));
-      const height = Math.ceil(baseHeight * (spriteScale + margin));
-      const canvas = this.textures.createCanvas(key, width, height);
-      const context = canvas?.getContext();
-      if (!canvas || !context) {
-        continue;
-      }
-
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const glow = `#${glowColor.toString(16).padStart(6, "0")}`;
-
-      context.save();
-      if (tier === 3) {
-        // Dort isin: silueti yildiza cevirir, yani kademe 3 mermi kalabaligin
-        // icinde tek bakista secilir.
-        context.strokeStyle = glow;
-        context.globalAlpha = 0.55;
-        context.lineWidth = Math.max(1.5, baseWidth * 0.09);
-        context.lineCap = "round";
-        const reach = Math.min(width, height) / 2 - 1;
-        for (let index = 0; index < 4; index += 1) {
-          const angle = (Math.PI / 2) * index + Math.PI / 4;
-          context.beginPath();
-          context.moveTo(centerX + Math.cos(angle) * reach * 0.34, centerY + Math.sin(angle) * reach * 0.34);
-          context.lineTo(centerX + Math.cos(angle) * reach, centerY + Math.sin(angle) * reach);
-          context.stroke();
-        }
-      }
-
-      context.globalAlpha = tier === 2 ? 0.34 : 0.5;
-      context.fillStyle = glow;
-      context.beginPath();
-      context.arc(centerX, centerY, baseWidth * (tier === 2 ? 0.42 : 0.54), 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-
-      const drawWidth = baseWidth * spriteScale;
-      const drawHeight = baseHeight * spriteScale;
-      context.drawImage(source, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
-      canvas.refresh();
     }
   }
 
@@ -780,5 +675,8 @@ function getVisualPalette(tower: TowerDefinition): VisualPalette {
   if (tower.damageType === "none" || tower.classType === "control") {
     return { main: 0x94a3b8, accent: 0xa7f3d0, glow: 0x99f6e4, dark: 0x334155 };
   }
-  return { main: tower.color, accent: 0xf8fafc, glow: 0x86efac, dark: 0x166534 };
+  // Taslak kuleler (Baransel, Ulku, Omer, Onur 3-6) kendi renklerini tasiyor:
+  // eskiden hepsinin halesi ayni varsayilan yesildi (0x86efac), mor buyucu da
+  // pembe sifaci da yesil parliyordu.
+  return { main: tower.color, accent: 0xf8fafc, glow: liftToWhite(tower.color, 0.4), dark: darken(tower.color, 0.6) };
 }

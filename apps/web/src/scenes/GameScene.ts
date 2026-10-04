@@ -39,7 +39,13 @@ import {
   type ChampionDownMessage
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
-import { CombatVfx, drawCombatProjectile, drawIsolationField, drawPressureWave, drawSynthesisRay, readTextureAccent, shotStyle } from "../vfx/combat-vfx";
+import { CombatVfx, drawIsolationField, readTextureAccent } from "../vfx/combat-vfx";
+import { AttackVfx } from "../vfx/attack-vfx";
+import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
+import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
+import { liftToWhite, toTier } from "../vfx/kit";
+import { VfxLod } from "../vfx/lod";
+import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
 import {
   AssistToastGate,
@@ -225,7 +231,6 @@ import { saveQuickStartIntent } from "../quick-start";
 import { readResolvedCosmetics, recordRunProgress, recordWaveBadges, resolveRoomFirstLiveWave, type RunProgressOutcome } from "../progress-store";
 import { createWaveReportElement, getWaveReportKey } from "../wave-report-ui";
 import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
-import { getProjectileTierFrameGrowth } from "./PreloaderScene";
 import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
@@ -648,16 +653,6 @@ type TapLogEntry = {
   sonuc: string;
 };
 
-/** Onuncu seviye asiri yuklemede kiris boyunca kosan parlama sayisi. */
-/** Onuncu seviyede Zeynep isinindan dokulen zerre sayisi. */
-const SHOWCASE_MOTE_COUNT = 9;
-const OVERDRIVE_FLARE_COUNT = 7;
-/** Kirisin kenarindan dokulen kivilcim sayisi. */
-const OVERDRIVE_SPARK_COUNT = 10;
-/** Halenin kac katmanda sondugu; az katman duz kenarli bir bant birakiyor. */
-const OVERDRIVE_HALO_LAYERS = 6;
-/** Bir kivilcimin dogup sonme suresi. */
-const OVERDRIVE_SPARK_LIFE_MS = 520;
 /**
  * Yerel yankinin en fazla ne kadar ayakta kalacagi.
  *
@@ -866,7 +861,42 @@ export class GameScene extends Phaser.Scene {
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
-  private impactGraphics?: Phaser.GameObjects.Graphics;
+  /** Isinlarin ADD karisimli omuzlari ve haleleri; govde `beamGraphics`te. */
+  private beamGlowGraphics?: Phaser.GameObjects.Graphics;
+  /** Isin cizimi (lazer, Zeynep, Melis, ultiler); her karede, ara degerli isinlarla. */
+  private beamRenderer?: BeamRenderer;
+  private readonly beamInterpolator = new BeamInterpolator();
+  /** Profil gudumlu mermi, namlu ve carpma cizimi. */
+  private attackVfx?: AttackVfx;
+  /** Kisa omurlu ADD parlamalari (en fazla 64 canli). */
+  private flashPool?: FlashPool;
+  /** Mermi omuzlari ve haleleri: karede tek dortgenlik ADD damgalar. */
+  private glowStamps?: GlowStampPool;
+  /** Yuk altinda once kivilcim, sonra hale, en son iz uzunlugu dusuyor. */
+  private readonly vfxLod = new VfxLod();
+  private lastVfxFrameAt = 0;
+  /** Bu karede efektlere giden CPU suresi (LOD olcusu). */
+  private vfxFrameCost = 0;
+  /** Mermiyi atan kule yerel oyuncunun mu; atis aninda kulenin konumundan. */
+  private readonly projectileOwnership = new Map<string, boolean>();
+  /**
+   * Kulelerin konumu ve sahibi (snapshot basina bir kez): isinin ve merminin
+   * cikis noktasi kuleyi soyluyor. Duz diziler; karede metin anahtari yok.
+   */
+  private readonly towerSpotX: number[] = [];
+  private readonly towerSpotY: number[] = [];
+  private readonly towerSpotOwner: string[] = [];
+  /** Testere bicaklarinin snapshot'lar arasi acisi: bir onceki ve son deger. */
+  private readonly bladeAngles = new Map<string, { from: number; to: number; at: number; interval: number }>();
+  /** Karede ayni nesne: isin cizimi secenekleri ve sahiplik cozucusu. */
+  private readonly beamRenderOptions: BeamRenderOptions = {
+    now: 0,
+    sceneNow: 0,
+    scale: 1,
+    isOwn: (beam) => this.isOwnBeam(beam),
+    reducedMotion: false
+  };
+  private readonly projectileOwnResolver = (projectile: ProjectileSnapshot) => this.projectileOwnership.get(projectile.id) ?? true;
   private combatVfx?: CombatVfx;
   /** Yuzen hasar sayilarinin sabit havuzu; kac tanesinin gorunecegini yonetmen soyluyor. */
   private damageNumbers?: DamageNumberPool;
@@ -885,17 +915,6 @@ export class GameScene extends Phaser.Scene {
   private towersPrimed = false;
   /** Olcegi snapshot'lar arasinda degisen kuleler (nabiz ya da inis); karede yalnizca bunlar. */
   private readonly animatedTowers = new Set<RenderTower>();
-  /**
-   * Kuleye ozgu carpma izleri.
-   *
-   * Halka havuzu yalnizca daire cizebiliyor; buradaki imzalar cizgi istiyor
-   * (ic ice kapanan halka, kivilcim kollari, cam kirigi yelpazesi). Kisa
-   * omurlu oldugu icin ayri bir liste tutuluyor ve her karede yasina gore
-   * soluyor.
-   */
-  private impactMarks: Array<{ x: number; y: number; definitionId: string; tier: number; angle: number; bornAt: number }> = [];
-  private static readonly MAX_IMPACT_MARKS = 48;
-  private static readonly IMPACT_MARK_MS = 260;
   private towerSnapshots = new Map<string, TowerSnapshot>();
   private staticEnemySnapshots = new Map<string, StaticEnemySnapshot>();
   private staticTowerSnapshots = new Map<string, StaticTowerSnapshot>();
@@ -1331,10 +1350,28 @@ export class GameScene extends Phaser.Scene {
     this.createHeader();
     window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
+    // Omuzlar ve haleler ADD: siyah zeminde ust uste binen ton beyaza yaniyor,
+    // daha az katmanla daha zengin bir parlama.
+    this.beamGlowGraphics = this.add.graphics().setDepth(10.05).setBlendMode(Phaser.BlendModes.ADD);
+    this.beamRenderer = new BeamRenderer(this.beamGraphics, this.beamGlowGraphics, this.vfxLod);
+    this.beamInterpolator.clear();
     // Mermi izleri mermilerin (11) hemen altinda: iz cekirdegi ortmemeli.
     this.projectileTrailGraphics = this.add.graphics().setDepth(10.9);
-    // Carpma imzalari halkalarin ustunde: halka zemin, imza kulenin kimligi.
-    this.impactGraphics = this.add.graphics().setDepth(11.6);
+    const projectileGlow = this.add.graphics().setDepth(10.85).setBlendMode(Phaser.BlendModes.ADD);
+    // Namlu ve carpma kule govdesinin (12) ustunde, seviye halkasinin (12.6)
+    // altinda: namlu cakmasi eskiden kulenin altinda kaliyordu.
+    const attackEvents = this.add.graphics().setDepth(12.45);
+    this.flashPool = new FlashPool(this, 12.5);
+    this.glowStamps = new GlowStampPool(this, 10.86);
+    this.attackVfx = new AttackVfx(this.projectileTrailGraphics, projectileGlow, attackEvents, this.flashPool, {
+      lod: this.vfxLod,
+      stamps: this.glowStamps,
+      reducedMotion: () => this.feedback?.reducedMotion ?? false,
+      // Agir tek vurus (Sunucu, Jackpot; kademe 3, yalnizca kendi kulen):
+      // yonetmenin mikro sarsintisi. Aralik, ust sinir ve hareket azaltma orada.
+      onHeavyImpact: () => this.feedback?.shakeCamera({ own: true, priority: 1, px: 1.5, durationMs: 90 })
+    });
+    this.projectileOwnership.clear();
     this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
     this.damageNumbers = new DamageNumberPool(this, 30);
     // Sayilarin hemen ustunde: seviye etiketi seyrek ve oyuncunun satin aldigi an.
@@ -1428,6 +1465,13 @@ export class GameScene extends Phaser.Scene {
       this.backgroundMusic?.pause();
       this.feedback?.destroy();
       this.feedback = undefined;
+      this.flashPool?.destroy();
+      this.flashPool = undefined;
+      this.glowStamps?.destroy();
+      this.glowStamps = undefined;
+      this.attackVfx?.clear();
+      this.beamInterpolator.clear();
+      this.projectileOwnership.clear();
       this.damageNumbers?.destroy();
       this.damageNumbers = undefined;
       this.levelLabels?.destroy();
@@ -1451,9 +1495,18 @@ export class GameScene extends Phaser.Scene {
 
   update() {
     const now = performance.now();
+    const frameMs = this.lastVfxFrameAt > 0 ? now - this.lastVfxFrameAt : 16.7;
+    this.lastVfxFrameAt = now;
+    this.vfxFrameCost = 0;
     this.renderPlaybackFrame(now);
-    this.renderImpactMarks(now);
+    const vfxStart = performance.now();
     this.combatVfx?.render(now, this.getTowerEffectScale());
+    this.attackVfx?.render(now, this.getTowerEffectScale());
+    this.flashPool?.update(now);
+    const eventsMs = performance.now() - vfxStart;
+    this.recordClientPerfSection("vfx", eventsMs);
+    // LOD olcusu: isinlar + mermi efektleri + olaylar, ve kare araligi.
+    this.vfxLod.note(this.vfxFrameCost + eventsMs, frameMs, now);
     this.damageNumbers?.update(now);
     this.levelLabels?.update(now);
     this.updateAnimatedTowers(now);
@@ -2905,10 +2958,15 @@ export class GameScene extends Phaser.Scene {
     return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
   }
 
-  /** Kare degil kenar kaplayan tanimlar. */
+  /**
+   * Kenara yerlesen yapi mi (Abarti, duvar): kare degil kenar kaplayan tanimlar.
+   *
+   * Tanim butun kataloglarda araniyor: yalnizca kendi karakterinin
+   * katalogunda arandiginda Zeynep olmayan oyuncunun ekraninda takim
+   * arkadasinin Abartisi kare bir sprite olarak ciziliyordu.
+   */
   private isEdgePlacedDefinition(definitionId: string) {
-    const definition = towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === definitionId);
-    return Boolean(definition?.engine?.placement?.requiresEdge);
+    return EDGE_PLACED_DEFINITION_IDS.has(definitionId);
   }
 
   private getPlacementOrientation(definitionId = this.selectedTowerDefinition.id, x?: number, y?: number): TowerOrientation {
@@ -3089,13 +3147,21 @@ export class GameScene extends Phaser.Scene {
    */
   private pendingEffects: Array<{ dueAt: number; play: () => void }> = [];
 
-  private queueDelayedEffect(play: () => void) {
+  private queueDelayedEffect(play: () => void, leadMs = 0) {
     // Kuyrugun kendisi de sinirli: bagalanti donarsa birikmis yuzlerce efekt
-    // cozuldugu anda hep birden patlamamali.
-    if (this.pendingEffects.length >= 96) {
+    // cozuldugu anda hep birden patlamamali. 20 kulelik dalgada saniyede ~60
+    // atis + temas + hazirlik vurusu geliyor; 500 ms'lik gecikme bunu tutmali.
+    if (this.pendingEffects.length >= 160) {
       return;
     }
-    this.pendingEffects.push({ dueAt: performance.now() + this.playbackDelayMs, play });
+    // `leadMs`: oynatmadan biraz once (namlunun hazirlik vurusu). Kuyruk sirali
+    // kalmali, bosaltma ilk vakti gelmemis kayitta duruyor.
+    const dueAt = performance.now() + this.playbackDelayMs - Math.max(0, leadMs);
+    let index = this.pendingEffects.length;
+    while (index > 0 && this.pendingEffects[index - 1].dueAt > dueAt) {
+      index -= 1;
+    }
+    this.pendingEffects.splice(index, 0, { dueAt, play });
   }
 
   private drainPendingEffects(now: number) {
@@ -3109,260 +3175,6 @@ export class GameScene extends Phaser.Scene {
     }
     if (index > 0) {
       this.pendingEffects.splice(0, index);
-    }
-  }
-
-  /**
-   * Kademe rengi seviye kadraniyla ayni dili konusur: celikten altina, altindan
-   * beyaza. Boylece merminin rengi kulenin halkasindaki ipucunu tekrar eder.
-   */
-  private getTierColor(tier: number) {
-    if (tier >= 3) return 0xfff1f2;
-    return tier === 2 ? 0xfacc15 : 0x93c5fd;
-  }
-
-  /**
-   * Kademe efektlerinin tek kurali: **buyume yok**.
-   *
-   * Once kademe basina her sey olcekleniyordu; seviye 10 kulenin atisi ekranda
-   * daha genis bir leke birakiyordu, o kadar. Buyutmek gucu degil kabaligi
-   * anlatir. Simdi disa dogru sinir ayni kaliyor, kademe ise katman, incelik ve
-   * zamanlama kazandiriyor: karsit yonde kapanan bir halka, gecikmeli bir yanki,
-   * uzun sonen bir tortu. Ayni yerde daha az yer kaplayan ama daha islenmis bir
-   * sey gorunuyor.
-   */
-  private playMuzzleFlash(x: number, y: number, tier: number, color: number) {
-    // Dis sinir uc kademede de ayni. Degisen sey cizginin inceligi.
-    this.spawnFlashRing(x, y, {
-      color,
-      startRadius: 2,
-      endRadius: 9,
-      durationMs: 150 + tier * 25,
-      thickness: tier >= 2 ? 1.2 : 1.8,
-      depth: 11.5,
-      fill: tier >= 2 ? 0.22 : 0.35
-    });
-
-    if (tier >= 2) {
-      // Iceri kapanan karsit halka: namludan cikan degil, namluya toplanan bir
-      // hareket. Ayni cerceve icinde iki yonlu okundugu icin daha derli toplu.
-      this.spawnFlashRing(x, y, {
-        color: 0xffffff,
-        startRadius: 9,
-        endRadius: 2.5,
-        durationMs: 130,
-        thickness: 0.9,
-        depth: 11.55
-      });
-    }
-
-    if (tier >= 3) {
-      // Tortu: ayni yaricapa cok yavas varan, neredeyse gorunmez bir hale.
-      this.spawnFlashRing(x, y, {
-        color,
-        startRadius: 4,
-        endRadius: 9.5,
-        durationMs: 420,
-        thickness: 0.6,
-        depth: 11.45
-      });
-    }
-  }
-
-  /**
-   * Isabet patlamasi.
-   *
-   * Carpma "daha buyuk" degil "daha agir" hissettirmeli: kademe yankiyi ve
-   * sonusu uzatiyor, yaricapi degil.
-   */
-  private playImpactBurst(x: number, y: number, tier: number, color: number) {
-    this.spawnFlashRing(x, y, {
-      color,
-      startRadius: 3,
-      endRadius: 14,
-      durationMs: 200 + tier * 25,
-      thickness: tier >= 2 ? 1.5 : 2.2,
-      depth: 11.4,
-      fill: tier >= 2 ? 0.14 : 0.22
-    });
-
-    if (tier >= 2) {
-      // Yanki: ayni sinira biraz gecikmeyle varan ince ikinci halka.
-      this.queueDelayedEffect(() => this.spawnFlashRing(x, y, {
-        color: 0xffffff,
-        startRadius: 5,
-        endRadius: 13,
-        durationMs: 260,
-        thickness: 0.9,
-        depth: 11.35
-      }));
-    }
-
-    if (tier >= 3) {
-      // Sonus: kil kalinliginda, uzun ve sessiz. Buyuklugu degil sureyi ekler.
-      this.spawnFlashRing(x, y, {
-        color,
-        startRadius: 8,
-        endRadius: 14.5,
-        durationMs: 520,
-        thickness: 0.6,
-        depth: 11.3
-      });
-    }
-  }
-
-  /**
-   * Isinlarin kademe vurgusu.
-   *
-   * Mermilerin kademesi vardi, isinlarin yoktu: isinla vuran kuleler seviye
-   * atladikca ekranda hicbir sey degistirmiyordu. Vurgu isini kalinlastirmaz --
-   * ayni genisligin **icinde** daha ince ve daha parlak bir cekirdek acar,
-   * kenarina kil gibi raylar cizer ve boyunca ilerleyen kucuk bir dugum tasir.
-   * Sabit bir cizgiye hareket katmak, onu kalinlastirmaktan daha pahali bir
-   * gorunum verir.
-   */
-  /**
-   * Kademe vurgusu: yalnizca onuncu seviyede, isin boyunca kosan tek bir dugum.
-   *
-   * Burada bir donem iki sey daha vardi ve ikisi de ayni hatayi yapiyordu.
-   * Kademe 2'de isinin iki yanina cekilen paralel kil hatlar, kademe 3'te ise
-   * boyunca dizilen dik kil cizgiler. Ikisi birlikte -- ve tek baslarina --
-   * kirisi bir borunun ya da rayin icinden geciyormus gibi gosteriyordu: goz
-   * once o duzenli geometriyi okuyor, isini sonra. Kademeyi zaten renk
-   * soyluyor (kirmizi, mavi, beyaz) ve rengin uzerine cizilen bir cerceve o
-   * bilgiyi tekrar etmekten baska bir sey yapmiyordu.
-   *
-   * Geriye kalan dugum bir cerceve degil, bir hareket: isin duruyorken bile
-   * icinden bir sey akiyor gorunuyor.
-   */
-  private drawBeamTierAccent(beam: BeamSnapshot, color: number, options: { outerWidth?: number } = {}) {
-    const graphics = this.beamGraphics;
-    if (!graphics || (beam.tier ?? 1) < 3) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-
-    // Dugum, isinin **cizilen** genisligine gore olculur.
-    //
-    // Once beam.width kullaniliyordu, ama cizim fonksiyonlari govdenin ustune
-    // hale katmanlari koyuyor: Debug Lazer 4 birimlik bir isin bildirirken
-    // ekranda 12 birim yer kapliyor. Taban deger de sart: ince isinlarda oranla
-    // olculen her sey birkac pikselin altina inip kayboluyor.
-    const outerHalf = Math.max(3, (options.outerWidth ?? beam.width) * 0.5);
-    const travel = ((this.time.now % 620) / 620) * length;
-    graphics.fillStyle(0xffffff, 0.9);
-    graphics.fillCircle(beam.x1 + ux * travel, beam.y1 + uy * travel, Math.max(2, outerHalf * 0.5));
-  }
-
-  /**
-   * Carpma imzasini kuyruga alir.
-   *
-   * Yalnizca imzasi tanimli kuleler icin: digerlerinde halka zaten yeterli ve
-   * her mermi icin bos bir kayit tutmanin anlami yok.
-   */
-  private addImpactMark(x: number, y: number, definitionId: string, tier: number, angle: number) {
-    if (!IMPACT_MARK_STYLES[definitionId]) {
-      return;
-    }
-    if (this.impactMarks.length >= GameScene.MAX_IMPACT_MARKS) {
-      this.impactMarks.shift();
-    }
-    this.impactMarks.push({ x, y, definitionId, tier, angle, bornAt: performance.now() });
-  }
-
-  /**
-   * Kuleye ozgu carpma imzalari.
-   *
-   * Uc kule de çarpma vuruyor ama uc ayri sey yapiyor; imza da onu soylemeli.
-   * Ortak kural yine ayni: kademe buyutmez, katman ekler.
-   */
-  private renderImpactMarks(now: number) {
-    const graphics = this.impactGraphics;
-    if (!graphics) {
-      return;
-    }
-
-    graphics.clear();
-    let writeIndex = 0;
-    for (const mark of this.impactMarks) {
-      const age = (now - mark.bornAt) / GameScene.IMPACT_MARK_MS;
-      if (age >= 1) {
-        continue;
-      }
-      this.impactMarks[writeIndex] = mark;
-      writeIndex += 1;
-      this.drawImpactMark(graphics, mark, age);
-    }
-    this.impactMarks.length = writeIndex;
-  }
-
-  private drawImpactMark(
-    graphics: Phaser.GameObjects.Graphics,
-    mark: { x: number; y: number; definitionId: string; tier: number; angle: number },
-    age: number
-  ) {
-    const style = IMPACT_MARK_STYLES[mark.definitionId];
-    if (!style) {
-      return;
-    }
-
-    const fade = 1 - age;
-    const color = this.getTierColor(mark.tier);
-
-    if (style === "collapse") {
-      // Obsesyon: halka disari degil **iceri** kapanir. Kule ayni hedefe
-      // kilitlendikce guclendigi icin imzasi da toplanmayi anlatiyor.
-      const radius = 15 - 13 * age;
-      graphics.lineStyle(1.4, color, 0.85 * fade);
-      graphics.strokeCircle(mark.x, mark.y, radius);
-      if (mark.tier >= 3) {
-        const second = Math.max(0, (age - 0.3) / 0.7);
-        if (second > 0) {
-          graphics.lineStyle(0.9, 0xffffff, 0.7 * (1 - second));
-          graphics.strokeCircle(mark.x, mark.y, 15 - 13 * second);
-        }
-      }
-      return;
-    }
-
-    if (style === "spark") {
-      // Ucube: elektrik. Kollar kirikli, cunku kulenin zinciri de kirikli.
-      const arms = mark.tier >= 3 ? 5 : 3;
-      const reach = 4 + 10 * age;
-      graphics.lineStyle(mark.tier >= 3 ? 1.3 : 1, color, 0.9 * fade);
-      for (let index = 0; index < arms; index += 1) {
-        const armAngle = mark.angle + (index / arms) * Math.PI * 2;
-        const midAngle = armAngle + 0.35;
-        graphics.beginPath();
-        graphics.moveTo(mark.x, mark.y);
-        graphics.lineTo(mark.x + Math.cos(midAngle) * reach * 0.55, mark.y + Math.sin(midAngle) * reach * 0.55);
-        graphics.lineTo(mark.x + Math.cos(armAngle) * reach, mark.y + Math.sin(armAngle) * reach);
-        graphics.strokePath();
-      }
-      return;
-    }
-
-    // Kirik Ayna: cam kirigi yelpazesi, merminin geldigi yone dogru acilir.
-    const shards = mark.tier >= 3 ? 5 : 3;
-    // Yelpaze disa dogru actigi icin ayni sayilarla halka ve kivilcimdan daha
-    // sonuk kaliyordu; erisim ve parlaklik onlarla ayni agirliga getirildi.
-    const reach = 4 + 15 * age;
-    graphics.lineStyle(mark.tier >= 3 ? 1.5 : 1.1, color, 0.95 * fade);
-    for (let index = 0; index < shards; index += 1) {
-      const spread = ((index / Math.max(1, shards - 1)) - 0.5) * 1.1;
-      const shardAngle = mark.angle + spread;
-      const inner = reach * 0.3;
-      graphics.lineBetween(
-        mark.x + Math.cos(shardAngle) * inner,
-        mark.y + Math.sin(shardAngle) * inner,
-        mark.x + Math.cos(shardAngle) * reach,
-        mark.y + Math.sin(shardAngle) * reach
-      );
     }
   }
 
@@ -4499,6 +4311,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.noteBadgeSnapshot(hydratedSnapshot);
+    this.noteProjectileOwnership(hydratedSnapshot.projectiles);
     // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
     // ayni soketten, ayni sirayla geliyor (oynatma saati ise ~500 ms geride,
     // o yuzden oynatilan snapshot degil). Karnesi gelmis dalgadan baska bir
@@ -4541,6 +4354,27 @@ export class GameScene extends Phaser.Scene {
       if (tower.ownerId === this.localSessionId) this.noteBadgeTowerFacts(tower);
     }
   }
+
+  /**
+   * Dogrusal olmayan mermilerin (gudumlu, odak, lanet...) sahipligi ilk
+   * gorulduklerinde: bunlar `projectile:spawn` gondermiyor. Alindigi anda
+   * (oynatmadan ~500 ms once) mermi henuz kulesinin yanindayken. Gorulmeyen
+   * kayitlar siliniyor; dogrusal mermiler kendi atis/isabet mesajlariyla.
+   */
+  private noteProjectileOwnership(projectiles: readonly ProjectileSnapshot[]) {
+    const seen = this.ownershipSeen;
+    seen.clear();
+    for (const projectile of projectiles) {
+      seen.add(projectile.id);
+      if (projectile.source !== "tower" || this.projectileOwnership.has(projectile.id)) continue;
+      this.projectileOwnership.set(projectile.id, this.isOwnShotFrom(projectile.x, projectile.y));
+    }
+    for (const id of this.projectileOwnership.keys()) {
+      if (!seen.has(id) && !this.linearProjectileSnapshots.has(id)) this.projectileOwnership.delete(id);
+    }
+  }
+
+  private readonly ownershipSeen = new Set<string>();
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
     // Delta once tamamlaniyor: hidratlama tam kayit bekliyor.
@@ -4617,7 +4451,19 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderProjectiles(frame.snapshot.projectiles);
-    this.recordClientPerfSection("projectiles", performance.now() - sectionStart);
+    const projectilesMs = performance.now() - sectionStart;
+    this.recordClientPerfSection("projectiles", projectilesMs);
+    this.vfxFrameCost += projectilesMs;
+    // Isinlar ve kule ustu canli katmanlar her karede: eskiden yalnizca
+    // snapshot geldiginde (~15 Hz) ciziliyorlardi ve zamana bagli her sey
+    // (Gosteri'nin ikinci perdesi, Ucube zinciri, Melis patlamalari)
+    // basamakli oynuyordu.
+    sectionStart = performance.now();
+    this.renderBeamFrame(frame.snapshot.beams, now);
+    const beamsMs = performance.now() - sectionStart;
+    this.recordClientPerfSection("beams", beamsMs);
+    this.vfxFrameCost += beamsMs;
+    this.renderTowerOverlays();
     this.lastPlaybackAlpha = frame.alpha;
 
     if (frame.snapshot.serverTime !== this.lastRenderedSnapshotServerTime) {
@@ -4729,8 +4575,84 @@ export class GameScene extends Phaser.Scene {
       ...next,
       enemies,
       drones,
-      projectiles
+      projectiles,
+      beams: this.beamInterpolator.interpolate(previous.beams, next.beams, alpha, next.serverTime - previous.serverTime)
     };
+  }
+
+  /**
+   * Karenin isinlari: ara degerlenmis uclar ve yerelde akan omur.
+   *
+   * Lazerin cizimi kitten ve eskisiyle bire bir ayni
+   * (tests/vfx-kit-laser-identity.test.mjs); degisen yalnizca ne siklikla
+   * cizildigi.
+   */
+  private renderBeamFrame(beams: readonly BeamSnapshot[], now: number) {
+    const options = this.beamRenderOptions;
+    options.now = now;
+    options.sceneNow = this.time.now;
+    options.scale = this.getTowerEffectScale();
+    options.reducedMotion = this.feedback?.reducedMotion ?? false;
+    this.beamRenderer?.render(beams, options);
+  }
+
+  /**
+   * Kule ustundeki canli katmanlar (performans alevi, Testere bicaklari,
+   * Odaklan halkasi, Zeynep emirleri, Debug Lazer prizmasi, Izolasyon alani...)
+   * her karede. Eskiden yalnizca snapshot geldiginde ciziliyordu.
+   */
+  private renderTowerOverlays() {
+    for (const [id, rendered] of this.towers) {
+      const tower = this.towerSnapshots.get(id);
+      if (tower) this.renderTowerSpriteEffects(rendered.effect, tower);
+    }
+  }
+
+  /**
+   * Konumun en yakin kulesinin sahibi; `reach` icinde kule yoksa `undefined`.
+   * Kule sayisi en fazla birkac duzine: duz tarama.
+   */
+  private findTowerOwnerNear(x: number, y: number, reach: number) {
+    let best = reach * reach;
+    let owner: string | undefined;
+    for (let index = 0; index < this.towerSpotX.length; index += 1) {
+      const dx = this.towerSpotX[index] - x;
+      const dy = this.towerSpotY[index] - y;
+      const gap = dx * dx + dy * dy;
+      if (gap <= best) {
+        best = gap;
+        owner = this.towerSpotOwner[index];
+      }
+    }
+    return owner;
+  }
+
+  /**
+   * Isini atan yerel oyuncu mu (takim arkadasinin kademe 3 eklentileri %70).
+   *
+   * - Ulti isinlari (Zeynep sutunu, Sempati agi) kuleye degil atana ait;
+   *   sunucu atani yazmiyor, ama ultinin karakteri belli: yerel oyuncu o
+   *   karakterse kendi ultisi (kendi ultisi soluk cizilmesin).
+   * - Kuleden cikan isin: cikis noktasinin yarim karelik cevresindeki kule.
+   * - Kimlikte kule kimligi (`t12`) gecen isin: o kule.
+   * - Gerisi (dusmandan cikan Melis isinlari): yerel oyuncu Melis'se kendi,
+   *   degilse bilinmiyor ve takim arkadasininki sayiliyor.
+   */
+  private isOwnBeam(beam: BeamSnapshot) {
+    if (beam.definitionId === "zeynep-ultimate-column") return this.selectedCharacterId === "zeynep";
+    if (beam.definitionId === "onur-sympathy") return this.selectedCharacterId === "onur";
+    const nearOrigin = this.findTowerOwnerNear(beam.x1, beam.y1, this.getMapCellSize() * 0.5);
+    if (nearOrigin !== undefined) return nearOrigin === this.localSessionId;
+    const towerId = BEAM_TOWER_ID_PATTERN.exec(beam.id)?.[1];
+    const tower = towerId ? this.towerSnapshots.get(towerId) : undefined;
+    if (tower) return tower.ownerId === this.localSessionId;
+    return beam.definitionId.startsWith("archer-") && this.selectedCharacterId === "archer";
+  }
+
+  /** Atis aninda mermiyi atan kule; kule bulunamazsa yerel sayilir (soluklastirma yalnizca bilinene). */
+  private isOwnShotFrom(x: number, y: number) {
+    const owner = this.findTowerOwnerNear(x, y, this.getMapCellSize() * 1.5);
+    return owner === undefined || owner === this.localSessionId;
   }
 
   private renderSnapshotPayload(snapshot: HydratedGameSnapshot) {
@@ -4748,9 +4670,6 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderTowers(snapshot.towers);
     this.recordClientPerfSection("towers", performance.now() - sectionStart);
-    sectionStart = performance.now();
-    this.renderBeams(snapshot.beams);
-    this.recordClientPerfSection("beams", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderKillEvents(snapshot);
     this.renderDamageEvents(snapshot);
@@ -4824,33 +4743,48 @@ export class GameScene extends Phaser.Scene {
     });
     room.onMessage("projectile:spawn", (projectile: ProjectileSpawnSnapshot) => {
       this.linearProjectileSnapshots.set(projectile.id, projectile);
-      const tier = projectile.tier ?? 1;
-      this.queueDelayedEffect(() => {
-        if (shotStyle(projectile.definitionId)) {
-          this.combatVfx?.emit({ x: projectile.x, y: projectile.y, tier, definitionId: projectile.definitionId!,
-            angle: Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1), bornAt: performance.now(), muzzle: true });
-        } else this.playMuzzleFlash(projectile.x, projectile.y, tier, this.getTierColor(tier));
-      });
+      // Sahiplik atis aninda kulenin konumundan: takim arkadasinin kademe 3
+      // eklentileri soluk, kendi kulen tam.
+      if (this.projectileOwnership.size > 600) this.projectileOwnership.clear();
+      const own = this.isOwnShotFrom(projectile.x, projectile.y);
+      this.projectileOwnership.set(projectile.id, own);
+      const definitionId = projectile.definitionId ?? "";
+      const angle = Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1);
+      const recipe = getVfxTier(getVfxProfile(definitionId), projectile.tier);
+      // Kademe 2+: namluda 80-120 ms'lik hazirlik vurusu. Atis mesaji oynatmadan
+      // ~500 ms once geldigi icin hazirlik gercekten atistan once oynuyor.
+      if (recipe.muzzle.anticipationMs > 0) {
+        this.queueDelayedEffect(() => this.attackVfx?.emitAnticipation({
+          x: projectile.x, y: projectile.y, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+        }), recipe.muzzle.anticipationMs);
+      }
+      this.queueDelayedEffect(() => this.attackVfx?.emitMuzzle({
+        x: projectile.x, y: projectile.y, angle, definitionId, tier: projectile.tier, own, key: projectile.id, bornAt: performance.now()
+      }));
     });
+    // Carpma cizimi her temasta (delip gecen ara temaslar dahil) ve her kulede:
+    // profil kulenin carpma dilini, kademesini ve rengini veriyor. Eskiden
+    // yalnizca alti kulenin temasi ciziliyordu, gerisi kaldirma mesajinda
+    // ortak bir halka aliyordu.
     room.onMessage("projectile:contact", (message: ProjectileContactSnapshot) => {
-      this.queueDelayedEffect(() => this.combatVfx?.emit({ ...message, tier: message.tier ?? 1, bornAt: performance.now() }));
+      const own = this.projectileOwnership.get(message.id) ?? true;
+      this.queueDelayedEffect(() => this.attackVfx?.emitImpact({
+        x: message.x,
+        y: message.y,
+        angle: message.angle,
+        definitionId: message.definitionId,
+        tier: message.tier,
+        own,
+        key: `${message.id}@${message.x}:${message.y}`,
+        radius: message.r,
+        bornAt: performance.now()
+      }));
     });
     room.onMessage("projectile:hit", (message: ProjectileHitSnapshot) => {
-      // Kimlik ve yon, mermi listeden silinmeden once okunmali: imza hangi
-      // kuleden geldigini bilmeden secilemez ve telde bu alanlar yok.
-      const hitProjectile = this.linearProjectileSnapshots.get(message.id);
-      const definitionId = hitProjectile?.definitionId ?? "";
-      const angle = hitProjectile && (hitProjectile.vx || hitProjectile.vy)
-        ? Math.atan2(hitProjectile.vy ?? 0, hitProjectile.vx ?? 0)
-        : 0;
+      // Kaldirma ayri bir olay: carpma temastan cizildi, menzil sonunda bosa
+      // giden mermi carpma cizmiyor.
       this.finishLinearProjectile(message);
-      // Custom contacts arrive independently, also when a projectile keeps piercing.
-      if (shotStyle(definitionId)) return;
-      const tier = message.tier ?? 1;
-      this.queueDelayedEffect(() => {
-        this.playImpactBurst(message.x, message.y, tier, this.getTierColor(tier));
-        this.addImpactMark(message.x, message.y, definitionId, tier, angle);
-      });
+      this.projectileOwnership.delete(message.id);
     });
     room.onMessage("snapshot:full", (snapshot: StaticSnapshot) => this.applyFullStaticSnapshot(snapshot));
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
@@ -6304,7 +6238,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const previousX = mover.sprite.x;
       const previousY = mover.sprite.y;
       mover.sprite.setPosition(enemy.x, enemy.y);
-      mover.sprite.setDepth(enemy.movementKind === "air" ? 9 : 8);
+      // Karede degismeyen derinlik yeniden yazilmiyor: her `setDepth` sahnenin
+      // siralamasini kuyruga sokuyor ve bu dongu her karede her dusmanda donuyor.
+      setDepthIfChanged(mover.sprite, enemy.movementKind === "air" ? 9 : 8);
       mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY, mover.sprite.rotation));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
       // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin.
@@ -6339,8 +6275,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const shieldRadius = displayedEnemySize * 0.48;
       const statusYOffset = Math.max(18, displayedEnemySize * 0.42);
       mover.shieldHalo?.setPosition(enemy.x, enemy.y);
-      mover.shieldHalo?.setDepth(enemy.movementKind === "air" ? 8.6 : 7.6);
-      mover.shieldHalo?.setRadius(shieldRadius);
+      if (mover.shieldHalo) setDepthIfChanged(mover.shieldHalo, enemy.movementKind === "air" ? 8.6 : 7.6);
+      // Yaricap degisince daire yeniden ucgenleniyor; ayni yaricapi yazma.
+      if (mover.shieldHalo && mover.shieldHalo.radius !== shieldRadius) mover.shieldHalo.setRadius(shieldRadius);
       mover.shieldHalo?.setFillStyle(0x38bdf8, hasShield ? 0.04 + shieldRatio * 0.08 : 0);
       mover.shieldHalo?.setStrokeStyle(1.5, 0x60a5fa, hasShield ? 0.42 + shieldRatio * 0.45 : 0);
       mover.shieldHalo?.setVisible(hasShield);
@@ -6369,19 +6306,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
       mover.marker?.setPosition(enemy.x, enemy.y - statusYOffset - (hasSeparateMelisMarker ? 11 : 4));
       mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isWhisperTurned ? "DÖN" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : trackingStacks > 1 ? `T${trackingStacks}` : hasCombatMarker ? "T" : slowLabel || "AIR");
-      mover.marker?.setColor(enemy.isDominated ? "#f0abfc" : enemy.isWhisperTurned ? "#c4b5fd" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
-      mover.marker?.setFontSize(enemy.isDominated ? 9 : enemy.isWhisperTurned ? 10 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      // Renk ve punto yalnizca degistiginde: Phaser ikisinde de metnin tuvalini
+      // yeniden ciziyor (punto olcumleri de yeniden hesapliyor) ve bu her karede
+      // her dusmanda iki etiket demekti.
+      if (mover.marker) {
+        setTextColorIfChanged(mover.marker, enemy.isDominated ? "#f0abfc" : enemy.isWhisperTurned ? "#c4b5fd" : enemy.isUndead ? "#22d3ee" : enemy.isUnderworldLinked ? "#2dd4bf" : enemy.isFeared ? "#c084fc" : hasCombatMarker ? getTrackingMarkerColor(trackingStacks) : slowTierLevel > 0 ? getZeynepSlowTextColor(slowTierLevel) : "#67e8f9");
+        setFontSizeIfChanged(mover.marker, enemy.isDominated ? 9 : enemy.isWhisperTurned ? 10 : enemy.isUndead ? 9 : enemy.isUnderworldLinked ? 9 : enemy.isFeared ? 9 : hasCombatMarker ? 12 : slowTierLevel > 0 ? 8 : 8);
+      }
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const curseText = `L${Math.min(999, Math.round(curseLoad))}`;
       const doubtText = enemy.isHesitating ? "Ş!" : `Ş${Math.max(1, doubtStacks)}`;
       const melisMarkerGap = isCursed && hasDoubt ? Math.max(10, displayedEnemySize * 0.2) : 0;
       mover.curseMarker?.setPosition(enemy.x - melisMarkerGap, enemy.y - statusYOffset);
       mover.curseMarker?.setText(curseText);
-      mover.curseMarker?.setFontSize(curseLoad >= 100 ? 8 : 9);
+      if (mover.curseMarker) setFontSizeIfChanged(mover.curseMarker, curseLoad >= 100 ? 8 : 9);
       mover.curseMarker?.setVisible(isCursed);
       mover.doubtMarker?.setPosition(enemy.x + melisMarkerGap, enemy.y - statusYOffset);
       mover.doubtMarker?.setText(doubtText);
-      mover.doubtMarker?.setColor(enemy.isHesitating ? "#99f6e4" : "#5eead4");
+      if (mover.doubtMarker) setTextColorIfChanged(mover.doubtMarker, enemy.isHesitating ? "#99f6e4" : "#5eead4");
       mover.doubtMarker?.setVisible(hasDoubt);
       const iconPulse = enemy.isArmorBroken ? 1 + Math.sin(performance.now() / 95) * 0.08 : 1;
       mover.armorBreakIcon?.setPosition(enemy.x + 12, enemy.y - 15);
@@ -6412,7 +6354,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     graphics.setVisible(true);
-    graphics.setDepth(enemy.movementKind === "air" ? 9.1 : 8.1);
+    setDepthIfChanged(graphics, enemy.movementKind === "air" ? 9.1 : 8.1);
     const radius = Math.max(7, displayedSize * 0.46);
     const now = performance.now();
 
@@ -6471,7 +6413,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     graphics.setVisible(true);
-    graphics.setDepth(enemy.movementKind === "air" ? 8.9 : 7.9);
+    setDepthIfChanged(graphics, enemy.movementKind === "air" ? 8.9 : 7.9);
     const radius = Math.max(8, displayedSize * 0.34);
     const groundY = enemy.y + displayedSize * 0.34;
     const phase = performance.now() / 520;
@@ -6543,6 +6485,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         tower.isolation.destroy();
         tower.healthBar.destroy();
         this.towers.delete(id);
+        this.bladeAngles.delete(id);
         // Seviye kaydi da gitmeli: ayni kimlik yeniden kullanilirsa eski seviye
         // sahte bir yukseltme parlamasi uretirdi.
         this.towerLevels.delete(id);
@@ -6554,6 +6497,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     const now = performance.now();
+    this.towerSpotX.length = 0;
+    this.towerSpotY.length = 0;
+    this.towerSpotOwner.length = 0;
+    for (const tower of towers) {
+      this.towerSpotX.push(tower.x);
+      this.towerSpotY.push(tower.y);
+      this.towerSpotOwner.push(tower.ownerId);
+      if (tower.bladeAngle !== undefined) this.noteBladeAngle(tower.id, tower.bladeAngle, now);
+    }
     for (const tower of towers) {
       let rendered = this.towers.get(tower.id);
       let landing = false;
@@ -6607,7 +6559,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
-        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
+        this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2, this.getTowerTierColor(tower, getTowerTier(tower.level)));
         if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
@@ -6641,7 +6593,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (tower.id === this.selectedPlacedTowerId) {
         this.drawSelectedTowerResources(tower, discSize);
       }
-      this.renderTowerSpriteEffects(rendered.effect, tower);
       if (tower.definitionId === "onur-1") {
         rendered.range
           .setRadius(tower.bladeLength ?? tower.range)
@@ -6826,12 +6777,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
+   * Kulenin kademe rengi: kendi profilinin rampasindan.
+   *
+   * Eskiden butun kulelerde ayni genel renkler (celik, altin, beyaz) idi:
+   * Omer'in kademe 2 altini kulenin kendi sarisiydi ve tamamen kayboluyordu.
+   * Tören, rozet ve saldiri artik ayni rampayi konusuyor.
+   */
+  private getTowerTierColor(tower: Pick<TowerSnapshot, "definitionId" | "color">, tier: number) {
+    const ramp = getVfxProfile(tower.definitionId, tower.color).ramp;
+    return ramp[Math.max(0, Math.min(2, tier - 1))];
+  }
+
+  /**
    * Level ring. Three redundant ordinal cues so it reads without a legend and
    * without relying on hue: the arc fills clockwise as the tower levels (a full
    * circle is 10), the stroke thickens, and the colour heats from steel to
    * white. Drawn outside the sprite radius so painted art stays uncovered.
    */
-  private drawTowerLevelRing(graphics: Phaser.GameObjects.Graphics, x: number, y: number, level: number, spriteRadius: number) {
+  private drawTowerLevelRing(graphics: Phaser.GameObjects.Graphics, x: number, y: number, level: number, spriteRadius: number, tierColor = 0xfacc15) {
     const style = getTowerLevelStyle(level);
     // Sits on the sprite's outer rim like a collar rather than orbiting outside
     // it: a ring wide enough to clear a 38px sprite would be 48px across on a
@@ -6865,7 +6828,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const tier = getTowerTier(level);
     if (tier >= 2) {
-      this.drawTowerTierBadge(graphics, x, y + radius, tier, radius);
+      this.drawTowerTierBadge(graphics, x, y + radius, tier, radius, tierColor);
     }
   }
 
@@ -6879,8 +6842,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * nokta), renk mermi ve sutunla ayni; renk tek basina bilgi tasimiyor.
    * Seviye 5'te kadranin yayi tam rozetin oldugu yere, alta variyor.
    */
-  private drawTowerTierBadge(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, tier: number, radius: number) {
-    const color = this.getTierColor(tier);
+  private drawTowerTierBadge(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, tier: number, radius: number, color: number) {
     const pip = Math.max(1.5, radius * 0.1);
     const gap = pip * 2.6;
     const width = gap * (tier - 1) + pip * 4.4;
@@ -6930,7 +6892,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
 
-    this.playTowerPulse(tower, discSize, this.getTierColor(ceremony.tier), ceremony.kind === "tier");
+    this.playTowerPulse(tower, discSize, this.getTowerTierColor(tower, ceremony.tier), ceremony.kind === "tier");
     this.playTowerLevelCeremony(tower, discSize, ceremony);
   }
 
@@ -6953,7 +6915,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const labelY = tower.y - discSize / 2 - LEVEL_LABEL_LIFT_PX;
     const decision = this.feedback?.emit(ceremony.kind, { own, x: tower.x, y: labelY, lifetimeMs: ceremony.labelMs });
     const still = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
-    const tierColor = this.getTierColor(ceremony.tier);
+    const tierColor = this.getTowerTierColor(tower, ceremony.tier);
 
     if (tierMoment) {
       this.combatVfx?.emitTowerMoment({
@@ -7188,9 +7150,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const now = performance.now();
     const breath = 0.86 + Math.sin(now / 900) * 0.14;
 
-    // Zemin: alanin nereye kadar ulastigini soyleyen sonuk disk.
-    graphics.fillStyle(0x0ea5e9, 0.05 * breath);
-    graphics.fillCircle(tower.x, tower.y, radius);
+    // Zemin ve ice akan agir surukleme: kademeli alan (combat-vfx). Kademe
+    // alanin yogunlugunu ve kenarini aciyor; yaricap hep dogru.
+    drawIsolationField(graphics, tower.x, tower.y, radius, getTowerTier(tower.level), now, this.getTowerEffectScale());
     graphics.lineStyle(Math.max(1, radius * 0.012), 0x38bdf8, 0.34 * breath);
     graphics.strokeCircle(tower.x, tower.y, radius);
 
@@ -7228,42 +7190,68 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
   }
 
+  /**
+   * Testere acisinin snapshot'lar arasi gecisi: yeni aci geldiginde bir
+   * oncekinden ona, snapshot araligi boyunca. Bicaklar 15 Hz'de basamakli
+   * donuyordu; bir aralik gecikme karsiliginda akici.
+   */
+  private noteBladeAngle(towerId: string, angle: number, now: number) {
+    const entry = this.bladeAngles.get(towerId);
+    if (!entry) {
+      this.bladeAngles.set(towerId, { from: angle, to: angle, at: now, interval: 60 });
+      return;
+    }
+    if (entry.to === angle) return;
+    entry.from = this.getBladeAngle(towerId, angle, now);
+    entry.interval = Math.max(16, Math.min(250, now - entry.at));
+    entry.to = angle;
+    entry.at = now;
+  }
+
+  private getBladeAngle(towerId: string, fallback: number, now: number) {
+    const entry = this.bladeAngles.get(towerId);
+    if (!entry) return fallback;
+    let turn = entry.to - entry.from;
+    turn -= Math.round(turn / (Math.PI * 2)) * Math.PI * 2;
+    const t = Math.max(0, Math.min(1, (now - entry.at) / entry.interval));
+    return entry.from + turn * t;
+  }
+
   private renderOrbitBlades(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     if (tower.definitionId !== "onur-1" || tower.bladeAngle === undefined || tower.bladeLength === undefined) return;
-    const definition = towerCatalog.onur.find((candidate) => candidate.id === tower.definitionId);
+    const definition = getOrbitDefinition(tower.definitionId);
     const bladeCount = definition?.engine?.attack.bladeCount ?? 2;
     const bladeWidth = Math.max(3, definition?.engine?.attack.width ?? 8);
+    const bladeLength = tower.bladeLength;
+    const baseAngle = this.getBladeAngle(tower.id, tower.bladeAngle, performance.now());
+    const inner = this.getMapCellSize() * 0.18;
     for (let blade = 0; blade < bladeCount; blade += 1) {
-      const angle = tower.bladeAngle + blade * Math.PI * 2 / bladeCount;
-      const inner = this.getMapCellSize() * 0.18;
+      const angle = baseAngle + blade * Math.PI * 2 / bladeCount;
       const forwardX = Math.cos(angle);
       const forwardY = Math.sin(angle);
-      const rightX = -forwardY;
-      const rightY = forwardX;
-      const point = (distance: number, side: number) => new Phaser.Geom.Point(
-        tower.x + forwardX * distance + rightX * side,
-        tower.y + forwardY * distance + rightY * side
-      );
-      const rootLeft = point(inner, -bladeWidth * 0.34);
-      const rootRight = point(inner, bladeWidth * 0.34);
-      const spineTip = point(tower.bladeLength * 0.86, -bladeWidth * 0.48);
-      const cuttingTip = point(tower.bladeLength, bladeWidth * 0.05);
-      const heel = point(tower.bladeLength * 0.76, bladeWidth * 0.5);
+      // Noktalar modul duzeyindeki dizilerde: karede bicak basina yeni nokta yok.
+      setBladePoint(BLADE_SHADOW, 0, tower.x, tower.y, forwardX, forwardY, inner - 1.5, -bladeWidth * 0.58);
+      setBladePoint(BLADE_SHADOW, 1, tower.x, tower.y, forwardX, forwardY, inner - 1.5, bladeWidth * 0.58);
+      setBladePoint(BLADE_SHADOW, 2, tower.x, tower.y, forwardX, forwardY, bladeLength + 2, bladeWidth * 0.08);
+      setBladePoint(BLADE_SHADOW, 3, tower.x, tower.y, forwardX, forwardY, bladeLength * 0.87, -bladeWidth * 0.67);
+      setBladePoint(BLADE_BODY, 0, tower.x, tower.y, forwardX, forwardY, inner, -bladeWidth * 0.34);
+      setBladePoint(BLADE_BODY, 1, tower.x, tower.y, forwardX, forwardY, inner, bladeWidth * 0.34);
+      setBladePoint(BLADE_BODY, 2, tower.x, tower.y, forwardX, forwardY, bladeLength * 0.76, bladeWidth * 0.5);
+      setBladePoint(BLADE_BODY, 3, tower.x, tower.y, forwardX, forwardY, bladeLength, bladeWidth * 0.05);
+      setBladePoint(BLADE_BODY, 4, tower.x, tower.y, forwardX, forwardY, bladeLength * 0.86, -bladeWidth * 0.48);
+      setBladePoint(BLADE_EDGE, 0, tower.x, tower.y, forwardX, forwardY, inner + 1, -bladeWidth * 0.2);
+      setBladePoint(BLADE_EDGE, 1, tower.x, tower.y, forwardX, forwardY, inner + 1, bladeWidth * 0.2);
+      setBladePoint(BLADE_EDGE, 2, tower.x, tower.y, forwardX, forwardY, bladeLength * 0.77, bladeWidth * 0.33);
+      setBladePoint(BLADE_EDGE, 3, tower.x, tower.y, forwardX, forwardY, bladeLength, bladeWidth * 0.05);
+      setBladePoint(BLADE_EDGE, 4, tower.x, tower.y, forwardX, forwardY, bladeLength * 0.83, -bladeWidth * 0.18);
+      const rootLeft = BLADE_BODY[0];
+      const rootRight = BLADE_BODY[1];
+      const cuttingTip = BLADE_BODY[3];
+      const spineTip = BLADE_BODY[4];
 
-      graphics.fillStyle(0x050a12, 0.92).fillPoints([
-        point(inner - 1.5, -bladeWidth * 0.58),
-        point(inner - 1.5, bladeWidth * 0.58),
-        point(tower.bladeLength + 2, bladeWidth * 0.08),
-        point(tower.bladeLength * 0.87, -bladeWidth * 0.67)
-      ], true);
-      graphics.fillStyle(0x64748b, 1).fillPoints([rootLeft, rootRight, heel, cuttingTip, spineTip], true);
-      graphics.fillStyle(0xb8c4d1, 0.95).fillPoints([
-        point(inner + 1, -bladeWidth * 0.2),
-        point(inner + 1, bladeWidth * 0.2),
-        point(tower.bladeLength * 0.77, bladeWidth * 0.33),
-        cuttingTip,
-        point(tower.bladeLength * 0.83, -bladeWidth * 0.18)
-      ], true);
+      graphics.fillStyle(0x050a12, 0.92).fillPoints(BLADE_SHADOW, true);
+      graphics.fillStyle(0x64748b, 1).fillPoints(BLADE_BODY, true);
+      graphics.fillStyle(0xb8c4d1, 0.95).fillPoints(BLADE_EDGE, true);
       graphics.lineStyle(Math.max(1.2, bladeWidth * 0.18), 0xf8fafc, 1)
         .lineBetween(rootRight.x, rootRight.y, cuttingTip.x, cuttingTip.y);
       graphics.lineStyle(Math.max(0.8, bladeWidth * 0.1), 0x334155, 0.95)
@@ -7448,7 +7436,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const cellSize = this.getMapCellSize();
     const effectScale = this.getTowerEffectScale();
     const radius = Math.max(13, cellSize * 0.58);
-    const phase = ((performance.now() + tower.x * 13 + tower.y * 7) % 1100) / 1100;
+    // Surekli faz: `% 1100` ile isaretlerin 0.32 turluk donusu her turda basa sicriyordu.
+    const phase = (performance.now() + tower.x * 13 + tower.y * 7) / 1100;
     const wave = Math.sin(phase * Math.PI * 2);
 
     graphics.fillStyle(0x020617, 0.2);
@@ -7525,7 +7514,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
 
-    const phase = (performance.now() % 1000) / 1000;
+    // Faz surekli: `(now % 1000) / 1000` ile carpilan 1.7 ve -0.65 tam sayi
+    // olmadigi icin isaretler her saniye basa sicriyordu.
+    const phase = performance.now() / 1000;
     const cellSize = this.getMapCellSize();
     const spriteRadius = Math.max(20, cellSize * 1.12) / 2;
     const lineScale = spriteRadius / 26;
@@ -7687,71 +7678,32 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Merminin dokusu: once kulenin kendi cizimi, sonra kademe varyanti.
+   * Merminin dokusu: kulenin kendi cizimi; yoksa turun jenerik dokusu.
    *
-   * Kademe varyanti yoksa taban dokuya duser -- yeni bir kule eklendiginde ya da
-   * doku uretimi atlandiginda mermi kaybolmaz, sadece kademesiz gorunur.
+   * Kademe varyantlari (--t2/--t3) emekli: kademe artik profilin kesitinden,
+   * izinden ve rengiden geliyor, dokunun cevresine eklenen genel haleden degil.
+   * Sunucu ozel atislara son ek veriyor ("archer-6-whisper"); doku kulenin
+   * kendisi. Eskiden bu anahtar bulunamiyor, Fisilti Korosu beyaz yedek
+   * noktayla ciziliyordu.
    */
-  private getProjectileTextureKey(projectile: Pick<ProjectileSnapshot, "definitionId" | "kind" | "tier">) {
-    const base = projectile.definitionId && this.textures.exists(`projectile-${projectile.definitionId}`)
-      ? `projectile-${projectile.definitionId}`
-      : `projectile-${projectile.kind}`;
-    const tier = projectile.tier ?? 1;
-    if (tier <= 1) {
-      return base;
-    }
-    const tiered = `${base}--t${tier}`;
-    return this.textures.exists(tiered) ? tiered : base;
+  private getProjectileTextureKey(projectile: Pick<ProjectileSnapshot, "definitionId" | "kind">) {
+    const definitionId = projectile.definitionId;
+    if (definitionId && this.textures.exists(`projectile-${definitionId}`)) return `projectile-${definitionId}`;
+    const towerId = getProfileDefinitionId(definitionId);
+    if (towerId && this.textures.exists(`projectile-${towerId}`)) return `projectile-${towerId}`;
+    return `projectile-${projectile.kind}`;
   }
 
-  /**
-   * Kademeli mermilerin arkasinda birakigi iz.
-   *
-   * Merminin kademesi zaten dokusunda ve atis/carpma halkalarinda vardi, ama
-   * ikisi de ya cok kucuk ya cok kisa: namlu alevi 150 ms suruyor, doku farki
-   * birkac piksel. Iz, merminin **ucusu boyunca** duruyor -- seviye farkinin
-   * gercekten goze carptigi tek yer bu oldu.
-   *
-   * Mermiyi buyutmuyor: uzunluk merminin arkasina dogru gidiyor, capina
-   * dokunmuyor.
-   */
-  private renderProjectileTrails(projectiles: ProjectileSnapshot[]) {
-    const graphics = this.projectileTrailGraphics;
-    if (!graphics) {
-      return;
-    }
-
-    graphics.clear();
-    for (const projectile of projectiles) {
-      if (drawCombatProjectile(graphics, projectile, performance.now(), this.getTowerEffectScale())) continue;
-      const tier = projectile.tier ?? 1;
-      if (tier < 2) continue;
-
-      const vx = projectile.vx ?? 0;
-      const vy = projectile.vy ?? 0;
-      const speed = Math.hypot(vx, vy);
-      if (speed < 0.01) continue;
-
-      const ux = vx / speed;
-      const uy = vy / speed;
-      const length = tier >= 3 ? 20 : 12;
-      const color = this.getTierColor(tier);
-
-      graphics.lineStyle(tier >= 3 ? 2.4 : 1.8, color, 0.4);
-      graphics.lineBetween(projectile.x, projectile.y, projectile.x - ux * length, projectile.y - uy * length);
-
-      if (tier >= 3) {
-        // Ucuncu kademede izin icinde bir de parlak cekirdek: uzunluk degil
-        // katman ekleniyor.
-        graphics.lineStyle(1, 0xffffff, 0.8);
-        graphics.lineBetween(projectile.x, projectile.y, projectile.x - ux * (length * 0.55), projectile.y - uy * (length * 0.55));
-      }
-    }
-  }
+  private readonly activeProjectileIds = new Set<string>();
 
   private renderProjectiles(projectiles: ProjectileSnapshot[]) {
-    this.renderProjectileTrails(projectiles);
-    const activeIds = new Set(projectiles.map((projectile) => projectile.id));
+    const scale = this.getTowerEffectScale();
+    // Govde, iz ve kademe eklentileri profilden (attack-vfx). Kendi cizilmis
+    // dokusu olan Melis mermileri disinda sprite gizli: siluet profilden.
+    this.attackVfx?.renderProjectiles(projectiles, performance.now(), scale, this.projectileOwnResolver);
+    const activeIds = this.activeProjectileIds;
+    activeIds.clear();
+    for (const projectile of projectiles) activeIds.add(projectile.id);
 
     for (const [id, sprite] of this.projectiles) {
       if (!activeIds.has(id)) {
@@ -7764,7 +7716,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     for (const projectile of projectiles) {
+      const fromTower = projectile.source === "tower";
+      const profile = fromTower ? getVfxProfile(projectile.definitionId) : undefined;
+      const showSprite = !profile || profile.silhouette === "sprite";
       let sprite = this.projectiles.get(projectile.id);
+      if (!showSprite) {
+        // Gizli mermiye sprite acilmiyor: govdesi profilin cizimi.
+        if (sprite?.visible) sprite.setVisible(false);
+        continue;
+      }
       const texture = this.getProjectileTextureKey(projectile);
 
       if (!sprite) {
@@ -7782,23 +7742,34 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (sprite.texture.key !== texture) {
         sprite.setTexture(texture);
       }
+      if (!sprite.visible) sprite.setVisible(true);
       sprite.setPosition(projectile.x, projectile.y);
-      sprite.setVisible(!shotStyle(projectile.definitionId));
-      // Cerceve kademeyle buyudugu icin cap da ayni oranda buyumeli; yoksa
-      // `setDisplaySize` buyumeyi geri alir ve cekirdek kucuk gorunur.
-      const tierGrowth = getProjectileTierFrameGrowth(projectile.tier ?? 1);
-      if (projectile.hitType === "projectile" || projectile.hitType === "impact") {
-        const diameter = getBallisticCollisionRadius(projectile.hitType) * 2 * tierGrowth;
-        sprite.setDisplaySize(diameter, diameter);
+      if (profile) {
+        // Siluet profilden (12-16 birim), carpisma boyundan (8) degil. Kademe
+        // 2-3'te doku rampanin duragina dogru boyaniyor; ayrinti kaliyor.
+        const recipe = getVfxTier(profile, projectile.tier);
+        const size = recipe.silhouette * scale;
+        sprite.setDisplaySize(size, size);
+        const tint = toTier(projectile.tier) >= 2 ? liftToWhite(recipe.color, 0.5) : 0xffffff;
+        if (sprite.tintTopLeft !== tint) sprite.setTint(tint);
       } else {
-        sprite.setScale(this.getTowerEffectScale());
+        // Havuzdan gelen sprite onceki bir Melis mermisinin tonunu tasiyabilir.
+        if (sprite.tintTopLeft !== 0xffffff) sprite.clearTint();
+        if (projectile.hitType === "projectile" || projectile.hitType === "impact") {
+          const diameter = getBallisticCollisionRadius(projectile.hitType) * 2;
+          sprite.setDisplaySize(diameter, diameter);
+        } else {
+          sprite.setScale(scale);
+        }
       }
       if (typeof projectile.vx === "number" && typeof projectile.vy === "number" && Math.abs(projectile.vx) + Math.abs(projectile.vy) > 0.01) {
         sprite.setRotation(Math.atan2(projectile.vy, projectile.vx));
       }
       const isMelisProjectile = projectile.definitionId?.startsWith("archer-");
       sprite.setAlpha(isMelisProjectile ? 0.92 : 1);
-      sprite.setDepth(isMelisProjectile ? 11.2 : 11);
+      // Derinlik her karede yeniden yazilinca Phaser her karede sahneyi siraliyor.
+      const depth = isMelisProjectile ? 11.2 : 11;
+      if (sprite.depth !== depth) sprite.setDepth(depth);
     }
   }
 
@@ -8989,6 +8960,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
+   * Afisi kameraya sigdir.
+   *
+   * Plakalar sabit yarim genislikle ciziliyor (178-252) ve efsane Melis
+   * afisi ~520 birime cikiyordu: 390 birimlik portre dunyada iki yandan
+   * kesiliyordu. Kapsayici kameranin gorunur genisligine olceklenir; kapsayicinin
+   * kendi olcegine hicbir tween dokunmuyor (tweenler aci, konum ve metinde).
+   */
+  private fitStreakBannerToCamera(container: Phaser.GameObjects.Container, halfWidth: number) {
+    const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
+    const margin = 10;
+    const fit = Math.min(1, Math.max(0.4, (view.width - margin * 2) / Math.max(1, halfWidth * 2)));
+    container.setScale(fit);
+  }
+
+  /**
    * Seri afisinin oturacagi nokta.
    *
    * Iki sey yanlisti. Yatayda dunya merkezi (195) kullaniliyordu ama kameranin
@@ -9120,6 +9106,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }).setOrigin(0, 0.5).setAlpha(0.78);
 
     container.add([plate, cyanGhost, redGhost, mainText, motifText]);
+    this.fitStreakBannerToCamera(container, width + 8);
     this.addStreakBuffLine(container, rule, height - 9);
     this.rampageContainer = container;
     if (this.feedback?.reducedMotion) {
@@ -9474,6 +9461,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }).setOrigin(0.5).setAlpha(0.72);
 
     container.add([plate, handsImage, cyanGhost, pinkGhost, mainText, commandText, crownText]);
+    this.fitStreakBannerToCamera(container, width + 8);
     this.addStreakBuffLine(container, rule, height - 10);
     this.rampageContainer = container;
     if (this.feedback?.reducedMotion) {
@@ -9627,6 +9615,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     container.add([plate, coldText, hotText, mainText, ...glitches, ...imageObjects]);
+    this.fitStreakBannerToCamera(container, width + 10);
     // En ustte: parazit cubuklari ve ADD resimler okunurlugu bozmasin.
     this.addStreakBuffLine(container, rule, height - 11);
     this.rampageContainer = container;
@@ -9681,1062 +9670,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       ease: "Sine.easeInOut"
     });
     this.scheduleStreakBannerExit(container, anchor.exitY, 2200 + chaos * 300, 520);
-  }
-
-  private renderBeams(beams: BeamSnapshot[]) {
-    this.beamGraphics?.clear();
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    for (const beam of beams) {
-      const color = beam.color ?? 0xfb7185;
-      if (beam.overdrive) {
-        this.drawOverdriveBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-6" || beam.definitionId === "zeynep-3-kin-wave") {
-        drawPressureWave(this.beamGraphics, beam, performance.now(), this.getTowerEffectScale());
-      } else if (beam.definitionId === "zeynep-3-kin-showcase") {
-        this.drawKinShowcaseLight(beam, color);
-      } else if (beam.definitionId === "archer-2-rage") {
-        this.drawMelisRageWave(beam, color);
-      } else if (beam.definitionId === "archer-3-curse" || beam.definitionId === "archer-3-curse-burst" || beam.definitionId === "archer-3-curse-pool") {
-        this.drawMelisCursePulse(beam, color);
-      } else if (beam.definitionId === "archer-6-whisper") {
-        this.drawMelisWhisperWave(beam, color);
-      } else if (beam.definitionId === "archer-6-whisper-turn") {
-        this.drawMelisWhisperTurnShot(beam, color);
-      } else if (beam.definitionId === "archer-6-whisper-suicide") {
-        this.drawMelisWhisperSuicideBurst(beam, color);
-      } else if (beam.definitionId === "archer-4-underworld-link" || beam.definitionId === "archer-4-underworld-execute" || beam.definitionId === "archer-4-undead-shot") {
-        this.drawMelisUnderworldLink(beam, color);
-      } else if (beam.definitionId === "archer-5-mirror") {
-        this.drawMelisBrokenMirrorBurst(beam, color);
-      } else if (beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
-        drawSynthesisRay(this.beamGraphics, beam, performance.now(), this.getTowerEffectScale());
-      } else if (beam.definitionId === "zeynep-2" || beam.definitionId === "zeynep-3-burn") {
-        this.drawShowcaseBeam(beam, color);
-      } else if (beam.definitionId === "zeynep-3-burn-trail") {
-        this.drawSynthesisBurnTrail(beam, color);
-      } else if (beam.definitionId === "warrior-6") {
-        this.drawChainLightning(beam, color);
-      } else if (beam.definitionId === "zeynep-ultimate-column") {
-        this.drawZeynepColumnBurst(beam, color);
-      } else if (beam.definitionId === "onur-sympathy") {
-        this.drawSympathyLink(beam, color);
-      } else if (beam.definitionId === "enemy-shot") {
-        this.drawEnemyShot(beam, color);
-      } else {
-        this.drawLaserConnection(beam, color);
-      }
-    }
-  }
-
-  /**
-   * Zeynep ultisi: sutunu bastan asagi yakan isik.
-   *
-   * Sutunun kendisi bir dikdortgen, ama patlama hissi kenarlardan geliyor:
-   * disa dogru sonen katmanlar ve merkezde ince bir parlak cekirdek.
-   */
-  private drawZeynepColumnBurst(beam: BeamSnapshot, color: number) {
-    const graphics = this.beamGraphics;
-    if (!graphics) {
-      return;
-    }
-
-    const width = Math.max(6, beam.width);
-    const centerX = (beam.x1 + beam.x2) / 2;
-    const top = Math.min(beam.y1, beam.y2);
-    const height = Math.abs(beam.y2 - beam.y1);
-    const phase = (performance.now() % 620) / 620;
-    const fade = 1 - phase;
-
-    for (const layer of [1.35, 1, 0.62]) {
-      graphics.fillStyle(color, 0.12 * fade * layer);
-      graphics.fillRect(centerX - (width * layer) / 2, top, width * layer, height);
-    }
-
-    graphics.fillStyle(0xfffbeb, 0.55 * fade);
-    graphics.fillRect(centerX - width * 0.12, top, width * 0.24, height);
-    graphics.lineStyle(2, 0xfef3c7, 0.7 * fade);
-    graphics.strokeRect(centerX - width / 2, top, width, height);
-  }
-
-  private drawMelisRageWave(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const radius = Math.max(8, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 380, 0, 1);
-    const pulse = 1 + Math.sin(Date.now() / 42) * 0.08;
-    this.beamGraphics.fillStyle(color, 0.08 * life);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, radius * pulse);
-    this.beamGraphics.lineStyle(3 * this.getTowerEffectScale(), color, 0.75 * life);
-    this.beamGraphics.strokeCircle(beam.x1, beam.y1, radius * (1.02 - life * 0.18));
-    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0xfdf2f8, 0.62 * life);
-    for (let index = 0; index < 10; index += 1) {
-      const angle = (Math.PI * 2 * index) / 10 + Date.now() / 480;
-      const inner = radius * 0.45;
-      const outer = radius * (0.82 + (index % 3) * 0.04);
-      this.beamGraphics.lineBetween(
-        beam.x1 + Math.cos(angle) * inner,
-        beam.y1 + Math.sin(angle) * inner,
-        beam.x1 + Math.cos(angle) * outer,
-        beam.y1 + Math.sin(angle) * outer
-      );
-    }
-  }
-
-  private drawMelisCursePulse(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const radius = Math.max(8, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 360, 0, 1);
-    const isBurst = beam.definitionId === "archer-3-curse-burst";
-    const isPool = beam.definitionId === "archer-3-curse-pool";
-    const pulse = 1 + Math.sin(Date.now() / 58) * 0.06;
-    if (!isPool) {
-      this.beamGraphics.lineStyle(1.2 * this.getTowerEffectScale(), 0xf5d0fe, 0.48 * life);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    }
-    this.beamGraphics.fillStyle(color, isPool ? 0.18 * life : isBurst ? 0.13 * life : 0.08 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * pulse);
-    if (isBurst) {
-      const now = Date.now();
-      this.beamGraphics.fillStyle(0x020617, 0.7 * life);
-      this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.34);
-      this.beamGraphics.lineStyle(5.2 * this.getTowerEffectScale(), 0xf0abfc, 0.78 * life);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.34 - life * 0.24));
-      this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), 0x7f1dff, 0.95 * life);
-      for (let index = 0; index < 16; index += 1) {
-        const angle = (Math.PI * 2 * index) / 16 + now / 380;
-        const inner = radius * (0.2 + (index % 3) * 0.06);
-        const mid = radius * (0.62 + (index % 4) * 0.09);
-        const outer = radius * (1.08 + (index % 2) * 0.16);
-        this.beamGraphics.lineBetween(
-          beam.x2 + Math.cos(angle) * inner,
-          beam.y2 + Math.sin(angle) * inner,
-          beam.x2 + Math.cos(angle + 0.12) * mid,
-          beam.y2 + Math.sin(angle + 0.12) * mid
-        );
-        this.beamGraphics.lineBetween(
-          beam.x2 + Math.cos(angle + 0.12) * mid,
-          beam.y2 + Math.sin(angle + 0.12) * mid,
-          beam.x2 + Math.cos(angle - 0.08) * outer,
-          beam.y2 + Math.sin(angle - 0.08) * outer
-        );
-      }
-      this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), 0xfdf4ff, 0.72 * life);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.54 + Math.sin(now / 40) * 0.05));
-      return;
-    }
-    this.beamGraphics.lineStyle((isBurst || isPool ? 3 : 2) * this.getTowerEffectScale(), color, 0.78 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.05 - life * 0.22));
-    this.beamGraphics.lineStyle(1.4 * this.getTowerEffectScale(), isPool ? 0xf0abfc : 0x020617, isPool ? 0.52 * life : 0.36 * life);
-    for (let index = 0; index < 8; index += 1) {
-      const angle = (Math.PI * 2 * index) / 8 + Date.now() / 520;
-      const inner = radius * (isPool ? 0.12 : 0.22);
-      const outer = radius * (isPool ? 0.9 : 0.72 + (index % 2) * 0.12);
-      this.beamGraphics.lineBetween(
-        beam.x2 + Math.cos(angle) * inner,
-        beam.y2 + Math.sin(angle) * inner,
-        beam.x2 + Math.cos(angle) * outer,
-        beam.y2 + Math.sin(angle) * outer
-      );
-    }
-    if (isPool) {
-      this.beamGraphics.lineStyle(1 * this.getTowerEffectScale(), 0xd8b4fe, 0.38 * life);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.58 + Math.sin(Date.now() / 94) * 0.04));
-    }
-  }
-
-  private drawMelisWhisperWave(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const radius = Math.max(8, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 420, 0, 1);
-    const now = Date.now();
-    const scale = this.getTowerEffectScale();
-    const pulse = 1 + Math.sin(now / 34) * 0.07;
-    this.beamGraphics.lineStyle(4.8 * scale, 0x020617, 0.58 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(2.2 * scale, 0xccfbf1, 0.82 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(1.1 * scale, 0xf0abfc, 0.62 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.fillStyle(0x14b8a6, 0.14 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.92 * pulse);
-    this.beamGraphics.fillStyle(0x7c3aed, 0.075 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 1.26 * pulse);
-
-    for (let ring = 0; ring < 3; ring += 1) {
-      const ringRadius = radius * (0.48 + ring * 0.24 + Math.sin(now / 80 + ring) * 0.035);
-      this.beamGraphics.lineStyle((3 - ring * 0.55) * scale, ring === 1 ? 0xf0abfc : color, (0.82 - ring * 0.18) * life);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, ringRadius);
-    }
-
-    this.beamGraphics.lineStyle(1.5 * scale, 0xccfbf1, 0.74 * life);
-    for (let index = 0; index < 14; index += 1) {
-      const angle = (Math.PI * 2 * index) / 14 + Math.sin(now / 220 + index) * 0.32;
-      const inner = radius * (0.22 + (index % 2) * 0.08);
-      const outer = radius * (0.92 + (index % 4) * 0.09);
-      this.beamGraphics.lineBetween(
-        beam.x2 + Math.cos(angle) * inner,
-        beam.y2 + Math.sin(angle) * inner,
-        beam.x2 + Math.cos(angle) * outer,
-        beam.y2 + Math.sin(angle) * outer
-      );
-    }
-  }
-
-  private drawMelisWhisperTurnShot(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 180, 0, 1);
-    const scale = this.getTowerEffectScale();
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    const wobble = Math.sin(Date.now() / 35) * 4 * scale;
-    this.beamGraphics.lineStyle(5.2 * scale, 0x020617, 0.72 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(2.4 * scale, 0xc4b5fd, 0.88 * life);
-    this.beamGraphics.lineBetween(beam.x1 + nx * wobble, beam.y1 + ny * wobble, beam.x2 - nx * wobble, beam.y2 - ny * wobble);
-    this.beamGraphics.lineStyle(1.2 * scale, color, 0.72 * life);
-    for (let index = 0; index < 5; index += 1) {
-      const t = (index + 0.5) / 5;
-      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
-      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
-      this.beamGraphics.lineBetween(x - nx * 7 * scale - ux * 3, y - ny * 7 * scale - uy * 3, x + nx * 7 * scale + ux * 3, y + ny * 7 * scale + uy * 3);
-    }
-  }
-
-  private drawMelisWhisperSuicideBurst(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const radius = Math.max(12, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 380) / 380, 0, 1);
-    const scale = this.getTowerEffectScale();
-    const now = Date.now();
-    this.beamGraphics.fillStyle(0x7f1d1d, 0.16 * life);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, radius * (0.62 + Math.sin(now / 40) * 0.04));
-    this.beamGraphics.lineStyle(3.2 * scale, 0xef4444, 0.82 * life);
-    this.beamGraphics.strokeCircle(beam.x1, beam.y1, radius * 0.52);
-    this.beamGraphics.lineStyle(1.8 * scale, color, 0.72 * life);
-    for (let index = 0; index < 12; index += 1) {
-      const angle = (Math.PI * 2 * index) / 12 + now / 300;
-      const inner = radius * 0.18;
-      const outer = radius * (0.42 + (index % 3) * 0.1);
-      this.beamGraphics.lineBetween(
-        beam.x1 + Math.cos(angle) * inner,
-        beam.y1 + Math.sin(angle) * inner,
-        beam.x1 + Math.cos(angle) * outer,
-        beam.y1 + Math.sin(angle) * outer
-      );
-    }
-  }
-
-  /**
-   * Sempati bagi. Bag bir vurus degil bir engel, bu yuzden sabit kalinlikta ve
-   * yavas nabizli cizilir; parlayip sonen bir lazer gibi degil, gorulebilir bir
-   * tel gibi durmasi gerekiyor.
-   */
-  private drawSympathyLink(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const scale = this.getTowerEffectScale();
-    const width = Math.max(2, beam.width * scale);
-    const pulse = 0.72 + Math.sin(Date.now() / 260) * 0.14;
-
-    this.beamGraphics.lineStyle(width, 0x0f172a, 0.5);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(Math.max(1, width * 0.55), color, pulse);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-
-    for (const [x, y] of [[beam.x1, beam.y1], [beam.x2, beam.y2]] as const) {
-      this.beamGraphics.fillStyle(color, pulse * 0.6);
-      this.beamGraphics.fillCircle(x, y, Math.max(1.5, width * 0.6));
-    }
-  }
-
-  private drawMelisUnderworldLink(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const lifeBase = beam.definitionId === "archer-4-underworld-execute" ? 420 : 180;
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / lifeBase, 0, 1);
-    const now = Date.now();
-    const width = Math.max(2, beam.width * this.getTowerEffectScale());
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / length;
-    const ny = dx / length;
-    const pull = beam.definitionId === "archer-4-underworld-execute";
-    this.beamGraphics.lineStyle((pull ? 4.4 : width) * this.getTowerEffectScale(), 0x020617, 0.86 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle((pull ? 2.4 : 1.6) * this.getTowerEffectScale(), color, 0.72 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(0.9 * this.getTowerEffectScale(), 0xf0fdfa, 0.38 * life);
-    for (let index = 0; index < 5; index += 1) {
-      const t = (index + ((now / 220) % 1)) / 5;
-      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
-      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
-      const wave = Math.sin(now / 70 + index * 1.8) * 4 * this.getTowerEffectScale();
-      this.beamGraphics.lineBetween(x - nx * (5 + wave), y - ny * (5 + wave), x + nx * (5 - wave), y + ny * (5 - wave));
-    }
-
-    if (pull) {
-      const radius = Math.max(10, beam.width / 2);
-      this.beamGraphics.fillStyle(color, 0.18 * life);
-      this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * (1.05 + Math.sin(now / 48) * 0.08));
-      this.beamGraphics.lineStyle(2.2 * this.getTowerEffectScale(), 0xf0fdfa, 0.7 * life);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.8 + life * 0.2));
-    }
-  }
-
-  private drawMelisBrokenMirrorBurst(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const radius = Math.max(18, beam.width / 2);
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 180) / 520, 0, 1);
-    const now = Date.now();
-    const scale = this.getTowerEffectScale();
-    const pulse = 1 + Math.sin(now / 32) * 0.05;
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / length;
-    const ny = dx / length;
-
-    this.beamGraphics.lineStyle(9 * scale, 0x020617, 0.82 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(5.4 * scale, 0xfdf4ff, 0.64 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    this.beamGraphics.lineStyle(2.6 * scale, color, 0.92 * life);
-    this.beamGraphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-
-    this.beamGraphics.fillStyle(0xfdf4ff, 0.18 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 0.92 * pulse);
-    this.beamGraphics.fillStyle(0xe879f9, 0.12 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, radius * 1.35 * pulse);
-    this.beamGraphics.lineStyle(4.2 * scale, 0xfdf4ff, 0.92 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (0.82 - life * 0.1));
-    this.beamGraphics.lineStyle(2.5 * scale, color, 0.86 * life);
-    this.beamGraphics.strokeCircle(beam.x2, beam.y2, radius * (1.18 - life * 0.16));
-
-    this.beamGraphics.lineStyle(2.2 * scale, 0xf0abfc, 0.92 * life);
-    for (let index = 0; index < 14; index += 1) {
-      const angle = (Math.PI * 2 * index) / 14 + now / 260;
-      const inner = radius * (0.18 + (index % 2) * 0.08);
-      const outer = radius * (0.76 + (index % 5) * 0.13);
-      this.beamGraphics.lineBetween(
-        beam.x2 + Math.cos(angle) * inner,
-        beam.y2 + Math.sin(angle) * inner,
-        beam.x2 + Math.cos(angle) * outer,
-        beam.y2 + Math.sin(angle) * outer
-      );
-    }
-
-    this.beamGraphics.fillStyle(0xfdf4ff, 0.74 * life);
-    for (let index = 0; index < 6; index += 1) {
-      const t = (index + 1) / 7;
-      const x = Phaser.Math.Linear(beam.x1, beam.x2, t);
-      const y = Phaser.Math.Linear(beam.y1, beam.y2, t);
-      const shard = (5 + (index % 3) * 2) * scale;
-      this.beamGraphics.fillTriangle(
-        x + nx * shard,
-        y + ny * shard,
-        x - nx * shard * 0.7,
-        y - ny * shard * 0.7,
-        x + dx / length * shard * 1.6,
-        y + dy / length * shard * 1.6
-      );
-    }
-  }
-
-  /**
-   * Zeynep'in kademe dili: renk degil, **rutbe**.
-   *
-   * Debug Lazer'in rampasi fiziksel bir sey anlatiyor -- yildiz sicakligi,
-   * kirmizidan maviye, maviden beyaza. Zeynep'in kuleleri o dili konusamaz:
-   * hepsi saray imgesi tasiyor (Hiza Emri, Gosteri Kulesi, Taht Muhru, Saray
-   * Arsivi). Bu yuzden onun kademesi isinma degil **toren**: 5'te isik
-   * altina donuyor, 10'da beyaz altina. Oyunun seviye kadraninin zaten
-   * konustugu dil de bu -- celikten altina, altindan beyaza.
-   */
-  private getZeynepTierPalette(tier: number, base: number) {
-    if (tier >= 3) return { band: 0xfde68a, mid: 0xfef3c7, inner: 0xfffbeb, core: 0xffffff, shard: 0xfffbeb };
-    if (tier >= 2) return { band: 0xf59e0b, mid: 0xfcd34d, inner: 0xfef3c7, core: 0xffffff, shard: 0xfde68a };
-    return { band: base, mid: 0xf0abfc, inner: 0xfdf2f8, core: 0xffffff, shard: 0xfdf2f8 };
-  }
-
-  /**
-   * Onuncu seviyede isindan dokulen zerreler.
-   *
-   * Kademeyi anlatmanin yolu olarak cizgi ve cerceve elendi: isinin yanina
-   * cekilen her duzenli geometri onu bir borunun icinde gosteriyor. Zerreler
-   * duzensiz ve **hareketli** -- isin sonerken disari acilip kayboluyorlar,
-   * yani gozun okudugu sey bir sinir degil bir dokulme.
-   *
-   * Durum tutulmuyor: konumlar isinin kimliginden ve omrunden tureyen
-   * sabit bir gurultuyle cikiyor. Kare kare tasinan bir parcacik listesi,
-   * saniyede birkac kez yeniden gelen bir isinla birlikte kaymak yerine
-   * geride kalirdi.
-   */
-  private drawShowcaseMotes(beam: BeamSnapshot, tone: number, life: number) {
-    const graphics = this.beamGraphics;
-    if (!graphics) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    // Isin sonerken zerreler aciliyor: omur 1'den 0'a inerken acilma 0'dan 1'e.
-    const drift = 1 - life;
-    const scale = this.getTowerEffectScale();
-
-    for (let index = 0; index < SHOWCASE_MOTE_COUNT; index += 1) {
-      const seed = Math.sin((beam.id.length + index * 31.7) * 12.9898) * 43758.5453;
-      const a = seed - Math.floor(seed);
-      const seed2 = Math.sin((beam.id.length + index * 57.3 + 11) * 78.233) * 43758.5453;
-      const b = seed2 - Math.floor(seed2);
-      const along = (0.06 + a * 0.88) * length;
-      const side = index % 2 === 0 ? 1 : -1;
-      const spread = beam.width * (0.4 + b * 0.34) + drift * (9 + b * 15) * scale;
-      const x = beam.x1 + ux * along + nx * side * spread;
-      const y = beam.y1 + uy * along + ny * side * spread;
-      graphics.fillStyle(index % 3 === 0 ? 0xffffff : tone, 0.7 * life * (1 - drift * 0.45));
-      graphics.fillCircle(x, y, Math.max(0.7, 1.9 * (1 - drift * 0.5) * scale));
-    }
-  }
-
-  private drawShowcaseBeam(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 130) / 260, 0, 1);
-    const flash = Phaser.Math.Clamp((life - 0.22) / 0.78, 0, 1);
-    const afterglow = Phaser.Math.Clamp(life / 0.82, 0, 1);
-    const pulse = 0.9 + Math.sin(Date.now() / 34) * 0.08;
-
-    const fillBeamBand = (width: number, bandColor: number, alpha: number, inset = 0) => {
-      const startX = beam.x1 + ux * inset;
-      const startY = beam.y1 + uy * inset;
-      const endX = beam.x2 - ux * inset;
-      const endY = beam.y2 - uy * inset;
-      const clampedWidth = Math.min(width, beam.width);
-      const halfStart = clampedWidth * 0.42;
-      const halfMid = width * 0.5;
-      const halfEnd = clampedWidth * 0.42;
-      const midX = (startX + endX) / 2;
-      const midY = (startY + endY) / 2;
-
-      this.beamGraphics?.fillStyle(bandColor, alpha * pulse);
-      this.beamGraphics?.fillPoints([
-        new Phaser.Geom.Point(startX + nx * halfStart, startY + ny * halfStart),
-        new Phaser.Geom.Point(midX + nx * halfMid, midY + ny * halfMid),
-        new Phaser.Geom.Point(endX + nx * halfEnd, endY + ny * halfEnd),
-        new Phaser.Geom.Point(endX - nx * halfEnd, endY - ny * halfEnd),
-        new Phaser.Geom.Point(midX - nx * halfMid, midY - ny * halfMid),
-        new Phaser.Geom.Point(startX - nx * halfStart, startY - ny * halfStart)
-      ], true);
-      this.beamGraphics?.fillCircle(startX, startY, halfStart);
-      this.beamGraphics?.fillCircle(endX, endY, halfEnd);
-    };
-
-    const tier = beam.tier ?? 1;
-    const palette = this.getZeynepTierPalette(tier, color);
-
-    // Kademe 5: gosterinin ikinci perdesi.
-    //
-    // Ilk vurus sonmeye baslarken arkasindan daha genis ve cok daha soluk bir
-    // bant geciyor -- ayni isin degil, ayni isin bir daha. Kademeyi zamanla
-    // anlatmak, isini kalinlastirmadan ona bir agirlik veriyor.
-    if (tier >= 2) {
-      const encore = Phaser.Math.Clamp((0.74 - life) / 0.52, 0, 1) * Phaser.Math.Clamp(life / 0.22, 0, 1);
-      if (encore > 0) {
-        fillBeamBand(beam.width * (1 + 0.3 * encore), palette.band, 0.24 * encore);
-      }
-    }
-
-    fillBeamBand(beam.width, palette.band, 0.2 * afterglow);
-    fillBeamBand(beam.width * 0.74, palette.mid, 0.36 * afterglow, 2);
-    fillBeamBand(beam.width * 0.48, palette.inner, 0.62 * flash + 0.18 * afterglow, 5);
-    fillBeamBand(beam.width * 0.24, palette.core, 0.96 * flash, 8);
-
-    for (let index = 0; index < 7; index += 1) {
-      const t = (index + 1) / 8;
-      const hash = Math.sin((beam.id.length + index * 17) * 23.91) * 43758.5453;
-      const normalizedHash = hash - Math.floor(hash);
-      const side = index % 2 === 0 ? 1 : -1;
-      const centerX = beam.x1 + dx * t;
-      const centerY = beam.y1 + dy * t;
-      const halfHeight = beam.width * (0.18 + normalizedHash * 0.18);
-      const halfLength = 3 + normalizedHash * 7;
-      const offset = side * Math.min(beam.width * 0.28, beam.width * (0.12 + normalizedHash * 0.16));
-      this.beamGraphics.fillStyle(index % 3 === 0 ? palette.core : palette.shard, 0.5 * flash);
-      this.beamGraphics.fillPoints([
-        new Phaser.Geom.Point(centerX - ux * halfLength + nx * offset, centerY - uy * halfLength + ny * offset),
-        new Phaser.Geom.Point(centerX + nx * (offset + side * halfHeight), centerY + ny * (offset + side * halfHeight)),
-        new Phaser.Geom.Point(centerX + ux * halfLength + nx * offset, centerY + uy * halfLength + ny * offset),
-        new Phaser.Geom.Point(centerX + nx * (offset - side * halfHeight * 0.55), centerY + ny * (offset - side * halfHeight * 0.55))
-      ], true);
-    }
-
-    this.beamGraphics.fillStyle(palette.core, 0.88 * flash);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, beam.width * 0.32);
-    this.beamGraphics.fillStyle(palette.shard, 0.42 * afterglow);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, beam.width * 0.28);
-    if (tier >= 3) {
-      this.drawShowcaseMotes(beam, palette.band, afterglow);
-    }
-    this.drawBeamTierAccent(beam, color);
-  }
-
-  private drawKinConeWave(beam: BeamSnapshot, kinColor: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    // Kin dalgasi da ayni torene bagli: 5'te altin, 10'da beyaz altin. Dalganin
-    // kendi geometrisine dokunulmuyor, degisen yalnizca rengi ve 10'da
-    // cevresine dokulen zerreler.
-    const kinTier = beam.tier ?? 1;
-    const kinPalette = this.getZeynepTierPalette(kinTier, kinColor);
-    // Dalganin govdesi genis ve dusuk alfayla doluyor: karanlik uzerinde
-    // dogurgan olan sey doygunluk degil parlaklik. Kademe 3'te soluk altini
-    // (band) kullanmak dalgayi kademe 2'den **daha sonuk** gosteriyordu ve
-    // ilerleme tersine donuyordu; o yuzden en ust kademe beyaza cikiyor.
-    const color = kinTier >= 3 ? kinPalette.inner : kinTier >= 2 ? kinPalette.band : kinColor;
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    const halfWidth = Math.max(4, beam.width / 2);
-    const isInstant = beam.definitionId === "zeynep-3-kin-showcase";
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 120) / (isInstant ? 260 : 120), 0, 1);
-    const pulse = 0.9 + Math.sin(Date.now() / 70) * 0.1;
-    const heading = Math.atan2(dy, dx);
-    const halfAngle = Math.atan2(halfWidth, length);
-
-    if (!isInstant) {
-      const waveDepth = Math.min(Math.max(12, length * 0.34), 34 * this.getTowerEffectScale());
-      const outerRadius = length;
-      const innerRadius = Math.max(1, length - waveDepth);
-      const steps = 12;
-      const outerPoints: Phaser.Geom.Point[] = [];
-      const innerPoints: Phaser.Geom.Point[] = [];
-
-      for (let index = 0; index <= steps; index += 1) {
-        const t = index / steps;
-        const angle = heading - halfAngle + halfAngle * 2 * t;
-        const ripple = Math.sin(Date.now() / 90 + index * 1.7) * 2.2 * this.getTowerEffectScale();
-        outerPoints.push(new Phaser.Geom.Point(
-          beam.x1 + Math.cos(angle) * (outerRadius + ripple),
-          beam.y1 + Math.sin(angle) * (outerRadius + ripple)
-        ));
-        innerPoints.unshift(new Phaser.Geom.Point(
-          beam.x1 + Math.cos(angle) * Math.max(1, innerRadius + ripple * 0.35),
-          beam.y1 + Math.sin(angle) * Math.max(1, innerRadius + ripple * 0.35)
-        ));
-      }
-
-      this.beamGraphics.fillStyle(color, 0.18 * life * pulse);
-      this.beamGraphics.fillPoints([...outerPoints, ...innerPoints], true);
-      for (let band = 0; band < 3; band += 1) {
-        const radius = Math.max(1, outerRadius - band * waveDepth * 0.34);
-        const alpha = (0.72 - band * 0.18) * life;
-        this.beamGraphics.lineStyle(Math.max(1.5, (4 - band) * this.getTowerEffectScale()), band === 0 ? (kinTier >= 3 ? 0xffffff : kinPalette.inner) : color, alpha);
-        this.beamGraphics.beginPath();
-        for (let index = 0; index <= steps; index += 1) {
-          const t = index / steps;
-          const angle = heading - halfAngle + halfAngle * 2 * t;
-          const ripple = Math.sin(Date.now() / 85 + index * 1.6 + band) * 1.8 * this.getTowerEffectScale();
-          const x = beam.x1 + Math.cos(angle) * (radius + ripple);
-          const y = beam.y1 + Math.sin(angle) * (radius + ripple);
-          if (index === 0) {
-            this.beamGraphics.moveTo(x, y);
-          } else {
-            this.beamGraphics.lineTo(x, y);
-          }
-        }
-        this.beamGraphics.strokePath();
-      }
-      this.beamGraphics.fillStyle(kinTier >= 2 ? kinPalette.mid : 0x7f1d1d, 0.2 * life);
-      this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(3, halfWidth * 0.08));
-      if (kinTier >= 3) {
-        this.drawShowcaseMotes(beam, kinPalette.band, life);
-      }
-      return;
-    }
-
-    const startInset = isInstant ? 4 : Math.min(18, length * 0.18);
-    const startX = beam.x1 + ux * startInset;
-    const startY = beam.y1 + uy * startInset;
-
-    const left = new Phaser.Geom.Point(beam.x2 + nx * halfWidth, beam.y2 + ny * halfWidth);
-    const right = new Phaser.Geom.Point(beam.x2 - nx * halfWidth, beam.y2 - ny * halfWidth);
-    const origin = new Phaser.Geom.Point(startX, startY);
-    const innerLeft = new Phaser.Geom.Point(beam.x2 + nx * halfWidth * 0.72 - ux * 18, beam.y2 + ny * halfWidth * 0.72 - uy * 18);
-    const innerRight = new Phaser.Geom.Point(beam.x2 - nx * halfWidth * 0.72 - ux * 18, beam.y2 - ny * halfWidth * 0.72 - uy * 18);
-
-    this.beamGraphics.fillStyle(color, (isInstant ? 0.18 : 0.12) * life * pulse);
-    this.beamGraphics.fillPoints([origin, left, right], true);
-    this.beamGraphics.lineStyle(Math.max(2, 4 * this.getTowerEffectScale()), color, (isInstant ? 0.74 : 0.52) * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(startX, startY);
-    this.beamGraphics.lineTo(left.x, left.y);
-    this.beamGraphics.moveTo(startX, startY);
-    this.beamGraphics.lineTo(right.x, right.y);
-    this.beamGraphics.moveTo(innerLeft.x, innerLeft.y);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.lineTo(innerRight.x, innerRight.y);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(Math.max(1, 2 * this.getTowerEffectScale()), isInstant ? 0xffe4e6 : 0xfca5a5, (isInstant ? 0.86 : 0.58) * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(innerLeft.x, innerLeft.y);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.lineTo(innerRight.x, innerRight.y);
-    this.beamGraphics.strokePath();
-
-    if (isInstant) {
-      this.beamGraphics.fillStyle(0xfff1f2, 0.52 * life);
-      this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(5, halfWidth * 0.12));
-    }
-
-    // Koni disa dogru genisledigi icin kenar raylari yanlis yere duserdi;
-    // yalnizca eksen filamani ve ilerleyen dugum kalir.
-    this.drawBeamTierAccent(beam, color);
-  }
-
-  private drawKinShowcaseLight(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 260) / 260, 0, 1);
-    const flash = Phaser.Math.Clamp((life - 0.18) / 0.82, 0, 1);
-    const spread = Math.min(beam.width * 0.42, length * 0.5);
-    const coreWidth = Math.max(5, Math.min(18, beam.width * 0.18));
-    const pulse = 0.92 + Math.sin(Date.now() / 30) * 0.08;
-
-    for (let index = -2; index <= 2; index += 1) {
-      const ratio = index / 2;
-      const endX = beam.x2 + nx * spread * ratio;
-      const endY = beam.y2 + ny * spread * ratio;
-      const width = coreWidth * (index === 0 ? 1.35 : 0.72);
-      const alpha = (index === 0 ? 0.88 : 0.42) * flash * pulse;
-      this.beamGraphics.lineStyle(width + 10, color, 0.13 * life);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-      this.beamGraphics.lineStyle(width + 4, color, 0.34 * life);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-      this.beamGraphics.lineStyle(Math.max(2, width), index === 0 ? 0xfff1f2 : 0xfca5a5, alpha);
-      this.beamGraphics.lineBetween(beam.x1, beam.y1, endX, endY);
-    }
-
-    this.beamGraphics.fillStyle(color, 0.18 * life);
-    this.beamGraphics.fillPoints([
-      new Phaser.Geom.Point(beam.x1, beam.y1),
-      new Phaser.Geom.Point(beam.x2 + nx * spread, beam.y2 + ny * spread),
-      new Phaser.Geom.Point(beam.x2 - nx * spread, beam.y2 - ny * spread)
-    ], true);
-    this.beamGraphics.fillStyle(0xfff1f2, 0.86 * flash);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, Math.max(5, coreWidth * 0.7));
-    this.beamGraphics.fillStyle(0xffe4e6, 0.48 * life);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, Math.max(8, spread * 0.08));
-    // Kin gosterisi de disa acilir: eksen filamani evet, kenar raylari hayir.
-    this.drawBeamTierAccent(beam, color);
-  }
-
-  private drawSynthesisBurnTrail(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const life = Phaser.Math.Clamp((beam.ttlMs ?? 0) / 3000, 0, 1);
-    const width = Math.max(5, beam.width * 0.34);
-    this.beamGraphics.lineStyle(width + 5, 0x1c0703, 0.28 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(width, color, 0.36 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    this.beamGraphics.lineStyle(Math.max(2, width * 0.42), 0xf97316, 0.22 * life);
-    this.beamGraphics.beginPath();
-    this.beamGraphics.moveTo(beam.x1, beam.y1);
-    this.beamGraphics.lineTo(beam.x2, beam.y2);
-    this.beamGraphics.strokePath();
-    // Yanik izi sonup giden bir tortu: raysiz, yalnizca ince bir cekirdek.
-    this.drawBeamTierAccent(beam, color);
-  }
-
-  private drawChainLightning(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const nx = -dy / length;
-    const ny = dx / length;
-    const points: Array<{ x: number; y: number }> = [];
-    const segments = 7;
-
-    for (let index = 0; index <= segments; index += 1) {
-      const t = index / segments;
-      const hash = Math.sin((beam.id.length + index * 13) * 19.73) * 43758.5453;
-      const offset = index === 0 || index === segments ? 0 : (hash - Math.floor(hash) - 0.5) * 13;
-      points.push({
-        x: beam.x1 + dx * t + nx * offset,
-        y: beam.y1 + dy * t + ny * offset
-      });
-    }
-
-    const strokeJagged = (width: number, strokeColor: number, alpha: number) => {
-      this.beamGraphics?.lineStyle(width, strokeColor, alpha);
-      this.beamGraphics?.beginPath();
-      points.forEach((point, index) => {
-        if (index === 0) {
-          this.beamGraphics?.moveTo(point.x, point.y);
-        } else {
-          this.beamGraphics?.lineTo(point.x, point.y);
-        }
-      });
-      this.beamGraphics?.strokePath();
-    };
-
-    const visualScale = this.getTowerEffectScale();
-    strokeJagged((beam.width + 10) * visualScale, color, 0.16);
-    strokeJagged((beam.width + 4) * visualScale, 0xffffff, 0.58);
-    strokeJagged(Math.max(1.5, (beam.width - 1) * visualScale), 0x93c5fd, 0.98);
-
-    // Kademe vurgusu kirikli yolun kendisini izler: duz bir eksen cizgisi
-    // simsegin icinden gecerdi ve zincir kirikli olmaktan cikardi.
-    const tier = beam.tier ?? 1;
-    if (tier >= 2) {
-      strokeJagged(Math.max(0.7, beam.width * 0.28 * visualScale), 0xffffff, tier >= 3 ? 0.95 : 0.78);
-    }
-
-    this.beamGraphics.fillStyle(0x67e8f9, 0.72);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5 * visualScale);
-    this.beamGraphics.fillStyle(0xffffff, 0.92);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4 * visualScale);
-
-    if (tier >= 3) {
-      // Carpma noktasinda kil kalinliginda bir halka: zincirin nerede
-      // kapandigini buyutmeden isaret eder.
-      this.beamGraphics.lineStyle(0.7, 0xffffff, 0.6);
-      this.beamGraphics.strokeCircle(beam.x2, beam.y2, 7 * visualScale);
-    }
-  }
-
-  /**
-   * Govde renginin beyaza cekilmis hali.
-   *
-   * Tumuyle beyaz bir cekirdek isini beyaz gosteriyor; tumuyle renkli bir
-   * cekirdek ise sicakligi kaybediyor. Aradaki karisim ikisini de veriyor --
-   * kirmizi isinin ortasi acik kirmizi, mavininki acik mavi, beyazinki beyaz.
-   */
-  private getBeamCoreColor(color: number, whiteness = 0.5) {
-    const lift = (channel: number) => Math.round(channel + (255 - channel) * whiteness);
-    return (lift((color >> 16) & 0xff) << 16) | (lift((color >> 8) & 0xff) << 8) | lift(color & 0xff);
-  }
-
-  /**
-   * Isinin kesiti. Kademe yukseldikce yumusuyor ve genisliyor.
-   *
-   * Uc kademe uc ayri karakter tasiyor, cunku seviye atlamasinin **hissedilmesi**
-   * icin arada gorulecek bir fark olmasi gerekiyor. Kirmizi duz: kenardan
-   * merkeze hicbir gecis yok, tek renk bir serit. Mavide hare aciliyor ve
-   * merkez isinmaya basliyor. Beyazda ayni hare belirgin sekilde daha genise
-   * yayiliyor. Kirmizinin da gradyani olsaydi ucu de ayni seyin daha parlak
-   * hali olurdu ve gecis yalnizca bir renk degisimi olarak kalirdi.
-   *
-   * Yumusaklik tek bir cizgiden degil katman **sayisindan** geliyor. Bir ara
-   * katmani dusurmek yetmisti: hale ile govde arasinda gecis kalmayinca isin
-   * keskin kenarli duz bir seride donusmustu. Beyazda mesafe buyudugu icin
-   * omuz sayisi da artiyor, yoksa genisleyen hare basamakli gorunurdu.
-   *
-   * Rengi omuzlar ve govde tasiyor, beyaz olan yalnizca en icteki ince file.
-   * Boylece seviye rengi okunuyor ama merkez yine de sicak: eskiden cekirdek
-   * neredeyse tam genislikte ve sabit beyazdi, o yuzden hangi seviye olursa
-   * olsun isin beyaz gorunuyordu.
-   */
-  private strokeBeamProfile(beam: BeamSnapshot, color: number, options: { spread: number; body: number }) {
-    const graphics = this.beamGraphics;
-    if (!graphics) {
-      return;
-    }
-    const { body } = options;
-    const cizgi = (width: number, tone: number, alpha: number) => {
-      graphics.lineStyle(Math.max(0.6, width), tone, alpha);
-      graphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    };
-
-    const tier = beam.tier ?? 1;
-    if (tier < 2) {
-      cizgi(body, color, 0.95);
-      return;
-    }
-
-    const spread = tier >= 3 ? options.spread * 1.8 : options.spread;
-    const omuzlar: Array<[number, number]> = tier >= 3
-      ? [[1, 0.07], [0.74, 0.13], [0.5, 0.22], [0.28, 0.4]]
-      : [[1, 0.1], [0.62, 0.24], [0.28, 0.46]];
-    for (const [olcek, alfa] of omuzlar) {
-      cizgi(body + spread * olcek, color, alfa);
-    }
-    cizgi(body, color, 0.82);
-    cizgi(body * 0.52, this.getBeamCoreColor(color, 0.45), 0.9);
-    cizgi(body * 0.2, this.getBeamCoreColor(color, 0.86), 0.96);
-  }
-
-  /** Vurus noktasinin rengi: kirmizi kademede duz govde rengi, ustunde sicak. */
-  private getBeamImpactColor(beam: BeamSnapshot, color: number) {
-    return (beam.tier ?? 1) < 2 ? color : this.getBeamCoreColor(color, 0.86);
-  }
-
-  /**
-   * Menzilli dusmanin yapiya attigi atisin izi.
-   *
-   * Kule kirislerinden bilerek ayri duruyor: hale yok, kademe vurgusu yok,
-   * kalinlik yok. Kesik kesik ince bir cizgi -- oyuncunun ekranindaki her
-   * parlak sey onun kendi ates gucu, bu degil.
-   */
-  private drawEnemyShot(beam: BeamSnapshot, color: number) {
-    const graphics = this.beamGraphics;
-    if (!graphics) {
-      return;
-    }
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.hypot(dx, dy);
-    if (length < 1) {
-      return;
-    }
-    const stepLength = 9;
-    const steps = Math.max(1, Math.floor(length / stepLength));
-    graphics.lineStyle(Math.max(1, beam.width), color, 0.85);
-    for (let i = 0; i < steps; i += 2) {
-      const from = i / steps;
-      const to = Math.min(1, (i + 1) / steps);
-      graphics.lineBetween(
-        beam.x1 + dx * from,
-        beam.y1 + dy * from,
-        beam.x1 + dx * to,
-        beam.y1 + dy * to
-      );
-    }
-    // Carpma noktasi: hasarin nereye dustugunu tek isaret eden sey.
-    graphics.fillStyle(color, 0.9);
-    graphics.fillCircle(beam.x2, beam.y2, 3);
-  }
-
-  private drawLaserConnection(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    this.strokeBeamProfile(beam, color, { spread: 8, body: Math.max(2, beam.width) });
-    // Carpma noktasi kirisin en sicak yeri, ama yalnizca nokta: cevresine
-    // renkli bir bulut konmuyor. Bulut kirisin ucunu kalinlastirip vurusun
-    // nereye dustugunu bulaniklastiriyordu.
-    //
-    // Kirmizi kademede nokta da duz: govdenin gradyani yokken ucunda beyaz bir
-    // parlama olsa, kaldirilan gecis oradan geri girerdi.
-    this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.95);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4);
-    this.beamGraphics.fillStyle(color, 0.22);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
-    // Dis hale govdeden 8 birim genis; vurgu onun disina oturmali.
-    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 8 });
-  }
-
-  private drawOverdriveBeam(beam: BeamSnapshot, color: number) {
-    if (!this.beamGraphics) {
-      return;
-    }
-
-    const core = this.getBeamCoreColor(color, 0.86);
-    this.strokeBeamProfile(beam, color, { spread: 14, body: Math.max(3, beam.width) });
-    this.beamGraphics.lineStyle(1, color, 0.65);
-    this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
-    this.beamGraphics.fillStyle(color, 0.35);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 11);
-    this.beamGraphics.fillStyle(core, 1);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5);
-    // Ucta hare yok, yalnizca sicak nokta; kural asiri yuklemede de ayni.
-    this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.9);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
-    const tier = beam.tier ?? 1;
-    this.drawBeamTierAccent(beam, color, { outerWidth: beam.width + 14 });
-    if (tier >= 3) {
-      this.drawOverdriveFlare(beam);
-    }
-  }
-
-  /**
-   * Onuncu seviyede asiri yuklemenin cevresine dokulen parlamalar.
-   *
-   * Kural yine ayni: kiris kalinlasmiyor. Eklenen sey **cevresi** -- govdenin
-   * disina tasan hale, uzerinde kosan parlamalar ve kenardan dokulen kivilcimlar.
-   * Kalinlik buyutmek gucu degil kabaligi anlatiyor; asil "en ust seviye" hissi
-   * ayni cizginin daha canli, daha katmanli olmasindan geliyor.
-   *
-   * Hicbirinin durumu tutulmuyor: her sey saatten ve indeksten tureyen
-   * deterministik bir gurultuyle ciziliyor. Kiris saniyede yirmi kez yeniden
-   * geldigi ve supurme sirasinda acisi degistigi icin, kare kare tasinan bir
-   * parcacik listesi kirisle birlikte kaymak yerine geride kalirdi.
-   */
-  private drawOverdriveFlare(beam: BeamSnapshot) {
-    const graphics = this.beamGraphics;
-    if (!graphics) {
-      return;
-    }
-
-    const dx = beam.x2 - beam.x1;
-    const dy = beam.y2 - beam.y1;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const ux = dx / length;
-    const uy = dy / length;
-    const nx = -uy;
-    const ny = ux;
-    const now = this.time.now;
-
-    // Hale: disa dogru sonen katmanlar.
-    //
-    // Tek bir genis cizgi denendi ve ise yaramadi: `lineStyle` duz kenarli bir
-    // kapsul ciziyor, yani ortaya yumusak bir parlama degil kirisi cerceveleyen
-    // gri bir dikdortgen cikiyor. Ust uste binen birkac katman gecisi taklit
-    // ediyor -- kirisin govdesinin zaten yaptigi sey.
-    const breath = 0.5 + Math.sin(now / 180) * 0.5;
-    // Katman sayisi yuksek ve araliklar dar: uc kalin katman denendi ve kenari
-    // hala duz bir bant gibi gorunuyordu. Gecisi yapan sey katmanin kalinligi
-    // degil, sayisi.
-    for (let layer = OVERDRIVE_HALO_LAYERS; layer >= 1; layer -= 1) {
-      const spread = beam.width + 6 + layer * (3.4 + breath * 0.8);
-      graphics.lineStyle(spread, 0xbae6fd, 0.016 + breath * 0.006);
-      graphics.lineBetween(beam.x1, beam.y1, beam.x2, beam.y2);
-    }
-
-    // Kiris boyunca kosan parlamalar: her biri kucuk bir yildiz cakmasi.
-    for (let index = 0; index < OVERDRIVE_FLARE_COUNT; index += 1) {
-      // Baslangic noktalari esit araliklarla dagitiliyor, uzerine kucuk bir
-      // sapma biniyor. Tumuyle rastgele birakildiginda parlamalar kumeleniyor
-      // ve kirisin ortasinda taramaya benzeyen bir yigin olusturuyorlardi.
-      const speed = 0.35 + this.spaceNoise(index * 3 + 1) * 0.5;
-      const offset = index / OVERDRIVE_FLARE_COUNT + this.spaceNoise(index * 3 + 2) * 0.08;
-      const along = (((now / 1000) * speed + offset) % 1) * length;
-      const px = beam.x1 + ux * along;
-      const py = beam.y1 + uy * along;
-      // Kenarlara yaklasirken sonuyor: parlamalar hictten belirip hicte kayboluyor.
-      const edge = Math.min(along, length - along) / Math.max(1, length * 0.18);
-      const fade = Math.min(1, Math.max(0, edge));
-      if (fade <= 0) continue;
-
-      // Kol boyu kiris boyunca degil **disa** dogru uzun: yildiz cakmasi
-      // hissini veren sey dik eksen, cunku kirisin kendi ekseni zaten parlak.
-      const arm = 10 + this.spaceNoise(index * 3 + 3) * 8;
-      graphics.lineStyle(1.4, 0xffffff, 0.85 * fade);
-      graphics.lineBetween(px - nx * arm, py - ny * arm, px + nx * arm, py + ny * arm);
-      graphics.lineStyle(1, 0xffffff, 0.5 * fade);
-      graphics.lineBetween(px - ux * arm * 0.7, py - uy * arm * 0.7, px + ux * arm * 0.7, py + uy * arm * 0.7);
-      graphics.fillStyle(0xbae6fd, 0.4 * fade);
-      graphics.fillCircle(px, py, 4.5);
-      graphics.fillStyle(0xffffff, 1 * fade);
-      graphics.fillCircle(px, py, 2.2);
-    }
-
-    // Kenardan dokulen kivilcimlar.
-    //
-    // Her kivilcimin yeri **omru boyunca sabit**: yalnizca disari aciliyor ve
-    // soluyor. Ilk halinde yer her karede yeniden cekiliyordu ve on dort
-    // kivilcim ayri ayri sicramak yerine kirisin iki yaninda titreyen tekduze
-    // bir tuye donusuyordu -- kum gibi, kivilcim gibi degil.
-    for (let index = 0; index < OVERDRIVE_SPARK_COUNT; index += 1) {
-      const durationMs = OVERDRIVE_SPARK_LIFE_MS * (0.7 + this.spaceNoise(index * 7 + 1) * 0.6);
-      const phase = now / durationMs + this.spaceNoise(index * 7 + 2) * 10;
-      const generation = Math.floor(phase);
-      const life = phase - generation;
-      // Kusak numarasi tohuma giriyor: her dogusta baska bir yerden cikiyor,
-      // ama o dogusun icinde yerini birakmiyor.
-      const seed = index * 7 + generation * 131;
-      const along = this.spaceNoise(seed) * length;
-      const side = this.spaceNoise(seed + 1) > 0.5 ? 1 : -1;
-      const drift = this.spaceNoise(seed + 2) * 0.5 - 0.25;
-
-      const spread = beam.width * 0.5 + 4 + life * 22;
-      const px = beam.x1 + ux * (along + life * length * 0.02 * drift) + nx * side * spread;
-      const py = beam.y1 + uy * (along + life * length * 0.02 * drift) + ny * side * spread;
-      const tail = 4 + this.spaceNoise(seed + 3) * 6;
-      // Once parlayip sonra sonuyor: duz sonme, cakma hissini vermiyor.
-      const glow = life < 0.15 ? life / 0.15 : 1 - (life - 0.15) / 0.85;
-      graphics.lineStyle(1.1, 0xfffbeb, 0.8 * glow);
-      graphics.lineBetween(px, py, px - nx * side * tail, py - ny * side * tail);
-    }
-
-    // Namludaki cakma: kirisin dogdugu yer en parlak nokta olmali.
-    const muzzlePulse = 0.6 + Math.sin(now / 90) * 0.4;
-    graphics.lineStyle(1.2, 0xffffff, 0.5 + muzzlePulse * 0.35);
-    for (let index = 0; index < 4; index += 1) {
-      const angle = (index / 4) * Math.PI + now / 700;
-      const reach = 16 + muzzlePulse * 7;
-      graphics.lineBetween(
-        beam.x1 - Math.cos(angle) * reach,
-        beam.y1 - Math.sin(angle) * reach,
-        beam.x1 + Math.cos(angle) * reach,
-        beam.y1 + Math.sin(angle) * reach
-      );
-    }
-    graphics.fillStyle(0xffffff, 0.9);
-    graphics.fillCircle(beam.x1, beam.y1, 3 + muzzlePulse * 1.6);
   }
 
   private createMover(sprite: Phaser.Physics.Arcade.Sprite, x: number, y: number): RenderMover {
@@ -11976,7 +10909,8 @@ function getTowerLevelStyle(level: number) {
     color: heat[normalizedLevel - 1],
     fill: normalizedLevel / 10,
     width: 1.8 + (normalizedLevel - 1) * (2.4 / 9),
-    glow: normalizedLevel >= 6
+    // Hale kademe sinirinda aciliyor (5), bir seviye sonra degil.
+    glow: normalizedLevel >= 5
   };
 }
 
@@ -12041,17 +10975,45 @@ function toCssColor(color: number) {
 }
 
 /**
- * Carpma vuran kulelerin imzalari.
+ * Karede cagrilan ayar fonksiyonlari icin degisim kontrolleri.
  *
- * Tablo burada, cizim fonksiyonunun disinda: yeni bir carpma kulesi eklendiginde
- * degistirilecek tek yer bu satirlar olsun. Listede olmayan kule eski davranisi
- * korur -- katmanli halka zaten herkese ait ortak zemin.
+ * Phaser `setDepth`te her seferinde sahne siralamasini kuyruga sokuyor,
+ * `setColor` ve `setFontSize`ta metnin tuvalini yeniden ciziyor. Bu cagrilar
+ * dusman dongusunde her karede her dusmanda donuyor; deger ayniysa yazilmiyor.
  */
-const IMPACT_MARK_STYLES: Record<string, "collapse" | "spark" | "shard"> = {
-  // Obsesyon: ayni hedefte biriken kule; halkasi iceri kapanir.
-  "warrior-4": "collapse",
-  // Ucube: elektrik zinciri; kirikli kivilcim kollari.
-  "warrior-6": "spark",
-  // Kirik Ayna: cam kirigi yelpazesi.
-  "archer-5": "shard"
-};
+function setDepthIfChanged(target: { depth: number; setDepth(value: number): unknown }, depth: number) {
+  if (target.depth !== depth) target.setDepth(depth);
+}
+
+function setTextColorIfChanged(text: Phaser.GameObjects.Text, color: string) {
+  if (text.style.color !== color) text.setColor(color);
+}
+
+function setFontSizeIfChanged(text: Phaser.GameObjects.Text, px: number) {
+  const size = `${px}px`;
+  if (text.style.fontSize !== size) text.setFontSize(px);
+}
+
+/** Testere bicaginin cokgenleri: karede yeniden yazilan sabit diziler. */
+const BLADE_SHADOW = Array.from({ length: 4 }, () => ({ x: 0, y: 0 }));
+const BLADE_BODY = Array.from({ length: 5 }, () => ({ x: 0, y: 0 }));
+const BLADE_EDGE = Array.from({ length: 5 }, () => ({ x: 0, y: 0 }));
+function setBladePoint(list: Array<{ x: number; y: number }>, index: number, x: number, y: number, forwardX: number, forwardY: number, distance: number, side: number) {
+  list[index].x = x + forwardX * distance - forwardY * side;
+  list[index].y = y + forwardY * distance + forwardX * side;
+}
+const ORBIT_DEFINITIONS = new Map<string, TowerDefinition | undefined>();
+function getOrbitDefinition(definitionId: string) {
+  if (!ORBIT_DEFINITIONS.has(definitionId)) {
+    ORBIT_DEFINITIONS.set(definitionId, towerCatalog.onur.find((candidate) => candidate.id === definitionId));
+  }
+  return ORBIT_DEFINITIONS.get(definitionId);
+}
+
+/** Isin kimligindeki kule kimligi (`melis-curse-t12`, `showcase-t4-91`). */
+const BEAM_TOWER_ID_PATTERN = /(?:^|-)(t\d+)(?=-|$)/;
+
+/** Kenara yerlesen yapilar (Abarti, duvar), butun karakterlerin kataloglarindan. */
+const EDGE_PLACED_DEFINITION_IDS: ReadonlySet<string> = new Set(
+  Object.values(towerCatalog).flat().filter((tower) => tower.engine?.placement?.requiresEdge).map((tower) => tower.id)
+);

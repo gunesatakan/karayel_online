@@ -40,6 +40,12 @@ const TEAMMATE_SFX_GAIN = 0.35;
 /** Uyari tonunun suresi. Kisa: uyari, muzik degil. */
 const ALERT_TONE_SECONDS = 0.24;
 /**
+ * Kamera sarsintisinin Phaser yogunlugu olarak ust siniri (kamera genisliginin
+ * orani). Yonetmenin px siniri ve 400 ms araligi ustune biniyor; Melis serisinin
+ * eski 0.022'lik sarsintisi dahil hicbir sarsinti bunu asamiyor.
+ */
+export const MAX_SHAKE_INTENSITY = 0.004;
+/**
  * Baglam surdurulurken istenen sesin bekleyebildigi en uzun sure.
  *
  * `resume` baglami hemen degil biraz sonra "running"e geciriyor; dokunusun
@@ -628,7 +634,10 @@ export class FeedbackDirector {
     const cssWidth = canvas?.getBoundingClientRect().width || camera.width;
     const canvasPerCss = (canvas?.width || camera.width) / Math.max(1, cssWidth);
     const zoom = camera.zoom || 1;
-    const intensity = (px * canvasPerCss) / Math.max(1, camera.width * zoom * zoom);
+    // Ust sinir ekranin binde dordu: 375 px'lik telefonda ~1.5 css pikseli.
+    // Px siniri genis ekranda da ayni hissi verirken dar ekranda sarsintiyi
+    // oransal olarak buyutuyordu; ikisinden kucuk olan geciyor.
+    const intensity = Math.min(MAX_SHAKE_INTENSITY, (px * canvasPerCss) / Math.max(1, camera.width * zoom * zoom));
     const duration = durationMs !== undefined && Number.isFinite(durationMs) ? Math.max(0, durationMs) : 80 + px * 25;
     camera.shake(Math.round(duration), intensity);
   }

@@ -711,8 +711,13 @@ export type ProjectileSnapshot = {
 
 export type ProjectileSpawnSnapshot = ProjectileSnapshot & { spawnedAt: number };
 export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: TowerTier };
-/** Every physical contact, including intermediate pierces; removal is a separate event. */
-export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: string; angle: number };
+/**
+ * Every physical contact, including intermediate pierces; removal is a separate event.
+ *
+ * `r`: alan hasarinin gercek yaricapi (dunya birimi, yuvarlanmis); alani
+ * olmayan mermide anahtar hic yazilmiyor.
+ */
+export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: string; angle: number; r?: number };
 
 export type DroneSnapshot = {
   id: string;
@@ -1705,6 +1710,7 @@ export {
   ULTIMATE_POWER_COST_GROWTH,
   ULTIMATE_POWER_DAMAGE_STEP,
   getUltimatePowerMultiplier,
+  getUltimateVisualTier,
   getUltimatePowerUpgradeCost,
   canUpgradeUltimatePower,
   ATAKAN_ULTIMATE_DRONE_DAMAGE,

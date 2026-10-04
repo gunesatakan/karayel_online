@@ -20,6 +20,7 @@
     "compare:builds": "npm run build:server && node tools/compare-builds.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.0",
     "typescript": "^5.8.3"
   }
 }

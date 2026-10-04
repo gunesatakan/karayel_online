@@ -130,8 +130,10 @@ import {
   ATAKAN_ULTIMATE_DRONE_DAMAGE,
   ULTIMATE_POWER_MAX_LEVEL,
   getUltimatePowerMultiplier,
+  getUltimateVisualTier,
   getUltimatePowerUpgradeCost,
   getBestUltimateColumnHits,
+  type TowerTier,
   getUltimateResultKind,
   type UltimateCastMessage,
   SERVER_LINK_NOTICE_COOLDOWN_MS,
@@ -1563,6 +1565,8 @@ export class MatchRoom extends Room<MatchState> {
    */
   private landedHitCount = 0;
   private sympathyUntil = 0;
+  /** Sempati baglarinin gorsel kademesi: atanin ulti gucunden, kademe 1 yazilmaz. */
+  private sympathyBeamTier?: TowerTier;
   private sympathyLinks: SympathyLink[] = [];
   /** Sempati kanamasi dusman basina bir kez; ulti bitince liste sifirlanir. */
   private sympathyBledEnemyIds = new Set<string>();
@@ -2822,6 +2826,15 @@ export class MatchRoom extends Room<MatchState> {
     const tower = towerId ? this.towers.get(towerId) : undefined;
     if (!tower) return undefined;
     const tier = getTowerTier(tower.level);
+    return tier === 1 ? undefined : tier;
+  }
+
+  /**
+   * Ulti isinlarinin (Zeynep sutunu, Sempati) gorsel kademesi: atanin ulti
+   * gucunden. Kule isinlarindaki kural: kademe 1 telde yazilmaz.
+   */
+  private getUltimateBeamTier(ownerId: string): TowerTier | undefined {
+    const tier = getUltimateVisualTier(this.state.players.get(ownerId)?.ultimatePower ?? 0);
     return tier === 1 ? undefined : tier;
   }
 
@@ -5444,7 +5457,11 @@ export class MatchRoom extends Room<MatchState> {
       x: roundNetworkNumber(projectile.x),
       y: roundNetworkNumber(projectile.y),
       angle: Math.atan2(projectile.vy, projectile.vx),
-      tier: this.getProjectileTier(projectile)
+      tier: this.getProjectileTier(projectile),
+      // Alan hasarinin gercek yaricapi: istemci patlamayi o boyda ciziyor
+      // (Baransel'in 42-87 birimlik alani 14 birimlik bir halkaydi). Alani
+      // olmayan mermide anahtar hic yok.
+      ...(projectile.aoeRadius > 0 ? { r: Math.round(projectile.aoeRadius) } : {})
     });
     const projectileTower = this.towers.get(projectile.towerId);
     const projectileOwnerId = projectileTower?.ownerId ?? "";
@@ -8888,7 +8905,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "onur") {
-      this.startSympathy();
+      this.startSympathy(client.sessionId);
       this.openTimedUltimateReport(report, this.sympathyUntil);
       return;
     }
@@ -9095,6 +9112,8 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(id, {
       id,
       definitionId: "zeynep-ultimate-column",
+      // Ulti kademesi kulenin seviyesinden degil ulti gucunden (0-2/3-4/5).
+      tier: this.getUltimateBeamTier(ownerId),
       x1: left + gridSize / 2,
       y1: bounds.top,
       x2: left + gridSize / 2,
@@ -10115,6 +10134,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-5-mirror",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: target.x,
@@ -10571,6 +10591,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(`melis-curse-${tower.id}`, {
       id: `melis-curse-${tower.id}`,
       definitionId: "archer-3-curse",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: target.x,
@@ -10633,6 +10654,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-3-curse-burst",
+      tier: this.getBeamTier(towerId),
       x1: enemy.x,
       y1: enemy.y,
       x2: enemy.x,
@@ -10697,6 +10719,7 @@ export class MatchRoom extends Room<MatchState> {
       this.beams.set(id, {
         id,
         definitionId: "archer-3-curse-pool",
+        tier: this.getBeamTier(pool.towerId),
         x1: pool.x,
         y1: pool.y,
         x2: pool.x,
@@ -10847,6 +10870,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-6-whisper-turn",
+      tier: this.getBeamTier(enemy.melisWhisperTurnedSourceTowerId),
       x1: enemy.x,
       y1: enemy.y,
       x2: target.x,
@@ -10946,6 +10970,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-6-whisper-suicide",
+      tier: this.getBeamTier(enemy.melisWhisperTurnedSourceTowerId),
       x1: enemy.x,
       y1: enemy.y,
       x2: enemy.x,
@@ -11093,6 +11118,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-4-underworld-execute",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: x,
@@ -11210,6 +11236,7 @@ export class MatchRoom extends Room<MatchState> {
         this.beams.set(beamId, {
           id: beamId,
           definitionId: "archer-4-undead-shot",
+          tier: this.getBeamTier(enemy.melisUndeadSourceTowerId),
           x1: enemy.x,
           y1: enemy.y,
           x2: target.x,
@@ -11258,6 +11285,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-4-underworld-link",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: enemy.x,
@@ -11344,6 +11372,7 @@ export class MatchRoom extends Room<MatchState> {
     this.beams.set(beamId, {
       id: beamId,
       definitionId: "archer-2-rage",
+      tier: this.getBeamTier(tower.id),
       x1: tower.x,
       y1: tower.y,
       x2: tower.x,
@@ -12882,8 +12911,9 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private startSympathy() {
+  private startSympathy(ownerId?: string) {
     this.sympathyUntil = Date.now() + scaleGameDuration(SYMPATHY_DURATION_MS);
+    this.sympathyBeamTier = ownerId ? this.getUltimateBeamTier(ownerId) : undefined;
     this.sympathyBledEnemyIds.clear();
     this.sympathyLinks = [];
   }
@@ -12920,6 +12950,7 @@ export class MatchRoom extends Room<MatchState> {
       this.beams.set(link.id, {
         id: link.id,
         definitionId: "onur-sympathy",
+        tier: this.sympathyBeamTier,
         x1: link.x1,
         y1: link.y1,
         x2: link.x2,
