@@ -116,6 +116,34 @@ canvas {
 
 .card-draft__status--error { color: #fda4af; }
 
+/*
+ * Dalga molasinda acilan nisan: kart perdesinin basliginda tek satir. `p`
+ * degil `span`: 375 px'te basligin paragraflari gizleniyor (karne yerlerini
+ * aliyor). Tek satirda kesiliyor; tam ad raporda da var. Parilti yalnizca ilk
+ * dagitimda ve hareket azaltma kapaliyken.
+ */
+.card-draft__badge {
+  display: block;
+  max-width: 100%;
+  margin: 6px auto 0;
+  overflow: hidden;
+  color: #fde68a;
+  font: 700 13px/1.3 Rajdhani, sans-serif;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-draft__badge--animate { animation: card-draft-badge-in 360ms cubic-bezier(.2, 1.3, .4, 1) 200ms both; }
+
+@keyframes card-draft-badge-in {
+  from { opacity: 0; transform: scale(1.3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-draft__badge--animate { animation: none; }
+}
+
 .run-card:disabled,
 .tower-choice:disabled {
   cursor: wait;
@@ -2242,6 +2270,33 @@ button.wave-report:active { transform: scale(0.99); }
   font-weight: 600;
 }
 
+/* Secili operatorun ustaligi ve bu tarayicinin unvani; tek satir, 375 px'te kesiliyor. */
+.hero__mastery {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.hero__mastery b {
+  flex: none;
+  color: #fde68a;
+}
+
+.hero__mastery span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+}
+
 .hero__stats {
   position: relative;
   z-index: 1;
@@ -2372,8 +2427,9 @@ button.wave-report:active { transform: scale(0.99); }
 }
 
 /*
- * Alti dugme, iki sira uc: dort sutunda Kart Arsivi ikinci siraya tek basina
- * dusuyordu. Yukseklik ayni (iki sira), dugmeler biraz genisledi.
+ * Yedi dugme, uc sira: iki sira uc, ucuncu sirada Nisanlar bir uctan obur
+ * uca (`command--wide`). Dort sutunda Kart Arsivi ikinci siraya tek basina
+ * dusuyordu; uc sutun dugmeleri biraz genisletiyor.
  */
 .home-actions__grid {
   display: grid;
@@ -2392,6 +2448,13 @@ button.wave-report:active { transform: scale(0.99); }
   flex-direction: column;
   gap: 1px;
   line-height: 1.1;
+}
+
+/* Tek basina kalan genis dugme (Nisanlar): son satiri bir uctan obur uca kaplar. */
+.home-actions__grid .command--wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  gap: 8px;
 }
 
 .command--count small {
@@ -3143,6 +3206,174 @@ button.wave-report:active { transform: scale(0.99); }
   text-transform: uppercase;
   white-space: nowrap;
 }
+
+/* --- badges --------------------------------------------------------------- */
+
+/*
+ * Nisanlar: Kart Arsivi'nin kabugu. Kazanilan nisan dolu elmas ve altin
+ * cerceve, kilitli olan bos elmas ve soluk cerceve; renk tek isaret degil,
+ * etiket de ("Kazanıldı", "Uzun vadeli", operator) yaziyor. Animasyon yok.
+ */
+.badge-group {
+  --frame: rgba(148, 163, 184, 0.3);
+  --tag: var(--ink-3);
+}
+
+.badge-entry.is-earned {
+  --frame: #fbbf24;
+  --tag: #fbbf24;
+}
+
+.badge-entry.is-locked strong { color: var(--ink-2); }
+
+.badge-entry__progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-entry__progress i {
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, var(--cyan) var(--fill, 0%), rgba(198, 178, 150, 0.16) var(--fill, 0%));
+}
+
+.badge-board__section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.badge-board__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.mastery-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mastery-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--accent, var(--cyan));
+  background: rgba(13, 10, 16, 0.72);
+}
+
+.mastery-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f2ece0;
+  font-family: var(--serif);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ustalik cubugu: metin ustte, ince cubuk altta; operator kartinda da ayni. */
+.mastery-meter {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 3px;
+}
+
+.mastery-meter em {
+  overflow: hidden;
+  color: #fde68a;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mastery-meter i {
+  display: block;
+  height: 3px;
+  background: linear-gradient(90deg, #fbbf24 var(--fill, 0%), rgba(198, 178, 150, 0.16) var(--fill, 0%));
+}
+
+.cosmetic-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cosmetic-group__label {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cosmetic-group__label small {
+  margin-left: 6px;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.cosmetic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 44 px dokunma hedefi; kilitli secenek kapali ve kosulunu ikinci satirda yaziyor. */
+.cosmetic-chip {
+  display: grid;
+  min-height: 44px;
+  max-width: 100%;
+  align-content: center;
+  gap: 1px;
+  padding: 5px 10px;
+  color: var(--ink-2);
+  border: 1px solid rgba(198, 178, 150, 0.22);
+  background: rgba(13, 10, 16, 0.72);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-align: left;
+}
+
+.cosmetic-chip.is-active {
+  color: #f2ece0;
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(251, 191, 36, 0.12);
+  box-shadow: inset 0 -2px 0 #fbbf24;
+}
+
+.cosmetic-chip.is-locked {
+  border-style: dashed;
+  opacity: 0.6;
+}
+
+.cosmetic-chip.is-locked b {
+  font-weight: 700;
+}
+
+.cosmetic-chip.is-locked small {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+}
+
+.cosmetic-chip:disabled { cursor: default; }
 
 /* --- detail --------------------------------------------------------------- */
 
@@ -4063,6 +4294,15 @@ button.wave-report:active { transform: scale(0.99); }
 }
 .game-hud__wave-clear-lines .is-gold { color: #fbbf24; }
 .game-hud__wave-clear-lines .is-bonus { color: #fde68a; }
+/* Bekleyen nisan bildirimi: kendi satirinda, dalga satirlarini itmesin. */
+.game-hud__wave-clear-lines .is-badge {
+  flex-basis: 100%;
+  overflow: hidden;
+  color: #fde68a;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+.game-hud__wave-clear-lines span.is-badge::before { content: "\25C8\00A0"; margin: 0; color: #facc15; }
 @keyframes hud-wave-clear-line {
   from { opacity: 0; transform: translateY(4px); }
 }
@@ -5516,6 +5756,98 @@ button.wave-report:active { transform: scale(0.99); }
   font-weight: 700;
 }
 
+/*
+ * Nisan ve ustalik: ustalik cubugu "Ustalık 3 → 4" basligiyla, altinda
+ * "140/200 · sonraki seviyeye 60". Seviye atlandiysa cubuk bastan doluyor.
+ * Nisanlar altin elmasli satirlar; kosulu da yaziyor ki neden acildigi okunsun.
+ */
+.run-report__progress { text-align: left; }
+
+.run-report__mastery {
+  display: grid;
+  gap: 5px;
+  padding: 9px 12px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 12px;
+}
+
+.run-report__mastery-head {
+  margin: 0;
+  color: #f8fafc;
+  font: 700 16px/1.2 Rajdhani, sans-serif;
+}
+
+.run-report__mastery.is-level-up .run-report__mastery-head { color: #facc15; }
+
+.run-report__mastery-bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 3px;
+}
+
+.run-report__mastery-bar i {
+  display: block;
+  width: var(--fill, 0%);
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #facc15);
+  border-radius: 3px;
+}
+
+.run-report__mastery small {
+  color: #cbd5e1;
+  font: 600 12px/1.25 Rajdhani, sans-serif;
+}
+
+.run-report__badges {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-report__badge-item {
+  display: grid;
+  gap: 1px;
+  padding: 6px 10px;
+  background: rgba(251, 191, 36, 0.08);
+  border-left: 3px solid #fbbf24;
+  border-radius: 8px;
+}
+
+.run-report__badge-item b {
+  color: #fde68a;
+  font: 700 14px/1.2 Rajdhani, sans-serif;
+}
+
+.run-report__badge-item small {
+  color: #cbd5e1;
+  font: 600 12px/1.25 Rajdhani, sans-serif;
+}
+
+/*
+ * Rapor muhru (kozmetik): yildiz ya da dalga basligi bir muhrun icinde.
+ * Yalnizca cerceve ve renk; metin ve olcu ayni kaliyor.
+ */
+.run-report--stamp-bronz .run-report__hero,
+.run-report--stamp-gumus .run-report__hero,
+.run-report--stamp-altin .run-report__hero {
+  display: inline-block;
+  padding: 8px 18px 9px;
+  border: 2px solid var(--stamp-color);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 3px rgba(2, 6, 23, 0.6), inset 0 0 0 4px color-mix(in srgb, var(--stamp-color) 45%, transparent);
+}
+
+.run-report--stamp-bronz { --stamp-color: #c2793d; }
+.run-report--stamp-gumus { --stamp-color: #cbd5e1; }
+.run-report--stamp-altin { --stamp-color: #facc15; }
+
+.run-report--stamp-altin .run-report__hero { background: radial-gradient(circle at 50% 0%, rgba(250, 204, 21, 0.16), transparent 70%); }
+
 .run-report__link {
   display: block;
   margin: 12px auto 0;
@@ -5610,6 +5942,14 @@ button.wave-report:active { transform: scale(0.99); }
 }
 .run-report--reveal .run-report__stars { animation: run-report-stamp 360ms cubic-bezier(.2, 1.3, .4, 1) 560ms both; }
 .run-report--reveal .run-report__badge.is-celebrated { animation: run-report-stamp 300ms cubic-bezier(.2, 1.3, .4, 1) 620ms both; }
+.run-report--reveal .run-report__mastery-bar i {
+  animation: run-report-mastery 700ms cubic-bezier(.2, .8, .2, 1) 700ms both;
+}
+.run-report--reveal .run-report__badge-item {
+  animation: run-report-stamp 300ms cubic-bezier(.2, 1.3, .4, 1) both;
+  animation-delay: calc(760ms + var(--i, 0) * 90ms);
+}
+@keyframes run-report-mastery { from { width: var(--from, 0%); } }
 
 @keyframes run-report-in { from { opacity: 0; transform: translateY(16px) scale(.98); } }
 @keyframes run-report-title { from { opacity: 0; transform: scale(1.2); } }

@@ -3,7 +3,18 @@ import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../def
 import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
 import {
   ArchiveOfferLatch,
+  BadgeNoticeQueue,
+  BadgeRunWatch,
   DEFAULT_MAP_SCALE,
+  countsAsTower,
+  formatBadgeNotice,
+  formatBannerSecondLine,
+  getBadgeDefinition,
+  getBadgeNoticeMoment,
+  getTowerCrownPoints,
+  isRepairDepotDefinition,
+  resolveFirstLiveWave,
+  TOWER_HEALTH_BAR_LIFT_PX,
   MatchResultLatch,
   RUN_REPORT_ACTIONABLE_AFTER_MS,
   buildRunReportView,
@@ -211,6 +222,7 @@ import { recordRun, type RunRecordOutcome } from "../run-records";
 import { markArchiveOffered, recordArchiveRunResult } from "../card-archive";
 import { removeRunReport, renderRunReport, type RunReportChoice, type RunReportNote } from "../run-report-ui";
 import { saveQuickStartIntent } from "../quick-start";
+import { readResolvedCosmetics, recordRunProgress, recordWaveBadges, resolveRoomFirstLiveWave, type RunProgressOutcome } from "../progress-store";
 import { createWaveReportElement, getWaveReportKey } from "../wave-report-ui";
 import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
 import { getProjectileTierFrameGrowth } from "./PreloaderScene";
@@ -1016,6 +1028,19 @@ export class GameScene extends Phaser.Scene {
    * kendi ultisi, damganin altini ve nexus cani. Karne kart perdesinin basliginda.
    */
   private readonly waveReports = new WaveReportTracker();
+  /**
+   * Nisanlarin olgulari: karneler, kendi kulelerin ve kendi ultin. Kayit
+   * dalga sonunda ve mac sonunda; dalga ortasinda yalnizca not aliniyor.
+   */
+  private readonly badgeWatch = new BadgeRunWatch();
+  /** Acilan nisanin bildirimi: dalga molasina ve kosu raporuna, dalga ortasina hic. */
+  private readonly badgeNotices = new BadgeNoticeQueue();
+  /** Kart perdesinin nisan satiri; ayni el yeniden cizilince kaybolmasin. */
+  private cardDraftBadgeNotice?: string;
+  /** Mac sonu nisan ve ustalik kaydi; sayfada bir kez. */
+  private runProgressOutcome?: RunProgressOutcome;
+  /** Bu tarayicinin kozmetigi (unvan, tac, muhur); sahne basinda bir kez okunuyor. */
+  private cosmetics = readResolvedCosmetics();
   /** Kombo damgalarinin kapisi: tur + sahip basina 4 sn, ekranda en fazla iki. */
   private readonly comboStamps = new ComboStampGate();
   /** Dogus etiketi gosterilmis sampiyonlar: etiket dusman basina bir kez. */
@@ -1336,6 +1361,10 @@ export class GameScene extends Phaser.Scene {
     this.goldShopWasOpen = false;
     this.waveClearWatch.reset();
     this.waveReports.reset();
+    this.badgeWatch.reset();
+    this.badgeNotices.reset();
+    this.cardDraftBadgeNotice = undefined;
+    this.cosmetics = readResolvedCosmetics();
     this.comboStamps.reset();
     this.announcedChampionIds.clear();
     this.cardDraftWave = undefined;
@@ -3574,6 +3603,8 @@ export class GameScene extends Phaser.Scene {
     // Raporun "en iyi an"i icin kendi ultilerinin en iyisi tutuluyor; mesaj
     // basina bir karsilastirma, sicak yolda degil.
     this.bestOwnUltimate = pickBetterUltimate(this.bestOwnUltimate, message);
+    // Nisan olgusu yalnizca not ediliyor; yazim ve bildirim dalga sonunda.
+    this.badgeWatch.noteUltimate(message);
     // Dalga karnesinin one cikan satiri: bu dalganin karnesi gelince ona
     // yaziliyor. Suresi dalga bitince dolan ulti (Kabus, Sempati, drone)
     // kurulumda raporlaniyor; o zaman az once biten dalganin karnesine gidiyor
@@ -3779,6 +3810,8 @@ export class GameScene extends Phaser.Scene {
     if (!message || (message.waves !== 5 && message.waves !== 10) || this.matchResultShown) {
       return;
     }
+    // Olgun Bag nisani yalnizca Sunucunun sahibine: baskasinin bagi senin kulende olgunlasabilir.
+    this.badgeWatch.noteLinkMatured(message.waves, message.serverOwnerId === this.localSessionId);
     this.queueLinkMoment(() => {
       const target = this.towerSnapshots.get(message.targetTowerId);
       if (!target) {
@@ -3936,6 +3969,7 @@ export class GameScene extends Phaser.Scene {
   private receiveChampionDown(raw: ChampionDownMessage) {
     const message = sanitizeChampionDownMessage(raw);
     if (!message || this.matchResultShown) return;
+    this.badgeWatch.noteChampionDown(message);
     this.time.delayedCall(this.playbackDelayMs, () => {
       const labels = this.levelLabels;
       if (!labels || this.matchResultShown || this.cardChoiceRoot) return;
@@ -4464,6 +4498,7 @@ export class GameScene extends Phaser.Scene {
       this.requestFullStaticSnapshot();
       return;
     }
+    this.noteBadgeSnapshot(hydratedSnapshot);
     // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
     // ayni soketten, ayni sirayla geliyor (oynatma saati ise ~500 ms geride,
     // o yuzden oynatilan snapshot degil). Karnesi gelmis dalgadan baska bir
@@ -4486,6 +4521,25 @@ export class GameScene extends Phaser.Scene {
       this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
     }
     this.recordClientPerfSection("snapshotRecv", performance.now() - receiveStart);
+  }
+
+  /**
+   * Nisanin snapshot olgulari, alindigi an (oynatma ~500 ms geride; mac biterken
+   * son yukseltme ya da zar oynatilmadan kaybolmasin).
+   *
+   * Ilk sonucsuz snapshot kosunun canli gorulen ilk dalgasini sabitliyor:
+   * sonradan katilan ya da yuva devralan oyuncu kendinden onceki dalgalari
+   * almiyor. Deger oda kimligiyle oturum deposunda; yeniden baglanma ve sayfa
+   * yenileme ilk degeri koruyor.
+   */
+  private noteBadgeSnapshot(snapshot: HydratedGameSnapshot) {
+    if (!snapshot.result && this.badgeWatch.firstLiveWave === undefined) {
+      const candidate = resolveFirstLiveWave({ wave: snapshot.team.wave, setupPhase: snapshot.setupPhase });
+      this.badgeWatch.noteFirstLiveWave(resolveRoomFirstLiveWave(this.room?.roomId, candidate));
+    }
+    for (const tower of snapshot.towers) {
+      if (tower.ownerId === this.localSessionId) this.noteBadgeTowerFacts(tower);
+    }
   }
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
@@ -4854,6 +4908,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // (yeniden baglanmada tekrar). Karne kart perdesinin basliginda.
     room.onMessage("wave:report", (record: unknown) => {
       if (this.waveReports.receiveReport(record)) this.refreshWaveReportCard();
+      if (this.badgeWatch.noteWave(record)) this.recordWaveBadges();
     });
     room.send("defense:request");
     room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
@@ -5040,6 +5095,37 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Arsivin "kac kosuda secildi" sayaci rekor kapisina bagli degil: co-op'ta
     // kilitli asamada da kartlari sen sectin. Yalnizca yaratici kosu disarida.
     recordArchiveRunResult(getArchiveRun(run, { slot, creative: creative || this.isArchiveSandbox() }));
+    // Nisan ve ustalik rekor ve arsivden sonra: "Her Cephede" bu temizlemeyi,
+    // "Arşivci" bu kosunun kartlarini gormeli. Kapi kayit modulunde.
+    this.runProgressOutcome = recordRunProgress({
+      run,
+      creative: creative || this.isArchiveSandbox(),
+      stage: this.roomStage ?? message.stage,
+      live: this.liveSnapshotSeen,
+      local: { slot, characterId: this.selectedCharacterId },
+      watch: this.badgeWatch
+    });
+    if (this.runProgressOutcome) this.badgeNotices.push(this.runProgressOutcome.badges);
+  }
+
+  /**
+   * Dalga sonu nisanlari: karne geldi (dalga molasi, kart perdesinden hemen
+   * once). Yeni nisan depoya yaziliyor ve kuyruga giriyor; bildirim kart
+   * perdesinde ya da bir sonraki temizleme damgasinda, dalga ortasinda hic.
+   * Kapi (yaratici, asama, kilitli asama, canli mac) depo modulunde.
+   */
+  private recordWaveBadges() {
+    if (this.matchResultShown) return;
+    const stage = this.roomStage;
+    // Canli dalga bilinmiyorsa karne katilirken yeniden gonderilendir: nisan yok.
+    if (stage === undefined || this.badgeWatch.firstLiveWave === undefined) return;
+    const characterId = this.localPlayerSnapshot?.characterId ?? this.selectedCharacterId;
+    const fresh = recordWaveBadges(
+      this.badgeWatch.buildFacts({ characterId, stage }),
+      { creative: this.creativeMode || this.isArchiveSandbox(), stage, live: this.liveSnapshotSeen }
+    );
+    this.badgeWatch.noteAwarded(fresh);
+    this.badgeNotices.push(fresh);
   }
 
   /**
@@ -5132,12 +5218,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // inmesin. Hareket ayarindan bagimsiz: kaza dokunusu canlanmayla ilgili degil.
       actionableAt: this.runReportOpenedAt + RUN_REPORT_ACTIONABLE_AFTER_MS,
       onChoice: (choice) => this.chooseRunReportAction(choice),
+      progress: this.buildRunReportProgress(report.creative),
+      stamp: this.cosmetics.stamp,
       onDefenseSummary: summary
         ? () => openDefenseDialog(`Dalga ${summary.wave} · Savunma özeti`, defenseSummaryLines(summary))
         : undefined
     });
 
-    const celebrated = view.badge?.celebrated === true;
+    // Yeni nisan ya da ustalik seviyesi de rozet tinisini caliyor (bir kez);
+    // ses yonetmenden, ayri bir ses yok.
+    const progressMoment = (this.runProgressOutcome?.badges.length ?? 0) > 0 || this.runProgressOutcome?.mastery?.levelUp === true;
+    const celebrated = view.badge?.celebrated === true || progressMoment;
     for (const cue of getRunReportCues({ result: report.result, celebrated, reducedMotion })) {
       if (cue.kind === "reportRecord") {
         if (this.runReportRecordCuePlayed) continue;
@@ -5153,6 +5244,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }, delay);
       this.runReportCueTimers.push(timer);
     }
+  }
+
+  /**
+   * Raporun nisan ve ustalik bolumu. Nisanlar kuyrugun "rapor" ani: bu kosuda
+   * acilan her nisan, dalga molasinda gosterilenler de. Yaratici kosuda yok.
+   */
+  private buildRunReportProgress(creative: boolean) {
+    if (creative) return undefined;
+    const badges = this.badgeNotices.take("report")
+      .map((id) => getBadgeDefinition(id))
+      .filter((badge): badge is NonNullable<typeof badge> => Boolean(badge))
+      .map((badge) => ({ name: badge.name, condition: badge.condition }));
+    const outcome = this.runProgressOutcome;
+    if (badges.length === 0 && !outcome?.mastery && !outcome?.cosmetics.length) return undefined;
+    return { badges, mastery: outcome?.mastery, cosmetics: outcome?.cosmetics ?? [] };
   }
 
   /**
@@ -5223,6 +5329,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (deal) {
       this.cardDealKey = dealKey;
       this.cardDealStartedAt = performance.now();
+      // Dalga molasi: bu dalgada acilan nisan perdenin basliginda bir satir.
+      // Ayni el yeniden cizilince satir kaliyor, yeni elde yeniden okunuyor.
+      const moment = getBadgeNoticeMoment({ over: this.matchResultShown, setupPhase: true, enemiesLeft: 0, draftOpen: true });
+      this.cardDraftBadgeNotice = formatBadgeNotice(this.badgeNotices.take(moment));
     }
     const animate = deal && !reducedMotion;
     root.className = "card-draft card-draft--visible";
@@ -5240,6 +5350,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.cardDraftWave = draftWave;
     const header = root.querySelector<HTMLElement>("[data-wave-report-slot]");
     if (header) this.mountWaveReportCard(header, animate);
+    if (header && this.cardDraftBadgeNotice) {
+      const notice = document.createElement("span");
+      notice.className = `card-draft__badge${animate ? " card-draft__badge--animate" : ""}`;
+      notice.textContent = `◈ ${this.cardDraftBadgeNotice}`;
+      header.querySelector(".card-draft__status")?.before(notice);
+    }
     const grid = root.querySelector<HTMLElement>(".card-draft__grid");
     const localTowers = this.getLocalTowerProfiles();
     const rarities: CardRarity[] = [];
@@ -6492,6 +6608,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2);
+        if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, discSize / 2);
         rendered.linkHighlight.setPosition(tower.x, tower.y);
         rendered.base.setPosition(tower.x, tower.y).setTexture(texture);
         rendered.range.setPosition(tower.x, tower.y).setRadius(tower.range);
@@ -6664,6 +6781,48 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       still,
       bornAt: now
     });
+  }
+
+  /**
+   * Nisanin kule olgulari: kendi kulelerinin seviyesi, Zeynep dizilimi, Melis
+   * evrimi ve Onur'un zari. Anlik goruntude zaten olan alanlar; yalnizca not
+   * aliniyor, yazim dalga sonunda. Taban kulenin ilk gorulen hali
+   * (`BadgeRunWatch.noteOwnTower`): miras kalan kule bir sey acmiyor. Duvar ve
+   * tamir deposu kule sayilmiyor.
+   */
+  private noteBadgeTowerFacts(tower: TowerSnapshot) {
+    const definition = { id: tower.definitionId };
+    this.badgeWatch.noteOwnTower({
+      id: tower.id,
+      level: tower.level,
+      countsAsTower: countsAsTower(definition) && !isRepairDepotDefinition(definition),
+      formationSize: tower.characterId === "zeynep" ? tower.zeynepFormationSize : undefined,
+      evolution: tower.characterId === "archer" ? tower.melisEvolutionLevel : undefined,
+      luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined,
+      luckyWindowRemainingMs: tower.characterId === "onur" ? tower.luckyWindowRemainingMs : undefined
+    });
+  }
+
+  /**
+   * Tac susu: yalnizca kendi onuncu seviye kulelerinde ve kozmetik aciksa.
+   * Bu tarayicinin secimi; takim arkadasi gormuyor, sunucu bilmiyor.
+   */
+  private shouldDrawTowerCrown(tower: TowerSnapshot) {
+    return this.cosmetics.crown && tower.ownerId === this.localSessionId && getTowerTier(tower.level) >= 3;
+  }
+
+  /**
+   * Kulenin tepesinde kucuk bir tac: uc dis, altin. Can cubugunun ustunde
+   * (cubuk kadranin 4-9 px ustunde, derinligi 16); seviye etiketinin
+   * altinda. Olculer paylasilan kuralda (`getTowerCrownPoints`), test cubukla
+   * cakismadigini oradan olcuyor.
+   */
+  private drawTowerCrown(graphics: Phaser.GameObjects.Graphics, x: number, y: number, spriteRadius: number) {
+    const points = getTowerCrownPoints(x, y, spriteRadius).map((point) => new Phaser.Geom.Point(point.x, point.y));
+    graphics.fillStyle(0xfacc15, 0.95);
+    graphics.fillPoints(points, true);
+    graphics.lineStyle(1.5, 0x422006, 0.9);
+    graphics.strokePoints(points, true);
   }
 
   /**
@@ -7870,7 +8029,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const width = Math.max(22, discSize * 0.88);
     const height = 3;
     const x = tower.x - width / 2;
-    const y = tower.y - discSize / 2 - 8;
+    const y = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX;
     const ratio = Phaser.Math.Clamp((tower.hp ?? 0) / Math.max(1, tower.maxHp ?? 1), 0, 1);
     graphics.clear();
     graphics.fillStyle(0x020617, 0.94).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
@@ -8685,7 +8844,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
     this.feedback?.emit("waveClear", { own: true, lifetimeMs: WAVE_CLEAR_STAMP_MS });
-    this.game.events.emit("game:hud-wave-clear", getWaveClearStampText(summary));
+    const stamp = getWaveClearStampText(summary);
+    // Kart perdesine sigmayan (perdesiz dalga, gec karne) nisan bildirimi
+    // bir sonraki temizleme damgasinin son satiri; dalga ortasinda hic.
+    const moment = getBadgeNoticeMoment({ over: false, setupPhase: Boolean(snapshot.setupPhase), enemiesLeft: snapshot.team.enemiesLeft });
+    const notice = formatBadgeNotice(this.badgeNotices.take(moment));
+    if (notice) stamp.lines.push({ kind: "badge", text: notice });
+    this.game.events.emit("game:hud-wave-clear", stamp);
   }
 
   /**
@@ -9009,7 +9174,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * Afis basina bir Text; afis dalgada 0-3 kez cikiyor.
    */
   private addStreakBuffLine(container: Phaser.GameObjects.Container, rule: KillStreakRule, y: number) {
-    const text = getKillStreakBuffText(rule.tier);
+    // Ikinci satir: once serinin gucu, sigarsa yaninda bu tarayicinin unvani.
+    const text = formatBannerSecondLine(getKillStreakBuffText(rule.tier), this.cosmetics.title);
     if (!text) {
       return;
     }

@@ -150,7 +150,8 @@ export class WaveClearWatch {
   }
 }
 
-export type WaveClearStampLine = { kind: "kills" | "gold" | "bonus"; text: string };
+/** `badge`: dalga ortasinda acilip kart perdesine sigmayan nisan bildirimi (`BadgeNoticeQueue`). */
+export type WaveClearStampLine = { kind: "kills" | "gold" | "bonus" | "badge"; text: string };
 
 export type WaveClearStampText = { title: string; lines: WaveClearStampLine[] };
 

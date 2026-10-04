@@ -1380,6 +1380,118 @@ export type {
   CardArchiveView,
   StoredCardArchive
 } from "./progress/archive.js";
+export {
+  AIRSPACE_WAVE,
+  ARCHIVIST_CARD_TARGET,
+  BADGE_BOOK_VERSION,
+  BADGE_CATALOG,
+  BADGE_GROUP_LABELS,
+  BadgeNoticeQueue,
+  BadgeRunWatch,
+  FULL_HEAL_WAVE_HP,
+  LOCK_CROWD_HITS,
+  LUCK_SAFE_MULTIPLIER,
+  METEOR_KILLS,
+  UNBROKEN_CLEAN_STREAK,
+  awardBadges,
+  buildBadgeBoardView,
+  checkBadgeRecordable,
+  countSignatureBadges,
+  createEmptyBadgeFlags,
+  findNewBadges,
+  formatBadgeNotice,
+  getBadgeDefinition,
+  getBadgeNoticeMoment,
+  getSignatureBadges,
+  getStageOneClearOperators,
+  isBadgeId,
+  resolveFirstLiveWave,
+  sanitizeBadgeBook,
+  serializeBadgeBook,
+  withoutBadges
+} from "./progress/badges.js";
+export type {
+  BadgeBoardView,
+  BadgeBook,
+  BadgeContext,
+  BadgeDefinition,
+  BadgeEntryView,
+  BadgeGroup,
+  BadgeGroupView,
+  BadgeNoticeMoment,
+  BadgeProgress,
+  BadgeRunFacts,
+  BadgeRunFlags,
+  StoredBadgeBook
+} from "./progress/badges.js";
+export {
+  MASTERY_BOOK_VERSION,
+  MASTERY_LEVEL_FLOORS,
+  MASTERY_MAX_LEVEL,
+  MASTERY_POINTS,
+  MASTERY_RUN_ID_LIMIT,
+  applyRunToMastery,
+  buildMasteryReportView,
+  countRunClearedWaves,
+  createEmptyMasteryBook,
+  getMasteryLevel,
+  getMasteryLevelFloor,
+  getMasteryPoints,
+  getMasteryProgress,
+  sanitizeMasteryBook,
+  serializeMasteryBook
+} from "./progress/mastery.js";
+export type {
+  MasteryBook,
+  MasteryEntry,
+  MasteryGain,
+  MasteryProgress,
+  MasteryReportView,
+  MasteryRunResult,
+  StoredMasteryBook
+} from "./progress/mastery.js";
+export {
+  BANNER_LINE_MAX_CHARS,
+  COSMETICS_VERSION,
+  CROWN_MASTERY_LEVEL,
+  CROWN_UNLOCK,
+  MASTERY_TITLE_LEVELS,
+  STAMP_CATALOG,
+  TITLE_CATALOG,
+  TOWER_CROWN_LIFT_PX,
+  TOWER_HEALTH_BAR_LIFT_PX,
+  buildCosmeticsView,
+  createDefaultCosmetics,
+  describeCosmeticUnlock,
+  findNewCosmetics,
+  formatBannerSecondLine,
+  getTitleDefinition,
+  getTowerCrownPoints,
+  isCosmeticUnlocked,
+  resolveCosmetics,
+  sanitizeCosmetics,
+  selectCosmetic,
+  serializeCosmetics
+} from "./progress/cosmetics.js";
+export type {
+  CosmeticFacts,
+  CosmeticOptionView,
+  CosmeticSelection,
+  CosmeticUnlock,
+  CosmeticsView,
+  ResolvedCosmetics,
+  StampDefinition,
+  StampStyleId,
+  StoredCosmetics,
+  TitleDefinition
+} from "./progress/cosmetics.js";
+export {
+  getCosmeticFactsFor,
+  getMasteryLevels,
+  getOperatorMasteryPoints,
+  summarizeRunProgress
+} from "./progress/run-progress.js";
+export type { RunProgressSummary } from "./progress/run-progress.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export type {
   AmmoType,

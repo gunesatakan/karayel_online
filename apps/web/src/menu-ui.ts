@@ -6,8 +6,15 @@ import {
   createDefaultEditableMap,
   STAGE_COUNT,
   WAVES_PER_STAGE,
+  buildBadgeBoardView,
   buildCardArchiveView,
+  buildCosmeticsView,
+  createDefaultCosmetics,
   createEmptyCardArchive,
+  createEmptyMasteryBook,
+  getMasteryProgress,
+  resolveCosmetics,
+  selectCosmetic,
   formatArchiveProgress,
   formatStars,
   getArchiveProgress,
@@ -32,7 +39,13 @@ import {
   type ArchiveGroupView,
   type ArchiveKind,
   type ArchiveSectionView,
+  type BadgeBook,
+  type BadgeEntryView,
+  type BadgeGroupView,
   type CardArchive,
+  type CosmeticOptionView,
+  type CosmeticSelection,
+  type MasteryBook,
   type CharacterDefinition,
   type CharacterId,
   type EditableMapData,
@@ -43,6 +56,7 @@ import {
   type MapTileKind,
   type RoomListingSnapshot,
   type SkillDefinition,
+  type RecordBook,
   type StageRecord,
   type TowerDefinition
 } from "@karayel/shared";
@@ -52,10 +66,24 @@ import { getClearedStages, getDefaultStage } from "./stage-progress";
 import { getRecordBook, getStageRecord } from "./run-records";
 import { takeQuickStartIntent } from "./quick-start";
 import { readCardArchive } from "./card-archive";
+import { getCosmeticFacts, getOperatorMasteryPoints, isProgressStorageAvailable, readBadgeBook, readCosmeticSelection, readMasteryBook, saveCosmeticSelection } from "./progress-store";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "./online-session";
 
-type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive";
+type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges";
+
+/**
+ * Nisanlar ekraninin ve menudeki ustalik/unvan satirlarinin bildigi her sey:
+ * nisan ve ustalik defterleri, kozmetik secimi ve deponun durumu. Menu
+ * acilista bir kez okuyor (sonuc ekranindan donus sayfayi yeniden yukluyor);
+ * yalnizca kozmetik secimi menude degisiyor.
+ */
+type ProgressState = {
+  badges: BadgeBook;
+  mastery: MasteryBook;
+  cosmetics: CosmeticSelection;
+  available: boolean;
+};
 
 /**
  * Kart Arsivi ekraninin bildigi her sey: depodaki arsiv, deponun calisip
@@ -215,7 +243,8 @@ export function setupMenuUi(game: Phaser.Game) {
       selectedMapName,
       lobbyError,
       withStageRecords(stageState),
-      { ...cardArchive, tab: archiveTab }
+      { ...cardArchive, tab: archiveTab },
+      progressState
     );
     bindUi(view);
   };
@@ -248,6 +277,13 @@ export function setupMenuUi(game: Phaser.Game) {
    */
   const cardArchive = readCardArchive();
   let archiveTab: ArchiveKind = "cards";
+  /** Nisan, ustalik ve kozmetik; acilista bir kez okunuyor. */
+  const progressState: ProgressState = {
+    badges: readBadgeBook(),
+    mastery: readMasteryBook(),
+    cosmetics: readCosmeticSelection(),
+    available: isProgressStorageAvailable()
+  };
 
   /**
    * Kosu raporunun "Tekrar" / "Sonraki aşama" niyeti.
@@ -284,7 +320,7 @@ export function setupMenuUi(game: Phaser.Game) {
     for (const stage of stageCatalog) {
       records[stage.id] = getStageRecord(recordBook, stage.id, selectedCharacter.id, 1, mapKey);
     }
-    return { ...state, records };
+    return { ...state, records, allRecords: recordBook };
   };
 
   const startGame = (mode: "solo" | "online" = "solo") => {
@@ -419,6 +455,26 @@ export function setupMenuUi(game: Phaser.Game) {
         archiveTab = tab;
         render("cardArchive");
       });
+    });
+
+    // Kozmetik secimi: kilitli secim paylasilan kuralda reddediliyor
+    // (`selectCosmetic` ayni nesneyi donduruyor), dugme de zaten kapali.
+    const changeCosmetic = (change: Parameters<typeof selectCosmetic>[2]) => {
+      const facts = getCosmeticFacts(progressState.mastery, progressState.badges);
+      const next = selectCosmetic(progressState.cosmetics, facts, change);
+      if (next === progressState.cosmetics) return;
+      progressState.cosmetics = next;
+      saveCosmeticSelection(next);
+      render("badges");
+    };
+    root.querySelectorAll<HTMLElement>("[data-cosmetic-title]").forEach((button) => {
+      button.addEventListener("click", () => changeCosmetic({ title: button.dataset.cosmeticTitle || null }));
+    });
+    root.querySelectorAll<HTMLElement>("[data-cosmetic-stamp]").forEach((button) => {
+      button.addEventListener("click", () => changeCosmetic({ stamp: button.dataset.cosmeticStamp }));
+    });
+    root.querySelectorAll<HTMLElement>("[data-cosmetic-crown]").forEach((button) => {
+      button.addEventListener("click", () => changeCosmetic({ crown: button.dataset.cosmeticCrown === "on" }));
     });
 
     root.querySelectorAll<HTMLElement>("[data-character-id]").forEach((button) => {
@@ -782,19 +838,21 @@ function renderShell(
   selectedMapName = "Harita 1",
   lobbyError = "",
   stageState: StageState = { cleared: [], selected: 1 },
-  cardArchive: CardArchiveState = { archive: createEmptyCardArchive(), available: true, tab: "cards" }
+  cardArchive: CardArchiveState = { archive: createEmptyCardArchive(), available: true, tab: "cards" },
+  progress: ProgressState = { badges: {}, mastery: createEmptyMasteryBook(), cosmetics: createDefaultCosmetics(), available: true }
 ) {
   return `
     <main class="menu-shell">
       <section class="menu-stage">
-        ${view === "home" ? renderHome(selectedCharacter, stageState, cardArchive.archive) : ""}
-        ${view === "archive" ? renderArchive(selectedCharacter) : ""}
+        ${view === "home" ? renderHome(selectedCharacter, stageState, cardArchive.archive, progress) : ""}
+        ${view === "archive" ? renderArchive(selectedCharacter, progress) : ""}
+        ${view === "badges" ? renderBadges(progress, stageState, cardArchive.archive) : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "bestiary" ? renderBestiary() : ""}
         ${view === "cardArchive" ? renderCardArchive(cardArchive) : ""}
         ${view === "map" ? renderMapEditor(selectedMap, selectedMapTool, mapSaveStatus, savedMaps, activeSavedMapId, selectedMapName) : ""}
         ${view === "online" ? renderOnline(selectedCharacter, onlineTab, roomListings, selectedMapScale, lobbyError, stageState.selected) : ""}
-        ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError) : ""}
+        ${view === "lobby" ? renderLobby(selectedCharacter, lobbyState, lobbySessionId, lobbyError, getSelectedTitle(progress)) : ""}
       </section>
     </main>
   `;
@@ -804,11 +862,20 @@ function renderShell(
  * Menunun asama hakkinda bildigi her sey; `renderHome` disaridan aliyor.
  * `records` secili operatorun solo rekorlari, asama kimligiyle.
  */
-type StageState = { cleared: number[]; selected: number; records?: Partial<Record<number, StageRecord>> };
+type StageState = {
+  cleared: number[];
+  selected: number;
+  records?: Partial<Record<number, StageRecord>>;
+  /** Butun rekor defteri; "Her Cephede" ilerlemesi icin (Nisanlar ekrani). */
+  allRecords?: RecordBook;
+};
 
-function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState, cardArchive: CardArchive) {
+function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState, cardArchive: CardArchive, progress: ProgressState) {
   // Dugmede yalnizca kart sayaci ("64/113"); esyalar arsiv ekraninda.
   const cardProgress = formatArchiveProgress(getArchiveProgress(cardArchive, "cards"));
+  const board = buildBadgeBoardView(progress.badges, {});
+  const mastery = getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, selectedCharacter.id));
+  const title = getSelectedTitle(progress);
   return `
     <div class="screen screen--home">
       <header class="brand">
@@ -823,6 +890,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           <p class="kicker">Seçili Operatör</p>
           <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
           <p class="hero__role">${escapeHtml(selectedCharacter.role)}</p>
+          <p class="hero__mastery"><b>Ustalık ${mastery.level}</b>${title ? `<span>${escapeHtml(title)}</span>` : ""}</p>
         </div>
         <button class="hero__cta" data-view="detail" aria-label="Operatör dosyasını aç">
           <i>›</i>
@@ -863,6 +931,10 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           <button class="command command--ghost command--count" data-view="cardArchive" aria-label="Kart Arşivi, ${cardProgress} kart görüldü">
             <span>Kart Arşivi</span>
             <small>${cardProgress}</small>
+          </button>
+          <button class="command command--ghost command--count command--wide" data-view="badges" aria-label="Nişanlar, ${board.earned}/${board.total} kazanıldı">
+            <span>Nişanlar</span>
+            <small>${board.earned}/${board.total}</small>
           </button>
         </div>
       </footer>
@@ -950,7 +1022,7 @@ function renderOnline(
   `;
 }
 
-function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyStateSnapshot, lobbySessionId = "", lobbyError = "") {
+function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyStateSnapshot, lobbySessionId = "", lobbyError = "", ownTitle?: string) {
   if (!lobbyState) {
     return `
       <div class="screen">
@@ -989,7 +1061,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
           ${lobbyState.players.map((player) => `
             <div class="lobby-player-row ${player.ready ? "is-ready" : ""}">
               <strong>${escapeHtml(player.name)}</strong>
-              <span>${escapeHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}</span>
+              <span>${escapeHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}${player.id === lobbySessionId && ownTitle ? ` · ${escapeHtml(ownTitle)}` : ""}</span>
               <small>${player.isHost ? "Kurucu" : player.ready ? "Hazir" : "Bekliyor"}</small>
             </div>
           `).join("")}
@@ -1126,7 +1198,7 @@ function renderTool(tool: MapTileKind, label: string, selectedTool: MapTileKind)
   return `<button class="map-tool map-tool--${tool} ${selectedTool === tool ? "is-active" : ""}" data-map-tool="${tool}">${label}</button>`;
 }
 
-function renderArchive(selectedCharacter: CharacterDefinition) {
+function renderArchive(selectedCharacter: CharacterDefinition, progress: ProgressState) {
   return `
     <div class="screen">
       <header class="screen-topbar">
@@ -1144,6 +1216,7 @@ function renderArchive(selectedCharacter: CharacterDefinition) {
             <span class="archive-card__body">
               <strong>${escapeHtml(character.displayName)}</strong>
               <small>${escapeHtml(character.role)}</small>
+              ${renderMasteryMeter(getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, character.id)))}
             </span>
           </button>
         `).join("")}
@@ -1345,6 +1418,133 @@ function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
       ${entries}
       ${locked > 0 ? `<div class="card-archive__locked" role="img" aria-label="${escapeHtml(`${group.label}: ${locked} ${unit} henüz görülmedi`)}">${silhouettes}</div>` : ""}
     </section>
+  `;
+}
+
+/** Bu tarayicinin secili ve acilmis unvani; yoksa yok. Takim arkadasina gitmiyor. */
+function getSelectedTitle(progress: ProgressState) {
+  return resolveCosmetics(progress.cosmetics, getCosmeticFacts(progress.mastery, progress.badges)).title;
+}
+
+/** Ustalik cubugu: "Ustalık 3 · 140/200"; son seviyede "Ustalık 10 · tam". */
+function renderMasteryMeter(mastery: ReturnType<typeof getMasteryProgress>) {
+  const text = mastery.next === undefined ? `Ustalık ${mastery.level} · tam` : `Ustalık ${mastery.level} · ${mastery.points}/${mastery.next}`;
+  return `
+              <span class="mastery-meter" role="img" aria-label="${escapeHtml(text)}">
+                <em>${escapeHtml(text)}</em>
+                <i style="--fill: ${Math.round(mastery.ratio * 100)}%" aria-hidden="true"></i>
+              </span>`;
+}
+
+/**
+ * Nisanlar: Kart Arsivi'nin deseni. Kilitli nisan kosulunu yaziyor -- bir
+ * hedef olarak okunsun -- ve anlamli oldugu yerde ilerlemesini ("4/7").
+ * Ustte operator basina ustalik cubugu, altta gorunum (unvan, muhur, tac).
+ * Hepsi kayit: hicbiri guc vermiyor, metin bunu acikca soyluyor.
+ */
+function renderBadges(progress: ProgressState, stageState: StageState, cardArchive: CardArchive) {
+  const view = buildBadgeBoardView(progress.badges, { records: stageState.allRecords, archive: cardArchive });
+  const facts = getCosmeticFacts(progress.mastery, progress.badges);
+  const cosmetics = buildCosmeticsView(progress.cosmetics, facts);
+  const noTitle = !cosmetics.titles.some((title) => title.selected);
+  const percent = view.total > 0 ? Math.floor((view.earned / view.total) * 100) : 0;
+  const operators = characters.map((character) => {
+    const mastery = getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, character.id));
+    return `
+          <li class="mastery-row" style="--accent: ${classColor[character.id]}">
+            <strong>${escapeHtml(character.displayName)}</strong>
+            ${renderMasteryMeter(mastery)}
+          </li>`;
+  }).join("");
+  return `
+    <div class="screen screen--badges">
+      <header class="screen-topbar">
+        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <div>
+          <p class="eyebrow">Tanınma Kaydı</p>
+          <h1>Nişanlar</h1>
+        </div>
+      </header>
+
+      <section class="card-archive__summary selected-dossier frame">
+        <div class="card-archive__meter">
+          <p><span>Nişanlar</span><b>${view.earned}/${view.total}</b><small>%${percent}</small></p>
+          <i style="--fill: ${percent}%" aria-hidden="true"></i>
+        </div>
+        <p>Her nişanın koşulu yazılı; kilitli olanlar hedef. Nişan ve ustalık yalnızca bir kayıttır, güç vermez; yaratıcı mod sayılmaz.</p>
+        ${progress.available ? "" : `<p class="card-archive__warning">Bu tarayıcıda kayıt saklanamıyor; nişanlar boş görünür.</p>`}
+      </section>
+
+      <section class="badge-board__section">
+        <p class="section-label">Operatör Ustalığı</p>
+        <ul class="mastery-list">${operators}</ul>
+        <p class="badge-board__hint">Ustalık temizlenen dalgalardan, ilk temizlemelerden, ilk ★★ ve ★★★'tan ve operatörün imza nişanlarından gelir; co-op'ta da aynı.</p>
+      </section>
+
+      <section class="card-archive__groups">
+        ${view.groups.map(renderBadgeGroup).join("")}
+      </section>
+
+      <section class="badge-board__section">
+        <p class="section-label">Görünüm</p>
+        <p class="badge-board__hint">Yalnızca bu tarayıcıda görünür: unvan menüde, lobide ve seri afişinde; taç 10. seviye kulelerinde; mühür koşu raporunda.</p>
+        <div class="cosmetic-group" role="group" aria-label="Unvan">
+          <p class="cosmetic-group__label">Unvan</p>
+          <div class="cosmetic-chips">
+            <button type="button" class="cosmetic-chip${noTitle ? " is-active" : ""}" data-cosmetic-title="" aria-pressed="${noTitle}">Unvan yok</button>
+            ${cosmetics.titles.map((title) => renderCosmeticChip(title, "title")).join("")}
+          </div>
+        </div>
+        <div class="cosmetic-group" role="group" aria-label="Rapor mührü">
+          <p class="cosmetic-group__label">Rapor mührü</p>
+          <div class="cosmetic-chips">${cosmetics.stamps.map((stamp) => renderCosmeticChip(stamp, "stamp")).join("")}</div>
+        </div>
+        <div class="cosmetic-group" role="group" aria-label="Taç süsü">
+          <p class="cosmetic-group__label">Taç süsü <small>${cosmetics.crown.unlocked ? "10. seviye kulelerinde" : escapeHtml(cosmetics.crown.condition)}</small></p>
+          <div class="cosmetic-chips">
+            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? " is-active" : ""}" data-cosmetic-crown="on" aria-pressed="${cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>Açık</button>
+            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? "" : " is-active"}" data-cosmetic-crown="off" aria-pressed="${!cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>Kapalı</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+/** Kilitli secenek kapali ve kosulunu yaziyor; kurcalanan istek zaten reddediliyor. */
+function renderCosmeticChip(option: CosmeticOptionView, kind: "title" | "stamp") {
+  const attribute = kind === "title" ? `data-cosmetic-title="${escapeHtml(option.id)}"` : `data-cosmetic-stamp="${escapeHtml(option.id)}"`;
+  if (!option.unlocked) {
+    return `<button type="button" class="cosmetic-chip is-locked" ${attribute} disabled aria-label="${escapeHtml(`${option.label}, kilitli: ${option.condition}`)}"><b>${escapeHtml(option.label)}</b><small>${escapeHtml(option.condition)}</small></button>`;
+  }
+  return `<button type="button" class="cosmetic-chip${option.selected ? " is-active" : ""}" ${attribute} aria-pressed="${option.selected}">${escapeHtml(option.label)}</button>`;
+}
+
+function renderBadgeGroup(group: BadgeGroupView) {
+  return `
+    <section class="card-archive__group badge-group badge-group--${group.key}">
+      <p class="section-label">${escapeHtml(group.label)} <b>${group.earned}/${group.total}</b></p>
+      ${group.entries.map(renderBadgeEntry).join("")}
+    </section>
+  `;
+}
+
+/** Nisan satiri: kazanilan dolu elmas, kilitli bos elmas; renk tek isaret degil, etiket de yaziyor. */
+function renderBadgeEntry(entry: BadgeEntryView) {
+  const operator = entry.characterId ? characters.find((character) => character.id === entry.characterId)?.displayName : undefined;
+  const tag = entry.earned ? "Kazanıldı" : entry.longTerm ? "Uzun vadeli" : operator ?? "Kilitli";
+  const progress = entry.progress
+    ? `<span class="badge-entry__progress" role="img" aria-label="İlerleme ${escapeHtml(entry.progress.text)}"><i style="--fill: ${entry.progress.percent}%"></i><small>${escapeHtml(entry.progress.text)}</small></span>`
+    : "";
+  return `
+      <article class="card-archive__entry badge-entry${entry.earned ? " is-earned" : " is-locked"}">
+        <header>
+          <strong>${entry.earned ? "◈" : "◇"} ${escapeHtml(entry.name)}</strong>
+          <span>${escapeHtml(tag)}</span>
+        </header>
+        <p>${escapeHtml(entry.condition)}</p>
+        ${progress}
+      </article>
   `;
 }
 

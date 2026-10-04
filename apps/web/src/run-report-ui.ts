@@ -1,4 +1,4 @@
-import { FINAL_WAVE, type CardRarity, type RunReportAction, type RunReportActions, type RunReportView } from "@karayel/shared";
+import { FINAL_WAVE, type CardRarity, type MasteryReportView, type RunReportAction, type RunReportActions, type RunReportView, type StampStyleId } from "@karayel/shared";
 import { getCharacterColorCss } from "./character-colors";
 import { cardRarityLabels } from "./codex";
 
@@ -24,6 +24,17 @@ export type RunReportNote = { tone: "unlock" | "dim"; text: string };
 
 export type RunReportChoice = RunReportAction | "menu";
 
+/**
+ * Raporun nisan ve ustalik bolumu: bu kosuda acilan nisanlar (dalga
+ * molasinda gosterilenler de), operatorun ustalik cubugu ve acilan kozmetik.
+ * Yaratici kosuda ya da kayit yazilmadiysa hic yok.
+ */
+export type RunReportProgress = {
+  badges: ReadonlyArray<{ name: string; condition: string }>;
+  mastery?: MasteryReportView;
+  cosmetics: readonly string[];
+};
+
 export type RunReportRenderOptions = {
   view: RunReportView;
   actions: RunReportActions;
@@ -43,6 +54,9 @@ export type RunReportRenderOptions = {
   onChoice: (choice: RunReportChoice) => void;
   /** Son dalganin savunma ozeti varsa tani baglantisi. */
   onDefenseSummary?: () => void;
+  progress?: RunReportProgress;
+  /** Bu tarayicinin muhru (kozmetik); klasikte sinif yok. */
+  stamp?: StampStyleId;
 };
 
 const ROOT_ID = "run-report-root";
@@ -170,6 +184,41 @@ function renderFacts(view: RunReportView) {
   return facts.length ? `<dl class="run-report__facts">${facts.join("")}</dl>` : "";
 }
 
+/**
+ * Ustalik cubugu ve nisanlar. Seviye atlandiysa cubuk bastan doluyor ve
+ * baslik "Ustalık 3 → 4"; atlanmadiysa "Ustalık 3 · +24". Doluluk yalnizca
+ * renkle soylenmiyor: altinda "140/200 · sonraki seviyeye 60" yazili.
+ */
+function renderProgress(progress: RunReportProgress | undefined) {
+  if (!progress) return "";
+  const parts: string[] = [];
+  const mastery = progress.mastery;
+  if (mastery) {
+    const fill = Math.round(mastery.after.ratio * 100);
+    const from = mastery.levelUp ? 0 : Math.round(mastery.before.ratio * 100);
+    parts.push(`
+        <div class="run-report__mastery${mastery.levelUp ? " is-level-up" : ""}">
+          <p class="run-report__mastery-head"><strong>${escapeHtml(mastery.operator)} · ${escapeHtml(mastery.headline)}</strong></p>
+          <span class="run-report__mastery-bar" role="img" aria-label="${escapeHtml(`Ustalık ${mastery.after.level}: ${mastery.detail}`)}" style="--from:${from}%;--fill:${fill}%"><i></i></span>
+          <small>${escapeHtml(mastery.detail)}${mastery.sources ? ` · ${escapeHtml(mastery.sources)}` : ""}</small>
+        </div>`);
+  }
+  if (progress.badges.length > 0) {
+    const items = progress.badges.map((badge, index) => `
+          <li class="run-report__badge-item" style="--i:${index}"><b>◈ ${escapeHtml(badge.name)}</b><small>${escapeHtml(badge.condition)}</small></li>`).join("");
+    parts.push(`<ul class="run-report__badges" aria-label="Bu koşunun nişanları">${items}</ul>`);
+  }
+  if (progress.cosmetics.length > 0) {
+    parts.push(`<p class="run-report__note run-report__note--unlock">Açıldı: ${escapeHtml(progress.cosmetics.join(" · "))}</p>`);
+  }
+  if (parts.length === 0) return "";
+  return `
+      <section class="run-report__section run-report__progress" aria-label="Nişan ve ustalık">
+        <h3 class="run-report__label">Nişan ve ustalık</h3>
+        ${parts.join("")}
+      </section>`;
+}
+
 function renderButton(action: RunReportAction, primary: boolean) {
   return `<button type="button" class="run-report__button${primary ? " run-report__button--primary" : ""}" data-report-action="${action.kind}">
           <strong>${escapeHtml(action.label)}</strong><small>${escapeHtml(action.detail)}</small>
@@ -206,7 +255,8 @@ export function renderRunReport(options: RunReportRenderOptions) {
   const finale = view.heading.finale
     ? `<p class="run-report__finale">${escapeHtml(view.heading.finale.text)}<small>${escapeHtml(view.heading.finale.races)}</small></p>`
     : "";
-  root.className = `run-report run-report--${view.heading.tone}${options.animate ? " run-report--reveal" : ""}`;
+  const stamp = options.stamp && options.stamp !== "klasik" ? ` run-report--stamp-${options.stamp}` : "";
+  root.className = `run-report run-report--${view.heading.tone}${stamp}${options.animate ? " run-report--reveal" : ""}`;
   root.innerHTML = `
     <div class="run-report__veil"></div>
     <section class="run-report__panel" role="dialog" aria-modal="true" aria-labelledby="run-report-title" tabindex="-1">
@@ -223,6 +273,7 @@ export function renderRunReport(options: RunReportRenderOptions) {
         ${renderPlayers(view)}
         ${renderDeck(view)}
         ${view.goal ? `<p class="run-report__goal">${escapeHtml(view.goal)}</p>` : ""}
+        ${renderProgress(options.progress)}
         ${notes}
         ${options.onDefenseSummary ? `<button type="button" class="run-report__link" data-report-defense>Son dalganın savunma özeti</button>` : ""}
       </div>
