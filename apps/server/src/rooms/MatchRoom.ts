@@ -1091,6 +1091,7 @@ type TowerModel = {
   overheatMs: number;
   offlineUntil: number;
   debugOverdriveUntil: number;
+  debugSweepRouteAngles?: number[];
   debugSweepStartedAt: number;
   /**
    * Supurmenin ugrayacagi dusmanlar, kuleye yakinliga gore sirali.
@@ -3776,6 +3777,7 @@ export class MatchRoom extends Room<MatchState> {
         let firesThisTick = false;
         if (tower.cooldownMs <= 0) {
           if (!this.canTowerFire(tower)) {
+            this.beams.delete(`beam-${tower.id}`);
             continue;
           }
           this.consumeTowerResources(tower);
@@ -4106,6 +4108,12 @@ export class MatchRoom extends Room<MatchState> {
   private startDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, now: number) {
     tower.debugSweepStartedAt = now;
     tower.debugSweepTargetIds = this.getDebugLaserSweepTargetIds(tower);
+    tower.debugSweepRouteAngles = undefined;
+    tower.debugSweepRouteAngles = this.getDebugLaserSweepAngles(tower);
+    if (tower.debugSweepRouteAngles.length === 0) {
+      tower.debugSweepRouteAngles.push(Number.isFinite(target.x) && Number.isFinite(target.y)
+        ? Math.atan2(target.y - tower.y, target.x - tower.x) : tower.facing);
+    }
     // Ilk kare bir donus degil, dogus: kiris zincirin basinda aciliyor.
     tower.debugSweepAngle = this.getDebugLaserSweepAngles(tower)[0] ?? tower.facing;
     tower.debugSweepAngleAt = now;
@@ -5162,9 +5170,12 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepStartedAt = now;
     }
 
-    const elapsedSeconds = this.clamp((now - tower.debugSweepStartedAt) / 1000, 0, DEBUG_LASER_OVERDRIVE_DURATION_MS / 1000);
+    const elapsedSeconds = Math.max(0, (now - tower.debugSweepStartedAt) / 1000);
     const sweepAngles = this.getDebugLaserSweepAngles(tower);
-    const desiredAngle = getDebugLaserChainSweepAngle(sweepAngles, elapsedSeconds, tower.facing);
+    const durationSeconds = (tower.debugOverdriveUntil - tower.debugSweepStartedAt) / 1000;
+    const turnAt = durationSeconds * 0.75;
+    const routeSeconds = elapsedSeconds <= turnAt ? elapsedSeconds : Math.max(0, 2 * turnAt - elapsedSeconds);
+    const desiredAngle = getDebugLaserChainSweepAngle(sweepAngles, routeSeconds, tower.debugSweepAngle);
 
     // Donus hizi tavani cizilen acinin uzerinde.
     //
@@ -5180,7 +5191,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugSweepAngleAt = now;
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle, this.getActiveWorldBounds());
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
-    const finishedSweep = now - tower.debugSweepStartedAt >= DEBUG_LASER_OVERDRIVE_DURATION_MS;
+    const finishedSweep = now >= tower.debugOverdriveUntil;
 
     this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
     if (!firesThisTick) {
@@ -5272,20 +5283,32 @@ export class MatchRoom extends Room<MatchState> {
    * sicratirdi.
    */
   private getDebugLaserSweepTargetIds(tower: TowerModel) {
-    return Array.from(this.enemies.values())
-      .map((enemy) => ({ id: enemy.id, distance: distanceSq(tower.x, tower.y, enemy.x, enemy.y) }))
-      .sort((a, b) => a.distance - b.distance)
-      .map((entry) => entry.id);
+    const remaining = Array.from(this.enemies.values()).filter((enemy) => enemy.hp > 0);
+    const ids: string[] = [];
+    let origin = { x: tower.x, y: tower.y };
+    while (remaining.length) {
+      remaining.sort((a, b) => distanceSq(origin.x, origin.y, a.x, a.y) - distanceSq(origin.x, origin.y, b.x, b.y) || a.id.localeCompare(b.id));
+      const next = remaining.shift()!;
+      ids.push(next.id);
+      origin = next;
+    }
+    return ids;
   }
 
   /**
    * Zincirin su anki acilari.
    *
-   * Sira sabit ama acilar canli: hedefler yuruyor, kiris de onlari takip
-   * etsin. Olen hedefler listeden dusuyor -- iki saniyelik supurmede surunun
-   * yarisi olebilir ve olulere nisan almak kirisi bosluga cevirirdi.
+   * Hedefler yururken acilar guncellenir. Olen hedefin son acisi rotada
+   * kalir; boylece yol kisalmaz ve geri donus ayni rotayi izler.
    */
   private getDebugLaserSweepAngles(tower: TowerModel) {
+    if (tower.debugSweepRouteAngles) {
+      tower.debugSweepTargetIds.forEach((id, index) => {
+        const enemy = this.enemies.get(id);
+        if (enemy) tower.debugSweepRouteAngles![index] = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
+      });
+      return tower.debugSweepRouteAngles;
+    }
     const angles: number[] = [];
     for (const id of tower.debugSweepTargetIds) {
       const enemy = this.enemies.get(id);

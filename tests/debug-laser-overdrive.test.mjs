@@ -125,6 +125,70 @@ test("kiriş önce en yakın düşmana nişan alır", () => {
   });
 });
 
+test("son işaretli düşmana son vuruş boş haritada kesintisiz lazer açar", () => {
+  withClock((advance) => {
+    const { room, tower, enemies } = overdriveScene([{ degrees: 0, distance: 60 }]);
+    tower.debugOverdriveUntil = 0;
+    const target = enemies[0];
+    target.hp = 1;
+    target.trackingStackUntil = [Date.now() + 5000];
+    room.fireDebugLaser(tower, target);
+    assert.equal(room.enemies.size, 0);
+    assert.ok(tower.debugOverdriveUntil > Date.now());
+    for (let i = 0; i < 30; i++) {
+      runTicks(room, advance, TICK_MS);
+      assert.equal(room.beams.get(`beam-${tower.id}`)?.overdrive, true);
+    }
+  });
+});
+
+for (const resource of ["energy"]) {
+  test(`${resource} bittiğinde özel lazer hasar vermez ve kiriş kesilir`, () => {
+    withClock((advance) => {
+      const { room, tower, enemies } = overdriveScene([{ degrees: 0, distance: 60 }]);
+      tower[resource] = 0;
+      tower.cooldownMs = 0;
+      const hp = enemies[0].hp;
+      runTicks(room, advance, TICK_MS);
+      assert.equal(enemies[0].hp, hp);
+      assert.equal(room.beams.has(`beam-${tower.id}`), false);
+    });
+  });
+}
+
+for (const scenario of ["unmarked-kill", "marked-survivor", "expired-mark-kill", "other-tower-kill"]) {
+  test(`özel mod açılmaz: ${scenario}`, () => {
+    withClock(() => {
+      const { room, tower, enemies } = overdriveScene([{ degrees: 0, distance: 60 }]);
+      tower.debugOverdriveUntil = 0;
+      const target = enemies[0];
+      target.trackingStackUntil = scenario === "unmarked-kill" ? [] : [Date.now() + (scenario === "expired-mark-kill" ? -1 : 5000)];
+      target.hp = scenario === "marked-survivor" ? 1_000_000 : 1;
+      if (scenario === "other-tower-kill") {
+        const spot = findBuildableSpot(room, "warrior-1");
+        room.placeTower({ sessionId: "p1" }, { ...spot, definitionId: "warrior-1" });
+        const other = [...room.towers.values()].find((entry) => entry !== tower);
+        room.damageEnemyFromTower(other, target, 1_000_000, 0);
+      } else {
+        room.fireDebugLaser(tower, target);
+      }
+      assert.equal(tower.debugOverdriveUntil, 0);
+    });
+  });
+}
+
+test("lazer son çeyrekte geri döner ve hedefler ölünce sönmez", () => {
+  withClock((advance) => {
+    const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }, { degrees: 60, distance: 240 }]);
+    runTicks(room, advance, 1850);
+    const outward = beamAngle(room, tower);
+    room.enemies.clear();
+    runTicks(room, advance, 500);
+    assert.ok(beamAngle(room, tower) < outward - 0.05);
+    assert.equal(room.beams.get(`beam-${tower.id}`)?.overdrive, true);
+  });
+});
+
 test("kiriş sıradaki en yakına doğru döner", () => {
   withClock((ilerlet) => {
     const { room, tower } = overdriveScene([
