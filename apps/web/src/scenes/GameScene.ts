@@ -219,7 +219,8 @@ import {
   type StaticTowerSnapshot,
   type TowerDefinition,
   type TowerSnapshot,
-  type WireGameSnapshot
+  type WireGameSnapshot,
+  ENEMY_SIZE_SCALE
 } from "@karayel/shared";
 import type { WorkerSkillChoice } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
@@ -11015,7 +11016,8 @@ const ENEMY_DISPLAY_SIZE: Readonly<Record<string, number>> = {
 function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
   const base = ENEMY_DISPLAY_SIZE[enemy.type] ?? 34;
   const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : enemy.race === "fallen" && enemy.type === "brute" ? 1.1 : 1;
-  return base * raceMultiplier * (cellSize / TOWER_GRID_SIZE);
+  // Isabet kutusuyla ayni olcek (`ENEMY_SIZE_SCALE`): gorsel ve carpisma birlikte kuculuyor.
+  return base * raceMultiplier * ENEMY_SIZE_SCALE * (cellSize / TOWER_GRID_SIZE);
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {

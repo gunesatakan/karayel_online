@@ -197,9 +197,10 @@ test("Gösteri hattı: hattaki düşmanlar (sunucunun sorgusu, çarpışma yarı
   const beam = { id: "showcase-t2-1", definitionId: "zeynep-2", tier: 2, x1: 0, y1: 0, x2: 200, y2: 0, width: 18, color: 0xf9a8d4, ttlMs: 260 };
   const enemies = [
     { id: "on", x: 80, y: 3 },
-    // Yaricap: grunt 15 + hattin yari genisligi 9 = 24.
-    { id: "edge", x: 120, y: 22 },
-    { id: "brute", x: 150, y: 27, type: "brute" },
+    // Yaricap: grunt 11,25 + hattin yari genisligi 9 = 20,25; brute 14,25 + 9
+    // = 23,25 (dusmanlar %25 kucultuldu). Brute grunt'in erisemeyecegi yerde.
+    { id: "edge", x: 120, y: 19 },
+    { id: "brute", x: 150, y: 22, type: "brute" },
     { id: "off", x: 120, y: 40 },
     { id: "behind", x: -40, y: 0 }
   ];
