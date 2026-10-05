@@ -554,6 +554,38 @@ export const SNAPSHOT_BACKPRESSURE_LIMIT_BYTES = 48 * 1024;
  * baglanan biri guncel durumu en gec bu kadar sonra goruyor.
  */
 const SNAPSHOT_IDLE_HEARTBEAT_MS = 500;
+/**
+ * Kopan oyuncunun yuvasinin ona ayrildigi sure (sn).
+ *
+ * Bu pencerede yuva devralinamiyor: yeni gelen bos yuva aliyor ya da oda
+ * doluysa reddediliyor. Pencere kapaninca oyuncu "ayrilmis" sayiliyor --
+ * kulesi sahada kaliyor, yuvasi takim arkadasinin geri donusune (ya da
+ * listeden katilan birine) acik, ama dalga boyunu, dusman canini ve tecrube
+ * payini artik buyutmuyor.
+ */
+const RECONNECT_WINDOW_SECONDS = 20;
+/**
+ * Hic istemcisi kalmayan odanin kapanmadan once bekledigi sure.
+ *
+ * `autoDispose` kapali: son istemci gidince oda hemen kapanmasin, pencere
+ * kapandiktan sonra listeden geri donen oyuncu macini bulsun -- sekmesi
+ * mobil tarayicida oldurulen oyuncu dakikalar sonra donebiliyor. Ama terk
+ * edilmis bir mac sonsuza kadar tick atmamali. Bos oda kimseyi engellemiyor:
+ * yeni oda kurulurken baglisi olmayan odalar zaten kapatiliyor.
+ */
+export const ABANDONED_ROOM_DISPOSE_MS = 10 * 60 * 1000;
+/** Tick hatasindan sonra simulasyonun bekledigi en uzun sure; hata dongusu kurulmasin. */
+const TICK_ERROR_BACKOFF_MAX_MS = 2000;
+/**
+ * Ust uste bu kadar basarisiz tick'ten sonra oda kapatiliyor (beklemelerle
+ * ~11 sn). Donmus oda oyunculari bagli tutuyor ve bagli oyuncusu olan oda
+ * yeni oda kurulmasini engelliyor; kapanmak beklemekten iyi.
+ */
+export const TICK_FAILURE_LIMIT = 10;
+/** Lobi ve katilim akisinin bilinen redleri; hata degil, gunluge yazilmiyor. */
+const EXPECTED_ROOM_REJECTIONS = new Set(["Oda dolu.", "Maç bitti.", "Zaten aktif bir oda var."]);
+/** Ayni yerden gelen hata gunlugu en fazla bu siklikta yaziliyor. */
+const ROOM_ERROR_LOG_INTERVAL_MS = 10_000;
 const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
@@ -1204,6 +1236,129 @@ type CreativeItemMessage = { itemId?: string; towerId?: string; on?: boolean };
 type CreativeWaveMessage = { wave?: number };
 type CreativeSpawnMessage = { count?: number };
 
+/**
+ * Istemci mesajlarinin kapisi: hangi asamada, hangi alanlarla, ne siklikta.
+ *
+ * Mesaj govdesi istemciden geliyor ve hicbir sekline guvenilemez. Govdesiz
+ * gonderilen mesaj `undefined` olarak geliyor; bir donem yirmi kadar isleyici
+ * alanini korumasiz okuyordu ve Colyseus'un yakalanmamis hata kancasi tum
+ * sureci kapatiyordu -- tek bir `room.send("latency:ping")` butun maclari
+ * bitiriyordu. NaN ve Infinity de `typeof === "number"` testinden geciyordu
+ * (NaN performans kolu muhimmatli kuleyi her tick ateslettiriyordu).
+ *
+ * Kural tek yerde, isleyicide degil: `onMessage` bu tabloya bakarak govdeyi
+ * duz bir nesneye indiriyor ve yalnizca bildirilen alanlari, dogru tipte ve
+ * sonlu sayi olarak birakiyor. Isleyici yine kendi aralik kontrolunu yapiyor;
+ * burasi yalnizca seklin dogrulugunu garanti ediyor.
+ */
+type MessageFieldKind = "string" | "number" | "boolean";
+export type MessageRule = {
+  /** "lobby": yalnizca mac baslamadan; "match": yalnizca macta; "any": her zaman. */
+  phase: "lobby" | "match" | "any";
+  /** Yalnizca yaratici odada; bayrak govde okunmadan once soruluyor. */
+  creative?: boolean;
+  fields: Readonly<Record<string, MessageFieldKind>>;
+  /** Mesaj turu basina kova; verilmezse `MESSAGE_RATE_DEFAULT`. */
+  rate?: MessageRate;
+  /**
+   * "Son deger kazanir": kovayi asan mesaj dusmuyor, bu alanin degeri
+   * basina saklaniyor ve bir sonraki tick'te uygulaniyor. Kaydirici gibi
+   * yalnizca son degeri anlamli olan mesajlar icin; birakis degeri kaybolmaz.
+   */
+  latestWinsBy?: string;
+};
+type MessageRate = { burst: number; perSecond: number };
+
+/** Kimlik ve secim metinleri kisa; uzunu gecersiz sayiliyor, kirpilmiyor. */
+const MESSAGE_STRING_MAX_LENGTH = 80;
+/**
+ * Mesaj turu basina varsayilan kova. Elle oynayan bir oyuncu buna hic
+ * dokunmuyor; amac dongude gonderen istemcinin isini sinirlamak.
+ */
+const MESSAGE_RATE_DEFAULT: MessageRate = { burst: 40, perSecond: 20 };
+/**
+ * Istemci basina butun turlerin toplami. Performans kolu surukleme boyunca
+ * kare basina mesaj yolluyor; tavan ona yer birakacak kadar genis.
+ */
+const MESSAGE_RATE_TOTAL: MessageRate = { burst: 300, perSecond: 200 };
+
+export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
+  "lobby:setCharacter": { phase: "lobby", fields: { characterId: "string" } },
+  "lobby:setReady": { phase: "lobby", fields: { ready: "boolean" } },
+  "lobby:start": { phase: "lobby", fields: {} },
+  placeTower: { phase: "match", fields: { definitionId: "string", x: "number", y: "number", orientation: "string" } },
+  upgradeTower: { phase: "match", fields: { towerId: "string" } },
+  sellTower: { phase: "match", fields: { towerId: "string" } },
+  equipShopItem: { phase: "match", fields: { itemId: "string", towerId: "string" } },
+  useSkill: { phase: "match", fields: { slot: "number", x: "number", y: "number", towerId: "string", commandTier: "string" } },
+  useUltimate: { phase: "match", fields: { mode: "string", column: "number" } },
+  linkServer: { phase: "match", fields: { serverTowerId: "string", targetTowerId: "string" } },
+  setTowerMode: { phase: "match", fields: { towerId: "string", mode: "string" } },
+  toggleWallGate: { phase: "match", fields: { towerId: "string" } },
+  toggleAmmoLogistics: { phase: "match", fields: { towerId: "string" } },
+  "tower:priority": { phase: "match", fields: { towerId: "string", priority: "string" } },
+  "tower:preview": { phase: "match", fields: { requestId: "string", towerId: "string", cardId: "string", itemId: "string" } },
+  "defense:request": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
+  // Kol surukleme boyunca her karede gidiyor; son deger dusmemeli.
+  setTowerPerformance: { phase: "match", fields: { towerId: "string", performance: "number" }, rate: { burst: 120, perSecond: 120 }, latestWinsBy: "towerId" },
+  // Istemci saniyede bir yolluyor.
+  "latency:ping": { phase: "any", fields: { sentAt: "number" }, rate: { burst: 4, perSecond: 2 } },
+  "wave:continue": { phase: "match", fields: {} },
+  "card:choose": { phase: "match", fields: { cardId: "string", towerId: "string" } },
+  // Tam statik kayit butun haritayi tasiyor; istemci kendisi saniyede birden sik istemiyor.
+  "snapshot:requestFull": { phase: "any", fields: {}, rate: { burst: 3, perSecond: 1 } },
+  "card:sync": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
+  "run:sync": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
+  "silent:sync": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
+  "shop:buy": { phase: "match", fields: { itemId: "string" } },
+  "shop:reroll": { phase: "match", fields: {} },
+  "structure:repair": { phase: "match", fields: { towerId: "string" } },
+  "worker:hire": { phase: "match", fields: { role: "string", advanced: "boolean" } },
+  "worker:specialization": { phase: "match", fields: { workerId: "string", role: "string" } },
+  "worker:skill": { phase: "match", fields: { workerId: "string", skillId: "string" } },
+  "worker:development": { phase: "match", fields: { role: "string", skillId: "string" } },
+  "ultimate:upgrade": { phase: "match", fields: {} },
+  "ucube:choose": { phase: "match", fields: { towerId: "string", perkId: "string" } },
+  "melis:stance": { phase: "match", fields: { stance: "string" } },
+  "tower:targeting": { phase: "match", fields: { towerId: "string", mode: "string" } },
+  "shop:place": { phase: "match", fields: { itemId: "string", x: "number", y: "number" } },
+  "worker:banCell": { phase: "match", fields: { x: "number", y: "number" } },
+  "creative:sync": { phase: "match", creative: true, fields: {} },
+  "creative:tower": { phase: "match", creative: true, fields: { definitionId: "string", x: "number", y: "number", orientation: "string" } },
+  "creative:level": { phase: "match", creative: true, fields: { towerId: "string", level: "number" } },
+  "creative:card": { phase: "match", creative: true, fields: { cardId: "string", towerId: "string", on: "boolean" } },
+  "creative:item": { phase: "match", creative: true, fields: { itemId: "string", towerId: "string", on: "boolean" } },
+  "creative:wave": { phase: "match", creative: true, fields: { wave: "number" } },
+  // Her biri kirk dusmana kadar dogurabiliyor.
+  "creative:spawn": { phase: "match", creative: true, fields: { count: "number" }, rate: { burst: 10, perSecond: 4 } }
+};
+
+/**
+ * Govdeyi duz bir nesneye indirir; yalnizca bildirilen alanlar, dogru tipte.
+ *
+ * Sayi sonlu olmali (NaN ve Infinity dusuyor), metin kisa olmali. Tipi
+ * tutmayan alan yok sayiliyor: isleyici onu hic gelmemis gibi goruyor ve
+ * zaten eksik alan icin reddetme yolunu biliyor. Govde nesne degilse (yok,
+ * `null`, metin, sayi, dizi) sonuc bos nesne.
+ */
+export function sanitizeMessagePayload(raw: unknown, fields: Readonly<Record<string, MessageFieldKind>>): Record<string, unknown> {
+  const message: Record<string, unknown> = {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return message;
+  }
+  const source = raw as Record<string, unknown>;
+  for (const [name, kind] of Object.entries(fields)) {
+    if (!Object.prototype.hasOwnProperty.call(source, name)) continue;
+    const value = source[name];
+    if (kind === "number" ? typeof value === "number" && Number.isFinite(value)
+      : kind === "string" ? typeof value === "string" && value.length <= MESSAGE_STRING_MAX_LENGTH
+      : typeof value === "boolean") {
+      message[name] = value;
+    }
+  }
+  return message;
+}
+
 type DebugOverdriveHeatSegment = {
   startedAt: number;
   endedAt: number;
@@ -1438,13 +1593,18 @@ export class MatchRoom extends Room<MatchState> {
       // istemcide DOM, soket kapaninca da ekranda kaliyor ve sonuc zaten
       // kaydedildi. Raporunu okuyan bir takim arkadasi, "Tekrar" ile yeni oda
       // kuran oyuncuyu (ya da sunucudaki baska birini) bekletmemeli.
-      if (room.getConnectedPlayerCount() > 0 && !room.matchResult) {
+      // Kapanmakta olan oda (hata ya da terk) aktif sayilmiyor.
+      if (room.getConnectedPlayerCount() > 0 && !room.matchResult && !room.abandonDisposing) {
         throw new Error("Zaten aktif bir oda var.");
       }
     }
 
+    // Pencere suren ya da koltugu ayrilmis oda bos sayilmiyor: oyunculari
+    // birkac saniye icinde donuyor ve yeni oda kurulurken maclari kapanirdi.
     const emptyRooms = Array.from(MatchRoom.rooms.values()).filter((room) => {
-      return room.roomId !== nextRoomId && (room.getConnectedPlayerCount() === 0 || room.matchResult !== undefined);
+      if (room.roomId === nextRoomId) return false;
+      if (room.matchResult !== undefined) return true;
+      return room.getConnectedPlayerCount() === 0 && !room.hasPendingSeats();
     });
     await Promise.all(emptyRooms.map((room) => room.disconnect()));
   }
@@ -1861,15 +2021,53 @@ export class MatchRoom extends Room<MatchState> {
    */
   private lastSentEnemyWire = new Map<string, Record<string, unknown>>();
   /**
-   * Bir sonraki kare delta degil tam gitmeli.
+   * Bir sonraki kare herkese delta degil tam gitmeli.
    *
-   * Delta yalnizca istemci onceki kareyi aldiysa dogru. Tikanma yuzunden bir
-   * gonderim atlandiginda, odaya yeni biri katildiginda ya da tam kayit
-   * istendiginde bayrak kalkiyor. Yayindan tek kopya cikttigi icin kime tam
-   * gerektigini ayirmanin bedeli, ara sira herkese bir tam kare
-   * gondermekten yuksek.
+   * Delta yalnizca istemci onceki kareyi aldiysa dogru. Tek bir istemcinin
+   * eksigi (tikanma, katilma, kopma, tam kayit istegi) istemci basina
+   * `wireSyncedSessionIds` ile izleniyor; bu bayrak yalnizca tabanin kendisi
+   * guvenilmez oldugunda kalkiyor (ilk kare, yarim kalan tick).
    */
   private towerWireNeedsFullResend = true;
+  /**
+   * Elindeki kayit tabanla ayni olan istemciler; delta yalnizca onlara gidiyor.
+   *
+   * Bayrak bir donem tek ve ortakti: tikanan istemci atlaninca kalkiyor, ama
+   * kareyi baska biri aldiysa taban ilerlerken siliniyordu. Atlanan istemci
+   * bir daha tam kayit almiyor, eksik alanlari ekranda eski degerleriyle
+   * kaliyordu. Kume istemci basina: atlanan, kopan ya da tam kayit isteyen
+   * buradan dusuyor ve bir sonraki karede yalnizca **o** tam kayit aliyor.
+   */
+  private wireSyncedSessionIds = new Set<string>();
+  /** Yeniden baglanma penceresi acik oturumlar: yuvalari onlara ayrilmis. */
+  private reconnectingSessionIds = new Set<string>();
+  /**
+   * Acik pencerelerin Colyseus beklemesi. Yeniden yuklenen sayfa anahtarini
+   * kaybettiyse ayni oyuncu listeden yeni bir oturumla geliyor; o zaman
+   * bekleme burada reddedilip yuva yeni oturuma veriliyor.
+   */
+  private pendingReconnections = new Map<string, ReturnType<Room["allowReconnection"]>>();
+  /** Kovayi asan "son deger kazanir" mesajlari; anahtar tur, oturum ve hedef. */
+  private latestMessageStash = new Map<string, { sessionId: string; apply: () => void }>();
+  /**
+   * Penceresi kapanan ya da kendi istegiyle cikan oyuncular.
+   *
+   * Kayitlari duruyor (kuleleri, altinlari; yuva geri donuse acik) ama
+   * takimin olcegine artik girmiyorlar: dalga boyu, dusman cani ve tecrube
+   * payi yalnizca kalanlarla hesaplaniyor. Yuva devralininca kume temizleniyor.
+   */
+  private departedSessionIds = new Set<string>();
+  /** Istemci basina mesaj kovalari; anahtar mesaj turu, `*` toplam. */
+  private messageBuckets = new Map<string, Map<string, { tokens: number; at: number }>>();
+  /** Hata gunlugu kisici: yer -> son yazilan an ve arada yutulan sayi. */
+  private roomErrorLog = new Map<string, { at: number; suppressed: number }>();
+  /** Ust uste basarisiz tick sayisi ve simulasyonun bekleyecegi an. */
+  private tickFailures = 0;
+  private tickBackoffUntil = 0;
+  /** Terk edilmis oda denetimi; yalnizca gercek oda (`onCreate`) icin acik. */
+  private abandonCheckEnabled = false;
+  private abandonedSince = 0;
+  private abandonDisposing = false;
   private stage = 1;
   /**
    * Etki basina biriken is: hasar ya da saniye.
@@ -1951,6 +2149,12 @@ export class MatchRoom extends Room<MatchState> {
     this.autoStartOnFirstJoin = options.autoStart === true;
     // Yaratici bayragi lobi yoluna sizmasin diye dogrudan baslatmaya bagli.
     this.creativeMode = options.creative === true && options.autoStart === true;
+    // Yaratici oda tek kisilik ve oyle kaliyor: ikinci oyuncu girseydi
+    // `getCreativePlayer` kapisi sahibinin komutlarini da kapatirdi. Oda
+    // listede gorunmuyor (`hasJoinableSeat`) ve tek koltuk sahibinin.
+    if (this.creativeMode) {
+      this.maxClients = 1;
+    }
     // Gecersiz kimlik ilk asamaya duser; eksik veri odanin kurulmasini
     // engellememeli.
     this.stage = getStage(options.stage).id;
@@ -1960,8 +2164,13 @@ export class MatchRoom extends Room<MatchState> {
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
     this.planWaveSpawns(this.wave);
+    this.abandonCheckEnabled = true;
+    this.abandonedSince = Date.now();
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
+    // Her kayit `onMessage` uzerinden geciyor ve orada sarmalaniyor: govde
+    // `MESSAGE_RULES`e gore duzeltiliyor, hiz siniri ve asama soruluyor,
+    // isleyicinin firlattigi hata yakalanip gunluge yaziliyor.
     this.onMessage("lobby:setCharacter", (client, message: { characterId?: CharacterId }) => {
       this.setLobbyCharacter(client, message.characterId);
     });
@@ -2045,7 +2254,7 @@ export class MatchRoom extends Room<MatchState> {
       const serverAt = Date.now();
       const processingStartedAt = performance.now();
       client.send("latency:pong", {
-        sentAt: typeof message.sentAt === "number" ? message.sentAt : Date.now(),
+        sentAt: isFiniteNumber(message.sentAt) ? message.sentAt : Date.now(),
         serverAt,
         serverProcessingMs: roundMetric(performance.now() - processingStartedAt),
         bufferedAmount: getClientBufferedAmount(client)
@@ -2059,8 +2268,9 @@ export class MatchRoom extends Room<MatchState> {
       this.chooseCard(client, message);
     });
     this.onMessage("snapshot:requestFull", (client) => {
-      // Statikleri isteyen istemcinin dinamik tarafi da eksik olabilir.
-      this.markTowerWireStale();
+      // Statikleri isteyen istemcinin dinamik tarafi da eksik olabilir. Tam
+      // kayit yalnizca ona: isteyen herkese tam kare yollatamasin.
+      this.markTowerWireStale(client.sessionId);
       this.sendFullStaticSnapshot(client);
     });
     this.onMessage("card:sync", (client) => this.sendPendingCardChoices(client));
@@ -2094,14 +2304,148 @@ export class MatchRoom extends Room<MatchState> {
     this.syncRoomRegistry();
   }
 
-  onJoin(client: Client, options: JoinOptions) {
+  /**
+   * Butun mesaj kayitlarinin tek kapisi.
+   *
+   * Colyseus'un kendi `onMessage`i sarmalaniyor ki unutulan bir kayit olmasin:
+   * bugun yazilan da yarin eklenen de ayni yoldan geciyor. Sira onemli --
+   * once hiz siniri (ucuz), sonra asama ve yaratici bayragi (govde okunmadan),
+   * en son govdenin duzeltilmesi. Isleyicinin hatasi burada yakalaniyor; tek
+   * bir bozuk mesaj odayi da sureci de dusurmuyor.
+   */
+  onMessage<T = any>(messageType: "*", callback: (client: Client, type: string | number, message: T) => void): any;
+  onMessage<T = any>(messageType: string | number, callback: (client: Client, message: T) => void, validate?: (message: unknown) => T): any;
+  onMessage(messageType: string | number, callback: (...args: any[]) => void, validate?: (message: unknown) => unknown) {
+    if (messageType === "*") {
+      return super.onMessage("*", callback as (client: Client, type: string | number, message: unknown) => void);
+    }
+    const type = String(messageType);
+    const rule = MESSAGE_RULES[type];
+    const guarded = (client: Client, raw: unknown) => {
+      try {
+        const allowed = this.consumeMessageToken(client.sessionId, type, rule?.rate ?? MESSAGE_RATE_DEFAULT);
+        if (!allowed && !rule?.latestWinsBy) return;
+        if (rule?.phase === "lobby" && this.gameStarted) return;
+        if (rule?.phase === "match" && !this.gameStarted) return;
+        if (rule?.creative && !this.creativeMode) return;
+        // Kurali olmayan tur alan tasimiyor: yeni bir mesaj tabloya yazilmadan
+        // govdesini okuyamaz. Test bunu her kayitli tur icin ayrica soruyor.
+        const message = sanitizeMessagePayload(raw, rule?.fields ?? {});
+        if (rule?.latestWinsBy) {
+          const key = `${type}|${client.sessionId}|${String(message[rule.latestWinsBy] ?? "")}`;
+          // Kabul edilen yeni deger bekleyen eskisini geciyor; sinirda kalan
+          // ise eskisinin yerine yaziliyor. Ayni hedef icin tek kayit var,
+          // yani bekleyen is istemci basina hedef sayisiyla sinirli.
+          this.latestMessageStash.delete(key);
+          if (!allowed) {
+            this.latestMessageStash.set(key, { sessionId: client.sessionId, apply: () => callback(client, message) });
+            return;
+          }
+        }
+        callback(client, message);
+      } catch (error) {
+        this.reportRoomError(`onMessage:${type}`, error);
+      }
+    };
+    return super.onMessage(messageType, guarded, validate);
+  }
+
+  /**
+   * Colyseus'un son savunma hatti: mesaj, tick, zamanlayici ve yasam dongusu
+   * hatalari sureci kapatmak yerine buraya geliyor. Mesaj ve tick zaten kendi
+   * kapilarinda yakalaniyor; burasi onlarin kacirdigi icin.
+   */
+  onUncaughtException(error: unknown, methodName: string) {
+    // Colyseus asil hatayi kendi istisna sinifina sariyor; yigin izi
+    // sarmalayicinin degil asil hatanin olmali.
+    const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+    // Dolu oda, bitmis mac, ikinci aktif oda: bilinen redler. Colyseus onlari
+    // istemciye zaten donduruyor; hata gunlugune girmiyorlar.
+    if (cause instanceof Error && EXPECTED_ROOM_REJECTIONS.has(cause.message)) return;
+    this.reportRoomError(methodName, cause);
+  }
+
+  /** Hata gunlugu; ayni yerden gelen hata en fazla on saniyede bir yaziliyor. */
+  private reportRoomError(context: string, error: unknown) {
+    const now = Date.now();
+    const entry = this.roomErrorLog.get(context);
+    if (entry && now - entry.at < ROOM_ERROR_LOG_INTERVAL_MS) {
+      entry.suppressed += 1;
+      return;
+    }
+    const suppressed = entry?.suppressed ?? 0;
+    this.roomErrorLog.set(context, { at: now, suppressed: 0 });
+    const cause = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(`[MatchRoom ${this.roomId}] ${context} hatasi${suppressed ? ` (+${suppressed} yutuldu)` : ""}: ${cause}`);
+  }
+
+  /**
+   * Jeton kovasi: tur basina ve istemci basina toplam.
+   *
+   * Asilan mesaj sessizce dusuyor. Kova once doluyor, sonra harcaniyor;
+   * toplam kova yalnizca tur kovasi izin verdiyse harcaniyor ki reddedilen
+   * bir tur digerlerinin payini yemesin.
+   */
+  private consumeMessageToken(sessionId: string, type: string, rate: MessageRate) {
+    const now = Date.now();
+    let buckets = this.messageBuckets.get(sessionId);
+    if (!buckets) {
+      buckets = new Map();
+      this.messageBuckets.set(sessionId, buckets);
+    }
+    const refill = (key: string, limit: MessageRate) => {
+      const bucket = buckets!.get(key) ?? { tokens: limit.burst, at: now };
+      bucket.tokens = Math.min(limit.burst, bucket.tokens + Math.max(0, now - bucket.at) / 1000 * limit.perSecond);
+      bucket.at = now;
+      buckets!.set(key, bucket);
+      return bucket;
+    };
+    const typed = refill(type, rate);
+    const total = refill("*", MESSAGE_RATE_TOTAL);
+    if (typed.tokens < 1 || total.tokens < 1) return false;
+    typed.tokens -= 1;
+    total.tokens -= 1;
+    return true;
+  }
+
+  /** Oturumun mesaj kovalari ve tel durumu; oturum odadan tamamen cikinca. */
+  private forgetSession(sessionId: string) {
+    this.messageBuckets.delete(sessionId);
+    this.wireSyncedSessionIds.delete(sessionId);
+    for (const [key, entry] of this.latestMessageStash) {
+      if (entry.sessionId === sessionId) this.latestMessageStash.delete(key);
+    }
+  }
+
+  /** Kovayi asmis "son deger kazanir" mesajlarini uygular; her tick bir kez. */
+  private flushLatestMessages() {
+    if (this.latestMessageStash.size === 0) return;
+    const entries = Array.from(this.latestMessageStash.values());
+    this.latestMessageStash.clear();
+    for (const entry of entries) {
+      try {
+        entry.apply();
+      } catch (error) {
+        this.reportRoomError("onMessage:latest", error);
+      }
+    }
+  }
+
+  /** Acik yeniden baglanma penceresi ya da ayrilmis koltuk var mi. */
+  private hasPendingSeats() {
+    return this.reconnectingSessionIds.size > 0 || Object.keys(this.reservedSeats ?? {}).length > 0;
+  }
+
+  onJoin(client: Client, rawOptions: JoinOptions) {
+    // Katilim secenekleri de istemciden: sekli tutmayan alan yok sayiliyor.
+    const options: JoinOptions = typeof rawOptions === "object" && rawOptions !== null ? rawOptions : {};
     if (this.gameStarted) {
       this.joinStartedMatch(client, options);
       return;
     }
 
     const player = new Player();
-    player.name = options.playerName?.slice(0, 20) || "Oyuncu";
+    player.name = getJoinPlayerName(options.playerName) || "Oyuncu";
     player.characterId = this.getAvailableCharacterId(options.characterId);
     player.ready = false;
     player.connected = true;
@@ -2128,33 +2472,66 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   async onLeave(client: Client, consented = false) {
+    // Kopan istemcinin elindeki kayit artik tabanla ayni degil; geri donerse
+    // (ayni oturumla da olsa) tam kayit almali.
+    this.wireSyncedSessionIds.delete(client.sessionId);
     const player = this.state.players.get(client.sessionId);
     if (this.gameStarted && player) {
       player.connected = false;
-      this.broadcastLobbyState();
 
       if (!consented) {
+        // Pencere boyunca yuva bu oturumun: yeni gelen onu devralamaz.
+        this.reconnectingSessionIds.add(client.sessionId);
+        this.broadcastLobbyState();
         try {
-          const reconnectedClient = await this.allowReconnection(client, 20);
+          const reconnection = this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
+          this.pendingReconnections.set(client.sessionId, reconnection);
+          const reconnectedClient = await reconnection;
+          this.pendingReconnections.delete(client.sessionId);
+          this.reconnectingSessionIds.delete(client.sessionId);
           player.connected = true;
           this.sendMatchResumeState(reconnectedClient);
           this.broadcastLobbyState();
           return;
         } catch {
-          // The reconnect window expired. Keep the player slot available for
-          // the existing started-match fallback in joinStartedMatch().
+          // Pencere kapandi ya da yuva ayni oyuncunun yeni oturumuna verildi
+          // (`reclaimReconnectingSlot`). Ilkinde yuva geri donuse acik.
+          this.pendingReconnections.delete(client.sessionId);
+          this.reconnectingSessionIds.delete(client.sessionId);
         }
       }
 
+      // Kayit hala bu oturumdaysa oyuncu ayrildi: takimin olcegine artik girmiyor.
+      if (this.state.players.get(client.sessionId) === player) {
+        this.departedSessionIds.add(client.sessionId);
+      }
+      this.forgetSession(client.sessionId);
+      this.broadcastLobbyState();
       this.tryFinishSetupPhase();
       return;
     }
 
+    this.forgetSession(client.sessionId);
     this.state.players.delete(client.sessionId);
     if (this.hostSessionId === client.sessionId) {
       this.hostSessionId = this.state.players.keys().next().value ?? "";
     }
     this.broadcastLobbyState();
+  }
+
+  /**
+   * Takimin olcegine giren oyuncu sayisi: ayrilanlar haric.
+   *
+   * Penceresi suren oyuncu sayiliyor -- birkac saniye icinde donmesi bekleniyor
+   * ve dalga ortasinda olcegi oynatmak bir sey kazandirmaz. En az bir: oda hic
+   * kimsesiz kalsa da dalga formulleri tek oyuncu olcegine dussun.
+   */
+  private getActivePlayerCount() {
+    let count = 0;
+    for (const sessionId of this.state.players.keys()) {
+      if (!this.departedSessionIds.has(sessionId)) count += 1;
+    }
+    return Math.max(1, count);
   }
 
   private joinStartedMatch(client: Client, options: JoinOptions) {
@@ -2167,10 +2544,23 @@ export class MatchRoom extends Room<MatchState> {
       throw new Error("Maç bitti.");
     }
 
-    const disconnectedEntry = Array.from(this.state.players.entries()).find(([, player]) => !player.connected);
+    // Sayfasi yenilenen oyuncu once kendi (penceresi suren) yuvasina.
+    if (this.reclaimReconnectingSlot(client, options)) {
+      return;
+    }
+
+    // Devralinabilen yuva yalnizca penceresi kapanmis olan. Pencere acikken
+    // yuvayi yeni gelene vermek, kulesini ve altinini ona vermek demekti;
+    // geri donen asil oyuncu da yuvasiz bir hayalet olarak kaliyordu.
+    // Ayni karakteri secmis olan once: listeden geri donen oyuncu kendi
+    // yuvasini bulsun.
+    const takeoverCandidates = Array.from(this.state.players.entries())
+      .filter(([sessionId, player]) => !player.connected && !this.reconnectingSessionIds.has(sessionId));
+    const disconnectedEntry = takeoverCandidates.find(([, player]) => player.characterId === options.characterId)
+      ?? takeoverCandidates[0];
     if (disconnectedEntry) {
       const [previousSessionId, player] = disconnectedEntry;
-      this.transferPlayerSession(previousSessionId, client.sessionId, player, options.playerName);
+      this.transferPlayerSession(previousSessionId, client.sessionId, player, getJoinPlayerName(options.playerName));
       this.sendMatchResumeState(client);
       this.syncRoomRegistry();
       return;
@@ -2181,7 +2571,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const player = new Player();
-    player.name = options.playerName?.slice(0, 20) || "Oyuncu";
+    player.name = getJoinPlayerName(options.playerName) || "Oyuncu";
     player.characterId = this.getAvailableCharacterId(options.characterId);
     player.ready = true;
     player.connected = true;
@@ -2195,11 +2585,47 @@ export class MatchRoom extends Room<MatchState> {
     this.syncRoomRegistry();
   }
 
+  /**
+   * Penceresi suren yuvayi ayni oyuncunun yeni oturumuna verir.
+   *
+   * Sayfasi yenilenen oyuncunun elinde yeniden baglanma anahtari kalmayabilir;
+   * listeden yeni bir oturumla geliyor. Ayni operator ve ayni adla gelen
+   * kendi yuvasini aliyor: Colyseus beklemesi reddediliyor, eski oturumun
+   * `onLeave`i yuvanin el degistirdigini gorup onu ayrilmis saymiyor.
+   * Farkli adla gelen pencere boyunca yuvaya dokunamiyor.
+   */
+  private reclaimReconnectingSlot(client: Client, options: JoinOptions) {
+    const name = getJoinPlayerName(options.playerName);
+    if (!name) return false;
+    const entry = Array.from(this.state.players.entries()).find(([sessionId, player]) =>
+      this.reconnectingSessionIds.has(sessionId) && !player.connected
+      && player.characterId === options.characterId && player.name === name);
+    if (!entry) return false;
+    const [previousSessionId, player] = entry;
+    const reconnection = this.pendingReconnections.get(previousSessionId);
+    this.pendingReconnections.delete(previousSessionId);
+    this.reconnectingSessionIds.delete(previousSessionId);
+    // Colyseus pencere zamanlayicisini reddedilen beklemede temizlemiyor.
+    const timeout = this.reservedSeatTimeouts?.[previousSessionId];
+    if (timeout) clearTimeout(timeout);
+    this.transferPlayerSession(previousSessionId, client.sessionId, player, name);
+    // Reddedilmeyen bekleme de zararsiz: pencere dolunca eski `onLeave`
+    // yuvanin el degistirdigini goruyor ve dokunmuyor.
+    if (typeof reconnection?.reject === "function") reconnection.reject(new Error("Yuva yeni oturuma devredildi."));
+    this.sendMatchResumeState(client);
+    this.syncRoomRegistry();
+    return true;
+  }
+
   private transferPlayerSession(previousSessionId: string, nextSessionId: string, player: Player, playerName?: string) {
     this.state.players.delete(previousSessionId);
     player.connected = true;
-    player.name = playerName?.slice(0, 20) || player.name;
+    player.name = getJoinPlayerName(playerName) || player.name;
     this.state.players.set(nextSessionId, player);
+    // Yuvayi devralan oturum takimin olcegine yeniden giriyor.
+    this.departedSessionIds.delete(previousSessionId);
+    this.reconnectingSessionIds.delete(previousSessionId);
+    this.forgetSession(previousSessionId);
     if (this.setupReadyPlayerIds.delete(previousSessionId)) {
       this.setupReadyPlayerIds.add(nextSessionId);
     }
@@ -2216,11 +2642,27 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    for (const drone of this.drones.values()) {
-      if (drone.ownerId === previousSessionId) {
-        drone.ownerId = nextSessionId;
-      }
+    // Lojistik iscilerinin kimligi sahibin oturumunu tasiyor
+    // (`logistics-<oturum>-<rol>`). Yalnizca sahibi degistirmek yetmiyordu:
+    // `ensureLogisticsWorkers` yeni anahtarla isciyi bulamayip tam bir kadro
+    // daha kuruyordu ve her devralmada isci sayisi katlaniyordu. Isci yeni
+    // anahtara tasiniyor, yuku ve konumu korunuyor; olum sayaci da onunla.
+    const previousWorkerPrefix = `logistics-${previousSessionId}-`;
+    for (const [droneId, drone] of Array.from(this.drones.entries())) {
+      if (drone.ownerId !== previousSessionId) continue;
+      drone.ownerId = nextSessionId;
+      if (!droneId.startsWith(previousWorkerPrefix)) continue;
+      const nextId = `logistics-${nextSessionId}-${droneId.slice(previousWorkerPrefix.length)}`;
+      this.drones.delete(droneId);
+      drone.id = nextId;
+      this.drones.set(nextId, drone);
     }
+    for (const [workerId, respawnAt] of Array.from(this.workerRespawnAt.entries())) {
+      if (!workerId.startsWith(previousWorkerPrefix)) continue;
+      this.workerRespawnAt.delete(workerId);
+      this.workerRespawnAt.set(`logistics-${nextSessionId}-${workerId.slice(previousWorkerPrefix.length)}`, respawnAt);
+    }
+    this.transferMapKey(this.workerBannedCells, previousSessionId, nextSessionId);
     // Suren Sessiz Mod'un atani yeni oturumla anilsin: istemci adi ve "senin
     // miydi" sorusunu bu kimlikten okuyor.
     if (this.silentModeCasterId === previousSessionId) {
@@ -2329,6 +2771,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private setLobbyCharacter(client: Client, requestedCharacterId: CharacterId | undefined) {
+    // Karakter secimi altini baslangic degerine yaziyor. Mac basladiktan sonra
+    // bu, ayni karakteri yeniden secerek sinirsiz altin demekti; ustelik
+    // kuleler ve kartlar eski karaktere bagli kalirdi.
+    if (this.gameStarted) {
+      return;
+    }
     const player = this.state.players.get(client.sessionId);
     const characterId = this.getCharacterId(requestedCharacterId);
     if (!player) {
@@ -2367,7 +2815,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private setLobbyReady(client: Client, ready: boolean | undefined) {
     const player = this.state.players.get(client.sessionId);
-    if (!player) {
+    if (!player || this.gameStarted) {
       return;
     }
 
@@ -2376,6 +2824,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private startLobbyMatch(client: Client) {
+    // Baslamis maci yeniden baslatmak arenayi sifirlar, dalga ortasinda kurulum
+    // evresini acar ve kurulum sonu iyilesmelerini (`nexus:mend`) yeniden
+    // tetiklerdi.
+    if (this.gameStarted) {
+      return;
+    }
     if (client.sessionId !== this.hostSessionId) {
       client.send("lobby:error", { message: "Sadece oda kurucusu baslatabilir." });
       return;
@@ -2474,11 +2928,18 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
+    // Yaratici oda tek kisilik bir kum havuzu: listede yok, katilinamaz.
+    if (this.creativeMode) {
+      return false;
+    }
+
     if (!this.gameStarted) {
       return this.state.players.size < this.maxClients;
     }
 
-    return this.state.players.size < this.maxClients || Array.from(this.state.players.values()).some((player) => !player.connected);
+    // Penceresi suren yuva sahibinin; listede bos koltuk sayilmiyor.
+    return this.state.players.size < this.maxClients || Array.from(this.state.players.entries())
+      .some(([sessionId, player]) => !player.connected && !this.reconnectingSessionIds.has(sessionId));
   }
 
   private transferMapKey<T>(map: Map<string, T>, previousKey: string, nextKey: string) {
@@ -2504,7 +2965,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getScaledWaveEnemyCount(wave: number) {
-    return getArenaWaveEnemyCount(wave, this.mapScale, this.state.players.size);
+    // Ayrilan oyuncu dalgayi buyutmuyor; kalanlar onun payini savunmak zorunda kalirdi.
+    return getArenaWaveEnemyCount(wave, this.mapScale, this.getActivePlayerCount());
   }
 
   /**
@@ -2592,7 +3054,102 @@ export class MatchRoom extends Room<MatchState> {
     return ownerGain;
   }
 
+  /**
+   * Tick'in hata siniri.
+   *
+   * Tick bir donem korumasizdi: icindeki tek bir istisna Colyseus'un surec
+   * kancasina kadar cikiyor ve butun odalari kapatiyordu. Simdi hata
+   * gunluge yaziliyor ve oda yasamaya devam ediyor. Ayni hata her tick
+   * tekrarlanirsa simulasyon katlanarak artan (en fazla iki saniyelik)
+   * araliklarla bekliyor; saniyede altmis yigin izi ve tam islemci yerine
+   * ara ara bir deneme.
+   */
   private update(deltaTime: number) {
+    const now = Date.now();
+    this.checkAbandoned(now);
+    if (this.abandonDisposing || now < this.tickBackoffUntil) {
+      return;
+    }
+    // Kovayi asan son degerler (performans kolu) tick'ten once uygulaniyor.
+    this.flushLatestMessages();
+    try {
+      this.runTick(deltaTime);
+      this.tickFailures = 0;
+    } catch (error) {
+      this.tickFailures += 1;
+      this.tickBackoffUntil = now + Math.min(TICK_ERROR_BACKOFF_MAX_MS, 50 * 2 ** (this.tickFailures - 1));
+      this.synergyIsolationCache = undefined;
+      // Yarim kalan tick tabanla gonderilen arasini bozmus olabilir; herkes tam kayit alsin.
+      this.markTowerWireStale();
+      this.reportRoomError("update", error);
+      if (this.tickFailures >= TICK_FAILURE_LIMIT) {
+        this.abortBrokenRoom();
+      }
+    }
+  }
+
+  /**
+   * Kurtarilamayan odayi kapatir.
+   *
+   * Tick her denemede ayni hatayi veriyorsa oda donmus demek: oyuncular bagli
+   * kaliyor, hicbir sey ilerlemiyor ve bagli oyuncusu olan oda yeni oda
+   * kurulmasini engelliyor. Oyunculara kisa bir mesaj gidiyor (istemci
+   * yeniden baglanmayi denemiyor), sonra oda kapaniyor. Sonuc raporu yok:
+   * bozuk durumdan uretilen rapor gercek bir yenilgi gibi kaydedilirdi.
+   */
+  private abortBrokenRoom() {
+    if (this.abandonDisposing) {
+      return;
+    }
+    this.abandonDisposing = true;
+    MatchRoom.publicRooms.delete(this.roomId);
+    try {
+      this.broadcast("room:error", { message: "Sunucu hatası: maç sonlandırıldı." });
+    } catch (error) {
+      this.reportRoomError("abort", error);
+    }
+    try {
+      void Promise.resolve(this.disconnect()).catch((error) => this.reportRoomError("abort", error));
+    } catch (error) {
+      this.reportRoomError("abort", error);
+    }
+  }
+
+  /**
+   * Kimsesiz odayi kapatir.
+   *
+   * Istemci yok, pencere acik oturum yok, rezerve koltuk yok ve bu durum
+   * `ABANDONED_ROOM_DISPOSE_MS` boyunca suruyor. Test duzenekleri `onCreate`
+   * cagirmadigi icin denetim onlarda kapali.
+   */
+  private checkAbandoned(now: number) {
+    if (!this.abandonCheckEnabled || this.abandonDisposing) {
+      return;
+    }
+    const pendingSeats = Object.keys(this.reservedSeats ?? {}).length;
+    if (this.clients.length > 0 || this.reconnectingSessionIds.size > 0 || pendingSeats > 0) {
+      this.abandonedSince = 0;
+      return;
+    }
+    if (this.abandonedSince === 0) {
+      this.abandonedSince = now;
+      return;
+    }
+    if (now - this.abandonedSince < ABANDONED_ROOM_DISPOSE_MS) {
+      return;
+    }
+    this.abandonDisposing = true;
+    MatchRoom.publicRooms.delete(this.roomId);
+    try {
+      void Promise.resolve(this.disconnect()).catch((error) => this.reportRoomError("dispose", error));
+    } catch (error) {
+      // Oda henuz kurulurken kapatilamaz; bir sonraki tick yeniden denesin.
+      this.abandonDisposing = false;
+      this.reportRoomError("dispose", error);
+    }
+  }
+
+  private runTick(deltaTime: number) {
     if (!this.gameStarted) {
       this.syncRoomRegistry();
       return;
@@ -2683,8 +3240,10 @@ export class MatchRoom extends Room<MatchState> {
       // Delta burada uygulaniyor, `getSnapshot` icinde degil: o yontem hem
       // testlerden hem baska yollardan cagriliyor ve yan etkili olmasi,
       // okuyanin tam kayit sandigi yerde delta almasina yol acardi.
+      // Tabanla ayni olmayan istemci (atlanan, kopan, tam kayit isteyen) deltayi
+      // degil tam kareyi aliyor; digerleri deltayi.
       const { wire, towerBaseline, enemyBaseline } = this.applyWireDelta(snapshot);
-      if (this.sendSnapshotWithBackpressure(wire)) {
+      if (this.sendSnapshotWithBackpressure(wire, snapshot)) {
         this.commitWireBaseline(towerBaseline, enemyBaseline);
         this.recordSnapshotBroadcast(now);
       }
@@ -2802,21 +3361,43 @@ export class MatchRoom extends Room<MatchState> {
     this.towerWireNeedsFullResend = false;
   }
 
-  /** Bir sonraki kare tam gitsin: elindeki kayit eksik olabilecek biri var. */
-  private markTowerWireStale() {
-    this.towerWireNeedsFullResend = true;
+  /**
+   * Bir sonraki kare tam gitsin: elindeki kayit eksik olabilecek biri var.
+   *
+   * Oturum verilirse yalnizca o istemci; verilmezse herkes.
+   */
+  private markTowerWireStale(sessionId?: string) {
+    if (sessionId === undefined) {
+      this.towerWireNeedsFullResend = true;
+      return;
+    }
+    this.wireSyncedSessionIds.delete(sessionId);
   }
 
-  private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot) {
+  /**
+   * Kareyi kuyrugu bosalan istemcilere yollar.
+   *
+   * `snapshot` delta, `full` ayni karenin tam hali. Tabanla ayni olan
+   * istemci deltayi, olmayan tam kareyi aliyor; atlanan istemci kumeden
+   * dusuyor ve bir sonraki gonderimde tam kare aliyor -- kareyi baskasi
+   * almis olsa bile. Biri bile aldiysa `true`; o zaman taban ilerliyor.
+   */
+  private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot, full: WireGameSnapshot = snapshot) {
     let sent = false;
+    const recipients: string[] = [];
     for (const client of this.clients) {
       if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) {
         // Atlanan istemci bu deltayi kacirdi; bir daha yakalayamaz.
-        this.markTowerWireStale();
+        this.wireSyncedSessionIds.delete(client.sessionId);
         continue;
       }
-      client.send("snapshot", snapshot);
+      const synced = !this.towerWireNeedsFullResend && this.wireSyncedSessionIds.has(client.sessionId);
+      client.send("snapshot", synced ? snapshot : full);
+      recipients.push(client.sessionId);
       sent = true;
+    }
+    for (const sessionId of recipients) {
+      this.wireSyncedSessionIds.add(sessionId);
     }
     return sent;
   }
@@ -3225,7 +3806,7 @@ export class MatchRoom extends Room<MatchState> {
     const airHealthMultiplier = isFlyingEnemy ? AIR_ENEMY_HEALTH_MULTIPLIER : 1;
     // Normal dusmanda 1: carpim degeri degistirmiyor, eski sayilar bire bir ayni.
     const championMultiplier = champion?.hpMultiple ?? 1;
-    const multiplayerHealth = 1 + Math.max(0, this.state.players.size - 1) * 0.45;
+    const multiplayerHealth = 1 + Math.max(0, this.getActivePlayerCount() - 1) * 0.45;
     const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier * championMultiplier) * multiplayerHealth;
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
@@ -6396,13 +6977,20 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private placeShopMapItem(client: Client, message: PlaceShopMapItemMessage) {
-    if (!this.setupPhase || !message.itemId || typeof message.x !== "number" || typeof message.y !== "number") return;
+    // Esya kimligi iki degerden biri olmali. Bir donem yalnizca hakkin
+    // `<= 0` olmadigina bakiliyordu: "constructor" gibi bir kimlik nesnenin
+    // prototipinden bir fonksiyon okuyordu, karsilastirma yanlis cikiyor ve
+    // tek bir alimdan sonra sinirsiz bariyer kuruluyordu (her biri butun
+    // haritayi yayinliyordu).
+    const itemId = message.itemId;
+    if (itemId !== "bariyer" && itemId !== "ziftli-zemin") return;
+    if (!this.setupPhase || !isFiniteNumber(message.x) || !isFiniteNumber(message.y)) return;
     const charges = this.shopPlacementCharges.get(client.sessionId);
-    if (!charges || charges[message.itemId] <= 0) return;
+    if (!charges || !(charges[itemId] > 0)) return;
     const cell = worldToGrid(message.x, message.y, this.activeMap);
     if (!isInsideMap(this.activeMap, cell.col, cell.row) || getTile(this.activeMap, cell.col, cell.row) !== "road" || cell.row === 0 || cell.row === this.activeMap.rows - 1) return;
     const key = `${cell.col}:${cell.row}`;
-    if (message.itemId === "ziftli-zemin") {
+    if (itemId === "ziftli-zemin") {
       if (this.tarredCells.has(key)) return;
       this.tarredCells.add(key);
     } else {
@@ -6413,11 +7001,14 @@ export class MatchRoom extends Room<MatchState> {
       this.markNavigationDirty();
       this.broadcast("match:map", this.activeMap);
     }
-    charges[message.itemId] -= 1;
+    charges[itemId] -= 1;
   }
 
   private awardEnemyExperience(enemy: EnemyModel) {
-    const players = Array.from(this.state.players.values());
+    // Ayrilan oyuncu pay almiyor: tecrube kalanlar arasinda bolunuyor.
+    const players = Array.from(this.state.players.entries())
+      .filter(([sessionId]) => !this.departedSessionIds.has(sessionId))
+      .map(([, player]) => player);
     if (players.length === 0) {
       return;
     }
@@ -7973,7 +8564,9 @@ export class MatchRoom extends Room<MatchState> {
   private setTowerPerformance(client: Client, message: SetTowerPerformanceMessage) {
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!this.gameStarted || !tower || tower.ownerId !== client.sessionId) return;
-    if (!this.acceptsTowerOperation(tower) || typeof message.performance !== "number") return;
+    // NaN kolu atis araligini NaN yapiyordu: muhimmatli kule her tick atesliyor,
+    // hic isi kilidine girmiyor ve bakim bedeli odemiyordu.
+    if (!this.acceptsTowerOperation(tower) || !isFiniteNumber(message.performance)) return;
     tower.performance = Math.max(0, Math.min(1, message.performance));
   }
 
@@ -7987,7 +8580,7 @@ export class MatchRoom extends Room<MatchState> {
    * ortasinda hattin yanlis yerden gectigini goren oyuncu o an duzeltebilmeli.
    */
   private toggleWorkerBannedCell(client: Client, message: WorkerBanCellMessage) {
-    if (!this.gameStarted || typeof message?.x !== "number" || typeof message?.y !== "number") return;
+    if (!this.gameStarted || !isFiniteNumber(message?.x) || !isFiniteNumber(message?.y)) return;
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
     const cell = worldToGrid(message.x, message.y, this.activeMap);
@@ -8141,7 +8734,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private placeTower(client: Client, message: PlaceTowerMessage, options: { free?: boolean; ignoreLimit?: boolean } = {}) {
     const player = this.state.players.get(client.sessionId);
-    if (!player || typeof message.x !== "number" || typeof message.y !== "number" || !message.definitionId) {
+    if (!player || !isFiniteNumber(message.x) || !isFiniteNumber(message.y) || typeof message.definitionId !== "string") {
       return;
     }
 
@@ -8516,10 +9109,12 @@ export class MatchRoom extends Room<MatchState> {
    * kademeler atlaniyor. Hepsini gormek isteyen seviyeyi birer birer verebilir.
    */
   private creativeSetTowerLevel(client: Client, message: CreativeLevelMessage) {
+    // Kapi her seyden once: yaratici olmayan odada govde hic okunmuyor.
     const player = this.getCreativePlayer(client);
+    if (!player) return;
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
-    if (!player || !tower || tower.ownerId !== client.sessionId) return;
-    const level = Math.max(1, Math.min(MAX_TOWER_LEVEL, Math.round(message.level ?? tower.level)));
+    if (!tower || tower.ownerId !== client.sessionId) return;
+    const level = Math.max(1, Math.min(MAX_TOWER_LEVEL, Math.round(isFiniteNumber(message.level) ? message.level : tower.level)));
     if (level === tower.level) return;
     tower.level = level;
     if (tower.definition.id === "warrior-6" && getUcubePerkTier(level)) {
@@ -8536,8 +9131,9 @@ export class MatchRoom extends Room<MatchState> {
 
   private creativeToggleCard(client: Client, message: CreativeCardMessage) {
     const player = this.getCreativePlayer(client);
+    if (!player) return;
     const card = message.cardId ? getCardDefinition(message.cardId) : undefined;
-    if (!player || !card) return;
+    if (!card) return;
 
     if (card.scope.kind === "targeted") {
       const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
@@ -8573,8 +9169,9 @@ export class MatchRoom extends Room<MatchState> {
    */
   private creativeToggleItem(client: Client, message: CreativeItemMessage) {
     const player = this.getCreativePlayer(client);
+    if (!player) return;
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
-    if (!player || !item) return;
+    if (!item) return;
     const adding = message.on !== false;
 
     if (isGlobalShopItem(item)) {
@@ -8623,7 +9220,8 @@ export class MatchRoom extends Room<MatchState> {
    */
   private creativeSetWave(client: Client, message: CreativeWaveMessage) {
     if (!this.getCreativePlayer(client)) return;
-    const wave = Math.max(1, Math.min(FINAL_WAVE, Math.round(message.wave ?? this.wave)));
+    // NaN dalga her tick NaN canli, olumsuz bir dusman doguruyordu.
+    const wave = Math.max(1, Math.min(FINAL_WAVE, Math.round(isFiniteNumber(message.wave) ? message.wave : this.wave)));
     this.wave = wave;
     this.waveSpawned = 0;
     this.planWaveSpawns(wave);
@@ -8640,7 +9238,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   private creativeSpawnEnemies(client: Client, message: CreativeSpawnMessage) {
     if (!this.getCreativePlayer(client)) return;
-    const count = Math.max(1, Math.min(CREATIVE_MAX_SPAWN_BURST, Math.round(message.count ?? 1)));
+    const count = Math.max(1, Math.min(CREATIVE_MAX_SPAWN_BURST, Math.round(isFiniteNumber(message.count) ? message.count : 1)));
     this.setupPhase = false;
     this.setupReadyPlayerIds.clear();
     this.waveClearedAt = 0;
@@ -8650,7 +9248,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private setTowerMode(client: Client, message: TowerModeMessage) {
-    if (!message.towerId || !message.mode) {
+    if (!message.towerId || (message.mode !== "standby" && message.mode !== "approval" && message.mode !== "stress")) {
       return;
     }
 
@@ -8703,7 +9301,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private refactorTower(client: Client, message: UseSkillMessage) {
-    if (!message.towerId || typeof message.x !== "number" || typeof message.y !== "number") {
+    if (!message.towerId || !isFiniteNumber(message.x) || !isFiniteNumber(message.y)) {
       return false;
     }
 
@@ -8715,6 +9313,9 @@ export class MatchRoom extends Room<MatchState> {
 
     tower.x = x;
     tower.y = y;
+    // Yapi yer degistirdi: hucre indeksi eski karede hayalet bir engel
+    // birakiyordu ve dusmanlar yeni karedeki kuleyi gormuyordu.
+    this.markNavigationDirty();
     tower.cooldownMs = Math.min(tower.cooldownMs, 150);
     tower.rangeMemoryEnemyIds = [];
     this.broadcastTowerSpawn(tower);
@@ -8818,7 +9419,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private useSkill(client: Client, message: UseSkillMessage) {
     const player = this.state.players.get(client.sessionId);
-    const slot = typeof message.slot === "number" ? Math.floor(message.slot) : -1;
+    const slot = isFiniteNumber(message.slot) ? Math.floor(message.slot) : -1;
     if (!player || slot < 0 || slot > 2 || this.getSkillCooldown(player, slot) > 0) {
       return;
     }
@@ -8888,7 +9489,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
 
     if (slot === 0) {
-      if (typeof message.x !== "number" || typeof message.y !== "number") {
+      if (!isFiniteNumber(message.x) || !isFiniteNumber(message.y)) {
         return false;
       }
       this.projectileGuidanceUntil = Math.max(this.projectileGuidanceUntil, now + scaleGameDuration(3000));
@@ -8990,7 +9591,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useMelisBully(ownerId: string, message: UseSkillMessage) {
-    if (typeof message.x !== "number" || typeof message.y !== "number") {
+    if (!isFiniteNumber(message.x) || !isFiniteNumber(message.y)) {
       return false;
     }
 
@@ -13900,6 +14501,16 @@ function getZeynepCommandType(slot: number): ZeynepCommandType {
     return "range";
   }
   return "slow";
+}
+
+/** Sonlu sayi mi; NaN ve Infinity `typeof` testinden geciyor, buradan gecmiyor. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/** Katilim secenegindeki oyuncu adi: metin degilse yok sayiliyor, 20 harfe kirpiliyor. */
+function getJoinPlayerName(value: unknown) {
+  return typeof value === "string" ? value.slice(0, 20) : "";
 }
 
 function getRequestedZeynepCommandTier(tier: unknown): ZeynepCommandTier {

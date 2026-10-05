@@ -68,7 +68,16 @@ import { takeQuickStartIntent } from "./quick-start";
 import { readCardArchive } from "./card-archive";
 import { getCosmeticFacts, getOperatorMasteryPoints, isProgressStorageAvailable, readBadgeBook, readCosmeticSelection, readMasteryBook, saveCosmeticSelection } from "./progress-store";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
-import { getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "./online-session";
+import {
+  getSharedClient,
+  loadMatchReconnect,
+  resumeSavedMatch,
+  retryExpiredSeatReservation,
+  setActiveLobbyRoom,
+  setResumedMatch,
+  takeResumedMatch,
+  type MatchReconnectRecord
+} from "./online-session";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges";
 
@@ -323,7 +332,7 @@ export function setupMenuUi(game: Phaser.Game) {
     return { ...state, records, allRecords: recordBook };
   };
 
-  const startGame = (mode: "solo" | "online" = "solo") => {
+  const startGame = (mode: "solo" | "online" = "solo", resume?: MatchReconnectRecord) => {
     if (!phaserReady || onlineGameStarting) {
       return;
     }
@@ -331,6 +340,17 @@ export function setupMenuUi(game: Phaser.Game) {
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");
     game.scene.stop("preloader");
+    // Yeniden yuklemeden donulen mac: operator, olcek ve asama kayittan; oda
+    // sahneye `setResumedMatch` ile gidiyor.
+    if (resume) {
+      game.scene.start("game", {
+        characterId: characters.find((character) => character.id === resume.characterId)?.id ?? selectedCharacter.id,
+        mapData: scaleEditableMap(selectedMap, resume.mapScale as MapScale),
+        creative: false,
+        stage: resume.stage
+      });
+      return;
+    }
     game.scene.start("game", {
       characterId: selectedCharacter.id,
       mapData: mode === "online" && currentLobbyState ? scaleEditableMap(selectedMap, currentLobbyState.mapScale) : selectedMap,
@@ -681,6 +701,32 @@ export function setupMenuUi(game: Phaser.Game) {
   // Phaser hazir oldugunda, normal "Başla" yoluyla (yukaridaki dinleyiciden
   // sonra kayitli, yani hazir bayragi o an acik).
   render(quickStart?.mode === "online" ? "online" : "home");
+
+  // Yeniden yuklenen sekmede suren bir mac varsa once ona donmeyi dene.
+  // Basarisizsa (pencere doldu, mac bitti) normal menu akisi suruyor. Oyuncu
+  // bu arada kendisi bir oda kurduysa ya da oyuna girdiyse donulen oda birakiliyor.
+  const savedMatch = quickStart ? undefined : loadMatchReconnect();
+  if (savedMatch) {
+    void resumeSavedMatch(gameServerUrl, savedMatch).then((room) => {
+      if (!room) return;
+      if (currentLobbyRoom || onlineGameStarting) {
+        void room.leave(true);
+        return;
+      }
+      setResumedMatch(room, savedMatch.mode);
+      const launchResumed = () => {
+        if (currentLobbyRoom || onlineGameStarting) {
+          takeResumedMatch();
+          void room.leave(true);
+          return;
+        }
+        startGame(savedMatch.mode, savedMatch);
+      };
+      if (phaserReady) launchResumed();
+      else window.addEventListener("karayel:phaser-ready", launchResumed, { once: true });
+    });
+  }
+
   if (quickStart && quickStart.mode !== "online") {
     // Oyuncu Phaser hazir olmadan menuye dokunursa kontrol onda: gec gelen
     // kendiliginden baslatma onun kurdugu bir lobi odasinin (sahne onu oyun

@@ -182,19 +182,28 @@ test("her kule her karede listede kaliyor", () => {
   }
 });
 
-test("tikanan istemci sonrasinda bir sonraki kare tam gidiyor", () => {
+test("tikanan istemci sonrasinda bir sonraki kare ona tam gidiyor", () => {
+  // Bayrak bir donem ortakti: kareyi obur istemci aldigi icin taban
+  // ilerlerken siliniyordu ve atlanan istemci bir daha tam kayit almiyordu.
   const room = ikiKisilikOda(4);
   kareleriTopla(room, 40);
 
-  // Ikinci istemcinin kuyrugu dolu: bu kareyi kaciriyor.
+  // Ikinci istemcinin kuyrugu dolu: bu kareyi kaciriyor, birinci aliyor.
+  const ilkTam = JSON.parse(JSON.stringify(room.getSnapshot()));
+  const ilk = room.applyWireDelta(ilkTam);
   room.clients[1].ref.bufferedAmount = 10_000_000;
-  room.sendSnapshotWithBackpressure(room.getSnapshot());
+  assert.equal(room.sendSnapshotWithBackpressure(ilk.wire, ilkTam), true);
+  room.commitWireBaseline(ilk.towerBaseline, ilk.enemyBaseline);
   room.clients[1].ref.bufferedAmount = 0;
 
+  const alinan = new Map();
+  for (const client of room.clients) client.send = (tip, veri) => { if (tip === "snapshot") alinan.set(client.sessionId, veri); };
   const tam = JSON.parse(JSON.stringify(room.getSnapshot()));
   const { wire } = room.applyWireDelta(tam);
-  assert.deepEqual(wire.towers, tam.towers, "atlanan istemciden sonra kule kaydi tam gitmedi");
-  assert.deepEqual(wire.enemies, tam.enemies, "atlanan istemciden sonra dusman kaydi tam gitmedi");
+  room.sendSnapshotWithBackpressure(wire, tam);
+  assert.deepEqual(alinan.get("p2").towers, tam.towers, "atlanan istemciye kule kaydi tam gitmedi");
+  assert.deepEqual(alinan.get("p2").enemies, tam.enemies, "atlanan istemciye dusman kaydi tam gitmedi");
+  assert.notDeepEqual(alinan.get("p1").towers, tam.towers, "tabanla ayni istemci delta almaya devam etmeli");
 });
 
 test("tam kayit istegi tabani sifirliyor", () => {

@@ -60,3 +60,103 @@ export function clearActiveLobbyRoom(expectedRoomId?: string) {
     activeLobbyRoom = undefined;
   }
 }
+
+/**
+ * Suren macin yeniden baglanma kaydi.
+ *
+ * Sayfa yenilenince (ya da mobil tarayici sekmeyi oldurunce) bellekteki oda
+ * ve yeniden baglanma anahtari kayboluyordu; geri donmenin tek yolu oda
+ * listesiydi. Sunucu kopan oyuncunun yuvasini pencere boyunca ona ayiriyor,
+ * yani anahtari olmayan oyuncu kendi yuvasina bu sure icinde donemiyordu.
+ * Kayit sekmeye bagli (`sessionStorage`): ayni sekmede yeniden yuklemede
+ * duruyor, baska sekmeye ya da cihaza tasinmiyor.
+ */
+export type MatchReconnectRecord = {
+  roomId: string;
+  token: string;
+  /** Solo ve co-op kayitlari ayri anahtarlarda: sahne kipi buradan. */
+  mode: "solo" | "online";
+  characterId: string;
+  mapScale: number;
+  stage: number;
+  savedAt: number;
+};
+
+const MATCH_RECONNECT_KEY = "karayel:match-reconnect";
+/** Sunucu terk edilmis odayi bundan once kapatmiyor; daha eski kayit denenmiyor. */
+const MATCH_RECONNECT_MAX_AGE_MS = 15 * 60 * 1000;
+
+export function saveMatchReconnect(room: Room, info: Omit<MatchReconnectRecord, "roomId" | "token" | "savedAt">) {
+  if (!room.reconnectionToken) return;
+  const record: MatchReconnectRecord = { ...info, roomId: room.roomId, token: room.reconnectionToken, savedAt: Date.now() };
+  try {
+    window.sessionStorage.setItem(MATCH_RECONNECT_KEY, JSON.stringify(record));
+  } catch {
+    // Gizli pencere ya da kapali depolama: yeniden baglanma yalnizca listeden.
+  }
+}
+
+export function loadMatchReconnect(): MatchReconnectRecord | undefined {
+  try {
+    const raw = window.sessionStorage.getItem(MATCH_RECONNECT_KEY);
+    if (!raw) return undefined;
+    const record = JSON.parse(raw) as Partial<MatchReconnectRecord>;
+    if (typeof record.token !== "string" || typeof record.roomId !== "string" || typeof record.characterId !== "string"
+      || (record.mode !== "solo" && record.mode !== "online") || typeof record.savedAt !== "number"
+      || Date.now() - record.savedAt > MATCH_RECONNECT_MAX_AGE_MS) {
+      clearMatchReconnect();
+      return undefined;
+    }
+    return {
+      roomId: record.roomId,
+      token: record.token,
+      mode: record.mode,
+      characterId: record.characterId,
+      mapScale: typeof record.mapScale === "number" ? record.mapScale : 1,
+      stage: typeof record.stage === "number" ? record.stage : 1,
+      savedAt: record.savedAt
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Kaydi siler; oda verilirse yalnizca o odanin kaydini. */
+export function clearMatchReconnect(expectedRoomId?: string) {
+  try {
+    if (expectedRoomId) {
+      const raw = window.sessionStorage.getItem(MATCH_RECONNECT_KEY);
+      const record = raw ? JSON.parse(raw) as Partial<MatchReconnectRecord> : undefined;
+      if (record?.roomId !== expectedRoomId) return;
+    }
+    window.sessionStorage.removeItem(MATCH_RECONNECT_KEY);
+  } catch {
+    // Depolama yoksa silinecek bir sey de yok.
+  }
+}
+
+/**
+ * Yeniden yuklemeden sonra suren maca donulen oda; sahne `create` yerine onu
+ * kullaniyor. Kip kayittan: solo mac co-op rekoru olarak yazilmasin.
+ */
+let resumedMatch: { room: Room; mode: "solo" | "online" } | undefined;
+
+export function setResumedMatch(room: Room, mode: "solo" | "online") {
+  resumedMatch = { room, mode };
+}
+
+export function takeResumedMatch() {
+  const match = resumedMatch;
+  resumedMatch = undefined;
+  return match;
+}
+
+/** Kayitli anahtarla odaya donmeyi dener; olmazsa kaydi silip `undefined` doner. */
+export async function resumeSavedMatch(serverUrl: string, record: MatchReconnectRecord) {
+  try {
+    return await getSharedClient(serverUrl).reconnect(record.token);
+  } catch {
+    clearMatchReconnect(record.roomId);
+    return undefined;
+  }
+}

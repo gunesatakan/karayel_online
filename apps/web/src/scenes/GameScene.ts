@@ -228,7 +228,16 @@ import {
 import type { WorkerSkillChoice } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
 import { SnapshotPlaybackClock } from "@karayel/shared";
-import { clearActiveLobbyRoom, getActiveLobbyRoom, getSharedClient, retryExpiredSeatReservation, setActiveLobbyRoom } from "../online-session";
+import {
+  clearActiveLobbyRoom,
+  clearMatchReconnect,
+  getActiveLobbyRoom,
+  getSharedClient,
+  retryExpiredSeatReservation,
+  saveMatchReconnect,
+  setActiveLobbyRoom,
+  takeResumedMatch
+} from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
 import { getClearedStages, markStageCleared } from "../stage-progress";
 import { recordRun, type RunRecordOutcome } from "../run-records";
@@ -449,6 +458,8 @@ type RemovedEnemyTrace = {
  * bir baglantinin oyuncuyu raporda tutmasini engelliyor.
  */
 const RUN_REPORT_RELOAD_WAIT_MS = 1500;
+/** Performans kolu surukleme gonderimi: saniyede en fazla ~25 mesaj. */
+const PERFORMANCE_SEND_INTERVAL_MS = 40;
 
 /** Takim arkadasinin oldurmesinin patlamasi: gorunsun ama seninkiyle yarismasin. */
 const TEAMMATE_DEATH_BURST_INTENSITY = 0.5;
@@ -897,6 +908,15 @@ export class GameScene extends Phaser.Scene {
   private performanceSliderTowerId = "";
   private performanceSliderDragging = false;
   private optimisticPerformance?: { towerId: string; value: number };
+  /**
+   * Performans kolu gonderimi kisiliyor: surukleme her `pointermove`da
+   * yolluyordu, 240 Hz ekranda saniyede 240 mesaj. Sunucunun kovasi bunu
+   * kesiyor ve birakis degeri dusebiliyordu. Son deger hep gidiyor: bekleyen
+   * deger aralik dolunca ve parmak kalkinca hemen gonderiliyor.
+   */
+  private lastPerformanceSendAt = 0;
+  private pendingPerformanceSend?: { towerId: string; performance: number };
+  private pendingPerformanceTimer?: number;
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
@@ -1097,6 +1117,8 @@ export class GameScene extends Phaser.Scene {
   private bestOwnUltimate?: RunUltimateMoment;
   /** Oda lobiden geldi: rapordaki "Tekrar" oda kurma ekranini aciyor. */
   private startedFromLobby = false;
+  /** Sunucunun hata yuzunden kapattigi oda; kopunca yeniden baglanma denenmiyor. */
+  private roomAbortedId = "";
   private runReportCueTimers: number[] = [];
   private runReportRecordCuePlayed = false;
   /**
@@ -4380,8 +4402,13 @@ export class GameScene extends Phaser.Scene {
       await this.checkServerHealth();
       this.emitHudState({ status: "Bağlanıyor" });
 
+      const resumed = takeResumedMatch();
       const existingRoom = getActiveLobbyRoom();
-      if (existingRoom) {
+      if (resumed) {
+        // Sayfa yenilendi ve kayitli anahtarla suren maca donuldu.
+        this.room = resumed.room;
+        this.startedFromLobby = resumed.mode === "online";
+      } else if (existingRoom) {
         this.room = existingRoom;
         this.startedFromLobby = true;
       } else {
@@ -4406,6 +4433,7 @@ export class GameScene extends Phaser.Scene {
       this.room.send("card:sync");
       // Mac ortasina (sayfa yenileme) donuldu: suren Sessiz Mod'un geri sayimi.
       this.room.send("silent:sync");
+      this.rememberMatchReconnect(this.room);
       this.startPingLoop();
     } catch (error) {
       console.error(error);
@@ -5219,14 +5247,27 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.latestServerPerf = perf;
       if (this.latestPerfSnapshot) this.latestPerfSnapshot.perf = perf;
     });
+    // Sunucu bozulan odayi kapatiyor: yeniden baglanmayi denemenin anlami yok.
+    room.onMessage("room:error", (message: { message?: string }) => {
+      this.roomAbortedId = room.roomId;
+      clearMatchReconnect(room.roomId);
+      const text = message?.message ?? "Sunucu hatası: maç sonlandırıldı.";
+      this.showNotice(text, 8000);
+      this.emitHudState({ status: text });
+    });
     room.onLeave((code) => {
       if (this.room !== room) return;
+      if (this.roomAbortedId === room.roomId) {
+        clearActiveLobbyRoom(room.roomId);
+        return;
+      }
       // Rapor ekranda ve kosunun raporu gelip islendi: bitmis odaya 18 sn
       // yeniden baglanmaya calismanin bir getirisi yok (sunucu yeni bir oda
       // kurulurken bitmis odayi kapatiyor). Rapor DOM'da, kapanan soketten
       // etkilenmiyor. Rapor henuz gelmediyse baglanti yine deneniyor.
       if (this.matchResultShown && this.matchReport?.run) {
         clearActiveLobbyRoom(room.roomId);
+        clearMatchReconnect(room.roomId);
         return;
       }
       void this.reconnectRoom(room, code);
@@ -5242,6 +5283,20 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Keep the authoritative impact position through the interpolation delay,
       // then let the normal projectile renderer remove it on the next frame.
       removeAfter: performance.now() + this.playbackDelayMs + 50
+    });
+  }
+
+  /**
+   * Suren macin yeniden baglanma anahtarini sekmeye yazar. Sayfa yenilenirse
+   * menu once bu anahtarla ayni yuvaya donmeyi deniyor (bkz. `menu-ui`).
+   */
+  private rememberMatchReconnect(room: Room) {
+    if (this.matchResultShown) return;
+    saveMatchReconnect(room, {
+      mode: this.startedFromLobby ? "online" : "solo",
+      characterId: this.selectedCharacterId,
+      mapScale: this.runMapScale,
+      stage: this.selectedStage
     });
   }
 
@@ -5263,6 +5318,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         room.send("snapshot:requestFull");
         room.send("card:sync");
         room.send("silent:sync");
+        this.rememberMatchReconnect(room);
         this.reconnecting = false;
         this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
         this.emitHudState({ status: `#${room.roomId}` });
@@ -5274,6 +5330,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     this.reconnecting = false;
     clearActiveLobbyRoom(disconnectedRoom.roomId);
+    clearMatchReconnect(disconnectedRoom.roomId);
     this.setCardChoicePending(false, "Bağlantı kurulamadı. Oyuna yeniden girmen gerekiyor.");
     this.emitHudState({ status: `Koptu (${code})` });
   }
@@ -5289,6 +5346,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * iki kez sayilmasini engelliyor.
    */
   private handleMatchResult(result: "victory" | "defeat", summary: MatchResultSummary) {
+    // Bitmis maca yeniden yuklemede donulmuyor; rapor kaydi zaten yazildi.
+    if (this.room) clearMatchReconnect(this.room.roomId);
     const step = this.matchResultLatch.receive({ run: summary.run });
     if (step.record) this.recordRunResult(summary);
     // Dugmeye rapor gelmeden basilmisti: kayit yukarida (esanli) yazildi,
@@ -8464,6 +8523,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         }
       });
       this.input.on("pointerup", () => {
+        if (this.performanceSliderDragging) this.flushPerformanceSend();
         this.performanceSliderDragging = false;
       });
     }
@@ -8486,7 +8546,30 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
       this.drawSelectedTowerResources({ ...tower, performance }, discSize);
     }
-    this.room?.send("setTowerPerformance", { towerId: this.performanceSliderTowerId, performance });
+    this.queuePerformanceSend(this.performanceSliderTowerId, performance);
+  }
+
+  private queuePerformanceSend(towerId: string, value: number) {
+    if (this.pendingPerformanceSend && this.pendingPerformanceSend.towerId !== towerId) this.flushPerformanceSend();
+    this.pendingPerformanceSend = { towerId, performance: value };
+    const wait = PERFORMANCE_SEND_INTERVAL_MS - (performance.now() - this.lastPerformanceSendAt);
+    if (wait <= 0) {
+      this.flushPerformanceSend();
+      return;
+    }
+    this.pendingPerformanceTimer ??= window.setTimeout(() => this.flushPerformanceSend(), wait);
+  }
+
+  private flushPerformanceSend() {
+    if (this.pendingPerformanceTimer !== undefined) {
+      window.clearTimeout(this.pendingPerformanceTimer);
+      this.pendingPerformanceTimer = undefined;
+    }
+    const pending = this.pendingPerformanceSend;
+    if (!pending) return;
+    this.pendingPerformanceSend = undefined;
+    this.lastPerformanceSendAt = performance.now();
+    this.room?.send("setTowerPerformance", pending);
   }
 
   private drawEnemyHealthBar(graphics: Phaser.GameObjects.Graphics | undefined, enemy: EnemySnapshot, displayedSize: number) {
