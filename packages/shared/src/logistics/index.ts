@@ -6,20 +6,23 @@
  * gucunu beslemek eskisinden bir tik fazla emek istiyor ama hat artik
  * nefessiz degil. Kapasiteler ayni yolu izledi (12 -> 6 -> 9).
  *
+ * Sonra isci ekonomisi bir kez daha 1,5 kat hizlandi: cikarma 10,67 sn ->
+ * 7,11 sn, kapasiteler 9 -> 13,5, 3 -> 4,5, 1,5 -> 2,25.
+ *
  * Isci alimi, gelismis isci ve isci kartlari bu tabanin uzerine biniyor;
  * hepsi carpan oldugu icin oranlar korunuyor.
  */
-export const RESOURCE_EXTRACTION_DURATION_MS = 10_667;
+export const RESOURCE_EXTRACTION_DURATION_MS = 7_111;
 /** Kapasiteler de ayni yolu izledi; bkz. `RESOURCE_EXTRACTION_DURATION_MS`. */
-export const LOGISTICS_WORKER_CAPACITY = 9;
-export const ENERGY_LOGISTICS_WORKER_CAPACITY = 9;
-export const AMMO_LOGISTICS_WORKER_CAPACITY = 3;
+export const LOGISTICS_WORKER_CAPACITY = 13.5;
+export const ENERGY_LOGISTICS_WORKER_CAPACITY = 13.5;
+export const AMMO_LOGISTICS_WORKER_CAPACITY = 4.5;
 /**
- * Kesirli: 1'in 1,5 kati. Kesirli kapasite oyunda zaten olagan -- kart ve
+ * Kesirli: 1'in 2,25 kati. Kesirli kapasite oyunda zaten olagan -- kart ve
  * esya carpanlari (orn. Seyyar Depo x1,4) her kapasiteyi kesirli yapiyor;
  * gosterim tabana yuvarliyor.
  */
-export const AMMO_COLLECTOR_WORKER_CAPACITY = 1.5;
+export const AMMO_COLLECTOR_WORKER_CAPACITY = 2.25;
 export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 
 /**

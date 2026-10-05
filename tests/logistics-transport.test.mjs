@@ -47,15 +47,15 @@ function worker(mode, x = 20, y = 20) {
   };
 }
 
-test("cephane hammaddesi toplayıcısı 1,5, mühimmat taşıyıcısı 3 kapasiteyle doğar", () => {
+test("cephane hammaddesi toplayıcısı 2,25, mühimmat taşıyıcısı 4,5 kapasiteyle doğar", () => {
   const room = new MatchRoom();
   room.state = { players: new Map([["p1", { ownedShopItemIds: [], inventoryItemIds: [] }]]) };
   room.ensureLogisticsWorkers();
 
   const collector = room.drones.get("logistics-p1-ammoCollector");
   const transporter = room.drones.get("logistics-p1-ammoTransport");
-  assert.equal(collector.capacity, 1.5);
-  assert.equal(transporter.capacity, 3);
+  assert.equal(collector.capacity, 2.25);
+  assert.equal(transporter.capacity, 4.5);
 });
 
 test("enerji tasiyicisi stok bosken reaktore donup bekler", () => {

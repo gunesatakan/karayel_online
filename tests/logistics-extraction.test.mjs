@@ -24,7 +24,7 @@ test("kaynak çıkarma süresi dolmadan tamamlanmaz", () => {
 test("kaynak çıkarma son saniyede tamamlanır", () => {
   // Sayilar yarilandi (bkz. logistics/index.ts); test sabiti degil suresini
   // okuyor, ama tabanin ne oldugunu yine de burada sabitliyor.
-  // Sure tam saniye olmak zorunda degil (10.667 ms); son adim kusurati da
+  // Sure tam saniye olmak zorunda degil (7.111 ms); son adim kusurati da
   // kapatan adim. Tam saniye varsayan dongu kusurlu surede hic bitmezdi.
   const adim = Math.ceil(RESOURCE_EXTRACTION_DURATION_MS / 1000);
   let remainingMs;
@@ -33,10 +33,11 @@ test("kaynak çıkarma son saniyede tamamlanır", () => {
     remainingMs = state.remainingMs;
     assert.equal(state.completed, second === adim - 1);
   }
-  assert.equal(RESOURCE_EXTRACTION_DURATION_MS, 10_667);
-  assert.equal(LOGISTICS_WORKER_CAPACITY, 9);
-  assert.equal(AMMO_LOGISTICS_WORKER_CAPACITY, 3);
-  assert.equal(AMMO_COLLECTOR_WORKER_CAPACITY, 1.5);
+  // Isci ekonomisi 1,5 kat: cikarma 10.667 -> 7.111 ms, kapasiteler x1,5.
+  assert.equal(RESOURCE_EXTRACTION_DURATION_MS, 7_111);
+  assert.equal(LOGISTICS_WORKER_CAPACITY, 13.5);
+  assert.equal(AMMO_LOGISTICS_WORKER_CAPACITY, 4.5);
+  assert.equal(AMMO_COLLECTOR_WORKER_CAPACITY, 2.25);
   assert.equal(RESOURCE_PROVIDER_INITIAL_STOCK, 0);
   assert.equal(AMMO_FACTORY_INITIAL_ENERGY, 20);
   assert.equal(remainingMs, 0);
