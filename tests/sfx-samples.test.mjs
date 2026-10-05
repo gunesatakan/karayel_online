@@ -26,7 +26,7 @@ const samples = await importWebModule("apps/web/src/sfx-samples.ts");
 const hit = await importWebModule("apps/web/src/hit-sounds.ts");
 const director = await importWebModule("apps/web/src/feedback-director.ts");
 const profiles = await importWebModule("apps/web/src/vfx/vfx-profiles.ts");
-const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_KILL_SECONDS, MAX_TICK_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
+const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
 const { towerCatalog, FEEDBACK_KIND_RULES, FeedbackGovernor } = await import("../packages/shared/dist/index.js");
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -167,6 +167,11 @@ async function makeDirector(options = {}, decodeMode = "ok") {
 const sources = (context) => context.created.filter((node) => node.kind === "bufferSource");
 const oscillators = (context) => context.created.filter((node) => node.kind === "oscillator");
 const familyOf = (file) => manifestByFile.get(file)?.family;
+/** Oldurme sesleri: meka hafif (er), agir (kaba), ucan (kosucu). */
+const LIGHT = samples.getKillSoundCue("grunt", "meka");
+const HEAVY = samples.getKillSoundCue("brute", "meka");
+const isBody = (node) => familyOf(node.buffer?.file)?.startsWith("body");
+const isVoice = (node) => familyOf(node.buffer?.file)?.startsWith("voice");
 /** Kanal dugumleri (vurus ve Efektler kanali): ses basina degil, bir kez kuruluyor. */
 const isBus = (node) => node.connections[0]?.kind === "compressor" || node.connections[0]?.connections?.[0]?.kind === "compressor";
 
@@ -251,14 +256,28 @@ test("seviyeler sentezle eslesik: ailenin etkin tepesi hedef araliginda, oldurme
     const top = samples.SAMPLE_TIERS[2].gain;
     assert.ok(effectivePeak(voice, top) + effectivePeak("heft", samples.SAMPLE_FAMILIES[voice].gain * top) <= 0.6, `${voice} sv 10 cok yuksek`);
   }
-  for (const [id, low, high] of [["killLight", 0.17, 0.26], ["killAir", 0.17, 0.26], ["killHeavy", 0.25, 0.34], ["crit", 0.1, 0.2]]) {
+  // Oldurme: govde eski oldurme seviyesinde (hafif ~0.2, agir ~0.3), olum sesi onun altinda.
+  const ranges = [["bodyLight", 0.15, 0.22], ["bodyAir", 0.15, 0.22], ["bodyHeavy", 0.22, 0.3], ["crit", 0.1, 0.2]];
+  for (const family of samples.KILL_VOICE_FAMILIES) {
+    ranges.push(family.endsWith("Heavy") ? [family, 0.14, 0.22] : [family, 0.1, 0.16]);
+  }
+  for (const [id, low, high] of ranges) {
     const peak = effectivePeak(id);
     assert.ok(peak >= low && peak <= high, `${id} etkin tepe ${peak.toFixed(3)} (${low}-${high})`);
   }
-  assert.ok(effectivePeak("killHeavy") > effectivePeak("killLight"), "agir oldurme hafiften dolgun");
-  // Vurus kanali varsayilan 0.5: en yuksek vurus Efektler'de hafif oldurmeden kisik ama yarisindan yuksek.
+  for (const voice of samples.KILL_VOICE_FAMILIES) {
+    const rms = Math.max(...samples.SAMPLE_FAMILIES[voice].files.map((file) => 10 ** (manifestByFile.get(file).rmsDb / 20)));
+    assert.ok(samples.SAMPLE_FAMILIES[voice].gain * rms <= 0.046, `${voice} RMS cok yuksek`);
+  }
+  assert.ok(effectivePeak("bodyHeavy") > effectivePeak("bodyLight"), "agir govde hafiften dolgun");
+  // Iki katmanin tepeleri ust uste gelse bile en agir oldurme 0.5'i asmiyor.
+  for (const race of samples.ENEMY_RACES) {
+    const cue = samples.getKillSoundCue("brute", race, false, true);
+    assert.ok(effectivePeak(cue.body) + effectivePeak(cue.voice) <= 0.5, `${race} agir oldurme cok yuksek`);
+  }
+  // Vurus kanali varsayilan 0.5: en yuksek vurus Efektler'de hafif oldurme govdesinden kisik ama yarisindan yuksek.
   const loudestHit = Math.max(...hit.HIT_VOICE_IDS.map((voice) => effectivePeak(voice))) * 0.5;
-  assert.ok(loudestHit < effectivePeak("killLight") && loudestHit > effectivePeak("killLight") * 0.5);
+  assert.ok(loudestHit < effectivePeak("bodyLight") && loudestHit > effectivePeak("bodyLight") * 0.5);
 });
 
 test("Efektler kanali sikistirici ve son bir sinirlayicidan cikiyor", async () => {
@@ -331,32 +350,36 @@ test("sv 10 govdesi yuvayi paylasiyor: butce ikisinden uzununu tutuyor", async (
   instance.destroy();
 });
 
-test("oldurme butcede gercek suresiyle; arkadasin agir oldurmesi kisa ve kisik", async () => {
+test("oldurme butcede en uzun katmanin suresiyle; arkadasinki kisik ve kisa sesli", async () => {
   const { instance, context } = await makeDirector();
   advance();
-  instance.emit("kill", { own: true, x: 0, y: 0 }, "killHeavy");
+  instance.emit("kill", { own: true, x: 0, y: 0 }, HEAVY, "h1");
+  const layers = sources(context);
+  assert.deepEqual(layers.map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"], "agir oldurme: govde ve derin ses");
   advance(400);
-  assert.equal(instance.getBudgetUsage().voices, 1, "agir oldurme 400 ms sonra hala butcede");
+  assert.equal(instance.getBudgetUsage().voices, 1, "agir oldurme 400 ms sonra hala butcede (ses 420 ms)");
   advance(200);
   assert.equal(instance.getBudgetUsage().voices, 0);
   assert.equal(FEEDBACK_KIND_RULES.kill.soundMs, 120, "kural yalnizca sentez yedegi icin");
 
   advance();
-  const mate = instance.emit("kill", { own: false, x: 90, y: 0 }, "killHeavy");
+  const before = sources(context).length;
+  const mate = instance.emit("kill", { own: false, x: 90, y: 0 }, HEAVY, "m1");
   assert.equal(mate.sound, true);
-  const played = sources(context).at(-1);
-  assert.equal(familyOf(played.buffer.file), "killLight", "arkadasin agir oldurmesi kisa ezilme");
-  assert.ok(played.connections[0].gain.value < samples.SAMPLE_FAMILIES.killLight.gain * 0.5, "kisik");
+  const played = sources(context).slice(before);
+  const body = played.find(isBody);
+  assert.ok(body.connections[0].gain.value < samples.SAMPLE_FAMILIES.bodyHeavy.gain * 0.5, "arkadasin govdesi kisik");
+  for (const node of played.filter(isVoice)) assert.ok(familyOf(node.buffer.file).endsWith("Light"), "arkadasin sesi hep kisa");
 
   // Normal co-op yogunlugu: saniyede ~3 arkadas oldurmesi ve senin 1 oldurmen; arkadasinkiler duyuluyor.
   advance();
   let mates = 0;
   let mateHeard = 0;
   for (let ms = 0; ms < 3000; ms += 50) {
-    if (ms % 1000 === 0) instance.emit("kill", { own: true, x: ms, y: 5 }, "killLight");
+    if (ms % 1000 === 0) instance.emit("kill", { own: true, x: ms, y: 5 }, LIGHT, `o${ms}`);
     if (ms % 350 === 0) {
       mates += 1;
-      if (instance.emit("kill", { own: false, x: ms, y: 40 }, ms % 700 === 0 ? "killHeavy" : "killLight").sound) mateHeard += 1;
+      if (instance.emit("kill", { own: false, x: ms, y: 40 }, ms % 700 === 0 ? HEAVY : LIGHT, `t${ms}`).sound) mateHeard += 1;
     }
     advance(50);
   }
@@ -364,13 +387,114 @@ test("oldurme butcede gercek suresiyle; arkadasin agir oldurmesi kisa ve kisik",
   instance.destroy();
 });
 
-test("oldurme ailesi dusmanin agirligindan: agir patlama, ucan parcalanma, digeri kisa ezilme", () => {
-  assert.equal(samples.getKillSoundFamily("brute"), "killHeavy");
-  assert.equal(samples.getKillSoundFamily("siege", true), "killHeavy", "agir dusman havada da agir");
-  assert.equal(samples.getKillSoundFamily("runner", true), "killAir");
-  assert.equal(samples.getKillSoundFamily("grunt"), "killLight");
-  assert.equal(samples.getKillSoundFamily("shooter", false), "killLight");
-  assert.equal(samples.getKillSoundFamily(undefined), "killLight");
+test("her irk x agirlik x hava x sampiyon organik bir govde ve olum sesine iniyor", () => {
+  const types = ["grunt", "runner", "shooter", "brute", "siege"];
+  for (const race of samples.ENEMY_RACES) {
+    for (const type of types) {
+      for (const air of [false, true]) {
+        for (const champion of [false, true]) {
+          const cue = samples.getKillSoundCue(type, race, air, champion);
+          const heavy = type === "brute" || type === "siege";
+          assert.equal(cue.body, heavy ? "bodyHeavy" : air ? "bodyAir" : "bodyLight", `${race}/${type}/${air}`);
+          assert.ok(samples.KILL_VOICE_FAMILIES.includes(cue.voice) && samples.KILL_VOICE_FAMILIES.includes(cue.teammateVoice));
+          if (heavy || champion) {
+            assert.equal(cue.voice, `voice${race[0].toUpperCase()}${race.slice(1)}Heavy`, "agir ve sampiyon irkin derin sesi");
+            assert.equal(cue.forceVoice, true);
+          } else {
+            assert.equal(cue.voice, air ? "voiceAir" : `voice${race[0].toUpperCase()}${race.slice(1)}Light`);
+            assert.equal(cue.forceVoice, false);
+          }
+          assert.ok(!cue.teammateVoice.endsWith("Heavy") || champion, "arkadasin sesi kisa");
+          assert.equal(samples.getKillSoundCue(type, race, air, champion), cue, "onceden kurulmus, oldurme basina nesne yok");
+        }
+      }
+    }
+  }
+  assert.equal(samples.getKillSoundCue("grunt", undefined), LIGHT, "irk bilinmiyorsa meka");
+  // Galeri: irk x (hafif, agir) ve hava.
+  assert.equal(samples.GALLERY_KILL_CUES.length, samples.ENEMY_RACES.length * 2 + 1);
+  assert.ok(samples.GALLERY_KILL_CUES.some((entry) => entry.label === "Ölüm: böcek (hafif)"));
+});
+
+test("oldurmede metal ya da patlama yok: govde ezilme paketinden, ses yaratik paketlerinden", () => {
+  for (const family of samples.KILL_SOUND_FAMILIES) {
+    for (const file of samples.SAMPLE_FAMILIES[family].files) {
+      const entry = manifestByFile.get(file);
+      assert.doesNotMatch(entry.source, /metal|explosion|crunch|glass|plate|impact\/|scifi\/|tin|bell/i, `${file}: ${entry.source}`);
+      if (family.startsWith("body")) assert.match(entry.source, /^squish\//, `${file} govde ezilme paketinden`);
+      else assert.match(entry.source, /^creature[12]\//, `${file} ses yaratik paketlerinden`);
+      // Komik ya da insan sesleri yok.
+      assert.doesNotMatch(entry.source, /cute|burp|cough|snore|nose|bark|human|ooh|eat_/, `${file}: ${entry.source}`);
+      assert.equal(entry.layer, family.startsWith("body") ? "body" : "voice");
+    }
+  }
+  for (const name of readdirSync(sfxDir)) assert.doesNotMatch(name, /^kill-(light|heavy|air)-/, `eski oldurme dosyasi kaldi: ${name}`);
+});
+
+test("olum sesi seyrek ve deterministik: kendi ~3/sn, arkadas ~1/sn; agir ve sampiyon her zaman", () => {
+  const original = Math.random;
+  Math.random = () => { throw new Error("Math.random kullanildi"); };
+  try {
+    const run = () => {
+      const gate = new samples.KillVoiceGate();
+      const log = [];
+      // On saniye: saniyede 12 kendi, 12 arkadas oldurmesi (kalabalik dalga).
+      for (let ms = 0; ms < 10_000; ms += 40) {
+        for (const own of [true, false]) {
+          const key = `${own ? "o" : "t"}${ms}`;
+          if (gate.check(own, LIGHT, key, ms)) {
+            gate.commit(own, ms);
+            log.push([own, ms]);
+          }
+        }
+      }
+      return log;
+    };
+    const first = run();
+    assert.deepEqual(run(), first, "ayni oldurmeler ayni sesler");
+    const own = first.filter(([mine]) => mine).length;
+    const mate = first.filter(([mine]) => !mine).length;
+    assert.ok(own <= 31 && own >= 15, `kendi: 10 sn'de ${own} ses`);
+    assert.ok(mate <= 10 && mate >= 4, `arkadas: 10 sn'de ${mate} ses`);
+    for (let index = 1; index < first.length; index += 1) {
+      assert.ok(first[index][1] - first[index - 1][1] >= samples.KILL_VOICE_LIMITS.minGapMs, "iki ses ust uste binmiyor");
+    }
+
+    // Agir dusman: her biri (araliklar en az 120 ms); sampiyon araliga da bakmiyor.
+    const gate = new samples.KillVoiceGate();
+    for (let ms = 0; ms < 3000; ms += 150) {
+      assert.equal(gate.check(true, HEAVY, `h${ms}`, ms), true, `agir oldurme ${ms}`);
+      gate.commit(true, ms);
+    }
+    const champion = samples.getKillSoundCue("grunt", "golem", false, true);
+    assert.equal(gate.check(true, champion, "c", 2851), true, "sampiyon hemen arkasindan da");
+    assert.equal(gate.check(false, champion, "c2", 2852), true, "arkadasin sampiyonu da");
+    assert.equal(gate.check(false, HEAVY, "x", 2900), false, "arkadasin agir oldurmesi seyreltiliyor");
+  } finally {
+    Math.random = original;
+  }
+});
+
+test("yonetmende: govde her oldurmede, ses seyrek; agir oldurme hep sesli", async () => {
+  const { instance, context } = await makeDirector();
+  advance();
+  let bodies = 0;
+  for (let index = 0; index < 40; index += 1) {
+    if (instance.emit("kill", { own: true, x: index * 20, y: 0 }, LIGHT, `k${index}`).sound) bodies += 1;
+    advance(80);
+  }
+  assert.equal(sources(context).filter(isBody).length, bodies, "her calan oldurmede govde");
+  const voices = sources(context).filter(isVoice).length;
+  assert.ok(voices > 0 && voices <= Math.ceil((40 * 80) / samples.KILL_VOICE_LIMITS.ownGapMs), `${voices} ses / ${bodies} oldurme`);
+
+  advance();
+  for (let index = 0; index < 5; index += 1) {
+    const before = sources(context).length;
+    assert.equal(instance.emit("kill", { own: true, x: index * 40, y: 99 }, HEAVY, `b${index}`).sound, true);
+    assert.equal(sources(context).slice(before).filter(isVoice).length, 1, "agir oldurme sesli");
+    advance(400);
+  }
+  instance.destroy();
 });
 
 /* ------------------------------------------------------------------ */
@@ -384,9 +508,10 @@ test("manifestteki her dosya diskte, sure ve boyut butcesinin altinda; lisans ya
     assert.ok(existsSync(path), `${entry.file} diskte yok`);
     const bytes = statSync(path).size;
     assert.equal(bytes, entry.bytes, `${entry.file} manifestle ayni boyutta degil (yeniden uretin)`);
-    const kill = entry.family.startsWith("kill");
+    const kill = entry.layer !== undefined;
     assert.ok(bytes <= (kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes), `${entry.file} ${bytes} bayt`);
-    assert.ok(entry.durationMs / 1000 <= (kill ? MAX_KILL_SECONDS : MAX_HIT_SECONDS) + 0.005, `${entry.file} ${entry.durationMs} ms`);
+    const limit = entry.layer === "body" ? MAX_BODY_SECONDS : entry.layer === "voice" ? MAX_VOICE_SECONDS : MAX_HIT_SECONDS;
+    assert.ok(entry.durationMs / 1000 <= limit + 0.005, `${entry.file} ${entry.durationMs} ms`);
     assert.ok(entry.midBandDb >= MIN_MID_BAND_DB, `${entry.file} telefon bandinda enerji yok (${entry.midBandDb} dB)`);
     assert.ok(entry.peakDb <= -0.5, `${entry.file} tepe ${entry.peakDb} dBFS`);
     assert.match(entry.file, /\.mp3$/, "her tarayicinin cozdugu bicim");
@@ -568,8 +693,8 @@ test("seviye 0, kapali baglam ya da gizli sekme: hic dugum yok", async () => {
   const muted = await makeDirector({ sfxVolume: 0 });
   const mutedBefore = muted.context.created.length;
   assert.equal(muted.instance.playHit("projectile", 1, true, "z"), false);
-  assert.equal(muted.instance.emit("kill", { own: true }, "killHeavy").sound, false);
-  assert.equal(muted.instance.previewKill("killHeavy"), false);
+  assert.equal(muted.instance.emit("kill", { own: true }, HEAVY, "m").sound, false);
+  assert.equal(muted.instance.previewKill(HEAVY), false);
   assert.equal(muted.context.created.length, mutedBefore, "Efektler 0: oldurme de vurus da sessiz");
   muted.instance.destroy();
 
@@ -630,8 +755,8 @@ test("onizleme ornegi caliyor, oyunun butcesinin disinda", async () => {
     assert.equal(familyOf(played[1].buffer.file), "heft", "Sv 10 dinlemesi govdeyle");
     assert.equal(instance.getBudgetUsage().hitVoices, 6, "onizleme yuva yemiyor");
     clock += director.HIT_PREVIEW_GAP_MS;
-    assert.equal(instance.previewKill("killHeavy"), true);
-    assert.equal(familyOf(sources(context).at(-1).buffer.file), "killHeavy");
+    assert.equal(instance.previewKill(HEAVY), true);
+    assert.deepEqual(sources(context).slice(-2).map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"], "galeri govde ve sesi birlikte caliyor");
     instance.destroy();
   }
 });
@@ -645,10 +770,10 @@ test("oldurme sesi dusmanin ailesinden; kombo perdeyi degistirmiyor", async () =
   {
     const rateAt = async (step) => {
       const { instance, context } = await makeDirector();
-      const decision = instance.emit("kill", { own: true, step }, "killHeavy");
+      const decision = instance.emit("kill", { own: true, step }, HEAVY, "same");
       assert.equal(decision.sound, true);
       const [source] = sources(context);
-      assert.equal(familyOf(source.buffer.file), "killHeavy");
+      assert.equal(familyOf(source.buffer.file), "bodyHeavy");
       const gain = source.connections[0].gain.value;
       instance.destroy();
       return { rate: source.playbackRate.value, gain };
@@ -663,20 +788,21 @@ test("oldurme sesi dusmanin ailesinden; kombo perdeyi degistirmiyor", async () =
     for (let index = 0; index < 10; index += 1) {
       clock += 200;
       context.currentTime += 0.2;
-      instance.emit("kill", { own: true, x: index * 50, y: 0 }, "killLight");
+      instance.emit("kill", { own: true, x: index * 50, y: 0 }, LIGHT, `c${index}`);
     }
-    const rates = sources(context).map((node) => node.playbackRate.value);
+    const rates = sources(context).filter(isBody).map((node) => node.playbackRate.value);
     assert.equal(rates.length, 10);
     assert.ok(rates.every((rate) => Math.abs(rate - 1) <= samples.SAMPLE_RATE_SPREAD + 1e-9));
     assert.ok(rates.slice(1).some((rate, index) => rate < rates[index]), "tirmanan perde yok");
-    assert.ok(sources(context).every((node) => familyOf(node.buffer.file) === "killLight"));
+    assert.ok(sources(context).every((node) => ["bodyLight", "voiceMekaLight"].includes(familyOf(node.buffer.file))));
 
     // Takim arkadasinin oldurmesi kisik.
     clock += 5000;
     context.currentTime += 5;
-    instance.emit("kill", { own: false }, "killLight");
-    const mate = sources(context).at(-1).connections[0].gain.value;
-    assert.ok(mate < samples.SAMPLE_FAMILIES.killLight.gain * 0.5, "arkadasin oldurmesi kisik");
+    const before = sources(context).length;
+    instance.emit("kill", { own: false }, LIGHT, "mate");
+    const mate = sources(context).slice(before).find(isBody).connections[0].gain.value;
+    assert.ok(mate < samples.SAMPLE_FAMILIES.bodyLight.gain * 0.5, "arkadasin oldurmesi kisik");
     instance.destroy();
   }
 });
@@ -710,11 +836,12 @@ test("oldurme basina altin tinisi yok; altin yalnizca gorunuyor", async () => {
 
   // Kendi oldurmen: oldurme sesi ve altin olayi; tek kaynak, tini yok.
   const { instance, context } = await makeDirector();
-  instance.emit("kill", { own: true, x: 0, y: 0 }, "killLight");
+  instance.emit("kill", { own: true, x: 0, y: 0 }, LIGHT, "coin-kill");
   const coin = instance.emit("coin", { own: true, x: 0, y: -10 });
   assert.equal(coin.show, true, "+N sayisi yine cikiyor");
   assert.equal(coin.sound, false);
-  assert.equal(sources(context).length, 1);
+  assert.equal(sources(context).filter(isBody).length, 1);
+  assert.ok(sources(context).every((node) => isBody(node) || isVoice(node)), "yalnizca oldurmenin katmanlari");
   assert.equal(oscillators(context).length, 0, "muzikal tini yok");
 
   // Savasta sik calan sentez seslerinde (oldurme yedegi, seviye, kademe) sabit nota yok: hepsi kayiyor.
@@ -733,7 +860,7 @@ test("kritik ornekli; Efektler onizlemesi hafif oldurme sesi ve seyrek", async (
     assert.equal(familyOf(sources(context)[0].buffer.file), "crit");
     clock += 1000;
     assert.equal(instance.previewSfx(), true);
-    assert.equal(familyOf(sources(context).at(-1).buffer.file), "killLight");
+    assert.ok(sources(context).slice(1).some((node) => familyOf(node.buffer.file) === "bodyLight"));
     clock += 100;
     assert.equal(instance.previewSfx(), false, "surukleme: 250 ms dolmadan ikincisi yok");
     instance.destroy();
@@ -751,7 +878,7 @@ test("cozme basarisizsa ses sentezle devam ediyor; hata firlamiyor", async () =>
     assert.equal(instance.playHit("projectile", 1, true, "a"), true, `${mode}: vurus yine caliyor`);
     assert.equal(sources(context).filter((node) => node.buffer?.file).length, 0, "ornek yok");
     assert.ok(oscillators(context).length > 0, "sentez yedegi");
-    assert.equal(instance.emit("kill", { own: true }, "killHeavy").sound, true);
+    assert.equal(instance.emit("kill", { own: true }, HEAVY, "f").sound, true);
     instance.destroy();
   }
 
@@ -802,7 +929,8 @@ test("dosyalar dokunustan once iniyor, ilk dokunusta (askidaki baglamda da) cozu
     await suspended.whenSamplesLoaded();
     assert.equal(context.decoded, total, "askida da cozuldu");
     assert.equal(requested.length, total, "onceden inen veri kullanildi");
-    assert.equal(suspended.hasSample("killHeavy"), true);
+    assert.equal(suspended.hasSample("bodyHeavy"), true);
+    assert.equal(suspended.hasSample("voiceGolemHeavy"), true);
   } finally {
     FakeContext.prototype.resume = originalResume;
     window.AudioContext = FakeContext;
@@ -821,7 +949,7 @@ test("cozulurken ornekli sesler sessiz (eski sentez caliyor degil); gelince orne
   const instance = new director.FeedbackDirector({ sfxVolume: 0.6, hitVolume: 0.5, vibration: false, getCamera: () => undefined, loadSample: slowLoader });
   instance.unlockAudio();
   const context = FakeContext.instances.at(-1);
-  const kill = instance.emit("kill", { own: true, x: 0, y: 0 }, "killLight");
+  const kill = instance.emit("kill", { own: true, x: 0, y: 0 }, LIGHT, "early");
   assert.equal(kill.sound, false, "oldurme sessiz");
   assert.equal(kill.show, true, "gorsel yine karar aliyor");
   assert.equal(instance.playHit("impact", 1, true, "a"), false, "vurus sessiz");
@@ -834,8 +962,8 @@ test("cozulurken ornekli sesler sessiz (eski sentez caliyor degil); gelince orne
   for (const open of gates) open();
   await instance.whenSamplesLoaded();
   advance();
-  assert.equal(instance.emit("kill", { own: true, x: 50, y: 0 }, "killLight").sound, true);
-  assert.equal(familyOf(sources(context).at(-1).buffer.file), "killLight");
+  assert.equal(instance.emit("kill", { own: true, x: 50, y: 0 }, HEAVY, "late").sound, true);
+  assert.deepEqual(sources(context).map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"]);
   instance.destroy();
 });
 
@@ -891,7 +1019,7 @@ test("bastaki kodlayici dolgusu atlaniyor: kaynak ilk duyulan ornekten basliyor"
   const context = FakeContext.instances.at(-1);
   advance();
   instance.playHit("projectile", 1, true, "p");
-  instance.emit("kill", { own: true }, "killLight");
+  instance.emit("kill", { own: true }, HEAVY, "lead");
   for (const source of sources(context)) assert.ok(Math.abs(source.offset - 1105 / rate) < 1e-9, "dolgu atlandi");
   instance.destroy();
 });
@@ -903,11 +1031,12 @@ test("bastaki kodlayici dolgusu atlaniyor: kaynak ilk duyulan ornekten basliyor"
 test("oyun ve galeri baglantisi: oldurme ailesi dusmandan, kaydirici onizlemesi, galeride oldurme sesleri", () => {
   const scene = read("apps/web/src/scenes/GameScene.ts");
   const kill = scene.slice(scene.indexOf("private playKillConfirmation("), scene.indexOf("private playKillCoin("));
-  assert.ok(/emit\("kill",[\s\S]*getKillSoundFamily\(trace\.type, trace\.air\)\)/.test(kill), "oldurme sesi dusmanin agirligindan");
+  assert.ok(/emit\("kill",[\s\S]*getKillSoundCue\(trace\.type, trace\.race, trace\.air, trace\.champion\), event\.enemyId\)/.test(kill), "oldurme sesi dusmanin agirligindan, irkindan ve kimliginden");
+  assert.ok(/race: mover\.race,\s*champion: Boolean\(mover\.crown\)/.test(scene), "iz irki ve sampiyonu tasiyor");
   assert.ok(!scene.includes('playSfx("coin"'), "altin tinisi hicbir yerde calinmiyor");
   assert.ok(scene.includes("this.feedback?.previewSfx()"), "Efektler kaydiricisi onizlemesi");
 
   const gallery = read("apps/web/src/scenes/VfxGalleryScene.ts");
-  assert.ok(gallery.includes("KILL_SOUND_FAMILIES"), "secicide oldurme sesleri");
+  assert.ok(gallery.includes("GALLERY_KILL_CUES"), "secicide irk ve agirlik oldurme sesleri");
   assert.ok(gallery.includes("previewKill("), "Sv dugmeleri oldurme sesini caliyor");
 });

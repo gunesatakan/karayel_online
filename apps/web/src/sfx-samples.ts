@@ -1,10 +1,15 @@
 /**
  * Kayitli savas sesleri: vurus, oldurme ve kritik ornekleri.
  *
- * Dosyalar `public/audio/sfx/` altinda, `tools/build-sfx.mjs` Kenney'nin CC0
- * paketlerinden uretiyor (lisans ve kaynaklar oradaki LICENSE.txt ve
- * manifest.json'da). Hepsi ayni yukseklige esitlenmis; aileler arasi denge
- * burada, `gain` ile.
+ * Dosyalar `public/audio/sfx/` altinda, `tools/build-sfx.mjs` CC0 paketlerden
+ * uretiyor (lisans ve kaynaklar oradaki LICENSE.txt ve manifest.json'da):
+ * vuruslar Kenney'den (sert, mekanik), oldurmeler OpenGameArt'in ezilme ve
+ * yaratik paketlerinden (organik). Hepsi ayni yukseklige esitlenmis; aileler
+ * arasi denge burada, `gain` ile.
+ *
+ * Oldurme iki katman: her zaman bir govde (islak ezilme, dusmanin agirligina
+ * gore) ve seyrek bir olum sesi (irka gore; `KillVoiceGate`). Meka dahil
+ * hicbir oldurmede metal ya da patlama yok.
  *
  * Her vurus turunun ve siluet sesinin kendi ailesi var; aileler ayni kaynak
  * dosyayi paylasmiyor. Aile basina 2-3 cesit: art arda ayni cesit hic
@@ -18,12 +23,26 @@
  * ornekli sesler sessiz; cozulemezse (ag, bicim) oyun sentez seslerine
  * dusuyor ve sonraki dokunusta yeniden deniyor. Hicbir yol hata firlatmiyor.
  */
-import { isHeavyEnemyType, type EnemyType } from "@karayel/shared";
+import { isHeavyEnemyType, type EnemyRace, type EnemyType } from "@karayel/shared";
 import type { HitVoiceId } from "./hit-sounds";
 import { fnvUnit, toTier } from "./vfx/kit";
 
-/** Oldurme sesinin ailesi: dusmanin agirligina ve ucup ucmadigina gore. */
-export type KillSoundFamily = "killLight" | "killHeavy" | "killAir";
+/** Oldurmenin govde katmani: dusmanin agirligina ve ucup ucmadigina gore. */
+export type KillBodyFamily = "bodyLight" | "bodyHeavy" | "bodyAir";
+
+const RACE_KEYS = {
+  meka: "Meka",
+  spaceBug: "SpaceBug",
+  fourthDimensional: "FourthDimensional",
+  holyGuardian: "HolyGuardian",
+  fallen: "Fallen",
+  golem: "Golem"
+} as const satisfies Record<EnemyRace, string>;
+type RaceKey = (typeof RACE_KEYS)[EnemyRace];
+
+/** Oldurmenin ses katmani: irk x agirlik; ucanlarda irktan bagimsiz dusen ciglik. */
+export type KillVoiceFamily = `voice${RaceKey}${"Light" | "Heavy"}` | "voiceAir";
+export type KillSoundFamily = KillBodyFamily | KillVoiceFamily;
 /** Odul seslerinden ornekli olanlar. */
 export type SfxSampleFamily = KillSoundFamily | "crit";
 export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
@@ -76,22 +95,139 @@ export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = O
   dart: family("dart", 2, 0.22, "Ok"),
   // Sv 10 govdesi ana ornegin kazanc dugumune bagli (ayni yuva); dosya 6 dB kisik.
   heft: family("heft", 1, 1, "Sv 10 gövdesi"),
-  killLight: family("kill-light", 2, 0.235, "Ölüm (hafif)"),
-  killHeavy: family("kill-heavy", 2, 0.355, "Ölüm (ağır)"),
-  killAir: family("kill-air", 2, 0.225, "Ölüm (hava)"),
-  crit: family("crit", 2, 0.18, "Kritik")
+  crit: family("crit", 2, 0.18, "Kritik"),
+  // Oldurme govdesi (squish paketi): etkin tepe hafif/hava ~0.18, agir ~0.26.
+  bodyLight: family("kill-body-light", 3, 0.2, "Ölüm gövdesi (hafif)"),
+  bodyHeavy: family("kill-body-heavy", 2, 0.31, "Ölüm gövdesi (ağır)"),
+  bodyAir: family("kill-body-air", 2, 0.21, "Ölüm gövdesi (hava)"),
+  // Olum sesi (yaratik paketleri): govdenin altinda; hafif ~0.13, agir ~0.18.
+  voiceSpaceBugLight: family("kill-voice-spacebug-light", 2, 0.155, "Ölüm: böcek (hafif)"),
+  voiceSpaceBugHeavy: family("kill-voice-spacebug-heavy", 2, 0.21, "Ölüm: böcek (ağır)"),
+  voiceFourthDimensionalLight: family("kill-voice-fourth-light", 2, 0.15, "Ölüm: 4. boyut (hafif)"),
+  voiceFourthDimensionalHeavy: family("kill-voice-fourth-heavy", 2, 0.21, "Ölüm: 4. boyut (ağır)"),
+  voiceGolemLight: family("kill-voice-golem-light", 2, 0.26, "Ölüm: golem (hafif)"),
+  voiceGolemHeavy: family("kill-voice-golem-heavy", 2, 0.265, "Ölüm: golem (ağır)"),
+  voiceFallenLight: family("kill-voice-fallen-light", 2, 0.15, "Ölüm: düşmüş (hafif)"),
+  voiceFallenHeavy: family("kill-voice-fallen-heavy", 2, 0.215, "Ölüm: düşmüş (ağır)"),
+  voiceHolyGuardianLight: family("kill-voice-holy-light", 2, 0.155, "Ölüm: kutsal koruyucu (hafif)"),
+  voiceHolyGuardianHeavy: family("kill-voice-holy-heavy", 2, 0.22, "Ölüm: kutsal koruyucu (ağır)"),
+  voiceMekaLight: family("kill-voice-meka-light", 2, 0.155, "Ölüm: meka (hafif)"),
+  voiceMekaHeavy: family("kill-voice-meka-heavy", 2, 0.21, "Ölüm: meka (ağır)"),
+  voiceAir: family("kill-voice-air", 3, 0.165, "Ölüm: hava")
 });
 
 export const SAMPLE_FAMILY_IDS = Object.freeze(Object.keys(SAMPLE_FAMILIES) as SampleFamilyId[]);
-export const KILL_SOUND_FAMILIES: readonly KillSoundFamily[] = Object.freeze(["killLight", "killHeavy", "killAir"] as KillSoundFamily[]);
+export const ENEMY_RACES: readonly EnemyRace[] = Object.freeze(Object.keys(RACE_KEYS) as EnemyRace[]);
+export const KILL_BODY_FAMILIES: readonly KillBodyFamily[] = Object.freeze(["bodyLight", "bodyHeavy", "bodyAir"] as KillBodyFamily[]);
+export const KILL_VOICE_FAMILIES: readonly KillVoiceFamily[] = Object.freeze([
+  ...ENEMY_RACES.flatMap((race) => [`voice${RACE_KEYS[race]}Light`, `voice${RACE_KEYS[race]}Heavy`] as KillVoiceFamily[]),
+  "voiceAir" as KillVoiceFamily
+]);
+/** Oldurmenin butun aileleri (govde ve ses). */
+export const KILL_SOUND_FAMILIES: readonly KillSoundFamily[] = Object.freeze([...KILL_BODY_FAMILIES, ...KILL_VOICE_FAMILIES]);
+
+/** Oldurmenin agirlik sinifi. */
+export type KillWeight = "light" | "heavy" | "air";
 
 /**
- * Oldurme sesi dusmanin agirligindan: brute ve kusatma tam patlama, ucan
- * dusman havada parcalanma (yerde patlama yok), geri kalani kisa bir ezilme.
+ * Bir oldurmenin sesi: govde, ses ve sesin zorunlu olup olmadigi.
+ * Onceden kurulmus ve dondurulmus; oldurme basina nesne yok.
  */
-export function getKillSoundFamily(type: EnemyType | undefined, air = false): KillSoundFamily {
-  if (type && isHeavyEnemyType(type)) return "killHeavy";
-  return air ? "killAir" : "killLight";
+export type KillSoundCue = {
+  readonly race: EnemyRace;
+  readonly weight: KillWeight;
+  readonly champion: boolean;
+  readonly body: KillBodyFamily;
+  /** Kendi oldurmende (ve sampiyonda) calan ses. */
+  readonly voice: KillVoiceFamily;
+  /** Takim arkadasinin oldurmesinde: her zaman kisa (hafif) ses. */
+  readonly teammateVoice: KillVoiceFamily;
+  /** Agir dusman ya da sampiyon: ses seyreltilmiyor. */
+  readonly forceVoice: boolean;
+};
+
+const raceVoice = (race: EnemyRace, heavy: boolean) => `voice${RACE_KEYS[race]}${heavy ? "Heavy" : "Light"}` as KillVoiceFamily;
+
+const KILL_CUES = Object.fromEntries(ENEMY_RACES.map((race) => [race, Object.fromEntries((["light", "heavy", "air"] as KillWeight[]).map((weight) => [
+  weight,
+  [false, true].map((champion) => Object.freeze<KillSoundCue>({
+    race,
+    weight,
+    champion,
+    body: weight === "heavy" ? "bodyHeavy" : weight === "air" ? "bodyAir" : "bodyLight",
+    // Sampiyon her agirlikta irkin derin cigligiyla dusuyor.
+    voice: champion || weight === "heavy" ? raceVoice(race, true) : weight === "air" ? "voiceAir" : raceVoice(race, false),
+    teammateVoice: champion ? raceVoice(race, true) : weight === "air" ? "voiceAir" : raceVoice(race, false),
+    forceVoice: champion || weight === "heavy"
+  }))
+]))])) as unknown as Record<EnemyRace, Record<KillWeight, readonly [KillSoundCue, KillSoundCue]>>;
+
+/**
+ * Oldurmenin sesi: dusmanin turu (agirlik), irki (ses), ucup ucmadigi ve
+ * sampiyon olup olmadigi. Brute ve kusatma agir (derin ezilme, yavas ve uzun
+ * olum sesi, her zaman); ucan dusman havada patlayan govde ve dusen bir
+ * ciglik; digerleri kisa bir ezilme ve kisa bir ses. Irk bilinmiyorsa meka
+ * (temel dusmanlarin irki).
+ */
+export function getKillSoundCue(type: EnemyType | undefined, race: EnemyRace | undefined, air = false, champion = false): KillSoundCue {
+  const weight: KillWeight = type && isHeavyEnemyType(type) ? "heavy" : air ? "air" : "light";
+  const cues = KILL_CUES[race && race in KILL_CUES ? race : "meka"][weight];
+  return champion ? cues[1] : cues[0];
+}
+
+/** Galeride dinlenebilen oldurme sesleri: irk x (hafif, agir) ve hava. */
+export const GALLERY_KILL_CUES: ReadonlyArray<{ readonly id: string; readonly label: string; readonly cue: KillSoundCue }> = Object.freeze([
+  ...ENEMY_RACES.flatMap((race) => (["light", "heavy"] as KillWeight[]).map((weight) => {
+    const cue = KILL_CUES[race][weight][0];
+    return Object.freeze({ id: `kill:${race}:${weight}`, label: SAMPLE_FAMILIES[cue.voice].label, cue });
+  })),
+  Object.freeze({ id: "kill:air", label: SAMPLE_FAMILIES.voiceAir.label, cue: KILL_CUES.meka.air[0] })
+]);
+
+/**
+ * Olum sesinin seyrekligi. Govde her oldurmede caliyor; ses kalabalik bir
+ * dalgada koroya donmesin diye:
+ * - kendi oldurmen: en fazla 333 ms'de bir (saniyede ~3) ve olay kimliginden
+ *   (FNV) %70 olasilikla;
+ * - takim arkadasi: en fazla saniyede bir, %50 ve hep kisa (hafif) ses;
+ * - agir dusman (kendi) ve sampiyon her zaman; ama iki ses arasi en az 120 ms
+ *   (ulti 60 dusmani ayni karede oldurdugunde bile ust uste en fazla birkac
+ *   ses). Sampiyon bu siniri da geciyor: dalgada bir kez.
+ */
+export const KILL_VOICE_LIMITS = Object.freeze({
+  ownGapMs: 333,
+  teammateGapMs: 1000,
+  ownChance: 0.7,
+  teammateChance: 0.5,
+  minGapMs: 120
+});
+
+export class KillVoiceGate {
+  private lastOwn = Number.NEGATIVE_INFINITY;
+  private lastTeam = Number.NEGATIVE_INFINITY;
+  private lastAny = Number.NEGATIVE_INFINITY;
+
+  /** Bu oldurme ses calsin mi; durum degismiyor (`commit` calinca). */
+  check(own: boolean, cue: Pick<KillSoundCue, "forceVoice" | "champion">, key: string | undefined, now: number) {
+    if (cue.champion) return true;
+    if (now - this.lastAny < KILL_VOICE_LIMITS.minGapMs) return false;
+    if (own && cue.forceVoice) return true;
+    if (now - (own ? this.lastOwn : this.lastTeam) < (own ? KILL_VOICE_LIMITS.ownGapMs : KILL_VOICE_LIMITS.teammateGapMs)) return false;
+    if (key === undefined) return true;
+    return fnvUnit(key, 0x7a) < (own ? KILL_VOICE_LIMITS.ownChance : KILL_VOICE_LIMITS.teammateChance);
+  }
+
+  commit(own: boolean, now: number) {
+    this.lastAny = now;
+    if (own) this.lastOwn = now;
+    else this.lastTeam = now;
+  }
+
+  reset() {
+    this.lastOwn = Number.NEGATIVE_INFINITY;
+    this.lastTeam = Number.NEGATIVE_INFINITY;
+    this.lastAny = Number.NEGATIVE_INFINITY;
+  }
 }
 
 /* ------------------------------------------------------------------ */

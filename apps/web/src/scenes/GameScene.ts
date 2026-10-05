@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
-import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
+import type { DefenseSummary, EnemyRace, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
 import {
   ArchiveOfferLatch,
   BadgeNoticeQueue,
@@ -238,7 +238,7 @@ import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, Te
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
 import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
-import { getKillSoundFamily } from "../sfx-samples";
+import { getKillSoundCue } from "../sfx-samples";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
@@ -405,6 +405,8 @@ type RenderMover = {
   /** Son karede cizilen tur ve hareket bicimi; kaldirilinca olum patlamasina iz oluyor. */
   type?: EnemyType;
   air?: boolean;
+  /** Son karedeki irk: olum sesi irka gore. */
+  race?: EnemyRace;
   /** Son karedeki ekran boyu (dunya px). */
   displaySize?: number;
   /** Flas haric taban ton; patlamanin rengi flasin beyazini almasin. */
@@ -432,6 +434,9 @@ type RemovedEnemyTrace = {
   tint: number;
   type: EnemyType;
   air: boolean;
+  /** Olum sesi icin: irk ve sampiyon mu (sampiyon derin bir ciglikla dusuyor). */
+  race?: EnemyRace;
+  champion: boolean;
 };
 
 /**
@@ -6467,7 +6472,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
             texture: mover.sprite.texture.key,
             tint: mover.baseTint ?? 0xffffff,
             type: mover.type,
-            air: Boolean(mover.air)
+            air: Boolean(mover.air),
+            race: mover.race,
+            champion: Boolean(mover.crown)
           }, now);
         }
         this.enemyGroup?.killAndHide(mover.sprite);
@@ -6595,6 +6602,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
       mover.type = enemy.type;
       mover.air = enemy.movementKind === "air";
+      mover.race = enemy.race;
       mover.displaySize = displayedEnemySize;
       const shieldRadius = displayedEnemySize * 0.48;
       const statusYOffset = Math.max(18, displayedEnemySize * 0.42);
@@ -8934,8 +8942,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const own = Boolean(event.ownerId) && event.ownerId === this.localSessionId;
     const shape = getDeathBurstShape(trace.type);
-    // Ses dusmanin agirligindan (agir patlama, ucanda parcalanma, yoksa kisa
-    // ezilme). Kombo perdeyi degil yalnizca seviyeyi biraz artiriyor; basamak
+    // Ses organik: govdenin ezilmesi dusmanin agirligindan, seyrek olum sesi
+    // irkindan (sampiyonda hep, derin). Seyreklik oldurmenin kimligiyle
+    // (FNV). Kombo perdeyi degil yalnizca seviyeyi biraz artiriyor; basamak
     // kombo hapiyla ayni sayidan.
     const decision = this.feedback?.emit("kill", {
       own,
@@ -8943,7 +8952,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       y: trace.y,
       weight: getKillFeedbackWeight(trace.type, own && ownCritKill),
       step: own ? comboStep : undefined
-    }, getKillSoundFamily(trace.type, trace.air));
+    }, getKillSoundCue(trace.type, trace.race, trace.air, trace.champion), event.enemyId);
     if (own) {
       this.playKillCoin(event, trace, decision?.step, now);
     }

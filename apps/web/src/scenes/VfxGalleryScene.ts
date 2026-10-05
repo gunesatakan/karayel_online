@@ -28,7 +28,7 @@ import { getVfxProfile, getVfxTier, type VfxCourtMechanic, type VfxDelivery, typ
 import { ZeynepSignatureVfx, type CourtFrame } from "../vfx/zeynep-signatures";
 import { FeedbackDirector } from "../feedback-director";
 import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
-import { KILL_SOUND_FAMILIES, SAMPLE_FAMILIES, type KillSoundFamily } from "../sfx-samples";
+import { GALLERY_KILL_CUES } from "../sfx-samples";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -68,8 +68,9 @@ import { KILL_SOUND_FAMILIES, SAMPLE_FAMILIES, type KillSoundFamily } from "../s
  * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
  * aciyor. "Ses" dugmesi galeride sesi kapatiyor; secici ve Sv 1 / 5 / 10
  * dugmeleri her vurus sesini -- hicbir kulenin kullanmadigi Bulasma dahil --
- * dogrudan caliyor. Seciciden oldurme sesleri de (hafif / agir / hava)
- * dinlenebiliyor; onlarda seviye yok, uc dugme de ayni sesi caliyor.
+ * dogrudan caliyor. Seciciden oldurme sesleri de (irk x hafif / agir, hava;
+ * govde ve olum sesi birlikte) dinlenebiliyor; onlarda seviye yok, uc dugme
+ * de ayni sesi caliyor.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
@@ -195,7 +196,7 @@ export class VfxGalleryScene extends Phaser.Scene {
   /** Yalnizca bu kulenin sesi (hucreye dokunuldu); yoksa herkes. */
   private soloTowerId?: string;
   private soloMarker?: Phaser.GameObjects.Graphics;
-  private auditionVoice: HitVoiceId | KillSoundFamily = HIT_VOICE_IDS[0];
+  private auditionVoice: string = HIT_VOICE_IDS[0];
   /** Galeri yuruyucularinin karedeki konumlari: alan isinlarinin sesi icin, yeniden kullaniliyor. */
   private readonly walkerSpots: Array<{ x: number; y: number }> = [];
 
@@ -668,14 +669,16 @@ export class VfxGalleryScene extends Phaser.Scene {
     feedback.unlockAudio();
     const voice = this.auditionVoice;
     const own = !this.teammate;
-    if (isKillFamily(voice)) {
-      if (!feedback.previewKill(voice, own)) {
-        window.setTimeout(() => this.feedback?.previewKill(voice, own), 160);
+    const kill = GALLERY_KILL_CUES.find((entry) => entry.id === voice);
+    if (kill) {
+      if (!feedback.previewKill(kill.cue, own)) {
+        window.setTimeout(() => this.feedback?.previewKill(kill.cue, own), 160);
       }
       return;
     }
-    if (!feedback.previewHit(voice, levelToTier(level), own)) {
-      window.setTimeout(() => this.feedback?.previewHit(voice, levelToTier(level), own), 160);
+    const hitVoice = voice as HitVoiceId;
+    if (!feedback.previewHit(hitVoice, levelToTier(level), own)) {
+      window.setTimeout(() => this.feedback?.previewHit(hitVoice, levelToTier(level), own), 160);
     }
   }
 
@@ -813,16 +816,16 @@ export class VfxGalleryScene extends Phaser.Scene {
       option.textContent = HIT_VOICE_LABELS[voice];
       select.append(option);
     }
-    for (const family of KILL_SOUND_FAMILIES) {
+    for (const kill of GALLERY_KILL_CUES) {
       const option = document.createElement("option");
-      option.value = family;
-      option.textContent = SAMPLE_FAMILIES[family].label;
+      option.value = kill.id;
+      option.textContent = kill.label;
       select.append(option);
     }
     select.addEventListener("change", () => {
       const value = select.value;
-      this.auditionVoice = isKillFamily(value) || (HIT_VOICE_IDS as readonly string[]).includes(value)
-        ? value as HitVoiceId | KillSoundFamily
+      this.auditionVoice = GALLERY_KILL_CUES.some((entry) => entry.id === value) || (HIT_VOICE_IDS as readonly string[]).includes(value)
+        ? value
         : HIT_VOICE_IDS[0];
     });
     bar.append(select);
@@ -943,10 +946,6 @@ function createCourtCell(entry: GalleryRow, level: number, cellX: number, y: num
     default:
       return base;
   }
-}
-
-function isKillFamily(value: string): value is KillSoundFamily {
-  return (KILL_SOUND_FAMILIES as readonly string[]).includes(value);
 }
 
 function levelToTier(level: number) {

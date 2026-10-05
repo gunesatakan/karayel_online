@@ -1,5 +1,37 @@
 {
-  "note": "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0, Kenney).",
+  "note": "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0: Kenney, EZduzziteh, rubberduck).",
+  "sources": {
+    "impact": {
+      "title": "Impact Sounds",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/impact-sounds",
+      "license": "CC0-1.0"
+    },
+    "scifi": {
+      "title": "Sci-Fi Sounds",
+      "author": "Kenney",
+      "url": "https://kenney.nl/assets/sci-fi-sounds",
+      "license": "CC0-1.0"
+    },
+    "squish": {
+      "title": "Squish Sounds Effects",
+      "author": "EZduzziteh",
+      "url": "https://opengameart.org/content/squish-sounds-effects",
+      "license": "CC0-1.0"
+    },
+    "creature1": {
+      "title": "80 CC0 creature SFX",
+      "author": "rubberduck",
+      "url": "https://opengameart.org/content/80-cc0-creature-sfx",
+      "license": "CC0-1.0"
+    },
+    "creature2": {
+      "title": "80 CC0 creature SFX #2",
+      "author": "rubberduck",
+      "url": "https://opengameart.org/content/80-cc0-creture-sfx-2",
+      "license": "CC0-1.0"
+    }
+  },
   "format": {
     "codec": "mp3",
     "channels": 1,
@@ -8,10 +40,10 @@
   },
   "budget": {
     "hitBytes": 8192,
-    "killBytes": 16384,
-    "totalBytes": 307200
+    "killBytes": 12288,
+    "totalBytes": 409600
   },
-  "totalBytes": 93785,
+  "totalBytes": 221287,
   "files": [
     {
       "file": "projectile-1.mp3",
@@ -312,64 +344,378 @@
       "midBandDb": -2.6
     },
     {
-      "file": "kill-light-1.mp3",
-      "family": "killLight",
-      "source": "scifi/explosionCrunch_002.ogg",
-      "bytes": 3781,
-      "durationMs": 260,
-      "rmsDb": -18.5,
-      "peakDb": -4.7,
-      "midBandDb": -2.7
-    },
-    {
-      "file": "kill-light-2.mp3",
-      "family": "killLight",
-      "source": "scifi/explosionCrunch_001.ogg",
-      "bytes": 3781,
-      "durationMs": 260,
-      "rmsDb": -19.4,
-      "peakDb": -1.4,
-      "midBandDb": -4.5
-    },
-    {
-      "file": "kill-heavy-1.mp3",
-      "family": "killHeavy",
-      "source": "scifi/explosionCrunch_000.ogg",
-      "bytes": 6602,
-      "durationMs": 480,
-      "rmsDb": -18.5,
-      "peakDb": -1.6,
-      "midBandDb": -6.4
-    },
-    {
-      "file": "kill-heavy-2.mp3",
-      "family": "killHeavy",
-      "source": "scifi/explosionCrunch_003.ogg",
-      "bytes": 6602,
-      "durationMs": 480,
-      "rmsDb": -18.4,
-      "peakDb": -1.5,
-      "midBandDb": -6.7
-    },
-    {
-      "file": "kill-air-1.mp3",
-      "family": "killAir",
-      "source": "impact/impactGlass_heavy_003.ogg",
-      "bytes": 3154,
-      "durationMs": 187,
-      "rmsDb": -19,
+      "file": "kill-body-light-1.mp3",
+      "family": "bodyLight",
+      "layer": "body",
+      "source": "squish/squish_02.mp3",
+      "bytes": 2841,
+      "durationMs": 170,
+      "rmsDb": -22.7,
       "peakDb": -1.1,
+      "midBandDb": -2.2
+    },
+    {
+      "file": "kill-body-light-2.mp3",
+      "family": "bodyLight",
+      "layer": "body",
+      "source": "squish/squish_03.mp3",
+      "bytes": 2841,
+      "durationMs": 170,
+      "rmsDb": -22.4,
+      "peakDb": -0.9,
+      "midBandDb": -2.6
+    },
+    {
+      "file": "kill-body-light-3.mp3",
+      "family": "bodyLight",
+      "layer": "body",
+      "source": "squish/squish_05.mp3",
+      "bytes": 2841,
+      "durationMs": 170,
+      "rmsDb": -18.9,
+      "peakDb": -1.4,
+      "midBandDb": -2.3
+    },
+    {
+      "file": "kill-body-heavy-1.mp3",
+      "family": "bodyHeavy",
+      "layer": "body",
+      "source": "squish/squish_04.mp3",
+      "bytes": 3781,
+      "durationMs": 250,
+      "rmsDb": -18.5,
+      "peakDb": -2.3,
+      "midBandDb": -1.3
+    },
+    {
+      "file": "kill-body-heavy-2.mp3",
+      "family": "bodyHeavy",
+      "layer": "body",
+      "source": "squish/squish_06.mp3",
+      "bytes": 3781,
+      "durationMs": 250,
+      "rmsDb": -19.9,
+      "peakDb": -1.5,
       "midBandDb": -3
     },
     {
-      "file": "kill-air-2.mp3",
-      "family": "killAir",
-      "source": "impact/impactGlass_heavy_000.ogg",
-      "bytes": 3468,
-      "durationMs": 220,
-      "rmsDb": -21.8,
+      "file": "kill-body-air-1.mp3",
+      "family": "bodyAir",
+      "layer": "body",
+      "source": "squish/squishsplat_impact.mp3",
+      "bytes": 3154,
+      "durationMs": 200,
+      "rmsDb": -21.4,
+      "peakDb": -1.4,
+      "midBandDb": -2.7
+    },
+    {
+      "file": "kill-body-air-2.mp3",
+      "family": "bodyAir",
+      "layer": "body",
+      "source": "squish/squish_01_0.mp3",
+      "bytes": 3154,
+      "durationMs": 200,
+      "rmsDb": -19.7,
+      "peakDb": -1.4,
+      "midBandDb": -3
+    },
+    {
+      "file": "kill-voice-spacebug-light-1.mp3",
+      "family": "voiceSpaceBugLight",
+      "layer": "voice",
+      "source": "creature2/bug_05.ogg",
+      "bytes": 4095,
+      "durationMs": 268,
+      "rmsDb": -22.8,
+      "peakDb": -1.6,
+      "midBandDb": -6.7
+    },
+    {
+      "file": "kill-voice-spacebug-light-2.mp3",
+      "family": "voiceSpaceBugLight",
+      "layer": "voice",
+      "source": "creature2/bug_08.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -20.8,
       "peakDb": -1.5,
-      "midBandDb": -3.2
+      "midBandDb": -2.6
+    },
+    {
+      "file": "kill-voice-spacebug-heavy-1.mp3",
+      "family": "voiceSpaceBugHeavy",
+      "layer": "voice",
+      "source": "creature1/bug_04.ogg",
+      "bytes": 5349,
+      "durationMs": 373,
+      "rmsDb": -22.5,
+      "peakDb": -1.5,
+      "midBandDb": -0.9
+    },
+    {
+      "file": "kill-voice-spacebug-heavy-2.mp3",
+      "family": "voiceSpaceBugHeavy",
+      "layer": "voice",
+      "source": "creature2/bug_06.ogg",
+      "bytes": 3781,
+      "durationMs": 245,
+      "rmsDb": -21.5,
+      "peakDb": -1.4,
+      "midBandDb": -1.8
+    },
+    {
+      "file": "kill-voice-fourth-light-1.mp3",
+      "family": "voiceFourthDimensionalLight",
+      "layer": "voice",
+      "source": "creature2/alien_12.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.7,
+      "peakDb": -1.6,
+      "midBandDb": -2.6
+    },
+    {
+      "file": "kill-voice-fourth-light-2.mp3",
+      "family": "voiceFourthDimensionalLight",
+      "layer": "voice",
+      "source": "creature1/alien_05.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -24.9,
+      "peakDb": -1.3,
+      "midBandDb": -5.2
+    },
+    {
+      "file": "kill-voice-fourth-heavy-1.mp3",
+      "family": "voiceFourthDimensionalHeavy",
+      "layer": "voice",
+      "source": "creature1/alien_03.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -19.3,
+      "peakDb": -1.4,
+      "midBandDb": -0.7
+    },
+    {
+      "file": "kill-voice-fourth-heavy-2.mp3",
+      "family": "voiceFourthDimensionalHeavy",
+      "layer": "voice",
+      "source": "creature2/alien_07.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -19.2,
+      "peakDb": -1.4,
+      "midBandDb": -4.9
+    },
+    {
+      "file": "kill-voice-golem-light-1.mp3",
+      "family": "voiceGolemLight",
+      "layer": "voice",
+      "source": "creature1/troll_03.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.4,
+      "peakDb": -7,
+      "midBandDb": -8.7
+    },
+    {
+      "file": "kill-voice-golem-light-2.mp3",
+      "family": "voiceGolemLight",
+      "layer": "voice",
+      "source": "creature2/monster_15.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.4,
+      "peakDb": -6,
+      "midBandDb": -7.5
+    },
+    {
+      "file": "kill-voice-golem-heavy-1.mp3",
+      "family": "voiceGolemHeavy",
+      "layer": "voice",
+      "source": "creature1/monster_06.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.4,
+      "peakDb": -4.4,
+      "midBandDb": -10.4
+    },
+    {
+      "file": "kill-voice-golem-heavy-2.mp3",
+      "family": "voiceGolemHeavy",
+      "layer": "voice",
+      "source": "creature2/monster_09.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.4,
+      "peakDb": -3.4,
+      "midBandDb": -7.7
+    },
+    {
+      "file": "kill-voice-fallen-light-1.mp3",
+      "family": "voiceFallenLight",
+      "layer": "voice",
+      "source": "creature1/hurt_01.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.5,
+      "peakDb": -1.3,
+      "midBandDb": -0.7
+    },
+    {
+      "file": "kill-voice-fallen-light-2.mp3",
+      "family": "voiceFallenLight",
+      "layer": "voice",
+      "source": "creature1/hurt_03.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.4,
+      "peakDb": -5.1,
+      "midBandDb": -1.8
+    },
+    {
+      "file": "kill-voice-fallen-heavy-1.mp3",
+      "family": "voiceFallenHeavy",
+      "layer": "voice",
+      "source": "creature2/die_03.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.4,
+      "peakDb": -1.6,
+      "midBandDb": -1.7
+    },
+    {
+      "file": "kill-voice-fallen-heavy-2.mp3",
+      "family": "voiceFallenHeavy",
+      "layer": "voice",
+      "source": "creature2/die_01.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.5,
+      "peakDb": -2.5,
+      "midBandDb": -0.9
+    },
+    {
+      "file": "kill-voice-holy-light-1.mp3",
+      "family": "voiceHolyGuardianLight",
+      "layer": "voice",
+      "source": "creature1/roar_03.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -18.4,
+      "peakDb": -2.9,
+      "midBandDb": -1.9
+    },
+    {
+      "file": "kill-voice-holy-light-2.mp3",
+      "family": "voiceHolyGuardianLight",
+      "layer": "voice",
+      "source": "creature2/monster_11.ogg",
+      "bytes": 3781,
+      "durationMs": 253,
+      "rmsDb": -19.5,
+      "peakDb": -1.5,
+      "midBandDb": -1
+    },
+    {
+      "file": "kill-voice-holy-heavy-1.mp3",
+      "family": "voiceHolyGuardianHeavy",
+      "layer": "voice",
+      "source": "creature2/monster_10.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.4,
+      "peakDb": -2.9,
+      "midBandDb": -2.6
+    },
+    {
+      "file": "kill-voice-holy-heavy-2.mp3",
+      "family": "voiceHolyGuardianHeavy",
+      "layer": "voice",
+      "source": "creature2/monster_16.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -18.8,
+      "peakDb": -1.7,
+      "midBandDb": -1
+    },
+    {
+      "file": "kill-voice-meka-light-1.mp3",
+      "family": "voiceMekaLight",
+      "layer": "voice",
+      "source": "creature2/slime_07.ogg",
+      "bytes": 3781,
+      "durationMs": 246,
+      "rmsDb": -18.4,
+      "peakDb": -2.6,
+      "midBandDb": -1.2
+    },
+    {
+      "file": "kill-voice-meka-light-2.mp3",
+      "family": "voiceMekaLight",
+      "layer": "voice",
+      "source": "creature2/slime_02.ogg",
+      "bytes": 4095,
+      "durationMs": 280,
+      "rmsDb": -19.5,
+      "peakDb": -1.6,
+      "midBandDb": -1.3
+    },
+    {
+      "file": "kill-voice-meka-heavy-1.mp3",
+      "family": "voiceMekaHeavy",
+      "layer": "voice",
+      "source": "creature1/burble_02.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -20.4,
+      "peakDb": -1.5,
+      "midBandDb": -0.7
+    },
+    {
+      "file": "kill-voice-meka-heavy-2.mp3",
+      "family": "voiceMekaHeavy",
+      "layer": "voice",
+      "source": "creature2/slime_08.ogg",
+      "bytes": 5975,
+      "durationMs": 420,
+      "rmsDb": -19.9,
+      "peakDb": -1.4,
+      "midBandDb": -3.9
+    },
+    {
+      "file": "kill-voice-air-1.mp3",
+      "family": "voiceAir",
+      "layer": "voice",
+      "source": "creature1/scream_02.ogg",
+      "bytes": 5035,
+      "durationMs": 360,
+      "rmsDb": -18.5,
+      "peakDb": -1.4,
+      "midBandDb": -2.2
+    },
+    {
+      "file": "kill-voice-air-2.mp3",
+      "family": "voiceAir",
+      "layer": "voice",
+      "source": "creature2/misc_17.ogg",
+      "bytes": 5035,
+      "durationMs": 360,
+      "rmsDb": -18.5,
+      "peakDb": -3.3,
+      "midBandDb": -1.3
+    },
+    {
+      "file": "kill-voice-air-3.mp3",
+      "family": "voiceAir",
+      "layer": "voice",
+      "source": "creature2/die_02.ogg",
+      "bytes": 5035,
+      "durationMs": 360,
+      "rmsDb": -18.5,
+      "peakDb": -1.9,
+      "midBandDb": -5.1
     }
   ]
 }

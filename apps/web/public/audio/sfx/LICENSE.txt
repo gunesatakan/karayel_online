@@ -1,17 +1,24 @@
 Karayel Online savas sesi ornekleri
 ===================================
 
-Bu klasordeki MP3 dosyalari asagidaki paketlerden uretildi
+Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):
 
+Vurus ve kritik sesleri:
 - "Impact Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
 
-Lisans: Creative Commons Zero (CC0)
+Oldurme sesleri:
+- "Squish Sounds Effects" - EZduzziteh (OpenGameArt)
+  https://opengameart.org/content/squish-sounds-effects
+- "80 CC0 creature SFX" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/80-cc0-creature-sfx
+- "80 CC0 creature SFX #2" - rubberduck (OpenGameArt)
+  https://opengameart.org/content/80-cc0-creture-sfx-2
+
+Lisans: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
-Kenney: "This content is free to use in personal, educational and commercial
-projects. Support us by crediting Kenney or www.kenney.nl (this is not
-mandatory)." Tesekkurler, Kenney.
+CC0 atif istemiyor; yine de tesekkurler: Kenney, EZduzziteh ve rubberduck.
