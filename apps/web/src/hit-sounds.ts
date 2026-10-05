@@ -1,10 +1,14 @@
 /**
- * Vurus sesleri: her vurus turunun (HitType) kendi sentez sesi.
+ * Vurus sesleri: her vurus turunun (HitType) kendi sesi.
+ *
+ * Asil ses kayitli bir ornek ailesi (sfx-samples.ts: tur basina ayri kaynak,
+ * 2-3 cesit, Kenney CC0). Buradaki sentez tarifleri yalnizca ornekler
+ * yuklenmeden once ya da yuklenemezse caliyor; ses hicbir zaman kesilmesin.
  *
  * Oyunun en sik sesi bu: 20 kulelik bir dalgada saniyede onlarca temas.
  * Bu yuzden burada iki sey var:
  *
- * - Tarifler: tur basina kisa (40-160 ms) bir ses ve kademe katmanlari.
+ * - Yedek tarifler: tur basina kisa (40-160 ms) bir ses ve kademe katmanlari.
  *   Duz -> acilmis -> canli dili VFX'ten: sv 5-9 bir parilti ya da alt
  *   katman ekliyor, sv 10 kisa bir kuyruk ya da pirilti.
  * - Butce: ayni anda en fazla 6 vurus sesi, tur basina 70 ms aralik, tik
@@ -390,8 +394,14 @@ export const HIT_SOUND_LIMITS = {
   gapMs: 70,
   /** Takim arkadasinda aralik bunun kati: daha seyrek. */
   teammateGapFactor: 1.6,
-  /** Tik (surekli isin nabzi, alan, sizinti): tur basina bu aralikta bir. */
+  /**
+   * Tik (surekli isin nabzi, alan, sizinti): tur basina bu aralikta bir. Tik
+   * sesi butcede de en fazla bu kadar yer tutuyor: ust uste binen nabizlar
+   * yuvalari doldurmasin.
+   */
   tickGapMs: 150,
+  /** Tiklerin hic giremedigi yuva sayisi: mermi ve carpma vuruslarina ayrilmis. */
+  reservedHitSlots: 2,
   /** Takim arkadasinin kulesinin seviyesi (kendi kulen 1). */
   teammateGain: 0.45,
   /** Perde kaymasinin genligi (yarim ton, iki yone). */
@@ -405,7 +415,7 @@ const TICK_VOICES: ReadonlySet<HitVoiceId> = new Set<HitVoiceId>(["aura", "conta
 
 const VOICE_INDEX = new Map<HitVoiceId, number>(HIT_VOICE_IDS.map((id, index) => [id, index]));
 
-type HitSlot = { until: number; own: boolean };
+type HitSlot = { until: number; own: boolean; tick: boolean };
 
 /**
  * Vurus sesi butcesi.
@@ -416,8 +426,12 @@ type HitSlot = { until: number; own: boolean };
  *
  * Kurallar:
  * - Tur basina aralik (70 ms); takim arkadasinda 1.6 kati, kendi izinde.
- * - Tik ve alan/sizinti turleri tur basina 150 ms'de bir (birlesiyor).
- * - En fazla 6 ses; takim arkadasi en fazla 3.
+ * - Tik ve alan/sizinti turleri tur basina 150 ms'de bir (birlesiyor) ve
+ *   butcede en fazla 150 ms yer tutuyor.
+ * - En fazla 6 ses; takim arkadasi en fazla 3; tikler en fazla 4 -- 2 yuva
+ *   her zaman tik olmayan vuruslara (mermi, carpma...) kaliyor. Surekli
+ *   isinlar bu sinir olmadan yuvalarin cogunu tutup gercek vuruslari
+ *   dusuruyordu.
  * - Dolu butcede kendi vurusun takim arkadasinin en eski sesinin yerini
  *   aliyor; takim arkadasininki ve tamamen kendi seslerinle dolu butcede
  *   gelen ses dusuyor (vurus sesi sik, birini kacirmak sorun degil).
@@ -433,7 +447,7 @@ export class HitSoundGovernor {
 
   constructor(readonly limits: { voices: number; teammateVoices: number } = HIT_SOUND_LIMITS) {
     for (let index = 0; index < limits.voices; index += 1) {
-      this.slots.push({ until: Number.NEGATIVE_INFINITY, own: true });
+      this.slots.push({ until: Number.NEGATIVE_INFINITY, own: true, tick: false });
     }
   }
 
@@ -454,6 +468,7 @@ export class HitSoundGovernor {
 
     let free = -1;
     let liveTeam = 0;
+    let liveTicks = 0;
     let oldestTeam = -1;
     for (let slot = 0; slot < this.slots.length; slot += 1) {
       const entry = this.slots[slot];
@@ -461,6 +476,7 @@ export class HitSoundGovernor {
         if (free < 0) free = slot;
         continue;
       }
+      if (entry.tick) liveTicks += 1;
       if (!entry.own) {
         liveTeam += 1;
         if (oldestTeam < 0 || entry.until < this.slots[oldestTeam].until) oldestTeam = slot;
@@ -469,6 +485,7 @@ export class HitSoundGovernor {
 
     let chosen = free;
     if (!own && liveTeam >= this.limits.teammateVoices) return -1;
+    if (isTick && liveTicks >= this.slots.length - HIT_SOUND_LIMITS.reservedHitSlots) return -1;
     if (chosen < 0) {
       if (!own || oldestTeam < 0) return -1;
       chosen = oldestTeam;
@@ -476,8 +493,9 @@ export class HitSoundGovernor {
     }
 
     const entry = this.slots[chosen];
-    entry.until = now + durationMs;
+    entry.until = now + (isTick ? Math.min(durationMs, HIT_SOUND_LIMITS.tickGapMs) : durationMs);
     entry.own = own;
+    entry.tick = isTick;
     last[index] = now;
     if (isTick) lastTick[index] = now;
     return chosen;

@@ -1,8 +1,11 @@
 /**
  * Vurus sesleri.
  *
- * Her vurus turunun (ve turu olmayan kulelerin siluetinin) kendi sentez
- * sesi var; oyunun en sik sesi oldugu icin butcesi sert:
+ * Her vurus turunun (ve turu olmayan kulelerin siluetinin) kendi sesi var:
+ * asil ses kayitli bir ornek ailesi (tests/sfx-samples.test.mjs), buradaki
+ * sentez tarifleri ornekler yuklenmeden once ya da yuklenemezse calan
+ * yedek. Bu dosyadaki yonetmen baglaminda `decodeAudioData` yok, yani her
+ * vurus yedek yoldan geciyor. Oyunun en sik sesi oldugu icin butcesi sert:
  *
  * - Her HitType ve vurus turu olmayan her saldiran kule bir sese iniyor;
  *   hicbiri sessiz ya da tek bir genel seste degil.

@@ -4499,6 +4499,8 @@ button.wave-report:active { transform: scale(0.99); }
   line-height: 1.2;
   pointer-events: none;
 }
+/* `display: flex` tarayicinin [hidden] kuralini eziyor; cip hic kapanmiyordu. */
+.game-hud__silent[hidden] { display: none; }
 .game-hud__silent[data-phase="burst"] {
   --silent-accent: #fbbf24;
   border-color: rgba(251, 191, 36, 0.5);

@@ -717,7 +717,41 @@ function pointOnSegments(segments: readonly CourtRaySegment[], distance: number)
 }
 
 /** Galeri satiri: bir kule tanimi ve (Zeynep'te) gosterdigi sahne. */
-export type GalleryRow = { key: string; definitionId: string; court?: CourtScene; label?: string };
+export type GalleryRow = { key: string; definitionId: string; court?: CourtScene; label?: string; death?: GalleryDeathRow };
+
+/** Olum satirinin bir hucresi: dusman tipi (doku ve agirlik), ucan mi. */
+export type GalleryDeathCell = { type: "grunt" | "runner" | "shooter" | "brute" | "siege"; air?: boolean; label: string };
+export type GalleryDeathRow = { race: "meka" | "spaceBug" | "fourthDimensional" | "holyGuardian" | "fallen" | "golem"; cells: readonly [GalleryDeathCell, GalleryDeathCell, GalleryDeathCell] };
+
+/**
+ * Galerinin olum satirlari: her irk (malzeme) siradan, kosucu ve agir
+ * dusmanla; mekanin ek satiri nisanci, kusatma ve ucan dusman. Boylece her
+ * dusman tipi ve agirligi yan yana gorunuyor.
+ */
+export const GALLERY_DEATH_ROWS: readonly GalleryDeathRow[] = [
+  ...(["meka", "holyGuardian", "spaceBug", "fourthDimensional", "golem", "fallen"] as const).map((race) => ({
+    race,
+    cells: [
+      { type: "grunt", label: "grunt" },
+      { type: "runner", label: "koşucu" },
+      { type: "brute", label: "brute (ağır)" }
+    ] as const
+  })),
+  {
+    race: "meka",
+    cells: [
+      { type: "shooter", label: "nişancı" },
+      { type: "siege", label: "kuşatma (ağır)" },
+      { type: "grunt", air: true, label: "ucan" }
+    ]
+  }
+];
+
+/** Olum satirinin dokusu (GameScene `getEnemyTextureKey` ile ayni kural). */
+export function getGalleryDeathTexture(race: GalleryDeathRow["race"], type: GalleryDeathCell["type"]) {
+  const art = type === "siege" ? "brute" : type;
+  return race === "meka" ? `enemy-${art}` : `enemy-${race}-${art}`;
+}
 
 /**
  * Galerinin satirlari: saldiran kuleler katalog sirasiyla; Zeynep'in Taht'i
@@ -748,6 +782,9 @@ export function getGalleryRows(): GalleryRow[] {
         rows.push({ key: id, definitionId: id });
     }
   }
+  GALLERY_DEATH_ROWS.forEach((death, index) => {
+    rows.push({ key: `death-${index}`, definitionId: "", death, label: death.race });
+  });
   return rows;
 }
 

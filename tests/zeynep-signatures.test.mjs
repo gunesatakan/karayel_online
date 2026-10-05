@@ -7,7 +7,8 @@
  * kayboluyor, vurdugu dusmanda iz birakmiyordu; Abarti gecisi gorunmuyordu.
  * Buradaki testler cizimin davranisini olcuyor (kaynak metni degil):
  *
- * - Ferman cizgisi ve kertik: iki temasta cizgi, kertik dusmanin boyunda.
+ * - Delme cizgisi ve kertik: iki temasta cizgi, kertik dusmanin boyunda; cizgi
+ *   kapanip tac basmiyor (agir, sert dilde sus yok).
  * - Spot isigi ve damga dusmani kimlikle izliyor, govdeyi sariyor; damganin
  *   serit sayisi okunur (en az 3 birim, 2 birim aralik) ve durum yazisi /
  *   can cubugu bandina girmiyor; LOD 3'te tek serit.
@@ -17,6 +18,8 @@
  * - Ayna mizragi sekmeyi kirik ciziyor; Kin gosterisi gercek 60 derece; yanik
  *   izi canli; Kin dalgasi sonerek kayboluyor.
  * - Hareket azaltma, saniyede 3 parlama ve takim arkadasinin %70'i.
+ * - Altin rutbe trimi, serit (chevron), muhur ve tac yok; kademe agirlik ve
+ *   sicaklik.
  * - Yuk: 60 dusmanin hepsi Kin damgaliyken bile butce icinde.
  */
 import test from "node:test";
@@ -24,6 +27,7 @@ import assert from "node:assert/strict";
 import { createCountingGraphics, createRecorder, importWebModule } from "./helpers/web-module.mjs";
 
 const zeynep = await importWebModule("apps/web/src/vfx/zeynep-signatures.ts");
+const kit = await importWebModule("apps/web/src/vfx/kit.ts");
 const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
 const { AttackVfx } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
 const { BeamRenderer } = await importWebModule("apps/web/src/vfx/beam-renderer.ts");
@@ -67,26 +71,29 @@ test("ferman çizgisi iki temastan sonra delinen düşmanları birleştiriyor; k
   assert.ok(tick(34) <= 34 && tick(56) <= 56, "kertik govdeden tasmiyor");
 });
 
-test("regalya: ferman çizgisi son temasa kapanıyor ve orada taç; hareket azaltmada kapanmıyor", () => {
-  const run = (reducedMotion) => {
+test("delme çizgisi kademe 3'te de kapanmıyor ve taç basmıyor; kademe çizgiyi ağırlaştırıyor", () => {
+  const run = (tier) => {
     const [ground, links, glow, marks] = surfaces();
-    const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(0), reducedMotion: () => reducedMotion });
-    vfx.emit({ kind: "pierce", key: "p1", x: 0, y: 0, angle: 0, definitionId: "zeynep-1", tier: 3 }, 0);
-    vfx.emit({ kind: "pierce", key: "p1", x: 100, y: 0, angle: 0, definitionId: "zeynep-1", tier: 3 }, 0);
+    const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(0) });
+    vfx.emit({ kind: "pierce", key: "p1", x: 0, y: 0, angle: 0, definitionId: "zeynep-1", tier }, 0);
+    vfx.emit({ kind: "pierce", key: "p1", x: 100, y: 0, angle: 0, definitionId: "zeynep-1", tier }, 0);
     const starts = [];
-    for (const now of [20, 200, 380, 460]) {
+    let crown = false;
+    let width = 0;
+    for (const now of [20, 200, 380]) {
       links.calls.length = 0;
       marks.calls.length = 0;
       vfx.render({ enemies: [], now, scale: 1 });
       starts.push(lines(links)[0]?.[1]);
+      crown ||= marks.calls.some(([name]) => name === "strokePath");
+      width = Math.max(width, ...styled(links, "lineStyle").map(([, value]) => value));
     }
-    return { starts, crown: marks.calls.some(([name]) => name === "strokePath") };
+    return { starts, crown, width };
   };
-  const live = run(false);
-  assert.ok(live.starts[3] > live.starts[0] + 20, `cizgi kapanmali: ${live.starts.join(" / ")}`);
-  assert.ok(live.crown, "kapandigi yerde tac");
-  const still = run(true);
-  assert.equal(still.starts[0], still.starts[2], "hareket azaltmada cizgi kapanmiyor");
+  const [t1, t2, t3] = [1, 2, 3].map(run);
+  assert.deepEqual(t3.starts, [-5, -5, -5], "cizgi kapanmamali");
+  assert.equal(t3.crown, false, "tac yok");
+  assert.ok(t1.width < t2.width && t2.width < t3.width, `kademe agirligi ${t1.width} / ${t2.width} / ${t3.width}`);
 });
 
 test("spot ışığı ve damga düşmanı kimlikle izliyor, gövdeyi sarıyor; yazı ve can çubuğu bandına girmiyor", () => {
@@ -115,7 +122,7 @@ test("spot ışığı ve damga düşmanı kimlikle izliyor, gövdeyi sarıyor; y
   }
 });
 
-test("Kin damgası: şerit sayısı yavaşlatmanın gücü, okunur boyda; LOD 3'te tek şerit", () => {
+test("Kin damgası: kertik sayısı yavaşlatmanın gücü, okunur boyda; yalnızca son LOD basamağında tek şerit", () => {
   for (const strength of [1, 2, 3]) {
     const draw = (level) => {
       const [ground, links, glow, marks] = surfaces();
@@ -134,23 +141,25 @@ test("Kin damgası: şerit sayısı yavaşlatmanın gücü, okunur boyda; LOD 3'
     for (let index = 1; index < ys.length; index += 1) {
       assert.ok(ys[index] - ys[index - 1] - zeynep.BRAND_PIP_SIZE >= zeynep.BRAND_PIP_GAP, "aralik en az 2 birim");
     }
-    const strip = styled(draw(3), "fillRect").filter(([, x]) => x > 100 + 34 * 0.44);
-    assert.equal(strip.length, 1, "LOD 3 tek serit");
+    // Bilgi isareti en son sikisiyor: yer izi basamaginda (3) kertikler hala ayri.
+    assert.equal(styled(draw(3), "fillTriangle").filter(([, x]) => x > 100 + 34 * 0.44).length, strength, "LOD 3 kertikler ayri");
+    const strip = styled(draw(4), "fillRect").filter(([, x]) => x > 100 + 34 * 0.44);
+    assert.equal(strip.length, 1, "LOD 4 tek serit");
     assert.equal(strip[0][4], strength * zeynep.BRAND_PIP_SIZE + (strength - 1) * zeynep.BRAND_PIP_GAP);
   }
   assert.deepEqual([0.1, 0.5, 0.9].map((ratio) => zeynep.getKinBrandStrength(ratio * 90, 90)), [1, 2, 3]);
 });
 
 test("takım arkadaşının regalyası %70, beyaz iç parlama saniyede en fazla 3 kez", () => {
-  const sealAlpha = (own) => {
+  const coreAlpha = (own) => {
     const [ground, links, glow, marks] = surfaces();
     const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(0), reducedMotion: () => true });
     vfx.emit({ kind: "crossing", x: 0, y: 0, vertical: true, railHalf: 34, tier: 3, own }, 0);
     vfx.render({ enemies: [], now: 10, scale: 1 });
-    // Muhrun kabartmasi beyaz altin dikdortgen.
-    return marks.calls.filter(([name, color]) => name === "fillStyle" && color === WHITE_GOLD).map(([, , alpha]) => alpha)[0];
+    // Rayin beyaz-sicak cekirdek cizgisi (ikinci cizgi): kademe 3 agirligi.
+    return styled(links, "lineStyle")[1][3];
   };
-  assert.ok(Math.abs(sealAlpha(false) / sealAlpha(true) - 0.7) < 1e-6, "arkadasin muhru %70");
+  assert.ok(Math.abs(coreAlpha(false) / coreAlpha(true) - 0.7) < 1e-6, "arkadasin kademe 3 cekirdegi %70");
 
   const [ground, links, glow, marks] = surfaces();
   const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(0) });
@@ -300,13 +309,14 @@ test("Kin gösterisi gerçek 60 derece; yanık izi canlı; Kin dalgası sönerek
   new BeamRenderer(recorder).render([cone], { now: 0, sceneNow: 0, scale: 1 });
   const edge = lines(recorder).find(([, x1, y1, x2, y2]) => x1 === 0 && y1 === 0 && x2 === range && Math.abs(Math.abs(y2) - cone.width / 2) < 1e-6);
   assert.ok(edge, "koninin kenari gercek yari genislikte (60 derece)");
-  const chevrons = (tier) => {
+  const coneCore = (tier) => {
     const r = createRecorder();
     new BeamRenderer(r).render([{ ...cone, tier }], { now: 0, sceneNow: 0, scale: 1 });
-    return styled(r, "lineStyle").filter(([, , color]) => color === GOLD).length;
+    const colors = new Set(styled(r, "lineStyle").map(([, , color]) => color));
+    assert.ok(!colors.has(GOLD) && !colors.has(WHITE_GOLD), `kademe ${tier ?? 1}: altin serit yok`);
+    return Math.max(...styled(r, "lineStyle").map(([, width]) => width));
   };
-  assert.equal(chevrons(undefined), 0);
-  assert.ok(chevrons(2) > 0, "kademe 5'te altin seritler");
+  assert.ok(coneCore(undefined) < coneCore(2) && coneCore(2) < coneCore(3), "kademe isik cizgisini agirlastiriyor");
 
   const trail = { id: "zeynep-burn-trail-t-1", definitionId: "zeynep-3-burn-trail", x1: 0, y1: 0, x2: 120, y2: 0, width: 32, color: 0x0e7490, ttlMs: 2000 };
   const trailCalls = (now, reducedMotion, extra = {}) => {
@@ -316,11 +326,11 @@ test("Kin gösterisi gerçek 60 derece; yanık izi canlı; Kin dalgası sönerek
   };
   assert.notDeepEqual(trailCalls(100, false), trailCalls(400, false), "iz duragan bir serit degil");
   assert.deepEqual(trailCalls(100, true), trailCalls(400, true), "hareket azaltmada iz sabit");
-  // Regalya: son 320 ms'de uclarindan kapaniyor.
+  // Kapanan ferman (regalya) yok: iz son ana kadar gercek boyunda.
   const firstLine = (calls) => calls.find(([name]) => name === "lineBetween");
   const open = firstLine(trailCalls(0, false, { tier: 3, ttlMs: 1000 }));
-  const closing = firstLine(trailCalls(0, false, { tier: 3, ttlMs: 100 }));
-  assert.ok(closing[1] > open[1] + 20 && closing[3] < open[3] - 20, "iz kapanmali");
+  const ending = firstLine(trailCalls(0, false, { tier: 3, ttlMs: 100 }));
+  assert.deepEqual([ending[1], ending[3]], [open[1], open[3]], "iz kapanmiyor");
 
   // Kin dalgasi kaybolunca son halinde 200 ms'de soner.
   const wave = { id: "kin-wave-kw9", definitionId: "zeynep-6", x1: 0, y1: 0, x2: 60, y2: 0, width: 66, color: 0x7f1d1d, ttlMs: 120 };
@@ -415,7 +425,7 @@ test("galeri: Zeynep satırları mekaniği gösteren sahnelerde (delme, dizilim 
 test("yük testi: 60 düşmanın hepsi Kin damgalıyken bile LOD 0 bütçe içinde, LOD damgayı döküyor", async () => {
   const { runVfxBench } = await import("../tools/vfx-bench.mjs");
   const full = await runVfxBench({ lodLevel: 0, kinBrandEvery: 1 });
-  const shed = await runVfxBench({ lodLevel: 3, kinBrandEvery: 1 });
+  const shed = await runVfxBench({ lodLevel: 4, kinBrandEvery: 1 });
   assert.ok(full.kinBranded === 60);
   assert.ok(full.verticesPerFrame < 20000, `kose ${full.verticesPerFrame}`);
   assert.ok(full.earcutPerFrame < 16, `earcut ${full.earcutPerFrame}`);
@@ -518,12 +528,12 @@ test("Kin damgası Takipçi nişangâhına değmiyor (her yığın, her boy); LO
       }
     }
   }
-  // LOD 2: isaretli dusmanda besik ve muhur dusuyor, sayi seridi kaliyor.
+  // Son LOD basamagi: isaretli dusmanda besik dusuyor, sayi seridi kaliyor.
   const [ground, links, glow, marks] = surfaces();
-  const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(2), reducedMotion: () => true });
+  const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(4), reducedMotion: () => true });
   vfx.emit({ kind: "brand", key: "e", x: 100, y: 100, color: 0xdc2626, tier: 3, durationMs: 1000, strength: 2 }, 0);
   vfx.render({ enemies: [{ id: "e", x: 100, y: 100, trackingStacks: 2 }], now: 100, scale: 1, enemySize: () => 34 });
-  assert.equal(lines(marks).length, 0, "LOD 2 isaretli dusmanda besik yok");
+  assert.equal(lines(marks).length, 0, "LOD 4 isaretli dusmanda besik yok");
   assert.equal(styled(marks, "fillRect").length, 1, "sayi seridi kaliyor");
 });
 
@@ -577,20 +587,17 @@ test("ferman kertiğinin beyaz çekirdeği saniyede en fazla 3 kez, hareket azal
   const dots = (reducedMotion) => {
     const events = createRecorder();
     const attack = new AttackVfx(createRecorder(), createRecorder(), events, undefined, { lod: lodAt(0), reducedMotion: () => reducedMotion });
-    const white = 0xec4899;
+    const body = zeynep.ZEYNEP_MEMBER_COLORS.hiza;
+    const core = kit.whiteHot(body, 0.5);
     let count = 0;
     for (let at = 0; at < 1000; at += 50) {
       attack.emitImpact({ x: at, y: 0, angle: 0, definitionId: "zeynep-1", tier: 1, bornAt: at, key: `c${at}` });
       events.calls.length = 0;
       attack.render(at, 1);
       // Yeni dogan olayin cekirdegi tam parlaklikta (yas 0).
-      count += events.calls.filter(([name, color, alpha]) => name === "fillStyle" && color !== white && alpha === 1 && color === liftWhite(white)).length;
+      count += events.calls.filter(([name, color, alpha]) => name === "fillStyle" && alpha === 1 && color === core).length;
     }
     return count;
-  };
-  const liftWhite = (color) => {
-    const lift = (channel) => Math.round(channel + (255 - channel) * 0.8);
-    return (lift((color >> 16) & 0xff) << 16) | (lift((color >> 8) & 0xff) << 8) | lift(color & 0xff);
   };
   const live = dots(false);
   assert.ok(live >= 1 && live <= 3, `bir saniyede ${live} cekirdek`);
@@ -599,23 +606,21 @@ test("ferman kertiğinin beyaz çekirdeği saniyede en fazla 3 kez, hareket azal
   const trail = (id) => ({ id, definitionId: "zeynep-3-burn-trail", x1: 0, y1: 0, x2: 120, y2: 0, width: 32, color: 0x0e7490, ttlMs: 2000 });
   const recorder = createRecorder();
   new BeamRenderer(recorder).render([trail("zeynep-burn-trail-a-1"), trail("zeynep-burn-trail-b-7")], { now: 123, sceneNow: 123, scale: 1 });
-  const bodyAlphas = styled(recorder, "lineStyle").filter(([, , color]) => color === 0x0e7490).map(([, , , alpha]) => alpha);
+  const body = kit.groundHue(0x0e7490);
+  const bodyAlphas = styled(recorder, "lineStyle").filter(([, , color]) => color === body).map(([, , , alpha]) => alpha);
   assert.ok(bodyAlphas.length >= 4 && new Set(bodyAlphas.map((alpha) => alpha.toFixed(6))).size === 2, "iki iz ayni nabizda (zarf ve govde)");
 });
 
-test("dizilim şeridi synergy-marks elmasının (ortada) üstünde değil", () => {
+test("dizilim: üyelerden Taht'a düz çizgiler (üyenin tonunda); şerit, taç ve altın yok", () => {
   const [ground, links, glow, marks] = surfaces();
   const vfx = new zeynep.ZeynepSignatureVfx(ground, links, glow, marks, { lod: lodAt(0), reducedMotion: () => true });
-  vfx.emit({ kind: "formation", key: "t", x: 0, y: 0, tier: 2, members: [{ x: 34, y: 0, definitionId: "zeynep-1" }] }, 0);
+  vfx.emit({ kind: "formation", key: "t", x: 0, y: 0, tier: 3, members: [{ x: 34, y: 0, definitionId: "zeynep-1" }] }, 0);
   vfx.render({ enemies: [], now: 50, scale: 1 });
-  const goldLines = [];
-  let gold = false;
-  for (const [name, ...args] of marks.calls) {
-    if (name === "lineStyle") gold = args[1] === GOLD;
-    else if (name === "lineBetween" && gold) goldLines.push(args);
-  }
-  assert.ok(goldLines.length > 0, "nisan seridi cizilmeli");
-  for (const [x1, y1, x2, y2] of goldLines) {
-    for (const [px, py] of [[x1, y1], [x2, y2]]) assert.ok(Math.hypot(px - 17, py) > 3, "serit dizilim elmasinin uzerinde");
-  }
+  const memberLine = styled(links, "lineStyle").find(([, , color]) => color === zeynep.ZEYNEP_MEMBER_COLORS.hiza);
+  assert.ok(memberLine, "uyenin tonunda cizgi");
+  assert.equal(lines(links).length, 1, "uyeden Taht'a tek cizgi");
+  // Taht'in halkasi sekiz kisa cizgi; baska isaret (serit, tac) yok.
+  assert.equal(lines(marks).length, 8);
+  assert.ok(!marks.calls.some(([name]) => name === "strokePath"), "tac yok");
+  for (const [, , color] of styled(marks, "lineStyle")) assert.ok(color !== GOLD && color !== WHITE_GOLD, "altin yok");
 });

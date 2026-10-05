@@ -17,6 +17,17 @@ import {
   getHitVoiceRecipe,
   type HitVoiceId
 } from "./hit-sounds";
+import {
+  SAMPLE_FAMILIES,
+  SAMPLE_RATE_SPREAD,
+  SampleBank,
+  getKillComboGain,
+  getSampleRateJitter,
+  getSampleTier,
+  type KillSoundFamily,
+  type SampleLoader,
+  type SfxSampleFamily
+} from "./sfx-samples";
 import { fnvUnit } from "./vfx/kit";
 
 export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } from "@karayel/shared";
@@ -26,13 +37,17 @@ export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } 
  *
  * Oyunun her kucuk odulu (oldurme, altin, kritik, seviye, kart) buradan
  * geciyor: `emit` tek cagri, butceyi paylasilan `FeedbackGovernor` tutuyor,
- * burasi da sonucu yurutuyor -- sentez sesi, kucuk kamera sarsintisi,
- * telefon titresimi. Gorselin kendisi cagiranda kaliyor; karar ona
- * "goster / birlestir / dusur" diye donuyor.
+ * burasi da sonucu yurutuyor -- ses, kucuk kamera sarsintisi, telefon
+ * titresimi. Gorselin kendisi cagiranda kaliyor; karar ona "goster /
+ * birlestir / dusur" diye donuyor.
  *
- * Ses dosyasi yok, hepsi Web Audio ile sentez. Uyari tonlarinin eskiden
- * GameScene'de tuttugu tek baglam artik burada: iOS ses baglamini yalnizca
- * gercek bir dokunusla aciyor ve birden fazla baglam sessizlikle bitiyor.
+ * Savas sesleri (vurus, oldurme, kritik) kayitli ornekler (sfx-samples.ts,
+ * Kenney CC0): ilk dokunusla baglam acilinca bir kez yukleniyor ve
+ * cozuluyor. Ornek hazir degilse (dokunustan once, ag, cozme hatasi) ayni
+ * yol sentez sesine dusuyor. Arayuz ve odul sesleri Web Audio sentezi.
+ * Uyari tonlarinin eskiden GameScene'de tuttugu tek baglam artik burada: iOS
+ * ses baglamini yalnizca gercek bir dokunusla aciyor ve birden fazla baglam
+ * sessizlikle bitiyor.
  *
  * Kanal ayrimi:
  * - Efektler: bu dosyanin sentez sesleri, kendi kaydiricisi var.
@@ -45,14 +60,30 @@ export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } 
 /** Tek tonun tarifi: dalga, perde (istege bagli kayma), baslangic, sure, seviye. */
 type Tone = { wave: OscillatorType; from: number; to?: number; at: number; dur: number; gain: number };
 
-type Voice = { endsAt: number; gain: GainNode; sources: OscillatorNode[] };
+type Voice = { endsAt: number; gain: GainNode; sources: AudioScheduledSourceNode[] };
 
 /**
  * Vurus sesinin yuvasi. Yuvalar sabit ve diziler yeniden kullaniliyor:
  * vurus basina yalnizca ses dugumlerinin kendisi uretiliyor. Biten sesin
- * dugumleri bir sonraki vurusta ayriliyor (`onended` kapanisi yok).
+ * dugumleri ornek bitince (`onEnded`, yuva basina bir kez kurulan tek
+ * kapanis) ya da bir sonraki vurusta ayriliyor.
  */
-type HitVoiceHandle = { endsAt: number; gain?: GainNode; nodes: AudioNode[]; sources: AudioScheduledSourceNode[] };
+type HitVoiceHandle = {
+  endsAt: number;
+  gain?: GainNode;
+  nodes: AudioNode[];
+  sources: AudioScheduledSourceNode[];
+  onEnded: () => void;
+};
+
+/**
+ * Odul seslerinden ornekli olanlar ve varsayilan aileleri. Oldurmenin
+ * ailesini cagiran dusmandan seciyor (`emit`in ucuncu argumani).
+ */
+const SFX_SAMPLE_FAMILY: Partial<Record<FeedbackKind, SfxSampleFamily>> = {
+  kill: "killLight",
+  crit: "crit"
+};
 
 /** Paylasilan beyaz gurultu tamponunun uzunlugu (sn); vuruslar farkli yerinden baslar. */
 const HIT_NOISE_SECONDS = 1;
@@ -99,33 +130,39 @@ const NOTE = {
  * Ses tarifleri.
  *
  * Hepsi kisa ve kuru: telefon hoparlorunde uzun kuyruklu ses bir sonrakiyle
- * camura donuyor. Sik gelenler (oldurme, altin, kritik) en kisik ve en kisa;
- * seyrek olanlar (kademe, dalga temizleme) daha dolgun. `r` perde carpani:
- * kombo ilerledikce oldurme ve altin sesi yukseliyor.
+ * camura donuyor. Sik gelenler (oldurme, kritik) en kisik ve en kisa;
+ * seyrek olanlar (kademe, dalga temizleme) daha dolgun. `r` perde carpani;
+ * yalnizca gelisim onayi kullaniyor (kademesi).
+ *
+ * Savasta sik calanlar muzikal degil: notalar, arpejler ve kombo ile
+ * tirmanan perde yok. Oldurme ve kritik once ornek (bkz. SFX_SAMPLE_FAMILY);
+ * buradaki tarifleri yalnizca ornek yokken caliyor. Altin oldurme basina
+ * ses cikarmiyor (yalnizca "+N" sayisi ve HUD sayaci): her oldurmede ikinci
+ * bir tini savas sesini maskeliyordu.
  */
 const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
-  kill: (r) => [
-    { wave: "triangle", from: 440 * r * 1.45, to: 440 * r, at: 0, dur: 0.075, gain: 0.16 },
-    { wave: "sine", from: 220 * r, to: 130 * r, at: 0, dur: 0.1, gain: 0.1 }
-  ],
-  // Altin tinisi bir oktavdan fazla tirmanmiyor; ustu telefonda cizirti.
-  coin: (r) => [
-    { wave: "triangle", from: NOTE.G6 * Math.min(r, 2), at: 0, dur: 0.05, gain: 0.05 },
-    { wave: "sine", from: NOTE.C7 * Math.min(r, 2), at: 0.04, dur: 0.1, gain: 0.06 }
+  // Ornek yokken: kisa, kuru, inen bir "tok". Perde kombodan bagimsiz.
+  kill: () => [
+    { wave: "square", from: 320, to: 90, at: 0, dur: 0.07, gain: 0.05 },
+    { wave: "sine", from: 180, to: 55, at: 0, dur: 0.12, gain: 0.18 },
+    { wave: "sawtooth", from: 1400, to: 300, at: 0, dur: 0.04, gain: 0.025 }
   ],
   crit: () => [
     { wave: "square", from: 2600, to: 1400, at: 0, dur: 0.035, gain: 0.045 },
     { wave: "triangle", from: 1200, to: 900, at: 0.005, dur: 0.06, gain: 0.08 }
   ],
+  // Seviye: kisa bir servo kalkisi -- kayan, nota degil.
   level: () => [
-    { wave: "triangle", from: NOTE.C5, at: 0, dur: 0.12, gain: 0.12 },
-    { wave: "triangle", from: NOTE.G5, at: 0.09, dur: 0.2, gain: 0.12 }
+    { wave: "square", from: 240, to: 620, at: 0, dur: 0.12, gain: 0.035 },
+    { wave: "sine", from: 160, to: 420, at: 0, dur: 0.14, gain: 0.09 }
   ],
+  // Kademe: guc dalgalanmasi -- yukari kayan bir govde, kuru bir role tiki ve
+  // altta bas. Akor yok.
   tier: () => [
-    { wave: "triangle", from: NOTE.C5, at: 0, dur: 0.14, gain: 0.11 },
-    { wave: "triangle", from: NOTE.E5, at: 0.09, dur: 0.16, gain: 0.11 },
-    { wave: "triangle", from: NOTE.G5, at: 0.18, dur: 0.4, gain: 0.12 },
-    { wave: "sine", from: NOTE.C3, to: 110, at: 0, dur: 0.55, gain: 0.24 }
+    { wave: "sawtooth", from: 110, to: 520, at: 0, dur: 0.32, gain: 0.04 },
+    { wave: "square", from: 1800, to: 900, at: 0, dur: 0.03, gain: 0.035 },
+    { wave: "triangle", from: 300, to: 760, at: 0.05, dur: 0.3, gain: 0.06 },
+    { wave: "sine", from: NOTE.C3, to: 70, at: 0, dur: 0.5, gain: 0.24 }
   ],
   // Telefon hoparlorunde 250 Hz'in alti neredeyse duyulmuyor; tik dokunusun
   // cevabini tasiyor, bas kulaklikta.
@@ -273,6 +310,11 @@ export type FeedbackDirectorOptions = {
   vibration: boolean;
   /** Sarsilacak kamera; sahne kurulmadan once yok olabilir. */
   getCamera: () => Phaser.Cameras.Scene2D.Camera | undefined;
+  /**
+   * Ornek dosyalarini getiren islev; verilmezse `fetch`. Testler sahte bir
+   * yukleyici veriyor. Hata firlatirsa o ornek yok sayilir, ses sentezle.
+   */
+  loadSample?: SampleLoader;
 };
 
 export class FeedbackDirector {
@@ -291,15 +333,21 @@ export class FeedbackDirector {
   private readonly hitGraveyard: HitVoiceHandle[] = [];
   private graveCursor = 0;
   /** Onizlemenin kendi yuvasi: oyunun vurus butcesinden ayri. */
-  private readonly previewHandle: HitVoiceHandle = { endsAt: 0, nodes: [], sources: [] };
+  private readonly previewHandle: HitVoiceHandle = this.createHitHandle();
   private lastPreviewAt = Number.NEGATIVE_INFINITY;
+  private lastSfxPreviewAt = Number.NEGATIVE_INFINITY;
+  /** Kayitli savas sesleri; baglam acilinca bir kez yukleniyor. */
+  private readonly samples: SampleBank;
+  private samplesLoad?: Promise<void>;
+  /** Oldurme/kritik orneklerinin sira numarasi: hiz kaymasinin tohumu. */
+  private sfxSampleSerial = 0;
   /** Son `resume` istegi; bekleyen ses yalnizca bunun hemen ardindan tutuluyor. */
   private resumeRequestedAt?: number;
   /**
    * Baglam acilirken istenen tek ses. Tek yuva: acildigi an bir yigin ses
    * birden calmasin (emit'in "acilinca patlama yok" kurali).
    */
-  private pendingSfx?: { kind: FeedbackKind; step: number; own: boolean; at: number };
+  private pendingSfx?: { kind: FeedbackKind; step: number; own: boolean; sample?: SfxSampleFamily; at: number };
   private motionQuery?: MediaQueryList;
   private readonly handleMotionChange = (event: MediaQueryListEvent) => {
     this.governor.setReducedMotion(event.matches);
@@ -308,9 +356,12 @@ export class FeedbackDirector {
   constructor(options: FeedbackDirectorOptions) {
     this.sfxVolume = clampVolume(options.sfxVolume);
     this.hitVolume = clampVolume(options.hitVolume ?? 0.5);
+    this.samples = options.loadSample ? new SampleBank(options.loadSample) : new SampleBank();
+    // Dosyalar simdiden iniyor (dokunus gerekmez); ilk dokunusta yalnizca cozme kaliyor.
+    this.samples.prefetch();
     for (let index = 0; index < this.hitGovernor.capacity; index += 1) {
-      this.hitSlots.push({ endsAt: 0, nodes: [], sources: [] });
-      this.hitGraveyard.push({ endsAt: 0, nodes: [], sources: [] });
+      this.hitSlots.push(this.createHitHandle());
+      this.hitGraveyard.push(this.createHitHandle());
     }
     this.getCamera = options.getCamera;
     this.motionQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -350,12 +401,18 @@ export class FeedbackDirector {
    *
    * Baglam henuz acilmadiysa (ilk dokunustan once) ses sessizce atlanir:
    * askida baglama sirayla yazilan sesler, acildigi an hepsi birden calardi.
+   *
+   * `sample` ornekli seslerin ailesi; oldurmede dusmanin agirligi
+   * (`getKillSoundFamily`). Verilmezse turun varsayilani. Ornekli ses
+   * butcede gercek suresiyle tutuluyor; ornek henuz cozuluyorsa ses yok
+   * (gorsel yine karar aliyor).
    */
-  emit(kind: FeedbackKind, input: FeedbackInput): FeedbackDecision {
-    const audible = !input.silent && this.isSfxReady(kind);
-    const decision = this.governor.decide(kind, { ...input, silent: !audible }, performance.now());
+  emit(kind: FeedbackKind, input: FeedbackInput, sample?: SfxSampleFamily): FeedbackDecision {
+    const family = this.resolveSampleFamily(kind, sample, Boolean(input.own));
+    const audible = !input.silent && this.isSfxReady(kind) && !this.isSampleLoading(family);
+    const decision = this.governor.decide(kind, { ...input, silent: !audible, soundMs: this.getSampleSoundMs(family) }, performance.now());
     if (decision.sound) {
-      this.synthesize(kind, decision.step, decision.own, decision.stealVoice);
+      this.synthesize(kind, decision.step, decision.own, decision.stealVoice, family);
     }
     if (decision.shakePx > 0) {
       this.applyShake(decision.shakePx);
@@ -375,17 +432,98 @@ export class FeedbackDirector {
    * surduruluyorsa ses kisa bir sure (`PENDING_SFX_MS`) tutulup baglam acilir
    * acilmaz caliyor. Bu durumda donus yine `false`: ses henuz calmadi.
    */
-  playSfx(kind: FeedbackKind, options: { step?: number; own?: boolean } = {}) {
+  playSfx(kind: FeedbackKind, options: { step?: number; own?: boolean; sample?: SfxSampleFamily } = {}) {
     if (!this.isSfxReady(kind)) {
       this.holdPendingSfx(kind, options);
       return false;
     }
     const own = options.own ?? true;
-    const admitted = this.governor.admitSound(kind, own, performance.now());
+    const family = this.resolveSampleFamily(kind, options.sample, own);
+    if (this.isSampleLoading(family)) {
+      return false;
+    }
+    const admitted = this.governor.admitSound(kind, own, performance.now(), this.getSampleSoundMs(family));
     if (!admitted.play) {
       return false;
     }
-    return this.synthesize(kind, options.step ?? 0, own, admitted.steal);
+    return this.synthesize(kind, options.step ?? 0, own, admitted.steal, family);
+  }
+
+  /**
+   * Ornekli sesin ailesi. Takim arkadasinin agir oldurmesi kisa ezilmeyi
+   * caliyor (kisik): co-op'ta baskasinin 480 ms'lik patlamalari hem
+   * seninkileri bastirir hem de arkadas butcesini (3 ses) doldururdu.
+   */
+  private resolveSampleFamily(kind: FeedbackKind, sample: SfxSampleFamily | undefined, own: boolean): SfxSampleFamily | undefined {
+    const family = sample ?? SFX_SAMPLE_FAMILY[kind];
+    return !own && family === "killHeavy" ? "killLight" : family;
+  }
+
+  /** Ornek hazir degil ama cozuluyor: o kisa anda sentez yerine sessizlik. */
+  private isSampleLoading(family: SfxSampleFamily | undefined) {
+    return family !== undefined && this.samples.isLoading(family);
+  }
+
+  /** Ornekli sesin butcedeki suresi (ms): en uzun cesit, en yavas hizda. */
+  private getSampleSoundMs(family: SfxSampleFamily | undefined) {
+    return family !== undefined && this.samples.has(family)
+      ? (this.samples.duration(family) / (1 - SAMPLE_RATE_SPREAD)) * 1000
+      : undefined;
+  }
+
+  /**
+   * Efektler kaydiricisinin onizlemesi: hafif bir oldurme sesi, en fazla
+   * `HIT_PREVIEW_GAP_MS`'de bir (surukleme saniyede ~14 deger yolluyor).
+   * `playSfx` yolundan: butce gecerli ve baglam bu dokunusta aciliyorsa ses
+   * kisa bir an tutulup acilinca caliyor.
+   */
+  previewSfx() {
+    const at = performance.now();
+    if (at - this.lastSfxPreviewAt < HIT_PREVIEW_GAP_MS) {
+      return false;
+    }
+    this.lastSfxPreviewAt = at;
+    return this.playSfx("kill", { own: true, sample: "killLight" });
+  }
+
+  /**
+   * Galerinin oldurme sesi dinlemesi: oyunun butcesinin disinda, vurus
+   * onizlemesiyle ayni aralik ve kurallar (seviye 0, kapali baglam, gizli
+   * sekme: dugum yok).
+   */
+  previewKill(family: KillSoundFamily = "killLight", own = true) {
+    if (this.sfxVolume <= 0) {
+      return false;
+    }
+    const context = this.context;
+    if (!context || context.state !== "running") {
+      return false;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return false;
+    }
+    if (this.isSampleLoading(family)) {
+      return false;
+    }
+    const at = performance.now();
+    if (at - this.lastPreviewAt < HIT_PREVIEW_GAP_MS) {
+      return false;
+    }
+    this.lastPreviewAt = at;
+    return this.synthesize("kill", 0, own, false, family);
+  }
+
+  /**
+   * Orneklerin yuklenmesi bittiginde (basarili ya da degil) cozulen soz.
+   * Yukleme baslamadiysa hemen cozuluyor. Oyun beklemiyor; testler ve tani.
+   */
+  whenSamplesLoaded(): Promise<void> {
+    return this.samplesLoad ?? Promise.resolve();
+  }
+
+  /** Ailenin ornegi hazir mi (tani ve galeri). */
+  hasSample(family: Parameters<SampleBank["has"]>[0]) {
+    return this.samples.has(family);
   }
 
   /**
@@ -455,11 +593,23 @@ export class FeedbackDirector {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return false;
     }
-    const recipe = getHitVoiceRecipe(voice, tier);
-    if (recipe.length === 0) {
+    let duration: number;
+    if (this.samples.has(voice)) {
+      // Butce ornegin gercek suresiyle: en yavas hizda en uzun cesit. Sv 10
+      // govdesi ayni yuvayi paylasiyor; ikisinden uzun olani sayiliyor.
+      const shape = getSampleTier(tier);
+      let seconds = this.samples.duration(voice);
+      if (shape.heft && this.samples.has("heft")) seconds = Math.max(seconds, this.samples.duration("heft"));
+      duration = seconds / (shape.rate * (1 - SAMPLE_RATE_SPREAD));
+    } else if (this.samples.isLoading(voice)) {
+      // Ornek cozuluyor: sentez yerine kisa bir an sessizlik.
       return false;
+    } else {
+      if (getHitVoiceRecipe(voice, tier).length === 0) {
+        return false;
+      }
+      duration = getHitVoiceDuration(voice, tier);
     }
-    const duration = getHitVoiceDuration(voice, tier);
     const slot = this.hitGovernor.admit(voice, own, tick, duration * 1000 + HIT_SOUND_LIMITS.tailMs, performance.now());
     if (slot < 0) {
       return false;
@@ -489,6 +639,9 @@ export class FeedbackDirector {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return false;
     }
+    if (!this.samples.has(voice) && this.samples.isLoading(voice)) {
+      return false;
+    }
     const at = performance.now();
     if (at - this.lastPreviewAt < HIT_PREVIEW_GAP_MS) {
       return false;
@@ -506,7 +659,6 @@ export class FeedbackDirector {
    * yapar. Bitmisse dugumleri hemen ayriliyor.
    */
   private synthesizeHit(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, tier: number | undefined, own: boolean, key: string | undefined, stole: boolean) {
-    const recipe = getHitVoiceRecipe(voice, tier);
     const now = context.currentTime;
     if (handle.gain) {
       if (stole || handle.endsAt > now) {
@@ -516,6 +668,12 @@ export class FeedbackDirector {
       }
     }
 
+    const buffer = this.samples.pick(voice, key);
+    if (buffer) {
+      return this.playHitSample(context, handle, voice, buffer, tier, own, key, now);
+    }
+
+    const recipe = getHitVoiceRecipe(voice, tier);
     const ratio = getHitPitchRatio(key);
     const noiseOffset = key ? fnvUnit(key, 0x9e) * (HIT_NOISE_SECONDS - 0.3) : 0;
     const voiceGain = context.createGain();
@@ -565,6 +723,60 @@ export class FeedbackDirector {
     }
     handle.endsAt = endsAt;
     return true;
+  }
+
+  /**
+   * Ornekli vurus: bir AudioBufferSourceNode ve sesin kazanc dugumu; sv 10'da
+   * ayni kazanca bagli ikinci bir kaynak (govde). Govde ayni yuvayi
+   * paylasiyor; yuvanin bitisi ikisinden uzun olaninki (`playHit` butceyi de
+   * oyle tutuyor), yani yuva yeniden kullanilinca govdenin kuyrugu kesilmiyor. Seviye aile x kademe x
+   * (takim arkadasi kisik); hiz olay kimliginden +-4%, kademede biraz yavas.
+   * Ornekler zaten sonumlu kesildi, zarf dugumu yok.
+   */
+  private playHitSample(context: AudioContext, handle: HitVoiceHandle, voice: HitVoiceId, buffer: AudioBuffer, tier: number | undefined, own: boolean, key: string | undefined, now: number) {
+    const shape = getSampleTier(tier);
+    const rate = getSampleRateJitter(key) * shape.rate;
+    const voiceGain = context.createGain();
+    voiceGain.gain.value = SAMPLE_FAMILIES[voice].gain * shape.gain * (own ? 1 : HIT_SOUND_LIMITS.teammateGain);
+    voiceGain.connect(this.getHitBus(context));
+    handle.gain = voiceGain;
+    let endsAt = now + this.startHitSource(context, handle, buffer, rate, voiceGain, now);
+    if (shape.heft) {
+      const heft = this.samples.pick("heft", key);
+      if (heft) endsAt = Math.max(endsAt, now + this.startHitSource(context, handle, heft, rate, voiceGain, now));
+    }
+    handle.endsAt = endsAt;
+    return true;
+  }
+
+  private startHitSource(context: AudioContext, handle: HitVoiceHandle, buffer: AudioBuffer, rate: number, target: AudioNode, at: number) {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(target);
+    source.onended = handle.onEnded;
+    // Bastaki kodlayici dolgusu atlaniyor: vurus cizimle ayni anda.
+    const lead = this.samples.lead(buffer);
+    source.start(at, lead);
+    handle.nodes.push(source);
+    handle.sources.push(source);
+    return (buffer.duration - lead) / rate;
+  }
+
+  /**
+   * Vurus yuvasi. Bitis kapanisi yuva basina bir kez kuruluyor: ornek
+   * bitince yuvanin sesi hala o sesse (yuva yeniden kullanilmadiysa)
+   * dugumler ayriliyor. Yuva bu arada baska sese gectiyse dokunmuyor.
+   */
+  private createHitHandle(): HitVoiceHandle {
+    const handle: HitVoiceHandle = { endsAt: 0, nodes: [], sources: [], onEnded: () => undefined };
+    handle.onEnded = () => {
+      const now = this.context?.currentTime;
+      if (handle.gain && now !== undefined && handle.endsAt <= now + 0.02) {
+        this.releaseHitVoice(handle);
+      }
+    };
+    return handle;
   }
 
   setVibration(on: boolean) {
@@ -631,14 +843,40 @@ export class FeedbackDirector {
    */
   unlockAudio() {
     const context = this.getAudioContext();
+    // Cozme askidaki baglamda da calisiyor: kilit acilmasini beklemeden.
+    this.loadSamples();
+    if (context?.state === "running") {
+      return;
+    }
     // iOS arama ya da alarm sonrasi baglami "interrupted" birakabiliyor; o da
     // ayni sekilde surduruluyor.
-    if (context && context.state !== "running" && context.state !== "closed") {
+    if (context && context.state !== "closed") {
       this.resumeRequestedAt = performance.now();
       // `resume` durumu hemen degistirmiyor; ayni dokunusta istenen ses
       // (ulti bas vurusu) baglam acilinca yetissin.
       void context.resume().then(() => this.flushPendingSfx()).catch(() => undefined);
     }
+  }
+
+  /**
+   * Hazir olmayan ornekleri coz (onceden inmis veriden). Her acilista
+   * cagriliyor: cozulmekte ya da hazir olan dosyaya dokunulmuyor, gelmeyen
+   * dosya yeniden deneniyor (en fazla 3 kez). Hata oyunu durdurmuyor; o ses
+   * sentezle caliyor.
+   */
+  private loadSamples() {
+    const context = this.context;
+    if (!context || context.state === "closed") {
+      return;
+    }
+    let job: Promise<void>;
+    try {
+      job = this.samples.load(context).catch(() => undefined);
+    } catch {
+      job = Promise.resolve();
+    }
+    const previous = this.samplesLoad;
+    this.samplesLoad = previous ? Promise.all([previous, job]).then(() => undefined) : job;
   }
 
   destroy() {
@@ -676,21 +914,29 @@ export class FeedbackDirector {
   }
 
   /**
-   * Efekt sesinin cikis yolu: ses seviyesi, sonra sikistirici.
+   * Efekt sesinin cikis yolu: ses seviyesi, sikistirici, sonra sinirlayici.
    *
-   * Sikistirici ust uste binen seslerin (oldurme + altin + kritik) telefon
-   * hoparlorunu patlatmasini onluyor; butce 6 sesle sinirli ama tepe yine de
-   * toplaniyor.
+   * Sikistirici ust uste binen seslerin (vuruslar + oldurme + kritik)
+   * yogunlugunu topluyor; sinirlayici (-3 dBFS, 20:1, 1 ms) kalabalik bir
+   * dalgada tepenin telefon hoparlorunu kirpmasini engelliyor. Butce 6+6
+   * sesle sinirli ama tepe yine de toplaniyor.
    */
   private getSfxBus(context: AudioContext) {
     if (!this.sfxBus) {
+      const limiter = context.createDynamicsCompressor();
+      limiter.threshold.value = -3;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.001;
+      limiter.release.value = 0.1;
+      limiter.connect(context.destination);
       const compressor = context.createDynamicsCompressor();
       compressor.threshold.value = -18;
       compressor.knee.value = 12;
       compressor.ratio.value = 4;
       compressor.attack.value = 0.003;
       compressor.release.value = 0.12;
-      compressor.connect(context.destination);
+      compressor.connect(limiter);
       const bus = context.createGain();
       bus.gain.value = this.sfxVolume;
       bus.connect(compressor);
@@ -806,7 +1052,7 @@ export class FeedbackDirector {
    * yoksa baglam acilirken biriken oyun olaylari kuyruga girerdi. Yuva tek ve
    * son istek oncekinin yerini aliyor; `resume` istegi eskidiyse hic tutulmuyor.
    */
-  private holdPendingSfx(kind: FeedbackKind, options: { step?: number; own?: boolean }) {
+  private holdPendingSfx(kind: FeedbackKind, options: { step?: number; own?: boolean; sample?: SfxSampleFamily }) {
     const now = performance.now();
     const context = this.context;
     if (
@@ -819,7 +1065,7 @@ export class FeedbackDirector {
     ) {
       return;
     }
-    this.pendingSfx = { kind, step: options.step ?? 0, own: options.own ?? true, at: now };
+    this.pendingSfx = { kind, step: options.step ?? 0, own: options.own ?? true, sample: options.sample, at: now };
   }
 
   /**
@@ -834,14 +1080,22 @@ export class FeedbackDirector {
     this.pendingSfx = undefined;
     this.resumeRequestedAt = undefined;
     if (pending && performance.now() - pending.at <= PENDING_SFX_MS) {
-      this.playSfx(pending.kind, { step: pending.step, own: pending.own });
+      this.playSfx(pending.kind, { step: pending.step, own: pending.own, sample: pending.sample });
     }
   }
 
-  private synthesize(kind: FeedbackKind, step: number, own: boolean, steal: boolean) {
+  /**
+   * Odul sesi: ornegi varsa ornek, yoksa sentez tarifi. Oldurmede perde
+   * kombodan bagimsiz; kombo yalnizca seviyeyi biraz artiriyor.
+   */
+  private synthesize(kind: FeedbackKind, step: number, own: boolean, steal: boolean, sample?: SfxSampleFamily) {
     const context = this.context;
-    const recipe = SFX_RECIPES[kind];
-    if (!context || !recipe) {
+    if (!context) {
+      return false;
+    }
+
+    const family = this.resolveSampleFamily(kind, sample, own);
+    if (this.isSampleLoading(family)) {
       return false;
     }
 
@@ -849,6 +1103,16 @@ export class FeedbackDirector {
     this.voices = this.voices.filter((voice) => voice.endsAt > now);
     if (steal) {
       this.fadeOutOldestVoice(context);
+    }
+
+    const buffer = family ? this.samples.pick(family, undefined) : undefined;
+    if (family && buffer) {
+      return this.playSfxSample(context, kind, family, buffer, step, own, now);
+    }
+
+    const recipe = SFX_RECIPES[kind];
+    if (!recipe) {
+      return false;
     }
 
     const voiceGain = context.createGain();
@@ -887,6 +1151,34 @@ export class FeedbackDirector {
     }
 
     this.voices.push({ endsAt, gain: voiceGain, sources });
+    return true;
+  }
+
+  /**
+   * Ornekli odul sesi (oldurme, kritik): Efektler kanalina bir kaynak ve bir
+   * kazanc dugumu; ornek bitince ikisi de ayriliyor. Hiz sira numarasindan
+   * +-4% kayiyor (perde basamagi degil); oldurmede kombo seviyeyi en fazla
+   * %16 artiriyor.
+   */
+  private playSfxSample(context: AudioContext, kind: FeedbackKind, family: SfxSampleFamily, buffer: AudioBuffer, step: number, own: boolean, now: number) {
+    const rate = getSampleRateJitter(`${family}#${this.sfxSampleSerial}`);
+    this.sfxSampleSerial = (this.sfxSampleSerial + 1) % 65536;
+    const voiceGain = context.createGain();
+    voiceGain.gain.value = SAMPLE_FAMILIES[family].gain
+      * (own ? 1 : TEAMMATE_SFX_GAIN)
+      * (kind === "kill" && own ? getKillComboGain(step) : 1);
+    voiceGain.connect(this.getSfxBus(context));
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(voiceGain);
+    source.onended = () => {
+      source.disconnect();
+      voiceGain.disconnect();
+    };
+    const lead = this.samples.lead(buffer);
+    source.start(now, lead);
+    this.voices.push({ endsAt: now + (buffer.duration - lead) / rate, gain: voiceGain, sources: [source] });
     return true;
   }
 

@@ -17,6 +17,11 @@
  * damgalari). `kinBrandEvery`: her N. dusman surekli Kin damgali (1 = 60
  * dusmanin hepsi -- iki Kin kulesinin kalabalik dalgadaki en kotu durumu).
  *
+ * Carpmalarin yanik izleri (AttackVfx `ground`) oyundaki gibi ayri bir yuzeyde
+ * ve toplama dahil. Olumler (CombatVfx) ayri olculuyor (`runDeathBench`):
+ * saniyede N oldurme, dusman tipleri ve irklar sirayla (metal, kitin, kristal,
+ * tas, kul; dortte biri agir).
+ *
  * Kullanim: npm run build --workspace @karayel/shared && node tools/vfx-bench.mjs
  * Ciktiya `--json` verilirse makine okunur.
  */
@@ -41,13 +46,14 @@ export async function runVfxBench({ lodLevel = 0, markEvery = 4, kinBrandEvery =
   const body = createCountingGraphics();
   const glow = createCountingGraphics();
   const events = createCountingGraphics();
+  const ground = createCountingGraphics();
   const beam = createCountingGraphics();
   const beamGlow = createCountingGraphics();
   const live = [];
   const flashes = { flash(spec) { live.push(spec); } };
   // Damgalar: oyunda GlowStampPool (tek ADD dortgen); burada sayiliyor.
   const stamps = { count: 0, beginFrame() { this.count = 0; }, stamp() { this.count += 1; }, endFrame() {} };
-  const vfx = new AttackVfx(body, glow, events, flashes, { lod, stamps });
+  const vfx = new AttackVfx(body, glow, events, flashes, { lod, stamps, ground });
   const beams = new BeamRenderer(beam, beamGlow, lod);
   const signatureGround = createCountingGraphics();
   const signatureLinks = createCountingGraphics();
@@ -60,7 +66,7 @@ export async function runVfxBench({ lodLevel = 0, markEvery = 4, kinBrandEvery =
   // Harita karesi 28 (yuk sahnesinin karesi): Kin bandi ve Abarti rayi bununla.
   const courtFeed = new ScenarioCourtFeed(court, { gridSize: 28, worldScale: 28 / 34, isOwnOwner: (ownerId) => ownerId === undefined });
   const courtFrame = { enemies: [], now: 0, scale: 1, enemySize: () => 34 };
-  const surfaces = [body, glow, events, beam, beamGlow, ...signatureSurfaces, ...courtSurfaces];
+  const surfaces = [body, glow, events, ground, beam, beamGlow, ...signatureSurfaces, ...courtSurfaces];
   // Dusmanin ekrandaki capi: grunt 34 birim (GameScene getEnemySpriteDisplaySize).
   const signatureFrame = { towers: [], enemies: [], now: 0, scale: 1, cellSize: 28, isOwn: (tower) => tower.ownerId === undefined, enemySize: () => 34 };
 
@@ -143,20 +149,81 @@ export async function runVfxBench({ lodLevel = 0, markEvery = 4, kinBrandEvery =
   };
 }
 
+/** Olumlerin irk dokulari ve tipleri: malzemeler sirayla, dortte biri agir. */
+const DEATH_TEXTURES = ["enemy-grunt", "enemy-spaceBug-runner", "enemy-fourthDimensional-grunt", "enemy-brute", "enemy-golem-shooter", "enemy-fallen-grunt", "enemy-holyGuardian-runner", "enemy-golem-brute"];
+
+/**
+ * Olum olcumu: saniyede `perSecond` oldurme (tepede 3-6), 60 dusmanin
+ * konumlarinda; ulti anini da gormek icin `burst` kadar olum tek karede.
+ */
+export async function runDeathBench({ lodLevel = 0, perSecond = 6, burst = 0 } = {}) {
+  const { CombatVfx } = await importWebModule("apps/web/src/vfx/combat-vfx.ts");
+  const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
+  const lod = new VfxLod();
+  lod.force(lodLevel);
+  const graphics = createCountingGraphics();
+  const ground = createCountingGraphics();
+  const combat = new CombatVfx(graphics, ground, lod);
+  const interval = 1000 / perSecond;
+  let now = 10_000;
+  let next = now;
+  let kills = 0;
+  const totals = { vertices: 0, calls: 0, live: 0, ms: 0, peak: 0 };
+  const emit = (at) => {
+    const texture = DEATH_TEXTURES[kills % DEATH_TEXTURES.length];
+    const heavy = texture.includes("brute");
+    combat.emitDeath({
+      x: 40 + (kills * 53) % 310, y: 120 + (kills * 97) % 520, size: heavy ? 43 : 34, color: 0xdc2626,
+      shards: heavy ? 8 : 5, durationMs: heavy ? 220 : 190, intensity: kills % 4 === 0 ? 0.5 : 1,
+      still: false, bornAt: at, texture, heavy, air: false
+    });
+    kills += 1;
+  };
+  for (let frame = 0; frame < WARMUP_FRAMES + FRAMES; frame += 1) {
+    while (next <= now) {
+      emit(next);
+      next += interval;
+    }
+    if (burst > 0 && frame === WARMUP_FRAMES) for (let index = 0; index < burst; index += 1) emit(now);
+    graphics.reset();
+    ground.reset();
+    const start = performance.now();
+    combat.render(now, 1);
+    const ms = performance.now() - start;
+    if (frame >= WARMUP_FRAMES) {
+      const vertices = graphics.stats.vertices + ground.stats.vertices;
+      totals.vertices += vertices;
+      totals.calls += graphics.stats.calls + ground.stats.calls;
+      totals.live += combat.liveDeaths ?? 0;
+      totals.ms += ms;
+      totals.peak = Math.max(totals.peak, vertices);
+    }
+    now += FRAME_MS;
+  }
+  const per = (value) => Math.round((value / FRAMES) * 10) / 10;
+  return { lodLevel, perSecond, burst, verticesPerFrame: per(totals.vertices), callsPerFrame: per(totals.calls), liveDeaths: per(totals.live), peakVertices: totals.peak, msPerFrame: Math.round((totals.ms / FRAMES) * 1000) / 1000 };
+}
+
 // Dogrudan calistirildiginda tablo basiyor; testten ice aktarildiginda sessiz.
 if (process.argv[1]?.replace(/\\/g, "/").endsWith("tools/vfx-bench.mjs")) {
   const results = [];
-  for (const lodLevel of [0, 1, 2, 3]) results.push(await runVfxBench({ lodLevel }));
+  for (const lodLevel of [0, 1, 2, 3, 4]) results.push(await runVfxBench({ lodLevel }));
   // Hepsi isaretli: 60 dusman, uc yigin.
-  for (const lodLevel of [0, 1, 2, 3]) results.push(await runVfxBench({ lodLevel, markEvery: 1 }));
+  for (const lodLevel of [0, 1, 2, 3, 4]) results.push(await runVfxBench({ lodLevel, markEvery: 1 }));
   // Zeynep'in en kotu durumu: 60 dusmanin hepsi Kin damgali (isaret varsayilan).
-  for (const lodLevel of [0, 1, 2, 3]) results.push(await runVfxBench({ lodLevel, kinBrandEvery: 1 }));
+  for (const lodLevel of [0, 1, 2, 3, 4]) results.push(await runVfxBench({ lodLevel, kinBrandEvery: 1 }));
   // Birlesik en kotu durum: 60 dusmanin hepsi hem Takipci isaretli hem Kin damgali.
-  for (const lodLevel of [0, 1, 2, 3]) results.push(await runVfxBench({ lodLevel, markEvery: 1, kinBrandEvery: 1 }));
+  for (const lodLevel of [0, 1, 2, 3, 4]) results.push(await runVfxBench({ lodLevel, markEvery: 1, kinBrandEvery: 1 }));
+  const deaths = [];
+  for (const lodLevel of [0, 1, 2, 3]) deaths.push(await runDeathBench({ lodLevel }));
+  // Ulti: 40 olum tek karede (CombatVfx'in tavani).
+  deaths.push(await runDeathBench({ lodLevel: 0, burst: 40 }));
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify(results, null, 2));
+    console.log(JSON.stringify({ attacks: results, deaths }, null, 2));
   } else {
     console.log("VFX olcumu: 20 kademe-3 kule, 60 dusman (15 ya da 60'i isaretli; ya da 60'i Kin damgali), 600 kare (60 fps)");
     console.table(results);
+    console.log("Olumler: saniyede 6 oldurme (irklar ve tipler sirayla); son satir 40 olumluk ulti ani");
+    console.table(deaths);
   }
 }

@@ -128,7 +128,7 @@ test("onay sesleri: kendi dokunusun P1, takim arkadasina yok, sarsinti ve titres
 test("onay sesi kalabalik dalgada dusmez ama ust uste basmada seyrelir", () => {
   const governor = new FeedbackGovernor();
   // Alti ses birden: butce dolu.
-  for (const kind of ["crit", "kill", "coin", "place", "cardPick", "level"]) {
+  for (const kind of ["crit", "kill", "ultimateReady", "place", "cardPick", "level"]) {
     assert.equal(governor.admitSound(kind, true, 0).play, true, `${kind} calmali`);
   }
   assert.equal(governor.activeVoices(1), FEEDBACK_LIMITS.sounds);

@@ -1,10 +1,13 @@
 /**
  * Efektlerin ayrinti seviyesi (LOD): yuk altinda neyin once dusecegi.
  *
- * Sira sabit ve kural: once kivilcim ve zerreler, sonra haleler, en son
- * iz uzunlugu. Renk ve siluet hicbir seviyede dusmuyor -- kademeyi onlar
- * tasiyor; yuk altinda bile oyuncu seviye 10 kulesini seviye 1'den ayirt
- * edebilmeli.
+ * Sira sabit ve kural (agir, sert dil): once kivilcimlar (ve carpmanin
+ * metal kirintilari), sonra duman (ve ADD isi parlamalari), sonra yer
+ * izleri (yanik, sivi lekesi), en son iz uzunlugu ve -- ayni son basamakta --
+ * bilgi isaretlerinin sikismasi (kertikler tek seride). Renk ve siluet hicbir
+ * seviyede dusmuyor -- kademeyi onlar tasiyor (cekirdegin sicakligi ve
+ * govdenin agirligi); yuk altinda bile oyuncu seviye 10 kulesini seviye
+ * 1'den ayirt edebilmeli.
  *
  * Olcu iki tane: efektlerin bu karedeki CPU suresi (butce 3 ms, orta sinif
  * Android'de 20 kademe-3 kule ateslerken) ve kare araligi (cihazin kendi
@@ -28,7 +31,8 @@ export const VFX_SLOW_FRAME_RATIO = 1.25;
 export const VFX_CALM_FRAME_RATIO = 1.1;
 export const VFX_LOD_RAISE_AFTER_MS = 500;
 export const VFX_LOD_LOWER_AFTER_MS = 2000;
-export const VFX_LOD_MAX = 3;
+/** Dort basamak: 1 kivilcim, 2 duman, 3 yer izi, 4 iz uzunlugu. */
+export const VFX_LOD_MAX = 4;
 
 export class VfxLod {
   level = 0;
@@ -84,31 +88,42 @@ export class VfxLod {
     if (this.forced !== undefined) this.level = this.forced;
   }
 
-  /** Kivilcim ve zerreler (ilk dusen). */
+  /** Balistik kivilcimlar, korlar ve carpmanin metal kirintilari (ilk dusen). */
   get sparks() {
     return this.level < 1;
   }
 
-  /** Haleler ve kosan parlamalar. */
-  get corona() {
+  /** Duman ve ADD isi parlamalari (ikinci). */
+  get smoke() {
     return this.level < 2;
+  }
+
+
+  /** Yer izleri: yanik, sivi lekesi (ucuncu). */
+  get decals() {
+    return this.level < 3;
   }
 
   /**
-   * Ayni anda cizilen kademe 3 imza carpmasi siniri; ikinci vurusun ince
-   * halkasi da 2. seviyede dusuyor (parlama dokusu kaliyor).
+   * Ayni karede cizilen agir sok halkasi siniri (kademe 3, agir vurus): 2'de
+   * dort, 3 ve ustunde iki. Halkanin kendisi tek ince cizgi.
    */
-  get signatureCap() {
+  get shockRingCap() {
     return this.level >= 3 ? 2 : this.level >= 2 ? 4 : Number.POSITIVE_INFINITY;
   }
 
-  get secondBeatRing() {
-    return this.level < 2;
+  /** Iz uzunlugunun carpani (dorduncu basamak). */
+  get trailScale() {
+    return this.level >= 4 ? 0.5 : 1;
   }
 
-  /** Iz uzunlugunun carpani (en son dusen). */
-  get trailScale() {
-    return this.level >= 3 ? 0.5 : 1;
+  /**
+   * Bilgi isaretlerinin sikismasi (Takipci kertikleri ve Kin damgasi tek
+   * seride, Kin yayi iki parcaya): en son, iz kisalmasiyla ayni basamakta
+   * (VFX_LOD_MAX). Sayi ve renk yine okunuyor.
+   */
+  get compactMarks() {
+    return this.level >= VFX_LOD_MAX;
   }
 
   get smoothedVfxMs() {

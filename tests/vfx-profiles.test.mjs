@@ -1,17 +1,20 @@
 /**
- * Kademe dili: her saldiran kulenin profili var ve uc kademesi gercekten farkli.
+ * Kademe dili (agir, sert): her saldiran kulenin profili var ve uc kademesi
+ * gercekten farkli -- ama sus ile degil, yogunlukla.
  *
  * c59c79b alti kuleyi sessizce kademe halkalarindan dusurdu ve hicbir test
  * bunu gormedi: testler yalnizca kademenin tele ciktigini sayiyordu, ekranda
  * neyin cizildigini degil. Buradaki testler:
  *
  * - Katalogdaki her saldiran kulenin kayitli bir profili var (turetilmis yedek
- *   degil), uc kademesi renkte ve en az bir ozellik bayraginda ayrisiyor.
- * - Rampa kulenin kendi renginden: varsayilan yesil yok, ucuncu durak tumuyle
- *   beyaz degil, Omer'in kademe 2'si kulenin kendi sarisi degil.
- * - Profil cizicisi kademe yukseldikce gercekten daha fazla ciziyor ve kademe
- *   2+ omuzlarini ADD katmanina koyuyor.
- * - LOD once kivilcimi, sonra haleyi, en son iz uzunlugunu kesiyor.
+ *   degil); uc kademesi cekirdegin sicakliginda, govdenin agirliginda ve
+ *   vurusun gucunde kesin olarak artiyor.
+ * - Ton kulenin kendi tonu, yere indirilmis: varsayilan yesil yok, rampa ayni
+ *   tonda kaliyor (pembe -> altin -> beyaz altin gibi rutbe rampasi yok).
+ * - Cizici kademe yukseldikce daha agir ve daha sicak ciziyor; carpma daha
+ *   cok kivilcim ve kirinti sacip daha buyuk ve sert parliyor.
+ * - LOD once kivilcimi, sonra dumani, sonra yer izini, en son iz uzunlugunu
+ *   kesiyor.
  * - Isinlar snapshot'lar arasinda kimlikle ara degerleniyor.
  */
 import test from "node:test";
@@ -29,13 +32,13 @@ const { VfxScenario } = await importWebModule("apps/web/src/vfx/vfx-scenario.ts"
 const attacking = [...new Map(Object.values(towerCatalog).flat().map((tower) => [tower.id, tower])).values()]
   .filter((tower) => profiles.isAttackingDefinition(tower));
 
-const flags = (recipe) => JSON.stringify({
-  shoulders: recipe.shoulders,
-  trail: recipe.trail,
-  muzzle: recipe.muzzle,
-  impact: { ...recipe.impact, scale: undefined, durationMs: undefined },
-  alive: recipe.alive
-});
+/** Rengin HSL acikligi (0-1). */
+const lightness = (color) => {
+  const [r, g, b] = channels(color).map((value) => value / 255);
+  return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+};
+/** Vurusun gucu: kivilcim, kirinti, catirti, parlama ve hiz birlikte. */
+const force = (recipe) => recipe.impact.sparks + recipe.impact.debris + recipe.impact.crackle + recipe.impact.flash / 4 + recipe.impact.force / 50;
 
 const channels = (color) => [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
 const distance = (a, b) => {
@@ -54,82 +57,120 @@ test("katalogdaki her saldıran kulenin kayıtlı bir profili var", () => {
   }
 });
 
-test("her profilin üç kademesi renkte ve en az bir özellikte ayrışır", () => {
+test("her profilin üç kademesi yoğunlukta ayrışır: çekirdek daha sıcak, gövde daha ağır, vuruş daha güçlü", () => {
   for (const tower of attacking) {
     const profile = profiles.getVfxProfile(tower.id);
     const [t1, t2, t3] = profile.tiers;
     assert.deepEqual([t1.tier, t2.tier, t3.tier], [1, 2, 3]);
-    for (const [a, b, label] of [[t1, t2, "1-2"], [t2, t3, "2-3"], [t1, t3, "1-3"]]) {
-      assert.ok(distance(a.color, b.color) > 40, `${tower.id} kademe ${label} rengi ayni gibi (${a.color.toString(16)} / ${b.color.toString(16)})`);
-      assert.notEqual(flags(a), flags(b), `${tower.id} kademe ${label} ayni ozellikleri tasiyor`);
+    for (const [a, b, label] of [[t1, t2, "1-2"], [t2, t3, "2-3"]]) {
+      assert.ok(b.heat > a.heat, `${tower.id} kademe ${label}: cekirdek isinmiyor`);
+      assert.ok(lightness(b.core) > lightness(a.core), `${tower.id} kademe ${label}: cekirdek beyazlasmiyor`);
+      assert.ok(b.weight > a.weight, `${tower.id} kademe ${label}: govde agirlasmiyor`);
+      assert.ok(force(b) > force(a), `${tower.id} kademe ${label}: vurus guclenmiyor`);
+      assert.ok(b.impact.flash > a.impact.flash, `${tower.id} kademe ${label}: sert parlama buyumuyor`);
+      assert.ok(b.trail.points >= a.trail.points, `${tower.id} kademe ${label}: iz kisaliyor`);
     }
-    // Siluet kademeyle buyumuyor; varlik buyuyor.
+    // Sok halkasi yalnizca kademe 3'te ve yalnizca agir ya da alan vurusunda.
+    assert.equal(t1.impact.shockRing || t2.impact.shockRing, false, `${tower.id}: sok halkasi kademe 3'un`);
+    assert.equal(t3.impact.shockRing, profile.heavy || profile.aoe, `${tower.id}: sok halkasi agir/alan vurusunda`);
+    // Siluet kademeyle buyumuyor; agirlik ve cekirdek buyuyor.
     assert.equal(t1.silhouette, t3.silhouette, `${tower.id} siluet buyumemeli`);
     assert.ok(t1.silhouette >= 12 && t1.silhouette <= 16, `${tower.id} siluet ${t1.silhouette} (12-16)`);
+    // Kisa sert iz: en fazla 5 nokta; namlu sarji kisa.
+    assert.ok(t3.trail.points <= 5, `${tower.id} iz ${t3.trail.points} nokta`);
+    assert.ok(t3.muzzle.anticipationMs <= 120, `${tower.id} namlu sarji ${t3.muzzle.anticipationMs} ms`);
   }
 });
 
-test("rampa kulenin kendi renginden: varsayılan yeşil yok, üst kademe tümüyle beyaz değil", () => {
+test("rampa kulenin kendi tonunda ve yere indirilmiş: varsayılan yeşil yok, altın rütbe rampası yok", () => {
+  const saturation = (color) => {
+    const [r, g, b] = channels(color).map((value) => value / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    return max === min ? 0 : l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
+  };
   for (const tower of attacking) {
     const { ramp } = profiles.getVfxProfile(tower.id);
     assert.ok(!ramp.includes(0x86efac), `${tower.id} varsayilan yesili kullaniyor`);
-    for (const legacy of [0x93c5fd, 0xfacc15, 0xfff1f2]) {
-      // Eski genel kademe renkleri (celik, altin, beyaz) saldirida yok; Omer'in
-      // sarisi kulenin kendi rengi olarak ilk durakta kalabilir.
-      if (legacy === 0xfacc15 && ramp[0] === 0xfacc15) continue;
-      assert.ok(!ramp.slice(1).includes(legacy), `${tower.id} eski genel kademe rengi ${legacy.toString(16)}`);
+    // Debug Lazer'in rampasi sunucunun lazer renkleri (kirmizi, mavi, beyaz): dokunulmadi.
+    if (tower.id === "warrior-5") continue;
+    for (const legacy of [0xf59e0b, 0xfde68a, 0xfacc15, 0x93c5fd, 0xfff1f2]) {
+      assert.ok(!ramp.includes(legacy), `${tower.id} eski rutbe/genel kademe rengi ${legacy.toString(16)}`);
+    }
+    for (const stop of ramp) {
+      assert.ok(profiles.hueDistance(stop, ramp[0]) <= 6, `${tower.id} rampa tonu kayiyor (${stop.toString(16)})`);
+      assert.ok(saturation(stop) <= 0.625, `${tower.id} rampa doygun (${stop.toString(16)}: ${saturation(stop).toFixed(2)})`);
     }
     const [r, g, b] = channels(ramp[2]);
     assert.ok(Math.max(r, g, b) - Math.min(r, g, b) >= 12, `${tower.id} kademe 3 tumuyle beyaz (${ramp[2].toString(16)})`);
   }
-  // Omer'in kademe 2 altini eskiden tam olarak kulenin sarisiydi ve kayboluyordu.
-  const tank = profiles.getVfxProfile("tank-1");
-  assert.ok(distance(tank.ramp[1], 0xfacc15) > 40, "Omer kademe 2 kulenin govdesinde kayboluyor");
+  // Zeynep'in kuleleri kendi tonlarinda: kizil, gul, eflatun -- altin degil.
+  for (const id of ["zeynep-1", "zeynep-2", "zeynep-3", "zeynep-6"]) {
+    const { ramp, base } = profiles.getVfxProfile(id);
+    assert.ok(profiles.hueDistance(ramp[2], base) <= 6, `${id} kademe 3 tonu kulenin tonu degil`);
+  }
 });
 
-test("profil çizicisi kademe yükseldikçe daha fazla çiziyor, omuzlar ADD katmanında", () => {
+test("profil çizicisi kademe yükseldikçe daha ağır ve daha sıcak çiziyor; kademe 2+ ısısı ADD katmanında", () => {
   const lod = new VfxLod();
   lod.force(0);
   for (const tower of attacking) {
     const profile = profiles.getVfxProfile(tower.id);
     if (profile.silhouette === "none") continue;
-    const counts = [];
-    const glowCounts = [];
+    const hottest = [];
+    const glowCalls = [];
     for (const tier of [1, 2, 3]) {
-      const body = createCountingGraphics();
-      const glow = createCountingGraphics();
-      const events = createCountingGraphics();
+      const body = createRecorder();
+      const glow = createRecorder();
+      const events = createRecorder();
       const vfx = new AttackVfx(body, glow, events, undefined, { lod });
       // Birkac kare: izin noktalari dolsun.
       for (let frame = 0; frame < 6; frame += 1) {
         vfx.renderProjectiles([{ id: "p1", kind: "tower", source: "tower", definitionId: tower.id, x: 100 + frame * 4, y: 200, vx: 240, vy: 0, tier: tier === 1 ? undefined : tier }], 1000 + frame * 16, 1);
       }
-      counts.push(body.stats.calls + glow.stats.calls);
-      glowCounts.push(glow.stats.calls);
+      const colors = body.calls.filter(([name]) => name === "lineStyle" || name === "fillStyle").map(([name, a, b]) => (name === "lineStyle" ? b : a));
+      hottest.push(colors.length > 0 ? Math.max(...colors.map(lightness)) : 0);
+      glowCalls.push(glow.calls.filter(([name]) => name !== "clear").length);
     }
-    assert.ok(counts[1] > counts[0] && counts[2] > counts[1], `${tower.id} cagri sayilari ${counts.join(" / ")}`);
-    assert.ok(glowCounts[1] > glowCounts[0], `${tower.id} kademe 2 omuzlari ADD katmanina gitmiyor`);
+    if (profile.silhouette !== "sprite") {
+      assert.ok(hottest[1] > hottest[0] && hottest[2] > hottest[1], `${tower.id} cekirdek isinmiyor: ${hottest.map((value) => value.toFixed(3)).join(" / ")}`);
+    }
+    assert.ok(glowCalls[1] > 0 && glowCalls[2] > 0, `${tower.id} kademe 2-3 isisi ADD katmanina gitmiyor`);
   }
 });
 
-test("çarpma: kademe 1 tek darbe, 2 ikinci vuruş, 3 imza ve iğne ucu", () => {
+test("çarpma: kademe yükseldikçe daha güçlü; sert parlama 1-3 kare, büyümüyor; iğne ucu yalnızca kademe 3", () => {
   const lod = new VfxLod();
   lod.force(0);
   for (const tower of attacking) {
-    const calls = [];
+    const vertices = [];
     const flashes = [];
     for (const tier of [1, 2, 3]) {
       const events = createCountingGraphics();
       const flashLog = [];
       const vfx = new AttackVfx(createRecorder(), createRecorder(), events, { flash: (spec) => flashLog.push(spec) }, { lod });
       vfx.emitImpact({ x: 50, y: 50, angle: 0.3, definitionId: tower.id, tier, bornAt: 0, key: "c1" });
-      // Ikinci vurus 80 ms sonra; 140 ms'deki kare hepsini gormeli.
-      vfx.render(140, 1);
-      calls.push(events.stats.calls);
-      flashes.push(flashLog.length);
+      // Bir kac kare: kivilcim, kirinti ve duman olayin omru boyunca.
+      for (const at of [20, 60, 120, 200]) vfx.render(at, 1);
+      vertices.push(events.stats.vertices);
+      flashes.push(flashLog);
     }
-    assert.ok(calls[1] > calls[0] && calls[2] > calls[1], `${tower.id} carpma cagrilari ${calls.join(" / ")}`);
-    assert.ok(flashes[2] > flashes[0], `${tower.id} kademe 3 igne ucu yok`);
+    assert.ok(vertices[1] > vertices[0] && vertices[2] > vertices[1], `${tower.id} carpma kosesi ${vertices.join(" / ")}`);
+    for (const log of flashes) {
+      const hard = log[0];
+      assert.equal(hard.texture, "glow");
+      assert.equal(hard.sizeFrom, hard.sizeTo, `${tower.id} sert parlama buyumemeli`);
+      assert.ok(hard.durationMs <= 50, `${tower.id} sert parlama ${hard.durationMs} ms (1-3 kare)`);
+    }
+    assert.ok(flashes[2][0].sizeFrom > flashes[0][0].sizeFrom, `${tower.id} kademe 3 parlamasi daha buyuk`);
+    const pinpoint = (log) => log.some((spec) => spec.tint === 0xffffff && spec.durationMs <= 40);
+    assert.equal(pinpoint(flashes[0]) || pinpoint(flashes[1]), false, `${tower.id} igne ucu kademe 3'un`);
+    assert.ok(pinpoint(flashes[2]), `${tower.id} kademe 3 igne ucu yok`);
+    // Halka en fazla bir tane ve yalnizca kademe 3'te (agir vurus).
+    for (const [index, log] of flashes.entries()) {
+      assert.ok(log.filter((spec) => spec.texture === "ring").length <= (index === 2 ? 1 : 0), `${tower.id} kademe ${index + 1} halka yigiyor`);
+    }
   }
 });
 
@@ -160,7 +201,7 @@ test("ağır tek vuruş yalnızca kademe 3'te ve yalnızca kendi kulende sarsıy
   assert.equal(shakes.length, 2);
 });
 
-test("LOD önce kıvılcımı, sonra haleyi, en son iz uzunluğunu düşürüyor; renk hiç", () => {
+test("LOD önce kıvılcımı, sonra dumanı, sonra yer izini, en son iz uzunluğunu düşürüyor; renk hiç", () => {
   const lod = new VfxLod();
   let now = 0;
   const run = (vfxMs, frameMs, ms) => {
@@ -169,21 +210,26 @@ test("LOD önce kıvılcımı, sonra haleyi, en son iz uzunluğunu düşürüyor
       lod.note(vfxMs, frameMs, now);
     }
   };
+  const state = () => [lod.level, lod.sparks, lod.smoke, lod.decals, lod.trailScale];
   run(1, 16, 1000);
-  assert.deepEqual([lod.level, lod.sparks, lod.corona, lod.trailScale], [0, true, true, 1]);
-  run(6, 16, 900);
-  assert.equal(lod.level, 1);
-  assert.deepEqual([lod.sparks, lod.corona, lod.trailScale], [false, true, 1]);
-  run(6, 16, 600);
-  assert.deepEqual([lod.level, lod.sparks, lod.corona, lod.trailScale], [2, false, false, 1]);
-  run(6, 30, 600);
-  assert.deepEqual([lod.level, lod.trailScale], [3, 0.5]);
+  assert.deepEqual(state(), [0, true, true, true, 1]);
+  // Yuk altinda her yarim saniyede bir basamak; her basamak bir sey daha dokuyor.
+  const expected = [
+    [1, false, true, true, 1],
+    [2, false, false, true, 1],
+    [3, false, false, false, 1],
+    [4, false, false, false, 0.5]
+  ];
+  for (const step of expected) {
+    for (let guard = 0; guard < 200 && lod.level < step[0]; guard += 1) run(6, 30, 16);
+    assert.deepEqual(state(), step);
+  }
   run(6, 30, 2000);
-  assert.equal(lod.level, 3, "ust sinir 3");
+  assert.equal(lod.level, 4, "ust sinir 4");
   // Rahatlayinca yavas geri donuyor.
   run(0.5, 16, 1500);
-  assert.equal(lod.level, 3, "bir buçuk saniyede donmemeli");
-  run(0.5, 16, 7000);
+  assert.equal(lod.level, 4, "bir buçuk saniyede donmemeli");
+  run(0.5, 16, 9000);
   assert.equal(lod.level, 0);
 });
 
@@ -279,12 +325,16 @@ test("tek karelik beyaz iğne ucu saniyede en fazla 3 kez", () => {
 
 test("yük testi bütçesi: 20 kademe-3 kule ve 60 düşmanda karede çizim sınırlı", async () => {
   // Olcum tools/vfx-bench.mjs ile ayni (Phaser'in gercek ucgenleme maliyetiyle
-  // sayan sahte Graphics). Eski cizim ayni sahnede ~34.6k kose ve ~24 earcut
-  // uretiyordu (28 halkalik havuzun tween'li yaylari dahil).
+  // sayan sahte Graphics). Ilk cizim ayni sahnede ~34.6k kose ve ~24 earcut,
+  // sus dili (d7ae205-529aeca) ~14.9k kose uretiyordu.
   const { runVfxBench } = await import("../tools/vfx-bench.mjs");
   const full = await runVfxBench({ lodLevel: 0 });
   const shed = await runVfxBench({ lodLevel: 3 });
+  const trail = await runVfxBench({ lodLevel: 4 });
   assert.ok(full.verticesPerFrame < 20000, `kose ${full.verticesPerFrame}`);
+  // Agir, sert dil eskisinden ucuz: ayni sahnede 14.9k kose idi.
+  assert.ok(full.verticesPerFrame < 12000, `kose ${full.verticesPerFrame} (eski 14.9k)`);
+  assert.ok(trail.verticesPerFrame <= shed.verticesPerFrame, "LOD 4 iz uzunlugunu kisaltiyor");
   assert.ok(full.earcutPerFrame < 16, `earcut ${full.earcutPerFrame}`);
   assert.ok(full.flashQuadsLive <= 64 && full.glowStampQuads <= 192);
   assert.ok(shed.callsPerFrame < full.callsPerFrame, "LOD cizimi azaltmali");
@@ -300,26 +350,15 @@ const ATAKAN_SIGNED = ["warrior-1", "warrior-2", "warrior-3", "warrior-4", "warr
 const lineColors = (recorder) => new Set(recorder.calls.filter(([name]) => name === "lineStyle").map(([, , color]) => color));
 const fillColors = (recorder) => new Set(recorder.calls.filter(([name]) => name === "fillStyle").map(([, color]) => color));
 
-test("Atakan imzalarının üç kademesi türde ayrışıyor; Debug Lazer'e dokunulmadı", () => {
+test("Atakan imzaları mekaniği taşıyor, süs taşımıyor; Debug Lazer'e dokunulmadı", () => {
   assert.equal(profiles.getVfxProfile("warrior-5").signature, undefined, "lazerin profili imza almamali");
   const mechanics = new Set();
   for (const id of ATAKAN_SIGNED) {
     const signature = profiles.getVfxProfile(id).signature;
     assert.ok(signature, `${id} imzasi yok`);
     mechanics.add(signature.mechanic);
-    const [raw, compiled, overdrive] = signature.tiers;
-    assert.deepEqual([raw.act, compiled.act, overdrive.act], ["raw", "compiled", "overdrive"]);
-    // Ham: duz serit, aksan yok, cikartma yok.
-    assert.equal(raw.trailMotif, "plain");
-    assert.equal(raw.accent, false);
-    assert.equal(raw.decal, "none");
-    // Derlenmis: motifli iz, terminal yesili, izgara/altigen; asiri yukleme yok.
-    assert.notEqual(compiled.trailMotif, "plain", `${id} derlenmis iz motifi yok`);
-    assert.equal(compiled.accent, true);
-    assert.notEqual(compiled.decal, "none");
-    assert.deepEqual([compiled.whiteCore, compiled.glints, compiled.codeSparks], [false, false, false]);
-    // Asiri yukleme: beyaz-sicak cekirdek, kosan parlama, kod kivilcimi.
-    assert.deepEqual([overdrive.whiteCore, overdrive.glints, overdrive.codeSparks], [true, true, true]);
+    // Imza yalnizca mekanik: kademe basina sus bayragi (aksan, paket, kod biti) yok.
+    assert.deepEqual(Object.keys(signature), ["mechanic"], `${id} imzasi sus tasiyor`);
   }
   assert.equal(mechanics.size, ATAKAN_SIGNED.length, "her kulenin kendi mekanik imzasi olmali");
   // Ucube artik Sunucu'nun yeniden boyanmis simsegi degil.
@@ -327,7 +366,7 @@ test("Atakan imzalarının üç kademesi türde ayrışıyor; Debug Lazer'e doku
   assert.notEqual(profiles.getVfxProfile("warrior-6").impact, profiles.getVfxProfile("warrior-2").impact);
 });
 
-test("Atakan imzası çizimde de türde ayrışıyor: yeşil aksan kademe 2'de, kod bitleri kademe 3'te", () => {
+test("Atakan çizimi: terminal yeşili aksan ve kod biti yok; kademe ağırlıkla ve sıcaklıkla", () => {
   const lod = new VfxLod();
   lod.force(0);
   for (const id of ATAKAN_SIGNED) {
@@ -345,16 +384,12 @@ test("Atakan imzası çizimde de türde ayrışıyor: yeşil aksan kademe 2'de, 
       vfx.render(2150, 1);
       const all = [...body.calls, ...glow.calls, ...events.calls];
       return {
-        accentLines: all.some(([name, , color]) => name === "lineStyle" && color === ACCENT),
-        accentFills: all.some(([name, color]) => name === "fillStyle" && color === ACCENT),
-        calls: all.length
+        accent: all.some(([name, a, b]) => (name === "lineStyle" && b === ACCENT) || (name === "fillStyle" && a === ACCENT)),
+        width: Math.max(...all.filter(([name]) => name === "lineStyle").map(([, width]) => width))
       };
     });
-    assert.equal(drawn[0].accentLines || drawn[0].accentFills, false, `${id} kademe 1 ham sinyal: aksan olmamali`);
-    assert.ok(drawn[1].accentLines, `${id} kademe 2 derlenmis aksan cizmiyor`);
-    assert.equal(drawn[1].accentFills, false, `${id} kademe 2 kod biti dokmemeli`);
-    assert.ok(drawn[2].accentFills, `${id} kademe 3 kod kivilcimi yok`);
-    assert.ok(drawn[0].calls < drawn[1].calls && drawn[1].calls < drawn[2].calls, `${id} cagrilar ${drawn.map((entry) => entry.calls).join(" / ")}`);
+    for (const [index, entry] of drawn.entries()) assert.equal(entry.accent, false, `${id} kademe ${index + 1}: terminal yesili aksan`);
+    assert.ok(drawn[0].width < drawn[1].width && drawn[1].width < drawn[2].width, `${id} cizgi agirlasmiyor: ${drawn.map((entry) => entry.width.toFixed(2)).join(" / ")}`);
   }
 });
 
@@ -397,8 +432,8 @@ test("Takipçi nişangâhı gövdeyi sarıyor, yığın başına daralıyor, ker
     for (let index = 1; index < ys.length; index += 1) {
       assert.ok(ys[index] - ys[index - 1] - signatures.MARK_PIP_SIZE >= signatures.MARK_PIP_GAP, "kertik araligi en az 2 birim");
     }
-    // LOD 3: tek dikdortgenlik serit, boyu yigini soyluyor.
-    lod.force(3);
+    // Son basamak (VFX_LOD_MAX): tek dikdortgenlik serit, boyu yigini soyluyor.
+    lod.force(4);
     const shed = createRecorder();
     new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), shed, { lod, reducedMotion: () => true })
       .render({ towers: [], enemies: [{ id: "e1", x: 100, y: 100, trackingStacks: stacks }], now: 500, scale: 1, cellSize: 34, enemySize: () => GRUNT });
@@ -414,7 +449,7 @@ test("Takipçi nişangâhı gövdeyi sarıyor, yığın başına daralıyor, ker
   assert.equal(empty.calls.filter(([name]) => name !== "clear").length, 0);
 });
 
-test("Takipçi nişangâhı: renk ve perde işaretleyen kulenin kademesinden, yığın yalnızca darlık", () => {
+test("Takipçi nişangâhı: ağırlık ve sıcaklık işaretleyen kulenin kademesinden, yığın yalnızca darlık", () => {
   const lod = new VfxLod();
   lod.force(0);
   const ramp = profiles.getVfxProfile("warrior-1").ramp;
@@ -436,12 +471,16 @@ test("Takipçi nişangâhı: renk ve perde işaretleyen kulenin kademesinden, y�
   // Kaynak bilinmiyor: ham kademe, notr ilk durak; 3 yigin rengi degistirmiyor.
   assert.ok(draw(undefined, 3).colors.has(ramp[0]));
   assert.ok(draw("t-l1", 3).colors.has(ramp[0]));
-  // Kademe 3 eklentileri (beyaz kose dugumleri) takim arkadasinin isaretinde %70.
-  const nodeAlpha = (k) => draw(k, 3).marks.calls.filter(([name, color]) => name === "fillStyle" && color !== 0x22c55e).map(([, , alpha]) => alpha);
-  assert.ok(Math.min(...nodeAlpha("t-mate")) < Math.min(...nodeAlpha("t-l10")), "arkadasin eklentileri soluk olmali");
+  // Kademe 3'un beyaz-sicak cekirdek cizgisi takim arkadasinin isaretinde %70.
+  const core = (k) => draw(k, 3).marks.calls.filter(([name, , color]) => name === "lineStyle" && color !== ramp[2]).map(([, , , alpha]) => alpha);
+  assert.ok(core("t-l10").length > 0, "kademe 3 cekirdek cizgisi");
+  assert.ok(Math.abs(Math.min(...core("t-mate")) / Math.min(...core("t-l10")) - 0.7) < 1e-6, "arkadasin cekirdegi %70");
+  // Kademe ayraclarin kalinligini artiriyor.
+  const width = (k) => Math.max(...draw(k, 1).marks.calls.filter(([name]) => name === "lineStyle").map(([, value]) => value));
+  assert.ok(width("t-l10") > width("t-l1"), "kademe 3 ayraci daha kalin");
 });
 
-test("Takipçi nişangâhı LOD'da gerçekten azalıyor: 2'de iç kertik ve düğüm, 3'te yalnızca ayraç ve şerit", () => {
+test("Takipçi nişangâhı LOD'da gerçekten azalıyor: 2'de çekirdek çizgisi, en son yalnızca ayraç ve şerit; kertikler izden önce sıkışmıyor", () => {
   const lod = new VfxLod();
   const towers = [{ id: "t", definitionId: "warrior-1", x: 0, y: 0, level: 10 }];
   const enemies = Array.from({ length: 60 }, (_, index) => ({ id: `e${index}`, x: (index % 10) * 40, y: Math.floor(index / 10) * 40, trackingStacks: 3, k: "t" }));
@@ -453,10 +492,17 @@ test("Takipçi nişangâhı LOD'da gerçekten azalıyor: 2'de iç kertik ve dü�
   };
   const full = cost(0);
   const mid = cost(2);
-  const shed = cost(3);
+  const decals = cost(3);
+  const shed = cost(4);
+  // Yuzeylerin karedeki temizligi (4 `clear`) dusman basina degil.
+  const perEnemy = (entry) => (entry.calls - 4) / enemies.length;
   assert.ok(mid.calls < full.calls * 0.7, `LOD 2 cagrilar ${mid.calls} / ${full.calls}`);
-  assert.ok(shed.calls <= full.calls * 0.5, `LOD 3 cagrilar ${shed.calls} / ${full.calls}`);
-  assert.ok(shed.vertices <= full.vertices * 0.6, `LOD 3 kose ${shed.vertices} / ${full.vertices}`);
+  // Bilgi isareti en son sikisiyor: yer izi basamaginda kertikler hala ayri.
+  assert.equal(decals.calls, mid.calls, "LOD 3 isareti degistirmemeli");
+  // Son basamak: dusman basina 8 kose cizgisi + bir stil ve tek serit (11 cagri; tam hali 22).
+  assert.ok(perEnemy(full) >= 20, `tam nisangah ${perEnemy(full)} cagri`);
+  assert.ok(perEnemy(shed) <= 11, `LOD 4 nisangah ${perEnemy(shed)} cagri`);
+  assert.ok(shed.vertices / enemies.length <= 54, `LOD 4 kose ${shed.vertices / enemies.length}`);
 });
 
 test("Obsesyon ipi yığınla kalınlaşıyor, hedef değişince kopup sıfırdan başlıyor", () => {
@@ -501,7 +547,8 @@ test("Ucube göstergesi tavan kadar dilim, yığın kadar yanık dilim çiziyor"
     const marks = createRecorder();
     const vfx = new signatures.AtakanSignatureVfx(createRecorder(), createRecorder(), createRecorder(), marks, { lod, reducedMotion: () => true });
     vfx.render({ towers: [{ id: "u1", definitionId: "warrior-6", x: 0, y: 0, level: 1, u, m }], enemies: [], now: 0, scale: 1, cellSize: 28 });
-    const segments = marks.calls.filter(([name]) => name === "lineBetween").length;
+    // Tavan kertigi (tepede, dikey) dilim degil.
+    const segments = marks.calls.filter(([name, x1, , x2]) => name === "lineBetween" && !(x1 === 0 && x2 === 0)).length;
     assert.equal(segments, m ?? 10, `tavan ${m ?? 10}, dilim ${segments}`);
     let litAlpha = 0;
     let lit = 0;
@@ -545,9 +592,10 @@ test("İzolasyon: yalnızken kapatma alanı ve mühürlü kare, komşu varken ih
   const raw = draw(true, 1);
   const compiled = draw(true, 5);
   assert.ok(raw.ground.calls.some(([name]) => name === "strokePath"), "alanin siniri cizilmeli");
-  // Derlenmis sinir altigen: alti kose dugumu terminal yesilinde.
-  assert.ok(!fillColors(raw.ground).has(ACCENT));
-  assert.ok(fillColors(compiled.ground).has(ACCENT), "kademe 2 altigen dugumleri");
+  // Terminal yesili dugum yok; kademe siniri kalinlastiriyor.
+  assert.ok(!fillColors(compiled.ground).has(ACCENT) && !lineColors(compiled.ground).has(ACCENT));
+  const boundary = (drawn) => Math.max(...drawn.ground.calls.filter(([name]) => name === "lineStyle").map(([, width]) => width));
+  assert.ok(boundary(compiled) > boundary(raw), "kademe 2 siniri daha kalin");
   // Muhurlu kare yalnizken; komsu varken alan yok, kehribar ihlal var.
   const breached = draw(false, 5, true);
   assert.equal(breached.ground.calls.filter(([name]) => name !== "clear").length, 0, "komsu varken alan cizilmemeli");
@@ -661,7 +709,7 @@ test("galeri senaryosu yığın alanlarını besliyor: Obsesyon yükseliyor, Ucu
 });
 
 /* ------------------------------------------------------------------ */
-/* Zeynep imzalari: ferman -> nisan -> regalya                          */
+/* Zeynep imzalari: kenar tonu, beyaz-sicak cekirdek, islevsel isaret    */
 /* ------------------------------------------------------------------ */
 
 const zeynep = await importWebModule("apps/web/src/vfx/zeynep-signatures.ts");
@@ -671,36 +719,26 @@ const ZEYNEP_SIGNED = ["zeynep-1", "zeynep-2", "zeynep-3", "zeynep-6", "zeynep-8
 const allColors = (...recorders) => new Set(recorders.flatMap((recorder) => recorder.calls
   .filter(([name]) => name === "lineStyle" || name === "fillStyle")
   .map(([name, a, b]) => (name === "lineStyle" ? b : a))));
+const maxWidth = (...recorders) => Math.max(...recorders.flatMap((recorder) => recorder.calls.filter(([name]) => name === "lineStyle").map(([, width]) => width)));
 
-test("Zeynep imzalarının üç kademesi türde ayrışıyor: ferman, nişan, regalya", () => {
+test("Zeynep imzaları mekaniği taşıyor; ferman/nişan/regalya süsleri yok", () => {
   const mechanics = new Set();
   for (const id of ZEYNEP_SIGNED) {
     const profile = profiles.getVfxProfile(id);
-    assert.equal(profile.signature, undefined, `${id} Atakan imzasi (yesil aksan) almamali`);
-    assert.ok(profile.court, `${id} saray imzasi yok`);
+    assert.equal(profile.signature, undefined, `${id} Atakan imzasi almamali`);
+    assert.ok(profile.court, `${id} imzasi yok`);
     mechanics.add(profile.court.mechanic);
-    const [decree, insignia, regalia] = profile.court.tiers;
-    assert.deepEqual([decree.act, insignia.act, regalia.act], ["decree", "insignia", "regalia"]);
-    // Ferman: temiz bir mizrak / cizgi; nisan ve regalya bayraklarinin hicbiri yok.
-    assert.deepEqual([decree.chevrons, decree.encore, decree.parade, decree.seal, decree.crown, decree.giltMotes, decree.snap], [false, false, false, false, false, false, false]);
-    // Nisan: altin serit, ikinci perde, gecit toreni; regalya yok.
-    assert.deepEqual([insignia.chevrons, insignia.encore, insignia.parade], [true, true, true]);
-    assert.deepEqual([insignia.seal, insignia.crown, insignia.giltMotes, insignia.snap], [false, false, false, false]);
-    // Regalya: muhur, tac, yaldiz, kapanan ferman.
-    assert.deepEqual([regalia.seal, regalia.crown, regalia.giltMotes, regalia.snap], [true, true, true, true]);
-    // Rutbe trimi: govdenin acigi -> altin -> beyaz altin (hicbiri tumuyle beyaz degil).
-    assert.equal(insignia.trim, GOLD);
-    assert.equal(regalia.trim, WHITE_GOLD);
-    assert.ok(distance(decree.trim, insignia.trim) > 40 && distance(insignia.trim, regalia.trim) > 40);
+    assert.deepEqual(Object.keys(profile.court), ["mechanic"], `${id} imzasi sus tasiyor`);
   }
   assert.equal(mechanics.size, ZEYNEP_SIGNED.length, "her kulenin kendi mekanik imzasi olmali");
   // Abarti saldiri sayilmiyor ama imzasi var.
   assert.ok(!attacking.some((tower) => tower.id === "zeynep-8"));
 });
 
-test("Zeynep mızrağı çizimde türde ayrışıyor: gövde kipin renginde, altın kademe 2'de, beyaz altın 3'te", () => {
+test("Zeynep mızrağı: gövde kipin tonunda, altın yok; kademe ağırlıkla ve sıcaklıkla", () => {
   const lod = new VfxLod();
   lod.force(0);
+  const colors = zeynep.ZEYNEP_MEMBER_COLORS;
   const draw = (definitionId, tier) => {
     const body = createRecorder();
     const glow = createRecorder();
@@ -708,30 +746,24 @@ test("Zeynep mızrağı çizimde türde ayrışıyor: gövde kipin renginde, alt
     for (let frame = 0; frame < 6; frame += 1) {
       vfx.renderProjectiles([{ id: "p1", kind: "tower", source: "tower", definitionId, x: 100 + frame * 4, y: 200, vx: 240, vy: 0, tier: tier === 1 ? undefined : tier }], 1000 + frame * 16, 1);
     }
-    return { body, glow, colors: allColors(body, glow), calls: body.calls.length + glow.calls.length };
+    return { body, glow, colors: allColors(body, glow), width: maxWidth(body) };
   };
-  for (const [definitionId, bodyColor] of [["zeynep-1", 0xec4899], ["zeynep-3", 0xe879f9], ["zeynep-3-kin-projectile", 0xdc2626], [zeynep.TAHT_COPY_ID, 0xec4899]]) {
+  for (const [definitionId, bodyColor] of [["zeynep-1", colors.hiza], ["zeynep-3", colors.taht], ["zeynep-3-kin-projectile", colors.kin], [zeynep.TAHT_COPY_ID, colors.hiza]]) {
     const [t1, t2, t3] = [1, 2, 3].map((tier) => draw(definitionId, tier));
-    for (const drawn of [t1, t2, t3]) assert.ok(drawn.colors.has(bodyColor), `${definitionId} govdesi kipin renginde olmali`);
-    assert.ok(!t1.colors.has(GOLD) && !t1.colors.has(WHITE_GOLD), `${definitionId} ferman: rutbe yok`);
-    assert.ok(t2.colors.has(GOLD), `${definitionId} nisan: altin serit`);
-    assert.ok(t3.colors.has(WHITE_GOLD), `${definitionId} regalya: beyaz altin`);
-    assert.ok(t1.calls < t2.calls && t2.calls < t3.calls, `${definitionId} cagrilar ${t1.calls} / ${t2.calls} / ${t3.calls}`);
+    for (const drawn of [t1, t2, t3]) {
+      assert.ok(drawn.colors.has(bodyColor), `${definitionId} govdesi kipin tonunda olmali`);
+      assert.ok(!drawn.colors.has(GOLD) && !drawn.colors.has(WHITE_GOLD), `${definitionId}: altin rutbe`);
+    }
+    assert.ok(t1.width < t2.width && t2.width < t3.width, `${definitionId} govde agirlasmiyor ${t1.width} / ${t2.width} / ${t3.width}`);
   }
-  // Taht'in muhru: uyelerin renginde uc isaret; Hiza'da muhur yok.
+  // Taht'in kertikleri: uyelerin tonunda uc isaret; Hiza'da yok.
   const sigil = (definitionId) => draw(definitionId, 1).body.calls.filter(([name]) => name === "fillStyle").map(([, color]) => color);
-  assert.ok(sigil("zeynep-3-kin-projectile").includes(0xdc2626) && sigil("zeynep-3-kin-projectile").includes(0xec4899), "Kin kipi: Hiza ve Kin isaretleri");
-  assert.ok(!sigil("zeynep-1").includes(0xe879f9), "Hiza'nin muhru olmamali");
-  assert.deepEqual(zeynep.getLanceSigil("copy"), [0xe879f9, 0xe879f9, 0xec4899], "kopya: iki Taht ve Hiza");
-  // Gecit toreni (hayalet kopyalar) LOD 2'de dusuyor; govde ve renk kaliyor.
-  lod.force(2);
-  const shed = draw("zeynep-1", 2);
-  lod.force(0);
-  assert.ok(shed.calls < draw("zeynep-1", 2).calls, "LOD 2 hayaletleri dusurmeli");
-  assert.ok(shed.colors.has(0xec4899) && shed.colors.has(GOLD));
+  assert.ok(sigil("zeynep-3-kin-projectile").includes(colors.kin) && sigil("zeynep-3-kin-projectile").includes(colors.hiza), "Kin kipi: Hiza ve Kin isaretleri");
+  assert.ok(!sigil("zeynep-1").includes(colors.taht), "Hiza'nin dizilim isareti olmamali");
+  assert.deepEqual(zeynep.getLanceSigil("copy"), [colors.taht, colors.taht, colors.hiza], "kopya: iki Taht ve Hiza");
 });
 
-test("Zeynep olay imzaları çizimde türde ayrışıyor ve LOD sırayla döküyor", () => {
+test("Zeynep olay imzaları: altın yok, kademe ağırlıkla; LOD sırayla döküyor, renk hiç", () => {
   const enemies = [{ id: "e1", x: 100, y: 100 }, { id: "e2", x: 140, y: 100 }];
   const inputs = [
     { kind: "spotlight", key: "e1", x: 100, y: 100, color: 0xf9a8d4 },
@@ -749,18 +781,16 @@ test("Zeynep olay imzaları çizimde türde ayrışıyor ve LOD sırayla döküy
     vfx.emit({ kind: "pierce", key: "p1", x: 100, y: 100, angle: 0, definitionId: "zeynep-1", tier }, 0);
     vfx.emit({ kind: "pierce", key: "p1", x: 140, y: 100, angle: 0, definitionId: "zeynep-1", tier }, 20);
     vfx.render({ enemies, now: at, scale: 1, enemySize: () => 34 });
-    return { colors: allColors(...surfaces), calls: surfaces.reduce((sum, surface) => sum + surface.calls.length, 0) };
+    // Agirlik govde yuzeylerinde (ADD isisi sabit, LOD ilk onu dokuyor).
+    return { colors: allColors(...surfaces), calls: surfaces.reduce((sum, surface) => sum + surface.calls.length, 0), width: maxWidth(surfaces[0], surfaces[1], surfaces[3]) };
   };
   const [t1, t2, t3] = [1, 2, 3].map((tier) => draw(tier));
-  assert.ok(!t1.colors.has(GOLD) && !t1.colors.has(WHITE_GOLD), "ferman: rutbe trimi govdenin acigi");
-  assert.ok(t2.colors.has(GOLD) && !t2.colors.has(WHITE_GOLD), "nisan: altin");
-  assert.ok(t3.colors.has(WHITE_GOLD), "regalya: beyaz altin");
-  assert.ok(t1.calls < t2.calls && t2.calls < t3.calls, `cagrilar ${t1.calls} / ${t2.calls} / ${t3.calls}`);
-  // Kombo kimligi govdede: Gosteri pembesi (spot havuzu), Abarti menekse, dizilim
-  // uyelerinin renkleri kademe 3'te de cizili; rutbe yalnizca trim.
-  for (const color of [0xf9a8d4, 0x7c3aed, 0xec4899]) assert.ok(t3.colors.has(color), `govde rengi ${color.toString(16)} kademe 3'te kayboldu`);
-  // LOD: once zerre, sonra ikinci perde, en son serit seridi; renk hic.
+  for (const drawn of [t1, t2, t3]) assert.ok(!drawn.colors.has(GOLD) && !drawn.colors.has(WHITE_GOLD), "altin rutbe trimi yok");
+  assert.ok(t1.width < t2.width && t2.width < t3.width, `kademe agirlasmiyor ${t1.width} / ${t2.width} / ${t3.width}`);
+  // Uyelerin tonlari kademe 3'te de cizili.
+  for (const color of [zeynep.ZEYNEP_MEMBER_COLORS.hiza, zeynep.ZEYNEP_MEMBER_COLORS.gosteri]) assert.ok(t3.colors.has(color), `uye tonu ${color.toString(16)} kayboldu`);
+  // LOD: once ADD isi, sonra yer golgesi ve kertikler; renk hic.
   const costs = [0, 1, 2, 3].map((level) => draw(3, level).calls);
-  assert.ok(costs[0] > costs[1] && costs[1] > costs[2] && costs[2] >= costs[3], `LOD ${costs.join(" / ")}`);
-  assert.ok(draw(3, 3).colors.has(WHITE_GOLD), "LOD 3'te de kademe rengi");
+  assert.ok(costs[0] >= costs[1] && costs[1] >= costs[2] && costs[2] >= costs[3] && costs[0] > costs[3], `LOD ${costs.join(" / ")}`);
+  assert.ok(draw(3, 3).colors.has(zeynep.ZEYNEP_MEMBER_COLORS.hiza), "LOD 3'te de kenar tonu");
 });

@@ -1,57 +1,46 @@
 /**
- * Atakan kulelerinin dunya ici imzalari: mekanigi gosteren canli katman.
+ * Atakan kulelerinin dunya ici isaretleri: mekanigi gosteren canli katman.
  *
  * Saldiri efektleri (mermi, namlu, carpma) `AttackVfx`te; burada kulenin
  * **durumu** -- sunucunun bildigi ama ekranda olmayan sey:
  *
  * - Takipci (warrior-1): dusmanin uzerinde isaret nisangahi. Yigin basina
  *   daraliyor ve yigin sayisi kadar kertik tasiyor (renk gormeyen oyuncu da
- *   sayiyi okuyor; eski "T/T2/T3" yazisinin yerine); renk ve perde isareti
- *   koyan Takipci'nin kademesinden.
+ *   sayiyi okuyor); agirlik ve sicaklik isareti koyan Takipci'nin kademesinden.
  * - Sunucu (warrior-2): bagli kuleye giden ince, surekli gorunen bag.
- * - Izolasyon (warrior-3): yalnizken kapatma alani ve muhurlu 3x3 karantina
- *   karesi; komsu varken karenin koselerinden komsuya uzanan ihlal isareti.
+ * - Izolasyon (warrior-3): yalnizken kapatma alani ve 3x3 karantina karesi;
+ *   komsu varken karenin koselerinden komsuya uzanan ihlal isareti.
  * - Obsesyon (warrior-4): kuleden hedefe yiginla kalinlasan ip; hedef
  *   degisince kopup geri cekiliyor.
  * - Ucube (warrior-6): tavan kadar dilimli yigin gostergesi.
  *
- * Her biri Atakan'in uc perdesinde (vfx-profiles `signature`): ham sinyal ->
- * derlenmis (terminal yesili ayrac, paket, izgara/altigen) -> asiri yukleme
- * (beyaz-sicak cekirdek, kosan parlama, kod kivilcimi). Kademe tonu kulenin
- * kendi rampasindan.
+ * Agir, sert dil (vfx-profiles): isaretler HUD gibi -- ince cizgi, kertik,
+ * ayrac. Kademe sus degil yogunluk: cizgi kalinlasiyor, kademe 3'te beyaz-
+ * sicak bir cekirdek cizgisi ekleniyor. Terminal yesili aksan, veri paketi,
+ * kod kivilcimi ve kosan parlama yok.
  *
  * Kurallar kitle ayni: `Math.random` yok (tohumlar kimligin FNV ozetinden),
  * karede nesne yok (secenekler bir kez kuruluyor, durum havuzda), daire yok
- * (kitin ucuz halka ve diski). LOD sirasi: once kivilcim, sonra parlama ve
- * ADD omuzlar, en son paket sayisi; renk ve govde (nisangah, ip, gosterge
- * dilimleri) hic dusmuyor. Takim arkadasinin kademe 3 eklentileri %70.
+ * (kitin ucuz halka ve diski). LOD: duman basamaginda (2) ADD omuzlar ve
+ * kademe 3'un cekirdek cizgisi, en son (VFX_LOD_MAX) kertikler tek serit; renk ve govde (nisangah, ip, gosterge
+ * dilimleri, yigin sayisi) hic dusmuyor. Takim arkadasinin kademe 3 cekirdegi %70.
  */
 import { findIsolationBlockers, towerCatalog, type EnemySnapshot, type SynergyMap, type TowerDefinition, type TowerSnapshot } from "@karayel/shared";
 import {
-  ATAKAN_ACCENT,
-  LASER_GLINTS,
   TEAMMATE_EXTRA_ALPHA,
   clamp01,
   darken,
   drawBracketCorners,
-  drawCodeSparks,
-  drawDataPackets,
-  drawHotDot,
-  drawRunningGlints,
   fillDisc,
   fnvHash,
-  hashNoise,
-  hexCorner,
-  liftToWhite,
+  whiteHot,
   strokeHex,
-  strokePointProfile,
-  strokeProfile,
-  strokeRing,
+  strokeHardBeam,
   type VfxGraphics,
   type VfxTier
 } from "./kit";
 import { VfxLod } from "./lod";
-import { getSignatureTier, getVfxProfile, type VfxProfile, type VfxSignatureTier } from "./vfx-profiles";
+import { getVfxProfile, type VfxProfile } from "./vfx-profiles";
 
 /** Obsesyon yiginin tavani (engine.ts: `max: 10`). */
 export const OBSESSION_MAX_STACK = 10;
@@ -140,13 +129,7 @@ type TetherState = {
 
 /* Karede yerinde yazilan secenekler: cagri basina nesne literali yok. */
 const LINE = { body: 0, spread: 0 };
-const POINT = { radius: 0, spread: 0 };
-const PACKETS = { count: 0, size: 0, color: 0, alpha: 0, speed: 0, seed: 0, still: false };
-const CODE = { seed: 0, count: 0, radius: 0, rise: 0, color: 0, accent: ATAKAN_ACCENT, size: 0, alpha: 0, lifeMs: 520 };
-const GLINTS = { ...LASER_GLINTS, count: 1, armBase: 3, armRange: 2, armWidth: 0.9, crossWidth: 0.7, haloRadius: 2.2, coreRadius: 1, cheapDiscs: true };
-/** Izolasyon alanindaki ice akan cizgiler; kademe 1 seyrek. */
-const FIELD_DRIFT = [8, 11, 14] as const;
-/** Ihlal isaretinin rengi: kehribar uyari, kulenin tonundan ayri. */
+/** Ihlal isaretinin rengi: kehribar uyari (islevsel), kulenin tonundan ayri. */
 const BREACH_COLOR = 0xf59e0b;
 
 const levelTier = (level: number): VfxTier => (level >= 10 ? 3 : level >= 5 ? 2 : 1);
@@ -213,10 +196,10 @@ export class AtakanSignatureVfx {
     for (const tower of towers) {
       switch (tower.definitionId) {
         case "warrior-2":
-          if (tower.linkedTowerIds && tower.linkedTowerIds.length > 0 && !tower.disabled) this.drawServerLinks(tower, frame, still);
+          if (tower.linkedTowerIds && tower.linkedTowerIds.length > 0 && !tower.disabled) this.drawServerLinks(tower, frame);
           break;
         case "warrior-3":
-          if (!tower.disabled) this.drawContainment(tower, frame, still);
+          if (!tower.disabled) this.drawContainment(tower, frame);
           break;
         case "warrior-4":
           this.drawTether(tower, frame, still);
@@ -233,12 +216,12 @@ export class AtakanSignatureVfx {
       const stacks = enemy.trackingStacks ?? (enemy.isTracked ? 1 : 0);
       if (stacks <= 0) continue;
       const size = frame.enemySize ? frame.enemySize(enemy) : 34 * scale;
-      // Renk ve perde isareti koyan kulenin kademesinden; kule bilinmiyorsa
-      // (eski sunucu, satilmis kule) ham kademe ve tam alfa.
+      // Agirlik ve sicaklik isareti koyan kulenin kademesinden; kule bilinmiyorsa
+      // (eski sunucu, satilmis kule) kademe 1 ve tam alfa.
       const source = enemy.k ? this.findTower(frame, enemy.k) : undefined;
       const tier = source ? levelTier(source.level) : 1;
       const extra = source && frame.isOwn && !frame.isOwn(source) ? TEAMMATE_EXTRA_ALPHA : 1;
-      this.drawMarkReticle(enemy.x, enemy.y, stacks, tier, extra, size, now, scale, still, fnvHash(enemy.id) % 4999);
+      this.drawMarkReticle(enemy.x, enemy.y, stacks, tier, extra, size, scale);
     }
   }
 
@@ -262,31 +245,26 @@ export class AtakanSignatureVfx {
    * Iki ayri eksen, karistirilmiyor:
    * - **Yigin** (sunucudaki canli isaret yuvasi sayisi, 1-3; Debug Lazer
    *   isaret tuketince dusuyor): yalnizca darlik ve kertik sayisi.
-   * - **Kademe** (isareti koyan Takipci'nin seviyesi, `k` alani): renk ve perde.
-   *   Ham: rampanin ilk tonunda duz ayraclar. Derlenmis: ADD dusumlu ayraclar
-   *   ve terminal yesili ic kertikler. Asiri yukleme: beyaz-sicak kose
-   *   dugumleri, kutunun cevresinde kosan parlama, kod kivilcimi.
+   * - **Kademe** (isareti koyan Takipci'nin seviyesi, `k` alani): cizginin
+   *   agirligi ve sicakligi. Kademe 3'te ayraclarin icinde beyaz-sicak bir
+   *   cekirdek cizgisi (takim arkadasinin isaretinde %70).
    *
-   * Isaret takimin ortak sinyali (her kulenin hasarini artiriyor), ama
-   * kademe 3 eklentileri isaretleyen kulenin sahibine gore: takim
-   * arkadasinin isaretinde %70.
-   *
-   * LOD: 1'de kivilcim; 2'de parlama, ic kertikler ve kose dugumleri; 3'te
-   * yalnizca ayraclar ve tek dikdortgenlik kertik seridi (boyu yigini
-   * soyluyor). Renk, ayraclar ve yigin sayisi hic dusmuyor.
+   * LOD: 2'de cekirdek cizgisi; en son (VFX_LOD_MAX) kertikler tek dikdortgenlik serit (boyu
+   * yigini soyluyor). Renk, ayraclar ve yigin sayisi hic dusmuyor.
    */
-  private drawMarkReticle(x: number, y: number, stacks: number, tier: VfxTier, extra: number, size: number, now: number, scale: number, still: boolean, seed: number) {
+  private drawMarkReticle(x: number, y: number, stacks: number, tier: VfxTier, extra: number, size: number, scale: number) {
     const g = this.marks;
     const lod = this.options.lod;
     const s = Math.max(1, Math.min(MARK_MAX_STACK, Math.round(stacks)));
     const color = this.tracker.ramp[tier - 1];
-    const breath = still || tier < 2 || !lod.corona ? 0 : (0.5 + Math.sin(now / 260 + seed) * 0.5) * 0.05;
-    const half = getMarkReticleHalf(size, s) * (1 - breath);
+    const half = getMarkReticleHalf(size, s);
     const arm = Math.max(2.5 * scale, half * 0.42);
-    const width = Math.max(0.8, (tier >= 2 ? 1.25 : 1) * scale);
+    const width = Math.max(0.8, (0.75 + tier * 0.25) * scale);
 
-    // Ayraclar: kademe 2+ ADD katmaninda (siyah zeminde dusumlu); ham kademede duz.
-    drawBracketCorners(tier >= 2 && lod.corona ? this.glow : g, x, y, half, half, arm, width, color, 0.95);
+    drawBracketCorners(g, x, y, half, half, arm, width, color, 0.95);
+    if (tier >= 3 && lod.smoke) {
+      drawBracketCorners(g, x, y, half, half, arm * 0.8, Math.max(0.5, width * 0.4), whiteHot(color, 1), 0.95 * extra);
+    }
 
     // Yigin kertikleri: solda dikey sutun, yigin kadar.
     const pip = Math.max(MARK_PIP_SIZE, MARK_PIP_SIZE * scale);
@@ -294,54 +272,13 @@ export class AtakanSignatureVfx {
     const column = s * pip + (s - 1) * gap;
     const left = x - half - gap - pip;
     const top = y - column / 2;
-    g.fillStyle(tier >= 2 ? ATAKAN_ACCENT : color, 0.95);
-    if (lod.level >= 3) {
+    g.fillStyle(color, 0.95);
+    if (lod.compactMarks) {
       g.fillRect(left, top, pip, column);
       return;
     }
     for (let index = 0; index < s; index += 1) {
       g.fillRect(left, top + index * (pip + gap), pip, pip);
-    }
-    if (lod.level >= 2) return;
-
-    if (tier >= 2) {
-      // Derlenmis: kenar ortalarindan ice dort kertik (nisangah artisi).
-      const tick = half * 0.32;
-      g.lineStyle(Math.max(0.6, 0.85 * scale), ATAKAN_ACCENT, 0.85);
-      g.lineBetween(x - half, y, x - half + tick, y);
-      g.lineBetween(x + half, y, x + half - tick, y);
-      g.lineBetween(x, y + half, x, y + half - tick);
-      g.lineBetween(x, y - half, x, y - half + tick);
-    }
-
-    if (tier >= 3) {
-      // Asiri yukleme: beyaz-sicak kose dugumleri; ton ayraclarda kaliyor.
-      const node = Math.max(1, 1.3 * scale);
-      g.fillStyle(liftToWhite(color, 0.9), extra);
-      g.fillRect(x - half - node / 2, y - half - node / 2, node, node);
-      g.fillRect(x + half - node / 2, y - half - node / 2, node, node);
-      g.fillRect(x - half - node / 2, y + half - node / 2, node, node);
-      g.fillRect(x + half - node / 2, y + half - node / 2, node, node);
-      if (!still && lod.corona) {
-        // Kutunun cevresinde kosan tek parlama.
-        const lap = ((now / 900 + hashNoise(seed)) % 1) * 4;
-        const side = Math.floor(lap);
-        const t = lap - side;
-        const px = side === 0 ? x - half + t * half * 2 : side === 1 ? x + half : side === 2 ? x + half - t * half * 2 : x - half;
-        const py = side === 0 ? y - half : side === 1 ? y - half + t * half * 2 : side === 2 ? y + half : y + half - t * half * 2;
-        drawHotDot(this.glow, px, py, 0xffffff, Math.max(1, 1.4 * scale), 0.9 * extra);
-      }
-      if (!still && lod.sparks) {
-        CODE.seed = seed;
-        CODE.count = 1;
-        CODE.radius = half;
-        CODE.rise = 8 * scale;
-        CODE.color = color;
-        CODE.size = Math.max(0.8, 1.1 * scale);
-        CODE.alpha = 0.85 * extra;
-        CODE.lifeMs = 640;
-        drawCodeSparks(this.glow, x, y, now, CODE);
-      }
     }
   }
 
@@ -351,17 +288,16 @@ export class AtakanSignatureVfx {
 
   /**
    * Bag haritanin obur ucuna gidebiliyor (global menzil): ince ve soluk
-   * kaliyor. Ham: tek cizgi. Derlenmis: bagli kuleye akan veri paketleri ve
-   * ucunda terminal yesili ayrac. Asiri yukleme: bag boyunca kosan parlama.
+   * kaliyor. Ucunda bagli kuleyi saran ince ayrac (hangi kule bagli).
+   * Kademe cizgiyi kalinlastiriyor; kademe 3'te beyaz-sicak cekirdek cizgisi.
    */
-  private drawServerLinks(tower: SignatureTower, frame: SignatureFrame, still: boolean) {
+  private drawServerLinks(tower: SignatureTower, frame: SignatureFrame) {
     const tier = levelTier(tower.level);
     const profile = getVfxProfile(tower.definitionId);
-    const signature = getSignatureTier(profile, tier);
     const own = frame.isOwn ? frame.isOwn(tower) : true;
     const extra = own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const quiet = tower.status === "Hararet" || tower.status === "Tukenmis" ? 0.45 : 1;
-    const base = 0.3 * quiet;
+    const base = 0.32 * quiet;
     const color = profile.ramp[tier - 1];
     const scale = frame.scale;
     const lod = this.options.lod;
@@ -371,29 +307,14 @@ export class AtakanSignatureVfx {
       const linked = this.findTower(frame, linkedId);
       if (!linked) continue;
       const g = this.links;
-      g.lineStyle(Math.max(0.6, 0.8 * scale), color, base);
+      g.lineStyle(Math.max(0.6, (0.5 + tier * 0.3) * scale), color, base);
       g.lineBetween(tower.x, tower.y, linked.x, linked.y);
-      g.fillStyle(color, base * 2);
-      fillDisc(g, linked.x, linked.y, Math.max(1, 1.6 * scale));
-      if (!signature?.accent) continue;
-      const length = Math.hypot(linked.x - tower.x, linked.y - tower.y);
-      PACKETS.count = Math.max(1, Math.min(5, Math.round((length / 70) * (lod.trailScale))));
-      PACKETS.size = Math.max(1, 1.7 * scale);
-      PACKETS.color = liftToWhite(color, 0.4);
-      PACKETS.alpha = Math.min(1, base * 2.6);
-      PACKETS.speed = 140 / Math.max(60, length);
-      PACKETS.seed = fnvHash(tower.id) % 997;
-      PACKETS.still = still;
-      drawDataPackets(g, tower.x, tower.y, linked.x, linked.y, frame.now, PACKETS);
-      const half = Math.max(6 * scale, frame.cellSize * 0.42);
-      drawBracketCorners(g, linked.x, linked.y, half, half, half * 0.35, Math.max(0.6, 0.8 * scale), ATAKAN_ACCENT, base * 1.8);
-      if (signature.glints && !still && lod.corona) {
-        GLINTS.seedOffset = fnvHash(linkedId) % 997;
-        GLINTS.haloColor = color;
-        GLINTS.armBase = 3 * scale;
-        GLINTS.armRange = 2 * scale;
-        drawRunningGlints(this.glow, tower.x, tower.y, linked.x, linked.y, frame.now, GLINTS, 0.8 * extra * quiet);
+      if (tier >= 3 && lod.smoke) {
+        g.lineStyle(Math.max(0.5, 0.45 * scale), whiteHot(color, 1), base * 1.6 * extra);
+        g.lineBetween(tower.x, tower.y, linked.x, linked.y);
       }
+      const half = Math.max(6 * scale, frame.cellSize * 0.42);
+      drawBracketCorners(g, linked.x, linked.y, half, half, half * 0.3, Math.max(0.6, 0.8 * scale), color, base * 2);
     }
   }
 
@@ -402,92 +323,43 @@ export class AtakanSignatureVfx {
   /* ---------------------------------------------------------------- */
 
   /**
-   * Yalnizken (`auraActive`) alan: ham kademede ince halka ve ice akan
-   * cizgiler; derlenmiste altigen sinir, terminal yesili kose dugumleri ve
-   * donen tarama; asiri yuklemede beyaz-sicak cekirdek, sinirda kosan
-   * dugumler ve icten yukselen kod bitleri. Yaricap her zaman gercek
-   * (`range`).
+   * Yalnizken (`auraActive`) alan: gercek yaricapta (`range`) ince bir
+   * altigen sinir ve koyu bir dolgu; kademe siniri kalinlastiriyor, kademe 3'te
+   * beyaz-sicak cekirdek cizgisi. Donen tarama ve akan zerre yok.
    *
-   * Yalnizlik kosulu ayrica 3x3 karantina karesiyle: yalnizken muhurlu
-   * (yesil, tam), komsu varken soluk ve her komsuya uzanan kehribar ihlal
-   * cizgisiyle. Sunucunun karari `auraActive`; komsu isareti istemcinin
-   * kare mesafesi tahmini, yalnizca yon gostermek icin.
+   * Yalnizlik kosulu ayrica 3x3 karantina karesiyle: yalnizken tam ayraclar,
+   * komsu varken soluk ve her komsuya uzanan kehribar ihlal cizgisiyle.
+   * Sunucunun karari `auraActive`; komsu isareti sunucunun kuralindan.
    */
-  private drawContainment(tower: SignatureTower, frame: SignatureFrame, still: boolean) {
+  private drawContainment(tower: SignatureTower, frame: SignatureFrame) {
     const tier = levelTier(tower.level);
     const profile = getVfxProfile(tower.definitionId);
-    const signature = getSignatureTier(profile, tier);
     const own = frame.isOwn ? frame.isOwn(tower) : true;
     const extra = own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const color = profile.ramp[tier - 1];
-    const { now, scale, cellSize } = frame;
+    const { scale, cellSize } = frame;
     const lod = this.options.lod;
     const g = this.ground;
     const quarantine = cellSize * 1.5;
-    const seed = fnvHash(tower.id) % 997;
+    const spin = (fnvHash(tower.id) % 997) / 997 * (Math.PI / 3);
 
     if (tower.auraActive) {
       const radius = Math.max(12, tower.range ?? 0);
-      g.fillStyle(darken(color, 0.65), 0.05 + tier * 0.012);
+      g.fillStyle(darken(color, 0.7), 0.06 + tier * 0.012);
       fillDisc(g, tower.x, tower.y, radius);
-      if (tier === 1) {
-        g.lineStyle(Math.max(0.7, 0.9 * scale), color, 0.42);
-        strokeRing(g, tower.x, tower.y, radius);
-      } else {
-        // Derlenmis sinir: altigen; yavas donuyor (hareket azaltmada sabit).
-        const spin = still ? 0 : now / 9000;
-        g.lineStyle(Math.max(0.8, 1.1 * scale), color, 0.55);
+      g.lineStyle(Math.max(0.7, (0.6 + tier * 0.3) * scale), color, 0.5);
+      strokeHex(g, tower.x, tower.y, radius, spin);
+      if (tier >= 3 && lod.smoke) {
+        g.lineStyle(Math.max(0.5, 0.45 * scale), whiteHot(color, 1), 0.6 * extra);
         strokeHex(g, tower.x, tower.y, radius, spin);
-        g.fillStyle(ATAKAN_ACCENT, 0.85);
-        const node = Math.max(1.2, 1.8 * scale);
-        for (let index = 0; index < 6; index += 1) {
-          g.fillRect(hexCorner(tower.x, tower.y, radius, spin, index, 0) - node / 2, hexCorner(tower.x, tower.y, radius, spin, index, 1) - node / 2, node, node);
-        }
-        // Tarama: merkezden sinira donen tek cizgi.
-        const sweep = still ? -Math.PI / 2 : now / 1400 + seed;
-        g.lineStyle(Math.max(0.6, 0.8 * scale), ATAKAN_ACCENT, 0.32);
-        g.lineBetween(tower.x, tower.y, tower.x + Math.cos(sweep) * radius * 0.96, tower.y + Math.sin(sweep) * radius * 0.96);
       }
-      // Ice akan agir surukleme: alanin yaptigi is. Yerler tohumdan.
-      const drift = FIELD_DRIFT[tier - 1];
-      for (let index = 0; index < drift; index += 1) {
-        const a = hashNoise(seed + index + 5) * Math.PI * 2;
-        const phase = still ? 0.35 : (now / (2600 + hashNoise(seed + index) * 1500) + hashNoise(seed + index + 10)) % 1;
-        const r = radius * (1 - phase * 0.65);
-        const length = (2 + tier) * scale;
-        g.lineStyle(Math.max(0.6, 0.8 * scale), tier >= 3 && index % 4 === 0 ? liftToWhite(color, 0.85) : liftToWhite(color, 0.4), Math.sin(phase * Math.PI) * 0.4);
-        g.lineBetween(tower.x + Math.cos(a) * r, tower.y + Math.sin(a) * r, tower.x + Math.cos(a) * (r - length), tower.y + Math.sin(a) * (r - length));
-      }
-      if (signature?.whiteCore) {
-        POINT.radius = 2.4 * scale;
-        POINT.spread = 4 * scale;
-        strokePointProfile(this.links, tower.x, tower.y, color, 3, POINT, lod.corona ? this.glow : this.links, extra);
-        if (!still && lod.corona) {
-          // Sinirda kosan uc dugum.
-          for (let index = 0; index < 3; index += 1) {
-            const angle = now / 2400 + (index / 3) * Math.PI * 2 + seed;
-            drawHotDot(this.glow, tower.x + Math.cos(angle) * radius, tower.y + Math.sin(angle) * radius, liftToWhite(color, 0.85), Math.max(1, 1.5 * scale), 0.85 * extra);
-          }
-        }
-        if (!still && lod.sparks) {
-          CODE.seed = seed;
-          CODE.count = 4;
-          CODE.radius = radius * 0.7;
-          CODE.rise = 12 * scale;
-          CODE.color = color;
-          CODE.size = Math.max(0.9, 1.3 * scale);
-          CODE.alpha = 0.75 * extra;
-          CODE.lifeMs = 900;
-          drawCodeSparks(this.glow, tower.x, tower.y, now, CODE);
-        }
-      }
-      // Muhurlu karantina: yalnizlik saglandi.
-      drawBracketCorners(this.marks, tower.x, tower.y, quarantine, quarantine, quarantine * 0.3, Math.max(0.7, 1 * scale), signature?.accent ? ATAKAN_ACCENT : color, 0.6);
+      // Karantina: yalnizlik saglandi.
+      drawBracketCorners(this.marks, tower.x, tower.y, quarantine, quarantine, quarantine * 0.3, Math.max(0.7, (0.6 + tier * 0.2) * scale), color, 0.6);
       return;
     }
 
     // Komsu var: karantina acik ve soluk; komsulara ihlal isareti.
-    drawBracketCorners(this.marks, tower.x, tower.y, quarantine, quarantine, quarantine * 0.22, Math.max(0.6, 0.8 * scale), signature?.accent ? ATAKAN_ACCENT : color, 0.26);
+    drawBracketCorners(this.marks, tower.x, tower.y, quarantine, quarantine, quarantine * 0.22, Math.max(0.6, 0.8 * scale), color, 0.26);
     for (const other of this.isolationBlockers(tower, frame)) {
       const dx = other.x - tower.x;
       const dy = other.y - tower.y;
@@ -535,10 +407,9 @@ export class AtakanSignatureVfx {
 
   /**
    * Kuleden hedefe ip: kalinligi ve parlakligi yiginla (0 -> 10) buyuyor.
-   * Yigin kadar sayac kertigi kulenin yaninda. Ham kademede duz cizgi;
-   * derlenmiste omuzlar, hedefe akan paketler (sayi ve hiz yiginla) ve
-   * yiginla daralan yesil ayrac; asiri yuklemede beyaz-sicak cekirdek,
-   * kosan parlamalar ve tam yiginda hedeften dokulen kod bitleri.
+   * Yigin kadar sayac kertigi kulenin yaninda; hedefte yiginla daralan ince
+   * ayrac. Kesit lazerin merdiveni (kademe 2'de omuzlar, 3'te beyaz-sicak
+   * cekirdek); paket, kosan parlama ya da kod biti yok.
    *
    * Hedef degisince (ya da yigin dusunce) ip kopuyor: iki yari 260 ms'de
    * uclarina geri cekiliyor. Sunucu sifirladigi icin bir sonraki ip ince
@@ -572,7 +443,6 @@ export class AtakanSignatureVfx {
 
     const tier = levelTier(tower.level);
     const profile = getVfxProfile(tower.definitionId);
-    const signature = getSignatureTier(profile, tier);
     const own = frame.isOwn ? frame.isOwn(tower) : true;
     const extra = own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const color = profile.ramp[tier - 1];
@@ -583,7 +453,7 @@ export class AtakanSignatureVfx {
     if (!target) return;
     state.x2 = target.x;
     state.y2 = target.y;
-    this.drawTetherBody(this.links, tower.x, tower.y, target.x, target.y, stack, tier, color, signature, extra, now, scale, still, fnvHash(tower.id) % 997);
+    this.drawTetherBody(this.links, tower.x, tower.y, target.x, target.y, stack, tier, color, extra, scale);
   }
 
   private drawTetherBody(
@@ -595,12 +465,8 @@ export class AtakanSignatureVfx {
     stack: number,
     tier: VfxTier,
     color: number,
-    signature: VfxSignatureTier | undefined,
     extra: number,
-    now: number,
-    scale: number,
-    still: boolean,
-    seed: number
+    scale: number
   ) {
     const lod = this.options.lod;
     const ratio = clamp01(stack / OBSESSION_MAX_STACK);
@@ -611,13 +477,13 @@ export class AtakanSignatureVfx {
     const uy = dy / length;
     const alpha = 0.35 + 0.6 * ratio;
     LINE.body = getTetherWidth(stack, scale);
-    LINE.spread = (2 + 4 * ratio) * scale;
-    strokeProfile(g, x1, y1, x2, y2, color, tier, LINE, lod.corona ? this.glow : undefined, alpha * (tier >= 3 ? extra : 1));
+    LINE.spread = (2 + 3 * ratio) * scale;
+    strokeHardBeam(g, x1, y1, x2, y2, color, tier, LINE, lod.smoke ? this.glow : undefined, alpha * (tier >= 3 ? extra : 1));
 
     // Sayac: yigin kadar dik kertik, kulenin yaninda (renk gormeyen de sayar).
     const half = (2 + ratio * 1.5) * scale;
     const step = Math.min(4 * scale, (length * 0.45) / OBSESSION_MAX_STACK);
-    g.lineStyle(Math.max(0.6, 0.9 * scale), signature?.accent ? ATAKAN_ACCENT : liftToWhite(color, 0.4), 0.9);
+    g.lineStyle(Math.max(0.6, 0.9 * scale), whiteHot(color, 0.3), 0.9);
     for (let index = 0; index < stack; index += 1) {
       const along = 9 * scale + index * step;
       if (along > length - 6 * scale) break;
@@ -625,41 +491,9 @@ export class AtakanSignatureVfx {
       const py = y1 + uy * along;
       g.lineBetween(px - uy * half, py + ux * half, px + uy * half, py - ux * half);
     }
-
-    if (!signature?.accent) return;
-    PACKETS.count = Math.max(1, Math.round((1 + Math.floor(stack / 3)) * lod.trailScale));
-    PACKETS.size = Math.max(1, (1.4 + ratio * 0.8) * scale);
-    PACKETS.color = liftToWhite(color, 0.5);
-    PACKETS.alpha = 0.95;
-    PACKETS.speed = (0.6 + 0.14 * stack) * Math.min(2, 90 / length);
-    PACKETS.seed = seed;
-    PACKETS.still = still;
-    drawDataPackets(g, x1, y1, x2, y2, now, PACKETS);
-    // Hedefte yiginla daralan ayrac.
+    // Hedefte yiginla daralan ince ayrac: ip kime bagli.
     const bracket = (10 - 4 * ratio) * scale;
-    drawBracketCorners(g, x2, y2, bracket, bracket, bracket * 0.4, Math.max(0.6, 0.9 * scale), ATAKAN_ACCENT, 0.5 + 0.45 * ratio);
-
-    if (!signature.glints || still) return;
-    if (lod.corona) {
-      GLINTS.count = 1 + Math.floor(stack / 4);
-      GLINTS.seedOffset = seed;
-      GLINTS.haloColor = color;
-      GLINTS.armBase = 3 * scale;
-      GLINTS.armRange = 2 * scale;
-      drawRunningGlints(this.glow, x1, y1, x2, y2, now, GLINTS, extra);
-      GLINTS.count = 1;
-    }
-    if (lod.sparks && stack >= OBSESSION_MAX_STACK) {
-      CODE.seed = seed;
-      CODE.count = 4;
-      CODE.radius = bracket;
-      CODE.rise = 9 * scale;
-      CODE.color = color;
-      CODE.size = Math.max(0.9, 1.2 * scale);
-      CODE.alpha = 0.9 * extra;
-      CODE.lifeMs = 520;
-      drawCodeSparks(this.glow, x2, y2, now, CODE);
-    }
+    drawBracketCorners(g, x2, y2, bracket, bracket, bracket * 0.4, Math.max(0.6, 0.8 * scale), color, 0.45 + 0.45 * ratio);
   }
 
   private drawTetherSnap(tower: SignatureTower, state: TetherState, age: number, color: number, scale: number, still: boolean) {
@@ -670,7 +504,7 @@ export class AtakanSignatureVfx {
     const my = (tower.y + state.snapY2) / 2;
     // Iki yari uclarina geri cekiliyor; hareket azaltmada yerinde soner.
     const keep = still ? 0.45 : 0.5 * (1 - age);
-    g.lineStyle(Math.max(0.6, width), liftToWhite(color, 0.3), 0.85 * fade);
+    g.lineStyle(Math.max(0.6, width), color, 0.85 * fade);
     g.lineBetween(tower.x, tower.y, tower.x + (mx - tower.x) * keep * 2 * 0.9, tower.y + (my - tower.y) * keep * 2 * 0.9);
     g.lineBetween(state.snapX2, state.snapY2, state.snapX2 + (mx - state.snapX2) * keep * 2 * 0.9, state.snapY2 + (my - state.snapY2) * keep * 2 * 0.9);
   }
@@ -690,15 +524,14 @@ export class AtakanSignatureVfx {
   /* ---------------------------------------------------------------- */
 
   /**
-   * Tavan kadar dilim (10 / 15 / 20), yigin kadari yanik. Ham: duz dilimler.
-   * Derlenmis: yanik dilimlerin ADD dusumu ve tavani isaretleyen yesil
-   * kertik. Asiri yukleme: yanik dilimlerde beyaz-sicak cekirdek, yanik yay
-   * boyunca kosan dugum, tavanda kod bitleri.
+   * Tavan kadar dilim (10 / 15 / 20), yigin kadari yanik; tepede tavanin
+   * basladigi ve bittigi yeri gosteren kertik. Kademe yanik dilimleri
+   * kalinlastiriyor; kademe 3'te uzerlerinde beyaz-sicak cekirdek cizgisi.
+   * Tavanda dilimler nabiz atiyor (hareket azaltmada sabit).
    */
   private drawUcubeGauge(tower: SignatureTower, frame: SignatureFrame, still: boolean) {
     const tier = levelTier(tower.level);
     const profile = getVfxProfile(tower.definitionId);
-    const signature = getSignatureTier(profile, tier);
     const own = frame.isOwn ? frame.isOwn(tower) : true;
     const extra = own ? 1 : TEAMMATE_EXTRA_ALPHA;
     const color = profile.ramp[tier - 1];
@@ -714,44 +547,21 @@ export class AtakanSignatureVfx {
     const pulse = full && !still ? 0.75 + Math.sin(now / 90) * 0.25 : 1;
 
     // Yanmamis dilimler: tavanin kendisi, soluk.
-    g.lineStyle(Math.max(0.6, 0.9 * scale), darken(color, 0.4), 0.32);
+    g.lineStyle(Math.max(0.6, 0.9 * scale), darken(color, 0.45), 0.32);
     for (let index = stack; index < limit; index += 1) {
       const a0 = -Math.PI / 2 + index * step + gap;
       const a1 = -Math.PI / 2 + (index + 1) * step - gap;
       g.lineBetween(tower.x + Math.cos(a0) * radius, tower.y + Math.sin(a0) * radius, tower.x + Math.cos(a1) * radius, tower.y + Math.sin(a1) * radius);
     }
-    if (tier >= 2 && lod.corona) {
-      this.glow.lineStyle(Math.max(1, 4 * scale), color, 0.22 * pulse);
-      for (let index = 0; index < stack; index += 1) this.gaugeSegment(this.glow, tower, index, step, gap, radius);
-    }
-    g.lineStyle(Math.max(1, 2 * scale), color, 0.95 * pulse);
+    g.lineStyle(Math.max(1, (1.4 + tier * 0.35) * scale), color, 0.95 * pulse);
     for (let index = 0; index < stack; index += 1) this.gaugeSegment(g, tower, index, step, gap, radius);
-    if (signature?.whiteCore) {
-      g.lineStyle(Math.max(0.5, 0.8 * scale), liftToWhite(color, 0.9), 0.95 * extra);
+    if (tier >= 3 && lod.smoke) {
+      g.lineStyle(Math.max(0.5, 0.7 * scale), whiteHot(color, 1), 0.95 * extra);
       for (let index = 0; index < stack; index += 1) this.gaugeSegment(g, tower, index, step, gap, radius);
     }
-    if (signature?.accent) {
-      // Tavan kertigi: tepede, dilimlerin basladigi ve bittigi yer.
-      g.lineStyle(Math.max(0.7, 1 * scale), ATAKAN_ACCENT, 0.9);
-      g.lineBetween(tower.x, tower.y - radius - 3 * scale, tower.x, tower.y - radius + 2 * scale);
-    }
-    if (!signature?.glints || still) return;
-    if (lod.corona) {
-      const lit = stack * step;
-      const angle = -Math.PI / 2 + ((now / 700) % 1) * lit;
-      drawHotDot(this.glow, tower.x + Math.cos(angle) * radius, tower.y + Math.sin(angle) * radius, 0xffffff, Math.max(1, 1.5 * scale), 0.9 * extra);
-    }
-    if (lod.sparks && full) {
-      CODE.seed = fnvHash(tower.id) % 997;
-      CODE.count = 4;
-      CODE.radius = radius;
-      CODE.rise = 10 * scale;
-      CODE.color = color;
-      CODE.size = Math.max(0.9, 1.2 * scale);
-      CODE.alpha = 0.9 * extra;
-      CODE.lifeMs = 560;
-      drawCodeSparks(this.glow, tower.x, tower.y, now, CODE);
-    }
+    // Tavan kertigi: tepede, dilimlerin basladigi ve bittigi yer.
+    g.lineStyle(Math.max(0.7, 1 * scale), whiteHot(color, 0.3), 0.9);
+    g.lineBetween(tower.x, tower.y - radius - 3 * scale, tower.x, tower.y - radius + 2 * scale);
   }
 
   private gaugeSegment(g: VfxGraphics, tower: SignatureTower, index: number, step: number, gap: number, radius: number) {

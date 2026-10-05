@@ -1,0 +1,375 @@
+{
+  "note": "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0, Kenney).",
+  "format": {
+    "codec": "mp3",
+    "channels": 1,
+    "sampleRate": 44100,
+    "bitrateKbps": 96
+  },
+  "budget": {
+    "hitBytes": 8192,
+    "killBytes": 16384,
+    "totalBytes": 307200
+  },
+  "totalBytes": 93785,
+  "files": [
+    {
+      "file": "projectile-1.mp3",
+      "family": "projectile",
+      "source": "impact/impactMetal_medium_001.ogg",
+      "bytes": 1900,
+      "durationMs": 100,
+      "rmsDb": -18.5,
+      "peakDb": -6,
+      "midBandDb": -0.8
+    },
+    {
+      "file": "projectile-2.mp3",
+      "family": "projectile",
+      "source": "impact/impactMetal_medium_002.ogg",
+      "bytes": 1587,
+      "durationMs": 77,
+      "rmsDb": -18.4,
+      "peakDb": -4.6,
+      "midBandDb": -1
+    },
+    {
+      "file": "projectile-3.mp3",
+      "family": "projectile",
+      "source": "impact/impactMetal_medium_004.ogg",
+      "bytes": 1587,
+      "durationMs": 72,
+      "rmsDb": -18.5,
+      "peakDb": -4.9,
+      "midBandDb": -1
+    },
+    {
+      "file": "impact-1.mp3",
+      "family": "impact",
+      "source": "impact/impactMetal_heavy_000.ogg",
+      "bytes": 2214,
+      "durationMs": 110,
+      "rmsDb": -19.6,
+      "peakDb": -1.5,
+      "midBandDb": -2.5
+    },
+    {
+      "file": "impact-2.mp3",
+      "family": "impact",
+      "source": "impact/impactMetal_heavy_002.ogg",
+      "bytes": 1900,
+      "durationMs": 83,
+      "rmsDb": -18.7,
+      "peakDb": -1.4,
+      "midBandDb": -1.8
+    },
+    {
+      "file": "impact-3.mp3",
+      "family": "impact",
+      "source": "impact/impactMetal_heavy_004.ogg",
+      "bytes": 1900,
+      "durationMs": 91,
+      "rmsDb": -18.4,
+      "peakDb": -2,
+      "midBandDb": -1.9
+    },
+    {
+      "file": "focus-1.mp3",
+      "family": "focus",
+      "tick": true,
+      "source": "scifi/laserSmall_000.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.5,
+      "peakDb": -7.8,
+      "midBandDb": -3.7
+    },
+    {
+      "file": "focus-2.mp3",
+      "family": "focus",
+      "tick": true,
+      "source": "scifi/laserSmall_003.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.5,
+      "peakDb": -8.1,
+      "midBandDb": -1.5
+    },
+    {
+      "file": "aura-1.mp3",
+      "family": "aura",
+      "tick": true,
+      "source": "scifi/forceField_002.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.5,
+      "peakDb": -7.5,
+      "midBandDb": -3.4
+    },
+    {
+      "file": "aura-2.mp3",
+      "family": "aura",
+      "tick": true,
+      "source": "scifi/forceField_004.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.4,
+      "peakDb": -7.2,
+      "midBandDb": -3.8
+    },
+    {
+      "file": "contamination-1.mp3",
+      "family": "contamination",
+      "tick": true,
+      "source": "scifi/slime_000.ogg",
+      "bytes": 2214,
+      "durationMs": 117,
+      "rmsDb": -22.5,
+      "peakDb": -1.5,
+      "midBandDb": -1
+    },
+    {
+      "file": "contamination-2.mp3",
+      "family": "contamination",
+      "tick": true,
+      "source": "scifi/slime_001.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -20.2,
+      "peakDb": -1.4,
+      "midBandDb": -0.3
+    },
+    {
+      "file": "curse-1.mp3",
+      "family": "curse",
+      "tick": true,
+      "source": "scifi/computerNoise_002.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.5,
+      "peakDb": -12.6,
+      "midBandDb": -1.4
+    },
+    {
+      "file": "curse-2.mp3",
+      "family": "curse",
+      "tick": true,
+      "source": "scifi/computerNoise_003.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.4,
+      "peakDb": -12.6,
+      "midBandDb": -4.2
+    },
+    {
+      "file": "wave-1.mp3",
+      "family": "wave",
+      "source": "scifi/laserLarge_000.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -18.4,
+      "peakDb": -5.2,
+      "midBandDb": -4.5
+    },
+    {
+      "file": "wave-2.mp3",
+      "family": "wave",
+      "source": "scifi/laserLarge_001.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -18.4,
+      "peakDb": -5,
+      "midBandDb": -2
+    },
+    {
+      "file": "slash-1.mp3",
+      "family": "slash",
+      "source": "impact/impactMetal_light_000.ogg",
+      "bytes": 2527,
+      "durationMs": 150,
+      "rmsDb": -18.5,
+      "peakDb": -3.1,
+      "midBandDb": -1.1
+    },
+    {
+      "file": "slash-2.mp3",
+      "family": "slash",
+      "source": "impact/impactMetal_light_002.ogg",
+      "bytes": 2527,
+      "durationMs": 150,
+      "rmsDb": -18.4,
+      "peakDb": -1.6,
+      "midBandDb": -1.6
+    },
+    {
+      "file": "orb-1.mp3",
+      "family": "orb",
+      "source": "impact/impactGlass_light_000.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.5,
+      "peakDb": -4.5,
+      "midBandDb": -0.4
+    },
+    {
+      "file": "orb-2.mp3",
+      "family": "orb",
+      "source": "impact/impactGlass_light_002.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -18.4,
+      "peakDb": -4.2,
+      "midBandDb": -0.5
+    },
+    {
+      "file": "ring-1.mp3",
+      "family": "ring",
+      "source": "impact/impactBell_heavy_003.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -18.7,
+      "peakDb": -1.5,
+      "midBandDb": -4.2
+    },
+    {
+      "file": "ring-2.mp3",
+      "family": "ring",
+      "source": "impact/impactBell_heavy_002.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -18.5,
+      "peakDb": -2.4,
+      "midBandDb": -5.4
+    },
+    {
+      "file": "ball-1.mp3",
+      "family": "ball",
+      "source": "impact/impactPlate_heavy_000.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -20,
+      "peakDb": -1.5,
+      "midBandDb": -6.2
+    },
+    {
+      "file": "ball-2.mp3",
+      "family": "ball",
+      "source": "impact/impactPlate_heavy_002.ogg",
+      "bytes": 2841,
+      "durationMs": 180,
+      "rmsDb": -21,
+      "peakDb": -1.7,
+      "midBandDb": -4.1
+    },
+    {
+      "file": "dart-1.mp3",
+      "family": "dart",
+      "source": "impact/impactTin_medium_000.ogg",
+      "bytes": 2214,
+      "durationMs": 110,
+      "rmsDb": -18.5,
+      "peakDb": -1.8,
+      "midBandDb": -2.7
+    },
+    {
+      "file": "dart-2.mp3",
+      "family": "dart",
+      "source": "impact/impactTin_medium_002.ogg",
+      "bytes": 1900,
+      "durationMs": 79,
+      "rmsDb": -18.4,
+      "peakDb": -3.9,
+      "midBandDb": -1.9
+    },
+    {
+      "file": "heft-1.mp3",
+      "family": "heft",
+      "source": "impact/impactPunch_heavy_003.ogg",
+      "bytes": 2527,
+      "durationMs": 140,
+      "rmsDb": -24.4,
+      "peakDb": -10.9,
+      "midBandDb": -10.6
+    },
+    {
+      "file": "crit-1.mp3",
+      "family": "crit",
+      "source": "impact/impactPlate_light_000.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -20.6,
+      "peakDb": -1.7,
+      "midBandDb": -2.1
+    },
+    {
+      "file": "crit-2.mp3",
+      "family": "crit",
+      "source": "impact/impactPlate_light_003.ogg",
+      "bytes": 2214,
+      "durationMs": 120,
+      "rmsDb": -21.1,
+      "peakDb": -1.6,
+      "midBandDb": -2.6
+    },
+    {
+      "file": "kill-light-1.mp3",
+      "family": "killLight",
+      "source": "scifi/explosionCrunch_002.ogg",
+      "bytes": 3781,
+      "durationMs": 260,
+      "rmsDb": -18.5,
+      "peakDb": -4.7,
+      "midBandDb": -2.7
+    },
+    {
+      "file": "kill-light-2.mp3",
+      "family": "killLight",
+      "source": "scifi/explosionCrunch_001.ogg",
+      "bytes": 3781,
+      "durationMs": 260,
+      "rmsDb": -19.4,
+      "peakDb": -1.4,
+      "midBandDb": -4.5
+    },
+    {
+      "file": "kill-heavy-1.mp3",
+      "family": "killHeavy",
+      "source": "scifi/explosionCrunch_000.ogg",
+      "bytes": 6602,
+      "durationMs": 480,
+      "rmsDb": -18.5,
+      "peakDb": -1.6,
+      "midBandDb": -6.4
+    },
+    {
+      "file": "kill-heavy-2.mp3",
+      "family": "killHeavy",
+      "source": "scifi/explosionCrunch_003.ogg",
+      "bytes": 6602,
+      "durationMs": 480,
+      "rmsDb": -18.4,
+      "peakDb": -1.5,
+      "midBandDb": -6.7
+    },
+    {
+      "file": "kill-air-1.mp3",
+      "family": "killAir",
+      "source": "impact/impactGlass_heavy_003.ogg",
+      "bytes": 3154,
+      "durationMs": 187,
+      "rmsDb": -19,
+      "peakDb": -1.1,
+      "midBandDb": -3
+    },
+    {
+      "file": "kill-air-2.mp3",
+      "family": "killAir",
+      "source": "impact/impactGlass_heavy_000.ogg",
+      "bytes": 3468,
+      "durationMs": 220,
+      "rmsDb": -21.8,
+      "peakDb": -1.5,
+      "midBandDb": -3.2
+    }
+  ]
+}

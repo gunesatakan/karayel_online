@@ -45,7 +45,7 @@ import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEvent
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
-import { liftToWhite, toTier } from "../vfx/kit";
+import { fnvHash, hashNoise, toTier } from "../vfx/kit";
 import { VfxLod } from "../vfx/lod";
 import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
@@ -238,6 +238,7 @@ import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, Te
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
 import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
+import { getKillSoundFamily } from "../sfx-samples";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
@@ -412,7 +413,13 @@ type RenderMover = {
   lastEffectiveHp?: number;
   /** Son vurus flasinin basladigi an; hiz siniri da buradan. */
   hitFlashAt?: number;
-  /** Sampiyonun taci; normal dusmanda yok. */
+  /** Kozmetik itmenin ani ve yonu (piksel); karedeki uygulanan payi. */
+  knockAt?: number;
+  knockX?: number;
+  knockY?: number;
+  knockDx?: number;
+  knockDy?: number;
+  /** Sampiyonun sabit isareti ("[Ş]"); normal dusmanda yok. */
   crown?: Phaser.GameObjects.Text;
 };
 
@@ -502,13 +509,16 @@ const COMBO_OVERDRIVE_FILL = "#fdba74";
 const COMBO_OVERDRIVE_STROKE = "#431407";
 const COMBO_LUCKY_FILL = "#fde047";
 /**
- * Sampiyon: tac, etiket ve can cubugu ayni altin tonunda; dunyadaki hicbir
- * durum isaretiyle (sari T takip, mor lanet) karismasin diye koyu kahve
- * konturla. Tac can cubugunun (16) hemen ustunde, etiketlerin (30.5) altinda.
+ * Sampiyon: isaret, etiket ve can cubugu ayni koyu kizil kimlikte (agir, sert
+ * dil: altin tac ve sallanma yok); kirik beyaz yazi, kalin koyu kizil kontur.
+ * Dunyadaki hicbir durum isaretiyle (takip, mor lanet) karismiyor. Isaret can
+ * cubugunun (16) hemen ustunde, etiketlerin (30.5) altinda.
  */
-const CHAMPION_FILL = "#fbbf24";
-const CHAMPION_STROKE = "#422006";
-const CHAMPION_BAR_FRAME = 0xfbbf24;
+const CHAMPION_FILL = "#f1e4e1";
+const CHAMPION_STROKE = "#6b1414";
+const CHAMPION_BAR_FRAME = 0xb33a3a;
+/** Govdenin ustundeki sabit sampiyon isareti: koseli ayrac icinde "S" (sallanmiyor). */
+const CHAMPION_MARK = "[Ş]";
 const CHAMPION_CROWN_DEPTH = 16.2;
 const CHAMPION_LABEL_LIFT_PX = 16;
 /**
@@ -525,6 +535,14 @@ const UPGRADE_READY_BOB_RATE = 1 / 180;
 /** Doygun rengi olmayan doku (tas golem) icin patlama rengi. */
 const ENEMY_ACCENT_FALLBACK = 0xd6d3d1;
 const ENEMY_HIT_FLASH_COLOR = 0xffffff;
+/** Kozmetik itmenin geri oturma suresi (kendi agir vurusun; yalnizca govdenin cizimi). */
+const ENEMY_KNOCK_MS = 90;
+/** Buz kabugu: soluk celik-mavisi (eski pastel camgobegi rozetin yerine), donmuyor. */
+const FROST_CRUST_FILL = 0x8aa1b4;
+const FROST_CRUST_EDGE = 0xc3d0dc;
+const FROST_CRACK = 0x7890a6;
+/** Kabugun kenar noktalari: karede yeniden yaziliyor (nesne uretilmiyor). */
+const FROST_POINTS = Array.from({ length: 6 }, () => new Phaser.Geom.Point());
 /**
  * Sunucu onayi atimlarinin renkleri.
  *
@@ -874,7 +892,7 @@ export class GameScene extends Phaser.Scene {
   private renderedMapKey = "";
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
-  /** Isinlarin ADD karisimli omuzlari ve haleleri; govde `beamGraphics`te. */
+  /** Isinlarin ADD karisimli dusumu (ve lazerin omuzlari); govde `beamGraphics`te. */
   private beamGlowGraphics?: Phaser.GameObjects.Graphics;
   /** Isin cizimi (lazer, Zeynep, Melis, ultiler); her karede, ara degerli isinlarla. */
   private beamRenderer?: BeamRenderer;
@@ -923,9 +941,9 @@ export class GameScene extends Phaser.Scene {
   };
   /** Kisa omurlu ADD parlamalari (en fazla 64 canli). */
   private flashPool?: FlashPool;
-  /** Mermi omuzlari ve haleleri: karede tek dortgenlik ADD damgalar. */
+  /** Mermilerin isisi (kademe 2-3): karede tek dortgenlik ADD damgalar. */
   private glowStamps?: GlowStampPool;
-  /** Yuk altinda once kivilcim, sonra hale, en son iz uzunlugu dusuyor. */
+  /** Yuk altinda once kivilcim, sonra duman, sonra yer izi, en son iz uzunlugu dusuyor. */
   private readonly vfxLod = new VfxLod();
   private lastVfxFrameAt = 0;
   /** Bu karede efektlere giden CPU suresi (LOD olcusu). */
@@ -1430,9 +1448,14 @@ export class GameScene extends Phaser.Scene {
       reducedMotion: () => this.feedback?.reducedMotion ?? false,
       // Agir tek vurus (Sunucu, Jackpot; kademe 3, yalnizca kendi kulen):
       // yonetmenin mikro sarsintisi. Aralik, ust sinir ve hareket azaltma orada.
-      onHeavyImpact: () => this.feedback?.shakeCamera({ own: true, priority: 1, px: 1.5, durationMs: 90 })
+      onHeavyImpact: () => this.feedback?.shakeCamera({ own: true, priority: 1, px: 1.5, durationMs: 90 }),
+      // Kendi agir / kinetik kademe 2+ vurusun: vurulan dusman 1-2 px itiliyor
+      // (yalnizca istemcide, govdenin cizimi; konum ve can cubugu yerinde).
+      onKnock: (x, y, angle, px) => this.knockEnemyNear(x, y, angle, px),
+      // Yanik izleri dusmanlarin (8) altinda.
+      ground: this.add.graphics().setDepth(7.3)
     });
-    // Atakan imzalari: alan dusmanlarin altinda (7.4), bag ve ip mermilerin
+    // Atakan isaretleri: alan dusmanlarin altinda (7.4), bag ve ip mermilerin
     // altinda (10.4, ADD omuzlari 10.42), nisangah ve gosterge dusman ve kule
     // govdesinin ustunde, can cubugunun (16) altinda (13.2).
     this.atakanSignatures = new AtakanSignatureVfx(
@@ -1443,10 +1466,10 @@ export class GameScene extends Phaser.Scene {
       { lod: this.vfxLod, reducedMotion: () => this.feedback?.reducedMotion ?? false }
     );
     this.signatureTowers = [];
-    // Zeynep imzalari: spot isiginin havuzu dusmanlarin altinda (7.45), ferman
-    // ve dizilim cizgileri mermilerin altinda (10.41, ADD ikinci perdeler
-    // 10.43), halka, damga ve muhur dusman govdesinin ustunde, can cubugunun
-    // (16) altinda (13.25).
+    // Zeynep imzalari: hat isaretinin yer golgesi dusmanlarin altinda (7.45),
+    // delme ve dizilim cizgileri mermilerin altinda (10.41, ADD isi 10.43),
+    // halka, damga ve kertikler dusman govdesinin ustunde, can cubugunun (16)
+    // altinda (13.25).
     this.zeynepSignatures = new ZeynepSignatureVfx(
       this.add.graphics().setDepth(7.45),
       this.add.graphics().setDepth(10.41),
@@ -1456,7 +1479,9 @@ export class GameScene extends Phaser.Scene {
     );
     this.zeynepReceipt.clear();
     this.projectileOwnership.clear();
-    this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7));
+    // Olumun yer izi (yanik, leke, toz) dusmanlarin altinda; govde, kirinti
+    // ve duman ustlerinde. Kivilcim, duman ve iz efektlerin LOD'uyla dusuyor.
+    this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7), this.add.graphics().setDepth(7.35), this.vfxLod);
     this.damageNumbers = new DamageNumberPool(this, 30);
     // Sayilarin hemen ustunde: seviye etiketi seyrek ve oyuncunun satin aldigi an.
     this.levelLabels = new WorldLabelPool(this, 30.5);
@@ -2002,12 +2027,12 @@ export class GameScene extends Phaser.Scene {
     }
     this.applyAudioVolumes();
     if (channel === "sfx") {
-      // Onizleme: oyuncu kaydiriciyi surerken yeni seviyeyi duysun. Altin
-      // tinisinin hiz siniri (saniyede 4) surukleme boyunca da gecerli.
-      // Kaydirici bir dokunus oldugu icin baglam burada acilabiliyor; ilk
-      // hareketin onizlemesi yonetmende bir an tutulup baglam acilinca caliyor.
+      // Onizleme: oyuncu kaydiriciyi surerken yeni seviyeyi duysun -- hafif
+      // bir oldurme sesi, en fazla 250 ms'de bir. Kaydirici bir dokunus
+      // oldugu icin baglam burada acilabiliyor; ilk hareketin onizlemesi
+      // yonetmende bir an tutulup baglam acilinca caliyor.
       this.feedback?.unlockAudio();
-      this.feedback?.playSfx("coin", { own: true });
+      this.feedback?.previewSfx();
     } else if (channel === "hit") {
       // Onizleme: kendi mermi vurusun, sv 1. Oyunun vurus butcesinin disinda
       // (savas ortasinda da duyulur) ve 250 ms'de bir; baglam bu dokunusta
@@ -4548,6 +4573,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Kozmetik itme: carpmanin cizildigi anda (oynatma saati) en yakin cizili
+   * dusman `px` piksel vurus yonunde itiliyor ve ENEMY_KNOCK_MS'de yerine
+   * oturuyor. Yalnizca kendi agir vurusun (AttackVfx karar veriyor; hareket
+   * azaltmada hic). Sunucunun konumu ve can cubugu degismiyor.
+   */
+  private knockEnemyNear(x: number, y: number, angle: number, px: number) {
+    let best = 26 * 26;
+    let target: RenderMover | undefined;
+    for (const mover of this.enemies.values()) {
+      const gap = (mover.sprite.x - x) ** 2 + (mover.sprite.y - y) ** 2;
+      if (gap < best) {
+        best = gap;
+        target = mover;
+      }
+    }
+    if (!target) return;
+    target.knockAt = performance.now();
+    target.knockX = Math.cos(angle) * px;
+    target.knockY = Math.sin(angle) * px;
+  }
+
+  /**
    * Gudumlu atisin namlusu (Izolasyon Kulesi): sunucu gudumlu mermi icin
    * `projectile:spawn` gondermiyor, mermi ilk kez snapshot'ta goruluyor.
    * Goruldugu an (oynatmadan ~500 ms once) atan kulenin yaninda; namlu ve
@@ -6492,13 +6539,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setDepth(15)
           .setVisible(false);
         if (enemy.champion) {
-          mover.crown = this.add.text(enemy.x, enemy.y - 24, "♛", {
+          mover.crown = this.add.text(enemy.x, enemy.y - 24, CHAMPION_MARK, {
             color: CHAMPION_FILL,
             fontFamily: "Arial",
-            fontSize: "14px",
+            fontSize: "11px",
             fontStyle: "bold",
             stroke: CHAMPION_STROKE,
-            strokeThickness: 3
+            strokeThickness: 4
           }).setOrigin(0.5).setDepth(CHAMPION_CROWN_DEPTH);
         }
         this.enemies.set(enemy.id, mover);
@@ -6507,9 +6554,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (mover.sprite.texture.key !== texture) {
         mover.sprite.setTexture(texture);
       }
-      const previousX = mover.sprite.x;
-      const previousY = mover.sprite.y;
-      mover.sprite.setPosition(enemy.x, enemy.y);
+      const previousX = mover.sprite.x - (mover.knockDx ?? 0);
+      const previousY = mover.sprite.y - (mover.knockDy ?? 0);
+      // Kozmetik itme (kendi agir vurusun, 1-2 px): yalnizca govdenin cizimi,
+      // ENEMY_KNOCK_MS'de yerine oturuyor. Konum, can cubugu ve yon etkilenmiyor.
+      const knock = mover.knockAt === undefined ? 0 : 1 - (now - mover.knockAt) / ENEMY_KNOCK_MS;
+      mover.knockDx = knock > 0 ? (mover.knockX ?? 0) * knock : 0;
+      mover.knockDy = knock > 0 ? (mover.knockY ?? 0) * knock : 0;
+      mover.sprite.setPosition(enemy.x + mover.knockDx, enemy.y + mover.knockDy);
       // Karede degismeyen derinlik yeniden yazilmiyor: her `setDepth` sahnenin
       // siralamasini kuyruga sokuyor ve bu dongu her karede her dusmanda donuyor.
       setDepthIfChanged(mover.sprite, enemy.movementKind === "air" ? 9 : 8);
@@ -6557,9 +6609,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.drawEnemyFrostEffect(mover.frostEffect, enemy, displayedEnemySize);
       this.drawEnemyHealthBar(mover.healthBar, enemy, displayedEnemySize);
       if (mover.crown) {
-        // Tac govdenin ustunde hafifce sallaniyor; hareket azaltmada sabit.
-        const bob = this.feedback?.reducedMotion ? 0 : Math.sin(now / 320) * 1.5;
-        mover.crown.setPosition(enemy.x, enemy.y - displayedEnemySize * 0.5 - 6 + bob);
+        // Sampiyon isareti govdenin ustunde sabit (sallanma yok).
+        mover.crown.setPosition(enemy.x, enemy.y - displayedEnemySize * 0.5 - 6);
         mover.crown.setScale(Math.max(0.8, displayedEnemySize / 44));
       }
       if (enemy.champion && !this.announcedChampionIds.has(enemy.id)) {
@@ -6630,50 +6681,48 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     graphics.setVisible(true);
     setDepthIfChanged(graphics, enemy.movementKind === "air" ? 9.1 : 8.1);
     const radius = Math.max(7, displayedSize * 0.46);
-    const now = performance.now();
+    // Buzun bicimi dusmanin kimliginden: donmuyor, titremiyor (agir, sert dil).
+    const seed = fnvHash(enemy.id) % 997;
 
     if (enemy.isFrozen) {
-      // Kabuk: alti kenarli bir buz zarfi, yavasca donuyor.
-      const spin = now / 1400;
-      const points: Phaser.Geom.Point[] = [];
-      for (let i = 0; i < 6; i += 1) {
-        const angle = spin + (i * Math.PI * 2) / 6;
-        // Kenarlar esit degil: duzgun bir altigen kristal degil rozet gibi
-        // duruyordu. Kucuk bir dalga onu kirilmis buza ceviriyor.
-        const r = radius * (i % 2 === 0 ? 1.12 : 0.86);
-        points.push(new Phaser.Geom.Point(enemy.x + Math.cos(angle) * r, enemy.y + Math.sin(angle) * r));
+      // Kabuk: kirik kenarli, soluk celik-mavisi bir buz kabugu; yerinde duruyor.
+      const turn = hashNoise(seed) * Math.PI;
+      for (let i = 0; i < FROST_POINTS.length; i += 1) {
+        const angle = turn + (i * Math.PI * 2) / FROST_POINTS.length;
+        const r = radius * (0.84 + hashNoise(seed + i + 1) * 0.3);
+        FROST_POINTS[i].setTo(enemy.x + Math.cos(angle) * r, enemy.y + Math.sin(angle) * r);
       }
-      graphics.fillStyle(0x67e8f9, 0.2);
-      graphics.fillPoints(points, true);
-      graphics.lineStyle(Math.max(1.2, radius * 0.13), 0xe0f2fe, 0.9);
-      graphics.strokePoints(points, true, true);
+      graphics.fillStyle(FROST_CRUST_FILL, 0.22);
+      graphics.fillPoints(FROST_POINTS, true);
+      graphics.lineStyle(Math.max(1.1, radius * 0.1), FROST_CRUST_EDGE, 0.85);
+      graphics.strokePoints(FROST_POINTS, true, true);
 
-      // Ic catlaklar: merkezden kenarlara uc kirik.
-      graphics.lineStyle(Math.max(1, radius * 0.09), 0xa5f3fc, 0.75);
+      // Ic catlaklar: merkezden kenarlara uc kirik, sabit.
+      graphics.lineStyle(Math.max(0.8, radius * 0.07), FROST_CRACK, 0.75);
       for (let i = 0; i < 3; i += 1) {
-        const angle = -spin * 1.6 + (i * Math.PI * 2) / 3;
+        const angle = turn + 0.4 + (i * Math.PI * 2) / 3 + (hashNoise(seed + i + 9) - 0.5) * 0.6;
         graphics.lineBetween(
           enemy.x + Math.cos(angle) * radius * 0.18,
           enemy.y + Math.sin(angle) * radius * 0.18,
-          enemy.x + Math.cos(angle) * radius * 0.96,
-          enemy.y + Math.sin(angle) * radius * 0.96
+          enemy.x + Math.cos(angle) * radius * 0.9,
+          enemy.y + Math.sin(angle) * radius * 0.9
         );
       }
       return;
     }
 
-    // Kirag: govdenin cevresinde birkac kristal tozu. Kabuktan cok daha
-    // sonuk, cunku yavaslatma durdurmak degil.
-    const pulse = 0.62 + Math.sin(now / 260) * 0.16;
-    graphics.lineStyle(Math.max(1, radius * 0.1), 0x7dd3fc, 0.42 * pulse);
+    // Kirag: govdenin kenarinda ince, sonuk bir buz cizgisi ve dort kisa
+    // buz kertigi; kabuktan cok daha sonuk, cunku yavaslatma durdurmak degil.
+    graphics.lineStyle(Math.max(1, radius * 0.08), FROST_CRUST_EDGE, 0.4);
     graphics.strokeCircle(enemy.x, enemy.y, radius * 0.92);
-    graphics.fillStyle(0xbae6fd, 0.7 * pulse);
+    graphics.lineStyle(Math.max(0.8, radius * 0.07), FROST_CRACK, 0.6);
     for (let i = 0; i < 4; i += 1) {
-      const angle = now / 900 + (i * Math.PI * 2) / 4;
-      graphics.fillCircle(
-        enemy.x + Math.cos(angle) * radius * 0.92,
-        enemy.y + Math.sin(angle) * radius * 0.92,
-        Math.max(0.9, radius * 0.11)
+      const angle = hashNoise(seed) * Math.PI + (i * Math.PI * 2) / 4;
+      graphics.lineBetween(
+        enemy.x + Math.cos(angle) * radius * 0.8,
+        enemy.y + Math.sin(angle) * radius * 0.8,
+        enemy.x + Math.cos(angle) * radius * 1.02,
+        enemy.y + Math.sin(angle) * radius * 1.02
       );
     }
   }
@@ -7298,11 +7347,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Carpani karede `updateAnimatedTowers` uyguluyor.
       this.tweens.killTweensOf(rendered.punch);
       rendered.punch.value = 1;
+      // Kisa, sert bir sikisma (en fazla %6, asma yok): esneyen Back egrisi
+      // ve 1.3 katlik pop sekerleme gibi ziplatiyordu.
       this.tweens.add({
         targets: rendered.punch,
-        value: strong ? 1.3 : 1.15,
-        duration: strong ? 180 : 120,
-        ease: "Back.easeOut",
+        value: strong ? 1.06 : 1.04,
+        duration: strong ? 70 : 50,
+        ease: "Quad.easeOut",
         yoyo: true,
         onComplete: () => {
           rendered.punch.value = 1;
@@ -7957,11 +8008,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       sprite.setPosition(projectile.x, projectile.y);
       if (profile) {
         // Siluet profilden (12-16 birim), carpisma boyundan (8) degil. Kademe
-        // 2-3'te doku rampanin duragina dogru boyaniyor; ayrinti kaliyor.
+        // 2-3te doku beyaz-sicak cekirdege dogru isiniyor (pastel ara ton yok).
         const recipe = getVfxTier(profile, projectile.tier);
         const size = recipe.silhouette * scale;
         sprite.setDisplaySize(size, size);
-        const tint = toTier(projectile.tier) >= 2 ? liftToWhite(recipe.color, 0.5) : 0xffffff;
+        const tint = toTier(projectile.tier) >= 2 ? recipe.core : 0xffffff;
         if (sprite.tintTopLeft !== tint) sprite.setTint(tint);
       } else {
         // Havuzdan gelen sprite onceki bir Melis mermisinin tonunu tasiyabilir.
@@ -8883,14 +8934,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const own = Boolean(event.ownerId) && event.ownerId === this.localSessionId;
     const shape = getDeathBurstShape(trace.type);
-    // Perde kombo hapiyla ayni sayidan: hap "×5" derken ses de besinci basamakta.
+    // Ses dusmanin agirligindan (agir patlama, ucanda parcalanma, yoksa kisa
+    // ezilme). Kombo perdeyi degil yalnizca seviyeyi biraz artiriyor; basamak
+    // kombo hapiyla ayni sayidan.
     const decision = this.feedback?.emit("kill", {
       own,
       x: trace.x,
       y: trace.y,
       weight: getKillFeedbackWeight(trace.type, own && ownCritKill),
       step: own ? comboStep : undefined
-    });
+    }, getKillSoundFamily(trace.type, trace.air));
     if (own) {
       this.playKillCoin(event, trace, decision?.step, now);
     }
@@ -8904,12 +8957,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       size: trace.size,
       color: tintAccentColor(this.getEnemyAccentColor(trace.texture), trace.tint),
       shards: shape.shards,
-      // Ucan dusmanin altinda zemin yok; toz halkasi yalnizca yerdeki agir govdede.
-      dustRing: shape.dustRing && !trace.air,
       durationMs: shape.durationMs,
       intensity: own ? 1 : TEAMMATE_DEATH_BURST_INTENSITY,
       still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
-      bornAt: now
+      bornAt: now,
+      // Malzeme irkin dokusundan (metal, kitin, kristal, tas, kul); agirlik tipten.
+      // Ucan dusmanin altinda zemin yok: yer izi ve inis yalnizca yerdeki govdede.
+      texture: trace.texture,
+      heavy: shape.heavy,
+      air: trace.air
     });
   }
 
@@ -8924,8 +8980,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * buraya hic gelmiyor: senin de payin var ama o HUD sayiminda goruluyor,
    * dunyada senin gozunu cekmiyor.
    *
-   * Tini yonetmenden: saniyede en fazla 4, perdesi oldurme zinciriyle
-   * yukseliyor (bir oktavla sinirli).
+   * Sesi yok: oldurmenin kendi sesi yetiyor; her oldurmede ikinci bir tini
+   * savas sesini maskeliyordu. Butce ve birlestirme yine yonetmenden.
    */
   private playKillCoin(event: KillEventSnapshot, trace: { x: number; y: number; size: number }, step: number | undefined, now: number) {
     const gold = event.g ?? 0;

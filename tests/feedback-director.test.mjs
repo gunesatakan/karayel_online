@@ -9,7 +9,8 @@
  *   birlesir ya da en eski gorselin yerini alir.
  * - Takim arkadasinin olayi P3: soluk, kisik, dar butceli; senin kamerani
  *   sallamaz, senin sesini hiz sinirina takmaz.
- * - Altin tinisi saniyede en fazla 4, altin sayisi en fazla 3.
+ * - Altin sayisi saniyede en fazla 3; altinin sesi yok (oldurme sesi yetiyor).
+ * - Oldurme zinciri sayiliyor ama perde tirmanmiyor (sfx-samples testi).
  * - Sarsinti yalnizca yerel P0/P1 olayinda, en fazla 3 px; hareket
  *   azaltma aciksa hic. Titresim 10-15 ms ve kullanici kapatabiliyor.
  *
@@ -123,7 +124,7 @@ test("ayni yerde ust uste gelen ayni tur olay oncekine eklenir, yeni gorsel acma
   assert.equal(governor.decide("crit", { own: true, x: 106, y: 104 }, 60 + FEEDBACK_LIMITS.mergeWindowMs + 1).show, true);
 });
 
-test("altin: sayi saniyede en fazla 3 (arasi birlesir), tini saniyede en fazla 4", () => {
+test("altin: sayi saniyede en fazla 3 (arasi birlesir), oldurme basina tini yok", () => {
   const governor = new FeedbackGovernor();
   let shown = 0;
   let merged = 0;
@@ -136,7 +137,8 @@ test("altin: sayi saniyede en fazla 3 (arasi birlesir), tini saniyede en fazla 4
     if (decision.sound) sounds += 1;
   }
   assert.ok(shown <= 3, `saniyede ${shown} altin sayisi`);
-  assert.ok(sounds <= 4, `saniyede ${sounds} altin tinisi`);
+  assert.equal(sounds, 0, `saniyede ${sounds} altin tinisi`);
+  assert.equal(FEEDBACK_KIND_RULES.coin.soundMs, 0, "altin ses butcesine girmiyor");
   assert.equal(shown + merged, 20, "gosterilmeyen altin birlesir, kaybolmaz");
 });
 
@@ -236,7 +238,7 @@ test("titresim: 10-15 ms, yalnizca kendi olayin, aralikli ve kapatilabilir", () 
   assert.ok(off.decide("tier", { own: true }, 1000).vibrateMs > 0);
 });
 
-test("oldurme perdesi kendi zincirinle yukselir, 1.5 sn sessizlikte basa doner", () => {
+test("oldurme zinciri kendi oldurmelerinle ilerler, 1.5 sn sessizlikte basa doner", () => {
   const governor = new FeedbackGovernor();
   const steps = [0, 200, 400, 600].map((now) => governor.decide("kill", { own: true }, now).step);
   assert.deepEqual(steps, [0, 1, 2, 3]);
@@ -247,6 +249,8 @@ test("oldurme perdesi kendi zincirinle yukselir, 1.5 sn sessizlikte basa doner",
   // Cagiran kendi kombosunu verirse o kullanilir.
   assert.equal(governor.decide("kill", { own: true, step: 7 }, 5000).step, 7);
 
+  // Perde basamaklari yalnizca arayuz onaylarinin (gelisim kademesi); oldurme
+  // sesi zinciri perdeyle degil hafif bir seviye artisiyla duyuruyor.
   let previous = 0;
   for (let step = 0; step <= FEEDBACK_MAX_PITCH_STEP; step += 1) {
     const ratio = getFeedbackPitchRatio(step);

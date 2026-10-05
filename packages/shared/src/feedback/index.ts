@@ -94,7 +94,8 @@ export type FeedbackKindRule = {
 /**
  * Tur basina kurallar.
  *
- * Sesli olanlarin hepsi sentez: dosya yok. Sarsinti ve titresim yalnizca
+ * Ses ya kayitli ornek (oldurme, kritik; istemcide sfx-samples.ts) ya da
+ * sentez; burasi yalnizca butcesini tutuyor. Sarsinti ve titresim yalnizca
  * seyrek ve oyuncunun kendi sectigi anlarda; oldurme ancak agirligi yuksekse
  * (kritik ya da agir dusman) dokunuyor, yoksa dakikada 22-30 kez sallardi.
  */
@@ -105,9 +106,15 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // ve oldurme olayina bagli; bu yalnizca sayi. Sessiz ama P1: kalabalik bir
   // dalgada senin oldurdugun dusmanin sayisi siradan vuruslar icin dusmemeli.
   lastHit: { ownPriority: 1, channel: "number", visualMs: 800, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 },
-  kill:{ ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 110, soundGapMs: 70, teammateSound: true, shakePx: 1.5, vibrateMs: 12, defaultWeight: 0.3 },
-  // Altin sayisi saniyede en fazla 3, tinisi en fazla 4: arasi birlesiyor.
-  coin: { ownPriority: 2, channel: "number", visualMs: 800, visualGapMs: 334, teammateVisual: false, soundMs: 150, soundGapMs: 250, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 },
+  // Oldurme sesi kayitli bir ezilme/patlama (hafif ~260 ms, agir ~480 ms);
+  // yonetmen ornegin gercek suresini veriyor (`FeedbackInput.soundMs`).
+  // Buradaki 120 ms yalnizca ornek yokken calan kisa sentez icin.
+  kill: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 120, soundGapMs: 70, teammateSound: true, shakePx: 1.5, vibrateMs: 12, defaultWeight: 0.3 },
+  // Altin sayisi saniyede en fazla 3: arasi birlesiyor. Sesi yok: her
+  // oldurmede ikinci bir tini (eskiden kombo ile tirmanan G6-C7) savas sesini
+  // maskeliyor ve oyunu bir sekerleme oyununa benzetiyordu. Altin gorunuyor
+  // ("+N" ve HUD sayaci), duyulmuyor.
+  coin: { ownPriority: 2, channel: "number", visualMs: 800, visualGapMs: 334, teammateVisual: false, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 },
   level: { ownPriority: 2, channel: "label", visualMs: 900, visualGapMs: 0, teammateVisual: true, soundMs: 300, soundGapMs: 150, teammateSound: true, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
   tier: { ownPriority: 0, channel: "label", visualMs: 1100, visualGapMs: 0, teammateVisual: true, soundMs: 600, soundGapMs: 0, teammateSound: true, shakePx: 3, vibrateMs: 15, defaultWeight: 1 },
   place: { ownPriority: 2, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 130, soundGapMs: 80, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
@@ -212,11 +219,13 @@ export const FEEDBACK_LIMITS = {
 } as const;
 
 /**
- * Oldurme ve altin perdesinin basamaklari: major pentatonik.
+ * Perde basamaklari: major pentatonik. Yalnizca arayuz onaylari (gelisim
+ * kademesi) kullaniyor.
  *
- * Duz yarim ton artisi birkac adimda bir siren gibi tiziyor; pentatonik
- * hangi iki basamak ust uste gelse de uyumlu kaliyor. Iki oktavda duruyor,
- * daha yukarisi telefon hoparlorunde cizirtiya donuyor.
+ * Oldurme ve altin artik perde tirmanmiyor: kombo ile yukselen pentatonik
+ * savasi bir sekerleme oyununa ceviriyordu. Oldurme zinciri (`step`) yine
+ * sayiliyor; istemci onu perde degil hafif bir seviye artisi olarak
+ * kullaniyor. Iki oktavda duruyor, daha yukarisi telefonda cizirti.
  */
 const PITCH_STEPS_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24] as const;
 export const FEEDBACK_MAX_PITCH_STEP = PITCH_STEPS_SEMITONES.length - 1;
@@ -280,12 +289,17 @@ export type FeedbackInput = {
   y?: number;
   /** Tur icindeki onem (0-1): agir dusman ya da kritik oldurme 1. */
   weight?: number;
-  /** Perde basamagi (kombo); verilmezse oldurmede yonetmen kendisi sayar. */
+  /** Kombo basamagi; verilmezse oldurmede yonetmen kendisi sayar. Perde degil: oldurme sesi tirmanmiyor. */
   step?: number;
   /** Gorselin gercek omru; kuraldakinden farkliysa. */
   lifetimeMs?: number;
   /** Yalnizca gorsel butce; ses calinmasin. */
   silent?: boolean;
+  /**
+   * Calacak sesin gercek suresi (ms). Verilirse ses butcesinde kuraldaki
+   * `soundMs` yerine bu tutuluyor (ornekli sesler: agir oldurme ~480 ms).
+   */
+  soundMs?: number;
 };
 
 export type FeedbackDecision = {
@@ -315,7 +329,7 @@ export type FeedbackDecision = {
   vibrateMs: number;
   /** Kullanici hareketi azaltmayi istiyor: pop, zoom ve ucus yerine sabit goster. */
   reducedMotion: boolean;
-  /** Perde basamagi. */
+  /** Kombo basamagi (oldurme zinciri); arayuz onaylarinda perde basamagi. */
   step: number;
 };
 
@@ -392,7 +406,7 @@ export class FeedbackGovernor {
     const priority = getFeedbackPriority(kind, own);
     const weight = clampUnit(input.weight ?? rule.defaultWeight);
     const visual = this.admitVisual(kind, rule, priority, own, input, now);
-    const sound = input.silent ? { play: false, steal: false } : this.admitSound(kind, own, now);
+    const sound = input.silent ? { play: false, steal: false } : this.admitSound(kind, own, now, input.soundMs);
     const shakePx = rule.shakePx > 0 && weight >= FEEDBACK_LIMITS.impactMinWeight
       ? this.admitShake(own, priority, rule.shakePx * weight, now)
       : 0;
@@ -419,11 +433,13 @@ export class FeedbackGovernor {
   /**
    * Yalnizca ses: dogrudan `playSfx` cagrilari da ayni butceden geciyor.
    *
+   * `durationMs` sesin gercek suresi (ornekli ses); verilmezse kuraldaki.
+   *
    * Takim arkadasinin sesi kendi anahtarinda sayiliyor. Ayni anahtari
    * paylassalar arkadasin oldurmesi senin oldurme sesini hiz sinirina
    * takardi -- baskasinin olayi senin sesini kesmemeli.
    */
-  admitSound(kind: FeedbackKind, own: boolean, now: number): { play: boolean; steal: boolean } {
+  admitSound(kind: FeedbackKind, own: boolean, now: number, durationMs?: number): { play: boolean; steal: boolean } {
     const rule = FEEDBACK_KIND_RULES[kind];
     if (rule.soundMs <= 0 || (!own && !rule.teammateSound)) {
       return { play: false, steal: false };
@@ -451,7 +467,8 @@ export class FeedbackGovernor {
       steal = true;
     }
 
-    this.voices.push({ until: now + rule.soundMs, own });
+    const length = durationMs !== undefined && Number.isFinite(durationMs) && durationMs > 0 ? durationMs : rule.soundMs;
+    this.voices.push({ until: now + length, own });
     this.lastSound.set(key, now);
     return { play: true, steal };
   }
@@ -543,11 +560,11 @@ export class FeedbackGovernor {
   }
 
   /**
-   * Perde basamagi.
+   * Kombo basamagi.
    *
    * Cagiran kombo sayiyorsa onunki. Saymiyorsa kendi oldurmelerin icin kisa
    * bir zincir: 1.5 sn sessizlikte basa donuyor. Takim arkadasinin oldurmesi
-   * zinciri ilerletmiyor -- senin perden senin isin.
+   * zinciri ilerletmiyor -- senin zincirin senin isin.
    */
   private resolveStep(kind: FeedbackKind, own: boolean, step: number | undefined, now: number) {
     if (step !== undefined && Number.isFinite(step)) {

@@ -8,31 +8,67 @@ import {
   type BeamSnapshot,
   type ProjectileSnapshot
 } from "@karayel/shared";
-import { clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, type VfxGraphics } from "./kit";
+import {
+  SCORCH,
+  SMOKE,
+  STEEL,
+  clamp01,
+  darken,
+  drawBallisticSparks,
+  drawCrackle,
+  drawDebris,
+  drawScorch,
+  drawSlug,
+  drawSmoke,
+  fillDisc,
+  fillFan,
+  groundHue,
+  groundHueCached,
+  hashNoise,
+  liftToWhite,
+  whiteHot,
+  type BallisticSparkOptions,
+  type CrackleOptions,
+  type DebrisOptions,
+  type SmokeOptions,
+  type VfxGraphics
+} from "./kit";
+import type { VfxLod } from "./lod";
 
 type Graphics = VfxGraphics;
 // Zeynep'in mermileri (Hiza, Taht) artik ferman mizragi (zeynep-signatures);
 // burada yalnizca Atakan'in hareketli govdeleri kaldi.
-export type ShotStyle = "tracker" | "psychic" | "server" | "electric";
+export type ShotStyle = "tracker" | "psychic";
 /**
- * Olum patlamasi ("death" turu): basilan govde, kiymiklar, agir dusmanda toz
- * halkasi. Sprite yok; tek Graphics yuzeyinde, yasina gore her karede yeniden.
+ * Olum ("death" turu): koyu bir siluete coken govde, malzemesine gore
+ * kirinti, kivilcim ya da kor, duman ve sonen bir yer izi. Sprite yok;
+ * Graphics yuzeyinde (iz dusmanlarin altindaki yuzeyde), yasina gore her
+ * karede yeniden.
  */
 export type DeathBurst = {
   x: number; y: number;
   /** Dusmanin ekrandaki boyu (dunya px). */
   size: number;
-  /** Dusmanin kendi rengi: dokunun vurgusu, sprite'in tonuyla. */
+  /** Dusmanin vurgu rengi (dokudan): yalnizca kivilcimin ve sivinin ince tonu. */
   color: number;
+  /** Kirinti sayisi (siradan 5, agir 8). */
   shards: number;
-  dustRing: boolean;
+  /** Cekirdek patlamanin suresi (180-220 ms); duman ve iz bundan uzun. */
   durationMs: number;
   /** Kendi oldurmen 1, takim arkadasininki soluk. */
   intensity: number;
-  /** Hareket azaltma: basma, kiymik ve halka yok; govde yerinde soner. */
+  /** Hareket azaltma: basma, kirinti ve kivilcim yok; govde yerinde soner. */
   still: boolean;
   bornAt: number;
   seed: number;
+  /** Dusmanin dokusu: irk ve malzeme bundan (meka, bocek, kristal, tas, kul). */
+  texture?: string;
+  /** Agir dusman (brute, kusatma): daha cok ve daha iri parca, daha buyuk iz. */
+  heavy: boolean;
+  /** Ucan dusman: yer izi ve inis yok. */
+  air?: boolean;
+  /** Yere indirilmis vurgu (emit aninda bir kez hesaplaniyor). */
+  accent?: number;
 };
 /**
  * Kule ani ("tower" turu): kademe toreni, yerlestirmenin inisi ya da sunucu
@@ -83,17 +119,12 @@ export type CastWave = {
   still: boolean;
   bornAt: number;
 };
-const colors: Record<ShotStyle, number> = {
-  tracker: 0x4dffbd, psychic: 0xcb79ff,
-  server: 0x58d9ff, electric: 0xadf765
-};
 const noise = hashNoise;
 const clamp = clamp01;
+/** "combat" silueti: Takipci ve Obsesyon (Sunucu paket, Ucube simsek; attack-vfx'te). */
 export function shotStyle(id = ""): ShotStyle | undefined {
   if (id === "warrior-1") return "tracker";
-  if (id === "warrior-2") return "server";
   if (id === "warrior-4") return "psychic";
-  if (id === "warrior-6") return "electric";
   return undefined;
 }
 
@@ -102,78 +133,34 @@ function line(g: Graphics, x1: number, y1: number, x2: number, y2: number, width
   g.lineStyle(width, color, clamp(alpha));
   g.lineBetween(x1, y1, x2, y2);
 }
-function glow(g: Graphics, x: number, y: number, radius: number, color: number, alpha: number) {
-  for (let i = 3; i >= 1; i--) {
-    g.fillStyle(color, clamp(alpha * (i === 1 ? 0.65 : 0.06)));
-    fillDisc(g, x, y, radius * i / 2);
-  }
-}
-function bolt(g: Graphics, x1: number, y1: number, x2: number, y2: number, color: number, alpha: number, seed: number, width: number, jitter: number) {
-  const dx = x2 - x1, dy = y2 - y1, length = Math.max(1, Math.hypot(dx, dy));
-  for (let pass = 0; pass < 3; pass += 1) {
-    const weight = pass === 0 ? 3.5 : pass === 1 ? 1.4 : 0.55;
-    const opacity = pass === 0 ? 0.11 : pass === 1 ? 0.75 : 0.96;
-    g.lineStyle(width * weight, pass === 2 ? 0xf3ffff : color, alpha * opacity);
-    g.beginPath(); g.moveTo(x1, y1);
-    for (let i = 1; i <= 7; i++) {
-      const t = i / 7;
-      const offset = i === 7 ? 0 : (noise(seed + i) - 0.5) * jitter;
-      g.lineTo(x1 + dx * t - dy / length * offset, y1 + dy * t + dx / length * offset);
-    }
-    g.strokePath();
-  }
-}
-
 /**
- * Hareketli mermi govdesi ve izi: kimlik hareketten geliyor.
+ * Hareketli mermi govdesi: Takipci ve Obsesyon.
  *
- * Renk profilden (kademenin rampa duragi); verilmezse eski sabit renk.
- * Kademe 2'de kenara cekilen paralel kil hatlar ("raylar") kaldirildi:
- * sahip boru gorunumunu reddetti, kademeyi artik kesit ve renk anlatiyor.
+ * Agir, sert dil: Takipci yogun bir iz mermisi (koyu kenarli ton, beyaz-sicak
+ * cekirdek, parlak bas); Obsesyon koyu cekirdekli agir bir gulle, ton yalnizca
+ * kenarda. Donen kiymik ve kivrimli simsek yok. `heat` cekirdegin sicakligi
+ * (kademenin yogunlugu), renk profilin kimlik tonu.
  */
-export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, now: number, scale: number, colorOverride?: number) {
+export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, scale: number, color: number, heat = 0.6) {
   const style = shotStyle(p.definitionId);
   if (!style) return false;
-  const tier = p.tier ?? 1, color = colorOverride ?? colors[style];
+  const tier = Math.max(1, Math.min(3, p.tier ?? 1));
   const angle = Math.atan2(p.vy ?? 0, p.vx ?? 1), ux = Math.cos(angle), uy = Math.sin(angle);
-  const nx = -uy, ny = ux;
-  const seed = fnvHash(p.id) % 997;
-  const length = (10 + tier * 4) * scale;
-  if (style === "electric" || style === "server") {
-    const radius = (style === "server" ? 4.2 : 2.7) * scale;
-    const phase = Math.floor(now / 45) + seed;
-    bolt(g, p.x - ux * length, p.y - uy * length, p.x, p.y, color, 0.8, phase, scale, (4 + tier * 2) * scale);
-    glow(g, p.x, p.y, radius, color, 0.8);
-    for (let i = 0; i < tier + 1; i++) {
-      const a = now / 170 + i * 2.4 + seed;
-      bolt(g, p.x, p.y, p.x + Math.cos(a) * radius * 2.3, p.y + Math.sin(a) * radius * 2.3,
-        color, 0.8, phase + i * 19, 0.7 * scale, 4 * scale);
-    }
+  if (style === "psychic") {
+    // Koyu cekirdek, ince ton kenari ve beyaz-sicak bir nokta: cokertme gullesi.
+    const radius = (2.4 + tier * 0.35) * scale;
+    line(g, p.x - ux * radius * 2.6, p.y - uy * radius * 2.6, p.x, p.y, radius * 0.9, darken(color, 0.35), 0.55);
+    g.fillStyle(color, 0.85);
+    fillDisc(g, p.x, p.y, radius * 1.3);
+    g.fillStyle(0x0b0612, 0.96);
+    fillDisc(g, p.x, p.y, radius);
+    const core = Math.max(0.6, radius * 0.32);
+    g.fillStyle(whiteHot(color, heat), 1);
+    g.fillRect(p.x - core, p.y - core, core * 2, core * 2);
     return true;
   }
-  if (style === "psychic") {
-    // Collapsing fragments orbit an opaque dark nucleus, unlike an electric ball.
-    glow(g, p.x, p.y, 4 * scale, color, 0.5);
-    g.fillStyle(0x160d28, 0.95); fillDisc(g, p.x, p.y, 2.5 * scale);
-    for (let i = 0; i < 3 + tier; i++) {
-      const a = angle + i * 2.4 + now / 200;
-      const r = (3.5 + noise(i + seed) * 2) * scale;
-      line(g, p.x + Math.cos(a) * r, p.y + Math.sin(a) * r,
-        p.x + Math.cos(a + 0.5) * r * 0.65, p.y + Math.sin(a + 0.5) * r * 0.65, scale, color, 0.85);
-    }
-  }
-  for (let i = 5; i >= 1; i--) {
-    const t = i / 5;
-    line(g, p.x - ux * length * t, p.y - uy * length * t, p.x, p.y,
-      (1 + (1 - t) * 2) * scale, color, (1 - t * 0.82) * 0.3);
-  }
-  if (style !== "psychic") {
-    const tip = 4 * scale, half = 1.5 * scale;
-    g.fillStyle(color, 0.95);
-    g.fillTriangle(p.x + ux * tip, p.y + uy * tip, p.x - ux * 6 * scale + nx * half,
-      p.y - uy * 6 * scale + ny * half, p.x - ux * 6 * scale - nx * half, p.y - uy * 6 * scale - ny * half);
-    line(g, p.x - ux * 7 * scale, p.y - uy * 7 * scale, p.x + ux * tip, p.y + uy * tip, 0.8 * scale, liftToWhite(color, 0.85), 1);
-  }
+  // Iz mermisi: govde kalinligi kademenin agirligiyla.
+  drawSlug(g, p.x, p.y, ux, uy, (6 + tier * 1.5) * scale, (1.1 + tier * 0.3) * scale, color, heat);
   return true;
 }
 
@@ -190,21 +177,22 @@ export function gainColor(color: number, gain: number) {
 }
 
 /**
- * Zeynep'in rutbe trimi: kademe govdeyi boyamiyor, kenara rutbe ekliyor.
- * Kademe 1 govdenin beyaza cekilmis hali, 2 altin, 3 beyaz altin.
+ * Kademenin kenari: ayni ton, kademe yukseldikce daha beyaz-sicak.
+ *
+ * Eskiden Zeynep'in "rutbe trimi" idi (kademe 2 altin, 3 beyaz altin). Agir
+ * dilde kademe renk degistirmiyor, isiniyor: govde kombonun tonunda (Kin
+ * kizili, yanik camgobegi, Abarti'nin koyulastirmasi), kenar onun sicak hali.
  */
-export function getZeynepTrim(tier: number, body: number) {
-  if (tier >= 3) return 0xfde68a;
-  if (tier >= 2) return 0xf59e0b;
-  return liftToWhite(body, 0.72);
+export function getTierEdge(tier: number, body: number) {
+  // En fazla 0.2 cekme: kenar tonun sicak hali, pastel degil (beyaz-sicak cekirdek ayri).
+  return liftToWhite(body, tier >= 3 ? 0.2 : tier >= 2 ? 0.12 : 0.05);
 }
 
 /**
  * Kin dalgasi: yogun on kenar, arkada kalan kiriklar.
  *
- * Govde isinin kendi rengi (Kin kizili, Abarti'nin karartmasi); kademe yalnizca
- * on kenarin ve kiriklarin rutbe trimini degistiriyor, 10'da dalganin
- * ardindan altin-beyaz zerreler dokuluyor. Dalganin yasi ttl'den: sunucu
+ * Govde isinin kendi rengi (Kin kizili, Abarti'nin karartmasi); kademe on
+ * kenarin sicakligini ve kalinligini artiriyor. Dalganin yasi ttl'den: sunucu
  * dalgayi her karede yeniden gonderiyor, son karede sonuyor.
  */
 export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, scale: number) {
@@ -212,25 +200,24 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
   if (radius < 1) return;
   const tier = beam.tier ?? 1, heading = Math.atan2(dy, dx);
   const halfAngle = Math.atan2(beam.width / 2, radius);
-  const color = gainColor(beam.color ?? 0x7f1d1d, PRESSURE_WAVE_GAIN);
-  const trim = getZeynepTrim(tier, color);
+  const color = groundHueCached(gainColor(beam.color ?? 0x7f1d1d, PRESSURE_WAVE_GAIN));
+  const edge = getTierEdge(tier, color);
   // Son 40 ms'de soner: dalga eskiden son karede birden kayboluyordu.
   const life = clamp((beam.ttlMs ?? 120) / 40);
-  // Dense leading edge, trailing fractures: the front actually advances with server geometry.
-  for (let band = 4; band >= 0; band--) {
+  // Yogun on kenar ve arkasinda koyu dusum: on kenar sunucunun geometrisiyle ilerliyor.
+  for (let band = 3; band >= 0; band--) {
     const r = Math.max(1, radius - band * 2.5 * scale);
-    // Arka yaylar 0.12'nin altindaydi, siyah zeminde gorunmuyordu.
-    g.lineStyle((band === 0 ? 1.6 : 2.5) * scale, band === 0 ? trim : color, (band === 0 ? 0.9 : 0.3 * (1 - band / 6)) * life);
+    g.lineStyle((band === 0 ? 1.2 + tier * 0.4 : 2.5) * scale, band === 0 ? edge : darken(color, band * 0.18), (band === 0 ? 0.92 : 0.32 * (1 - band / 5)) * life);
     g.beginPath();
-    for (let i = 0; i <= 24; i++) {
-      const a = heading - halfAngle + halfAngle * 2 * i / 24;
-      const ripple = Math.sin(i * 1.4 + now / 110) * scale * (band === 0 ? 0.4 : 1.5);
+    for (let i = 0; i <= 16; i++) {
+      const a = heading - halfAngle + halfAngle * 2 * i / 16;
+      const ripple = Math.sin(i * 1.4 + now / 110) * scale * (band === 0 ? 0.4 : 1.2);
       const x = beam.x1 + Math.cos(a) * (r + ripple), y = beam.y1 + Math.sin(a) * (r + ripple);
       if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
     }
     g.strokePath();
   }
-  const fractures = 5 + tier * 3;
+  const fractures = 4 + tier * 2;
   for (let i = 0; i < fractures; i++) {
     const fraction = (i + 0.5) / fractures;
     const a = heading - halfAngle + halfAngle * 2 * fraction;
@@ -238,17 +225,7 @@ export function drawPressureWave(g: Graphics, beam: BeamSnapshot, now: number, s
     const r = Math.max(0, radius - lag);
     line(g, beam.x1 + Math.cos(a) * r, beam.y1 + Math.sin(a) * r,
       beam.x1 + Math.cos(a) * Math.max(0, r - 4 * scale), beam.y1 + Math.sin(a) * Math.max(0, r - 4 * scale),
-      0.8 * scale, i % 3 === 0 && tier >= 2 ? trim : color, 0.6 * (1 - lag / ((10 + tier * 5) * scale)) * life);
-  }
-  if (tier >= 3) {
-    // Zerreler on kenarin arkasina dokuluyor; yerleri dalganin kimliginden.
-    const seed = fnvHash(beam.id) % 9973;
-    for (let i = 0; i < 7; i++) {
-      const a = heading - halfAngle + halfAngle * 2 * noise(seed + i);
-      const back = (3 + noise(seed + i + 20) * 12 + ((now / 300 + noise(seed + i + 40)) % 1) * 6) * scale;
-      g.fillStyle(i % 2 ? trim : 0xffffff, 0.75 * life);
-      fillDisc(g, beam.x1 + Math.cos(a) * (radius - back), beam.y1 + Math.sin(a) * (radius - back), Math.max(0.7, 1.2 * scale));
-    }
+      0.8 * scale, color, 0.6 * (1 - lag / ((10 + tier * 5) * scale)) * life);
   }
 }
 
@@ -264,50 +241,185 @@ function lighten(color: number, amount: number) {
 }
 
 /**
- * Olum patlamasi: govde basilip soner, kiymiklar dusmanin renginde sacilir.
+ * Olumun malzemesi: dusmanin irkindan (dokusunun anahtarindan).
  *
- * Govde bir elips: Graphics doku cizemiyor ve dusman sprite'i zaten havuza
- * dondu. Elips dusmanin boyunda ve renginde, beyaz bir cekirdekle basliyor;
- * ilk an "vurus", gerisi sonme. Kiymiklar merminin degil olumun: yone bagli
- * degil, cevreye esit dagiliyor.
+ * - metal: meka ve kutsal muhafiz -- zirhli, mekanik govde. Celik kirinti,
+ *   beyaz-sicak kivilcim, koyu duman, yanik izi.
+ * - chitin: uzay bocegi -- organik. Koyu kitin parcalari ve koyu bir sivi
+ *   (ichor) sicramasi, yerde leke; kivilcim yok.
+ * - crystal: dorduncu boyut -- kristal govde. Koyu kristal kiymiklari ve
+ *   kisa bir enerji catirtisi; duman yok.
+ * - stone: golem -- tas parcalari ve toz.
+ * - ash: dusmus -- kul, yukselen korlar ve koyu duman.
+ *
+ * Renkler yerin ve malzemenin; dusmanin vurgu rengi yalnizca kivilcimin,
+ * korun ve sivinin ince tonu. Eski patlama kiymiklari dusmanin vurgu
+ * renginde (pembe, limon, mor) saciyordu: sekerleme gibi.
  */
-export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scale: number) {
-  const t = clamp((now - burst.bornAt) / burst.durationMs);
+export type DeathMaterial = "metal" | "chitin" | "crystal" | "stone" | "ash";
+
+export function getDeathMaterial(textureKey: string | undefined): DeathMaterial {
+  if (!textureKey) return "metal";
+  if (textureKey.includes("spaceBug")) return "chitin";
+  if (textureKey.includes("fourthDimensional")) return "crystal";
+  if (textureKey.includes("golem")) return "stone";
+  if (textureKey.includes("fallen")) return "ash";
+  return "metal";
+}
+
+type DeathLook = {
+  /** Cokup sonen govdenin rengi (koyu). */
+  body: number;
+  /** Kirintinin govdesi ve parlak yuzu. */
+  debris: number;
+  edge: (accent: number) => number;
+  sparks: "sparks" | "embers" | "crackle" | "none";
+  /** Duman rengi; 0 duman yok. */
+  smoke: number;
+  /** Yer izinin rengi (yanik, leke, toz). */
+  decal: (accent: number) => number;
+  /** Kirintinin boyu ve hizi carpani. */
+  chunk: number;
+};
+
+const DEATH_LOOKS: Record<DeathMaterial, DeathLook> = {
+  metal: { body: 0x18181b, debris: STEEL, edge: () => 0xa1a1aa, sparks: "sparks", smoke: SMOKE, decal: () => SCORCH, chunk: 1 },
+  chitin: { body: 0x0d1208, debris: 0x1c2410, edge: (accent) => darken(accent, 0.3), sparks: "none", smoke: 0, decal: (accent) => darken(accent, 0.82), chunk: 0.9 },
+  crystal: { body: 0x120a1f, debris: 0x2a1745, edge: (accent) => liftToWhite(darken(accent, 0.2), 0.2), sparks: "crackle", smoke: 0, decal: () => SCORCH, chunk: 1 },
+  stone: { body: 0x1c1917, debris: 0x44403c, edge: () => 0x78716c, sparks: "none", smoke: 0x57534e, decal: () => 0x292524, chunk: 1.2 },
+  ash: { body: 0x0f0a0a, debris: 0x1f1414, edge: (accent) => darken(accent, 0.4), sparks: "embers", smoke: 0x27272a, decal: () => SCORCH, chunk: 0.9 }
+};
+
+/** Korun tonu: sonmekte olan kizil-turuncu, yere indirilmis (sekerleme turuncu degil). */
+const EMBER = groundHue(0xc2410c);
+
+/** Olumun duman, kor ve yer izi ne kadar kaliyor (cekirdek patlamadan sonra). */
+export const DEATH_SMOKE_MS = 650;
+export const DEATH_DECAL_MS = 1100;
+
+/* Karede yerinde yazilan secenekler: olum basina nesne literali yok. */
+const DEATH_DEBRIS: DebrisOptions = { seed: 0, count: 0, speed: 0, heading: undefined, fan: 0, gravity: 0, lifeMs: 0, color: 0, edge: 0, size: 0, alpha: 0, floor: 0 };
+const DEATH_SPARKS: BallisticSparkOptions = { seed: 0, count: 0, speed: 0, heading: undefined, fan: 0, gravity: 0, lifeMs: 0, hue: 0, width: 0, alpha: 0, streak: 0 };
+const DEATH_SMOKE: SmokeOptions = { seed: 0, count: 0, radius: 0, grow: 0, rise: 0, lifeMs: 0, color: 0, alpha: 0, still: false };
+const DEATH_CRACKLE: CrackleOptions = { seed: 0, count: 0, reach: 0, hue: 0, width: 0, alpha: 0, heading: undefined, fan: 0 };
+
+/**
+ * Olumun tam omru: yalnizca gercekten cizilecek olan kadar. Yer izi (zemin
+ * yuzeyi var, ucmuyor, LOD izin veriyor) ~1.1 sn, duman ~0.65 sn, kirinti ve
+ * kivilcim (hareket azaltmada yok) ~0.4-0.7 sn; hicbiri yoksa cekirdek patlama.
+ */
+export function getDeathLifeMs(burst: Pick<DeathBurst, "durationMs" | "still" | "air" | "heavy" | "texture">, hasGround: boolean, lod?: VfxLod) {
+  const look = DEATH_LOOKS[getDeathMaterial(burst.texture)];
+  let life = burst.durationMs;
+  if (!burst.still) {
+    life = Math.max(life, burst.heavy ? 620 : 520);
+    if (!lod || lod.sparks) life = Math.max(life, look.sparks === "embers" ? 700 : look.sparks === "sparks" ? 420 : 140);
+  }
+  if (look.smoke !== 0 && (!lod || lod.smoke)) life = Math.max(life, DEATH_SMOKE_MS);
+  if (hasGround && !burst.air && (!lod || lod.decals)) life = Math.max(life, DEATH_DECAL_MS);
+  return life;
+}
+
+/**
+ * Olum: govde koyu bir siluete cokup soner, malzemesine gore parcalanir.
+ *
+ * Ilk 1-3 kare beyaz-sicak bir cekirdek (paylasilan poz: `flash`). Govde
+ * basiliyor (x1.3 / y0.6) ama dusmanin renginde degil, koyu: govde sonuyor.
+ * Kirintilar balistik ve yere iniyor; metal kivilcim saciyor, kul kor
+ * birakiyor, kristal catirdiyor, bocek koyu sivi sicratiyor; duman yukselip
+ * soner, yer izi bir saniyede kayboluyor. Agir dusman daha cok ve daha iri
+ * parca, daha buyuk iz. Ucan dusmanin altinda zemin yok: yer izi ve inis yok.
+ *
+ * `ground` yer izinin yuzeyi (dusmanlarin altinda); yoksa iz cizilmiyor.
+ */
+export function drawDeathBurst(g: Graphics, burst: DeathBurst, now: number, scale: number, ground?: Graphics, lod?: VfxLod) {
+  const elapsed = now - burst.bornAt;
+  if (elapsed < 0) return;
+  const t = clamp(elapsed / burst.durationMs);
   const pose = getDeathBurstPose(t, burst.still);
-  const { x, y, color, intensity, seed } = burst;
+  const { x, y, intensity, seed } = burst;
+  const material = getDeathMaterial(burst.texture);
+  const look = DEATH_LOOKS[material];
+  const accent = burst.accent ?? burst.color;
+  const heavy = burst.heavy;
   const radius = burst.size * 0.34;
+  const sparks = lod ? lod.sparks : true;
+  const smoke = lod ? lod.smoke : true;
+  const decals = lod ? lod.decals : true;
+
+  // Yer izi: govdenin altinda; ucan dusmanda yok.
+  if (ground && decals && !burst.air && elapsed < DEATH_DECAL_MS) {
+    const age = elapsed / DEATH_DECAL_MS;
+    const spread = burst.still ? 1 : Math.min(1, elapsed / 120);
+    const size = radius * (heavy ? 1.5 : 1.15) * (0.6 + 0.4 * spread);
+    drawScorch(ground, x, y + radius * 0.35, age, size, size * 0.48, look.decal(accent), 0.6 * intensity, seed);
+  }
+
   if (pose.alpha > 0) {
-    g.fillStyle(color, clamp(pose.alpha * 0.8 * intensity));
-    g.fillEllipse(x, y, radius * 2 * pose.scaleX, radius * 2 * pose.scaleY, 18);
+    g.fillStyle(look.body, clamp(pose.alpha * 0.85 * intensity));
+    fillFan(g, x, y, radius * pose.scaleX, radius * pose.scaleY, 8);
   }
   if (pose.flash > 0) {
-    g.fillStyle(0xffffff, clamp(pose.flash * 0.9 * intensity));
-    g.fillEllipse(x, y, radius * 1.3 * pose.scaleX, radius * 1.3 * pose.scaleY, 14);
+    // Sert parlama: kucuk ve beyaz-sicak, govdenin ortasinda (1-3 kare).
+    g.fillStyle(whiteHot(accent, 0.5), clamp(pose.flash * 0.95 * intensity));
+    fillDisc(g, x, y, radius * 0.6 * (0.7 + 0.3 * pose.flash));
   }
+
+  if (smoke && look.smoke !== 0 && elapsed < DEATH_SMOKE_MS) {
+    DEATH_SMOKE.seed = seed * 7 + 3;
+    DEATH_SMOKE.count = heavy ? 3 : 2;
+    DEATH_SMOKE.radius = radius * (material === "stone" ? 0.55 : 0.45);
+    DEATH_SMOKE.grow = 1.1;
+    DEATH_SMOKE.rise = (heavy ? 20 : 15) * scale;
+    DEATH_SMOKE.lifeMs = DEATH_SMOKE_MS * 0.8;
+    DEATH_SMOKE.color = look.smoke;
+    DEATH_SMOKE.alpha = 0.34 * intensity;
+    DEATH_SMOKE.still = burst.still;
+    drawSmoke(g, x, y - radius * 0.2, elapsed, DEATH_SMOKE);
+  }
+
+  // Parcalar ve kivilcimlar hareket: hareket azaltmada yok.
   if (burst.still) return;
+  DEATH_DEBRIS.seed = seed * 13 + 1;
+  DEATH_DEBRIS.count = burst.shards;
+  DEATH_DEBRIS.speed = (heavy ? 95 : 80) * look.chunk * scale;
+  DEATH_DEBRIS.heading = undefined;
+  DEATH_DEBRIS.fan = 0;
+  DEATH_DEBRIS.gravity = 320 * scale;
+  DEATH_DEBRIS.lifeMs = heavy ? 620 : 520;
+  DEATH_DEBRIS.color = material === "chitin" ? darken(accent, 0.7) : look.debris;
+  DEATH_DEBRIS.edge = look.edge(accent);
+  DEATH_DEBRIS.size = (heavy ? 2.6 : 2) * look.chunk * scale;
+  DEATH_DEBRIS.alpha = 0.95 * intensity;
+  DEATH_DEBRIS.floor = burst.air ? 0 : radius * 0.7;
+  // Yere inen parca zemin yuzeyinde (dusmanlarin altinda).
+  drawDebris(g, x, y, elapsed, DEATH_DEBRIS, ground);
 
-  if (burst.dustRing) {
-    // Yere yatik ve govdenin altindan: agir govdenin iniste kaldirdigi toz.
-    const spread = Math.pow(t, 0.55);
-    const rx = radius * (1.1 + spread * 1.5);
-    g.lineStyle(Math.max(0.6, (2.4 - spread * 1.6) * scale), DUST_COLOR, clamp(0.55 * (1 - t) * intensity));
-    g.strokeEllipse(x, y + radius * 0.35, rx * 2, rx * 1.1, 20);
-  }
-
-  const fade = clamp(Math.pow(1 - t, 1.3) * intensity);
-  if (fade <= 0) return;
-  const reach = (burst.dustRing ? 24 : 18) * scale;
-  for (let i = 0; i < burst.shards; i++) {
-    const a = (i / burst.shards) * Math.PI * 2 + (noise(seed + i) - 0.5) * 0.9;
-    const ux = Math.cos(a), uy = Math.sin(a);
-    const travel = radius * 0.45 + Math.sqrt(t) * reach * (0.65 + noise(seed + i + 20) * 0.6);
-    // Hafif dusus: kiymik havada asili kalmasin.
-    const px = x + ux * travel, py = y + uy * travel + t * t * 6 * scale;
-    const length = (2.6 + noise(seed + i + 40) * 2.4) * scale * (1 - t * 0.6);
-    const half = (i % 3 === 0 ? 1.2 : 0.8) * scale;
-    g.fillStyle(i % 4 === 0 ? lighten(color, 0.55) : color, fade);
-    g.fillTriangle(px + ux * length, py + uy * length,
-      px - uy * half, py + ux * half, px + uy * half, py - ux * half);
+  if (!sparks) return;
+  if (look.sparks === "sparks" || look.sparks === "embers") {
+    const embers = look.sparks === "embers";
+    DEATH_SPARKS.seed = seed * 11 + 5;
+    DEATH_SPARKS.count = heavy ? 7 : 5;
+    DEATH_SPARKS.speed = (embers ? 38 : 150) * scale;
+    DEATH_SPARKS.heading = embers ? -Math.PI / 2 : undefined;
+    DEATH_SPARKS.fan = embers ? 2.2 : 0;
+    // Korlar sicak havayla yukseliyor; kivilcim dusuyor.
+    DEATH_SPARKS.gravity = (embers ? -30 : 340) * scale;
+    DEATH_SPARKS.lifeMs = embers ? 700 : 420;
+    DEATH_SPARKS.hue = embers ? EMBER : accent;
+    DEATH_SPARKS.width = Math.max(0.7, (embers ? 1.3 : 0.9) * scale);
+    DEATH_SPARKS.alpha = 0.95 * intensity;
+    DEATH_SPARKS.streak = embers ? 0.02 : 0.028;
+    drawBallisticSparks(g, x, y, elapsed, DEATH_SPARKS);
+  } else if (look.sparks === "crackle" && elapsed < 140) {
+    DEATH_CRACKLE.seed = seed * 3 + Math.floor(elapsed / 45) * 7;
+    DEATH_CRACKLE.count = heavy ? 4 : 3;
+    DEATH_CRACKLE.reach = radius * 1.3;
+    DEATH_CRACKLE.hue = accent;
+    DEATH_CRACKLE.width = Math.max(0.6, 0.9 * scale);
+    DEATH_CRACKLE.alpha = (1 - elapsed / 140) * intensity;
+    DEATH_CRACKLE.heading = undefined;
+    drawCrackle(g, x, y, DEATH_CRACKLE);
   }
 }
 
@@ -515,14 +627,15 @@ export function readTextureAccent(source: unknown, fallback: number) {
 }
 
 /**
- * Canli olum patlamasi siniri.
+ * Canli olum siniri.
  *
- * Tepede saniyede 3-6 oldurme, patlama 190-220 ms: normalde 1-2 canli.
- * Ulti tek karede onlarca dusman oldurebiliyor; sinir o anki cizim yukunu
- * bagliyor. Mermi temaslarindan ayri tutuluyor ki kalabalik bir atis olumu,
- * olum de atisi silmesin.
+ * Tepede saniyede 3-6 oldurme; cekirdek patlama 190-220 ms, duman ve yer izi
+ * ~1 sn: normalde 3-6 canli. Ulti tek karede onlarca dusman oldurebiliyor;
+ * sinir o anki cizim yukunu bagliyor (dolunca en eski olum, yani en soluk iz,
+ * yerini veriyor). Mermi temaslarindan ayri tutuluyor ki kalabalik bir atis
+ * olumu, olum de atisi silmesin.
  */
-const MAX_DEATH_BURSTS = 40;
+export const MAX_DEATH_BURSTS = 40;
 /**
  * Canli kule ani siniri.
  *
@@ -551,11 +664,17 @@ export class CombatVfx {
   private moments: TowerMoment[] = [];
   private casts: CastWave[] = [];
   private seed = 0;
-  constructor(private graphics: Graphics & { clear(): unknown }) {}
+  /**
+   * @param graphics olumler, kule anlari ve ulti dalgalari (dusmanlarin ustunde).
+   * @param ground olumun yer izi (dusmanlarin altinda); yoksa iz cizilmiyor.
+   * @param lod kivilcim, duman ve yer izi bu sirayla dusuyor.
+   */
+  constructor(private graphics: Graphics & { clear(): unknown }, private ground?: Graphics & { clear(): unknown }, private lod?: VfxLod) {}
   /** "death" turu: yalnizca oldurme olayindan; sizinti buraya hic gelmez. */
   emitDeath(burst: Omit<DeathBurst, "seed">) {
     if (this.deaths.length >= MAX_DEATH_BURSTS) this.deaths.shift();
-    this.deaths.push({ ...burst, seed: ++this.seed });
+    // Vurgu bir kez yere indiriliyor (karede renk donusumu yok).
+    this.deaths.push({ ...burst, accent: groundHue(burst.color), seed: ++this.seed });
   }
   /** "tower" turu: kademe toreni, yerlestirme inisi ya da onay halkasi. */
   emitTowerMoment(moment: Omit<TowerMoment, "seed">) {
@@ -567,8 +686,21 @@ export class CombatVfx {
     if (this.casts.length >= MAX_CAST_WAVES) this.casts.shift();
     this.casts.push({ ...wave });
   }
+  /** Canli olum sayisi (duman ve iz dahil); olcum ve testler icin. */
+  get liveDeaths() {
+    return this.deaths.length;
+  }
+  /** Butun canli anlari birak (galeri sayfa degistirdi). */
+  clear() {
+    this.deaths.length = 0;
+    this.moments.length = 0;
+    this.casts.length = 0;
+    this.graphics.clear();
+    this.ground?.clear();
+  }
   render(now: number, scale: number) {
     this.graphics.clear();
+    this.ground?.clear();
     // Kule anlari en altta: sutun ve toz zemine ait, olum ve temas ustlerinden gecer.
     let write = 0;
     for (const moment of this.moments) {
@@ -590,9 +722,9 @@ export class CombatVfx {
     // Olumler once: ayni yerdeki mermi temasi ustte kalsin.
     write = 0;
     for (const burst of this.deaths) {
-      if (now - burst.bornAt >= burst.durationMs) continue;
+      if (now - burst.bornAt >= getDeathLifeMs(burst, Boolean(this.ground), this.lod)) continue;
       this.deaths[write++] = burst;
-      drawDeathBurst(this.graphics, burst, now, scale);
+      drawDeathBurst(this.graphics, burst, now, scale, this.ground, this.lod);
     }
     this.deaths.length = write;
   }

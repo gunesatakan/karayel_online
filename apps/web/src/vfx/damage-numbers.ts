@@ -88,28 +88,45 @@ const COIN_FONT_PX = 12;
 export const COIN_LIFT_RATIO = 0.45;
 const TEAMMATE_ALPHA = 0.55;
 const CRIT_SCALE = 1.5;
-const CRIT_POP_FROM = 1.6;
-const CRIT_POP_MS = 120;
+/** Kritigin kisa, sert vurusu: 1.2 kattan dogrusal iner (esneyen egri yok). */
+const CRIT_POP_FROM = 1.2;
+const CRIT_POP_MS = 90;
 const RISE_PX = 28;
 const DRIFT_PX = 8;
 /** Uste binme sirasi: kendi kritigin ve son vurusun, kendi vurusun, takim arkadasi. */
 const DEPTH_OFFSET = { team: 0, ownHit: 0.1, ownMarked: 0.2 } as const;
 
 /**
- * Renk bilgi tasiyor, sus degil: beyaz kendi vurusun, turuncu kritik, altin
- * son vurus, gri takim arkadasi. Renk tek basina da kalmiyor -- kritikte "!",
- * son vurusta "✕" var; renk ayirt edemeyen oyuncu da okuyabilsin.
+ * Renk bilgi tasiyor, sus degil (agir, sert dil): beyaz kendi vurusun, beyaz-
+ * sicak kehribar kritik (koyu kizil kontur, kalin), kirik beyaz son vurus,
+ * gri takim arkadasi. Turuncu ya da altin sekerleme yok. Renk tek basina da
+ * kalmiyor -- kritikte "!", son vurusta "✕" var; renk ayirt edemeyen oyuncu
+ * da okuyabilsin.
  */
-const PALETTE: Record<PaletteKey, { fill: string; stroke: string }> = {
-  ownHit: { fill: "#f8fafc", stroke: "#0f172a" },
-  ownCrit: { fill: "#ff9f1a", stroke: "#431407" },
-  ownKill: { fill: "#ffd23f", stroke: "#422006" },
+export const DAMAGE_NUMBER_PALETTE: Record<PaletteKey, { fill: string; stroke: string }> = {
+  ownHit: { fill: "#f8fafc", stroke: "#0b0f14" },
+  ownCrit: { fill: "#fff1dc", stroke: "#5c1010" },
+  ownKill: { fill: "#e7e5e4", stroke: "#0b0f14" },
   teamHit: { fill: "#cbd5e1", stroke: "#1e293b" },
-  teamCrit: { fill: "#e3ad72", stroke: "#1e293b" },
-  teamKill: { fill: "#dccb86", stroke: "#1e293b" },
-  // HUD'daki altin cipinin rengi: "+18◆" oraya akan altin oldugunu soyluyor.
-  ownCoin: { fill: "#fbbf24", stroke: "#3b1d05" }
+  teamCrit: { fill: "#e7ded3", stroke: "#3b1a1a" },
+  teamKill: { fill: "#d6d3d1", stroke: "#1e293b" },
+  // HUD'daki altin cipinin rengine akan odul: soluk kehribar, okunur ama sekerleme degil.
+  ownCoin: { fill: "#c9a66b", stroke: "#1c1308" }
 };
+const PALETTE = DAMAGE_NUMBER_PALETTE;
+/** Kritik daha kalin konturla: renk degil, agirlik. */
+const CRIT_STROKE_PX = 8;
+
+/** Kaymanin yonu: anahtarin ve konumun FNV ozetinden (rastgele cagri yok; ayni olay ayni yere). */
+function driftUnit(key: string, x: number, y: number) {
+  let hash = 0x811c9dc5;
+  const text = `${key}:${Math.round(x)}:${Math.round(y)}`;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return (hash >>> 0) / 4294967296;
+}
 
 /**
  * Sayinin metni.
@@ -163,7 +180,7 @@ export class DamageNumberPool {
     slot.endsAt = now + Math.max(1, spec.lifetimeMs);
     slot.x = spec.x;
     slot.y = spec.y;
-    slot.drift = spec.still ? 0 : (Math.random() * 2 - 1) * DRIFT_PX;
+    slot.drift = spec.still ? 0 : (driftUnit(spec.key, spec.x, spec.y) * 2 - 1) * DRIFT_PX;
     slot.scale = fontPx / BASE_FONT_PX;
     slot.alpha = spec.own ? 1 : TEAMMATE_ALPHA;
     // Pop yalnizca kendi kritiginde: takim arkadasinin kritigi senin gozunu
@@ -239,7 +256,7 @@ export class DamageNumberPool {
       if (slot.pop) {
         const age = now - slot.bornAt;
         if (age < CRIT_POP_MS) {
-          const settle = 1 - (1 - age / CRIT_POP_MS) ** 2;
+          const settle = age / CRIT_POP_MS;
           text.setScale(slot.scale * (CRIT_POP_FROM - (CRIT_POP_FROM - 1) * settle));
         } else {
           text.setScale(slot.scale);
@@ -336,6 +353,8 @@ export class DamageNumberPool {
     if (slot.palette !== palette) {
       text.style.color = PALETTE[palette].fill;
       text.style.stroke = PALETTE[palette].stroke;
+      // Kritik renkle degil agirlikla ayrisiyor: daha kalin kontur.
+      text.style.strokeThickness = palette === "ownCrit" || palette === "teamCrit" ? CRIT_STROKE_PX : STROKE_PX;
       slot.palette = palette;
       styleChanged = true;
     }

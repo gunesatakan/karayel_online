@@ -1,14 +1,16 @@
 import Phaser from "phaser";
-import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot } from "@karayel/shared";
+import { getDeathBurstShape, towerCatalog, type BeamSnapshot, type ProjectileSnapshot } from "@karayel/shared";
 import { configureHiDpiCamera } from "../rendering";
 import { AttackVfx } from "../vfx/attack-vfx";
 import { AtakanSignatureVfx, type SignatureFrame, type SignatureTower } from "../vfx/atakan-signatures";
 import { BeamRenderer } from "../vfx/beam-renderer";
+import { CombatVfx, getDeathMaterial, readTextureAccent, type DeathMaterial } from "../vfx/combat-vfx";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
-import { liftToWhite, toTier } from "../vfx/kit";
+import { toTier } from "../vfx/kit";
 import { VfxLod } from "../vfx/lod";
 import {
   GALLERY_COURT_CELL,
+  getGalleryDeathTexture,
   ScenarioCourtFeed,
   VfxScenario,
   createStressScenario,
@@ -17,6 +19,7 @@ import {
   getScenarioColor,
   getScenarioIntervalMs,
   walkerPosition,
+  type GalleryDeathCell,
   type GalleryRow,
   type ScenarioTower,
   type ScenarioWalker
@@ -25,6 +28,7 @@ import { getVfxProfile, getVfxTier, type VfxCourtMechanic, type VfxDelivery, typ
 import { ZeynepSignatureVfx, type CourtFrame } from "../vfx/zeynep-signatures";
 import { FeedbackDirector } from "../feedback-director";
 import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
+import { KILL_SOUND_FAMILIES, SAMPLE_FAMILIES, type KillSoundFamily } from "../sfx-samples";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -54,12 +58,18 @@ import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type 
  * gercek 60 derecede, Kin dalgasi yakin/orta/uzak dusmani 1/2/3 seritle
  * damgaliyor, Abarti rayindan gecen atis nabiz atiyor.
  *
+ * Olum satirlari (son sayfalar): her irk -- malzemesi: metal, kitin,
+ * kristal, tas, kul -- siradan, kosucu ve agir dusmanla; mekanin ek satiri
+ * nisanci, kusatma ve ucan dusman. Dusman her 2.2 sn'de olup yeniden
+ * doguyor; olum oyundaki `CombatVfx` ile (ayni yer izi yuzeyi ve LOD).
+ *
  * Vurus sesleri: ilk dokunus ses baglamini aciyor, sonra her temas oyundaki
  * gibi caliyor (ayni yonetmen, ayni butce). Bir hucreye dokunmak yalnizca o
  * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
  * aciyor. "Ses" dugmesi galeride sesi kapatiyor; secici ve Sv 1 / 5 / 10
  * dugmeleri her vurus sesini -- hicbir kulenin kullanmadigi Bulasma dahil --
- * dogrudan caliyor.
+ * dogrudan caliyor. Seciciden oldurme sesleri de (hafif / agir / hava)
+ * dinlenebiliyor; onlarda seviye yok, uc dugme de ayni sesi caliyor.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
@@ -75,11 +85,41 @@ const ROW_HEIGHT = 84;
 const GALLERY_ENEMY_SIZE = 30;
 /** Galerinin harita karesi: Izolasyon karantinasi ve Ucube gostergesi bununla. */
 const GALLERY_CELL = 22;
+/** Olum satirinin dongusu: dusman bu kadar yasiyor, sonra olup yeniden doguyor. */
+const DEATH_CYCLE_MS = 2200;
+const DEATH_AT_MS = 1300;
+/** Galerinin dusman boylari (oyundaki oranlarla, grunt 30). */
+const GALLERY_DEATH_SIZE: Record<GalleryDeathCell["type"], number> = { grunt: 30, runner: 35, shooter: 33, brute: 38, siege: 34 };
+/** Takim arkadasinin olumu (GameScene `TEAMMATE_DEATH_BURST_INTENSITY`). */
+const GALLERY_TEAMMATE_DEATH = 0.5;
+/** Malzemenin satir etiketindeki tarifi. */
+const DEATH_MATERIAL_LABELS: Record<DeathMaterial, string> = {
+  metal: "metal: kıvılcım, çelik kırıntı, duman, yanık",
+  chitin: "kitin: koyu parça, sıvı lekesi",
+  crystal: "kristal: koyu kıymık, çatırtı",
+  stone: "taş: parça, toz",
+  ash: "kül: kor, koyu duman, yanık"
+};
+
+type DeathCellState = {
+  sprite: Phaser.GameObjects.Image;
+  texture: string;
+  x: number;
+  y: number;
+  size: number;
+  heavy: boolean;
+  air: boolean;
+  shards: number;
+  durationMs: number;
+  phase: number;
+  accent: number;
+};
+
 /** Zeynep imzasinin satir etiketindeki adi. */
 const COURT_LABELS: Record<VfxCourtMechanic, string> = {
-  "pierce-line": "ferman çizgisi",
-  spotlight: "spot ışığı",
-  "formation-seal": "dizilim mührü",
+  "pierce-line": "delme çizgisi",
+  spotlight: "hat işareti",
+  "formation-seal": "dizilim",
   brand: "Kin damgası",
   "crossing-pulse": "Abartı geçişi"
 };
@@ -132,6 +172,10 @@ export class VfxGalleryScene extends Phaser.Scene {
   /** Sunucu bagi ve Izolasyon komsusu: soluk yan kule sprite'lari, kimlikle. */
   private readonly anchorSprites = new Map<string, Phaser.GameObjects.Image>();
   private beamRenderer?: BeamRenderer;
+  /** Olumler (oyundaki sinif): olum satirlari ve yer izleri. */
+  private combatVfx?: CombatVfx;
+  private deathCells: DeathCellState[] = [];
+  private readonly deathAccents = new Map<string, number>();
   private flashPool?: FlashPool;
   private stamps?: GlowStampPool;
   private surfaces: Phaser.GameObjects.Graphics[] = [];
@@ -151,7 +195,7 @@ export class VfxGalleryScene extends Phaser.Scene {
   /** Yalnizca bu kulenin sesi (hucreye dokunuldu); yoksa herkes. */
   private soloTowerId?: string;
   private soloMarker?: Phaser.GameObjects.Graphics;
-  private auditionVoice: HitVoiceId = HIT_VOICE_IDS[0];
+  private auditionVoice: HitVoiceId | KillSoundFamily = HIT_VOICE_IDS[0];
   /** Galeri yuruyucularinin karedeki konumlari: alan isinlarinin sesi icin, yeniden kullaniliyor. */
   private readonly walkerSpots: Array<{ x: number; y: number }> = [];
 
@@ -167,6 +211,10 @@ export class VfxGalleryScene extends Phaser.Scene {
     const body = this.add.graphics().setDepth(10.9);
     const glow = this.add.graphics().setDepth(10.85).setBlendMode(Phaser.BlendModes.ADD);
     const events = this.add.graphics().setDepth(12.45);
+    // Yer izleri (yanik, leke) dusmanlarin altinda: GameScene ile ayni derinlikler.
+    const attackGround = this.add.graphics().setDepth(7.3);
+    const deathGround = this.add.graphics().setDepth(7.35);
+    const deaths = this.add.graphics().setDepth(11.7);
     // Atakan imzalari oyundaki derinliklerde (GameScene ile ayni).
     const signatureGround = this.add.graphics().setDepth(7.4);
     const signatureLinks = this.add.graphics().setDepth(10.4);
@@ -178,7 +226,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     const courtGlow = this.add.graphics().setDepth(10.43).setBlendMode(Phaser.BlendModes.ADD);
     const courtMarks = this.add.graphics().setDepth(13.25);
     this.courtStage = this.add.graphics().setDepth(7.2);
-    this.surfaces = [beamGraphics, beamGlow, body, glow, events, signatureGround, signatureLinks, signatureGlow, signatureMarks, courtGround, courtLinks, courtGlow, courtMarks];
+    this.surfaces = [beamGraphics, beamGlow, body, glow, events, attackGround, deathGround, deaths, signatureGround, signatureLinks, signatureGlow, signatureMarks, courtGround, courtLinks, courtGlow, courtMarks];
     this.signatures = new AtakanSignatureVfx(signatureGround, signatureLinks, signatureGlow, signatureMarks, { lod: this.lod });
     this.court = new ZeynepSignatureVfx(courtGround, courtLinks, courtGlow, courtMarks, { lod: this.lod });
     this.courtFeed = new ScenarioCourtFeed(this.court, {
@@ -189,9 +237,11 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.flashPool = new FlashPool(this, 12.5);
     this.stamps = new GlowStampPool(this, 10.86);
     this.beamRenderer = new BeamRenderer(beamGraphics, beamGlow, this.lod);
+    this.combatVfx = new CombatVfx(deaths, deathGround, this.lod);
     this.attackVfx = new AttackVfx(body, glow, events, this.flashPool, {
       lod: this.lod,
       stamps: this.stamps,
+      ground: attackGround,
       // Galeride sarsinti yok: yan yana 40 kule kamerayi hic durdurmazdi.
       onHeavyImpact: undefined
     });
@@ -259,6 +309,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.beamRenderer.render(frame.beams, { now: this.now, sceneNow: this.now, scale: 1, isOwn: (beam: BeamSnapshot) => ownOf(beam.id) });
     this.beamHitTracker?.update(frame.beams, this.now, this.collectWalkerSpots(scenario.walkers));
     this.attackVfx.render(this.now, 1);
+    this.updateDeaths(step > 0 ? since : this.now);
+    this.combatVfx?.render(this.now, 1);
     const signatureFrame = this.signatureFrame;
     signatureFrame.towers = frame.signatureTowers;
     signatureFrame.enemies = frame.signatureEnemies;
@@ -294,6 +346,9 @@ export class VfxGalleryScene extends Phaser.Scene {
 
   private buildScene() {
     for (const sprite of [...this.towerSprites, ...this.walkerSprites]) sprite.destroy();
+    for (const cell of this.deathCells) cell.sprite.destroy();
+    this.deathCells = [];
+    this.combatVfx?.clear();
     for (const label of this.labels) label.destroy();
     for (const sprite of this.projectileSprites.values()) sprite.destroy();
     this.projectileSprites.clear();
@@ -342,6 +397,10 @@ export class VfxGalleryScene extends Phaser.Scene {
     if (this.mode === "grid") {
       const rows = this.pageRows();
       rows.forEach((entry, row) => {
+        if (entry.death) {
+          this.buildDeathRow(entry, row);
+          return;
+        }
         const id = entry.definitionId;
         const definition = Object.values(towerCatalog).flat().find((tower) => tower.id === id);
         const y = HEADER + row * ROW_HEIGHT + 4;
@@ -361,7 +420,10 @@ export class VfxGalleryScene extends Phaser.Scene {
       });
       this.drawCourtStage();
       this.labels.push(this.add.text(4, 1, "Dokun: ses açılır · hücreye dokun: tek kule", { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#94a3b8" }).setDepth(13));
+      // Yalnizca olum satirlari olan sayfada sutunlar seviye degil, dusman tipi (hucre etiketinde).
+      const towerRows = rows.some((entry) => !entry.death);
       COLUMN_LEVELS.forEach((level, column) => {
+        if (!towerRows) return;
         this.labels.push(this.add.text(column * COLUMN_WIDTH + 65, 14, `Sv ${level}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" })
           .setOrigin(0.5, 0)
           .setDepth(13));
@@ -428,6 +490,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     const towers: ScenarioTower[] = [];
     const walkers: ScenarioWalker[] = [];
     this.pageRows().forEach((entry, row) => {
+      if (entry.death) return;
       const definitionId = entry.definitionId;
       const y = HEADER + row * ROW_HEIGHT + 48;
       COLUMN_LEVELS.forEach((level, column) => {
@@ -458,6 +521,85 @@ export class VfxGalleryScene extends Phaser.Scene {
       });
     });
     return new VfxScenario(towers, walkers);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Olumler                                                            */
+  /* ---------------------------------------------------------------- */
+
+  /** Olum satiri: irkin malzemesi etikette, her sutunda bir dusman tipi. */
+  private buildDeathRow(entry: GalleryRow, row: number) {
+    const death = entry.death;
+    if (!death) return;
+    const top = HEADER + row * ROW_HEIGHT;
+    const material = getDeathMaterial(getGalleryDeathTexture(death.race, "grunt"));
+    this.labels.push(this.add.text(6, top + 4, `Ölüm · ${death.race} · ${DEATH_MATERIAL_LABELS[material]}`, { fontFamily: "Rajdhani, sans-serif", fontSize: "10px", color: "#cbd5e1" }).setDepth(13));
+    death.cells.forEach((cell, column) => {
+      const texture = getGalleryDeathTexture(death.race, cell.type);
+      const key = this.textures.exists(texture) ? texture : "enemy-grunt";
+      const x = column * COLUMN_WIDTH + 65;
+      const y = top + 46;
+      const size = GALLERY_DEATH_SIZE[cell.type] * (cell.air ? 1.28 : 1);
+      const sprite = this.add.image(x, y, key).setDepth(cell.air ? 9 : 8);
+      sprite.setDisplaySize(size, size);
+      const shape = getDeathBurstShape(cell.type);
+      this.deathCells.push({
+        sprite,
+        texture: key,
+        x,
+        y,
+        size,
+        heavy: shape.heavy,
+        air: Boolean(cell.air),
+        shards: shape.shards,
+        durationMs: shape.durationMs,
+        phase: (row * 3 + column) * 370,
+        accent: this.getDeathAccent(key)
+      });
+      this.labels.push(this.add.text(x, top + 70, cell.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "9px", color: "#94a3b8" }).setOrigin(0.5, 0).setDepth(13));
+    });
+  }
+
+  /** Dokunun vurgusu (oyundaki gibi dokudan okunuyor); doku basina bir kez. */
+  private getDeathAccent(texture: string) {
+    let color = this.deathAccents.get(texture);
+    if (color === undefined) {
+      color = readTextureAccent(this.textures.exists(texture) ? this.textures.get(texture).getSourceImage() : undefined, 0xd6d3d1);
+      this.deathAccents.set(texture, color);
+    }
+    return color;
+  }
+
+  /**
+   * Olum dongusu: dusman `DEATH_AT_MS`'de son vurusu (beyaz flas) alip oluyor,
+   * dongunun geri kalaninda yok, sonra yeniden doguyor. Olum ani zamanin saf
+   * fonksiyonu: yavas cekim ve duraklatmada da ayni.
+   */
+  private updateDeaths(since: number) {
+    for (const cell of this.deathCells) {
+      const local = (this.now + cell.phase) % DEATH_CYCLE_MS;
+      const alive = local < DEATH_AT_MS;
+      cell.sprite.setVisible(alive);
+      if (alive && local > DEATH_AT_MS - 50) cell.sprite.setTintFill(0xffffff);
+      else if (cell.sprite.isTinted) cell.sprite.clearTint();
+      const cycle = Math.floor((this.now + cell.phase) / DEATH_CYCLE_MS);
+      const deathAt = cycle * DEATH_CYCLE_MS + DEATH_AT_MS - cell.phase;
+      if (!(deathAt > since && deathAt <= this.now)) continue;
+      this.combatVfx?.emitDeath({
+        x: cell.x,
+        y: cell.y,
+        size: cell.size,
+        color: cell.accent,
+        shards: cell.shards,
+        durationMs: cell.durationMs,
+        intensity: this.teammate ? GALLERY_TEAMMATE_DEATH : 1,
+        still: false,
+        bornAt: deathAt,
+        texture: cell.texture,
+        heavy: cell.heavy,
+        air: cell.air
+      });
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -526,6 +668,12 @@ export class VfxGalleryScene extends Phaser.Scene {
     feedback.unlockAudio();
     const voice = this.auditionVoice;
     const own = !this.teammate;
+    if (isKillFamily(voice)) {
+      if (!feedback.previewKill(voice, own)) {
+        window.setTimeout(() => this.feedback?.previewKill(voice, own), 160);
+      }
+      return;
+    }
     if (!feedback.previewHit(voice, levelToTier(level), own)) {
       window.setTimeout(() => this.feedback?.previewHit(voice, levelToTier(level), own), 160);
     }
@@ -589,7 +737,7 @@ export class VfxGalleryScene extends Phaser.Scene {
       const recipe = getVfxTier(profile, projectile.tier);
       sprite.setPosition(projectile.x, projectile.y).setDisplaySize(recipe.silhouette, recipe.silhouette);
       sprite.setRotation(Math.atan2(projectile.vy ?? 0, projectile.vx ?? 1));
-      sprite.setTint(toTier(projectile.tier) >= 2 ? liftToWhite(recipe.color, 0.5) : 0xffffff);
+      sprite.setTint(toTier(projectile.tier) >= 2 ? recipe.core : 0xffffff);
     }
     for (const [id, sprite] of this.projectileSprites) {
       if (seen.has(id)) continue;
@@ -606,7 +754,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     const commands = this.surfaces.reduce((sum, surface) => sum + (surface as unknown as { commandBuffer: unknown[] }).commandBuffer.length, 0);
     this.perfText.setText([
       `fps ${(1000 / Math.max(1, this.frameMsEma)).toFixed(0)}  vfx ${this.vfxMsEma.toFixed(2)} ms`,
-      `LOD ${this.lod.level}  (kıvılcım ${this.lod.sparks ? "açık" : "kapalı"}, hale ${this.lod.corona ? "açık" : "kapalı"}, iz ×${this.lod.trailScale})`,
+      `LOD ${this.lod.level}  (kıvılcım ${this.lod.sparks ? "açık" : "kapalı"}, duman ${this.lod.smoke ? "açık" : "kapalı"}, yer izi ${this.lod.decals ? "açık" : "kapalı"}, iz ×${this.lod.trailScale})`,
       `mermi ${projectiles}  ışın ${beams}  olay ${this.attackVfx?.liveEvents ?? 0}`,
       `parlama ${this.flashPool?.live ?? 0}/64  damga ${this.stamps?.count ?? 0}  komut ${commands}`
     ]);
@@ -665,8 +813,17 @@ export class VfxGalleryScene extends Phaser.Scene {
       option.textContent = HIT_VOICE_LABELS[voice];
       select.append(option);
     }
+    for (const family of KILL_SOUND_FAMILIES) {
+      const option = document.createElement("option");
+      option.value = family;
+      option.textContent = SAMPLE_FAMILIES[family].label;
+      select.append(option);
+    }
     select.addEventListener("change", () => {
-      this.auditionVoice = (HIT_VOICE_IDS as readonly string[]).includes(select.value) ? select.value as HitVoiceId : HIT_VOICE_IDS[0];
+      const value = select.value;
+      this.auditionVoice = isKillFamily(value) || (HIT_VOICE_IDS as readonly string[]).includes(value)
+        ? value as HitVoiceId | KillSoundFamily
+        : HIT_VOICE_IDS[0];
     });
     bar.append(select);
     for (const level of COLUMN_LEVELS) {
@@ -786,6 +943,10 @@ function createCourtCell(entry: GalleryRow, level: number, cellX: number, y: num
     default:
       return base;
   }
+}
+
+function isKillFamily(value: string): value is KillSoundFamily {
+  return (KILL_SOUND_FAMILIES as readonly string[]).includes(value);
 }
 
 function levelToTier(level: number) {

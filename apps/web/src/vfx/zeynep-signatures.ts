@@ -1,34 +1,32 @@
 /**
- * Zeynep kulelerinin imzalari: saray dili (ferman -> nisan -> regalya).
+ * Zeynep kulelerinin imzalari: mekanigi gosteren islevsel isaretler.
  *
- * Rampa pembe -> altin -> beyaz altin ve **rutbe trimi**: govde kulenin ya da
- * kombonun renginde kaliyor (Kin kizili, yanik camgobegi, Abarti'nin
- * koyulastirmasi -- isinin rengi sunucudan, hep okunuyor), kademe kenara
- * rutbe ekliyor. Kademe 1 temiz bir ferman; 2 altin seritler (chevron),
- * ikinci perde ve "gecit toreni" (hayalet kopyalar, paralel ray degil);
- * 3 tac ve muhur, yaldiz zerreler, mum muhur damgasi ve kapanan ferman
- * cizgisi -- hicbir zaman tumuyle beyaz degil.
+ * Agir, sert dil (vfx-profiles): kizil, mor ve eflatun yalnizca kenarda bir
+ * ton; enerji beyaz-sicak cekirdek. Kademe yogunluk -- cizgi daha kalin,
+ * cekirdek daha beyaz -- tac, muhur, altin serit, yaldiz ya da ikinci perde
+ * degil. Isaretler HUD gibi: ince cizgi, kertik, ayrac.
  *
  * Burada:
  * - Mizrak (Hiza ve Taht'in mermileri): ince uzun govde, sivri uc; Taht'ta
- *   kuyrukta dizilimin muhru (uc isaret, uyelerin renginde: kipi renk
- *   gormeden de diziliminden okunuyor).
- * - Ferman kertigi (carpma dili "decree"): her delinen dusmanda govdeyi kesen
+ *   kuyrukta dizilimin uc kertigi (uyelerin tonunda: kipi renk gormeden de
+ *   diziliminden okunuyor).
+ * - Delme kertigi (carpma dili "decree"): her delinen dusmanda govdeyi kesen
  *   bir cizgi -- kertik sayisi delinen dusman sayisi.
- * - `ZeynepSignatureVfx`: delen merminin ferman cizgisi, Gosteri hattindaki
- *   her dusmana spot isigi, Kin'in damgasi (yavaslatmanin gucu kadar serit),
- *   Abarti gecis nabzi ve Taht atisinda dizilimin kendisi.
+ * - `ZeynepSignatureVfx`: delen merminin delme cizgisi, Gosteri hattindaki
+ *   her dusmana isaret, Kin'in damgasi (yavaslatmanin gucu kadar kertik),
+ *   Abarti gecis nabzi, ayna sekmesi ve Taht atisinda dizilimin kendisi.
  * - `ZeynepReceiptTracker`: bunlarin hepsi mevcut veriden turuyor (isinlar,
  *   temaslar, gelen snapshot'in dusman ve kule konumlari, paylasilan kurallar);
  *   tek ek tel alani ayna isininin sekme kosesi (`BeamSnapshot.b`).
  *
  * Kurallar kitle ayni: `Math.random` yok (tohumlar FNV ozetinden), karede
  * nesne yok (olaylar havuzda, secenekler modul sabiti), daire yok (kitin
- * ucuz halka ve diski). LOD sirasi: once zerre, sonra parlama ve ikinci
- * perde, en son serit sayisi tek dikdortgen; renk ve govde (kertik, halka,
- * damga yayi, nabiz) hic dusmuyor. Takim arkadasinin kademe 3 eklentileri %70.
- * Hareket azaltma her hareket dalini kapatiyor; hicbir sey saniyede 3'ten
- * fazla parlamiyor.
+ * ucuz halka ve diski). LOD sirasi efektlerinkiyle ayni: duman basamaginda
+ * ADD isi, yer izi basamaginda isaretin yer golgesi, en son (VFX_LOD_MAX) Kin
+ * kertikleri tek seride ve yay iki parcaya; renk ve govde (kertik, halka,
+ * damga yayi, nabiz) hic dusmuyor. Takim arkadasinin kademe 3 agirligi %70. Hareket
+ * azaltma her hareket dalini kapatiyor; hicbir sey saniyede 3'ten fazla
+ * parlamiyor.
  */
 import {
   GAME_SPEED_MULTIPLIER,
@@ -53,23 +51,21 @@ import {
   type TowerDefinition,
   type TowerSnapshot
 } from "@karayel/shared";
-import { PRESSURE_WAVE_GAIN, gainColor, getZeynepTrim } from "./combat-vfx";
+import { PRESSURE_WAVE_GAIN, gainColor, getTierEdge } from "./combat-vfx";
 import { getMarkReticleHalf } from "./atakan-signatures";
-import { TEAMMATE_EXTRA_ALPHA, clamp01, fillDisc, fnvHash, hashNoise, liftToWhite, strokeProfile, type VfxGraphics, type VfxTier } from "./kit";
+import { TEAMMATE_EXTRA_ALPHA, clamp01, darken, drawSlug, fillDisc, fnvHash, groundHue, whiteHot, type VfxGraphics, type VfxTier } from "./kit";
 import { VfxLod } from "./lod";
-import { ZEYNEP_GOLD, getCourtTier, getVfxProfile, type VfxCourtTier } from "./vfx-profiles";
+import { TIER_HEAT, TIER_WEIGHT } from "./vfx-profiles";
 
-/** Ikinci perde gecikmesi (attack-vfx `SECOND_BEAT_DELAY_MS` ile ayni). */
-export const COURT_ENCORE_MS = 80;
 /**
  * Beyaz ic parlamanin genel siniri: saniyede en fazla 3 (isiga duyarlilik;
  * igne ucuyla ayni kural). Kalabalik bir Gosteri hattinda on dusman ayni
  * anda yansa da tek parlama.
  */
 export const COURT_FLASH_GAP_MS = 334;
-/** Ferman cizgisinin omru (son temastan); kademe 3'te kapanma bunun icinde. */
+/** Delme cizgisinin omru (son temastan). */
 export const PIERCE_LINE_MS = 420;
-/** Spot isiginin omru. */
+/** Gosteri isaretinin omru. */
 export const SPOTLIGHT_MS = 460;
 /** Abarti gecis nabzinin omru. */
 export const CROSSING_MS = 440;
@@ -81,7 +77,7 @@ export const BOUNCE_MS = 480;
 export const KIN_PUSH_BRAND_MS = 520;
 
 /**
- * Kin damgasinin serit olcusu: en az 3 birimlik isaret, en az 2 birim
+ * Kin damgasinin kertik olcusu: en az 3 birimlik isaret, en az 2 birim
  * aralik (375 piksellik telefonda sayilabiliyor). Atakan nisangahinin
  * kertikleriyle ayni olcu, ama sagda: kertikler solda.
  */
@@ -95,12 +91,16 @@ export const TAHT_COPY_ID = "zeynep-3-copy";
 /* Renkler                                                              */
 /* ------------------------------------------------------------------ */
 
-/** Dizilim uyelerinin renkleri: muhrun isaretleri ve atistaki dizilim cizgileri. */
+/**
+ * Dizilim uyelerinin tonlari: mizragin govdesi, kuyruk kertikleri ve atistaki
+ * dizilim cizgileri. Katalog renkleri yere indirilmis (kenar tonu, sekerleme
+ * degil): Hiza kizil-pembe, Gosteri gul, Taht eflatun, Kin kizil.
+ */
 export const ZEYNEP_MEMBER_COLORS = {
-  hiza: 0xec4899,
-  gosteri: 0xf9a8d4,
-  taht: 0xe879f9,
-  kin: 0xdc2626
+  hiza: groundHue(0xec4899),
+  gosteri: groundHue(0xf9a8d4),
+  taht: groundHue(0xe879f9),
+  kin: groundHue(0xdc2626)
 } as const;
 
 export function getZeynepMemberColor(definitionId: string) {
@@ -109,7 +109,7 @@ export function getZeynepMemberColor(definitionId: string) {
     case "zeynep-2": return ZEYNEP_MEMBER_COLORS.gosteri;
     case "zeynep-3": return ZEYNEP_MEMBER_COLORS.taht;
     case "zeynep-6": return ZEYNEP_MEMBER_COLORS.kin;
-    default: return 0xf0abfc;
+    default: return ZEYNEP_MEMBER_COLORS.taht;
   }
 }
 
@@ -126,7 +126,7 @@ export function getLanceMode(definitionId: string | undefined): LanceMode {
 }
 
 /**
- * Mizragin govde rengi: kip kendi tonunda. Eskiden Kin, cift ve kopya kipi
+ * Mizragin govde tonu: kip kendi tonunda. Eskiden Kin, cift ve kopya kipi
  * ayni pembe Hiza atisiydi; kopya kipi kehribara donuyordu.
  */
 const LANCE_BODY: Record<LanceMode, number> = {
@@ -136,7 +136,7 @@ const LANCE_BODY: Record<LanceMode, number> = {
   copy: ZEYNEP_MEMBER_COLORS.hiza
 };
 
-/** Taht mizraginin muhru: dizilimin uc uyesi (son isaret Taht'in kendisi, elmas). */
+/** Taht mizraginin dizilim kertikleri: uc uye (son kertik Taht'in kendisi, onde). */
 const LANCE_SIGILS: Record<LanceMode, readonly [number, number, number] | undefined> = {
   hiza: undefined,
   dual: [ZEYNEP_MEMBER_COLORS.hiza, ZEYNEP_MEMBER_COLORS.hiza, ZEYNEP_MEMBER_COLORS.taht],
@@ -148,7 +148,7 @@ export function getLanceSigil(mode: LanceMode) {
   return LANCE_SIGILS[mode];
 }
 
-/** Mermi ya da temas kimliginden govde rengi (kip); Zeynep mermisi degilse `fallback`. */
+/** Mermi ya da temas kimliginden govde tonu (kip); Zeynep mermisi degilse `fallback`. */
 export function getZeynepBodyColor(definitionId: string | undefined, fallback: number) {
   if (definitionId === "zeynep-1" || definitionId === "zeynep-3" || definitionId === "zeynep-3-kin-projectile" || definitionId === TAHT_COPY_ID) {
     return LANCE_BODY[getLanceMode(definitionId)];
@@ -157,41 +157,8 @@ export function getZeynepBodyColor(definitionId: string | undefined, fallback: n
 }
 
 /* ------------------------------------------------------------------ */
-/* Saray isaretleri: serit, muhur, tac                                   */
+/* Ucuz sekiller                                                        */
 /* ------------------------------------------------------------------ */
-
-/** Altin serit (chevron): `angle` yonune bakan V. Iki cizgi. */
-export function drawChevron(g: VfxGraphics, x: number, y: number, angle: number, size: number, width: number, color: number, alpha: number) {
-  if (alpha <= 0) return;
-  const ux = Math.cos(angle);
-  const uy = Math.sin(angle);
-  const half = size * 0.5;
-  const tipX = x + ux * half;
-  const tipY = y + uy * half;
-  g.lineStyle(Math.max(0.6, width), color, clamp01(alpha));
-  g.lineBetween(x - ux * half - uy * half, y - uy * half + ux * half, tipX, tipY);
-  g.lineBetween(x - ux * half + uy * half, y - uy * half - ux * half, tipX, tipY);
-}
-
-/**
- * Mum muhur: koyu mumdan bir baklava, ortasinda rutbe renginde kabartma ve
- * (`drips`) iki mum damlasi. Mum kulenin (kombonun) tonunda koyu, kabartma
- * rutbe renginde: muhur hicbir zaman beyaz bir disk degil. Ucuz: iki ucgen,
- * bir dikdortgen, iki cizgi (yuz dusmanin damgasinda da butceye sigiyor).
- */
-export function drawWaxSeal(g: VfxGraphics, x: number, y: number, radius: number, wax: number, rim: number, alpha: number, drips = true) {
-  if (alpha <= 0 || radius <= 0) return;
-  g.fillStyle(wax, clamp01(alpha * 0.95));
-  g.fillTriangle(x, y - radius * 1.15, x + radius * 1.15, y, x - radius * 1.15, y);
-  g.fillTriangle(x, y + radius * 1.15, x + radius * 1.15, y, x - radius * 1.15, y);
-  const core = radius * 0.55;
-  g.fillStyle(rim, clamp01(alpha));
-  g.fillRect(x - core / 2, y - core / 2, core, core);
-  if (!drips) return;
-  g.lineStyle(Math.max(0.6, radius * 0.3), wax, clamp01(alpha * 0.9));
-  g.lineBetween(x + radius * 0.5, y + radius * 0.6, x + radius * 0.7, y + radius * 1.4);
-  g.lineBetween(x - radius * 0.6, y + radius * 0.5, x - radius * 0.9, y + radius * 1.2);
-}
 
 /**
  * Ucuz halka: sekiz cizgi. Phaser'in yol cizgisi her kirilmada ~12 kose
@@ -212,25 +179,7 @@ export function strokeOctagon(g: VfxGraphics, x: number, y: number, radius: numb
   }
 }
 
-/** Tac isareti: alt cubuk ve uc sivri; tek yol. `width` tacin genisligi. */
-export function drawCrownSigil(g: VfxGraphics, x: number, y: number, width: number, color: number, alpha: number, lineWidth: number) {
-  if (alpha <= 0) return;
-  const half = width / 2;
-  const height = width * 0.62;
-  g.lineStyle(Math.max(0.6, lineWidth), color, clamp01(alpha));
-  g.beginPath();
-  g.moveTo(x - half, y);
-  g.lineTo(x - half, y - height);
-  g.lineTo(x - half * 0.5, y - height * 0.45);
-  g.lineTo(x, y - height);
-  g.lineTo(x + half * 0.5, y - height * 0.45);
-  g.lineTo(x + half, y - height);
-  g.lineTo(x + half, y);
-  g.closePath();
-  g.strokePath();
-}
-
-/** Ucuz elips (spot isiginin havuzu): 10 kenarli yelpaze; earcut yok. */
+/** Ucuz elips (isaretin yer golgesi): 10 kenarli yelpaze; earcut yok. */
 const ELLIPSE_SIDES = 10;
 const ELLIPSE_COS = new Float32Array(ELLIPSE_SIDES);
 const ELLIPSE_SIN = new Float32Array(ELLIPSE_SIDES);
@@ -263,175 +212,86 @@ function strokeArc(g: VfxGraphics, x: number, y: number, radius: number, start: 
   }
 }
 
-/** Yukari suzulen yaldiz zerreleri (durumsuz, tohumlu); `age` 0..1. */
-function drawGiltMotes(g: VfxGraphics, x: number, y: number, spread: number, rise: number, count: number, age: number, seed: number, color: number, size: number, alpha: number) {
-  if (alpha <= 0) return;
-  for (let index = 0; index < count; index += 1) {
-    const roll = hashNoise(seed + index * 7 + 1);
-    const lift = hashNoise(seed + index * 7 + 2);
-    const life = clamp01(age * (0.8 + lift * 0.5));
-    const glow = life < 0.2 ? life / 0.2 : 1 - (life - 0.2) / 0.8;
-    if (glow <= 0) continue;
-    g.fillStyle(index % 2 === 0 ? color : liftToWhite(color, 0.6), clamp01(alpha * glow));
-    fillDisc(g, x + (roll - 0.5) * spread * 2, y - life * rise * (0.6 + lift * 0.6), size);
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Mizrak                                                               */
 /* ------------------------------------------------------------------ */
 
-/** Karede yerinde yazilan secenekler: cagri basina nesne yok. */
-const LINE = { body: 0, spread: 0 };
-
 export type LanceDrawOptions = {
   mode: LanceMode;
   tier: VfxTier;
-  court: VfxCourtTier | undefined;
+  /** Cekirdegin sicakligi (kademenin yogunlugu). */
+  heat: number;
+  /** Govdenin agirligi (kademe). */
+  weight: number;
   /** Siluetin yari boyu (dunya birimi, olcekli). */
   radius: number;
   scale: number;
-  /** Takim arkadasinin kademe 3 eklentisi icin alfa. */
-  extra: number;
-  /** Hayalet kopyalar (gecit toreni) LOD 2'de dusuyor. */
-  parade: boolean;
 };
 
 /** Mizragin secenekleri; attack-vfx karede yerinde yaziyor. */
-export const LANCE_OPTIONS: LanceDrawOptions = { mode: "hiza", tier: 1, court: undefined, radius: 7, scale: 1, extra: 1, parade: true };
+export const LANCE_OPTIONS: LanceDrawOptions = { mode: "hiza", tier: 1, heat: TIER_HEAT[0], weight: TIER_WEIGHT[0], radius: 7, scale: 1 };
 
 /**
- * Ferman mizragi.
- *
- * - Ferman (1): kipin renginde duz govde ve sivri uc; Taht'ta kuyrukta
- *   dizilimin muhru (uc isaret, uyelerin renginde).
- * - Nisan (2): omuzlar ADD katmaninda, ucun arkasinda altin serit ve gecit
- *   toreni: iki hayalet mizrak geride V dizilisinde (paralel ray yok).
- * - Regalya (3): beyaza cekilmis file (ton omuzlarda), muhrun cevresinde
- *   beyaz altin muhur halkasi; Hiza'da ucun dibinde.
+ * Mizrak: ince uzun govde (kipin tonu kenarda, cekirdek beyaz-sicak) ve
+ * sivri uc. Kademe govdeyi kalinlastirip cekirdegi beyaza cekiyor. Taht'ta
+ * kuyrukta dizilimin uc kertigi (uyelerin tonunda; kip bilgisi).
  */
-export function drawZeynepLance(g: VfxGraphics, glow: VfxGraphics, x: number, y: number, angle: number, options: LanceDrawOptions) {
-  const { mode, tier, radius: r, scale } = options;
+export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: number, options: LanceDrawOptions) {
+  const { mode, radius: r, weight, heat } = options;
   const color = LANCE_BODY[mode];
-  const trim = getZeynepTrim(tier, color);
   const ux = Math.cos(angle);
   const uy = Math.sin(angle);
   const nx = -uy;
   const ny = ux;
 
-  if (tier >= 2 && options.parade) {
-    // Gecit toreni: iki hayalet mizrak geride, V dizilisinde.
-    for (let side = -1; side <= 1; side += 2) {
-      const gx = x - ux * r * 2.4 + nx * side * r * 1.25;
-      const gy = y - uy * r * 2.4 + ny * side * r * 1.25;
-      g.lineStyle(Math.max(0.6, r * 0.16), liftToWhite(color, 0.2), 0.38);
-      g.lineBetween(gx - ux * r * 1.5, gy - uy * r * 1.5, gx + ux * r * 0.4, gy + uy * r * 0.4);
-      g.fillStyle(liftToWhite(color, 0.25), 0.4);
-      g.fillTriangle(gx + ux * r * 0.85, gy + uy * r * 0.85, gx + nx * r * 0.26, gy + ny * r * 0.26, gx - nx * r * 0.26, gy - ny * r * 0.26);
-    }
-  }
-
-  // Govde: lazerin kesiti, omuzlar ADD katmaninda.
-  LINE.body = Math.max(1, r * 0.3);
-  LINE.spread = r * 0.55;
-  strokeProfile(g, x - ux * r * 2, y - uy * r * 2, x + ux * r * 0.05, y + uy * r * 0.05, color, tier, LINE, glow);
+  drawSlug(g, x, y, ux, uy, r * 2, Math.max(1, r * 0.2 * weight), color, heat);
   const tip = r * 1.05;
-  const half = r * 0.42;
-  g.fillStyle(tier >= 2 ? liftToWhite(color, 0.35) : color, 0.97);
+  const half = r * 0.3 * weight;
+  g.fillStyle(whiteHot(color, heat), 0.97);
   g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * r * 0.15 + nx * half, y - uy * r * 0.15 + ny * half, x - ux * r * 0.15 - nx * half, y - uy * r * 0.15 - ny * half);
 
-  if (tier >= 2) {
-    // Nisan: ucun arkasinda rutbe seridi.
-    drawChevron(g, x - ux * r * 0.7, y - uy * r * 0.7, angle, r * 0.8, Math.max(0.8, 0.9 * scale), trim, 0.95);
-  }
-
   const sigil = LANCE_SIGILS[mode];
-  if (sigil) {
-    // Dizilimin muhru: kuyrugun arkasinda uc isaret, sivri ucu ileri bakan ucgen.
-    const sx = x - ux * r * 2.75;
-    const sy = y - uy * r * 2.75;
-    const dot = Math.max(1.5, r * 0.2);
-    const ax = sx + ux * r * 0.45;
-    const ay = sy + uy * r * 0.45;
-    const bx = sx - ux * r * 0.3;
-    const by = sy - uy * r * 0.3;
-    g.fillStyle(sigil[0], 0.95);
-    fillDisc(g, bx + nx * r * 0.5, by + ny * r * 0.5, dot);
-    g.fillStyle(sigil[1], 0.95);
-    fillDisc(g, bx - nx * r * 0.5, by - ny * r * 0.5, dot);
-    // Son isaret elmas: dizilimin kendi kulesi (Taht ya da kopyalanan Hiza).
-    g.fillStyle(sigil[2], 0.95);
-    g.fillTriangle(ax + ux * dot * 1.3, ay + uy * dot * 1.3, ax + nx * dot * 1.1, ay + ny * dot * 1.1, ax - nx * dot * 1.1, ay - ny * dot * 1.1);
-    g.fillTriangle(ax - ux * dot * 1.3, ay - uy * dot * 1.3, ax + nx * dot * 1.1, ay + ny * dot * 1.1, ax - nx * dot * 1.1, ay - ny * dot * 1.1);
-    if (options.court?.seal) {
-      g.lineStyle(Math.max(0.6, 0.8 * scale), trim, 0.9 * options.extra);
-      strokeOctagon(g, sx, sy, r * 0.95);
-    }
-  } else if (options.court?.seal) {
-    // Hiza'nin regalyasi: ucun dibinde beyaz altin muhur halkasi.
-    g.lineStyle(Math.max(0.6, 0.8 * scale), trim, 0.9 * options.extra);
-    strokeOctagon(g, x - ux * r * 0.2, y - uy * r * 0.2, r * 0.6);
-  }
+  if (!sigil) return;
+  // Dizilimin kertikleri: kuyrugun arkasinda iki uye yan yana, Taht onde.
+  const sx = x - ux * r * 2.7;
+  const sy = y - uy * r * 2.7;
+  const pip = Math.max(1.4, r * 0.18);
+  g.fillStyle(sigil[0], 0.95);
+  g.fillRect(sx + nx * r * 0.45 - pip / 2, sy + ny * r * 0.45 - pip / 2, pip, pip);
+  g.fillStyle(sigil[1], 0.95);
+  g.fillRect(sx - nx * r * 0.45 - pip / 2, sy - ny * r * 0.45 - pip / 2, pip, pip);
+  g.fillStyle(sigil[2], 0.95);
+  g.fillRect(sx + ux * r * 0.5 - pip * 0.65, sy + uy * r * 0.5 - pip * 0.65, pip * 1.3, pip * 1.3);
 }
 
 /* ------------------------------------------------------------------ */
-/* Ferman kertigi (temas)                                                */
+/* Delme kertigi (temas)                                                 */
 /* ------------------------------------------------------------------ */
 
 /**
- * Ferman kertigi: govdeyi ucus yonune dik kesen cizgi. Boyu dusmanin
+ * Delme kertigi: govdeyi ucus yonune dik kesen cizgi. Boyu dusmanin
  * ekrandaki capindan (govdeyi sariyor, tasmiyor): delinen her dusmanda bir
  * tane, yani kertik sayisi delinen dusman sayisi. Hareket azaltmada cizgi
  * buyumeden belirip soner.
  */
-export function drawDecreeTick(g: VfxGraphics, x: number, y: number, angle: number, size: number, body: number, age: number, scale: number, still: boolean, flash: boolean) {
+export function drawDecreeTick(g: VfxGraphics, x: number, y: number, angle: number, size: number, body: number, age: number, scale: number, still: boolean, flash: boolean, heat: number = TIER_HEAT[0]) {
   const nx = -Math.sin(angle);
   const ny = Math.cos(angle);
   const half = size * 0.42 * (still ? 1 : 0.35 + 0.65 * clamp01(age / 0.12));
   const fade = 1 - age;
-  g.lineStyle(Math.max(1, 1.7 * scale), body, clamp01(0.95 * fade));
+  g.lineStyle(Math.max(1, 1.5 * scale), body, clamp01(0.9 * fade));
   g.lineBetween(x - nx * half, y - ny * half, x + nx * half, y + ny * half);
-  g.lineStyle(Math.max(0.6, 0.7 * scale), liftToWhite(body, 0.8), clamp01(0.9 * fade));
+  g.lineStyle(Math.max(0.6, 0.6 * scale), whiteHot(body, heat), clamp01(0.95 * fade));
   g.lineBetween(x - nx * half * 0.8, y - ny * half * 0.8, x + nx * half * 0.8, y + ny * half * 0.8);
   // Beyaz cekirdek: cagiran saniyede en fazla 3 olaya veriyor (`COURT_FLASH_GAP_MS`);
   // hareket azaltmada hic.
   if (!flash || still) return;
-  g.fillStyle(liftToWhite(body, 0.8), Math.pow(1 - clamp01(age * 4), 2));
+  g.fillStyle(whiteHot(body, 0.5), Math.pow(1 - clamp01(age * 4), 2));
   fillDisc(g, x, y, 2 * scale);
 }
 
-/** Kertigin nisani (kademe 2+): cikis yonunde altin serit ve gecikmeli ikinci kertik. */
-export function drawDecreeInsignia(g: VfxGraphics, x: number, y: number, angle: number, size: number, trim: number, age: number, elapsed: number, durationMs: number, scale: number, still: boolean, encore: boolean) {
-  const ux = Math.cos(angle);
-  const uy = Math.sin(angle);
-  const fade = 1 - age;
-  drawChevron(g, x + ux * (size * 0.5 + 2.5 * scale), y + uy * (size * 0.5 + 2.5 * scale), angle, Math.max(3, 4 * scale), Math.max(0.9, 1.1 * scale), trim, 0.95 * fade);
-  if (!encore || elapsed < COURT_ENCORE_MS) return;
-  const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, durationMs - COURT_ENCORE_MS));
-  const nx = -uy;
-  const ny = ux;
-  const shift = (still ? 3 : 3 + beat * 3) * scale;
-  const half = size * 0.36;
-  g.lineStyle(Math.max(0.8, 1.1 * scale), trim, clamp01(0.6 * (1 - beat)));
-  g.lineBetween(x + ux * shift - nx * half, y + uy * shift - ny * half, x + ux * shift + nx * half, y + uy * shift + ny * half);
-}
-
-/** Kertigin regalyasi (kademe 3): cikis tarafinda basilan mum muhur. */
-export function drawDecreeSeal(g: VfxGraphics, x: number, y: number, angle: number, size: number, body: number, trim: number, age: number, scale: number, still: boolean, extra: number) {
-  const ux = Math.cos(angle);
-  const uy = Math.sin(angle);
-  const press = still ? 1 : 1 + 0.6 * (1 - clamp01(age / 0.2));
-  const reach = size * 0.5 + 8 * scale;
-  drawWaxSeal(g, x + ux * reach, y + uy * reach, 2.6 * scale * press, mixTowardDark(body), trim, (1 - age) * extra);
-}
-
-function mixTowardDark(color: number) {
-  const channel = (shift: number) => Math.round(((color >> shift) & 0xff) * 0.55);
-  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
-}
-
 /* ------------------------------------------------------------------ */
-/* Olaylar: ferman cizgisi, spot isigi, damga, gecis, dizilim            */
+/* Olaylar: delme cizgisi, isaret, damga, gecis, dizilim, sekme          */
 /* ------------------------------------------------------------------ */
 
 export type CourtEventInput =
@@ -444,8 +304,10 @@ export type CourtEventInput =
 
 type CourtKind = CourtEventInput["kind"];
 
-/** Ferman cizgisinin en fazla nokta sayisi (Hiza 2 deliyor, Saray Arsivi ile Taht 3-4). */
+/** Delme cizgisinin en fazla nokta sayisi (Hiza 2 deliyor, Saray Arsivi ile Taht 3-4). */
 const PIERCE_POINTS = 5;
+/** Abarti'nin rayi: tonu (katalog menekse, yere indirilmis). */
+const ABARTI_COLOR = groundHue(0x7c3aed);
 
 type CourtEvent = {
   kind: CourtKind;
@@ -457,13 +319,16 @@ type CourtEvent = {
   tier: VfxTier;
   own: boolean;
   bornAt: number;
-  /** Ferman cizgisi: son temasin ani (omur bundan). */
+  /** Delme cizgisi: son temasin ani (omur bundan). */
   lastAt: number;
   durationMs: number;
   seed: number;
   color: number;
-  trim: number;
-  court: VfxCourtTier;
+  /** Kademenin kenari: ayni ton, kademeyle daha beyaz-sicak. */
+  edge: number;
+  /** Cekirdegin sicakligi ve cizginin agirligi (kademe). */
+  heat: number;
+  weight: number;
   size: number;
   strength: number;
   push: boolean;
@@ -471,7 +336,7 @@ type CourtEvent = {
   railHalf: number;
   /** Bu olay beyaz ic parlamayi aldi mi (saniyede 3 siniri). */
   flash: boolean;
-  /** Ferman cizgisinin noktalari; dizilimde uyeler. */
+  /** Delme cizgisinin noktalari; dizilimde uyeler. */
   xs: Float32Array;
   ys: Float32Array;
   colors: Uint32Array;
@@ -491,7 +356,7 @@ export type CourtFrame = {
 
 export type ZeynepSignatureOptions = {
   lod: VfxLod;
-  /** Hareket azaltma: buyume, kayma, kapanma ve zerre yok; sekiller yerinde soner. */
+  /** Hareket azaltma: buyume, kayma ve daralma yok; sekiller yerinde soner. */
   reducedMotion?: () => boolean;
 };
 
@@ -501,13 +366,13 @@ type Surface = VfxGraphics & { clear(): unknown };
 export const MAX_COURT_EVENTS = 192;
 
 /**
- * Zeynep'in dunya ici imzalari: olay havuzu, her karede yaslarina gore
+ * Zeynep'in dunya ici isaretleri: olay havuzu, her karede yaslarina gore
  * yeniden ciziliyor (combat-vfx'in sinirli tampon mimarisi).
  *
- * Katmanlar (GameScene derinlikleri): `ground` dusmanlarin altinda (spot
- * isiginin havuzu), `links` mermilerin altinda (ferman ve dizilim cizgileri,
- * ray nabzi), `glow` ADD (ikinci perdeler), `marks` dusman govdesinin
- * ustunde, can cubugunun altinda (halka, damga, muhur, tac).
+ * Katmanlar (GameScene derinlikleri): `ground` dusmanlarin altinda (isaretin
+ * yer golgesi), `links` mermilerin altinda (delme ve dizilim cizgileri, ray
+ * nabzi), `glow` ADD (kisa isi), `marks` dusman govdesinin ustunde, can
+ * cubugunun altinda (halka, damga, kertik).
  */
 export class ZeynepSignatureVfx {
   private readonly events: CourtEvent[] = [];
@@ -579,7 +444,7 @@ export class ZeynepSignatureVfx {
   }
 
   private noteBounce(input: Extract<CourtEventInput, { kind: "bounce" }>, bornAt: number) {
-    const event = this.push("bounce", input.key, bornAt, input.tier, input.own, input.color, "zeynep-3");
+    const event = this.push("bounce", input.key, bornAt, input.tier, input.own, groundHue(input.color));
     event.x = input.x;
     event.y = input.y;
     event.angle = input.angle;
@@ -590,8 +455,7 @@ export class ZeynepSignatureVfx {
     // Ayni mermi: noktaya ekle (delip gecti); yoksa yeni cizgi.
     let event = this.find("pierce", input.key);
     if (!event) {
-      const profile = getVfxProfile(input.definitionId);
-      event = this.push("pierce", input.key, bornAt, input.tier, input.own, getZeynepBodyColor(input.definitionId, profile.base), profile.id);
+      event = this.push("pierce", input.key, bornAt, input.tier, input.own, getZeynepBodyColor(input.definitionId, ZEYNEP_MEMBER_COLORS.hiza));
       event.count = 0;
     }
     if (event.count < PIERCE_POINTS) {
@@ -609,7 +473,7 @@ export class ZeynepSignatureVfx {
   }
 
   private noteSpotlight(input: Extract<CourtEventInput, { kind: "spotlight" }>, bornAt: number) {
-    const event = this.push("spotlight", input.key, bornAt, input.tier, input.own, input.color, "zeynep-2");
+    const event = this.push("spotlight", input.key, bornAt, input.tier, input.own, groundHue(input.color));
     event.x = input.x;
     event.y = input.y;
     event.size = input.size ?? 0;
@@ -622,8 +486,9 @@ export class ZeynepSignatureVfx {
 
   private noteBrand(input: Extract<CourtEventInput, { kind: "brand" }>, bornAt: number) {
     // Ayni dusmanin damgasi tazeleniyor: her dalga yeniden hesapliyor (sunucu da oyle).
-    const event = this.find("brand", input.key) ?? this.push("brand", input.key, bornAt, input.tier, input.own, input.color, "zeynep-6");
-    this.reset(event, "brand", input.key, bornAt, input.tier, input.own, input.color, "zeynep-6");
+    const color = groundHue(input.color);
+    const event = this.find("brand", input.key) ?? this.push("brand", input.key, bornAt, input.tier, input.own, color);
+    this.reset(event, "brand", input.key, bornAt, input.tier, input.own, color);
     event.x = input.x;
     event.y = input.y;
     event.size = input.size ?? 0;
@@ -634,7 +499,7 @@ export class ZeynepSignatureVfx {
   }
 
   private noteCrossing(input: Extract<CourtEventInput, { kind: "crossing" }>, bornAt: number) {
-    const event = this.push("crossing", input.projectileId ?? "", bornAt, input.tier, input.own, input.color ?? 0x7c3aed, "zeynep-8");
+    const event = this.push("crossing", input.projectileId ?? "", bornAt, input.tier, input.own, input.color !== undefined ? groundHue(input.color) : ABARTI_COLOR);
     event.x = input.x;
     event.y = input.y;
     event.vertical = input.vertical;
@@ -643,7 +508,7 @@ export class ZeynepSignatureVfx {
   }
 
   private noteFormation(input: Extract<CourtEventInput, { kind: "formation" }>, bornAt: number) {
-    const event = this.push("formation", input.key, bornAt, input.tier, input.own, ZEYNEP_MEMBER_COLORS.taht, "zeynep-3");
+    const event = this.push("formation", input.key, bornAt, input.tier, input.own, ZEYNEP_MEMBER_COLORS.taht);
     event.x = input.x;
     event.y = input.y;
     event.durationMs = FORMATION_MS;
@@ -664,7 +529,7 @@ export class ZeynepSignatureVfx {
     return undefined;
   }
 
-  private push(kind: CourtKind, key: string, bornAt: number, tier: number | undefined, own: boolean | undefined, color: number, profileId: string) {
+  private push(kind: CourtKind, key: string, bornAt: number, tier: number | undefined, own: boolean | undefined, color: number) {
     let event: CourtEvent | undefined;
     for (const candidate of this.events) {
       if (!candidate.live) {
@@ -676,7 +541,7 @@ export class ZeynepSignatureVfx {
       if (this.events.length < MAX_COURT_EVENTS) {
         event = {
           kind, live: true, key, x: 0, y: 0, angle: 0, tier: 1, own: true, bornAt, lastAt: bornAt, durationMs: 0, seed: 0,
-          color, trim: color, court: getCourtTier(getVfxProfile(profileId), 1)!, size: 0, strength: 1, push: false, vertical: false,
+          color, edge: color, heat: TIER_HEAT[0], weight: TIER_WEIGHT[0], size: 0, strength: 1, push: false, vertical: false,
           railHalf: 0, flash: false, xs: new Float32Array(PIERCE_POINTS), ys: new Float32Array(PIERCE_POINTS), colors: new Uint32Array(3), count: 0
         };
         this.events.push(event);
@@ -685,11 +550,11 @@ export class ZeynepSignatureVfx {
         this.cursor += 1;
       }
     }
-    this.reset(event, kind, key, bornAt, tier, own, color, profileId);
+    this.reset(event, kind, key, bornAt, tier, own, color);
     return event;
   }
 
-  private reset(event: CourtEvent, kind: CourtKind, key: string, bornAt: number, tier: number | undefined, own: boolean | undefined, color: number, profileId: string) {
+  private reset(event: CourtEvent, kind: CourtKind, key: string, bornAt: number, tier: number | undefined, own: boolean | undefined, color: number) {
     const level: VfxTier = tier !== undefined && tier >= 3 ? 3 : tier !== undefined && tier >= 2 ? 2 : 1;
     event.kind = kind;
     event.live = true;
@@ -701,8 +566,9 @@ export class ZeynepSignatureVfx {
     event.durationMs = PIERCE_LINE_MS;
     event.seed = fnvHash(key || `${kind}:${Math.round(bornAt)}`) % 100003;
     event.color = color;
-    event.trim = getZeynepTrim(level, color);
-    event.court = getCourtTier(getVfxProfile(profileId), level)!;
+    event.edge = getTierEdge(level, color);
+    event.heat = TIER_HEAT[level - 1];
+    event.weight = TIER_WEIGHT[level - 1];
     event.flash = false;
     event.push = false;
   }
@@ -728,37 +594,35 @@ export class ZeynepSignatureVfx {
       const start = event.kind === "pierce" ? event.lastAt : event.bornAt;
       const elapsed = frame.now - start;
       if (frame.now < event.bornAt) continue;
-      const total = event.kind === "pierce" ? event.durationMs + (event.court.snap && !still ? 120 : 0) : event.durationMs;
-      if (elapsed >= total) {
+      if (elapsed >= event.durationMs) {
         event.live = false;
         continue;
       }
-      const age = clamp01(elapsed / total);
-      const extra = event.own ? 1 : TEAMMATE_EXTRA_ALPHA;
+      const age = clamp01(elapsed / event.durationMs);
+      // Takim arkadasinin kademe 3 agirligi %70 (kendi kulen tam).
+      const extra = event.own || event.tier < 3 ? 1 : TEAMMATE_EXTRA_ALPHA;
       switch (event.kind) {
-        case "pierce": this.drawPierceLine(event, age, elapsed, frame.scale, still, extra); break;
+        case "pierce": this.drawPierceLine(event, age, frame.scale, extra); break;
         case "spotlight": this.drawSpotlight(event, frame, age, elapsed, still, extra); break;
-        case "brand": this.drawBrand(event, frame, age, elapsed, still, extra); break;
-        case "crossing": this.drawCrossing(event, age, elapsed, frame.scale, still, extra); break;
+        case "brand": this.drawBrand(event, frame, age, extra); break;
+        case "crossing": this.drawCrossing(event, age, frame.scale, still, extra); break;
         case "formation": this.drawFormation(event, age, elapsed, frame.scale, still, extra); break;
-        case "bounce": this.drawBounce(event, age, elapsed, frame.scale, still, extra); break;
+        case "bounce": this.drawBounce(event, age, frame.scale, still, extra); break;
         default:
       }
     }
   }
 
   /**
-   * Ferman cizgisi: delinen dusmanlar arasinda, delen merminin yolu.
+   * Delme cizgisi: delinen dusmanlar arasinda, delen merminin yolu.
    *
    * Hiza'nin kimligi delmek ama hic gosterilmiyordu. Iki temastan sonra
-   * temaslari birlestiren cizgi (uclari biraz tasarak); her temasin kertigi
-   * attack-vfx'te. Nisan: altin ikinci perde (genis, soluk; ADD). Regalya:
-   * cizgi uclarindan son temasa kapanir ve orada tac belirir; yol boyunca
-   * yaldiz zerreler.
+   * temaslari birlestiren ince cizgi (uclari biraz tasarak): ton kenarda,
+   * cekirdek beyaz-sicak. Kademe cizgiyi kalinlastiriyor ve isitiyor; her
+   * temasin kertigi attack-vfx'te. Kapanip tac basan son perde yok.
    */
-  private drawPierceLine(event: CourtEvent, age: number, elapsed: number, scale: number, still: boolean, extra: number) {
+  private drawPierceLine(event: CourtEvent, age: number, scale: number, extra: number) {
     if (event.count < 2) return;
-    const lod = this.options.lod;
     const last = event.count - 1;
     const x0 = event.xs[0];
     const y0 = event.ys[0];
@@ -770,47 +634,26 @@ export class ZeynepSignatureVfx {
     const ux = dx / length;
     const uy = dy / length;
     const overhang = 5 * scale;
-    let sx = x0 - ux * overhang;
-    let sy = y0 - uy * overhang;
+    const sx = x0 - ux * overhang;
+    const sy = y0 - uy * overhang;
     const ex = x1 + ux * overhang;
     const ey = y1 + uy * overhang;
-    const court = event.court;
-    // Regalya: son %40'ta cizgi son temasa kapaniyor.
-    const snap = court.snap && !still ? clamp01((age - 0.6) / 0.4) : 0;
-    if (snap > 0) {
-      const eased = snap * snap;
-      sx += (ex - sx) * eased;
-      sy += (ey - sy) * eased;
-    }
-    const fade = court.snap && !still ? 1 - Math.max(0, age - 0.85) / 0.15 : 1 - age;
+    const fade = 1 - age;
     const g = this.links;
-    g.lineStyle(Math.max(1, 1.5 * scale), event.color, clamp01(0.85 * fade));
+    g.lineStyle(Math.max(1, 1.2 * scale * event.weight), event.color, clamp01(0.8 * fade));
     g.lineBetween(sx, sy, ex, ey);
-    g.lineStyle(Math.max(0.6, 0.6 * scale), liftToWhite(event.color, 0.75), clamp01(0.85 * fade));
+    g.lineStyle(Math.max(0.6, 0.5 * scale * event.weight), whiteHot(event.color, event.heat), clamp01(0.9 * fade * extra));
     g.lineBetween(sx, sy, ex, ey);
-    if (court.encore && lod.secondBeatRing && elapsed >= COURT_ENCORE_MS) {
-      const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, event.durationMs - COURT_ENCORE_MS));
-      this.glow.lineStyle(Math.max(1, 3.6 * scale), event.trim, clamp01(0.3 * (1 - beat)));
-      this.glow.lineBetween(sx, sy, ex, ey);
-    }
-    if (!court.crown) return;
-    // Tac: cizgi kapandigi yerde (son temas); hareket azaltmada sonuna kadar yerinde.
-    const crownAlpha = still ? 1 - age : snap > 0.6 ? 1 - Math.max(0, age - 0.9) / 0.1 : 0;
-    if (crownAlpha > 0) drawCrownSigil(this.marks, x1, y1 - 2 * scale, 6 * scale, event.trim, crownAlpha * extra, Math.max(0.8, 1 * scale));
-    if (court.giltMotes && lod.sparks && !still) {
-      drawGiltMotes(this.glow, (x0 + x1) / 2, (y0 + y1) / 2, length * 0.45, 9 * scale, 4, age, event.seed, event.trim, Math.max(0.7, 0.9 * scale), 0.9 * extra);
-    }
   }
 
   /**
-   * Spot isigi: Gosteri hattindaki (ve Taht'in yanik ve Kin gosterisinin)
-   * her dusmana. Hattaki dusmanlar hic geri bildirim almiyordu.
+   * Gosteri isareti: hattaki (ve Taht'in yanik ve Kin gosterisinin) her
+   * dusmana. Hattaki dusmanlar hic geri bildirim almiyordu.
    *
-   * Ferman: dusmanin ayaginda isinin renginde bir isik havuzu ve govdeyi
-   * saran, daralan halka. Nisan: iki yanda iceri bakan altin serit ve
-   * gecikmeli altin ikinci halka. Regalya: havuzun onunde mum muhur,
-   * havuzdan yukselen yaldiz zerreler. Dusmani kimlikle izliyor (oynatma
-   * konumunda); dusman oldu ya da gittiyse son konumda soner.
+   * Dusmanin ayaginda kisa bir yer golgesi (tonun koyusu) ve govdeyi saran,
+   * daralan ince bir halka; ilk anda (saniyede en fazla 3 kez) kisa bir
+   * beyaz-sicak isi. Kademe halkayi kalinlastirip isitiyor. Dusmani kimlikle
+   * izliyor (oynatma konumunda); dusman oldu ya da gittiyse son konumda soner.
    */
   private drawSpotlight(event: CourtEvent, frame: CourtFrame, age: number, elapsed: number, still: boolean, extra: number) {
     const lod = this.options.lod;
@@ -825,57 +668,33 @@ export class ZeynepSignatureVfx {
     const x = event.x;
     const y = event.y;
     const fade = 1 - age;
-    const court = event.court;
-    if (lod.level < 3) {
-      this.ground.fillStyle(event.color, clamp01(0.26 * fade));
-      fillEllipseFan(this.ground, x, y + size * 0.3, size * 0.52, size * 0.17);
+    if (lod.decals) {
+      this.ground.fillStyle(darken(event.color, 0.35), clamp01(0.24 * fade));
+      fillEllipseFan(this.ground, x, y + size * 0.3, size * 0.5, size * 0.16);
     }
     const ring = size * (still ? 0.46 : 0.48 - 0.06 * (1 - (1 - age) * (1 - age)));
-    this.marks.lineStyle(Math.max(1, 1.3 * scale), liftToWhite(event.color, 0.35), clamp01(0.95 * fade));
+    this.marks.lineStyle(Math.max(0.9, (0.6 + event.tier * 0.25) * scale), event.edge, clamp01(0.85 * fade * extra));
     strokeOctagon(this.marks, x, y, ring);
-    if (event.flash && elapsed < 70 && !still) {
-      this.glow.fillStyle(liftToWhite(event.color, 0.7), clamp01(0.4 * (1 - elapsed / 70)));
-      fillDisc(this.glow, x, y, size * 0.3);
-    }
-    if (court.chevrons) {
-      // Iki yanda iceri bakan serit: spotun kenarlari.
-      const reach = ring + 3.5 * scale;
-      const chevron = Math.max(3, 3.6 * scale);
-      const width = Math.max(1, 1.1 * scale);
-      drawChevron(this.marks, x - reach, y, 0, chevron, width, event.trim, 0.95 * fade);
-      drawChevron(this.marks, x + reach, y, Math.PI, chevron, width, event.trim, 0.95 * fade);
-    }
-    if (court.encore && lod.secondBeatRing && elapsed >= COURT_ENCORE_MS) {
-      const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, event.durationMs - COURT_ENCORE_MS));
-      const grow = still ? 0.6 : 0.5 + 0.18 * (1 - (1 - beat) * (1 - beat));
-      this.glow.lineStyle(Math.max(0.8, 1.2 * scale), event.trim, clamp01(0.75 * (1 - beat)));
-      strokeOctagon(this.glow, x, y, size * grow);
-    }
-    if (court.seal) {
-      // Regalya: havuzun onunde (govdenin altinda, can cubugunun ustunde) muhur.
-      const press = still ? 1 : 1 + 0.5 * (1 - clamp01(age / 0.2));
-      drawWaxSeal(this.marks, x, y + size * 0.36, 2.4 * scale * press, mixTowardDark(event.color), event.trim, fade * extra);
-      if (court.giltMotes && lod.sparks && !still) {
-        drawGiltMotes(this.glow, x, y + size * 0.25, size * 0.4, size * 0.7, 3, age, event.seed, event.trim, Math.max(0.7, 0.9 * scale), 0.9 * extra);
-      }
+    if (event.flash && elapsed < 70 && !still && lod.smoke) {
+      this.glow.fillStyle(whiteHot(event.color, 0.3), clamp01(0.4 * (1 - elapsed / 70)));
+      fillDisc(this.glow, x, y, size * 0.28);
     }
   }
 
   /**
    * Kin damgasi: vurulan dusmanin govdesini alttan saran yay ve sagda
-   * yavaslatmanin gucu kadar serit (1-3; uzakta yakalanan 3 kat yavaslar).
+   * yavaslatmanin gucu kadar kertik (1-3; uzakta yakalanan 3 kat yavaslar).
    * Kin hic geri bildirim vermiyordu; dalga da hasar vermiyor, damga onun
-   * yaptigi isi soyluyor.
+   * yaptigi isi soyluyor. Kizil kenar, kertikler kademenin sicak kenarinda;
+   * kademe yayi kalinlastiriyor. Damga yavaslatma bitene kadar; son %30'da
+   * soner. Taht'in itme dalgasinda kertik yerine dalga yonunde iki kisa iz
+   * cizgisi (itme).
    *
-   * Ferman: kizil yay, serit kombonun acik tonunda. Nisan: altin serit ve
-   * gecikmeli altin kenar yayi. Regalya: yayin dibinde mum muhur, yaldiz
-   * zerreler. Damga yavaslatma bitene kadar; son %30'da soner. Taht'in itme
-   * dalgasinda serit yerine dalga yonunde cift serit (itme).
-   *
-   * LOD: 1'de zerre; 2'de kenar yayi, muhur ve serit ucgenleri (tek dikdortgenlik
-   * sayi seridi kaliyor), Takipci isaretli dusmanda besik; renk ve sayi hic dusmuyor.
+   * LOD: en son basamakta (VFX_LOD_MAX, iz kisalmasiyla) yay iki parcaya ve
+   * kertikler tek dikdortgenlik sayi seridine iniyor, Takipci isaretli dusmanda
+   * besik dusuyor; renk ve sayi hic dusmuyor.
    */
-  private drawBrand(event: CourtEvent, frame: CourtFrame, age: number, elapsed: number, still: boolean, extra: number) {
+  private drawBrand(event: CourtEvent, frame: CourtFrame, age: number, extra: number) {
     const lod = this.options.lod;
     const scale = frame.scale;
     const enemy = this.enemy(frame, event.key);
@@ -888,7 +707,6 @@ export class ZeynepSignatureVfx {
     const x = event.x;
     const y = event.y;
     const fade = age < 0.7 ? 1 : 1 - (age - 0.7) / 0.3;
-    const court = event.court;
     const g = this.marks;
     const radius = size * 0.44;
     // Takipci nisangahi da varsa yay onun alt koselerine degiyordu (0.02-0.08 birim):
@@ -898,66 +716,54 @@ export class ZeynepSignatureVfx {
     const reticle = stacks > 0 ? getMarkReticleHalf(size, stacks) : 0;
     const cradleY = y + reticle + 2.5 * scale;
     const cradleHalf = reticle * 0.5;
-    // Isaretli dusmanda nisangah zaten kalabalik ve pahali: ikinci perde ve zerreler
-    // yalnizca isaretsiz dusmanda (kademeyi serit rengi ve muhur tasiyor).
-    const encore = reticle <= 0 && court.encore && lod.secondBeatRing && elapsed >= COURT_ENCORE_MS;
-    g.lineStyle(Math.max(1.2, 1.6 * scale), liftToWhite(event.color, 0.15), clamp01(0.95 * fade));
+    g.lineStyle(Math.max(1.1, (1 + event.tier * 0.25) * scale), event.color, clamp01(0.95 * fade));
     if (reticle <= 0) {
-      strokeArc(g, x, y, radius, Math.PI * 0.12, Math.PI * 0.88, lod.level >= 2 ? 2 : 3);
-    } else if (lod.level < 2) {
+      strokeArc(g, x, y, radius, Math.PI * 0.12, Math.PI * 0.88, lod.compactMarks ? 2 : 3);
+    } else if (!lod.compactMarks) {
       g.lineBetween(x - cradleHalf, cradleY, x + cradleHalf, cradleY);
-    }
-    if (encore) {
-      // Ikinci perde: yayin (besigin) altinda gecikmeli altin kenar.
-      g.lineStyle(Math.max(0.6, 0.8 * scale), event.trim, clamp01(0.85 * fade));
-      strokeArc(g, x, y, radius + 1.8 * scale, Math.PI * 0.25, Math.PI * 0.75, 2);
     }
 
     if (event.push) {
-      // Itme: dusmanin arkasinda dalga yonunde cift serit.
+      // Itme: dusmanin arkasinda dalga yonunde iki kisa iz cizgisi.
       const ux = Math.cos(event.angle);
       const uy = Math.sin(event.angle);
-      const bx = x - ux * (size * 0.5 + 3 * scale);
-      const by = y - uy * (size * 0.5 + 3 * scale);
-      const chevron = Math.max(3, 3.4 * scale);
-      drawChevron(g, bx, by, event.angle, chevron, Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-      drawChevron(g, bx - ux * chevron * 0.9, by - uy * chevron * 0.9, event.angle, chevron, Math.max(1, 1.1 * scale), event.trim, 0.7 * fade);
-    } else {
-      // Gucu soyleyen serit sutunu: sagda, govdenin dikey araliginda.
-      const count = event.strength;
-      const pip = Math.max(BRAND_PIP_SIZE, BRAND_PIP_SIZE * scale);
-      const gap = Math.max(BRAND_PIP_GAP, BRAND_PIP_GAP * scale);
-      const column = count * pip + (count - 1) * gap;
-      const left = x + radius + gap;
-      const top = y - column / 2;
-      g.fillStyle(event.trim, clamp01(0.95 * fade));
-      if (lod.level >= 2) {
-        // Sayi seridi: tek dikdortgen, boyu gucu soyluyor.
-        g.fillRect(left, top, pip, column);
-      } else {
-        // Dolu serit: govdeye bakan ucgen (uc kose; altmis damgada da ucuz).
-        for (let index = 0; index < count; index += 1) {
-          const cy = top + index * (pip + gap) + pip / 2;
-          g.fillTriangle(left, cy, left + pip, cy - pip / 2, left + pip, cy + pip / 2);
-        }
-      }
+      const nx = -uy;
+      const ny = ux;
+      const bx = x - ux * (size * 0.5 + 2 * scale);
+      const by = y - uy * (size * 0.5 + 2 * scale);
+      const length = Math.max(3, 4 * scale);
+      const gap = Math.max(1.5, 1.6 * scale);
+      g.lineStyle(Math.max(1, 1.1 * scale), event.edge, clamp01(0.95 * fade * extra));
+      g.lineBetween(bx + nx * gap, by + ny * gap, bx + nx * gap - ux * length, by + ny * gap - uy * length);
+      g.lineBetween(bx - nx * gap, by - ny * gap, bx - nx * gap - ux * length, by - ny * gap - uy * length);
+      return;
     }
-
-    // Regalya muhru LOD 2'de dusuyor: kademeyi beyaz altin serit tasimaya devam ediyor.
-    if (!court.seal || lod.level >= 2) return;
-    drawWaxSeal(g, x, reticle > 0 ? cradleY : y + radius + 0.5 * scale, 2.3 * scale, mixTowardDark(event.color), event.trim, fade * extra, false);
-    if (court.giltMotes && lod.sparks && !still && reticle <= 0) {
-      drawGiltMotes(this.glow, x, y + radius * 0.6, size * 0.3, size * 0.5, 2, (elapsed % 900) / 900, event.seed, event.trim, Math.max(0.7, 0.8 * scale), 0.85 * extra * fade);
+    // Gucu soyleyen kertik sutunu: sagda, govdenin dikey araliginda.
+    const count = event.strength;
+    const pip = Math.max(BRAND_PIP_SIZE, BRAND_PIP_SIZE * scale);
+    const gap = Math.max(BRAND_PIP_GAP, BRAND_PIP_GAP * scale);
+    const column = count * pip + (count - 1) * gap;
+    const left = x + radius + gap;
+    const top = y - column / 2;
+    g.fillStyle(event.edge, clamp01(0.95 * fade * extra));
+    if (lod.compactMarks) {
+      // Sayi seridi: tek dikdortgen, boyu gucu soyluyor.
+      g.fillRect(left, top, pip, column);
+      return;
+    }
+    // Kertik: govdeye bakan ucgen (uc kose; altmis damgada da ucuz).
+    for (let index = 0; index < count; index += 1) {
+      const cy = top + index * (pip + gap) + pip / 2;
+      g.fillTriangle(left, cy, left + pip, cy - pip / 2, left + pip, cy + pip / 2);
     }
   }
 
   /**
    * Abarti gecis nabzi: atis rayi gectigi noktada. Ray boyunca iki yana
-   * sonen bir parlama ve gecis noktasinda daralan halka. Nisan: rayda iki
-   * yana kayan altin serit ve gecikmeli altin halka. Regalya: gecis
-   * noktasinda mum muhur ve yaldiz zerreler.
+   * sonen sert bir cizgi (ton kenari, beyaz-sicak cekirdek) ve gecis
+   * noktasinda daralan ince bir halka. Kademe cizgiyi kalinlastiriyor.
    */
-  private drawCrossing(event: CourtEvent, age: number, elapsed: number, scale: number, still: boolean, extra: number) {
+  private drawCrossing(event: CourtEvent, age: number, scale: number, still: boolean, extra: number) {
     const lod = this.options.lod;
     const ax = event.vertical ? 0 : 1;
     const ay = event.vertical ? 1 : 0;
@@ -965,124 +771,59 @@ export class ZeynepSignatureVfx {
     const reach = event.railHalf * 0.92;
     const x = event.x;
     const y = event.y;
-    const court = event.court;
-    const rail = liftToWhite(event.color, 0.35);
-    this.links.lineStyle(Math.max(1.2, 2.4 * scale), rail, clamp01(0.85 * fade));
+    this.links.lineStyle(Math.max(1.2, (1.4 + event.tier * 0.4) * scale), event.color, clamp01(0.8 * fade));
     this.links.lineBetween(x - ax * reach, y - ay * reach, x + ax * reach, y + ay * reach);
-    if (lod.corona) {
-      this.glow.lineStyle(Math.max(2, 6 * scale), event.color, clamp01(0.32 * fade));
-      this.glow.lineBetween(x - ax * reach * 0.6, y - ay * reach * 0.6, x + ax * reach * 0.6, y + ay * reach * 0.6);
+    this.links.lineStyle(Math.max(0.6, 0.7 * scale * event.weight), whiteHot(event.color, event.heat), clamp01(0.9 * fade * extra));
+    this.links.lineBetween(x - ax * reach * 0.7, y - ay * reach * 0.7, x + ax * reach * 0.7, y + ay * reach * 0.7);
+    if (lod.smoke) {
+      this.glow.lineStyle(Math.max(2, 5 * scale), event.color, clamp01(0.28 * fade));
+      this.glow.lineBetween(x - ax * reach * 0.5, y - ay * reach * 0.5, x + ax * reach * 0.5, y + ay * reach * 0.5);
     }
     const ring = (still ? 5 : 8 - 4 * (1 - fade * fade)) * scale;
-    this.marks.lineStyle(Math.max(1, 1.3 * scale), liftToWhite(event.color, 0.55), clamp01(0.95 * fade));
+    this.marks.lineStyle(Math.max(1, (0.8 + event.tier * 0.3) * scale), event.edge, clamp01(0.95 * fade));
     strokeOctagon(this.marks, x, y, ring);
-    if (court.chevrons) {
-      const travel = still ? 0.5 : 1 - (1 - age) * (1 - age);
-      const along = 3 * scale + travel * reach * 0.75;
-      const chevron = Math.max(3, 3.6 * scale);
-      const angle = Math.atan2(ay, ax);
-      drawChevron(this.marks, x + ax * along, y + ay * along, angle, chevron, Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-      drawChevron(this.marks, x - ax * along, y - ay * along, angle + Math.PI, chevron, Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-    }
-    if (court.encore && lod.secondBeatRing && elapsed >= COURT_ENCORE_MS) {
-      const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, event.durationMs - COURT_ENCORE_MS));
-      this.glow.lineStyle(Math.max(0.8, 1.2 * scale), event.trim, clamp01(0.75 * (1 - beat)));
-      strokeOctagon(this.glow, x, y, (still ? 9 : 6 + beat * 7) * scale);
-    }
-    if (!court.seal) return;
-    drawWaxSeal(this.marks, x, y, 2.8 * scale, mixTowardDark(event.color), event.trim, fade * extra);
-    if (court.giltMotes && lod.sparks && !still) {
-      drawGiltMotes(this.glow, x, y, 6 * scale, 12 * scale, 3, age, event.seed, event.trim, Math.max(0.7, 0.9 * scale), 0.9 * extra);
-    }
   }
 
   /**
-   * Ayna isininin sekmesi: duvarda bir parlama (duvar boyunca kisa cizgi ve
-   * sonen bir nokta). Isin koseyi gectikten sonra da yarim saniye kaliyor:
-   * oyuncu sekmeyi isinin kendisi kadar kisa bir anda yakalamak zorunda degil.
-   * Nisan: duvar boyunca iki yana kayan altin serit ve gecikmeli halka.
-   * Regalya: duvara basilan mum muhur, yaldiz zerreler.
+   * Ayna isininin sekmesi: duvarda sert bir isaret (duvar boyunca kisa cizgi
+   * ve sonen beyaz-sicak nokta). Isin koseyi gectikten sonra da yarim saniye
+   * kaliyor: oyuncu sekmeyi isinin kendisi kadar kisa bir anda yakalamak
+   * zorunda degil. Kademe cizgiyi kalinlastiriyor.
    */
-  private drawBounce(event: CourtEvent, age: number, elapsed: number, scale: number, still: boolean, extra: number) {
-    const lod = this.options.lod;
-    const court = event.court;
+  private drawBounce(event: CourtEvent, age: number, scale: number, still: boolean, extra: number) {
     const fade = 1 - age;
     // Duvar normale dik.
     const wx = -Math.sin(event.angle);
     const wy = Math.cos(event.angle);
     const x = event.x;
     const y = event.y;
-    const reach = 7 * scale;
-    this.links.lineStyle(Math.max(1.2, 1.8 * scale), liftToWhite(event.color, 0.45), clamp01(0.95 * fade));
+    const reach = (6 + event.tier) * scale;
+    this.links.lineStyle(Math.max(1.2, (1.2 + event.tier * 0.35) * scale), event.edge, clamp01(0.95 * fade));
     this.links.lineBetween(x - wx * reach, y - wy * reach, x + wx * reach, y + wy * reach);
-    this.marks.fillStyle(liftToWhite(event.color, 0.7), clamp01(0.9 * Math.pow(fade, 2)));
-    fillDisc(this.marks, x, y, (still ? 2.6 : 2 + 1.4 * fade) * scale);
-    if (court.chevrons) {
-      const travel = still ? 0.5 : 1 - fade * fade;
-      const along = (4 + travel * 7) * scale;
-      const angle = Math.atan2(wy, wx);
-      drawChevron(this.marks, x + wx * along, y + wy * along, angle, Math.max(3, 3.4 * scale), Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-      drawChevron(this.marks, x - wx * along, y - wy * along, angle + Math.PI, Math.max(3, 3.4 * scale), Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-    }
-    if (court.encore && lod.secondBeatRing && elapsed >= COURT_ENCORE_MS) {
-      const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, event.durationMs - COURT_ENCORE_MS));
-      this.glow.lineStyle(Math.max(0.8, 1.2 * scale), event.trim, clamp01(0.7 * (1 - beat)));
-      strokeOctagon(this.glow, x, y, (still ? 8 : 4 + beat * 7) * scale);
-    }
-    if (!court.seal) return;
-    drawWaxSeal(this.marks, x, y, 2.8 * scale, mixTowardDark(event.color), event.trim, fade * extra);
-    if (court.giltMotes && lod.sparks && !still) {
-      drawGiltMotes(this.glow, x, y, 5 * scale, 10 * scale, 3, age, event.seed, event.trim, Math.max(0.7, 0.9 * scale), 0.9 * extra);
-    }
+    this.marks.fillStyle(whiteHot(event.color, event.heat), clamp01(0.9 * Math.pow(fade, 2) * extra));
+    fillDisc(this.marks, x, y, (still ? 2.4 : 1.8 + 1.2 * fade) * scale);
   }
 
   /**
-   * Taht atisinda dizilimin kendisi: uyelerden Taht'a toplanan ferman
-   * cizgileri, uyelerin renginde. Odul dizilimin, ama ekranda yalnizca
-   * pembe bir Hiza atisi gibi gorunuyordu. Nisan: cizgilerde Taht'a bakan
-   * altin serit ve uyeleri birlestiren altin kenar (ucgen kapaniyor).
-   * Regalya: ucgenin ortasinda tac, cizgilerde yaldiz zerreler.
+   * Taht atisinda dizilimin kendisi: uyelerden Taht'a toplanan ince cizgiler,
+   * uyelerin tonunda, ve Taht'in uzerinde ince bir halka. Odul dizilimin,
+   * ama ekranda yalnizca bir Hiza atisi gibi gorunuyordu. Kademe cizgileri
+   * kalinlastiriyor; tac, serit ve yaldiz yok.
    */
   private drawFormation(event: CourtEvent, age: number, elapsed: number, scale: number, still: boolean, extra: number) {
-    const lod = this.options.lod;
-    const court = event.court;
     const fade = 1 - age;
     const grow = still ? 1 : 1 - Math.pow(1 - clamp01(elapsed / 120), 2);
     const g = this.links;
     const x = event.x;
     const y = event.y;
-    let cx = x;
-    let cy = y;
     for (let index = 0; index < event.count; index += 1) {
       const mx = event.xs[index];
       const my = event.ys[index];
-      cx += mx;
-      cy += my;
-      g.lineStyle(Math.max(1, 1.3 * scale), event.colors[index], clamp01(0.85 * fade));
+      g.lineStyle(Math.max(1, (0.9 + event.tier * 0.3) * scale), event.colors[index], clamp01(0.85 * fade));
       g.lineBetween(mx, my, mx + (x - mx) * grow, my + (y - my) * grow);
-      if (court.chevrons) {
-        const angle = Math.atan2(y - my, x - mx);
-        // %30'da: %50'de dizilimin kalici elmasi (synergy-marks) duruyor.
-        drawChevron(this.marks, mx + (x - mx) * 0.3, my + (y - my) * 0.3, angle, Math.max(3, 3.4 * scale), Math.max(1, 1.1 * scale), event.trim, 0.95 * fade);
-      }
     }
-    this.marks.lineStyle(Math.max(1, 1.2 * scale), liftToWhite(event.color, 0.3), clamp01(0.9 * fade));
+    this.marks.lineStyle(Math.max(1, (0.8 + event.tier * 0.3) * scale), event.edge, clamp01(0.9 * fade * extra));
     strokeOctagon(this.marks, x, y, (still ? 11 : 14 - 3 * grow) * scale);
-    if (court.chevrons && event.count >= 2 && lod.secondBeatRing) {
-      // Ucgen kapaniyor: uyeler arasi altin kenar (ikinci perde).
-      const beat = clamp01((elapsed - COURT_ENCORE_MS) / Math.max(1, event.durationMs - COURT_ENCORE_MS));
-      if (elapsed >= COURT_ENCORE_MS) {
-        this.glow.lineStyle(Math.max(0.8, 1 * scale), event.trim, clamp01(0.7 * (1 - beat)));
-        this.glow.lineBetween(event.xs[0], event.ys[0], event.xs[1], event.ys[1]);
-      }
-    }
-    if (!court.crown || event.count === 0) return;
-    cx /= event.count + 1;
-    cy /= event.count + 1;
-    drawCrownSigil(this.marks, cx, cy + 2 * scale, 7 * scale, event.trim, fade * extra, Math.max(0.8, 1 * scale));
-    if (court.giltMotes && lod.sparks && !still) {
-      drawGiltMotes(this.glow, cx, cy, 10 * scale, 10 * scale, 3, age, event.seed, event.trim, Math.max(0.7, 0.9 * scale), 0.85 * extra);
-    }
   }
 }
 

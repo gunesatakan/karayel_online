@@ -246,78 +246,6 @@ export function strokeProfile(
   cizgi(g, body * PROFILE_FILAMENT.width, liftToWhite(color, PROFILE_FILAMENT.lift), PROFILE_FILAMENT.alpha);
 }
 
-/**
- * Noktanin kesiti: ayni merdiven, ic ice dairelerle.
- *
- * Mermi govdeleri, carpma cekirdekleri ve kule cekirdekleri icin. `radius`
- * govdenin yaricapi; omuzlar `spread` kadar disa tasiyor.
- */
-export function strokePointProfile(
-  g: VfxGraphics,
-  x: number,
-  y: number,
-  color: number,
-  tier: number,
-  options: { radius: number; spread: number },
-  glow?: VfxGraphics,
-  alpha = 1
-) {
-  const { radius } = options;
-  if (tier < 2) {
-    g.fillStyle(color, PROFILE_FLAT_ALPHA * alpha);
-    fillDisc(g, x, y, radius);
-    return;
-  }
-  const spread = tier >= 3 ? options.spread * PROFILE_TIER3_SPREAD : options.spread;
-  const omuzlar = tier >= 3 ? PROFILE_SHOULDERS[3] : PROFILE_SHOULDERS[2];
-  const shoulderTarget = glow ?? g;
-  for (const [olcek, alfa] of omuzlar) {
-    shoulderTarget.fillStyle(color, alfa * alpha);
-    fillDisc(shoulderTarget, x, y, radius + spread * olcek);
-  }
-  g.fillStyle(color, PROFILE_BODY_ALPHA * alpha);
-  fillDisc(g, x, y, radius);
-  g.fillStyle(liftToWhite(color, PROFILE_CORE.lift), PROFILE_CORE.alpha * alpha);
-  fillDisc(g, x, y, radius * PROFILE_CORE.width);
-  g.fillStyle(liftToWhite(color, PROFILE_FILAMENT.lift), PROFILE_FILAMENT.alpha * alpha);
-  fillDisc(g, x, y, Math.max(0.6, radius * PROFILE_FILAMENT.width * 1.6));
-}
-
-/**
- * Halkanin kesiti: genisleyen carpma halkalari ve kule halkalari icin.
- * Kademe 1 tek cizgi; 2 ve 3'te omuzlar halkanin iki yanina tasiyor.
- */
-export function strokeRingProfile(
-  g: VfxGraphics,
-  x: number,
-  y: number,
-  radius: number,
-  color: number,
-  tier: number,
-  options: { width: number; spread: number },
-  glow?: VfxGraphics,
-  alpha = 1
-) {
-  if (radius <= 0.5) return;
-  const { width } = options;
-  if (tier < 2) {
-    g.lineStyle(Math.max(0.6, width), color, PROFILE_FLAT_ALPHA * alpha);
-    strokeRing(g, x, y, radius);
-    return;
-  }
-  const spread = tier >= 3 ? options.spread * PROFILE_TIER3_SPREAD : options.spread;
-  const omuzlar = tier >= 3 ? PROFILE_SHOULDERS[3] : PROFILE_SHOULDERS[2];
-  const shoulderTarget = glow ?? g;
-  for (const [olcek, alfa] of omuzlar) {
-    shoulderTarget.lineStyle(width + spread * olcek, color, alfa * alpha);
-    strokeRing(shoulderTarget, x, y, radius);
-  }
-  g.lineStyle(Math.max(0.6, width), color, PROFILE_BODY_ALPHA * alpha);
-  strokeRing(g, x, y, radius);
-  g.lineStyle(Math.max(0.6, width * PROFILE_FILAMENT.width * 2), liftToWhite(color, PROFILE_FILAMENT.lift), PROFILE_FILAMENT.alpha * alpha);
-  strokeRing(g, x, y, radius);
-}
-
 export type CoronaOptions = {
   /** En icteki katmanin kalinligi (lazerde isin + 6). */
   base: number;
@@ -364,21 +292,6 @@ export function drawCorona(
     const layerAlpha = options.alpha + breath * options.breathAlpha;
     g.lineStyle(spread, options.color, alpha === 1 ? layerAlpha : layerAlpha * alpha);
     g.lineBetween(x1, y1, x2, y2);
-  }
-}
-
-/** Noktasal hale: ic ice dairelerle ayni nefes (mermi ve carpma icin). */
-export function drawPointCorona(
-  g: VfxGraphics,
-  x: number,
-  y: number,
-  now: number,
-  options: { radius: number; layers: number; step: number; color: number; alpha: number; period: number; phase?: number }
-) {
-  const breath = 0.5 + Math.sin(now / options.period + (options.phase ?? 0)) * 0.5;
-  for (let layer = options.layers; layer >= 1; layer -= 1) {
-    g.fillStyle(options.color, options.alpha * (0.75 + breath * 0.5));
-    fillDisc(g, x, y, options.radius + layer * options.step * (0.85 + breath * 0.3));
   }
 }
 
@@ -549,79 +462,6 @@ export function drawLineSparks(
   }
 }
 
-/**
- * Noktadan sacilan kivilcimlar (carpma korleri); durumsuz ve tohumlu.
- *
- * `age` 0..1 olayin yasi; kivilcimlar disa kosuyor, hafifce dusuyor ve
- * sonuyor. Yon ve hiz yalnizca `seed`den: olay kimligi ayni oldukca her
- * istemcide ayni yere.
- */
-export function drawPointSparks(
-  g: VfxGraphics,
-  x: number,
-  y: number,
-  age: number,
-  options: {
-    seed: number;
-    count: number;
-    reach: number;
-    color: number;
-    width: number;
-    alpha: number;
-    /** Merkez yon (radyan) ve yelpaze; yoksa butun cevre. */
-    heading?: number;
-    fan?: number;
-    gravity?: number;
-    tail?: number;
-  }
-) {
-  if (age >= 1 || options.count <= 0) return;
-  const fade = Math.pow(1 - age, 1.5);
-  const travel = Math.pow(age, 0.55);
-  const gravity = options.gravity ?? 0;
-  for (let index = 0; index < options.count; index += 1) {
-    const roll = hashNoise(options.seed + index * 13 + 1);
-    const angle = options.heading === undefined
-      ? (index / options.count) * Math.PI * 2 + (roll - 0.5) * 0.9
-      : options.heading + (roll - 0.5) * (options.fan ?? Math.PI);
-    const speed = 0.55 + hashNoise(options.seed + index * 13 + 2) * 0.45;
-    const reach = options.reach * speed * travel;
-    const ux = Math.cos(angle);
-    const uy = Math.sin(angle);
-    const px = x + ux * reach;
-    const py = y + uy * reach + age * age * gravity;
-    const tail = (options.tail ?? 3) * (1 - age * 0.5);
-    g.lineStyle(options.width, index % 3 === 0 ? liftToWhite(options.color, 0.7) : options.color, options.alpha * fade);
-    g.lineBetween(px, py, px - ux * tail, py - uy * tail);
-  }
-}
-
-/**
- * Noktasal zerreler: ust kademede merminin ya da isinin cevresine dokulen.
- *
- * Konum yalnizca tohumdan ve kusaktan; mermi uctukca geride kalanlar o
- * anki konuma gore cizildigi icin iz gibi okunuyor.
- */
-export function drawMotes(
-  g: VfxGraphics,
-  x: number,
-  y: number,
-  now: number,
-  options: { seed: number; count: number; radius: number; color: number; size: number; alpha: number; lifeMs: number }
-) {
-  for (let index = 0; index < options.count; index += 1) {
-    const durationMs = options.lifeMs * (0.7 + hashNoise(options.seed + index * 5 + 1) * 0.6);
-    const phase = now / durationMs + hashNoise(options.seed + index * 5 + 2) * 10;
-    const generation = Math.floor(phase);
-    const life = phase - generation;
-    const seed = options.seed + index * 5 + generation * 97;
-    const angle = hashNoise(seed) * Math.PI * 2;
-    const reach = options.radius * (0.4 + hashNoise(seed + 1) * 0.6) * (0.6 + life * 0.6);
-    g.fillStyle(index % 3 === 0 ? liftToWhite(options.color, 0.8) : options.color, options.alpha * sparkGlow(life));
-    fillDisc(g, x + Math.cos(angle) * reach, y + Math.sin(angle) * reach - life * options.radius * 0.35, options.size * (1 - life * 0.4));
-  }
-}
-
 export type MuzzleBurstOptions = {
   spikes: number;
   reachBase: number;
@@ -675,12 +515,6 @@ export function drawMuzzleBurst(g: VfxGraphics, x: number, y: number, now: numbe
   g.fillStyle(options.coreColor, alpha === 1 ? 0.9 : 0.9 * alpha);
   if (options.cheapDiscs) fillDisc(g, x, y, options.coreBase + muzzlePulse * options.corePulse);
   else g.fillCircle(x, y, options.coreBase + muzzlePulse * options.corePulse);
-}
-
-/** Sicak nokta: vurusun dustugu yer, beyaza cekilmis cekirdek renginde. */
-export function drawHotDot(g: VfxGraphics, x: number, y: number, color: number, radius: number, alpha: number) {
-  g.fillStyle(color, alpha);
-  fillDisc(g, x, y, radius);
 }
 
 /**
@@ -786,23 +620,409 @@ export function drawTaperedRibbon(
 }
 
 /* ------------------------------------------------------------------ */
-/* Atakan'in dili: sinyal -> derlenmis -> asiri yukleme.                 */
-/* Lazer bunlarin hicbirini kullanmiyor; lazerin sayilari degismedi.     */
+/* Agir, sert dil: beyaz-sicak cekirdek, balistik kivilcim, metal, duman. */
+/*                                                                      */
+/* Sahibin begendigi Debug Lazer'in disindaki her vurus bu dilde: az     */
+/* renk, beyaz-sicak bir cekirdek, kisa ve sert bir parlama, yercekimiyle */
+/* dusen kivilcimlar, kinetik vuruslarda metal kirintisi, kisa bir duman  */
+/* ve sonen bir yanik. Kademe sus degil yogunluk: cekirdek daha beyaz,    */
+/* govde daha agir, vurus daha guclu. Lazer bunlarin hicbirini            */
+/* kullanmiyor; lazerin sayilari degismedi.                               */
 /* ------------------------------------------------------------------ */
 
+type Hsl = { h: number; s: number; l: number };
+
+/** Rengin HSL hali (0-1). */
+export function toHsl(color: number): Hsl {
+  const r = ((color >> 16) & 0xff) / 255;
+  const g = ((color >> 8) & 0xff) / 255;
+  const b = (color & 0xff) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h /= 6;
+  return { h, s, l };
+}
+
+export function fromHsl({ h, s, l }: Hsl) {
+  const hue = (p: number, q: number, t: number) => {
+    let x = t;
+    if (x < 0) x += 1;
+    if (x > 1) x -= 1;
+    if (x < 1 / 6) return p + (q - p) * 6 * x;
+    if (x < 1 / 2) return q;
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6;
+    return p;
+  };
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return (v << 16) | (v << 8) | v;
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const r = hue(p, q, h + 1 / 3);
+  const g = hue(p, q, h);
+  const b = hue(p, q, h - 1 / 3);
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+
+/** Kimlik tonunun doygunluk ust siniri: ton kenarda okunur, sekerleme gibi parlamaz. */
+export const GROUNDED_MAX_SATURATION = 0.6;
+
 /**
- * Atakan'in ortak aksani: terminal yesili.
+ * Kulenin kimlik tonu, yere indirilmis: doygunluk sinirli, aciklik ortada.
  *
- * Her Atakan kulesi kendi tonunu tasiyor; bu renk yalnizca nisangah
- * ayraclarinda, izgara/altigen cikartmalarinda ve kod kivilcimlarinda.
- * Katalogdaki kule rengiyle ayni (0x22c55e).
+ * Ton (hue) korunuyor -- Zeynep'in kizili ve morlari, Melis'in menekseleri
+ * taninir kaliyor -- ama pastel ya da asiri doygun degil: kenarda bir
+ * tint, enerjinin kendisi beyaz-sicak cekirdek.
  */
-export const ATAKAN_ACCENT = 0x22c55e;
+export function groundHue(color: number, maxSaturation = GROUNDED_MAX_SATURATION) {
+  const hsl = toHsl(color);
+  if (hsl.s === 0) return color;
+  return fromHsl({ h: hsl.h, s: Math.min(maxSaturation, hsl.s), l: Math.min(0.55, Math.max(0.44, hsl.l)) });
+}
+
+/**
+ * `groundHue` renk basina bir kez (sunucunun gonderdigi isin renkleri):
+ * karede renk donusumu ve nesne yok.
+ */
+const GROUNDED_CACHE = new Map<number, number>();
+export function groundHueCached(color: number) {
+  let value = GROUNDED_CACHE.get(color);
+  if (value === undefined) {
+    value = groundHue(color);
+    if (GROUNDED_CACHE.size < 256) GROUNDED_CACHE.set(color, value);
+  }
+  return value;
+}
+
+/**
+ * Beyaz-sicak alt sinir: yere indirilmis bir ton (aciklik 0.44-0.58) bu
+ * kadar beyaza cekilince acikligi 0.9'u geciyor -- tonun izi kalan beyaz.
+ * Arasi (0.35-0.84 cekme) pastel bir bant: ne ton ne beyaz-sicak; agir dilde
+ * hic kullanilmiyor.
+ */
+export const WHITE_HOT_LIFT = 0.84;
+
+/** Beyaz-sicak cekirdek; `heat` 0..1 ne kadar beyaz (kademenin yogunlugu). */
+export function whiteHot(hue: number, heat = 0.5) {
+  return liftToWhite(hue, WHITE_HOT_LIFT + 0.15 * clamp01(heat));
+}
+
+/**
+ * Soguma rengi: beyaz-sicak -> ton -> koyu.
+ *
+ * Kivilcim ve kor buyle yasliyor: dogarken beyaza yakin, ortasinda kulenin
+ * tonu, sonunda karanliga dusuyor. `t` 0..1 (omrun orani).
+ */
+export function coolingColor(hue: number, t: number) {
+  // Pastel bantta durmuyor: beyaz-sicaktan dogrudan tonun sicak haline iniyor.
+  if (t <= 0.22) return whiteHot(hue, 1 - t / 0.22);
+  if (t <= 0.55) return hue;
+  return darken(hue, 0.7 * ((t - 0.55) / 0.45));
+}
+
+/** Celik: metal kirintisinin govdesi (tonsuz; koyu zeminde okunacak kadar acik). */
+export const STEEL = 0x71717a;
+/** Duman: notr gri (dusuk alfayla; koyu zeminde okunuyor). */
+export const SMOKE = 0x78716c;
+/** Yanik izi: neredeyse siyah. */
+export const SCORCH = 0x0c0a09;
+
+const FAN_SIDES = [6, 8] as const;
+const FAN_TABLES = new Map<number, { cos: Float32Array; sin: Float32Array }>();
+for (const sides of FAN_SIDES) {
+  const cos = new Float32Array(sides);
+  const sin = new Float32Array(sides);
+  for (let index = 0; index < sides; index += 1) {
+    cos[index] = Math.cos((index / sides) * Math.PI * 2);
+    sin[index] = Math.sin((index / sides) * Math.PI * 2);
+  }
+  FAN_TABLES.set(sides, { cos, sin });
+}
+
+/**
+ * Ucuz dolu elips: 6 ya da 8 kenarli ucgen yelpazesi (earcut yok). Duman
+ * topagi ve yer izi icin; bu boyda daireden ayirt edilmiyor ve kenar sayisi
+ * duzensiz bir duman gibi okunuyor.
+ */
+export function fillFan(g: VfxGraphics, x: number, y: number, rx: number, ry: number, sides: 6 | 8, rotation = 0) {
+  if (!(rx > 0) || !(ry > 0)) return;
+  const { cos, sin } = FAN_TABLES.get(sides)!;
+  const c = Math.cos(rotation);
+  const s = Math.sin(rotation);
+  const x0 = x + (cos[0] * c - sin[0] * s) * rx;
+  const y0 = y + (sin[0] * c + cos[0] * s) * ry;
+  let ax = x + (cos[1] * c - sin[1] * s) * rx;
+  let ay = y + (sin[1] * c + cos[1] * s) * ry;
+  for (let index = 2; index < sides; index += 1) {
+    const bx = x + (cos[index] * c - sin[index] * s) * rx;
+    const by = y + (sin[index] * c + cos[index] * s) * ry;
+    g.fillTriangle(x0, y0, ax, ay, bx, by);
+    ax = bx;
+    ay = by;
+  }
+}
+
+export type BallisticSparkOptions = {
+  seed: number;
+  count: number;
+  /** Ilk hiz (birim / sn). */
+  speed: number;
+  /** Merkez yon (radyan); `undefined` butun cevre. */
+  heading: number | undefined;
+  /** Yelpazenin genisligi (radyan). */
+  fan: number;
+  /** Yercekimi (birim / sn^2, +y asagi). */
+  gravity: number;
+  lifeMs: number;
+  /** Kulenin tonu: kivilcim beyaz-sicak dogup bu tondan karanliga soguyor. */
+  hue: number;
+  width: number;
+  alpha: number;
+  /** Cizginin boyu: hizin bu kadar saniyelik yolu (hizli kivilcim uzun). */
+  streak: number;
+};
+
+/**
+ * Balistik kivilcimlar: durumsuz ve tohumlu.
+ *
+ * Her kivilcimin yonu ve hizi tohumdan; konumu `v t + g t^2 / 2`. Cizgi
+ * hizin yonunde (dustukce egiliyor), boyu hizla. Renk soguyor: beyaz ->
+ * ton -> koyu. `elapsedMs` olayin yasi; kivilcimlarin omru biraz farkli.
+ */
+export function drawBallisticSparks(g: VfxGraphics, x: number, y: number, elapsedMs: number, options: BallisticSparkOptions) {
+  if (options.count <= 0 || elapsedMs < 0) return;
+  const t = elapsedMs / 1000;
+  for (let index = 0; index < options.count; index += 1) {
+    const base = options.seed + index * 17;
+    const life = elapsedMs / (options.lifeMs * (0.6 + hashNoise(base + 3) * 0.4));
+    if (life >= 1) continue;
+    const roll = hashNoise(base + 1);
+    const angle = options.heading === undefined
+      ? (index / options.count) * Math.PI * 2 + (roll - 0.5) * 0.8
+      : options.heading + (roll - 0.5) * options.fan;
+    const speed = options.speed * (0.45 + hashNoise(base + 2) * 0.55);
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const vy = uy * speed + options.gravity * t;
+    const px = x + ux * speed * t;
+    const py = y + uy * speed * t + 0.5 * options.gravity * t * t;
+    const fade = 1 - life;
+    g.lineStyle(options.width, coolingColor(options.hue, life), clamp01(options.alpha * fade));
+    g.lineBetween(px - ux * speed * options.streak, py - vy * options.streak, px, py);
+  }
+}
+
+export type DebrisOptions = {
+  seed: number;
+  count: number;
+  speed: number;
+  heading: number | undefined;
+  fan: number;
+  gravity: number;
+  lifeMs: number;
+  /** Kirintinin govdesi (celik, kitin, tas). */
+  color: number;
+  /** Ucte birinin rengi: sicak kenar ya da parlak yuz. */
+  edge: number;
+  size: number;
+  alpha: number;
+  /** Kirinti bu kadar asagida yere iniyor (dusmanin ayagi); 0 zemin yok. */
+  floor: number;
+};
+
+/**
+ * Metal kirintilari ve govde parcalari: donen koyu ucgenler, balistik.
+ *
+ * Her parca tek `fillTriangle`. Yere (`floor`) inen parca orada kaliyor ve
+ * sonuyor: havada asili kalan kiymik sekerleme gibi duruyordu.
+ */
+export function drawDebris(g: VfxGraphics, x: number, y: number, elapsedMs: number, options: DebrisOptions, ground?: VfxGraphics) {
+  if (options.count <= 0 || elapsedMs < 0) return;
+  for (let index = 0; index < options.count; index += 1) {
+    const base = options.seed + index * 23;
+    const lifeMs = options.lifeMs * (0.7 + hashNoise(base + 4) * 0.3);
+    const life = elapsedMs / lifeMs;
+    if (life >= 1) continue;
+    const roll = hashNoise(base + 1);
+    const angle = options.heading === undefined
+      ? (index / options.count) * Math.PI * 2 + (roll - 0.5) * 0.9
+      : options.heading + (roll - 0.5) * options.fan;
+    const speed = options.speed * (0.4 + hashNoise(base + 2) * 0.6);
+    // Yere indikten sonra zaman durmuyor ama yol duruyor.
+    let t = elapsedMs / 1000;
+    let px = x + Math.cos(angle) * speed * t;
+    let py = y + Math.sin(angle) * speed * t + 0.5 * options.gravity * t * t;
+    // Her parcanin kendi zemini: hepsi ayni cizgiye dizilmesin.
+    const floor = options.floor * (0.55 + hashNoise(base + 6) * 0.9);
+    let surface = g;
+    if (options.floor > 0 && py > y + floor) {
+      py = y + floor;
+      t = Math.min(t, 0.4);
+      px = x + Math.cos(angle) * speed * t;
+      // Yere inen parca yerde: zemin yuzeyinde (dusmanlarin ve kulelerin altinda).
+      if (ground) surface = ground;
+    }
+    const spin = hashNoise(base + 3) * Math.PI * 2 + (roll - 0.5) * 16 * t;
+    const size = options.size * (0.6 + hashNoise(base + 5) * 0.7);
+    const fade = life < 0.55 ? 1 : 1 - (life - 0.55) / 0.45;
+    surface.fillStyle(index % 3 === 0 ? options.edge : options.color, clamp01(options.alpha * fade));
+    surface.fillTriangle(
+      px + Math.cos(spin) * size, py + Math.sin(spin) * size,
+      px + Math.cos(spin + 2.3) * size * 0.7, py + Math.sin(spin + 2.3) * size * 0.7,
+      px + Math.cos(spin + 4.1) * size * 0.85, py + Math.sin(spin + 4.1) * size * 0.85
+    );
+  }
+}
+
+export type SmokeOptions = {
+  seed: number;
+  count: number;
+  /** Topagin ilk yaricapi. */
+  radius: number;
+  /** Omru boyunca buyume orani (1 = iki katina). */
+  grow: number;
+  /** Omru boyunca yukselme (birim). */
+  rise: number;
+  lifeMs: number;
+  color: number;
+  alpha: number;
+  /** Hareket azaltma: buyumeden ve yukselmeden yerinde soner. */
+  still: boolean;
+};
+
+/**
+ * Kisa bir duman: birkac dusuk alfali, buyuyerek yukselen topak (6 kenar).
+ * Topaklar biraz gecikmeli dogup ust uste biniyor; hepsi tohumdan.
+ */
+export function drawSmoke(g: VfxGraphics, x: number, y: number, elapsedMs: number, options: SmokeOptions) {
+  if (options.count <= 0 || elapsedMs < 0 || options.alpha <= 0) return;
+  for (let index = 0; index < options.count; index += 1) {
+    const base = options.seed + index * 29;
+    // Topaklar biraz gecikmeli doguyor; hareket azaltmada hepsi birden (sonradan beliren topak hareket).
+    const local = (elapsedMs - (options.still ? 0 : index * options.lifeMs * 0.12)) / options.lifeMs;
+    if (local < 0 || local >= 1) continue;
+    const motion = options.still ? 0 : local;
+    const ox = (hashNoise(base + 1) - 0.5) * options.radius * 1.4;
+    const oy = -options.rise * motion * (0.7 + hashNoise(base + 2) * 0.6);
+    const r = options.radius * (0.65 + hashNoise(base + 3) * 0.45) * (1 + options.grow * motion);
+    const alpha = options.alpha * (local < 0.12 ? local / 0.12 : 1 - (local - 0.12) / 0.88);
+    g.fillStyle(options.color, clamp01(alpha));
+    fillFan(g, x + ox, y + oy, r, r * 0.9, 6, hashNoise(base + 4) * Math.PI);
+  }
+}
+
+/**
+ * Yer izi: yere yatik koyu bir leke, kenari daha soluk. Iki yelpaze (8
+ * kenar); `age` 0..1 sonme.
+ */
+export function drawScorch(g: VfxGraphics, x: number, y: number, age: number, rx: number, ry: number, color: number, alpha: number, seed: number) {
+  if (age >= 1 || alpha <= 0) return;
+  const fade = Math.pow(1 - age, 1.4);
+  const rotation = hashNoise(seed + 7) * 0.6 - 0.3;
+  g.fillStyle(color, clamp01(alpha * 0.45 * fade));
+  fillFan(g, x, y, rx, ry, 8, rotation);
+  g.fillStyle(color, clamp01(alpha * fade));
+  fillFan(g, x + (hashNoise(seed + 8) - 0.5) * rx * 0.3, y, rx * 0.58, ry * 0.58, 6, rotation);
+}
+
+/** Elektrik catirtisinin noktalari (havuzlu; karede nesne yok). */
+const CRACKLE_POINTS: Array<{ x: number; y: number }> = Array.from({ length: 4 }, () => ({ x: 0, y: 0 }));
+
+export type CrackleOptions = {
+  seed: number;
+  count: number;
+  reach: number;
+  hue: number;
+  width: number;
+  alpha: number;
+  /** Merkez yon ve yelpaze; `undefined` butun cevre. */
+  heading: number | undefined;
+  fan: number;
+};
+
+/**
+ * Enerji vurusunun catirtisi: noktadan cikan kisa kirikli kollar. Ton kenarda
+ * (genis, soluk), beyaz-sicak cekirdek ortada (ince). Uc parcali yol, her
+ * parca tek cizgi (yol eklemi yok).
+ */
+export function drawCrackle(g: VfxGraphics, x: number, y: number, options: CrackleOptions) {
+  if (options.count <= 0 || options.alpha <= 0) return;
+  const core = whiteHot(options.hue, 0.6);
+  for (let index = 0; index < options.count; index += 1) {
+    const base = options.seed + index * 31;
+    const angle = options.heading === undefined
+      ? (index / options.count) * Math.PI * 2 + (hashNoise(base + 1) - 0.5) * 1.1
+      : options.heading + (hashNoise(base + 1) - 0.5) * options.fan;
+    const reach = options.reach * (0.55 + hashNoise(base + 2) * 0.45);
+    fillJaggedPath(CRACKLE_POINTS, x, y, x + Math.cos(angle) * reach, y + Math.sin(angle) * reach, 3, base, reach * 0.55);
+    g.lineStyle(Math.max(0.6, options.width * 2.2), options.hue, clamp01(options.alpha * 0.5));
+    for (let step = 0; step < 3; step += 1) g.lineBetween(CRACKLE_POINTS[step].x, CRACKLE_POINTS[step].y, CRACKLE_POINTS[step + 1].x, CRACKLE_POINTS[step + 1].y);
+    g.lineStyle(Math.max(0.5, options.width * 0.8), core, clamp01(options.alpha));
+    for (let step = 0; step < 3; step += 1) g.lineBetween(CRACKLE_POINTS[step].x, CRACKLE_POINTS[step].y, CRACKLE_POINTS[step + 1].x, CRACKLE_POINTS[step + 1].y);
+  }
+}
+
+/**
+ * Sert mermi govdesi (slug / tracer): koyu kenarli ton, beyaz-sicak cekirdek,
+ * parlak bas. `heat` cekirdegin beyaza cekilme orani (kademe yogunlugu),
+ * `width` govdenin kalinligi (kademe agirligi).
+ */
+export function drawSlug(g: VfxGraphics, x: number, y: number, ux: number, uy: number, length: number, width: number, hue: number, heat: number, alpha = 1) {
+  const tailX = x - ux * length;
+  const tailY = y - uy * length;
+  g.lineStyle(Math.max(0.8, width), hue, clamp01(0.95 * alpha));
+  g.lineBetween(tailX, tailY, x, y);
+  g.lineStyle(Math.max(0.6, width * 0.45), whiteHot(hue, heat), clamp01(alpha));
+  g.lineBetween(tailX + ux * length * 0.3, tailY + uy * length * 0.3, x, y);
+  const head = Math.max(0.7, width * 0.42);
+  g.fillStyle(whiteHot(hue, Math.min(1, heat + 0.1)), clamp01(alpha));
+  g.fillRect(x - head, y - head, head * 2, head * 2);
+}
+
+/**
+ * Sert isin kesiti (lazer olmayan isinlar ve ip): koyu dusum (genis, soluk;
+ * `glow` verilirse ADD katmaninda), tonun govdesi ve beyaz-sicak cekirdek.
+ * Kademe govdeyi ve cekirdegi kalinlastiriyor; pastel ara ton yok. Lazerin
+ * `strokeProfile`i (omuzlar, %45 cekilmis cekirdek) lazerin kendisinde kaliyor.
+ */
+export function strokeHardBeam(
+  g: VfxGraphics,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  hue: number,
+  tier: number,
+  options: { body: number; spread: number },
+  glow?: VfxGraphics,
+  alpha = 1
+) {
+  const level = tier >= 3 ? 2 : tier >= 2 ? 1 : 0;
+  if (level > 0) {
+    const falloff = glow ?? g;
+    falloff.lineStyle(options.body + options.spread * (level === 2 ? 1.4 : 1), darken(hue, 0.35), clamp01((level === 2 ? 0.22 : 0.16) * alpha));
+    falloff.lineBetween(x1, y1, x2, y2);
+  }
+  g.lineStyle(Math.max(0.6, options.body), hue, clamp01(0.92 * alpha));
+  g.lineBetween(x1, y1, x2, y2);
+  g.lineStyle(Math.max(0.5, options.body * (0.3 + level * 0.08)), whiteHot(hue, level / 2), clamp01(0.95 * alpha));
+  g.lineBetween(x1, y1, x2, y2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Islevsel isaretler: ince cizgi, kertik, ayrac. Sus degil, bilgi.      */
+/* ------------------------------------------------------------------ */
 
 const CORNER_SIGNS = [-1, 1] as const;
 
 /**
- * Dort kose ayraci: nisangahin govdesi.
+ * Dort kose ayraci: nisangahin ve karantina karesinin govdesi.
  *
  * `halfWidth`/`halfHeight` kutunun yari boyu, `arm` kose kolunun boyu.
  * Sekiz cizgi; daire yok.
@@ -837,17 +1057,7 @@ for (let index = 0; index < 6; index += 1) {
   HEX_SIN[index] = Math.sin((index / 6) * Math.PI * 2);
 }
 
-/** Altigenin `index`. kosesinin bir ekseni (0: x, 1: y); `rotation` radyan. */
-export function hexCorner(x: number, y: number, radius: number, rotation: number, index: number, axis: 0 | 1) {
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const corner = index % 6;
-  return axis === 0
-    ? x + (HEX_COS[corner] * cos - HEX_SIN[corner] * sin) * radius
-    : y + (HEX_SIN[corner] * cos + HEX_COS[corner] * sin) * radius;
-}
-
-/** Altigen cizgi: derlenmis kademenin halkasi ve kapanan hucre. Tek yol. */
+/** Altigen cizgi: kapatma alaninin siniri ve kapanan kafes. Tek yol. */
 export function strokeHex(g: VfxGraphics, x: number, y: number, radius: number, rotation: number) {
   if (!(radius > 0.5)) return;
   const cos = Math.cos(rotation);
@@ -861,147 +1071,6 @@ export function strokeHex(g: VfxGraphics, x: number, y: number, radius: number, 
   }
   g.closePath();
   g.strokePath();
-}
-
-/**
- * Izgara halkasi: halkanin uzerinde esit aralikli kisa kertikler.
- *
- * Derlenmis kademenin olcu cetveli: yuvarlak bir halka yerine dijital bir
- * kadran. `ticks` kertik sayisi, `length` iceri uzunlugu.
- */
-export function drawGridTicks(g: VfxGraphics, x: number, y: number, radius: number, ticks: number, length: number, rotation: number, width: number, color: number, alpha: number) {
-  if (alpha <= 0 || ticks <= 0) return;
-  g.lineStyle(width, color, clamp01(alpha));
-  for (let index = 0; index < ticks; index += 1) {
-    const angle = rotation + (index / ticks) * Math.PI * 2;
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    g.lineBetween(x + cos * radius, y + sin * radius, x + cos * (radius - length), y + sin * (radius - length));
-  }
-}
-
-export type CodeSparkOptions = {
-  seed: number;
-  count: number;
-  /** Dogdugu yerin yaricapi. */
-  radius: number;
-  /** Omru boyunca yukari kayma. */
-  rise: number;
-  /** Bitlerin ucte biri kulenin tonunda, gerisi aksan (terminal yesili). */
-  color: number;
-  accent: number;
-  /** Bitin boyu (dunya birimi). */
-  size: number;
-  alpha: number;
-  lifeMs: number;
-};
-
-/**
- * Dokulen kod kivilcimlari: bir ve sifir gibi okunan kucuk dikdortgen bitler.
- *
- * Kademe 3'un (asiri yukleme / uretim) imzasi. Durumsuz ve tohumlu: her
- * bitin yeri kusak numarasindan, kusak icinde sabit; yalnizca yukari kayip
- * soner. Daire yok, her bit tek `fillRect` (iki ucgen).
- */
-export function drawCodeSparks(g: VfxGraphics, x: number, y: number, now: number, options: CodeSparkOptions) {
-  for (let index = 0; index < options.count; index += 1) {
-    const durationMs = options.lifeMs * (0.7 + hashNoise(options.seed + index * 11 + 1) * 0.6);
-    const phase = now / durationMs + hashNoise(options.seed + index * 11 + 2) * 10;
-    const generation = Math.floor(phase);
-    const life = phase - generation;
-    const seed = options.seed + index * 11 + generation * 89;
-    const angle = hashNoise(seed) * Math.PI * 2;
-    const reach = options.radius * (0.35 + hashNoise(seed + 1) * 0.65);
-    const px = x + Math.cos(angle) * reach;
-    const py = y + Math.sin(angle) * reach - life * options.rise;
-    const glow = sparkGlow(life);
-    if (glow <= 0) continue;
-    const size = options.size;
-    g.fillStyle(index % 3 === 0 ? options.color : options.accent, clamp01(options.alpha * glow));
-    if (hashNoise(seed + 2) > 0.5) g.fillRect(px - size * 0.22, py - size * 0.8, size * 0.44, size * 1.6);
-    else g.fillRect(px - size * 0.55, py - size * 0.55, size * 1.1, size * 1.1);
-  }
-}
-
-export type PacketOptions = {
-  count: number;
-  /** Paketin kenari. */
-  size: number;
-  color: number;
-  alpha: number;
-  /** Yolu saniyede kac kez katediyor. */
-  speed: number;
-  seed: number;
-  /** Hareket azaltma: paketler yerinde, esit aralikli. */
-  still?: boolean;
-};
-
-/**
- * Bir dogru boyunca kayan veri paketleri (kucuk kareler): derlenmis bag.
- *
- * Yonu x1 -> x2. Uclarda sonuyorlar; sayisi ve hizi cagirandan (yigin
- * buyudukce artiyor). Her paket tek `fillRect`.
- */
-export function drawDataPackets(g: VfxGraphics, x1: number, y1: number, x2: number, y2: number, now: number, options: PacketOptions) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const half = options.size / 2;
-  for (let index = 0; index < options.count; index += 1) {
-    const offset = index / options.count + hashNoise(options.seed + index * 5) * 0.06;
-    const t = options.still ? (index + 0.5) / options.count : ((((now / 1000) * options.speed + offset) % 1) + 1) % 1;
-    const fade = clamp01(Math.min(t, 1 - t) / 0.12);
-    if (fade <= 0) continue;
-    g.fillStyle(options.color, clamp01(options.alpha * fade));
-    g.fillRect(x1 + dx * t - half, y1 + dy * t - half, options.size, options.size);
-  }
-}
-
-export type TrailMotifOptions = {
-  /** "scan": harekete dik tarama cizgileri; "packets": kuculen kareler. */
-  motif: "scan" | "packets";
-  color: number;
-  /** Tarama cizgisinin yari boyu ya da paketin kenari. */
-  size: number;
-  width: number;
-  alpha: number;
-  maxPoints: number;
-};
-
-/**
- * Derlenmis iz: seridin ustune tarama cizgileri ya da veri paketleri.
- *
- * `TrailBuffer` kaydindan; en yeni noktadan eskiye boy ve alfa azaliyor.
- * Tarama cizgisi iki komsu noktanin dogrultusuna dik.
- */
-export function drawTrailMotif(g: VfxGraphics, entry: TrailEntry, capacity: number, headX: number, headY: number, options: TrailMotifOptions) {
-  const count = Math.min(entry.count, options.maxPoints);
-  if (count < 1) return;
-  let previousX = headX;
-  let previousY = headY;
-  for (let step = 0; step < count; step += 1) {
-    const index = (entry.head - 1 - step + capacity * 2) % capacity;
-    const x = entry.xs[index];
-    const y = entry.ys[index];
-    const t = 1 - step / (count + 1);
-    if (options.motif === "scan") {
-      const dx = previousX - x;
-      const dy = previousY - y;
-      const length = Math.hypot(dx, dy);
-      if (length > 0.01) {
-        const nx = -dy / length;
-        const ny = dx / length;
-        const half = options.size * t;
-        g.lineStyle(Math.max(0.5, options.width), options.color, clamp01(options.alpha * t));
-        g.lineBetween(x - nx * half, y - ny * half, x + nx * half, y + ny * half);
-      }
-    } else {
-      const side = Math.max(0.6, options.size * t);
-      g.fillStyle(options.color, clamp01(options.alpha * t));
-      g.fillRect(x - side / 2, y - side / 2, side, side);
-    }
-    previousX = x;
-    previousY = y;
-  }
 }
 
 /**
