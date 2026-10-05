@@ -552,15 +552,26 @@ for (const level of [5, 10]) {
   });
 }
 
-test("10. seviye: üç kiriş overdrive bitince, kule ateş edemeyince ve hararette kalkar", () => {
+test("10. seviye: dönen kirişler bitişte kalkar, zincir kirişi normal kirişe boşluksuz devreder; ateş edemeyince ve hararette üçü de kalkar", () => {
   withClock((advance) => {
-    const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level: 10 });
-    runTicks(room, advance, TICK_MS);
+    const { room, tower } = overdriveScene([{ degrees: 20, distance: 60 }], { level: 10 });
+    const main = `beam-${tower.id}`;
+    recordHits(room, tower, advance, TICK_MS);
     for (const id of spinBeamIds(tower)) assert.ok(room.beams.has(id));
-    while (tower.debugOverdriveUntil > Date.now()) runTicks(room, advance, TICK_MS);
-    runTicks(room, advance, TICK_MS);
+    while (tower.debugOverdriveUntil > Date.now()) recordHits(room, tower, advance, TICK_MS);
+    const sweepAngle = tower.debugSweepAngle;
+    recordHits(room, tower, advance, TICK_MS);
     for (const id of spinBeamIds(tower)) assert.equal(room.beams.has(id), false, `${id} bitiste kalmadi`);
-    assert.notEqual(room.beams.get(`beam-${tower.id}`)?.overdrive, true, "zincir kirisi bitiste kaldi");
+    // Namlu kirisin durdugu yerden devam ediyor (eskiden 90 derecede kalmisti).
+    assert.ok(Math.abs(shortestAngleDelta(sweepAngle, tower.facing)) < 0.2, `namlu ${degrees(tower.facing).toFixed(1)} derecede, kiris ${degrees(sweepAngle).toFixed(1)}`);
+    // Zincir kirisi normal lazerin kirisi gelene kadar her karede var.
+    let handedOver = false;
+    for (let elapsed = 0; elapsed < 600 && !handedOver; elapsed += TICK_MS) {
+      assert.ok(room.beams.has(main), `bitisten ${elapsed} ms sonra kiris yok`);
+      handedOver = room.beams.get(main).overdrive !== true;
+      if (!handedOver) recordHits(room, tower, advance, TICK_MS);
+    }
+    assert.ok(handedOver, "normal lazer kirisi devralmadi");
   });
 
   withClock((advance) => {
@@ -577,6 +588,108 @@ test("10. seviye: üç kiriş overdrive bitince, kule ateş edemeyince ve harare
     room.triggerDebugLaserOverheat(tower);
     for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.equal(room.beams.has(id), false);
     assert.equal(tower.debugTwinStartAngle, undefined);
+  });
+});
+
+test("asiri yuklemede satilan Debug Lazer'in kirisleri hemen kalkar", () => {
+  withClock((advance) => {
+    const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level: 10 });
+    room.broadcast = () => {};
+    recordHits(room, tower, advance, TICK_MS);
+    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.ok(room.beams.has(id));
+    room.sellTower({ sessionId: "p1" }, { towerId: tower.id });
+    assert.equal(room.towers.has(tower.id), false, "kule satilmadi");
+    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.equal(room.beams.has(id), false, `${id} satistan sonra kaldi`);
+  });
+});
+
+/**
+ * Kapanis vurusunu izler: `damageDebugLaserSweepHits` ve zincir toplama
+ * cagrilari, bitisten sonra yapilanlar ayri.
+ */
+function watchClosingPass(room, tower) {
+  const proto = Object.getPrototypeOf(room);
+  const log = { sweepDamage: [], chainCollectsAfterEnd: 0 };
+  let inSweep = false;
+  room.damageDebugLaserSweepHits = function (source, hit) {
+    inSweep = true;
+    try {
+      return proto.damageDebugLaserSweepHits.call(this, source, hit);
+    } finally {
+      inSweep = false;
+    }
+  };
+  room.collectDebugLaserChainHits = function (...args) {
+    if (tower.debugOverdriveUntil <= Date.now()) log.chainCollectsAfterEnd += 1;
+    return proto.collectDebugLaserChainHits.apply(this, args);
+  };
+  const originalDamage = room.damageEnemyFromTower.bind(room);
+  room.damageEnemyFromTower = (source, target, damage, ...rest) => {
+    if (inSweep && source === tower) log.sweepDamage.push({ at: Date.now(), afterEnd: tower.debugOverdriveUntil <= Date.now(), id: target.id, damage });
+    return originalDamage(source, target, damage, ...rest);
+  };
+  return log;
+}
+
+for (const level of [5, 9]) {
+  test(`${level}. seviyede kapanis vurusu yok: bitisten sonra ritim disi vurus olmuyor`, () => {
+    withClock((advance) => {
+      const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level });
+      const log = watchClosingPass(room, tower);
+      runTicks(room, advance, OVERDRIVE_REAL_MS + 4 * TICK_MS);
+      assert.ok(log.sweepDamage.length > 0, "asiri yukleme hic vurmadi");
+      assert.deepEqual(log.sweepDamage.filter((hit) => hit.afterEnd), [], "5-9. seviyede kapanis vurusu oldu");
+    });
+  });
+}
+
+test("10. seviye kapanis vurusu: yalnizca donen kirislerin yayi, asiri yukleme carpaniyla", () => {
+  withClock((advance) => {
+    const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }, { degrees: 0, distance: 320 }], { level: 10 });
+    const log = watchClosingPass(room, tower);
+    for (let elapsed = 0; elapsed < OVERDRIVE_REAL_MS + 4 * TICK_MS; elapsed += TICK_MS) {
+      Object.assign(tower, { temperature: 0, ammo: tower.maxAmmo, energy: tower.maxEnergy });
+      runTicks(room, advance, TICK_MS);
+    }
+    const closing = log.sweepDamage.filter((hit) => hit.afterEnd);
+    assert.ok(closing.length > 0, "kapanis vurusu olmadi");
+    assert.equal(log.chainCollectsAfterEnd, 0, "kapanista zincir kirisi de toplandi");
+    const overdriveDamage = room.getTowerDamage(tower, true);
+    const normalDamage = room.getTowerDamage(tower);
+    assert.ok(overdriveDamage > normalDamage, "carpanlar ayni, test bir sey olcmez");
+    for (const hit of closing) assert.ok(Math.abs(hit.damage - overdriveDamage) < 1e-6, `kapanis ${hit.damage} vurdu, asiri yukleme ${overdriveDamage}`);
+  });
+});
+
+test("10. seviye kapanis vurusunun oldurmeleri \"Tarama\" sayisina girer", () => {
+  withClock((advance) => {
+    const { room, tower } = overdriveScene([{ degrees: 90, distance: 60 }], { level: 10 });
+    const stamps = [];
+    room.sendComboStamp = (kind, source, options = {}) => {
+      stamps.push({ kind, towerId: source.id, kills: options.kills });
+      return true;
+    };
+    room.debugSweepRuns.set(tower.id, { ownerId: tower.ownerId, kills: 0 });
+    // Bitise bir kare kalana kadar sur.
+    while (tower.debugOverdriveUntil - Date.now() > TICK_MS) recordHits(room, tower, advance, TICK_MS);
+    // Bitisi gecen karede, donen kirislerin son diliminde (baslangic acisi)
+    // iki zayif dusman: yalnizca kapanis vurusu onlari gorebilir.
+    advance(tower.debugOverdriveUntil - Date.now() + 1);
+    const start = tower.debugTwinStartAngle;
+    for (const distance of [150, 250]) {
+      room.spawnEnemy();
+      const enemy = [...room.enemies.values()].at(-1);
+      Object.assign(enemy, { x: tower.x + distance * Math.cos(start), y: tower.y + distance * Math.sin(start), hp: 1, maxHp: 1, shield: 0, armor: 0 });
+    }
+    tower.temperature = 0;
+    tower.ammo = tower.maxAmmo;
+    tower.energy = tower.maxEnergy;
+    room.enemySpatialGrid.rebuild(room.enemies.values());
+    room.updateTowers(1);
+    const sweep = stamps.filter((stamp) => stamp.kind === "sweepKills");
+    assert.equal(sweep.length, 1, "tarama damgasi yok");
+    assert.equal(sweep[0].kills, 2, "kapanisin oldurmeleri sayilmadi");
+    assert.equal(room.debugSweepRuns.has(tower.id), false, "kayit kapanmadi");
   });
 });
 

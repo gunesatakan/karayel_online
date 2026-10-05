@@ -563,3 +563,31 @@ test("menzil ucunda kritik Kin vurusu tam 0,4 hizla Derin Dondurma'yi tetikliyor
     assert.equal(isStatusEffectActive(enemy.statusEffects.freeze, Date.now()), donmali, `kritik=${kritik}`);
   }
 });
+
+test("Taht'in Kin mermisi hedef alinamayan dusmani yavaslatmiyor", () => {
+  const { room, tower } = kinOdasi("zeynep-3");
+  kartAl(room, "buz-kirigi");
+  room.towerCriticalRandom = () => 0;
+  const projectile = { definitionId: "zeynep-3-kin-projectile", towerId: tower.id };
+  for (const [ad, hazirla] of [
+    ["tahakkum", (enemy) => { enemy.dominatedUntil = Date.now() + 5000; }],
+    ["olu", (enemy) => { enemy.melisUndeadUntil = Date.now() + 5000; }],
+    ["fisilti", (enemy) => { enemy.melisWhisperTurnedUntil = Date.now() + 5000; }]
+  ]) {
+    const enemy = dusman(room);
+    enemy.x = tower.x + room.getTowerRange(tower);
+    enemy.y = tower.y;
+    hazirla(enemy);
+    room.applyKinProjectileSlow(projectile, enemy);
+    assert.equal(Object.keys(enemy.slowSpeedFloors ?? {}).length, 0, `${ad}: yavaslatma kaydi yazildi`);
+    assert.equal(enemy.statusEffects.slow, undefined, `${ad}: yavaslatma durumu yazildi`);
+  }
+  assert.equal(room.broadcasts.some((entry) => entry.type === "slow:critical"), false, "hedef disi dusmana kritik yayini");
+
+  // Kontrol: siradan dusman yavasliyor.
+  const enemy = dusman(room);
+  enemy.x = tower.x + room.getTowerRange(tower);
+  enemy.y = tower.y;
+  room.applyKinProjectileSlow(projectile, enemy);
+  assert.ok(room.getEnemySlowSpeedMultiplier(enemy, Date.now()) < 1, "siradan dusman yavaslamadi");
+});

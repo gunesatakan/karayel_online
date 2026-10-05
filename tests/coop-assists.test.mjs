@@ -346,3 +346,49 @@ test("oda: yeniden baglanan oyuncunun dusmandaki yavaslatmasi ve soguma yavaslat
   room.damageEnemy(cooled, 100, 0, "warrior-4", "p1", "true", 0, 1, attacker.id);
   assert.deepEqual(decodeKillAssists(lastKill(room).a), [{ slot: 1, kind: "slow" }]);
 });
+
+test("oda: B'nin Izolasyon'u yavaslatir, A'nin Taht Kin mermisi dokunur, A oldurur -> B'nin yavaslatma asisti kaliyor", () => {
+  // Ortak `slow` durumunun tek sahibi vardi ve A'nin Kin vurusu onu A'ya
+  // yaziyordu; asist kaynak basina yavaslatma kayitlarindan okunuyor.
+  const room = createRoom("zeynep");
+  const p1 = room.state.players.get("p1");
+  Object.assign(p1, { slot: 0, connected: true });
+  room.state.players.set("p2", { ...p1, id: "p2", name: "Atakan", characterId: "warrior", slot: 1, skillCooldowns: [], runModifiers: [], ownedCardIds: [], hiredWorkers: [] });
+  room.broadcast = () => {};
+  room.towerCriticalRandom = () => 1;
+  const client = { sessionId: "p1", send() {} };
+  room.placeTower(client, { ...findBuildableSpot(room, "zeynep-3"), definitionId: "zeynep-3" });
+  const taht = [...room.towers.values()].at(-1);
+  assert.equal(taht.definition.id, "zeynep-3");
+  // B'nin Izolasyon'u: yerlestirme karakter kontrolunden gectigi icin
+  // A adina kurulup B'ye devrediliyor.
+  p1.characterId = "warrior";
+  room.placeTower(client, { ...findBuildableSpot(room, "warrior-3"), definitionId: "warrior-3" });
+  p1.characterId = "zeynep";
+  const izolasyon = [...room.towers.values()].at(-1);
+  assert.equal(izolasyon.definition.id, "warrior-3");
+  izolasyon.ownerId = "p2";
+  izolasyon.level = 10;
+
+  const enemy = plainEnemy(room, 50);
+  enemy.statusResistances = {};
+  enemy.x = taht.x + room.getTowerRange(taht);
+  enemy.y = taht.y;
+  room.damageEnemyFromTower(izolasyon, enemy, 0, 850);
+  room.applyKinProjectileSlow({ definitionId: "zeynep-3-kin-projectile", towerId: taht.id }, enemy);
+  assert.equal(enemy.statusEffects.slow.sourceOwnerId, "p1", "senaryo: ortak durumu A ezdi");
+
+  room.damageEnemyFromTower(taht, enemy, 1000, 0);
+  const event = lastKill(room);
+  assert.equal(event.ownerId, "p1");
+  assert.deepEqual(decodeKillAssists(event.a), [{ slot: 1, kind: "slow" }]);
+});
+
+test("oda: bitmis yavaslatma kaydi asist sayilmiyor", () => {
+  const { room, attacker } = teamRoom();
+  const enemy = plainEnemy(room, 50);
+  room.damageEnemy(enemy, 1, 1000, "warrior-3", "p2", "true", 0, 1, "");
+  for (const floor of Object.values(enemy.slowSpeedFloors)) floor.expiresAt = Date.now() - 1;
+  room.damageEnemy(enemy, 100, 0, "warrior-4", "p1", "true", 0, 1, attacker.id);
+  assert.equal(lastKill(room).a, undefined);
+});

@@ -965,7 +965,7 @@ type EnemyModel = {
    * vurusu kendi kaydini tazeliyor; kritik vurus ayri kayit, bir sonraki
    * kritiksiz vurus onu silmiyor -- kendi suresi bitene kadar en guclu o.
    */
-  slowSpeedFloors?: Record<string, { speedMultiplier: number; expiresAt: number }>;
+  slowSpeedFloors?: Record<string, { speedMultiplier: number; expiresAt: number; ownerId?: string }>;
   /**
    * Bu dusmanin yeniden donabilecegi an.
    *
@@ -2722,6 +2722,10 @@ export class MatchRoom extends Room<MatchState> {
         if (state?.sourceOwnerId === previousSessionId) state.sourceOwnerId = nextSessionId;
       }
       if (enemy.coolantSlowOwnerId === previousSessionId) enemy.coolantSlowOwnerId = nextSessionId;
+      for (const key in enemy.slowSpeedFloors ?? {}) {
+        const floor = enemy.slowSpeedFloors![key];
+        if (floor.ownerId === previousSessionId) floor.ownerId = nextSessionId;
+      }
     }
     // Havadaki drone'larin karnesi yeni oturuma gitmeli; eskisine giden rapor kaybolurdu.
     for (const report of this.openUltimateReports) {
@@ -4418,13 +4422,20 @@ export class MatchRoom extends Room<MatchState> {
         // vurustan bitise kadar taradigi yay burada kapatiliyor (yoksa son
         // dilim, yani baslangic acisi, hic vurulmazdi), sonra her sey sifir.
         this.finishDebugLaserOverdrive(tower, now);
+        // Kapanisin oldurmeleri de "Tarama: N öldü" sayisina girdi; kayit simdi kapaniyor.
+        this.finishDebugSweepRun(tower.id);
+        // Normal lazer kirisin durdugu yerden devam ediyor: namlu asiri yukleme
+        // boyunca eski acisinda kaliyordu ve geri donerken kiris ~1 sn kayboluyordu.
+        if (Number.isFinite(tower.debugSweepAngle)) tower.facing = tower.debugSweepAngle;
         tower.debugSweepStartedAt = 0;
         tower.debugSweepTargetIds = [];
         tower.debugSweepAngleAt = 0;
         tower.debugSweepLastDamageAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
         tower.debugTwinStartAngle = undefined;
-        this.deleteDebugLaserOverdriveBeams(tower);
+        // Yalnizca donen kirisler kalkiyor; zincir kirisi omru dolana ya da
+        // normal lazerin kirisi onun yerine yazilana kadar kaliyor (bosluk yok).
+        for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
       }
 
       if (tower.definition.id === "warrior-2") {
@@ -5187,7 +5198,8 @@ export class MatchRoom extends Room<MatchState> {
           now + durationMs,
           overrides.sourceTowerId ?? "flat",
           now,
-          overrides.slowFloorKey
+          overrides.slowFloorKey,
+          overrides.sourceOwnerId
         );
       }
     } else if (definition.type === "fear") {
@@ -5205,7 +5217,7 @@ export class MatchRoom extends Room<MatchState> {
    * en fazla kule basina iki (kritikli/kritiksiz) ve sureleri bir saniye
    * mertebesinde, yani tablo kucuk kaliyor.
    */
-  private addEnemySlowFloor(enemy: EnemyModel, speedMultiplier: number, expiresAt: number, sourceKey: string, now: number, replaceKey?: string) {
+  private addEnemySlowFloor(enemy: EnemyModel, speedMultiplier: number, expiresAt: number, sourceKey: string, now: number, replaceKey?: string, ownerId?: string) {
     const floors = enemy.slowSpeedFloors ?? (enemy.slowSpeedFloors = {});
     for (const key in floors) {
       if (floors[key].expiresAt <= now) delete floors[key];
@@ -5214,12 +5226,15 @@ export class MatchRoom extends Room<MatchState> {
     if (replaceKey) {
       // Yeniden hesaplanan yavaslatma (Kin): her temas kendi kaydinin
       // yerine geciyor, daha zayif ya da daha kisa olsa bile.
-      floors[replaceKey] = { speedMultiplier: safeMultiplier, expiresAt };
+      floors[replaceKey] = { speedMultiplier: safeMultiplier, expiresAt, ...(ownerId ? { ownerId } : {}) };
       this.syncEnemySlowUntil(enemy);
       return;
     }
-    const key = `${sourceKey}:${safeMultiplier.toFixed(3)}`;
-    floors[key] = { speedMultiplier: safeMultiplier, expiresAt: Math.max(floors[key]?.expiresAt ?? 0, expiresAt) };
+    // Kulesiz (duz) kayit sahibine gore ayriliyor: iki oyuncunun ayni
+    // guclu yetenegi tek kayda dussaydi son yazan oburunun asistini silerdi.
+    const key = `${sourceKey === "flat" && ownerId ? `flat@${ownerId}` : sourceKey}:${safeMultiplier.toFixed(3)}`;
+    const owner = ownerId ?? floors[key]?.ownerId;
+    floors[key] = { speedMultiplier: safeMultiplier, expiresAt: Math.max(floors[key]?.expiresAt ?? 0, expiresAt), ...(owner ? { ownerId: owner } : {}) };
     enemy.slowUntil = Math.max(enemy.slowUntil, expiresAt);
   }
 
@@ -6025,16 +6040,23 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Asiri yukleme dogal sonuna vardiktan sonraki ilk karede kapanis vurusu.
+   * 10. seviye: asiri yukleme dogal sonuna vardiktan sonraki ilk karede
+   * ters donen kirislerin kapanis vurusu.
    *
-   * Sweep yalnizca `debugOverdriveUntil > now` iken calisiyor, yani son
-   * vurustan bitise kadar taranan yay -- ters donen kirislerde tam turun son
+   * Sweep yalnizca `debugOverdriveUntil > now` iken calisiyor, yani ters
+   * donen kirislerin son vurustan bitise kadar taradigi yay -- tam turun son
    * dilimi, baslangic acisi -- hic vurulmuyordu. Burada bir kez, bitis anina
-   * kadar kapatiliyor; kule ates edemiyorsa ya da bitisin ustunden uzun sure
-   * gectiyse (kule askida kaldi) kapanis yok. Bir atis sayiliyor: kaynak bir
-   * kez tukeniyor ve normal lazer bir aralik bekliyor.
+   * kadar kapatiliyor. Yalnizca donen kirislerin yayi: zincir kirisi
+   * yerinde duruyor ve onun "kapanisi" ritim disi bir ekstra vurus olurdu
+   * (5-9. seviyede kapanis hic yok). Kule ates edemiyorsa ya da bitisin
+   * ustunden uzun sure gectiyse (kule askida kaldi) kapanis yok. Bir atis
+   * sayiliyor: kaynak bir kez tukeniyor, hasar asiri yukleme carpaniyla,
+   * normal lazer bir aralik bekliyor.
    */
   private finishDebugLaserOverdrive(tower: TowerModel, now: number) {
+    if (tower.debugTwinStartAngle === undefined) {
+      return;
+    }
     const endedAt = tower.debugOverdriveUntil;
     if (endedAt <= 0 || endedAt > now || now - endedAt > DEBUG_LASER_CLOSING_PASS_WINDOW_MS) {
       return;
@@ -6043,8 +6065,6 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     const hit = new Set<EnemyModel>();
-    const chainFrom = tower.debugSweepDamageAngleAt > 0 ? tower.debugSweepDamageAngle : tower.debugSweepAngle;
-    this.collectDebugLaserChainHits(tower, chainFrom, tower.debugSweepAngle, hit);
     this.collectDebugLaserTwinHits(tower, tower.debugSweepDamageAngleAt, endedAt, hit);
     if (hit.size === 0) {
       return;
@@ -6136,7 +6156,9 @@ export class MatchRoom extends Room<MatchState> {
     if (hit.size === 0) {
       return;
     }
-    const damage = this.getTowerDamage(tower);
+    // Her zaman asiri yukleme vurusu: kapanis vurusu bitisten sonraki karede
+    // geliyor ve saate baksaydi normal carpanla vururdu.
+    const damage = this.getTowerDamage(tower, true);
     for (const enemy of hit) {
       this.damageEnemyFromTower(tower, enemy, damage, 0);
     }
@@ -6511,6 +6533,12 @@ export class MatchRoom extends Room<MatchState> {
 
     const tower = this.towers.get(projectile.towerId);
     if (!tower) {
+      return;
+    }
+    // Alan vurusu hedefi kuleye sormadan seciyor; Kin dalgasi gibi burada da
+    // kule hedef alamayacagi dusmani (tahakkum, olu, donmus fisilti)
+    // yavaslatmiyor -- yoksa onlara durum, kritik ve yayin yaziliyordu.
+    if (!this.canTowerTargetEnemy(tower, target)) {
       return;
     }
 
@@ -9011,6 +9039,13 @@ export class MatchRoom extends Room<MatchState> {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
+      if (tower.definition.id === "warrior-5") {
+        // Yikilan kule dongude atlaniyor: asiri yukleme kirisleri omurleri
+        // dolana kadar olu kuleden cikmaya devam ederdi. Asiri yukleme de bitiyor.
+        tower.debugOverdriveUntil = 0;
+        this.beams.delete(`beam-${tower.id}`);
+        this.deleteDebugLaserOverdriveBeams(tower);
+      }
       this.runTowerTriggers(tower, "towerDeath");
       if (this.towerHasUnlock(tower, "trigger:debrisOnDeath")) {
         const cell = worldToGrid(tower.x, tower.y, this.activeMap);
@@ -9313,6 +9348,10 @@ export class MatchRoom extends Room<MatchState> {
       player.towersBuilt = Math.max(0, player.towersBuilt - 1);
     }
     this.removeTowerReferences(tower.id);
+    // Satilan kulenin kirisleri hemen kalkiyor; yoksa bir omur boyunca bos
+    // yerden cikmaya devam ederlerdi (Debug Lazer asiri yuklemede uc kiris).
+    this.beams.delete(`beam-${tower.id}`);
+    this.deleteDebugLaserOverdriveBeams(tower);
     this.towers.delete(tower.id);
     this.markNavigationDirty();
     this.broadcast("tower:remove", { id: tower.id });
@@ -11560,10 +11599,19 @@ export class MatchRoom extends Room<MatchState> {
     if (isStatusEffectActive(freeze, now) && freeze?.sourceOwnerId) {
       candidates.push({ slot: this.getPlayerSlot(freeze.sourceOwnerId), kind: "freeze" });
     }
-    for (const state of [enemy.statusEffects.slow, enemy.statusEffects.chill]) {
-      if (isStatusEffectActive(state, now) && state?.sourceOwnerId) {
-        candidates.push({ slot: this.getPlayerSlot(state.sourceOwnerId), kind: "slow" });
+    // Yavaslatma asisti kaynak basina kayitlardan: ortak `slow` durumunun
+    // tek bir sahibi var ve her yeni vurus onu eziyordu -- arkadasin
+    // Izolasyon'u yavaslatip ardindan oldurenin Kin'i dokununca asist
+    // kayboluyordu. Kayit kendi kaynagini ve bitisini biliyor.
+    for (const key in enemy.slowSpeedFloors ?? {}) {
+      const floor = enemy.slowSpeedFloors![key];
+      if (floor.expiresAt > now && floor.ownerId && floor.speedMultiplier < 1) {
+        candidates.push({ slot: this.getPlayerSlot(floor.ownerId), kind: "slow" });
       }
+    }
+    const chill = enemy.statusEffects.chill;
+    if (isStatusEffectActive(chill, now) && chill?.sourceOwnerId) {
+      candidates.push({ slot: this.getPlayerSlot(chill.sourceOwnerId), kind: "slow" });
     }
     if (enemy.coolantSlowUntil > now && enemy.coolantSlowOwnerId) {
       candidates.push({ slot: this.getPlayerSlot(enemy.coolantSlowOwnerId), kind: "slow" });
@@ -13224,11 +13272,12 @@ export class MatchRoom extends Room<MatchState> {
     return tower.characterId === "archer" && (this.melisGothicNightmareOwnerUntil.get(tower.ownerId) ?? 0) > now;
   }
 
-  private getTowerDamage(tower: TowerModel) {
-    return resolveModifierBreakdown(this.getTowerDamageBreakdown(tower));
+  /** `debugOverdrive`: Debug Lazer asiri yukleme carpaniyla (saat bitisi gecmis olsa da). */
+  private getTowerDamage(tower: TowerModel, debugOverdrive = false) {
+    return resolveModifierBreakdown(this.getTowerDamageBreakdown(tower, debugOverdrive));
   }
 
-  private getTowerDamageBreakdown(tower: TowerModel): ModifierBreakdown {
+  private getTowerDamageBreakdown(tower: TowerModel, debugOverdrive = false): ModifierBreakdown {
     const now = Date.now();
     let breakdown: ModifierBreakdown = {
       base: calculateTowerScaledBaseDamage(tower.definition, tower.level),
@@ -13249,7 +13298,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (tower.definition.id === "warrior-5") {
-      add("tower:warrior-5:debug", getDebugLaserDamageMultiplier(tower.level, tower.debugOverdriveUntil > now));
+      add("tower:warrior-5:debug", getDebugLaserDamageMultiplier(tower.level, debugOverdrive || tower.debugOverdriveUntil > now));
     }
 
     if (tower.definition.id === "warrior-6") {
@@ -14518,6 +14567,13 @@ export class MatchRoom extends Room<MatchState> {
     for (const towerId of Array.from(this.debugSweepRuns.keys())) {
       const tower = this.towers.get(towerId);
       if (tower && tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
+        continue;
+      }
+      // Dogal sonuna varmis ama kapanis vurusu henuz yapilmamis supurme: kule
+      // dongusu kapanisin oldurmelerini sayip kaydi kendisi kapatiyor. Kule o
+      // donguye varamazsa (askida, yikik) pencere dolunca burada kapanir.
+      if (tower && tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0
+        && now - tower.debugOverdriveUntil <= DEBUG_LASER_CLOSING_PASS_WINDOW_MS) {
         continue;
       }
       this.finishDebugSweepRun(towerId);
