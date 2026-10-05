@@ -1554,6 +1554,15 @@ button.wave-report:active { transform: scale(0.99); }
   opacity: .42;
 }
 
+/* Dokunmatikte kilitli hucre surukleme tutamagi: bazi tarayicilar devre disi
+   dugmeden isaretci olayi yollamiyor ve agacin cogu kilitli. Fareyle uzerine
+   gelince aciklama (title) gorunmeye devam ediyor. */
+@media (hover: none) {
+  .worker-development__viewport .game-controls__worker-development:disabled {
+    pointer-events: none;
+  }
+}
+
 /*
  * Gecici bildirim (toast).
  *

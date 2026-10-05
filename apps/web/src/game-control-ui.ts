@@ -1,6 +1,7 @@
 import type Phaser from "phaser";
 import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
+import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 
 type ZeynepTier = "small" | "medium" | "big";
 
@@ -500,6 +501,12 @@ export function setupGameControlUi(game: Phaser.Game) {
    */
   type DrawerId = "towers" | "skills" | "inventory" | "creative" | "workerDevelopment";
   let openDrawer: DrawerId | undefined;
+  /**
+   * Isci agacinin kaydirmasi. Cekmecenin icinde dursaydi her yeniden kurulumda
+   * (parmak kalkinca bekleyen kurulum dahil) agac baslangica donerdi.
+   * Cekmece kapaninca sifirlaniyor (`render`).
+   */
+  let workerTreePan: TreePan = { x: 0, y: 0 };
   /** Yaratici cekmecenin acik sekmesi; cekmece kapansa da hatirlaniyor. */
   let creativeTab: "cards" | "items" | "wave" = "cards";
   /**
@@ -701,30 +708,52 @@ export function setupGameControlUi(game: Phaser.Game) {
       canvas.append(section);
     }
     viewport.append(canvas);
-    let dragX = 0;
-    let dragY = 0;
+    // Kaydirma `workerTreePan`ta: cekmece yeniden kurulunca agac yerinde kaliyor.
+    const applyTransform = () => { canvas.style.transform = formatTreePanTransform(workerTreePan); };
+    applyTransform();
+    // Surukleme her yerden basliyor, dugmenin ustunden de: esigi asinca
+    // isaretci pencereye yakalaniyor ve dugmenin `pointerup`u hic gelmiyor.
+    let activePointer: number | undefined;
+    let dragging = false;
     let startX = 0;
     let startY = 0;
-    let dragging = false;
-    const applyTransform = () => { canvas.style.transform = `translate(${dragX}px, ${dragY}px)`; };
+    let originPan: TreePan = { x: 0, y: 0 };
+    let bounds: TreePanBounds | undefined;
     viewport.addEventListener("pointerdown", (event) => {
-      if (event.target instanceof Element && event.target.closest("button")) return;
-      dragging = true;
-      startX = event.clientX - dragX;
-      startY = event.clientY - dragY;
-      viewport.setPointerCapture(event.pointerId);
-      viewport.classList.add("is-dragging");
+      if (activePointer !== undefined) return;
+      activePointer = event.pointerId;
+      dragging = false;
+      startX = event.clientX;
+      startY = event.clientY;
+      originPan = { ...workerTreePan };
+      bounds = undefined;
     });
     viewport.addEventListener("pointermove", (event) => {
-      if (!dragging) return;
-      dragX = event.clientX - startX;
-      dragY = event.clientY - startY;
+      if (event.pointerId !== activePointer) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (!dragging) {
+        if (!exceedsTreeDragThreshold(dx, dy)) return;
+        dragging = true;
+        viewport.setPointerCapture(event.pointerId);
+        viewport.classList.add("is-dragging");
+      }
+      // Olculer surukleme basina bir kez: her harekette okumak yerlesimi zorlar.
+      bounds ??= {
+        treeWidth: canvas.offsetWidth,
+        treeHeight: canvas.offsetHeight,
+        viewportWidth: viewport.clientWidth,
+        viewportHeight: viewport.clientHeight
+      };
+      workerTreePan = clampTreePan({ x: originPan.x + dx, y: originPan.y + dy }, bounds);
       applyTransform();
     });
     const release = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      activePointer = undefined;
       if (!dragging) return;
       dragging = false;
-      viewport.releasePointerCapture?.(event.pointerId);
+      if (viewport.hasPointerCapture?.(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
       viewport.classList.remove("is-dragging");
     };
     viewport.addEventListener("pointerup", release);
@@ -1387,6 +1416,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (drawer) {
       panel.append(drawer);
     }
+    if (drawerId !== "workerDevelopment") workerTreePan = { x: 0, y: 0 };
 
     panel.append(buildLauncher(state));
     root.append(panel);
