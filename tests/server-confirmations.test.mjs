@@ -321,7 +321,9 @@ test("isci agaci: hucre adi, rol ve harcanan XP; ust kademe daha yuksek perde", 
     assert.equal(cue.pulse, undefined, "isci bir kule degil");
     steps.push(cue.step);
   }
-  assert.ok(steps[0] < steps[1] && steps[1] < steps[2], `kademe perdesi yukselmeli: ${steps.join(", ")}`);
+  // Perde uclu sira basina yukseliyor: yon, derinlestirme ve oyun degistirici ayni sirada.
+  for (let index = 1; index < steps.length; index += 1) assert.ok(steps[index] >= steps[index - 1], `perde dusmemeli: ${steps.join(", ")}`);
+  assert.ok(steps[0] < steps[3] && steps[3] < steps[6], `kademe perdesi yukselmeli: ${steps.join(", ")}`);
 });
 
 test("bilinmeyen ya da bozuk yuk toast acmaz", () => {

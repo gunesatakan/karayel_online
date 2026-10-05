@@ -65,6 +65,17 @@ test("kaydirma cekmecenin yeniden kurulumundan sagkaliyor", () => {
   assert.match(builder, /applyTransform\(\);\n/, "yeni kurulan agac kayitli kaydirmayla cizilmeli");
   // Dugmenin ustunden baslayan surukleme reddedilmiyor (agacin cogu dugme).
   assert.doesNotMatch(builder, /closest\("button"\)\) return/);
-  // Cekmece kapaninca bir dahaki acilis baslangictan.
-  assert.match(ui, /if \(drawerId !== "workerDevelopment"\) workerTreePan = \{ x: 0, y: 0 \};/);
+  // Cekmece kapaninca bir dahaki acilis baslangictan, incelenen secenek de bos.
+  assert.match(ui, /if \(drawerId !== "workerDevelopment"\) \{\n\s+workerTreePan = \{ x: 0, y: 0 \};\n\s+workerTreeFocus = undefined;/);
+});
+
+test("secenege dokunmak secimi acmiyor; acma ayrintidaki dugmede", () => {
+  const ui = readSource("apps/web/src/game-control-ui.ts");
+  const builder = ui.slice(ui.indexOf("const buildWorkerDevelopmentDrawer"), ui.indexOf("const buildInventoryDrawer"));
+  // Secim geri alinamaz ve telefonda aciklama ancak dokununca gorunuyor.
+  const unlocks = builder.match(/action: "unlockWorkerDevelopment"/g) ?? [];
+  assert.equal(unlocks.length, 1, "agacta tek acma yolu olmali");
+  assert.match(builder, /"worker-development__unlock", true, \(\) => \{\n\s+dispatch\(\{ action: "unlockWorkerDevelopment"/);
+  // Secenek dugmeleri devre disi degil: kilitli olan da okunabiliyor.
+  assert.match(builder, /`game-controls__worker-development is-\$\{status\.kind\}`, true,/);
 });

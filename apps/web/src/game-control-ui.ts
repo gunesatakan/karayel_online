@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 
@@ -507,6 +507,11 @@ export function setupGameControlUi(game: Phaser.Game) {
    * Cekmece kapaninca sifirlaniyor (`render`).
    */
   let workerTreePan: TreePan = { x: 0, y: 0 };
+  /**
+   * Agacta incelenen secenek. Dokunus secimi hemen acmiyor (geri alinamaz ve
+   * telefonda aciklamayi gormenin baska yolu yok): once aciklama, sonra "Ac".
+   */
+  let workerTreeFocus: WorkerSkillId | undefined;
   /** Yaratici cekmecenin acik sekmesi; cekmece kapansa da hatirlaniyor. */
   let creativeTab: "cards" | "items" | "wave" = "cards";
   /**
@@ -651,6 +656,38 @@ export function setupGameControlUi(game: Phaser.Game) {
     return body;
   };
 
+  /** Agactaki secenegin rolu ve hucresi. */
+  const findWorkerDevelopmentOption = (skillId: WorkerSkillId) => {
+    for (const role of HIRABLE_WORKER_ROLES) {
+      const index = WORKER_DEVELOPMENT_CELLS[role].findIndex((cell) => cell.options?.some((option) => option.id === skillId));
+      const option = index < 0 ? undefined : WORKER_DEVELOPMENT_CELLS[role][index].options?.find((entry) => entry.id === skillId);
+      if (option) return { role, index, option };
+    }
+    return undefined;
+  };
+
+  /**
+   * Secenegin durumu, sunucunun `unlockWorkerDevelopment` kuraliyla ayni:
+   * hucreler sirayla, her hucreden tek secim, derinlestirme yonunu istiyor.
+   */
+  const getWorkerDevelopmentStatus = (
+    development: NonNullable<ControlState["workerDevelopment"]>,
+    role: HirableWorkerRole,
+    index: number,
+    option: WorkerSkillChoice
+  ): { kind: "selected" | "available" | "locked"; text: string } => {
+    const owned = development.selectedSkillIds.filter((skill) => isWorkerSkillForRole(role, skill));
+    const cost = WORKER_DEVELOPMENT_XP_COSTS[index];
+    if (owned.includes(option.id)) return { kind: "selected", text: "Seçildi." };
+    if (owned.length > index) return { kind: "locked", text: "Bu hücreden diğer seçenek alındı." };
+    if (option.requires && !owned.includes(option.requires) && owned.length === index) {
+      return { kind: "locked", text: `Yalnızca ${getWorkerSkill(option.requires)?.name ?? "önceki yön"} seçildiyse açılır.` };
+    }
+    if (owned.length < index) return { kind: "locked", text: `Önce ${index}. hücreye kadar olanlar açılmalı · ${cost} XP` };
+    if (development.experience < cost) return { kind: "locked", text: `XP yetersiz: ${Math.floor(development.experience)} / ${cost}` };
+    return { kind: "available", text: `Açılabilir · ${cost} XP` };
+  };
+
   const buildWorkerDevelopmentDrawer = (state: ControlState) => {
     const development = state.workerDevelopment;
     if (!development) return [];
@@ -676,38 +713,67 @@ export function setupGameControlUi(game: Phaser.Game) {
       path.className = "worker-development__path";
       WORKER_DEVELOPMENT_CELLS[role].forEach((cell, index) => {
         const row = document.createElement("div");
-        row.className = `worker-development__cell${cell.options ? " worker-development__cell--choice" : " worker-development__cell--empty"}`;
+        const gamechanger = index % 3 === 2;
+        row.className = `worker-development__cell worker-development__cell--choice${gamechanger ? " worker-development__cell--gamechanger" : ""}`;
         const marker = document.createElement("span");
         marker.className = "worker-development__marker";
         marker.textContent = String(index + 1);
         row.append(marker);
-        if (!cell.options) {
-          const fork = document.createElement("div");
-          fork.className = "worker-development__fork worker-development__fork--empty";
-          for (let branch = 0; branch < 2; branch += 1) {
-            const empty = document.createElement("span");
-            empty.className = "worker-development__empty-branch";
-            empty.textContent = "boş";
-            fork.append(empty);
-          }
-          row.append(fork);
-        } else {
-          const fork = document.createElement("div");
-          fork.className = "worker-development__fork";
-          cell.options.forEach((option) => {
-            const selected = development.selectedSkillIds.includes(option.id);
-            const button = makeActionButton(`${option.name}${selected ? " ✓" : ""}`, "game-controls__worker-development", !selected && development.experience >= WORKER_DEVELOPMENT_XP_COSTS[Math.floor(index / 3)], () => dispatch({ action: "unlockWorkerDevelopment", role, skillId: option.id }));
-            button.title = `${option.description} · ${WORKER_DEVELOPMENT_XP_COSTS[Math.floor(index / 3)]} XP`;
-            fork.append(button);
+        const fork = document.createElement("div");
+        fork.className = "worker-development__fork";
+        for (const option of cell.options ?? []) {
+          const status = getWorkerDevelopmentStatus(development, role, index, option);
+          const button = makeActionButton(`${option.name}${status.kind === "selected" ? " ✓" : ""}`, `game-controls__worker-development is-${status.kind}`, true, () => {
+            workerTreeFocus = option.id;
+            for (const focused of canvas.querySelectorAll(".is-focused")) focused.classList.remove("is-focused");
+            button.classList.add("is-focused");
+            renderWorkerTreeDetail();
           });
-          row.append(fork);
+          button.dataset.skillId = option.id;
+          button.title = `${option.description} · ${WORKER_DEVELOPMENT_XP_COSTS[index]} XP`;
+          if (option.id === workerTreeFocus) button.classList.add("is-focused");
+          fork.append(button);
         }
+        row.append(fork);
         path.append(row);
       });
       section.append(path);
       canvas.append(section);
     }
     viewport.append(canvas);
+    // Incelenen secenegin ayrintisi: aciklama, bedel, durum ve "Ac". Agacin
+    // penceresinin icinde: cekmece 300 px'te kesiliyor ve agacin altina konan
+    // bir kutu telefonda ancak kaydirinca gorunuyordu.
+    const detail = document.createElement("div");
+    detail.className = "worker-development__detail";
+    const renderWorkerTreeDetail = () => {
+      detail.replaceChildren();
+      const focus = workerTreeFocus ? findWorkerDevelopmentOption(workerTreeFocus) : undefined;
+      detail.hidden = !focus;
+      if (!focus) return;
+      const status = getWorkerDevelopmentStatus(development, focus.role, focus.index, focus.option);
+      const title = document.createElement("strong");
+      title.textContent = `${WORKER_ROLE_LABELS[focus.role]} · ${focus.index + 1}. hücre · ${focus.option.name}`;
+      const close = makeActionButton("×", "worker-development__detail-close", true, () => {
+        workerTreeFocus = undefined;
+        for (const focused of canvas.querySelectorAll(".is-focused")) focused.classList.remove("is-focused");
+        renderWorkerTreeDetail();
+      });
+      close.setAttribute("aria-label", "Ayrıntıyı kapat");
+      const body = document.createElement("p");
+      body.textContent = focus.option.description;
+      const state = document.createElement("small");
+      state.className = `worker-development__detail-state is-${status.kind}`;
+      state.textContent = status.text;
+      detail.append(close, title, body, state);
+      if (status.kind === "available") {
+        detail.append(makeActionButton(`Aç · ${WORKER_DEVELOPMENT_XP_COSTS[focus.index]} XP`, "worker-development__unlock", true, () => {
+          dispatch({ action: "unlockWorkerDevelopment", role: focus.role, skillId: focus.option.id });
+        }));
+      }
+    };
+    renderWorkerTreeDetail();
+    viewport.append(detail);
     // Kaydirma `workerTreePan`ta: cekmece yeniden kurulunca agac yerinde kaliyor.
     const applyTransform = () => { canvas.style.transform = formatTreePanTransform(workerTreePan); };
     applyTransform();
@@ -720,6 +786,8 @@ export function setupGameControlUi(game: Phaser.Game) {
     let originPan: TreePan = { x: 0, y: 0 };
     let bounds: TreePanBounds | undefined;
     viewport.addEventListener("pointerdown", (event) => {
+      // Ayrinti kutusu agacin ustunde duruyor ama agacin parcasi degil.
+      if (event.target instanceof Element && event.target.closest(".worker-development__detail")) return;
       if (activePointer !== undefined) return;
       activePointer = event.pointerId;
       dragging = false;
@@ -760,7 +828,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     viewport.addEventListener("pointercancel", release);
     const hint = document.createElement("small");
     hint.className = "worker-development__hint";
-    hint.textContent = "Ağacı dokunup sürükleyerek gezebilirsin · 3 / 6 / 9 gamechanger hücreleri";
+    hint.textContent = "Ağacı sürükleyerek gez, seçeneğe dokunup oku · hücreler sırayla açılır, her hücreden bir seçim · 3 / 6 / 9 gamechanger hücreleri";
     return [intro, viewport, hint];
   };
 
@@ -1416,7 +1484,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (drawer) {
       panel.append(drawer);
     }
-    if (drawerId !== "workerDevelopment") workerTreePan = { x: 0, y: 0 };
+    if (drawerId !== "workerDevelopment") {
+      workerTreePan = { x: 0, y: 0 };
+      workerTreeFocus = undefined;
+    }
 
     panel.append(buildLauncher(state));
     root.append(panel);

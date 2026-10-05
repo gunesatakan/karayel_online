@@ -69,17 +69,20 @@ test("every non-energy specialization exposes three binary choices", () => {
 test("worker development tree spends XP once and applies to every role cell", () => {
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
-  player.experience = WORKER_DEVELOPMENT_XP_COSTS[0] + 10;
+  player.experience = WORKER_DEVELOPMENT_XP_COSTS[0] + WORKER_DEVELOPMENT_XP_COSTS[1] + WORKER_DEVELOPMENT_XP_COSTS[2] + 10;
+  // Hucreler sirayla aciliyor: oyun degistirici (3. hucre) yon ve derinlestirmeden sonra.
   room.unlockWorkerDevelopment(client, { role: "repairer", skillId: "repair-bulwark" });
+  assert.deepEqual(player.workerSkillIds ?? [], []);
+  for (const skillId of ["repair-tune-up", "repair-fine-tune", "repair-bulwark"]) room.unlockWorkerDevelopment(client, { role: "repairer", skillId });
   assert.equal(player.experience, 10);
-  assert.deepEqual(player.workerSkillIds, ["repair-bulwark"]);
+  assert.deepEqual(player.workerSkillIds, ["repair-tune-up", "repair-fine-tune", "repair-bulwark"]);
   room.hireWorker(client, { advanced: false });
   const hired = player.hiredWorkers.at(-1);
   room.chooseWorkerSpecialization(client, { workerId: hired.id, role: "repairer" });
   room.ensureLogisticsWorkers();
   const repairers = [...room.drones.values()].filter((worker) => worker.ownerId === "p1" && worker.mode === "repairer");
   assert.ok(repairers.length > 0);
-  assert.ok(repairers.every((worker) => room.hasWorkerSkill(worker, "repair-bulwark")));
+  assert.ok(repairers.every((worker) => room.hasWorkerSkill(worker, "repair-bulwark") && room.hasWorkerSkill(worker, "repair-fine-tune")));
 });
 
 test("crystal reserve and conduit change reactor failure and tower topology", () => {

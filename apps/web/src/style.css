@@ -1550,17 +1550,98 @@ button.wave-report:active { transform: scale(0.99); }
   white-space: normal;
 }
 
-.game-controls .game-controls__worker-development:disabled {
-  opacity: .42;
+/* Secenek dugmeleri devre disi degil: kilitli olan da dokununca okunuyor.
+   Durum renkte ve saydamlikta; acma ayrintidaki "Ac" dugmesiyle. */
+.game-controls .game-controls__worker-development.is-locked {
+  opacity: .48;
 }
 
-/* Dokunmatikte kilitli hucre surukleme tutamagi: bazi tarayicilar devre disi
-   dugmeden isaretci olayi yollamiyor ve agacin cogu kilitli. Fareyle uzerine
-   gelince aciklama (title) gorunmeye devam ediyor. */
-@media (hover: none) {
-  .worker-development__viewport .game-controls__worker-development:disabled {
-    pointer-events: none;
-  }
+.game-controls .game-controls__worker-development.is-available {
+  border-color: rgba(250, 204, 21, .7);
+  color: #fef3c7;
+}
+
+.game-controls .game-controls__worker-development.is-selected {
+  border-color: #2dd4bf;
+  color: #f0fdfa;
+  background: rgba(13, 148, 136, .32);
+}
+
+.game-controls .game-controls__worker-development.is-focused {
+  outline: 2px solid #facc15;
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+/* 3/6/9: oyun degistirici hucreler. Yon ve derinlestirmeden ayrissin. */
+.worker-development__cell--gamechanger .worker-development__marker {
+  border-color: rgba(250, 204, 21, .75);
+  color: #fde68a;
+  background: #2a2110;
+}
+
+/* Agacin penceresinin ust kenarinda: oyuncunun baktigi yerde aciliyor. Alt
+   kenar olmadi -- cekmece 300 px'te kesildigi icin pencerenin alti telefonda
+   kaydirilmadan gorunmuyor, ust kenari ise cekmece acilinca hep gorunuyor. */
+.worker-development__detail {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  left: 6px;
+  z-index: 3;
+  display: grid;
+  gap: 4px;
+  padding: 7px 34px 8px 9px;
+  border: 1px solid rgba(96, 165, 250, .4);
+  border-radius: 10px;
+  color: #dbeafe;
+  background: rgba(8, 18, 38, .96);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, .55);
+  font-size: 11px;
+  line-height: 1.35;
+  cursor: auto;
+}
+
+/* `display: grid` `hidden` niteligini eziyor; kural olmadan kutu hep acik kalirdi. */
+.worker-development__detail[hidden] { display: none; }
+
+.worker-development__detail strong {
+  color: #f8fafc;
+  font-size: 11px;
+}
+
+.worker-development__detail p {
+  margin: 0;
+}
+
+.game-controls .worker-development__detail-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.worker-development__detail-state {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.worker-development__detail-state.is-available { color: #fde68a; }
+.worker-development__detail-state.is-selected { color: #5eead4; }
+
+.game-controls .worker-development__unlock {
+  justify-self: start;
+  min-height: 32px;
+  padding: 4px 14px;
+  border-color: rgba(250, 204, 21, .75);
+  color: #fef3c7;
+  font-size: 11px;
 }
 
 /*
