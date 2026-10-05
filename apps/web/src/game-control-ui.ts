@@ -14,6 +14,12 @@ function formatShopCategory(category: string) {
   return SHOP_CATEGORY_LABELS[category as ShopItemCategory] ?? category;
 }
 
+/**
+ * Kilidi kartlardan zaten gelen esyanin etiketi (vitrin ve envanter).
+ * Satin almayi engellemiyor; yalnizca bir sey eklemeyecegini soyluyor.
+ */
+const ALREADY_UNLOCKED_TAG = `<i class="gold-shop__new gold-shop__unlocked">zaten açık</i>`;
+
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
 /**
@@ -167,9 +173,10 @@ type ControlState = {
     open: boolean;
     /** Bir esya secildiyse oyuncu simdi kule bekliyor demektir. */
     pendingItemId?: string;
-    items: Array<{ id: string; name: string; description: string; category: string; count: number }>;
+    /** `alreadyUnlocked`: kilidi kartlardan zaten geliyor (`isShopItemAlreadyUnlocked`). */
+    items: Array<{ id: string; name: string; description: string; category: string; count: number; alreadyUnlocked?: boolean }>;
   };
-  goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean; fresh?: boolean }> };
+  goldShop?: { gold: number; rerollPrice: number; offers: Array<{ id: string; name: string; description: string; price: number; category: string; affordable: boolean; fresh?: boolean; alreadyUnlocked?: boolean }> };
   targeting?: { current: string; modes: string[] };
   /**
    * Yaratici mod paneli.
@@ -848,7 +855,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `gold-shop__item gold-shop__item--${item.category}`;
-      button.innerHTML = `<span>${formatShopCategory(item.category)}</span><strong>${item.name}</strong><small>${item.description}</small>`
+      button.innerHTML = `<span>${formatShopCategory(item.category)}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG : ""}</span><strong>${item.name}</strong><small>${item.description}</small>`
         + (item.count > 1 ? `<b>x${item.count}</b>` : "");
       button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
       list.append(button);
@@ -1397,7 +1404,7 @@ export function setupGameControlUi(game: Phaser.Game) {
         button.disabled = !item.affordable;
         // "YENİ": bu tarayicida ilk kez gorulen esya (Kart Arsivi). Fiyat ve
         // cerceve ayni kaliyor; etiket sessiz, secimi one cekmesin.
-        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">YENİ</i>` : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
+        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">YENİ</i>` : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
         button.addEventListener("pointerup", () => dispatch({ action: "buyShopItem", itemId: item.id }));
         offers?.append(button);
       }

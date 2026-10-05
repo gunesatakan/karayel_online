@@ -119,9 +119,12 @@ test("isabet ve donus hizi kartlari nisan alan en az bir kuleye ulasir", () => {
 });
 
 /**
- * Isabet bonusu 1.0 degerinde doyuyor: ustundeki her sey bosa gidiyor. Yeni
- * isabet kartlari kasten toplami tavanin altinda kalacak sekilde ayarlandi ki
- * oyuncu ucunu de alsa hicbir secimi bosa gitmesin.
+ * Isabet bonusu 1.0 degerinde doyuyor: kullanildigi yerde (ates konisi,
+ * Goz Karari'nin kritik cevrimi) [0, 1] araligina kirpiliyor ve ustu bosa
+ * gidiyor. Toplam tavani asabiliyor: tek bir kulede yalnizca kartlar bile
+ * 1.0'in ustune cikiyor, esyalarla daha da fazlasi. Buradaki iddia daha
+ * dar: bu uc kartin toplami kasten tavanin altinda, yani oyuncu ucunu de
+ * alsa bunlarin hicbiri birbirini bosa cikarmiyor.
  */
 test("yeni isabet kartlarinin toplami isabet tavanini asmaz", () => {
   const ids = ["sabit-kundak", "uzun-namlu", "atis-kontrol-birimi"];

@@ -185,6 +185,11 @@ import {
   resolveTowerAttackMultipliers,
   COLD_CRIT_CHANCE,
   COLD_CRIT_TEMPERATURE,
+  MARKED_CRIT_CHANCE,
+  ISOLATED_CRIT_CHANCE,
+  KILL_SNAP_TURN_RATE,
+  KILL_SNAP_DURATION_MS,
+  getAccuracyCritChance,
   RUN_HOT_DAMAGE_PER_DEGREE,
   RUN_HOT_HEAT_LOCK_THRESHOLD,
   getCardDefinition,
@@ -1126,6 +1131,8 @@ type TowerModel = {
   streakDamageMultiplier: number;
   streakHasteUntil: number;
   streakHasteMultiplier: number;
+  /** `aim:killSnap`: son oldurmeden sonraki donus hizi penceresinin sonu. */
+  killSnapUntil?: number;
   zeynepFormationSize: number;
   zeynepFormationLevel: number;
   melisEvolutionLevel: number;
@@ -3941,7 +3948,10 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const targetAngle = Math.atan2(dy, dx);
-    const turnRate = getModifierMultiplier(this.getTowerRunModifiers(tower), "turnRate") * TOWER_TURN_RATE_RADIANS_PER_SECOND;
+    // Av Refleksi: oldurmeden sonraki pencere modifier havuzuna eklenir, ayri
+    // bir carpan olarak degil -- kartin metni "+%150" diyor, "x2,5" degil.
+    const killSnap = (tower.killSnapUntil ?? 0) > Date.now() && this.towerHasUnlock(tower, "aim:killSnap") ? KILL_SNAP_TURN_RATE : 0;
+    const turnRate = (getModifierMultiplier(this.getTowerRunModifiers(tower), "turnRate") + killSnap) * TOWER_TURN_RATE_RADIANS_PER_SECOND;
     tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds, turnRate);
     const accuracyBonus = getModifierAdd(this.getTowerRunModifiers(tower), "accuracy");
     return isTowerAligned(tower.facing, targetAngle, getTowerFireAlignmentTolerance(accuracyBonus));
@@ -6245,7 +6255,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private openPlayerSetupShop(playerId: string, player: Player) {
     player.shopRerolls = 0;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, marksAvailable: this.canTeamMarkEnemies() });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies() });
   }
 
   private rerollShop(client: Client) {
@@ -6256,7 +6266,7 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.shopRerolls += 1;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, marksAvailable: this.canTeamMarkEnemies() });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies() });
   }
 
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
@@ -9997,8 +10007,20 @@ export class MatchRoom extends Room<MatchState> {
       && isStatusEffectActive(enemy.statusEffects.freeze, now)
       ? FROZEN_CRIT_CHANCE
       : 0;
+    // Av Izi: isaret baska bir kaynaktan geldiginde sayiliyor -- baska bir
+    // Takipci (takim arkadasininki dahil), Melis'in yeralti isareti, gudum.
+    // Isaret gucunun okundugu ayni `activeMark`. Kulenin kendi koydugu takip
+    // isareti sayilmiyor: Takipci vurdugu her hedefi isaretledigi icin aksi
+    // halde kosul onun icin kosulsuz bir +%20 olurdu.
+    const ownMarkOnly = activeMark.id === "tracking" && enemy.trackingSourceTowerId === damageSourceTower?.id;
+    const markedCritChance = damageSourceTower
+      && activeMark.id && activeMark.expiresAt > now && !ownMarkOnly
+      && this.towerHasUnlock(damageSourceTower, "crit:vsMarked")
+      ? MARKED_CRIT_CHANCE
+      : 0;
     const critChance = canCrit
-      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + getModifierAdd(damageModifiers, "critChance"))
+      ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + markedCritChance
+        + (damageSourceTower ? this.getTowerOwnConditionalCritChance(damageSourceTower) : 0) + getModifierAdd(damageModifiers, "critChance"))
       : 0;
     const critDamageAdd = canCrit
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
@@ -10179,6 +10201,7 @@ export class MatchRoom extends Room<MatchState> {
       for (let unit = 0; unit < killUnits; unit += 1) this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
       if (this.towerHasUnlock(sourceTower, "stack:kill")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + killUnits);
       if (this.towerHasUnlock(sourceTower, "ammoDrop") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
+      if (this.towerHasUnlock(sourceTower, "aim:killSnap")) sourceTower.killSnapUntil = now + KILL_SNAP_DURATION_MS;
       if (this.towerHasUnlock(sourceTower, "heat:killVent")) {
         // Oldurme isiyi atar. Kilitli bir kule de yanik hasariyla oldurebilir,
         // o yuzden esik burada da yeniden bakiliyor: tahliye kilidi kaldirabilir.
@@ -13050,16 +13073,38 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Kulenin kritik ihtimali.
    *
-   * Hasar yolundaki hesabin kartlara acik olan parcasi. Kosula bagli
-   * olanlar (soguk namlu, donmus hedef, isaretli hedef) burada yok: onlar
-   * bir **hedefe** bakiyor, bu ise kulenin kendi degeri -- "Buz Kirigi"nin
-   * okudugu sayi da bu.
+   * Hasar yolundaki hesabin kartlara acik olan parcasi; "Buz Kirigi"nin
+   * okudugu sayi bu. Hedefe bakan kosullar (donmus hedef, isaretli hedef,
+   * motorun durum etkisine bagli kritigi) burada yok, cunku yavaslatma
+   * zarinda bakilacak bir vurus hedefi yok. Kulenin kendisine bakan iki
+   * kosul (isabetten gelen kritik, komsusuz kule) burada da var.
+   *
+   * Soguk Celik (`heat:coldCrit`) bir istisna: hedefe degil kulenin kendi
+   * sicakligina bakiyor, ama bilerek yalnizca hasar yolunda kaliyor. Buz
+   * Kirigi'nin dengesi o pay olmadan kuruldu; buraya eklemek sogutma
+   * kurulumlarinin yavaslatmasini da +%25 kritik yapardi ve davranis
+   * degisikligi olurdu, yorum duzeltmesi degil.
    */
   private getTowerCritChance(tower: TowerModel) {
     const critical = this.getTowerEngine(tower)?.critical;
     return Math.max(0, TOWER_BASE_CRITICAL_CHANCE
       + (critical?.baseChance ?? 0)
+      + this.getTowerOwnConditionalCritChance(tower)
       + getModifierAdd(this.getTowerRunModifiers(tower), "critChance"));
+  }
+
+  /**
+   * Hedefe degil kulenin kendisine bakan kosullu kritik: Goz Karari isabet
+   * bonusunu kritige ceviriyor, Gozcu Yuvasi komsusuz kuleye kritik veriyor.
+   * Komsuluk kurali Yalniz Nisanci ile ayni (`isTowerIsolated`).
+   */
+  private getTowerOwnConditionalCritChance(tower: TowerModel) {
+    let chance = 0;
+    if (this.towerHasUnlock(tower, "crit:fromAccuracy")) {
+      chance += getAccuracyCritChance(getModifierAdd(this.getTowerRunModifiers(tower), "accuracy"));
+    }
+    if (this.towerHasUnlock(tower, "crit:isolated") && this.isTowerIsolated(tower)) chance += ISOLATED_CRIT_CHANCE;
+    return chance;
   }
 
   /**

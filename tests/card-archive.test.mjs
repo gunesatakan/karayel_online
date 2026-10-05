@@ -70,26 +70,26 @@ test("gorulme: yalnizca hic gorulmemis olan YENİ, sirayla ve bir kez; arsiv ger
   assert.deepEqual(findUnseenArchiveIds(esyali.archive, "items", [esya, shopCatalog[1].id]), [shopCatalog[1].id]);
 });
 
-test("sayac: katalogdan '64/113' ve '30/85'; bilinmeyen kimlik korunuyor ama sayilmiyor", () => {
-  assert.equal(cardCatalog.length, 113, "plan ve menu metni bu sayiyla yazildi");
-  assert.equal(shopCatalog.length, 85);
+test("sayac: katalogdan '64/123' ve '30/91'; bilinmeyen kimlik korunuyor ama sayilmiyor", () => {
+  assert.equal(cardCatalog.length, 123, "plan ve menu metni bu sayiyla yazildi");
+  assert.equal(shopCatalog.length, 91);
 
   let arsiv = markArchiveSeen(createEmptyCardArchive(), "cards", [...kartlar(64), "gelecekteki-kart"]).archive;
   arsiv = markArchiveSeen(arsiv, "items", shopCatalog.slice(0, 30).map((item) => item.id)).archive;
-  assert.deepEqual(getArchiveProgress(arsiv, "cards"), { seen: 64, total: 113 });
-  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "cards")), "64/113");
-  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "items")), "30/85");
+  assert.deepEqual(getArchiveProgress(arsiv, "cards"), { seen: 64, total: 123 });
+  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "cards")), "64/123");
+  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "items")), "30/91");
   assert.ok(arsiv.cards.includes("gelecekteki-kart"), "eski bir sekme yeni surumun gordugunu silmesin");
 
   // Yuzde asagi yuvarlaniyor: son kart gorulmeden %100 yazmiyor.
-  assert.equal(getArchivePercent({ seen: 112, total: 113 }), 99);
-  assert.equal(getArchivePercent({ seen: 113, total: 113 }), 100);
+  assert.equal(getArchivePercent({ seen: 122, total: 123 }), 99);
+  assert.equal(getArchivePercent({ seen: 123, total: 123 }), 100);
   assert.equal(getArchivePercent({ seen: 0, total: 0 }), 0);
 
   // Butun katalog arsivlenebilir: her kart ve esya kimligi bicime uyuyor.
   const tam = markArchiveSeen(markArchiveSeen(createEmptyCardArchive(), "cards", cardCatalog.map((card) => card.id)).archive, "items", shopCatalog.map((item) => item.id)).archive;
-  assert.deepEqual(getArchiveProgress(tam, "cards"), { seen: 113, total: 113 });
-  assert.deepEqual(getArchiveProgress(tam, "items"), { seen: 85, total: 85 });
+  assert.deepEqual(getArchiveProgress(tam, "cards"), { seen: 123, total: 123 });
+  assert.deepEqual(getArchiveProgress(tam, "items"), { seen: 91, total: 91 });
 });
 
 test("gercek cekilis: sunulan her kart ve esya arsive giriyor, ikinci sunumda yeni degil", () => {
@@ -179,9 +179,9 @@ test("menu gorunumu: gorulmemis satirda ad yok, gruplar nadirlige ve kategoriye 
   assert.deepEqual(view.cards.groups.map((group) => group.key), ["common", "uncommon", "rare"]);
   assert.deepEqual(view.cards.groups.map((group) => group.label), ["Yaygın", "Seyrek", "Nadir"]);
   assert.deepEqual(view.items.groups.map((group) => group.key), ["power", "class", "utility", "map", "risk"]);
-  assert.equal(view.cards.total, 113);
-  assert.equal(view.items.total, 85);
-  assert.equal(view.cards.groups.reduce((sum, group) => sum + group.total, 0), 113, "her kart tam bir grupta");
+  assert.equal(view.cards.total, 123);
+  assert.equal(view.items.total, 91);
+  assert.equal(view.cards.groups.reduce((sum, group) => sum + group.total, 0), 123, "her kart tam bir grupta");
 
   const nadirGrup = view.cards.groups.find((group) => group.key === "rare");
   assert.equal(nadirGrup.seen, 1);

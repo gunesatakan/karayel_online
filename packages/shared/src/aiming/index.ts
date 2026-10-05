@@ -65,3 +65,37 @@ export function isTowerAligned(facing: number, targetAngle: number, tolerance = 
 function normalizeAngle(angle: number) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
+
+// Liste bir donem paylasilan paketin kok dosyasindaydi. Kart kapsami da
+// (`aims`) ayni soruyu sordugu icin buraya tasindi: `cards` modulu kok
+// dosyayi iceri alamaz, kok dosya zaten `cards`'i iceri aliyor.
+
+/**
+ * Towers whose muzzle should turn toward what they are shooting.
+ *
+ * Kept as an explicit list rather than inferred from hitType: Kin Kulesi is an
+ * aura tower but fires a directional cone, while Sunucu throws projectiles yet
+ * is a global rack with no muzzle. Auras, passives and area curses never aim.
+ *
+ * Taht Muhru was excluded while it was a socketed seal, but its art now carries
+ * an explicit barrel on the right, and a muzzle that never turns reads worse
+ * than one that does.
+ */
+const AIMING_TOWER_IDS = new Set<string>([
+  "zeynep-1",
+  "zeynep-2",
+  "zeynep-3",
+  "zeynep-6",
+  "warrior-1",
+  "warrior-4",
+  "warrior-5",
+  "warrior-6",
+  "archer-1",
+  "archer-2",
+  "archer-4",
+  "archer-5"
+]);
+
+export function towerAims(definitionId: string) {
+  return AIMING_TOWER_IDS.has(definitionId);
+}

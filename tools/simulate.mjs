@@ -164,7 +164,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     // Esyalar kule basina takildigi icin tek bir esya artik anlamli bir yatirim
     // degil; gercek oyuncu her hazirlik fazinda parasi yettigince alir. Teklif
     // listesi tukenene veya altin bitene kadar satin alinir.
-    const shopOffers = drawShopOffers({ wave, preferredAxes: config.axes, towers: definitions, ownedItemIds: ownedShopItemIds, random });
+    const shopOffers = drawShopOffers({ wave, preferredAxes: config.axes, towers: definitions, ownedItemIds: ownedShopItemIds, ownedCardIds, random });
     const remainingOffers = [...shopOffers];
     let shopSafety = SHOP_OFFER_COUNT;
     while (shopSafety-- > 0) {
@@ -415,7 +415,15 @@ const UNLOCK_DAMAGE_ADD = {
   "status:burn": 0.1,
   "status:chill": 0.12,
   "canHitAir": 0.05,
-  "bloodBank": 0.2
+  "bloodBank": 0.2,
+  // Kosullu kritikler: ek sans x taban kritik fazlasi (1) x kosulun tutma
+  // payi. Isaretli dusman ve komsusuz kule yaklasik yari yariya, isabet
+  // cevrimi ise ancak isabet yigilmis kulede anlamli.
+  "crit:vsMarked": 0.08,
+  "crit:isolated": 0.06,
+  "crit:fromAccuracy": 0.05,
+  // Donus hizi hasar degil; yalnizca hedef degistirme gecikmesini kisaltiyor.
+  "aim:killSnap": 0.03
 };
 
 /** Motor eklentilerinin kaba hasar karsiligi; ayni mantik, ayni kaba olcek. */

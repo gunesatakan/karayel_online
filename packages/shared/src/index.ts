@@ -1639,6 +1639,12 @@ export {
   hasUnlockBit,
   COLD_CRIT_CHANCE,
   COLD_CRIT_TEMPERATURE,
+  MARKED_CRIT_CHANCE,
+  ISOLATED_CRIT_CHANCE,
+  ACCURACY_CRIT_RATIO,
+  KILL_SNAP_TURN_RATE,
+  KILL_SNAP_DURATION_MS,
+  getAccuracyCritChance,
   RUN_HOT_DAMAGE_PER_DEGREE,
   RUN_HOT_HEAT_LOCK_THRESHOLD,
   cardCatalog,
@@ -1670,6 +1676,9 @@ export {
   isShopItemAvailable,
   getShopItem,
   drawShopOffers,
+  getTowerGrantedUnlocks,
+  isShopItemAlreadyUnlocked,
+  isShopItemUnlockRedundant,
   shopCatalog
 } from "./shop/index.js";
 export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
@@ -1683,7 +1692,8 @@ export {
   shouldRetainAimTargetLock,
   shortestAngleDelta,
   rotateTowerTowards,
-  isTowerAligned
+  isTowerAligned,
+  towerAims
 } from "./aiming/index.js";
 export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
@@ -1928,36 +1938,6 @@ export {
   type RuntimePath,
   type WorldPoint
 } from "./map.js";
-
-/**
- * Towers whose muzzle should turn toward what they are shooting.
- *
- * Kept as an explicit list rather than inferred from hitType: Kin Kulesi is an
- * aura tower but fires a directional cone, while Sunucu throws projectiles yet
- * is a global rack with no muzzle. Auras, passives and area curses never aim.
- *
- * Taht Muhru was excluded while it was a socketed seal, but its art now carries
- * an explicit barrel on the right, and a muzzle that never turns reads worse
- * than one that does.
- */
-const AIMING_TOWER_IDS = new Set<string>([
-  "zeynep-1",
-  "zeynep-2",
-  "zeynep-3",
-  "zeynep-6",
-  "warrior-1",
-  "warrior-4",
-  "warrior-5",
-  "warrior-6",
-  "archer-1",
-  "archer-2",
-  "archer-4",
-  "archer-5"
-]);
-
-export function towerAims(definitionId: string) {
-  return AIMING_TOWER_IDS.has(definitionId);
-}
 
 /**
  * How many grid cells a tower covers per side. Saray Arsivi is a 2x2 vault, so

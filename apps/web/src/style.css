@@ -580,6 +580,8 @@ button.wave-report:active { transform: scale(0.99); }
   font-style: normal;
   letter-spacing: .1em;
 }
+/* "zaten açık": kilidi kartlardan zaten gelen esya; YENİ ile ayni sessiz etiket, soluk. */
+.gold-shop__unlocked { color: #94a3b8; border-color: rgba(148, 163, 184, .4); text-transform: none; letter-spacing: 0; }
 .gold-shop__reroll { min-height: 28px !important; color: #fde68a !important; background: rgba(113, 63, 18, .45) !important; }
 .gold-shop__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .gold-shop__close { min-height: 34px !important; color: #dbeafe !important; background: rgba(30, 64, 175, .35) !important; }

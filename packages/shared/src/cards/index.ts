@@ -3,6 +3,7 @@ import type { AmmoType, TowerAttackShape, TowerAxis, TowerDefinition } from "../
 import type { TowerGrant } from "../grants/index.js";
 import type { Modifier, ModifierStat } from "../modifiers/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
+import { towerAims } from "../aiming/index.js";
 
 export type CardScope =
   | { kind: "global" }
@@ -17,7 +18,15 @@ export type CardScope =
    * duvara da "uyar" gorunur ve yaricapi olmayan bir kule karttan yalnizca
    * hasar cezasini alir; bu yuzden olcut sekil degil, alanin kendisi.
    */
-  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean };
+  /**
+   * `aims`: yalnizca namlusu hedefe donen kuleler (`towerAims`).
+   *
+   * Donus hizi ve isabet yalnizca o kulelerde is goruyor ve hicbir etiket
+   * bunu soylemiyor: Sunucu bir carpma kulesi ama namlusu yok, Kin Kulesi
+   * bir aura kulesi ama namlusu donuyor. Donus hizini vurus tipine kapsayan
+   * bir kart bu yuzden hep birkac kulede olu kaliyordu.
+   */
+  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean; aims?: boolean };
 
 /**
  * Katalog buyudukce her kartin ayni sikligta cikmasi oyunu kotulestirir: oyuncu
@@ -78,7 +87,13 @@ export type Unlock =
   | "status:coolantSlow" | "status:slowCrit" | "control:deepFreeze" | "crit:vsFrozen"
   // Iki mermi tek tetikte: en nadir kart, cunku kulenin her seyini
   // ikiye katliyor -- hasari da, muhimmat ve isi bedelini de.
-  | "attack:doubleShot";
+  | "attack:doubleShot"
+  // --- Nisan ve kritik ---
+  // Uc kosullu kritik ve bir kosullu donus. Hicbiri yeni bir sistem degil:
+  // her biri sahada zaten olan bir seye bakiyor -- dusmanin isaretine,
+  // kulenin isabet bonusuna, kulenin komsusuz olup olmadigina ve kulenin
+  // az once oldurup oldurmedigine.
+  | "crit:vsMarked" | "crit:fromAccuracy" | "crit:isolated" | "aim:killSnap";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -101,7 +116,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   "repair:performanceCeiling",
   "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch",
   "status:coolantSlow", "status:slowCrit", "control:deepFreeze", "crit:vsFrozen",
-  "attack:doubleShot"
+  "attack:doubleShot",
+  "crit:vsMarked", "crit:fromAccuracy", "crit:isolated", "aim:killSnap"
 ];
 
 /**
@@ -159,6 +175,28 @@ export const COLD_CRIT_TEMPERATURE = 20;
 export const COLD_CRIT_CHANCE = 0.25;
 /** `energy:backupLine` enerji kesildikten sonra muhimmatla ates edilen sure. */
 export const BACKUP_LINE_DURATION_MS = 4000;
+/** `crit:vsMarked`: isaretli dusmana vuruslarda eklenen kritik sansi. */
+export const MARKED_CRIT_CHANCE = 0.2;
+/** `crit:isolated`: komsusuz kulenin kritik sansi eki; komsuluk kurali `isolationBonus` ile ayni. */
+export const ISOLATED_CRIT_CHANCE = 0.15;
+/**
+ * `crit:fromAccuracy`: isabet bonusunun her birimi bu kadar kritik sansi
+ * verir, yani her %10 isabet +%3 kritik.
+ *
+ * Bonus ates konisindeki gibi [0, 1] araligina kirpiliyor: koni 1.0`da
+ * doyuyor, cevrim de orada doyuyor. Boylece tavanin ustune yigilan isabet
+ * kritik olarak da bosa gidiyor ve "isabeti sonsuza kadar yigma" yolu
+ * acilmiyor. Tavan bu yuzden +%30.
+ */
+export const ACCURACY_CRIT_RATIO = 0.3;
+/** `aim:killSnap`: oldurmeden sonra donus hizina eklenen pay ve suresi. */
+export const KILL_SNAP_TURN_RATE = 1.5;
+export const KILL_SNAP_DURATION_MS = 2000;
+
+/** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
+export function getAccuracyCritChance(accuracyBonus: number) {
+  return Math.max(0, Math.min(1, accuracyBonus)) * ACCURACY_CRIT_RATIO;
+}
 
 export type CardRarity = "common" | "uncommon" | "rare";
 
@@ -485,7 +523,33 @@ export const cardCatalog: CardDefinition[] = [
   { id: "yagmaci", name: "Yağmacı", description: "Düşmanlar %20 ihtimalle 4 mühimmat düşürür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["ammoDrop"] },
   { id: "enkaz-tuzagi", name: "Enkaz Tuzağı", description: "Yıkılan kule 12 saniyelik yavaşlatıcı enkaz bırakır.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["trigger:debrisOnDeath"] },
   { id: "avci-egitimi", name: "Avcı Eğitimi", description: "En zayıf ve rastgele olmak üzere 2 hedefleme modu açar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["targeting:weakest", "targeting:random"] },
-  { id: "nobet-egitimi", name: "Nöbet Eğitimi", description: "En yakın ve son olmak üzere 2 hedefleme modu açar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["targeting:closest", "targeting:last"] }
+  { id: "nobet-egitimi", name: "Nöbet Eğitimi", description: "En yakın ve son olmak üzere 2 hedefleme modu açar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["targeting:closest", "targeting:last"] },
+
+  // --- Nisan ve kritik, ikinci tur ---
+  //
+  // Ilk turdaki kartlar bu uc stati tek tek buyutuyordu; burada her kart ya
+  // bir bedelle geliyor ya da sahadaki baska bir seye baglaniyor. Uc kural:
+  //
+  // (a) Donus hizi yalnizca nisan alan kulelerde is goruyor, o yuzden donus
+  //     kartlari `aims` kapsamiyla geliyor; nisan almayan kuleye ne bonusu ne
+  //     cezasi ulasiyor.
+  // (b) Isabet yalnizca namlu yonunde ucan mermi ve carpma kulelerinde iska
+  //     azaltiyor; obur nisan alan kulelerde yalnizca tetigi geciktiriyor.
+  //     Isabet karti o yuzden ikisine birden kapsanmis. Goz Karari isabeti
+  //     baska kulelerde de bir seye ceviriyor: kritige.
+  // (c) Kritik sansi eksiye cekilebiliyor (isabetin aksine): toplam sifirin
+  //     altina dusmuyor ama gercekten azaliyor. Agir Funye bunu bir bahse
+  //     ceviriyor -- kritik sansi kurmamis kulede kritigi siliyor.
+  { id: "doner-kaide", name: "Döner Kaide", description: "Nişan alan kulelerin dönüş hızı +%45, atış hızı -%5.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("doner-kaide", "turnRate", 0.45), effect("doner-kaide", "fireRate", -0.05)] },
+  { id: "nisan-kertigi", name: "Nişan Kertiği", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%30, dönüş hızı -%15.", axes: ["dps"], scope: { kind: "tagged", aims: true, hitTypes: ["impact", "projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("nisan-kertigi", "accuracy", 0.3), effect("nisan-kertigi", "turnRate", -0.15)] },
+  { id: "av-refleksi", name: "Av Refleksi", description: "Nişan alan kuleler düşman öldürdükten sonra 2 saniye boyunca dönüş hızı +%150 kazanır.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:killSnap"] },
+  { id: "sicak-tetik", name: "Sıcak Tetik", description: "Tüm kulelerin kritik şansı +%12, ısısı +%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sicak-tetik", "critChance", 0.12), effect("sicak-tetik", "heat", 0.15)] },
+  { id: "agir-funye", name: "Ağır Fünye", description: "Tüm kulelerin kritik hasarı +%150, kritik şansı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-funye", "critDamage", 1.5), effect("agir-funye", "critChance", -0.05)] },
+  { id: "ince-uc", name: "İnce Uç", description: "Tek hedefe saldıran kulelerin kritik hasarı +%70.", axes: ["dps"], scope: { kind: "tagged", shapes: ["single"] }, stackable: false, rarity: "uncommon", effects: [effect("ince-uc", "critDamage", 0.7)] },
+  { id: "keskin-nisanci-durbunu", name: "Keskin Nişancı Dürbünü", description: "Bir kulenin kritik şansı +%25, menzili +%10, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("keskin-nisanci-durbunu", "critChance", 0.25, "tower"), effect("keskin-nisanci-durbunu", "range", 0.1, "tower"), effect("keskin-nisanci-durbunu", "fireRate", -0.2, "tower")] },
+  { id: "av-izi", name: "Av İzi", description: "İşaretli düşmanlara kritik şansı +%20; kulenin kendi koyduğu takip işareti sayılmaz.", axes: ["dps", "amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsMarked"] },
+  { id: "goz-karari", name: "Göz Kararı", description: "Her kulede isabet bonusunun her %10'u kritik şansına +%3 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["crit:fromAccuracy"] },
+  { id: "gozcu-yuvasi", name: "Gözcü Yuvası", description: "Komşusuz kulelerin kritik şansı +%15.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:isolated"] }
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));
@@ -495,7 +559,12 @@ export function getCardDefinition(cardId: string) {
   return cardsById.get(cardId);
 }
 
-export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider" | "aoeRadius"> & { engine?: TowerDefinition["engine"] };
+/**
+ * `id` istege bagli: yalnizca `aims` kapsami ona bakiyor. Kimligi olmayan bir
+ * profil nisan alan kule sayilmaz, yani o kapsamdaki kart ona hic uymaz --
+ * yanlislikla uyan bir karttan iyidir.
+ */
+export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider" | "aoeRadius"> & { engine?: TowerDefinition["engine"]; id?: string };
 
 /**
  * Kulenin alan yaricapi. `getTowerAttackRadius` ile ayni kural: motor degeri
@@ -526,13 +595,14 @@ export function canTowerHoldTargetedCard(tower: CardTowerProfile) {
 export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
   if (tower.resourceProvider) return false;
   if (card.scope.kind !== "tagged") return true;
-  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius } = card.scope;
+  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius, aims } = card.scope;
   return (!axes?.length || axes.some((axis) => tower.axes?.includes(axis)))
     && (!hitTypes?.length || (!!tower.hitType && hitTypes.includes(tower.hitType)))
     && (!damageTypes?.length || (!!tower.damageType && damageTypes.includes(tower.damageType)))
     && (!shapes?.length || (!!tower.engine?.attack.shape && shapes.includes(tower.engine.attack.shape)))
     && (!ammoTypes?.length || (!!tower.engine?.resources.ammoType && ammoTypes.includes(tower.engine.resources.ammoType)))
-    && (!hasAreaRadius || getCardTowerAreaRadius(tower) > 0);
+    && (!hasAreaRadius || getCardTowerAreaRadius(tower) > 0)
+    && (!aims || (!!tower.id && towerAims(tower.id)));
 }
 
 /**

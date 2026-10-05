@@ -1,5 +1,5 @@
 import type { CardScope, CardTowerProfile, Unlock } from "../cards/index.js";
-import { cardAppliesToTower } from "../cards/index.js";
+import { cardAppliesToTower, getCardDefinition, ownedCardAppliesToTower } from "../cards/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
 import type { TowerAxis } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
@@ -276,7 +276,18 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("direnc-sokucu", "Direnç Sökücü", "Takıldığı kulenin vuruşlarında düşman dirençlerinin %40’ı yok sayılır.", "power", 125, { axes: ["dps"], effects: [effect("direnc-sokucu", "resistancePierce", 0.4)] }),
   defineItem("zaaf-mercegi", "Zaaf Merceği", "Takıldığı kule düşmanın zayıf olduğu hasar tipinden %50 daha çok yararlanır.", "power", 115, { axes: ["dps"], effects: [effect("zaaf-mercegi", "weaknessBonus", 0.5)] }),
   defineItem("asiri-surucu", "Aşırı Sürücü", "Takıldığı kulenin performans kolu yarısı üstündeki ısı ve enerji bedeli -%50.", "power", 130, { axes: ["dps"], effects: [effect("asiri-surucu", "performanceCost", -0.5)] }),
-  defineItem("kan-bankasi", "Kan Bankası", "Takıldığı kulenin hasarı +%20 olur; karşılığında her dalga 5 nexus canı gider.", "risk", 75, { unlocks: ["bloodBank"] })
+  defineItem("kan-bankasi", "Kan Bankası", "Takıldığı kulenin hasarı +%20 olur; karşılığında her dalga 5 nexus canı gider.", "risk", 75, { unlocks: ["bloodBank"] }),
+
+  // Nisan ve kritik, ikinci tur. Kart karsiliklarinin tek kuleye baglanan
+  // halleri; ikisi kapsamla sinirli cunku vaatleri yalnizca nisan alan
+  // kulede bir sey yapiyor. Nisan almayan kuleye takilabilseler oyuncu
+  // altinini bir hicligin uzerine harcardi -- esya geri sokulemiyor.
+  defineItem("jiroskop", "Jiroskop", "Takıldığı kule düşman öldürdükten sonra 2 saniye boyunca dönüş hızı +%150 kazanır; yalnızca nişan alan kulelere takılır.", "class", 85, { scope: { kind: "tagged", aims: true }, unlocks: ["aim:killSnap"] }),
+  defineItem("nisan-durbunu", "Nişan Dürbünü", "Takıldığı kulenin isabeti +%45, atış hızı -%10; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 90, { scope: { kind: "tagged", aims: true, hitTypes: ["impact", "projectile"] }, effects: [effect("nisan-durbunu", "accuracy", 0.45), effect("nisan-durbunu", "fireRate", -0.1)] }),
+  defineItem("iz-okuyucu", "İz Okuyucu", "Takıldığı kulenin işaretli düşmanlara kritik şansı +%20; kendi koyduğu takip işareti sayılmaz.", "power", 110, { axes: ["amplify"], unlocks: ["crit:vsMarked"] }),
+  defineItem("mesafe-olcer", "Mesafe Ölçer", "Takıldığı kulede isabet bonusunun her %10'u kritik şansına +%3 ekler; en fazla +%30.", "power", 100, { unlocks: ["crit:fromAccuracy"] }),
+  defineItem("atesleme-pimi", "Ateşleme Pimi", "Takıldığı kulenin kritik şansı +%20, ısısı +%25.", "power", 95, { effects: [effect("atesleme-pimi", "critChance", 0.2), effect("atesleme-pimi", "heat", 0.25)] }),
+  defineItem("yarik-mermi", "Yarık Mermi", "Takıldığı kulenin kritik hasarı +%250, kritik şansı -%6.", "power", 110, { effects: [effect("yarik-mermi", "critDamage", 2.5), effect("yarik-mermi", "critChance", -0.06)] })
 ];
 
 /**
@@ -329,8 +340,69 @@ export function canEquipShopItem(
   return { ok: true };
 }
 
-/** `marksAvailable` kart cekilisindekiyle ayni anlamda; bkz. `drawCards`. */
-export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedItemIds: string[]; marksAvailable?: boolean; count?: number; random?: () => number }) {
+/**
+ * Bir kulede kartlarin ve takili esyalarin actigi kilitler.
+ *
+ * Sunucunun `collectTowerGrants` kuraliyla ayni: genel kart her yapiya,
+ * etiketli kart uyan kuleye, hedefli kart yalnizca takildigi kuleye, esya
+ * yalnizca takildigi kuleye. Kilitler bir kume oldugu icin ayni kilidi ikinci
+ * kez vermek hicbir sey eklemiyor; arayuz ve vitrin bunu buradan okuyor.
+ */
+export function getTowerGrantedUnlocks(options: {
+  tower: CardTowerProfile;
+  ownedCardIds: readonly string[];
+  targetedCardIds?: readonly string[];
+  equippedItemIds?: readonly string[];
+}) {
+  const unlocks = new Set<Unlock>();
+  for (const cardId of options.ownedCardIds) {
+    const card = getCardDefinition(cardId);
+    if (card && ownedCardAppliesToTower(card, options.tower)) for (const unlock of card.unlocks ?? []) unlocks.add(unlock);
+  }
+  for (const cardId of options.targetedCardIds ?? []) {
+    for (const unlock of getCardDefinition(cardId)?.unlocks ?? []) unlocks.add(unlock);
+  }
+  for (const itemId of options.equippedItemIds ?? []) {
+    for (const unlock of getShopItem(itemId)?.unlocks ?? []) unlocks.add(unlock);
+  }
+  return unlocks;
+}
+
+/** Esyanin vaat ettigi her kilit zaten acik mi. Kilit vermeyen esya hicbir zaman. */
+export function isShopItemUnlockRedundant(item: ShopItem, unlocks: ReadonlySet<Unlock>) {
+  return (item.unlocks?.length ?? 0) > 0 && item.unlocks!.every((unlock) => unlocks.has(unlock));
+}
+
+/**
+ * Esyanin kilidi oyuncunun kartlarindan zaten geliyor mu.
+ *
+ * Vitrin sorusu: esya takilabilecegi **her** kulede kartlarin zaten actigi
+ * kilidi veriyorsa satin almak altini bosa harcamak. Av Refleksi alinmisken
+ * Jiroskop, Zafer Sarhoslugu alinmisken Zafer Serisi boyle. Hedefli kartlar
+ * burada sayilmiyor: tek kuleye bagli, esya baska kuleye takilabilir.
+ * Takilabilecegi kule yoksa genel kartlara bakiliyor -- sonra kurulacak
+ * her kulede de acik olacak olan yalnizca onlar.
+ */
+export function isShopItemAlreadyUnlocked(item: ShopItem, ownedCardIds: readonly string[], towers: readonly CardTowerProfile[]) {
+  if (!item.unlocks?.length || ownedCardIds.length === 0) return false;
+  const eligible = item.target === "global" ? [] : towers.filter((tower) => shopItemAppliesToTower(item, tower));
+  if (eligible.length === 0) {
+    const globalUnlocks = new Set<Unlock>();
+    for (const cardId of ownedCardIds) {
+      const card = getCardDefinition(cardId);
+      if (card?.scope.kind === "global") for (const unlock of card.unlocks ?? []) globalUnlocks.add(unlock);
+    }
+    return isShopItemUnlockRedundant(item, globalUnlocks);
+  }
+  return eligible.every((tower) => isShopItemUnlockRedundant(item, getTowerGrantedUnlocks({ tower, ownedCardIds })));
+}
+
+/**
+ * `marksAvailable` kart cekilisindekiyle ayni anlamda; bkz. `drawCards`.
+ * `ownedCardIds` verilirse kilidi kartlardan zaten gelen esya olu agirlik alir
+ * (`isShopItemAlreadyUnlocked`).
+ */
+export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedItemIds: string[]; ownedCardIds?: readonly string[]; marksAvailable?: boolean; count?: number; random?: () => number }) {
   const random = options.random ?? Math.random;
   const pool = shopCatalog.filter((item) => isShopItemAvailable(item, options.wave, options.ownedItemIds));
   const result: ShopItem[] = [];
@@ -338,7 +410,8 @@ export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis
     const weights = pool.map((item) => {
       const axisWeight = item.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
       const deadWeight = (item.scope.kind === "tagged" && !options.towers.some((tower) => shopItemAppliesToTower(item, tower)))
-        || (options.marksAvailable === false && isMarkOnlyChoice(item)) ? 0.15 : 1;
+        || (options.marksAvailable === false && isMarkOnlyChoice(item))
+        || (options.ownedCardIds !== undefined && isShopItemAlreadyUnlocked(item, options.ownedCardIds, options.towers)) ? 0.15 : 1;
       return axisWeight * deadWeight;
     });
     let roll = random() * weights.reduce((sum, value) => sum + value, 0);

@@ -871,7 +871,7 @@ type StageState = {
 };
 
 function renderHome(selectedCharacter: CharacterDefinition, stageState: StageState, cardArchive: CardArchive, progress: ProgressState) {
-  // Dugmede yalnizca kart sayaci ("64/113"); esyalar arsiv ekraninda.
+  // Dugmede yalnizca kart sayaci ("64/123"); esyalar arsiv ekraninda.
   const cardProgress = formatArchiveProgress(getArchiveProgress(cardArchive, "cards"));
   const board = buildBadgeBoardView(progress.badges, {});
   const mastery = getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, selectedCharacter.id));

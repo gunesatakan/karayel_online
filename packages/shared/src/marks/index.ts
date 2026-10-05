@@ -25,12 +25,26 @@ export function getMarkDamageMultiplier(mark: ActiveMark | undefined, modifiers:
  *
  * Boyle bir kart ya da esya, sahada dusmani isaretleyen hicbir sey yokken
  * bos bir secimdir. Cekilis bunu etiketli kartlarin olu agirligiyla ayni
- * sekilde geri ceker; kilit ya da motor eki veren bir secenek baska bir sey
- * de yaptigi icin bu sinifa girmez.
+ * sekilde geri ceker. Motor eki veren bir secenek baska bir sey de yaptigi
+ * icin bu sinifa girmez; kilit veren secenek de girmez, kilidi
+ * `MARK_ONLY_UNLOCKS` icinde degilse. O listede su an yalnizca
+ * `crit:vsMarked` var (Av Izi, Iz Okuyucu): isaretsiz dusmanda hicbir
+ * vurusu degistirmiyor.
  */
 export function isMarkOnlyChoice(choice: { effects: readonly Modifier[]; unlocks?: readonly unknown[]; grants?: unknown }) {
-  return choice.effects.length > 0
-    && !choice.unlocks?.length
+  const unlocks = choice.unlocks ?? [];
+  return (choice.effects.length > 0 || unlocks.length > 0)
     && !choice.grants
-    && choice.effects.every((modifier) => modifier.stat === "markAmplification");
+    && choice.effects.every((modifier) => modifier.stat === "markAmplification")
+    && unlocks.every((unlock) => MARK_ONLY_UNLOCKS.has(unlock));
 }
+
+/**
+ * Yalnizca isaretli dusmanda bir sey yapan kilitler.
+ *
+ * Kilitlerin cogu baska bir sey de yaptigi icin mark-only sayilmiyor; bunlar
+ * sayiliyor, cunku isaretsiz bir sahada hicbir vurusu degistirmiyorlar.
+ * Metin olarak tutuluyor: `Unlock` tipi `cards` modulunde ve o modul bunu
+ * iceri aliyor.
+ */
+const MARK_ONLY_UNLOCKS: ReadonlySet<unknown> = new Set(["crit:vsMarked"]);

@@ -96,6 +96,9 @@ import {
   getTowerPerformanceFlameIntensity,
   getShopItem,
   getShopItemPrice,
+  getTowerGrantedUnlocks,
+  isShopItemAlreadyUnlocked,
+  isShopItemUnlockRedundant,
   MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
   getTile,
   gridToWorld,
@@ -2629,6 +2632,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const itemId = this.pendingEquipItemId;
+    // Takma engellenmiyor (sunucu da engellemiyor); yalnizca soyleniyor:
+    // kartin ya da baska bir esyanin zaten actigi kilidi ikinci kez vermek
+    // hicbir sey eklemiyor.
+    if (this.isShopItemAlreadyUnlockedOnTower(itemId, towerId)) {
+      this.showNotice(`${getShopItem(itemId)?.name ?? "Bu eşya"} bu kulede zaten açık; takarsan bir şey değişmez.`, 4200);
+    }
     this.previewTowerChange({ itemId, towerId }, () => {
       // Onizlemenin "uygula" dugmesi bir dokunus: takma sesinin baglami burada acilabilir.
       this.feedback?.unlockAudio();
@@ -5974,6 +5983,29 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /** Esyanin su an takilabilecegi yerel kule sayisi; sunucunun takma kuraliyla. */
+  /**
+   * Esyanin kilidi kartlardan zaten geliyor mu: vitrin ve envanter etiketi.
+   * Cekilisin olu agirlik verdigi kuralla ayni fonksiyon.
+   */
+  private isShopItemAlreadyUnlockedLocally(itemId: string) {
+    const item = getShopItem(itemId);
+    if (!item) return false;
+    return isShopItemAlreadyUnlocked(item, this.localPlayerSnapshot?.ownedCardIds ?? [], this.getLocalTowerProfiles().map(({ definition }) => definition));
+  }
+
+  /** Secilen kulede kartlar, hedefli kartlar ve takili esyalar kilidi zaten aciyor mu. */
+  private isShopItemAlreadyUnlockedOnTower(itemId: string, towerId: string) {
+    const item = getShopItem(itemId);
+    const profile = this.getLocalTowerProfiles().find(({ tower }) => tower.id === towerId);
+    if (!item || !profile) return false;
+    return isShopItemUnlockRedundant(item, getTowerGrantedUnlocks({
+      tower: profile.definition,
+      ownedCardIds: this.localPlayerSnapshot?.ownedCardIds ?? [],
+      targetedCardIds: profile.tower.targetedCardIds ?? [],
+      equippedItemIds: profile.tower.equippedShopItemIds ?? []
+    }));
+  }
+
   private countEquippableLocalTowers(itemId?: string) {
     const item = itemId ? getShopItem(itemId) : undefined;
     if (!item) return 0;
@@ -6089,6 +6121,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (scope.kind === "global") return getCardTowerReach(card) === "none" ? "Genel" : "Tüm kuleler";
     if (scope.kind === "targeted") return "Bir kule seç";
     const parts = [
+      scope.aims ? "Nişan alan kuleler" : "",
       scope.axes?.length ? `${scope.axes.map((axis) => towerAxisLabels[axis]).join(" / ")} kuleleri` : "",
       scope.hitTypes?.length ? `${scope.hitTypes.map((type) => hitTypeCodex[type].name).join(" / ")} kuleleri` : "",
       scope.damageTypes?.length ? `${scope.damageTypes.map((type) => damageTypeCodex[type].name).join(" / ")} hasarlı kuleler` : "",
@@ -10220,7 +10253,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
           const price = getShopItemPrice(item, ownedShopItems);
-          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true };
+          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true, alreadyUnlocked: this.isShopItemAlreadyUnlockedLocally(item.id) };
         })
       } : undefined,
       equippedItems: selectedTower?.equippedShopItemIds?.map((itemId) => {
@@ -10238,7 +10271,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         pendingItemId: this.pendingEquipItemId,
         // Ayni esyadan birden fazla olabilir; listede tek satirda sayilir.
         items: Object.values(
-          (this.localPlayerSnapshot?.inventoryItemIds ?? []).reduce<Record<string, { id: string; name: string; description: string; category: string; count: number }>>((grouped, itemId) => {
+          (this.localPlayerSnapshot?.inventoryItemIds ?? []).reduce<Record<string, { id: string; name: string; description: string; category: string; count: number; alreadyUnlocked: boolean }>>((grouped, itemId) => {
             const item = getShopItem(itemId);
             const existing = grouped[itemId];
             if (existing) {
@@ -10250,7 +10283,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
               name: item?.name ?? itemId,
               description: item?.description ?? "",
               category: item?.category ?? "power",
-              count: 1
+              count: 1,
+              alreadyUnlocked: this.isShopItemAlreadyUnlockedLocally(itemId)
             };
             return grouped;
           }, {})

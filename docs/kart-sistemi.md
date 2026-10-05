@@ -54,8 +54,9 @@ komşuluk/yalnızlık, ekonomi, ve ısı/enerji eğrisi.
 
 Kilitler tele **bit maskesi** olarak gider (`encodeUnlocks` / `hasUnlockBit`).
 Sıra `ALL_UNLOCKS` tarafından belirlenir, o yüzden yeni kilitler **listenin
-sonuna** eklenir; ortaya eklemek eski istemcilerle uyumu bozar. Liste 31 kilidi
-aşamaz.
+sonuna** eklenir; ortaya eklemek eski istemcilerle uyumu bozar. Liste 53 kilidi
+(`MAX_ENCODABLE_UNLOCKS`) aşamaz: kodlama bit işlemi değil `2 ** sıra` ile
+toplama, yani tavan `Number.MAX_SAFE_INTEGER`'ın 53 biti. Şu an 46 kilit var.
 
 ## 3. Motor eklentisi (`grants`)
 
