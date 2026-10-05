@@ -1,6 +1,6 @@
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
-import { NON_FIRING_INTERVAL_MS } from "../../../tower-rules.js";
+import { ISOLATION_SLOW_FRACTION_LEVEL_1, ISOLATION_SLOW_FRACTION_LEVEL_10, NON_FIRING_INTERVAL_MS } from "../../../tower-rules.js";
 
 const color = 0x22c55e;
 
@@ -48,7 +48,7 @@ export const atakanTowers: TowerDefinition[] = ([
     characterId: "warrior",
     name: "İzolasyon Kulesi",
     role: "Alan kontrolü",
-    description: "Hiç hasar vermez, sadece yavaşlatır. Çevresinde başka kule varken hedefleri tek tek yavaşlatır; tamamen yalnız bırakılırsa atışı bırakıp sürekli açık, çok daha güçlü bir yavaşlatma aurasına geçer. Hattın darboğazına tek başına kurulmak için tasarlanmıştır.",
+    description: `Hiç hasar vermez, sadece yavaşlatır: 1. seviyede %${Math.round(ISOLATION_SLOW_FRACTION_LEVEL_1 * 100)}, her seviyede eşit artarak 10. seviyede %${Math.round(ISOLATION_SLOW_FRACTION_LEVEL_10 * 100)}. Çevresinde başka kule varken hedefleri tek tek yavaşlatır; tamamen yalnız bırakılırsa atışı bırakıp aynı güçte, sürekli açık bir yavaşlatma aurasına geçer. Hattın darboğazına tek başına kurulmak için tasarlanmıştır.`,
     classType: "control",
     damageType: "none",
     hitType: "aura",
@@ -86,7 +86,7 @@ export const atakanTowers: TowerDefinition[] = ([
     characterId: "warrior",
     name: "Debug Lazer",
     role: "Sürekli hasar",
-    description: "Çok sık ve küçük vuran bir odak lazeri; tek başına zayıf, Takipçi ile birlikte yıkıcıdır. Takipte işaretli düşmanları önceliklendirir. İşaretli bir düşmanı öldürdüğünde 2 saniyeliğine haritanın kenarına uzanan bir kirişe dönüşür: en yakın düşmana nişan alır, oradan sıradaki en yakına döner ve geçtiği herkesi vurur. Kesintisiz ateş ettikçe ısınır: 20 saniyelik pencerede 10 saniyeyi doldurursa 5 saniye aşırı ısınıp susar. Hava hedeflerini vuramaz.",
+    description: "Çok sık ve küçük vuran bir odak lazeri; tek başına zayıf, Takipçi ile birlikte yıkıcıdır. Takipte işaretli düşmanları önceliklendirir. Overdrive 5. seviyede açılır; 10. seviyede zincir ışınına ek olarak iki ters dönen ışın. İşaretli bir düşmanı öldürdüğünde 2 saniyeliğine overdrive'a geçip haritanın kenarına uzanan bir kirişe dönüşür: en yakın düşmana nişan alır, oradan sıradaki en yakına döner ve geçtiği herkesi normal atış hızıyla vurur. 10. seviyede bu zincir ışınının yanında aynı yönden iki ışın daha çıkar, biri saat yönünde diğeri tersine birer tam tur atar; birden fazla ışının altında kalan düşman atış başına bir kez vurulur. Kesintisiz ateş ettikçe ısınır: 20 saniyelik pencerede 10 saniyeyi doldurursa 5 saniye aşırı ısınıp susar. Hava hedeflerini vuramaz.",
     classType: "damage",
     damageType: "fire",
     hitType: "focus",

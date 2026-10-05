@@ -1,5 +1,5 @@
 import type { DamageType, HitType } from "./combat.js";
-import type { AmmoType, TowerDefinition } from "./characters/common/types.js";
+import type { AmmoType, TowerDefinition, TowerSlowCurve, TowerStatusEffectDefinition } from "./characters/common/types.js";
 import { getModifierAdd, type Modifier } from "./modifiers/index.js";
 
 export const TOWER_BASE_AMMO_COST = 1;
@@ -247,15 +247,89 @@ export function getTowerEnergyState(energy: number, depletedAt: number, now: num
 }
 
 /**
- * Yavaslatma durumu altindaki dusmanin hiz tavani.
+ * Yavaslatma durumu altindaki dusmanin hiz tavani -- duz yavaslatma.
  *
- * Yavaslatmanin `magnitude` degeri hiza **islemiyor**: durum aktifse hiz
- * duz olarak buraya iniyor, gucu ne olursa olsun. Sabit burada duruyor ki
- * arayuz de ayni sayiyi okusun -- kule panelinde bir donem `magnitude`
- * yaziyordu ve "-%100 yavaslatma" gibi gercekte olmayan bir sey
- * gosteriyordu.
+ * Yavaslatmanin `magnitude` degeri hiza **islemiyor**: gucunu tanimda
+ * `slowByLevel` ile bildirmeyen her yavaslatma hizi duz olarak buraya
+ * indiriyor. Sabit burada duruyor ki arayuz de ayni sayiyi okusun -- kule
+ * panelinde bir donem `magnitude` yaziyordu ve "-%100 yavaslatma" gibi
+ * gercekte olmayan bir sey gosteriyordu.
  */
 export const SLOW_STATUS_SPEED_MULTIPLIER = 0.48;
+
+/** Duz yavaslatmanin kesri: dusman %52 yavas yurur. */
+export const SLOW_STATUS_FRACTION = 1 - SLOW_STATUS_SPEED_MULTIPLIER;
+
+/**
+ * Buz Kirigi: kritik gelen yavaslatmanin kesri bu katla buyur.
+ *
+ * Kesir buyuyor, hiz carpani degil: %40 yavaslatma %60 olur (hiz 0,6'dan
+ * 0,4'e), duz %52 ise %78.
+ */
+export const SLOW_CRIT_MULTIPLIER = 1.5;
+
+/**
+ * Kritik yavaslatmanin tavani. Kesir 1'e ulasirsa dusman durur; durdurmak
+ * Derin Dondurma'nin isi, yavaslatmanin degil. %90'da dusman hala yurur.
+ */
+export const SLOW_CRIT_MAX_FRACTION = 0.9;
+
+/**
+ * Izolasyon Kulesi'nin yavaslatma egrisinin uclari: 1. seviyede %10,
+ * 10. seviyede %50. Ayar tek satir: egri yalnizca bu iki sayidan.
+ */
+export const ISOLATION_SLOW_FRACTION_LEVEL_1 = 0.1;
+export const ISOLATION_SLOW_FRACTION_LEVEL_10 = 0.5;
+export const ISOLATION_SLOW_CURVE: TowerSlowCurve = {
+  level1: ISOLATION_SLOW_FRACTION_LEVEL_1,
+  level10: ISOLATION_SLOW_FRACTION_LEVEL_10
+};
+
+/**
+ * Kin yavaslatmasinin menzil ucundaki kesri; kulenin dibinde sifir, arasi
+ * dogrusal (kuleye uzaklik / menzil). Sunucu, panel ve kodeks buradan.
+ */
+export const KIN_SLOW_FAR_FRACTION = 0.4;
+
+const SLOW_CURVE_MAX_LEVEL = 10;
+
+/**
+ * Seviyeyle buyuyen yavaslatmanin kesri.
+ *
+ * Dogrusal: `level1 + (seviye - 1) * (level10 - level1) / 9`, seviye 1-10
+ * araligina kirpiliyor. Izolasyon icin 1. seviye %10, 5. seviye ~%27,8,
+ * 10. seviye %50.
+ */
+export function getLevelScaledSlowFraction(curve: TowerSlowCurve, level: number) {
+  const safeLevel = Math.max(1, Math.min(SLOW_CURVE_MAX_LEVEL, Number.isFinite(level) ? level : 1));
+  return curve.level1 + (safeLevel - 1) * (curve.level10 - curve.level1) / (SLOW_CURVE_MAX_LEVEL - 1);
+}
+
+export function getIsolationSlowFraction(level: number) {
+  return getLevelScaledSlowFraction(ISOLATION_SLOW_CURVE, level);
+}
+
+/**
+ * Bir yavaslatma durumunun kesri: egrisi varsa seviyeden, yoksa duz %52.
+ */
+export function getStatusSlowFraction(definition: Pick<TowerStatusEffectDefinition, "slowByLevel"> | undefined, level: number) {
+  return definition?.slowByLevel ? getLevelScaledSlowFraction(definition.slowByLevel, level) : SLOW_STATUS_FRACTION;
+}
+
+/** Kritik yavaslatmanin kesri: 1,5 kat, %90 tavanla. */
+export function getCriticalSlowFraction(fraction: number) {
+  return Math.min(SLOW_CRIT_MAX_FRACTION, Math.max(0, fraction) * SLOW_CRIT_MULTIPLIER);
+}
+
+/**
+ * Kulenin vurus yavaslatmasinin kesri; kule yavaslatmiyorsa `undefined`.
+ * Arayuz (panel, kodeks) ve sunucu ayni fonksiyonu okuyor.
+ */
+export function getTowerHitSlowFraction(definition: TowerDefinition, level: number) {
+  const slow = definition.engine?.statusEffects?.find((effect) => effect.type === "slow");
+  if (!slow && !((definition.slowMs ?? 0) > 0)) return undefined;
+  return getStatusSlowFraction(slow, level);
+}
 
 export function calculateTowerScaledBaseDamage(definition: TowerDefinition, level: number) {
   const safeLevel = Math.max(1, Math.min(10, Math.round(level)));

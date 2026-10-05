@@ -267,14 +267,15 @@ test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanıml�
     shape: "circle",
     radius: 104,
     stat: "slow",
-    multiplier: 0.48,
+    multiplier: 0.9,
+    slowByLevel: { level1: 0.1, level10: 0.5 },
     stacking: "strongest",
     tickIntervalMs: 220,
     refreshDurationMultiplier: 2,
-    activation: "isolated",
-    multiplierPerLevel: -0.026,
-    minMultiplier: 0.25
+    activation: "isolated"
   });
+  // Vurus yavaslatmasi da ayni egride: ikisi ayri olsaydi biri otekini ezerdi.
+  assert.deepEqual(byId["warrior-3"].statusEffects[0].slowByLevel, { level1: 0.1, level10: 0.5 });
   assert.equal(byId["zeynep-7"].placement.footprintSpan, 2);
   assert.equal(byId["zeynep-8"].placement.requiresEdge, true);
 });

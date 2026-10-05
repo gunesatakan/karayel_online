@@ -212,6 +212,8 @@ import {
   type ServerPerfSnapshot,
   hasUnlockBit,
   TOWER_HEAT_BRAKE_TEMPERATURE,
+  DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL,
+  DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
   getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
   isOperationalTower,
@@ -227,7 +229,7 @@ import {
 } from "@karayel/shared";
 import type { WorkerSkillChoice } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
-import { SnapshotPlaybackClock } from "@karayel/shared";
+import { SnapshotPlaybackClock, getCriticalSlowFraction, getLevelScaledSlowFraction, type TowerSlowCurve } from "@karayel/shared";
 import {
   clearActiveLobbyRoom,
   clearMatchReconnect,
@@ -742,6 +744,34 @@ function formatSlowRange(near: number, far?: number) {
   if (far === undefined || far === near) return `hiz -%${yuzde(near)}`;
   const [az, cok] = yuzde(near) <= yuzde(far) ? [yuzde(near), yuzde(far)] : [yuzde(far), yuzde(near)];
   return `hiz -%${az}…-%${cok} (uzaklikla)`;
+}
+
+/**
+ * Seviyeyle buyuyen yavaslatmanin bir sonraki seviyedeki degeri.
+ *
+ * Yalnizca egrisi olan kulede (Izolasyon): duz yavaslatma seviyeyle
+ * degismiyor ve "sonraki" yazmak orada yalan olurdu. 10. seviyede bos.
+ */
+function formatNextLevelSlow(curve: TowerSlowCurve | undefined, level: number) {
+  if (!curve || level >= 10) return "";
+  return ` (sonraki sv -%${Math.round(getLevelScaledSlowFraction(curve, level + 1) * 100)})`;
+}
+
+/**
+ * Buz Kirigi kritiginde vurus yavaslatmasi: kesir 1,5 kat, %90 tavan --
+ * sunucuyla ayni fonksiyon. Kin'de iki uc ayri (menzil ucunda -%60).
+ */
+function formatCriticalSlowRange(near: number, far?: number) {
+  const critical = (value: number) => 1 - getCriticalSlowFraction(1 - value);
+  return ` · kritikte ${formatSlowRange(critical(near), far === undefined ? undefined : critical(far))}`;
+}
+
+/** Kulenin yavaslatma egrileri: vurus ve aura ayri bildiriliyor. */
+function getTowerSlowCurves(definition: TowerDefinition | undefined) {
+  return {
+    hit: definition?.engine?.statusEffects?.find((effect) => effect.type === "slow")?.slowByLevel,
+    aura: definition?.engine?.auras?.find((aura) => aura.affects === "enemies" && aura.stat === "slow")?.slowByLevel
+  };
 }
 
 /** Iki kimlik listesi ayni sirada ayni mi; karsilastirma icin kopya uretmez. */
@@ -10413,12 +10443,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ...(selectedTower.effectIntervalMs !== undefined ? [
           `Etki araligi: ${(selectedTower.effectIntervalMs / 1000).toFixed(2)} sn (atis hizindan etkilenmez)`
         ] : []),
+        // Seviyeyle buyuyen yavaslatmada bir sonraki seviyenin degeri de
+        // yaziliyor: Izolasyon 1. seviyede %10 ile basliyor ve yukseltmenin
+        // ne kazandirdigi ancak boyle gorunuyor.
         ...(selectedTower.auraSlowMultiplier !== undefined ? [
-          `Aura: ${Math.round(selectedTower.range)} yariçap | hiz -%${Math.round((1 - selectedTower.auraSlowMultiplier) * 100)}`
+          `Aura: ${Math.round(selectedTower.range)} yariçap | hiz -%${Math.round((1 - selectedTower.auraSlowMultiplier) * 100)}${formatNextLevelSlow(getTowerSlowCurves(definition).aura, selectedTower.level)}`
         ] : []),
         ...(selectedTower.slowSpeedMultiplier !== undefined ? [
-          `Vurus yavaslatmasi: ${formatSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar)} · ${((selectedTower.slowDurationMs ?? 0) / 1000).toFixed(1)} sn`
+          `Vurus yavaslatmasi: ${formatSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar)}${formatNextLevelSlow(getTowerSlowCurves(definition).hit, selectedTower.level)}${selectedTower.slowCrit ? formatCriticalSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar) : ""} · ${((selectedTower.slowDurationMs ?? 0) / 1000).toFixed(1)} sn`
         ] : []),
+        // Debug Lazer: overdrive'in hangi seviyede acildigi ve 10. seviyenin
+        // ne getirdigi. Satir kuleye sabit, parca sayisi oyunda degismiyor.
+        ...(selectedTower.definitionId === "warrior-5" ? [formatDebugLaserOverdriveLine(selectedTower.level)] : []),
         ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
         ...(towerOperations ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
@@ -11428,8 +11464,22 @@ function getOrbitDefinition(definitionId: string) {
   return ORBIT_DEFINITIONS.get(definitionId);
 }
 
-/** Isin kimligindeki kule kimligi (`melis-curse-t12`, `showcase-t4-91`). */
+/** Isin kimligindeki kule kimligi (`melis-curse-t12`, `showcase-t4-91`, ikiz lazer `beam-t3-b`). */
 const BEAM_TOWER_ID_PATTERN = /(?:^|-)(t\d+)(?=-|$)/;
+
+/**
+ * Debug Lazer panelinde overdrive satiri: seviyeye gore ne acik, yukseltme ne
+ * getirecek. Overdrive 5. seviyede aciliyor, 10. seviyede iki ters donen isin.
+ */
+function formatDebugLaserOverdriveLine(level: number) {
+  if (level < DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL) {
+    return `Overdrive: ${DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL}. seviyede açılır; ${DEBUG_LASER_TWIN_OVERDRIVE_LEVEL}. seviyede zincir ışınına ek olarak iki ters dönen ışın`;
+  }
+  if (level < DEBUG_LASER_TWIN_OVERDRIVE_LEVEL) {
+    return `Overdrive: açık (zincir ışını); ${DEBUG_LASER_TWIN_OVERDRIVE_LEVEL}. seviyede ek olarak iki ters dönen ışın`;
+  }
+  return "Overdrive: açık (zincir ışını + iki ters dönen ışın)";
+}
 
 /** Kenara yerlesen yapilar (Abarti, duvar), butun karakterlerin kataloglarindan. */
 const EDGE_PLACED_DEFINITION_IDS: ReadonlySet<string> = new Set(

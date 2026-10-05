@@ -31,6 +31,9 @@ import {
   getTowerAttackRadius,
   getTowerDisplayStats,
   getTowerSlowDurationMs,
+  getTowerHitSlowFraction,
+  getCriticalSlowFraction,
+  KIN_SLOW_FAR_FRACTION,
   getTowerLevelExpCost,
   getTile,
   normalizeMapData,
@@ -1816,6 +1819,35 @@ function skillToDetail(skill: SkillDefinition): DetailItem {
   };
 }
 
+/**
+ * Vurus yavaslatmasinin gucu, sunucunun okudugu fonksiyondan.
+ *
+ * Izolasyon seviyeyle buyuyor (%10 -> %50), otekiler duz %52. Mesafeyle
+ * degisen yavaslatma (Kin) kulenin dibinde %0, menzil ucunda %40.
+ */
+function formatSlowStrengthRow(tower: TowerDefinition) {
+  const slow = tower.engine?.statusEffects?.find((effect) => effect.type === "slow");
+  if (slow?.scaling === "distance") {
+    return [{
+      label: "Yavaşlatma gücü",
+      value: `%0 → %${Math.round(KIN_SLOW_FAR_FRACTION * 100)} (uzaklıkla)`,
+      hint: `Kulenin dibinde yavaşlatmaz, menzil ucunda %${Math.round(KIN_SLOW_FAR_FRACTION * 100)}. Buz Kırığı kritiğiyle 1,5 kat: en çok %${Math.round(getCriticalSlowFraction(KIN_SLOW_FAR_FRACTION) * 100)}.`
+    }];
+  }
+  const level1 = getTowerHitSlowFraction(tower, 1);
+  if (level1 === undefined) return [];
+  const level10 = getTowerHitSlowFraction(tower, 10) ?? level1;
+  const yuzde = (value: number) => `%${Math.round(value * 100)}`;
+  const grows = Math.abs(level10 - level1) > 1e-9;
+  return [{
+    label: "Yavaşlatma gücü",
+    value: grows ? `${yuzde(level1)} → ${yuzde(level10)}` : yuzde(level1),
+    hint: grows
+      ? `1. seviyeden 10. seviyeye, her seviyede eşit artar. Buz Kırığı kritiğiyle 1,5 kat: en çok ${yuzde(getCriticalSlowFraction(level10))}.`
+      : `Düşman bu oranda yavaş yürür. Buz Kırığı kritiğiyle 1,5 kat: ${yuzde(getCriticalSlowFraction(level1))}.`
+  }];
+}
+
 function towerToDetail(tower: TowerDefinition): DetailItem {
   const isPassiveTower = (tower.fireIntervalMs ?? 0) > 100000;
   const classType = tower.classType ?? "hybrid";
@@ -1863,7 +1895,8 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
           }]
         : []),
       ...(getTowerAttackRadius(tower) > 0 ? [{ label: "Etki alanı", value: String(getTowerAttackRadius(tower)) }] : []),
-      ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: "Yavaşlatma", value: `${(getTowerSlowDurationMs(tower) / 1000).toFixed(2)} sn` }] : [])
+      ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: "Yavaşlatma", value: `${(getTowerSlowDurationMs(tower) / 1000).toFixed(2)} sn` }] : []),
+      ...formatSlowStrengthRow(tower)
     ]
   });
 
@@ -1915,7 +1948,7 @@ function getTowerBalanceNote(towerId: string) {
   return {
     "warrior-2": "Uzun bağlantı ödülü: aynı kuleye 5 dalga bağlı kalırsa çarpma vuruşlu bağlı kule Sunucu seviyesine göre %12-30 ek hasar alır. 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının %0.1-0.5'i kadar ek hasar eklenir.",
     "warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 850, 7. seviye 1200, 8. seviye 1500, 10. seviye 2000 DPS.",
-    "warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Aşırı yükleme sırasında bu değerlerin yarısına iner.",
+    "warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Overdrive 5. seviyede açılır; 10. seviyede zincir ışınına ek olarak iki ters dönen ışın. Overdrive ışınları da aynı aralıkla vurur; 10. seviyedeki iki ek ışın birer tam tur atar ve birden fazla ışının altında kalan düşman atış başına bir kez vurulur.",
     "warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 4228 DPS'ye ulaşır."
   }[towerId];
 }

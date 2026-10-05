@@ -1,7 +1,7 @@
 import { makeTowers } from "../../common/factory.js";
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
-import { NON_FIRING_INTERVAL_MS, PASSIVE_AURA_TICK_INTERVAL_MS } from "../../../tower-rules.js";
+import { KIN_SLOW_FAR_FRACTION, NON_FIRING_INTERVAL_MS, PASSIVE_AURA_TICK_INTERVAL_MS, getCriticalSlowFraction } from "../../../tower-rules.js";
 
 export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Hiza Emri", "Delici fiziksel mermi"],
@@ -64,7 +64,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   if (tower.id === "zeynep-6") {
     return {
       ...tower,
-      description: "Uzun aralıklarla 60 derecelik, yavaş ilerleyen bir koni dalgası yollar. Dalgaya uzakta yakalanan düşmanlar yakındakilere göre 3 kata kadar daha güçlü yavaşlar, yani kulenin menzil sınırı asıl etki alanıdır. Yavaşlatması üst üste binmez; her yeni dalga temasında yeniden hesaplanır.",
+      description: `Uzun aralıklarla 60 derecelik, yavaş ilerleyen bir koni dalgası yollar. Yavaşlatma kuleye uzaklıkla artar: dibinde yakalanan düşman yavaşlamaz, menzil sınırında %${Math.round(KIN_SLOW_FAR_FRACTION * 100)} yavaşlar (Buz Kırığı kritiğiyle %${Math.round(getCriticalSlowFraction(KIN_SLOW_FAR_FRACTION) * 100)}), yani kulenin menzil sınırı asıl etki alanıdır. Yavaşlatması üst üste binmez; her yeni dalga temasında yeniden hesaplanır.`,
       classType: "control",
       damageType: "none",
       hitType: "aura",

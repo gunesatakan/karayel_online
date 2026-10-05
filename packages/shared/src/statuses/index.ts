@@ -6,14 +6,22 @@ export const STATUS_EFFECTS = {
 } as const;
 
 /**
- * Donma esigi: hiz carpani bunun altina inen dusman donar.
+ * Donma esigi: hiz carpani bu degere ya da altina inen dusman donar, yani
+ * %60 ya da daha fazla yavaslayan.
  *
- * Yarim, cunku oyunun kendi yavaslatma tabani zaten 0.48 -- yani "tek bir
- * tam yavaslatma yemis" dusman esigin hemen altinda kaliyor. Daha asagi bir
- * esik donmayi yalnizca yavaslatma yiginlarinda gorulen bir sey yapardi;
- * daha yukarisi ise her yavaslatmayi donmaya cevirirdi.
+ * Kule vurus yavaslatmalari esige tek baslarina ulasamiyor: Izolasyon en
+ * fazla %50 (10. seviye), duz vurus yavaslatmasi %52. Onlarda donma Buz
+ * Kirigi'nin kritik yavaslatmasiyla (x1,5) geliyor: 8. seviye Izolasyon
+ * %41,1 -> kritikle %61,7 (hiz 0,383) donduruyor, 7. seviye %36,7 ->
+ * kritikle %55 donduramiyor; duz %52 kritikle %78.
+ *
+ * Esige kritiksiz ulasanlar da var: tavandaki Sogutma Kanali (%60, hiz
+ * x0,4 -- ustune bindigi icin baska bir yavaslatmayla daha da asagi) ve
+ * Zeynep'in en guclu yavaslatma komutu (zincirli buyuk komut, otorite ~8
+ * ve ustunde tam 0,4'e kirpiliyor). Esik dahil oldugu icin ikisi de
+ * tek basina donduruyor.
  */
-export const DEEP_FREEZE_SPEED_THRESHOLD = 0.5;
+export const DEEP_FREEZE_SPEED_THRESHOLD = 0.4;
 
 /** Donmanin suresi. */
 export const DEEP_FREEZE_DURATION_MS = 3000;

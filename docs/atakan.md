@@ -166,17 +166,29 @@ Izolasyon Kulesi hasar vermek icin degil, dusman temposunu bozmak icin kullanili
 - Bu alan secili Izolasyon Kulesi uzerinde kare grid overlay olarak gorunur.
 - Izole haldeyken atis yapmak yerine aura gibi calisir.
 - Izole aura, dusman alanin icindeyken anlik hiz carpani uygular. Dusman alandan ciktigi anda aura slow'u biter.
-- Izole aura hiz carpani:
+- Vurus yavaslatmasi ve izole aura ayni seviye egrisini kullanir (`ISOLATION_SLOW_CURVE`, `packages/shared/src/tower-rules.ts`):
 
 ```txt
-Hiz carpani = max(0.25, 0.48 - (kule seviyesi - 1) * 0.026)
+Yavaslatma(L) = 0.10 + (clamp(L, 1, 10) - 1) * 0.40 / 9
+Hiz carpani   = 1 - Yavaslatma(L)
 ```
 
-| Level | Aura hiz carpani |
-|---:|---:|
-| 1 | 0.48x |
-| 5 | 0.376x |
-| 10 | 0.25x |
+| Level | Yavaslatma | Hiz carpani |
+|---:|---:|---:|
+| 1 | %10.0 | 0.900x |
+| 2 | %14.4 | 0.856x |
+| 3 | %18.9 | 0.811x |
+| 4 | %23.3 | 0.767x |
+| 5 | %27.8 | 0.722x |
+| 6 | %32.2 | 0.678x |
+| 7 | %36.7 | 0.633x |
+| 8 | %41.1 | 0.589x |
+| 9 | %45.6 | 0.544x |
+| 10 | %50.0 | 0.500x |
+
+- Buz Kirigi: vurus yavaslatmasi kritik gelirse yavaslatma kesri 1.5 kat olur (%40 -> %60), en fazla %90. Aura kritik gelmez (220 ms'lik tikte zar atmak yavaslatmayi titretirdi); kart Izolasyon'a vurus yavaslatmasindan isler.
+- Diger kulelerin vurus yavaslatmasi duz %52'dir (hiz 0.48x); Buz Kirigi kritigiyle %78.
+- Derin Dondurma %60 ya da daha fazla yavaslayan (hizi 0.4x'e ya da altina inen) dusmani dondurur. Izolasyon (en fazla %50) ve duz vurus yavaslatmasi (%52) buna yalnizca Buz Kirigi kritigiyle ulasir: 8. seviyeden itibaren Izolasyon'un kritik yavaslatmasi (%61.7 ve ustu) dondurur, 7. seviyede kritikle %55, dondurmaz. Tavandaki Sogutma Kanali (%60) ve Zeynep'in en guclu yavaslatma komutu (zincirli buyuk komut, otorite ~8 ve ustunde tam 0.4x) kritiksiz de dondurur.
 
 ### 4. Obsesyon Kulesi
 
@@ -230,7 +242,7 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 | Menzil | 134 |
 | Hasar | 5 |
 | Atis araligi | Lv1 0.20 sn, Lv5 0.16 sn, Lv10 0.12 sn |
-| Overdrive tick araligi | Lv1 0.10 sn, Lv5 0.08 sn, Lv10 0.06 sn |
+| Overdrive tick araligi | Normal atis araligiyla ayni (Lv1 0.20 sn, Lv5 0.16 sn, Lv10 0.12 sn) |
 | Mermi hizi | 620 |
 | AOE radius | 10 |
 
@@ -241,15 +253,19 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 
 **Overdrive:**
 
-- Debug Lazer, Takipte bir hedefi oldururse overdrive tetiklenir.
-- Overdrive suresi 2 saniyedir.
-- Lazer, oldurulen hedefin path mesafesinden gerideki dusmana dogru path acisina gore sweep yapar.
-- Lazerin sweep donus hizi 30 derece/saniye ile sinirlidir.
+- Overdrive 5. seviyede acilir; altinda isaretli oldurme siradan bir oldurmedir.
+- Debug Lazer (Lv5+), Takipte bir hedefi oldururse overdrive tetiklenir.
+- Overdrive suresi 2 saniyedir (oyun hizi dahil gercek 2.5 sn).
+- Zincir isini: kuleye en yakin dusmandan baslayip her dusmandan bir sonraki en yakina giden bir rota izler; surenin %75'inde geri doner ve ayni rotayi geri izler.
+- Zincir isininin donus hizi 30 derece/saniye ile sinirlidir.
+- Lv10: zincir isinina ek olarak iki ters donen isin. Ikisi de zincirin dogdugu acidan cikar; biri saat yonunde, digeri tersine, sabit hizla (tam tur / overdrive suresi, ~144 derece/sn) ve hedeflerden bagimsiz doner. Yarida baslangicin karsisinda kesisir, sonda baslangicta bulusur. Overdrive bitince son dilim (baslangic acisi) bir kapanis vurusuyla kapatilir.
 - Overdrive sirasinda:
   - Menzil harita sonuna kadar uzar.
-  - Tick araligi normal lazer araliginin yarisidir.
-  - Tick hasari, DPS onceki dengeye yakin kalacak sekilde level bazli ayarlanir.
-  - Lazer cizgisine temas eden dusmanlar hasar alir.
+  - Tick araligi normal lazer araligiyla aynidir (atis hizi carpanlari dahil).
+  - Tick hasari normal vurustan yuksektir: Lv1 x1.44, Lv5 x1.30, Lv10 x1.20 (bkz. carpim tablosu).
+  - Son vurustan bu yana isinlarin taradigi yaydaki dusmanlar hasar alir; birden fazla isinin altindaki dusman atis basina bir kez vurulur.
+  - Kaynak ve isi kule basina: atis basina bir tuketim, isin basina degil.
+  - Hava hedeflerini overdrive'da da vuramaz.
 
 **Hararet:**
 
@@ -438,8 +454,8 @@ Ozel kule denge carpimlari:
 | Kule | Ek hasar carpani |
 |---|---|
 | Obsesyon | Level bazli denge egrisi: Lv6 `425 DPS`, Lv7 `600 DPS`, Lv8 `750 DPS`, Lv10 `1000 DPS` hedefler |
-| Debug Lazer | DPS'i koruyan level bazli tick hasari: Lv1 `x1.3333`, Lv5 `x2.432`, Lv10 `x2.604` |
-| Debug Lazer overdrive | DPS'i koruyan level bazli tick hasari: Lv1 `x1.92`, Lv5 `x2.3347`, Lv10 `x2.4998` |
+| Debug Lazer | Level bazli tick hasari (`1.3333 * (1 + 0.74 * levelOrani)`): Lv1 `x1.3333`, Lv5 `x1.772`, Lv10 `x2.320` |
+| Debug Lazer overdrive | Level bazli tick hasari (`1.92 * (1 + 0.45 * levelOrani)`): Lv1 `x1.92`, Lv5 `x2.304`, Lv10 `x2.784` |
 | Ucube | Level bazli gec acilan egri: Lv1 `x0.45`, Lv3 `x0.34`, Lv6 `x0.42`, Lv8 `x0.25`, Lv10 `x1.05` |
 | Ucube dalga 6+ | Lv7 `x1.6`, Lv8 `x1.5`, Lv9 `x1.4`, Lv10 `x1.3` gec oyun carpani |
 
@@ -457,7 +473,7 @@ Minimum atis araligi:
 
 - Normal kuleler: 80 ms
 - Takipci ozel egri kullanir; Lv10'da 333 ms olur.
-- Debug Lazer overdrive: normal lazer araliginin yarisi
+- Debug Lazer overdrive: normal lazer araligiyla ayni
 
 ### Menzil artisi
 
@@ -613,26 +629,13 @@ Korku etkisi level 3 ve sonrasinda acilir.
 
 Debug Lazer'in Lv5 ve Lv10 esiklerinde aldigi atis araligi gucu nedeniyle Lv5 sonrasi upgrade maliyeti ozel tablodan gelir. Lv2-Lv4 maliyetleri genel kule formuluyle ayni kalir.
 
-Overdrive sirasinda:
+Overdrive sirasinda (yalnizca Lv5+):
 
-- Tick araligi normal lazer araliginin yarisidir.
-- Tick hasari, DPS onceki dengeye yakin kalacak sekilde level bazli ayarlanir.
+- Tick araligi normal lazer araligiyla aynidir; araligin yarilanmasi yoktur.
+- Tick hasari normal vurusun `getDebugLaserDamageMultiplier(level, true) / getDebugLaserDamageMultiplier(level, false)` kati: Lv1 x1.44, Lv5 x1.30, Lv10 x1.20.
 - Menzil harita sonuna kadar uzar.
 
-Overdrive efektif DPS:
-
-| Lv | Overdrive tick hasari | Overdrive araligi | Overdrive DPS |
-|---:|---:|---:|---:|
-| 1 | 9.6 | 0.10 sn | 96.0 |
-| 2 | 14.6 | 0.10 sn | 154.0 |
-| 3 | 20.0 | 0.09 sn | 222.6 |
-| 4 | 25.6 | 0.09 sn | 301.6 |
-| 5 | 31.3 | 0.08 sn | 391.1 |
-| 6 | 37.3 | 0.08 sn | 491.0 |
-| 7 | 43.3 | 0.07 sn | 601.5 |
-| 8 | 49.1 | 0.07 sn | 722.4 |
-| 9 | 54.6 | 0.06 sn | 853.9 |
-| 10 | 59.7 | 0.06 sn | 995.8 |
+Kirisin altinda tutulan tek hedefe overdrive DPS'i bu yuzden normal DPS'in ayni katidir (Lv5 ~x1.30, Lv9 ~x1.22, Lv10 ~x1.20). Lv10'un iki ters donen isini zincir isinina eklenir: tek hedefte Lv9'dan asagi dusmez, kalabalikta cevredeki herkesi her overdrive'da en az iki kez tarar.
 
 ### Ucube - Level Statlari
 
@@ -674,18 +677,18 @@ Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir:
 
 Asagidaki degerler oyun hizinin `%20` yavaslatilmis hali dahil edilerek, gercek saniye DPS olarak hesaplanir.
 
-| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS | Ucube ana DPS (`16 dalga`, `15 stack`) | Ucube toplam DPS (`16 dalga`, `15 stack`, `2 chain`) |
+| Lv | Obsesyon DPS | Debug Lazer DPS | Debug Lazer overdrive DPS (tek hedef, Lv5+) | Ucube ana DPS (`16 dalga`, `15 stack`) | Ucube toplam DPS (`16 dalga`, `15 stack`, `2 chain`) |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 18.9 | 33.3 | 96.0 | 11.8 | 21.7 |
-| 2 | 33.0 | 59.4 | 154.0 | 16.6 | 30.5 |
-| 3 | 54.7 | 96.6 | 222.6 | 20.5 | 37.8 |
-| 4 | 92.1 | 149.6 | 301.6 | 28.8 | 55.3 |
-| 5 | 170.1 | 203.7 | 391.1 | 41.1 | 80.5 |
-| 6 | 425.0 | 255.8 | 491.0 | 68.4 | 136.8 |
-| 7 | 600.0 | 313.3 | 601.5 | 88.7 | 216.5 |
-| 8 | 750.0 | 376.3 | 722.4 | 129.3 | 349.2 |
-| 9 | 897.8 | 444.7 | 853.9 | 421.9 | 1206.7 |
-| 10 | 999.8 | 518.6 | 995.8 | 704.7 | 2114.0 |
+| 1 | 18.9 | 33.3 | - | 11.8 | 21.7 |
+| 2 | 33.0 | 59.4 | - | 16.6 | 30.5 |
+| 3 | 54.7 | 96.6 | - | 20.5 | 37.8 |
+| 4 | 92.1 | 149.6 | - | 28.8 | 55.3 |
+| 5 | 170.1 | 203.7 | 264.9 | 41.1 | 80.5 |
+| 6 | 425.0 | 255.8 | 326.3 | 68.4 | 136.8 |
+| 7 | 600.0 | 313.3 | 392.8 | 88.7 | 216.5 |
+| 8 | 750.0 | 376.3 | 464.3 | 129.3 | 349.2 |
+| 9 | 897.8 | 444.7 | 540.8 | 421.9 | 1206.7 |
+| 10 | 999.8 | 518.6 | 622.3 | 704.7 | 2114.0 |
 
 Bu tabloya gore:
 

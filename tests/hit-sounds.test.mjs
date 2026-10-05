@@ -522,6 +522,29 @@ test("surekli isin (Debug Lazer) vizilti degil nabiz; tek atis isini bir kez", (
   assert.deepEqual(showcase, [["showcase-t2-1", "impact", false]]);
 });
 
+test("Debug Lazer'in 10. seviyedeki uc kirisi tek nabiz: uc kat tik yok", () => {
+  const solo = [];
+  const trio = [];
+  const soloTracker = new hit.BeamHitTracker((b) => solo.push(b.id));
+  const trioTracker = new hit.BeamHitTracker((b) => trio.push(b.id));
+  for (let now = 0; now <= 1000; now += 16) {
+    soloTracker.update([beam("beam-t1", "warrior-5", 260, 3)], now);
+    trioTracker.update([beam("beam-t1", "warrior-5", 260, 3), beam("beam-t1-b", "warrior-5", 260, 3), beam("beam-t1-c", "warrior-5", 260, 3)], now);
+  }
+  assert.ok(solo.length >= 5, `${solo.length} nabiz`);
+  assert.equal(trio.length, solo.length, "uc kiris bir kulenin tek nabzi");
+  assert.equal(hit.getBeamPulseKey({ id: "beam-t1-b", definitionId: "warrior-5" }), "beam-t1");
+  assert.equal(hit.getBeamPulseKey({ id: "beam-t1-c", definitionId: "warrior-5" }), "beam-t1");
+  assert.equal(hit.getBeamPulseKey({ id: "beam-t1", definitionId: "warrior-5" }), "beam-t1");
+  assert.equal(hit.getBeamPulseKey({ id: "chain-t1-b", definitionId: "warrior-6" }), "chain-t1-b", "yalnizca lazerin kirisleri");
+
+  // Zincir kirisi o karede yoksa donen kirisler yine nabiz ritminde, her karede degil.
+  const alone = [];
+  const aloneTracker = new hit.BeamHitTracker((b) => alone.push(b.id));
+  for (let now = 0; now <= 1000; now += 16) aloneTracker.update([beam("beam-t1-b", "warrior-5", 260, 3), beam("beam-t1-c", "warrior-5", 260, 3)], now);
+  assert.equal(alone.length, solo.length);
+});
+
 test("ayni kimlikle yeniden atilan isin yeniden calar; dalga yalnizca dogusta", () => {
   const calls = [];
   const tracker = new hit.BeamHitTracker((b) => calls.push(b.id));

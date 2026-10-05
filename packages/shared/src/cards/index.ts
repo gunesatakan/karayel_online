@@ -372,9 +372,9 @@ export const cardCatalog: CardDefinition[] = [
   // seye baglaniyor -- soguma hizina, kulenin kritigine, dusmanin o anki
   // hizina, yerinde durup durmadigina. Birlikte cikarlarsa oyuncu bunu
   // gorur ve kullanir; cikmazlarsa hicbiri bos kalmaz.
-  { id: "derin-dondurma", name: "Derin Dondurma", description: "Bir kulenin menzilinde hızı yarıya inen düşmanlar 3 saniye donar. Kimin yavaşlattığı fark etmez.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["control:deepFreeze"] },
+  { id: "derin-dondurma", name: "Derin Dondurma", description: "Bir kulenin menzilinde %60 ya da daha fazla yavaşlayan düşmanlar 3 saniye donar. Kimin yavaşlattığı fark etmez.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["control:deepFreeze"] },
   { id: "sogutma-kanali", name: "Soğutma Kanalı", description: "Takıldığı kulenin vuruşları, saniyedeki soğumasının %3'ü kadar yavaşlatır. Aura kuleleri her etki aralığında uygular. Kendisiyle yığılmaz.", axes: ["cc"], scope: { kind: "targeted" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["status:coolantSlow"] },
-  { id: "buz-kirigi", name: "Buz Kırığı", description: "Yavaşlatmalar kritik gelebilir; kulenin kritik ihtimalini kullanır ve kritik yavaşlatma %50 daha derindir.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["status:slowCrit"] },
+  { id: "buz-kirigi", name: "Buz Kırığı", description: "Yavaşlatmalar kritik gelebilir; kulenin kritik ihtimalini kullanır ve kritik yavaşlatma 1,5 kat derindir: %40 yavaşlatma %60 olur.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["status:slowCrit"] },
   { id: "kirilgan-buz", name: "Kırılgan Buz", description: "Donmuş düşmanlara kritik vuruş ihtimali +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsFrozen"] },
   { id: "cifte-namlu", name: "Çifte Namlu", description: "Bir kule her atışta 2 mermi çıkarır. Mühimmat, enerji ve ısı bedeli de 2 katına çıkar. Yörünge ve aura kulelerinde, Sunucu'da ve Ölüler Bağı'nda işlemez.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [], unlocks: ["attack:doubleShot"] },
 

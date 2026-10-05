@@ -1,4 +1,5 @@
 import type { TowerAuraDefinition, TowerAuraStat } from "../characters/common/types.js";
+import { getLevelScaledSlowFraction } from "../tower-rules.js";
 
 export type TowerAuraSource = {
   x: number;
@@ -53,6 +54,9 @@ export function applyTowerAuraModifier(baseValue: number, modifiers: TowerAuraMo
 }
 
 export function getTowerAuraLevelMultiplier(aura: TowerAuraDefinition, level: number) {
+  // Egrisi olan yavaslatma aurasi: carpan dogrudan yavaslatma kesrinden,
+  // vurus yavaslatmasiyla ayni fonksiyondan (Izolasyon Kulesi).
+  if (aura.slowByLevel) return 1 - getLevelScaledSlowFraction(aura.slowByLevel, level);
   const safeLevel = Math.max(1, Math.round(level));
   const scaled = aura.multiplier + (safeLevel - 1) * (aura.multiplierPerLevel ?? 0);
   return Math.max(aura.minMultiplier ?? Number.NEGATIVE_INFINITY, Math.min(aura.maxMultiplier ?? Number.POSITIVE_INFINITY, scaled));

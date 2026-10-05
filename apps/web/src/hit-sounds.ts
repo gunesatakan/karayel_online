@@ -24,6 +24,7 @@
  * siluetinden (kure, top, halka, ok).
  */
 import {
+  DEBUG_LASER_TWIN_BEAM_SUFFIXES,
   GAME_SPEED_MULTIPLIER,
   MELIS_CURSE_POOL_TICK_MS,
   ZEYNEP_SYNTHESIS_BURN_TICK_MS,
@@ -581,6 +582,19 @@ export function isAreaBeamOccupied(beam: Pick<BeamSnapshot, "x1" | "y1" | "x2" |
 
 export type BeamHitSink = (beam: BeamSnapshot, voice: HitVoiceId, tick: boolean) => void;
 
+/**
+ * Nabzin sayaci. Debug Lazer'in 10. seviyede zincir kirisine eklenen iki ters
+ * donen kirisi (`beam-<kule>-b`, `beam-<kule>-c`) zincir kirisiyle
+ * (`beam-<kule>`) ayni sayaci paylasiyor: uc kiris bir kulenin tek nabzi.
+ */
+export function getBeamPulseKey(beam: Pick<BeamSnapshot, "id" | "definitionId">) {
+  if (beam.definitionId !== "warrior-5") return beam.id;
+  for (const suffix of DEBUG_LASER_TWIN_BEAM_SUFFIXES) {
+    if (beam.id.endsWith(suffix)) return beam.id.slice(0, -suffix.length);
+  }
+  return beam.id;
+}
+
 const NO_OCCUPANTS: readonly HitAreaOccupant[] = [];
 
 /**
@@ -616,16 +630,21 @@ export class BeamHitTracker {
       const ttl = beam.ttlMs ?? 0;
       const previousTtl = this.lastTtl.get(beam.id);
       this.lastTtl.set(beam.id, ttl);
-      const lastPulse = this.lastPulse.get(beam.id);
       if (isContinuousBeam(beam)) {
+        // Ters donen kirisler zincir kirisinin sayacini kullaniyor; sayac zincir kirisi o karede
+        // yokken de silinmesin diye anahtar da goruldu sayiliyor.
+        const pulseKey = getBeamPulseKey(beam);
+        if (pulseKey !== beam.id) this.lastSeen.set(pulseKey, this.frame);
+        const lastPulse = this.lastPulse.get(pulseKey);
         const areaTick = AREA_BEAM_TICK_MS[beam.definitionId];
         const period = areaTick ?? FOCUS_BEAM_PULSE_MS;
         if (lastPulse !== undefined && now - lastPulse < period) continue;
         if (areaTick !== undefined && !isAreaBeamOccupied(beam, occupants)) continue;
-        this.lastPulse.set(beam.id, now);
+        this.lastPulse.set(pulseKey, now);
         this.sink(beam, voice, true);
         continue;
       }
+      const lastPulse = this.lastPulse.get(beam.id);
       const refire = seen
         && !ONSET_ONLY_BEAM_IDS.has(beam.definitionId)
         && previousTtl !== undefined

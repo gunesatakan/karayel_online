@@ -592,23 +592,20 @@ export function estimateSynergyShare(dealt: number, dpsMultiplier: number) {
 
 /**
  * Yalnizligin bir vurustaki payi. `isolated` vurus anindaki durum: bonus o an
- * kapaliysa pay yok. `cadenceApplies` false ise kule o an sabit bir ritimle
- * atiyor (Debug Lazer'in asiri yukleme supurmesi 220 ms'de sabit); o zaman
- * yalnizca hasar ekseni sayiliyor.
+ * kapaliysa pay yok. Hasar ve atis hizi eksenleri birlikte sayiliyor: atis
+ * hizi carpanini atlayan bir ritim artik yok (Debug Lazer'in asiri yukleme
+ * kirisi de normal araligiyla vuruyor).
  */
-export function getAtakanIsolationShare(dealt: number, isolated: boolean, cadenceApplies = true) {
+export function getAtakanIsolationShare(dealt: number, isolated: boolean) {
   if (!isolated) return 0;
-  const multiplier = cadenceApplies
-    ? getAtakanIsolationDpsMultiplier()
-    : getSynergyDpsMultiplier(ATAKAN_ISOLATION_MULTIPLIER);
-  return estimateSynergyShare(dealt, multiplier);
+  return estimateSynergyShare(dealt, getAtakanIsolationDpsMultiplier());
 }
 
 /** Dizilimin bir vurustaki payi; seviye orani dahil, sunucunun kullandigi carpanlarla ayni. */
-export function getZeynepFormationShare(dealt: number, state: ZeynepFormationState, cadenceApplies = true) {
+export function getZeynepFormationShare(dealt: number, state: ZeynepFormationState) {
   const multiplier = getSynergyDpsMultiplier(
     getZeynepFormationDamageMultiplier(state),
-    cadenceApplies ? getZeynepFormationFireIntervalMultiplier(state) : 1
+    getZeynepFormationFireIntervalMultiplier(state)
   );
   return estimateSynergyShare(dealt, multiplier);
 }

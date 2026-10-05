@@ -80,12 +80,30 @@ export function getDebugLaserDamageMultiplier(level: number, overdrive: boolean)
   return base * (1 + levelRatio(level) * growth);
 }
 
-export function getDebugLaserFireInterval(level: number, overdrive: boolean) {
+/** Debug Lazer'in asiri yuklemesi bu seviyeden itibaren tetiklenebiliyor. */
+export const DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL = 5;
+/** Bu seviyede asiri yukleme zincir kirisine ek olarak iki ters donen kiris aciyor. */
+export const DEBUG_LASER_TWIN_OVERDRIVE_LEVEL = 10;
+/**
+ * Ters donen kirislerin kimlik ekleri, kulenin kendi kirisine (`beam-<kule>`)
+ * eklenerek: `-b` saat yonunde, `-c` tersine.
+ */
+export const DEBUG_LASER_TWIN_BEAM_SUFFIXES = ["-b", "-c"] as const;
+
+/** Ters donen iki kirisin kimligi: saat yonundeki once. */
+export function getDebugLaserTwinBeamIds(towerId: string) {
+  return DEBUG_LASER_TWIN_BEAM_SUFFIXES.map((suffix) => `beam-${towerId}${suffix}`);
+}
+
+/**
+ * Atis araligi. Asiri yuklemede de ayni: kiris normal lazerin ritminde
+ * vuruyor (bir donem yarisi yaziyordu ama hic uygulanmiyordu).
+ */
+export function getDebugLaserFireInterval(level: number) {
   const clampedLevel = clampLevel(level);
-  const normalRealMs = clampedLevel <= 5
+  const realMs = clampedLevel <= 5
     ? 200 - (clampedLevel - 1) * 10
     : 160 - (clampedLevel - 5) * 8;
-  const realMs = overdrive ? normalRealMs / 2 : normalRealMs;
   return realMs * GAME_SPEED_MULTIPLIER;
 }
 
@@ -180,7 +198,7 @@ export function getTowerBaseLevelDamage(definition: TowerDefinition, level: numb
 /** Game-time milliseconds between shots with no haste, stacks or passives. */
 export function getTowerBaseLevelFireIntervalMs(definition: TowerDefinition, level: number) {
   if (definition.engine?.fixedFireInterval) return definition.fireIntervalMs;
-  if (definition.id === "warrior-5") return getDebugLaserFireInterval(level, false);
+  if (definition.id === "warrior-5") return getDebugLaserFireInterval(level);
   if (definition.hitType === "impact") return Math.max(TOWER_MIN_FIRE_INTERVAL_MS, definition.fireIntervalMs);
   if (definition.id === "warrior-1") return getTrackerFireInterval(level);
   if (definition.id === "zeynep-1") return getZeynepHizaFireInterval(level);

@@ -21,6 +21,14 @@ export type TowerTriggerDefinition = {
   cooldownMs?: number;
   condition?: TowerTriggerCondition;
 };
+/**
+ * Seviyeyle buyuyen yavaslatma gucu: 1. ve 10. seviyedeki yavaslatma
+ * kesri (0.1 = dusman %10 yavas yurur). Aradaki seviyeler dogrusal.
+ */
+export type TowerSlowCurve = {
+  level1: number;
+  level10: number;
+};
 export type TowerStatusEffectDefinition = {
   type: TowerStatusEffectType;
   magnitude: number;
@@ -28,6 +36,11 @@ export type TowerStatusEffectDefinition = {
   stacking?: "none" | "refresh" | "add";
   maxStacks?: number;
   scaling?: "none" | "distance";
+  /**
+   * Yalnizca `slow` icin: vurusun yavaslatma gucu seviyeyle bu egriden.
+   * Yoksa oyunun duz yavaslatmasi (`SLOW_STATUS_SPEED_MULTIPLIER`).
+   */
+  slowByLevel?: TowerSlowCurve;
 };
 export type TowerStackTrigger = "hit" | "kill" | "wave" | "sameTarget" | "activeSecond";
 /** fireRate is attack-speed gain; fireIntervalReduction explicitly shortens the interval. */
@@ -57,6 +70,11 @@ export type TowerAuraDefinition = {
   multiplierPerLevel?: number;
   minMultiplier?: number;
   maxMultiplier?: number;
+  /**
+   * Yalnizca dusman yavaslatan aura icin: hiz carpani `1 - egri(seviye)`.
+   * Varsa `multiplier`/`multiplierPerLevel` seviye olceginde yok sayilir.
+   */
+  slowByLevel?: TowerSlowCurve;
 };
 export type TowerLevelScalingDefinition = {
   stat: "damage";

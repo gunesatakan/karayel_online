@@ -64,8 +64,6 @@ test("yalnizlik: yalniz kulede hasar ve atis hizi birlikte, degilse sifir", () =
   close(getAtakanIsolationShare(1000, true), 1000 * (1 - 1 / dps), "yalniz");
   close(getAtakanIsolationShare(1000, true), 555.5555555555, "2,25 kat DPS");
   assert.equal(getAtakanIsolationShare(1000, false), 0, "yalniz degil: pay yok");
-  // Sabit ritimli supurme (asiri yukleme): yalnizca hasar ekseni.
-  close(getAtakanIsolationShare(900, true, false), 900 * (1 - 1 / ATAKAN_ISOLATION_MULTIPLIER), "sabit ritim");
 });
 
 test("dizilim: sunucunun carpanlari ve seviye orani, dizilim yoksa sifir", () => {
@@ -300,6 +298,8 @@ function teamRoom(characterId) {
 function laserScene(spots) {
   const scene = teamRoom("warrior");
   const tower = place(scene.room, scene.client, "warrior-5");
+  // Asiri yukleme 5. seviyede aciliyor.
+  tower.level = 5;
   tower.ammo = tower.maxAmmo;
   tower.energy = tower.maxEnergy;
   const enemies = spots.map(({ degrees, distance, hp }) => {

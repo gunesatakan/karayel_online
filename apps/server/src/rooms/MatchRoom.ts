@@ -47,6 +47,9 @@ import {
   MELIS_CURSE_POOL_TICK_MS,
   getDebugLaserDamageMultiplier,
   getDebugLaserFireInterval,
+  getDebugLaserTwinBeamIds,
+  DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL,
+  DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
   getKinFireInterval,
   getObsessionDamageMultiplier,
   getTowerLevelIntervalMultiplier,
@@ -271,6 +274,10 @@ import {
   usesLinearBallistics,
   rotateTowerTowards,
   SLOW_STATUS_SPEED_MULTIPLIER,
+  SLOW_STATUS_FRACTION,
+  KIN_SLOW_FAR_FRACTION,
+  getCriticalSlowFraction,
+  getStatusSlowFraction,
   canRefundTowerPurchase,
   usesEffectInterval,
   resolveTowerRefund,
@@ -454,8 +461,8 @@ const COOLANT_SLOW_MAX = 0.6;
 /** Sogutma yavaslatmasinin suresi; her vurusta yenilenir. */
 const COOLANT_SLOW_DURATION_MS = 1500;
 
-/** Kritik gelen yavaslatma bu kadar derinlesir. */
-const SLOW_CRIT_MULTIPLIER = 1.5;
+/** Ayni kulenin iki `slow:critical` yayini arasindaki en kisa sure (duvar saati). */
+const SLOW_CRIT_BROADCAST_INTERVAL_MS = 150;
 
 /** Donmus hedefe nisan alma kolayligi. */
 const FROZEN_CRIT_CHANCE = 0.3;
@@ -592,6 +599,22 @@ const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
+/**
+ * 10. seviyede zincir kirisine eklenen iki ters donen kirisin her birinin
+ * asiri yukleme boyunca taradigi aci: tam tur. Biri saat yonunde, digeri
+ * tersine; ikisi baslangicin tam karsisinda yarida kesisiyor, sonda
+ * baslangicta bulusuyor -- cember iki kez taraniyor. Zincir rotasinin 30
+ * derece/sn tavani bunlara uygulanmiyor: o tavan hedef olunce rotanin bir
+ * karede sicramasini engelliyor; bu kirisler sabit hizla donuyor, kare basina
+ * adimlari zaten `hiz x kare suresi`.
+ */
+const DEBUG_LASER_TWIN_SWEEP_RADIANS = Math.PI * 2;
+/** Ters donen kirislerin yonu, `getDebugLaserTwinBeamIds` sirasiyla: `-b` saat yonunde, `-c` tersine. */
+const DEBUG_LASER_TWIN_DIRECTIONS = [1, -1] as const;
+/** Taranan yay bu dilimlerden buyukse vurus testi dilimlere bolunuyor. */
+const DEBUG_LASER_TWIN_MAX_HIT_ARC = Math.PI / 4;
+/** Asiri yukleme bittikten sonra kapanis vurusunun yapilabildigi en gec an. */
+const DEBUG_LASER_CLOSING_PASS_WINDOW_MS = 250;
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
 const DEBUG_LASER_HEAT_LIMIT_MS = 10000;
 const DEBUG_LASER_OVERHEAT_MS = 5000;
@@ -653,7 +676,7 @@ const BACKUP_LINE_AMMO_PER_SHOT = 2;
 /** `ammo:emptyBleed` kilidinin uyguladigi kanama. */
 const AMMO_EMPTY_BLEED: TowerStatusEffectDefinition = { type: "bleed", magnitude: 0.012, durationMs: 5000, stacking: "refresh" };
 const KIN_SLOW_NEAR_MULTIPLIER = 1;
-const KIN_SLOW_FAR_MULTIPLIER = 0.6;
+const KIN_SLOW_FAR_MULTIPLIER = 1 - KIN_SLOW_FAR_FRACTION;
 const KIN_SYNTHESIS_PUSHBACK_DISTANCE = 12;
 const KIN_SYNTHESIS_TIP_HOLD_SECONDS = 0.5;
 const KIN_SHOWCASE_ARMOR_BREAK_BASE = 8;
@@ -928,7 +951,21 @@ type EnemyModel = {
   /** Bu hucre icin verilmis karar; hucre degisene kadar tekrarlanir. */
   navigatorStep?: { fromCol: number; fromRow: number; toCol: number; toRow: number };
   pathDistance: number;
+  /**
+   * Herhangi bir yavaslatmanin bittigi en gec an ("yavaslamis mi" sorusu).
+   * Hizi bu degil `slowSpeedFloors` belirliyor.
+   */
   slowUntil: number;
+  /**
+   * Aktif yavaslatmalarin hiz tabanlari; dusmanin hizi en gucluleri.
+   *
+   * Tek bir sayi yetmiyordu: yavaslatmanin gucu artik kaynaktan kaynaga
+   * degisiyor (Izolasyon seviyeyle %10 -> %50, kritik 1,5 kat) ve her
+   * birinin suresi ayri. Anahtar kaynak + guc, yani ayni kulenin yenilenen
+   * vurusu kendi kaydini tazeliyor; kritik vurus ayri kayit, bir sonraki
+   * kritiksiz vurus onu silmiyor -- kendi suresi bitene kadar en guclu o.
+   */
+  slowSpeedFloors?: Record<string, { speedMultiplier: number; expiresAt: number }>;
   /**
    * Bu dusmanin yeniden donabilecegi an.
    *
@@ -952,8 +989,6 @@ type EnemyModel = {
   coolantSlowOwnerId?: string;
   auraSlowMultiplier: number;
   trackingSourceTowerId?: string;
-  kinSlowUntil: number;
-  kinSlowMultiplier: number;
   fearUntil: number;
   armorBrokenUntil: number;
   dominatedUntil: number;
@@ -1150,6 +1185,11 @@ type TowerModel = {
   debugSweepDamageAngle: number;
   debugSweepDamageAngleAt: number;
   debugSweepLastDamageAt: number;
+  /**
+   * 10. seviyenin asiri yuklemesi: zincir kirisine eklenen iki ters donen
+   * kirisin ortak baslangic acisi. Tanimsizsa yalnizca zincir kirisi.
+   */
+  debugTwinStartAngle?: number;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
@@ -1760,6 +1800,8 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowUntil = 0;
   private zeynepSlowMultiplier = 1;
   private zeynepSlowTier: ZeynepCommandTier = "small";
+  /** Kule basina son `slow:critical` yayini (duvar saati); bkz. `broadcastSlowCritical`. */
+  private slowCritBroadcastAt = new Map<string, number>();
   private melisGothicNightmareUntil = 0;
   private melisGothicNightmareOwnerUntil = new Map<string, number>();
   /** Sonucu henuz belli olmayan ultiler (drone, Kabus, Sempati); bitince raporlaniyor. */
@@ -3849,8 +3891,6 @@ export class MatchRoom extends Room<MatchState> {
       coolantSlowUntil: 0,
       coolantSlowMultiplier: 1,
       auraSlowMultiplier: 1,
-      kinSlowUntil: 0,
-      kinSlowMultiplier: 1,
       fearUntil: 0,
       armorBrokenUntil: 0,
       dominatedUntil: 0,
@@ -4358,11 +4398,15 @@ export class MatchRoom extends Room<MatchState> {
         let firesThisTick = false;
         if (tower.cooldownMs <= 0) {
           if (!this.canTowerFire(tower)) {
-            this.beams.delete(`beam-${tower.id}`);
+            this.deleteDebugLaserOverdriveBeams(tower);
             continue;
           }
           this.consumeTowerResources(tower);
-          tower.cooldownMs = this.adjustIntervalForPerformanceAndHeat(tower, 220);
+          // Normal lazerle ayni ritim. Eskiden sabit 220 ms'ydi (kaynak
+          // tuketiminin araligi olarak kalmisti): seviyenin araligini ve atis
+          // hizi carpanlarini -- Izolasyon pasifi dahil -- atliyor, kirisin
+          // altindaki dusman normal lazerdekinin yarisindan az vuruluyordu.
+          tower.cooldownMs = this.getTowerFireInterval(tower);
           firesThisTick = true;
         }
         this.updateDebugLaserSweep(tower, firesThisTick);
@@ -4370,11 +4414,17 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       if (tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0) {
+        // Asiri yukleme dogal sonuna vardi: ters donen kirislerin son
+        // vurustan bitise kadar taradigi yay burada kapatiliyor (yoksa son
+        // dilim, yani baslangic acisi, hic vurulmazdi), sonra her sey sifir.
+        this.finishDebugLaserOverdrive(tower, now);
         tower.debugSweepStartedAt = 0;
         tower.debugSweepTargetIds = [];
         tower.debugSweepAngleAt = 0;
         tower.debugSweepLastDamageAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
+        tower.debugTwinStartAngle = undefined;
+        this.deleteDebugLaserOverdriveBeams(tower);
       }
 
       if (tower.definition.id === "warrior-2") {
@@ -4701,6 +4751,12 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugSweepDamageAngle = tower.debugSweepAngle;
     tower.debugSweepDamageAngleAt = 0;
     tower.debugSweepLastDamageAt = 0;
+    // 10. seviye: zincir kirisine ek olarak iki ters donen kiris, zincirin
+    // dogdugu acidan ve zincirden bagimsiz.
+    tower.debugTwinStartAngle = tower.level >= DEBUG_LASER_TWIN_OVERDRIVE_LEVEL ? tower.debugSweepAngle : undefined;
+    if (tower.debugTwinStartAngle === undefined) {
+      for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
+    }
     tower.debugOverdriveHeatLastAt = now;
     tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
     this.updateDebugLaserSweep(tower);
@@ -4724,10 +4780,20 @@ export class MatchRoom extends Room<MatchState> {
     return overdrive ? tierColors.overdrive : tierColors.beam;
   }
 
-  private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number) {
+  /**
+   * Asiri yuklemenin butun kirislerini kaldirir: zincir kirisi (normal lazerin
+   * kirisine donmusse dokunulmuyor) ve 10. seviyenin iki ters donen kirisi.
+   */
+  private deleteDebugLaserOverdriveBeams(tower: TowerModel) {
+    const mainId = `beam-${tower.id}`;
+    if (this.beams.get(mainId)?.overdrive) this.beams.delete(mainId);
+    for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
+  }
+
+  private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number, id = `beam-${tower.id}`) {
     const ttlMs = overdrive ? Math.max(180, this.getTowerFireInterval(tower) + 90) : Math.max(260, this.getTowerFireInterval(tower) + 90);
-    this.beams.set(`beam-${tower.id}`, {
-      id: `beam-${tower.id}`,
+    this.beams.set(id, {
+      id,
       definitionId: tower.definition.id,
       x1: tower.x,
       y1: tower.y,
@@ -5044,21 +5110,50 @@ export class MatchRoom extends Room<MatchState> {
     enemy.pathDistance = this.clamp(pushedDistance, 0, path?.totalLength ?? pushedDistance);
   }
 
+  /**
+   * Kin yavaslatmasi: kulenin dibinde %0, menzil ucunda %40, arasi dogrusal.
+   *
+   * Kesir yavaslatma tabanina dogrudan yaziliyor (oteki kule yavaslatmalari
+   * gibi), Buz Kirigi kritigi de ona isliyor: menzil ucunda %60. Eskiden
+   * mesafe carpani ayri bir kanaldaydi ve kulenin yanina duz %52'lik bir
+   * yavaslatma durumu da yaziliyordu; `min` icinde duz olan hep kazaniyordu,
+   * yani panelin "-%0...-%40 (uzaklikla)" sozu hicbir mesafede tutmuyordu.
+   *
+   * Dibinde yakalanan dusmana hic yavaslatma yazilmiyor: sifir kesir kayit
+   * birakmiyor ve kayitsiz `slowUntil` duz 0,48'e dusecekti.
+   */
   private applyKinSlow(enemy: EnemyModel, tower: TowerModel, distanceFromTower: number, range: number, slowMs: number) {
     const now = Date.now();
     const ratio = this.getKinDistanceRatio(distanceFromTower, range);
-    const multiplier = KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio;
-    this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio });
-    const duration = applyStatusResistance(slowMs, enemy.statusResistances.slow);
-    enemy.kinSlowMultiplier = this.clamp(multiplier, KIN_SLOW_FAR_MULTIPLIER, KIN_SLOW_NEAR_MULTIPLIER);
-    enemy.kinSlowUntil = now + scaleGameDuration(duration);
+    const multiplier = this.clamp(
+      KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio,
+      KIN_SLOW_FAR_MULTIPLIER,
+      KIN_SLOW_NEAR_MULTIPLIER
+    );
+    const slowFraction = 1 - multiplier;
+    // Her temas yeniden hesaplaniyor (kartin sozu: "ust uste binmez"): kule
+    // basina tek kayit, kritik de olsa bir sonraki temas onun yerine geciyor.
+    const slowFloorKey = `${tower.id}:kin`;
+    if (slowFraction <= 0) {
+      this.removeEnemySlowFloor(enemy, slowFloorKey);
+      return;
+    }
+    if (this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio, slowFraction, slowFloorKey })) return;
+    // Taht'in Kin mermisi (zeynep-3) tanimda yavaslatma bildirmiyor: ayni
+    // kural, tanim yerine burada. Sure eskisi gibi kart carpansiz.
+    this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 1, durationMs: slowMs, stacking: "refresh" }, now, {
+      slowFraction: this.rollTowerSlowFraction(tower, undefined, tower.level, enemy, slowFraction),
+      slowFloorKey,
+      sourceTowerId: tower.id,
+      sourceOwnerId: tower.ownerId
+    });
   }
 
   private applyEnemyStatusEffect(
     enemy: EnemyModel,
     definition: TowerStatusEffectDefinition,
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string } = {}
   ) {
     const scaledDefinition = {
       ...definition,
@@ -5074,7 +5169,27 @@ export class MatchRoom extends Room<MatchState> {
     });
     enemy.statusEffects[definition.type] = state;
     if (definition.type === "slow") {
-      enemy.slowUntil = Math.max(enemy.slowUntil, state.expiresAt);
+      // Hizi durumun `magnitude` degeri degil yavaslatma kesri belirliyor;
+      // bildirilmemisse duz %52. Sure durumla ayni hesap (direnc dahil),
+      // ama bu vurusun kendi suresi: ortak durumun en gec bitisi degil.
+      //
+      // `slowUntil` yalnizca `addEnemySlowFloor` icinden buyuyor. Durumun
+      // `expiresAt`i eski ve yeni bitisin en buyugu; ondan yazilsaydi kaydi
+      // bitmis eski bir yavaslatma `slowUntil`i uzatir ve taban bitince hiz
+      // kayitsiz `slowUntil` yedegine (duz 0,48) duserdi.
+      const durationMs = applyStatusResistance(scaledDefinition.durationMs, enemy.statusResistances.slow);
+      // Sifir kesir kayit birakmiyor: kayitsiz bir `slowUntil` duz 0,48
+      // sayiliyor, yani "yavaslatmayan" vurus dusmani %52 yavaslatirdi.
+      if (durationMs > 0 && (overrides.slowFraction ?? SLOW_STATUS_FRACTION) > 0) {
+        this.addEnemySlowFloor(
+          enemy,
+          1 - (overrides.slowFraction ?? SLOW_STATUS_FRACTION),
+          now + durationMs,
+          overrides.sourceTowerId ?? "flat",
+          now,
+          overrides.slowFloorKey
+        );
+      }
     } else if (definition.type === "fear") {
       enemy.fearUntil = Math.max(enemy.fearUntil, state.expiresAt);
     } else if (definition.type === "stun") {
@@ -5083,25 +5198,135 @@ export class MatchRoom extends Room<MatchState> {
     return state;
   }
 
+  /**
+   * Bir yavaslatmanin hiz tabanini kaydeder; bitmis kayitlari da temizler.
+   *
+   * Ayni kaynak ayni gucte yeniden vurursa kayit yalnizca uzuyor. Kayitlar
+   * en fazla kule basina iki (kritikli/kritiksiz) ve sureleri bir saniye
+   * mertebesinde, yani tablo kucuk kaliyor.
+   */
+  private addEnemySlowFloor(enemy: EnemyModel, speedMultiplier: number, expiresAt: number, sourceKey: string, now: number, replaceKey?: string) {
+    const floors = enemy.slowSpeedFloors ?? (enemy.slowSpeedFloors = {});
+    for (const key in floors) {
+      if (floors[key].expiresAt <= now) delete floors[key];
+    }
+    const safeMultiplier = Math.max(0, Math.min(1, speedMultiplier));
+    if (replaceKey) {
+      // Yeniden hesaplanan yavaslatma (Kin): her temas kendi kaydinin
+      // yerine geciyor, daha zayif ya da daha kisa olsa bile.
+      floors[replaceKey] = { speedMultiplier: safeMultiplier, expiresAt };
+      this.syncEnemySlowUntil(enemy);
+      return;
+    }
+    const key = `${sourceKey}:${safeMultiplier.toFixed(3)}`;
+    floors[key] = { speedMultiplier: safeMultiplier, expiresAt: Math.max(floors[key]?.expiresAt ?? 0, expiresAt) };
+    enemy.slowUntil = Math.max(enemy.slowUntil, expiresAt);
+  }
+
+  /** Bir kaydi siler (Kin'in dibinde yakalanan dusman: yavaslatma yok). */
+  private removeEnemySlowFloor(enemy: EnemyModel, key: string) {
+    if (!enemy.slowSpeedFloors?.[key]) return;
+    delete enemy.slowSpeedFloors[key];
+    this.syncEnemySlowUntil(enemy);
+  }
+
+  /**
+   * `slowUntil`i kayitlarin en gec bitisine ceker. Kisalan ya da silinen
+   * bir kayittan sonra gerekli: yoksa kayitsiz kalan `slowUntil` duz 0,48
+   * yedegine duserdi.
+   */
+  private syncEnemySlowUntil(enemy: EnemyModel) {
+    let latest = 0;
+    for (const key in enemy.slowSpeedFloors ?? {}) latest = Math.max(latest, enemy.slowSpeedFloors![key].expiresAt);
+    enemy.slowUntil = latest;
+  }
+
+  /**
+   * Durum yolundan gecmeyen duz yavaslatmalar (isci mermisi, reaktor,
+   * ulti): eskisi gibi %52, ama kaydi ayni tabloda ki daha guclu ya da
+   * daha zayif bir kule yavaslatmasiyla `min` icinde dogru yarissin.
+   */
+  private extendFlatSlow(enemy: EnemyModel, until: number, now: number) {
+    if (until <= now) return;
+    this.addEnemySlowFloor(enemy, SLOW_STATUS_SPEED_MULTIPLIER, until, "flat", now);
+  }
+
+  /**
+   * Yavaslatmalarin dusman hizina verdigi carpan: aktif olanlarin en
+   * guclusu. Kaydi olmayan bir `slowUntil` (eski kayitlar, testlerin elle
+   * yazdigi deger) duz yavaslatma sayiliyor.
+   */
+  private getEnemySlowSpeedMultiplier(enemy: EnemyModel, now: number) {
+    if (enemy.slowUntil <= now) return 1;
+    let multiplier = 1;
+    let active = false;
+    const floors = enemy.slowSpeedFloors;
+    if (floors) {
+      for (const key in floors) {
+        const floor = floors[key];
+        if (floor.expiresAt <= now) continue;
+        active = true;
+        if (floor.speedMultiplier < multiplier) multiplier = floor.speedMultiplier;
+      }
+    }
+    return active ? multiplier : SLOW_STATUS_SPEED_MULTIPLIER;
+  }
+
+  /**
+   * Bir kule vurusunun yavaslatma kesri; Buz Kirigi zari burada.
+   *
+   * Kesir tanimdan (`slowByLevel` varsa seviyeden, yoksa duz %52). Kritik
+   * gelirse 1,5 kat, %90 tavanla; oyuncu gorsun diye `slow:critical`
+   * yayiniyor. Butun kule vurus yavaslatmalari bu kapidan geciyor.
+   */
+  private rollTowerSlowFraction(tower: TowerModel | undefined, definition: TowerStatusEffectDefinition | undefined, level: number, enemy: EnemyModel, baseFraction?: number) {
+    const fraction = baseFraction ?? getStatusSlowFraction(definition, level);
+    // Sifir yavaslatma kritik gelemez: 0 x 1,5 hala sifir ve "kritik"
+    // patlamasi yavaslamayan bir dusmanin uzerinde yalan olurdu.
+    if (!tower || fraction <= 0 || !this.rollSlowCrit(tower)) return fraction;
+    this.broadcastSlowCritical(tower, enemy);
+    return getCriticalSlowFraction(fraction);
+  }
+
+  /**
+   * Kritik yavaslatmanin gorsel isareti; kule basina 150 ms'de bir.
+   *
+   * Zar her dusmana ayri atiliyor: alan vuran bir kule tek vurusta bir
+   * suruye kritik yavaslatma verebiliyor ve hizli atan Izolasyon bunu
+   * saniyede onlarca kez yapar. Her biri ayri mesaj olsaydi tel ve ekran
+   * ayni patlamayla dolardi; biri yeterince soyluyor. Ayni vurusta olen
+   * dusmana yayin yok -- yavaslatacak kimse kalmadi.
+   */
+  private broadcastSlowCritical(tower: TowerModel, enemy: EnemyModel, now = Date.now()) {
+    if (enemy.hp <= 0 || !this.enemies.has(enemy.id)) return;
+    const last = this.slowCritBroadcastAt.get(tower.id);
+    if (last !== undefined && now - last < SLOW_CRIT_BROADCAST_INTERVAL_MS) return;
+    if (this.slowCritBroadcastAt.size > 256) {
+      for (const towerId of this.slowCritBroadcastAt.keys()) {
+        if (!this.towers.has(towerId)) this.slowCritBroadcastAt.delete(towerId);
+      }
+    }
+    this.slowCritBroadcastAt.set(tower.id, now);
+    this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
+  }
+
   private applyConfiguredTowerStatus(
     tower: TowerModel,
     enemy: EnemyModel,
     type: TowerStatusEffectDefinition["type"],
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceOwnerId?: string } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string } = {}
   ) {
     const definition = this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === type);
     if (!definition) return undefined;
     const modifiers = this.getTowerRunModifiers(tower);
     return this.applyEnemyStatusEffect(enemy, definition, now, {
       durationMs: (overrides.durationMs ?? definition.durationMs) * getModifierMultiplier(modifiers, "statusDuration"),
+      magnitude: (overrides.magnitude ?? definition.magnitude) * getModifierMultiplier(modifiers, "statusMagnitude"),
       // Buz Kirigi yalnizca yavaslatmaya bakiyor: yanma ya da lanet kritik
       // gelseydi kart "durum etkileri kritik gelebilir" olurdu ve o baska
-      // bir kart. Zar burada atiliyor cunku butun yapilandirilmis
-      // yavaslatmalar bu kapidan geciyor.
-      magnitude: (overrides.magnitude ?? definition.magnitude)
-        * getModifierMultiplier(modifiers, "statusMagnitude")
-        * (definition.type === "slow" && this.rollSlowCrit(tower) ? SLOW_CRIT_MULTIPLIER : 1),
+      // bir kart. Kritik `magnitude`a degil kesre isliyor -- hiz kesirden.
+      ...(definition.type === "slow" ? { slowFraction: this.rollTowerSlowFraction(tower, definition, tower.level, enemy, overrides.slowFraction), slowFloorKey: overrides.slowFloorKey } : {}),
       scalingFactor: overrides.scalingFactor,
       sourceTowerId: tower.id,
       sourceOwnerId: overrides.sourceOwnerId ?? tower.ownerId
@@ -5289,7 +5514,8 @@ export class MatchRoom extends Room<MatchState> {
         this.triggerMelisRageWave(tower, context.areaDamageMultiplier ?? 0);
       } else if (effect === "rage-wave-on-kill" && tower.melisEvolutionLevel >= 1) {
         this.triggerMelisRageWave(tower);
-      } else if (effect === "marked-overdrive" && context.target) {
+      } else if (effect === "marked-overdrive" && context.target && tower.level >= DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL) {
+        // Asiri yukleme 5. seviyede aciliyor; altinda isaretli oldurme siradan bir oldurme.
         this.startDebugLaserOverdrive(tower, context.target, context.now ?? Date.now());
         this.noteMarkedOverdriveStarted(tower, context.now ?? Date.now());
       }
@@ -5740,6 +5966,12 @@ export class MatchRoom extends Room<MatchState> {
    * yalnizca ates sayacinin doldugu karede uygulaniyor. Iki kare arasinda
    * taranan yay atlanmasin diye vurus testi onceki aciyla su anki aci arasini
    * birlikte olcer.
+   *
+   * 10. seviyede zincir kirisine iki ters donen kiris ekleniyor. Uc kirisin
+   * vuruslari ayni atista birlesiyor: dusman basina atis basina en fazla bir
+   * vurus. Kaynak ve isi kule basina (atis basina bir tuketim, asiri yukleme
+   * isi penceresi zamana gore), kiris basina degil. Havayi vuramayan lazer
+   * hicbir kirisle ucani vurmuyor.
    */
   private updateDebugLaserSweep(tower: TowerModel, firesThisTick = false) {
     const now = Date.now();
@@ -5772,32 +6004,141 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugSweepAngleAt = now;
     const end = getRayAngleToWorldEdge(tower.x, tower.y, currentAngle, this.getActiveWorldBounds());
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
-    const finishedSweep = now >= tower.debugOverdriveUntil;
 
     this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
+    this.drawDebugLaserTwinBeams(tower, now);
     if (!firesThisTick) {
-      if (finishedSweep) {
-        tower.debugOverdriveUntil = now;
-      }
       return;
     }
 
-    const damage = this.getTowerDamage(tower);
     // Taranan yay artik yeniden hesaplanmiyor: kirisin bir onceki karede
     // gercekten durdugu aci ile su anki acisi arasi. Hesaplanan degerden yay
     // cikarmak, sinirin kirptigi hareketi de vurulmus saymak olurdu.
     const sweptFromAngle = tower.debugSweepDamageAngleAt > 0 ? tower.debugSweepDamageAngle : previousAngle;
+    const hit = new Set<EnemyModel>();
+    this.collectDebugLaserChainHits(tower, sweptFromAngle, currentAngle, hit);
+    this.collectDebugLaserTwinHits(tower, tower.debugSweepDamageAngleAt, now, hit);
     tower.debugSweepDamageAngle = currentAngle;
     tower.debugSweepDamageAngleAt = now;
+    this.damageDebugLaserSweepHits(tower, hit);
+    tower.debugSweepLastDamageAt = now;
+  }
 
-    for (const enemy of Array.from(this.enemies.values())) {
-      if (didDebugLaserSweepHitEnemy(tower, enemy, sweptFromAngle, currentAngle, end.x, end.y, this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS))) {
-        this.damageEnemyFromTower(tower, enemy, damage, 0);
+  /**
+   * Asiri yukleme dogal sonuna vardiktan sonraki ilk karede kapanis vurusu.
+   *
+   * Sweep yalnizca `debugOverdriveUntil > now` iken calisiyor, yani son
+   * vurustan bitise kadar taranan yay -- ters donen kirislerde tam turun son
+   * dilimi, baslangic acisi -- hic vurulmuyordu. Burada bir kez, bitis anina
+   * kadar kapatiliyor; kule ates edemiyorsa ya da bitisin ustunden uzun sure
+   * gectiyse (kule askida kaldi) kapanis yok. Bir atis sayiliyor: kaynak bir
+   * kez tukeniyor ve normal lazer bir aralik bekliyor.
+   */
+  private finishDebugLaserOverdrive(tower: TowerModel, now: number) {
+    const endedAt = tower.debugOverdriveUntil;
+    if (endedAt <= 0 || endedAt > now || now - endedAt > DEBUG_LASER_CLOSING_PASS_WINDOW_MS) {
+      return;
+    }
+    if (!this.canTowerFire(tower)) {
+      return;
+    }
+    const hit = new Set<EnemyModel>();
+    const chainFrom = tower.debugSweepDamageAngleAt > 0 ? tower.debugSweepDamageAngle : tower.debugSweepAngle;
+    this.collectDebugLaserChainHits(tower, chainFrom, tower.debugSweepAngle, hit);
+    this.collectDebugLaserTwinHits(tower, tower.debugSweepDamageAngleAt, endedAt, hit);
+    if (hit.size === 0) {
+      return;
+    }
+    this.consumeTowerResources(tower);
+    tower.cooldownMs = Math.max(tower.cooldownMs, this.getTowerFireInterval(tower));
+    this.damageDebugLaserSweepHits(tower, hit);
+  }
+
+  /** Zincir kirisinin `from`dan `to`ya taradigi yaydaki dusmanlar. */
+  private collectDebugLaserChainHits(tower: TowerModel, from: number, to: number, hit: Set<EnemyModel>) {
+    const end = getRayAngleToWorldEdge(tower.x, tower.y, to, this.getActiveWorldBounds());
+    const beamRadius = this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS);
+    const canHitAir = this.canTowerHitAir(tower);
+    for (const enemy of this.enemies.values()) {
+      if (hit.has(enemy) || (!canHitAir && enemy.movementKind === "air")) continue;
+      if (didDebugLaserSweepHitEnemy(tower, enemy, from, to, end.x, end.y, beamRadius)) {
+        hit.add(enemy);
       }
     }
-    tower.debugSweepLastDamageAt = now;
-    if (finishedSweep) {
-      tower.debugOverdriveUntil = now;
+  }
+
+  /**
+   * Ters donen kirislerin `time` anindaki donusu (radyan, 0..tam tur). Aci
+   * zamandan hesaplaniyor, yani kare atlansa da kiris sicramiyor.
+   */
+  private getDebugLaserTwinTurn(tower: TowerModel, time: number) {
+    const durationMs = Math.max(1, tower.debugOverdriveUntil - tower.debugSweepStartedAt);
+    return (Math.min(durationMs, Math.max(0, time - tower.debugSweepStartedAt)) / durationMs) * DEBUG_LASER_TWIN_SWEEP_RADIANS;
+  }
+
+  /**
+   * 10. seviyenin ters donen iki kirisi, zincir kirisine ek olarak.
+   *
+   * Ikisi de zincirin dogdugu acidan cikiyor; `-b` saat yonunde, `-c` tersine,
+   * sabit acisal hizla ve hedeflerden bagimsiz. Her biri asiri yukleme boyunca
+   * tam tur atiyor: yarida baslangicin karsisinda kesisiyor, sonda baslangicta
+   * bulusuyor.
+   */
+  private drawDebugLaserTwinBeams(tower: TowerModel, now: number) {
+    const startAngle = tower.debugTwinStartAngle;
+    if (startAngle === undefined) {
+      return;
+    }
+    const turned = this.getDebugLaserTwinTurn(tower, now);
+    const bounds = this.getActiveWorldBounds();
+    getDebugLaserTwinBeamIds(tower.id).forEach((id, index) => {
+      const angle = startAngle + DEBUG_LASER_TWIN_DIRECTIONS[index] * turned;
+      const end = getRayAngleToWorldEdge(tower.x, tower.y, angle, bounds);
+      const scanPoint = getPointOnRay(tower.x, tower.y, angle, this.scaleWorldDistance(190));
+      this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y, id);
+    });
+  }
+
+  /**
+   * Ters donen kirislerin son vurustan (ilk atista asiri yuklemenin
+   * basindan, yani baslangic acisi dahil) `until`a kadar taradigi yaylar.
+   * Buyuk yay dilimlere bolunuyor: vurus testi en kisa aci farkiyla olcuyor.
+   */
+  private collectDebugLaserTwinHits(tower: TowerModel, lastDamageAt: number, until: number, hit: Set<EnemyModel>) {
+    const startAngle = tower.debugTwinStartAngle;
+    if (startAngle === undefined) {
+      return;
+    }
+    const fromTurn = lastDamageAt > 0 ? this.getDebugLaserTwinTurn(tower, lastDamageAt) : 0;
+    const toTurn = this.getDebugLaserTwinTurn(tower, until);
+    const span = Math.max(0, toTurn - fromTurn);
+    const slices = Math.max(1, Math.ceil(span / DEBUG_LASER_TWIN_MAX_HIT_ARC));
+    const bounds = this.getActiveWorldBounds();
+    const beamRadius = this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS);
+    const canHitAir = this.canTowerHitAir(tower);
+    for (const direction of DEBUG_LASER_TWIN_DIRECTIONS) {
+      for (let slice = 0; slice < slices; slice += 1) {
+        const sliceFrom = startAngle + direction * (fromTurn + (span * slice) / slices);
+        const sliceTo = startAngle + direction * (fromTurn + (span * (slice + 1)) / slices);
+        const end = getRayAngleToWorldEdge(tower.x, tower.y, sliceTo, bounds);
+        for (const enemy of this.enemies.values()) {
+          if (hit.has(enemy) || (!canHitAir && enemy.movementKind === "air")) continue;
+          if (didDebugLaserSweepHitEnemy(tower, enemy, sliceFrom, sliceTo, end.x, end.y, beamRadius)) {
+            hit.add(enemy);
+          }
+        }
+      }
+    }
+  }
+
+  /** Atisin birlesik vurus listesi: her dusmana bir kez kule hasari. */
+  private damageDebugLaserSweepHits(tower: TowerModel, hit: Set<EnemyModel>) {
+    if (hit.size === 0) {
+      return;
+    }
+    const damage = this.getTowerDamage(tower);
+    for (const enemy of hit) {
+      this.damageEnemyFromTower(tower, enemy, damage, 0);
     }
   }
 
@@ -5852,7 +6193,8 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = 0;
     tower.debugOverdriveHeatSegments = [];
-    this.beams.delete(`beam-${tower.id}`);
+    tower.debugTwinStartAngle = undefined;
+    this.deleteDebugLaserOverdriveBeams(tower);
   }
 
   /**
@@ -6319,9 +6661,8 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const isFeared = enemy.fearUntil > now;
-      const isSlowed = enemy.slowUntil > now;
+      const slowStatusMultiplier = this.getEnemySlowSpeedMultiplier(enemy, now);
       const isHesitating = enemy.melisDoubtHesitateUntil > now;
-      const kinSlowMultiplier = enemy.kinSlowUntil > now ? enemy.kinSlowMultiplier : 1;
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
       const doubtSlowMultiplier = enemy.melisDoubtUntil > now ? Math.max(0.1, 1 - Math.min(3, enemy.melisDoubtStacks) * MELIS_DOUBT_SLOW_PER_STACK) : 1;
       const doubtHasteMultiplier = enemy.melisDoubtHasteUntil > now ? MELIS_DOUBT_STRESS_HASTE_MULTIPLIER : 1;
@@ -6352,7 +6693,7 @@ export class MatchRoom extends Room<MatchState> {
         // ustlerine biner. Icerde olsaydi %9'luk bir yavaslatma, %52'lik
         // bir yavaslatmanin yaninda hicbir sey yapmazdi -- olcup gorduk:
         // 0,48 varken 0,91 hic gorunmuyordu.
-        : Math.min(isSlowed ? SLOW_STATUS_SPEED_MULTIPLIER : 1, statusSpeedMultiplier, enemy.auraSlowMultiplier, kinSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier, crystalTrapMultiplier, repairBreachMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
+        : Math.min(slowStatusMultiplier, statusSpeedMultiplier, enemy.auraSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier, crystalTrapMultiplier, repairBreachMultiplier) * coolantSlowMultiplier * doubtHasteMultiplier;
       // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
       // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
       // sozu bu -- kule yavaslatmayi kendi yapmak zorunda degil, yalnizca
@@ -7250,7 +7591,7 @@ export class MatchRoom extends Room<MatchState> {
     const slow = this.getWorkerBoost(tower, "slowShots", now);
     if (slow) {
       this.spendWorkerBoostShot(tower, "slowShots", now);
-      enemy.slowUntil = Math.max(enemy.slowUntil, now + slow.value);
+      this.extendFlatSlow(enemy, now + slow.value, now);
     }
   }
 
@@ -7440,7 +7781,7 @@ export class MatchRoom extends Room<MatchState> {
       reactor.crystalCriticalResonanceWave = this.wave;
       const radius = getMapGridSize(this.activeMap) * 3;
       for (const enemy of this.enemies.values()) {
-        if (distanceSq(enemy.x, enemy.y, reactor.x, reactor.y) <= radius * radius) enemy.slowUntil = Math.max(enemy.slowUntil, now + 3_000);
+        if (distanceSq(enemy.x, enemy.y, reactor.x, reactor.y) <= radius * radius) this.extendFlatSlow(enemy, now + 3_000, now);
       }
       for (const tower of this.towers.values()) {
         if (tower.ownerId === reactor.ownerId && distanceSq(tower.x, tower.y, reactor.x, reactor.y) <= radius * radius) tower.heatLocked = false;
@@ -9607,6 +9948,10 @@ export class MatchRoom extends Room<MatchState> {
     target.dominatedOwnerId = ownerId;
     target.fearUntil = 0;
     target.slowUntil = 0;
+    target.slowSpeedFloors = undefined;
+    // Yavaslatma durumu da gidiyor: kalsaydi sonraki bir vurus onun eski
+    // bitisini devralirdi ve asist kaydi bitmis bir yavaslatmayi sayardi.
+    delete target.statusEffects.slow;
     return true;
   }
 
@@ -9764,7 +10109,7 @@ export class MatchRoom extends Room<MatchState> {
       report.heal = this.teamHealth - healthBefore;
       for (const enemy of this.enemies.values()) {
         const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
-        enemy.slowUntil = Math.max(enemy.slowUntil, Date.now() + scaleGameDuration(duration));
+        this.extendFlatSlow(enemy, Date.now() + scaleGameDuration(duration), Date.now());
         report.hits += 1;
       }
       this.finishUltimateReport(report);
@@ -10728,6 +11073,12 @@ export class MatchRoom extends Room<MatchState> {
     if (slowMs > 0) {
       const sourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
       const modifiers = sourceTower ? this.getTowerRunModifiers(sourceTower) : [];
+      // Kule vurusunun yavaslatma gucu kulenin tanimindan: Izolasyon seviyeyle
+      // (%10 -> %50), otekiler duz %52. Kule satildiysa mermi tanimi ve
+      // seviyesiyle; kulesiz kaynaklar (yetenek, ulti) duz.
+      const slowDefinition = (sourceTower ? this.getTowerEngine(sourceTower) : sourceTowerId ? this.findTowerDefinitionById(sourceDefinitionId)?.engine : undefined)
+        ?.statusEffects?.find((effect) => effect.type === "slow");
+      const slowFraction = this.rollTowerSlowFraction(sourceTower, slowDefinition, sourceTower?.level ?? sourceTowerLevel, enemy);
       this.applyEnemyStatusEffect(enemy, {
         type: "slow",
         magnitude: 0.52,
@@ -10736,7 +11087,8 @@ export class MatchRoom extends Room<MatchState> {
       }, now, {
         durationMs: slowMs * getModifierMultiplier(modifiers, "statusDuration"),
         magnitude: 0.52 * getModifierMultiplier(modifiers, "statusMagnitude"),
-        // Kaynak yalnizca co-op asisti icin; yavaslatmanin kendisi ayni.
+        slowFraction,
+        // Kaynak co-op asisti ve yavaslatma kaydinin anahtari icin.
         sourceTowerId: sourceTower?.id,
         sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
       });
@@ -10930,13 +11282,12 @@ export class MatchRoom extends Room<MatchState> {
     if (!tower) {
       return;
     }
-    // Asiri yukleme supurmesi sabit 220 ms'lik ritimle atiyor; atis hizi
-    // carpani orada uygulanmiyor, pay yalnizca hasar ekseninden.
-    const cadenceApplies = !(tower.definition.id === "warrior-5" && tower.debugSweepStartedAt > 0 && tower.debugOverdriveUntil > 0);
+    // Asiri yukleme supurmesi de normal lazerin araligiyla atiyor (atis hizi
+    // carpanlari dahil), yani pay her iki eksenden.
     const isolation = receivesAtakanIsolationBonus(tower)
-      ? getAtakanIsolationShare(dealt, this.isTowerIsolatedForShare(tower), cadenceApplies)
+      ? getAtakanIsolationShare(dealt, this.isTowerIsolatedForShare(tower))
       : 0;
-    const formation = tower.zeynepFormationSize > 0 ? getZeynepFormationShare(dealt, tower, cadenceApplies) : 0;
+    const formation = tower.zeynepFormationSize > 0 ? getZeynepFormationShare(dealt, tower) : 0;
     if (isolation <= 0 && formation <= 0) {
       return;
     }
@@ -12084,8 +12435,6 @@ export class MatchRoom extends Room<MatchState> {
       coolantSlowUntil: 0,
       coolantSlowMultiplier: 1,
       auraSlowMultiplier: 1,
-      kinSlowUntil: 0,
-      kinSlowMultiplier: 1,
       fearUntil: 0,
       armorBrokenUntil: 0,
       dominatedUntil: 0,
@@ -12442,6 +12791,7 @@ export class MatchRoom extends Room<MatchState> {
         slowSpeedMultiplier: this.getTowerSlowStatus(tower)?.speedMultiplier,
         slowSpeedMultiplierFar: this.getTowerSlowStatus(tower)?.farSpeedMultiplier,
         slowDurationMs: this.getTowerSlowStatus(tower)?.durationMs,
+        slowCrit: this.getTowerSlowStatus(tower) && this.towerHasUnlock(tower, "status:slowCrit") ? true : undefined,
         range: roundNetworkNumber(this.getTowerRange(tower)),
         minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
@@ -12830,7 +13180,8 @@ export class MatchRoom extends Room<MatchState> {
     const melisFocusKillHasteMultiplier = tower.characterId === "archer" && tower.melisFocusKillHasteUntil > now ? 1 / MELIS_FOCUS_KILL_HASTE_MULTIPLIER : 1;
 
     if (tower.definition.id === "warrior-5") {
-      return getDebugLaserFireInterval(tower.level, tower.debugOverdriveUntil > Date.now()) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier;
+      // Asiri yuklemede de ayni aralik: kiris normal lazerin ritminde vuruyor.
+      return getDebugLaserFireInterval(tower.level) * hasteMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier;
     }
 
     if (tower.definition.id === "zeynep-3") {
@@ -13615,6 +13966,9 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyTowerEnemyAuras(tower: TowerModel, activeAuras = this.getActiveTowerAuras(tower), seconds = 0) {
+    // Yavaslatma aurasi kritik gelmiyor (Buz Kirigi): aura her 220 ms'de bir
+    // tazeleniyor ve her tikte zar atsaydik yavaslatma tikten tike titrerdi.
+    // Izolasyon'da kart vurus yavaslatmasindan isliyor; aura sabit egride.
     const range = this.getTowerRange(tower);
     const affected = new Set<string>();
     for (const definition of activeAuras) {
@@ -13670,7 +14024,9 @@ export class MatchRoom extends Room<MatchState> {
    * var -- yoksa donmus dusmanin sifir hizi onu sonsuza kadar dondururdu.
    */
   private tryDeepFreeze(enemy: EnemyModel, speedMultiplier: number, towers: TowerModel[], now: number) {
-    if (speedMultiplier >= DEEP_FREEZE_SPEED_THRESHOLD) return;
+    // Esik dahil: tam %60 yavaslama (hiz 0,4) donduruyor. Kucuk pay kayan
+    // noktadan: 1 - 0,4 * 1,5 tam 0,4 cikmayabiliyor.
+    if (speedMultiplier > DEEP_FREEZE_SPEED_THRESHOLD + 1e-9) return;
     if (enemy.freezeReadyAt > now) return;
     if (isStatusEffectActive(enemy.statusEffects.freeze, now)) return;
 
@@ -13755,13 +14111,16 @@ export class MatchRoom extends Room<MatchState> {
   private applyCoolantSlow(tower: TowerModel, enemy: EnemyModel, now: number) {
     const modifiers = this.getTowerRunModifiers(tower);
     const critical = this.rollSlowCrit(tower);
-    const magnitude = Math.min(
+    const baseMagnitude = Math.min(
       COOLANT_SLOW_MAX,
       this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING
         * getModifierMultiplier(modifiers, "statusMagnitude")
-        * (critical ? SLOW_CRIT_MULTIPLIER : 1)
     );
-    if (magnitude <= 0) return;
+    if (baseMagnitude <= 0) return;
+    // Kritik, tavandan **sonra**: oteki yavaslatmalarla ayni kural (kesir
+    // 1,5 kat, %90 tavan). Once carpilsaydi tavandaki kulede kritik hicbir
+    // sey yapmazdi.
+    const magnitude = critical ? getCriticalSlowFraction(baseMagnitude) : baseMagnitude;
 
     // Yenileniyor, uzerine eklenmiyor: kart kendisiyle stacklenmiyor.
     // Aktifken gelen daha zayif bir vurus guclu olani zayiflatmasin diye
@@ -13771,9 +14130,7 @@ export class MatchRoom extends Room<MatchState> {
     const duration = COOLANT_SLOW_DURATION_MS * getModifierMultiplier(modifiers, "statusDuration");
     enemy.coolantSlowUntil = Math.max(enemy.coolantSlowUntil, now + scaleGameDuration(applyStatusResistance(duration, enemy.statusResistances.slow)));
     enemy.coolantSlowOwnerId = tower.ownerId;
-    if (critical) {
-      this.broadcast("slow:critical", { enemyId: enemy.id, towerId: tower.id, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y) });
-    }
+    if (critical) this.broadcastSlowCritical(tower, enemy);
   }
 
   /**
@@ -13819,10 +14176,10 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Kulenin vuruslarinin dusman hizina yapacagi sey.
    *
-   * Durumun `magnitude` degeri degil gercek carpan donuyor. Ikisi ayni sey
-   * degil: yavaslatma aktifken hiz duz bir tavana iniyor ve gucun hiza
-   * hicbir etkisi olmuyor. Mesafeye gore olcekleniyorsa iki uc da
-   * donuyor, cunku o kulelerde tek bir sayi yalan olurdu.
+   * Durumun `magnitude` degeri degil gercek carpan donuyor: hiz yavaslatma
+   * kesrinden (`slowByLevel` varsa seviyeden, yoksa duz %52). Mesafeye gore
+   * olcekleniyorsa iki uc da donuyor, cunku o kulelerde tek bir sayi yalan
+   * olurdu. Kritik (Buz Kirigi) haric: o bir zar, kulenin sabit degeri degil.
    */
   private getTowerSlowStatus(tower: TowerModel) {
     const definition = this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === "slow");
@@ -13831,7 +14188,7 @@ export class MatchRoom extends Room<MatchState> {
     if (definition.scaling === "distance") {
       return { speedMultiplier: KIN_SLOW_NEAR_MULTIPLIER, farSpeedMultiplier: KIN_SLOW_FAR_MULTIPLIER, durationMs };
     }
-    return { speedMultiplier: SLOW_STATUS_SPEED_MULTIPLIER, durationMs };
+    return { speedMultiplier: Math.round((1 - getStatusSlowFraction(definition, tower.level)) * 1000) / 1000, durationMs };
   }
 
   private addEffectStat(key: string, amount: number) {

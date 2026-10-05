@@ -573,6 +573,11 @@ export type TowerSnapshot = {
   /** Mesafeyle degisen yavaslatmalarda uzaktaki deger; yoksa tek bir sayi. */
   slowSpeedMultiplierFar?: number;
   slowDurationMs?: number;
+  /**
+   * Kulenin vurus yavaslatmasi kritik gelebiliyor (Buz Kirigi). Panel kritik
+   * degeri bundan ve yukaridaki carpanlardan hesapliyor (kesir x1,5, %90 tavan).
+   */
+  slowCrit?: boolean;
   /** Radians toward the current target. Only sent for towers that aim. */
   facing?: number;
   level: number;
@@ -1551,6 +1556,7 @@ export type {
   TowerStackResetReason,
   TowerAuraDefinition,
   TowerAuraStat,
+  TowerSlowCurve,
   TowerLevelScalingDefinition,
   TowerTriggerCondition,
   TowerTriggerDefinition,
@@ -1603,6 +1609,18 @@ export {
   getTowerEnergyState,
   type TowerEnergyState,
   SLOW_STATUS_SPEED_MULTIPLIER,
+  SLOW_STATUS_FRACTION,
+  SLOW_CRIT_MULTIPLIER,
+  SLOW_CRIT_MAX_FRACTION,
+  ISOLATION_SLOW_FRACTION_LEVEL_1,
+  ISOLATION_SLOW_FRACTION_LEVEL_10,
+  ISOLATION_SLOW_CURVE,
+  KIN_SLOW_FAR_FRACTION,
+  getLevelScaledSlowFraction,
+  getIsolationSlowFraction,
+  getStatusSlowFraction,
+  getCriticalSlowFraction,
+  getTowerHitSlowFraction,
   calculateTowerScaledBaseDamage,
   inferTowerAmmoType
 } from "./tower-rules.js";
@@ -1862,6 +1880,10 @@ export {
   getTowerTier,
   getDebugLaserDamageMultiplier,
   getDebugLaserFireInterval,
+  getDebugLaserTwinBeamIds,
+  DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL,
+  DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
+  DEBUG_LASER_TWIN_BEAM_SUFFIXES,
   getKinFireInterval,
   getObsessionDamageMultiplier,
   getTowerBaseLevelDamage,
