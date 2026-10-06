@@ -52,7 +52,7 @@ import { sanitizeWaveRecord } from "./wave-report.js";
 /** Deponun bicim surumu; anahtar da surumlu (`karayel_badges_v1`). */
 export const BADGE_BOOK_VERSION = 1;
 
-/** Arsivci: bu kadar farkli kart gorulmus olmali (katalog 113). */
+/** Arsivci: bu kadar farkli kart gorulmus olmali (katalog 137; esik bilerek sabit). */
 export const ARCHIVIST_CARD_TARGET = 50;
 /** Kesintisiz: tek kosuda ust uste temiz dalga. */
 export const UNBROKEN_CLEAN_STREAK = 10;

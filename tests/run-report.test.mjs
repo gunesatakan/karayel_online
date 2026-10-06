@@ -311,9 +311,12 @@ test("deste: secim sirasiyla, yigilan kart tek kalemde, nadirlik secim basina", 
     [common.id, 1, "common"]
   ]);
   assert.equal(deck.total, 4, "katalogda olmayan kimlik atlaniyor");
-  assert.deepEqual(deck.rarities, { common: 1, uncommon: 2, rare: 1 });
+  assert.deepEqual(deck.rarities, { common: 1, uncommon: 2, rare: 1, epic: 0 });
   assert.equal(deck.rarities.common + deck.rarities.uncommon + deck.rarities.rare, deck.total);
-  assert.deepEqual(buildRunDeck(undefined), { cards: [], total: 0, rarities: { common: 0, uncommon: 0, rare: 0 } });
+  assert.deepEqual(buildRunDeck(undefined), { cards: [], total: 0, rarities: { common: 0, uncommon: 0, rare: 0, epic: 0 } });
+  // Epik kart da kendi nadirligiyle sayiliyor.
+  const epic = cardCatalog.find((card) => getCardRarity(card) === "epic");
+  assert.deepEqual(buildRunDeck([epic.id]).rarities, { common: 0, uncommon: 0, rare: 0, epic: 1 });
 
   // Rapor yokken deste snapshot'tan; rapor gelince raporun kendi satirindan.
   const fallback = buildRunReportView({ result: "defeat", wave: 3, kills: 9, stage: 1, creative: false, localSlot: 0, finale: false, fallbackCardIds: [rare.id] });

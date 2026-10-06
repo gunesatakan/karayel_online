@@ -155,7 +155,7 @@ function renderPlayers(view: RunReportView) {
 function describeDeck(view: RunReportView) {
   const deck = view.deck;
   if (deck.total === 0) return "Kart seçilmedi";
-  const order: CardRarity[] = ["rare", "uncommon"];
+  const order: CardRarity[] = ["epic", "rare", "uncommon"];
   const parts = [`${deck.total} kart`];
   for (const rarity of order) {
     if (deck.rarities[rarity] > 0) parts.push(`${deck.rarities[rarity]} ${cardRarityLabels[rarity]}`);

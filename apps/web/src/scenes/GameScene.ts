@@ -5647,9 +5647,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    *
    * Baslik hangi dalganin odulu oldugunu soyluyor ("DALGA 7 ÖDÜLÜ"). Kartlar
    * 80 ms arayla ters gelip donuyor, her biri yuzu gorundugunde kisa bir
-   * cevirme sesi. Nadirlik kenarda: yaygin duz, seyrek gumus, nadir altin;
-   * nadir kart bir kez parliyor ve kendi tinisini caliyor -- yaklasik her uc
-   * secimden birinde nadir var, gelmesi kendi basina kucuk bir odul.
+   * cevirme sesi. Nadirlik kenarda: yaygin duz, seyrek gumus, nadir altin,
+   * epik cift cizgili koyu kan kirmizisi; nadir kart bir kez parliyor ve kendi
+   * tinisini caliyor -- yaklasik her uc secimden birinde nadir var, gelmesi
+   * kendi basina kucuk bir odul. Epik kart parlamiyor (fark cercevede), ama
+   * ayni tiniyi aliyor.
    *
    * Kart ancak dagitimi baslayali 250 ms olunca secilebiliyor: ekran dalga
    * sonunda kendiliginden aciliyor ve haritaya yapilan son dokunus bir karti
@@ -6211,6 +6213,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (scope.kind === "targeted") return "Bir kule seç";
     const parts = [
       scope.aims ? "Nişan alan kuleler" : "",
+      scope.projectiles ? "Mermi atan kuleler" : "",
+      scope.alongFacing ? "Nişan alan mermi ve çarpma kuleleri" : "",
+      scope.combat ? "Hasar veren kuleler" : "",
       scope.axes?.length ? `${scope.axes.map((axis) => towerAxisLabels[axis]).join(" / ")} kuleleri` : "",
       scope.hitTypes?.length ? `${scope.hitTypes.map((type) => hitTypeCodex[type].name).join(" / ")} kuleleri` : "",
       scope.damageTypes?.length ? `${scope.damageTypes.map((type) => damageTypeCodex[type].name).join(" / ")} hasarlı kuleler` : "",

@@ -313,6 +313,35 @@ canvas {
 .run-card--rare .run-card__rarity { color: #fbbf24; }
 
 /*
+ * Epik: bir statu baska bir stata ceviren kartlar. Koyu kan kirmizisi, sert
+ * sci-fi: cift cizgili cerceve (dis kenar #b91c1c + koyu bosluk + ic hat
+ * #7f1d1d'nin acik tonu) ve kirmizi zeminli "EPİK" etiketi. Altin, parilti ve
+ * hareket yok; dis isik en fazla 6 px ve soluk.
+ *
+ * Tehlike kirmizisindan ayri: HUD uyarilari tek cizgili ve parlak
+ * (#f87171 / #dc2626 dolgu); epik koyu ve cift cizgili. Nadirin altin tek
+ * cizgisinden de ayri.
+ */
+.run-card--epic {
+  border-color: #b91c1c;
+  box-shadow: inset 0 0 0 3px rgba(7, 13, 29, 0.92), inset 0 0 0 4px rgba(185, 28, 28, 0.6), 0 0 6px rgba(185, 28, 28, 0.18), 0 12px 30px rgba(0, 0, 0, 0.3);
+}
+.run-card--epic:hover,
+.run-card--epic:focus-visible {
+  border-color: #c81e1e;
+  box-shadow: inset 0 0 0 3px rgba(7, 13, 29, 0.92), inset 0 0 0 4px rgba(185, 28, 28, 0.8), 0 0 6px rgba(185, 28, 28, 0.24), 0 18px 45px rgba(0, 0, 0, 0.35);
+}
+.run-card--epic .run-card__rarity {
+  margin-left: 7px;
+  padding: 2px 5px 1px;
+  color: #fee2e2;
+  background: #7f1d1d;
+  border: 1px solid #b91c1c;
+  border-radius: 3px;
+}
+.run-card--epic .run-card__rarity::before { content: none; }
+
+/*
  * Nadir kartin tek parlamasi (1.2 sn): yuzu gorundugu an kartin ustunden
  * capraz bir isik geciyor. Baslangic ve bitis kartin disinda, varsayilan
  * saydam: animasyon yoksa hicbir sey gorunmuyor.
@@ -616,6 +645,9 @@ button.wave-report:active { transform: scale(0.99); }
 .owned-cards__card > strong { min-width: 0; color: #eaf2ff; font-size: 12px; line-height: 1.2; }
 .owned-cards__tags { align-self: center; color: #7dd3fc; font-size: 9px; letter-spacing: .06em; white-space: nowrap; }
 .owned-cards__card > small { grid-column: 1 / -1; margin-top: 2px; color: #aab7cc; font-size: 10px; line-height: 1.3; }
+/* Epik kartin satiri: kart secimindeki cift cizgili koyu kirmizi cerceve, kucuk olcekte. */
+.owned-cards__card--epic { border-color: #b91c1c; box-shadow: inset 0 0 0 2px rgba(15, 23, 42, .9), inset 0 0 0 3px rgba(185, 28, 28, .55); }
+.owned-cards__card--epic .owned-cards__tags { color: #fecaca; }
 .game-controls__inventory-button { min-height: 26px !important; padding: 0 10px !important; font-size: 10px; color: #99f6e4 !important; background: rgba(13, 148, 136, .28) !important; }
 
 @media (max-width: 700px), (max-height: 560px) and (pointer: coarse) {
@@ -3197,6 +3229,23 @@ button.wave-report:active { transform: scale(0.99); }
 .card-archive__group--rare {
   --frame: #fbbf24;
   --tag: #fbbf24;
+}
+
+/* Epik: kart secimindeki koyu kan kirmizisi; cift cizgi satirda ic golgeyle, etiket kirmizi zeminli. */
+.card-archive__group--epic {
+  --frame: #b91c1c;
+  --tag: #fecaca;
+}
+
+.card-archive__group--epic .card-archive__entry {
+  box-shadow: inset 0 0 0 2px rgba(13, 10, 16, 0.9), inset 0 0 0 3px rgba(185, 28, 28, 0.55);
+}
+
+.card-archive__group--epic .card-archive__entry header span {
+  padding: 1px 5px;
+  color: #fee2e2;
+  background: #7f1d1d;
+  border: 1px solid #b91c1c;
 }
 
 .card-archive__group--class {
@@ -5826,6 +5875,12 @@ button.wave-report:active { transform: scale(0.99); }
   color: #fef3c7;
   border-color: #fbbf24;
   box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.3), 0 0 10px rgba(251, 191, 36, 0.18);
+}
+
+.run-report__card--epic {
+  color: #fee2e2;
+  border-color: #b91c1c;
+  box-shadow: inset 0 0 0 2px rgba(15, 27, 52, 0.9), inset 0 0 0 3px rgba(185, 28, 28, 0.55);
 }
 
 .run-report__goal {

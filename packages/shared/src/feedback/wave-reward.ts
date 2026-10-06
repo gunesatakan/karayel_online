@@ -233,10 +233,14 @@ export type CardRevealCue = { atMs: number; kind: "cardFlip" | "cardRare"; index
  * kartin yuzu gorundugunde kendi tinisi, elde kac nadir olursa olsun bir kez:
  * nadir gelmesi bir odul, iki tini ayni haberi iki kez verirdi. Hareket
  * azaltmada donus yok, tek cevirme sesi ve (varsa) tini hemen.
+ *
+ * Epik kart da ayni tiniyi aliyor -- ayri bir ses yok, tini nadirligin
+ * habercisi -- ve elde ikisi birden varsa tini epik kartin yuzunde.
  */
 export function getCardRevealCues(rarities: readonly CardRarity[], reducedMotion: boolean): CardRevealCue[] {
   const cues: CardRevealCue[] = [];
-  const rareIndex = rarities.indexOf("rare");
+  const epicIndex = rarities.indexOf("epic");
+  const rareIndex = epicIndex >= 0 ? epicIndex : rarities.indexOf("rare");
   if (reducedMotion) {
     if (rarities.length > 0) cues.push({ atMs: 0, kind: "cardFlip", index: 0 });
     if (rareIndex >= 0) cues.push({ atMs: 0, kind: "cardRare", index: rareIndex });

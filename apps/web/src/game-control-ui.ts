@@ -927,7 +927,9 @@ export function setupGameControlUi(game: Phaser.Game) {
       const card = getCardDefinition(cardId);
       const name = card?.name ?? cardId;
       const row = document.createElement("div");
-      row.className = "owned-cards__card";
+      // Epik kartin satiri kendi cercevesiyle: destede cevrim kartini
+      // digerlerinden ayirmanin tek isareti etiket olmasin.
+      row.className = card && getCardRarity(card) === "epic" ? "owned-cards__card owned-cards__card--epic" : "owned-cards__card";
       const title = document.createElement("strong");
       title.textContent = count > 1 ? `${name} ×${count}` : name;
       row.append(title);

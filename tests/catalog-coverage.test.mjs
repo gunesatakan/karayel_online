@@ -37,7 +37,7 @@ const ALL_STATS = [
   "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs",
   "damageVsGrunt", "damageVsRunner", "damageVsShooter", "damageVsSiege",
   "experienceGain", "repairCost", "sellRefund", "workerHireCost", "ultimateDamage",
-  "shopRerollCost"
+  "shopRerollCost", "waveIncome"
 ];
 
 /**
@@ -214,11 +214,12 @@ test("kart ve esya kimlikleri benzersiz", () => {
 
 test("nadirlik cekilis agirligini gercekten degistirir", () => {
   const rarities = new Set(cardCatalog.map((card) => getCardRarity(card)));
-  for (const rarity of ["common", "uncommon", "rare"]) {
+  for (const rarity of ["common", "uncommon", "rare", "epic"]) {
     assert.ok(rarities.has(rarity), `${rarity} nadirlikte hic kart yok`);
   }
   assert.ok(CARD_RARITY_WEIGHT.common > CARD_RARITY_WEIGHT.uncommon);
   assert.ok(CARD_RARITY_WEIGHT.uncommon > CARD_RARITY_WEIGHT.rare);
+  assert.ok(CARD_RARITY_WEIGHT.rare > CARD_RARITY_WEIGHT.epic);
 
   // Buyuyen katalogda cekirdek guc kartlari hala sik gorunmeli: 46 kartlik
   // havuzdan 3 secenek cikarken common agirligi toplamin anlamli bir payi olmali.
@@ -237,6 +238,7 @@ test("nadirlik cekilis agirligini gercekten degistirir", () => {
 const carriesPayload = (entry) =>
   entry.effects.length > 0
   || (entry.unlocks?.length ?? 0) > 0
+  || (entry.conversions?.length ?? 0) > 0
   || (entry.grants !== undefined && !isEmptyTowerGrant(entry.grants));
 
 test("her kart ve esya bir sey yapar", () => {
@@ -245,7 +247,7 @@ test("her kart ve esya bir sey yapar", () => {
     assert.match(card.description, /\d/, `${card.id} aciklamasinda sayi yok`);
   }
   for (const item of shopCatalog) {
-    const doesSomething = carriesPayload(item) || item.category === "map" || item.category === "risk" || item.id === "besinci-isci";
+    const doesSomething = carriesPayload(item) || item.deposit !== undefined || item.category === "map" || item.category === "risk" || item.id === "besinci-isci";
     assert.ok(doesSomething, `${item.id} hicbir etki tasimiyor`);
   }
 });

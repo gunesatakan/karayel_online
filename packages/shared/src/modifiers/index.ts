@@ -110,7 +110,17 @@ export type ModifierStat =
    * Ikisi bilerek ayri -- biri dalgayi okumayi gereksiz kilar, obru okumayi
    * daha degerli yapar, ve ayni oyunda ikisini birden almak bosa yatirim.
    */
-  | "weaknessBonus";
+  | "weaknessBonus"
+  /**
+   * Dalga sonunda kazanilan duz altin.
+   *
+   * Carpan degil, adet: "+20" her dalga sonunda 20 altin demek. Iki katmandan
+   * birden okunuyor -- oyuncunun listesinden (genel kart) ve oyuncunun her
+   * kulesinin **kendi** listesinden (binaya takilan esya) -- ve her kaynak bir
+   * kez sayiliyor. Kule katmanindan da okundugu icin bir binaya takilan esya
+   * bunu vaat edebilir (bkz. shop-item-wiring testi).
+   */
+  | "waveIncome";
 
 export type Modifier = {
   source: string;
@@ -149,6 +159,53 @@ export function appendLegacyMultiplier(breakdown: ModifierBreakdown, source: str
     ...breakdown,
     mods: [...breakdown.mods, { source, scope: "tower", stat: "damage", add: currentMultiplier * (multiplier - 1) }]
   };
+}
+
+/**
+ * Bir statin baska bir stata cevrimi: Epik kartlarin dili.
+ *
+ * "Donus hizin arttikca atis hizin da artar" bir carpan degil, bir okuma:
+ * kulenin **gercek** kaynak bonusu (kartlar, esyalar, o anki kosullu paylar)
+ * okunuyor ve hedefe bir ek olarak yaziliyor. Uc kural:
+ *
+ * - Kaynagin yalnizca `threshold` ustu sayilir; isabetin %100 tavani gibi
+ *   zaten bosa giden bir payi hedeflemek icin. Yoksa 0, yani eksi bonus
+ *   (cezali bir kart) hicbir sey vermez ama bir sey de almaz.
+ * - Ek dogrusal: kaynagin her birimi hedefe `ratio` kadar ekler. Metindeki
+ *   "her %10'u +%2" 0,2 demek; ara degerler de sayilir (Goz Karari gibi).
+ * - `cap` hedefe eklenebilecek en fazla. Cevrim kosmaz: kaynak ne kadar
+ *   buyurse buyusun ek orada durur.
+ *
+ * Cevrimler zincirlenmez: kaynak cevrimlerden once okunuyor. Bir cevrimin
+ * hedefi oteki cevrimin kaynagi olsa bile ikincisi birincinin ekledigini
+ * gormez (katalog testi bunu ayrica yasakliyor).
+ */
+export type StatConversion = {
+  from: ModifierStat;
+  to: ModifierStat;
+  threshold?: number;
+  ratio: number;
+  cap: number;
+};
+
+/** Cevrimin hedefe ekledigi pay; kaynak esigin altindaysa 0. */
+export function getStatConversionAdd(conversion: StatConversion, sourceAdd: number) {
+  const excess = Math.max(0, sourceAdd - (conversion.threshold ?? 0));
+  return Math.max(0, Math.min(conversion.cap, excess * conversion.ratio));
+}
+
+/**
+ * Cevrimleri modifierlara cevirir. `readSource` kaynagin gercek bonusunu
+ * veriyor; sunucu orada kart ve esya toplamina o anki kosullu paylari
+ * (Av Refleksi'nin penceresi, soguk namlunun isabeti) ekliyor.
+ */
+export function resolveStatConversions(conversions: ReadonlyArray<StatConversion & { source: string }>, readSource: (stat: ModifierStat) => number): Modifier[] {
+  const resolved: Modifier[] = [];
+  for (const conversion of conversions) {
+    const add = getStatConversionAdd(conversion, readSource(conversion.from));
+    if (add > 0) resolved.push({ source: conversion.source, scope: "tower", stat: conversion.to, add });
+  }
+  return resolved;
 }
 
 export function canAcceptTargetedCard(targetedCardIds: readonly string[]) {

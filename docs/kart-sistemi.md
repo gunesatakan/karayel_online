@@ -17,8 +17,9 @@ Oysa kule motoru çok daha zengin konuşuyor. Artık kartlar da o dili konuşabi
 | Modifier | Bir statı büyütür veya küçültür | `effects` |
 | Kilit | Sunucuda yazılı bir davranışı açar | `unlocks` |
 | Motor eklentisi | Kulenin motoruna stack/aura/trigger/durum ekler | `grants` |
+| Çevrim (yalnızca kart) | Bir statın gerçek bonusunu başka bir stata ekler | `conversions` |
 
-Üçü de hem kartlarda hem mağaza eşyalarında geçerli. Bir davranışın kaynağı
+İlk üçü hem kartlarda hem mağaza eşyalarında geçerli. Bir davranışın kaynağı
 kart mı eşya mı olduğu sunucu için fark etmez.
 
 ## 1. Modifier
@@ -56,7 +57,24 @@ Kilitler tele **bit maskesi** olarak gider (`encodeUnlocks` / `hasUnlockBit`).
 Sıra `ALL_UNLOCKS` tarafından belirlenir, o yüzden yeni kilitler **listenin
 sonuna** eklenir; ortaya eklemek eski istemcilerle uyumu bozar. Liste 53 kilidi
 (`MAX_ENCODABLE_UNLOCKS`) aşamaz: kodlama bit işlemi değil `2 ** sıra` ile
-toplama, yani tavan `Number.MAX_SAFE_INTEGER`'ın 53 biti. Şu an 46 kilit var.
+toplama, yani tavan `Number.MAX_SAFE_INTEGER`'ın 53 biti. Şu an 50 kilit var;
+geriye 3 yer kaldı. Sayıyla ifade edilebilen yeni bir davranış için kilit yerine
+bir `ModifierStat` (örneğin `waveIncome`) tercih et.
+
+## Çevrim (`conversions`, Epik kartlar)
+
+```ts
+conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }]
+```
+
+"Dönüş hızın arttıkça atış hızın da artar": sunucu kulenin **gerçek** kaynak
+bonusunu okur — kart ve eşya toplamı artı o anki koşullu paylar (Av Refleksi'nin
+penceresi, soğuk namlunun isabeti) — ve hedefe `min(cap, max(0, kaynak - threshold) * ratio)`
+kadar bir modifier ekler (`resolveStatConversions`, `getTowerRunModifiers`).
+Kart kimliğine bakan bir sunucu dalı yok. Çevrimler zincirlenmez: kaynak çevrimlerden
+önce okunur. `threshold` kaynağın yalnızca eşik üstünü saydırır (isabetin %100
+tavanı gibi). Açıklama "her %10'u … +%X ekler; en fazla +%Y" diye yazılır ve test
+metni sayılarla karşılaştırır.
 
 ## 3. Motor eklentisi (`grants`)
 
@@ -94,7 +112,12 @@ bir kule mekaniğine bağlı olmadığı için her olayla kullanılabilir.
 
 - `global` — oyuncunun bütün kulelerine işler.
 - `targeted` — tek bir kuleye takılır, kule başına en fazla 3 tane.
-- `tagged` — `axes`, `hitTypes`, `damageTypes`, `shapes`, `ammoTypes` filtreleri.
+- `tagged` — `axes`, `hitTypes`, `damageTypes`, `shapes`, `ammoTypes` filtreleri;
+  ayrıca `hasAreaRadius` (etki alanı olan), `aims` (nişan alan, `towerAims`),
+  `projectiles` (mermi hızının bir şey değiştirdiği, `towerFiresProjectiles`),
+  `alongFacing` (atışı namlu yönünde giden nişan kulesi, `towerFiresAlongFacing`;
+  isabet içeriğinin kapsamı) ve `combat` (hasar veren kule, `towerDealsDamage`;
+  kritik ve öldürme eşyaları duvara ya da hasarsız aura binasına takılmasın).
 
 `tagged` bir kart hiçbir kuleye uymuyorsa **ölü içeriktir** ve test onu reddeder.
 Şekil filtresi her kulede dolu olduğu için en güvenli dar kapsam odur; vuruş ve
@@ -102,7 +125,12 @@ hasar türü kulelerin bir kısmında tanımsızdır.
 
 ## Nadirlik
 
-`common: 6`, `uncommon: 3`, `rare: 1` — çekiliş ağırlıkları. Yazılmazsa `global`
+`common: 6`, `uncommon: 3`, `rare: 1`, `epic: 0.5` — çekiliş ağırlıkları. `epic`
+yalnızca çevrim kartlarında ve elle yazılır. Sunucu çekilişe kaynak bonuslarını
+verir (`sourceBonuses`): kaynağı kuruluşta pozitif olmayan epik kart (eşikli
+çevrimde eşiğin yarısı) ölü ağırlık (0,15) alır. Kilidi oyuncunun eşyalarından
+zaten gelen kart da öyle (`ownedUnlocks`, mağazadaki "zaten açık" kuralının
+karşılığı). Yazılmazsa `global`
 kartlar `common`, dar kapsamlılar `uncommon` sayılır. Geniş kapsamlı kart her
 kuruluşta işe yarar, o yüzden sık çıkmalı; dar kapsamlı olan ancak doğru kuleyle
 anlamlıdır, o yüzden daha seyrek ama daha güçlü.

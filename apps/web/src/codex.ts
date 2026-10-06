@@ -57,7 +57,8 @@ export const towerAxisLabels: Record<TowerAxis, string> = {
 export const cardRarityLabels: Record<CardRarity, string> = {
   common: "yaygın",
   uncommon: "seyrek",
-  rare: "nadir"
+  rare: "nadir",
+  epic: "epik"
 };
 
 export const attackShapeLabels: Record<TowerAttackShape, string> = {

@@ -1,3 +1,5 @@
+import type { HitType } from "../combat.js";
+
 /**
  * Namlunun saniyede kac radyan dondugu: 1.2 rad/sn, yani ~69 derece. Tam ters
  * yone donmek 2,6 saniye suruyor.
@@ -98,4 +100,21 @@ const AIMING_TOWER_IDS = new Set<string>([
 
 export function towerAims(definitionId: string) {
   return AIMING_TOWER_IDS.has(definitionId);
+}
+
+/**
+ * Atisi namlunun baktigi yone giden kuleler: isabetin iska azalttigi yer.
+ *
+ * Nisan alan kulelerin hepsinde isabet ates konisini daraltiyor, ama koni
+ * yalnizca namlu yonunde ucan mermide (carpma, mermi, dalga) bir sapmayi
+ * kapatiyor. Obur nisan alan kulelerde isabet yalnizca tetigi geciktiriyor:
+ * Debug Lazer bir odak kulesi, Gosteri Kulesi ise vurus tipi carpma olsa da
+ * isinini en kalabalik hatta kendisi seciyor (`findBestZeynepShowcaseLine`)
+ * ve namlunun yonune bakmiyor. Taht Muhru karma: mermi kipleri namlu
+ * yonunde ucuyor, isin kipleri ucmuyor; kapsamda kaliyor.
+ */
+export function towerFiresAlongFacing(tower: { id?: string; hitType?: HitType; engine?: { attack: { executor?: string } } }) {
+  if (!tower.id || !towerAims(tower.id)) return false;
+  if (tower.engine?.attack.executor === "showcase-beam") return false;
+  return tower.hitType === "impact" || tower.hitType === "projectile" || tower.hitType === "wave";
 }

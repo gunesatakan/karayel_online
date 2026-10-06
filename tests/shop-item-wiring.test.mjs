@@ -191,3 +191,63 @@ test("kuleye takılan eşya yalnızca oyuncudan okunan bir stat vaat edemez", ()
     }
   }
 });
+
+/**
+ * Ayni sinifin obur yuzu: kule katmanindan okunmayan stat.
+ *
+ * Yukaridaki bekci yalnizca **bilinen** oyuncu statlarini yakaliyor. Egitim
+ * Sahasi gozden kacti: tecrube kazanci o listede degildi ama yine de
+ * yalnizca oyuncudan okunuyordu, yani esya takildigi kulede hicbir sey
+ * yapmiyordu. Bu bekci listeyi tersine ceviriyor: kuleye takilan esyanin
+ * vaat edebilecegi statlar, sunucunun kulenin listesinden okudugu
+ * dogrulanmis statlar. Yeni bir stat buraya ancak okuyucusu yazildiktan
+ * (ve bir davranis testiyle kanitlandiktan) sonra eklenmeli.
+ */
+const KULE_KATMANINDAN_OKUNANLAR = new Set([
+  // Savas: `getTowerRunModifiers` -> atis, hasar, nisan, kritik, isi, durum.
+  "accuracy", "airDamage", "ammoEmptyDamage", "cooling", "critChance", "critDamage", "damage",
+  "damageVsBrute", "damageVsRunner", "damageVsShielded", "damageVsShooter", "damageVsGrunt", "damageVsSiege",
+  "fireRate", "heat", "markAmplification", "operatingEnergyCost", "performanceCost", "projectileSpeed",
+  "range", "resistancePierce", "shotFuelCost", "statusDuration", "statusMagnitude", "targetLockMs",
+  "turnRate", "weaknessBonus", "towerHealth", "repairCost", "ammoCost", "energyCost", "armorBreak",
+  // Binalar: uretim kulenin listesinden, isci bonusu hizmet edilen binadan.
+  "ammoProduction", "resourceProduction", "workerGatherSpeed", "workerSpeed",
+  // Oyuncu basina ama kule katmanindan da: dalga geliri (bina), tecrube (olduren kule).
+  "waveIncome", "experienceGain"
+]);
+
+test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {
+  for (const item of shopCatalog) {
+    if (isGlobalShopItem(item)) continue;
+    for (const modifier of item.effects ?? []) {
+      assert.ok(
+        KULE_KATMANINDAN_OKUNANLAR.has(modifier.stat),
+        `${item.id} ("${item.name}") kuleye takiliyor ama ${modifier.stat} icin kule katmani okuyucusu dogrulanmadi`
+      );
+    }
+  }
+});
+
+test("Eğitim Sahası takıldığı kulenin öldürmesinde tecrübeyi gerçekten artırır", () => {
+  const olc = (esyali) => {
+    const room = createRoom("warrior");
+    const spot = findBuildableSpot(room, "warrior-1");
+    room.placeTower(client, { x: spot.x, y: spot.y, definitionId: "warrior-1" });
+    const tower = [...room.towers.values()][0];
+    if (esyali) {
+      buyItem(room, "egitim-sahasi");
+      room.equipShopItem(client, { itemId: "egitim-sahasi", towerId: tower.id });
+      assert.ok(tower.equippedShopItemIds.includes("egitim-sahasi"));
+    }
+    const player = room.state.players.get("p1");
+    player.experience = 0;
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()][0];
+    Object.assign(enemy, { type: "grunt", movementKind: "ground" });
+    room.damageEnemy(enemy, 1e9, 0, "warrior-1", "p1", "true", 0, tower.level, tower.id);
+    return player.experience;
+  };
+  const sade = olc(false);
+  assert.ok(sade > 0);
+  assert.ok(Math.abs(olc(true) / sade - 1.5) < 1e-9, "Egitim Sahasi tecrubeyi %50 artirmadi");
+});

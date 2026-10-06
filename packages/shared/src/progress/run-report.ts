@@ -412,7 +412,7 @@ export type RunDeck = {
  * atlaniyor; raporda adi olmayan bir kart cizilmiyor.
  */
 export function buildRunDeck(cardIds: readonly unknown[] | undefined): RunDeck {
-  const deck: RunDeck = { cards: [], total: 0, rarities: { common: 0, uncommon: 0, rare: 0 } };
+  const deck: RunDeck = { cards: [], total: 0, rarities: { common: 0, uncommon: 0, rare: 0, epic: 0 } };
   const byId = new Map<string, RunDeckCard>();
   for (const id of Array.isArray(cardIds) ? cardIds : []) {
     if (typeof id !== "string") continue;

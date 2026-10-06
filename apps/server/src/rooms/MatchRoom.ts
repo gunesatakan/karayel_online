@@ -192,6 +192,14 @@ import {
   ISOLATED_CRIT_CHANCE,
   KILL_SNAP_TURN_RATE,
   KILL_SNAP_DURATION_MS,
+  FAST_TARGET_TURN_RATE,
+  COLD_ACCURACY_TEMPERATURE,
+  COLD_ACCURACY_BONUS,
+  CLEAN_WAVE_GOLD,
+  CRIT_KILL_GOLD,
+  CRIT_KILL_GOLD_WAVE_CAP,
+  isCleanWave,
+  resolveStatConversions,
   getAccuracyCritChance,
   RUN_HOT_DAMAGE_PER_DEGREE,
   RUN_HOT_HEAT_LOCK_THRESHOLD,
@@ -206,6 +214,7 @@ import {
   ownedCardAppliesToTower,
   cardCatalog,
   drawCards,
+  getOwnedItemUnlocks,
   drawShopOffers,
   getShopItem,
   getShopItemPrice,
@@ -328,7 +337,10 @@ import {
   type ProjectileKind,
   type ProjectileSpawnSnapshot,
   type RoomListingSnapshot,
+  type Modifier,
+  type ModifierStat,
   type RunModifiers,
+  type StatConversion,
   type ServerPerfSnapshot,
   type TowerDefinition,
   type AmmoType,
@@ -790,6 +802,14 @@ class Player extends Schema {
   shopRerolls = 0;
   nexusShieldCharges = 0;
   /**
+   * Vadeli Mevduat (esyanin `deposit` alani): her alimin odenecegi dalga ve
+   * tutari. `dueWave` dalgasi tamamlaninca, dalga sonu primleriyle birlikte
+   * odenip listeden dusuyor.
+   */
+  goldDeposits?: Array<{ dueWave: number; amount: number }> = [];
+  /** `gold:critKill`: bu dalgada kritik oldurmeden kazanilan altin; dalga tavani icin. */
+  critKillGold?: { wave: number; earned: number } = { wave: 0, earned: 0 };
+  /**
    * Odadaki sabit yuva (0-3); katilista bos olan en kucuk sayi.
    *
    * Hasar olayi vuranini bununla soyluyor. Kayitla birlikte yasiyor: yeniden
@@ -1149,6 +1169,8 @@ type TowerModel = {
   auraActive: boolean;
   focusTargetId: string;
   aimTargetId: string;
+  /** `aimTowerAt`'in en son dondurdugu dusman; namlunun gercek hedefi. */
+  turnTargetId?: string;
   aimTargetLockUntil: number;
   aimTargetHasFired: boolean;
   focusStacks: number;
@@ -1239,6 +1261,8 @@ type TowerModel = {
     statusMagnitudeMultiplier: number;
     statusDurationMultiplier: number;
     unlocks: Set<Unlock>;
+    /** Kuleye isleyen Epik kartlarin stat cevrimleri; kaynak modifier adi ile. */
+    conversions: Array<StatConversion & { source: string }>;
   };
   /** `surge` trigger etkisinin bitis zamani. */
   surgeUntil?: number;
@@ -3101,6 +3125,72 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
+   * Dalga sonu primleri, oyuncu basina ve oyuncunun kendi kartlarindan.
+   *
+   * Uc kaynak: dalga geliri (`waveIncome`; genel kart ve ayakta duran
+   * binaya takili esya), temiz dalga primi (`gold:cleanWave`) ve vadesi
+   * gelen mevduat. Ucu de duz: oyuncunun biriktirdigi altinla buyumuyor,
+   * yani faize benzer bir dongu kurmuyor. Co-op'ta her oyuncu yalnizca
+   * kendi kartinin ve esyasinin karsiligini aliyor; temizlik kosulu ise
+   * takimin -- sizinti takimin nexusundan.
+   */
+  private awardWaveEndBonusGold(completedWave: number, clean: boolean) {
+    for (const [playerId, player] of this.state.players.entries()) {
+      let bonus = this.getPlayerWaveIncome(playerId);
+      if (clean && this.playerHasUnlock(playerId, "gold:cleanWave")) bonus += CLEAN_WAVE_GOLD;
+      const deposits = player.goldDeposits ?? [];
+      const due = deposits.filter((deposit) => deposit.dueWave <= completedWave);
+      if (due.length > 0) {
+        bonus += due.reduce((sum, deposit) => sum + deposit.amount, 0);
+        player.goldDeposits = deposits.filter((deposit) => deposit.dueWave > completedWave);
+      }
+      if (bonus > 0) player.gold += bonus;
+    }
+  }
+
+  /** Vadeli altin: bu dalga dahil `waves` dalga tamamlaninca `payout`. */
+  private addGoldDeposit(player: Player, deposit: { payout: number; waves: number }) {
+    player.goldDeposits = [...(player.goldDeposits ?? []), { dueWave: this.wave + deposit.waves - 1, amount: deposit.payout }];
+  }
+
+  /**
+   * Oyuncunun dalga geliri: kendi listesindeki genel kartlar ve kendi
+   * kulelerinin **kendi** listeleri. `getTowerRunModifiers` oyuncu
+   * listesini her kuleye kopyaladigi icin burada kullanilmiyor -- genel kart
+   * kule sayisi kadar sayilirdi. Yikik bina gelir getirmiyor.
+   */
+  private getPlayerWaveIncome(playerId: string) {
+    const player = this.state.players.get(playerId);
+    if (!player) return 0;
+    let income = getModifierAdd(player.runModifiers ?? [], "waveIncome");
+    for (const tower of this.towers.values()) {
+      if (tower.ownerId !== playerId || tower.hp <= 0) continue;
+      income += getModifierAdd(tower.runModifiers, "waveIncome");
+    }
+    return Math.max(0, Math.round(income));
+  }
+
+  /**
+   * Kritik oldurme primi (`gold:critKill`): oldurenin sahibine, oyuncu
+   * basina dalga tavaniyla. Kilit oldurenin kulesinden okunuyor: genel kart
+   * her kuleye, Kelle Defteri yalnizca takildigi kuleye isliyor. Tavan ikisi
+   * icin ortak. Donen deger odenen altin.
+   */
+  private awardCritKillGold(sourceTower: TowerModel | undefined, ownerId: string) {
+    if (!sourceTower || !this.towerHasUnlock(sourceTower, "gold:critKill")) return 0;
+    const player = this.state.players.get(ownerId);
+    if (!player) return 0;
+    const ledger = player.critKillGold && player.critKillGold.wave === this.wave
+      ? player.critKillGold
+      : { wave: this.wave, earned: 0 };
+    const gain = Math.max(0, Math.min(CRIT_KILL_GOLD, CRIT_KILL_GOLD_WAVE_CAP - ledger.earned));
+    ledger.earned += gain;
+    player.critKillGold = ledger;
+    player.gold += gain;
+    return gain;
+  }
+
+  /**
    * Tick'in hata siniri.
    *
    * Tick bir donem korumasizdi: icindeki tek bir istisna Colyseus'un surec
@@ -3554,7 +3644,7 @@ export class MatchRoom extends Room<MatchState> {
 
       this.applyMelisWaveStress();
       this.finishDefenseSummary();
-      this.closeRunWave(false);
+      const waveRecord = this.closeRunWave(false);
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
       if (this.wave >= FINAL_WAVE) {
@@ -3570,6 +3660,8 @@ export class MatchRoom extends Room<MatchState> {
       for (const [playerId, player] of this.state.players.entries()) {
         if (this.playerHasUnlock(playerId, "goldInterest")) player.gold += Math.min(60, Math.floor(player.gold * 0.08));
       }
+      // Faizden sonra: duz primler faizin tabanina girmesin.
+      this.awardWaveEndBonusGold(completedWave, isCleanWave(waveRecord));
       this.setupPhase = true;
       this.setupSession += 1;
       this.setupReadyPlayerIds.clear();
@@ -3650,12 +3742,25 @@ export class MatchRoom extends Room<MatchState> {
 
   private offerWaveCards() {
     for (const [playerId, player] of this.state.players.entries()) {
-      const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
+      const ownedTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId);
+      const towers = ownedTowers.map((tower) => tower.definition);
       const choices = drawCards({
         preferredAxes: getCharacterCardAxes(player.characterId),
         towers,
         ownedCardIds: player.ownedCardIds,
         marksAvailable: this.canTeamMarkEnemies(),
+        // Epik kart kaynagi kurulusta olmadan bos bir secenek: kart ve esya
+        // bonusu (kosullu paylar degil -- dalga sonunda gecici bir pencereye
+        // bakmak zari oynatirdi).
+        sourceBonuses: {
+          player: (stat) => getModifierAdd(player.runModifiers ?? [], stat),
+          towers: ownedTowers.map((tower) => {
+            const modifiers = this.getTowerStaticRunModifiers(tower);
+            return { tower: tower.definition, bonus: (stat: ModifierStat) => getModifierAdd(modifiers, stat) };
+          })
+        },
+        // Kilidi esyadan zaten gelen kart: magazanin "zaten acik" kurali.
+        ownedUnlocks: getOwnedItemUnlocks(player.ownedShopItemIds ?? [], ownedTowers),
         count: this.playerHasUnlock(playerId, "card:wideSearch") ? WIDE_SEARCH_CARD_COUNT : undefined
       });
       if (choices.length === 0) {
@@ -3807,6 +3912,7 @@ export class MatchRoom extends Room<MatchState> {
   private closeRunWave(died: boolean) {
     const record = this.runLedger.closeWave(this.wave, { died, slots: this.getRunSlots() });
     this.broadcast("wave:report", record);
+    return record;
   }
 
   private buildRunSummary(result: "victory" | "defeat") {
@@ -4575,7 +4681,12 @@ export class MatchRoom extends Room<MatchState> {
    * Records which way an aiming tower is pointing. Kept sticky: when the target
    * dies the muzzle holds its last bearing instead of snapping back to zero.
    */
-  private aimTowerAt(tower: TowerModel, target: { x: number; y: number } | undefined, deltaSeconds: number) {
+  private aimTowerAt(tower: TowerModel, target: { x: number; y: number; id?: string } | undefined, deltaSeconds: number) {
+    // Namlunun su an dondugu dusman. `aimTargetId` yalnizca hedef seciminin
+    // yazdigi kilit; Oluler Bagi, Kirik Ayna'nin patlamasi ve gudumlu donusler
+    // namluyu baska bir dusmana ceviriyor. Hedefe bakan kosullu paylar
+    // (Ongorulu Takip) bunu okuyor.
+    tower.turnTargetId = target?.id ?? "";
     if (!target) {
       return false;
     }
@@ -4592,12 +4703,14 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const targetAngle = Math.atan2(dy, dx);
-    // Av Refleksi: oldurmeden sonraki pencere modifier havuzuna eklenir, ayri
-    // bir carpan olarak degil -- kartin metni "+%150" diyor, "x2,5" degil.
-    const killSnap = (tower.killSnapUntil ?? 0) > Date.now() && this.towerHasUnlock(tower, "aim:killSnap") ? KILL_SNAP_TURN_RATE : 0;
-    const turnRate = (getModifierMultiplier(this.getTowerRunModifiers(tower), "turnRate") + killSnap) * TOWER_TURN_RATE_RADIANS_PER_SECOND;
+    // Kosullu paylar (Av Refleksi'nin penceresi, Ongorulu Takip'in hizli
+    // hedefi) modifier havuzuna eklenir, ayri bir carpan olarak degil --
+    // kartin metni "+%150" diyor, "x2,5" degil. Cevrimler de ayni sayiyi
+    // okuyor (`getTowerStatBonus`).
+    const modifiers = this.getTowerRunModifiers(tower);
+    const turnRate = Math.max(0, 1 + this.getTowerStatBonus(tower, "turnRate", modifiers)) * TOWER_TURN_RATE_RADIANS_PER_SECOND;
     tower.facing = rotateTowerTowards(tower.facing, targetAngle, deltaSeconds, turnRate);
-    const accuracyBonus = getModifierAdd(this.getTowerRunModifiers(tower), "accuracy");
+    const accuracyBonus = this.getTowerStatBonus(tower, "accuracy", modifiers);
     return isTowerAligned(tower.facing, targetAngle, getTowerFireAlignmentTolerance(accuracyBonus));
   }
 
@@ -7267,6 +7380,7 @@ export class MatchRoom extends Room<MatchState> {
     // Kilit uzerinden okunuyor ki ayni kilidi veren baska bir esya ya da kart
     // eklendiginde burasi degismek zorunda kalmasin.
     if (item.unlocks?.includes("nexusShield")) player.nexusShieldCharges += 3;
+    if (item.deposit) this.addGoldDeposit(player, item.deposit);
     if (item.id === "bariyer" || item.id === "ziftli-zemin") {
       const charges = this.shopPlacementCharges.get(client.sessionId) ?? { bariyer: 0, "ziftli-zemin": 0 };
       charges[item.id] += 1;
@@ -7373,7 +7487,14 @@ export class MatchRoom extends Room<MatchState> {
     charges[itemId] -= 1;
   }
 
-  private awardEnemyExperience(enemy: EnemyModel) {
+  /**
+   * `sourceTower`: olduren kule. Ona takili esyanin ya da hedefli kartin
+   * tecrube bonusu (Egitim Sahasi) yalnizca kulenin sahibinin payina ve
+   * yalnizca kulenin **kendi** listesinden ekleniyor -- oyuncunun listesi
+   * zaten okunuyor, `getTowerRunModifiers` onu ikinci kez sayardi. Bir donem
+   * bu yol yoktu ve Egitim Sahasi takildigi kulede hicbir sey yapmiyordu.
+   */
+  private awardEnemyExperience(enemy: EnemyModel, sourceTower?: TowerModel) {
     // Ayrilan oyuncu pay almiyor: tecrube kalanlar arasinda bolunuyor.
     const players = Array.from(this.state.players.entries())
       .filter(([sessionId]) => !this.departedSessionIds.has(sessionId))
@@ -7383,10 +7504,15 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const share = (enemy.champion?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind)) / players.length;
+    const killer = sourceTower ? this.state.players.get(sourceTower.ownerId) : undefined;
     for (const player of players) {
       // Kazanc oyuncu basina olceklenir: tecrube kartlari oyuncunun kendi
-      // ilerlemesini hizlandirmali, odadaki herkesinkini degil.
-      player.experience = (player.experience ?? 0) + share * getModifierMultiplier(player.runModifiers ?? [], "experienceGain");
+      // ilerlemesini hizlandirmali, odadaki herkesinkini degil. Kart ve esya
+      // bonuslari ayni havuzda toplaniyor (`1 + toplam`).
+      const modifiers = player === killer && sourceTower
+        ? [...(player.runModifiers ?? []), ...(sourceTower.runModifiers ?? [])]
+        : player.runModifiers ?? [];
+      player.experience = (player.experience ?? 0) + share * getModifierMultiplier(modifiers, "experienceGain");
     }
   }
 
@@ -9560,9 +9686,17 @@ export class MatchRoom extends Room<MatchState> {
         if (owned >= 0 && !item.repeatable) return;
         if (item.repeatable && this.countOwned(player.ownedShopItemIds, item.id) >= (item.maxStacks ?? Infinity)) return;
         player.ownedShopItemIds.push(item.id);
+        // Magazadaki alimla ayni: vadeli altin bu dalgadan sayilmaya basliyor.
+        if (item.deposit) this.addGoldDeposit(player, item.deposit);
       } else {
         if (owned < 0) return;
         player.ownedShopItemIds.splice(owned, 1);
+        // Cikarilan mevduatin henuz odenmemis son kaydi da duser.
+        if (item.deposit) {
+          const deposits = player.goldDeposits ?? [];
+          const index = deposits.map((deposit) => deposit.amount).lastIndexOf(item.deposit.payout);
+          if (index >= 0) player.goldDeposits = deposits.filter((_, position) => position !== index);
+        }
       }
       this.rebuildCreativeLoadout(client.sessionId);
       this.sendCreativeLoadout(client);
@@ -11165,7 +11299,7 @@ export class MatchRoom extends Room<MatchState> {
       this.resolveMelisUnderworldLinkedDeath(enemy, now);
     }
     this.triggerMelisCurseDeathBurst(enemy, now);
-    this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists });
+    this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists, critKill: critAdd > 0 });
     return true;
   }
 
@@ -11183,6 +11317,8 @@ export class MatchRoom extends Room<MatchState> {
     sourceDefinitionId: string;
     now: number;
     killAssists?: KillAssist[];
+    /** Oldurucu vurus kritik miydi (`gold:critKill`). Durum tiki hicbir zaman. */
+    critKill?: boolean;
   }) {
     const { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists } = context;
     const damagePlayer = this.state.players.get(sourceOwnerId);
@@ -11192,8 +11328,13 @@ export class MatchRoom extends Room<MatchState> {
     const killUnits = enemy.champion?.replaced ?? 1;
     this.enemies.delete(enemy.id);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
-    const ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
-    this.awardEnemyExperience(enemy);
+    let ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
+    // Kritik oldurme primi oldurme olayinin "+N"ine de giriyor: oyuncu
+    // kazandigini oldugu yerde goruyor.
+    if (context.critKill && sourceOwnerId) {
+      ownerGold += this.awardCritKillGold(sourceTowerId ? this.towers.get(sourceTowerId) : undefined, sourceOwnerId);
+    }
+    this.awardEnemyExperience(enemy, sourceTowerId ? this.towers.get(sourceTowerId) : undefined);
     this.kills += 1;
     this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
     // Supurmenin kendi oldurmesi: suren supurmede o kulenin vurusu (durum tiki degil).
@@ -13367,7 +13508,67 @@ export class MatchRoom extends Room<MatchState> {
     return breakdown;
   }
 
+  /**
+   * Kuleye isleyen modifierlar: kartlar, esyalar ve Epik kartlarin cevrimleri.
+   *
+   * Cevrimler kaynagi `getTowerStatBonus` uzerinden okuyor -- kart ve esya
+   * toplami arti o anki kosullu paylar -- ve hedefe birer modifier olarak
+   * ekleniyor. Atis hizini, hasari ve menzili okuyan her yer zaten bu listeyi
+   * okudugu icin cevrim icin ayri bir okuma dali yok. Cevrimsiz kulede liste
+   * eskisiyle birebir ayni.
+   */
   private getTowerRunModifiers(tower: TowerModel): RunModifiers {
+    const base = this.getTowerStaticRunModifiers(tower);
+    const conversions = this.getTowerGrantState(tower).conversions;
+    if (conversions.length === 0) return base;
+    return [...base, ...resolveStatConversions(conversions, (stat) => this.getTowerStatBonus(tower, stat, base))];
+  }
+
+  /**
+   * Kulenin bir stattaki gercek bonusu: kart ve esya toplami arti o an
+   * gecerli kosullu paylar. Kosullu paylar modifier listesine yazilmiyor
+   * (zamana ve hedefe bagli); onlari okuyan yerler (namlu donusu, ates
+   * konisi, isabetten kritik, cevrimler) bunu cagiriyor ki ayni sayiyi
+   * gorsunler.
+   */
+  private getTowerStatBonus(tower: TowerModel, stat: ModifierStat, modifiers: readonly Modifier[] = this.getTowerStaticRunModifiers(tower)) {
+    return getModifierAdd(modifiers, stat) + this.getTowerConditionalStatAdd(tower, stat);
+  }
+
+  /**
+   * Kosullu stat paylari. Uc tane, ucu de kulenin o anki durumuna bakiyor:
+   * Av Refleksi'nin oldurme penceresi ve Ongorulu Takip'in hizli hedefi donus
+   * hizina, Isil Kalibrasyon'un soguk namlusu isabete ekleniyor.
+   */
+  private getTowerConditionalStatAdd(tower: TowerModel, stat: ModifierStat, now = Date.now()) {
+    if (stat === "turnRate") {
+      let add = 0;
+      if ((tower.killSnapUntil ?? 0) > now && this.towerHasUnlock(tower, "aim:killSnap")) add += KILL_SNAP_TURN_RATE;
+      if (this.towerHasUnlock(tower, "aim:fastTargets") && this.isTowerAimingAtFastTarget(tower)) add += FAST_TARGET_TURN_RATE;
+      return add;
+    }
+    if (stat === "accuracy") {
+      return this.towerHasUnlock(tower, "aim:coldAccuracy") && tower.temperature < COLD_ACCURACY_TEMPERATURE ? COLD_ACCURACY_BONUS : 0;
+    }
+    return 0;
+  }
+
+  /**
+   * Namlunun dondugu hedef kosucu ya da ucan bir dusman mi. Hedef secim
+   * kilidi (`aimTargetId`) degil, `aimTowerAt`'in kaydettigi gercek hedef:
+   * Oluler Bagi ve Kirik Ayna namluyu kilit disindaki dusmana ceviriyor.
+   */
+  private isTowerAimingAtFastTarget(tower: TowerModel) {
+    const target = tower.turnTargetId ? this.enemies.get(tower.turnTargetId) : undefined;
+    return Boolean(target && (target.type === "runner" || target.movementKind === "air"));
+  }
+
+  /**
+   * Kart ve esya modifierlari, cevrimsiz. Kule motoru ve kilit kumesi
+   * cozulurken (`collectTowerGrants`) bu okunuyor: cevrimler o kumeden
+   * geldigi icin orada tam listeyi okumak kendi kendini cagirmak olurdu.
+   */
+  private getTowerStaticRunModifiers(tower: TowerModel): RunModifiers {
     const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
     return [
       ...playerModifiers.filter((modifier) => {
@@ -13407,6 +13608,9 @@ export class MatchRoom extends Room<MatchState> {
   private collectTowerGrants(tower: TowerModel) {
     const grants: TowerGrant[] = [];
     const unlocks = new Set<Unlock>();
+    // Cevrimler kart basina bir kez: ayni kart iki yoldan gelse de (hedefli ve
+    // desteden) tavan ikiye katlanmasin.
+    const conversions = new Map<string, StatConversion & { source: string }>();
 
     const takeShopItem = (itemId: string) => {
       const item = getShopItem(itemId);
@@ -13418,10 +13622,17 @@ export class MatchRoom extends Room<MatchState> {
       if (!card) return;
       if (card.grants) grants.push(card.grants);
       for (const unlock of card.unlocks ?? []) unlocks.add(unlock);
+      (card.conversions ?? []).forEach((conversion, index) => {
+        const source = `conversion:${card.id}:${index}`;
+        conversions.set(source, { ...conversion, source });
+      });
     };
 
-    for (const itemId of tower.equippedShopItemIds) takeShopItem(itemId);
-    for (const cardId of tower.targetedCardIds) takeCard(getCardDefinition(cardId));
+    // `getTowerRunModifiers` cevrimler icin buraya bakiyor ve her kule
+    // modelinde (testlerin elle kurdugu yari modeller dahil) cagriliyor;
+    // listeler eksikse bos say.
+    for (const itemId of tower.equippedShopItemIds ?? []) takeShopItem(itemId);
+    for (const cardId of tower.targetedCardIds ?? []) takeCard(getCardDefinition(cardId));
     for (const cardId of this.state.players.get(tower.ownerId)?.ownedCardIds ?? []) {
       const card = getCardDefinition(cardId);
       // Modifier kapsam kuraliyla ayni. Arayuzun "bu kuleye etki edenler"
@@ -13435,7 +13646,10 @@ export class MatchRoom extends Room<MatchState> {
     // `getTowerRunModifiers` her cagrisinda katalogda arama yapiyor.
     // Onbellek zaten tam dogru anda -- kart secildiginde, esya alinip
     // takildiginda -- atiliyor, yani carpanlarin yeri burasi.
-    const goldModifiers = this.getTowerRunModifiers(tower);
+    //
+    // Cevrimsiz liste: cevrimler bu cozumlemenin ciktisi. Hicbir cevrimin
+    // hedefi bu dort stattan biri degil (katalog testi).
+    const goldModifiers = this.getTowerStaticRunModifiers(tower);
     return {
       generation: this.grantGeneration,
       engine: resolveTowerEngine(tower.definition.engine, grants),
@@ -13444,7 +13658,8 @@ export class MatchRoom extends Room<MatchState> {
       sellRefundMultiplier: getModifierMultiplier(goldModifiers, "sellRefund"),
       statusMagnitudeMultiplier: getModifierMultiplier(goldModifiers, "statusMagnitude"),
       statusDurationMultiplier: getModifierMultiplier(goldModifiers, "statusDuration"),
-      unlocks
+      unlocks,
+      conversions: [...conversions.values()]
     };
   }
 
@@ -14130,7 +14345,8 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerOwnConditionalCritChance(tower: TowerModel) {
     let chance = 0;
     if (this.towerHasUnlock(tower, "crit:fromAccuracy")) {
-      chance += getAccuracyCritChance(getModifierAdd(this.getTowerRunModifiers(tower), "accuracy"));
+      // Ates konisinin okudugu sayinin aynisi: soguk namlunun isabeti dahil.
+      chance += getAccuracyCritChance(this.getTowerStatBonus(tower, "accuracy", this.getTowerRunModifiers(tower)));
     }
     if (this.towerHasUnlock(tower, "crit:isolated") && this.isTowerIsolated(tower)) chance += ISOLATED_CRIT_CHANCE;
     return chance;

@@ -16,6 +16,10 @@ import {
   getEnemyCombatDefinition,
   getModifierAdd,
   getModifierMultiplier,
+  getStatConversionAdd,
+  CLEAN_WAVE_GOLD,
+  CRIT_KILL_GOLD,
+  CRIT_KILL_GOLD_WAVE_CAP,
   TOWER_BASE_CRITICAL_CHANCE,
   TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER,
   getEnemyExp,
@@ -150,6 +154,8 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
   const ownedCardIds = [];
   const cardHistory = [];
   const ownedShopItemIds = [];
+  // Vadeli Mevduat: odenecegi dalga ve tutari (sunucudaki `goldDeposits`).
+  const deposits = [];
   let gold = START_GOLD;
   let experience = 0;
   let nexusHealth = 100;
@@ -188,6 +194,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
       gold -= purchase.price;
       ownedShopItemIds.push(purchase.item.id);
       remainingOffers.splice(remainingOffers.indexOf(purchase.item), 1);
+      if (purchase.item.deposit) deposits.push({ dueWave: wave + purchase.item.deposit.waves - 1, amount: purchase.item.deposit.payout });
       if (target) {
         target.equippedShopItemIds.push(purchase.item.id);
         target.modifiers.push(...purchase.item.effects);
@@ -265,7 +272,22 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     }
 
     reachedWave = wave;
-    gold += totalReward + (wave < FINAL_WAVE ? getWaveCompletionGold(wave) : 0);
+    // Oldurme altini oyuncunun carpaniyla (sunucudaki `awardEnemyGold`). Bir
+    // donem carpan hic okunmuyordu: altin kartlari puanlaniyor ama botun
+    // kesesine hicbir sey eklemiyordu.
+    gold += totalReward * getModifierMultiplier(playerModifiers, "goldGain")
+      + getCritKillGold({ towers, playerModifiers, ownedCardIds, count });
+    if (wave < FINAL_WAVE) {
+      gold += getWaveCompletionGold(wave);
+      // Dalga sonu primleri: odenek, temiz dalga (sizinti yoksa) ve vadesi gelen mevduat.
+      gold += getModifierAdd(playerModifiers, "waveIncome");
+      if (damageBudget >= totalHealth && hasOwnedUnlock("gold:cleanWave", ownedCardIds, ownedShopItemIds)) gold += CLEAN_WAVE_GOLD;
+      for (let index = deposits.length - 1; index >= 0; index -= 1) {
+        if (deposits[index].dueWave > wave) continue;
+        gold += deposits[index].amount;
+        deposits.splice(index, 1);
+      }
+    }
     experience += totalExperience;
     if (wave < FINAL_WAVE) {
       const choices = drawCards({ preferredAxes: config.axes, towers: definitions, ownedCardIds, random });
@@ -423,8 +445,64 @@ const UNLOCK_DAMAGE_ADD = {
   "crit:isolated": 0.06,
   "crit:fromAccuracy": 0.05,
   // Donus hizi hasar degil; yalnizca hedef degistirme gecikmesini kisaltiyor.
-  "aim:killSnap": 0.03
+  "aim:killSnap": 0.03,
+  // Ucuncu tur: donus hizi ve isabet kosullu, hasar degil. Altin kilitleri
+  // hasar vermiyor -- altinlari `simulateRun` icinde modelleniyor -- o yuzden
+  // burada sifir; secim puanlari `GOLD_UNLOCK_SCORE`dan.
+  "aim:fastTargets": 0.03,
+  "aim:coldAccuracy": 0.03,
+  "gold:cleanWave": 0,
+  "gold:critKill": 0
 };
+
+/**
+ * Altin kilitlerinin secim ve satin alma puani (hasar olcegine cevrilmis).
+ * Kosuya katkilari puan degil gercek altin olarak modelleniyor.
+ */
+const GOLD_UNLOCK_SCORE = { "gold:cleanWave": 0.3, "gold:critKill": 0.15 };
+const goldUnlockScore = (entry) => (entry.unlocks ?? []).reduce((sum, unlock) => sum + (GOLD_UNLOCK_SCORE[unlock] ?? 0), 0);
+
+/** Kart ya da esya bu kilidi veriyor mu (oyuncu katmani; sunucudaki `playerHasUnlock`). */
+function hasOwnedUnlock(unlock, ownedCardIds, ownedShopItemIds) {
+  return ownedCardIds.some((id) => cardCatalog.find((card) => card.id === id)?.unlocks?.includes(unlock))
+    || ownedShopItemIds.some((id) => shopCatalog.find((item) => item.id === id)?.unlocks?.includes(unlock));
+}
+
+/**
+ * Kritik oldurme primi, beklenen deger olarak: kilidi tasiyan kulelerin hasar
+ * payi kadar oldurme, her biri kulenin kritik ihtimaliyle prim; dalga tavani.
+ */
+function getCritKillGold({ towers, playerModifiers, ownedCardIds, count }) {
+  const cardUnlock = ownedCardIds.some((id) => cardCatalog.find((card) => card.id === id)?.unlocks?.includes("gold:critKill"));
+  const totalDps = towers.reduce((sum, tower) => sum + getTowerDps(tower, playerModifiers, ownedCardIds), 0) || 1;
+  let expected = 0;
+  for (const tower of towers) {
+    const itemUnlock = tower.equippedShopItemIds.some((id) => shopCatalog.find((item) => item.id === id)?.unlocks?.includes("gold:critKill"));
+    if (!cardUnlock && !itemUnlock) continue;
+    const modifiers = modifiersForTower(tower, playerModifiers);
+    const critChance = Math.min(1, Math.max(0, TOWER_BASE_CRITICAL_CHANCE + getModifierAdd(modifiers, "critChance")));
+    expected += count * (getTowerDps(tower, playerModifiers, ownedCardIds) / totalDps) * critChance * CRIT_KILL_GOLD;
+  }
+  return Math.min(CRIT_KILL_GOLD_WAVE_CAP, expected);
+}
+
+/**
+ * Epik cevrimler: kuleye isleyen kartin kaynak statini hedefe cevirir.
+ * Kosullu paylar (oldurme penceresi, soguk namlu) burada yok; menzil cevrimi
+ * de yok, cunku simulatorde menzil modeli yok.
+ */
+function conversionAddsForTower(tower, modifiers, ownedCardIds) {
+  const adds = { damage: 0, fireRate: 0 };
+  for (const cardId of new Set(ownedCardIds)) {
+    const card = cardCatalog.find((candidate) => candidate.id === cardId);
+    if (!card?.conversions || card.scope.kind === "targeted") continue;
+    if (card.scope.kind !== "global" && !cardAppliesToTower(card, tower.definition)) continue;
+    for (const conversion of card.conversions) {
+      if (conversion.to in adds) adds[conversion.to] += getStatConversionAdd(conversion, getModifierAdd(modifiers, conversion.from));
+    }
+  }
+  return adds;
+}
 
 /** Motor eklentilerinin kaba hasar karsiligi; ayni mantik, ayni kaba olcek. */
 function grantDamageAdd(grant) {
@@ -491,8 +569,9 @@ function behaviourDamageAddForTower(tower, ownedCardIds) {
  */
 function getTowerDps(tower, playerModifiers, ownedCardIds = []) {
   const modifiers = modifiersForTower(tower, playerModifiers);
-  const damageAdd = getModifierAdd(modifiers, "damage") + behaviourDamageAddForTower(tower, ownedCardIds);
-  const fireRate = getModifierMultiplier(modifiers, "fireRate");
+  const conversions = conversionAddsForTower(tower, modifiers, ownedCardIds);
+  const damageAdd = getModifierAdd(modifiers, "damage") + behaviourDamageAddForTower(tower, ownedCardIds) + conversions.damage;
+  const fireRate = Math.max(0, 1 + getModifierAdd(modifiers, "fireRate") + conversions.fireRate);
   // Kritik, MatchRoom'daki gibi beklenen deger olarak katilir; aksi halde kritik
   // kartlari simulasyonda hicbir sey yapmiyor gibi gorunur.
   const critChance = Math.max(0, TOWER_BASE_CRITICAL_CHANCE + getModifierAdd(modifiers, "critChance"));
@@ -507,7 +586,9 @@ function getTowerDps(tower, playerModifiers, ownedCardIds = []) {
 /** Esyalar da artik kilit ve motor eklentisi tasiyor; puanlama ikisini de gorur. */
 function shopItemScore(item) {
   const effectScore = item.effects.reduce((sum, modifier) => sum + (STAT_SCORE[modifier.stat] ?? 0.3) * modifier.add, 0);
-  return effectScore + behaviourDamageAdd(item) * STAT_SCORE.damage;
+  // Vadeli altin: getirisi (%47) kabaca bir hasar esyasi kadar puanlaniyor.
+  const depositScore = item.deposit ? 0.5 : 0;
+  return effectScore + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage;
 }
 
 function chooseCard(cards, preferredAxes, towers) {
@@ -531,7 +612,9 @@ const STAT_SCORE = {
   statusDuration: 0.8, statusMagnitude: 0.8, armorBreak: 0.15,
   ammoEmptyDamage: 0.3, ultimateCharge: 1, skillCooldown: -1,
   targetLockMs: 0.0002, resourceProduction: 0.5, ammoProduction: 0.5,
-  workerGatherSpeed: 0.4, workerSpeed: 0.3
+  workerGatherSpeed: 0.4, workerSpeed: 0.3,
+  // Duz altin: 20 altin/dalga kabaca +%8 hasarlik bir kart.
+  waveIncome: 0.02
 };
 
 /**
@@ -543,8 +626,11 @@ const STAT_SCORE = {
 function cardScore(card, axes, towers) {
   const effectScore = card.effects.reduce((sum, effect) => sum + (STAT_SCORE[effect.stat] ?? 0.3) * effect.add, 0);
   // Davranis kartlarinin efekt listesi bostur; degerleri kilit ve motor
-  // eklentilerinden gelir ve hasar carpani olcegine tasinir.
-  const behaviourScore = behaviourDamageAdd(card) * STAT_SCORE.damage;
+  // eklentilerinden gelir ve hasar carpani olcegine tasinir. Cevrim karti
+  // secilirken kaynagin ne kadar yigilacagi belli degil: tavanin yarisi.
+  // Kulenin gercek katkisi `getTowerDps` icinde, kaynagin kendisinden.
+  const conversionScore = (card.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5, 0) * STAT_SCORE.damage;
+  const behaviourScore = (behaviourDamageAdd(card) + goldUnlockScore(card)) * STAT_SCORE.damage + conversionScore;
   const total = effectScore + behaviourScore;
   const axisBonus = card.axes.some((axis) => axes.includes(axis)) ? 0.5 : 0;
   if (towers.length === 0) return total + axisBonus;

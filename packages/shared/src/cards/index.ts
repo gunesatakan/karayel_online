@@ -1,9 +1,10 @@
 import type { DamageType, HitType } from "../combat.js";
 import type { AmmoType, TowerAttackShape, TowerAxis, TowerDefinition } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
-import type { Modifier, ModifierStat } from "../modifiers/index.js";
+import type { Modifier, ModifierStat, StatConversion } from "../modifiers/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
-import { towerAims } from "../aiming/index.js";
+import { towerAims, towerFiresAlongFacing } from "../aiming/index.js";
+import { towerFiresProjectiles } from "../ballistics/index.js";
 
 export type CardScope =
   | { kind: "global" }
@@ -26,7 +27,23 @@ export type CardScope =
    * bir aura kulesi ama namlusu donuyor. Donus hizini vurus tipine kapsayan
    * bir kart bu yuzden hep birkac kulede olu kaliyordu.
    */
-  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean; aims?: boolean };
+  /**
+   * `projectiles`: yalnizca mermi hizinin bir sey degistirdigi kuleler
+   * (`towerFiresProjectiles`). Vurus tipi bunu soylemiyor: Gosteri Kulesi
+   * bir carpma kulesi ama isin atiyor, Kin Kulesi bir aura kulesi ama
+   * dalgasi ucuyor.
+   */
+  /**
+   * `alongFacing`: atisi namlunun yonunde giden nisan alan kuleler
+   * (`towerFiresAlongFacing`); isabet iceriginin kapsami. `aims` ile
+   * vurus tipi birlikte bunu soylemiyordu: Gosteri Kulesi nisan alan bir
+   * carpma kulesi ama isinini namludan bagimsiz seciyor.
+   *
+   * `combat`: hasar veren kuleler (`towerDealsDamage`). Kritik ve oldurme
+   * esyalari duvara, onarim ussune ya da hasarsiz bir aura binasina
+   * takilabiliyordu; orada hicbir zaman bir sey yapmazlar.
+   */
+  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean; aims?: boolean; projectiles?: boolean; alongFacing?: boolean; combat?: boolean };
 
 /**
  * Katalog buyudukce her kartin ayni sikligta cikmasi oyunu kotulestirir: oyuncu
@@ -93,7 +110,12 @@ export type Unlock =
   // her biri sahada zaten olan bir seye bakiyor -- dusmanin isaretine,
   // kulenin isabet bonusuna, kulenin komsusuz olup olmadigina ve kulenin
   // az once oldurup oldurmedigine.
-  | "crit:vsMarked" | "crit:fromAccuracy" | "crit:isolated" | "aim:killSnap";
+  | "crit:vsMarked" | "crit:fromAccuracy" | "crit:isolated" | "aim:killSnap"
+  // --- Nisan ve altin, ucuncu tur ---
+  // Iki kosullu nisan (hedefin cinsine ve namlunun sicakligina bakiyor) ve
+  // iki kosullu altin (dalganin temiz bitmesine ve oldurucu vurusun kritik
+  // olmasina bakiyor). Ilk ikisi kuleye, son ikisi oyuncunun kesesine isliyor.
+  | "aim:fastTargets" | "aim:coldAccuracy" | "gold:cleanWave" | "gold:critKill";
 
 /** Uzerinde gezinilebilir tam liste; snapshot cozumlemesi bunu kullanir. */
 export const ALL_UNLOCKS: Unlock[] = [
@@ -117,7 +139,8 @@ export const ALL_UNLOCKS: Unlock[] = [
   "nexus:mend", "tower:coldStart", "logistics:selfSufficient", "card:wideSearch",
   "status:coolantSlow", "status:slowCrit", "control:deepFreeze", "crit:vsFrozen",
   "attack:doubleShot",
-  "crit:vsMarked", "crit:fromAccuracy", "crit:isolated", "aim:killSnap"
+  "crit:vsMarked", "crit:fromAccuracy", "crit:isolated", "aim:killSnap",
+  "aim:fastTargets", "aim:coldAccuracy", "gold:cleanWave", "gold:critKill"
 ];
 
 /**
@@ -193,17 +216,48 @@ export const ACCURACY_CRIT_RATIO = 0.3;
 export const KILL_SNAP_TURN_RATE = 1.5;
 export const KILL_SNAP_DURATION_MS = 2000;
 
+/**
+ * `aim:fastTargets`: namlu kosucuya ya da ucan hedefe donerken donus hizina
+ * eklenen pay. Hizli hedef namlunun onunden yana kayiyor; donus hizinin en
+ * cok ise yaradigi yer orasi.
+ */
+export const FAST_TARGET_TURN_RATE = 1;
+/**
+ * `aim:coldAccuracy`: namlu bu sicakligin altindayken isabete eklenen pay.
+ * Isinan namlu genlesir; esik Soguk Celik'inkinden (20) yuksek, cunku
+ * isabet bonusu kritik kadar dogrudan bir hasar degil.
+ */
+export const COLD_ACCURACY_TEMPERATURE = 40;
+export const COLD_ACCURACY_BONUS = 0.5;
+/** `gold:cleanWave`: sizintisiz biten dalganin sonunda oyuncuya odenen altin. */
+export const CLEAN_WAVE_GOLD = 45;
+/**
+ * `gold:critKill`: kritik vurusla gelen her oldurmenin altini ve oyuncu
+ * basina dalga tavani. Tavan kart ve esya icin ortak: ikisi ayni kilidi
+ * veriyor, ikisini birden almak tavani iki katina cikarmiyor.
+ */
+export const CRIT_KILL_GOLD = 3;
+export const CRIT_KILL_GOLD_WAVE_CAP = 45;
+
 /** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
 export function getAccuracyCritChance(accuracyBonus: number) {
   return Math.max(0, Math.min(1, accuracyBonus)) * ACCURACY_CRIT_RATIO;
 }
 
-export type CardRarity = "common" | "uncommon" | "rare";
+/**
+ * `epic`: bir statu baska bir stata ceviren kartlar (`conversions`).
+ *
+ * Kendi baslarina hicbir sey yapmiyorlar -- kaynak stata yatirim yapilmis bir
+ * kurulusta anlam kazaniyorlar -- o yuzden nadirden de seyrek: agirlik nadirin
+ * yarisi. Her biri tek kopya.
+ */
+export type CardRarity = "common" | "uncommon" | "rare" | "epic";
 
 export const CARD_RARITY_WEIGHT: Record<CardRarity, number> = {
   common: 6,
   uncommon: 3,
-  rare: 1
+  rare: 1,
+  epic: 0.5
 };
 
 export type CardDefinition = {
@@ -225,6 +279,12 @@ export type CardDefinition = {
    * sunucu dalı gerektirmez.
    */
   grants?: TowerGrant;
+  /**
+   * Bir statin baska bir stata cevrimi (Epik kartlar). Sunucu kulenin gercek
+   * kaynak bonusunu okuyup hedefe ek olarak yaziyor; kart kimligine bakan bir
+   * dal yok (bkz. `StatConversion`).
+   */
+  conversions?: StatConversion[];
 };
 
 /**
@@ -541,7 +601,7 @@ export const cardCatalog: CardDefinition[] = [
   //     altina dusmuyor ama gercekten azaliyor. Agir Funye bunu bir bahse
   //     ceviriyor -- kritik sansi kurmamis kulede kritigi siliyor.
   { id: "doner-kaide", name: "Döner Kaide", description: "Nişan alan kulelerin dönüş hızı +%45, atış hızı -%5.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("doner-kaide", "turnRate", 0.45), effect("doner-kaide", "fireRate", -0.05)] },
-  { id: "nisan-kertigi", name: "Nişan Kertiği", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%30, dönüş hızı -%15.", axes: ["dps"], scope: { kind: "tagged", aims: true, hitTypes: ["impact", "projectile"] }, stackable: false, rarity: "uncommon", effects: [effect("nisan-kertigi", "accuracy", 0.3), effect("nisan-kertigi", "turnRate", -0.15)] },
+  { id: "nisan-kertigi", name: "Nişan Kertiği", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%30, dönüş hızı -%15.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "uncommon", effects: [effect("nisan-kertigi", "accuracy", 0.3), effect("nisan-kertigi", "turnRate", -0.15)] },
   { id: "av-refleksi", name: "Av Refleksi", description: "Nişan alan kuleler düşman öldürdükten sonra 2 saniye boyunca dönüş hızı +%150 kazanır.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:killSnap"] },
   { id: "sicak-tetik", name: "Sıcak Tetik", description: "Tüm kulelerin kritik şansı +%12, ısısı +%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sicak-tetik", "critChance", 0.12), effect("sicak-tetik", "heat", 0.15)] },
   { id: "agir-funye", name: "Ağır Fünye", description: "Tüm kulelerin kritik hasarı +%150, kritik şansı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-funye", "critDamage", 1.5), effect("agir-funye", "critChance", -0.05)] },
@@ -549,7 +609,53 @@ export const cardCatalog: CardDefinition[] = [
   { id: "keskin-nisanci-durbunu", name: "Keskin Nişancı Dürbünü", description: "Bir kulenin kritik şansı +%25, menzili +%10, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("keskin-nisanci-durbunu", "critChance", 0.25, "tower"), effect("keskin-nisanci-durbunu", "range", 0.1, "tower"), effect("keskin-nisanci-durbunu", "fireRate", -0.2, "tower")] },
   { id: "av-izi", name: "Av İzi", description: "İşaretli düşmanlara kritik şansı +%20; kulenin kendi koyduğu takip işareti sayılmaz.", axes: ["dps", "amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:vsMarked"] },
   { id: "goz-karari", name: "Göz Kararı", description: "Her kulede isabet bonusunun her %10'u kritik şansına +%3 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["crit:fromAccuracy"] },
-  { id: "gozcu-yuvasi", name: "Gözcü Yuvası", description: "Komşusuz kulelerin kritik şansı +%15.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:isolated"] }
+  { id: "gozcu-yuvasi", name: "Gözcü Yuvası", description: "Komşusuz kulelerin kritik şansı +%15.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["crit:isolated"] },
+
+  // --- Donus hizi, isabet ve mermi hizi, ucuncu tur ---
+  //
+  // Her eksende iki kart: biri bedelli ve yigilabilir, obru bir kosula bagli
+  // ya da daha buyuk bir bedel istiyor. Kapsamlar statin gercekten is
+  // gordugu kuleler: donus hizi nisan alan kulelerde, isabet namlu yonunde
+  // ucan mermi ve carpma kulelerinde, mermi hizi bir sey firlatan kulelerde
+  // (`projectiles`). Bedeller isabetten hic almiyor (eksi isabet bir sey
+  // yapmiyor); donus ve mermi hizi bedelleri ise baska eksenlerden geliyor.
+  { id: "servo-takviyesi", name: "Servo Takviyesi", description: "Nişan alan kulelerin dönüş hızı +%60, çalışma enerjisi tüketimi +%20.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("servo-takviyesi", "turnRate", 0.6), effect("servo-takviyesi", "operatingEnergyCost", 0.2)] },
+  { id: "ongorulu-takip", name: "Öngörülü Takip", description: "Nişan alan kuleler koşucu ve hava hedeflerine dönerken dönüş hızı +%100 kazanır.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:fastTargets"] },
+  { id: "titresim-sonumleyici", name: "Titreşim Sönümleyici", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%25, atış hızı -%5.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("titresim-sonumleyici", "accuracy", 0.25), effect("titresim-sonumleyici", "fireRate", -0.05)] },
+  { id: "isil-kalibrasyon", name: "Isıl Kalibrasyon", description: "Sıcaklığı 40 derecenin altındaki nişan alan mermi ve çarpma kulelerinin isabeti +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:coldAccuracy"] },
+  { id: "basincli-hazne", name: "Basınçlı Hazne", description: "Mermi atan kulelerin mermi hızı +%50, ısısı +%10.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("basincli-hazne", "projectileSpeed", 0.5), effect("basincli-hazne", "heat", 0.1)] },
+  { id: "hizlandirici-bobin", name: "Hızlandırıcı Bobin", description: "Mermi atan kulelerin mermi hızı +%100, menzili -%8.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "uncommon", effects: [effect("hizlandirici-bobin", "projectileSpeed", 1), effect("hizlandirici-bobin", "range", -0.08)] },
+
+  // --- Altin kazanimi ---
+  //
+  // Dort kart, dort ayri kol. Oldurme altini zaten en buyuk kaynak (kosunun
+  // %90'indan fazlasi) ve tavansiz carpanlari katalogda var; buradakilerin
+  // ucu o carpani buyutmuyor, yanina baska bir gelir koyuyor: dalga basina
+  // duz bir odenek, temiz dalga primi ve kritik oldurme primi. Duz ve
+  // tavanli olduklari icin biriktikce kendini buyuten bir dongu kurmuyorlar.
+  // Hepsi oyuncunun kendi kesesine: co-op'ta herkes kendi kartinin karsiligini
+  // aliyor, takim arkadasinin payi degismiyor.
+  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%25 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 0.25), effect("parali-asker", "experienceGain", -0.2)] },
+  { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +20 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 20)] },
+  { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +45 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
+  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +3 altın verir; dalga başına en fazla 45 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
+
+  // --- Epik: cevrim kartlari ---
+  //
+  // Her biri bir statu baska bir stata ceviriyor ve kaynagi kulenin gercek
+  // bonusu: kartlar, esyalar, o anki kosullu paylar (Av Refleksi'nin
+  // penceresi, Isil Kalibrasyon'un soguk namlusu). Kendi baslarina hicbir sey
+  // yapmiyorlar; o eksene yatirim yapilmis kurulusu odullendiriyorlar ve
+  // tavanlari o yatirimin nerede durmasi gerektigini soyluyor.
+  //
+  // Isabet cevrimi bilerek yalnizca %100'un ustunu okuyor: ates konisi orada
+  // doyuyor ve ustu bugune kadar bosa gidiyordu. Altin cevrimi hasar veriyor,
+  // altin degil -- altini buyuten bir altin karti co-op'ta kendini besleyen
+  // bir dongu olurdu.
+  { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerde dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
+  { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinde %100'ü aşan isabet bonusunun her %10'u hasara +%10 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "accuracy", to: "damage", threshold: 1, ratio: 1, cap: 0.5 }] },
+  { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerde mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını bonusunun her %10'u tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "goldGain", to: "damage", ratio: 0.3, cap: 0.3 }] }
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));
@@ -564,7 +670,7 @@ export function getCardDefinition(cardId: string) {
  * profil nisan alan kule sayilmaz, yani o kapsamdaki kart ona hic uymaz --
  * yanlislikla uyan bir karttan iyidir.
  */
-export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider" | "aoeRadius"> & { engine?: TowerDefinition["engine"]; id?: string };
+export type CardTowerProfile = Pick<TowerDefinition, "axes" | "hitType" | "damageType" | "resourceProvider" | "aoeRadius"> & { engine?: TowerDefinition["engine"]; id?: string; damage?: number };
 
 /**
  * Kulenin alan yaricapi. `getTowerAttackRadius` ile ayni kural: motor degeri
@@ -592,17 +698,33 @@ export function canTowerHoldTargetedCard(tower: CardTowerProfile) {
   return tower.hitType !== "none" && !tower.resourceProvider;
 }
 
+/**
+ * Kule dusmana hasar veriyor mu: ates eden (`canTowerHoldTargetedCard`) ve
+ * hasarsiz bir aura binasi olmayan yapi. Tanimdaki `damage` alani tek basina
+ * yetmiyor: Sunucu, Kin Kulesi ve Oluler Bagi tanimda 0 yaziyor ama baglanti
+ * patlamasiyla, dalgayla ve infazla gercekten vuruyor ve olduruyor. Hasarsiz
+ * olanlar yalnizca yurutucusu olmayan auralar (Izolasyon, Saray Arsivi,
+ * Abarti). Hasari bilinmeyen profil, aura ise hasarsiz sayilir.
+ */
+export function towerDealsDamage(tower: CardTowerProfile) {
+  if (!canTowerHoldTargetedCard(tower)) return false;
+  return tower.hitType !== "aura" || (tower.damage ?? 0) > 0 || !!tower.engine?.attack.executor;
+}
+
 export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
   if (tower.resourceProvider) return false;
   if (card.scope.kind !== "tagged") return true;
-  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius, aims } = card.scope;
+  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius, aims, projectiles, alongFacing, combat } = card.scope;
   return (!axes?.length || axes.some((axis) => tower.axes?.includes(axis)))
     && (!hitTypes?.length || (!!tower.hitType && hitTypes.includes(tower.hitType)))
     && (!damageTypes?.length || (!!tower.damageType && damageTypes.includes(tower.damageType)))
     && (!shapes?.length || (!!tower.engine?.attack.shape && shapes.includes(tower.engine.attack.shape)))
     && (!ammoTypes?.length || (!!tower.engine?.resources.ammoType && ammoTypes.includes(tower.engine.resources.ammoType)))
     && (!hasAreaRadius || getCardTowerAreaRadius(tower) > 0)
-    && (!aims || (!!tower.id && towerAims(tower.id)));
+    && (!aims || (!!tower.id && towerAims(tower.id)))
+    && (!projectiles || towerFiresProjectiles(tower))
+    && (!alongFacing || towerFiresAlongFacing(tower))
+    && (!combat || towerDealsDamage(tower));
 }
 
 /**
@@ -659,7 +781,8 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // oyuncunun odedigi altini.
   goldGain: "none", towerCapacity: "none", experienceGain: "none", repairCost: "none", sellRefund: "none",
   workerGatherSpeed: "none", workerSpeed: "none", workerCapacity: "none", workerHealth: "none", workerRepairRate: "none",
-  workerHireCost: "none", shopRerollCost: "none", ultimateDamage: "none", ultimateCharge: "none", skillCooldown: "none"
+  workerHireCost: "none", shopRerollCost: "none", ultimateDamage: "none", ultimateCharge: "none", skillCooldown: "none",
+  waveIncome: "none"
 };
 
 /**
@@ -673,6 +796,11 @@ const UNLOCK_REACH: Partial<Record<Unlock, CardTowerReach>> = {
   nexusShield: "none",
   "nexus:mend": "none",
   "card:wideSearch": "none",
+  // Ikisi de oyuncunun kesesine isliyor: kulenin yaptigi hicbir seyi
+  // degistirmiyorlar. Kritik oldurme kilidi kuleden okunuyor (oldurenin
+  // kulesi), ama "N kulene etki eder" bir altin kartina yanlis olurdu.
+  "gold:cleanWave": "none",
+  "gold:critKill": "none",
   "trigger:debrisOnDeath": "structure"
 };
 
@@ -690,6 +818,8 @@ export function getCardTowerReach(card: CardDefinition): CardTowerReach {
   };
   for (const modifier of card.effects) widen(MODIFIER_STAT_REACH[modifier.stat]);
   for (const unlock of card.unlocks ?? []) widen(UNLOCK_REACH[unlock] ?? "combat");
+  // Cevrimin erisimi hedef statininki: kaynak yalnizca okunuyor.
+  for (const conversion of card.conversions ?? []) widen(MODIFIER_STAT_REACH[conversion.to]);
   return reach;
 }
 
@@ -716,12 +846,82 @@ export function cardReachesTower(card: CardDefinition, tower: CardTowerProfile) 
 }
 
 /**
+ * Oyuncunun esyalarindan gelen kilitler: kuresel esyalarinki (oyuncunun
+ * kendisine ait kilitler) ve her kulenin takili esyalari ile hedefli
+ * kartlarininki. `shop` modulu doldurur (`getOwnedItemUnlocks`); burada
+ * yalnizca sekli duruyor, cunku `shop` bu modulu iceri aliyor.
+ */
+export type CardDrawOwnedUnlocks = {
+  global: ReadonlySet<Unlock>;
+  towers: ReadonlyArray<{ tower: CardTowerProfile; unlocks: ReadonlySet<Unlock> }>;
+};
+
+/**
+ * Kartin kilidi oyuncunun esyalarindan zaten geliyor mu: magazanin "zaten
+ * acik" kuralinin karttaki karsiligi (`isShopItemAlreadyUnlocked`).
+ *
+ * Kuresel esyanin actigi kilit (Sigorta Policesi) her yerde acik. Kuleye
+ * bagli kilit ancak kartin isleyecegi **her** ates eden kulede aciksa kart
+ * bir sey eklemiyor: Kelle Defteri tek kuledeyken Kelle Parasi otekilere
+ * hala bir sey veriyor. Hedefli kart sayilmiyor; hangi kuleye gidecegini
+ * oyuncu seciyor.
+ */
+export function isCardUnlockAlreadyOwned(card: CardDefinition, owned: CardDrawOwnedUnlocks) {
+  const unlocks = card.unlocks ?? [];
+  if (unlocks.length === 0 || card.scope.kind === "targeted") return false;
+  const covered = (set: ReadonlySet<Unlock>) => unlocks.every((unlock) => set.has(unlock));
+  if (covered(owned.global)) return true;
+  const eligible = owned.towers.filter(({ tower }) => ownedCardAppliesToTower(card, tower) && canTowerHoldTargetedCard(tower));
+  return eligible.length > 0 && eligible.every(({ unlocks: towerUnlocks }) => covered(towerUnlocks));
+}
+
+/**
+ * Epik cevrim kartinin kaynagi kurulusta var mi: cekilis agirligi icin.
+ *
+ * `player` oyuncunun kendi listesindeki bonus (altin gibi oyuncu statlari),
+ * `towers` her kulenin kart ve esya bonusu. Kosullu paylar bilerek yok:
+ * cekilis aninda (dalga sonu) gecici bir pencereye bakmak zari oynatirdi.
+ */
+export type CardDrawSourceBonuses = {
+  player: (stat: ModifierStat) => number;
+  towers: ReadonlyArray<{ tower: CardTowerProfile; bonus: (stat: ModifierStat) => number }>;
+};
+
+/**
+ * Esikli cevrim (Balistik Hesaplayici, %100 ustu) icin kurulusa yatirimin
+ * basladigini soyleyen pay: esigin yarisi. Isabet %50'yi gecmis bir kule
+ * tavana dogru gidiyor; sifirdan basliyorsa kart bos bir secenek.
+ */
+export const CONVERSION_READY_THRESHOLD_FRACTION = 0.5;
+
+/**
+ * Cevrim kartinin kaynagi en az bir yerde pozitif mi. Cevrimi olmayan kart
+ * her zaman hazir. Genel kart oyuncunun kendi bonusuna da bakiyor (Savas
+ * Hazinesi: oyuncunun herhangi bir altin bonusu).
+ */
+export function isConversionCardReady(card: CardDefinition, sources: CardDrawSourceBonuses) {
+  const conversions = card.conversions ?? [];
+  if (conversions.length === 0) return true;
+  return conversions.some((conversion) => {
+    const minimum = (conversion.threshold ?? 0) * CONVERSION_READY_THRESHOLD_FRACTION;
+    if (card.scope.kind === "global" && sources.player(conversion.from) > minimum) return true;
+    return sources.towers.some(({ tower, bonus }) => ownedCardAppliesToTower(card, tower) && bonus(conversion.from) > minimum);
+  });
+}
+
+/**
  * `marksAvailable`: takimda dusmani isaretleyebilecek bir kaynak var mi.
  * Isaret dusmanin uzerinde durdugu ve kimin kulesi vurursa vursun isledigi
  * icin bunu kule listesi degil sunucu bilir. Verilmezse bilinmiyor sayilir ve
  * cekilis eskisi gibi davranir.
  */
-export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; marksAvailable?: boolean; random?: () => number }) {
+/*
+ * `sourceBonuses` verilirse kaynagi kurulusta olmayan Epik kart olu agirlik
+ * alir (`isConversionCardReady`); `ownedUnlocks` verilirse kilidi
+ * esyalardan zaten gelen kart (`isCardUnlockAlreadyOwned`). Ikisi de
+ * verilmezse kural uygulanmiyor (eski cagiranlar, simulator).
+ */
+export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; marksAvailable?: boolean; sourceBonuses?: CardDrawSourceBonuses; ownedUnlocks?: CardDrawOwnedUnlocks; random?: () => number }) {
   const count = options.count ?? 3;
   const random = options.random ?? Math.random;
   const ownedCounts = new Map<string, number>();
@@ -732,7 +932,9 @@ export function drawCards(options: { count?: number; preferredAxes: TowerAxis[];
     const weights = pool.map((card) => {
       const axisWeight = card.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
       const deadWeight = (card.scope.kind === "tagged" && !options.towers.some((tower) => cardAppliesToTower(card, tower)))
-        || (options.marksAvailable === false && isMarkOnlyChoice(card)) ? 0.15 : 1;
+        || (options.marksAvailable === false && isMarkOnlyChoice(card))
+        || (options.sourceBonuses !== undefined && !isConversionCardReady(card, options.sourceBonuses))
+        || (options.ownedUnlocks !== undefined && isCardUnlockAlreadyOwned(card, options.ownedUnlocks)) ? 0.15 : 1;
       return axisWeight * deadWeight * CARD_RARITY_WEIGHT[getCardRarity(card)];
     });
     let roll = random() * weights.reduce((sum, weight) => sum + weight, 0);

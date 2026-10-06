@@ -217,7 +217,8 @@ export function getArchivePercent(progress: ArchiveProgress) {
 export const ARCHIVE_RARITY_LABELS: Record<CardRarity, string> = {
   common: "Yaygın",
   uncommon: "Seyrek",
-  rare: "Nadir"
+  rare: "Nadir",
+  epic: "Epik"
 };
 
 /**
@@ -233,7 +234,7 @@ export const SHOP_CATEGORY_LABELS: Record<ShopItemCategory, string> = {
 };
 
 /** Grup sirasi: en sik gorulenden en seyrege; menu yukaridan asagi dolsun. */
-const ARCHIVE_RARITY_ORDER: readonly CardRarity[] = ["common", "uncommon", "rare"];
+const ARCHIVE_RARITY_ORDER: readonly CardRarity[] = ["common", "uncommon", "rare", "epic"];
 const ARCHIVE_CATEGORY_ORDER: readonly ShopItemCategory[] = ["power", "class", "utility", "map", "risk"];
 
 /**

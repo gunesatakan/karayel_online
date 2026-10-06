@@ -1644,9 +1644,11 @@ export {
   canAcceptTargetedCard,
   getModifierAdd,
   getModifierMultiplier,
-  resolveModifierBreakdown
+  getStatConversionAdd,
+  resolveModifierBreakdown,
+  resolveStatConversions
 } from "./modifiers/index.js";
-export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers } from "./modifiers/index.js";
+export type { Modifier, ModifierBreakdown, ModifierCaps, ModifierScope, ModifierStat, RunModifiers, StatConversion } from "./modifiers/index.js";
 export {
   ALL_UNLOCKS,
   BACKUP_LINE_DURATION_MS,
@@ -1662,6 +1664,12 @@ export {
   ACCURACY_CRIT_RATIO,
   KILL_SNAP_TURN_RATE,
   KILL_SNAP_DURATION_MS,
+  FAST_TARGET_TURN_RATE,
+  COLD_ACCURACY_TEMPERATURE,
+  COLD_ACCURACY_BONUS,
+  CLEAN_WAVE_GOLD,
+  CRIT_KILL_GOLD,
+  CRIT_KILL_GOLD_WAVE_CAP,
   getAccuracyCritChance,
   RUN_HOT_DAMAGE_PER_DEGREE,
   RUN_HOT_HEAT_LOCK_THRESHOLD,
@@ -1670,12 +1678,16 @@ export {
   cardAppliesToTower,
   cardReachesTower,
   drawCards,
+  isCardUnlockAlreadyOwned,
+  isConversionCardReady,
+  CONVERSION_READY_THRESHOLD_FRACTION,
+  towerDealsDamage,
   getCardDefinition,
   getCardRarity,
   getCardTowerReach,
   ownedCardAppliesToTower
 } from "./cards/index.js";
-export type { CardDefinition, CardRarity, CardScope, CardTowerProfile, CardTowerReach, Unlock } from "./cards/index.js";
+export type { CardDefinition, CardDrawOwnedUnlocks, CardDrawSourceBonuses, CardRarity, CardScope, CardTowerProfile, CardTowerReach, Unlock } from "./cards/index.js";
 export { NEUTRAL_ATTACK_MULTIPLIERS, isEmptyTowerGrant, resolveTowerAttackMultipliers, resolveTowerEngine } from "./grants/index.js";
 export type { TowerAttackGrant, TowerAttackMultipliers, TowerGrant } from "./grants/index.js";
 export {
@@ -1691,10 +1703,12 @@ export {
   getShopItemCount,
   getShopItemPrice,
   getShopRerollPrice,
+  getShopItemLastOfferWave,
   isShopItemAvailable,
   getShopItem,
   drawShopOffers,
   getTowerGrantedUnlocks,
+  getOwnedItemUnlocks,
   isShopItemAlreadyUnlocked,
   isShopItemUnlockRedundant,
   shopCatalog
@@ -1711,9 +1725,10 @@ export {
   shortestAngleDelta,
   rotateTowerTowards,
   isTowerAligned,
-  towerAims
+  towerAims,
+  towerFiresAlongFacing
 } from "./aiming/index.js";
-export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision } from "./ballistics/index.js";
+export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {
   RESOURCE_EXTRACTION_DURATION_MS,

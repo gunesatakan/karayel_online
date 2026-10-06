@@ -42,7 +42,8 @@ import {
   shopCatalog,
   shopItemAppliesToTower,
   towerAims,
-  towerCatalog
+  towerCatalog,
+  towerFiresAlongFacing
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -148,14 +149,15 @@ const STAT_LABEL = {
   critDamage: "kritik hasarı",
   fireRate: "atış hızı",
   heat: "ısı",
-  range: "menzil"
+  range: "menzil",
+  projectileSpeed: "mermi hızı"
 };
 
 const yuzde = (value) => String(Math.round(Math.abs(value) * 100));
 const isaret = (value) => (value < 0 ? "-" : "\\+");
 
 test("nisan ve kritik iceriginin her efekti aciklamada isaretiyle ve sayisiyla yaziyor", () => {
-  const aimingStats = new Set(["turnRate", "accuracy", "critChance", "critDamage"]);
+  const aimingStats = new Set(["turnRate", "accuracy", "critChance", "critDamage", "projectileSpeed"]);
   const entries = [...cardCatalog, ...shopCatalog].filter((entry) => entry.effects.some((modifier) => aimingStats.has(modifier.stat)));
   assert.ok(entries.length >= 25, `beklenenden az icerik: ${entries.length}`);
   for (const entry of entries) {
@@ -220,10 +222,11 @@ test("donus kartlari ve esyasi yalnizca nisan alan kuleye ulasiyor", () => {
   assert.equal(cardAppliesToTower(card("doner-kaide"), anonim), false);
 });
 
-test("isabet karti ve esyasi yalnizca nisan alan mermi ve carpma kulelerine ulasiyor", () => {
+test("isabet karti ve esyasi yalnizca namlu yonunde atan nisan kulelerine ulasiyor", () => {
   let reached = 0;
   for (const tower of allTowers) {
-    const expected = towerAims(tower.id) && ["impact", "projectile"].includes(tower.hitType) && !tower.resourceProvider;
+    const expected = towerFiresAlongFacing(tower) && !tower.resourceProvider;
+    if (expected) assert.ok(towerAims(tower.id) && ["impact", "projectile"].includes(tower.hitType), tower.id);
     assert.equal(cardAppliesToTower(card("nisan-kertigi"), tower), expected, `nisan-kertigi / ${tower.id}`);
     assert.equal(shopItemAppliesToTower(getShopItem("nisan-durbunu"), tower), expected, `nisan-durbunu / ${tower.id}`);
     if (expected) reached += 1;
@@ -233,6 +236,14 @@ test("isabet karti ve esyasi yalnizca nisan alan mermi ve carpma kulelerine ulas
   const lazer = allTowers.find((tower) => tower.id === "warrior-5");
   assert.equal(towerAims(lazer.id), true);
   assert.equal(cardAppliesToTower(card("nisan-kertigi"), lazer), false);
+  // Gosteri Kulesi nisan alan bir carpma kulesi ama isinini en kalabalik
+  // hatta kendisi seciyor: isabet orada da yalnizca tetigi geciktirirdi.
+  const gosteri = allTowers.find((tower) => tower.id === "zeynep-2");
+  assert.equal(towerAims(gosteri.id), true);
+  assert.equal(gosteri.hitType, "impact");
+  assert.equal(cardAppliesToTower(card("nisan-kertigi"), gosteri), false);
+  // Taht Muhru karma (mermi kipleri namlu yonunde): kapsamda.
+  assert.equal(cardAppliesToTower(card("nisan-kertigi"), allTowers.find((tower) => tower.id === "zeynep-3")), true);
 });
 
 test("Ince Uc yalnizca tek hedefe saldiran kulelere ulasiyor", () => {
@@ -248,10 +259,15 @@ test("kapsamli esya uymayan kuleye takilamiyor", () => {
   assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), sunucu, []), { ok: false, reason: "incompatibleTower" });
   assert.deepEqual(canEquipShopItem(getShopItem("jiroskop"), takipci, []), { ok: true });
   assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), takipci, []), { ok: true });
-  // Kosulsuz kritik esyalari her kuleye takilir.
+  // Kritik esyalari hasar veren her kuleye takilir (Sunucu dahil: baglanti
+  // patlamasi vuruyor), duvara ve hasarsiz aura binasina takilmaz.
+  const duvar = allTowers.find((tower) => tower.id === "wall-1");
+  const izolasyon = allTowers.find((tower) => tower.id === "warrior-3");
   for (const id of ["iz-okuyucu", "mesafe-olcer", "atesleme-pimi", "yarik-mermi"]) {
-    assert.equal(getShopItem(id).scope.kind, "global", id);
+    assert.deepEqual(getShopItem(id).scope, { kind: "tagged", combat: true }, id);
     assert.deepEqual(canEquipShopItem(getShopItem(id), sunucu, []), { ok: true }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), duvar, []), { ok: false, reason: "incompatibleTower" }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), izolasyon, []), { ok: false, reason: "incompatibleTower" }, id);
   }
 });
 
@@ -299,7 +315,9 @@ test("yeni esyalar tek seferlik ve fiyatlari komsulariyla ayni bantta", () => {
     assert.ok(item.price >= 80 && item.price <= 130, `${id} fiyati ${item.price}`);
     assert.ok(["power", "class"].includes(item.category), id);
     // Kapsamli esya "class", kosulsuz olan "power": magaza ayni dili konusuyor.
-    assert.equal(item.category, item.scope.kind === "tagged" ? "class" : "power", id);
+    // Yalnizca "hasar veren kule" kapsami kosul sayilmiyor: her savas kulesine takiliyor.
+    const restricted = item.scope.kind === "tagged" && Object.keys(item.scope).some((key) => key !== "kind" && key !== "combat");
+    assert.equal(item.category, restricted ? "class" : "power", id);
   }
 });
 
@@ -648,7 +666,8 @@ test("vitrin kilidi zaten acik esyayi olu agirlikla geri cekiyor", () => {
   };
   const say = (ownedCardIds) => {
     let count = 0;
-    for (let index = 0; index < 3000; index += 1) {
+    // Ornek katalog buyudukce buyudu: vitrin 108 esyadan cekiyor.
+    for (let index = 0; index < 6000; index += 1) {
       const offers = drawShopOffers({ wave: 5, preferredAxes: ["dps"], towers: [kule("warrior-1")], ownedItemIds: [], ownedCardIds, count: 1, random });
       if (offers[0]?.id === "iz-okuyucu") count += 1;
     }
