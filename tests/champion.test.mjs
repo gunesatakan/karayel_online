@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import {
   AIR_ENEMY_HEALTH_MULTIPLIER,
   CHAMPION_FIRST_WAVE,
+  CHAMPION_HP_BONUS,
   CHAMPION_TYPE_ROTATION,
   ENEMY_MIX_BRUTE_FROM,
   ENEMY_MIX_RUNNER_FROM,
@@ -196,12 +197,13 @@ test("butce: can, altin, deneyim ve sizinti yerine gecilen dogumlarin toplamina 
       assert.ok(Math.abs(plan.reputation - reputation) <= 0.005 + 1e-9, `${label}: itibar ${plan.reputation} / ${reputation}`);
       const championHp = getEffectiveHp(getEnemySpawnHealth(plan.type, wave, plan.hpMultiple));
       // Can ve kalkan tam sayiya yuvarlaniyor: binde bes pay.
-      assert.ok(Math.abs(championHp - effectiveHp) / effectiveHp < 0.005, `${label}: can ${championHp} / ${effectiveHp}`);
+      // Can butcenin CHAMPION_HP_BONUS kati; odul butcede kaliyor.
+      assert.ok(Math.abs(championHp - effectiveHp * CHAMPION_HP_BONUS) / (effectiveHp * CHAMPION_HP_BONUS) < 0.005, `${label}: can ${championHp} / ${effectiveHp * CHAMPION_HP_BONUS}`);
       assert.ok(Number.isInteger(plan.gold) && Math.abs(plan.gold - gold) <= 0.5, `${label}: altin ${plan.gold} / ${gold}`);
       assert.ok(Math.abs(plan.exp - exp) <= 0.005 + 1e-9, `${label}: deneyim ${plan.exp} / ${exp}`);
       assert.ok(Number.isInteger(plan.leakDamage) && Math.abs(plan.leakDamage - leak) <= 0.5, `${label}: sizinti ${plan.leakDamage} / ${leak}`);
       // Kalinlik belgelenen aralikta; dalganin yarisindan fazlasi sampiyona gitmiyor.
-      assert.ok(plan.hpMultiple >= 4 && plan.hpMultiple <= 6, `${label}: kat ${plan.hpMultiple}`);
+      assert.ok(plan.hpMultiple >= 4 * CHAMPION_HP_BONUS && plan.hpMultiple <= 6 * CHAMPION_HP_BONUS, `${label}: kat ${plan.hpMultiple}`);
       assert.ok(plan.replaced >= 2 && plan.replaced <= slots / 2, `${label}: ${plan.replaced} dogum`);
       // Sampiyon dalganin ortasinda; dalganin sayisi onu bir dusman sayiyor.
       assert.equal(plan.slot, Math.floor((slots - plan.replaced) / 2));
@@ -221,7 +223,7 @@ test("butce: dalga toplami sampiyonlu ve sampiyonsuz ayni", () => {
       .filter((index) => !skip || index < plan.slot || index >= plan.slot + plan.replaced)
       .reduce((total, index) => total + getWaveSlotExpectation(wave, index)[key], 0);
     const champion = {
-      effectiveHp: getEffectiveHp(getEnemySpawnHealth(plan.type, wave, plan.hpMultiple)),
+      effectiveHp: getEffectiveHp(getEnemySpawnHealth(plan.type, wave, plan.hpMultiple)) / CHAMPION_HP_BONUS,
       gold: plan.gold,
       exp: plan.exp,
       leakDamage: plan.leakDamage

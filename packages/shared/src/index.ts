@@ -1846,6 +1846,7 @@ export type { KillStreakRule, KillStreakTier, WaveAirMode } from "./balance/inde
 export {
   CHAMPION_FIRST_WAVE,
   CHAMPION_HP_MULTIPLE,
+  CHAMPION_HP_BONUS,
   CHAMPION_MIN_REPLACED,
   CHAMPION_MAX_SHARE,
   CHAMPION_TYPE_ROTATION,

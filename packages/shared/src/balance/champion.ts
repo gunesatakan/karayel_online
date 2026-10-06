@@ -84,6 +84,13 @@ export const CHAMPION_FIRST_WAVE = 6;
  */
 export const CHAMPION_HP_MULTIPLE = 5;
 
+/**
+ * Butcenin ustune binen can carpani: sampiyon yerine gectigi dogumlarin
+ * toplam canının bu kati. Odul (altin, deneyim, sizinti) butcede kaliyor;
+ * yalnizca dayaniklilik artiyor. Sahibinin istegiyle 2 (once 1).
+ */
+export const CHAMPION_HP_BONUS = 2;
+
 /** En az bu kadar dogumun yerine gecer; tek dogumun yerine gecen "sampiyon" olmazdi. */
 export const CHAMPION_MIN_REPLACED = 2;
 
@@ -302,7 +309,8 @@ export function getWaveChampionPlan(wave: number, slotCount: number, options: Wa
     type,
     slot: best.slot,
     replaced: best.replaced,
-    hpMultiple: best.multiple,
+    // Butce esitligindeki kat, ustune sampiyon can bonusu (bkz. `CHAMPION_HP_BONUS`).
+    hpMultiple: best.multiple * CHAMPION_HP_BONUS,
     gold: Math.round(gold),
     exp: Math.round(exp * 100) / 100,
     leakDamage: Math.round(leakDamage),
