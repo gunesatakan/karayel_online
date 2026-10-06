@@ -16,9 +16,9 @@ import {
 } from "./helpers/match-room-harness.mjs";
 
 const CHARACTERS = [
-  ["warrior", "Atakan"],
-  ["zeynep", "Zeynep"],
-  ["archer", "Melis"]
+  ["warrior", "AttackLord"],
+  ["zeynep", "ZentaX"],
+  ["archer", "DualiTemp"]
 ];
 
 for (const [characterId, characterName] of CHARACTERS) {

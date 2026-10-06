@@ -7,7 +7,7 @@ const towers = makeTowers("onur", 0x14b8a6, [
   ["Sessiz Ok", "Uzun menzil"],
   ["Odak Hatti", "Sert vurus"],
   ["Iz Surucu", "Hedef takibi"],
-  ["Onur Keskinligi", "Elit tek hedef"]
+  ["Honour Keskinligi", "Elit tek hedef"]
 ], { cost: 44, range: 124, damage: 18, fireIntervalMs: 620, projectileSpeed: 390 });
 
 export const onurTowers = towers.map((tower) => {

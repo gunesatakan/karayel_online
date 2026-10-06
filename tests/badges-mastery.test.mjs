@@ -643,7 +643,7 @@ test("kozmetik acilislari: ustalik ve nisandan; kosuyla acilan yazili; unvanlar 
   const before = { masteryLevels: { zeynep: 2 }, badges: {} };
   const after = { masteryLevels: { zeynep: 5 }, badges: { "sampiyon-avcisi": 1 } };
   const fresh = findNewCosmetics(before, after);
-  assert.ok(fresh.includes("Unvan: Zeynep Kalfası"));
+  assert.ok(fresh.includes("Unvan: ZentaX Kalfası"));
   assert.ok(fresh.includes("Unvan: Şampiyon Avcısı"));
   assert.ok(fresh.includes("Taç süsü"));
   assert.ok(fresh.includes("Bronz mühür"));

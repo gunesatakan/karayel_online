@@ -374,7 +374,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "tam-dizilim",
     name: "Tam Dizilim",
-    condition: "Zeynep: üç kuleyi üçgen dizip (2×2 karenin üç köşesi) üçlü dizilim kur.",
+    condition: "ZentaX: üç kuleyi üçgen dizip (2×2 karenin üç köşesi) üçlü dizilim kur.",
     group: "operator",
     characterId: "zeynep",
     phase: "wave",
@@ -383,7 +383,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "mukemmel-sutun",
     name: "Mükemmel Sütun",
-    condition: "Zeynep: Sütun ultisini en kalabalık sütuna (en az 3 düşman) indir.",
+    condition: "ZentaX: Sütun ultisini en kalabalık sütuna (en az 3 düşman) indir.",
     group: "operator",
     characterId: "zeynep",
     phase: "wave",
@@ -393,7 +393,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
     id: "olgun-bag",
     wholeRun: true,
     name: "Olgun Bağ",
-    condition: "Atakan: bir Sunucu bağını 10 dalga boyunca koru.",
+    condition: "AttackLord: bir Sunucu bağını 10 dalga boyunca koru.",
     group: "operator",
     characterId: "warrior",
     phase: "wave",
@@ -403,7 +403,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
     id: "yalniz-kurt",
     wholeRun: true,
     name: "Yalnız Kurt",
-    condition: `Atakan: yalnızlık payın bir koşuda ~${SYNERGY_SHARE_RUN_FLOOR.toLocaleString("tr-TR")} hasarı geçsin (kuleyi komşusuz kur).`,
+    condition: `AttackLord: yalnızlık payın bir koşuda ~${SYNERGY_SHARE_RUN_FLOOR.toLocaleString("tr-TR")} hasarı geçsin (kuleyi komşusuz kur).`,
     group: "operator",
     characterId: "warrior",
     phase: "run",
@@ -412,7 +412,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "tam-evrim",
     name: "Tam Evrim",
-    condition: "Melis: bir kuleyi 3. evrime kadar evrimleştir.",
+    condition: "DualiTemp: bir kuleyi 3. evrime kadar evrimleştir.",
     group: "operator",
     characterId: "archer",
     phase: "wave",
@@ -421,7 +421,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "sans-penceresi",
     name: "Şans Penceresi",
-    condition: "Onur: uğursuzluğu doldurup şans penceresini aç.",
+    condition: "Honour: uğursuzluğu doldurup şans penceresini aç.",
     group: "operator",
     characterId: "onur",
     phase: "wave",
@@ -430,7 +430,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "kasa",
     name: "Kasa",
-    condition: "Onur: şans penceresinde zarın ×1,9 ya da üstü gelsin.",
+    condition: "Honour: şans penceresinde zarın ×1,9 ya da üstü gelsin.",
     group: "operator",
     characterId: "onur",
     phase: "wave",
@@ -439,7 +439,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "kilit-alan",
     name: "Kalabalığı Kilitle",
-    condition: `Ömer: Kilit Alan ultisiyle tek seferde ${LOCK_CROWD_HITS} düşmanı yakala.`,
+    condition: `Zexceed: Kilit Alan ultisiyle tek seferde ${LOCK_CROWD_HITS} düşmanı yakala.`,
     group: "operator",
     characterId: "tank",
     phase: "wave",
@@ -448,7 +448,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "tam-dalga",
     name: "Boşa Gitmeyen Dalga",
-    condition: `Ülkü: Can Dalgası'nın ${FULL_HEAL_WAVE_HP} canının hepsi üsse dönsün (üssün canı en az ${FULL_HEAL_WAVE_HP} eksikken at).`,
+    condition: `Boosty: Can Dalgası'nın ${FULL_HEAL_WAVE_HP} canının hepsi üsse dönsün (üssün canı en az ${FULL_HEAL_WAVE_HP} eksikken at).`,
     group: "operator",
     characterId: "healer",
     phase: "wave",
@@ -457,7 +457,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
   {
     id: "meteor-yagmuru",
     name: "Meteor Yağmuru",
-    condition: `Baransel: tek meteorla ${METEOR_KILLS} düşman öldür.`,
+    condition: `Bioside: tek meteorla ${METEOR_KILLS} düşman öldür.`,
     group: "operator",
     characterId: "mage",
     phase: "wave",

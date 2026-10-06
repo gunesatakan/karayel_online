@@ -6,7 +6,7 @@ import { atakanUltimate } from "./ultimate/index.js";
 
 export const atakanCharacter: CharacterDefinition = {
   id: "warrior",
-  displayName: "Atakan",
+  displayName: "AttackLord",
   role: "Modüler Stratejist",
   theme: "Kule yerleşimini yalıtma, işaretleme ve bağlantı üzerine kuran sinerji oyunu.",
   summary: "Tek tek kuleleri güçlü değildir; gücü yerleşimden gelir. Yalnız duran kuleleri pasifiyle daha verimli çalışır, Takipçi'nin işaretlediği düşmanlar tüm takımdan fazla hasar alır, Sunucu ise iki kuleyi birbirine bağlayarak menzil dışına kaçanı vurur. Doğru kurulan modüler hat, ham gücü katlar.",

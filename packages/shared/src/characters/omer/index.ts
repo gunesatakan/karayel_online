@@ -6,7 +6,7 @@ import { omerUltimate } from "./ultimate/index.js";
 
 export const omerCharacter: CharacterDefinition = {
   id: "tank",
-  displayName: "Ömer",
+  displayName: "Zexceed",
   role: "Tank",
   summary: "Yavaslatma ve yol kontrolu odakli.",
   maxHp: 130,

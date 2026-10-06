@@ -6,7 +6,7 @@ import { ulkuUltimate } from "./ultimate/index.js";
 
 export const ulkuCharacter: CharacterDefinition = {
   id: "healer",
-  displayName: "Ülkü",
+  displayName: "Boosty",
   role: "Destek",
   summary: "Takim canini ve savunma ritmini destekleyen sinif.",
   maxHp: 90,

@@ -6,5 +6,5 @@ export const omerTowers = makeTowers("tank", 0xfacc15, [
   ["Kilit Kule", "Kontrol"],
   ["Capa Atisi", "Yuksek yavaslatma"],
   ["Kalkan Topu", "Dayanikli savunma"],
-  ["Omer Hisari", "En guclu kontrol"]
+  ["Zexceed Hisari", "En guclu kontrol"]
 ], { cost: 42, range: 94, damage: 10, fireIntervalMs: 780, projectileSpeed: 280, slowMs: 720 });

@@ -6,7 +6,7 @@ import { onurUltimate } from "./ultimate/index.js";
 
 export const onurCharacter: CharacterDefinition = {
   id: "onur",
-  displayName: "Onur",
+  displayName: "Honour",
   role: "Kumarbaz",
   summary: "Değişken hasar zarlarını şanssızlık biriktirerek yüksek riskli fırsat pencerelerine dönüştürür.",
   maxHp: 110,

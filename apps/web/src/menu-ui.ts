@@ -928,16 +928,16 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
   return `
     <div class="screen screen--home">
       <header class="brand">
-        <p class="eyebrow"><i class="rule-dot"></i>Derin Uzay Savunma Ağı</p>
-        <h1 class="brand__word">Karayel</h1>
-        <div class="brand__rule"><i></i><b>Online</b><i></i></div>
+        <p class="eyebrow"><i class="rule-dot"></i>Yörünge Komuta Ağı</p>
+        <h1 class="brand__word">Uzay Savunma</h1>
+        <div class="brand__rule" aria-hidden="true"><i></i><span class="rule-dot"></span><i></i></div>
       </header>
 
       <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
         ${renderSigil(selectedCharacter.id, initials(selectedCharacter.displayName))}
         <div class="hero__copy">
           <p class="kicker">Seçili Operatör</p>
-          <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
+          <h2>${operatorNameHtml(selectedCharacter.displayName)}</h2>
           <p class="hero__role">${escapeHtml(selectedCharacter.role)}</p>
           <p class="hero__mastery"><b>Ustalık ${mastery.level}</b>${title ? `<span>${escapeHtml(title)}</span>` : ""}</p>
         </div>
@@ -958,7 +958,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           ${characters.map((character) => `
             <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
               ${renderSigil(character.id, initials(character.displayName))}
-              <span class="token__name">${escapeHtml(character.displayName)}</span>
+              <span class="token__name">${operatorNameHtml(character.displayName)}</span>
             </button>
           `).join("")}
         </div>
@@ -1013,7 +1013,7 @@ function renderOnline(
           <p class="eyebrow">Online Nexus</p>
           <h1>Oda Sistemi</h1>
         </div>
-        <span class="status-pill">${escapeHtml(selectedCharacter.displayName)}</span>
+        <span class="status-pill">${operatorNameHtml(selectedCharacter.displayName)}</span>
       </header>
 
       <section class="online-tabs" aria-label="Online sekmeleri">
@@ -1110,7 +1110,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
           ${lobbyState.players.map((player) => `
             <div class="lobby-player-row ${player.ready ? "is-ready" : ""}">
               <strong>${escapeHtml(player.name)}</strong>
-              <span>${escapeHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}${player.id === lobbySessionId && ownTitle ? ` · ${escapeHtml(ownTitle)}` : ""}</span>
+              <span>${operatorNameHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}${player.id === lobbySessionId && ownTitle ? ` · ${escapeHtml(ownTitle)}` : ""}</span>
               <small>${player.isHost ? "Kurucu" : player.ready ? "Hazir" : "Bekliyor"}</small>
             </div>
           `).join("")}
@@ -1127,7 +1127,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
               style="--item: ${classColor[character.id]}"
             >
               <span>${owner ? escapeHtml(owner.name) : "Bos"}</span>
-              <strong>${escapeHtml(character.displayName)}</strong>
+              <strong>${operatorNameHtml(character.displayName)}</strong>
             </button>
           `;
         }).join("")}
@@ -1263,7 +1263,7 @@ function renderArchive(selectedCharacter: CharacterDefinition, progress: Progres
           <button class="archive-card ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
             <span class="archive-card__mark">${initials(character.displayName)}</span>
             <span class="archive-card__body">
-              <strong>${escapeHtml(character.displayName)}</strong>
+              <strong>${operatorNameHtml(character.displayName)}</strong>
               <small>${escapeHtml(character.role)}</small>
               ${renderMasteryMeter(getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, character.id)))}
             </span>
@@ -1273,7 +1273,7 @@ function renderArchive(selectedCharacter: CharacterDefinition, progress: Progres
 
       <section class="selected-dossier frame" style="--accent: ${classColor[selectedCharacter.id]}">
         <p class="kicker">Aktif Dosya</p>
-        <h2>${escapeHtml(selectedCharacter.displayName)}</h2>
+        <h2>${operatorNameHtml(selectedCharacter.displayName)}</h2>
         <p>${escapeHtml(selectedCharacter.summary)}</p>
         <button class="command command--primary" data-view="detail">Dosyayı Aç</button>
       </section>
@@ -1501,7 +1501,7 @@ function renderBadges(progress: ProgressState, stageState: StageState, cardArchi
     const mastery = getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, character.id));
     return `
           <li class="mastery-row" style="--accent: ${classColor[character.id]}">
-            <strong>${escapeHtml(character.displayName)}</strong>
+            <strong>${operatorNameHtml(character.displayName)}</strong>
             ${renderMasteryMeter(mastery)}
           </li>`;
   }).join("");
@@ -1589,7 +1589,7 @@ function renderBadgeEntry(entry: BadgeEntryView) {
       <article class="card-archive__entry badge-entry${entry.earned ? " is-earned" : " is-locked"}">
         <header>
           <strong>${entry.earned ? "◈" : "◇"} ${escapeHtml(entry.name)}</strong>
-          <span>${escapeHtml(tag)}</span>
+          <span>${!entry.earned && !entry.longTerm && operator ? operatorNameHtml(operator) : escapeHtml(tag)}</span>
         </header>
         <p>${escapeHtml(entry.condition)}</p>
         ${progress}
@@ -1605,7 +1605,7 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
         <button class="icon-command" data-view="archive" aria-label="Arşive dön">‹</button>
         <div>
           <p class="eyebrow">Operator Dossier</p>
-          <h1>${escapeHtml(character.displayName)}</h1>
+          <h1>${operatorNameHtml(character.displayName)}</h1>
         </div>
         <button class="command command--small command--primary" data-start-game>Başlat</button>
       </header>
@@ -1978,7 +1978,7 @@ function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
     "archer-5": [
       "Komşu kulelerden depoladığı hasar oranı %4 artar.",
       "Patlamanın %25'i zırhı yok sayan gerçek hasara dönüşür.",
-      "Patlama hedefi öldürürse tüm Melis kuleleri 2 saniye boyunca %20 atış hızı kazanır."
+      "Patlama hedefi öldürürse tüm DualiTemp kuleleri 2 saniye boyunca %20 atış hızı kazanır."
     ],
     "archer-6": [
       "Korku altındaki bir düşmanda duraksama tetiklenirse hedef 1 saniye taraf değiştirir ve kendi ırkına saldırır.",
@@ -2102,6 +2102,15 @@ function getMapCounts(map: EditableMapData) {
     tower: map.tiles.filter((tile) => tile === "tower").length,
     empty: map.tiles.filter((tile) => tile === "empty").length
   };
+}
+
+/**
+ * Operator adi metin olarak. Adlar Ingilizce yazimli (DualiTemp, Bioside);
+ * sayfa lang="tr" oldugu icin CSS uppercase "i"yi "İ" yapiyordu
+ * (DUALİTEMP). lang="en" buyuk harfe cevirmeyi Ingilizce kuralla yapar.
+ */
+function operatorNameHtml(name: string) {
+  return `<span lang="en">${escapeHtml(name)}</span>`;
 }
 
 function escapeHtml(value: string | number) {

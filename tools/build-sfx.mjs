@@ -167,8 +167,8 @@ const RECIPES = [
   { family: "voiceAir", id: "kill-voice-air-3", src: "creature2/die_02", dur: 0.36, rate: 0.94, hp: 250, fadeOut: 0.28, kill: "voice" }
 ];
 
-const LICENSE_TEXT = `Karayel Online savas sesi ornekleri
-===================================
+const LICENSE_TEXT = `Uzay Savunma savas sesi ornekleri
+=================================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):

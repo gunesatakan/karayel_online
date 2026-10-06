@@ -162,7 +162,7 @@ export function formatSilentModeSeconds(remainingMs: number) {
 export type TeamSignalText = { title: string; detail: string };
 
 /**
- * "Atakan Sessiz Mod" / "5 sn sessizlik → 3x ateş".
+ * "AttackLord Sessiz Mod" / "5 sn sessizlik → 3x ateş".
  *
  * Saniye oyun saniyesi, beceri kartindaki gibi; ekrandaki geri sayim gercek
  * sureyi sayiyor.
@@ -175,7 +175,7 @@ export function getSilentModeNoticeText(casterName: string | undefined): TeamSig
   };
 }
 
-/** "Atakan'ın Sunucusu" / "kulene bağlandı". */
+/** "AttackLord'un Sunucusu" / "kulene bağlandı". */
 export function getServerLinkJoinedText(ownerName: string | undefined): TeamSignalText {
   const name = ownerName?.trim();
   return {
@@ -207,14 +207,31 @@ const FRONT_VOWELS = "eiöü";
 const GENITIVE_VOWEL: Readonly<Record<string, string>> = { a: "ı", "ı": "ı", o: "u", u: "u", e: "i", i: "i", "ö": "ü", "ü": "ü" };
 
 /**
- * Ozel adin tamlayan eki: Atakan'ın, Zeynep'in, Onur'un, Ülkü'nün.
+ * Yabanci yazilan operator adlarinin okunusu. Ek yaziya degil okunusa
+ * uyuyor: "Boosty" "busti" okunur, sonu unlu (Boosty'nin); "Bioside"
+ * "bayosayd" okunur, sonu unsuz (Bioside'ın). Anahtar adin kucuk harfi.
+ */
+const NAME_PRONUNCIATIONS: Readonly<Record<string, string>> = {
+  zentax: "zentaks",
+  attacklord: "ataklord",
+  dualitemp: "dualitemp",
+  honour: "onur",
+  zexceed: "zeksiid",
+  boosty: "busti",
+  bioside: "bayosayd"
+};
+
+/**
+ * Ozel adin tamlayan eki: AttackLord'un, ZentaX'ın, DualiTemp'in, Boosty'nin.
  *
- * Unlu uyumu son unluden; adin sonu unluyse araya "n" giriyor. Unlusu
- * olmayan ad (kisaltma) "'in" aliyor; yanlis bir ek bos birakmaktan iyi.
+ * Unlu uyumu son unluden; adin sonu unluyse araya "n" giriyor. Operator
+ * adlari yazilisa degil okunusa gore (NAME_PRONUNCIATIONS). Unlusu olmayan
+ * ad (kisaltma) "'in" aliyor; yanlis bir ek bos birakmaktan iyi.
  */
 export function getTurkishGenitive(name: string) {
   const trimmed = name.trim();
-  const lower = trimmed.toLocaleLowerCase("tr");
+  const written = trimmed.toLocaleLowerCase("tr");
+  const lower = NAME_PRONUNCIATIONS[written] ?? written;
   let vowel = "";
   for (let index = lower.length - 1; index >= 0; index -= 1) {
     const character = lower[index];

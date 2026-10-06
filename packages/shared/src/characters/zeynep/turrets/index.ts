@@ -18,7 +18,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   if (tower.id === "zeynep-1") {
     return {
       ...tower,
-      description: "Zeynep'in temel hasar kulesi. Mermisi ilk vurduğu düşmanı delip aynı doğrultuda ilerlemeye devam eder ve arkasındaki ikinci düşmana da tam hasar verir, sonra kaybolur. Bu yüzden yolun düz kısımlarına, düşmanların arka arkaya dizildiği hatta bakacak şekilde kurulur.",
+      description: "ZentaX'ın temel hasar kulesi. Mermisi ilk vurduğu düşmanı delip aynı doğrultuda ilerlemeye devam eder ve arkasındaki ikinci düşmana da tam hasar verir, sonra kaybolur. Bu yüzden yolun düz kısımlarına, düşmanların arka arkaya dizildiği hatta bakacak şekilde kurulur.",
       classType: "damage",
       damageType: "physical",
       hitType: "projectile",
@@ -47,7 +47,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   if (tower.id === "zeynep-3") {
     return {
       ...tower,
-      description: "Kendi hasarı ve vuruş tipi yoktur; ne yaptığı, yanındaki kulelere bağlıdır. Geçerli bir üçgen dizilimde iki Hiza Emri ile durursa çift delici mermi yollar. İki Gösteri Kulesi ile durursa ışık çarpmalarıyla yanan bir alan bırakır. Bir Hiza Emri ve bir Gösteri Kulesi ile durursa harita kenarından seken, fiziksel ve ışık karışımı delici bir ışın atar. Zeynep'in dizilim oyununun merkezidir.",
+      description: "Kendi hasarı ve vuruş tipi yoktur; ne yaptığı, yanındaki kulelere bağlıdır. Geçerli bir üçgen dizilimde iki Hiza Emri ile durursa çift delici mermi yollar. İki Gösteri Kulesi ile durursa ışık çarpmalarıyla yanan bir alan bırakır. Bir Hiza Emri ve bir Gösteri Kulesi ile durursa harita kenarından seken, fiziksel ve ışık karışımı delici bir ışın atar. ZentaX'ın dizilim oyununun merkezidir.",
       classType: "hybrid",
       damageType: "none",
       hitType: "impact",

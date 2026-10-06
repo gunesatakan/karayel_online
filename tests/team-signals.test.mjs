@@ -96,6 +96,15 @@ test("bag olgunlugu yalnizca 5 ve 10 esiginde, bir kez", () => {
 });
 
 test("tamlayan eki unlu uyumuna uyuyor", () => {
+  // Operator adlari: ek yaziya degil okunusa gore.
+  assert.equal(getTurkishGenitive("ZentaX"), "ZentaX'ın");
+  assert.equal(getTurkishGenitive("AttackLord"), "AttackLord'un");
+  assert.equal(getTurkishGenitive("DualiTemp"), "DualiTemp'in");
+  assert.equal(getTurkishGenitive("Honour"), "Honour'un");
+  assert.equal(getTurkishGenitive("Zexceed"), "Zexceed'in");
+  assert.equal(getTurkishGenitive("Boosty"), "Boosty'nin");
+  assert.equal(getTurkishGenitive("Bioside"), "Bioside'ın");
+  // Oyuncunun kendi yazdigi Turkce adlar yazilisa gore.
   assert.equal(getTurkishGenitive("Atakan"), "Atakan'ın");
   assert.equal(getTurkishGenitive("Zeynep"), "Zeynep'in");
   assert.equal(getTurkishGenitive("Melis"), "Melis'in");
@@ -105,6 +114,8 @@ test("tamlayan eki unlu uyumuna uyuyor", () => {
   assert.equal(getTurkishGenitive("Baransel"), "Baransel'in");
   assert.equal(getTurkishGenitive("Ayla"), "Ayla'nın");
   assert.deepEqual(getServerLinkJoinedText("Atakan"), { title: "Atakan'ın Sunucusu", detail: "kulene bağlandı" });
+  assert.deepEqual(getServerLinkJoinedText("Boosty"), { title: "Boosty'nin Sunucusu", detail: "kulene bağlandı" });
+  assert.deepEqual(getServerLinkJoinedText("Bioside"), { title: "Bioside'ın Sunucusu", detail: "kulene bağlandı" });
   assert.equal(getServerLinkJoinedText(undefined).title, "Takım arkadaşının Sunucusu");
 });
 

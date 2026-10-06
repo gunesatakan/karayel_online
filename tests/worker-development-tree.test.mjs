@@ -19,13 +19,14 @@ import {
   WORKER_DEVELOPMENT_XP_COSTS,
   WORKER_FULL_TANK_ENERGY_RATIO,
   WORKER_SKILL_TIERS,
+  characters,
   getMapGridSize,
   towerCatalog
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
-const CHARACTER_NAMES = ["Atakan", "Zeynep", "Melis", "Baransel", "Ülkü", "Ömer", "Onur"];
+const CHARACTER_NAMES = characters.map((character) => character.displayName);
 
 function setupRoom() {
   const room = createRoom("warrior");

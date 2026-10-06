@@ -6,7 +6,7 @@ import { zeynepUltimate } from "./ultimate/index.js";
 
 export const zeynepCharacter: CharacterDefinition = {
   id: "zeynep",
-  displayName: "Zeynep",
+  displayName: "ZentaX",
   role: "Komuta ve Dizilim",
   theme: "İtibarla komut veren, kuleleri ikili ve üçlü dizilimlerle güçlendiren düzen oyunu.",
   summary: "Kule kurmakla bitmez; hattı komutlarla yönetir. Öldürdükçe topladığı İtibar'ı takım geneline atış hızı, menzil veya yavaşlatma vermek için harcar ve komutları zincirledikçe etkileri büyür. Kuleleri tam ikili veya üçgen üçlü dizilimde durduğunda ek buff alır, gruba fazladan kule girerse buff bozulur.",

@@ -1,5 +1,5 @@
-Karayel Online savas sesi ornekleri
-===================================
+Uzay Savunma savas sesi ornekleri
+=================================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):

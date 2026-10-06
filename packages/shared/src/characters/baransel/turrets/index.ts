@@ -6,5 +6,5 @@ export const baranselTowers = makeTowers("mage", 0xa78bfa, [
   ["Kozmik Halka", "Genis alan"],
   ["Enerji Topu", "Yavas ama sert"],
   ["Mana Kirilimi", "Zincir hasar"],
-  ["Baransel Meteoru", "Yuksek AOE"]
+  ["Bioside Meteoru", "Yuksek AOE"]
 ], { cost: 48, range: 98, damage: 20, fireIntervalMs: 900, projectileSpeed: 280, aoeRadius: 42 });

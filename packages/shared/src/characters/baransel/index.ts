@@ -6,7 +6,7 @@ import { baranselUltimate } from "./ultimate/index.js";
 
 export const baranselCharacter: CharacterDefinition = {
   id: "mage",
-  displayName: "Baransel",
+  displayName: "Bioside",
   role: "AOE",
   summary: "Yavas ama alan hasari yuksek.",
   maxHp: 75,

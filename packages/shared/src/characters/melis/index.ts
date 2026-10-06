@@ -6,7 +6,7 @@ import { melisUltimate } from "./ultimate/index.js";
 
 export const melisCharacter: CharacterDefinition = {
   id: "archer",
-  displayName: "Melis",
+  displayName: "DualiTemp",
   role: "Evrim Uzmanı",
   theme: "Onay ve stres dengesini kule evrimine çeviren baskı oyunu.",
   summary: "Seri öldürmelerinden kazandığı puanı onaya mı strese mi yazacağına her an kendisi karar verir. Onay ilk üç kulesini güçlendirir, stres ise evrim satın alır; önde giden taraf her dalga eridiği için ikisinden birine yerleşmek mümkün değildir. Barı doğru zamanda çeviren oyuncu hem güçlü kulelere hem evrimlere ulaşır.",

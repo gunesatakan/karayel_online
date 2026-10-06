@@ -2229,11 +2229,14 @@ button.wave-report:active { transform: scale(0.99); }
   margin: 0;
   color: #f2f4f8;
   font-family: var(--serif);
-  font-size: var(--fs-display);
+  /* "Uzay Savunma" iki kelime: 375 px'te tek satira sigsin diye display
+     boyutundan kucuk; menu 460 px'te durdugu icin ust sinir da orada. */
+  font-size: min(var(--fs-display), 9.6vw, 44px);
   font-weight: 900;
   line-height: 0.88;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  white-space: nowrap;
   text-shadow:
     0 0 28px rgba(139, 92, 246, 0.42),
     0 14px 32px rgba(0, 0, 0, 0.62);
