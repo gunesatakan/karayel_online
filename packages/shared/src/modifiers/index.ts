@@ -133,7 +133,24 @@ export type ModifierStat =
    *   Nisanci ile ayni kural) mermi hizi.
    */
   | "accuracyVsAir"
-  | "projectileSpeedIsolated";
+  | "projectileSpeedIsolated"
+  /**
+   * Altin primleri: oldurme altininin carpanindan (`goldGain`) ayri, belirli
+   * bir olaya baglanan duz altin. Hepsinin dalga tavani var (sabitleri
+   * `cards` modulunde). Ilki oyuncudan, otekiler oldurenin ya da hasari
+   * verenin kulesinden okunuyor.
+   *
+   * - `championGold`: bir sampiyon dusman oldugunde (kim oldururse oldursun).
+   * - `airKillGold`: kulenin oldurdugu her ucan dusman.
+   * - `damageGold`: dalga sonunda kulenin o dalga verdigi her 1000 hasar.
+   * - `multiKillGold`: kule kisa bir pencerede uc dusman oldurdugunde.
+   * - `overkillGold`: oldurucu vurusta canin ustune tasan hasarin payi.
+   */
+  | "championGold"
+  | "airKillGold"
+  | "damageGold"
+  | "multiKillGold"
+  | "overkillGold";
 
 export type Modifier = {
   source: string;

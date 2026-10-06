@@ -58,7 +58,15 @@ import {
   getOwnedItemUnlocks,
   isCardUnlockAlreadyOwned,
   isConversionCardReady,
-  getRiskyInvestmentNoticeText
+  getRiskyInvestmentNoticeText,
+  CHAMPION_GOLD_WAVE_CAP,
+  AIR_KILL_GOLD_WAVE_CAP,
+  DAMAGE_GOLD_PER_DAMAGE,
+  DAMAGE_GOLD_WAVE_CAP,
+  MULTI_KILL_GOLD_COUNT,
+  MULTI_KILL_GOLD_WINDOW_MS,
+  MULTI_KILL_GOLD_WAVE_CAP,
+  OVERKILL_GOLD_WAVE_CAP
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -1656,6 +1664,8 @@ function baskinCiftler(items, etkili) {
     const map = new Map();
     for (const modifier of entry.effects) map.set(modifier.stat, (map.get(modifier.stat) ?? 0) + modifier.add);
     for (const unlock of entry.unlocks ?? []) map.set(`unlock:${unlock}`, 1);
+    // Vadeli altin etki listesinde degil, kendi alaninda.
+    if (entry.deposit) map.set("deposit", entry.deposit.payout);
     return map;
   };
   const pairs = [];
@@ -1683,4 +1693,259 @@ test("isabet ve mermi hizi ailelerinde hicbir esya bir digerince baskilanmiyor",
   const eski = (id, price) => ({ ...item(id), price });
   assert.deepEqual(baskinCiftler([eski("nisan-durbunu", 90), eski("nisangah", 95)], (tower) => towerFiresAlongFacing(tower)).sort(), ["nisan-durbunu > nisangah"]);
   assert.ok(baskinCiftler([eski("hafif-cekirdek", 85), eski("manyetik-ray", 90)], (tower) => towerFiresProjectiles(tower)).includes("hafif-cekirdek > manyetik-ray"));
+});
+
+// ------------------------------------- 10. Altin primleri
+
+const BOUNTY_ITEMS = ["odul-fermani", "dusurme-primi", "savas-tazminati", "toplu-imha-primi", "artik-enerji-toplayici"];
+
+test("altin primleri: metin = etki, tavan sabitlerle ayni, bedelsiz, kapsam", () => {
+  const text = {
+    "odul-fermani": `Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +${getModifierAdd(item("odul-fermani").effects, "championGold")} altın; dalga başına en fazla ${CHAMPION_GOLD_WAVE_CAP} altın.`,
+    "dusurme-primi": `Takıldığı kulenin öldürdüğü her uçan düşman +${getModifierAdd(item("dusurme-primi").effects, "airKillGold")} altın verir; dalga başına en fazla ${AIR_KILL_GOLD_WAVE_CAP} altın.`,
+    "savas-tazminati": `Takıldığı kule dalga sonunda o dalga verdiği her ${DAMAGE_GOLD_PER_DAMAGE} hasar için +${getModifierAdd(item("savas-tazminati").effects, "damageGold")} altın kazandırır; dalga başına en fazla ${DAMAGE_GOLD_WAVE_CAP} altın.`,
+    "toplu-imha-primi": `Takıldığı kule ${MULTI_KILL_GOLD_WINDOW_MS / 1000} saniye içinde ${MULTI_KILL_GOLD_COUNT} düşman öldürdüğünde +${getModifierAdd(item("toplu-imha-primi").effects, "multiKillGold")} altın verir; dalga başına en fazla ${MULTI_KILL_GOLD_WAVE_CAP} altın.`,
+    "artik-enerji-toplayici": `Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %${Math.round(getModifierAdd(item("artik-enerji-toplayici").effects, "overkillGold") * 100)}'i altına dönüşür; dalga başına en fazla ${OVERKILL_GOLD_WAVE_CAP} altın.`
+  };
+  const prices = { "odul-fermani": 120, "dusurme-primi": 75, "savas-tazminati": 90, "toplu-imha-primi": 85, "artik-enerji-toplayici": 70 };
+  for (const id of BOUNTY_ITEMS) {
+    const entry = item(id);
+    assert.equal(entry.description, text[id], id);
+    assert.equal(entry.price, prices[id], id);
+    assert.equal(entry.category, "utility", id);
+    assert.equal(entry.repeatable, false, id);
+    assert.ok(entry.effects.length === 1 && entry.effects[0].add > 0, `${id}: tek, olumlu etki`);
+  }
+  assert.equal(item("odul-fermani").target, "global");
+  assert.ok(GLOBAL_SHOP_ITEM_IDS.includes("odul-fermani"));
+  for (const id of BOUNTY_ITEMS.slice(1)) {
+    assert.equal(item(id).target, "tower", id);
+    for (const tower of allTowers) assert.equal(canEquipShopItem(item(id), tower, []).ok, towerDealsDamage(tower), `${id} / ${tower.id}`);
+  }
+  // Ad cakismasi yok.
+  const names = shopCatalog.map((entry) => entry.name);
+  for (const id of BOUNTY_ITEMS) assert.equal(names.filter((name) => name === item(id).name).length, 1, id);
+});
+
+test("altin ailesinde baskin esya yok (karsilastirilabilir olanlar)", () => {
+  const gold = shopCatalog.filter((entry) => ["altin-elek", "ganimet-kesesi", "sigorta-policesi", "darphane-modulu", "kelle-defteri", "faiz-hesabi", "vadeli-mevduat", ...BOUNTY_ITEMS].includes(entry.id));
+  assert.equal(gold.length, 12);
+  assert.deepEqual(baskinCiftler(gold, () => true), []);
+});
+
+/** Sampiyon dusman: yerine gectigi tek dogumun altini ve tecrubesiyle. */
+function sampiyon(room, tower) {
+  const enemy = dusman(room, tower, { hp: 1, maxHp: 1, type: "brute", movementKind: "ground" });
+  enemy.champion = { type: "brute", gold: 50, exp: 5, reputation: 0, replaced: 1, leadSlots: 0, hpMultiple: 1, leakDamage: 1, spawnedAt: Date.now() };
+  return enemy;
+}
+
+test("Odul Fermani: sampiyon olunce +150, dalgada bir kez; yeni dalga sifirliyor; co-op'ta yalnizca sahibine", () => {
+  const room = oda();
+  const p2 = ikinciOyuncu(room);
+  const tower = kur(room, "warrior-4");
+  assert.ok(satinAl(room, "odul-fermani"));
+  const p1 = room.state.players.get("p1");
+  const oldurSampiyon = () => {
+    const [a, b] = [p1.gold, p2.gold];
+    room.towerCriticalRandom = () => 1;
+    const enemy = sampiyon(room, tower);
+    assert.equal(room.damageEnemy(enemy, 1e6, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id), true);
+    return [p1.gold - a, p2.gold - b];
+  };
+  const [ilk, arkadas] = oldurSampiyon();
+  assert.equal(ilk - arkadas, 150, "sahibi takim arkadasindan 150 fazla almadi");
+  const [ikinci, arkadas2] = oldurSampiyon();
+  assert.equal(ikinci - arkadas2, 0, "ayni dalgada ikinci prim");
+  room.wave += 1;
+  const [yeni, arkadas3] = oldurSampiyon();
+  assert.equal(yeni - arkadas3, 150, "yeni dalgada prim yok");
+  // Sampiyonu takim arkadasinin kulesi oldurse de sahibi aliyor.
+  room.wave += 1;
+  const ikinciKule = kur(room, "warrior-6", { sessionId: "p2", send() {} });
+  const once = p1.gold;
+  const enemy = sampiyon(room, ikinciKule);
+  room.damageEnemy(enemy, 1e6, 0, ikinciKule.definition.id, "p2", "true", 0, ikinciKule.level, ikinciKule.id);
+  assert.equal(p1.gold - once, 150 + 50, "takim arkadasinin oldurdugu sampiyonda prim yok");
+});
+
+test("Dusurme Primi: ucan oldurme +8, dalga tavani 80, yeni dalga sifirliyor, yalnizca takildigi kule", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  const oteki = kur(room, "warrior-4");
+  assert.ok(esyaTak(room, tower, "dusurme-primi"));
+  const player = room.state.players.get("p1");
+  const altin = (kule, movementKind) => {
+    const once = player.gold;
+    room.towerCriticalRandom = () => 1;
+    const enemy = dusman(room, kule, { hp: 1, maxHp: 1, reward: 20, type: "grunt", movementKind });
+    assert.equal(room.damageEnemy(enemy, 1e6, 0, kule.definition.id, "p1", "true", 0, kule.level, kule.id), true);
+    return player.gold - once;
+  };
+  const yer = altin(tower, "ground");
+  assert.equal(altin(tower, "air") - yer, 8);
+  assert.equal(altin(oteki, "air") - altin(oteki, "ground"), 0, "baska kuleye isledi");
+  let toplam = 8;
+  for (let index = 0; index < 15; index += 1) toplam += altin(tower, "air") - yer;
+  assert.equal(toplam, AIR_KILL_GOLD_WAVE_CAP);
+  room.wave += 1;
+  assert.equal(altin(tower, "air") - yer, 8, "yeni dalgada sifirlanmadi");
+});
+
+test("Savas Tazminati: dalga sonunda her 1000 hasara +10, kule basina 60 tavan, sayac sifirlaniyor", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  const oteki = kur(room, "warrior-4");
+  assert.ok(esyaTak(room, tower, "savas-tazminati"));
+  const player = room.state.players.get("p1");
+  const vur = (kule, hasar) => {
+    room.towerCriticalRandom = () => 1;
+    const enemy = dusman(room, kule);
+    room.damageEnemy(enemy, hasar, 0, kule.definition.id, "p1", "true", 0, kule.level, kule.id);
+  };
+  const kapanis = () => {
+    const once = player.gold;
+    room.awardWaveEndBonusGold(room.wave, false);
+    return player.gold - once;
+  };
+  vur(tower, 2500);
+  vur(oteki, 9000);
+  assert.equal(kapanis(), 20, "2500 hasar -> 2 x 10; oteki kule odenmemeli");
+  assert.equal(tower.waveDamageDealt, 0);
+  assert.equal(oteki.waveDamageDealt, 0, "primsiz kulenin sayaci da sifirlanmali");
+  assert.equal(kapanis(), 0, "sayac sifirlanmadi");
+  vur(tower, 50_000);
+  assert.equal(kapanis(), DAMAGE_GOLD_WAVE_CAP);
+});
+
+test("Toplu Imha Primi: 2 saniyede 3 oldurme +15, iki oldurme hicbir sey, tavan 75", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "toplu-imha-primi"));
+  const player = room.state.players.get("p1");
+  const gercekNow = Date.now;
+  let simdi = gercekNow();
+  Date.now = () => simdi;
+  try {
+    const oldur1 = () => {
+      room.towerCriticalRandom = () => 1;
+      const enemy = dusman(room, tower, { hp: 1, maxHp: 1, reward: 20, type: "grunt", movementKind: "ground" });
+      room.damageEnemy(enemy, 1e6, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+    };
+    const tekOldurme = (() => { const once = player.gold; oldur1(); return player.gold - once; })();
+    simdi += MULTI_KILL_GOLD_WINDOW_MS + 1;
+    // Pencere disinda iki, sonra pencere icinde uc.
+    let once = player.gold;
+    oldur1(); simdi += 1500; oldur1(); simdi += 1500; oldur1();
+    assert.equal(player.gold - once - 3 * tekOldurme, 0, "pencere disi oldurmeler prim verdi");
+    simdi += MULTI_KILL_GOLD_WINDOW_MS + 1;
+    once = player.gold;
+    oldur1(); simdi += 500; oldur1(); simdi += 500; oldur1();
+    assert.equal(player.gold - once - 3 * tekOldurme, 15);
+    // Ucuncuden sonra sayac sifirlaniyor: dorduncu tek basina prim degil.
+    once = player.gold;
+    simdi += 100;
+    oldur1();
+    assert.equal(player.gold - once - tekOldurme, 0);
+    // Tavan: cok sayida uclu.
+    once = player.gold;
+    for (let index = 0; index < 30; index += 1) { simdi += 10; oldur1(); }
+    assert.equal(player.gold - once - 30 * tekOldurme, MULTI_KILL_GOLD_WAVE_CAP - 15);
+  } finally {
+    Date.now = gercekNow;
+  }
+});
+
+test("Artik Enerji Toplayici: tasan hasarin %5'i, tavan 50; oldurmeyen vurus hicbir sey", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "artik-enerji-toplayici"));
+  const player = room.state.players.get("p1");
+  const vur = (hp, hasar) => {
+    room.towerCriticalRandom = () => 1;
+    const enemy = dusman(room, tower, { hp, maxHp: hp, reward: 20, type: "grunt", movementKind: "ground" });
+    const once = player.gold;
+    const oldu = room.damageEnemy(enemy, hasar, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+    return { oldu, altin: player.gold - once };
+  };
+  const tam = vur(100, 100);
+  assert.equal(tam.oldu, true);
+  const tasan = vur(400, 600);
+  near(tasan.altin - tam.altin, 200 * 0.05, "200 tasan hasar");
+  assert.equal(vur(1000, 300).altin, 0, "oldurmeyen vurus");
+  let toplam = 10;
+  for (let index = 0; index < 10; index += 1) toplam += vur(1000, 2000).altin - tam.altin;
+  near(toplam, OVERKILL_GOLD_WAVE_CAP, "tavan");
+});
+
+test("Artik Enerji Toplayici: tasan hasar vurus basina azami canla sinirli; infaz sayilmiyor", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "artik-enerji-toplayici"));
+  const player = room.state.players.get("p1");
+  const vur = (hp, hasar, kaynak = tower.definition.id) => {
+    room.towerCriticalRandom = () => 1;
+    const enemy = dusman(room, tower, { hp, maxHp: hp, reward: 20, type: "grunt", movementKind: "ground" });
+    const once = player.gold;
+    room.damageEnemy(enemy, hasar, 0, kaynak, "p1", "true", 0, tower.level, tower.id);
+    return player.gold - once;
+  };
+  const tam = vur(100, 100);
+  // Zayif hedefe dev vurus: tasan hasar 100 (azami can) sayiliyor, 999.900 degil.
+  near(vur(100, 1_000_000) - tam, 100 * 0.05, "vurus basina sinir");
+  // Oluler Bagi'nin infazi: yapay hasar, prim yok.
+  const infaz = room.state.players.get("p1").gold;
+  room.towerCriticalRandom = () => 1;
+  const enemy = dusman(room, tower, { hp: 100, maxHp: 100, reward: 20, type: "grunt", movementKind: "ground" });
+  room.damageEnemy(enemy, enemy.hp + enemy.shield + enemy.maxHp + 1, 0, "archer-4-underworld-execute", "p1", "true", 0, tower.level, tower.id, "focus");
+  near(player.gold - infaz, tam, "infaz tasan hasar primi verdi");
+});
+
+test("Savas Tazminati sayaci eksiye dusmuyor: cani bitmis hedefe vurus sayilmiyor", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "savas-tazminati"));
+  const enemy = dusman(room, tower);
+  enemy.hp = -50;
+  room.towerCriticalRandom = () => 1;
+  room.damageEnemy(enemy, 10, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+  assert.equal(tower.waveDamageDealt, 0);
+  const canli = dusman(room, tower);
+  room.damageEnemy(canli, 1500, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+  assert.equal(tower.waveDamageDealt, 1500);
+});
+
+test("yuva devrinden sonra kule primi kulenin yeni sahibine; Melis'in dusman sahipleri de tasiniyor", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "dusurme-primi"));
+  const player = room.state.players.get("p1");
+  const lanetli = dusman(room, tower);
+  Object.assign(lanetli, { melisCurseOwnerId: "p1", melisUndeadOwnerId: "p1", melisWhisperTurnedOwnerId: "p1" });
+  room.transferPlayerSession("p1", "p9", player, player.name);
+  assert.equal(tower.ownerId, "p9");
+  assert.deepEqual([lanetli.melisCurseOwnerId, lanetli.melisUndeadOwnerId, lanetli.melisWhisperTurnedOwnerId], ["p9", "p9", "p9"]);
+  // Oldurme eski kimlikle gelse de (devirden once baslamis bir etki) prim kulenin sahibine.
+  const once = player.gold;
+  room.towerCriticalRandom = () => 1;
+  const ucan = dusman(room, tower, { hp: 1, maxHp: 1, reward: 20, type: "grunt", movementKind: "air" });
+  room.damageEnemy(ucan, 1e6, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+  assert.ok(player.gold - once >= 8, "prim kayboldu");
+  const ikinci = player.gold;
+  const yer = dusman(room, tower, { hp: 1, maxHp: 1, reward: 20, type: "grunt", movementKind: "ground" });
+  room.damageEnemy(yer, 1e6, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+  near((ikinci - once) - (player.gold - ikinci), 8, "ucan ile yer farki 8 degil");
+});
+
+test("co-op: kule primleri yalnizca kulenin sahibine", () => {
+  const room = oda();
+  const p2 = ikinciOyuncu(room);
+  const tower = kur(room, "warrior-1");
+  assert.ok(esyaTak(room, tower, "dusurme-primi"));
+  const p1 = room.state.players.get("p1");
+  const [a, b] = [p1.gold, p2.gold];
+  room.towerCriticalRandom = () => 1;
+  const enemy = dusman(room, tower, { hp: 1, maxHp: 1, reward: 20, type: "grunt", movementKind: "air" });
+  room.damageEnemy(enemy, 1e6, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+  assert.equal((p1.gold - a) - (p2.gold - b), 8);
 });

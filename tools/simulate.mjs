@@ -622,7 +622,10 @@ const STAT_SCORE = {
   waveIncome: 0.02,
   // Kosullu nisan statlari: isabet ve mermi hizinin kosul tuttugunda (ucan
   // hedef, komsusuz kule) karsiligi; yaklasik yarisi kadar.
-  accuracyVsAir: 0.5, projectileSpeedIsolated: 0.25
+  accuracyVsAir: 0.5, projectileSpeedIsolated: 0.25,
+  // Altin primleri: dalga tavanina gore, kabaca bir altin esyasi kadar. Altinlari
+  // simulatorde modellenmiyor (sampiyon, ucan, toplu ve tasan oldurme ayrintisi yok).
+  championGold: 0.003, airKillGold: 0.04, damageGold: 0.04, multiKillGold: 0.025, overkillGold: 6
 };
 
 /**

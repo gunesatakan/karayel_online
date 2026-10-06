@@ -246,6 +246,22 @@ export const CLEAN_WAVE_GOLD = 90;
 export const CRIT_KILL_GOLD = 6;
 export const CRIT_KILL_GOLD_WAVE_CAP = 90;
 
+/**
+ * Altin primlerinin dalga tavanlari (statlar `modifiers` modulunde). Tavan
+ * oyuncunun ya da kulenin o dalgada o primden kazanabilecegi en fazla
+ * altin; oldurme ve hasarla buyuyen her prim burada duruyor.
+ */
+export const CHAMPION_GOLD_WAVE_CAP = 150;
+export const AIR_KILL_GOLD_WAVE_CAP = 80;
+/** `damageGold` bu kadar hasar basina oduyor. */
+export const DAMAGE_GOLD_PER_DAMAGE = 1000;
+export const DAMAGE_GOLD_WAVE_CAP = 60;
+/** `multiKillGold`: bu kadar oldurme bu pencerede gelirse prim. */
+export const MULTI_KILL_GOLD_COUNT = 3;
+export const MULTI_KILL_GOLD_WINDOW_MS = 2000;
+export const MULTI_KILL_GOLD_WAVE_CAP = 75;
+export const OVERKILL_GOLD_WAVE_CAP = 50;
+
 /** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
 export function getAccuracyCritChance(accuracyBonus: number) {
   return Math.max(0, Math.min(1, accuracyBonus)) * ACCURACY_CRIT_RATIO;
@@ -792,7 +808,9 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   workerGatherSpeed: "none", workerSpeed: "none", workerCapacity: "none", workerHealth: "none", workerRepairRate: "none",
   workerHireCost: "none", shopRerollCost: "none", ultimateDamage: "none", ultimateCharge: "none", skillCooldown: "none",
   waveIncome: "none",
-  accuracyVsAir: "combat", projectileSpeedIsolated: "combat"
+  accuracyVsAir: "combat", projectileSpeedIsolated: "combat",
+  // Altin primleri kulenin yaptigi bir seyi degistirmiyor, yalnizca oyuncunun altinini.
+  championGold: "none", airKillGold: "none", damageGold: "none", multiKillGold: "none", overkillGold: "none"
 };
 
 /**

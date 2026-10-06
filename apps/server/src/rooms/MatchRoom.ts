@@ -203,6 +203,14 @@ import {
   RISKY_INVESTMENT_NEXUS_COST,
   CRIT_KILL_GOLD,
   CRIT_KILL_GOLD_WAVE_CAP,
+  CHAMPION_GOLD_WAVE_CAP,
+  AIR_KILL_GOLD_WAVE_CAP,
+  DAMAGE_GOLD_PER_DAMAGE,
+  DAMAGE_GOLD_WAVE_CAP,
+  MULTI_KILL_GOLD_COUNT,
+  MULTI_KILL_GOLD_WINDOW_MS,
+  MULTI_KILL_GOLD_WAVE_CAP,
+  OVERKILL_GOLD_WAVE_CAP,
   isCleanWave,
   resolveStatConversions,
   getAccuracyCritChance,
@@ -814,6 +822,8 @@ class Player extends Schema {
   goldDeposits?: Array<{ dueWave: number; amount: number }> = [];
   /** `gold:critKill`: bu dalgada kritik oldurmeden kazanilan altin; dalga tavani icin. */
   critKillGold?: { wave: number; earned: number } = { wave: 0, earned: 0 };
+  /** Oyuncu basina altin primlerinin dalga defteri (Odul Fermani). */
+  bountyLedger?: { wave: number; earned: Record<string, number> };
   /**
    * Odadaki sabit yuva (0-3); katilista bos olan en kucuk sayi.
    *
@@ -1231,6 +1241,14 @@ type TowerModel = {
   streakDamageMultiplier: number;
   streakHasteUntil: number;
   streakHasteMultiplier: number;
+  /**
+   * Altin primlerinin kule basina dalga defteri (`awardTowerBountyGold`) ve
+   * Savas Tazminati'nin saydigi, bu dalga verilen hasar.
+   */
+  bountyLedger?: { wave: number; earned: Record<string, number> };
+  waveDamageDealt?: number;
+  /** Toplu Imha Primi: son oldurmelerin zamani (pencere icinde). */
+  recentKillTimes?: number[];
   /** `aim:killSnap`: son oldurmeden sonraki donus hizi penceresinin sonu. */
   killSnapUntil?: number;
   zeynepFormationSize: number;
@@ -2751,6 +2769,12 @@ export class MatchRoom extends Room<MatchState> {
         if (state?.sourceOwnerId === previousSessionId) state.sourceOwnerId = nextSessionId;
       }
       if (enemy.coolantSlowOwnerId === previousSessionId) enemy.coolantSlowOwnerId = nextSessionId;
+      // Melis'in dusmana yazdigi sahipler: cevrilmis, olumsuz ve lanetli
+      // dusmanin oldurmesi bu kimlikle geliyor; eskisinde kalirsa altin ve
+      // oldurme kaydi kayboluyordu.
+      if (enemy.melisWhisperTurnedOwnerId === previousSessionId) enemy.melisWhisperTurnedOwnerId = nextSessionId;
+      if (enemy.melisUndeadOwnerId === previousSessionId) enemy.melisUndeadOwnerId = nextSessionId;
+      if (enemy.melisCurseOwnerId === previousSessionId) enemy.melisCurseOwnerId = nextSessionId;
       for (const key in enemy.slowSpeedFloors ?? {}) {
         const floor = enemy.slowSpeedFloors![key];
         if (floor.ownerId === previousSessionId) floor.ownerId = nextSessionId;
@@ -3132,9 +3156,10 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Dalga sonu primleri, oyuncu basina ve oyuncunun kendi kartlarindan.
    *
-   * Uc kaynak: dalga geliri (`waveIncome`; genel kart ve ayakta duran
-   * binaya takili esya), temiz dalga primi (`gold:cleanWave`) ve vadesi
-   * gelen mevduat. Ucu de duz: oyuncunun biriktirdigi altinla buyumuyor,
+   * Dort kaynak: dalga geliri (`waveIncome`; genel kart ve ayakta duran
+   * binaya takili esya), temiz dalga primi (`gold:cleanWave`), vadesi gelen
+   * mevduat ve kulenin o dalga verdigi hasarin primi (`damageGold`, Savas
+   * Tazminati, kule basina tavanli). Hepsi duz: oyuncunun biriktirdigi altinla buyumuyor,
    * yani faize benzer bir dongu kurmuyor. Co-op'ta her oyuncu yalnizca
    * kendi kartinin ve esyasinin karsiligini aliyor; temizlik kosulu ise
    * takimin -- sizinti takimin nexusundan.
@@ -3150,6 +3175,17 @@ export class MatchRoom extends Room<MatchState> {
         player.goldDeposits = deposits.filter((deposit) => deposit.dueWave > completedWave);
       }
       if (bonus > 0) player.gold += bonus;
+    }
+    // Savas Tazminati: her kule o dalga verdigi hasarin karsiligini aliyor,
+    // kule basina tavanli. Sayac her kulede sifirlaniyor (primi olmasa da).
+    for (const tower of this.towers.values()) {
+      const perThousand = getModifierAdd(this.getTowerRunModifiers(tower), "damageGold");
+      const dealt = tower.waveDamageDealt ?? 0;
+      tower.waveDamageDealt = 0;
+      if (perThousand > 0 && this.state.players.has(tower.ownerId)) {
+        const amount = Math.floor(dealt / DAMAGE_GOLD_PER_DAMAGE) * perThousand;
+        this.state.players.get(tower.ownerId)!.gold += Math.min(DAMAGE_GOLD_WAVE_CAP, amount);
+      }
     }
   }
 
@@ -3173,6 +3209,71 @@ export class MatchRoom extends Room<MatchState> {
       income += getModifierAdd(tower.runModifiers, "waveIncome");
     }
     return Math.max(0, Math.round(income));
+  }
+
+  /**
+   * Bir kulenin altin primini dalga tavaniyla oduyor; odenen altini doner.
+   * Defter kule basina ve prim basina: iki ayri prim birbirinin tavanini
+   * yemiyor, yeni dalgada sifirlaniyor.
+   */
+  private awardTowerBountyGold(tower: TowerModel, key: string, amount: number, cap: number) {
+    const player = this.state.players.get(tower.ownerId);
+    if (!player || !(amount > 0)) return 0;
+    if (!tower.bountyLedger || tower.bountyLedger.wave !== this.wave) tower.bountyLedger = { wave: this.wave, earned: {} };
+    const earned = tower.bountyLedger.earned[key] ?? 0;
+    const gain = Math.max(0, Math.min(amount, cap - earned));
+    if (gain <= 0) return 0;
+    tower.bountyLedger.earned[key] = earned + gain;
+    player.gold += gain;
+    return gain;
+  }
+
+  /**
+   * Oldurme primleri, olduren kulenin listesinden: ucan dusman (Dusurme
+   * Primi), kisa pencerede uc oldurme (Toplu Imha Primi) ve tasan hasar
+   * (Artik Enerji Toplayici). Hepsi kulenin sahibine ve kule basina dalga
+   * tavanli.
+   */
+  private awardKillBountyGold(tower: TowerModel, enemy: EnemyModel, overkill: number, now: number) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    let gained = 0;
+    const air = getModifierAdd(modifiers, "airKillGold");
+    if (air > 0 && enemy.movementKind === "air") gained += this.awardTowerBountyGold(tower, "airKillGold", air, AIR_KILL_GOLD_WAVE_CAP);
+    const multi = getModifierAdd(modifiers, "multiKillGold");
+    if (multi > 0) {
+      const recent = (tower.recentKillTimes ?? []).filter((time) => now - time < MULTI_KILL_GOLD_WINDOW_MS);
+      recent.push(now);
+      if (recent.length >= MULTI_KILL_GOLD_COUNT) {
+        gained += this.awardTowerBountyGold(tower, "multiKillGold", multi, MULTI_KILL_GOLD_WAVE_CAP);
+        // Her uclu bir kez: sonraki prim yeni uc oldurme istiyor.
+        recent.length = 0;
+      }
+      tower.recentKillTimes = recent;
+    }
+    const overkillShare = getModifierAdd(modifiers, "overkillGold");
+    if (overkillShare > 0 && overkill > 0) gained += this.awardTowerBountyGold(tower, "overkillGold", overkill * overkillShare, OVERKILL_GOLD_WAVE_CAP);
+    return gained;
+  }
+
+  /**
+   * Sampiyon primi (Odul Fermani): sampiyon olunce primi olan her oyuncuya,
+   * kim oldururse oldursun; oyuncu basina dalga tavani. Esya kuresel, stat
+   * yalnizca oyuncunun listesinden okunuyor. Odenenleri oyuncu kimligiyle doner.
+   */
+  private awardChampionBountyGold() {
+    const gains = new Map<string, number>();
+    for (const [playerId, player] of this.state.players.entries()) {
+      const bounty = getModifierAdd(player.runModifiers ?? [], "championGold");
+      if (!(bounty > 0)) continue;
+      if (!player.bountyLedger || player.bountyLedger.wave !== this.wave) player.bountyLedger = { wave: this.wave, earned: {} };
+      const earned = player.bountyLedger.earned.championGold ?? 0;
+      const gain = Math.max(0, Math.min(bounty, CHAMPION_GOLD_WAVE_CAP - earned));
+      if (gain <= 0) continue;
+      player.bountyLedger.earned.championGold = earned + gain;
+      player.gold += gain;
+      gains.set(playerId, gain);
+    }
+    return gains;
   }
 
   /**
@@ -9375,6 +9476,9 @@ export class MatchRoom extends Room<MatchState> {
       auraActive: false,
       focusTargetId: "",
       aimTargetId: "",
+      turnTargetId: "",
+      waveDamageDealt: 0,
+      recentKillTimes: [],
       aimTargetLockUntil: 0,
       aimTargetHasFired: false,
       focusStacks: 0,
@@ -11230,8 +11334,18 @@ export class MatchRoom extends Room<MatchState> {
       hpDamage += enemy.maxHp * maxHealthDamageRatio;
     }
     const dealtAmount = result.shieldDamage + Math.min(enemy.hp, hpDamage);
+    // Oldurucu vurusta canin ustune tasan hasar (Artik Enerji Toplayici).
+    // Vurus basina dusmanin azami caniyla sinirli: tek dev vurus zayif bir
+    // hedefte dalga tavanini doldurmasin. Yapay hasarli oldurmeler (Oluler
+    // Bagi'nin infazi: "can + kalkan + azami can + 1") tasan hasar sayilmiyor.
+    const overkill = isSyntheticKillSource(sourceDefinitionId)
+      ? 0
+      : Math.min(enemy.maxHp, Math.max(0, hpDamage - Math.max(0, enemy.hp)));
     enemy.hp -= hpDamage;
     this.recordTowerDamage(sourceTowerId, dealtAmount, now);
+    // Savas Tazminati: kulenin bu dalga verdigi hasar; dalga sonunda okunup
+    // sifirlaniyor. Cani zaten bitmis hedefe vurus eksi sayilmasin.
+    if (damageSourceTower && dealtAmount > 0) damageSourceTower.waveDamageDealt = (damageSourceTower.waveDamageDealt ?? 0) + dealtAmount;
     // Yanik ve kanama tikleri kulenin carpanlarini tasimiyor; pay yalnizca vuruslarda.
     if (!sourceDefinitionId.startsWith("status:")) this.recordSynergyShare(sourceTowerId, dealtAmount);
     // Oyuncunun kosu hasari yalnizca kuleler degil: yetenek ve ulti de onun.
@@ -11328,7 +11442,7 @@ export class MatchRoom extends Room<MatchState> {
       this.resolveMelisUnderworldLinkedDeath(enemy, now);
     }
     this.triggerMelisCurseDeathBurst(enemy, now);
-    this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists, critKill: critAdd > 0 });
+    this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists, critKill: critAdd > 0, overkill });
     return true;
   }
 
@@ -11348,6 +11462,8 @@ export class MatchRoom extends Room<MatchState> {
     killAssists?: KillAssist[];
     /** Oldurucu vurus kritik miydi (`gold:critKill`). Durum tiki hicbir zaman. */
     critKill?: boolean;
+    /** Oldurucu vurusta canin ustune tasan hasar (`overkillGold`). */
+    overkill?: number;
   }) {
     const { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists } = context;
     const damagePlayer = this.state.players.get(sourceOwnerId);
@@ -11362,6 +11478,19 @@ export class MatchRoom extends Room<MatchState> {
     // kazandigini oldugu yerde goruyor.
     if (context.critKill && sourceOwnerId) {
       ownerGold += this.awardCritKillGold(sourceTowerId ? this.towers.get(sourceTowerId) : undefined, sourceOwnerId);
+    }
+    // Oldurme primleri: olduren kulenin sahibine; sampiyon primi esyasi olan herkese.
+    const killerTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+    // Prim her zaman kulenin sahibine (`awardTowerBountyGold`); oldurme
+    // olayinin "+N"ine yalnizca olduren ayni oyuncuysa ekleniyor (cevrilmis,
+    // olumsuz ya da lanetli dusmanin oldurmesi eski bir kimlikle gelebilir).
+    if (killerTower) {
+      const bounty = this.awardKillBountyGold(killerTower, enemy, context.overkill ?? 0, now);
+      if (killerTower.ownerId === sourceOwnerId) ownerGold += bounty;
+    }
+    if (enemy.champion) {
+      const gains = this.awardChampionBountyGold();
+      ownerGold += gains.get(sourceOwnerId) ?? 0;
     }
     this.awardEnemyExperience(enemy, sourceTowerId ? this.towers.get(sourceTowerId) : undefined);
     this.kills += 1;
@@ -15311,6 +15440,16 @@ function getMelisApprovalGain(tier: KillStreakTier) {
 }
 
 /** Karakterden bagimsiz; imza cagri yerlerini bozmamak icin duruyor. */
+/**
+ * Hasari gercek bir vurus olmayan oldurmeler: tasan hasar primi bunlari
+ * saymiyor. Oluler Bagi'nin infazi hedefi yapay bir hasarla (can + kalkan +
+ * azami can + 1) olduruyor.
+ */
+const SYNTHETIC_KILL_SOURCES: ReadonlySet<string> = new Set(["archer-4-underworld-execute"]);
+function isSyntheticKillSource(sourceDefinitionId: string) {
+  return SYNTHETIC_KILL_SOURCES.has(sourceDefinitionId);
+}
+
 export function getPlayerStartGold(_characterId: CharacterId) {
   return PLAYER_START_GOLD;
 }

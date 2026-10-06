@@ -37,7 +37,8 @@ const ALL_STATS = [
   "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs",
   "damageVsGrunt", "damageVsRunner", "damageVsShooter", "damageVsSiege",
   "experienceGain", "repairCost", "sellRefund", "workerHireCost", "ultimateDamage",
-  "shopRerollCost", "waveIncome", "accuracyVsAir", "projectileSpeedIsolated"
+  "shopRerollCost", "waveIncome", "accuracyVsAir", "projectileSpeedIsolated",
+  "championGold", "airKillGold", "damageGold", "multiKillGold", "overkillGold"
 ];
 
 /**
@@ -51,7 +52,7 @@ const BUILDING_ONLY_STATS = ["resourceProduction", "ammoProduction", "workerGath
  * (ucan hedef, komsusuzluk) bakiyorlar ve kart tarafinda ayni kosullar
  * kilitle duruyor (Ongorulu Takip, Gozcu Yuvasi).
  */
-const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated"];
+const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "championGold", "airKillGold", "damageGold", "multiKillGold", "overkillGold"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));

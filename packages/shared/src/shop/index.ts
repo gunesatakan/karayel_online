@@ -48,7 +48,9 @@ export const GLOBAL_SHOP_ITEM_IDS = [
   // Hicbirinin bir kulede okuyucusu yok.
   "altin-elek",
   "sigorta-policesi",
-  "vadeli-mevduat"
+  "vadeli-mevduat",
+  // Sampiyon primi oyuncunun: sampiyonu kim oldururse oldursun.
+  "odul-fermani"
 ] as const;
 
 /** Sokulemeyen esyalar icin tavan: her takma gercek bir taahhut olsun. */
@@ -367,7 +369,20 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sigorta-policesi", "Sigorta Poliçesi", "Sızıntısız biten her dalga sonunda +90 altın.", "utility", 120, { axes: ["economy"], unlocks: ["gold:cleanWave"] }),
   defineItem("darphane-modulu", "Darphane Modülü", "Takıldığı bina dalga sonunda ayaktaysa +40 altın verir; en fazla 3 kez alınır; yalnızca ekonomi binalarına takılır.", "utility", 80, { repeatable: true, maxStacks: 3, priceGrowth: 1.3, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("darphane-modulu", "waveIncome", 40)] }),
   defineItem("kelle-defteri", "Kelle Defteri", "Takıldığı kulenin kritik vuruşla öldürdüğü her düşman +6 altın verir; dalga başına en fazla 90 altın.", "utility", 70, { scope: { kind: "tagged", combat: true }, axes: ["economy"], unlocks: ["gold:critKill"] }),
-  defineItem("vadeli-mevduat", "Vadeli Mevduat", "Satın alındıktan sonra 4 dalga tamamlanınca 440 altın öder; en fazla 2 kez alınır; 16. dalgadan sonra çıkmaz.", "utility", 150, { repeatable: true, maxStacks: 2, priceGrowth: 1, axes: ["economy"], deposit: { payout: 440, waves: 4 } })
+  defineItem("vadeli-mevduat", "Vadeli Mevduat", "Satın alındıktan sonra 4 dalga tamamlanınca 440 altın öder; en fazla 2 kez alınır; 16. dalgadan sonra çıkmaz.", "utility", 150, { repeatable: true, maxStacks: 2, priceGrowth: 1, axes: ["economy"], deposit: { payout: 440, waves: 4 } }),
+
+  // Altin primleri: belirli bir olaya baglanan duz altin, hepsi bedelsiz ve
+  // dalga tavanli. Oldurme altini carpanindan (Ganimet Kesesi, Altin Elek)
+  // ve dalga sonu gelirlerinden (Darphane, Sigorta, Faiz) ayri kollar:
+  // sampiyon, ucan dusman, kulenin hasari, toplu oldurme ve tasan hasar.
+  // Sampiyon primi oyuncunun (kuresel); otekiler kuleye takiliyor ve
+  // oldurenin ya da hasari verenin kulesinden okunuyor -- hangi kuleye
+  // takilacagi bir karar.
+  defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +150 altın; dalga başına en fazla 150 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 150)] }),
+  defineItem("dusurme-primi", "Düşürme Primi", "Takıldığı kulenin öldürdüğü her uçan düşman +8 altın verir; dalga başına en fazla 80 altın.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("dusurme-primi", "airKillGold", 8)] }),
+  defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +10 altın kazandırır; dalga başına en fazla 60 altın.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 10)] }),
+  defineItem("toplu-imha-primi", "Toplu İmha Primi", "Takıldığı kule 2 saniye içinde 3 düşman öldürdüğünde +15 altın verir; dalga başına en fazla 75 altın.", "utility", 85, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("toplu-imha-primi", "multiKillGold", 15)] }),
+  defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %5'i altına dönüşür; dalga başına en fazla 50 altın.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.05)] })
 ];
 
 /**
