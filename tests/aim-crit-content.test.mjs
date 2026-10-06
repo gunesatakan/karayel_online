@@ -416,7 +416,7 @@ test("Nisan Kertigi ates konisini 20 dereceden 14 dereceye daraltiyor ve donusu 
   assert.ok(Math.abs(kartli - sade * 0.85) < 1e-9, `donus ${kartli}`);
 });
 
-test("Nisan Durbunu takildigi kulede koniyi 11 dereceye daraltiyor, atis hizindan %10 aliyor", () => {
+test("Nisan Durbunu takildigi kulede koniyi 11 dereceye daraltiyor, bedelsiz", () => {
   const room = oda();
   const tower = kur(room, "warrior-1");
   const derece = (value) => value * Math.PI / 180;
@@ -424,7 +424,8 @@ test("Nisan Durbunu takildigi kulede koniyi 11 dereceye daraltiyor, atis hizinda
   assert.ok(esyaTak(room, tower, "nisan-durbunu"));
   assert.equal(nisanAl(room, tower, derece(12), 0).hizali, false);
   assert.equal(nisanAl(room, tower, derece(10.5), 0).hizali, true);
-  assert.ok(Math.abs(room.getTowerFireInterval(tower) - sadeAralik / 0.9) < 1e-6, "atis hizi cezasi yok");
+  // Bedeli kaldirildi: atis hizi ayni.
+  assert.ok(Math.abs(room.getTowerFireInterval(tower) - sadeAralik) < 1e-6, "atis hizi cezasi geri geldi");
 });
 
 test("Nisan Durbunu nisan almayan kuleye takilamiyor", () => {

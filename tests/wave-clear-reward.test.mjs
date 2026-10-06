@@ -320,7 +320,7 @@ test("nadirlik: her kartin cercevesi var; nadir kart gercekten seyrek", () => {
   assert.ok(counts.rare > 0, "katalogda nadir kart var");
   assert.ok(CARD_RARITY_WEIGHT.rare < CARD_RARITY_WEIGHT.uncommon && CARD_RARITY_WEIGHT.uncommon < CARD_RARITY_WEIGHT.common);
   assert.ok(counts.epic > 0, "katalogda epik kart var");
-  assert.ok(CARD_RARITY_WEIGHT.epic < CARD_RARITY_WEIGHT.rare, "epik nadirden de seyrek");
+  assert.ok(CARD_RARITY_WEIGHT.epic <= CARD_RARITY_WEIGHT.rare, "epik nadirden sik degil");
 });
 
 test("epik kart nadirin tinisini aliyor; elde ikisi varsa tini epikte", () => {

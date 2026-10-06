@@ -1668,6 +1668,8 @@ export {
   COLD_ACCURACY_TEMPERATURE,
   COLD_ACCURACY_BONUS,
   CLEAN_WAVE_GOLD,
+  GOLD_INTEREST_RATE,
+  GOLD_INTEREST_CAP,
   CRIT_KILL_GOLD,
   CRIT_KILL_GOLD_WAVE_CAP,
   getAccuracyCritChance,
@@ -1692,6 +1694,8 @@ export { NEUTRAL_ATTACK_MULTIPLIERS, isEmptyTowerGrant, resolveTowerAttackMultip
 export type { TowerAttackGrant, TowerAttackMultipliers, TowerGrant } from "./grants/index.js";
 export {
   SHOP_OFFER_COUNT,
+  RISKY_INVESTMENT_GOLD,
+  RISKY_INVESTMENT_NEXUS_COST,
   SHOP_REROLL_BASE_PRICE,
   SHOP_REROLL_PRICE_STEP,
   DEFAULT_SHOP_PRICE_GROWTH,

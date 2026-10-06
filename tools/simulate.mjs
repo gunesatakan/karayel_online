@@ -18,6 +18,8 @@ import {
   getModifierMultiplier,
   getStatConversionAdd,
   CLEAN_WAVE_GOLD,
+  GOLD_INTEREST_RATE,
+  GOLD_INTEREST_CAP,
   CRIT_KILL_GOLD,
   CRIT_KILL_GOLD_WAVE_CAP,
   TOWER_BASE_CRITICAL_CHANCE,
@@ -260,7 +262,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     if (damageBudget < totalHealth) {
       nexusHealth -= Math.ceil((1 - damageBudget / totalHealth) * 42);
       if (nexusHealth <= 0) {
-        return result(false, reachedWave, towers, cardHistory, nexusHealth, seed, strategy);
+        return result(false, reachedWave, towers, cardHistory, nexusHealth, seed, strategy, gold);
       }
     }
     // Dalga duvari yipratir; kusatma dusmani bunu belirgin sekilde hizlandirir.
@@ -279,6 +281,8 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
       + getCritKillGold({ towers, playerModifiers, ownedCardIds, count });
     if (wave < FINAL_WAVE) {
       gold += getWaveCompletionGold(wave);
+      // Faiz Hesabi: sunucuyla ayni sira, dalga altinindan sonra, primlerden once.
+      if (hasOwnedUnlock("goldInterest", ownedCardIds, ownedShopItemIds)) gold += Math.min(GOLD_INTEREST_CAP, Math.floor(gold * GOLD_INTEREST_RATE));
       // Dalga sonu primleri: odenek, temiz dalga (sizinti yoksa) ve vadesi gelen mevduat.
       gold += getModifierAdd(playerModifiers, "waveIncome");
       if (damageBudget >= totalHealth && hasOwnedUnlock("gold:cleanWave", ownedCardIds, ownedShopItemIds)) gold += CLEAN_WAVE_GOLD;
@@ -301,7 +305,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
       }
     }
   }
-  return result(true, reachedWave, towers, cardHistory, nexusHealth, seed, strategy);
+  return result(true, reachedWave, towers, cardHistory, nexusHealth, seed, strategy, gold);
 }
 
 export function simulateMany({ runs = 100, seed = 1, strategy = "balanced" } = {}) {
@@ -649,13 +653,15 @@ function distributeDamage(towers, total) {
   towers.forEach((tower, index) => { tower.damageDealt += total * weights[index] / sum; });
 }
 
-function result(victory, reachedWave, towers, cardHistory, nexusHealth, seed, strategy) {
+function result(victory, reachedWave, towers, cardHistory, nexusHealth, seed, strategy, gold = 0) {
   const axisContribution = {};
   for (const tower of towers) {
     for (const axis of tower.definition.axes ?? ["dps"]) axisContribution[axis] = (axisContribution[axis] ?? 0) + tower.damageDealt / Math.max(1, tower.definition.axes?.length ?? 1);
   }
   return {
     seed, strategy, reachedWave, result: victory ? "victory" : "defeat", nexusHealth: Math.max(0, nexusHealth),
+    // Kosu sonunda harcanmamis altin: ekonomi icerigi degisince kaymayi olcmek icin.
+    finalGold: Math.round(gold),
     towerDamage: towers.map((tower) => ({ id: tower.id, definitionId: tower.definition.id, level: tower.level, damage: Math.round(tower.damageDealt) })),
     axisContribution: Object.fromEntries(Object.entries(axisContribution).map(([axis, damage]) => [axis, Math.round(damage)])),
     cardHistory

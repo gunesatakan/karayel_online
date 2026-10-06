@@ -125,7 +125,7 @@ hasar türü kulelerin bir kısmında tanımsızdır.
 
 ## Nadirlik
 
-`common: 6`, `uncommon: 3`, `rare: 1`, `epic: 0.5` — çekiliş ağırlıkları. `epic`
+`common: 6`, `uncommon: 3`, `rare: 1`, `epic: 1` — çekiliş ağırlıkları. `epic`
 yalnızca çevrim kartlarında ve elle yazılır. Sunucu çekilişe kaynak bonuslarını
 verir (`sourceBonuses`): kaynağı kuruluşta pozitif olmayan epik kart (eşikli
 çevrimde eşiğin yarısı) ölü ağırlık (0,15) alır. Kilidi oyuncunun eşyalarından

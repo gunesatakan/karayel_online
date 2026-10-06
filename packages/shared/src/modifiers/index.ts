@@ -120,7 +120,20 @@ export type ModifierStat =
    * kez sayiliyor. Kule katmanindan da okundugu icin bir binaya takilan esya
    * bunu vaat edebilir (bkz. shop-item-wiring testi).
    */
-  | "waveIncome";
+  | "waveIncome"
+  /**
+   * Kosullu nisan statlari: yalnizca kosul tutarken `accuracy` ve
+   * `projectileSpeed`e ekleniyor (sunucuda `getTowerConditionalStatAdd`).
+   * Kilit yerine stat, cunku sayi tasiyorlar ve yigilabilirler; kilit
+   * maskesinde de yer az. Ates konisi, isabetten kritik ve Epik cevrimler
+   * kosul tuttugunda bunlari da goruyor.
+   *
+   * - `accuracyVsAir`: namlu ucan bir dusmana donukken isabet.
+   * - `projectileSpeedIsolated`: kule komsusuzken (`isTowerIsolated`, Yalniz
+   *   Nisanci ile ayni kural) mermi hizi.
+   */
+  | "accuracyVsAir"
+  | "projectileSpeedIsolated";
 
 export type Modifier = {
   source: string;

@@ -67,7 +67,7 @@ test("Ganimet Kesesi düşman altınını gerçekten artırır", () => {
   const esyali = olc(true);
   assert.ok(esyasiz > 0, "esyasiz olcum altin vermedi");
   assert.ok(esyali > esyasiz, `esya altini artirmadi: ${esyasiz} -> ${esyali}`);
-  assert.ok(Math.abs(esyali / esyasiz - 1.2) < 0.01, `beklenen x1.2, olculen x${(esyali / esyasiz).toFixed(2)}`);
+  assert.ok(Math.abs(esyali / esyasiz - 1.4) < 0.01, `beklenen x1.4, olculen x${(esyali / esyasiz).toFixed(2)}`);
 });
 
 test("Komuta Modülü takıldığı kulenin işaret gücünü artırır", () => {
@@ -213,7 +213,9 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   // Binalar: uretim kulenin listesinden, isci bonusu hizmet edilen binadan.
   "ammoProduction", "resourceProduction", "workerGatherSpeed", "workerSpeed",
   // Oyuncu basina ama kule katmanindan da: dalga geliri (bina), tecrube (olduren kule).
-  "waveIncome", "experienceGain"
+  "waveIncome", "experienceGain",
+  // Kosullu nisan statlari: `getTowerConditionalStatAdd` kulenin listesinden.
+  "accuracyVsAir", "projectileSpeedIsolated"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

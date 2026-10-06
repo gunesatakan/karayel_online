@@ -229,15 +229,22 @@ export const FAST_TARGET_TURN_RATE = 1;
  */
 export const COLD_ACCURACY_TEMPERATURE = 40;
 export const COLD_ACCURACY_BONUS = 0.5;
+/**
+ * `goldInterest` (Faiz Hesabi): dalga sonunda oyuncunun altininin bu payi,
+ * en fazla `GOLD_INTEREST_CAP`. Tavan faizi duz bir prime ceviriyor:
+ * biriktirdikce kendini buyuten dongu tavanda duruyor.
+ */
+export const GOLD_INTEREST_RATE = 0.16;
+export const GOLD_INTEREST_CAP = 120;
 /** `gold:cleanWave`: sizintisiz biten dalganin sonunda oyuncuya odenen altin. */
-export const CLEAN_WAVE_GOLD = 45;
+export const CLEAN_WAVE_GOLD = 90;
 /**
  * `gold:critKill`: kritik vurusla gelen her oldurmenin altini ve oyuncu
  * basina dalga tavani. Tavan kart ve esya icin ortak: ikisi ayni kilidi
  * veriyor, ikisini birden almak tavani iki katina cikarmiyor.
  */
-export const CRIT_KILL_GOLD = 3;
-export const CRIT_KILL_GOLD_WAVE_CAP = 45;
+export const CRIT_KILL_GOLD = 6;
+export const CRIT_KILL_GOLD_WAVE_CAP = 90;
 
 /** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
 export function getAccuracyCritChance(accuracyBonus: number) {
@@ -248,8 +255,10 @@ export function getAccuracyCritChance(accuracyBonus: number) {
  * `epic`: bir statu baska bir stata ceviren kartlar (`conversions`).
  *
  * Kendi baslarina hicbir sey yapmiyorlar -- kaynak stata yatirim yapilmis bir
- * kurulusta anlam kazaniyorlar -- o yuzden nadirden de seyrek: agirlik nadirin
- * yarisi. Her biri tek kopya.
+ * kurulusta anlam kazaniyorlar. Agirlik bir donem nadirin yarisiydi; kosuda
+ * epik gormek dortte bire iniyordu ve sahibi siklasmasini istedi. Simdi
+ * nadirle esit: seyrekligi agirliktan degil, yatirimsiz kurulusta aldigi olu
+ * agirliktan geliyor (`isConversionCardReady`). Her biri tek kopya.
  */
 export type CardRarity = "common" | "uncommon" | "rare" | "epic";
 
@@ -257,7 +266,7 @@ export const CARD_RARITY_WEIGHT: Record<CardRarity, number> = {
   common: 6,
   uncommon: 3,
   rare: 1,
-  epic: 0.5
+  epic: 1
 };
 
 export type CardDefinition = {
@@ -367,7 +376,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "nisan-takimi", name: "Nişan Takımı", description: "Tüm kulelerin isabeti +%15, dönüş hızı +%20, mermi hızı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("nisan-takimi", "accuracy", 0.15), effect("nisan-takimi", "turnRate", 0.2), effect("nisan-takimi", "projectileSpeed", 0.25)] },
   { id: "verimli-namlu", name: "Verimli Yakıt", description: "Tüm kulelerin atış yakıtı tüketimi -%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("verimli-namlu", "shotFuelCost", -0.3)] },
   { id: "uyku-modu", name: "Uyku Modu", description: "Kulelerin çalışma enerjisi tüketimi -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, effects: [effect("uyku-modu", "operatingEnergyCost", -0.4)] },
-  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%15.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 0.15)] },
+  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%30.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 0.3)] },
   { id: "vardiya-duzeni", name: "Vardiya Düzeni", description: "Tüm işçilerin toplama hızı +%25.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("vardiya-duzeni", "workerGatherSpeed", 0.25)] },
   { id: "celik-burun", name: "Çelik Burun", description: "Tüm işçilerin yürüme hızı +%20.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("celik-burun", "workerSpeed", 0.2)] },
   { id: "lojistik-doktrini", name: "Lojistik Doktrini", description: "Tüm işçilerin toplama hızı +%30, yürüme hızı +%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("lojistik-doktrini", "workerGatherSpeed", 0.3), effect("lojistik-doktrini", "workerSpeed", 0.3)] },
@@ -380,7 +389,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "zirh-kirma", name: "Zırh Kırma", description: "Büyütme kuleleri vuruşta 3 zırh azaltır.", axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, stackable: false, effects: [effect("zirh-kirma", "armorBreak", 3)] },
   { id: "takinti", name: "Takıntı", description: "Bir kule hedefini 3 saniye daha uzun korur ama menzili -%12 olur.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, effects: [effect("takinti", "targetLockMs", 3000, "tower"), effect("takinti", "range", -0.12, "tower")] },
   { id: "son-atis", name: "Son Atış", description: "Mühimmatı biten kulenin son atışı 3x hasar verir.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("son-atis", "ammoEmptyDamage", 2, "tower")] },
-  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%35 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 0.35), effect("kanli-kazanc", "towerHealth", -0.2)] },
+  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%70 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 0.7), effect("kanli-kazanc", "towerHealth", -0.2)] },
   { id: "ek-yuva-plani", name: "Ek Yuva Planı", description: "Kule kapasitesi +1.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("ek-yuva-plani", "towerCapacity", 1)] },
 
   // --- Kimlik kartlari ---
@@ -635,10 +644,10 @@ export const cardCatalog: CardDefinition[] = [
   // tavanli olduklari icin biriktikce kendini buyuten bir dongu kurmuyorlar.
   // Hepsi oyuncunun kendi kesesine: co-op'ta herkes kendi kartinin karsiligini
   // aliyor, takim arkadasinin payi degismiyor.
-  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%25 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 0.25), effect("parali-asker", "experienceGain", -0.2)] },
-  { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +20 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 20)] },
-  { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +45 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
-  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +3 altın verir; dalga başına en fazla 45 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
+  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%50 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 0.5), effect("parali-asker", "experienceGain", -0.2)] },
+  { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +40 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 40)] },
+  { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +90 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
+  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +6 altın verir; dalga başına en fazla 90 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
 
   // --- Epik: cevrim kartlari ---
   //
@@ -782,7 +791,8 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   goldGain: "none", towerCapacity: "none", experienceGain: "none", repairCost: "none", sellRefund: "none",
   workerGatherSpeed: "none", workerSpeed: "none", workerCapacity: "none", workerHealth: "none", workerRepairRate: "none",
   workerHireCost: "none", shopRerollCost: "none", ultimateDamage: "none", ultimateCharge: "none", skillCooldown: "none",
-  waveIncome: "none"
+  waveIncome: "none",
+  accuracyVsAir: "combat", projectileSpeedIsolated: "combat"
 };
 
 /**

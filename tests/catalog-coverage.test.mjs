@@ -37,7 +37,7 @@ const ALL_STATS = [
   "workerSpeed", "airDamage", "damageVsShielded", "damageVsBrute", "targetLockMs",
   "damageVsGrunt", "damageVsRunner", "damageVsShooter", "damageVsSiege",
   "experienceGain", "repairCost", "sellRefund", "workerHireCost", "ultimateDamage",
-  "shopRerollCost", "waveIncome"
+  "shopRerollCost", "waveIncome", "accuracyVsAir", "projectileSpeedIsolated"
 ];
 
 /**
@@ -45,6 +45,13 @@ const ALL_STATS = [
  * tasiyan dort uretim stati kart tarafinda beklenmez; onlari esyalar karsilar.
  */
 const BUILDING_ONLY_STATS = ["resourceProduction", "ammoProduction", "workerGatherSpeed", "workerSpeed"];
+
+/**
+ * Yalnizca esyada anlamli kosullu statlar: bir kulenin kendi kosuluna
+ * (ucan hedef, komsusuzluk) bakiyorlar ve kart tarafinda ayni kosullar
+ * kilitle duruyor (Ongorulu Takip, Gozcu Yuvasi).
+ */
+const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));
@@ -57,7 +64,7 @@ test("her modifier stati en az bir kart veya esyada kullanilir", () => {
 
 test("kartlar bina disi statlarin tamamina dokunur", () => {
   const used = statsUsedBy(cardCatalog);
-  const expected = ALL_STATS.filter((stat) => !BUILDING_ONLY_STATS.includes(stat));
+  const expected = ALL_STATS.filter((stat) => !BUILDING_ONLY_STATS.includes(stat) && !ITEM_ONLY_STATS.includes(stat));
   const missing = expected.filter((stat) => !used.has(stat));
   assert.deepEqual(missing, [], `kartlarda eksik stat: ${missing.join(", ")}`);
 });
@@ -219,7 +226,8 @@ test("nadirlik cekilis agirligini gercekten degistirir", () => {
   }
   assert.ok(CARD_RARITY_WEIGHT.common > CARD_RARITY_WEIGHT.uncommon);
   assert.ok(CARD_RARITY_WEIGHT.uncommon > CARD_RARITY_WEIGHT.rare);
-  assert.ok(CARD_RARITY_WEIGHT.rare > CARD_RARITY_WEIGHT.epic);
+  // Epik nadirle esit agirlikta; seyrekligi yatirimsiz kurulustaki olu agirliktan.
+  assert.ok(CARD_RARITY_WEIGHT.rare >= CARD_RARITY_WEIGHT.epic);
 
   // Buyuyen katalogda cekirdek guc kartlari hala sik gorunmeli: 46 kartlik
   // havuzdan 3 secenek cikarken common agirligi toplamin anlamli bir payi olmali.

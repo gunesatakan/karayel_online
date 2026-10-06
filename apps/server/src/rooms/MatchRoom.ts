@@ -196,6 +196,10 @@ import {
   COLD_ACCURACY_TEMPERATURE,
   COLD_ACCURACY_BONUS,
   CLEAN_WAVE_GOLD,
+  GOLD_INTEREST_RATE,
+  GOLD_INTEREST_CAP,
+  RISKY_INVESTMENT_GOLD,
+  RISKY_INVESTMENT_NEXUS_COST,
   CRIT_KILL_GOLD,
   CRIT_KILL_GOLD_WAVE_CAP,
   isCleanWave,
@@ -3658,7 +3662,7 @@ export class MatchRoom extends Room<MatchState> {
       this.spawnCooldownMs = 950;
       this.awardGoldToPlayers(getWaveCompletionGold(completedWave));
       for (const [playerId, player] of this.state.players.entries()) {
-        if (this.playerHasUnlock(playerId, "goldInterest")) player.gold += Math.min(60, Math.floor(player.gold * 0.08));
+        if (this.playerHasUnlock(playerId, "goldInterest")) player.gold += Math.min(GOLD_INTEREST_CAP, Math.floor(player.gold * GOLD_INTEREST_RATE));
       }
       // Faizden sonra: duz primler faizin tabanina girmesin.
       this.awardWaveEndBonusGold(completedWave, isCleanWave(waveRecord));
@@ -4733,7 +4737,7 @@ export class MatchRoom extends Room<MatchState> {
     const speed = this.scaleWorldSpeed(getBallisticMovementSpeed(
       (tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower),
       hitType
-    )) * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed");
+    )) * this.getTowerProjectileSpeedMultiplier(tower);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -4785,7 +4789,7 @@ export class MatchRoom extends Room<MatchState> {
     const launchAngle = towerAims(sourceTower.definition.id) ? sourceTower.facing : Math.atan2(dy, dx);
     const hitType = sourceTower.definition.hitType ?? "impact";
     const scaledSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType))
-      * getModifierMultiplier(this.getTowerRunModifiers(sourceTower), "projectileSpeed");
+      * this.getTowerProjectileSpeedMultiplier(sourceTower);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -5137,7 +5141,7 @@ export class MatchRoom extends Room<MatchState> {
       distance: 0,
       range: baseRange * rangeMultiplier,
       speed: this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave"))
-        * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
+        * this.getTowerProjectileSpeedMultiplier(tower),
       bandDepth: this.scaleWorldDistance(KIN_WAVE_BAND_DEPTH),
       slowMs: getTowerSlowDurationMs(tower.definition) > 0
         ? getTowerSlowDurationMs(tower.definition) + (tower.level - 1) * 80
@@ -5848,7 +5852,7 @@ export class MatchRoom extends Room<MatchState> {
       x: initialHead.x,
       y: initialHead.y,
       speed: this.scaleWorldSpeed(getBallisticMovementSpeed(ZEYNEP_SYNTHESIS_RAY_SPEED, "impact"))
-        * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed"),
+        * this.getTowerProjectileSpeedMultiplier(tower),
       damage: this.getTowerDamage(tower) * ZEYNEP_RAY_SYNTHESIS_DAMAGE_MULTIPLIER,
       abartiLevel,
       hitEnemyIds: []
@@ -5970,7 +5974,7 @@ export class MatchRoom extends Room<MatchState> {
     const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
     const hitType = tower.definition.hitType ?? "projectile";
     const projectileSpeed = this.scaleWorldSpeed(getBallisticMovementSpeed(speed, hitType))
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "projectileSpeed");
+      * this.getTowerProjectileSpeedMultiplier(tower);
     const id = `p${this.nextProjectileId++}`;
 
     this.projectiles.set(id, {
@@ -7359,7 +7363,7 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
     if (!player || !item || !this.setupPhase || !player.shopOffers.some(({ id }) => id === item.id)) return;
-    if (item.id === "riskli-yatirim" && this.teamHealth <= 10) return;
+    if (item.id === "riskli-yatirim" && this.teamHealth <= RISKY_INVESTMENT_NEXUS_COST) return;
     const price = getShopItemPrice(item, player.ownedShopItemIds);
     if (player.gold < price) return;
     player.gold -= price;
@@ -7387,9 +7391,9 @@ export class MatchRoom extends Room<MatchState> {
       this.shopPlacementCharges.set(client.sessionId, charges);
       client.send("shop:placement-required", { itemId: item.id });
     }
-    if (item.id === "riskli-yatirim" && this.teamHealth > 10) {
-      this.teamHealth -= 10;
-      player.gold += 200;
+    if (item.id === "riskli-yatirim" && this.teamHealth > RISKY_INVESTMENT_NEXUS_COST) {
+      this.teamHealth -= RISKY_INVESTMENT_NEXUS_COST;
+      player.gold += RISKY_INVESTMENT_GOLD;
     }
     player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
     client.send("shop:purchased", { itemId: item.id, price });
@@ -13532,15 +13536,25 @@ export class MatchRoom extends Room<MatchState> {
    * gorsunler.
    */
   private getTowerStatBonus(tower: TowerModel, stat: ModifierStat, modifiers: readonly Modifier[] = this.getTowerStaticRunModifiers(tower)) {
-    return getModifierAdd(modifiers, stat) + this.getTowerConditionalStatAdd(tower, stat);
+    return getModifierAdd(modifiers, stat) + this.getTowerConditionalStatAdd(tower, stat, modifiers);
   }
 
   /**
-   * Kosullu stat paylari. Uc tane, ucu de kulenin o anki durumuna bakiyor:
-   * Av Refleksi'nin oldurme penceresi ve Ongorulu Takip'in hizli hedefi donus
-   * hizina, Isil Kalibrasyon'un soguk namlusu isabete ekleniyor.
+   * Mermi hizi carpani; mermi, ozel mermi, Kin dalgasi ve sentez okuyuculari
+   * hep buradan. Kosullu pay (Sessiz Mevzi) duz okumada gorunmezdi.
    */
-  private getTowerConditionalStatAdd(tower: TowerModel, stat: ModifierStat, now = Date.now()) {
+  private getTowerProjectileSpeedMultiplier(tower: TowerModel) {
+    return Math.max(0, 1 + this.getTowerStatBonus(tower, "projectileSpeed", this.getTowerRunModifiers(tower)));
+  }
+
+  /**
+   * Kosullu stat paylari; hepsi kulenin o anki durumuna bakiyor. Donus
+   * hizina Av Refleksi'nin oldurme penceresi ve Ongorulu Takip'in hizli
+   * hedefi; isabete Isil Kalibrasyon'un soguk namlusu ve ucan hedefe donuk
+   * namlunun `accuracyVsAir` payi (Irtifa Olcer); mermi hizina komsusuz
+   * kulenin `projectileSpeedIsolated` payi (Sessiz Mevzi).
+   */
+  private getTowerConditionalStatAdd(tower: TowerModel, stat: ModifierStat, modifiers: readonly Modifier[], now = Date.now()) {
     if (stat === "turnRate") {
       let add = 0;
       if ((tower.killSnapUntil ?? 0) > now && this.towerHasUnlock(tower, "aim:killSnap")) add += KILL_SNAP_TURN_RATE;
@@ -13548,9 +13562,22 @@ export class MatchRoom extends Room<MatchState> {
       return add;
     }
     if (stat === "accuracy") {
-      return this.towerHasUnlock(tower, "aim:coldAccuracy") && tower.temperature < COLD_ACCURACY_TEMPERATURE ? COLD_ACCURACY_BONUS : 0;
+      let add = this.towerHasUnlock(tower, "aim:coldAccuracy") && tower.temperature < COLD_ACCURACY_TEMPERATURE ? COLD_ACCURACY_BONUS : 0;
+      const vsAir = getModifierAdd(modifiers, "accuracyVsAir");
+      if (vsAir !== 0 && this.isTowerAimingAtAirTarget(tower)) add += vsAir;
+      return add;
+    }
+    if (stat === "projectileSpeed") {
+      const isolated = getModifierAdd(modifiers, "projectileSpeedIsolated");
+      return isolated !== 0 && this.isTowerIsolated(tower) ? isolated : 0;
     }
     return 0;
+  }
+
+  /** Namlunun dondugu hedef (`turnTargetId`) ucan bir dusman mi. */
+  private isTowerAimingAtAirTarget(tower: TowerModel) {
+    const target = tower.turnTargetId ? this.enemies.get(tower.turnTargetId) : undefined;
+    return target?.movementKind === "air";
   }
 
   /**
