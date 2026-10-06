@@ -463,7 +463,8 @@ const UNLOCK_DAMAGE_ADD = {
  * Altin kilitlerinin secim ve satin alma puani (hasar olcegine cevrilmis).
  * Kosuya katkilari puan degil gercek altin olarak modelleniyor.
  */
-const GOLD_UNLOCK_SCORE = { "gold:cleanWave": 0.3, "gold:critKill": 0.15 };
+// Primler iki katina cikti (temiz dalga 90, kritik oldurme 6/90); puanlar da.
+const GOLD_UNLOCK_SCORE = { "gold:cleanWave": 0.6, "gold:critKill": 0.3 };
 const goldUnlockScore = (entry) => (entry.unlocks ?? []).reduce((sum, unlock) => sum + (GOLD_UNLOCK_SCORE[unlock] ?? 0), 0);
 
 /** Kart ya da esya bu kilidi veriyor mu (oyuncu katmani; sunucudaki `playerHasUnlock`). */
@@ -590,8 +591,8 @@ function getTowerDps(tower, playerModifiers, ownedCardIds = []) {
 /** Esyalar da artik kilit ve motor eklentisi tasiyor; puanlama ikisini de gorur. */
 function shopItemScore(item) {
   const effectScore = item.effects.reduce((sum, modifier) => sum + (STAT_SCORE[modifier.stat] ?? 0.3) * modifier.add, 0);
-  // Vadeli altin: getirisi (%47) kabaca bir hasar esyasi kadar puanlaniyor.
-  const depositScore = item.deposit ? 0.5 : 0;
+  // Vadeli altin: getirisi (150 -> 440, %193) kabaca iki hasar esyasi kadar puanlaniyor.
+  const depositScore = item.deposit ? 1 : 0;
   return effectScore + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage;
 }
 
@@ -617,8 +618,11 @@ const STAT_SCORE = {
   ammoEmptyDamage: 0.3, ultimateCharge: 1, skillCooldown: -1,
   targetLockMs: 0.0002, resourceProduction: 0.5, ammoProduction: 0.5,
   workerGatherSpeed: 0.4, workerSpeed: 0.3,
-  // Duz altin: 20 altin/dalga kabaca +%8 hasarlik bir kart.
-  waveIncome: 0.02
+  // Duz altin: 40 altin/dalga (Muharebe Odenegi, Darphane) kabaca +%16 hasarlik bir kart.
+  waveIncome: 0.02,
+  // Kosullu nisan statlari: isabet ve mermi hizinin kosul tuttugunda (ucan
+  // hedef, komsusuz kule) karsiligi; yaklasik yarisi kadar.
+  accuracyVsAir: 0.5, projectileSpeedIsolated: 0.25
 };
 
 /**

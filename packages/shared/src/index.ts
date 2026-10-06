@@ -1176,6 +1176,7 @@ export {
   SILENT_MODE_SILENCE_GAME_MS,
   formatSilentModeSeconds,
   getServerLinkJoinedText,
+  getRiskyInvestmentNoticeText,
   getServerLinkMaturedText,
   getServerLinkMaturity,
   getSilentModeNoticeText,
@@ -1185,6 +1186,7 @@ export {
 } from "./feedback/team-signals.js";
 export type {
   ServerLinkJoinedMessage,
+  RiskyInvestmentMessage,
   ServerLinkMaturedMessage,
   ServerLinkMaturityWave,
   SilentModeMessage,

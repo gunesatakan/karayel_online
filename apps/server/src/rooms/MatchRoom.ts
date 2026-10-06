@@ -148,6 +148,7 @@ import {
   SILENT_MODE_SILENCE_GAME_MS,
   getServerLinkMaturity,
   type ServerLinkJoinedMessage,
+  type RiskyInvestmentMessage,
   type ServerLinkMaturedMessage,
   type SilentModeMessage,
   type UltimateResultKind,
@@ -7345,8 +7346,25 @@ export class MatchRoom extends Room<MatchState> {
 
   private openPlayerSetupShop(playerId: string, player: Player) {
     player.shopRerolls = 0;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies() });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player) });
   }
+
+  /**
+   * Bu dalga vitrine bir daha cikmayacak esyalar. Riskli Yatirim dalga basina
+   * bir kez: alinan teklif vitrinden dusuyordu ama yenileme onu ayni hazirlikta
+   * geri getirebiliyordu ve ikinci alim bir +400 daha veriyordu.
+   */
+  private getShopOfferExclusions(_player: Player) {
+    return this.riskyInvestmentWave === this.wave ? ["riskli-yatirim"] : [];
+  }
+
+  /**
+   * Riskli Yatirim'in bu macta en son alindigi dalga. Takimda dalga basina
+   * bir kez: bedel takimin nexusundan odeniyor, yani co-op'ta herkes ayri
+   * alabilseydi takim bir dalgada 10 yerine 40 can kaybedebilirdi. Odada
+   * duruyor, oyuncuda degil: yuva devri ve yeniden baglanma onu etkilemiyor.
+   */
+  private riskyInvestmentWave = -1;
 
   private rerollShop(client: Client) {
     const player = this.state.players.get(client.sessionId);
@@ -7356,14 +7374,14 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.shopRerolls += 1;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies() });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player) });
   }
 
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
     const player = this.state.players.get(client.sessionId);
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
     if (!player || !item || !this.setupPhase || !player.shopOffers.some(({ id }) => id === item.id)) return;
-    if (item.id === "riskli-yatirim" && this.teamHealth <= RISKY_INVESTMENT_NEXUS_COST) return;
+    if (item.id === "riskli-yatirim" && (this.teamHealth <= RISKY_INVESTMENT_NEXUS_COST || this.riskyInvestmentWave === this.wave)) return;
     const price = getShopItemPrice(item, player.ownedShopItemIds);
     if (player.gold < price) return;
     player.gold -= price;
@@ -7392,8 +7410,15 @@ export class MatchRoom extends Room<MatchState> {
       client.send("shop:placement-required", { itemId: item.id });
     }
     if (item.id === "riskli-yatirim" && this.teamHealth > RISKY_INVESTMENT_NEXUS_COST) {
+      this.riskyInvestmentWave = this.wave;
       this.teamHealth -= RISKY_INVESTMENT_NEXUS_COST;
       player.gold += RISKY_INVESTMENT_GOLD;
+      // Takimin vitrinlerinden de duser; herkese kimin aldigi soyleniyor.
+      for (const other of this.state.players.values()) {
+        if (other !== player) other.shopOffers = other.shopOffers.filter(({ id }) => id !== "riskli-yatirim");
+      }
+      const notice: RiskyInvestmentMessage = { buyerId: client.sessionId, nexusCost: RISKY_INVESTMENT_NEXUS_COST, gold: RISKY_INVESTMENT_GOLD };
+      this.broadcast("shop:risky-investment", notice);
     }
     player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
     client.send("shop:purchased", { itemId: item.id, price });
@@ -11166,7 +11191,7 @@ export class MatchRoom extends Room<MatchState> {
       : 0;
     const critChance = canCrit
       ? Math.max(0, TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0) + conditionalCritChance + coldCritChance + frozenCritChance + markedCritChance
-        + (damageSourceTower ? this.getTowerOwnConditionalCritChance(damageSourceTower) : 0) + getModifierAdd(damageModifiers, "critChance"))
+        + (damageSourceTower ? this.getTowerOwnConditionalCritChance(damageSourceTower, enemy) : 0) + getModifierAdd(damageModifiers, "critChance"))
       : 0;
     const critDamageAdd = canCrit
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
@@ -13562,7 +13587,7 @@ export class MatchRoom extends Room<MatchState> {
       return add;
     }
     if (stat === "accuracy") {
-      let add = this.towerHasUnlock(tower, "aim:coldAccuracy") && tower.temperature < COLD_ACCURACY_TEMPERATURE ? COLD_ACCURACY_BONUS : 0;
+      let add = this.getTowerColdAccuracyAdd(tower);
       const vsAir = getModifierAdd(modifiers, "accuracyVsAir");
       if (vsAir !== 0 && this.isTowerAimingAtAirTarget(tower)) add += vsAir;
       return add;
@@ -13572,6 +13597,11 @@ export class MatchRoom extends Room<MatchState> {
       return isolated !== 0 && this.isTowerIsolated(tower) ? isolated : 0;
     }
     return 0;
+  }
+
+  /** Isil Kalibrasyon / Termal Kilif: soguk namlunun isabet payi. */
+  private getTowerColdAccuracyAdd(tower: TowerModel) {
+    return this.towerHasUnlock(tower, "aim:coldAccuracy") && tower.temperature < COLD_ACCURACY_TEMPERATURE ? COLD_ACCURACY_BONUS : 0;
   }
 
   /** Namlunun dondugu hedef (`turnTargetId`) ucan bir dusman mi. */
@@ -14369,11 +14399,22 @@ export class MatchRoom extends Room<MatchState> {
    * bonusunu kritige ceviriyor, Gozcu Yuvasi komsusuz kuleye kritik veriyor.
    * Komsuluk kurali Yalniz Nisanci ile ayni (`isTowerIsolated`).
    */
-  private getTowerOwnConditionalCritChance(tower: TowerModel) {
+  /**
+   * `hitEnemy`: vurulan dusman. Ucan hedefe isabet payi (`accuracyVsAir`)
+   * kritikte vurulan dusmana bakiyor, namlunun o anki yonune degil: mermi
+   * ucarken namlu baska hedefe donmus olabilir. Ates konisi ve Balistik
+   * cevrimi ates anindaki namlu hedefini okumaya devam ediyor. Dusman yoksa
+   * (yavaslatma zari, panel) namlunun hedefi.
+   */
+  private getTowerOwnConditionalCritChance(tower: TowerModel, hitEnemy?: EnemyModel) {
     let chance = 0;
     if (this.towerHasUnlock(tower, "crit:fromAccuracy")) {
-      // Ates konisinin okudugu sayinin aynisi: soguk namlunun isabeti dahil.
-      chance += getAccuracyCritChance(this.getTowerStatBonus(tower, "accuracy", this.getTowerRunModifiers(tower)));
+      // Ates konisinin okudugu sayinin aynisi (soguk namlu dahil); ucan hedef payi vurulan dusmandan.
+      const modifiers = this.getTowerRunModifiers(tower);
+      const accuracy = hitEnemy
+        ? getModifierAdd(modifiers, "accuracy") + this.getTowerColdAccuracyAdd(tower) + (hitEnemy.movementKind === "air" ? getModifierAdd(modifiers, "accuracyVsAir") : 0)
+        : this.getTowerStatBonus(tower, "accuracy", modifiers);
+      chance += getAccuracyCritChance(accuracy);
     }
     if (this.towerHasUnlock(tower, "crit:isolated") && this.isTowerIsolated(tower)) chance += ISOLATED_CRIT_CHANCE;
     return chance;

@@ -184,6 +184,19 @@ export function getServerLinkJoinedText(ownerName: string | undefined): TeamSign
   };
 }
 
+/**
+ * `shop:risky-investment`: bir oyuncu Riskli Yatirim aldi. Takimda dalga
+ * basina bir kez alinabiliyor ve bedeli takimin nexusundan; herkese gidiyor,
+ * alan kendi bildirimini gostermiyor.
+ */
+export type RiskyInvestmentMessage = { buyerId: string; nexusCost: number; gold: number };
+
+/** "Atakan Riskli Yatırım aldı" / "nexus −10, +400 altın". */
+export function getRiskyInvestmentNoticeText(buyerName: string | undefined, nexusCost: number, gold: number): TeamSignalText {
+  const name = buyerName?.trim() || "Takım arkadaşın";
+  return { title: `${name} Riskli Yatırım aldı`, detail: `nexus −${nexusCost}, +${gold} altın` };
+}
+
 /** "Bağ olgunlaştı · 5 dalga". */
 export function getServerLinkMaturedText(waves: ServerLinkMaturityWave) {
   return `Bağ olgunlaştı · ${waves} dalga`;

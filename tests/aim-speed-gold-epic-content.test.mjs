@@ -57,7 +57,8 @@ import {
   towerFiresProjectiles,
   getOwnedItemUnlocks,
   isCardUnlockAlreadyOwned,
-  isConversionCardReady
+  isConversionCardReady,
+  getRiskyInvestmentNoticeText
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
@@ -427,7 +428,7 @@ test("yeni esyalar: tekrar sayisi, fiyat buyumesi ve kategori", () => {
     "bilyali-yatak": [4, 40, "class"], "gez-arpacik": [4, 35, "class"], "sabot-fisegi": [4, 40, "class"],
     "hafif-taret-kabugu": [1, 80, "class"], "taret-motoru": [1, 110, "class"], "hareket-ongorucu": [1, 75, "class"],
     "lazer-telemetre": [1, 110, "class"], "termal-kilif": [1, 70, "class"], "hassas-namlu": [1, 105, "class"],
-    "manyetik-ray": [1, 90, "class"], "genlesme-odasi": [1, 105, "class"], "hafif-cekirdek": [1, 85, "class"],
+    "manyetik-ray": [1, 90, "class"], "genlesme-odasi": [1, 105, "class"], "hafif-cekirdek": [1, 150, "class"],
     "altin-elek": [3, 85, "utility"], "sigorta-policesi": [1, 120, "utility"], "darphane-modulu": [3, 80, "utility"],
     "kelle-defteri": [1, 70, "utility"], "vadeli-mevduat": [2, 150, "utility"]
   };
@@ -1281,7 +1282,7 @@ test("altin kazanimini artiran her kart ve esya iki kat: deger, metin ve sabit a
   const prices = { "ganimet-kesesi": 110, "altin-elek": 85, "sigorta-policesi": 120, "darphane-modulu": 80, "kelle-defteri": 70, "faiz-hesabi": 140, "vadeli-mevduat": 150, "riskli-yatirim": 0 };
   for (const [id, price] of Object.entries(prices)) assert.equal(item(id).price, price, id);
   assert.equal(item("faiz-hesabi").description, `Dalga sonunda altının %${Math.round(GOLD_INTEREST_RATE * 100)}'sını, en fazla ${GOLD_INTEREST_CAP} altın kazandırır.`);
-  assert.equal(item("riskli-yatirim").description, `Dalga başına 1 kez ${RISKY_INVESTMENT_NEXUS_COST} nexus canı karşılığı ${RISKY_INVESTMENT_GOLD} altın verir.`);
+  assert.equal(item("riskli-yatirim").description, `Dalga başına takımda 1 kez alınabilir: ${RISKY_INVESTMENT_NEXUS_COST} nexus canı karşılığı ${RISKY_INVESTMENT_GOLD} altın verir.`);
 });
 
 test("Faiz Hesabi gercek dalga kapanisinda %16 veriyor, 120'de duruyor", () => {
@@ -1299,7 +1300,36 @@ test("Faiz Hesabi gercek dalga kapanisinda %16 veriyor, 120'de duruyor", () => {
   assert.equal(kapanis(5000), 120, "tavan");
 });
 
-test("Riskli Yatirim 10 nexus cani karsiliginda 400 altin veriyor; vitrindeki tek teklifle bir kez", () => {
+/** Tohumlu Math.random ile `fn`'i calistirir (magaza yenilemesi zari). */
+function tohumlu(seed, fn) {
+  let state = seed;
+  const gercek = Math.random;
+  Math.random = () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+  try {
+    return fn();
+  } finally {
+    Math.random = gercek;
+  }
+}
+
+/** Gercek yenileme yolundan `count` kez; Riskli Yatirim kac yenilemede sunuldu. */
+function yenile(room, count, owner = client) {
+  const player = room.state.players.get(owner.sessionId);
+  let sunuldu = 0;
+  room.setupPhase = true;
+  for (let index = 0; index < count; index += 1) {
+    player.shopRerolls = 0;
+    room.rerollShop(owner);
+    if (player.shopOffers.some((offer) => offer.id === "riskli-yatirim")) sunuldu += 1;
+  }
+  room.setupPhase = false;
+  return sunuldu;
+}
+
+test("Riskli Yatirim 10 nexus cani karsiliginda 400 altin veriyor", () => {
   const room = oda();
   const player = room.state.players.get("p1");
   room.teamHealth = 100;
@@ -1307,15 +1337,57 @@ test("Riskli Yatirim 10 nexus cani karsiliginda 400 altin veriyor; vitrindeki te
   assert.ok(satinAl(room, "riskli-yatirim"));
   assert.equal(player.gold, RISKY_INVESTMENT_GOLD);
   assert.equal(room.teamHealth, 100 - RISKY_INVESTMENT_NEXUS_COST);
-  // Alinan teklif vitrinden dusuyor: ayni hazirlikta ikinci kez alinamiyor.
-  assert.equal(player.shopOffers.some((offer) => offer.id === "riskli-yatirim"), false);
-  room.setupPhase = true;
-  room.buyShopItem(client, { itemId: "riskli-yatirim" });
-  assert.equal(player.gold, RISKY_INVESTMENT_GOLD, "ayni vitrinden ikinci alim");
-  room.setupPhase = false;
-  // Nexus 10 ya da altindayken satilmiyor.
+  assert.equal(room.riskyInvestmentWave, room.wave);
+  // Nexus 10 ya da altindayken satilmiyor (yeni dalgada bile).
+  room.wave += 1;
   room.teamHealth = RISKY_INVESTMENT_NEXUS_COST;
   assert.equal(satinAl(room, "riskli-yatirim"), false);
+});
+
+test("Riskli Yatirim dalga basina bir kez: yenileme onu geri getirmiyor, getirse de ikinci alim reddediliyor", () => {
+  // Kontrol: alinmamisken ayni tohumla yenileme onu sunuyor (yani yenileme
+  // gercekten geri getirebiliyordu).
+  const kontrol = oda();
+  kontrol.teamHealth = 100;
+  kontrol.state.players.get("p1").gold = 1e12;
+  const kontrolSayisi = tohumlu(17, () => yenile(kontrol, 300));
+  assert.ok(kontrolSayisi > 0, "kontrol: yenileme Riskli Yatirim'i hic sunmadi, tohum degistir");
+
+  const room = oda();
+  const player = room.state.players.get("p1");
+  room.teamHealth = 100;
+  player.gold = 1e12;
+  assert.ok(satinAl(room, "riskli-yatirim"));
+  const altin = player.gold;
+  assert.equal(tohumlu(17, () => yenile(room, 300)), 0, "alindiktan sonra yenileme yine sundu");
+  // Vitrine elle konsa da (eski istemci, yaris) ikinci alim reddediliyor.
+  assert.equal(satinAl(room, "riskli-yatirim"), false, "ikinci alim");
+  assert.equal(room.teamHealth, 100 - RISKY_INVESTMENT_NEXUS_COST);
+  // Hazirligin yeniden acilan vitrini de (kart secimi sonrasi) sunmuyor.
+  tohumlu(17, () => {
+    for (let index = 0; index < 200; index += 1) {
+      room.openPlayerSetupShop("p1", player);
+      assert.equal(player.shopOffers.some((offer) => offer.id === "riskli-yatirim"), false);
+    }
+  });
+  assert.ok(player.gold <= altin, "ikinci alim altin verdi");
+
+  // Sonraki dalgada yeniden alinabiliyor.
+  room.wave += 1;
+  assert.ok(tohumlu(17, () => yenile(room, 300)) > 0, "yeni dalgada sunulmuyor");
+  assert.ok(satinAl(room, "riskli-yatirim"), "yeni dalgada alinamiyor");
+});
+
+test("Riskli Yatirim kaydi odada: yuva devri dalga sinirini sifirlamiyor", () => {
+  const room = oda();
+  const player = room.state.players.get("p1");
+  room.teamHealth = 100;
+  assert.ok(satinAl(room, "riskli-yatirim"));
+  room.transferPlayerSession("p1", "p9", player, player.name);
+  const yeni = { sessionId: "p9", send() {} };
+  assert.equal(room.state.players.get("p9"), player);
+  assert.equal(room.riskyInvestmentWave, room.wave);
+  assert.equal(satinAl(room, "riskli-yatirim", yeni), false, "devralan oturum ikinci kez aldi");
 });
 
 // ------------------------------------- 7. Isabet ve mermi hizi esyalari: bedelsiz, uc yeni sekil
@@ -1474,12 +1546,141 @@ test("Sessiz Mevzi gercek yerlesimde komsuluk kuralini kullaniyor", () => {
   near(mermiHizi(room, tower), sade * 2.2);
 });
 
-test("esyalarla en yuksek isabet: Balistik tavani en az uc pahali yuva istiyor", () => {
+test("yalnizca esyalarla en yuksek isabet: Balistik tavani esyayla uc pahali yuva istiyor (kartlar haric)", () => {
   const facingItems = shopCatalog.filter((entry) => entry.target === "tower" && entry.effects.some((modifier) => modifier.stat === "accuracy"));
   // Kule basina 5 yuva; kosulsuz isabetin en buyuk bes esyasi (kopyalar dahil).
   const slots = facingItems.flatMap((entry) => Array.from({ length: entry.repeatable ? entry.maxStacks : 1 }, () => getModifierAdd(entry.effects, "accuracy"))).sort((a, b) => b - a);
   const best = (count) => slots.slice(0, count).reduce((sum, value) => sum + value, 0);
   near(best(5), 2.2, "bes yuvada kosulsuz isabet");
-  assert.ok(best(2) < 1.5, "iki esya Balistik tavanina ulasmamali");
-  assert.ok(best(3) >= 1.5, "uc esyayla ulasilabilmeli");
+  assert.ok(best(2) < 1.5, "kartsiz iki esya Balistik tavanina ulasmamali");
+  assert.ok(best(3) >= 1.5, "kartsiz uc esyayla ulasilabilmeli");
+  // Kartlar da isabet veriyor: esya yuku buradaki sayidan az olabilir. Iddia
+  // yalnizca esya tarafi icin.
+});
+
+test("isabetten kritik ucan hedef payini vurulan dusmandan okuyor, namlunun o anki yonunden degil", () => {
+  const room = oda();
+  const tower = kur(room, "warrior-1");
+  kartAl(room, "goz-karari");
+  assert.ok(esyaTak(room, tower, "irtifa-olcer"));
+  /** Namluyu bir dusmana cevirir, sonra baska bir dusmani vurur; kritik geldi mi. */
+  const kritikMi = (namlu, vurulan, zar) => {
+    room.aimTowerAt(tower, dusman(room, tower, { x: tower.x, y: tower.y + 100, movementKind: namlu }), 0);
+    const olc = (value) => {
+      const enemy = dusman(room, tower, { movementKind: vurulan, type: "grunt" });
+      room.towerCriticalRandom = () => value;
+      const once = enemy.hp;
+      room.damageEnemy(enemy, 100, 0, tower.definition.id, "p1", "true", 0, tower.level, tower.id);
+      return once - enemy.hp;
+    };
+    return olc(zar) > olc(1) + 1e-6;
+  };
+  // Ucan hedefe +%60 isabet -> kritik +%18; taban %1. Zar 0,15 yalnizca payla gelir.
+  assert.equal(kritikMi("ground", "air", 0.15), true, "namlu yere donukken ucana vurus payi almadi");
+  assert.equal(kritikMi("air", "ground", 0.15), false, "namlu ucana donukken yere vurus payi aldi");
+  assert.equal(kritikMi("air", "air", 0.15), true);
+  assert.equal(kritikMi("ground", "ground", 0.15), false);
+  // Ates konisi ates anindaki namlu hedefine bakmaya devam ediyor (Irtifa Olcer testi).
+});
+
+// ------------------------------------- 8. Riskli Yatirim: takimda dalga basina bir kez
+
+test("co-op: Riskli Yatirim'i takimda bir kisi aliyor; oteki reddediliyor, vitrininden ve yenilemelerinden dusuyor", () => {
+  const room = oda();
+  const yayinlar = [];
+  room.broadcast = (type, payload) => yayinlar.push({ type, payload });
+  const p2 = ikinciOyuncu(room);
+  const ikinci = { sessionId: "p2", send() {} };
+  room.clients = [client, ikinci];
+  room.teamHealth = 100;
+  const p1 = room.state.players.get("p1");
+  p1.gold = 1e12;
+  p2.gold = 1e12;
+  // Ikinci oyuncunun vitrininde de var.
+  p2.shopOffers = [item("riskli-yatirim"), item("altin-elek")];
+  assert.ok(satinAl(room, "riskli-yatirim"));
+  assert.equal(room.teamHealth, 100 - RISKY_INVESTMENT_NEXUS_COST);
+  // Bildirim: kim aldi, bedel ve kazanc.
+  const notice = yayinlar.find((entry) => entry.type === "shop:risky-investment");
+  assert.deepEqual(notice?.payload, { buyerId: "p1", nexusCost: RISKY_INVESTMENT_NEXUS_COST, gold: RISKY_INVESTMENT_GOLD });
+  // Ikincinin vitrininden dustu, oteki teklif yerinde.
+  assert.deepEqual(p2.shopOffers.map((offer) => offer.id), ["altin-elek"]);
+  // Sunucu ikinci alimi reddediyor (vitrine elle konsa da).
+  const altin = p2.gold;
+  assert.equal(satinAl(room, "riskli-yatirim", ikinci), false);
+  assert.equal(p2.gold, altin);
+  assert.equal(room.teamHealth, 100 - RISKY_INVESTMENT_NEXUS_COST, "takim iki kez odedi");
+  // Yenilemeler de sunmuyor (kontrol ayni tohumla sunuyordu; bkz. yukaridaki test).
+  assert.equal(tohumlu(17, () => yenile(room, 300, ikinci)), 0);
+  // Sonraki dalgada ikinci oyuncu alabiliyor.
+  room.wave += 1;
+  const yenilemeSonrasi = p2.gold;
+  assert.ok(satinAl(room, "riskli-yatirim", ikinci));
+  assert.equal(p2.gold, yenilemeSonrasi + RISKY_INVESTMENT_GOLD);
+});
+
+test("solo: Riskli Yatirim dalga basina bir kez, sonraki dalga yine aliniyor", () => {
+  const room = oda();
+  room.teamHealth = 100;
+  assert.ok(satinAl(room, "riskli-yatirim"));
+  assert.equal(satinAl(room, "riskli-yatirim"), false);
+  room.wave += 1;
+  assert.ok(satinAl(room, "riskli-yatirim"));
+  assert.equal(room.teamHealth, 100 - 2 * RISKY_INVESTMENT_NEXUS_COST);
+});
+
+test("Riskli Yatirim bildirimi: metin ve istemci kablosu", async () => {
+  assert.deepEqual(getRiskyInvestmentNoticeText("Atakan", 10, 400), { title: "Atakan Riskli Yatırım aldı", detail: "nexus −10, +400 altın" });
+  assert.equal(getRiskyInvestmentNoticeText(undefined, 10, 400).title, "Takım arkadaşın Riskli Yatırım aldı");
+  const scene = (await readFile(new URL("../apps/web/src/scenes/GameScene.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  assert.ok(scene.includes(`room.onMessage("shop:risky-investment"`), "istemci mesaji dinlemiyor");
+  const handler = scene.slice(scene.indexOf("  private receiveRiskyInvestment("), scene.indexOf("  private receiveServerLinkJoined("));
+  assert.ok(handler.includes("message.buyerId === this.localSessionId"), "alan kendi bildirimini goruyor");
+  assert.ok(handler.includes(`this.game.events.emit("game:hud-team-notice"`), "takim bildirimi kanali kullanilmiyor");
+});
+
+// ------------------------------------- 9. Ayni ailede baskin esya yok
+
+/**
+ * A, B'yi baskilar: A'nin isledigi etkili kuleler B'ninkileri kapsiyor, A her
+ * etkide (ve kilitte) en az B kadar veriyor ve ilk alim fiyati en fazla
+ * B'ninki kadar. Yigin sayisi bilerek sayilmiyor: kule basina 5 yuva var ve
+ * yuva basina daha iyi olan esya, yigilabilen zayif esyayi da bosa cikariyor. Etkili kule: statin is gordugu kule
+ * (isabet: namlu yonunde atan, mermi hizi: mermi atan); Nisangah ve Hafif
+ * Muhimmat her kuleye takiliyor ama ancak orada bir sey yapiyor.
+ */
+function baskinCiftler(items, etkili) {
+  const towers = allTowers.filter(etkili);
+  const applies = (entry) => new Set(towers.filter((tower) => canEquipShopItem(entry, tower, []).ok).map((tower) => tower.id));
+  const values = (entry) => {
+    const map = new Map();
+    for (const modifier of entry.effects) map.set(modifier.stat, (map.get(modifier.stat) ?? 0) + modifier.add);
+    for (const unlock of entry.unlocks ?? []) map.set(`unlock:${unlock}`, 1);
+    return map;
+  };
+  const pairs = [];
+  for (const a of items) {
+    for (const b of items) {
+      if (a === b) continue;
+      const [ta, tb] = [applies(a), applies(b)];
+      if (![...tb].every((id) => ta.has(id))) continue;
+      const [va, vb] = [values(a), values(b)];
+      const covers = [...vb].every(([stat, value]) => (va.get(stat) ?? 0) >= value);
+      if (covers && a.price <= b.price) pairs.push(`${a.id} > ${b.id}`);
+    }
+  }
+  return pairs;
+}
+
+test("isabet ve mermi hizi ailelerinde hicbir esya bir digerince baskilanmiyor", () => {
+  const aim = shopCatalog.filter((entry) => entry.id === "termal-kilif" || entry.effects.some((modifier) => (modifier.stat === "accuracy" || modifier.stat === "accuracyVsAir") && modifier.add > 0));
+  const speed = shopCatalog.filter((entry) => entry.effects.some((modifier) => (modifier.stat === "projectileSpeed" || modifier.stat === "projectileSpeedIsolated") && modifier.add > 0));
+  assert.equal(aim.length, 9);
+  assert.equal(speed.length, 8);
+  assert.deepEqual(baskinCiftler(aim, (tower) => towerFiresAlongFacing(tower) && !tower.resourceProvider), []);
+  assert.deepEqual(baskinCiftler(speed, (tower) => towerFiresProjectiles(tower)), []);
+  // Kontrol: eski fiyatlarla bulunan iki baskin cift gercekten yakalaniyor.
+  const eski = (id, price) => ({ ...item(id), price });
+  assert.deepEqual(baskinCiftler([eski("nisan-durbunu", 90), eski("nisangah", 95)], (tower) => towerFiresAlongFacing(tower)).sort(), ["nisan-durbunu > nisangah"]);
+  assert.ok(baskinCiftler([eski("hafif-cekirdek", 85), eski("manyetik-ray", 90)], (tower) => towerFiresProjectiles(tower)).includes("hafif-cekirdek > manyetik-ray"));
 });

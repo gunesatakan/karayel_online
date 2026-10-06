@@ -178,11 +178,13 @@ import {
   getUltimateTeamChipText,
   type UltimateCastMessage,
   getServerLinkJoinedText,
+  getRiskyInvestmentNoticeText,
   getServerLinkMaturedText,
   getSilentModeNoticeText,
   getSilentModePhase,
   toLocalSilentModeTimeline,
   type ServerLinkJoinedMessage,
+  type RiskyInvestmentMessage,
   type ServerLinkMaturedMessage,
   type SilentModeMessage,
   type SilentModeTimeline,
@@ -3790,6 +3792,18 @@ export class GameScene extends Phaser.Scene {
    * ve kulende turkuaz bir nabiz. Sunucu bu mesaji yalnizca kulenin sahibine
    * yolluyor; yani hep "senin" anin.
    */
+  /**
+   * Takim arkadasi Riskli Yatirim aldi: nexus bu dalga 10 can kaybetti ve
+   * esya bu dalga takimda bir daha alinamaz. Alan kendi alimini zaten goruyor.
+   */
+  private receiveRiskyInvestment(message: RiskyInvestmentMessage) {
+    if (!message || typeof message.buyerId !== "string" || this.matchResultShown) return;
+    if (message.buyerId === this.localSessionId) return;
+    const buyer = this.describePlayer(message.buyerId);
+    const toast: TeamNoticeToast = { ...getRiskyInvestmentNoticeText(buyer.name, message.nexusCost, message.gold), color: buyer.color };
+    this.game.events.emit("game:hud-team-notice", toast);
+  }
+
   private receiveServerLinkJoined(message: ServerLinkJoinedMessage) {
     if (!message || typeof message.targetTowerId !== "string" || this.matchResultShown) {
       return;
@@ -5267,6 +5281,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Sunucu baska birinin kulesine baglanabiliyor. Ikisi de tek seferlik mesaj.
     room.onMessage("silent:mode", (message: SilentModeMessage) => this.receiveSilentMode(message));
     room.onMessage("link:joined", (message: ServerLinkJoinedMessage) => this.receiveServerLinkJoined(message));
+    // Riskli Yatirim takimda dalga basina bir kez ve bedeli takimin nexusundan.
+    room.onMessage("shop:risky-investment", (message: RiskyInvestmentMessage) => this.receiveRiskyInvestment(message));
     room.onMessage("link:matured", (message: ServerLinkMaturedMessage) => this.receiveServerLinkMatured(message));
     // Sonucu degistiren kombolar: tek seferlik mesaj, damga kulenin ustunde.
     room.onMessage("combo:stamp", (message: ComboStampMessage) => this.receiveComboStamp(message));
