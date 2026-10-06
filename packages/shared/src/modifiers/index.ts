@@ -136,7 +136,7 @@ export type ModifierStat =
   | "projectileSpeedIsolated"
   /**
    * Altin primleri: oldurme altininin carpanindan (`goldGain`) ayri, belirli
-   * bir olaya baglanan duz altin. Hepsinin dalga tavani var (sabitleri
+   * bir olaya baglanan duz altin. Dalga tavani yok (sabitleri
    * `cards` modulunde). Ilki oyuncudan, otekiler oldurenin ya da hasari
    * verenin kulesinden okunuyor.
    *
@@ -150,7 +150,28 @@ export type ModifierStat =
   | "airKillGold"
   | "damageGold"
   | "multiKillGold"
-  | "overkillGold";
+  | "overkillGold"
+  /**
+   * Ikinci tur altin primleri. Ilk dordu oyuncunun listesinden (kartlar),
+   * son dordu kulenin listesinden (esyalar) okunuyor; tavan yok.
+   *
+   * - `garrisonGold`: dalga sonunda ayakta olan her hasar veren kule.
+   * - `upgradeGold`: her kule gelistirme.
+   * - `heavyKillGold`: oyuncunun oldurdugu her brute ve kusatma dusmani.
+   * - `statusKillGold`: oyuncunun yanma ve kanamasiyla olen her dusman.
+   * - `hotKillGold`: kule 50 derece ya da ustundeyken oldurdugu her dusman.
+   * - `slowedKillGold`: kulenin oldurdugu her yavaslamis dusman.
+   * - `deliveryGold`: kuleye yapilan her muhimmat ya da enerji teslimati.
+   * - `longRangeKillGold`: kulenin menzilinin dis dortte birinde oldurdugu her dusman.
+   */
+  | "garrisonGold"
+  | "upgradeGold"
+  | "heavyKillGold"
+  | "statusKillGold"
+  | "hotKillGold"
+  | "slowedKillGold"
+  | "deliveryGold"
+  | "longRangeKillGold";
 
 export type Modifier = {
   source: string;

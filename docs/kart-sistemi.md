@@ -72,8 +72,9 @@ bonusunu okur — kart ve eşya toplamı artı o anki koşullu paylar (Av Reflek
 penceresi, soğuk namlunun isabeti) — ve hedefe `min(cap, max(0, kaynak - threshold) * ratio)`
 kadar bir modifier ekler (`resolveStatConversions`, `getTowerRunModifiers`).
 Kart kimliğine bakan bir sunucu dalı yok. Çevrimler zincirlenmez: kaynak çevrimlerden
-önce okunur. `threshold` kaynağın yalnızca eşik üstünü saydırır (isabetin %100
-tavanı gibi). Açıklama "her %10'u … +%X ekler; en fazla +%Y" diye yazılır ve test
+önce okunur. `threshold` kaynağın yalnızca eşik üstünü saydırır (Balistik
+Hesaplayıcı'da %30). Her epik kaynak statından bir taban bonus da verir (`effects`)
+ve çevrim onu da okur: kart tek başına işler, yatırımla tavanına büyür. Açıklama "her %10'u … +%X ekler; en fazla +%Y" diye yazılır ve test
 metni sayılarla karşılaştırır.
 
 ## 3. Motor eklentisi (`grants`)
@@ -126,9 +127,12 @@ hasar türü kulelerin bir kısmında tanımsızdır.
 ## Nadirlik
 
 `common: 6`, `uncommon: 3`, `rare: 1`, `epic: 1` — çekiliş ağırlıkları. `epic`
-yalnızca çevrim kartlarında ve elle yazılır. Sunucu çekilişe kaynak bonuslarını
-verir (`sourceBonuses`): kaynağı kuruluşta pozitif olmayan epik kart (eşikli
-çevrimde eşiğin yarısı) ölü ağırlık (0,15) alır. Kilidi oyuncunun eşyalarından
+yalnızca çevrim kartlarında ve elle yazılır. Her epik kendi kaynak statını da
+verir (Tork Aktarımı +%50 dönüş hızı): tek başına işler, yatırımla büyür. Sunucu
+çekilişe kaynak bonuslarını verir (`sourceBonuses`): kaynağı ne kartın kendisinde
+ne kuruluşta pozitif olan çevrim kartı (eşikli çevrimde eşiğin yarısı) ölü ağırlık
+(0,15) alır; bugünkü dört epik kendi bonusunu taşıdığı için bu kural onlara
+işlemiyor, yalnızca "uyan kule yok" kuralı işliyor. Kilidi oyuncunun eşyalarından
 zaten gelen kart da öyle (`ownedUnlocks`, mağazadaki "zaten açık" kuralının
 karşılığı). Yazılmazsa `global`
 kartlar `common`, dar kapsamlılar `uncommon` sayılır. Geniş kapsamlı kart her

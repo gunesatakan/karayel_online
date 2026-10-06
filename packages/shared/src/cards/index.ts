@@ -43,7 +43,8 @@ export type CardScope =
    * esyalari duvara, onarim ussune ya da hasarsiz bir aura binasina
    * takilabiliyordu; orada hicbir zaman bir sey yapmazlar.
    */
-  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean; aims?: boolean; projectiles?: boolean; alongFacing?: boolean; combat?: boolean };
+  /** `boundedRange`: menzili haritayi kaplamayan kuleler (`towerHasBoundedRange`). */
+  | { kind: "tagged"; axes?: TowerAxis[]; hitTypes?: HitType[]; damageTypes?: DamageType[]; shapes?: TowerAttackShape[]; ammoTypes?: AmmoType[]; hasAreaRadius?: boolean; aims?: boolean; projectiles?: boolean; alongFacing?: boolean; combat?: boolean; boundedRange?: boolean };
 
 /**
  * Katalog buyudukce her kartin ayni sikligta cikmasi oyunu kotulestirir: oyuncu
@@ -261,6 +262,40 @@ export const MULTI_KILL_GOLD_COUNT = 3;
 export const MULTI_KILL_GOLD_WINDOW_MS = 2000;
 export const MULTI_KILL_GOLD_WAVE_CAP = 75;
 export const OVERKILL_GOLD_WAVE_CAP = 50;
+/** Ikinci tur altin primlerinin dalga tavanlari; kartlarinki oyuncu, esyalarinki kule basina. */
+export const GARRISON_GOLD_WAVE_CAP = 40;
+export const UPGRADE_GOLD_WAVE_CAP = 40;
+export const HEAVY_KILL_GOLD_WAVE_CAP = 60;
+export const STATUS_KILL_GOLD_WAVE_CAP = 40;
+export const HOT_KILL_TEMPERATURE = 50;
+export const HOT_KILL_GOLD_WAVE_CAP = 45;
+export const SLOWED_KILL_GOLD_WAVE_CAP = 45;
+export const DELIVERY_GOLD_WAVE_CAP = 40;
+/**
+ * `longRangeKillGold`: dusman kulenin menzilinin bu payindan uzakta ama en
+ * fazla `LONG_RANGE_KILL_MAX_FRACTION` kadarindaysa (hedefin menzilden
+ * yeni cikmis olmasina pay; haritanin obur ucu sayilmiyor).
+ */
+export const LONG_RANGE_KILL_FRACTION = 0.75;
+export const LONG_RANGE_KILL_MAX_FRACTION = 1.1;
+/**
+ * `deliveryGold`: Ikmal Senedi bu kadar muhimmat ya da enerji teslimati
+ * basina oduyor. Birimler bir iscinin taban yukune yakin (muhimmat 4,5,
+ * enerji 13,5): bir tam yuk yaklasik bir birim.
+ */
+export const DELIVERY_GOLD_AMMO_UNIT = 5;
+export const DELIVERY_GOLD_ENERGY_UNIT = 15;
+
+/**
+ * Menzili haritayi kaplayan kuleler: Sunucu'nun baglantisi butun haritaya
+ * uzaniyor. Mesafeye bakan icerik (Uzak Menzil Primi) bunlarda anlamsiz.
+ * Debug Lazer'in asiri yuklemesi gecici; o sunucuda calisirken ayiklaniyor.
+ */
+const MAP_WIDE_RANGE_TOWER_IDS: ReadonlySet<string> = new Set(["warrior-2"]);
+export function towerHasBoundedRange(tower: { id?: string }) {
+  return !!tower.id && !MAP_WIDE_RANGE_TOWER_IDS.has(tower.id);
+}
+export const LONG_RANGE_KILL_GOLD_WAVE_CAP = 48;
 
 /** Isabet bonusundan gelen kritik sansi; negatif bonus hicbir sey vermez. */
 export function getAccuracyCritChance(accuracyBonus: number) {
@@ -270,11 +305,12 @@ export function getAccuracyCritChance(accuracyBonus: number) {
 /**
  * `epic`: bir statu baska bir stata ceviren kartlar (`conversions`).
  *
- * Kendi baslarina hicbir sey yapmiyorlar -- kaynak stata yatirim yapilmis bir
- * kurulusta anlam kazaniyorlar. Agirlik bir donem nadirin yarisiydi; kosuda
- * epik gormek dortte bire iniyordu ve sahibi siklasmasini istedi. Simdi
- * nadirle esit: seyrekligi agirliktan degil, yatirimsiz kurulusta aldigi olu
- * agirliktan geliyor (`isConversionCardReady`). Her biri tek kopya.
+ * Her biri kendi kaynak statindan bir taban bonus da veriyor (Tork Aktarimi
+ * +%50 donus hizi): tek basina isliyor, o eksene yatirimla buyuyor. Agirlik
+ * bir donem nadirin yarisiydi; sahibi siklasmasini istedi ve simdi nadirle
+ * esit. Uyan kulesi olmayan kurulusta olu agirlik aliyor; kaynak bonusu
+ * tasimayan bir cevrim karti eklenirse yatirimsiz kurulusta da
+ * (`isConversionCardReady`). Her biri tek kopya.
  */
 export type CardRarity = "common" | "uncommon" | "rare" | "epic";
 
@@ -663,24 +699,33 @@ export const cardCatalog: CardDefinition[] = [
   { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%50 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 0.5), effect("parali-asker", "experienceGain", -0.2)] },
   { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +40 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 40)] },
   { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +90 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
-  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +6 altın verir; dalga başına en fazla 90 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
+  // Ikinci tur altin kartlari: esyalarin bakmadigi olaylar -- dalga sonunda
+  // ayakta kalan kuleler, gelistirme, agir hedef ve sureli hasarla gelen
+  // olum. Hepsi oyuncunun listesinden okunuyor ve oyuncu basina tavanli.
+  { id: "garnizon-maasi", name: "Garnizon Maaşı", description: "Dalga sonunda ayakta olan her hasar veren kulen için +4 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("garnizon-maasi", "garrisonGold", 4)] },
+  { id: "terfi-ikramiyesi", name: "Terfi İkramiyesi", description: "Her kule geliştirmende +10 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("terfi-ikramiyesi", "upgradeGold", 10)] },
+  { id: "agir-hedef-odulu", name: "Ağır Hedef Ödülü", description: "Öldürdüğün her brute ve kuşatma düşmanı +6 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-hedef-odulu", "heavyKillGold", 6)] },
+  { id: "yavas-olum-primi", name: "Yavaş Ölüm Primi", description: "Yanma ve kanamanla ölen her düşman +4 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("yavas-olum-primi", "statusKillGold", 4)] },
+  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +6 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
 
   // --- Epik: cevrim kartlari ---
   //
   // Her biri bir statu baska bir stata ceviriyor ve kaynagi kulenin gercek
   // bonusu: kartlar, esyalar, o anki kosullu paylar (Av Refleksi'nin
-  // penceresi, Isil Kalibrasyon'un soguk namlusu). Kendi baslarina hicbir sey
-  // yapmiyorlar; o eksene yatirim yapilmis kurulusu odullendiriyorlar ve
-  // tavanlari o yatirimin nerede durmasi gerektigini soyluyor.
+  // penceresi, Isil Kalibrasyon'un soguk namlusu). Her epik kaynak statindan
+  // bir taban bonus veriyor ve cevrim onu da okuyor: kart tek basina +%10
+  // civari bir sey yapiyor, yatirimla tavanina buyuyor; tavanlar yatirimin
+  // nerede durmasi gerektigini soyluyor.
   //
-  // Isabet cevrimi bilerek yalnizca %100'un ustunu okuyor: ates konisi orada
-  // doyuyor ve ustu bugune kadar bosa gidiyordu. Altin cevrimi hasar veriyor,
+  // Isabet cevrimi %30'un ustunu okuyor ve her %10'u +%5: kartin kendi +%50'si
+  // tek basina +%10 hasar veriyor, tavan (+%50) isabet 1,3'te -- ates konisinin
+  // doydugu 1,0'in ustundeki isabet de bosa gitmiyor. Altin cevrimi hasar veriyor,
   // altin degil -- altini buyuten bir altin karti co-op'ta kendini besleyen
   // bir dongu olurdu.
-  { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerde dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
-  { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinde %100'ü aşan isabet bonusunun her %10'u hasara +%10 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "accuracy", to: "damage", threshold: 1, ratio: 1, cap: 0.5 }] },
-  { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerde mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
-  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını bonusunun her %10'u tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [], conversions: [{ from: "goldGain", to: "damage", ratio: 0.3, cap: 0.3 }] }
+  { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
+  { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5, cap: 0.5 }] },
+  { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%30. Düşman altını bonusunun her %10'u tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.3)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.3, cap: 0.3 }] }
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));
@@ -739,7 +784,7 @@ export function towerDealsDamage(tower: CardTowerProfile) {
 export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile) {
   if (tower.resourceProvider) return false;
   if (card.scope.kind !== "tagged") return true;
-  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius, aims, projectiles, alongFacing, combat } = card.scope;
+  const { axes, hitTypes, damageTypes, shapes, ammoTypes, hasAreaRadius, aims, projectiles, alongFacing, combat, boundedRange } = card.scope;
   return (!axes?.length || axes.some((axis) => tower.axes?.includes(axis)))
     && (!hitTypes?.length || (!!tower.hitType && hitTypes.includes(tower.hitType)))
     && (!damageTypes?.length || (!!tower.damageType && damageTypes.includes(tower.damageType)))
@@ -749,7 +794,8 @@ export function cardAppliesToTower(card: CardDefinition, tower: CardTowerProfile
     && (!aims || (!!tower.id && towerAims(tower.id)))
     && (!projectiles || towerFiresProjectiles(tower))
     && (!alongFacing || towerFiresAlongFacing(tower))
-    && (!combat || towerDealsDamage(tower));
+    && (!combat || towerDealsDamage(tower))
+    && (!boundedRange || towerHasBoundedRange(tower));
 }
 
 /**
@@ -810,7 +856,9 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   waveIncome: "none",
   accuracyVsAir: "combat", projectileSpeedIsolated: "combat",
   // Altin primleri kulenin yaptigi bir seyi degistirmiyor, yalnizca oyuncunun altinini.
-  championGold: "none", airKillGold: "none", damageGold: "none", multiKillGold: "none", overkillGold: "none"
+  championGold: "none", airKillGold: "none", damageGold: "none", multiKillGold: "none", overkillGold: "none",
+  garrisonGold: "none", upgradeGold: "none", heavyKillGold: "none", statusKillGold: "none",
+  hotKillGold: "none", slowedKillGold: "none", deliveryGold: "none", longRangeKillGold: "none"
 };
 
 /**
@@ -916,11 +964,16 @@ export type CardDrawSourceBonuses = {
 };
 
 /**
- * Esikli cevrim (Balistik Hesaplayici, %100 ustu) icin kurulusa yatirimin
- * basladigini soyleyen pay: esigin yarisi. Isabet %50'yi gecmis bir kule
- * tavana dogru gidiyor; sifirdan basliyorsa kart bos bir secenek.
+ * Esikli cevrim (Balistik Hesaplayici, %30 ustu) icin kurulusa yatirimin
+ * basladigini soyleyen pay: esigin yarisi. Bugunku epikler kendi kaynak
+ * bonusunu tasidigi icin hep hazir; kural bonus tasimayan bir cevrim karti
+ * icin duruyor.
  */
 export const CONVERSION_READY_THRESHOLD_FRACTION = 0.5;
+
+function getCardEffectAdd(card: CardDefinition, stat: ModifierStat) {
+  return card.effects.reduce((sum, modifier) => (modifier.stat === stat ? sum + modifier.add : sum), 0);
+}
 
 /**
  * Cevrim kartinin kaynagi en az bir yerde pozitif mi. Cevrimi olmayan kart
@@ -932,6 +985,9 @@ export function isConversionCardReady(card: CardDefinition, sources: CardDrawSou
   if (conversions.length === 0) return true;
   return conversions.some((conversion) => {
     const minimum = (conversion.threshold ?? 0) * CONVERSION_READY_THRESHOLD_FRACTION;
+    // Epikler artik kendi kaynak statini da veriyor (Tork Aktarimi +%50 donus):
+    // bos kurulusta da isliyorlar, yani kendi bonusu yeterliyse hazir.
+    if (getCardEffectAdd(card, conversion.from) > minimum) return true;
     if (card.scope.kind === "global" && sources.player(conversion.from) > minimum) return true;
     return sources.towers.some(({ tower, bonus }) => ownedCardAppliesToTower(card, tower) && bonus(conversion.from) > minimum);
   });

@@ -19,9 +19,7 @@ import {
   getStatConversionAdd,
   CLEAN_WAVE_GOLD,
   GOLD_INTEREST_RATE,
-  GOLD_INTEREST_CAP,
   CRIT_KILL_GOLD,
-  CRIT_KILL_GOLD_WAVE_CAP,
   TOWER_BASE_CRITICAL_CHANCE,
   TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER,
   getEnemyExp,
@@ -282,7 +280,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     if (wave < FINAL_WAVE) {
       gold += getWaveCompletionGold(wave);
       // Faiz Hesabi: sunucuyla ayni sira, dalga altinindan sonra, primlerden once.
-      if (hasOwnedUnlock("goldInterest", ownedCardIds, ownedShopItemIds)) gold += Math.min(GOLD_INTEREST_CAP, Math.floor(gold * GOLD_INTEREST_RATE));
+      if (hasOwnedUnlock("goldInterest", ownedCardIds, ownedShopItemIds)) gold += Math.floor(gold * GOLD_INTEREST_RATE);
       // Dalga sonu primleri: odenek, temiz dalga (sizinti yoksa) ve vadesi gelen mevduat.
       gold += getModifierAdd(playerModifiers, "waveIncome");
       if (damageBudget >= totalHealth && hasOwnedUnlock("gold:cleanWave", ownedCardIds, ownedShopItemIds)) gold += CLEAN_WAVE_GOLD;
@@ -475,7 +473,7 @@ function hasOwnedUnlock(unlock, ownedCardIds, ownedShopItemIds) {
 
 /**
  * Kritik oldurme primi, beklenen deger olarak: kilidi tasiyan kulelerin hasar
- * payi kadar oldurme, her biri kulenin kritik ihtimaliyle prim; dalga tavani.
+ * payi kadar oldurme, her biri kulenin kritik ihtimaliyle prim; tavan yok.
  */
 function getCritKillGold({ towers, playerModifiers, ownedCardIds, count }) {
   const cardUnlock = ownedCardIds.some((id) => cardCatalog.find((card) => card.id === id)?.unlocks?.includes("gold:critKill"));
@@ -488,7 +486,7 @@ function getCritKillGold({ towers, playerModifiers, ownedCardIds, count }) {
     const critChance = Math.min(1, Math.max(0, TOWER_BASE_CRITICAL_CHANCE + getModifierAdd(modifiers, "critChance")));
     expected += count * (getTowerDps(tower, playerModifiers, ownedCardIds) / totalDps) * critChance * CRIT_KILL_GOLD;
   }
-  return Math.min(CRIT_KILL_GOLD_WAVE_CAP, expected);
+  return expected;
 }
 
 /**
@@ -625,7 +623,9 @@ const STAT_SCORE = {
   accuracyVsAir: 0.5, projectileSpeedIsolated: 0.25,
   // Altin primleri: dalga tavanina gore, kabaca bir altin esyasi kadar. Altinlari
   // simulatorde modellenmiyor (sampiyon, ucan, toplu ve tasan oldurme ayrintisi yok).
-  championGold: 0.003, airKillGold: 0.04, damageGold: 0.04, multiKillGold: 0.025, overkillGold: 6
+  championGold: 0.003, airKillGold: 0.04, damageGold: 0.04, multiKillGold: 0.025, overkillGold: 6,
+  garrisonGold: 0.08, upgradeGold: 0.03, heavyKillGold: 0.05, statusKillGold: 0.06,
+  hotKillGold: 0.08, slowedKillGold: 0.08, deliveryGold: 0.15, longRangeKillGold: 0.06
 };
 
 /**

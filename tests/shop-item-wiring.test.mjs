@@ -178,7 +178,7 @@ test("binaya takılan işçi eşyaları o binanın işçisine ulaşmayı sürdü
  * birden kaciran bosluk tam olarak buydu.
  */
 test("kuleye takılan eşya yalnızca oyuncudan okunan bir stat vaat edemez", () => {
-  const yalnizcaOyuncudanOkunanlar = new Set(["goldGain", "towerCapacity", "ultimateCharge", "skillCooldown", "championGold"]);
+  const yalnizcaOyuncudanOkunanlar = new Set(["goldGain", "towerCapacity", "ultimateCharge", "skillCooldown", "championGold", "garrisonGold", "upgradeGold", "heavyKillGold", "statusKillGold"]);
 
   for (const item of shopCatalog) {
     if (isGlobalShopItem(item)) continue;
@@ -217,7 +217,8 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   // Kosullu nisan statlari: `getTowerConditionalStatAdd` kulenin listesinden.
   "accuracyVsAir", "projectileSpeedIsolated",
   // Altin primleri: olduren / hasari veren kulenin listesinden.
-  "airKillGold", "damageGold", "multiKillGold", "overkillGold"
+  "airKillGold", "damageGold", "multiKillGold", "overkillGold",
+  "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {
