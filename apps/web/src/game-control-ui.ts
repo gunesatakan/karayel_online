@@ -2,6 +2,14 @@ import type Phaser from "phaser";
 import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText, SILENT_MODE_PHASE_LABELS, formatSilentModeSeconds, getSilentModePhase, type SilentModeTimeline } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
+import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
+
+/**
+ * Kule panelinin yeri ve gorunurlugu; sahne bunu okuyup paneli kuleyi
+ * kapatmayacak tarafa yasliyor ve panel gizliyken sunucuyu yoklamiyor.
+ * `heightRatio`: panelin tavan yuksekligi / tuval yuksekligi.
+ */
+export type TowerSheetReport = { visible: boolean; heightRatio: number; expanded: boolean };
 
 type ZeynepTier = "small" | "medium" | "big";
 
@@ -19,6 +27,17 @@ function formatShopCategory(category: string) {
  * Satin almayi engellemiyor; yalnizca bir sey eklemeyecegini soyluyor.
  */
 const ALREADY_UNLOCKED_TAG = `<i class="gold-shop__new gold-shop__unlocked">zaten açık</i>`;
+
+/** Hedefleme kiplerinin adi; Debug Lazer'in "marked" kipi de dahil. */
+const TARGETING_LABELS: Readonly<Record<string, string>> = {
+  first: "İlk",
+  last: "Son",
+  strongest: "En güçlü",
+  weakest: "En zayıf",
+  closest: "En yakın",
+  marked: "İşaretli",
+  random: "Rastgele"
+};
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
@@ -150,8 +169,11 @@ type ControlState = {
   gate?: { open: boolean; canEdit: boolean };
   /** Isci yol yasagi kipi; acikken haritaya basmak kareyi kapatir/acar. */
   workerBan?: { active: boolean; count: number };
-  selectedStats?: string[];
-  selectedInsight?: string;
+  /**
+   * Secili kulenin paneli (`tower-sheet`). Varligi "kule secili" demek;
+   * canli sayilari yapi anahtarina girmiyor, yerinde yaziliyor.
+   */
+  towerSheet?: TowerSheetInput;
   /** Secili kulenin kimligi; cekmece onceligi bunun degismesine bakiyor. */
   selectedTowerId?: string;
   /** Secili kuleye takili esyalar; "Bu kuleye etki edenler" bolumunde listelenir. */
@@ -263,6 +285,13 @@ export function setupGameControlUi(game: Phaser.Game) {
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
     root.style.height = `${rect.height}px`;
+    // Uste yaslanan kule paneli ust cubugun hemen altindan baslar.
+    const hud = document.getElementById("game-hud-root");
+    const hudBottom = hud && !hud.classList.contains("game-hud--hidden") ? hud.getBoundingClientRect().bottom - rect.top : 0;
+    root.style.setProperty("--tower-sheet-top", `${Math.max(0, Math.round(hudBottom))}px`);
+    // Panelin sigabilecegi en fazla boy: ust cubuk ile alt bar arasi.
+    const panelHeight = root.querySelector<HTMLElement>(".game-controls__panel")?.getBoundingClientRect().height ?? 48;
+    root.style.setProperty("--tower-sheet-room", `${Math.max(160, Math.round(rect.height - Math.max(0, hudBottom) - panelHeight - 16))}px`);
     reportChrome(game, rect.height);
   };
 
@@ -283,11 +312,9 @@ export function setupGameControlUi(game: Phaser.Game) {
     return JSON.stringify(state, (fieldName, value) => {
       // Bildirim panelin parcasi degil, kendi elemaninda yerinde yaziliyor.
       if (fieldName === "notice") return undefined;
-      if (fieldName === "selectedInsight") return Boolean(value);
-      if (fieldName === "selectedStats") {
-        // Icerigi degil varligi onemli: bar satiri var mi, yok mu.
-        return Array.isArray(value) ? value.length : value;
-      }
+      // Kule panelinin yalnizca yapisi: hangi satir, cubuk ve dokum kalemi
+      // var. Sayilar `syncLiveStats` ile yerinde yaziliyor.
+      if (fieldName === "towerSheet") return latestSheetModel ? getTowerSheetStructureKey(latestSheetModel) : undefined;
       // Kesirli sayilar ekranda yuvarlanarak gosteriliyor; anahtarda tam
       // hallerini tutmak, gozle gorulmeyen bir oynamayi yeniden kurma
       // sebebine cevirirdi.
@@ -295,17 +322,31 @@ export function setupGameControlUi(game: Phaser.Game) {
     });
   };
 
-  /** Yalnizca canli sayi satirini tazeler; panelin geri kalanina dokunmaz. */
+  /** Secili kulenin modeli ve kurulu paneli; canli sayilar bunlara yaziliyor. */
+  let latestSheetModel: TowerSheetModel | undefined;
+  let sheetElement: HTMLElement | undefined;
+  let lastSheetReport = "";
+
+  /**
+   * Panelin tavan boyunu ve gorunurlugunu sahneye bildirir. Icerik degil
+   * tavan olculuyor (`max-height`): bolum katlamak yeri oynatmasin.
+   */
+  const reportTowerSheet = () => {
+    const visible = Boolean(sheetElement?.isConnected);
+    const rootHeight = root.getBoundingClientRect().height;
+    const cap = visible && sheetElement ? Number.parseFloat(getComputedStyle(sheetElement).maxHeight) : 0;
+    const heightRatio = rootHeight > 0 && Number.isFinite(cap) ? cap / rootHeight : 0;
+    const report: TowerSheetReport = { visible, heightRatio: Math.round(heightRatio * 100) / 100, expanded: isTowerSheetExpanded() };
+    const key = `${report.visible}|${report.heightRatio}|${report.expanded}`;
+    if (key === lastSheetReport) return;
+    lastSheetReport = key;
+    game.events.emit("game:tower-sheet", report);
+  };
+
+  /** Yalnizca kule panelinin degisen sayilarini yazar; panelin geri kalanina dokunmaz. */
   const syncLiveStats = () => {
-    const insight = root.querySelector<HTMLElement>(".game-controls__insight");
-    if (insight) insight.textContent = latestState.selectedInsight ?? "";
-    const line = root.querySelector<HTMLElement>(".game-controls__stats");
-    if (!line || !latestState?.selectedStats) {
-      return;
-    }
-    const text = latestState.selectedStats.join("  |  ");
-    if (line.textContent !== text) {
-      line.textContent = text;
+    if (sheetElement && latestSheetModel && sheetElement.isConnected) {
+      patchTowerSheet(sheetElement, latestSheetModel);
     }
   };
 
@@ -345,7 +386,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (!notice.classList.contains("game-controls__notice--visible")) {
       return;
     }
-    const anchor = root.querySelector<HTMLElement>(".game-controls__drawer")
+    const anchor = root.querySelector<HTMLElement>(".game-controls__drawer, .tower-sheet--bottom")
       ?? root.querySelector<HTMLElement>(".game-controls__panel");
     if (!anchor) {
       notice.style.removeProperty("bottom");
@@ -522,13 +563,12 @@ export function setupGameControlUi(game: Phaser.Game) {
   /** Yaratici cekmecenin acik sekmesi; cekmece kapansa da hatirlaniyor. */
   let creativeTab: "cards" | "items" | "wave" = "cards";
   /**
-   * Kule cekmecesindeki "etki edenler" bolumu acik mi, ve aciklamasi acik
-   * olan kalem. Panel beceri sayaclari yuzunden saniyede bir yeniden
-   * kurulabiliyor; bu durum elemanin kendisinde dursaydi oyuncu okurken
-   * bolum kendiliginden kapanirdi. Yeniden kurulumdan sagkalir ama baska
-   * bir kule secilince sifirlanir (`render`).
+   * Kule panelindeki "Kartlar ve eşyalar" bolumunde aciklamasi acik olan
+   * kalem. Panel beceri sayaclari yuzunden saniyede bir yeniden kurulabiliyor;
+   * bu durum elemanin kendisinde dursaydi oyuncu okurken aciklama kapanirdi.
+   * Baska bir kule secilince sifirlanir (`render`). Bolumun kendisinin acik
+   * olup olmadigi panelin oteki bolumleri gibi yerel depoda.
    */
-  let towerEffectsOpen = false;
   let towerEffectFocus: string | undefined;
 
   const toggleDrawer = (next: DrawerId) => {
@@ -951,9 +991,9 @@ export function setupGameControlUi(game: Phaser.Game) {
    * destesinden bu kuleye isleyenler ve takili esyalar.
    *
    * Aciklama dokununca aciliyor. Esyalar bir donem yalnizca `title` ile
-   * aciklaniyordu ve telefonda o metne ulasmanin yolu yoktu. Bolum kapali
-   * basliyor: cekmece en fazla 300 piksel ve kulenin ayarlari da orada.
-   * Baslik satiri kapaliyken de sayilari ve esya yuvasini gosteriyor.
+   * aciklaniyordu ve telefonda o metne ulasmanin yolu yoktu. Kule panelinin
+   * bir bolumu: baslik satiri kapaliyken de sayilari ve esya yuvasini
+   * gosteriyor; kalemler kompakt cipler.
    */
   const buildTowerEffects = (state: ControlState) => {
     const targetedIds = state.towerCards?.targetedCardIds ?? [];
@@ -961,22 +1001,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     const items = state.equippedItems ?? [];
     const capacity = state.equippedCapacity ?? 0;
 
-    const section = document.createElement("div");
-    section.className = "tower-items tower-effects";
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "tower-effects__toggle";
-    toggle.setAttribute("aria-expanded", String(towerEffectsOpen));
-    toggle.textContent = `${towerEffectsOpen ? "▾" : "▸"} Bu kuleye etki edenler · ${targetedIds.length + ownerIds.length} kart · eşya ${capacity > 0 ? `${items.length}/${capacity}` : items.length}`;
-    toggle.addEventListener("pointerup", () => {
-      towerEffectsOpen = !towerEffectsOpen;
-      latestKey = "";
-      render(latestState);
-    });
-    section.append(toggle);
-    if (!towerEffectsOpen) {
-      return section;
-    }
+    const panel = createTowerSheetPanel(
+      state.selectedTowerId ?? "",
+      "cards",
+      "Kartlar ve eşyalar",
+      `${targetedIds.length + ownerIds.length} kart · eşya ${capacity > 0 ? `${items.length}/${capacity}` : items.length}`
+    );
+    const section = panel.content;
+    section.classList.add("tower-effects");
 
     type Entry = { key: string; name: string; count: number; description: string };
     const cardEntries = (prefix: string, ids: readonly string[]): Entry[] => Array.from(countIds(ids), ([cardId, count]) => {
@@ -1037,12 +1069,122 @@ export function setupGameControlUi(game: Phaser.Game) {
       detail.textContent = `${focused.name}: ${focused.description}`;
       section.append(detail);
     }
-    return section;
+    return panel.wrapper;
   };
 
-  const buildTowerDrawer = (state: ControlState) => {
-    const body: HTMLElement[] = [];
+  /** Etiketli bir ayar satiri: solda ad, sagda denetim. */
+  const makeControlRow = (label: string, control: HTMLElement, id?: string) => {
+    const row = document.createElement("div");
+    row.className = "ts-control";
+    const name = document.createElement(id ? "label" : "span");
+    name.className = "ts-control__label";
+    name.textContent = label;
+    if (id && name instanceof HTMLLabelElement) name.htmlFor = id;
+    row.append(name, control);
+    return row;
+  };
 
+  /**
+   * Kulenin ayarlari: performans kolu, hedefleme, lojistik, bekleme, kapi,
+   * Yeralti kipi. Hepsi eskiden cekmecede alt alta duruyordu; simdi panelin
+   * katlanir bir bolumu, etiketli satirlar. Sahibi olmayan oyuncuda
+   * denetimler kapali ama gorunur: takim arkadasi ne secildigini okuyabiliyor.
+   */
+  const buildTowerControls = (state: ControlState) => {
+    const rows: HTMLElement[] = [];
+    if (state.targeting) {
+      const id = "tower-sheet-targeting";
+      const select = document.createElement("select");
+      select.id = id;
+      select.className = "game-controls__targeting";
+      for (const mode of state.targeting.modes) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = TARGETING_LABELS[mode] ?? mode;
+        option.selected = mode === state.targeting.current;
+        select.append(option);
+      }
+      select.disabled = Boolean(state.towerSheet?.readOnly);
+      select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
+      rows.push(makeControlRow("Hedefleme", select, id));
+    }
+    if (state.performance) {
+      rows.push(makePerformanceSlider(state.performance));
+    }
+    if (state.underworldMode) {
+      rows.push(makeControlRow("Yeraltı kipi", makeRow([
+        makeUnderworldModeButton("Onay", "approval", state.underworldMode),
+        makeUnderworldModeButton("Stres", "stress", state.underworldMode)
+      ], "game-controls__underworld-mode")));
+    }
+    if (state.gate) {
+      const gate = state.gate;
+      rows.push(makeControlRow(gate.open ? "Kapı açık: işçiler geçer" : "Kapı kapalı", makeActionButton(
+        gate.open ? "Kapıyı Ör" : "Kapı Yap",
+        "game-controls__underworld-mode-button",
+        gate.canEdit,
+        () => dispatch({ action: "toggleWallGate" })
+      )));
+    }
+    if (state.ammoLogistics) {
+      const logistics = makeActionButton(
+        state.ammoLogistics.enabled ? "Açık" : "Kapalı",
+        `game-controls__underworld-mode-button ts-toggle${state.ammoLogistics.enabled ? " is-active" : ""}`,
+        state.ammoLogistics.canEdit,
+        () => dispatch({ action: "toggleAmmoLogistics" })
+      );
+      logistics.setAttribute("aria-pressed", String(state.ammoLogistics.enabled));
+      logistics.setAttribute("aria-label", `Mühimmat akışı: ${state.ammoLogistics.enabled ? "Açık" : "Kapalı"}`);
+      rows.push(makeControlRow("Mühimmat akışı", logistics));
+    }
+    if (state.logisticsPriority) {
+      const priority = state.logisticsPriority;
+      const group = makeRow((["critical", "normal", "low"] as const).map((value) => {
+        const button = makeActionButton(
+          { critical: "Kritik", normal: "Normal", low: "Düşük" }[value],
+          `game-controls__underworld-mode-button ts-toggle${priority.value === value ? " is-active" : ""}`,
+          priority.canEdit,
+          () => dispatch({ action: "setLogisticsPriority", priority: value })
+        );
+        button.setAttribute("aria-pressed", String(priority.value === value));
+        return button;
+      }), "game-controls__underworld-mode ts-segmented");
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", "Sevkiyat önceliği");
+      rows.push(makeControlRow("Sevkiyat önceliği", group));
+    }
+    if (state.standby) {
+      const standby = state.standby;
+      rows.push(makeControlRow(standby.active ? "Beklemede" : standby.waking ? "Isınıyor" : "Çalışıyor", makeActionButton(
+        standby.active ? "Kuleyi Aç" : standby.waking ? "Kule ısınıyor…" : "Beklemeye Al",
+        "game-controls__underworld-mode-button",
+        standby.canEdit && !standby.waking,
+        () => dispatch({ action: "toggleTowerStandby" })
+      )));
+    }
+    if (rows.length === 0) return undefined;
+    const summary = [
+      state.targeting ? TARGETING_LABELS[state.targeting.current] ?? state.targeting.current : undefined,
+      state.performance ? `performans %${state.performance.percent}` : undefined,
+      state.standby?.active ? "beklemede" : undefined
+    ].filter(Boolean).join(" · ");
+    const panel = createTowerSheetPanel(state.selectedTowerId ?? "", "controls", "Ayarlar", summary);
+    panel.content.append(...rows);
+    return panel.wrapper;
+  };
+
+  /**
+   * Secili kulenin paneli.
+   *
+   * Eskiden tek satira " | " ile dizilmis bir metin ("Toplam hasar: 412 |
+   * Anlik DPS: 3.1 | Muhimmat: 12/40 | ...") ve altinda alt alta dugmelerdi.
+   * Simdi ust satirda dort ana sayi, altinda katlanir bolumler (Saldiri,
+   * Nisan, Etkiler, Kaynak, Gelisim, Kartlar ve esyalar, Ayarlar), en altta
+   * sabit Gelistir/Onar/Sat seridi: kaydirma ne kadar asagida olursa olsun
+   * ana dugmeler gorunur. Sayilar sunucunun blogundan (`tower:stats`).
+   */
+  const buildTowerSheet = (state: ControlState, model: TowerSheetModel) => {
+    const lead: HTMLElement[] = [];
     // Yaratici modda seviye bir dugme dizisi: yukseltme yolu tek tek ilerliyor
     // ve bedel istiyor, burasi dogrudan yaziyor.
     if (state.creative && state.selectedPlacedTowerId) {
@@ -1056,29 +1198,18 @@ export function setupGameControlUi(game: Phaser.Game) {
         button.addEventListener("pointerup", () => dispatch({ action: "creativeLevel", level }));
         levels.append(button);
       }
-      body.push(levels);
+      lead.push(levels);
     }
-
-    if (state.selectedInsight) {
-      const insight = document.createElement("p");
-      insight.className = "game-controls__insight";
-      insight.style.cssText = "margin:0;padding:8px 10px;line-height:1.5;font-size:12px;color:#c9e6ee;white-space:normal;max-height:6em;overflow:auto;border-left:2px solid #4b91a6;background:#132532";
-      insight.textContent = state.selectedInsight;
-      body.push(insight);
-    }
-    const stats = document.createElement("div");
-    stats.className = "game-controls__stats";
-    stats.textContent = (state.selectedStats ?? []).join("  |  ");
-    body.push(stats);
 
     // Takili esyalar da burada: takilan esya sokulemedigi icin liste salt
     // okunur, yalnizca aciklamasi acilir.
-    body.push(buildTowerEffects(state));
+    const tail: HTMLElement[] = [buildTowerEffects(state)];
+    const controls = buildTowerControls(state);
+    if (controls) tail.push(controls);
 
-    // Satis haritadaki kule panelinde de duruyor ama tek yeri orasi
-    // olamaz: cekmece tuvalin alt yarisini kapliyor ve haritanin alt
-    // sirasindaki bir kulenin paneli tam onun altina dusuyor. Oyuncu
-    // kuleyi seciyor, satis dugmesi hic gorunmuyordu.
+    // Satis haritadaki kule panelinde de duruyor ama tek yeri orasi olamaz:
+    // haritanin alt sirasindaki bir kulenin paneli tam bu panelin altina
+    // dusuyor. Serit sabit: bolumler ne kadar uzarsa uzasin gorunur.
     const actions: HTMLElement[] = [
       makeActionButton(state.upgrade?.label ?? "Yükselt", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" }))
     ];
@@ -1088,71 +1219,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.sell) {
       actions.push(makeActionButton(state.sell.label, "game-controls__action--sell", state.sell.enabled, () => dispatch({ action: "sellTower" })));
     }
-    body.push(makeRow(actions));
+    const footer = makeRow(actions, "tower-sheet__actions");
 
-    if (state.performance) {
-      body.push(makePerformanceSlider(state.performance));
-    }
-
-    if (state.underworldMode) {
-      body.push(makeRow([
-        makeUnderworldModeButton("Onay", "approval", state.underworldMode),
-        makeUnderworldModeButton("Stres", "stress", state.underworldMode)
-      ], "game-controls__underworld-mode"));
-    }
-    if (state.gate) {
-      const gate = state.gate;
-      body.push(makeRow([makeActionButton(
-        gate.open ? "Kapıyı Ör" : "Kapı Yap",
-        "game-controls__underworld-mode-button",
-        gate.canEdit,
-        () => dispatch({ action: "toggleWallGate" })
-      )], "game-controls__underworld-mode"));
-    }
-    if (state.ammoLogistics) {
-      body.push(makeRow([makeActionButton(
-        state.ammoLogistics.enabled ? "Mühimmat Akışı: Açık" : "Mühimmat Akışı: Kapalı",
-        "game-controls__underworld-mode-button",
-        state.ammoLogistics.canEdit,
-        () => dispatch({ action: "toggleAmmoLogistics" })
-      )], "game-controls__underworld-mode"));
-    }
-    if (state.logisticsPriority) {
-      const label = document.createElement("span");
-      label.textContent = "Sevkiyat önceliği";
-      label.className = "tower-items__header";
-      body.push(label);
-      const priority = state.logisticsPriority;
-      body.push(makeRow((["critical", "normal", "low"] as const).map((value) => makeActionButton(
-          `${priority.value === value ? "● " : ""}${{ critical: "Kritik", normal: "Normal", low: "Düşük" }[value]}`,
-          "game-controls__underworld-mode-button", priority.canEdit,
-          () => dispatch({ action: "setLogisticsPriority", priority: value })
-      )), "game-controls__underworld-mode"));
-    }
-    if (state.standby) {
-      const standby = state.standby;
-      body.push(makeRow([makeActionButton(
-        standby.active ? "Kuleyi Ac" : standby.waking ? "Kule Isiniyor..." : "Beklemeye Al",
-        "game-controls__underworld-mode-button",
-        standby.canEdit && !standby.waking,
-        () => dispatch({ action: "toggleTowerStandby" })
-      )], "game-controls__underworld-mode"));
-    }
-    if (state.targeting) {
-      const select = document.createElement("select");
-      select.className = "game-controls__targeting";
-      for (const mode of state.targeting.modes) {
-        const option = document.createElement("option");
-        option.value = mode;
-        option.textContent = ({ first: "İlk", strongest: "En güçlü", weakest: "En zayıf", closest: "En yakın", last: "Son", random: "Rastgele" } as Record<string, string>)[mode] ?? mode;
-        option.selected = mode === state.targeting.current;
-        select.append(option);
-      }
-      select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
-      body.push(select);
-    }
-
-    return body;
+    const sheet = document.createElement("section");
+    const body = renderTowerSheet(sheet, model, {
+      close: () => dispatch({ action: "clearTowerSelection" }),
+      resize: () => window.requestAnimationFrame(reportTowerSheet)
+    }, { lead, tail, footer });
+    return { sheet, body };
   };
 
   /**
@@ -1349,13 +1423,12 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.selectedTowerId !== lastSelectedTowerId) {
       lastSelectedTowerId = state.selectedTowerId;
       if (state.selectedTowerId) openDrawer = undefined;
-      // Her kule "etki edenler" kapali baslar: bolum Gelistir/Sat satirinin
-      // ustunde ve cekmece en fazla 300px; bir kulede acik birakilmasi
-      // sonraki her kulede ana dugmeleri katlamanin altina itiyordu.
-      towerEffectsOpen = false;
       towerEffectFocus = undefined;
     }
 
+    // Model her durumda bir kez kuruluyor: hem yapi anahtari hem canli
+    // sayilar ondan okunuyor.
+    latestSheetModel = state.towerSheet ? buildTowerSheetModel(state.towerSheet) : undefined;
     // Canli sayilar paneli yeniden kurmaz, yerinde yazilir.
     syncLiveStats();
     // Bildirim de: parmak bir cekmece dugmesinin ustundeyken yeniden kurma
@@ -1384,7 +1457,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     rebuildDeferred = false;
     latestKey = key;
     root.classList.toggle("game-controls--hidden", !state.visible);
-    root.classList.toggle("game-controls--tower-selected", Boolean(state.selectedStats));
+    root.classList.toggle("game-controls--tower-selected", Boolean(state.towerSheet));
     if (!state.visible) {
       clearPanel();
       return;
@@ -1462,7 +1535,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
 
     const panel = document.createElement("section");
-    panel.className = `game-controls__panel${state.selectedStats ? " game-controls__panel--tower-selected" : ""}`;
+    panel.className = `game-controls__panel${state.towerSheet ? " game-controls__panel--tower-selected" : ""}`;
 
     // Elle acilan cekmece, secimle kendiliginden gelen kule panelinin onune
     // geciyor. Yukaridaki "yeni secim cekmeceyi kapatir" kuralinin obur
@@ -1470,7 +1543,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     // olsaydi kule secili hicbir cekmece acilamaz, ters yonlu olsaydi
     // kuleye dokunmak panelini getirmezdi.
     let drawer: HTMLElement | undefined;
+    /** Kaydirmasi korunan eleman: cekmecenin kendisi ya da kule panelinin govdesi. */
+    let scroller: HTMLElement | undefined;
     let drawerId = "";
+    sheetElement = undefined;
     if (openDrawer === "creative" && state.creative) {
       drawerId = "creative";
       drawer = makeDrawer("Yaratıcı mod", buildCreativeDrawer(state), () => toggleDrawer("creative"));
@@ -1486,12 +1562,15 @@ export function setupGameControlUi(game: Phaser.Game) {
     } else if (openDrawer === "workerDevelopment") {
       drawerId = "workerDevelopment";
       drawer = makeDrawer("İşçi Gelişim Ağacı", buildWorkerDevelopmentDrawer(state), () => toggleDrawer("workerDevelopment"));
-    } else if (state.selectedStats) {
+    } else if (state.towerSheet && latestSheetModel) {
       drawerId = `tower:${state.selectedTowerId ?? ""}`;
-      drawer = makeDrawer("Seçili kule", buildTowerDrawer(state), () => dispatch({ action: "clearTowerSelection" }));
+      const built = buildTowerSheet(state, latestSheetModel);
+      sheetElement = built.sheet;
+      scroller = built.body;
     }
     if (drawer) {
       panel.append(drawer);
+      scroller = drawer;
     }
     if (drawerId !== "workerDevelopment") {
       workerTreePan = { x: 0, y: 0 };
@@ -1500,8 +1579,16 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     panel.append(buildLauncher(state));
     root.append(panel);
-    if (drawer) {
-      keepDrawerScroll(drawer, drawerId);
+    // Kule paneli alta yaslaninca cekmecenin yerinde (barin hemen ustu);
+    // kule ekranin alt yarisindaysa ust cubugun altina geciyor ki kule ve
+    // savundugu hat panelin arkasinda kalmasin.
+    if (sheetElement && latestSheetModel) {
+      if (latestSheetModel.dock === "top") root.append(sheetElement);
+      else panel.prepend(sheetElement);
+    }
+    reportTowerSheet();
+    if (scroller) {
+      keepDrawerScroll(scroller, drawerId);
     } else {
       // Kapanan cekmece yeniden acildiginda basindan baslar.
       drawerScroll = { id: "", top: 0 };
@@ -1570,6 +1657,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     slider.value = String(performance.percent);
     slider.disabled = !performance.canEdit;
     slider.className = "game-controls__performance-slider";
+    slider.setAttribute("aria-label", "Performans kolu");
     slider.addEventListener("input", () => {
       label.textContent = `Performans %${slider.value}`;
       dispatch({ action: "setTowerPerformance", performance: Number(slider.value) / 100 });

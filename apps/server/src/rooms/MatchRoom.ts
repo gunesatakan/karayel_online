@@ -3,6 +3,8 @@ import { MapSchema, Schema, type } from "@colyseus/schema";
 import { performance } from "node:perf_hooks";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
+// Kule paneli: secili kulenin savasta okunan sayilari (`sendTowerStats`).
+import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
 // Zeynep atislarinin geometrisi paylasilan pakette: istemcinin imzalari ayni kurali cagiriyor.
 import { KIN_WAVE_BAND_DEPTH, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getEnemyTypeCollisionRadius, isAbartiArmorBreakProjectile } from "@karayel/shared";
 import {
@@ -1250,6 +1252,8 @@ type TowerModel = {
   recentKillTimes?: number[];
   /** `aim:killSnap`: son oldurmeden sonraki donus hizi penceresinin sonu. */
   killSnapUntil?: number;
+  /** Bu kosuda oldurdugu dusman (kule paneli); yalnizca sayac, hicbir kural okumuyor. */
+  killCount?: number;
   zeynepFormationSize: number;
   zeynepFormationLevel: number;
   melisEvolutionLevel: number;
@@ -1384,6 +1388,9 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   toggleAmmoLogistics: { phase: "match", fields: { towerId: "string" } },
   "tower:priority": { phase: "match", fields: { towerId: "string", priority: "string" } },
   "tower:preview": { phase: "match", fields: { requestId: "string", towerId: "string", cardId: "string", itemId: "string" } },
+  // Kule paneli acikken istemci yarim saniyede bir istiyor (`TOWER_STATS_REFRESH_MS`);
+  // kova secim degisiminde aninda istege ve bir yeniden baglanmaya yer birakiyor.
+  "tower:stats": { phase: "match", fields: { towerId: "string", q: "number" }, rate: { burst: 4, perSecond: 3 } },
   "defense:request": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
   // Kol surukleme boyunca her karede gidiyor; son deger dusmemeli.
   setTowerPerformance: { phase: "match", fields: { towerId: "string", performance: "number" }, rate: { burst: 120, perSecond: 120 }, latestWinsBy: "towerId" },
@@ -2332,6 +2339,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("toggleAmmoLogistics", (client, message: ToggleAmmoLogisticsMessage) => this.toggleAmmoLogistics(client, message));
     this.onMessage("tower:priority", (client, message) => this.setLogisticsPriority(client, message));
     this.onMessage("tower:preview", (client, message) => this.sendTowerPreview(client, message));
+    this.onMessage("tower:stats", (client, message) => this.sendTowerStats(client, message));
     this.onMessage("defense:request", (client) => {
       const summary = this.lastDefenseSummary.get(client.sessionId);
       if (summary) client.send("defense:summary", summary);
@@ -4572,17 +4580,15 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Anlik goruntuye giden surekli atis alani; yalnizca isi tam hizi kisiyorsa.
-   *
-   * Deger yoksa anahtar hic yazilmiyor: `undefined` degerli anahtar JSON'da
-   * dusuyor ve delta onu silmek icin `null` gondermiyor, istemcide eski sayi
-   * asili kalirdi. Anahtar kayittan ciktiginda delta `null` yolluyor.
+   * Kule panelinin surekli atis sayisi (`TowerStatsWire.su`); yalnizca isi
+   * tam hizi kisiyorsa. Eskiden her karede her kule icin anlik goruntuye
+   * yaziliyordu; artik yalnizca panelin istedigi kule icin okunuyor.
    */
-  private getSustainedAttackWire(tower: TowerModel) {
+  private getSustainedAttacksPerSecond(tower: TowerModel) {
     const budget = this.getTowerHeatBudget(tower);
     if (!budget) return undefined;
     const sustained = Math.round(budget.sustained * 100) / 100;
-    return sustained < Math.round(budget.nominal * 100) / 100 ? { sustainedAttacksPerSecond: sustained } : undefined;
+    return sustained < Math.round(budget.nominal * 100) / 100 ? sustained : undefined;
   }
 
   private updateTowers(deltaTime: number) {
@@ -9228,6 +9234,271 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
+   * Kule panelinin istegi: secili kulenin blogu, yalnizca isteyene.
+   *
+   * Takim arkadasinin kulesi de okunabiliyor -- co-op'ta herkes ayni hatti
+   * savunuyor -- ama blok salt okunur isaretiyle gidiyor; kuleyi degistiren
+   * her komut sahipligi zaten kendisi soruyor. Odada oyuncusu olmayan oturum
+   * ve var olmayan kule cevapsiz kaliyor. Hiz siniri `MESSAGE_RULES`ta.
+   */
+  private sendTowerStats(client: Client, message: { towerId?: string; q?: number } | undefined) {
+    if (!this.state.players.has(client.sessionId)) return;
+    const tower = typeof message?.towerId === "string" ? this.towers.get(message.towerId) : undefined;
+    if (!tower) return;
+    const q = typeof message?.q === "number" && Number.isInteger(message.q) && message.q >= 0 && message.q <= 1e9 ? message.q : undefined;
+    client.send("tower:stats", this.getTowerStatsBlock(tower, client.sessionId, q));
+  }
+
+  /**
+   * Kule panelinin blogu (`TowerStatsWire`).
+   *
+   * Her sayi savasin okudugu fonksiyondan geliyor: hasar `getTowerDamageBreakdown`
+   * ve vurus paylari (onizlemeyle ayni), ritim `getTowerEffectInterval`, donus
+   * hizi ve ates konisi `aimTowerAt`'in formulu, mermi hizi
+   * `spawnTowerProjectile`'in, kritik `getTowerCritChance` ve `damageEnemy`'nin
+   * carpani. Panel kendi kural yazmiyor; yazsaydi ilk denge turunda yalan
+   * soylemeye baslardi. Hedefe bagli olanlar (hava, kalkan, donmus hedef)
+   * hedef olmadan bilinmiyor; onlar ayri bir listede kosul olarak gidiyor.
+   */
+  private getTowerStatsBlock(tower: TowerModel, viewerId: string, requestId?: number): TowerStatsWire {
+    const now = Date.now();
+    const definition = tower.definition;
+    const engine = this.getTowerEngine(tower);
+    const modifiers = this.getTowerRunModifiers(tower);
+    const sourcesOf = (stat: ModifierStat) => groupTowerStatSources(modifiers.filter((modifier) => modifier.stat === stat));
+    const block: TowerStatsWire = { id: tower.id, c: roundTowerStat(this.scaleWorldDistance(TOWER_GRID_SIZE)) };
+    if (requestId !== undefined) block.q = requestId;
+    if (tower.ownerId !== viewerId) block.ro = 1;
+    if ((tower.killCount ?? 0) > 0) block.k = tower.killCount;
+    if (tower.equippedShopItemIds.length > 0) block.it = [...tower.equippedShopItemIds];
+    if (tower.targetedCardIds.length > 0) block.tc = [...tower.targetedCardIds];
+    // Kaynak binasi ve ates etmeyen yapi (duvar, Tamir Merkezi): savas sayisi yok.
+    if (definition.resourceProvider || !isOperationalTower(definition)) return block;
+
+    const executor = definition.engine?.attack.executor;
+    const ballistic = !executor || executor === "ballistic";
+    if (executor !== "orbit") block.tm = tower.targetingMode;
+    if (definition.damageType) block.dt = definition.damageType;
+    if (definition.hitType) block.ht = definition.hitType;
+
+    // Menzil. Sunucu ve asiri yuklenmis Debug Lazer haritanin kosegeni: tek sayi degil.
+    const range = this.getTowerRange(tower);
+    if (definition.id === "warrior-2" || (definition.id === "warrior-5" && tower.debugOverdriveUntil > now)) {
+      block.rg = 1;
+    } else {
+      block.r = closeTowerStatValue(range, this.scaleWorldDistance(getTowerBaseLevelRange(definition, tower.level)), sourcesOf("range"),
+        [["character:atakan-passive", this.getAtakanPassiveMultiplier(tower)]]);
+    }
+
+    // Hasar: tabani seviyeli tanim, paylari dokumun kendisi. Vurus paylari
+    // (Kan Bankasi, rolanti, onarim) havuzun ustune carpiyor; dokumde ayri kalem.
+    const breakdown = this.getTowerDamageBreakdown(tower);
+    const hitAdd = this.getTowerHitDamageAdd(tower, now);
+    const resolvedDamage = resolveModifierBreakdown(breakdown);
+    const damage = resolvedDamage * (1 + hitAdd);
+    const dealsDamage = towerDealsDamage(definition) && damage > 0;
+    if (dealsDamage) {
+      // Kart ve esya paylari ham yaziliyor, atis hizi satiriyla ayni dilde:
+      // dokum onlari karakter/motor havuzuyla carpiyor ve
+      // `b * (1 + L + havuz * C) = b * havuz * (1 + C)`. Havuz kendi
+      // kalemleriyle carpan olarak duruyor; "-%10" yazan kart "-%15" gorunmuyor.
+      const runDamageCount = modifiers.filter((modifier) => modifier.stat === "damage").length;
+      const poolMods = breakdown.mods.slice(0, breakdown.mods.length - runDamageCount);
+      const pool = new Map<string, number>();
+      let current = 1;
+      for (const modifier of poolMods) {
+        if (current <= 0) break;
+        pool.set(modifier.source, (pool.get(modifier.source) ?? 1) * (1 + modifier.add / current));
+        current += modifier.add;
+      }
+      block.d = closeTowerStatValue(damage, breakdown.base, sourcesOf("damage"), [...pool, ["hit", 1 + hitAdd]]);
+    }
+
+    // Ritim. Aura ve odak kulesinde etki tiki (hiz kartlari islemez), sabit
+    // aralikli kulede tanim (performans ve isi islemez).
+    const auras = this.getActiveTowerAuras(tower);
+    const effectInterval = usesEffectInterval(definition);
+    const fixedPath = Boolean(definition.engine?.fixedFireInterval) && auras.length === 0;
+    const interval = this.getTowerEffectInterval(tower);
+    const baseInterval = auras.length > 0
+      ? Math.min(...auras.map((aura) => aura.tickIntervalMs ?? definition.fireIntervalMs))
+      : getTowerBaseLevelFireIntervalMs(definition, tower.level);
+    const rateSources: TowerStatSource[] = [];
+    const rateMultipliers: TowerStatSource[] = [];
+    if (!fixedPath) {
+      rateMultipliers.push(["perf", this.getTowerPerformanceAttackMultiplier(tower, false)], ["heat", this.getTowerHeatFireRateMultiplier(tower)]);
+      // Atakan'in yalnizlik pasifi kulenin kendi ritmine isliyor; aura tiki ondan gecmiyor.
+      if (auras.length === 0 && this.getAtakanPassiveMultiplier(tower) > 1) rateMultipliers.push(["character:atakan-passive", ATAKAN_ISOLATION_MULTIPLIER]);
+    }
+    if (!effectInterval && !fixedPath) {
+      rateSources.push(...sourcesOf("fireRate"), ["engine:stack", 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1]);
+    }
+    const rate = 1000 / Math.max(1, interval);
+    block.f = closeTowerStatValue(rate, 1000 / Math.max(1, baseInterval), rateSources, rateMultipliers);
+    if (effectInterval) block.e = 1;
+    if (fixedPath) block.fx = 1;
+    const shots = this.getTowerShotsPerTrigger(tower);
+    if (shots !== 1) block.n = shots;
+    const sustained = this.getSustainedAttacksPerSecond(tower);
+    if (sustained !== undefined) block.su = sustained;
+
+    // Kritik: `damageEnemy`'nin zari. Kulenin kendisine bakan paylar (isabetten
+    // kritik, komsusuz kule, soguk namlu) toplamda; hedefe bakanlar kosul listesinde.
+    if (dealsDamage) {
+      const critical = engine?.critical;
+      const definitionBaseChance = TOWER_BASE_CRITICAL_CHANCE + (definition.engine?.critical?.baseChance ?? 0);
+      const coldCrit = this.towerHasUnlock(tower, "heat:coldCrit") && tower.temperature < COLD_CRIT_TEMPERATURE ? COLD_CRIT_CHANCE : 0;
+      // Kulenin kendi kosulu yer hedefiyle okunuyor: ucan hedefe isabet payi
+      // (Irtifa Olcer, isabetten kritik) namlunun o anki hedefine bagli ve
+      // ana sayiyi titretirdi; o pay kosul listesinde "Hava hedefine".
+      const groundTarget = { movementKind: "ground" } as EnemyModel;
+      const ownGround = this.getTowerOwnConditionalCritChance(tower, groundTarget);
+      const ownAir = this.getTowerOwnConditionalCritChance(tower, { movementKind: "air" } as EnemyModel);
+      const critChanceMods = getModifierAdd(modifiers, "critChance");
+      const engineBaseChance = TOWER_BASE_CRITICAL_CHANCE + (critical?.baseChance ?? 0);
+      block.cc = closeTowerStatValue(Math.max(0, engineBaseChance + ownGround + critChanceMods) + coldCrit, definitionBaseChance, [
+        ["engine:critical", engineBaseChance - definitionBaseChance],
+        ...sourcesOf("critChance"),
+        ["cond:own", ownGround],
+        ["cond:cold", coldCrit]
+      ], [], "absolute");
+      const conditional: TowerStatSource[] = [];
+      if (critical?.bonusChanceAgainstStatus) conditional.push([`st:${critical.bonusChanceAgainstStatus.type}`, critical.bonusChanceAgainstStatus.chance]);
+      if (this.towerHasUnlock(tower, "crit:vsFrozen")) conditional.push(["frozen", FROZEN_CRIT_CHANCE]);
+      if (this.towerHasUnlock(tower, "crit:vsMarked")) conditional.push(["marked", MARKED_CRIT_CHANCE]);
+      if (ownAir - ownGround > 0.0005) conditional.push(["air", roundTowerStat(ownAir - ownGround)]);
+      if (conditional.length > 0) block.ccx = conditional;
+      const definitionCritDamage = definition.engine?.critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER;
+      const engineCritDamage = critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER;
+      const critDamage = 1 + Math.max(0, engineCritDamage - 1 + getModifierAdd(modifiers, "critDamage"));
+      block.cm = closeTowerStatValue(critDamage, definitionCritDamage, [["engine:critical", engineCritDamage - definitionCritDamage], ...sourcesOf("critDamage")], [], "absolute");
+
+      // Hedefe bagli hasar paylari: `damageEnemy` onlari vurus ve kritik
+      // paylariyla ayni toplama ekliyor; hedef olmadan bilinmiyor, liste.
+      const targetDamage: TowerStatSource[] = [
+        ["air", getModifierAdd(modifiers, "airDamage")],
+        ["shielded", getModifierAdd(modifiers, "damageVsShielded")],
+        ["brute", getModifierAdd(modifiers, "damageVsBrute")],
+        ["grunt", getModifierAdd(modifiers, "damageVsGrunt")],
+        ["runner", getModifierAdd(modifiers, "damageVsRunner")],
+        ["shooter", getModifierAdd(modifiers, "damageVsShooter")],
+        ["siege", getModifierAdd(modifiers, "damageVsSiege")],
+        ["slowed", this.towerHasUnlock(tower, "status:chill") ? 0.2 : 0],
+        ["marked", getModifierAdd(modifiers, "markAmplification")]
+      ];
+      const dx = targetDamage.filter(([, add]) => Math.abs(add) >= 0.0005).map(([kind, add]): TowerStatSource => [kind, roundTowerStat(add)]);
+      if (dx.length > 0) block.dx = dx;
+
+      // Beklenen saniyelik hasar yalnizca tetik basina bir vurus atan yolda:
+      // yorunge, dalga, lanet ve sentez hasari baska bir ritimle dagitiyor.
+      // `damageEnemy` gibi: vurus ve kritik paylari toplaniyor, carpilmiyor.
+      if (ballistic || executor === "debug-laser") {
+        block.dps = roundTowerStat(resolvedDamage * (1 + hitAdd + block.cc.v * (critDamage - 1)) * shots * rate);
+      }
+    }
+
+    // Nisan: `aimTowerAt`'in formulu.
+    if (towerAims(definition.id)) {
+      const degrees = 180 / Math.PI;
+      const turnBonus = this.getTowerStatBonus(tower, "turnRate", modifiers);
+      block.tr = closeTowerStatValue(
+        Math.max(0, 1 + turnBonus) * TOWER_TURN_RATE_RADIANS_PER_SECOND * degrees,
+        TOWER_TURN_RATE_RADIANS_PER_SECOND * degrees,
+        [...sourcesOf("turnRate"), ["cond:turnRate", this.getTowerConditionalStatAdd(tower, "turnRate", modifiers, now)]]
+      );
+      // Koni carpanla degil tabandan kesirle daraliyor; dokum kendiliginden kapali.
+      block.ac = closeTowerStatValue(
+        getTowerFireAlignmentTolerance(this.getTowerStatBonus(tower, "accuracy", modifiers)) * degrees,
+        getTowerFireAlignmentTolerance(0) * degrees,
+        [...sourcesOf("accuracy"), ["cond:accuracy", this.getTowerConditionalStatAdd(tower, "accuracy", modifiers, now)]],
+        [],
+        "none"
+      );
+    }
+
+    // Mermi hizi: `spawnTowerProjectile` ve Kin dalgasi; obur yurutuculerde
+    // mermi hizi tek bir sayi degil, yalnizca carpan gidiyor.
+    if (towerFiresProjectiles(definition)) {
+      const multiplier = this.getTowerProjectileSpeedMultiplier(tower);
+      const speedSources: TowerStatSource[] = [...sourcesOf("projectileSpeed"), ["cond:projectileSpeed", this.getTowerConditionalStatAdd(tower, "projectileSpeed", modifiers, now)]];
+      const hitType = definition.hitType ?? "projectile";
+      if (ballistic && definition.id !== "warrior-2") {
+        const raw = definition.projectileSpeed + tower.level * 22;
+        const speed = this.scaleWorldSpeed(getBallisticMovementSpeed(raw * this.getMelisFocusProjectileSpeedMultiplier(tower), hitType)) * multiplier;
+        block.ps = closeTowerStatValue(speed, this.scaleWorldSpeed(getBallisticMovementSpeed(raw, hitType)), speedSources);
+      } else if (executor === "kin-wave") {
+        const base = this.scaleWorldSpeed(getBallisticMovementSpeed(KIN_WAVE_SPEED + tower.level * 4, "wave"));
+        block.ps = closeTowerStatValue(base * multiplier, base, speedSources);
+      } else {
+        block.ps = closeTowerStatValue(multiplier, 1, speedSources);
+        block.pr = 1;
+      }
+    }
+
+    // Vurusun sekli.
+    if (ballistic) {
+      const aoe = this.getTowerAoeRadius(tower);
+      if (aoe > 0) block.a = roundTowerStat(this.scaleWorldDistance(aoe + (tower.level - 1) * 5));
+      const pierce = (engine?.attack.pierceCount ?? 1) + this.getWorkerPierceBonus(tower);
+      if (pierce > 1) block.pl = pierce;
+    }
+    if (definition.engine?.attack.shape === "cone") block.ca = roundTowerStat(this.getTowerConeAngleRadians(tower) * 180 / Math.PI);
+    if (executor === "orbit") block.bl = engine?.attack.bladeCount ?? 1;
+
+    // Etkiler: hiz carpanlari sahadaki fonksiyonlardan (`getTowerSlowStatus`,
+    // aura), digerleri `applyConfiguredTowerStatus`'un okudugu carpanlarla.
+    const effects: TowerEffectWire[] = [];
+    const slow = this.getTowerSlowStatus(tower);
+    if (slow) {
+      effects.push(slow.farSpeedMultiplier === undefined
+        ? ["slow", roundTowerStat(1 - slow.speedMultiplier), slow.durationMs]
+        : ["slow", roundTowerStat(1 - slow.speedMultiplier), slow.durationMs, roundTowerStat(1 - slow.farSpeedMultiplier)]);
+      if (this.towerHasUnlock(tower, "status:slowCrit")) block.sc = 1;
+    }
+    const auraSlow = this.getTowerAuraSlowMultiplier(tower);
+    if (auraSlow !== undefined) effects.push(["aslow", roundTowerStat(1 - auraSlow)]);
+    const magnitudeMultiplier = getModifierMultiplier(modifiers, "statusMagnitude");
+    const durationMultiplier = getModifierMultiplier(modifiers, "statusDuration");
+    for (const status of engine?.statusEffects ?? []) {
+      if (status.type === "slow") continue;
+      const stacks = status.stacking === "add" && status.maxStacks ? status.maxStacks : 0;
+      const entry: TowerEffectWire = [status.type, roundTowerStat(status.magnitude * magnitudeMultiplier), Math.round(status.durationMs * durationMultiplier)];
+      if (stacks > 0) entry.push(stacks);
+      effects.push(entry);
+    }
+    if (this.towerHasUnlock(tower, "status:burn") && definition.damageType === "fire") effects.push(["burn", 0.015, 4000]);
+    if (this.towerHasUnlock(tower, "status:coolantSlow")) {
+      const coolant = Math.min(COOLANT_SLOW_MAX, this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING * magnitudeMultiplier);
+      if (coolant > 0) effects.push(["coolant", roundTowerStat(coolant), Math.round(COOLANT_SLOW_DURATION_MS * durationMultiplier)]);
+    }
+    // Takipci'nin isareti dusmani seviyeye gore %20/%40/%60 fazla hasar alir yapiyor.
+    if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * 0.2), 6500]);
+    const armorBreak = getModifierAdd(modifiers, "armorBreak");
+    if (armorBreak > 0) effects.push(["armor", roundTowerStat(armorBreak)]);
+    if (definition.id === "zeynep-8") effects.push(["armorAura", roundTowerStat(getAbartiArmorBreak(tower.level))]);
+    if (effects.length > 0) block.fe = effects;
+
+    // Kaynak: tetik basina bedel ve soguma; anlik doluluk anlik goruntude zaten var.
+    if (definition.id !== "warrior-2") {
+      block.hs = roundTowerStat(this.getTowerShotHeat(tower) * shots);
+      block.hc = roundTowerStat(this.getTowerCoolingPerSecond(tower));
+      block.hl = this.getTowerHeatLockThreshold(tower);
+      block.hr = this.getTowerHeatReleaseThreshold(tower);
+      if (this.towerHasUnlock(tower, "heat:thermalMass") || definition.engine?.fixedFireInterval) block.nb = 1;
+    }
+    const energyCost = this.getTowerEnergyCost(tower) * shots;
+    if (energyCost > 0) block.ec = roundTowerStat(energyCost);
+    const ammoCost = this.getTowerAmmoCost(tower) * shots;
+    if (ammoCost > 0) block.am = roundTowerStat(ammoCost);
+    // Calisma enerjisi `updateTowers`'in harcadigi: kart carpani dahil, oyun saniyesi basina.
+    const upkeep = this.getWorkerBoost(tower, "upkeepFree", now)
+      ? 0
+      : calculateTowerOperatingEnergy(definition, 1, getModifierMultiplier(modifiers, "operatingEnergyCost"));
+    if (upkeep > 0) block.oe = roundTowerStat(upkeep);
+    return block;
+  }
+
+  /**
    * Bir tetiklemede cikan mermi sayisi.
    *
    * Cifte Namlu ikinci mermiyi ayni tetikte atar ve muhimmat, enerji ve isiyi
@@ -9556,6 +9827,7 @@ export class MatchRoom extends Room<MatchState> {
       equippedShopItemIds: [],
       targetingMode: definition.engine?.targeting ?? "first",
       shopKillStacks: 0,
+      killCount: 0,
       shopWaveStacks: 0,
       activeMs: 0,
       overheatMs: 0,
@@ -11575,6 +11847,7 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceOwnerId) ownerGold += this.awardPlayerKillBountyGold(sourceOwnerId, enemy, sourceDefinitionId);
     this.awardEnemyExperience(enemy, sourceTowerId ? this.towers.get(sourceTowerId) : undefined);
     this.kills += 1;
+    if (killerTower) killerTower.killCount = (killerTower.killCount ?? 0) + 1;
     this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
     // Supurmenin kendi oldurmesi: suren supurmede o kulenin vurusu (durum tiki degil).
     const sweepRun = sourceTowerId && !sourceDefinitionId.startsWith("status:") ? this.debugSweepRuns.get(sourceTowerId) : undefined;
@@ -13215,11 +13488,6 @@ export class MatchRoom extends Room<MatchState> {
         effectIntervalMs: usesEffectInterval(tower.definition)
           ? Math.round(this.getTowerEffectInterval(tower))
           : undefined,
-        auraSlowMultiplier: this.getTowerAuraSlowMultiplier(tower),
-        slowSpeedMultiplier: this.getTowerSlowStatus(tower)?.speedMultiplier,
-        slowSpeedMultiplierFar: this.getTowerSlowStatus(tower)?.farSpeedMultiplier,
-        slowDurationMs: this.getTowerSlowStatus(tower)?.durationMs,
-        slowCrit: this.getTowerSlowStatus(tower) && this.towerHasUnlock(tower, "status:slowCrit") ? true : undefined,
         range: roundNetworkNumber(this.getTowerRange(tower)),
         minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
@@ -13260,7 +13528,6 @@ export class MatchRoom extends Room<MatchState> {
         insight: this.getTowerInsight(tower),
         gate: tower.gate,
         temperature: Math.round(tower.temperature * 10) / 10,
-        ...this.getSustainedAttackWire(tower),
         misfortune: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.misfortune * 10) / 10 : undefined,
         luckyWindowRemainingMs: tower.characterId === "onur" ? Math.max(0, tower.luckyWindowUntil - now) : undefined,
         lastLuckMultiplier: tower.characterId === "onur" && tower.definition.damage > 0 ? Math.round(tower.lastLuckMultiplier * 100) / 100 : undefined,

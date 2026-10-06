@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Kule paneli · geliştirme</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Sahte harita: koyu zemin, izgara ve bir yol. Panelin kuleyi kapatip kapatmadigi gorulsun. */
+      #fake-canvas {
+        position: fixed;
+        inset: 0;
+        background:
+          linear-gradient(90deg, transparent 47%, rgba(148, 163, 184, 0.16) 47%, rgba(148, 163, 184, 0.16) 53%, transparent 53%),
+          repeating-linear-gradient(0deg, rgba(56, 189, 248, 0.05) 0 1px, transparent 1px 34px),
+          repeating-linear-gradient(90deg, rgba(56, 189, 248, 0.05) 0 1px, transparent 1px 34px),
+          #070b16;
+      }
+      #game-hud-root {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 54px;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        box-sizing: border-box;
+        border-bottom: 1px solid rgba(96, 165, 250, 0.4);
+        background: rgba(2, 6, 23, 0.92);
+        color: #cbd5e1;
+        font: 600 12px/1 Rajdhani, sans-serif;
+      }
+      #tower-marker {
+        position: fixed;
+        left: calc(50% + 40px);
+        width: 30px;
+        height: 30px;
+        margin: -15px 0 0 -15px;
+        border: 2px solid #22c55e;
+        background: rgba(34, 197, 94, 0.18);
+        box-shadow: 0 0 0 46px rgba(34, 197, 94, 0.06);
+        border-radius: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="fake-canvas"></div>
+    <div id="game-hud-root">◆ 210g · 52 XP · Dalga 7 · ♥ 86</div>
+    <div id="tower-marker" title="Seçili kule"></div>
+    <script type="module">
+      import "/src/style.css";
+      import "/src/dev/tower-sheet-harness.ts";
+    </script>
+  </body>
+</html>

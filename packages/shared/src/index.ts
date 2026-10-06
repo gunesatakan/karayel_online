@@ -548,36 +548,17 @@ export type TowerSnapshot = {
    */
   auraActive?: boolean;
   /**
-   * Kulenin aurasinin dusman hizina uyguladigi carpan.
-   *
-   * Izolasyon Kulesi'nin ne kadar yavaslattigi hicbir yerde yazmiyordu.
-   * Seviyeyle ve kartlarla degistigi icin istemci kendi hesaplayamaz.
-   */
-  /**
    * Kulenin ritmi bir etki araligiysa, o araligin uzunlugu.
    *
    * Ayri bir alan cunku anlami ayri: saldiri hizi buna islemiyor ve panelde
    * bunu gormek, isabet etmeyen bir karti almamanin tek yolu.
    */
   effectIntervalMs?: number;
-  auraSlowMultiplier?: number;
-  /**
-   * Kulenin vuruslarinin dusman hizina birakacagi carpan ve suresi.
-   *
-   * Durumun `magnitude` degeri degil, sahada gercekten olusan hiz. Ikisi
-   * ayni sey degil: yavaslatma durumunun gucu hiza islemiyor, aktifse hiz
-   * duz bir tavana iniyor. Panelde `magnitude` yazdigi surece kule
-   * "-%100 yavaslatiyorum" diyordu, oysa yaptigi -%52'ydi.
+  /*
+   * Yavaslatma ve surekli atis sayilari anlik goruntude yok: her karede her
+   * kule icin gidiyordu ama yalnizca secili kulenin paneli okuyordu. Artik
+   * panelin blogunda (`TowerStatsWire`), yalnizca isteyene.
    */
-  slowSpeedMultiplier?: number;
-  /** Mesafeyle degisen yavaslatmalarda uzaktaki deger; yoksa tek bir sayi. */
-  slowSpeedMultiplierFar?: number;
-  slowDurationMs?: number;
-  /**
-   * Kulenin vurus yavaslatmasi kritik gelebiliyor (Buz Kirigi). Panel kritik
-   * degeri bundan ve yukaridaki carpanlardan hesapliyor (kesir x1,5, %90 tavan).
-   */
-  slowCrit?: boolean;
   /** Radians toward the current target. Only sent for towers that aim. */
   facing?: number;
   level: number;
@@ -632,15 +613,6 @@ export type TowerSnapshot = {
    */
   gate?: boolean;
   temperature?: number;
-  /**
-   * Isinin izin verdigi surekli tetikleme hizi, oyun saniyesi basina.
-   *
-   * Yalnizca isi baglayan kulede, yani sogutma tam hizi karsilayamiyorsa
-   * geliyor; yoksa alan hic yok. Sunucu savasin kullandigi fonksiyonlarla
-   * hesapliyor (atis isisi, sogutma, isisiz aralik): istemci kural yazsa
-   * kartlar ve kol bir tarafta degisip obur tarafta degismezdi.
-   */
-  sustainedAttacksPerSecond?: number;
   misfortune?: number;
   luckyWindowRemainingMs?: number;
   lastLuckMultiplier?: number;
@@ -2147,3 +2119,4 @@ export * from "./defense-insights.js";
 export * from "./worker-skills.js";
 export * from "./synergy/index.js";
 export * from "./zeynep-shots/index.js";
+export * from "./tower-panel/index.js";

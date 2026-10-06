@@ -12,8 +12,8 @@
  *      Termal Kutle'de ve sabit aralikli kulede fren yok, durum da yok.
  *   2. Surekli atis hizi isi dengesi: isi baglarsa `soguma / tetikleme isisi`,
  *      baglamazsa frensiz tam hiz. Sayi gercek savasla ayni cikiyor.
- *   3. Alan yalnizca isi baglayan kulede tele cikiyor ve baglamayi biraktiginda
- *      delta onu `null` ile siliyor.
+ *   3. Sayi yalnizca isi baglayan kulede kule panelinin blogunda (`su`);
+ *      anlik goruntude hic yok (her karede her kule icin gitmesi bosunaydi).
  *   4. Onizleme surekli tetiklemeyi gosteriyor: isi baglayan kulede atis hizi
  *      karti onu kipirdatmiyor, sogutma esyasi buyutuyor.
  *   5. Sogutma kartlari "dps" ekseni de tasiyor.
@@ -134,8 +134,8 @@ test("isi baglarsa surekli atis soguma bolu tetikleme isisi", () => {
   assert.ok(Math.abs(room.getTowerHeatBudget(tower).nominal - budget.nominal) < 1e-9, "tam hiz frenle birlikte dustu");
   tower.temperature = 0;
 
-  // Tel iki basamakli sayiyi tasiyor.
-  assert.deepEqual(room.getSustainedAttackWire(tower), { sustainedAttacksPerSecond: Math.round(expected * 100) / 100 });
+  // Panel blogu iki basamakli sayiyi tasiyor.
+  assert.equal(room.getTowerStatsBlock(tower, "p1").su, Math.round(expected * 100) / 100);
 });
 
 test("sogutma tam hizi karsiliyorsa surekli atis tam hiz ve tele cikmiyor", () => {
@@ -145,7 +145,7 @@ test("sogutma tam hizi karsiliyorsa surekli atis tam hiz ve tele cikmiyor", () =
   const budget = room.getTowerHeatBudget(tower);
   assert.ok(room.getTowerCoolingPerSecond(tower) / room.getTowerShotHeat(tower) > budget.nominal, "olcum bos: isi hala bagliyor");
   assert.equal(budget.sustained, budget.nominal);
-  assert.equal(room.getSustainedAttackWire(tower), undefined);
+  assert.equal(room.getTowerStatsBlock(tower, "p1").su, undefined);
 
   // Isinmayan yapinin butcesi hic yok.
   const depot = kuleliOda("warrior-8");
@@ -172,30 +172,26 @@ test("surekli atis gercek savasla ayni: sade, sogutmali ve Termal Kütle'li", ()
   kartAl(termal.room, "termal-kutle");
   const beklenenTermal = termal.room.getTowerHeatBudget(termal.tower);
   assert.ok(beklenenTermal.sustained < beklenenTermal.nominal * 0.5, "Termal Kutle'de isi baglamiyor gorunuyor");
-  assert.ok(termal.room.getSustainedAttackWire(termal.tower), "Termal Kutle'li kulede alan tele cikmali");
+  assert.ok(termal.room.getTowerStatsBlock(termal.tower, "p1").su, "Termal Kutle'li kulede panel surekli atisi gostermeli");
   const olculenTermal = olculenTetiklemeHizi(termal.room, termal.tower);
   assert.ok(Math.abs(olculenTermal / beklenenTermal.sustained - 1) < 0.15, `beklenen ${beklenenTermal.sustained.toFixed(3)}/sn, olculen ${olculenTermal.toFixed(3)}/sn`);
 });
 
-test("surekli atis deltada gidiyor, isi baglamayi birakinca null gidiyor", () => {
+test("surekli atis anlik goruntude yok, panel blogunda var", () => {
   const { room, tower } = kuleliOda();
   const onbellek = new Map();
-  const gonder = () => {
-    const { wire, towerBaseline, enemyBaseline } = room.applyWireDelta(room.getSnapshot());
-    room.commitWireBaseline(towerBaseline, enemyBaseline);
-    // Tel gibi: JSON'dan gecince `undefined` alanlar dusuyor.
-    const kayitlar = JSON.parse(JSON.stringify(wire.towers));
-    mergeDynamicTowerSnapshots(onbellek, kayitlar);
-    return kayitlar.find((entry) => entry.id === tower.id);
-  };
-
-  const ilk = gonder();
-  assert.equal(typeof ilk.sustainedAttacksPerSecond, "number");
-  assert.equal(gonder().sustainedAttacksPerSecond, undefined, "degismeyen alan deltada tekrar gitti");
-
+  const { wire, towerBaseline, enemyBaseline } = room.applyWireDelta(room.getSnapshot());
+  room.commitWireBaseline(towerBaseline, enemyBaseline);
+  const kayitlar = JSON.parse(JSON.stringify(wire.towers));
+  mergeDynamicTowerSnapshots(onbellek, kayitlar);
+  const kayit = kayitlar.find((entry) => entry.id === tower.id);
+  assert.ok(kayit, "kule tele cikmadi");
+  for (const alan of ["sustainedAttacksPerSecond", "auraSlowMultiplier", "slowSpeedMultiplier", "slowSpeedMultiplierFar", "slowDurationMs", "slowCrit"]) {
+    assert.equal(alan in kayit, false, `${alan} hala her karede gidiyor`);
+  }
+  assert.equal(typeof room.getTowerStatsBlock(tower, "p1").su, "number");
   tower.performance = 0.1;
-  assert.equal(gonder().sustainedAttacksPerSecond, null, "isi baglamayi birakinca alan silinmedi");
-  assert.equal("sustainedAttacksPerSecond" in onbellek.get(tower.id), false, "istemcide eski sayi kaldi");
+  assert.equal(room.getTowerStatsBlock(tower, "p1").su, undefined, "isi baglamayi birakinca sayi kalkmadi");
 });
 
 /** "Etiket: once -> sonra" satirindan iki sayi. */

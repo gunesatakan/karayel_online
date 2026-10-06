@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
+import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
+import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
+import type { TowerSheetReport } from "../game-control-ui";
 import type { DefenseSummary, EnemyRace, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
 import {
   ArchiveOfferLatch,
@@ -231,7 +234,7 @@ import {
 } from "@karayel/shared";
 import type { WorkerSkillChoice } from "@karayel/shared";
 import { gameServerUrl, healthUrl } from "../config";
-import { SnapshotPlaybackClock, getCriticalSlowFraction, getLevelScaledSlowFraction, type TowerSlowCurve } from "@karayel/shared";
+import { SnapshotPlaybackClock } from "@karayel/shared";
 import {
   clearActiveLobbyRoom,
   clearMatchReconnect,
@@ -734,48 +737,6 @@ const EFFECT_STAT_LABELS: Record<string, string> = {
   stopped: "Tam durdurma"
 };
 
-/**
- * Yavaslatmayi yuzde olarak yazar.
- *
- * Mesafeye gore degisen kuleler icin iki uc da yaziliyor: Kin Kulesi
- * dibinde hic yavaslatmiyor, kenarinda %40 yavaslatiyor. Tek bir sayi
- * yazmak o kulede yanlis olurdu.
- */
-function formatSlowRange(near: number, far?: number) {
-  const yuzde = (value: number) => Math.round((1 - value) * 100);
-  if (far === undefined || far === near) return `hiz -%${yuzde(near)}`;
-  const [az, cok] = yuzde(near) <= yuzde(far) ? [yuzde(near), yuzde(far)] : [yuzde(far), yuzde(near)];
-  return `hiz -%${az}…-%${cok} (uzaklikla)`;
-}
-
-/**
- * Seviyeyle buyuyen yavaslatmanin bir sonraki seviyedeki degeri.
- *
- * Yalnizca egrisi olan kulede (Izolasyon): duz yavaslatma seviyeyle
- * degismiyor ve "sonraki" yazmak orada yalan olurdu. 10. seviyede bos.
- */
-function formatNextLevelSlow(curve: TowerSlowCurve | undefined, level: number) {
-  if (!curve || level >= 10) return "";
-  return ` (sonraki sv -%${Math.round(getLevelScaledSlowFraction(curve, level + 1) * 100)})`;
-}
-
-/**
- * Buz Kirigi kritiginde vurus yavaslatmasi: kesir 1,5 kat, %90 tavan --
- * sunucuyla ayni fonksiyon. Kin'de iki uc ayri (menzil ucunda -%60).
- */
-function formatCriticalSlowRange(near: number, far?: number) {
-  const critical = (value: number) => 1 - getCriticalSlowFraction(1 - value);
-  return ` · kritikte ${formatSlowRange(critical(near), far === undefined ? undefined : critical(far))}`;
-}
-
-/** Kulenin yavaslatma egrileri: vurus ve aura ayri bildiriliyor. */
-function getTowerSlowCurves(definition: TowerDefinition | undefined) {
-  return {
-    hit: definition?.engine?.statusEffects?.find((effect) => effect.type === "slow")?.slowByLevel,
-    aura: definition?.engine?.auras?.find((aura) => aura.affects === "enemies" && aura.stat === "slow")?.slowByLevel
-  };
-}
-
 /** Iki kimlik listesi ayni sirada ayni mi; karsilastirma icin kopya uretmez. */
 function haveSameIds(a: readonly string[], b: readonly string[]) {
   if (a.length !== b.length) return false;
@@ -896,6 +857,22 @@ export class GameScene extends Phaser.Scene {
   private latestDefenseSummary?: DefenseSummary;
   private pendingPreview?: { requestId: string; apply: () => void; dialog: HTMLDialogElement };
   private previewSequence = 0;
+  /**
+   * Kule panelinin sunucu blogu (`tower:stats`): yalnizca secili kule icin,
+   * panel acikken yarim saniyede bir tazeleniyor. Sira numarasi eski cevabi
+   * ayikliyor; anahtar (kule, seviye, kart, esya) degisince beklemeden isteniyor.
+   */
+  private towerStatsBlock?: TowerStatsWire;
+  private towerStatsSequence = 0;
+  private towerStatsRequestKey = "";
+  private towerStatsTimer?: Phaser.Time.TimerEvent;
+  /** Kule panelinin yeri; esikte gidip gelmesin diye son karar hatirlaniyor. */
+  private towerSheetDock: "top" | "bottom" = "bottom";
+  /**
+   * Arayuzun bildirdigi panel: gorunur mu (baska bir cekmece onune gecmis
+   * olabilir) ve tavan boyu tuvalin ne kadari. Yer karari bundan.
+   */
+  private towerSheetReport: TowerSheetReport = { visible: true, heightRatio: 0.41, expanded: false };
   private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
@@ -1598,6 +1575,8 @@ export class GameScene extends Phaser.Scene {
     this.projectileGroup = this.physics.add.group({ defaultKey: "projectile-tower", maxSize: 260 });
 
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
+    this.game.events.on("game:tower-sheet", this.applyTowerSheetReport, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tower-sheet", this.applyTowerSheetReport, this));
     // Cihaz donunce ya da arac cubugu acilip kapaninca tuvalin orani degisiyor;
     // kamera o anki olcuden kuruldugu icin yeniden kurulmasi gerekiyor.
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
@@ -1612,6 +1591,10 @@ export class GameScene extends Phaser.Scene {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
       window.removeEventListener("karayel:control-action", this.handleControlAction);
       this.pingTimer?.remove(false);
+      this.towerStatsTimer?.remove(false);
+      this.towerStatsTimer = undefined;
+      this.towerStatsBlock = undefined;
+      this.towerStatsRequestKey = "";
       this.placementGrid?.destroy();
       this.melisNightmareMapGraphics?.destroy();
       this.placementGhost?.destroy();
@@ -4479,6 +4462,7 @@ export class GameScene extends Phaser.Scene {
       this.room.send("silent:sync");
       this.rememberMatchReconnect(this.room);
       this.startPingLoop();
+      this.startTowerStatsLoop();
     } catch (error) {
       console.error(error);
       this.emitHudState({ status: this.formatConnectionError(error) });
@@ -5233,6 +5217,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("match:victory", (message: MatchResultSummary) => this.handleMatchResult("victory", message));
     room.onMessage("match:defeat", (message: MatchResultSummary) => this.handleMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
+    room.onMessage("tower:stats", (block: TowerStatsWire) => this.receiveTowerStats(block));
     room.onMessage("tower:preview", (preview: TowerPreview) => {
       const pending = this.pendingPreview;
       if (!pending || pending.requestId !== preview.requestId || !pending.dialog.isConnected) return;
@@ -10237,6 +10222,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private emitControlState() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    this.syncTowerStatsRequest(selectedTower);
     const definition = selectedTower
       ? towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId)
       : undefined;
@@ -10446,89 +10432,37 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       performance: this.getPerformanceControlState(selectedTower),
       selectedTowerId: this.selectedPlacedTowerId,
       defenseSummaryAvailable: Boolean(this.latestDefenseSummary),
-      selectedInsight: selectedTower?.insight,
       logisticsPriority: selectedTower ? { value: selectedTower.logisticsPriority ?? "normal", canEdit: selectedTower.ownerId === this.localSessionId } : undefined,
-      selectedStats: selectedTower ? [
-        // Hasar ve DPS yalnizca vuran yapida. Duvarin ikisi de her zaman
-        // sifir ve o sifirlar bir bilgi degil, gurultu.
-        ...(towerOperations ? [
-          `Toplam hasar: ${Math.round(selectedTower.damageDealt ?? 0)}`,
-          `Anlik DPS: ${(selectedTower.currentDps ?? 0).toFixed(1)}`
-        ] : []),
-        // Kulenin ne yaptigini soyleyen satirlar. Aura yaricapi ve
-        // yavaslatma gucu hicbir yerde yazmiyordu: Izolasyon Kulesi'ni
-        // kuran oyuncu ne kadar yavaslattigini ancak dusmanlara bakarak
-        // tahmin edebiliyordu.
-        // Etki araligi ayri yaziliyor: saldiri hizi ona islemiyor ve
-        // oyuncunun bunu kart almadan once gormesi gerekiyor.
-        ...(selectedTower.effectIntervalMs !== undefined ? [
-          `Etki araligi: ${(selectedTower.effectIntervalMs / 1000).toFixed(2)} sn (atis hizindan etkilenmez)`
-        ] : []),
-        // Seviyeyle buyuyen yavaslatmada bir sonraki seviyenin degeri de
-        // yaziliyor: Izolasyon 1. seviyede %10 ile basliyor ve yukseltmenin
-        // ne kazandirdigi ancak boyle gorunuyor.
-        ...(selectedTower.auraSlowMultiplier !== undefined ? [
-          `Aura: ${Math.round(selectedTower.range)} yariçap | hiz -%${Math.round((1 - selectedTower.auraSlowMultiplier) * 100)}${formatNextLevelSlow(getTowerSlowCurves(definition).aura, selectedTower.level)}`
-        ] : []),
-        ...(selectedTower.slowSpeedMultiplier !== undefined ? [
-          `Vurus yavaslatmasi: ${formatSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar)}${formatNextLevelSlow(getTowerSlowCurves(definition).hit, selectedTower.level)}${selectedTower.slowCrit ? formatCriticalSlowRange(selectedTower.slowSpeedMultiplier, selectedTower.slowSpeedMultiplierFar) : ""} · ${((selectedTower.slowDurationMs ?? 0) / 1000).toFixed(1)} sn`
-        ] : []),
-        // Debug Lazer: overdrive'in hangi seviyede acildigi ve 10. seviyenin
-        // ne getirdigi. Satir kuleye sabit, parca sayisi oyunda degismiyor.
-        ...(selectedTower.definitionId === "warrior-5" ? [formatDebugLaserOverdriveLine(selectedTower.level)] : []),
-        ...(selectedTower.resourceProvider === "ammunition" ? [`Fabrika: ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde: ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(selectedTower.resourceProvider === "energy" ? [`Enerji deposu: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(towerOperations ? [`Muhimmat: ${selectedTower.shotFuel === "energy" ? "KULLANMIYOR" : `${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0}`} | Enerji: ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`] : []),
-        ...(towerOperations ? [`Atis yakiti: ${selectedTower.shotFuel === "energy" ? "Enerji" : "Muhimmat"} | Calisma enerjisi: ${(selectedTower.operatingEnergyPerSecond ?? 0).toFixed(1)}/sn`] : []),
-        ...(towerOperations && selectedTower.energyState !== "powered" ? ["ENERJI YOK"] : []),
-        ...(towerOperations ? [`Sicaklik: %${Math.round(selectedTower.temperature ?? 0)} | Performans: %${Math.round((selectedTower.performance ?? 0.5) * 100)}`] : []),
-        // Kural ve surekli hiz tek parca: ayri parca olsalardi fren girip
-        // ciktikca parca sayisi degisir ve panel bastan kurulurdu. Sunucu
-        // hic tetiklemiyor; sunucu da onu frenden ve butceden cikariyor.
-        // Istisna kuleye sabit, parca sayisi oyun icinde degismiyor.
-        ...(towerOperations && selectedTower.definitionId !== "warrior-2" ? [this.getHeatBrakeLine(selectedTower, definition)] : []),
-        ...(selectedTower.characterId === "onur" ? [`Şanssızlık: %${Math.round(selectedTower.misfortune ?? 0)} | Son zar: ×${(selectedTower.lastLuckMultiplier ?? 1).toFixed(2)}`] : []),
-        // Kurulumda bir kez gelen sabit taban: kart, esya ve Radyator ona
-        // islemiyor. "Temel" demezse surekli hizla bolunup dogrulanmaya
-        // calisilir ve tutmaz.
-        ...(towerOperations ? [`Temel soğuma: %${selectedTower.coolingRate ?? 0}/sn`] : []),
-        ...(towerOperations ? [`Muhimmat akisi: ${selectedTower.ammoLogisticsEnabled === false ? "Kapali" : "Acik"}`] : []),
-        // Duvarin kendine ait tek satiri: kapi acik mi.
-        ...(selectedTower.definitionId === WALL_TOWER_ID ? [`Kapi: ${selectedTower.gate ? "Acik (isciler gecer)" : "Kapali"}`] : []),
-        ...(melisZoneEffect ? [`Ruh hali — ${melisZoneLabel}: ${melisZoneEffect}`] : []),
-        ...(isUnderworldTower ? [
-          `Ruh: ${selectedTower.melisUnderworldPullCount ?? 0}`,
-          `Mod: ${(selectedTower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}`
-        ] : []),
-        selectedTower.level < 10 ? `Sonraki: ${upgradePriceLabel} | Havuz: ${formatExperience(this.localPlayerSnapshot?.experience ?? 0)} XP, ${Math.floor(this.localPlayerSnapshot?.gold ?? 0)}g` : "Maksimum level",
-        canSell ? `${refundState?.undoable ? "Kurulum iadesi" : "Satis"}: ${sellRefund}g` : "Sadece sahibi satar"
-      ] : undefined
+      // Kule paneli: sunucunun blogu, canli sayilar ve bolum notlari. Eskiden
+      // hepsi " | " ile dizilmis tek bir metin satiriydi (`selectedStats`).
+      towerSheet: selectedTower ? this.buildTowerSheetInput(selectedTower, definition, {
+        towerOperations,
+        melisZoneEffect,
+        melisZoneLabel,
+        upgradeXp: upgradeCost,
+        upgradeGold: upgradeGoldCost,
+        refund: canSell && refundState ? { amount: sellRefund, undoable: Boolean(refundState.undoable) } : undefined
+      }) : undefined
     });
   }
 
   /**
-   * Kule panelindeki isi freni parcasi.
+   * Kule panelindeki isi freni notu (Kaynak bolumu).
    *
    * Kural hep yaziyor: fren uzun sure hicbir yerde gorunmuyordu ve oyuncu
    * isiyi yalnizca kilit sanip atis hizi kartini sogutmanin onune koyuyordu.
-   * Surekli hiz sunucudan geliyor ve yalnizca isi tam hizi kisiyorsa var;
-   * burada hesaplanmiyor, kartlar ve kol yalnizca sunucuda cozuluyor.
    */
   private getHeatBrakeLine(tower: TowerSnapshot, definition: TowerDefinition | undefined) {
     // Etki araligiyla calisan kulede atis yok ama fren o araligi da uzatiyor.
     const rate = tower.effectIntervalMs !== undefined ? "etki" : "atış";
-    // Esik panelin sicaklik birimiyle ("Sicaklik: %X") yaziliyor; "°C"
-    // panelde baska hicbir yerde gecmiyordu ve oyuncu ikisini eslestiremiyordu.
-    const rule = hasUnlockBit(tower.unlockBits, "heat:thermalMass")
+    // Esik isi cubugunun birimiyle ("%X") yaziliyor; "°C" panelde baska
+    // hicbir yerde gecmiyordu ve oyuncu ikisini eslestiremiyordu. Isinin
+    // izin verdigi surekli hiz artik ritim satirinin altinda (sunucu blogu).
+    return hasUnlockBit(tower.unlockBits, "heat:thermalMass")
       ? "Isı freni yok (Termal Kütle)"
       : definition?.engine?.fixedFireInterval
         ? "Isı freni yok (sabit atış aralığı)"
-        : `Isı freni: sıcaklık %${TOWER_HEAT_BRAKE_TEMPERATURE} üstünde ${rate} hızı düşer`;
-    // Sayi tetikleme basina: Cifte Namlu'da bir tetik iki mermi, "atis"
-    // deseydi kart surekli atisi yariya indiriyor gorunurdu.
-    return tower.sustainedAttacksPerSecond === undefined
-      ? rule
-      : `${rule} · Sürekli ${tower.effectIntervalMs !== undefined ? "etki" : "tetikleme"} ${tower.sustainedAttacksPerSecond.toFixed(2)}/sn (ısı sınırlı)`;
+        : `Isı freni: sıcaklık %${TOWER_HEAT_BRAKE_TEMPERATURE} üstünde ${rate} hızı düşer (çubuktaki çizgi)`;
   }
 
   private updateSelectionUi() {
@@ -10554,43 +10488,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
 
-    const definition = towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId);
-    const cost = definition ? getTowerLevelExpCost(definition.cost, selectedTower.level) : 0;
-    const goldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower.level) : 0;
-    const upgradePriceLabel = `${cost} XP${goldCost > 0 ? ` + ${goldCost}g` : ""}`;
-    const sellRefund = this.getTowerRefundState(selectedTower).amount;
-    const ownsTower = selectedTower.ownerId === this.localSessionId;
-    const canUpgrade = ownsTower && selectedTower.level < 10
-      && (this.localPlayerSnapshot?.experience ?? 0) >= cost
-      && (this.localPlayerSnapshot?.gold ?? 0) >= goldCost;
-    const canSell = selectedTower.ownerId === this.localSessionId;
-    const status = selectedTower.status ? ` | ${selectedTower.status}` : "";
+    // Kulenin adi, seviyesi, menzili, cani ve kaynaklari artik kule panelinde;
+    // ayni bilgiyi bir de bildirim olarak yazmak paneli tekrarliyordu. Kalan
+    // tek bildirim, panelde olmayan bir eylem ipucu: Sunucu baglantisi ve
+    // Sentez dizilimi. Yalnizca secim, seviye ya da sahip degisince cikiyor.
     const linkHint = selectedTower.definitionId === "warrior-2"
-      ? ` | Link ${selectedTower.linkedTowerIds?.length ?? 0}/2 için kuleye dokun`
+      ? `Bağlantı ${selectedTower.linkedTowerIds?.length ?? 0}/2: bağlamak için bir kuleye dokun`
       : selectedTower.definitionId === "zeynep-3"
-        ? " | Sentez için 3'lü üçgen dizilim kur"
+        ? "Sentez için 3'lü üçgen dizilim kur"
         : "";
-    const hpText = selectedTower.hp !== undefined && selectedTower.maxHp !== undefined
-      ? ` | HP ${selectedTower.hp}/${selectedTower.maxHp} Zırh ${selectedTower.armor ?? 0}`
-      : "";
-    const ammoLabels = { bullet: "Mermi", auraCrystal: "Aura Kristali", powerCrystal: "Güç Kristali" } as const;
-    const resourceText = selectedTower.resourceProvider
-      ? selectedTower.resourceProvider === "ammunition"
-        ? ` | Fabrika ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Hammadde ${selectedTower.rawAmmo ?? 0}/${selectedTower.maxRawAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
-        : ` | Enerji Deposu ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
-      : selectedTower.shotFuel === "energy"
-        ? ` | Mühimmat KULLANMIYOR | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
-        : selectedTower.ammoType
-          ? ` | ${ammoLabels[selectedTower.ammoType]} ${selectedTower.ammo ?? 0}/${selectedTower.maxAmmo ?? 0} | Enerji ${selectedTower.energy ?? 0}/${selectedTower.maxEnergy ?? 0}`
-        : "";
-    const rangeText = selectedTower.definitionId === "warrior-2" ? "Global" : `${Math.round(selectedTower.range)}`;
-    // selectionKey canli sayilarla her anlik goruntude degisiyor; toast
-    // yalnizca secim, seviye ya da sahip degisince cikmali. Canli degerler
-    // Secili kule cekmecesinde zaten guncelleniyor.
     const noticeKey = `${selectedTower.id}|${selectedTower.level}|${selectedTower.ownerId}`;
     if (noticeKey !== this.lastSelectionNoticeKey) {
       this.lastSelectionNoticeKey = noticeKey;
-      this.showNotice(`${selectedTower.name} Lv.${selectedTower.level} | Menzil ${rangeText}${hpText}${resourceText}${status}${linkHint}`);
+      if (linkHint) this.showNotice(linkHint);
     }
     this.emitControlState();
   }
@@ -10615,6 +10525,164 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.skillButtons[index]?.setStrokeStyle(1, isDisabled ? 0x475569 : 0x60a5fa, isDisabled ? 0.45 : 0.75);
     });
     this.emitControlState();
+  }
+
+  /**
+   * Kule paneli acikken sunucudan blogu tazeler.
+   *
+   * Tek bir dongu: kule secili degilse hicbir sey gitmiyor. Phaser saati
+   * oldugu icin sekme arka plandayken o da duruyor. Secim degisimi
+   * (`syncTowerStatsRequest`) donguyu beklemeden ayrica istiyor.
+   */
+  private startTowerStatsLoop() {
+    this.towerStatsTimer?.remove(false);
+    this.towerStatsTimer = this.time.addEvent({
+      delay: TOWER_STATS_REFRESH_MS,
+      loop: true,
+      callback: () => {
+        // Panel baska bir cekmecenin arkasindaysa okuyan yok; yoklama duruyor.
+        if (this.selectedPlacedTowerId && this.towerSheetReport.visible) this.requestTowerStats(this.selectedPlacedTowerId);
+      }
+    });
+  }
+
+  /**
+   * Arayuz panelin gorunurlugunu ve tavan boyunu bildirdi. Panel yeniden
+   * gorunur olduysa blok beklemeden isteniyor; boy degistiyse yer yeniden
+   * seciliyor (genisletilen panel kuleyi kapatmasin).
+   */
+  private applyTowerSheetReport(report: TowerSheetReport) {
+    if (!report || !Number.isFinite(report.heightRatio)) return;
+    const becameVisible = report.visible && !this.towerSheetReport.visible;
+    const resized = Math.abs(report.heightRatio - this.towerSheetReport.heightRatio) >= 0.01 || report.expanded !== this.towerSheetReport.expanded;
+    this.towerSheetReport = { ...report, heightRatio: report.heightRatio > 0 ? report.heightRatio : this.towerSheetReport.heightRatio };
+    if (becameVisible && this.selectedPlacedTowerId) this.requestTowerStats(this.selectedPlacedTowerId);
+    if (resized && report.visible && this.selectedPlacedTowerId) this.emitControlState();
+  }
+
+  private requestTowerStats(towerId: string) {
+    this.towerStatsSequence = (this.towerStatsSequence + 1) % 1_000_000_000;
+    this.room?.send("tower:stats", { towerId, q: this.towerStatsSequence });
+  }
+
+  /**
+   * Secili kule, seviyesi, kartlari ya da esyalari degistiyse blogu hemen
+   * ister; baska kuleye gecildiyse eski blogu atar ki panel bir an onceki
+   * kulenin sayilarini gostermesin.
+   */
+  private syncTowerStatsRequest(tower: TowerSnapshot | undefined) {
+    const key = tower
+      ? `${tower.id}|${tower.level}|${(tower.targetedCardIds ?? []).join(",")}|${(tower.equippedShopItemIds ?? []).join(",")}|${tower.targetingMode ?? ""}`
+      : "";
+    if (key === this.towerStatsRequestKey) return;
+    this.towerStatsRequestKey = key;
+    if (this.towerStatsBlock && this.towerStatsBlock.id !== tower?.id) this.towerStatsBlock = undefined;
+    if (tower) this.requestTowerStats(tower.id);
+  }
+
+  private receiveTowerStats(block: TowerStatsWire) {
+    if (!block || typeof block.id !== "string" || block.id !== this.selectedPlacedTowerId) return;
+    // Yolda bekleyen eski bir cevap yenisinin ustune yazmasin.
+    const previous = this.towerStatsBlock;
+    if (previous?.id === block.id && previous.q !== undefined && block.q !== undefined && block.q < previous.q
+      && previous.q - block.q < 500_000_000) return;
+    this.towerStatsBlock = block;
+    this.emitControlState();
+  }
+
+  /**
+   * Panel kuleyi ve savundugu hatti kapatmasin.
+   *
+   * Esik sabit degil: arayuzun bildirdigi panel tavanindan (dar ya da genis)
+   * ve ust/alt seritlerin olculen boyundan. Alta yaslanan panel tuvalin
+   * `1 - alt - panel` cizgisinin altini, uste yaslanan `ust + panel`
+   * cizgisinin ustunu kapliyor; kule hangisinin disinda kaliyorsa oraya. Iki
+   * taraf da kapatiyorsa (genis panel) kuleden daha uzak kenara: genisken
+   * kuleyi ortmek kabul, ama mumkunse degil. Mevcut taraf hala aciksa
+   * degismiyor; kamera yakinlasirken panel gidip gelmesin.
+   */
+  private getTowerSheetDock(tower: TowerSnapshot): "top" | "bottom" {
+    const view = this.cameras.main?.worldView;
+    if (!view || view.height <= 0) return this.towerSheetDock;
+    const ratio = (tower.y - view.y) / view.height;
+    const sheet = this.towerSheetReport.heightRatio;
+    const margin = 0.035;
+    const bottomEdge = 1 - this.arenaChrome.bottomRatio - sheet - 0.01;
+    const topEdge = this.arenaChrome.topRatio + sheet + 0.01;
+    const clearBottom = ratio < bottomEdge - margin;
+    const clearTop = ratio > topEdge + margin;
+    if (this.towerSheetDock === "bottom" ? clearBottom : clearTop) return this.towerSheetDock;
+    if (clearBottom) this.towerSheetDock = "bottom";
+    else if (clearTop) this.towerSheetDock = "top";
+    else this.towerSheetDock = bottomEdge - ratio >= ratio - topEdge ? "bottom" : "top";
+    return this.towerSheetDock;
+  }
+
+  /**
+   * Kule panelinin girdisi. Sunucunun blogu ve anlik goruntunun canli
+   * sayilari; metin notlari burada, ait olduklari bolume etiketli. Eskiden
+   * hepsi tek satirlik `selectedStats` metniydi.
+   */
+  private buildTowerSheetInput(
+    tower: TowerSnapshot,
+    definition: TowerDefinition | undefined,
+    context: { towerOperations: boolean; melisZoneEffect?: string; melisZoneLabel: string; upgradeXp: number; upgradeGold: number; refund?: { amount: number; undoable: boolean } }
+  ): TowerSheetInput {
+    const notes: TowerSheetNote[] = [];
+    const ownsTower = tower.ownerId === this.localSessionId;
+    if (tower.definitionId === "warrior-5") notes.push({ section: "effects", text: formatDebugLaserOverdriveLine(tower.level) });
+    if (context.melisZoneEffect) notes.push({ section: "effects", text: `Ruh hali — ${context.melisZoneLabel}: ${context.melisZoneEffect}` });
+    if (tower.definitionId === "archer-4") {
+      notes.push({ section: "effects", text: `Ruh ${tower.melisUnderworldPullCount ?? 0} · Mod ${(tower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}` });
+    }
+    if (tower.characterId === "onur") {
+      notes.push({ section: "attack", text: `Şanssızlık %${Math.round(tower.misfortune ?? 0)} · son zar ×${(tower.lastLuckMultiplier ?? 1).toFixed(2).replace(".", ",")}` });
+    }
+    if (context.towerOperations && tower.definitionId !== "warrior-2") notes.push({ section: "resources", text: this.getHeatBrakeLine(tower, definition) });
+    if (context.towerOperations && tower.energyState && tower.energyState !== "powered") notes.push({ section: "status", text: "Enerji yok" });
+    if (tower.definitionId === WALL_TOWER_ID) notes.push({ section: "status", text: tower.gate ? "Kapı açık: işçiler geçer" : "Kapı kapalı" });
+    if (tower.definitionId === "warrior-2") notes.push({ section: "effects", text: `Bağlı kule ${tower.linkedTowerIds?.length ?? 0}/2 · bağlamak için kuleye dokun` });
+    const owner = ownsTower ? undefined : this.playerSnapshots.find((player) => player.id === tower.ownerId)?.name ?? tower.ownerName;
+    return {
+      towerId: tower.id,
+      definitionId: tower.definitionId,
+      characterId: tower.characterId,
+      name: tower.name,
+      level: tower.level,
+      color: `#${(definition?.color ?? tower.color ?? 0x60a5fa).toString(16).padStart(6, "0")}`,
+      ownerName: owner,
+      readOnly: !ownsTower,
+      dock: this.getTowerSheetDock(tower),
+      stats: this.towerStatsBlock?.id === tower.id ? this.towerStatsBlock : undefined,
+      live: {
+        hp: tower.hp,
+        maxHp: tower.maxHp,
+        armor: tower.armor,
+        temperature: tower.temperature,
+        ammo: tower.ammo,
+        maxAmmo: tower.maxAmmo,
+        rawAmmo: tower.rawAmmo,
+        maxRawAmmo: tower.maxRawAmmo,
+        energy: tower.energy,
+        maxEnergy: tower.maxEnergy,
+        shotFuel: tower.shotFuel,
+        resourceProvider: tower.resourceProvider,
+        performance: context.towerOperations ? tower.performance ?? 0.5 : undefined,
+        damageDealt: tower.damageDealt,
+        currentDps: tower.currentDps,
+        status: tower.status,
+        insight: tower.insight
+      },
+      notes,
+      progress: {
+        maxed: tower.level >= 10,
+        upgradeXp: context.upgradeXp,
+        upgradeGold: context.upgradeGold,
+        poolXp: this.localPlayerSnapshot?.experience ?? 0,
+        poolGold: this.localPlayerSnapshot?.gold ?? 0,
+        refund: ownsTower ? context.refund : undefined
+      }
+    };
   }
 
   private startPingLoop() {
@@ -11359,11 +11427,6 @@ function writeStoredFlag(key: string, value: boolean) {
 
 function formatVolumePercent(value: number) {
   return `${Math.round(Phaser.Math.Clamp(value, 0, 1) * 100)}%`;
-}
-
-function formatExperience(value: number) {
-  const rounded = Math.round(Math.max(0, value) * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 function roundClientMetric(value: number) {
