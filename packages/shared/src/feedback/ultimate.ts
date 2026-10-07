@@ -1,3 +1,4 @@
+import { enPlural, lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 
 /**
@@ -174,15 +175,16 @@ export function getUltimateStampText(result: UltimateResultMessage): UltimateSta
   const heal = toCount(result.heal);
   const parts = [label];
 
+  const killed = lt(`${kills} öldü`, `${kills} killed`);
   if (result.kind === "repair") {
-    parts.push(heal > 0 ? `+${heal} üs canı` : "üs canı değişmedi");
+    parts.push(heal > 0 ? lt(`+${heal} üs canı`, `+${heal} base HP`) : lt("üs canı değişmedi", "base HP unchanged"));
   } else if (result.kind === "heal") {
-    if (heal > 0) parts.push(`+${heal} üs canı`);
-    parts.push(hits > 0 ? `${hits} yavaşladı` : "yavaşlayan yok");
+    if (heal > 0) parts.push(lt(`+${heal} üs canı`, `+${heal} base HP`));
+    parts.push(hits > 0 ? lt(`${hits} yavaşladı`, `${hits} slowed`) : lt("yavaşlayan yok", "none slowed"));
   } else if (result.kind === "sympathy") {
-    parts.push(hits > 0 ? `${hits} bağlandı · ${kills} öldü` : "bağa takılan yok");
+    parts.push(hits > 0 ? `${lt(`${hits} bağlandı`, `${hits} linked`)} · ${killed}` : lt("bağa takılan yok", "none linked"));
   } else {
-    parts.push(hits > 0 ? `${hits} isabet · ${kills} öldü` : "isabet yok");
+    parts.push(hits > 0 ? `${lt(`${hits} isabet`, `${hits} ${enPlural(hits, "hit", "hits")}`)} · ${killed}` : lt("isabet yok", "no hits"));
   }
 
   const stamp: UltimateStampText = { title: parts.join(" · ") };
@@ -194,11 +196,11 @@ export function getUltimateStampText(result: UltimateResultMessage): UltimateSta
     const tier = getUltimateAimTier(aimed, result.best);
     const best = toCount(result.best);
     if (tier === "perfect") {
-      stamp.grade = { tier, text: "MÜKEMMEL NİŞAN" };
+      stamp.grade = { tier, text: lt("MÜKEMMEL NİŞAN", "PERFECT AIM") };
     } else if (tier === "good") {
-      stamp.grade = { tier, text: `İyi nişan · ${aimed}/${best}` };
+      stamp.grade = { tier, text: lt(`İyi nişan · ${aimed}/${best}`, `Good aim · ${aimed}/${best}`) };
     } else if (tier === "neutral") {
-      stamp.grade = { tier, text: `En kalabalık sütun: ${best}` };
+      stamp.grade = { tier, text: lt(`En kalabalık sütun: ${best}`, `Most crowded column: ${best}`) };
     }
   }
   return stamp;
@@ -211,14 +213,16 @@ export function getUltimateStampText(result: UltimateResultMessage): UltimateSta
  * ekranin, sesin ve kameran onun ultisine ait degil; cip kenardan haber veriyor.
  */
 export function getUltimateTeamChipText(name: string, cast: Pick<UltimateCastMessage, "kind" | "hits" | "kills" | "heal">) {
-  const head = `${name} ULTİ`;
+  const head = `${name} ${lt("ULTİ", "ULTIMATE")}`;
   const kills = toCount(cast.kills);
   const hits = toCount(cast.hits);
   const heal = toCount(cast.heal);
-  if (kills > 0) return `${head} · ${kills} öldü`;
-  if (heal > 0) return `${head} · +${heal} üs canı`;
+  if (kills > 0) return `${head} · ${lt(`${kills} öldü`, `${kills} killed`)}`;
+  if (heal > 0) return `${head} · ${lt(`+${heal} üs canı`, `+${heal} base HP`)}`;
   if (hits > 0) {
-    const unit = cast.kind === "sympathy" ? "bağlandı" : cast.kind === "heal" ? "yavaşladı" : "isabet";
+    const unit = cast.kind === "sympathy"
+      ? lt("bağlandı", "linked")
+      : cast.kind === "heal" ? lt("yavaşladı", "slowed") : lt("isabet", enPlural(hits, "hit", "hits"));
     return `${head} · ${hits} ${unit}`;
   }
   return head;

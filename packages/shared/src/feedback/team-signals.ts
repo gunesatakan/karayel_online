@@ -9,6 +9,8 @@
  * yolluyor (her tick'te veri degil).
  */
 
+import { lt } from "../i18n/index.js";
+
 /** `link:joined`: Sunucu senin kulene baglandi. Yalnizca hedef kulenin sahibine. */
 export type ServerLinkJoinedMessage = {
   serverTowerId: string;
@@ -57,8 +59,8 @@ export type TeamSignalText = { title: string; detail: string };
 export function getServerLinkJoinedText(ownerName: string | undefined): TeamSignalText {
   const name = ownerName?.trim();
   return {
-    title: name ? `${getTurkishGenitive(name)} Sunucusu` : "Takım arkadaşının Sunucusu",
-    detail: "kulene bağlandı"
+    title: name ? lt(`${getTurkishGenitive(name)} Sunucusu`, `${name}'s Server`) : lt("Takım arkadaşının Sunucusu", "Your teammate's Server"),
+    detail: lt("kulene bağlandı", "linked to your tower")
   };
 }
 
@@ -71,13 +73,16 @@ export type RiskyInvestmentMessage = { buyerId: string; nexusCost: number; gold:
 
 /** "Atakan Riskli Yatırım aldı" / "nexus −10, +400 altın". */
 export function getRiskyInvestmentNoticeText(buyerName: string | undefined, nexusCost: number, gold: number): TeamSignalText {
-  const name = buyerName?.trim() || "Takım arkadaşın";
-  return { title: `${name} Riskli Yatırım aldı`, detail: `nexus −${nexusCost}, +${gold} altın` };
+  const name = buyerName?.trim() || lt("Takım arkadaşın", "Your teammate");
+  return {
+    title: lt(`${name} Riskli Yatırım aldı`, `${name} bought Risky Investment`),
+    detail: lt(`nexus −${nexusCost}, +${gold} altın`, `nexus −${nexusCost}, +${gold} gold`)
+  };
 }
 
 /** "Bağ olgunlaştı · 5 dalga". */
 export function getServerLinkMaturedText(waves: ServerLinkMaturityWave) {
-  return `Bağ olgunlaştı · ${waves} dalga`;
+  return lt(`Bağ olgunlaştı · ${waves} dalga`, `Link matured · ${waves} waves`);
 }
 
 const BACK_VOWELS = "aıou";

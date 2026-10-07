@@ -21,6 +21,7 @@ import {
 } from "@karayel/shared";
 import { damageTypeCodex, hitTypeCodex } from "./codex";
 import { assetUrl } from "./asset-url";
+import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
 
 /**
  * Kule paneli: secili kulenin sayilari, gruplu ve dokumlu.
@@ -173,13 +174,15 @@ function getPortrait(definitionId: string, level: number) {
 
 // ------------------------------------------------------------------ Bicim
 
-const numberFormats = new Map<number, Intl.NumberFormat>();
+const numberFormats = new Map<string, Intl.NumberFormat>();
 
+/** Dile gore: Turkcede ondalik virgul, Ingilizcede nokta. */
 function formatNumber(value: number, digits: number) {
-  let format = numberFormats.get(digits);
+  const key = `${numberLocale()}:${digits}`;
+  let format = numberFormats.get(key);
   if (!format) {
-    format = new Intl.NumberFormat("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-    numberFormats.set(digits, format);
+    format = new Intl.NumberFormat(numberLocale(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    numberFormats.set(key, format);
   }
   return format.format(Number.isFinite(value) ? value : 0);
 }
@@ -196,17 +199,17 @@ function formatXp(value: number) {
   return formatNumber(rounded, Number.isInteger(rounded) ? 0 : 1);
 }
 
-/** Turkcede yuzde isareti onde: "%15". Kucuk kesirde bir basamak. */
+/** Turkcede yuzde isareti onde ("%15"), Ingilizcede arkada ("15%"). Kucuk kesirde bir basamak. */
 function formatPercent(fraction: number) {
   const percent = fraction * 100;
   const digits = Math.abs(percent) < 10 && Math.abs(percent - Math.round(percent)) > 0.05 ? 1 : 0;
-  return `%${formatNumber(percent, digits)}`;
+  return t("format.percent", { v: formatNumber(percent, digits) });
 }
 
 function formatSignedPercent(fraction: number) {
   const percent = Math.round(fraction * 100);
-  if (percent === 0) return "±%0";
-  return `${percent > 0 ? "+" : "−"}%${Math.abs(percent)}`;
+  if (percent === 0) return t("format.zeroPercent");
+  return t("format.signedPercent", { sign: percent > 0 ? "+" : "−", v: Math.abs(percent) });
 }
 
 /** Bonus gostergesi; bir puandan az fark gurultu. */
@@ -221,89 +224,43 @@ const realSeconds = (gameMs: number) => gameMs / GAME_SPEED_MULTIPLIER / 1000;
 
 // ------------------------------------------------------------------ Kaynak adlari
 
-const SOURCE_LABELS: Readonly<Record<string, string>> = {
-  hit: "Vuruş bonusları",
-  perf: "Performans kolu",
-  heat: "Isı freni",
-  etc: "Diğer (karakter, beceri, aura)",
-  "cond:turnRate": "Koşullu (şu an)",
-  "cond:accuracy": "Koşullu (şu an)",
-  "cond:projectileSpeed": "Koşullu (şu an)",
-  "cond:own": "Kulenin kendi koşulu",
-  "cond:cold": "Soğuk namlu",
-  "engine:stack": "Yığınlar",
-  "engine:aura": "Aura",
-  "engine:critical": "Kule motoru",
-  "engine:impact-compensation": "Çarpma dengesi",
-  "grant:surge": "Dalgalanma",
-  "unlock:heat:runHot": "Kızgın namlu (ısı)",
-  "character:atakan-passive": "Yalnızlık pasifi",
-  "character:onur-gambler": "Kumarbaz zarı",
-  "character:zeynep-formation": "Formasyon",
-  "character:melis-favorite": "Favori kule",
-  "character:melis-evolution": "Evrim",
-  "character:melis-nightmare": "Gotik kâbus",
-  "tower:kill-streak": "Öldürme serisi",
-  "tower:warrior-2:server-link": "Sunucu bağı",
-  "tower:warrior-4:obsession": "Obsesyon",
-  "tower:warrior-5:debug": "Debug seviyesi",
-  "tower:zeynep-1:compensation": "Hiza dengesi",
-  "tower:archer-1:focus": "Odak"
-};
+/** Kosullu paylar (donus, isabet, mermi hizi) ayni ad altinda. */
+const CONDITIONAL_SOURCES: ReadonlySet<string> = new Set(["cond:turnRate", "cond:accuracy", "cond:projectileSpeed"]);
 
-const STATUS_LABELS: Readonly<Record<string, string>> = {
-  slow: "Yavaşlatma",
-  aslow: "Aura yavaşlatması",
-  coolant: "Soğutucu yavaşlatma",
-  burn: "Yanma",
-  bleed: "Kanama",
-  chill: "Üşütme",
-  stun: "Sersemletme",
-  fear: "Korku",
-  bind: "Bağlama",
-  convert: "Ele geçirme",
-  curse: "Lanet",
-  freeze: "Dondurma",
-  mark: "İşaret",
-  armor: "Zırh kırma",
-  armorAura: "Zırh kırma (geçen mermiler)"
-};
-
-/** Hedefe bagli hasar paylarinin adi (`TowerStatsWire.dx`). */
-const TARGET_DAMAGE_LABELS: Readonly<Record<string, string>> = {
-  air: "Hava",
-  shielded: "Kalkanlı",
-  brute: "Ezici",
-  grunt: "Er",
-  runner: "Koşucu",
-  shooter: "Nişancı",
-  siege: "Kuşatma",
-  slowed: "Yavaşlamış",
-  marked: "İşaretli (işarete ek)"
-};
-
+/** Dokum kaynaklarinin adi (`sheet.source.*`). */
 function sourceLabel(source: string) {
-  const known = SOURCE_LABELS[source];
+  const known = CONDITIONAL_SOURCES.has(source) ? t("sheet.source.conditional") : tMaybe(`sheet.source.${source}`);
   if (known) return known;
-  if (source.startsWith("card:")) return getCardDefinition(source.slice(5))?.name ?? "Kart";
-  if (source.startsWith("shop:")) return getShopItem(source.slice(5))?.name ?? "Eşya";
+  if (source === "engine:critical") return t("sheet.source.engine");
+  if (source.startsWith("card:")) return getCardDefinition(source.slice(5))?.name ?? t("sheet.source.card");
+  if (source.startsWith("shop:")) return getShopItem(source.slice(5))?.name ?? t("sheet.source.item");
   if (source.startsWith("conversion:")) {
     const cardId = source.split(":")[1] ?? "";
-    return `${getCardDefinition(cardId)?.name ?? "Epik kart"} (çevrim)`;
+    return t("sheet.source.conversion", { name: getCardDefinition(cardId)?.name ?? t("sheet.source.epicCard") });
   }
-  if (source.startsWith("tower:warrior-6")) return "Ucube gelişimi";
-  if (source.startsWith("tower:")) return "Kule özelliği";
-  if (source.startsWith("character:")) return "Karakter";
-  if (source.startsWith("engine:")) return "Kule motoru";
-  if (source.startsWith("unlock:")) return "Kilit";
+  if (source.startsWith("tower:warrior-6")) return t("sheet.source.ucube");
+  if (source.startsWith("tower:")) return t("sheet.source.tower");
+  if (source.startsWith("character:")) return t("sheet.source.character");
+  if (source.startsWith("engine:")) return t("sheet.source.engine");
+  if (source.startsWith("unlock:")) return t("sheet.source.unlock");
   return source;
 }
 
+/** Durum etkisinin adi (`sheet.status.*`); bilinmeyen tur kimligiyle. */
+function statusLabel(kind: string) {
+  return tMaybe(`sheet.status.${kind}`) ?? kind;
+}
+
+/** Hedefe bagli hasar paylarinin adi (`TowerStatsWire.dx`). */
+function targetDamageLabel(kind: string) {
+  return tMaybe(`sheet.target.${kind}`) ?? kind;
+}
+
 function conditionLabel(condition: string) {
-  if (condition === "frozen") return "Donmuş hedefe";
-  if (condition === "marked") return "İşaretli hedefe";
-  if (condition === "air") return "Hava hedefine";
-  if (condition.startsWith("st:")) return `${STATUS_LABELS[condition.slice(3)] ?? condition.slice(3)} altındaki hedefe`;
+  if (condition === "frozen") return t("sheet.cond.frozen");
+  if (condition === "marked") return t("sheet.cond.marked");
+  if (condition === "air") return t("sheet.cond.air");
+  if (condition.startsWith("st:")) return t("sheet.cond.status", { status: statusLabel(condition.slice(3)) });
   return condition;
 }
 
@@ -317,14 +274,14 @@ type StatFormat = (value: number) => string;
  */
 function breakdownLines(stat: TowerStatValue | undefined, format: StatFormat, mode: "relative" | "absolute" | "cone"): TowerSheetLine[] {
   if (!stat) return [];
-  const lines: TowerSheetLine[] = [{ label: "Taban", value: format(stat.b ?? stat.v) }];
+  const lines: TowerSheetLine[] = [{ label: t("sheet.base"), value: format(stat.b ?? stat.v) }];
   for (const [source, add] of stat.s ?? []) {
-    lines.push({ label: sourceLabel(source), value: mode === "cone" ? `${formatSignedPercent(add)} isabet` : formatSignedPercent(add) });
+    lines.push({ label: sourceLabel(source), value: mode === "cone" ? t("sheet.accuracyShare", { v: formatSignedPercent(add) }) : formatSignedPercent(add) });
   }
   for (const [source, multiplier] of stat.m ?? []) {
     lines.push({ label: sourceLabel(source), value: `×${formatNumber(multiplier, 2)}` });
   }
-  lines.push({ label: "Şu an", value: format(stat.v) });
+  lines.push({ label: t("sheet.now"), value: format(stat.v) });
   return lines;
 }
 
@@ -369,50 +326,50 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   const pending = !stats;
   const live = input.live;
   const cell = stats?.c && stats.c > 0 ? stats.c : 1;
-  const tiles = (world: number) => `${formatNumber(world / cell, world / cell >= 1 ? 1 : 2)} kare`;
+  const tiles = (world: number) => t("sheet.unit.tiles", { v: formatNumber(world / cell, world / cell >= 1 ? 1 : 2) });
   const notesFor = (section: TowerSheetNote["section"]) => input.notes.filter((note) => note.section === section).map((note) => note.text);
 
   const damageType = (stats?.dt ?? definition?.damageType) as DamageType | undefined;
   const hitType = (stats?.ht ?? definition?.hitType) as HitType | undefined;
-  const typeText = [damageType && damageType !== "none" ? damageTypeCodex[damageType]?.name : undefined, hitType && hitType !== "none" ? hitTypeCodex[hitType]?.name.toLocaleLowerCase("tr-TR") : undefined]
+  const typeText = [damageType && damageType !== "none" ? damageTypeCodex[damageType]?.name : undefined, hitType && hitType !== "none" ? lower(hitTypeCodex[hitType]?.name ?? "") : undefined]
     .filter(Boolean).join(" ");
   const tier = getTowerTier(input.level);
-  const ownerText = input.ownerName ? `${input.ownerName} · salt okunur` : input.readOnly ? "salt okunur" : undefined;
-  const subtitle = [ownerText, `Sv ${input.level}/10`, `Kademe ${tierNames[tier - 1]}`, typeText].filter(Boolean).join(" · ");
+  const ownerText = input.ownerName ? t("sheet.ownerReadOnly", { owner: input.ownerName }) : input.readOnly ? t("sheet.readOnly") : undefined;
+  const subtitle = [ownerText, t("sheet.level", { level: input.level }), t("sheet.tier", { tier: tierNames[tier - 1] }), typeText].filter(Boolean).join(" · ");
 
   // -------------------------------------------------------------- Figurler
   const figures: TowerSheetRow[] = [];
   const effectRhythm = stats ? stats.e === 1 : Boolean(definition && (definition.hitType === "focus" || definition.engine?.auras?.length));
   const orbit = definition?.engine?.attack.executor === "orbit";
-  const rateLabel = orbit ? "Dönüş temposu" : effectRhythm ? "Etki hızı" : "Atış hızı";
-  const rateFormat: StatFormat = (value) => `${formatNumber(realRate(value), 2)}/sn`;
+  const rateLabel = orbit ? t("sheet.rate.orbit") : effectRhythm ? t("sheet.rate.effect") : t("sheet.rate.fire");
+  const rateFormat: StatFormat = (value) => t("sheet.unit.perSecond", { v: formatNumber(realRate(value), 2) });
 
   const showCombat = relevance.combat && (pending || Boolean(stats?.d));
   if (showCombat) {
     if (stats?.dps !== undefined) {
-      figures.push({ key: "dps", label: "DPS", value: formatSmart(realRate(stats.dps)), sub: "tek hedef, kritik ortalamalı", detail: [] });
+      figures.push({ key: "dps", label: t("sheet.dps"), value: formatSmart(realRate(stats.dps)), sub: t("sheet.dps.single"), detail: [] });
     } else if (pending) {
-      figures.push({ key: "dps", label: "DPS", value: PENDING, detail: [] });
+      figures.push({ key: "dps", label: t("sheet.dps"), value: PENDING, detail: [] });
     } else {
-      figures.push({ key: "dps", label: "DPS", value: formatSmart(live.currentDps ?? 0), sub: "ölçülen, son saniyeler", detail: [] });
+      figures.push({ key: "dps", label: t("sheet.dps"), value: formatSmart(live.currentDps ?? 0), sub: t("sheet.dps.measured"), detail: [] });
     }
     figures.push({
       key: "d",
-      label: "Hasar",
+      label: t("sheet.damage"),
       value: stats?.d ? formatSmart(stats.d.v) : PENDING,
       ...relativeBonus(stats?.d),
-      sub: stats?.n && stats.n > 1 ? `tetik başına ${stats.n} mermi` : undefined,
+      sub: stats?.n && stats.n > 1 ? t("sheet.damage.perTrigger", { n: stats.n }) : undefined,
       detail: breakdownLines(stats?.d, formatSmart, "relative"),
       expandable: true
     });
   }
   if (relevance.operational) {
     const rateSub = stats?.e
-      ? "etki aralığı; atış hızı kartları işlemez"
+      ? t("sheet.rate.effectSub")
       : stats?.fx
-        ? "sabit aralık"
+        ? t("sheet.rate.fixed")
         : stats?.su !== undefined
-          ? `ısı sınırı: sürekli ${formatNumber(realRate(stats.su), 2)}/sn`
+          ? t("sheet.rate.heatCap", { v: formatNumber(realRate(stats.su), 2) })
           : undefined;
     figures.push({
       key: "f",
@@ -425,8 +382,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     });
     figures.push({
       key: "r",
-      label: "Menzil",
-      value: stats?.rg ? "Global" : stats?.r ? tiles(stats.r.v) : PENDING,
+      label: t("sheet.range"),
+      value: stats?.rg ? t("sheet.range.global") : stats?.r ? tiles(stats.r.v) : PENDING,
       ...(stats?.rg ? {} : relativeBonus(stats?.r)),
       detail: stats?.rg ? [] : breakdownLines(stats?.r, tiles, "relative"),
       expandable: !stats?.rg
@@ -442,7 +399,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     const multiplier: StatFormat = (value) => `×${formatNumber(value, 2)}`;
     rows.push({
       key: "cc",
-      label: "Kritik ihtimali",
+      label: t("sheet.critChance"),
       value: stats?.cc ? chance(stats.cc.v) : PENDING,
       ...absoluteBonus(stats?.cc),
       sub: stats?.ccx?.length ? stats.ccx.map(([condition, add]) => `${conditionLabel(condition)} +${formatPercent(add)}`).join(" · ") : undefined,
@@ -451,7 +408,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     });
     rows.push({
       key: "cm",
-      label: "Kritik hasarı",
+      label: t("sheet.critDamage"),
       value: stats?.cm ? multiplier(stats.cm.v) : PENDING,
       ...absoluteBonus(stats?.cm),
       detail: breakdownLines(stats?.cm, multiplier, "absolute"),
@@ -462,19 +419,19 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     if (stats?.dx?.length) {
       rows.unshift({
         key: "dx",
-        label: "Hasar: hedefe göre",
-        value: `${stats.dx.length} koşul`,
-        sub: stats.dx.map(([kind, add]) => `${TARGET_DAMAGE_LABELS[kind] ?? kind} ${formatSignedPercent(add)}`).join(" · "),
+        label: t("sheet.damageByTarget"),
+        value: t("sheet.conditions", { n: stats.dx.length }),
+        sub: stats.dx.map(([kind, add]) => `${targetDamageLabel(kind)} ${formatSignedPercent(add)}`).join(" · "),
         detail: []
       });
     }
-    if (typeText) rows.push({ key: "type", label: "Hasar tipi", value: typeText, detail: [] });
-    if (stats?.a) rows.push({ key: "aoe", label: "Alan yarıçapı", value: tiles(stats.a), detail: [] });
-    if (stats?.pl) rows.push({ key: "pierce", label: "Delme", value: `${stats.pl} hedef`, detail: [] });
-    if (stats?.ca) rows.push({ key: "cone", label: "Saldırı konisi", value: `${formatNumber(stats.ca, 0)}°`, detail: [] });
-    if (stats?.bl) rows.push({ key: "blades", label: "Bıçak", value: String(stats.bl), detail: [] });
-    const summary = stats?.cc && stats.cm ? `kritik ${chance(stats.cc.v)} · ${multiplier(stats.cm.v)}` : PENDING;
-    sections.push({ id: "attack", title: "Saldırı", summary, rows, bars: [], notes: notesFor("attack") });
+    if (typeText) rows.push({ key: "type", label: t("sheet.damageType"), value: typeText, detail: [] });
+    if (stats?.a) rows.push({ key: "aoe", label: t("sheet.aoe"), value: tiles(stats.a), detail: [] });
+    if (stats?.pl) rows.push({ key: "pierce", label: t("sheet.pierce"), value: t("sheet.targets", { n: stats.pl }), detail: [] });
+    if (stats?.ca) rows.push({ key: "cone", label: t("sheet.cone"), value: `${formatNumber(stats.ca, 0)}°`, detail: [] });
+    if (stats?.bl) rows.push({ key: "blades", label: t("sheet.blades"), value: String(stats.bl), detail: [] });
+    const summary = stats?.cc && stats.cm ? t("sheet.attack.summary", { chance: chance(stats.cc.v), multiplier: multiplier(stats.cm.v) }) : PENDING;
+    sections.push({ id: "attack", title: t("sheet.section.attack"), summary, rows, bars: [], notes: notesFor("attack") });
   }
 
   // -------------------------------------------------------------- Nisan
@@ -482,27 +439,27 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   const showProjectile = relevance.projectiles && (pending || Boolean(stats?.ps));
   if (showAim || showProjectile) {
     const rows: TowerSheetRow[] = [];
-    const degreesPerSecond: StatFormat = (value) => `${formatNumber(realRate(value), 0)}°/sn`;
+    const degreesPerSecond: StatFormat = (value) => t("sheet.unit.degreesPerSecond", { v: formatNumber(realRate(value), 0) });
     const coneDegrees: StatFormat = (value) => `${formatNumber(value, 1)}°`;
     if (showAim) {
-      rows.push({ key: "tr", label: "Dönüş hızı", value: stats?.tr ? degreesPerSecond(stats.tr.v) : PENDING, ...relativeBonus(stats?.tr), detail: breakdownLines(stats?.tr, degreesPerSecond, "relative"), expandable: true });
+      rows.push({ key: "tr", label: t("sheet.turnRate"), value: stats?.tr ? degreesPerSecond(stats.tr.v) : PENDING, ...relativeBonus(stats?.tr), detail: breakdownLines(stats?.tr, degreesPerSecond, "relative"), expandable: true });
       const coneBonus = stats?.ac && stats.ac.b ? bonusOf(1 - stats.ac.v / stats.ac.b) : {};
       rows.push({
         key: "ac",
-        label: "İsabet konisi",
+        label: t("sheet.aimCone"),
         value: stats?.ac ? coneDegrees(stats.ac.v) : PENDING,
         ...coneBonus,
-        sub: "dar koni: namlu hedefe daha yakınken ateşler",
+        sub: t("sheet.aimCone.sub"),
         detail: breakdownLines(stats?.ac, coneDegrees, "cone"),
         expandable: true
       });
     }
     if (showProjectile) {
       const relativeOnly = stats?.pr === 1;
-      const speed: StatFormat = relativeOnly ? (value) => `×${formatNumber(value, 2)}` : (value) => `${formatNumber(realRate(value) / cell, 1)} kare/sn`;
+      const speed: StatFormat = relativeOnly ? (value) => `×${formatNumber(value, 2)}` : (value) => t("sheet.unit.tilesPerSecond", { v: formatNumber(realRate(value) / cell, 1) });
       rows.push({
         key: "ps",
-        label: "Mermi hızı",
+        label: t("sheet.projectileSpeed"),
         value: stats?.ps ? speed(stats.ps.v) : PENDING,
         ...(relativeOnly && stats?.ps ? bonusOf(stats.ps.v - 1) : relativeBonus(stats?.ps)),
         detail: breakdownLines(stats?.ps, speed, "relative"),
@@ -510,15 +467,15 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       });
     }
     const summary = rows.filter((row) => row.key !== "ac" || showAim).map((row) => row.value).join(" · ");
-    sections.push({ id: "aim", title: showAim ? "Nişan" : "Mermi", summary, rows, bars: [], notes: [] });
+    sections.push({ id: "aim", title: showAim ? t("sheet.section.aim") : t("sheet.section.projectile"), summary, rows, bars: [], notes: [] });
   }
 
   // -------------------------------------------------------------- Etkiler
   const effectRows: TowerSheetRow[] = [];
   const curves = getSlowCurves(definition);
   for (const [kind, magnitude, durationMs, extra] of stats?.fe ?? []) {
-    const label = STATUS_LABELS[kind] ?? kind;
-    const duration = durationMs ? ` · ${formatNumber(realSeconds(durationMs), 1)} sn` : "";
+    const label = statusLabel(kind);
+    const duration = durationMs ? ` · ${t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs), 1) })}` : "";
     let value = "";
     let sub: string | undefined;
     if (kind === "slow" || kind === "aslow" || kind === "coolant") {
@@ -528,26 +485,26 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
         : `−${formatPercent(magnitude)}${duration}`;
       const curve = kind === "slow" ? curves.hit : kind === "aslow" ? curves.aura : undefined;
       const parts: string[] = [];
-      if (far !== undefined && far !== magnitude) parts.push("uzaklıkla değişir");
-      if (curve && input.level < 10) parts.push(`sonraki seviye −${formatPercent(getLevelScaledSlowFraction(curve, input.level + 1))}`);
+      if (far !== undefined && far !== magnitude) parts.push(t("sheet.fx.byDistance"));
+      if (curve && input.level < 10) parts.push(t("sheet.fx.nextLevel", { v: formatPercent(getLevelScaledSlowFraction(curve, input.level + 1)) }));
       if (kind === "slow" && stats?.sc) {
         const near = getCriticalSlowFraction(magnitude);
         const distant = far === undefined ? near : getCriticalSlowFraction(far);
         parts.push(near === distant
-          ? `kritikte −${formatPercent(near)}`
-          : `kritikte −${formatPercent(Math.min(near, distant))}…${formatPercent(Math.max(near, distant))}`);
+          ? t("sheet.fx.onCrit", { v: formatPercent(near) })
+          : t("sheet.fx.onCrit", { v: `${formatPercent(Math.min(near, distant))}…${formatPercent(Math.max(near, distant))}` }));
       }
       sub = parts.length > 0 ? parts.join(" · ") : undefined;
     } else if (kind === "burn" || kind === "bleed") {
-      value = `azami canın ${formatPercent(magnitude)}/sn${duration}`;
+      value = `${t("sheet.fx.dot", { v: formatPercent(magnitude) })}${duration}`;
     } else if (kind === "mark") {
-      value = `+${formatPercent(magnitude)} hasar alır${duration}`;
+      value = `${t("sheet.fx.mark", { v: formatPercent(magnitude) })}${duration}`;
     } else if (kind === "armor" || kind === "armorAura") {
-      value = `−${formatSmart(magnitude)} zırh`;
+      value = t("sheet.fx.armor", { v: formatSmart(magnitude) });
     } else {
-      value = durationMs ? `${formatNumber(realSeconds(durationMs), 1)} sn` : "vuruşta";
+      value = durationMs ? t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs), 1) }) : t("sheet.fx.onHit");
     }
-    if (extra !== undefined && kind !== "slow") sub = `en fazla ${extra} yığın`;
+    if (extra !== undefined && kind !== "slow") sub = t("sheet.fx.maxStacks", { n: extra });
     effectRows.push({ key: `fx:${kind}`, label, value, sub, detail: [] });
   }
   // Hasarsiz kontrol kulesinde ana sayi etkinin kendisi (Izolasyon: yavaslatma).
@@ -559,8 +516,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   if (effectRows.length > 0 || effectNotes.length > 0) {
     sections.push({
       id: "effects",
-      title: "Etkiler",
-      summary: effectRows.length > 0 ? effectRows.slice(0, 2).map((row) => `${row.label.toLocaleLowerCase("tr-TR")} ${row.value.split(" · ")[0]}`).join(" · ") : `${effectNotes.length} not`,
+      title: t("sheet.section.effects"),
+      summary: effectRows.length > 0 ? effectRows.slice(0, 2).map((row) => `${lower(row.label)} ${row.value.split(" · ")[0]}`).join(" · ") : t("sheet.notes", { n: effectNotes.length }),
       rows: effectRows,
       bars: [],
       notes: effectNotes
@@ -572,20 +529,20 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   const resourceRows: TowerSheetRow[] = [];
   if (live.maxHp !== undefined && live.maxHp > 0) {
     const ratio = (live.hp ?? 0) / live.maxHp;
-    bars.push({ key: "hp", label: "Gövde", value: `${Math.round(live.hp ?? 0)}/${Math.round(live.maxHp)}`, ratio, tone: ratio < 0.3 ? "hot" : ratio < 0.6 ? "warn" : "ok", sub: live.armor ? `zırh ${formatNumber(live.armor, 0)}` : undefined });
+    bars.push({ key: "hp", label: t("sheet.hull"), value: `${Math.round(live.hp ?? 0)}/${Math.round(live.maxHp)}`, ratio, tone: ratio < 0.3 ? "hot" : ratio < 0.6 ? "warn" : "ok", sub: live.armor ? t("sheet.armor", { v: formatNumber(live.armor, 0) }) : undefined });
   }
   if (relevance.operational) {
     const temperature = Math.max(0, Math.min(100, live.temperature ?? 0));
     const brake = stats?.nb ? undefined : TOWER_HEAT_BRAKE_TEMPERATURE / 100;
     const heatParts = [
-      stats?.hs !== undefined ? `atış başına +${formatSmart(stats.hs)}` : undefined,
-      stats?.hc !== undefined ? `soğuma %${formatSmart(realRate(stats.hc))}/sn` : undefined,
-      stats?.hl !== undefined && stats.hl < 100 ? `kilit %${stats.hl}` : undefined
+      stats?.hs !== undefined ? t("sheet.heat.perShot", { v: formatSmart(stats.hs) }) : undefined,
+      stats?.hc !== undefined ? t("sheet.heat.cooling", { v: formatSmart(realRate(stats.hc)) }) : undefined,
+      stats?.hl !== undefined && stats.hl < 100 ? t("sheet.heat.lock", { v: stats.hl }) : undefined
     ].filter(Boolean);
     bars.push({
       key: "heat",
-      label: "Isı",
-      value: `%${Math.round(temperature)}`,
+      label: t("sheet.heat"),
+      value: t("format.percent", { v: Math.round(temperature) }),
       ratio: temperature / 100,
       marker: brake,
       tone: temperature >= (stats?.hl ?? 100) - 5 ? "hot" : brake !== undefined && temperature > TOWER_HEAT_BRAKE_TEMPERATURE ? "warn" : "ok",
@@ -593,30 +550,30 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     });
   }
   if (live.resourceProvider === "ammunition") {
-    bars.push({ key: "ammo", label: "Ürün", value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio: ratioOf(live.ammo, live.maxAmmo), tone: "ok" });
-    bars.push({ key: "raw", label: "Hammadde", value: `${Math.floor(live.rawAmmo ?? 0)}/${live.maxRawAmmo ?? 0}`, ratio: ratioOf(live.rawAmmo, live.maxRawAmmo), tone: "ok" });
+    bars.push({ key: "ammo", label: t("sheet.product"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio: ratioOf(live.ammo, live.maxAmmo), tone: "ok" });
+    bars.push({ key: "raw", label: t("sheet.raw"), value: `${Math.floor(live.rawAmmo ?? 0)}/${live.maxRawAmmo ?? 0}`, ratio: ratioOf(live.rawAmmo, live.maxRawAmmo), tone: "ok" });
   } else if (relevance.operational && live.shotFuel !== "energy" && (live.maxAmmo ?? 0) > 0) {
     const ratio = ratioOf(live.ammo, live.maxAmmo);
-    bars.push({ key: "ammo", label: "Mühimmat", value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: stats?.am !== undefined ? `atış başına ${formatSmart(stats.am)}` : undefined });
+    bars.push({ key: "ammo", label: t("sheet.ammo"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: stats?.am !== undefined ? t("sheet.perShot", { v: formatSmart(stats.am) }) : undefined });
   }
   if ((live.maxEnergy ?? 0) > 0) {
     const ratio = ratioOf(live.energy, live.maxEnergy);
     const energyParts = [
-      stats?.ec !== undefined ? `atış başına ${formatSmart(stats.ec)}` : undefined,
-      stats?.oe !== undefined ? `çalışma ${formatNumber(realRate(stats.oe), 2)}/sn` : undefined
+      stats?.ec !== undefined ? t("sheet.perShot", { v: formatSmart(stats.ec) }) : undefined,
+      stats?.oe !== undefined ? t("sheet.energy.upkeep", { v: formatNumber(realRate(stats.oe), 2) }) : undefined
     ].filter(Boolean);
-    bars.push({ key: "energy", label: live.resourceProvider === "energy" ? "Enerji deposu" : "Enerji", value: `${Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: energyParts.length > 0 ? energyParts.join(" · ") : undefined });
+    bars.push({ key: "energy", label: live.resourceProvider === "energy" ? t("sheet.energyStore") : t("sheet.energy"), value: `${Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: energyParts.length > 0 ? energyParts.join(" · ") : undefined });
   }
   if (relevance.operational) {
-    resourceRows.push({ key: "fuel", label: "Atış yakıtı", value: live.shotFuel === "energy" ? "Enerji" : "Mühimmat", detail: [] });
-    if (live.performance !== undefined) resourceRows.push({ key: "perf", label: "Performans", value: `%${Math.round(live.performance * 100)}`, detail: [] });
+    resourceRows.push({ key: "fuel", label: t("sheet.fuel"), value: live.shotFuel === "energy" ? t("sheet.energy") : t("sheet.ammo"), detail: [] });
+    if (live.performance !== undefined) resourceRows.push({ key: "perf", label: t("sheet.performance"), value: t("format.percent", { v: Math.round(live.performance * 100) }), detail: [] });
   }
   const resourceNotes = notesFor("resources");
   if (bars.length > 0 || resourceNotes.length > 0) {
     sections.push({
       id: "resources",
-      title: "Kaynak",
-      summary: bars.filter((bar) => bar.key !== "hp" || bars.length === 1).slice(0, 3).map((bar) => `${bar.label.toLocaleLowerCase("tr-TR")} ${bar.value}`).join(" · "),
+      title: t("sheet.section.resources"),
+      summary: bars.filter((bar) => bar.key !== "hp" || bars.length === 1).slice(0, 3).map((bar) => `${lower(bar.label)} ${bar.value}`).join(" · "),
       rows: resourceRows,
       bars,
       notes: resourceNotes
@@ -628,28 +585,28 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   const progress = input.progress;
   if (progress) {
     progressRows.push(progress.maxed
-      ? { key: "next", label: "Sonraki seviye", value: "En üst seviye", detail: [] }
+      ? { key: "next", label: t("sheet.next"), value: t("sheet.maxLevel"), detail: [] }
       : {
         key: "next",
-        label: "Sonraki seviye",
+        label: t("sheet.next"),
         value: `${formatXp(progress.upgradeXp)} XP${progress.upgradeGold > 0 ? ` + ${progress.upgradeGold}g` : ""}`,
-        sub: `havuz ${formatXp(progress.poolXp)} XP · ${Math.floor(progress.poolGold)}g`,
+        sub: t("sheet.pool", { xp: formatXp(progress.poolXp), gold: Math.floor(progress.poolGold) }),
         tone: progress.poolXp >= progress.upgradeXp && progress.poolGold >= progress.upgradeGold ? "up" : undefined,
         detail: []
       });
-    if (progress.refund) progressRows.push({ key: "refund", label: progress.refund.undoable ? "Kurulum iadesi" : "Satış değeri", value: `${progress.refund.amount}g`, detail: [] });
+    if (progress.refund) progressRows.push({ key: "refund", label: progress.refund.undoable ? t("sheet.refund.undo") : t("sheet.refund.sell"), value: `${progress.refund.amount}g`, detail: [] });
   }
   if (relevance.combat) {
-    progressRows.push({ key: "total", label: "Toplam hasar", value: formatNumber(live.damageDealt ?? 0, 0), detail: [] });
-    progressRows.push({ key: "live-dps", label: "Anlık DPS", value: formatNumber(live.currentDps ?? 0, 1), detail: [] });
-    progressRows.push({ key: "kills", label: "Öldürme", value: String(stats?.k ?? 0), detail: [] });
+    progressRows.push({ key: "total", label: t("sheet.totalDamage"), value: formatNumber(live.damageDealt ?? 0, 0), detail: [] });
+    progressRows.push({ key: "live-dps", label: t("sheet.liveDps"), value: formatNumber(live.currentDps ?? 0, 1), detail: [] });
+    progressRows.push({ key: "kills", label: t("sheet.kills"), value: String(stats?.k ?? 0), detail: [] });
   }
   if (progressRows.length > 0) {
     const next = progressRows.find((row) => row.key === "next");
     sections.push({
       id: "progress",
-      title: "Gelişim",
-      summary: [next ? (progress?.maxed ? "en üst seviye" : `sonraki ${next.value}`) : undefined, relevance.combat ? `${stats?.k ?? 0} öldürme` : undefined].filter(Boolean).join(" · "),
+      title: t("sheet.section.progress"),
+      summary: [next ? (progress?.maxed ? t("sheet.progress.max") : t("sheet.progress.next", { v: next.value })) : undefined, relevance.combat ? t("sheet.progress.kills", { n: stats?.k ?? 0 }) : undefined].filter(Boolean).join(" · "),
       rows: progressRows,
       bars: [],
       notes: notesFor("progress")
@@ -667,7 +624,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     readOnly: Boolean(input.readOnly ?? stats?.ro),
     color: input.color,
     portrait: getPortrait(input.definitionId, input.level),
-    monogram: input.name.trim().charAt(0).toLocaleUpperCase("tr-TR") || "?",
+    monogram: upper(input.name.trim().charAt(0)) || "?",
     dock: input.dock ?? "bottom",
     pending,
     status,
@@ -846,7 +803,7 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
   const expanded = isTowerSheetExpanded();
   sheet.replaceChildren();
   sheet.className = `tower-sheet tower-sheet--${model.dock}${expanded ? " tower-sheet--expanded" : ""}${model.readOnly ? " tower-sheet--readonly" : ""}`;
-  sheet.setAttribute("aria-label", `Kule bilgisi: ${model.title}`);
+  sheet.setAttribute("aria-label", t("sheet.aria.tower", { name: model.title }));
   sheet.style.setProperty("--tower-color", model.color);
 
   // Baslik: dokunmak paneli buyutup kucultur (kapatma dugmesi haric).
@@ -874,13 +831,13 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
   const expand = el("button", "tower-sheet__expand");
   expand.type = "button";
   expand.setAttribute("aria-expanded", String(expanded));
-  expand.setAttribute("aria-label", expanded ? "Paneli daralt" : "Paneli genişlet");
+  expand.setAttribute("aria-label", expanded ? t("sheet.aria.collapse") : t("sheet.aria.expand"));
   expand.append(el("span", "tower-sheet__expand-icon"));
   const toggleExpanded = () => {
     const next = !sheet.classList.contains("tower-sheet--expanded");
     sheet.classList.toggle("tower-sheet--expanded", next);
     expand.setAttribute("aria-expanded", String(next));
-    expand.setAttribute("aria-label", next ? "Paneli daralt" : "Paneli genişlet");
+    expand.setAttribute("aria-label", next ? t("sheet.aria.collapse") : t("sheet.aria.expand"));
     writeExpandedState(next);
     handlers.resize?.(next);
   };
@@ -892,7 +849,7 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
 
   const close = el("button", "tower-sheet__close", "×");
   close.type = "button";
-  close.setAttribute("aria-label", "Paneli kapat");
+  close.setAttribute("aria-label", t("sheet.aria.close"));
   onActivate(close, handlers.close);
   head.append(grip, portrait, titles, expand, close);
 
@@ -973,7 +930,7 @@ function buildRow(model: TowerSheetModel, row: TowerSheetRow, className: string,
   const detail = keep(`dc:${row.key}`, el("div", "ts-breakdown"));
   detail.id = domId(model, `d-${row.key}`);
   detail.setAttribute("role", "region");
-  detail.setAttribute("aria-label", `${row.label} dökümü`);
+  detail.setAttribute("aria-label", t("sheet.aria.breakdown", { label: row.label }));
   fillBreakdown(detail, row.detail);
   const focusKey = `${model.towerId}:${row.key}`;
   const open = focusedRowKey === focusKey;
@@ -1060,7 +1017,7 @@ function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) 
   if (bar.marker !== undefined) {
     const marker = el("span", "ts-bar__marker");
     marker.style.left = `${(bar.marker * 100).toFixed(1)}%`;
-    marker.title = "Isı freni eşiği";
+    marker.title = t("sheet.heatBrakeMarker");
     track.append(marker);
   }
   const sub = keep(`bs:${bar.key}`, el("small", "ts-bar__sub", bar.sub ?? ""));

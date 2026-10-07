@@ -24,6 +24,8 @@
  * donmuyor (altin, XP ve ulti sarji eskisi gibi).
  */
 
+import { lt } from "../i18n/index.js";
+
 export type KillAssistKind = "mark" | "command" | "freeze" | "slow";
 
 /**
@@ -104,11 +106,21 @@ const ASSIST_VERBS: Readonly<Record<KillAssistKind, string>> = {
   slow: "yavaşlattı"
 };
 
+const ASSIST_VERBS_EN: Readonly<Record<KillAssistKind, string>> = {
+  mark: "marked",
+  command: "commanded",
+  freeze: "froze",
+  slow: "slowed"
+};
+
 /** "Atakan işaretledi → Zeynep bitirdi". Ad yoksa "Takım arkadaşın". */
 export function getKillAssistText(kind: KillAssistKind, assisterName: string | undefined, killerName: string | undefined) {
-  const assister = assisterName?.trim() || "Takım arkadaşın";
-  const killer = killerName?.trim() || "Takım arkadaşın";
-  return `${assister} ${ASSIST_VERBS[kind] ?? ASSIST_VERBS.mark} → ${killer} bitirdi`;
+  const assister = assisterName?.trim() || lt("Takım arkadaşın", "Your teammate");
+  const killer = killerName?.trim() || lt("Takım arkadaşın", "Your teammate");
+  return lt(
+    `${assister} ${ASSIST_VERBS[kind] ?? ASSIST_VERBS.mark} → ${killer} bitirdi`,
+    `${assister} ${ASSIST_VERBS_EN[kind] ?? ASSIST_VERBS_EN.mark} → ${killer} finished`
+  );
 }
 
 /**

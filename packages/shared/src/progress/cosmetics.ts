@@ -1,4 +1,5 @@
 import { characters } from "../characters/index.js";
+import { lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import { getBadgeDefinition, type BadgeBook } from "./badges.js";
 import { MASTERY_MAX_LEVEL } from "./mastery.js";
@@ -44,7 +45,7 @@ const BADGE_TITLES: ReadonlyArray<{ badgeId: string; label: string }> = [
 ];
 
 function operatorName(characterId: CharacterId) {
-  return characters.find((character) => character.id === characterId)?.displayName ?? "Operatör";
+  return characters.find((character) => character.id === characterId)?.displayName ?? lt("Operatör", "Operator");
 }
 
 /**
@@ -96,10 +97,13 @@ export function isCosmeticUnlocked(unlock: CosmeticUnlock | undefined, facts: Co
 
 /** Kilitliyken menude yazan kosul: "Zeynep ustalığı 5", "Hava Sahası nişanı". */
 export function describeCosmeticUnlock(unlock: CosmeticUnlock | undefined) {
-  if (!unlock) return "Açık";
-  if (unlock.kind === "badge") return `${getBadgeDefinition(unlock.badgeId)?.name ?? "Bir"} nişanı`;
-  if (unlock.characterId) return `${operatorName(unlock.characterId)} ustalığı ${unlock.level}`;
-  return `Herhangi bir operatörde ustalık ${unlock.level}`;
+  if (!unlock) return lt("Açık", "Unlocked");
+  if (unlock.kind === "badge") {
+    const name = getBadgeDefinition(unlock.badgeId)?.name;
+    return lt(`${name ?? "Bir"} nişanı`, name ? `${name} badge` : "A badge");
+  }
+  if (unlock.characterId) return lt(`${operatorName(unlock.characterId)} ustalığı ${unlock.level}`, `${operatorName(unlock.characterId)} mastery ${unlock.level}`);
+  return lt(`Herhangi bir operatörde ustalık ${unlock.level}`, `Mastery ${unlock.level} on any operator`);
 }
 
 export type CosmeticSelection = {
@@ -201,12 +205,12 @@ export function buildCosmeticsView(selection: CosmeticSelection, facts: Cosmetic
 export function findNewCosmetics(before: CosmeticFacts, after: CosmeticFacts): string[] {
   const labels: string[] = [];
   for (const title of TITLE_CATALOG) {
-    if (!isCosmeticUnlocked(title.unlock, before) && isCosmeticUnlocked(title.unlock, after)) labels.push(`Unvan: ${title.label}`);
+    if (!isCosmeticUnlocked(title.unlock, before) && isCosmeticUnlocked(title.unlock, after)) labels.push(`${lt("Unvan", "Title")}: ${title.label}`);
   }
   for (const stamp of STAMP_CATALOG) {
     if (!isCosmeticUnlocked(stamp.unlock, before) && isCosmeticUnlocked(stamp.unlock, after)) labels.push(stamp.label);
   }
-  if (!isCosmeticUnlocked(CROWN_UNLOCK, before) && isCosmeticUnlocked(CROWN_UNLOCK, after)) labels.push("Taç süsü");
+  if (!isCosmeticUnlocked(CROWN_UNLOCK, before) && isCosmeticUnlocked(CROWN_UNLOCK, after)) labels.push(lt("Taç süsü", "Crown ornament"));
   return labels;
 }
 

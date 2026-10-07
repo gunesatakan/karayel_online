@@ -1,5 +1,6 @@
 import { ULTIMATE_POWER_MAX_LEVEL, getUltimatePowerMultiplier } from "../balance/index.js";
 import type { CardTowerProfile } from "../cards/index.js";
+import { enPlural, lt } from "../i18n/index.js";
 import { HIRABLE_WORKER_ROLES, WORKER_ROLE_LABELS, type HirableWorkerRole } from "../logistics/index.js";
 import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, canEquipShopItem, getExclusiveShopItemId, getShopItem, getShopItemTowerLimit, type EquipShopItemFailure, type ShopItem } from "../shop/index.js";
 import { WORKER_DEVELOPMENT_CELLS } from "../worker-skills.js";
@@ -104,8 +105,8 @@ export function getShopPurchaseCue(
     const count = Math.max(0, Math.floor(context.equippableTowers ?? 0));
     return {
       text: count > 0
-        ? `${item.name} envantere eklendi · ${count} kulene takılabilir`
-        : `${item.name} envantere eklendi · şu an takılabileceği kulen yok`,
+        ? lt(`${item.name} envantere eklendi · ${count} kulene takılabilir`, `${item.name} added to inventory · fits ${count} of your ${enPlural(count, "tower", "towers")}`)
+        : lt(`${item.name} envantere eklendi · şu an takılabileceği kulen yok`, `${item.name} added to inventory · none of your towers can take it now`),
       durationMs: CONFIRMATION_NOTICE_MS,
       sfx: "purchase",
       step: 0
@@ -113,13 +114,13 @@ export function getShopPurchaseCue(
   }
   if (context.placementPending) {
     return {
-      text: `${item.name} alındı · yerleştirmek için bir yol karesi seç`,
+      text: lt(`${item.name} alındı · yerleştirmek için bir yol karesi seç`, `${item.name} bought · pick a path tile to place it`),
       durationMs: CONFIRMATION_INSTRUCTION_MS,
       sfx: "purchase",
       step: 0
     };
   }
-  return { text: `${item.name} alındı`, durationMs: CONFIRMATION_NOTICE_MS, sfx: "purchase", step: 0 };
+  return { text: lt(`${item.name} alındı`, `${item.name} bought`), durationMs: CONFIRMATION_NOTICE_MS, sfx: "purchase", step: 0 };
 }
 
 /** Esya kuleye takildi: hedefli kartla ayni an, guclu atim. */
@@ -128,7 +129,7 @@ export function getInventoryEquipCue(message: InventoryEquippedMessage, towerNam
   if (!item) return undefined;
   const name = towerName?.trim();
   return {
-    text: name ? `${item.name} takıldı · ${name}` : `${item.name} kuleye takıldı`,
+    text: name ? lt(`${item.name} takıldı · ${name}`, `${item.name} equipped · ${name}`) : lt(`${item.name} kuleye takıldı`, `${item.name} equipped on a tower`),
     durationMs: CONFIRMATION_NOTICE_MS,
     sfx: "equip",
     step: 0,
@@ -151,26 +152,29 @@ export function getInventoryEquipRejectedCue(
 ): ServerConfirmationCue | undefined {
   const item = message?.itemId ? getShopItem(message.itemId) : undefined;
   if (!item) return undefined;
-  const kept = context.creative ? "" : " · envanterde kaldı";
+  const kept = context.creative ? "" : lt(" · envanterde kaldı", " · kept in inventory");
   const text = message.reason === "towerFull"
-    ? `Bu kulede boş yuva yok · en fazla ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} eşya`
+    ? lt(`Bu kulede boş yuva yok · en fazla ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} eşya`, `No free slot on this tower · max ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} items`)
     : message.reason === "incompatibleTower"
-      ? `${item.name} bu kuleye takılamaz${kept}`
+      ? lt(`${item.name} bu kuleye takılamaz${kept}`, `${item.name} cannot go on this tower${kept}`)
       : message.reason === "itemLimit"
-        ? `${item.name} bir kuleye en fazla ${getShopItemTowerLimit(item)} kez takılır${kept}`
+        ? lt(`${item.name} bir kuleye en fazla ${getShopItemTowerLimit(item)} kez takılır${kept}`, `${item.name}: max ${getShopItemTowerLimit(item)} per tower${kept}`)
         : message.reason === "itemConflict"
-          ? `${item.name}, ${getShopItem(getExclusiveShopItemId(item.id) ?? "")?.name ?? "karşıt eşya"} ile aynı kuleye takılamaz${kept}`
-          : `${item.name} takılamadı${kept}`;
+          ? lt(
+            `${item.name}, ${getShopItem(getExclusiveShopItemId(item.id) ?? "")?.name ?? "karşıt eşya"} ile aynı kuleye takılamaz${kept}`,
+            `${item.name} cannot share a tower with ${getShopItem(getExclusiveShopItemId(item.id) ?? "")?.name ?? "its opposing item"}${kept}`
+          )
+          : lt(`${item.name} takılamadı${kept}`, `${item.name} could not be equipped${kept}`);
   return { text, durationMs: CONFIRMATION_NOTICE_MS, step: 0 };
 }
 
 /** Onarim: kule tam cana dondu. Bedel toast'ta, cunku altin cipi yalnizca dususu gosteriyor. */
 export function getStructureRepairCue(message: StructureRepairedMessage, towerName?: string): ServerConfirmationCue | undefined {
   if (!message?.towerId) return undefined;
-  const name = towerName?.trim() || "Yapı";
+  const name = towerName?.trim() || lt("Yapı", "Structure");
   const cost = Math.round(Number(message.cost));
   return {
-    text: Number.isFinite(cost) && cost > 0 ? `${name} onarıldı (${cost}g)` : `${name} onarıldı`,
+    text: Number.isFinite(cost) && cost > 0 ? lt(`${name} onarıldı (${cost}g)`, `${name} repaired (${cost}g)`) : lt(`${name} onarıldı`, `${name} repaired`),
     durationMs: CONFIRMATION_NOTICE_MS,
     sfx: "repair",
     step: 0,
@@ -190,7 +194,10 @@ export function getUltimateUpgradeCue(message: UltimateUpgradedMessage): ServerC
   if (!Number.isFinite(level) || level < 1) return undefined;
   const clamped = Math.min(ULTIMATE_POWER_MAX_LEVEL, level);
   return {
-    text: `Ulti Gücü ×${getUltimatePowerMultiplier(clamped)}! · kademe ${clamped}/${ULTIMATE_POWER_MAX_LEVEL}`,
+    text: lt(
+      `Ulti Gücü ×${getUltimatePowerMultiplier(clamped)}! · kademe ${clamped}/${ULTIMATE_POWER_MAX_LEVEL}`,
+      `Ultimate Power ×${getUltimatePowerMultiplier(clamped)}! · tier ${clamped}/${ULTIMATE_POWER_MAX_LEVEL}`
+    ),
     durationMs: CONFIRMATION_NOTICE_MS,
     sfx: "upgrade",
     step: clamped - 1
@@ -215,8 +222,8 @@ export function getWorkerDevelopmentCue(message: WorkerDevelopmentUnlockedMessag
   const label = WORKER_ROLE_LABELS[role as HirableWorkerRole];
   return {
     text: Number.isFinite(cost) && cost > 0
-      ? `${label} · ${skill.name} açıldı (${cost} XP)`
-      : `${label} · ${skill.name} açıldı`,
+      ? lt(`${label} · ${skill.name} açıldı (${cost} XP)`, `${label} · ${skill.name} unlocked (${cost} XP)`)
+      : lt(`${label} · ${skill.name} açıldı`, `${label} · ${skill.name} unlocked`),
     durationMs: CONFIRMATION_NOTICE_MS,
     sfx: "upgrade",
     step: tier * WORKER_TIER_PITCH_STEPS

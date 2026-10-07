@@ -1,4 +1,5 @@
 import { ONUR_LUCKY_WINDOW_MS } from "../characters/onur/passive/index.js";
+import { lt } from "../i18n/index.js";
 
 /**
  * Secili kombo damgalari: sonucu gercekten degistiren etkilesimler.
@@ -54,13 +55,13 @@ export function getLuckyWindowSeconds() {
 export function getComboStampText(message: Pick<ComboStampMessage, "kind" | "kills">): string | undefined {
   switch (message.kind) {
     case "markOverdrive":
-      return "İŞARET → OVERDRIVE";
+      return lt("İŞARET → OVERDRIVE", "MARK → OVERDRIVE");
     case "sweepKills": {
       const kills = typeof message.kills === "number" && Number.isFinite(message.kills) ? Math.floor(message.kills) : 0;
-      return kills >= DEBUG_SWEEP_STAMP_MIN_KILLS ? `Tarama: ${kills} öldü` : undefined;
+      return kills >= DEBUG_SWEEP_STAMP_MIN_KILLS ? lt(`Tarama: ${kills} öldü`, `Sweep: ${kills} killed`) : undefined;
     }
     case "luckyWindow":
-      return `ŞANS PENCERESİ ${getLuckyWindowSeconds()} sn`;
+      return lt(`ŞANS PENCERESİ ${getLuckyWindowSeconds()} sn`, `LUCK WINDOW ${getLuckyWindowSeconds()} s`);
     default:
       return undefined;
   }

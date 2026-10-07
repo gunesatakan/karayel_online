@@ -1,4 +1,5 @@
 import type { WaveReportCard } from "@karayel/shared";
+import { t } from "./i18n";
 
 /**
  * Dalga karnesinin serit hali: kart secim perdesinin basliginda.
@@ -32,7 +33,7 @@ export function createWaveReportElement(card: WaveReportCard, options: WaveRepor
   if (open) {
     const button = root as HTMLButtonElement;
     button.type = "button";
-    button.setAttribute("aria-label", `${card.label}. Savunma özetini aç`);
+    button.setAttribute("aria-label", t("report.wave.openAria", { label: card.label }));
     button.addEventListener("click", open);
   } else {
     root.setAttribute("role", "group");

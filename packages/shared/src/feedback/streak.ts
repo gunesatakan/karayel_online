@@ -1,5 +1,6 @@
 import { KILL_STREAK_BUFF_DURATION_MS, getKillStreakRule, getWaveSpawnIntervalMs, type KillStreakTier } from "../balance/index.js";
 import { countsAsTower, occupiesTowerSlot, towerCatalog } from "../characters/index.js";
+import { lt, ltFixed, ltPercent } from "../i18n/index.js";
 import type { TowerSnapshot } from "../index.js";
 import { isOperationalTower } from "../tower-rules.js";
 import { GAME_SPEED_MULTIPLIER } from "../tower-stats/index.js";
@@ -68,9 +69,9 @@ export function getComboHeat(count: number) {
 
 /** Patlamanin adi; tek oldurme patlama degil. Dort ve ustu "ÇOKLU": "ÜÇLÜ" yalan olurdu. */
 export function getMultiKillLabel(burst: number) {
-  if (burst >= 4) return "ÇOKLU!";
-  if (burst === 3) return "ÜÇLÜ!";
-  if (burst === 2) return "ÇİFT!";
+  if (burst >= 4) return lt("ÇOKLU!", "MULTI!");
+  if (burst === 3) return lt("ÜÇLÜ!", "TRIPLE!");
+  if (burst === 2) return lt("ÇİFT!", "DOUBLE!");
   return undefined;
 }
 
@@ -205,7 +206,7 @@ export function getKillStreakBuffRealMs() {
 
 function formatSeconds(ms: number) {
   const seconds = ms / 1000;
-  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1).replace(".", ",");
+  return Number.isInteger(seconds) ? String(seconds) : ltFixed(seconds, 1);
 }
 
 /**
@@ -222,15 +223,15 @@ export function getKillStreakBuffText(tier: KillStreakTier) {
   }
   const parts: string[] = [];
   if (rule.damageMultiplier > 1) {
-    parts.push(`+%${Math.round((rule.damageMultiplier - 1) * 100)} hasar`);
+    parts.push(`+${ltPercent(Math.round((rule.damageMultiplier - 1) * 100))} ${lt("hasar", "damage")}`);
   }
   if (rule.hasteMultiplier > 1) {
-    parts.push(`+%${Math.round((rule.hasteMultiplier - 1) * 100)} atış hızı`);
+    parts.push(`+${ltPercent(Math.round((rule.hasteMultiplier - 1) * 100))} ${lt("atış hızı", "fire rate")}`);
   }
   if (rule.fearAllMs > 0) {
-    parts.push("düşmanlar korkar");
+    parts.push(lt("düşmanlar korkar", "enemies flee"));
   }
-  parts.push(`${formatSeconds(KILL_STREAK_BUFF_DURATION_MS)} sn`);
+  parts.push(`${formatSeconds(KILL_STREAK_BUFF_DURATION_MS)} ${lt("sn", "s")}`);
   return parts.join(" · ");
 }
 

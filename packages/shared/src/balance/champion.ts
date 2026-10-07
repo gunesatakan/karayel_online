@@ -1,5 +1,6 @@
 import type { EnemyType } from "../index.js";
 import { getEnemyExp } from "../index.js";
+import { lt, ltFixed } from "../i18n/index.js";
 import { SHIELD_DAMAGE_TAKEN_MULTIPLIER, calculateArmorDamageMultiplier, getEnemyCombatDefinition } from "../combat.js";
 import {
   AIR_ENEMY_HEALTH_MULTIPLIER,
@@ -371,13 +372,13 @@ export function sanitizeChampionDownMessage(raw: unknown): ChampionDownMessage |
   return message;
 }
 
-/** "10,6": saniye, tek basamak, Turkce virgul. */
+/** "10,6": saniye, tek basamak; ayirac dile gore (Ingilizcede "10.6"). */
 export function formatChampionSeconds(ms: number) {
-  return (Math.max(0, ms) / 1000).toFixed(1).replace(".", ",");
+  return ltFixed(Math.max(0, ms) / 1000, 1);
 }
 
 /** "ŞAMPİYON DEVRİLDİ · 10,6 sn (önceki 12,1)"; ilk sampiyonda parantez yok. */
 export function getChampionDownText(message: Pick<ChampionDownMessage, "ms" | "prevMs">) {
-  const base = `ŞAMPİYON DEVRİLDİ · ${formatChampionSeconds(message.ms)} sn`;
-  return message.prevMs === undefined ? base : `${base} (önceki ${formatChampionSeconds(message.prevMs)})`;
+  const base = lt(`ŞAMPİYON DEVRİLDİ · ${formatChampionSeconds(message.ms)} sn`, `CHAMPION DOWN · ${formatChampionSeconds(message.ms)} s`);
+  return message.prevMs === undefined ? base : `${base} (${lt("önceki", "was")} ${formatChampionSeconds(message.prevMs)})`;
 }

@@ -280,7 +280,9 @@ test("mesaj kurali: useSkill enemyId tasiyor, kovasi var; red ve infaz istemcide
   assert.ok(scene.includes(`onMessage("skill:execute"`));
   assert.ok(scene.includes(`onMessage("skill:rejected"`));
   assert.ok(/send\("useSkill", \{ slot: ATAKAN_EXECUTE_SLOT, enemyId: enemy\.id \}\)/.test(scene), "istemci infaz istegini kimlikle yollamiyor");
-  assert.ok(scene.includes(`"Bir düşmana dokun"`));
+  // Hedef ipucu sozlukte: anahtar sahnede, Turkce metin scene bolgesinde.
+  assert.ok(scene.includes(`t("scene.skill.executePickEnemy")`));
+  assert.ok(readSource("apps/web/src/locales/areas/scene.ts").includes(`"scene.skill.executePickEnemy": "Bir düşmana dokun"`));
   assert.ok(scene.includes(`emit("execute"`), "infaz geri bildirimi yonetmenden gecmiyor");
   // Infaz sesi ve isareti: sert, kisa; takim arkadasinda sessiz.
   assert.equal(FEEDBACK_KIND_RULES.execute.teammateSound, false);

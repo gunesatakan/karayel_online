@@ -1,4 +1,5 @@
 import { characters } from "../characters/index.js";
+import { lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import { countSignatureBadges, type BadgeBook } from "./badges.js";
 import { findNewCosmetics, type CosmeticFacts } from "./cosmetics.js";
@@ -64,7 +65,7 @@ export function summarizeRunProgress(input: {
   };
   if (input.gained) {
     const { characterId } = input;
-    const operator = characters.find((character) => character.id === characterId)?.displayName ?? "Operatör";
+    const operator = characters.find((character) => character.id === characterId)?.displayName ?? lt("Operatör", "Operator");
     const badgeCount = countSignatureBadges(input.badgesAfter, characterId) - countSignatureBadges(input.badgesAtStart, characterId);
     summary.mastery = buildMasteryReportView({
       characterId,

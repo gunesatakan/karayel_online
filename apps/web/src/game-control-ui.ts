@@ -1,7 +1,8 @@
 import type Phaser from "phaser";
-import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
-import { TELEMETRY_SETTING_LABEL, TELEMETRY_SETTING_NOTE, readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
+import { numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
+import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
 
@@ -26,19 +27,17 @@ function formatShopCategory(category: string) {
 /**
  * Kilidi kartlardan zaten gelen esyanin etiketi (vitrin ve envanter).
  * Satin almayi engellemiyor; yalnizca bir sey eklemeyecegini soyluyor.
+ * Fonksiyon: metin cizim aninda secili dilden okunuyor.
  */
-const ALREADY_UNLOCKED_TAG = `<i class="gold-shop__new gold-shop__unlocked">zaten açık</i>`;
+const ALREADY_UNLOCKED_TAG = () => `<i class="gold-shop__new gold-shop__unlocked">${t("controls.alreadyUnlocked")}</i>`;
 
-/** Hedefleme kiplerinin adi; Debug Lazer'in "marked" kipi de dahil. */
-const TARGETING_LABELS: Readonly<Record<string, string>> = {
-  first: "İlk",
-  last: "Son",
-  strongest: "En güçlü",
-  weakest: "En zayıf",
-  closest: "En yakın",
-  marked: "İşaretli",
-  random: "Rastgele"
-};
+/**
+ * Hedefleme kipinin adi (`controls.targeting.<kip>`); Debug Lazer'in
+ * "marked" kipi de dahil. Bilinmeyen kip ham haliyle kaliyor.
+ */
+function formatTargeting(mode: string) {
+  return tMaybe(`controls.targeting.${mode}`) ?? mode;
+}
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
@@ -241,12 +240,13 @@ function countIds(ids: readonly string[]) {
 /**
  * Kartin eksen ve nadirlik etiketi. Eksenler kart secim ekranindaki gibi,
  * rozet yaratici paneldeki gibi yaziliyor: hedefli kart "kule", digerleri
- * nadirligi. Ikisi de Turkce adlarla (`towerAxisLabels`, `cardRarityLabels`);
- * ham kimlikler ("ECONOMY", "uncommon") Turkce arayuzde yabanci kaliyordu.
+ * nadirligi. Ikisi de secili dildeki adlarla (`towerAxisLabels`,
+ * `cardRarityLabels`); ham kimlikler ("ECONOMY", "uncommon") Turkce arayuzde
+ * yabanci kaliyordu.
  */
 function formatCardTags(card: CardDefinition) {
-  const axes = card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ");
-  const badge = card.scope.kind === "targeted" ? "kule" : cardRarityLabels[getCardRarity(card)];
+  const axes = card.axes.map((axis) => upper(towerAxisLabels[axis])).join(" • ");
+  const badge = card.scope.kind === "targeted" ? t("controls.card.towerBadge") : cardRarityLabels[getCardRarity(card)];
   return axes ? `${axes} · ${badge}` : badge;
 }
 
@@ -580,7 +580,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     const close = document.createElement("button");
     close.type = "button";
     close.className = "game-controls__drawer-close";
-    close.setAttribute("aria-label", "Kapat");
+    close.setAttribute("aria-label", t("controls.drawer.close"));
     close.textContent = "×";
     close.addEventListener("pointerup", onClose);
     header.append(label, close);
@@ -640,17 +640,17 @@ export function setupGameControlUi(game: Phaser.Game) {
     // Ulti: kip secimi ya da Zeynep kademesi acikken onun yerini aliyor.
     if (state.ultimate?.choiceOpen && state.ultimate.needsChoice) {
       body.push(makeRow([
-        makeActionButton("Saldiri", "game-controls__action--attack", true, () => dispatch({ action: "useUltimateMode", mode: "attack" })),
-        makeActionButton("Tamir", "game-controls__action--repair", true, () => dispatch({ action: "useUltimateMode", mode: "repair" }))
+        makeActionButton(t("controls.ultimate.attack"), "game-controls__action--attack", true, () => dispatch({ action: "useUltimateMode", mode: "attack" })),
+        makeActionButton(t("controls.ultimate.repair"), "game-controls__action--repair", true, () => dispatch({ action: "useUltimateMode", mode: "repair" }))
       ]));
     } else if (state.zeynepTier) {
       body.push(makeRow([
-        makeTierButton("Dusuk", "small", 10, state.zeynepTier.reputation, state.zeynepTier.chainReady),
-        makeTierButton("Orta", "medium", 40, state.zeynepTier.reputation, state.zeynepTier.chainReady),
-        makeTierButton("Yuksek", "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
+        makeTierButton(t("controls.zeynep.low"), "small", 10, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton(t("controls.zeynep.medium"), "medium", 40, state.zeynepTier.reputation, state.zeynepTier.chainReady),
+        makeTierButton(t("controls.zeynep.high"), "big", 80, state.zeynepTier.reputation, state.zeynepTier.chainReady)
       ]));
     } else if (state.ultimate) {
-      const ultimateButton = makeActionButton(`Ulti ${state.ultimate.charge}%`, "game-controls__action--ultimate", state.ultimate.ready, () => dispatch({ action: "useUltimate" }));
+      const ultimateButton = makeActionButton(t("controls.ultimate.charge", { charge: state.ultimate.charge }), "game-controls__action--ultimate", state.ultimate.ready, () => dispatch({ action: "useUltimate" }));
       applyUltimateReadyPulse(ultimateButton, state.ultimate.readyPulseAt);
       body.push(makeRow([ultimateButton]));
     }
@@ -661,12 +661,12 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.zeynepChain) {
       const chain = document.createElement("span");
       chain.className = `game-controls__chain${state.zeynepChain.ready ? " game-controls__chain--ready" : ""}`;
-      chain.textContent = `Zincir ${state.zeynepChain.value}/2`;
+      chain.textContent = t("controls.zeynep.chain", { value: state.zeynepChain.value });
       indicators.push(chain);
     }
     if (state.showOrientationToggle) {
       indicators.push(makeActionButton(
-        state.orientation === "vertical" ? "Yon: Dikey" : "Yon: Yatay",
+        state.orientation === "vertical" ? t("controls.orientation.vertical") : t("controls.orientation.horizontal"),
         "game-controls__orientation",
         true,
         () => dispatch({ action: "toggleAbartiOrientation" })
@@ -675,9 +675,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.melisStance) {
       const stance = state.melisStance;
       const toStress = stance.current === "approval";
-      const bedel = stance.evolutionCost !== undefined ? ` ${Math.floor(stance.stress)}/${stance.evolutionCost}` : " tamam";
+      const side = stance.current === "stress" ? t("controls.mode.stress") : t("controls.mode.approval");
       indicators.push(makeActionButton(
-        `Seri→${stance.current === "stress" ? "Stres" : "Onay"} | Evrim${bedel}`,
+        stance.evolutionCost !== undefined
+          ? t("controls.melis.stance", { side, stress: Math.floor(stance.stress), cost: stance.evolutionCost })
+          : t("controls.melis.stanceDone", { side }),
         "game-controls__melis-stance",
         true,
         () => dispatch({ action: "setMelisStance", stance: toStress ? "stress" : "approval" })
@@ -715,14 +717,14 @@ export function setupGameControlUi(game: Phaser.Game) {
   ): { kind: "selected" | "available" | "locked"; text: string } => {
     const owned = development.selectedSkillIds.filter((skill) => isWorkerSkillForRole(role, skill));
     const cost = WORKER_DEVELOPMENT_XP_COSTS[index];
-    if (owned.includes(option.id)) return { kind: "selected", text: "Seçildi." };
-    if (owned.length > index) return { kind: "locked", text: "Bu hücreden diğer seçenek alındı." };
+    if (owned.includes(option.id)) return { kind: "selected", text: t("controls.workerTree.selected") };
+    if (owned.length > index) return { kind: "locked", text: t("controls.workerTree.otherTaken") };
     if (option.requires && !owned.includes(option.requires) && owned.length === index) {
-      return { kind: "locked", text: `Yalnızca ${getWorkerSkill(option.requires)?.name ?? "önceki yön"} seçildiyse açılır.` };
+      return { kind: "locked", text: t("controls.workerTree.requires", { name: getWorkerSkill(option.requires)?.name ?? t("controls.workerTree.previousPath") }) };
     }
-    if (owned.length < index) return { kind: "locked", text: `Önce ${index}. hücreye kadar olanlar açılmalı · ${cost} XP` };
-    if (development.experience < cost) return { kind: "locked", text: `XP yetersiz: ${Math.floor(development.experience)} / ${cost}` };
-    return { kind: "available", text: `Açılabilir · ${cost} XP` };
+    if (owned.length < index) return { kind: "locked", text: t("controls.workerTree.unlockEarlier", { index, cost }) };
+    if (development.experience < cost) return { kind: "locked", text: t("controls.workerTree.notEnoughXp", { xp: Math.floor(development.experience), cost }) };
+    return { kind: "available", text: t("controls.workerTree.available", { cost }) };
   };
 
   const buildWorkerDevelopmentDrawer = (state: ControlState) => {
@@ -730,15 +732,17 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (!development) return [];
     const intro = document.createElement("p");
     intro.className = "worker-development__intro";
-    intro.textContent = `Ortak işçi ağacı · ${Math.floor(development.experience)} XP. Açılan hücreler aynı uzmanlıktaki tüm işçilere uygulanır.`;
+    intro.textContent = t("controls.workerTree.intro", { xp: Math.floor(development.experience) });
     const viewport = document.createElement("div");
     viewport.className = "worker-development__viewport";
-    viewport.title = "Ağacı sürükleyerek gez";
+    viewport.title = t("controls.workerTree.pan");
     const canvas = document.createElement("div");
     canvas.className = "worker-development__tree";
     const origin = document.createElement("div");
     origin.className = "worker-development__origin";
-    origin.innerHTML = "<span>İŞÇİ<br>AĞACI</span>";
+    const originLabel = document.createElement("span");
+    originLabel.append(t("controls.workerTree.originTop"), document.createElement("br"), t("controls.workerTree.originBottom"));
+    origin.append(originLabel);
     canvas.append(origin);
     for (const role of HIRABLE_WORKER_ROLES) {
       const section = document.createElement("section");
@@ -790,13 +794,13 @@ export function setupGameControlUi(game: Phaser.Game) {
       if (!focus) return;
       const status = getWorkerDevelopmentStatus(development, focus.role, focus.index, focus.option);
       const title = document.createElement("strong");
-      title.textContent = `${WORKER_ROLE_LABELS[focus.role]} · ${focus.index + 1}. hücre · ${focus.option.name}`;
+      title.textContent = t("controls.workerTree.detailTitle", { role: WORKER_ROLE_LABELS[focus.role], n: focus.index + 1, name: focus.option.name });
       const close = makeActionButton("×", "worker-development__detail-close", true, () => {
         workerTreeFocus = undefined;
         for (const focused of canvas.querySelectorAll(".is-focused")) focused.classList.remove("is-focused");
         renderWorkerTreeDetail();
       });
-      close.setAttribute("aria-label", "Ayrıntıyı kapat");
+      close.setAttribute("aria-label", t("controls.workerTree.closeDetail"));
       const body = document.createElement("p");
       body.textContent = focus.option.description;
       const state = document.createElement("small");
@@ -804,7 +808,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       state.textContent = status.text;
       detail.append(close, title, body, state);
       if (status.kind === "available") {
-        detail.append(makeActionButton(`Aç · ${WORKER_DEVELOPMENT_XP_COSTS[focus.index]} XP`, "worker-development__unlock", true, () => {
+        detail.append(makeActionButton(t("controls.workerTree.unlock", { cost: WORKER_DEVELOPMENT_XP_COSTS[focus.index] }), "worker-development__unlock", true, () => {
           dispatch({ action: "unlockWorkerDevelopment", role: focus.role, skillId: focus.option.id });
         }));
       }
@@ -865,7 +869,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     viewport.addEventListener("pointercancel", release);
     const hint = document.createElement("small");
     hint.className = "worker-development__hint";
-    hint.textContent = "Ağacı sürükleyerek gez, seçeneğe dokunup oku · hücreler sırayla açılır, her hücreden bir seçim · 3 / 6 / 9 gamechanger hücreleri";
+    hint.textContent = t("controls.workerTree.hint");
     return [intro, viewport, hint];
   };
 
@@ -878,14 +882,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (items.length === 0) {
       const empty = document.createElement("p");
       empty.className = "inventory__empty";
-      empty.textContent = "Envanterin boş. Mağazadan aldığın eşyalar burada birikir.";
+      empty.textContent = t("controls.inventory.empty");
       list.append(empty);
     }
     for (const item of items) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `gold-shop__item gold-shop__item--${item.category}`;
-      button.innerHTML = `<span>${formatShopCategory(item.category)}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG : ""}</span><strong>${item.name}</strong><small>${item.description}</small>`
+      button.innerHTML = `<span>${formatShopCategory(item.category)}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small>`
         + (item.count > 1 ? `<b>x${item.count}</b>` : "");
       button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
       list.append(button);
@@ -894,16 +898,16 @@ export function setupGameControlUi(game: Phaser.Game) {
 
     const actions: HTMLElement[] = [];
     if (state.inventory?.pendingItemId) {
-      actions.push(makeActionButton("Takmayı iptal et", "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
+      actions.push(makeActionButton(t("controls.inventory.cancelEquip"), "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
     }
     if (state.workerHire) {
-      const hireLabel = state.workerHire.pendingSpecialization ? "İşçi Al · seçim bekliyor" : `İşçi Al ${state.workerHire.cost}g`;
+      const hireLabel = state.workerHire.pendingSpecialization ? t("controls.workerHire.buttonPending") : t("controls.workerHire.button", { cost: state.workerHire.cost });
       actions.push(makeActionButton(hireLabel, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
     }
     if (state.workerBan) {
       const ban = state.workerBan;
       actions.push(makeActionButton(
-        ban.active ? "Yasak: kare seç" : `İşçi Yolu Yasakla${ban.count > 0 ? ` (${ban.count})` : ""}`,
+        ban.active ? t("controls.workerBan.active") : ban.count > 0 ? t("controls.workerBan.idleCount", { count: ban.count }) : t("controls.workerBan.idle"),
         "game-controls__worker-ban",
         true,
         () => dispatch({ action: "toggleWorkerBanMode" })
@@ -915,8 +919,8 @@ export function setupGameControlUi(game: Phaser.Game) {
       const ulti = state.ultimate;
       actions.push(makeActionButton(
         ulti.upgradeCost === undefined
-          ? `Ulti Gücü ×${ulti.powerMultiplier} (tam)`
-          : `Ulti Gücü ×${ulti.powerMultiplier} → ×${ulti.powerMultiplier * 2} ${ulti.upgradeCost}g`,
+          ? t("controls.ultimate.powerMax", { multiplier: ulti.powerMultiplier })
+          : t("controls.ultimate.power", { multiplier: ulti.powerMultiplier, next: ulti.powerMultiplier * 2, cost: ulti.upgradeCost }),
         "game-controls__ultimate-power",
         ulti.canUpgrade,
         () => dispatch({ action: "upgradeUltimatePower" })
@@ -944,12 +948,12 @@ export function setupGameControlUi(game: Phaser.Game) {
     section.className = "owned-cards";
     const header = document.createElement("span");
     header.className = "tower-items__header";
-    header.textContent = `Kartlar ${ids.length}`;
+    header.textContent = t("controls.ownedCards.header", { count: ids.length });
     section.append(header);
     if (ids.length === 0) {
       const empty = document.createElement("p");
       empty.className = "inventory__empty";
-      empty.textContent = "Henüz kart seçmedin. Dalga sonunda seçtiğin kartlar burada listelenir.";
+      empty.textContent = t("controls.ownedCards.empty");
       section.append(empty);
       return section;
     }
@@ -994,8 +998,8 @@ export function setupGameControlUi(game: Phaser.Game) {
     const panel = createTowerSheetPanel(
       state.selectedTowerId ?? "",
       "cards",
-      "Kartlar ve eşyalar",
-      `${targetedIds.length + ownerIds.length} kart · eşya ${capacity > 0 ? `${items.length}/${capacity}` : items.length}`
+      t("controls.towerEffects.title"),
+      t("controls.towerEffects.summary", { cards: targetedIds.length + ownerIds.length, items: capacity > 0 ? `${items.length}/${capacity}` : items.length })
     );
     const section = panel.content;
     section.classList.add("tower-effects");
@@ -1045,12 +1049,16 @@ export function setupGameControlUi(game: Phaser.Game) {
     };
 
     if (targetedIds.length === 0 && ownerIds.length === 0) {
-      addGroup("Kartlar", [], "Bu kuleye işleyen kart yok");
+      addGroup(t("controls.towerEffects.cards"), [], t("controls.towerEffects.noCards"));
     } else {
-      addGroup("Hedefli kartlar", cardEntries("targeted", targetedIds));
-      addGroup("Genel kartlar", cardEntries("card", ownerIds));
+      addGroup(t("controls.towerEffects.targeted"), cardEntries("targeted", targetedIds));
+      addGroup(t("controls.towerEffects.general"), cardEntries("card", ownerIds));
     }
-    addGroup(capacity > 0 ? `Eşyalar ${items.length}/${capacity}` : "Eşyalar", itemEntries, "Takılı eşya yok");
+    addGroup(
+      capacity > 0 ? t("controls.towerEffects.itemsCapacity", { count: items.length, capacity }) : t("controls.towerEffects.items"),
+      itemEntries,
+      t("controls.towerEffects.noItems")
+    );
 
     const focused = shown.find((entry) => entry.key === towerEffectFocus);
     if (focused) {
@@ -1090,48 +1098,49 @@ export function setupGameControlUi(game: Phaser.Game) {
       for (const mode of state.targeting.modes) {
         const option = document.createElement("option");
         option.value = mode;
-        option.textContent = TARGETING_LABELS[mode] ?? mode;
+        option.textContent = formatTargeting(mode);
         option.selected = mode === state.targeting.current;
         select.append(option);
       }
       select.disabled = Boolean(state.towerSheet?.readOnly);
       select.addEventListener("change", () => dispatch({ action: "setTargeting", targetingMode: select.value }));
-      rows.push(makeControlRow("Hedefleme", select, id));
+      rows.push(makeControlRow(t("controls.targeting.label"), select, id));
     }
     if (state.performance) {
       rows.push(makePerformanceSlider(state.performance));
     }
     if (state.underworldMode) {
-      rows.push(makeControlRow("Yeraltı kipi", makeRow([
-        makeUnderworldModeButton("Onay", "approval", state.underworldMode),
-        makeUnderworldModeButton("Stres", "stress", state.underworldMode)
+      rows.push(makeControlRow(t("controls.tower.underworldMode"), makeRow([
+        makeUnderworldModeButton(t("controls.mode.approval"), "approval", state.underworldMode),
+        makeUnderworldModeButton(t("controls.mode.stress"), "stress", state.underworldMode)
       ], "game-controls__underworld-mode")));
     }
     if (state.gate) {
       const gate = state.gate;
-      rows.push(makeControlRow(gate.open ? "Kapı açık: işçiler geçer" : "Kapı kapalı", makeActionButton(
-        gate.open ? "Kapıyı Ör" : "Kapı Yap",
+      rows.push(makeControlRow(gate.open ? t("controls.tower.gateOpen") : t("controls.tower.gateClosed"), makeActionButton(
+        gate.open ? t("controls.tower.gateSeal") : t("controls.tower.gateBuild"),
         "game-controls__underworld-mode-button",
         gate.canEdit,
         () => dispatch({ action: "toggleWallGate" })
       )));
     }
     if (state.ammoLogistics) {
+      const onOff = state.ammoLogistics.enabled ? t("controls.tower.on") : t("controls.tower.off");
       const logistics = makeActionButton(
-        state.ammoLogistics.enabled ? "Açık" : "Kapalı",
+        onOff,
         `game-controls__underworld-mode-button ts-toggle${state.ammoLogistics.enabled ? " is-active" : ""}`,
         state.ammoLogistics.canEdit,
         () => dispatch({ action: "toggleAmmoLogistics" })
       );
       logistics.setAttribute("aria-pressed", String(state.ammoLogistics.enabled));
-      logistics.setAttribute("aria-label", `Mühimmat akışı: ${state.ammoLogistics.enabled ? "Açık" : "Kapalı"}`);
-      rows.push(makeControlRow("Mühimmat akışı", logistics));
+      logistics.setAttribute("aria-label", t("controls.tower.ammoFlowState", { state: onOff }));
+      rows.push(makeControlRow(t("controls.tower.ammoFlow"), logistics));
     }
     if (state.logisticsPriority) {
       const priority = state.logisticsPriority;
       const group = makeRow((["critical", "normal", "low"] as const).map((value) => {
         const button = makeActionButton(
-          { critical: "Kritik", normal: "Normal", low: "Düşük" }[value],
+          { critical: t("controls.tower.priorityCritical"), normal: t("controls.tower.priorityNormal"), low: t("controls.tower.priorityLow") }[value],
           `game-controls__underworld-mode-button ts-toggle${priority.value === value ? " is-active" : ""}`,
           priority.canEdit,
           () => dispatch({ action: "setLogisticsPriority", priority: value })
@@ -1140,13 +1149,13 @@ export function setupGameControlUi(game: Phaser.Game) {
         return button;
       }), "game-controls__underworld-mode ts-segmented");
       group.setAttribute("role", "group");
-      group.setAttribute("aria-label", "Sevkiyat önceliği");
-      rows.push(makeControlRow("Sevkiyat önceliği", group));
+      group.setAttribute("aria-label", t("controls.tower.priority"));
+      rows.push(makeControlRow(t("controls.tower.priority"), group));
     }
     if (state.standby) {
       const standby = state.standby;
-      rows.push(makeControlRow(standby.active ? "Beklemede" : standby.waking ? "Isınıyor" : "Çalışıyor", makeActionButton(
-        standby.active ? "Kuleyi Aç" : standby.waking ? "Kule ısınıyor…" : "Beklemeye Al",
+      rows.push(makeControlRow(standby.active ? t("controls.tower.standby") : standby.waking ? t("controls.tower.warming") : t("controls.tower.running"), makeActionButton(
+        standby.active ? t("controls.tower.wake") : standby.waking ? t("controls.tower.warmingButton") : t("controls.tower.sleep"),
         "game-controls__underworld-mode-button",
         standby.canEdit && !standby.waking,
         () => dispatch({ action: "toggleTowerStandby" })
@@ -1154,11 +1163,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     }
     if (rows.length === 0) return undefined;
     const summary = [
-      state.targeting ? TARGETING_LABELS[state.targeting.current] ?? state.targeting.current : undefined,
-      state.performance ? `performans %${state.performance.percent}` : undefined,
-      state.standby?.active ? "beklemede" : undefined
+      state.targeting ? formatTargeting(state.targeting.current) : undefined,
+      state.performance ? t("controls.tower.summaryPerformance", { v: state.performance.percent }) : undefined,
+      state.standby?.active ? t("controls.tower.summaryStandby") : undefined
     ].filter(Boolean).join(" · ");
-    const panel = createTowerSheetPanel(state.selectedTowerId ?? "", "controls", "Ayarlar", summary);
+    const panel = createTowerSheetPanel(state.selectedTowerId ?? "", "controls", t("controls.tower.settings"), summary);
     panel.content.append(...rows);
     return panel.wrapper;
   };
@@ -1201,7 +1210,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     // haritanin alt sirasindaki bir kulenin paneli tam bu panelin altina
     // dusuyor. Serit sabit: bolumler ne kadar uzarsa uzasin gorunur.
     const actions: HTMLElement[] = [
-      makeActionButton(state.upgrade?.label ?? "Yükselt", "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" }))
+      makeActionButton(state.upgrade?.label ?? t("controls.tower.upgrade"), "game-controls__action--upgrade", Boolean(state.upgrade?.enabled), () => dispatch({ action: "upgradeTower" }))
     ];
     if (state.repair) {
       actions.push(makeActionButton(state.repair.label, "game-controls__action--repair", state.repair.enabled, () => dispatch({ action: "repairStructure" })));
@@ -1247,10 +1256,14 @@ export function setupGameControlUi(game: Phaser.Game) {
     const hedef = document.createElement("div");
     hedef.className = "creative__target";
     hedef.textContent = creative.selectedTowerId
-      ? `Seçili kule: ${creative.selectedTowerId} · seviye ${creative.selectedTowerLevel ?? 1}`
-      : "Kule seçili değil — hedefli kartlar ve kuleye takılan eşyalar kapalı";
+      ? t("controls.creative.selected", { id: creative.selectedTowerId, level: creative.selectedTowerLevel ?? 1 })
+      : t("controls.creative.noTower");
     body.push(hedef);
-    body.push(makeRow([makeTab("Kart", "cards"), makeTab("Eşya", "items"), makeTab("Dalga", "wave")], "creative__tabs"));
+    body.push(makeRow([
+      makeTab(t("controls.creative.tabCards"), "cards"),
+      makeTab(t("controls.creative.tabItems"), "items"),
+      makeTab(t("controls.creative.tabWave"), "wave")
+    ], "creative__tabs"));
 
     const list = document.createElement("div");
     list.className = "creative__list";
@@ -1267,10 +1280,10 @@ export function setupGameControlUi(game: Phaser.Game) {
         list.append(makeCreativeRow({
           name: card.name,
           detail: card.description,
-          badge: targeted ? "kule" : cardRarityLabels[getCardRarity(card)],
+          badge: targeted ? t("controls.card.towerBadge") : cardRarityLabels[getCardRarity(card)],
           count,
           disabled: needsTower,
-          disabledHint: "Önce bir kule seç",
+          disabledHint: t("controls.creative.needsTower"),
           onToggle: (on) => dispatch({ action: "creativeCard", cardId: card.id, on })
         }));
       }
@@ -1286,10 +1299,10 @@ export function setupGameControlUi(game: Phaser.Game) {
         list.append(makeCreativeRow({
           name: item.name,
           detail: item.description,
-          badge: global ? "genel" : "kule",
+          badge: global ? t("controls.card.globalBadge") : t("controls.card.towerBadge"),
           count,
           disabled: needsTower,
-          disabledHint: "Önce bir kule seç",
+          disabledHint: t("controls.creative.needsTower"),
           onToggle: (on) => dispatch({ action: "creativeItem", itemId: item.id, on })
         }));
       }
@@ -1312,7 +1325,7 @@ export function setupGameControlUi(game: Phaser.Game) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "creative__spawn-button";
-        button.textContent = `${count} düşman`;
+        button.textContent = t("controls.creative.spawn", { count });
         button.addEventListener("pointerup", () => dispatch({ action: "creativeSpawn", count }));
         spawn.append(button);
       }
@@ -1378,21 +1391,21 @@ export function setupGameControlUi(game: Phaser.Game) {
     const total = (state.inventory?.items ?? []).reduce((sum, entry) => sum + entry.count, 0);
     // Ulti dugmesi Beceriler cekmecesinin icinde; cekmece kapaliyken "hazir"
     // bilgisi ancak buradan gorunuyor. Kenar rengi kalici, atim bir kez.
-    const skillsButton = makeLaunchButton("Beceriler", "skills");
+    const skillsButton = makeLaunchButton(t("controls.launch.skills"), "skills");
     if (state.ultimate?.ready) {
       skillsButton.classList.add("game-controls__launch--ult-ready");
       applyUltimateReadyPulse(skillsButton, state.ultimate.readyPulseAt);
     }
     const buttons = [
-      makeLaunchButton("Kuleler", "towers"),
+      makeLaunchButton(t("controls.launch.towers"), "towers"),
       skillsButton,
-      makeLaunchButton("İşçi Ağacı", "workerDevelopment"),
+      makeLaunchButton(t("controls.launch.workerTree"), "workerDevelopment"),
       // Rolsuz isci yeni alimi kilitliyor; bildirim kart secimi gibi bir
       // ortunun altinda kalabilir, bu isaret kalici.
-      makeLaunchButton(`Envanter ${total}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "inventory")
+      makeLaunchButton(`${t("controls.launch.inventory", { count: total })}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "inventory")
     ];
-    if (state.creative) buttons.push(makeLaunchButton("Yaratıcı", "creative"));
-    if (state.defenseSummaryAvailable) buttons.push(makeActionButton("Savunma Özeti", "game-controls__launch", true, () => dispatch({ action: "showDefenseSummary" })));
+    if (state.creative) buttons.push(makeLaunchButton(t("controls.launch.creative"), "creative"));
+    if (state.defenseSummaryAvailable) buttons.push(makeActionButton(t("controls.launch.defenseSummary"), "game-controls__launch", true, () => dispatch({ action: "showDefenseSummary" })));
     return makeRow(buttons, "game-controls__launcher");
   };
 
@@ -1462,7 +1475,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.goldShop) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop";
-      drawer.innerHTML = `<header><span>ALTIN MAĞAZASI</span><strong>${state.goldShop.gold}g</strong></header><p>Kurulumunu genişletmek için bir geliştirme seç.</p><div class="gold-shop__offers"></div>`;
+      drawer.innerHTML = `<header><span>${t("controls.shop.title")}</span><strong>${state.goldShop.gold}g</strong></header><p>${t("controls.shop.intro")}</p><div class="gold-shop__offers"></div>`;
       const offers = drawer.querySelector<HTMLElement>(".gold-shop__offers");
       for (const item of state.goldShop.offers) {
         const button = document.createElement("button");
@@ -1471,12 +1484,12 @@ export function setupGameControlUi(game: Phaser.Game) {
         button.disabled = !item.affordable;
         // "YENİ": bu tarayicida ilk kez gorulen esya (Kart Arsivi). Fiyat ve
         // cerceve ayni kaliyor; etiket sessiz, secimi one cekmesin.
-        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">YENİ</i>` : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
+        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">${t("controls.shop.new")}</i>` : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
         button.addEventListener("pointerup", () => dispatch({ action: "buyShopItem", itemId: item.id }));
         offers?.append(button);
       }
-      const reroll = makeActionButton(`Yenile ${state.goldShop.rerollPrice}g`, "gold-shop__reroll", state.goldShop.gold >= state.goldShop.rerollPrice, () => dispatch({ action: "rerollShop" }));
-      const close = makeActionButton("Mağazayı Kapat", "gold-shop__close", true, () => dispatch({ action: "closeShop" }));
+      const reroll = makeActionButton(t("controls.shop.reroll", { price: state.goldShop.rerollPrice }), "gold-shop__reroll", state.goldShop.gold >= state.goldShop.rerollPrice, () => dispatch({ action: "rerollShop" }));
+      const close = makeActionButton(t("controls.shop.close"), "gold-shop__close", true, () => dispatch({ action: "closeShop" }));
       const actions = document.createElement("div");
       actions.className = "gold-shop__actions";
       actions.append(reroll, close);
@@ -1493,11 +1506,11 @@ export function setupGameControlUi(game: Phaser.Game) {
       const drawer = document.createElement("section");
       drawer.className = "gold-shop inventory";
       drawer.innerHTML = pending
-        ? `<header><span>İŞÇİ AL</span><strong>Seçim bekliyor · ücretsiz</strong></header>`
-          + `<p>Önceki işçinin uzmanlığı seçilmedi. Seçim ücretsiz; seçtikten sonra yeni işçi alabilirsin.</p>`
+        ? `<header><span>${t("controls.workerHire.title")}</span><strong>${t("controls.workerHire.pendingPrice")}</strong></header>`
+          + `<p>${t("controls.workerHire.pendingIntro")}</p>`
           + `<div class="gold-shop__offers"></div>`
-        : `<header><span>İŞÇİ AL</span><strong>${hire.advanced ? hire.advancedCost : hire.cost} altın</strong></header>`
-          + `<p>Tek tip işçi alırsın; uzmanlığını sonraki kalıcı seçimde belirlersin. Alınan işçi: ${hire.hired}. Kademe farketmez, her alım sonrakini pahalılaştırır.</p>`
+        : `<header><span>${t("controls.workerHire.title")}</span><strong>${t("controls.workerHire.price", { cost: hire.advanced ? hire.advancedCost : hire.cost })}</strong></header>`
+          + `<p>${t("controls.workerHire.intro", { hired: hire.hired })}</p>`
           + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
           + `<div class="gold-shop__offers"></div>`;
 
@@ -1505,8 +1518,8 @@ export function setupGameControlUi(game: Phaser.Game) {
       // is yapacagi seciliyor.
       const tiers = drawer.querySelector<HTMLElement>(".game-controls__worker-tier");
       tiers?.append(
-        makeWorkerTierButton(`Normal ${hire.cost}g`, false, hire),
-        makeWorkerTierButton(`Gelişmiş ${hire.advancedCost}g`, true, hire)
+        makeWorkerTierButton(t("controls.workerHire.tierNormal", { cost: hire.cost }), false, hire),
+        makeWorkerTierButton(t("controls.workerHire.tierAdvanced", { cost: hire.advancedCost }), true, hire)
       );
 
       const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
@@ -1515,13 +1528,13 @@ export function setupGameControlUi(game: Phaser.Game) {
       button.className = `gold-shop__item gold-shop__item--utility${hire.advanced && !pending ? " gold-shop__item--advanced-worker" : ""}`;
       button.disabled = !hire.affordable && !pending;
       button.innerHTML = pending
-        ? `<span>bekliyor</span><strong>Uzmanlığını seç</strong><small>Kristal, enerji, mühimmat veya tamir işlerinden birini seç.</small>`
-        : `<span>${hire.advanced ? "gelişmiş" : "işçi"}</span><strong>Yeni işçi al</strong><small>İlk seçimde uzmanlık dalını seçersin; sonraki seçimler kalıcı gamechanger becerilerdir.</small>`;
+        ? `<span>${t("controls.workerHire.pendingTag")}</span><strong>${t("controls.workerHire.pendingName")}</strong><small>${t("controls.workerHire.pendingDescription")}</small>`
+        : `<span>${hire.advanced ? t("controls.workerHire.tagAdvanced") : t("controls.workerHire.tagWorker")}</span><strong>${t("controls.workerHire.name")}</strong><small>${t("controls.workerHire.description")}</small>`;
       button.addEventListener("pointerup", () => dispatch({ action: "hireWorker" }));
       list?.append(button);
       const actions = document.createElement("div");
       actions.className = "gold-shop__actions";
-      actions.append(makeActionButton("Kapat", "gold-shop__close", true, () => dispatch({ action: "closeWorkerHire" })));
+      actions.append(makeActionButton(t("controls.drawer.close"), "gold-shop__close", true, () => dispatch({ action: "closeWorkerHire" })));
       drawer.append(actions);
       root.append(drawer);
     }
@@ -1541,19 +1554,19 @@ export function setupGameControlUi(game: Phaser.Game) {
     sheetElement = undefined;
     if (openDrawer === "creative" && state.creative) {
       drawerId = "creative";
-      drawer = makeDrawer("Yaratıcı mod", buildCreativeDrawer(state), () => toggleDrawer("creative"));
+      drawer = makeDrawer(t("controls.drawer.creative"), buildCreativeDrawer(state), () => toggleDrawer("creative"));
     } else if (openDrawer === "towers") {
       drawerId = "towers";
-      drawer = makeDrawer("Kuleler", buildTowersDrawer(state), () => toggleDrawer("towers"));
+      drawer = makeDrawer(t("controls.drawer.towers"), buildTowersDrawer(state), () => toggleDrawer("towers"));
     } else if (openDrawer === "skills") {
       drawerId = "skills";
-      drawer = makeDrawer("Beceriler", buildSkillsDrawer(state), () => toggleDrawer("skills"));
+      drawer = makeDrawer(t("controls.drawer.skills"), buildSkillsDrawer(state), () => toggleDrawer("skills"));
     } else if (openDrawer === "inventory") {
       drawerId = "inventory";
-      drawer = makeDrawer("Envanter", buildInventoryDrawer(state), () => toggleDrawer("inventory"));
+      drawer = makeDrawer(t("controls.drawer.inventory"), buildInventoryDrawer(state), () => toggleDrawer("inventory"));
     } else if (openDrawer === "workerDevelopment") {
       drawerId = "workerDevelopment";
-      drawer = makeDrawer("İşçi Gelişim Ağacı", buildWorkerDevelopmentDrawer(state), () => toggleDrawer("workerDevelopment"));
+      drawer = makeDrawer(t("controls.drawer.workerDevelopment"), buildWorkerDevelopmentDrawer(state), () => toggleDrawer("workerDevelopment"));
     } else if (state.towerSheet && latestSheetModel) {
       drawerId = `tower:${state.selectedTowerId ?? ""}`;
       const built = buildTowerSheet(state, latestSheetModel);
@@ -1621,7 +1634,7 @@ export function setupGameControlUi(game: Phaser.Game) {
   };
 
   const makeTierButton = (label: string, tier: ZeynepTier, cost: number, reputation: number, chainReady = false) => {
-    const button = makeActionButton(`${label} ${cost}I`, `game-controls__tier game-controls__tier--${tier}${chainReady && reputation >= cost ? " game-controls__tier--chain-ready" : ""}`, reputation >= cost, () => {
+    const button = makeActionButton(t("controls.zeynep.tierCost", { label, cost }), `game-controls__tier game-controls__tier--${tier}${chainReady && reputation >= cost ? " game-controls__tier--chain-ready" : ""}`, reputation >= cost, () => {
       dispatch({ action: "useZeynepTier", tier });
     });
     return button;
@@ -1640,7 +1653,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     row.className = "game-controls__performance";
     const label = document.createElement("span");
     label.className = "game-controls__performance-label";
-    label.textContent = `Performans %${performance.percent}`;
+    label.textContent = t("controls.performance.label", { v: performance.percent });
     const slider = document.createElement("input");
     slider.type = "range";
     slider.min = "0";
@@ -1649,9 +1662,9 @@ export function setupGameControlUi(game: Phaser.Game) {
     slider.value = String(performance.percent);
     slider.disabled = !performance.canEdit;
     slider.className = "game-controls__performance-slider";
-    slider.setAttribute("aria-label", "Performans kolu");
+    slider.setAttribute("aria-label", t("controls.performance.aria"));
     slider.addEventListener("input", () => {
-      label.textContent = `Performans %${slider.value}`;
+      label.textContent = t("controls.performance.label", { v: slider.value });
       dispatch({ action: "setTowerPerformance", performance: Number(slider.value) / 100 });
     });
     row.append(label, slider);
@@ -1725,6 +1738,14 @@ export function setupGameControlUi(game: Phaser.Game) {
   };
 
   game.events.on("game:controls-state", render);
+  // Dil degisince panel son durumla bastan kuruluyor: yapi anahtari metin
+  // tasimiyor, anahtar sifirlanmazsa eski dildeki dugmeler kalirdi. Acik
+  // cekmece, sekme ve agac kaydirmasi modul degiskenlerinde, kurulustan
+  // sagkaliyor. Parmak basiliyken kurma her zamanki gibi erteleniyor.
+  onLocaleChange(() => {
+    latestKey = "";
+    render(latestState);
+  });
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);
@@ -1862,7 +1883,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   document.body.append(root);
 
   let state: HudState = {
-    status: "Sunucu kontrol ediliyor...", stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
+    status: t("hud.status.checking"), stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5,
     sfxVolume: 0.5, hitVolume: 0.5, vibration: true,
     statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: [], forecastEnemyCount: 0, airWarning: false,
@@ -1887,8 +1908,8 @@ export function setupGameHudUi(game: Phaser.Game) {
   const compactNumber = (value: number) => {
     const amount = Math.floor(Math.max(0, value));
     if (amount < 10_000) return String(amount);
-    if (amount < 1_000_000) return `${(amount / 1000).toFixed(amount < 100_000 ? 1 : 0)}B`;
-    return `${(amount / 1_000_000).toFixed(1)}M`;
+    if (amount < 1_000_000) return t("hud.number.thousand", { v: (amount / 1000).toFixed(amount < 100_000 ? 1 : 0) });
+    return t("hud.number.million", { v: (amount / 1_000_000).toFixed(1) });
   };
 
   const formatXp = (value: number) => {
@@ -1899,29 +1920,31 @@ export function setupGameHudUi(game: Phaser.Game) {
   // Yapi bir kez kuruluyor. Eskiden her altin degisiminde butun bar yeniden
   // yazilip dinleyiciler bastan baglaniyordu; altin dalga boyunca surekli
   // degistigi icin bu, saniyede onlarca kez DOM yikip yeniden kurmak demekti.
+  // Sabit metinler sablonda bos; `applyStaticLabels` secili dilde yaziyor ve
+  // dil degisince ayni dugumlere yeniden yaziyor (dinleyiciler yerinde).
   root.innerHTML = `
     <div class="game-hud__row">
       <div class="game-hud__vitals">
-        <span class="game-hud__vital game-hud__vital--gold" title="Altın" data-hud-gold-vital><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
-        <span class="game-hud__vital game-hud__vital--health" title="Üs canı"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
-        <span class="game-hud__vital game-hud__vital--wave" title="Dalga 1/${FINAL_WAVE}" data-hud-wave-vital><i aria-hidden="true">⚑</i><span class="game-hud__wave-word" aria-hidden="true">Dalga</span><b data-hud-wave>1</b><small class="game-hud__wave-total">/${FINAL_WAVE}</small><em class="game-hud__air" data-hud-air hidden>HAVA</em></span>
+        <span class="game-hud__vital game-hud__vital--gold" data-hud-gold-vital><i aria-hidden="true">◆</i><b data-hud-gold>0</b></span>
+        <span class="game-hud__vital game-hud__vital--health"><i aria-hidden="true">♥</i><b data-hud-health>0</b></span>
+        <span class="game-hud__vital game-hud__vital--wave" data-hud-wave-vital><i aria-hidden="true">⚑</i><span class="game-hud__wave-word" aria-hidden="true"></span><b data-hud-wave>1</b><small class="game-hud__wave-total">/${FINAL_WAVE}</small><em class="game-hud__air" data-hud-air hidden></em></span>
       </div>
       <p class="game-hud__status" data-hud-status hidden></p>
       <div class="game-hud__actions">
-        <button data-hud="perf" aria-label="Performans bilgisi">i</button>
-        <button data-hud="stats" aria-label="İstatistikler">▤</button>
-        <button data-hud="audio" aria-label="Ses ayarları">♪</button>
-        <button class="game-hud__continue" data-hud="continue" hidden>Devam</button>
+        <button data-hud="perf">i</button>
+        <button data-hud="stats">▤</button>
+        <button data-hud="audio">♪</button>
+        <button class="game-hud__continue" data-hud="continue" hidden></button>
       </div>
     </div>
     <div class="game-hud__strip" data-hud-strip>
       <span class="game-hud__strip-group" data-hud-strip-dynamic></span>
-      <span class="game-hud__chip game-hud__chip--xp" data-hud-xp title="Deneyim"><i aria-hidden="true">★</i><b data-hud-xp-value>0</b></span>
-      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping title="Gecikme"><i aria-hidden="true">●</i><b data-hud-ping-value>-- ms</b></span>
+      <span class="game-hud__chip game-hud__chip--xp" data-hud-xp><i aria-hidden="true">★</i><b data-hud-xp-value>0</b></span>
+      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping><i aria-hidden="true">●</i><b data-hud-ping-value>-- ms</b></span>
     </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
-      <p class="game-hud__forecast-line">Sonraki dalga: <b data-hud-forecast-count>0</b> düşman<em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
-      <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden>Kulelerin havadaki düşmanı vuramıyor!</p>
+      <p class="game-hud__forecast-line"><b data-hud-forecast-count>0</b><em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
+      <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden></p>
     </div>
     <div data-hud-popups></div>
     <span class="game-hud__gain" data-hud-gold-gain aria-hidden="true" hidden></span>
@@ -1969,6 +1992,36 @@ export function setupGameHudUi(game: Phaser.Game) {
   };
 
   /**
+   * Ongoru satirinin sayi disindaki parcalari: `<b>`nin iki yanindaki metin
+   * dugumleri. Tek anahtar (`hud.forecast.line`) `{count}` yerinden
+   * bolunuyor; cevirmen cumleyi butun goruyor, kelime sirasi serbest.
+   */
+  const forecastPreNode = document.createTextNode("");
+  const forecastPostNode = document.createTextNode("");
+  forecastCountNode.before(forecastPreNode);
+  forecastCountNode.after(forecastPostNode);
+  const actionsNode = root.querySelector<HTMLElement>(".game-hud__actions")!;
+
+  /**
+   * Bir kez kurulan sablonun sabit metinleri ve ipuclari. Kurulumda ve dil
+   * degisince cagriliyor; durumdan gelen metinler (`render`) ayrica yaziliyor.
+   */
+  const applyStaticLabels = () => {
+    goldVitalNode.title = t("hud.gold");
+    root.querySelector<HTMLElement>(".game-hud__vital--health")!.title = t("hud.health");
+    setText(root.querySelector<HTMLElement>(".game-hud__wave-word")!, t("hud.wave"));
+    setText(waveAirNode, t("hud.air"));
+    actionsNode.querySelector<HTMLElement>("[data-hud=\"perf\"]")!.setAttribute("aria-label", t("hud.perfButton"));
+    actionsNode.querySelector<HTMLElement>("[data-hud=\"stats\"]")!.setAttribute("aria-label", t("hud.statsButton"));
+    actionsNode.querySelector<HTMLElement>("[data-hud=\"audio\"]")!.setAttribute("aria-label", t("hud.audioButton"));
+    const [pre, post = ""] = t("hud.forecast.line", { count: "\u0000" }).split("\u0000");
+    forecastPreNode.data = pre;
+    forecastPostNode.data = post;
+    setText(forecastWarningNode, t("hud.forecast.airWarning"));
+  };
+  applyStaticLabels();
+
+  /**
    * Dalganin hava etiketi ve kurulumdaki ongoru kutusu.
    *
    * Ucanlar bir donem hic duyurulmuyordu: bar yalnizca dalga numarasini
@@ -2002,10 +2055,17 @@ export function setupGameHudUi(game: Phaser.Game) {
     // satirda kaliyor; kutu yuksekligi ve cubugun olcusu degismiyor.
     const heavy = next.forecastHpStep;
     setHidden(forecastHeavyNode, heavy === undefined);
-    if (heavy !== undefined) setText(forecastHeavyNode, formatWaveHpStep(heavy));
+    // Sayi kutunun kendi anahtariyla (`hud.forecast.hpStep`): iki basamak,
+    // Turkcede ondalik virgul. Intl degil `toFixed`: Intl esitlikte (1.005)
+    // farkli yuvarliyor, Turkce metin eskisinden sapardi.
+    if (heavy !== undefined) {
+      const fixed = heavy.toFixed(2);
+      const step = numberLocale() === "tr-TR" ? fixed.replace(".", ",") : fixed;
+      setText(forecastHeavyNode, t("hud.forecast.hpStep", { v: step }));
+    }
     setHidden(forecastAirNode, !air);
     setClass(forecastAirNode, airClass);
-    setText(forecastAirNode, air === "mixed" ? "KARIŞIK HAVA" : "HAVA");
+    setText(forecastAirNode, air === "mixed" ? t("hud.airMixed") : t("hud.air"));
     setHidden(forecastWarningNode, !next.airWarning);
   };
 
@@ -2051,10 +2111,10 @@ export function setupGameHudUi(game: Phaser.Game) {
         + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${escapeHudText(value)}</b></span>`;
 
     const chips: string[] = [
-      chip("☠", String(stats.enemiesLeft), "Kalan düşman"),
+      chip("☠", String(stats.enemiesLeft), t("hud.enemiesLeft")),
       ...stats.extras.map((extra) => chip(extra.icon, extra.value, extra.label)),
-      chip("⚡", `${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}`, "Enerji"),
-      `<span class="game-hud__chip game-hud__chip--ammo" title="Mermi · Aura · Güç">`
+      chip("⚡", `${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}`, t("hud.energy")),
+      `<span class="game-hud__chip game-hud__chip--ammo" title="${escapeHudText(t("hud.ammo"))}">`
         + `<em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
         + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
@@ -2068,11 +2128,11 @@ export function setupGameHudUi(game: Phaser.Game) {
 
     setText(xpValueNode, formatXp(stats.experience));
     if (xpChipNode.classList.contains("is-ready") !== upgradeReady) xpChipNode.classList.toggle("is-ready", upgradeReady);
-    setTitle(xpChipNode, upgradeReady ? "Deneyim · yükseltme hazır" : "Deneyim");
+    setTitle(xpChipNode, upgradeReady ? t("hud.experienceReady") : t("hud.experience"));
 
     setText(pingValueNode, ping);
     setClass(pingChipNode, `game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}`);
-    setTitle(pingChipNode, pingDetail || "Gecikme");
+    setTitle(pingChipNode, pingDetail || t("hud.latency"));
   };
 
   /**
@@ -2313,7 +2373,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   };
   const showCombo = (combo: ComboHudState) => {
     if (root.classList.contains("game-hud--hidden") || !(combo.durationMs > 0)) return;
-    setText(comboCountNode, combo.team ? `EKİP ×${combo.count}` : `×${combo.count}`);
+    setText(comboCountNode, combo.team ? t("hud.combo.team", { count: combo.count }) : `×${combo.count}`);
     const heat = String(combo.heat);
     if (comboNode.dataset.heat !== heat) comboNode.dataset.heat = heat;
     if (comboNode.classList.contains("is-team") !== combo.team) comboNode.classList.toggle("is-team", combo.team);
@@ -2453,18 +2513,18 @@ export function setupGameHudUi(game: Phaser.Game) {
   const renderStatsRows = (next: HudState) => {
     if (next.statsTab === "effects") {
       if (next.statsEffects.length === 0) {
-        return "<p class=\"game-hud__stats-empty\">Henüz ölçülecek bir etki yok.</p>";
+        return `<p class="game-hud__stats-empty">${escapeHudText(t("hud.stats.noEffects"))}</p>`;
       }
       return next.statsEffects
         .map((entry) => {
-          const value = entry.unit === "seconds" ? `${entry.value.toFixed(1)} sn` : formatStatValue(entry.value);
+          const value = entry.unit === "seconds" ? t("hud.stats.seconds", { v: entry.value.toFixed(1) }) : formatStatValue(entry.value);
           return `<li><span class="game-hud__stats-name">${escapeHudText(entry.label)}</span><b>${escapeHudText(value)}</b></li>`;
         })
         .join("");
     }
 
     if (next.statsTowers.length === 0) {
-      return "<p class=\"game-hud__stats-empty\">Sahada kule yok.</p>";
+      return `<p class="game-hud__stats-empty">${escapeHudText(t("hud.stats.noTowers"))}</p>`;
     }
 
     const byDps = next.statsTab === "dps";
@@ -2478,7 +2538,7 @@ export function setupGameHudUi(game: Phaser.Game) {
         const ratio = Math.max(0, Math.min(1, value / peak)) * 100;
         const shown = byDps ? value.toFixed(1) : formatStatValue(value);
         return `<li><span class="game-hud__stats-rank">${index + 1}</span>`
-          + `<span class="game-hud__stats-name">${escapeHudText(tower.name)} <em>lv${tower.level}</em></span>`
+          + `<span class="game-hud__stats-name">${escapeHudText(tower.name)} <em>${escapeHudText(t("hud.stats.level", { level: tower.level }))}</em></span>`
           + `<span class="game-hud__stats-bar"><i style="width:${ratio.toFixed(1)}%"></i></span>`
           + `<b>${escapeHudText(shown)}</b></li>`;
       })
@@ -2490,11 +2550,11 @@ export function setupGameHudUi(game: Phaser.Game) {
     const tab = (id: string, label: string, active: boolean) =>
       `<button data-hud="stats-${id}" class="${active ? "is-active" : ""}">${escapeHudText(label)}</button>`;
     return `<section class="game-hud__popup game-hud__popup--stats"><button data-hud="stats">×</button>`
-      + `<strong>İstatistikler</strong>`
+      + `<strong>${escapeHudText(t("hud.stats.title"))}</strong>`
       + `<nav class="game-hud__stats-tabs">`
-      + tab("damage", "Toplam hasar", next.statsTab === "damage")
-      + tab("dps", "Anlık DPS", next.statsTab === "dps")
-      + tab("effects", "Etkiler", next.statsTab === "effects")
+      + tab("damage", t("hud.stats.totalDamage"), next.statsTab === "damage")
+      + tab("dps", t("hud.stats.liveDps"), next.statsTab === "dps")
+      + tab("effects", t("hud.stats.effects"), next.statsTab === "effects")
       + `</nav><ul class="game-hud__stats-list">${renderStatsRows(next)}</ul></section>`;
   };
 
@@ -2515,19 +2575,19 @@ export function setupGameHudUi(game: Phaser.Game) {
     `<label>${escapeHudText(label)} <input data-volume="${channel}" type="range" min="0" max="1" step="0.01" value="${value}"${extra}></label>`;
   const renderAudioPopup = (next: HudState) => {
     if (!next.audioOpen) return "";
-    return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>Ses ayarları</strong>`
-      + volumeSlider("Müzik", "music", next.musicVolume)
-      + volumeSlider("Seslendirme", "voice", next.voiceVolume)
-      + volumeSlider("Efektler", "sfx", next.sfxVolume)
-      + volumeSlider("Vuruş sesleri", "hit", next.hitVolume, ` aria-describedby="game-hud-hit-note"`)
+    return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>${escapeHudText(t("hud.audio.title"))}</strong>`
+      + volumeSlider(t("hud.audio.music"), "music", next.musicVolume)
+      + volumeSlider(t("hud.audio.voice"), "voice", next.voiceVolume)
+      + volumeSlider(t("hud.audio.sfx"), "sfx", next.sfxVolume)
+      + volumeSlider(t("hud.audio.hit"), "hit", next.hitVolume, ` aria-describedby="game-hud-hit-note"`)
       + `<p id="game-hud-hit-note" class="game-hud__popup-note" data-hit-note${next.sfxVolume > 0 ? " hidden" : ""}>`
-      + `Efektler kapalı: vuruş sesleri de duyulmaz (Efektler ile birlikte ölçeklenir).</p>`
+      + `${escapeHudText(t("hud.audio.hitNote"))}</p>`
       + (canVibrate
-        ? `<label>Titreşim <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
+        ? `<label>${escapeHudText(t("hud.audio.vibration"))} <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
         : "")
       // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
-      + `<label>${escapeHudText(TELEMETRY_SETTING_LABEL)} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
-      + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(TELEMETRY_SETTING_NOTE)}</p>`
+      + `<label>${escapeHudText(t("menu.telemetry.label"))} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
+      + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("menu.telemetry.note"))}</p>`
       + `</section>`;
   };
   const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
@@ -2543,7 +2603,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     if (key === lastPopupKey) return;
     lastPopupKey = key;
     popupsNode.innerHTML = `
-      ${next.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>Performans Profili</strong><pre>${escapeHudText(next.perfText)}</pre></section>` : ""}
+      ${next.perfOpen ? `<section class="game-hud__popup game-hud__popup--perf"><button data-hud="perf">×</button><strong>${escapeHudText(t("hud.perf.title"))}</strong><pre>${escapeHudText(next.perfText)}</pre></section>` : ""}
       ${renderAudioPopup(next)}
       ${renderStatsPopup(next)}
     `;
@@ -2585,7 +2645,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     }
     setText(healthNode, `${Math.max(0, Math.round(state.stats.health))}`);
     setText(waveNode, `${state.stats.wave}`);
-    setTitle(waveVitalNode, `Dalga ${state.stats.wave}/${FINAL_WAVE}`);
+    setTitle(waveVitalNode, t("hud.waveTitle", { wave: state.stats.wave, total: FINAL_WAVE }));
     renderWaveAir(state);
     // Can azaldikca renk isinir; sayiya bakmadan da fark edilmeli.
     const healthRatio = state.stats.maxHealth > 0 ? state.stats.health / state.stats.maxHealth : 1;
@@ -2600,7 +2660,7 @@ export function setupGameHudUi(game: Phaser.Game) {
 
     continueButton.hidden = !state.continueVisible;
     continueButton.disabled = state.continueWaiting;
-    setText(continueButton, state.continueWaiting ? "Bekleniyor" : "Devam");
+    setText(continueButton, state.continueWaiting ? t("hud.waiting") : t("hud.continue"));
 
     renderPopups(state);
   };
@@ -2629,6 +2689,16 @@ export function setupGameHudUi(game: Phaser.Game) {
   game.events.on("game:hud-team-ultimate", showTeamUltimate);
   game.events.on("game:hud-team-notice", showTeamNotice);
   game.events.on("game:hud-assist", showTeamAssist);
+  // Dil degisince: sablonun sabit metinleri yerinde yeniden yaziliyor (dugum
+  // ve dinleyiciler ayni), serit ve acik paneller anahtari bosaltilip son
+  // durumla yeniden ciziliyor. Gecici damgalar (dalga, ulti, toast) kendi
+  // suresiyle kalkiyor; metinleri sahneden hazir geliyor.
+  onLocaleChange(() => {
+    applyStaticLabels();
+    lastStripKey = "";
+    lastPopupKey = "";
+    render(state);
+  });
   window.addEventListener("resize", syncCanvasBounds);
   window.addEventListener("orientationchange", syncCanvasBounds);
   new ResizeObserver(syncCanvasBounds).observe(document.body);

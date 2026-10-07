@@ -1,4 +1,5 @@
 import { activityLabels, type DefenseSummary, type TowerActivity } from "@karayel/shared";
+import { t } from "./i18n";
 
 /**
  * Native modal traps keyboard focus and prevents accidental clicks on the map.
@@ -38,8 +39,8 @@ export function openDefenseDialog(title: string, lines: string[], confirm?: () =
     element.onclick = action;
     actions.append(element);
   };
-  button("Kapat", () => dialog.close());
-  if (confirm) button("Uygula", () => { dialog.close(); confirm(); });
+  button(t("report.dialog.close"), () => dialog.close());
+  if (confirm) button(t("report.dialog.apply"), () => { dialog.close(); confirm(); });
   dialog.append(heading, content, actions);
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
@@ -93,9 +94,9 @@ export function openChoiceDialog<T extends string>(
 
 export function defenseSummaryLines(summary: DefenseSummary) {
   return [
-    "Gerçek hasar = indirilen can + kalkan. Destek süreleri hasara eklenmez. Döngü süreleri nişan alma ve atış aralığını da içerir; kesintisiz isabet süresi değildir.",
-    ...summary.rows.map((row) => `\n${row.name} · ${row.damage} hasar · ${row.repaired} alınan onarım${row.auraEnemySeconds ? ` · aura teması ${row.auraEnemySeconds} düşman·sn (örtüşebilir)` : ""}${row.markAssistDamage ? ` · takip katkısı ${row.markAssistDamage} (vuranın hasarına dahil; son yenileyen)` : ""}\n`
+    t("report.defense.intro"),
+    ...summary.rows.map((row) => `\n${t("report.defense.row", { name: row.name, damage: row.damage, repaired: row.repaired })}${row.auraEnemySeconds ? ` · ${t("report.defense.aura", { v: row.auraEnemySeconds })}` : ""}${row.markAssistDamage ? ` · ${t("report.defense.markAssist", { v: row.markAssistDamage })}` : ""}\n`
       + Object.entries(row.seconds).filter(([, value]) => value >= 0.1)
-        .map(([key, value]) => `${activityLabels[key as TowerActivity]}: ${value.toFixed(1)} sn`).join(" · "))
+        .map(([key, value]) => t("report.defense.seconds", { label: activityLabels[key as TowerActivity], v: value.toFixed(1) })).join(" · "))
   ];
 }

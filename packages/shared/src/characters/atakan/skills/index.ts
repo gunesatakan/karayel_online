@@ -1,5 +1,6 @@
 import { makeSkills } from "../../common/factory.js";
 import type { EnemyType } from "../../../index.js";
+import { lt } from "../../../i18n/index.js";
 
 export const atakanSkills = makeSkills("warrior", [
   ["Yönlendirme", "Basılı tutup sürükleyerek haritada bir alan işaretler. 3 saniye boyunca mermi vuruşlu kuleler menzil sınırını yok sayıp o alandaki düşmanlara ateş eder ve alandaki düşmanlar %30 fazla hasar alır. Hattın uzağında açılan sızıntıyı kapatmak için kullanılır.", 16000],
@@ -81,5 +82,5 @@ export function pickExecuteTapTarget<T extends ExecuteTapCandidate>(candidates: 
 
 /** Red gerekcesinin oyuncuya gorunen metni. */
 export function getExecuteRejectText(reason: ExecuteRejectReason) {
-  return reason === "immune" ? "Etkisiz" : "Hedef geçersiz";
+  return reason === "immune" ? lt("Etkisiz", "Immune") : lt("Hedef geçersiz", "Invalid target");
 }

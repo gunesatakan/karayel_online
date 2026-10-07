@@ -703,7 +703,10 @@ test("arayuz kilidi acik esyayi vitrinde, envanterde ve takarken soyluyor", asyn
   const read = async (path) => (await readFile(new URL(path, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
   const controls = await read("../apps/web/src/game-control-ui.ts");
   const scene = await read("../apps/web/src/scenes/GameScene.ts");
-  assert.ok(controls.includes("zaten açık"), "etiket metni yok");
+  // Etiket metni sozlukte (controls bolgesi); arayuz onu anahtarla okuyor.
+  const dictionary = await read("../apps/web/src/locales/areas/controls.ts");
+  assert.ok(dictionary.includes(`"controls.alreadyUnlocked": "zaten açık"`), "etiket metni yok");
+  assert.ok(controls.includes(`t("controls.alreadyUnlocked")`), "etiket sozlukten okunmuyor");
   assert.equal((controls.match(/item\.alreadyUnlocked \? ALREADY_UNLOCKED_TAG/g) ?? []).length, 2, "vitrin ve envanter");
   assert.equal((scene.match(/alreadyUnlocked: this\.isShopItemAlreadyUnlockedLocally\(/g) ?? []).length, 2);
   assert.ok(scene.includes("this.isShopItemAlreadyUnlockedOnTower(itemId, towerId)"), "takarken uyari yok");

@@ -63,6 +63,9 @@ import {
   type HirableWorkerRole,
   WORKER_ROLE_DESCRIPTIONS,
   WORKER_ROLE_LABELS,
+  WORKER_DEVELOPMENT_CELLS,
+  WORKER_SKILL_TIERS,
+  WORKER_SPECIALIZATION_CHOICES,
   getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
   TOWER_ART_DISC_RATIO,
@@ -273,6 +276,8 @@ import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
 import { assetUrl } from "../asset-url";
+import { getLocale, t, tMaybe, upper } from "../i18n";
+import { enChampionLabel } from "../locales/catalog/en-progression";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -742,18 +747,58 @@ const SELL_BUTTON_HEIGHT = 20;
 /**
  * Etki kalemlerinin ekranda okunacak adlari.
  *
- * Sunucu ham anahtar gonderiyor (`bleed`, `slowed`, ...) ve cevirisi burada
- * duruyor: dil istemcinin isi, sunucunun degil. Listede olmayan bir anahtar
- * ham haliyle gosteriliyor -- yeni bir etki eklendiginde panel bos kalmasin.
+ * Sunucu ham anahtar gonderiyor (`bleed`, `slowed`, ...) ve cevirisi
+ * sozlukte (`scene.effect.<anahtar>`): dil istemcinin isi, sunucunun degil.
+ * Sozlukte olmayan bir anahtar ham haliyle gosteriliyor -- yeni bir etki
+ * eklendiginde panel bos kalmasin.
  */
-const EFFECT_STAT_LABELS: Record<string, string> = {
-  burn: "Yanma hasarı",
-  bleed: "Kanama hasarı",
-  crit: "Kritik fazlası",
-  mark: "İşaret fazlası",
-  slowed: "Engellenen yürüyüş",
-  stopped: "Tam durdurma"
-};
+function getEffectStatLabel(key: string) {
+  return tMaybe(`scene.effect.${key}`) ?? key;
+}
+
+/** Tanim kimliginden katalog kaydi; ilk cagrida bir kez kuruluyor. */
+let towerDefinitionsById: Map<string, TowerDefinition> | undefined;
+
+/**
+ * Kulenin ekranda okunacak adi. Snapshot'taki `name` sunucudan Turkce
+ * geliyor; katalog nesnesinin adi ise dile bakiyor (catalog-locale), o
+ * yuzden tanim kimligiyle oradan okunuyor. Katalogda yoksa snapshot adi.
+ */
+function getTowerDisplayName(definitionId: string | undefined, fallback: string) {
+  towerDefinitionsById ??= new Map(Object.values(towerCatalog).flat().map((definition) => [definition.id, definition]));
+  return (definitionId ? towerDefinitionsById.get(definitionId)?.name : undefined) || fallback;
+}
+
+/**
+ * Kart seciminde okunacak ad ve aciklama. `card:choices` sunucunun Turkce
+ * kopyasini tasiyor; katalog nesnesi dile bakiyor. Katalogda yoksa sunucununki.
+ */
+function getCardText(card: Pick<CardDefinition, "id" | "name" | "description">) {
+  const entry = getCardDefinition(card.id);
+  return { name: entry?.name ?? card.name, description: entry?.description ?? card.description };
+}
+
+/** Sunucunun yolladigi uzmanlik secenegi; ad ve aciklama katalogdan, dile gore. */
+function localizeWorkerSpecialization<T extends { id: HirableWorkerRole; name: string; description: string }>(option: T): T {
+  const entry = WORKER_SPECIALIZATION_CHOICES.find((choice) => choice.id === option.id);
+  return entry ? { ...option, name: entry.name, description: entry.description } : option;
+}
+
+/**
+ * Sunucunun yolladigi isci becerisi; ad ve aciklama katalogdan (gelisim
+ * hucreleri, eski katmanlar). Katalogda yoksa sunucunun metni.
+ */
+function localizeWorkerSkillChoice(choice: WorkerSkillChoice): WorkerSkillChoice {
+  const pairs = [
+    ...Object.values(WORKER_DEVELOPMENT_CELLS).flatMap((cells) => cells.map((cell) => cell.options ?? [])),
+    ...Object.values(WORKER_SKILL_TIERS).flat()
+  ];
+  for (const pair of pairs) {
+    const entry = pair.find((option) => option.id === choice.id);
+    if (entry) return { ...choice, name: entry.name, description: entry.description };
+  }
+  return choice;
+}
 
 /** Iki kimlik listesi ayni sirada ayni mi; karsilastirma icin kopya uretmez. */
 function haveSameIds(a: readonly string[], b: readonly string[]) {
@@ -1223,9 +1268,11 @@ export class GameScene extends Phaser.Scene {
   private cardPickStampUntil = 0;
   private cardAppliedTimer?: number;
   private reconnecting = false;
+  /** Durum cubuguna en son yazilan "Kurulum n/m" metni; kurulum bitince silinecek olan. */
+  private setupStatusText?: string;
   private perfText?: Phaser.GameObjects.Text;
   private hudState: HudState = {
-    status: "Bağlanıyor",
+    status: t("scene.status.connecting"),
     stats: EMPTY_HUD_STATS,
     ping: "-- ms",
     pingTone: "warn",
@@ -1863,7 +1910,7 @@ export class GameScene extends Phaser.Scene {
       .filter((tower) => tower.ownerId === this.localSessionId)
       .map((tower) => ({
         id: tower.id,
-        name: tower.name,
+        name: getTowerDisplayName(tower.definitionId, tower.name),
         level: tower.level,
         damage: tower.damageDealt ?? 0,
         dps: tower.currentDps ?? 0
@@ -1872,7 +1919,7 @@ export class GameScene extends Phaser.Scene {
     const stats = this.latestPerfSnapshot?.effectStats ?? {};
     const effects = Object.entries(stats)
       .map(([key, value]) => ({
-        label: EFFECT_STAT_LABELS[key] ?? key,
+        label: getEffectStatLabel(key),
         value,
         unit: SECOND_VALUED_EFFECT_STATS.has(key) ? ("seconds" as const) : ("damage" as const)
       }))
@@ -1943,7 +1990,7 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(1, 0x94a3b8, 0.62)
       .setInteractive({ useHandCursor: true })
       .setDepth(62);
-    const label = this.add.text(x, y, "Ses", {
+    const label = this.add.text(x, y, t("scene.audio.button"), {
       color: "#e2e8f0",
       fontFamily: "Arial",
       fontSize: "11px",
@@ -2233,7 +2280,7 @@ export class GameScene extends Phaser.Scene {
       });
       this.echoPlacement(cell.x, cell.y, tower.id);
     } else {
-      this.showNotice("Bu kareye kule yerleştirilemez");
+      this.showNotice(t("scene.place.blocked"));
     }
 
     this.draggedTowerDefinition = undefined;
@@ -2283,7 +2330,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.strandedTowerDragCount += 1;
     this.cancelTowerDrag();
-    this.showNotice("Yarım kalan yerleştirme iptal edildi");
+    this.showNotice(t("scene.place.strandedCancelled"));
   }
 
   /**
@@ -2564,7 +2611,7 @@ export class GameScene extends Phaser.Scene {
         this.room?.send("tower:priority", { towerId: this.selectedPlacedTowerId, priority: detail.priority });
         break;
       case "showDefenseSummary":
-        if (this.latestDefenseSummary) openDefenseDialog(`Dalga ${this.latestDefenseSummary.wave} · Savunma özeti`, defenseSummaryLines(this.latestDefenseSummary));
+        if (this.latestDefenseSummary) openDefenseDialog(t("scene.defense.title", { wave: this.latestDefenseSummary.wave }), defenseSummaryLines(this.latestDefenseSummary));
         break;
       case "toggleWallGate":
         if (this.selectedPlacedTowerId) {
@@ -2573,7 +2620,7 @@ export class GameScene extends Phaser.Scene {
         break;
       case "toggleWorkerBanMode":
         this.workerBanMode = !this.workerBanMode;
-        this.showNotice(this.workerBanMode ? "İşçilere kapatılacak kareye bas" : "Yasak kipi kapandı");
+        this.showNotice(this.workerBanMode ? t("scene.workerBan.on") : t("scene.workerBan.off"));
         this.emitControlState();
         break;
       case "toggleTowerStandby":
@@ -2681,7 +2728,7 @@ export class GameScene extends Phaser.Scene {
     // kartin ya da baska bir esyanin zaten actigi kilidi ikinci kez vermek
     // hicbir sey eklemiyor.
     if (this.isShopItemAlreadyUnlockedOnTower(itemId, towerId)) {
-      this.showNotice(`${getShopItem(itemId)?.name ?? "Bu eşya"} bu kulede zaten açık; takarsan bir şey değişmez.`, 4200);
+      this.showNotice(t("scene.equip.alreadyUnlocked", { item: getShopItem(itemId)?.name ?? t("scene.equip.thisItem") }), 4200);
     }
     this.previewTowerChange({ itemId, towerId }, () => {
       // Onizlemenin "uygula" dugmesi bir dokunus: takma sesinin baglami burada acilabilir.
@@ -2694,13 +2741,13 @@ export class GameScene extends Phaser.Scene {
 
   private previewTowerChange(change: { towerId: string; cardId?: string; itemId?: string }, apply: () => void) {
     const requestId = String(++this.previewSequence);
-    const dialog = openDefenseDialog("Değişiklik önizlemesi", ["Sunucudan güncel değerler alınıyor…"]);
+    const dialog = openDefenseDialog(t("scene.preview.title"), [t("scene.preview.loading")]);
     this.pendingPreview = { requestId, apply, dialog };
     this.room?.send("tower:preview", { ...change, requestId });
     this.time.delayedCall(8000, () => {
       if (this.pendingPreview?.requestId !== requestId || !dialog.isConnected) return;
       this.pendingPreview = undefined;
-      openDefenseDialog("Önizleme alınamadı", ["Bağlantıyı kontrol edip yeniden dene."]);
+      openDefenseDialog(t("scene.preview.failedTitle"), [t("scene.preview.failedBody")]);
     });
   }
 
@@ -3134,8 +3181,8 @@ export class GameScene extends Phaser.Scene {
     const maxHp = selectedTower.maxHp ?? 0;
     const hp = selectedTower.hp ?? 0;
     if (maxHp <= 0) return undefined;
-    if (hp <= 0) return { label: "Yikildi", enabled: false };
-    if (hp >= maxHp) return { label: "Saglam", enabled: false };
+    if (hp <= 0) return { label: t("scene.repair.destroyed"), enabled: false };
+    if (hp >= maxHp) return { label: t("scene.repair.intact"), enabled: false };
 
     // Carpan sunucudan geliyor: onu doguran kart ve esya listesi tele
     // cikmiyor, yani istemci indirimi kendi bulamaz. Eksikse 1.
@@ -3145,7 +3192,7 @@ export class GameScene extends Phaser.Scene {
       selectedTower.repairCostMultiplier ?? 1
     );
     const affordable = (this.localPlayerSnapshot?.gold ?? 0) >= cost;
-    return { label: `Onar ${cost}g`, enabled: affordable && cost > 0 };
+    return { label: t("scene.repair.action", { cost }), enabled: affordable && cost > 0 };
   }
 
   /**
@@ -3183,13 +3230,13 @@ export class GameScene extends Phaser.Scene {
    */
   private showStructureBreach(message: StructureBreachMessage) {
     this.pulseAlertMarker(message.x, message.y, 0xf97316);
-    this.showNotice(`Gedik açılıyor! %${Math.round(message.healthRatio * 100)} can kaldı`);
+    this.showNotice(t("scene.alert.breach", { hp: t("format.percent", { v: Math.round(message.healthRatio * 100) }) }));
     this.playAlertSound("breach");
   }
 
   private showFlowShift(message: FlowShiftMessage) {
     this.pulseAlertMarker(message.x, message.y, 0x38bdf8);
-    this.showNotice("Düşman akışı yeni bir kapıya kaydı");
+    this.showNotice(t("scene.alert.flowShift"));
     this.playAlertSound("flow");
   }
 
@@ -3636,7 +3683,7 @@ export class GameScene extends Phaser.Scene {
     const owner = this.playerSnapshots.find((player) => player.id === message.ownerId);
     const character = owner ? characters.find((candidate) => candidate.id === owner.characterId) : undefined;
     const chip: TeamUltimateChip = {
-      text: getUltimateTeamChipText(character?.displayName ?? "Takım arkadaşın", message),
+      text: getUltimateTeamChipText(character?.displayName ?? t("scene.teammate"), message),
       color: getCharacterColorCss(owner?.characterId)
     };
     this.time.delayedCall(this.playbackDelayMs + ULTIMATE_STAMP_LAG_MS, () => {
@@ -3994,7 +4041,8 @@ export class GameScene extends Phaser.Scene {
     const reducedMotion = decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false;
     labels.spawn({
       key: `champion:${enemy.id}`,
-      text: CHAMPION_LABEL,
+      // Paylasilan sabit Turkce; katalog katmani sabiti cevirmiyor, Ingilizcesi burada.
+      text: getLocale() === "en" ? enChampionLabel : CHAMPION_LABEL,
       x,
       y,
       fill: CHAMPION_FILL,
@@ -4081,7 +4129,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.currentUltimateCharge < 100) {
       this.hideUltimateChoices();
-      this.showNotice("Ulti henüz hazır değil");
+      this.showNotice(t("scene.ultimate.notReady"));
       return;
     }
 
@@ -4089,7 +4137,7 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedCharacterId === "zeynep") {
       this.pendingUltimateColumn = !this.pendingUltimateColumn;
       this.clearUltimateColumnPreview();
-      this.showNotice(this.pendingUltimateColumn ? "Ulti: patlatılacak sütuna dokun" : "Ulti iptal edildi");
+      this.showNotice(this.pendingUltimateColumn ? t("scene.ultimate.pickColumn") : t("scene.ultimate.cancelled"));
       this.emitControlState();
       return;
     }
@@ -4162,7 +4210,7 @@ export class GameScene extends Phaser.Scene {
     this.isGuidanceDragging = true;
     this.hideUltimateChoices();
     this.drawGuidancePreview(pointer.worldX, pointer.worldY);
-    this.showNotice("Yönlendirme: alanı sürükle, bırakınca uygula");
+    this.showNotice(t("scene.skill.redirectDragging"));
   }
 
   /**
@@ -4313,7 +4361,7 @@ export class GameScene extends Phaser.Scene {
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
       this.clearGuidancePreview();
-      this.showNotice("Yönlendirme alanı gönderildi");
+      this.showNotice(t("scene.skill.redirectSent"));
       return;
     }
 
@@ -4336,7 +4384,7 @@ export class GameScene extends Phaser.Scene {
     this.hideZeynepTierChoicesIfOpen();
 
     if (this.pendingAction?.type === "guidance") {
-      this.showNotice(this.selectedCharacterId === "archer" ? "Zorba için alanı sürükle" : "Yönlendirme için haritada basılı tutup sürükle");
+      this.showNotice(this.selectedCharacterId === "archer" ? t("scene.skill.tyrantDragHint") : t("scene.skill.redirectDragHint"));
       return;
     }
 
@@ -4349,7 +4397,7 @@ export class GameScene extends Phaser.Scene {
       });
       this.pendingAction = undefined;
       this.clearPlacedTowerSelection();
-      this.showNotice("Refactor isteği gönderildi");
+      this.showNotice(t("scene.skill.refactorSent"));
       return;
     }
 
@@ -4376,7 +4424,7 @@ export class GameScene extends Phaser.Scene {
       const reputation = this.localPlayerSnapshot?.reputation ?? 0;
       this.clearPlacedTowerSelection();
       this.showZeynepTierChoices(index, reputation);
-      this.showNotice("Komut gücünü seç: düşük, orta veya yüksek");
+      this.showNotice(t("scene.skill.pickCommandTier"));
       return;
     }
 
@@ -4385,13 +4433,13 @@ export class GameScene extends Phaser.Scene {
       if (index === 0) {
         this.pendingAction = { type: "guidance" };
         this.clearPlacedTowerSelection();
-        this.showNotice("Zorba: tank düşmanın olduğu alanı sürükle");
+        this.showNotice(t("scene.skill.tyrantArmed"));
         return;
       }
       if (index === 1) {
         const towerId = this.selectedPlacedTowerId;
         if (!towerId) {
-          this.showNotice("Ölümcül Stres için önce kendi kuleni seç");
+          this.showNotice(t("scene.skill.lethalStressNeedsTower"));
           return;
         }
         this.room.send("useSkill", { slot: index, towerId });
@@ -4417,19 +4465,19 @@ export class GameScene extends Phaser.Scene {
       this.hideZeynepTierChoices();
       this.pendingAction = { type: "guidance" };
       this.clearPlacedTowerSelection();
-      this.showNotice("Yönlendirme: haritada basılı tutup alanı sürükle");
+      this.showNotice(t("scene.skill.redirectArmed"));
       return;
     }
 
     if (index === 1) {
       const towerId = this.selectedPlacedTowerId;
       if (!towerId) {
-        this.showNotice("Refactor için önce kendi kuleni seç");
+        this.showNotice(t("scene.skill.refactorNeedsTower"));
         return;
       }
       this.pendingAction = { type: "refactor", towerId };
       this.clearPlacedTowerSelection();
-      this.showNotice("Refactor: yeni konuma dokun");
+      this.showNotice(t("scene.skill.refactorPickSpot"));
       return;
     }
 
@@ -4438,13 +4486,13 @@ export class GameScene extends Phaser.Scene {
       // Ikinci basis hedeflemeyi kapatiyor: ayri bir iptal dugmesi yok.
       if (this.pendingAction?.type === "execute") {
         this.pendingAction = undefined;
-        this.showNotice("Execute iptal edildi");
+        this.showNotice(t("scene.skill.executeCancelled"));
         this.emitControlState();
         return;
       }
       this.pendingAction = { type: "execute" };
       this.clearPlacedTowerSelection();
-      this.showNotice("Bir düşmana dokun");
+      this.showNotice(t("scene.skill.executePickEnemy"));
       this.emitControlState();
       return;
     }
@@ -4478,7 +4526,7 @@ export class GameScene extends Phaser.Scene {
     this.pendingAction = undefined;
     const enemy = this.findEnemyAt(pointer.worldX, pointer.worldY);
     if (!enemy) {
-      this.showNotice("Execute iptal edildi");
+      this.showNotice(t("scene.skill.executeCancelled"));
       this.emitControlState();
       return;
     }
@@ -4510,14 +4558,19 @@ export class GameScene extends Phaser.Scene {
       serverTowerId: linkRequest.serverTowerId,
       targetTowerId: linkRequest.targetTowerId
     });
-    this.showNotice(`${linkRequest.sourceName}: ${linkRequest.targetName} link isteği gönderildi`);
+    this.showNotice(t("scene.link.requestSent", { source: linkRequest.sourceName, target: linkRequest.targetName }));
     return true;
   }
 
   private getLinkRequest(selectedTower: TowerSnapshot, targetTower: TowerSnapshot) {
     if (selectedTower.definitionId === "warrior-2") {
       return targetTower.definitionId !== "warrior-2"
-        ? { serverTowerId: selectedTower.id, targetTowerId: targetTower.id, sourceName: selectedTower.name, targetName: targetTower.name }
+        ? {
+          serverTowerId: selectedTower.id,
+          targetTowerId: targetTower.id,
+          sourceName: getTowerDisplayName(selectedTower.definitionId, selectedTower.name),
+          targetName: getTowerDisplayName(targetTower.definitionId, targetTower.name)
+        }
         : undefined;
     }
 
@@ -4527,7 +4580,7 @@ export class GameScene extends Phaser.Scene {
   private async connect() {
     try {
       await this.checkServerHealth();
-      this.emitHudState({ status: "Bağlanıyor" });
+      this.emitHudState({ status: t("scene.status.connecting") });
 
       const resumed = takeResumedMatch();
       const existingRoom = getActiveLobbyRoom();
@@ -4578,7 +4631,7 @@ export class GameScene extends Phaser.Scene {
       if (isServerFullError(error)) {
         console.warn(error);
         this.showNotice(error instanceof Error ? error.message : String(error), 8000);
-        this.emitHudState({ status: "Sunucu dolu" });
+        this.emitHudState({ status: t("scene.status.serverFull") });
         return;
       }
       console.error(error);
@@ -5317,24 +5370,26 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));
     room.onMessage("worker:hired", (message: { role?: HirableWorkerRole; advanced?: boolean; cost: number }) => {
-      const kademe = message.advanced ? "Gelişmiş " : "";
-      this.showNotice(`${kademe}${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçi"} alındı (${message.cost}g). Uzmanlığını seç.`);
+      const role = message.role ? WORKER_ROLE_LABELS[message.role] : t("scene.worker.generic");
+      const worker = message.advanced ? t("scene.worker.advanced", { role }) : role;
+      this.showNotice(t("scene.worker.hired", { worker, cost: message.cost }));
     });
     room.onMessage("worker:specialization-choice", (message: { workerId: string; options: readonly { id: HirableWorkerRole; name: string; description: string }[] }) => {
       openChoiceDialog(
-        "İşçi uzmanlığı · kalıcı seçim",
-        ["Bu seçim işçinin yapacağı işi belirler ve geri alınamaz."],
-        message.options,
+        t("scene.worker.specializationTitle"),
+        [t("scene.worker.specializationBody")],
+        // Secenek metinleri sunucunun kopyasi (Turkce); katalogdan dile gore.
+        message.options.map(localizeWorkerSpecialization),
         (role) => this.room?.send("worker:specialization", { workerId: message.workerId, role }),
         // Rolsuz isci yeni alimi kilitliyor; oyuncu nereden devam edecegini bilmeli.
-        () => this.showNotice("Uzmanlık seçilmedi. Envanter › İşçi Al'dan seçebilirsin.", 4200)
+        () => this.showNotice(t("scene.worker.specializationSkipped"), 4200)
       );
     });
     room.onMessage("worker:skill-choice", (message: { workerId: string; tier: number; role: HirableWorkerRole; options: readonly [WorkerSkillChoice, WorkerSkillChoice]; legacy?: boolean }) => {
       if (message.legacy) return;
-      const [first, second] = message.options;
-      const dialog = openDefenseDialog(`${WORKER_ROLE_LABELS[message.role]} · kalıcı uzmanlık ${message.tier + 1}/3`, [
-        "Bu seçim geri alınamaz. İşçinin temel verimliliği değişmez; lojistik hattının kriz, savunma veya saldırı davranışı değişir.",
+      const [first, second] = message.options.map(localizeWorkerSkillChoice);
+      const dialog = openDefenseDialog(t("scene.worker.skillTitle", { role: WORKER_ROLE_LABELS[message.role], tier: message.tier + 1 }), [
+        t("scene.worker.skillBody"),
         `\n${first.name}\n${first.description}\n\n${second.name}\n${second.description}`
       ]);
       const actions = dialog.querySelector("div:last-child");
@@ -5346,7 +5401,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         actions?.append(button);
       }
     });
-    room.onMessage("worker:skill-complete", (message: { role?: HirableWorkerRole }) => this.showNotice(`${message.role ? WORKER_ROLE_LABELS[message.role] : "İşçinin"} uzmanlığı kalıcı olarak tamamlandı.`));
+    room.onMessage("worker:skill-complete", (message: { role?: HirableWorkerRole }) => this.showNotice(message.role ? t("scene.worker.skillCompleteRole", { role: WORKER_ROLE_LABELS[message.role] }) : t("scene.worker.skillComplete")));
     room.onMessage("match:victory", (message: MatchResultSummary) => this.handleMatchResult("victory", message));
     room.onMessage("match:defeat", (message: MatchResultSummary) => this.handleMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
@@ -5355,7 +5410,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const pending = this.pendingPreview;
       if (!pending || pending.requestId !== preview.requestId || !pending.dialog.isConnected) return;
       this.pendingPreview = undefined;
-      openDefenseDialog(preview.title ?? "Önizleme", preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply, preview.error ? undefined : preview.changed);
+      openDefenseDialog(preview.title ?? t("scene.preview.fallbackTitle"), preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply, preview.error ? undefined : preview.changed);
     });
     room.onMessage("defense:summary", (summary: DefenseSummary) => {
       this.latestDefenseSummary = summary;
@@ -5371,12 +5426,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.send("defense:request");
     room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
     room.onMessage("card:rejected", (message: { reason?: string }) => {
-      this.setCardChoicePending(false, message.reason ?? "Kart seçimi uygulanamadı. Tekrar dene.");
+      // Sunucunun gerekcesi Turkce geliyor (sunucu tarafi); yedek dile bakiyor.
+      this.setCardChoicePending(false, message.reason ?? t("scene.card.rejected"));
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
       this.cancelExecuteTargeting();
-      this.showNotice(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
+      this.showNotice(message.itemId === "bariyer" ? t("scene.shop.pickBarrierTile") : t("scene.shop.pickTarTile"));
     });
     // Sunucu bu onaylari yalnizca yapan oyuncuya yolluyor; hepsi ayni
     // yoldan geciyor: toast, yonetmen sesi, kule varsa atim.
@@ -5418,7 +5474,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("room:error", (message: { message?: string }) => {
       this.roomAbortedId = room.roomId;
       clearMatchReconnect(room.roomId);
-      const text = message?.message ?? "Sunucu hatası: maç sonlandırıldı.";
+      // Sunucunun metni Turkce geliyor (sunucu tarafi); yedek dile bakiyor.
+      const text = message?.message ?? t("scene.room.serverError");
       this.showNotice(text, 8000);
       this.emitHudState({ status: text });
     });
@@ -5476,8 +5533,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private async reconnectRoom(disconnectedRoom: Room, code: number) {
     if (this.reconnecting) return;
     this.reconnecting = true;
-    this.setCardChoicePending(true, "Bağlantı yenileniyor…");
-    this.emitHudState({ status: "Yeniden bağlanılıyor" });
+    this.setCardChoicePending(true, t("scene.reconnect.renewing"));
+    this.emitHudState({ status: t("scene.status.reconnecting") });
     const client = getSharedClient(gameServerUrl);
     const deadline = Date.now() + 18_000;
 
@@ -5492,7 +5549,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         room.send("card:sync");
         this.rememberMatchReconnect(room);
         this.reconnecting = false;
-        this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
+        this.setCardChoicePending(false, t("scene.reconnect.renewed"));
         this.emitHudState({ status: `#${room.roomId}` });
         return;
       } catch {
@@ -5503,8 +5560,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.reconnecting = false;
     clearActiveLobbyRoom(disconnectedRoom.roomId);
     clearMatchReconnect(disconnectedRoom.roomId);
-    this.setCardChoicePending(false, "Bağlantı kurulamadı. Oyuna yeniden girmen gerekiyor.");
-    this.emitHudState({ status: `Koptu (${code})` });
+    this.setCardChoicePending(false, t("scene.reconnect.failed"));
+    this.emitHudState({ status: t("scene.status.disconnected", { code }) });
   }
 
   /**
@@ -5689,21 +5746,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     const notes: RunReportNote[] = [];
     if (report.stageResult?.unlockedStage) {
-      notes.push({ tone: "unlock", text: `${report.stageResult.unlockedStage}. aşama açıldı` });
+      notes.push({ tone: "unlock", text: t("scene.report.stageUnlocked", { stage: report.stageResult.unlockedStage }) });
     }
     if (report.creative) {
       // Yaratici kosu sessizce kaydedilmiyor olsaydi oyuncu acilis ya da rekor
       // bekleyip bulamazdi; nedenini soluk bir satir soyluyor.
-      notes.push({ tone: "dim", text: "Yaratıcı mod: ilerleme kaydedilmez" });
+      notes.push({ tone: "dim", text: t("scene.report.creativeNoProgress") });
     } else if (!this.liveSnapshotSeen) {
       // Rapor baskasinin kosusu: sessizce kaydedilmiyor olsaydi oyuncu rekorunu arardi.
-      notes.push({ tone: "dim", text: "Bu koşuya bitince katıldın: ilerleme kaydedilmez" });
+      notes.push({ tone: "dim", text: t("scene.report.joinedLate") });
     } else if (report.stageResult?.locked || (outcome?.status === "skipped" && outcome.reason === "locked")) {
       // Co-op'ta katilan oyuncunun henuz acmadigi asama: kayit yazilmadi.
       // Yenilgide asama isaretlenmiyor; kilidi rekor kapisi soyluyor.
-      notes.push({ tone: "dim", text: "Bu aşama sende henüz açık değil: ilerleme kaydedilmez" });
+      notes.push({ tone: "dim", text: t("scene.report.stageLocked") });
     } else if (outcome?.status === "recorded" && !outcome.saved) {
-      notes.push({ tone: "dim", text: "Kayıt bu tarayıcıda saklanamadı" });
+      notes.push({ tone: "dim", text: t("scene.report.notSaved") });
     }
     const summary = this.latestDefenseSummary;
     renderRunReport({
@@ -5721,7 +5778,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       progress: this.buildRunReportProgress(report.creative),
       stamp: this.cosmetics.stamp,
       onDefenseSummary: summary
-        ? () => openDefenseDialog(`Dalga ${summary.wave} · Savunma özeti`, defenseSummaryLines(summary))
+        ? () => openDefenseDialog(t("scene.defense.title", { wave: summary.wave }), defenseSummaryLines(summary))
         : undefined
     });
 
@@ -5860,11 +5917,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     root.className = "card-draft card-draft--visible";
     root.innerHTML = `
       <div class="card-draft__veil"></div>
-      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Kart seçimi">
+      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="${t("scene.card.draftAria")}">
         <header class="card-draft__header" data-wave-report-slot>
           <span class="card-draft__eyebrow">${getCardDraftTitle(draftWave)}</span>
-          <h2>Rotanı güçlendir</h2>
-          <p>Koşu boyunca kalacak bir kart seç</p>
+          <h2>${t("scene.card.draftTitle")}</h2>
+          <p>${t("scene.card.draftSubtitle")}</p>
           <span class="card-draft__status" role="status" aria-live="polite"></span>
         </header>
         <div class="card-draft__grid"></div>
@@ -5901,14 +5958,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Yaygin kart etiketsiz ("duz"); digerlerinde renk tek isaret olmasin.
       const rarityTag = rarity === "common"
         ? ""
-        : `<span class="run-card__rarity">${cardRarityLabels[rarity].toLocaleUpperCase("tr-TR")}</span>`;
+        : `<span class="run-card__rarity">${upper(cardRarityLabels[rarity])}</span>`;
+      // Sunucunun kart nesnesi Turkce kopya; ad ve aciklama katalogdan, dile gore.
+      const text = getCardText(card);
       button.innerHTML = `
         <span class="run-card__back" aria-hidden="true"></span>
-        <span class="run-card__index">0${index + 1}${isNew ? `<span class="run-card__new">YENİ</span>` : ""}</span>
+        <span class="run-card__index">0${index + 1}${isNew ? `<span class="run-card__new">${t("scene.card.new")}</span>` : ""}</span>
         <span class="run-card__glow"></span>
-        <span class="run-card__axis">${card.axes.map((axis) => towerAxisLabels[axis].toLocaleUpperCase("tr-TR")).join(" • ")}${rarityTag}</span>
-        <strong>${card.name}</strong>
-        <span class="run-card__description">${card.description}</span>
+        <span class="run-card__axis">${card.axes.map((axis) => upper(towerAxisLabels[axis])).join(" • ")}${rarityTag}</span>
+        <strong>${text.name}</strong>
+        <span class="run-card__description">${text.description}</span>
         <span class="run-card__scope">${scope}</span>
         <span class="run-card__reach${reach.muted ? " run-card__reach--muted" : ""}">${reach.text}</span>`;
       button.addEventListener("click", () => {
@@ -5943,7 +6002,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       onOpen: summary
         ? () => {
           if (performance.now() < this.cardDealStartedAt + CARD_PICKABLE_AFTER_MS) return;
-          openDefenseDialog(`Dalga ${summary.wave} · Savunma özeti`, defenseSummaryLines(summary));
+          openDefenseDialog(t("scene.defense.title", { wave: summary.wave }), defenseSummaryLines(summary));
         }
         : undefined
     });
@@ -6033,16 +6092,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (card.scope.kind === "targeted") {
       const count = towers.filter(({ tower }) => this.canTowerHoldCard(tower)).length;
       return count > 0
-        ? { text: `${count} kule taşıyabilir`, muted: false }
-        : { text: "Şu an taşıyabilecek kulen yok", muted: true };
+        ? { text: t("scene.card.reachTargeted", { count }), muted: false }
+        : { text: t("scene.card.reachTargetedNone"), muted: true };
     }
     if (getCardTowerReach(card) === "none") {
-      return { text: "Kulelere değil, sana etki eder", muted: false };
+      return { text: t("scene.card.reachPlayer"), muted: false };
     }
     const count = towers.filter(({ definition }) => cardReachesTower(card, definition)).length;
     return count > 0
-      ? { text: `${count} kulene etki eder`, muted: false }
-      : { text: "Şu an hiçbir kulene etki etmez", muted: true };
+      ? { text: t("scene.card.reachTowers", { count }), muted: false }
+      : { text: t("scene.card.reachTowersNone"), muted: true };
   }
 
   private showTargetedTowerChoices(card: CardDefinition) {
@@ -6055,10 +6114,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     panel.classList.add("card-draft__panel--targets");
     panel.innerHTML = `
       <header class="card-draft__header">
-        <button class="card-draft__back" type="button" aria-label="Kartlara dön">←</button>
-        <span class="card-draft__eyebrow">${card.name.toLocaleUpperCase("tr-TR")}</span>
-        <h2>Hedef kuleyi seç</h2>
-        <p>Kart bu kuleye kalıcı olarak bağlanacak</p>
+        <button class="card-draft__back" type="button" aria-label="${t("scene.card.backToCards")}">←</button>
+        <span class="card-draft__eyebrow">${upper(getCardText(card).name)}</span>
+        <h2>${t("scene.card.targetTitle")}</h2>
+        <p>${t("scene.card.targetSubtitle")}</p>
         <span class="card-draft__status" role="status" aria-live="polite"></span>
       </header>
       <div class="tower-choice-list"></div>`;
@@ -6070,7 +6129,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // binasi olan oyuncu bos bir listeye bakip ne yapacagini bilemezdi.
       const empty = document.createElement("p");
       empty.className = "tower-choice-empty";
-      empty.textContent = `Bu kartı taşıyabilecek bir kulen yok. Duvarlar ve kaynak binaları savaş kartı alamaz, bir kule en fazla ${MAX_TARGETED_CARDS_PER_TOWER} hedefli kart taşır — geri dön ve başka bir kart seç.`;
+      empty.textContent = t("scene.card.targetNone", { max: MAX_TARGETED_CARDS_PER_TOWER });
       list?.append(empty);
     }
     towers.forEach((tower) => {
@@ -6078,7 +6137,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       button.type = "button";
       button.className = "tower-choice";
       button.dataset.towerId = tower.id;
-      button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${tower.name}</strong><small>Seviye ${tower.level} • ${Math.round(tower.damageDealt ?? 0)} hasar</small></span><span class="tower-choice__arrow">→</span>`;
+      button.innerHTML = `<span class="tower-choice__orb" style="--tower-color:#${tower.color.toString(16).padStart(6, "0")}"></span><span><strong>${getTowerDisplayName(tower.definitionId, tower.name)}</strong><small>${t("scene.card.towerChoiceMeta", { level: tower.level, damage: Math.round(tower.damageDealt ?? 0) })}</small></span><span class="tower-choice__arrow">→</span>`;
       button.addEventListener("click", () => this.previewTowerChange({ cardId: card.id, towerId: tower.id }, () => this.submitCardChoice({ cardId: card.id, towerId: tower.id })));
       list?.append(button);
     });
@@ -6104,11 +6163,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     root.className = "card-draft card-draft--visible";
     root.innerHTML = `
       <div class="card-draft__veil"></div>
-      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="Ucube seçimi">
+      <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="${t("scene.ucube.aria")}">
         <header class="card-draft__header">
-          <span class="card-draft__eyebrow">UCUBE SEVİYE ${message.level}</span>
-          <h2>Bir yükseltme seç</h2>
-          <span class="card-draft__status">Seçilmeyen seçenek geri gelmez.</span>
+          <span class="card-draft__eyebrow">${t("scene.ucube.level", { level: message.level })}</span>
+          <h2>${t("scene.ucube.title")}</h2>
+          <span class="card-draft__status">${t("scene.ucube.status")}</span>
         </header>
         <div class="card-draft__grid"></div>
       </section>`;
@@ -6122,7 +6181,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       button.addEventListener("pointerup", () => {
         this.room?.send("ucube:choose", { towerId: message.towerId, perkId: option.id });
         this.hideCardChoices();
-        this.showNotice(`${option.name} seçildi`);
+        this.showNotice(t("scene.ucube.picked", { name: option.name }));
       });
       grid?.append(button);
     }
@@ -6151,11 +6210,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.playTowerPulse(tower, cellSize * getTowerGridSpan(tower.definitionId), color, card.scope.kind === "targeted");
     }
     if (card.scope.kind !== "targeted" && getCardTowerReach(card) === "none") {
-      this.showNotice(`${card.name} alındı`);
+      this.showNotice(t("scene.card.applied", { name: card.name }));
     } else if (towerIds.size > 0) {
-      this.showNotice(`${card.name} alındı · ${towerIds.size} kuleye etki etti`);
+      this.showNotice(t("scene.card.appliedTowers", { name: card.name, count: towerIds.size }));
     } else {
-      this.showNotice(`${card.name} alındı · şu an hiçbir kulene etki etmiyor`);
+      this.showNotice(t("scene.card.appliedNone", { name: card.name }));
     }
   }
 
@@ -6270,7 +6329,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private findTowerName(towerId?: string) {
-    return towerId ? this.latestPerfSnapshot?.towers.find((tower) => tower.id === towerId)?.name : undefined;
+    const tower = towerId ? this.latestPerfSnapshot?.towers.find((entry) => entry.id === towerId) : undefined;
+    return tower ? getTowerDisplayName(tower.definitionId, tower.name) : undefined;
   }
 
   private hideCardChoices() {
@@ -6289,10 +6349,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private submitCardChoice(message: { cardId: string; towerId?: string }) {
     if (!this.room || this.cardChoicePending) return;
     this.stampPickedChoice(message);
-    this.setCardChoicePending(true, "Kart uygulanıyor…");
+    this.setCardChoicePending(true, t("scene.card.applying"));
     this.room.send("card:choose", message);
     this.cardChoiceTimeout = window.setTimeout(() => {
-      this.setCardChoicePending(false, "Sunucudan yanıt alınamadı. Tekrar deneyebilirsin.");
+      this.setCardChoicePending(false, t("scene.card.noResponse"));
     }, 4500);
   }
 
@@ -6353,21 +6413,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private getCardScopeLabel(card: CardDefinition) {
     const scope = card.scope;
-    if (scope.kind === "global") return getCardTowerReach(card) === "none" ? "Genel" : "Tüm kuleler";
-    if (scope.kind === "targeted") return "Bir kule seç";
+    if (scope.kind === "global") return getCardTowerReach(card) === "none" ? t("scene.scope.general") : t("scene.scope.allTowers");
+    if (scope.kind === "targeted") return t("scene.scope.pickTower");
     const parts = [
-      scope.aims ? "Nişan alan kuleler" : "",
-      scope.projectiles ? "Mermi atan kuleler" : "",
-      scope.alongFacing ? "Nişan alan mermi ve çarpma kuleleri" : "",
-      scope.combat ? "Hasar veren kuleler" : "",
-      scope.axes?.length ? `${scope.axes.map((axis) => towerAxisLabels[axis]).join(" / ")} kuleleri` : "",
-      scope.hitTypes?.length ? `${scope.hitTypes.map((type) => hitTypeCodex[type].name).join(" / ")} kuleleri` : "",
-      scope.damageTypes?.length ? `${scope.damageTypes.map((type) => damageTypeCodex[type].name).join(" / ")} hasarlı kuleler` : "",
-      scope.shapes?.length ? `${scope.shapes.map((shape) => attackShapeLabels[shape]).join(" / ")} kuleleri` : "",
-      scope.ammoTypes?.length ? `${scope.ammoTypes.map((ammo) => ammoTypeLabels[ammo]).join(" / ")} kullanan kuleler` : "",
-      scope.hasAreaRadius ? "Etki alanı olan kuleler" : ""
+      scope.aims ? t("scene.scope.aims") : "",
+      scope.projectiles ? t("scene.scope.projectiles") : "",
+      scope.alongFacing ? t("scene.scope.alongFacing") : "",
+      scope.combat ? t("scene.scope.combat") : "",
+      scope.axes?.length ? t("scene.scope.towersOf", { list: scope.axes.map((axis) => towerAxisLabels[axis]).join(" / ") }) : "",
+      scope.hitTypes?.length ? t("scene.scope.towersOf", { list: scope.hitTypes.map((type) => hitTypeCodex[type].name).join(" / ") }) : "",
+      scope.damageTypes?.length ? t("scene.scope.damageTypes", { list: scope.damageTypes.map((type) => damageTypeCodex[type].name).join(" / ") }) : "",
+      scope.shapes?.length ? t("scene.scope.towersOf", { list: scope.shapes.map((shape) => attackShapeLabels[shape]).join(" / ") }) : "",
+      scope.ammoTypes?.length ? t("scene.scope.ammoTypes", { list: scope.ammoTypes.map((ammo) => ammoTypeLabels[ammo]).join(" / ") }) : "",
+      scope.hasAreaRadius ? t("scene.scope.areaRadius") : ""
     ].filter(Boolean);
-    return parts.join(" · ") || "Tüm kuleler";
+    return parts.join(" · ") || t("scene.scope.allTowers");
   }
 
   private getCardAccent(card: CardDefinition) {
@@ -6397,9 +6457,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     };
     if (active) {
       const readyCount = snapshot.setupReadyPlayerIds?.length ?? 0;
-      hudPatch.status = `Kurulum ${readyCount}/${snapshot.players.length}`;
-    } else if (this.hudState.status.startsWith("Kurulum")) {
+      hudPatch.status = t("scene.status.setup", { ready: readyCount, total: snapshot.players.length });
+      this.setupStatusText = hudPatch.status;
+    } else if (this.setupStatusText !== undefined && this.hudState.status === this.setupStatusText) {
+      // On ek yerine yazilan metin: "Kurulum" dile gore degisiyor.
       hudPatch.status = `#${this.room?.roomId ?? "-"}`;
+      this.setupStatusText = undefined;
     }
     this.emitHudState(hudPatch);
     // Toast kutuya bagli degil: bildirim kontrollerin icinde magazanin
@@ -6460,8 +6523,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (airWarning && this.getActiveNotice()) return;
     this.airWarningSetupSession = session;
     if (!airWarning) return;
-    const share = snapshot.team.waveAirMode === "mixed" ? "yarısı" : "tamamı";
-    this.showNotice(`Kulelerin havadaki düşmanı vuramıyor! Sonraki dalganın ${share} uçuyor.`, 5000);
+    this.showNotice(t(snapshot.team.waveAirMode === "mixed" ? "scene.air.warningMixed" : "scene.air.warningAll"), 5000);
   }
 
   private handleArenaZoomTap(pointer: Phaser.Input.Pointer) {
@@ -6690,14 +6752,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // uretirdi. Ikincil seride ek rozet olarak akiyorlar.
     const extras = player?.characterId === "zeynep"
       ? [
-        { label: "İtibar", icon: "✦", value: `${reputation}/100` },
-        { label: "Zincir", icon: "⛓", value: `${authorityChain}/2` },
-        { label: "Kalite", icon: "◈", value: `${authorityQuality}/15` }
+        { label: t("scene.resource.prestige"), icon: "✦", value: `${reputation}/100` },
+        { label: t("scene.resource.chain"), icon: "⛓", value: `${authorityChain}/2` },
+        { label: t("scene.resource.quality"), icon: "◈", value: `${authorityQuality}/15` }
       ]
       : player?.characterId === "archer"
         ? [
-          { label: "Onay", icon: "☺", value: `${Math.round(approval)}` },
-          { label: "Stres", icon: "☹", value: `${Math.round(stress)}` }
+          { label: t("scene.resource.approval"), icon: "☺", value: `${Math.round(approval)}` },
+          { label: t("scene.resource.stress"), icon: "☹", value: `${Math.round(stress)}` }
         ]
         : [];
     const hudKey = `${gold}|${experience}|${Math.round(snapshot.team.health)}|${snapshot.team.wave}|${snapshot.team.enemiesLeft}|${charge}|${reputation}|${authorityChain}|${authorityQuality}|${approval}|${stress}|${Math.floor(snapshot.team.energy ?? 0)}|${snapshot.team.maxEnergy ?? 0}|${Math.floor(ammunition.bullet)}|${Math.floor(ammunition.auraCrystal)}|${Math.floor(ammunition.powerCrystal)}`;
@@ -6911,7 +6973,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const hasCombatMarker = Boolean(enemy.isDominated || enemy.isWhisperTurned || enemy.isFeared || hasUnderworld);
       const slowLabel = slowTierLevel > 0 ? `SLOW ${slowTierLevel}` : "";
       mover.marker?.setPosition(enemy.x, enemy.y - statusYOffset - (hasSeparateMelisMarker ? 11 : 4));
-      mover.marker?.setText(enemy.isDominated ? "ZORBA" : enemy.isWhisperTurned ? "DÖN" : enemy.isUndead ? "ÖLÜ" : enemy.isUnderworldLinked ? "BAĞ" : enemy.isFeared ? "KORKU" : slowLabel || "AIR");
+      mover.marker?.setText(enemy.isDominated ? t("scene.marker.dominated") : enemy.isWhisperTurned ? t("scene.marker.turned") : enemy.isUndead ? t("scene.marker.undead") : enemy.isUnderworldLinked ? t("scene.marker.linked") : enemy.isFeared ? t("scene.marker.feared") : slowLabel || "AIR");
       // Renk ve punto yalnizca degistiginde: Phaser ikisinde de metnin tuvalini
       // yeniden ciziyor (punto olcumleri de yeniden hesapliyor) ve bu her karede
       // her dusmanda iki etiket demekti.
@@ -6921,7 +6983,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       mover.marker?.setVisible(Boolean(hasCombatMarker || slowTierLevel > 0 || enemy.movementKind === "air"));
       const curseText = `L${Math.min(999, Math.round(curseLoad))}`;
-      const doubtText = enemy.isHesitating ? "Ş!" : `Ş${Math.max(1, doubtStacks)}`;
+      const doubtText = enemy.isHesitating ? t("scene.marker.hesitating") : t("scene.marker.doubt", { n: Math.max(1, doubtStacks) });
       const melisMarkerGap = isCursed && hasDoubt ? Math.max(10, displayedEnemySize * 0.2) : 0;
       mover.curseMarker?.setPosition(enemy.x - melisMarkerGap, enemy.y - statusYOffset);
       mover.curseMarker?.setText(curseText);
@@ -8648,24 +8710,24 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.selectedMisfortuneText ??= this.add.text(0, 0, "", { color: "#e9d5ff", fontFamily: "Arial", fontSize: "8px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedPerformanceText ??= this.add.text(0, 0, "", { color: "#dcfce7", fontFamily: "Arial", fontSize: "9px", fontStyle: "bold" }).setOrigin(0.5, 0).setDepth(67);
     this.selectedAmmoText
-      .setText(usesAmmo ? `Mühimmat ${Math.floor(tower.ammo ?? 0)}/${tower.maxAmmo ?? 0}` : "Mühimmat — KULLANMIYOR")
+      .setText(usesAmmo ? t("scene.tower.ammo", { n: Math.floor(tower.ammo ?? 0), max: tower.maxAmmo ?? 0 }) : t("scene.tower.ammoUnused"))
       .setColor(usesAmmo ? "#fef3c7" : "#fecaca")
       .setPosition(labelCenterX, panelY + 2)
       .setVisible(showsResources);
-    this.selectedEnergyText.setText(`Enerji ${Math.floor(tower.energy ?? 0)}/${tower.maxEnergy ?? 0}`).setPosition(labelCenterX, panelY + 24).setVisible(showsResources);
+    this.selectedEnergyText.setText(t("scene.tower.energy", { n: Math.floor(tower.energy ?? 0), max: tower.maxEnergy ?? 0 })).setPosition(labelCenterX, panelY + 24).setVisible(showsResources);
     this.selectedTemperatureText
       .setText(isAmmoFactory
-        ? `Hammadde ${Math.floor(tower.rawAmmo ?? 0)}/${tower.maxRawAmmo ?? 0}`
-        : `Sıcaklık %${Math.round(tower.temperature ?? 0)}`)
+        ? t("scene.tower.rawAmmo", { n: Math.floor(tower.rawAmmo ?? 0), max: tower.maxRawAmmo ?? 0 })
+        : t("scene.tower.temperature", { v: t("format.percent", { v: Math.round(tower.temperature ?? 0) }) }))
       .setPosition(hasMisfortune ? barX + splitBarWidth / 2 : labelCenterX, panelY + 46)
       .setVisible(showsResources);
     this.selectedMisfortuneText
       .setText((tower.luckyWindowRemainingMs ?? 0) > 0
-        ? `Şanslı ${(tower.luckyWindowRemainingMs! / 1000).toFixed(1)}sn`
-        : `Şans %${Math.round(tower.misfortune ?? 0)}`)
+        ? t("scene.tower.lucky", { s: (tower.luckyWindowRemainingMs! / 1000).toFixed(1) })
+        : t("scene.tower.luck", { v: t("format.percent", { v: Math.round(tower.misfortune ?? 0) }) }))
       .setPosition(barX + splitBarWidth + 4 + splitBarWidth / 2, panelY + 46)
       .setVisible(hasMisfortune);
-    this.selectedPerformanceText.setText(`Performans %${Math.round(performanceRatio * 100)}`).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
+    this.selectedPerformanceText.setText(t("scene.tower.performance", { v: t("format.percent", { v: Math.round(performanceRatio * 100) }) })).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
     const refundState = this.getTowerRefundState(tower);
     this.selectedSellText = this.selectedSellText ?? this.add.text(0, 0, "", {
@@ -8675,7 +8737,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       color: "#fecdd3"
     }).setOrigin(0.5).setDepth(67);
     this.selectedSellText
-      .setText(sell ? `${refundState.undoable ? "Geri Al" : "Sat"}  +${refundState.amount}g` : "")
+      .setText(sell ? `${refundState.undoable ? t("scene.tower.undo") : t("scene.tower.sell")}  +${refundState.amount}g` : "")
       .setPosition(sell ? sell.x + sell.width / 2 : 0, sell ? sell.y + sell.height / 2 : 0)
       .setVisible(Boolean(sell));
 
@@ -9119,7 +9181,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const characterId = owner?.characterId;
       const character = characterId ? characters.find((candidate) => candidate.id === characterId) : undefined;
       const toast: TeamStreakToast = {
-        name: character?.displayName ?? "Takım arkadaşın",
+        name: character?.displayName ?? t("scene.teammate"),
         label: rule.label,
         buff: getKillStreakBuffText(tier),
         color: (characterId && CHARACTER_CLASS_COLORS[characterId]) || "#94a3b8"
@@ -10395,7 +10457,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const melisZoneEffect = selectedTower?.characterId === "archer"
       ? getMelisZoneEffectText(selectedTower.definitionId, melisZone)
       : undefined;
-    const melisZoneLabel = melisZone === "approval" ? "Onay" : melisZone === "stress" ? "Stres" : "Denge";
+    const melisZoneLabel = melisZone === "approval" ? t("scene.resource.approval") : melisZone === "stress" ? t("scene.resource.stress") : t("scene.resource.balance");
     const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
     // Kule esyalarinin fiyati kule basina; sunucunun `getPlayerShopLoadout` yukuyle ayni.
     const shopLoadout = {
@@ -10450,7 +10512,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         return {
           slot: index,
           name: skill.name,
-          label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : executeArmed ? `${skill.name}\nİptal` : skill.name,
+          label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : executeArmed ? `${skill.name}\n${t("scene.skill.cancel")}` : skill.name,
           disabled: cooldown > 0
         };
       }),
@@ -10518,7 +10580,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
           const price = getShopItemPrice(item, ownedShopItems, shopLoadout);
-          return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true, alreadyUnlocked: this.isShopItemAlreadyUnlockedLocally(item.id) };
+          // Teklif sunucunun kopyasi (Turkce metin); ad ve aciklama katalogdan, dile gore.
+          const local = getShopItem(item.id);
+          return { id: item.id, name: local?.name ?? item.name, description: local?.description ?? item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true, alreadyUnlocked: this.isShopItemAlreadyUnlockedLocally(item.id) };
         })
       } : undefined,
       equippedItems: selectedTower?.equippedShopItemIds?.map((itemId) => {
@@ -10563,14 +10627,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       },
       creative: this.getCreativeControlState(),
       upgrade: {
-        label: selectedTower?.level === 10 ? "Max" : selectedTower ? `Gelistir ${upgradePriceLabel}` : "Kule sec",
+        label: selectedTower?.level === 10 ? t("scene.upgrade.max") : selectedTower ? t("scene.upgrade.action", { price: upgradePriceLabel }) : t("scene.upgrade.noTower"),
         enabled: canUpgrade
       },
       sell: {
         // "Geri Al" ve "Sat" ayni dugme ama ayni sey degil: biri alimi
         // iptal ediyor, digeri zarara satiyor. Oyuncunun hangisini
         // yaptigini basmadan once bilmesi gerekiyor.
-        label: canSell ? `${refundState?.undoable ? "Geri Al" : "Sat"} ${sellRefund}g` : "Sat",
+        label: canSell ? `${refundState?.undoable ? t("scene.tower.undo") : t("scene.tower.sell")} ${sellRefund}g` : t("scene.tower.sell"),
         enabled: canSell
       },
       repair: repairState,
@@ -10599,15 +10663,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private getHeatBrakeLine(tower: TowerSnapshot, definition: TowerDefinition | undefined) {
     // Etki araligiyla calisan kulede atis yok ama fren o araligi da uzatiyor.
-    const rate = tower.effectIntervalMs !== undefined ? "etki" : "atış";
     // Esik isi cubugunun birimiyle ("%X") yaziliyor; "°C" panelde baska
     // hicbir yerde gecmiyordu ve oyuncu ikisini eslestiremiyordu. Isinin
     // izin verdigi surekli hiz artik ritim satirinin altinda (sunucu blogu).
+    const temp = t("format.percent", { v: TOWER_HEAT_BRAKE_TEMPERATURE });
     return hasUnlockBit(tower.unlockBits, "heat:thermalMass")
-      ? "Isı freni yok (Termal Kütle)"
+      ? t("scene.heat.noBrakeThermalMass")
       : definition?.engine?.fixedFireInterval
-        ? "Isı freni yok (sabit atış aralığı)"
-        : `Isı freni: sıcaklık %${TOWER_HEAT_BRAKE_TEMPERATURE} üstünde ${rate} hızı düşer (çubuktaki çizgi)`;
+        ? t("scene.heat.noBrakeFixedInterval")
+        : t(tower.effectIntervalMs !== undefined ? "scene.heat.brakeEffect" : "scene.heat.brakeFire", { temp });
   }
 
   private updateSelectionUi() {
@@ -10638,9 +10702,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // tek bildirim, panelde olmayan bir eylem ipucu: Sunucu baglantisi ve
     // Sentez dizilimi. Yalnizca secim, seviye ya da sahip degisince cikiyor.
     const linkHint = selectedTower.definitionId === "warrior-2"
-      ? `Bağlantı ${selectedTower.linkedTowerIds?.length ?? 0}/2: bağlamak için bir kuleye dokun`
+      ? t("scene.link.hint", { n: selectedTower.linkedTowerIds?.length ?? 0 })
       : selectedTower.definitionId === "zeynep-3"
-        ? "Sentez için 3'lü üçgen dizilim kur"
+        ? t("scene.synthesis.hint")
         : "";
     const noticeKey = `${selectedTower.id}|${selectedTower.level}|${selectedTower.ownerId}`;
     if (noticeKey !== this.lastSelectionNoticeKey) {
@@ -10776,23 +10840,28 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const notes: TowerSheetNote[] = [];
     const ownsTower = tower.ownerId === this.localSessionId;
     if (tower.definitionId === "warrior-5") notes.push({ section: "effects", text: formatDebugLaserOverdriveLine(tower.level) });
-    if (context.melisZoneEffect) notes.push({ section: "effects", text: `Ruh hali — ${context.melisZoneLabel}: ${context.melisZoneEffect}` });
+    // Etki metni paylasilan modulden (getMelisZoneEffectText), Turkce kaliyor.
+    if (context.melisZoneEffect) notes.push({ section: "effects", text: t("scene.sheet.mood", { zone: context.melisZoneLabel, effect: context.melisZoneEffect }) });
     if (tower.definitionId === "archer-4") {
-      notes.push({ section: "effects", text: `Ruh ${tower.melisUnderworldPullCount ?? 0} · Mod ${(tower.melisUnderworldMode ?? "approval") === "approval" ? "Onay" : "Stres"}` });
+      notes.push({ section: "effects", text: t("scene.sheet.underworld", { souls: tower.melisUnderworldPullCount ?? 0, mode: (tower.melisUnderworldMode ?? "approval") === "approval" ? t("scene.resource.approval") : t("scene.resource.stress") }) });
     }
     if (tower.characterId === "onur") {
-      notes.push({ section: "attack", text: `Şanssızlık %${Math.round(tower.misfortune ?? 0)} · son zar ×${(tower.lastLuckMultiplier ?? 1).toFixed(2).replace(".", ",")}` });
+      notes.push({ section: "attack", text: t("scene.sheet.misfortune", {
+        v: t("format.percent", { v: Math.round(tower.misfortune ?? 0) }),
+        // toFixed + ayirac: Intl esitlikte farkli yuvarliyor (1,005 -> "1,01"), eski "1,00" kalsin.
+        roll: getLocale() === "tr" ? (tower.lastLuckMultiplier ?? 1).toFixed(2).replace(".", ",") : (tower.lastLuckMultiplier ?? 1).toFixed(2)
+      }) });
     }
     if (context.towerOperations && tower.definitionId !== "warrior-2") notes.push({ section: "resources", text: this.getHeatBrakeLine(tower, definition) });
-    if (context.towerOperations && tower.energyState && tower.energyState !== "powered") notes.push({ section: "status", text: "Enerji yok" });
-    if (tower.definitionId === WALL_TOWER_ID) notes.push({ section: "status", text: tower.gate ? "Kapı açık: işçiler geçer" : "Kapı kapalı" });
-    if (tower.definitionId === "warrior-2") notes.push({ section: "effects", text: `Bağlı kule ${tower.linkedTowerIds?.length ?? 0}/2 · bağlamak için kuleye dokun` });
+    if (context.towerOperations && tower.energyState && tower.energyState !== "powered") notes.push({ section: "status", text: t("scene.sheet.noEnergy") });
+    if (tower.definitionId === WALL_TOWER_ID) notes.push({ section: "status", text: tower.gate ? t("scene.sheet.gateOpen") : t("scene.sheet.gateClosed") });
+    if (tower.definitionId === "warrior-2") notes.push({ section: "effects", text: t("scene.sheet.linked", { n: tower.linkedTowerIds?.length ?? 0 }) });
     const owner = ownsTower ? undefined : this.playerSnapshots.find((player) => player.id === tower.ownerId)?.name ?? tower.ownerName;
     return {
       towerId: tower.id,
       definitionId: tower.definitionId,
       characterId: tower.characterId,
-      name: tower.name,
+      name: getTowerDisplayName(tower.definitionId, tower.name),
       level: tower.level,
       color: `#${(definition?.color ?? tower.color ?? 0x60a5fa).toString(16).padStart(6, "0")}`,
       ownerName: owner,
@@ -10868,7 +10937,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       ping: `${averagePing > 999 ? "999+" : averagePing} ms ±${jitter > 99 ? "99+" : jitter}`,
       pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad",
       // Kuyruk nadir ama uzun; metinden cikip ipucunda duruyor.
-      pingDetail: queueKb > 0 ? `Gecikme ${averagePing} ms, sapma ${jitter} ms, kuyruk ${queueKb}K` : `Gecikme ${averagePing} ms, sapma ${jitter} ms`
+      pingDetail: queueKb > 0 ? t("scene.ping.detailQueue", { ping: averagePing, jitter, queue: queueKb }) : t("scene.ping.detail", { ping: averagePing, jitter })
     });
   }
 
@@ -11379,7 +11448,7 @@ function getBrowserMemoryInfo() {
 }
 
 function getZeynepCommandButtonState(authorityChain: number) {
-  return { cost: 10, label: authorityChain >= 2 ? "Zincir Sec" : "Sec" };
+  return { cost: 10, label: authorityChain >= 2 ? t("scene.skill.zeynepPickChain") : t("scene.skill.zeynepPick") };
 }
 
 function getBackgroundMusicPath(characterId: CharacterId) {
@@ -11703,12 +11772,12 @@ const BEAM_TOWER_ID_PATTERN = /(?:^|-)(t\d+)(?=-|$)/;
  */
 function formatDebugLaserOverdriveLine(level: number) {
   if (level < DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL) {
-    return `Overdrive: ${DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL}. seviyede açılır; ${DEBUG_LASER_TWIN_OVERDRIVE_LEVEL}. seviyede zincir ışınına ek olarak iki ters dönen ışın`;
+    return t("scene.overdrive.locked", { unlock: DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL, twin: DEBUG_LASER_TWIN_OVERDRIVE_LEVEL });
   }
   if (level < DEBUG_LASER_TWIN_OVERDRIVE_LEVEL) {
-    return `Overdrive: açık (zincir ışını); ${DEBUG_LASER_TWIN_OVERDRIVE_LEVEL}. seviyede ek olarak iki ters dönen ışın`;
+    return t("scene.overdrive.chain", { twin: DEBUG_LASER_TWIN_OVERDRIVE_LEVEL });
   }
-  return "Overdrive: açık (zincir ışını + iki ters dönen ışın)";
+  return t("scene.overdrive.full");
 }
 
 /** Kenara yerlesen yapilar (Abarti, duvar), butun karakterlerin kataloglarindan. */

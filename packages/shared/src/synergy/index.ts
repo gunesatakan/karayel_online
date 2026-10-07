@@ -14,6 +14,7 @@
 import { ATAKAN_ISOLATION_MULTIPLIER } from "../balance/index.js";
 import { countsAsTower, occupiesTowerSlot } from "../characters/index.js";
 import type { TowerDefinition } from "../characters/common/types.js";
+import { lt, ltFixed } from "../i18n/index.js";
 import { worldToGrid } from "../map.js";
 
 /** Kurallarin bir yapidan okudugu her sey; sunucunun kule modeli zaten bu bicimde. */
@@ -485,9 +486,9 @@ export function diffSynergyStates<T extends SynergyStructure>(
 /* Metin                                                                    */
 /* ------------------------------------------------------------------------ */
 
-/** "×2,25": Turkce ondalik virgul, iki hane; onizleme ve damga ayni bicimde. */
+/** "×2,25": iki hane, ayirac dile gore; onizleme ve damga ayni bicimde. */
 export function formatSynergyMultiplier(value: number) {
-  return `×${value.toFixed(2).replace(".", ",")}`;
+  return `×${ltFixed(value, 2)}`;
 }
 
 export type SynergyPreviewText = {
@@ -515,13 +516,13 @@ export function describeSynergyPreview<T extends SynergyStructure>(
   const text: SynergyPreviewText = {};
   if (preview.formation) {
     text.headline = {
-      text: `DİZİLİM ${formatSynergyMultiplier(preview.formationDamageMultiplier)} · Sv ${preview.formation.level}`,
+      text: `${lt("DİZİLİM", "FORMATION")} ${formatSynergyMultiplier(preview.formationDamageMultiplier)} · ${lt("Sv", "Lv")} ${preview.formation.level}`,
       tone: "gain"
     };
   } else if (preview.isolationEligible) {
     text.headline = preview.isolated
-      ? { text: `Yalnız ${formatSynergyMultiplier(getAtakanIsolationDpsMultiplier())} DPS`, tone: "gain" }
-      : { text: "Yalnızlık yok", tone: "blocked" };
+      ? { text: `${lt("Yalnız", "Isolated")} ${formatSynergyMultiplier(getAtakanIsolationDpsMultiplier())} DPS`, tone: "gain" }
+      : { text: lt("Yalnızlık yok", "No isolation"), tone: "blocked" };
   }
 
   const names: string[] = [];
@@ -531,8 +532,8 @@ export function describeSynergyPreview<T extends SynergyStructure>(
   }
   const parts = names.slice(0, PREVIEW_MAX_NAMES);
   if (names.length > PREVIEW_MAX_NAMES) parts.push(`+${names.length - PREVIEW_MAX_NAMES}`);
-  if (preview.breaksFormation.length > 0) parts.push("Dizilim");
-  if (parts.length > 0) text.warning = `Bozar: ${parts.join(", ")}`;
+  if (preview.breaksFormation.length > 0) parts.push(lt("Dizilim", "Formation"));
+  if (parts.length > 0) text.warning = `${lt("Bozar", "Breaks")}: ${parts.join(", ")}`;
   return text;
 }
 
@@ -540,13 +541,13 @@ export function describeSynergyPreview<T extends SynergyStructure>(
 export function getSynergyStampText(kind: SynergyChange<SynergyStructure>["kind"]) {
   switch (kind) {
     case "isolationGained":
-      return `Yalnız ${formatSynergyMultiplier(getAtakanIsolationDpsMultiplier())}`;
+      return `${lt("Yalnız", "Isolated")} ${formatSynergyMultiplier(getAtakanIsolationDpsMultiplier())}`;
     case "isolationLost":
-      return "Yalnızlık bozuldu";
+      return lt("Yalnızlık bozuldu", "Isolation broken");
     case "formationFormed":
-      return "Dizilim kuruldu";
+      return lt("Dizilim kuruldu", "Formation set");
     case "formationBroken":
-      return "Dizilim bozuldu";
+      return lt("Dizilim bozuldu", "Formation broken");
   }
 }
 
@@ -556,7 +557,10 @@ export function getSynergyStampText(kind: SynergyChange<SynergyStructure>["kind"
  * "senin" kimin seyinin bozuldugunu soyluyor.
  */
 export function getSynergyCulpritNotice(kind: "isolationLost" | "formationBroken", culprit: string) {
-  return `${culprit} senin ${kind === "isolationLost" ? "yalnızlığını" : "dizilimini"} bozdu`;
+  return lt(
+    `${culprit} senin ${kind === "isolationLost" ? "yalnızlığını" : "dizilimini"} bozdu`,
+    `${culprit} broke your ${kind === "isolationLost" ? "isolation" : "formation"}`
+  );
 }
 
 /* ------------------------------------------------------------------------ */
@@ -635,7 +639,7 @@ export function roundSynergyShare(value: number) {
 }
 
 export function getSynergyShareLabel(kind: SynergyShareKind) {
-  return kind === "isolation" ? "Yalnızlık payı" : "Dizilim payı";
+  return kind === "isolation" ? lt("Yalnızlık payı", "Isolation share") : lt("Dizilim payı", "Formation share");
 }
 
 /** Iki paydan buyugu; ikisi de yoksa undefined. Esitlikte yalnizlik (once yazilan). */

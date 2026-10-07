@@ -1,6 +1,7 @@
 import { FINAL_WAVE, type CardRarity, type MasteryReportView, type RunReportAction, type RunReportActions, type RunReportView, type StampStyleId } from "@karayel/shared";
 import { getCharacterColorCss } from "./character-colors";
 import { cardRarityLabels } from "./codex";
+import { t } from "./i18n";
 
 /**
  * Kosu raporu: macin son ekrani, tek ekranlik bir DOM karti.
@@ -89,7 +90,7 @@ function renderHero(view: RunReportView) {
   if (hero.kind === "stars") {
     return `
         <p class="run-report__hero run-report__hero--stars">
-          <span class="run-report__stars" role="img" aria-label="${hero.stars} yıldız, 3 üzerinden">${escapeHtml(hero.text)}</span>
+          <span class="run-report__stars" role="img" aria-label="${escapeHtml(t("report.run.starsAria", { stars: hero.stars }))}">${escapeHtml(hero.text)}</span>
           <small>${escapeHtml(hero.caption)}</small>
         </p>
         ${badgeHtml ? `<p class="run-report__badge-line">${badgeHtml}</p>` : ""}`;
@@ -120,14 +121,14 @@ function renderStrip(view: RunReportView) {
     .map((wave) => `<span style="grid-column:${wave}">${wave}</span>`)
     .join("");
   return `
-      <section class="run-report__strip-wrap" aria-label="Dalga şeridi, ${FINAL_WAVE} dalga">
+      <section class="run-report__strip-wrap" aria-label="${escapeHtml(t("report.run.stripAria", { count: FINAL_WAVE }))}">
         <ol class="run-report__strip" style="--cells:${count}">${cells}</ol>
         <div class="run-report__ticks" style="--cells:${count}" aria-hidden="true">${ticks}</div>
         <p class="run-report__legend" aria-hidden="true">
-          <span><i class="is-clean"></i>temiz</span>
-          <span><i class="is-leak"></i>sızıntı</span>
-          <span><i class="is-death"></i>düştü</span>
-          <span><i class="is-air"></i>hava</span>
+          <span><i class="is-clean"></i>${escapeHtml(t("report.run.legend.clean"))}</span>
+          <span><i class="is-leak"></i>${escapeHtml(t("report.run.legend.leak"))}</span>
+          <span><i class="is-death"></i>${escapeHtml(t("report.run.legend.death"))}</span>
+          <span><i class="is-air"></i>${escapeHtml(t("report.run.legend.air"))}</span>
         </p>
       </section>`;
 }
@@ -139,26 +140,27 @@ function renderPlayers(view: RunReportView) {
     return `
         <li class="run-report__player${player.local ? " is-local" : ""}" style="--player-color:${getCharacterColorCss(player.characterId)}">
           <span class="run-report__player-head">
-            <strong>${name}${player.local ? ` <em class="run-report__you">sen</em>` : ""}</strong>
+            <strong>${name}${player.local ? ` <em class="run-report__you">${escapeHtml(t("report.run.you"))}</em>` : ""}</strong>
             <b class="run-report__role run-report__role--${player.titleKind}">${escapeHtml(player.title)}</b>
           </span>
           <span class="run-report__player-detail">${escapeHtml(player.detail)}</span>
         </li>`;
   }).join("");
   return `
-      <section class="run-report__section" aria-label="Oyuncular">
-        <h3 class="run-report__label">Ekip</h3>
+      <section class="run-report__section" aria-label="${escapeHtml(t("report.run.playersAria"))}">
+        <h3 class="run-report__label">${escapeHtml(t("report.run.team"))}</h3>
         <ul class="run-report__players">${rows}</ul>
       </section>`;
 }
 
 function describeDeck(view: RunReportView) {
   const deck = view.deck;
-  if (deck.total === 0) return "Kart seçilmedi";
+  if (deck.total === 0) return t("report.run.deck.none");
   const order: CardRarity[] = ["epic", "rare", "uncommon"];
-  const parts = [`${deck.total} kart`];
+  // Tekil ayri anahtar: Ingilizcede "1 card"; Turkcede ikisi ayni.
+  const parts = [t(deck.total === 1 ? "report.run.deck.countOne" : "report.run.deck.count", { n: deck.total })];
   for (const rarity of order) {
-    if (deck.rarities[rarity] > 0) parts.push(`${deck.rarities[rarity]} ${cardRarityLabels[rarity]}`);
+    if (deck.rarities[rarity] > 0) parts.push(t("report.run.deck.rarity", { n: deck.rarities[rarity], rarity: cardRarityLabels[rarity] }));
   }
   return parts.join(" · ");
 }
@@ -167,20 +169,20 @@ function describeDeck(view: RunReportView) {
 function renderDeck(view: RunReportView) {
   const cards = view.deck.cards.map((card) => {
     const rarity = cardRarityLabels[card.rarity];
-    const label = `${card.name} · ${rarity}${card.count > 1 ? ` · ${card.count} kez` : ""}`;
+    const label = `${card.name} · ${rarity}${card.count > 1 ? ` · ${t("report.run.card.times", { n: card.count })}` : ""}`;
     return `<li class="run-report__card run-report__card--${card.rarity}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${escapeHtml(card.name)}${card.count > 1 ? `<b>×${card.count}</b>` : ""}</li>`;
   }).join("");
   return `
-      <section class="run-report__section run-report__deck" aria-label="Deste">
-        <h3 class="run-report__label">Deste <small>${escapeHtml(describeDeck(view))}</small></h3>
+      <section class="run-report__section run-report__deck" aria-label="${escapeHtml(t("report.run.deck"))}">
+        <h3 class="run-report__label">${escapeHtml(t("report.run.deck"))} <small>${escapeHtml(describeDeck(view))}</small></h3>
         ${cards ? `<ul class="run-report__cards">${cards}</ul>` : ""}
       </section>`;
 }
 
 function renderFacts(view: RunReportView) {
   const facts: string[] = [];
-  if (view.mvp) facts.push(`<div class="run-report__fact"><dt>Koşunun kulesi</dt><dd>${escapeHtml(view.mvp)}</dd></div>`);
-  if (view.moment) facts.push(`<div class="run-report__fact run-report__fact--moment"><dt>En iyi an</dt><dd>${escapeHtml(view.moment.text)}</dd></div>`);
+  if (view.mvp) facts.push(`<div class="run-report__fact"><dt>${escapeHtml(t("report.run.mvp"))}</dt><dd>${escapeHtml(view.mvp)}</dd></div>`);
+  if (view.moment) facts.push(`<div class="run-report__fact run-report__fact--moment"><dt>${escapeHtml(t("report.run.moment"))}</dt><dd>${escapeHtml(view.moment.text)}</dd></div>`);
   return facts.length ? `<dl class="run-report__facts">${facts.join("")}</dl>` : "";
 }
 
@@ -199,22 +201,22 @@ function renderProgress(progress: RunReportProgress | undefined) {
     parts.push(`
         <div class="run-report__mastery${mastery.levelUp ? " is-level-up" : ""}">
           <p class="run-report__mastery-head"><strong>${escapeHtml(mastery.operator)} · ${escapeHtml(mastery.headline)}</strong></p>
-          <span class="run-report__mastery-bar" role="img" aria-label="${escapeHtml(`Ustalık ${mastery.after.level}: ${mastery.detail}`)}" style="--from:${from}%;--fill:${fill}%"><i></i></span>
+          <span class="run-report__mastery-bar" role="img" aria-label="${escapeHtml(t("report.run.masteryAria", { level: mastery.after.level, detail: mastery.detail }))}" style="--from:${from}%;--fill:${fill}%"><i></i></span>
           <small>${escapeHtml(mastery.detail)}${mastery.sources ? ` · ${escapeHtml(mastery.sources)}` : ""}</small>
         </div>`);
   }
   if (progress.badges.length > 0) {
     const items = progress.badges.map((badge, index) => `
           <li class="run-report__badge-item" style="--i:${index}"><b>◈ ${escapeHtml(badge.name)}</b><small>${escapeHtml(badge.condition)}</small></li>`).join("");
-    parts.push(`<ul class="run-report__badges" aria-label="Bu koşunun nişanları">${items}</ul>`);
+    parts.push(`<ul class="run-report__badges" aria-label="${escapeHtml(t("report.run.badgesAria"))}">${items}</ul>`);
   }
   if (progress.cosmetics.length > 0) {
-    parts.push(`<p class="run-report__note run-report__note--unlock">Açıldı: ${escapeHtml(progress.cosmetics.join(" · "))}</p>`);
+    parts.push(`<p class="run-report__note run-report__note--unlock">${escapeHtml(t("report.run.unlocked", { list: progress.cosmetics.join(" · ") }))}</p>`);
   }
   if (parts.length === 0) return "";
   return `
-      <section class="run-report__section run-report__progress" aria-label="Nişan ve ustalık">
-        <h3 class="run-report__label">Nişan ve ustalık</h3>
+      <section class="run-report__section run-report__progress" aria-label="${escapeHtml(t("report.run.progress"))}">
+        <h3 class="run-report__label">${escapeHtml(t("report.run.progress"))}</h3>
         ${parts.join("")}
       </section>`;
 }
@@ -228,7 +230,7 @@ function renderButton(action: RunReportAction, primary: boolean) {
 function renderActions(actions: RunReportActions) {
   const primary = actions.primary === "next" ? actions.next : actions.retry;
   const secondary = actions.primary === "next" ? actions.retry : actions.next;
-  const menu = `<button type="button" class="run-report__button" data-report-action="menu"><strong>Ana menü</strong></button>`;
+  const menu = `<button type="button" class="run-report__button" data-report-action="menu"><strong>${escapeHtml(t("report.run.menu"))}</strong></button>`;
   return `
     <footer class="run-report__actions">
       ${primary ? renderButton(primary, true) : ""}
@@ -275,7 +277,7 @@ export function renderRunReport(options: RunReportRenderOptions) {
         ${view.goal ? `<p class="run-report__goal">${escapeHtml(view.goal)}</p>` : ""}
         ${renderProgress(options.progress)}
         ${notes}
-        ${options.onDefenseSummary ? `<button type="button" class="run-report__link" data-report-defense>Son dalganın savunma özeti</button>` : ""}
+        ${options.onDefenseSummary ? `<button type="button" class="run-report__link" data-report-defense>${escapeHtml(t("report.run.defenseLink"))}</button>` : ""}
       </div>
       ${renderActions(options.actions)}
     </section>`;

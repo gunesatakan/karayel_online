@@ -5,6 +5,7 @@ import type { TowerTier } from "./tower-stats/index.js";
 // getEnemyExp bu dosyada tanimli oldugu icin deger yeniden disa aktarmanin yaninda
 // buraya da alinmali; re-export yalnizca disariya acar, iceride goruntu vermez.
 import { ENEMY_EXP_MULTIPLIER, getStructureRepairCost } from "./balance/index.js";
+import { lt } from "./i18n/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -175,8 +176,38 @@ const MELIS_ZONE_EFFECTS: Record<string, Record<MelisSpectrumZone, string>> = {
   }
 };
 
+/** Ayni satirlar Ingilizce; anahtarlar Turkce tabloyla ayni; eksik satir Turkceye duser. */
+const MELIS_ZONE_EFFECTS_EN: Record<string, Record<MelisSpectrumZone, string>> = {
+  "archer-1": {
+    approval: "Lock holds outside range",
+    balanced: "Lock breaks when the target leaves range",
+    stress: "Lock breaks when the target leaves range"
+  },
+  "archer-2": {
+    approval: "Rage wave does not affect allied towers",
+    balanced: "Rage wave does not affect allied towers",
+    stress: "Rage wave halts nearby allied towers for 0.5 s"
+  },
+  "archer-3": {
+    approval: "Curse lasts 7 s",
+    balanced: "Curse lasts 5 s",
+    stress: "Curse lasts 3 s"
+  },
+  "archer-5": {
+    approval: "Targets the enemy nearest the exit",
+    balanced: "Targets the highest-health enemy",
+    stress: "Random targets, no blast on kill"
+  },
+  "archer-6": {
+    approval: "Doubt lasts 2 s longer",
+    balanced: "Doubt lasts its normal duration",
+    stress: "Enemy speeds up for 0.5 s after the stall"
+  }
+};
+
 export function getMelisZoneEffectText(definitionId: string, zone: MelisSpectrumZone) {
-  return MELIS_ZONE_EFFECTS[definitionId]?.[zone];
+  const text = MELIS_ZONE_EFFECTS[definitionId]?.[zone];
+  return text === undefined ? undefined : lt(text, MELIS_ZONE_EFFECTS_EN[definitionId]?.[zone] ?? text);
 }
 
 /** Ruh haline gore davranisi degisen Melis kuleleri. */
@@ -2141,3 +2172,4 @@ export * from "./worker-skills.js";
 export * from "./synergy/index.js";
 export * from "./zeynep-shots/index.js";
 export * from "./tower-panel/index.js";
+export * from "./i18n/index.js";

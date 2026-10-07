@@ -1,4 +1,5 @@
 import { cardCatalog, getCardRarity, type CardRarity } from "../cards/index.js";
+import { lt } from "../i18n/index.js";
 import type { RunSummary } from "../run-trace/index.js";
 import { shopCatalog, type ShopItemCategory } from "../shop/index.js";
 
@@ -306,7 +307,7 @@ function buildSection<Key extends string>(
 export function buildCardArchiveView(archive: CardArchive): CardArchiveView {
   const cards = buildSection(
     "cards",
-    "Kartlar",
+    lt("Kartlar", "Cards"),
     ARCHIVE_RARITY_ORDER,
     ARCHIVE_RARITY_LABELS,
     cardCatalog.map((card) => ({ id: card.id, name: card.name, description: card.description, group: getCardRarity(card) })),
@@ -315,7 +316,7 @@ export function buildCardArchiveView(archive: CardArchive): CardArchiveView {
   );
   const items = buildSection(
     "items",
-    "Eşyalar",
+    lt("Eşyalar", "Items"),
     ARCHIVE_CATEGORY_ORDER,
     SHOP_CATEGORY_LABELS,
     shopCatalog.map((item) => ({ id: item.id, name: item.name, description: item.description, group: item.category })),

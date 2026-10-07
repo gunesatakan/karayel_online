@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { onLocaleChange, t } from "./i18n";
 
 /**
  * Ilk mac brifingi: alti adimlik canli yonlendirme.
@@ -123,25 +124,17 @@ export function isTutorialStepVisible(run: TutorialRun, seen: TutorialObservatio
 export function getTutorialCopy(id: TutorialStepId, open: boolean): { title: string; body: string; ack?: string } {
   switch (id) {
     case "tower":
-      return open
-        ? { title: "KONUŞLANMA", body: "Bir birimi basılı tut ve haritada boş bir kareye sürükle. Düşman rotasının yakını en iyi mevzi." }
-        : { title: "KONUŞLANMA", body: "Savunma hattı açık. Kuleler'i aç." };
+      return { title: t("tutorial.tower.title"), body: t(open ? "tutorial.tower.open" : "tutorial.tower.closed") };
     case "wave":
-      return { title: "TEMAS", body: "Hat hazır. Devam ile ilk dalgayı başlat. Ekipte herkes hazır olunca dalga girer." };
+      return { title: t("tutorial.wave.title"), body: t("tutorial.wave.body") };
     case "logistics":
-      return {
-        title: "LOJİSTİK",
-        body: "Kuleler ateş ettikçe ısınır; 50°C üstünde atış hızı düşer. Enerji ve mühimmat işçilerle taşınır, stok biterse kule susar. Üst şeritten izle.",
-        ack: "ANLAŞILDI"
-      };
+      return { title: t("tutorial.logistics.title"), body: t("tutorial.logistics.body"), ack: t("tutorial.ack") };
     case "card":
-      return { title: "TAKVİYE", body: "Dalga temizlendi. Komuta takviye sunuyor: bir kart seç. Hedefli kartlar seçtiğin kuleye işler." };
+      return { title: t("tutorial.card.title"), body: t("tutorial.card.body") };
     case "shop":
-      return { title: "İKMAL", body: "Altınla eşya al. Çoğu eşya envantere düşer; Envanter'den bir kuleye tak, kule başına en fazla 10. Bitince Mağazayı Kapat." };
+      return { title: t("tutorial.shop.title"), body: t("tutorial.shop.body") };
     case "workers":
-      return open
-        ? { title: "İŞÇİLER", body: "İşçi Al ile bir işçi al ve uzmanlığını seç. Gelişim İşçi Ağacı'nda.", ack: "ANLAŞILDI" }
-        : { title: "İŞÇİLER", body: "Envanter'i aç. İşçiler enerji ve mühimmatı kulelere taşır.", ack: "ANLAŞILDI" };
+      return { title: t("tutorial.workers.title"), body: t(open ? "tutorial.workers.open" : "tutorial.workers.closed"), ack: t("tutorial.ack") };
   }
 }
 
@@ -384,7 +377,7 @@ export function setupTutorial(game: Phaser.Game) {
 
     if (run.done) {
       if (now < doneBannerUntil && seen.inMatch) {
-        render("done", { title: "BRİFİNG TAMAM", body: "Sektör senin, operatör. Brifing yeniden: ana menü › Eğitim." }, undefined, null, "hud");
+        render("done", { title: t("tutorial.done.title"), body: t("tutorial.done.body") }, undefined, null, "hud");
       } else {
         hide();
       }
@@ -409,8 +402,9 @@ export function setupTutorial(game: Phaser.Game) {
   const render = (key: string, copy: { title: string; body: string; ack?: string }, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom") => {
     if (renderedKey !== key) {
       renderedKey = key;
-      tag.textContent = "KOMUTA //";
-      count.textContent = stepNumber ? `BRİFİNG ${stepNumber}/${TUTORIAL_STEPS.length}` : "KAYIT KAPANDI";
+      tag.textContent = t("tutorial.tag");
+      count.textContent = stepNumber ? t("tutorial.count", { n: stepNumber, total: TUTORIAL_STEPS.length }) : t("tutorial.closed");
+      skip.textContent = t("tutorial.skip");
       title.textContent = copy.title;
       body.textContent = copy.body;
       actions.hidden = !copy.ack;
@@ -427,6 +421,10 @@ export function setupTutorial(game: Phaser.Game) {
   };
 
   window.setInterval(tick, TICK_MS);
+  onLocaleChange(() => {
+    renderedKey = "";
+    tick();
+  });
   // Dokunus cekmece acip kapatiyor: kutu bir sonraki tiki beklemeden
   // yeni hedefe gecsin, eski metin yeni cekmecenin ustunde kalmasin.
   document.addEventListener("pointerup", () => window.setTimeout(tick, 30), { passive: true });

@@ -5,6 +5,7 @@ import { getTowerLevelLabel } from "../feedback/tower-ceremony.js";
 import { getUltimateStampText, type UltimateResultMessage } from "../feedback/ultimate.js";
 import type { CharacterId } from "../index.js";
 import type { MapScale } from "../map.js";
+import { enPlural, lt, ltUpper, sharedNumberLocale } from "../i18n/index.js";
 import { getKillStreakTierRank, type RunSummary, type RunTowerSummary, type WaveRecord } from "../run-trace/index.js";
 import { STAGE_COUNT, getHighestUnlockedStage, getStage, isStageUnlocked, stageCatalog } from "../stages/index.js";
 import { TOWER_TIER_3_LEVEL } from "../tower-stats/index.js";
@@ -57,14 +58,14 @@ function toCount(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 }
 
-/** Sayi binlik ayiracla ("12.400"); arayuz Turkce. */
+/** Sayi binlik ayiracla, dile gore ("12.400" / "12,400"). */
 export function formatRunCount(value: number) {
-  return toCount(value).toLocaleString("tr-TR");
+  return toCount(value).toLocaleString(sharedNumberLocale());
 }
 
 function airSuffix(air: RunWaveCell["air"]) {
-  if (air === "all") return " (hava)";
-  if (air === "mixed") return " (karışık hava)";
+  if (air === "all") return lt(" (hava)", " (air)");
+  if (air === "mixed") return lt(" (karışık hava)", " (mixed air)");
   return "";
 }
 
@@ -97,7 +98,7 @@ export function buildWaveStrip(input: {
   for (let wave = 1; wave <= finalWave; wave += 1) {
     const mode = getWaveAirMode(wave);
     const air = mode === "none" ? undefined : mode;
-    const head = `${wave}. dalga${airSuffix(air)}`;
+    const head = `${lt(`${wave}. dalga`, `Wave ${wave}`)}${airSuffix(air)}`;
     const record = records.get(wave);
     let state: RunWaveCellState;
     let leaks = 0;
@@ -106,26 +107,29 @@ export function buildWaveStrip(input: {
       leaks = toCount(record.l);
       if (record.d) {
         state = "death";
-        label = `${head}: düştü${leaks > 0 ? ` · ${leaks} sızıntı` : ""}`;
+        label = lt(
+          `${head}: düştü${leaks > 0 ? ` · ${leaks} sızıntı` : ""}`,
+          `${head}: fell${leaks > 0 ? ` · ${leaks} ${enPlural(leaks, "leak", "leaks")}` : ""}`
+        );
       } else if (leaks > 0) {
         state = "leak";
         const details: string[] = [];
-        if (toCount(record.a) > 0) details.push(`${toCount(record.a)} hava`);
-        if (toCount(record.s) > 0) details.push(`kalkan tuttu ${toCount(record.s)}`);
-        label = `${head}: ${leaks} sızıntı${details.length ? ` (${details.join(", ")})` : ""}`;
+        if (toCount(record.a) > 0) details.push(lt(`${toCount(record.a)} hava`, `${toCount(record.a)} air`));
+        if (toCount(record.s) > 0) details.push(lt(`kalkan tuttu ${toCount(record.s)}`, `shield held ${toCount(record.s)}`));
+        label = `${head}: ${lt(`${leaks} sızıntı`, `${leaks} ${enPlural(leaks, "leak", "leaks")}`)}${details.length ? ` (${details.join(", ")})` : ""}`;
       } else {
         state = "clean";
-        label = `${head}: temiz`;
+        label = `${head}: ${lt("temiz", "clean")}`;
       }
     } else if (!input.run && input.result === "defeat" && wave === reached) {
       state = "death";
-      label = `${head}: düştü`;
+      label = `${head}: ${lt("düştü", "fell")}`;
     } else if (wave <= reached) {
       state = "played";
-      label = `${head}: oynandı`;
+      label = `${head}: ${lt("oynandı", "played")}`;
     } else {
       state = "open";
-      label = `${head}: oynanmadı`;
+      label = `${head}: ${lt("oynanmadı", "not played")}`;
     }
     const cell: RunWaveCell = { wave, state, leaks, label };
     if (air) cell.air = air;
@@ -222,7 +226,7 @@ export function pickRunMoment(
 ): RunMoment | undefined {
   const players = Array.isArray(run?.players) ? run.players : [];
   const coop = players.length > 1;
-  const nameOf = (slot: number) => players.find((player) => player.slot === slot)?.name ?? "Takım arkadaşın";
+  const nameOf = (slot: number) => players.find((player) => player.slot === slot)?.name ?? lt("Takım arkadaşın", "Your teammate");
   const prefix = (own: boolean, slot: number) => (own || !coop ? "" : `${nameOf(slot)}: `);
   const candidates: Array<RunMoment & { score: number }> = [];
 
@@ -233,7 +237,7 @@ export function pickRunMoment(
       kind: "level10",
       own,
       score: MOMENT_SCORE_LEVEL10,
-      text: `${prefix(own, level10.slot)}${level10.name} ${getTowerLevelLabel(TOWER_TIER_3_LEVEL, true)} · Dalga ${toCount(level10.wave)}`
+      text: `${prefix(own, level10.slot)}${level10.name} ${getTowerLevelLabel(TOWER_TIER_3_LEVEL, true)} · ${lt("Dalga", "Wave")} ${toCount(level10.wave)}`
     });
   }
 
@@ -245,7 +249,7 @@ export function pickRunMoment(
       kind: "streak",
       own: true,
       score: streakMomentScore(ownStreak),
-      text: `${KILL_STREAK_TIER_LABELS[ownStreak]} serisi${wave > 0 ? ` · Dalga ${wave}` : ""}`
+      text: `${KILL_STREAK_TIER_LABELS[ownStreak]} ${lt("serisi", "streak")}${wave > 0 ? ` · ${lt("Dalga", "Wave")} ${wave}` : ""}`
     });
   }
   const teamStreak = run?.bestStreak;
@@ -254,7 +258,7 @@ export function pickRunMoment(
       kind: "streak",
       own: false,
       score: streakMomentScore(teamStreak.tier),
-      text: `${prefix(false, teamStreak.slot)}${KILL_STREAK_TIER_LABELS[teamStreak.tier]} serisi · Dalga ${toCount(teamStreak.wave)}`
+      text: `${prefix(false, teamStreak.slot)}${KILL_STREAK_TIER_LABELS[teamStreak.tier]} ${lt("serisi", "streak")} · ${lt("Dalga", "Wave")} ${toCount(teamStreak.wave)}`
     });
   }
 
@@ -278,7 +282,7 @@ export function pickRunMoment(
       kind: "synergy",
       own: true,
       score: MOMENT_SCORE_SYNERGY,
-      text: `${getSynergyShareLabel(share.kind)} · ~${formatRunCount(roundSynergyShare(share.amount))} hasar`
+      text: `${getSynergyShareLabel(share.kind)} · ~${formatRunCount(roundSynergyShare(share.amount))} ${lt("hasar", "damage")}`
     });
   }
 
@@ -345,9 +349,9 @@ export function buildPlayerLines(run: Pick<RunSummary, "players" | "firstLevel10
   return players
     .map((player): RunPlayerLine => {
       const character = characters.find((candidate) => candidate.id === player.characterId);
-      const operator = character?.displayName ?? "Operatör";
+      const operator = character?.displayName ?? lt("Operatör", "Operator");
       let titleKind: RunRoleTitleKind = "role";
-      let title: string = character?.role ?? "Operatör";
+      let title: string = character?.role ?? lt("Operatör", "Operator");
       const roleTitle = roleTitles.get(player.slot);
       if (roleTitle) {
         titleKind = roleTitle;
@@ -360,11 +364,11 @@ export function buildPlayerLines(run: Pick<RunSummary, "players" | "firstLevel10
         title = RUN_ROLE_TITLES.streak;
       }
       const kills = toCount(player.kills);
-      const parts = [`${formatRunCount(kills)} öldürme`];
+      const parts = [lt(`${formatRunCount(kills)} öldürme`, `${formatRunCount(kills)} ${enPlural(kills, "kill", "kills")}`)];
       // Asist oldurmenin hemen yaninda: arkadaki oyuncunun katkisi da bir sayi.
       const assists = toCount(player.assists) + toCount(player.commandAssists);
-      if (assists > 0) parts.push(`${formatRunCount(assists)} asist`);
-      parts.push(player.topTower ? `${player.topTower.name} ${getTowerLevelLabel(player.topTower.level, false)}` : "kule hasarı yok");
+      if (assists > 0) parts.push(lt(`${formatRunCount(assists)} asist`, `${formatRunCount(assists)} ${enPlural(assists, "assist", "assists")}`));
+      parts.push(player.topTower ? `${player.topTower.name} ${getTowerLevelLabel(player.topTower.level, false)}` : lt("kule hasarı yok", "no tower damage"));
       if (player.bestStreakTier && KILL_STREAK_TIER_LABELS[player.bestStreakTier]) parts.push(KILL_STREAK_TIER_LABELS[player.bestStreakTier]);
       return {
         slot: player.slot,
@@ -384,7 +388,7 @@ export function buildPlayerLines(run: Pick<RunSummary, "players" | "firstLevel10
 /** Solo raporun kulesi: "Takipçi · SV 7 · 12.400 hasar". Butun dalgalarin toplami; satilan kule de sayiliyor. */
 export function describeRunMvp(mvp: RunTowerSummary | undefined) {
   if (!mvp || typeof mvp.name !== "string" || !(mvp.damage > 0)) return undefined;
-  return `${mvp.name} · ${getTowerLevelLabel(mvp.level, false)} · ${formatRunCount(mvp.damage)} hasar`;
+  return `${mvp.name} · ${getTowerLevelLabel(mvp.level, false)} · ${formatRunCount(mvp.damage)} ${lt("hasar", "damage")}`;
 }
 
 export type RunDeckCard = {
@@ -437,10 +441,12 @@ export function buildRunDeck(cardIds: readonly unknown[] | undefined): RunDeck {
 /** "84 düşman · 3 sızıntı · 14 temiz dalga". */
 export function describeRunTotals(run: Pick<RunSummary, "kills" | "leaks" | "cleanWaves">) {
   const leaks = toCount(run.leaks);
+  const kills = toCount(run.kills);
+  const clean = Math.min(FINAL_WAVE, toCount(run.cleanWaves));
   return [
-    `${formatRunCount(run.kills)} düşman`,
-    leaks > 0 ? `${formatRunCount(leaks)} sızıntı` : "sızıntı yok",
-    `${Math.min(FINAL_WAVE, toCount(run.cleanWaves))} temiz dalga`
+    lt(`${formatRunCount(kills)} düşman`, `${formatRunCount(kills)} ${enPlural(kills, "enemy", "enemies")}`),
+    leaks > 0 ? lt(`${formatRunCount(leaks)} sızıntı`, `${formatRunCount(leaks)} ${enPlural(leaks, "leak", "leaks")}`) : lt("sızıntı yok", "no leaks"),
+    lt(`${clean} temiz dalga`, `${clean} clean ${enPlural(clean, "wave", "waves")}`)
   ].join(" · ");
 }
 
@@ -475,19 +481,19 @@ export function isFinaleClear(input: {
 
 export function getRunReportHeading(input: { result: "victory" | "defeat"; stage?: number; finale: boolean }): RunReportHeading {
   const stage = input.stage !== undefined && stageCatalog.some((entry) => entry.id === input.stage) ? getStage(input.stage) : undefined;
-  const base = stage ? `${stage.id}. AŞAMA · ${stage.name.toLocaleUpperCase("tr-TR")}` : "KOŞU RAPORU";
+  const base = stage ? `${lt(`${stage.id}. AŞAMA`, `STAGE ${stage.id}`)} · ${ltUpper(stage.name)}` : lt("KOŞU RAPORU", "RUN REPORT");
   if (input.finale && input.result === "victory") {
     return {
       tone: "finale",
-      eyebrow: `${base} · FİNAL`,
-      title: "TÜM AŞAMALAR TAMAMLANDI",
+      eyebrow: `${base} · ${lt("FİNAL", "FINALE")}`,
+      title: lt("TÜM AŞAMALAR TAMAMLANDI", "ALL STAGES COMPLETE"),
       finale: {
-        text: `${STAGE_COUNT} aşamanın hepsi temizlendi.`,
+        text: lt(`${STAGE_COUNT} aşamanın hepsi temizlendi.`, `All ${STAGE_COUNT} stages cleared.`),
         races: stageCatalog.map((entry) => entry.raceName).join(" · ")
       }
     };
   }
-  return { tone: input.result, eyebrow: base, title: input.result === "victory" ? "ZAFER" : "YENİLGİ" };
+  return { tone: input.result, eyebrow: base, title: input.result === "victory" ? lt("ZAFER", "VICTORY") : lt("YENİLGİ", "DEFEAT") };
 }
 
 /**
@@ -521,7 +527,7 @@ export function buildRunReportHero(input: {
   if (victory && !input.creative && (merge || input.run)) {
     const stars = merge ? merge.stars : computeStars({ result: "victory", cleanWaves: input.run?.cleanWaves ?? 0 });
     const clean = merge ? merge.cleanWaves : Math.min(finalWave, toCount(input.run?.cleanWaves));
-    const hero: RunReportHero = { kind: "stars", stars, text: formatStars(stars), caption: `${clean}/${finalWave} temiz dalga` };
+    const hero: RunReportHero = { kind: "stars", stars, text: formatStars(stars), caption: lt(`${clean}/${finalWave} temiz dalga`, `${clean}/${finalWave} clean waves`) };
     if (!merge) return { hero };
     const parts = getRecordChangeParts(merge);
     if (parts.celebrated) return { hero, badge: { text: parts.badge, celebrated: true } };
@@ -531,11 +537,13 @@ export function buildRunReportHero(input: {
     // tutan bir en iyi ancak yenilgiden gelmis olabilir ve yildizin yaninda
     // "tuttun ama yildiz yok" diye okunurdu. O zaman yalnizca yildiz.
     const threshold = getNextStarCleanWaves(previous.bestStars);
-    const bestClean = threshold === undefined || previous.bestCleanWaves < threshold ? ` · ${previous.bestCleanWaves} temiz dalga` : "";
-    return { hero, badge: { text: `En iyi ${formatStars(previous.bestStars)}${bestClean}`, celebrated: false } };
+    const bestClean = threshold === undefined || previous.bestCleanWaves < threshold
+      ? ` · ${lt(`${previous.bestCleanWaves} temiz dalga`, `${previous.bestCleanWaves} clean ${enPlural(previous.bestCleanWaves, "wave", "waves")}`)}`
+      : "";
+    return { hero, badge: { text: `${lt("En iyi", "Best")} ${formatStars(previous.bestStars)}${bestClean}`, celebrated: false } };
   }
   const reached = victory ? finalWave : Math.min(finalWave, toCount(input.wave));
-  const hero: RunReportHero = { kind: "wave", text: `Dalga ${reached}/${finalWave}` };
+  const hero: RunReportHero = { kind: "wave", text: `${lt("Dalga", "Wave")} ${reached}/${finalWave}` };
   if (!merge || victory) return { hero };
   const parts = getRecordChangeParts(merge);
   return { hero: { kind: "wave", text: parts.head }, badge: { separator: parts.separator, text: parts.badge, celebrated: parts.celebrated } };
@@ -584,7 +592,7 @@ export function buildRunReportView(input: RunReportInput): RunReportView {
     heading,
     hero,
     strip: buildWaveStrip({ result: input.result, wave: input.wave, run }),
-    totals: run ? describeRunTotals(run) : `${formatRunCount(input.kills)} düşman`,
+    totals: run ? describeRunTotals(run) : lt(`${formatRunCount(input.kills)} düşman`, `${formatRunCount(input.kills)} ${enPlural(toCount(input.kills), "enemy", "enemies")}`),
     deck: buildRunDeck(own ? own.cards : input.fallbackCardIds)
   };
   if (badge) view.badge = badge;
@@ -759,9 +767,9 @@ export type RunReportActions = {
 };
 
 function describeActionTarget(mode: QuickStartMode, stage: number) {
-  const target = `${stage}. aşama · ${getStage(stage).name}`;
-  if (mode === "online") return `yeni oda · ${target}`;
-  if (mode === "creative") return `yaratıcı · ${target}`;
+  const target = `${lt(`${stage}. aşama`, `Stage ${stage}`)} · ${getStage(stage).name}`;
+  if (mode === "online") return `${lt("yeni oda", "new room")} · ${target}`;
+  if (mode === "creative") return `${lt("yaratıcı", "creative")} · ${target}`;
   return target;
 }
 
@@ -789,13 +797,13 @@ export function planRunReportActions(input: {
     : getHighestUnlockedStage(input.clearedStageIds);
   const retryIntent = createQuickStartIntent({ mode: input.mode, stage: retryStage, characterId: input.characterId, mapScale: input.mapScale }, input.now);
   if (retryIntent) {
-    actions.retry = { kind: "retry", label: "Tekrar", detail: describeActionTarget(input.mode, retryStage), intent: retryIntent };
+    actions.retry = { kind: "retry", label: lt("Tekrar", "Retry"), detail: describeActionTarget(input.mode, retryStage), intent: retryIntent };
   }
   const nextStage = input.stage !== undefined && isQuickStartStage(input.stage) ? input.stage + 1 : undefined;
   if (nextStage !== undefined && nextStage <= STAGE_COUNT && isStageUnlocked(nextStage, input.clearedStageIds)) {
     const nextIntent = createQuickStartIntent({ mode: input.mode, stage: nextStage, characterId: input.characterId, mapScale: input.mapScale }, input.now);
     if (nextIntent) {
-      actions.next = { kind: "next", label: "Sonraki aşama", detail: describeActionTarget(input.mode, nextStage), intent: nextIntent };
+      actions.next = { kind: "next", label: lt("Sonraki aşama", "Next stage"), detail: describeActionTarget(input.mode, nextStage), intent: nextIntent };
       if (input.result === "victory") actions.primary = "next";
     }
   }

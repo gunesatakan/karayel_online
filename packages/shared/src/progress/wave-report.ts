@@ -1,6 +1,7 @@
 import { FINAL_WAVE } from "../balance/index.js";
 import type { DefenseRow, DefenseSummary } from "../defense-insights.js";
 import { getUltimateStampText, type UltimateAimTier } from "../feedback/ultimate.js";
+import { enPlural, lt, ltPercent } from "../i18n/index.js";
 import type { WaveRecord } from "../run-trace/index.js";
 import {
   SYNERGY_SHARE_WAVE_FLOOR,
@@ -184,14 +185,14 @@ export function pickWaveReportHighlight(input: {
     if (ratio < NEAR_MISS_HEALTH_RATIO) {
       // Asagi yuvarlaniyor: %29,6 "%30" yazsaydi esigin altinda oldugu okunmazdi.
       const percent = Math.max(1, Math.floor(ratio * 100));
-      return { kind: "nearMiss", text: `Kıl payı · nexus %${percent} canla dayandı` };
+      return { kind: "nearMiss", text: lt(`Kıl payı · nexus %${percent} canla dayandı`, `Close call · nexus held at ${ltPercent(percent)} HP`) };
     }
   }
 
   if (!input.coop) return undefined;
   const assist = (input.defense?.rows ?? []).reduce((sum, row) => sum + toCount(row?.markAssistDamage), 0);
   if (assist > 0) {
-    return { kind: "assist", text: `Takip işaretin takıma +${formatRunCount(assist)} hasar kattı` };
+    return { kind: "assist", text: lt(`Takip işaretin takıma +${formatRunCount(assist)} hasar kattı`, `Your Tracker mark added +${formatRunCount(assist)} damage for the team`) };
   }
   return undefined;
 }
@@ -214,7 +215,7 @@ function pickSynergyShareHighlight(defense: DefenseSummary | undefined): WaveRep
 
 /** "Yalnızlık payı: ~2.110 hasar": tahmin oldugu icin "~" ve onluga yuvarli. */
 export function formatSynergyShareText(kind: SynergyShareKind, amount: number) {
-  return `${getSynergyShareLabel(kind)}: ~${formatRunCount(roundSynergyShare(amount))} hasar`;
+  return `${getSynergyShareLabel(kind)}: ~${formatRunCount(roundSynergyShare(amount))} ${lt("hasar", "damage")}`;
 }
 
 /**
@@ -243,8 +244,10 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
       const celebrated = !input.creative && isCleanStreakMilestone(streak);
       const chip: WaveReportChip = {
         kind: "clean",
-        text: `Kusursuz ×${streak}`,
-        label: celebrated ? `${streak} dalga üst üste kusursuz` : `Kusursuz dalga, seri ${streak}`
+        text: lt(`Kusursuz ×${streak}`, `Flawless ×${streak}`),
+        label: celebrated
+          ? lt(`${streak} dalga üst üste kusursuz`, `${streak} flawless waves in a row`)
+          : lt(`Kusursuz dalga, seri ${streak}`, `Flawless wave, streak ${streak}`)
       };
       if (celebrated) {
         chip.milestone = true;
@@ -255,8 +258,11 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
       const shielded = toCount(record.s);
       chips.push({
         kind: "leak",
-        text: `${formatRunCount(leaks)} sızıntı`,
-        label: `${formatRunCount(leaks)} sızıntı${shielded > 0 ? `, ${shielded} tanesini kalkan tuttu` : ""}`
+        text: lt(`${formatRunCount(leaks)} sızıntı`, `${formatRunCount(leaks)} ${enPlural(leaks, "leak", "leaks")}`),
+        label: lt(
+          `${formatRunCount(leaks)} sızıntı${shielded > 0 ? `, ${shielded} tanesini kalkan tuttu` : ""}`,
+          `${formatRunCount(leaks)} ${enPlural(leaks, "leak", "leaks")}${shielded > 0 ? `, shield held ${shielded}` : ""}`
+        )
       });
     }
   }
@@ -266,13 +272,15 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
     ? (input.coop ? toCount(record.p?.[input.localSlot]) : toCount(record.k))
     : (input.coop || input.kills === undefined ? undefined : toCount(input.kills));
   if (kills !== undefined) {
-    const text = input.coop ? `${formatRunCount(kills)} öldürmen` : `${formatRunCount(kills)} öldürme`;
-    chips.push({ kind: "kills", text, label: input.coop ? `senin ${formatRunCount(kills)} öldürmen` : text });
+    const count = formatRunCount(kills);
+    const noun = enPlural(kills, "kill", "kills");
+    const text = input.coop ? lt(`${count} öldürmen`, `${count} ${noun} (you)`) : lt(`${count} öldürme`, `${count} ${noun}`);
+    chips.push({ kind: "kills", text, label: input.coop ? lt(`senin ${count} öldürmen`, `your ${count} ${noun}`) : text });
   }
 
   const gold = toCount(input.gold);
   if (gold > 0) {
-    chips.push({ kind: "gold", text: `◆ +${formatRunCount(gold)}`, label: `+${formatRunCount(gold)} altın` });
+    chips.push({ kind: "gold", text: `◆ +${formatRunCount(gold)}`, label: lt(`+${formatRunCount(gold)} altın`, `+${formatRunCount(gold)} gold`) });
   }
 
   // Co-op rol unvani: yalnizca senin unvanin. Takim arkadasinin unvani burada
@@ -285,18 +293,18 @@ export function buildWaveReportCard(input: WaveReportCardInput): WaveReportCard 
   const top = defense && !title ? pickTopDefenseRow(defense.rows ?? []) : undefined;
   if (top) {
     const damage = formatRunCount(top.damage);
-    chips.push({ kind: "mvp", text: `MVP ${top.name} ${damage}`, label: `en iyi kulen ${top.name}, ${damage} hasar` });
+    chips.push({ kind: "mvp", text: `MVP ${top.name} ${damage}`, label: lt(`en iyi kulen ${top.name}, ${damage} hasar`, `your best tower ${top.name}, ${damage} damage`) });
   }
   if (title) {
     const name = ROLE_TITLE_LABELS[title];
-    chips.push({ kind: "title", title, text: `Unvanın: ${name}`, label: `bu dalgadaki unvanın ${name}` });
+    chips.push({ kind: "title", title, text: lt(`Unvanın: ${name}`, `Your title: ${name}`), label: lt(`bu dalgadaki unvanın ${name}`, `your title this wave: ${name}`) });
   }
 
   if (chips.length === 0) return undefined;
   const card: WaveReportCard = {
     wave,
     chips,
-    label: `Dalga ${wave} karnesi: ${chips.map((chip) => chip.label).join(", ")}`
+    label: `${lt(`Dalga ${wave} karnesi`, `Wave ${wave} report`)}: ${chips.map((chip) => chip.label).join(", ")}`
   };
   // Ulti yalnizca kendi karnesiyle eslesiyorsa: hangi dalgaya ait oldugunu karne belirliyor.
   const highlight = pickWaveReportHighlight({ record, defense, health: input.health, ultimate: record ? input.ultimate : undefined, coop: input.coop });

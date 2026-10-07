@@ -1,5 +1,6 @@
 import { FINAL_WAVE, getWaveCompletionGold } from "../balance/index.js";
 import type { CardRarity } from "../cards/index.js";
+import { enPlural, lt } from "../i18n/index.js";
 import { FEEDBACK_KIND_RULES } from "./index.js";
 
 /**
@@ -166,15 +167,15 @@ export type WaveClearStampText = { title: string; lines: WaveClearStampLine[] };
 export function getWaveClearStampText(summary: WaveClearSummary): WaveClearStampText {
   const lines: WaveClearStampLine[] = [];
   if (summary.kills !== undefined) {
-    lines.push({ kind: "kills", text: `${summary.kills} düşman` });
+    lines.push({ kind: "kills", text: lt(`${summary.kills} düşman`, `${summary.kills} ${enPlural(summary.kills, "enemy", "enemies")}`) });
   }
   if (summary.gold !== undefined && summary.gold > 0) {
     lines.push({ kind: "gold", text: `+${summary.gold} ◆` });
   }
   if (summary.bonus > 0) {
-    lines.push({ kind: "bonus", text: `+${summary.bonus} dalga bonusu` });
+    lines.push({ kind: "bonus", text: lt(`+${summary.bonus} dalga bonusu`, `+${summary.bonus} wave bonus`) });
   }
-  return { title: `DALGA ${summary.wave}/${summary.finalWave} TEMİZLENDİ`, lines };
+  return { title: lt(`DALGA ${summary.wave}/${summary.finalWave} TEMİZLENDİ`, `WAVE ${summary.wave}/${summary.finalWave} CLEARED`), lines };
 }
 
 /**
@@ -194,7 +195,7 @@ export function getCardDraftWave(snapshot: { wave: number; setupPhase?: boolean 
 }
 
 export function getCardDraftTitle(wave: number | undefined) {
-  return wave !== undefined ? `DALGA ${wave} ÖDÜLÜ` : "DALGA ÖDÜLÜ";
+  return wave !== undefined ? lt(`DALGA ${wave} ÖDÜLÜ`, `WAVE ${wave} REWARD`) : lt("DALGA ÖDÜLÜ", "WAVE REWARD");
 }
 
 export type CardDealTiming = {

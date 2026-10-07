@@ -1,6 +1,7 @@
 import { FINAL_WAVE, type KillStreakTier } from "../balance/index.js";
 import { towerCatalog } from "../characters/index.js";
 import { getUltimateStampText, type UltimateResultMessage } from "../feedback/ultimate.js";
+import { lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import { getKillStreakTierRank, type RunPlayerSummary, type RunSummary, type WaveRecord } from "../run-trace/index.js";
 import { STAGE_COUNT, canRecordProgress, getStageDamageProfile, shouldRecordStageClear, type ProgressRecordSource } from "../stages/index.js";
@@ -771,7 +772,7 @@ export class BadgeNoticeQueue {
 export function formatBadgeNotice(ids: readonly string[]): string | undefined {
   const names = ids.map((id) => getBadgeDefinition(id)?.name).filter((name): name is string => Boolean(name));
   if (names.length === 0) return undefined;
-  return `Yeni nişan: ${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ""}`;
+  return `${lt("Yeni nişan", "New badge")}: ${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ""}`;
 }
 
 // --- Depo --------------------------------------------------------------------

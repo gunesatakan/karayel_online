@@ -119,6 +119,8 @@ test("baglanti: main kuruyor, launcher dugmeleri data-launch tasiyor, menude Eğ
   assert.match(readSource("apps/web/src/main.ts"), /setupTutorial\(game\);/);
   assert.match(readSource("apps/web/src/game-control-ui.ts"), /button\.dataset\.launch = id;/);
   const menu = readSource("apps/web/src/menu-ui.ts");
-  assert.match(menu, /data-start-game data-replay-tutorial>Eğitim</);
+  // Dugme metni sozlukten (locales/areas/menu.ts); Turkcesi "Eğitim".
+  assert.match(menu, /data-start-game data-replay-tutorial>\$\{t\("menu\.home\.tutorial"\)\}</);
+  assert.match(readSource("apps/web/src/locales/areas/menu.ts"), /"menu\.home\.tutorial": "Eğitim"/);
   assert.match(menu, /hasAttribute\("data-replay-tutorial"\)\) resetTutorialProgress\(\)/);
 });

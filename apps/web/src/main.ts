@@ -5,6 +5,7 @@ import { GameScene } from "./scenes/GameScene";
 import { setupGameControlUi, setupGameHudUi } from "./game-control-ui";
 import { setupMenuUi } from "./menu-ui";
 import { setupTutorial } from "./tutorial";
+import { installCatalogLocale } from "./catalog-locale";
 import { getCanvasSize } from "./rendering";
 import { startTelemetry } from "./telemetry-boot";
 import "./style.css";
@@ -60,6 +61,8 @@ if (vfxGallery) {
   // adim adim surebilsin; yalnizca galeri adresinde.
   (window as unknown as { __karayelVfxGallery?: Phaser.Game }).__karayelVfxGallery = game;
 } else {
+  // Katalog metinleri dile baksin; menu ilk cizimde kart ve kule adlarini okuyor.
+  installCatalogLocale();
   setupMenuUi(game);
   setupGameControlUi(game);
   setupGameHudUi(game);

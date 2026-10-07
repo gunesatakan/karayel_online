@@ -1,3 +1,4 @@
+import { lt } from "../i18n/index.js";
 import { getTowerTier, type TowerTier } from "../tower-stats/index.js";
 import { FEEDBACK_KIND_RULES } from "./index.js";
 
@@ -70,7 +71,8 @@ export type TowerLevelCeremony = {
 /** Seviye etiketi. Kademe yalnizca gecildigi anda yaziliyor; siradan seviyede gurultu olurdu. */
 export function getTowerLevelLabel(level: number, crossedTier: boolean) {
   const shown = Math.round(level);
-  return crossedTier ? `SV ${shown} · KADEME ${getTowerTier(shown)}` : `SV ${shown}`;
+  const head = `${lt("SV", "LV")} ${shown}`;
+  return crossedTier ? `${head} · ${lt("KADEME", "TIER")} ${getTowerTier(shown)}` : head;
 }
 
 /**

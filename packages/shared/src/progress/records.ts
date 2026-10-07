@@ -1,4 +1,5 @@
 import { FINAL_WAVE, getWaveAirMode } from "../balance/index.js";
+import { enPlural, lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import { RUN_SUMMARY_VERSION, RUN_WAVE_HISTORY_LIMIT, type RunSummary } from "../run-trace/index.js";
 import { STAGE_COUNT, canRecordProgress, shouldRecordStageClear, type ProgressRecordSource } from "../stages/index.js";
@@ -287,28 +288,33 @@ export function getRecordChangeParts(merge: RecordMerge): RecordChangeParts {
   const celebrated = merge.newRecord || merge.improved.firstClear;
   if (merge.stars > 0) {
     const head = formatStars(merge.stars);
-    let badge = `${merge.cleanWaves} temiz dalga`;
-    if (merge.improved.firstClear) badge = "İLK TEMİZLEME";
-    else if (previous && merge.improved.bestStars) badge = `YENİ REKOR (önceki ${formatStars(previous.bestStars)})`;
+    let badge = lt(`${merge.cleanWaves} temiz dalga`, `${merge.cleanWaves} clean ${enPlural(merge.cleanWaves, "wave", "waves")}`);
+    if (merge.improved.firstClear) badge = lt("İLK TEMİZLEME", "FIRST CLEAR");
+    else if (previous && merge.improved.bestStars) badge = lt(`YENİ REKOR (önceki ${formatStars(previous.bestStars)})`, `NEW RECORD (was ${formatStars(previous.bestStars)})`);
     else if (previous && merge.improved.bestCleanWaves) {
-      badge = `YENİ REKOR: ${merge.cleanWaves} temiz dalga (önceki ${previous.bestCleanWaves})`;
+      badge = lt(
+        `YENİ REKOR: ${merge.cleanWaves} temiz dalga (önceki ${previous.bestCleanWaves})`,
+        `NEW RECORD: ${merge.cleanWaves} clean ${enPlural(merge.cleanWaves, "wave", "waves")} (was ${previous.bestCleanWaves})`
+      );
     }
     return { head, separator: " · ", badge, celebrated };
   }
-  const head = `Dalga ${merge.wave}/${FINAL_WAVE}`;
-  if (!previous) return { head, separator: " · ", badge: "ilk kayıt", celebrated };
-  if (merge.improved.bestWave) return { head, separator: " — ", badge: `YENİ REKOR (önceki ${previous.bestWave})`, celebrated };
+  const head = `${lt("Dalga", "Wave")} ${merge.wave}/${FINAL_WAVE}`;
+  if (!previous) return { head, separator: " · ", badge: lt("ilk kayıt", "first record"), celebrated };
+  if (merge.improved.bestWave) return { head, separator: " — ", badge: lt(`YENİ REKOR (önceki ${previous.bestWave})`, `NEW RECORD (was ${previous.bestWave})`), celebrated };
   // Daha erken biten ama daha temiz oynanan kosu da bir rekor: ★★ esigine
   // yaklasildigi yenilgide de gorunsun. "önceki" yazilmiyor: dalga basligiyla
   // satir 375 px'e sigmiyordu.
-  if (merge.improved.bestCleanWaves) return { head, separator: " · ", badge: `YENİ REKOR: ${merge.cleanWaves} temiz dalga`, celebrated };
+  if (merge.improved.bestCleanWaves) {
+    return { head, separator: " · ", badge: lt(`YENİ REKOR: ${merge.cleanWaves} temiz dalga`, `NEW RECORD: ${merge.cleanWaves} clean ${enPlural(merge.cleanWaves, "wave", "waves")}`), celebrated };
+  }
   const gap = previous.bestWave - merge.wave;
   // Temizlenmis asamada son dalgada dusmek rekora "esit" degil: rekor bir
   // temizleme. Satir o zaman kaydin gercek olcusunu, en iyi yildizi soyluyor.
   if (gap <= 0 && previous.clears > 0) {
-    return { head, separator: " · ", badge: `en iyi ${formatStars(previous.bestStars)}`, celebrated };
+    return { head, separator: " · ", badge: `${lt("en iyi", "best")} ${formatStars(previous.bestStars)}`, celebrated };
   }
-  return { head, separator: " · ", badge: gap > 0 ? `rekora ${gap} dalga` : "rekora eşit", celebrated };
+  return { head, separator: " · ", badge: gap > 0 ? lt(`rekora ${gap} dalga`, `${gap} ${enPlural(gap, "wave", "waves")} short of record`) : lt("rekora eşit", "record tied"), celebrated };
 }
 
 /**
@@ -348,18 +354,27 @@ export function nextGoal(record: StageRecord | undefined, run?: Pick<RunSummary,
     // Hic kosu yoksa ya da son dalgada olunduyse siradaki dalga yok: hedef
     // asamanin kendisi.
     const waveGoal = current.bestWave <= 0 || current.bestWave >= finalWave
-      ? "Aşamayı temizle"
-      : `Dalga ${current.bestWave + 1}`;
-    return `Sıradaki hedef: ${waveGoal} · ★★ için ${TWO_STAR_CLEAN_WAVES} temiz dalga`;
+      ? lt("Aşamayı temizle", "Clear the stage")
+      : `${lt("Dalga", "Wave")} ${current.bestWave + 1}`;
+    return lt(
+      `Sıradaki hedef: ${waveGoal} · ★★ için ${TWO_STAR_CLEAN_WAVES} temiz dalga`,
+      `Next goal: ${waveGoal} · ${TWO_STAR_CLEAN_WAVES} clean waves for ★★`
+    );
   }
-  const best = (threshold: number) => (current.bestCleanWaves < threshold ? ` (en iyi ${current.bestCleanWaves})` : "");
+  const best = (threshold: number) => (current.bestCleanWaves < threshold ? ` (${lt("en iyi", "best")} ${current.bestCleanWaves})` : "");
   if (current.bestStars < 2) {
-    return `Sıradaki hedef: ★★ için ${TWO_STAR_CLEAN_WAVES} temiz dalga${best(TWO_STAR_CLEAN_WAVES)}`;
+    return lt(
+      `Sıradaki hedef: ★★ için ${TWO_STAR_CLEAN_WAVES} temiz dalga${best(TWO_STAR_CLEAN_WAVES)}`,
+      `Next goal: ${TWO_STAR_CLEAN_WAVES} clean waves for ★★${best(TWO_STAR_CLEAN_WAVES)}`
+    );
   }
   if (current.bestStars < MAX_STAGE_STARS) {
-    return `Sıradaki hedef: ★★★ için ${finalWave}/${finalWave} temiz dalga${best(THREE_STAR_CLEAN_WAVES)}`;
+    return lt(
+      `Sıradaki hedef: ★★★ için ${finalWave}/${finalWave} temiz dalga${best(THREE_STAR_CLEAN_WAVES)}`,
+      `Next goal: ${finalWave}/${finalWave} clean waves for ★★★${best(THREE_STAR_CLEAN_WAVES)}`
+    );
   }
-  return "Sıradaki hedef: ★★★ tamam · başka bir operatörle dene";
+  return lt("Sıradaki hedef: ★★★ tamam · başka bir operatörle dene", "Next goal: ★★★ done · try another operator");
 }
 
 /**

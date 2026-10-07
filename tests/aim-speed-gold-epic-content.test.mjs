@@ -541,7 +541,10 @@ test("istemci epigi kart seciminde, Kart Arsivi'nde, destede ve raporda ayri ciz
   const scene = await read("../apps/web/src/scenes/GameScene.ts");
   assert.ok(scene.includes("run-card run-card--${rarity}"), "nadirlik sinifi karttan");
   assert.ok(scene.includes(`rarity === "rare" ? " run-card--shine"`), "parilti yalnizca nadirde");
-  assert.ok(scene.includes(`scope.projectiles ? "Mermi atan kuleler"`));
+  // Kapsam etiketi sozlukte: anahtar sahnede, Turkce metin scene bolgesinde.
+  assert.ok(scene.includes(`scope.projectiles ? t("scene.scope.projectiles")`));
+  const sceneText = await read("../apps/web/src/locales/areas/scene.ts");
+  assert.ok(sceneText.includes(`"scene.scope.projectiles": "Mermi atan kuleler"`));
   const report = await read("../apps/web/src/run-report-ui.ts");
   assert.ok(report.includes(`["epic", "rare", "uncommon"]`));
   const controls = await read("../apps/web/src/game-control-ui.ts");

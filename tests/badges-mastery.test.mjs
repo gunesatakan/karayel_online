@@ -719,7 +719,9 @@ test("sahne: bildirim yalnizca temizleme damgasinda, kart perdesinde ve raporda;
 test("menu: Nişanlar ekrani, operator secimindeki ustalik, lobide yalnizca kendi unvanin", () => {
   const menu = readSource("apps/web/src/menu-ui.ts");
   assert.match(menu, /data-view="badges"/);
-  assert.match(menu, /<h1>Nişanlar<\/h1>/);
+  // Baslik sozlukten (locales/areas/menu.ts); Turkcesi ayni.
+  assert.match(menu, /<h1>\$\{t\("menu\.badges\.title"\)\}<\/h1>/);
+  assert.match(readSource("apps/web/src/locales/areas/menu.ts"), /"menu\.badges\.title": "Nişanlar"/);
   assert.match(menu, /function renderArchive\(selectedCharacter: CharacterDefinition, progress: ProgressState\)[\s\S]*?renderMasteryMeter/);
   assert.match(menu, /player\.id === lobbySessionId && ownTitle/);
 });

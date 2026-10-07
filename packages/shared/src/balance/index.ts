@@ -1,3 +1,4 @@
+import { lt, ltFixed } from "../i18n/index.js";
 import type { EnemyType } from "../index.js";
 
 export const FINAL_WAVE = 20;
@@ -172,9 +173,9 @@ export function getHeavyWaveHpStep(wave: number): number | undefined {
   return step !== undefined && step > HEAVY_WAVE_HP_STEP ? step : undefined;
 }
 
-/** "Can ×1,49": iki basamak, Turkce ondalik virgulu. */
+/** "Can ×1,49" / "HP ×1.49": iki basamak, ayirac dile gore. */
 export function formatWaveHpStep(step: number) {
-  return `Can ×${step.toFixed(2).replace(".", ",")}`;
+  return `${lt("Can", "HP")} ×${ltFixed(step, 2)}`;
 }
 
 export function getWaveCompletionGold(completedWave: number) {

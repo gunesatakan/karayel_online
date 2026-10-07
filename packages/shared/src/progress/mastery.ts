@@ -1,4 +1,5 @@
 import { FINAL_WAVE } from "../balance/index.js";
+import { enPlural, lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import type { RunSummary } from "../run-trace/index.js";
 import { STAGE_COUNT } from "../stages/index.js";
@@ -316,16 +317,17 @@ export function buildMasteryReportView(input: {
   const after = getMasteryProgress(Math.max(input.beforePoints, input.afterPoints));
   const gained = Math.max(0, after.points - before.points);
   const levelUp = after.level > before.level;
-  const headline = levelUp ? `Ustalık ${before.level} → ${after.level}` : `Ustalık ${after.level} · +${gained}`;
+  const mastery = lt("Ustalık", "Mastery");
+  const headline = levelUp ? `${mastery} ${before.level} → ${after.level}` : `${mastery} ${after.level} · +${gained}`;
   const detail = after.next === undefined
-    ? "En yüksek ustalık"
-    : `${after.points}/${after.next} · sonraki seviyeye ${after.next - after.points}`;
+    ? lt("En yüksek ustalık", "Max mastery")
+    : `${after.points}/${after.next} · ${lt(`sonraki seviyeye ${after.next - after.points}`, `${after.next - after.points} to next level`)}`;
   const sources: string[] = [];
   const waves = Math.round(input.gained.waves / MASTERY_POINTS.wave);
-  if (waves > 0) sources.push(`${waves} dalga +${input.gained.waves}`);
-  if (input.gained.firstClear > 0) sources.push(`ilk temizleme +${input.gained.firstClear}`);
-  if (input.gained.stars > 0) sources.push(`yıldız +${input.gained.stars}`);
-  if (input.badgePoints > 0) sources.push(`imza nişanı +${input.badgePoints}`);
+  if (waves > 0) sources.push(lt(`${waves} dalga +${input.gained.waves}`, `${waves} ${enPlural(waves, "wave", "waves")} +${input.gained.waves}`));
+  if (input.gained.firstClear > 0) sources.push(`${lt("ilk temizleme", "first clear")} +${input.gained.firstClear}`);
+  if (input.gained.stars > 0) sources.push(`${lt("yıldız", "stars")} +${input.gained.stars}`);
+  if (input.badgePoints > 0) sources.push(`${lt("imza nişanı", "signature badge")} +${input.badgePoints}`);
   return {
     characterId: input.characterId,
     operator: input.operator,

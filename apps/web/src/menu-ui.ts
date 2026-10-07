@@ -58,7 +58,12 @@ import {
   type MapScale,
   type MapTileKind,
   type RoomListingSnapshot,
-  SERVER_FULL_MESSAGE,
+  CROWN_UNLOCK,
+  STAMP_CATALOG,
+  TITLE_CATALOG,
+  getBadgeDefinition,
+  getCardDefinition,
+  type CosmeticUnlock,
   type SkillDefinition,
   type RecordBook,
   type StageRecord,
@@ -72,7 +77,8 @@ import { takeQuickStartIntent } from "./quick-start";
 import { readCardArchive } from "./card-archive";
 import { getCosmeticFacts, getOperatorMasteryPoints, isProgressStorageAvailable, readBadgeBook, readCosmeticSelection, readMasteryBook, saveCosmeticSelection } from "./progress-store";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
-import { TELEMETRY_SETTING_LABEL, TELEMETRY_SETTING_NOTE, readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
+import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
+import { getLocale, onLocaleChange, setLocale, t, tMaybe, type Locale, type MessageKey, type MessageParams } from "./i18n";
 import {
   getSharedClient,
   isServerFullError,
@@ -139,20 +145,20 @@ type SavedMapRecord = {
 const MAP_RECORDS_STORAGE_KEY = "karayel:custom-maps:v2";
 const enemyRaceOrder: EnemyRace[] = ["meka", "spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"];
 const enemyTypeOrder: EnemyType[] = ["grunt", "brute", "runner", "shooter"];
-const detailTypeLabels: Record<DetailItem["type"], string> = {
-  passive: "Pasif",
-  ultimate: "Ulti",
-  skill: "Yetenek",
-  tower: "Kule"
-};
+/**
+ * Ekranda kalan durum/hata satiri: metnin kendisi degil onu ureten
+ * fonksiyon. Parametreler o anki degerleriyle donduruluyor, metin her
+ * cizimde secili dilde kuruluyor.
+ */
+type UiText = () => string;
+const noText: UiText = () => "";
+const uiText = (key: MessageKey, params?: MessageParams): UiText => () => t(key, params);
+/** Sunucudan ya da hatadan gelen hazir metin; cevrilmiyor. */
+const rawText = (text: string): UiText => () => text;
 
-const enemyTypeLabels: Record<EnemyType, string> = {
-  grunt: "Sürü",
-  brute: "Ezici",
-  runner: "Koşucu",
-  shooter: "Atıcı",
-  siege: "Kuşatma"
-};
+// Etiketler cizim aninda sozlukten: dil degisince bir sonraki cizim yeni dilde.
+const detailTypeLabel = (type: DetailItem["type"]) => t(`menu.detail.type.${type}`);
+const enemyTypeLabel = (type: EnemyType) => t(`menu.enemy.type.${type}`);
 
 // Oyun ici takim toast'u da ayni rengi kullaniyor; tek kaynak orada.
 const classColor = CHARACTER_CLASS_COLORS;
@@ -164,43 +170,23 @@ const characterArt: Partial<Record<CharacterId, string>> = {
 };
 
 
-const enemyDossier: Record<EnemyType, {
-  name: string;
-  title: string;
-  threat: string;
-  summary: string;
-}> = {
-  grunt: {
-    name: "Sürü Artığı",
-    title: "Standart kara hedefi",
-    threat: "Düşük",
-    summary: "Dalgaların temel gövdesi. Özel savunması yoktur; sayıları arttıkça yolu tıkayıp kule hedeflerini dağıtır."
-  },
-  brute: {
-    name: "Zırhlı Ezici",
-    title: "Tank sınıfı kara hedefi",
-    threat: "Yüksek",
-    summary: "Yavaş ama dirençli ilerler. Zırhı, kalkanı ve yavaşlatma/korkuya direnci nedeniyle ham hasar testidir."
-  },
-  siege: {
-    name: "Kuşatma Koçu",
-    title: "Yapı kırıcı kara hedefi",
-    threat: "Yüksek",
-    summary: "Duvarlara ve kulelere normalin 4 katı hasar verir ama canı en düşük düşmanlardan biridir. Duvar örerek her şeyi çözmeye çalışan savunmanın cezası; arkasına ateş gücü koymayan hat kuşatma karşısında erir."
-  },
-  runner: {
-    name: "Çatlak Koşucu",
-    title: "Hızlı sızma hedefi",
-    threat: "Orta",
-    summary: "Düşük cana rağmen çok hızlıdır. Elektrik hasarına daha açık, slow etkilerine ise daha dirençlidir."
-  },
-  shooter: {
-    name: "Uzak Atıcı",
-    title: "Menzilli baskı hedefi",
-    threat: "Orta",
-    summary: "İlerlerken ateş edebilen varyanttır. Kalkanı ve can yenilemesiyle uzun çatışmalarda değer kazanır."
-  }
+// Dusman dosyasi: tehdit seviyesi burada, metinler sozlukte (menu.enemy.<tur>.*).
+const enemyThreat: Record<EnemyType, "low" | "medium" | "high"> = {
+  grunt: "low",
+  brute: "high",
+  siege: "high",
+  runner: "medium",
+  shooter: "medium"
 };
+
+function enemyDossier(type: EnemyType) {
+  return {
+    name: t(`menu.enemy.${type}.name`),
+    title: t(`menu.enemy.${type}.title`),
+    threat: t(`menu.enemy.threat.${enemyThreat[type]}`),
+    summary: t(`menu.enemy.${type}.summary`)
+  };
+}
 
 export function setupMenuUi(game: Phaser.Game) {
   const root = document.querySelector<HTMLDivElement>("#menu-root");
@@ -213,19 +199,26 @@ export function setupMenuUi(game: Phaser.Game) {
   let selectedDetail = getDetailItems(selectedCharacter)[0];
   let savedMaps = loadSavedMapRecords();
   let activeSavedMapId = savedMaps[0]?.id ?? "";
-  let selectedMapName = savedMaps[0]?.name ?? "Harita 1";
+  let selectedMapName = savedMaps[0]?.name ?? t("menu.map.defaultName", { n: 1 });
   let selectedMap = savedMaps[0]?.map ?? loadStoredMap();
   let selectedMapTool: MapTileKind = "road";
   let selectedMapScale: MapScale = selectedMap.scale;
-  let mapSaveStatus = savedMaps.length > 0 ? `"${selectedMapName}" yuklendi` : "Kayitli harita hazir";
+  // Durum ve hata satirlari metin degil metin ureten fonksiyon: dil degisince
+  // yeniden cizim ayni durumu yeni dilde yaziyor. Sunucunun yolladigi hata
+  // metni oldugu gibi kaliyor.
+  let mapSaveStatus = savedMaps.length > 0
+    ? uiText("menu.map.status.loaded", { name: selectedMapName })
+    : uiText("menu.map.status.ready");
   let onlineTab: OnlineTab = "create";
   let roomListings: RoomListingSnapshot[] = [];
   let currentLobbyRoom: Room | undefined;
   let currentLobbyState: LobbyStateSnapshot | undefined;
-  let lobbyError = "";
+  let lobbyError: UiText = noText;
   let onlineGameStarting = false;
   let onlineRoomRequestPending = false;
   let phaserReady = false;
+  // Dil degisince yeniden cizilecek ekran.
+  let currentView: ViewName = "home";
   // The backdrop lives outside the render cycle: rebuilding it per view would
   // re-decode the splash and replay its fade on every navigation.
   root.innerHTML = renderBackdrop();
@@ -243,7 +236,11 @@ export function setupMenuUi(game: Phaser.Game) {
   }
 
   const render = (view: ViewName) => {
+    currentView = view;
     root.dataset.screen = view;
+    // Secili dosya ogesi metinleriyle saklaniyor; anahtarindan yeniden
+    // kuruluyor ki dil degisince eski dilde kalmasin.
+    selectedDetail = getDetailItems(selectedCharacter).find((item) => item.key === selectedDetail.key) ?? getDetailItems(selectedCharacter)[0];
     shellHost.innerHTML = renderShell(
       view,
       selectedCharacter,
@@ -255,11 +252,11 @@ export function setupMenuUi(game: Phaser.Game) {
       currentLobbyState,
       currentLobbyRoom?.sessionId,
       selectedMapScale,
-      mapSaveStatus,
+      mapSaveStatus(),
       savedMaps,
       activeSavedMapId,
       selectedMapName,
-      lobbyError,
+      lobbyError(),
       withStageRecords(stageState),
       { ...cardArchive, tab: archiveTab },
       progressState
@@ -374,7 +371,7 @@ export function setupMenuUi(game: Phaser.Game) {
   const bindLobbyRoom = (room: Room) => {
     currentLobbyRoom = room;
     setActiveLobbyRoom(room);
-    lobbyError = "";
+    lobbyError = noText;
     room.onMessage("lobby:state", (state: LobbyStateSnapshot) => {
       currentLobbyState = state;
       const localPlayer = state.players.find((player) => player.id === room.sessionId);
@@ -392,7 +389,8 @@ export function setupMenuUi(game: Phaser.Game) {
       render("lobby");
     });
     room.onMessage("lobby:error", (payload: { message?: string }) => {
-      lobbyError = payload.message ?? "Oda islemi basarisiz.";
+      // Sunucunun metni (Turkce) oldugu gibi; yoksa yerel yedek.
+      lobbyError = payload.message ? rawText(payload.message) : uiText("menu.online.error.lobby");
       render("lobby");
     });
     room.onMessage("lobby:started", () => {
@@ -410,7 +408,7 @@ export function setupMenuUi(game: Phaser.Game) {
       roomListings = payload.rooms ?? [];
     } catch {
       roomListings = [];
-      lobbyError = "Odalar alinamadi.";
+      lobbyError = uiText("menu.online.error.rooms");
     } finally {
       if (!currentLobbyRoom) {
         render("online");
@@ -422,9 +420,9 @@ export function setupMenuUi(game: Phaser.Game) {
     if (onlineRoomRequestPending) return;
     onlineRoomRequestPending = true;
     try {
-      lobbyError = "";
+      lobbyError = noText;
       const roomNameInput = root.querySelector<HTMLInputElement>("[data-room-name-input]");
-      const roomName = roomNameInput?.value.trim() || `${selectedCharacter.displayName} Odasi`;
+      const roomName = roomNameInput?.value.trim() || t("menu.online.defaultRoomName", { name: selectedCharacter.displayName });
       const client = getSharedClient(gameServerUrl);
       const room = await retryExpiredSeatReservation(() => client.create("match", withWireCaps({
         playerName: getPlayerName(),
@@ -440,7 +438,8 @@ export function setupMenuUi(game: Phaser.Game) {
       render("lobby");
     } catch (error) {
       // Dolu sunucu: oda kurulamadi ama listedeki odalara katilmak hala mumkun.
-      lobbyError = isServerFullError(error) ? SERVER_FULL_MESSAGE : formatUiError(error, "Oda kurulurken hata olustu.");
+      // Sunucu dolu hatasi taninip yerel metinle yaziliyor (Turkcesi SERVER_FULL_MESSAGE ile ayni).
+      lobbyError = isServerFullError(error) ? uiText("menu.online.serverFull") : formatUiError(error, "menu.online.error.create");
       render("online");
     } finally {
       onlineRoomRequestPending = false;
@@ -451,7 +450,7 @@ export function setupMenuUi(game: Phaser.Game) {
     if (onlineRoomRequestPending) return;
     onlineRoomRequestPending = true;
     try {
-      lobbyError = "";
+      lobbyError = noText;
       const client = getSharedClient(gameServerUrl);
       const room = await retryExpiredSeatReservation(() => client.joinById(roomId, withWireCaps({
         playerName: getPlayerName(),
@@ -460,7 +459,7 @@ export function setupMenuUi(game: Phaser.Game) {
       bindLobbyRoom(room);
       render("lobby");
     } catch (error) {
-      lobbyError = formatUiError(error, "Odaya katilinamadi.");
+      lobbyError = formatUiError(error, "menu.online.error.join");
       render("online");
     } finally {
       onlineRoomRequestPending = false;
@@ -551,6 +550,14 @@ export function setupMenuUi(game: Phaser.Game) {
       input.addEventListener("change", () => setTelemetryEnabled(input.checked));
     });
 
+    // Dil secici: secim kaydediliyor, `onLocaleChange` dinleyicisi menuyu yeniden ciziyor.
+    root.querySelectorAll<HTMLElement>("[data-locale]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const locale = button.dataset.locale;
+        if (locale === "tr" || locale === "en") setLocale(locale);
+      });
+    });
+
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
       button.addEventListener("click", () => {
         // Egitim: brifing ilerlemesi sifirlanip normal solo mac.
@@ -582,7 +589,7 @@ export function setupMenuUi(game: Phaser.Game) {
         }
         setTile(nextMap, col, row, selectedMapTool);
         selectedMap = nextMap;
-        mapSaveStatus = "Kaydedilmemis degisiklik var";
+        mapSaveStatus = uiText("menu.map.status.unsaved");
         render("map");
       });
     });
@@ -597,7 +604,7 @@ export function setupMenuUi(game: Phaser.Game) {
         selectedMapName = record.name;
         selectedMap = normalizeMapData(record.map);
         selectedMapScale = selectedMap.scale;
-        mapSaveStatus = `"${selectedMapName}" secildi`;
+        mapSaveStatus = uiText("menu.map.status.selected", { name: selectedMapName });
         render("map");
       });
     });
@@ -606,23 +613,23 @@ export function setupMenuUi(game: Phaser.Game) {
       button.addEventListener("click", () => {
         const action = button.dataset.mapAction;
         const nameInput = root.querySelector<HTMLInputElement>("[data-map-name-input]");
-        selectedMapName = nameInput?.value.trim().slice(0, 28) || selectedMapName || `Harita ${savedMaps.length + 1}`;
+        selectedMapName = nameInput?.value.trim().slice(0, 28) || selectedMapName || t("menu.map.defaultName", { n: savedMaps.length + 1 });
         if (action === "new") {
           selectedMap = createDefaultEditableMap(selectedMapScale);
           activeSavedMapId = "";
-          selectedMapName = `Harita ${savedMaps.length + 1}`;
-          mapSaveStatus = "Yeni harita taslagi hazir";
+          selectedMapName = t("menu.map.defaultName", { n: savedMaps.length + 1 });
+          mapSaveStatus = uiText("menu.map.status.new");
         }
         if (action === "reset") {
           selectedMap = createDefaultEditableMap(selectedMap.scale);
           selectedMapScale = selectedMap.scale;
-          mapSaveStatus = "Varsayilan harita taslagi hazir";
+          mapSaveStatus = uiText("menu.map.status.reset");
         }
         if (action === "clear") {
           selectedMap = createDefaultEditableMap(selectedMap.scale);
           selectedMap.tiles = selectedMap.tiles.map(() => "tower");
           selectedMapScale = selectedMap.scale;
-          mapSaveStatus = "Bos harita hazir";
+          mapSaveStatus = uiText("menu.map.status.clear");
         }
         if (action === "save") {
           const saved = saveStoredMap(selectedMap, selectedMapName, activeSavedMapId);
@@ -631,7 +638,7 @@ export function setupMenuUi(game: Phaser.Game) {
           selectedMapName = saved.name;
           selectedMap = saved.map;
           selectedMapScale = selectedMap.scale;
-          mapSaveStatus = `"${selectedMapName}" kaydedildi`;
+          mapSaveStatus = uiText("menu.map.status.saved", { name: selectedMapName });
         }
         render("map");
       });
@@ -643,7 +650,7 @@ export function setupMenuUi(game: Phaser.Game) {
         if (selectedMap.scale !== nextScale) {
           selectedMap = scaleEditableMap(selectedMap, nextScale);
           selectedMapScale = nextScale;
-          mapSaveStatus = `${nextScale}x olcege cevrildi`;
+          mapSaveStatus = uiText("menu.map.status.scaled", { scale: nextScale });
         }
         render("map");
       });
@@ -708,6 +715,16 @@ export function setupMenuUi(game: Phaser.Game) {
       });
     });
   };
+
+  // Sayfa dili secili dilden: CSS buyuk harfi ("i" -> "İ"/"I") ona bakiyor.
+  // Dil degisince acik ekran yeniden ciziliyor (setupMenuUi bir kez cagriliyor,
+  // dinleyici de bir kez kuruluyor). Odak dil dugmesindeyse yenisine geciyor.
+  document.documentElement.lang = getLocale();
+  onLocaleChange((locale) => {
+    const pickerFocused = document.activeElement instanceof HTMLElement && document.activeElement.hasAttribute("data-locale");
+    render(currentView);
+    if (pickerFocused) root.querySelector<HTMLElement>(`[data-locale="${locale}"]`)?.focus();
+  });
 
   gameRoot.classList.add("game-root--hidden");
   root.classList.add("menu-root--loading");
@@ -791,10 +808,13 @@ function renderStageBoard(stageState: StageState) {
       cleared ? "is-cleared" : ""
     ].filter(Boolean).join(" ");
     const detail = unlocked
-      ? `${escapeHtml(stage.raceName)} · ${WAVES_PER_STAGE} tur`
-      : "Önceki aşamayı tamamla";
+      ? t("menu.stage.detail", { race: escapeHtml(stage.raceName), waves: WAVES_PER_STAGE })
+      : t("menu.stage.locked");
     const profileLine = unlocked
-      ? `<em>Zayıf: ${profile.weakTo.map((type) => damageTypeCodex[type].name).join(", ")} · Dirençli: ${profile.resistantTo.map((type) => damageTypeCodex[type].name).join(", ")}</em>`
+      ? `<em>${t("menu.stage.profile", {
+        weak: profile.weakTo.map((type) => damageTypeCodex[type].name).join(", "),
+        resistant: profile.resistantTo.map((type) => damageTypeCodex[type].name).join(", ")
+      })}</em>`
       : "";
     return `
       <button class="${classes}" data-stage-id="${stage.id}"${unlocked ? "" : " disabled"}>
@@ -810,8 +830,8 @@ function renderStageBoard(stageState: StageState) {
   }).join("");
 
   return `
-    <section class="stages" aria-label="Aşamalar">
-      <p class="section-label">Aşamalar <b>${stageState.cleared.length}/${STAGE_COUNT}</b></p>
+    <section class="stages" aria-label="${t("menu.stage.title")}">
+      <p class="section-label">${t("menu.stage.title")} <b>${stageState.cleared.length}/${STAGE_COUNT}</b></p>
       <div class="stages__grid">${rows}</div>
     </section>`;
 }
@@ -831,16 +851,20 @@ function renderStageRecord(record: StageRecord | undefined) {
   const checkpoints = getAirCheckpoints(record);
   const pips = checkpoints.map((checkpoint) => {
     const left = ((checkpoint.wave - 0.5) / WAVES_PER_STAGE) * 100;
-    const label = `${checkpoint.wave}. dalga: ${checkpoint.mode === "all" ? "hava" : "karışık hava"}${checkpoint.passed ? " · geçildi" : ""}`;
+    const mode = t(checkpoint.mode === "all" ? "menu.stage.pipAir" : "menu.stage.pipMixed");
+    const label = `${t("menu.stage.pip", { wave: checkpoint.wave, mode })}${checkpoint.passed ? t("menu.stage.pipPassed") : ""}`;
     return `<i class="stage__pip stage__pip--${checkpoint.mode}${checkpoint.passed ? " is-passed" : ""}" style="left: ${left.toFixed(1)}%" title="${label}"></i>`;
   }).join("");
-  const trackLabel = `${record ? `En iyi ${bestWave}/${WAVES_PER_STAGE}; ` : ""}hava dalgaları ${checkpoints.map((checkpoint) => checkpoint.wave).join(", ")}`;
+  const waves = checkpoints.map((checkpoint) => checkpoint.wave).join(", ");
+  const trackLabel = record
+    ? t("menu.stage.trackWithBest", { best: bestWave, total: WAVES_PER_STAGE, waves })
+    : t("menu.stage.track", { waves });
   const fill = Math.min(100, Math.max(0, (bestWave / WAVES_PER_STAGE) * 100));
   return `
           <span class="stage__record">
             <span class="stage__track" role="img" aria-label="${trackLabel}"><b style="width: ${fill.toFixed(1)}%"></b>${pips}</span>
-            ${record ? `<span class="stage__best">En iyi ${bestWave}/${WAVES_PER_STAGE}</span>
-            <span class="stage__stars" aria-label="${record.bestStars} yıldız">${formatStars(record.bestStars)}</span>` : ""}
+            ${record ? `<span class="stage__best">${t("menu.stage.best", { best: bestWave, total: WAVES_PER_STAGE })}</span>
+            <span class="stage__stars" aria-label="${t("menu.stage.stars", { n: record.bestStars })}">${formatStars(record.bestStars)}</span>` : ""}
           </span>`;
 }
 
@@ -900,7 +924,7 @@ function renderShell(
   mapSaveStatus = "",
   savedMaps: SavedMapRecord[] = [],
   activeSavedMapId = "",
-  selectedMapName = "Harita 1",
+  selectedMapName = t("menu.map.defaultName", { n: 1 }),
   lobbyError = "",
   stageState: StageState = { cleared: [], selected: 1 },
   cardArchive: CardArchiveState = { archive: createEmptyCardArchive(), available: true, tab: "cards" },
@@ -944,7 +968,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
   return `
     <div class="screen screen--home">
       <header class="brand">
-        <p class="eyebrow"><i class="rule-dot"></i>Yörünge Komuta Ağı</p>
+        <p class="eyebrow"><i class="rule-dot"></i>${t("menu.home.eyebrow")}</p>
         <h1 class="brand__word">Uzay Savunma</h1>
         <div class="brand__rule" aria-hidden="true"><i></i><span class="rule-dot"></span><i></i></div>
       </header>
@@ -952,24 +976,24 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
       <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
         ${renderSigil(selectedCharacter.id, initials(selectedCharacter.displayName))}
         <div class="hero__copy">
-          <p class="kicker">Seçili Operatör</p>
+          <p class="kicker">${t("menu.home.selectedOperator")}</p>
           <h2>${operatorNameHtml(selectedCharacter.displayName)}</h2>
           <p class="hero__role">${escapeHtml(selectedCharacter.role)}</p>
-          <p class="hero__mastery"><b>Ustalık ${mastery.level}</b>${title ? `<span>${escapeHtml(title)}</span>` : ""}</p>
+          <p class="hero__mastery"><b>${t("menu.home.mastery", { level: mastery.level })}</b>${title ? `<span>${escapeHtml(title)}</span>` : ""}</p>
         </div>
-        <button class="hero__cta" data-view="detail" aria-label="Operatör dosyasını aç">
+        <button class="hero__cta" data-view="detail" aria-label="${t("menu.home.dossierAria")}">
           <i>›</i>
-          Dosya
+          ${t("menu.home.dossier")}
         </button>
         <dl class="hero__stats">
-          <div><dt>Dayanım</dt><dd>${selectedCharacter.maxHp}</dd></div>
-          <div><dt>Hasar</dt><dd>${selectedCharacter.damage}</dd></div>
-          <div><dt>Kule</dt><dd>${selectedCharacter.towers.length}</dd></div>
+          <div><dt>${t("menu.home.stat.hp")}</dt><dd>${selectedCharacter.maxHp}</dd></div>
+          <div><dt>${t("menu.home.stat.damage")}</dt><dd>${selectedCharacter.damage}</dd></div>
+          <div><dt>${t("menu.home.stat.towers")}</dt><dd>${selectedCharacter.towers.length}</dd></div>
         </dl>
       </section>
 
-      <section class="roster" aria-label="Operatörler">
-        <p class="section-label">Operatör Kadrosu <b>${characters.length}</b></p>
+      <section class="roster" aria-label="${t("menu.home.rosterAria")}">
+        <p class="section-label">${t("menu.home.roster")} <b>${characters.length}</b></p>
         <div class="roster__grid">
           ${characters.map((character) => `
             <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
@@ -984,22 +1008,22 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
 
       <footer class="home-actions">
         <button class="command command--hero" data-start-game>
-          <span>Savaşa Gir</span>
-          <small>${stageState.selected}. Aşama · ${escapeHtml(getStage(stageState.selected).name)}</small>
+          <span>${t("menu.home.deploy")}</span>
+          <small>${t("menu.home.stageLine", { n: stageState.selected, name: escapeHtml(getStage(stageState.selected).name) })}</small>
         </button>
         <div class="home-actions__grid">
-          <button class="command command--ghost" data-start-creative>Yaratıcı</button>
+          <button class="command command--ghost" data-start-creative>${t("menu.home.creative")}</button>
           <button class="command command--ghost" data-view="online">Online</button>
-          <button class="command command--ghost" data-view="archive">Operatör</button>
-          <button class="command command--ghost" data-view="bestiary">Düşman</button>
-          <button class="command command--ghost" data-view="map">Harita</button>
-          <button class="command command--ghost command--count" data-view="cardArchive" aria-label="Kart Arşivi, ${cardProgress} kart görüldü">
-            <span>Kart Arşivi</span>
+          <button class="command command--ghost" data-view="archive">${t("menu.home.operator")}</button>
+          <button class="command command--ghost" data-view="bestiary">${t("menu.home.enemies")}</button>
+          <button class="command command--ghost" data-view="map">${t("menu.home.map")}</button>
+          <button class="command command--ghost command--count" data-view="cardArchive" aria-label="${t("menu.home.cardArchiveAria", { progress: cardProgress })}">
+            <span>${t("menu.home.cardArchive")}</span>
             <small>${cardProgress}</small>
           </button>
-          <button class="command command--ghost" data-start-game data-replay-tutorial>Eğitim</button>
-          <button class="command command--ghost command--count command--wide" data-view="badges" aria-label="Nişanlar, ${board.earned}/${board.total} kazanıldı">
-            <span>Nişanlar</span>
+          <button class="command command--ghost" data-start-game data-replay-tutorial>${t("menu.home.tutorial")}</button>
+          <button class="command command--ghost command--count command--wide" data-view="badges" aria-label="${t("menu.home.badgesAria", { earned: board.earned, total: board.total })}">
+            <span>${t("menu.home.badges")}</span>
             <small>${board.earned}/${board.total}</small>
           </button>
         </div>
@@ -1007,13 +1031,28 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
 
       <aside class="slate">
         <span class="slate__name">${escapeHtml(getPlayerName())}</span>
-        <label class="slate__privacy" title="${escapeHtml(TELEMETRY_SETTING_NOTE)}">
-          <input type="checkbox" data-telemetry-toggle aria-label="${escapeHtml(TELEMETRY_SETTING_LABEL)}"${readTelemetrySetting() ? " checked" : ""} />Anonim veri
+        <label class="slate__privacy" title="${escapeHtml(t("menu.telemetry.note"))}">
+          <input type="checkbox" data-telemetry-toggle aria-label="${escapeHtml(t("menu.telemetry.label"))}"${readTelemetrySetting() ? " checked" : ""} />${t("menu.home.telemetry")}
         </label>
+        ${renderLocalePicker()}
         <span class="slate__node"><i></i>Frankfurt Shard</span>
       </aside>
     </div>
   `;
+}
+
+/**
+ * Dil secici: alt seritte TR | EN. Gorunen etiket kisaltma, tam ad
+ * `title`da ve kendi dilinde (`lang`) okunuyor; secili olan `aria-pressed`.
+ * Grup `div`: `.slate span` kurali secicinin parcalarini esnetmesin.
+ */
+function renderLocalePicker() {
+  const active = getLocale();
+  const option = (locale: Locale, code: string) => `
+          <button type="button" class="locale-picker__option${locale === active ? " is-active" : ""}" data-locale="${locale}" lang="${locale}" aria-pressed="${locale === active}" title="${t(`language.${locale}`)}">${code}</button>`;
+  return `
+        <div class="locale-picker" role="group" aria-label="${t("language.label")}">${option("tr", "TR")}${option("en", "EN")}
+        </div>`;
 }
 
 function renderOnline(
@@ -1028,31 +1067,31 @@ function renderOnline(
   return `
     <div class="screen">
       <header class="screen-topbar detail-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
           <p class="eyebrow">Online Nexus</p>
-          <h1>Oda Sistemi</h1>
+          <h1>${t("menu.online.title")}</h1>
         </div>
         <span class="status-pill">${operatorNameHtml(selectedCharacter.displayName)}</span>
       </header>
 
-      <section class="online-tabs" aria-label="Online sekmeleri">
-        <button class="command ${onlineTab === "create" ? "command--primary" : "command--ghost"}" data-online-tab="create">Oda Kur</button>
-        <button class="command ${onlineTab === "join" ? "command--primary" : "command--ghost"}" data-online-tab="join">Odaya Katıl</button>
+      <section class="online-tabs" aria-label="${t("menu.online.tabsAria")}">
+        <button class="command ${onlineTab === "create" ? "command--primary" : "command--ghost"}" data-online-tab="create">${t("menu.online.create")}</button>
+        <button class="command ${onlineTab === "join" ? "command--primary" : "command--ghost"}" data-online-tab="join">${t("menu.online.join")}</button>
       </section>
 
       ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
 
       ${onlineTab === "create" ? `
         <section class="selected-dossier frame online-card" style="--accent: ${classColor[selectedCharacter.id]}">
-          <p class="kicker">Kurulum</p>
-          <h2>Yeni Oda</h2>
+          <p class="kicker">${t("menu.online.setup")}</p>
+          <h2>${t("menu.online.newRoom")}</h2>
           <label class="field-stack">
-            <span>Oda adı</span>
-            <input class="text-field" data-room-name-input value="${escapeHtml(`${selectedCharacter.displayName} Odasi`)}" maxlength="24" />
+            <span>${t("menu.online.roomName")}</span>
+            <input class="text-field" data-room-name-input value="${escapeHtml(t("menu.online.defaultRoomName", { name: selectedCharacter.displayName }))}" maxlength="24" />
           </label>
           <div class="scale-picker">
-            <span>Harita Ölçeği</span>
+            <span>${t("menu.online.mapScale")}</span>
             <div class="scale-picker__buttons">
               <button class="scale-chip ${selectedMapScale === 1 ? "is-active" : ""}" data-map-scale="1">1x</button>
               <button class="scale-chip ${selectedMapScale === 2 ? "is-active" : ""}" data-map-scale="2">2x</button>
@@ -1060,29 +1099,29 @@ function renderOnline(
               <button class="scale-chip ${selectedMapScale === 4 ? "is-active" : ""}" data-map-scale="4">4x</button>
             </div>
           </div>
-          <p class="online-note">1x–4x seçenekleri aynı alandaki grid yoğunluğunu belirler; ölçek büyüdükçe kule kareleri küçülür.</p>
-          <p class="online-note">Aşama: <b>${stage.id}. ${escapeHtml(stage.name)}</b> · ana ekranda seçilir; zafer bu aşamayı işaretler.</p>
-          <button class="command command--primary" data-create-room>Odayı Kur</button>
+          <p class="online-note">${t("menu.online.scaleNote")}</p>
+          <p class="online-note">${t("menu.online.stageLabel")} <b>${stage.id}. ${escapeHtml(stage.name)}</b> · ${t("menu.online.stageHint")}</p>
+          <button class="command command--primary" data-create-room>${t("menu.online.createSubmit")}</button>
         </section>
       ` : `
         <section class="online-room-list">
           <div class="online-list-head">
-            <p class="kicker">Açık Odalar</p>
-            <button class="command command--ghost command--small" data-refresh-rooms>Yenile</button>
+            <p class="kicker">${t("menu.online.openRooms")}</p>
+            <button class="command command--ghost command--small" data-refresh-rooms>${t("menu.online.refresh")}</button>
           </div>
           ${roomListings.length > 0 ? roomListings.map((room) => `
             <button class="archive-card room-card" data-room-join-id="${room.roomId}" style="--accent: #22d3ee">
               <span class="archive-card__mark">${room.mapScale}x</span>
               <span class="archive-card__body">
                 <strong>${escapeHtml(room.roomName)}</strong>
-                <small>${escapeHtml(room.hostName)}${room.stage !== undefined ? ` · ${getStage(room.stage).id}. Aşama` : ""} · ${room.playerCount}/${room.maxPlayers} oyuncu · ${room.started ? "Devam ediyor" : "Lobi"}</small>
+                <small>${escapeHtml(room.hostName)}${room.stage !== undefined ? ` · ${t("menu.common.stage", { n: getStage(room.stage).id })}` : ""} · ${t("menu.online.players", { count: room.playerCount, max: room.maxPlayers })} · ${t(room.started ? "menu.online.inProgress" : "menu.online.lobby")}</small>
               </span>
             </button>
           `).join("") : `
             <div class="selected-dossier frame online-card">
-              <p class="kicker">Bekleme</p>
-              <h2>Şu an açık oda yok</h2>
-              <p>Bir oda kurulduğunda bu listede görünecek.</p>
+              <p class="kicker">${t("menu.online.waiting")}</p>
+              <h2>${t("menu.online.noRooms")}</h2>
+              <p>${t("menu.online.noRoomsHint")}</p>
             </div>
           `}
         </section>
@@ -1099,7 +1138,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
           <button class="icon-command" data-view="online" aria-label="Online">‹</button>
           <div>
             <p class="eyebrow">Lobby</p>
-            <h1>Oda bekleniyor</h1>
+            <h1>${t("menu.lobby.waitingRoom")}</h1>
           </div>
         </header>
       </div>
@@ -1115,7 +1154,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
       <header class="screen-topbar detail-topbar">
         <button class="icon-command" data-view="online" aria-label="Online">‹</button>
         <div>
-          <p class="eyebrow">Room Lobby${lobbyState.stage !== undefined ? ` · ${getStage(lobbyState.stage).id}. Aşama` : ""}</p>
+          <p class="eyebrow">Room Lobby${lobbyState.stage !== undefined ? ` · ${t("menu.common.stage", { n: getStage(lobbyState.stage).id })}` : ""}</p>
           <h1>${escapeHtml(lobbyState.roomName)}</h1>
         </div>
         <span class="status-pill">${lobbyState.mapScale}x Grid</span>
@@ -1124,14 +1163,14 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
       ${lobbyError ? `<p class="online-error">${escapeHtml(lobbyError)}</p>` : ""}
 
       <section class="selected-dossier frame online-card" style="--accent: ${classColor[selectedCharacter.id]}">
-        <p class="kicker">Oyuncular</p>
-        <h2>${lobbyState.players.filter((player) => player.ready).length}/${lobbyState.players.length} hazır</h2>
+        <p class="kicker">${t("menu.lobby.players")}</p>
+        <h2>${t("menu.lobby.readyCount", { ready: lobbyState.players.filter((player) => player.ready).length, total: lobbyState.players.length })}</h2>
         <div class="lobby-player-list">
           ${lobbyState.players.map((player) => `
             <div class="lobby-player-row ${player.ready ? "is-ready" : ""}">
               <strong>${escapeHtml(player.name)}</strong>
               <span>${operatorNameHtml(characters.find((character) => character.id === player.characterId)?.displayName ?? player.characterId)}${player.id === lobbySessionId && ownTitle ? ` · ${escapeHtml(ownTitle)}` : ""}</span>
-              <small>${player.isHost ? "Kurucu" : player.ready ? "Hazir" : "Bekliyor"}</small>
+              <small>${t(player.isHost ? "menu.lobby.host" : player.ready ? "menu.lobby.ready" : "menu.lobby.waiting")}</small>
             </div>
           `).join("")}
         </div>
@@ -1146,7 +1185,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
               data-lobby-character="${character.id}"
               style="--item: ${classColor[character.id]}"
             >
-              <span>${owner ? escapeHtml(owner.name) : "Bos"}</span>
+              <span>${owner ? escapeHtml(owner.name) : t("menu.lobby.freeSlot")}</span>
               <strong>${operatorNameHtml(character.displayName)}</strong>
             </button>
           `;
@@ -1155,14 +1194,14 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
 
       <footer class="lobby-actions">
         <button class="command ${localPlayer?.ready ? "command--ghost" : "command--primary"}" data-lobby-ready>
-          ${localPlayer?.ready ? "Hazır Değilim" : "Hazırım"}
+          ${t(localPlayer?.ready ? "menu.lobby.notReady" : "menu.lobby.setReady")}
         </button>
         ${localIsHost ? `
           <button class="command ${everyoneReady ? "command--primary" : "command--ghost"}" data-lobby-start>
-            Oyunu Başlat
+            ${t("menu.lobby.start")}
           </button>
         ` : `
-          <p class="online-note">Kurucu herkes hazır olduğunda oyunu başlatır.</p>
+          <p class="online-note">${t("menu.lobby.hostNote")}</p>
         `}
       </footer>
     </div>
@@ -1181,18 +1220,18 @@ function renderMapEditor(
   return `
     <div class="screen">
       <header class="screen-topbar detail-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
           <p class="eyebrow">Map Forge</p>
-          <h1>Harita Tasarla</h1>
+          <h1>${t("menu.map.title")}</h1>
         </div>
-        <button class="command command--small" data-start-game>Başlat</button>
+        <button class="command command--small" data-start-game>${t("menu.common.start")}</button>
       </header>
 
       <section class="map-scale-panel">
         <div>
-          <p class="kicker">Olcek</p>
-          <strong>${map.scale}x Harita</strong>
+          <p class="kicker">${t("menu.map.scale")}</p>
+          <strong>${t("menu.map.scaleValue", { scale: map.scale })}</strong>
         </div>
         <div class="scale-picker__buttons">
           <button class="scale-chip ${map.scale === 1 ? "is-active" : ""}" data-map-editor-scale="1">1x</button>
@@ -1203,13 +1242,13 @@ function renderMapEditor(
       <section class="map-records">
         <div class="map-records__head">
           <div>
-            <p class="kicker">Kayıtlar</p>
-            <strong>${savedMaps.length} harita</strong>
+            <p class="kicker">${t("menu.map.records")}</p>
+            <strong>${t("menu.map.count", { n: savedMaps.length })}</strong>
           </div>
-          <button class="command command--ghost command--small" data-map-action="new">Yeni</button>
+          <button class="command command--ghost command--small" data-map-action="new">${t("menu.map.new")}</button>
         </div>
         <label class="map-name-row">
-          <span>Harita Adı</span>
+          <span>${t("menu.map.name")}</span>
           <input class="text-field" data-map-name-input value="${escapeHtml(selectedMapName)}" maxlength="28" />
         </label>
         <div class="map-record-list">
@@ -1220,19 +1259,19 @@ function renderMapEditor(
             </button>
           `).join("") : `
             <div class="map-record map-record--empty">
-              <span>Kayit yok</span>
-              <small>Kaydet ile ilk haritani olustur</small>
+              <span>${t("menu.map.empty")}</span>
+              <small>${t("menu.map.emptyHint")}</small>
             </div>
           `}
         </div>
       </section>
 
-      <section class="map-tools" aria-label="Harita araçları">
-        ${renderTool("road", "Yol", selectedTool)}
-        ${renderTool("tower", "Kule", selectedTool)}
+      <section class="map-tools" aria-label="${t("menu.map.toolsAria")}">
+        ${renderTool("road", t("menu.map.tool.road"), selectedTool)}
+        ${renderTool("tower", t("menu.map.tool.tower"), selectedTool)}
         ${renderTool("spawn", "Spawn", selectedTool)}
         ${renderTool("nexus", "Nexus", selectedTool)}
-        ${renderTool("empty", "Boş", selectedTool)}
+        ${renderTool("empty", t("menu.map.tool.empty"), selectedTool)}
       </section>
 
       <section class="map-editor-card">
@@ -1248,16 +1287,16 @@ function renderMapEditor(
       <section class="map-summary">
         <span>Spawn <strong>${counts.spawn}</strong></span>
         <span>Nexus <strong>${counts.nexus}</strong></span>
-        <span>Yol <strong>${counts.road}</strong></span>
-        <span>Kule <strong>${counts.tower}</strong></span>
+        <span>${t("menu.map.tool.road")} <strong>${counts.road}</strong></span>
+        <span>${t("menu.map.tool.tower")} <strong>${counts.tower}</strong></span>
       </section>
 
       <p class="map-save-status">${escapeHtml(saveStatus)}</p>
 
       <footer class="map-actions">
-        <button class="command command--primary" data-map-action="save">Kaydet</button>
-        <button class="command command--ghost" data-map-action="reset">Varsayılan</button>
-        <button class="command command--ghost" data-map-action="clear">Temizle</button>
+        <button class="command command--primary" data-map-action="save">${t("menu.map.save")}</button>
+        <button class="command command--ghost" data-map-action="reset">${t("menu.map.reset")}</button>
+        <button class="command command--ghost" data-map-action="clear">${t("menu.map.clear")}</button>
       </footer>
     </div>
   `;
@@ -1271,10 +1310,10 @@ function renderArchive(selectedCharacter: CharacterDefinition, progress: Progres
   return `
     <div class="screen">
       <header class="screen-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
           <p class="eyebrow">Operator Archive</p>
-          <h1>Operatör Seçimi</h1>
+          <h1>${t("menu.archive.title")}</h1>
         </div>
       </header>
 
@@ -1292,10 +1331,10 @@ function renderArchive(selectedCharacter: CharacterDefinition, progress: Progres
       </section>
 
       <section class="selected-dossier frame" style="--accent: ${classColor[selectedCharacter.id]}">
-        <p class="kicker">Aktif Dosya</p>
+        <p class="kicker">${t("menu.archive.active")}</p>
         <h2>${operatorNameHtml(selectedCharacter.displayName)}</h2>
         <p>${escapeHtml(selectedCharacter.summary)}</p>
-        <button class="command command--primary" data-view="detail">Dosyayı Aç</button>
+        <button class="command command--primary" data-view="detail">${t("menu.archive.open")}</button>
       </section>
     </div>
   `;
@@ -1306,16 +1345,16 @@ function renderBestiary() {
   return `
     <div class="screen">
       <header class="screen-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
           <p class="eyebrow">Threat Bestiary</p>
-          <h1>Düşman Arşivi</h1>
+          <h1>${t("menu.bestiary.title")}</h1>
         </div>
       </header>
 
       <section class="bestiary-grid">
         ${enemies.map(([type, definition]) => {
-          const dossier = enemyDossier[type];
+          const dossier = enemyDossier(type);
           const movementKind = definition.movementKind as string;
           const abilities = "abilities" in definition ? [...definition.abilities] : [];
           // Menzil yalnizca menzilli dusmanda yaziliyor: sifir yazmak
@@ -1333,24 +1372,24 @@ function renderBestiary() {
               </div>
               <dl class="bestiary-stats">
                 ${renderBestiaryStat("HP", definition.maxHp)}
-                ${renderBestiaryStat("Zırh", definition.armor)}
-                ${renderBestiaryStat("Kalkan", definition.shield)}
-                ${renderBestiaryStat("Regen", `${definition.healthRegenPerSecond}/sn`)}
-                ${renderBestiaryStat("Hız", definition.speed)}
-                ${renderBestiaryStat("Saldırı", definition.attack)}
-                ${attackRange ? renderBestiaryStat("Menzil", attackRange) : ""}
-                ${renderBestiaryStat("Altın", definition.reward)}
+                ${renderBestiaryStat(t("menu.bestiary.armor"), definition.armor)}
+                ${renderBestiaryStat(t("menu.bestiary.shield"), definition.shield)}
+                ${renderBestiaryStat("Regen", t("menu.common.perSecond", { v: definition.healthRegenPerSecond }))}
+                ${renderBestiaryStat(t("menu.bestiary.speed"), definition.speed)}
+                ${renderBestiaryStat(t("menu.bestiary.attack"), definition.attack)}
+                ${attackRange ? renderBestiaryStat(t("menu.bestiary.range"), attackRange) : ""}
+                ${renderBestiaryStat(t("menu.bestiary.gold"), definition.reward)}
               </dl>
               <div class="bestiary-tags">
-                <span>Irk: ${escapeHtml(formatEnemyRace(definition.race))}</span>
-                <span>${movementKind === "air" ? "Havacı" : "Karacı"}</span>
-                <span>Tehdit ${escapeHtml(dossier.threat)}</span>
+                <span>${escapeHtml(t("menu.bestiary.race", { race: formatEnemyRace(definition.race) }))}</span>
+                <span>${t(movementKind === "air" ? "menu.bestiary.air" : "menu.bestiary.ground")}</span>
+                <span>${escapeHtml(t("menu.bestiary.threat", { threat: dossier.threat }))}</span>
                 ${abilities.map((ability) => `<span>${escapeHtml(formatEnemyAbility(ability))}</span>`).join("")}
               </div>
               <div class="bestiary-notes">
-                ${formatResistanceLine("Hasar", getEnemyDamageResistances(definition))}
-                ${formatResistanceLine("Vuruş", definition.hitTypeResistances)}
-                ${formatResistanceLine("Durum", definition.statusResistances)}
+                ${formatResistanceLine(t("menu.bestiary.resist.damage"), getEnemyDamageResistances(definition))}
+                ${formatResistanceLine(t("menu.bestiary.resist.hit"), definition.hitTypeResistances)}
+                ${formatResistanceLine(t("menu.bestiary.resist.status"), definition.statusResistances)}
               </div>
             </article>
           `;
@@ -1358,8 +1397,8 @@ function renderBestiary() {
       </section>
 
       <section class="selected-dossier frame">
-        <p class="kicker">Irk Varyantları</p>
-        <h2>Dalga kimlikleri</h2>
+        <p class="kicker">${t("menu.bestiary.races")}</p>
+        <h2>${t("menu.bestiary.racesTitle")}</h2>
         <div class="bestiary-race-gallery">
           ${enemyRaceOrder.map((race) => `
             <article class="bestiary-race-row">
@@ -1368,7 +1407,7 @@ function renderBestiary() {
                 ${enemyTypeOrder.map((type) => `
                   <figure style="--enemy: ${enemyColor(type)}">
                     <img class="${getEnemyImageClass(race, type)}" src="${getEnemyImagePath(race, type)}" alt="" loading="lazy" />
-                    <figcaption>${escapeHtml(enemyTypeLabels[type])}</figcaption>
+                    <figcaption>${escapeHtml(enemyTypeLabel(type))}</figcaption>
                   </figure>
                 `).join("")}
               </div>
@@ -1378,9 +1417,9 @@ function renderBestiary() {
       </section>
 
       <section class="selected-dossier frame">
-        <p class="kicker">Dalga Varyantı</p>
-        <h2>Uçan dalgalar</h2>
-        <p>Belirli dalgalarda düşmanlar havacı varyant olarak doğabilir. Havacılar yolu takip etmez, spawn noktasından nexusa en kısa hatla uçar ve mevcut can değerleri hava saldırısı dengesine göre düşürülür.</p>
+        <p class="kicker">${t("menu.bestiary.waveVariant")}</p>
+        <h2>${t("menu.bestiary.flyingTitle")}</h2>
+        <p>${t("menu.bestiary.flyingText")}</p>
       </section>
     </div>
   `;
@@ -1406,16 +1445,21 @@ function renderBestiaryStat(label: string, value: string | number) {
  * kosu surdu ve hicbir sey acmiyor. Metin bunu acikca soyluyor.
  */
 function renderCardArchive(state: CardArchiveState) {
-  const view = buildCardArchiveView(state.archive);
+  const built = buildCardArchiveView(state.archive);
+  // Bolum adlari ("Kartlar"/"Eşyalar") paylasilan gorunumde Turkce sabit; dile gore burada.
+  const view = {
+    cards: { ...built.cards, label: t("menu.cardArchive.cards") },
+    items: { ...built.items, label: t("menu.cardArchive.items") }
+  };
   const section = state.tab === "items" ? view.items : view.cards;
   const empty = view.cards.seen === 0 && view.items.seen === 0;
   return `
     <div class="screen screen--card-archive">
       <header class="screen-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
-          <p class="eyebrow">Keşif Kaydı</p>
-          <h1>Kart Arşivi</h1>
+          <p class="eyebrow">${t("menu.cardArchive.eyebrow")}</p>
+          <h1>${t("menu.cardArchive.title")}</h1>
         </div>
       </header>
 
@@ -1424,13 +1468,11 @@ function renderCardArchive(state: CardArchiveState) {
           ${renderArchiveMeter(view.cards)}
           ${renderArchiveMeter(view.items)}
         </div>
-        <p>${empty
-          ? "Henüz bir şey görmedin: dalga ödülündeki kartlar ve kurulum mağazasındaki eşyalar görüldükçe buraya yazılır."
-          : "Kart seçiminde ve altın mağazasında gördüğün her şey buraya yazılır."} Arşiv yalnızca bir kayıttır, güç vermez; yaratıcı mod sayılmaz.</p>
-        ${state.available ? "" : `<p class="card-archive__warning">Bu tarayıcıda kayıt saklanamıyor; arşiv boş görünür.</p>`}
+        <p>${t(empty ? "menu.cardArchive.empty" : "menu.cardArchive.seen")} ${t("menu.cardArchive.note")}</p>
+        ${state.available ? "" : `<p class="card-archive__warning">${t("menu.cardArchive.noStorage")}</p>`}
       </section>
 
-      <div class="card-archive__tabs" role="tablist" aria-label="Arşiv bölümü">
+      <div class="card-archive__tabs" role="tablist" aria-label="${t("menu.cardArchive.tabsAria")}">
         ${renderArchiveTab(view.cards, state.tab)}
         ${renderArchiveTab(view.items, state.tab)}
       </div>
@@ -1445,7 +1487,7 @@ function renderCardArchive(state: CardArchiveState) {
 function renderArchiveMeter(section: ArchiveSectionView) {
   return `
     <div class="card-archive__meter">
-      <p><span>${escapeHtml(section.label)}</span><b>${section.seen}/${section.total}</b><small>%${section.percent}</small></p>
+      <p><span>${escapeHtml(section.label)}</span><b>${section.seen}/${section.total}</b><small>${t("format.percent", { v: section.percent })}</small></p>
       <i style="--fill: ${section.percent}%" aria-hidden="true"></i>
     </div>
   `;
@@ -1462,7 +1504,7 @@ function renderArchiveTab(section: ArchiveSectionView, active: ArchiveKind) {
 
 /** Bir nadirlik ya da kategori: once gorulenler, sonra siluetler. */
 function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
-  const unit = kind === "cards" ? "kart" : "eşya";
+  const lockedKey = kind === "cards" ? "menu.cardArchive.lockedCards" : "menu.cardArchive.lockedItems";
   const locked = group.total - group.seen;
   const entries = group.entries.map((entry) => entry.seen
     ? `
@@ -1472,7 +1514,7 @@ function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
           <span>${escapeHtml(entry.tag)}</span>
         </header>
         <p>${escapeHtml(entry.description)}</p>
-        ${entry.picks > 0 ? `<small>${entry.picks} koşuda seçildi</small>` : ""}
+        ${entry.picks > 0 ? `<small>${t("menu.cardArchive.picked", { n: entry.picks })}</small>` : ""}
       </article>
     `
     : "").join("");
@@ -1485,7 +1527,7 @@ function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
     <section class="card-archive__group card-archive__group--${group.key}">
       <p class="section-label">${escapeHtml(group.label)} <b>${group.seen}/${group.total}</b></p>
       ${entries}
-      ${locked > 0 ? `<div class="card-archive__locked" role="img" aria-label="${escapeHtml(`${group.label}: ${locked} ${unit} henüz görülmedi`)}">${silhouettes}</div>` : ""}
+      ${locked > 0 ? `<div class="card-archive__locked" role="img" aria-label="${escapeHtml(t(lockedKey, { group: group.label, n: locked }))}">${silhouettes}</div>` : ""}
     </section>
   `;
 }
@@ -1497,7 +1539,9 @@ function getSelectedTitle(progress: ProgressState) {
 
 /** Ustalik cubugu: "Ustalık 3 · 140/200"; son seviyede "Ustalık 10 · tam". */
 function renderMasteryMeter(mastery: ReturnType<typeof getMasteryProgress>) {
-  const text = mastery.next === undefined ? `Ustalık ${mastery.level} · tam` : `Ustalık ${mastery.level} · ${mastery.points}/${mastery.next}`;
+  const text = mastery.next === undefined
+    ? t("menu.mastery.max", { level: mastery.level })
+    : t("menu.mastery.progress", { level: mastery.level, points: mastery.points, next: mastery.next });
   return `
               <span class="mastery-meter" role="img" aria-label="${escapeHtml(text)}">
                 <em>${escapeHtml(text)}</em>
@@ -1528,26 +1572,26 @@ function renderBadges(progress: ProgressState, stageState: StageState, cardArchi
   return `
     <div class="screen screen--badges">
       <header class="screen-topbar">
-        <button class="icon-command" data-view="home" aria-label="Ana menü">‹</button>
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
         <div>
-          <p class="eyebrow">Tanınma Kaydı</p>
-          <h1>Nişanlar</h1>
+          <p class="eyebrow">${t("menu.badges.eyebrow")}</p>
+          <h1>${t("menu.badges.title")}</h1>
         </div>
       </header>
 
       <section class="card-archive__summary selected-dossier frame">
         <div class="card-archive__meter">
-          <p><span>Nişanlar</span><b>${view.earned}/${view.total}</b><small>%${percent}</small></p>
+          <p><span>${t("menu.badges.title")}</span><b>${view.earned}/${view.total}</b><small>${t("format.percent", { v: percent })}</small></p>
           <i style="--fill: ${percent}%" aria-hidden="true"></i>
         </div>
-        <p>Her nişanın koşulu yazılı; kilitli olanlar hedef. Nişan ve ustalık yalnızca bir kayıttır, güç vermez; yaratıcı mod sayılmaz.</p>
-        ${progress.available ? "" : `<p class="card-archive__warning">Bu tarayıcıda kayıt saklanamıyor; nişanlar boş görünür.</p>`}
+        <p>${t("menu.badges.summary")}</p>
+        ${progress.available ? "" : `<p class="card-archive__warning">${t("menu.badges.noStorage")}</p>`}
       </section>
 
       <section class="badge-board__section">
-        <p class="section-label">Operatör Ustalığı</p>
+        <p class="section-label">${t("menu.badges.mastery")}</p>
         <ul class="mastery-list">${operators}</ul>
-        <p class="badge-board__hint">Ustalık temizlenen dalgalardan, ilk temizlemelerden, ilk ★★ ve ★★★'tan ve operatörün imza nişanlarından gelir; co-op'ta da aynı.</p>
+        <p class="badge-board__hint">${t("menu.badges.masteryHint")}</p>
       </section>
 
       <section class="card-archive__groups">
@@ -1555,24 +1599,24 @@ function renderBadges(progress: ProgressState, stageState: StageState, cardArchi
       </section>
 
       <section class="badge-board__section">
-        <p class="section-label">Görünüm</p>
-        <p class="badge-board__hint">Yalnızca bu tarayıcıda görünür: unvan menüde, lobide ve seri afişinde; taç 10. seviye kulelerinde; mühür koşu raporunda.</p>
-        <div class="cosmetic-group" role="group" aria-label="Unvan">
-          <p class="cosmetic-group__label">Unvan</p>
+        <p class="section-label">${t("menu.badges.appearance")}</p>
+        <p class="badge-board__hint">${t("menu.badges.appearanceHint")}</p>
+        <div class="cosmetic-group" role="group" aria-label="${t("menu.badges.titleGroup")}">
+          <p class="cosmetic-group__label">${t("menu.badges.titleGroup")}</p>
           <div class="cosmetic-chips">
-            <button type="button" class="cosmetic-chip${noTitle ? " is-active" : ""}" data-cosmetic-title="" aria-pressed="${noTitle}">Unvan yok</button>
+            <button type="button" class="cosmetic-chip${noTitle ? " is-active" : ""}" data-cosmetic-title="" aria-pressed="${noTitle}">${t("menu.badges.noTitle")}</button>
             ${cosmetics.titles.map((title) => renderCosmeticChip(title, "title")).join("")}
           </div>
         </div>
-        <div class="cosmetic-group" role="group" aria-label="Rapor mührü">
-          <p class="cosmetic-group__label">Rapor mührü</p>
+        <div class="cosmetic-group" role="group" aria-label="${t("menu.badges.stamp")}">
+          <p class="cosmetic-group__label">${t("menu.badges.stamp")}</p>
           <div class="cosmetic-chips">${cosmetics.stamps.map((stamp) => renderCosmeticChip(stamp, "stamp")).join("")}</div>
         </div>
-        <div class="cosmetic-group" role="group" aria-label="Taç süsü">
-          <p class="cosmetic-group__label">Taç süsü <small>${cosmetics.crown.unlocked ? "10. seviye kulelerinde" : escapeHtml(cosmetics.crown.condition)}</small></p>
+        <div class="cosmetic-group" role="group" aria-label="${t("menu.badges.crown")}">
+          <p class="cosmetic-group__label">${t("menu.badges.crown")} <small>${cosmetics.crown.unlocked ? t("menu.badges.crownWhere") : escapeHtml(describeUnlock(CROWN_UNLOCK, cosmetics.crown.condition))}</small></p>
           <div class="cosmetic-chips">
-            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? " is-active" : ""}" data-cosmetic-crown="on" aria-pressed="${cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>Açık</button>
-            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? "" : " is-active"}" data-cosmetic-crown="off" aria-pressed="${!cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>Kapalı</button>
+            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? " is-active" : ""}" data-cosmetic-crown="on" aria-pressed="${cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>${t("menu.badges.on")}</button>
+            <button type="button" class="cosmetic-chip${cosmetics.crown.on ? "" : " is-active"}" data-cosmetic-crown="off" aria-pressed="${!cosmetics.crown.on}"${cosmetics.crown.unlocked ? "" : " disabled"}>${t("menu.badges.off")}</button>
           </div>
         </div>
       </section>
@@ -1584,9 +1628,31 @@ function renderBadges(progress: ProgressState, stageState: StageState, cardArchi
 function renderCosmeticChip(option: CosmeticOptionView, kind: "title" | "stamp") {
   const attribute = kind === "title" ? `data-cosmetic-title="${escapeHtml(option.id)}"` : `data-cosmetic-stamp="${escapeHtml(option.id)}"`;
   if (!option.unlocked) {
-    return `<button type="button" class="cosmetic-chip is-locked" ${attribute} disabled aria-label="${escapeHtml(`${option.label}, kilitli: ${option.condition}`)}"><b>${escapeHtml(option.label)}</b><small>${escapeHtml(option.condition)}</small></button>`;
+    const unlock = kind === "title"
+      ? TITLE_CATALOG.find((title) => title.id === option.id)?.unlock
+      : STAMP_CATALOG.find((stamp) => stamp.id === option.id)?.unlock;
+    const condition = describeUnlock(unlock, option.condition);
+    return `<button type="button" class="cosmetic-chip is-locked" ${attribute} disabled aria-label="${escapeHtml(t("menu.badges.lockedAria", { label: option.label, condition }))}"><b>${escapeHtml(option.label)}</b><small>${escapeHtml(condition)}</small></button>`;
   }
   return `<button type="button" class="cosmetic-chip${option.selected ? " is-active" : ""}" ${attribute} aria-pressed="${option.selected}">${escapeHtml(option.label)}</button>`;
+}
+
+/**
+ * Kilitli kozmetigin kosulu secili dilde. Paylasilan `describeCosmeticUnlock`
+ * Turkce yaziyor; Turkce kalip burada da ayni, nisan ve operator adi
+ * katalogdan (dile bakan okuyucu). Taninmayan kilitte paylasilan metin kaliyor.
+ */
+function describeUnlock(unlock: CosmeticUnlock | undefined, fallback: string) {
+  if (!unlock) return fallback;
+  if (unlock.kind === "badge") {
+    const badge = getBadgeDefinition(unlock.badgeId);
+    return badge ? t("menu.badges.unlock.badge", { badge: badge.name }) : fallback;
+  }
+  if (unlock.characterId) {
+    const operator = characters.find((character) => character.id === unlock.characterId)?.displayName;
+    return operator ? t("menu.badges.unlock.operator", { operator, level: unlock.level }) : fallback;
+  }
+  return t("menu.badges.unlock.any", { level: unlock.level });
 }
 
 function renderBadgeGroup(group: BadgeGroupView) {
@@ -1601,9 +1667,9 @@ function renderBadgeGroup(group: BadgeGroupView) {
 /** Nisan satiri: kazanilan dolu elmas, kilitli bos elmas; renk tek isaret degil, etiket de yaziyor. */
 function renderBadgeEntry(entry: BadgeEntryView) {
   const operator = entry.characterId ? characters.find((character) => character.id === entry.characterId)?.displayName : undefined;
-  const tag = entry.earned ? "Kazanıldı" : entry.longTerm ? "Uzun vadeli" : operator ?? "Kilitli";
+  const tag = entry.earned ? t("menu.badges.earned") : entry.longTerm ? t("menu.badges.longTerm") : operator ?? t("menu.badges.locked");
   const progress = entry.progress
-    ? `<span class="badge-entry__progress" role="img" aria-label="İlerleme ${escapeHtml(entry.progress.text)}"><i style="--fill: ${entry.progress.percent}%"></i><small>${escapeHtml(entry.progress.text)}</small></span>`
+    ? `<span class="badge-entry__progress" role="img" aria-label="${escapeHtml(t("menu.badges.progressAria", { text: entry.progress.text }))}"><i style="--fill: ${entry.progress.percent}%"></i><small>${escapeHtml(entry.progress.text)}</small></span>`
     : "";
   return `
       <article class="card-archive__entry badge-entry${entry.earned ? " is-earned" : " is-locked"}">
@@ -1622,12 +1688,12 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
   return `
     <div class="screen" style="--accent: ${classColor[character.id]}">
       <header class="screen-topbar detail-topbar">
-        <button class="icon-command" data-view="archive" aria-label="Arşive dön">‹</button>
+        <button class="icon-command" data-view="archive" aria-label="${t("menu.detail.backAria")}">‹</button>
         <div>
           <p class="eyebrow">Operator Dossier</p>
           <h1>${operatorNameHtml(character.displayName)}</h1>
         </div>
-        <button class="command command--small command--primary" data-start-game>Başlat</button>
+        <button class="command command--small command--primary" data-start-game>${t("menu.common.start")}</button>
       </header>
 
       <section class="dossier-hero frame">
@@ -1641,7 +1707,7 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
       <section class="loadout-grid">
         ${details.map((item) => `
           <button class="loadout-chip ${item.key === selectedDetail.key ? "is-active" : ""}" data-detail-key="${item.key}" style="--item: ${item.color}">
-            <span>${detailTypeLabels[item.type]}</span>
+            <span>${detailTypeLabel(item.type)}</span>
             <strong>${escapeHtml(item.title)}</strong>
           </button>
         `).join("")}
@@ -1712,16 +1778,16 @@ function getDetailItems(character: CharacterDefinition): DetailItem[] {
   return [
     {
       key: "passive",
-      title: splitTitle(character.passive).title ?? "Pasif",
-      label: "Pasif",
+      title: splitTitle(character.passive).title ?? detailTypeLabel("passive"),
+      label: detailTypeLabel("passive"),
       type: "passive",
       color: "#34d399",
       blocks: [{ kind: "brief", text: splitTitle(character.passive).body }]
     },
     {
       key: "ultimate",
-      title: splitTitle(character.ultimate).title ?? "Ulti",
-      label: "Ulti",
+      title: splitTitle(character.ultimate).title ?? detailTypeLabel("ultimate"),
+      label: detailTypeLabel("ultimate"),
       type: "ultimate",
       color: "#facc15",
       blocks: [{ kind: "brief", text: splitTitle(character.ultimate).body }]
@@ -1751,23 +1817,13 @@ function enemyColor(type: EnemyType) {
   }[type];
 }
 
+// Yetenek, irk ve direnc adlari sozlukte; bilinmeyen kimlik oldugu gibi yaziliyor.
 function formatEnemyAbility(ability: string) {
-  return {
-    "heavy-body": "Ağır Gövde",
-    fast: "Çok Hızlı",
-    "ranged-shot": "Ateş Eder"
-  }[ability] ?? ability;
+  return tMaybe(`menu.enemy.ability.${ability}`) ?? ability;
 }
 
 function formatEnemyRace(race: string) {
-  return {
-    meka: "Meka",
-    spaceBug: "Uzay böceği",
-    fourthDimensional: "4. boyut yerlisi",
-    holyGuardian: "Kutsal koruyucu",
-    fallen: "Düşmüş",
-    golem: "Golem"
-  }[race] ?? race;
+  return tMaybe(`menu.enemy.race.${race}`) ?? race;
 }
 
 function getEnemyImagePath(race: EnemyRace, type: EnemyType) {
@@ -1786,7 +1842,7 @@ function getEnemyImageClass(race: EnemyRace, type: EnemyType) {
 function formatResistanceLine(label: string, resistances: Record<string, number> | undefined) {
   const entries = Object.entries(resistances ?? {});
   if (entries.length === 0) {
-    return `<p><strong>${label}</strong><span>Özel direnç yok</span></p>`;
+    return `<p><strong>${label}</strong><span>${t("menu.bestiary.resist.none")}</span></p>`;
   }
 
   return `
@@ -1798,42 +1854,27 @@ function formatResistanceLine(label: string, resistances: Record<string, number>
 }
 
 function formatResistanceKey(key: string) {
-  return {
-    physical: "Fiziksel",
-    electric: "Elektrik",
-    psychic: "Psişik",
-    fire: "Ateş",
-    light: "Işık",
-    cellular: "Hücresel",
-    projectile: "Mermi",
-    impact: "Patlama",
-    focus: "Odaklanma",
-    aura: "Aura",
-    contamination: "Kontaminasyon",
-    slow: "Slow",
-    fear: "Korku",
-    tracking: "Takip"
-  }[key] ?? key;
+  return tMaybe(`menu.enemy.resist.${key}`) ?? key;
 }
 
 function formatResistanceValue(value: number) {
   const percent = Math.round(Math.abs(value) * 100);
-  return value < 0 ? `+%${percent} zayıf` : `%${percent} direnç`;
+  return t(value < 0 ? "menu.bestiary.resist.weak" : "menu.bestiary.resist.strong", { v: percent });
 }
 
 function skillToDetail(skill: SkillDefinition): DetailItem {
   return {
     key: `skill-${skill.id}`,
     title: skill.name,
-    label: "Yetenek",
+    label: detailTypeLabel("skill"),
     type: "skill",
     color: "#22d3ee",
     blocks: [
       { kind: "brief", text: skill.description },
       {
         kind: "stats",
-        label: "Kullanım",
-        rows: [{ label: "Bekleme", value: `${(skill.cooldownMs / 1000).toFixed(1)} sn` }]
+        label: t("menu.detail.usage"),
+        rows: [{ label: t("menu.detail.cooldown"), value: t("menu.common.seconds", { v: (skill.cooldownMs / 1000).toFixed(1) }) }]
       }
     ]
   };
@@ -1847,24 +1888,26 @@ function skillToDetail(skill: SkillDefinition): DetailItem {
  */
 function formatSlowStrengthRow(tower: TowerDefinition) {
   const slow = tower.engine?.statusEffects?.find((effect) => effect.type === "slow");
+  // Yuzde isareti dile gore (TR "%40", EN "40%"); kart adi katalogdan.
+  const yuzde = (value: number) => t("format.percent", { v: Math.round(value * 100) });
+  const card = getCardDefinition("buz-kirigi")?.name ?? "Buz Kırığı";
   if (slow?.scaling === "distance") {
     return [{
-      label: "Yavaşlatma gücü",
-      value: `%0 → %${Math.round(KIN_SLOW_FAR_FRACTION * 100)} (uzaklıkla)`,
-      hint: `Kulenin dibinde yavaşlatmaz, menzil ucunda %${Math.round(KIN_SLOW_FAR_FRACTION * 100)}. Buz Kırığı kritiğiyle 1,5 kat: en çok %${Math.round(getCriticalSlowFraction(KIN_SLOW_FAR_FRACTION) * 100)}.`
+      label: t("menu.tower.slowStrength"),
+      value: t("menu.tower.slowByDistance", { from: yuzde(0), to: yuzde(KIN_SLOW_FAR_FRACTION) }),
+      hint: t("menu.tower.slowByDistanceHint", { far: yuzde(KIN_SLOW_FAR_FRACTION), card, max: yuzde(getCriticalSlowFraction(KIN_SLOW_FAR_FRACTION)) })
     }];
   }
   const level1 = getTowerHitSlowFraction(tower, 1);
   if (level1 === undefined) return [];
   const level10 = getTowerHitSlowFraction(tower, 10) ?? level1;
-  const yuzde = (value: number) => `%${Math.round(value * 100)}`;
   const grows = Math.abs(level10 - level1) > 1e-9;
   return [{
-    label: "Yavaşlatma gücü",
+    label: t("menu.tower.slowStrength"),
     value: grows ? `${yuzde(level1)} → ${yuzde(level10)}` : yuzde(level1),
     hint: grows
-      ? `1. seviyeden 10. seviyeye, her seviyede eşit artar. Buz Kırığı kritiğiyle 1,5 kat: en çok ${yuzde(getCriticalSlowFraction(level10))}.`
-      : `Düşman bu oranda yavaş yürür. Buz Kırığı kritiğiyle 1,5 kat: ${yuzde(getCriticalSlowFraction(level1))}.`
+      ? t("menu.tower.slowGrowsHint", { card, max: yuzde(getCriticalSlowFraction(level10)) })
+      : t("menu.tower.slowFlatHint", { card, max: yuzde(getCriticalSlowFraction(level1)) })
   }];
 }
 
@@ -1883,75 +1926,74 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
 
   blocks.push({
     kind: "stats",
-    label: "Künye",
+    label: t("menu.tower.profile"),
     rows: [
-      { label: "Sınıf", value: classTypeCodex[classType]?.name ?? classType, hint: classTypeCodex[classType]?.text },
-      { label: "Hasar türü", value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
-      { label: "Vuruş", value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
+      { label: t("menu.tower.class"), value: classTypeCodex[classType]?.name ?? classType, hint: classTypeCodex[classType]?.text },
+      { label: t("menu.tower.damageType"), value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
+      { label: t("menu.tower.hitType"), value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
       {
-        label: "Menzil",
-        value: level1.hasGlobalRange ? "Global" : `${level1.range.toFixed(0)} → ${level10.range.toFixed(0)}`,
-        hint: level1.hasGlobalRange ? "Tüm haritayı görür." : "1. seviyeden 10. seviyeye."
+        label: t("menu.tower.range"),
+        value: level1.hasGlobalRange ? t("menu.tower.rangeGlobal") : `${level1.range.toFixed(0)} → ${level10.range.toFixed(0)}`,
+        hint: t(level1.hasGlobalRange ? "menu.tower.rangeGlobalHint" : "menu.tower.levelSpan")
       },
       ...(level1.minimumRange > 0
-        ? [{ label: "Ölü bölge", value: `${level1.minimumRange.toFixed(0)}`, hint: "Bu mesafeden yakındaki hedefleri vuramaz." }]
+        ? [{ label: t("menu.tower.deadZone"), value: `${level1.minimumRange.toFixed(0)}`, hint: t("menu.tower.deadZoneHint") }]
         : []),
       ...(isPassiveTower
         ? []
         : [{
-            label: "Atış aralığı",
+            label: t("menu.tower.fireInterval"),
             value: level1.hasFixedFireInterval
-              ? `${(level1.realFireIntervalMs / 1000).toFixed(2)} sn (sabit)`
-              : `${(level1.realFireIntervalMs / 1000).toFixed(2)} → ${(level10.realFireIntervalMs / 1000).toFixed(2)} sn`,
-            hint: level1.hasFixedFireInterval
-              ? "Bu kule atış hızı artışlarından etkilenmez."
-              : "Gerçek saniye cinsinden, 1. seviyeden 10. seviyeye."
+              ? t("menu.tower.fireIntervalFixed", { v: (level1.realFireIntervalMs / 1000).toFixed(2) })
+              : t("menu.common.secondsRange", { from: (level1.realFireIntervalMs / 1000).toFixed(2), to: (level10.realFireIntervalMs / 1000).toFixed(2) }),
+            hint: t(level1.hasFixedFireInterval ? "menu.tower.fireIntervalFixedHint" : "menu.tower.fireIntervalHint")
           }]),
       ...(tower.engine?.canHitAir !== undefined
         ? [{
-            label: "Hava hedefi",
-            value: tower.engine.canHitAir ? "Vurabilir" : "Vuramaz",
-            hint: "Bazı dalgalarda düşmanların tamamı havacı gelir."
+            label: t("menu.tower.air"),
+            value: t(tower.engine.canHitAir ? "menu.tower.airYes" : "menu.tower.airNo"),
+            hint: t("menu.tower.airHint")
           }]
         : []),
-      ...(getTowerAttackRadius(tower) > 0 ? [{ label: "Etki alanı", value: String(getTowerAttackRadius(tower)) }] : []),
-      ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: "Yavaşlatma", value: `${(getTowerSlowDurationMs(tower) / 1000).toFixed(2)} sn` }] : []),
+      ...(getTowerAttackRadius(tower) > 0 ? [{ label: t("menu.tower.area"), value: String(getTowerAttackRadius(tower)) }] : []),
+      ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: t("menu.tower.slow"), value: t("menu.common.seconds", { v: (getTowerSlowDurationMs(tower) / 1000).toFixed(2) }) }] : []),
       ...formatSlowStrengthRow(tower)
     ]
   });
 
   blocks.push({
     kind: "stats",
-    label: "Ekonomi",
+    label: t("menu.tower.economy"),
     rows: [
-      { label: "Kuruluş", value: `${getTowerBuildCost(tower.cost)} altın` },
-      { label: "2. seviye", value: `${getTowerLevelExpCost(tower.cost, 1)} XP` },
-      { label: "3. seviye", value: `${getTowerLevelExpCost(tower.cost, 2)} XP` },
-      { label: "4. seviye", value: `${getTowerLevelExpCost(tower.cost, 3)} XP` }
+      { label: t("menu.tower.build"), value: t("menu.tower.gold", { v: getTowerBuildCost(tower.cost) }) },
+      ...[2, 3, 4].map((level) => ({
+        label: t("menu.common.level", { n: level }),
+        value: t("menu.tower.xp", { v: getTowerLevelExpCost(tower.cost, level - 1) })
+      }))
     ]
   });
 
   if (!isPassiveTower && tower.damage > 0) {
     blocks.push({
       kind: "stats",
-      label: "Güç",
+      label: t("menu.tower.power"),
       rows: [
-        { label: "1. seviye vuruş", value: level1.damage.toFixed(1) },
-        { label: "10. seviye vuruş", value: level10.damage.toFixed(1) },
-        { label: "1. seviye DPS", value: formatDps(tower, 1) },
-        { label: "10. seviye DPS", value: formatDps(tower, 10), hint: "Gerçek saniye başına hasar. Evrim, işaret ve dizilim bonusları hariç." }
+        { label: t("menu.tower.levelHit", { n: 1 }), value: level1.damage.toFixed(1) },
+        { label: t("menu.tower.levelHit", { n: 10 }), value: level10.damage.toFixed(1) },
+        { label: t("menu.tower.levelDps", { n: 1 }), value: formatDps(tower, 1) },
+        { label: t("menu.tower.levelDps", { n: 10 }), value: formatDps(tower, 10), hint: t("menu.tower.dpsHint") }
       ]
     });
   }
 
-  const balanceNote = getTowerBalanceNote(tower.id);
+  const balanceNote = tMaybe(`menu.tower.balance.${tower.id}`);
   if (balanceNote) {
     blocks.push({ kind: "note", text: balanceNote });
   }
 
   const evolutionNotes = getTowerEvolutionArchiveNotes(tower);
   if (evolutionNotes.length > 0) {
-    blocks.push({ kind: "steps", label: "Evrimler", items: evolutionNotes });
+    blocks.push({ kind: "steps", label: t("menu.tower.evolutions"), items: evolutionNotes });
   }
 
   return {
@@ -1964,50 +2006,14 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   };
 }
 
-function getTowerBalanceNote(towerId: string) {
-  return {
-    "warrior-2": "Uzun bağlantı ödülü: aynı kuleye 5 dalga bağlı kalırsa çarpma vuruşlu bağlı kule Sunucu seviyesine göre %12-30 ek hasar alır. 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının %0.1-0.5'i kadar ek hasar eklenir.",
-    "warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 850, 7. seviye 1200, 8. seviye 1500, 10. seviye 2000 DPS.",
-    "warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Overdrive 5. seviyede açılır; 10. seviyede zincir ışınına ek olarak iki ters dönen ışın. Overdrive ışınları da aynı aralıkla vurur; 10. seviyedeki iki ek ışın birer tam tur atar ve birden fazla ışının altında kalan düşman atış başına bir kez vurulur.",
-    "warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 4228 DPS'ye ulaşır."
-  }[towerId];
-}
-
+/**
+ * Evrim adimlari (kule basina uc). Metinler sozlukte `menu.tower.evo.<kule>.<n>`;
+ * sozlukte olmayan kulede liste bos, adim yazilmiyor.
+ */
 function getTowerEvolutionArchiveNotes(tower: TowerDefinition) {
-  const notes: Record<string, string[]> = {
-    "archer-1": [
-      "Ölüler Bağı'na bağlı bir düşman menziline girerse ona öncelik verir; zaten böyle bir hedefe vuruyorsa hedef değiştirmez.",
-      "Aynı hedefe kilitlenen her ek Hedefçi için hasar 1.5 katına çıkar.",
-      "Şüphe yüklü hedeflere vururken o hedefe özel atış hızı kazanır: 1 yükte %10, 2 yükte %20, 3 yükte %40."
-    ],
-    "archer-2": [
-      "Düz vuruşuyla son vuruşu yaptığında da korku dalgasını tetikler.",
-      "Korku dalgası kalkanlı bir hedefe denk gelirse kalkan katmanına iki kat hasar verir.",
-      "Korku süresi 0.5 saniye artarak toplam 1 saniyeye çıkar."
-    ],
-    "archer-3": [
-      "Lanet uygulama alanı genişler.",
-      "Lanetli düşman öldüğünde altında 3 saniyelik lanet göleti bırakır; gölete giren düşmanlar bir kez lanet yükü alır.",
-      "Gölet artık pasif değildir: üzerindeki düşmanlara 0.5 saniyede bir yeniden lanet uygular."
-    ],
-    "archer-4": [
-      "Ölüler alemine çekilen hedefin bitişiğindeki düşmanlar 1 saniye korkar.",
-      "Aynı anda kurabildiği bağ sayısı 2'ye çıkar.",
-      "İnfaz edilen bir Uzak Atıcı, nexus tarafında ölü olarak dirilir ve kendi ırkına karşı savaşır."
-    ],
-    "archer-5": [
-      "Komşu kulelerden depoladığı hasar oranı %4 artar.",
-      "Patlamanın %25'i zırhı yok sayan gerçek hasara dönüşür.",
-      "Patlama hedefi öldürürse tüm DualiTemp kuleleri 2 saniye boyunca %20 atış hızı kazanır."
-    ],
-    "archer-6": [
-      "Korku altındaki bir düşmanda duraksama tetiklenirse hedef 1 saniye taraf değiştirir ve kendi ırkına saldırır.",
-      "Taraf değiştiren hedef fiziksel engel olur; arkadan gelen düşmanlar ilerlemek için onu öldürmek zorunda kalır.",
-      "Taraf değiştiren hedefin canı %10'un altına inerse kalan canı kadar fiziksel patlama yapar."
-    ]
-  };
-
-  return notes[tower.id] ?? [];
+  return [1, 2, 3]
+    .map((step) => tMaybe(`menu.tower.evo.${tower.id}.${step}`))
+    .filter((note): note is string => note !== undefined);
 }
 
 function formatDps(tower: TowerDefinition, level: number) {
@@ -2051,7 +2057,7 @@ function loadSavedMapRecords(): SavedMapRecord[] {
 
     const rawLegacyMap = localStorage.getItem(MAP_STORAGE_KEY);
     if (rawLegacyMap) {
-      return [createSavedMapRecord(normalizeMapData(JSON.parse(rawLegacyMap)), "Kayitli Harita", "legacy-map")];
+      return [createSavedMapRecord(normalizeMapData(JSON.parse(rawLegacyMap)), t("menu.map.legacyName"), "legacy-map")];
     }
   } catch {
     return [];
@@ -2062,7 +2068,7 @@ function loadSavedMapRecords(): SavedMapRecord[] {
 
 function saveStoredMap(map: EditableMapData, name: string, existingId = "") {
   const normalizedMap = normalizeMapData(map);
-  const recordName = name.trim().slice(0, 28) || "Harita";
+  const recordName = name.trim().slice(0, 28) || t("menu.map.fallbackName");
   const recordId = existingId || createMapRecordId();
   const record = createSavedMapRecord(normalizedMap, recordName, recordId);
   const records = loadSavedMapRecords().filter((candidate) => candidate.id !== recordId);
@@ -2075,7 +2081,7 @@ function saveStoredMap(map: EditableMapData, name: string, existingId = "") {
 function createSavedMapRecord(map: EditableMapData, name: string, id = createMapRecordId()): SavedMapRecord {
   return {
     id,
-    name: name.trim().slice(0, 28) || "Harita",
+    name: name.trim().slice(0, 28) || t("menu.map.fallbackName"),
     map: normalizeMapData(map),
     savedAt: Date.now()
   };
@@ -2090,7 +2096,7 @@ function normalizeSavedMapRecord(value: unknown): SavedMapRecord | undefined {
   try {
     return {
       id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : createMapRecordId(),
-      name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim().slice(0, 28) : "Harita",
+      name: typeof candidate.name === "string" && candidate.name.trim() ? candidate.name.trim().slice(0, 28) : t("menu.map.fallbackName"),
       map: normalizeMapData(candidate.map),
       savedAt: typeof candidate.savedAt === "number" ? candidate.savedAt : 0
     };
@@ -2142,10 +2148,11 @@ function escapeHtml(value: string | number) {
     .replaceAll("'", "&#039;");
 }
 
-function formatUiError(error: unknown, fallback: string) {
+/** Hatanin kendi metni (cogu sunucudan, Turkce) varsa o; yoksa yerel yedek. */
+function formatUiError(error: unknown, fallback: MessageKey): UiText {
   if (error instanceof Error && error.message.trim()) {
-    return error.message;
+    return rawText(error.message);
   }
 
-  return fallback;
+  return uiText(fallback);
 }
