@@ -16,7 +16,7 @@ export const trControls = {
   "controls.launch.workerTree": "İşçi Ağacı",
   "controls.launch.inventory": "Envanter {count}",
   "controls.launch.creative": "Yaratıcı",
-  "controls.launch.defenseSummary": "Savunma Özeti",
+  "controls.launch.defenseSummary": "Özet",
 
   // ------------------------------------------------------------ Beceriler ve ulti
   "controls.ultimate.charge": "Ulti {charge}%",
