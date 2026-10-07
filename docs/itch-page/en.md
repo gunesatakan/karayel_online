@@ -6,7 +6,7 @@ Hard sci-fi tower defense with a card-built run and co-op for up to four. In you
 
 ## Long description
 
-**Uzay Savunma** is a browser tower defense game with co-op for up to four players. Pick an operator, build a defense line and hold the nexus through twenty waves.
+**Defense Protocol** is a browser tower defense game with co-op for up to four players. Pick an operator, build a defense line and hold the nexus through twenty waves.
 
 Every operator brings their own towers, skills and an ultimate. After each wave you pick a card that shapes your run, and items from the gold shop go into tower slots. Towers heat up as they fire; workers carry energy and ammo to them. Let the logistics slip and even your strongest tower goes quiet.
 

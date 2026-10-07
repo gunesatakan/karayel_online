@@ -3,7 +3,8 @@ import { en } from "./locales/en";
 import { tr, type MessageKey } from "./locales/tr";
 
 /**
- * Arayuz dili: Turkce (varsayilan) ve Ingilizce.
+ * Arayuz dili: Turkce ve Ingilizce. Kayitli secim yoksa tarayici dili
+ * Turkceyse Turkce, degilse Ingilizce (`resolveInitialLocale`).
  *
  * Metinler anahtarla (`t("hud.continue")`) okunuyor; Turkce sozluk kaynak,
  * anahtarlarin tamami orada. Ingilizcede eksik anahtar Turkceye dusuyor:
@@ -23,16 +24,48 @@ export const LOCALE_STORAGE_KEY = "uzay_locale";
 
 const dictionaries: Record<Locale, Partial<Record<MessageKey, string>>> = { tr, en };
 
-let current: Locale = readStoredLocale();
+let current: Locale = readInitialLocale();
 // Paylasilan metin ureticileri (rapor, karne, bildirim) ayni dilde yazsin.
 setSharedLocale(current);
+// Sayfa dili de ilk boyamadan once secili dilden (index.html "tr" ile geliyor).
+try {
+  if (typeof document !== "undefined") document.documentElement.lang = current;
+} catch {
+  // Belge yok (node): yapacak bir sey yok.
+}
 
-function readStoredLocale(): Locale {
+/**
+ * Ilk dil: kayitli secim her zaman kazanir. Secim yoksa tarayicinin ilk
+ * tercih ettigi dil: Turkce ("tr", "tr-TR") ise Turkce, baska her dil ya da
+ * bilinmiyorsa Ingilizce.
+ */
+export function resolveInitialLocale(stored: string | null | undefined, languages: readonly (string | null | undefined)[]): Locale {
+  if (stored === "en" || stored === "tr") return stored;
+  const preferred = languages.find((language) => typeof language === "string" && language.trim().length > 0);
+  return preferred && /^tr(?:[-_]|$)/i.test(preferred.trim()) ? "tr" : "en";
+}
+
+function readInitialLocale(): Locale {
+  return resolveInitialLocale(readStoredChoice(), readBrowserLanguages());
+}
+
+function readStoredChoice(): string | null {
   try {
-    const stored = typeof window === "undefined" ? null : window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    return stored === "en" || stored === "tr" ? stored : "tr";
+    return typeof window === "undefined" ? null : window.localStorage.getItem(LOCALE_STORAGE_KEY);
   } catch {
-    return "tr";
+    // Depolama kapali (itch iframe'i, gizli pencere): secim yok sayilir.
+    return null;
+  }
+}
+
+/** Tarayicinin dil tercihleri, onem sirasiyla; okunamazsa bos liste. */
+function readBrowserLanguages(): readonly string[] {
+  try {
+    if (typeof navigator === "undefined") return [];
+    const list = Array.isArray(navigator.languages) ? navigator.languages : [];
+    return list.length > 0 ? list : [navigator.language];
+  } catch {
+    return [];
   }
 }
 

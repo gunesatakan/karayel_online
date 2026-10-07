@@ -13,3 +13,6 @@ pnpm-debug.log*
 
 # Sunucu telemetrisi (yerel calistirma; Fly'da /data/telemetry)
 **/data/telemetry/
+
+# Ses adaylari (yalnizca dinleme; tools/build-portal-death-candidates.mjs uretiyor)
+ses-adaylari/

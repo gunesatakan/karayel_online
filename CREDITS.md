@@ -1,7 +1,7 @@
 # Emeği geçenler ve varlık lisansları
 
-Uzay Savunma'nın oyunla birlikte dağıtılan (ya da oyunun yüklediği) sanat, ses,
-yazı tipi ve yazılım kaynakları. Bu dosya ile `apps/web/src/credits.ts` aynı
+Defense Protocol'ün oyunla birlikte dağıtılan (ya da oyunun yüklediği) sanat, ses,
+müzik, yazı tipi ve yazılım kaynakları. Bu dosya ile `apps/web/src/credits.ts` aynı
 kaynak listesini taşır; oyundaki **Emeği geçenler** ekranı o modülden çizilir.
 `tests/credits.test.mjs` modüldeki her kaynağın adını, yazarını, lisansını ve
 bağlantısını burada arar. Yeni bir varlık eklerken ikisine de yazın.
@@ -55,17 +55,19 @@ yüklenmiyor.
 
 SIL Open Font License 1.1: https://openfontlicense.org
 
-### Görsel üretim
+### Üretken yapay zekâ
 
 | Eser | Yazar | Lisans | Bağlantı |
 |---|---|---|---|
 | gpt-image | OpenAI | OpenAI Terms of Use | https://openai.com/policies/terms-of-use |
+| Suno | Suno, Inc. | Suno Terms of Service | https://suno.com |
 
 Kanıt: `apps/web/public/images/melis-creepy-unstoppable.png` içinde imzalı bir
 C2PA bildirimi var (üretici "OpenAI Media Service API", araç `gpt-image`,
 `digitalSourceType: trainedAlgorithmicMedia`, 2026-06-23). itch.io sayfasında
 "Generative AI disclosure" alanı, Steam'de içerik anketindeki yapay zekâ
-beyanı bu yüzden "evet, grafik" olarak doldurulmalı.
+beyanı bu yüzden "evet, grafik" olarak doldurulmalı. Lobi müziği Suno ile
+üretildi (aşağıda "Müzik: Last Stand"); beyan "evet, grafik ve müzik" olur.
 
 ### Yazılım
 
@@ -76,8 +78,8 @@ beyanı bu yüzden "evet, grafik" olarak doldurulmalı.
 
 ## Geliştirici yapımı varlıklar
 
-Aşağıdaki görsel ve ses varlıklarını geliştirici (gunesatakan) kendisi üretti.
-Bazı görseller üretken yapay zekâ araçlarıyla yapıldı. Üçüncü taraf lisans
+Aşağıdaki görsel, ses ve müzik varlıklarını geliştirici (gunesatakan) kendisi
+üretti. Bazı görseller ve lobi müziği üretken yapay zekâ araçlarıyla yapıldı. Üçüncü taraf lisans
 gerektiren kaynaklar yukarıdaki bölümlerde ayrıca listelendi. Aşağıdaki liste
 kaydın eksiksiz olması için dosya yollarını gruplar hâlinde tutuyor.
 
@@ -85,13 +87,31 @@ kaydın eksiksiz olması için dosya yollarını gruplar hâlinde tutuyor.
 
 Oyunun bazı görselleri (düşman ve kule sprite'ları, menü ve operatör görselleri)
 üretken yapay zekâ araçlarıyla oluşturuldu; bunlardan biri yukarıda belirtilen
-OpenAI gpt-image. Mağaza sayfalarındaki yapay zekâ beyanı (itch.io "Generative
-AI disclosure", Steam içerik anketi) "evet, grafik" olarak doldurulur.
+OpenAI gpt-image. Lobi müziği "Last Stand" geliştirici tarafından Suno ile
+üretildi. Yapay zekâ artık grafikte **ve** müzikte kullanılıyor: mağaza
+sayfalarındaki yapay zekâ beyanı (itch.io "Generative AI disclosure", Steam
+içerik anketi) "evet, grafik ve müzik" olarak doldurulur.
+
+### Müzik: Last Stand (lobi)
+
+Ana menüde (alt ekranlar dahil) ve co-op bekleme odasında, ilk dokunuştan sonra
+döngüde çalan tek parça. Maç başlarken ~600 ms'de susuyor; maçın kendisi
+müziksiz. Çalma mantığı `apps/web/src/menu-music.ts`.
+
+| Eser | Yazar | Lisans | Bağlantı |
+|---|---|---|---|
+| Last Stand | gunesatakan (aliatakangunes) | Suno Terms of Service | https://suno.com |
+
+- Dosya: `apps/web/public/audio/music/last-stand.mp3` (3:45, 44,1 kHz stereo,
+  128 kb/s, ~-18 LUFS; gömülü kapak ve etiketler çıkarıldı, sondaki ~0,6 sn
+  sessizlik döngü için kırpıldı).
+- Kaynak: geliştiricinin Suno ile ürettiği kayıt (ID3: sanatçı "aliatakangunes",
+  yorum "made with suno", 2026-10-07).
 
 ### Müzik: ticari kayıtlar (kaldırıldı)
 
-İki arka plan parçası lisanssız ticari kayıttı ve oyundan kaldırıldı; oyun
-şimdilik müziksiz. Lisanslı ya da CC0 parça eklenince buraya kaynağıyla yazılır.
+İki arka plan parçası lisanssız ticari kayıttı ve oyundan kaldırıldı. Maç hâlâ
+müziksiz; yalnızca menüde yukarıdaki lobi müziği çalıyor.
 
 | Dosya | Not | Durum |
 |---|---|---|
@@ -158,20 +178,28 @@ manifest.
   CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
 - Typefaces (loaded from Google Fonts): Cinzel (Natanael Gama), Rajdhani
   (Indian Type Foundry), Share Tech Mono (Carrois Apostrophe). All SIL OFL 1.1.
-- Image generation: OpenAI gpt-image, under the OpenAI Terms of Use
-  (`melis-creepy-unstoppable.png` carries a C2PA manifest). Declare
-  generative AI on itch.io and Steam.
+- Generative AI: OpenAI gpt-image, under the OpenAI Terms of Use
+  (`melis-creepy-unstoppable.png` carries a C2PA manifest), and Suno, under
+  the Suno Terms of Service (the lobby music). Declare generative AI on
+  itch.io and Steam.
 - Software: Phaser (MIT), Colyseus (MIT).
 
 **Created by the developer (gunesatakan):** the streak/announcer clips, all 24
-enemy sprites, the tower sprites, the splash art, the Zeynep hands and the
-Melis portraits were made by the developer. Some of the visuals were made with
-generative AI tools. The Turkish section above keeps the full file lists.
+enemy sprites, the tower sprites, the splash art, the Zeynep hands, the
+Melis portraits and the lobby music were made by the developer. Some of the
+visuals and the lobby music were made with generative AI tools.
+
+**Music:** "Last Stand" by gunesatakan (aliatakangunes), generated with Suno AI
+(`apps/web/public/audio/music/last-stand.mp3`). It plays as lobby music on the
+main menu and in the co-op waiting room after the first tap, and fades out when
+a match starts. The Turkish section above keeps the full file lists.
 
 **Removed:** the two commercial music tracks (Chipzel "Courtesy"; Dynoro
-"Zver") are no longer shipped; the game currently has no music.
+"Zver") are no longer shipped; matches have no music, only the lobby track
+above plays on the menu.
 
 **AI disclosure:** some of the game's artwork (enemy and tower sprites, menu
 and operator images) was created with generative AI tools, including OpenAI
-gpt-image. Store-page AI disclosures (itch.io "Generative AI disclosure",
-Steam content survey) are answered "yes, graphics".
+gpt-image, and the lobby music ("Last Stand") was generated with Suno AI. AI is
+used in graphics and music. Store-page AI disclosures (itch.io "Generative AI
+disclosure", Steam content survey) are answered "yes, graphics and music".

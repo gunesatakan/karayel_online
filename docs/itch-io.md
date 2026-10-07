@@ -6,7 +6,7 @@
 npm run build:itch
 ```
 
-Çıktı `dist/itch/uzay-savunma-web.zip`. Zip'in kökünde `index.html` var; itch'e bu dosya olduğu gibi yüklenir.
+Çıktı `dist/itch/defense-protocol-web.zip`. Zip'in kökünde `index.html` var; itch'e bu dosya olduğu gibi yüklenir.
 
 Oyun sunucusu derleme anında gömülür. Varsayılan üretim sunucusudur (`wss://karayel-online.fly.dev`). Başka bir sunucu için:
 
@@ -29,7 +29,7 @@ itch oyunu `https://html.itch.zone/html/<id>/index.html` gibi bir alt yoldan, ke
 | Ayar | Değer |
 | --- | --- |
 | Kind of project | HTML |
-| Uploads | `uzay-savunma-web.zip`, "This file will be played in the browser" işaretli |
+| Uploads | `defense-protocol-web.zip`, "This file will be played in the browser" işaretli |
 | Viewport dimensions | 405 × 720 (dikey) |
 | Mobile friendly | Açık; Orientation: **Portrait** |
 | Automatically start on page load | Kapalı (ses tarayıcıda ilk dokunuşla açılıyor; "Run game" düğmesi bu dokunuşu sağlıyor) |

@@ -44,9 +44,48 @@ export async function importWebModule(relativePath) {
   }
   const file = join(outDir, `${relativePath.replace(/[\\/.:]/g, "_")}.mjs`);
   writeFileSync(file, result.outputFiles[0].text, "utf8");
-  const loaded = import(pathToFileURL(file).href);
+  const loaded = withTurkishBrowser(() => import(pathToFileURL(file).href));
   cache.set(relativePath, loaded);
   return loaded;
+}
+
+/**
+ * Istemcinin dili acilista tarayici dilinden seciliyor (apps/web/src/i18n.ts);
+ * node'un `navigator.language`i makinenin diline bakiyor. Testler Turkce
+ * kaynak metne gore yazili: paket degerlendirilirken tarayici Turkce
+ * gorunuyor, sonuc makineden bagimsiz. Dili sinayan test kendi sahte
+ * navigator'unu kuruyor (tests/initial-locale.test.mjs).
+ */
+let turkishDepth = 0;
+let savedNavigator;
+
+async function withTurkishBrowser(load) {
+  if (turkishDepth === 0) {
+    savedNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const original = globalThis.navigator;
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        hardwareConcurrency: original?.hardwareConcurrency,
+        platform: original?.platform,
+        userAgent: original?.userAgent,
+        language: "tr-TR",
+        languages: ["tr-TR"]
+      },
+      configurable: true,
+      writable: true,
+      enumerable: true
+    });
+  }
+  turkishDepth += 1;
+  try {
+    return await load();
+  } finally {
+    turkishDepth -= 1;
+    if (turkishDepth === 0) {
+      if (savedNavigator) Object.defineProperty(globalThis, "navigator", savedNavigator);
+      else delete globalThis.navigator;
+    }
+  }
 }
 
 /**

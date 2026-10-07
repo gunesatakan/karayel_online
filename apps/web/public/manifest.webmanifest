@@ -1,6 +1,6 @@
 {
-  "name": "Uzay Savunma",
-  "short_name": "Uzay Savunma",
+  "name": "Defense Protocol",
+  "short_name": "Defense Protocol",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

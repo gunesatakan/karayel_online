@@ -133,6 +133,10 @@ export const trMenu = {
   // telemetry.ts'deki TELEMETRY_SETTING_LABEL / _NOTE ile ayni metin; degisirse ikisi birlikte.
   "menu.telemetry.label": "Anonim kullanım verisi gönder",
   "menu.telemetry.note": "Yalnızca kendi sunucumuza gider: hata mesajları, dalga, seçilen kart ve eşyalar, kule seviyeleri, FPS ve gecikme. Ad, IP veya hesap bilgisi gönderilmez; kimlik bu tarayıcıda üretilen rastgele bir sayıdır. Veriler 90 gün saklanır.",
+  // Alt seritteki lobi muzigi dugmesi (menu-music.ts): ad sabit, durum title ve aria-pressed.
+  "menu.music.label": "Lobi müziği",
+  "menu.music.on": "Lobi müziği: açık",
+  "menu.music.off": "Lobi müziği: kapalı",
 
   // ------------------------------------------------------------ Operator arsivi ve dosya
   "menu.archive.title": "Operatör Seçimi",
@@ -448,6 +452,9 @@ export const enMenu: Readonly<Record<keyof typeof trMenu, string>> = {
   "menu.home.telemetry": "Anon data",
   "menu.telemetry.label": "Send anonymous usage data",
   "menu.telemetry.note": "Goes only to our own server: error messages, wave, chosen cards and items, tower levels, FPS and latency. No name, IP or account details are sent; the ID is a random number generated in this browser. Data is kept for 90 days.",
+  "menu.music.label": "Lobby music",
+  "menu.music.on": "Lobby music: on",
+  "menu.music.off": "Lobby music: off",
 
   // ------------------------------------------------------------ Operator arsivi ve dosya
   "menu.archive.title": "Operator Select",

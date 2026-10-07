@@ -19,7 +19,7 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
 
 ## 2. Ses
 
-- [ ] İlk dokunuştan sonra müzik ve efektler çalıyor (iOS'ta sessiz mod anahtarı kapalıyken dene).
+- [ ] Menüde ilk dokunuştan sonra lobi müziği çalıyor (bekleme odasında da sürüyor); alt çubuktaki ♪ düğmesi onu kapatıp açıyor ve seçim yenilemede korunuyor. Maç başlayınca müzik kısa bir geçişle susuyor; maçta yalnızca efekt sesleri var. iOS'ta sessiz mod anahtarı kapalıyken dene.
 - [ ] Uygulama arka plana alınıp geri dönülünce ses geri geliyor.
 - [ ] ♪ panelinde ses ayarları çalışıyor; titreşim yalnızca Android'de görünüyor.
 

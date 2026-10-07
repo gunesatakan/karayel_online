@@ -103,7 +103,41 @@ test("yapay zeka beyani CREDITS.md'de Turkce ve Ingilizce, ekran metinlerinde ik
   assert.match(credits, /### Yapay zekâ beyanı/);
   assert.match(credits.slice(0, credits.indexOf("## English summary")), /üretken yapay zekâ araçlarıyla/);
   assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*generative AI/);
-  assert.match(english, /game currently has no music/);
+  assert.match(english, /matches have no music/);
+  assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*Suno AI[\s\S]*graphics and music/);
+  assert.match(credits.slice(0, credits.indexOf("## English summary")), /### Yapay zekâ beyanı[\s\S]*Suno[\s\S]*"evet, grafik ve müzik"/);
   assert.match(i18n.tr["credits.game.body"], /yapay zekâ/);
   assert.match(i18n.en["credits.game.body"], /generative AI/);
+  assert.match(i18n.tr["credits.game.body"], /lobi müziği/);
+  assert.match(i18n.en["credits.game.body"], /lobby music/);
+});
+
+test("lobi muzigi Last Stand: gelistiricinin Suno ile urettigi parca, modulde ve CREDITS.md'de", () => {
+  const music = CREDIT_GROUPS.find((group) => group.id === "music");
+  assert.ok(music, "muzik grubu yok");
+  const track = music.sources.find((source) => source.title === "Last Stand");
+  assert.ok(track, "Last Stand yok");
+  assert.ok(track.author.includes(CREDITS_DEVELOPER), "yazar gelistirici degil");
+  assert.ok(track.author.includes("aliatakangunes"), "Suno hesabinin adi yok");
+  assert.match(track.license, /Suno/);
+  const ai = CREDIT_GROUPS.find((group) => group.id === "ai").sources;
+  assert.ok(ai.some((source) => source.title === "Suno"), "yapay zeka grubunda Suno yok");
+
+  const section = credits.slice(credits.indexOf("### Müzik: Last Stand"), credits.indexOf("### Müzik: ticari kayıtlar"));
+  assert.ok(section.includes("apps/web/public/audio/music/last-stand.mp3"), "dosya yolu yok");
+  assert.match(section, /Suno/);
+  assert.match(credits.slice(credits.indexOf("## English summary")), /"Last Stand" by gunesatakan \(aliatakangunes\), generated with Suno AI/);
+  assert.ok(existsSync(new URL("../apps/web/public/audio/music/last-stand.mp3", import.meta.url)), "dosya pakette yok");
+});
+
+test("itch sayfasi beyani ve mobil test listesi lobi muzigini anlatiyor", () => {
+  const page = read("docs/itch-page/README.md");
+  const declarations = page.slice(page.indexOf("## Beyanlar"), page.indexOf("## Sayfa düzeni"));
+  assert.match(declarations, /AI disclosure: yes \(graphics and music\)/);
+  assert.match(declarations, /yalnızca lobi müziği/);
+  assert.doesNotMatch(declarations, /oyun şu an müziksiz/);
+  const checklist = read("docs/mobile-test-checklist.md");
+  assert.doesNotMatch(checklist, /Oyunda şu an müzik yok/);
+  assert.match(checklist, /ilk dokunuştan sonra lobi müziği/);
+  assert.match(checklist, /maçta yalnızca efekt sesleri/);
 });

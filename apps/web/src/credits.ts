@@ -24,13 +24,16 @@ export type CreditSource = {
 };
 
 export type CreditGroup = {
-  id: "audio" | "fonts" | "ai" | "software";
+  id: "audio" | "music" | "fonts" | "ai" | "software";
   titleKey: MessageKey;
   noteKey: MessageKey;
   sources: readonly CreditSource[];
 };
 
-/** Oyunun tasarimi, gelistirmesi, gorselleri ve sesleri (git yazari; bazi gorseller uretken yapay zeka ile). */
+/**
+ * Oyunun tasarimi, gelistirmesi, gorselleri, sesleri ve lobi muzigi (git
+ * yazari; bazi gorseller ve lobi muzigi uretken yapay zeka ile).
+ */
 export const CREDITS_DEVELOPER = "gunesatakan";
 
 export const CREDIT_GROUPS: readonly CreditGroup[] = [
@@ -44,6 +47,15 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
       { id: "oga-squish", title: "Squish Sounds Effects", author: "EZduzziteh", license: "CC0 1.0", url: "https://opengameart.org/content/squish-sounds-effects" },
       { id: "oga-creature-1", title: "80 CC0 creature SFX", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/80-cc0-creature-sfx" },
       { id: "oga-creature-2", title: "80 CC0 creature SFX #2", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/80-cc0-creture-sfx-2" }
+    ]
+  },
+  {
+    id: "music",
+    titleKey: "credits.group.music",
+    noteKey: "credits.group.music.note",
+    sources: [
+      // Gelistiricinin Suno hesabiyla uretildi (ID3: sanatci "aliatakangunes", "made with suno").
+      { id: "music-last-stand", title: "Last Stand", author: "gunesatakan (aliatakangunes)", license: "Suno Terms of Service", url: "https://suno.com" }
     ]
   },
   {
@@ -61,7 +73,8 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     titleKey: "credits.group.ai",
     noteKey: "credits.group.ai.note",
     sources: [
-      { id: "openai-gpt-image", title: "gpt-image", author: "OpenAI", license: "OpenAI Terms of Use", url: "https://openai.com/policies/terms-of-use" }
+      { id: "openai-gpt-image", title: "gpt-image", author: "OpenAI", license: "OpenAI Terms of Use", url: "https://openai.com/policies/terms-of-use" },
+      { id: "suno", title: "Suno", author: "Suno, Inc.", license: "Suno Terms of Service", url: "https://suno.com" }
     ]
   },
   {

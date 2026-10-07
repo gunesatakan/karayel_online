@@ -276,6 +276,8 @@ import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
 import { assetUrl } from "../asset-url";
+// Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
+import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getLocale, t, tMaybe, upper } from "../i18n";
 import { describeServerError, localizeDefenseSummary, localizeRunSummary, localizeServerText, localizeTowerPreview } from "../server-text";
 import { enChampionLabel } from "../locales/catalog/en-progression";
@@ -892,12 +894,10 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
     chaos: 1
   }
 ];
-const MUSIC_VOLUME_STORAGE_KEY = "karayel.musicVolume";
 const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
 const SFX_VOLUME_STORAGE_KEY = "karayel.sfxVolume";
 const HIT_VOLUME_STORAGE_KEY = "karayel.hitVolume";
 const VIBRATION_STORAGE_KEY = "karayel.vibration";
-const DEFAULT_MUSIC_VOLUME = 0.34;
 const DEFAULT_VOICE_VOLUME = 0.82;
 /**
  * Efekt sesleri seslendirmeden kisik basliyor: onlar saniyede birkac kez
@@ -11480,9 +11480,10 @@ function getZeynepCommandButtonState(authorityChain: number) {
 }
 
 /**
- * Arka plan muzigi su an yok: eski iki parca lisanssiz ticari kayitti ve
- * kaldirildi (bkz. CREDITS.md). Lisansli/CC0 parca gelince operatore gore
- * yol burada dondurulur; bos yol "muzik yok" demek.
+ * Mac muziksiz: eski iki parca lisanssiz ticari kayitti ve kaldirildi (bkz.
+ * CREDITS.md). Lobi muzigi ("Last Stand") yalnizca menude calar ve mac
+ * baslarken susar (menu-music.ts); maca bilerek tasinmiyor. Mac icin parca
+ * gelince operatore gore yol burada dondurulur; bos yol "muzik yok" demek.
  */
 function getBackgroundMusicPath(_characterId: CharacterId): string {
   return "";

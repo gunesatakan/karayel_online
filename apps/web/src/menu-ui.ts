@@ -95,6 +95,7 @@ import { assetUrl } from "./asset-url";
 import { describeServerError, localizeServerText } from "./server-text";
 import { resetTutorialProgress } from "./tutorial";
 import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
+import { installMenuMusic, readMenuMusicMuted } from "./menu-music";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges" | "credits";
 
@@ -324,6 +325,13 @@ export function setupMenuUi(game: Phaser.Game) {
   }
 
   /**
+   * Lobi muzigi (menu-music.ts): menu ve bekleme odasi boyunca, ilk
+   * dokunustan sonra. Mac baslarken `startGame` susturuyor. Kosu raporunun
+   * "Tekrar"i menuyu atlayip maca gidiyor; o yolda parca onden yuklenmiyor.
+   */
+  const menuMusic = installMenuMusic({ preload: !quickStart || quickStart.mode === "online" });
+
+  /**
    * Asama tahtasinin rekorlari: secili operatorun **solo** kaydi, siradaki
    * solo kosunun oynanacagi harita olcegiyle. Sunucu haritayi olcekteki acik
    * arenaya ceviriyor, anahtar da ondan (`getRunMapKey`). Co-op ve baska
@@ -343,6 +351,8 @@ export function setupMenuUi(game: Phaser.Game) {
       return;
     }
     onlineGameStarting = true;
+    // Sahne devraliyor: lobi muzigi ~600 ms'de susup kaynagini birakiyor, mac muziksiz.
+    menuMusic.stop();
     root.classList.add("menu-root--hidden");
     gameRoot.classList.remove("game-root--hidden");
     game.scene.stop("preloader");
@@ -549,6 +559,14 @@ export function setupMenuUi(game: Phaser.Game) {
     // Anonim telemetri tercihi: depoya yaziliyor, menu yeniden cizilmiyor.
     root.querySelectorAll<HTMLInputElement>("[data-telemetry-toggle]").forEach((input) => {
       input.addEventListener("change", () => setTelemetryEnabled(input.checked));
+    });
+
+    // Lobi muzigi dugmesi: kalici sessiz bayragi; menu yeniden cizilmiyor, dugme yerinde guncelleniyor.
+    root.querySelectorAll<HTMLButtonElement>("[data-menu-music-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        menuMusic.setMuted(!menuMusic.isMuted());
+        applyMusicToggleState(button, menuMusic.isMuted());
+      });
     });
 
     // Dil secici: secim kaydediliyor, `onLocaleChange` dinleyicisi menuyu yeniden ciziyor.
@@ -971,7 +989,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
     <div class="screen screen--home">
       <header class="brand">
         <p class="eyebrow"><i class="rule-dot"></i>${t("menu.home.eyebrow")}</p>
-        <h1 class="brand__word">Uzay Savunma</h1>
+        <h1 class="brand__word">Defense Protocol</h1>
         <div class="brand__rule" aria-hidden="true"><i></i><span class="rule-dot"></span><i></i></div>
       </header>
 
@@ -1037,11 +1055,29 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
         <label class="slate__privacy" title="${escapeHtml(t("menu.telemetry.note"))}">
           <input type="checkbox" data-telemetry-toggle aria-label="${escapeHtml(t("menu.telemetry.label"))}"${readTelemetrySetting() ? " checked" : ""} />${t("menu.home.telemetry")}
         </label>
+        ${renderMusicToggle(readMenuMusicMuted())}
         ${renderLocalePicker()}
         <span class="slate__node"><i></i>Frankfurt Shard</span>
       </aside>
     </div>
   `;
+}
+
+/**
+ * Lobi muzigi dugmesi: alt seritte dil seciciyle ayni ince cerceve, tek
+ * hucre, nota isareti. Kapaliyken notanin ustunden capraz bir cizgi geciyor.
+ * Ad sabit ("Lobi müziği"), durum `aria-pressed`te (acik = basili); `title`
+ * durumu yaziyor.
+ */
+function renderMusicToggle(muted: boolean) {
+  return `
+        <button type="button" class="music-toggle${muted ? " is-muted" : ""}" data-menu-music-toggle aria-label="${escapeHtml(t("menu.music.label"))}" aria-pressed="${!muted}" title="${escapeHtml(t(muted ? "menu.music.off" : "menu.music.on"))}"><i aria-hidden="true">♪</i></button>`;
+}
+
+function applyMusicToggleState(button: HTMLElement, muted: boolean) {
+  button.classList.toggle("is-muted", muted);
+  button.setAttribute("aria-pressed", String(!muted));
+  button.title = t(muted ? "menu.music.off" : "menu.music.on");
 }
 
 /**
@@ -1704,7 +1740,7 @@ function renderCredits() {
 
       <section class="selected-dossier frame">
         <p class="kicker">${t("credits.game.label")}</p>
-        <h2>Uzay Savunma</h2>
+        <h2>Defense Protocol</h2>
         <p>${escapeHtml(t("credits.game.body", { developer: CREDITS_DEVELOPER }))}</p>
         <p>${escapeHtml(t("credits.intro"))}</p>
       </section>

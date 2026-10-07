@@ -2204,9 +2204,10 @@ button.wave-report:active { transform: scale(0.99); }
   margin: 0;
   color: #f2f4f8;
   font-family: var(--serif);
-  /* "Uzay Savunma" iki kelime: 375 px'te tek satira sigsin diye display
-     boyutundan kucuk; menu 460 px'te durdugu icin ust sinir da orada. */
-  font-size: min(var(--fs-display), 9.6vw, 44px);
+  /* "Defense Protocol" iki kelime, 16 harf: Cinzel 900'de genislik ~11.9em.
+     320-375 px'te tek satira sigsin diye 7.4vw; menu 460 px'te durdugu icin
+     ust sinir da orada (34 px). */
+  font-size: min(var(--fs-display), 7.4vw, 34px);
   font-weight: 900;
   line-height: 0.88;
   letter-spacing: 0.02em;
@@ -7027,6 +7028,57 @@ button.wave-report:active { transform: scale(0.99); }
   outline-offset: -3px;
 }
 /* Dil secici sonu */
+
+/* Lobi muzigi dugmesi: dil secicinin solunda ayni ince cerceveli tek hucre
+   (28 px). Acikken nota camgobegi, kapaliyken soluk ve ustunden capraz bir
+   piksel cizgi. Parilti, yuvarlak kose, hareket yok. */
+#menu-root .music-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(198, 178, 150, 0.22);
+  color: var(--cyan);
+  background: rgba(69, 217, 232, 0.07);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+}
+
+#menu-root .music-toggle i {
+  font-style: normal;
+}
+
+#menu-root .music-toggle.is-muted {
+  color: var(--ink-3);
+  background: transparent;
+}
+
+#menu-root .music-toggle.is-muted::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 1px;
+  background: currentColor;
+  transform: rotate(-45deg);
+}
+
+#menu-root .music-toggle.is-muted:hover {
+  color: var(--ink-2);
+}
+
+#menu-root .music-toggle:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: -3px;
+}
+/* Lobi muzigi dugmesi sonu */
 
 /*
  * Ilk acilis veri bildirimi (telemetry-notice.ts). Ekranin tepesinde ince bir
