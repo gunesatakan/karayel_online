@@ -4,6 +4,7 @@ import { PreloaderScene } from "./scenes/PreloaderScene";
 import { GameScene } from "./scenes/GameScene";
 import { setupGameControlUi, setupGameHudUi } from "./game-control-ui";
 import { setupMenuUi } from "./menu-ui";
+import { setupTutorial } from "./tutorial";
 import { getCanvasSize } from "./rendering";
 import { startTelemetry } from "./telemetry-boot";
 import "./style.css";
@@ -62,6 +63,7 @@ if (vfxGallery) {
   setupMenuUi(game);
   setupGameControlUi(game);
   setupGameHudUi(game);
+  setupTutorial(game);
   // Anonim telemetri: galeri ve gelistirme sahnesi bu yoldan gecmiyor.
   startTelemetry(game);
 }

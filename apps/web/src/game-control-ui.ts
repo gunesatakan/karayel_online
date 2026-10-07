@@ -1369,6 +1369,8 @@ export function setupGameControlUi(game: Phaser.Game) {
       button.type = "button";
       button.className = `game-controls__launch${openDrawer === id ? " game-controls__launch--open" : ""}`;
       button.textContent = label;
+      // Brifing (tutorial.ts) dugmeyi etiketinden bagimsiz bulsun.
+      button.dataset.launch = id;
       button.addEventListener("pointerup", () => toggleDrawer(id));
       return button;
     };

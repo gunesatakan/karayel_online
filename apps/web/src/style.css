@@ -2541,9 +2541,9 @@ button.wave-report:active { transform: scale(0.99); }
   line-height: 1.1;
 }
 
-/* Tek basina kalan genis dugme (Nisanlar): son satiri bir uctan obur uca kaplar. */
+/* Genis dugme (Nisanlar): son satirda Egitim'in yaninda iki sutun kaplar. */
 .home-actions__grid .command--wide {
-  grid-column: 1 / -1;
+  grid-column: span 2;
   flex-direction: row;
   gap: 8px;
 }
@@ -6639,3 +6639,156 @@ button.wave-report:active { transform: scale(0.99); }
   }
 }
 /* Kule paneli sonu */
+
+/*
+ * Ilk mac brifingi (tutorial.ts). Komuta terminali: koyu, keskin koseli
+ * kutu, mono baslik, tek camgobegi vurgu. Parilti, ziplama, renk gecisi yok;
+ * giris 140 ms duz bir kayma. HUD'un (70) ustunde, mac raporunun (80) altinda.
+ * Katman ve kutu tiklamayi gecirir (kutu bir kartin ucunu ortse de kart
+ * secilebilsin); yalnizca dugmeler dokunulabilir.
+ */
+.tutorial {
+  --tut-accent: #45d9e8;
+  --tut-line: rgba(69, 217, 232, 0.42);
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  pointer-events: none;
+}
+
+.tutorial[hidden],
+.tutorial__frame[hidden],
+.tutorial__box[hidden],
+.tutorial__actions[hidden],
+.tutorial button[hidden] {
+  display: none;
+}
+
+/* Hedef cercevesi: yalniz kose isaretleri ve ince cizgi. */
+.tutorial__frame {
+  position: fixed;
+  top: 0;
+  left: 0;
+  border: 1px solid var(--tut-line);
+  background:
+    linear-gradient(var(--tut-accent), var(--tut-accent)) top left / 12px 2px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) top left / 2px 12px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) top right / 12px 2px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) top right / 2px 12px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) bottom left / 12px 2px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) bottom left / 2px 12px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) bottom right / 12px 2px no-repeat,
+    linear-gradient(var(--tut-accent), var(--tut-accent)) bottom right / 2px 12px no-repeat;
+}
+
+.tutorial__box {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  width: min(340px, calc(100vw - 32px));
+  margin-left: calc(min(340px, calc(100vw - 32px)) / -2);
+  box-sizing: border-box;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--tut-line);
+  border-left: 3px solid var(--tut-accent);
+  border-radius: 2px;
+  color: #e6edf6;
+  background: rgba(4, 9, 18, 0.95);
+  font-family: Rajdhani, system-ui, sans-serif;
+}
+
+.tutorial button {
+  pointer-events: auto;
+}
+
+.tutorial__box--enter {
+  animation: tutorial-enter 140ms linear;
+}
+
+@keyframes tutorial-enter {
+  from { opacity: 0; margin-top: 6px; }
+  to { opacity: 1; margin-top: 0; }
+}
+
+.tutorial__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Share Tech Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: rgba(148, 197, 214, 0.78);
+}
+
+.tutorial__tag {
+  color: var(--tut-accent);
+}
+
+.tutorial__count {
+  flex: 1;
+}
+
+/* ATLA baslik satirinda: kutu bir satir kisa, kartlari daha az ortuyor. */
+.tutorial__head .tutorial__skip {
+  min-height: 28px;
+  margin: -4px -4px -4px 0;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 2px;
+  color: #9fb2c6;
+  background: transparent;
+  font: inherit;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.tutorial__title {
+  display: block;
+  margin-top: 4px;
+  font-family: "Share Tech Mono", ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: #f1f6fb;
+}
+
+.tutorial__body {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: #c9d6e4;
+}
+
+.tutorial__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.tutorial__actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 2px;
+  color: #9fb2c6;
+  background: transparent;
+  font-family: "Share Tech Mono", ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.tutorial__actions .tutorial__ack {
+  border-color: var(--tut-line);
+  color: var(--tut-accent);
+  background: rgba(69, 217, 232, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial__box--enter {
+    animation: none;
+  }
+}
+/* Brifing sonu */

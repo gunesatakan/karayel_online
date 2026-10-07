@@ -86,6 +86,7 @@ import {
   type MatchReconnectRecord
 } from "./online-session";
 import { assetUrl } from "./asset-url";
+import { resetTutorialProgress } from "./tutorial";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges";
 
@@ -551,7 +552,11 @@ export function setupMenuUi(game: Phaser.Game) {
     });
 
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
-      button.addEventListener("click", () => startGame("solo"));
+      button.addEventListener("click", () => {
+        // Egitim: brifing ilerlemesi sifirlanip normal solo mac.
+        if (button.hasAttribute("data-replay-tutorial")) resetTutorialProgress();
+        startGame("solo");
+      });
     });
 
     root.querySelectorAll<HTMLElement>("[data-map-tool]").forEach((button) => {
@@ -992,6 +997,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
             <span>Kart Arşivi</span>
             <small>${cardProgress}</small>
           </button>
+          <button class="command command--ghost" data-start-game data-replay-tutorial>Eğitim</button>
           <button class="command command--ghost command--count command--wide" data-view="badges" aria-label="Nişanlar, ${board.earned}/${board.total} kazanıldı">
             <span>Nişanlar</span>
             <small>${board.earned}/${board.total}</small>
