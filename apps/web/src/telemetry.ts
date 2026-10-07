@@ -67,7 +67,51 @@ export function setTelemetryEnabled(enabled: boolean, storage: StorageLike | und
     // Yazilamadiysa tercih yalnizca bu sayfada gecerli (asagidaki bellek bayragi).
   }
   sessionOverride = enabled;
+  // Ayardan bilerek yapilan secim bildirimi de gecmis sayiliyor: oyuncu
+  // neyin gidecegini o kutunun notunda okudu.
+  markTelemetryNoticeSeen(storage);
   for (const listener of settingListeners) listener(enabled);
+}
+
+// --- ilk acilis bildirimi -------------------------------------------------------
+
+export const TELEMETRY_NOTICE_KEY = "karayel_telemetry_notice";
+
+/** Depo yazilamasa da bu sayfada bildirim bir kez gecildi mi. */
+let noticeSeenThisPage = false;
+
+/**
+ * Ilk acilis bildirimi gecildi mi (Tamam, Kapat ya da ayardan secim).
+ * Gecilene kadar hicbir olay tutulmuyor ve gitmiyor; depo kapaliysa bildirim
+ * her acilista yeniden geliyor ve o sayfada kararla geciliyor.
+ */
+export function hasSeenTelemetryNotice(storage: StorageLike | undefined = browserStorage("localStorage")) {
+  if (noticeSeenThisPage) return true;
+  try {
+    return storage?.getItem(TELEMETRY_NOTICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markTelemetryNoticeSeen(storage: StorageLike | undefined) {
+  noticeSeenThisPage = true;
+  try {
+    storage?.setItem(TELEMETRY_NOTICE_KEY, "1");
+  } catch {
+    // Yazilamadi: karar bu sayfada gecerli.
+  }
+}
+
+/** Bildirimin karari: Tamam (acik kalir) ya da Kapat (kapatir). */
+export function acknowledgeTelemetryNotice(enabled: boolean, storage: StorageLike | undefined = browserStorage("localStorage")) {
+  setTelemetryEnabled(enabled, storage);
+}
+
+/** Olay tutmak ve yollamak icin: bildirim gecilmis ve ayar acik. */
+export function isTelemetryActive(storage?: StorageLike) {
+  const resolved = storage ?? browserStorage("localStorage");
+  return hasSeenTelemetryNotice(resolved) && readTelemetrySetting(resolved);
 }
 
 /** Depo yazilamasa da bu sayfadaki son secim gecerli. */
@@ -85,6 +129,7 @@ export function onTelemetrySettingChange(listener: (enabled: boolean) => void) {
 /** Test icin: bellek bayragini ve dinleyicileri sifirlar. */
 export function resetTelemetrySettingForTests() {
   sessionOverride = undefined;
+  noticeSeenThisPage = false;
   settingListeners.clear();
 }
 

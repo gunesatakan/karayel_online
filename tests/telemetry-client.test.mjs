@@ -129,6 +129,55 @@ test("ayar: varsayilan acik, kapaliyken hicbir sey tutulmuyor ya da gonderilmiyo
   resetTelemetrySettingForTests();
 });
 
+test("ilk acilis bildirimi: gecilene kadar hicbir olay yok; Tamam acar, Kapat kapatir, ayar secimi de gecer", () => {
+  const { TELEMETRY_NOTICE_KEY, acknowledgeTelemetryNotice, hasSeenTelemetryNotice, isTelemetryActive } = telemetry;
+  resetTelemetrySettingForTests();
+  const storage = memoryStorage();
+  assert.equal(hasSeenTelemetryNotice(storage), false);
+  assert.equal(readTelemetrySetting(storage), true, "ayar varsayilan acik");
+  assert.equal(isTelemetryActive(storage), false, "bildirim ekrandayken kapali");
+
+  // Istemci kapinin arkasinda: bildirim gecilmeden track hicbir sey tutmuyor.
+  const { client, sent } = createClient({ isEnabled: () => isTelemetryActive(storage) });
+  client.track("session_start", {});
+  assert.equal(client.pending, 0);
+  assert.equal(client.flush(true), 0);
+
+  acknowledgeTelemetryNotice(true, storage);
+  assert.equal(storage.getItem(TELEMETRY_NOTICE_KEY), "1");
+  assert.equal(isTelemetryActive(storage), true);
+  client.track("session_start", {});
+  client.flush();
+  assert.equal(sent.length, 1, "Tamam'dan sonra gidiyor");
+
+  resetTelemetrySettingForTests();
+  const declined = memoryStorage();
+  acknowledgeTelemetryNotice(false, declined);
+  assert.equal(hasSeenTelemetryNotice(declined), true);
+  assert.equal(declined.getItem(TELEMETRY_SETTING_KEY), "0");
+  assert.equal(isTelemetryActive(declined), false, "Kapat kapatiyor");
+
+  // Menudeki ya da oyun icindeki kutudan secim de bildirimi geciyor.
+  resetTelemetrySettingForTests();
+  const toggled = memoryStorage();
+  setTelemetryEnabled(true, toggled);
+  assert.equal(hasSeenTelemetryNotice(toggled), true);
+
+  // Depo kapali: karar bu sayfada gecerli, sonraki acilista bildirim yine gelir.
+  resetTelemetrySettingForTests();
+  const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); }, removeItem() {} };
+  assert.equal(isTelemetryActive(broken), false);
+  acknowledgeTelemetryNotice(true, broken);
+  assert.equal(isTelemetryActive(broken), true);
+  resetTelemetrySettingForTests();
+  assert.equal(hasSeenTelemetryNotice(broken), false);
+
+  // Kablolama: tarayici istemcisi bu kapiyi kullaniyor, bildirim kuruluyor.
+  const boot = source("apps/web/src/telemetry-boot.ts");
+  assert.match(boot, /isEnabled: \(\) => isTelemetryActive\(\)/);
+  assert.match(boot, /setupTelemetryNotice\(\);/);
+});
+
 test("kurulum kimligi: bir kez uretilip saklaniyor; depo yoksa yine bir kimlik", () => {
   const storage = memoryStorage();
   const first = getInstallId(storage, () => "11111111-2222-4333-8444-555555555555");
@@ -413,11 +462,11 @@ test("gelistirme sahnesi ve VFX galerisi hicbir sey gondermiyor", () => {
   assert.ok(!source("apps/web/src/dev/tower-sheet-harness.ts").includes("telemetry-boot"));
   assert.ok(!source("apps/web/src/scenes/VfxGalleryScene.ts").includes("telemetry"));
 
-  // Kapilar: derleme bayragi, adres ve ayar.
+  // Kapilar: derleme bayragi, adres, ilk acilis bildirimi ve ayar.
   const boot = source("apps/web/src/telemetry-boot.ts");
   assert.match(boot, /VITE_TELEMETRY/);
   assert.match(boot, /isTelemetryBlockedLocation\(window\.location\)/);
-  assert.match(boot, /isEnabled: \(\) => readTelemetrySetting\(\)/);
+  assert.match(boot, /isEnabled: \(\) => isTelemetryActive\(\)/);
   assert.match(boot, /getTelemetryEndpoint\(gameServerUrl\)/, "adres oyun sunucusuyla ayni kaynaktan");
   // Cekirdek modul tarayiciya baglanmiyor: dinleyici ya da zamanlayici kurmuyor.
   const core = source("apps/web/src/telemetry.ts");

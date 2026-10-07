@@ -6295,6 +6295,12 @@ button.wave-report:active { transform: scale(0.99); }
   text-overflow: ellipsis;
 }
 
+/* Ingilizce birimler uzun ("1.5 tiles", "0.80/s"): 375 px'te dort hucreye
+   sigsin diye bir piksel kucuk. Turkce ayni kaliyor. */
+:root[lang="en"] .ts-fig__value {
+  font-size: 14px;
+}
+
 .ts-fig__bonus,
 .ts-row__bonus {
   font: 400 11px/1.1 var(--ts-mono);
@@ -6851,3 +6857,81 @@ button.wave-report:active { transform: scale(0.99); }
   outline-offset: -3px;
 }
 /* Dil secici sonu */
+
+/*
+ * Ilk acilis veri bildirimi (telemetry-notice.ts). Ekranin tepesinde ince bir
+ * serit: koyu zemin, tek camgobegi cizgi, keskin kose; parilti ve hareket yok.
+ * Alt kenarda "Savasa Gir"i ortuyordu; ustte yalniz basligin ustune biniyor.
+ * Mac basinda gizli.
+ */
+.telemetry-notice {
+  position: fixed;
+  left: 50%;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  z-index: 90;
+  width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 9px 12px 10px;
+  border: 1px solid rgba(69, 217, 232, 0.42);
+  border-left: 3px solid #45d9e8;
+  border-radius: 2px;
+  color: #e6edf6;
+  background: rgba(4, 9, 18, 0.96);
+  font-family: Rajdhani, system-ui, sans-serif;
+}
+
+.telemetry-notice[hidden],
+.telemetry-notice__details[hidden] {
+  display: none;
+}
+
+.telemetry-notice__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.telemetry-notice__details {
+  margin: 7px 0 0;
+  padding-left: 16px;
+  color: #b8c6d6;
+  font-size: 13px;
+  line-height: 1.32;
+}
+
+.telemetry-notice__details li + li {
+  margin-top: 3px;
+}
+
+.telemetry-notice__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.telemetry-notice__actions button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 2px;
+  color: #9fb2c6;
+  background: transparent;
+  font-family: "Share Tech Mono", ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.telemetry-notice__actions .telemetry-notice__more {
+  margin-right: auto;
+}
+
+.telemetry-notice__actions .telemetry-notice__ok {
+  border-color: rgba(69, 217, 232, 0.42);
+  color: #45d9e8;
+  background: rgba(69, 217, 232, 0.08);
+}
+/* Veri bildirimi sonu */

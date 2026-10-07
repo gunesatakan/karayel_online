@@ -1,3 +1,4 @@
+import { enConsent } from "./areas/consent";
 import { enControls } from "./areas/controls";
 import { enMenu } from "./areas/menu";
 import { enReports } from "./areas/reports";
@@ -207,4 +208,4 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.heatBrakeMarker": "Heat brake threshold"
 };
 
-export const en: Partial<Record<MessageKey, string>> = { ...enCore, ...enMenu, ...enControls, ...enScene, ...enReports };
+export const en: Partial<Record<MessageKey, string>> = { ...enCore, ...enMenu, ...enControls, ...enScene, ...enReports, ...enConsent };

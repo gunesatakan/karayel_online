@@ -8,13 +8,14 @@ import {
   describeSession,
   getInstallId,
   getTelemetryEndpoint,
+  isTelemetryActive,
   isTelemetryBlockedLocation,
   onTelemetrySettingChange,
   randomId,
-  readTelemetrySetting,
   runTelemetry,
   setActiveErrorReporter
 } from "./telemetry";
+import { setupTelemetryNotice } from "./telemetry-notice";
 
 declare const __APP_VERSION__: string | undefined;
 
@@ -22,8 +23,9 @@ declare const __APP_VERSION__: string | undefined;
  * Telemetrinin tarayici kablolamasi; yalnizca `main.ts`in oyun yolundan.
  *
  * Kapilar: derleme bayragi (`VITE_TELEMETRY=off`), adres (gelistirme sahnesi,
- * VFX galerisi) ve oyuncunun ayari. Ayar kapaliyken istemci hicbir sey
- * tutmuyor ve yollamiyor; acilinca yeni olaylar gidiyor.
+ * VFX galerisi), ilk acilis bildirimi (`telemetry-notice.ts`; gecilene kadar
+ * kapali) ve oyuncunun ayari. Ayar kapaliyken istemci hicbir sey tutmuyor ve
+ * yollamiyor; acilinca yeni olaylar gidiyor.
  *
  * Sunucu adresi oyun sunucusuyla ayni kaynaktan (`VITE_GAME_SERVER_URL`):
  * itch.io gibi goreli yoldan yuklenen derlemede de mutlak adres.
@@ -40,7 +42,8 @@ export function startTelemetry(game: Phaser.Game) {
     sessionId: randomId(),
     version,
     transport: createBrowserTransport(),
-    isEnabled: () => readTelemetrySetting()
+    // Ilk acilis bildirimi gecilmeden hicbir olay tutulmuyor ve gitmiyor.
+    isEnabled: () => isTelemetryActive()
   });
   runTelemetry.bind((type, fields) => client.track(type, fields));
 
@@ -65,7 +68,9 @@ export function startTelemetry(game: Phaser.Game) {
   game.events.on("poststep", () => runTelemetry.noteFrame(performance.now()));
 
   const sendSessionStart = () => client.track("session_start", describeSession(window));
+  // Bildirim gecilmediyse bu olay atiliyor; "Tamam" ayari tetikleyip yeniden yolluyor.
   sendSessionStart();
+  setupTelemetryNotice();
   onTelemetrySettingChange((enabled) => {
     if (!enabled) client.clear();
     else sendSessionStart();

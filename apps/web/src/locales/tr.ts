@@ -1,3 +1,4 @@
+import { trConsent } from "./areas/consent";
 import { trControls } from "./areas/controls";
 import { trMenu } from "./areas/menu";
 import { trReports } from "./areas/reports";
@@ -208,6 +209,6 @@ export const trCore = {
 } as const;
 
 /** Butun bolgeler; anahtar onekleri bolgeye ozgu, cakisma yok. */
-export const tr = { ...trCore, ...trMenu, ...trControls, ...trScene, ...trReports } as const;
+export const tr = { ...trCore, ...trMenu, ...trControls, ...trScene, ...trReports, ...trConsent } as const;
 
 export type MessageKey = keyof typeof tr;

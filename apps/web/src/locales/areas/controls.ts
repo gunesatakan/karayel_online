@@ -199,7 +199,7 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "controls.launch.workerTree": "Worker Tree",
   "controls.launch.inventory": "Inventory {count}",
   "controls.launch.creative": "Creative",
-  "controls.launch.defenseSummary": "Defense Summary",
+  "controls.launch.defenseSummary": "Debrief",
 
   // ------------------------------------------------------------ Skills and ultimate
   "controls.ultimate.charge": "Ultimate {charge}%",

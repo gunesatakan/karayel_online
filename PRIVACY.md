@@ -31,7 +31,7 @@ Veriler sunucuda **90 gün** saklanır, sonra otomatik olarak silinir. Veriler s
 
 Kapalıyken hiçbir veri gönderilmez. Tercih bu tarayıcıda saklanır.
 
-Sorular ve silme talepleri için: `<İLETİŞİM E-POSTASI>`. Veriler kimliksiz olduğundan, silme için oyundaki kurulum kimliğine ihtiyaç duyabiliriz.
+Sorular ve silme talepleri için: nobetportal@gmail.com. Veriler kimliksiz olduğundan, silme için oyundaki kurulum kimliğine ihtiyaç duyabiliriz.
 
 ## English
 
@@ -62,4 +62,4 @@ Data is kept on the server for **90 days** and then deleted automatically. It is
 
 While off, nothing is sent. The choice is stored in this browser.
 
-Questions or deletion requests: `<CONTACT E-MAIL>`. Because the data is anonymous, we may need your install ID to find it.
+Questions or deletion requests: nobetportal@gmail.com. Because the data is anonymous, we may need your install ID to find it.
