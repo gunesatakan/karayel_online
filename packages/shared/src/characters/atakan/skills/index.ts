@@ -5,7 +5,7 @@ import { lt } from "../../../i18n/index.js";
 export const atakanSkills = makeSkills("warrior", [
   ["Yönlendirme", "Basılı tutup sürükleyerek haritada bir alan işaretler. 3 saniye boyunca mermi vuruşlu kuleler menzil sınırını yok sayıp o alandaki düşmanlara ateş eder ve alandaki düşmanlar %30 fazla hasar alır. Hattın uzağında açılan sızıntıyı kapatmak için kullanılır.", 16000],
   ["Refactor", "Seçili kuleyi altın kaybetmeden başka bir uygun kareye taşır. Seviyesi ve birikmiş bonusları korunur; yanlış yerleşimi satıp yeniden kurmak yerine düzeltmeyi sağlar.", 24000],
-  ["Execute", "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere ve şampiyonlara etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.", 32000]
+  ["Execute", "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere, şampiyonlara ve kule avcılarına etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.", 32000]
 ]);
 
 /**
@@ -33,11 +33,12 @@ export type SkillExecuteMessage = { casterId: string; enemyId: string; x: number
 
 /**
  * Infaza bagisik mi: "tank" sinifi yalnizca ezici (brute) dusman; sampiyon
- * turu ne olursa olsun bagisik. Kusatma, piyade, kosucu, nisanci ve ucan
- * dusmanlar infaz edilebilir. Sunucu ve istemci ayni kurali okuyor.
+ * turu ne olursa olsun bagisik; kule avcisi (sampiyon canli ozel dusman) da
+ * bagisik. Kusatma, piyade, kosucu, nisanci ve ucan dusmanlar infaz
+ * edilebilir. Sunucu ve istemci ayni kurali okuyor.
  */
-export function isExecuteImmune(enemy: { type: EnemyType; champion?: unknown }) {
-  return enemy.type === "brute" || Boolean(enemy.champion);
+export function isExecuteImmune(enemy: { type: EnemyType; champion?: unknown; special?: string }) {
+  return enemy.type === "brute" || Boolean(enemy.champion) || enemy.special === "hunter";
 }
 
 /**
@@ -58,12 +59,14 @@ export type ExecuteTapCandidate = {
   type?: EnemyType;
   champion: boolean;
   teamSide: boolean;
+  /** Ozel dusman turu ("hunter" infaza bagisik). */
+  special?: string;
 };
 
 /**
  * Execute hedeflemesinde dokunulan dusman: dokunusa en yakin, govdenin biraz
  * disi da sayiliyor (yaricap `max(minRadius, size * 0.75)`). Takimin
- * tarafindaki dusmanlar atlaniyor; bagisik (ezici, sampiyon) olan seciliyor ki
+ * tarafindaki dusmanlar atlaniyor; bagisik (ezici, sampiyon, kule avcisi) olan seciliyor ki
  * oyuncu "Etkisiz" gorsun. Bos zeminde undefined.
  */
 export function pickExecuteTapTarget<T extends ExecuteTapCandidate>(candidates: Iterable<T>, x: number, y: number, minRadius: number): T | undefined {

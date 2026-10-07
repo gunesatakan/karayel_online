@@ -380,6 +380,31 @@ import {
   type TowerGrant,
   type Unlock
 } from "@karayel/shared";
+// Ozel dusmanlar ve karsi atak (2. asamadan itibaren): tablo ve sayilar paylasilan pakette.
+import {
+  COUNTER_SURGE_CROSS_MS,
+  COUNTER_SURGE_DAMAGE_RATIO,
+  COUNTER_SURGE_TELEGRAPH_MS,
+  ENERGY_EATER_DRAIN_PER_SECOND,
+  ENERGY_EATER_HP_MULTIPLIER,
+  ENERGY_EATER_MIN_CONTACT_MS,
+  ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
+  HEATER_HEAT_PER_SECOND_RATIO,
+  HEATER_RADIUS_CELLS,
+  SPECIAL_BASE_TYPE,
+  SPECIAL_ENEMIES_FIRST_STAGE,
+  SPECIAL_ROUTE_BLOCKER_COST,
+  TOWER_HUNTER_ATTACK_INTERVAL_MS,
+  TOWER_HUNTER_HIT_DAMAGE,
+  createSpecialRandom,
+  getWaveSpecialSpawnReduction,
+  planWaveSpecials,
+  type CounterSurgeHitMessage,
+  type CounterSurgeSnapshot,
+  type SpecialEnemyKind,
+  type WaveSpecialPlan,
+  type WaveSpecialSpawn
+} from "@karayel/shared";
 import {
   createFullStaticSnapshot,
   createStaticEnemySnapshot,
@@ -1176,6 +1201,134 @@ type EnemyModel = {
    * (`getWaveChampionPlan`). `spawnedAt` devrilme suresi icin (duvar saati).
    */
   champion?: { replaced: number; gold: number; exp: number; leakDamage: number; reputation: number; spawnedAt: number };
+  /**
+   * Ozel dusman (2. asamadan itibaren): kule avcisi, isitici, enerji yiyici.
+   * Sampiyon degil -- tac, sampiyon primi, nisan ya da "sampiyon devrildi"
+   * yok. Avcinin butcesi (`budget`) o dalganin sampiyon butcesi: altin,
+   * deneyim, sizinti ve oldurme birimi yerine gectigi dogumlar kadar.
+   */
+  special?: SpecialEnemyState;
+};
+
+type SpecialSpawnOptions = {
+  kind: SpecialEnemyKind;
+  type: EnemyType;
+  /** Can, kalkan ve yenilenme kati (sampiyon katiyla ayni yer). */
+  healthMultiplier: number;
+  start: { x: number; y: number };
+  budget?: SpecialEnemyState["budget"];
+};
+
+/** Ozel dusman yol karari; `findEnemyRoute`un donusuyle ayni sekil, arti emme. */
+type SpecialEnemyRoute = {
+  cells: Array<{ col: number; row: number }>;
+  reachedBottom: false;
+  targetTower: TowerModel | undefined;
+  exitPoint: undefined;
+  /** Enerji yiyici hedefine vardi: bunu emiyor. */
+  drainTower?: TowerModel;
+};
+
+const SPECIAL_ROUTE_COL_STEPS = [0, -1, 1, 0] as const;
+const SPECIAL_ROUTE_ROW_STEPS = [1, 0, 0, -1] as const;
+
+/**
+ * Yol alani icin kucuk ikili yigin (hucre indeksi, maliyet). Esitlikte
+ * ekleme sirasi belirlenimli: ayni yerlesim her zaman ayni alani uretiyor.
+ */
+class SpecialRouteHeap {
+  private readonly indices: number[] = [];
+  private readonly costs: number[] = [];
+  private readonly orders: number[] = [];
+  private counter = 0;
+  /** Son `pop`un maliyeti (bayat kaydi ayiklamak icin). */
+  lastCost = 0;
+
+  get size() {
+    return this.indices.length;
+  }
+
+  push(index: number, cost: number) {
+    this.indices.push(index);
+    this.costs.push(cost);
+    this.orders.push(this.counter++);
+    let child = this.indices.length - 1;
+    while (child > 0) {
+      const parent = (child - 1) >> 1;
+      if (!this.less(child, parent)) break;
+      this.swap(child, parent);
+      child = parent;
+    }
+  }
+
+  pop() {
+    const top = this.indices[0];
+    this.lastCost = this.costs[0];
+    const last = this.indices.length - 1;
+    this.swap(0, last);
+    this.indices.pop();
+    this.costs.pop();
+    this.orders.pop();
+    let parent = 0;
+    for (;;) {
+      const left = parent * 2 + 1;
+      const right = left + 1;
+      let smallest = parent;
+      if (left < this.indices.length && this.less(left, smallest)) smallest = left;
+      if (right < this.indices.length && this.less(right, smallest)) smallest = right;
+      if (smallest === parent) break;
+      this.swap(parent, smallest);
+      parent = smallest;
+    }
+    return top;
+  }
+
+  private less(a: number, b: number) {
+    return this.costs[a] < this.costs[b] || (this.costs[a] === this.costs[b] && this.orders[a] < this.orders[b]);
+  }
+
+  private swap(a: number, b: number) {
+    [this.indices[a], this.indices[b]] = [this.indices[b], this.indices[a]];
+    [this.costs[a], this.costs[b]] = [this.costs[b], this.costs[a]];
+    [this.orders[a], this.orders[b]] = [this.orders[b], this.orders[a]];
+  }
+}
+
+type SpecialEnemyState = {
+  kind: SpecialEnemyKind;
+  budget?: { replaced: number; gold: number; exp: number; leakDamage: number; reputation: number };
+  /** Enerji yiyici: su anda emilen bina; yalnizca emerken. */
+  drainId?: string;
+  /** Enerji yiyici: ayni binaya kesintisiz temas suresi (oyun ms). */
+  drainContactMs?: number;
+};
+
+/**
+ * Ozel dusmanlarin ortak yol alani: her hucreden en yakin hedefe (avci icin
+ * duvar disi her kare kaplayan yapi, yiyici icin enerji binasi) bir sonraki
+ * adim. Hedef yapilarin karelerinden geriye dogru Dijkstra; duvar gecmek ya
+ * da hedef olmayan bir yapiyi kirmak `SPECIAL_ROUTE_BLOCKER_COST`. Yapi
+ * degisince (`markNavigationDirty`) atiliyor; dusman basina arama yok.
+ */
+type SpecialRouteField = {
+  cols: number;
+  /** Hucreden hedefe maliyet; ulasilamazsa sonsuz. */
+  cost: Float64Array;
+  /** Bir sonraki hucrenin indeksi; hedef karesinde -1. */
+  next: Int32Array;
+  /** Hucre bir hedefin karesi mi. */
+  target: Uint8Array;
+};
+
+/** Karsi atak: ust kenardan inen, gectigi yapilari bir kez vuran serit. */
+type CounterSurgeModel = {
+  id: number;
+  col: number;
+  width: number;
+  /** Uyarinin basladigi ve seridin kalktigi an (duvar saati). */
+  createdAt: number;
+  launchAt: number;
+  hitIds: Set<string>;
 };
 
 /**
@@ -2037,6 +2190,25 @@ export class MatchRoom extends Room<MatchState> {
   private championsEnabled = true;
   /** Bu kosuda en son devrilen sampiyonun suresi (oyun ms); damganin "onceki" sayisi. */
   private lastChampionKillMs?: number;
+  /**
+   * Ozel dusman tohumu: oda basina bir kez, yalnizca 2. asama ve sonrasinda
+   * (ilk planda) cekiliyor. 1. asamada hic zar atilmiyor; dogum sirasi ve
+   * olcum parmak izi eskisiyle bire bir ayni kaliyor.
+   */
+  private specialSeed?: number;
+  /** Dalganin ozel dusman plani ve dalga basina tohumlu zari. */
+  private waveSpecialPlan?: WaveSpecialPlan;
+  private specialRandom?: () => number;
+  /** Plandaki siradaki ozel dogum. */
+  private waveSpecialCursor = 0;
+  /** Bu dalganin karsi atagi basladi mi (dalgada en fazla bir). */
+  private waveSurgeStarted = false;
+  private counterSurge?: CounterSurgeModel;
+  private nextCounterSurgeId = 1;
+  /** Isiticinin tick ici tekrar onleyici listesi (tahsis yok). */
+  private readonly heaterScratch: TowerModel[] = [];
+  /** Ozel dusman yol alanlari; yapi degisince atiliyor. `null`: hedef yok. */
+  private specialRouteFields = new Map<"hunter" | "eater", SpecialRouteField | null>();
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
   private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
@@ -2141,6 +2313,8 @@ export class MatchRoom extends Room<MatchState> {
     this.mainGateDirty = true;
     this.towerCellIndexDirty = true;
     this.edgeStructureIndexDirty = true;
+    // Ozel dusmanlarin yol alani da yerlesimden; bir sonraki soruda yeniden kuruluyor.
+    if (this.specialRouteFields.size > 0) this.specialRouteFields.clear();
     // Yapi degisti: kapali sanilan bir cikis acilmis olabilir. Hafizayi
     // korumak, oyuncunun actigi gecidi dusmanlarin gormemesi demek olurdu.
     this.sealedCells.clear();
@@ -3432,7 +3606,48 @@ export class MatchRoom extends Room<MatchState> {
     this.waveChampionPlan = this.championsEnabled ? getWaveChampionPlan(wave, slotCount) : undefined;
     this.waveSlotOffset = 0;
     this.waveChampionSpawned = false;
-    this.waveTarget = slotCount - (this.waveChampionPlan ? this.waveChampionPlan.replaced - 1 : 0);
+    this.planWaveSpecials(wave, slotCount);
+    this.waveTarget = slotCount - (this.waveChampionPlan ? this.waveChampionPlan.replaced - 1 : 0)
+      - getWaveSpecialSpawnReduction(this.waveSpecialPlan);
+  }
+
+  /**
+   * Dalganin ozel dusman ve karsi atak plani (2. asamadan itibaren).
+   *
+   * 1. asamada zar hic atilmiyor ve tohum hic cekilmiyor: oradaki maclar
+   * eskisiyle bire bir ayni. Dalga basina ayri bir tohumlu zar: ozel
+   * dusmanin kararlari normal dogumun zarini kaydirmiyor.
+   */
+  private planWaveSpecials(wave: number, slotCount: number) {
+    this.waveSpecialCursor = 0;
+    this.waveSurgeStarted = false;
+    // Serit dalgayla yasiyor: yeni dalga planinda suren serit kalkiyor.
+    this.counterSurge = undefined;
+    if (this.stage < SPECIAL_ENEMIES_FIRST_STAGE) {
+      this.waveSpecialPlan = undefined;
+      this.specialRandom = undefined;
+      return;
+    }
+    this.specialSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+    const random = createSpecialRandom(this.specialSeed, wave);
+    const champion = this.waveChampionPlan;
+    this.waveSpecialPlan = planWaveSpecials({
+      stage: this.stage,
+      wave,
+      slotCount,
+      champion: champion ? { replaced: champion.replaced, slot: champion.slot } : undefined,
+      cols: this.activeMap.cols,
+      random
+    });
+    this.specialRandom = random;
+  }
+
+  /** Siradaki dogum ozel dusman mi; sampiyonun sirasi her zaman once. */
+  private getPendingSpecial(): WaveSpecialSpawn | undefined {
+    const plan = this.waveSpecialPlan;
+    if (!plan || plan.wave !== this.wave) return undefined;
+    const spawn = plan.spawns[this.waveSpecialCursor];
+    return spawn && this.waveSpawned >= spawn.index ? spawn : undefined;
   }
 
   /**
@@ -3452,14 +3667,92 @@ export class MatchRoom extends Room<MatchState> {
   /** Bir dusman dogurur (sirasi geldiyse sampiyonu) ve sayaclari ilerletir; dogan sampiyonsa planini dondurur. */
   private spawnNextWaveEnemy() {
     const champion = this.getPendingChampion();
-    this.spawnEnemy(champion);
+    const special = champion ? undefined : this.getPendingSpecial();
+    if (special) {
+      this.spawnSpecialEnemy(special);
+      this.waveSpecialCursor += 1;
+    } else {
+      this.spawnEnemy(champion);
+    }
     this.waveSpawned += 1;
     if (champion) {
       this.waveChampionSpawned = true;
       this.waveSlotOffset += champion.replaced - 1;
     }
+    this.maybeStartCounterSurge();
     return champion;
   }
+
+  /**
+   * Ozel dusman dogurur. Govde normal dogum yolundan; tur, can kati ve
+   * dogum yeri ozel zardan (normal dogumun zarina dokunmuyor).
+   *
+   * - Avci: o dalganin sampiyon butcesi ve cani, ust kenardan.
+   * - Isitici: dalganin normal dusmani, ust kenardan.
+   * - Enerji yiyici: normalin 1,5 kati can, sol ya da sag kenardan.
+   */
+  private spawnSpecialEnemy(spawn: WaveSpecialSpawn) {
+    const random = this.specialRandom ?? Math.random;
+    const plan = this.waveSpecialPlan;
+    if (spawn.kind === "hunter" && plan?.hunter) {
+      const budget = plan.hunter;
+      this.spawnEnemy(undefined, {
+        kind: "hunter",
+        type: budget.type,
+        healthMultiplier: budget.hpMultiple,
+        start: this.pickSpecialTopSpawn(random),
+        budget: { replaced: budget.replaced, gold: budget.gold, exp: budget.exp, leakDamage: budget.leakDamage, reputation: budget.reputation }
+      });
+      return;
+    }
+    if (spawn.kind === "eater") {
+      this.spawnEnemy(undefined, {
+        kind: "eater",
+        type: SPECIAL_BASE_TYPE,
+        healthMultiplier: ENERGY_EATER_HP_MULTIPLIER,
+        start: this.pickSpecialSideSpawn(random)
+      });
+      return;
+    }
+    this.spawnEnemy(undefined, {
+      kind: "heater",
+      type: SPECIAL_BASE_TYPE,
+      healthMultiplier: 1,
+      start: this.pickSpecialTopSpawn(random)
+    });
+  }
+
+  /** Ust kenarda bos bir hucre (normal dogumla ayni kural, ozel zarla). */
+  private pickSpecialTopSpawn(random: () => number) {
+    const open: number[] = [];
+    for (let col = 0; col < this.activeMap.cols; col += 1) {
+      if (!this.getTowerAtCell(col, 0)) open.push(col);
+    }
+    const col = open[Math.floor(random() * Math.max(1, open.length))] ?? 0;
+    return gridToWorld(col, 0, this.activeMap);
+  }
+
+  /**
+   * Sol ya da sag kenarda yurunebilir bir hucre. Ust satir disinda, nexusun
+   * hemen ustundeki satirlara da degil: yiyici yandan sizip hedefine yurusun,
+   * dogdugu yerde nexusa dusmesin.
+   */
+  private pickSpecialSideSpawn(random: () => number) {
+    const sideCol = random() < 0.5 ? 0 : this.activeMap.cols - 1;
+    const lastRow = Math.max(1, this.activeMap.rows - 1 - ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS);
+    const rows: Array<{ col: number; row: number }> = [];
+    for (const col of [sideCol, sideCol === 0 ? this.activeMap.cols - 1 : 0]) {
+      for (let row = 1; row <= lastRow; row += 1) {
+        const tower = this.getTowerAtCell(col, row);
+        if (!tower || tower.hp <= 0) rows.push({ col, row });
+      }
+      // Once secilen kenar; tamamen doluysa obur kenar.
+      if (rows.length > 0) break;
+    }
+    const cell = rows[Math.floor(random() * Math.max(1, rows.length))] ?? { col: sideCol, row: 1 };
+    return gridToWorld(cell.col, cell.row, this.activeMap);
+  }
+
 
   private getActiveWorldBounds() {
     return getMapWorldBounds(this.activeMap);
@@ -3490,7 +3783,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     // Sampiyonun payi yerine gectigi dogumlarin beklenen toplami.
-    const share = enemy.champion?.gold ?? Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
+    const share = enemy.champion?.gold ?? enemy.special?.budget?.gold ?? Math.max(1, Math.round(enemy.reward * ENEMY_REWARD_MULTIPLIER));
     let ownerGain = 0;
     // Anahtar oturum kimligi: yeniden baglanan oyuncunun kaydi yeni anahtara
     // tasiniyor, oldurme olayinin sahibi de o anahtar.
@@ -4530,29 +4823,27 @@ export class MatchRoom extends Room<MatchState> {
     return player ? player.slot ?? 0 : undefined;
   }
 
-  private spawnEnemy(champion?: WaveChampionPlan) {
-    const roll = Math.random();
+  private spawnEnemy(champion?: WaveChampionPlan, special?: SpecialSpawnOptions) {
+    // Ozel dusman normal dogumun zarini tuketmiyor (tur ve yer kendi zarindan).
+    const roll = special ? 0 : Math.random();
     // Kusatma dusmani erken dalgalarda yok: duvar meta'si once kurulsun, cezasi
     // sonra gelsin. Karisim paylasilan pakette: sampiyon butcesi ayni
     // agirliklardan hesaplaniyor. Sampiyonun turu zardan degil plandan.
-    const type: EnemyType = champion?.type ?? pickWaveEnemyType(this.wave, roll);
+    const type: EnemyType = special?.type ?? champion?.type ?? pickWaveEnemyType(this.wave, roll);
     const definition = getEnemyCombatDefinition(type);
     const race = getStageRace(this.stage);
     // Sampiyon her zaman karada; karisik dalgada da (bkz. `getWaveChampionPlan`).
-    const isFlyingEnemy = !champion && isFlyingWaveSpawn(this.wave, this.waveSpawned + this.waveSlotOffset);
+    const isFlyingEnemy = !champion && !special && isFlyingWaveSpawn(this.wave, this.waveSpawned + this.waveSlotOffset);
     const waveScale = getWaveHpMultiplier(this.wave);
     const airHealthMultiplier = isFlyingEnemy ? AIR_ENEMY_HEALTH_MULTIPLIER : 1;
     // Normal dusmanda 1: carpim degeri degistirmiyor, eski sayilar bire bir ayni.
-    const championMultiplier = champion?.hpMultiple ?? 1;
+    const championMultiplier = champion?.hpMultiple ?? special?.healthMultiplier ?? 1;
     const multiplayerHealth = 1 + Math.max(0, this.getActivePlayerCount() - 1) * 0.45;
     const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier * championMultiplier) * multiplayerHealth;
     const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
-    const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
-      .filter((col) => !this.getTowerAtCell(col, 0));
-    const spawnCol = openSpawnColumns[Math.floor(Math.random() * Math.max(1, openSpawnColumns.length))] ?? 0;
-    const start = gridToWorld(spawnCol, 0, this.activeMap);
+    const start = special?.start ?? this.pickNormalSpawnPoint();
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -4626,9 +4917,18 @@ export class MatchRoom extends Room<MatchState> {
           reputation: champion.reputation,
           spawnedAt: Date.now()
         }
-      } : {})
+      } : {}),
+      ...(special ? { special: { kind: special.kind, ...(special.budget ? { budget: special.budget } : {}) } } : {})
     });
     this.broadcastEnemySpawn(this.enemies.get(id)!);
+  }
+
+  /** Normal dogum yeri: ust satirda bos bir sutun. */
+  private pickNormalSpawnPoint() {
+    const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
+      .filter((col) => !this.getTowerAtCell(col, 0));
+    const spawnCol = openSpawnColumns[Math.floor(Math.random() * Math.max(1, openSpawnColumns.length))] ?? 0;
+    return gridToWorld(spawnCol, 0, this.activeMap);
   }
 
   private updateResourceFactories(seconds: number) {
@@ -7341,6 +7641,8 @@ export class MatchRoom extends Room<MatchState> {
       this.announceFlowShift();
     }
     const now = Date.now();
+    // Karsi atak dusman degil ama dusman tikinde ilerliyor: dalgayla yasiyor.
+    if (this.counterSurge) this.updateCounterSurge(now);
     for (const [id, enemy] of this.enemies) {
       if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
         continue;
@@ -7437,7 +7739,10 @@ export class MatchRoom extends Room<MatchState> {
         this.addEffectStat("slowed", (1 - speedMultiplier) * seconds);
       }
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
-      const route = this.findEnemyRoute(enemy);
+      // Avci ve yiyici kendi yol alanindan; hedef kalmadiysa normal yola dusuyor.
+      const special = enemy.special;
+      const specialRoute = special && special.kind !== "heater" ? this.findSpecialEnemyRoute(enemy, special.kind) : undefined;
+      const route = specialRoute ?? this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
         if (this.melisGothicNightmareUntil > now) {
           enemy.y = Math.min(enemy.y, TOWER_BUILD_BOTTOM - 1);
@@ -7448,8 +7753,9 @@ export class MatchRoom extends Room<MatchState> {
           // Sampiyon yerine gectigi dogumlar kadar birim: her birim kendi
           // kalkan sarjini yiyor ya da kendi payini vuruyor. Tek birim gibi
           // davransaydi bir kalkan sarji bes dusmanlik sizintiyi yutardi.
-          const leakParts = enemy.champion
-            ? splitChampionLeakDamage(enemy.champion.leakDamage, enemy.champion.replaced)
+          const leakBudget = enemy.champion ?? enemy.special?.budget;
+          const leakParts = leakBudget
+            ? splitChampionLeakDamage(leakBudget.leakDamage, leakBudget.replaced)
             : [getEnemyLeakDamage(enemy.type)];
           // Kalkan tuttu sayilmasi icin her birimi tutmus olmali: nexus can
           // kaybettiyse sizinti kalkanda kalmadi.
@@ -7492,6 +7798,11 @@ export class MatchRoom extends Room<MatchState> {
         enemy.pathDistance += movement;
       }
 
+      if (special) {
+        if (special.kind === "heater") this.applyHeaterHeat(enemy, seconds);
+        else if (special.kind === "eater") this.updateEnergyDrain(special, specialRoute?.drainTower, seconds);
+      }
+
       if (enemy.towerAttackCooldownMs <= 0) {
         // Bitisikteki hedef menzillinin onunde gelir: duvara yaslanmis bir
         // nisanci arkadaki kuleyi vurup onundeki duvari birakmamalı.
@@ -7512,14 +7823,301 @@ export class MatchRoom extends Room<MatchState> {
    * hatta unutulurdu.
    */
   private strikeStructure(enemy: EnemyModel, tower: TowerModel) {
-    const structureDamage = enemy.type === "siege"
-      ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
-      : enemy.attack;
+    // Kule avcisi kendi vurusuyla (`TOWER_HUNTER_HIT_DAMAGE`): kusatma
+    // carpani ona binmiyor, yoksa kusatma turundeki avci kuleyi bir saniyede indirirdi.
+    const hunter = enemy.special?.kind === "hunter";
+    const structureDamage = hunter
+      ? TOWER_HUNTER_HIT_DAMAGE
+      : enemy.type === "siege"
+        ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
+        : enemy.attack;
     if (enemy.attackRange > 0) {
       this.spawnEnemyShotBeam(enemy, tower);
     }
     this.damageTower(tower, structureDamage);
-    enemy.towerAttackCooldownMs = ENEMY_TOWER_ATTACK_INTERVAL_MS;
+    enemy.towerAttackCooldownMs = hunter ? TOWER_HUNTER_ATTACK_INTERVAL_MS : ENEMY_TOWER_ATTACK_INTERVAL_MS;
+  }
+
+  /**
+   * Ozel dusmanin yol alani: once kesinlesmis olani, yoksa kurar. Hedef
+   * yoksa `undefined` (dusman normal yola duser).
+   */
+  private getSpecialRouteField(kind: "hunter" | "eater") {
+    const cached = this.specialRouteFields.get(kind);
+    if (cached !== undefined) return cached ?? undefined;
+    const field = this.buildSpecialRouteField(kind);
+    this.specialRouteFields.set(kind, field ?? null);
+    return field;
+  }
+
+  /**
+   * Hedef: avci icin duvar disinda kare kaplayan her ayakta yapi (savas
+   * kulesi, kaynak binasi, Tamir Merkezi), yiyici icin enerji binasi.
+   * Kenara oturan yapilar (duvar, Abarti) hedef degil, engel.
+   */
+  private isSpecialRouteTarget(kind: "hunter" | "eater", tower: TowerModel) {
+    if (tower.hp <= 0 || tower.definition.engine?.placement?.requiresEdge) return false;
+    return kind === "eater" ? tower.definition.resourceProvider === "energy" : !isWallDefinition(tower.definition);
+  }
+
+  /**
+   * Hedef yapilarin karelerinden geriye dogru Dijkstra.
+   *
+   * Adim 1 hucre; duvar (kenar yapisi) gecmek ya da hedef olmayan bir yapinin
+   * karesine girmek (kirmak) ek `SPECIAL_ROUTE_BLOCKER_COST`. Bedel cok
+   * buyuk oldugu icin sira sozlukseldir: once duvarsiz ulasilan en yakin
+   * hedef; hepsi duvarla kapaliysa en az engel kirilarak, esitlikte en kisa
+   * yoldan. Kirilacak duvar o yolun uzerindeki ilk engel, yani en yakin
+   * hedefe giden yolun duvari. Harita en fazla 24x36: kurulum mikro saniye.
+   */
+  private buildSpecialRouteField(kind: "hunter" | "eater"): SpecialRouteField | undefined {
+    const cols = this.activeMap.cols;
+    const rows = this.activeMap.rows;
+    const size = cols * rows;
+    const occupied = new Uint8Array(size);
+    const target = new Uint8Array(size);
+    const cost = new Float64Array(size).fill(Number.POSITIVE_INFINITY);
+    const next = new Int32Array(size).fill(-1);
+    const heap = new SpecialRouteHeap();
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0 || tower.definition.engine?.placement?.requiresEdge) continue;
+      const isTarget = this.isSpecialRouteTarget(kind, tower);
+      for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) {
+        if (cell.col < 0 || cell.col >= cols || cell.row < 0 || cell.row >= rows) continue;
+        const index = cell.row * cols + cell.col;
+        occupied[index] = 1;
+        if (isTarget && !target[index]) {
+          target[index] = 1;
+          cost[index] = 0;
+          heap.push(index, 0);
+        }
+      }
+    }
+    if (heap.size === 0) return undefined;
+
+    const from = { col: 0, row: 0 };
+    const to = { col: 0, row: 0 };
+    while (heap.size > 0) {
+      const current = heap.pop();
+      const base = cost[current];
+      if (heap.lastCost > base) continue;
+      const col = current % cols;
+      const row = (current - col) / cols;
+      // Esit uzunluktaki yollar arasinda engeli hedefe en yakin olani: engel
+      // bedeline engelden sonra kalan adim sayisinin kucuk bir kesri biniyor.
+      // Duz bir duvar hattinda avci hattin boyunca kulenin tam ustundeki
+      // duvara yuruyor. Kesir bir adimdan hep kucuk; uzunluk sirasini bozmuyor.
+      const blockerCost = SPECIAL_ROUTE_BLOCKER_COST + (Math.floor(base % SPECIAL_ROUTE_BLOCKER_COST) / 4096);
+      // Hedef olmayan dolu kareye girmek o yapiyi kirmak demek.
+      const entering = !target[current] && occupied[current] ? blockerCost : 0;
+      to.col = col;
+      to.row = row;
+      for (let step = 0; step < 4; step += 1) {
+        const neighborCol = col + SPECIAL_ROUTE_COL_STEPS[step];
+        const neighborRow = row + SPECIAL_ROUTE_ROW_STEPS[step];
+        if (neighborCol < 0 || neighborCol >= cols || neighborRow < 0 || neighborRow >= rows) continue;
+        const neighbor = neighborRow * cols + neighborCol;
+        if (target[neighbor]) continue;
+        from.col = neighborCol;
+        from.row = neighborRow;
+        const edge = this.getEdgeStructure(from, to);
+        const total = base + 1 + entering + (edge && edge.hp > 0 ? blockerCost : 0);
+        if (total < cost[neighbor]) {
+          cost[neighbor] = total;
+          next[neighbor] = current;
+          heap.push(neighbor, total);
+        }
+      }
+    }
+    return { cols, cost, next, target };
+  }
+
+  /**
+   * Avcinin ve yiyicinin bu tickteki karari: yurumek, engeli kirmak ya da
+   * hedefe varmak (avci vurur, yiyici emer). Alan hucre basina bir sonraki
+   * adimi tutuyor; burada yalnizca canli kontrol var, arama yok.
+   */
+  private findSpecialEnemyRoute(enemy: EnemyModel, kind: "hunter" | "eater"): SpecialEnemyRoute | undefined {
+    const field = this.getSpecialRouteField(kind);
+    if (!field) return undefined;
+    const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
+    if (!isInsideMap(this.activeMap, start.col, start.row)) return undefined;
+    const index = start.row * field.cols + start.col;
+    const standing = this.getTowerAtCell(start.col, start.row);
+    if (standing && standing.hp > 0) {
+      // Yapinin ustunde duruyor (ustune kuruldu): hedefse ona, degilse kirarak.
+      return kind === "eater" && field.target[index]
+        ? { cells: [start], reachedBottom: false, targetTower: undefined, exitPoint: undefined, drainTower: standing }
+        : { cells: [start], reachedBottom: false, targetTower: standing, exitPoint: undefined };
+    }
+    const nextIndex = field.next[index];
+    if (!Number.isFinite(field.cost[index]) || nextIndex < 0) return undefined;
+    const nextCell = { col: nextIndex % field.cols, row: Math.floor(nextIndex / field.cols) };
+    const edge = this.getEdgeStructure(start, nextCell);
+    if (edge && edge.hp > 0) {
+      return { cells: [start], reachedBottom: false, targetTower: edge, exitPoint: undefined };
+    }
+    const occupant = this.getTowerAtCell(nextCell.col, nextCell.row);
+    if (occupant && occupant.hp > 0) {
+      if (kind === "eater" && field.target[nextIndex]) {
+        return { cells: [start], reachedBottom: false, targetTower: undefined, exitPoint: undefined, drainTower: occupant };
+      }
+      return { cells: [start], reachedBottom: false, targetTower: occupant, exitPoint: undefined };
+    }
+    return { cells: [start, nextCell], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+  }
+
+  /**
+   * Enerji yiyicinin emmesi. Emilen enerji kayboluyor; bina bosalinca (ve en
+   * az `ENERGY_EATER_MIN_CONTACT_MS` temasla) yikiliyor. Yikim yol alanini
+   * eskitiyor, yiyici bir sonraki tickte siradaki enerji binasina donuyor.
+   */
+  private updateEnergyDrain(special: SpecialEnemyState, tower: TowerModel | undefined, seconds: number) {
+    if (!tower || tower.hp <= 0) {
+      special.drainId = undefined;
+      special.drainContactMs = 0;
+      return;
+    }
+    if (special.drainId !== tower.id) {
+      special.drainId = tower.id;
+      special.drainContactMs = 0;
+    }
+    special.drainContactMs = (special.drainContactMs ?? 0) + seconds * 1000;
+    tower.energy = Math.max(0, tower.energy - ENERGY_EATER_DRAIN_PER_SECOND * seconds);
+    if (tower.energy <= 0 && special.drainContactMs >= ENERGY_EATER_MIN_CONTACT_MS) {
+      this.destroyStructure(tower);
+      special.drainId = undefined;
+      special.drainContactMs = 0;
+    }
+  }
+
+  /** Yapiyi yikar; yikimin yan etkileri (`damageTower`) aynen isliyor. */
+  private destroyStructure(tower: TowerModel) {
+    this.damageTower(tower, 1e12, { pierceArmor: true });
+  }
+
+  /**
+   * Isiticinin yakinindaki kuleleri isitmasi: yaricap icindeki her ates
+   * eden kuleye saniyede kilit esiginin `HEATER_HEAT_PER_SECOND_RATIO` payi.
+   * Kule hucre indeksinden bakiliyor (cevredeki 5x5 hucre), tarama yok.
+   */
+  private applyHeaterHeat(enemy: EnemyModel, seconds: number) {
+    if (!(seconds > 0)) return;
+    const gridSize = getMapGridSize(this.activeMap);
+    const radius = gridSize * HEATER_RADIUS_CELLS;
+    const radiusSq = radius * radius;
+    const cell = worldToGrid(enemy.x, enemy.y, this.activeMap);
+    const reach = Math.ceil(HEATER_RADIUS_CELLS);
+    const index = this.getTowerCellIndex();
+    const heated = this.heaterScratch;
+    heated.length = 0;
+    for (let dr = -reach; dr <= reach; dr += 1) {
+      for (let dc = -reach; dc <= reach; dc += 1) {
+        const tower = index.get(`${cell.col + dc}:${cell.row + dr}`);
+        if (!tower || heated.includes(tower)) continue;
+        heated.push(tower);
+        if (tower.hp <= 0 || tower.definition.resourceProvider || !isOperationalTower(tower.definition)) continue;
+        if (distanceSq(enemy.x, enemy.y, tower.x, tower.y) > radiusSq) continue;
+        this.addExternalTowerHeat(tower, HEATER_HEAT_PER_SECOND_RATIO * this.getTowerHeatLockThreshold(tower) * seconds);
+      }
+    }
+    heated.length = 0;
+  }
+
+  /**
+   * Disaridan gelen isi (isitici). Atisin isisiyle ayni kurallar: ust sinir
+   * 100, kilit esigi kulenin kendi esigi, kilide giriste "overheat"
+   * tetikleri ve Asiri Isi Patlamasi. Fren atis hizini sicakliktan okudugu
+   * icin kendiliginden isliyor.
+   */
+  private addExternalTowerHeat(tower: TowerModel, heat: number) {
+    if (!(heat > 0)) return;
+    const wasHeatLocked = tower.heatLocked;
+    tower.temperature = Math.min(100, tower.temperature + heat);
+    if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) {
+      tower.heatLocked = true;
+    }
+    if (!wasHeatLocked && tower.heatLocked) {
+      this.runTowerTriggers(tower, "overheat");
+      if (this.towerHasUnlock(tower, "heat:overheatBurst")) this.applyOverheatBurst(tower, Date.now());
+    }
+  }
+
+  /** Planin karsi atagi, sirasi gelen dogumla birlikte uyariya basliyor. */
+  private maybeStartCounterSurge() {
+    const plan = this.waveSpecialPlan;
+    const surge = plan?.surge;
+    if (!plan || !surge || this.waveSurgeStarted || plan.wave !== this.wave || this.waveSpawned <= surge.atSpawn) return;
+    this.startCounterSurge(surge.col, surge.width);
+  }
+
+  private startCounterSurge(col: number, width: number, now = Date.now()) {
+    this.waveSurgeStarted = true;
+    this.counterSurge = {
+      id: this.nextCounterSurgeId++,
+      col: Math.max(0, Math.min(this.activeMap.cols - 1, Math.floor(col))),
+      width: Math.max(1, Math.floor(width)),
+      createdAt: now,
+      launchAt: now + COUNTER_SURGE_TELEGRAPH_MS,
+      hitIds: new Set()
+    };
+  }
+
+  private getCounterSurgeProgress(surge: CounterSurgeModel, now: number) {
+    return Math.max(0, Math.min(1, (now - surge.launchAt) / COUNTER_SURGE_CROSS_MS));
+  }
+
+  /**
+   * Seridin ilerlemesi ve vuruslari. On cizgisi yapinin merkezini gecince
+   * yapi bir kez, azami caninin `COUNTER_SURGE_DAMAGE_RATIO` payi kadar
+   * (zirh delinir) vuruluyor. Kuleler, kaynak binalari ve duvarlar; dusman,
+   * isci ve nexus degil. Serit tek; yapilar tick basina bir kez taraniyor.
+   */
+  private updateCounterSurge(now: number) {
+    const surge = this.counterSurge;
+    if (!surge || now < surge.launchAt) return;
+    const progress = this.getCounterSurgeProgress(surge, now);
+    const origin = getMapOrigin(this.activeMap);
+    const gridSize = getMapGridSize(this.activeMap);
+    const frontY = origin.y + progress * this.activeMap.rows * gridSize;
+    const left = origin.x + surge.col * gridSize;
+    const right = left + surge.width * gridSize;
+    const hits: CounterSurgeHitMessage["hits"] = [];
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0 || tower.y > frontY || surge.hitIds.has(tower.id)) continue;
+      if (!this.isInCounterSurgeBand(tower, left, right, gridSize)) continue;
+      surge.hitIds.add(tower.id);
+      const before = tower.hp;
+      this.damageTower(tower, tower.maxHp * COUNTER_SURGE_DAMAGE_RATIO, { pierceArmor: true });
+      hits.push({ towerId: tower.id, amount: Math.max(0, Math.round(before - tower.hp)) });
+    }
+    if (hits.length > 0) {
+      const message: CounterSurgeHitMessage = { id: surge.id, hits };
+      this.broadcast("surge:hit", message);
+    }
+    if (progress >= 1) this.counterSurge = undefined;
+  }
+
+  /** Yapi seridin sutunlarina biniyor mu (dikey kenar yapisi sinirda da sayiliyor). */
+  private isInCounterSurgeBand(tower: TowerModel, left: number, right: number, gridSize: number) {
+    const edge = tower.definition.engine?.placement?.requiresEdge;
+    if (edge && tower.orientation === "vertical") return tower.x >= left - 0.5 && tower.x <= right + 0.5;
+    const half = edge
+      ? (gridSize * this.getEdgeLength(tower.definition.id)) / 2
+      : (gridSize * this.getTowerPlacementSpan(tower.definition.id)) / 2;
+    return tower.x + half > left + 0.5 && tower.x - half < right - 0.5;
+  }
+
+  private getCounterSurgeWire(now: number): CounterSurgeSnapshot | undefined {
+    const surge = this.counterSurge;
+    if (!surge) return undefined;
+    return {
+      id: surge.id,
+      col: surge.col,
+      w: surge.width,
+      p: Math.round(this.getCounterSurgeProgress(surge, now) * 1000) / 1000,
+      ...(now < surge.launchAt ? { warn: true as const } : {})
+    };
   }
 
   /**
@@ -8178,7 +8776,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const share = (enemy.champion?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind)) / players.length;
+    const share = (enemy.champion?.exp ?? enemy.special?.budget?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind)) / players.length;
     const killer = sourceTower ? this.state.players.get(sourceTower.ownerId) : undefined;
     for (const player of players) {
       // Kazanc oyuncu basina olceklenir: tecrube kartlari oyuncunun kendi
@@ -10085,7 +10683,7 @@ export class MatchRoom extends Room<MatchState> {
     client.send("structure:repaired", { towerId: tower.id, cost });
   }
 
-  private damageTower(tower: TowerModel, rawDamage: number) {
+  private damageTower(tower: TowerModel, rawDamage: number, options: { pierceArmor?: boolean } = {}) {
     if (tower.hp <= 0) {
       return;
     }
@@ -10109,7 +10707,8 @@ export class MatchRoom extends Room<MatchState> {
       rawDamage *= 0.7;
     }
     rawDamage *= this.getWorkerBoostReduction(tower, "damageTaken");
-    const effectiveArmor = applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
+    // Karsi atak ve yikim zirhi deliyor: oransal hasar zirhla kirpilmasin.
+    const effectiveArmor = options.pierceArmor ? 0 : applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
     tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
     this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
@@ -11040,7 +11639,7 @@ export class MatchRoom extends Room<MatchState> {
   private getExecuteRejectReason(enemy: EnemyModel | undefined, now: number): ExecuteRejectReason | undefined {
     if (!enemy || enemy.hp <= 0 || this.enemies.get(enemy.id) !== enemy) return "invalid";
     // Bagisiklik once: ezici ya da sampiyon hukmedilmis olsa da "etkisiz".
-    if (isExecuteImmune({ type: enemy.type, champion: enemy.champion })) return "immune";
+    if (isExecuteImmune({ type: enemy.type, champion: enemy.champion, special: enemy.special?.kind })) return "immune";
     // Kulelerin hedef kurali (`canTowerTargetEnemy`): hukmedilen, olumsuz ve
     // cevrilmis dusman takimin tarafinda, ona dokunulmuyor. Ucan dusman serbest.
     if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now) return "invalid";
@@ -12344,7 +12943,7 @@ export class MatchRoom extends Room<MatchState> {
     // Sampiyon yerine gectigi dogumlar kadar oldurme sayiliyor: seri, kule
     // yiginlari ve ulti sarji (dalganin toplami ayni kalsin). Oldurme sayaci,
     // defter ve mermi dusurme sansi dusman basina.
-    const killUnits = enemy.champion?.replaced ?? 1;
+    const killUnits = enemy.champion?.replaced ?? enemy.special?.budget?.replaced ?? 1;
     this.enemies.delete(enemy.id);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     let ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
@@ -12405,7 +13004,7 @@ export class MatchRoom extends Room<MatchState> {
       const player = this.state.players.get(sourceOwnerId);
       if (player?.characterId === "zeynep") {
         // Sampiyonun itibari yerine gectigi dogumlarin turlerinden beklenen toplam.
-        this.awardZeynepReputation(player, enemy.champion?.reputation ?? getEnemyZeynepReputationGain(enemy.type));
+        this.awardZeynepReputation(player, enemy.champion?.reputation ?? enemy.special?.budget?.reputation ?? getEnemyZeynepReputationGain(enemy.type));
       }
       const assists = killAssists ?? this.resolveEnemyKillAssists(enemy, sourceOwnerId, sourceTowerId, sourceDefinitionId, now);
       for (const assist of assists) this.runLedger.recordAssist(assist.slot, assist.kind);
@@ -14000,7 +14599,9 @@ export class MatchRoom extends Room<MatchState> {
         isChilled: enemy.coolantSlowUntil > now,
         isFrozen: isStatusEffectActive(enemy.statusEffects.freeze, now),
         isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
-        isUndead: enemy.melisUndeadUntil > now
+        isUndead: enemy.melisUndeadUntil > now,
+        // Yalnizca emerken: anahtar normal dusmanda hic yazilmiyor.
+        ...(enemy.special?.drainId ? { drain: enemy.special.drainId } : {})
       })),
       towers: Array.from(this.towers.values()).map((tower) => stripWireDefaults({
         id: tower.id,
@@ -14155,6 +14756,8 @@ export class MatchRoom extends Room<MatchState> {
       // yaziliyor ve her snapshotta her istemciye ~12 bayt demek.
       ...(this.creativeMode ? { creative: true as const } : {}),
       stage: this.stage,
+      // Yalnizca serit varken: 1. asamada ve seritsiz dalgada anahtar yok.
+      ...(this.counterSurge ? { surges: [this.getCounterSurgeWire(now)!] } : {}),
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,

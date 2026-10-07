@@ -3040,6 +3040,16 @@ button.wave-report:active { transform: scale(0.99); }
   clip-path: polygon(50% 0, 100% 28%, 88% 100%, 12% 100%, 0 28%);
 }
 
+/* Ozel tehditlerin isareti: oyundaki cizimin kendisi, sert ve parlamasiz. */
+.bestiary-special-glyph {
+  display: block;
+  width: 72%;
+  max-width: 64px;
+  height: auto;
+  aspect-ratio: 1;
+  color: var(--enemy);
+}
+
 .enemy-game-sprite {
   --sprite: 1;
   display: block;

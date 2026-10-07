@@ -12,7 +12,7 @@
  *   node tools/bench-late-game.mjs --verify out.txt  belirlenimci parmak izi (tick basina durum + istemcinin gordugu)
  *
  * Secenekler: --wave N (20), --seconds N (75), --seed N, --scale N (harita
- * olcegi, 2), --burst N (dalga basinda N dusman birden), --breakdown (snapshot
+ * olcegi, 2), --stage N (asama, 1; 2+ ozel dusman ve karsi atak), --burst N (dalga basinda N dusman birden), --breakdown (snapshot
  * bolum/alan baytlari), --slow (en yavas tickler).
  *
  * Sabit adim ve dogrulama kipinde `Date.now`, `performance.now` ve
@@ -239,6 +239,8 @@ function setupRoom() {
   room.state = { players: new Map() };
   room.broadcastPatch = () => false;
   room.mapScale = Number(option("scale", 2));
+  // Asama: 1 (varsayilan) ozel dusmansiz; parmak izi eskisiyle ayni kaliyor.
+  room.stage = Number(option("stage", 1));
   const clients = ROSTER.map((entry) => createClient(entry.sessionId, sink));
   room.clients = clients;
 

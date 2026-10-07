@@ -33,9 +33,14 @@ export type DamageNumberSpec = {
    * butcesi ikisini birlikte sayiyor, ekrandaki yazilar da birlikte sinirli.
    */
   coin?: boolean;
+  /**
+   * Dusmana degil yapiya inen hasar (karsi atak): "-35", kizil-kiremit.
+   * Ayni havuz ve butce; eksi isareti renk gormeden de ayirt ettiriyor.
+   */
+  structure?: boolean;
 };
 
-type PaletteKey = "ownHit" | "ownCrit" | "ownKill" | "teamHit" | "teamCrit" | "teamKill" | "ownCoin";
+type PaletteKey = "ownHit" | "ownCrit" | "ownKill" | "teamHit" | "teamCrit" | "teamKill" | "ownCoin" | "structure";
 
 type Slot = {
   text: Phaser.GameObjects.Text;
@@ -54,6 +59,7 @@ type Slot = {
   crit: boolean;
   killingBlow: boolean;
   coin: boolean;
+  structure: boolean;
   palette?: PaletteKey;
   depth: number;
 };
@@ -81,6 +87,8 @@ const TEAMMATE_FONT_PX = 11;
  * kendi oldurmende cikiyor; takim arkadasininki senin ekraninda pop yapmiyor.
  */
 const COIN_FONT_PX = 12;
+/** Yapi hasari: kendi vurusunun en buyugu kadar; seyrek ve takimin ortak derdi. */
+const STRUCTURE_FONT_PX = 15;
 /**
  * Altin sayisi dusmanin govdesinin ustunden basliyor; son vurusun "✕"
  * sayisi govdenin ortasinda, ikisi ust uste binmesin.
@@ -111,7 +119,9 @@ export const DAMAGE_NUMBER_PALETTE: Record<PaletteKey, { fill: string; stroke: s
   teamCrit: { fill: "#e7ded3", stroke: "#3b1a1a" },
   teamKill: { fill: "#d6d3d1", stroke: "#1e293b" },
   // HUD'daki altin cipinin rengine akan odul: soluk kehribar, okunur ama sekerleme degil.
-  ownCoin: { fill: "#c9a66b", stroke: "#1c1308" }
+  ownCoin: { fill: "#c9a66b", stroke: "#1c1308" },
+  // Yapinin aldigi hasar (karsi atak): kizil-kiremit, koyu kizil kontur.
+  structure: { fill: "#d97862", stroke: "#1f0806" }
 };
 const PALETTE = DAMAGE_NUMBER_PALETTE;
 /** Kritik daha kalin konturla: renk degil, agirlik. */
@@ -147,6 +157,11 @@ export function formatCoinNumber(amount: number) {
   return `+${Math.max(0, Math.round(amount))}◆`;
 }
 
+/** Yapi hasari: eksi isaretli, dusman hasarindan ayri okunsun. */
+export function formatStructureDamage(amount: number) {
+  return `-${Math.max(0, Math.round(amount))}`;
+}
+
 export class DamageNumberPool {
   private readonly slots: Slot[] = [];
   private readonly lastByKey = new Map<string, Slot>();
@@ -163,14 +178,19 @@ export class DamageNumberPool {
   spawn(spec: DamageNumberSpec, now: number, recycle = false) {
     const slot = this.takeSlot(recycle);
     const coin = Boolean(spec.coin);
+    const structure = !coin && Boolean(spec.structure);
     const palette: PaletteKey = coin
       ? "ownCoin"
-      : spec.own
-        ? (spec.crit ? "ownCrit" : spec.killingBlow ? "ownKill" : "ownHit")
-        : (spec.crit ? "teamCrit" : spec.killingBlow ? "teamKill" : "teamHit");
+      : structure
+        ? "structure"
+        : spec.own
+          ? (spec.crit ? "ownCrit" : spec.killingBlow ? "ownKill" : "ownHit")
+          : (spec.crit ? "teamCrit" : spec.killingBlow ? "teamKill" : "teamHit");
     const fontPx = coin
       ? COIN_FONT_PX
-      : spec.own
+      : structure
+        ? STRUCTURE_FONT_PX
+        : spec.own
         ? OWN_FONT_PX[spec.bucket] * (spec.crit ? CRIT_SCALE : 1)
         : TEAMMATE_FONT_PX;
 
@@ -185,12 +205,13 @@ export class DamageNumberPool {
     slot.alpha = spec.own ? 1 : TEAMMATE_ALPHA;
     // Pop yalnizca kendi kritiginde: takim arkadasinin kritigi senin gozunu
     // cekmemeli, hareket azaltmada da hic yok.
-    slot.pop = spec.own && spec.crit && !coin && !spec.still;
+    slot.pop = spec.own && spec.crit && !coin && !structure && !spec.still;
     slot.still = spec.still;
     slot.amount = spec.amount;
-    slot.crit = spec.crit && !coin;
-    slot.killingBlow = spec.killingBlow && !coin;
+    slot.crit = spec.crit && !coin && !structure;
+    slot.killingBlow = spec.killingBlow && !coin && !structure;
     slot.coin = coin;
+    slot.structure = structure;
     this.render(slot, palette);
 
     const depth = this.depth + (!spec.own ? DEPTH_OFFSET.team : spec.crit || spec.killingBlow ? DEPTH_OFFSET.ownMarked : DEPTH_OFFSET.ownHit);
@@ -225,7 +246,7 @@ export class DamageNumberPool {
       return false;
     }
     slot.amount += amount;
-    if (!slot.coin) {
+    if (!slot.coin && !slot.structure) {
       slot.crit ||= Boolean(flags?.crit);
       slot.killingBlow ||= Boolean(flags?.killingBlow);
     }
@@ -333,6 +354,7 @@ export class DamageNumberPool {
       crit: false,
       killingBlow: false,
       coin: false,
+      structure: false,
       palette: "ownHit",
       depth: this.depth
     };
@@ -358,7 +380,11 @@ export class DamageNumberPool {
       slot.palette = palette;
       styleChanged = true;
     }
-    const label = slot.coin ? formatCoinNumber(slot.amount) : formatDamageNumber(slot.amount, slot.crit, slot.killingBlow);
+    const label = slot.coin
+      ? formatCoinNumber(slot.amount)
+      : slot.structure
+        ? formatStructureDamage(slot.amount)
+        : formatDamageNumber(slot.amount, slot.crit, slot.killingBlow);
     if (text.text !== label) {
       text.setText(label);
     } else if (styleChanged) {

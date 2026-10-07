@@ -6,6 +6,8 @@ import {
   createDefaultEditableMap,
   STAGE_COUNT,
   WAVES_PER_STAGE,
+  COUNTER_SURGE_FIRST_WAVE,
+  SPECIAL_ENEMIES_FIRST_STAGE,
   buildBadgeBoardView,
   buildCardArchiveView,
   buildCosmeticsView,
@@ -1552,7 +1554,52 @@ function renderBestiary() {
         <h2>${t("menu.bestiary.flyingTitle")}</h2>
         <p>${t("menu.bestiary.flyingText")}</p>
       </section>
+
+      ${renderSpecialThreats()}
     </div>
+  `;
+}
+
+/**
+ * Ozel tehditler: kule avcisi, isitici, enerji yiyici ve karsi atak. Ortak
+ * dusman tanimlarindan (enemyCombatDefinitions) gelmiyorlar, o yuzden ayri
+ * kucuk bir liste. Gorsel oyundaki isaretin kendisi: koseli ayrac, kesik
+ * halka, altigen, asagi bakan sivri oklar (sert, parlamasiz).
+ */
+const specialThreats = [
+  { id: "hunter", threat: "high", color: "#c8473a", glyph: '<path d="M10 22V10h12M42 10h12v12M54 42v12H42M22 54H10V42M32 4v10" />' },
+  { id: "heater", threat: "medium", color: "#c8743e", glyph: '<circle cx="32" cy="32" r="26" stroke-dasharray="6 6" stroke-width="1.5" /><path d="M32 18a14 14 0 0 1 12 7M44 39a14 14 0 0 1-12 7M20 39a14 14 0 0 1 0-14" />' },
+  { id: "eater", threat: "medium", color: "#3fa7b5", glyph: '<path d="M50 32 41 47.6H23L14 32l9-15.6h18Z" /><path d="M41 32h18" stroke-width="1.5" /><path d="M48 30h4v4h-4z" fill="currentColor" />' },
+  { id: "surge", threat: "high", color: "#d0603e", glyph: '<path d="M14 8h36M14 8v8M50 8v8M18 20l6 5 6-5M28 20l4 3 4-3M34 20l6 5 6-5" /><path d="M14 44h36" stroke-width="3" /><path d="M14 30h36" stroke-width="1" opacity=".5" />' }
+] as const;
+
+function renderSpecialThreats() {
+  return `
+      <section class="selected-dossier frame">
+        <p class="kicker">${t("menu.bestiary.specialKicker")}</p>
+        <h2>${t("menu.bestiary.specialTitle")}</h2>
+        <p>${t("menu.bestiary.specialText")}</p>
+      </section>
+
+      <section class="bestiary-grid">
+        ${specialThreats.map((entry) => `
+          <article class="bestiary-card bestiary-card--special" style="--enemy: ${entry.color}">
+            <div class="bestiary-card__visual" aria-hidden="true">
+              <svg class="bestiary-special-glyph" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square">${entry.glyph}</svg>
+            </div>
+            <div class="bestiary-card__copy">
+              <p class="kicker">${escapeHtml(t(`menu.enemy.${entry.id}.title`))}</p>
+              <h2>${escapeHtml(t(`menu.enemy.${entry.id}.name`))}</h2>
+              <p>${escapeHtml(t(`menu.enemy.${entry.id}.summary`))}</p>
+            </div>
+            <div class="bestiary-tags">
+              <span>${escapeHtml(t("menu.bestiary.threat", { threat: t(`menu.enemy.threat.${entry.threat}`) }))}</span>
+              <span>${escapeHtml(t("menu.bestiary.fromStage", { n: SPECIAL_ENEMIES_FIRST_STAGE }))}</span>
+              ${entry.id === "surge" ? `<span>${escapeHtml(t("menu.bestiary.fromWave", { n: COUNTER_SURGE_FIRST_WAVE }))}</span>` : ""}
+            </div>
+          </article>
+        `).join("")}
+      </section>
   `;
 }
 

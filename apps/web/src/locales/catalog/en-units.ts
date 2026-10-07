@@ -250,7 +250,7 @@ export const enSkills: Readonly<Record<string, { name: string; description: stri
   },
   "warrior-skill-3": {
     name: "Execute",
-    description: "Instantly executes a single enemy you choose. No effect on Crushers and champions; no cooldown is spent on an immune or invalid target."
+    description: "Instantly executes a single enemy you choose. No effect on Crushers, champions and Tower Hunters; no cooldown is spent on an immune or invalid target."
   },
 
   // ------------------------------------------------------------ DualiTemp

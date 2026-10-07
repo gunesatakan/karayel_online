@@ -39,7 +39,10 @@ import {
   getChampionDownText,
   getHeavyWaveHpStep,
   sanitizeChampionDownMessage,
-  type ChampionDownMessage
+  type ChampionDownMessage,
+  getHeaterRadius,
+  type CounterSurgeSnapshot,
+  type SpecialEnemyKind
 } from "@karayel/shared";
 import { Room } from "colyseus.js";
 import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
@@ -273,6 +276,21 @@ import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resol
 import { getKillSoundCue } from "../sfx-samples";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
+import {
+  SPECIAL_MARK_COLORS,
+  SURGE_COLOR,
+  SURGE_EDGE_COLOR,
+  SpecialThreatNotices,
+  drawCounterSurge,
+  drawEaterDrain,
+  drawSpecialEnemyMarker,
+  getCounterSurgeBand,
+  interpolateCounterSurges,
+  isSpecialEnemyKind,
+  readCounterSurge,
+  sanitizeSurgeHitMessage,
+  type CounterSurgeBand
+} from "../vfx/special-threats";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
@@ -280,6 +298,7 @@ import { assetUrl } from "../asset-url";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
 import { getLocale, t, tMaybe, upper } from "../i18n";
+import type { MessageKey } from "../locales/tr";
 import { describeServerError, localizeDefenseSummary, localizeRunSummary, localizeServerText, localizeTowerPreview } from "../server-text";
 import { enChampionLabel } from "../locales/catalog/en-progression";
 
@@ -461,6 +480,10 @@ type RenderMover = {
   knockDy?: number;
   /** Sampiyonun sabit isareti ("[Ş]"); normal dusmanda yok. */
   crown?: Phaser.GameObjects.Text;
+  /** Ozel dusmanin isareti (avci ayraclari, isitici halkasi, yiyici altigeni ve emme hatti). */
+  specialEffect?: Phaser.GameObjects.Graphics;
+  /** Ozel dusman turu; infaz dokunusunda bagisiklik icin. */
+  specialKind?: SpecialEnemyKind;
   /** Son karede takimin tarafinda mi (hukmedilmis, olumsuz, cevrilmis); Execute bunlari secmiyor. */
   teamSide?: boolean;
 };
@@ -571,6 +594,12 @@ const CHAMPION_BAR_FRAME = 0xb33a3a;
 const CHAMPION_MARK = "[Ş]";
 const CHAMPION_CROWN_DEPTH = 16.2;
 const CHAMPION_LABEL_LIFT_PX = 16;
+/** Ozel dusmanin ilk gorulme bildirimi (macta tur basina bir kez). */
+const SPECIAL_NOTICE_KEYS = {
+  hunter: "scene.special.hunter",
+  heater: "scene.special.heater",
+  eater: "scene.special.eater"
+} as const satisfies Record<SpecialEnemyKind, MessageKey>;
 /**
  * "Yukseltme hazir" isareti: kule sprite'larinin (12) ve can cubugunun (16)
  * ustunde, yuzen sayilarin (30) ve secili kule panelinin (66) altinda.
@@ -1246,6 +1275,15 @@ export class GameScene extends Phaser.Scene {
   private readonly comboStamps = new ComboStampGate();
   /** Dogus etiketi gosterilmis sampiyonlar: etiket dusman basina bir kez. */
   private readonly announcedChampionIds = new Set<string>();
+  /** Ozel dusman turu ve karsi atak bildirimleri: tur basina macta bir kez, serit basina bir kez. */
+  private readonly specialNotices = new SpecialThreatNotices();
+  /** Karsi atak seridi: dolgu dusmanlarin altinda, sert kenarlar kulelerin ustunde. */
+  private surgeFillGraphics?: Phaser.GameObjects.Graphics;
+  private surgeEdgeGraphics?: Phaser.GameObjects.Graphics;
+  /** Seridin karedeki geometrisi; ayni nesne yeniden dolduruluyor. */
+  private readonly surgeBand: CounterSurgeBand = { left: 0, right: 0, top: 0, bottom: 0, frontY: 0, columns: 0, warn: false };
+  /** Son karede cizili serit vardi: yoksa yuzeyler her karede yeniden temizlenmiyor. */
+  private surgeDrawn = false;
   /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
   private cardDraftWave?: number;
   /**
@@ -1612,6 +1650,13 @@ export class GameScene extends Phaser.Scene {
     this.cosmetics = readResolvedCosmetics();
     this.comboStamps.reset();
     this.announcedChampionIds.clear();
+    // Ozel dusman bildirimleri macta bir kez: yeni macta yeniden.
+    this.specialNotices.reset();
+    // Serit dolgusu dusmanlarin (8) altinda, zeminin ustunde; kenarlar kule
+    // govdesinin (12) ve seviye halkasinin (12.6) ustunde, can cubugunun (16) altinda.
+    this.surgeFillGraphics = this.add.graphics().setDepth(7.25);
+    this.surgeEdgeGraphics = this.add.graphics().setDepth(12.7);
+    this.surgeDrawn = false;
     this.cardDraftWave = undefined;
     this.ultimateReadyWatch.reset();
     this.ultimateReadyPulseAt = undefined;
@@ -1665,6 +1710,11 @@ export class GameScene extends Phaser.Scene {
       this.streakGlows = [];
       this.streakGlowGraphics?.destroy();
       this.streakGlowGraphics = undefined;
+      this.surgeFillGraphics?.destroy();
+      this.surgeFillGraphics = undefined;
+      this.surgeEdgeGraphics?.destroy();
+      this.surgeEdgeGraphics = undefined;
+      this.surgeDrawn = false;
       this.streakVoice?.audio.pause();
       this.streakVoice = undefined;
       this.hideAudioSettingsPanel();
@@ -3822,7 +3872,8 @@ export class GameScene extends Phaser.Scene {
         size: mover.displaySize ?? 0,
         type: mover.type,
         champion: Boolean(mover.crown),
-        teamSide: Boolean(mover.teamSide)
+        teamSide: Boolean(mover.teamSide),
+        special: mover.specialKind
       });
     }
     return pickExecuteTapTarget(candidates, x, y, this.getMapCellSize() * 0.55);
@@ -4062,6 +4113,135 @@ export class GameScene extends Phaser.Scene {
       still: reducedMotion,
       bounds: this.getWorldLabelBoundsAboveBottomBar()
     }, performance.now(), decision?.recycle ?? false);
+  }
+
+  /**
+   * Ozel dusmanin isareti (govde normal irk cizimi) ve enerji yiyicinin emme
+   * hatti; yuzey dusmanla birlikte kuruluyor ve yikiliyor. Tur macta ilk kez
+   * goruldugunde HUD bildirimi ve konumunda kisa bir uyari halkasi.
+   */
+  private renderSpecialEnemy(mover: RenderMover, enemy: EnemySnapshot, kind: SpecialEnemyKind, displayedSize: number, now: number) {
+    if (!isSpecialEnemyKind(kind)) return;
+    mover.specialKind = kind;
+    const air = enemy.movementKind === "air";
+    if (!mover.specialEffect) mover.specialEffect = this.add.graphics();
+    const graphics = mover.specialEffect;
+    // Emme hatti ve isi halkasi govdenin altinda kalmasin diye govdenin hemen ustunde.
+    setDepthIfChanged(graphics, air ? 9.15 : 8.15);
+    graphics.clear();
+    const options = this.specialDrawOptions;
+    options.now = now;
+    options.reducedMotion = this.feedback?.reducedMotion ?? false;
+    const cellSize = this.getMapCellSize();
+    drawSpecialEnemyMarker(graphics, kind, enemy.x, enemy.y, displayedSize, getHeaterRadius(cellSize), options);
+    if (kind === "eater" && typeof enemy.drain === "string") {
+      const target = this.towerSnapshots.get(enemy.drain);
+      if (target) {
+        drawEaterDrain(graphics, enemy.x, enemy.y, target.x, target.y, cellSize * getTowerGridSpan(target.definitionId), options);
+      }
+    }
+    if (this.specialNotices.noteKind(kind)) {
+      this.showNotice(t(SPECIAL_NOTICE_KEYS[kind]), 4200);
+      this.pulseAlertMarker(enemy.x, enemy.y, SPECIAL_MARK_COLORS[kind]);
+    }
+  }
+
+  private readonly specialDrawOptions = { now: 0, reducedMotion: false };
+
+  /**
+   * Karsi atak seridi, her karede oynatma saatinde. Uyari evresinde ust
+   * kenarda isaret, kalkinca on kenara kadar yari saydam serit. Serit
+   * snapshot'tan dustugunde yuzeyler bir kez temizleniyor. Serit ilk
+   * goruldugunde (kimlik basina bir kez) HUD bildirimi ve uyari sesi.
+   */
+  private renderCounterSurge(surges: readonly CounterSurgeSnapshot[] | undefined, now: number) {
+    const fill = this.surgeFillGraphics;
+    const edge = this.surgeEdgeGraphics;
+    if (!fill || !edge) return;
+    const surge = readCounterSurge(surges);
+    if (!surge) {
+      if (this.surgeDrawn) {
+        fill.clear();
+        edge.clear();
+        this.surgeDrawn = false;
+      }
+      return;
+    }
+    fill.clear();
+    edge.clear();
+    this.surgeDrawn = true;
+    const cellSize = this.getMapCellSize();
+    const band = getCounterSurgeBand(surge, getMapOrigin(this.selectedMapData), cellSize, this.selectedMapData.cols, this.selectedMapData.rows, this.surgeBand);
+    const options = this.specialDrawOptions;
+    options.now = now;
+    options.reducedMotion = this.feedback?.reducedMotion ?? false;
+    drawCounterSurge(fill, edge, band, cellSize, options);
+    if (this.specialNotices.noteSurge(surge.id) && !this.matchResultShown) {
+      this.showNotice(t("scene.special.surge"), 4200);
+      this.pulseAlertMarker((band.left + band.right) / 2, band.top + cellSize * 0.5, SURGE_COLOR);
+      this.playAlertSound("breach");
+    }
+  }
+
+  /**
+   * Karsi atak yapilari vurdu: sunucu mesaji oynatmadan once yolluyor, cizim
+   * oynatma gecikmesi kadar sonra (on kenar o an yapinin ustunde). Her yapida
+   * sert kenarli kare flas, kisa nabiz ve eksi isaretli hasar sayisi.
+   */
+  private receiveSurgeHit(raw: unknown) {
+    const message = sanitizeSurgeHitMessage(raw);
+    if (!message || this.matchResultShown) return;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown) return;
+      const now = performance.now();
+      const cellSize = this.getMapCellSize();
+      const reducedMotion = this.feedback?.reducedMotion ?? false;
+      for (const hit of message.hits) {
+        const tower = this.towerSnapshots.get(hit.towerId);
+        if (!tower) continue;
+        const size = cellSize * getTowerGridSpan(tower.definitionId);
+        this.flashStructureHit(tower.x, tower.y, size, reducedMotion);
+        if (!reducedMotion) this.punchTower(tower.id, true);
+        this.showStructureDamage(hit.towerId, tower.x, tower.y - size * 0.3, hit.amount, now);
+      }
+    });
+  }
+
+  private flashStructureHit(x: number, y: number, size: number, reducedMotion: boolean) {
+    const square = this.add.rectangle(x, y, size, size, SURGE_COLOR, 0.24)
+      .setStrokeStyle(2, SURGE_EDGE_COLOR, 0.95)
+      .setDepth(24);
+    this.tweens.add({
+      targets: square,
+      alpha: 0,
+      scale: reducedMotion ? 1 : 1.12,
+      duration: 420,
+      ease: "Quad.easeOut",
+      onComplete: () => square.destroy()
+    });
+  }
+
+  /** Yapinin aldigi hasar: hasar sayisi havuzundan, kendi rengiyle ("-35"). */
+  private showStructureDamage(towerId: string, x: number, y: number, amount: number, now: number) {
+    const pool = this.damageNumbers;
+    if (!pool) return;
+    // Takimin ortak derdi: herkes icin "kendi" olay; son vurus gibi P1, sessiz.
+    const lifetimeMs = FEEDBACK_KIND_RULES.lastHit.visualMs;
+    const decision = this.feedback?.emit("lastHit", { own: true, x, y, lifetimeMs });
+    if (decision && !decision.show && !decision.merge) return;
+    pool.spawn({
+      key: `surge:${towerId}`,
+      x,
+      y,
+      amount,
+      own: true,
+      crit: false,
+      killingBlow: false,
+      bucket: 2,
+      lifetimeMs,
+      still: decision?.reducedMotion ?? false,
+      structure: true
+    }, now, decision?.recycle ?? false);
   }
 
   /**
@@ -4538,7 +4718,7 @@ export class GameScene extends Phaser.Scene {
       this.emitControlState();
       return;
     }
-    if (enemy.champion || (enemy.type && isExecuteImmune({ type: enemy.type }))) {
+    if (enemy.champion || (enemy.type && isExecuteImmune({ type: enemy.type, special: enemy.special }))) {
       this.showNotice(getExecuteRejectText("immune"));
       this.emitControlState();
       return;
@@ -4976,6 +5156,7 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("beams", beamsMs);
     this.vfxFrameCost += beamsMs;
     this.renderTowerOverlays();
+    this.renderCounterSurge(frame.snapshot.surges, now);
     sectionStart = performance.now();
     this.renderAtakanSignatures(frame.snapshot.enemies, now);
     this.renderZeynepSignatures(frame.snapshot.enemies, now);
@@ -5095,6 +5276,8 @@ export class GameScene extends Phaser.Scene {
       enemies,
       drones,
       projectiles,
+      // Karsi atagin on kenari snapshotlar arasinda yumusak ilerlesin.
+      surges: interpolateCounterSurges(previous.surges, next.surges, alpha),
       beams: this.beamInterpolator.interpolate(previous.beams, next.beams, alpha, next.serverTime - previous.serverTime)
     };
   }
@@ -5477,6 +5660,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Sonucu degistiren kombolar: tek seferlik mesaj, damga kulenin ustunde.
     room.onMessage("combo:stamp", (message: ComboStampMessage) => this.receiveComboStamp(message));
     room.onMessage("champion:down", (message: ChampionDownMessage) => this.receiveChampionDown(message));
+    // Karsi atak yapilari vurdu: yapi basina bir kez, mesaj temizlenerek okunuyor.
+    room.onMessage("surge:hit", (message: unknown) => this.receiveSurgeHit(message));
     room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
@@ -6850,6 +7035,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         mover.bleedEffect?.destroy();
         mover.frostEffect?.destroy();
         mover.crown?.destroy();
+        mover.specialEffect?.destroy();
         this.announcedChampionIds.delete(id);
         this.enemies.delete(id);
       }
@@ -6984,6 +7170,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (enemy.champion && !this.announcedChampionIds.has(enemy.id)) {
         this.announcedChampionIds.add(enemy.id);
         this.announceChampion(enemy, displayedEnemySize);
+      }
+      if (enemy.special) {
+        this.renderSpecialEnemy(mover, enemy, enemy.special, displayedEnemySize, now);
       }
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const curseLoad = enemy.curseLoad ?? 0;

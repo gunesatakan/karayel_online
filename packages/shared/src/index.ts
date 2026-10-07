@@ -531,12 +531,19 @@ export type EnemySnapshot = {
    * bir kez gidiyor, karelerde hic.
    */
   champion?: true;
+  /**
+   * Ozel dusman turu (2. asamadan itibaren; `waves/special-enemies`): kule
+   * avcisi, isitici, enerji yiyici. Normal dusmanda alan yok. Statik kayitta.
+   */
+  special?: import("./waves/special-enemies.js").SpecialEnemyKind;
+  /** Enerji yiyici su anda bu yapiyi emiyor (yapi kimligi); yalnizca emerken. */
+  drain?: string;
 };
 
 export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
   "id" | "type" | "race" | "maxHp" | "attack" |
   "healthRegenPerSecond" | "maxShield" | "movementKind"
->> & Pick<EnemySnapshot, "pathId" | "champion">;
+>> & Pick<EnemySnapshot, "pathId" | "champion" | "special">;
 export type DynamicEnemySnapshot = Omit<EnemySnapshot, keyof StaticEnemySnapshot> & { id: string };
 
 export type TowerSnapshot = {
@@ -993,6 +1000,11 @@ export type GameSnapshot = {
   creative?: boolean;
   /** Odanin asamasi; dusman irki buradan cikiyor. */
   stage?: number;
+  /**
+   * Suren karsi atak seritleri (`CounterSurgeSnapshot`). Yalnizca serit
+   * varken telde; dalgada en fazla bir tane.
+   */
+  surges?: import("./waves/special-enemies.js").CounterSurgeSnapshot[];
   perf?: ServerPerfSnapshot;
 };
 
@@ -1914,6 +1926,7 @@ export {
   getChampionDownText
 } from "./balance/champion.js";
 export type { WaveChampionPlan, WaveChampionOptions, ChampionDownMessage } from "./balance/champion.js";
+export * from "./waves/special-enemies.js";
 export {
   GAME_SPEED_MULTIPLIER,
   GLOBAL_TOWER_RANGE_MULTIPLIER,

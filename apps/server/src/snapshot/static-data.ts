@@ -27,7 +27,7 @@ type TowerStaticSource = {
   };
 };
 
-type EnemyStaticModel = Omit<EnemyStaticSource, "champion"> & { champion?: unknown };
+type EnemyStaticModel = Omit<EnemyStaticSource, "champion" | "special"> & { champion?: unknown; special?: { kind: StaticEnemySnapshot["special"] } };
 
 export function createStaticEnemySnapshot(enemy: EnemyStaticModel): StaticEnemySnapshot {
   const snapshot: StaticEnemySnapshot = {
@@ -45,6 +45,9 @@ export function createStaticEnemySnapshot(enemy: EnemyStaticModel): StaticEnemyS
   // yaziliyor, o yuzden kosullu. Sunucu modelinde alan butce kaydini tasiyor;
   // tele yalnizca "var" bilgisi cikiyor.
   if (enemy.champion) snapshot.champion = true;
+  // Ozel dusman turu da yalnizca varken; sunucu modelindeki durum (emme,
+  // butce) tele cikmiyor, yalnizca tur.
+  if (enemy.special?.kind) snapshot.special = enemy.special.kind;
   return snapshot;
 }
 

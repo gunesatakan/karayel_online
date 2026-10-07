@@ -81,7 +81,7 @@ test("Execute yuva 3'te Sessiz Mod'un yerinde: ad, Turkce aciklama, 32 sn", () =
   assert.deepEqual(names, ["Yönlendirme", "Refactor", "Execute"]);
   assert.equal(ATAKAN_EXECUTE_SLOT, 2);
   assert.equal(executeSkill.cooldownMs, 32000);
-  assert.equal(executeSkill.description, "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere ve şampiyonlara etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.");
+  assert.equal(executeSkill.description, "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere, şampiyonlara ve kule avcılarına etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.");
   assert.equal(getExecuteRejectText("immune"), "Etkisiz");
   assert.equal(ATAKAN_EXECUTE_SOURCE_ID, "warrior-skill-execute");
 });
@@ -91,6 +91,14 @@ test("bagisiklik: yalnizca ezici (brute) ve sampiyon; tur ne olursa olsun sampiy
   for (const type of ["grunt", "runner", "shooter", "siege"]) {
     assert.equal(isExecuteImmune({ type }), false, type);
     assert.equal(isExecuteImmune({ type, champion: { replaced: 3 } }), true, `${type} sampiyon`);
+  }
+});
+
+test("bagisiklik: kule avcisi da bagisik; isitici ve enerji yiyici degil", () => {
+  for (const type of ["grunt", "siege"]) {
+    assert.equal(isExecuteImmune({ type, special: "hunter" }), true, `${type} avci`);
+    assert.equal(isExecuteImmune({ type, special: "heater" }), false, `${type} isitici`);
+    assert.equal(isExecuteImmune({ type, special: "eater" }), false, `${type} yiyici`);
   }
 });
 
