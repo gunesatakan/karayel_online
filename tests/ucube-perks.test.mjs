@@ -146,6 +146,26 @@ test("govde secimi cani iki katina cikarir", () => {
   assert.equal(tower.hp, oncekiMaxHp, "can dolmamis");
 });
 
+test("govde secimi yikilmis Ucube'yi diriltmiyor: azami can artiyor, can sifirda kaliyor", () => {
+  const { room, tower } = ucubeRoom();
+  // 8. seviyenin secimi bekletiliyor (oncekiler aliniyor).
+  for (let guard = 0; guard < 20 && tower.ucubePendingLevel !== 8; guard += 1) {
+    if (tower.ucubePendingLevel > 0) {
+      room.chooseUcubePerk(client, { towerId: tower.id, perkId: getUcubePerkTier(tower.ucubePendingLevel).options[0].id });
+    } else {
+      room.upgradeTower(client, { towerId: tower.id });
+    }
+  }
+  assert.equal(tower.ucubePendingLevel, 8, "8. seviye secimi beklemiyor");
+  room.damageTower(tower, 1e12, { pierceArmor: true });
+  assert.equal(tower.hp, 0, "Ucube yikilmadi");
+  const maxHp = tower.maxHp;
+  room.chooseUcubePerk(client, { towerId: tower.id, perkId: "range-hull" });
+  assert.ok(tower.ucubePerks.includes("range-hull"), "govde secimi alinmadi");
+  assert.equal(tower.maxHp, maxHp * 2);
+  assert.equal(tower.hp, 0, "yikilmis Ucube dirildi");
+});
+
 test("Ucube disindaki kuleler secim acmaz", () => {
   const room = createRoom("warrior");
   const spot = findBuildableSpot(room, "warrior-1");

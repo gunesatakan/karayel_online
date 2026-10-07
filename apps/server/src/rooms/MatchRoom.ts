@@ -1328,6 +1328,8 @@ type CounterSurgeModel = {
   /** Uyarinin basladigi ve seridin kalktigi an (duvar saati). */
   createdAt: number;
   launchAt: number;
+  /** Haritayi gecme suresi, duvar saati ms (oyun suresi `scaleGameDuration` ile). */
+  crossMs: number;
   hitIds: Set<string>;
 };
 
@@ -2305,6 +2307,8 @@ export class MatchRoom extends Room<MatchState> {
   /** Kenar -> yapi; kare kaplamayan yapilar burada tutulur. */
   private edgeStructureIndex = new Map<string, TowerModel>();
   private edgeStructureIndexDirty = true;
+  /** `edgeStructureIndex`in dizi hali; indeksle birlikte kuruluyor. */
+  private edgeStructureGrid?: { stride: number; vertical: Array<TowerModel | undefined>; horizontal: Array<TowerModel | undefined> };
 
   /** Yapi eklendi, yikildi, satildi ya da harita degisti. */
   private markNavigationDirty() {
@@ -2360,14 +2364,33 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     this.edgeStructureIndex.clear();
+    // Ayni indeksin dizi hali (ozel dusman yol alani icin): anahtar dizgisi
+    // kurmadan hucre indeksiyle okunuyor. Adim (cols + 1): sag ve alt kenar da sigiyor.
+    const stride = this.activeMap.cols + 1;
+    const cellCount = stride * (this.activeMap.rows + 1);
+    const vertical: Array<TowerModel | undefined> = new Array(cellCount);
+    const horizontal: Array<TowerModel | undefined> = new Array(cellCount);
     for (const tower of this.towers.values()) {
       if (!tower.definition.engine?.placement?.requiresEdge || tower.hp <= 0) continue;
       for (const segment of this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation, this.getEdgeLength(tower.definition.id))) {
         this.edgeStructureIndex.set(`${segment.orientation}:${segment.col}:${segment.row}`, tower);
+        if (segment.col < 0 || segment.col >= stride || segment.row < 0 || segment.row > this.activeMap.rows) continue;
+        (segment.orientation === "vertical" ? vertical : horizontal)[segment.row * stride + segment.col] = tower;
       }
     }
+    this.edgeStructureGrid = { stride, vertical, horizontal };
     this.edgeStructureIndexDirty = false;
     return this.edgeStructureIndex;
+  }
+
+  /**
+   * Kenar indeksinin dizi hali: `vertical[row * stride + col]` (col-1 ile col
+   * arasindaki gecis), `horizontal[row * stride + col]` (row-1 ile row arasi).
+   * `getEdgeStructure` ile ayni kayitlar; sik okunan dongulerde dizgi yok.
+   */
+  private getEdgeStructureGrid() {
+    this.getEdgeStructureIndex();
+    return this.edgeStructureGrid!;
   }
 
   /** Iki komsu hucre arasindaki gecise oturmus yapi. */
@@ -3621,8 +3644,8 @@ export class MatchRoom extends Room<MatchState> {
   private planWaveSpecials(wave: number, slotCount: number) {
     this.waveSpecialCursor = 0;
     this.waveSurgeStarted = false;
-    // Serit dalgayla yasiyor: yeni dalga planinda suren serit kalkiyor.
-    this.counterSurge = undefined;
+    // Baslamis serit dalgayla bitmiyor: haritayi tamamen gecene kadar dalga
+    // arasinda ve sonraki dalgada da suruyor (`updateCounterSurge`).
     if (this.stage < SPECIAL_ENEMIES_FIRST_STAGE) {
       this.waveSpecialPlan = undefined;
       this.specialRandom = undefined;
@@ -4604,6 +4627,8 @@ export class MatchRoom extends Room<MatchState> {
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
+    // Arena yeniden kuruldu: eski haritanin seridi (sutunu, ilerlemesi) gecersiz.
+    this.counterSurge = undefined;
     this.planWaveSpawns(this.wave);
   }
 
@@ -4749,6 +4774,8 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     this.matchResult = result;
+    // Sonuctan sonra serit yapilari vurmasin ve telde kalmasin.
+    this.counterSurge = undefined;
     // Oda listeden hemen dussun; bir sonraki lobi yayinini beklemesin.
     this.syncRoomRegistry();
     if (result === "defeat") {
@@ -7641,11 +7668,17 @@ export class MatchRoom extends Room<MatchState> {
       this.announceFlowShift();
     }
     const now = Date.now();
-    // Karsi atak dusman degil ama dusman tikinde ilerliyor: dalgayla yasiyor.
-    if (this.counterSurge) this.updateCounterSurge(now);
+    // Karsi atak dusman degil ama dusman tikinde ilerliyor; dalga bitse de
+    // haritayi gecene kadar suruyor (mac bitince `finishMatch` kaldiriyor).
+    if (this.counterSurge && !this.matchResult) this.updateCounterSurge(now);
     for (const [id, enemy] of this.enemies) {
       if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
         continue;
+      }
+      // Takim tarafina gecen (hukmedilen, olumsuz, cevrilen) yiyici emmiyor:
+      // asagidaki dallar emmeden once donuyor, emme isini burada kapat.
+      if (enemy.special?.drainId && (enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now || enemy.dominatedUntil > now)) {
+        this.stopEnergyDrain(enemy.special);
       }
       if (enemy.melisUndeadUntil > now) {
         this.updateMelisUndead(enemy, seconds, now);
@@ -7746,6 +7779,7 @@ export class MatchRoom extends Room<MatchState> {
       if (route.reachedBottom) {
         if (this.melisGothicNightmareUntil > now) {
           enemy.y = Math.min(enemy.y, TOWER_BUILD_BOTTOM - 1);
+          if (enemy.special?.drainId) this.stopEnergyDrain(enemy.special);
         } else {
           this.runEnemyEscapeTriggers(enemy, now);
           this.enemies.delete(id);
@@ -7895,8 +7929,10 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (heap.size === 0) return undefined;
 
-    const from = { col: 0, row: 0 };
-    const to = { col: 0, row: 0 };
+    // Kenar yapilari dizi halinden: `getEdgeStructure` her komsuda dizgi
+    // anahtar kuruyordu (24x36 haritada kurulum basina binlerce).
+    const edges = this.getEdgeStructureGrid();
+    const stride = edges.stride;
     while (heap.size > 0) {
       const current = heap.pop();
       const base = cost[current];
@@ -7910,17 +7946,17 @@ export class MatchRoom extends Room<MatchState> {
       const blockerCost = SPECIAL_ROUTE_BLOCKER_COST + (Math.floor(base % SPECIAL_ROUTE_BLOCKER_COST) / 4096);
       // Hedef olmayan dolu kareye girmek o yapiyi kirmak demek.
       const entering = !target[current] && occupied[current] ? blockerCost : 0;
-      to.col = col;
-      to.row = row;
       for (let step = 0; step < 4; step += 1) {
         const neighborCol = col + SPECIAL_ROUTE_COL_STEPS[step];
         const neighborRow = row + SPECIAL_ROUTE_ROW_STEPS[step];
         if (neighborCol < 0 || neighborCol >= cols || neighborRow < 0 || neighborRow >= rows) continue;
         const neighbor = neighborRow * cols + neighborCol;
         if (target[neighbor]) continue;
-        from.col = neighborCol;
-        from.row = neighborRow;
-        const edge = this.getEdgeStructure(from, to);
+        // `getEdgeStructure` ile ayni kural: yatay komsuda dikey kenar
+        // (buyuk sutun), dikey komsuda yatay kenar (buyuk satir).
+        const edge = neighborRow === row
+          ? edges.vertical[row * stride + Math.max(col, neighborCol)]
+          : edges.horizontal[Math.max(row, neighborRow) * stride + col];
         const total = base + 1 + entering + (edge && edge.hp > 0 ? blockerCost : 0);
         if (total < cost[neighbor]) {
           cost[neighbor] = total;
@@ -7974,8 +8010,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   private updateEnergyDrain(special: SpecialEnemyState, tower: TowerModel | undefined, seconds: number) {
     if (!tower || tower.hp <= 0) {
-      special.drainId = undefined;
-      special.drainContactMs = 0;
+      this.stopEnergyDrain(special);
       return;
     }
     if (special.drainId !== tower.id) {
@@ -7986,9 +8021,17 @@ export class MatchRoom extends Room<MatchState> {
     tower.energy = Math.max(0, tower.energy - ENERGY_EATER_DRAIN_PER_SECOND * seconds);
     if (tower.energy <= 0 && special.drainContactMs >= ENERGY_EATER_MIN_CONTACT_MS) {
       this.destroyStructure(tower);
-      special.drainId = undefined;
-      special.drainContactMs = 0;
+      this.stopEnergyDrain(special);
     }
+  }
+
+  /**
+   * Emme isinini kapatir. Emme olmayan her tickte cagrilmali: `drainId`
+   * snapshotta `drain` olarak gidiyor, kalirsa istemci isini asili cizer.
+   */
+  private stopEnergyDrain(special: SpecialEnemyState) {
+    special.drainId = undefined;
+    special.drainContactMs = 0;
   }
 
   /** Yapiyi yikar; yikimin yan etkileri (`damageTower`) aynen isliyor. */
@@ -8043,14 +8086,26 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  /** Planin karsi atagi, sirasi gelen dogumla birlikte uyariya basliyor. */
+  /**
+   * Planin karsi atagi, sirasi gelen dogumla birlikte uyariya basliyor.
+   * Ayni anda tek serit: onceki dalganin seridi hala geciyorsa bu dalganin
+   * seridi atlaniyor (ertelenmiyor).
+   */
   private maybeStartCounterSurge() {
     const plan = this.waveSpecialPlan;
     const surge = plan?.surge;
-    if (!plan || !surge || this.waveSurgeStarted || plan.wave !== this.wave || this.waveSpawned <= surge.atSpawn) return;
+    if (!plan || !surge || this.waveSurgeStarted || plan.wave !== this.wave || this.waveSpawned <= surge.atSpawn || this.matchResult) return;
+    if (this.counterSurge) {
+      this.waveSurgeStarted = true;
+      return;
+    }
     this.startCounterSurge(surge.col, surge.width);
   }
 
+  /**
+   * Seridi kaldirir. Sureler oyun suresi: oyun hizi carpani (`scaleGameDuration`)
+   * oteki zamanlayicilar gibi seride de biniyor.
+   */
   private startCounterSurge(col: number, width: number, now = Date.now()) {
     this.waveSurgeStarted = true;
     this.counterSurge = {
@@ -8058,13 +8113,14 @@ export class MatchRoom extends Room<MatchState> {
       col: Math.max(0, Math.min(this.activeMap.cols - 1, Math.floor(col))),
       width: Math.max(1, Math.floor(width)),
       createdAt: now,
-      launchAt: now + COUNTER_SURGE_TELEGRAPH_MS,
+      launchAt: now + scaleGameDuration(COUNTER_SURGE_TELEGRAPH_MS),
+      crossMs: scaleGameDuration(COUNTER_SURGE_CROSS_MS),
       hitIds: new Set()
     };
   }
 
   private getCounterSurgeProgress(surge: CounterSurgeModel, now: number) {
-    return Math.max(0, Math.min(1, (now - surge.launchAt) / COUNTER_SURGE_CROSS_MS));
+    return Math.max(0, Math.min(1, (now - surge.launchAt) / surge.crossMs));
   }
 
   /**
@@ -9953,7 +10009,9 @@ export class MatchRoom extends Room<MatchState> {
 
     if (message.perkId === "range-hull") {
       tower.maxHp *= 2;
-      tower.hp = tower.maxHp;
+      // "Can dolar" ayakta kalan Ucube icin: yikilmis yapi onarilamaz, secim
+      // onu diriltmemeli (diriltse yol alani da eskimis kalirdi).
+      if (tower.hp > 0) tower.hp = tower.maxHp;
     }
   }
 

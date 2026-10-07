@@ -174,6 +174,42 @@ test("Execute sampiyonda etkisiz (turu piyade olsa da); bekleme harcanmiyor", ()
   assert.deepEqual(rejections(clients[0]), [{ slot: ATAKAN_EXECUTE_SLOT, reason: "immune" }]);
 });
 
+test("Execute kule avcisinda etkisiz; isitici ve enerji yiyici infaz ediliyor", () => {
+  const { room, clients, broadcasts, player } = executeRoom();
+  room.stage = 3;
+  const ozel = (kind) => {
+    room.spawnEnemy(undefined, { kind, type: "grunt", healthMultiplier: 1, start: { x: room.activePaths[0].points[0].x, y: room.activePaths[0].points[0].y } });
+    const enemy = [...room.enemies.values()].at(-1);
+    assert.equal(enemy.special?.kind, kind);
+    // Tur piyade: bagisiklik yalnizca avciliktan gelmeli.
+    assert.equal(enemy.type, "grunt");
+    assert.equal(enemy.champion, undefined);
+    return enemy;
+  };
+
+  const avci = ozel("hunter");
+  const hp = avci.hp;
+  const shield = avci.shield;
+  cast(room, clients[0], avci.id);
+  assert.equal(room.enemies.has(avci.id), true, "avci infaz edildi");
+  assert.equal(avci.hp, hp, "avciya hasar gitti");
+  assert.equal(avci.shield, shield);
+  assert.equal(player.skill3CooldownMs, 0, "bekleme harcandi");
+  assert.deepEqual(rejections(clients[0]), [{ slot: ATAKAN_EXECUTE_SLOT, reason: "immune" }]);
+  assert.equal(broadcasts.filter((entry) => entry.type === "skill:execute").length, 0);
+
+  for (const kind of ["heater", "eater"]) {
+    clients[0].sent = [];
+    player.skill3CooldownMs = 0;
+    const enemy = ozel(kind);
+    cast(room, clients[0], enemy.id);
+    assert.equal(room.enemies.has(enemy.id), false, `${kind} infaz edilmedi`);
+    assert.equal(player.skill3CooldownMs, executeSkill.cooldownMs, `${kind}: bekleme uygulanmadi`);
+    assert.deepEqual(rejections(clients[0]), [], kind);
+  }
+  assert.equal(broadcasts.filter((entry) => entry.type === "skill:execute").length, 2);
+});
+
 test("Execute olu, kayip, hukmedilmis, olumsuz ya da cevrilmis hedefi reddediyor; bekleme harcanmiyor", () => {
   const { room, clients, player } = executeRoom();
   const now = Date.now();

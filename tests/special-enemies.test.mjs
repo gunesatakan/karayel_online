@@ -16,6 +16,7 @@ import {
   COUNTER_SURGE_TELEGRAPH_MS,
   ENERGY_EATER_HP_MULTIPLIER,
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
+  GAME_SPEED_MULTIPLIER,
   HEATER_HEAT_PER_SECOND_RATIO,
   SPECIAL_KIND_FIRST_WAVE,
   SPECIAL_MAX_SLOT_SHARE,
@@ -103,6 +104,14 @@ function sur(room, saniye, kosul = () => false, dt = 0.05) {
 function hucre(room, enemy) {
   return worldToGrid(enemy.x, enemy.y, room.activeMap);
 }
+
+/**
+ * Oyun suresinin duvar saatindeki karsiligi: sunucunun `scaleGameDuration`i
+ * (oyun hizi carpani). Karsi atagin sureleri oyun suresi.
+ */
+const oyun = (ms) => ms / GAME_SPEED_MULTIPLIER;
+const SURGE_UYARI_MS = oyun(COUNTER_SURGE_TELEGRAPH_MS);
+const SURGE_GECIS_MS = oyun(COUNTER_SURGE_CROSS_MS);
 
 /** Sahte duvar saati: karsi atak duvar saatiyle ilerliyor. */
 function sahteSaat(fn) {
@@ -285,7 +294,7 @@ test("karşı atak şeridindeki her yapıyı bir kez, azami canın payı kadar v
     const maxlar = new Map(icerdekiler.map((tower) => [tower.id, tower.maxHp]));
 
     room.startCounterSurge(4, 3, saat.now);
-    for (let t = 0; t <= COUNTER_SURGE_TELEGRAPH_MS + COUNTER_SURGE_CROSS_MS + 500; t += 50) {
+    for (let t = 0; t <= SURGE_UYARI_MS + SURGE_GECIS_MS + 500; t += 50) {
       saat.now += 50;
       room.updateCounterSurge(saat.now);
     }
@@ -314,7 +323,7 @@ test("karşı atak önce uyarılıyor, sonra yavaşça iniyor", () => {
     const dip = kur(room, "warrior-1", 5, 16);
     room.startCounterSurge(4, 3, saat.now);
     // Uyari: ust satirdaki kuleye bile dokunulmuyor, telde `warn` var.
-    saat.now += COUNTER_SURGE_TELEGRAPH_MS - 100;
+    saat.now += SURGE_UYARI_MS - 100;
     room.updateCounterSurge(saat.now);
     assert.equal(tepe.hp, tepe.maxHp, "uyari evresinde vurdu");
     const uyari = room.getSnapshot().surges;
@@ -376,7 +385,7 @@ test("dalgada en fazla bir karşı atak; 4. dalgadan önce ve 1. aşamada hiç y
   assert.ok(found, "seritli dalga bulunamadi");
 });
 
-test("karşı atak dalga değişince kalkıyor ve 1. aşamada snapshotta hiç yok", () => {
+test("karşı atak 1. aşamada snapshotta hiç yok; yeni dalga planı süren şeridi kaldırmıyor", () => {
   const room = oda(1);
   for (let wave = 1; wave <= 20; wave += 1) {
     dalgayiDogur(room, wave);
@@ -386,9 +395,144 @@ test("karşı atak dalga değişince kalkıyor ve 1. aşamada snapshotta hiç yo
   }
   const sonraki = oda(4);
   sonraki.startCounterSurge(2, 3);
+  const serit = sonraki.counterSurge;
   assert.ok(sonraki.getSnapshot().surges);
   sonraki.planWaveSpawns(5);
-  assert.equal(sonraki.counterSurge, undefined);
+  assert.equal(sonraki.counterSurge, serit, "dalga plani suren seridi kaldirdi");
+});
+
+test("karşı atağın uyarı ve geçiş süresi oyun süresi: oyun hızı çarpanıyla ölçekleniyor", () => {
+  // Carpan 1 olsaydi test olcekleme ile olceklemesizi ayirt edemezdi.
+  assert.notEqual(GAME_SPEED_MULTIPLIER, 1);
+  sahteSaat((saat) => {
+    const room = oda();
+    const baslangic = saat.now;
+    room.startCounterSurge(4, 3, saat.now);
+    const surge = room.counterSurge;
+    assert.equal(surge.launchAt - baslangic, SURGE_UYARI_MS, "uyari suresi olceklenmedi");
+    assert.equal(surge.crossMs, SURGE_GECIS_MS, "gecis suresi olceklenmedi");
+    // Uyari oyun suresiyle bitiyor: olceksiz sure dolunca hala uyari.
+    saat.now = baslangic + SURGE_UYARI_MS - 1;
+    assert.equal(room.getSnapshot().surges[0].warn, true);
+    saat.now = baslangic + SURGE_UYARI_MS + SURGE_GECIS_MS / 2;
+    const yari = room.getSnapshot().surges[0];
+    assert.equal(yari.warn, undefined);
+    assert.ok(Math.abs(yari.p - 0.5) < 0.002, `gecisin yarisinda ilerleme ${yari.p}`);
+    // Olceksiz gecis suresi dolunca serit hala yolda; olcekli sure dolunca bitiyor.
+    saat.now = baslangic + SURGE_UYARI_MS + COUNTER_SURGE_CROSS_MS;
+    room.updateCounterSurge(saat.now);
+    assert.ok(room.counterSurge, "serit olceksiz surede bitti");
+    assert.ok(room.getSnapshot().surges[0].p < 1);
+    saat.now = baslangic + SURGE_UYARI_MS + SURGE_GECIS_MS;
+    room.updateCounterSurge(saat.now);
+    assert.equal(room.counterSurge, undefined, "serit olcekli surede bitmedi");
+  });
+});
+
+/** Dalgayi bitirir: dusman yok, dogumlar tamam; gercek dalga kapanisi (`updateSpawning`). */
+function dalgayiBitir(room, saat) {
+  for (const id of [...room.enemies.keys()]) room.enemies.delete(id);
+  room.waveSpawned = room.waveTarget;
+  const wave = room.wave;
+  room.updateSpawning(16);
+  saat.now += 2500;
+  room.updateSpawning(16);
+  assert.equal(room.wave, wave + 1, "dalga kapanmadi");
+  assert.equal(room.setupPhase, true, "dalga arasina girilmedi");
+}
+
+test("başlamış karşı atak dalga bitse de haritayı geçiyor ve alt yarıdaki yapıları vuruyor", () => {
+  sahteSaat((saat) => {
+    const room = oda(4);
+    room.wave = 6;
+    room.waveSpawned = 0;
+    room.planWaveSpawns(6);
+    const ust = kur(room, "warrior-1", 5, 2);
+    const alt = kur(room, "warrior-1", 5, room.activeMap.rows - 2);
+    room.startCounterSurge(4, 3, saat.now);
+    const id = room.counterSurge.id;
+    // Kalkistan biraz sonra dalga temizleniyor: serit henuz ustte.
+    saat.now += SURGE_UYARI_MS + SURGE_GECIS_MS * 0.2;
+    room.updateEnemies(0.05);
+    assert.ok(ust.hp < ust.maxHp, "ustteki kule vurulmadi");
+    assert.equal(alt.hp, alt.maxHp);
+    dalgayiBitir(room, saat);
+    assert.equal(room.counterSurge?.id, id, "dalga kapaninca serit kalkti");
+    // Dalga arasinda (kurulum evresi) serit inmeye devam ediyor.
+    for (let t = 0; t < SURGE_GECIS_MS; t += 100) {
+      saat.now += 100;
+      room.updateEnemies(0.1);
+      if (!room.counterSurge) break;
+    }
+    assert.ok(alt.hp < alt.maxHp, "alt yaridaki kule vurulmadi");
+    assert.ok(Math.abs(alt.hp - alt.maxHp * (1 - COUNTER_SURGE_DAMAGE_RATIO)) < 0.001, "alt kule bir kez vurulmadi");
+    assert.equal(room.counterSurge, undefined, "serit haritayi gecince kalkmadi");
+    const hits = room.sent.filter((entry) => entry.type === "surge:hit" && entry.payload.id === id).flatMap((entry) => entry.payload.hits);
+    assert.ok(hits.some((hit) => hit.towerId === alt.id));
+  });
+});
+
+for (const result of ["victory", "defeat"]) {
+  test(`karşı atak maç bitince (${result}) duruyor: yapı vurmuyor, telde yok`, () => {
+    sahteSaat((saat) => {
+      const room = oda(4);
+      const alt = kur(room, "warrior-1", 5, room.activeMap.rows - 2);
+      room.startCounterSurge(4, 3, saat.now);
+      saat.now += SURGE_UYARI_MS + SURGE_GECIS_MS * 0.3;
+      room.updateEnemies(0.05);
+      assert.ok(room.counterSurge);
+      room.finishMatch(result);
+      assert.equal(room.counterSurge, undefined, "mac sonunda serit kalkmadi");
+      assert.ok(!("surges" in room.getSnapshot()), "mac sonunda serit telde");
+      const sentBefore = room.sent.filter((entry) => entry.type === "surge:hit").length;
+      for (let t = 0; t < SURGE_GECIS_MS; t += 200) {
+        saat.now += 200;
+        room.updateEnemies(0.2);
+      }
+      assert.equal(alt.hp, alt.maxHp, "mac bittikten sonra serit yapi vurdu");
+      assert.equal(room.sent.filter((entry) => entry.type === "surge:hit").length, sentBefore);
+      // Mac bittikten sonra yeni serit de baslamiyor.
+      room.waveSpecialPlan = { stage: 4, wave: room.wave, spawns: [], replaced: 0, surge: { atSpawn: 0, col: 2, width: 3 } };
+      room.waveSurgeStarted = false;
+      room.waveSpawned = 1;
+      room.maybeStartCounterSurge();
+      assert.equal(room.counterSurge, undefined);
+    });
+  });
+}
+
+test("karşı atak sürerken ikinci şerit başlamıyor; o dalganın şeridi atlanıyor", () => {
+  sahteSaat((saat) => {
+    let found = false;
+    for (let seed = 1; seed <= 80 && !found; seed += 1) {
+      const room = oda(5);
+      room.specialSeed = seed;
+      room.planWaveSpawns(12);
+      if (!room.waveSpecialPlan?.surge) continue;
+      found = true;
+      // Onceki dalgadan kalan, hala yolda olan serit.
+      room.startCounterSurge(0, 3, saat.now);
+      const onceki = room.counterSurge;
+      const sonrakiId = room.nextCounterSurgeId;
+      dalgayiDogur(room, 12);
+      assert.equal(room.counterSurge, onceki, "suren serit degisti");
+      assert.equal(room.nextCounterSurgeId, sonrakiId, "ikinci serit basladi");
+      // Onceki serit bitince de bu dalganin seridi sonradan kalkmiyor (atlandi).
+      saat.now += SURGE_UYARI_MS + SURGE_GECIS_MS + 100;
+      room.updateEnemies(0.05);
+      assert.equal(room.counterSurge, undefined);
+      room.maybeStartCounterSurge();
+      assert.equal(room.counterSurge, undefined, "atlanan serit sonradan basladi");
+      // Sonraki seritli dalga yeniden serit kaldirabiliyor.
+      for (let wave = 13; wave <= 20 && !room.counterSurge; wave += 1) {
+        room.planWaveSpawns(wave);
+        if (room.waveSpecialPlan?.surge) dalgayiDogur(room, wave);
+      }
+      assert.ok(room.counterSurge, "serit bittikten sonra yeni serit baslamadi");
+      assert.equal(room.nextCounterSurgeId, sonrakiId + 1);
+    }
+    assert.ok(found, "seritli dalga bulunamadi");
+  });
 });
 
 // --- Enerji yiyici ------------------------------------------------------------------
@@ -442,6 +586,39 @@ test("enerji yiyici en yakın enerji binasını emiyor, boşalınca yıkıyor ve
   room.updateEnemies(0.05);
   assert.ok(!("drain" in room.getSnapshot().enemies.find((entry) => entry.id === yiyici.id)), "emmeden sonra drain kaldi");
 });
+
+for (const [label, donustur] of [
+  ["hükmedilen", (enemy, now) => { enemy.dominatedUntil = now + 60_000; enemy.dominatedOwnerId = "p1"; }],
+  ["ölümsüz", (enemy, now) => { enemy.melisUndeadUntil = now + 60_000; }],
+  ["fısıltıyla çevrilen", (enemy, now) => { enemy.melisWhisperTurnedUntil = now + 60_000; enemy.melisWhisperTurnedOwnerId = "p1"; }]
+]) {
+  test(`${label} yiyicinin emme ışını kapanıyor: snapshotta yok, deltada null`, () => {
+    const room = oda(2);
+    const reaktor = kur(room, "warrior-8", 5, 8);
+    reaktor.energy = 400;
+    const yiyici = ozel(room, "eater", 0, 8);
+    assert.ok(sur(room, 30, () => reaktor.energy < 400), "yiyici emmeye baslamadi");
+    const gonder = () => {
+      const { wire, towerBaseline, enemyBaseline } = room.applyWireDelta(room.getSnapshot());
+      room.commitWireBaseline(towerBaseline, enemyBaseline);
+      return wire.enemies.find((entry) => entry.id === yiyici.id);
+    };
+    assert.equal(gonder().drain, reaktor.id, "telde emme yok");
+    assert.ok(!("drain" in gonder()), "degismeyen emme tekrar gitti");
+
+    donustur(yiyici, Date.now());
+    room.updateEnemies(0.05);
+    assert.equal(yiyici.special.drainId, undefined, "cevrilen yiyici emiyor sayiliyor");
+    assert.equal(yiyici.special.drainContactMs, 0);
+    const kayit = room.getSnapshot().enemies.find((entry) => entry.id === yiyici.id);
+    assert.ok(kayit && !("drain" in kayit), "snapshot kaydinda drain kaldi");
+    assert.equal(gonder().drain, null, "delta drain'i null ile silmedi");
+    // Cevrilen yiyici emmiyor: enerji yerinde kaliyor.
+    const enerji = reaktor.energy;
+    sur(room, 2);
+    assert.equal(reaktor.energy, enerji, "cevrilen yiyici emmeye devam etti");
+  });
+}
 
 test("enerji binası kalmayınca yiyici nexusa iniyor", () => {
   const room = oda(2);
