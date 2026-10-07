@@ -8,6 +8,9 @@
 | `cover-630x500.png` | **Kapak görseli (kullanılan):** oyun içi savaş sahnesi ve logo |
 | `cover-630x500-operators.png` | Seçilmeyen alternatif: iki operatörlü afiş (AttackLord ve ZentaX) |
 | `cover-1260x1000-operators.png` | Alternatif afişin 2× kopyası |
+| `theme/banner-960x360.png` | Sayfa teması **Banner**: kule sırası, altta NEXHOLD bandı |
+| `theme/embed-bg-405x720.jpg` | Sayfa teması **Embed BG**: oyun kutusunun arkası (oyun başlamadan görünen alan); koyulaştırılmış sahne, üstte logo, ortası "Run game" düğmesine açık |
+| `theme/background-1920x1080.jpg` | Sayfa teması **Background**: koyu laciverten siyaha sade geçiş; parıltı yok |
 
 ## Ekran görüntüleri
 
