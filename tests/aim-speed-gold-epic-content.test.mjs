@@ -1474,7 +1474,7 @@ test("yeni isabet ve mermi hizi esyalari: kapsam butun katalogda, yigin, fiyat, 
     const owned = Array.from({ length: maxStacks }, () => id);
     assert.equal(isShopItemAvailable(entry, 5, owned.slice(0, -1)), true, id);
     assert.equal(isShopItemAvailable(entry, 5, owned), false, id);
-    if (maxStacks > 1) assert.ok(entry.description.includes(`en fazla ${maxStacks} kez alınır`), id);
+    if (maxStacks > 1) assert.ok(entry.description.includes(`bir kuleye en fazla ${maxStacks} kez takılır`), id);
     for (const tower of allTowers) {
       const want = NEW_AIM_ITEMS.includes(id) ? towerFiresAlongFacing(tower) && !tower.resourceProvider : towerFiresProjectiles(tower);
       assert.equal(canEquipShopItem(entry, tower, []).ok, want, `${id} / ${tower.id}`);

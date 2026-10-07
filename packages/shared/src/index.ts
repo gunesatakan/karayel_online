@@ -1686,6 +1686,8 @@ export {
   isGlobalShopItem,
   shopItemAppliesToTower,
   getShopItemCount,
+  getShopItemTowerLimit,
+  getExclusiveShopItemId,
   getShopItemPrice,
   getShopRerollPrice,
   getShopItemLastOfferWave,
@@ -1698,7 +1700,7 @@ export {
   isShopItemUnlockRedundant,
   shopCatalog
 } from "./shop/index.js";
-export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
+export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemLoadout, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
 export { applyEnemyMark, getMarkDamageMultiplier, isMarkOnlyChoice } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {

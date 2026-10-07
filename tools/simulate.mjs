@@ -170,12 +170,14 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     // Esyalar kule basina takildigi icin tek bir esya artik anlamli bir yatirim
     // degil; gercek oyuncu her hazirlik fazinda parasi yettigince alir. Teklif
     // listesi tukenene veya altin bitene kadar satin alinir.
-    const shopOffers = drawShopOffers({ wave, preferredAxes: config.axes, towers: definitions, ownedItemIds: ownedShopItemIds, ownedCardIds, random });
+    // Kule esyalarinin sinirlari ve fiyati kule basina; bot aldigini hemen takiyor, envanteri bos.
+    const shopLoadout = () => ({ towers: towers.map((tower) => ({ definition: tower.definition, equippedItemIds: tower.equippedShopItemIds })), inventoryItemIds: [] });
+    const shopOffers = drawShopOffers({ wave, preferredAxes: config.axes, towers: definitions, ownedItemIds: ownedShopItemIds, ownedCardIds, loadout: shopLoadout(), random });
     const remainingOffers = [...shopOffers];
     let shopSafety = SHOP_OFFER_COUNT;
     while (shopSafety-- > 0) {
       const purchase = remainingOffers
-        .map((item) => ({ item, price: getShopItemPrice(item, ownedShopItemIds), score: shopItemScore(item) }))
+        .map((item) => ({ item, price: getShopItemPrice(item, ownedShopItemIds, shopLoadout()), score: shopItemScore(item) }))
         .filter(({ price, score }) => price <= gold && score > 0)
         .sort((a, b) => b.score / Math.max(1, b.price) - a.score / Math.max(1, a.price))[0];
       if (!purchase) break;

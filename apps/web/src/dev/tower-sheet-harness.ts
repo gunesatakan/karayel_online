@@ -12,7 +12,7 @@
  * `expanded=1|0` (panelin boyunu yerel depoya yazar).
  */
 import type Phaser from "phaser";
-import type { TowerStatsWire } from "@karayel/shared";
+import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, type TowerStatsWire } from "@karayel/shared";
 import { setupGameControlUi } from "../game-control-ui";
 import type { TowerSheetInput } from "../tower-sheet";
 
@@ -126,7 +126,7 @@ function stateFor(): Record<string, unknown> {
     logisticsPriority: { value: "normal", canEdit: !readOnly },
     standby: { active: false, waking: false, canEdit: !readOnly },
     equippedItems: (block.it ?? []).map((id) => ({ id, name: id, description: "" })),
-    equippedCapacity: 5,
+    equippedCapacity: MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
     towerCards: { targetedCardIds: block.tc ?? [], ownerCardIds: towerId === "warrior-1" ? ["nisan-takimi", "tork-aktarimi"] : ["nisan-takimi"] },
     inventory: { open: false, items: [] },
     skills: []

@@ -1,7 +1,7 @@
 import { ULTIMATE_POWER_MAX_LEVEL, getUltimatePowerMultiplier } from "../balance/index.js";
 import type { CardTowerProfile } from "../cards/index.js";
 import { HIRABLE_WORKER_ROLES, WORKER_ROLE_LABELS, type HirableWorkerRole } from "../logistics/index.js";
-import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, canEquipShopItem, getShopItem, type EquipShopItemFailure, type ShopItem } from "../shop/index.js";
+import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, canEquipShopItem, getExclusiveShopItemId, getShopItem, getShopItemTowerLimit, type EquipShopItemFailure, type ShopItem } from "../shop/index.js";
 import { WORKER_DEVELOPMENT_CELLS } from "../worker-skills.js";
 import type { FeedbackKind } from "./index.js";
 
@@ -70,8 +70,8 @@ const WORKER_TIER_PITCH_STEPS = 2;
 /**
  * Esyanin su an takilabilecegi kule sayisi.
  *
- * Sunucunun `equipShopItem` kurali (`canEquipShopItem`): uyumlu kule ve bos
- * yuva. Magaza bu sayiyi kartin "N kulene etki eder" satiri gibi soyluyor;
+ * Sunucunun `equipShopItem` kurali (`canEquipShopItem`): uyumlu kule, bos
+ * yuva ve esyanin kule basina siniri. Magaza bu sayiyi kartin "N kulene etki eder" satiri gibi soyluyor;
  * sayi sunucunun kabul edecegi takma sayisindan farkli olamaz.
  */
 export function countEquippableTowers(
@@ -156,7 +156,11 @@ export function getInventoryEquipRejectedCue(
     ? `Bu kulede boş yuva yok · en fazla ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} eşya`
     : message.reason === "incompatibleTower"
       ? `${item.name} bu kuleye takılamaz${kept}`
-      : `${item.name} takılamadı${kept}`;
+      : message.reason === "itemLimit"
+        ? `${item.name} bir kuleye en fazla ${getShopItemTowerLimit(item)} kez takılır${kept}`
+        : message.reason === "itemConflict"
+          ? `${item.name}, ${getShopItem(getExclusiveShopItemId(item.id) ?? "")?.name ?? "karşıt eşya"} ile aynı kuleye takılamaz${kept}`
+          : `${item.name} takılamadı${kept}`;
   return { text, durationMs: CONFIRMATION_NOTICE_MS, step: 0 };
 }
 

@@ -151,6 +151,7 @@ import {
   getServerLinkMaturity,
   type ServerLinkJoinedMessage,
   type RiskyInvestmentMessage,
+  type ShopItemLoadout,
   type ServerLinkMaturedMessage,
   type SilentModeMessage,
   type UltimateResultKind,
@@ -222,6 +223,7 @@ import {
   resolveTowerEngine,
   canAcceptTargetedCard,
   canEquipShopItem,
+  getInventoryEquipRejectedCue,
   isGlobalShopItem,
   canTowerHoldTargetedCard,
   cardAppliesToTower,
@@ -7491,6 +7493,17 @@ export class MatchRoom extends Room<MatchState> {
   }
 
 
+  /**
+   * Kule esyalarinin kule basina sinirlari ve fiyati icin oyuncunun yuku:
+   * kuleleri, takili esyalariyla, ve envanterde bekleyen esyalar.
+   */
+  private getPlayerShopLoadout(playerId: string, player: Player): ShopItemLoadout {
+    return {
+      towers: Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => ({ definition: tower.definition, equippedItemIds: tower.equippedShopItemIds })),
+      inventoryItemIds: player.inventoryItemIds
+    };
+  }
+
   private getPlayerTowerDefinitions(playerId: string) {
     return Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
   }
@@ -7516,7 +7529,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private openPlayerSetupShop(playerId: string, player: Player) {
     player.shopRerolls = 0;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(playerId, player) });
   }
 
   /**
@@ -7544,7 +7557,7 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.shopRerolls += 1;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(client.sessionId, player) });
   }
 
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
@@ -7552,7 +7565,7 @@ export class MatchRoom extends Room<MatchState> {
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
     if (!player || !item || !this.setupPhase || !player.shopOffers.some(({ id }) => id === item.id)) return;
     if (item.id === "riskli-yatirim" && (this.teamHealth <= RISKY_INVESTMENT_NEXUS_COST || this.riskyInvestmentWave === this.wave)) return;
-    const price = getShopItemPrice(item, player.ownedShopItemIds);
+    const price = getShopItemPrice(item, player.ownedShopItemIds, this.getPlayerShopLoadout(client.sessionId, player));
     if (player.gold < price) return;
     player.gold -= price;
     player.goldSpent += price;
@@ -7598,7 +7611,8 @@ export class MatchRoom extends Room<MatchState> {
    * Envanterdeki bir esyayi secilen kuleye takar.
    *
    * Takma geri alinamaz oldugu icin dogrulama tamamen sunucuda: sahiplik, esyanin
-   * gercekten envanterde olmasi, kulenin esyayla uyumlulugu ve 5'li tavan burada
+   * gercekten envanterde olmasi, kulenin esyayla uyumlulugu, esyanin kule basina
+   * siniri ve 10'lu tavan burada
    * kontrol edilir. Arayuz ayni `canEquipShopItem` kuralini kullandigi icin
    * normalde buraya reddedilecek bir istek gelmez.
    */
@@ -9191,7 +9205,12 @@ export class MatchRoom extends Room<MatchState> {
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
     if (!player || !tower || tower.ownerId !== client.sessionId || (!!message.cardId === !!message.itemId)) return reject("Geçersiz hedef.");
     if (message.cardId && (!card || !canTowerHoldTargetedCard(tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("Bu kule kartı alamıyor.");
-    if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id) || !canEquipShopItem(item, tower.definition, tower.equippedShopItemIds).ok)) return reject("Bu kule eşyayı alamıyor.");
+    if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id))) return reject("Bu kule eşyayı alamıyor.");
+    if (item) {
+      // Takmayla ayni ret metni; ek ("envanterde kaldi") onizlemede yanlis olurdu.
+      const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
+      if (!check.ok) return reject(getInventoryEquipRejectedCue({ itemId: item.id, reason: check.reason }, { creative: true })?.text ?? "Bu kule eşyayı alamıyor.");
+    }
     const change = card ?? item;
     if (!change) return reject("Seçenek artık mevcut değil.");
     const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...change.effects],
@@ -10154,7 +10173,7 @@ export class MatchRoom extends Room<MatchState> {
    * Esyayi takar ya da cikarir.
    *
    * Kuresel esyalar dogrudan oyuncuya yaziliyor. Kuleye takilanlarda
-   * `canEquipShopItem` kurali korunuyor: bes esyalik tavan ve uyumluluk gercek
+   * `canEquipShopItem` kurali korunuyor: on esyalik tavan ve uyumluluk gercek
    * oyun kurallari ve onlari delmek, geri kalan kodun beklemedigi bir kule
    * uretirdi.
    */

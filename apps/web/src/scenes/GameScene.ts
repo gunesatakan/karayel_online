@@ -10259,6 +10259,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       : undefined;
     const melisZoneLabel = melisZone === "approval" ? "Onay" : melisZone === "stress" ? "Stres" : "Denge";
     const ownedShopItems = this.localPlayerSnapshot?.ownedShopItemIds ?? [];
+    // Kule esyalarinin fiyati kule basina; sunucunun `getPlayerShopLoadout` yukuyle ayni.
+    const shopLoadout = {
+      towers: this.getLocalTowerProfiles().map(({ tower, definition }) => ({ definition, equippedItemIds: tower.equippedShopItemIds ?? [] })),
+      inventoryItemIds: this.localPlayerSnapshot?.inventoryItemIds ?? []
+    };
     // Hedefleme modlari artik kulenin acik kilitlerinden okunur; kilidi veren
     // sey esya da olabilir kart da, ikisini de sunucu cozup gonderiyor.
     const towerUnlockBits = selectedTower?.unlockBits;
@@ -10372,7 +10377,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         gold: Math.floor(this.localPlayerSnapshot.gold),
         rerollPrice: this.localPlayerSnapshot.shopRerollPrice ?? 40,
         offers: (this.localPlayerSnapshot.shopOffers ?? []).map((item) => {
-          const price = getShopItemPrice(item, ownedShopItems);
+          const price = getShopItemPrice(item, ownedShopItems, shopLoadout);
           return { id: item.id, name: item.name, description: item.description, price, category: item.category, affordable: this.localPlayerSnapshot!.gold >= price, fresh: shopFresh?.has(item.id) === true, alreadyUnlocked: this.isShopItemAlreadyUnlockedLocally(item.id) };
         })
       } : undefined,
