@@ -5,6 +5,7 @@ import { GameScene } from "./scenes/GameScene";
 import { setupGameControlUi, setupGameHudUi } from "./game-control-ui";
 import { setupMenuUi } from "./menu-ui";
 import { getCanvasSize } from "./rendering";
+import { startTelemetry } from "./telemetry-boot";
 import "./style.css";
 
 const initialCanvas = getCanvasSize();
@@ -61,6 +62,8 @@ if (vfxGallery) {
   setupMenuUi(game);
   setupGameControlUi(game);
   setupGameHudUi(game);
+  // Anonim telemetri: galeri ve gelistirme sahnesi bu yoldan gecmiyor.
+  startTelemetry(game);
 }
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {

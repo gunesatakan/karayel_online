@@ -28,7 +28,12 @@ export async function importWebModule(relativePath) {
     target: "node20",
     write: false,
     logLevel: "silent",
-    alias: { phaser: join(root, "tests/helpers/phaser-stub.mjs") }
+    alias: {
+      phaser: join(root, "tests/helpers/phaser-stub.mjs"),
+      // Colyseus istemcisi node'a ESM olarak paketlenemiyor (dinamik `require`).
+      // Oturum modulu yalnizca sinifin kendisini tutuyor; testler sahte oda veriyor.
+      "colyseus.js": join(root, "tests/helpers/colyseus-client-stub.mjs")
+    }
   });
   if (!outDir) {
     outDir = mkdtempSync(join(tmpdir(), "karayel-web-"));

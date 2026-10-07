@@ -107,6 +107,7 @@ import {
   gridToWorld,
   hydrateWireSnapshot,
   mergeDynamicEnemySnapshots,
+  mergeDynamicRecordSnapshots,
   mergeDynamicTowerSnapshots,
   isInsideMap,
   isClientProjectileExpired,
@@ -241,12 +242,16 @@ import { SnapshotPlaybackClock } from "@karayel/shared";
 import {
   clearActiveLobbyRoom,
   clearMatchReconnect,
+  createOwnerSecret,
   getActiveLobbyRoom,
   getSharedClient,
+  isServerFullError,
+  leaveRoomQuietly,
   retryExpiredSeatReservation,
   saveMatchReconnect,
   setActiveLobbyRoom,
-  takeResumedMatch
+  takeResumedMatch,
+  withWireCaps
 } from "../online-session";
 import { configureHiDpiCamera, getSceneRenderScale } from "../rendering";
 import { getClearedStages, markStageCleared } from "../stage-progress";
@@ -266,6 +271,7 @@ import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
+import { reportTelemetryError, runTelemetry } from "../telemetry";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -1048,6 +1054,9 @@ export class GameScene extends Phaser.Scene {
   private dynamicTowerSnapshots = new Map<string, DynamicTowerSnapshot>();
   /** Dusmanlarin en son bilinen tam dinamik kaydi; kulelerdekiyle ayni is. */
   private dynamicEnemySnapshots = new Map<string, DynamicEnemySnapshot>();
+  /** Oyuncu ve isci kayitlari da delta geliyor; en son bilinen tam halleri. */
+  private dynamicPlayerSnapshots = new Map<string, GameSnapshot["players"][number]>();
+  private dynamicDroneSnapshots = new Map<string, DroneSnapshot>();
   private lastFullSnapshotRequestAt = 0;
   private enemyGroup?: Phaser.Physics.Arcade.Group;
   private projectileGroup?: Phaser.Physics.Arcade.Group;
@@ -1276,6 +1285,10 @@ export class GameScene extends Phaser.Scene {
   private currentUltimateCharge = 0;
   /** Menude yaratici mod secildi mi; odayi kurarken sunucuya gidiyor. */
   private creativeRequested = false;
+  /** Solo odanin sahip sirri; yeniden baglanma kaydina yaziliyor (`rememberMatchReconnect`). */
+  private soloOwnerSecret?: string;
+  /** Oyuncu menuye donuyor: odadan izinli cikildi, kopma sanilip yeniden baglanilmasin. */
+  private leavingRoom = false;
   /** Oynanan asama; dusman irki sunucuda buradan cikiyor. */
   private selectedStage = 1;
   /** Sunucu bayragi acti mi; panel ve bedava yerlestirme buna bakiyor. */
@@ -4521,6 +4534,7 @@ export class GameScene extends Phaser.Scene {
         // Sayfa yenilendi ve kayitli anahtarla suren maca donuldu.
         this.room = resumed.room;
         this.startedFromLobby = resumed.mode === "online";
+        this.soloOwnerSecret = resumed.ownerSecret;
       } else if (existingRoom) {
         this.room = existingRoom;
         this.startedFromLobby = true;
@@ -4530,14 +4544,18 @@ export class GameScene extends Phaser.Scene {
         // yeniden denemesini kullaniyordu ama burasi atlanmisti; oyunu dogrudan
         // baslatan oyuncu, uyanan ya da deploy edilen sunucuda hatayi ham haliyle
         // goruyordu.
-        this.room = await retryExpiredSeatReservation(() => client.create("match", {
+        // Sahip sirri bir kez: yeniden denemeler ayni sirla kuruyor.
+        const ownerSecret = createOwnerSecret();
+        this.soloOwnerSecret = ownerSecret;
+        this.room = await retryExpiredSeatReservation(() => client.create("match", withWireCaps({
           playerName: this.selectedCharacter.displayName,
           characterId: this.selectedCharacterId,
           mapData: this.selectedMapData,
           autoStart: true,
           creative: this.creativeRequested,
-          stage: this.selectedStage
-        }));
+          stage: this.selectedStage,
+          ownerSecret
+        })));
       }
       this.localSessionId = this.room.sessionId;
       this.emitHudState({ status: `#${this.room.roomId}` });
@@ -4545,10 +4563,25 @@ export class GameScene extends Phaser.Scene {
       this.room.send("snapshot:requestFull");
       this.room.send("card:sync");
       this.rememberMatchReconnect(this.room);
+      runTelemetry.attach({
+        roomId: this.room.roomId,
+        online: this.startedFromLobby,
+        creative: this.creativeRequested,
+        resumed: Boolean(resumed),
+        operator: this.selectedCharacterId
+      });
       this.startPingLoop();
       this.startTowerStatsLoop();
     } catch (error) {
+      // Dolu sunucu bir ariza degil: tam metin bildirimde, cubukta kisa hali.
+      if (isServerFullError(error)) {
+        console.warn(error);
+        this.showNotice(error instanceof Error ? error.message : String(error), 8000);
+        this.emitHudState({ status: "Sunucu dolu" });
+        return;
+      }
       console.error(error);
+      reportTelemetryError(error, "connect");
       this.emitHudState({ status: this.formatConnectionError(error) });
     }
   }
@@ -4596,6 +4629,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.noteBadgeSnapshot(hydratedSnapshot);
+    runTelemetry.noteSnapshot(hydratedSnapshot, this.localSessionId);
     this.noteProjectileOwnership(hydratedSnapshot.projectiles, hydratedSnapshot.towers);
     this.noteZeynepReceipt(hydratedSnapshot);
     // Dalga karnesinin kapanis araligi burada kapaniyor: snapshot mesajlarla
@@ -4779,15 +4813,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hydrateSnapshot(snapshot: WireGameSnapshot): HydratedGameSnapshot | undefined {
+    // Tam kare (atlanip geri gelen istemci): kayitlar birlestirilmiyor, yerine
+    // konuyor. Birlestirilseydi tam kayitta artik olmayan alan eski degerde kalirdi.
+    if (snapshot.wireFull) {
+      this.dynamicTowerSnapshots.clear();
+      this.dynamicEnemySnapshots.clear();
+      this.dynamicPlayerSnapshots.clear();
+      this.dynamicDroneSnapshots.clear();
+    }
     // Delta once tamamlaniyor: hidratlama tam kayit bekliyor.
     const towers = mergeDynamicTowerSnapshots(this.dynamicTowerSnapshots, snapshot.towers);
     const enemies = mergeDynamicEnemySnapshots(this.dynamicEnemySnapshots, snapshot.enemies);
-    const hydrated = hydrateWireSnapshot({ ...snapshot, towers, enemies }, this.staticEnemySnapshots, this.staticTowerSnapshots);
+    const players = mergeDynamicRecordSnapshots(this.dynamicPlayerSnapshots, snapshot.players);
+    const drones = mergeDynamicRecordSnapshots(this.dynamicDroneSnapshots, snapshot.drones ?? []);
+    const hydrated = hydrateWireSnapshot({ ...snapshot, towers, enemies, players, drones }, this.staticEnemySnapshots, this.staticTowerSnapshots);
     if (!hydrated) return undefined;
     pruneStaticSnapshotCache(this.staticEnemySnapshots, snapshot.enemies.map((enemy) => enemy.id));
     pruneStaticSnapshotCache(this.staticTowerSnapshots, snapshot.towers.map((tower) => tower.id));
     pruneStaticSnapshotCache(this.dynamicTowerSnapshots, snapshot.towers.map((tower) => tower.id));
     pruneStaticSnapshotCache(this.dynamicEnemySnapshots, snapshot.enemies.map((enemy) => enemy.id));
+    pruneStaticSnapshotCache(this.dynamicPlayerSnapshots, snapshot.players.map((player) => player.id));
+    pruneStaticSnapshotCache(this.dynamicDroneSnapshots, (snapshot.drones ?? []).map((drone) => drone.id));
     const linearProjectiles: ProjectileSnapshot[] = [];
     for (const [id, projectile] of this.linearProjectileSnapshots) {
       if (isClientProjectileExpired(projectile, snapshot.serverTime)) {
@@ -4815,6 +4861,8 @@ export class GameScene extends Phaser.Scene {
     // birikimi de birakmak gerekiyor ki eski alanlar yeni kayda sizmasin.
     this.dynamicTowerSnapshots.clear();
     this.dynamicEnemySnapshots.clear();
+    this.dynamicPlayerSnapshots.clear();
+    this.dynamicDroneSnapshots.clear();
     // Harita buradan da gelir: `match:map` mesaji dinleyiciler takilmadan once
     // cikabildigi icin tek basina guvenilir degil. Yanlis haritayla oynayan
     // istemci kareleri baska yere cizer, dokunuslari baska hucreye yazar ve
@@ -5362,6 +5410,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {
       this.latestServerPerf = perf;
+      runTelemetry.noteServerTick(perf?.tickMs, perf?.tickMaxMs);
       if (this.latestPerfSnapshot) this.latestPerfSnapshot.perf = perf;
     });
     // Sunucu bozulan odayi kapatiyor: yeniden baglanmayi denemenin anlami yok.
@@ -5374,6 +5423,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     room.onLeave((code) => {
       if (this.room !== room) return;
+      // Oyuncu menuye donuyor: kendi istegiyle ciktik, yeniden baglanma yok.
+      if (this.leavingRoom) return;
       if (this.roomAbortedId === room.roomId) {
         clearActiveLobbyRoom(room.roomId);
         return;
@@ -5412,6 +5463,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     saveMatchReconnect(room, {
       mode: this.startedFromLobby ? "online" : "solo",
       characterId: this.selectedCharacterId,
+      // Solo odaya `create`te verilen ad ve sahip sirri; pencereden sonra
+      // donuste sunucu yuvayi yalnizca sirri gosterene veriyor.
+      playerName: this.startedFromLobby ? undefined : this.selectedCharacter.displayName,
+      ownerSecret: this.startedFromLobby ? undefined : this.soloOwnerSecret,
       mapScale: this.runMapScale,
       stage: this.selectedStage
     });
@@ -5462,6 +5517,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * iki kez sayilmasini engelliyor.
    */
   private handleMatchResult(result: "victory" | "defeat", summary: MatchResultSummary) {
+    runTelemetry.end(result, summary.run);
     // Bitmis maca yeniden yuklemede donulmuyor; rapor kaydi zaten yazildi.
     if (this.room) clearMatchReconnect(this.room.roomId);
     const step = this.matchResultLatch.receive({ run: summary.run });
@@ -5470,7 +5526,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // bekleyen yeniden yukleme simdi. Tazelemeden once, yoksa yeniden cizim
     // basilmis dugmeyi yeniden acardi.
     if (this.runReportReloadPending && !this.matchResultLatch.awaitingRun) {
-      window.location.reload();
+      this.reloadAfterLeavingRoom();
       return;
     }
     if (step.open) {
@@ -5722,10 +5778,30 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (choice !== "menu") saveQuickStartIntent({ ...choice.intent, at: Date.now() });
     if (this.matchResultLatch.awaitingRun) {
       this.runReportReloadPending = true;
-      window.setTimeout(() => window.location.reload(), RUN_REPORT_RELOAD_WAIT_MS);
+      window.setTimeout(() => this.reloadAfterLeavingRoom(), RUN_REPORT_RELOAD_WAIT_MS);
       return;
     }
-    window.location.reload();
+    this.reloadAfterLeavingRoom();
+  }
+
+  /**
+   * Odadan izinli cikip sayfayi yeniden yukler (raporun dugmeleri).
+   *
+   * Yalnizca yeniden yukleme izinsiz cikis sayiliyordu: sunucu yuvayi
+   * yeniden baglanma icin tutuyor, oda sinirda yer kapliyordu. Izinli cikista
+   * bitmis ya da herkesin biraktigi oda beklemeden kapaniyor. Cikis en iyi
+   * caba ve kisa (`leaveRoomQuietly`): olu soket yuklemeyi bekletmiyor.
+   * Kayit once siliniyor ki yeni sayfa bu odaya donmeyi denemesin.
+   */
+  private reloadAfterLeavingRoom() {
+    if (this.leavingRoom) return;
+    this.leavingRoom = true;
+    const room = this.room;
+    if (room) {
+      clearMatchReconnect(room.roomId);
+      clearActiveLobbyRoom(room.roomId);
+    }
+    void leaveRoomQuietly(room).finally(() => window.location.reload());
   }
 
   /**
@@ -10773,6 +10849,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     const ping = Math.max(0, Math.round(performance.now() - message.sentAt));
+    runTelemetry.notePing(ping);
     this.pingSamples.push(ping);
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);

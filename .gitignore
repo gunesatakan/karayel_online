@@ -10,3 +10,6 @@ yarn-error.log*
 pnpm-debug.log*
 .vercel/
 .fly/
+
+# Sunucu telemetrisi (yerel calistirma; Fly'da /data/telemetry)
+data/telemetry/

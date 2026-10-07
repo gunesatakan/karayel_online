@@ -1,11 +1,67 @@
 import { Client, Room } from "colyseus.js";
+import { SERVER_FULL_MESSAGE, WIRE_DELTA_PROTOCOL } from "@karayel/shared";
 
 let sharedClient: Client | undefined;
 let activeLobbyRoom: Room | undefined;
 
+/**
+ * Odaya giris seceneklerine istemcinin tel surumunu ekler.
+ *
+ * Her `create`/`joinById`/`join` bunu kullaniyor: sunucu oyuncu ve isci
+ * deltasini yalnizca bunu bildiren oturuma yolluyor, digerlerine (eski
+ * istemci) o iki bolum tam gidiyor. `reconnect` secenek tasimiyor; sunucu
+ * bayragi oturumun ilk girisinden hatirliyor.
+ */
+export function withWireCaps<T extends object>(options: T): T & { wireDelta: number } {
+  return { ...options, wireDelta: WIRE_DELTA_PROTOCOL };
+}
+
+/**
+ * Solo odanin sahip sirri: kurulumda bir kez uretiliyor, yeniden baglanma
+ * kaydinda saklaniyor. Pencereden sonra oda kimligiyle donus bunu gostermek
+ * zorunda; oda kimligi HUD'da yaziyor, ad ve operator kimseyi kanitlamiyor.
+ */
+export function createOwnerSecret() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Menuye donuste odadan izinli cikisin en uzun beklemesi; cikis sayfayi asla tutmuyor. */
+export const ROOM_LEAVE_TIMEOUT_MS = 400;
+
+/**
+ * Odadan kendi istegiyle cikar (en iyi caba, kisa sureli).
+ *
+ * Sekme kapanmasi izinsiz cikis: sunucu yuvayi yeniden baglanma icin tutuyor
+ * ve oda sinirda yer kapliyor. Oyuncu menuye kendisi donerken izinli cikis
+ * yollaniyor; herkes boyle cikinca sunucu odayi beklemeden kapatiyor. Soket
+ * olu ya da yavassa zaman asimi bekliyor ve devam ediliyor.
+ */
+export async function leaveRoomQuietly(room: Room | undefined, timeoutMs = ROOM_LEAVE_TIMEOUT_MS) {
+  if (!room) return;
+  try {
+    await Promise.race([
+      Promise.resolve(room.leave(true)).catch(() => undefined),
+      delay(timeoutMs)
+    ]);
+  } catch {
+    // Kapanmis soket: cikacak bir sey yok.
+  }
+}
+
 export function isSeatReservationExpiredError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return message.toLocaleLowerCase("en-US").includes("seat reservation expired");
+}
+
+/**
+ * Sunucu ayni anda acik oda sinirinda: yeni oda kurulamadi. Gecici bir
+ * durum, hata degil; menu metni oldugu gibi gosteriyor, oyun cubugu kisaltiyor.
+ */
+export function isServerFullError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes(SERVER_FULL_MESSAGE);
 }
 
 const SEAT_RESERVATION_RETRY_DELAYS_MS = [600, 1800];
@@ -77,6 +133,18 @@ export type MatchReconnectRecord = {
   /** Solo ve co-op kayitlari ayri anahtarlarda: sahne kipi buradan. */
   mode: "solo" | "online";
   characterId: string;
+  /**
+   * Odaya girerken kullanilan ad. Solo oda listede yok; pencere kapandiktan
+   * sonra donen oyuncu odaya kimligiyle ve sahip sirriyla (`ownerSecret`)
+   * giriyor. Eski kayitlarda yok.
+   */
+  playerName?: string;
+  /**
+   * Solo odanin sahip sirri (`createOwnerSecret`). Pencere kapandiktan sonra
+   * sunucu yuvayi yalnizca bunu gosterene veriyor. Co-op kayitlarinda ve
+   * eski kayitlarda yok.
+   */
+  ownerSecret?: string;
   mapScale: number;
   stage: number;
   savedAt: number;
@@ -112,6 +180,8 @@ export function loadMatchReconnect(): MatchReconnectRecord | undefined {
       token: record.token,
       mode: record.mode,
       characterId: record.characterId,
+      playerName: typeof record.playerName === "string" ? record.playerName : undefined,
+      ownerSecret: typeof record.ownerSecret === "string" ? record.ownerSecret : undefined,
       mapScale: typeof record.mapScale === "number" ? record.mapScale : 1,
       stage: typeof record.stage === "number" ? record.stage : 1,
       savedAt: record.savedAt
@@ -139,10 +209,11 @@ export function clearMatchReconnect(expectedRoomId?: string) {
  * Yeniden yuklemeden sonra suren maca donulen oda; sahne `create` yerine onu
  * kullaniyor. Kip kayittan: solo mac co-op rekoru olarak yazilmasin.
  */
-let resumedMatch: { room: Room; mode: "solo" | "online" } | undefined;
+let resumedMatch: { room: Room; mode: "solo" | "online"; ownerSecret?: string } | undefined;
 
-export function setResumedMatch(room: Room, mode: "solo" | "online") {
-  resumedMatch = { room, mode };
+/** Sahip sirri da tasiniyor: sahne kaydi yeniden yazarken onu korusun. */
+export function setResumedMatch(room: Room, mode: "solo" | "online", ownerSecret?: string) {
+  resumedMatch = { room, mode, ownerSecret };
 }
 
 export function takeResumedMatch() {
@@ -151,11 +222,30 @@ export function takeResumedMatch() {
   return match;
 }
 
-/** Kayitli anahtarla odaya donmeyi dener; olmazsa kaydi silip `undefined` doner. */
+/**
+ * Kayitli anahtarla odaya donmeyi dener; olmazsa kaydi silip `undefined` doner.
+ *
+ * Anahtar yalnizca yeniden baglanma penceresinde gecerli. Co-op odasina
+ * pencereden sonra listeden donuluyor; solo oda listede olmadigi icin oraya
+ * kayitli oda kimligi ve sahip sirriyla donuluyor (sunucu yuvayi yalnizca
+ * sirri gosterene veriyor).
+ */
 export async function resumeSavedMatch(serverUrl: string, record: MatchReconnectRecord) {
+  const client = getSharedClient(serverUrl);
   try {
-    return await getSharedClient(serverUrl).reconnect(record.token);
+    return await client.reconnect(record.token);
   } catch {
+    if (record.mode === "solo" && record.playerName && record.ownerSecret) {
+      try {
+        return await client.joinById(record.roomId, withWireCaps({
+          playerName: record.playerName,
+          characterId: record.characterId,
+          ownerSecret: record.ownerSecret
+        }));
+      } catch {
+        // Oda kapandi, mac bitti ya da yuva baskasinin: normal menu akisi.
+      }
+    }
     clearMatchReconnect(record.roomId);
     return undefined;
   }

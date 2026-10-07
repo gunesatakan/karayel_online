@@ -3,10 +3,13 @@ import express from "express";
 import { createServer } from "node:http";
 import { Server } from "colyseus";
 import { MatchRoom } from "./rooms/MatchRoom.js";
+import { installTelemetry } from "./telemetry.js";
 
 const port = Number(process.env.PORT ?? 2567);
 const app = express();
 
+// Telemetri kendi kaynak listesini uyguluyor: genel cors()'tan once.
+installTelemetry(app);
 app.use(cors());
 app.get("/health", (_request, response) => {
   response.json({

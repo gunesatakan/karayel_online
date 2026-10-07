@@ -88,6 +88,19 @@ export function mergeDynamicEnemySnapshots(
   return mergeDynamicRecords(cache, enemies);
 }
 
+/**
+ * Oyuncu ve isci kayitlari da delta geliyor (kule ve dusmanla ayni kural).
+ *
+ * Gec oyunda oyuncu bolumu karenin en buyuk kalemiydi ve neredeyse hic
+ * degismiyordu (esya ve kart listeleri); isciler de konum disinda sabit.
+ */
+export function mergeDynamicRecordSnapshots<T extends { id: string }>(
+  cache: Map<string, T>,
+  records: readonly T[]
+): T[] {
+  return mergeDynamicRecords(cache, records);
+}
+
 export function hydrateWireSnapshot(
   snapshot: WireGameSnapshot,
   enemies: ReadonlyMap<string, StaticEnemySnapshot>,

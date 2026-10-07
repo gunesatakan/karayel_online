@@ -1,6 +1,7 @@
 import type Phaser from "phaser";
 import { CountUpValue, FINAL_WAVE, formatWaveHpStep, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
+import { TELEMETRY_SETTING_LABEL, TELEMETRY_SETTING_NOTE, readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
 
@@ -2522,6 +2523,9 @@ export function setupGameHudUi(game: Phaser.Game) {
       + (canVibrate
         ? `<label>Titreşim <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
         : "")
+      // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
+      + `<label>${escapeHudText(TELEMETRY_SETTING_LABEL)} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
+      + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(TELEMETRY_SETTING_NOTE)}</p>`
       + `</section>`;
   };
   const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
@@ -2560,6 +2564,9 @@ export function setupGameHudUi(game: Phaser.Game) {
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"vibration\"]").forEach((input) => input.addEventListener("change", () => {
       dispatch("setVibration", input.checked ? 1 : 0);
+    }));
+    popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"telemetry\"]").forEach((input) => input.addEventListener("change", () => {
+      setTelemetryEnabled(input.checked);
     }));
   };
 

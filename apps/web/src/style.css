@@ -2674,6 +2674,24 @@ button.wave-report:active { transform: scale(0.99); }
   color: var(--ink-2);
 }
 
+/* Anonim telemetri tercihi: kucuk, ama etiketin tamami dokunma alani. */
+.slate__privacy {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.slate__privacy input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--cyan);
+}
+
 .slate .slate__node {
   flex: 0 0 auto;
   display: inline-flex;
@@ -4987,6 +5005,10 @@ button.wave-report:active { transform: scale(0.99); }
 /* Vurus sesleri notu: Efektler 0 iken kaydiricinin altinda, tam satir. */
 .game-hud__popup-note { margin: 6px 0 0; font-size: 11px; font-weight: 600; line-height: 1.35; color: #fbbf24; }
 .game-hud__popup-note[hidden] { display: none; }
+/* Telemetri aciklamasi: uyari degil bilgi; sessiz ton. */
+.game-hud__popup-note--muted { color: #94a3b8; font-weight: 500; }
+/* Gizlilik satiriyla ses paneli yatay telefonda ekrandan uzayabiliyor: kaysin. */
+.game-hud__popup--audio { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 /* Titresim kutusu kaydiricilarla ayni izgarada; satiri doldurmuyor, etiketin tamami dokunma alani. */
 .game-hud__popup input[type="checkbox"] { justify-self: start; width: 20px; height: 20px; margin: 0; accent-color: #38bdf8; }
 

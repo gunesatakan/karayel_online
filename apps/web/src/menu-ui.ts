@@ -58,6 +58,7 @@ import {
   type MapScale,
   type MapTileKind,
   type RoomListingSnapshot,
+  SERVER_FULL_MESSAGE,
   type SkillDefinition,
   type RecordBook,
   type StageRecord,
@@ -71,14 +72,17 @@ import { takeQuickStartIntent } from "./quick-start";
 import { readCardArchive } from "./card-archive";
 import { getCosmeticFacts, getOperatorMasteryPoints, isProgressStorageAvailable, readBadgeBook, readCosmeticSelection, readMasteryBook, saveCosmeticSelection } from "./progress-store";
 import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
+import { TELEMETRY_SETTING_LABEL, TELEMETRY_SETTING_NOTE, readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import {
   getSharedClient,
+  isServerFullError,
   loadMatchReconnect,
   resumeSavedMatch,
   retryExpiredSeatReservation,
   setActiveLobbyRoom,
   setResumedMatch,
   takeResumedMatch,
+  withWireCaps,
   type MatchReconnectRecord
 } from "./online-session";
 
@@ -420,7 +424,7 @@ export function setupMenuUi(game: Phaser.Game) {
       const roomNameInput = root.querySelector<HTMLInputElement>("[data-room-name-input]");
       const roomName = roomNameInput?.value.trim() || `${selectedCharacter.displayName} Odasi`;
       const client = getSharedClient(gameServerUrl);
-      const room = await retryExpiredSeatReservation(() => client.create("match", {
+      const room = await retryExpiredSeatReservation(() => client.create("match", withWireCaps({
         playerName: getPlayerName(),
         characterId: selectedCharacter.id,
         roomName,
@@ -429,11 +433,12 @@ export function setupMenuUi(game: Phaser.Game) {
         // Asama gitmezse sunucu ilk asamaya dusuyor ve co-op zaferi hep 1.
         // asamayi isaretliyordu; kurucunun sectigi asama odanin asamasi.
         stage: stageState.selected
-      }));
+      })));
       bindLobbyRoom(room);
       render("lobby");
     } catch (error) {
-      lobbyError = formatUiError(error, "Oda kurulurken hata olustu.");
+      // Dolu sunucu: oda kurulamadi ama listedeki odalara katilmak hala mumkun.
+      lobbyError = isServerFullError(error) ? SERVER_FULL_MESSAGE : formatUiError(error, "Oda kurulurken hata olustu.");
       render("online");
     } finally {
       onlineRoomRequestPending = false;
@@ -446,10 +451,10 @@ export function setupMenuUi(game: Phaser.Game) {
     try {
       lobbyError = "";
       const client = getSharedClient(gameServerUrl);
-      const room = await retryExpiredSeatReservation(() => client.joinById(roomId, {
+      const room = await retryExpiredSeatReservation(() => client.joinById(roomId, withWireCaps({
         playerName: getPlayerName(),
         characterId: selectedCharacter.id
-      }));
+      })));
       bindLobbyRoom(room);
       render("lobby");
     } catch (error) {
@@ -537,6 +542,11 @@ export function setupMenuUi(game: Phaser.Game) {
         creativeRequested = true;
         startGame("solo");
       });
+    });
+
+    // Anonim telemetri tercihi: depoya yaziliyor, menu yeniden cizilmiyor.
+    root.querySelectorAll<HTMLInputElement>("[data-telemetry-toggle]").forEach((input) => {
+      input.addEventListener("change", () => setTelemetryEnabled(input.checked));
     });
 
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
@@ -716,7 +726,7 @@ export function setupMenuUi(game: Phaser.Game) {
         void room.leave(true);
         return;
       }
-      setResumedMatch(room, savedMatch.mode);
+      setResumedMatch(room, savedMatch.mode, savedMatch.ownerSecret);
       const launchResumed = () => {
         if (currentLobbyRoom || onlineGameStarting) {
           takeResumedMatch();
@@ -990,6 +1000,9 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
 
       <aside class="slate">
         <span class="slate__name">${escapeHtml(getPlayerName())}</span>
+        <label class="slate__privacy" title="${escapeHtml(TELEMETRY_SETTING_NOTE)}">
+          <input type="checkbox" data-telemetry-toggle aria-label="${escapeHtml(TELEMETRY_SETTING_LABEL)}"${readTelemetrySetting() ? " checked" : ""} />Anonim veri
+        </label>
         <span class="slate__node"><i></i>Frankfurt Shard</span>
       </aside>
     </div>

@@ -989,12 +989,9 @@ test("ust uste tick hatasi odayi mesajla kapatiyor", () => {
   }
 });
 
-test("yeni oda kurulurken penceresi suren mac kapatilmiyor, bos oda kapatiliyor", async () => {
+test("yeni oda kurulurken baska odaya dokunulmuyor: ne penceresi suren mac ne bos oda", async () => {
   const reconnecting = await realRoom();
-  // Ikinci bos oda `onCreate`siz kaydediliyor: gercek odayi kurmak ilkini kapatmayi denerdi.
-  const empty = new MatchRoom();
-  empty.roomId = `sertlestirme-bos-${roomCounter += 1}`;
-  empty.state = { players: new Map() };
+  const empty = await realRoom();
   let next;
   try {
     const a = joinClient(reconnecting, "a", { characterId: "warrior" });
@@ -1003,16 +1000,15 @@ test("yeni oda kurulurken penceresi suren mac kapatilmiyor, bos oda kapatiliyor"
     controllableReconnection(reconnecting);
     reconnecting.clients.splice(0, 1);
     void reconnecting.onLeave(a, false);
+    assert.equal(reconnecting.getConnectedPlayerCount(), 0);
     const closed = [];
     reconnecting.disconnect = () => { closed.push("reconnecting"); return Promise.resolve(); };
-    MatchRoom.rooms.set(empty.roomId, empty);
     empty.disconnect = () => { closed.push("empty"); return Promise.resolve(); };
 
-    next = new MatchRoom();
-    next.roomId = `sertlestirme-yeni-${roomCounter += 1}`;
-    next.setSimulationInterval = () => {};
-    await next.onCreate({ roomName: "Yeni", mapScale: 1 });
-    assert.deepEqual(closed, ["empty"], "penceresi suren mac kapatildi ya da bos oda kaldi");
+    next = await realRoom({ roomName: "Yeni", mapScale: 1 });
+    assert.deepEqual(closed, [], "yeni oda baska bir odayi kapatti");
+    assert.equal(MatchRoom.rooms.get(reconnecting.roomId), reconnecting);
+    assert.equal(MatchRoom.rooms.get(empty.roomId), empty);
   } finally {
     cleanup(reconnecting);
     cleanup(empty);
@@ -1020,26 +1016,22 @@ test("yeni oda kurulurken penceresi suren mac kapatilmiyor, bos oda kapatiliyor"
   }
 });
 
-test("kapanmakta olan bozuk oda yeni oda kurulmasini engellemiyor", async () => {
-  const broken = await realRoom();
-  let next;
+test("bagli oyuncusu olan oda yeni oda kurulmasini engellemiyor; kapanmakta olan oda sinira sayilmiyor", async () => {
+  const busy = await realRoom();
+  const rooms = [busy];
+  const previousCap = MatchRoom.maxConcurrentRooms;
   try {
-    joinClient(broken, "a", { characterId: "warrior" });
-    broken.disconnect = () => Promise.resolve();
-    await assert.rejects(async () => {
-      const blocked = new MatchRoom();
-      blocked.roomId = `sertlestirme-engel-${roomCounter += 1}`;
-      blocked.setSimulationInterval = () => {};
-      await blocked.onCreate({ roomName: "Engel", mapScale: 1 });
-    }, /Zaten aktif bir oda var/);
-    broken.abandonDisposing = true;
-    next = new MatchRoom();
-    next.roomId = `sertlestirme-yeni-${roomCounter += 1}`;
-    next.setSimulationInterval = () => {};
-    await next.onCreate({ roomName: "Yeni", mapScale: 1 });
+    joinClient(busy, "a", { characterId: "warrior" });
+    busy.disconnect = () => Promise.resolve();
+    rooms.push(await realRoom({ roomName: "Ikinci", mapScale: 1 }));
+
+    MatchRoom.maxConcurrentRooms = MatchRoom.countOpenRooms();
+    await assert.rejects(realRoom({ roomName: "Fazla", mapScale: 1 }), /Sunucu dolu, biraz sonra tekrar dene./);
+    busy.abandonDisposing = true;
+    rooms.push(await realRoom({ roomName: "Yerine", mapScale: 1 }));
   } finally {
-    cleanup(broken);
-    if (next) cleanup(next);
+    MatchRoom.maxConcurrentRooms = previousCap;
+    rooms.forEach(cleanup);
   }
 });
 
@@ -1051,7 +1043,7 @@ test("Colyseus hatasi asil yigin iziyle yaziliyor, bilinen redler yazilmiyor", (
   room.onUncaughtException(wrapped, "onMessage");
   assert.equal(errors.length, 1);
   assert.equal(errors[0].error, cause, "sarmalayicinin yigini yazildi");
-  for (const message of ["Oda dolu.", "Maç bitti.", "Zaten aktif bir oda var."]) {
+  for (const message of ["Oda dolu.", "Maç bitti.", "Sunucu dolu, biraz sonra tekrar dene."]) {
     room.onUncaughtException(new Error("x", { cause: new Error(message) }), "onJoin");
   }
   assert.equal(errors.length, 1, "bilinen red hata olarak yazildi");

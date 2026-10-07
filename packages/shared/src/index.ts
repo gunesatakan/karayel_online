@@ -444,6 +444,25 @@ export type RoomListingSnapshot = {
   stage?: number;
 };
 
+/**
+ * Sunucu ayni anda acik oda sinirina ulasinca oda kurma reddinin metni.
+ *
+ * Istemci hatayi bu metinle taniyor (menude oldugu gibi gosteriyor, oyun
+ * cubugunda kisaltiyor); iki taraf ayni sabiti okuyor ki biri degisince
+ * digeri sessizce tanimaz hale gelmesin.
+ */
+export const SERVER_FULL_MESSAGE = "Sunucu dolu, biraz sonra tekrar dene.";
+
+/**
+ * Istemcinin odaya girerken bildirdigi tel surumu (`wireDelta` secenegi).
+ *
+ * 2: oyuncu ve isci kayitlari da delta gelebilir (kule ve dusman zaten
+ * oyleydi). Secenegi gondermeyen eski istemci (bayat sekme, yeniden
+ * yuklenmemis itch derlemesi) bu iki bolumu her karede tam aliyor; kismi
+ * kaydi tam sanip HUD'u ve isci dokularini bozmasin.
+ */
+export const WIRE_DELTA_PROTOCOL = 2;
+
 export type EnemySnapshot = {
   id: string;
   type: EnemyType;
@@ -956,6 +975,14 @@ export type GameSnapshot = {
 export type WireGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
   enemies: DynamicEnemySnapshot[];
   towers: DynamicTowerSnapshot[];
+  /**
+   * Kayitlar (kule, dusman, oyuncu, isci) bu karede delta degil tam.
+   *
+   * Yalnizca tabanla ayni olmayan istemciye giden karede yazili. Istemci
+   * delta onbelleklerini birakip kayitlari yerine koyuyor; birlestirseydi tam
+   * kayitta artik olmayan bir alan eski degeriyle asili kalirdi.
+   */
+  wireFull?: true;
 };
 
 export {
@@ -963,6 +990,7 @@ export {
   getLinearProjectilePosition,
   hydrateWireSnapshot,
   mergeDynamicEnemySnapshots,
+  mergeDynamicRecordSnapshots,
   mergeDynamicTowerSnapshots,
   isClientProjectileExpired,
   pruneStaticSnapshotCache,

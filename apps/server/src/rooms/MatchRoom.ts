@@ -1,6 +1,8 @@
-import { Client, Room } from "colyseus";
+import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { FixedWindowRateLimiter, ipRateKey, readClientIp } from "../rate-limit.js";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
 import { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, isExecuteImmune, type ExecuteRejectReason, type SkillExecuteMessage, type SkillRejectedMessage } from "@karayel/shared";
@@ -352,6 +354,8 @@ import {
   type ProjectileKind,
   type ProjectileSpawnSnapshot,
   type RoomListingSnapshot,
+  SERVER_FULL_MESSAGE,
+  WIRE_DELTA_PROTOCOL,
   type Modifier,
   type ModifierStat,
   type RunModifiers,
@@ -537,6 +541,59 @@ const ENEMY_SHOT_BEAM_ID = "enemy-shot";
  */
 const WAVE_CLEAR_PAUSE_MS = 2000;
 const ENEMY_MOVEMENT_SPEED_MULTIPLIER = 0.5;
+/** Kule ozeti (`insight`) bu siklikta yeniden kuruluyor. */
+const TOWER_INSIGHT_REFRESH_MS = 1000;
+/** Ardisik kurulan kulelerin ozet evreleri arasindaki kayma; ~bir snapshot araligi. */
+const TOWER_INSIGHT_PHASE_STEP_MS = 67;
+/** Isci aramasinin komsu sirasi (`getGridNeighbors` ile ayni): asagi, sol, sag, yukari. */
+const WORKER_NEIGHBOR_COL_STEPS = [0, -1, 1, 0] as const;
+const WORKER_NEIGHBOR_ROW_STEPS = [1, 0, 0, -1] as const;
+/**
+ * Onbellekten donen, dondurulmus modifier listesi. Tipi de salt okunur:
+ * cagiran yerinde degistirmeye kalkarsa derleyici durduruyor (dondurulmus
+ * diziye `push` calisma aninda sessizce ya da hatayla duserdi).
+ */
+type FrozenRunModifiers = readonly Modifier[];
+/** Sahipsiz kulenin oyuncu modifierlari: her cagrida yeni bos dizi kurulmasin. */
+const EMPTY_RUN_MODIFIERS: FrozenRunModifiers = Object.freeze([]);
+
+/** Iki modifier listesi ayni nesneleri ayni sirada mi tutuyor (kopyasiz, tahsissiz). */
+function sameModifierElements(cached: readonly Modifier[], current: readonly Modifier[]) {
+  if (cached.length !== current.length) return false;
+  for (let index = 0; index < cached.length; index += 1) {
+    if (cached[index] !== current[index]) return false;
+  }
+  return true;
+}
+
+/**
+ * Tel deltasinin alan karsilastirmasi: `JSON.stringify(a) === JSON.stringify(b)`
+ * ile birebir ayni sonuc, ama sayi/metin/bayrak ve ilkel dizilerde metin
+ * kurmadan. Her karede her kayit icin her alanda cagriliyor.
+ *
+ * Ozel durumlar JSON'un kendisinden: NaN ve sonsuzluklar `null` yaziliyor
+ * (ikisi de sonlu degilse esit), dizide ayni olmayan bir eleman ya da nesne
+ * goruldugunde eski yola, metne dusuluyor.
+ */
+export function wireValueEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  const typeA = typeof a;
+  if (typeA === typeof b) {
+    if (typeA === "number") return !Number.isFinite(a as number) && !Number.isFinite(b as number);
+    if (typeA === "string" || typeA === "boolean") return false;
+    if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) {
+      let identical = true;
+      for (let index = 0; index < a.length; index += 1) {
+        if (a[index] !== b[index]) {
+          identical = false;
+          break;
+        }
+      }
+      if (identical) return true;
+    }
+  }
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 /**
  * Kimlikten kule tanimina sabit zamanli erisim.
  *
@@ -604,20 +661,52 @@ const RECONNECT_WINDOW_SECONDS = 20;
  * `autoDispose` kapali: son istemci gidince oda hemen kapanmasin, pencere
  * kapandiktan sonra listeden geri donen oyuncu macini bulsun -- sekmesi
  * mobil tarayicida oldurulen oyuncu dakikalar sonra donebiliyor. Ama terk
- * edilmis bir mac sonsuza kadar tick atmamali. Bos oda kimseyi engellemiyor:
- * yeni oda kurulurken baglisi olmayan odalar zaten kapatiliyor.
+ * edilmis bir mac sonsuza kadar tick atmamali ve oda sinirinda yer tutmamali.
+ * Bitmis mac beklemiyor: ona donulecek bir sey yok, son istemci gidince
+ * kapaniyor.
  */
 export const ABANDONED_ROOM_DISPOSE_MS = 10 * 60 * 1000;
+/**
+ * Ayni anda acik oda sinirinin varsayilani (`MAX_CONCURRENT_ROOMS` yoksa).
+ *
+ * Varsayilan Fly makinesi tek paylasimli cekirdek ve her oda kendi 60 Hz
+ * simulasyonunu donduruyor. Olculdu: gec oyundaki bir oda hizli bir masaustu
+ * cekirdeginin ~%9'unu yiyor; paylasimli Fly cekirdegi bundan yavas ve
+ * komsulariyla paylasiliyor. Alti oda o cekirdekte tick'leri zamaninda
+ * tutmanin ust siniri; daha guclu makinede ortam degiskeniyle artiyor.
+ */
+export const DEFAULT_MAX_CONCURRENT_ROOMS = 6;
+/** Sinir doluyken oda kurma reddinin kodu; Colyseus istemciye metinle birlikte yolluyor. */
+export const SERVER_FULL_ERROR_CODE = 4290;
+/**
+ * Hic kimsenin girmedigi yeni oda bu sure boyunca yerinden edilmiyor.
+ *
+ * Colyseus odayi kurduktan sonra kurucunun koltugunu ayiriyor; arada (ve
+ * koltuk ayrilip soket gelene kadar) oda bos gorunuyor. Sinir doluyken gelen
+ * baska bir kurulum o odayi terk edilmis sanip kapatmasin. Koltuk
+ * rezervasyon suresiyle (`setSeatReservationTime(45)`) ayni.
+ */
+export const FRESH_ROOM_EVICTION_GRACE_MS = 45_000;
+/** IP basina dakikada en fazla bu kadar oda kurulumu (`/matchmake/create`). */
+export const ROOM_CREATE_LIMIT_PER_MINUTE = 6;
+
+/** `MAX_CONCURRENT_ROOMS` ortam degiskeni; pozitif tam sayi degilse varsayilan. */
+export function readMaxConcurrentRooms(raw: string | undefined) {
+  const value = Number(raw);
+  return raw !== undefined && raw.trim() !== "" && Number.isInteger(value) && value > 0
+    ? value
+    : DEFAULT_MAX_CONCURRENT_ROOMS;
+}
 /** Tick hatasindan sonra simulasyonun bekledigi en uzun sure; hata dongusu kurulmasin. */
 const TICK_ERROR_BACKOFF_MAX_MS = 2000;
 /**
  * Ust uste bu kadar basarisiz tick'ten sonra oda kapatiliyor (beklemelerle
- * ~11 sn). Donmus oda oyunculari bagli tutuyor ve bagli oyuncusu olan oda
- * yeni oda kurulmasini engelliyor; kapanmak beklemekten iyi.
+ * ~11 sn). Donmus oda oyunculari bagli tutuyor ve oda sinirinda yer
+ * tutuyor; kapanmak beklemekten iyi.
  */
 export const TICK_FAILURE_LIMIT = 10;
 /** Lobi ve katilim akisinin bilinen redleri; hata degil, gunluge yazilmiyor. */
-const EXPECTED_ROOM_REJECTIONS = new Set(["Oda dolu.", "Maç bitti.", "Zaten aktif bir oda var."]);
+const EXPECTED_ROOM_REJECTIONS = new Set(["Oda dolu.", "Maç bitti.", SERVER_FULL_MESSAGE]);
 /** Ayni yerden gelen hata gunlugu en fazla bu siklikta yaziliyor. */
 const ROOM_ERROR_LOG_INTERVAL_MS = 10_000;
 const PERF_SEND_INTERVAL_MS = 1000;
@@ -868,6 +957,16 @@ type JoinOptions = {
   autoStart?: boolean;
   creative?: boolean;
   stage?: number;
+  /**
+   * Istemcinin anladigi tel surumu (`WIRE_DELTA_PROTOCOL`). Yoksa eski
+   * istemci: oyuncu ve isci kayitlarini her karede tam bekliyor.
+   */
+  wireDelta?: number;
+  /**
+   * Solo odanin sahip sirri: kurulumda istemcinin urettigi rastgele metin.
+   * Pencereden sonra kimlikle geri donus bunu gostermek zorunda.
+   */
+  ownerSecret?: string;
 };
 
 type PlaceTowerMessage = {
@@ -1291,6 +1390,12 @@ type TowerModel = {
     unlocks: Set<Unlock>;
     /** Kuleye isleyen Epik kartlarin stat cevrimleri; kaynak modifier adi ile. */
     conversions: Array<StatConversion & { source: string }>;
+    /**
+     * Motorda kulelere isleyen (`affects: "towers"`) bir aura var mi.
+     * `getTowerAuraModifiers` her cagrida butun kuleleri tariyor; aurasi
+     * olmayanlari burada eleyip tarama basina tahsisi atliyor.
+     */
+    hasTowerAura?: boolean;
   };
   /** `surge` trigger etkisinin bitis zamani. */
   surgeUntil?: number;
@@ -1668,41 +1773,111 @@ type ZeynepSynthesisComposition = {
 export class MatchRoom extends Room<MatchState> {
   towerDamageRandom: () => number = Math.random;
   towerCriticalRandom: () => number = Math.random;
+  /**
+   * Bu surecteki odalar: yalnizca sayim (oda siniri) icin.
+   *
+   * Odalar birbirine dokunmuyor. Eskiden burasi tek oda kuraliydi: bagli
+   * oyuncusu olan bir oda varken yeni oda kurulamiyordu ("Zaten aktif bir
+   * oda var.") ve yeni oda kurulurken bos odalar kapatiliyordu. Simdi her mac
+   * kendi durumuyla yasiyor; kimsesiz oda kendi zamanlayicisiyla kapaniyor
+   * (`checkAbandoned`). Tek istisna dolu sunucu: yeni kurulum yalnizca
+   * gercekten terk edilmis bir odanin yerini alabiliyor (`evictAbandonedRoom`).
+   */
   static rooms = new Map<string, MatchRoom>();
+  /** Listede gorunebilecek odalar; `syncRoomRegistry` her durum degisiminde tazeliyor. */
   static publicRooms = new Map<string, MatchRoom>();
+  /**
+   * Ayni anda acik oda siniri. Her oda kendi simulasyon dongusunu tek Node
+   * surecinde donduruyor; sinirsiz oda bir dolu sunucuda herkesin tick'ini
+   * yavaslatirdi. `MAX_CONCURRENT_ROOMS` ile degisiyor.
+   */
+  static maxConcurrentRooms = readMaxConcurrentRooms(process.env.MAX_CONCURRENT_ROOMS);
 
+  /**
+   * Katilinabilir co-op odalari. Yalnizca listede duran odalar dolasiliyor
+   * (oda siniri kadar), oda basina is oyuncu sayisi kadar.
+   */
   static listPublicRooms(): RoomListingSnapshot[] {
-    return Array.from(MatchRoom.publicRooms.values())
-      .filter((room) => room.hasJoinableSeat())
-      .map((room) => room.toRoomListing())
-      .filter((room) => room.playerCount > 0 || room.started)
-      .sort((left, right) => left.roomName.localeCompare(right.roomName, "tr"));
+    const listings: RoomListingSnapshot[] = [];
+    for (const room of MatchRoom.publicRooms.values()) {
+      if (!room.hasJoinableSeat()) continue;
+      const listing = room.toRoomListing();
+      if (listing.playerCount > 0 || listing.started) listings.push(listing);
+    }
+    return listings.sort((left, right) => left.roomName.localeCompare(right.roomName, "tr"));
   }
 
-  static async prepareSingleRoomSlot(nextRoomId: string) {
+  /** Sinira sayilan odalar: kapanmakta olanlar haric. */
+  static countOpenRooms() {
+    let count = 0;
     for (const room of MatchRoom.rooms.values()) {
-      if (room.roomId === nextRoomId) {
-        continue;
-      }
+      if (!room.abandonDisposing) count += 1;
+    }
+    return count;
+  }
 
-      // Bitmis oda aktif degil: icinde yalnizca bir rapor okunuyor. Rapor
-      // istemcide DOM, soket kapaninca da ekranda kaliyor ve sonuc zaten
-      // kaydedildi. Raporunu okuyan bir takim arkadasi, "Tekrar" ile yeni oda
-      // kuran oyuncuyu (ya da sunucudaki baska birini) bekletmemeli.
-      // Kapanmakta olan oda (hata ya da terk) aktif sayilmiyor.
-      if (room.getConnectedPlayerCount() > 0 && !room.matchResult && !room.abandonDisposing) {
-        throw new Error("Zaten aktif bir oda var.");
+  /**
+   * Yeni odaya yer ayirir; sinir doluysa once terk edilmis bir odayi
+   * kapatip yerini veriyor, o da yoksa reddediyor.
+   *
+   * Esanli: sayim, kapatma ve kayit arasinda `await` yok; ayni anda gelen iki
+   * kurulum son bos yeri birlikte alamiyor, ayni odayi iki kez de kapatamiyor
+   * (kapanan oda `abandonDisposing` ile sayimdan ve adaylardan hemen cikiyor).
+   */
+  static claimRoomSlot(room: MatchRoom, now = Date.now()) {
+    if (MatchRoom.countOpenRooms() >= MatchRoom.maxConcurrentRooms && !MatchRoom.evictAbandonedRoom(now)) {
+      throw new ServerError(SERVER_FULL_ERROR_CODE, SERVER_FULL_MESSAGE);
+    }
+    MatchRoom.rooms.set(room.roomId, room);
+  }
+
+  /**
+   * Sinir doluyken en uzun suredir terk edilmis odayi kapatir.
+   *
+   * Istemci mac icin hic izinli cikis yollamiyor (sekme kapatma da menuye
+   * donus de izinsiz): kimsesiz odalar on dakikalik kapanma suresi boyunca
+   * sinirda yer tutuyordu ve dolu sunucu yeni oyuncuyu bosuna reddediyordu.
+   * Aday yalnizca gercekten kimsesiz oda: bagli istemci yok, ayrilmis koltuk
+   * yok, yeniden baglanma penceresi acik oyuncu yok. Hic kimsenin girmedigi
+   * yeni oda da aday degil: kurucusunun koltugu henuz ayrilmamis olabilir.
+   * Bagli istemcisi ya da acik penceresi olan oda asla kapatilmiyor.
+   */
+  static evictAbandonedRoom(now = Date.now()) {
+    // Tick henuz gormediyse (`abandonedSince` 0) simdi terk edilmis sayiliyor.
+    const candidates = Array.from(MatchRoom.rooms.values())
+      .filter((room) => room.isEvictable(now))
+      .map((room) => ({ room, since: room.abandonedSince > 0 ? room.abandonedSince : now }))
+      .sort((left, right) => left.since - right.since);
+    // Kapatilamayan (henuz kurulan) oda atlaniyor, siradaki deneniyor.
+    return candidates.some(({ room }) => room.disposeAbandoned("evict"));
+  }
+
+  /** `evictAbandonedRoom` icin: kimsesiz ve kimsenin donmesini beklemeyen oda. */
+  private isEvictable(now: number) {
+    if (this.abandonDisposing || this.clients.length > 0 || this.hasPendingSeats()) return false;
+    return this.everJoined || now - this.roomCreatedAt >= FRESH_ROOM_EVICTION_GRACE_MS;
+  }
+
+  /**
+   * IP basina oda kurma siniri (`/matchmake/create` ve `joinOrCreate`).
+   *
+   * Kimliksiz bir POST oda kuruyor ve sinirda yer tutuyordu; tek bir istemci
+   * butun yerleri doldurabilirdi. Kurulum bu kapidan geciyor: Colyseus
+   * eslestirme isteklerini Express'ten once kendisi aliyor (`index.ts`'teki
+   * ara katman oraya hic ulasmiyor), statik `onAuth` ise `onCreate`ten once
+   * cagriliyor. Katilim (`joinById`) sayilmiyor.
+   */
+  static roomCreateLimiter = new FixedWindowRateLimiter(ROOM_CREATE_LIMIT_PER_MINUTE).startPruning();
+
+  static async onAuth(_token: string, _options: unknown, context?: AuthContext) {
+    const request = context?.req;
+    if (request && isRoomCreateRequest(request.url)) {
+      const key = ipRateKey(readClientIp(request.headers, request.socket?.remoteAddress));
+      if (!MatchRoom.roomCreateLimiter.hit(key)) {
+        throw new ServerError(SERVER_FULL_ERROR_CODE, SERVER_FULL_MESSAGE);
       }
     }
-
-    // Pencere suren ya da koltugu ayrilmis oda bos sayilmiyor: oyunculari
-    // birkac saniye icinde donuyor ve yeni oda kurulurken maclari kapanirdi.
-    const emptyRooms = Array.from(MatchRoom.rooms.values()).filter((room) => {
-      if (room.roomId === nextRoomId) return false;
-      if (room.matchResult !== undefined) return true;
-      return room.getConnectedPlayerCount() === 0 && !room.hasPendingSeats();
-    });
-    await Promise.all(emptyRooms.map((room) => room.disconnect()));
+    return true;
   }
 
   maxClients = 4;
@@ -1776,6 +1951,14 @@ export class MatchRoom extends Room<MatchState> {
    */
   private synergyIsolationCache?: Map<string, boolean>;
   /**
+   * Ayni gerekce, yerlesimin kendisine bagli iki sorgu icin: kulenin yalniz
+   * olup olmadigi (`isTowerIsolated`) ve sentez kulesinin bagli grubu. Ikisi de
+   * yalnizca kulelerin konumuna ve tanimina bakiyor. Gec oyunda tick basina
+   * yuzlerce kez soruluyor ve her biri butun kuleleri tariyor (grup aramasi
+   * karesel). Yerlesim tick icinde degisirse (`markNavigationDirty`) atiliyor.
+   */
+  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]> };
+  /**
    * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
    * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
    * isaretli oldurmeyle baslayan supurmede aciliyor.
@@ -1802,6 +1985,17 @@ export class MatchRoom extends Room<MatchState> {
   private deliveryWaitingSince = new Map<string, number>();
   private previewRequestTimes = new Map<string, number>();
   private towerInsightCache = new WeakMap<TowerModel, { at: number; value: string }>();
+  /**
+   * Kule ozetlerinin tazelenme evresi.
+   *
+   * Ozet kule basina saniyede bir yeniden kuruluyor. Ayni anda kurulan kuleler
+   * (mac basi, yeniden baglanma) hep ayni karede tazeleniyordu: olculdu, gec
+   * oyunda saniyede bir ~5 ms'lik ek tick ve normalin iki kati buyuklugunde
+   * (17.8 KB) bir snapshot -- pingte saniyelik bir sicrama. Ilk kayitta kuleye
+   * kaydirilmis bir evre veriliyor; tazeleme sikligi ayni (saniyede bir), yuk
+   * ise saniyenin karelerine yayiliyor. Yalnizca arayuz metni; oyuna etkisi yok.
+   */
+  private towerInsightPhaseCursor = 0;
   private waveTarget = getWaveEnemyCount(1);
   /**
    * Sampiyon plani ve dogum sirasindaki kayma.
@@ -1922,6 +2116,8 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Yapi eklendi, yikildi, satildi ya da harita degisti. */
   private markNavigationDirty() {
+    // Yerlesim degisti: tick ici yerlesim onbellegi artik eski.
+    if (this.tickLayoutCache) this.tickLayoutCache = { isolated: new Map(), synthesisGroups: new Map() };
     this.mainGateDirty = true;
     this.towerCellIndexDirty = true;
     this.edgeStructureIndexDirty = true;
@@ -2110,6 +2306,15 @@ export class MatchRoom extends Room<MatchState> {
    */
   private lastSentEnemyWire = new Map<string, Record<string, unknown>>();
   /**
+   * Oyuncu ve isci kayitlari da delta.
+   *
+   * Olculdu (dalga 20, dort oyuncu, 78 kule): oyuncu bolumu karenin en buyuk
+   * kalemiydi -- 15 KB'nin 5.8 KB'i, cogu sahip olunan esya ve kart listeleri
+   * -- ve neredeyse hic degismiyor. Isciler 2.8 KB; konum disinda sabit.
+   */
+  private lastSentPlayerWire = new Map<string, Record<string, unknown>>();
+  private lastSentDroneWire = new Map<string, Record<string, unknown>>();
+  /**
    * Bir sonraki kare herkese delta degil tam gitmeli.
    *
    * Delta yalnizca istemci onceki kareyi aldiysa dogru. Tek bir istemcinin
@@ -2128,6 +2333,14 @@ export class MatchRoom extends Room<MatchState> {
    * buradan dusuyor ve bir sonraki karede yalnizca **o** tam kayit aliyor.
    */
   private wireSyncedSessionIds = new Set<string>();
+  /**
+   * Oyuncu ve isci deltasini anlayan oturumlar (`wireDelta` secenegi).
+   *
+   * Digerleri eski istemci: o iki bolumu her karede tam aliyor, tam
+   * olarak eski surumdeki gibi. Oturuma bagli: yeniden baglanma ayni oturum
+   * kimligiyle geliyor ve secenek tasimiyor, bayrak ilk girisinden kaliyor.
+   */
+  private wireDeltaSessionIds = new Set<string>();
   /** Yeniden baglanma penceresi acik oturumlar: yuvalari onlara ayrilmis. */
   private reconnectingSessionIds = new Set<string>();
   /**
@@ -2186,6 +2399,26 @@ export class MatchRoom extends Room<MatchState> {
    * oda `autoStart` almadigi icin bayragi hicbir zaman alamaz.
    */
   private creativeMode = false;
+  /** Dogrudan baslatilan tek kisilik oda (`autoStart`): ozel, listede yok, yabanci giremiyor. */
+  private soloRoom = false;
+  /**
+   * Mac basladiktan sonra kendi istegiyle cikan oturumlar (menuye donus).
+   * Odadaki her oyuncu kaydi boyle ciktiysa oda beklemeden kapaniyor.
+   */
+  private consentedLeaveSessionIds = new Set<string>();
+  /**
+   * Solo odanin sahip sirrinin ozeti (`ownerSecret` kurulum secenegi).
+   *
+   * Oda kimligi HUD'da gorunuyor (#oda). Pencere kapandiktan sonra kimlikle
+   * donus eskiden ad ve operatorle eslesiyordu: kimligi bilen biri ayni
+   * operatoru secip baskasinin solo ya da yaratici kosusunu devralabiliyordu.
+   * Sir yalnizca bu alanda; snapshot'a, listeye ya da lobi durumuna girmiyor.
+   */
+  private soloOwnerSecretHash?: Buffer;
+  /** Odaya en az bir istemci kabul edildi mi; hic girilmemis yeni oda yerinden edilmiyor. */
+  private everJoined = false;
+  /** Odanin kuruldugu an (`onCreate`). */
+  private roomCreatedAt = Date.now();
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private pendingCardChoices = new Map<string, CardDefinition[]>();
@@ -2230,19 +2463,61 @@ export class MatchRoom extends Room<MatchState> {
     // Mobile networks and a waking/deploying Fly machine can take longer than
     // Colyseus' 15-second default between matchmaking and WebSocket upgrade.
     this.setSeatReservationTime(45);
-    await MatchRoom.prepareSingleRoomSlot(this.roomId);
-    MatchRoom.rooms.set(this.roomId, this);
+    this.roomCreatedAt = Date.now();
+    try {
+      MatchRoom.claimRoomSlot(this, this.roomCreatedAt);
+    } catch (error) {
+      this.releaseRejectedRoom();
+      throw error;
+    }
+    try {
+      this.setupRoom(options);
+    } catch (error) {
+      // Kurulamayan oda sinirda yer tutmasin.
+      MatchRoom.rooms.delete(this.roomId);
+      MatchRoom.publicRooms.delete(this.roomId);
+      this.releaseRejectedRoom();
+      throw error;
+    }
+  }
 
+  /**
+   * Reddedilen odanin Colyseus zamanlayicilari.
+   *
+   * Colyseus yama araligini ve saati `onCreate`ten once baslatiyor; `onCreate`
+   * reddedince odayi birakiyor ama aralik calismaya devam ediyordu. Her
+   * reddedilen kurulum (dolu sunucu) bir aralik sizdirmasin.
+   */
+  private releaseRejectedRoom() {
+    try {
+      this.setSimulationInterval(undefined);
+      this.setPatchRate(null);
+      this.clock.clear();
+      this.clock.stop();
+    } catch (error) {
+      this.reportRoomError("onCreate:release", error);
+    }
+  }
+
+  private setupRoom(options: JoinOptions) {
     this.setState(new MatchState());
     this.lobbyRoomName = this.getRoomName(options.roomName);
     this.autoStartOnFirstJoin = options.autoStart === true;
+    // Dogrudan baslatilan oda (solo, yaratici, hizli baslat) tek kisilik ve
+    // ozel: listede yok, Colyseus `join`/`joinOrCreate` ona bakmiyor, kimligi
+    // bilen yabanci da giremiyor (`joinStartedMatch`). Ayni sunucuda birden
+    // fazla mac surdugu icin baskasinin solo macina dusmek mumkun olmamali.
+    this.soloRoom = options.autoStart === true;
     // Yaratici bayragi lobi yoluna sizmasin diye dogrudan baslatmaya bagli.
     this.creativeMode = options.creative === true && options.autoStart === true;
     // Yaratici oda tek kisilik ve oyle kaliyor: ikinci oyuncu girseydi
     // `getCreativePlayer` kapisi sahibinin komutlarini da kapatirdi. Oda
     // listede gorunmuyor (`hasJoinableSeat`) ve tek koltuk sahibinin.
-    if (this.creativeMode) {
+    if (this.soloRoom) {
       this.maxClients = 1;
+      this.hideFromMatchmaking();
+      // Sirsiz kurulan solo odaya (eski istemci) pencereden sonra donus yok.
+      this.soloOwnerSecretHash = hashOwnerSecret(options.ownerSecret);
     }
     // Gecersiz kimlik ilk asamaya duser; eksik veri odanin kurulmasini
     // engellememeli.
@@ -2448,7 +2723,7 @@ export class MatchRoom extends Room<MatchState> {
     // Colyseus asil hatayi kendi istisna sinifina sariyor; yigin izi
     // sarmalayicinin degil asil hatanin olmali.
     const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
-    // Dolu oda, bitmis mac, ikinci aktif oda: bilinen redler. Colyseus onlari
+    // Dolu oda, bitmis mac, dolu sunucu: bilinen redler. Colyseus onlari
     // istemciye zaten donduruyor; hata gunlugune girmiyorlar.
     if (cause instanceof Error && EXPECTED_ROOM_REJECTIONS.has(cause.message)) return;
     this.reportRoomError(methodName, cause);
@@ -2501,6 +2776,7 @@ export class MatchRoom extends Room<MatchState> {
   private forgetSession(sessionId: string) {
     this.messageBuckets.delete(sessionId);
     this.wireSyncedSessionIds.delete(sessionId);
+    this.wireDeltaSessionIds.delete(sessionId);
     for (const [key, entry] of this.latestMessageStash) {
       if (entry.sessionId === sessionId) this.latestMessageStash.delete(key);
     }
@@ -2525,9 +2801,49 @@ export class MatchRoom extends Room<MatchState> {
     return this.reconnectingSessionIds.size > 0 || Object.keys(this.reservedSeats ?? {}).length > 0;
   }
 
+  /**
+   * Baslamis macin her oyuncusu kendi istegiyle cikti (`onLeave` consented,
+   * menuye donus). Kopma (pencere dolsa da) sayilmiyor: o oyuncu solo odaya
+   * kimligiyle, co-op odaya listeden donebiliyor.
+   *
+   * Solo oda icin sahibi birakti demek. Co-op icin de dogru: herkes menuye
+   * dondu, kimse geri gelmeyecek; listedeki yabanci bos koltuga girseydi
+   * terk edilmis bir kosuyu devralirdi. Yuvayi devralan yeni oturum kumede
+   * olmadigi icin oda yeniden dolunca bu yol kapaniyor.
+   */
+  private isLeftByEveryone() {
+    if (!this.gameStarted || this.state.players.size === 0) return false;
+    for (const sessionId of this.state.players.keys()) {
+      if (!this.consentedLeaveSessionIds.has(sessionId)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Odayi Colyseus eslestirmesinden gizler: `join`/`joinOrCreate` ozel odaya
+   * hic bakmiyor. Kimligi bilenin `joinById`si ise `joinStartedMatch`te
+   * duruyor. Test duzeneklerinde Colyseus kaydi (`listing`) yok.
+   */
+  private hideFromMatchmaking() {
+    if (!this.listing) return;
+    void Promise.resolve(this.setPrivate(true)).catch((error) => this.reportRoomError("setPrivate", error));
+  }
+
   onJoin(client: Client, rawOptions: JoinOptions) {
     // Katilim secenekleri de istemciden: sekli tutmayan alan yok sayiliyor.
     const options: JoinOptions = typeof rawOptions === "object" && rawOptions !== null ? rawOptions : {};
+    this.admitClient(client, options);
+    // Buraya yalnizca kabul edilen giris geliyor; red firlatiyor ve oturum
+    // hic kaydedilmiyor.
+    this.everJoined = true;
+    if (typeof options.wireDelta === "number" && options.wireDelta >= WIRE_DELTA_PROTOCOL) {
+      this.wireDeltaSessionIds.add(client.sessionId);
+    } else {
+      this.wireDeltaSessionIds.delete(client.sessionId);
+    }
+  }
+
+  private admitClient(client: Client, options: JoinOptions) {
     if (this.gameStarted) {
       this.joinStartedMatch(client, options);
       return;
@@ -2567,6 +2883,9 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     if (this.gameStarted && player) {
       player.connected = false;
+      // Oyuncu menuye dondu: herkes boyle ciktiysa oda beklemeden kapanacak
+      // (`checkAbandoned`, `isLeftByEveryone`).
+      if (consented) this.consentedLeaveSessionIds.add(client.sessionId);
 
       if (!consented) {
         // Pencere boyunca yuva bu oturumun: yeni gelen onu devralamaz.
@@ -2642,9 +2961,13 @@ export class MatchRoom extends Room<MatchState> {
     // yuvayi yeni gelene vermek, kulesini ve altinini ona vermek demekti;
     // geri donen asil oyuncu da yuvasiz bir hayalet olarak kaliyordu.
     // Ayni karakteri secmis olan once: listeden geri donen oyuncu kendi
-    // yuvasini bulsun.
+    // yuvasini bulsun. Tek kisilik odada yuva yalnizca sahibinin: kurulumdaki
+    // sirri gosteren (`isSoloOwner`). Ad ve operator yetmiyor -- oda kimligi
+    // HUD'da yaziyor; kimligi bilen yabanci "Oda dolu." aliyor.
+    const soloOwner = this.soloRoom && this.isSoloOwner(options);
     const takeoverCandidates = Array.from(this.state.players.entries())
-      .filter(([sessionId, player]) => !player.connected && !this.reconnectingSessionIds.has(sessionId));
+      .filter(([sessionId, player]) => !player.connected && !this.reconnectingSessionIds.has(sessionId))
+      .filter(() => !this.soloRoom || soloOwner);
     const disconnectedEntry = takeoverCandidates.find(([, player]) => player.characterId === options.characterId)
       ?? takeoverCandidates[0];
     if (disconnectedEntry) {
@@ -2683,9 +3006,21 @@ export class MatchRoom extends Room<MatchState> {
    * `onLeave`i yuvanin el degistirdigini gorup onu ayrilmis saymiyor.
    * Farkli adla gelen pencere boyunca yuvaya dokunamiyor.
    */
+  /**
+   * Gelen, solo odayi kuranin sirrini mi gosteriyor. Ozetler sabit zamanda
+   * karsilastiriliyor; sirsiz kurulan odada (eski istemci) kimse sahip degil.
+   */
+  private isSoloOwner(options: JoinOptions) {
+    const expected = this.soloOwnerSecretHash;
+    const given = hashOwnerSecret(options.ownerSecret);
+    return Boolean(expected && given && timingSafeEqual(expected, given));
+  }
+
   private reclaimReconnectingSlot(client: Client, options: JoinOptions) {
     const name = getJoinPlayerName(options.playerName);
     if (!name) return false;
+    // Solo odada ad ve operator yetmiyor; sahip sirri sart (`joinStartedMatch`).
+    if (this.soloRoom && !this.isSoloOwner(options)) return false;
     const entry = Array.from(this.state.players.entries()).find(([sessionId, player]) =>
       this.reconnectingSessionIds.has(sessionId) && !player.connected
       && player.characterId === options.characterId && player.name === name);
@@ -2714,6 +3049,7 @@ export class MatchRoom extends Room<MatchState> {
     // Yuvayi devralan oturum takimin olcegine yeniden giriyor.
     this.departedSessionIds.delete(previousSessionId);
     this.reconnectingSessionIds.delete(previousSessionId);
+    this.consentedLeaveSessionIds.delete(previousSessionId);
     this.forgetSession(previousSessionId);
     if (this.setupReadyPlayerIds.delete(previousSessionId)) {
       this.setupReadyPlayerIds.add(nextSessionId);
@@ -3021,8 +3357,9 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    // Yaratici oda tek kisilik bir kum havuzu: listede yok, katilinamaz.
-    if (this.creativeMode) {
+    // Dogrudan baslatilan oda (solo, yaratici) tek kisilik: listede yok,
+    // katilinamaz. Kapanmakta olan oda da listelenmiyor.
+    if (this.soloRoom || this.creativeMode || this.abandonDisposing) {
       return false;
     }
 
@@ -3376,6 +3713,7 @@ export class MatchRoom extends Room<MatchState> {
       this.tickFailures += 1;
       this.tickBackoffUntil = now + Math.min(TICK_ERROR_BACKOFF_MAX_MS, 50 * 2 ** (this.tickFailures - 1));
       this.synergyIsolationCache = undefined;
+      this.tickLayoutCache = undefined;
       // Yarim kalan tick tabanla gonderilen arasini bozmus olabilir; herkes tam kayit alsin.
       this.markTowerWireStale();
       this.reportRoomError("update", error);
@@ -3389,8 +3727,7 @@ export class MatchRoom extends Room<MatchState> {
    * Kurtarilamayan odayi kapatir.
    *
    * Tick her denemede ayni hatayi veriyorsa oda donmus demek: oyuncular bagli
-   * kaliyor, hicbir sey ilerlemiyor ve bagli oyuncusu olan oda yeni oda
-   * kurulmasini engelliyor. Oyunculara kisa bir mesaj gidiyor (istemci
+   * kaliyor, hicbir sey ilerlemiyor ve oda sinirda yer tutuyor. Oyunculara kisa bir mesaj gidiyor (istemci
    * yeniden baglanmayi denemiyor), sonra oda kapaniyor. Sonuc raporu yok:
    * bozuk durumdan uretilen rapor gercek bir yenilgi gibi kaydedilirdi.
    */
@@ -3416,15 +3753,18 @@ export class MatchRoom extends Room<MatchState> {
    * Kimsesiz odayi kapatir.
    *
    * Istemci yok, pencere acik oturum yok, rezerve koltuk yok ve bu durum
-   * `ABANDONED_ROOM_DISPOSE_MS` boyunca suruyor. Test duzenekleri `onCreate`
-   * cagirmadigi icin denetim onlarda kapali.
+   * `ABANDONED_ROOM_DISPOSE_MS` boyunca suruyor. Bitmis mac beklemiyor: ona
+   * kimse giremiyor ("Maç bitti."), oda sinirda bosuna yer tutardi. Sahibi
+   * kendi istegiyle cikmis solo oda da beklemiyor: listede degil, sahibi
+   * birakti; kopan (istemsiz) sahip ise on dakika boyunca donebiliyor. Her oda
+   * yalnizca kendini kapatiyor. Test duzenekleri `onCreate` cagirmadigi icin
+   * denetim onlarda kapali.
    */
   private checkAbandoned(now: number) {
     if (!this.abandonCheckEnabled || this.abandonDisposing) {
       return;
     }
-    const pendingSeats = Object.keys(this.reservedSeats ?? {}).length;
-    if (this.clients.length > 0 || this.reconnectingSessionIds.size > 0 || pendingSeats > 0) {
+    if (this.clients.length > 0 || this.hasPendingSeats()) {
       this.abandonedSince = 0;
       return;
     }
@@ -3432,17 +3772,33 @@ export class MatchRoom extends Room<MatchState> {
       this.abandonedSince = now;
       return;
     }
-    if (now - this.abandonedSince < ABANDONED_ROOM_DISPOSE_MS) {
+    // Bos lobi de beklemiyor: mac baslamadan cikan oyuncunun kaydi siliniyor,
+    // donulecek bir yuva yok ve oda listede de degil.
+    const emptyLobby = !this.gameStarted && this.state.players.size === 0;
+    const disposeAfterMs = this.matchResult || emptyLobby || this.isLeftByEveryone() ? 0 : ABANDONED_ROOM_DISPOSE_MS;
+    if (now - this.abandonedSince < disposeAfterMs) {
       return;
     }
+    this.disposeAbandoned("dispose");
+  }
+
+  /**
+   * Kimsesiz odayi kapatir; kapanis basladiysa `true`.
+   *
+   * `abandonDisposing` hemen yaziliyor: oda o andan itibaren sinira
+   * sayilmiyor ve yerinden etme adayi degil (`evictAbandonedRoom`).
+   */
+  private disposeAbandoned(context: "dispose" | "evict") {
     this.abandonDisposing = true;
     MatchRoom.publicRooms.delete(this.roomId);
     try {
-      void Promise.resolve(this.disconnect()).catch((error) => this.reportRoomError("dispose", error));
+      void Promise.resolve(this.disconnect()).catch((error) => this.reportRoomError(context, error));
+      return true;
     } catch (error) {
       // Oda henuz kurulurken kapatilamaz; bir sonraki tick yeniden denesin.
       this.abandonDisposing = false;
-      this.reportRoomError("dispose", error);
+      this.reportRoomError(context, error);
+      return false;
     }
   }
 
@@ -3456,6 +3812,7 @@ export class MatchRoom extends Room<MatchState> {
     const seconds = gameDeltaTime / 1000;
     const frameStart = performance.now();
     this.synergyIsolationCache = new Map();
+    this.tickLayoutCache = { isolated: new Map(), synthesisGroups: new Map() };
     const timings = {
       spawnMs: 0,
       towersMs: 0,
@@ -3524,6 +3881,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     this.synergyIsolationCache = undefined;
+    this.tickLayoutCache = undefined;
     const tickMs = performance.now() - frameStart;
 
     this.recordPerfFrame({
@@ -3539,9 +3897,9 @@ export class MatchRoom extends Room<MatchState> {
       // okuyanin tam kayit sandigi yerde delta almasina yol acardi.
       // Tabanla ayni olmayan istemci (atlanan, kopan, tam kayit isteyen) deltayi
       // degil tam kareyi aliyor; digerleri deltayi.
-      const { wire, towerBaseline, enemyBaseline } = this.applyWireDelta(snapshot);
+      const { wire, towerBaseline, enemyBaseline, extraBaselines } = this.applyWireDelta(snapshot);
       if (this.sendSnapshotWithBackpressure(wire, snapshot)) {
-        this.commitWireBaseline(towerBaseline, enemyBaseline);
+        this.commitWireBaseline(towerBaseline, enemyBaseline, extraBaselines);
         this.recordSnapshotBroadcast(now);
       }
     }
@@ -3628,7 +3986,7 @@ export class MatchRoom extends Room<MatchState> {
       const delta: Record<string, unknown> = { id: entry.id };
       for (const key of Object.keys(record)) {
         if (key === "id") continue;
-        if (JSON.stringify(record[key]) !== JSON.stringify(previous[key])) delta[key] = record[key];
+        if (!wireValueEquals(record[key], previous[key])) delta[key] = record[key];
       }
       for (const key of Object.keys(previous)) {
         if (key !== "id" && !(key in record)) delta[key] = null;
@@ -3642,19 +4000,38 @@ export class MatchRoom extends Room<MatchState> {
     const full = this.towerWireNeedsFullResend;
     const towers = this.toWireDelta(snapshot.towers, this.lastSentTowerWire, full);
     const enemies = this.toWireDelta(snapshot.enemies, this.lastSentEnemyWire, full);
+    const players = this.toWireDelta(snapshot.players, this.lastSentPlayerWire, full);
+    const drones = snapshot.drones ? this.toWireDelta(snapshot.drones, this.lastSentDroneWire, full) : undefined;
     return {
-      wire: { ...snapshot, towers: towers.wire, enemies: enemies.wire },
+      wire: {
+        ...snapshot,
+        towers: towers.wire,
+        enemies: enemies.wire,
+        players: players.wire,
+        ...(drones ? { drones: drones.wire } : {})
+      },
       towerBaseline: towers.baseline,
-      enemyBaseline: enemies.baseline
+      enemyBaseline: enemies.baseline,
+      extraBaselines: { players: players.baseline, drones: drones?.baseline }
     };
   }
 
+  /**
+   * Gonderilen karenin kayitlarini taban yapar.
+   *
+   * Oyuncu ve isci tabanlari istege bagli: verilmezse eskisi duruyor ve o
+   * bolumler bir sonraki karede yine tam gidiyor (yanlis degil, yalnizca
+   * kucultulmemis).
+   */
   private commitWireBaseline(
     towerBaseline: Map<string, Record<string, unknown>>,
-    enemyBaseline: Map<string, Record<string, unknown>>
+    enemyBaseline: Map<string, Record<string, unknown>>,
+    extraBaselines?: { players?: Map<string, Record<string, unknown>>; drones?: Map<string, Record<string, unknown>> }
   ) {
     this.lastSentTowerWire = towerBaseline;
     this.lastSentEnemyWire = enemyBaseline;
+    if (extraBaselines?.players) this.lastSentPlayerWire = extraBaselines.players;
+    if (extraBaselines?.drones) this.lastSentDroneWire = extraBaselines.drones;
     this.towerWireNeedsFullResend = false;
   }
 
@@ -3678,10 +4055,23 @@ export class MatchRoom extends Room<MatchState> {
    * istemci deltayi, olmayan tam kareyi aliyor; atlanan istemci kumeden
    * dusuyor ve bir sonraki gonderimde tam kare aliyor -- kareyi baskasi
    * almis olsa bile. Biri bile aldiysa `true`; o zaman taban ilerliyor.
+   * Tabanla ayni ama `wireDelta` bildirmemis (eski) istemci ucuncu cesidi
+   * aliyor: kule ve dusman delta, oyuncu ve isci tam (`toLegacyWireFrame`).
    */
   private sendSnapshotWithBackpressure(snapshot: WireGameSnapshot, full: WireGameSnapshot = snapshot) {
     let sent = false;
     const recipients: string[] = [];
+    // Tam kare isaretli: istemci delta onbelleklerini atip kayitlari
+    // birlestirmek yerine yerine koyuyor. Aksi halde atlanip geri gelen
+    // istemcide tam kayitta artik olmayan bir alan eski degeriyle kalirdi.
+    const fullFrame: WireGameSnapshot = full === snapshot ? full : { ...full, wireFull: true };
+    // Kare cesit basina bir kez kodlaniyor (delta, eski istemci deltasi ve
+    // tam), istemci basina degil: `client.send` her cagrida ayni nesneyi
+    // yeniden msgpack'liyordu.
+    let deltaBytes: Uint8Array | undefined;
+    let legacyBytes: Uint8Array | undefined;
+    let fullBytes: Uint8Array | undefined;
+    let legacyFrame: WireGameSnapshot | undefined;
     for (const client of this.clients) {
       if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) {
         // Atlanan istemci bu deltayi kacirdi; bir daha yakalayamaz.
@@ -3689,7 +4079,22 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       const synced = !this.towerWireNeedsFullResend && this.wireSyncedSessionIds.has(client.sessionId);
-      client.send("snapshot", synced ? snapshot : full);
+      // Eski istemci (`wireDelta` bildirmeyen) kule ve dusman deltasini
+      // anliyor ama oyuncu ve isci kayitlarini tam bekliyor: kendi cesidi
+      // o iki bolumu tam kareden aliyor. Yalnizca boyle biri varsa kuruluyor.
+      const variant = !synced ? "full" : this.wireDeltaSessionIds.has(client.sessionId) ? "delta" : "legacy";
+      if (variant === "legacy" && !legacyFrame) legacyFrame = toLegacyWireFrame(snapshot, full);
+      const payload = variant === "delta" ? snapshot : variant === "legacy" ? legacyFrame! : fullFrame;
+      if (typeof (client as Partial<Client>).enqueueRaw === "function") {
+        const bytes = variant === "delta"
+          ? (deltaBytes ??= getMessageBytes.raw(Protocol.ROOM_DATA, "snapshot", payload))
+          : variant === "legacy"
+            ? (legacyBytes ??= getMessageBytes.raw(Protocol.ROOM_DATA, "snapshot", payload))
+            : (fullBytes ??= getMessageBytes.raw(Protocol.ROOM_DATA, "snapshot", payload));
+        client.enqueueRaw(bytes);
+      } else {
+        client.send("snapshot", payload);
+      }
       recipients.push(client.sessionId);
       sent = true;
     }
@@ -5213,9 +5618,14 @@ export class MatchRoom extends Room<MatchState> {
     return { mode, hizaCount, showcaseCount, kinCount, linkedTowers, synthesisTowerCount, copySourceTower };
   }
 
-  private getZeynepFormationGroup(tower: TowerModel) {
+  private getZeynepFormationGroup(tower: TowerModel): readonly TowerModel[] {
+    const cache = this.tickLayoutCache?.synthesisGroups;
+    const cached = cache?.get(tower);
+    if (cached) return cached;
     // Kural paylasilan pakette: istemci onizlemesi ayni zinciri kuruyor.
-    return collectZeynepSynthesisGroup(tower, this.towers.values(), getMapGridSize(this.activeMap));
+    const group = collectZeynepSynthesisGroup(tower, this.towers.values(), getMapGridSize(this.activeMap));
+    cache?.set(tower, group);
+    return group;
   }
 
   private fireZeynepSynthesis(tower: TowerModel, target: EnemyModel) {
@@ -7449,6 +7859,57 @@ export class MatchRoom extends Room<MatchState> {
     goal: { col: number; row: number },
     goalOpen: boolean
   ) {
+    const map = this.activeMap;
+    if (!isInsideMap(map, start.col, start.row) || !Number.isInteger(start.col) || !Number.isInteger(start.row)) {
+      return this.searchWorkerStepByKey(worker, start, goal, goalOpen);
+    }
+    // Ayni genislik oncelikli arama, ayni komsu sirasi ve ayni giris kurali;
+    // yalnizca hucreler metin anahtar yerine dizi indeksinde tutuluyor. Gec
+    // oyunda isciler ve kule ozetleri (teslimat yolu acik mi) bunu tick basina
+    // onlarca kez kosuyordu ve maliyetin cogu anahtar/nesne tahsisiydi.
+    const cols = map.cols;
+    const size = cols * map.rows;
+    const seen = new Uint8Array(size);
+    /** Ilk adimin hucre indeksi + 1; 0 = baslangic (adim yok). */
+    const firstStep = new Int32Array(size);
+    const queue = new Int32Array(size);
+    let tail = 0;
+    const startIndex = start.row * cols + start.col;
+    queue[tail++] = startIndex;
+    seen[startIndex] = 1;
+    // Komsu kontrolleri bu iki nesneyi yalnizca okuyor; her adimda yenisi kurulmuyor.
+    const cell = { col: start.col, row: start.row };
+    const neighbor = { col: 0, row: 0 };
+    for (let head = 0; head < tail; head += 1) {
+      const index = queue[head];
+      cell.col = index % cols;
+      cell.row = (index - cell.col) / cols;
+      if (goalOpen ? cell.col === goal.col && cell.row === goal.row : this.isWorkerDeliveryReach(cell, goal)) {
+        const step = firstStep[index];
+        return step === 0 ? undefined : { col: (step - 1) % cols, row: Math.floor((step - 1) / cols) };
+      }
+      // `getGridNeighbors` sirasi: asagi, sol, sag, yukari.
+      for (let direction = 0; direction < 4; direction += 1) {
+        neighbor.col = cell.col + WORKER_NEIGHBOR_COL_STEPS[direction];
+        neighbor.row = cell.row + WORKER_NEIGHBOR_ROW_STEPS[direction];
+        if (!isInsideMap(map, neighbor.col, neighbor.row)) continue;
+        const neighborIndex = neighbor.row * cols + neighbor.col;
+        if (seen[neighborIndex] === 1 || !this.canWorkerEnter(cell, neighbor, worker)) continue;
+        seen[neighborIndex] = 1;
+        firstStep[neighborIndex] = firstStep[index] !== 0 ? firstStep[index] : neighborIndex + 1;
+        queue[tail++] = neighborIndex;
+      }
+    }
+    return undefined;
+  }
+
+  /** Haritanin disinda baslayan arama icin eski, anahtarli yol (indeks orada tanimsiz). */
+  private searchWorkerStepByKey(
+    worker: DroneModel,
+    start: { col: number; row: number },
+    goal: { col: number; row: number },
+    goalOpen: boolean
+  ) {
     const startKey = `${start.col}:${start.row}`;
     // Isci yapinin icinde kalmis olabilir (kule tam ustune kuruldu):
     // aramanin baslangici yine de gecerli sayiliyor, yoksa cikamazdi.
@@ -9096,7 +9557,7 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerInsight(tower: TowerModel) {
     const now = Date.now();
     const cached = this.towerInsightCache.get(tower);
-    if (cached && now - cached.at < 1000) return cached.value;
+    if (cached && now - cached.at < TOWER_INSIGHT_REFRESH_MS) return cached.value;
     const reasons: string[] = [];
     if (this.acceptsTowerOperation(tower) && !this.setupPhase) reasons.push(activityLabels[this.getTowerActivity(tower)]);
     reasons.push(this.getTowerStatus(tower));
@@ -9115,7 +9576,10 @@ export class MatchRoom extends Room<MatchState> {
       if (row) reasons.push(`Bu dalga: döngü ${Math.floor(row.seconds.cycle)} sn · hedef ${Math.floor(row.seconds.target)} sn · mühimmat ${Math.floor(row.seconds.ammo)} sn · enerji ${Math.floor(row.seconds.energy)} sn · soğuma ${Math.floor(row.seconds.heat)} sn`);
     }
     const value = reasons.filter(Boolean).join(" | ");
-    this.towerInsightCache.set(tower, { at: now, value });
+    // Ilk kayitta evre kaydiriliyor (bkz. `towerInsightPhaseCursor`): ilk
+    // tazeleme biraz erken geliyor, sonrakiler yine saniyede bir.
+    const phase = cached ? 0 : (this.towerInsightPhaseCursor++ * TOWER_INSIGHT_PHASE_STEP_MS) % TOWER_INSIGHT_REFRESH_MS;
+    this.towerInsightCache.set(tower, { at: now - phase, value });
     return value;
   }
 
@@ -13450,7 +13914,9 @@ export class MatchRoom extends Room<MatchState> {
         ownedCardIds: player.ownedCardIds.length > 0 ? [...player.ownedCardIds] : undefined,
         ownedShopItemIds: [...player.ownedShopItemIds],
         inventoryItemIds: [...player.inventoryItemIds],
-        shopOffers: player.shopOffers,
+        // Kopya: delta tabani bu kaydi tutuyor; dizi bir gun yerinde
+        // degisirse taban da degisir ve fark hic gorulmezdi.
+        shopOffers: player.shopOffers ? [...player.shopOffers] : player.shopOffers,
         shopRerollPrice: Math.ceil(getShopRerollPrice(player.shopRerolls) * getModifierMultiplier(player.runModifiers, "shopRerollCost")),
         towersBuilt: player.towersBuilt,
         towerLimit: this.getPlayerTowerLimit(player),
@@ -13470,7 +13936,9 @@ export class MatchRoom extends Room<MatchState> {
         approval: player.characterId === "archer" ? player.approval : undefined,
         stress: player.characterId === "archer" ? player.stress : undefined,
         melisStance: player.characterId === "archer" ? player.melisStance : undefined,
-        hiredWorkers: player.hiredWorkers.map((worker) => ({ ...worker })),
+        // Derin kopya: `chooseWorkerSkill` beceri listesini yerinde buyutuyor.
+        // Paylasilan dizi delta tabanini da buyutur, secim hic gonderilmezdi.
+        hiredWorkers: player.hiredWorkers.map(toHiredWorkerWire),
         workerBannedCells: [...(this.workerBannedCells.get(id) ?? [])],
         // 1 ise yazilmiyor: indirimsiz oyunda her karede bir sayi
         // gondermenin karsiligi yok, okuyan taraf eksik alani 1 sayiyor.
@@ -13618,7 +14086,8 @@ export class MatchRoom extends Room<MatchState> {
         repairing: drone.repairing,
         // Istemci iki kademeyi ancak buradan ayirt ediyor.
         advanced: drone.advanced,
-        skillIds: drone.skillIds,
+        // Kopya: delta tabani diziyi paylasmasin (bkz. `hiredWorkers`).
+        skillIds: drone.skillIds ? [...drone.skillIds] : undefined,
         hp: drone.hp === undefined ? undefined : Math.round(drone.hp),
         maxHp: drone.maxHp === undefined ? undefined : Math.round(this.getWorkerMaxHp(drone))
       })),
@@ -13724,6 +14193,9 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerAuraModifiers(target: TowerModel) {
     const sources: TowerAuraSource[] = [];
     for (const source of this.towers.values()) {
+      // Kulelere isleyen aurasi olmayan kaynak hicbir sey eklemez; aktif aura
+      // suzgecini (tahsis + yalnizlik sorgusu) onun icin calistirmaya gerek yok.
+      if (this.getTowerGrantState(source).hasTowerAura === false) continue;
       for (const aura of this.getActiveTowerAuras(source)) {
         if (aura.affects !== "towers") {
           continue;
@@ -13828,9 +14300,12 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerMinimumRange(tower: TowerModel) {
     const multiplier = Math.max(0, tower.definition.engine?.attack.minimumRangeMultiplier ?? 0);
     if (!tower.definition.engine?.attack.rangeStartsAtFootprint) {
-      return this.getTowerRange(tower) * multiplier;
+      // Carpani sifir olan kulelerin (neredeyse hepsi) sonucu menzilden
+      // bagimsiz olarak 0; menzil hesabi pahali (aura ve modifier taramasi).
+      return multiplier === 0 ? 0 : this.getTowerRange(tower) * multiplier;
     }
     const footprintRadius = this.scaleWorldDistance(TOWER_GRID_SIZE * getTowerGridSpan(tower.definition.id) / 2);
+    if (multiplier === 0) return footprintRadius;
     return footprintRadius + Math.max(0, this.getTowerRange(tower) - footprintRadius) * multiplier;
   }
 
@@ -14052,7 +14527,7 @@ export class MatchRoom extends Room<MatchState> {
    * okudugu icin cevrim icin ayri bir okuma dali yok. Cevrimsiz kulede liste
    * eskisiyle birebir ayni.
    */
-  private getTowerRunModifiers(tower: TowerModel): RunModifiers {
+  private getTowerRunModifiers(tower: TowerModel): FrozenRunModifiers {
     const base = this.getTowerStaticRunModifiers(tower);
     const conversions = this.getTowerGrantState(tower).conversions;
     if (conversions.length === 0) return base;
@@ -14131,20 +14606,50 @@ export class MatchRoom extends Room<MatchState> {
    * cozulurken (`collectTowerGrants`) bu okunuyor: cevrimler o kumeden
    * geldigi icin orada tam listeyi okumak kendi kendini cagirmak olurdu.
    */
-  private getTowerStaticRunModifiers(tower: TowerModel): RunModifiers {
-    const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? [];
-    return [
+  private getTowerStaticRunModifiers(tower: TowerModel): FrozenRunModifiers {
+    const playerModifiers = this.state.players.get(tower.ownerId)?.runModifiers ?? EMPTY_RUN_MODIFIERS;
+    // Gec oyunda en sicak nokta buydu: kule basina tick'te onlarca cagri, her
+    // biri liste kurup her modifier icin katalogda dogrusal arama yapiyordu.
+    // Sonuc yalnizca iki listenin elemanlarina ve kule tanimina bagli;
+    // onbellek o elemanlari birebir (referansla) dogrulayarak tekrar kullaniliyor.
+    // Listeler yerinde degisse de (push, yeni dizi) dogrulama kaciramaz.
+    const cached = this.staticRunModifierCache.get(tower);
+    if (cached
+      && cached.definition === tower.definition
+      && sameModifierElements(cached.playerModifiers, playerModifiers)
+      && sameModifierElements(cached.towerModifiers, tower.runModifiers)) {
+      return cached.result;
+    }
+    const result: FrozenRunModifiers = Object.freeze([
       ...playerModifiers.filter((modifier) => {
         const shopId = modifier.source.startsWith("shop:") ? modifier.source.slice(5) : "";
-        const shopItem = shopId ? shopCatalog.find((candidate) => candidate.id === shopId) : undefined;
+        const shopItem = shopId ? getShopItem(shopId) : undefined;
         if (shopItem) return shopItem.scope.kind === "global" || shopItemAppliesToTower(shopItem, tower.definition);
         const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
-        const card = cardCatalog.find((candidate) => candidate.id === cardId);
+        const card = getCardDefinition(cardId);
         return !card || card.scope.kind === "global" || cardAppliesToTower(card, tower.definition);
       }),
       ...tower.runModifiers
-    ];
+    ]);
+    this.staticRunModifierCache.set(tower, {
+      definition: tower.definition,
+      playerModifiers: [...playerModifiers],
+      towerModifiers: [...tower.runModifiers],
+      result
+    });
+    return result;
   }
+
+  /** `getWorkerModifiers` kuresel suzgeci; oyuncunun modifier dizisi anahtar, elemanlar dogrulaniyor. */
+  private workerGlobalModifierCache = new WeakMap<readonly Modifier[], { source: Modifier[]; result: FrozenRunModifiers }>();
+
+  /** `getTowerStaticRunModifiers` sonucu; kule nesnesine yazilmiyor ki kule kaydi degismesin. */
+  private staticRunModifierCache = new WeakMap<TowerModel, {
+    definition: TowerDefinition;
+    playerModifiers: Modifier[];
+    towerModifiers: Modifier[];
+    result: FrozenRunModifiers;
+  }>();
 
   /**
    * Kart ve esya sahipligi degistiginde artan sayac.
@@ -14213,9 +14718,11 @@ export class MatchRoom extends Room<MatchState> {
     // Cevrimsiz liste: cevrimler bu cozumlemenin ciktisi. Hicbir cevrimin
     // hedefi bu dort stattan biri degil (katalog testi).
     const goldModifiers = this.getTowerStaticRunModifiers(tower);
+    const engine = resolveTowerEngine(tower.definition.engine, grants);
     return {
       generation: this.grantGeneration,
-      engine: resolveTowerEngine(tower.definition.engine, grants),
+      engine,
+      hasTowerAura: (engine?.auras ?? []).some((aura) => aura.affects === "towers"),
       attackMultipliers: resolveTowerAttackMultipliers(grants),
       repairCostMultiplier: getModifierMultiplier(goldModifiers, "repairCost"),
       sellRefundMultiplier: getModifierMultiplier(goldModifiers, "sellRefund"),
@@ -14327,16 +14834,26 @@ export class MatchRoom extends Room<MatchState> {
    * kart katmani isciler icin tumden oluydu, ve bir hedefe baglanmamis isci
    * (dugume yururken, yuk toplarken) hicbir buff gormuyordu.
    */
-  private getWorkerModifiers(worker: DroneModel): RunModifiers {
-    const playerModifiers = worker.ownerId ? this.state.players.get(worker.ownerId)?.runModifiers ?? [] : [];
-    const globalModifiers = playerModifiers.filter((modifier) => {
-      const shopId = modifier.source.startsWith("shop:") ? modifier.source.slice(5) : "";
-      const shopItem = shopId ? shopCatalog.find((candidate) => candidate.id === shopId) : undefined;
-      if (shopItem) return shopItem.scope.kind === "global";
-      const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
-      const card = cardCatalog.find((candidate) => candidate.id === cardId);
-      return !card || card.scope.kind === "global";
-    });
+  private getWorkerModifiers(worker: DroneModel): FrozenRunModifiers {
+    const playerModifiers = worker.ownerId ? this.state.players.get(worker.ownerId)?.runModifiers ?? EMPTY_RUN_MODIFIERS : EMPTY_RUN_MODIFIERS;
+    // Kuresel suzgecin sonucu yalnizca oyuncu listesinin elemanlarina bagli;
+    // `getTowerStaticRunModifiers` gibi elemanlar birebir dogrulanarak tekrar
+    // kullaniliyor (isci basina tick'te birkac cagri, her biri katalog taramasiydi).
+    let globalModifiers: FrozenRunModifiers;
+    const cached = this.workerGlobalModifierCache.get(playerModifiers);
+    if (cached && sameModifierElements(cached.source, playerModifiers)) {
+      globalModifiers = cached.result;
+    } else {
+      globalModifiers = Object.freeze(playerModifiers.filter((modifier) => {
+        const shopId = modifier.source.startsWith("shop:") ? modifier.source.slice(5) : "";
+        const shopItem = shopId ? getShopItem(shopId) : undefined;
+        if (shopItem) return shopItem.scope.kind === "global";
+        const cardId = modifier.source.startsWith("card:") ? modifier.source.slice(5) : "";
+        const card = getCardDefinition(cardId);
+        return !card || card.scope.kind === "global";
+      }));
+      this.workerGlobalModifierCache.set(playerModifiers, { source: [...playerModifiers], result: globalModifiers });
+    }
 
     const tower = worker.targetTowerId ? this.towers.get(worker.targetTowerId) : undefined;
     return tower && tower.ownerId === worker.ownerId
@@ -14765,8 +15282,13 @@ export class MatchRoom extends Room<MatchState> {
    * kulenin kendi yetenegini kapatirdi.
    */
   private isTowerIsolated(tower: TowerModel) {
+    const cache = this.tickLayoutCache?.isolated;
+    const cached = cache?.get(tower);
+    if (cached !== undefined) return cached;
     // Kural paylasilan pakette: istemci yerlestirme onizlemesi ayni soruyu soruyor.
-    return isStructureIsolated(tower, this.towers.values(), this.activeMap);
+    const isolated = isStructureIsolated(tower, this.towers.values(), this.activeMap);
+    cache?.set(tower, isolated);
+    return isolated;
   }
 
   private countAdjacentFriendlyTowers(tower: TowerModel) {
@@ -15713,6 +16235,47 @@ function isFiniteNumber(value: unknown): value is number {
 /** Katilim secenegindeki oyuncu adi: metin degilse yok sayiliyor, 20 harfe kirpiliyor. */
 function getJoinPlayerName(value: unknown) {
   return typeof value === "string" ? value.slice(0, 20) : "";
+}
+
+/** Eslestirme yolu oda kuruyor mu: `/matchmake/create/...` ya da `/matchmake/joinOrCreate/...`. */
+function isRoomCreateRequest(url: string | undefined) {
+  return typeof url === "string" && /\/matchmake\/(?:create|joinOrCreate)\//.test(url);
+}
+
+/** Sahip sirrinin ozeti; sir kendisi saklanmiyor. Bicimi tutmayan sir yok sayiliyor. */
+function hashOwnerSecret(secret: unknown) {
+  if (typeof secret !== "string" || secret.length < 16 || secret.length > 128) return undefined;
+  return createHash("sha256").update(secret).digest();
+}
+
+/**
+ * Eski istemcinin delta karesi: kule ve dusman delta, oyuncu ve isci tam.
+ *
+ * Oyuncu ve isci deltasi sonradan geldi; onu bilmeyen istemci (bayat sekme,
+ * yeniden yuklenmemis itch derlemesi) kismi kaydi tam sanip HUD'unu ve isci
+ * dokularini bozuyordu. Bu iki bolum tam kareden aynen aliniyor; eski
+ * surumde de her karede tam gidiyorlardi.
+ */
+function toLegacyWireFrame(delta: WireGameSnapshot, full: WireGameSnapshot): WireGameSnapshot {
+  if (delta === full) return full;
+  const frame: WireGameSnapshot = { ...delta, players: full.players };
+  if (full.drones) frame.drones = full.drones;
+  return frame;
+}
+
+/**
+ * Kiralik iscinin tel kopyasi.
+ *
+ * Yayilim yalnizca sayilabilir alanlari aliyor: kimlik ve secimler
+ * `hireWorker`da gizli (sayilamaz) tutuluyor ve telde yok, bu degismiyor.
+ * Beceri listesi sayilabilir oldugunda (eski kayitlar) kopyalaniyor; aksi
+ * halde delta tabani canli diziyi paylasir ve yerinde eklenen secim hic
+ * fark olarak gorunmezdi.
+ */
+function toHiredWorkerWire(worker: HiredWorker): HiredWorker {
+  const copy = { ...worker };
+  if (Array.isArray(copy.skillIds)) copy.skillIds = [...copy.skillIds];
+  return copy;
 }
 
 function getRequestedZeynepCommandTier(tier: unknown): ZeynepCommandTier {

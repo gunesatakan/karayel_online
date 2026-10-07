@@ -498,24 +498,33 @@ test("bitmis mac: bekleyen kart eli temizleniyor, geri donen oyuncuya gitmiyor",
   assert.ok(donen.sent.some((sent) => sent.type === "match:defeat"), "rapor yine gidiyor");
 });
 
-test("tek oda: bitmis oda yeni odayi engellemiyor ve kapatiliyor; suren oda hala engelliyor", async () => {
+test("bitmis mac son istemci gidince hemen kapaniyor; suren mac on dakika bekliyor", () => {
   const { room } = bitecekOda("warrior");
   room.roomId = "oda-bitecek";
+  room.abandonCheckEnabled = true;
   let kapatma = 0;
   room.disconnect = async () => { kapatma += 1; };
-  MatchRoom.rooms.set(room.roomId, room);
+  const realNow = Date.now;
+  let now = 9_000_000;
+  Date.now = () => now;
   try {
-    await assert.rejects(MatchRoom.prepareSingleRoomSlot("oda-yeni"), /Zaten aktif bir oda var/, "suren mac yerinde");
-    assert.equal(kapatma, 0);
+    room.update(16);
+    now += 60_000;
+    room.update(16);
+    assert.equal(kapatma, 0, "suren mac erken kapandi");
 
-    // Raporunu okuyan oyuncu bagli ama mac bitti: yeni oda kurulabiliyor.
+    // Rapor okunurken istemci bagli: oda duruyor.
     room.finishMatch("victory");
-    assert.equal(room.getConnectedPlayerCount(), 1);
-    await MatchRoom.prepareSingleRoomSlot("oda-yeni");
-    assert.equal(kapatma, 1, "bitmis oda bos oda gibi kapatildi");
+    room.clients = [sahteIstemci("p1")];
+    room.update(16);
+    assert.equal(kapatma, 0);
+    room.clients = [];
+    room.update(16);
+    now += 16;
+    room.update(16);
+    assert.equal(kapatma, 1, "bitmis bos oda beklemeye devam etti");
   } finally {
-    MatchRoom.rooms.delete(room.roomId);
-    MatchRoom.publicRooms.delete(room.roomId);
+    Date.now = realNow;
   }
 });
 
