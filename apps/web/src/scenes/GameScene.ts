@@ -272,6 +272,7 @@ import { WorldLabelPool } from "../vfx/world-labels";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
+import { assetUrl } from "../asset-url";
 
 type GameSceneData = {
   characterId?: CharacterId;
@@ -3390,10 +3391,10 @@ export class GameScene extends Phaser.Scene {
 
   private createKillStreakAudio() {
     this.killStreakSounds = {
-      granted: [new Audio("/audio/streak-granted.mp3")],
-      unstoppable: [new Audio("/audio/streak-unstopable.mp3")],
-      rampage: [new Audio("/audio/kill-streak-deep.mp3")],
-      legendary: [new Audio("/audio/streak-legendary.mp3")]
+      granted: [new Audio(assetUrl("audio/streak-granted.mp3"))],
+      unstoppable: [new Audio(assetUrl("audio/streak-unstopable.mp3"))],
+      rampage: [new Audio(assetUrl("audio/kill-streak-deep.mp3"))],
+      legendary: [new Audio(assetUrl("audio/streak-legendary.mp3"))]
     };
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
@@ -11382,7 +11383,7 @@ function getZeynepCommandButtonState(authorityChain: number) {
 }
 
 function getBackgroundMusicPath(characterId: CharacterId) {
-  return characterId === "zeynep" || characterId === "archer" ? "/audio/zeynep-theme.mp3" : "/audio/background-theme.mp3";
+  return characterId === "zeynep" || characterId === "archer" ? assetUrl("audio/zeynep-theme.mp3") : assetUrl("audio/background-theme.mp3");
 }
 
 /**

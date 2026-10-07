@@ -20,6 +20,7 @@ import {
   type TowerStatsWire
 } from "@karayel/shared";
 import { damageTypeCodex, hitTypeCodex } from "./codex";
+import { assetUrl } from "./asset-url";
 
 /**
  * Kule paneli: secili kulenin sayilari, gruplu ve dokumlu.
@@ -155,17 +156,17 @@ const ALL_DEFINITIONS: ReadonlyMap<string, TowerDefinition> = new Map(
 
 /** Boyali kule resimleri (`PreloaderScene`); digerleri rengiyle bir harf. */
 const PORTRAITS: Readonly<Record<string, string>> = {
-  "zeynep-1": "/images/towers/tower-zeynep-1.webp",
-  "zeynep-2": "/images/towers/tower-zeynep-2.webp",
-  "zeynep-3": "/images/towers/tower-zeynep-3.webp",
-  "zeynep-6": "/images/towers/tower-zeynep-6.webp",
-  "zeynep-7": "/images/towers/tower-zeynep-7.webp"
+  "zeynep-1": assetUrl("images/towers/tower-zeynep-1.webp"),
+  "zeynep-2": assetUrl("images/towers/tower-zeynep-2.webp"),
+  "zeynep-3": assetUrl("images/towers/tower-zeynep-3.webp"),
+  "zeynep-6": assetUrl("images/towers/tower-zeynep-6.webp"),
+  "zeynep-7": assetUrl("images/towers/tower-zeynep-7.webp")
 };
 
 function getPortrait(definitionId: string, level: number) {
   if (definitionId === "warrior-1") {
     const tier = getTowerTier(level);
-    return `/images/towers/tower-warrior-1-${tier === 3 ? "level-10" : tier === 2 ? "levels-5-9" : "levels-1-4"}.png`;
+    return assetUrl(`images/towers/tower-warrior-1-${tier === 3 ? "level-10" : tier === 2 ? "levels-5-9" : "levels-1-4"}.png`);
   }
   return PORTRAITS[definitionId];
 }

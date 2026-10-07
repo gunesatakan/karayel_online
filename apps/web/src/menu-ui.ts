@@ -85,6 +85,7 @@ import {
   withWireCaps,
   type MatchReconnectRecord
 } from "./online-session";
+import { assetUrl } from "./asset-url";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges";
 
@@ -157,8 +158,8 @@ const classColor = CHARACTER_CLASS_COLORS;
 
 // Portraits that exist as real art; everyone else falls back to an engraved mark.
 const characterArt: Partial<Record<CharacterId, string>> = {
-  zeynep: "/images/zeynep-puppet-hands.png",
-  archer: "/images/melis-creepy.png"
+  zeynep: assetUrl("images/zeynep-puppet-hands.png"),
+  archer: assetUrl("images/melis-creepy.png")
 };
 
 
@@ -844,8 +845,8 @@ function renderBackdrop() {
       <img
         class="backdrop__art"
         data-splash-art
-        src="/images/splash-siege.webp"
-        srcset="/images/splash-siege-sm.webp 640w, /images/splash-siege.webp 1024w"
+        src="${assetUrl("images/splash-siege.webp")}"
+        srcset="${assetUrl("images/splash-siege-sm.webp")} 640w, ${assetUrl("images/splash-siege.webp")} 1024w"
         sizes="100vw"
         alt=""
         fetchpriority="high"
@@ -1764,7 +1765,7 @@ function formatEnemyRace(race: string) {
 }
 
 function getEnemyImagePath(race: EnemyRace, type: EnemyType) {
-  return race === "meka" ? `/images/enemies/enemy-${type}.png` : `/images/enemies/enemy-${race}-${type}.png`;
+  return race === "meka" ? assetUrl(`images/enemies/enemy-${type}.png`) : assetUrl(`images/enemies/enemy-${race}-${type}.png`);
 }
 
 function getEnemyImageClass(race: EnemyRace, type: EnemyType) {

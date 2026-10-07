@@ -5,13 +5,26 @@ export const gameServerUrl =
 export const healthUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/health";
 export const roomsUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/rooms";
 
+// itch.io oyunu baska kokenli bir iframe'de aciyor; ucuncu taraf cerezleri
+// kapali Chrome orada localStorage'a erisimde hata firlatiyor. Ad kaydedilemezse
+// bu oturum icin uretilen adla devam.
+let sessionPlayerName = "";
+
 export function getPlayerName() {
-  const savedName = window.localStorage.getItem("karayel_player_name");
-  if (savedName) {
-    return savedName;
+  try {
+    const savedName = window.localStorage.getItem("karayel_player_name");
+    if (savedName) {
+      return savedName;
+    }
+  } catch {
+    // Depolama kapali.
   }
 
-  const generatedName = `Oyuncu ${Math.floor(Math.random() * 900 + 100)}`;
-  window.localStorage.setItem("karayel_player_name", generatedName);
-  return generatedName;
+  sessionPlayerName ||= `Oyuncu ${Math.floor(Math.random() * 900 + 100)}`;
+  try {
+    window.localStorage.setItem("karayel_player_name", sessionPlayerName);
+  } catch {
+    // Depolama kapali.
+  }
+  return sessionPlayerName;
 }

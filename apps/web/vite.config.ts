@@ -26,6 +26,10 @@ function resolveAppVersion() {
 }
 
 export default defineConfig({
+  // Goreli taban: paket hem alan adinin kokunden (Vercel) hem de bir alt
+  // yoldan (itch.io `html.itch.zone/html/<id>/`) ayni dosyalarla calissin.
+  // `public/` dosyalarini kodda `assetUrl()` ile istiyoruz.
+  base: "./",
   define: {
     __APP_VERSION__: JSON.stringify(resolveAppVersion())
   },

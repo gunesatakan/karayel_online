@@ -1,8 +1,8 @@
 {
   "name": "Uzay Savunma",
   "short_name": "Uzay Savunma",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["fullscreen", "standalone"],
   "orientation": "portrait",
@@ -10,7 +10,7 @@
   "theme_color": "#111827",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

@@ -68,7 +68,9 @@ if (vfxGallery) {
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js");
+    // Goreli: itch.io'da paket bir alt yolda. Orada oyun baska kokenli bir
+    // iframe'de; tarayici kaydi reddedebilir, oyun icin onemsiz.
+    navigator.serviceWorker.register("sw.js").catch(() => undefined);
   });
 }
 
@@ -143,8 +145,21 @@ document.addEventListener("fullscreenchange", () => {
 
 let hasRequestedFullscreen = false;
 
+/**
+ * Baska bir sayfaya gomulu (itch.io iframe'i) ve dokunmatik olmayan cihaz:
+ * masaustunde ilk tiklamada tam ekrana gecmek sayfayi okuyan oyuncuyu
+ * sasirtiyor, itch'in kendi tam ekran dugmesi var. Telefonda yine otomatik.
+ */
+const skipAutoFullscreen = (() => {
+  try {
+    return window.self !== window.top && !window.matchMedia("(pointer: coarse)").matches;
+  } catch {
+    return true;
+  }
+})();
+
 function requestGameFullscreen() {
-  if (hasRequestedFullscreen || document.fullscreenElement) {
+  if (skipAutoFullscreen || hasRequestedFullscreen || document.fullscreenElement) {
     return;
   }
 

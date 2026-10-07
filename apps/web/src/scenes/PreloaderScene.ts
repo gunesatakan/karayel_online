@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { towerCatalog, type TowerDefinition } from "@karayel/shared";
 import { bakeFlashTextures } from "../vfx/flash-pool";
 import { darken, liftToWhite } from "../vfx/kit";
+import { assetUrl } from "../asset-url";
 
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
@@ -33,24 +34,24 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("zeynep-puppet-hands", "/images/zeynep-puppet-hands.png");
-    this.load.image("melis-creepy", "/images/melis-creepy.png");
-    this.load.image("melis-creepy-unstoppable", "/images/melis-creepy-unstoppable.png");
-    this.load.image("melis-creepy-legend", "/images/melis-creepy-legend.png");
-    this.load.image("enemy-grunt", "/images/enemies/enemy-grunt.png");
-    this.load.image("enemy-brute", "/images/enemies/enemy-brute.png");
-    this.load.image("enemy-runner", "/images/enemies/enemy-runner.png");
-    this.load.image("enemy-shooter", "/images/enemies/enemy-shooter.png");
-    this.load.image("tower-warrior-1-levels-1-4", "/images/towers/tower-warrior-1-levels-1-4.png");
-    this.load.image("tower-warrior-1-levels-5-9", "/images/towers/tower-warrior-1-levels-5-9.png");
-    this.load.image("tower-warrior-1-level-10", "/images/towers/tower-warrior-1-level-10.png");
+    this.load.image("zeynep-puppet-hands", assetUrl("images/zeynep-puppet-hands.png"));
+    this.load.image("melis-creepy", assetUrl("images/melis-creepy.png"));
+    this.load.image("melis-creepy-unstoppable", assetUrl("images/melis-creepy-unstoppable.png"));
+    this.load.image("melis-creepy-legend", assetUrl("images/melis-creepy-legend.png"));
+    this.load.image("enemy-grunt", assetUrl("images/enemies/enemy-grunt.png"));
+    this.load.image("enemy-brute", assetUrl("images/enemies/enemy-brute.png"));
+    this.load.image("enemy-runner", assetUrl("images/enemies/enemy-runner.png"));
+    this.load.image("enemy-shooter", assetUrl("images/enemies/enemy-shooter.png"));
+    this.load.image("tower-warrior-1-levels-1-4", assetUrl("images/towers/tower-warrior-1-levels-1-4.png"));
+    this.load.image("tower-warrior-1-levels-5-9", assetUrl("images/towers/tower-warrior-1-levels-5-9.png"));
+    this.load.image("tower-warrior-1-level-10", assetUrl("images/towers/tower-warrior-1-level-10.png"));
     for (const race of ENEMY_RACE_TEXTURES) {
       for (const type of ENEMY_TYPE_TEXTURES) {
-        this.load.image(`enemy-${race}-${type}`, `/images/enemies/enemy-${race}-${type}.png`);
+        this.load.image(`enemy-${race}-${type}`, assetUrl(`images/enemies/enemy-${race}-${type}.png`));
       }
     }
     for (const towerId of PAINTED_TOWER_IDS) {
-      this.load.image(`tower-${towerId}`, `/images/towers/tower-${towerId}.webp`);
+      this.load.image(`tower-${towerId}`, assetUrl(`images/towers/tower-${towerId}.webp`));
     }
   }
 

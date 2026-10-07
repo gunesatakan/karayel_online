@@ -26,6 +26,7 @@
 import { isHeavyEnemyType, type EnemyRace, type EnemyType } from "@karayel/shared";
 import type { HitVoiceId } from "./hit-sounds";
 import { fnvUnit, toTier } from "./vfx/kit";
+import { assetUrl } from "./asset-url";
 
 /** Oldurmenin govde katmani: dusmanin agirligina ve ucup ucmadigina gore. */
 export type KillBodyFamily = "bodyLight" | "bodyHeavy" | "bodyAir";
@@ -48,7 +49,7 @@ export type SfxSampleFamily = KillSoundFamily | "crit" | "execute";
 export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
 
 /** Dosyalarin sunuldugu yer (vite `public/`). */
-export const SFX_SAMPLE_BASE_URL = "/audio/sfx/";
+export const SFX_SAMPLE_BASE_URL = assetUrl("audio/sfx/");
 
 export type SampleFamily = {
   /** Cesitler; `public/audio/sfx/` altinda. */
