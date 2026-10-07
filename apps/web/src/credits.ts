@@ -12,7 +12,7 @@ import type { MessageKey } from "./i18n";
  * ve aciklamalar sozlukte (locales/areas/credits.ts).
  *
  * Ses grubu apps/web/public/audio/sfx/LICENSE.txt ve manifest.json ile ayni
- * bes paketi listeliyor (tools/build-sfx.mjs).
+ * iki Kenney paketini listeliyor (tools/build-sfx.mjs).
  */
 
 export type CreditSource = {
@@ -43,10 +43,7 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     noteKey: "credits.group.audio.note",
     sources: [
       { id: "kenney-impact", title: "Impact Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/impact-sounds" },
-      { id: "kenney-scifi", title: "Sci-Fi Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/sci-fi-sounds" },
-      { id: "oga-squish", title: "Squish Sounds Effects", author: "EZduzziteh", license: "CC0 1.0", url: "https://opengameart.org/content/squish-sounds-effects" },
-      { id: "oga-creature-1", title: "80 CC0 creature SFX", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/80-cc0-creature-sfx" },
-      { id: "oga-creature-2", title: "80 CC0 creature SFX #2", author: "rubberduck", license: "CC0 1.0", url: "https://opengameart.org/content/80-cc0-creture-sfx-2" }
+      { id: "kenney-scifi", title: "Sci-Fi Sounds", author: "Kenney", license: "CC0 1.0", url: "https://kenney.nl/assets/sci-fi-sounds" }
     ]
   },
   {
@@ -55,7 +52,7 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     noteKey: "credits.group.music.note",
     sources: [
       // Gelistiricinin Suno hesabiyla uretildi (ID3: sanatci "aliatakangunes", "made with suno").
-      { id: "music-last-stand", title: "Last Stand", author: "gunesatakan (aliatakangunes)", license: "Suno Terms of Service", url: "https://suno.com" }
+      { id: "music-last-stand", title: "Last Stand", author: "gunesatakan (aliatakangunes)", license: "Suno free plan: non-commercial use only", url: "https://suno.com" }
     ]
   },
   {

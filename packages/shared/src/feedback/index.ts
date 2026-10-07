@@ -106,9 +106,11 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // ve oldurme olayina bagli; bu yalnizca sayi. Sessiz ama P1: kalabalik bir
   // dalgada senin oldurdugun dusmanin sayisi siradan vuruslar icin dusmemeli.
   lastHit: { ownPriority: 1, channel: "number", visualMs: 800, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.3 },
-  // Oldurme sesi kayitli bir ezilme/patlama (hafif ~260 ms, agir ~480 ms);
-  // yonetmen ornegin gercek suresini veriyor (`FeedbackInput.soundMs`).
-  // Buradaki 120 ms yalnizca ornek yokken calan kisa sentez icin.
+  // Oldurme sesi kayitli bir "portal" sesi (kucuk ~370 ms, agir ~600 ms,
+  // sampiyon ~870 ms); yonetmen ornegin gercek suresini veriyor
+  // (`FeedbackInput.soundMs`). Buradaki 120 ms yalnizca ornek yokken calan
+  // kisa sentez icin. Saniyedeki sayisi istemcide (`KillSoundLimiter`), ayni
+  // anda calan sayisi burada (`FEEDBACK_LIMITS.killSounds`).
   kill: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 120, soundGapMs: 70, teammateSound: true, shakePx: 1.5, vibrateMs: 12, defaultWeight: 0.3 },
   // Altin sayisi saniyede en fazla 3: arasi birlesiyor. Sesi yok: her
   // oldurmede ikinci bir tini (eskiden kombo ile tirmanan G6-C7) savas sesini
@@ -202,6 +204,13 @@ export const FEEDBACK_LIMITS = {
   /** Ayni anda calan efekt sesi. */
   sounds: 6,
   teammateSounds: 3,
+  /**
+   * Bunlardan en fazla kaci oldurme sesi. Portal sesi uzun (0.4-0.9 sn);
+   * kalabalik dalgada butcenin hepsini tutmasin, kritik ve arayuz onaylarina
+   * en az iki yer kalsin. Dolunca yeni oldurme en eski oldurme sesinin yerini
+   * aliyor (kendi) ya da dusuyor (takim arkadasi).
+   */
+  killSounds: 4,
   /** Takim arkadasi sesi kendi turunun araliginin bu kati kadar seyrek. */
   teammateSoundGapFactor: 2,
   /** Kamera sarsintisinin ust siniri (css px). */
@@ -299,9 +308,14 @@ export type FeedbackInput = {
   silent?: boolean;
   /**
    * Calacak sesin gercek suresi (ms). Verilirse ses butcesinde kuraldaki
-   * `soundMs` yerine bu tutuluyor (ornekli sesler: agir oldurme ~480 ms).
+   * `soundMs` yerine bu tutuluyor (ornekli sesler: agir oldurme ~600 ms).
    */
   soundMs?: number;
+  /**
+   * Ses her durumda calsin (sampiyon oldurmesi): turun araligina takilmiyor,
+   * dolu butcede (takim arkadasininki dahil) bir sesin yerini aliyor.
+   */
+  essential?: boolean;
 };
 
 export type FeedbackDecision = {
@@ -337,7 +351,7 @@ export type FeedbackDecision = {
 
 type LiveVisual = { until: number };
 type LastVisual = { at: number; x?: number; y?: number };
-type Voice = { until: number; own: boolean };
+type Voice = { until: number; own: boolean; kill: boolean };
 
 export class FeedbackGovernor {
   private reducedMotion = false;
@@ -408,7 +422,7 @@ export class FeedbackGovernor {
     const priority = getFeedbackPriority(kind, own);
     const weight = clampUnit(input.weight ?? rule.defaultWeight);
     const visual = this.admitVisual(kind, rule, priority, own, input, now);
-    const sound = input.silent ? { play: false, steal: false } : this.admitSound(kind, own, now, input.soundMs);
+    const sound = input.silent ? { play: false, steal: false } : this.admitSound(kind, own, now, input.soundMs, input.essential);
     const shakePx = rule.shakePx > 0 && weight >= FEEDBACK_LIMITS.impactMinWeight
       ? this.admitShake(own, priority, rule.shakePx * weight, now)
       : 0;
@@ -440,8 +454,15 @@ export class FeedbackGovernor {
    * Takim arkadasinin sesi kendi anahtarinda sayiliyor. Ayni anahtari
    * paylassalar arkadasin oldurmesi senin oldurme sesini hiz sinirina
    * takardi -- baskasinin olayi senin sesini kesmemeli.
+   *
+   * Yer acarken once en erken bitecek oldurme sesi kisiliyor; oldurme sesi
+   * yoksa en erken bitecek ses. Oldurme sesi yalnizca baska bir oldurme
+   * sesinin yerini alabiliyor (kritik, infaz ve arayuz onaylari oldurmeye
+   * kurban gitmiyor); ayni anda en fazla `killSounds` oldurme sesi caliyor.
+   * `essential` (sampiyon) araliga takilmiyor ve gerekirse herhangi bir sesin
+   * yerini aliyor. Vurus sesleri ve uyari tonlari bu butcede degil.
    */
-  admitSound(kind: FeedbackKind, own: boolean, now: number, durationMs?: number): { play: boolean; steal: boolean } {
+  admitSound(kind: FeedbackKind, own: boolean, now: number, durationMs?: number, essential = false): { play: boolean; steal: boolean } {
     const rule = FEEDBACK_KIND_RULES[kind];
     if (rule.soundMs <= 0 || (!own && !rule.teammateSound)) {
       return { play: false, steal: false };
@@ -451,28 +472,53 @@ export class FeedbackGovernor {
     const gap = rule.soundGapMs * (own ? 1 : FEEDBACK_LIMITS.teammateSoundGapFactor);
     const last = this.lastSound.get(key);
     // Hiz sinirinda dusen ses birlesmis sayiliyor: onceki ses bu olayi da anlatiyor.
-    if (last !== undefined && now - last < gap) {
+    if (!essential && last !== undefined && now - last < gap) {
       return { play: false, steal: false };
     }
 
     this.pruneVoices(now);
     const priority = getFeedbackPriority(kind, own);
     const cap = priority === 3 ? FEEDBACK_LIMITS.teammateSounds : FEEDBACK_LIMITS.sounds;
+    const kill = kind === "kill";
+    const killFull = kill && this.voices.filter((voice) => voice.kill).length >= FEEDBACK_LIMITS.killSounds;
     let steal = false;
-    if (this.voices.length >= cap) {
-      if (priority > 1) {
+    if (this.voices.length >= cap || killFull) {
+      if (priority > 1 && !essential) {
         return { play: false, steal: false };
       }
-      // P0/P1 dusmez: en once bitecek sesi kisip yerini aliyor.
-      this.voices.sort((a, b) => a.until - b.until);
-      this.voices.shift();
+      // P0/P1 dusmez: en once bitecek (oldurme) sesi kisip yerini aliyor.
+      const victim = this.pickVictim(kill && !essential);
+      if (victim < 0) {
+        return { play: false, steal: false };
+      }
+      this.voices.splice(victim, 1);
       steal = true;
     }
 
     const length = durationMs !== undefined && Number.isFinite(durationMs) && durationMs > 0 ? durationMs : rule.soundMs;
-    this.voices.push({ until: now + length, own });
+    this.voices.push({ until: now + length, own, kill });
     this.lastSound.set(key, now);
     return { play: true, steal };
+  }
+
+  /**
+   * Yeri alinacak ses: en erken bitecek oldurme sesi, yoksa (`killOnly`
+   * degilse) en erken bitecek ses; uygun ses yoksa -1. Yonetmen
+   * (`fadeOutOldestVoice`) ayni kuralla kisiyor.
+   */
+  private pickVictim(killOnly: boolean) {
+    const anyKill = this.voices.some((voice) => voice.kill);
+    if (killOnly && !anyKill) {
+      return -1;
+    }
+    let victim = -1;
+    for (let index = 0; index < this.voices.length; index += 1) {
+      if (anyKill && !this.voices[index].kill) continue;
+      if (victim < 0 || this.voices[index].until < this.voices[victim].until) {
+        victim = index;
+      }
+    }
+    return victim;
   }
 
   /**

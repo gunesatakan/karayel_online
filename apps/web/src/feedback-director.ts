@@ -24,10 +24,9 @@ import {
   getKillComboGain,
   getSampleRateJitter,
   getSampleTier,
-  KillVoiceGate,
+  KillSoundLimiter,
   getKillSoundCue,
   type KillSoundCue,
-  type KillVoiceFamily,
   type SampleLoader,
   type SfxSampleFamily
 } from "./sfx-samples";
@@ -63,7 +62,8 @@ export type { FeedbackDecision, FeedbackInput, FeedbackKind, FeedbackPriority } 
 /** Tek tonun tarifi: dalga, perde (istege bagli kayma), baslangic, sure, seviye. */
 type Tone = { wave: OscillatorType; from: number; to?: number; at: number; dur: number; gain: number };
 
-type Voice = { endsAt: number; gain: GainNode; sources: AudioScheduledSourceNode[] };
+/** Calan efekt sesi; `kill` oldurme sesi mi (butce dolunca once onlar kisiliyor). */
+type Voice = { endsAt: number; gain: GainNode; sources: AudioScheduledSourceNode[]; kill: boolean };
 
 /**
  * Vurus sesinin yuvasi. Yuvalar sabit ve diziler yeniden kullaniliyor:
@@ -88,11 +88,25 @@ const SFX_SAMPLE_FAMILY: Partial<Record<FeedbackKind, SfxSampleFamily>> = {
   execute: "execute"
 };
 
-/** Oldurmenin sesi bilinmiyorsa (onizleme, eski cagiran): meka, hafif. */
-const DEFAULT_KILL_CUE = getKillSoundCue("grunt", "meka");
+/** Oldurmenin sesi bilinmiyorsa (onizleme, eski cagiran): siradan dusman, kucuk portal. */
+const DEFAULT_KILL_CUE = getKillSoundCue("grunt");
 
-/** Bir sesin cozulmus hali: ornekli aile, oldurmede olum sesi, butce suresi. */
-type ResolvedSound = { family?: SfxSampleFamily; voice?: KillVoiceFamily; loading: boolean; soundMs?: number };
+/**
+ * Bir sesin cozulmus hali: ornekli aile, butce suresi, calma hizi carpani
+ * (ucan dusman biraz tiz) ve oldurmede yogunluk karari: `dropped` sinirin
+ * ustunde (ses yok), `limited` calarsa sayaca yazilacak, `essential`
+ * (sampiyon) butce ve aralik ne derse desin calacak.
+ */
+type ResolvedSound = {
+  family?: SfxSampleFamily;
+  loading: boolean;
+  soundMs?: number;
+  rate: number;
+  key?: string;
+  dropped: boolean;
+  limited: boolean;
+  essential: boolean;
+};
 
 /** Paylasilan beyaz gurultu tamponunun uzunlugu (sn); vuruslar farkli yerinden baslar. */
 const HIT_NOISE_SECONDS = 1;
@@ -359,10 +373,10 @@ export class FeedbackDirector {
    * birden calmasin (emit'in "acilinca patlama yok" kurali).
    */
   private pendingSfx?: { kind: FeedbackKind; step: number; own: boolean; sample?: SfxSampleFamily | KillSoundCue; key?: string; at: number };
-  /** Olum sesinin seyrekligi (kalabalik dalgada koro olmasin). */
-  private readonly killVoices = new KillVoiceGate();
+  /** Oldurme sesinin yogunlugu (kalabalik dalgada portal sesleri ust uste binmesin). */
+  private readonly killSounds = new KillSoundLimiter();
   /** Ses cozumunun yeniden kullanilan sonucu: olay basina nesne yok. */
-  private readonly resolved: ResolvedSound = { loading: false };
+  private readonly resolved: ResolvedSound = { loading: false, rate: 1, dropped: false, limited: false, essential: false };
   private motionQuery?: MediaQueryList;
   private readonly handleMotionChange = (event: MediaQueryListEvent) => {
     this.governor.setReducedMotion(event.matches);
@@ -418,16 +432,16 @@ export class FeedbackDirector {
    * askida baglama sirayla yazilan sesler, acildigi an hepsi birden calardi.
    *
    * `sample` ornekli seslerin ailesi; oldurmede dusmanin sesi
-   * (`getKillSoundCue`: govde, irkin olum sesi), `key` olayin kimligi (olum
-   * sesinin seyrekligi bundan, FNV). Verilmezse turun varsayilani. Ornekli
-   * ses butcede gercek suresiyle tutuluyor; ornek henuz cozuluyorsa ses yok
-   * (gorsel yine karar aliyor).
+   * (`getKillSoundCue`: portalin boyu), `key` olayin kimligi (cesit ve hiz
+   * kaymasi bundan, FNV). Verilmezse turun varsayilani. Ornekli ses butcede
+   * gercek suresiyle tutuluyor; ornek henuz cozuluyorsa ya da oldurme sesi
+   * yogunluk sinirinin ustundeyse ses yok (gorsel yine karar aliyor).
    */
   emit(kind: FeedbackKind, input: FeedbackInput, sample?: SfxSampleFamily | KillSoundCue, key?: string): FeedbackDecision {
     const now = performance.now();
     const sound = this.resolveSound(kind, sample, Boolean(input.own), key, now, false);
-    const audible = !input.silent && this.isSfxReady(kind) && !sound.loading;
-    const decision = this.governor.decide(kind, { ...input, silent: !audible, soundMs: sound.soundMs }, now);
+    const audible = !input.silent && this.isSfxReady(kind) && !sound.loading && !sound.dropped;
+    const decision = this.governor.decide(kind, { ...input, silent: !audible, soundMs: sound.soundMs, essential: sound.essential }, now);
     if (decision.sound) {
       this.synthesize(kind, decision.step, decision.own, decision.stealVoice, sound, now);
     }
@@ -457,10 +471,10 @@ export class FeedbackDirector {
     const own = options.own ?? true;
     const now = performance.now();
     const sound = this.resolveSound(kind, options.sample, own, options.key, now, false);
-    if (sound.loading) {
+    if (sound.loading || sound.dropped) {
       return false;
     }
-    const admitted = this.governor.admitSound(kind, own, now, sound.soundMs);
+    const admitted = this.governor.admitSound(kind, own, now, sound.soundMs, sound.essential);
     if (!admitted.play) {
       return false;
     }
@@ -468,34 +482,40 @@ export class FeedbackDirector {
   }
 
   /**
-   * Sesin ornekli hali. Oldurmede govde her zaman; olum sesi yalnizca
-   * `KillVoiceGate` izin verirse (ya da `forceVoice`: galeri). Takim
-   * arkadasinin oldurmesinde ses hep kisa (hafif) cesit. Butce suresi
-   * calacak en uzun katman.
+   * Sesin ornekli hali. Oldurmede dusmanin boyundaki portal sesi; yogunluk
+   * `KillSoundLimiter`da (sampiyon ve `force`: galeri onizlemesi hep caliyor).
+   * Butce suresi ornegin en uzun cesidi, calma hizina gore.
    */
-  private resolveSound(kind: FeedbackKind, sample: SfxSampleFamily | KillSoundCue | undefined, own: boolean, key: string | undefined, now: number, forceVoice: boolean): ResolvedSound {
+  private resolveSound(kind: FeedbackKind, sample: SfxSampleFamily | KillSoundCue | undefined, own: boolean, key: string | undefined, now: number, force: boolean): ResolvedSound {
     const result = this.resolved;
     result.family = undefined;
-    result.voice = undefined;
     result.soundMs = undefined;
     result.loading = false;
+    result.rate = 1;
+    result.key = key;
+    result.dropped = false;
+    result.limited = false;
+    result.essential = false;
     const cue = typeof sample === "object" ? sample : kind === "kill" && sample === undefined ? DEFAULT_KILL_CUE : undefined;
     if (cue) {
-      result.family = cue.body;
-      if (this.samples.isLoading(cue.body)) {
+      result.family = cue.family;
+      if (this.samples.isLoading(cue.family)) {
         result.loading = true;
         return result;
       }
-      if (!this.samples.has(cue.body)) {
+      if (!this.samples.has(cue.family)) {
         return result;
       }
-      const voice = own || cue.champion ? cue.voice : cue.teammateVoice;
-      let seconds = this.samples.duration(cue.body);
-      if (this.samples.has(voice) && (forceVoice || this.killVoices.check(own, cue, key, now))) {
-        result.voice = voice;
-        seconds = Math.max(seconds, this.samples.duration(voice));
+      result.rate = cue.rate;
+      result.essential = cue.champion;
+      if (!force) {
+        if (!this.killSounds.check(own, cue.champion, now)) {
+          result.dropped = true;
+          return result;
+        }
+        result.limited = true;
       }
-      result.soundMs = (seconds / (1 - SAMPLE_RATE_SPREAD)) * 1000;
+      result.soundMs = (this.samples.duration(cue.family) / (cue.rate * (1 - SAMPLE_RATE_SPREAD))) * 1000;
       return result;
     }
     const family = (typeof sample === "string" ? sample : undefined) ?? SFX_SAMPLE_FAMILY[kind];
@@ -523,8 +543,8 @@ export class FeedbackDirector {
   }
 
   /**
-   * Galerinin oldurme sesi dinlemesi: govde ve olum sesi birlikte (ses
-   * seyreltilmiyor). Oyunun butcesinin disinda, vurus onizlemesiyle ayni
+   * Galerinin oldurme sesi dinlemesi: boyun portal sesi (yogunluk siniri yok;
+   * A ve D sirayla). Oyunun butcesinin disinda, vurus onizlemesiyle ayni
    * aralik ve kurallar (seviye 0, kapali baglam, gizli sekme: dugum yok).
    */
   previewKill(cue: KillSoundCue = DEFAULT_KILL_CUE, own = true) {
@@ -926,7 +946,7 @@ export class FeedbackDirector {
       this.motionQuery = undefined;
     }
     this.governor.reset();
-    this.killVoices.reset();
+    this.killSounds.reset();
     this.voices = [];
     for (const handle of this.hitSlots) this.releaseHitVoice(handle);
     for (const handle of this.hitGraveyard) this.releaseHitVoice(handle);
@@ -1139,14 +1159,12 @@ export class FeedbackDirector {
     }
 
     const family = sound.family;
-    const buffer = family ? this.samples.pick(family, undefined) : undefined;
+    // Cesit olay kimliginden ve bir oncekiyle hic ayni degil: portalda A ve D sirayla.
+    const buffer = family ? this.samples.pick(family, sound.key) : undefined;
     if (family && buffer) {
-      this.playSfxSample(context, kind, family, buffer, step, own, now);
-      // Oldurmenin olum sesi govdenin ustune, ayni anda.
-      const voice = sound.voice ? this.samples.pick(sound.voice, undefined) : undefined;
-      if (sound.voice && voice) {
-        this.playSfxSample(context, kind, sound.voice, voice, step, own, now);
-        this.killVoices.commit(own, at);
+      this.playSfxSample(context, kind, family, buffer, step, own, now, sound.rate);
+      if (sound.limited) {
+        this.killSounds.commit(own, at);
       }
       return true;
     }
@@ -1191,18 +1209,18 @@ export class FeedbackDirector {
       endsAt = Math.max(endsAt, stop + 0.02);
     }
 
-    this.voices.push({ endsAt, gain: voiceGain, sources });
+    this.voices.push({ endsAt, gain: voiceGain, sources, kill: kind === "kill" });
     return true;
   }
 
   /**
-   * Ornekli odul sesi (oldurme katmani, kritik): Efektler kanalina bir kaynak ve bir
-   * kazanc dugumu; ornek bitince ikisi de ayriliyor. Hiz sira numarasindan
-   * +-4% kayiyor (perde basamagi degil); oldurmede kombo seviyeyi en fazla
-   * %16 artiriyor.
+   * Ornekli odul sesi (oldurme portali, kritik, infaz): Efektler kanalina bir
+   * kaynak ve bir kazanc dugumu; ornek bitince ikisi de ayriliyor. Hiz sira
+   * numarasindan +-4% kayiyor (perde basamagi degil), `rateScale` ustune
+   * (ucan dusman biraz tiz); oldurmede kombo seviyeyi en fazla %16 artiriyor.
    */
-  private playSfxSample(context: AudioContext, kind: FeedbackKind, family: SfxSampleFamily, buffer: AudioBuffer, step: number, own: boolean, now: number) {
-    const rate = getSampleRateJitter(`${family}#${this.sfxSampleSerial}`);
+  private playSfxSample(context: AudioContext, kind: FeedbackKind, family: SfxSampleFamily, buffer: AudioBuffer, step: number, own: boolean, now: number, rateScale = 1) {
+    const rate = getSampleRateJitter(`${family}#${this.sfxSampleSerial}`) * rateScale;
     this.sfxSampleSerial = (this.sfxSampleSerial + 1) % 65536;
     const voiceGain = context.createGain();
     voiceGain.gain.value = SAMPLE_FAMILIES[family].gain
@@ -1219,18 +1237,25 @@ export class FeedbackDirector {
     };
     const lead = this.samples.lead(buffer);
     source.start(now, lead);
-    this.voices.push({ endsAt: now + (buffer.duration - lead) / rate, gain: voiceGain, sources: [source] });
+    this.voices.push({ endsAt: now + (buffer.duration - lead) / rate, gain: voiceGain, sources: [source], kill: kind === "kill" });
     return true;
   }
 
-  /** Butce dolu ve gelen ses dusurulemez: en once bitecek ses 30 ms'de kisiliyor. */
+  /**
+   * Butce dolu ve gelen ses dusurulemez: 30 ms'de kisilen ses, butcenin
+   * (`FeedbackGovernor.admitSound`) sectigiyle ayni kuralla: once en erken
+   * bitecek oldurme sesi, oldurme sesi yoksa en erken bitecek ses. Kritik,
+   * infaz ve arayuz onaylari oldurme sesine yer acmak icin kesilmiyor.
+   */
   private fadeOutOldestVoice(context: AudioContext) {
     if (this.voices.length === 0) {
       return;
     }
-    let oldestIndex = 0;
-    for (let index = 1; index < this.voices.length; index += 1) {
-      if (this.voices[index].endsAt < this.voices[oldestIndex].endsAt) {
+    const anyKill = this.voices.some((voice) => voice.kill);
+    let oldestIndex = -1;
+    for (let index = 0; index < this.voices.length; index += 1) {
+      if (anyKill && !this.voices[index].kill) continue;
+      if (oldestIndex < 0 || this.voices[index].endsAt < this.voices[oldestIndex].endsAt) {
         oldestIndex = index;
       }
     }

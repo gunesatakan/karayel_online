@@ -68,9 +68,9 @@ import { GALLERY_KILL_CUES } from "../sfx-samples";
  * kuleyi (o seviyede) dinletiyor, ayni hucreye ikinci dokunus herkesi geri
  * aciyor. "Ses" dugmesi galeride sesi kapatiyor; secici ve Sv 1 / 5 / 10
  * dugmeleri her vurus sesini -- hicbir kulenin kullanmadigi Bulasma dahil --
- * dogrudan caliyor. Seciciden oldurme sesleri de (irk x hafif / agir, hava;
- * govde ve olum sesi birlikte) dinlenebiliyor; onlarda seviye yok, uc dugme
- * de ayni sesi caliyor.
+ * dogrudan caliyor. Seciciden oldurme portal sesleri de (kucuk, hava, agir,
+ * sampiyon; her basista A ve D sirayla) dinlenebiliyor; onlarda seviye yok,
+ * uc dugme de ayni boyu caliyor.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */

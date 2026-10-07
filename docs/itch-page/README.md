@@ -30,6 +30,7 @@ Paket ve sayfa ayarları için: [../itch-io.md](../itch-io.md).
 ## Beyanlar
 
 - **AI disclosure: yes (graphics and music).** Bazı görseller (düşman ve kule sprite'ları, menü ve operatör görselleri) ve lobi müziği ("Last Stand", Suno) geliştirici tarafından üretken yapay zekâ araçlarıyla yapıldı; itch.io "Generative AI disclosure" alanı grafik ve müzik için işaretlenir. Ayrıntı: [../../CREDITS.md](../../CREDITS.md).
+- **Pricing: "No payments".** Lobi müziği Suno ücretsiz planıyla üretildi ve yalnız ticari olmayan kullanıma açık; sayfada ödeme, bağış ve "istediğin kadar öde" kapalı kalmalı. Reklamlı ya da ücretli yayından önce müzik değiştirilmeli.
 - **Müzik:** yalnızca lobi müziği var: ana menüde ve co-op bekleme odasında ilk dokunuştan sonra çalan tek parça ("Last Stand"). Maçın kendisi müziksiz, yalnızca efekt sesleri (lisanssız ticari parçalar kaldırıldı). Sayfa metnine ve etiketlere maç içi müzik ya da film müziği vaadi yazılmamalı.
 
 ## Sayfa düzeni önerisi

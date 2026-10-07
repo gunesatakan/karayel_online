@@ -1,15 +1,16 @@
 /**
  * Kayitli savas sesleri: vurus, oldurme ve kritik ornekleri.
  *
- * Dosyalar `public/audio/sfx/` altinda, `tools/build-sfx.mjs` CC0 paketlerden
- * uretiyor (lisans ve kaynaklar oradaki LICENSE.txt ve manifest.json'da):
- * vuruslar Kenney'den (sert, mekanik), oldurmeler OpenGameArt'in ezilme ve
- * yaratik paketlerinden (organik). Hepsi ayni yukseklige esitlenmis; aileler
- * arasi denge burada, `gain` ile.
+ * Dosyalar `public/audio/sfx/` altinda, `tools/build-sfx.mjs` Kenney'nin CC0
+ * paketlerinden uretiyor (lisans ve kaynaklar oradaki LICENSE.txt ve
+ * manifest.json'da). Hepsi ayni yukseklige esitlenmis; aileler arasi denge
+ * burada, `gain` ile.
  *
- * Oldurme iki katman: her zaman bir govde (islak ezilme, dusmanin agirligina
- * gore) ve seyrek bir olum sesi (irka gore; `KillVoiceGate`). Meka dahil
- * hicbir oldurmede metal ya da patlama yok.
+ * Dusman oldurmesi tek bir "portal" sesi: yarik acilip dusmani yutuyor
+ * (tools/sfx-portal.mjs). Boy dusmandan (`getKillSoundCue`): siradan ve
+ * ucan dusman kucuk, agir (kaba, kusatma) normal, sampiyon buyuk. Her boyun
+ * iki cesidi iki tarz: A "rift whoosh" ve D "pulse thrum"; ayni cesit art arda
+ * gelmedigi icin ikisi sirayla caliyor. Yogunlugu `KillSoundLimiter` tutuyor.
  *
  * Her vurus turunun ve siluet sesinin kendi ailesi var; aileler ayni kaynak
  * dosyayi paylasmiyor. Aile basina 2-3 cesit: art arda ayni cesit hic
@@ -23,27 +24,15 @@
  * ornekli sesler sessiz; cozulemezse (ag, bicim) oyun sentez seslerine
  * dusuyor ve sonraki dokunusta yeniden deniyor. Hicbir yol hata firlatmiyor.
  */
-import { isHeavyEnemyType, type EnemyRace, type EnemyType } from "@karayel/shared";
+import { isHeavyEnemyType, type EnemyType } from "@karayel/shared";
 import type { HitVoiceId } from "./hit-sounds";
 import { fnvUnit, toTier } from "./vfx/kit";
 import { assetUrl } from "./asset-url";
 
-/** Oldurmenin govde katmani: dusmanin agirligina ve ucup ucmadigina gore. */
-export type KillBodyFamily = "bodyLight" | "bodyHeavy" | "bodyAir";
-
-const RACE_KEYS = {
-  meka: "Meka",
-  spaceBug: "SpaceBug",
-  fourthDimensional: "FourthDimensional",
-  holyGuardian: "HolyGuardian",
-  fallen: "Fallen",
-  golem: "Golem"
-} as const satisfies Record<EnemyRace, string>;
-type RaceKey = (typeof RACE_KEYS)[EnemyRace];
-
-/** Oldurmenin ses katmani: irk x agirlik; ucanlarda irktan bagimsiz dusen ciglik. */
-export type KillVoiceFamily = `voice${RaceKey}${"Light" | "Heavy"}` | "voiceAir";
-export type KillSoundFamily = KillBodyFamily | KillVoiceFamily;
+/** Oldurme portal sesinin boyu. */
+export type KillPortalSize = "small" | "normal" | "large";
+/** Oldurme sesinin ailesi: boy basina bir aile, iki cesit (A ve D). */
+export type KillSoundFamily = "portalSmall" | "portalNormal" | "portalLarge";
 /** Odul seslerinden ornekli olanlar. */
 export type SfxSampleFamily = KillSoundFamily | "crit" | "execute";
 export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
@@ -66,6 +55,16 @@ const family = (name: string, count: number, gain: number, label: string): Sampl
   label
 });
 
+/** Oldurme portal tarzlari (build-sfx.mjs ile ayni sira): A "rift whoosh", D "pulse thrum". */
+export const KILL_PORTAL_STYLES = Object.freeze(["a", "d"] as const);
+
+/** Portal ailesi: boyun iki tarzi iki cesit (`death-portal-a-small.mp3`, `death-portal-d-small.mp3`). */
+const portalFamily = (size: KillPortalSize, gain: number, label: string): SampleFamily => Object.freeze({
+  files: Object.freeze(KILL_PORTAL_STYLES.map((style) => `death-portal-${style}-${size}.mp3`)),
+  gain,
+  label
+});
+
 /**
  * Aileler ve kaynaklari (secim gerekceleri build-sfx.mjs'de):
  * mermi orta metal, carpma agir metal, odak kucuk lazer, aura kuvvet alani,
@@ -78,8 +77,9 @@ const family = (name: string, count: number, gain: number, label: string): Sampl
  * toplamina yakin (0.15-0.35; tikler 0.15 civari) ve RMS'i ~-26 dBFS'i
  * (tiklerde -28) asmiyor: ezilmis lanet gibi yogun sesler tepeden degil
  * RMS'ten kisiliyor. Vurus kanali varsayilan 0.5 oldugu icin bir vurus
- * Efektler'de ~0.1-0.18 tepeyle; hafif oldurme ~0.2, agir ~0.3 -- olay
- * vurustan biraz one cikiyor, onu bastirmiyor.
+ * Efektler'de ~0.1-0.18 tepeyle. Oldurme portali RMS'te en yuksek vurusun
+ * biraz ustunde (bkz. portal aileleri) -- olay vurustan one cikiyor, onu
+ * bastirmiyor.
  */
 export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = Object.freeze({
   projectile: family("projectile", 3, 0.4, "Mermi"),
@@ -98,139 +98,140 @@ export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = O
   heft: family("heft", 1, 1, "Sv 10 gövdesi"),
   crit: family("crit", 2, 0.18, "Kritik"),
   // Execute infazi: hafif metalin kilit tiki + agir yumruk darbesi (Kenney).
-  // Etkin tepe ~0.22-0.26: agir oldurme govdesiyle ayni seviyede, onu bastirmiyor.
+  // Etkin tepe ~0.22-0.26: eski agir oldurme govdesinin seviyesi.
   execute: family("execute", 2, 0.34, "Execute infazı"),
-  // Oldurme govdesi (squish paketi): etkin tepe hafif/hava ~0.18, agir ~0.26.
-  bodyLight: family("kill-body-light", 3, 0.2, "Ölüm gövdesi (hafif)"),
-  bodyHeavy: family("kill-body-heavy", 2, 0.31, "Ölüm gövdesi (ağır)"),
-  bodyAir: family("kill-body-air", 2, 0.21, "Ölüm gövdesi (hava)"),
-  // Olum sesi (yaratik paketleri): govdenin altinda; hafif ~0.13, agir ~0.18.
-  voiceSpaceBugLight: family("kill-voice-spacebug-light", 2, 0.155, "Ölüm: böcek (hafif)"),
-  voiceSpaceBugHeavy: family("kill-voice-spacebug-heavy", 2, 0.21, "Ölüm: böcek (ağır)"),
-  voiceFourthDimensionalLight: family("kill-voice-fourth-light", 2, 0.15, "Ölüm: 4. boyut (hafif)"),
-  voiceFourthDimensionalHeavy: family("kill-voice-fourth-heavy", 2, 0.21, "Ölüm: 4. boyut (ağır)"),
-  voiceGolemLight: family("kill-voice-golem-light", 2, 0.26, "Ölüm: golem (hafif)"),
-  voiceGolemHeavy: family("kill-voice-golem-heavy", 2, 0.265, "Ölüm: golem (ağır)"),
-  voiceFallenLight: family("kill-voice-fallen-light", 2, 0.15, "Ölüm: düşmüş (hafif)"),
-  voiceFallenHeavy: family("kill-voice-fallen-heavy", 2, 0.215, "Ölüm: düşmüş (ağır)"),
-  voiceHolyGuardianLight: family("kill-voice-holy-light", 2, 0.155, "Ölüm: kutsal koruyucu (hafif)"),
-  voiceHolyGuardianHeavy: family("kill-voice-holy-heavy", 2, 0.22, "Ölüm: kutsal koruyucu (ağır)"),
-  voiceMekaLight: family("kill-voice-meka-light", 2, 0.155, "Ölüm: meka (hafif)"),
-  voiceMekaHeavy: family("kill-voice-meka-heavy", 2, 0.21, "Ölüm: meka (ağır)"),
-  voiceAir: family("kill-voice-air", 3, 0.165, "Ölüm: hava")
+  // Oldurme portali. Dosyalar -20 LUFS; kazanc eski govde + olum sesi
+  // karisiminin algilanan seviyesine gore (100 ms'lik pencerede en yuksek
+  // K-agirlikli RMS ve 400 ms'lik anlik yukseklik, ikisi de olculdu): eski
+  // hafif oldurme (govde 0.2 + ses 0.155) ~0.19-0.2'ye, eski agir oldurme
+  // (govde 0.31 + derin ses 0.21) ~0.39-0.47'ye denk. Portal sesi uzun
+  // (0.37-0.87 sn), yani agir boy olcumun alt ucunda. Sampiyon biraz ustte.
+  portalSmall: portalFamily("small", 0.2, "Ölüm portalı (küçük)"),
+  portalNormal: portalFamily("normal", 0.36, "Ölüm portalı (ağır)"),
+  portalLarge: portalFamily("large", 0.42, "Ölüm portalı (şampiyon)")
 });
 
 export const SAMPLE_FAMILY_IDS = Object.freeze(Object.keys(SAMPLE_FAMILIES) as SampleFamilyId[]);
-export const ENEMY_RACES: readonly EnemyRace[] = Object.freeze(Object.keys(RACE_KEYS) as EnemyRace[]);
-export const KILL_BODY_FAMILIES: readonly KillBodyFamily[] = Object.freeze(["bodyLight", "bodyHeavy", "bodyAir"] as KillBodyFamily[]);
-export const KILL_VOICE_FAMILIES: readonly KillVoiceFamily[] = Object.freeze([
-  ...ENEMY_RACES.flatMap((race) => [`voice${RACE_KEYS[race]}Light`, `voice${RACE_KEYS[race]}Heavy`] as KillVoiceFamily[]),
-  "voiceAir" as KillVoiceFamily
-]);
-/** Oldurmenin butun aileleri (govde ve ses). */
-export const KILL_SOUND_FAMILIES: readonly KillSoundFamily[] = Object.freeze([...KILL_BODY_FAMILIES, ...KILL_VOICE_FAMILIES]);
+/** Oldurme sesinin aileleri (kucukten buyuge). */
+export const KILL_SOUND_FAMILIES: readonly KillSoundFamily[] = Object.freeze(["portalSmall", "portalNormal", "portalLarge"] as KillSoundFamily[]);
 
 /** Oldurmenin agirlik sinifi. */
 export type KillWeight = "light" | "heavy" | "air";
 
 /**
- * Bir oldurmenin sesi: govde, ses ve sesin zorunlu olup olmadigi.
+ * Ucan dusmanin portal sesi: kucuk boy, biraz tiz (calma hizi carpani; dosya
+ * yok, ayni ornek). Olay kimliginden gelen +-4% bunun ustune.
+ */
+export const KILL_AIR_RATE = 1.06;
+
+/**
+ * Bir oldurmenin sesi: aile (boy), calma hizi carpani ve sampiyon mu.
  * Onceden kurulmus ve dondurulmus; oldurme basina nesne yok.
  */
 export type KillSoundCue = {
-  readonly race: EnemyRace;
   readonly weight: KillWeight;
   readonly champion: boolean;
-  readonly body: KillBodyFamily;
-  /** Kendi oldurmende (ve sampiyonda) calan ses. */
-  readonly voice: KillVoiceFamily;
-  /** Takim arkadasinin oldurmesinde: her zaman kisa (hafif) ses. */
-  readonly teammateVoice: KillVoiceFamily;
-  /** Agir dusman ya da sampiyon: ses seyreltilmiyor. */
-  readonly forceVoice: boolean;
+  readonly size: KillPortalSize;
+  readonly family: KillSoundFamily;
+  /** Calma hizi carpani (hava 1.06, digerleri 1). */
+  readonly rate: number;
 };
 
-const raceVoice = (race: EnemyRace, heavy: boolean) => `voice${RACE_KEYS[race]}${heavy ? "Heavy" : "Light"}` as KillVoiceFamily;
+const SIZE_FAMILY: Readonly<Record<KillPortalSize, KillSoundFamily>> = Object.freeze({ small: "portalSmall", normal: "portalNormal", large: "portalLarge" });
 
-const KILL_CUES = Object.fromEntries(ENEMY_RACES.map((race) => [race, Object.fromEntries((["light", "heavy", "air"] as KillWeight[]).map((weight) => [
+const KILL_CUES = Object.fromEntries((["light", "heavy", "air"] as KillWeight[]).map((weight) => [
   weight,
-  [false, true].map((champion) => Object.freeze<KillSoundCue>({
-    race,
-    weight,
-    champion,
-    body: weight === "heavy" ? "bodyHeavy" : weight === "air" ? "bodyAir" : "bodyLight",
-    // Sampiyon her agirlikta irkin derin cigligiyla dusuyor.
-    voice: champion || weight === "heavy" ? raceVoice(race, true) : weight === "air" ? "voiceAir" : raceVoice(race, false),
-    teammateVoice: champion ? raceVoice(race, true) : weight === "air" ? "voiceAir" : raceVoice(race, false),
-    forceVoice: champion || weight === "heavy"
-  }))
-]))])) as unknown as Record<EnemyRace, Record<KillWeight, readonly [KillSoundCue, KillSoundCue]>>;
+  [false, true].map((champion) => {
+    // Sampiyon her agirlikta buyuk; agir dusman normal; siradan ve ucan kucuk.
+    const size: KillPortalSize = champion ? "large" : weight === "heavy" ? "normal" : "small";
+    return Object.freeze<KillSoundCue>({
+      weight,
+      champion,
+      size,
+      family: SIZE_FAMILY[size],
+      rate: weight === "air" && !champion ? KILL_AIR_RATE : 1
+    });
+  })
+])) as unknown as Record<KillWeight, readonly [KillSoundCue, KillSoundCue]>;
 
 /**
- * Oldurmenin sesi: dusmanin turu (agirlik), irki (ses), ucup ucmadigi ve
- * sampiyon olup olmadigi. Brute ve kusatma agir (derin ezilme, yavas ve uzun
- * olum sesi, her zaman); ucan dusman havada patlayan govde ve dusen bir
- * ciglik; digerleri kisa bir ezilme ve kisa bir ses. Irk bilinmiyorsa meka
- * (temel dusmanlarin irki).
+ * Oldurmenin sesi: dusmanin turu (agirlik), ucup ucmadigi ve sampiyon olup
+ * olmadigi. Brute ve kusatma agir (normal portal), sampiyon buyuk portal,
+ * digerleri (ucan dahil) kucuk portal; ucan biraz tiz.
  */
-export function getKillSoundCue(type: EnemyType | undefined, race: EnemyRace | undefined, air = false, champion = false): KillSoundCue {
+export function getKillSoundCue(type: EnemyType | undefined, air = false, champion = false): KillSoundCue {
   const weight: KillWeight = type && isHeavyEnemyType(type) ? "heavy" : air ? "air" : "light";
-  const cues = KILL_CUES[race && race in KILL_CUES ? race : "meka"][weight];
+  const cues = KILL_CUES[weight];
   return champion ? cues[1] : cues[0];
 }
 
-/** Galeride dinlenebilen oldurme sesleri: irk x (hafif, agir) ve hava. */
+/** Galeride dinlenebilen oldurme sesleri: kucuk, hava, agir, sampiyon (A ve D sirayla). */
 export const GALLERY_KILL_CUES: ReadonlyArray<{ readonly id: string; readonly label: string; readonly cue: KillSoundCue }> = Object.freeze([
-  ...ENEMY_RACES.flatMap((race) => (["light", "heavy"] as KillWeight[]).map((weight) => {
-    const cue = KILL_CUES[race][weight][0];
-    return Object.freeze({ id: `kill:${race}:${weight}`, label: SAMPLE_FAMILIES[cue.voice].label, cue });
-  })),
-  Object.freeze({ id: "kill:air", label: SAMPLE_FAMILIES.voiceAir.label, cue: KILL_CUES.meka.air[0] })
+  Object.freeze({ id: "kill:small", label: "Ölüm portalı: küçük (A/D sırayla)", cue: KILL_CUES.light[0] }),
+  Object.freeze({ id: "kill:air", label: "Ölüm portalı: hava (küçük, tiz)", cue: KILL_CUES.air[0] }),
+  Object.freeze({ id: "kill:normal", label: "Ölüm portalı: ağır (A/D sırayla)", cue: KILL_CUES.heavy[0] }),
+  Object.freeze({ id: "kill:large", label: "Ölüm portalı: şampiyon (A/D sırayla)", cue: KILL_CUES.light[1] })
 ]);
 
 /**
- * Olum sesinin seyrekligi. Govde her oldurmede caliyor; ses kalabalik bir
- * dalgada koroya donmesin diye:
- * - kendi oldurmen: en fazla 333 ms'de bir (saniyede ~3) ve olay kimliginden
- *   (FNV) %70 olasilikla;
- * - takim arkadasi: en fazla saniyede bir, %50 ve hep kisa (hafif) ses;
- * - agir dusman (kendi) ve sampiyon her zaman; ama iki ses arasi en az 120 ms
- *   (ulti 60 dusmani ayni karede oldurdugunde bile ust uste en fazla birkac
- *   ses). Sampiyon bu siniri da geciyor: dalgada bir kez.
+ * Oldurme sesinin yogunlugu. Portal sesi 0.37-0.87 sn suruyor; kalabalik bir
+ * dalgada (ulti 60 dusmani ayni karede oldururken) ust uste binip camura
+ * donmesin diye son `windowMs` icinde baslayan oldurme sesi sayisi sinirli:
+ * - kendi oldurmen: saniyede en fazla `ownPerSecond` (6);
+ * - takim arkadasi: saniyede en fazla `teammatePerSecond` (2; zaten kisik);
+ * - sampiyon her zaman (sinira bakmiyor, ama sayiliyor).
+ * Sinirin ustundeki oldurme sessiz: gorseli ve sayisi yine cikiyor, sesi
+ * oncekilerin kuyrugunda zaten duyuluyor. Kendi ve takim sayaclari ayri:
+ * arkadasin oldurmesi senin sesini kesmiyor. `Math.random` yok.
  */
-export const KILL_VOICE_LIMITS = Object.freeze({
-  ownGapMs: 333,
-  teammateGapMs: 1000,
-  ownChance: 0.7,
-  teammateChance: 0.5,
-  minGapMs: 120
+export const KILL_SOUND_LIMITS = Object.freeze({
+  ownPerSecond: 6,
+  teammatePerSecond: 2,
+  windowMs: 1000
 });
 
-export class KillVoiceGate {
-  private lastOwn = Number.NEGATIVE_INFINITY;
-  private lastTeam = Number.NEGATIVE_INFINITY;
-  private lastAny = Number.NEGATIVE_INFINITY;
+/** Son N baslangic zamani; halka dizisi, oldurme basina nesne yok. */
+class StartRing {
+  private readonly times: number[];
+  private cursor = 0;
 
-  /** Bu oldurme ses calsin mi; durum degismiyor (`commit` calinca). */
-  check(own: boolean, cue: Pick<KillSoundCue, "forceVoice" | "champion">, key: string | undefined, now: number) {
-    if (cue.champion) return true;
-    if (now - this.lastAny < KILL_VOICE_LIMITS.minGapMs) return false;
-    if (own && cue.forceVoice) return true;
-    if (now - (own ? this.lastOwn : this.lastTeam) < (own ? KILL_VOICE_LIMITS.ownGapMs : KILL_VOICE_LIMITS.teammateGapMs)) return false;
-    if (key === undefined) return true;
-    return fnvUnit(key, 0x7a) < (own ? KILL_VOICE_LIMITS.ownChance : KILL_VOICE_LIMITS.teammateChance);
+  constructor(size: number) {
+    this.times = Array.from({ length: size }, () => Number.NEGATIVE_INFINITY);
   }
 
-  commit(own: boolean, now: number) {
-    this.lastAny = now;
-    if (own) this.lastOwn = now;
-    else this.lastTeam = now;
+  /** Son `windowMs` icinde `size` ses basladiysa dolu. */
+  isFull(now: number, windowMs: number) {
+    return now - this.times[this.cursor] < windowMs;
+  }
+
+  push(now: number) {
+    this.times[this.cursor] = now;
+    this.cursor = (this.cursor + 1) % this.times.length;
   }
 
   reset() {
-    this.lastOwn = Number.NEGATIVE_INFINITY;
-    this.lastTeam = Number.NEGATIVE_INFINITY;
-    this.lastAny = Number.NEGATIVE_INFINITY;
+    this.times.fill(Number.NEGATIVE_INFINITY);
+    this.cursor = 0;
+  }
+}
+
+export class KillSoundLimiter {
+  private readonly own = new StartRing(KILL_SOUND_LIMITS.ownPerSecond);
+  private readonly team = new StartRing(KILL_SOUND_LIMITS.teammatePerSecond);
+
+  /** Bu oldurme ses calsin mi; durum degismiyor (`commit` calinca). */
+  check(own: boolean, champion: boolean, now: number) {
+    if (champion) return true;
+    return !(own ? this.own : this.team).isFull(now, KILL_SOUND_LIMITS.windowMs);
+  }
+
+  commit(own: boolean, now: number) {
+    (own ? this.own : this.team).push(now);
+  }
+
+  reset() {
+    this.own.reset();
+    this.team.reset();
   }
 }
 

@@ -8,7 +8,9 @@
  *   iniyor; aileler ayni dosyayi ya da ayni kaynagi paylasmiyor.
  * - Manifestteki her dosya diskte, sure ve boyut butcesinin altinda;
  *   lisans notu yaninda.
- * - Oldurme sesi kombo ile tirmanmiyor; oldurme basina muzikal tini yok.
+ * - Oldurme sesi bir portal: boyu dusmandan, A ve D tarzi sirayla, saniyede
+ *   en fazla 6 (arkadas 2), sampiyon her zaman. Kombo ile tirmanmiyor;
+ *   oldurme basina muzikal tini yok.
  * - Vurus butcesi (6 ses, aralik, tik), seviye 0, gizli sekme ve saat
  *   ayrismasi kurallari orneklerle de gecerli.
  * - Cozme basarisizsa ses sentezle devam ediyor, hicbir yol hata firlatmiyor.
@@ -26,8 +28,9 @@ const samples = await importWebModule("apps/web/src/sfx-samples.ts");
 const hit = await importWebModule("apps/web/src/hit-sounds.ts");
 const director = await importWebModule("apps/web/src/feedback-director.ts");
 const profiles = await importWebModule("apps/web/src/vfx/vfx-profiles.ts");
-const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
-const { towerCatalog, FEEDBACK_KIND_RULES, FeedbackGovernor } = await import("../packages/shared/dist/index.js");
+const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
+const portal = await import("../tools/sfx-portal.mjs");
+const { towerCatalog, FEEDBACK_KIND_RULES, FEEDBACK_LIMITS, FeedbackGovernor } = await import("../packages/shared/dist/index.js");
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const sfxDir = new URL("../apps/web/public/audio/sfx/", import.meta.url);
@@ -167,11 +170,13 @@ async function makeDirector(options = {}, decodeMode = "ok") {
 const sources = (context) => context.created.filter((node) => node.kind === "bufferSource");
 const oscillators = (context) => context.created.filter((node) => node.kind === "oscillator");
 const familyOf = (file) => manifestByFile.get(file)?.family;
-/** Oldurme sesleri: meka hafif (er), agir (kaba), ucan (kosucu). */
-const LIGHT = samples.getKillSoundCue("grunt", "meka");
-const HEAVY = samples.getKillSoundCue("brute", "meka");
-const isBody = (node) => familyOf(node.buffer?.file)?.startsWith("body");
-const isVoice = (node) => familyOf(node.buffer?.file)?.startsWith("voice");
+/** Oldurme sesleri: siradan (er), agir (kaba), ucan, sampiyon. */
+const LIGHT = samples.getKillSoundCue("grunt");
+const HEAVY = samples.getKillSoundCue("brute");
+const AIR = samples.getKillSoundCue("runner", true);
+const CHAMPION = samples.getKillSoundCue("grunt", false, true);
+const isPortal = (node) => familyOf(node.buffer?.file)?.startsWith("portal");
+const styleOf = (node) => manifestByFile.get(node.buffer?.file)?.style;
 /** Kanal dugumleri (vurus ve Efektler kanali): ses basina degil, bir kez kuruluyor. */
 const isBus = (node) => node.connections[0]?.kind === "compressor" || node.connections[0]?.connections?.[0]?.kind === "compressor";
 
@@ -221,6 +226,8 @@ test("aileler ayri: dosya da kaynak da paylasilmiyor", () => {
       const entry = manifestByFile.get(file);
       assert.ok(entry, `${file} manifestte yok`);
       assert.equal(entry.family, id, `${file} manifestte baska ailede`);
+      // Oldurme portalinin uc boyu ayni tarifin uc olcegi: sisme kaynagi ortak, darbe kaydi farkli.
+      if (samples.KILL_SOUND_FAMILIES.includes(id)) continue;
       const owner = sourceOwner.get(entry.source);
       assert.ok(owner === undefined || owner === id, `${entry.source} hem ${owner} hem ${id} ailesinde`);
       sourceOwner.set(entry.source, id);
@@ -256,28 +263,31 @@ test("seviyeler sentezle eslesik: ailenin etkin tepesi hedef araliginda, oldurme
     const top = samples.SAMPLE_TIERS[2].gain;
     assert.ok(effectivePeak(voice, top) + effectivePeak("heft", samples.SAMPLE_FAMILIES[voice].gain * top) <= 0.6, `${voice} sv 10 cok yuksek`);
   }
-  // Oldurme: govde eski oldurme seviyesinde (hafif ~0.2, agir ~0.3), olum sesi onun altinda.
-  const ranges = [["bodyLight", 0.15, 0.22], ["bodyAir", 0.15, 0.22], ["bodyHeavy", 0.22, 0.3], ["crit", 0.1, 0.2], ["execute", 0.2, 0.3]];
-  for (const family of samples.KILL_VOICE_FAMILIES) {
-    ranges.push(family.endsWith("Heavy") ? [family, 0.14, 0.22] : [family, 0.1, 0.16]);
-  }
-  for (const [id, low, high] of ranges) {
+  for (const [id, low, high] of [["crit", 0.1, 0.2], ["execute", 0.2, 0.3]]) {
     const peak = effectivePeak(id);
     assert.ok(peak >= low && peak <= high, `${id} etkin tepe ${peak.toFixed(3)} (${low}-${high})`);
   }
-  for (const voice of samples.KILL_VOICE_FAMILIES) {
-    const rms = Math.max(...samples.SAMPLE_FAMILIES[voice].files.map((file) => 10 ** (manifestByFile.get(file).rmsDb / 20)));
-    assert.ok(samples.SAMPLE_FAMILIES[voice].gain * rms <= 0.046, `${voice} RMS cok yuksek`);
+  // Oldurme portali: dosyalar -20 LUFS; kazanc eski govde + olum sesi karisiminin
+  // olculen seviyesinde (kucuk ~0.2, agir ~0.36-0.47). Boy buyudukce seviye artiyor.
+  const gains = samples.KILL_SOUND_FAMILIES.map((id) => samples.SAMPLE_FAMILIES[id].gain);
+  assert.deepEqual(gains, [...gains].sort((a, b) => a - b), "kucuk <= agir <= sampiyon");
+  assert.ok(gains[0] >= 0.18 && gains[0] <= 0.3, `kucuk portal ${gains[0]}`);
+  assert.ok(gains[2] <= 0.5, `sampiyon portal ${gains[2]}`);
+  const rmsOf = (id) => samples.SAMPLE_FAMILIES[id].gain * Math.max(...samples.SAMPLE_FAMILIES[id].files.map((file) => 10 ** (manifestByFile.get(file).rmsDb / 20)));
+  for (const id of samples.KILL_SOUND_FAMILIES) {
+    for (const file of samples.SAMPLE_FAMILIES[id].files) {
+      const entry = manifestByFile.get(file);
+      assert.ok(Math.abs(entry.lufs - portal.PORTAL_TARGET_LUFS) <= 1, `${file} ${entry.lufs} LUFS`);
+      assert.ok(entry.peakDb <= portal.PORTAL_PEAK_DB + 0.5, `${file} tepe ${entry.peakDb}`);
+    }
+    // Kombo (+%16) ve tepesi ile bile sinirlayicidan (-3 dBFS) uzak.
+    assert.ok(effectivePeak(id, samples.getKillComboGain(8)) <= 0.4, `${id} etkin tepe cok yuksek`);
+    assert.ok(rmsOf(id) <= 0.07, `${id} RMS cok yuksek`);
   }
-  assert.ok(effectivePeak("bodyHeavy") > effectivePeak("bodyLight"), "agir govde hafiften dolgun");
-  // Iki katmanin tepeleri ust uste gelse bile en agir oldurme 0.5'i asmiyor.
-  for (const race of samples.ENEMY_RACES) {
-    const cue = samples.getKillSoundCue("brute", race, false, true);
-    assert.ok(effectivePeak(cue.body) + effectivePeak(cue.voice) <= 0.5, `${race} agir oldurme cok yuksek`);
-  }
-  // Vurus kanali varsayilan 0.5: en yuksek vurus Efektler'de hafif oldurme govdesinden kisik ama yarisindan yuksek.
-  const loudestHit = Math.max(...hit.HIT_VOICE_IDS.map((voice) => effectivePeak(voice))) * 0.5;
-  assert.ok(loudestHit < effectivePeak("bodyLight") && loudestHit > effectivePeak("bodyLight") * 0.5);
+  // Vurus kanali varsayilan 0.5: en yuksek vurus Efektler'de kucuk portaldan (RMS) kisik ama yarisindan yuksek.
+  // Tepe degil RMS: portalin tepe/RMS orani vurustan dusuk (uzun, yuvarlak bir ses).
+  const loudestHit = Math.max(...hit.HIT_VOICE_IDS.map((voice) => rmsOf(voice))) * 0.5;
+  assert.ok(loudestHit < rmsOf("portalSmall") && loudestHit > rmsOf("portalSmall") * 0.5, `vurus ${loudestHit.toFixed(4)} / oldurme ${rmsOf("portalSmall").toFixed(4)}`);
 });
 
 test("Efektler kanali sikistirici ve son bir sinirlayicidan cikiyor", async () => {
@@ -350,14 +360,15 @@ test("sv 10 govdesi yuvayi paylasiyor: butce ikisinden uzununu tutuyor", async (
   instance.destroy();
 });
 
-test("oldurme butcede en uzun katmanin suresiyle; arkadasinki kisik ve kisa sesli", async () => {
+test("oldurme tek bir portal sesi: butcede ornegin suresiyle; arkadasinki kisik", async () => {
   const { instance, context } = await makeDirector();
   advance();
   instance.emit("kill", { own: true, x: 0, y: 0 }, HEAVY, "h1");
   const layers = sources(context);
-  assert.deepEqual(layers.map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"], "agir oldurme: govde ve derin ses");
-  advance(400);
-  assert.equal(instance.getBudgetUsage().voices, 1, "agir oldurme 400 ms sonra hala butcede (ses 420 ms)");
+  assert.deepEqual(layers.map((node) => familyOf(node.buffer.file)), ["portalNormal"], "agir oldurme: tek kaynak, govde ya da yaratik sesi yok");
+  const longest = Math.max(...samples.SAMPLE_FAMILIES.portalNormal.files.map((file) => manifestByFile.get(file).durationMs));
+  advance(longest - 50);
+  assert.equal(instance.getBudgetUsage().voices, 1, "agir oldurme sesi bitene kadar butcede");
   advance(200);
   assert.equal(instance.getBudgetUsage().voices, 0);
   assert.equal(FEEDBACK_KIND_RULES.kill.soundMs, 120, "kural yalnizca sentez yedegi icin");
@@ -367,83 +378,94 @@ test("oldurme butcede en uzun katmanin suresiyle; arkadasinki kisik ve kisa sesl
   const mate = instance.emit("kill", { own: false, x: 90, y: 0 }, HEAVY, "m1");
   assert.equal(mate.sound, true);
   const played = sources(context).slice(before);
-  const body = played.find(isBody);
-  assert.ok(body.connections[0].gain.value < samples.SAMPLE_FAMILIES.bodyHeavy.gain * 0.5, "arkadasin govdesi kisik");
-  for (const node of played.filter(isVoice)) assert.ok(familyOf(node.buffer.file).endsWith("Light"), "arkadasin sesi hep kisa");
-
-  // Normal co-op yogunlugu: saniyede ~3 arkadas oldurmesi ve senin 1 oldurmen; arkadasinkiler duyuluyor.
-  advance();
-  let mates = 0;
-  let mateHeard = 0;
-  for (let ms = 0; ms < 3000; ms += 50) {
-    if (ms % 1000 === 0) instance.emit("kill", { own: true, x: ms, y: 5 }, LIGHT, `o${ms}`);
-    if (ms % 350 === 0) {
-      mates += 1;
-      if (instance.emit("kill", { own: false, x: ms, y: 40 }, ms % 700 === 0 ? HEAVY : LIGHT, `t${ms}`).sound) mateHeard += 1;
-    }
-    advance(50);
-  }
-  assert.ok(mateHeard >= mates * 0.8, `${mateHeard}/${mates} arkadas oldurmesi duyuldu`);
+  assert.equal(played.length, 1);
+  assert.ok(Math.abs(played[0].connections[0].gain.value - samples.SAMPLE_FAMILIES.portalNormal.gain * 0.35) < 1e-9, "arkadasin oldurmesi x0.35");
   instance.destroy();
 });
 
-test("her irk x agirlik x hava x sampiyon organik bir govde ve olum sesine iniyor", () => {
+test("boy esleme: siradan ve ucan kucuk, agir normal, sampiyon buyuk; ucan biraz tiz", () => {
   const types = ["grunt", "runner", "shooter", "brute", "siege"];
-  for (const race of samples.ENEMY_RACES) {
-    for (const type of types) {
-      for (const air of [false, true]) {
-        for (const champion of [false, true]) {
-          const cue = samples.getKillSoundCue(type, race, air, champion);
-          const heavy = type === "brute" || type === "siege";
-          assert.equal(cue.body, heavy ? "bodyHeavy" : air ? "bodyAir" : "bodyLight", `${race}/${type}/${air}`);
-          assert.ok(samples.KILL_VOICE_FAMILIES.includes(cue.voice) && samples.KILL_VOICE_FAMILIES.includes(cue.teammateVoice));
-          if (heavy || champion) {
-            assert.equal(cue.voice, `voice${race[0].toUpperCase()}${race.slice(1)}Heavy`, "agir ve sampiyon irkin derin sesi");
-            assert.equal(cue.forceVoice, true);
-          } else {
-            assert.equal(cue.voice, air ? "voiceAir" : `voice${race[0].toUpperCase()}${race.slice(1)}Light`);
-            assert.equal(cue.forceVoice, false);
-          }
-          assert.ok(!cue.teammateVoice.endsWith("Heavy") || champion, "arkadasin sesi kisa");
-          assert.equal(samples.getKillSoundCue(type, race, air, champion), cue, "onceden kurulmus, oldurme basina nesne yok");
-        }
+  for (const type of types) {
+    for (const air of [false, true]) {
+      for (const champion of [false, true]) {
+        const cue = samples.getKillSoundCue(type, air, champion);
+        const heavy = type === "brute" || type === "siege";
+        const size = champion ? "large" : heavy ? "normal" : "small";
+        assert.equal(cue.size, size, `${type}/${air}/${champion}`);
+        assert.equal(cue.family, { small: "portalSmall", normal: "portalNormal", large: "portalLarge" }[size]);
+        assert.equal(cue.champion, champion);
+        assert.equal(cue.rate, air && !heavy && !champion ? samples.KILL_AIR_RATE : 1, "yalnizca ucan siradan dusman tiz");
+        assert.equal(samples.getKillSoundCue(type, air, champion), cue, "onceden kurulmus, oldurme basina nesne yok");
       }
     }
   }
-  assert.equal(samples.getKillSoundCue("grunt", undefined), LIGHT, "irk bilinmiyorsa meka");
-  // Galeri: irk x (hafif, agir) ve hava.
-  assert.equal(samples.GALLERY_KILL_CUES.length, samples.ENEMY_RACES.length * 2 + 1);
-  assert.ok(samples.GALLERY_KILL_CUES.some((entry) => entry.label === "Ölüm: böcek (hafif)"));
+  assert.ok(samples.KILL_AIR_RATE > 1 && samples.KILL_AIR_RATE <= 1.1, "hava biraz tiz, cizgi film degil");
+  assert.equal(samples.getKillSoundCue(undefined), LIGHT, "tur bilinmiyorsa kucuk");
+  assert.equal(AIR.family, "portalSmall");
+  assert.equal(CHAMPION.family, "portalLarge");
+  // Her boyun iki cesidi: A ve D, ayni sirayla.
+  for (const id of samples.KILL_SOUND_FAMILIES) {
+    assert.deepEqual(samples.SAMPLE_FAMILIES[id].files.map((file) => manifestByFile.get(file).style), ["a", "d"], id);
+  }
+  // Galeri: kucuk, hava, agir, sampiyon.
+  assert.deepEqual(samples.GALLERY_KILL_CUES.map((entry) => entry.cue.family), ["portalSmall", "portalSmall", "portalNormal", "portalLarge"]);
+  assert.ok(samples.GALLERY_KILL_CUES.every((entry) => /portal/i.test(entry.label)));
+  assert.equal(samples.GALLERY_KILL_CUES[1].cue.rate, samples.KILL_AIR_RATE);
 });
 
-test("oldurmede metal ya da patlama yok: govde ezilme paketinden, ses yaratik paketlerinden", () => {
-  for (const family of samples.KILL_SOUND_FAMILIES) {
-    for (const file of samples.SAMPLE_FAMILIES[family].files) {
-      const entry = manifestByFile.get(file);
-      assert.doesNotMatch(entry.source, /metal|explosion|crunch|glass|plate|impact\/|scifi\/|tin|bell/i, `${file}: ${entry.source}`);
-      if (family.startsWith("body")) assert.match(entry.source, /^squish\//, `${file} govde ezilme paketinden`);
-      else assert.match(entry.source, /^creature[12]\//, `${file} ses yaratik paketlerinden`);
-      // Komik ya da insan sesleri yok.
-      assert.doesNotMatch(entry.source, /cute|burp|cough|snore|nose|bark|human|ooh|eat_/, `${file}: ${entry.source}`);
-      assert.equal(entry.layer, family.startsWith("body") ? "body" : "voice");
+test("portal dosyalari Kenney'den uretiliyor; eski ezilme ve yaratik sesleri yok", () => {
+  const killFiles = samples.KILL_SOUND_FAMILIES.flatMap((id) => samples.SAMPLE_FAMILIES[id].files);
+  assert.deepEqual([...killFiles].sort(), [
+    "death-portal-a-large.mp3", "death-portal-a-normal.mp3", "death-portal-a-small.mp3",
+    "death-portal-d-large.mp3", "death-portal-d-normal.mp3", "death-portal-d-small.mp3"
+  ]);
+  const license = read("apps/web/public/audio/sfx/LICENSE.txt");
+  for (const file of killFiles) {
+    const entry = manifestByFile.get(file);
+    assert.ok(entry, `${file} manifestte yok`);
+    assert.ok(existsSync(new URL(file, sfxDir)), `${file} diskte yok`);
+    assert.equal(entry.kill, "portal");
+    assert.ok(entry.durationMs / 1000 <= MAX_PORTAL_SECONDS[entry.size] + 0.005, `${file} ${entry.durationMs} ms`);
+    for (const source of [entry.source, ...entry.layers]) {
+      assert.match(source, /^(scifi|impact)\//, `${file}: ${source}`);
+      assert.ok(license.includes(source), `LICENSE.txt kaynagi saymiyor: ${source}`);
+    }
+    assert.ok(license.includes(file), `LICENSE.txt ${file} dosyasini saymiyor`);
+    // Manifest tarifle ayni: kaynaklar tools/sfx-portal.mjs'deki katmanlar.
+    const design = portal.getPortalDesign(entry.style, entry.size);
+    assert.deepEqual([entry.source, ...entry.layers].map((source) => source.replace(/\.(ogg|mp3)$/, "")), design.layers.map((layer) => layer.src));
+    assert.equal(entry.swellMs, Math.round(design.swell * 1000));
+  }
+  // Sisme: kucuk boy kisa (sik oldurme gec kalmasin), normal ve buyuk sahibin dinledigi gibi.
+  for (const style of portal.PORTAL_STYLES) {
+    for (const size of portal.PORTAL_SIZES) {
+      const swell = portal.getPortalDesign(style.id, size.id).swell;
+      if (size.id === "small") assert.ok(swell <= MAX_SMALL_SWELL_SECONDS + 1e-9 && swell >= 0.1, `${style.id} kucuk sisme ${swell}`);
+      else assert.ok(Math.abs(swell - style.swell * size.k) < 1e-9, `${style.id}/${size.id} sisme degismis`);
     }
   }
-  for (const name of readdirSync(sfxDir)) assert.doesNotMatch(name, /^kill-(light|heavy|air)-/, `eski oldurme dosyasi kaldi: ${name}`);
+  assert.equal(MAX_SMALL_SWELL_SECONDS, 0.15);
+  assert.ok(Math.max(...Object.values(MAX_PORTAL_SECONDS)) <= 0.9, "sure siniri yalnizca gerektigi kadar");
+  // Eski organik oldurme tamamen gitti: dosya, aile, paket.
+  for (const name of readdirSync(sfxDir)) assert.doesNotMatch(name, /^kill-/, `eski oldurme dosyasi kaldi: ${name}`);
+  assert.deepEqual(Object.keys(manifest.sources).sort(), ["impact", "scifi"]);
+  assert.doesNotMatch(license, /squish|creature|EZduzziteh|rubberduck/i);
+  assert.ok(RECIPES.every((recipe) => !/^(squish|creature)/.test(recipe.src ?? "")));
+  assert.ok(samples.SAMPLE_FAMILY_IDS.every((id) => !/^(body|voice)/.test(id)));
 });
 
-test("olum sesi seyrek ve deterministik: kendi ~3/sn, arkadas ~1/sn; agir ve sampiyon her zaman", () => {
+test("oldurme sesi siniri: kendi 6/sn, arkadas 2/sn, sampiyon her zaman; deterministik", () => {
   const original = Math.random;
   Math.random = () => { throw new Error("Math.random kullanildi"); };
   try {
     const run = () => {
-      const gate = new samples.KillVoiceGate();
+      const limiter = new samples.KillSoundLimiter();
       const log = [];
-      // On saniye: saniyede 12 kendi, 12 arkadas oldurmesi (kalabalik dalga).
+      // On saniye: saniyede 25 kendi, 25 arkadas oldurmesi (ulti ve kalabalik dalga).
       for (let ms = 0; ms < 10_000; ms += 40) {
         for (const own of [true, false]) {
-          const key = `${own ? "o" : "t"}${ms}`;
-          if (gate.check(own, LIGHT, key, ms)) {
-            gate.commit(own, ms);
+          if (limiter.check(own, false, ms)) {
+            limiter.commit(own, ms);
             log.push([own, ms]);
           }
         }
@@ -452,49 +474,127 @@ test("olum sesi seyrek ve deterministik: kendi ~3/sn, arkadas ~1/sn; agir ve sam
     };
     const first = run();
     assert.deepEqual(run(), first, "ayni oldurmeler ayni sesler");
-    const own = first.filter(([mine]) => mine).length;
-    const mate = first.filter(([mine]) => !mine).length;
-    assert.ok(own <= 31 && own >= 15, `kendi: 10 sn'de ${own} ses`);
-    assert.ok(mate <= 10 && mate >= 4, `arkadas: 10 sn'de ${mate} ses`);
-    for (let index = 1; index < first.length; index += 1) {
-      assert.ok(first[index][1] - first[index - 1][1] >= samples.KILL_VOICE_LIMITS.minGapMs, "iki ses ust uste binmiyor");
+    const { ownPerSecond, teammatePerSecond, windowMs } = samples.KILL_SOUND_LIMITS;
+    assert.equal(ownPerSecond, 6);
+    assert.equal(teammatePerSecond, 2);
+    for (const [mine, limit] of [[true, ownPerSecond], [false, teammatePerSecond]]) {
+      const times = first.filter(([own]) => own === mine).map(([, ms]) => ms);
+      assert.ok(times.length >= limit * 9 && times.length <= limit * 10, `${mine ? "kendi" : "arkadas"}: 10 sn'de ${times.length}`);
+      // Kayan pencere: hicbir 1 sn'de sinirdan fazla baslangic yok.
+      for (let index = limit; index < times.length; index += 1) {
+        assert.ok(times[index] - times[index - limit] >= windowMs, `${mine ? "kendi" : "arkadas"} ${times[index]} ms'de sinir asildi`);
+      }
     }
 
-    // Agir dusman: her biri (araliklar en az 120 ms); sampiyon araliga da bakmiyor.
-    const gate = new samples.KillVoiceGate();
-    for (let ms = 0; ms < 3000; ms += 150) {
-      assert.equal(gate.check(true, HEAVY, `h${ms}`, ms), true, `agir oldurme ${ms}`);
-      gate.commit(true, ms);
-    }
-    const champion = samples.getKillSoundCue("grunt", "golem", false, true);
-    assert.equal(gate.check(true, champion, "c", 2851), true, "sampiyon hemen arkasindan da");
-    assert.equal(gate.check(false, champion, "c2", 2852), true, "arkadasin sampiyonu da");
-    assert.equal(gate.check(false, HEAVY, "x", 2900), false, "arkadasin agir oldurmesi seyreltiliyor");
+    // Sampiyon her zaman: sinir dolu olsa da; arkadasin oldurmesi senin sayacini doldurmuyor.
+    const limiter = new samples.KillSoundLimiter();
+    for (let index = 0; index < ownPerSecond; index += 1) limiter.commit(true, index);
+    assert.equal(limiter.check(true, false, 10), false, "kendi sinir dolu");
+    assert.equal(limiter.check(true, true, 10), true, "sampiyon yine calar");
+    assert.equal(limiter.check(false, false, 10), true, "arkadasin sayaci ayri");
+    assert.equal(limiter.check(true, false, windowMs + 1), true, "pencere gecince yeniden");
+    limiter.reset();
+    assert.equal(limiter.check(true, false, 11), true);
   } finally {
     Math.random = original;
   }
 });
 
-test("yonetmende: govde her oldurmede, ses seyrek; agir oldurme hep sesli", async () => {
+test("yonetmende: A ve D sirayla, ayni cesit art arda yok; boy dusmandan, hava tiz", async () => {
   const { instance, context } = await makeDirector();
   advance();
-  let bodies = 0;
-  for (let index = 0; index < 40; index += 1) {
-    if (instance.emit("kill", { own: true, x: index * 20, y: 0 }, LIGHT, `k${index}`).sound) bodies += 1;
-    advance(80);
-  }
-  assert.equal(sources(context).filter(isBody).length, bodies, "her calan oldurmede govde");
-  const voices = sources(context).filter(isVoice).length;
-  assert.ok(voices > 0 && voices <= Math.ceil((40 * 80) / samples.KILL_VOICE_LIMITS.ownGapMs), `${voices} ses / ${bodies} oldurme`);
-
-  advance();
-  for (let index = 0; index < 5; index += 1) {
+  const play = (cue, key, own = true) => {
     const before = sources(context).length;
-    assert.equal(instance.emit("kill", { own: true, x: index * 40, y: 99 }, HEAVY, `b${index}`).sound, true);
-    assert.equal(sources(context).slice(before).filter(isVoice).length, 1, "agir oldurme sesli");
     advance(400);
+    context.currentTime += 0.4;
+    assert.equal(instance.emit("kill", { own, x: 0, y: 0 }, cue, key).sound, true, key);
+    const played = sources(context).slice(before);
+    assert.equal(played.length, 1, "oldurme basina tek kaynak");
+    return played[0];
+  };
+  for (const [cue, family] of [[LIGHT, "portalSmall"], [HEAVY, "portalNormal"], [CHAMPION, "portalLarge"], [AIR, "portalSmall"]]) {
+    const styles = [];
+    for (let index = 0; index < 8; index += 1) {
+      const node = play(cue, `${family}-${index}`);
+      assert.equal(familyOf(node.buffer.file), family);
+      styles.push(styleOf(node));
+      const base = cue === AIR ? samples.KILL_AIR_RATE : 1;
+      assert.ok(Math.abs(node.playbackRate.value / base - 1) <= samples.SAMPLE_RATE_SPREAD + 1e-9, "+-4% hiz kaymasi");
+      if (cue === AIR) assert.ok(node.playbackRate.value > 1, "hava tiz");
+    }
+    assert.ok(styles.every((style, index) => index === 0 || style !== styles[index - 1]), `${family}: ayni tarz art arda (${styles.join("")})`);
+    assert.deepEqual(new Set(styles), new Set(["a", "d"]), `${family}: iki tarz da caliyor`);
   }
   instance.destroy();
+
+  // Iki istemci ayni olaylarda ayni cesit ve hizi caliyor.
+  const runs = [];
+  for (let round = 0; round < 2; round += 1) {
+    const made = await makeDirector();
+    for (let index = 0; index < 6; index += 1) {
+      advance(400);
+      made.context.currentTime += 0.4;
+      made.instance.emit("kill", { own: true, x: index, y: 0 }, index % 3 === 2 ? HEAVY : LIGHT, `d${index}`);
+    }
+    runs.push(sources(made.context).map((node) => [node.buffer.file, node.playbackRate.value]));
+    made.instance.destroy();
+  }
+  assert.deepEqual(runs[0], runs[1]);
+});
+
+test("yonetmende yogunluk: kendi en fazla 6/sn, arkadas 2/sn, sampiyon hep; butce arayuz seslerini kesmiyor", async () => {
+  const { instance, context } = await makeDirector();
+  advance();
+  // Ulti: bir saniyede 25 kendi oldurmesi.
+  let heard = 0;
+  for (let index = 0; index < 25; index += 1) {
+    if (instance.emit("kill", { own: true, x: index * 30, y: 0 }, LIGHT, `u${index}`).sound) heard += 1;
+    advance(40);
+  }
+  assert.ok(heard <= samples.KILL_SOUND_LIMITS.ownPerSecond, `1 sn'de ${heard} oldurme sesi`);
+  assert.ok(heard >= 4, `yeterince duyuluyor (${heard})`);
+  assert.ok(instance.getBudgetUsage().voices <= FEEDBACK_LIMITS.killSounds, "ayni anda en fazla 4 oldurme sesi");
+  // Sinir dolu: sampiyon yine calar, buyuk portal.
+  const before = sources(context).length;
+  assert.equal(instance.emit("kill", { own: true, x: 999, y: 0 }, CHAMPION, "champ").sound, true, "sampiyon her zaman");
+  assert.equal(familyOf(sources(context).slice(before)[0].buffer.file), "portalLarge");
+  // Sampiyon 70 ms araligina da takilmiyor.
+  assert.equal(instance.emit("kill", { own: true, x: 998, y: 0 }, CHAMPION, "champ2").sound, true);
+
+  // Arkadas: iki saniye boyunca 10/sn.
+  advance(5000);
+  let mates = 0;
+  for (let index = 0; index < 20; index += 1) {
+    if (instance.emit("kill", { own: false, x: index * 30, y: 50 }, LIGHT, `t${index}`).sound) mates += 1;
+    advance(100);
+  }
+  assert.ok(mates <= samples.KILL_SOUND_LIMITS.teammatePerSecond * 2 && mates >= 2, `arkadas 2 sn'de ${mates}`);
+  instance.destroy();
+
+  // Butce: oldurme sesi yalnizca oldurme sesinin yerini aliyor; kritik ve arayuz onaylari kesilmiyor.
+  const governor = new FeedbackGovernor();
+  assert.equal(governor.admitSound("purchase", true, 0, 5000).play, true);
+  assert.equal(governor.admitSound("equip", true, 0, 5000).play, true);
+  assert.equal(governor.admitSound("crit", true, 0, 5000).play, true);
+  for (let ms = 100; ms <= 1000; ms += 100) assert.equal(governor.admitSound("kill", true, ms, 600).play, true, `kendi oldurmesi ${ms}`);
+  assert.equal(governor.activeVoices(1000), FEEDBACK_LIMITS.sounds, "butce dolu ama asilmiyor");
+  assert.equal(governor.activeVoices(1700), 3, "oldurmeler bitti, arayuz sesleri hala caliyor");
+  // Arayuz onayi dolu butcede bir oldurme sesinin yerini aliyor.
+  for (let ms = 2000; ms < 2300; ms += 100) governor.admitSound("kill", true, ms, 2000);
+  assert.equal(governor.activeVoices(2300), FEEDBACK_LIMITS.sounds);
+  const pick = governor.admitSound("cardPick", true, 2300, 5000);
+  assert.equal(pick.play && pick.steal, true);
+  assert.equal(governor.activeVoices(4400), 4, "kurban bir oldurme sesiydi");
+  // Yalnizca oldurmeler: en fazla killSounds kadar ayni anda.
+  const kills = new FeedbackGovernor();
+  for (let ms = 0; ms < 800; ms += 100) kills.admitSound("kill", true, ms, 2000);
+  assert.equal(kills.activeVoices(800), FEEDBACK_LIMITS.killSounds);
+  assert.ok(FEEDBACK_LIMITS.killSounds <= FEEDBACK_LIMITS.sounds - 2, "kritik ve arayuze en az iki yer");
+  // Takim arkadasinin sampiyonu dolu arkadas butcesinde de calar.
+  const team = new FeedbackGovernor();
+  for (const kind of ["level", "place", "crit"]) team.admitSound(kind, true, 0, 5000);
+  assert.equal(team.admitSound("kill", false, 10, 600).play, false, "arkadasin siradan oldurmesi duser");
+  assert.equal(team.admitSound("kill", false, 20, 600, true).play, true, "arkadasin sampiyonu calar");
 });
 
 /* ------------------------------------------------------------------ */
@@ -508,9 +608,9 @@ test("manifestteki her dosya diskte, sure ve boyut butcesinin altinda; lisans ya
     assert.ok(existsSync(path), `${entry.file} diskte yok`);
     const bytes = statSync(path).size;
     assert.equal(bytes, entry.bytes, `${entry.file} manifestle ayni boyutta degil (yeniden uretin)`);
-    const kill = entry.layer !== undefined;
+    const kill = entry.kill !== undefined;
     assert.ok(bytes <= (kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes), `${entry.file} ${bytes} bayt`);
-    const limit = entry.layer === "body" ? MAX_BODY_SECONDS : entry.layer === "voice" ? MAX_VOICE_SECONDS : entry.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
+    const limit = kill ? MAX_PORTAL_SECONDS[entry.size] : entry.tick ? MAX_TICK_SECONDS : entry.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
     assert.ok(entry.durationMs / 1000 <= limit + 0.005, `${entry.file} ${entry.durationMs} ms`);
     assert.ok(entry.midBandDb >= MIN_MID_BAND_DB, `${entry.file} telefon bandinda enerji yok (${entry.midBandDb} dB)`);
     assert.ok(entry.peakDb <= -0.5, `${entry.file} tepe ${entry.peakDb} dBFS`);
@@ -756,7 +856,15 @@ test("onizleme ornegi caliyor, oyunun butcesinin disinda", async () => {
     assert.equal(instance.getBudgetUsage().hitVoices, 6, "onizleme yuva yemiyor");
     clock += director.HIT_PREVIEW_GAP_MS;
     assert.equal(instance.previewKill(HEAVY), true);
-    assert.deepEqual(sources(context).slice(-2).map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"], "galeri govde ve sesi birlikte caliyor");
+    const first = sources(context).at(-1);
+    assert.equal(familyOf(first.buffer.file), "portalNormal", "galeri agir portali caliyor");
+    // Galeri yogunluk sinirina takilmiyor; art arda basista A ve D sirayla.
+    for (let index = 0; index < 8; index += 1) {
+      clock += director.HIT_PREVIEW_GAP_MS;
+      assert.equal(instance.previewKill(LIGHT), true, `galeri ${index}`);
+    }
+    const styles = sources(context).slice(-8).map(styleOf);
+    assert.ok(styles.every((style, index) => index === 0 || style !== styles[index - 1]), styles.join(""));
     instance.destroy();
   }
 });
@@ -773,7 +881,7 @@ test("oldurme sesi dusmanin ailesinden; kombo perdeyi degistirmiyor", async () =
       const decision = instance.emit("kill", { own: true, step }, HEAVY, "same");
       assert.equal(decision.sound, true);
       const [source] = sources(context);
-      assert.equal(familyOf(source.buffer.file), "bodyHeavy");
+      assert.equal(familyOf(source.buffer.file), "portalNormal");
       const gain = source.connections[0].gain.value;
       instance.destroy();
       return { rate: source.playbackRate.value, gain };
@@ -790,19 +898,19 @@ test("oldurme sesi dusmanin ailesinden; kombo perdeyi degistirmiyor", async () =
       context.currentTime += 0.2;
       instance.emit("kill", { own: true, x: index * 50, y: 0 }, LIGHT, `c${index}`);
     }
-    const rates = sources(context).filter(isBody).map((node) => node.playbackRate.value);
+    const rates = sources(context).filter(isPortal).map((node) => node.playbackRate.value);
     assert.equal(rates.length, 10);
     assert.ok(rates.every((rate) => Math.abs(rate - 1) <= samples.SAMPLE_RATE_SPREAD + 1e-9));
     assert.ok(rates.slice(1).some((rate, index) => rate < rates[index]), "tirmanan perde yok");
-    assert.ok(sources(context).every((node) => ["bodyLight", "voiceMekaLight"].includes(familyOf(node.buffer.file))));
+    assert.ok(sources(context).every((node) => familyOf(node.buffer.file) === "portalSmall"));
 
     // Takim arkadasinin oldurmesi kisik.
     clock += 5000;
     context.currentTime += 5;
     const before = sources(context).length;
     instance.emit("kill", { own: false }, LIGHT, "mate");
-    const mate = sources(context).slice(before).find(isBody).connections[0].gain.value;
-    assert.ok(mate < samples.SAMPLE_FAMILIES.bodyLight.gain * 0.5, "arkadasin oldurmesi kisik");
+    const mate = sources(context).slice(before).find(isPortal).connections[0].gain.value;
+    assert.ok(mate < samples.SAMPLE_FAMILIES.portalSmall.gain * 0.5, "arkadasin oldurmesi kisik");
     instance.destroy();
   }
 });
@@ -840,8 +948,8 @@ test("oldurme basina altin tinisi yok; altin yalnizca gorunuyor", async () => {
   const coin = instance.emit("coin", { own: true, x: 0, y: -10 });
   assert.equal(coin.show, true, "+N sayisi yine cikiyor");
   assert.equal(coin.sound, false);
-  assert.equal(sources(context).filter(isBody).length, 1);
-  assert.ok(sources(context).every((node) => isBody(node) || isVoice(node)), "yalnizca oldurmenin katmanlari");
+  assert.equal(sources(context).filter(isPortal).length, 1);
+  assert.ok(sources(context).every(isPortal), "yalnizca oldurmenin portal sesi");
   assert.equal(oscillators(context).length, 0, "muzikal tini yok");
 
   // Savasta sik calan sentez seslerinde (oldurme yedegi, seviye, kademe) sabit nota yok: hepsi kayiyor.
@@ -860,7 +968,7 @@ test("kritik ornekli; Efektler onizlemesi hafif oldurme sesi ve seyrek", async (
     assert.equal(familyOf(sources(context)[0].buffer.file), "crit");
     clock += 1000;
     assert.equal(instance.previewSfx(), true);
-    assert.ok(sources(context).slice(1).some((node) => familyOf(node.buffer.file) === "bodyLight"));
+    assert.ok(sources(context).slice(1).some((node) => familyOf(node.buffer.file) === "portalSmall"));
     clock += 100;
     assert.equal(instance.previewSfx(), false, "surukleme: 250 ms dolmadan ikincisi yok");
     instance.destroy();
@@ -929,8 +1037,8 @@ test("dosyalar dokunustan once iniyor, ilk dokunusta (askidaki baglamda da) cozu
     await suspended.whenSamplesLoaded();
     assert.equal(context.decoded, total, "askida da cozuldu");
     assert.equal(requested.length, total, "onceden inen veri kullanildi");
-    assert.equal(suspended.hasSample("bodyHeavy"), true);
-    assert.equal(suspended.hasSample("voiceGolemHeavy"), true);
+    assert.equal(suspended.hasSample("portalNormal"), true);
+    assert.equal(suspended.hasSample("portalLarge"), true);
   } finally {
     FakeContext.prototype.resume = originalResume;
     window.AudioContext = FakeContext;
@@ -963,7 +1071,7 @@ test("cozulurken ornekli sesler sessiz (eski sentez caliyor degil); gelince orne
   await instance.whenSamplesLoaded();
   advance();
   assert.equal(instance.emit("kill", { own: true, x: 50, y: 0 }, HEAVY, "late").sound, true);
-  assert.deepEqual(sources(context).map((node) => familyOf(node.buffer.file)), ["bodyHeavy", "voiceMekaHeavy"]);
+  assert.deepEqual(sources(context).map((node) => familyOf(node.buffer.file)), ["portalNormal"]);
   instance.destroy();
 });
 
@@ -1031,12 +1139,12 @@ test("bastaki kodlayici dolgusu atlaniyor: kaynak ilk duyulan ornekten basliyor"
 test("oyun ve galeri baglantisi: oldurme ailesi dusmandan, kaydirici onizlemesi, galeride oldurme sesleri", () => {
   const scene = read("apps/web/src/scenes/GameScene.ts");
   const kill = scene.slice(scene.indexOf("private playKillConfirmation("), scene.indexOf("private playKillCoin("));
-  assert.ok(/emit\("kill",[\s\S]*getKillSoundCue\(trace\.type, trace\.race, trace\.air, trace\.champion\), event\.enemyId\)/.test(kill), "oldurme sesi dusmanin agirligindan, irkindan ve kimliginden");
-  assert.ok(/race: mover\.race,\s*champion: Boolean\(mover\.crown\)/.test(scene), "iz irki ve sampiyonu tasiyor");
+  assert.ok(/emit\("kill",[\s\S]*getKillSoundCue\(trace\.type, trace\.air, trace\.champion\), event\.enemyId\)/.test(kill), "oldurme sesi dusmanin agirligindan, sampiyonlugundan ve kimliginden");
+  assert.ok(/air: Boolean\(mover\.air\),\s*champion: Boolean\(mover\.crown\)/.test(scene), "iz havayi ve sampiyonu tasiyor");
   assert.ok(!scene.includes('playSfx("coin"'), "altin tinisi hicbir yerde calinmiyor");
   assert.ok(scene.includes("this.feedback?.previewSfx()"), "Efektler kaydiricisi onizlemesi");
 
   const gallery = read("apps/web/src/scenes/VfxGalleryScene.ts");
-  assert.ok(gallery.includes("GALLERY_KILL_CUES"), "secicide irk ve agirlik oldurme sesleri");
+  assert.ok(gallery.includes("GALLERY_KILL_CUES"), "secicide oldurme portal sesleri");
   assert.ok(gallery.includes("previewKill("), "Sv dugmeleri oldurme sesini caliyor");
 });

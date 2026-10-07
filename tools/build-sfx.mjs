@@ -5,16 +5,10 @@
  *
  *   <paketler>/impact/Audio/*.ogg   Kenney "Impact Sounds"   https://kenney.nl/assets/impact-sounds
  *   <paketler>/scifi/Audio/*.ogg    Kenney "Sci-Fi Sounds"   https://kenney.nl/assets/sci-fi-sounds
- *   <paketler>/squish/*.mp3         EZduzziteh "Squish Sounds Effects"
- *                                   https://opengameart.org/content/squish-sounds-effects
- *   <paketler>/creature1/*.ogg      rubberduck "80 CC0 creature SFX"
- *                                   https://opengameart.org/content/80-cc0-creature-sfx
- *   <paketler>/creature2/*.ogg      rubberduck "80 CC0 creature SFX #2"
- *                                   https://opengameart.org/content/80-cc0-creture-sfx-2
  *
- * Vuruslar Kenney'den (sert, mekanik bilim kurgu); oldurmeler organik: bir
- * govde katmani (islak ezilme, squish paketi) ve irka gore kisa bir olum
- * sesi (yaratik paketleri). Oldurmede metal ya da patlama yok.
+ * Vuruslar sert, mekanik bilim kurgu. Dusman oldurmesi bir "portal" sesi:
+ * yarik acilip dusmani yutuyor (tools/sfx-portal.mjs; iki tarz x uc boy).
+ * Eski organik oldurme (ezilme + yaratik sesi) kaldirildi.
  *
  * Calistirma:
  *
@@ -39,6 +33,10 @@
  *  5. Denetim: 500 Hz - 5 kHz bandinda enerji var mi (telefonda duyulan
  *     bant), sure siniri, boyut butcesi. Biri tutmazsa hata.
  *
+ * Portal tariflerinin (`portal`) zinciri ayri: katmanli karisim, sonra
+ * RMS degil EBU R128 yuksekligi (-20 LUFS, tepe -3 dBFS); sahibin dinledigi
+ * adaylarla ayni. Ayrinti tools/sfx-portal.mjs'de.
+ *
  * Seviye dengesi (aile basina kazanc) burada degil, istemcide
  * (apps/web/src/sfx-samples.ts): dosyalar ayni yuksuklukte, oyun karar veriyor.
  */
@@ -47,17 +45,20 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PORTAL_SIZES, PORTAL_STYLES, PORTAL_TARGET_LUFS, getPortalDesign, measurePortalLoudness, normalizePortal, renderPortalMix } from "./sfx-portal.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const outDir = join(root, "apps", "web", "public", "audio", "sfx");
 
 /** Vurus orneginin en uzun suresi (sn). */
 const MAX_HIT_SECONDS = 0.19;
-/** Oldurmenin govde katmani (ezilme) ve ses katmani (olum sesi) en uzun suresi. */
-const MAX_BODY_SECONDS = 0.25;
-const MAX_VOICE_SECONDS = 0.45;
-/** Eski ad: oldurme dosyasinin en uzun suresi (ses katmani). */
-const MAX_KILL_SECONDS = MAX_VOICE_SECONDS;
+/**
+ * Oldurme portal sesinin boy basina en uzun suresi (sn): sisme + kuyruk.
+ * small 0.15 + 0.234, normal 0.30 + 0.30 (D), large 1.45 x 0.60 (D) = 0.87.
+ */
+const MAX_PORTAL_SECONDS = Object.freeze({ small: 0.39, normal: 0.6, large: 0.87 });
+/** Kucuk boyun darbe oncesi sismesinin ust siniri (sn): sik oldurme gec kalmasin. */
+const MAX_SMALL_SWELL_SECONDS = 0.15;
 /**
  * Tik ailelerinin (odak nabzi, aura, bulasma, lanet havuzu) en uzun suresi:
  * tik araligindan (150 ms) kisa kalsinlar ki surekli isinlar vurus
@@ -128,82 +129,53 @@ const RECIPES = [
   // yavaslatilmis. Parilti ya da nota yok; kisa ve sert.
   { family: "execute", id: "execute-1", src: "impact/impactPunch_heavy_000", delay: 50, layers: [{ src: "impact/impactMetal_light_001", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
   { family: "execute", id: "execute-2", src: "impact/impactPunch_heavy_001", delay: 50, layers: [{ src: "impact/impactMetal_light_003", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
-  // ---- Oldurme: govde katmani (islak ezilme). Her oldurmede caliyor. ----
-  // Hafif (kosucu, er, nisanci): kisa, kuru bir ezilme.
-  { family: "bodyLight", id: "kill-body-light-1", src: "squish/squish_02", dur: 0.17, rate: 1, hp: 180, fadeOut: 0.09, kill: "body" },
-  { family: "bodyLight", id: "kill-body-light-2", src: "squish/squish_03", dur: 0.17, rate: 1, hp: 180, fadeOut: 0.09, kill: "body" },
-  { family: "bodyLight", id: "kill-body-light-3", src: "squish/squish_05", dur: 0.17, rate: 1, hp: 180, fadeOut: 0.09, kill: "body" },
-  // Agir (kaba, kusatma): en dolgun iki ezilme, yavaslatilmis -- daha derin ve uzun.
-  { family: "bodyHeavy", id: "kill-body-heavy-1", src: "squish/squish_04", dur: 0.25, rate: 0.82, hp: 120, fadeOut: 0.14, kill: "body" },
-  { family: "bodyHeavy", id: "kill-body-heavy-2", src: "squish/squish_06", dur: 0.25, rate: 0.82, hp: 120, fadeOut: 0.14, kill: "body" },
-  // Ucan: havada patlayan govde, kisa bir sicrama.
-  { family: "bodyAir", id: "kill-body-air-1", src: "squish/squishsplat_impact", dur: 0.2, rate: 0.92, hp: 180, fadeOut: 0.1, kill: "body" },
-  { family: "bodyAir", id: "kill-body-air-2", src: "squish/squish_01_0", dur: 0.2, rate: 0.92, hp: 180, fadeOut: 0.1, kill: "body" },
-
-  // ---- Oldurme: ses katmani (irka gore olum sesi). Seyrek caliyor. ----
-  // Hafif: ~280 ms, dogal hizda. Agir: yavaslatilmis (x0.86), ~420 ms -- daha
-  // alcak ve uzun. Hepsi uzun bir sonmeyle bitiyor.
-  // Uzay bocegi: kisa cicirti / ciyaklama.
-  { family: "voiceSpaceBugLight", id: "kill-voice-spacebug-light-1", src: "creature2/bug_05", dur: 0.28, rate: 1, hp: 250, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceSpaceBugLight", id: "kill-voice-spacebug-light-2", src: "creature2/bug_08", dur: 0.28, rate: 1, hp: 250, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceSpaceBugHeavy", id: "kill-voice-spacebug-heavy-1", src: "creature1/bug_04", dur: 0.42, rate: 0.86, hp: 200, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceSpaceBugHeavy", id: "kill-voice-spacebug-heavy-2", src: "creature2/bug_06", dur: 0.42, rate: 0.86, hp: 200, fadeOut: 0.24, kill: "voice" },
-  // 4. boyut yerlisi: yabanci, tuhaf bir ses.
-  { family: "voiceFourthDimensionalLight", id: "kill-voice-fourth-light-1", src: "creature2/alien_12", dur: 0.28, rate: 1, hp: 250, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceFourthDimensionalLight", id: "kill-voice-fourth-light-2", src: "creature1/alien_05", dur: 0.28, rate: 1, hp: 250, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceFourthDimensionalHeavy", id: "kill-voice-fourth-heavy-1", src: "creature1/alien_03", at: 0.12, dur: 0.42, rate: 0.86, hp: 200, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceFourthDimensionalHeavy", id: "kill-voice-fourth-heavy-2", src: "creature2/alien_07", dur: 0.42, rate: 0.86, hp: 200, fadeOut: 0.24, kill: "voice" },
-  // Golem: derin canavar / trol inlemesi.
-  { family: "voiceGolemLight", id: "kill-voice-golem-light-1", src: "creature1/troll_03", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceGolemLight", id: "kill-voice-golem-light-2", src: "creature2/monster_15", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceGolemHeavy", id: "kill-voice-golem-heavy-1", src: "creature1/monster_06", at: 0.05, dur: 0.42, rate: 0.86, hp: 200, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceGolemHeavy", id: "kill-voice-golem-heavy-2", src: "creature2/monster_09", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  // Dusmus: aci / olum hirlamasi.
-  { family: "voiceFallenLight", id: "kill-voice-fallen-light-1", src: "creature1/hurt_01", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceFallenLight", id: "kill-voice-fallen-light-2", src: "creature1/hurt_03", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceFallenHeavy", id: "kill-voice-fallen-heavy-1", src: "creature2/die_03", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceFallenHeavy", id: "kill-voice-fallen-heavy-2", src: "creature2/die_01", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  // Kutsal koruyucu: canavar kukremesi / cigligi.
-  { family: "voiceHolyGuardianLight", id: "kill-voice-holy-light-1", src: "creature1/roar_03", at: 0.03, dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceHolyGuardianLight", id: "kill-voice-holy-light-2", src: "creature2/monster_11", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceHolyGuardianHeavy", id: "kill-voice-holy-heavy-1", src: "creature2/monster_10", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceHolyGuardianHeavy", id: "kill-voice-holy-heavy-2", src: "creature2/monster_16", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  // Meka: zirhin icindeki canli -- organik, islak bir gurulti (metal yok).
-  { family: "voiceMekaLight", id: "kill-voice-meka-light-1", src: "creature2/slime_07", dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceMekaLight", id: "kill-voice-meka-light-2", src: "creature2/slime_02", at: 0.05, dur: 0.28, rate: 1, hp: 200, fadeOut: 0.16, kill: "voice" },
-  { family: "voiceMekaHeavy", id: "kill-voice-meka-heavy-1", src: "creature1/burble_02", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  { family: "voiceMekaHeavy", id: "kill-voice-meka-heavy-2", src: "creature2/slime_08", dur: 0.42, rate: 0.86, hp: 180, fadeOut: 0.24, kill: "voice" },
-  // Ucan: duserken sonen bir ciglik (irktan bagimsiz).
-  { family: "voiceAir", id: "kill-voice-air-1", src: "creature1/scream_02", dur: 0.36, rate: 0.94, hp: 250, fadeOut: 0.28, kill: "voice" },
-  { family: "voiceAir", id: "kill-voice-air-2", src: "creature2/misc_17", dur: 0.36, rate: 0.94, hp: 250, fadeOut: 0.28, kill: "voice" },
-  { family: "voiceAir", id: "kill-voice-air-3", src: "creature2/die_02", dur: 0.36, rate: 0.94, hp: 250, fadeOut: 0.28, kill: "voice" }
+  // ---- Oldurme: portal (tools/sfx-portal.mjs). Boy basina bir aile, iki
+  // cesit: A "rift whoosh" ve D "pulse thrum"; istemci ikisini sirayla caliyor.
+  // small: siradan ve ucan dusman, normal: agir (kaba, kusatma), large: sampiyon.
+  ...PORTAL_SIZES.flatMap((size) => PORTAL_STYLES.map((style) => ({
+    family: `portal${size.id[0].toUpperCase()}${size.id.slice(1)}`,
+    id: `death-portal-${style.id}-${size.id}`,
+    portal: { style: style.id, size: size.id },
+    kill: "portal"
+  })))
 ];
 
-const LICENSE_TEXT = `Defense Protocol savas sesi ornekleri
+/**
+ * LICENSE.txt. Oldurme (portal) seslerinin kullandigi kaynak dosyalar tek tek
+ * yaziliyor (`portalSources`: cikti dosyasi -> `paket/ad.uzanti` listesi).
+ */
+function licenseText(portalSources) {
+  const lines = portalSources.map(({ file, sources }) => [`- ${file}:`, ...sources.map((source) => `    ${source}`)].join("\n")).join("\n");
+  const used = [...new Set(portalSources.flatMap(({ sources }) => sources))].sort();
+  return `Defense Protocol savas sesi ornekleri
 =====================================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
-(tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):
+(tools/build-sfx.mjs ve tools/sfx-portal.mjs; hangi dosyanin hangi kaynaktan
+geldigi manifest.json'da):
 
-Vurus, kritik ve beceri (Execute infazi) sesleri:
 - "Impact Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
 
-Oldurme sesleri:
-- "Squish Sounds Effects" - EZduzziteh (OpenGameArt)
-  https://opengameart.org/content/squish-sounds-effects
-- "80 CC0 creature SFX" - rubberduck (OpenGameArt)
-  https://opengameart.org/content/80-cc0-creature-sfx
-- "80 CC0 creature SFX #2" - rubberduck (OpenGameArt)
-  https://opengameart.org/content/80-cc0-creture-sfx-2
+Vurus, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+
+Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
+dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi
+Sounds; paketlerin Audio/ klasorunden):
+
+${lines}
+
+Oldurme seslerinde kullanilan kaynak dosyalarin tamami:
+${used.map((source) => `- ${source}`).join("\n")}
 
 Lisans: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
-CC0 atif istemiyor; yine de tesekkurler: Kenney, EZduzziteh ve rubberduck.
+CC0 atif istemiyor; yine de tesekkurler: Kenney.
 `;
+}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -245,13 +217,10 @@ function durationOf(ffmpeg, file) {
 
 const round = (value, digits = 1) => Number(value.toFixed(digits));
 
-/** Paket adindan klasore: Kenney paketleri `Audio/` altinda, digerleri duz. */
+/** Paket adindan klasore: Kenney paketleri `Audio/` altinda. */
 const PACK_DIRS = {
   impact: join("impact", "Audio"),
-  scifi: join("scifi", "Audio"),
-  squish: "squish",
-  creature1: "creature1",
-  creature2: "creature2"
+  scifi: join("scifi", "Audio")
 };
 
 /** `paket/ad` -> dosya yolu; uzanti .ogg ya da .mp3 (paket neyse). */
@@ -272,6 +241,51 @@ function sourceName(packs, src) {
   return `${src}${file.slice(file.lastIndexOf("."))}`;
 }
 
+/** Kaynagin suresi (sn), mono cozulmus ornek sayisindan (portal katmanlarinin `len` siniri). */
+function monoSeconds(ffmpeg, file) {
+  const log = run(ffmpeg, ["-i", file, "-af", "aresample=44100,aformat=channel_layouts=mono,astats=measure_overall=Number_of_samples:measure_perchannel=none", "-f", "null", "-"]);
+  const match = /Number of samples: (\d+)/.exec(log);
+  if (!match) throw new Error(`sure okunamadi: ${file}`);
+  return Number(match[1]) / 44100;
+}
+
+/** WAV -> mono 44.1 kHz 96 kbps MP3; ust veri yok, bayt bayt tekrarlanabilir. */
+function encodeMp3(ffmpeg, wav, output) {
+  run(ffmpeg, [
+    "-i", wav,
+    "-ac", "1", "-ar", "44100",
+    "-c:a", "libmp3lame", "-b:a", "96k",
+    "-map_metadata", "-1", "-fflags", "+bitexact", "-flags:a", "+bitexact",
+    output
+  ]);
+}
+
+/**
+ * Ciktinin denetimi ve manifest satiri: telefon bandi, sure siniri, boyut
+ * butcesi. Tutmayan `problems`a yaziliyor.
+ */
+function audit(ffmpeg, recipe, output, length, limit, problems, fields) {
+  const final = measure(ffmpeg, output);
+  const mid = measure(ffmpeg, output, "highpass=f=500,highpass=f=500,lowpass=f=5000,lowpass=f=5000");
+  const bytes = statSync(output).size;
+  const seconds = durationOf(ffmpeg, output);
+  const midBandDb = round(mid.rms - final.rms);
+  if (length > limit + 0.005) problems.push(`${recipe.id}: ${length.toFixed(3)} sn > ${limit}`);
+  if (midBandDb < MIN_MID_BAND_DB) problems.push(`${recipe.id}: 500 Hz-5 kHz bandi ${midBandDb} dB (en az ${MIN_MID_BAND_DB})`);
+  if (bytes > (recipe.kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes)) problems.push(`${recipe.id}: ${bytes} bayt`);
+  console.log(`${recipe.id.padEnd(24)} ${String(Math.round(length * 1000)).padStart(4)} ms ${String(bytes).padStart(6)} B  rms ${round(final.rms)}  tepe ${round(final.peak)}  orta bant ${midBandDb} dB  (cozulmus ${seconds.toFixed(3)} sn)`);
+  return {
+    file: `${recipe.id}.mp3`,
+    family: recipe.family,
+    ...fields,
+    bytes,
+    durationMs: Math.round(length * 1000),
+    rmsDb: round(final.rms),
+    peakDb: round(final.peak),
+    midBandDb
+  };
+}
+
 function build() {
   const { packs, ffmpeg } = parseArgs();
   if (!packs || Object.values(PACK_DIRS).some((dir) => !existsSync(join(packs, dir)))) {
@@ -289,8 +303,45 @@ function build() {
 
   const files = [];
   const problems = [];
+  const portalSources = [];
+  const portalTools = {
+    run: (args) => run(ffmpeg, args),
+    resolveSource: (src) => {
+      const file = resolveSource(packs, src);
+      if (!existsSync(file)) throw new Error(`kaynak yok: ${file}`);
+      return file;
+    },
+    sourceSeconds: (file) => monoSeconds(ffmpeg, file)
+  };
   try {
     for (const recipe of RECIPES) {
+      if (recipe.portal) {
+        // Oldurme portal sesi: katmanli karisim, -20 LUFS, MP3 (tools/sfx-portal.mjs).
+        const design = getPortalDesign(recipe.portal.style, recipe.portal.size);
+        const raw = join(work, `${recipe.id}-raw.wav`);
+        const wav = join(work, `${recipe.id}.wav`);
+        const output = join(outDir, `${recipe.id}.mp3`);
+        renderPortalMix(portalTools, design, raw);
+        normalizePortal(portalTools.run, raw, wav, work);
+        encodeMp3(ffmpeg, wav, output);
+        const length = durationOf(ffmpeg, wav);
+        const sources = design.layers.map((layer) => sourceName(packs, layer.src));
+        portalSources.push({ file: `${recipe.id}.mp3`, sources });
+        const loudness = measurePortalLoudness(portalTools.run, output);
+        const limit = MAX_PORTAL_SECONDS[recipe.portal.size];
+        if (recipe.portal.size === "small" && design.swell > MAX_SMALL_SWELL_SECONDS + 1e-9) problems.push(`${recipe.id}: sisme ${design.swell} sn > ${MAX_SMALL_SWELL_SECONDS}`);
+        if (Math.abs(loudness.lufs - PORTAL_TARGET_LUFS) > 1) problems.push(`${recipe.id}: ${loudness.lufs} LUFS`);
+        files.push(audit(ffmpeg, recipe, output, length, limit, problems, {
+          kill: "portal",
+          style: recipe.portal.style,
+          size: recipe.portal.size,
+          swellMs: Math.round(design.swell * 1000),
+          source: sources[0],
+          layers: sources.slice(1),
+          lufs: round(loudness.lufs)
+        }));
+        continue;
+      }
       let input = resolveSource(packs, recipe.src);
       if (!existsSync(input)) throw new Error(`kaynak yok: ${input}`);
       const rate = recipe.rate ?? 1;
@@ -364,30 +415,13 @@ function build() {
       ]);
 
       // 5: denetim.
-      const final = measure(ffmpeg, output);
-      const mid = measure(ffmpeg, output, "highpass=f=500,highpass=f=500,lowpass=f=5000,lowpass=f=5000");
-      const bytes = statSync(output).size;
-      const seconds = durationOf(ffmpeg, output);
-      const midBandDb = round(mid.rms - final.rms);
-      const limit = recipe.kill === "body" ? MAX_BODY_SECONDS : recipe.kill === "voice" ? MAX_VOICE_SECONDS : recipe.tick ? MAX_TICK_SECONDS : recipe.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
-      if (length > limit + 0.005) problems.push(`${recipe.id}: ${length.toFixed(3)} sn > ${limit}`);
-      if (midBandDb < MIN_MID_BAND_DB) problems.push(`${recipe.id}: 500 Hz-5 kHz bandi ${midBandDb} dB (en az ${MIN_MID_BAND_DB})`);
-      if (bytes > (recipe.kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes)) problems.push(`${recipe.id}: ${bytes} bayt`);
-      files.push({
-        file: `${recipe.id}.mp3`,
-        family: recipe.family,
+      const limit = recipe.tick ? MAX_TICK_SECONDS : recipe.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
+      files.push(audit(ffmpeg, recipe, output, length, limit, problems, {
         ...(recipe.tick ? { tick: true } : {}),
         ...(recipe.cue ? { cue: true } : {}),
-        ...(recipe.kill ? { layer: recipe.kill } : {}),
         source: sourceName(packs, recipe.src),
-        ...(recipe.layers ? { layers: recipe.layers.map((part) => sourceName(packs, part.src)) } : {}),
-        bytes,
-        durationMs: Math.round(length * 1000),
-        rmsDb: round(final.rms),
-        peakDb: round(final.peak),
-        midBandDb
-      });
-      console.log(`${recipe.id.padEnd(18)} ${String(Math.round(length * 1000)).padStart(4)} ms ${String(bytes).padStart(6)} B  rms ${round(final.rms)}  tepe ${round(final.peak)}  orta bant ${midBandDb} dB  (cozulmus ${seconds.toFixed(3)} sn)`);
+        ...(recipe.layers ? { layers: recipe.layers.map((part) => sourceName(packs, part.src)) } : {})
+      }));
     }
   } finally {
     rmSync(work, { recursive: true, force: true });
@@ -396,13 +430,10 @@ function build() {
   const totalBytes = files.reduce((sum, entry) => sum + entry.bytes, 0);
   if (totalBytes > SFX_BUDGET.totalBytes) problems.push(`toplam ${totalBytes} bayt`);
   const manifest = {
-    note: "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0: Kenney, EZduzziteh, rubberduck).",
+    note: "tools/build-sfx.mjs uretti; elle duzenlemeyin. Lisans: LICENSE.txt (CC0: Kenney).",
     sources: {
       impact: { title: "Impact Sounds", author: "Kenney", url: "https://kenney.nl/assets/impact-sounds", license: "CC0-1.0" },
-      scifi: { title: "Sci-Fi Sounds", author: "Kenney", url: "https://kenney.nl/assets/sci-fi-sounds", license: "CC0-1.0" },
-      squish: { title: "Squish Sounds Effects", author: "EZduzziteh", url: "https://opengameart.org/content/squish-sounds-effects", license: "CC0-1.0" },
-      creature1: { title: "80 CC0 creature SFX", author: "rubberduck", url: "https://opengameart.org/content/80-cc0-creature-sfx", license: "CC0-1.0" },
-      creature2: { title: "80 CC0 creature SFX #2", author: "rubberduck", url: "https://opengameart.org/content/80-cc0-creture-sfx-2", license: "CC0-1.0" }
+      scifi: { title: "Sci-Fi Sounds", author: "Kenney", url: "https://kenney.nl/assets/sci-fi-sounds", license: "CC0-1.0" }
     },
     format: { codec: "mp3", channels: 1, sampleRate: 44100, bitrateKbps: 96 },
     budget: SFX_BUDGET,
@@ -410,7 +441,7 @@ function build() {
     files
   };
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  writeFileSync(join(outDir, "LICENSE.txt"), LICENSE_TEXT, "utf8");
+  writeFileSync(join(outDir, "LICENSE.txt"), licenseText(portalSources), "utf8");
   console.log(`\n${files.length} dosya, toplam ${(totalBytes / 1024).toFixed(1)} KB -> ${outDir}`);
   if (problems.length > 0) {
     console.error(`\nDenetim hatalari:\n- ${problems.join("\n- ")}`);
@@ -423,4 +454,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 }
 
 // Testler tarifleri okuyabilsin diye (dosyayi calistirmadan).
-export { RECIPES, MAX_HIT_SECONDS, MAX_KILL_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB };
+export { RECIPES, MAX_HIT_SECONDS, MAX_PORTAL_SECONDS, MAX_SMALL_SWELL_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB };

@@ -2,23 +2,73 @@ Defense Protocol savas sesi ornekleri
 =====================================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
-(tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):
+(tools/build-sfx.mjs ve tools/sfx-portal.mjs; hangi dosyanin hangi kaynaktan
+geldigi manifest.json'da):
 
-Vurus, kritik ve beceri (Execute infazi) sesleri:
 - "Impact Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/sci-fi-sounds
 
-Oldurme sesleri:
-- "Squish Sounds Effects" - EZduzziteh (OpenGameArt)
-  https://opengameart.org/content/squish-sounds-effects
-- "80 CC0 creature SFX" - rubberduck (OpenGameArt)
-  https://opengameart.org/content/80-cc0-creature-sfx
-- "80 CC0 creature SFX #2" - rubberduck (OpenGameArt)
-  https://opengameart.org/content/80-cc0-creture-sfx-2
+Vurus, kritik ve beceri (Execute infazi) sesleri bu iki paketten kesildi.
+
+Dusman oldurme sesleri ("portal"; death-portal-*.mp3) bu iki paketin su
+dosyalarinin katmanli karisimi (impact/ = Impact Sounds, scifi/ = Sci-Fi
+Sounds; paketlerin Audio/ klasorunden):
+
+- death-portal-a-small.mp3:
+    scifi/explosionCrunch_002.ogg
+    scifi/thrusterFire_002.ogg
+    scifi/forceField_000.ogg
+    impact/impactSoft_heavy_000.ogg
+    impact/impactPunch_medium_000.ogg
+- death-portal-d-small.mp3:
+    scifi/forceField_000.ogg
+    scifi/thrusterFire_001.ogg
+    impact/impactPunch_heavy_001.ogg
+    scifi/lowFrequency_explosion_001.ogg
+- death-portal-a-normal.mp3:
+    scifi/explosionCrunch_002.ogg
+    scifi/thrusterFire_002.ogg
+    scifi/forceField_000.ogg
+    impact/impactSoft_heavy_001.ogg
+    impact/impactPunch_medium_001.ogg
+- death-portal-d-normal.mp3:
+    scifi/forceField_001.ogg
+    scifi/thrusterFire_001.ogg
+    impact/impactPunch_heavy_003.ogg
+    scifi/lowFrequency_explosion_001.ogg
+- death-portal-a-large.mp3:
+    scifi/explosionCrunch_002.ogg
+    scifi/thrusterFire_002.ogg
+    scifi/forceField_000.ogg
+    impact/impactSoft_heavy_003.ogg
+    impact/impactPunch_medium_002.ogg
+- death-portal-d-large.mp3:
+    scifi/forceField_003.ogg
+    scifi/thrusterFire_001.ogg
+    impact/impactPunch_heavy_000.ogg
+    scifi/lowFrequency_explosion_001.ogg
+
+Oldurme seslerinde kullanilan kaynak dosyalarin tamami:
+- impact/impactPunch_heavy_000.ogg
+- impact/impactPunch_heavy_001.ogg
+- impact/impactPunch_heavy_003.ogg
+- impact/impactPunch_medium_000.ogg
+- impact/impactPunch_medium_001.ogg
+- impact/impactPunch_medium_002.ogg
+- impact/impactSoft_heavy_000.ogg
+- impact/impactSoft_heavy_001.ogg
+- impact/impactSoft_heavy_003.ogg
+- scifi/explosionCrunch_002.ogg
+- scifi/forceField_000.ogg
+- scifi/forceField_001.ogg
+- scifi/forceField_003.ogg
+- scifi/lowFrequency_explosion_001.ogg
+- scifi/thrusterFire_001.ogg
+- scifi/thrusterFire_002.ogg
 
 Lisans: Creative Commons Zero (CC0 1.0)
 http://creativecommons.org/publicdomain/zero/1.0/
 
-CC0 atif istemiyor; yine de tesekkurler: Kenney, EZduzziteh ve rubberduck.
+CC0 atif istemiyor; yine de tesekkurler: Kenney.

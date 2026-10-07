@@ -26,20 +26,19 @@ Oyunun kendi kodunda üretilenler (üçüncü taraf kaynak yok):
 ### Ses efektleri
 
 Vuruş, kritik, infaz ve öldürme sesleri (`apps/web/public/audio/sfx/*.mp3`).
-`tools/build-sfx.mjs` bu paketlerden kesiyor; dosya dosya kaynak
-`apps/web/public/audio/sfx/manifest.json`, lisans notu
+Öldürme sesi bir "portal": yarık açılıp düşmanı yutuyor; Sci-Fi gürültü ve
+uğultu kayıtları ile Impact darbelerinin katmanlı karışımı
+(`tools/sfx-portal.mjs`). `tools/build-sfx.mjs` bu paketlerden kesiyor; dosya
+dosya kaynak `apps/web/public/audio/sfx/manifest.json`, lisans notu
 `apps/web/public/audio/sfx/LICENSE.txt`.
 
 | Eser | Yazar | Lisans | Bağlantı |
 |---|---|---|---|
 | Impact Sounds | Kenney | CC0 1.0 | https://kenney.nl/assets/impact-sounds |
 | Sci-Fi Sounds | Kenney | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
-| Squish Sounds Effects | EZduzziteh | CC0 1.0 | https://opengameart.org/content/squish-sounds-effects |
-| 80 CC0 creature SFX | rubberduck | CC0 1.0 | https://opengameart.org/content/80-cc0-creature-sfx |
-| 80 CC0 creature SFX #2 | rubberduck | CC0 1.0 | https://opengameart.org/content/80-cc0-creture-sfx-2 |
 
 CC0 1.0: http://creativecommons.org/publicdomain/zero/1.0/ . Atıf istemiyor;
-yine de teşekkürler: Kenney, EZduzziteh ve rubberduck.
+yine de teşekkürler: Kenney.
 
 ### Yazı tipleri
 
@@ -100,13 +99,19 @@ müziksiz. Çalma mantığı `apps/web/src/menu-music.ts`.
 
 | Eser | Yazar | Lisans | Bağlantı |
 |---|---|---|---|
-| Last Stand | gunesatakan (aliatakangunes) | Suno Terms of Service | https://suno.com |
+| Last Stand | gunesatakan (aliatakangunes) | Suno free plan: non-commercial use only | https://suno.com |
 
 - Dosya: `apps/web/public/audio/music/last-stand.mp3` (3:45, 44,1 kHz stereo,
   128 kb/s, ~-18 LUFS; gömülü kapak ve etiketler çıkarıldı, sondaki ~0,6 sn
   sessizlik döngü için kırpıldı).
 - Kaynak: geliştiricinin Suno ile ürettiği kayıt (ID3: sanatçı "aliatakangunes",
   yorum "made with suno", 2026-10-07).
+- **Lisans sınırı:** parça Suno'nun ücretsiz planıyla üretildi. Suno şartlarına
+  göre ücretsiz planda üretilen parçalar yalnız ticari olmayan amaçlarla
+  kullanılabilir; sonradan ücretli plana geçmek geriye dönük hak vermez. Bu
+  yüzden yalnız ödemesi ve bağışı kapalı ücretsiz yayında (itch.io kapalı test)
+  kullanılır. Reklamlı ya da ücretli yayından (CrazyGames, Steam, Google Play)
+  önce ücretli planla yeniden üretilmeli ya da CC0 bir parçayla değiştirilmeli.
 
 ### Müzik: ticari kayıtlar (kaldırıldı)
 
@@ -173,9 +178,9 @@ manifest.
 
 **Third-party, known licence:**
 
-- Sound effects: Kenney "Impact Sounds" and "Sci-Fi Sounds"; EZduzziteh
-  "Squish Sounds Effects"; rubberduck "80 CC0 creature SFX" and "#2". All
-  CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
+- Sound effects: Kenney "Impact Sounds" and "Sci-Fi Sounds" (hits, crits,
+  the execute cue and the "portal" enemy death sound, layered from Sci-Fi noise
+  and hum recordings and Impact thumps). Both CC0 1.0 (see `apps/web/public/audio/sfx/LICENSE.txt`).
 - Typefaces (loaded from Google Fonts): Cinzel (Natanael Gama), Rajdhani
   (Indian Type Foundry), Share Tech Mono (Carrois Apostrophe). All SIL OFL 1.1.
 - Generative AI: OpenAI gpt-image, under the OpenAI Terms of Use
@@ -193,6 +198,10 @@ visuals and the lobby music were made with generative AI tools.
 (`apps/web/public/audio/music/last-stand.mp3`). It plays as lobby music on the
 main menu and in the co-op waiting room after the first tap, and fades out when
 a match starts. The Turkish section above keeps the full file lists.
+It was made on Suno's free plan, so it is licensed for non-commercial use only:
+it may ship only in free builds with payments and donations off (the itch.io
+closed test) and must be regenerated on a paid plan or replaced before any
+ad-supported or paid release.
 
 **Removed:** the two commercial music tracks (Chipzel "Courtesy"; Dynoro
 "Zver") are no longer shipped; matches have no music, only the lobby track
