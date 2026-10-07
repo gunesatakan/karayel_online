@@ -156,6 +156,7 @@ Altı ırkın 24 görseli, 512×512 PNG; geliştirici yapımı.
 - `apps/web/public/images/zeynep-puppet-hands.png` (Zeynep'in operatör mührü ve kukla elleri)
 - `apps/web/public/images/melis-creepy.png`, `melis-creepy-legend.png` (Melis'in operatör mührü ve seri görseli)
 - `apps/web/public/images/melis-creepy-unstoppable.png` (OpenAI gpt-image; yukarıdaki "Görsel üretim" bölümüne bakın)
+- `apps/web/public/images/attacklord-icon-256.webp`, `apps/web/public/images/attacklord-icon-128.webp` (AttackLord'un operatör mührü: üç mor enerji bıçağı; geliştirici yapımı, üretken yapay zekâ ile; kaynak görselin saydam arka planı korunup web boyutlarına küçültüldü)
 
 ## Notlar
 
@@ -191,7 +192,8 @@ manifest.
 
 **Created by the developer (gunesatakan):** the streak/announcer clips, all 24
 enemy sprites, the tower sprites, the splash art, the Zeynep hands, the
-Melis portraits and the lobby music were made by the developer. Some of the
+Melis portraits, the AttackLord operator icon (`attacklord-icon-*.webp`) and
+the lobby music were made by the developer. Some of the
 visuals and the lobby music were made with generative AI tools.
 
 **Music:** "Last Stand" by gunesatakan (aliatakangunes), generated with Suno AI

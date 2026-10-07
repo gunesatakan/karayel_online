@@ -2,19 +2,19 @@
 
 ## Short description (itch "Short description", ~100 characters max)
 
-Hard sci-fi tower defense with a card-built run and co-op for up to four. In your browser, on your phone.
+Hard sci-fi tower defense with a card-built run and two-player co-op. In your browser, on your phone.
 
 ## Long description
 
-**Defense Protocol** is a browser tower defense game with co-op for up to four players. Pick an operator, build a defense line and hold the nexus through twenty waves.
+**Defense Protocol** is a browser tower defense game with two-player co-op. Pick an operator, build a defense line and hold the nexus through twenty waves.
 
 Every operator brings their own towers, skills and an ultimate. After each wave you pick a card that shapes your run, and items from the gold shop go into tower slots. Towers heat up as they fire; workers carry energy and ammo to them. Let the logistics slip and even your strongest tower goes quiet.
 
-- **7 operators:** each with their own tower set, skills and ultimate.
+- **2 operators in this build (AttackLord and ZentaX):** each with their own tower set, skills and ultimate. Five more are in development.
 - **5 stages:** each one a single enemy race (Golem, Mech, Space Bug, the Fallen, Fourth Dimension) over 20 waves. Champions join from wave 6.
 - **141 cards, 123 items:** a card pick after every wave, ten item slots per tower.
 - **Heat, energy and ammo:** hire workers, pick their specialization, grow them in the Worker Tree.
-- **Co-op:** up to four players on one map. Solo works too.
+- **Co-op:** two players on one map. Solo works too.
 - **Reports:** a defense summary for every wave and run, plus badges, mastery and records.
 - **English and Turkish.**
 

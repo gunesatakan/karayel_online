@@ -1244,6 +1244,7 @@ export {
 export type { RoleTitleFacts, RoleTitleKind } from "./progress/role-titles.js";
 
 export { WALL_EDGE_LENGTH, SHARED_STRUCTURE_IDS, REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower, countsAsTower, occupiesTowerSlot, getCharacterTowers, isSharedStructure, WALL_TOWER_ID, getStructureHealthMultiplier, isWallDefinition, wallTower, characters, towerCatalog, attachTowerEngine, deriveTowerResources, getTowerAttackRadius, getTowerModeDamageType, getTowerSlowDurationMs } from "./characters/index.js";
+export { PLAYABLE_CHARACTER_IDS, FALLBACK_PLAYABLE_CHARACTER_ID, isPlayableCharacterId, resolvePlayableCharacterId } from "./characters/playable.js";
 export {
   ONUR_JACKPOT_MIN_LUCK,
   ONUR_LUCKY_WINDOW_MS,

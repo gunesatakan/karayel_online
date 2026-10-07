@@ -1933,7 +1933,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       <div class="game-hud__actions">
         <button data-hud="perf">i</button>
         <button data-hud="stats">▤</button>
-        <button data-hud="audio">♪</button>
+        <button class="game-hud__menu-button" data-hud="menu"><svg class="game-hud__menu-glyph" viewBox="0 0 12 10" aria-hidden="true" focusable="false"><path d="M0 1h12M0 5h12M0 9h12"/></svg></button>
         <button class="game-hud__continue" data-hud="continue" hidden></button>
       </div>
     </div>
@@ -2015,7 +2015,10 @@ export function setupGameHudUi(game: Phaser.Game) {
     setText(waveAirNode, t("hud.air"));
     actionsNode.querySelector<HTMLElement>("[data-hud=\"perf\"]")!.setAttribute("aria-label", t("hud.perfButton"));
     actionsNode.querySelector<HTMLElement>("[data-hud=\"stats\"]")!.setAttribute("aria-label", t("hud.statsButton"));
-    actionsNode.querySelector<HTMLElement>("[data-hud=\"audio\"]")!.setAttribute("aria-label", t("hud.audioButton"));
+    // Ayarlar ve menu: ses, titresim, veri ve menuye donus ayni panelde.
+    const menuButton = actionsNode.querySelector<HTMLElement>("[data-hud=\"menu\"]")!;
+    menuButton.setAttribute("aria-label", t("hud.menuButton"));
+    menuButton.title = t("hud.menuButton");
     const [pre, post = ""] = t("hud.forecast.line", { count: "\u0000" }).split("\u0000");
     forecastPreNode.data = pre;
     forecastPostNode.data = post;
@@ -2076,7 +2079,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     const action = element.dataset.hud;
     if (action === "continue") dispatch("continueWave");
     if (action === "perf") dispatch("togglePerfHud");
-    if (action === "audio") dispatch("toggleAudioHud");
+    if (action === "menu") dispatch("toggleAudioHud");
     if (action === "stats") dispatch("toggleStatsHud");
     if (action === "stats-damage") dispatch("setStatsTab", 0);
     if (action === "stats-dps") dispatch("setStatsTab", 1);
@@ -2584,7 +2587,11 @@ export function setupGameHudUi(game: Phaser.Game) {
   };
 
   /**
-   * Ses paneli.
+   * Ayarlar ve menu paneli (cubuktaki ☰ dugmesi).
+   *
+   * En ustte tam genislikte "Menüye dön": oyuncu mactan cikis yolunu
+   * bulamiyordu -- dugme eskiden ♪ simgeli ses panelinin dibindeydi. Altinda
+   * ses bolumu.
    *
    * Dort kaydirici: muzik, seslendirme (seri anonslari ve uyarilar), efektler
    * (sentez odul sesleri) ve vurus sesleri (kulelerin carpma sesi; Efektler'in
@@ -2600,7 +2607,10 @@ export function setupGameHudUi(game: Phaser.Game) {
     `<label>${escapeHudText(label)} <input data-volume="${channel}" type="range" min="0" max="1" step="0.01" value="${value}"${extra}></label>`;
   const renderAudioPopup = (next: HudState) => {
     if (!next.audioOpen) return "";
-    return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="audio">×</button><strong>${escapeHudText(t("hud.audio.title"))}</strong>`
+    return `<section class="game-hud__popup game-hud__popup--audio"><button data-hud="menu">×</button><strong>${escapeHudText(t("hud.menu.title"))}</strong>`
+      // Mactan cikis: cubukta ayri dugme yok (dar ekranda yer yok); sahne once onay soruyor.
+      + `<button type="button" class="game-hud__popup-quit" data-hud="quit">${escapeHudText(t("hud.quit.button"))}</button>`
+      + `<p class="game-hud__popup-section">${escapeHudText(t("hud.audio.title"))}</p>`
       + volumeSlider(t("hud.audio.music"), "music", next.musicVolume)
       + volumeSlider(t("hud.audio.voice"), "voice", next.voiceVolume)
       + volumeSlider(t("hud.audio.sfx"), "sfx", next.sfxVolume)
@@ -2613,8 +2623,6 @@ export function setupGameHudUi(game: Phaser.Game) {
       // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
       + `<label>${escapeHudText(t("menu.telemetry.label"))} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
       + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("menu.telemetry.note"))}</p>`
-      // Mactan cikis: cubukta ayri dugme yok (dar ekranda yer yok); sahne once onay soruyor.
-      + `<button type="button" class="game-hud__popup-quit" data-hud="quit">${escapeHudText(t("hud.quit.button"))}</button>`
       + `</section>`;
   };
   const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
@@ -2638,7 +2646,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       event.stopPropagation();
       const action = element.dataset.hud;
       if (action === "perf") dispatch("togglePerfHud");
-      if (action === "audio") dispatch("toggleAudioHud");
+      if (action === "menu") dispatch("toggleAudioHud");
       if (action === "quit") dispatch("quitMatch");
       if (action === "stats") dispatch("toggleStatsHud");
       if (action === "stats-damage") dispatch("setStatsTab", 0);

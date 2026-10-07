@@ -326,6 +326,9 @@ import {
   getEnemyExp,
   towerAims,
   towerCatalog,
+  PLAYABLE_CHARACTER_IDS,
+  FALLBACK_PLAYABLE_CHARACTER_ID,
+  isPlayableCharacterId,
   type CharacterId,
   type CardDefinition,
   type ShopItem,
@@ -678,6 +681,8 @@ export const ABANDONED_ROOM_DISPOSE_MS = 10 * 60 * 1000;
  * tutmanin ust siniri; daha guclu makinede ortam degiskeniyle artiyor.
  */
 export const DEFAULT_MAX_CONCURRENT_ROOMS = 6;
+/** Bir co-op odanin ust siniri; oynanabilir operator sayisi bunu daha da kisar. */
+export const MAX_COOP_PLAYERS = 4;
 /** Sinir doluyken oda kurma reddinin kodu; Colyseus istemciye metinle birlikte yolluyor. */
 export const SERVER_FULL_ERROR_CODE = 4290;
 /**
@@ -1798,6 +1803,13 @@ export class MatchRoom extends Room<MatchState> {
    * yavaslatirdi. `MAX_CONCURRENT_ROOMS` ile degisiyor.
    */
   static maxConcurrentRooms = readMaxConcurrentRooms(process.env.MAX_CONCURRENT_ROOMS);
+  /**
+   * Istemcinin secebildigi operatorler. Kilitli (gelistirme asamasindaki)
+   * operatoru isteyen eski istemci reddedilmiyor, AttackLord'a cevriliyor.
+   * Testler butun kadroyla calissin diye degistirilebilir; test duzenegi
+   * (tests/helpers/match-room-harness.mjs) listeyi butun karakterlere acar.
+   */
+  static playableCharacterIds: readonly CharacterId[] = PLAYABLE_CHARACTER_IDS;
 
   /**
    * Katilinabilir co-op odalari. Yalnizca listede duran odalar dolasiliyor
@@ -1886,7 +1898,9 @@ export class MatchRoom extends Room<MatchState> {
     return true;
   }
 
-  maxClients = 4;
+  // Co-op oda kapasitesi oynanabilir operator sayisini gecmez: her oyuncu
+  // ayri operator alsin (su an 2). Testler listeyi genisletince 4'e cikar.
+  maxClients = Math.min(MAX_COOP_PLAYERS, MatchRoom.playableCharacterIds.length);
   autoDispose = false;
   private enemies = new Map<string, EnemyModel>();
   private readonly enemySpatialGrid = new SpatialGrid<EnemyModel>(128);
@@ -15958,12 +15972,21 @@ export class MatchRoom extends Room<MatchState> {
     return Math.min(...pathSegments.map((segment) => distanceToSegment(x, y, segment.from.x, segment.from.y, segment.to.x, segment.to.y)));
   }
 
+  /**
+   * Istemciden gelen kimlik: oynanabilir operatorse kendisi, degilse (kilitli,
+   * bilinmeyen, bos) AttackLord. Kilitli istek girisi bozmuyor; yalnizca
+   * hata ayiklama kaydina dusuyor.
+   */
   private getCharacterId(value: unknown): CharacterId {
-    if (value === "zeynep" || value === "archer" || value === "mage" || value === "healer" || value === "tank" || value === "onur" || value === "warrior") {
+    const playable = MatchRoom.playableCharacterIds;
+    if (isPlayableCharacterId(value, playable)) {
       return value;
     }
-
-    return "warrior";
+    const fallback = playable.includes(FALLBACK_PLAYABLE_CHARACTER_ID) ? FALLBACK_PLAYABLE_CHARACTER_ID : playable[0] ?? FALLBACK_PLAYABLE_CHARACTER_ID;
+    if (value !== undefined) {
+      console.debug(`[MatchRoom ${this.roomId ?? "?"}] oynanamayan operator istegi ${JSON.stringify(value)} -> ${fallback}`);
+    }
+    return fallback;
   }
 
   private getAvailableCharacterId(requestedCharacterId: unknown) {
@@ -15973,7 +15996,9 @@ export class MatchRoom extends Room<MatchState> {
       return requested;
     }
 
-    return characters.find((character) => !taken.has(character.id))?.id ?? requested;
+    // Bos yuva yalnizca oynanabilirlerden; hepsi alinmissa istek (ayni operator iki kez).
+    const playable = MatchRoom.playableCharacterIds;
+    return characters.find((character) => playable.includes(character.id) && !taken.has(character.id))?.id ?? requested;
   }
 
   private getRoomName(value: unknown) {

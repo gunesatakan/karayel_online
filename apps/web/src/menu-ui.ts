@@ -36,6 +36,7 @@ import {
   KIN_SLOW_FAR_FRACTION,
   getTowerLevelExpCost,
   getTile,
+  isPlayableCharacterId,
   normalizeMapData,
   scaleEditableMap,
   setTile,
@@ -80,8 +81,10 @@ import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { getLocale, onLocaleChange, setLocale, t, tMaybe, type Locale, type MessageKey, type MessageParams } from "./i18n";
 import {
+  clearMatchReconnect,
   getSharedClient,
   isServerFullError,
+  leaveRoomAndForget,
   loadMatchReconnect,
   resumeSavedMatch,
   retryExpiredSeatReservation,
@@ -96,6 +99,15 @@ import { describeServerError, localizeServerText } from "./server-text";
 import { resetTutorialProgress } from "./tutorial";
 import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
 import { installMenuMusic, readMenuMusicMuted } from "./menu-music";
+import {
+  getDefaultOperator,
+  getLockedOperatorNote,
+  isPlayableOperator,
+  lockedOperatorAttributes,
+  renderOperatorLock,
+  renderOperatorLockDescription,
+  resolvePlayableOperator
+} from "./operator-lock";
 
 type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges" | "credits";
 
@@ -165,9 +177,16 @@ const enemyTypeLabel = (type: EnemyType) => t(`menu.enemy.type.${type}`);
 const classColor = CHARACTER_CLASS_COLORS;
 
 // Portraits that exist as real art; everyone else falls back to an engraved mark.
-const characterArt: Partial<Record<CharacterId, string>> = {
-  zeynep: assetUrl("images/zeynep-puppet-hands.png"),
-  archer: assetUrl("images/melis-creepy.png")
+// `srcset` yalnizca birden cok boyutu olan gorselde: muhur en fazla ~76 px,
+// 1x ekranda 128'lik, yogun ekranda 256'lik dosya iniyor.
+type CharacterArt = { src: string; srcset?: string };
+const characterArt: Partial<Record<CharacterId, CharacterArt>> = {
+  zeynep: { src: assetUrl("images/zeynep-puppet-hands.png") },
+  archer: { src: assetUrl("images/melis-creepy.png") },
+  warrior: {
+    src: assetUrl("images/attacklord-icon-256.webp"),
+    srcset: `${assetUrl("images/attacklord-icon-128.webp")} 128w, ${assetUrl("images/attacklord-icon-256.webp")} 256w`
+  }
 };
 
 
@@ -196,7 +215,7 @@ export function setupMenuUi(game: Phaser.Game) {
     return;
   }
 
-  let selectedCharacter = characters[0];
+  let selectedCharacter = getDefaultOperator();
   let selectedDetail = getDetailItems(selectedCharacter)[0];
   let savedMaps = loadSavedMapRecords();
   let activeSavedMapId = savedMaps[0]?.id ?? "";
@@ -226,6 +245,19 @@ export function setupMenuUi(game: Phaser.Game) {
   const shellHost = document.createElement("div");
   shellHost.className = "menu-shell-host";
   root.append(shellHost);
+  // Kilitli operatore dokunus notu: yeniden cizimin disinda, ekranlar arasi kaliyor.
+  const operatorToast = document.createElement("p");
+  operatorToast.className = "menu-toast";
+  operatorToast.setAttribute("role", "status");
+  operatorToast.setAttribute("aria-live", "polite");
+  root.append(operatorToast);
+  let operatorToastTimer: number | undefined;
+  const showLockedOperatorNote = (characterId: string | undefined) => {
+    operatorToast.textContent = getLockedOperatorNote(characterId);
+    operatorToast.classList.add("is-visible");
+    window.clearTimeout(operatorToastTimer);
+    operatorToastTimer = window.setTimeout(() => operatorToast.classList.remove("is-visible"), 2400);
+  };
 
   const splashArt = root.querySelector<HTMLImageElement>("[data-splash-art]");
   if (splashArt) {
@@ -313,11 +345,10 @@ export function setupMenuUi(game: Phaser.Game) {
    */
   const quickStart = takeQuickStartIntent();
   if (quickStart) {
-    const character = characters.find((candidate) => candidate.id === quickStart.characterId);
-    if (character) {
-      selectedCharacter = character;
-      selectedDetail = getDetailItems(character)[0];
-    }
+    // Kilitli operatorle birakilmis not (eski surum) varsayilan operatore duser.
+    const character = resolvePlayableOperator(quickStart.characterId);
+    selectedCharacter = character;
+    selectedDetail = getDetailItems(character)[0];
     stageState = { ...stageState, selected: resolveQuickStartStage(quickStart, stageState.cleared) };
     if (selectedMap.scale !== quickStart.mapScale) selectedMap = scaleEditableMap(selectedMap, quickStart.mapScale);
     selectedMapScale = quickStart.mapScale;
@@ -346,11 +377,26 @@ export function setupMenuUi(game: Phaser.Game) {
     return { ...state, records, allRecords: recordBook };
   };
 
+  /**
+   * Maca giden operator her zaman oynanabilir: secim bir sekilde kilitli
+   * operatorde kaldiysa varsayilana duser. Solo baslatma ve oda kurma/katilma
+   * kimligi buradan aliyor.
+   */
+  const ensurePlayableSelection = () => {
+    if (!isPlayableOperator(selectedCharacter.id)) {
+      selectedCharacter = getDefaultOperator();
+      selectedDetail = getDetailItems(selectedCharacter)[0];
+    }
+    return selectedCharacter.id;
+  };
+
   const startGame = (mode: "solo" | "online" = "solo", resume?: MatchReconnectRecord) => {
     if (!phaserReady || onlineGameStarting) {
       return;
     }
     onlineGameStarting = true;
+    // Her solo baslatma yolu (Savaşa Gir, Eğitim, yaratici, harita, Tekrar) buradan.
+    ensurePlayableSelection();
     // Sahne devraliyor: lobi muzigi ~600 ms'de susup kaynagini birakiyor, mac muziksiz.
     menuMusic.stop();
     root.classList.add("menu-root--hidden");
@@ -360,7 +406,7 @@ export function setupMenuUi(game: Phaser.Game) {
     // sahneye `setResumedMatch` ile gidiyor.
     if (resume) {
       game.scene.start("game", {
-        characterId: characters.find((character) => character.id === resume.characterId)?.id ?? selectedCharacter.id,
+        characterId: resolvePlayableOperator(resume.characterId).id,
         mapData: scaleEditableMap(selectedMap, resume.mapScale as MapScale),
         creative: false,
         stage: resume.stage
@@ -382,7 +428,9 @@ export function setupMenuUi(game: Phaser.Game) {
     currentLobbyRoom = room;
     setActiveLobbyRoom(room);
     lobbyError = noText;
+    // Birakilan odanin gec gelen mesaji oyuncuyu lobiye geri cekmesin.
     room.onMessage("lobby:state", (state: LobbyStateSnapshot) => {
+      if (currentLobbyRoom !== room) return;
       currentLobbyState = state;
       const localPlayer = state.players.find((player) => player.id === room.sessionId);
       if (localPlayer) {
@@ -399,14 +447,36 @@ export function setupMenuUi(game: Phaser.Game) {
       render("lobby");
     });
     room.onMessage("lobby:error", (payload: { message?: string; key?: string }) => {
+      if (currentLobbyRoom !== room) return;
       // Sunucunun metni Turkce; anahtari varsa secili dilde, yoksa yerel yedek.
       const message = payload.message;
       lobbyError = message ? () => localizeServerText(message, payload.key) ?? message : uiText("menu.online.error.lobby");
       render("lobby");
     });
     room.onMessage("lobby:started", () => {
+      if (currentLobbyRoom !== room) return;
       startGame("online");
     });
+  };
+
+  /**
+   * Bekleme odasindan ayrilma ("‹" / "Odadan ayrıl").
+   *
+   * Dugme eskiden yalnizca ekrani oda listesine ceviriyordu: oyuncu odada
+   * kaliyor, lobi durumu gelince ekran lobiye geri donuyordu ve odadan
+   * cikmanin bir yolu yoktu. Simdi izinli cikis (`leave(true)`): sunucu
+   * oyuncuyu odadan siliyor, kurucuysa kurucu digerine geciyor. Etkin lobi
+   * odasi ve yeniden baglanma kaydi siliniyor; ekran oda listesine donup
+   * listeyi yeniliyor.
+   */
+  const leaveLobby = () => {
+    const room = currentLobbyRoom;
+    currentLobbyRoom = undefined;
+    currentLobbyState = undefined;
+    lobbyError = noText;
+    void leaveRoomAndForget(room);
+    render("online");
+    void refreshRoomListings();
   };
 
   const refreshRoomListings = async () => {
@@ -437,7 +507,7 @@ export function setupMenuUi(game: Phaser.Game) {
       const client = getSharedClient(gameServerUrl);
       const room = await retryExpiredSeatReservation(() => client.create("match", withWireCaps({
         playerName: getPlayerName(),
-        characterId: selectedCharacter.id,
+        characterId: ensurePlayableSelection(),
         roomName,
         mapScale: selectedMapScale,
         mapData: selectedMap,
@@ -465,7 +535,7 @@ export function setupMenuUi(game: Phaser.Game) {
       const client = getSharedClient(gameServerUrl);
       const room = await retryExpiredSeatReservation(() => client.joinById(roomId, withWireCaps({
         playerName: getPlayerName(),
-        characterId: selectedCharacter.id
+        characterId: ensurePlayableSelection()
       })));
       bindLobbyRoom(room);
       render("lobby");
@@ -521,6 +591,11 @@ export function setupMenuUi(game: Phaser.Game) {
       button.addEventListener("click", () => {
         const character = characters.find((candidate) => candidate.id === button.dataset.characterId);
         if (!character) {
+          return;
+        }
+        // Kilitli operator secilmiyor; dokunus/tiklama notu gosteriyor (mobilde hover yok).
+        if (!isPlayableOperator(character.id)) {
+          showLockedOperatorNote(character.id);
           return;
         }
         selectedCharacter = character;
@@ -717,6 +792,10 @@ export function setupMenuUi(game: Phaser.Game) {
     root.querySelectorAll<HTMLElement>("[data-lobby-character]").forEach((button) => {
       button.addEventListener("click", () => {
         const characterId = button.dataset.lobbyCharacter as CharacterId | undefined;
+        if (!characterId || !isPlayableOperator(characterId)) {
+          showLockedOperatorNote(characterId);
+          return;
+        }
         currentLobbyRoom?.send("lobby:setCharacter", { characterId });
       });
     });
@@ -732,6 +811,10 @@ export function setupMenuUi(game: Phaser.Game) {
       button.addEventListener("click", () => {
         currentLobbyRoom?.send("lobby:start");
       });
+    });
+
+    root.querySelectorAll<HTMLElement>("[data-lobby-leave]").forEach((button) => {
+      button.addEventListener("click", leaveLobby);
     });
   };
 
@@ -760,7 +843,11 @@ export function setupMenuUi(game: Phaser.Game) {
   // Yeniden yuklenen sekmede suren bir mac varsa once ona donmeyi dene.
   // Basarisizsa (pencere doldu, mac bitti) normal menu akisi suruyor. Oyuncu
   // bu arada kendisi bir oda kurduysa ya da oyuna girdiyse donulen oda birakiliyor.
-  const savedMatch = quickStart ? undefined : loadMatchReconnect();
+  // Kilitli operatorle kaydedilmis mac (kilitten onceki surum) geri acilmiyor:
+  // kayit siliniyor, menu normal aciliyor.
+  const storedMatch = quickStart ? undefined : loadMatchReconnect();
+  if (storedMatch && !isPlayableCharacterId(storedMatch.characterId)) clearMatchReconnect(storedMatch.roomId);
+  const savedMatch = storedMatch && isPlayableCharacterId(storedMatch.characterId) ? storedMatch : undefined;
   if (savedMatch) {
     void resumeSavedMatch(gameServerUrl, savedMatch).then((room) => {
       if (!room) return;
@@ -923,7 +1010,7 @@ function renderSigil(characterId: CharacterId, mark: string) {
         </g>
       </svg>
       ${art
-        ? `<img class="sigil__art" src="${art}" alt="" loading="lazy" decoding="async" />`
+        ? `<img class="sigil__art" src="${art.src}"${art.srcset ? ` srcset="${art.srcset}" sizes="76px"` : ""} alt="" loading="lazy" decoding="async" />`
         : `<b class="sigil__mark">${escapeHtml(mark)}</b>`}
     </span>
   `;
@@ -951,6 +1038,7 @@ function renderShell(
 ) {
   return `
     <main class="menu-shell">
+      ${renderOperatorLockDescription()}
       <section class="menu-stage">
         ${view === "home" ? renderHome(selectedCharacter, stageState, cardArchive.archive, progress) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter, progress) : ""}
@@ -1016,9 +1104,10 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
         <p class="section-label">${t("menu.home.roster")} <b>${characters.length}</b></p>
         <div class="roster__grid">
           ${characters.map((character) => `
-            <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
+            <button class="token ${character.id === selectedCharacter.id ? "is-active" : ""} ${isPlayableOperator(character.id) ? "" : "is-operator-locked"}" data-character-id="${character.id}"${lockedOperatorAttributes(character.id)} style="--accent: ${classColor[character.id]}">
               ${renderSigil(character.id, initials(character.displayName))}
               <span class="token__name">${operatorNameHtml(character.displayName)}</span>
+              ${renderOperatorLock(character.id)}
             </button>
           `).join("")}
         </div>
@@ -1174,7 +1263,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
     return `
       <div class="screen">
         <header class="screen-topbar">
-          <button class="icon-command" data-view="online" aria-label="Online">‹</button>
+          <button class="icon-command" data-lobby-leave aria-label="${t("menu.lobby.leave")}" title="${t("menu.lobby.leave")}">‹</button>
           <div>
             <p class="eyebrow">Lobby</p>
             <h1>${t("menu.lobby.waitingRoom")}</h1>
@@ -1191,7 +1280,7 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
   return `
     <div class="screen" style="--accent: ${classColor[selectedCharacter.id]}">
       <header class="screen-topbar detail-topbar">
-        <button class="icon-command" data-view="online" aria-label="Online">‹</button>
+        <button class="icon-command" data-lobby-leave aria-label="${t("menu.lobby.leave")}" title="${t("menu.lobby.leave")}">‹</button>
         <div>
           <p class="eyebrow">Room Lobby${lobbyState.stage !== undefined ? ` · ${t("menu.common.stage", { n: getStage(lobbyState.stage).id })}` : ""}</p>
           <h1>${escapeHtml(lobbyState.roomName)}</h1>
@@ -1218,14 +1307,16 @@ function renderLobby(selectedCharacter: CharacterDefinition, lobbyState?: LobbyS
       <section class="loadout-grid lobby-roster-grid">
         ${characters.map((character) => {
           const owner = lobbyState.players.find((player) => player.characterId === character.id);
+          const playable = isPlayableOperator(character.id);
           return `
             <button
-              class="loadout-chip ${selectedCharacter.id === character.id ? "is-active" : ""} ${owner ? "is-locked" : ""}"
-              data-lobby-character="${character.id}"
+              class="loadout-chip ${selectedCharacter.id === character.id ? "is-active" : ""} ${owner ? "is-locked" : ""} ${playable ? "" : "is-operator-locked"}"
+              data-lobby-character="${character.id}"${lockedOperatorAttributes(character.id)}
               style="--item: ${classColor[character.id]}"
             >
-              <span>${owner ? escapeHtml(owner.name) : t("menu.lobby.freeSlot")}</span>
+              <span>${owner ? escapeHtml(owner.name) : playable ? t("menu.lobby.freeSlot") : escapeHtml(t("menu.operator.locked"))}</span>
               <strong>${operatorNameHtml(character.displayName)}</strong>
+              ${renderOperatorLock(character.id)}
             </button>
           `;
         }).join("")}
@@ -1358,13 +1449,14 @@ function renderArchive(selectedCharacter: CharacterDefinition, progress: Progres
 
       <section class="archive-list">
         ${characters.map((character) => `
-          <button class="archive-card ${character.id === selectedCharacter.id ? "is-active" : ""}" data-character-id="${character.id}" style="--accent: ${classColor[character.id]}">
+          <button class="archive-card ${character.id === selectedCharacter.id ? "is-active" : ""} ${isPlayableOperator(character.id) ? "" : "is-operator-locked"}" data-character-id="${character.id}"${lockedOperatorAttributes(character.id)} style="--accent: ${classColor[character.id]}">
             <span class="archive-card__mark">${initials(character.displayName)}</span>
             <span class="archive-card__body">
               <strong>${operatorNameHtml(character.displayName)}</strong>
-              <small>${escapeHtml(character.role)}</small>
+              <small>${isPlayableOperator(character.id) ? escapeHtml(character.role) : escapeHtml(t("menu.operator.locked"))}</small>
               ${renderMasteryMeter(getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, character.id)))}
             </span>
+            ${renderOperatorLock(character.id)}
           </button>
         `).join("")}
       </section>
@@ -1777,7 +1869,7 @@ function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem
       </header>
 
       <section class="dossier-hero frame">
-        <div class="sigil">${initials(character.displayName)}</div>
+        ${renderSigil(character.id, initials(character.displayName))}
         <div class="dossier-copy">
           <strong>${escapeHtml(character.role)}</strong>
           <p>${escapeHtml(character.summary)}</p>

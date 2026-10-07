@@ -36,6 +36,24 @@ export type CreditGroup = {
  */
 export const CREDITS_DEVELOPER = "gunesatakan";
 
+/**
+ * Gelistiricinin uretken yapay zeka ile yaptigi, kaydi dosya bazinda tutulan
+ * operator gorselleri (simdilik AttackLord'un muhru).
+ *
+ * Ucuncu taraf kaynagi degiller, ekranda ayri satir da cizilmiyor (ekrandaki
+ * "credits.game.body" metni gelistirici yapimi gorsellerin bir kismini yapay
+ * zekayla yapildigini zaten soyluyor). Yeni boyle bir gorsel eklerken buraya
+ * ve CREDITS.md'ye yazin. Liste kaydin izlenebilir olmasi icin:
+ * tests/credits.test.mjs her yolun pakette ve CREDITS.md'nin "Gelistirici
+ * yapimi varliklar" bolumunde oldugunu denetliyor.
+ */
+export type DeveloperArt = { path: string; author: string; generativeAi: boolean; note: string };
+
+export const DEVELOPER_OPERATOR_ART: readonly DeveloperArt[] = [
+  { path: "apps/web/public/images/attacklord-icon-256.webp", author: CREDITS_DEVELOPER, generativeAi: true, note: "AttackLord operator icon, 256 px" },
+  { path: "apps/web/public/images/attacklord-icon-128.webp", author: CREDITS_DEVELOPER, generativeAi: true, note: "AttackLord operator icon, 128 px" }
+];
+
 export const CREDIT_GROUPS: readonly CreditGroup[] = [
   {
     id: "audio",

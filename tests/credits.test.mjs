@@ -12,7 +12,7 @@ import { importWebModule } from "./helpers/web-module.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
-const { CREDIT_GROUPS, CREDIT_SOURCES, CREDITS_DEVELOPER, creditLinkLabel } = await importWebModule("apps/web/src/credits.ts");
+const { CREDIT_GROUPS, CREDIT_SOURCES, CREDITS_DEVELOPER, DEVELOPER_OPERATOR_ART, creditLinkLabel } = await importWebModule("apps/web/src/credits.ts");
 const i18n = await importWebModule("tests/fixtures/i18n-entry.ts");
 const credits = read("CREDITS.md");
 
@@ -92,7 +92,9 @@ test("geliştirici yapımı varliklar CREDITS.md'de yollariyla listeli", () => {
     "apps/web/public/images/towers/tower-warrior-1-level-10.png",
     "apps/web/public/images/splash-siege.webp",
     "apps/web/public/images/zeynep-puppet-hands.png",
-    "apps/web/public/images/melis-creepy.png"
+    "apps/web/public/images/melis-creepy.png",
+    "apps/web/public/images/attacklord-icon-256.webp",
+    "apps/web/public/images/attacklord-icon-128.webp"
   ]) {
     assert.ok(section.includes(path), `listede yok: ${path}`);
   }
@@ -140,4 +142,27 @@ test("itch sayfasi beyani ve mobil test listesi lobi muzigini anlatiyor", () => 
   assert.doesNotMatch(checklist, /Oyunda şu an müzik yok/);
   assert.match(checklist, /ilk dokunuştan sonra lobi müziği/);
   assert.match(checklist, /maçta yalnızca efekt sesleri/);
+});
+
+test("AttackLord ikonu: gelistirici yapimi, uretken yapay zekayla; modulde, CREDITS.md'de ve pakette", () => {
+  const section = credits.slice(credits.indexOf("## Geliştirici yapımı varlıklar"), credits.indexOf("## Notlar"));
+  const english = credits.slice(credits.indexOf("## English summary"));
+  const paths = DEVELOPER_OPERATOR_ART.map((art) => art.path);
+  assert.ok(paths.includes("apps/web/public/images/attacklord-icon-256.webp"), "256 px modulde yok");
+  assert.ok(paths.includes("apps/web/public/images/attacklord-icon-128.webp"), "128 px modulde yok");
+  assert.equal(new Set(paths).size, paths.length, "yinelenen yol");
+  for (const art of DEVELOPER_OPERATOR_ART) {
+    assert.equal(art.author, CREDITS_DEVELOPER, `${art.path} gelistiricinin degil`);
+    assert.equal(art.generativeAi, true, `${art.path} yapay zeka beyani yok`);
+    assert.ok(existsSync(new URL(`../${art.path}`, import.meta.url)), `pakette yok: ${art.path}`);
+    assert.ok(section.includes(art.path), `CREDITS.md gelistirici bolumunde yok: ${art.path}`);
+  }
+  const line = section.split("\n").find((entry) => entry.includes("attacklord-icon-256.webp"));
+  assert.match(line, /AttackLord/);
+  assert.match(line, /üretken yapay zekâ/);
+  assert.match(english, /AttackLord operator icon/);
+  // Menu ikonu varlik yolundan (assetUrl) yukluyor; kayitli dosyalar menude kullaniliyor.
+  const menu = read("apps/web/src/menu-ui.ts");
+  assert.match(menu, /assetUrl\("images\/attacklord-icon-256\.webp"\)/);
+  assert.match(menu, /assetUrl\("images\/attacklord-icon-128\.webp"\)/);
 });

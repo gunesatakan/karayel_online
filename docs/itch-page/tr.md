@@ -2,19 +2,19 @@
 
 ## Kısa açıklama (itch "Short description", en fazla ~100 karakter)
 
-Dört kişiye kadar co-op, kartlarla kurulan sert bilimkurgu kule savunması. Tarayıcıda, telefonda.
+İki kişilik co-op, kartlarla kurulan sert bilimkurgu kule savunması. Tarayıcıda, telefonda.
 
 ## Uzun açıklama
 
-**Defense Protocol**, tarayıcıda oynanan, dört kişiye kadar co-op bir kule savunma oyunudur. Bir operatör seç, savunma hattını kur ve yirmi dalga boyunca nexus'u koru.
+**Defense Protocol**, tarayıcıda oynanan, iki kişilik co-op bir kule savunma oyunudur. Bir operatör seç, savunma hattını kur ve yirmi dalga boyunca nexus'u koru.
 
 Her operatörün kendine ait kuleleri, becerileri ve bir ultisi var. Her dalgadan sonra bir kart seçip koşunu şekillendiriyorsun; altın mağazasından aldığın eşyaları kulelere takıyorsun. Kuleler ateş ettikçe ısınıyor; enerjiyi ve mühimmatı işçiler taşıyor. Lojistiği aksatırsan en güçlü kule de susar.
 
-- **7 operatör:** her birinin kendi kule seti, becerileri ve ultisi var.
+- **Bu sürümde 2 operatör (AttackLord ve ZentaX):** her birinin kendi kule seti, becerileri ve ultisi var. Beş operatör daha geliştirme aşamasında.
 - **5 aşama:** her aşama tek bir düşman ırkı (Golem, Meka, Uzay Böceği, Düşmüş, Dördüncü Boyut) ve 20 dalga. 6. dalgadan sonra şampiyonlar geliyor.
 - **141 kart, 123 eşya:** her dalgadan sonra kart seçimi, kule başına 10 eşya yuvası.
 - **Isı, enerji ve mühimmat:** işçi al, uzmanlığını seç, İşçi Ağacı'nda geliştir.
-- **Co-op:** dört kişiye kadar aynı haritada. İstersen tek başına oyna.
+- **Co-op:** iki kişi aynı haritada. İstersen tek başına oyna.
 - **Rapor:** her dalga ve her koşu için savunma özeti, nişanlar, ustalık ve rekorlar.
 - **Türkçe ve İngilizce.**
 

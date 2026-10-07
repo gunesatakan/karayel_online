@@ -3,8 +3,8 @@ import { en } from "./locales/en";
 import { tr, type MessageKey } from "./locales/tr";
 
 /**
- * Arayuz dili: Turkce ve Ingilizce. Kayitli secim yoksa tarayici dili
- * Turkceyse Turkce, degilse Ingilizce (`resolveInitialLocale`).
+ * Arayuz dili: Turkce ve Ingilizce. Kayitli secim yoksa oyun Ingilizce
+ * aciliyor (`DEFAULT_LOCALE`, sahibin karari); oyuncu menuden degistirir.
  *
  * Metinler anahtarla (`t("hud.continue")`) okunuyor; Turkce sozluk kaynak,
  * anahtarlarin tamami orada. Ingilizcede eksik anahtar Turkceye dusuyor:
@@ -22,31 +22,32 @@ export type { MessageKey };
 export const LOCALES: readonly Locale[] = ["tr", "en"];
 export const LOCALE_STORAGE_KEY = "uzay_locale";
 
+// Node testleri Turkce kaynak metne gore yazili; test paketleyicisi bunu "tr"
+// tanimliyor (tests/helpers/web-module.mjs). Oyun paketinde tanimsiz: Ingilizce.
+declare const __DEFAULT_LOCALE__: string | undefined;
+
+/** Kayitli secim yokken acilis dili. */
+export const DEFAULT_LOCALE: Locale = typeof __DEFAULT_LOCALE__ !== "undefined" && __DEFAULT_LOCALE__ === "tr" ? "tr" : "en";
+
 const dictionaries: Record<Locale, Partial<Record<MessageKey, string>>> = { tr, en };
 
 let current: Locale = readInitialLocale();
 // Paylasilan metin ureticileri (rapor, karne, bildirim) ayni dilde yazsin.
 setSharedLocale(current);
-// Sayfa dili de ilk boyamadan once secili dilden (index.html "tr" ile geliyor).
+// Sayfa dili de ilk boyamadan once secili dilden (index.html "en" ile geliyor).
 try {
   if (typeof document !== "undefined") document.documentElement.lang = current;
 } catch {
   // Belge yok (node): yapacak bir sey yok.
 }
 
-/**
- * Ilk dil: kayitli secim her zaman kazanir. Secim yoksa tarayicinin ilk
- * tercih ettigi dil: Turkce ("tr", "tr-TR") ise Turkce, baska her dil ya da
- * bilinmiyorsa Ingilizce.
- */
-export function resolveInitialLocale(stored: string | null | undefined, languages: readonly (string | null | undefined)[]): Locale {
-  if (stored === "en" || stored === "tr") return stored;
-  const preferred = languages.find((language) => typeof language === "string" && language.trim().length > 0);
-  return preferred && /^tr(?:[-_]|$)/i.test(preferred.trim()) ? "tr" : "en";
+/** Ilk dil: kayitli gecerli secim her zaman kazanir, yoksa varsayilan dil. */
+export function resolveInitialLocale(stored: string | null | undefined, fallback: Locale = DEFAULT_LOCALE): Locale {
+  return stored === "en" || stored === "tr" ? stored : fallback;
 }
 
 function readInitialLocale(): Locale {
-  return resolveInitialLocale(readStoredChoice(), readBrowserLanguages());
+  return resolveInitialLocale(readStoredChoice());
 }
 
 function readStoredChoice(): string | null {
@@ -55,17 +56,6 @@ function readStoredChoice(): string | null {
   } catch {
     // Depolama kapali (itch iframe'i, gizli pencere): secim yok sayilir.
     return null;
-  }
-}
-
-/** Tarayicinin dil tercihleri, onem sirasiyla; okunamazsa bos liste. */
-function readBrowserLanguages(): readonly string[] {
-  try {
-    if (typeof navigator === "undefined") return [];
-    const list = Array.isArray(navigator.languages) ? navigator.languages : [];
-    return list.length > 0 ? list : [navigator.language];
-  } catch {
-    return [];
   }
 }
 

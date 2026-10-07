@@ -151,7 +151,7 @@ export const trControls = {
   "hud.airMixed": "KARIŞIK HAVA",
   "hud.perfButton": "Performans bilgisi",
   "hud.statsButton": "İstatistikler",
-  "hud.audioButton": "Ses ayarları",
+  "hud.menuButton": "Ayarlar ve menü",
   "hud.continue": "Devam",
   "hud.waiting": "Bekleniyor",
   "hud.experience": "Deneyim",
@@ -177,6 +177,8 @@ export const trControls = {
   "hud.stats.noTowers": "Sahada kule yok.",
   "hud.stats.seconds": "{v} sn",
   "hud.stats.level": "lv{level}",
+  // Menu paneli: basligi, en ustte menuye donus, altinda ses bolumu.
+  "hud.menu.title": "Menü",
   "hud.audio.title": "Ses ayarları",
   "hud.audio.music": "Müzik",
   "hud.audio.voice": "Seslendirme",
@@ -184,7 +186,7 @@ export const trControls = {
   "hud.audio.hit": "Vuruş sesleri",
   "hud.audio.hitNote": "Efektler kapalı: vuruş sesleri de duyulmaz (Efektler ile birlikte ölçeklenir).",
   "hud.audio.vibration": "Titreşim",
-  // Mac icinden menuye donus: ses panelinin altindaki dugme ve onayi.
+  // Mac icinden menuye donus: menu panelinin en ustundeki dugme ve onayi.
   "hud.quit.button": "Menüye dön",
   "hud.quit.title": "Menüye dön",
   "hud.quit.solo": "Maçtan çık? İlerleme kaybolur.",
@@ -341,7 +343,7 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.airMixed": "MIXED AIR",
   "hud.perfButton": "Performance info",
   "hud.statsButton": "Statistics",
-  "hud.audioButton": "Audio settings",
+  "hud.menuButton": "Settings & menu",
   "hud.continue": "Continue",
   "hud.waiting": "Waiting",
   "hud.experience": "Experience",
@@ -367,6 +369,7 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.stats.noTowers": "No towers on the field.",
   "hud.stats.seconds": "{v} s",
   "hud.stats.level": "Lv{level}",
+  "hud.menu.title": "Menu",
   "hud.audio.title": "Audio settings",
   "hud.audio.music": "Music",
   "hud.audio.voice": "Voice",

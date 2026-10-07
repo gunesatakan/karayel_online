@@ -92,6 +92,7 @@ export const trMenu = {
   "menu.lobby.setReady": "Hazırım",
   "menu.lobby.start": "Oyunu Başlat",
   "menu.lobby.hostNote": "Kurucu herkes hazır olduğunda oyunu başlatır.",
+  "menu.lobby.leave": "Odadan ayrıl",
 
   // ------------------------------------------------------------ Asama tahtasi
   "menu.stage.title": "Aşamalar",
@@ -118,6 +119,9 @@ export const trMenu = {
   "menu.home.stat.towers": "Kule",
   "menu.home.rosterAria": "Operatörler",
   "menu.home.roster": "Operatör Kadrosu",
+  // Kilitli (oynanamayan) operator: ipucu, aciklama ve dokunus notu.
+  "menu.operator.locked": "Geliştirme aşamasında",
+  "menu.operator.lockedNote": "{name} geliştirme aşamasında",
   "menu.home.deploy": "Savaşa Gir",
   "menu.home.stageLine": "{n}. Aşama · {name}",
   "menu.home.creative": "Yaratıcı",
@@ -412,6 +416,7 @@ export const enMenu: Readonly<Record<keyof typeof trMenu, string>> = {
   "menu.lobby.setReady": "Ready",
   "menu.lobby.start": "Start Game",
   "menu.lobby.hostNote": "The host starts the game once everyone is ready.",
+  "menu.lobby.leave": "Leave room",
 
   // ------------------------------------------------------------ Asama tahtasi
   "menu.stage.title": "Stages",
@@ -438,6 +443,8 @@ export const enMenu: Readonly<Record<keyof typeof trMenu, string>> = {
   "menu.home.stat.towers": "Towers",
   "menu.home.rosterAria": "Operators",
   "menu.home.roster": "Operator Roster",
+  "menu.operator.locked": "In development",
+  "menu.operator.lockedNote": "{name} is in development",
   "menu.home.deploy": "Enter Battle",
   "menu.home.stageLine": "Stage {n} · {name}",
   "menu.home.creative": "Creative",

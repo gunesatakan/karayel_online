@@ -58,6 +58,7 @@ import {
   getKillAssistText,
   pickLocalKillAssist,
   characters,
+  resolvePlayableCharacterId,
   GAME_WORLD_WIDTH,
   HIRABLE_WORKER_ROLES,
   type HirableWorkerRole,
@@ -1478,7 +1479,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data: GameSceneData) {
-    this.selectedCharacterId = data.characterId ?? "zeynep";
+    // Menu kilitli operatorle sahne acmiyor; yine de sahne kendi basina da
+    // oynanabilir operatore dusuyor (varsayilan ZentaX).
+    this.selectedCharacterId = resolvePlayableCharacterId(data.characterId, "zeynep");
     this.selectedCharacter = characters.find((character) => character.id === this.selectedCharacterId) ?? characters[0];
     this.selectedTowerDefinition = towerCatalog[this.selectedCharacter.id][0];
     this.selectedMapData = normalizeMapData(data.mapData);
@@ -5870,7 +5873,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Mac icinde menuye donus (ses panelinin altindaki dugme). Once oyun ici
+   * Mac icinde menuye donus (ayarlar ve menu panelinin en ustundeki dugme). Once oyun ici
    * onay: solo kosu kayboluyor, co-op'ta takim sensiz devam ediyor (kuleler
    * ve isciler sahada kaliyor). Onayda raporun dugmeleriyle ayni yol.
    */

@@ -11,12 +11,19 @@
  */
 import { MatchRoom } from "../../apps/server/dist/rooms/MatchRoom.js";
 import {
+  characters,
   getMapGridSize,
   getMapOrigin,
   getPointAlongRuntimePath,
   gridToWorld,
   worldToGrid
 } from "../../packages/shared/dist/index.js";
+
+// Oyunda yalnizca birkac operator oynanabiliyor (PLAYABLE_CHARACTER_IDS); sunucu
+// digerlerini AttackLord'a ceviriyor. Sunucu testleri butun kadroyu surdugu
+// icin duzenek listeyi butun karakterlere aciyor. Kilidin kendisi
+// tests/playable-operators.test.mjs'te, duzenegi yuklemeden test ediliyor.
+MatchRoom.playableCharacterIds = characters.map((character) => character.id);
 
 /** Kalkanli dusman profilleri. Kalkan efektif cani buyuttugu icin kritikler. */
 export const SHIELDED_ENEMIES = {

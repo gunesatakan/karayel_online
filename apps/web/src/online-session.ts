@@ -66,11 +66,21 @@ export function leaveMatchAndReload(
   reload: () => void = () => window.location.reload(),
   timeoutMs = ROOM_LEAVE_TIMEOUT_MS
 ) {
+  return leaveRoomAndForget(room, timeoutMs).finally(reload);
+}
+
+/**
+ * Odadan izinli cikar ve o odanin kayitlarini siler (yeniden baglanma kaydi,
+ * etkin lobi odasi). Kayitlar cikistan once siliniyor: yeni sayfa ya da menu
+ * bu odaya donmeyi denemesin. Menuye donus (`leaveMatchAndReload`) ve bekleme
+ * odasindaki "Odadan ayrıl" ayni yoldan; ikincisi sayfayi yuklemiyor.
+ */
+export function leaveRoomAndForget(room: Room | undefined, timeoutMs = ROOM_LEAVE_TIMEOUT_MS) {
   if (room) {
     clearMatchReconnect(room.roomId);
     clearActiveLobbyRoom(room.roomId);
   }
-  return leaveRoomQuietly(room, timeoutMs).finally(reload);
+  return leaveRoomQuietly(room, timeoutMs);
 }
 
 export function isSeatReservationExpiredError(error: unknown) {
