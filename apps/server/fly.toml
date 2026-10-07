@@ -8,9 +8,20 @@ primary_region = "fra"
   PORT = "2567"
   COLYSEUS_SEAT_RESERVATION_TIME = "45"
 
+# Makine boyutu: kapali test icin paylasimli 2 cekirdek. Gec oyunda kisilma
+# (Fly Metrics > CPU throttling) gorulurse cpu_kind = "performance" yapilir.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "1gb"
+
 [[services]]
   internal_port = 2567
   protocol = "tcp"
+  # Canli maclar yarida kesilmesin: makine kendiliginden durmaz, hep bir tane acik.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
 
   [[services.ports]]
     port = 80
@@ -20,6 +31,20 @@ primary_region = "fra"
     port = 443
     handlers = ["tls", "http"]
 
+  # Fly varsayilani 20/25 baglantiydi; oda siniri (MAX_CONCURRENT_ROOMS) asil
+  # kapasite sinirini koyar, burasi yalniz ust guvenlik.
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 200
+
   [[services.tcp_checks]]
     interval = "15s"
     timeout = "2s"
+
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"

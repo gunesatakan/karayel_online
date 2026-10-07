@@ -745,6 +745,12 @@ export class RunTelemetry {
   /**
    * Sayfa kapaniyor ya da sahne birakiliyor. Bekleyen sonuc varsa simdi
    * gidiyor; yoksa kosu birakilmis sayiliyor.
+   *
+   * "menu": oyuncu menuye kendisi dondu ve sayfa hemen yeniden yukleniyor.
+   * Kosu burada bittigi icin yuklemedeki `pagehide` ("closed") ve gizlenme
+   * bir sey yollamiyor. Kaydi da siliniyor: kapanmadan farkli olarak bu
+   * kosuya donulmuyor (yeniden baglanma kaydi da silindi), ayni odaya
+   * listeden donulse bile yeni bir kosu sayiliyor.
    */
   leave(reason: "closed" | "menu") {
     if (!this.active) return;
@@ -754,6 +760,7 @@ export class RunTelemetry {
     }
     this.track("abandon", this.abandonFields(reason));
     this.finish("abandoned");
+    if (reason === "menu") this.clearSavedRun();
   }
 
   reset() {

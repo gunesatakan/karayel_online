@@ -979,6 +979,7 @@ test("ust uste tick hatasi odayi mesajla kapatiyor", () => {
     assert.equal(disposed, 1);
     const notice = broadcasts.find((entry) => entry.type === "room:error");
     assert.ok(notice?.payload.message.includes("maç sonlandırıldı"), "oyunculara mesaj gitmedi");
+    assert.equal(notice.payload.key, "room.serverError", "istemci metni kendi dilinde yazsin diye anahtar");
     clock.advance(2500);
     room.update(16);
     assert.equal(disposed, 1, "kapatma tekrarlandi");

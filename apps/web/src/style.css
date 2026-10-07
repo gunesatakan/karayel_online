@@ -2529,9 +2529,10 @@ button.wave-report:active { transform: scale(0.99); }
 }
 
 /*
- * Yedi dugme, uc sira: iki sira uc, ucuncu sirada Nisanlar bir uctan obur
- * uca (`command--wide`). Dort sutunda Kart Arsivi ikinci siraya tek basina
- * dusuyordu; uc sutun dugmeleri biraz genisletiyor.
+ * Dokuz dugme, uc sira uc: son sira Egitim, Nisanlar, Emegi gecenler. Dort
+ * sutunda Kart Arsivi ikinci siraya tek basina dusuyordu; uc sutun dugmeleri
+ * biraz genisletiyor. `command--wide` tek dugmeyi iki sutuna yayar (su an
+ * kullanilmiyor; sira tek kalirsa).
  */
 .home-actions__grid {
   display: grid;
@@ -2552,7 +2553,7 @@ button.wave-report:active { transform: scale(0.99); }
   line-height: 1.1;
 }
 
-/* Genis dugme (Nisanlar): son satirda Egitim'in yaninda iki sutun kaplar. */
+/* Genis dugme: iki sutun kaplar. */
 .home-actions__grid .command--wide {
   grid-column: span 2;
   flex-direction: row;
@@ -3387,6 +3388,100 @@ button.wave-report:active { transform: scale(0.99); }
   color: var(--ink-3);
   font-size: var(--fs-small);
   line-height: 1.4;
+}
+
+/* --- credits -------------------------------------------------------------- */
+
+/*
+ * Emegi gecenler: grup basina etiket, kisa not ve kaynak satirlari. Satir
+ * kesik koseli koyu panel; ad ve yazar solda, lisans mono etiket, baglanti
+ * cyan veri satiri. Uzun adres 375 px'te tasmasin diye her yerden kiriliyor.
+ */
+.credits-group {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.credits-group__note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.credits-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.credits-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-left: 2px solid color-mix(in srgb, var(--cyan) 55%, transparent);
+  background: var(--panel-2);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+}
+
+.credits-entry strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.credits-entry__author {
+  grid-column: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.credits-entry__license {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  max-width: 38vw;
+  color: var(--gold);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.credits-entry__license small {
+  color: var(--ink-3);
+  font-size: inherit;
+}
+
+.credits-entry__link {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.credits-entry__link:hover,
+.credits-entry__link:focus-visible {
+  text-decoration: underline;
 }
 
 .mastery-list {
@@ -4811,6 +4906,13 @@ button.wave-report:active { transform: scale(0.99); }
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.6);
+  /*
+   * Sayinin boyu cubugun genisligiyle: 400 px ve ustunde 11, telefonda 10.
+   * Satir yuksekligi sabit carpan: ping rozeti yuksekligini buna gore
+   * sabitliyor (asagida).
+   */
+  font-size: clamp(10px, 2.75cqi, 11px);
+  line-height: 1.25;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -4827,8 +4929,15 @@ button.wave-report:active { transform: scale(0.99); }
 
 .game-hud__chip b {
   color: #dbeafe;
-  font-size: 11px;
+  font-size: 1em;
   font-weight: 700;
+}
+
+/* Tavan ("/500"): dalga "/20"si gibi kucuk ve soluk, sayi one cikiyor. */
+.game-hud__chip b small {
+  font-size: 0.8em;
+  font-weight: 600;
+  opacity: 0.6;
 }
 
 /* Mühimmat tek rozette: uc sayi ayni turden, ucu de ayri etiket hak etmiyor. */
@@ -4849,9 +4958,30 @@ button.wave-report:active { transform: scale(0.99); }
 .game-hud__chip--ping i { font-size: 7px; }
 /*
  * Ping rozeti seritteki en degisken ve en az acil olan sey: yer daralinca ilk
- * kirpilan o olsun.
+ * o kisiliyor, oyun sayilari ancak o noktaya inince.
+ *
+ * Kisilan rozet yazisini yarim kirpmiyor: parcalari sariyor ve rozetin boyu
+ * tek satira sabit, sigmayan parca gorunmeyen ikinci satira iniyor. Once
+ * sapma ("±3"), sonra birim ("ms"), sonra sayi dusuyor; en son renkli nokta
+ * kaliyor (iyi / uyari / kotu). Tam ayrinti ipucunda. Boy satir
+ * yuksekligiyle ayni carpan (1.25em), yani serit hicbir durumda uzamiyor.
  */
-.game-hud__chip--ping { flex-shrink: 4; }
+.game-hud__chip--ping {
+  flex-shrink: 1000;
+  flex-wrap: wrap;
+  justify-content: center;
+  height: 1.25em;
+  /* Yalniz nokta kalan ilk satir kisa; inen parca kesin gorunmez bolgeye. */
+  row-gap: 1.25em;
+  /* Nokta her zaman kalsin. */
+  min-width: 7px;
+}
+.game-hud__ping-unit,
+.game-hud__ping-jitter {
+  color: #94a3b8;
+  font-size: 0.8em;
+  font-weight: 600;
+}
 /* Ust cubuktaki dugmeler de basildigini gostersin. */
 .game-hud__actions button:active:not(:disabled) {
   border-color: rgba(125, 211, 252, 0.95);
@@ -4923,11 +5053,24 @@ button.wave-report:active { transform: scale(0.99); }
   .game-hud__actions { gap: 4px; }
   .game-hud__actions button { min-width: 28px; min-height: 29px; padding: 0 6px; font-size: 10px; }
   .game-hud .game-hud__continue { min-width: 62px; }
-  /* Rozetleri kismak satir sayisini dusurur: Zeynep dar ekranda uce degil
-     ikiye siniyor, yani bar ekranin altida birini yemiyor. */
-  .game-hud__chip { gap: 3px; padding: 1px 5px; }
+}
+
+/*
+ * Telefon genisligi (cubuk 460 px'e kadar): serit ZentaX'in sekiz rozetiyle
+ * tek satira sigsin. Ic bosluklar 1 px'e, simgeler 7 px'e iniyor; sayilar
+ * ayni boyda (yukarida clamp). 375 px'te (cubuk ~359) kenar boslugu bir
+ * piksel daha: gec dalgadaki "100/100 · 15/15 · 820/900" de sigiyor.
+ */
+@container (max-width: 460px) {
+  .game-hud__strip { gap: 2px; }
+  .game-hud__chip { column-gap: 2px; padding: 1px 4px; }
   .game-hud__chip i { font-size: 7px; }
-  .game-hud__chip b { font-size: 10px; }
+  .game-hud__chip--ammo b + em { margin-left: 2px; }
+}
+
+@container (max-width: 360px) {
+  .game-hud__chip { padding: 1px 3px; }
+  .game-hud__chip--ammo b + em { margin-left: 1px; }
 }
 
 @container (max-width: 310px) {
@@ -5022,6 +5165,22 @@ button.wave-report:active { transform: scale(0.99); }
 .game-hud__popup--audio { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 /* Titresim kutusu kaydiricilarla ayni izgarada; satiri doldurmuyor, etiketin tamami dokunma alani. */
 .game-hud__popup input[type="checkbox"] { justify-self: start; width: 20px; height: 20px; margin: 0; accent-color: #38bdf8; }
+/*
+ * Menuye donus: ses panelinin dibinde, tam genislik. Koseye
+ * oturan kapatma dugmesinin (`> button`) konumunu almiyor. Koyu kirmizi
+ * cerceve geri alinamayan eylemi soyluyor; onay penceresi ayrica soruyor.
+ */
+.game-hud__popup > .game-hud__popup-quit {
+  position: static;
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 16px;
+  border-color: rgba(180, 80, 90, 0.7);
+  color: #fecdd3;
+  background: rgba(74, 28, 34, 0.92);
+  letter-spacing: 0.03em;
+}
 
 /* Istatistik paneli: sekmeler ve siralanmis liste. */
 .game-hud__popup--stats { min-width: min(420px, 86vw); }
@@ -5062,6 +5221,17 @@ button.wave-report:active { transform: scale(0.99); }
   .game-hud__actions { gap: 4px; }
   .game-hud__actions button { min-width: 30px; min-height: 30px; padding: 0 7px; font-size: 10px; }
   .game-hud .game-hud__continue { min-width: 66px; }
+}
+
+/*
+ * Kurulumda "Kurulum 0/1" 375 px'te 5 px kirpiliyordu. Satir ve sayi
+ * aralari 2'ser px daraliyor; dugmeler (dokunma alani) ayni. Ustteki medya
+ * kuralindan sonra, cunku ikisi de ayni ozgullukte ve sira kazaniyor.
+ */
+@container (max-width: 420px) {
+  .game-hud__row { gap: 6px; }
+  .game-hud__vitals { gap: 6px; }
+  .game-hud__actions { gap: 4px; }
 }
 
 /*

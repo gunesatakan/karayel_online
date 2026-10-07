@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { openChoiceDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
+import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
 import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
 import type { TowerSheetReport } from "../game-control-ui";
@@ -249,7 +249,7 @@ import {
   getActiveLobbyRoom,
   getSharedClient,
   isServerFullError,
-  leaveRoomQuietly,
+  leaveMatchAndReload,
   retryExpiredSeatReservation,
   saveMatchReconnect,
   setActiveLobbyRoom,
@@ -277,6 +277,7 @@ import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } 
 import { reportTelemetryError, runTelemetry } from "../telemetry";
 import { assetUrl } from "../asset-url";
 import { getLocale, t, tMaybe, upper } from "../i18n";
+import { describeServerError, localizeDefenseSummary, localizeRunSummary, localizeServerText, localizeTowerPreview } from "../server-text";
 import { enChampionLabel } from "../locales/catalog/en-progression";
 
 type GameSceneData = {
@@ -371,6 +372,7 @@ type ControlActionDetail = {
     | "setSfxVolume"
     | "setHitVolume"
     | "setVibration"
+    | "quitMatch"
     | "openInventory"
     | "closeInventory"
     | "selectInventoryItem"
@@ -2475,6 +2477,9 @@ export class GameScene extends Phaser.Scene {
       case "setVibration":
         this.setVibrationEnabled(detail.value === 1);
         break;
+      case "quitMatch":
+        this.confirmQuitMatch();
+        break;
       case "selectTower": {
         this.hideZeynepTierChoicesIfOpen();
         const tower = findTower();
@@ -3452,6 +3457,9 @@ export class GameScene extends Phaser.Scene {
 
   private createBackgroundMusic() {
     this.backgroundMusicPath = getBackgroundMusicPath(this.selectedCharacterId);
+    if (!this.backgroundMusicPath) {
+      return;
+    }
     this.backgroundMusic = new Audio(this.backgroundMusicPath);
     this.backgroundMusic.preload = "auto";
     this.backgroundMusic.loop = true;
@@ -4630,7 +4638,7 @@ export class GameScene extends Phaser.Scene {
       // Dolu sunucu bir ariza degil: tam metin bildirimde, cubukta kisa hali.
       if (isServerFullError(error)) {
         console.warn(error);
-        this.showNotice(error instanceof Error ? error.message : String(error), 8000);
+        this.showNotice(describeServerError(error), 8000);
         this.emitHudState({ status: t("scene.status.serverFull") });
         return;
       }
@@ -5241,6 +5249,10 @@ export class GameScene extends Phaser.Scene {
     const shouldResume = this.gameAudioUnlocked && this.backgroundMusic ? !this.backgroundMusic.paused : false;
     this.backgroundMusic?.pause();
     this.backgroundMusicPath = nextPath;
+    if (!nextPath) {
+      this.backgroundMusic = undefined;
+      return;
+    }
     this.backgroundMusic = new Audio(nextPath);
     this.backgroundMusic.preload = "auto";
     this.backgroundMusic.loop = true;
@@ -5410,7 +5422,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const pending = this.pendingPreview;
       if (!pending || pending.requestId !== preview.requestId || !pending.dialog.isConnected) return;
       this.pendingPreview = undefined;
-      openDefenseDialog(preview.title ?? t("scene.preview.fallbackTitle"), preview.error ? [preview.error] : [...(preview.lines ?? []), "", preview.description ?? ""], preview.error ? undefined : pending.apply, preview.error ? undefined : preview.changed);
+      // Sunucunun metinleri Turkce; secili dilde anahtar ve kimliklerden (`server-text`).
+      const text = localizeTowerPreview(preview);
+      openDefenseDialog(text.title ?? t("scene.preview.fallbackTitle"), text.error ? [text.error] : [...(text.lines ?? []), "", text.description ?? ""], text.error ? undefined : pending.apply, text.error ? undefined : preview.changed);
     });
     room.onMessage("defense:summary", (summary: DefenseSummary) => {
       this.latestDefenseSummary = summary;
@@ -5425,9 +5439,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     room.send("defense:request");
     room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
-    room.onMessage("card:rejected", (message: { reason?: string }) => {
-      // Sunucunun gerekcesi Turkce geliyor (sunucu tarafi); yedek dile bakiyor.
-      this.setCardChoicePending(false, message.reason ?? t("scene.card.rejected"));
+    room.onMessage("card:rejected", (message: { reason?: string; key?: string }) => {
+      // Sunucunun gerekcesi Turkce; anahtari varsa secili dilde, yedek dile bakiyor.
+      this.setCardChoicePending(false, localizeServerText(message.reason, message.key) ?? t("scene.card.rejected"));
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
@@ -5471,11 +5485,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       if (this.latestPerfSnapshot) this.latestPerfSnapshot.perf = perf;
     });
     // Sunucu bozulan odayi kapatiyor: yeniden baglanmayi denemenin anlami yok.
-    room.onMessage("room:error", (message: { message?: string }) => {
+    room.onMessage("room:error", (message: { message?: string; key?: string }) => {
       this.roomAbortedId = room.roomId;
       clearMatchReconnect(room.roomId);
-      // Sunucunun metni Turkce geliyor (sunucu tarafi); yedek dile bakiyor.
-      const text = message?.message ?? t("scene.room.serverError");
+      // Sunucunun metni Turkce; anahtari varsa secili dilde, yedek dile bakiyor.
+      const text = localizeServerText(message?.message, message?.key) ?? t("scene.room.serverError");
       this.showNotice(text, 8000);
       this.emitHudState({ status: text });
     });
@@ -5726,7 +5740,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       kills: report.summary.kills,
       stage: report.stage,
       creative: report.creative,
-      run: report.run,
+      // Kule adlari secili dilde (tanim kimligiyle katalogdan).
+      run: localizeRunSummary(report.run),
       localSlot: this.getRunLocalSlot(report.run),
       merge,
       ultimate: this.bestOwnUltimate,
@@ -5843,23 +5858,35 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Odadan izinli cikip sayfayi yeniden yukler (raporun dugmeleri).
+   * Odadan izinli cikip sayfayi yeniden yukler: raporun dugmeleri ve mac
+   * icindeki "Menüye dön" (`leaveMatchAndReload`).
    *
-   * Yalnizca yeniden yukleme izinsiz cikis sayiliyordu: sunucu yuvayi
-   * yeniden baglanma icin tutuyor, oda sinirda yer kapliyordu. Izinli cikista
-   * bitmis ya da herkesin biraktigi oda beklemeden kapaniyor. Cikis en iyi
-   * caba ve kisa (`leaveRoomQuietly`): olu soket yuklemeyi bekletmiyor.
-   * Kayit once siliniyor ki yeni sayfa bu odaya donmeyi denemesin.
+   * Kosu izi yuklemeden once kapaniyor: suren kosu `abandon` (menu) ve
+   * `run_end` (abandoned) aliyor, bekleyen sonuc varsa o gidiyor. Kosu
+   * bittigi icin yuklemedeki `pagehide` ("closed") ikinci kez saymiyor.
    */
   private reloadAfterLeavingRoom() {
     if (this.leavingRoom) return;
     this.leavingRoom = true;
-    const room = this.room;
-    if (room) {
-      clearMatchReconnect(room.roomId);
-      clearActiveLobbyRoom(room.roomId);
-    }
-    void leaveRoomQuietly(room).finally(() => window.location.reload());
+    runTelemetry.leave("menu");
+    void leaveMatchAndReload(this.room);
+  }
+
+  /**
+   * Mac icinde menuye donus (ses panelinin altindaki dugme). Once oyun ici
+   * onay: solo kosu kayboluyor, co-op'ta takim sensiz devam ediyor (kuleler
+   * ve isciler sahada kaliyor). Onayda raporun dugmeleriyle ayni yol.
+   */
+  private confirmQuitMatch() {
+    this.hideAudioSettingsPanel();
+    if (this.leavingRoom) return;
+    const coop = this.startedFromLobby && (this.latestPerfSnapshot?.players.length ?? 0) > 1;
+    openConfirmDialog(
+      t("hud.quit.title"),
+      [t(coop ? "hud.quit.coop" : "hud.quit.solo")],
+      { confirm: t("hud.quit.confirm"), cancel: t("hud.quit.cancel") },
+      () => this.reloadAfterLeavingRoom()
+    );
   }
 
   /**
@@ -6018,7 +6045,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       localSlot: local?.slot ?? 0,
       coop: this.playerSnapshots.length > 1,
       creative: this.creativeMode,
-      defense: this.latestDefenseSummary,
+      defense: localizeDefenseSummary(this.latestDefenseSummary),
       health: team ? { health: team.health, maxHealth: team.maxHealth } : undefined
     });
   }
@@ -11388,7 +11415,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * kirpiliyor. Tamami zaten konsolda ve "i" kutusunda duruyor.
    */
   private formatConnectionError(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    // Bilinen oda redleri ("Oda dolu.") secili dilde; obur hatalar oldugu gibi.
+    const message = describeServerError(error);
     // "Hata:" gibi bir on ek yer yiyor ve hicbir sey soylemiyor -- yazi zaten
     // yalnizca bir sey ters gittiginde cikiyor. Butonlarin yaninda kalan en dar
     // alan 22 harf kadar; sinir oradan.
@@ -11451,8 +11479,13 @@ function getZeynepCommandButtonState(authorityChain: number) {
   return { cost: 10, label: authorityChain >= 2 ? t("scene.skill.zeynepPickChain") : t("scene.skill.zeynepPick") };
 }
 
-function getBackgroundMusicPath(characterId: CharacterId) {
-  return characterId === "zeynep" || characterId === "archer" ? assetUrl("audio/zeynep-theme.mp3") : assetUrl("audio/background-theme.mp3");
+/**
+ * Arka plan muzigi su an yok: eski iki parca lisanssiz ticari kayitti ve
+ * kaldirildi (bkz. CREDITS.md). Lisansli/CC0 parca gelince operatore gore
+ * yol burada dondurulur; bos yol "muzik yok" demek.
+ */
+function getBackgroundMusicPath(_characterId: CharacterId): string {
+  return "";
 }
 
 /**

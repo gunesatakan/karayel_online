@@ -444,6 +444,47 @@ test("kosu izi: gizlenme bir kez abandon, kapanma birakma; yenilemede ayni kosu 
   assert.equal(other.events[0].mode, "creative");
 });
 
+test("kosu izi: menuye donus bir kez abandon (menu) + run_end; yuklemedeki gizlenme ve kapanma ikinci kez saymiyor", () => {
+  const storage = memoryStorage();
+  const { run, events } = createRun(storage);
+  run.attach({ roomId: "room5", online: true, creative: false, resumed: false, operator: "atakan" });
+  run.noteSnapshot(snapshot({ wave: 6, players: 2 }), "me");
+  run.leave("menu");
+  // Sayfa yeniden yukleniyor: once gizlenme, sonra pagehide ("closed").
+  run.hidden();
+  run.leave("closed");
+  run.leave("menu");
+  const abandons = events.filter((event) => event.type === "abandon");
+  assert.equal(abandons.length, 1, "birakma iki kez sayildi");
+  assert.equal(abandons[0].reason, "menu");
+  assert.equal(abandons[0].wave, 6);
+  assert.equal(abandons[0].mode, "coop");
+  const ends = events.filter((event) => event.type === "run_end");
+  assert.equal(ends.length, 1, "kosu iki kez bitti");
+  assert.equal(ends[0].outcome, "abandoned");
+  assert.equal(run.active, false);
+  // Kapanmadan farkli olarak bu kosuya donulmuyor: kayit silindi, ayni odaya
+  // listeden donus yeni kimlikle yeni bir kosu.
+  assert.equal(storage.getItem(TELEMETRY_RUN_KEY), null);
+  const again = new RunTelemetry({ storage, generateId: () => "yenirid01", now: () => 0 });
+  const againEvents = [];
+  again.bind((type, fields) => againEvents.push({ type, ...fields }));
+  again.attach({ roomId: "room5", online: true, creative: false, resumed: false, operator: "atakan" });
+  again.noteSnapshot(snapshot({ wave: 7, players: 2 }), "me");
+  assert.equal(againEvents[0].rid, "yenirid01");
+  assert.equal(againEvents[0].resumed, false);
+
+  // Rapordan menuye donus: bekleyen sonuc gidiyor, birakma yok.
+  const finished = createRun();
+  finished.run.attach({ roomId: "room6", online: false, creative: false, resumed: false, operator: "melis" });
+  finished.run.noteSnapshot(snapshot({ wave: 9 }), "me");
+  finished.run.end("victory");
+  finished.run.leave("menu");
+  finished.run.leave("closed");
+  assert.equal(finished.events.filter((event) => event.type === "abandon").length, 0);
+  assert.deepEqual(finished.events.filter((event) => event.type === "run_end").map((event) => event.outcome), ["win"]);
+});
+
 test("gelistirme sahnesi ve VFX galerisi hicbir sey gondermiyor", () => {
   assert.equal(isTelemetryBlockedLocation({ pathname: "/dev/tower-sheet.html", search: "" }), true);
   assert.equal(isTelemetryBlockedLocation({ pathname: "/", search: "?vfx-gallery" }), true);

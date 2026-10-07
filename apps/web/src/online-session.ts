@@ -50,6 +50,29 @@ export async function leaveRoomQuietly(room: Room | undefined, timeoutMs = ROOM_
   }
 }
 
+/**
+ * Suren ya da biten bir mactan menuye doner: kosu raporunun dugmeleri ve
+ * mac icindeki "Menüye dön" ayni yoldan.
+ *
+ * Yalnizca yeniden yukleme izinsiz cikis sayiliyordu: sunucu yuvayi yeniden
+ * baglanma icin tutuyor, oda sinirda yer kapliyordu. Izinli cikista bitmis ya
+ * da herkesin biraktigi oda beklemeden kapaniyor; co-op'ta kalanlar oynamaya
+ * devam ediyor. Kayitlar once siliniyor ki yeni sayfa bu odaya donmeyi
+ * denemesin. Cikis en iyi caba ve kisa (`leaveRoomQuietly`): olu soket
+ * yuklemeyi bekletmiyor, yukleme her durumda oluyor.
+ */
+export function leaveMatchAndReload(
+  room: Room | undefined,
+  reload: () => void = () => window.location.reload(),
+  timeoutMs = ROOM_LEAVE_TIMEOUT_MS
+) {
+  if (room) {
+    clearMatchReconnect(room.roomId);
+    clearActiveLobbyRoom(room.roomId);
+  }
+  return leaveRoomQuietly(room, timeoutMs).finally(reload);
+}
+
 export function isSeatReservationExpiredError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   return message.toLocaleLowerCase("en-US").includes("seat reservation expired");

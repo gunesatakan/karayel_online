@@ -104,6 +104,55 @@ test("odadan izinli cikis: leave(true), olu soket zaman asimiyla birakiliyor, ha
   }
 });
 
+test("menuye donus (ortak yol): kayitlar once siliniyor, izinli cikis, sonra her durumda yukleme", async () => {
+  const store = new Map();
+  globalThis.window = {
+    sessionStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key)
+    },
+    setTimeout
+  };
+  try {
+    const order = [];
+    const room = {
+      roomId: "oda7",
+      reconnectionToken: "jeton",
+      leave: (consented) => {
+        order.push(`leave:${consented}`);
+        // Cikis aninda yeniden baglanma kaydi ve lobi odasi zaten silinmis olmali.
+        order.push(`kayit:${session.loadMatchReconnect() ? "var" : "yok"}`);
+        order.push(`lobi:${session.getActiveLobbyRoom() ? "var" : "yok"}`);
+        return Promise.resolve(1000);
+      }
+    };
+    session.saveMatchReconnect(room, { mode: "online", characterId: "warrior", mapScale: 1, stage: 1 });
+    session.setActiveLobbyRoom(room);
+    await session.leaveMatchAndReload(room, () => order.push("reload"));
+    assert.deepEqual(order, ["leave:true", "kayit:yok", "lobi:yok", "reload"]);
+
+    // Asili soket: zaman asimindan sonra yine yukleniyor.
+    let reloads = 0;
+    const startedAt = Date.now();
+    await session.leaveMatchAndReload({ roomId: "oda8", leave: () => new Promise(() => {}) }, () => { reloads += 1; }, 30);
+    assert.equal(reloads, 1);
+    assert.ok(Date.now() - startedAt < 1000, "asili cikis menuye donusu tuttu");
+
+    // Kapali soket ve odasiz sahne (baglanti hic kurulmadi): yine yukleniyor.
+    await session.leaveMatchAndReload({ roomId: "oda9", leave: () => { throw new Error("kapali"); } }, () => { reloads += 1; }, 30);
+    await session.leaveMatchAndReload(undefined, () => { reloads += 1; });
+    assert.equal(reloads, 3);
+
+    // Baska odanin kaydi silinmiyor (yalnizca cikilan oda).
+    session.saveMatchReconnect({ roomId: "baska", reconnectionToken: "j2" }, { mode: "solo", characterId: "warrior", mapScale: 1, stage: 1 });
+    await session.leaveMatchAndReload({ roomId: "oda10", leave: () => Promise.resolve() }, () => {});
+    assert.equal(session.loadMatchReconnect()?.roomId, "baska");
+  } finally {
+    delete globalThis.window;
+  }
+});
+
 test("sahne: solo kurulum sirri uretip kaydediyor; menuye donus once odadan cikiyor", () => {
   const scene = read("apps/web/src/scenes/GameScene.ts");
   const connect = scene.slice(scene.indexOf("private async connect()"), scene.indexOf("this.localSessionId = this.room.sessionId;"));
@@ -114,10 +163,15 @@ test("sahne: solo kurulum sirri uretip kaydediyor; menuye donus once odadan ciki
   assert.match(remember, /ownerSecret: this\.startedFromLobby \? undefined : this\.soloOwnerSecret/);
 
   const choose = scene.slice(scene.indexOf("private chooseRunReportAction("), scene.indexOf("private showCardChoices("));
-  assert.equal(/window\.location\.reload\(\)/.test(choose.slice(0, choose.indexOf("private reloadAfterLeavingRoom("))), false, "rapor dugmesi odadan cikmadan yukluyor");
-  const helper = choose.slice(choose.indexOf("private reloadAfterLeavingRoom("));
-  assert.ok(helper.indexOf("leaveRoomQuietly(room)") < helper.indexOf("window.location.reload()"));
-  assert.match(helper, /\.finally\(\(\) => window\.location\.reload\(\)\)/);
+  assert.equal(/window\.location\.reload\(\)/.test(choose), false, "sahne odadan cikmadan yukluyor");
+  // Rapor dugmeleri ve mac icindeki "Menüye dön" ayni yoldan cikiyor.
+  const helper = choose.slice(choose.indexOf("private reloadAfterLeavingRoom("), choose.indexOf("private confirmQuitMatch("));
+  assert.ok(helper.indexOf("runTelemetry.leave(\"menu\")") < helper.indexOf("leaveMatchAndReload(this.room)"), "kosu izi yuklemeden once kapanmiyor");
+  const quit = choose.slice(choose.indexOf("private confirmQuitMatch("));
+  assert.match(quit, /openConfirmDialog\(/, "onay oyun ici pencerede degil");
+  assert.match(quit, /\(\) => this\.reloadAfterLeavingRoom\(\)/, "onay ayri bir cikis yolu kullaniyor");
+  assert.equal(/window\.confirm|leaveRoomQuietly|room\.leave\(/.test(quit), false);
+  assert.equal(scene.match(/leaveMatchAndReload\(/g).length, 1, "ikinci bir cikis kopyasi var");
   const handle = scene.slice(scene.indexOf("private handleMatchResult("), scene.indexOf("private openRunReport("));
   assert.equal(handle.includes("window.location.reload()"), false, "bekleyen yukleme odadan cikmiyor");
   // Izinli cikis yeniden baglanmayi tetiklemiyor.

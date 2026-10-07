@@ -153,11 +153,20 @@ test("kosu raporu: dugmeler, co-op satiri ve hedef satiri iki dilde", () => {
   }));
   const stageName = (id) => getStage(id).name;
   assert.equal(actions.tr.retry.label, "Tekrar");
-  assert.equal(actions.tr.retry.detail, `yeni oda · 1. aşama · ${stageName(1)}`);
+  assert.equal(actions.tr.retry.detail, `Yeni oda · 1. aşama · ${stageName(1)}`);
   assert.equal(actions.tr.next.label, "Sonraki aşama");
   assert.equal(actions.en.retry.label, "Retry");
-  assert.equal(actions.en.retry.detail, `new room · Stage 1 · ${stageName(1)}`);
+  assert.equal(actions.en.retry.detail, `New room · Stage 1 · ${stageName(1)}`);
   assert.equal(actions.en.next.label, "Next stage");
+  const creative = inBoth(() => planRunReportActions({
+    result: "defeat", stage: 1, mode: "creative", characterId: "zeynep", mapScale: 1, clearedStageIds: [], now: 1000
+  }));
+  assert.equal(creative.tr.retry.detail, `Yaratıcı · 1. aşama · ${stageName(1)}`);
+  assert.equal(creative.en.retry.detail, `Creative · Stage 1 · ${stageName(1)}`);
+  const solo = inBoth(() => planRunReportActions({
+    result: "defeat", stage: 1, mode: "solo", characterId: "zeynep", mapScale: 1, clearedStageIds: [], now: 1000
+  }));
+  assert.equal(solo.en.retry.detail, `Stage 1 · ${stageName(1)}`);
 
   const coop = {
     players: [

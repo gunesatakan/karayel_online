@@ -364,12 +364,13 @@ test("dugmeler: Sonraki aşama yalnizca aciksa; zaferde buyuk dugme o, son asama
   // Co-op'ta katilan oyuncu: ev sahibinin asamasi kendisinde kilitliyse tekrar acik olana dusuyor.
   const katilan = planRunReportActions({ ...base, mode: "online", result: "defeat", stage: 4, clearedStageIds: [1] });
   assert.equal(katilan.retry.intent.stage, 2);
-  assert.equal(katilan.retry.detail, "yeni oda · 2. aşama · Çelik Hat");
+  assert.equal(katilan.retry.detail, "Yeni oda · 2. aşama · Çelik Hat");
   assert.equal(katilan.next, undefined);
 
   const yaratici = planRunReportActions({ ...base, mode: "creative", result: "defeat", stage: 1, clearedStageIds: [] });
   assert.equal(yaratici.retry.intent.mode, "creative");
-  assert.equal(yaratici.retry.detail, "yaratıcı · 1. aşama · Taş Kuşatma");
+  // Kip adi menudeki gibi ("Yaratıcı"), kucuk harfli kimlik gibi degil.
+  assert.equal(yaratici.retry.detail, "Yaratıcı · 1. aşama · Taş Kuşatma");
 });
 
 test("tekrar niyeti: dogrulaniyor, eskiyince ve bozulunca yok sayiliyor", () => {
@@ -569,7 +570,8 @@ test("kaynak: rapor DOM'da, Tekrar niyet + yeniden yukleme, menu niyeti bir kez 
   assert.ok(scene.includes("renderRunReport("), "rapor DOM'da ciziliyor");
   assert.equal(scene.includes('"ANA MENÜ"'), false, "eski Phaser sonuc katmani kalkti");
   assert.ok(scene.includes("saveQuickStartIntent("));
-  assert.ok(scene.includes("window.location.reload()"));
+  // Yeniden yukleme ortak cikis yolunda (online-session.ts `leaveMatchAndReload`).
+  assert.ok(scene.includes("leaveMatchAndReload(this.room)"));
   assert.ok(scene.includes("recordRun("), "kayit tek kapidan");
 
   const quick = (await readFile(new URL("../apps/web/src/quick-start.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");

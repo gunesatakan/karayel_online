@@ -12,4 +12,4 @@ pnpm-debug.log*
 .fly/
 
 # Sunucu telemetrisi (yerel calistirma; Fly'da /data/telemetry)
-data/telemetry/
+**/data/telemetry/

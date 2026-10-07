@@ -183,7 +183,14 @@ export const trControls = {
   "hud.audio.sfx": "Efektler",
   "hud.audio.hit": "Vuruş sesleri",
   "hud.audio.hitNote": "Efektler kapalı: vuruş sesleri de duyulmaz (Efektler ile birlikte ölçeklenir).",
-  "hud.audio.vibration": "Titreşim"
+  "hud.audio.vibration": "Titreşim",
+  // Mac icinden menuye donus: ses panelinin altindaki dugme ve onayi.
+  "hud.quit.button": "Menüye dön",
+  "hud.quit.title": "Menüye dön",
+  "hud.quit.solo": "Maçtan çık? İlerleme kaybolur.",
+  "hud.quit.coop": "Maçtan çık? Takım sensiz devam eder; kulelerin ve işçilerin sahada kalır.",
+  "hud.quit.confirm": "Maçtan çık",
+  "hud.quit.cancel": "Vazgeç"
 } as const;
 
 export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
@@ -366,5 +373,11 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.audio.sfx": "Effects",
   "hud.audio.hit": "Hit sounds",
   "hud.audio.hitNote": "Effects off: hit sounds are muted too (they scale with Effects).",
-  "hud.audio.vibration": "Vibration"
+  "hud.audio.vibration": "Vibration",
+  "hud.quit.button": "Quit to menu",
+  "hud.quit.title": "Quit to menu",
+  "hud.quit.solo": "Quit the match? Progress will be lost.",
+  "hud.quit.coop": "Quit the match? The team carries on without you; your towers and workers stay on the field.",
+  "hud.quit.confirm": "Quit match",
+  "hud.quit.cancel": "Cancel"
 };

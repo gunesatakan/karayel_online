@@ -1,5 +1,6 @@
 import { activityLabels, type DefenseSummary, type TowerActivity } from "@karayel/shared";
 import { t } from "./i18n";
+import { localizeTowerName } from "./server-text";
 
 /**
  * Native modal traps keyboard focus and prevents accidental clicks on the map.
@@ -45,6 +46,31 @@ export function openDefenseDialog(title: string, lines: string[], confirm?: () =
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
+  return dialog;
+}
+
+/**
+ * Geri alinamayan bir eylemin onayi (ornegin mactan cikis), ayni pencere
+ * dilinde. Odak ilk dugmede, yani Vazgec'te: yanlislikla Enter cikarmasin.
+ * Onay dugmesi koyu kirmizi cerceveli; kapatma yolu (Esc, Vazgec) hicbir
+ * sey yapmiyor.
+ */
+export function openConfirmDialog(
+  title: string,
+  lines: string[],
+  labels: { confirm: string; cancel: string },
+  onConfirm: () => void
+) {
+  const dialog = openDefenseDialog(title, lines, onConfirm);
+  dialog.classList.add("confirm-dialog");
+  const [cancel, confirm] = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"));
+  cancel.textContent = labels.cancel;
+  cancel.dataset.confirmCancel = "";
+  confirm.textContent = labels.confirm;
+  confirm.dataset.confirmAccept = "";
+  confirm.style.background = "#4a1c22";
+  confirm.style.borderColor = "#b4505a";
+  cancel.focus({ preventScroll: true });
   return dialog;
 }
 
@@ -95,7 +121,7 @@ export function openChoiceDialog<T extends string>(
 export function defenseSummaryLines(summary: DefenseSummary) {
   return [
     t("report.defense.intro"),
-    ...summary.rows.map((row) => `\n${t("report.defense.row", { name: row.name, damage: row.damage, repaired: row.repaired })}${row.auraEnemySeconds ? ` · ${t("report.defense.aura", { v: row.auraEnemySeconds })}` : ""}${row.markAssistDamage ? ` · ${t("report.defense.markAssist", { v: row.markAssistDamage })}` : ""}\n`
+    ...summary.rows.map((row) => `\n${t("report.defense.row", { name: localizeTowerName(row.definitionId, row.name), damage: row.damage, repaired: row.repaired })}${row.auraEnemySeconds ? ` · ${t("report.defense.aura", { v: row.auraEnemySeconds })}` : ""}${row.markAssistDamage ? ` · ${t("report.defense.markAssist", { v: row.markAssistDamage })}` : ""}\n`
       + Object.entries(row.seconds).filter(([, value]) => value >= 0.1)
         .map(([key, value]) => t("report.defense.seconds", { label: activityLabels[key as TowerActivity], v: value.toFixed(1) })).join(" · "))
   ];

@@ -22,6 +22,7 @@ import {
 import { damageTypeCodex, hitTypeCodex } from "./codex";
 import { assetUrl } from "./asset-url";
 import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
+import { localizeTowerStatusText } from "./server-text";
 
 /**
  * Kule paneli: secili kulenin sayilari, gruplu ve dokumlu.
@@ -613,8 +614,9 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     });
   }
 
-  const status = [live.status, ...notesFor("status")].filter((text) => Boolean(text && text.trim())).join(" · ");
-  const insight = live.insight?.trim() ?? "";
+  // Durum ve ozet sunucunun Turkce metni; Ingilizcede kaliplardan cevriliyor.
+  const status = [localizeTowerStatusText(live.status), ...notesFor("status")].filter((text) => Boolean(text && text.trim())).join(" · ");
+  const insight = localizeTowerStatusText(live.insight?.trim() ?? "");
 
   return {
     towerId: input.towerId,

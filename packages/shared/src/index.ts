@@ -475,14 +475,7 @@ export type RoomListingSnapshot = {
   stage?: number;
 };
 
-/**
- * Sunucu ayni anda acik oda sinirina ulasinca oda kurma reddinin metni.
- *
- * Istemci hatayi bu metinle taniyor (menude oldugu gibi gosteriyor, oyun
- * cubugunda kisaltiyor); iki taraf ayni sabiti okuyor ki biri degisince
- * digeri sessizce tanimaz hale gelmesin.
- */
-export const SERVER_FULL_MESSAGE = "Sunucu dolu, biraz sonra tekrar dene.";
+// `SERVER_FULL_MESSAGE` sunucu metinleriyle birlikte `i18n/server-text.ts`te.
 
 /**
  * Istemcinin odaya girerken bildirdigi tel surumu (`wireDelta` secenegi).
@@ -2173,3 +2166,4 @@ export * from "./synergy/index.js";
 export * from "./zeynep-shots/index.js";
 export * from "./tower-panel/index.js";
 export * from "./i18n/index.js";
+export * from "./i18n/server-text.js";

@@ -225,7 +225,8 @@ test("sunucu -> karne: pay ozetle kart seciminden once gidiyor, tick'te ayrica m
   // Pay yalnizca ozetin icinde: kendi mesaj tipi yok.
   assert.equal(/send\("synergy:share"|broadcast\("synergy:share"/.test(server), false);
   const scene = readSource("apps/web/src/scenes/GameScene.ts");
-  assert.ok(scene.includes("defense: this.latestDefenseSummary"), "karne ozetten kuruluyor");
+  // Ozet kule adlari secili dilde olsun diye `localizeDefenseSummary`den geciyor.
+  assert.ok(/defense: (localizeDefenseSummary\()?this\.latestDefenseSummary/.test(scene), "karne ozetten kuruluyor");
 });
 
 // --- kombo damgalari: saf kurallar -------------------------------------------

@@ -92,9 +92,11 @@ import {
   type MatchReconnectRecord
 } from "./online-session";
 import { assetUrl } from "./asset-url";
+import { describeServerError, localizeServerText } from "./server-text";
 import { resetTutorialProgress } from "./tutorial";
+import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
 
-type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges";
+type ViewName = "home" | "archive" | "detail" | "map" | "online" | "lobby" | "bestiary" | "cardArchive" | "badges" | "credits";
 
 /**
  * Nisanlar ekraninin ve menudeki ustalik/unvan satirlarinin bildigi her sey:
@@ -153,8 +155,6 @@ const enemyTypeOrder: EnemyType[] = ["grunt", "brute", "runner", "shooter"];
 type UiText = () => string;
 const noText: UiText = () => "";
 const uiText = (key: MessageKey, params?: MessageParams): UiText => () => t(key, params);
-/** Sunucudan ya da hatadan gelen hazir metin; cevrilmiyor. */
-const rawText = (text: string): UiText => () => text;
 
 // Etiketler cizim aninda sozlukten: dil degisince bir sonraki cizim yeni dilde.
 const detailTypeLabel = (type: DetailItem["type"]) => t(`menu.detail.type.${type}`);
@@ -388,9 +388,10 @@ export function setupMenuUi(game: Phaser.Game) {
       }
       render("lobby");
     });
-    room.onMessage("lobby:error", (payload: { message?: string }) => {
-      // Sunucunun metni (Turkce) oldugu gibi; yoksa yerel yedek.
-      lobbyError = payload.message ? rawText(payload.message) : uiText("menu.online.error.lobby");
+    room.onMessage("lobby:error", (payload: { message?: string; key?: string }) => {
+      // Sunucunun metni Turkce; anahtari varsa secili dilde, yoksa yerel yedek.
+      const message = payload.message;
+      lobbyError = message ? () => localizeServerText(message, payload.key) ?? message : uiText("menu.online.error.lobby");
       render("lobby");
     });
     room.onMessage("lobby:started", () => {
@@ -936,6 +937,7 @@ function renderShell(
         ${view === "home" ? renderHome(selectedCharacter, stageState, cardArchive.archive, progress) : ""}
         ${view === "archive" ? renderArchive(selectedCharacter, progress) : ""}
         ${view === "badges" ? renderBadges(progress, stageState, cardArchive.archive) : ""}
+        ${view === "credits" ? renderCredits() : ""}
         ${view === "detail" ? renderDetail(selectedCharacter, selectedDetail) : ""}
         ${view === "bestiary" ? renderBestiary() : ""}
         ${view === "cardArchive" ? renderCardArchive(cardArchive) : ""}
@@ -1022,10 +1024,11 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
             <small>${cardProgress}</small>
           </button>
           <button class="command command--ghost" data-start-game data-replay-tutorial>${t("menu.home.tutorial")}</button>
-          <button class="command command--ghost command--count command--wide" data-view="badges" aria-label="${t("menu.home.badgesAria", { earned: board.earned, total: board.total })}">
+          <button class="command command--ghost command--count" data-view="badges" aria-label="${t("menu.home.badgesAria", { earned: board.earned, total: board.total })}">
             <span>${t("menu.home.badges")}</span>
             <small>${board.earned}/${board.total}</small>
           </button>
+          <button class="command command--ghost" data-view="credits">${t("credits.menuButton")}</button>
         </div>
       </footer>
 
@@ -1683,6 +1686,47 @@ function renderBadgeEntry(entry: BadgeEntryView) {
   `;
 }
 
+/**
+ * Emegi gecenler: ucuncu taraf kaynaklar (apps/web/src/credits.ts; CREDITS.md
+ * ile ayni liste). Eser adlari ve lisanslar cevrilmiyor; baglantilar yeni
+ * sekmede (itch iframe'inden cikiyor).
+ */
+function renderCredits() {
+  return `
+    <div class="screen screen--credits">
+      <header class="screen-topbar">
+        <button class="icon-command" data-view="home" aria-label="${t("menu.common.back")}">‹</button>
+        <div>
+          <p class="eyebrow">${t("credits.eyebrow")}</p>
+          <h1>${t("credits.title")}</h1>
+        </div>
+      </header>
+
+      <section class="selected-dossier frame">
+        <p class="kicker">${t("credits.game.label")}</p>
+        <h2>Uzay Savunma</h2>
+        <p>${escapeHtml(t("credits.game.body", { developer: CREDITS_DEVELOPER }))}</p>
+        <p>${escapeHtml(t("credits.intro"))}</p>
+      </section>
+
+      ${CREDIT_GROUPS.map((group) => `
+        <section class="credits-group" aria-label="${escapeHtml(t(group.titleKey))}">
+          <p class="section-label">${escapeHtml(t(group.titleKey))} <b>${group.sources.length}</b></p>
+          <p class="credits-group__note">${escapeHtml(t(group.noteKey))}</p>
+          <ul class="credits-list">
+            ${group.sources.map((source) => `
+              <li class="credits-entry">
+                <strong>${escapeHtml(source.title)}</strong>
+                <span class="credits-entry__author">${escapeHtml(source.author)}</span>
+                <span class="credits-entry__license"><small>${t("credits.license")}</small>${escapeHtml(source.license)}</span>
+                <a class="credits-entry__link" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(t("credits.linkAria", { title: source.title }))}">${escapeHtml(creditLinkLabel(source.url))}</a>
+              </li>`).join("")}
+          </ul>
+        </section>`).join("")}
+    </div>
+  `;
+}
+
 function renderDetail(character: CharacterDefinition, selectedDetail: DetailItem) {
   const details = getDetailItems(character);
   return `
@@ -2148,10 +2192,13 @@ function escapeHtml(value: string | number) {
     .replaceAll("'", "&#039;");
 }
 
-/** Hatanin kendi metni (cogu sunucudan, Turkce) varsa o; yoksa yerel yedek. */
+/**
+ * Hatanin kendi metni (cogu sunucudan, Turkce) varsa o; yoksa yerel yedek.
+ * Sunucunun bilinen redleri ("Oda dolu." gibi) secili dilde.
+ */
 function formatUiError(error: unknown, fallback: MessageKey): UiText {
   if (error instanceof Error && error.message.trim()) {
-    return rawText(error.message);
+    return () => describeServerError(error);
   }
 
   return uiText(fallback);

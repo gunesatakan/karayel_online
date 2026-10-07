@@ -12,6 +12,16 @@ Bu sözlük oyunun Türkçe metinlerinin İngilizceye çevirisinde kullanılır.
 - **Büyük harf:** adlar (kart, eşya, kule, beceri, nişan) Title Case yazılır, açıklamalar cümle düzeninde.
 - **Operatör adları değişmez:** AttackLord, ZentaX, DualiTemp, Honour, Zexceed, Boosty, Bioside.
 
+## Sunucu metinleri
+
+Sunucu dili hiç değiştirmez; ürettiği metin Türkçedir ve eskisiyle birebir aynı kalır (eski istemci ve testler onu okur). İstemci metni seçili dilde kendisi yazar:
+
+- **Anahtarlı mesaj:** metin alanının yanında kararlı bir anahtar gider: `{ message: "Oda dolu.", key: "room.full" }`. Türkçeler `packages/shared/src/i18n/server-text.ts` içindeki `SERVER_TEXT`te, istemci karşılığı `server.<anahtar>` (`apps/web/src/locales/areas/server.ts`). Böyle gidenler: `lobby:error` ve `room:error` (`message` + `key`), `card:rejected` (`reason` + `key`), `tower:preview` (red için `errorKey`/`errorParams`; satır etiketleri için `lineKeys`; başlık ve açıklama için `cardId`/`itemId` ve `definitionId`).
+- **Oda katılım/kurma reddi:** Colyseus yalnızca hata metnini taşır; istemci bilinen metni (`getRoomRejectionKey`) anahtara çevirir.
+- **Snapshot'taki kule durumu ve özeti** (`status`, `insight`): saniyede ~15 kez giden telde anahtar yok. İstemci Türkçe metni `server.status.*`, `server.insight.*`, `server.activity.*` kalıplarıyla parçalar ve aynı anahtarın İngilizcesini yazar. Kalıp sunucudaki metinle birebir aynı olmalı; sunucuda metin değişirse kalıp da değişir (test yakalar). Tanınmayan parça Türkçe kalır.
+- **Kule adı** (savunma özeti, koşu raporu): ad Türkçe gider, yanında tanım kimliği (`definitionId`); istemci adı katalogdan çözer.
+- Anahtarı tanımayan istemci ya da anahtarsız eski sunucu: Türkçe metin gösterilir.
+
 ## Terimler
 
 | Türkçe | English |

@@ -127,10 +127,31 @@ export function localizeLabelMap(map: Record<string, string>, english: Readonly<
 
 let done = false;
 
+/**
+ * Turkce kule adindan tanim kimligi. Sunucunun Turkce yazdigi kule ozeti
+ * (`insight`) adlari metnin icinde tasiyor; istemci onlari bu dizinle
+ * tanimaya ceviriyor. Kurulumdan sonra katalog adi dile bakiyor, bu yuzden
+ * Turkce adlar kurulumdan once yaziliyor.
+ */
+const turkishTowerIds = new Map<string, string>();
+
+function indexTurkishTowerNames() {
+  for (const tower of [...Object.values(towerCatalog).flat(), ...characters.flatMap((character) => character.towers)]) {
+    if (!installed.has(tower) && !turkishTowerIds.has(tower.name)) turkishTowerIds.set(tower.name, tower.id);
+  }
+}
+
+/** Sunucunun yazdigi Turkce kule adinin tanim kimligi; tanimazsa `undefined`. */
+export function getTowerIdByTurkishName(name: string) {
+  if (turkishTowerIds.size === 0) indexTurkishTowerNames();
+  return turkishTowerIds.get(name);
+}
+
 /** Acilista bir kez; menu ve oyun arayuzu kurulmadan once. */
 export function installCatalogLocale() {
   if (done) return;
   done = true;
+  indexTurkishTowerNames();
   for (const card of cardCatalog) localizeFields(card, ["name", "description"], () => enCards[card.id]);
   for (const item of shopCatalog) localizeFields(item, ["name", "description"], () => enShopItems[item.id]);
   for (const towers of Object.values(towerCatalog)) {

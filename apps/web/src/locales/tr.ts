@@ -1,8 +1,10 @@
 import { trConsent } from "./areas/consent";
 import { trControls } from "./areas/controls";
+import { trCredits } from "./areas/credits";
 import { trMenu } from "./areas/menu";
 import { trReports } from "./areas/reports";
 import { trScene } from "./areas/scene";
+import { trServer } from "./areas/server";
 
 /**
  * Turkce arayuz metinleri: kaynak sozluk. Anahtarlarin tamami burada;
@@ -209,6 +211,6 @@ export const trCore = {
 } as const;
 
 /** Butun bolgeler; anahtar onekleri bolgeye ozgu, cakisma yok. */
-export const tr = { ...trCore, ...trMenu, ...trControls, ...trScene, ...trReports, ...trConsent } as const;
+export const tr = { ...trCore, ...trMenu, ...trControls, ...trScene, ...trReports, ...trConsent, ...trCredits, ...trServer } as const;
 
 export type MessageKey = keyof typeof tr;

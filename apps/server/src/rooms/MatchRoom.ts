@@ -5,6 +5,8 @@ import { performance } from "node:perf_hooks";
 import { FixedWindowRateLimiter, ipRateKey, readClientIp } from "../rate-limit.js";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
+// Istemciye giden sabit metinler: Turkcesi buradan, yaninda anahtari (`key`).
+import { PREVIEW_EQUIP_REJECTED_KEY, SERVER_TEXT, type ServerTextKey } from "@karayel/shared";
 import { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, isExecuteImmune, type ExecuteRejectReason, type SkillExecuteMessage, type SkillRejectedMessage } from "@karayel/shared";
 // Kule paneli: secili kulenin savasta okunan sayilari (`sendTowerStats`).
 import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
@@ -706,7 +708,11 @@ const TICK_ERROR_BACKOFF_MAX_MS = 2000;
  */
 export const TICK_FAILURE_LIMIT = 10;
 /** Lobi ve katilim akisinin bilinen redleri; hata degil, gunluge yazilmiyor. */
-const EXPECTED_ROOM_REJECTIONS = new Set(["Oda dolu.", "Maç bitti.", SERVER_FULL_MESSAGE]);
+const EXPECTED_ROOM_REJECTIONS = new Set<string>([SERVER_TEXT["room.full"], SERVER_TEXT["room.matchOver"], SERVER_FULL_MESSAGE]);
+/** `{ message }` mesajinin anahtarli hali: Turkce metin ayni, istemci anahtari kendi dilinde yaziyor. */
+function serverTextMessage(key: ServerTextKey) {
+  return { message: SERVER_TEXT[key], key };
+}
 /** Ayni yerden gelen hata gunlugu en fazla bu siklikta yaziliyor. */
 const ROOM_ERROR_LOG_INTERVAL_MS = 10_000;
 const PERF_SEND_INTERVAL_MS = 1000;
@@ -2949,7 +2955,7 @@ export class MatchRoom extends Room<MatchState> {
     // oyuncunun kendisi yeniden baglanmayla (`allowReconnection`) donuyor,
     // o yol buraya ugramiyor.
     if (this.matchResult) {
-      throw new Error("Maç bitti.");
+      throw new Error(SERVER_TEXT["room.matchOver"]);
     }
 
     // Sayfasi yenilenen oyuncu once kendi (penceresi suren) yuvasina.
@@ -2979,7 +2985,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (this.state.players.size >= this.maxClients) {
-      throw new Error("Oda dolu.");
+      throw new Error(SERVER_TEXT["room.full"]);
     }
 
     const player = new Player();
@@ -3216,7 +3222,7 @@ export class MatchRoom extends Room<MatchState> {
       return sessionId !== client.sessionId && candidate.characterId === characterId;
     });
     if (takenByOtherPlayer) {
-      client.send("lobby:error", { message: "Bu karakter zaten secildi." });
+      client.send("lobby:error", serverTextMessage("lobby.characterTaken"));
       return;
     }
 
@@ -3260,12 +3266,12 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     if (client.sessionId !== this.hostSessionId) {
-      client.send("lobby:error", { message: "Sadece oda kurucusu baslatabilir." });
+      client.send("lobby:error", serverTextMessage("lobby.hostOnlyStart"));
       return;
     }
 
     if (!this.canStartLobbyMatch()) {
-      client.send("lobby:error", { message: "Baslatmak icin herkes hazir olmali." });
+      client.send("lobby:error", serverTextMessage("lobby.notAllReady"));
       return;
     }
 
@@ -3738,7 +3744,7 @@ export class MatchRoom extends Room<MatchState> {
     this.abandonDisposing = true;
     MatchRoom.publicRooms.delete(this.roomId);
     try {
-      this.broadcast("room:error", { message: "Sunucu hatası: maç sonlandırıldı." });
+      this.broadcast("room:error", serverTextMessage("room.serverError"));
     } catch (error) {
       this.reportRoomError("abort", error);
     }
@@ -4343,11 +4349,11 @@ export class MatchRoom extends Room<MatchState> {
     const choices = this.pendingCardChoices.get(client.sessionId);
     const card = choices?.find((choice) => choice.id === message.cardId);
     if (!player || !choices) {
-      client.send("card:rejected", { reason: "Bekleyen kart seçimi bulunamadı. Bağlantı yenileniyor olabilir." });
+      client.send("card:rejected", { reason: SERVER_TEXT["card.noPendingChoice"], key: "card.noPendingChoice" });
       return;
     }
     if (!card) {
-      client.send("card:rejected", { reason: "Bu kart artık geçerli bir seçenek değil." });
+      client.send("card:rejected", { reason: SERVER_TEXT["card.invalidChoice"], key: "card.invalidChoice" });
       client.send("card:choices", choices);
       return;
     }
@@ -4359,7 +4365,7 @@ export class MatchRoom extends Room<MatchState> {
       if (!tower || tower.ownerId !== client.sessionId
         || !canTowerHoldTargetedCard(tower.definition)
         || !canAcceptTargetedCard(tower.targetedCardIds)) {
-        client.send("card:rejected", { reason: "Seçilen kule bu kartı alamıyor. Başka bir kule seç." });
+        client.send("card:rejected", { reason: SERVER_TEXT["card.towerCannotTake"], key: "card.towerCannotTake" });
         client.send("card:choices", choices);
         return;
       }
@@ -9491,7 +9497,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     let row = this.defenseRows.get(tower.id);
     if (!row) {
-      row = createDefenseRow(tower.id, tower.ownerId, tower.definition.name);
+      row = createDefenseRow(tower.id, tower.ownerId, tower.definition.name, tower.definition.id);
       this.defenseRows.set(tower.id, row);
     }
     return row;
@@ -9640,61 +9646,69 @@ export class MatchRoom extends Room<MatchState> {
 
   private sendTowerPreview(client: Client, message: { requestId?: string; towerId?: string; cardId?: string; itemId?: string } | undefined) {
     if (!message || typeof message.requestId !== "string" || message.requestId.length > 80) return;
-    const reject = (error: string) => client.send("tower:preview", { requestId: message.requestId, error });
+    // Ret metni Turkce; yaninda anahtari (`errorKey`) ve gerekirse parametreleri.
+    const reject = (errorKey: ServerTextKey | typeof PREVIEW_EQUIP_REJECTED_KEY, error: string = SERVER_TEXT[errorKey as ServerTextKey], errorParams?: Record<string, string>) =>
+      client.send("tower:preview", { requestId: message.requestId, error, errorKey, ...(errorParams ? { errorParams } : {}) });
     const now = Date.now();
-    if (now - (this.previewRequestTimes.get(client.sessionId) ?? 0) < 40) return reject("Biraz sonra tekrar dene.");
+    if (now - (this.previewRequestTimes.get(client.sessionId) ?? 0) < 40) return reject("preview.tooSoon");
     this.previewRequestTimes.set(client.sessionId, now);
     const player = this.state.players.get(client.sessionId);
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     const card = this.pendingCardChoices.get(client.sessionId)?.find((entry) => entry.id === message.cardId && entry.scope.kind === "targeted");
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
-    if (!player || !tower || tower.ownerId !== client.sessionId || (!!message.cardId === !!message.itemId)) return reject("Geçersiz hedef.");
-    if (message.cardId && (!card || !canTowerHoldTargetedCard(tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("Bu kule kartı alamıyor.");
-    if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id))) return reject("Bu kule eşyayı alamıyor.");
+    if (!player || !tower || tower.ownerId !== client.sessionId || (!!message.cardId === !!message.itemId)) return reject("preview.invalidTarget");
+    if (message.cardId && (!card || !canTowerHoldTargetedCard(tower.definition) || !canAcceptTargetedCard(tower.targetedCardIds))) return reject("preview.cardRejected");
+    if (message.itemId && (!item || !player.inventoryItemIds.includes(item.id))) return reject("preview.itemRejected");
     if (item) {
       // Takmayla ayni ret metni; ek ("envanterde kaldi") onizlemede yanlis olurdu.
       const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
-      if (!check.ok) return reject(getInventoryEquipRejectedCue({ itemId: item.id, reason: check.reason }, { creative: true })?.text ?? "Bu kule eşyayı alamıyor.");
+      if (!check.ok) {
+        const text = getInventoryEquipRejectedCue({ itemId: item.id, reason: check.reason }, { creative: true })?.text;
+        return text ? reject(PREVIEW_EQUIP_REJECTED_KEY, text, { itemId: item.id, reason: check.reason }) : reject("preview.itemRejected");
+      }
     }
     const change = card ?? item;
-    if (!change) return reject("Seçenek artık mevcut değil.");
+    if (!change) return reject("preview.optionGone");
     const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...change.effects],
       targetedCardIds: card ? [...tower.targetedCardIds, card.id] : [...tower.targetedCardIds],
       equippedShopItemIds: item ? [...tower.equippedShopItemIds, item.id] : [...tower.equippedShopItemIds] };
     after.maxHp *= this.getTowerHealthRescaleRatio(tower, change.effects);
-    type PreviewStat = [label: string, get: (value: TowerModel) => number];
+    // Etiketin anahtari `preview.stat.<anahtar>`; Turkce metni `SERVER_TEXT`te.
+    type PreviewStat = [key: string, get: (value: TowerModel) => number];
     // Cifte Namlu: bedel tetikleme basina, yani mermi sayisiyla carpiliyor.
     // Satir yalnizca iki mermiden birinde gorunur; tek mermili kulede gurultu.
     const shots = (value: TowerModel) => this.getTowerShotsPerTrigger(value);
-    const shotStats: PreviewStat[] = shots(tower) !== 1 || shots(after) !== 1 ? [["Mermi / tetikleme", shots]] : [];
+    const shotStats: PreviewStat[] = shots(tower) !== 1 || shots(after) !== 1 ? [["shots", shots]] : [];
     // Surekli tetikleme ustundeki aralik, isi ve soguma satirlarinin sonucu.
     // Atis hizi ile sogutma secenegini ancak bu satir durust karsilastiriyor:
     // isi baglayan kulede atis hizi karti burada kipirdamaz, sogutma karti
     // buyur. Birim "tetikleme", ustteki "/ tetikleme" satirlariyla ayni:
     // "atis" deseydi Cifte Namlu surekli atisi yariya indiriyor gorunurdu.
     const sustainedStats: PreviewStat[] = this.getTowerHeatBudget(tower)
-      ? [["Sürekli tetikleme / sn", (value) => this.getTowerHeatBudget(value)?.sustained ?? 0]]
+      ? [["sustained", (value) => this.getTowerHeatBudget(value)?.sustained ?? 0]]
       : [];
     const stats: PreviewStat[] = [
       // Vurus aninda eklenen kule bonuslari da sayiya dahil; yoksa Kan
       // Bankasi gibi her vurusa +%20 veren bir esya hicbir sey degistirmiyor
       // gorunuyordu.
-      ["Hasar / etki", (value) => this.getTowerDamage(value) * (1 + this.getTowerHitDamageAdd(value, now))],
-      ["Atış / etki aralığı (sn)", (value) => this.getTowerEffectInterval(value) / 1000],
-      ["Menzil", (value) => this.getTowerRange(value)], ["Azami can", (value) => value.maxHp],
+      ["damage", (value) => this.getTowerDamage(value) * (1 + this.getTowerHitDamageAdd(value, now))],
+      ["interval", (value) => this.getTowerEffectInterval(value) / 1000],
+      ["range", (value) => this.getTowerRange(value)], ["maxHp", (value) => value.maxHp],
       ...shotStats,
-      ["Mühimmat / tetikleme", (value) => this.getTowerAmmoCost(value) * shots(value)],
-      ["Enerji / tetikleme", (value) => this.getTowerEnergyCost(value) * shots(value)],
-      ["Isı / tetikleme", (value) => this.getTowerShotHeat(value) * shots(value)],
-      ["Soğutma / sn", (value) => this.getTowerCoolingPerSecond(value)],
+      ["ammo", (value) => this.getTowerAmmoCost(value) * shots(value)],
+      ["energy", (value) => this.getTowerEnergyCost(value) * shots(value)],
+      ["heat", (value) => this.getTowerShotHeat(value) * shots(value)],
+      ["cooling", (value) => this.getTowerCoolingPerSecond(value)],
       ...sustainedStats
     ];
-    const values = stats.map(([label, get]) => ({ label, before: get(tower).toFixed(2), after: get(after).toFixed(2) }));
+    const values = stats.map(([key, get]) => ({ key: `preview.stat.${key}`, label: SERVER_TEXT[`preview.stat.${key}` as ServerTextKey], before: get(tower).toFixed(2), after: get(after).toFixed(2) }));
     const lines = values.map(({ label, before, after: next }) => `${label}: ${before} → ${next}`);
     // Istemci degisen satiri one cikarir; ayni kalanlar arasinda kaybolmasin.
     const changed = values.map(({ before, after: next }) => before !== next);
     client.send("tower:preview", { requestId: message.requestId, title: `${change.name} · ${tower.definition.name}`,
-      description: `${change.description} Anlık koşullar gösterilir; koşullu davranışlar ve gelecekte birikecek yükler açıklamaya tabidir.`, lines, changed });
+      description: `${change.description} ${SERVER_TEXT["preview.disclaimer"]}`, lines, changed,
+      // Istemci baslik, aciklama ve etiketleri kendi dilinde bunlardan kuruyor.
+      lineKeys: values.map(({ key }) => key), ...(card ? { cardId: card.id } : { itemId: change.id }), definitionId: tower.definition.id });
   }
 
   /**

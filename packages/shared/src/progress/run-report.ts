@@ -766,10 +766,15 @@ export type RunReportActions = {
   primary: "retry" | "next";
 };
 
+/**
+ * Dugmenin ikinci satiri. Kip adi menudeki dugmeyle ayni ("Yaratıcı" /
+ * "Creative"), satirin basinda buyuk harfle; eskiden kucuk harfli kip
+ * kimligi gibi okunuyordu ("creative · Stage 5"). Solo kipte on ek yok.
+ */
 function describeActionTarget(mode: QuickStartMode, stage: number) {
   const target = `${lt(`${stage}. aşama`, `Stage ${stage}`)} · ${getStage(stage).name}`;
-  if (mode === "online") return `${lt("yeni oda", "new room")} · ${target}`;
-  if (mode === "creative") return `${lt("yaratıcı", "creative")} · ${target}`;
+  if (mode === "online") return `${lt("Yeni oda", "New room")} · ${target}`;
+  if (mode === "creative") return `${lt("Yaratıcı", "Creative")} · ${target}`;
   return target;
 }
 

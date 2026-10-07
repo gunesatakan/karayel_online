@@ -1940,7 +1940,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     <div class="game-hud__strip" data-hud-strip>
       <span class="game-hud__strip-group" data-hud-strip-dynamic></span>
       <span class="game-hud__chip game-hud__chip--xp" data-hud-xp><i aria-hidden="true">★</i><b data-hud-xp-value>0</b></span>
-      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping><i aria-hidden="true">●</i><b data-hud-ping-value>-- ms</b></span>
+      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping><i aria-hidden="true">●</i><b data-hud-ping-value>--</b><small class="game-hud__ping-unit" data-hud-ping-unit>ms</small><small class="game-hud__ping-jitter" data-hud-ping-jitter hidden></small></span>
     </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
       <p class="game-hud__forecast-line"><b data-hud-forecast-count>0</b><em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
@@ -1977,6 +1977,8 @@ export function setupGameHudUi(game: Phaser.Game) {
   const xpValueNode = root.querySelector<HTMLElement>("[data-hud-xp-value]")!;
   const pingChipNode = root.querySelector<HTMLElement>("[data-hud-ping]")!;
   const pingValueNode = root.querySelector<HTMLElement>("[data-hud-ping-value]")!;
+  const pingUnitNode = root.querySelector<HTMLElement>("[data-hud-ping-unit]")!;
+  const pingJitterNode = root.querySelector<HTMLElement>("[data-hud-ping-jitter]")!;
   const statusNode = root.querySelector<HTMLElement>("[data-hud-status]")!;
   const popupsNode = root.querySelector<HTMLElement>("[data-hud-popups]")!;
   const continueButton = root.querySelector<HTMLButtonElement>(".game-hud__continue")!;
@@ -2100,15 +2102,38 @@ export function setupGameHudUi(game: Phaser.Game) {
    * degistigi icin bu, parlamanin hic gorunmemesi demekti; sabit dugumde
    * ping de artik seridi yeniden kurdurmuyor. Degisken rozetler
    * `display: contents` bir kabin icinde, yani esnek dizilim ayni.
+   *
+   * 375 px'te ZentaX'in sekiz rozeti sigmiyordu. Genislik uc yerden geldi:
+   * dar cubukta daha siki ic bosluklar (CSS); "463/500"un tavani ("/500")
+   * dalga "/20"si gibi kucuk ve soluk; ping rozetinde sayi, birim ve sapma
+   * ("±3") ayri parca. Yer daralinca once sapma, sonra birim, sonra sayi
+   * rozetten dusuyor ve renkli nokta kaliyor (CSS); ayrintisi ipucunda. Oyun
+   * sayilari ancak ondan sonra kisiliyor.
    */
   let lastStripKey = "";
   const setTitle = (node: HTMLElement, title: string) => {
     if (node.title !== title) node.title = title;
   };
+  /** "463/500" -> sayi ve kucuk tavan; egik cizgi yoksa deger oldugu gibi. */
+  const chipValue = (value: string) => {
+    const slash = value.indexOf("/");
+    return slash > 0
+      ? `${escapeHudText(value.slice(0, slash))}<small>${escapeHudText(value.slice(slash))}</small>`
+      : escapeHudText(value);
+  };
+  /** Sahnenin ping metni ("45 ms ±3", "999+ ms ±99+"); bicim tanimazsa metnin tamami sayi yerinde. */
+  const PING_TEXT = /^(\S+) ms(?: (\S+))?$/;
+  const renderPing = (ping: string) => {
+    const match = PING_TEXT.exec(ping);
+    setText(pingValueNode, match ? match[1] : ping);
+    setHidden(pingUnitNode, !match);
+    setText(pingJitterNode, match?.[2] ?? "");
+    setHidden(pingJitterNode, !match?.[2]);
+  };
   const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string, upgradeReady: boolean) => {
     const chip = (icon: string, value: string, title: string, extraClass = "") =>
       `<span class="game-hud__chip ${extraClass}" title="${escapeHudText(title)}">`
-        + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${escapeHudText(value)}</b></span>`;
+        + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${chipValue(value)}</b></span>`;
 
     const chips: string[] = [
       chip("☠", String(stats.enemiesLeft), t("hud.enemiesLeft")),
@@ -2130,7 +2155,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     if (xpChipNode.classList.contains("is-ready") !== upgradeReady) xpChipNode.classList.toggle("is-ready", upgradeReady);
     setTitle(xpChipNode, upgradeReady ? t("hud.experienceReady") : t("hud.experience"));
 
-    setText(pingValueNode, ping);
+    renderPing(ping);
     setClass(pingChipNode, `game-hud__chip game-hud__chip--ping game-hud__chip--${pingTone}`);
     setTitle(pingChipNode, pingDetail || t("hud.latency"));
   };
@@ -2588,6 +2613,8 @@ export function setupGameHudUi(game: Phaser.Game) {
       // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
       + `<label>${escapeHudText(t("menu.telemetry.label"))} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
       + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("menu.telemetry.note"))}</p>`
+      // Mactan cikis: cubukta ayri dugme yok (dar ekranda yer yok); sahne once onay soruyor.
+      + `<button type="button" class="game-hud__popup-quit" data-hud="quit">${escapeHudText(t("hud.quit.button"))}</button>`
       + `</section>`;
   };
   const volumeActions: Record<string, string> = { music: "setMusicVolume", voice: "setVoiceVolume", sfx: "setSfxVolume", hit: "setHitVolume" };
@@ -2612,6 +2639,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       const action = element.dataset.hud;
       if (action === "perf") dispatch("togglePerfHud");
       if (action === "audio") dispatch("toggleAudioHud");
+      if (action === "quit") dispatch("quitMatch");
       if (action === "stats") dispatch("toggleStatsHud");
       if (action === "stats-damage") dispatch("setStatsTab", 0);
       if (action === "stats-dps") dispatch("setStatsTab", 1);
