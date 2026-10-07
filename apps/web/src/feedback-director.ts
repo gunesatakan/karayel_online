@@ -84,7 +84,8 @@ type HitVoiceHandle = {
  * sesini cagiran dusmandan seciyor (`emit`in ucuncu argumani, `KillSoundCue`).
  */
 const SFX_SAMPLE_FAMILY: Partial<Record<FeedbackKind, SfxSampleFamily>> = {
-  crit: "crit"
+  crit: "crit",
+  execute: "execute"
 };
 
 /** Oldurmenin sesi bilinmiyorsa (onizleme, eski cagiran): meka, hafif. */
@@ -279,12 +280,14 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
     { wave: "sine", from: NOTE.C7, at: 0.08, dur: 0.34, gain: 0.07 },
     { wave: "triangle", from: NOTE.C6, at: 0.08, dur: 0.3, gain: 0.03 }
   ],
-  // Sessiz Mod: asagi kayan yumusak bir "sus" ve altta kisa bir bas. Uyari
-  // tonu degil -- kuleler bilerek susuyor; takim arkadasinda kisik caliyor.
-  silentMode: () => [
-    { wave: "sine", from: NOTE.E5, to: NOTE.C4, at: 0, dur: 0.36, gain: 0.07 },
-    { wave: "triangle", from: NOTE.A5, to: NOTE.E5, at: 0.02, dur: 0.22, gain: 0.03 },
-    { wave: "sine", from: 140, to: 70, at: 0, dur: 0.3, gain: 0.14 }
+  // Execute: asil ses kayitli ornek (`execute` ailesi: kilit tiki + agir
+  // darbe, Kenney). Bu tarif yalnizca ornek yokken caliyor: kuru bir tik ve
+  // inen bas govdesi. Nota ya da akor yok.
+  execute: () => [
+    { wave: "square", from: 2600, to: 2100, at: 0, dur: 0.018, gain: 0.04 },
+    { wave: "square", from: 1500, to: 900, at: 0.03, dur: 0.02, gain: 0.035 },
+    { wave: "sawtooth", from: 420, to: 60, at: 0.05, dur: 0.12, gain: 0.05 },
+    { wave: "sine", from: 150, to: 38, at: 0.05, dur: 0.22, gain: 0.32 }
   ],
   // Kulene bag kuruldu: iki kisa dijital tik (kod), sonra baglanti notasi.
   linkJoined: () => [

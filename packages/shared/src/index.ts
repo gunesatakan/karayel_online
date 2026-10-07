@@ -1142,29 +1142,17 @@ export type {
 export {
   SERVER_LINK_MATURITY_WAVES,
   SERVER_LINK_NOTICE_COOLDOWN_MS,
-  SILENT_MODE_BURST_MULTIPLIER,
-  SILENT_MODE_HASTE_GAME_MS,
-  SILENT_MODE_PHASE_LABELS,
-  SILENT_MODE_SILENCE_GAME_MS,
-  formatSilentModeSeconds,
   getServerLinkJoinedText,
   getRiskyInvestmentNoticeText,
   getServerLinkMaturedText,
   getServerLinkMaturity,
-  getSilentModeNoticeText,
-  getSilentModePhase,
-  getTurkishGenitive,
-  toLocalSilentModeTimeline
+  getTurkishGenitive
 } from "./feedback/team-signals.js";
 export type {
   ServerLinkJoinedMessage,
   RiskyInvestmentMessage,
   ServerLinkMaturedMessage,
   ServerLinkMaturityWave,
-  SilentModeMessage,
-  SilentModePhase,
-  SilentModePhaseKind,
-  SilentModeTimeline,
   TeamSignalText
 } from "./feedback/team-signals.js";
 export {
@@ -1515,6 +1503,8 @@ export {
 } from "./progress/run-progress.js";
 export type { RunProgressSummary } from "./progress/run-progress.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
+export { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, getExecuteRejectText, isExecuteImmune, isExecuteTeamSide, pickExecuteTapTarget } from "./characters/atakan/skills/index.js";
+export type { ExecuteRejectReason, ExecuteTapCandidate, SkillExecuteMessage, SkillRejectedMessage } from "./characters/atakan/skills/index.js";
 export type {
   AmmoType,
   TowerAxis,

@@ -26,7 +26,7 @@ const samples = await importWebModule("apps/web/src/sfx-samples.ts");
 const hit = await importWebModule("apps/web/src/hit-sounds.ts");
 const director = await importWebModule("apps/web/src/feedback-director.ts");
 const profiles = await importWebModule("apps/web/src/vfx/vfx-profiles.ts");
-const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
+const { RECIPES, SFX_BUDGET, MAX_HIT_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB } = await import("../tools/build-sfx.mjs");
 const { towerCatalog, FEEDBACK_KIND_RULES, FeedbackGovernor } = await import("../packages/shared/dist/index.js");
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -257,7 +257,7 @@ test("seviyeler sentezle eslesik: ailenin etkin tepesi hedef araliginda, oldurme
     assert.ok(effectivePeak(voice, top) + effectivePeak("heft", samples.SAMPLE_FAMILIES[voice].gain * top) <= 0.6, `${voice} sv 10 cok yuksek`);
   }
   // Oldurme: govde eski oldurme seviyesinde (hafif ~0.2, agir ~0.3), olum sesi onun altinda.
-  const ranges = [["bodyLight", 0.15, 0.22], ["bodyAir", 0.15, 0.22], ["bodyHeavy", 0.22, 0.3], ["crit", 0.1, 0.2]];
+  const ranges = [["bodyLight", 0.15, 0.22], ["bodyAir", 0.15, 0.22], ["bodyHeavy", 0.22, 0.3], ["crit", 0.1, 0.2], ["execute", 0.2, 0.3]];
   for (const family of samples.KILL_VOICE_FAMILIES) {
     ranges.push(family.endsWith("Heavy") ? [family, 0.14, 0.22] : [family, 0.1, 0.16]);
   }
@@ -510,7 +510,7 @@ test("manifestteki her dosya diskte, sure ve boyut butcesinin altinda; lisans ya
     assert.equal(bytes, entry.bytes, `${entry.file} manifestle ayni boyutta degil (yeniden uretin)`);
     const kill = entry.layer !== undefined;
     assert.ok(bytes <= (kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes), `${entry.file} ${bytes} bayt`);
-    const limit = entry.layer === "body" ? MAX_BODY_SECONDS : entry.layer === "voice" ? MAX_VOICE_SECONDS : MAX_HIT_SECONDS;
+    const limit = entry.layer === "body" ? MAX_BODY_SECONDS : entry.layer === "voice" ? MAX_VOICE_SECONDS : entry.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
     assert.ok(entry.durationMs / 1000 <= limit + 0.005, `${entry.file} ${entry.durationMs} ms`);
     assert.ok(entry.midBandDb >= MIN_MID_BAND_DB, `${entry.file} telefon bandinda enerji yok (${entry.midBandDb} dB)`);
     assert.ok(entry.peakDb <= -0.5, `${entry.file} tepe ${entry.peakDb} dBFS`);

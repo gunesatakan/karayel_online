@@ -44,7 +44,7 @@ type RaceKey = (typeof RACE_KEYS)[EnemyRace];
 export type KillVoiceFamily = `voice${RaceKey}${"Light" | "Heavy"}` | "voiceAir";
 export type KillSoundFamily = KillBodyFamily | KillVoiceFamily;
 /** Odul seslerinden ornekli olanlar. */
-export type SfxSampleFamily = KillSoundFamily | "crit";
+export type SfxSampleFamily = KillSoundFamily | "crit" | "execute";
 export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
 
 /** Dosyalarin sunuldugu yer (vite `public/`). */
@@ -96,6 +96,9 @@ export const SAMPLE_FAMILIES: Readonly<Record<SampleFamilyId, SampleFamily>> = O
   // Sv 10 govdesi ana ornegin kazanc dugumune bagli (ayni yuva); dosya 6 dB kisik.
   heft: family("heft", 1, 1, "Sv 10 gövdesi"),
   crit: family("crit", 2, 0.18, "Kritik"),
+  // Execute infazi: hafif metalin kilit tiki + agir yumruk darbesi (Kenney).
+  // Etkin tepe ~0.22-0.26: agir oldurme govdesiyle ayni seviyede, onu bastirmiyor.
+  execute: family("execute", 2, 0.34, "Execute infazı"),
   // Oldurme govdesi (squish paketi): etkin tepe hafif/hava ~0.18, agir ~0.26.
   bodyLight: family("kill-body-light", 3, 0.2, "Ölüm gövdesi (hafif)"),
   bodyHeavy: family("kill-body-heavy", 2, 0.31, "Ölüm gövdesi (ağır)"),

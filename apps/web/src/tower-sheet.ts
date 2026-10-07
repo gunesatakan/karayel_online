@@ -272,7 +272,7 @@ const STATUS_LABELS: Readonly<Record<string, string>> = {
 const TARGET_DAMAGE_LABELS: Readonly<Record<string, string>> = {
   air: "Hava",
   shielded: "Kalkanlı",
-  brute: "Kaba",
+  brute: "Ezici",
   grunt: "Er",
   runner: "Koşucu",
   shooter: "Nişancı",

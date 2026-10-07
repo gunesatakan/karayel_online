@@ -183,14 +183,17 @@ import {
   getServerLinkJoinedText,
   getRiskyInvestmentNoticeText,
   getServerLinkMaturedText,
-  getSilentModeNoticeText,
-  getSilentModePhase,
-  toLocalSilentModeTimeline,
+  ATAKAN_EXECUTE_SLOT,
+  getExecuteRejectText,
+  isExecuteImmune,
+  isExecuteTeamSide,
+  pickExecuteTapTarget,
+  type ExecuteTapCandidate,
+  type SkillExecuteMessage,
+  type SkillRejectedMessage,
   type ServerLinkJoinedMessage,
   type RiskyInvestmentMessage,
   type ServerLinkMaturedMessage,
-  type SilentModeMessage,
-  type SilentModeTimeline,
   type UltimateResultMessage,
   type KillStreakTier,
   type ConfirmationPulseStyle,
@@ -254,7 +257,7 @@ import { saveQuickStartIntent } from "../quick-start";
 import { readResolvedCosmetics, recordRunProgress, recordWaveBadges, resolveRoomFirstLiveWave, type RunProgressOutcome } from "../progress-store";
 import { createWaveReportElement, getWaveReportKey } from "../wave-report-ui";
 import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, hitTypeCodex, towerAxisLabels } from "../codex";
-import type { HudState, SilentModeHudEvent, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
+import type { HudState, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
 import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
@@ -443,6 +446,8 @@ type RenderMover = {
   knockDy?: number;
   /** Sampiyonun sabit isareti ("[Ş]"); normal dusmanda yok. */
   crown?: Phaser.GameObjects.Text;
+  /** Son karede takimin tarafinda mi (hukmedilmis, olumsuz, cevrilmis); Execute bunlari secmiyor. */
+  teamSide?: boolean;
 };
 
 /** Kaldirilan dusmanin izi: oldurme olayi patlamayi buradan ciziyor. */
@@ -499,12 +504,16 @@ const SYNERGY_LOST_FILL = "#fca5a5";
 const SYNERGY_NOTICE_MS = 2600;
 const SYNERGY_NOTICE_GAP_MS = 4000;
 /**
- * Sessiz Mod'da susan kulenin rengi: soguk bir lavanta. Isi ve tukenmenin
- * grisinden, enerjisizligin kirmizisindan ayri okunmali -- bu kule bozuk
- * degil, bilerek susturuldu.
+ * Execute isareti (`playExecuteMark`): nisangah kilidi + sert beyaz flas.
+ * Can cubugunun (16) ve sampiyon tacinin (16.2) ustunde, kule hazir
+ * isaretinin (16.5) altinda. Renk tek: soguk bir beyaz; parilti yok.
  */
-const SILENT_TOWER_TINT = 0xc7d2fe;
-const SILENT_TOWER_MARK_COLOR = 0x818cf8;
+const EXECUTE_MARK_DEPTH = 16.3;
+const EXECUTE_MARK_MS = 320;
+/** Koselerin kilitlendigi pay (~90 ms); gerisi arti ve flas. */
+const EXECUTE_MARK_LOCK_FRACTION = 0.28;
+const EXECUTE_MARK_COLOR = 0xe2e8f0;
+const EXECUTE_MARK_CORNERS: ReadonlyArray<readonly [number, number]> = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
 /** Sunucu baginin renkleri: kulede kod yagmuruyla ayni (5 dalga turkuaz, 10 dalga mor). */
 const SERVER_LINK_JOIN_COLOR = 0x22d3ee;
 const SERVER_LINK_MATURE_5_FILL = "#67e8f9";
@@ -606,6 +615,8 @@ type ClientPerfSample = {
 type PendingAction =
   | { type: "guidance" }
   | { type: "refactor"; towerId: string }
+  /** AttackLord Execute: bir sonraki dokunus bir dusmani secer; bos zemin iptal. */
+  | { type: "execute" }
   | undefined;
 
 /**
@@ -1351,18 +1362,6 @@ export class GameScene extends Phaser.Scene {
    */
   private towerCardsCache?: { definitionId: string; source: string[]; applied: string[] };
   private zeynepCommandEffects?: GameSnapshot["zeynepCommands"];
-  /**
-   * Suren Sessiz Mod, istemcinin saatinde (performance.now). Sunucu yalnizca
-   * atildiginda (ve yeniden baglanmada) tek mesaj yolluyor; susan kulelerin
-   * rengi ve HUD geri sayimi bundan.
-   */
-  private silentModeTimeline?: SilentModeTimeline;
-  /** HUD'a son yollanan geri sayim; perde kapaninca suruyorsa geri getiriliyor. */
-  private silentModeHudEvent?: SilentModeHudEvent;
-  /** Ayni atisin ikinci kez gelen mesaji (yeniden baglanma + `silent:sync`) bildirimi tekrarlamasin. */
-  private silentModeCastAt = 0;
-  /** Bu karede kuleler susturulmus mu; kule basina yeniden hesaplanmasin. */
-  private silentTowersNow = false;
   /** Kart perdesi acikken gelen bag anlari; perde kapaninca oynuyor. */
   private pendingLinkMoments: Array<() => void> = [];
   private lastHudKey = "";
@@ -1529,12 +1528,9 @@ export class GameScene extends Phaser.Scene {
     // can cubugunun (16) altinda; onizleme hayaletin (28) ustunde.
     this.synergyMarks = new SynergyMarks(this, { glyph: 12.8, preview: 29 });
     this.synergyNoticeAt = Number.NEGATIVE_INFINITY;
-    // Onceki macin Sessiz Mod'u ve bekleyen bag anlari yeni maca tasinmasin.
-    this.silentModeTimeline = undefined;
-    this.silentModeHudEvent = undefined;
-    this.silentModeCastAt = 0;
-    this.silentTowersNow = false;
+    // Onceki macin bekleyen bag anlari ve infaz hedeflemesi yeni maca tasinmasin.
     this.pendingLinkMoments = [];
+    this.pendingAction = undefined;
     // Sahne ayni nesneyle yeniden baslarsa alan baslaticilari yeniden
     // calismiyor; ilk snapshot yine "ilk" sayilsin, ★ ve etiket yanlis cikmasin.
     this.freshTowerSpawns.clear();
@@ -1638,9 +1634,6 @@ export class GameScene extends Phaser.Scene {
       this.levelLabels = undefined;
       this.synergyMarks?.destroy();
       this.synergyMarks = undefined;
-      this.silentModeTimeline = undefined;
-      this.silentModeHudEvent = undefined;
-      this.game.events.emit("game:hud-silent-mode-hide");
       this.animatedTowers.clear();
       this.freshTowerSpawns.clear();
       for (const marker of this.upgradeReadyMarkers) marker.destroy();
@@ -2126,6 +2119,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startTowerDragAt(tower: TowerDefinition, previewPoint: { x: number; y: number }) {
+    this.cancelExecuteTargeting();
     this.draggedTowerDefinition = tower;
     this.selectedTowerDefinition = tower;
     this.selectedPlacedTowerId = undefined;
@@ -3647,35 +3641,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Sessiz Mod atildi: herkesin kulesi susuyor, sonra hasar kuleleri hizlaniyor.
+   * Execute infaz edildi (`skill:execute`, herkese).
    *
-   * Eskiden yalnizca atan biliyordu; takim arkadasi kulelerinin bir anda
-   * sustugunu goruyor ve oyunu bozuk saniyordu. Simdi herkeste ayni geri sayim
-   * (once sessizlik, sonra 3x ates), susan kulelerde soguk bir renk ve atan
-   * disindakilere adini veren tek satir. Atana bildirim yok: dugmeye kendisi
-   * basti, geri sayim yeter.
-   *
-   * Ayni atisin ikinci mesaji (yeniden baglanma ile `silent:sync` ikisi de
-   * yollar) geri sayimi tazeler ama bildirimi tekrarlamaz. Bildirim ve tini
-   * dunyayla ayni anda: istemci sunucunun yarim saniye gerisinden oynuyor.
+   * Gorsel ve ses dunyayla ayni anda: istemci sunucunun yarim saniye
+   * gerisinden oynuyor, dusman ekranda o kadar sonra oluyor. Konum sunucunun
+   * infaz anindaki konumu; gecikmeden sonra ekrandaki dusman tam orada.
+   * Atanin ekraninda tam guc (ses, hafif sarsinti), takim arkadasinda soluk
+   * ve sessiz: sahada ne oldugunu gorsun, ses butcesini yemesin.
    */
-  private receiveSilentMode(message: SilentModeMessage) {
-    if (!message || typeof message.casterId !== "string" || this.matchResultShown) {
-      return;
-    }
-    const timeline = toLocalSilentModeTimeline(message, performance.now(), this.playbackDelayMs);
-    if (!timeline) {
-      return;
-    }
-    const repeat = message.castAt === this.silentModeCastAt;
-    this.silentModeCastAt = message.castAt;
-    this.silentModeTimeline = timeline;
-    const caster = this.describePlayer(message.casterId);
-    const notice = getSilentModeNoticeText(caster.name);
-    const hudEvent: SilentModeHudEvent = { timeline, title: notice.title, color: caster.color };
-    this.silentModeHudEvent = hudEvent;
-    this.game.events.emit("game:hud-silent-mode", hudEvent);
-    if (repeat) {
+  private receiveSkillExecute(message: SkillExecuteMessage) {
+    if (!message || typeof message.casterId !== "string" || !Number.isFinite(message.x) || !Number.isFinite(message.y) || this.matchResultShown) {
       return;
     }
     const own = message.casterId === this.localSessionId;
@@ -3683,53 +3658,105 @@ export class GameScene extends Phaser.Scene {
       if (this.matchResultShown || !this.feedback) {
         return;
       }
-      const decision = this.feedback.emit("silentMode", { own });
-      // Kart perdesi acikken HUD perdenin ustunde kalirdi; geri sayim yine suruyor.
-      if (own || !decision.show || this.cardChoiceRoot) {
+      const decision = this.feedback.emit("execute", { own, x: message.x, y: message.y });
+      if (!decision.show) {
         return;
       }
-      const toast: TeamNoticeToast = { ...notice, color: caster.color };
-      this.game.events.emit("game:hud-team-notice", toast);
+      this.playExecuteMark(message.x, message.y, own, decision.reducedMotion ?? this.feedback.reducedMotion);
     });
   }
 
-  /** Bu kule su an Sessiz Mod yuzunden mi susuyor; kaynak yapilari ve duvarlar atis yapmiyor zaten. */
-  private isTowerSilenced(tower: TowerSnapshot) {
-    return this.silentTowersNow
-      && !tower.disabled
-      && !tower.standby
-      && !tower.resourceProvider
-      && !this.isEdgePlacedDefinition(tower.definitionId);
-  }
-
-  /** Karenin basinda bir kez: sessizlik suruyor mu; bittiyse cizelge birakiliyor. */
-  private refreshSilentTowers(now: number) {
-    const phase = getSilentModePhase(this.silentModeTimeline, now);
-    if (!phase) {
-      this.silentModeTimeline = undefined;
+  /**
+   * Execute reddedildi (`skill:rejected`, yalnizca atana): sunucu bekleme
+   * suresini geri aldi. Dugmenin "gitti, bekleniyor" yankisi da kalkiyor.
+   */
+  private receiveSkillRejected(message: SkillRejectedMessage) {
+    if (!message || !Number.isFinite(message.slot)) {
+      return;
     }
-    this.silentTowersNow = phase?.phase === "silent";
+    const slot = Math.floor(message.slot);
+    if (slot >= 0 && slot < this.skillEchoUntil.length) {
+      this.skillEchoUntil[slot] = 0;
+    }
+    if (this.selectedCharacterId === "warrior" && slot === ATAKAN_EXECUTE_SLOT) {
+      this.showNotice(getExecuteRejectText(message.reason === "immune" ? "immune" : "invalid"));
+    }
+    this.emitControlState();
   }
 
   /**
-   * Susan kulenin isareti: sol ustte kucuk bir "duraklat" rozeti. Renk tek
-   * basina "bozuk" ile "bilerek susturuldu"yu ayirmaya yetmeyebilir (renk
-   * korlugu, soluk takim arkadasi kulesi); sekil de soylesin.
+   * Infazin dunyadaki isareti: nisangah koseleri hedefin uzerine disaridan
+   * kilitleniyor (~90 ms), kilitlendigi an ince bir arti ve sert beyaz bir
+   * flas; toplam ~320 ms. Parilti, kivilcim, renk gecisi yok -- tek renk,
+   * keskin cizgi. Hareket azaltmada koseler yerinde cikiyor, flas buyumuyor.
    */
-  private renderSilentModeTowerMark(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (!this.isTowerSilenced(tower)) {
-      return;
+  private playExecuteMark(x: number, y: number, own: boolean, still: boolean) {
+    const cell = this.getMapCellSize();
+    const radius = Math.max(9, cell * 0.42);
+    const alpha = own ? 1 : 0.5;
+    const lineWidth = Math.max(1.5, cell * 0.06);
+    const graphics = this.add.graphics().setDepth(EXECUTE_MARK_DEPTH);
+    const state = { t: 0 };
+    const draw = () => {
+      graphics.clear();
+      const t = state.t;
+      const lock = Math.min(1, t / EXECUTE_MARK_LOCK_FRACTION);
+      const eased = 1 - (1 - lock) ** 3;
+      const r = still ? radius : radius * (2.1 - 1.1 * eased);
+      const fade = t < 0.6 ? 1 : Math.max(0, 1 - (t - 0.6) / 0.4);
+      const arm = r * 0.45;
+      graphics.lineStyle(lineWidth, EXECUTE_MARK_COLOR, alpha * fade);
+      for (const [sx, sy] of EXECUTE_MARK_CORNERS) {
+        const cx = x + sx * r;
+        const cy = y + sy * r;
+        graphics.lineBetween(cx, cy, cx - sx * arm, cy);
+        graphics.lineBetween(cx, cy, cx, cy - sy * arm);
+      }
+      if (lock < 1) {
+        return;
+      }
+      const flashT = (t - EXECUTE_MARK_LOCK_FRACTION) / (1 - EXECUTE_MARK_LOCK_FRACTION);
+      const flashAlpha = alpha * Math.max(0, 1 - flashT * 1.6);
+      if (flashAlpha > 0) {
+        graphics.fillStyle(0xffffff, flashAlpha * 0.95).fillCircle(x, y, radius * (still ? 0.6 : 0.55 + 0.35 * flashT));
+      }
+      graphics.lineStyle(Math.max(1, lineWidth * 0.7), 0xffffff, alpha * fade);
+      graphics.lineBetween(x - r * 1.25, y, x + r * 1.25, y);
+      graphics.lineBetween(x, y - r * 1.25, x, y + r * 1.25);
+    };
+    draw();
+    this.tweens.add({
+      targets: state,
+      t: 1,
+      duration: EXECUTE_MARK_MS,
+      ease: "Linear",
+      onUpdate: draw,
+      onComplete: () => graphics.destroy()
+    });
+  }
+
+  /**
+   * Execute hedeflemesinde dokunulan dusman: ekranda cizilen konuma gore
+   * (sunucunun degil), dokunusa en yakin olan; govdenin biraz disi da sayiliyor,
+   * parmak kucuk dusmani tam tutturamiyor. Takimin tarafindaki (hukmedilmis,
+   * olumsuz, cevrilmis) dusmanlar atlaniyor: asil hedefle temas halinde
+   * duruyor ve dokunusu yutuyorlardi. Bos zeminde undefined.
+   */
+  private findEnemyAt(x: number, y: number) {
+    const candidates: ExecuteTapCandidate[] = [];
+    for (const [id, mover] of this.enemies) {
+      if (!mover.sprite.active || !mover.sprite.visible) continue;
+      candidates.push({
+        id,
+        x: mover.sprite.x,
+        y: mover.sprite.y,
+        size: mover.displaySize ?? 0,
+        type: mover.type,
+        champion: Boolean(mover.crown),
+        teamSide: Boolean(mover.teamSide)
+      });
     }
-    const size = Math.max(4.5, this.getMapCellSize() * 0.13);
-    const x = tower.x - size * 1.9;
-    const y = tower.y - size * 1.9;
-    graphics.fillStyle(0x1e1b4b, 0.92).fillCircle(x, y, size);
-    graphics.lineStyle(Math.max(1, size * 0.22), SILENT_TOWER_MARK_COLOR, 1).strokeCircle(x, y, size);
-    const barWidth = Math.max(1, size * 0.28);
-    const barHeight = size * 0.95;
-    graphics.fillStyle(0xe0e7ff, 1);
-    graphics.fillRect(x - size * 0.42, y - barHeight / 2, barWidth, barHeight);
-    graphics.fillRect(x + size * 0.42 - barWidth, y - barHeight / 2, barWidth, barHeight);
+    return pickExecuteTapTarget(candidates, x, y, this.getMapCellSize() * 0.55);
   }
 
   /**
@@ -4035,6 +4062,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    this.cancelExecuteTargeting();
     this.clearPlacedTowerSelection();
 
     if (this.currentUltimateCharge < 100) {
@@ -4284,6 +4312,12 @@ export class GameScene extends Phaser.Scene {
     if (this.handleArenaZoomTap(pointer)) {
       return;
     }
+    // Yakinlastiran ilk dokunus da hedef seciyor: dunya koordinati dokunus
+    // anindan, yakinlastirmadan once hesaplanmis.
+    if (this.pendingAction?.type === "execute") {
+      this.resolveExecuteTap(pointer);
+      return;
+    }
     this.hideUltimateChoices();
     this.hideZeynepTierChoicesIfOpen();
 
@@ -4385,10 +4419,62 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (index === ATAKAN_EXECUTE_SLOT) {
+      this.hideZeynepTierChoices();
+      // Ikinci basis hedeflemeyi kapatiyor: ayri bir iptal dugmesi yok.
+      if (this.pendingAction?.type === "execute") {
+        this.pendingAction = undefined;
+        this.showNotice("Execute iptal edildi");
+        this.emitControlState();
+        return;
+      }
+      this.pendingAction = { type: "execute" };
+      this.clearPlacedTowerSelection();
+      this.showNotice("Bir düşmana dokun");
+      this.emitControlState();
+      return;
+    }
+
     this.hideZeynepTierChoices();
     this.room.send("useSkill", { slot: index });
     this.echoSkillUse(index);
     this.clearPlacedTowerSelection();
+  }
+
+  /**
+   * Execute hedeflemesinde haritaya dokunuldu. Dusman yoksa kip kapaniyor;
+   * ezici ya da sampiyonsa istek hic gitmiyor ("Etkisiz", bekleme harcanmaz).
+   * Sunucu ayni kurali yeniden soruyor: istemcinin gordugu dusman orada
+   * coktan olmus ya da hukmedilmis olabilir, o zaman `skill:rejected` geliyor.
+   */
+  /**
+   * Infaz hedeflemesini kapatir: baska bir kip acildi (ulti, magaza
+   * yerlestirmesi, kule surukleme) ya da dalga bitti. Acik degilse hicbir sey.
+   */
+  private cancelExecuteTargeting() {
+    if (this.pendingAction?.type !== "execute") {
+      return false;
+    }
+    this.pendingAction = undefined;
+    this.emitControlState();
+    return true;
+  }
+
+  private resolveExecuteTap(pointer: Phaser.Input.Pointer) {
+    this.pendingAction = undefined;
+    const enemy = this.findEnemyAt(pointer.worldX, pointer.worldY);
+    if (!enemy) {
+      this.showNotice("Execute iptal edildi");
+      this.emitControlState();
+      return;
+    }
+    if (enemy.champion || (enemy.type && isExecuteImmune({ type: enemy.type }))) {
+      this.showNotice(getExecuteRejectText("immune"));
+      this.emitControlState();
+      return;
+    }
+    this.room?.send("useSkill", { slot: ATAKAN_EXECUTE_SLOT, enemyId: enemy.id });
+    this.echoSkillUse(ATAKAN_EXECUTE_SLOT);
   }
 
   private tryLinkServerTower(targetTower: TowerSnapshot) {
@@ -4458,8 +4544,6 @@ export class GameScene extends Phaser.Scene {
       this.bindRoomHandlers(this.room);
       this.room.send("snapshot:requestFull");
       this.room.send("card:sync");
-      // Mac ortasina (sayfa yenileme) donuldu: suren Sessiz Mod'un geri sayimi.
-      this.room.send("silent:sync");
       this.rememberMatchReconnect(this.room);
       this.startPingLoop();
       this.startTowerStatsLoop();
@@ -5242,6 +5326,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
+      this.cancelExecuteTargeting();
       this.showNotice(message.itemId === "bariyer" ? "Bariyer için bir yol karesi seç" : "Zift için bir yol karesi seç");
     });
     // Sunucu bu onaylari yalnizca yapan oyuncuya yolluyor; hepsi ayni
@@ -5262,9 +5347,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Ulti karnesi yalnizca atana; takim arkadaslarina tek satirlik cip.
     room.onMessage("ultimate:result", (message: UltimateResultMessage) => this.receiveUltimateResult(message));
     room.onMessage("ultimate:cast", (message: UltimateCastMessage) => this.receiveTeamUltimate(message));
-    // Takimi etkileyen sessiz kararlar: Sessiz Mod herkesin kulesini susturuyor,
-    // Sunucu baska birinin kulesine baglanabiliyor. Ikisi de tek seferlik mesaj.
-    room.onMessage("silent:mode", (message: SilentModeMessage) => this.receiveSilentMode(message));
+    // AttackLord'un Execute'u: infaz herkese (gorsel), red yalnizca atana.
+    room.onMessage("skill:execute", (message: SkillExecuteMessage) => this.receiveSkillExecute(message));
+    room.onMessage("skill:rejected", (message: SkillRejectedMessage) => this.receiveSkillRejected(message));
+    // Sunucu baska birinin kulesine baglanabiliyor: tek seferlik mesaj.
     room.onMessage("link:joined", (message: ServerLinkJoinedMessage) => this.receiveServerLinkJoined(message));
     // Riskli Yatirim takimda dalga basina bir kez ve bedeli takimin nexusundan.
     room.onMessage("shop:risky-investment", (message: RiskyInvestmentMessage) => this.receiveRiskyInvestment(message));
@@ -5348,7 +5434,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.bindRoomHandlers(room);
         room.send("snapshot:requestFull");
         room.send("card:sync");
-        room.send("silent:sync");
         this.rememberMatchReconnect(room);
         this.reconnecting = false;
         this.setCardChoicePending(false, "Bağlantı yenilendi. Seçimini yapabilirsin.");
@@ -6122,25 +6207,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.cardChoices = [];
     this.cardDraftWave = undefined;
     this.flushLinkMoments();
-    this.restoreSilentModeCountdown();
-  }
-
-  /**
-   * Perde (kart, Ucube) acilinca HUD'daki geri sayim da kalkiyor; perde
-   * kapandiginda Sessiz Mod hala suruyorsa geri geliyor. Ucube secimi dalga
-   * ortasinda acilabiliyor, sayim kaybolup geri gelmeseydi oyuncu sessizligin
-   * ne zaman bittigini bilemezdi.
-   */
-  private restoreSilentModeCountdown() {
-    const event = this.silentModeHudEvent;
-    if (!event || this.matchResultShown) {
-      return;
-    }
-    if (!getSilentModePhase(event.timeline, performance.now())) {
-      this.silentModeHudEvent = undefined;
-      return;
-    }
-    this.game.events.emit("game:hud-silent-mode", event);
   }
 
   private submitCardChoice(message: { cardId: string; towerId?: string }) {
@@ -6731,6 +6797,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const displayedEnemySize = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale * (enemy.movementKind === "air" ? 1.28 : 1) * (1 + slowPulse);
       mover.type = enemy.type;
       mover.air = enemy.movementKind === "air";
+      mover.teamSide = isExecuteTeamSide(enemy);
       mover.race = enemy.race;
       mover.displaySize = displayedEnemySize;
       const shieldRadius = displayedEnemySize * 0.48;
@@ -6914,7 +6981,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private renderTowers(towers: TowerSnapshot[]) {
     const activeIds = new Set(towers.map((tower) => tower.id));
-    this.refreshSilentTowers(performance.now());
     this.towerSnapshots = new Map(towers.map((tower) => [tower.id, tower]));
     this.signatureTowers = towers;
     const cellSize = this.getMapCellSize();
@@ -7538,10 +7604,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (tower.status === "Hararet" || tower.status === "Tukenmis" || tower.disabled) {
       return 0x94a3b8;
     }
-    // Sessizlik enerjisizlikten once: kule o an zaten ates edemiyor ve sebebi bu.
-    if (this.isTowerSilenced(tower)) {
-      return SILENT_TOWER_TINT;
-    }
     if (tower.energyState && tower.energyState !== "powered") {
       return 0xf87171;
     }
@@ -7586,7 +7648,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderServerLinkCodeEffect(graphics, tower);
     this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
-    this.renderSilentModeTowerMark(graphics, tower);
   }
 
   /**
@@ -9220,8 +9281,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * hemen kalkmali.
    */
   private hideArenaHudOverlays() {
-    // Geri sayim da perdenin ustunde kalirdi; perde kapaninca suruyorsa geri geliyor.
-    this.game.events.emit("game:hud-silent-mode-hide");
     this.game.events.emit("game:hud-wave-clear-hide");
     this.game.events.emit("game:hud-combo-hide");
     this.game.events.emit("game:hud-team-streak-hide");
@@ -9254,6 +9313,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       earned: player ? (player.gold ?? 0) + (player.goldSpent ?? 0) : undefined
     });
     if (summary) {
+      // Dalga bitti: hedef kalmadi, acik infaz hedeflemesi bir sonraki dalgaya tasinmasin.
+      this.cancelExecuteTargeting();
       // Karne ayni sayilari kullaniyor: damga "+412 ◆" dediyse karne de ayni
       // altini yaziyor. Can temizlenme anindan; "Kıl payı" o ana bakiyor.
       this.waveReports.noteClear({
@@ -10307,10 +10368,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       skills: this.selectedCharacter.skills.map((skill, index) => {
         const cooldown = cooldowns[index] ?? 0;
         const zeynepCommand = this.localPlayerSnapshot?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
+        // Execute hedeflemesi acikken dugme ikinci basisin iptal ettigini soyluyor.
+        const executeArmed = index === ATAKAN_EXECUTE_SLOT && this.selectedCharacterId === "warrior" && this.pendingAction?.type === "execute";
         return {
           slot: index,
           name: skill.name,
-          label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : skill.name,
+          label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : executeArmed ? `${skill.name}\nİptal` : skill.name,
           disabled: cooldown > 0
         };
       }),

@@ -27,6 +27,8 @@
  * eski iOS'ta yok.
  *
  * Her ornek icin zincir:
+ *  0. Katmanli tarifte (`layers`) kaynaklar once kendi gecikmeleriyle
+ *     (`delay` ms) ust uste karistiriliyor; asagidaki adimlar karisima.
  *  1. Kaynaktan `at` saniyesinden kes, bastaki sessizligi at.
  *  2. Hiz/perde (`rate`; <1 daha agir), alcak kesim (telefon hoparloru
  *     250 Hz altini zaten calamiyor; bas yalnizca tepe payi yiyor),
@@ -62,6 +64,11 @@ const MAX_KILL_SECONDS = MAX_VOICE_SECONDS;
  * butcesini doldurmasin.
  */
 const MAX_TICK_SECONDS = 0.12;
+/**
+ * Beceri isaretlerinin (`cue`: Execute infazi) en uzun suresi: oyuncunun
+ * kendi sectigi seyrek bir an; kilit tiki + agir darbe sigsin, uzamasin.
+ */
+const MAX_CUE_SECONDS = 0.4;
 /** Dosya basina ve toplam boyut butcesi (bayt); testler de ayni sayilari okuyor. */
 export const SFX_BUDGET = { hitBytes: 8 * 1024, killBytes: 12 * 1024, totalBytes: 400 * 1024 };
 /** 500 Hz - 5 kHz bandinin toplam enerjiye gore en az payi (dB). */
@@ -116,6 +123,11 @@ const RECIPES = [
   // Kritik: zirh levhasinin parlak catlamasi; vurus sesinin ustune biniyor.
   { family: "crit", id: "crit-1", src: "impact/impactPlate_light_000", dur: 0.12, rate: 1, hp: 350, fadeOut: 0.07 },
   { family: "crit", id: "crit-2", src: "impact/impactPlate_light_003", dur: 0.12, rate: 1, hp: 350, fadeOut: 0.07 },
+  // Execute (AttackLord infazi): once nisangahin kuru kilit tiki (hafif metal,
+  // `layers`), ~50 ms sonra agir, tok bir darbe (agir yumruk) -- biraz
+  // yavaslatilmis. Parilti ya da nota yok; kisa ve sert.
+  { family: "execute", id: "execute-1", src: "impact/impactPunch_heavy_000", delay: 50, layers: [{ src: "impact/impactMetal_light_001", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
+  { family: "execute", id: "execute-2", src: "impact/impactPunch_heavy_001", delay: 50, layers: [{ src: "impact/impactMetal_light_003", gain: -9 }], dur: 0.32, rate: 0.9, hp: 140, eq: [[1500, 4]], fadeOut: 0.14, cue: true },
   // ---- Oldurme: govde katmani (islak ezilme). Her oldurmede caliyor. ----
   // Hafif (kosucu, er, nisanci): kisa, kuru bir ezilme.
   { family: "bodyLight", id: "kill-body-light-1", src: "squish/squish_02", dur: 0.17, rate: 1, hp: 180, fadeOut: 0.09, kill: "body" },
@@ -173,7 +185,7 @@ const LICENSE_TEXT = `Uzay Savunma savas sesi ornekleri
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):
 
-Vurus ve kritik sesleri:
+Vurus, kritik ve beceri (Execute infazi) sesleri:
 - "Impact Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)
@@ -279,18 +291,43 @@ function build() {
   const problems = [];
   try {
     for (const recipe of RECIPES) {
-      const input = resolveSource(packs, recipe.src);
+      let input = resolveSource(packs, recipe.src);
       if (!existsSync(input)) throw new Error(`kaynak yok: ${input}`);
       const rate = recipe.rate ?? 1;
       const stage1 = join(work, `${recipe.id}-1.wav`);
       const stage2 = join(work, `${recipe.id}-2.wav`);
       const output = join(outDir, `${recipe.id}.mp3`);
+      let start = recipe.at ?? 0;
+
+      // 0: katmanli tarif (`layers`): her kaynak kendi basindan kesilip
+      // gecikmesiyle (`delay` ms) ust uste karistiriliyor; zincir karisimdan devam.
+      if (recipe.layers) {
+        const parts = [{ src: recipe.src, at: recipe.at, delay: recipe.delay, gain: 0 }, ...recipe.layers];
+        const inputs = parts.flatMap((part) => {
+          const file = resolveSource(packs, part.src);
+          if (!existsSync(file)) throw new Error(`kaynak yok: ${file}`);
+          return ["-i", file];
+        });
+        const graph = parts.map((part, index) => [
+          `[${index}:a]aformat=sample_fmts=fltp:channel_layouts=mono`,
+          "aresample=44100",
+          `atrim=start=${part.at ?? 0}`,
+          "asetpts=PTS-STARTPTS",
+          "silenceremove=start_periods=1:start_threshold=-50dB",
+          `volume=${part.gain ?? 0}dB`,
+          `adelay=${Math.round(part.delay ?? 0)}[p${index}]`
+        ].join(",")).join(";");
+        const mixed = join(work, `${recipe.id}-0.wav`);
+        run(ffmpeg, [...inputs, "-filter_complex", `${graph};${parts.map((_, index) => `[p${index}]`).join("")}amix=inputs=${parts.length}:normalize=0:duration=longest[out]`, "-map", "[out]", "-c:a", "pcm_f32le", mixed]);
+        input = mixed;
+        start = 0;
+      }
 
       // 1-3: kes, sessizligi at, perde, suzgec, kisalt.
       const chain = [
         "aformat=sample_fmts=fltp:channel_layouts=mono",
         "aresample=44100",
-        `atrim=start=${recipe.at ?? 0}`,
+        `atrim=start=${start}`,
         "asetpts=PTS-STARTPTS",
         "silenceremove=start_periods=1:start_threshold=-50dB",
         `asetrate=${Math.round(44100 * rate)}`,
@@ -332,7 +369,7 @@ function build() {
       const bytes = statSync(output).size;
       const seconds = durationOf(ffmpeg, output);
       const midBandDb = round(mid.rms - final.rms);
-      const limit = recipe.kill === "body" ? MAX_BODY_SECONDS : recipe.kill === "voice" ? MAX_VOICE_SECONDS : recipe.tick ? MAX_TICK_SECONDS : MAX_HIT_SECONDS;
+      const limit = recipe.kill === "body" ? MAX_BODY_SECONDS : recipe.kill === "voice" ? MAX_VOICE_SECONDS : recipe.tick ? MAX_TICK_SECONDS : recipe.cue ? MAX_CUE_SECONDS : MAX_HIT_SECONDS;
       if (length > limit + 0.005) problems.push(`${recipe.id}: ${length.toFixed(3)} sn > ${limit}`);
       if (midBandDb < MIN_MID_BAND_DB) problems.push(`${recipe.id}: 500 Hz-5 kHz bandi ${midBandDb} dB (en az ${MIN_MID_BAND_DB})`);
       if (bytes > (recipe.kill ? SFX_BUDGET.killBytes : SFX_BUDGET.hitBytes)) problems.push(`${recipe.id}: ${bytes} bayt`);
@@ -340,8 +377,10 @@ function build() {
         file: `${recipe.id}.mp3`,
         family: recipe.family,
         ...(recipe.tick ? { tick: true } : {}),
+        ...(recipe.cue ? { cue: true } : {}),
         ...(recipe.kill ? { layer: recipe.kill } : {}),
         source: sourceName(packs, recipe.src),
+        ...(recipe.layers ? { layers: recipe.layers.map((part) => sourceName(packs, part.src)) } : {}),
         bytes,
         durationMs: Math.round(length * 1000),
         rmsDb: round(final.rms),
@@ -384,4 +423,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 }
 
 // Testler tarifleri okuyabilsin diye (dosyayi calistirmadan).
-export { RECIPES, MAX_HIT_SECONDS, MAX_KILL_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MIN_MID_BAND_DB };
+export { RECIPES, MAX_HIT_SECONDS, MAX_KILL_SECONDS, MAX_BODY_SECONDS, MAX_VOICE_SECONDS, MAX_TICK_SECONDS, MAX_CUE_SECONDS, MIN_MID_BAND_DB };

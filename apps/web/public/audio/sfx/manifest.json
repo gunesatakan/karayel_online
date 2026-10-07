@@ -43,7 +43,7 @@
     "killBytes": 12288,
     "totalBytes": 409600
   },
-  "totalBytes": 221287,
+  "totalBytes": 230731,
   "files": [
     {
       "file": "projectile-1.mp3",
@@ -342,6 +342,34 @@
       "rmsDb": -21.1,
       "peakDb": -1.6,
       "midBandDb": -2.6
+    },
+    {
+      "file": "execute-1.mp3",
+      "family": "execute",
+      "cue": true,
+      "source": "impact/impactPunch_heavy_000.ogg",
+      "layers": [
+        "impact/impactMetal_light_001.ogg"
+      ],
+      "bytes": 4722,
+      "durationMs": 320,
+      "rmsDb": -18.4,
+      "peakDb": -3.7,
+      "midBandDb": -8.2
+    },
+    {
+      "file": "execute-2.mp3",
+      "family": "execute",
+      "cue": true,
+      "source": "impact/impactPunch_heavy_001.ogg",
+      "layers": [
+        "impact/impactMetal_light_003.ogg"
+      ],
+      "bytes": 4722,
+      "durationMs": 320,
+      "rmsDb": -18.4,
+      "peakDb": -2.4,
+      "midBandDb": -6.6
     },
     {
       "file": "kill-body-light-1.mp3",

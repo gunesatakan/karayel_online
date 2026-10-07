@@ -14,7 +14,7 @@
  * Oncelikler:
  * - P0: kendi kademe atlaman, ulti sonucu, serin.
  * - P1: kendi kritigin, son vurusun, dalga temizleme, kart acilisi, ulti hazir,
- *   dokunusunun sunucu onayi (alim, takma, onarim, gelisim), Sessiz Mod ve
+ *   dokunusunun sunucu onayi (alim, takma, onarim, gelisim), Execute infazi ve
  *   kulene baglanan / olgunlasan Sunucu bagi, sonucu degistiren kombo damgasi.
  * - P2: kendi vurusun, altinin, seviyen, yerlestirmen.
  * - P3: takim arkadasinin her olayi.
@@ -48,7 +48,7 @@ export type FeedbackKind =
   | "reportLoss"
   | "reportRecord"
   | "synergy"
-  | "silentMode"
+  | "execute"
   | "linkJoined"
   | "linkMatured"
   | "combo"
@@ -152,12 +152,14 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // sesi zaten caliyor, ikinci bir ses ayni dokunusu iki kez anlatirdi. Takim
   // arkadasininki soluk; etiket butcesi kalabalik bir kurulum aninda dusuruyor.
   synergy: { ownPriority: 2, channel: "label", visualMs: 1300, visualGapMs: 0, teammateVisual: true, soundMs: 0, soundGapMs: 0, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
-  // Sessiz Mod: butun kuleleri (herkesinkini) susturan beceri. Bildirim HUD
-  // yigininda, dunyada degil; etiket butcesine girmiyor. Takim arkadasinda
-  // da gorunur ve kisik bir tini calar -- haberin kendisi bu, arkadasin
-  // kulelerinin neden sustugunu bilmesi gerek. Arasi 1.5 sn: ust uste gelen
-  // ikinci yayin (uzatma, yeniden baglanma) ayni haberi tekrar vermesin.
-  silentMode: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 1500, teammateVisual: true, soundMs: 420, soundGapMs: 1500, teammateSound: true, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
+  // Execute (AttackLord): tek dusmani infaz eden beceri. Gorsel dunyada,
+  // hedefin ustunde (nisangah kilidi + sert beyaz flas); CombatVfx degil, kendi
+  // kisa cizimi, etiket butcesine girmiyor. Ses kisa ve kuru bir kilit tiki ve
+  // agir bir darbe -- parilti yok. Oldurme sesi de ayrica caliyor; bu onun
+  // onunde, "infaz edildi" anini isaretliyor. Takim arkadasi gorseli soluk
+  // goruyor (sahada ne oldugunu bilsin), sesi duymuyor. Sarsinti hafif ve
+  // yalnizca atanin ekraninda: kendi sectigi bir an.
+  execute: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 260, soundGapMs: 120, teammateSound: false, shakePx: 2, vibrateMs: 12, defaultWeight: 1 },
   // Takim arkadasinin Sunucusu kulene baglandi: yalnizca kulenin sahibine
   // gidiyor, yani hep "senin". Bildirim yiginda, kulede nabiz. Arasi uzun:
   // bag dokunusla acilip kapaniyor, ac-kapa ekrani bildirime bogmasin.

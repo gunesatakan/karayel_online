@@ -4,7 +4,7 @@ Uzay Savunma savas sesi ornekleri
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs; hangi dosyanin hangi kaynaktan geldigi manifest.json'da):
 
-Vurus ve kritik sesleri:
+Vurus, kritik ve beceri (Execute infazi) sesleri:
 - "Impact Sounds" (1.0) - Kenney (www.kenney.nl)
   https://kenney.nl/assets/impact-sounds
 - "Sci-Fi Sounds" (1.0) - Kenney (www.kenney.nl)

@@ -39,7 +39,6 @@ test("Jackpot ignores every fire-rate increase and keeps its defined interval", 
   tower.performance = 1;
   tower.temperature = 80;
   tower.runModifiers.push({ source: "test", scope: "tower", stat: "fireRate", add: 5 });
-  room.damageHasteUntil = Date.now() + 10_000;
   assert.equal(definition.engine.fixedFireInterval, true);
   assert.equal(room.getTowerFireInterval(tower), definition.fireIntervalMs);
 });

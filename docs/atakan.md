@@ -357,20 +357,23 @@ Secili kuleyi cezasiz sekilde baska bir uygun kareye tasir.
 - Kule cooldown'u en fazla 150 ms olacak sekilde dengelenir.
 - Sunucu link hafizasi gibi menzil gecmisleri sifirlanir.
 
-### 3. Sessiz Mod
+### 3. Execute
 
-**Cooldown:** 32 saniye  
-**Susma suresi:** 5 saniye  
-**Hizlanma penceresi:** Beceri kullanildigi andan itibaren 10 saniyeye kadar server tarafinda aktif tutulur; ilk 5 saniye kuleler sustugu icin pratikte kalan 5 saniye hizlanma olarak oynanir.
+**Cooldown:** 32 saniye (oyun suresi; diger beceriler gibi `gameDeltaTime` ile akar ve bekleme kartlariyla kisalir)
 
-Tum kuleler kisa sure susar. Ardindan hasar sinifli kuleler cok hizli calisir.
+Secilen tek bir dusmani aninda infaz eder. Ezicilere (brute) ve sampiyonlara etkisizdir.
 
 **Mevcut uygulama:**
 
-- `silentModeUntil`: 5 saniye.
-- `damageHasteUntil`: beceri baslangicindan itibaren 10 saniye.
-- Hasar sinifli kulelerin atis araligi `1/3` carpani alir.
-- Yani susma bittikten sonra kalan pencerede hasar kuleleri yaklasik 3 kat daha sik ates eder.
+- Oyuncu beceriye basar ("Bir düşmana dokun"), sonra haritada bir dusmana dokunur. Bos zemine dokunmak ya da beceriye tekrar basmak hedeflemeyi iptal eder.
+- Istemci dokunulan dusmanin kimligini `useSkill { slot: 2, enemyId }` ile yollar. Konum degil kimlik: istemci dunyayi sunucunun yarim saniye gerisinden ciziyor.
+- Hedef Ezici (brute) ya da sampiyonsa istek gitmez ve "Etkisiz" yazar; sunucu da ayni kurali (`isExecuteImmune`) yeniden sorar ve `skill:rejected { reason: "immune" }` yollar.
+- Hedef yoksa, olmusse, hukmedilmisse (Zorba), olumsuzsa ya da cevrilmisse `skill:rejected { reason: "invalid" }` gelir ("Hedef geçersiz").
+- Iki red durumunda da bekleme suresi harcanmaz.
+- Kusatma, piyade, kosucu, nisanci ve ucan dusmanlar infaz edilebilir.
+- Oldurme normal yoldan gecer (`damageEnemy` -> `finishEnemyKill`, kaynak `warrior-skill-execute`): normal altin ve XP, seri, asist, kosu defteri. Oldurme atana yazilir.
+- Hasar yapay oldugu icin tasan hasar primi odenmez (`SYNTHETIC_KILL_SOURCES`).
+- Basarili infaz herkese `skill:execute` olarak gider: hedefin uzerinde nisangah kilidi ve sert beyaz flas (~320 ms), kuru bir kilit tiki ve agir bir darbe sesi (kayitli CC0 ornek, Kenney Impact Sounds; `execute` ailesi). Takim arkadasi gorseli soluk gorur, sesi duymaz.
 
 ## Ulti: Tam Otomasyon
 
@@ -487,7 +490,7 @@ Atakan pasifi aktifse menzil de `x1.12` pasif carpaniyla etkilenir.
 
 ## Kule Level Stat Tablolari
 
-Bu tablolardaki degerler pasif, Sessiz Mod, Takipte bonusu, Obsesyon stacki, Ucube aktif stacki gibi gecici carpimlar olmadan hesaplanan baz degerlerdir.
+Bu tablolardaki degerler pasif, Takipte bonusu, Obsesyon stacki, Ucube aktif stacki gibi gecici carpimlar olmadan hesaplanan baz degerlerdir.
 
 Tablo notlari:
 
@@ -749,5 +752,5 @@ Oyuncu icin ana karar sorulari:
 - Hangi kuleler Sunucu'ya baglanacak?
 - Izolasyon Kulesi gercekten yalniz kalabilecek mi?
 - Ucube'ye erken yatirim yapmaya deger mi?
-- Sessiz Mod ne zaman kullanilirsa kaybedilen 5 saniyeyi telafi eder?
+- Execute hangi dusmana harcanmali: kacan bir kosucuya mi, nexusa dayanan bir kusatmaya mi?
 - Tam Otomasyon savunma tamiri icin mi, kamikaze hasar icin mi saklanmali?
