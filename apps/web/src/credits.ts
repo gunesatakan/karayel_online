@@ -30,7 +30,7 @@ export type CreditGroup = {
   sources: readonly CreditSource[];
 };
 
-/** Oyunun tasarimi ve gelistirmesi (git yazari). */
+/** Oyunun tasarimi, gelistirmesi, gorselleri ve sesleri (git yazari; bazi gorseller uretken yapay zeka ile). */
 export const CREDITS_DEVELOPER = "gunesatakan";
 
 export const CREDIT_GROUPS: readonly CreditGroup[] = [

@@ -78,15 +78,32 @@ test("lisanssiz ticari muzik pakette yok ve oyun muzik yuklemiyor", () => {
   assert.doesNotMatch(scene, /background-theme|zeynep-theme/);
 });
 
-test("doğrulanamayan varliklar CREDITS.md'de yollariyla listeli", () => {
-  const section = credits.slice(credits.indexOf("## Kaynağı doğrulanamayanlar"), credits.indexOf("## English summary"));
-  assert.ok(section.length > 0, "bolum yok");
+test("geliştirici yapımı varliklar CREDITS.md'de yollariyla listeli", () => {
+  const start = credits.indexOf("## Geliştirici yapımı varlıklar");
+  assert.ok(start >= 0, "bolum yok");
+  assert.ok(!credits.includes("## Kaynağı doğrulanamayanlar"), "eski bolum hala duruyor");
+  const section = credits.slice(start, credits.indexOf("## Notlar"));
+  assert.ok(section.includes(CREDITS_DEVELOPER), "bolum gelistirici adini anmiyor");
   for (const path of [
+    "apps/web/public/audio/streak-granted.mp3",
+    "apps/web/public/audio/kill-streak-deep.mp3",
     "apps/web/public/images/enemies/enemy-grunt.png",
+    "apps/web/public/images/towers/tower-zeynep-1.webp",
+    "apps/web/public/images/towers/tower-warrior-1-level-10.png",
     "apps/web/public/images/splash-siege.webp",
     "apps/web/public/images/zeynep-puppet-hands.png",
     "apps/web/public/images/melis-creepy.png"
   ]) {
     assert.ok(section.includes(path), `listede yok: ${path}`);
   }
+});
+
+test("yapay zeka beyani CREDITS.md'de Turkce ve Ingilizce, ekran metinlerinde iki dilde", () => {
+  const english = credits.slice(credits.indexOf("## English summary"));
+  assert.match(credits, /### Yapay zekâ beyanı/);
+  assert.match(credits.slice(0, credits.indexOf("## English summary")), /üretken yapay zekâ araçlarıyla/);
+  assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*generative AI/);
+  assert.match(english, /game currently has no music/);
+  assert.match(i18n.tr["credits.game.body"], /yapay zekâ/);
+  assert.match(i18n.en["credits.game.body"], /generative AI/);
 });

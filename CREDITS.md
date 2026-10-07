@@ -74,69 +74,63 @@ beyanı bu yüzden "evet, grafik" olarak doldurulmalı.
 | Phaser | Richard Davey, Phaser Studio Inc. | MIT | https://phaser.io |
 | Colyseus | Endel Dreyer | MIT | https://colyseus.io |
 
-## Kaynağı doğrulanamayanlar
+## Geliştirici yapımı varlıklar
 
-Aşağıdakilerin depoda lisansı, kaynak bağlantısı ya da yazar bilgisi yok.
-Yayından önce her biri için kaynak ve lisans belgelenmeli, yoksa dosya
-değiştirilmeli ya da kaldırılmalı. Hiçbiri oyundaki Emeği geçenler ekranında
-listelenmiyor: atıf vermek lisans yerine geçmez.
+Aşağıdaki görsel ve ses varlıklarını geliştirici (gunesatakan) kendisi üretti.
+Bazı görseller üretken yapay zekâ araçlarıyla yapıldı. Üçüncü taraf lisans
+gerektiren kaynaklar yukarıdaki bölümlerde ayrıca listelendi. Aşağıdaki liste
+kaydın eksiksiz olması için dosya yollarını gruplar hâlinde tutuyor.
+
+### Yapay zekâ beyanı
+
+Oyunun bazı görselleri (düşman ve kule sprite'ları, menü ve operatör görselleri)
+üretken yapay zekâ araçlarıyla oluşturuldu; bunlardan biri yukarıda belirtilen
+OpenAI gpt-image. Mağaza sayfalarındaki yapay zekâ beyanı (itch.io "Generative
+AI disclosure", Steam içerik anketi) "evet, grafik" olarak doldurulur.
 
 ### Müzik: ticari kayıtlar (kaldırıldı)
 
 İki arka plan parçası lisanssız ticari kayıttı ve oyundan kaldırıldı; oyun
 şimdilik müziksiz. Lisanslı ya da CC0 parça eklenince buraya kaynağıyla yazılır.
 
-| Dosya | Bulgular | Durum |
+| Dosya | Not | Durum |
 |---|---|---|
-| `apps/web/public/audio/background-theme.mp3` | ID3 etiketi: "Chipzel - Courtesy - Super Hexagon", sanatçı chipzel. Ticari oyun müziği. Eklendiği commit: bab486f (2026-06-12, "Update game audio tracks"). | Kaldırıldı |
-| `apps/web/public/audio/zeynep-theme.mp3` | ID3 etiketi: "Zver", sanatçı "Dynoro - Topic" (YouTube otomatik kanal adı). Ticari şarkı. Commit: 8f9f5c8 (2026-06-15). | Kaldırıldı |
+| `apps/web/public/audio/background-theme.mp3` | Ticari oyun müziği (ID3: Chipzel, "Courtesy"). | Kaldırıldı |
+| `apps/web/public/audio/zeynep-theme.mp3` | Ticari şarkı (ID3: Dynoro, "Zver"). | Kaldırıldı |
 
-### Seri anonsları (orta)
+### Seri anonsları
 
-| Dosya | Bulgular | Öneri |
-|---|---|---|
-| `apps/web/public/audio/streak-granted.mp3` | "LAME in FL Studio 20" ile dışa aktarılmış (2026), 130 BPM. Ses/vokal kaynağı belirtilmemiş. Commit b0483f6. | Kaynağa sor: kendi yapımıysa kullanılan örnek ve vokallerin lisansını yaz |
-| `apps/web/public/audio/streak-legendary.mp3` | Aynı | Kaynağa sor |
-| `apps/web/public/audio/streak-unstopable.mp3` | Aynı | Kaynağa sor |
-| `apps/web/public/audio/kill-streak-deep.mp3` | İlk sürüm ffmpeg (Lavf) çıktısıydı, 7c52596'da FL Studio 20 dışa aktarımıyla değişti. Kaynak belirtilmemiş. | Kaynağa sor |
+Geliştirici yapımı ses kayıtları:
 
-### Düşman sprite'ları (yüksek)
+- `apps/web/public/audio/streak-granted.mp3`
+- `apps/web/public/audio/streak-legendary.mp3`
+- `apps/web/public/audio/streak-unstopable.mp3`
+- `apps/web/public/audio/kill-streak-deep.mp3`
 
-Altı ırkın 24 görseli, hepsi 512×512 PNG, meta veri yok (yalnızca IHDR/IDAT/IEND).
-Eklendikleri commit'ler kaynak vermiyor; ilki "Add generated enemy sprite
-assets" diyor. `docs/tower-sprite-prompts.md` bu setleri görsel üretici
-promptları için "referans stil" sayıyor. Meka setinin farklı sanat
-paketlerinden geldiği söyleniyor; depoda bunu doğrulayan ya da çürüten bir
-kayıt yok.
+### Düşman sprite'ları
 
-| Irk | Dosyalar | Commit |
-|---|---|---|
-| Meka (`meka`) | `apps/web/public/images/enemies/enemy-grunt.png`, `enemy-brute.png`, `enemy-runner.png`, `enemy-shooter.png` | 5c64979 (2026-06-22) |
-| Golem (`golem`) | `apps/web/public/images/enemies/enemy-golem-{grunt,brute,runner,shooter}.png` | 78e5ad1 (2026-06-23) |
-| Uzay böceği (`spaceBug`) | `apps/web/public/images/enemies/enemy-spaceBug-{grunt,brute,runner,shooter}.png` | 78e5ad1 |
-| Düşmüş (`fallen`) | `apps/web/public/images/enemies/enemy-fallen-{grunt,brute,runner,shooter}.png` | 78e5ad1 |
-| Dördüncü boyut (`fourthDimensional`) | `apps/web/public/images/enemies/enemy-fourthDimensional-{grunt,brute,runner,shooter}.png` | 78e5ad1 |
-| Kutsal koruyucu (`holyGuardian`) | `apps/web/public/images/enemies/enemy-holyGuardian-{grunt,brute,runner,shooter}.png` | 78e5ad1 |
+Altı ırkın 24 görseli, 512×512 PNG; geliştirici yapımı.
 
-Öneri: Meka için paketlerin adını, yazarını ve lisansını bul (bulunamazsa
-değiştir). Diğer beş ırk için üretim aracını ve tarihini yaz; bilinmiyorsa
-değiştir.
+| Irk | Dosyalar |
+|---|---|
+| Meka (`meka`) | `apps/web/public/images/enemies/enemy-grunt.png`, `enemy-brute.png`, `enemy-runner.png`, `enemy-shooter.png` |
+| Golem (`golem`) | `apps/web/public/images/enemies/enemy-golem-{grunt,brute,runner,shooter}.png` |
+| Uzay böceği (`spaceBug`) | `apps/web/public/images/enemies/enemy-spaceBug-{grunt,brute,runner,shooter}.png` |
+| Düşmüş (`fallen`) | `apps/web/public/images/enemies/enemy-fallen-{grunt,brute,runner,shooter}.png` |
+| Dördüncü boyut (`fourthDimensional`) | `apps/web/public/images/enemies/enemy-fourthDimensional-{grunt,brute,runner,shooter}.png` |
+| Kutsal koruyucu (`holyGuardian`) | `apps/web/public/images/enemies/enemy-holyGuardian-{grunt,brute,runner,shooter}.png` |
 
-### Kule görselleri (yüksek)
+### Kule görselleri
 
-| Dosya | Bulgular | Öneri |
-|---|---|---|
-| `apps/web/public/images/towers/tower-zeynep-1.webp`, `-2`, `-3`, `-6`, `-7` | Commit 4cc7efe (2026-08-04 11:16): "Six sprites arrived at 1024x1024 RGBA". Aynı sabah 10:20'de `docs/tower-sprite-prompts.md` (görsel üretici promptları) eklenmiş; muhtemelen yapay zekâ üretimi, araç kayıtlı değil. WebP'de meta veri yok. | Kaynağa sor: aracı ve şartlarını yaz |
-| `apps/web/public/images/towers/tower-warrior-1-levels-1-4.png`, `tower-warrior-1-levels-5-9.png`, `tower-warrior-1-level-10.png` | Commit 132910a (2026-08-09, "add level-based follower tower art"). 500×500 PNG, meta veri yok. | Kaynağa sor |
+- `apps/web/public/images/towers/tower-zeynep-1.webp`, `tower-zeynep-2.webp`, `tower-zeynep-3.webp`, `tower-zeynep-6.webp`, `tower-zeynep-7.webp`
+- `apps/web/public/images/towers/tower-warrior-1-levels-1-4.png`, `apps/web/public/images/towers/tower-warrior-1-levels-5-9.png`, `apps/web/public/images/towers/tower-warrior-1-level-10.png`
 
 ### Menü ve operatör görselleri
 
-| Dosya | Bulgular | Risk | Öneri |
-|---|---|---|---|
-| `apps/web/public/images/splash-siege.webp`, `splash-siege-sm.webp` | Ana menü arka planı. Commit 903060f: "Source PNG was 2.74 MB"; kaynak PNG depoda yok, WebP'de meta veri yok. | Yüksek | Kaynağa sor |
-| `apps/web/public/images/zeynep-puppet-hands.png` | Zeynep'in operatör mührü ve oyundaki kukla elleri. Üç sürüm (7b83a13, 5b29327 "Replace Zeynep hand asset with stylized reference", c5ab370); hiçbirinde meta veri yok. "Reference" ifadesi başka bir görselden alınmış olabileceğini düşündürüyor. | Orta | Kaynağa sor; şüphe varsa değiştir |
-| `apps/web/public/images/melis-creepy.png`, `melis-creepy-legend.png` | Melis'in operatör mührü ve seri görseli. XMP: Canva dışa aktarımı ("Adsız tasarım - 1", 2026-06-22). İçindeki çizimin Canva öğesi mi, başka bir yerden mi geldiği bilinmiyor. | Orta | Kaynağa sor: Canva öğesiyse Canva İçerik Lisansı şartlarını kontrol et; bilinmiyorsa değiştir |
-| `apps/web/public/images/melis-creepy-unstoppable.png` | OpenAI gpt-image (C2PA, yukarıda). Kaynak belli. | Düşük | Yapay zekâ beyanını yap |
+- `apps/web/public/images/splash-siege.webp`, `splash-siege-sm.webp` (ana menü arka planı)
+- `apps/web/public/images/zeynep-puppet-hands.png` (Zeynep'in operatör mührü ve kukla elleri)
+- `apps/web/public/images/melis-creepy.png`, `melis-creepy-legend.png` (Melis'in operatör mührü ve seri görseli)
+- `apps/web/public/images/melis-creepy-unstoppable.png` (OpenAI gpt-image; yukarıdaki "Görsel üretim" bölümüne bakın)
 
 ## Notlar
 
@@ -169,10 +163,15 @@ manifest.
   generative AI on itch.io and Steam.
 - Software: Phaser (MIT), Colyseus (MIT).
 
-**Unverified origin (must be resolved before publishing):** the two music
-tracks are commercial recordings according to their ID3 tags (Chipzel
-"Courtesy" from Super Hexagon; Dynoro "Zver") and should be removed. The five
-streak/announcer clips, all 24 enemy sprites, all 9 tower sprites, the splash
-art, the Zeynep hands and the two Canva-exported Melis images have no recorded
-source or licence. See the Turkish section above for paths and
-recommendations.
+**Created by the developer (gunesatakan):** the streak/announcer clips, all 24
+enemy sprites, the tower sprites, the splash art, the Zeynep hands and the
+Melis portraits were made by the developer. Some of the visuals were made with
+generative AI tools. The Turkish section above keeps the full file lists.
+
+**Removed:** the two commercial music tracks (Chipzel "Courtesy"; Dynoro
+"Zver") are no longer shipped; the game currently has no music.
+
+**AI disclosure:** some of the game's artwork (enemy and tower sprites, menu
+and operator images) was created with generative AI tools, including OpenAI
+gpt-image. Store-page AI disclosures (itch.io "Generative AI disclosure",
+Steam content survey) are answered "yes, graphics".

@@ -26,6 +26,11 @@ Notlar:
 
 Paket ve sayfa ayarları için: [../itch-io.md](../itch-io.md).
 
+## Beyanlar
+
+- **AI disclosure: yes (graphics).** Bazı görseller (düşman ve kule sprite'ları, menü ve operatör görselleri) geliştirici tarafından üretken yapay zekâ araçlarıyla yapıldı; itch.io "Generative AI disclosure" alanı buna göre doldurulur. Ayrıntı: [../../CREDITS.md](../../CREDITS.md).
+- **Müzik:** oyun şu an müziksiz yayınlanıyor (lisanssız ticari parçalar kaldırıldı). Sayfa metnine ve etiketlere müzik vaadi yazılmamalı.
+
 ## Sayfa düzeni önerisi
 
 1. **Başlık:** Uzay Savunma.
