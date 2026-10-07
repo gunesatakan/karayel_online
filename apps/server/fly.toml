@@ -15,6 +15,12 @@ primary_region = "fra"
   cpus = 2
   memory = "1gb"
 
+# Telemetri kalici diski (fly volumes create telemetry_data ...). Sunucu /data
+# varsa olaylari /data/telemetry altina yazar; yeniden yuklemede silinmez.
+[mounts]
+  source = "telemetry_data"
+  destination = "/data"
+
 [[services]]
   internal_port = 2567
   protocol = "tcp"
