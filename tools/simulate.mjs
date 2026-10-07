@@ -618,7 +618,7 @@ const STAT_SCORE = {
   ammoEmptyDamage: 0.3, ultimateCharge: 1, skillCooldown: -1,
   targetLockMs: 0.0002, resourceProduction: 0.5, ammoProduction: 0.5,
   workerGatherSpeed: 0.4, workerSpeed: 0.3,
-  // Duz altin: 40 altin/dalga (Muharebe Odenegi, Darphane) kabaca +%16 hasarlik bir kart.
+  // Duz altin: dalga basina her 40 altin kabaca +%16 hasarlik bir kart (Muharebe Odenegi ve Darphane simdi 160).
   waveIncome: 0.02,
   // Kosullu nisan statlari: isabet ve mermi hizinin kosul tuttugunda (ucan
   // hedef, komsusuz kule) karsiligi; yaklasik yarisi kadar.

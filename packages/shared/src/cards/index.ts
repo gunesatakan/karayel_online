@@ -238,13 +238,13 @@ export const COLD_ACCURACY_BONUS = 0.5;
 export const GOLD_INTEREST_RATE = 0.16;
 export const GOLD_INTEREST_CAP = 120;
 /** `gold:cleanWave`: sizintisiz biten dalganin sonunda oyuncuya odenen altin. */
-export const CLEAN_WAVE_GOLD = 90;
+export const CLEAN_WAVE_GOLD = 360;
 /**
  * `gold:critKill`: kritik vurusla gelen her oldurmenin altini ve oyuncu
  * basina dalga tavani. Tavan kart ve esya icin ortak: ikisi ayni kilidi
  * veriyor, ikisini birden almak tavani iki katina cikarmiyor.
  */
-export const CRIT_KILL_GOLD = 6;
+export const CRIT_KILL_GOLD = 24;
 export const CRIT_KILL_GOLD_WAVE_CAP = 90;
 
 /**
@@ -428,7 +428,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "nisan-takimi", name: "Nişan Takımı", description: "Tüm kulelerin isabeti +%15, dönüş hızı +%20, mermi hızı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("nisan-takimi", "accuracy", 0.15), effect("nisan-takimi", "turnRate", 0.2), effect("nisan-takimi", "projectileSpeed", 0.25)] },
   { id: "verimli-namlu", name: "Verimli Yakıt", description: "Tüm kulelerin atış yakıtı tüketimi -%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("verimli-namlu", "shotFuelCost", -0.3)] },
   { id: "uyku-modu", name: "Uyku Modu", description: "Kulelerin çalışma enerjisi tüketimi -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, effects: [effect("uyku-modu", "operatingEnergyCost", -0.4)] },
-  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%30.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 0.3)] },
+  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%120.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 1.2)] },
   { id: "vardiya-duzeni", name: "Vardiya Düzeni", description: "Tüm işçilerin toplama hızı +%25.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("vardiya-duzeni", "workerGatherSpeed", 0.25)] },
   { id: "celik-burun", name: "Çelik Burun", description: "Tüm işçilerin yürüme hızı +%20.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("celik-burun", "workerSpeed", 0.2)] },
   { id: "lojistik-doktrini", name: "Lojistik Doktrini", description: "Tüm işçilerin toplama hızı +%30, yürüme hızı +%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("lojistik-doktrini", "workerGatherSpeed", 0.3), effect("lojistik-doktrini", "workerSpeed", 0.3)] },
@@ -441,7 +441,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "zirh-kirma", name: "Zırh Kırma", description: "Büyütme kuleleri vuruşta 3 zırh azaltır.", axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, stackable: false, effects: [effect("zirh-kirma", "armorBreak", 3)] },
   { id: "takinti", name: "Takıntı", description: "Bir kule hedefini 3 saniye daha uzun korur ama menzili -%12 olur.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, effects: [effect("takinti", "targetLockMs", 3000, "tower"), effect("takinti", "range", -0.12, "tower")] },
   { id: "son-atis", name: "Son Atış", description: "Mühimmatı biten kulenin son atışı 3x hasar verir.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("son-atis", "ammoEmptyDamage", 2, "tower")] },
-  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%70 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 0.7), effect("kanli-kazanc", "towerHealth", -0.2)] },
+  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%280 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 2.8), effect("kanli-kazanc", "towerHealth", -0.2)] },
   { id: "ek-yuva-plani", name: "Ek Yuva Planı", description: "Kule kapasitesi +1.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("ek-yuva-plani", "towerCapacity", 1)] },
 
   // --- Kimlik kartlari ---
@@ -696,17 +696,17 @@ export const cardCatalog: CardDefinition[] = [
   // tavanli olduklari icin biriktikce kendini buyuten bir dongu kurmuyorlar.
   // Hepsi oyuncunun kendi kesesine: co-op'ta herkes kendi kartinin karsiligini
   // aliyor, takim arkadasinin payi degismiyor.
-  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%50 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 0.5), effect("parali-asker", "experienceGain", -0.2)] },
-  { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +40 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 40)] },
-  { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +90 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
+  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%200 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 2), effect("parali-asker", "experienceGain", -0.2)] },
+  { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +160 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 160)] },
+  { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +360 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
   // Ikinci tur altin kartlari: esyalarin bakmadigi olaylar -- dalga sonunda
   // ayakta kalan kuleler, gelistirme, agir hedef ve sureli hasarla gelen
   // olum. Hepsi oyuncunun listesinden okunuyor ve oyuncu basina tavanli.
-  { id: "garnizon-maasi", name: "Garnizon Maaşı", description: "Dalga sonunda ayakta olan her hasar veren kulen için +4 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("garnizon-maasi", "garrisonGold", 4)] },
+  { id: "garnizon-maasi", name: "Garnizon Maaşı", description: "Dalga sonunda ayakta olan her hasar veren kulen için +16 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("garnizon-maasi", "garrisonGold", 16)] },
   { id: "terfi-ikramiyesi", name: "Terfi İkramiyesi", description: "Her kule geliştirmende +10 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("terfi-ikramiyesi", "upgradeGold", 10)] },
-  { id: "agir-hedef-odulu", name: "Ağır Hedef Ödülü", description: "Öldürdüğün her brute ve kuşatma düşmanı +6 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-hedef-odulu", "heavyKillGold", 6)] },
-  { id: "yavas-olum-primi", name: "Yavaş Ölüm Primi", description: "Yanma ve kanamanla ölen her düşman +4 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("yavas-olum-primi", "statusKillGold", 4)] },
-  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +6 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
+  { id: "agir-hedef-odulu", name: "Ağır Hedef Ödülü", description: "Öldürdüğün her brute ve kuşatma düşmanı +24 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-hedef-odulu", "heavyKillGold", 24)] },
+  { id: "yavas-olum-primi", name: "Yavaş Ölüm Primi", description: "Yanma ve kanamanla ölen her düşman +16 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("yavas-olum-primi", "statusKillGold", 16)] },
+  { id: "kelle-parasi", name: "Kelle Parası", description: "Kritik vuruşla öldürülen her düşman +24 altın verir.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:critKill"] },
 
   // --- Epik: cevrim kartlari ---
   //
@@ -721,11 +721,13 @@ export const cardCatalog: CardDefinition[] = [
   // tek basina +%10 hasar veriyor, tavan (+%50) isabet 1,3'te -- ates konisinin
   // doydugu 1,0'in ustundeki isabet de bosa gitmiyor. Altin cevrimi hasar veriyor,
   // altin degil -- altini buyuten bir altin karti co-op'ta kendini besleyen
-  // bir dongu olurdu.
+  // bir dongu olurdu. Altin kartlari ve esyalari dort katina cikinca altin
+  // cevriminin orani dortte birine indi (her %40'i +%3): hasar egrisi ayni
+  // kaldi, kartin kendi +%120'si yine +%9 veriyor, tavan +%400 altinda.
   { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
   { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5, cap: 0.5 }] },
   { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
-  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%30. Düşman altını bonusunun her %10'u tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.3)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.3, cap: 0.3 }] }
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%120. Düşman altını bonusunun her %40'ı tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 1.2)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.075, cap: 0.3 }] }
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));

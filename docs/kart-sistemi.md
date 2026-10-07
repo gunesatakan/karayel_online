@@ -75,7 +75,8 @@ Kart kimliğine bakan bir sunucu dalı yok. Çevrimler zincirlenmez: kaynak çev
 önce okunur. `threshold` kaynağın yalnızca eşik üstünü saydırır (Balistik
 Hesaplayıcı'da %30). Her epik kaynak statından bir taban bonus da verir (`effects`)
 ve çevrim onu da okur: kart tek başına işler, yatırımla tavanına büyür. Açıklama "her %10'u … +%X ekler; en fazla +%Y" diye yazılır ve test
-metni sayılarla karşılaştırır.
+metni sayılarla karşılaştırır. Savaş Hazinesi'nin adımı %40: altın kartları dört katına
+çıkınca oranı dörtte bire indi, hasar eğrisi aynı kaldı.
 
 ## 3. Motor eklentisi (`grants`)
 

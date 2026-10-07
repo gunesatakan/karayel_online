@@ -327,7 +327,7 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("yorunge-rulmani", "Yörünge Rulmanı", "Takıldığı kulenin hasarı +%40, ısısı +%20; yalnızca yörünge kulelerine takılır.", "class", 95, { scope: { kind: "tagged", shapes: ["orbit"] }, effects: [effect("yorunge-rulmani", "damage", 0.4), effect("yorunge-rulmani", "heat", 0.2)] }),
   defineItem("isin-prizmasi", "Işın Prizması", "Takıldığı kulenin hasarı +%45, soğuması -%15; yalnızca ışın kulelerine takılır.", "class", 105, { scope: { kind: "tagged", shapes: ["beam"] }, effects: [effect("isin-prizmasi", "damage", 0.45), effect("isin-prizmasi", "cooling", -0.15)] }),
 
-  defineItem("ganimet-kesesi", "Ganimet Kesesi", "Düşman altını +%40.", "utility", 110, { effects: [effect("ganimet-kesesi", "goldGain", 0.4)] }),
+  defineItem("ganimet-kesesi", "Ganimet Kesesi", "Düşman altını +%160.", "utility", 110, { effects: [effect("ganimet-kesesi", "goldGain", 1.6)] }),
   defineItem("ikmal-hatti", "İkmal Hattı", "Takıldığı kulenin atış yakıtı tüketimi -%30.", "utility", 95, { effects: [effect("ikmal-hatti", "shotFuelCost", -0.3)] }),
 
   // Motor esyalari. Esya tek bir kuleye kalici olarak takildigi icin grant
@@ -435,10 +435,10 @@ const rawShopCatalog: ShopItem[] = [
   // ve vadeli altin. Dalga basina altin tavani yok (sahibi kaldirdi). Darphane ve Kelle Defteri
   // kuleye takiliyor ve ikisi de kule katmanindan okunuyor (oldurenin
   // kulesi, binanin kendisi); obur ucu oyuncunun.
-  defineItem("altin-elek", "Altın Elek", "Düşman altını +%24; en fazla 3 kez alınır.", "utility", 85, { repeatable: true, maxStacks: 3, priceGrowth: 1.5, axes: ["economy"], effects: [effect("altin-elek", "goldGain", 0.24)] }),
-  defineItem("sigorta-policesi", "Sigorta Poliçesi", "Sızıntısız biten her dalga sonunda +90 altın.", "utility", 120, { axes: ["economy"], unlocks: ["gold:cleanWave"] }),
-  defineItem("darphane-modulu", "Darphane Modülü", "Takıldığı bina dalga sonunda ayaktaysa +40 altın verir; bir binaya en fazla 3 kez takılır; yalnızca ekonomi binalarına takılır.", "utility", 80, { repeatable: true, maxStacks: 3, priceGrowth: 1.3, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("darphane-modulu", "waveIncome", 40)] }),
-  defineItem("kelle-defteri", "Kelle Defteri", "Takıldığı kulenin kritik vuruşla öldürdüğü her düşman +6 altın verir.", "utility", 70, { scope: { kind: "tagged", combat: true }, axes: ["economy"], unlocks: ["gold:critKill"] }),
+  defineItem("altin-elek", "Altın Elek", "Düşman altını +%96; en fazla 3 kez alınır.", "utility", 85, { repeatable: true, maxStacks: 3, priceGrowth: 1.5, axes: ["economy"], effects: [effect("altin-elek", "goldGain", 0.96)] }),
+  defineItem("sigorta-policesi", "Sigorta Poliçesi", "Sızıntısız biten her dalga sonunda +360 altın.", "utility", 120, { axes: ["economy"], unlocks: ["gold:cleanWave"] }),
+  defineItem("darphane-modulu", "Darphane Modülü", "Takıldığı bina dalga sonunda ayaktaysa +160 altın verir; bir binaya en fazla 3 kez takılır; yalnızca ekonomi binalarına takılır.", "utility", 80, { repeatable: true, maxStacks: 3, priceGrowth: 1.3, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("darphane-modulu", "waveIncome", 160)] }),
+  defineItem("kelle-defteri", "Kelle Defteri", "Takıldığı kulenin kritik vuruşla öldürdüğü her düşman +24 altın verir.", "utility", 70, { scope: { kind: "tagged", combat: true }, axes: ["economy"], unlocks: ["gold:critKill"] }),
   defineItem("vadeli-mevduat", "Vadeli Mevduat", "Satın alındıktan sonra 4 dalga tamamlanınca 440 altın öder; en fazla 2 kez alınır; 16. dalgadan sonra çıkmaz.", "utility", 150, { repeatable: true, maxStacks: 2, priceGrowth: 1, axes: ["economy"], deposit: { payout: 440, waves: 4 } }),
 
   // Altin primleri: belirli bir olaya baglanan duz altin, hepsi bedelsiz ve
@@ -448,18 +448,18 @@ const rawShopCatalog: ShopItem[] = [
   // Sampiyon primi oyuncunun (kuresel); otekiler kuleye takiliyor ve
   // oldurenin ya da hasari verenin kulesinden okunuyor -- hangi kuleye
   // takilacagi bir karar.
-  defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +150 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 150)] }),
-  defineItem("dusurme-primi", "Düşürme Primi", "Takıldığı kulenin öldürdüğü her uçan düşman +8 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("dusurme-primi", "airKillGold", 8)] }),
-  defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +10 altın kazandırır.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 10)] }),
-  defineItem("toplu-imha-primi", "Toplu İmha Primi", "Takıldığı kule 2 saniye içinde 3 düşman öldürdüğünde +15 altın verir.", "utility", 85, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("toplu-imha-primi", "multiKillGold", 15)] }),
-  defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %5'i altına dönüşür.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.05)] }),
+  defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +600 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 600)] }),
+  defineItem("dusurme-primi", "Düşürme Primi", "Takıldığı kulenin öldürdüğü her uçan düşman +32 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("dusurme-primi", "airKillGold", 32)] }),
+  defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +40 altın kazandırır.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 40)] }),
+  defineItem("toplu-imha-primi", "Toplu İmha Primi", "Takıldığı kule 2 saniye içinde 3 düşman öldürdüğünde +60 altın verir.", "utility", 85, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("toplu-imha-primi", "multiKillGold", 60)] }),
+  defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %20'si altına dönüşür.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.2)] }),
   // Ikinci tur kule primleri: kulenin sicakligi, hedefin yavasligi, ikmal
   // ve mesafe. Hepsi takildigi kulenin listesinden okunuyor ve kulenin
   // sahibine oduyor; tavan yok.
-  defineItem("ates-hatti-primi", "Ateş Hattı Primi", "Takıldığı kule sıcaklığı 50 derece ya da üstündeyken öldürdüğü her düşman için (yanma ve kanamasıyla ölenler dahil) +3 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ates-hatti-primi", "hotKillGold", 3)] }),
-  defineItem("soguk-av-kaydi", "Soğuk Av Kaydı", "Takıldığı kulenin öldürdüğü her yavaşlamış düşman (yanma ve kanamasıyla ölenler dahil) +3 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("soguk-av-kaydi", "slowedKillGold", 3)] }),
+  defineItem("ates-hatti-primi", "Ateş Hattı Primi", "Takıldığı kule sıcaklığı 50 derece ya da üstündeyken öldürdüğü her düşman için (yanma ve kanamasıyla ölenler dahil) +12 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ates-hatti-primi", "hotKillGold", 12)] }),
+  defineItem("soguk-av-kaydi", "Soğuk Av Kaydı", "Takıldığı kulenin öldürdüğü her yavaşlamış düşman (yanma ve kanamasıyla ölenler dahil) +12 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("soguk-av-kaydi", "slowedKillGold", 12)] }),
   defineItem("ikmal-senedi", "İkmal Senedi", "Takıldığı kuleye teslim edilen her 5 mühimmat ya da 15 enerji için +2 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ikmal-senedi", "deliveryGold", 2)] }),
-  defineItem("uzak-menzil-primi", "Uzak Menzil Primi", "Takıldığı kulenin menzilinin dış dörtte birinde vurarak öldürdüğü her düşman +4 altın verir; menzili haritayı kaplayan kulelere takılmaz.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("uzak-menzil-primi", "longRangeKillGold", 4)] })
+  defineItem("uzak-menzil-primi", "Uzak Menzil Primi", "Takıldığı kulenin menzilinin dış dörtte birinde vurarak öldürdüğü her düşman +16 altın verir; menzili haritayı kaplayan kulelere takılmaz.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("uzak-menzil-primi", "longRangeKillGold", 16)] })
 ];
 
 /**

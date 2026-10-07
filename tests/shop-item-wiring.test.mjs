@@ -67,7 +67,7 @@ test("Ganimet Kesesi düşman altınını gerçekten artırır", () => {
   const esyali = olc(true);
   assert.ok(esyasiz > 0, "esyasiz olcum altin vermedi");
   assert.ok(esyali > esyasiz, `esya altini artirmadi: ${esyasiz} -> ${esyali}`);
-  assert.ok(Math.abs(esyali / esyasiz - 1.4) < 0.01, `beklenen x1.4, olculen x${(esyali / esyasiz).toFixed(2)}`);
+  assert.ok(Math.abs(esyali / esyasiz - 2.6) < 0.01, `beklenen x2.6, olculen x${(esyali / esyasiz).toFixed(2)}`);
 });
 
 test("Komuta Modülü takıldığı kulenin işaret gücünü artırır", () => {
