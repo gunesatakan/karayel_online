@@ -1,10 +1,10 @@
-# Gizlilik / Privacy — Defense Protocol
+# Gizlilik / Privacy — Nexhold
 
 _Son güncelleme / Last updated: 2026-10-07_
 
 ## Türkçe
 
-**Defense Protocol** oyunu, hataları düzeltmek ve oyunu dengelemek için **anonim kullanım verisi** toplar. Veriler yalnızca oyunun kendi sunucusuna gönderilir. Üçüncü taraf analitik, reklam veya takip servisi kullanılmaz.
+**Nexhold** oyunu, hataları düzeltmek ve oyunu dengelemek için **anonim kullanım verisi** toplar. Veriler yalnızca oyunun kendi sunucusuna gönderilir. Üçüncü taraf analitik, reklam veya takip servisi kullanılmaz.
 
 ### Toplanan veriler
 
@@ -35,7 +35,7 @@ Sorular ve silme talepleri için: nobetportal@gmail.com. Veriler kimliksiz oldu�
 
 ## English
 
-**Defense Protocol** collects **anonymous usage data** to fix bugs and balance the game. Data is sent only to the game's own server. No third-party analytics, advertising or tracking services are used.
+**Nexhold** collects **anonymous usage data** to fix bugs and balance the game. Data is sent only to the game's own server. No third-party analytics, advertising or tracking services are used.
 
 ### What is collected
 

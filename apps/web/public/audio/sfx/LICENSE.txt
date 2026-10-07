@@ -1,5 +1,5 @@
-Defense Protocol savas sesi ornekleri
-=====================================
+Nexhold savas sesi ornekleri
+============================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs ve tools/sfx-portal.mjs; hangi dosyanin hangi kaynaktan

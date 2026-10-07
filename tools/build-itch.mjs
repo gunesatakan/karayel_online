@@ -6,7 +6,7 @@
  *   npm run build:itch -- --server wss://baska-sunucu.fly.dev
  *
  * Istemciyi uretip (`npm run build:web`) `apps/web/dist` klasorunu
- * `dist/itch/defense-protocol-web.zip` olarak paketliyor; zip kokunde
+ * `dist/itch/nexhold-web.zip` olarak paketliyor; zip kokunde
  * `index.html` var, itch'in istedigi bu. Sunucu adresi derleme aninda
  * `VITE_GAME_SERVER_URL` ile gomuluyor (`apps/web/src/config.ts`); verilmezse
  * uretim sunucusu.
@@ -23,7 +23,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const distDir = join(root, "apps/web/dist");
-const outFile = join(root, "dist/itch/defense-protocol-web.zip");
+const outFile = join(root, "dist/itch/nexhold-web.zip");
 
 /** itch.io HTML5 sinirlari: en fazla 1000 dosya, dosya basina 200 MB. */
 export const ITCH_MAX_FILES = 1000;

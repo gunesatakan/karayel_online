@@ -1,6 +1,6 @@
 # Emeği geçenler ve varlık lisansları
 
-Defense Protocol'ün oyunla birlikte dağıtılan (ya da oyunun yüklediği) sanat, ses,
+Nexhold'un oyunla birlikte dağıtılan (ya da oyunun yüklediği) sanat, ses,
 müzik, yazı tipi ve yazılım kaynakları. Bu dosya ile `apps/web/src/credits.ts` aynı
 kaynak listesini taşır; oyundaki **Emeği geçenler** ekranı o modülden çizilir.
 `tests/credits.test.mjs` modüldeki her kaynağın adını, yazarını, lisansını ve

@@ -6,7 +6,7 @@
 
 ## Uzun açıklama
 
-**Defense Protocol**, tarayıcıda oynanan, iki kişilik co-op bir kule savunma oyunudur. Bir operatör seç, savunma hattını kur ve yirmi dalga boyunca nexus'u koru.
+**Nexhold**, tarayıcıda oynanan, iki kişilik co-op bir kule savunma oyunudur. Bir operatör seç, savunma hattını kur ve yirmi dalga boyunca nexus'u koru.
 
 Her operatörün kendine ait kuleleri, becerileri ve bir ultisi var. Her dalgadan sonra bir kart seçip koşunu şekillendiriyorsun; altın mağazasından aldığın eşyaları kulelere takıyorsun. Kuleler ateş ettikçe ısınıyor; enerjiyi ve mühimmatı işçiler taşıyor. Lojistiği aksatırsan en güçlü kule de susar.
 

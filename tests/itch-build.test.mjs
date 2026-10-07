@@ -78,7 +78,7 @@ test("assetUrl gelistirmede kokten, node'da (import.meta.env yok) yine kokten co
 test("zip geri acilinca ayni dosyalar ileri bolulu yollarla; medya sikistirilmadan", () => {
   const files = [
     { name: "index.html", data: Buffer.from("<!doctype html><script src=\"./assets/a.js\"></script>".repeat(20)) },
-    { name: "assets/a.js", data: Buffer.from("console.log('Defense Protocol — çalışıyor');".repeat(50)) },
+    { name: "assets/a.js", data: Buffer.from("console.log('Nexhold — çalışıyor');".repeat(50)) },
     { name: "images/towers/kule.webp", data: Buffer.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4]) },
     { name: "audio/sfx/bos.mp3", data: Buffer.alloc(0) }
   ];

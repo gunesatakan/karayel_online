@@ -147,8 +147,8 @@ const RECIPES = [
 function licenseText(portalSources) {
   const lines = portalSources.map(({ file, sources }) => [`- ${file}:`, ...sources.map((source) => `    ${source}`)].join("\n")).join("\n");
   const used = [...new Set(portalSources.flatMap(({ sources }) => sources))].sort();
-  return `Defense Protocol savas sesi ornekleri
-=====================================
+  return `Nexhold savas sesi ornekleri
+============================
 
 Bu klasordeki MP3 dosyalari asagidaki CC0 paketlerden uretildi
 (tools/build-sfx.mjs ve tools/sfx-portal.mjs; hangi dosyanin hangi kaynaktan

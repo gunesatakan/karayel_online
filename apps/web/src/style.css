@@ -2204,10 +2204,9 @@ button.wave-report:active { transform: scale(0.99); }
   margin: 0;
   color: #f2f4f8;
   font-family: var(--serif);
-  /* "Defense Protocol" iki kelime, 16 harf: Cinzel 900'de genislik ~11.9em.
-     320-375 px'te tek satira sigsin diye 7.4vw; menu 460 px'te durdugu icin
-     ust sinir da orada (34 px). */
-  font-size: min(var(--fs-display), 7.4vw, 34px);
+  /* "Nexhold" tek kelime, 7 harf (Cinzel 900'de genislik ~5.7em): tam
+     display boyutu 320 px'te 240/293 px, 430 px'te 323/394 px; tasmiyor. */
+  font-size: var(--fs-display);
   font-weight: 900;
   line-height: 0.88;
   letter-spacing: 0.02em;

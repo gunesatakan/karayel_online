@@ -1077,7 +1077,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
     <div class="screen screen--home">
       <header class="brand">
         <p class="eyebrow"><i class="rule-dot"></i>${t("menu.home.eyebrow")}</p>
-        <h1 class="brand__word">Defense Protocol</h1>
+        <h1 class="brand__word">Nexhold</h1>
         <div class="brand__rule" aria-hidden="true"><i></i><span class="rule-dot"></span><i></i></div>
       </header>
 
@@ -1832,7 +1832,7 @@ function renderCredits() {
 
       <section class="selected-dossier frame">
         <p class="kicker">${t("credits.game.label")}</p>
-        <h2>Defense Protocol</h2>
+        <h2>Nexhold</h2>
         <p>${escapeHtml(t("credits.game.body", { developer: CREDITS_DEVELOPER }))}</p>
         <p>${escapeHtml(t("credits.intro"))}</p>
       </section>

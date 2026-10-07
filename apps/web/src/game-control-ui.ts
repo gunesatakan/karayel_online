@@ -448,10 +448,22 @@ export function setupGameControlUi(game: Phaser.Game) {
     window.setTimeout(() => button.classList.remove("is-pressed"), BUTTON_PRESS_FLASH_MS);
   };
 
+  // Yakalama evresinde: parmak, dugmenin kendi dinleyicisinden ONCE kaydedilmeli.
+  //
+  // Kule dugmesi isini `pointerdown`da yapiyor (secim + surukleme baslangici) ve
+  // sahne ayni anda yeni durumu yayinliyor. Kayit kabarcik evresinde kaldiginda
+  // o an liste bos goruluyor, panel hemen yeniden kuruluyor ve parmagin altindaki
+  // dugme DOM'dan cikiyordu. Dokunmatikte jestin geri kalani o kopuk dugmeye
+  // gidiyor ve pencereye hic ulasmiyor: `pointerup` gelmiyor, parmak listede
+  // sonsuza dek kaliyor, butun yeniden kurmalar ertelenip cekmece donuyordu --
+  // ne Kuleler dugmesi ne × kapatabiliyordu, surukleme de acik kaliyordu.
   root.addEventListener("pointerdown", (event: PointerEvent) => {
+    // Birincil isaretci ekranda baska parmak olmadigini soyluyor; kaybolmus bir
+    // birakmadan kalan kayitlar paneli bir daha kilitlemesin.
+    if (event.isPrimary) pressedPointers.clear();
     pressedPointers.add(event.pointerId);
     markButtonPressed(event.target);
-  });
+  }, { capture: true });
   root.addEventListener("pointerup", releasePointer);
   root.addEventListener("pointercancel", releasePointer);
   window.addEventListener("pointerup", releasePointer);
