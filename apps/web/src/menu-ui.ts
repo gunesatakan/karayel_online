@@ -97,6 +97,7 @@ import {
   type MatchReconnectRecord
 } from "./online-session";
 import { assetUrl } from "./asset-url";
+import { forwardStrayMenuWheel } from "./menu-scroll";
 import { describeServerError, localizeServerText } from "./server-text";
 import { resetTutorialProgress } from "./tutorial";
 import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
@@ -247,6 +248,8 @@ export function setupMenuUi(game: Phaser.Game) {
   const shellHost = document.createElement("div");
   shellHost.className = "menu-shell-host";
   root.append(shellHost);
+  // Masaustunde ortadaki sutunun disinda tekerlek/touchpad de ekrani kaydirsin.
+  forwardStrayMenuWheel(shellHost);
   // Kilitli operatore dokunus notu: yeniden cizimin disinda, ekranlar arasi kaliyor.
   const operatorToast = document.createElement("p");
   operatorToast.className = "menu-toast";
