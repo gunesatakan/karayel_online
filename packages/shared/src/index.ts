@@ -6,6 +6,8 @@ import type { TowerTier } from "./tower-stats/index.js";
 // buraya da alinmali; re-export yalnizca disariya acar, iceride goruntu vermez.
 import { ENEMY_EXP_MULTIPLIER, getStructureRepairCost } from "./balance/index.js";
 import { lt } from "./i18n/index.js";
+// getTowerGridSpan kule izini motor tanimindan okuyor.
+import { towerCatalog } from "./characters/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -2020,13 +2022,23 @@ export {
   type WorldPoint
 } from "./map.js";
 
+let towerGridSpans: ReadonlyMap<string, number> | undefined;
+
 /**
- * How many grid cells a tower covers per side. Saray Arsivi is a 2x2 vault, so
- * it snaps to a cell corner and occupies four tiles. Abarti is not a tile tower
- * at all and goes through the edge placement path instead.
+ * How many grid cells a tower covers per side. Saray Arsivi and Ucube are 2x2,
+ * so they snap to a cell corner and occupy four tiles. Abarti is not a tile
+ * tower at all and goes through the edge placement path instead.
+ *
+ * Read from the engine's `placement.footprintSpan`, the same field the server
+ * validates placement with, so the client cannot disagree about a tower's size.
+ * Built lazily: the catalog is not ready while this module is still loading.
  */
 export function getTowerGridSpan(definitionId: string) {
-  return definitionId === "zeynep-7" ? 2 : 1;
+  towerGridSpans ??= new Map(Object.values(towerCatalog).flat().map((definition) => [
+    definition.id,
+    Math.max(1, definition.engine?.placement?.footprintSpan ?? 1)
+  ]));
+  return towerGridSpans.get(definitionId) ?? 1;
 }
 
 /**

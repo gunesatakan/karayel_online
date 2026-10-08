@@ -364,20 +364,27 @@ test("kiriş kare başına dönüş hızını aşamaz", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Vurus ritmi, 5. seviye kilidi ve 10. seviyenin ters donen kirisleri */
+/* Vurus ritmi, 5. seviye kilidi ve 10. seviyenin supuren kirisleri    */
 /* ------------------------------------------------------------------ */
 
 /** Asiri yuklemenin gercek suresi: 2000 oyun ms'si / oyun hizi 0.8. */
 const OVERDRIVE_REAL_MS = 2500;
+/** 10. seviyede: 3000 oyun ms'si / oyun hizi 0.8. */
+const TWIN_REAL_MS = 3750;
 
-/** 10. seviyede zincir kirisine eklenen iki kiris: `-b` saat yonunde, `-c` tersine. */
-function spinBeamIds(tower) {
+/** 10. seviyenin iki kirisi: `-b` sola, `-c` saga supuren. */
+function sweepBeamIds(tower) {
   return [`beam-${tower.id}-b`, `beam-${tower.id}-c`];
 }
 
 function angleOf(room, tower, id) {
   const beam = room.beams.get(id);
   return beam ? Math.atan2(beam.y2 - tower.y, beam.x2 - tower.x) : undefined;
+}
+
+/** Kulenin `dy` kadar ustunde (ekranda yukarida) yatay bir dusman sirasi; `dx` ofsetleriyle. */
+function rowSpots(offsets, dy = -120) {
+  return offsets.map((dx) => ({ degrees: degrees(Math.atan2(dy, dx)), distance: Math.hypot(dx, dy) }));
 }
 
 /**
@@ -425,7 +432,7 @@ for (const level of [5, 10]) {
   test(`${level}. seviye: asiri yukleme altindaki dusmani normal lazer kadar sik vurur`, () => {
     // Sikayet buydu: kiris sabit 220 ms'de atiyordu, normal lazer seviyesinin
     // araligiyla (Izolasyon pasifiyle 100 ms'nin altinda) -- yarisindan az vurus.
-    // 10. seviyede uc kiris birden: dusman atis basina yine bir kez.
+    // 10. seviyede iki kiris birden: dusman atis basina yine bir kez.
     const normal = withClock((advance) => {
       const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level, overdrive: false });
       recordHits(room, tower, advance, 1000); // nisan alma
@@ -463,78 +470,120 @@ test("5-9. seviyede yalnızca zincir kirişi", () => {
       for (let elapsed = 0; elapsed < 2000; elapsed += TICK_MS) {
         runTicks(room, advance, TICK_MS);
         assert.equal(room.beams.get(`beam-${tower.id}`)?.overdrive, true);
-        for (const id of spinBeamIds(tower)) assert.equal(room.beams.has(id), false, `${level}. seviyede ${id} var`);
+        for (const id of sweepBeamIds(tower)) assert.equal(room.beams.has(id), false, `${level}. seviyede ${id} var`);
       }
     });
   }
 });
 
-test("10. seviyede zincir kirişine ek olarak iki ters dönen kiriş", () => {
+test("10. seviye: 3 saniye boyunca yalnızca iki süpüren ışın; zincir kirişi de normal lazer de susar", () => {
   withClock((advance) => {
-    const start = (20 * Math.PI) / 180;
-    const { room, tower, enemies } = overdriveScene([{ degrees: 20, distance: 60 }, { degrees: 40, distance: 200 }], { level: 10 });
-    const [cw, ccw] = spinBeamIds(tower);
-
-    // Dogus: uc kiris de zincirin dogdugu acida, ayni gorunuste.
-    for (const id of [`beam-${tower.id}`, cw, ccw]) {
-      assert.ok(Math.abs(shortestAngleDelta(start, angleOf(room, tower, id))) < 0.01, `${id} baslangicta degil`);
+    const { room, tower } = overdriveScene(rowSpots([-90, -45, 0, 45, 90]), { level: 10 });
+    assert.equal(tower.debugOverdriveUntil - Date.now(), TWIN_REAL_MS);
+    let ticks = 0;
+    while (tower.debugOverdriveUntil > Date.now()) {
+      // `beam-<kule>` hem zincir kirisi hem normal lazerin kirisi: ikisi de yok.
+      assert.equal(room.beams.has(`beam-${tower.id}`), false, `${ticks * TICK_MS} ms: zincir ya da normal kiris acik`);
+      for (const id of sweepBeamIds(tower)) assert.equal(room.beams.get(id)?.overdrive, true, `${ticks * TICK_MS} ms: ${id} yok`);
+      recordHits(room, tower, advance, TICK_MS);
+      ticks += 1;
     }
-    const main = room.beams.get(`beam-${tower.id}`);
-    for (const id of [cw, ccw]) {
-      const beam = room.beams.get(id);
-      for (const field of ["definitionId", "overdrive", "width", "color", "tier", "x1", "y1", "ttlMs"]) {
-        assert.equal(beam[field], main[field], `${id} kirisinin ${field} alani farkli`);
-      }
-    }
-
-    // Ayni hizla ters yonlere; zincir kirisi kendi rotasinda kaliyor.
-    runTicks(room, advance, 500);
-    const turnCw = shortestAngleDelta(start, angleOf(room, tower, cw));
-    const turnCcw = shortestAngleDelta(start, angleOf(room, tower, ccw));
-    const expected = (500 / OVERDRIVE_REAL_MS) * Math.PI * 2;
-    assert.ok(turnCw > 0 && turnCcw < 0, `kirisler ayni yone dondu: ${degrees(turnCw).toFixed(1)}, ${degrees(turnCcw).toFixed(1)}`);
-    assert.ok(Math.abs(turnCw - expected) < 0.02, `saat yonundeki kiris ${degrees(turnCw).toFixed(1)} derece dondu`);
-    assert.ok(Math.abs(turnCw + turnCcw) < 0.02, "ters donen kirisler ayni hizla donmuyor");
-    const chainAngles = enemies.map((enemy) => Math.atan2(enemy.y - tower.y, enemy.x - tower.x));
-    const chain = angleOf(room, tower, `beam-${tower.id}`);
-    assert.ok(chain >= Math.min(...chainAngles) - 0.03 && chain <= Math.max(...chainAngles) + 0.03, "zincir kirisi rotasindan cikti");
-
-    // Yarida baslangicin tam karsisinda kesisiyorlar.
-    runTicks(room, advance, OVERDRIVE_REAL_MS / 2 - 500);
-    assert.ok(Math.abs(shortestAngleDelta(angleOf(room, tower, cw), angleOf(room, tower, ccw))) < 0.03, "kirisler karsida kesismedi");
-    assert.ok(Math.abs(Math.abs(shortestAngleDelta(start, angleOf(room, tower, cw))) - Math.PI) < 0.03);
+    assert.ok(ticks * TICK_MS >= TWIN_REAL_MS - TICK_MS, `asiri yukleme ${ticks * TICK_MS} ms surdu`);
   });
 });
 
-test("10. seviye: birden fazla kirişin altındaki düşman atış başına bir kez vurulur", () => {
+test("10. seviye: iki ışın ortadaki düşmandan başlar, biri sola diğeri sağa süpürür, sonda ortada buluşur", () => {
   withClock((advance) => {
-    // Biri baslangicta (uc kiris de ustunde doguyor, sonda bulusuyor), biri
-    // tam karsida (yarida kesisme noktasi), biri yanda.
-    const { room, tower, enemies } = overdriveScene([{ degrees: 0, distance: 70 }, { degrees: 180, distance: 90 }, { degrees: 90, distance: 120 }], { level: 10 });
-    const hits = recordHits(room, tower, advance, OVERDRIVE_REAL_MS + 200);
+    // Soldan saga: -90, -45, 0, 45, 90. Ortadaki x = 0'daki.
+    const { room, tower, enemies } = overdriveScene(rowSpots([45, -90, 0, 90, -45]), { level: 10 });
+    const angleTo = (enemy) => Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
+    const middle = angleTo(enemies[2]);
+    const [left, right] = sweepBeamIds(tower);
+    for (const id of [left, right]) {
+      assert.ok(Math.abs(shortestAngleDelta(middle, angleOf(room, tower, id))) < 0.01, `${id} ortadaki dusmanda dogmadi`);
+    }
+
+    recordHits(room, tower, advance, 600);
+    // Ekranda sol: x kuculuyor. Kiris ucunun x'i ortadakinden solda/sagda.
+    const middleX = enemies[2].x;
+    const xAtRow = (id) => {
+      const beam = room.beams.get(id);
+      const t = (enemies[2].y - tower.y) / (beam.y2 - tower.y);
+      return tower.x + (beam.x2 - tower.x) * t;
+    };
+    assert.ok(xAtRow(left) < middleX - 10, `sol kiris sola gitmedi: ${(xAtRow(left) - middleX).toFixed(1)}`);
+    assert.ok(xAtRow(right) > middleX + 10, `sag kiris saga gitmedi: ${(xAtRow(right) - middleX).toFixed(1)}`);
+
+    // Son karede ikisi de ortaya donmus.
+    while (tower.debugOverdriveUntil - Date.now() > TICK_MS) recordHits(room, tower, advance, TICK_MS);
+    for (const id of [left, right]) {
+      const delta = degrees(shortestAngleDelta(middle, angleOf(room, tower, id)));
+      assert.ok(Math.abs(delta) < 2, `${id} ortaya donmedi: ${delta.toFixed(1)} derece`);
+    }
+  });
+});
+
+test("10. seviye: ileri en fazla 1,5 saniye; erken varan ışın kalan sürede döner, ışınlar düşmanda beklemez", () => {
+  withClock((advance) => {
+    // Ortadaki dusman tam yukarida (-90). Solda kisa bir rota (10 derece),
+    // sagda uzun bir rota (90 derece): sag kiris yarida bile ucuna varamaz.
+    const { room, tower } = overdriveScene([
+      { degrees: -100, distance: 150 },
+      { degrees: -95, distance: 150 },
+      { degrees: -90, distance: 150 },
+      { degrees: -45, distance: 150 },
+      { degrees: 0, distance: 150 }
+    ], { level: 10 });
+    const startedAt = Date.now();
+    const half = TWIN_REAL_MS / 2;
+    const [left, right] = sweepBeamIds(tower);
+    const samples = [];
+    while (tower.debugOverdriveUntil > Date.now()) {
+      samples.push({
+        at: Date.now() - startedAt,
+        left: degrees(shortestAngleDelta(-Math.PI / 2, angleOf(room, tower, left))),
+        right: degrees(shortestAngleDelta(-Math.PI / 2, angleOf(room, tower, right)))
+      });
+      recordHits(room, tower, advance, TICK_MS);
+    }
+
+    // Sol: 10 dereceyi 30 derece/sn ile ~333 ms'de bitirir, kalan ~3417 ms'de doner.
+    const leftmost = samples.reduce((best, sample) => (sample.left < best.left ? sample : best));
+    assert.ok(Math.abs(leftmost.left + 10) < 0.6, `sol kiris soldaki son dusmana varmadi: ${leftmost.left.toFixed(1)}`);
+    assert.ok(Math.abs(leftmost.at - 333) <= TICK_MS, `sol kiris ${leftmost.at} ms'de dondu, ~333 bekleniyordu`);
+    const leftAtHalf = samples.find((sample) => sample.at >= half);
+    const expectedLeftAtHalf = -10 * (1 - (leftAtHalf.at - 1000 / 3) / (TWIN_REAL_MS - 1000 / 3));
+    assert.ok(Math.abs(leftAtHalf.left - expectedLeftAtHalf) < 0.6, `sol kiris yarida ${leftAtHalf.left.toFixed(1)}, ${expectedLeftAtHalf.toFixed(1)} bekleniyordu (yavas donus)`);
+
+    // Sag: yarida (1875 ms) 56.25 derecede doner, kalan 1875 ms'de ortaya iner.
+    const rightmost = samples.reduce((best, sample) => (sample.right > best.right ? sample : best));
+    assert.ok(Math.abs(rightmost.right - 56.25) < 1.6, `sag kiris ${rightmost.right.toFixed(1)} dereceye kadar gitti`);
+    assert.ok(Math.abs(rightmost.at - half) <= TICK_MS, `sag kiris ${rightmost.at} ms'de dondu, yarida (${half}) bekleniyordu`);
+
+    // Dusmanda beklemiyor: ileri giderken her karede ayni adim, -45'teki dusmanin uzerinden gecerken de.
+    const outward = samples.filter((sample) => sample.at > 0 && sample.at <= half - TICK_MS);
+    outward.slice(1).forEach((sample, index) => {
+      const step = sample.right - outward[index].right;
+      assert.ok(step > 1.3 && step < 1.7, `${sample.at} ms: sag kiris ${step.toFixed(2)} derece ilerledi (30 derece/sn bekleniyordu)`);
+    });
+
+    const last = samples.at(-1);
+    assert.ok(Math.abs(last.left) < 1 && Math.abs(last.right) < 2.5, `sonda ortada degil: sol ${last.left.toFixed(1)}, sag ${last.right.toFixed(1)}`);
+  });
+});
+
+test("10. seviye: geçtiği düşmanları vurur; iki ışının altındaki düşman atış başına bir kez", () => {
+  withClock((advance) => {
+    const { room, tower, enemies } = overdriveScene(rowSpots([-120, -80, -40, 0, 40, 80, 120]), { level: 10 });
+    const hits = recordHits(room, tower, advance, TWIN_REAL_MS);
     assertOneHitPerShot(hits);
     for (const enemy of enemies) {
       assert.ok(hits.some((hit) => hit.id === enemy.id), `${enemy.id} hic vurulmadi`);
     }
-  });
-});
-
-test("10. seviye: ters dönen kirişler başlangıç açısını hem başta hem sonda vurur", () => {
-  // Kor nokta: ilk vurus son kareden olculurse baslangic dilimi, asiri
-  // yukleme bitisten once kesilirse son dilim hic taranmiyordu. Zincir
-  // kirisi kapatiliyor ki olculen yalnizca ters donen kirisler olsun.
-  withClock((advance) => {
-    const { room, tower, enemies } = overdriveScene([{ degrees: 0, distance: 60 }, { degrees: 0, distance: 320 }], { level: 10 });
-    room.collectDebugLaserChainHits = () => {};
-    const startedAt = Date.now();
-    const endsAt = tower.debugOverdriveUntil;
-    // Ilk atis birkac kare sonra: arada cizilen kareler baslangic dilimini yutmasin.
-    tower.cooldownMs = 3 * TICK_MS;
-    const far = enemies[1];
-    const hits = recordHits(room, tower, advance, OVERDRIVE_REAL_MS + 200).filter((hit) => hit.id === far.id);
-    assert.ok(hits.some((hit) => hit.at <= startedAt + 4 * TICK_MS), `uzak dusman basta vurulmadi: ${hits.map((hit) => hit.at - startedAt).join(", ")}`);
-    assert.ok(hits.some((hit) => hit.at >= endsAt), `uzak dusman sonda vurulmadi: ${hits.map((hit) => hit.at - startedAt).join(", ")}`);
-    assertOneHitPerShot(hits);
+    // Ortadaki dusman: iki kiris de ustunde doguyor ve sonda ustunde bulusuyor.
+    const middle = enemies[3];
+    const middleHits = hits.filter((hit) => hit.id === middle.id).map((hit) => hit.at);
+    assert.ok(middleHits.length >= 2, "ortadaki dusman basta ve sonda vurulmadi");
   });
 });
 
@@ -545,49 +594,48 @@ for (const level of [5, 10]) {
       const air = [enemies[1], enemies[2]];
       for (const enemy of air) enemy.movementKind = "air";
       const before = air.map((enemy) => enemy.hp);
-      const hits = recordHits(room, tower, advance, OVERDRIVE_REAL_MS + 200);
+      const hits = recordHits(room, tower, advance, (level >= 10 ? TWIN_REAL_MS : OVERDRIVE_REAL_MS) + 200);
       assert.ok(hits.some((hit) => hit.id === enemies[0].id), "yerdeki dusman vurulmadi");
       air.forEach((enemy, index) => assert.equal(enemy.hp, before[index], `havadaki ${enemy.id} vuruldu`));
     });
   });
 }
 
-test("10. seviye: dönen kirişler bitişte kalkar, zincir kirişi normal kirişe boşluksuz devreder; ateş edemeyince ve hararette üçü de kalkar", () => {
+test("10. seviye: ışınlar bitişte kalkar, namlu buluştukları yerden devam eder ve normal lazer döner; ateş edemeyince ve hararette kalkarlar", () => {
   withClock((advance) => {
-    const { room, tower } = overdriveScene([{ degrees: 20, distance: 60 }], { level: 10 });
+    const { room, tower } = overdriveScene(rowSpots([-60, 0, 60]), { level: 10 });
     const main = `beam-${tower.id}`;
     recordHits(room, tower, advance, TICK_MS);
-    for (const id of spinBeamIds(tower)) assert.ok(room.beams.has(id));
+    for (const id of sweepBeamIds(tower)) assert.ok(room.beams.has(id));
     while (tower.debugOverdriveUntil > Date.now()) recordHits(room, tower, advance, TICK_MS);
     const sweepAngle = tower.debugSweepAngle;
     recordHits(room, tower, advance, TICK_MS);
-    for (const id of spinBeamIds(tower)) assert.equal(room.beams.has(id), false, `${id} bitiste kalmadi`);
-    // Namlu kirisin durdugu yerden devam ediyor (eskiden 90 derecede kalmisti).
+    for (const id of sweepBeamIds(tower)) assert.equal(room.beams.has(id), false, `${id} bitiste kalmadi`);
+    // Namlu iki kirisin bulustugu yerden, ortadaki dusmandan devam ediyor.
+    assert.ok(Math.abs(shortestAngleDelta(-Math.PI / 2, sweepAngle)) < 0.05, `bulusma ${degrees(sweepAngle).toFixed(1)} derecede`);
     assert.ok(Math.abs(shortestAngleDelta(sweepAngle, tower.facing)) < 0.2, `namlu ${degrees(tower.facing).toFixed(1)} derecede, kiris ${degrees(sweepAngle).toFixed(1)}`);
-    // Zincir kirisi normal lazerin kirisi gelene kadar her karede var.
-    let handedOver = false;
-    for (let elapsed = 0; elapsed < 600 && !handedOver; elapsed += TICK_MS) {
-      assert.ok(room.beams.has(main), `bitisten ${elapsed} ms sonra kiris yok`);
-      handedOver = room.beams.get(main).overdrive !== true;
-      if (!handedOver) recordHits(room, tower, advance, TICK_MS);
+    let normal = false;
+    for (let elapsed = 0; elapsed < 600 && !normal; elapsed += TICK_MS) {
+      normal = room.beams.get(main)?.overdrive === false;
+      if (!normal) recordHits(room, tower, advance, TICK_MS);
     }
-    assert.ok(handedOver, "normal lazer kirisi devralmadi");
+    assert.ok(normal, "normal lazer geri donmedi");
   });
 
   withClock((advance) => {
     const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level: 10 });
-    for (const id of spinBeamIds(tower)) assert.ok(room.beams.has(id));
+    for (const id of sweepBeamIds(tower)) assert.ok(room.beams.has(id));
     tower.energy = 0;
     tower.cooldownMs = 0;
     runTicks(room, advance, TICK_MS);
-    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.equal(room.beams.has(id), false, `${id} kalmadi mi`);
+    for (const id of [`beam-${tower.id}`, ...sweepBeamIds(tower)]) assert.equal(room.beams.has(id), false, `${id} kalmadi mi`);
   });
 
   withClock(() => {
     const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level: 10 });
     room.triggerDebugLaserOverheat(tower);
-    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.equal(room.beams.has(id), false);
-    assert.equal(tower.debugTwinStartAngle, undefined);
+    for (const id of [`beam-${tower.id}`, ...sweepBeamIds(tower)]) assert.equal(room.beams.has(id), false);
+    assert.equal(tower.debugTwinSweep, undefined);
   });
 });
 
@@ -596,20 +644,17 @@ test("asiri yuklemede satilan Debug Lazer'in kirisleri hemen kalkar", () => {
     const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }], { level: 10 });
     room.broadcast = () => {};
     recordHits(room, tower, advance, TICK_MS);
-    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.ok(room.beams.has(id));
+    for (const id of sweepBeamIds(tower)) assert.ok(room.beams.has(id));
     room.sellTower({ sessionId: "p1" }, { towerId: tower.id });
     assert.equal(room.towers.has(tower.id), false, "kule satilmadi");
-    for (const id of [`beam-${tower.id}`, ...spinBeamIds(tower)]) assert.equal(room.beams.has(id), false, `${id} satistan sonra kaldi`);
+    for (const id of [`beam-${tower.id}`, ...sweepBeamIds(tower)]) assert.equal(room.beams.has(id), false, `${id} satistan sonra kaldi`);
   });
 });
 
-/**
- * Kapanis vurusunu izler: `damageDebugLaserSweepHits` ve zincir toplama
- * cagrilari, bitisten sonra yapilanlar ayri.
- */
+/** Kapanis vurusunu izler: `damageDebugLaserSweepHits` cagrilari, bitisten sonra yapilanlar ayri. */
 function watchClosingPass(room, tower) {
   const proto = Object.getPrototypeOf(room);
-  const log = { sweepDamage: [], chainCollectsAfterEnd: 0 };
+  const log = { sweepDamage: [] };
   let inSweep = false;
   room.damageDebugLaserSweepHits = function (source, hit) {
     inSweep = true;
@@ -618,10 +663,6 @@ function watchClosingPass(room, tower) {
     } finally {
       inSweep = false;
     }
-  };
-  room.collectDebugLaserChainHits = function (...args) {
-    if (tower.debugOverdriveUntil <= Date.now()) log.chainCollectsAfterEnd += 1;
-    return proto.collectDebugLaserChainHits.apply(this, args);
   };
   const originalDamage = room.damageEnemyFromTower.bind(room);
   room.damageEnemyFromTower = (source, target, damage, ...rest) => {
@@ -643,17 +684,16 @@ for (const level of [5, 9]) {
   });
 }
 
-test("10. seviye kapanis vurusu: yalnizca donen kirislerin yayi, asiri yukleme carpaniyla", () => {
+test("10. seviye kapanis vurusu: ışınların son yayı, asiri yukleme carpaniyla", () => {
   withClock((advance) => {
-    const { room, tower } = overdriveScene([{ degrees: 0, distance: 60 }, { degrees: 0, distance: 320 }], { level: 10 });
+    const { room, tower } = overdriveScene(rowSpots([-60, 0, 60]), { level: 10 });
     const log = watchClosingPass(room, tower);
-    for (let elapsed = 0; elapsed < OVERDRIVE_REAL_MS + 4 * TICK_MS; elapsed += TICK_MS) {
+    for (let elapsed = 0; elapsed < TWIN_REAL_MS + 4 * TICK_MS; elapsed += TICK_MS) {
       Object.assign(tower, { temperature: 0, ammo: tower.maxAmmo, energy: tower.maxEnergy });
       runTicks(room, advance, TICK_MS);
     }
     const closing = log.sweepDamage.filter((hit) => hit.afterEnd);
     assert.ok(closing.length > 0, "kapanis vurusu olmadi");
-    assert.equal(log.chainCollectsAfterEnd, 0, "kapanista zincir kirisi de toplandi");
     const overdriveDamage = room.getTowerDamage(tower, true);
     const normalDamage = room.getTowerDamage(tower);
     assert.ok(overdriveDamage > normalDamage, "carpanlar ayni, test bir sey olcmez");
@@ -672,14 +712,14 @@ test("10. seviye kapanis vurusunun oldurmeleri \"Tarama\" sayisina girer", () =>
     room.debugSweepRuns.set(tower.id, { ownerId: tower.ownerId, kills: 0 });
     // Bitise bir kare kalana kadar sur.
     while (tower.debugOverdriveUntil - Date.now() > TICK_MS) recordHits(room, tower, advance, TICK_MS);
-    // Bitisi gecen karede, donen kirislerin son diliminde (baslangic acisi)
-    // iki zayif dusman: yalnizca kapanis vurusu onlari gorebilir.
+    // Bitisi gecen karede, kirislerin bulustugu acida iki zayif dusman:
+    // yalnizca kapanis vurusu onlari gorebilir.
     advance(tower.debugOverdriveUntil - Date.now() + 1);
-    const start = tower.debugTwinStartAngle;
+    const meeting = tower.debugSweepAngle;
     for (const distance of [150, 250]) {
       room.spawnEnemy();
       const enemy = [...room.enemies.values()].at(-1);
-      Object.assign(enemy, { x: tower.x + distance * Math.cos(start), y: tower.y + distance * Math.sin(start), hp: 1, maxHp: 1, shield: 0, armor: 0 });
+      Object.assign(enemy, { x: tower.x + distance * Math.cos(meeting), y: tower.y + distance * Math.sin(meeting), hp: 1, maxHp: 1, shield: 0, armor: 0 });
     }
     tower.temperature = 0;
     tower.ammo = tower.maxAmmo;
@@ -699,18 +739,19 @@ function overdriveDamage(level, spots) {
     const { room, tower, enemies } = overdriveScene(spots, { level });
     room.towerDamageRandom = () => 0.5;
     const before = enemies.map((enemy) => enemy.hp);
-    recordHits(room, tower, advance, OVERDRIVE_REAL_MS + 200);
+    recordHits(room, tower, advance, (level >= 10 ? TWIN_REAL_MS : OVERDRIVE_REAL_MS) + 200);
     const dealt = enemies.map((enemy, index) => before[index] - enemy.hp);
     return { total: dealt.reduce((sum, value) => sum + value, 0), touched: dealt.filter((value) => value > 0).length };
   });
 }
 
-test("10. seviye gerçek bir yükseltme: tek hedefte en az 9. seviye kadar, kalabalıkta çok daha güçlü", () => {
+test("10. seviye gerçek bir yükseltme: tek hedefte en az 9. seviye kadar, yana yayılmış kalabalıkta çok daha güçlü", () => {
   const single = [{ degrees: 0, distance: 60 }];
   assert.ok(overdriveDamage(10, single).total >= overdriveDamage(9, single).total, "tek hedefte 10. seviye 9'un altinda");
-  const ring = Array.from({ length: 12 }, (_, index) => ({ degrees: index * 30, distance: 120 }));
-  const nine = overdriveDamage(9, ring);
-  const ten = overdriveDamage(10, ring);
-  assert.equal(ten.touched, 12, "halkanin tamami taranmadi");
-  assert.ok(ten.total >= nine.total * 2, `kalabalikta 10. seviye ${ten.total.toFixed(0)}, 9. seviye ${nine.total.toFixed(0)}`);
+  const row = rowSpots([-160, -120, -80, -40, 0, 40, 80, 120, 160]);
+  const nine = overdriveDamage(9, row);
+  const ten = overdriveDamage(10, row);
+  assert.equal(ten.touched, 9, "siranin tamami taranmadi");
+  assert.ok(ten.touched > nine.touched, `10. seviye ${ten.touched}, 9. seviye ${nine.touched} dusmana degdi`);
+  assert.ok(ten.total >= nine.total * 1.5, `kalabalikta 10. seviye ${ten.total.toFixed(0)}, 9. seviye ${nine.total.toFixed(0)}`);
 });

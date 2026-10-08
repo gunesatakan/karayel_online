@@ -749,22 +749,14 @@ const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
+/**
+ * 10. seviyenin asiri yuklemesi: iki kiris ortadaki dusmandan sola ve saga
+ * supuruyor. Surenin en fazla yarisi ileri gitmeye, kalani ortaya donmeye.
+ */
+const DEBUG_LASER_TWIN_OVERDRIVE_DURATION_MS = 3000;
+/** Supuren kirisin ileri giderken donus hizi; zincir ve 10. seviyenin kirisleri ayni. */
 const DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND = degreesToRadians(30);
 const DEBUG_LASER_OVERDRIVE_BEAM_RADIUS = 12;
-/**
- * 10. seviyede zincir kirisine eklenen iki ters donen kirisin her birinin
- * asiri yukleme boyunca taradigi aci: tam tur. Biri saat yonunde, digeri
- * tersine; ikisi baslangicin tam karsisinda yarida kesisiyor, sonda
- * baslangicta bulusuyor -- cember iki kez taraniyor. Zincir rotasinin 30
- * derece/sn tavani bunlara uygulanmiyor: o tavan hedef olunce rotanin bir
- * karede sicramasini engelliyor; bu kirisler sabit hizla donuyor, kare basina
- * adimlari zaten `hiz x kare suresi`.
- */
-const DEBUG_LASER_TWIN_SWEEP_RADIANS = Math.PI * 2;
-/** Ters donen kirislerin yonu, `getDebugLaserTwinBeamIds` sirasiyla: `-b` saat yonunde, `-c` tersine. */
-const DEBUG_LASER_TWIN_DIRECTIONS = [1, -1] as const;
-/** Taranan yay bu dilimlerden buyukse vurus testi dilimlere bolunuyor. */
-const DEBUG_LASER_TWIN_MAX_HIT_ARC = Math.PI / 4;
 /** Asiri yukleme bittikten sonra kapanis vurusunun yapilabildigi en gec an. */
 const DEBUG_LASER_CLOSING_PASS_WINDOW_MS = 250;
 const DEBUG_LASER_HEAT_WINDOW_MS = 20000;
@@ -1491,10 +1483,10 @@ type TowerModel = {
   debugSweepDamageAngleAt: number;
   debugSweepLastDamageAt: number;
   /**
-   * 10. seviyenin asiri yuklemesi: zincir kirisine eklenen iki ters donen
-   * kirisin ortak baslangic acisi. Tanimsizsa yalnizca zincir kirisi.
+   * 10. seviyenin asiri yuklemesi: ortadaki dusmandan sola ve saga supuren
+   * iki kiris (zincir kirisi yok). Tanimsizsa 5-9. seviyenin zincir kirisi.
    */
-  debugTwinStartAngle?: number;
+  debugTwinSweep?: DebugLaserTwinSweep;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
   linkBurstCooldownMs: number;
@@ -1730,6 +1722,25 @@ type DebugOverdriveHeatSegment = {
   startedAt: number;
   endedAt: number;
 };
+
+/**
+ * 10. seviyede supuren kirislerden biri: ortadaki dusmandan bir kenardaki son
+ * dusmana giden rota ve kirisin o rotadaki yolculugu.
+ */
+type DebugLaserTwinRoute = {
+  /** Ugrak sirasi: ortadaki dusman, sonra kenara dogru siradakiler. */
+  targetIds: string[];
+  /** Ugraklarin acilari, canli; olen dusmanin son acisi rotada kaliyor. */
+  angles: number[];
+  /** Geri donusun basladigi an ve o anda rotada kat edilmis aci; donene kadar tanimsiz. */
+  turnAt?: number;
+  turnDistance: number;
+  /** Son hasar karesinde kirisin acisi: taranan yayin bir ucu. */
+  damageAngle: number;
+};
+
+/** `getDebugLaserTwinBeamIds` sirasiyla: `-b` sola, `-c` saga supuren kiris. */
+type DebugLaserTwinSweep = { routes: [DebugLaserTwinRoute, DebugLaserTwinRoute] };
 
 type ProjectileModel = {
   id: string;
@@ -5445,7 +5456,7 @@ export class MatchRoom extends Room<MatchState> {
         tower.debugSweepAngleAt = 0;
         tower.debugSweepLastDamageAt = 0;
         tower.debugOverdriveHeatLastAt = 0;
-        tower.debugTwinStartAngle = undefined;
+        tower.debugTwinSweep = undefined;
         // Yalnizca donen kirisler kalkiyor; zincir kirisi omru dolana ya da
         // normal lazerin kirisi onun yerine yazilana kadar kaliyor (bosluk yok).
         for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
@@ -5642,6 +5653,7 @@ export class MatchRoom extends Room<MatchState> {
       hitType
     )) * this.getTowerProjectileSpeedMultiplier(tower);
     const id = `p${this.nextProjectileId++}`;
+    const muzzle = this.getTowerMuzzlePoint(tower, launchAngle, target, getEnemyCollisionRadius(target) + getBallisticCollisionRadius(hitType));
 
     this.projectiles.set(id, {
       id,
@@ -5652,8 +5664,8 @@ export class MatchRoom extends Room<MatchState> {
       hitType,
       source: "tower",
       targetId: target.id,
-      x: tower.x,
-      y: tower.y,
+      x: muzzle.x,
+      y: muzzle.y,
       vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * speed : (dx / length) * speed,
       vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * speed : (dy / length) * speed,
       damage: this.getTowerDamage(tower),
@@ -5683,6 +5695,24 @@ export class MatchRoom extends Room<MatchState> {
       luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined
     });
     this.broadcastProjectileSpawn(this.projectiles.get(id)!);
+  }
+
+  /**
+   * Merminin (ya da isinin) ciktigi nokta: tanimda namlu agzi varsa kulenin
+   * baktigi yonde o kadar ileride, yoksa merkez. Buyuk kulede (Ucube 2x2)
+   * merkezden cikan mermi topun ortasindan dogmus gibi gorunuyordu.
+   *
+   * Agiz hedefin on yuzunu (`clearance` kadar oncesini) gecmiyor: kulenin
+   * ustundeki hava dusmani namludan yakinda olabilir, mermi onun arkasinda
+   * dogarsa carpisma taramasi onu hic gormezdi.
+   */
+  private getTowerMuzzlePoint(tower: TowerModel, angle: number, target: { x: number; y: number }, clearance = 0) {
+    const offset = this.getTowerEngine(tower)?.attack.muzzleOffset ?? 0;
+    if (offset <= 0) return { x: tower.x, y: tower.y };
+    const muzzle = this.scaleWorldDistance(TOWER_GRID_SIZE * this.getTowerPlacementSpan(tower.definition.id) / 2 * offset);
+    const targetFront = Math.hypot(target.x - tower.x, target.y - tower.y) - clearance;
+    const distance = Math.max(0, Math.min(muzzle, targetFront));
+    return { x: tower.x + Math.cos(angle) * distance, y: tower.y + Math.sin(angle) * distance };
   }
 
   private spawnSpecialProjectile(sourceTower: TowerModel, definitionId: string, target: EnemyModel, damage: number, speed: number, aoeRadius: number, slowMs: number) {
@@ -5768,29 +5798,59 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private startDebugLaserOverdrive(tower: TowerModel, target: EnemyModel, now: number) {
+    const fallbackAngle = Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.atan2(target.y - tower.y, target.x - tower.x) : tower.facing;
+    const twin = tower.level >= DEBUG_LASER_TWIN_OVERDRIVE_LEVEL;
     tower.debugSweepStartedAt = now;
-    tower.debugSweepTargetIds = this.getDebugLaserSweepTargetIds(tower);
     tower.debugSweepRouteAngles = undefined;
-    tower.debugSweepRouteAngles = this.getDebugLaserSweepAngles(tower);
-    if (tower.debugSweepRouteAngles.length === 0) {
-      tower.debugSweepRouteAngles.push(Number.isFinite(target.x) && Number.isFinite(target.y)
-        ? Math.atan2(target.y - tower.y, target.x - tower.x) : tower.facing);
+    if (twin) {
+      // 10. seviye: zincir kirisi yok, iki kiris ortadaki dusmandan sola ve saga.
+      tower.debugSweepTargetIds = [];
+      tower.debugTwinSweep = this.createDebugLaserTwinSweep(tower, fallbackAngle);
+      tower.debugSweepAngle = tower.debugTwinSweep.routes[0].angles[0];
+      // Oldurme atisinin normal kirisi de kalkiyor: supurme boyunca normal lazer yok.
+      this.beams.delete(`beam-${tower.id}`);
+    } else {
+      tower.debugSweepTargetIds = this.getDebugLaserSweepTargetIds(tower);
+      tower.debugSweepRouteAngles = this.getDebugLaserSweepAngles(tower);
+      if (tower.debugSweepRouteAngles.length === 0) tower.debugSweepRouteAngles.push(fallbackAngle);
+      tower.debugTwinSweep = undefined;
+      for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
+      // Ilk kare bir donus degil, dogus: kiris zincirin basinda aciliyor.
+      tower.debugSweepAngle = this.getDebugLaserSweepAngles(tower)[0] ?? tower.facing;
     }
-    // Ilk kare bir donus degil, dogus: kiris zincirin basinda aciliyor.
-    tower.debugSweepAngle = this.getDebugLaserSweepAngles(tower)[0] ?? tower.facing;
     tower.debugSweepAngleAt = now;
     tower.debugSweepDamageAngle = tower.debugSweepAngle;
     tower.debugSweepDamageAngleAt = 0;
     tower.debugSweepLastDamageAt = 0;
-    // 10. seviye: zincir kirisine ek olarak iki ters donen kiris, zincirin
-    // dogdugu acidan ve zincirden bagimsiz.
-    tower.debugTwinStartAngle = tower.level >= DEBUG_LASER_TWIN_OVERDRIVE_LEVEL ? tower.debugSweepAngle : undefined;
-    if (tower.debugTwinStartAngle === undefined) {
-      for (const id of getDebugLaserTwinBeamIds(tower.id)) this.beams.delete(id);
-    }
     tower.debugOverdriveHeatLastAt = now;
-    tower.debugOverdriveUntil = now + scaleGameDuration(DEBUG_LASER_OVERDRIVE_DURATION_MS);
+    tower.debugOverdriveUntil = now + scaleGameDuration(twin ? DEBUG_LASER_TWIN_OVERDRIVE_DURATION_MS : DEBUG_LASER_OVERDRIVE_DURATION_MS);
     this.updateDebugLaserSweep(tower);
+  }
+
+  /**
+   * 10. seviyenin iki rotasi. Vurulabilen dusmanlar soldan saga (sol ve sag
+   * kenara yakinliga gore) siralaniyor; ikisi de ortadaki dusmandan basliyor,
+   * `-b` oradan sola, `-c` saga gidiyor. Sira baslangicta bir kez kuruluyor:
+   * her karede yeniden siralamak, dusmanlar birbirini gectikce kirisi ileri
+   * geri sicratirdi.
+   */
+  private createDebugLaserTwinSweep(tower: TowerModel, fallbackAngle: number): DebugLaserTwinSweep {
+    const canHitAir = this.canTowerHitAir(tower);
+    const sorted = Array.from(this.enemies.values())
+      .filter((enemy) => enemy.hp > 0 && (canHitAir || enemy.movementKind !== "air"))
+      .sort((a, b) => a.x - b.x || a.id.localeCompare(b.id));
+    const middle = Math.floor(sorted.length / 2);
+    const route = (enemies: EnemyModel[]): DebugLaserTwinRoute => {
+      const angles = enemies.length > 0 ? enemies.map((enemy) => Math.atan2(enemy.y - tower.y, enemy.x - tower.x)) : [fallbackAngle];
+      return { targetIds: enemies.map((enemy) => enemy.id), angles, turnDistance: 0, damageAngle: angles[0] };
+    };
+    return {
+      routes: [
+        route(sorted.slice(0, middle + 1).reverse()),
+        route(sorted.slice(middle))
+      ]
+    };
   }
 
   /**
@@ -5823,11 +5883,15 @@ export class MatchRoom extends Room<MatchState> {
 
   private setBeam(tower: TowerModel, x2: number, y2: number, overdrive: boolean, scanX?: number, scanY?: number, id = `beam-${tower.id}`) {
     const ttlMs = overdrive ? Math.max(180, this.getTowerFireInterval(tower) + 90) : Math.max(260, this.getTowerFireInterval(tower) + 90);
+    // Normal isin nozulun ucundan. Asiri yuklemenin kirisleri namluyla donmuyor
+    // (namlu eski acisinda kaliyor), o yuzden ortadaki prizmadan cikiyorlar.
+    // Yalnizca cizim: hasar hesabi kule merkezinden.
+    const origin = overdrive ? { x: tower.x, y: tower.y } : this.getTowerMuzzlePoint(tower, tower.facing, { x: x2, y: y2 });
     this.beams.set(id, {
       id,
       definitionId: tower.definition.id,
-      x1: tower.x,
-      y1: tower.y,
+      x1: origin.x,
+      y1: origin.y,
       x2,
       y2,
       scanX,
@@ -7023,6 +7087,11 @@ export class MatchRoom extends Room<MatchState> {
       tower.debugSweepStartedAt = now;
     }
 
+    if (tower.debugTwinSweep) {
+      this.updateDebugLaserTwinSweep(tower, tower.debugTwinSweep, now, firesThisTick);
+      return;
+    }
+
     const elapsedSeconds = Math.max(0, (now - tower.debugSweepStartedAt) / 1000);
     const sweepAngles = this.getDebugLaserSweepAngles(tower);
     const durationSeconds = (tower.debugOverdriveUntil - tower.debugSweepStartedAt) / 1000;
@@ -7046,7 +7115,6 @@ export class MatchRoom extends Room<MatchState> {
     const scanPoint = getPointOnRay(tower.x, tower.y, currentAngle, this.scaleWorldDistance(190));
 
     this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y);
-    this.drawDebugLaserTwinBeams(tower, now);
     if (!firesThisTick) {
       return;
     }
@@ -7056,8 +7124,7 @@ export class MatchRoom extends Room<MatchState> {
     // cikarmak, sinirin kirptigi hareketi de vurulmus saymak olurdu.
     const sweptFromAngle = tower.debugSweepDamageAngleAt > 0 ? tower.debugSweepDamageAngle : previousAngle;
     const hit = new Set<EnemyModel>();
-    this.collectDebugLaserChainHits(tower, sweptFromAngle, currentAngle, hit);
-    this.collectDebugLaserTwinHits(tower, tower.debugSweepDamageAngleAt, now, hit);
+    this.collectDebugLaserArcHits(tower, sweptFromAngle, currentAngle, hit);
     tower.debugSweepDamageAngle = currentAngle;
     tower.debugSweepDamageAngleAt = now;
     this.damageDebugLaserSweepHits(tower, hit);
@@ -7066,20 +7133,20 @@ export class MatchRoom extends Room<MatchState> {
 
   /**
    * 10. seviye: asiri yukleme dogal sonuna vardiktan sonraki ilk karede
-   * ters donen kirislerin kapanis vurusu.
+   * supuren kirislerin kapanis vurusu.
    *
-   * Sweep yalnizca `debugOverdriveUntil > now` iken calisiyor, yani ters
-   * donen kirislerin son vurustan bitise kadar taradigi yay -- tam turun son
-   * dilimi, baslangic acisi -- hic vurulmuyordu. Burada bir kez, bitis anina
-   * kadar kapatiliyor. Yalnizca donen kirislerin yayi: zincir kirisi
-   * yerinde duruyor ve onun "kapanisi" ritim disi bir ekstra vurus olurdu
-   * (5-9. seviyede kapanis hic yok). Kule ates edemiyorsa ya da bitisin
-   * ustunden uzun sure gectiyse (kule askida kaldi) kapanis yok. Bir atis
-   * sayiliyor: kaynak bir kez tukeniyor, hasar asiri yukleme carpaniyla,
-   * normal lazer bir aralik bekliyor.
+   * Sweep yalnizca `debugOverdriveUntil > now` iken calisiyor, yani kirislerin
+   * son vurustan bitise kadar taradigi yay -- ortaya donusun son dilimi --
+   * hic vurulmuyordu. Burada bir kez, bitis anina kadar kapatiliyor (5-9.
+   * seviyenin zincir kirisinde kapanis yok: yerinde duruyor ve kapanisi ritim
+   * disi bir ekstra vurus olurdu). Kule ates edemiyorsa ya da bitisin ustunden
+   * uzun sure gectiyse (kule askida kaldi) kapanis yok. Bir atis sayiliyor:
+   * kaynak bir kez tukeniyor, hasar asiri yukleme carpaniyla, normal lazer bir
+   * aralik bekliyor.
    */
   private finishDebugLaserOverdrive(tower: TowerModel, now: number) {
-    if (tower.debugTwinStartAngle === undefined) {
+    const sweep = tower.debugTwinSweep;
+    if (!sweep) {
       return;
     }
     const endedAt = tower.debugOverdriveUntil;
@@ -7090,7 +7157,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     const hit = new Set<EnemyModel>();
-    this.collectDebugLaserTwinHits(tower, tower.debugSweepDamageAngleAt, endedAt, hit);
+    this.collectDebugLaserTwinHits(tower, sweep, this.getDebugLaserTwinAngles(tower, sweep, endedAt), hit);
     if (hit.size === 0) {
       return;
     }
@@ -7099,8 +7166,8 @@ export class MatchRoom extends Room<MatchState> {
     this.damageDebugLaserSweepHits(tower, hit);
   }
 
-  /** Zincir kirisinin `from`dan `to`ya taradigi yaydaki dusmanlar. */
-  private collectDebugLaserChainHits(tower: TowerModel, from: number, to: number, hit: Set<EnemyModel>) {
+  /** Supuren bir kirisin `from`dan `to`ya taradigi yaydaki dusmanlar. */
+  private collectDebugLaserArcHits(tower: TowerModel, from: number, to: number, hit: Set<EnemyModel>) {
     const end = getRayAngleToWorldEdge(tower.x, tower.y, to, this.getActiveWorldBounds());
     const beamRadius = this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS);
     const canHitAir = this.canTowerHitAir(tower);
@@ -7113,67 +7180,73 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Ters donen kirislerin `time` anindaki donusu (radyan, 0..tam tur). Aci
-   * zamandan hesaplaniyor, yani kare atlansa da kiris sicramiyor.
+   * 10. seviyenin karesi: iki kiris cizilir, ates karesinde taradiklari yay vurulur.
+   * Zincir kirisi yok; namlu bitiste kirislerin bulustugu yerden (ortadaki
+   * dusman) devam etsin diye `debugSweepAngle` oraya yaziliyor.
    */
-  private getDebugLaserTwinTurn(tower: TowerModel, time: number) {
-    const durationMs = Math.max(1, tower.debugOverdriveUntil - tower.debugSweepStartedAt);
-    return (Math.min(durationMs, Math.max(0, time - tower.debugSweepStartedAt)) / durationMs) * DEBUG_LASER_TWIN_SWEEP_RADIANS;
+  private updateDebugLaserTwinSweep(tower: TowerModel, sweep: DebugLaserTwinSweep, now: number, firesThisTick: boolean) {
+    const angles = this.getDebugLaserTwinAngles(tower, sweep, now);
+    const bounds = this.getActiveWorldBounds();
+    getDebugLaserTwinBeamIds(tower.id).forEach((id, index) => {
+      const end = getRayAngleToWorldEdge(tower.x, tower.y, angles[index], bounds);
+      const scanPoint = getPointOnRay(tower.x, tower.y, angles[index], this.scaleWorldDistance(190));
+      this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y, id);
+    });
+    tower.debugSweepAngle = sweep.routes[0].angles[0];
+    tower.debugSweepAngleAt = now;
+    if (!firesThisTick) {
+      return;
+    }
+    const hit = new Set<EnemyModel>();
+    this.collectDebugLaserTwinHits(tower, sweep, angles, hit);
+    this.damageDebugLaserSweepHits(tower, hit);
+    tower.debugSweepLastDamageAt = now;
   }
 
   /**
-   * 10. seviyenin ters donen iki kirisi, zincir kirisine ek olarak.
+   * Iki kirisin `time` anindaki acilari (`-b` sol, `-c` sag).
    *
-   * Ikisi de zincirin dogdugu acidan cikiyor; `-b` saat yonunde, `-c` tersine,
-   * sabit acisal hizla ve hedeflerden bagimsiz. Her biri asiri yukleme boyunca
-   * tam tur atiyor: yarida baslangicin karsisinda kesisiyor, sonda baslangicta
-   * bulusuyor.
+   * Her kiris rotasinda ileri gidiyor: ortadaki dusmandan kenara, zincirle
+   * ayni acisal hizla, dusmanlarda durmadan. Kenardaki son dusmana varinca ya
+   * da surenin yarisi dolunca geri donuyor ve kalan surede ortaya iniyor --
+   * 1. saniyede varan kiris kalan 2 saniyede doner. Konum zamandan
+   * hesaplaniyor, yani kare atlansa da kiris sicramiyor.
    */
-  private drawDebugLaserTwinBeams(tower: TowerModel, now: number) {
-    const startAngle = tower.debugTwinStartAngle;
-    if (startAngle === undefined) {
-      return;
-    }
-    const turned = this.getDebugLaserTwinTurn(tower, now);
-    const bounds = this.getActiveWorldBounds();
-    getDebugLaserTwinBeamIds(tower.id).forEach((id, index) => {
-      const angle = startAngle + DEBUG_LASER_TWIN_DIRECTIONS[index] * turned;
-      const end = getRayAngleToWorldEdge(tower.x, tower.y, angle, bounds);
-      const scanPoint = getPointOnRay(tower.x, tower.y, angle, this.scaleWorldDistance(190));
-      this.setBeam(tower, end.x, end.y, true, scanPoint.x, scanPoint.y, id);
+  private getDebugLaserTwinAngles(tower: TowerModel, sweep: DebugLaserTwinSweep, time: number) {
+    const startedAt = tower.debugSweepStartedAt;
+    const endsAt = Math.max(startedAt + 1, tower.debugOverdriveUntil);
+    const radiansPerMs = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND / 1000;
+    return sweep.routes.map((route) => {
+      route.targetIds.forEach((id, index) => {
+        const enemy = this.enemies.get(id);
+        if (enemy) route.angles[index] = Math.atan2(enemy.y - tower.y, enemy.x - tower.x);
+      });
+      if (route.turnAt === undefined) {
+        const length = getAngularRouteLength(route.angles);
+        const turnAt = Math.min(startedAt + length / radiansPerMs, startedAt + (endsAt - startedAt) / 2);
+        if (time < turnAt) {
+          return getAngleAlongRoute(route.angles, (time - startedAt) * radiansPerMs);
+        }
+        // Donus ani bir kez sabitleniyor: rota canli, her karede yeniden
+        // hesaplansa yuruyen dusmanlar donus anini ileri geri oynatirdi.
+        route.turnAt = turnAt;
+        route.turnDistance = Math.min(length, (turnAt - startedAt) * radiansPerMs);
+      }
+      const back = Math.max(1, endsAt - route.turnAt);
+      const returned = Math.min(1, Math.max(0, (time - route.turnAt) / back));
+      return getAngleAlongRoute(route.angles, route.turnDistance * (1 - returned));
     });
   }
 
   /**
-   * Ters donen kirislerin son vurustan (ilk atista asiri yuklemenin
-   * basindan, yani baslangic acisi dahil) `until`a kadar taradigi yaylar.
-   * Buyuk yay dilimlere bolunuyor: vurus testi en kisa aci farkiyla olcuyor.
+   * Iki kirisin son vurustan beri taradigi yaylar. Iki kirisin altinda kalan
+   * dusman `hit` kumesinde bir kez: atis basina bir vurus.
    */
-  private collectDebugLaserTwinHits(tower: TowerModel, lastDamageAt: number, until: number, hit: Set<EnemyModel>) {
-    const startAngle = tower.debugTwinStartAngle;
-    if (startAngle === undefined) {
-      return;
-    }
-    const fromTurn = lastDamageAt > 0 ? this.getDebugLaserTwinTurn(tower, lastDamageAt) : 0;
-    const toTurn = this.getDebugLaserTwinTurn(tower, until);
-    const span = Math.max(0, toTurn - fromTurn);
-    const slices = Math.max(1, Math.ceil(span / DEBUG_LASER_TWIN_MAX_HIT_ARC));
-    const bounds = this.getActiveWorldBounds();
-    const beamRadius = this.scaleWorldDistance(DEBUG_LASER_OVERDRIVE_BEAM_RADIUS);
-    const canHitAir = this.canTowerHitAir(tower);
-    for (const direction of DEBUG_LASER_TWIN_DIRECTIONS) {
-      for (let slice = 0; slice < slices; slice += 1) {
-        const sliceFrom = startAngle + direction * (fromTurn + (span * slice) / slices);
-        const sliceTo = startAngle + direction * (fromTurn + (span * (slice + 1)) / slices);
-        const end = getRayAngleToWorldEdge(tower.x, tower.y, sliceTo, bounds);
-        for (const enemy of this.enemies.values()) {
-          if (hit.has(enemy) || (!canHitAir && enemy.movementKind === "air")) continue;
-          if (didDebugLaserSweepHitEnemy(tower, enemy, sliceFrom, sliceTo, end.x, end.y, beamRadius)) {
-            hit.add(enemy);
-          }
-        }
-      }
-    }
+  private collectDebugLaserTwinHits(tower: TowerModel, sweep: DebugLaserTwinSweep, angles: number[], hit: Set<EnemyModel>) {
+    sweep.routes.forEach((route, index) => {
+      this.collectDebugLaserArcHits(tower, route.damageAngle, angles[index], hit);
+      route.damageAngle = angles[index];
+    });
   }
 
   /** Atisin birlesik vurus listesi: her dusmana bir kez kule hasari. */
@@ -7240,7 +7313,7 @@ export class MatchRoom extends Room<MatchState> {
     tower.debugSweepLastDamageAt = 0;
     tower.debugOverdriveHeatLastAt = 0;
     tower.debugOverdriveHeatSegments = [];
-    tower.debugTwinStartAngle = undefined;
+    tower.debugTwinSweep = undefined;
     this.deleteDebugLaserOverdriveBeams(tower);
   }
 
@@ -17230,8 +17303,15 @@ function getDebugLaserChainSweepAngle(angles: readonly number[], elapsedSeconds:
   if (angles.length === 0) {
     return fallbackAngle;
   }
+  return getAngleAlongRoute(angles, DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * Math.max(0, elapsedSeconds));
+}
 
-  let remainingAngle = DEBUG_LASER_MAX_SWEEP_RADIANS_PER_SECOND * Math.max(0, elapsedSeconds);
+/**
+ * Ugrak acilarindan gecen rotada, basindan `distance` radyan sonraki aci.
+ * Ugraklar arasi en kisa yoldan; rota bitince son ugrakta kaliyor.
+ */
+function getAngleAlongRoute(angles: readonly number[], distance: number) {
+  let remainingAngle = Math.max(0, distance);
   let currentAngle = angles[0];
 
   for (let index = 1; index < angles.length; index += 1) {
@@ -17247,6 +17327,15 @@ function getDebugLaserChainSweepAngle(angles: readonly number[], elapsedSeconds:
   }
 
   return currentAngle;
+}
+
+/** Rotanin toplam acisi: ugraklar arasi en kisa donuslerin toplami. */
+function getAngularRouteLength(angles: readonly number[]) {
+  let length = 0;
+  for (let index = 1; index < angles.length; index += 1) {
+    length += Math.abs(getSignedShortestAngleDelta(angles[index - 1], angles[index]));
+  }
+  return length;
 }
 
 function distanceSq(ax: number, ay: number, bx: number, by: number) {

@@ -38,8 +38,22 @@ dokuyu oraya küçültmek aşırı örnekleme yapıp detayı gürültüye çevir
 kurulabiliyor, `mipmapFilter` açık) hem de yüksek yoğunluklu ekranlar için yeterli
 pay bırakıyor. Üretimi 1024'te yapın, dosyaya 128 olarak inin.
 
-**Saray Arşivi 2×2'dir.** Dört hücre kaplar, hücre köşesine oturur ve dairesi iki
-hücre eninde çizilir. Çerçeve kuralı aynı; sadece daha büyük render edilir.
+**Saray Arşivi ve Ucube 2×2'dir.** Dört hücre kaplar, hücre köşesine oturur ve dairesi iki
+hücre eninde çizilir. Çerçeve kuralı aynı; sadece daha büyük render edilir. Kule
+izi motor tanımındaki `placement.footprintSpan` alanından okunur; istemci ve sunucu
+aynı alanı kullanır.
+
+**Kademe resimleri kareyi doldurur.** Takipçi, Obsesyon, Debug Lazer ve Ucube seviye 1–4, 5–9 ve 10 için üç
+ayrı resim taşır (`tower-<id>-levels-1-4`, `-levels-5-9`, `-level-10`). Bu resimlerde
+disk çerçevenin kendisidir, %70 payı yoktur; liste `apps/web/src/tower-art.ts`
+içindedir. Topun ağzı diskin kenarındaysa mermi oradan çıkar: motor tanımındaki
+`attack.muzzleOffset` ağzın izin yarı genişliğine oranıdır (Obsesyon ve Ucube'de 0.97,
+Debug Lazer'in nozulunda 0.89; lazerin aşırı yükleme kirişleri namluyla dönmediği için
+ortadaki prizmadan çıkar).
+
+**Sahte saydamlığa dikkat.** ChatGPT bazen saydamlık yerine gri-beyaz dama desenini
+resmin içine çiziyor (dosya RGB, arka plan opak). Böyle bir resim oyuna girmeden önce
+desen gerçek saydamlığa çevrilmeli; Obsesyon'un seviye 1–4 resmi böyle geldi.
 
 Silüet testi: sprite'ı 40 px'e küçültüp tek renk siyaha çevirdiğinde hangi kule olduğu
 ayırt edilebilmeli. Detay değil, dış hat taşır.
@@ -367,6 +381,10 @@ clearly larger and heavier than the other towers
 ```
 
 Geç oyun kulesi: diğerlerinden belirgin biçimde büyük ve düzensiz durmalı.
+
+**Oyunda:** 2×2 kaplar. Resimler (`tower-warrior-6-levels-1-4.webp` vb.) bakır
+kiremit taban ve sağa bakan kalın bir topla üretildi; diske ortalanıp 256×256'ya
+küçültüldü. Mermi topun ağzından çıkar ve iki kat kalın çizilir.
 
 ### 7. Derleyici — `tower-warrior-7` — **öneri, veride yok** — sabit
 

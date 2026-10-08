@@ -21,6 +21,7 @@
  * - `flashes`: pisirilmis dokulu ADD parlamalari (havuzlu).
  */
 import type { ProjectileSnapshot } from "@karayel/shared";
+import { drawObsessionShot, drawUcubeShot, type AtakanShotInput } from "./atakan-shots";
 import { drawCombatProjectile } from "./combat-vfx";
 import {
   SCORCH,
@@ -37,13 +38,11 @@ import {
   drawSmoke,
   drawTaperedRibbon,
   fillDisc,
-  fillJaggedPath,
   fnvHash,
   hashNoise,
   liftToWhite,
   whiteHot,
   strokeHex,
-  strokePolyline,
   strokeRing,
   toTier,
   TrailBuffer,
@@ -188,11 +187,11 @@ const CRACKLE: CrackleOptions = { seed: 0, count: 0, reach: 0, hue: 0, width: 0,
 const SIDES = [-1, 1] as const;
 /** Metal kirintisinin parlak yuzu. */
 const STEEL_EDGE = 0xe4e4e7;
-/** Ucube'nin kirikli govdesi: bes nokta, karede yeniden yaziliyor. */
-const ARC_SEGMENTS = 4;
-const ARC_POINTS: Array<{ x: number; y: number }> = Array.from({ length: ARC_SEGMENTS + 1 }, () => ({ x: 0, y: 0 }));
-/** Ucube govdesinin yeniden tohumlanma araligi (ms): simsek kendini yeniden ciziyor. */
-export const ARC_RESEED_MS = 50;
+/** Obsesyon ve Ucube'nin mermi girdisi (atakan-shots): mermi basina yerinde yaziliyor. */
+const SHOT: AtakanShotInput = {
+  x: 0, y: 0, angle: 0, radius: 0, scale: 1, tier: 1, recipe: undefined as unknown as VfxTierRecipe, hue: 0,
+  now: 0, seed: 0, still: false, sparks: true, extra: 1, trail: undefined, trailCapacity: 1, trailScale: 1
+};
 /** Enerji catirtisinin omru ve yeniden tohumlanma araligi. */
 const CRACKLE_MS = 130;
 const CRACKLE_RESEED_MS = 40;
@@ -260,9 +259,10 @@ export class AttackVfx {
       // Zeynep: govde ve iz mizragin kipinin tonunda.
       const hue = profile.court ? getZeynepBodyColor(projectile.definitionId, recipe.color) : recipe.color;
 
-      // Iz: kisa ve sert; LOD'da en son kisalan (en az iki nokta).
+      // Iz: kisa ve sert; LOD'da en son kisalan (en az iki nokta). Obsesyon ve
+      // Ucube kendi izlerini ciziyor (bakis kamasi, simsek); kayit yine tutuluyor.
       const entry = this.trails.record(projectile.id, projectile.x, projectile.y);
-      if (entry && moving && profile.silhouette !== "sprite") {
+      if (entry && moving && profile.silhouette !== "sprite" && profile.silhouette !== "gaze" && profile.silhouette !== "arc") {
         RIBBON.color = darken(hue, 0.2);
         RIBBON.width = recipe.trail.width * scale;
         RIBBON.alpha = 0.5;
@@ -284,15 +284,34 @@ export class AttackVfx {
         drawZeynepLance(this.body, projectile.x, projectile.y, angle, LANCE_OPTIONS);
       } else if (profile.silhouette === "combat") {
         drawCombatProjectile(this.body, projectile, scale * 1.4, hue, recipe.heat);
+      } else if (profile.silhouette === "gaze" || profile.silhouette === "arc") {
+        SHOT.x = projectile.x;
+        SHOT.y = projectile.y;
+        SHOT.angle = angle;
+        SHOT.radius = radius;
+        SHOT.scale = scale;
+        SHOT.tier = tier;
+        SHOT.recipe = recipe;
+        SHOT.hue = hue;
+        SHOT.now = now;
+        // Tohum yalnizca bu iki mermide gerekiyor: her mermiyi her karede ozetlemek bosa is.
+        SHOT.seed = fnvHash(projectile.id) % 997;
+        SHOT.still = still;
+        SHOT.sparks = lod.sparks;
+        SHOT.extra = extra;
+        SHOT.trail = entry;
+        SHOT.trailCapacity = this.trails.bufferCapacity;
+        SHOT.trailScale = lod.trailScale;
+        if (profile.silhouette === "gaze") drawObsessionShot(this.body, SHOT);
+        else drawUcubeShot(this.body, SHOT);
       } else if (profile.silhouette !== "sprite") {
-        // Tohum yalnizca kirikli govdede (Ucube) gerekiyor: her mermiyi her karede ozetlemek bosa is.
-        const arcSeed = profile.silhouette === "arc" ? fnvHash(projectile.id) % 997 + (still ? 0 : Math.floor(now / ARC_RESEED_MS) * 7) : 0;
-        this.drawSilhouette(profile, recipe, tier, projectile.x, projectile.y, angle, radius, hue, arcSeed);
+        this.drawSilhouette(profile, recipe, tier, projectile.x, projectile.y, angle, radius, hue);
       }
 
       // Isi: kademe 2-3'te tek, kucuk ADD damga (Melis'in dokulu mermisinde her kademede).
+      // Kalin govdenin (Ucube) isisi de genis: alan degil cap buyuyor.
       if (tier >= 2 || profile.silhouette === "sprite") {
-        const size = radius * (tier >= 3 ? 3.2 : tier >= 2 ? 2.6 : 2);
+        const size = radius * (tier >= 3 ? 3.2 : tier >= 2 ? 2.6 : 2) * Math.sqrt(recipe.thickness);
         const alpha = (tier >= 3 ? 0.42 * extra : tier >= 2 ? 0.32 : 0.22);
         if (stamps) {
           stamps.stamp(projectile.x, projectile.y, hue, size, alpha);
@@ -310,13 +329,14 @@ export class AttackVfx {
    * Profilin silueti: yogun ve okunur, 12-16 birim. Kademe govdeyi
    * kalinlastiriyor (`weight`) ve cekirdegi beyaza cekiyor (`heat`).
    */
-  private drawSilhouette(profile: VfxProfile, recipe: VfxTierRecipe, tier: VfxTier, x: number, y: number, angle: number, radius: number, hue: number, seed: number) {
+  private drawSilhouette(profile: VfxProfile, recipe: VfxTierRecipe, tier: VfxTier, x: number, y: number, angle: number, radius: number, hue: number) {
     const g = this.body;
     const ux = Math.cos(angle);
     const uy = Math.sin(angle);
     const nx = -uy;
     const ny = ux;
-    const weight = recipe.weight;
+    // Kalinlik yalnizca cizgi ve cekirdek genisligine; boy `radius`ta kaliyor.
+    const weight = recipe.weight * recipe.thickness;
     const core = whiteHot(hue, recipe.heat);
     switch (profile.silhouette) {
       case "packet": {
@@ -335,25 +355,6 @@ export class AttackVfx {
         drawSlug(g, x, y, ux, uy, radius * 1.2, radius * 0.3 * weight, hue, recipe.heat);
         g.lineStyle(Math.max(0.6, radius * 0.1 * weight), hue, 0.75);
         strokeHex(g, x, y, radius * 0.8, angle);
-        return;
-      }
-      case "arc": {
-        // Ucube: kendi kendini yeniden cizen kirikli kivilcim oku; ton kenarda,
-        // cekirdek beyaz-sicak. Kademe 3'te ikinci kol (daha guclu bosalma).
-        const tailX = x - ux * radius * 1.6;
-        const tailY = y - uy * radius * 1.6;
-        fillJaggedPath(ARC_POINTS, tailX, tailY, x, y, ARC_SEGMENTS, seed, radius * 0.9);
-        strokePolyline(g, ARC_POINTS, ARC_SEGMENTS + 1, radius * 0.26 * weight, hue, 0.9);
-        strokePolyline(g, ARC_POINTS, ARC_SEGMENTS + 1, radius * 0.1 * weight, core, 1);
-        if (tier >= 3) {
-          const fork = ARC_POINTS[2];
-          const side = hashNoise(seed + 5) > 0.5 ? 1 : -1;
-          g.lineStyle(Math.max(0.6, radius * 0.12), core, 0.9);
-          g.lineBetween(fork.x, fork.y, fork.x - ux * radius * 0.6 + nx * side * radius * 0.7, fork.y - uy * radius * 0.6 + ny * side * radius * 0.7);
-        }
-        g.fillStyle(core, 1);
-        const head = Math.max(0.7, radius * 0.16 * weight);
-        g.fillRect(x - head, y - head, head * 2, head * 2);
         return;
       }
       case "dart": {

@@ -48,6 +48,7 @@ import { Room } from "colyseus.js";
 import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
+import { getTowerSpriteSize, getTowerTextureKey } from "../tower-art";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
@@ -72,7 +73,6 @@ import {
   WORKER_SPECIALIZATION_CHOICES,
   getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
-  TOWER_ART_DISC_RATIO,
   TOWER_BUILD_TOP,
   TOWER_GRID_SIZE,
   GAME_SPEED_MULTIPLIER,
@@ -2241,7 +2241,7 @@ export class GameScene extends Phaser.Scene {
     // Matches the placed sprite: disc on the tile, frame slightly larger to hold
     // whatever overhangs it.
     const ghost = this.getGhostSize(tower.id, this.getPlacementOrientation(tower.id, previewPoint.x, previewPoint.y));
-    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, this.getTowerTextureKey(tower.id, 1))
+    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, getTowerTextureKey(tower.id, 1))
       .setDisplaySize(ghost.width, ghost.height)
       .setAlpha(0.78)
       .setDepth(28);
@@ -2257,8 +2257,7 @@ export class GameScene extends Phaser.Scene {
    * oyuncunun gordugu sey bir kenar degil dairesel bir alan oluyordu.
    */
   private getGhostSize(definitionId: string, orientation: TowerOrientation) {
-    const discSize = this.getMapCellSize() * getTowerGridSpan(definitionId);
-    const size = definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
+    const size = getTowerSpriteSize(definitionId, this.getMapCellSize() * getTowerGridSpan(definitionId));
     if (!this.isEdgePlacedDefinition(definitionId)) {
       return { width: size, height: size };
     }
@@ -2400,7 +2399,7 @@ export class GameScene extends Phaser.Scene {
     this.pendingPlacement = { x, y, definitionId, until: performance.now() + LOCAL_ECHO_TIMEOUT_MS };
 
     const span = this.getGhostSize(definitionId, this.getPlacementOrientation(definitionId, x, y));
-    this.pendingPlacementGhost = this.add.image(x, y, this.getTowerTextureKey(definitionId, 1))
+    this.pendingPlacementGhost = this.add.image(x, y, getTowerTextureKey(definitionId, 1))
       .setDisplaySize(span.width, span.height)
       .setAlpha(0.5)
       .setDepth(27);
@@ -7409,7 +7408,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setVisible(false)
           .setDepth(6);
         const healthBar = this.add.graphics().setDepth(16);
-        const base = this.add.image(tower.x, tower.y, this.getTowerTextureKey(tower.definitionId, tower.level))
+        const base = this.add.image(tower.x, tower.y, getTowerTextureKey(tower.definitionId, tower.level))
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
@@ -7424,16 +7423,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // and the sprite is sized larger only to make room for whatever the art
       // hangs outside the disc, such as Taht Muhru's barrel.
       const discSize = cellSize * getTowerGridSpan(tower.definitionId);
-      // Takipçi artwork already fills its square frame. Applying the generic
-      // painted-art overhang would make its circular base spill into neighbours.
-      const spriteSize = tower.definitionId === "warrior-1" ? discSize : discSize / TOWER_ART_DISC_RATIO;
+      // Takipçi and Ucube artwork already fills its square frame (tower-art.ts).
+      // Applying the generic painted-art overhang would make its circular base
+      // spill into neighbours.
+      const spriteSize = getTowerSpriteSize(tower.definitionId, discSize);
 
       this.playTowerLevelUpIfChanged(tower, discSize);
       if (landing) {
         this.playTowerLanding(tower, rendered, discSize, now);
       }
 
-      const texture = this.getTowerTextureKey(tower.definitionId, tower.level);
+      const texture = getTowerTextureKey(tower.definitionId, tower.level);
       // Durum anahtarda yok: asagidaki blok onu okumuyor, "Isı freni %X" ise
       // savasta neredeyse her anlik goruntude degisip halkayi ve izgarayi
       // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
@@ -7917,16 +7917,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
       this.animatedTowers.add(rendered);
     }
-  }
-
-  private getTowerTextureKey(definitionId: string, level: number) {
-    if (definitionId !== "warrior-1") {
-      return `tower-${definitionId}`;
-    }
-    if (level >= 10) {
-      return "tower-warrior-1-level-10";
-    }
-    return level >= 5 ? "tower-warrior-1-levels-5-9" : "tower-warrior-1-levels-1-4";
   }
 
   private updateServerLinkHighlight(highlight: Phaser.GameObjects.Arc, tower: TowerSnapshot) {
@@ -11989,7 +11979,7 @@ const BEAM_TOWER_ID_PATTERN = /(?:^|-)(t\d+)(?=-|$)/;
 
 /**
  * Debug Lazer panelinde overdrive satiri: seviyeye gore ne acik, yukseltme ne
- * getirecek. Overdrive 5. seviyede aciliyor, 10. seviyede iki ters donen isin.
+ * getirecek. Overdrive 5. seviyede aciliyor, 10. seviyede sola ve saga supuren iki isin.
  */
 function formatDebugLaserOverdriveLine(level: number) {
   if (level < DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL) {

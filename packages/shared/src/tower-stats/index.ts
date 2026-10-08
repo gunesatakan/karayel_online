@@ -82,15 +82,15 @@ export function getDebugLaserDamageMultiplier(level: number, overdrive: boolean)
 
 /** Debug Lazer'in asiri yuklemesi bu seviyeden itibaren tetiklenebiliyor. */
 export const DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL = 5;
-/** Bu seviyede asiri yukleme zincir kirisine ek olarak iki ters donen kiris aciyor. */
+/** Bu seviyede asiri yuklemenin zincir kirisi yerini sola ve saga supuren iki kirise birakiyor. */
 export const DEBUG_LASER_TWIN_OVERDRIVE_LEVEL = 10;
 /**
- * Ters donen kirislerin kimlik ekleri, kulenin kendi kirisine (`beam-<kule>`)
- * eklenerek: `-b` saat yonunde, `-c` tersine.
+ * Supuren iki kirisin kimlik ekleri, kulenin kendi kirisine (`beam-<kule>`)
+ * eklenerek: `-b` sola, `-c` saga supuren.
  */
 export const DEBUG_LASER_TWIN_BEAM_SUFFIXES = ["-b", "-c"] as const;
 
-/** Ters donen iki kirisin kimligi: saat yonundeki once. */
+/** Supuren iki kirisin kimligi: sola supuren once. */
 export function getDebugLaserTwinBeamIds(towerId: string) {
   return DEBUG_LASER_TWIN_BEAM_SUFFIXES.map((suffix) => `beam-${towerId}${suffix}`);
 }

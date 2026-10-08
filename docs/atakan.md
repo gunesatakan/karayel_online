@@ -255,10 +255,10 @@ Debug Lazer, dusmana mermi firlatmak yerine kule ile hedef arasinda lazer baglan
 
 - Overdrive 5. seviyede acilir; altinda isaretli oldurme siradan bir oldurmedir.
 - Debug Lazer (Lv5+), Takipte bir hedefi oldururse overdrive tetiklenir.
-- Overdrive suresi 2 saniyedir (oyun hizi dahil gercek 2.5 sn).
+- Overdrive suresi 2 saniyedir (oyun hizi dahil gercek 2.5 sn); Lv10'da 3 saniye (gercek 3.75 sn).
 - Zincir isini: kuleye en yakin dusmandan baslayip her dusmandan bir sonraki en yakina giden bir rota izler; surenin %75'inde geri doner ve ayni rotayi geri izler.
 - Zincir isininin donus hizi 30 derece/saniye ile sinirlidir.
-- Lv10: zincir isinina ek olarak iki ters donen isin. Ikisi de zincirin dogdugu acidan cikar; biri saat yonunde, digeri tersine, sabit hizla (tam tur / overdrive suresi, ~144 derece/sn) ve hedeflerden bagimsiz doner. Yarida baslangicin karsisinda kesisir, sonda baslangicta bulusur. Overdrive bitince son dilim (baslangic acisi) bir kapanis vurusuyla kapatilir.
+- Lv10: zincir isini yok; overdrive 3 saniye surer (gercek 3.75 sn) ve iki isin cikar. Vurulabilen dusmanlar soldan saga (x konumuna gore) siralanir; iki isin da ortadaki dusmandan baslar, biri soldaki son dusmana, digeri sagdaki son dusmana dogru siradaki dusmanlarin uzerinden supurur. Ileri giderken zincirle ayni hizda (30 derece/sn) ve dusmanlarda durmadan ilerler; kenardaki son dusmana varinca ya da surenin yarisi (1.5 sn) dolunca geri doner ve kalan surede ortadaki dusmana iner (1. saniyede varan isin kalan 2 saniyede doner). Normal lazer overdrive boyunca susar. Overdrive bitince son dilim bir kapanis vurusuyla kapatilir; namlu iki isinin bulustugu yerden devam eder.
 - Overdrive sirasinda:
   - Menzil harita sonuna kadar uzar.
   - Tick araligi normal lazer araligiyla aynidir (atis hizi carpanlari dahil).
@@ -638,7 +638,7 @@ Overdrive sirasinda (yalnizca Lv5+):
 - Tick hasari normal vurusun `getDebugLaserDamageMultiplier(level, true) / getDebugLaserDamageMultiplier(level, false)` kati: Lv1 x1.44, Lv5 x1.30, Lv10 x1.20.
 - Menzil harita sonuna kadar uzar.
 
-Kirisin altinda tutulan tek hedefe overdrive DPS'i bu yuzden normal DPS'in ayni katidir (Lv5 ~x1.30, Lv9 ~x1.22, Lv10 ~x1.20). Lv10'un iki ters donen isini zincir isinina eklenir: tek hedefte Lv9'dan asagi dusmez, kalabalikta cevredeki herkesi her overdrive'da en az iki kez tarar.
+Kirisin altinda tutulan tek hedefe overdrive DPS'i bu yuzden normal DPS'in ayni katidir (Lv5 ~x1.30, Lv9 ~x1.22, Lv10 ~x1.20). Lv10'da zincirin yerini sola ve saga supuren iki isin alir ve overdrive 3 saniyeye uzar: tek hedefte Lv9'dan asagi dusmez (isinlar 3 saniye boyunca onun ustunde kalir), yana yayilmis bir kalabalikta ortadan iki yana supururek her dusmanin ustunden gidiste ve donuste gecer.
 
 ### Ucube - Level Statlari
 

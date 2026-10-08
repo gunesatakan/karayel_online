@@ -96,9 +96,14 @@ const profiles: Record<string, EngineProfile> = {
   // `min` icinde hep ezerdi. `multiplier` 1. seviyenin degeri; seviye olcegi
   // `slowByLevel`den.
   "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh", slowByLevel: ISOLATION_SLOW_CURVE }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 1 - ISOLATION_SLOW_CURVE.level1, slowByLevel: ISOLATION_SLOW_CURVE, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated" }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
-  "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
-  "warrior-5": { targeting: "marked", attack: { shape: "beam", executor: "debug-laser" }, canHitAir: false, consumesMarks: [{ id: "tracking", event: "hit", consumeStacks: 1 }], triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
-  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireIntervalReduction", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }] },
+  // Obsesyon: mercek namlusu boyali resimde diskin kenarinda (tower-warrior-4-*.webp).
+  "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
+  // Debug Lazer: nozul ucu boyali resimde (tower-warrior-5-*.webp) yari cercevenin
+  // ~%89'unda. Normal isin oradan cikiyor; asiri yuklemenin kirisleri ortadaki prizmadan.
+  "warrior-5": { targeting: "marked", attack: { shape: "beam", executor: "debug-laser", muzzleOffset: 0.89 }, canHitAir: false, consumesMarks: [{ id: "tracking", event: "hit", consumeStacks: 1 }], triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
+  // Ucube 2x2: dort kare kaplar. Topun agzi boyali resimde diskin kenarinda
+  // (tower-warrior-6-*.webp, yari cercevenin ~%97'si); mermi oradan cikiyor.
+  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireIntervalReduction", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }], placement: { footprintSpan: 2 } },
   "warrior-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "warrior-8": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },
 

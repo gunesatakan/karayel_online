@@ -3,6 +3,7 @@ import { towerCatalog, type TowerDefinition } from "@karayel/shared";
 import { bakeFlashTextures } from "../vfx/flash-pool";
 import { darken, liftToWhite } from "../vfx/kit";
 import { assetUrl } from "../asset-url";
+import { listTieredTowerArt } from "../tower-art";
 
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
@@ -42,9 +43,9 @@ export class PreloaderScene extends Phaser.Scene {
     this.load.image("enemy-brute", assetUrl("images/enemies/enemy-brute.png"));
     this.load.image("enemy-runner", assetUrl("images/enemies/enemy-runner.png"));
     this.load.image("enemy-shooter", assetUrl("images/enemies/enemy-shooter.png"));
-    this.load.image("tower-warrior-1-levels-1-4", assetUrl("images/towers/tower-warrior-1-levels-1-4.png"));
-    this.load.image("tower-warrior-1-levels-5-9", assetUrl("images/towers/tower-warrior-1-levels-5-9.png"));
-    this.load.image("tower-warrior-1-level-10", assetUrl("images/towers/tower-warrior-1-level-10.png"));
+    for (const art of listTieredTowerArt()) {
+      this.load.image(art.key, assetUrl(art.path));
+    }
     for (const race of ENEMY_RACE_TEXTURES) {
       for (const type of ENEMY_TYPE_TEXTURES) {
         this.load.image(`enemy-${race}-${type}`, assetUrl(`images/enemies/enemy-${race}-${type}.png`));

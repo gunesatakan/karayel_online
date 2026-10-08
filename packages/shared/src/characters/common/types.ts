@@ -97,6 +97,11 @@ export type TowerEngineConfig = {
     bladeLength?: number;
     minimumRangeMultiplier?: number;
     rangeStartsAtFootprint?: boolean;
+    /**
+     * Merminin ciktigi namlu agzi, kulenin baktigi yonde: kule izinin yari
+     * genisligi cinsinden (1 = izin kenari). Yoksa mermi merkezden cikar.
+     */
+    muzzleOffset?: number;
   };
   statusEffects?: TowerStatusEffectDefinition[];
   stacks?: TowerStackDefinition[];

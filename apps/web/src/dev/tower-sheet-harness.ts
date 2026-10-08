@@ -108,7 +108,7 @@ function stateFor(): Record<string, unknown> {
     },
     notes: [
       { section: "resources", text: "Isı freni: sıcaklık %50 üstünde atış hızı düşer (çubuktaki çizgi)" },
-      ...(towerId === "warrior-5" ? [{ section: "effects" as const, text: "Overdrive: açık (zincir ışını); 10. seviyede ek olarak iki ters dönen ışın" }] : [])
+      ...(towerId === "warrior-5" ? [{ section: "effects" as const, text: "Overdrive: açık (zincir ışını); 10. seviyede sola ve sağa süpüren iki ışın" }] : [])
     ],
     progress: { maxed: false, upgradeXp: 46, upgradeGold: 30, poolXp: 52.5, poolGold: 210, refund: readOnly ? undefined : { amount: 84, undoable: false } }
   };

@@ -187,9 +187,9 @@ export const trScene = {
   "scene.heat.noBrakeFixedInterval": "Isı freni yok (sabit atış aralığı)",
   "scene.heat.brakeFire": "Isı freni: sıcaklık {temp} üstünde atış hızı düşer (çubuktaki çizgi)",
   "scene.heat.brakeEffect": "Isı freni: sıcaklık {temp} üstünde etki hızı düşer (çubuktaki çizgi)",
-  "scene.overdrive.locked": "Overdrive: {unlock}. seviyede açılır; {twin}. seviyede zincir ışınına ek olarak iki ters dönen ışın",
-  "scene.overdrive.chain": "Overdrive: açık (zincir ışını); {twin}. seviyede ek olarak iki ters dönen ışın",
-  "scene.overdrive.full": "Overdrive: açık (zincir ışını + iki ters dönen ışın)"
+  "scene.overdrive.locked": "Overdrive: {unlock}. seviyede açılır; {twin}. seviyede sola ve sağa süpüren iki ışın",
+  "scene.overdrive.chain": "Overdrive: açık (zincir ışını); {twin}. seviyede sola ve sağa süpüren iki ışın",
+  "scene.overdrive.full": "Overdrive: açık (sola ve sağa süpüren iki ışın)"
 } as const;
 
 export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
@@ -359,7 +359,7 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.heat.noBrakeFixedInterval": "No heat brake (fixed fire interval)",
   "scene.heat.brakeFire": "Heat brake: fire rate drops above {temp} temperature (line on the bar)",
   "scene.heat.brakeEffect": "Heat brake: effect rate drops above {temp} temperature (line on the bar)",
-  "scene.overdrive.locked": "Overdrive: unlocks at level {unlock}; at level {twin}, two counter-rotating beams on top of the chain beam",
-  "scene.overdrive.chain": "Overdrive: active (chain beam); at level {twin}, two more counter-rotating beams",
-  "scene.overdrive.full": "Overdrive: active (chain beam + two counter-rotating beams)"
+  "scene.overdrive.locked": "Overdrive: unlocks at level {unlock}; at level {twin}, two beams sweeping left and right",
+  "scene.overdrive.chain": "Overdrive: active (chain beam); at level {twin}, two beams sweeping left and right",
+  "scene.overdrive.full": "Overdrive: active (two beams sweeping left and right)"
 };

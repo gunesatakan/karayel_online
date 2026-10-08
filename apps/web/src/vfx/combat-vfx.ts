@@ -36,9 +36,9 @@ import {
 import type { VfxLod } from "./lod";
 
 type Graphics = VfxGraphics;
-// Zeynep'in mermileri (Hiza, Taht) artik ferman mizragi (zeynep-signatures);
-// burada yalnizca Atakan'in hareketli govdeleri kaldi.
-export type ShotStyle = "tracker" | "psychic";
+// Zeynep'in mermileri (Hiza, Taht) artik ferman mizragi (zeynep-signatures),
+// Obsesyon ve Ucube'ninkiler atakan-shots'ta; burada yalnizca Takipci kaldi.
+export type ShotStyle = "tracker";
 /**
  * Olum ("death" turu): koyu bir siluete coken govde, malzemesine gore
  * kirinti, kivilcim ya da kor, duman ve sonen bir yer izi. Sprite yok;
@@ -121,10 +121,9 @@ export type CastWave = {
 };
 const noise = hashNoise;
 const clamp = clamp01;
-/** "combat" silueti: Takipci ve Obsesyon (Sunucu paket, Ucube simsek; attack-vfx'te). */
+/** "combat" silueti: Takipci (Sunucu paket attack-vfx'te; Obsesyon ve Ucube atakan-shots'ta). */
 export function shotStyle(id = ""): ShotStyle | undefined {
   if (id === "warrior-1") return "tracker";
-  if (id === "warrior-4") return "psychic";
   return undefined;
 }
 
@@ -134,31 +133,17 @@ function line(g: Graphics, x1: number, y1: number, x2: number, y2: number, width
   g.lineBetween(x1, y1, x2, y2);
 }
 /**
- * Hareketli mermi govdesi: Takipci ve Obsesyon.
+ * Hareketli mermi govdesi: Takipci.
  *
- * Agir, sert dil: Takipci yogun bir iz mermisi (koyu kenarli ton, beyaz-sicak
- * cekirdek, parlak bas); Obsesyon koyu cekirdekli agir bir gulle, ton yalnizca
- * kenarda. Donen kiymik ve kivrimli simsek yok. `heat` cekirdegin sicakligi
- * (kademenin yogunlugu), renk profilin kimlik tonu.
+ * Agir, sert dil: yogun bir iz mermisi (koyu kenarli ton, beyaz-sicak
+ * cekirdek, parlak bas). Donen kiymik ve kivrimli simsek yok. `heat`
+ * cekirdegin sicakligi (kademenin yogunlugu), renk profilin kimlik tonu.
  */
 export function drawCombatProjectile(g: Graphics, p: ProjectileSnapshot, scale: number, color: number, heat = 0.6) {
   const style = shotStyle(p.definitionId);
   if (!style) return false;
   const tier = Math.max(1, Math.min(3, p.tier ?? 1));
   const angle = Math.atan2(p.vy ?? 0, p.vx ?? 1), ux = Math.cos(angle), uy = Math.sin(angle);
-  if (style === "psychic") {
-    // Koyu cekirdek, ince ton kenari ve beyaz-sicak bir nokta: cokertme gullesi.
-    const radius = (2.4 + tier * 0.35) * scale;
-    line(g, p.x - ux * radius * 2.6, p.y - uy * radius * 2.6, p.x, p.y, radius * 0.9, darken(color, 0.35), 0.55);
-    g.fillStyle(color, 0.85);
-    fillDisc(g, p.x, p.y, radius * 1.3);
-    g.fillStyle(0x0b0612, 0.96);
-    fillDisc(g, p.x, p.y, radius);
-    const core = Math.max(0.6, radius * 0.32);
-    g.fillStyle(whiteHot(color, heat), 1);
-    g.fillRect(p.x - core, p.y - core, core * 2, core * 2);
-    return true;
-  }
   // Iz mermisi: govde kalinligi kademenin agirligiyla.
   drawSlug(g, p.x, p.y, ux, uy, (6 + tier * 1.5) * scale, (1.1 + tier * 0.3) * scale, color, heat);
   return true;

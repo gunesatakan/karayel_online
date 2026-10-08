@@ -149,6 +149,9 @@ Altı ırkın 24 görseli, 512×512 PNG; geliştirici yapımı.
 
 - `apps/web/public/images/towers/tower-zeynep-1.webp`, `tower-zeynep-2.webp`, `tower-zeynep-3.webp`, `tower-zeynep-6.webp`, `tower-zeynep-7.webp`
 - `apps/web/public/images/towers/tower-warrior-1-levels-1-4.png`, `apps/web/public/images/towers/tower-warrior-1-levels-5-9.png`, `apps/web/public/images/towers/tower-warrior-1-level-10.png`
+- `apps/web/public/images/towers/tower-warrior-4-levels-1-4.webp`, `apps/web/public/images/towers/tower-warrior-4-levels-5-9.webp`, `apps/web/public/images/towers/tower-warrior-4-level-10.webp` (Obsesyon; geliştirici yapımı, ChatGPT üzerinden OpenAI gpt-image ile; seviye 1–4 görselindeki işlenmiş dama deseni gerçek saydamlığa çevrildi, diske ortalanarak 128×128'e küçültüldü)
+- `apps/web/public/images/towers/tower-warrior-5-levels-1-4.webp`, `apps/web/public/images/towers/tower-warrior-5-levels-5-9.webp`, `apps/web/public/images/towers/tower-warrior-5-level-10.webp` (Debug Lazer; geliştirici yapımı, ChatGPT üzerinden OpenAI gpt-image ile; diske ortalanarak 128×128'e küçültüldü)
+- `apps/web/public/images/towers/tower-warrior-6-levels-1-4.webp`, `apps/web/public/images/towers/tower-warrior-6-levels-5-9.webp`, `apps/web/public/images/towers/tower-warrior-6-level-10.webp` (Ucube; geliştirici yapımı, ChatGPT üzerinden OpenAI gpt-image ile; saydam arka plan korunup diske ortalanarak 256×256'ya küçültüldü)
 
 ### Menü ve operatör görselleri
 

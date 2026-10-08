@@ -23,6 +23,7 @@ import { damageTypeCodex, hitTypeCodex } from "./codex";
 import { assetUrl } from "./asset-url";
 import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
 import { localizeTowerStatusText } from "./server-text";
+import { getTieredTowerArtPath } from "./tower-art";
 
 /**
  * Kule paneli: secili kulenin sayilari, gruplu ve dokumlu.
@@ -166,11 +167,8 @@ const PORTRAITS: Readonly<Record<string, string>> = {
 };
 
 function getPortrait(definitionId: string, level: number) {
-  if (definitionId === "warrior-1") {
-    const tier = getTowerTier(level);
-    return assetUrl(`images/towers/tower-warrior-1-${tier === 3 ? "level-10" : tier === 2 ? "levels-5-9" : "levels-1-4"}.png`);
-  }
-  return PORTRAITS[definitionId];
+  const tiered = getTieredTowerArtPath(definitionId, level);
+  return tiered ? assetUrl(tiered) : PORTRAITS[definitionId];
 }
 
 // ------------------------------------------------------------------ Bicim

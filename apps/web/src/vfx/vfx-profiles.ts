@@ -36,13 +36,15 @@ export type VfxSilhouette =
   | "ring"
   /** Kulenin kendi cizilmis dokusu (Melis). */
   | "sprite"
-  /** combat-vfx'in hareketli govdesi (Takipci, Obsesyon). */
+  /** combat-vfx'in hareketli govdesi (Takipci). */
   | "combat"
+  /** Ucan goz: badem mercek ve yarik gozbebegi; kademeyle iris ve odak halkalari (Obsesyon, atakan-shots). */
+  | "gaze"
   /** Veri paketi: koseli agir govde (Sunucu). */
   | "packet"
   /** Altigen kabuk: kapatma alaninin kucuk hali (Izolasyon). */
   | "cell"
-  /** Kirikli kivilcim oku: kendi kendini yeniden cizen simsek (Ucube). */
+  /** Plazma yuku: kapsul, kademeyle yildirim topu ve simsek kuyrugu (Ucube, atakan-shots). */
   | "arc"
   /**
    * Zeynep'in mizragi: ince uzun govde ve sivri uc; Taht'ta kuyrugunda
@@ -110,6 +112,8 @@ export type VfxTierRecipe = {
   heat: number;
   /** Govdenin agirligi: kalinlik ve kuvvet carpani. */
   weight: number;
+  /** Kuleye ozgu govde kalinligi (1 varsayilan): govde ve izin genisligi, boyu degil. */
+  thickness: number;
   /** Govdenin boyu (dunya birimi, olcekten once); kademeyle buyumuyor. */
   silhouette: number;
   trail: {
@@ -251,6 +255,7 @@ const SILHOUETTE_SIZE: Record<VfxSilhouette, number> = {
   ring: 13,
   sprite: 16,
   combat: 14,
+  gaze: 14,
   packet: 14,
   cell: 13,
   arc: 14,
@@ -280,7 +285,8 @@ function makeTiers(
   silhouette: VfxSilhouette,
   matter: VfxMatter,
   heavy: boolean,
-  aoe: boolean
+  aoe: boolean,
+  thickness: number
 ): readonly [VfxTierRecipe, VfxTierRecipe, VfxTierRecipe] {
   const size = SILHOUETTE_SIZE[silhouette];
   const kinetic = matter === "kinetic";
@@ -294,9 +300,10 @@ function makeTiers(
       core: whiteHot(hue, heat),
       heat,
       weight,
+      thickness,
       silhouette: size,
       // Kisa, sert iz: 3 / 4 / 5 nokta (eski serit 3 / 6 / 8 idi).
-      trail: { points: 3 + index, width: size * 0.22 * weight },
+      trail: { points: 3 + index, width: size * 0.22 * weight * thickness },
       muzzle: { anticipationMs: index === 0 ? 0 : 70 + index * 15, reach: (7 + index * 3) * (heavy ? 1.2 : 1) },
       impact: {
         flash: (11 + index * 4) * (heavy ? 1.2 : 1),
@@ -329,6 +336,8 @@ type ProfileSeed = {
   heavy?: boolean;
   aoe?: boolean;
   matter?: VfxMatter;
+  /** Govde kalinligi carpani; yoksa 1. */
+  thickness?: number;
   signature?: VfxMechanic;
   court?: VfxCourtMechanic;
 };
@@ -341,11 +350,12 @@ const PROFILE_SEEDS: Record<string, ProfileSeed> = {
   "warrior-1": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "brackets", base: 0x4dffbd, signature: "mark-reticle" },
   "warrior-2": { character: "warrior", delivery: "ballistic", silhouette: "packet", impact: "uplink", base: 0x58d9ff, heavy: true, aoe: true, signature: "uplink-column" },
   "warrior-3": { character: "warrior", delivery: "homing", silhouette: "cell", impact: "contain", base: 0x7fe5e8, signature: "containment" },
-  "warrior-4": { character: "warrior", delivery: "ballistic", silhouette: "combat", impact: "collapse", base: 0xcb79ff, signature: "tether" },
+  "warrior-4": { character: "warrior", delivery: "ballistic", silhouette: "gaze", impact: "collapse", base: 0xcb79ff, signature: "tether" },
   // Lazerin rampasi sunucudaki DEBUG_LASER_TIER_COLORS: kirmizi, mavi, beyaz.
   // Isin kendi cizimini koruyor (dokunulmadi); rampa yalnizca kule halkasi ve galeri icin.
   "warrior-5": { character: "warrior", delivery: "laser", silhouette: "none", impact: "fragments", base: 0xef4444, ramp: [0xef4444, 0x60a5fa, 0xe0f2fe] },
-  "warrior-6": { character: "warrior", delivery: "ballistic", silhouette: "arc", impact: "bolt", base: 0xadf765, signature: "stack-gauge" },
+  // Ucube 2x2 kule: mermisi de iki kat kalin (boyu ayni).
+  "warrior-6": { character: "warrior", delivery: "ballistic", silhouette: "arc", impact: "bolt", base: 0xadf765, thickness: 2, signature: "stack-gauge" },
 
   // Zeynep: kizil, mor ve eflatun kenar tonu; govdenin enerjisi beyaz-sicak.
   "zeynep-1": { character: "zeynep", delivery: "ballistic", silhouette: "lance", impact: "decree", base: 0xec4899, court: "pierce-line" },
@@ -417,7 +427,7 @@ function buildProfile(id: string, seed: ProfileSeed): VfxProfile {
     ramp,
     heavy,
     aoe,
-    tiers: makeTiers(ramp, hue, seed.silhouette, matter, heavy, aoe),
+    tiers: makeTiers(ramp, hue, seed.silhouette, matter, heavy, aoe, seed.thickness ?? 1),
     ...(seed.signature ? { signature: { mechanic: seed.signature } } : {}),
     ...(seed.court ? { court: { mechanic: seed.court } } : {})
   };
