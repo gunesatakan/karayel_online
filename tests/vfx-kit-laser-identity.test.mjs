@@ -100,10 +100,11 @@ test("liftToWhite tonu koruyor, beyaza ceker", () => {
   assert.equal((half >> 16) & 0xff, 128);
 });
 
-test("oyundaki lazer eskisinin 2/3'u kalinlikta: hale, govde ve uc noktalari birlikte inceliyor", async () => {
+test("oyundaki lazer eskisinin 2/3'u, asiri yukleme 1/3'u kalinlikta: hale, govde ve uc noktalari birlikte inceliyor", async () => {
   const { DEBUG_LASER_BEAM_WIDTH, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH } = await import("../packages/shared/dist/index.js");
   assert.ok(Math.abs(DEBUG_LASER_BEAM_WIDTH - (4 * 2) / 3) < 1e-12);
-  assert.ok(Math.abs(DEBUG_LASER_OVERDRIVE_BEAM_WIDTH - (8 * 2) / 3) < 1e-12);
+  // Asiri yukleme 2/3'e indikten sonra bir kez daha yariya: eskinin 1/3'u.
+  assert.ok(Math.abs(DEBUG_LASER_OVERDRIVE_BEAM_WIDTH - 8 / 3) < 1e-12);
   const extent = (width, overdrive, tier) => {
     const recorder = createRecorder();
     const beam = { id: "beam-t1", definitionId: "warrior-5", tier, x1: 0, y1: 0, x2: 200, y2: 0, width, color: 0x60a5fa, overdrive, ttlMs: 260 };
@@ -112,12 +113,12 @@ test("oyundaki lazer eskisinin 2/3'u kalinlikta: hale, govde ve uc noktalari bir
     const largest = Math.max(...recorder.calls.filter(([name]) => name === "fillCircle").map(([, , , radius]) => radius));
     return { widest, largest };
   };
-  for (const [overdrive, old, now] of [[false, 4, DEBUG_LASER_BEAM_WIDTH], [true, 8, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH]]) {
+  for (const [overdrive, old, now, ratio] of [[false, 4, DEBUG_LASER_BEAM_WIDTH, 2 / 3], [true, 8, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH, 1 / 3]]) {
     for (const tier of [undefined, 2]) {
       const before = extent(old, overdrive, tier);
       const after = extent(now, overdrive, tier);
-      assert.ok(Math.abs(after.widest - (before.widest * 2) / 3) < 1e-9, `od=${overdrive} t${tier ?? 1}: hale ${after.widest} / ${before.widest}`);
-      assert.ok(Math.abs(after.largest - (before.largest * 2) / 3) < 1e-9, `od=${overdrive} t${tier ?? 1}: uc ${after.largest} / ${before.largest}`);
+      assert.ok(Math.abs(after.widest - before.widest * ratio) < 1e-9, `od=${overdrive} t${tier ?? 1}: hale ${after.widest} / ${before.widest}`);
+      assert.ok(Math.abs(after.largest - before.largest * ratio) < 1e-9, `od=${overdrive} t${tier ?? 1}: uc ${after.largest} / ${before.largest}`);
     }
   }
   // Lazer olmayan, varsayilan cizime dusen isin eski sabitlerle kaliyor.

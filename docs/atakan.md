@@ -288,7 +288,7 @@ Ucube pahali ve zayif baslayan, fakat dalgalar ilerledikce buyuyen yatirim kules
 
 **Calisma ritmi:**
 
-- Aktif olarak hedef vurabildigi her saniye saldiri hizi stack kazanir.
+- Aktif olarak hedef vurabildigi her saniye saldiri hizi stack kazanir. Yalnizca ates edebilirken sayilir: isi kilidinde, enerjisiz ya da muhimmatsiz beklerken stack ve hararet sayaci ilerlemez (stack silinmez, kaldigi yerden devam eder).
 - Hedef bulamazsa aktif sure ve stackler sifirlanir.
 - Stack basina atis araligi azalir.
 - Stack etkisi:
@@ -303,6 +303,8 @@ Atis araligi carpani = 1 - stack * 0.04539
 - 20 saniye araliksiz calisirsa hararet yapar.
 - Hararet suresi 10 saniyedir.
 - Dalga gelisimiyle hararet tamamen kalkabilir.
+- Atis isisi `~10` derece (carpma x elektrik tablosunun 28.6'si x `0.35`, Takipci duzeyi). Surekli atisi isi belirler (saniyede `soguma / atis isisi`); 28.6 ile Ucube diger hasar kulelerinin ucte biri hizda atabiliyor, birkac atista kilide girip uzun sure susuyordu.
+- Isi kilidi acilinca (30 derece) bekleme suresi normal araliga iner. Eskiden kilide sokan atisin ~100 derecede frenlenmis araligi (yaklasik 100 kat) kilit acildiktan sonra da suruyordu; bu butun kuleler icin duzeltildi.
 - Dalga bonuslari Ucube sahadayken tamamlanan dalga sayisina gore acilir: bonus 1/2/3/4/5 icin 2/4/6/8/10 dalga, bonus 6 icin 14 dalga, bonus 7 icin 16 dalga gerekir.
 
 **Dalga sonu gelisimleri:**

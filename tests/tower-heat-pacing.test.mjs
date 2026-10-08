@@ -44,8 +44,14 @@ test("atis isisi tip ve hasar tipinden hesaplanir", () => {
         continue;
       }
 
+      // Tek istisna Ucube: aralıksiz ateste hizlanan kule, carpma x elektrik
+      // isisiyla diger hasar kulelerinin ucte biri hizda atabiliyordu
+      // (UCUBE_HEAT_MULTIPLIER, tests/ucube-heat.test.mjs). Baska sapma yok.
+      const ozel = tower.id === "warrior-6" ? 0.35 : 1;
+      assert.equal(tower.engine.resources.heatMultiplier ?? 1, ozel, `${tower.id}: isi carpani`);
       const beklenen = TOWER_HEAT_BY_HIT_TYPE[tower.hitType ?? "projectile"]
-        * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[tower.damageType ?? "physical"];
+        * TOWER_HEAT_DAMAGE_TYPE_MULTIPLIER[tower.damageType ?? "physical"]
+        * ozel;
 
       assert.ok(
         Math.abs(calculateTowerShotHeat(tower, 0.5) - beklenen) < 1e-6,

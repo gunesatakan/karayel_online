@@ -23,6 +23,8 @@ function setup(...definitionIds) {
   const room = createRoom("warrior");
   room.broadcast = () => {};
   room.clients = [client];
+  // Kritik zari kapali: olcumler hasarin kendisine bakiyor.
+  room.towerCriticalRandom = () => 1;
   const build = (definitionId) => {
     const spot = findBuildableSpot(room, definitionId);
     assert.ok(spot, `${definitionId} icin yer yok`);

@@ -5373,6 +5373,10 @@ export class MatchRoom extends Room<MatchState> {
         }
         if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) {
           tower.heatLocked = false;
+          // Kilide sokan atisin araligi 100 dereceye yakin sicaklikla
+          // frenlenmisti (carpan tabanda, aralik ~100 kat). Kule sogudugu
+          // halde o bekleme surmesin: acilan kule normal araligiyla devam.
+          tower.cooldownMs = Math.min(tower.cooldownMs, this.getTowerFireInterval(tower));
         }
       }
       if (tower.hp <= 0) {
@@ -16008,6 +16012,11 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
+    // Ritim yalnizca ates edebilirken ilerliyor ("aralıksız ateş ettikçe"):
+    // isi kilidinde, enerjisiz ya da muhimmatsiz bekleyen kule yigin
+    // toplamiyor ve 20 sn'lik zorunlu sogumaya da yaklasmiyor. Yigin
+    // silinmiyor; kule ates edebilir olunca kaldigi yerden devam.
+    if (!this.canTowerFire(tower)) return;
     tower.activeMs += deltaTime;
     tower.focusTargetId = target.id;
     const stackLimit = getUcubeStackLimit(tower);

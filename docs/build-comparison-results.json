@@ -249,16 +249,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 114.5,
+    "damage": 583.6,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 3,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 29.200000000000003,
+    "elapsedSeconds": 32.800000000000004,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.15,
+    "damagePerGold": 0.75,
     "auraEnemySeconds": 0
   },
   {
@@ -274,16 +274,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 114.5,
+    "damage": 503.6,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 2,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 29.200000000000003,
+    "elapsedSeconds": 31.6,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.15,
+    "damagePerGold": 0.64,
     "auraEnemySeconds": 0
   },
   {
@@ -299,16 +299,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 137.3,
+    "damage": 618.2,
     "nexusLoss": 100,
-    "kills": 1,
+    "kills": 2,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 30.400000000000002,
+    "elapsedSeconds": 31.6,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.18,
+    "damagePerGold": 0.79,
     "auraEnemySeconds": 0
   },
   {
@@ -639,7 +639,7 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 85.5,
+    "damage": 352.9,
     "nexusLoss": 100,
     "kills": 0,
     "complete": false,
@@ -648,7 +648,7 @@
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.11,
+    "damagePerGold": 0.45,
     "auraEnemySeconds": 0
   },
   {
@@ -664,7 +664,7 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 85.5,
+    "damage": 310.1,
     "nexusLoss": 100,
     "kills": 0,
     "complete": false,
@@ -673,7 +673,7 @@
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.11,
+    "damagePerGold": 0.4,
     "auraEnemySeconds": 0
   },
   {
@@ -689,7 +689,7 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 91,
+    "damage": 395.6,
     "nexusLoss": 100,
     "kills": 0,
     "complete": false,
@@ -698,7 +698,7 @@
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.12,
+    "damagePerGold": 0.51,
     "auraEnemySeconds": 0
   },
   {
@@ -1029,16 +1029,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 114.5,
+    "damage": 443.6,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 1,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 22.55,
+    "elapsedSeconds": 23.75,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.15,
+    "damagePerGold": 0.57,
     "auraEnemySeconds": 0
   },
   {
@@ -1054,7 +1054,7 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 171.8,
+    "damage": 343.6,
     "nexusLoss": 100,
     "kills": 0,
     "complete": false,
@@ -1063,7 +1063,7 @@
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.22,
+    "damagePerGold": 0.44,
     "auraEnemySeconds": 0
   },
   {
@@ -1079,16 +1079,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 171.8,
+    "damage": 443.6,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 1,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 22.55,
+    "elapsedSeconds": 23.75,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.22,
+    "damagePerGold": 0.57,
     "auraEnemySeconds": 0
   },
   {
@@ -1419,16 +1419,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 171.8,
+    "damage": 509.1,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 4,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 27.1,
+    "elapsedSeconds": 32.300000000000004,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.22,
+    "damagePerGold": 0.65,
     "auraEnemySeconds": 0
   },
   {
@@ -1444,16 +1444,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 171.8,
+    "damage": 610.9,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 3,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 27.1,
+    "elapsedSeconds": 30.900000000000002,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.22,
+    "damagePerGold": 0.78,
     "auraEnemySeconds": 0
   },
   {
@@ -1469,16 +1469,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 171.8,
+    "damage": 553.6,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 3,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 27.1,
+    "elapsedSeconds": 30.700000000000003,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.22,
+    "damagePerGold": 0.71,
     "auraEnemySeconds": 0
   },
   {
@@ -1809,16 +1809,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 159.1,
+    "damage": 660.3,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 1,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 31.450000000000003,
+    "elapsedSeconds": 32.65,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.2,
+    "damagePerGold": 0.84,
     "auraEnemySeconds": 0
   },
   {
@@ -1834,16 +1834,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 159.1,
+    "damage": 660.3,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 1,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 31.450000000000003,
+    "elapsedSeconds": 32.65,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.2,
+    "damagePerGold": 0.84,
     "auraEnemySeconds": 0
   },
   {
@@ -1859,16 +1859,16 @@
     "loadout": [
       "warrior-6:L3"
     ],
-    "damage": 212.1,
+    "damage": 501.2,
     "nexusLoss": 100,
-    "kills": 0,
+    "kills": 1,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 31.450000000000003,
+    "elapsedSeconds": 32.65,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.27,
+    "damagePerGold": 0.64,
     "auraEnemySeconds": 0
   },
   {
@@ -2199,16 +2199,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 320,
-    "nexusLoss": 100,
-    "kills": 4,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34,
-    "clearSeconds": null,
+    "damage": 2080,
+    "nexusLoss": 48,
+    "kills": 26,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 52.050000000000004,
+    "clearSeconds": 52.050000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.06,
+    "damagePerGold": 0.37,
     "auraEnemySeconds": 0
   },
   {
@@ -2224,16 +2224,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 400,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 35.2,
-    "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.07,
+    "damage": 2560,
+    "nexusLoss": 0,
+    "kills": 32,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 43.1,
+    "clearSeconds": 43.1,
+    "resourceWaitSeconds": 0.3,
+    "resourceWaitRatio": 0.003,
+    "damagePerGold": 0.45,
     "auraEnemySeconds": 0
   },
   {
@@ -2249,16 +2249,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 400,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 35.2,
-    "clearSeconds": null,
+    "damage": 2560,
+    "nexusLoss": 0,
+    "kills": 32,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 39.800000000000004,
+    "clearSeconds": 39.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.07,
+    "damagePerGold": 0.45,
     "auraEnemySeconds": 0
   },
   {
@@ -2589,16 +2589,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 1431.9,
-    "nexusLoss": 100,
-    "kills": 3,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 36,
-    "clearSeconds": null,
+    "damage": 5846.8,
+    "nexusLoss": 84,
+    "kills": 12,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 44.45,
+    "clearSeconds": 44.45,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.25,
+    "damagePerGold": 1.03,
     "auraEnemySeconds": 0
   },
   {
@@ -2614,16 +2614,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 1431.9,
-    "nexusLoss": 100,
-    "kills": 3,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 36,
-    "clearSeconds": null,
+    "damage": 5301.9,
+    "nexusLoss": 84,
+    "kills": 12,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 44.45,
+    "clearSeconds": 44.45,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.25,
+    "damagePerGold": 0.93,
     "auraEnemySeconds": 0
   },
   {
@@ -2639,16 +2639,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 1431.9,
-    "nexusLoss": 100,
-    "kills": 3,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 36,
-    "clearSeconds": null,
+    "damage": 5558.7,
+    "nexusLoss": 98,
+    "kills": 11,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 44.45,
+    "clearSeconds": 44.45,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.25,
+    "damagePerGold": 0.98,
     "auraEnemySeconds": 0
   },
   {
@@ -2979,16 +2979,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 500,
+    "damage": 800,
     "nexusLoss": 100,
-    "kills": 5,
+    "kills": 8,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 28.55,
+    "elapsedSeconds": 32.15,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.09,
+    "damagePerGold": 0.14,
     "auraEnemySeconds": 0
   },
   {
@@ -3004,16 +3004,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 500,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 28.55,
-    "clearSeconds": null,
+    "damage": 1400,
+    "nexusLoss": 80,
+    "kills": 14,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 35.800000000000004,
+    "clearSeconds": 35.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.09,
+    "damagePerGold": 0.25,
     "auraEnemySeconds": 0
   },
   {
@@ -3029,16 +3029,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 500,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 28.55,
-    "clearSeconds": null,
+    "damage": 1400,
+    "nexusLoss": 80,
+    "kills": 14,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 35.800000000000004,
+    "clearSeconds": 35.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.09,
+    "damagePerGold": 0.25,
     "auraEnemySeconds": 0
   },
   {
@@ -3369,16 +3369,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.5,
-    "clearSeconds": null,
+    "damage": 1540,
+    "nexusLoss": 16,
+    "kills": 22,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 40.75,
+    "clearSeconds": 40.75,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.07,
+    "damagePerGold": 0.27,
     "auraEnemySeconds": 0
   },
   {
@@ -3394,16 +3394,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.300000000000004,
-    "clearSeconds": null,
+    "damage": 1680,
+    "nexusLoss": 0,
+    "kills": 24,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 33.800000000000004,
+    "clearSeconds": 33.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.07,
+    "damagePerGold": 0.3,
     "auraEnemySeconds": 0
   },
   {
@@ -3419,16 +3419,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.300000000000004,
-    "clearSeconds": null,
+    "damage": 1540,
+    "nexusLoss": 16,
+    "kills": 22,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 40.75,
+    "clearSeconds": 40.75,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.07,
+    "damagePerGold": 0.27,
     "auraEnemySeconds": 0
   },
   {
@@ -3759,16 +3759,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 650,
+    "damage": 4680,
     "nexusLoss": 100,
-    "kills": 5,
+    "kills": 36,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 37.45,
+    "elapsedSeconds": 71.05,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.11,
+    "resourceWaitSeconds": 6.2,
+    "resourceWaitRatio": 0.036,
+    "damagePerGold": 0.82,
     "auraEnemySeconds": 0
   },
   {
@@ -3784,16 +3784,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 910,
+    "damage": 5590,
     "nexusLoss": 100,
-    "kills": 7,
+    "kills": 43,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 39.85,
+    "elapsedSeconds": 83.05000000000001,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.16,
+    "resourceWaitSeconds": 12.3,
+    "resourceWaitRatio": 0.062,
+    "damagePerGold": 0.98,
     "auraEnemySeconds": 0
   },
   {
@@ -3809,16 +3809,16 @@
     "loadout": [
       "warrior-6:L8"
     ],
-    "damage": 650,
+    "damage": 4940,
     "nexusLoss": 100,
-    "kills": 5,
+    "kills": 38,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 37.45,
+    "elapsedSeconds": 73.45,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.11,
+    "resourceWaitSeconds": 4.8,
+    "resourceWaitRatio": 0.027,
+    "damagePerGold": 0.87,
     "auraEnemySeconds": 0
   },
   {
@@ -4149,16 +4149,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 480,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 36.4,
-    "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damage": 2400,
+    "nexusLoss": 16,
+    "kills": 30,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 49.400000000000006,
+    "clearSeconds": 49.400000000000006,
+    "resourceWaitSeconds": 1.1,
+    "resourceWaitRatio": 0.009,
+    "damagePerGold": 0.1,
     "auraEnemySeconds": 0
   },
   {
@@ -4174,16 +4174,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 560,
-    "nexusLoss": 100,
-    "kills": 7,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 37.6,
-    "clearSeconds": null,
+    "damage": 1760,
+    "nexusLoss": 80,
+    "kills": 22,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 52.050000000000004,
+    "clearSeconds": 52.050000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.07,
     "auraEnemySeconds": 0
   },
   {
@@ -4199,16 +4199,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 400,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 35.2,
-    "clearSeconds": null,
+    "damage": 2560,
+    "nexusLoss": 0,
+    "kills": 32,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 39.7,
+    "clearSeconds": 39.7,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.1,
     "auraEnemySeconds": 0
   },
   {
@@ -4539,16 +4539,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 3010,
-    "nexusLoss": 100,
-    "kills": 7,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 40.800000000000004,
-    "clearSeconds": null,
+    "damage": 7740,
+    "nexusLoss": 0,
+    "kills": 18,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 21.1,
+    "clearSeconds": 21.1,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.12,
+    "damagePerGold": 0.31,
     "auraEnemySeconds": 0
   },
   {
@@ -4564,16 +4564,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 2580,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 39.6,
-    "clearSeconds": null,
+    "damage": 7740,
+    "nexusLoss": 0,
+    "kills": 18,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 24.55,
+    "clearSeconds": 24.55,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.1,
+    "damagePerGold": 0.31,
     "auraEnemySeconds": 0
   },
   {
@@ -4589,16 +4589,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 3010,
-    "nexusLoss": 100,
-    "kills": 7,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 40.800000000000004,
-    "clearSeconds": null,
+    "damage": 7740,
+    "nexusLoss": 0,
+    "kills": 18,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 21.3,
+    "clearSeconds": 21.3,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.12,
+    "damagePerGold": 0.31,
     "auraEnemySeconds": 0
   },
   {
@@ -4929,16 +4929,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 400,
+    "damage": 1100,
     "nexusLoss": 100,
-    "kills": 4,
+    "kills": 11,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 27.35,
+    "elapsedSeconds": 35.75,
     "clearSeconds": null,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.04,
     "auraEnemySeconds": 0
   },
   {
@@ -4954,16 +4954,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 500,
-    "nexusLoss": 100,
-    "kills": 5,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 28.55,
-    "clearSeconds": null,
+    "damage": 1500,
+    "nexusLoss": 72,
+    "kills": 15,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 35.800000000000004,
+    "clearSeconds": 35.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.06,
     "auraEnemySeconds": 0
   },
   {
@@ -4979,16 +4979,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 600,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 29.75,
-    "clearSeconds": null,
+    "damage": 1600,
+    "nexusLoss": 64,
+    "kills": 16,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 35.800000000000004,
+    "clearSeconds": 35.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.06,
     "auraEnemySeconds": 0
   },
   {
@@ -5319,16 +5319,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.5,
-    "clearSeconds": null,
+    "damage": 1680,
+    "nexusLoss": 0,
+    "kills": 24,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 40.650000000000006,
+    "clearSeconds": 40.650000000000006,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.07,
     "auraEnemySeconds": 0
   },
   {
@@ -5344,16 +5344,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.300000000000004,
-    "clearSeconds": null,
+    "damage": 1680,
+    "nexusLoss": 0,
+    "kills": 24,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 33.800000000000004,
+    "clearSeconds": 33.800000000000004,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.07,
     "auraEnemySeconds": 0
   },
   {
@@ -5369,16 +5369,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 420,
-    "nexusLoss": 100,
-    "kills": 6,
-    "complete": false,
-    "outcome": "defeat",
-    "elapsedSeconds": 34.300000000000004,
-    "clearSeconds": null,
+    "damage": 1680,
+    "nexusLoss": 0,
+    "kills": 24,
+    "complete": true,
+    "outcome": "cleared",
+    "elapsedSeconds": 31.1,
+    "clearSeconds": 31.1,
     "resourceWaitSeconds": 0,
     "resourceWaitRatio": 0,
-    "damagePerGold": 0.02,
+    "damagePerGold": 0.07,
     "auraEnemySeconds": 0
   },
   {
@@ -5709,16 +5709,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 910,
+    "damage": 4290,
     "nexusLoss": 100,
-    "kills": 7,
+    "kills": 33,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 39.85,
+    "elapsedSeconds": 71.05,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.04,
+    "resourceWaitSeconds": 3.9,
+    "resourceWaitRatio": 0.023,
+    "damagePerGold": 0.17,
     "auraEnemySeconds": 0
   },
   {
@@ -5734,16 +5734,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 910,
+    "damage": 3770,
     "nexusLoss": 100,
-    "kills": 7,
+    "kills": 29,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 39.85,
+    "elapsedSeconds": 62.650000000000006,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.04,
+    "resourceWaitSeconds": 2,
+    "resourceWaitRatio": 0.013,
+    "damagePerGold": 0.15,
     "auraEnemySeconds": 0
   },
   {
@@ -5759,16 +5759,16 @@
     "loadout": [
       "warrior-6:L10"
     ],
-    "damage": 910,
+    "damage": 5720,
     "nexusLoss": 100,
-    "kills": 7,
+    "kills": 44,
     "complete": false,
     "outcome": "defeat",
-    "elapsedSeconds": 39.85,
+    "elapsedSeconds": 84.25,
     "clearSeconds": null,
-    "resourceWaitSeconds": 0,
-    "resourceWaitRatio": 0,
-    "damagePerGold": 0.04,
+    "resourceWaitSeconds": 13.2,
+    "resourceWaitRatio": 0.065,
+    "damagePerGold": 0.23,
     "auraEnemySeconds": 0
   },
   {

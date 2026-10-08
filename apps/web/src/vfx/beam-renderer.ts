@@ -997,7 +997,8 @@ export class BeamRenderer {
 
     const scale = this.getLaserScale(beam, 8);
     const core = this.getBeamCoreColor(color, 0.86);
-    this.strokeBeamProfile(beam, color, { spread: 14 * scale, body: Math.max(3, beam.width) });
+    // Govde tabani da olcekli: sabit 3 incelen asiri yuklemeyi kalin tutardi.
+    this.strokeBeamProfile(beam, color, { spread: 14 * scale, body: Math.max(3 * scale, beam.width) });
     this.beamGraphics.lineStyle(1, color, 0.65);
     this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19 * scale);
     this.beamGraphics.fillStyle(color, 0.35);

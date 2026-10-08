@@ -55,6 +55,17 @@ type EngineProfile = Omit<TowerEngineConfig, "resources" | "levelScaling"> & {
  */
 const DAMAGE_PER_LEVEL = 0.5;
 
+/**
+ * Ucube'nin atis isisi carpani: 28,6 -> ~10 (Takipci duzeyi).
+ *
+ * Carpma x elektrik tablosu (22 x 1,3) yavas, agir vuran kuleler icin. Ucube
+ * aralıksiz ateste hizlanan bir kule ve surekli atisi isi belirliyor
+ * (saniyede `soguma / atis isisi`): 28,6 ile saniyede 0,1 atisa, yani diger
+ * hasar kulelerinin ucte birine iniyordu; birkac atista kilide girip
+ * dakikalarca susuyordu.
+ */
+export const UCUBE_HEAT_MULTIPLIER = 0.35;
+
 const defaultEngine: TowerEngineConfig = {
   targeting: "first",
   attack: { shape: "single", pierceCount: 1 },
@@ -103,7 +114,7 @@ const profiles: Record<string, EngineProfile> = {
   "warrior-5": { targeting: "marked", attack: { shape: "beam", executor: "debug-laser", muzzleOffset: 0.89 }, canHitAir: false, triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
   // Ucube 2x2: dort kare kaplar. Topun agzi boyali resimde diskin kenarinda
   // (tower-warrior-6-*.webp, yari cercevenin ~%97'si); mermi oradan cikiyor.
-  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireIntervalReduction", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }], placement: { footprintSpan: 2 } },
+  "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, resources: { heatMultiplier: UCUBE_HEAT_MULTIPLIER }, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireIntervalReduction", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }], placement: { footprintSpan: 2 } },
   "warrior-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "warrior-8": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },
 
