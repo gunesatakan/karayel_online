@@ -19,9 +19,9 @@ export function usesLinearBallistics(hitType: HitType) {
 /**
  * Mermi hizi modifierinin bir sey degistirdigi atis yollari.
  *
- * `projectileSpeed` sunucuda bes yerde okunuyor: duz balistik mermi
- * (`spawnTowerProjectile`), Sunucu'nun baglanti patlamasi ve Fisilti
- * Korosu'nun mermisi (`spawnSpecialProjectile`), Kin dalgasi ve Taht
+ * `projectileSpeed` sunucuda dort yerde okunuyor: duz balistik mermi
+ * (`spawnTowerProjectile`), Fisilti Korosu'nun mermisi
+ * (`spawnSpecialProjectile`), Kin dalgasi ve Taht
  * Muhru'nun sentez mermileri ve isinlari. Isinlar (Debug Lazer, Gosteri
  * Kulesi), lanet patlamasi, yorunge bicaklari, auralar ve odak baglari
  * hicbir sey firlatmiyor; mermi hizi kartini onlara uydurmak oyuncuya olu
@@ -33,12 +33,23 @@ export function usesLinearBallistics(hitType: HitType) {
 const NON_PROJECTILE_EXECUTORS: ReadonlySet<string> = new Set(["debug-laser", "showcase-beam", "curse-burst", "orbit"]);
 const PROJECTILE_EXECUTORS: ReadonlySet<string> = new Set(["kin-wave", "synthesis", "whisper-chorus"]);
 
-export function towerFiresProjectiles(tower: { hitType?: HitType; resourceProvider?: unknown; engine?: { attack: { executor?: string } } }) {
-  if (tower.resourceProvider) return false;
+export function towerFiresProjectiles(tower: { id?: string; hitType?: HitType; resourceProvider?: unknown; engine?: { attack: { executor?: string } } }) {
+  if (tower.resourceProvider || towerNeverAttacks(tower)) return false;
   const executor = tower.engine?.attack.executor;
   if (executor && NON_PROJECTILE_EXECUTORS.has(executor)) return false;
   if (executor && PROJECTILE_EXECUTORS.has(executor)) return true;
   return tower.hitType === undefined || tower.hitType === "projectile" || tower.hitType === "impact";
+}
+
+/**
+ * Hic saldirmayan kuleler. Sunucu yalnizca bagliyor: bagli kulelere menzil,
+ * soguma ve bilgi artisi (server-knowledge); kendisi ne ates ediyor ne vuruyor.
+ * Tanimdaki vurus tipi kimligi icin (gorsel, codex rengi) kaliyor; savas ve
+ * mermi kartlari, atis hizi satiri ona islemiyor.
+ */
+const NON_ATTACKING_TOWER_IDS: ReadonlySet<string> = new Set(["warrior-2"]);
+export function towerNeverAttacks(tower: { id?: string }) {
+  return !!tower.id && NON_ATTACKING_TOWER_IDS.has(tower.id);
 }
 
 export function getBallisticMovementSpeed(speed: number, hitType: HitType) {

@@ -52,7 +52,8 @@ import { getTowerSpriteSize, getTowerTextureKey } from "../tower-art";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
-import { fnvHash, hashNoise, toTier } from "../vfx/kit";
+import { fnvHash, hashNoise, TEAMMATE_EXTRA_ALPHA, toTier } from "../vfx/kit";
+import { drawServerReactorArcs, type ServerReactorInput } from "../vfx/server-reactor";
 import { VfxLod } from "../vfx/lod";
 import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
@@ -190,7 +191,10 @@ import {
   type UltimateCastMessage,
   getServerLinkJoinedText,
   getRiskyInvestmentNoticeText,
-  getServerLinkMaturedText,
+  getServerKnowledgeBonus,
+  getServerKnowledgeTopBonus,
+  SERVER_KNOWLEDGE_EFFECTS,
+  SERVER_KNOWLEDGE_TYPES,
   ATAKAN_EXECUTE_SLOT,
   getExecuteRejectText,
   isExecuteImmune,
@@ -201,7 +205,6 @@ import {
   type SkillRejectedMessage,
   type ServerLinkJoinedMessage,
   type RiskyInvestmentMessage,
-  type ServerLinkMaturedMessage,
   type UltimateResultMessage,
   type KillStreakTier,
   type ConfirmationPulseStyle,
@@ -551,13 +554,9 @@ const EXECUTE_MARK_MS = 320;
 const EXECUTE_MARK_LOCK_FRACTION = 0.28;
 const EXECUTE_MARK_COLOR = 0xe2e8f0;
 const EXECUTE_MARK_CORNERS: ReadonlyArray<readonly [number, number]> = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-/** Sunucu baginin renkleri: kulede kod yagmuruyla ayni (5 dalga turkuaz, 10 dalga mor). */
+/** Sunucu baginin rengi: reaktorun turkuazi. */
 const SERVER_LINK_JOIN_COLOR = 0x22d3ee;
-const SERVER_LINK_MATURE_5_FILL = "#67e8f9";
-const SERVER_LINK_MATURE_10_FILL = "#d8b4fe";
-const SERVER_LINK_MATURE_5_COLOR = 0x67e8f9;
-const SERVER_LINK_MATURE_10_COLOR = 0xd8b4fe;
-/** Kart perdesi kapanana kadar bekleyen bag anlari; dalga sonunda birkac tane birikebiliyor. */
+/** Kart perdesi kapanana kadar bekleyen bag anlari; birkac tane birikebiliyor. */
 const PENDING_LINK_MOMENT_LIMIT = 4;
 /** Perde kapandiktan sonra anin oynamasi icin kisa bekleme; perdenin cikis gecisi bitsin. */
 const LINK_MOMENT_AFTER_CURTAIN_MS = 320;
@@ -3879,10 +3878,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Bag anlarini oynatir; kart perdesi acikken perde kapanana kadar bekletir.
-   *
-   * Bag yasi dalga bittiginde artiyor, yani olgunlasma tam kart perdesinin
-   * acildigi ana denk geliyor; o an oynasa perdenin altinda kaybolurdu.
+   * Bag anlarini oynatir; kart perdesi acikken perde kapanana kadar bekletir:
+   * o an oynasa perdenin altinda kaybolurdu.
    */
   private queueLinkMoment(play: () => void) {
     this.time.delayedCall(this.playbackDelayMs, () => {
@@ -3950,63 +3947,6 @@ export class GameScene extends Phaser.Scene {
       const toast: TeamNoticeToast = { ...getServerLinkJoinedText(owner.name), color: owner.color };
       this.game.events.emit("game:hud-team-notice", toast);
       this.playTowerPulse(tower, this.getMapCellSize() * getTowerGridSpan(tower.definitionId), SERVER_LINK_JOIN_COLOR, false);
-    });
-  }
-
-  /**
-   * Bag olgunlasti (5 ya da 10 dalga): bagli kulenin ustunde kisa bir etiket
-   * ve iki kulede nabiz. Iki sahibe de gidiyor; etiket seviye etiketiyle ayni
-   * havuzda, butceyi yonetmen tutuyor.
-   */
-  private receiveServerLinkMatured(message: ServerLinkMaturedMessage) {
-    if (!message || (message.waves !== 5 && message.waves !== 10) || this.matchResultShown) {
-      return;
-    }
-    // Olgun Bag nisani yalnizca Sunucunun sahibine: baskasinin bagi senin kulende olgunlasabilir.
-    this.badgeWatch.noteLinkMatured(message.waves, message.serverOwnerId === this.localSessionId);
-    this.queueLinkMoment(() => {
-      const target = this.towerSnapshots.get(message.targetTowerId);
-      if (!target) {
-        return;
-      }
-      const cellSize = this.getMapCellSize();
-      const discSize = cellSize * getTowerGridSpan(target.definitionId);
-      const labelY = target.y - discSize / 2 - LEVEL_LABEL_LIFT_PX;
-      const lifetimeMs = FEEDBACK_KIND_RULES.linkMatured.visualMs;
-      const decision = this.feedback?.emit("linkMatured", { own: true, x: target.x, y: labelY, lifetimeMs });
-      const strong = message.waves >= 10;
-      const fill = strong ? SERVER_LINK_MATURE_10_FILL : SERVER_LINK_MATURE_5_FILL;
-      const pulseColor = strong ? SERVER_LINK_MATURE_10_COLOR : SERVER_LINK_MATURE_5_COLOR;
-      this.playTowerPulse(target, discSize, pulseColor, strong);
-      const server = this.towerSnapshots.get(message.serverTowerId);
-      if (server) {
-        this.playTowerPulse(server, cellSize * getTowerGridSpan(server.definitionId), pulseColor, false);
-      }
-
-      const labels = this.levelLabels;
-      if (!labels || (decision && !decision.show && !decision.merge)) {
-        return;
-      }
-      const text = getServerLinkMaturedText(message.waves);
-      const key = `link:${message.targetTowerId}`;
-      if (decision?.merge) {
-        labels.merge(key, text, fill, LEVEL_LABEL_STROKE);
-        return;
-      }
-      labels.spawn({
-        key,
-        text,
-        x: target.x,
-        y: labelY,
-        fill,
-        stroke: LEVEL_LABEL_STROKE,
-        fontPx: LEVEL_LABEL_FONT_PX,
-        alpha: 1,
-        pop: false,
-        lifetimeMs,
-        still: decision?.reducedMotion ?? this.feedback?.reducedMotion ?? false,
-        bounds: getMapWorldBounds(this.selectedMapData)
-      }, performance.now(), decision?.recycle ?? false);
     });
   }
 
@@ -5655,7 +5595,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("link:joined", (message: ServerLinkJoinedMessage) => this.receiveServerLinkJoined(message));
     // Riskli Yatirim takimda dalga basina bir kez ve bedeli takimin nexusundan.
     room.onMessage("shop:risky-investment", (message: RiskyInvestmentMessage) => this.receiveRiskyInvestment(message));
-    room.onMessage("link:matured", (message: ServerLinkMaturedMessage) => this.receiveServerLinkMatured(message));
     // Sonucu degistiren kombolar: tek seferlik mesaj, damga kulenin ustunde.
     room.onMessage("combo:stamp", (message: ComboStampMessage) => this.receiveComboStamp(message));
     room.onMessage("champion:down", (message: ChampionDownMessage) => this.receiveChampionDown(message));
@@ -7437,7 +7376,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Durum anahtarda yok: asagidaki blok onu okumuyor, "Isı freni %X" ise
       // savasta neredeyse her anlik goruntude degisip halkayi ve izgarayi
       // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
-      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.serverLinkWaveAge ?? 0}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
+      const key = `${tower.x}|${tower.y}|${tower.orientation ?? "horizontal"}|${tower.color}|${tower.ownerId}|${tower.name}|${tower.level}|${tower.range}|${tower.ucubePerks?.join(",") ?? ""}|${tower.zeynepFormationSize ?? 0}|${tower.zeynepFormationLevel ?? 0}|${texture}|${discSize}`;
       if (rendered.key !== key) {
         this.drawTowerLevelRing(rendered.halo, tower.x, tower.y, tower.level, discSize / 2, this.getTowerTierColor(tower, getTowerTier(tower.level)));
         if (this.shouldDrawTowerCrown(tower)) this.drawTowerCrown(rendered.halo, tower.x, tower.y, discSize / 2);
@@ -7630,7 +7569,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       formationSize: tower.characterId === "zeynep" ? tower.zeynepFormationSize : undefined,
       evolution: tower.characterId === "archer" ? tower.melisEvolutionLevel : undefined,
       luck: tower.characterId === "onur" ? tower.lastLuckMultiplier : undefined,
-      luckyWindowRemainingMs: tower.characterId === "onur" ? tower.luckyWindowRemainingMs : undefined
+      luckyWindowRemainingMs: tower.characterId === "onur" ? tower.luckyWindowRemainingMs : undefined,
+      serverKnowledgeBonus: tower.definitionId === "warrior-2" ? getServerKnowledgeTopBonus(tower.serverKnowledge, tower.level) : undefined
     });
   }
 
@@ -7990,8 +7930,32 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderMelisEvolutionStraps(graphics, tower);
     this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
-    this.renderServerLinkCodeEffect(graphics, tower);
+    this.renderServerReactorArcs(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
+  }
+
+  private readonly serverReactorInput: ServerReactorInput = { x: 0, y: 0, half: 0, rotation: 0, tier: 1, now: 0, still: false, alpha: 1 };
+
+  /**
+   * Sunucu'nun reaktor arklari (vfx/server-reactor.ts). Dokudaki boyali arklar
+   * silindi; burada canli ve hafifce dalgalaniyorlar. Olcu dokunun ekrandaki
+   * boyundan: secim ve inis olcegiyle birlikte buyuyor. Arklar bagin calistigi
+   * surece yaniyor: yikik ya da devre disi (Tukenmis) Sunucu bag tasimiyor.
+   */
+  private renderServerReactorArcs(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
+    if (tower.definitionId !== "warrior-2" || tower.disabled || tower.status === "Tukenmis") return;
+    const base = this.towers.get(tower.id)?.base;
+    if (!base) return;
+    const input = this.serverReactorInput;
+    input.x = base.x;
+    input.y = base.y;
+    input.half = base.displayWidth / 2;
+    input.rotation = base.rotation;
+    input.tier = toTier(getTowerTier(tower.level));
+    input.now = Date.now();
+    input.still = this.feedback?.reducedMotion ?? false;
+    input.alpha = tower.ownerId === this.localSessionId ? 1 : TEAMMATE_EXTRA_ALPHA;
+    drawServerReactorArcs(graphics, input);
   }
 
   /**
@@ -8360,57 +8324,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     drawCommandRing("range", commands.range, 0);
     drawCommandRing("haste", commands.haste, commands.range ? 3 : 0);
-  }
-
-  private renderServerLinkCodeEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    const linkAge = tower.serverLinkWaveAge ?? 0;
-    if (linkAge < 5 || tower.status === "Hararet" || tower.status === "Tukenmis") {
-      return;
-    }
-
-    const effectScale = this.getTowerEffectScale();
-    const isMaxHealthTier = linkAge >= 10;
-    const phase = (Date.now() % 1200) / 1200;
-    const columns = isMaxHealthTier ? 5 : 4;
-    const rows = isMaxHealthTier ? 5 : 4;
-    const primary = isMaxHealthTier ? 0xd8b4fe : 0x22d3ee;
-    const secondary = isMaxHealthTier ? 0xfacc15 : 0x22c55e;
-    const alpha = isMaxHealthTier ? 0.86 : 0.62;
-    const radiusLimit = 15.5 * effectScale;
-    const span = 22 * effectScale;
-    const rowStep = 6 * effectScale;
-    const rectWidth = Math.max(1, 2 * effectScale);
-    const rectHeight = Math.max(2, 4 * effectScale);
-
-    graphics.fillStyle(0x020617, isMaxHealthTier ? 0.22 : 0.16);
-    graphics.fillCircle(tower.x, tower.y, radiusLimit);
-
-    for (let column = 0; column < columns; column += 1) {
-      const x = tower.x - span / 2 + column * (span / Math.max(1, columns - 1));
-      const columnOffset = (phase * rows + column * 0.7) % rows;
-      for (let row = 0; row < rows; row += 1) {
-        const y = tower.y - 12 * effectScale + ((row + columnOffset) % rows) * rowStep;
-        if (Phaser.Math.Distance.Between(tower.x, tower.y, x, y) > radiusLimit) {
-          continue;
-        }
-        const isAccent = (row + column + Math.floor(phase * 10)) % 3 === 0;
-        const color = isAccent ? secondary : primary;
-        const glyphAlpha = alpha * (isAccent ? 1 : 0.7);
-        graphics.fillStyle(color, glyphAlpha);
-        graphics.fillRect(x - rectWidth / 2, y - rectHeight / 2, rectWidth, rectHeight);
-      }
-    }
-
-    graphics.lineStyle((isMaxHealthTier ? 1.6 : 1.1) * effectScale, primary, isMaxHealthTier ? 0.8 : 0.52);
-    graphics.strokeCircle(tower.x, tower.y, radiusLimit);
-    if (isMaxHealthTier) {
-      graphics.lineStyle(Math.max(0.7, effectScale), secondary, 0.7);
-      graphics.beginPath();
-      graphics.moveTo(tower.x - 10 * effectScale, tower.y + 8 * effectScale);
-      graphics.lineTo(tower.x - 2 * effectScale, tower.y + 12 * effectScale);
-      graphics.lineTo(tower.x + 10 * effectScale, tower.y - 8 * effectScale);
-      graphics.strokePath();
-    }
   }
 
   private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
@@ -11007,6 +10920,34 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * sayilari; metin notlari burada, ait olduklari bolume etiketli. Eskiden
    * hepsi tek satirlik `selectedStats` metniydi.
    */
+  /**
+   * Sunucu'nun bilgi satirlari: tur basina oldurme ve bagli kulelere verdigi
+   * artis ("Koşucu bilgisi 12 · yavaşlatma +%7"). Bilgi yoksa nasil
+   * toplandigini soyleyen tek satir.
+   */
+  private getServerKnowledgeLines(tower: TowerSnapshot) {
+    const lines: string[] = [];
+    for (const type of SERVER_KNOWLEDGE_TYPES) {
+      const kills = tower.serverKnowledge?.[type] ?? 0;
+      if (kills <= 0) continue;
+      lines.push(t("scene.sheet.knowledge", {
+        type: t(`menu.enemy.type.${type}`),
+        n: kills,
+        effect: t(`scene.sheet.knowledge.${SERVER_KNOWLEDGE_EFFECTS[type]}`),
+        v: t("format.percent", { v: Math.round(getServerKnowledgeBonus(kills, tower.level) * 100) })
+      }));
+    }
+    return lines.length > 0 ? lines : [t("scene.sheet.knowledgeEmpty")];
+  }
+
+  /** Kuleyi bir Sunucu bagliyor mu (anlik goruntudeki baglar). */
+  private isServerLinkedTower(towerId: string) {
+    for (const candidate of this.towerSnapshots.values()) {
+      if (candidate.definitionId === "warrior-2" && candidate.linkedTowerIds?.includes(towerId)) return true;
+    }
+    return false;
+  }
+
   private buildTowerSheetInput(
     tower: TowerSnapshot,
     definition: TowerDefinition | undefined,
@@ -11030,7 +10971,12 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (context.towerOperations && tower.definitionId !== "warrior-2") notes.push({ section: "resources", text: this.getHeatBrakeLine(tower, definition) });
     if (context.towerOperations && tower.energyState && tower.energyState !== "powered") notes.push({ section: "status", text: t("scene.sheet.noEnergy") });
     if (tower.definitionId === WALL_TOWER_ID) notes.push({ section: "status", text: tower.gate ? t("scene.sheet.gateOpen") : t("scene.sheet.gateClosed") });
-    if (tower.definitionId === "warrior-2") notes.push({ section: "effects", text: t("scene.sheet.linked", { n: tower.linkedTowerIds?.length ?? 0 }) });
+    if (tower.definitionId === "warrior-2") {
+      notes.push({ section: "effects", text: t("scene.sheet.linked", { n: tower.linkedTowerIds?.length ?? 0 }) });
+      for (const text of this.getServerKnowledgeLines(tower)) notes.push({ section: "effects", text });
+    } else if (this.isServerLinkedTower(tower.id)) {
+      notes.push({ section: "effects", text: t("scene.sheet.serverLinked") });
+    }
     const owner = ownsTower ? undefined : this.playerSnapshots.find((player) => player.id === tower.ownerId)?.name ?? tower.ownerName;
     return {
       towerId: tower.id,

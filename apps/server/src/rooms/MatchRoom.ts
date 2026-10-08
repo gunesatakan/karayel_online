@@ -9,7 +9,7 @@ import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@
 import { PREVIEW_EQUIP_REJECTED_KEY, SERVER_TEXT, type ServerTextKey } from "@karayel/shared";
 import { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, isExecuteImmune, type ExecuteRejectReason, type SkillExecuteMessage, type SkillRejectedMessage } from "@karayel/shared";
 // Kule paneli: secili kulenin savasta okunan sayilari (`sendTowerStats`).
-import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
+import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, towerNeverAttacks, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
 // Zeynep atislarinin geometrisi paylasilan pakette: istemcinin imzalari ayni kurali cagiriyor.
 import { KIN_WAVE_BAND_DEPTH, getAbartiRailRect, getAbartiShowcaseRangeMultiplier, getEnemyTypeCollisionRadius, isAbartiArmorBreakProjectile } from "@karayel/shared";
 import {
@@ -153,11 +153,13 @@ import {
   getUltimateResultKind,
   type UltimateCastMessage,
   SERVER_LINK_NOTICE_COOLDOWN_MS,
-  getServerLinkMaturity,
+  SERVER_KNOWLEDGE_EFFECTS,
+  SERVER_LINK_LIMIT,
+  getServerKnowledgeBonus,
+  type ServerKnowledge,
   type ServerLinkJoinedMessage,
   type RiskyInvestmentMessage,
   type ShopItemLoadout,
-  type ServerLinkMaturedMessage,
   type UltimateResultKind,
   type UltimateResultMessage,
   ZEYNEP_COLUMN_ULTIMATE_SLOW_MS,
@@ -307,6 +309,7 @@ import {
   SLOW_STATUS_FRACTION,
   KIN_SLOW_FAR_FRACTION,
   getCriticalSlowFraction,
+  SLOW_CRIT_MAX_FRACTION,
   getStatusSlowFraction,
   canRefundTowerPurchase,
   usesEffectInterval,
@@ -1496,14 +1499,16 @@ type TowerModel = {
   debugTwinSweep?: DebugLaserTwinSweep;
   debugOverdriveHeatLastAt: number;
   debugOverdriveHeatSegments: DebugOverdriveHeatSegment[];
-  linkBurstCooldownMs: number;
   /** Secilen seviye ozellikleri. */
   ucubePerks: UcubePerkId[];
   /** Secim bekleyen seviye; 0 ise bekleyen yok. */
   ucubePendingLevel: number;
   linkedTowerIds: string[];
-  linkedTowerWaveAges: Record<string, number>;
-  rangeMemoryEnemyIds: string[];
+  /**
+   * Sunucu'nun bilgisi: bagli kulelerin son vurusla oldurdugu dusman turleri
+   * (server-knowledge). Bag kalksa da silinmiyor; yalnizca Sunucu'da dolu.
+   */
+  serverKnowledge: ServerKnowledge;
   streakDamageUntil: number;
   streakDamageMultiplier: number;
   streakHasteUntil: number;
@@ -2661,7 +2666,8 @@ export class MatchRoom extends Room<MatchState> {
   private tarredCells = new Set<string>();
   private debrisCells = new Map<string, number>();
   private autoStartOnFirstJoin = false;
-  private serverLinkWaveAgeCache = new Map<string, number>();
+  /** Kule -> onu baglayan Sunucular (`refreshServerLinkIndex`). */
+  private serverLinkIndex = new Map<string, TowerModel[]>();
   private lastSnapshotBroadcastAt = 0;
   /** Duran tahtada en son gonderilen snapshotin icerigi ve ani. */
   private lastIdleSnapshotSignature = "";
@@ -4181,7 +4187,7 @@ export class MatchRoom extends Room<MatchState> {
 
     let sectionStart = performance.now();
     this.updateSpawning(gameDeltaTime);
-    this.refreshServerLinkWaveAgeCache();
+    this.refreshServerLinkIndex();
     timings.spawnMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -5178,6 +5184,11 @@ export class MatchRoom extends Room<MatchState> {
    * cagrilari varsayilanla kulenin o anki halini kullaniyor.
    */
   private getTowerCoolingPerSecond(tower: TowerModel, options: { temperature?: number; sustained?: boolean } = {}) {
+    return this.getServerSharedStat(tower, this.getTowerOwnCoolingPerSecond(tower, options), "cooling", options.sustained);
+  }
+
+  /** Kulenin kendi sogumasi; Sunucu paylasimi `getTowerCoolingPerSecond`da. */
+  private getTowerOwnCoolingPerSecond(tower: TowerModel, options: { temperature?: number; sustained?: boolean } = {}) {
     const temperature = options.temperature ?? tower.temperature;
     let cooling = TOWER_COOLING_PER_SECOND * getModifierMultiplier(this.getTowerRunModifiers(tower), "cooling")
       * (1 + (this.getWorkerBoost(tower, "cooling")?.value ?? 0));
@@ -5423,7 +5434,6 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       tower.cooldownMs -= deltaTime;
-      tower.linkBurstCooldownMs = Math.max(0, tower.linkBurstCooldownMs - deltaTime);
 
       if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
         // Vurus ani burada kararlasir ve supurmeye bildirilir. Supurme kendi
@@ -5533,8 +5543,6 @@ export class MatchRoom extends Room<MatchState> {
       }
       tower.cooldownMs = this.getTowerFireInterval(tower);
     }
-
-    this.updateServerLinks();
   }
 
   private updateOrbitTower(tower: TowerModel, seconds: number, now: number) {
@@ -5676,7 +5684,7 @@ export class MatchRoom extends Room<MatchState> {
       vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * speed : (dx / length) * speed,
       vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * speed : (dy / length) * speed,
       damage: this.getTowerDamage(tower),
-      maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
+      maxHealthDamageRatio: 0,
       // Seviye buyumesi yalnizca **zaten alani olan** kuleye isliyor.
       //
       // Buyume kosulsuz eklenirken tek hedefe atan bir kule seviye atladikca
@@ -6287,12 +6295,21 @@ export class MatchRoom extends Room<MatchState> {
       // bitmis eski bir yavaslatma `slowUntil`i uzatir ve taban bitince hiz
       // kayitsiz `slowUntil` yedegine (duz 0,48) duserdi.
       const durationMs = applyStatusResistance(scaledDefinition.durationMs, enemy.statusResistances.slow);
+      // Sunucu'nun Kosucu bilgisi yavaslatma miktarini buyutuyor (kritikteki
+      // %90 tavanla); yavaslatmayan kuleye yavaslatma vermiyor.
+      const baseFraction = overrides.slowFraction ?? SLOW_STATUS_FRACTION;
+      const runnerKnowledge = enemy.type === "runner" && overrides.sourceTowerId && baseFraction > 0
+        ? this.getTowerServerKnowledgeBonus(this.towers.get(overrides.sourceTowerId), "runner")
+        : 0;
+      const slowFraction = runnerKnowledge > 0
+        ? Math.max(baseFraction, Math.min(SLOW_CRIT_MAX_FRACTION, baseFraction * (1 + runnerKnowledge)))
+        : baseFraction;
       // Sifir kesir kayit birakmiyor: kayitsiz bir `slowUntil` duz 0,48
       // sayiliyor, yani "yavaslatmayan" vurus dusmani %52 yavaslatirdi.
-      if (durationMs > 0 && (overrides.slowFraction ?? SLOW_STATUS_FRACTION) > 0) {
+      if (durationMs > 0 && slowFraction > 0) {
         this.addEnemySlowFloor(
           enemy,
-          1 - (overrides.slowFraction ?? SLOW_STATUS_FRACTION),
+          1 - slowFraction,
           now + durationMs,
           overrides.sourceTowerId ?? "flat",
           now,
@@ -6689,7 +6706,7 @@ export class MatchRoom extends Room<MatchState> {
     for (const enemy of result.targets) {
       const distanceRatio = this.getKinDistanceRatio(Math.hypot(enemy.x - tower.x, enemy.y - tower.y), range);
       const armorBreak = Math.round(baseArmorBreak * distanceRatio * 3);
-      this.applyArmorBreak(enemy, armorBreak);
+      this.applyArmorBreak(enemy, armorBreak, tower);
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, "light", 0);
     }
 
@@ -6972,7 +6989,7 @@ export class MatchRoom extends Room<MatchState> {
       vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * projectileSpeed : (dx / length) * projectileSpeed,
       vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * projectileSpeed : (dy / length) * projectileSpeed,
       damage,
-      maxHealthDamageRatio: this.getServerLinkedMaxHealthDamageRatio(tower),
+      maxHealthDamageRatio: 0,
       aoeRadius: 0,
       slowMs: 0,
       pierceLimit,
@@ -7369,61 +7386,6 @@ export class MatchRoom extends Room<MatchState> {
     }
     return angles;
   }
-  private updateServerLinks() {
-    const now = Date.now();
-
-    for (const serverTower of this.towers.values()) {
-      if (serverTower.definition.id !== "warrior-2" || serverTower.offlineUntil > now || serverTower.overheatMs > 0) {
-        continue;
-      }
-
-      serverTower.linkedTowerIds = serverTower.linkedTowerIds.filter((towerId) => {
-        const exists = this.towers.has(towerId);
-        if (!exists) {
-          delete serverTower.linkedTowerWaveAges[towerId];
-        }
-        return exists;
-      });
-
-      for (const linkedTowerId of serverTower.linkedTowerIds) {
-        const linkedTower = this.towers.get(linkedTowerId);
-        if (!linkedTower || linkedTower.offlineUntil > now || linkedTower.overheatMs > 0) {
-          continue;
-        }
-
-        const linkedRange = this.getTowerRange(linkedTower);
-        const currentEnemyIds = Array.from(this.enemies.values())
-          .filter((enemy) => enemy.movementKind !== "air" && distanceSq(linkedTower.x, linkedTower.y, enemy.x, enemy.y) <= linkedRange * linkedRange)
-          .map((enemy) => enemy.id);
-        const previousEnemyIds = linkedTower.rangeMemoryEnemyIds;
-        linkedTower.rangeMemoryEnemyIds = currentEnemyIds;
-
-        if (linkedTower.linkBurstCooldownMs > 0) {
-          continue;
-        }
-
-        const escapedEnemy = previousEnemyIds
-          .map((enemyId) => this.enemies.get(enemyId))
-          .find((enemy) => {
-            if (!enemy || currentEnemyIds.includes(enemy.id)) {
-              return false;
-            }
-
-            const linkedPath = this.activePaths[enemy.pathId] ?? this.activePaths[0];
-            return enemy.pathDistance > getClosestPathDistance(linkedPath, linkedTower.x, linkedTower.y);
-          });
-
-        if (!escapedEnemy) {
-          continue;
-        }
-
-        const damage = getServerLinkBurstDamage(serverTower.level);
-        this.spawnSpecialProjectile(serverTower, "warrior-2", escapedEnemy, damage, 520, getServerLinkBurstRadius(serverTower.level), 0);
-        linkedTower.linkBurstCooldownMs = Math.max(520, 1100 - serverTower.level * 80);
-      }
-    }
-  }
-
   private updateProjectiles(seconds: number) {
     for (const [id, projectile] of this.projectiles) {
       const previousX = projectile.x;
@@ -7597,7 +7559,7 @@ export class MatchRoom extends Room<MatchState> {
     const projectileOwnerId = projectileTower?.ownerId ?? "";
     const projectileTowerLevel = projectileTower?.level ?? 1;
     if (projectile.armorBreakAmount > 0) {
-      this.applyArmorBreak(target, projectile.armorBreakAmount);
+      this.applyArmorBreak(target, projectile.armorBreakAmount, projectileTower);
     }
     if (projectile.aoeRadius > 0) {
       const areaTargets = this.selectEnemiesForAttackShape({
@@ -7624,11 +7586,13 @@ export class MatchRoom extends Room<MatchState> {
     this.applyPostHitEffects(projectile, target);
   }
 
-  private applyArmorBreak(enemy: EnemyModel, amount: number) {
+  private applyArmorBreak(enemy: EnemyModel, amount: number, sourceTower?: TowerModel) {
     if (amount <= 0) {
       return;
     }
 
+    // Sunucu'nun Ezici bilgisi kulenin zirh kirmasini buyutuyor; vermiyor.
+    if (enemy.type === "brute") amount *= 1 + this.getTowerServerKnowledgeBonus(sourceTower, "brute");
     enemy.armor = Math.max(-100, enemy.armor - amount);
     enemy.armorBrokenUntil = Math.max(enemy.armorBrokenUntil, Date.now() + scaleGameDuration(ARMOR_BREAK_MARKER_MS));
   }
@@ -10567,7 +10531,8 @@ export class MatchRoom extends Room<MatchState> {
       rateSources.push(...sourcesOf("fireRate"), ["engine:stack", 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1]);
     }
     const rate = 1000 / Math.max(1, interval);
-    block.f = closeTowerStatValue(rate, 1000 / Math.max(1, baseInterval), rateSources, rateMultipliers);
+    // Sunucu saldirmiyor: tanimdaki aralik kimligin parcasi, gosterilecek bir ritim degil.
+    if (!towerNeverAttacks(definition)) block.f = closeTowerStatValue(rate, 1000 / Math.max(1, baseInterval), rateSources, rateMultipliers);
     if (effectInterval) block.e = 1;
     if (fixedPath) block.fx = 1;
     const shots = this.getTowerShotsPerTrigger(tower);
@@ -10865,6 +10830,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.cooldownMs = 0;
       tower.focusTargetId = "";
       tower.linkedTowerIds = [];
+      this.refreshServerLinkIndex();
       if (tower.definition.id === "warrior-5") {
         // Yikilan kule dongude atlaniyor: asiri yukleme kirisleri omurleri
         // dolana kadar olu kuleden cikmaya devam ederdi. Asiri yukleme de bitiyor.
@@ -11076,12 +11042,10 @@ export class MatchRoom extends Room<MatchState> {
       debugSweepLastDamageAt: 0,
       debugOverdriveHeatLastAt: 0,
       debugOverdriveHeatSegments: [],
-      linkBurstCooldownMs: 0,
       ucubePerks: [],
       ucubePendingLevel: 0,
       linkedTowerIds: [],
-      linkedTowerWaveAges: {},
-      rangeMemoryEnemyIds: [],
+      serverKnowledge: {},
       streakDamageUntil: 0,
       streakDamageMultiplier: 1,
       streakHasteUntil: 0,
@@ -11525,12 +11489,11 @@ export class MatchRoom extends Room<MatchState> {
 
     for (const tower of this.towers.values()) {
       tower.linkedTowerIds = tower.linkedTowerIds.filter((linkedTowerId) => linkedTowerId !== towerId);
-      delete tower.linkedTowerWaveAges[towerId];
-      tower.rangeMemoryEnemyIds = tower.rangeMemoryEnemyIds.filter((enemyId) => enemyId !== towerId);
       if (tower.focusTargetId === towerId) {
         tower.focusTargetId = "";
       }
     }
+    this.refreshServerLinkIndex();
   }
 
   private refactorTower(client: Client, message: UseSkillMessage) {
@@ -11550,7 +11513,6 @@ export class MatchRoom extends Room<MatchState> {
     // birakiyordu ve dusmanlar yeni karedeki kuleyi gormuyordu.
     this.markNavigationDirty();
     tower.cooldownMs = Math.min(tower.cooldownMs, 150);
-    tower.rangeMemoryEnemyIds = [];
     this.broadcastTowerSpawn(tower);
     return true;
   }
@@ -11575,19 +11537,15 @@ export class MatchRoom extends Room<MatchState> {
     const existingIndex = serverTower.linkedTowerIds.indexOf(targetTower.id);
     if (existingIndex >= 0) {
       serverTower.linkedTowerIds.splice(existingIndex, 1);
-      delete serverTower.linkedTowerWaveAges[targetTower.id];
+      this.refreshServerLinkIndex();
       return;
     }
 
-    if (serverTower.linkedTowerIds.length >= 2) {
-      const removedTowerId = serverTower.linkedTowerIds.shift();
-      if (removedTowerId) {
-        delete serverTower.linkedTowerWaveAges[removedTowerId];
-      }
+    if (serverTower.linkedTowerIds.length >= SERVER_LINK_LIMIT) {
+      serverTower.linkedTowerIds.shift();
     }
     serverTower.linkedTowerIds.push(targetTower.id);
-    serverTower.linkedTowerWaveAges[targetTower.id] = serverTower.linkedTowerWaveAges[targetTower.id] ?? 0;
-    targetTower.rangeMemoryEnemyIds = [];
+    this.refreshServerLinkIndex();
     this.notifyServerLinkJoined(serverTower, targetTower);
   }
 
@@ -11619,27 +11577,6 @@ export class MatchRoom extends Room<MatchState> {
       serverOwnerId: serverTower.ownerId
     };
     recipient.send("link:joined", message);
-  }
-
-  /**
-   * Bag 5 ya da 10 dalgaya ulasti: iki sahibe de tek mesaj (ayni kisiyse bir
-   * kez). Bonus o dalgada aciliyor; bunu soyleyen bir an yoktu.
-   */
-  private notifyServerLinkMatured(serverTower: TowerModel, targetTower: TowerModel, previousAge: number, nextAge: number) {
-    const waves = getServerLinkMaturity(previousAge, nextAge);
-    if (!waves) {
-      return;
-    }
-    const message: ServerLinkMaturedMessage = {
-      serverTowerId: serverTower.id,
-      targetTowerId: targetTower.id,
-      serverOwnerId: serverTower.ownerId,
-      targetOwnerId: targetTower.ownerId,
-      waves
-    };
-    for (const ownerId of new Set([serverTower.ownerId, targetTower.ownerId])) {
-      this.clients.find((candidate) => candidate.sessionId === ownerId)?.send("link:matured", message);
-    }
   }
 
   private canLinkTower(sourceTower: TowerModel, targetTower: TowerModel) {
@@ -12869,6 +12806,14 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.type === "siege") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsSiege");
     if (this.towerHasUnlock(damageSourceTower, "status:chill") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (damageSourceTower) shopDamageAdd += this.getTowerHitDamageAdd(damageSourceTower, now);
+    // Sunucu bilgisi: bagli kulenin bu ture karsi oransal artisi. Suru ve
+    // Kusatma'da hasarin kendisi, Atici'da yalnizca kalkana giden hasar.
+    const knowledgeEffect = SERVER_KNOWLEDGE_EFFECTS[enemy.type];
+    const knowledgeBonus = damageSourceTower && (knowledgeEffect === "damage" || knowledgeEffect === "shieldDamage")
+      ? this.getTowerServerKnowledgeBonus(damageSourceTower, enemy.type)
+      : 0;
+    const knowledgeDamage = knowledgeEffect === "damage" ? 1 + knowledgeBonus : 1;
+    const shieldDamageMultiplier = knowledgeEffect === "shieldDamage" ? 1 + knowledgeBonus : 1;
     const critical = damageSourceTower ? this.getTowerEngine(damageSourceTower)?.critical : undefined;
     // Soguk Celik: kule sogukken nisan alma sansi artar. Kizgin Namlu ile
     // kasten ters yonde calisir; ikisini birden almak kendi kendini bozar.
@@ -12912,7 +12857,7 @@ export class MatchRoom extends Room<MatchState> {
       : 0;
     const critAdd = critChance > 0 && this.towerCriticalRandom() < critChance ? critDamageAdd : 0;
     const result = calculateDamageTaken(
-      { amount: damage * markMultiplier * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
+      { amount: damage * markMultiplier * knowledgeDamage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
       {
         armor: enemy.armor,
         shield: enemy.shield,
@@ -12921,7 +12866,8 @@ export class MatchRoom extends Room<MatchState> {
       },
       {
         resistancePierce: getModifierAdd(damageModifiers, "resistancePierce"),
-        weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus")
+        weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus"),
+        shieldDamageMultiplier
       }
     );
     // Same hit, resistance, shield and critical roll, with only the tracking mark removed.
@@ -12930,9 +12876,9 @@ export class MatchRoom extends Room<MatchState> {
       ? this.towers.get(enemy.trackingSourceTowerId) : undefined;
     if (assistTower && !this.setupPhase) {
       const withoutMark = calculateDamageTaken(
-        { amount: damage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
+        { amount: damage * knowledgeDamage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
         { armor: enemy.armor, shield: enemy.shield, damageResistances: enemy.damageResistances, hitTypeResistances: enemy.hitTypeResistances },
-        { resistancePierce: getModifierAdd(damageModifiers, "resistancePierce"), weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus") }
+        { resistancePierce: getModifierAdd(damageModifiers, "resistancePierce"), weaknessBonus: getModifierAdd(damageModifiers, "weaknessBonus"), shieldDamageMultiplier }
       );
       const actual = result.shieldDamage + Math.min(enemy.hp, result.hpDamage + (result.remainingShield <= 0 ? enemy.maxHp * maxHealthDamageRatio : 0));
       const baseline = withoutMark.shieldDamage + Math.min(enemy.hp, withoutMark.hpDamage + (withoutMark.remainingShield <= 0 ? enemy.maxHp * maxHealthDamageRatio : 0));
@@ -13112,6 +13058,7 @@ export class MatchRoom extends Room<MatchState> {
     this.awardEnemyExperience(enemy, sourceTowerId ? this.towers.get(sourceTowerId) : undefined);
     this.kills += 1;
     if (killerTower) killerTower.killCount = (killerTower.killCount ?? 0) + 1;
+    this.recordServerKnowledge(killerTower, enemy);
     this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
     // Supurmenin kendi oldurmesi: suren supurmede o kulenin vurusu (durum tiki degil).
     const sweepRun = sourceTowerId && !sourceDefinitionId.startsWith("status:") ? this.debugSweepRuns.get(sourceTowerId) : undefined;
@@ -13195,11 +13142,11 @@ export class MatchRoom extends Room<MatchState> {
     const damageType = this.isMelisGothicNightmareActiveForTower(tower, Date.now())
       ? "true"
       : tower.definition.damageType ?? "physical";
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id, tower.definition.hitType);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, 0, tower.level, tower.id, tower.definition.hitType);
   }
 
   private damageEnemyFromTowerAs(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number, damageType: DamageType, maxHealthDamageRatio?: number) {
-    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? this.getServerLinkedMaxHealthDamageRatio(tower), tower.level, tower.id, tower.definition.hitType);
+    return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? 0, tower.level, tower.id, tower.definition.hitType);
   }
 
   private recordTowerDamage(towerId: string, amount: number, now = Date.now()) {
@@ -14830,7 +14777,7 @@ export class MatchRoom extends Room<MatchState> {
         ucubePerks: tower.definition.id === "warrior-6" ? [...tower.ucubePerks] : undefined,
         ucubePendingLevel: tower.definition.id === "warrior-6" && tower.ucubePendingLevel > 0 ? tower.ucubePendingLevel : undefined,
         ...this.getAtakanStackWire(tower),
-        serverLinkWaveAge: this.getServerLinkWaveAge(tower),
+        serverKnowledge: tower.definition.id === "warrior-2" ? this.getServerKnowledgeWire(tower) : undefined,
         linkedTowerIds: [...tower.linkedTowerIds],
         zeynepFormationSize: tower.zeynepFormationSize > 0 ? tower.zeynepFormationSize : undefined,
         zeynepFormationLevel: tower.zeynepFormationLevel > 0 ? tower.zeynepFormationLevel : undefined
@@ -15044,6 +14991,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerRange(tower: TowerModel) {
+    return this.getServerSharedStat(tower, this.getTowerOwnRange(tower), "range");
+  }
+
+  /** Kulenin kendi menzili; Sunucu paylasimi `getTowerRange`de. */
+  private getTowerOwnRange(tower: TowerModel) {
     const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range")
       * getModifierMultiplier(this.getTowerRunModifiers(tower), "range")
       * (1 + (this.getWorkerBoost(tower, "range")?.value ?? 0))
@@ -15258,10 +15210,6 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "archer-1") {
       add("tower:archer-1:focus", this.getMelisHedefciFocusDamageMultiplier(tower));
-    }
-
-    if (tower.definition.hitType === "impact") {
-      add("tower:warrior-2:server-link", this.getServerLinkedImpactDamageMultiplier(tower));
     }
 
     add("engine:stack", this.getEngineStackStatMultiplier(tower, "damage", now));
@@ -15679,10 +15627,6 @@ export class MatchRoom extends Room<MatchState> {
     return { k: enemy.trackingSourceTowerId };
   }
 
-  private getServerLinkWaveAge(tower: TowerModel) {
-    return this.serverLinkWaveAgeCache.get(tower.id) ?? 0;
-  }
-
   /**
    * Atakan imzalarinin tel alanlari (`o`, `t`, `u`, `m`): yalnizca
    * Obsesyon ve Ucube'de, varsayilanda hic yok.
@@ -15704,55 +15648,86 @@ export class MatchRoom extends Room<MatchState> {
     return undefined;
   }
 
-  private refreshServerLinkWaveAgeCache() {
-    this.serverLinkWaveAgeCache.clear();
+  /**
+   * Sunucu baglarinin dizini: kule -> onu baglayan Sunucular. Her tikte ve
+   * bag degisince yeniden kuruluyor; menzil ve soguma sorgusu (karede
+   * defalarca) butun kuleleri taramasin.
+   */
+  private refreshServerLinkIndex() {
+    this.serverLinkIndex.clear();
     for (const serverTower of this.towers.values()) {
-      if (serverTower.definition.id !== "warrior-2") {
-        continue;
-      }
-
+      if (serverTower.definition.id !== "warrior-2") continue;
       for (const linkedTowerId of serverTower.linkedTowerIds) {
-        const linkedTower = this.towers.get(linkedTowerId);
-        if (!linkedTower) {
-          continue;
-        }
-
-        const previousAge = this.serverLinkWaveAgeCache.get(linkedTowerId) ?? 0;
-        const nextAge = Math.max(previousAge, serverTower.linkedTowerWaveAges[linkedTowerId] ?? 0);
-        this.serverLinkWaveAgeCache.set(linkedTowerId, nextAge);
+        const servers = this.serverLinkIndex.get(linkedTowerId);
+        if (servers) servers.push(serverTower);
+        else this.serverLinkIndex.set(linkedTowerId, [serverTower]);
       }
     }
   }
 
-  private getServerLinkedMaxHealthDamageRatio(tower: TowerModel) {
-    const serverLevel = this.getStrongestServerLinkLevel(tower, 10);
-    return serverLevel > 0 ? getServerLinkMaxHealthDamageRatio(serverLevel) : 0;
+  /** Bag calisiyor mu: yikik, satilmis ya da devre disi Sunucu bag tasimiyor. */
+  private isServerLinkActive(serverTower: TowerModel, now: number) {
+    return serverTower.hp > 0 && serverTower.offlineUntil <= now && this.towers.get(serverTower.id) === serverTower;
   }
 
-  private getServerLinkedImpactDamageMultiplier(tower: TowerModel) {
-    const serverLevel = this.getStrongestServerLinkLevel(tower, 5);
-    return serverLevel > 0 ? 1 + getServerLinkImpactDamageBonus(serverLevel) : 1;
-  }
-
-  private getStrongestServerLinkLevel(tower: TowerModel, minimumAge: number) {
-    let bestLevel = 0;
-    for (const serverTower of this.towers.values()) {
-      if (serverTower.definition.id !== "warrior-2") {
-        continue;
+  /**
+   * Sunucu'ya bagli iki kule menzili ve sogumayi paylasiyor: hangisininki
+   * buyukse oteki de ona erisiyor. Ortagin kendi degeri okunuyor (paylasilmis
+   * degil), yani paylasim zincirlenmiyor ve kendi kendini besleyemiyor.
+   */
+  private getServerSharedStat(tower: TowerModel, own: number, stat: "range" | "cooling", sustained?: boolean) {
+    const servers = this.serverLinkIndex.get(tower.id);
+    if (!servers) return own;
+    const now = Date.now();
+    let best = own;
+    for (const serverTower of servers) {
+      if (!this.isServerLinkActive(serverTower, now)) continue;
+      for (const partnerId of serverTower.linkedTowerIds) {
+        if (partnerId === tower.id) continue;
+        const partner = this.towers.get(partnerId);
+        if (!partner || partner.hp <= 0) continue;
+        best = Math.max(best, stat === "range" ? this.getTowerOwnRange(partner) : this.getTowerOwnCoolingPerSecond(partner, { sustained }));
       }
-
-      if (!serverTower.linkedTowerIds.includes(tower.id)) {
-        continue;
-      }
-
-      if ((serverTower.linkedTowerWaveAges[tower.id] ?? 0) < minimumAge) {
-        continue;
-      }
-
-      bestLevel = Math.max(bestLevel, serverTower.level);
     }
+    return best;
+  }
 
-    return bestLevel;
+  /**
+   * Kulenin bu ture karsi Sunucu bilgisinden aldigi oransal artis (0..1).
+   * Kuleyi birden cok Sunucu bagliyorsa en bilgilisi sayiliyor; toplanmiyor.
+   */
+  private getTowerServerKnowledgeBonus(tower: TowerModel | undefined, enemyType: EnemyType) {
+    const servers = tower ? this.serverLinkIndex.get(tower.id) : undefined;
+    if (!servers) return 0;
+    const now = Date.now();
+    let best = 0;
+    for (const serverTower of servers) {
+      if (!this.isServerLinkActive(serverTower, now)) continue;
+      const kills = serverTower.serverKnowledge[enemyType] ?? 0;
+      if (kills > 0) best = Math.max(best, getServerKnowledgeBonus(kills, serverTower.level));
+    }
+    return best;
+  }
+
+  /** Bagli kulenin son vurusu: kuleyi baglayan her calisan Sunucu'ya o turden bir bilgi. */
+  private recordServerKnowledge(killerTower: TowerModel | undefined, enemy: EnemyModel) {
+    const servers = killerTower ? this.serverLinkIndex.get(killerTower.id) : undefined;
+    if (!servers) return;
+    const now = Date.now();
+    for (const serverTower of servers) {
+      if (!this.isServerLinkActive(serverTower, now)) continue;
+      serverTower.serverKnowledge[enemy.type] = (serverTower.serverKnowledge[enemy.type] ?? 0) + 1;
+    }
+  }
+
+  /** Bilginin teli: yalnizca sifir olmayan turler; hic yoksa alan yok. */
+  private getServerKnowledgeWire(tower: TowerModel): ServerKnowledge | undefined {
+    let wire: ServerKnowledge | undefined;
+    for (const type in tower.serverKnowledge) {
+      const kills = tower.serverKnowledge[type as EnemyType] ?? 0;
+      if (kills > 0) (wire ??= {})[type as EnemyType] = kills;
+    }
+    return wire;
   }
 
   private getTowerStatus(tower: TowerModel) {
@@ -15853,8 +15828,7 @@ export class MatchRoom extends Room<MatchState> {
       return "Favori";
     }
     if (tower.definition.id === "warrior-2" && tower.linkedTowerIds.length > 0) {
-      const maxAge = Math.max(...tower.linkedTowerIds.map((towerId) => tower.linkedTowerWaveAges[towerId] ?? 0));
-      return `Link ${tower.linkedTowerIds.length}/2 ${maxAge}T`;
+      return `Link ${tower.linkedTowerIds.length}/${SERVER_LINK_LIMIT}`;
     }
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
@@ -15875,12 +15849,8 @@ export class MatchRoom extends Room<MatchState> {
       }
       return "Ucgen bekliyor";
     }
-    const serverLinkAge = this.getServerLinkWaveAge(tower);
-    if (serverLinkAge >= 10) {
-      return "Sunucu 10T";
-    }
-    if (serverLinkAge >= 5) {
-      return "Sunucu 5T";
+    if (this.serverLinkIndex.has(tower.id)) {
+      return "Sunucu";
     }
     if (tower.zeynepFormationSize === 3) {
       return `Dizilim 3 Lv.${tower.zeynepFormationLevel}`;
@@ -16475,12 +16445,6 @@ export class MatchRoom extends Room<MatchState> {
     for (const tower of this.towers.values()) {
       if (tower.definition.id === "warrior-2") {
         tower.linkedTowerIds = tower.linkedTowerIds.filter((towerId) => this.towers.has(towerId));
-        for (const linkedTowerId of tower.linkedTowerIds) {
-          const previousAge = tower.linkedTowerWaveAges[linkedTowerId] ?? 0;
-          tower.linkedTowerWaveAges[linkedTowerId] = previousAge + 1;
-          const linkedTower = this.towers.get(linkedTowerId);
-          if (linkedTower) this.notifyServerLinkMatured(tower, linkedTower, previousAge, previousAge + 1);
-        }
       }
     }
 
@@ -16964,25 +16928,6 @@ function getUcubeStackLimit(tower: TowerModel) {
 
 function getUcubeStackIntervalMultiplier(stacks: number) {
   return 1 - stacks * UCUBE_STACK_INTERVAL_REDUCTION;
-}
-
-function getServerLinkImpactDamageBonus(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 0.1 + clampedLevel * 0.02;
-}
-
-function getServerLinkBurstDamage(level: number) {
-  const damageByLevel = [160, 240, 330, 420, 500, 1000, 1500, 2000, 3000, 4000];
-  return damageByLevel[Math.min(Math.max(level, 1), 10) - 1] ?? 160;
-}
-
-function getServerLinkBurstRadius(level: number) {
-  return (24 + Math.min(Math.max(level, 1), 10) * 5) / 4;
-}
-
-function getServerLinkMaxHealthDamageRatio(level: number) {
-  const clampedLevel = Math.min(Math.max(level, 1), 10);
-  return 0.001 + ((clampedLevel - 1) / 9) * 0.004;
 }
 
 function getZeynepCommandType(slot: number): ZeynepCommandType {

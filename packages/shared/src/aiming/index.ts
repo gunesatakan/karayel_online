@@ -76,8 +76,8 @@ function normalizeAngle(angle: number) {
  * Towers whose muzzle should turn toward what they are shooting.
  *
  * Kept as an explicit list rather than inferred from hitType: Kin Kulesi is an
- * aura tower but fires a directional cone, while Sunucu throws projectiles yet
- * is a global rack with no muzzle. Auras, passives and area curses never aim.
+ * aura tower but fires a directional cone, while Sunucu is an impact-typed
+ * global rack that never attacks and has no muzzle. Auras, passives and area curses never aim.
  *
  * Taht Muhru was excluded while it was a socketed seal, but its art now carries
  * an explicit barrel on the right, and a muzzle that never turns reads worse

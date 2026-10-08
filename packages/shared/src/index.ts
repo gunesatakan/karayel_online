@@ -703,7 +703,11 @@ export type TowerSnapshot = {
   t?: string;
   u?: number;
   m?: number;
-  serverLinkWaveAge?: number;
+  /**
+   * Sunucu'nun biriktirdigi bilgi: bagli kulelerin oldurdugu dusman turleri
+   * (server-knowledge). Yalnizca Sunucu'da ve sifir olmayan turler.
+   */
+  serverKnowledge?: import("./server-knowledge/index.js").ServerKnowledge;
   linkedTowerIds?: string[];
   zeynepFormationSize?: number;
   zeynepFormationLevel?: number;
@@ -1206,19 +1210,14 @@ export type {
   UltimateStampText
 } from "./feedback/ultimate.js";
 export {
-  SERVER_LINK_MATURITY_WAVES,
   SERVER_LINK_NOTICE_COOLDOWN_MS,
   getServerLinkJoinedText,
   getRiskyInvestmentNoticeText,
-  getServerLinkMaturedText,
-  getServerLinkMaturity,
   getTurkishGenitive
 } from "./feedback/team-signals.js";
 export type {
   ServerLinkJoinedMessage,
   RiskyInvestmentMessage,
-  ServerLinkMaturedMessage,
-  ServerLinkMaturityWave,
   TeamSignalText
 } from "./feedback/team-signals.js";
 export {
@@ -1772,7 +1771,7 @@ export {
   towerAims,
   towerFiresAlongFacing
 } from "./aiming/index.js";
-export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles } from "./ballistics/index.js";
+export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles, towerNeverAttacks } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {
   RESOURCE_EXTRACTION_DURATION_MS,
@@ -2193,5 +2192,6 @@ export * from "./worker-skills.js";
 export * from "./synergy/index.js";
 export * from "./zeynep-shots/index.js";
 export * from "./tower-panel/index.js";
+export * from "./server-knowledge/index.js";
 export * from "./i18n/index.js";
 export * from "./i18n/server-text.js";

@@ -29,7 +29,7 @@ export const atakanTowers: TowerDefinition[] = ([
     characterId: "warrior",
     name: "Sunucu",
     role: "Global destek",
-    description: "Kendisi hedef seçip ateş etmez; iki kuleye bağlanır ve o kulelerin menzilinden kaçan düşmanları haritanın her yerinden elektrik topuyla vurur. Menzili global olduğu için hattın dibinde durması gerekmez. Aynı kuleye 5 dalga bağlı kalırsa bağlı kulenin çarpma vuruşlarına ek hasar, 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının bir yüzdesi kadar ek hasar ekler; yani bağı bozmamak ödüllendirilir. AttackLord'un yalnızlık pasifinden etkilenmez.",
+    description: "Kendisi saldırmaz; iki kuleye bağlanır. Bağlı iki kule birbirinin menzilini ve soğumasını kullanır: hangisininki yüksekse öteki de ona erişir. Bağlı bir kule bir düşmana son vuruşu yapınca Sunucu o düşman türü hakkında bilgi toplar; bağ kalksa da bilgi Sunucu'da kalır ve birikir. Bilgi, bağlı kulelerin o türe karşı zaten sahip olduğu etkiyi oransal olarak büyütür: Koşucu'ya yavaşlatma miktarı, Atıcı'ya kalkana verilen hasar, Ezici'ye zırh kırma, Sürü ve Kuşatma'ya hasar. Sunucu yeni etki vermez; zırh kırması olmayan kule zırh kırma kazanmaz. Getiri azalır (40 öldürmede yaklaşık %20) ve Sunucu'nun seviyesi her öldürmeyi daha çok saydırır. Menzili global olduğu için hattın dibinde durması gerekmez. AttackLord'un yalnızlık pasifinden etkilenmez.",
     classType: "hybrid",
     damageType: "electric",
     hitType: "impact",
@@ -39,7 +39,7 @@ export const atakanTowers: TowerDefinition[] = ([
     damage: 0,
     fireIntervalMs: 980,
     projectileSpeed: 310,
-    aoeRadius: 18,
+    aoeRadius: 0,
     slowMs: 0,
     color
   },

@@ -10,6 +10,7 @@ import { getTowerTier, TOWER_ART_DISC_RATIO } from "@karayel/shared";
  */
 const TIERED_TOWER_ART: Readonly<Record<string, "png" | "webp">> = {
   "warrior-1": "png",
+  "warrior-2": "webp",
   "warrior-4": "webp",
   "warrior-5": "webp",
   "warrior-6": "webp"

@@ -5,6 +5,7 @@ import { lt } from "../i18n/index.js";
 import type { CharacterId } from "../index.js";
 import { getKillStreakTierRank, type RunPlayerSummary, type RunSummary, type WaveRecord } from "../run-trace/index.js";
 import { STAGE_COUNT, canRecordProgress, getStageDamageProfile, shouldRecordStageClear, type ProgressRecordSource } from "../stages/index.js";
+import { SERVER_KNOWLEDGE_BADGE_BONUS } from "../server-knowledge/index.js";
 import { SYNERGY_SHARE_RUN_FLOOR } from "../synergy/index.js";
 import { TOWER_TIER_2_LEVEL, TOWER_TIER_3_LEVEL } from "../tower-stats/index.js";
 import { getArchiveProgress, type CardArchive } from "./archive.js";
@@ -23,7 +24,7 @@ import { sanitizeWaveRecord } from "./wave-report.js";
  * - rekor defteri ve Kart Arsivi (menude ve mac sonunda);
  * - istemcinin zaten aldigi anlik goruntu alanlari (kule seviyesi, Zeynep
  *   dizilimi, Melis evrimi, Onur zari) ve tek seferlik mesajlar
- *   (`ultimate:result`, `link:matured`, `champion:down`).
+ *   (`ultimate:result`, `champion:down`).
  *
  * Kurallar:
  * - Hepsi taninma. Hicbir nisan stat, altin, kart ya da baslangic kulesi
@@ -102,8 +103,8 @@ export type BadgeRunFlags = {
   bestLuck: number;
   /** Kendi Onur kulende sans penceresi acildi. */
   luckyWindow: boolean;
-  /** Senin Sunucun bir bagi 10 dalga olgunlastirdi. */
-  linkMatured10: boolean;
+  /** Senin Sunucunun bir ture karsi bilgi artisi canli olarak %50'yi gecti. */
+  serverKnowledgeHalf: boolean;
   /** Kosuda devrilen sampiyon. */
   championDowns: number;
   /** Bir sampiyon bir oncekinden hizli devrildi. */
@@ -125,7 +126,7 @@ export function createEmptyBadgeFlags(): BadgeRunFlags {
     melisMaxEvolution: 0,
     bestLuck: 0,
     luckyWindow: false,
-    linkMatured10: false,
+    serverKnowledgeHalf: false,
     championDowns: 0,
     championFaster: false,
     perfectColumn: false,
@@ -391,14 +392,14 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
     check: (facts) => facts.characterId === "zeynep" && facts.flags.perfectColumn
   },
   {
-    id: "olgun-bag",
+    id: "bilgi-bankasi",
     wholeRun: true,
-    name: "Olgun Bağ",
-    condition: "AttackLord: bir Sunucu bağını 10 dalga boyunca koru.",
+    name: "Bilgi Bankası",
+    condition: "AttackLord: bir Sunucu'nun tek bir düşman türüne karşı artışını %50'ye çıkar.",
     group: "operator",
     characterId: "warrior",
     phase: "wave",
-    check: (facts) => facts.characterId === "warrior" && facts.flags.linkMatured10
+    check: (facts) => facts.characterId === "warrior" && facts.flags.serverKnowledgeHalf
   },
   {
     id: "yalniz-kurt",
@@ -533,7 +534,7 @@ export class BadgeRunWatch {
   /** Kosunun canli gorulen ilk dalgasi; ilk sonucsuz snapshot'a kadar yok. */
   private liveWave?: number;
   /** Kulenin ilk gorulen hali: kademe, dizilim, evrim, zar ve pencere tabani. */
-  private readonly towerBaselines = new Map<string, { level: number; formation: number; evolution: number; luck?: number; window: boolean }>();
+  private readonly towerBaselines = new Map<string, { level: number; formation: number; evolution: number; luck?: number; window: boolean; knowledge: number }>();
   private championSeen = false;
   /** Bu kosuda dalga sonunda depoya yazilan nisanlar; raporun "once"si bunlarsiz. */
   private readonly awarded = new Set<string>();
@@ -584,6 +585,8 @@ export class BadgeRunWatch {
     evolution?: number;
     luck?: number;
     luckyWindowRemainingMs?: number;
+    /** Sunucu: en bilgili turdeki artis (0..1; `getServerKnowledgeTopBonus`). */
+    serverKnowledgeBonus?: number;
   }) {
     if (!tower || typeof tower.id !== "string") return;
     const level = typeof tower.level === "number" && Number.isFinite(tower.level) ? Math.floor(tower.level) : 0;
@@ -591,9 +594,10 @@ export class BadgeRunWatch {
     const evolution = typeof tower.evolution === "number" && Number.isFinite(tower.evolution) ? Math.floor(tower.evolution) : 0;
     const luck = typeof tower.luck === "number" && Number.isFinite(tower.luck) ? tower.luck : undefined;
     const window = typeof tower.luckyWindowRemainingMs === "number" && tower.luckyWindowRemainingMs > 0;
+    const knowledge = typeof tower.serverKnowledgeBonus === "number" && Number.isFinite(tower.serverKnowledgeBonus) ? tower.serverKnowledgeBonus : 0;
     const base = this.towerBaselines.get(tower.id);
     if (!base) {
-      this.towerBaselines.set(tower.id, { level, formation, evolution, luck, window });
+      this.towerBaselines.set(tower.id, { level, formation, evolution, luck, window, knowledge });
       return;
     }
     if (tower.countsAsTower !== false) {
@@ -605,16 +609,13 @@ export class BadgeRunWatch {
     if (evolution > base.evolution) this.flags.melisMaxEvolution = Math.max(this.flags.melisMaxEvolution, evolution);
     if (luck !== undefined && luck !== base.luck) this.flags.bestLuck = Math.max(this.flags.bestLuck, luck);
     if (window && !base.window) this.flags.luckyWindow = true;
+    if (base.knowledge < SERVER_KNOWLEDGE_BADGE_BONUS && knowledge >= SERVER_KNOWLEDGE_BADGE_BONUS) this.flags.serverKnowledgeHalf = true;
     base.level = Math.max(base.level, level);
+    base.knowledge = Math.max(base.knowledge, knowledge);
     base.formation = formation;
     base.evolution = Math.max(base.evolution, evolution);
     base.luck = luck;
     base.window = window;
-  }
-
-  /** `link:matured`; yalnizca Sunucunun sahibi sensen. */
-  noteLinkMatured(waves: number, ownServer: boolean) {
-    if (ownServer && waves >= 10) this.flags.linkMatured10 = true;
   }
 
   /** `champion:down`: takimin ortak ani. `prevMs` bu kosudaki bir onceki sampiyon. */

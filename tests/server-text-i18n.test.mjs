@@ -244,7 +244,7 @@ const STATUS_SAMPLES = [
   "İletken Damar", "Röle hattı", "Yük kesildi", "Frekans paylaşımı", "Tukenmis", "Hararet", "Performans Kapali",
   "Asiri Sicak", "Muhimmat Yok", "Enerji Yok", "Odaklan", "Odaklan x5", "Gotik Kabus", "Ucgen bekliyor",
   "Isı freni %40", "Ayna 55% · Isı freni %12", "Bag 1/2 | Ruh 4 | Onay · Isı freni %30", "Bag 0/1 | Ruh 0 | Stres",
-  "Favori Evrim 2", "Evrim 3", "Favori", "Link 2/2 7T", "Sentez 1+1", "Sentez 2+2", "Kopya 1", "Sunucu 10T", "Sunucu 5T",
+  "Favori Evrim 2", "Evrim 3", "Favori", "Link 2/2", "Sentez 1+1", "Sentez 2+2", "Kopya 1", "Sunucu",
   "Dizilim 3 Lv.4", "Dizilim 2 Lv.1", "Pasif",
   // `getTowerStatus`in obur dallari: kalan Sentez/Kopya kipleri, frensiz Ayna,
   // kalkanli enerjisiz fabrika ve Ingilizce kalan Streak'in yanindaki fren.
@@ -271,7 +271,7 @@ const INSIGHT_SAMPLES = [
   "Saldırı döngüsü | Bag 1/2 | Ruh 4 | Onay · Isı freni %30 | Mühimmat: 12.0 yolda",
   "Saldırı döngüsü | Overdrive | Bu dalga: döngü 9 sn · hedef 0 sn · mühimmat 0 sn · enerji 0 sn · soğuma 0 sn",
   "Saldırı döngüsü | Streak +20% · Isı freni %50 | Yalnızlık açık: hasar ×1.25",
-  "Destek döngüsü | Sunucu 10T | Enerji: 3.5 yolda",
+  "Destek döngüsü | Sunucu | Enerji: 3.5 yolda",
   "Isiniyor 3sn | Enerji: kaynak deposu boş | Mühimmat: yol kapalı",
   "Saldırı döngüsü | Sentez 1+2 | Dizilim 3: en düşük seviye 1 (Hiza Emri)",
   "Saldırı döngüsü | Dizilim 2 Lv.3 | Dizilim 2: en düşük seviye 3 (Hiza Emri, Hiza Emri)",
@@ -283,7 +283,7 @@ const INSIGHT_SAMPLES = [
   "Saldırı döngüsü | Son Çekirdek", "Saldırı döngüsü | İletken Damar", "Saldırı döngüsü | Röle hattı",
   "Saldırı döngüsü | Yük kesildi", "Saldırı döngüsü | Frekans paylaşımı", "Devre dışı / beklemede | Tukenmis",
   "Soğuyor | Hararet", "Devre dışı / beklemede | Performans Kapali", "Saldırı döngüsü | Odaklan x5",
-  "Saldırı döngüsü | Gotik Kabus", "Saldırı döngüsü | Favori Evrim 2", "Saldırı döngüsü | Link 1/2 3T",
+  "Saldırı döngüsü | Gotik Kabus", "Saldırı döngüsü | Favori Evrim 2", "Saldırı döngüsü | Link 1/2",
   "Saldırı döngüsü | Pasif"
 ];
 

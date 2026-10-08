@@ -1,12 +1,14 @@
 /**
  * Takimi etkileyen sessiz kararlarin sinyali: Sunucu bagi.
  *
- * Sunucu takim arkadasinin kulesine baglanip olgunlasiyor ama kulenin sahibi
- * bunu gormuyordu. Sunucu artik tek seferlik mesaj yolluyor:
+ * Sunucu takim arkadasinin kulesine baglanip ona menzil, soguma ve bilgi
+ * artisi veriyor ama kulenin sahibi bunu gormuyordu. Sunucu tek seferlik mesaj
+ * yolluyor:
  *
  * - `link:joined` yalnizca hedef kulenin sahibine, kendi kulene bagda hic;
  *   ac-kapa ayni cift icin bildirim yagdirmiyor.
- * - `link:matured` 5 ve 10 dalgada iki sahibe de, ayni kisiyse bir kez.
+ * - Eski `link:matured` (5 ve 10 dalgada bag olgunlasmasi) kalkti: bagin
+ *   yasi yok, bonuslari baglandigi an geliyor.
  *
  * Kural sayilari degismedi; testler bunu da tutuyor.
  */
@@ -14,12 +16,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  FEEDBACK_KIND_RULES,
   FeedbackGovernor,
-  SERVER_LINK_MATURITY_WAVES,
   SERVER_LINK_NOTICE_COOLDOWN_MS,
   getServerLinkJoinedText,
-  getServerLinkMaturedText,
-  getServerLinkMaturity,
   getTurkishGenitive
 } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
@@ -27,17 +27,6 @@ import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs"
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 // --- saf kurallar ---------------------------------------------------------
-
-test("bag olgunlugu yalnizca 5 ve 10 esiginde, bir kez", () => {
-  assert.deepEqual([...SERVER_LINK_MATURITY_WAVES], [5, 10]);
-  assert.equal(getServerLinkMaturity(4, 5), 5);
-  assert.equal(getServerLinkMaturity(9, 10), 10);
-  assert.equal(getServerLinkMaturity(5, 6), undefined);
-  assert.equal(getServerLinkMaturity(0, 1), undefined);
-  assert.equal(getServerLinkMaturity(10, 11), undefined);
-  assert.equal(getServerLinkMaturedText(5), "Bağ olgunlaştı · 5 dalga");
-  assert.equal(getServerLinkMaturedText(10), "Bağ olgunlaştı · 10 dalga");
-});
 
 test("tamlayan eki unlu uyumuna uyuyor", () => {
   // Operator adlari: ek yaziya degil okunusa gore.
@@ -63,7 +52,7 @@ test("tamlayan eki unlu uyumuna uyuyor", () => {
   assert.equal(getServerLinkJoinedText(undefined).title, "Takım arkadaşının Sunucusu");
 });
 
-test("yonetmen: bag bildirimleri hiz sinirina uyuyor, olgunluk etiketi butce doluyken dusmuyor", () => {
+test("yonetmen: bag bildirimleri hiz sinirina uyuyor; olgunluk ani yok", () => {
   const governor = new FeedbackGovernor();
   // Araligi olan butcesiz tur hiz sinirina uyuyor; araliksizlar eskisi gibi hep geciyor.
   assert.equal(governor.decide("linkJoined", { own: true }, 0).show, true);
@@ -71,11 +60,7 @@ test("yonetmen: bag bildirimleri hiz sinirina uyuyor, olgunluk etiketi butce dol
   for (let index = 0; index < 5; index += 1) {
     assert.equal(governor.decide("kill", { own: true, x: 0, y: 0 }, index).show, true, "oldurme hic birlesmez");
   }
-  // Olgunluk etiketi P1: etiket butcesi doluyken de dusmez.
-  for (let index = 0; index < 3; index += 1) governor.decide("synergy", { own: true, x: index * 100, y: 0 }, 1000);
-  const matured = governor.decide("linkMatured", { own: true, x: 900, y: 900 }, 1001);
-  assert.equal(matured.show, true);
-  assert.equal(matured.recycle, true);
+  assert.equal(Object.hasOwn(FEEDBACK_KIND_RULES, "linkMatured"), false, "bag olgunlugu kalkti");
 });
 
 // --- gercek oda -----------------------------------------------------------
@@ -143,46 +128,26 @@ test("kendi kulene kurdugun bag bildirim uretmiyor", () => {
   assert.equal(of("p2", "link:joined").length, 0);
 });
 
-test("bag 5 ve 10 dalgada olgunlasinca iki sahip de tek mesaj aliyor, arada hicbir sey yok", () => {
+test("bag dalgalar gectikce hicbir sahibe ek mesaj yollamiyor", () => {
   const { room, clients, of } = teamRoom();
   const server = build(room, clients[0], "warrior-2");
   const target = build(room, clients[1], "zeynep-1");
-  room.linkServerTower(clients[0], { serverTowerId: server.id, targetTowerId: target.id });
-
-  const expected = (waves) => ({ serverTowerId: server.id, targetTowerId: target.id, serverOwnerId: "p1", targetOwnerId: "p2", waves });
-  for (let wave = 1; wave <= 4; wave += 1) room.advanceWaveGrowth();
-  assert.equal(of("p1", "link:matured").length + of("p2", "link:matured").length, 0, "5. dalgadan once yok");
-  room.advanceWaveGrowth();
-  assert.equal(server.linkedTowerWaveAges[target.id], 5, "yas kurali degismedi");
-  assert.deepEqual(of("p1", "link:matured"), [expected(5)]);
-  assert.deepEqual(of("p2", "link:matured"), [expected(5)]);
-  for (let wave = 6; wave <= 9; wave += 1) room.advanceWaveGrowth();
-  assert.equal(of("p2", "link:matured").length, 1);
-  room.advanceWaveGrowth();
-  assert.deepEqual(of("p1", "link:matured"), [expected(5), expected(10)]);
-  assert.deepEqual(of("p2", "link:matured"), [expected(5), expected(10)]);
-  for (let wave = 11; wave <= 14; wave += 1) room.advanceWaveGrowth();
-  assert.equal(of("p2", "link:matured").length, 2, "10'dan sonra yeni an yok");
-});
-
-test("kendi kulene bag olgunlasinca mesaj bir kez gidiyor", () => {
-  const { room, clients, of } = teamRoom();
-  const server = build(room, clients[0], "warrior-2");
   const own = build(room, clients[0], "warrior-1");
+  room.linkServerTower(clients[0], { serverTowerId: server.id, targetTowerId: target.id });
   room.linkServerTower(clients[0], { serverTowerId: server.id, targetTowerId: own.id });
-  for (let wave = 1; wave <= 5; wave += 1) room.advanceWaveGrowth();
-  assert.equal(of("p1", "link:matured").length, 1);
-  assert.equal(of("p2", "link:matured").length, 0);
+  const before = { p1: of("p1", "link:joined").length, p2: of("p2", "link:joined").length };
+  for (let wave = 1; wave <= 12; wave += 1) room.advanceWaveGrowth();
+  assert.deepEqual(server.linkedTowerIds, [target.id, own.id], "bag dalga sonunda kopmadi");
+  assert.equal(of("p1", "link:joined").length, before.p1);
+  assert.equal(of("p2", "link:joined").length, before.p2);
+  assert.equal(of("p1", "link:matured").length + of("p2", "link:matured").length, 0);
 });
 
 test("istemci bag mesajlarini dinliyor ve yonetmenden geciriyor", () => {
   const scene = readSource("apps/web/src/scenes/GameScene.ts");
   const hud = readSource("apps/web/src/game-control-ui.ts");
-  for (const type of ["link:joined", "link:matured"]) {
-    assert.ok(scene.includes(`onMessage("${type}"`), `istemci ${type} dinlemiyor`);
-  }
+  assert.ok(scene.includes(`onMessage("link:joined"`), "istemci link:joined dinlemiyor");
+  assert.ok(!scene.includes(`onMessage("link:matured"`), "kalkan olgunluk mesaji hala dinleniyor");
   assert.ok(hud.includes(`"game:hud-team-notice"`));
-  for (const kind of ["linkJoined", "linkMatured"]) {
-    assert.ok(scene.includes(`emit("${kind}"`), `${kind} yonetmenden gecmiyor`);
-  }
+  assert.ok(scene.includes(`emit("linkJoined"`), "linkJoined yonetmenden gecmiyor");
 });

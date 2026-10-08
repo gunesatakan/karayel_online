@@ -4,7 +4,7 @@ import type { TowerGrant } from "../grants/index.js";
 import type { Modifier, ModifierStat, StatConversion } from "../modifiers/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
 import { towerAims, towerFiresAlongFacing } from "../aiming/index.js";
-import { towerFiresProjectiles } from "../ballistics/index.js";
+import { towerFiresProjectiles, towerNeverAttacks } from "../ballistics/index.js";
 
 export type CardScope =
   | { kind: "global" }
@@ -773,13 +773,14 @@ export function canTowerHoldTargetedCard(tower: CardTowerProfile) {
 /**
  * Kule dusmana hasar veriyor mu: ates eden (`canTowerHoldTargetedCard`) ve
  * hasarsiz bir aura binasi olmayan yapi. Tanimdaki `damage` alani tek basina
- * yetmiyor: Sunucu, Kin Kulesi ve Oluler Bagi tanimda 0 yaziyor ama baglanti
- * patlamasiyla, dalgayla ve infazla gercekten vuruyor ve olduruyor. Hasarsiz
- * olanlar yalnizca yurutucusu olmayan auralar (Izolasyon, Saray Arsivi,
- * Abarti). Hasari bilinmeyen profil, aura ise hasarsiz sayilir.
+ * yetmiyor: Kin Kulesi ve Oluler Bagi tanimda 0 yaziyor ama dalgayla ve
+ * infazla gercekten vuruyor ve olduruyor. Hasarsiz olanlar yurutucusu
+ * olmayan auralar (Izolasyon, Saray Arsivi, Abarti) ve hic saldirmayan
+ * Sunucu (`towerNeverAttacks`). Hasari bilinmeyen profil, aura ise hasarsiz
+ * sayilir.
  */
 export function towerDealsDamage(tower: CardTowerProfile) {
-  if (!canTowerHoldTargetedCard(tower)) return false;
+  if (!canTowerHoldTargetedCard(tower) || towerNeverAttacks(tower)) return false;
   return tower.hitType !== "aura" || (tower.damage ?? 0) > 0 || !!tower.engine?.attack.executor;
 }
 

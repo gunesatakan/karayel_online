@@ -203,7 +203,7 @@ export const enBadges: Readonly<Record<string, { name: string; condition: string
   // --- Operator imzalari ---
   "tam-dizilim": { name: "Full Formation", condition: "ZentaX: place three towers in a triangle (three corners of a 2×2 tile square) to form a trio formation." },
   "mukemmel-sutun": { name: "Perfect Column", condition: "ZentaX: drop the Column ultimate on the most crowded column (at least 3 enemies)." },
-  "olgun-bag": { name: "Mature Link", condition: "AttackLord: keep a Server link alive for 10 waves." },
+  "bilgi-bankasi": { name: "Knowledge Bank", condition: "AttackLord: raise a Server's bonus against a single enemy type to 50%." },
   "yalniz-kurt": {
     name: "Lone Wolf",
     condition: `AttackLord: have your isolation share pass ~${SYNERGY_SHARE_RUN_FLOOR.toLocaleString("en-US")} damage in one run (build towers with no neighbors).`

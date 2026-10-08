@@ -72,7 +72,6 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.source.character:melis-evolution": "Evolution",
   "sheet.source.character:melis-nightmare": "Gothic nightmare",
   "sheet.source.tower:kill-streak": "Kill streak",
-  "sheet.source.tower:warrior-2:server-link": "Server link",
   "sheet.source.tower:warrior-4:obsession": "Obsession",
   "sheet.source.tower:warrior-5:debug": "Debug level",
   "sheet.source.tower:zeynep-1:compensation": "Alignment balance",

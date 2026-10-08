@@ -259,13 +259,14 @@ test("kapsamli esya uymayan kuleye takilamiyor", () => {
   assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), sunucu, []), { ok: false, reason: "incompatibleTower" });
   assert.deepEqual(canEquipShopItem(getShopItem("jiroskop"), takipci, []), { ok: true });
   assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), takipci, []), { ok: true });
-  // Kritik esyalari hasar veren her kuleye takilir (Sunucu dahil: baglanti
-  // patlamasi vuruyor), duvara ve hasarsiz aura binasina takilmaz.
+  // Kritik esyalari hasar veren her kuleye takilir; duvara, hasarsiz aura
+  // binasina ve hic saldirmayan Sunucu'ya takilmaz.
   const duvar = allTowers.find((tower) => tower.id === "wall-1");
   const izolasyon = allTowers.find((tower) => tower.id === "warrior-3");
   for (const id of ["iz-okuyucu", "mesafe-olcer", "atesleme-pimi", "yarik-mermi"]) {
     assert.deepEqual(getShopItem(id).scope, { kind: "tagged", combat: true }, id);
-    assert.deepEqual(canEquipShopItem(getShopItem(id), sunucu, []), { ok: true }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), sunucu, []), { ok: false, reason: "incompatibleTower" }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), takipci, []), { ok: true }, id);
     assert.deepEqual(canEquipShopItem(getShopItem(id), duvar, []), { ok: false, reason: "incompatibleTower" }, id);
     assert.deepEqual(canEquipShopItem(getShopItem(id), izolasyon, []), { ok: false, reason: "incompatibleTower" }, id);
   }

@@ -81,65 +81,59 @@ Takipci, Atakan'in takim hasarini acan temel kulesidir. Dengeli tek hedef hasari
 
 ### 2. Sunucu
 
-**Rol:** Global destek  
-**Sinif:** Hibrit  
-**Hasar turu:** Elektrik  
-**Vurus turu:** Carpma
+**Rol:** Global destek
+**Sinif:** Hibrit
+**Saldiri:** Yok (kendisi ates etmez, hasar vermez)
 
-Sunucu, kendi basina normal atis yapan bir kule gibi davranmaz. Iki kuleye baglanabilir. Bagli kulelerin menzilinden cikan dusmanlara Sunucu tarafindan guclu elektrik topu gonderilir.
+Sunucu kendi basina saldirmaz. En fazla iki kuleye baglanir; gucu bagladigi kulelerden gelir. Ucuncu bir kuleye baglanirsa en eski bag duser. Ayni kuleye yeniden dokunmak bagi kaldirir.
 
 | Ozellik | Deger |
 |---|---:|
 | Maliyet | 74 altin |
 | Upgrade maliyeti | Satın alım maliyetine orantılı |
-| Menzil | Global |
-| Temel hasar | 0 |
-| Atis araligi | 980 ms |
-| Mermi hizi | 310 |
-| AOE | 18 |
+| Menzil | Global (haritanin her yerindeki kuleye baglanir) |
+| Bag sayisi | 2 |
 
-**Baglanti mekanigi:**
+**Paylasim:**
 
-- Sunucu en fazla 2 kuleye baglanabilir.
-- Bagli kulelerin menziline girip sonra menzilden cikan dusman tespit edilir.
-- Elektrik topunu bagli kule degil, Sunucu gonderir.
-- Sunucu ayni kuleye uzun sure bagli kalirsa o kuleye ek buff verir.
-- Mevcut hasar egrisi:
+- Bagli iki kule birbirinin menzilini ve sogumasini (isi sisteminin saniyelik sogumasi) kullanir: hangisininki yuksekse oteki de ona erisir.
+- Paylasilan deger ortagin kendi degeridir; paylasim zincirlenmez. Kuleyi birden cok Sunucu bagliyorsa butun ortaklarin en yuksegi gecerlidir.
+- Tek bagli kulenin paylasacagi bir ortagi yoktur.
+
+**Bilgi:**
+
+- Bagli bir kule bir dusmana son vurusu yapinca Sunucu o dusmanin turunden +1 bilgi yazar. Ozel dusmanlar (Kule Avcisi, Isitici...) ve sampiyonlar taban turlerine sayilir.
+- Bilgi Sunucu'nundur: bag kalksa da silinmez, yalnizca birikir. Sunucu satilirsa bilgisi de gider.
+- Bilgi bagli kulelere o ture karsi oransal artis verir. Artis yeni bir etki vermez, kulenin zaten sahip oldugunu buyutur:
+
+| Tur | Buyuyen etki |
+|---|---|
+| Kosucu | Yavaslatma miktari (hizdan dusulen kesir; %90 tavan) |
+| Atici | Kalkana verilen hasar (kalkani asan kisim degismez) |
+| Ezici | Zirh kirma (karttan, esyadan ya da kulenin kendisinden) |
+| Suru | Hasar |
+| Kusatma | Hasar |
+
+- Zirh kirmasi olmayan kule zirh kirma kazanmaz; yavaslatmayan kule yavaslatma kazanmaz.
+- Formul (azalan getiri; `packages/shared/src/server-knowledge`):
 
 ```txt
-Lv1-10 = 160 / 240 / 330 / 420 / 500 / 1000 / 1500 / 2000 / 3000 / 4000
+n = oldurme * (1 + (SunucuSeviyesi - 1) / 9)
+artis = n / (n + 160)
 ```
 
-- AOE formulu:
+| Oldurme | Lv1 | Lv5 | Lv10 |
+|---:|---:|---:|---:|
+| 10 | %5.9 | %8.3 | %11.1 |
+| 40 | %20.0 | %26.5 | %33.3 |
+| 100 | %38.5 | %47.4 | %55.6 |
+| 160 | %50.0 | %59.1 | %66.7 |
+| 400 | %71.4 | %78.3 | %83.3 |
 
-```txt
-AOE = (24 + SunucuSeviyesi * 5) / 4
-```
-
-- Bekleme suresi:
-
-```txt
-Cooldown = max(520, 1100 - SunucuSeviyesi * 80) ms
-```
-
-**Uzun baglanti bufflari:**
-
-Bag suresi, Sunucu ile ayni kule arasinda link kopmadan gecen dalga sayisiyla olculur.
-
-| Bagli kalinan dalga | Buff |
-|---:|---|
-| 5 dalga | Bagli kule `impact/carpma` vurus tipindeyse hasari Sunucu leveline gore artar: `+%12` - `+%30`. |
-| 10 dalga | Bagli kulenin her vurusuna Sunucu leveline gore hedefin maksimum caninin `%0.1` - `%0.5` kadari ek hasar olarak eklenir. |
-
-Notlar:
-
-- 5 dalga buff'i sadece `impact` vurus tipini etkiler.
-- Debug Lazer `focus` vurus tipinde oldugu icin 5 dalga buff'indan etkilenmez.
-- 10 dalga buff'i vurus tipinden bagimsizdir. Bu nedenle Debug Lazer gibi sik tick atan kulelerde cok degerlidir; tick araligi dustukce saniye basina uygulanan max HP hasari da artar.
-- 5 dalga impact buff formulu: `bonus = 0.10 + SunucuLevel * 0.02`. Lv1 `+%12`, Lv5 `+%20`, Lv10 `+%30`.
-- 10 dalga max HP buff formulu: `oran = 0.001 + ((SunucuLevel - 1) / 9) * 0.004`. Lv1 `%0.1`, Lv5 `%0.28`, Lv10 `%0.5`.
-- Link koparsa veya Sunucu baska kuleye baglanirken eski link slot'tan duserse bag sayaci sifirlanir.
-- 5 ve 10 dalga esigine ulasan bagli kulelerin sprite icinde Matrix benzeri kod akisi efekti gorunur. Efekt sprite'in icinde kalir, boylece kulenin tipi ayirt edilmeye devam eder.
+- Bir kuleyi birden cok Sunucu bagliyorsa her tur icin en bilgili Sunucu gecerlidir; artislar toplanmaz.
+- Sunucu devre disiyken (`Tukenmis`) ya da yikikken bag calismaz: paylasim, artis ve bilgi toplama durur. Bilgi kaybolmaz.
+- Kule panelinde Sunucu tur basina bilgiyi ve verdigi artisi gosterir; bagli kule paylasimi not olarak gosterir.
+- Gorsel: reaktorun cevresine sizan elektrik arklari canli cizilir ve hafifce dalgalanir (`apps/web/src/vfx/server-reactor.ts`). Bag calismadiginda arklar soner.
 
 ### 3. Izolasyon Kulesi
 
@@ -355,7 +349,6 @@ Secili kuleyi cezasiz sekilde baska bir uygun kareye tasir.
 - Sonra yeni konuma dokunur.
 - Yeni konum uygunsa kule oraya tasinir.
 - Kule cooldown'u en fazla 150 ms olacak sekilde dengelenir.
-- Sunucu link hafizasi gibi menzil gecmisleri sifirlanir.
 
 ### 3. Execute
 
@@ -497,7 +490,7 @@ Tablo notlari:
 - `Sonraki upgrade`, o levelden bir sonraki levele gecis maliyetidir.
 - Level 10 maksimum level oldugu icin sonraki upgrade yoktur.
 - DPS, baz hasar ve baz atis araligina gore hesaplanmistir.
-- Sunucu normal kule gibi hasar vermedigi icin ana hasar degeri 0'dır; asil hasari elektrik topu formulunden gelir.
+- Sunucu hic saldirmadigi icin hasar ve DPS degeri yoktur; gucu baglarindan gelir.
 - Izolasyon Kulesi hasar vermez; seviye ile menzili, atis araligi ve yavaslatma degerleri degisir.
 
 ### Takipci - Level Statlari
@@ -526,20 +519,20 @@ Takipci'nin isaret mekanigi level esiklerine gore stacklenir:
 
 ### Sunucu - Level Statlari
 
-Sunucu'nun kendi normal atisi yoktur. Bu nedenle baz hasar ve DPS degeri 0'dır. Level ile asil degisen sey, bagli kulelerin menzilinden cikan dusmanlara gonderdigi elektrik topudur.
+Sunucu saldirmaz; hasar, atis araligi ve DPS'i yoktur. Level iki seyi degistirir: upgrade maliyeti ve bilginin agirligi (her oldurmenin kac sayildigi).
 
-| Lv | Baz hasar | Atis araligi | Menzil | DPS | Sonraki upgrade |
-|---:|---:|---:|---:|---:|---:|
-| 1 | 0.0 | 980 ms | Global | 0.0 | 20 |
-| 2 | 0.0 | 882 ms | Global | 0.0 | 43 |
-| 3 | 0.0 | 784 ms | Global | 0.0 | 65 |
-| 4 | 0.0 | 686 ms | Global | 0.0 | 88 |
-| 5 | 0.0 | 588 ms | Global | 0.0 | 110 |
-| 6 | 0.0 | 490 ms | Global | 0.0 | 133 |
-| 7 | 0.0 | 392 ms | Global | 0.0 | 155 |
-| 8 | 0.0 | 294 ms | Global | 0.0 | 178 |
-| 9 | 0.0 | 196 ms | Global | 0.0 | 200 |
-| 10 | 0.0 | 98 ms | Global | 0.0 | - |
+| Lv | Oldurme agirligi | 40 oldurmede artis | 160 oldurmede artis | Sonraki upgrade |
+|---:|---:|---:|---:|---:|
+| 1 | 1.00 | %20.0 | %50.0 | 20 |
+| 2 | 1.11 | %21.7 | %52.6 | 43 |
+| 3 | 1.22 | %23.4 | %55.0 | 65 |
+| 4 | 1.33 | %25.0 | %57.1 | 88 |
+| 5 | 1.44 | %26.5 | %59.1 | 110 |
+| 6 | 1.56 | %28.0 | %60.9 | 133 |
+| 7 | 1.67 | %29.4 | %62.5 | 155 |
+| 8 | 1.78 | %30.8 | %64.0 | 178 |
+| 9 | 1.89 | %32.1 | %65.4 | 200 |
+| 10 | 2.00 | %33.3 | %66.7 | - |
 
 Sunucu upgrade maliyeti ozel bir yumusak artis egrisi kullanir:
 
@@ -548,34 +541,6 @@ Maliyet = round(20 + (MevcutLevel - 1) * ((200 - 20) / 8))
 Lv1->2: 20g
 Lv9->10: 200g
 ```
-
-Elektrik topu level etkisi:
-
-```txt
-Hasar = Sunucu level tablosundan okunur.
-AOE = (24 + SunucuSeviyesi * 5) / 4
-Cooldown = max(520, 1100 - SunucuSeviyesi * 80) ms
-```
-
-| Sunucu Lv | Elektrik hasari | AOE | Link cooldown |
-|---:|---:|---:|---:|
-| 1 | 160 | 7.3 | 1020 ms |
-| 2 | 240 | 8.5 | 940 ms |
-| 3 | 330 | 9.8 | 860 ms |
-| 4 | 420 | 11.0 | 780 ms |
-| 5 | 500 | 12.3 | 700 ms |
-| 6 | 1000 | 13.5 | 620 ms |
-| 7 | 1500 | 14.8 | 540 ms |
-| 8 | 2000 | 16.0 | 520 ms |
-| 9 | 3000 | 17.3 | 520 ms |
-| 10 | 4000 | 18.5 | 520 ms |
-
-Uzun baglanti bufflari:
-
-| Bagli kalinan dalga | Bagli kuleye etkisi |
-|---:|---|
-| 5 | Bagli kule `impact/carpma` vurus tipindeyse hasar Sunucu leveline gore `x1.12` - `x1.30` olur. |
-| 10 | Bagli kulenin her hasar uygulamasina Sunucu leveline gore hedef max HP'sinin `%0.1` - `%0.5` kadari eklenir. |
 
 ### Izolasyon Kulesi - Level Statlari
 

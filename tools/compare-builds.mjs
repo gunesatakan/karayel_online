@@ -18,10 +18,12 @@ export const threats = [
   { id: "air", type: "grunt", hp: 70, armor: 0, shield: 0, speed: 62, count: 24, air: true },
   { id: "supply", type: "grunt", hp: 130, armor: 8, shield: 0, speed: 45, count: 80 }
 ];
+// Sunucu tarifinde Sunucu'nun o tehdit turune dair bilgisi (oldurme):
+// 0 / 40 / 160, seviye 1'de +%0 / +%20 / +%50.
 const budgetTiers = [
-  { budget: 850, experienceBudget: 1800, linkAge: 0 },
-  { budget: 6500, experienceBudget: 16000, linkAge: 5 },
-  { budget: 26000, experienceBudget: 60000, linkAge: 10 }
+  { budget: 850, experienceBudget: 1800, knowledge: 0 },
+  { budget: 6500, experienceBudget: 16000, knowledge: 40 },
+  { budget: 26000, experienceBudget: 60000, knowledge: 160 }
 ];
 function randomSource(seed) {
   let value = seed >>> 0;
@@ -29,7 +31,7 @@ function randomSource(seed) {
 }
 
 /** Real MatchRoom loop; only clock, RNG, threat fixtures and network I/O are replaced. */
-export function compareScenario(recipe, threat, { seed = 1, budget = 850, experienceBudget = 1800, maxTicks = 3600, linkAge = 0 } = {}) {
+export function compareScenario(recipe, threat, { seed = 1, budget = 850, experienceBudget = 1800, maxTicks = 3600, knowledge = 0 } = {}) {
   const originalNow = Date.now;
   const originalRandom = Math.random;
   let clock = 1_800_000_000_000;
@@ -74,7 +76,7 @@ export function compareScenario(recipe, threat, { seed = 1, budget = 850, experi
     const server = combat.find((tower) => tower.definition.id === "warrior-2");
     if (server) {
       room.linkServerTower(client, { serverTowerId: server.id, targetTowerId: combat[0].id });
-      server.linkedTowerWaveAges[combat[0].id] = linkAge;
+      server.serverKnowledge = knowledge > 0 ? { [threat.type]: knowledge } : {};
     }
     room.refreshZeynepFormations();
     if (recipe.id === "hiza" && combat.some((tower) => tower.zeynepFormationSize !== 3)) throw new Error("Invalid Hiza fixture");
@@ -109,7 +111,7 @@ export function compareScenario(recipe, threat, { seed = 1, budget = 850, experi
     const waitSeconds = rows.reduce((sum, row) => sum + row.seconds.ammo + row.seconds.energy, 0);
     const observedSeconds = rows.reduce((sum, row) => sum + Object.values(row.seconds).reduce((a, b) => a + b, 0), 0);
     const complete = !room.matchResult && room.waveSpawned >= threat.count && room.enemies.size === 0;
-    return { recipe: recipe.id, threat: threat.id, seed, budget, experienceBudget, linkAge, spent, unspent, experienceSpent, loadout,
+    return { recipe: recipe.id, threat: threat.id, seed, budget, experienceBudget, knowledge, spent, unspent, experienceSpent, loadout,
       damage: +damage.toFixed(1), nexusLoss: initialHealth - room.teamHealth, kills: room.kills,
       complete, outcome: complete ? "cleared" : room.matchResult === "defeat" ? "defeat" : "timeout",
       elapsedSeconds: ticks * 0.05, clearSeconds: complete ? ticks * 0.05 : null,
@@ -131,7 +133,7 @@ async function main() {
     }
   }
   await writeFile(new URL("../docs/build-comparison-results.json", import.meta.url), JSON.stringify(results, null, 2) + "\n");
-  const lines = ["# Kuruluş karşılaştırması", "", "Aynı altın ve deneyim bütçesi; kurulum, yükseltme ve iki ek taşıyıcı bedelleri dahildir. Harcanmayan bütçe ayrıca gösterilir. Gerçek MatchRoom 50 ms adımlarla, üç sabit tohumla çalışır. Süreler duvar saati eşdeğeridir; bekleme ve aura süreleri oyun saatidir.", "", "Bu bir sabit kuruluş kıyaslamasıdır; en iyi yerleşim araması, insan oyun testi veya bütün kart/eşya kombinasyonlarının denge kanıtı değildir. İlk satırlar yeni bağlantı, yüksek bütçe satırları açıkça 10 dalga yaşlandırılmış Sunucu bağlantısı kullanır. Tehditler kontrollü test profilleridir; sonuçlar doğal dalga zorluğu puanı değildir.", "", "| Bütçe | Tehdit | Kuruluş | Harcanan | Kalan | Hasar | Nexus kaybı | Süre (sn) | Kaynak bekleme (kule·sn) | Hasar/altın |", "|---|---|---|---:|---:|---:|---:|---:|---:|---:|"];
+  const lines = ["# Kuruluş karşılaştırması", "", "Aynı altın ve deneyim bütçesi; kurulum, yükseltme ve iki ek taşıyıcı bedelleri dahildir. Harcanmayan bütçe ayrıca gösterilir. Gerçek MatchRoom 50 ms adımlarla, üç sabit tohumla çalışır. Süreler duvar saati eşdeğeridir; bekleme ve aura süreleri oyun saatidir.", "", "Bu bir sabit kuruluş kıyaslamasıdır; en iyi yerleşim araması, insan oyun testi veya bütün kart/eşya kombinasyonlarının denge kanıtı değildir. Sunucu tarifinde Sunucu, tehdit türü hakkında kademelere göre 0 / 40 / 160 öldürmelik bilgiyle başlar (seviye 1'de +%0 / +%20 / +%50). Tehditler kontrollü test profilleridir; sonuçlar doğal dalga zorluğu puanı değildir.", "", "| Bütçe | Tehdit | Kuruluş | Harcanan | Kalan | Hasar | Nexus kaybı | Süre (sn) | Kaynak bekleme (kule·sn) | Hasar/altın |", "|---|---|---|---:|---:|---:|---:|---:|---:|---:|"];
   for (const { budget } of budgetTiers) for (const threat of threats) for (const recipe of recipes) {
     const group = results.filter((row) => row.budget === budget && row.threat === threat.id && row.recipe === recipe.id);
     const mean = (key) => (group.reduce((sum, row) => sum + row[key], 0) / group.length).toFixed(1);

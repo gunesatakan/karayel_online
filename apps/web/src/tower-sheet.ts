@@ -11,6 +11,7 @@ import {
   towerCatalog,
   towerDealsDamage,
   towerFiresProjectiles,
+  towerNeverAttacks,
   type DamageType,
   type HitType,
   type TowerDefinition,
@@ -330,7 +331,9 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
 
   const damageType = (stats?.dt ?? definition?.damageType) as DamageType | undefined;
   const hitType = (stats?.ht ?? definition?.hitType) as HitType | undefined;
-  const typeText = [damageType && damageType !== "none" ? damageTypeCodex[damageType]?.name : undefined, hitType && hitType !== "none" ? lower(hitTypeCodex[hitType]?.name ?? "") : undefined]
+  // Saldirmayan kulenin (Sunucu) vurus ve hasar tipi yok: "Elektrik carpma" yaniltirdi.
+  const neverAttacks = towerNeverAttacks({ id: input.definitionId });
+  const typeText = neverAttacks ? "" : [damageType && damageType !== "none" ? damageTypeCodex[damageType]?.name : undefined, hitType && hitType !== "none" ? lower(hitTypeCodex[hitType]?.name ?? "") : undefined]
     .filter(Boolean).join(" ");
   const tier = getTowerTier(input.level);
   const ownerText = input.ownerName ? t("sheet.ownerReadOnly", { owner: input.ownerName }) : input.readOnly ? t("sheet.readOnly") : undefined;
@@ -370,7 +373,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
         : stats?.su !== undefined
           ? t("sheet.rate.heatCap", { v: formatNumber(realRate(stats.su), 2) })
           : undefined;
-    figures.push({
+    if (!neverAttacks) figures.push({
       key: "f",
       label: rateLabel,
       value: stats?.f ? rateFormat(stats.f.v) : PENDING,

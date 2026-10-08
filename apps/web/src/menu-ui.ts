@@ -31,6 +31,7 @@ import {
   getEnemyDamageResistances,
   getTowerBuildCost,
   getTowerAttackRadius,
+  towerNeverAttacks,
   getTowerDisplayStats,
   getTowerSlowDurationMs,
   getTowerHitSlowFraction,
@@ -2134,7 +2135,9 @@ function formatSlowStrengthRow(tower: TowerDefinition) {
 }
 
 function towerToDetail(tower: TowerDefinition): DetailItem {
-  const isPassiveTower = (tower.fireIntervalMs ?? 0) > 100000;
+  // Saldirmayan kule (Sunucu): atis araligi, alan, hasar ve vurus tipi satiri yok.
+  const neverAttacks = towerNeverAttacks(tower);
+  const isPassiveTower = neverAttacks || (tower.fireIntervalMs ?? 0) > 100000;
   const classType = tower.classType ?? "hybrid";
   const damageType = tower.damageType ?? "none";
   const hitType = tower.hitType ?? "impact";
@@ -2151,8 +2154,10 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
     label: t("menu.tower.profile"),
     rows: [
       { label: t("menu.tower.class"), value: classTypeCodex[classType]?.name ?? classType, hint: classTypeCodex[classType]?.text },
-      { label: t("menu.tower.damageType"), value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
-      { label: t("menu.tower.hitType"), value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text },
+      ...(neverAttacks ? [] : [
+        { label: t("menu.tower.damageType"), value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
+        { label: t("menu.tower.hitType"), value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text }
+      ]),
       {
         label: t("menu.tower.range"),
         value: level1.hasGlobalRange ? t("menu.tower.rangeGlobal") : `${level1.range.toFixed(0)} → ${level10.range.toFixed(0)}`,
@@ -2170,14 +2175,14 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
               : t("menu.common.secondsRange", { from: (level1.realFireIntervalMs / 1000).toFixed(2), to: (level10.realFireIntervalMs / 1000).toFixed(2) }),
             hint: t(level1.hasFixedFireInterval ? "menu.tower.fireIntervalFixedHint" : "menu.tower.fireIntervalHint")
           }]),
-      ...(tower.engine?.canHitAir !== undefined
+      ...(!neverAttacks && tower.engine?.canHitAir !== undefined
         ? [{
             label: t("menu.tower.air"),
             value: t(tower.engine.canHitAir ? "menu.tower.airYes" : "menu.tower.airNo"),
             hint: t("menu.tower.airHint")
           }]
         : []),
-      ...(getTowerAttackRadius(tower) > 0 ? [{ label: t("menu.tower.area"), value: String(getTowerAttackRadius(tower)) }] : []),
+      ...(!neverAttacks && getTowerAttackRadius(tower) > 0 ? [{ label: t("menu.tower.area"), value: String(getTowerAttackRadius(tower)) }] : []),
       ...(getTowerSlowDurationMs(tower) > 0 ? [{ label: t("menu.tower.slow"), value: t("menu.common.seconds", { v: (getTowerSlowDurationMs(tower) / 1000).toFixed(2) }) }] : []),
       ...formatSlowStrengthRow(tower)
     ]

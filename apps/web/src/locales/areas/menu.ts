@@ -193,7 +193,7 @@ export const trMenu = {
   "menu.tower.evolutions": "Evrimler",
 
   // ------------------------------------------------------------ Kule dosyasi: denge notlari
-  "menu.tower.balance.warrior-2": "Uzun bağlantı ödülü: aynı kuleye 5 dalga bağlı kalırsa çarpma vuruşlu bağlı kule Sunucu seviyesine göre %12-30 ek hasar alır. 10 dalga bağlı kalırsa her vuruşa hedefin maksimum canının %0.1-0.5'i kadar ek hasar eklenir.",
+  "menu.tower.balance.warrior-2": "Bilgi artışı = n / (n + 160); n = öldürme × (1 + (seviye − 1) / 9). Seviye 1'de 40 öldürme +%20, 160 öldürme +%50; seviye 10'da her öldürme iki sayılır. Artış hiçbir zaman +%100'e varmaz. Bir kuleyi birden çok Sunucu bağlıyorsa en bilgilisi geçerli. Güçlenen yavaşlatma %90 tavanını aşmaz.",
   "menu.tower.balance.warrior-4": "Çarpma vuruşlu olduğu için seviye ile atış hızı artmaz, DPS artışı hasara taşınır. Yaklaşık değerler: 6. seviye 850, 7. seviye 1200, 8. seviye 1500, 10. seviye 2000 DPS.",
   "menu.tower.balance.warrior-5": "Gerçek atış aralığı 1. seviyede 0.20 sn, 5. seviyede 0.16 sn, 10. seviyede 0.12 sn. Overdrive 5. seviyede açılır; 10. seviyede zincir ışını yerine sola ve sağa süpüren iki ışın. Overdrive ışınları da aynı aralıkla vurur; 10. seviyede overdrive 3 saniye sürer, iki ışın ortadaki düşmandan başlayıp en fazla 1,5 saniye ilerler, kalan sürede ortaya döner ve birden fazla ışının altında kalan düşman atış başına bir kez vurulur.",
   "menu.tower.balance.warrior-6": "Dalga bonusları 2, 4, 6, 8, 10, 14 ve 16. tamamlanan dalgada açılır. Tam kurulumda (10. seviye, 16 dalga, 15 stack, 2 zincir) yaklaşık 4228 DPS'ye ulaşır.",
@@ -531,7 +531,7 @@ export const enMenu: Readonly<Record<keyof typeof trMenu, string>> = {
   "menu.tower.evolutions": "Evolutions",
 
   // ------------------------------------------------------------ Kule dosyasi: denge notlari
-  "menu.tower.balance.warrior-2": "Long-link reward: if it stays linked to the same tower for 5 waves, the linked impact tower gains 12-30% bonus damage based on Server level. After 10 waves linked, every hit adds bonus damage equal to 0.1-0.5% of the target's max health.",
+  "menu.tower.balance.warrior-2": "Knowledge bonus = n / (n + 160); n = kills × (1 + (level − 1) / 9). At level 1, 40 kills give +20% and 160 kills +50%; at level 10 every kill counts twice. The bonus never reaches +100%. If several Servers link a tower, the most knowledgeable one applies. A boosted slow never exceeds the 90% cap.",
   "menu.tower.balance.warrior-4": "As an impact tower, its fire rate does not rise with level; DPS growth goes into damage. Approximate values: level 6 850, level 7 1200, level 8 1500, level 10 2000 DPS.",
   "menu.tower.balance.warrior-5": "Real fire interval is 0.20 s at level 1, 0.16 s at level 5, 0.12 s at level 10. Overdrive unlocks at level 5; at level 10, two beams sweeping left and right replace the chain beam. Overdrive beams hit at the same interval; at level 10 overdrive lasts 3 seconds, both beams start at the middle enemy, advance for at most 1.5 seconds and spend the rest returning to the middle, and an enemy under more than one beam is hit once per shot.",
   "menu.tower.balance.warrior-6": "Wave bonuses unlock after the 2nd, 4th, 6th, 8th, 10th, 14th and 16th completed wave. Fully built (level 10, 16 waves, 15 stacks, 2 chains) it reaches about 4228 DPS.",

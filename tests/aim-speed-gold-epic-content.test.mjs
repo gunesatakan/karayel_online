@@ -377,8 +377,9 @@ test("cevrim formulu: esik, oran ve tavan; eksi kaynak hicbir sey vermiyor", () 
 // ------------------------------------------------------------- 2. Kapsam
 
 test("mermi atan kuleler: sunucunun mermi hizini okudugu atis yollari", () => {
-  const expectedTrue = ["zeynep-1", "zeynep-3", "zeynep-6", "warrior-1", "warrior-2", "warrior-4", "warrior-6", "archer-1", "archer-2", "archer-5", "archer-6", "onur-2"];
-  const expectedFalse = ["zeynep-2", "zeynep-7", "zeynep-8", "warrior-3", "warrior-5", "archer-3", "archer-4", "onur-1", "wall-1", "repair-depot-1", "warrior-7", "warrior-8", "zeynep-9", "archer-7"];
+  const expectedTrue = ["zeynep-1", "zeynep-3", "zeynep-6", "warrior-1", "warrior-4", "warrior-6", "archer-1", "archer-2", "archer-5", "archer-6", "onur-2"];
+  // Sunucu (warrior-2) carpma tipinde ama hic saldirmiyor: bagliyor, ates etmiyor.
+  const expectedFalse = ["zeynep-2", "zeynep-7", "zeynep-8", "warrior-2", "warrior-3", "warrior-5", "archer-3", "archer-4", "onur-1", "wall-1", "repair-depot-1", "warrior-7", "warrior-8", "zeynep-9", "archer-7"];
   for (const id of expectedTrue) assert.equal(towerFiresProjectiles(kule(id)), true, id);
   for (const id of expectedFalse) assert.equal(towerFiresProjectiles(kule(id)), false, id);
 });
@@ -406,9 +407,9 @@ test("donus, isabet ve mermi hizi icerigi butun katalogda yalnizca statin is gor
   }
 });
 
-test("hasar veren kule: duvar, onarim ussu ve hasarsiz auralar disarida; tanimda 0 hasar yazan vurucular icerde", () => {
-  for (const id of ["wall-1", "repair-depot-1", "zeynep-7", "zeynep-8", "warrior-3", "warrior-7"]) assert.equal(towerDealsDamage(kule(id)), false, id);
-  for (const id of ["warrior-2", "zeynep-6", "archer-4", "warrior-1", "warrior-5", "archer-3", "onur-1"]) assert.equal(towerDealsDamage(kule(id)), true, id);
+test("hasar veren kule: duvar, onarim ussu, hasarsiz auralar ve Sunucu disarida; tanimda 0 hasar yazan vurucular icerde", () => {
+  for (const id of ["wall-1", "repair-depot-1", "zeynep-7", "zeynep-8", "warrior-2", "warrior-3", "warrior-7"]) assert.equal(towerDealsDamage(kule(id)), false, id);
+  for (const id of ["zeynep-6", "archer-4", "warrior-1", "warrior-5", "archer-3", "onur-1"]) assert.equal(towerDealsDamage(kule(id)), true, id);
   // Kritik ve oldurme esyalari bu kurala bagli; hicbiri olu kalmiyor.
   const combatItems = shopCatalog.filter((entry) => entry.scope.kind === "tagged" && entry.scope.combat);
   assert.ok(combatItems.length >= 20, `yalnizca ${combatItems.length}`);

@@ -24,7 +24,7 @@ Karakter kodu `warrior`. Katalogda altı savaş/destek kulesi ve iki lojistik bi
 | Kule | Güncel işlev ve stratejik karşılığı |
 |---|---|
 | Takipçi | Fiziksel tek hedef atışı, hava hedefleri ve Takipte işareti. Takımın diğer hasar kaynaklarını besler. |
-| Sunucu | İki kuleye bağlantı, bağlı kulelerin menzilinden çıkan hedeflere elektrik atışı. Beş dalgalık bağ çarpma hasarını, on dalgalık bağ vuruş başına azami can hasarını destekler. |
+| Sunucu | Kendisi saldırmaz; iki kuleye bağlanır. Bağlı iki kule menzil ve soğumada yüksek olanı paylaşır. Bağlı kulelerin son vuruşlarından düşman türü başına bilgi toplar ve o türe karşı yavaşlatma (Koşucu), kalkan hasarı (Atıcı), zırh kırma (Ezici) ya da hasarı (Sürü, Kuşatma) oransal büyütür. (2026-10 yeniden tasarım; eski kaçış atışı ve dalga yaşı bonusları kaldırıldı.) |
 | İzolasyon | Sıfır temel hasar; yalnızken sürekli yavaşlatma aurası. Yerleşim, hasardan daha belirleyici. |
 | Obsesyon | Güçlü hedefe odaklanır. Aynı hedefte vuruş başına %20 hasar birikimi, temel motor tanımında 10 yığın sınırı. Hedef değiştirmek yatırımını sıfırlar. |
 | Debug Lazer | İşaret öncelikli sık hasar ve işaretli düşmana son vuruşa bağlı overdrive (vuruş işareti tüketmez; işaret yalnızca süresi bitince kalkar). Isı ve ikmal sürekliliği gerçek çıktıyı belirler. |
@@ -33,7 +33,7 @@ Karakter kodu `warrior`. Katalogda altı savaş/destek kulesi ve iki lojistik bi
 
 Yalnızlık pasifi güncel kodda hasar ve menzili **1,5 kat**, atış aralığını **1/1,5** yapıyor. Sınırlandırma, hedef bekleme ve kaynak kesintileri yokken yaklaşık **2,25 kat DPS** karşılığı var. Komşu kuleler pasifi bozar; duvarlar bozmaz. Sunucu kendisi bonus almaz.
 
-Tasarımın güçlü tarafı, Takipçi–Lazer–Sunucu ilişkisiyle dağıtık yerleşimin farklı kararlar üretmesi. Denge riski, Sunucu'nun vuruş başına azami can hasarının çok sık vuran kaynaklarda büyümesi; bu birleşim yalnızca temel kule DPS tablosuyla değerlendirilemez.
+Tasarımın güçlü tarafı, Takipçi–Lazer–Sunucu ilişkisiyle dağıtık yerleşimin farklı kararlar üretmesi. Denge riski, Sunucu'nun menzil ve soğuma paylaşımının birbirinden çok farklı iki kuleyi eşleştirmesi (ör. uzun menzilli bir kule kısa menzilli hızlı bir kuleyi taşıyabilir); bu birleşim yalnızca temel kule DPS tablosuyla değerlendirilemez.
 
 Kaynaklar: `packages/shared/src/characters/atakan/`, `packages/shared/src/characters/common/engine.ts`, `packages/shared/src/index.ts:59`, `apps/server/src/rooms/MatchRoom.ts:10286`.
 

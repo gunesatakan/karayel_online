@@ -37,7 +37,8 @@ import {
   MASTERY_POINTS,
   METEOR_KILLS,
   RunLedger,
-  SERVER_LINK_MATURITY_WAVES,
+  SERVER_KNOWLEDGE_BADGE_BONUS,
+  getServerKnowledgeTopBonus,
   STAGE_COUNT,
   TITLE_CATALOG,
   applyRunToMastery,
@@ -221,7 +222,7 @@ test("imza nisanlari: yalnizca kendi operatoruyle, esigin altinda acilmaz", () =
   const cases = [
     ["tam-dizilim", "zeynep", { formationTrio: true }, { formationTrio: false }],
     ["mukemmel-sutun", "zeynep", { perfectColumn: true }, {}],
-    ["olgun-bag", "warrior", { linkMatured10: true }, {}],
+    ["bilgi-bankasi", "warrior", { serverKnowledgeHalf: true }, {}],
     ["tam-evrim", "archer", { melisMaxEvolution: 3 }, { melisMaxEvolution: 2 }],
     ["sans-penceresi", "onur", { luckyWindow: true }, {}],
     ["kasa", "onur", { bestLuck: 1.9 }, { bestLuck: 1.89 }],
@@ -304,12 +305,11 @@ test("ulasilabilir: sunucunun uclu Zeynep dizilimi anlik goruntude, Tam Dizilim 
   assert.ok(findNewBadges(watch.buildFacts({ characterId: "zeynep", stage: 1 }), {}, new Set(), "wave").includes("tam-dizilim"));
 });
 
-test("ulasilabilir: kendi Sunucu bagin 10 dalgada olgunlasiyor; baskasinin bagi sayilmiyor", () => {
+test("ulasilabilir: Sunucu'nun bilgi artisi canli olarak %50'yi gecince Bilgi Bankasi; miras bilgi saymiyor", () => {
   const room = createRoom("warrior");
-  const sent = [];
-  const client = { sessionId: "p1", send: (type, payload) => sent.push({ type, payload }) };
-  room.clients = [client];
   room.broadcast = () => {};
+  const client = { sessionId: "p1", send() {} };
+  room.clients = [client];
   const build = (definitionId) => {
     const spot = findBuildableSpot(room, definitionId);
     room.placeTower(client, { x: spot.x, y: spot.y, definitionId });
@@ -318,14 +318,37 @@ test("ulasilabilir: kendi Sunucu bagin 10 dalgada olgunlasiyor; baskasinin bagi 
   const server = build("warrior-2");
   const own = build("warrior-1");
   room.linkServerTower(client, { serverTowerId: server.id, targetTowerId: own.id });
-  for (let wave = 1; wave <= 10; wave += 1) room.advanceWaveGrowth();
-  const matured = sent.filter((entry) => entry.type === "link:matured").map((entry) => entry.payload);
-  assert.deepEqual(matured.map((message) => message.waves), [...SERVER_LINK_MATURITY_WAVES]);
   const watch = liveWatch();
-  for (const message of matured) watch.noteLinkMatured(message.waves, message.serverOwnerId === "p2");
-  assert.equal(watch.getFlags().linkMatured10, false, "baskasinin Sunucusu senin nisanin degil");
-  for (const message of matured) watch.noteLinkMatured(message.waves, message.serverOwnerId === "p1");
-  assert.ok(findNewBadges(watch.buildFacts({ characterId: "warrior", stage: 1 }), {}, new Set(), "wave").includes("olgun-bag"));
+  const note = () => {
+    for (const wire of room.getSnapshot().towers) {
+      watch.noteOwnTower({ id: wire.id, level: wire.level, // Telde tanim kimligi statik kanalda; Sunucu kimligiyle eslesiyor.
+        serverKnowledgeBonus: wire.id === server.id ? getServerKnowledgeTopBonus(wire.serverKnowledge, wire.level) : undefined });
+    }
+  };
+  note();
+  // Bagli kule bir turden oldurdukce Sunucu bilgi topluyor; esik seviye 1'de 160 oldurme.
+  for (let kill = 0; kill < 159; kill += 1) {
+    room.spawnEnemy();
+    const enemy = [...room.enemies.values()].at(-1);
+    Object.assign(enemy, { type: "runner", hp: 1, maxHp: 1, shield: 0, armor: 0, damageResistances: {}, hitTypeResistances: {} });
+    room.damageEnemy(enemy, 1000, 0, own.definition.id, "p1", "true", 0, own.level, own.id, own.definition.hitType);
+  }
+  assert.equal(server.serverKnowledge.runner, 159);
+  note();
+  assert.equal(watch.getFlags().serverKnowledgeHalf, false, "esigin altinda acildi");
+  room.spawnEnemy();
+  const last = [...room.enemies.values()].at(-1);
+  Object.assign(last, { type: "runner", hp: 1, maxHp: 1, shield: 0, armor: 0, damageResistances: {}, hitTypeResistances: {} });
+  room.damageEnemy(last, 1000, 0, own.definition.id, "p1", "true", 0, own.level, own.id, own.definition.hitType);
+  note();
+  assert.ok(getServerKnowledgeTopBonus(server.serverKnowledge, server.level) >= SERVER_KNOWLEDGE_BADGE_BONUS);
+  assert.equal(watch.getFlags().serverKnowledgeHalf, true);
+  assert.ok(findNewBadges(watch.buildFacts({ characterId: "warrior", stage: 1 }), {}, new Set(), "wave").includes("bilgi-bankasi"));
+  // Ilk gorulusunde zaten bilgili Sunucu (miras) taban oluyor, nisan acmiyor.
+  const heir = liveWatch();
+  heir.noteOwnTower({ id: "miras", level: 1, serverKnowledgeBonus: 0.9 });
+  heir.noteOwnTower({ id: "miras", level: 1, serverKnowledgeBonus: 0.9 });
+  assert.equal(heir.getFlags().serverKnowledgeHalf, false);
 });
 
 test("ulasilabilir: sunucunun champion:down mesaji iki sampiyon nisanini besliyor", () => {

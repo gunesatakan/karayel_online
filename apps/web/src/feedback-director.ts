@@ -308,12 +308,6 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
     { wave: "square", from: 1800, to: 1500, at: 0, dur: 0.02, gain: 0.03 },
     { wave: "square", from: 2200, to: 1800, at: 0.05, dur: 0.02, gain: 0.03 },
     { wave: "sine", from: NOTE.G5, at: 0.09, dur: 0.2, gain: 0.07 }
-  ],
-  // Bag olgunlasti: baglanti notasinin devami, yukselen uclu (G5-C6-E6).
-  linkMatured: () => [
-    { wave: "triangle", from: NOTE.G5, at: 0, dur: 0.12, gain: 0.07 },
-    { wave: "triangle", from: NOTE.C6, at: 0.08, dur: 0.12, gain: 0.07 },
-    { wave: "sine", from: NOTE.E6, at: 0.16, dur: 0.22, gain: 0.07 }
   ]
 };
 

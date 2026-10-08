@@ -72,7 +72,6 @@ export const trCore = {
   "sheet.source.character:melis-evolution": "Evrim",
   "sheet.source.character:melis-nightmare": "Gotik kâbus",
   "sheet.source.tower:kill-streak": "Öldürme serisi",
-  "sheet.source.tower:warrior-2:server-link": "Sunucu bağı",
   "sheet.source.tower:warrior-4:obsession": "Obsesyon",
   "sheet.source.tower:warrior-5:debug": "Debug seviyesi",
   "sheet.source.tower:zeynep-1:compensation": "Hiza dengesi",

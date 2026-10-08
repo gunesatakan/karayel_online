@@ -1,7 +1,7 @@
 /**
  * Kademe basina boyanmis kule resimleri (apps/web/src/tower-art.ts).
  *
- * Takipci, Obsesyon, Debug Lazer ve Ucube seviye 1-4, 5-9 ve 10 icin ayri resim tasiyor;
+ * Takipci, Sunucu, Obsesyon, Debug Lazer ve Ucube seviye 1-4, 5-9 ve 10 icin ayri resim tasiyor;
  * resim kendi karesini dolduruyor. Uretici bazen saydamlik yerine gri-beyaz
  * dama desenini resmin icine ciziyor (Obsesyon'un ilk resmi oyleydi): dosyada
  * saydamlik kanali hic olmuyor ve kule opak bir kare olarak cikiyordu.
@@ -28,7 +28,7 @@ function hasAlphaChannel(bytes) {
 }
 
 test("kademe resmi seviyenin kademesine gore seciliyor; digerleri tek resim", () => {
-  for (const id of ["warrior-1", "warrior-4", "warrior-5", "warrior-6"]) {
+  for (const id of ["warrior-1", "warrior-2", "warrior-4", "warrior-5", "warrior-6"]) {
     assert.equal(art.getTowerTextureKey(id, 1), `tower-${id}-levels-1-4`);
     assert.equal(art.getTowerTextureKey(id, 4), `tower-${id}-levels-1-4`);
     assert.equal(art.getTowerTextureKey(id, 5), `tower-${id}-levels-5-9`);
@@ -43,7 +43,7 @@ test("kademe resmi seviyenin kademesine gore seciliyor; digerleri tek resim", ()
 
 test("her kademe resmi pakette ve gercekten saydam", () => {
   const resimler = art.listTieredTowerArt();
-  assert.equal(resimler.length, 12);
+  assert.equal(resimler.length, 15);
   for (const { path } of resimler) {
     const url = new URL(`../apps/web/public/${path}`, import.meta.url);
     assert.ok(existsSync(url), `pakette yok: ${path}`);
@@ -53,6 +53,7 @@ test("her kademe resmi pakette ve gercekten saydam", () => {
 
 test("kademe resmi kareyi dolduruyor: cizim boyu kule izi, cikinti payi yok", () => {
   assert.equal(art.getTowerSpriteSize("warrior-1", 34), 34);
+  assert.equal(art.getTowerSpriteSize("warrior-2", 34), 34);
   assert.equal(art.getTowerSpriteSize("warrior-4", 34), 34);
   assert.equal(art.getTowerSpriteSize("warrior-5", 34), 34);
   assert.equal(art.getTowerSpriteSize("warrior-6", 68), 68);

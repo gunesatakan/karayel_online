@@ -15,7 +15,7 @@
  * - P0: kendi kademe atlaman, ulti sonucu, serin.
  * - P1: kendi kritigin, son vurusun, dalga temizleme, kart acilisi, ulti hazir,
  *   dokunusunun sunucu onayi (alim, takma, onarim, gelisim), Execute infazi ve
- *   kulene baglanan / olgunlasan Sunucu bagi, sonucu degistiren kombo damgasi.
+ *   kulene baglanan Sunucu bagi, sonucu degistiren kombo damgasi.
  * - P2: kendi vurusun, altinin, seviyen, yerlestirmen.
  * - P3: takim arkadasinin her olayi.
  *
@@ -50,7 +50,6 @@ export type FeedbackKind =
   | "synergy"
   | "execute"
   | "linkJoined"
-  | "linkMatured"
   | "combo"
   | "assist"
   | "champion"
@@ -166,10 +165,6 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // gidiyor, yani hep "senin". Bildirim yiginda, kulede nabiz. Arasi uzun:
   // bag dokunusla acilip kapaniyor, ac-kapa ekrani bildirime bogmasin.
   linkJoined: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 2000, teammateVisual: false, soundMs: 320, soundGapMs: 2000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
-  // Bag olgunlasti (5 / 10 dalga): kulenin ustunde kisa bir etiket. Dalga
-  // sonunda birkac bag ayni anda olgunlasabiliyor; etiket butcesi ve tek
-  // tini (hiz siniri) onlari tek ana topluyor.
-  linkMatured: { ownPriority: 1, channel: "label", visualMs: 1600, visualGapMs: 0, teammateVisual: true, soundMs: 380, soundGapMs: 1000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
   // Kombo damgasi ("İŞARET → OVERDRIVE", "Tarama: 3 öldü", "ŞANS PENCERESİ
   // 10 sn"): yalnizca sonucu degistiren uc etkilesim. Hiz siniri ve "ekranda
   // en fazla iki" kurali `ComboStampGate`te (tur + sahip basina 4 sn); burasi

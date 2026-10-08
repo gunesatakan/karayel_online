@@ -38,7 +38,6 @@ import {
   getRiskyInvestmentNoticeText,
   getRunMapKey,
   getServerLinkJoinedText,
-  getServerLinkMaturedText,
   getSharedLocale,
   getShopPurchaseCue,
   getStage,
@@ -301,7 +300,6 @@ test("geri bildirim: onay, ulti, seri, asist, takim ve sinerji metinleri", () =>
     getKillAssistText("mark", "Ali", "Ece"),
     getKillAssistText("freeze", undefined, "Ece"),
     getServerLinkJoinedText("AttackLord"),
-    getServerLinkMaturedText(5),
     getRiskyInvestmentNoticeText("Ali", 10, 400),
     getSynergyStampText("isolationLost"),
     getSynergyCulpritNotice("formationBroken", "Ece"),
@@ -311,12 +309,12 @@ test("geri bildirim: onay, ulti, seri, asist, takim ve sinerji metinleri", () =>
   ]);
   assert.deepEqual(misc.tr.slice(0, 4), ["İŞARET → OVERDRIVE", "Tarama: 4 öldü", misc.tr[2], "Ali işaretledi → Ece bitirdi"]);
   assert.deepEqual(misc.tr[5], { title: "AttackLord'un Sunucusu", detail: "kulene bağlandı" });
-  assert.equal(misc.tr[12], "SV 10 · KADEME 3");
+  assert.equal(misc.tr[11], "SV 10 · KADEME 3");
   assertEnglish(misc.en, "geri bildirim");
   assert.equal(misc.en[3], "Ali marked → Ece finished");
   assert.equal(misc.en[4], "Your teammate froze → Ece finished");
   assert.deepEqual(misc.en[5], { title: "AttackLord's Server", detail: "linked to your tower" });
-  assert.equal(misc.en[12], "LV 10 · TIER 3");
+  assert.equal(misc.en[11], "LV 10 · TIER 3");
 
   const preview = inBoth(() => describeSynergyPreview(
     { formation: undefined, isolationEligible: true, isolated: true, breaksIsolation: [{ id: "a" }], breaksFormation: [{ id: "b" }] },

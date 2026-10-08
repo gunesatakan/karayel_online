@@ -74,7 +74,7 @@ Kalkan varsa hesaplanan hasar once kalkana gider. Kalkan bittikten sonra kalan h
 
 ## Max HP Oranli Hasar
 
-Sunucu'nun 10 dalga uzun baglanti buff'i gibi `max HP yuzdesi` uzerinden calisan ek hasarlar kalkan varken tetiklenmez. Bu hasar tipi dusmanin canina saplanan ek hasar olarak kabul edilir.
+`maxHealthDamageRatio` tasiyan, `max HP yuzdesi` uzerinden calisan ek hasarlar kalkan varken tetiklenmez. (Bunu veren Sunucu'nun 10 dalga bag bonusu kaldirildi; mekanizma duruyor.) Bu hasar tipi dusmanin canina saplanan ek hasar olarak kabul edilir.
 
 Uygulama sirasi:
 

@@ -262,7 +262,12 @@ export function calculateDamageTaken(
     damageResistances?: ResistanceTable<DamageType>;
     hitTypeResistances?: ResistanceTable<HitType>;
   },
-  shaping: { resistancePierce?: number; weaknessBonus?: number } = {}
+  shaping: {
+    resistancePierce?: number;
+    weaknessBonus?: number;
+    /** Kalkana giden hasarin ek carpani (Sunucu'nun Atici bilgisi). Kalkani asan kisim degismiyor. */
+    shieldDamageMultiplier?: number;
+  } = {}
 ): DamageResult {
   const armorMultiplier = packet.damageType === "true" ? 1 : calculateArmorDamageMultiplier(target.armor);
   const resistance = shapeEnemyResistance(target.damageResistances?.[packet.damageType] ?? 0, shaping);
@@ -271,8 +276,9 @@ export function calculateDamageTaken(
   const hitTypeResistance = shapeEnemyResistance(rawHitTypeResistance, shaping);
   const hitTypeResistanceMultiplier = Math.max(0, 1 - hitTypeResistance);
   const rawDamage = Math.max(0, packet.amount * armorMultiplier * resistanceMultiplier * hitTypeResistanceMultiplier);
-  const shieldDamage = Math.min(target.shield, rawDamage * SHIELD_DAMAGE_TAKEN_MULTIPLIER);
-  const rawDamageAbsorbedByShield = shieldDamage / SHIELD_DAMAGE_TAKEN_MULTIPLIER;
+  const shieldMultiplier = SHIELD_DAMAGE_TAKEN_MULTIPLIER * Math.max(0, shaping.shieldDamageMultiplier ?? 1);
+  const shieldDamage = shieldMultiplier > 0 ? Math.min(target.shield, rawDamage * shieldMultiplier) : 0;
+  const rawDamageAbsorbedByShield = shieldMultiplier > 0 ? shieldDamage / shieldMultiplier : 0;
   const hpDamage = Math.max(0, rawDamage - rawDamageAbsorbedByShield);
 
   return {

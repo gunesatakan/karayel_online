@@ -1,9 +1,9 @@
 /**
  * Takimi etkileyen sessiz kararlarin sinyali.
  *
- * Sunucu (warrior-2) takim arkadasinin kulesine baglanabiliyor ve bag 5 ve
- * 10 dalgada olgunlasip o kuleye bonus veriyor; kulenin sahibi ne baglandigini
- * ne de olgunlastigini goruyordu.
+ * Sunucu (warrior-2) takim arkadasinin kulesine baglanabiliyor ve bag o
+ * kuleye menzil, soguma ve bilgi artisi veriyor; kulenin sahibi baglandigini
+ * gormuyordu.
  *
  * Burasi tel mesajlarinin sekli ve metinler. Sunucu tek seferlik mesaj
  * yolluyor (her tick'te veri degil).
@@ -17,33 +17,6 @@ export type ServerLinkJoinedMessage = {
   targetTowerId: string;
   serverOwnerId: string;
 };
-
-/**
- * Bagin olgunlastigi dalga yaslari: 5'te carpma bonusu, 10'da azami can
- * hasari. Sunucunun `getStrongestServerLinkLevel(tower, 5 | 10)` esikleriyle
- * ayni; test ikisini birlikte tutuyor.
- */
-export const SERVER_LINK_MATURITY_WAVES = [5, 10] as const;
-export type ServerLinkMaturityWave = (typeof SERVER_LINK_MATURITY_WAVES)[number];
-
-/** `link:matured`: bag 5 ya da 10 dalgaya ulasti. Iki sahibe de (ayni kisiyse bir kez). */
-export type ServerLinkMaturedMessage = {
-  serverTowerId: string;
-  targetTowerId: string;
-  serverOwnerId: string;
-  targetOwnerId: string;
-  waves: ServerLinkMaturityWave;
-};
-
-/** Yas bir dalgada `previous`tan `next`e cikti; bir olgunluk esigi gecildiyse o. */
-export function getServerLinkMaturity(previousAge: number, nextAge: number): ServerLinkMaturityWave | undefined {
-  for (const waves of SERVER_LINK_MATURITY_WAVES) {
-    if (previousAge < waves && nextAge >= waves) {
-      return waves;
-    }
-  }
-  return undefined;
-}
 
 /**
  * Ayni Sunucu-kule cifti icin "baglandi" bildirimleri arasi en kisa sure.
@@ -78,11 +51,6 @@ export function getRiskyInvestmentNoticeText(buyerName: string | undefined, nexu
     title: lt(`${name} Riskli Yatırım aldı`, `${name} bought Risky Investment`),
     detail: lt(`nexus −${nexusCost}, +${gold} altın`, `nexus −${nexusCost}, +${gold} gold`)
   };
-}
-
-/** "Bağ olgunlaştı · 5 dalga". */
-export function getServerLinkMaturedText(waves: ServerLinkMaturityWave) {
-  return lt(`Bağ olgunlaştı · ${waves} dalga`, `Link matured · ${waves} waves`);
 }
 
 const BACK_VOWELS = "aıou";
