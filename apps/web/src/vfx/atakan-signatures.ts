@@ -243,8 +243,8 @@ export class AtakanSignatureVfx {
    * Isaret nisangahi.
    *
    * Iki ayri eksen, karistirilmiyor:
-   * - **Yigin** (sunucudaki canli isaret yuvasi sayisi, 1-3; Debug Lazer
-   *   isaret tuketince dusuyor): yalnizca darlik ve kertik sayisi.
+   * - **Yigin** (sunucudaki canli isaret yuvasi sayisi, 1-3; yuvanin suresi
+   *   dolunca dusuyor): yalnizca darlik ve kertik sayisi.
    * - **Kademe** (isareti koyan Takipci'nin seviyesi, `k` alani): cizginin
    *   agirligi ve sicakligi. Kademe 3'te ayraclarin icinde beyaz-sicak bir
    *   cekirdek cizgisi (takim arkadasinin isaretinde %70).

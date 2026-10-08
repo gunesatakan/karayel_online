@@ -110,7 +110,6 @@ export type TowerEngineConfig = {
   damageTypeByMode?: Record<string, DamageType>;
   levelScaling: TowerLevelScalingDefinition[];
   appliesMark?: { id: string; damageMultiplier: number; durationMs: number };
-  consumesMarks?: Array<string | { id: string; event?: "hit" | "kill"; consumeStacks?: number }>;
   placement?: {
     requiresEdge?: boolean;
     footprintSpan?: number;

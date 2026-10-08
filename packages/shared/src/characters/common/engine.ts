@@ -100,7 +100,7 @@ const profiles: Record<string, EngineProfile> = {
   "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
   // Debug Lazer: nozul ucu boyali resimde (tower-warrior-5-*.webp) yari cercevenin
   // ~%89'unda. Normal isin oradan cikiyor; asiri yuklemenin kirisleri ortadaki prizmadan.
-  "warrior-5": { targeting: "marked", attack: { shape: "beam", executor: "debug-laser", muzzleOffset: 0.89 }, canHitAir: false, consumesMarks: [{ id: "tracking", event: "hit", consumeStacks: 1 }], triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
+  "warrior-5": { targeting: "marked", attack: { shape: "beam", executor: "debug-laser", muzzleOffset: 0.89 }, canHitAir: false, triggers: [{ event: "overheat", effect: "disable" }, { event: "kill", effect: "marked-overdrive", condition: "targetMarked" }] , resources: { ammoType: "powerCrystal" } },
   // Ucube 2x2: dort kare kaplar. Topun agzi boyali resimde diskin kenarinda
   // (tower-warrior-6-*.webp, yari cercevenin ~%97'si); mermi oradan cikiyor.
   "warrior-6": { targeting: "first", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "ucube-fire-rate", trigger: "activeSecond", stat: "fireIntervalReduction", perStack: 0.04539007092198582, resetOn: "noTarget" }], triggers: [{ event: "overheat", effect: "disable" }], placement: { footprintSpan: 2 } },

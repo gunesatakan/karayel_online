@@ -184,19 +184,26 @@ test("enerji yonleri: gerilim maliyeti, bobin isiyi, depo hasari degistiriyor", 
   assert.ok(Math.abs(room.getTowerHitDamageAdd(tower, now) - before) < 1e-9, "depo dolu degilken bonus yok");
 });
 
-test("isaret koruma isaret tuketen kuleyi isaretten alikoyuyor", () => {
+test("isaret koruma vurulan isaretli dusmanin isaretini bastan baslatiyor; yigini buyutmuyor, isaretsize koymuyor", () => {
   const room = setupRoom();
   const laser = place(room, "warrior-5");
-  const [enemy] = spawnEnemies(room, 1);
+  const [marked, plain] = spawnEnemies(room, 2);
   const now = Date.now();
-  room.applyTrackingStacks(enemy, now + 5000, 2);
-  room.consumeConfiguredMarks(laser, enemy, "hit");
-  assert.equal(room.getTrackingStackCount(enemy), 1, "korumasiz kule isaret yiyor");
+  // Iki yuva, ikisi de bitmek uzere; ucuncu yuva bos.
+  room.applyTrackingStacks(marked, now + 500, 2);
+  const hit = (enemy) => room.damageEnemy(enemy, 1, 0, "warrior-5", laser.ownerId, "fire", 0, laser.level, laser.id, "focus");
+
+  // Korumasiz vurus suresine dokunmuyor (vurus isareti tuketmiyor da).
+  hit(marked);
+  assert.equal(room.getTrackingStackCount(marked, now), 2);
+  assert.equal(Math.max(...marked.trackingStackUntil), now + 500);
 
   room.applyEnergyWorkerArrival(addWorker(room, "energyTransport", ["energy-mark-guard"]), laser);
-  room.consumeConfiguredMarks(laser, enemy, "hit");
-  room.consumeConfiguredMarks(laser, enemy, "hit");
-  assert.equal(room.getTrackingStackCount(enemy), 1);
+  hit(marked);
+  hit(plain);
+  assert.equal(room.getTrackingStackCount(marked, now), 2, "yigin buyudu ya da kuculdu");
+  assert.ok(marked.trackingStackUntil.filter((until) => until > now).every((until) => until > now + 5000), "isaret bastan baslamadi");
+  assert.equal(room.getTrackingStackCount(plain, now), 0, "isaretsiz dusmana isaret kondu");
 });
 
 test("hedef kilidi hedef degisince birikimi koruyor", () => {

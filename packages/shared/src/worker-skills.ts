@@ -284,11 +284,11 @@ export const WORKER_DEVELOPMENT_ROWS: Readonly<Record<HirableWorkerRole, readonl
     ),
     developmentRow(
       [
-        { id: "energy-mark-guard", name: "İşaret Koruma", description: "Teslim alan kule 6 sn boyunca vurduğu düşmanların işaretlerini tüketmez." },
+        { id: "energy-mark-guard", name: "İşaret Koruma", description: "Teslim alan kule 6 sn boyunca vurduğu işaretli düşmanların işaret süresini baştan başlatır." },
         { id: "energy-target-lock", name: "Hedef Kilidi", description: "Teslim alan kule 6 sn boyunca hedef değiştirse ya da hedefsiz kalsa da birikimlerini korur." }
       ],
       [
-        { id: "energy-lasting-trace", name: "Kalıcı İz", description: "İşaret Koruma güçlenir: teslim alan kule 10 sn boyunca işaret tüketmez." },
+        { id: "energy-lasting-trace", name: "Kalıcı İz", description: "İşaret Koruma güçlenir: teslim alan kule 10 sn boyunca vurduğu işaretli düşmanların işaret süresini baştan başlatır." },
         { id: "energy-fixation-lock", name: "Saplantı Kilidi", description: "Hedef Kilidi güçlenir: teslim alan kule 10 sn boyunca birikimlerini korur." }
       ]
     ),

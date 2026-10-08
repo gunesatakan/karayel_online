@@ -56,6 +56,8 @@ import {
   getDebugLaserFireInterval,
   getDebugLaserTwinBeamIds,
   DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL,
+  DEBUG_LASER_BEAM_WIDTH,
+  DEBUG_LASER_OVERDRIVE_BEAM_WIDTH,
   DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
   getKinFireInterval,
   getObsessionDamageMultiplier,
@@ -748,6 +750,11 @@ const ROOM_ERROR_LOG_INTERVAL_MS = 10_000;
 const PERF_SEND_INTERVAL_MS = 1000;
 const SNAPSHOT_SIZE_METRICS_ENABLED = process.env.SNAPSHOT_SIZE_METRICS === "true";
 const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
+/**
+ * Takipci'nin Takip isaretinin suresi (oyun ms'si). Isaret yalnizca bu sure
+ * dolunca kalkiyor; hicbir kulenin vurusu onu tuketmiyor.
+ */
+const TRACKING_MARK_DURATION_MS = 6500;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 /**
  * 10. seviyenin asiri yuklemesi: iki kiris ortadaki dusmandan sola ve saga
@@ -5780,6 +5787,11 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /**
+   * Lazerin normal atisi. Isaretli (Takipte) bir dusmana son vuruşu yaparsa
+   * asiri yukleme aciliyor. Vurus isareti tuketmiyor: isaret yalnizca suresi
+   * dolunca kalkiyor, hicbir kulenin vurusu onu silmiyor.
+   */
   private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
     const now = Date.now();
     const baseDamage = this.getTowerDamage(tower);
@@ -5788,11 +5800,8 @@ export class MatchRoom extends Room<MatchState> {
 
     if (wasTracked && killed) {
       this.runTowerTriggers(tower, "kill", { target, conditions: ["targetMarked"], now });
-      this.consumeConfiguredMarks(tower, target, "kill");
       return;
     }
-
-    this.consumeConfiguredMarks(tower, target, "hit");
 
     this.setBeam(tower, target.x, target.y, false);
   }
@@ -5896,7 +5905,7 @@ export class MatchRoom extends Room<MatchState> {
       y2,
       scanX,
       scanY,
-      width: overdrive ? 8 : 4,
+      width: overdrive ? DEBUG_LASER_OVERDRIVE_BEAM_WIDTH : DEBUG_LASER_BEAM_WIDTH,
       color: this.getDebugLaserBeamColor(tower, overdrive),
       overdrive,
       ttlMs,
@@ -9140,6 +9149,9 @@ export class MatchRoom extends Room<MatchState> {
   private applyWorkerHitBoosts(towerId: string, enemy: EnemyModel, now: number) {
     const tower = this.towers.get(towerId);
     if (!tower?.workerBoosts) return;
+    // Isaret Koruma: suresince vurulan isaretli dusmanin Takip isareti bastan
+    // basliyor. Isaretsiz dusmana isaret koymuyor, yigini buyutmuyor.
+    if (this.getWorkerBoost(tower, "markGuard", now)) this.refreshTrackingStacks(enemy, now);
     const mark = this.getWorkerBoost(tower, "markShots", now);
     if (mark) {
       this.spendWorkerBoostShot(tower, "markShots", now);
@@ -12978,7 +12990,7 @@ export class MatchRoom extends Room<MatchState> {
       : undefined;
     const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
     if (sourceDefinitionId === "warrior-1") {
-      const duration = applyStatusResistance(6500, enemy.statusResistances.tracking);
+      const duration = applyStatusResistance(TRACKING_MARK_DURATION_MS, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
       enemy.trackingSourceTowerId = sourceTowerId;
     }
@@ -13435,6 +13447,20 @@ export class MatchRoom extends Room<MatchState> {
     this.setEnemyMark(enemy, "tracking", stackLimit * 0.2, expiresAt);
   }
 
+  /**
+   * Etkin Takip yiginlarini isaretin tam suresine yeniler. Bitmis yuvalar
+   * bitmis kaliyor: yigin sayisi degismiyor, yalnizca sureleri uzuyor.
+   */
+  private refreshTrackingStacks(enemy: EnemyModel, now: number) {
+    const count = this.getTrackingStackCount(enemy, now);
+    if (count === 0) return;
+    const expiresAt = now + scaleGameDuration(applyStatusResistance(TRACKING_MARK_DURATION_MS, enemy.statusResistances.tracking));
+    enemy.trackingStackUntil.forEach((until, index) => {
+      if (until > now) enemy.trackingStackUntil[index] = Math.max(until, expiresAt);
+    });
+    this.setEnemyMark(enemy, "tracking", count * 0.2, expiresAt);
+  }
+
   private setEnemyMark(enemy: EnemyModel, id: string, add: number, until: number) {
     const next = applyEnemyMark(
       enemy.activeMarkId ? { id: enemy.activeMarkId, add: enemy.activeMarkAdd, expiresAt: enemy.activeMarkUntil } : undefined,
@@ -13480,8 +13506,8 @@ export class MatchRoom extends Room<MatchState> {
     const killerSlot = this.getPlayerSlot(killerId);
     if (killerSlot === undefined) return [];
     const candidates: KillAssistCandidate[] = [];
-    // Yigin sayisi, ilk yuva degil: isaret tuketen kule (warrior-5) once en
-    // erken biten yuvayi -- cogunlukla 0'i -- siliyor, kalan yiginlar suruyor.
+    // Yigin sayisi, ilk yuva degil: yuvalar ayri surelerle doluyor, ilk yuva
+    // bitmis olsa da kalan yiginlar suruyor.
     if (enemy.trackingSourceTowerId && this.getTrackingStackCount(enemy, now) > 0) {
       const tracker = this.towers.get(enemy.trackingSourceTowerId);
       if (tracker) candidates.push({ slot: this.getPlayerSlot(tracker.ownerId), kind: "mark" });
@@ -16508,8 +16534,6 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
     }
-    this.consumeConfiguredMarks(tower, target, this.enemies.has(target.id) ? "hit" : "kill");
-
     if (tower.definition.id === "warrior-4") {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
         if (tower.level >= 3) {
@@ -16554,35 +16578,6 @@ export class MatchRoom extends Room<MatchState> {
 
     if (hasUcubePerk(tower, "pushback") && this.enemies.has(target.id)) {
       target.pathDistance = Math.max(0, target.pathDistance - this.scaleWorldDistance(18));
-    }
-  }
-
-  private consumeConfiguredMarks(tower: TowerModel, target: EnemyModel, event: "hit" | "kill") {
-    // Isaret Koruma: kule bir sure vurdugu dusmanin isaretini yemiyor.
-    if (this.getWorkerBoost(tower, "markGuard")) return;
-    for (const rawRule of tower.definition.engine?.consumesMarks ?? []) {
-      const rule = typeof rawRule === "string" ? { id: rawRule, event: "hit" as const, consumeStacks: 1 } : rawRule;
-      if ((rule.event ?? "hit") !== event || target.activeMarkId !== rule.id || target.activeMarkUntil <= Date.now()) continue;
-      if (rule.id === "tracking") {
-        let remainingToConsume = Math.max(1, rule.consumeStacks ?? 1);
-        const activeIndexes = target.trackingStackUntil
-          .map((until, index) => ({ until, index }))
-          .filter((entry) => entry.until > Date.now())
-          .sort((left, right) => left.until - right.until);
-        for (const entry of activeIndexes) {
-          if (remainingToConsume <= 0) break;
-          target.trackingStackUntil[entry.index] = 0;
-          remainingToConsume -= 1;
-        }
-        const remaining = target.trackingStackUntil.filter((until) => until > Date.now());
-        target.activeMarkAdd = remaining.length * 0.2;
-        target.activeMarkUntil = remaining.length > 0 ? Math.max(...remaining) : 0;
-        if (remaining.length === 0) target.activeMarkId = "";
-      } else {
-        target.activeMarkId = "";
-        target.activeMarkAdd = 0;
-        target.activeMarkUntil = 0;
-      }
     }
   }
 

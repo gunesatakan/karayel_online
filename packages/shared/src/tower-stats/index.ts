@@ -82,6 +82,13 @@ export function getDebugLaserDamageMultiplier(level: number, overdrive: boolean)
 
 /** Debug Lazer'in asiri yuklemesi bu seviyeden itibaren tetiklenebiliyor. */
 export const DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL = 5;
+/**
+ * Debug Lazer isininin kalinligi (dunya birimi): normal ve asiri yukleme.
+ * Istemci butun cizimi (kesit, hale, uc noktalari) bundan orantiliyor. Eskiden
+ * 4 ve 8'di; boyali kulenin ince nozuluna gore kalin kaliyordu, 2/3'une indi.
+ */
+export const DEBUG_LASER_BEAM_WIDTH = 8 / 3;
+export const DEBUG_LASER_OVERDRIVE_BEAM_WIDTH = 16 / 3;
 /** Bu seviyede asiri yuklemenin zincir kirisi yerini sola ve saga supuren iki kirise birakiyor. */
 export const DEBUG_LASER_TWIN_OVERDRIVE_LEVEL = 10;
 /**

@@ -27,7 +27,7 @@ Karakter kodu `warrior`. Katalogda altı savaş/destek kulesi ve iki lojistik bi
 | Sunucu | İki kuleye bağlantı, bağlı kulelerin menzilinden çıkan hedeflere elektrik atışı. Beş dalgalık bağ çarpma hasarını, on dalgalık bağ vuruş başına azami can hasarını destekler. |
 | İzolasyon | Sıfır temel hasar; yalnızken sürekli yavaşlatma aurası. Yerleşim, hasardan daha belirleyici. |
 | Obsesyon | Güçlü hedefe odaklanır. Aynı hedefte vuruş başına %20 hasar birikimi, temel motor tanımında 10 yığın sınırı. Hedef değiştirmek yatırımını sıfırlar. |
-| Debug Lazer | İşaret öncelikli sık hasar, işaret tüketimi ve işaretli öldürmeye bağlı overdrive. Isı ve ikmal sürekliliği gerçek çıktıyı belirler. |
+| Debug Lazer | İşaret öncelikli sık hasar ve işaretli düşmana son vuruşa bağlı overdrive (vuruş işareti tüketmez; işaret yalnızca süresi bitince kalkar). Isı ve ikmal sürekliliği gerçek çıktıyı belirler. |
 | Ucube | Ateş sürekliliğine bağlı hız birikimi ve 4/6/8/10. seviyelerde ikili özellik seçimleri. Eski metinlerdeki bütün bonusların dalgayla otomatik açılması artık doğru değil. |
 | Cephane Merkezi / Enerji Reaktörü | Savaş kulelerinin kaynak zincirini besler. |
 

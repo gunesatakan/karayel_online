@@ -956,12 +956,25 @@ export class BeamRenderer {
     return (beam.tier ?? 1) < 2 ? color : this.getBeamCoreColor(color, 0.86);
   }
 
+  /**
+   * Debug Lazer'in kalinlik olcegi: sunucunun gonderdigi genisligin eski
+   * genislige (normal 4, asiri yukleme 8) orani. Lazerin butun sabitleri
+   * (hale, uc noktalari, vurgu) bununla carpiliyor; kalinligi tek sayi
+   * belirliyor (DEBUG_LASER_BEAM_WIDTH, 2/3). Eski genislikte olcek 1: cizim
+   * birebir eskisi (vfx-kit-laser-identity). Lazer olmayan isinlar bu yolu
+   * varsayilan cizim olarak kullaniyor; onlarda olcek hep 1.
+   */
+  private getLaserScale(beam: BeamSnapshot, baseWidth: number) {
+    return beam.definitionId === "warrior-5" ? beam.width / baseWidth : 1;
+  }
+
   private drawLaserConnection(beam: BeamSnapshot, color: number) {
     if (!this.beamGraphics) {
       return;
     }
 
-    this.strokeBeamProfile(beam, color, { spread: 8, body: Math.max(2, beam.width) });
+    const scale = this.getLaserScale(beam, 4);
+    this.strokeBeamProfile(beam, color, { spread: 8 * scale, body: Math.max(2, beam.width) });
     // Carpma noktasi kirisin en sicak yeri, ama yalnizca nokta: cevresine
     // renkli bir bulut konmuyor. Bulut kirisin ucunu kalinlastirip vurusun
     // nereye dustugunu bulaniklastiriyordu.
@@ -969,11 +982,11 @@ export class BeamRenderer {
     // Kirmizi kademede nokta da duz: govdenin gradyani yokken ucunda beyaz bir
     // parlama olsa, kaldirilan gecis oradan geri girerdi.
     this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.95);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 3.4 * scale);
     this.beamGraphics.fillStyle(color, 0.22);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 13);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 13 * scale);
     // Dis hale govdeden 8 birim genis; vurgu onun disina oturmali.
-    ACCENT_OUTER.outerWidth = beam.width + 8;
+    ACCENT_OUTER.outerWidth = beam.width + 8 * scale;
     this.drawBeamTierAccent(beam, color, ACCENT_OUTER);
   }
 
@@ -982,19 +995,20 @@ export class BeamRenderer {
       return;
     }
 
+    const scale = this.getLaserScale(beam, 8);
     const core = this.getBeamCoreColor(color, 0.86);
-    this.strokeBeamProfile(beam, color, { spread: 14, body: Math.max(3, beam.width) });
+    this.strokeBeamProfile(beam, color, { spread: 14 * scale, body: Math.max(3, beam.width) });
     this.beamGraphics.lineStyle(1, color, 0.65);
-    this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19);
+    this.beamGraphics.strokeCircle(beam.x1, beam.y1, 19 * scale);
     this.beamGraphics.fillStyle(color, 0.35);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 11);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 11 * scale);
     this.beamGraphics.fillStyle(core, 1);
-    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5);
+    this.beamGraphics.fillCircle(beam.x1, beam.y1, 5.5 * scale);
     // Ucta hare yok, yalnizca sicak nokta; kural asiri yuklemede de ayni.
     this.beamGraphics.fillStyle(this.getBeamImpactColor(beam, color), 0.9);
-    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4);
+    this.beamGraphics.fillCircle(beam.x2, beam.y2, 4 * scale);
     const tier = beam.tier ?? 1;
-    ACCENT_OUTER.outerWidth = beam.width + 14;
+    ACCENT_OUTER.outerWidth = beam.width + 14 * scale;
     this.drawBeamTierAccent(beam, color, ACCENT_OUTER);
     if (tier >= 3) {
       this.drawOverdriveFlare(beam);
@@ -1016,10 +1030,11 @@ export class BeamRenderer {
       return;
     }
     const now = this.time.now;
-    OVERDRIVE_CORONA.base = beam.width + 6;
+    const scale = this.getLaserScale(beam, 8);
+    OVERDRIVE_CORONA.base = beam.width + 6 * scale;
     drawCorona(graphics, beam.x1, beam.y1, beam.x2, beam.y2, now, OVERDRIVE_CORONA);
     drawRunningGlints(graphics, beam.x1, beam.y1, beam.x2, beam.y2, now, OVERDRIVE_GLINTS);
-    OVERDRIVE_SPARKS.offset = beam.width * 0.5 + 4;
+    OVERDRIVE_SPARKS.offset = beam.width * 0.5 + 4 * scale;
     drawLineSparks(graphics, beam.x1, beam.y1, beam.x2, beam.y2, now, OVERDRIVE_SPARKS);
     drawMuzzleBurst(graphics, beam.x1, beam.y1, now, LASER_MUZZLE);
   }

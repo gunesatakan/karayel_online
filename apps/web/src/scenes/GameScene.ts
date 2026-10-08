@@ -7671,8 +7671,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   /**
    * Level ring. Three redundant ordinal cues so it reads without a legend and
    * without relying on hue: the arc fills clockwise as the tower levels (a full
-   * circle is 10), the stroke thickens, and the colour heats from steel to
-   * white. Drawn outside the sprite radius so painted art stays uncovered.
+   * circle is 10), the stroke thickens up to level 9, and the colour heats from
+   * steel to white. Level 10 is the full white circle at half thickness: the
+   * complete ring already says "max", a heavy white stroke hid the art's rim.
+   * Drawn outside the sprite radius so painted art stays uncovered.
    */
   private drawTowerLevelRing(graphics: Phaser.GameObjects.Graphics, x: number, y: number, level: number, spriteRadius: number, tierColor = 0xfacc15) {
     const style = getTowerLevelStyle(level);
@@ -7695,7 +7697,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     graphics.strokePath();
 
     if (style.glow) {
-      graphics.lineStyle(style.width + 3, style.color, 0.18);
+      graphics.lineStyle(style.glowWidth, style.color, 0.18);
       graphics.beginPath();
       graphics.arc(x, y, radius, start, start + sweep);
       graphics.strokePath();
@@ -7989,7 +7991,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderMelisFocusTowerEffect(graphics, tower);
     this.renderZeynepCommandTowerEffect(graphics, tower);
     this.renderServerLinkCodeEffect(graphics, tower);
-    this.renderDebugLaserLevelPrism(graphics, tower);
     this.renderUcubeWaveEffect(graphics, tower);
   }
 
@@ -8361,41 +8362,6 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     drawCommandRing("haste", commands.haste, commands.range ? 3 : 0);
   }
 
-  private renderDebugLaserLevelPrism(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
-    if (tower.definitionId !== "warrior-5" || tower.level < 5 || tower.status === "Hararet" || tower.status === "Tukenmis") {
-      return;
-    }
-
-    const isMaxTier = tower.level >= 10;
-    const color = isMaxTier ? 0xffffff : 0xfacc15;
-    const glow = isMaxTier ? 0xbae6fd : 0xfbbf24;
-    const phase = (Date.now() % 900) / 900;
-    const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.12;
-    const prismScale = Math.max(20, this.getMapCellSize() * 1.12) / 52;
-
-    graphics.fillStyle(color, isMaxTier ? 0.9 : 0.82);
-    graphics.beginPath();
-    graphics.moveTo(tower.x, tower.y - 11 * prismScale);
-    graphics.lineTo(tower.x + 10 * prismScale, tower.y + 7 * prismScale);
-    graphics.lineTo(tower.x - 10 * prismScale, tower.y + 7 * prismScale);
-    graphics.closePath();
-    graphics.fillPath();
-
-    graphics.lineStyle((isMaxTier ? 2 : 1.5) * prismScale, glow, pulse);
-    graphics.beginPath();
-    graphics.moveTo(tower.x, tower.y - 13 * prismScale);
-    graphics.lineTo(tower.x + 12 * prismScale, tower.y + 8 * prismScale);
-    graphics.lineTo(tower.x - 12 * prismScale, tower.y + 8 * prismScale);
-    graphics.closePath();
-    graphics.strokePath();
-
-    if (isMaxTier) {
-      graphics.lineStyle(Math.max(0.7, prismScale), 0xffffff, 0.65);
-      graphics.lineBetween(tower.x - 7 * prismScale, tower.y, tower.x + 7 * prismScale, tower.y);
-      graphics.lineBetween(tower.x, tower.y - 8 * prismScale, tower.x, tower.y + 6 * prismScale);
-    }
-  }
-
   private renderServerLinkCodeEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     const linkAge = tower.serverLinkWaveAge ?? 0;
     if (linkAge < 5 || tower.status === "Hararet" || tower.status === "Tukenmis") {
@@ -8449,7 +8415,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private renderUcubeWaveEffect(graphics: Phaser.GameObjects.Graphics, tower: TowerSnapshot) {
     // Halkalar secilen ozellik sayisini gosterir: oyuncu kulenin ne kadar
-    // ilerledigini haritadan okuyabilsin.
+    // ilerledigini haritadan okuyabilsin. Kulenin kenarinda, seviye kadraninin
+    // hemen icinde (tas bilezigin ustunde) donuyorlar: ortadaki top ve namlu
+    // ortulmuyor. Olcu kule izinden, yani 2x2 Ucube'de iki kare eninde.
     const perkCount = tower.ucubePerks?.length ?? 0;
     if (tower.definitionId !== "warrior-6" || perkCount < 2 || tower.status === "Hararet" || tower.status === "Tukenmis") {
       return;
@@ -8458,16 +8426,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const waveCount = perkCount >= 3 ? 4 : 2;
     const phase = (Date.now() % 900) / 900;
     const effectScale = this.getTowerEffectScale();
+    const discRadius = (this.getMapCellSize() * getTowerGridSpan(tower.definitionId)) / 2;
+    const jagUnit = discRadius * 0.03;
     for (let waveIndex = 0; waveIndex < waveCount; waveIndex += 1) {
-      const radius = (11.5 + waveIndex * 1.6) * effectScale;
-      const segments = 10 + waveIndex * 2;
+      const radius = discRadius * (0.84 + waveIndex * 0.022);
+      const segments = 18 + waveIndex * 2;
       const offset = phase * Math.PI * 2 + waveIndex * 0.85;
       graphics.lineStyle((waveIndex % 2 === 0 ? 1.5 : 1) * effectScale, 0xffffff, perkCount >= 3 ? 0.86 : 0.66);
       graphics.beginPath();
       for (let pointIndex = 0; pointIndex <= segments; pointIndex += 1) {
         const angle = offset + (pointIndex / segments) * Math.PI * 2;
-        const jag = (pointIndex % 2 === 0 ? 2.2 : -1.5) * effectScale;
-        const clampedRadius = Phaser.Math.Clamp(radius + jag, 8 * effectScale, 18 * effectScale);
+        const jag = (pointIndex % 2 === 0 ? 1 : -0.7) * jagUnit;
+        // Seviye kadrani `discRadius - 1`de: halkalar onun icinde kaliyor.
+        const clampedRadius = Phaser.Math.Clamp(radius + jag, discRadius * 0.78, discRadius * 0.92);
         const x = tower.x + Math.cos(angle) * clampedRadius;
         const y = tower.y + Math.sin(angle) * clampedRadius;
         if (pointIndex === 0) {
@@ -11879,12 +11850,18 @@ function getTowerLevelStyle(level: number) {
     0xfff1f2
   ];
 
+  // 10. seviyede halka tam tur ve beyaz; cizgisi ve halesi yari kalinlikta.
+  // Tam beyaz halka zaten en ust seviyeyi soyluyor; kalin hali boyali kulenin
+  // kenarini ortuyordu.
+  const thickness = normalizedLevel >= 10 ? 0.5 : 1;
+  const width = 1.8 + (normalizedLevel - 1) * (2.4 / 9);
   return {
     color: heat[normalizedLevel - 1],
     fill: normalizedLevel / 10,
-    width: 1.8 + (normalizedLevel - 1) * (2.4 / 9),
+    width: width * thickness,
     // Hale kademe sinirinda aciliyor (5), bir seviye sonra degil.
-    glow: normalizedLevel >= 5
+    glow: normalizedLevel >= 5,
+    glowWidth: (width + 3) * thickness
   };
 }
 

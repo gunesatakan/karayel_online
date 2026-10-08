@@ -17,7 +17,7 @@
  * dusmanlari, Abarti rayi. Spot isigi, damga, gecis, dizilim ve sekme
  * olaylari oyundaki gibi `ZeynepReceiptTracker`dan turuyor (`ScenarioCourtFeed`).
  */
-import { towerCatalog, type BeamSnapshot, type ProjectileSnapshot, type TowerSnapshot } from "@karayel/shared";
+import { DEBUG_LASER_BEAM_WIDTH, DEBUG_LASER_OVERDRIVE_BEAM_WIDTH, towerCatalog, type BeamSnapshot, type ProjectileSnapshot, type TowerSnapshot } from "@karayel/shared";
 import type { SignatureEnemy, SignatureTower } from "./atakan-signatures";
 import { fnvUnit, toTier, type VfxTier } from "./kit";
 import { getVfxProfile, getVfxTier, isAttackingDefinition, type VfxDelivery } from "./vfx-profiles";
@@ -270,7 +270,7 @@ export class VfxScenario {
           y1: tower.y,
           x2,
           y2,
-          width: overdrive ? 8 : 4,
+          width: overdrive ? DEBUG_LASER_OVERDRIVE_BEAM_WIDTH : DEBUG_LASER_BEAM_WIDTH,
           color: overdrive ? DEBUG_LASER_COLORS[tier].overdrive : DEBUG_LASER_COLORS[tier].beam,
           overdrive,
           ttlMs: 260

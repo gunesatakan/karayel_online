@@ -313,7 +313,7 @@ test("oda: B yavaslatir, A'nin yavaslatan kulesi oldurur -> B'ye yavaslatma asis
   assert.deepEqual(decodeKillAssists(event.a), [{ slot: 1, kind: "slow" }]);
 });
 
-test("oda: warrior-5 uc yiginin birini tuketir, takim arkadasi oldurur -> isaret asisti kaliyor", () => {
+test("oda: warrior-5 isareti tuketmiyor, takim arkadasi oldurur -> isaret asisti kaliyor", () => {
   const { room, tracker, attacker } = teamRoom();
   tracker.ownerId = "p2";
   room.placeTower({ sessionId: "p1", send() {} }, { ...findBuildableSpot(room, "warrior-5"), definitionId: "warrior-5" });
@@ -322,9 +322,9 @@ test("oda: warrior-5 uc yiginin birini tuketir, takim arkadasi oldurur -> isaret
   const enemy = plainEnemy(room, 50);
   room.applyTrackingStacks(enemy, Date.now() + 5000, 3);
   enemy.trackingSourceTowerId = tracker.id;
-  room.consumeConfiguredMarks(laser, enemy, "hit");
-  assert.equal(enemy.trackingStackUntil[0], 0, "en erken biten yuva -- 0 -- tuketildi");
-  assert.equal(room.getTrackingStackCount(enemy, Date.now()), 2);
+  room.fireDebugLaser(laser, enemy);
+  assert.ok(room.enemies.has(enemy.id), "lazer olduruyor, test bir sey olcmez");
+  assert.equal(room.getTrackingStackCount(enemy, Date.now()), 3, "lazerin vurusu isaret tuketti");
   room.damageEnemy(enemy, 100, 0, "warrior-4", "p1", "true", 0, 1, attacker.id);
   assert.deepEqual(decodeKillAssists(lastKill(room).a), [{ slot: 1, kind: "mark" }]);
 });
