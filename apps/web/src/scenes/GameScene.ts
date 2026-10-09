@@ -99,6 +99,7 @@ import {
   getMapPoints,
   getBallisticCollisionRadius,
   getLinearProjectilePosition,
+  getTerminalProjectileSnapshot,
   getTowerGridSpan,
   getStage,
   getTowerTier,
@@ -5750,9 +5751,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.linearProjectileSnapshots.delete(message.id);
     if (!projectile) return;
     this.terminalProjectileSnapshots.set(message.id, {
-      projectile: { ...projectile, x: message.x, y: message.y, vx: 0, vy: 0 },
       // Keep the authoritative impact position through the interpolation delay,
       // then let the normal projectile renderer remove it on the next frame.
+      // Velocity stays: it sets the drawn direction, and a zeroed copy was
+      // drawn as a horizontal body just before vanishing.
+      projectile: getTerminalProjectileSnapshot(projectile, message.x, message.y),
       removeAfter: performance.now() + this.playbackDelayMs + 50
     });
   }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   CLIENT_PROJECTILE_MAX_LIFETIME_MS,
   GAME_SPEED_MULTIPLIER,
@@ -169,4 +170,42 @@ test("50 düşman ve 10 kule snapshotı sabit alan ayrımıyla en az yüzde 30 k
   const wireBytes = Buffer.byteLength(JSON.stringify(wire));
   const legacyBytes = Buffer.byteLength(JSON.stringify(hydrated));
   assert.ok(wireBytes <= legacyBytes * 0.7, `${wireBytes} must be <= 70% of ${legacyBytes}`);
+});
+
+test("duran doğrusal mermi son karesinde yönünü koruyor: yatay bir gövdeye dönmüyor", async () => {
+  const { getTerminalProjectileSnapshot } = await import("../packages/shared/dist/index.js");
+  const { importWebModule, createRecorder } = await import("./helpers/web-module.mjs");
+  const projectile = { id: "p1", kind: "tower", source: "tower", definitionId: "warrior-1", hitType: "projectile", x: 10, y: 20, vx: 0, vy: 120, spawnedAt: 1_000 };
+  const terminal = getTerminalProjectileSnapshot(projectile, 10, 90);
+  assert.deepEqual({ x: terminal.x, y: terminal.y, vx: terminal.vx, vy: terminal.vy }, { x: 10, y: 90, vx: 0, vy: 120 });
+  assert.equal(projectile.y, 20, "kaynak kayit degisti");
+
+  // Cizim yonu hizdan: asagi giden merminin govdesi dikey kalmali. Hizi
+  // sifirlanan eski kopya saga bakan yatay bir govde ciziyordu.
+  const { AttackVfx } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
+  const { VfxLod } = await importWebModule("apps/web/src/vfx/lod.ts");
+  const extent = (snapshot) => {
+    const body = createRecorder();
+    const lod = new VfxLod();
+    lod.force(0);
+    new AttackVfx(body, createRecorder(), createRecorder(), undefined, { lod, stamps: { beginFrame() {}, stamp() {}, endFrame() {} } })
+      .renderProjectiles([snapshot], 0, 1);
+    const xs = [];
+    const ys = [];
+    for (const [name, ...args] of body.calls) {
+      if (name !== "fillTriangle" && name !== "lineBetween") continue;
+      for (let index = 0; index + 1 < args.length; index += 2) { xs.push(args[index]); ys.push(args[index + 1]); }
+    }
+    assert.ok(xs.length > 0, "govde cizilmedi");
+    return { width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  };
+  const kept = extent(terminal);
+  assert.ok(kept.height > kept.width, `yon korunmadi: ${JSON.stringify(kept)}`);
+  const zeroed = extent({ ...terminal, vx: 0, vy: 0 });
+  assert.ok(zeroed.width > zeroed.height, "olcum hatayi gostermiyor: test bir sey olcmez");
+
+  const scene = readFileSync(new URL("../apps/web/src/scenes/GameScene.ts", import.meta.url), "utf8");
+  const finish = scene.slice(scene.indexOf("  private finishLinearProjectile("), scene.indexOf("  private rememberMatchReconnect("));
+  assert.ok(finish.includes("getTerminalProjectileSnapshot("), "istemci son kopyayi yardimcidan uretmiyor");
+  assert.ok(!/vx:\s*0/.test(finish), "son kopyanin hizi yine sifirlaniyor");
 });

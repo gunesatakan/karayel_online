@@ -1046,6 +1046,7 @@ export type WireGameSnapshot = Omit<GameSnapshot, "enemies" | "towers"> & {
 export {
   CLIENT_PROJECTILE_MAX_LIFETIME_MS,
   getLinearProjectilePosition,
+  getTerminalProjectileSnapshot,
   hydrateWireSnapshot,
   mergeDynamicEnemySnapshots,
   mergeDynamicRecordSnapshots,

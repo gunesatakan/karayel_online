@@ -34,6 +34,19 @@ export function isClientProjectileExpired(projectile: ProjectileSpawnSnapshot, s
 }
 
 /**
+ * Duran (carpan ya da menzilin sonuna varan) dogrusal merminin son kopyasi.
+ *
+ * Istemci mermiyi yetkili durus noktasinda oynatma gecikmesi boyunca tutuyor:
+ * ara degerleme oraya varabilsin. Hiz korunuyor. Cizim yonu hizdan okunuyor ve
+ * hizi sifirlanan mermi saga bakan yatay bir govdeye donup oyle kayboluyordu.
+ * Konum hizla ilerletilmiyor (ara degerleme iki kare arasinda dogrusal), yani
+ * mermi durdugu yerden ileri kaymiyor.
+ */
+export function getTerminalProjectileSnapshot<T extends { x: number; y: number }>(projectile: T, x: number, y: number): T {
+  return { ...projectile, x, y };
+}
+
+/**
  * Kule kayitlarinin delta halini tam hale getirir.
  *
  * Sunucu artik kule basina yalnizca **degisen** alanlari yolluyor: kaydin
