@@ -391,7 +391,6 @@ import {
   COUNTER_SURGE_DAMAGE_RATIO,
   COUNTER_SURGE_TELEGRAPH_MS,
   ENERGY_EATER_DRAIN_PER_SECOND,
-  ENERGY_EATER_HP_MULTIPLIER,
   ENERGY_EATER_MIN_CONTACT_MS,
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
   HEATER_HEAT_PER_SECOND_RATIO,
@@ -402,6 +401,7 @@ import {
   TOWER_HUNTER_ATTACK_INTERVAL_MS,
   TOWER_HUNTER_HIT_DAMAGE,
   createSpecialRandom,
+  getSpecialEnemyDurability,
   getWaveSpecialSpawnReduction,
   planWaveSpecials,
   type CounterSurgeHitMessage,
@@ -1217,6 +1217,8 @@ type SpecialSpawnOptions = {
   type: EnemyType;
   /** Can, kalkan ve yenilenme kati (sampiyon katiyla ayni yer). */
   healthMultiplier: number;
+  /** Turunun taban zirhinin kati; verilmezse 1 (taban zirh 0 ise 0 kalir). */
+  armorMultiplier?: number;
   start: { x: number; y: number };
   budget?: SpecialEnemyState["budget"];
 };
@@ -3734,9 +3736,11 @@ export class MatchRoom extends Room<MatchState> {
    * Ozel dusman dogurur. Govde normal dogum yolundan; tur, can kati ve
    * dogum yeri ozel zardan (normal dogumun zarina dokunmuyor).
    *
-   * - Avci: o dalganin sampiyon butcesi ve cani, ust kenardan.
-   * - Isitici: dalganin normal dusmani, ust kenardan.
-   * - Enerji yiyici: normalin 1,5 kati can, sol ya da sag kenardan.
+   * Can ve zirh katlari `getSpecialEnemyDurability`den (paylasilan tablo):
+   * - Avci: o dalganin sampiyon butcesi, sampiyonun 1,5 kati can (kalkan ve
+   *   yenilenme ayni katla), turunun 3 kati zirh; ust kenardan.
+   * - Isitici: dalganin normal dusmaninin 3 kati can, 2 kati zirh; ust kenardan.
+   * - Enerji yiyici: normalin 4,5 kati can, zirh ayni; sol ya da sag kenardan.
    */
   private spawnSpecialEnemy(spawn: WaveSpecialSpawn) {
     const random = this.specialRandom ?? Math.random;
@@ -3746,7 +3750,7 @@ export class MatchRoom extends Room<MatchState> {
       this.spawnEnemy(undefined, {
         kind: "hunter",
         type: budget.type,
-        healthMultiplier: budget.hpMultiple,
+        ...getSpecialEnemyDurability("hunter", budget.hpMultiple),
         start: this.pickSpecialTopSpawn(random),
         budget: { replaced: budget.replaced, gold: budget.gold, exp: budget.exp, leakDamage: budget.leakDamage, reputation: budget.reputation }
       });
@@ -3756,7 +3760,7 @@ export class MatchRoom extends Room<MatchState> {
       this.spawnEnemy(undefined, {
         kind: "eater",
         type: SPECIAL_BASE_TYPE,
-        healthMultiplier: ENERGY_EATER_HP_MULTIPLIER,
+        ...getSpecialEnemyDurability("eater"),
         start: this.pickSpecialSideSpawn(random)
       });
       return;
@@ -3764,7 +3768,7 @@ export class MatchRoom extends Room<MatchState> {
     this.spawnEnemy(undefined, {
       kind: "heater",
       type: SPECIAL_BASE_TYPE,
-      healthMultiplier: 1,
+      ...getSpecialEnemyDurability("heater"),
       start: this.pickSpecialTopSpawn(random)
     });
   }
@@ -4905,7 +4909,9 @@ export class MatchRoom extends Room<MatchState> {
       y: start.y,
       hp: maxHp,
       maxHp,
-      armor: definition.armor,
+      // Zirh kati yalnizca ozel dusmanda (isitici 2, avci 3); normal dusman ve
+      // sampiyonda taban zirhin kendisi.
+      armor: special?.armorMultiplier === undefined ? definition.armor : definition.armor * special.armorMultiplier,
       // Yenilenme de kalinlikla carpiliyor: oransal yenilenme normal dusmanla ayni.
       healthRegenPerSecond: definition.healthRegenPerSecond * waveScale * championMultiplier,
       shield: maxShield,

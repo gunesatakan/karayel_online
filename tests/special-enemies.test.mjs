@@ -17,19 +17,28 @@ import {
   ENERGY_EATER_HP_MULTIPLIER,
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
   GAME_SPEED_MULTIPLIER,
+  HEATER_ARMOR_MULTIPLIER,
   HEATER_HEAT_PER_SECOND_RATIO,
+  HEATER_HP_MULTIPLIER,
+  SPECIAL_ENEMY_COUNT_MULTIPLIER,
   SPECIAL_KIND_FIRST_WAVE,
   SPECIAL_MAX_SLOT_SHARE,
   SPECIAL_MIN_NORMAL_SHARE,
+  TOWER_HUNTER_ARMOR_MULTIPLIER,
+  TOWER_HUNTER_HP_MULTIPLIER,
   TOWER_HUNTER_MAX_PER_WAVE,
   createSpecialRandom,
   getArenaWaveEnemyCount,
   getCounterSurgeChance,
+  getEnemyCombatDefinition,
   getEnemySpawnHealth,
   getMapGridSize,
   getMapOrigin,
+  getSpecialEnemyDurability,
   getSpecialEnemyTotal,
+  getWaveAirMode,
   getWaveChampionPlan,
+  getWaveEnemyCount,
   getWaveSpecialEnemyCount,
   gridToWorld,
   planWaveSpecials,
@@ -231,7 +240,11 @@ test("yapı kalmayınca avcı normal düşman gibi nexusa iniyor", () => {
   assert.ok(room.teamHealth < 100, "avci sizmadi");
 });
 
-test("avcının canı o dalganın şampiyonunun canı; şampiyon bayrağı yok", () => {
+test("avcının canı o dalganın şampiyonunun 1,5 katı, zırhı türünün 3 katı; şampiyon bayrağı yok", () => {
+  assert.equal(TOWER_HUNTER_HP_MULTIPLIER, 1.5);
+  assert.equal(TOWER_HUNTER_ARMOR_MULTIPLIER, 3);
+  // Cift dalga grunt (zirh 5 -> 15), tek dalga kusatma (zirh 8 -> 24).
+  const beklenenZirh = { 6: 15, 9: 24, 14: 15 };
   for (const wave of [6, 9, 14]) {
     const room = oda(3);
     room.wave = wave;
@@ -247,9 +260,19 @@ test("avcının canı o dalganın şampiyonunun canı; şampiyon bayrağı yok",
     const avci = [...room.enemies.values()].at(-1);
     assert.equal(avci.special.kind, "hunter");
     assert.equal(avci.type, sampiyon.type);
-    assert.equal(avci.maxHp, sampiyon.maxHp, `${wave}. dalga: avci cani sampiyonunkiyle ayni degil`);
-    assert.equal(avci.maxShield, sampiyon.maxShield);
-    assert.ok(avci.maxHp >= CHAMPION_HP_BONUS * 3 * getEnemySpawnHealth(avci.type, wave).maxHp, "avci kalin degil");
+    // Kat sampiyonun katinin ustune biniyor; can tam sayiya yuvarlandigi icin oran binde birkac sapiyor.
+    const beklenen = getEnemySpawnHealth(avci.type, wave, champion.hpMultiple * TOWER_HUNTER_HP_MULTIPLIER);
+    assert.equal(avci.maxHp, beklenen.maxHp, `${wave}. dalga: avci cani sampiyonun 1,5 kati degil`);
+    assert.ok(Math.abs(avci.maxHp / sampiyon.maxHp - TOWER_HUNTER_HP_MULTIPLIER) < 0.005, `${wave}. dalga: ${avci.maxHp} / ${sampiyon.maxHp}`);
+    // Kalkan ve yenilenme canla ayni kati aliyor (grunt ve kusatmada ikisi de 0).
+    assert.equal(avci.maxShield, beklenen.maxShield);
+    assert.ok(Math.abs(avci.healthRegenPerSecond - sampiyon.healthRegenPerSecond * TOWER_HUNTER_HP_MULTIPLIER) < 1e-9);
+    assert.ok(avci.maxHp >= CHAMPION_HP_BONUS * 3 * TOWER_HUNTER_HP_MULTIPLIER * getEnemySpawnHealth(avci.type, wave).maxHp, "avci kalin degil");
+    // Zirh: sampiyon turunun taban zirhinda, avci uc katinda.
+    const tabanZirh = getEnemyCombatDefinition(avci.type).armor;
+    assert.equal(sampiyon.armor, tabanZirh, "sampiyonun zirhi degisti");
+    assert.equal(avci.armor, tabanZirh * TOWER_HUNTER_ARMOR_MULTIPLIER);
+    assert.equal(avci.armor, beklenenZirh[wave], `${wave}. dalga: ${avci.type} avci zirhi`);
     assert.equal(avci.champion, undefined, "avci sampiyon sayiliyor");
     const statik = createStaticEnemySnapshot(avci);
     assert.equal(statik.special, "hunter");
@@ -363,10 +386,13 @@ test("dalgada en fazla bir karşı atak; 4. dalgadan önce ve 1. aşamada hiç y
     for (let wave = 1; wave <= 20; wave += 1) {
       const chance = getCounterSurgeChance(stage, wave);
       if (stage === 1 || wave < 4) assert.equal(chance, 0, `${stage}/${wave}`);
-      else assert.ok(chance >= 0.2 && chance <= 0.45, `${stage}/${wave}: ${chance}`);
+      else assert.equal(chance, { 2: 0.4, 3: 0.56, 4: 0.74, 5: 0.9 }[stage], `${stage}/${wave}: ${chance}`);
+      assert.ok(chance <= 1, "olasilik 1'i asti");
     }
   }
   assert.ok(getCounterSurgeChance(5, 10) > getCounterSurgeChance(2, 10));
+  // 5. asamanin ustu 5. asamanin sayisi; 1'de kesik.
+  assert.equal(getCounterSurgeChance(9, 10), 0.9);
 
   // Gercek odada: seritli bir dalganin butun dogumlari tek serit baslatiyor.
   let found = false;
@@ -553,15 +579,61 @@ test("enerji yiyici sol ya da sağ kenardan, nexusa dayanmadan doğuyor", () => 
   assert.deepEqual([...sides].sort(), ["sag", "sol"]);
 });
 
-test("enerji yiyicinin canı normal düşmanın 1,5 katı", () => {
+test("enerji yiyicinin canı normal düşmanın 4,5 katı; zırhı türününki", () => {
+  assert.equal(ENERGY_EATER_HP_MULTIPLIER, 4.5);
   const room = oda(2);
   room.wave = 7;
   room.spawnEnemy(undefined, { kind: "heater", type: "grunt", healthMultiplier: 1, start: gridToWorld(2, 0, room.activeMap) });
   const normal = [...room.enemies.values()].at(-1);
+  assert.equal(normal.maxHp, getEnemySpawnHealth("grunt", 7).maxHp, "kat verilmeyen govde normal dusman degil");
   room.specialRandom = createSpecialRandom(1, 7);
   room.spawnSpecialEnemy({ index: 0, kind: "eater", replaced: 1 });
   const yiyici = [...room.enemies.values()].at(-1);
-  assert.ok(Math.abs(yiyici.maxHp / normal.maxHp - ENERGY_EATER_HP_MULTIPLIER) < 0.05, `${yiyici.maxHp} / ${normal.maxHp}`);
+  assert.equal(yiyici.maxHp, getEnemySpawnHealth("grunt", 7, ENERGY_EATER_HP_MULTIPLIER).maxHp);
+  assert.ok(Math.abs(yiyici.maxHp / normal.maxHp - ENERGY_EATER_HP_MULTIPLIER) < 0.02, `${yiyici.maxHp} / ${normal.maxHp}`);
+  assert.equal(yiyici.armor, getEnemyCombatDefinition("grunt").armor, "yiyicinin zirhi degisti");
+  assert.equal(yiyici.armor, 5);
+});
+
+test("ısıtıcının canı normal düşmanın 3 katı, zırhı 2 katı", () => {
+  assert.equal(HEATER_HP_MULTIPLIER, 3);
+  assert.equal(HEATER_ARMOR_MULTIPLIER, 2);
+  for (const wave of [1, 7, 16]) {
+    const room = oda(2);
+    room.wave = wave;
+    room.specialRandom = createSpecialRandom(1, wave);
+    room.spawnSpecialEnemy({ index: 0, kind: "heater", replaced: 1 });
+    const isitici = [...room.enemies.values()].at(-1);
+    const normal = getEnemySpawnHealth("grunt", wave);
+    assert.equal(isitici.special.kind, "heater");
+    assert.equal(isitici.type, "grunt");
+    assert.equal(isitici.maxHp, getEnemySpawnHealth("grunt", wave, HEATER_HP_MULTIPLIER).maxHp);
+    assert.equal(isitici.hp, isitici.maxHp);
+    assert.ok(Math.abs(isitici.maxHp / normal.maxHp - HEATER_HP_MULTIPLIER) < 0.02, `${wave}. dalga: ${isitici.maxHp} / ${normal.maxHp}`);
+    assert.equal(isitici.armor, normal.armor * HEATER_ARMOR_MULTIPLIER);
+    assert.equal(isitici.armor, 10);
+    // Telde de ayni zirh: istemci govdeyi sunucunun sayisiyla gosteriyor.
+    assert.equal(room.getSnapshot().enemies.find((entry) => entry.id === isitici.id).armor, 10);
+  }
+});
+
+test("dayanıklılık katları paylaşılan tablodan; normal düşman ve şampiyonun zırhı tabanında", () => {
+  assert.deepEqual(getSpecialEnemyDurability("heater"), { healthMultiplier: 3, armorMultiplier: 2 });
+  assert.deepEqual(getSpecialEnemyDurability("eater"), { healthMultiplier: 4.5, armorMultiplier: 1 });
+  assert.deepEqual(getSpecialEnemyDurability("hunter", 8), { healthMultiplier: 12, armorMultiplier: 3 });
+  // Normal dogum (8. dalga: hava yok): zirh turunun tabani, can dalganin normali.
+  const room = oda(3);
+  room.wave = 8;
+  assert.equal(getWaveAirMode(8), "none");
+  for (let index = 0; index < 40; index += 1) room.spawnEnemy();
+  for (const enemy of room.enemies.values()) {
+    assert.equal(enemy.special, undefined);
+    assert.equal(enemy.armor, getEnemyCombatDefinition(enemy.type).armor, `${enemy.type}: normal dusmanin zirhi degisti`);
+    assert.equal(enemy.maxHp, getEnemySpawnHealth(enemy.type, 8).maxHp, `${enemy.type}: normal dusmanin cani degisti`);
+  }
+  // Zirh kati verilmeyen ozel govde (testlerin ve araclarin elle dogurdugu) tabanda.
+  const elle = ozel(room, "hunter", 5, 1, { type: "siege" });
+  assert.equal(elle.armor, getEnemyCombatDefinition("siege").armor);
 });
 
 test("enerji yiyici en yakın enerji binasını emiyor, boşalınca yıkıyor ve sıradakine dönüyor", () => {
@@ -740,14 +812,26 @@ test("2. aşamadan itibaren özel düşmanlar dalganın içinde doğuyor ve say�
         assert.equal(specials.filter((enemy) => enemy.special.kind === kind).length, plan.spawns.filter((spawn) => spawn.kind === kind).length);
       }
       assert.ok(spawned.length - specials.length >= 1, "dalga yalnizca ozel dusman");
+      assert.equal(spawned[0].special, undefined, `${stage}/${wave}: ilk dogum ozel dusman`);
+      const normals = spawned.filter((enemy) => !enemy.special && !enemy.champion).length;
+      assert.ok(normals >= Math.ceil(room.getScaledWaveEnemyCount(wave) * SPECIAL_MIN_NORMAL_SHARE), `${stage}/${wave}: normal dogum ${normals}`);
     }
   }
 });
 
 test("plan tabloyu, tür kilitlerini ve payları tutuyor; dalga hiçbir zaman yalnızca özel düşman değil", () => {
-  // 2. asama erken dalgalar adil: 1-2. dalga tek isitici.
-  assert.equal(getSpecialEnemyTotal(2, 1), 1);
-  assert.equal(getSpecialEnemyTotal(2, 2), 1);
+  // Tablo iki kat (sahibinin istegi); 2. asama erken dalgalar adil: 1-2. dalga iki isitici.
+  assert.equal(SPECIAL_ENEMY_COUNT_MULTIPLIER, 2);
+  assert.equal(SPECIAL_MAX_SLOT_SHARE, 0.5);
+  assert.equal(SPECIAL_MIN_NORMAL_SHARE, 0.4);
+  assert.deepEqual({ ...TOWER_HUNTER_MAX_PER_WAVE }, { 2: 2, 3: 2, 4: 4, 5: 4 });
+  const tablo = (stage) => Array.from({ length: 20 }, (_, index) => getSpecialEnemyTotal(stage, index + 1));
+  assert.deepEqual(tablo(2), [2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 6]);
+  assert.deepEqual(tablo(3), [4, 4, 4, 4, 4, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 10, 10, 10, 10, 10]);
+  assert.deepEqual(tablo(4), [6, 6, 6, 6, 8, 8, 8, 8, 10, 10, 10, 10, 12, 12, 12, 12, 14, 14, 14, 14]);
+  assert.deepEqual(tablo(5), [8, 8, 8, 8, 10, 10, 10, 12, 12, 12, 14, 14, 14, 14, 16, 16, 16, 18, 18, 18]);
+  // 5. asamanin ustu 5. asamanin tablosu.
+  assert.deepEqual(tablo(7), tablo(5));
   for (let wave = 1; wave < 20; wave += 1) {
     for (let stage = 2; stage <= 5; stage += 1) {
       assert.ok(getSpecialEnemyTotal(stage, wave + 1) >= getSpecialEnemyTotal(stage, wave), "dalgayla azaliyor");
@@ -794,6 +878,103 @@ test("plan tabloyu, tür kilitlerini ve payları tutuyor; dalga hiçbir zaman ya
   }
   assert.ok(hunters > 0, "hic avci yok");
   assert.ok(heaters > hunters * 2, `avci (${hunters}) isiticidan (${heaters}) seyrek degil`);
+});
+
+/** Tek oyunculu standart haritada dalganin plani (sampiyonuyla). */
+function soloPlan(stage, wave, seed, slots = getWaveEnemyCount(wave)) {
+  const champion = getWaveChampionPlan(wave, slots);
+  const plan = planWaveSpecials({
+    stage,
+    wave,
+    slotCount: slots,
+    champion: champion ? { replaced: champion.replaced, slot: champion.slot } : undefined,
+    cols: 12,
+    random: createSpecialRandom(seed, wave)
+  });
+  return { plan, champion, slots };
+}
+
+test("avcı tablonun ilk dalgasından itibaren gerçekten çıkıyor; tam hava dalgalarında yok", () => {
+  // Hata: sigmayan listede once avci isiticiye donuyordu; 4. asamada ilk avci
+  // 3. dalga yerine 6., 5. asamada 2. dalga yerine 7. dalgada cikiyordu.
+  const SEEDS = 600;
+  for (const stage of [2, 3, 4, 5]) {
+    const first = SPECIAL_KIND_FIRST_WAVE.hunter[stage];
+    let firstSeen;
+    for (let wave = 1; wave <= 20; wave += 1) {
+      let withHunter = 0;
+      for (let seed = 1; seed <= SEEDS; seed += 1) {
+        if (soloPlan(stage, wave, seed * 7919).plan.spawns.some((spawn) => spawn.kind === "hunter")) withHunter += 1;
+      }
+      const rate = withHunter / SEEDS;
+      if (rate > 0 && firstSeen === undefined) firstSeen = wave;
+      if (wave < first || getWaveAirMode(wave) === "all") {
+        assert.equal(withHunter, 0, `${stage}/${wave}: avci olmamaliydi`);
+        continue;
+      }
+      // Secilen avci hic feda edilmiyor: oran, zarin kirpilmamis orani
+      // (agirlik 1/6, tablodaki sayi kadar zar) ile ayni.
+      const picks = getSpecialEnemyTotal(stage, wave);
+      const beklenen = 1 - (5 / 6) ** picks;
+      assert.ok(rate >= 0.2, `${stage}/${wave}: avci orani ${rate}`);
+      assert.ok(Math.abs(rate - beklenen) < 0.07, `${stage}/${wave}: avci orani ${rate.toFixed(3)}, zarin orani ${beklenen.toFixed(3)}`);
+    }
+    assert.equal(firstSeen, first, `${stage}. asama: ilk avci dalgasi tabloyla ayni degil`);
+  }
+});
+
+test("sığmayan listede avcı kalıyor, ucuz özel düşmanlar sondan atılıyor; fazla avcı ısıtıcıya dönüyor", () => {
+  // 5. asama 2. dalga: 12 dogum, ozel pay 6 dogum, avci 4 dogumluk, 8 zar.
+  // Avcili plan: tek avci (ikincisi sigmaz, isiticiya doner) + 2 ucuz.
+  // Avcisiz plan: 6 ucuz (8'in 6'si).
+  let avcili = 0;
+  let avcisiz = 0;
+  for (let seed = 1; seed <= 300; seed += 1) {
+    const { plan, slots } = soloPlan(5, 2, seed);
+    assert.equal(slots, 12);
+    const hunters = plan.spawns.filter((spawn) => spawn.kind === "hunter");
+    const cheap = plan.spawns.length - hunters.length;
+    assert.ok(plan.replaced <= 6);
+    if (hunters.length > 0) {
+      avcili += 1;
+      assert.equal(hunters.length, 1, `tohum ${seed}: sigmayan ikinci avci kaldi`);
+      assert.equal(hunters[0].replaced, 4);
+      assert.equal(cheap, 2, `tohum ${seed}: avcinin yaninda ${cheap} ucuz`);
+      assert.ok(plan.hunter, "avcili planda butce yok");
+    } else {
+      avcisiz += 1;
+      assert.equal(cheap, 6, `tohum ${seed}: avcisiz planda ${cheap} ucuz`);
+      assert.equal(plan.hunter, undefined);
+    }
+  }
+  assert.ok(avcili > 150, `avcili plan ${avcili}/300`);
+  assert.ok(avcisiz > 20, `avcisiz plan ${avcisiz}/300`);
+});
+
+test("iki kat sayı her dalga boyunda payları tutuyor: ilk doğum normal, dalga yalnızca özel düşman değil", () => {
+  for (let stage = 2; stage <= 5; stage += 1) {
+    for (const wave of [1, 2, 3, 5, 6, 7, 10, 15, 20]) {
+      for (let slots = 1; slots <= 48; slots += 1) {
+        for (let seed = 1; seed <= 3; seed += 1) {
+          const { plan, champion } = soloPlan(stage, wave, seed, slots);
+          const championReplaced = champion ? champion.replaced : 0;
+          const etiket = `${stage}/${wave}/${slots}`;
+          assert.ok(plan.replaced <= Math.floor(slots * SPECIAL_MAX_SLOT_SHARE), `${etiket}: ozel pay asildi`);
+          const normal = slots - championReplaced - plan.replaced;
+          if (plan.spawns.length > 0) {
+            assert.ok(normal >= Math.ceil(slots * SPECIAL_MIN_NORMAL_SHARE), `${etiket}: normal pay ${normal}`);
+            assert.ok(normal >= 1, `${etiket}: dalga yalnizca ozel dusman`);
+          }
+          const spawnCount = slots - (champion ? championReplaced - 1 : 0) - plan.spawns.reduce((sum, spawn) => sum + spawn.replaced - 1, 0);
+          const indices = plan.spawns.map((spawn) => spawn.index);
+          assert.equal(new Set(indices).size, indices.length, `${etiket}: ayni yere iki ozel`);
+          assert.ok(indices.every((index) => index >= 1 && index < spawnCount), `${etiket}: ilk dogum ozel ya da yer dalga disinda`);
+          if (champion) assert.ok(!indices.includes(champion.slot), `${etiket}: sampiyonun yerine ozel kondu`);
+          assert.ok(plan.spawns.filter((spawn) => spawn.kind === "hunter").length <= TOWER_HUNTER_MAX_PER_WAVE[stage]);
+        }
+      }
+    }
+  }
 });
 
 test("özel düşmanlar telde türleriyle gidiyor; normal düşmanın kaydında alan yok", () => {

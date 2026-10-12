@@ -7,7 +7,7 @@ import { TOWER_GRID_SIZE } from "../index.js";
  * Ozel dusmanlar ve karsi atak: 2. asamadan itibaren normal dalganin icinde.
  *
  * Dort mekanik, hicbiri kendi dalgasini kurmuyor:
- * - Kule avcisi: sampiyon canli, nexusa degil en yakin kuleye/binaya yuruyor.
+ * - Kule avcisi: sampiyonun 1,5 kati canli, nexusa degil en yakin kuleye/binaya yuruyor.
  * - Isitici: normal yolda yuruyor, yanindan gectigi kuleyi isitiyor.
  * - Enerji yiyici: yandan (sol/sag kenar) giriyor, enerji binasini emip yikiyor.
  * - Karsi atak: dusman degil; ust kenardan inen, gectigi yapilari yakan enerji seridi.
@@ -41,14 +41,16 @@ export const SPECIAL_KIND_FIRST_WAVE: Readonly<Record<SpecialEnemyKind, Readonly
  */
 export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = { heater: 3, eater: 2, hunter: 1 };
 
-/** Bir dalgada en fazla kac kule avcisi; asamaya gore. */
-export const TOWER_HUNTER_MAX_PER_WAVE: Readonly<Record<number, number>> = { 2: 1, 3: 1, 4: 2, 5: 2 };
+/** Bir dalgada en fazla kac kule avcisi; asamaya gore. Sahibinin istegiyle iki kat (once 1/1/2/2). */
+export const TOWER_HUNTER_MAX_PER_WAVE: Readonly<Record<number, number>> = { 2: 2, 3: 2, 4: 4, 5: 4 };
 
 /**
  * Ozel dusmanlarin dalganin orijinal dogumlarindan yerine gecebilecegi en
- * yuksek pay. Dalga hicbir zaman yalnizca ozel dusmandan olusmasin.
+ * yuksek pay. Dalga hicbir zaman yalnizca ozel dusmandan olusmasin. Sayilar
+ * iki katina cikinca 0,35'ten 0,5'e: kucuk erken dalgalarda iki katin daha
+ * cogu sigsin. Normal payin tabani (`SPECIAL_MIN_NORMAL_SHARE`) ayni.
  */
-export const SPECIAL_MAX_SLOT_SHARE = 0.35;
+export const SPECIAL_MAX_SLOT_SHARE = 0.5;
 
 /**
  * Sampiyon ve ozel dusmanlar ciktiktan sonra dalganin orijinal dogumlarinin
@@ -84,9 +86,21 @@ export const TOWER_HUNTER_ATTACK_INTERVAL_MS = 850;
  */
 export const SPECIAL_ROUTE_BLOCKER_COST = 100_000;
 
+/**
+ * Avcinin dayanikliligi, o dalganin sampiyonuna gore: can (kalkan ve
+ * yenilenme de ayni katla) sampiyonun 1,5 kati, zirh turunun 3 kati (grunt
+ * 5 -> 15, kusatma 8 -> 24). Odul butcede kaliyor; yalnizca govde kalinlasiyor.
+ */
+export const TOWER_HUNTER_HP_MULTIPLIER = 1.5;
+export const TOWER_HUNTER_ARMOR_MULTIPLIER = 3;
+
 export type TowerHunterBudget = {
   type: EnemyType;
-  /** Ayni dalgadaki ayni turden normal dusmana gore can, kalkan ve yenilenme kati. */
+  /**
+   * O dalganin **sampiyonunun** kati: ayni turden normal dusmana gore can,
+   * kalkan ve yenilenme. Avcinin kendi kati bunun `TOWER_HUNTER_HP_MULTIPLIER`
+   * kati (bkz. `getSpecialEnemyDurability`).
+   */
   hpMultiple: number;
   /** Yerine gectigi normal dogum sayisi. */
   replaced: number;
@@ -98,8 +112,9 @@ export type TowerHunterBudget = {
 
 /**
  * Avcinin butcesi: o dalganin sampiyon plani (`getWaveChampionPlan`) ile
- * birebir ayni can; sampiyonun ilk dalgasindan once de hesaplaniyor. Tam hava
- * dalgasinda ve cok kucuk dalgada sampiyon plani yok; o zaman avci da yok.
+ * birebir ayni kat ve odul; sampiyonun ilk dalgasindan once de hesaplaniyor.
+ * Tam hava dalgasinda ve cok kucuk dalgada sampiyon plani yok; o zaman avci
+ * da yok. Avcinin gercek cani bu katin `TOWER_HUNTER_HP_MULTIPLIER` kati.
  */
 export function getTowerHunterBudget(wave: number, slotCount: number): TowerHunterBudget | undefined {
   const plan = getWaveChampionPlan(wave, slotCount, { firstWave: 1 });
@@ -117,8 +132,8 @@ export function getTowerHunterBudget(wave: number, slotCount: number): TowerHunt
 
 // --- Enerji yiyici -------------------------------------------------------------
 
-/** Normal dusmanin cani kati. */
-export const ENERGY_EATER_HP_MULTIPLIER = 1.5;
+/** Normal dusmanin cani kati. Sahibinin istegiyle uc kat (once 1,5). Zirh turununki. */
+export const ENERGY_EATER_HP_MULTIPLIER = 4.5;
 
 /**
  * Saniyede emilen enerji. Reaktorun deposu 480: dolu bir reaktor ~15 sn'de
@@ -152,12 +167,45 @@ export function getHeaterRadius(gridSize = TOWER_GRID_SIZE) {
   return gridSize * HEATER_RADIUS_CELLS;
 }
 
+/**
+ * Isiticinin dayanikliligi: dalganin normal dusmaninin 3 kati can (once 1),
+ * turunun 2 kati zirh (grunt 5 -> 10).
+ */
+export const HEATER_HP_MULTIPLIER = 3;
+export const HEATER_ARMOR_MULTIPLIER = 2;
+
+// --- Dayaniklilik ------------------------------------------------------------------
+
+export type SpecialEnemyDurability = {
+  /** Ayni dalgadaki ayni turden normal dusmana gore can, kalkan ve yenilenme kati. */
+  healthMultiplier: number;
+  /** Turunun taban zirhinin kati (taban 0 ise zirh 0 kalir). */
+  armorMultiplier: number;
+};
+
+/**
+ * Ozel dusmanin can ve zirh kati; sunucu govdeyi kurarken bunu okuyor.
+ * `championHpMultiple` yalnizca avcida: o dalganin sampiyon kati
+ * (`TowerHunterBudget.hpMultiple`). Karsi atak dusman degil: cani da zirhi da yok.
+ */
+export function getSpecialEnemyDurability(kind: SpecialEnemyKind, championHpMultiple = 1): SpecialEnemyDurability {
+  if (kind === "hunter") {
+    return { healthMultiplier: championHpMultiple * TOWER_HUNTER_HP_MULTIPLIER, armorMultiplier: TOWER_HUNTER_ARMOR_MULTIPLIER };
+  }
+  if (kind === "eater") return { healthMultiplier: ENERGY_EATER_HP_MULTIPLIER, armorMultiplier: 1 };
+  return { healthMultiplier: HEATER_HP_MULTIPLIER, armorMultiplier: HEATER_ARMOR_MULTIPLIER };
+}
+
 // --- Karsi atak --------------------------------------------------------------------
 
 /** Karsi atagin gorunebildigi ilk dalga (2. asamadan itibaren). */
 export const COUNTER_SURGE_FIRST_WAVE = 4;
-/** Dalga basina olasilik, asamaya gore. Dalgada en fazla bir tane. */
-export const COUNTER_SURGE_CHANCE_BY_STAGE: Readonly<Record<number, number>> = { 2: 0.2, 3: 0.28, 4: 0.37, 5: 0.45 };
+/**
+ * Dalga basina olasilik, asamaya gore. Dalgada en fazla bir tane; ayni anda
+ * da en fazla bir serit. Sahibinin istegiyle iki kat (once 0,2/0,28/0,37/0,45);
+ * `getCounterSurgeChance` 1'de kesiyor.
+ */
+export const COUNTER_SURGE_CHANCE_BY_STAGE: Readonly<Record<number, number>> = { 2: 0.4, 3: 0.56, 4: 0.74, 5: 0.9 };
 /** Seridin genisligi, sutun. */
 export const COUNTER_SURGE_WIDTH_COLUMNS = 3;
 /** Kalkistan once ust kenardaki uyari suresi (ms). */
@@ -172,7 +220,7 @@ export const COUNTER_SURGE_START_SPAN_SHARE = 0.35;
 
 export function getCounterSurgeChance(stage: number, wave: number) {
   if (stage < SPECIAL_ENEMIES_FIRST_STAGE || wave < COUNTER_SURGE_FIRST_WAVE) return 0;
-  return COUNTER_SURGE_CHANCE_BY_STAGE[Math.min(5, Math.floor(stage))] ?? 0;
+  return Math.min(1, COUNTER_SURGE_CHANCE_BY_STAGE[Math.min(5, Math.floor(stage))] ?? 0);
 }
 
 /**
@@ -199,14 +247,22 @@ export type CounterSurgeHitMessage = {
 
 // --- Dalga plani -----------------------------------------------------------------
 
+/**
+ * Tablonun carpani: sahibinin istegiyle butun ozel dusman sayilari iki kat.
+ * Kucuk erken dalgalarda pay sinirlari (`SPECIAL_MAX_SLOT_SHARE`,
+ * `SPECIAL_MIN_NORMAL_SHARE`) bu sayiyi kirpiyor; bkz. `planWaveSpecials`.
+ */
+export const SPECIAL_ENEMY_COUNT_MULTIPLIER = 2;
+
 /** Dalgadaki ozel dusman sayisi (tablo). 1. asamada ve gecersiz girdide 0. */
 export function getSpecialEnemyTotal(stage: number, wave: number) {
   const s = Math.floor(stage);
   const w = Math.floor(wave);
   if (!(s >= SPECIAL_ENEMIES_FIRST_STAGE) || !(w >= 1)) return 0;
   const tier = Math.min(5, s) - SPECIAL_ENEMIES_FIRST_STAGE;
-  // 2. asama: 1. dalgada 1, 8. dalgada 2, 15. dalgada 3. 5. asama: 4 -> 9.
-  return 1 + tier + Math.floor((w - 1) * (0.15 + 0.05 * tier));
+  // Carpandan once -- 2. asama: 1. dalgada 1, 8. dalgada 2, 15. dalgada 3;
+  // 5. asama: 4 -> 9. Carpanla 2. asama 2/4/6, 5. asama 8 -> 18.
+  return SPECIAL_ENEMY_COUNT_MULTIPLIER * (1 + tier + Math.floor((w - 1) * (0.15 + 0.05 * tier)));
 }
 
 /**
@@ -268,7 +324,8 @@ export type WaveSpecialPlanInput = {
  * gore. Avci sampiyonun butcesi kadar dogumun yerine geciyor, digerleri birer
  * dogumun. Toplam pay `SPECIAL_MAX_SLOT_SHARE`i, sampiyonla birlikte de
  * normal payi `SPECIAL_MIN_NORMAL_SHARE`in altina indiremiyor; sigmayan ozel
- * dusman atiliyor (once avci isiticiye donuyor).
+ * dusman atiliyor: once ucuzlar (isitici, yiyici) sondan, avci kaliyor.
+ * Avci ancak tek basina bile sigmiyorsa isiticiya donuyor.
  *
  * Yerler dalgaya yayiliyor; ilk dogum hep normal, sampiyonun yeri bos.
  */
@@ -314,11 +371,29 @@ export function planWaveSpecials(input: WaveSpecialPlanInput): WaveSpecialPlan |
     const used = list.reduce((sum, kind) => sum + replacedOf(kind), 0);
     return used <= maxSpecialSlots && slots - championReplaced - used >= minNormal;
   };
-  // Sigmayan avci once isiticiye donuyor (dalganin hissi kalsin), o da
-  // sigmazsa sondan atiliyor.
-  for (let index = picked.length - 1; index >= 0 && !fits(picked); index -= 1) {
-    if (picked[index] === "hunter") picked[index] = "heater";
+  // Sigmayan liste: avci birkac dogumluk (cogu dalgada 4), digerleri birer. Eskiden once avci
+  // isiticiye donuyordu; kucuk erken dalgada feda edilen hep avciydi ve
+  // tablonun ilk avci dalgasi (4. asama 3, 5. asama 2) hic tutmuyordu.
+  // Simdi avci kaliyor:
+  // 1. Avcilar tek baslarina sigmiyorsa fazlasi (sondan) isiticiya donuyor;
+  //    tek avci bile sigmiyorsa o da.
+  // 2. Sonra ucuzlar (isitici, yiyici) sondan atiliyor.
+  let keptHunters = picked.filter((kind) => kind === "hunter").length;
+  let excessHunters = 0;
+  while (keptHunters > 0 && !fits(new Array<SpecialEnemyKind>(keptHunters).fill("hunter"))) {
+    keptHunters -= 1;
+    excessHunters += 1;
   }
+  for (let index = picked.length - 1; index >= 0 && excessHunters > 0; index -= 1) {
+    if (picked[index] !== "hunter") continue;
+    picked[index] = "heater";
+    excessHunters -= 1;
+  }
+  for (let index = picked.length - 1; index >= 0 && !fits(picked); index -= 1) {
+    if (picked[index] !== "hunter") picked.splice(index, 1);
+  }
+  // Guvenlik: yukaridaki iki adimdan sonra liste sigiyor (kalan avcilar tek
+  // baslarina sigiyor); yine de sigmayan bir liste asla dogmasin.
   while (picked.length > 0 && !fits(picked)) picked.pop();
 
   const replaced = picked.reduce((sum, kind) => sum + replacedOf(kind), 0);
