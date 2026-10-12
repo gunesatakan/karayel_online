@@ -1,7 +1,7 @@
 import type { TowerDefinition } from "./characters/common/types.js";
 
-export function getTowerMaxLevel(definition: Pick<TowerDefinition, "resourceProvider">) {
-  return definition.resourceProvider ? 5 : 10;
+export function getTowerMaxLevel(definition: Pick<TowerDefinition, "resourceProvider"> & { id?: string }) {
+  return definition.resourceProvider || definition.id === "repair-depot-1" ? 5 : 10;
 }
 
 function providerLevel(level: number) {

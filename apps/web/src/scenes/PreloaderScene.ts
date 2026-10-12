@@ -35,6 +35,7 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   preload() {
+    for (const kind of ["energy", "gunpowder", "mystic", "plasma", "iron"]) this.load.image(`resource-${kind}`, assetUrl(`images/resources/resource-${kind}.png`));
     this.load.image("zeynep-puppet-hands", assetUrl("images/zeynep-puppet-hands.png"));
     this.load.image("melis-creepy", assetUrl("images/melis-creepy.png"));
     this.load.image("melis-creepy-unstoppable", assetUrl("images/melis-creepy-unstoppable.png"));

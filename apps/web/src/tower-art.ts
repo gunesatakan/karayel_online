@@ -19,6 +19,7 @@ const TIERED_TOWER_ART: Readonly<Record<string, "png" | "webp">> = {
 const TIER_ART_SUFFIX = { 1: "levels-1-4", 2: "levels-5-9", 3: "level-10" } as const;
 
 const SUPPLY_TOWER_ART: Readonly<Record<string, string>> = {
+  "repair-depot-1": "repair",
   "warrior-7": "ammunition",
   "warrior-8": "energy",
   "zeynep-9": "ammunition",

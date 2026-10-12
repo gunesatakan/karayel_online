@@ -57,6 +57,7 @@ function tamirciTut(room) {
   room.updateDrones(16, 0.016);
   const tamirci = [...room.drones.values()].find((drone) => drone.mode === "repairer");
   assert.ok(tamirci, "tamirci sahaya cikmadi");
+  tamirci.cargo = 20; // Preloaded parts: these tests isolate repair effects.
   return tamirci;
 }
 

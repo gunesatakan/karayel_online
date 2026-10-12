@@ -285,7 +285,7 @@ test("kademe anlik goruntuye ve alim bildirimine yaziliyor", () => {
   ]);
   const drone = snapshot.drones.find((entry) => entry.advanced);
   assert.ok(drone, "gelismis isci anlik goruntude isaretlenmemis");
-  assert.equal(drone.mode, "ammoTransport");
+  assert.equal(drone.mode, "energyTransport");
 });
 
 test("gelismis istegi bedeli karsilanmiyorsa normal isciye dusmuyor", () => {

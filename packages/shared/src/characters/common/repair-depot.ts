@@ -26,7 +26,7 @@ export const repairDepotTower: TowerDefinition = attachTowerEngine({
   characterId: "zeynep",
   name: "Tamir Merkezi",
   role: "Tamirci üssü",
-  description: "Ateş etmez. Tamirci işçilerinin üssüdür: boş kaldıklarında buraya döner ve burada beklerler. Bir yapı hasar aldığında müdahale bu merkezden başlar — Tamirci önce merkezin çevresindeki en kötü durumdaki yapıyı onarır, çevrede onarılacak bir şey kalmadığında haritanın geri kalanına bakar. Yükseltmek çevre halkasını genişletir. Merkezi olmayan Tamirci de çalışır, ama nereye koşacağına oyuncu karar veremez.",
+  description: "Ateş etmez. Tamirci işçilerinin üssüdür: boş kaldıklarında buraya döner ve burada beklerler. Bir yapı hasar aldığında müdahale bu merkezden başlar — Tamirci önce merkezin çevresindeki en kötü durumdaki yapıyı onarır, çevrede onarılacak bir şey kalmadığında haritanın geri kalanına bakar. Yükseltmek çevre halkasını genişletir. Enerji ve demir tüketerek onarım parçası üretir. Tamirci merkezden parça almadan onaramaz. Seviye 5 üretim, depo ve canı artırır.",
   classType: "support",
   damageType: "none",
   hitType: "none",

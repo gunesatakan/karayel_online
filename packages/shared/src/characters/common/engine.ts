@@ -171,7 +171,8 @@ export function attachTowerEngine(definition: Omit<TowerDefinition, "engine">): 
         pierceCount: profile.attack.pierceCount ?? (profile.attack.shape === "single" ? 1 : undefined)
       },
       levelScaling: profile.levelScaling ?? defaultEngine.levelScaling.map((scaling) => ({ ...scaling })),
-      resources: deriveTowerResources(definition, profile.resources),
+      resources: deriveTowerResources(definition, { ...profile.resources,
+        ...(definition.damageType === "psychic" ? { ammoType: "auraCrystal" as const } : {}) }),
       resourceProvider: profile.resourceProvider ?? definition.resourceProvider
     }
   };

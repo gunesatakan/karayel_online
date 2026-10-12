@@ -33,9 +33,12 @@ for (const [character, id] of [["warrior", "warrior-7"], ["warrior", "warrior-8"
         tower.ammo = 0;
         tower.energy = 20;
         tower.rawAmmo = 20;
+        tower.materials = { gunpowder: 20 };
+        tower.ammoStock = {};
         room.updateResourceFactories(1);
         assert.equal(tower.ammo, rates[level - 1]);
         tower.ammo = tower.maxAmmo - 0.1;
+        tower.ammoStock = { bullet: tower.ammo };
         room.updateResourceFactories(1);
         assert.equal(tower.ammo, tower.maxAmmo);
       }

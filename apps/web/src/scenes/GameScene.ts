@@ -1,4 +1,6 @@
+import { WorkerAssignmentUi } from "../worker-assignment-ui";
 import { getTowerMaxLevel } from "@karayel/shared";
+import { ACTIVE_WORKER_ROLES } from "@karayel/shared";
 import Phaser from "phaser";
 import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
@@ -996,6 +998,7 @@ export class GameScene extends Phaser.Scene {
   private workerBanGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
+  private resourceSprites = new Map<string, Phaser.GameObjects.Image>();
   private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
   private selectedResourceGraphics?: Phaser.GameObjects.Graphics;
   private selectedAmmoText?: Phaser.GameObjects.Text;
@@ -1497,6 +1500,7 @@ export class GameScene extends Phaser.Scene {
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
   /** Isci yol yasagi kipi acik mi; acikken haritaya basmak kare kapatir. */
   private workerBanMode = false;
+  private workerAssignmentUi?: WorkerAssignmentUi;
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   private draggedTowerDefinition?: TowerDefinition;
@@ -3178,7 +3182,7 @@ export class GameScene extends Phaser.Scene {
       generic: true,
       // Rolu secilmemis isci varken sunucu yeni alim yerine secimi yeniden acar.
       pendingSpecialization: hired.some((worker) => !worker.role),
-      roles: HIRABLE_WORKER_ROLES.map((role) => ({
+      roles: ACTIVE_WORKER_ROLES.map((role) => ({
         id: role,
         label: WORKER_ROLE_LABELS[role],
         description: WORKER_ROLE_DESCRIPTIONS[role],
@@ -4451,6 +4455,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    if (this.isBattlePointer(pointer) && this.workerAssignmentUi?.mapClick(pointer.worldX, pointer.worldY, this.getMapCellSize() * 0.8)) return;
     this.logTap(pointer, this.describeTapOutcome(pointer));
     if (this.hitSellButton(pointer)) {
       this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
@@ -5078,6 +5083,11 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
     this.renderWorkerBannedCells();
+    if (!this.workerAssignmentUi) {
+      this.workerAssignmentUi = new WorkerAssignmentUi((message) => this.room?.send("worker:assign", message));
+      this.events.once("shutdown", () => { this.workerAssignmentUi?.destroy(); this.workerAssignmentUi = undefined; });
+    }
+    this.workerAssignmentUi.update(frame.snapshot, this.localSessionId);
     this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
     this.renderAmmoNodes(frame.snapshot.ammoNodes ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
@@ -8922,36 +8932,28 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private renderCrystalNodes(nodes: CrystalNodeSnapshot[]) {
-    const graphics = this.crystalGraphics ?? this.add.graphics().setDepth(8);
-    this.crystalGraphics = graphics;
-    graphics.clear();
-    const pulse = 1 + Math.sin(Date.now() / 260) * 0.12;
-    const scale = this.getMapCellSize() / TOWER_GRID_SIZE;
-    for (const node of nodes) {
-      graphics.fillStyle(0x7c3aed, 0.24);
-      graphics.fillCircle(node.x, node.y, 15 * scale * pulse);
-      graphics.lineStyle(Math.max(1, 2 * scale), 0xc4b5fd, 0.9);
-      graphics.strokeCircle(node.x, node.y, 9 * scale * pulse);
-      graphics.fillStyle(0xe9d5ff, 0.95);
-      graphics.fillTriangle(node.x, node.y - 9 * scale, node.x + 7 * scale, node.y + 7 * scale, node.x - 7 * scale, node.y + 7 * scale);
-    }
+    this.crystalGraphics?.clear();
+    this.renderResourceSprites(nodes.map((node) => ({ ...node, kind: "energy" })), "energy");
   }
 
   private renderAmmoNodes(nodes: AmmoNodeSnapshot[]) {
-    const graphics = this.ammoNodeGraphics ?? this.add.graphics().setDepth(8);
-    this.ammoNodeGraphics = graphics;
-    graphics.clear();
-    const pulse = 1 + Math.sin(Date.now() / 310) * 0.1;
-    const scale = this.getMapCellSize() / TOWER_GRID_SIZE;
+    this.ammoNodeGraphics?.clear();
+    this.renderResourceSprites(nodes.map((node) => ({ ...node, kind: node.kind ?? "gunpowder" })), "materials");
+  }
+
+  private renderResourceSprites(nodes: Array<{ id: string; x: number; y: number; kind: string }>, group: string) {
+    const current = new Set(nodes.map((node) => `${group}:${node.id}`));
+    for (const [id, sprite] of this.resourceSprites) {
+      if (id.startsWith(`${group}:`) && !current.has(id)) { sprite.destroy(); this.resourceSprites.delete(id); }
+    }
     for (const node of nodes) {
-      graphics.fillStyle(0x365314, 0.3);
-      graphics.fillCircle(node.x, node.y, 14 * scale * pulse);
-      graphics.lineStyle(Math.max(1, 2 * scale), 0xa3e635, 0.9);
-      graphics.strokeCircle(node.x, node.y, 8 * scale * pulse);
-      graphics.fillStyle(0xd9f99d, 0.96);
-      graphics.fillRect(node.x - 6 * scale, node.y - 5 * scale, 12 * scale, 10 * scale);
-      graphics.lineStyle(Math.max(1, scale), 0x3f6212, 0.9);
-      graphics.lineBetween(node.x - 4 * scale, node.y, node.x + 4 * scale, node.y);
+      const id = `${group}:${node.id}`;
+      let sprite = this.resourceSprites.get(id);
+      if (!sprite || !sprite.active) {
+        sprite = this.add.image(node.x, node.y, `resource-${node.kind}`).setDepth(8);
+        this.resourceSprites.set(id, sprite);
+      }
+      sprite.setPosition(node.x, node.y).setDisplaySize(this.getMapCellSize() * 0.95, this.getMapCellSize() * 0.95);
     }
   }
 
@@ -10997,6 +10999,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         temperature: tower.temperature,
         ammo: tower.ammo,
         maxAmmo: tower.maxAmmo,
+        materials: tower.materials,
+        ammoStock: tower.ammoStock,
+        repairParts: tower.repairParts,
         rawAmmo: tower.rawAmmo,
         maxRawAmmo: tower.maxRawAmmo,
         energy: tower.energy,

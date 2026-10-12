@@ -168,7 +168,7 @@ export const enTowers: Readonly<Record<string, { name: string; role: string; des
   "repair-depot-1": {
     name: "Repair Depot",
     role: "Repairer base",
-    description: "Does not fire. Base for Repairer workers: they return here and wait when idle. When a structure takes damage, the response starts from this depot — the Repairer first repairs the worst-off structure around the depot, and once nothing nearby needs repair it looks to the rest of the map. Upgrading widens the surrounding ring. A Repairer without a depot still works, but the player cannot decide where it runs."
+    description: "Does not fire. Base for Repairer workers: they return here and wait when idle. When a structure takes damage, the response starts from this depot — the Repairer first repairs the worst-off structure around the depot, and once nothing nearby needs repair it looks to the rest of the map. Upgrading widens the surrounding ring. Consumes energy and iron to produce repair parts. Repairers must collect parts here before repairing. Level 5 increases production, storage and health."
   }
 };
 

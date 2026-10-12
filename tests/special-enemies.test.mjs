@@ -803,8 +803,8 @@ test("işçiler yıkılan enerji binasından sonra çökmeden diğer binaya dön
   room.setupPhase = false;
   const ilk = kur(room, "warrior-8", 2, 9);
   const ikinci = kur(room, "warrior-8", 9, 9);
-  ilk.energy = 40;
-  ikinci.energy = 40;
+  ilk.energy = 5;
+  ikinci.energy = 5;
   room.ensureLogisticsWorkers();
   const toplayici = room.drones.get("logistics-p1-crystalCollector");
   const tasiyici = room.drones.get("logistics-p1-energyTransport");

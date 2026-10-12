@@ -74,16 +74,16 @@ export const HIRABLE_WORKER_ROLES = ["crystalCollector", "energyTransport", "amm
 export type HirableWorkerRole = (typeof HIRABLE_WORKER_ROLES)[number];
 
 export const WORKER_ROLE_LABELS: Record<HirableWorkerRole, string> = {
-  crystalCollector: "Kristal Toplayıcı",
-  energyTransport: "Enerji Taşıyıcı",
+  crystalCollector: "Toplama",
+  energyTransport: "Taşıma",
   ammoCollector: "Mühimmat Toplayıcı",
   ammoTransport: "Mühimmat Taşıyıcı",
   repairer: "Tamirci"
 };
 
 export const WORKER_ROLE_DESCRIPTIONS: Record<HirableWorkerRole, string> = {
-  crystalCollector: "Kristal düğümlerinden ham enerji toplar.",
-  energyTransport: "Toplanan enerjiyi kulelere dağıtır.",
+  crystalCollector: "Seçtiğin kaynaktan enerji, barut, mistik öz, güç kristali veya demir toplar.",
+  energyTransport: "Seçtiğin binadan enerji veya seçtiğin mühimmat türünü kulelere taşır.",
   ammoCollector: "Mühimmat düğümlerinden ham madde toplar.",
   ammoTransport: "Üretilen mühimmatı kulelere taşır.",
   repairer: `Hasarlı yapıları altın harcamadan onarır: saniyede ${String(WORKER_REPAIR_PER_SECOND).replace(".", ",")} can. Yıkılan yapıyı diriltemez.`

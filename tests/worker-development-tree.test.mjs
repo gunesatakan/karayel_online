@@ -11,7 +11,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  HIRABLE_WORKER_ROLES,
+  ACTIVE_WORKER_ROLES,
   WORKER_DEVELOPMENT_CELLS,
   WORKER_DEVELOPMENT_EFFECTS,
   WORKER_DEVELOPMENT_ROWS,
@@ -61,12 +61,12 @@ test("her rolun 9 hucresi de dolu: yon, derinlestirme, oyun degistirici", () => 
   for (let index = 1; index < 9; index += 1) assert.ok(WORKER_DEVELOPMENT_XP_COSTS[index] > WORKER_DEVELOPMENT_XP_COSTS[index - 1]);
   // Oyun degistiricilerin bedeli degismedi.
   assert.deepEqual([2, 5, 8].map((index) => WORKER_DEVELOPMENT_XP_COSTS[index]), [120, 280, 560]);
-  for (const role of HIRABLE_WORKER_ROLES) {
+  for (const role of ACTIVE_WORKER_ROLES) {
     const cells = WORKER_DEVELOPMENT_CELLS[role];
     assert.equal(cells.length, 9);
     for (const [index, cell] of cells.entries()) {
       assert.equal(cell.options?.length, 2, `${role} ${index + 1}. hucre bos`);
-      if (index % 3 === 2) assert.deepEqual(cell.options, WORKER_SKILL_TIERS[role][Math.floor(index / 3)]);
+      if (role === "repairer" && index % 3 === 2) assert.deepEqual(cell.options, WORKER_SKILL_TIERS[role][Math.floor(index / 3)]);
     }
   }
   const ids = developmentOptions().map((option) => option.id);
@@ -119,35 +119,35 @@ test("hicbir secenek bir kuleyi ya da karakteri anmiyor", () => {
 test("hucreler sirayla, her hucreden tek secim, derinlestirme yonunu istiyor", () => {
   const room = setupRoom();
   const player = room.state.players.get("p1");
-  const [direction, deepening] = WORKER_DEVELOPMENT_ROWS.energyTransport[0];
+  const [direction, deepening] = WORKER_DEVELOPMENT_ROWS.repairer[0];
   player.experience = 10_000;
 
   // Sira atlanamiyor: 2. hucre 1. hucreden once acilmaz.
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: deepening[0].id });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: deepening[0].id });
   assert.deepEqual(player.workerSkillIds ?? [], []);
 
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: direction[1].id });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: direction[1].id });
   assert.deepEqual(player.workerSkillIds, [direction[1].id]);
   assert.equal(player.experience, 10_000 - WORKER_DEVELOPMENT_XP_COSTS[0]);
 
   // Ayni hucrenin oteki secenegi artik kapali.
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: direction[0].id });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: direction[0].id });
   assert.deepEqual(player.workerSkillIds, [direction[1].id]);
 
   // B'yi secen A'nin derinlestirmesini alamaz, B'ninkini alir.
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: deepening[0].id });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: deepening[0].id });
   assert.deepEqual(player.workerSkillIds, [direction[1].id]);
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: deepening[1].id });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: deepening[1].id });
   assert.deepEqual(player.workerSkillIds, [direction[1].id, deepening[1].id]);
   assert.equal(player.experience, 10_000 - WORKER_DEVELOPMENT_XP_COSTS[0] - WORKER_DEVELOPMENT_XP_COSTS[1]);
 
   // 3. hucre: eski oyun degistirici, ucuncu sirada.
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: "energy-relay" });
-  assert.equal(player.workerSkillIds.at(-1), "energy-relay");
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: WORKER_SKILL_TIERS.repairer[0][0].id });
+  assert.equal(player.workerSkillIds.at(-1), WORKER_SKILL_TIERS.repairer[0][0].id);
 
   // XP yetmezse acilmaz ve XP gitmez.
   player.experience = WORKER_DEVELOPMENT_XP_COSTS[3] - 1;
-  room.unlockWorkerDevelopment(client, { role: "energyTransport", skillId: "energy-mark-guard" });
+  room.unlockWorkerDevelopment(client, { role: "repairer", skillId: WORKER_DEVELOPMENT_ROWS.repairer[1][0][0].id });
   assert.equal(player.workerSkillIds.length, 3);
   assert.equal(player.experience, WORKER_DEVELOPMENT_XP_COSTS[3] - 1);
 });
@@ -382,6 +382,7 @@ test("tamircinin yonleri onarim bitince isliyor", () => {
   tower.ammo = 0;
   tower.temperature = 80;
   tower.heatLocked = true;
+  repairer.cargo = 1;
   room.updateRepairWorker(repairer, 1);
   assert.equal(tower.hp, tower.maxHp);
   assert.equal(tower.ammo, tower.maxAmmo * 0.25);

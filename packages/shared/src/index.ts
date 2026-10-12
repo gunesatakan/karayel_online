@@ -548,7 +548,7 @@ export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
 >> & Pick<EnemySnapshot, "pathId" | "champion" | "special">;
 export type DynamicEnemySnapshot = Omit<EnemySnapshot, keyof StaticEnemySnapshot> & { id: string };
 
-export type TowerSnapshot = {
+export type TowerSnapshot = import("./resource-economy.js").EconomyStock & {
   id: string;
   ownerId: string;
   ownerName: string;
@@ -776,7 +776,11 @@ export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: T
  */
 export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: string; angle: number; r?: number };
 
+export * from "./resource-economy.js";
+
 export type DroneSnapshot = {
+  assignment?: import("./resource-economy.js").WorkerAssignment;
+  cargoResource?: import("./resource-economy.js").ResourceKind;
   id: string;
   /**
    * "repair" Atakan ultisinin nexusa giden dronu; "repairer" ise sahada
@@ -809,6 +813,7 @@ export type CrystalNodeSnapshot = {
 };
 
 export type AmmoNodeSnapshot = {
+  kind?: import("./resource-economy.js").ResourceKind;
   id: string;
   x: number;
   y: number;

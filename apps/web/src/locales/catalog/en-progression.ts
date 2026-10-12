@@ -1,3 +1,4 @@
+import { RESOURCE_NAMES_EN, RESOURCE_KINDS } from "@karayel/shared";
 import {
   ARCHIVIST_CARD_TARGET,
   FINAL_WAVE,
@@ -43,7 +44,13 @@ type NamedText = { name: string; description: string };
  * (`WORKER_DEVELOPMENT_ROWS`) ve uzmanlik secimleri
  * (`WORKER_SPECIALIZATION_CHOICES`, kimlik rol adi). Kimlikler cakismiyor.
  */
+const economySkillNames = Object.fromEntries(["gather", "gatherLoad", "transport", "transportSpeed"].flatMap((action) => [...RESOURCE_KINDS, "all" as const].flatMap((kind) => [1, 2].map((rank) => {
+  const resource = kind === "all" ? "All resources" : RESOURCE_NAMES_EN[kind];
+  const effect = action === "gather" ? "Gathering speed" : action === "gatherLoad" ? "Gathering capacity" : action === "transport" ? "Transport capacity" : "Transport movement speed";
+  return [`${action}-${kind}-${rank}`, { name: `${resource}: ${effect} ${rank}`, description: `${effect} for ${resource.toLowerCase()} increases by ${rank === 1 ? 30 : 60}%.` }];
+})))) as Record<WorkerSkillId, NamedText>;
 export const enWorkerSkills: Readonly<Record<WorkerSkillId | HirableWorkerRole, NamedText>> = {
+  ...economySkillNames,
   // --- Enerji tasiyici: oyun degistiriciler (ENERGY_WORKER_SKILL_TIERS) ------
   "energy-relay": { name: "Relay Architect", description: "The supplied tower becomes an energy source for adjacent towers for 8 s. Grid range 1 tile." },
   "local-capacitor": { name: "Local Capacitor", description: "Each delivery leaves an 18-energy local battery in the tower. Even if the main line is cut, this tower alone keeps running." },
@@ -155,27 +162,27 @@ export const enWorkerSkills: Readonly<Record<WorkerSkillId | HirableWorkerRole, 
   "repair-full-charge": { name: "Full Charge", description: "Upgrades Battery Swap: energy refills by 50% of capacity." },
 
   // --- Uzmanlik secimleri (WORKER_SPECIALIZATION_CHOICES; kimlik rol adi) ----
-  crystalCollector: { name: "Crystal Collector", description: "Manages the reactor's energy reserve and energy crises." },
-  energyTransport: { name: "Energy Carrier", description: "Changes the energy grid's links and the towers' emergency operation." },
+  crystalCollector: { name: "Gatherer", description: "Collects energy and production materials from the resource you choose on the map." },
+  energyTransport: { name: "Carrier", description: "Carries your selected energy or ammunition from the assigned building." },
   ammoCollector: { name: "Ammo Collector", description: "Sets the ammo factory's quality, safety and battle recycling." },
   ammoTransport: { name: "Ammo Carrier", description: "Sets how ammo is distributed between towers and its assault windows." },
   repairer: { name: "Repairer", description: "Sets how repair protects towers, rebuilds them and defends the nexus." }
 };
 
 export const enWorkerRoleLabels: Readonly<Record<HirableWorkerRole, string>> = {
-  crystalCollector: "Crystal Collector",
-  energyTransport: "Energy Carrier",
+  crystalCollector: "Gatherer",
+  energyTransport: "Carrier",
   ammoCollector: "Ammo Collector",
   ammoTransport: "Ammo Carrier",
   repairer: "Repairer"
 };
 
 export const enWorkerRoleDescriptions: Readonly<Record<HirableWorkerRole, string>> = {
-  crystalCollector: "Gathers raw energy from crystal nodes.",
-  energyTransport: "Distributes collected energy to towers.",
+  crystalCollector: "Gathers energy, gunpowder, mystic essence, power crystals or iron from an assigned node.",
+  energyTransport: "Distributes the selected energy or ammunition to compatible towers.",
   ammoCollector: "Gathers raw material from ammo nodes.",
   ammoTransport: "Carries produced ammo to towers.",
-  repairer: `Repairs damaged structures without spending gold: ${WORKER_REPAIR_PER_SECOND} HP per second. Cannot revive a destroyed structure.`
+  repairer: `Collects repair parts from a repair depot, then repairs damaged structures: ${WORKER_REPAIR_PER_SECOND} HP per second. Cannot revive a destroyed structure.`
 };
 
 /** Her Cephede nisaninin operator sayisi; kaynaktaki `OPERATOR_COUNT` disa acik degil. */

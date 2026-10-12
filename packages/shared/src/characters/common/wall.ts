@@ -56,7 +56,7 @@ export const wallTower: TowerDefinition = attachTowerEngine({
 
 /** Duvar ve kaynak yapilarinin cani seviyeye gore buyur. */
 export function getStructureHealthMultiplier(definition: TowerDefinition, level: number) {
-  if (definition.resourceProvider) return getResourceProviderHealthMultiplier(level);
+  if (definition.resourceProvider || definition.id === "repair-depot-1") return getResourceProviderHealthMultiplier(level);
   const base = definition.structureHealthMultiplier ?? 1;
   const perLevel = definition.structureHealthPerLevel ?? 0;
   return base * (1 + Math.max(0, Math.round(level) - 1) * perLevel);

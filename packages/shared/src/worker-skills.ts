@@ -1,7 +1,11 @@
+import { RESOURCE_NAMES, type ResourceKind } from "./resource-economy.js";
 import type { HirableWorkerRole } from "./logistics/index.js";
 
 /** Kalici isci secimleri. Her rol kendi uc kademeli ikili agacina sahiptir. */
+export type EconomyWorkerSkillId = `${"gather" | "gatherLoad" | "transport" | "transportSpeed"}-${ResourceKind | "all"}-${1 | 2}`;
+
 export type WorkerSkillId =
+  | EconomyWorkerSkillId
   | "energy-relay" | "local-capacitor" | "load-shedder" | "frequency-share" | "scenario-charge" | "emergency-bridge"
   | "crystal-reserve" | "crystal-resonance" | "crystal-trap" | "crystal-conduit" | "crystal-last-core" | "crystal-critical-resonance"
   | "ammo-refiner" | "ammo-emergency-refinery" | "ammo-cast-shell" | "ammo-recycling" | "ammo-black-box" | "ammo-wave-stock"
@@ -148,7 +152,7 @@ export const REPAIR_WORKER_SKILL_TIERS: readonly WorkerSkillPair[] = [
   ],
   [
     { id: "repair-fortification-seal", name: "Tahkimat Mührü", description: "Tamir tamamlanınca kule 30 hasarlık veya 10 sn süreli bariyer kazanır." },
-    { id: "repair-emergency-rebuild", name: "Acil Yeniden Kurulum", description: "Dalga başına bir kez yıkılmış bir yapı 5 sn içinde %20 canla yeniden kurulabilir." }
+    { id: "repair-emergency-rebuild", name: "Acil Yeniden Kurulum", description: "Merkezde yeterli parça varsa dalga başına bir kez yıkılmış yapı 5 sn içinde %20 canla yeniden kurulur. Her 10 can için 1 parça tüketir." }
   ],
   [
     { id: "repair-nexus-watch", name: "Nexus Nöbeti", description: "Takım canı %40'ın altına inince tamirci kuleleri bırakıp nexus'u saniyede 2 can onarır." },
@@ -448,6 +452,27 @@ export const WORKER_DEVELOPMENT_CELLS: Readonly<Record<HirableWorkerRole, readon
   })
 ) as unknown as Record<HirableWorkerRole, readonly WorkerDevelopmentCell[]>;
 
+/** Unified professions: resource-specific choices followed by advanced studies. */
+function economyCells(role: "gather" | "transport"): WorkerDevelopmentCell[] {
+  const kinds = role === "gather"
+    ? ["energy", "gunpowder", "mystic", "plasma", "iron", "all", "energy", "gunpowder", "all"] as const
+    : ["energy", "gunpowder", "mystic", "plasma", "all", "energy", "gunpowder", "mystic", "all"] as const;
+  return kinds.map((kind, tier) => {
+    const rank = tier >= (role === "gather" ? 6 : 5) ? 2 : 1;
+    const name = kind === "all" ? "Tüm kaynaklar" : RESOURCE_NAMES[kind];
+    const second = role === "gather" ? "gatherLoad" : "transportSpeed";
+    return { tier, options: [
+      { id: `${role}-${kind}-${rank}`, name: `${name}: ${role === "gather" ? "Hızlı çıkarım" : "Büyük yük"} ${rank}`,
+        description: `${name} için ${role === "gather" ? "toplama hızı" : "taşıma kapasitesi"} %${rank === 1 ? 30 : 60} artar.`,
+        ...(rank === 2 ? { requires: `${role}-${kind}-1` as WorkerSkillId } : {}) },
+      { id: `${second}-${kind}-${rank}`, name: `${name}: ${role === "gather" ? "Geniş sepet" : "Hızlı sevkiyat"} ${rank}`,
+        description: `${name} için ${role === "gather" ? "toplama kapasitesi" : "yürüme hızı"} %${rank === 1 ? 30 : 60} artar.`,
+        ...(rank === 2 ? { requires: `${second}-${kind}-1` as WorkerSkillId } : {}) }
+    ] };
+  });
+}
+Object.assign(WORKER_DEVELOPMENT_CELLS, { crystalCollector: economyCells("gather"), energyTransport: economyCells("transport") });
+
 /** Yon -> derinlestirmesi ("energy-high-voltage" -> "energy-superconductor"). */
 export const WORKER_DEVELOPMENT_UPGRADES: Readonly<Partial<Record<WorkerSkillId, WorkerDevelopmentSkillId>>> = Object.fromEntries(
   Object.values(WORKER_DEVELOPMENT_ROWS).flatMap((rows) => rows.flatMap(([, deepening]) => deepening.map((option) => [option.requires, option.id])))
@@ -468,11 +493,9 @@ export function resolveWorkerDevelopmentEffect(has: (skill: WorkerSkillId) => bo
 }
 
 export const WORKER_SPECIALIZATION_CHOICES = [
-  { id: "crystalCollector" as const, name: "Kristal Toplayıcı", description: "Reaktörün enerji rezervini ve enerji krizlerini yönetir." },
-  { id: "energyTransport" as const, name: "Enerji Taşıyıcı", description: "Enerji ağının bağlantılarını ve kulelerin acil çalışma durumunu değiştirir." },
-  { id: "ammoCollector" as const, name: "Mühimmat Toplayıcı", description: "Mühimmat fabrikasının kalite, güvenlik ve savaş geri dönüşümünü belirler." },
-  { id: "ammoTransport" as const, name: "Mühimmat Taşıyıcı", description: "Mühimmatın kuleler arasında nasıl dağıtıldığını ve saldırı pencerelerini belirler." },
-  { id: "repairer" as const, name: "Tamirci", description: "Tamirin kuleyi koruma, yeniden kurma ve nexus savunma biçimini belirler." }
+  { id: "crystalCollector" as const, name: "Toplama", description: "Haritada seçtiğin kaynaktan enerji ve üretim hammaddesi toplar." },
+  { id: "energyTransport" as const, name: "Taşıma", description: "Seçtiğin binadan enerji veya mühimmat taşır." },
+  { id: "repairer" as const, name: "Onarım", description: "Tamir merkezinden parça alıp hasarlı yapıları onarır." }
 ] as const;
 
 export type WorkerDevelopmentTree = {
@@ -486,7 +509,8 @@ export function getWorkerSkillTiers(role: HirableWorkerRole) {
 }
 
 export function isWorkerSkillId(value: unknown): value is WorkerSkillId {
-  return Object.values(WORKER_DEVELOPMENT_CELLS).some((cells) => cells.some((cell) => cell.options?.some((skill) => skill.id === value)));
+  return Object.values(WORKER_DEVELOPMENT_CELLS).some((cells) => cells.some((cell) => cell.options?.some((skill) => skill.id === value)))
+    || Object.values(WORKER_SKILL_TIERS).some((tiers) => tiers.some((pair) => pair.some((skill) => skill.id === value)));
 }
 
 /** Agactaki butun hucreler: oyun degistiriciler ve yon/derinlestirme secenekleri. */
@@ -506,7 +530,7 @@ export function getWorkerSkill(id: WorkerSkillId) {
       if (skill) return skill;
     }
   }
-  return undefined;
+  return Object.values(WORKER_SKILL_TIERS).flatMap((tiers) => tiers.flat()).find((skill) => skill.id === id);
 }
 
 export function getEnergyWorkerSkill(id: EnergyWorkerSkillId) {

@@ -17,7 +17,7 @@ const expectedProfiles = {
     ["warrior-1", "projectile", "physical", "bullet", 10, 24, 132, null],
     ["warrior-2", "impact", "electric", "bullet", 28.6, 0, 0, null],
     ["warrior-3", "aura", "none", "auraCrystal", 1, 0, 0, null],
-    ["warrior-4", "impact", "psychic", "bullet", 8.8, 54, 297, null],
+    ["warrior-4", "impact", "psychic", "auraCrystal", 8.8, 54, 297, null],
     ["warrior-5", "focus", "fire", "powerCrystal", 1.6, 10, 55, null],
     ["warrior-6", "impact", "electric", "bullet", 10.01, 27, 148.5, null],
     ["warrior-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
@@ -34,11 +34,11 @@ const expectedProfiles = {
     ["zeynep-10", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
   ],
   archer: [
-    ["archer-1", "projectile", "psychic", "bullet", 4, 64, 352, null],
+    ["archer-1", "projectile", "psychic", "auraCrystal", 4, 64, 352, null],
     ["archer-2", "projectile", "light", "bullet", 11, 44, 242, null],
     ["archer-3", "curse", "cellular", "auraCrystal", 0.15, 30, 165, null],
-    ["archer-4", "focus", "psychic", "powerCrystal", 0.4, 0, 0, null],
-    ["archer-5", "impact", "psychic", "bullet", 8.8, 20, 110, null],
+    ["archer-4", "focus", "psychic", "auraCrystal", 0.4, 0, 0, null],
+    ["archer-5", "impact", "psychic", "auraCrystal", 8.8, 20, 110, null],
     ["archer-6", "wave", "psychic", "auraCrystal", 8, 10, 55, null],
     ["archer-7", "none", "none", "auraCrystal", 0, 0, 0, "ammunition"],
     ["archer-8", "none", "none", "auraCrystal", 0, 0, 0, "energy"]
@@ -63,7 +63,7 @@ function profile(tower) {
 }
 
 for (const [characterId, expected] of Object.entries(expectedProfiles)) {
-  test(`${characterId} kulelerinin davranış profili değişmedi`, () => {
+  test(`${characterId} kulelerinin davranış profili ve yeni psişik mühimmatı doğru`, () => {
     assert.deepEqual(getCharacterTowers(characterId).map(profile), expected);
   });
 }

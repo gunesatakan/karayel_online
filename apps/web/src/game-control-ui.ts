@@ -1,3 +1,4 @@
+import { ACTIVE_WORKER_ROLES } from "@karayel/shared";
 import type Phaser from "phaser";
 import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
@@ -710,7 +711,7 @@ export function setupGameControlUi(game: Phaser.Game) {
 
   /** Agactaki secenegin rolu ve hucresi. */
   const findWorkerDevelopmentOption = (skillId: WorkerSkillId) => {
-    for (const role of HIRABLE_WORKER_ROLES) {
+    for (const role of ACTIVE_WORKER_ROLES) {
       const index = WORKER_DEVELOPMENT_CELLS[role].findIndex((cell) => cell.options?.some((option) => option.id === skillId));
       const option = index < 0 ? undefined : WORKER_DEVELOPMENT_CELLS[role][index].options?.find((entry) => entry.id === skillId);
       if (option) return { role, index, option };
@@ -757,7 +758,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     originLabel.append(t("controls.workerTree.originTop"), document.createElement("br"), t("controls.workerTree.originBottom"));
     origin.append(originLabel);
     canvas.append(origin);
-    for (const role of HIRABLE_WORKER_ROLES) {
+    for (const role of ACTIVE_WORKER_ROLES) {
       const section = document.createElement("section");
       section.className = `worker-development__role worker-development__role--${role}`;
       const heading = document.createElement("strong");

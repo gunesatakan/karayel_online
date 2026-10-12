@@ -1,3 +1,5 @@
+import { RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
+import { getLocale } from "./i18n";
 import {
   GAME_SPEED_MULTIPLIER,
   TOWER_HEAT_BRAKE_TEMPERATURE,
@@ -45,7 +47,7 @@ export type TowerSheetSectionId = "attack" | "aim" | "effects" | "resources" | "
 /** Sahnenin metin notlari; ait olduklari bolumun altinda duruyor. */
 export type TowerSheetNote = { section: TowerSheetSectionId | "status"; text: string };
 
-export type TowerSheetLive = {
+export type TowerSheetLive = EconomyStock & {
   hp?: number;
   maxHp?: number;
   armor?: number;
@@ -553,11 +555,21 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   }
   if (live.resourceProvider === "ammunition") {
     bars.push({ key: "ammo", label: t("sheet.product"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio: ratioOf(live.ammo, live.maxAmmo), tone: "ok" });
-    bars.push({ key: "raw", label: t("sheet.raw"), value: `${Math.floor(live.rawAmmo ?? 0)}/${live.maxRawAmmo ?? 0}`, ratio: ratioOf(live.rawAmmo, live.maxRawAmmo), tone: "ok" });
+    if (!live.materials) bars.push({ key: "raw", label: t("sheet.raw"), value: `${Math.floor(live.rawAmmo ?? 0)}/${live.maxRawAmmo ?? 0}`, ratio: ratioOf(live.rawAmmo, live.maxRawAmmo), tone: "ok" });
   } else if (relevance.operational && live.shotFuel !== "energy" && (live.maxAmmo ?? 0) > 0) {
     const ratio = ratioOf(live.ammo, live.maxAmmo);
     bars.push({ key: "ammo", label: t("sheet.ammo"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: stats?.am !== undefined ? t("sheet.perShot", { v: formatSmart(stats.am) }) : undefined });
   }
+  const resourceNames = getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN;
+  const capacity = getResourceProviderCapacity(input.level);
+  for (const kind of (live.resourceProvider === "ammunition" ? ["gunpowder", "mystic", "plasma"] : live.repairParts !== undefined ? ["iron"] : []) as ResourceKind[]) {
+    const amount = live.materials?.[kind] ?? 0;
+    bars.push({ key: `material-${kind}`, label: resourceNames[kind], value: `${Math.floor(amount)}/${capacity}`, ratio: amount / capacity });
+  }
+  for (const type of Object.keys(live.ammoStock ?? {}) as AmmoType[]) {
+    resourceRows.push({ key: `stock-${type}`, label: `${resourceNames[AMMO_RECIPES[type]]} → ${getLocale() === "tr" ? "mühimmat" : "ammo"}`, value: formatNumber(live.ammoStock![type] ?? 0, 1), detail: [] });
+  }
+  if (live.repairParts !== undefined) bars.push({ key: "parts", label: getLocale() === "tr" ? "Onarım parçaları" : "Repair parts", value: `${Math.floor(live.repairParts)}/${capacity}`, ratio: live.repairParts / capacity });
   if ((live.maxEnergy ?? 0) > 0) {
     const ratio = ratioOf(live.energy, live.maxEnergy);
     const energyParts = [

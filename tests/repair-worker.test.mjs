@@ -38,6 +38,7 @@ function tamirciTut(room, { advanced = false } = {}) {
   room.updateDrones(16, 0.016);
   const tamirci = [...room.drones.values()].find((drone) => drone.mode === "repairer");
   assert.ok(tamirci, "tamirci sahaya cikmadi");
+  tamirci.cargo = 20; // Preloaded parts: these tests isolate repair effects.
   return tamirci;
 }
 
@@ -177,14 +178,16 @@ test("tamir merkezi her karakterin listesinde", () => {
   }
 });
 
-test("tamir merkezi ateş etmez, deposu da yoktur", () => {
+test("tamir merkezi ateş etmez; enerji ve parça depolar", () => {
   // Duvarin dustugu tuzak: ates etmeyen yapiya kapasite verilirse isciler ona
   // ates etmeyecegi mühimmati tasir.
   assert.equal(isOperationalTower(merkezTanimi()), false);
   const room = oda();
   const merkez = merkezKur(room, ...Object.values(findBuildableSpot(room, REPAIR_DEPOT_TOWER_ID)));
   assert.equal(merkez.maxAmmo, 0, "merkezin mühimmat deposu var");
-  assert.equal(merkez.maxEnergy, 0, "merkezin enerji deposu var");
+  assert.equal(merkez.maxEnergy, 20);
+  assert.equal(merkez.repairParts, 0);
+  assert.deepEqual(merkez.materials, {});
   assert.equal(room.acceptsTowerOperation(merkez), false, "merkez kule islemine giriyor");
 });
 

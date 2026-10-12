@@ -1379,7 +1379,7 @@ button.wave-report:active { transform: scale(0.99); }
   top: 18px;
   left: 50%;
   display: grid;
-  grid-template-columns: repeat(5, 224px);
+  grid-template-columns: repeat(3, 224px);
   gap: 14px;
   width: max-content;
   min-height: 620px;
@@ -7329,3 +7329,14 @@ button.wave-report:active { transform: scale(0.99); }
   background: rgba(69, 217, 232, 0.08);
 }
 /* Veri bildirimi sonu */
+
+/* Non-modal worker assignment stays below one third of the mobile viewport. */
+.worker-roster { position: fixed; z-index: 40; left: max(8px, env(safe-area-inset-left)); bottom: calc(100px + env(safe-area-inset-bottom)); width: min(360px, calc(100vw - 16px)); pointer-events: none; font: 12px var(--mono); color: #e2e8f0; }
+.worker-roster button, .worker-roster select { pointer-events: auto; min-height: 44px; border: 1px solid #475569; border-radius: 6px; background: #101827; color: #e2e8f0; padding: 8px 10px; cursor: pointer; }
+.worker-roster__toggle { font-weight: 700; }
+.worker-roster__list { max-height: 26dvh; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; background: #0b1220f5; padding: 8px; border: 1px solid #475569; border-radius: 8px; }
+.worker-roster__list p { margin: 0 0 8px; line-height: 1.4; }
+.worker-roster__list button { display: block; text-align: left; width: 100%; margin: 4px 0; }
+.worker-roster__hint { pointer-events: auto; padding: 8px; background: #101827f5; border: 1px solid #22d3ee; border-radius: 8px; }
+.worker-roster__hint select { max-width: 100%; margin: 6px; }
+.worker-roster button:focus-visible, .worker-roster select:focus-visible { outline: 2px solid #22d3ee; }
