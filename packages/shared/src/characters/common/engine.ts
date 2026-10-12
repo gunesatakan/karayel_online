@@ -81,6 +81,7 @@ const profiles: Record<string, EngineProfile> = {
   "wall-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, placement: { requiresEdge: true }, resources: { ammoType: "auraCrystal" } },
   // Kareyi kaplar, ates etmez. `requiresEdge` yok: kontenjandan yer yemesi
   // buna bagli ve oyle olmali -- bir hasar kulesinden vazgecmek asil karar.
+  "warehouse-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false },
   "repair-depot-1": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resources: { ammoType: "auraCrystal" } },
   "onur-1": {
     targeting: undefined,

@@ -373,6 +373,7 @@ type ControlActionDetail = {
     | "repairStructure"
     | "setUnderworldMode"
     | "toggleAmmoLogistics"
+    | "setFactoryProduction"
     | "setLogisticsPriority"
     | "showDefenseSummary"
     | "toggleWallGate"
@@ -407,6 +408,7 @@ type ControlActionDetail = {
     | "cancelEquip"
     | "clearSelection";
   towerId?: string;
+  ammoType?: "bullet" | "auraCrystal" | "powerCrystal";
   priority?: LogisticsPriority;
   slot?: number;
   tier?: ZeynepCommandTier;
@@ -2665,6 +2667,9 @@ export class GameScene extends Phaser.Scene {
         if (this.selectedPlacedTowerId) {
           this.room?.send("toggleAmmoLogistics", { towerId: this.selectedPlacedTowerId });
         }
+        break;
+      case "setFactoryProduction":
+        this.room?.send("factory:production", { towerId: this.selectedPlacedTowerId, ammoType: detail.ammoType });
         break;
       case "setLogisticsPriority":
         this.room?.send("tower:priority", { towerId: this.selectedPlacedTowerId, priority: detail.priority });
@@ -10743,6 +10748,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       performance: this.getPerformanceControlState(selectedTower),
       selectedTowerId: this.selectedPlacedTowerId,
       defenseSummaryAvailable: Boolean(this.latestDefenseSummary),
+      productionAmmo: selectedTower?.resourceProvider === "ammunition" ? { value: selectedTower.productionAmmo ?? "bullet", canEdit: selectedTower.ownerId === this.localSessionId } : undefined,
       logisticsPriority: selectedTower ? { value: selectedTower.logisticsPriority ?? "normal", canEdit: selectedTower.ownerId === this.localSessionId } : undefined,
       // Kule paneli: sunucunun blogu, canli sayilar ve bolum notlari. Eskiden
       // hepsi " | " ile dizilmis tek bir metin satiriydi (`selectedStats`).
@@ -10779,7 +10785,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private updateSelectionUi() {
     const selectedTower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
     const selectionKey = selectedTower
-      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${this.localPlayerSnapshot?.approval ?? 0}:${this.localPlayerSnapshot?.stress ?? 0}|${selectedTower.ammoLogisticsEnabled}|${selectedTower.gate === true}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
+      ? `placed|${selectedTower.id}|${selectedTower.level}|${selectedTower.range}|${selectedTower.ownerId}|${selectedTower.status}|${selectedTower.hp}|${selectedTower.maxHp}|${selectedTower.ammo}|${selectedTower.energy}|${selectedTower.temperature}|${selectedTower.performance}|${selectedTower.misfortune}|${selectedTower.luckyWindowRemainingMs}|${selectedTower.lastLuckMultiplier}|${selectedTower.damageDealt}|${selectedTower.currentDps}|${selectedTower.linkedTowerIds?.join(",")}|${selectedTower.melisUnderworldMode ?? ""}|${selectedTower.melisUnderworldPullCount ?? 0}|${this.localPlayerSnapshot?.approval ?? 0}:${this.localPlayerSnapshot?.stress ?? 0}|${selectedTower.productionAmmo}|${JSON.stringify(selectedTower.ammoStock)}|${JSON.stringify(selectedTower.materials)}|${selectedTower.ammoLogisticsEnabled}|${selectedTower.gate === true}|${this.localPlayerSnapshot?.experience ?? 0}|${this.localPlayerSnapshot?.gold ?? 0}`
       : `new|${this.selectedTowerDefinition.id}|${this.abartiOrientation}`;
     if (this.lastSelectionKey === selectionKey) {
       this.updateAbartiOrientationButton();
@@ -11010,6 +11016,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         temperature: tower.temperature,
         ammo: tower.ammo,
         maxAmmo: tower.maxAmmo,
+        productionAmmo: tower.productionAmmo,
         materials: tower.materials,
         ammoStock: tower.ammoStock,
         repairParts: tower.repairParts,

@@ -4,7 +4,7 @@ import type { AmmoType } from "./characters/common/types.js";
 export const RESOURCE_NODE_INITIAL_AMOUNT = 2000;
 export const RESOURCE_KINDS = ["energy", "gunpowder", "mystic", "plasma", "iron"] as const;
 export type ResourceKind = typeof RESOURCE_KINDS[number];
-export type TransportProduct = "energy" | AmmoType;
+export type TransportProduct = "energy" | "materials" | AmmoType;
 export const RESOURCE_NAMES: Record<ResourceKind, string> = {
   energy: "Enerji kristali", gunpowder: "Barut", mystic: "Mistik öz", plasma: "Güç kristali", iron: "Demir"
 };
@@ -23,10 +23,12 @@ export function isResourceKind(value: unknown): value is ResourceKind {
   return RESOURCE_KINDS.includes(value as ResourceKind);
 }
 export function isTransportProduct(value: unknown): value is TransportProduct {
-  return value === "energy" || value === "bullet" || value === "auraCrystal" || value === "powerCrystal";
+  return value === "materials" || value === "energy" || value === "bullet" || value === "auraCrystal" || value === "powerCrystal";
 }
 export type WorkerAssignment = { nodeId?: string; sourceTowerId?: string; product?: TransportProduct };
+export const getWarehouseCapacity = (level: number) => [200, 400, 700, 1100, 1600][Math.max(0, Math.min(4, Math.round(level) - 1))];
 export type EconomyStock = {
+  productionAmmo?: AmmoType;
   materials?: Partial<Record<ResourceKind, number>>;
   ammoStock?: Partial<Record<AmmoType, number>>;
   repairParts?: number;

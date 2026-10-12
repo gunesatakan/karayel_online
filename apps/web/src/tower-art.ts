@@ -19,6 +19,7 @@ const TIERED_TOWER_ART: Readonly<Record<string, "png" | "webp">> = {
 const TIER_ART_SUFFIX = { 1: "levels-1-4", 2: "levels-5-9", 3: "level-10" } as const;
 
 const SUPPLY_TOWER_ART: Readonly<Record<string, string>> = {
+  "warehouse-1": "warehouse",
   "repair-depot-1": "repair",
   "warrior-7": "ammunition",
   "warrior-8": "energy",
@@ -29,6 +30,7 @@ const SUPPLY_TOWER_ART: Readonly<Record<string, string>> = {
 };
 
 export function getSupplyTowerArtPath(definitionId: string, level = 1) {
+  if (definitionId === "warehouse-1") return "images/towers/tower-warehouse.svg";
   const kind = SUPPLY_TOWER_ART[definitionId];
   return kind ? `images/towers/tower-supply-${kind}${level >= 5 ? "-level-5" : ""}.png` : undefined;
 }

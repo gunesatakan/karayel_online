@@ -1,9 +1,9 @@
-import { ACTIVE_WORKER_ROLES } from "@karayel/shared";
+import { type AmmoType, ACTIVE_WORKER_ROLES } from "@karayel/shared";
 import type Phaser from "phaser";
 import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
-import { numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
+import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
@@ -124,6 +124,7 @@ type ControlState = {
   };
   underworldMode?: { current: "approval" | "stress"; pullCount: number; canEdit: boolean };
   ammoLogistics?: { enabled: boolean; canEdit: boolean };
+  productionAmmo?: { value: AmmoType; canEdit: boolean };
   logisticsPriority?: { value: "critical" | "normal" | "low"; canEdit: boolean };
   defenseSummaryAvailable?: boolean;
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
@@ -210,6 +211,7 @@ type ControlState = {
 };
 
 type ControlAction = {
+  ammoType?: AmmoType;
   priority?: "critical" | "normal" | "low";
   action: string;
   role?: string;
@@ -1149,6 +1151,17 @@ export function setupGameControlUi(game: Phaser.Game) {
       logistics.setAttribute("aria-pressed", String(state.ammoLogistics.enabled));
       logistics.setAttribute("aria-label", t("controls.tower.ammoFlowState", { state: onOff }));
       rows.push(makeControlRow(t("controls.tower.ammoFlow"), logistics));
+    }
+    if (state.productionAmmo) {
+      const production = state.productionAmmo;
+      const group = makeRow((["bullet", "auraCrystal", "powerCrystal"] as const).map(ammoType => {
+        const button = makeActionButton((getLocale() === "tr" ? { bullet: "Projektil", auraCrystal: "Psişik / Aura", powerCrystal: "Plazma" } : { bullet: "Projectile", auraCrystal: "Psychic / Aura", powerCrystal: "Plasma" })[ammoType],
+          `game-controls__underworld-mode-button ts-toggle${production.value === ammoType ? " is-active" : ""}`,
+          production.canEdit, () => dispatch({ action: "setFactoryProduction", ammoType }));
+        button.setAttribute("aria-pressed", String(production.value === ammoType));
+        return button;
+      }), "game-controls__underworld-mode ts-segmented");
+      rows.push(makeControlRow(getLocale() === "tr" ? "Üretilecek mühimmat" : "Ammunition production", group));
     }
     if (state.logisticsPriority) {
       const priority = state.logisticsPriority;

@@ -46,17 +46,17 @@ export class WorkerAssignmentUi {
       hint.className = "worker-roster__hint";
       hint.textContent = worker.mode === "crystalCollector" || worker.mode === "ammoCollector"
         ? tr ? "Haritada çalışacağı kaynağa dokun." : "Tap a resource on the map."
-        : tr ? "Haritada çıkış binasına dokun." : "Tap the source building on the map.";
+        : this.product === "materials" ? tr ? "Haritada beslenecek üretim binasına dokun." : "Tap the production building to supply." : tr ? "Haritada çıkış binasına dokun." : "Tap the source building on the map.";
       if (worker.mode !== "crystalCollector" && worker.mode !== "ammoCollector" && worker.mode !== "repairer") {
         const select = document.createElement("select");
         select.setAttribute("aria-label", tr ? "Taşınacak ürün" : "Transport product");
-        for (const product of ["energy", "bullet", "auraCrystal", "powerCrystal"] as const) {
+        for (const product of ["materials", "energy", "bullet", "auraCrystal", "powerCrystal"] as const) {
           const option = document.createElement("option"); option.value = product;
-          option.textContent = product === "energy" ? tr ? "Enerji" : "Energy" : `${names[AMMO_RECIPES[product]]} → ${tr ? "mühimmat" : "ammo"}`;
+          option.textContent = product === "materials" ? tr ? "Üretim hammaddesi (depodan)" : "Production input (from warehouse)" : product === "energy" ? tr ? "Enerji" : "Energy" : `${names[AMMO_RECIPES[product]]} → ${tr ? "mühimmat" : "ammo"}`;
           select.append(option);
         }
         select.value = this.product;
-        select.onchange = () => { this.product = select.value as TransportProduct; };
+        select.onchange = () => { this.product = select.value as TransportProduct; this.key = ""; this.update(this.snapshot!, this.owner); };
         hint.append(select);
       }
       const cancel = document.createElement("button");
@@ -75,7 +75,7 @@ export class WorkerAssignmentUi {
         const node = [...snapshot.crystalNodes.map((entry) => ({ ...entry, kind: "energy" as const })), ...snapshot.ammoNodes].find((entry) => entry.id === worker.assignment?.nodeId);
         const source = snapshot.towers.find((tower) => tower.id === worker.assignment?.sourceTowerId);
         const job = gather ? names[node?.kind ?? "energy"] : worker.mode === "repairer" ? tr ? "Onarım parçası" : "Repair parts"
-          : worker.assignment?.product === "energy" ? tr ? "Enerji" : "Energy" : names[AMMO_RECIPES[worker.assignment?.product as keyof typeof AMMO_RECIPES] ?? "gunpowder"];
+          : worker.assignment?.product === "materials" ? tr ? "Üretim hammaddesi" : "Production input" : worker.assignment?.product === "energy" ? tr ? "Enerji" : "Energy" : names[AMMO_RECIPES[worker.assignment?.product as keyof typeof AMMO_RECIPES] ?? "gunpowder"];
         const reserve = gather && node?.remaining !== undefined ? ` · ${tr ? "Kalan" : "Remaining"}: ${Math.floor(node.remaining)}${node.remaining === 0 ? tr ? " (Tükendi)" : " (Depleted)" : ""}` : "";
         row.textContent = `${index + 1}. ${role} · ${job} · ${source?.name ?? worker.assignment?.nodeId ?? (tr ? "Otomatik merkez" : "Automatic source")} · ${tr ? "Yük" : "Cargo"}: ${Math.floor(worker.cargo ?? 0)}${reserve}`;
         row.onclick = () => { this.selected = worker.id; this.product = worker.assignment?.product ?? "energy"; this.open = false; this.key = ""; this.update(snapshot, owner); };
@@ -98,7 +98,7 @@ export class WorkerAssignmentUi {
       this.send({ workerId: worker.id, nodeId: node.id });
     } else {
       const source = nearby(this.snapshot.towers.filter((tower) => tower.ownerId === this.owner && (tower.hp ?? 0) > 0
-        && (worker.mode === "repairer" ? tower.definitionId === "repair-depot-1" : tower.resourceProvider === (this.product === "energy" ? "energy" : "ammunition"))));
+        && (worker.mode === "repairer" ? tower.definitionId === "repair-depot-1" : this.product === "materials" ? tower.resourceProvider === "ammunition" || tower.definitionId === "repair-depot-1" : tower.resourceProvider === (this.product === "energy" ? "energy" : "ammunition"))));
       if (!source) return true;
       this.send({ workerId: worker.id, sourceTowerId: source.id, product: this.product });
     }

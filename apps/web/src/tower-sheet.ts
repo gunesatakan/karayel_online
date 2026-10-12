@@ -1,4 +1,4 @@
-import { RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
+import { getWarehouseCapacity, RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
 import { getLocale } from "./i18n";
 import {
   GAME_SPEED_MULTIPLIER,
@@ -561,12 +561,12 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     bars.push({ key: "ammo", label: t("sheet.ammo"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: stats?.am !== undefined ? t("sheet.perShot", { v: formatSmart(stats.am) }) : undefined });
   }
   const resourceNames = getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN;
-  const capacity = getResourceProviderCapacity(input.level);
-  for (const kind of (live.resourceProvider === "ammunition" ? ["gunpowder", "mystic", "plasma"] : live.repairParts !== undefined ? ["iron"] : []) as ResourceKind[]) {
+  const capacity = input.definitionId === "warehouse-1" ? getWarehouseCapacity(input.level) : getResourceProviderCapacity(input.level);
+  for (const kind of (input.definitionId === "warehouse-1" ? ["gunpowder", "mystic", "plasma", "iron"] : live.resourceProvider === "ammunition" ? ["gunpowder", "mystic", "plasma"] : live.repairParts !== undefined ? ["iron"] : []) as ResourceKind[]) {
     const amount = live.materials?.[kind] ?? 0;
     bars.push({ key: `material-${kind}`, label: resourceNames[kind], value: `${Math.floor(amount)}/${capacity}`, ratio: amount / capacity });
   }
-  for (const type of Object.keys(live.ammoStock ?? {}) as AmmoType[]) {
+  for (const type of (live.ammoStock ? Object.keys(AMMO_RECIPES) : []) as AmmoType[]) {
     resourceRows.push({ key: `stock-${type}`, label: `${resourceNames[AMMO_RECIPES[type]]} → ${getLocale() === "tr" ? "mühimmat" : "ammo"}`, value: formatNumber(live.ammoStock![type] ?? 0, 1), detail: [] });
   }
   if (live.repairParts !== undefined) bars.push({ key: "parts", label: getLocale() === "tr" ? "Onarım parçaları" : "Repair parts", value: `${Math.floor(live.repairParts)}/${capacity}`, ratio: live.repairParts / capacity });

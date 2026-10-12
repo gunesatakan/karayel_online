@@ -22,6 +22,7 @@ test("recipes isolate all ammo stocks and consume real input and energy", () => 
   for (const [type, kind] of Object.entries(AMMO_RECIPES)) {
     const room = createRoom("warrior");
     const factory = build(room, "warrior-7");
+    room.setFactoryProduction(client, { towerId: factory.id, ammoType: type });
     factory.materials[kind] = 10;
     factory.energy = 10;
     room.updateResourceFactories(2);
@@ -71,17 +72,20 @@ test("collector chooses each resource and deposits it only into the appropriate 
   const energy = build(room, "warrior-8");
   const factory = build(room, "warrior-7");
   const depot = build(room, "repair-depot-1");
+  const warehouse = build(room, "warehouse-1");
   room.moveLogisticsWorker = () => true;
   const unit = worker(room, "crystalCollector", {});
   for (const node of room.getEconomyNodes()) {
     unit.assignment = { nodeId: node.id }; unit.cargo = 0; unit.cargoResource = undefined;
     room.updateAssignedWorker(unit, 100);
     assert.equal(unit.cargoResource, node.kind);
-    const destination = node.kind === "energy" ? energy : node.kind === "iron" ? depot : factory;
+    const destination = node.kind === "energy" ? energy : warehouse;
     const before = node.kind === "energy" ? destination.energy : destination.materials[node.kind] ?? 0;
     room.updateAssignedWorker(unit, 1);
     assert.equal(node.kind === "energy" ? destination.energy : destination.materials[node.kind], before + 5);
   }
+  assert.deepEqual(factory.materials, {});
+  assert.deepEqual(depot.materials, {});
 });
 
 test("assignment is owner-only, validates source and preserves in-transit cargo", () => {
@@ -142,7 +146,7 @@ test("repair depot reaches level five with double health and 200 storage", () =>
 test("queued gather assignment delivers original resource before switching", () => {
   const room = createRoom("warrior");
   const reactor = build(room, "warrior-8"); reactor.energy = 0;
-  build(room, "repair-depot-1");
+  build(room, "warehouse-1");
   room.moveLogisticsWorker = () => true;
   const unit = worker(room, "crystalCollector", { nodeId: "crystal-1" });
   unit.cargo = 3; unit.cargoResource = "energy";
@@ -183,7 +187,7 @@ test("emergency rebuild consumes depot parts and cannot bypass missing supply", 
 
 test("finite deposits share reserves across workers and preserve the last partial load", () => {
   const room = createRoom("warrior");
-  const depot = build(room, "repair-depot-1");
+  const depot = build(room, "warehouse-1");
   room.moveLogisticsWorker = () => true;
   room.resourceNodeRemaining.set("iron-1", 7);
   const first = worker(room, "crystalCollector", { nodeId: "iron-1" });
@@ -216,4 +220,57 @@ test("all energy and material nodes have isolated finite reserves", () => {
   assert.ok(room.getEconomyNodes().every(node => node.remaining === 0));
   const freshRoom = createRoom("warrior");
   assert.ok(freshRoom.getEconomyNodes().every(node => node.remaining === 2000));
+});
+
+
+test("factories select independent recipes and preserve existing finished stock", () => {
+  const room = createRoom("warrior");
+  const a = build(room, "warrior-7"); const b = build(room, "warrior-7");
+  a.materials = { gunpowder: 10, mystic: 10 }; b.materials = { gunpowder: 10, mystic: 10 };
+  room.setFactoryProduction(client, { towerId: b.id, ammoType: "auraCrystal" });
+  room.setFactoryProduction({ sessionId: "other" }, { towerId: a.id, ammoType: "auraCrystal" });
+  room.setFactoryProduction(client, { towerId: a.id, ammoType: "invalid" });
+  room.updateResourceFactories(2);
+  assert.deepEqual(a.ammoStock, { bullet: 1 }); assert.deepEqual(b.ammoStock, { auraCrystal: 1 });
+  assert.equal(a.materials.mystic, 10); assert.equal(b.materials.gunpowder, 10);
+  room.setFactoryProduction(client, { towerId: a.id, ammoType: "auraCrystal" });
+  room.updateResourceFactories(2);
+  assert.deepEqual(a.ammoStock, { bullet: 1, auraCrystal: 1 });
+});
+
+test("assigned carriers pull only required input, return obsolete cargo and supply repair iron", () => {
+  const room = createRoom("warrior");
+  const warehouse = build(room, "warehouse-1"); warehouse.materials = { gunpowder: 10, mystic: 10, iron: 10 };
+  const factory = build(room, "warrior-7"); const depot = build(room, "repair-depot-1");
+  const unit = worker(room, "energyTransport", { product: "energy" });
+  room.moveLogisticsWorker = () => true;
+  room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: factory.id, product: "materials" });
+  room.updateAssignedWorker(unit, 1);
+  assert.equal(unit.cargo, 5); assert.equal(unit.cargoResource, "gunpowder");
+  assert.equal(warehouse.materials.gunpowder, 5);
+  room.setFactoryProduction(client, { towerId: factory.id, ammoType: "auraCrystal" });
+  room.updateAssignedWorker(unit, 1);
+  assert.equal(warehouse.materials.gunpowder, 10); assert.equal(unit.cargo, 0);
+  room.updateAssignedWorker(unit, 1); room.updateAssignedWorker(unit, 1);
+  assert.equal(factory.materials.mystic, 5); assert.equal(factory.materials.gunpowder, undefined);
+  room.assignWorker(client, { workerId: unit.id, sourceTowerId: depot.id, product: "materials" });
+  room.updateAssignedWorker(unit, 1); room.updateAssignedWorker(unit, 1);
+  assert.equal(depot.materials.iron, 5); assert.equal(warehouse.materials.iron, 5);
+});
+
+test("gatherers cannot bypass a missing warehouse; input loading reserves capacity", () => {
+  const room = createRoom("warrior"); const factory = build(room, "warrior-7");
+  room.moveLogisticsWorker = () => true; room.getWorkerApproachPoint = () => ({ x: 0, y: 0 });
+  const collector = worker(room, "crystalCollector", { nodeId: "ammo-source-1" });
+  room.updateAssignedWorker(collector, 100); assert.equal(collector.cargo, 0);
+  const warehouse = build(room, "warehouse-1"); warehouse.materials.gunpowder = 20;
+  factory.materials.gunpowder = 18;
+  const first = worker(room, "energyTransport", { sourceTowerId: factory.id, product: "materials" });
+  const second = { ...first, id: "second-carrier" }; room.drones.set(second.id, second);
+  room.updateAssignedWorker(first, 1); room.updateAssignedWorker(second, 1);
+  assert.equal(first.cargo, 2); assert.equal(second.cargo, 0);
+  factory.hp = 0;
+  room.updateAssignedWorker(first, 1);
+  assert.equal(warehouse.materials.gunpowder, 20); assert.equal(first.cargo, 0);
 });

@@ -7,6 +7,7 @@ import { omerCharacter } from "./omer/index.js";
 import { onurCharacter } from "./onur/index.js";
 import { ulkuCharacter } from "./ulku/index.js";
 import { REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower } from "./common/repair-depot.js";
+import { warehouseTower } from "./common/warehouse.js";
 import { WALL_TOWER_ID, isWallDefinition, wallTower } from "./common/wall.js";
 import { zeynepCharacter } from "./zeynep/index.js";
 
@@ -34,7 +35,7 @@ export const characters: CharacterDefinition[] = [
  * yazilmis -- ama Tamirci bir karakter yetenegi degil, herkesin alabildigi
  * bir isci rolu. Ussunun de kimseye ait olmamasi gerekiyor.
  */
-const withSharedStructures = (towers: TowerDefinition[]) => [...towers, wallTower, repairDepotTower];
+const withSharedStructures = (towers: TowerDefinition[]) => [...towers, wallTower, repairDepotTower, warehouseTower];
 
 export const towerCatalog: Record<CharacterId, TowerDefinition[]> = {
   zeynep: withSharedStructures(zeynepCharacter.towers),
@@ -57,7 +58,7 @@ export { REPAIR_DEPOT_TOWER_ID, isRepairDepotDefinition, repairDepotTower } from
  * testleri, kodeks, tasarim tablolari -- kiti sormak ister, kurulabilirler
  * listesini degil. Ayrim burada aciktir.
  */
-export const SHARED_STRUCTURE_IDS: readonly string[] = [WALL_TOWER_ID, REPAIR_DEPOT_TOWER_ID];
+export const SHARED_STRUCTURE_IDS: readonly string[] = [WALL_TOWER_ID, REPAIR_DEPOT_TOWER_ID, "warehouse-1"];
 
 export function isSharedStructure(definition: Pick<TowerDefinition, "id">) {
   return SHARED_STRUCTURE_IDS.includes(definition.id);

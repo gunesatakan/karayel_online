@@ -148,10 +148,10 @@ test("binaya takılan işçi eşyaları o binanın işçisine ulaşmayı sürdü
   // Kuresele cevirdigimiz esyalar, kasten bina basina calisan kardeslerini
   // bozmamali: bunlar zaten dogru yazilmisti.
   const room = createRoom("warrior");
-  const spot = findBuildableSpot(room, "warrior-7");
-  assert.ok(spot, "Cephane Merkezi icin yer bulunamadi");
-  room.placeTower(client, { x: spot.x, y: spot.y, definitionId: "warrior-7" });
-  const bina = [...room.towers.values()].find((entry) => entry.definition.id === "warrior-7");
+  const spot = findBuildableSpot(room, "warrior-8");
+  assert.ok(spot, "Enerji Merkezi icin yer bulunamadi");
+  room.placeTower(client, { x: spot.x, y: spot.y, definitionId: "warrior-8" });
+  const bina = [...room.towers.values()].find((entry) => entry.definition.id === "warrior-8");
   assert.ok(bina);
 
   buyItem(room, "madenci-eldiveni");

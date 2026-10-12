@@ -165,6 +165,7 @@ export const enTowers: Readonly<Record<string, { name: string; role: string; des
     role: "Routing",
     description: "Does not take up a tile; it sits on the line between two tiles and closes that crossing. It turns horizontal if the edge it is brought to is horizontal, vertical if vertical. Enemies do not know the map: they walk toward the exit, and on hitting a wall they go around it looking for an open passage. If the line is walled off end to end, they stop circling and break the wall in front of them. Thickening raises its health and so how long it holds them. A destroyed wall does not come back on its own; repairing costs less than a full rebuild."
   },
+  "warehouse-1": { name: "Material Warehouse", role: "Raw material storage", description: "Gatherers deposit all raw materials except energy here. Carriers assigned to production buildings collect the required input. Upgrades increase storage capacity." },
   "repair-depot-1": {
     name: "Repair Depot",
     role: "Repairer base",

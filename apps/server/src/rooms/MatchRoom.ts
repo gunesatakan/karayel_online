@@ -1,4 +1,4 @@
-import { RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
+import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
@@ -1697,6 +1697,7 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "shop:buy": { phase: "match", fields: { itemId: "string" } },
   "shop:reroll": { phase: "match", fields: {} },
   "structure:repair": { phase: "match", fields: { towerId: "string" } },
+  "factory:production": { phase: "match", fields: { towerId: "string", ammoType: "string" } },
   "worker:assign": { phase: "match", fields: { workerId: "string", nodeId: "string", sourceTowerId: "string", product: "string" } },
   "worker:hire": { phase: "match", fields: { role: "string", advanced: "boolean" } },
   "worker:specialization": { phase: "match", fields: { workerId: "string", role: "string" } },
@@ -2901,6 +2902,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
     this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
+    this.onMessage("factory:production", (client, message) => this.setFactoryProduction(client, message));
     this.onMessage("worker:assign", (client, message) => this.assignWorker(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
     this.onMessage("worker:specialization", (client, message: ChooseWorkerSpecializationMessage) => this.chooseWorkerSpecialization(client, message));
@@ -8348,7 +8350,8 @@ export class MatchRoom extends Room<MatchState> {
         assignment = { sourceTowerId: source.id };
       } else {
         if (!isTransportProduct(message.product)) return;
-        if (source.definition.resourceProvider !== (message.product === "energy" ? "energy" : "ammunition")) return;
+        if (message.product === "materials" ? source.definition.resourceProvider !== "ammunition" && !isRepairDepotDefinition(source.definition)
+          : source.definition.resourceProvider !== (message.product === "energy" ? "energy" : "ammunition")) return;
         assignment = { sourceTowerId: source.id, product: message.product };
       }
     }
@@ -8356,6 +8359,13 @@ export class MatchRoom extends Room<MatchState> {
     this.workerAssignments.set(worker.id, assignment);
     if ((worker.cargo ?? 0) > 0) worker.pendingAssignment = assignment;
     else { worker.assignment = assignment; worker.targetTowerId = undefined; worker.extractionRemainingMs = undefined; }
+  }
+
+  private setFactoryProduction(client: Client, message: { towerId?: string; ammoType?: string }) {
+    const tower = message?.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!tower || tower.ownerId !== client.sessionId || tower.hp <= 0 || tower.definition.resourceProvider !== "ammunition"
+      || !["bullet", "auraCrystal", "powerCrystal"].includes(message.ammoType ?? "")) return;
+    tower.productionAmmo = message.ammoType as AmmoType;
   }
 
   private produceFactoryResources(tower: TowerModel, seconds: number) {
@@ -8371,7 +8381,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
     if (!tower.ammoStock) return;
-    const types = (Object.keys(AMMO_RECIPES) as AmmoType[]).filter((type) => (tower.materials![AMMO_RECIPES[type]] ?? 0) > 0);
+    const types: AmmoType[] = [tower.productionAmmo ?? "bullet"];
     const budget = getAmmoFactoryProductionRate(tower.level) * seconds
       * getModifierMultiplier(this.getTowerRunModifiers(tower), "resourceProduction")
       * getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoProduction");
@@ -8410,8 +8420,8 @@ export class MatchRoom extends Room<MatchState> {
       const kind = worker.cargoResource ?? node.kind;
       const stock = (tower: TowerModel) => kind === "energy" ? tower.energy : tower.materials?.[kind] ?? 0;
       const candidates = owned.filter((tower) => (kind === "energy" ? tower.definition.resourceProvider === "energy"
-        : kind === "iron" ? isRepairDepotDefinition(tower.definition) : tower.definition.resourceProvider === "ammunition")
-        && stock(tower) < getResourceProviderCapacity(tower.level));
+        : tower.definition.id === "warehouse-1")
+        && stock(tower) < (kind === "energy" ? getResourceProviderCapacity(tower.level) : getWarehouseCapacity(tower.level)));
       const depot = nearest(candidates);
       if (!depot) return;
       worker.targetTowerId = depot.id;
@@ -8430,13 +8440,14 @@ export class MatchRoom extends Room<MatchState> {
       }
       worker.targetTowerId = depot.id;
       if (!this.moveLogisticsWorker(worker, depot.x, depot.y, seconds)) return;
-      const amount = Math.min(worker.cargo!, getResourceProviderCapacity(depot.level) - stock(depot));
+      const amount = Math.min(worker.cargo!, (kind === "energy" ? getResourceProviderCapacity(depot.level) : getWarehouseCapacity(depot.level)) - stock(depot));
       if (kind === "energy") depot.energy += amount;
       else { depot.materials ??= {}; depot.materials[kind] = (depot.materials[kind] ?? 0) + amount; }
       worker.cargo = Math.max(0, worker.cargo! - amount);
       if (worker.cargo <= 0) worker.cargoResource = undefined;
       return;
     }
+    if (assignment.product === "materials") { this.updateMaterialCarrier(worker, seconds); return; }
     const product = assignment.product ?? "energy";
     const source = assignment.sourceTowerId ? owned.find((tower) => tower.id === assignment.sourceTowerId)
       : nearest(owned.filter((tower) => tower.definition.resourceProvider === (product === "energy" ? "energy" : "ammunition")));
@@ -8474,6 +8485,42 @@ export class MatchRoom extends Room<MatchState> {
       this.deliveryWaitingSince.delete(`${resource}:${target.id}`);
     }
     if (worker.cargo <= 0) { worker.logisticsPhase = "pickup"; worker.targetTowerId = undefined; }
+  }
+
+  /** Assigned production building pulls only its recipe input from an owned warehouse. */
+  private updateMaterialCarrier(worker: DroneModel, seconds: number) {
+    const destination = this.towers.get(worker.assignment?.sourceTowerId ?? "");
+    const valid = destination && destination.ownerId === worker.ownerId && destination.hp > 0
+      && (destination.definition.resourceProvider === "ammunition" || isRepairDepotDefinition(destination.definition));
+    const ownedWarehouses = [...this.towers.values()].filter(tower => tower.ownerId === worker.ownerId && tower.hp > 0 && tower.definition.id === "warehouse-1")
+      .sort((a, b) => distanceSq(a.x, a.y, worker.x, worker.y) - distanceSq(b.x, b.y, worker.x, worker.y));
+    const kind = valid ? isRepairDepotDefinition(destination.definition) ? "iron" : AMMO_RECIPES[destination.productionAmmo ?? "bullet"] : undefined;
+    if ((worker.cargo ?? 0) > 0) {
+      const cargoKind = worker.cargoResource!;
+      // Recipe changes and demolished destinations return cargo rather than converting or losing it.
+      const target = valid && kind === cargoKind ? destination : ownedWarehouses.find(tower => (tower.materials?.[cargoKind] ?? 0) < getWarehouseCapacity(tower.level));
+      if (!target) return;
+      worker.targetTowerId = target.id; worker.logisticsPhase = "deliver";
+      if (!this.moveLogisticsWorker(worker, target.x, target.y, seconds)) return;
+      const capacity = target.definition.id === "warehouse-1" ? getWarehouseCapacity(target.level) : getResourceProviderCapacity(target.level);
+      const amount = Math.min(worker.cargo!, Math.max(0, capacity - (target.materials?.[cargoKind] ?? 0)));
+      target.materials ??= {}; target.materials[cargoKind] = (target.materials[cargoKind] ?? 0) + amount;
+      worker.cargo = Math.max(0, worker.cargo! - amount);
+      if (worker.cargo === 0) { worker.cargoResource = undefined; worker.logisticsPhase = "pickup"; }
+      return;
+    }
+    if (!valid || !kind) return;
+    const needed = getResourceProviderCapacity(destination.level) - (destination.materials?.[kind] ?? 0)
+      - [...this.drones.values()].filter(other => other.id !== worker.id && other.assignment?.product === "materials"
+        && other.assignment.sourceTowerId === destination.id && other.cargoResource === kind).reduce((sum, other) => sum + (other.cargo ?? 0), 0);
+    if (needed <= 0) return;
+    const source = ownedWarehouses.find(tower => (tower.materials?.[kind] ?? 0) > 0
+      && this.getWorkerApproachPoint(worker, tower.x, tower.y));
+    if (!source) return;
+    worker.targetTowerId = destination.id; worker.logisticsPhase = "pickup";
+    if (!this.moveLogisticsWorker(worker, source.x, source.y, seconds)) return;
+    const amount = Math.min(needed, source.materials![kind]!, this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "transport", kind));
+    source.materials![kind]! -= amount; worker.cargo = amount; worker.cargoResource = kind; worker.logisticsPhase = "deliver";
   }
 
   private getEconomyResearchMultiplier(worker: DroneModel, action: "gather" | "gatherLoad" | "transport" | "transportSpeed", kind: ResourceKind) {
@@ -8676,7 +8723,7 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
     const product = worker.assignment?.product;
-    const researchSpeed = product ? this.getEconomyResearchMultiplier(worker, "transportSpeed", product === "energy" ? "energy" : AMMO_RECIPES[product]) : 1;
+    const researchSpeed = product ? this.getEconomyResearchMultiplier(worker, "transportSpeed", product === "energy" ? "energy" : product === "materials" ? worker.cargoResource ?? "iron" : AMMO_RECIPES[product]) : 1;
     const speed = researchSpeed * this.scaleWorldSpeed(worker.speed ?? LOGISTICS_WORKER_SPEED)
       * getModifierMultiplier(this.getWorkerModifiers(worker), "workerSpeed");
     worker.vx = (dx / Math.max(1, distance)) * speed;
@@ -10055,7 +10102,7 @@ export class MatchRoom extends Room<MatchState> {
    * kulelerini kestirme yol olarak kullanamaz. Tamirci disaridan calisir.
    */
   private canWorkerEnterStructure(worker: DroneModel | undefined, tower: TowerModel) {
-    if (tower.definition.resourceProvider || isRepairDepotDefinition(tower.definition)) return true;
+    if (tower.definition.resourceProvider || isRepairDepotDefinition(tower.definition) || tower.definition.id === "warehouse-1") return true;
     if (!worker || worker.ownerId !== tower.ownerId || worker.targetTowerId !== tower.id) return false;
     return worker.logisticsPhase === "pickup"
       || (worker.logisticsPhase === "deliver" && (worker.mode === "energyTransport" || worker.mode === "ammoTransport"));
@@ -11255,7 +11302,8 @@ export class MatchRoom extends Room<MatchState> {
       orbitLastHitAt: new Map(),
       performance: 0.5,
       heatLocked: false,
-      materials: definition.resourceProvider === "ammunition" || isRepairDepotDefinition(definition) ? {} : undefined,
+      materials: definition.resourceProvider === "ammunition" || isRepairDepotDefinition(definition) || definition.id === "warehouse-1" ? {} : undefined,
+      productionAmmo: definition.resourceProvider === "ammunition" ? "bullet" : undefined,
       ammoStock: definition.resourceProvider === "ammunition" ? {} : undefined,
       repairParts: isRepairDepotDefinition(definition) ? 0 : undefined,
       rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
@@ -11332,6 +11380,10 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateProviderCapacity(tower: TowerModel) {
+    if (tower.definition.id === "warehouse-1") {
+      for (const kind of RESOURCE_KINDS) if (tower.materials?.[kind] !== undefined) tower.materials[kind] = Math.min(tower.materials[kind]!, getWarehouseCapacity(tower.level));
+      return;
+    }
     if (!tower.definition.resourceProvider && !isRepairDepotDefinition(tower.definition)) return;
     const capacity = getResourceProviderCapacity(tower.level);
     tower.maxEnergy = capacity;
@@ -15004,6 +15056,7 @@ export class MatchRoom extends Room<MatchState> {
         maxAmmo: tower.maxAmmo,
         energy: Math.floor(tower.energy),
         maxEnergy: tower.maxEnergy,
+        productionAmmo: tower.productionAmmo,
         materials: tower.materials ? { ...tower.materials } : undefined,
         ammoStock: tower.ammoStock ? { ...tower.ammoStock } : undefined,
         repairParts: tower.repairParts,
