@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 import { numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
@@ -1201,7 +1202,9 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (state.creative && state.selectedPlacedTowerId) {
       const levels = document.createElement("div");
       levels.className = "creative__levels";
-      for (let level = 1; level <= 10; level += 1) {
+      const definition = Object.values(towerCatalog).flat().find((tower) => tower.id === state.towerSheet?.definitionId);
+      const maxLevel = definition ? getTowerMaxLevel(definition) : 10;
+      for (let level = 1; level <= maxLevel; level += 1) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = `creative__level${state.creative.selectedTowerLevel === level ? " creative__level--active" : ""}`;

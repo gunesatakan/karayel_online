@@ -1,3 +1,4 @@
+import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -479,9 +480,7 @@ const REPAIR_PERFORMANCE_MULTIPLIER = 2;
 function isLogisticsWorkerMode(mode: DroneSnapshot["mode"]) {
   return (HIRABLE_WORKER_ROLES as readonly string[]).includes(mode);
 }
-const AMMO_FACTORY_RATE_PER_SECOND = 5;
 const AMMO_FACTORY_ENERGY_PER_AMMO = 0.25;
-const RESOURCE_PROVIDER_CAPACITY = 480;
 const AMMO_RAW_MATERIAL_PER_AMMO = 1;
 const TOWER_COOLING_PER_SECOND = 3;
 const TOWER_HEAT_UNLOCK_THRESHOLD = 30;
@@ -5005,7 +5004,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
       const production = Math.min(
-        AMMO_FACTORY_RATE_PER_SECOND * seconds
+        getAmmoFactoryProductionRate(tower.level) * seconds
           * getModifierMultiplier(this.getTowerRunModifiers(tower), "resourceProduction")
           * getModifierMultiplier(this.getTowerRunModifiers(tower), "ammoProduction"),
         tower.maxAmmo - tower.ammo,
@@ -10993,14 +10992,14 @@ export class MatchRoom extends Room<MatchState> {
         ? RESOURCE_PROVIDER_INITIAL_STOCK
         : isOperationalTower(definition) ? TOWER_BASE_AMMO : 0,
       maxAmmo: definition.resourceProvider === "ammunition"
-        ? RESOURCE_PROVIDER_CAPACITY
+        ? getResourceProviderCapacity(1)
         : definition.resourceProvider || !isOperationalTower(definition) ? 0 : TOWER_BASE_AMMO,
       energy: definition.resourceProvider === "ammunition"
         ? AMMO_FACTORY_INITIAL_ENERGY
         : definition.resourceProvider ? RESOURCE_PROVIDER_INITIAL_STOCK
         : isOperationalTower(definition) ? TOWER_BASE_ENERGY : 0,
       maxEnergy: definition.resourceProvider
-        ? RESOURCE_PROVIDER_CAPACITY
+        ? getResourceProviderCapacity(1)
         : isOperationalTower(definition) ? TOWER_BASE_ENERGY : 0,
       energyDepletedAt: 0,
       energyConduitUntil: 0,
@@ -11039,7 +11038,7 @@ export class MatchRoom extends Room<MatchState> {
       performance: 0.5,
       heatLocked: false,
       rawAmmo: RESOURCE_PROVIDER_INITIAL_STOCK,
-      maxRawAmmo: definition.resourceProvider === "ammunition" ? RESOURCE_PROVIDER_CAPACITY : 0,
+      maxRawAmmo: definition.resourceProvider === "ammunition" ? getResourceProviderCapacity(1) : 0,
       level: 1,
       cooldownMs: 150,
       auraExpiresAt: 0,
@@ -11111,6 +11110,19 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  private updateProviderCapacity(tower: TowerModel) {
+    if (!tower.definition.resourceProvider) return;
+    const capacity = getResourceProviderCapacity(tower.level);
+    tower.maxEnergy = capacity;
+    tower.energy = Math.min(tower.energy, capacity);
+    if (tower.definition.resourceProvider === "ammunition") {
+      tower.maxAmmo = capacity;
+      tower.maxRawAmmo = capacity;
+      tower.ammo = Math.min(tower.ammo, capacity);
+      tower.rawAmmo = Math.min(tower.rawAmmo, capacity);
+    }
+  }
+
   private upgradeTower(client: Client, message: UpgradeTowerMessage) {
     if (!message.towerId) {
       return;
@@ -11118,7 +11130,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const player = this.state.players.get(client.sessionId);
     const tower = this.towers.get(message.towerId);
-    if (!player || !tower || tower.ownerId !== client.sessionId || tower.level >= MAX_TOWER_LEVEL) {
+    if (!player || !tower || tower.ownerId !== client.sessionId || tower.level >= getTowerMaxLevel(tower.definition)) {
       return;
     }
 
@@ -11132,6 +11144,7 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= goldCost;
     player.goldSpent += goldCost;
     tower.level += 1;
+    this.updateProviderCapacity(tower);
     // Terfi Ikramiyesi: yalnizca kule kontenjani tutan hasar kulesinin
     // gelistirmesi (Garnizon Maasi ile ayni olcu). Duvar ucuz ve tam iadeyle
     // geri alinabildigi icin bir altin pompasi olurdu. Odenen prim kulede
@@ -11337,9 +11350,10 @@ export class MatchRoom extends Room<MatchState> {
     if (!player) return;
     const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
     if (!tower || tower.ownerId !== client.sessionId) return;
-    const level = Math.max(1, Math.min(MAX_TOWER_LEVEL, Math.round(isFiniteNumber(message.level) ? message.level : tower.level)));
+    const level = Math.max(1, Math.min(getTowerMaxLevel(tower.definition), Math.round(isFiniteNumber(message.level) ? message.level : tower.level)));
     if (level === tower.level) return;
     tower.level = level;
+    this.updateProviderCapacity(tower);
     if (tower.definition.id === "warrior-6" && getUcubePerkTier(level)) {
       tower.ucubePendingLevel = level;
       client.send("ucube:choice", { towerId: tower.id, level });

@@ -2072,6 +2072,8 @@ export function getTowerBuildCost(towerCost: number) {
   return Math.round(towerCost * TOWER_BUILD_COST_MULTIPLIER);
 }
 
+export { getTowerMaxLevel, getResourceProviderCapacity, getResourceProviderHealthMultiplier, getAmmoFactoryProductionRate } from "./resource-providers.js";
+
 export function getTowerLevelExpCost(towerCost: number, currentLevel: number) {
   if (currentLevel < 1 || currentLevel >= 10) {
     return 0;

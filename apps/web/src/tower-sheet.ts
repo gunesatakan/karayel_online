@@ -24,7 +24,7 @@ import { damageTypeCodex, hitTypeCodex } from "./codex";
 import { assetUrl } from "./asset-url";
 import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
 import { localizeTowerStatusText } from "./server-text";
-import { getTieredTowerArtPath } from "./tower-art";
+import { getTieredTowerArtPath, getSupplyTowerArtPath } from "./tower-art";
 
 /**
  * Kule paneli: secili kulenin sayilari, gruplu ve dokumlu.
@@ -168,7 +168,7 @@ const PORTRAITS: Readonly<Record<string, string>> = {
 };
 
 function getPortrait(definitionId: string, level: number) {
-  const tiered = getTieredTowerArtPath(definitionId, level);
+  const tiered = getTieredTowerArtPath(definitionId, level) ?? getSupplyTowerArtPath(definitionId, level);
   return tiered ? assetUrl(tiered) : PORTRAITS[definitionId];
 }
 

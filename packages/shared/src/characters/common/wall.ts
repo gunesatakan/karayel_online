@@ -1,3 +1,4 @@
+import { getResourceProviderHealthMultiplier } from "../../resource-providers.js";
 import type { TowerDefinition } from "./types.js";
 import { attachTowerEngine } from "./engine.js";
 import { NON_FIRING_INTERVAL_MS } from "../../tower-rules.js";
@@ -53,8 +54,9 @@ export const wallTower: TowerDefinition = attachTowerEngine({
   structureHealthPerLevel: WALL_HEALTH_PER_LEVEL
 });
 
-/** Bir yapinin seviyesine gore can carpani. Duvar disi kuleler sabit kalir. */
+/** Duvar ve kaynak yapilarinin cani seviyeye gore buyur. */
 export function getStructureHealthMultiplier(definition: TowerDefinition, level: number) {
+  if (definition.resourceProvider) return getResourceProviderHealthMultiplier(level);
   const base = definition.structureHealthMultiplier ?? 1;
   const perLevel = definition.structureHealthPerLevel ?? 0;
   return base * (1 + Math.max(0, Math.round(level) - 1) * perLevel);

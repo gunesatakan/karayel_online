@@ -1,3 +1,4 @@
+import { getTowerMaxLevel } from "../resource-providers.js";
 import { countsAsTower, towerCatalog } from "../characters/index.js";
 import { getTowerLevelExpCost, getTowerLevelGoldCost, type TowerSnapshot } from "../index.js";
 
@@ -35,8 +36,7 @@ export const UPGRADE_READY_MARKER_LIMIT = 3;
  * saniyeler icinde olabiliyor; o zaman cip yanip sonen bir lambaya donerdi.
  */
 export const UPGRADE_READY_FLASH_GAP_MS = 2000;
-/** Sunucunun kule seviye tavani (MatchRoom `MAX_TOWER_LEVEL`). */
-const TOWER_MAX_LEVEL = 10;
+
 
 /**
  * Sayarak artan gosterge.
@@ -181,11 +181,11 @@ export function getUpgradeReadyTowerIds(
   }
   const ready: Array<{ id: string; exp: number; gold: number }> = [];
   for (const tower of towers) {
-    if (tower.ownerId !== ownerId || !(tower.level < TOWER_MAX_LEVEL)) {
+    if (tower.ownerId !== ownerId) {
       continue;
     }
     const definition = towerCatalog[tower.characterId]?.find((candidate) => candidate.id === tower.definitionId);
-    if (!definition || !countsAsTower(definition)) {
+    if (!definition || !countsAsTower(definition) || tower.level >= getTowerMaxLevel(definition)) {
       continue;
     }
     const exp = getTowerLevelExpCost(definition.cost, tower.level);

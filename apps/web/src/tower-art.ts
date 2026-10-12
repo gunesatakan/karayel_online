@@ -18,12 +18,34 @@ const TIERED_TOWER_ART: Readonly<Record<string, "png" | "webp">> = {
 
 const TIER_ART_SUFFIX = { 1: "levels-1-4", 2: "levels-5-9", 3: "level-10" } as const;
 
+const SUPPLY_TOWER_ART: Readonly<Record<string, string>> = {
+  "warrior-7": "ammunition",
+  "warrior-8": "energy",
+  "zeynep-9": "ammunition",
+  "zeynep-10": "energy",
+  "archer-7": "ammunition",
+  "archer-8": "energy"
+};
+
+export function getSupplyTowerArtPath(definitionId: string, level = 1) {
+  const kind = SUPPLY_TOWER_ART[definitionId];
+  return kind ? `images/towers/tower-supply-${kind}${level >= 5 ? "-level-5" : ""}.png` : undefined;
+}
+
+export function listSupplyTowerArt() {
+  return Object.keys(SUPPLY_TOWER_ART).flatMap((id) => [1, 5].map((level) => ({
+    key: getTowerTextureKey(id, level),
+    path: getSupplyTowerArtPath(id, level)!
+  })));
+}
+
 function hasTieredTowerArt(definitionId: string) {
   return definitionId in TIERED_TOWER_ART;
 }
 
 /** Kulenin doku anahtari; kademe resmi olan kulede seviyenin kademesi. */
 export function getTowerTextureKey(definitionId: string, level: number) {
+  if (definitionId in SUPPLY_TOWER_ART && level >= 5) return `tower-${definitionId}-level-5`;
   if (!hasTieredTowerArt(definitionId)) return `tower-${definitionId}`;
   return `tower-${definitionId}-${TIER_ART_SUFFIX[getTowerTier(level)]}`;
 }
@@ -47,5 +69,5 @@ export function listTieredTowerArt() {
  * Kademe resimleri kareyi dolduruyor; digerleri cikinti payi birakiyor.
  */
 export function getTowerSpriteSize(definitionId: string, discSize: number) {
-  return hasTieredTowerArt(definitionId) ? discSize : discSize / TOWER_ART_DISC_RATIO;
+  return hasTieredTowerArt(definitionId) || getSupplyTowerArtPath(definitionId) ? discSize : discSize / TOWER_ART_DISC_RATIO;
 }

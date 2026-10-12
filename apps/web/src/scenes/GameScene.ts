@@ -1,3 +1,4 @@
+import { getTowerMaxLevel } from "@karayel/shared";
 import Phaser from "phaser";
 import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
@@ -10518,7 +10519,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const upgradeGoldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower?.level ?? 1) : 0;
     const refundState = selectedTower ? this.getTowerRefundState(selectedTower) : undefined;
     const sellRefund = refundState?.amount ?? 0;
-    const canUpgrade = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId && selectedTower.level < 10
+    const canUpgrade = Boolean(selectedTower && definition && selectedTower.ownerId === this.localSessionId && selectedTower.level < getTowerMaxLevel(definition)
       && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost
       && (this.localPlayerSnapshot?.gold ?? 0) >= upgradeGoldCost);
     const upgradePriceLabel = `${upgradeCost} XP${upgradeGoldCost > 0 ? ` + ${upgradeGoldCost}g` : ""}`;
@@ -10715,7 +10716,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       },
       creative: this.getCreativeControlState(),
       upgrade: {
-        label: selectedTower?.level === 10 ? t("scene.upgrade.max") : selectedTower ? t("scene.upgrade.action", { price: upgradePriceLabel }) : t("scene.upgrade.noTower"),
+        label: selectedTower && definition && selectedTower.level >= getTowerMaxLevel(definition) ? t("scene.upgrade.max") : selectedTower ? t("scene.upgrade.action", { price: upgradePriceLabel }) : t("scene.upgrade.noTower"),
         enabled: canUpgrade
       },
       sell: {
@@ -11010,7 +11011,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       },
       notes,
       progress: {
-        maxed: tower.level >= 10,
+        maxed: tower.level >= getTowerMaxLevel(definition ?? { resourceProvider: tower.resourceProvider }),
         upgradeXp: context.upgradeXp,
         upgradeGold: context.upgradeGold,
         poolXp: this.localPlayerSnapshot?.experience ?? 0,
