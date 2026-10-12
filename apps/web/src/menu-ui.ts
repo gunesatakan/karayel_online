@@ -1143,6 +1143,9 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           </button>
           <button class="command command--ghost" data-view="credits">${t("credits.menuButton")}</button>
         </div>
+        <a class="home-bounty-board" href="https://www.bountyboard.gg/game/nexhold?ref=badge" target="_blank" rel="noopener noreferrer">
+          <img src="https://www.bountyboard.gg/badges/bounty-board-icon-128.png" alt="Nexhold on Bounty Board" width="64" height="64" decoding="async" />
+        </a>
       </footer>
 
       <aside class="slate">
