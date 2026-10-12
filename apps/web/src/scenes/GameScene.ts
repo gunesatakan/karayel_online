@@ -8523,7 +8523,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       sprite.setPosition(drone.x, drone.y);
       const isLogisticsWorker = (HIRABLE_WORKER_ROLES as readonly string[]).includes(drone.mode);
-      const workerScale = isLogisticsWorker ? 0.69 : drone.mode === "attack" ? 1.55 : 1.38;
+      const workerScale = isLogisticsWorker ? 0.69 * 0.75 : drone.mode === "attack" ? 1.55 : 1.38;
       sprite.setScale(workerScale * mapEntityScale * pulse);
       sprite.setAlpha(drone.mode === "attack" ? 1 : 0.95);
       const tint = drone.mode === "crystalCollector" ? 0xa78bfa : drone.mode === "ammoCollector" ? 0x84cc16 : drone.mode === "energyTransport" ? 0x22d3ee : drone.mode === "ammoTransport" ? 0xf59e0b : drone.mode === "repairer" ? 0xf472b6 : 0xffffff;
