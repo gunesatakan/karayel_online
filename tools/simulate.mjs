@@ -33,7 +33,8 @@ import {
   getWaveChampionPlan,
   getWaveSpawnCount,
   getEnemySpawnHealth,
-  REFERENCE_STRUCTURE_BREAK_DPS,
+  getEnemyStructureDamageMultiplier,
+  getReferenceStructureBreakDps,
   getStructureRepairCost,
   getStructureHealthMultiplier,
   wallTower,
@@ -101,7 +102,7 @@ function getWallAttackersPerWall(enemyCount, wallCount) {
  * Ustune ucan dusmanlar duvari tumden atlar, yani katki dalganin kara payiyla
  * olceklenir. 5. ve 10. dalgada bu sifirdir.
  */
-function getWallDelaySeconds(wallCount, wallHp, groundRatio, enemyCount) {
+function getWallDelaySeconds(wallCount, wallHp, groundRatio, enemyCount, wave) {
   if (wallCount <= 0 || wallHp <= 0 || groundRatio <= 0) return 0;
   const secondsPerCell = MAP_CELL_SIZE / REFERENCE_ENEMY_SPEED;
   const completeness = Math.min(1, wallCount / MAP_WIDTH_CELLS);
@@ -116,15 +117,20 @@ function getWallDelaySeconds(wallCount, wallHp, groundRatio, enemyCount) {
   // Tarama sutun basina bir kez oduleniyor; dalgaya dusen pay bu.
   const scoutShare = Math.min(1, MAP_WIDTH_CELLS / Math.max(1, enemyCount));
   const attackers = getWallAttackersPerWall(enemyCount, wallCount);
-  const breakSeconds = wallHp / (REFERENCE_STRUCTURE_BREAK_DPS * attackers);
+  // Dusmanin yapi hasari dalgayla buyuyor (1. dalga x1,25, 20. dalga x2,5).
+  const breakSeconds = wallHp / (getReferenceStructureBreakDps(wave) * attackers);
   return groundRatio * (sidewaysSeconds * scoutShare + breakSeconds);
 }
 
-/** Dalgadaki kusatma dusmanlarinin duvara verdigi ek asinma. */
+/**
+ * Dalganin duvara verdigi asinmanin carpani: kusatma dusmanlarinin ek
+ * asinmasi ve butun dusman -> yapi hasarinin dalga carpani.
+ */
 function getWallWearMultiplier(wave) {
-  return wave >= SIEGE_FIRST_WAVE
+  const siege = wave >= SIEGE_FIRST_WAVE
     ? 1 + SIEGE_SPAWN_RATIO * (SIEGE_STRUCTURE_DAMAGE_MULTIPLIER - 1)
     : 1;
+  return siege * getEnemyStructureDamageMultiplier(wave);
 }
 
 export const botStrategies = {
@@ -255,7 +261,7 @@ export function simulateRun({ seed = 1, strategy = "balanced" } = {}) {
     // Duvarin tek katkisi budur: dusmani oyalayip kulelere fazladan ates
     // saniyesi kazandirmak.
     const wallHp = getWallHealth(playerModifiers) * wallHealthRatio;
-    const combatSeconds = config.combatSeconds + getWallDelaySeconds(wallCount, wallHp, groundRatio, count);
+    const combatSeconds = config.combatSeconds + getWallDelaySeconds(wallCount, wallHp, groundRatio, count, wave);
     const damageBudget = towers.reduce((sum, tower) => sum + getTowerDps(tower, playerModifiers, ownedCardIds), 0) * combatSeconds * execution;
     const dealt = Math.min(totalHealth, damageBudget);
     distributeDamage(towers, dealt);

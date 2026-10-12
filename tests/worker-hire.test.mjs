@@ -12,8 +12,11 @@ import {
   ADVANCED_WORKER_COST_MULTIPLIER,
   cardCatalog,
   getWorkerHireCostWithModifiers,
-  ADVANCED_WORKER_MULTIPLIER,
+  ADVANCED_WORKER_CAPACITY_MULTIPLIER,
+  ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER,
+  ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
+  RESOURCE_EXTRACTION_DURATION_MS,
   WORKER_HIRE_BASE_COST,
   WORKER_HIRE_COST_GROWTH,
   canHireWorker,
@@ -155,16 +158,15 @@ test("alinan isciler anlik goruntuye yazilir", () => {
 /**
  * Gelismis isci.
  *
- * Takas duz olmali: her sey uc kat -- toplama, tasima, yurume, bedel. Uc
- * normal isciden farki yer kaplamada: tek beden, tek yol, takip edilecek tek
- * hedef. Testler bu duzlugu tutuyor, cunku bir kalemin uc kattan sapmasi
- * takasin kendisini bozar.
+ * Her eksen kendi katinda: tasima uc kat, yurume bir bucuk kat, toplama iki
+ * kat, bedel dort kat. Bir donem hepsi uc katti; kapasite ile iki hiz ust
+ * uste binince hat dokuz kata yaklasiyordu, hizlar bu yuzden indi. Testler
+ * her ekseni kendi sabitine bagliyor ki biri ayarlanirken oteki kaymasin.
  */
 
 test("gelismis iscinin bedeli ayni sayacta normalin bedel katı", () => {
-  // Bedel ile is ayri sabitler: gelismis isci uc iscinin isini yapiyor ama
-  // dordunun parasini istiyor. Test ikisini karistirmasin diye bedel
-  // sabitini okuyor.
+  // Bedel ile is ayri sabitler: gelismis isci dort iscinin parasini istiyor.
+  // Test ikisini karistirmasin diye bedel sabitini okuyor.
   assert.equal(getWorkerHireCost(0, true), 400, "ilk gelismis isci 400 altin olmali");
   for (let count = 0; count < 15; count += 1) {
     assert.equal(
@@ -201,7 +203,10 @@ test("sayac ortak: normal alim gelismisin bedelini de yukseltir, tersi de", () =
   );
 });
 
-test("gelismis isci uc kat tasir ve uc kat hizli yurur", () => {
+test("gelismis isci uc kat tasir ve bir bucuk kat hizli yurur", () => {
+  // Sahibinin sayilari: yurume 1,5 kat (once 3); kapasiteye dokunulmadi.
+  assert.equal(ADVANCED_WORKER_CAPACITY_MULTIPLIER, 3);
+  assert.equal(ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER, 1.5);
   const room = createRoom("warrior");
   room.ensureLogisticsWorkers();
   const normalIsci = workersOf(room).find((worker) => worker.mode === "crystalCollector");
@@ -210,14 +215,16 @@ test("gelismis isci uc kat tasir ve uc kat hizli yurur", () => {
   room.ensureLogisticsWorkers();
   const gelismis = workersOf(room).filter((worker) => worker.mode === "crystalCollector" && worker.advanced);
   assert.equal(gelismis.length, 1, "gelismis isci sahaya cikmadi");
-  assert.equal(gelismis[0].capacity, normalIsci.capacity * ADVANCED_WORKER_MULTIPLIER);
-  assert.equal(gelismis[0].speed, normalIsci.speed * ADVANCED_WORKER_MULTIPLIER);
+  assert.equal(gelismis[0].capacity, normalIsci.capacity * ADVANCED_WORKER_CAPACITY_MULTIPLIER);
+  assert.equal(gelismis[0].speed, normalIsci.speed * ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER);
+  assert.equal(gelismis[0].speed, normalIsci.speed * 1.5);
 });
 
-test("toplama hizi uc kat ve kart carpaniyla carpiliyor", () => {
+test("toplama hizi iki kat ve kart carpaniyla carpiliyor", () => {
   // Toplaniyor degil carpiliyor: isci hizlandiran bir kart, gelismis isciyi de
   // ayni **oranda** hizlandirmali. Toplansaydi kartin degeri gelismis iscide
-  // uctebire duserdi.
+  // yariya duserdi.
+  assert.equal(ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER, 2);
   const room = createRoom("warrior");
   const player = room.state.players.get("p1");
   room.ensureLogisticsWorkers();
@@ -228,16 +235,31 @@ test("toplama hizi uc kat ve kart carpaniyla carpiliyor", () => {
   const gelismis = workersOf(room).find((worker) => worker.mode === "crystalCollector" && worker.advanced);
   assert.equal(
     room.getWorkerGatherSpeedMultiplier(gelismis),
-    room.getWorkerGatherSpeedMultiplier(normal) * ADVANCED_WORKER_MULTIPLIER
+    room.getWorkerGatherSpeedMultiplier(normal) * ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER
   );
+  assert.equal(room.getWorkerGatherSpeedMultiplier(gelismis), 2);
 
   player.runModifiers = [{ source: "card:test", scope: "player", stat: "workerGatherSpeed", add: 0.5 }];
   assert.equal(room.getWorkerGatherSpeedMultiplier(normal), 1.5, "kart carpani normal isciye islemedi");
   assert.equal(
     room.getWorkerGatherSpeedMultiplier(gelismis),
-    1.5 * ADVANCED_WORKER_MULTIPLIER,
+    1.5 * ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER,
     "kart carpani ile kademe carpani carpilmadi"
   );
+});
+
+test("gelismis iscinin cikarma suresi normalin yarisi", () => {
+  // Carpan hiz carpani: sureyi boluyor (7,11 sn -> 3,56 sn), eklemiyor.
+  // Ayni saat diliminde gelismis isci tam iki kat ilerlemeli.
+  const room = createRoom("warrior");
+  room.ensureLogisticsWorkers();
+  hire(room, "crystalCollector", 100000, true);
+  room.ensureLogisticsWorkers();
+  const normal = workersOf(room).find((worker) => worker.mode === "crystalCollector" && !worker.advanced);
+  const gelismis = workersOf(room).find((worker) => worker.mode === "crystalCollector" && worker.advanced);
+  const sure = (worker) => RESOURCE_EXTRACTION_DURATION_MS / room.getWorkerGatherSpeedMultiplier(worker);
+  assert.equal(sure(normal), RESOURCE_EXTRACTION_DURATION_MS);
+  assert.equal(sure(gelismis), RESOURCE_EXTRACTION_DURATION_MS / 2);
 });
 
 test("kademe anlik goruntuye ve alim bildirimine yaziliyor", () => {

@@ -45,7 +45,7 @@ export const WORKER_MAX_HP = 60;
  * 4,5): en ucuz duvar (taban 40 civari can) yaklasik dokuz saniyede doluyor.
  * Onarim hizi kartlari ve gelismis kademe bu tabanin uzerine biniyor.
  *
- * Gelismis tamirci uc kati: her eksende oldugu gibi.
+ * Gelismis tamirci iki kati (`ADVANCED_WORKER_REPAIR_MULTIPLIER`).
  */
 export const WORKER_REPAIR_PER_SECOND = 4.5;
 
@@ -104,20 +104,28 @@ export const WORKER_HIRE_BASE_COST = 100;
 export const WORKER_HIRE_COST_GROWTH = 1.1;
 
 /**
- * Gelismis iscinin isi normalin uc kati: toplama hizi, tasima kapasitesi,
- * yurume hizi.
+ * Gelismis iscinin normal isciye gore katlari; her eksen kendi sabitinde.
  *
- * Uc iscinin isini bir bedenle yapiyor. Kazanc yer kaplamada -- bir
- * gelismis isci, uc normal isciden daha az yol tikanikligi ve daha az
- * takip edilecek beden demek.
+ * Bir donem tek sayiydi (`ADVANCED_WORKER_MULTIPLIER = 3`): kapasite, can,
+ * yurume, toplama ve onarim birlikte uc kat. Kapasite x3 ile yurume x3 ve
+ * toplama x3 ust uste binince tikanmayan bir hatta debi x9'a yaklasiyordu.
+ * Sahibinin istegiyle hiz eksenleri ayrildi: yurume 1,5 kat (once 3),
+ * toplama/cikarma ve onarim 2 kat (once 3). Kapasite ve can uc katta kaldi.
+ *
+ * Hepsi **hiz/kat** carpani: toplama carpani cikarma suresini boluyor
+ * (7,11 sn -> 3,56 sn), onarim carpani saniyelik onarimi carpiyor (4,5 -> 9).
  */
-export const ADVANCED_WORKER_MULTIPLIER = 3;
+export const ADVANCED_WORKER_CAPACITY_MULTIPLIER = 3;
+export const ADVANCED_WORKER_HEALTH_MULTIPLIER = 3;
+export const ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER = 1.5;
+export const ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER = 2;
+export const ADVANCED_WORKER_REPAIR_MULTIPLIER = 2;
 
 /**
  * Gelismis iscinin bedeli normalin dort kati: ilk gelismis isci 400 altin.
  *
- * Isten (uc kat) ayri bir sayi, cunku takas artik duz degil: gelismis isci
- * uc iscinin isini yapiyor ama dordunun parasini istiyor. Aradaki fark
+ * Isten ayri bir sayi, cunku takas duz degil: gelismis isci tek bedende
+ * daha cok is yapiyor ama dort iscinin parasini istiyor. Aradaki fark
  * yerin bedeli -- bir beden, bir yol, takip edilecek tek hedef. Iki sayiyi
  * tek sabitte tutmak, birini ayarlarken otekini sessizce bozmak demekti.
  */

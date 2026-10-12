@@ -269,13 +269,46 @@ export function isFlyingWaveSpawn(wave: number, spawnIndex: number) {
 }
 
 /**
- * Yapi kirmada referans hasar hizi (saniyede).
+ * Dusmanin yapilara (kule, kaynak binasi, duvar) verdigi hasarin dalga carpani.
  *
- * Dusman saldirisi dalgayla olceklenmiyor (her tip 12 hasar, 850ms arayla),
- * yani bir yapinin ne kadar dayandigi tek bir referans saldirganla dogru
- * hesaplanabiliyor. Denge simulatoru duvarin kazandirdigi sureyi bununla olcer.
+ * Sahibinin istegi: ates eden ve yapi kiran butun dusmanlar yapilara daha
+ * sert vursun ve bu dalgayla buyusun. Tek carpan, tek yer: sunucudaki
+ * `strikeStructure` her vurusu (bitisik, menzilli, kusatma, kule avcisi,
+ * sampiyon) zirhtan once bununla carpiyor. 1. dalgada x1,25, son dalgada
+ * (`FINAL_WAVE`) x2,5; arasi dogrusal.
+ *
+ * Kapsam disi: nexusa sizinti hasari, isciye temas hasari (o `attack`i kendi
+ * yolundan okuyor), karsi atak (kendi orani var) ve enerji yiyicinin yikimi.
+ * Butun asamalarda gecerli, 1. asama dahil. Sonsuz dalga yok: `FINAL_WAVE`in
+ * ustu son dalganin carpaninda kaliyor.
+ */
+export const ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE = 1;
+export const ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER = 1.25;
+export const ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER = 2.5;
+
+export function getEnemyStructureDamageMultiplier(wave: number) {
+  const safeWave = Number.isFinite(wave)
+    ? Math.max(ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE, Math.min(FINAL_WAVE, wave))
+    : ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE;
+  const progress = (safeWave - ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE) / (FINAL_WAVE - ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE);
+  return ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER
+    + (ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER - ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER) * progress;
+}
+
+/**
+ * Yapi kirmada referans hasar hizi (saniyede), dalga carpanindan **once**.
+ *
+ * Taban vurus dalgayla degismiyor (referans tip 12 hasar, 850ms arayla);
+ * dalgaya gore buyuyen kisim `getEnemyStructureDamageMultiplier`. Bir yapinin
+ * ne kadar dayandigi bu yuzden `getReferenceStructureBreakDps(wave)` ile
+ * hesaplaniyor. Denge simulatoru duvarin kazandirdigi sureyi bununla olcer.
  */
 export const REFERENCE_STRUCTURE_BREAK_DPS = 12 / 0.85;
+
+/** Referans saldirganin o dalgadaki yapi kirma hizi (saniyede). */
+export function getReferenceStructureBreakDps(wave: number) {
+  return REFERENCE_STRUCTURE_BREAK_DPS * getEnemyStructureDamageMultiplier(wave);
+}
 
 /**
  * Onarim, yeniden insadan ucuz olmali.

@@ -3,7 +3,7 @@
  *
  * Hattin altin harcamayan onarim yolu. Testler dort seyi tutuyor: gercekten
  * onariyor, yikilan yapiyi diriltmiyor (altinla onarimin kurali da bu, ikisi
- * ayrisamaz), hedefini kilitliyor ve gelismis kademesi uc kat calisiyor.
+ * ayrisamaz), hedefini kilitliyor ve gelismis kademesi iki kat calisiyor.
  *
  * Kilit en kritik detay. Kilit olmasa "en hasarli yapi" her tick yeniden
  * secilirdi: tamirci bir duvari onardikca o duvar listede geri duser, secim
@@ -13,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ADVANCED_WORKER_MULTIPLIER,
+  ADVANCED_WORKER_REPAIR_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
   REPAIR_DEPOT_TOWER_ID,
   WORKER_REPAIR_PER_SECOND,
@@ -72,16 +72,19 @@ test("tamirci hasarlı yapıya saniyede sabit can yazar", () => {
   );
 });
 
-test("gelişmiş tamirci üç kat hızlı onarır", () => {
+test("gelişmiş tamirci iki kat hızlı onarır", () => {
   const room = oda();
   const duvar = kur(room, "wall-1");
   duvar.hp = 1;
   const tamirci = tamirciTut(room, { advanced: true });
   onart(room, tamirci, duvar, 0.5);
   assert.ok(
-    Math.abs(duvar.hp - (1 + WORKER_REPAIR_PER_SECOND * ADVANCED_WORKER_MULTIPLIER * 0.5)) < 1e-6,
+    Math.abs(duvar.hp - (1 + WORKER_REPAIR_PER_SECOND * ADVANCED_WORKER_REPAIR_MULTIPLIER * 0.5)) < 1e-6,
     `yarim saniyede ${duvar.hp} oldu`
   );
+  // Sahibinin sayisi: onarim hizi 2 kat (once 3), yani saniyede 9 can.
+  assert.equal(ADVANCED_WORKER_REPAIR_MULTIPLIER, 2);
+  assert.equal(room.getWorkerRepairPerSecond(tamirci), WORKER_REPAIR_PER_SECOND * 2);
 });
 
 test("tamirci canı tavana çıkarınca durur", () => {

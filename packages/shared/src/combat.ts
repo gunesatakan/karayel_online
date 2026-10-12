@@ -21,6 +21,10 @@ export type EnemyCombatDefinition = {
    * Tek bir sayi cunku dusmanin hedefi ne olursa olsun -- kule, duvar,
    * isci -- ayni kolu sallıyor. Yapida zirh dusuluyor, iscide dusulmuyor:
    * iscinin zirhi yok.
+   *
+   * Bu taban deger. Yapiya vurusta uzerine dalga carpani biniyor
+   * (`getEnemyStructureDamageMultiplier`: 1. dalga x1,25, 20. dalga x2,5);
+   * isciye temas hasari tabanin kendisi.
    */
   attack: number;
   /**

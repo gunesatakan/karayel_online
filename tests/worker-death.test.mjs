@@ -13,7 +13,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  ADVANCED_WORKER_MULTIPLIER,
+  ADVANCED_WORKER_HEALTH_MULTIPLIER,
   WORKER_MAX_HP,
   WORKER_RESPAWN_MS,
   enemyCombatDefinitions
@@ -65,7 +65,9 @@ test("işçiler canla sahaya çıkar, gelişmiş işçi üç katıyla", () => {
   room.updateDrones(16, 0.016);
   const gelismis = [...room.drones.values()].find((drone) => drone.advanced);
   assert.ok(gelismis, "gelismis isci sahaya cikmadi");
-  assert.equal(gelismis.maxHp, WORKER_MAX_HP * ADVANCED_WORKER_MULTIPLIER);
+  // Can hiz ayarindan etkilenmedi: hala uc kat.
+  assert.equal(ADVANCED_WORKER_HEALTH_MULTIPLIER, 3);
+  assert.equal(gelismis.maxHp, WORKER_MAX_HP * ADVANCED_WORKER_HEALTH_MULTIPLIER);
 });
 
 test("temas eden işçi düşmanın saldırı gücü kadar saniyelik hasar alır", () => {
@@ -78,6 +80,24 @@ test("temas eden işçi düşmanın saldırı gücü kadar saniyelik hasar alır
   assert.ok(
     Math.abs(inen - enemyCombatDefinitions.grunt.attack * 0.5) < 1e-6,
     `yarim saniyede ${inen} indi, beklenen ${enemyCombatDefinitions.grunt.attack * 0.5}`
+  );
+});
+
+test("yapı hasarının dalga çarpanı işçiye binmiyor: 20. dalgada da temas hasarı düşmanın taban saldırısı", () => {
+  // Dusman -> yapi hasari dalgayla buyuyor (20. dalgada x2,5); isci o yoldan
+  // gecmiyor. Carpan `attack`in kendisine yazilsaydi isci de 2,5 kat yerdi.
+  const room = oda();
+  room.wave = 20;
+  const isci = isciler(room)[0];
+  temasEttir(room, isci);
+  const dusman = [...room.enemies.values()].at(-1);
+  assert.equal(dusman.attack, enemyCombatDefinitions.grunt.attack, "dalga dusmanin taban saldirisini degistirdi");
+  const once = isci.hp;
+  tikla(room, 0.5);
+  const inen = once - isci.hp;
+  assert.ok(
+    Math.abs(inen - enemyCombatDefinitions.grunt.attack * 0.5) < 1e-6,
+    `20. dalgada yarim saniyede ${inen} indi, beklenen ${enemyCombatDefinitions.grunt.attack * 0.5}`
   );
 });
 

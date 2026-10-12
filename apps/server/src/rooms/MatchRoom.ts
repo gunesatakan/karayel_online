@@ -103,6 +103,7 @@ import {
   receivesAtakanIsolationBonus,
   resolveZeynepFormations,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
+  getEnemyStructureDamageMultiplier,
   getStructureRepairCostWithModifiers,
   STRUCTURE_BREACH_HEALTH_RATIO,
   getStructureHealthMultiplier,
@@ -166,7 +167,11 @@ import {
   type HirableWorkerRole,
   type HiredWorker,
   type WorkerSkillId,
-  ADVANCED_WORKER_MULTIPLIER,
+  ADVANCED_WORKER_CAPACITY_MULTIPLIER,
+  ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER,
+  ADVANCED_WORKER_HEALTH_MULTIPLIER,
+  ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER,
+  ADVANCED_WORKER_REPAIR_MULTIPLIER,
   HIRABLE_WORKER_ROLES,
   WORKER_MAX_HP,
   WORKER_REPAIR_PER_SECOND,
@@ -388,7 +393,6 @@ import {
 // Ozel dusmanlar ve karsi atak (2. asamadan itibaren): tablo ve sayilar paylasilan pakette.
 import {
   COUNTER_SURGE_CROSS_MS,
-  COUNTER_SURGE_DAMAGE_RATIO,
   COUNTER_SURGE_TELEGRAPH_MS,
   ENERGY_EATER_DRAIN_PER_SECOND,
   ENERGY_EATER_MIN_CONTACT_MS,
@@ -401,6 +405,7 @@ import {
   TOWER_HUNTER_ATTACK_INTERVAL_MS,
   TOWER_HUNTER_HIT_DAMAGE,
   createSpecialRandom,
+  getCounterSurgeDamageRatio,
   getSpecialEnemyDurability,
   getWaveSpecialSpawnReduction,
   planWaveSpecials,
@@ -1334,6 +1339,12 @@ type CounterSurgeModel = {
   launchAt: number;
   /** Haritayi gecme suresi, duvar saati ms (oyun suresi `scaleGameDuration` ile). */
   crossMs: number;
+  /**
+   * Yapinin azami canina gore hasar payi: seridin **basladigi** dalganin
+   * orani (`getCounterSurgeDamageRatio`). Serit bir sonraki dalgaya sarksa
+   * da bu pay degismiyor.
+   */
+  damageRatio: number;
   hitIds: Set<string>;
 };
 
@@ -7911,16 +7922,26 @@ export class MatchRoom extends Room<MatchState> {
    * Menzilli ve bitisik vurus ayni yerden geciyor: ikisi de ayni kolun
    * sallanmasi, tek fark mesafe. Kusatma carpani da burada, yoksa menzilli
    * hatta unutulurdu.
+   *
+   * Dusmanin yapiya (kule, kaynak binasi, duvar) hasar verdigi **tek** yer
+   * burasi; dalga carpani (`getEnemyStructureDamageMultiplier`) bu yuzden
+   * burada, zirhtan once biniyor: nisanci, kusatma, avci, sampiyon ve
+   * siradan bitisik vurus ayni carpani aliyor. Isciye temas hasari
+   * (`damageWorkerOnEnemyContact`) ve nexusa sizinti buradan gecmiyor,
+   * carpan onlara binmiyor.
    */
   private strikeStructure(enemy: EnemyModel, tower: TowerModel) {
     // Kule avcisi kendi vurusuyla (`TOWER_HUNTER_HIT_DAMAGE`): kusatma
-    // carpani ona binmiyor, yoksa kusatma turundeki avci kuleyi bir saniyede indirirdi.
+    // carpani ona binmiyor, yoksa kusatma turundeki avci kuleyi tek vurusta indirirdi.
     const hunter = enemy.special?.kind === "hunter";
-    const structureDamage = hunter
+    const baseDamage = hunter
       ? TOWER_HUNTER_HIT_DAMAGE
       : enemy.type === "siege"
         ? enemy.attack * SIEGE_STRUCTURE_DAMAGE_MULTIPLIER
         : enemy.attack;
+    // Dalga bitmeden sonraki baslamiyor (sahada dusman kalmamali), yani
+    // vuran dusman hep `this.wave`in dusmani.
+    const structureDamage = baseDamage * getEnemyStructureDamageMultiplier(this.wave);
     if (enemy.attackRange > 0) {
       this.spawnEnemyShotBeam(enemy, tower);
     }
@@ -8160,7 +8181,9 @@ export class MatchRoom extends Room<MatchState> {
 
   /**
    * Seridi kaldirir. Sureler oyun suresi: oyun hizi carpani (`scaleGameDuration`)
-   * oteki zamanlayicilar gibi seride de biniyor.
+   * oteki zamanlayicilar gibi seride de biniyor. Hasar payi burada, kalkilan
+   * dalgadan aliniyor ve seritle birlikte tasiniyor: serit sonraki dalgaya
+   * sarkarsa o dalganin (daha yuksek) orani binmiyor.
    */
   private startCounterSurge(col: number, width: number, now = Date.now()) {
     this.waveSurgeStarted = true;
@@ -8171,6 +8194,7 @@ export class MatchRoom extends Room<MatchState> {
       createdAt: now,
       launchAt: now + scaleGameDuration(COUNTER_SURGE_TELEGRAPH_MS),
       crossMs: scaleGameDuration(COUNTER_SURGE_CROSS_MS),
+      damageRatio: getCounterSurgeDamageRatio(this.wave),
       hitIds: new Set()
     };
   }
@@ -8181,9 +8205,9 @@ export class MatchRoom extends Room<MatchState> {
 
   /**
    * Seridin ilerlemesi ve vuruslari. On cizgisi yapinin merkezini gecince
-   * yapi bir kez, azami caninin `COUNTER_SURGE_DAMAGE_RATIO` payi kadar
-   * (zirh delinir) vuruluyor. Kuleler, kaynak binalari ve duvarlar; dusman,
-   * isci ve nexus degil. Serit tek; yapilar tick basina bir kez taraniyor.
+   * yapi bir kez, azami caninin `surge.damageRatio` payi kadar (seridin
+   * basladigi dalganin orani; zirh delinir) vuruluyor. Kuleler, kaynak
+   * binalari ve duvarlar; dusman, isci ve nexus degil. Serit tek; yapilar tick basina bir kez taraniyor.
    */
   private updateCounterSurge(now: number) {
     const surge = this.counterSurge;
@@ -8200,7 +8224,7 @@ export class MatchRoom extends Room<MatchState> {
       if (!this.isInCounterSurgeBand(tower, left, right, gridSize)) continue;
       surge.hitIds.add(tower.id);
       const before = tower.hp;
-      this.damageTower(tower, tower.maxHp * COUNTER_SURGE_DAMAGE_RATIO, { pierceArmor: true });
+      this.damageTower(tower, tower.maxHp * surge.damageRatio, { pierceArmor: true });
       hits.push({ towerId: tower.id, amount: Math.max(0, Math.round(before - tower.hp)) });
     }
     if (hits.length > 0) {
@@ -8370,20 +8394,20 @@ export class MatchRoom extends Room<MatchState> {
           ttlMs: Number.POSITIVE_INFINITY,
           logisticsPhase: "pickup",
           cargo: 0,
-          // Gelismis isci uc kat tasiyor ve uc kat hizli yuruyor. Toplama
-          // hizi burada degil, tasima sirasinda carpiliyor (bkz.
-          // `getWorkerGatherSpeedMultiplier`).
+          // Gelismis isci uc kat tasiyor ve bir bucuk kat hizli yuruyor.
+          // Toplama hizi (iki kat) burada degil, cikarma sirasinda
+          // carpiliyor (bkz. `getWorkerGatherSpeedMultiplier`).
           capacity: (mode === "ammoTransport"
             ? AMMO_LOGISTICS_WORKER_CAPACITY
             : mode === "ammoCollector"
               ? AMMO_COLLECTOR_WORKER_CAPACITY
             : mode === "crystalCollector" || mode === "energyTransport"
               ? ENERGY_LOGISTICS_WORKER_CAPACITY
-              : LOGISTICS_WORKER_CAPACITY) * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
-          speed: LOGISTICS_WORKER_SPEED * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1),
-          // Can da uc kat: gelismis isci her eksende uc normal isci
-          // ediyor, dayaniklilikta ayrı tutulsaydi uc katlik yatirim tek
-          // bir sizmayla silinirdi. Kart ve esya carpani okuma aninda
+              : LOGISTICS_WORKER_CAPACITY) * (worker.advanced ? ADVANCED_WORKER_CAPACITY_MULTIPLIER : 1),
+          speed: LOGISTICS_WORKER_SPEED * (worker.advanced ? ADVANCED_WORKER_MOVE_SPEED_MULTIPLIER : 1),
+          // Can da uc kat (`ADVANCED_WORKER_HEALTH_MULTIPLIER`): dort
+          // iscinin parasini isteyen yatirim tek bir sizmayla
+          // silinmesin. Kart ve esya carpani okuma aninda
           // biniyor (bkz. `getWorkerMaxHp`), yani kosu ortasinda alinan
           // bir can karti sahadaki isciye de isliyor.
           hp: this.getWorkerBaseMaxHp(worker.advanced, ownerId),
@@ -9615,7 +9639,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Tamircinin saniyelik onarimi; gelismis kademe uc kati.
+   * Tamircinin saniyelik onarimi; gelismis kademe iki kati.
    *
    * Carpan iscinin canindaki gibi yalnizca kuresel listeden okunuyor.
    * Tamircinin "hizmet ettigi bina" her an onardigi kule oldugu icin
@@ -9624,7 +9648,7 @@ export class MatchRoom extends Room<MatchState> {
   private getWorkerRepairPerSecond(worker: DroneModel) {
     const runModifiers = worker.ownerId ? this.state.players.get(worker.ownerId)?.runModifiers ?? [] : [];
     return WORKER_REPAIR_PER_SECOND
-      * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1)
+      * (worker.advanced ? ADVANCED_WORKER_REPAIR_MULTIPLIER : 1)
       * getModifierMultiplier(runModifiers, "workerRepairRate");
   }
 
@@ -9643,7 +9667,7 @@ export class MatchRoom extends Room<MatchState> {
   private getWorkerBaseMaxHp(advanced?: boolean, ownerId?: string) {
     const runModifiers = ownerId ? this.state.players.get(ownerId)?.runModifiers ?? [] : [];
     return Math.max(1, WORKER_MAX_HP
-      * (advanced ? ADVANCED_WORKER_MULTIPLIER : 1)
+      * (advanced ? ADVANCED_WORKER_HEALTH_MULTIPLIER : 1)
       * getModifierMultiplier(runModifiers, "workerHealth"));
   }
 
@@ -9657,12 +9681,12 @@ export class MatchRoom extends Room<MatchState> {
    * Iscinin toplama hizi carpani.
    *
    * Kart ve esya carpani her isci icin ayni; gelismis isci onun uzerine kendi
-   * uc katini koyuyor. Ikisi carpiliyor, toplanmiyor: normal isciyi
+   * iki katini koyuyor. Ikisi carpiliyor, toplanmiyor: normal isciyi
    * hizlandiran bir kart gelismis isciyi de ayni oranda hizlandirmali.
    */
   private getWorkerGatherSpeedMultiplier(worker: DroneModel) {
     return getModifierMultiplier(this.getWorkerModifiers(worker), "workerGatherSpeed")
-      * (worker.advanced ? ADVANCED_WORKER_MULTIPLIER : 1);
+      * (worker.advanced ? ADVANCED_WORKER_GATHER_SPEED_MULTIPLIER : 1);
   }
 
   private getCrystalWorkerReactor(worker: DroneModel) {

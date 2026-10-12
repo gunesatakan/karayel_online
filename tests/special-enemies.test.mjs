@@ -12,7 +12,10 @@ import assert from "node:assert/strict";
 import {
   CHAMPION_HP_BONUS,
   COUNTER_SURGE_CROSS_MS,
-  COUNTER_SURGE_DAMAGE_RATIO,
+  COUNTER_SURGE_DAMAGE_RATIO_BASE,
+  COUNTER_SURGE_DAMAGE_RATIO_MAX,
+  COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE,
+  COUNTER_SURGE_FIRST_WAVE,
   COUNTER_SURGE_TELEGRAPH_MS,
   ENERGY_EATER_HP_MULTIPLIER,
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
@@ -25,11 +28,15 @@ import {
   SPECIAL_MAX_SLOT_SHARE,
   SPECIAL_MIN_NORMAL_SHARE,
   TOWER_HUNTER_ARMOR_MULTIPLIER,
+  TOWER_HUNTER_ATTACK_INTERVAL_MS,
+  TOWER_HUNTER_HIT_DAMAGE,
   TOWER_HUNTER_HP_MULTIPLIER,
   TOWER_HUNTER_MAX_PER_WAVE,
   createSpecialRandom,
   getArenaWaveEnemyCount,
   getCounterSurgeChance,
+  getCounterSurgeDamageRatio,
+  getEnemyStructureDamageMultiplier,
   getEnemyCombatDefinition,
   getEnemySpawnHealth,
   getMapGridSize,
@@ -172,21 +179,54 @@ test("avcı kaynak binasını da hedef alıyor, duvarı hedef almıyor", () => {
   assert.equal(ortaDuvar.hp, ortaDuvar.maxHp, "yoldaki olmayan duvar vuruldu");
 });
 
-test("avcının yapı vuruşu sert ama anında değil: orta bir kule 8–15 sn'de düşüyor", () => {
+/** Avciyi kulenin dibine koyar ve kule devrilene kadar surer; vurus sayisi ve sure. */
+function avciKuleyiYikar(wave, can) {
   const room = oda();
+  room.wave = wave;
   const kule = kur(room, "warrior-1", 5, 4);
-  kule.maxHp = 130;
-  kule.hp = 130;
+  kule.maxHp = can;
+  kule.hp = can;
+  const zirh = kule.armor;
   const avci = ozel(room, "hunter", 5, 3);
   let saniye = 0;
+  let vurus = 0;
+  let onceki = kule.hp;
   const dt = 0.05;
   while (kule.hp > 0 && saniye < 60) {
     room.updateEnemies(dt);
     saniye += dt;
+    if (kule.hp < onceki) {
+      vurus += 1;
+      onceki = kule.hp;
+    }
   }
-  assert.equal(kule.hp, 0, "avci kuleyi yikamadi");
-  assert.ok(saniye >= 8 && saniye <= 15, `yikim ${saniye.toFixed(1)} sn surdu`);
+  assert.equal(kule.hp, 0, `${wave}. dalga: avci kuleyi yikamadi`);
   assert.ok(room.enemies.has(avci.id));
+  return { vurus, saniye, zirh };
+}
+
+test("avcının yapı vuruşu dalgayla sertleşiyor (taban 14 × dalga çarpanı, zırhtan önce) ama tek vuruşluk değil", () => {
+  assert.equal(TOWER_HUNTER_HIT_DAMAGE, 14);
+  // [dalga, kule cani, beklenen vurus]: 10. dalgada 25,8 ham / 22,8 net,
+  // 20. dalgada 35 ham / 32 net (kule zirhi 3).
+  const tablo = [
+    [1, 100, 7], [1, 160, 12],
+    [10, 100, 5], [10, 160, 8],
+    [20, 100, 4], [20, 160, 5]
+  ];
+  for (const [wave, can, beklenenVurus] of tablo) {
+    const { vurus, saniye, zirh } = avciKuleyiYikar(wave, can);
+    const net = TOWER_HUNTER_HIT_DAMAGE * getEnemyStructureDamageMultiplier(wave) - zirh;
+    assert.equal(vurus, Math.ceil(can / net), `${wave}. dalga, ${can} can: vurus sayisi carpani izlemiyor`);
+    assert.equal(vurus, beklenenVurus, `${wave}. dalga, ${can} can`);
+    // Ilk vurus yaklasinca; gerisi kadansla. Ust sinir: vurus basina bir aralik.
+    assert.ok(saniye <= vurus * TOWER_HUNTER_ATTACK_INTERVAL_MS / 1000 + 0.2, `${wave}. dalga: yikim ${saniye.toFixed(1)} sn surdu`);
+  }
+  // Sert ama aninda degil: son dalgada bile taban kule birkac vurus dayaniyor.
+  const son = avciKuleyiYikar(20, 100);
+  assert.ok(son.vurus >= 3 && son.saniye >= 2, `20. dalgada kule ${son.vurus} vurusta, ${son.saniye.toFixed(1)} sn'de dustu`);
+  // Dalga ilerledikce ayni kule daha cabuk dusuyor.
+  assert.ok(avciKuleyiYikar(6, 130).saniye > avciKuleyiYikar(20, 130).saniye);
 });
 
 test("bütün kuleler duvarla kapalıysa en yakın kuleye giden yoldaki, kuleye en yakın duvarı kırıyor", () => {
@@ -322,7 +362,7 @@ test("karşı atak şeridindeki her yapıyı bir kez, azami canın payı kadar v
       room.updateCounterSurge(saat.now);
     }
     for (const tower of icerdekiler) {
-      const beklenen = canlar.get(tower.id) - maxlar.get(tower.id) * COUNTER_SURGE_DAMAGE_RATIO;
+      const beklenen = canlar.get(tower.id) - maxlar.get(tower.id) * getCounterSurgeDamageRatio(room.wave);
       assert.ok(Math.abs(tower.hp - beklenen) < 0.001, `${tower.definition.id} bir kez vurulmadi: ${tower.hp} (beklenen ${beklenen})`);
     }
     assert.equal(disari.hp, disari.maxHp, "seridin disindaki kule vuruldu");
@@ -491,11 +531,58 @@ test("başlamış karşı atak dalga bitse de haritayı geçiyor ve alt yarıdak
       if (!room.counterSurge) break;
     }
     assert.ok(alt.hp < alt.maxHp, "alt yaridaki kule vurulmadi");
-    assert.ok(Math.abs(alt.hp - alt.maxHp * (1 - COUNTER_SURGE_DAMAGE_RATIO)) < 0.001, "alt kule bir kez vurulmadi");
+    // Serit 6. dalgada kalkti, alt kuleye 7. dalganin arasinda vardi: oran
+    // kalktigi dalganin (6) orani, vardigi dalganin (7) degil.
+    assert.equal(room.wave, 7);
+    assert.notEqual(getCounterSurgeDamageRatio(6), getCounterSurgeDamageRatio(7));
+    assert.ok(Math.abs(ust.hp - ust.maxHp * (1 - getCounterSurgeDamageRatio(6))) < 0.001, "ust kule kalkis dalgasinin oraniyla vurulmadi");
+    assert.ok(Math.abs(alt.hp - alt.maxHp * (1 - getCounterSurgeDamageRatio(6))) < 0.001, `alt kule kalkis dalgasinin oraniyla bir kez vurulmadi: ${alt.hp}`);
     assert.equal(room.counterSurge, undefined, "serit haritayi gecince kalkmadi");
     const hits = room.sent.filter((entry) => entry.type === "surge:hit" && entry.payload.id === id).flatMap((entry) => entry.payload.hits);
     assert.ok(hits.some((hit) => hit.towerId === alt.id));
   });
+});
+
+test("karşı atağın hasar payı dalgayla büyüyor: 4. dalga %45, 12. dalga %65, 20. dalga %85; tavan %90", () => {
+  assert.equal(COUNTER_SURGE_FIRST_WAVE, 4);
+  assert.equal(COUNTER_SURGE_DAMAGE_RATIO_BASE, 0.45);
+  assert.equal(COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE, 0.025);
+  assert.equal(COUNTER_SURGE_DAMAGE_RATIO_MAX, 0.9);
+  const yakin = (a, b, mesaj) => assert.ok(Math.abs(a - b) < 1e-9, `${mesaj}: ${a} (beklenen ${b})`);
+  yakin(getCounterSurgeDamageRatio(4), 0.45, "4. dalga");
+  yakin(getCounterSurgeDamageRatio(5), 0.475, "5. dalga");
+  yakin(getCounterSurgeDamageRatio(12), 0.65, "12. dalga");
+  yakin(getCounterSurgeDamageRatio(20), 0.85, "20. dalga");
+  // Sinirlar: ilk dalgadan once taban, tavanin ustu yok, bozuk girdi taban.
+  yakin(getCounterSurgeDamageRatio(1), 0.45, "1. dalga");
+  yakin(getCounterSurgeDamageRatio(-3), 0.45, "eksi dalga");
+  yakin(getCounterSurgeDamageRatio(22), 0.9, "22. dalga");
+  yakin(getCounterSurgeDamageRatio(500), 0.9, "500. dalga");
+  yakin(getCounterSurgeDamageRatio(Number.NaN), 0.45, "NaN");
+  for (let wave = 4; wave < 20; wave += 1) {
+    yakin(getCounterSurgeDamageRatio(wave + 1) - getCounterSurgeDamageRatio(wave), COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE, `${wave}. dalga adimi`);
+  }
+
+  // Gercek odada: serit kalktigi dalganin payiyla vuruyor, zirh delinerek.
+  for (const [wave, pay] of [[4, 0.45], [12, 0.65], [20, 0.85]]) {
+    sahteSaat((saat) => {
+      const room = oda(3);
+      room.wave = wave;
+      const kule = kur(room, "warrior-1", 5, 3);
+      const sur1 = duvar(room, 5, 8, "bottom");
+      assert.ok(kule.armor > 0, "kulenin zirhi yok; delme olculemiyor");
+      room.startCounterSurge(4, 3, saat.now);
+      assert.ok(Math.abs(room.counterSurge.damageRatio - pay) < 1e-9, `${wave}. dalga: serit payi ${room.counterSurge.damageRatio}`);
+      for (let t = 0; t <= SURGE_UYARI_MS + SURGE_GECIS_MS + 500; t += 50) {
+        saat.now += 50;
+        room.updateCounterSurge(saat.now);
+      }
+      for (const yapi of [kule, sur1]) {
+        assert.ok(Math.abs(yapi.hp - yapi.maxHp * (1 - pay)) < 0.001, `${wave}. dalga, ${yapi.definition.id}: ${yapi.hp} / ${yapi.maxHp}`);
+      }
+      assert.equal(room.teamHealth, 100, "serit nexusa vurdu");
+    });
+  }
 });
 
 for (const result of ["victory", "defeat"]) {

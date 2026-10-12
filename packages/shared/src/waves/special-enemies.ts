@@ -67,14 +67,16 @@ export const SPECIAL_BASE_TYPE: EnemyType = "grunt";
 // --- Kule avcisi ---------------------------------------------------------------
 
 /**
- * Avcinin yapiya bir vurusu (zirhtan once). Kadans normal yapi vurusuyla ayni
- * (`TOWER_HUNTER_ATTACK_INTERVAL_MS`).
+ * Avcinin yapiya bir vurusunun **tabani** (zirhtan ve dalga carpanindan once).
+ * Kadans normal yapi vurusuyla ayni (`TOWER_HUNTER_ATTACK_INTERVAL_MS`).
  *
+ * Uzerine butun dusman -> yapi hasarinin ortak dalga carpani biniyor
+ * (`getEnemyStructureDamageMultiplier`: 1. dalga x1,25, 20. dalga x2,5).
  * Olcu: kule cani seviyeyle degil kart ve esyayla buyuyor (taban 100, zirh 3).
- * 14 ham hasar 11 net; 100 canli kule 10 vurusta, ~8,5 sn'de; 160 canli
- * (kartli) kule 15 vurusta, ~12,8 sn'de devriliyor. Tehlikeli ama aninda degil.
- * Kusatmanin yapi carpani avciya binmiyor: kusatma turundeki avci kuleyi bir
- * saniyede indirirdi.
+ * 10. dalgada 14 x 1,84 = 25,8 ham, 22,8 net: 100 canli kule 5 vurusta,
+ * 160 canli (kartli) kule 8 vurusta devriliyor; 20. dalgada 35 ham, 32 net:
+ * 4 ve 5 vurus. Kusatmanin yapi carpani avciya binmiyor: kusatma turundeki
+ * avci kuleyi tek vurusta indirirdi.
  */
 export const TOWER_HUNTER_HIT_DAMAGE = 14;
 export const TOWER_HUNTER_ATTACK_INTERVAL_MS = 850;
@@ -212,11 +214,30 @@ export const COUNTER_SURGE_WIDTH_COLUMNS = 3;
 export const COUNTER_SURGE_TELEGRAPH_MS = 3000;
 /** Haritayi yukaridan asagi gecme suresi (ms); harita boyundan bagimsiz. */
 export const COUNTER_SURGE_CROSS_MS = 32_000;
-/** Yapinin azami canina gore hasar; zirh delinir. Yapi basina bir kez. */
-export const COUNTER_SURGE_DAMAGE_RATIO = 0.35;
+/**
+ * Yapinin azami canina gore hasar; zirh delinir. Yapi basina bir kez.
+ *
+ * Sahibinin istegiyle sabit 0,35'ten dalgayla buyuyen bir paya: seridin
+ * basladigi ilk dalgada (`COUNTER_SURGE_FIRST_WAVE`) taban, her dalgada bir
+ * adim, tavanda kesiliyor. 4. dalga %45, 12. dalga %65, 20. dalga %85.
+ */
+export const COUNTER_SURGE_DAMAGE_RATIO_BASE = 0.45;
+export const COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE = 0.025;
+export const COUNTER_SURGE_DAMAGE_RATIO_MAX = 0.9;
 /** Seridin dalganin hangi diliminde basladigi (gercek dogum sirasina gore). */
 export const COUNTER_SURGE_START_MIN_SHARE = 0.25;
 export const COUNTER_SURGE_START_SPAN_SHARE = 0.35;
+
+/**
+ * Seridin basladigi dalgaya gore hasar payi. Serit bu payi kalkarken aliyor
+ * ve bir sonraki dalgaya sarksa da onu koruyor (bkz. sunucuda
+ * `startCounterSurge`). Ilk dalgadan once ve gecersiz girdide taban.
+ */
+export function getCounterSurgeDamageRatio(wave: number) {
+  const steps = Number.isFinite(wave) ? wave - COUNTER_SURGE_FIRST_WAVE : 0;
+  const ratio = COUNTER_SURGE_DAMAGE_RATIO_BASE + COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE * steps;
+  return Math.max(COUNTER_SURGE_DAMAGE_RATIO_BASE, Math.min(COUNTER_SURGE_DAMAGE_RATIO_MAX, ratio));
+}
 
 export function getCounterSurgeChance(stage: number, wave: number) {
   if (stage < SPECIAL_ENEMIES_FIRST_STAGE || wave < COUNTER_SURGE_FIRST_WAVE) return 0;
