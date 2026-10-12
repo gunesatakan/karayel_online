@@ -7087,7 +7087,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin.
       const championScale = enemy.champion ? CHAMPION_SPRITE_SCALE : 1;
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale / 512;
-      mover.sprite.setScale(baseSpriteScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
+      const artScale = enemy.special === "bomber" ? BOMBER_ART_SCALE[enemy.race] : 1;
+      mover.sprite.setScale(baseSpriteScale * artScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
       mover.sprite.setAlpha(enemy.movementKind === "air" ? 0.98 : 0.68 + 0.32 * (enemy.hp / enemy.maxHp));
       const baseTint = enemy.isDominated ? 0xf0abfc : enemy.isWhisperTurned ? 0xa78bfa : slowTierLevel > 0 ? getZeynepSlowTint(slowTierLevel) : enemy.shield > 0 ? 0xbfdbfe : enemy.movementKind === "air" ? 0x67e8f9 : 0xffffff;
       // Vurus flasi burada, tonun her karede yeniden yazildigi yerde: baska
@@ -11629,6 +11630,19 @@ const ENEMY_DISPLAY_SIZE: Readonly<Record<string, number>> = {
   brute: 43.2,
   runner: 40,
   shooter: 38
+};
+
+/** Match each bomber's visible longest side to its race's grunt sprite.
+ * Measured at alpha >= 32 on the 512px assets; transparent padding must not
+ * make a bomber look larger. Only artwork changes, not hitboxes or markers.
+ */
+const BOMBER_ART_SCALE: Readonly<Record<EnemySnapshot["race"], number>> = {
+  meka: 430 / 451,
+  spaceBug: 476 / 477,
+  fourthDimensional: 476 / 490,
+  holyGuardian: 476 / 471,
+  fallen: 476 / 479,
+  golem: 476 / 487
 };
 
 function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
