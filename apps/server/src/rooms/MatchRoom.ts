@@ -1,4 +1,4 @@
-import { RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
+import { RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
@@ -2108,6 +2108,7 @@ export class MatchRoom extends Room<MatchState> {
    * yani olen isciyi silmek yetmez -- bir sonraki tick geri gelirdi. Sayac
    * o yeniden kurmayi geciktiren tek sey.
    */
+  private resourceNodeRemaining = new Map<string, number>();
   private workerAssignments = new Map<string, WorkerAssignment>();
   private workerRespawnAt = new Map<string, number>();
   private crystalTrapUntil = new Map<string, number>();
@@ -8304,13 +8305,24 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  private getNodeRemaining(id: string) {
+    return this.resourceNodeRemaining.get(id) ?? RESOURCE_NODE_INITIAL_AMOUNT;
+  }
+
+  private extractNodeResource(id: string, requested: number) {
+    const remaining = this.getNodeRemaining(id);
+    const extracted = Math.max(0, Math.min(remaining, requested));
+    this.resourceNodeRemaining.set(id, remaining - extracted);
+    return extracted;
+  }
+
   private getMaterialNodes() {
     const kinds: ResourceKind[] = ["gunpowder", "mystic", "plasma", "iron"];
     const origin = getMapOrigin(this.activeMap);
     const grid = getMapGridSize(this.activeMap);
     return kinds.map((kind, index) => {
       const existing = this.getAmmoNodes()[index];
-      return { id: existing?.id ?? "iron-1", kind,
+      return { id: existing?.id ?? "iron-1", kind, remaining: this.getNodeRemaining(existing?.id ?? "iron-1"),
         x: existing?.x ?? origin.x + Math.max(1, Math.floor(this.activeMap.cols * 0.32)) * grid + grid / 2,
         y: existing?.y ?? origin.y + Math.max(2, Math.floor(this.activeMap.rows * 0.48)) * grid + grid / 2 };
     });
@@ -8391,6 +8403,10 @@ export class MatchRoom extends Room<MatchState> {
     if (gatherer) {
       const node = this.getEconomyNodes().find((entry) => entry.id === assignment.nodeId);
       if (!node) return;
+      if ((worker.cargo ?? 0) <= 0 && node.remaining <= 0) {
+        worker.extractionRemainingMs = undefined;
+        return;
+      }
       const kind = worker.cargoResource ?? node.kind;
       const stock = (tower: TowerModel) => kind === "energy" ? tower.energy : tower.materials?.[kind] ?? 0;
       const candidates = owned.filter((tower) => (kind === "energy" ? tower.definition.resourceProvider === "energy"
@@ -8406,7 +8422,7 @@ export class MatchRoom extends Room<MatchState> {
         const result = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * speed);
         worker.extractionRemainingMs = result.remainingMs;
         if (result.completed) {
-          worker.cargo = this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "gatherLoad", node.kind);
+          worker.cargo = this.extractNodeResource(node.id, this.getWorkerCapacity(worker) * this.getEconomyResearchMultiplier(worker, "gatherLoad", node.kind));
           worker.cargoResource = node.kind;
           worker.extractionRemainingMs = undefined;
         }
@@ -8472,6 +8488,7 @@ export class MatchRoom extends Room<MatchState> {
     const columns = [0.2, 0.5, 0.8];
     return columns.map((ratio, index) => ({
       id: `crystal-${index + 1}`,
+      remaining: this.getNodeRemaining(`crystal-${index + 1}`),
       x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
       y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.35 : 0.62)))) * gridSize + gridSize / 2
     }));
@@ -8503,6 +8520,7 @@ export class MatchRoom extends Room<MatchState> {
     const columns = [0.14, 0.56, 0.86];
     return columns.map((ratio, index) => ({
       id: `ammo-source-${index + 1}`,
+      remaining: this.getNodeRemaining(`ammo-source-${index + 1}`),
       x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
       y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.68 : 0.28)))) * gridSize + gridSize / 2
     }));
@@ -9116,13 +9134,14 @@ export class MatchRoom extends Room<MatchState> {
           worker.extractionRemainingMs = undefined;
           return;
         }
-        const node = this.getCrystalNodes()
+        const node = this.getCrystalNodes().filter((entry) => entry.remaining > 0)
           .sort((left, right) => distanceSq(reactor.x, reactor.y, left.x, left.y) - distanceSq(reactor.x, reactor.y, right.x, right.y))[0];
+        if (!node) { worker.extractionRemainingMs = undefined; return; }
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
           const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
           worker.extractionRemainingMs = extraction.remainingMs;
           if (extraction.completed) {
-            worker.cargo = Math.min(capacity, reactor.maxEnergy - reactor.energy);
+            worker.cargo = this.extractNodeResource(node.id, Math.min(capacity, reactor.maxEnergy - reactor.energy));
             worker.logisticsPhase = "deliver";
             worker.extractionRemainingMs = undefined;
             this.applyCrystalNodePickup(worker, node.id);
@@ -9158,13 +9177,14 @@ export class MatchRoom extends Room<MatchState> {
           worker.extractionRemainingMs = undefined;
           return;
         }
-        const node = this.getAmmoNodes()
+        const node = this.getAmmoNodes().filter((entry) => entry.remaining > 0)
           .sort((left, right) => distanceSq(factory.x, factory.y, left.x, left.y) - distanceSq(factory.x, factory.y, right.x, right.y))[0];
+        if (!node) { worker.extractionRemainingMs = undefined; return; }
         if (this.moveLogisticsWorker(worker, node.x, node.y, seconds)) {
           const extraction = advanceResourceExtraction(worker.extractionRemainingMs, seconds * 1000 * this.getWorkerGatherSpeedMultiplier(worker));
           worker.extractionRemainingMs = extraction.remainingMs;
           if (extraction.completed) {
-            worker.cargo = Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo);
+            worker.cargo = this.extractNodeResource(node.id, Math.min(capacity, factory.maxRawAmmo - factory.rawAmmo));
             worker.logisticsPhase = "deliver";
             worker.extractionRemainingMs = undefined;
           }

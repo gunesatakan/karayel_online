@@ -31,3 +31,7 @@ Subjects: (1) basic mechanical repair workshop with teal lighting and wrench emb
 Assets: `apps/web/public/images/towers/tower-supply-repair.png`, `tower-supply-repair-level-5.png`, and `apps/web/public/images/resources/resource-{energy,gunpowder,mystic,plasma,iron}.png`.
 
 Original generated images remain in the Codex generated-images directory for this chat. Runtime assets are included in Git; no runtime dependency on the image generation service.
+
+## Finite deposits
+
+Each map resource node starts with 2,000 shared units. Extraction deducts only the loaded amount, clamps the last partial load to the reserve and never regenerates on a new wave or worker respawn. A new match starts with fresh reserves. Exhausted nodes remain visible at reduced opacity with a zero count; assigned gatherers deliver their remaining cargo and wait for reassignment. Node labels and the worker roster show the remaining amount. Resource sprites are 25% smaller than the original size (0.7125 of one cell).

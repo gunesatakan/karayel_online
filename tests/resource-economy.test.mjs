@@ -179,3 +179,41 @@ test("emergency rebuild consumes depot parts and cannot bypass missing supply", 
   assert.equal(depot.repairParts, 20 - target.maxHp * 0.2 / REPAIR_HP_PER_PART);
   assert.equal(room.tryEmergencyRebuild(target), false);
 });
+
+
+test("finite deposits share reserves across workers and preserve the last partial load", () => {
+  const room = createRoom("warrior");
+  const depot = build(room, "repair-depot-1");
+  room.moveLogisticsWorker = () => true;
+  room.resourceNodeRemaining.set("iron-1", 7);
+  const first = worker(room, "crystalCollector", { nodeId: "iron-1" });
+  const second = { ...first, id: "second" }; room.drones.set(second.id, second);
+  room.updateAssignedWorker(first, 100);
+  room.updateAssignedWorker(second, 100);
+  assert.equal(first.cargo, 5);
+  assert.equal(second.cargo, 2);
+  assert.equal(room.getMaterialNodes().find(node => node.id === "iron-1").remaining, 0);
+  room.updateAssignedWorker(first, 1);
+  room.updateAssignedWorker(second, 1);
+  assert.equal(depot.materials.iron, 7);
+  room.updateAssignedWorker(first, 100);
+  room.updateAssignedWorker(second, 100);
+  assert.equal(first.cargo, 0);
+  assert.equal(second.cargo, 0);
+  assert.equal(depot.materials.iron, 7);
+  room.setupPhase = true; room.ensureLogisticsWorkers();
+  assert.equal(room.getNodeRemaining("iron-1"), 0);
+});
+
+test("all energy and material nodes have isolated finite reserves", () => {
+  const room = createRoom("warrior");
+  const nodes = room.getEconomyNodes();
+  for (const node of nodes) {
+    assert.equal(node.remaining, 2000);
+    assert.equal(room.extractNodeResource(node.id, 3000), 2000);
+    assert.equal(room.extractNodeResource(node.id, 1), 0);
+  }
+  assert.ok(room.getEconomyNodes().every(node => node.remaining === 0));
+  const freshRoom = createRoom("warrior");
+  assert.ok(freshRoom.getEconomyNodes().every(node => node.remaining === 2000));
+});

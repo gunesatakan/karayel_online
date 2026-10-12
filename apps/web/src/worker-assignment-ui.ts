@@ -27,7 +27,8 @@ export class WorkerAssignmentUi {
     if (this.selected && !workers.some((worker) => worker.id === this.selected)) this.selected = undefined;
     const key = JSON.stringify([getLocale(), this.open, this.selected, this.product,
       workers.map((worker) => [worker.id, worker.mode, worker.assignment, Math.floor(worker.cargo ?? 0)]),
-      snapshot.towers.map((tower) => [tower.id, tower.name])]);
+      snapshot.towers.map((tower) => [tower.id, tower.name]),
+      [...snapshot.crystalNodes, ...snapshot.ammoNodes].map((node) => [node.id, node.remaining])]);
     if (key === this.key) return;
     this.key = key;
     this.root.replaceChildren();
@@ -71,11 +72,12 @@ export class WorkerAssignmentUi {
         const row = document.createElement("button");
         const gather = worker.mode === "crystalCollector" || worker.mode === "ammoCollector";
         const role = gather ? tr ? "Toplama" : "Gatherer" : worker.mode === "repairer" ? tr ? "Onarım" : "Repairer" : tr ? "Taşıma" : "Carrier";
-        const node = snapshot.ammoNodes.find((entry) => entry.id === worker.assignment?.nodeId);
+        const node = [...snapshot.crystalNodes.map((entry) => ({ ...entry, kind: "energy" as const })), ...snapshot.ammoNodes].find((entry) => entry.id === worker.assignment?.nodeId);
         const source = snapshot.towers.find((tower) => tower.id === worker.assignment?.sourceTowerId);
         const job = gather ? names[node?.kind ?? "energy"] : worker.mode === "repairer" ? tr ? "Onarım parçası" : "Repair parts"
           : worker.assignment?.product === "energy" ? tr ? "Enerji" : "Energy" : names[AMMO_RECIPES[worker.assignment?.product as keyof typeof AMMO_RECIPES] ?? "gunpowder"];
-        row.textContent = `${index + 1}. ${role} · ${job} · ${source?.name ?? worker.assignment?.nodeId ?? (tr ? "Otomatik merkez" : "Automatic source")} · ${tr ? "Yük" : "Cargo"}: ${Math.floor(worker.cargo ?? 0)}`;
+        const reserve = gather && node?.remaining !== undefined ? ` · ${tr ? "Kalan" : "Remaining"}: ${Math.floor(node.remaining)}${node.remaining === 0 ? tr ? " (Tükendi)" : " (Depleted)" : ""}` : "";
+        row.textContent = `${index + 1}. ${role} · ${job} · ${source?.name ?? worker.assignment?.nodeId ?? (tr ? "Otomatik merkez" : "Automatic source")} · ${tr ? "Yük" : "Cargo"}: ${Math.floor(worker.cargo ?? 0)}${reserve}`;
         row.onclick = () => { this.selected = worker.id; this.product = worker.assignment?.product ?? "energy"; this.open = false; this.key = ""; this.update(snapshot, owner); };
         list.append(row);
       });

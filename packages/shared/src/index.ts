@@ -807,12 +807,14 @@ export type DroneSnapshot = {
 };
 
 export type CrystalNodeSnapshot = {
+  remaining?: number;
   id: string;
   x: number;
   y: number;
 };
 
 export type AmmoNodeSnapshot = {
+  remaining?: number;
   kind?: import("./resource-economy.js").ResourceKind;
   id: string;
   x: number;

@@ -998,6 +998,7 @@ export class GameScene extends Phaser.Scene {
   private workerBanGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
+  private resourceAmountLabels = new Map<string, Phaser.GameObjects.Text>();
   private resourceSprites = new Map<string, Phaser.GameObjects.Image>();
   private ammoNodeGraphics?: Phaser.GameObjects.Graphics;
   private selectedResourceGraphics?: Phaser.GameObjects.Graphics;
@@ -8941,10 +8942,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.renderResourceSprites(nodes.map((node) => ({ ...node, kind: node.kind ?? "gunpowder" })), "materials");
   }
 
-  private renderResourceSprites(nodes: Array<{ id: string; x: number; y: number; kind: string }>, group: string) {
+  private renderResourceSprites(nodes: Array<{ id: string; x: number; y: number; kind: string; remaining?: number }>, group: string) {
     const current = new Set(nodes.map((node) => `${group}:${node.id}`));
     for (const [id, sprite] of this.resourceSprites) {
-      if (id.startsWith(`${group}:`) && !current.has(id)) { sprite.destroy(); this.resourceSprites.delete(id); }
+      if (id.startsWith(`${group}:`) && !current.has(id)) { sprite.destroy(); this.resourceSprites.delete(id); this.resourceAmountLabels.get(id)?.destroy(); this.resourceAmountLabels.delete(id); }
     }
     for (const node of nodes) {
       const id = `${group}:${node.id}`;
@@ -8953,7 +8954,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         sprite = this.add.image(node.x, node.y, `resource-${node.kind}`).setDepth(8);
         this.resourceSprites.set(id, sprite);
       }
-      sprite.setPosition(node.x, node.y).setDisplaySize(this.getMapCellSize() * 0.95, this.getMapCellSize() * 0.95);
+      const cell = this.getMapCellSize();
+      sprite.setPosition(node.x, node.y).setDisplaySize(cell * 0.95 * 0.75, cell * 0.95 * 0.75)
+        .setAlpha(node.remaining === 0 ? 0.25 : 1);
+      let label = this.resourceAmountLabels.get(id);
+      if (!label || !label.active) {
+        label = this.add.text(node.x, node.y, "", { fontFamily: "monospace", color: "#e2e8f0", stroke: "#080e18", strokeThickness: 2 }).setOrigin(0.5, 0).setDepth(9);
+        this.resourceAmountLabels.set(id, label);
+      }
+      label.setPosition(node.x, node.y + cell * 0.36).setFontSize(Math.max(8, cell * 0.17))
+        .setText(node.remaining === undefined ? "" : String(Math.floor(node.remaining)))
+        .setAlpha(node.remaining === 0 ? 0.5 : 1);
     }
   }
 

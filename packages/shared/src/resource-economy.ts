@@ -1,5 +1,7 @@
 import type { AmmoType } from "./characters/common/types.js";
 
+/** Shared finite reserve per map node; persists across waves. */
+export const RESOURCE_NODE_INITIAL_AMOUNT = 2000;
 export const RESOURCE_KINDS = ["energy", "gunpowder", "mystic", "plasma", "iron"] as const;
 export type ResourceKind = typeof RESOURCE_KINDS[number];
 export type TransportProduct = "energy" | AmmoType;
