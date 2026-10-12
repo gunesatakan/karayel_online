@@ -15,9 +15,9 @@ import { TOWER_GRID_SIZE } from "../index.js";
  * 1. asama hic degismiyor: oyuncu once temel dili ogreniyor. Butun sayilar
  * burada; sunucu ve testler ayni tablodan okuyor.
  */
-export type SpecialEnemyKind = "hunter" | "heater" | "eater";
+export type SpecialEnemyKind = "hunter" | "heater" | "eater" | "bomber";
 
-export const SPECIAL_ENEMY_KINDS: readonly SpecialEnemyKind[] = ["hunter", "heater", "eater"];
+export const SPECIAL_ENEMY_KINDS: readonly SpecialEnemyKind[] = ["hunter", "heater", "eater", "bomber"];
 
 /** Ozel dusmanlarin ve karsi atagin basladigi asama. */
 export const SPECIAL_ENEMIES_FIRST_STAGE = 2;
@@ -32,14 +32,25 @@ export const SPECIAL_ENEMIES_FIRST_STAGE = 2;
 export const SPECIAL_KIND_FIRST_WAVE: Readonly<Record<SpecialEnemyKind, Readonly<Record<number, number>>>> = {
   heater: { 2: 1, 3: 1, 4: 1, 5: 1 },
   eater: { 2: 3, 3: 2, 4: 1, 5: 1 },
-  hunter: { 2: 6, 3: 4, 4: 3, 5: 2 }
+  hunter: { 2: 6, 3: 4, 4: 3, 5: 2 },
+  bomber: { 2: 8, 3: 6, 4: 4, 5: 3 }
 };
 
 /**
  * Turun secilme agirligi. Avci sampiyon canli oldugu icin en seyrek;
  * isitici en sik (tek basina en az tehlikeli olan).
  */
-export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = { heater: 3, eater: 2, hunter: 1 };
+export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = { heater: 3, eater: 2, hunter: 1, bomber: 1 };
+
+export const BOMBER_RADIUS_CELLS = 1.5;
+export const BOMBER_HP_MULTIPLIER = 6;
+export const BOMBER_ARMOR_MULTIPLIER = 4;
+
+/** Raw structure damage, before armor. A killed bomber releases half its charge. */
+export function getBomberExplosionDamage(wave: number, killed = false) {
+  const steps = Number.isFinite(wave) ? Math.max(0, Math.floor(wave) - 1) : 0;
+  return (100 + steps * 15) * (killed ? 0.5 : 1);
+}
 
 /** Bir dalgada en fazla kac kule avcisi; asamaya gore. Sahibinin istegiyle iki kat (once 1/1/2/2). */
 export const TOWER_HUNTER_MAX_PER_WAVE: Readonly<Record<number, number>> = { 2: 2, 3: 2, 4: 4, 5: 4 };
@@ -191,6 +202,7 @@ export type SpecialEnemyDurability = {
  * (`TowerHunterBudget.hpMultiple`). Karsi atak dusman degil: cani da zirhi da yok.
  */
 export function getSpecialEnemyDurability(kind: SpecialEnemyKind, championHpMultiple = 1): SpecialEnemyDurability {
+  if (kind === "bomber") return { healthMultiplier: BOMBER_HP_MULTIPLIER, armorMultiplier: BOMBER_ARMOR_MULTIPLIER };
   if (kind === "hunter") {
     return { healthMultiplier: championHpMultiple * TOWER_HUNTER_HP_MULTIPLIER, armorMultiplier: TOWER_HUNTER_ARMOR_MULTIPLIER };
   }

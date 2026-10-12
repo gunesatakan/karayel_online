@@ -47,6 +47,9 @@ export class PreloaderScene extends Phaser.Scene {
     for (const art of [...listTieredTowerArt(), ...listSupplyTowerArt()]) {
       this.load.image(art.key, assetUrl(art.path));
     }
+    for (const race of ["meka", ...ENEMY_RACE_TEXTURES]) {
+      this.load.image(`enemy-${race}-bomber`, assetUrl(`images/enemies/enemy-${race}-bomber.png`));
+    }
     for (const race of ENEMY_RACE_TEXTURES) {
       for (const type of ENEMY_TYPE_TEXTURES) {
         this.load.image(`enemy-${race}-${type}`, assetUrl(`images/enemies/enemy-${race}-${type}.png`));

@@ -28,6 +28,7 @@ export const SURGE_COLOR = 0xd0603e;
 export const SURGE_EDGE_COLOR = 0xfff0e6;
 
 export const SPECIAL_MARK_COLORS: Readonly<Record<SpecialEnemyKind, number>> = {
+  bomber: 0xff782e,
   hunter: HUNTER_MARK_COLOR,
   heater: HEATER_MARK_COLOR,
   eater: EATER_MARK_COLOR
@@ -38,7 +39,7 @@ export const SURGE_HIT_MAX_ENTRIES = 96;
 const MAX_ID_LENGTH = 64;
 
 export function isSpecialEnemyKind(value: unknown): value is SpecialEnemyKind {
-  return value === "hunter" || value === "heater" || value === "eater";
+  return value === "bomber" || value === "hunter" || value === "heater" || value === "eater";
 }
 
 /**
@@ -198,7 +199,12 @@ export function drawSpecialEnemyMarker(
   heaterRadius: number,
   options: DrawOptions
 ) {
-  if (kind === "hunter") drawHunterBrackets(graphics, x, y, size, options);
+  if (kind === "bomber") {
+    graphics.lineStyle(2, SPECIAL_MARK_COLORS.bomber, 0.85);
+    graphics.strokeCircle(x, y, Math.max(8, size * 0.55));
+    graphics.lineBetween(x, y - size * 0.55, x + 4, y - size * 0.55 - 5);
+  }
+  else if (kind === "hunter") drawHunterBrackets(graphics, x, y, size, options);
   else if (kind === "heater") drawHeaterRing(graphics, x, y, size, heaterRadius, options);
   else drawEaterHex(graphics, x, y, size, options);
 }

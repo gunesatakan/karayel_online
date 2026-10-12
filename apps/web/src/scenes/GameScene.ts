@@ -600,6 +600,7 @@ const CHAMPION_CROWN_DEPTH = 16.2;
 const CHAMPION_LABEL_LIFT_PX = 16;
 /** Ozel dusmanin ilk gorulme bildirimi (macta tur basina bir kez). */
 const SPECIAL_NOTICE_KEYS = {
+  bomber: "scene.special.bomber",
   hunter: "scene.special.hunter",
   heater: "scene.special.heater",
   eater: "scene.special.eater"
@@ -5414,6 +5415,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindRoomHandlers(room: Room) {
+    room.onMessage("bomber:explode", (message: { x: number; y: number; radius: number; killed: boolean }) => {
+      if (!message || ![message.x, message.y, message.radius].every(Number.isFinite) || message.radius <= 0) return;
+      const diameter = Math.min(1000, message.radius * 2);
+      const still = this.feedback?.reducedMotion ?? false;
+      this.flashPool?.flash({ x: message.x, y: message.y, texture: "ring", tint: 0xff782e,
+        alpha: message.killed ? 0.45 : 0.8, sizeFrom: still ? diameter : 10, sizeTo: diameter,
+        durationMs: 420, bornAt: performance.now() });
+    });
     // Yeni oda (ilk baglanti ya da yeniden baglanma): eski odanin isin
     // kimlikleri yeni odada baska isinlar olabilir.
     this.beamHitTracker.clear();
@@ -11630,6 +11639,7 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {
+  if (enemy.special === "bomber") return `enemy-${enemy.race}-bomber`;
   // Kusatma kocunun kendi gorseli henuz yok; brute silueti en yakin duran.
   // Boyut ve renk ayri veriliyor, yani sahada ikisi karistirilmiyor.
   const artType = enemy.type === "siege" ? "brute" : enemy.type;

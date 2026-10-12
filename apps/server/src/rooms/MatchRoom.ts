@@ -401,6 +401,8 @@ import {
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
   HEATER_HEAT_PER_SECOND_RATIO,
   HEATER_RADIUS_CELLS,
+  BOMBER_RADIUS_CELLS,
+  getBomberExplosionDamage,
   SPECIAL_BASE_TYPE,
   SPECIAL_ENEMIES_FIRST_STAGE,
   SPECIAL_ROUTE_BLOCKER_COST,
@@ -1304,6 +1306,7 @@ class SpecialRouteHeap {
 }
 
 type SpecialEnemyState = {
+  detonated?: boolean;
   kind: SpecialEnemyKind;
   budget?: { replaced: number; gold: number; exp: number; leakDamage: number; reputation: number };
   /** Enerji yiyici: su anda emilen bina; yalnizca emerken. */
@@ -2251,7 +2254,7 @@ export class MatchRoom extends Room<MatchState> {
   /** Isiticinin tick ici tekrar onleyici listesi (tahsis yok). */
   private readonly heaterScratch: TowerModel[] = [];
   /** Ozel dusman yol alanlari; yapi degisince atiliyor. `null`: hedef yok. */
-  private specialRouteFields = new Map<"hunter" | "eater", SpecialRouteField | null>();
+  private specialRouteFields = new Map<"hunter" | "eater" | "bomber", SpecialRouteField | null>();
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
   private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
@@ -3777,6 +3780,11 @@ export class MatchRoom extends Room<MatchState> {
         start: this.pickSpecialTopSpawn(random),
         budget: { replaced: budget.replaced, gold: budget.gold, exp: budget.exp, leakDamage: budget.leakDamage, reputation: budget.reputation }
       });
+      return;
+    }
+    if (spawn.kind === "bomber") {
+      this.spawnEnemy(undefined, { kind: "bomber", type: SPECIAL_BASE_TYPE,
+        ...getSpecialEnemyDurability("bomber"), start: this.pickSpecialTopSpawn(random) });
       return;
     }
     if (spawn.kind === "eater") {
@@ -7813,6 +7821,7 @@ export class MatchRoom extends Room<MatchState> {
       if (undeadBlocker) {
         undeadBlocker.hp -= enemy.maxHp * 0.18 * seconds;
         if (undeadBlocker.hp <= 0) {
+          this.detonateBomber(undeadBlocker, true);
           this.enemies.delete(undeadBlocker.id);
         }
       }
@@ -7900,7 +7909,10 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const nextCell = route.cells[1];
-      const movementTarget = nextCell ? gridToWorld(nextCell.col, nextCell.row, this.activeMap) : route.exitPoint;
+      const bomberContact = special?.kind === "bomber" ? specialRoute?.drainTower : undefined;
+      const movementTarget = bomberContact
+        ? gridToWorld(route.cells[0].col, route.cells[0].row, this.activeMap)
+        : nextCell ? gridToWorld(nextCell.col, nextCell.row, this.activeMap) : route.exitPoint;
       if (movementTarget && !isFeared && speedMultiplier > 0) {
         const point = movementTarget;
         const dx = point.x - enemy.x;
@@ -7912,6 +7924,10 @@ export class MatchRoom extends Room<MatchState> {
         enemy.pathDistance += movement;
       }
 
+      if (bomberContact && Math.hypot(bomberContact.x - enemy.x, bomberContact.y - enemy.y) <= getMapGridSize(this.activeMap) * 1.1) {
+        this.detonateBomber(enemy, false);
+        continue;
+      }
       if (special) {
         if (special.kind === "heater") this.applyHeaterHeat(enemy, seconds);
         else if (special.kind === "eater") this.updateEnergyDrain(special, specialRoute?.drainTower, seconds);
@@ -7929,6 +7945,23 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
+  /** One blast per bomber; killed bombs retain rewards through finishEnemyKill. */
+  private detonateBomber(enemy: EnemyModel, killed: boolean) {
+    const special = enemy.special;
+    if (special?.kind !== "bomber" || special.detonated) return;
+    special.detonated = true;
+    this.enemies.delete(enemy.id);
+    const radius = getMapGridSize(this.activeMap) * BOMBER_RADIUS_CELLS;
+    const damage = getBomberExplosionDamage(this.wave, killed);
+    // Copy before damage: destroyed structures can mutate the tower collection.
+    for (const tower of [...this.towers.values()]) {
+      if (tower.hp > 0 && Math.hypot(tower.x - enemy.x, tower.y - enemy.y) <= radius) {
+        this.damageTower(tower, damage);
+      }
+    }
+    this.broadcast("bomber:explode", { x: enemy.x, y: enemy.y, radius, killed });
+  }
+
   /**
    * Dusmanin yapiya vurusu.
    *
@@ -7936,8 +7969,7 @@ export class MatchRoom extends Room<MatchState> {
    * sallanmasi, tek fark mesafe. Kusatma carpani da burada, yoksa menzilli
    * hatta unutulurdu.
    *
-   * Dusmanin yapiya (kule, kaynak binasi, duvar) hasar verdigi **tek** yer
-   * burasi; dalga carpani (`getEnemyStructureDamageMultiplier`) bu yuzden
+   * Dusmanin normal yapi vuruslari buradan gecer (bombaci patlamasi ayri); dalga carpani (`getEnemyStructureDamageMultiplier`) bu yuzden
    * burada, zirhtan once biniyor: nisanci, kusatma, avci, sampiyon ve
    * siradan bitisik vurus ayni carpani aliyor. Isciye temas hasari
    * (`damageWorkerOnEnemyContact`) ve nexusa sizinti buradan gecmiyor,
@@ -7966,7 +7998,7 @@ export class MatchRoom extends Room<MatchState> {
    * Ozel dusmanin yol alani: once kesinlesmis olani, yoksa kurar. Hedef
    * yoksa `undefined` (dusman normal yola duser).
    */
-  private getSpecialRouteField(kind: "hunter" | "eater") {
+  private getSpecialRouteField(kind: "hunter" | "eater" | "bomber") {
     const cached = this.specialRouteFields.get(kind);
     if (cached !== undefined) return cached ?? undefined;
     const field = this.buildSpecialRouteField(kind);
@@ -7979,8 +8011,9 @@ export class MatchRoom extends Room<MatchState> {
    * kulesi, kaynak binasi, Tamir Merkezi), yiyici icin enerji binasi.
    * Kenara oturan yapilar (duvar, Abarti) hedef degil, engel.
    */
-  private isSpecialRouteTarget(kind: "hunter" | "eater", tower: TowerModel) {
+  private isSpecialRouteTarget(kind: "hunter" | "eater" | "bomber", tower: TowerModel) {
     if (tower.hp <= 0 || tower.definition.engine?.placement?.requiresEdge) return false;
+    if (kind === "bomber") return tower.definition.resourceProvider === "ammunition";
     return kind === "eater" ? tower.definition.resourceProvider === "energy" : !isWallDefinition(tower.definition);
   }
 
@@ -7994,7 +8027,7 @@ export class MatchRoom extends Room<MatchState> {
    * yoldan. Kirilacak duvar o yolun uzerindeki ilk engel, yani en yakin
    * hedefe giden yolun duvari. Harita en fazla 24x36: kurulum mikro saniye.
    */
-  private buildSpecialRouteField(kind: "hunter" | "eater"): SpecialRouteField | undefined {
+  private buildSpecialRouteField(kind: "hunter" | "eater" | "bomber"): SpecialRouteField | undefined {
     const cols = this.activeMap.cols;
     const rows = this.activeMap.rows;
     const size = cols * rows;
@@ -8063,7 +8096,7 @@ export class MatchRoom extends Room<MatchState> {
    * hedefe varmak (avci vurur, yiyici emer). Alan hucre basina bir sonraki
    * adimi tutuyor; burada yalnizca canli kontrol var, arama yok.
    */
-  private findSpecialEnemyRoute(enemy: EnemyModel, kind: "hunter" | "eater"): SpecialEnemyRoute | undefined {
+  private findSpecialEnemyRoute(enemy: EnemyModel, kind: "hunter" | "eater" | "bomber"): SpecialEnemyRoute | undefined {
     const field = this.getSpecialRouteField(kind);
     if (!field) return undefined;
     const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
@@ -8072,7 +8105,7 @@ export class MatchRoom extends Room<MatchState> {
     const standing = this.getTowerAtCell(start.col, start.row);
     if (standing && standing.hp > 0) {
       // Yapinin ustunde duruyor (ustune kuruldu): hedefse ona, degilse kirarak.
-      return kind === "eater" && field.target[index]
+      return (kind === "eater" || kind === "bomber") && field.target[index]
         ? { cells: [start], reachedBottom: false, targetTower: undefined, exitPoint: undefined, drainTower: standing }
         : { cells: [start], reachedBottom: false, targetTower: standing, exitPoint: undefined };
     }
@@ -8085,7 +8118,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     const occupant = this.getTowerAtCell(nextCell.col, nextCell.row);
     if (occupant && occupant.hp > 0) {
-      if (kind === "eater" && field.target[nextIndex]) {
+      if ((kind === "eater" || kind === "bomber") && field.target[nextIndex]) {
         return { cells: [start], reachedBottom: false, targetTower: undefined, exitPoint: undefined, drainTower: occupant };
       }
       return { cells: [start], reachedBottom: false, targetTower: occupant, exitPoint: undefined };
@@ -13361,6 +13394,7 @@ export class MatchRoom extends Room<MatchState> {
     // defter ve mermi dusurme sansi dusman basina.
     const killUnits = enemy.champion?.replaced ?? enemy.special?.budget?.replaced ?? 1;
     this.enemies.delete(enemy.id);
+    this.detonateBomber(enemy, true);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     let ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
     // Kritik oldurme primi oldurme olayinin "+N"ine de giriyor: oyuncu
@@ -14442,6 +14476,7 @@ export class MatchRoom extends Room<MatchState> {
   private removeMelisWhisperTurnedEnemy(enemy: EnemyModel) {
     if (!this.enemies.has(enemy.id)) return;
     if (!enemy.champion) {
+      if (enemy.hp <= 0) this.detonateBomber(enemy, true);
       this.enemies.delete(enemy.id);
       return;
     }
@@ -14724,6 +14759,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateMelisUndead(enemy: EnemyModel, seconds: number, now: number) {
     if (enemy.hp <= 0 || enemy.melisUndeadUntil <= now) {
+      if (enemy.hp <= 0) this.detonateBomber(enemy, true);
       this.enemies.delete(enemy.id);
       return;
     }

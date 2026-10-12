@@ -1574,6 +1574,7 @@ function renderBestiary() {
  * halka, altigen, asagi bakan sivri oklar (sert, parlamasiz).
  */
 const specialThreats = [
+  { id: "bomber", threat: "high", color: "#ff782e", glyph: '<circle cx="32" cy="36" r="18" /><path d="M32 18V10l10-4M28 28l8 16M36 28l-8 16" />' },
   { id: "hunter", threat: "high", color: "#c8473a", glyph: '<path d="M10 22V10h12M42 10h12v12M54 42v12H42M22 54H10V42M32 4v10" />' },
   { id: "heater", threat: "medium", color: "#c8743e", glyph: '<circle cx="32" cy="32" r="26" stroke-dasharray="6 6" stroke-width="1.5" /><path d="M32 18a14 14 0 0 1 12 7M44 39a14 14 0 0 1-12 7M20 39a14 14 0 0 1 0-14" />' },
   { id: "eater", threat: "medium", color: "#3fa7b5", glyph: '<path d="M50 32 41 47.6H23L14 32l9-15.6h18Z" /><path d="M41 32h18" stroke-width="1.5" /><path d="M48 30h4v4h-4z" fill="currentColor" />' },

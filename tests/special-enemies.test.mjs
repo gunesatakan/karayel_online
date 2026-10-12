@@ -25,6 +25,8 @@ import {
   HEATER_HP_MULTIPLIER,
   SPECIAL_ENEMY_COUNT_MULTIPLIER,
   SPECIAL_KIND_FIRST_WAVE,
+  SPECIAL_KIND_WEIGHTS,
+  getSpecialKindsForWave,
   SPECIAL_MAX_SLOT_SHARE,
   SPECIAL_MIN_NORMAL_SHARE,
   TOWER_HUNTER_ARMOR_MULTIPLIER,
@@ -1000,9 +1002,10 @@ test("avcı tablonun ilk dalgasından itibaren gerçekten çıkıyor; tam hava d
         continue;
       }
       // Secilen avci hic feda edilmiyor: oran, zarin kirpilmamis orani
-      // (agirlik 1/6, tablodaki sayi kadar zar) ile ayni.
+      // (aktif havuzdaki agirlik, tablodaki sayi kadar zar) ile ayni.
       const picks = getSpecialEnemyTotal(stage, wave);
-      const beklenen = 1 - (5 / 6) ** picks;
+      const weight = getSpecialKindsForWave(stage, wave).reduce((sum, kind) => sum + SPECIAL_KIND_WEIGHTS[kind], 0);
+      const beklenen = 1 - (1 - SPECIAL_KIND_WEIGHTS.hunter / weight) ** picks;
       assert.ok(rate >= 0.2, `${stage}/${wave}: avci orani ${rate}`);
       assert.ok(Math.abs(rate - beklenen) < 0.07, `${stage}/${wave}: avci orani ${rate.toFixed(3)}, zarin orani ${beklenen.toFixed(3)}`);
     }
