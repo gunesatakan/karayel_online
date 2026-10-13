@@ -1,0 +1,13 @@
+# Raw material warehouse sprites
+
+Generated with the built-in ImageGen tool. Transparent PNG, exported at 512×512, existing supply building footprint.
+Levels 1–4: `apps/web/public/images/towers/tower-supply-warehouse.png`.
+Level 5: `apps/web/public/images/towers/tower-supply-warehouse-level-5.png`.
+
+## Level 1 prompt
+
+Use case: stylized-concept. Asset: one RAW MATERIAL WAREHOUSE building sprite for Nexhold sci-fi top-down tower defense. Strict orthographic overhead TOP DOWN view. Circular industrial foundation, centered complete silhouette with 6% transparent margin all around, square canvas. Broad clearly readable storage building with four organized cargo compartments around a central freight elevator: stacked metal ingots, sealed powder drums, purple crystal containers, sealed plasma cylinders. Enclosed cargo bays, thick structural ribs, loading ramps integrated inside circular footprint. Painted realistic sci-fi game sprite, strong large shapes readable at 48 pixels, consistent with other circular tower sprites. No repair arms, no guns, no characters, no lettering or text, no floor beyond the circular foundation, no cast shadow outside the silhouette. Actual transparent alpha background. LEVEL 1 basic warehouse: low utilitarian profile, rugged dark steel and bronze frame, modest cyan-blue indicator lights, simple reinforced cargo bins. Recognizably a material storage depot.
+
+## Level 5 prompt
+
+Use case: stylized-concept. Asset: one RAW MATERIAL WAREHOUSE building sprite for Nexhold sci-fi top-down tower defense. Strict orthographic overhead TOP DOWN view. Circular industrial foundation, centered complete silhouette with 6% transparent margin all around, square canvas. Broad clearly readable storage building with four organized cargo compartments around a central freight elevator: stacked metal ingots, sealed powder drums, purple crystal containers, sealed plasma cylinders. Enclosed cargo bays, thick structural ribs, loading ramps integrated inside circular footprint. Painted realistic sci-fi game sprite, strong large shapes readable at 48 pixels, consistent with other circular tower sprites. No repair arms, no guns, no characters, no lettering or text, no floor beyond the circular foundation, no cast shadow outside the silhouette. Actual transparent alpha background. LEVEL 5 advanced warehouse: same footprint but more developed architecture, heavily reinforced bright brushed titanium silver outer plating, layered armored cargo vaults, prominent PURPLE freight-elevator core and purple conduit lighting, increased cargo organization and automation details. Clearly distinct premium silhouette and purple/silver palette versus the basic bronze/dark steel/cyan level 1.
