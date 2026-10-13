@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bountyboard/arcade-sdk": "1.4.12",
     "@karayel/shared": "0.1.0",
     "colyseus.js": "^0.16.19",
     "phaser": "^3.88.2"

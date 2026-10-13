@@ -52,6 +52,8 @@ import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
 import { getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
+import { arcade } from "../arcade";
+import { getArcadeRunScore } from "../arcade-score";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
@@ -1702,6 +1704,9 @@ export class GameScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
     this.installMapPointerInput();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      // Bounty Board: menuye donus oynanisi durdurur; bekleyen kayit hemen gider.
+      arcade.gameplayStop();
+      arcade.flushStorage();
       document.querySelector("#defense-dialog")?.remove();
       removeRunReport();
       for (const timer of this.runReportCueTimers) window.clearTimeout(timer);
@@ -4878,6 +4883,8 @@ export class GameScene extends Phaser.Scene {
     // zaten sonucu tasiyorsa istemci mac bittikten sonra girmis demek; o
     // kosunun kaydi ve ilerlemesi onun degil (`recordRunResult`).
     if (!snapshot.result) this.liveSnapshotSeen = true;
+    // Bounty Board: canli mac oynaniyor (kopru yinelenen cagriyi yutuyor).
+    if (!snapshot.result && !this.matchResultShown) arcade.gameplayStart();
     if (snapshot.stage !== undefined) this.roomStage = snapshot.stage;
     if (snapshot.result) {
       // Sonuc mesaji kacirildiysa (kopma, yeniden baglanma) ekran buradan
@@ -5869,6 +5876,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.hideCardChoices();
     const stage = this.roomStage ?? summary.stage;
     const creative = summary.creative === true || summary.run?.creative === true || this.creativeMode;
+    // Bounty Board: oynanis bitti, skor bir kez. Yaratici kosu skor tasimiyor;
+    // canli baslamamis kosuda kopru hicbir sey yollamiyor.
+    arcade.gameOver(creative ? 0 : getArcadeRunScore({ stage, wave: summary.wave }));
     // Mac bittikten sonra giren istemci (ilk snapshot sonucu tasiyordu) bu
     // zaferi oynamadi: asama onun yolunda acilmamali.
     const stageResult = result === "victory" && this.liveSnapshotSeen ? markStageCleared({ creative, stage }) : undefined;
@@ -5911,6 +5921,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       watch: this.badgeWatch
     });
     if (this.runProgressOutcome) this.badgeNotices.push(this.runProgressOutcome.badges);
+    // Rekor, arsiv, nisan ve ustalik yazildi: Bounty Board'da bulut kaydi hemen gitsin.
+    arcade.flushStorage();
   }
 
   /**

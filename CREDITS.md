@@ -74,6 +74,7 @@ beyanı bu yüzden "evet, grafik" olarak doldurulmalı. Lobi müziği Suno ile
 |---|---|---|---|
 | Phaser | Richard Davey, Phaser Studio Inc. | MIT | https://phaser.io |
 | Colyseus | Endel Dreyer | MIT | https://colyseus.io |
+| Bounty Board Arcade SDK | Bounty Board | MIT | https://www.bountyboard.gg/arcade/sdk |
 
 ## Geliştirici yapımı varlıklar
 
@@ -192,7 +193,7 @@ manifest.
   (`melis-creepy-unstoppable.png` carries a C2PA manifest), and Suno, under
   the Suno Terms of Service (the lobby music). Declare generative AI on
   itch.io and Steam.
-- Software: Phaser (MIT), Colyseus (MIT).
+- Software: Phaser (MIT), Colyseus (MIT), Bounty Board Arcade SDK (MIT).
 
 **Created by the developer (gunesatakan):** the streak/announcer clips, all 24
 enemy sprites, the tower sprites, the splash art, the Zeynep hands, the

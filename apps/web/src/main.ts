@@ -8,6 +8,7 @@ import { setupTutorial } from "./tutorial";
 import { installCatalogLocale } from "./catalog-locale";
 import { getCanvasSize } from "./rendering";
 import { startTelemetry } from "./telemetry-boot";
+import { arcade } from "./arcade";
 import "./style.css";
 
 const initialCanvas = getCanvasSize();
@@ -69,6 +70,8 @@ if (vfxGallery) {
   setupTutorial(game);
   // Anonim telemetri: galeri ve gelistirme sahnesi bu yoldan gecmiyor.
   startTelemetry(game);
+  // Bounty Board: dokular hazir, menu oynanabilir.
+  window.addEventListener("karayel:phaser-ready", () => arcade.loadingFinished(), { once: true });
 }
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
