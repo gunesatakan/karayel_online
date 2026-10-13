@@ -40,8 +40,9 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "tutorial.shop.title": "RESUPPLY",
   "tutorial.shop.body": "Buy items with gold. Most go to your inventory; equip them on a tower from Inventory, up to 10 per tower. Then Close Shop.",
   "tutorial.workers.title": "WORKERS",
-  "tutorial.workers.closed": "Open Inventory. Workers carry energy and ammo to your towers.",
-  "tutorial.workers.open": "Hire a worker with Hire Worker and pick its specialization. Upgrades live in the Worker Tree.",
+  "tutorial.workers.closed": "Open Worker. Workers carry energy and ammo to your towers.",
+  "tutorial.workers.tab": "Switch to the Hire section.",
+  "tutorial.workers.open": "Hire a worker with Hire Worker and pick its specialization. Assign jobs in Manage, upgrade in Tree.",
   "tutorial.done.title": "BRIEFING COMPLETE",
   "tutorial.done.body": "The sector is yours, operator. Replay the briefing: main menu › Tutorial.",
 

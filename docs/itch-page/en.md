@@ -26,7 +26,7 @@ The game is in closed testing, and your feedback helps a lot.
 - **Tower info:** tap a tower. Upgrade, sell or repair from its panel.
 - **Waves:** **Continue** at the top right starts the next wave.
 - **Skills and ultimate:** from the **Skills** drawer.
-- **Workers:** Inventory › **Hire Worker**. Grow them in the **Worker Tree**.
+- **Workers:** the **Worker** drawer. Assign jobs in **Manage**, hire in **Hire**, upgrade in **Tree**.
 - Works with a mouse too: click and drag.
 
 A short briefing walks you through your first match. Replay it any time with **Tutorial** on the main menu.

@@ -30,4 +30,4 @@ Seçimler işçi verimliliğini (kapasite, hız) artırmaz; teslimatın kule, fa
 - Mühimmat Taşıyıcı: kule teslimatı, boş şarjör, art arda teslimat, dolu hedef, işçi ölümü ve düşük can.
 - Tamirci: tamir başlangıcı, tamir sürmesi, tamir tamamlanması (yön seçimleri onarımı biten kuleye işler), ölümcül yapı hasarı ve nexus can eşiği.
 
-Her aktif durumun süresi, atış sayısı veya dalga sınırı vardır; aynı etki üst üste gelirse toplanmaz, en güçlü değer ve en uzun süre kalır. Sunucu bunları uygular. İstemci "İşçi Ağacı" çekmecesinde seçeneğe dokununca açıklamasını, bedelini ve durumunu gösterir; seçim ayrıntıdaki "Aç" düğmesiyle yapılır.
+Her aktif durumun süresi, atış sayısı veya dalga sınırı vardır; aynı etki üst üste gelirse toplanmaz, en güçlü değer ve en uzun süre kalır. Sunucu bunları uygular. İstemci "İşçi" çekmecesinin "Ağaç" bölümünde seçeneğe dokununca açıklamasını, bedelini ve durumunu gösterir; seçim ayrıntıdaki "Aç" düğmesiyle yapılır.

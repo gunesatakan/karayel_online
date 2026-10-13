@@ -65,8 +65,11 @@ test("kaydirma cekmecenin yeniden kurulumundan sagkaliyor", () => {
   assert.match(builder, /applyTransform\(\);\n/, "yeni kurulan agac kayitli kaydirmayla cizilmeli");
   // Dugmenin ustunden baslayan surukleme reddedilmiyor (agacin cogu dugme).
   assert.doesNotMatch(builder, /closest\("button"\)\) return/);
-  // Cekmece kapaninca bir dahaki acilis baslangictan, incelenen secenek de bos.
-  assert.match(ui, /if \(drawerId !== "workerDevelopment"\) \{\n\s+workerTreePan = \{ x: 0, y: 0 \};\n\s+workerTreeFocus = undefined;/);
+  // Agac artik Isci cekmecesinin bir bolumu (`worker:tree`). Cekmece kapaninca
+  // ya da baska bolume gecilince bir dahaki acilis baslangictan, incelenen
+  // secenek de bos.
+  assert.match(ui, /if \(drawerId !== "worker:tree"\) \{\n\s+workerTreePan = \{ x: 0, y: 0 \};\n\s+workerTreeFocus = undefined;/);
+  assert.match(ui, /return \{ id: `worker:\$\{tab\}`, drawer \};/, "agacin cekmece kimligi bolumden turemeli");
 });
 
 test("secenege dokunmak secimi acmiyor; acma ayrintidaki dugmede", () => {

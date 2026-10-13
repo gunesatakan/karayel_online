@@ -26,7 +26,7 @@ Oyun kapalı testte. Geri bildirimin bize çok yardımcı olur.
 - **Kule bilgisi:** bir kuleye dokun. Panelden yükselt, sat ya da onar.
 - **Dalga:** sağ üstteki **Devam** sıradaki dalgayı başlatır.
 - **Beceriler ve ulti:** **Beceriler** çekmecesinden.
-- **İşçiler:** Envanter › **İşçi Al**. Gelişim için **İşçi Ağacı**.
+- **İşçiler:** **İşçi** çekmecesi. Atama **Yönetim**'de, alım **İşe Al**'da, gelişim **Ağaç**'ta.
 - Fare ile de oynanır; tıkla ve sürükle.
 
 İlk maçta kısa bir brifing adım adım yol gösterir. Brifingi ana menüdeki **Eğitim** ile yeniden oynatabilirsin.

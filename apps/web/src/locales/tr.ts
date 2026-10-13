@@ -40,8 +40,9 @@ export const trCore = {
   "tutorial.shop.title": "İKMAL",
   "tutorial.shop.body": "Altınla eşya al. Çoğu eşya envantere düşer; Envanter'den bir kuleye tak, kule başına en fazla 10. Bitince Mağazayı Kapat.",
   "tutorial.workers.title": "İŞÇİLER",
-  "tutorial.workers.closed": "Envanter'i aç. İşçiler enerji ve mühimmatı kulelere taşır.",
-  "tutorial.workers.open": "İşçi Al ile bir işçi al ve uzmanlığını seç. Gelişim İşçi Ağacı'nda.",
+  "tutorial.workers.closed": "İşçi'yi aç. İşçiler enerji ve mühimmatı kulelere taşır.",
+  "tutorial.workers.tab": "İşe Al bölümüne geç.",
+  "tutorial.workers.open": "İşçi Al ile bir işçi al ve uzmanlığını seç. Atamalar Yönetim'de, gelişim Ağaç'ta.",
   "tutorial.done.title": "BRİFİNG TAMAM",
   "tutorial.done.body": "Sektör senin, operatör. Brifing yeniden: ana menü › Eğitim.",
 

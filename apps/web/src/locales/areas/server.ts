@@ -32,6 +32,7 @@ export const trServer = {
   "server.card.noPendingChoice": "Bekleyen kart seçimi bulunamadı. Bağlantı yenileniyor olabilir.",
   "server.card.invalidChoice": "Bu kart artık geçerli bir seçenek değil.",
   "server.card.towerCannotTake": "Seçilen kule bu kartı alamıyor. Başka bir kule seç.",
+  "server.worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
 
   // ------------------------------------------------------------ Kule onizlemesi
   "server.preview.tooSoon": "Biraz sonra tekrar dene.",
@@ -136,6 +137,7 @@ export const enServer: Readonly<Record<keyof typeof trServer, string>> = {
   "server.card.noPendingChoice": "No pending card choice found. The connection may be refreshing.",
   "server.card.invalidChoice": "This card is no longer a valid option.",
   "server.card.towerCannotTake": "The selected tower cannot take this card. Pick another tower.",
+  "server.worker.nodeDepleted": "This resource is depleted. Pick another one.",
 
   "server.preview.tooSoon": "Try again in a moment.",
   "server.preview.invalidTarget": "Invalid target.",

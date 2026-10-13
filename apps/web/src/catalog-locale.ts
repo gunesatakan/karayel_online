@@ -3,6 +3,8 @@ import {
   BADGE_CATALOG,
   BADGE_GROUP_LABELS,
   KILL_STREAK_TIER_LABELS,
+  RESOURCE_NAMES,
+  RESOURCE_NAMES_EN,
   ROLE_TITLE_LABELS,
   RUN_ROLE_TITLES,
   SHOP_CATEGORY_LABELS,
@@ -175,6 +177,8 @@ export function installCatalogLocale() {
   }
   localizeLabelMap(WORKER_ROLE_LABELS as Record<string, string>, enWorkerRoleLabels);
   localizeLabelMap(WORKER_ROLE_DESCRIPTIONS as Record<string, string>, enWorkerRoleDescriptions);
+  // Hammadde adlari (isci kadrosu): Ingilizcesi ortak pakette, ayni tablonun yaninda.
+  localizeLabelMap(RESOURCE_NAMES as Record<string, string>, RESOURCE_NAMES_EN);
 
   for (const badge of BADGE_CATALOG) localizeFields(badge, ["name", "condition"], () => enBadges[badge.id]);
   for (const title of TITLE_CATALOG) localizeFields(title, ["label"], () => ({ label: englishTitle(title) }));

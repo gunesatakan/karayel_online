@@ -120,8 +120,30 @@ export function isTutorialStepVisible(run: TutorialRun, seen: TutorialObservatio
   }
 }
 
-/** Kutunun metni; `open` hedef cekmece acik mi (iki asamali adimlar). */
-export function getTutorialCopy(id: TutorialStepId, open: boolean): { title: string; body: string; ack?: string } {
+/**
+ * Isci adiminin hedefi: Isci cekmecesi (baslatici) -> "Ise Al" bolumu -> alim
+ * dugmesi. Isci alimi bir donem Envanter'deydi; secicilerin sahipleri
+ * `game-control-ui.ts` (`data-launch`, `data-worker-tab`, alim dugmesi).
+ */
+export const TUTORIAL_WORKER_TARGETS = {
+  launcher: '[data-launch="worker"]',
+  hireTab: '[data-worker-tab="hire"]',
+  hireButton: ".game-controls__worker-hire"
+} as const;
+
+export type TutorialWorkerStage = keyof typeof TUTORIAL_WORKER_TARGETS;
+
+/** Isci adiminin o anki asamasi: cekmece kapali, baska bolum acik, "Ise Al" acik. */
+export function getTutorialWorkerStage(seen: { drawerOpen: boolean; hireVisible: boolean }): TutorialWorkerStage {
+  if (!seen.drawerOpen) return "launcher";
+  return seen.hireVisible ? "hireButton" : "hireTab";
+}
+
+/**
+ * Kutunun metni; `open` hedef cekmece acik mi (iki asamali adimlar).
+ * `section`: cekmecenin dogru bolumu de acik mi (isci adimi: "Ise Al").
+ */
+export function getTutorialCopy(id: TutorialStepId, open: boolean, section = true): { title: string; body: string; ack?: string } {
   switch (id) {
     case "tower":
       return { title: t("tutorial.tower.title"), body: t(open ? "tutorial.tower.open" : "tutorial.tower.closed") };
@@ -134,7 +156,7 @@ export function getTutorialCopy(id: TutorialStepId, open: boolean): { title: str
     case "shop":
       return { title: t("tutorial.shop.title"), body: t("tutorial.shop.body") };
     case "workers":
-      return { title: t("tutorial.workers.title"), body: t(open ? "tutorial.workers.open" : "tutorial.workers.closed"), ack: t("tutorial.ack") };
+      return { title: t("tutorial.workers.title"), body: t(!open ? "tutorial.workers.closed" : section ? "tutorial.workers.open" : "tutorial.workers.tab"), ack: t("tutorial.ack") };
   }
 }
 
@@ -282,7 +304,7 @@ export function setupTutorial(game: Phaser.Game) {
    *   kenarda, cerceve yok. Magazada alt kenarda Mağazayı Kapat duruyor; kutu
    *   o satiri cerceveleyip ustune geciyor.
    */
-  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; open: boolean } => {
+  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; open: boolean; section?: boolean } => {
     const launchOpen = (drawer: string) => document.querySelector<HTMLElement>(`[data-launch="${drawer}"].game-controls__launch--open`) !== null;
     const drawer = () => document.querySelector<HTMLElement>(".game-controls__drawer") ?? undefined;
     switch (id) {
@@ -298,13 +320,17 @@ export function setupTutorial(game: Phaser.Game) {
         // Yenile / Mağazayı Kapat satiri; kutu onun ustunde, son teklifin uzerinde.
         return { open: false, element: document.querySelector<HTMLElement>(".gold-shop:not(.inventory) .gold-shop__actions") };
       case "workers": {
-        // Isci alma perdesi acildiysa "Yeni işçi al"; perde cekmecenin ustunde.
-        const hire = document.querySelector<HTMLElement>(".gold-shop.inventory .gold-shop__item");
-        if (hire) return { open: true, element: hire };
-        const open = launchOpen("inventory");
+        // Isci cekmecesi -> "Ise Al" bolumu -> alim dugmesi. Hedef haritada
+        // beklenirken (cekmece seride inmis) cerceve yok, kutu seridin ustunde.
+        const open = launchOpen("worker");
+        const stage = getTutorialWorkerStage({
+          drawerOpen: open,
+          hireVisible: document.querySelector(TUTORIAL_WORKER_TARGETS.hireButton) !== null
+        });
         return {
           open,
-          element: document.querySelector<HTMLElement>(open ? ".game-controls__worker-hire" : '[data-launch="inventory"]'),
+          section: stage === "hireButton",
+          element: document.querySelector<HTMLElement>(TUTORIAL_WORKER_TARGETS[stage]),
           anchor: open ? drawer() : undefined
         };
       }
@@ -396,7 +422,7 @@ export function setupTutorial(game: Phaser.Game) {
       return;
     }
     const target = findTarget(id);
-    render(`${id}:${target.open}`, getTutorialCopy(id, target.open), run.step + 1, target.element, target.anchor);
+    render(`${id}:${target.open}:${target.section !== false}`, getTutorialCopy(id, target.open, target.section), run.step + 1, target.element, target.anchor);
   };
 
   const render = (key: string, copy: { title: string; body: string; ack?: string }, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom") => {

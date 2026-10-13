@@ -8374,6 +8374,12 @@ export class MatchRoom extends Room<MatchState> {
     if (worker.mode === "crystalCollector" || worker.mode === "ammoCollector") {
       const node = this.getEconomyNodes().find((entry) => entry.id === message.nodeId);
       if (!node) return;
+      // Tukenmis kaynaga atanan isci orada sonsuza dek bekler. Istemci bunu
+      // kendisi de reddediyor; buraya ancak kaynak arada tukenirse dusuluyor.
+      if (node.remaining <= 0) {
+        client.send("worker:rejected", { reason: SERVER_TEXT["worker.nodeDepleted"], key: "worker.nodeDepleted" });
+        return;
+      }
       assignment = { nodeId: node.id };
     } else {
       const source = message.sourceTowerId ? this.towers.get(message.sourceTowerId) : undefined;
@@ -8392,6 +8398,18 @@ export class MatchRoom extends Room<MatchState> {
     this.workerAssignments.set(worker.id, assignment);
     if ((worker.cargo ?? 0) > 0) worker.pendingAssignment = assignment;
     else { worker.assignment = assignment; worker.targetTowerId = undefined; worker.extractionRemainingMs = undefined; }
+  }
+
+  /**
+   * Iscinin teldeki isi. Elle atama varsa o gider -- yuk teslim edilene kadar
+   * bekleyen atama da: oyuncu secimini hemen gormeli. Yoksa varsayilan is ve
+   * tek bayrak; istemci onu "Otomatik" yaziyor, kaynagin turunu ve kalanini
+   * yine gosterebiliyor. Elle atanmis iscide bayrak hic yazilmiyor.
+   */
+  private getWorkerAssignmentSnapshot(drone: DroneModel): Pick<DroneSnapshot, "assignment" | "autoAssigned"> {
+    const manual = this.workerAssignments.get(drone.id);
+    if (manual) return { assignment: { ...manual } };
+    return drone.assignment ? { assignment: { ...drone.assignment }, autoAssigned: true } : {};
   }
 
   private setFactoryProduction(client: Client, message: { towerId?: string; ammoType?: string }) {
@@ -15177,7 +15195,7 @@ export class MatchRoom extends Room<MatchState> {
       drones: Array.from(this.drones.values()).map((drone) => ({
         id: drone.id,
         mode: drone.mode === "ammoCollector" ? "crystalCollector" : drone.mode === "ammoTransport" ? "energyTransport" : drone.mode,
-        assignment: drone.assignment ? { ...drone.assignment } : undefined,
+        ...this.getWorkerAssignmentSnapshot(drone),
         cargoResource: drone.cargoResource,
         x: roundNetworkNumber(drone.x),
         y: roundNetworkNumber(drone.y),

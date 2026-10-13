@@ -779,7 +779,16 @@ export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: 
 export * from "./resource-economy.js";
 
 export type DroneSnapshot = {
+  /**
+   * Iscinin isi. Elle atama varsa o (yuk teslim edilene kadar bekleyen atama
+   * dahil: oyuncu secimini hemen gorsun); yoksa sunucunun varsayilan isi.
+   */
   assignment?: import("./resource-economy.js").WorkerAssignment;
+  /**
+   * Is oyuncunun secimi degil, sunucunun varsayilani: istemci "Otomatik"
+   * yazar. Elle atanmis iscide anahtar hic yazilmaz.
+   */
+  autoAssigned?: true;
   cargoResource?: import("./resource-economy.js").ResourceKind;
   id: string;
   /**

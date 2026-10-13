@@ -6,6 +6,7 @@ import { cardRarityLabels, towerAxisLabels } from "./codex";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
+import { describeWorkerRow, formatTransportProduct, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerProductOptions, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
 import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey, isTowerSheetExpanded, patchTowerSheet, renderTowerSheet, type TowerSheetInput, type TowerSheetModel } from "./tower-sheet";
 
 /**
@@ -128,9 +129,14 @@ type ControlState = {
   logisticsPriority?: { value: "critical" | "normal" | "low"; canEdit: boolean };
   defenseSummaryAvailable?: boolean;
   standby?: { active: boolean; waking: boolean; canEdit: boolean };
-  /** Isci alimi; uzmanlik ilk secimde, kademe secimleri kalici belirlenir. */
+  /**
+   * Isci cekmecesinin "Yonetim" bolumu: oyuncunun iscileri ve haritada hedefi
+   * beklenen isci (`worker-roster.ts`). Yuk ve kalan miktar yapi anahtarina
+   * girmiyor, yerinde yaziliyor.
+   */
+  workerRoster?: WorkerRosterState;
+  /** Isci alimi ("Ise Al" bolumu); uzmanlik ilk secimde, kademe secimleri kalici belirlenir. */
   workerHire?: {
-    open: boolean;
     hired: number;
     /** Normal iscinin bedeli. */
     cost: number;
@@ -232,6 +238,8 @@ type ControlAction = {
   count?: number;
   on?: boolean;
   skillId?: string;
+  workerId?: string;
+  product?: string;
 };
 
 /** Ayni kimlik birden fazlaysa tek kalemde sayilir; ilk gorulen sira korunur. */
@@ -309,6 +317,9 @@ export function setupGameControlUi(game: Phaser.Game) {
       // Kule panelinin yalnizca yapisi: hangi satir, cubuk ve dokum kalemi
       // var. Sayilar `syncLiveStats` ile yerinde yaziliyor.
       if (fieldName === "towerSheet") return latestSheetModel ? getTowerSheetStructureKey(latestSheetModel) : undefined;
+      // Isci kadrosunun da yalnizca yapisi: hangi satirlar, ne yaziyorlar.
+      // Yuk ve kalan miktar `syncWorkerRosterLive` ile yerinde yaziliyor.
+      if (fieldName === "workerRoster") return getWorkerRosterStructureKey(value as WorkerRosterState | undefined);
       // Kesirli sayilar ekranda yuvarlanarak gosteriliyor; anahtarda tam
       // hallerini tutmak, gozle gorulmeyen bir oynamayi yeniden kurma
       // sebebine cevirirdi.
@@ -341,6 +352,29 @@ export function setupGameControlUi(game: Phaser.Game) {
   const syncLiveStats = () => {
     if (sheetElement && latestSheetModel && sheetElement.isConnected) {
       patchTowerSheet(sheetElement, latestSheetModel);
+    }
+  };
+
+  /**
+   * Kurulu isci satirlarinin canli hucreleri (yuk, kalan), isci kimligine
+   * gore. Liste her kuruldugunda bastan doluyor (`buildWorkerManageSection`).
+   */
+  const workerLiveCells = new Map<string, { cargo: HTMLElement; reserve: HTMLElement }>();
+
+  /**
+   * Iscilerin yukunu ve kaynakta kalani yerinde yazar; satirlari yeniden
+   * yaratmaz. Bu sayilar her anlik goruntude oynuyor: liste onlar icin
+   * kurulsaydi parmagin altindaki satir surekli degisirdi.
+   */
+  const syncWorkerRosterLive = (state: ControlState) => {
+    if (workerLiveCells.size === 0) return;
+    for (const row of state.workerRoster?.rows ?? []) {
+      const cells = workerLiveCells.get(row.id);
+      if (!cells || !cells.cargo.isConnected) continue;
+      const cargo = formatWorkerCargo(row);
+      if (cells.cargo.textContent !== cargo) cells.cargo.textContent = cargo;
+      const reserve = formatWorkerReserve(row);
+      if (cells.reserve.textContent !== reserve) cells.reserve.textContent = reserve;
     }
   };
 
@@ -553,8 +587,15 @@ export function setupGameControlUi(game: Phaser.Game) {
    * Satis dugmesi burada degil: haritada kulenin altinda zaten acilan panelin
    * icinde, yani kulenin oldugu yerde.
    */
-  type DrawerId = "towers" | "skills" | "inventory" | "creative" | "workerDevelopment";
+  type DrawerId = "towers" | "skills" | "inventory" | "creative" | "worker";
   let openDrawer: DrawerId | undefined;
+  /**
+   * Isci cekmecesinin bolumu: Yonetim (atama), Ise Al, Agac. Oyuncu secene
+   * kadar bos; o zaman iscisi olan Yonetim'i, olmayan Ise Al'i gorur
+   * (`getWorkerTab`). Mac boyunca hatirlaniyor, mac bitince sifirlaniyor.
+   */
+  type WorkerTab = "manage" | "hire" | "tree";
+  let workerTab: WorkerTab | undefined;
   /**
    * Isci agacinin kaydirmasi. Cekmecenin icinde dursaydi her yeniden kurulumda
    * (parmak kalkinca bekleyen kurulum dahil) agac baslangica donerdi.
@@ -579,20 +620,24 @@ export function setupGameControlUi(game: Phaser.Game) {
 
   const toggleDrawer = (next: DrawerId) => {
     openDrawer = openDrawer === next ? undefined : next;
+    // Hedef bekleyen isci cekmecesiyle birlikte kapanir: serit gorunmezken
+    // haritaya her dokunus atamaya gitmesin. Sahne durumu hemen yeniden
+    // yayinliyor, asagidaki cizim onu goruyor.
+    if (latestState?.workerRoster?.picking) dispatch({ action: "cancelWorkerAssign" });
     if (latestState) {
       latestKey = "";
       render(latestState);
     }
   };
 
-  /** Cekmece kabugu: baslik satiri ve icerik. */
-  const makeDrawer = (title: string, body: HTMLElement[], onClose: () => void) => {
+  /** Cekmece kabugu: baslik satiri ve icerik. Baslik metin ya da hazir bir eleman (Isci cekmecesinin sekmeleri). */
+  const makeDrawer = (title: string | HTMLElement, body: HTMLElement[], onClose: () => void) => {
     const drawer = document.createElement("div");
     drawer.className = "game-controls__drawer";
     const header = document.createElement("div");
     header.className = "game-controls__drawer-header";
-    const label = document.createElement("span");
-    label.textContent = title;
+    const label = typeof title === "string" ? document.createElement("span") : title;
+    if (typeof title === "string") label.textContent = title;
     const close = document.createElement("button");
     close.type = "button";
     close.className = "game-controls__drawer-close";
@@ -708,6 +753,170 @@ export function setupGameControlUi(game: Phaser.Game) {
       body.push(makeMelisSpectrum(state.melisSpectrum));
     }
 
+    return body;
+  };
+
+  /** Acik bolum: oyuncunun sectigi, yoksa iscisi olana Yonetim, olmayana Ise Al. */
+  const getWorkerTab = (state: ControlState): WorkerTab => workerTab ?? ((state.workerRoster?.rows.length ?? 0) > 0 ? "manage" : "hire");
+
+  /**
+   * Isci cekmecesi: Yonetim (atama), Ise Al, Agac. Bolum dugmeleri baslik
+   * satirinda, kapatma dugmesinin yaninda: cekmece 300 px'te kesiliyor ve
+   * ayri bir sekme satiri agaca kalan yeri yerdi.
+   *
+   * Haritada hedef beklenirken cekmece tek satirlik bir seride iniyor
+   * (`buildWorkerPickStrip`); atama ya da iptalden sonra Yonetim'e doner.
+   */
+  const buildWorkerDrawer = (state: ControlState): { id: string; drawer: HTMLElement } => {
+    const picking = state.workerRoster?.picking;
+    if (picking) return { id: "worker:pick", drawer: buildWorkerPickStrip(picking) };
+    const tab = getWorkerTab(state);
+    const tabs = document.createElement("div");
+    tabs.className = "worker-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", t("controls.workerTab.label"));
+    const makeTab = (id: WorkerTab, label: string) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `worker-tab${tab === id ? " is-active" : ""}`;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", String(tab === id));
+      button.textContent = label;
+      // Brifing (tutorial.ts) bolum dugmesini etiketinden bagimsiz bulsun.
+      button.dataset.workerTab = id;
+      button.addEventListener("pointerup", () => {
+        if (tab === id) return;
+        workerTab = id;
+        latestKey = "";
+        render(latestState);
+      });
+      return button;
+    };
+    tabs.append(
+      makeTab("manage", t("controls.workerTab.manage")),
+      makeTab("hire", `${t("controls.workerTab.hire")}${state.workerHire?.pendingSpecialization ? " •" : ""}`),
+      makeTab("tree", t("controls.workerTab.tree"))
+    );
+    const body = tab === "manage" ? buildWorkerManageSection(state) : tab === "hire" ? buildWorkerHireSection(state) : buildWorkerDevelopmentDrawer(state);
+    const drawer = makeDrawer(tabs, body, () => toggleDrawer("worker"));
+    drawer.classList.add("game-controls__drawer--worker", `game-controls__drawer--worker-${tab}`);
+    drawer.setAttribute("aria-label", t("controls.drawer.worker"));
+    return { id: `worker:${tab}`, drawer };
+  };
+
+  /**
+   * Yonetim: oyuncunun iscileri. Satira dokunmak isciyi secer; hedef haritada
+   * gosterilir. Satirlar yalnizca yapi degisince (isci, is, hedef) yeniden
+   * kurulur -- o da parmak basili degilken (`render`). Yuk ve kalan miktar
+   * `syncWorkerRosterLive` ile yerinde yazilir.
+   */
+  const buildWorkerManageSection = (state: ControlState) => {
+    const rows = state.workerRoster?.rows ?? [];
+    const intro = document.createElement("p");
+    intro.className = "worker-list__intro";
+    intro.textContent = t(rows.length > 0 ? "controls.roster.intro" : "controls.roster.empty");
+    const list = document.createElement("div");
+    list.className = "worker-list";
+    for (const row of rows) {
+      const text = describeWorkerRow(row);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `worker-row worker-row--${row.role}${row.depleted ? " is-depleted" : ""}`;
+      button.dataset.workerId = row.id;
+      const main = document.createElement("span");
+      main.className = "worker-row__main";
+      const title = document.createElement("strong");
+      title.textContent = text.title;
+      const detail = document.createElement("small");
+      detail.textContent = text.detail;
+      main.append(title, detail);
+      const live = document.createElement("span");
+      live.className = "worker-row__live";
+      const cargo = document.createElement("span");
+      cargo.textContent = formatWorkerCargo(row);
+      const reserve = document.createElement("span");
+      reserve.className = "worker-row__reserve";
+      reserve.textContent = formatWorkerReserve(row);
+      live.append(cargo, reserve);
+      button.append(main, live);
+      button.addEventListener("pointerup", () => dispatch({ action: "selectWorker", workerId: row.id }));
+      workerLiveCells.set(row.id, { cargo, reserve });
+      list.append(button);
+    }
+    return rows.length > 0 ? [intro, list] : [intro];
+  };
+
+  /**
+   * Hedef seridi: cekmecenin yerinde tek satir. Harita gorunur ve dokunulur
+   * kaliyor; serit yalnizca ne beklendigini soyluyor ve vazgecmeyi sunuyor.
+   * Tasiyicida urun secimi ikinci satirda, dugmelerle: yerel acilir liste
+   * acikken panel yeniden kurulunca kapaniyordu.
+   */
+  const buildWorkerPickStrip = (picking: NonNullable<WorkerRosterState["picking"]>) => {
+    const strip = document.createElement("div");
+    strip.className = "game-controls__drawer worker-pick";
+    strip.setAttribute("role", "group");
+    strip.setAttribute("aria-label", t("controls.roster.pickLabel"));
+    const line = document.createElement("div");
+    line.className = "worker-pick__line";
+    const hint = document.createElement("p");
+    hint.className = "worker-pick__hint";
+    const who = document.createElement("strong");
+    who.textContent = t("controls.roster.title", { n: picking.order, role: formatWorkerRole(picking.role) });
+    const what = document.createElement("span");
+    what.textContent = getWorkerPickHint(picking.role, picking.product);
+    hint.append(who, what);
+    line.append(hint, makeActionButton(t("controls.roster.cancel"), "worker-pick__cancel", true, () => dispatch({ action: "cancelWorkerAssign" })));
+    strip.append(line);
+    const options = getWorkerProductOptions(picking.role);
+    if (options.length > 0) {
+      const group = makeRow(options.map((product) => {
+        const active = picking.product === product;
+        const button = makeActionButton(formatTransportProduct(product), `worker-pick__product${active ? " is-active" : ""}`, true, () => {
+          if (!active) dispatch({ action: "setWorkerProduct", product });
+        });
+        button.setAttribute("aria-pressed", String(active));
+        return button;
+      }), "worker-pick__products");
+      group.setAttribute("role", "group");
+      group.setAttribute("aria-label", t("controls.roster.productLabel"));
+      strip.append(group);
+    }
+    return strip;
+  };
+
+  /**
+   * Ise Al: kademe secimi ve alim dugmesi. Eskiden Envanter'deki bir dugmenin
+   * actigi tam ekran perdeydi; artik cekmecenin bir bolumu. Bekleyen uzmanlik
+   * secimi bir satin alma degil: sunucu bedel almadan secimi yeniden aciyor,
+   * kademeye de bakmiyor -- fiyat ve kademe o zaman gosterilmiyor.
+   */
+  const buildWorkerHireSection = (state: ControlState) => {
+    const hire = state.workerHire;
+    if (!hire) return [];
+    const pending = Boolean(hire.pendingSpecialization);
+    const body: HTMLElement[] = [];
+    const intro = document.createElement("p");
+    intro.className = "worker-hire__intro";
+    intro.textContent = pending ? t("controls.workerHire.pendingIntro") : t("controls.workerHire.intro", { hired: hire.hired });
+    body.push(intro);
+    // Kademe alim dugmesinin ustunde: once ne kadar harcanacagi seciliyor.
+    if (!pending) {
+      body.push(makeRow([
+        makeWorkerTierButton(t("controls.workerHire.tierNormal", { cost: hire.cost }), false, hire),
+        makeWorkerTierButton(t("controls.workerHire.tierAdvanced", { cost: hire.advancedCost }), true, hire)
+      ], "game-controls__underworld-mode game-controls__worker-tier"));
+    }
+    body.push(makeActionButton(
+      pending ? t("controls.workerHire.pendingName") : t("controls.workerHire.button", { cost: hire.advanced ? hire.advancedCost : hire.cost }),
+      `game-controls__worker-hire${hire.advanced && !pending ? " game-controls__worker-hire--advanced" : ""}`,
+      hire.affordable || pending,
+      () => dispatch({ action: "hireWorker" })
+    ));
+    const note = document.createElement("p");
+    note.className = "worker-hire__note";
+    note.textContent = pending ? t("controls.workerHire.pendingDescription") : t("controls.workerHire.description");
+    body.push(note);
     return body;
   };
 
@@ -915,10 +1124,6 @@ export function setupGameControlUi(game: Phaser.Game) {
     const actions: HTMLElement[] = [];
     if (state.inventory?.pendingItemId) {
       actions.push(makeActionButton(t("controls.inventory.cancelEquip"), "game-controls__inventory-button", true, () => dispatch({ action: "cancelEquip" })));
-    }
-    if (state.workerHire) {
-      const hireLabel = state.workerHire.pendingSpecialization ? t("controls.workerHire.buttonPending") : t("controls.workerHire.button", { cost: state.workerHire.cost });
-      actions.push(makeActionButton(hireLabel, "game-controls__worker-hire", true, () => dispatch({ action: "openWorkerHire" })));
     }
     if (state.workerBan) {
       const ban = state.workerBan;
@@ -1428,10 +1633,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     const buttons = [
       makeLaunchButton(t("controls.launch.towers"), "towers"),
       skillsButton,
-      makeLaunchButton(t("controls.launch.workerTree"), "workerDevelopment"),
       // Rolsuz isci yeni alimi kilitliyor; bildirim kart secimi gibi bir
       // ortunun altinda kalabilir, bu isaret kalici.
-      makeLaunchButton(`${t("controls.launch.inventory", { count: total })}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "inventory")
+      makeLaunchButton(`${t("controls.launch.worker")}${state.workerHire?.pendingSpecialization ? " •" : ""}`, "worker"),
+      makeLaunchButton(t("controls.launch.inventory", { count: total }), "inventory")
     ];
     if (state.creative) buttons.push(makeLaunchButton(t("controls.launch.creative"), "creative"));
     if (state.defenseSummaryAvailable) buttons.push(makeActionButton(t("controls.launch.defenseSummary"), "game-controls__launch", true, () => dispatch({ action: "showDefenseSummary" })));
@@ -1459,12 +1664,18 @@ export function setupGameControlUi(game: Phaser.Game) {
       if (state.selectedTowerId) openDrawer = undefined;
       towerEffectFocus = undefined;
     }
+    // Hedef bekleyen iscinin seridi Isci cekmecesinin yerinde duruyor; serit
+    // gorunmeden secim acik kalirsa haritaya dokunuslar sessizce yutulurdu.
+    if (state.workerRoster?.picking) openDrawer = "worker";
+    // Bolum secimi maca ait: yeni mac varsayilandan baslar.
+    if (!state.visible) workerTab = undefined;
 
     // Model her durumda bir kez kuruluyor: hem yapi anahtari hem canli
     // sayilar ondan okunuyor.
     latestSheetModel = state.towerSheet ? buildTowerSheetModel(state.towerSheet) : undefined;
     // Canli sayilar paneli yeniden kurmaz, yerinde yazilir.
     syncLiveStats();
+    syncWorkerRosterLive(state);
     // Bildirim de: parmak bir cekmece dugmesinin ustundeyken yeniden kurma
     // asagida erteleniyor, bildirim o dokunusun sonucunu soyluyor olabilir.
     syncNotice(state);
@@ -1526,48 +1737,6 @@ export function setupGameControlUi(game: Phaser.Game) {
       root.append(drawer);
     }
 
-    if (state.workerHire?.open) {
-      const hire = state.workerHire;
-      // Bekleyen secim bir satin alma degil: sunucu bedel almadan secimi
-      // yeniden aciyor, kademeye de bakmiyor. Fiyat ve kademe gostermek
-      // oyuncuya altin harcanacakmis gibi soyluyordu.
-      const pending = Boolean(hire.pendingSpecialization);
-      const drawer = document.createElement("section");
-      drawer.className = "gold-shop inventory";
-      drawer.innerHTML = pending
-        ? `<header><span>${t("controls.workerHire.title")}</span><strong>${t("controls.workerHire.pendingPrice")}</strong></header>`
-          + `<p>${t("controls.workerHire.pendingIntro")}</p>`
-          + `<div class="gold-shop__offers"></div>`
-        : `<header><span>${t("controls.workerHire.title")}</span><strong>${t("controls.workerHire.price", { cost: hire.advanced ? hire.advancedCost : hire.cost })}</strong></header>`
-          + `<p>${t("controls.workerHire.intro", { hired: hire.hired })}</p>`
-          + `<div class="game-controls__underworld-mode game-controls__worker-tier"></div>`
-          + `<div class="gold-shop__offers"></div>`;
-
-      // Kademe secimi rollerin ustunde: once ne kadar harcanacagi, sonra ne
-      // is yapacagi seciliyor.
-      const tiers = drawer.querySelector<HTMLElement>(".game-controls__worker-tier");
-      tiers?.append(
-        makeWorkerTierButton(t("controls.workerHire.tierNormal", { cost: hire.cost }), false, hire),
-        makeWorkerTierButton(t("controls.workerHire.tierAdvanced", { cost: hire.advancedCost }), true, hire)
-      );
-
-      const list = drawer.querySelector<HTMLElement>(".gold-shop__offers");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `gold-shop__item gold-shop__item--utility${hire.advanced && !pending ? " gold-shop__item--advanced-worker" : ""}`;
-      button.disabled = !hire.affordable && !pending;
-      button.innerHTML = pending
-        ? `<span>${t("controls.workerHire.pendingTag")}</span><strong>${t("controls.workerHire.pendingName")}</strong><small>${t("controls.workerHire.pendingDescription")}</small>`
-        : `<span>${hire.advanced ? t("controls.workerHire.tagAdvanced") : t("controls.workerHire.tagWorker")}</span><strong>${t("controls.workerHire.name")}</strong><small>${t("controls.workerHire.description")}</small>`;
-      button.addEventListener("pointerup", () => dispatch({ action: "hireWorker" }));
-      list?.append(button);
-      const actions = document.createElement("div");
-      actions.className = "gold-shop__actions";
-      actions.append(makeActionButton(t("controls.drawer.close"), "gold-shop__close", true, () => dispatch({ action: "closeWorkerHire" })));
-      drawer.append(actions);
-      root.append(drawer);
-    }
-
     const panel = document.createElement("section");
     panel.className = `game-controls__panel${state.towerSheet ? " game-controls__panel--tower-selected" : ""}`;
 
@@ -1581,6 +1750,7 @@ export function setupGameControlUi(game: Phaser.Game) {
     let scroller: HTMLElement | undefined;
     let drawerId = "";
     sheetElement = undefined;
+    workerLiveCells.clear();
     if (openDrawer === "creative" && state.creative) {
       drawerId = "creative";
       drawer = makeDrawer(t("controls.drawer.creative"), buildCreativeDrawer(state), () => toggleDrawer("creative"));
@@ -1593,9 +1763,10 @@ export function setupGameControlUi(game: Phaser.Game) {
     } else if (openDrawer === "inventory") {
       drawerId = "inventory";
       drawer = makeDrawer(t("controls.drawer.inventory"), buildInventoryDrawer(state), () => toggleDrawer("inventory"));
-    } else if (openDrawer === "workerDevelopment") {
-      drawerId = "workerDevelopment";
-      drawer = makeDrawer(t("controls.drawer.workerDevelopment"), buildWorkerDevelopmentDrawer(state), () => toggleDrawer("workerDevelopment"));
+    } else if (openDrawer === "worker") {
+      const built = buildWorkerDrawer(state);
+      drawerId = built.id;
+      drawer = built.drawer;
     } else if (state.towerSheet && latestSheetModel) {
       drawerId = `tower:${state.selectedTowerId ?? ""}`;
       const built = buildTowerSheet(state, latestSheetModel);
@@ -1606,7 +1777,7 @@ export function setupGameControlUi(game: Phaser.Game) {
       panel.append(drawer);
       scroller = drawer;
     }
-    if (drawerId !== "workerDevelopment") {
+    if (drawerId !== "worker:tree") {
       workerTreePan = { x: 0, y: 0 };
       workerTreeFocus = undefined;
     }

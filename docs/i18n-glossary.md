@@ -16,7 +16,7 @@ Bu sözlük oyunun Türkçe metinlerinin İngilizceye çevirisinde kullanılır.
 
 Sunucu dili hiç değiştirmez; ürettiği metin Türkçedir ve eskisiyle birebir aynı kalır (eski istemci ve testler onu okur). İstemci metni seçili dilde kendisi yazar:
 
-- **Anahtarlı mesaj:** metin alanının yanında kararlı bir anahtar gider: `{ message: "Oda dolu.", key: "room.full" }`. Türkçeler `packages/shared/src/i18n/server-text.ts` içindeki `SERVER_TEXT`te, istemci karşılığı `server.<anahtar>` (`apps/web/src/locales/areas/server.ts`). Böyle gidenler: `lobby:error` ve `room:error` (`message` + `key`), `card:rejected` (`reason` + `key`), `tower:preview` (red için `errorKey`/`errorParams`; satır etiketleri için `lineKeys`; başlık ve açıklama için `cardId`/`itemId` ve `definitionId`).
+- **Anahtarlı mesaj:** metin alanının yanında kararlı bir anahtar gider: `{ message: "Oda dolu.", key: "room.full" }`. Türkçeler `packages/shared/src/i18n/server-text.ts` içindeki `SERVER_TEXT`te, istemci karşılığı `server.<anahtar>` (`apps/web/src/locales/areas/server.ts`). Böyle gidenler: `lobby:error` ve `room:error` (`message` + `key`), `card:rejected` ve `worker:rejected` (`reason` + `key`), `tower:preview` (red için `errorKey`/`errorParams`; satır etiketleri için `lineKeys`; başlık ve açıklama için `cardId`/`itemId` ve `definitionId`).
 - **Oda katılım/kurma reddi:** Colyseus yalnızca hata metnini taşır; istemci bilinen metni (`getRoomRejectionKey`) anahtara çevirir.
 - **Snapshot'taki kule durumu ve özeti** (`status`, `insight`): saniyede ~15 kez giden telde anahtar yok. İstemci Türkçe metni `server.status.*`, `server.insight.*`, `server.activity.*` kalıplarıyla parçalar ve aynı anahtarın İngilizcesini yazar. Kalıp sunucudaki metinle birebir aynı olmalı; sunucuda metin değişirse kalıp da değişir (test yakalar). Tanınmayan parça Türkçe kalır.
 - **Kule adı** (savunma özeti, koşu raporu): ad Türkçe gider, yanında tanım kimliği (`definitionId`); istemci adı katalogdan çözer.
@@ -39,7 +39,23 @@ Sunucu dili hiç değiştirmez; ürettiği metin Türkçedir ve eskisiyle birebi
 | Mağaza | Shop |
 | Yenile | Reroll |
 | İşçi | Worker |
-| İşçi Ağacı | Worker Tree |
+| İşçi (alt bardaki çekmece) | Worker |
+| Yönetim (İşçi çekmecesi bölümü) | Manage |
+| İşe Al (İşçi çekmecesi bölümü) | Hire |
+| Ağaç (İşçi çekmecesi bölümü) | Tree |
+| İşçi ağacı | Worker tree |
+| Toplama (işçi mesleği) | Gatherer |
+| Taşıma (işçi mesleği) | Carrier |
+| Otomatik (elle atanmamış işçi) | Automatic |
+| Yük | Cargo |
+| Kalan | Remaining |
+| Tükendi | Depleted |
+| … yatağı (hammadde kaynağı) | … deposit |
+| Hammadde | Raw material |
+| Enerji kristali | Energy crystal |
+| Barut | Gunpowder |
+| Mistik öz | Mystic essence |
+| Demir | Iron |
 | Uzmanlık | Specialization |
 | Mühimmat | Ammo |
 | Kurşun | Bullet |

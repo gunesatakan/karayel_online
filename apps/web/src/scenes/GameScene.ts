@@ -1,6 +1,6 @@
-import { WorkerAssignmentUi } from "../worker-assignment-ui";
+import { buildWorkerRoster, getWorkerRosterRole, listResourceNodes, resolveWorkerMapTarget, type WorkerPick, type WorkerRosterState } from "../worker-roster";
 import { getTowerMaxLevel } from "@karayel/shared";
-import { ACTIVE_WORKER_ROLES } from "@karayel/shared";
+import { ACTIVE_WORKER_ROLES, isTransportProduct } from "@karayel/shared";
 import Phaser from "phaser";
 import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
@@ -379,10 +379,11 @@ type ControlActionDetail = {
     | "toggleWallGate"
     | "toggleWorkerBanMode"
     | "toggleTowerStandby"
-    | "openWorkerHire"
-    | "closeWorkerHire"
     | "setWorkerTier"
     | "hireWorker"
+    | "selectWorker"
+    | "setWorkerProduct"
+    | "cancelWorkerAssign"
     | "unlockWorkerDevelopment"
     | "setMelisStance"
     | "setTowerPerformance"
@@ -428,6 +429,8 @@ type ControlActionDetail = {
   count?: number;
   on?: boolean;
   value?: number;
+  workerId?: string;
+  product?: string;
 };
 
 type RenderTower = {
@@ -1440,10 +1443,8 @@ export class GameScene extends Phaser.Scene {
   private degenerateCanvasRectCount = 0;
   /** Sahne kuruldugundan beri gecen sureyi okumak icin baslangic ani. */
   private readonly sceneStartedAt = performance.now();
-  /** Isci rol secici acik mi; alim sonrasi kendiliginden kapanir. */
-  private workerHireOpen = false;
   /**
-   * Isci alma cekmecesinde secili kademe.
+   * Isci cekmecesinin "Ise Al" bolumunde secili kademe.
    *
    * Kademe rolun yanina degil ustune konuyor: dort rolun her biri icin iki
    * ayri dugme sekiz dugme demekti ve telefonda cekmece tasiyordu. Ustelik
@@ -1504,7 +1505,13 @@ export class GameScene extends Phaser.Scene {
   private pendingShopPlacement?: "bariyer" | "ziftli-zemin";
   /** Isci yol yasagi kipi acik mi; acikken haritaya basmak kare kapatir. */
   private workerBanMode = false;
-  private workerAssignmentUi?: WorkerAssignmentUi;
+  /**
+   * Isci cekmecesinde secilen ve haritada hedefi beklenen isci. Acikken
+   * haritaya dokunus atamaya gider; cekmece o sirada tek satirlik seride iner.
+   */
+  private workerPick?: WorkerPick;
+  /** Isci kadrosunun okundugu son anlik goruntu (isciler ve kaynaklar). */
+  private workerRosterSource?: Pick<GameSnapshot, "drones" | "crystalNodes" | "ammoNodes">;
   private shopDismissedWave = 0;
   private pendingAction: PendingAction;
   private draggedTowerDefinition?: TowerDefinition;
@@ -1760,6 +1767,8 @@ export class GameScene extends Phaser.Scene {
       for (const marker of this.upgradeReadyMarkers) marker.destroy();
       this.upgradeReadyMarkers = [];
       this.upgradeReadyAnchors = [];
+      this.workerPick = undefined;
+      this.workerRosterSource = undefined;
       this.game.events.emit("game:controls-state", { visible: false });
       this.game.events.emit("game:hud-hide");
     });
@@ -2698,25 +2707,34 @@ export class GameScene extends Phaser.Scene {
           this.room?.send("melis:stance", { stance: detail.stance });
         }
         break;
-      case "openWorkerHire":
-        this.workerHireOpen = true;
-        this.refreshSetupForecast();
-        this.updateSelectionUi();
-        break;
-      case "closeWorkerHire":
-        this.workerHireOpen = false;
-        this.refreshSetupForecast();
-        this.updateSelectionUi();
-        break;
       case "setWorkerTier":
         this.workerHireAdvanced = detail.on === true;
         this.updateSelectionUi();
         break;
       case "hireWorker":
         this.room?.send("worker:hire", { role: isHirableWorkerRole(detail.role) ? detail.role : undefined, advanced: this.workerHireAdvanced });
-        this.workerHireOpen = false;
-        this.refreshSetupForecast();
         this.updateSelectionUi();
+        break;
+      case "selectWorker": {
+        // Urun iscinin su anki isinden baslar: oyuncu cogu zaman yalnizca
+        // binayi degistirmek istiyor.
+        const worker = detail.workerId ? this.workerRosterSource?.drones.find((drone) => drone.id === detail.workerId) : undefined;
+        if (!worker || worker.ownerId !== this.localSessionId || !getWorkerRosterRole(worker.mode)) break;
+        this.workerPick = { workerId: worker.id, product: worker.assignment?.product ?? "energy" };
+        this.emitControlState();
+        break;
+      }
+      case "setWorkerProduct":
+        if (this.workerPick && isTransportProduct(detail.product)) {
+          this.workerPick = { ...this.workerPick, product: detail.product };
+          this.emitControlState();
+        }
+        break;
+      case "cancelWorkerAssign":
+        if (this.workerPick) {
+          this.workerPick = undefined;
+          this.emitControlState();
+        }
         break;
       case "unlockWorkerDevelopment":
         if (isHirableWorkerRole(detail.role) && detail.skillId) {
@@ -3180,7 +3198,6 @@ export class GameScene extends Phaser.Scene {
     const gold = this.localPlayerSnapshot?.gold ?? 0;
     const advanced = this.workerHireAdvanced;
     return {
-      open: this.workerHireOpen,
       hired: hired.length,
       cost,
       advancedCost,
@@ -4360,6 +4377,7 @@ export class GameScene extends Phaser.Scene {
    * sey olmadi" sikayetinin sebebini cihazda tek satirda gormek.
    */
   private describeTapOutcome(pointer: Phaser.Input.Pointer) {
+    if (this.workerPick && this.isBattlePointer(pointer)) return "isci atama";
     if (this.hitSellButton(pointer)) return "sat dugmesi";
     if (this.draggedTowerDefinition) return "YARIM SURUKLEME";
     if (performance.now() < this.ignoreMapPointerUntil) return "beklemede";
@@ -4461,9 +4479,71 @@ export class GameScene extends Phaser.Scene {
       && pointer.worldY >= rect.y && pointer.worldY <= rect.y + rect.height;
   }
 
+  /**
+   * Hedef bekleyen isci icin haritaya dokunuldu. Uygun hedef varsa atama
+   * sunucuya gider ve cekmece Yonetim'e doner; tukenmis kaynak ya da yanlis
+   * bina reddedilir ve secim acik kalir. Bos kareye dokunus sessiz: serit
+   * neyin beklendigini zaten soyluyor.
+   */
+  private resolveWorkerPickTap(pointer: Phaser.Input.Pointer) {
+    const pick = this.workerPick;
+    const source = this.workerRosterSource;
+    const worker = pick ? source?.drones.find((drone) => drone.id === pick.workerId) : undefined;
+    const role = worker ? getWorkerRosterRole(worker.mode) : undefined;
+    if (!pick || !source || !worker || !role) {
+      this.workerPick = undefined;
+      this.emitControlState();
+      return;
+    }
+    const target = resolveWorkerMapTarget({
+      workerId: worker.id,
+      role,
+      product: pick.product,
+      x: pointer.worldX,
+      y: pointer.worldY,
+      radius: this.getMapCellSize() * 0.8,
+      nodes: listResourceNodes(source.crystalNodes, source.ammoNodes),
+      towers: this.towerSnapshots.values(),
+      hitTowerId: this.findTowerAt(pointer.worldX, pointer.worldY)?.id,
+      ownerId: this.localSessionId
+    });
+    if (target.kind === "assign") {
+      this.room?.send("worker:assign", target.message);
+      this.workerPick = undefined;
+      this.emitControlState();
+    } else if (target.kind === "depleted") {
+      this.showNotice(t("server.worker.nodeDepleted"));
+    } else if (target.kind === "wrongBuilding") {
+      this.showNotice(t("scene.worker.wrongBuilding"));
+    }
+  }
+
+  /**
+   * Isci cekmecesinin "Yonetim" bolumu icin oyuncunun iscileri. Hedefi beklenen
+   * isci artik sahada degilse (oldu) secim de kapanir.
+   */
+  private getWorkerRosterState(): WorkerRosterState | undefined {
+    const source = this.workerRosterSource;
+    if (!source) return undefined;
+    const roster = buildWorkerRoster({
+      drones: source.drones ?? [],
+      nodes: listResourceNodes(source.crystalNodes, source.ammoNodes),
+      getTower: (id) => this.towerSnapshots.get(id),
+      ownerId: this.localSessionId,
+      pick: this.workerPick
+    });
+    if (this.workerPick && !roster.picking) this.workerPick = undefined;
+    return roster;
+  }
+
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
-    if (this.isBattlePointer(pointer) && this.workerAssignmentUi?.mapClick(pointer.worldX, pointer.worldY, this.getMapCellSize() * 0.8)) return;
     this.logTap(pointer, this.describeTapOutcome(pointer));
+    // Hedef bekleyen isci varken haritaya dokunus atamadir: kule secmez,
+    // satmaz, yerlestirmez.
+    if (this.workerPick && this.isBattlePointer(pointer)) {
+      this.resolveWorkerPickTap(pointer);
+      return;
+    }
     if (this.hitSellButton(pointer)) {
       this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
       this.selectedPlacedTowerId = undefined;
@@ -5090,11 +5170,6 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
     this.renderWorkerBannedCells();
-    if (!this.workerAssignmentUi) {
-      this.workerAssignmentUi = new WorkerAssignmentUi((message) => this.room?.send("worker:assign", message));
-      this.events.once("shutdown", () => { this.workerAssignmentUi?.destroy(); this.workerAssignmentUi = undefined; });
-    }
-    this.workerAssignmentUi.update(frame.snapshot, this.localSessionId);
     this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
     this.renderAmmoNodes(frame.snapshot.ammoNodes ?? []);
     this.recordClientPerfSection("drones", performance.now() - sectionStart);
@@ -5350,6 +5425,8 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
 
     this.syncBackgroundMusic(snapshot);
+    // `renderHud` asagida alt barin durumunu yayinliyor; kadro o durumda.
+    this.workerRosterSource = snapshot;
     this.renderSetupPhase(snapshot);
     this.zeynepCommandEffects = snapshot.zeynepCommands;
     let sectionStart = performance.now();
@@ -5590,6 +5667,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("card:rejected", (message: { reason?: string; key?: string }) => {
       // Sunucunun gerekcesi Turkce; anahtari varsa secili dilde, yedek dile bakiyor.
       this.setCardChoicePending(false, localizeServerText(message.reason, message.key) ?? t("scene.card.rejected"));
+    });
+    // Atama reddi: istemci tukenmis kaynagi kendisi de reddediyor, buraya
+    // kaynak dokunus ile istek arasinda tukenirse dusuluyor.
+    room.onMessage("worker:rejected", (message: { reason?: string; key?: string }) => {
+      this.showNotice(localizeServerText(message?.reason, message?.key) ?? t("server.worker.nodeDepleted"));
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
@@ -6620,7 +6702,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // etiketi o sirada dalga numarasinin yaninda duruyor, yani gorunur kaliyor.
     const localPlayer = snapshot.players.find((player) => player.id === this.localSessionId);
     const choosingCard = this.cardChoiceRoot !== undefined;
-    const forecastVisible = active && !choosingCard && !this.isGoldShopOpen(snapshot, localPlayer) && !this.workerHireOpen;
+    const forecastVisible = active && !choosingCard && !this.isGoldShopOpen(snapshot, localPlayer);
     const airWarning = active && Boolean(localPlayer?.noAirDefense);
     const hudPatch: Partial<HudState> = {
       continueVisible: active,
@@ -10132,6 +10214,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           }, {})
         )
       },
+      workerRoster: this.getWorkerRosterState(),
       workerHire: this.getWorkerHireState(),
       workerDevelopment: {
         experience: this.localPlayerSnapshot?.experience ?? 0,

@@ -47,9 +47,11 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
   - Kaydırma çalışıyor ve "Mağazayı Kapat" görünüyor.
   - Eşya alınıyor; Envanter'den bir kuleye takılıyor.
 - [ ] **İşçi:**
-  - Envanter › İşçi Al ile işçi alınıyor.
+  - İşçi › İşe Al ile işçi alınıyor; Envanter'de işçi alımı yok.
   - Uzmanlık penceresi çıkıyor ve seçilebiliyor.
-  - İşçi Ağacı parmakla kaydırılabiliyor.
+  - İşçi › Yönetim: işçiye dokununca çekmece tek satıra iniyor, harita görünüyor; kaynağa ya da binaya dokununca atanıyor, İptal geri dönüyor.
+  - Dalga sürerken satırlara dokunuş kaçmıyor; yük ve kalan sayıları akıyor.
+  - İşçi › Ağaç parmakla kaydırılabiliyor.
 - [ ] **Brifing:** altı adımın hepsi sırayla geliyor; ATLA çalışıyor.
 - [ ] **Maç sonu:** birkaç dalga sonra kaybet ya da kazan; maç raporu tam görünüyor. Ana menü, Tekrar ve Sonraki aşama düğmeleri çalışıyor.
 - [ ] **İngilizce maç:** aynı akışı EN ile tekrarla; kesilen ya da taşan yazı var mı?

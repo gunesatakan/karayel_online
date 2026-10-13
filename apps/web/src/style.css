@@ -616,10 +616,6 @@ button.wave-report:active { transform: scale(0.99); }
 .gold-shop__close { min-height: 34px !important; color: #dbeafe !important; background: rgba(30, 64, 175, .35) !important; }
 .game-controls__targeting { width: 100%; min-height: 30px; padding: 0 8px; border: 1px solid rgba(125, 211, 252, .35); border-radius: 7px; color: #e0f2fe; background: #111827; }
 
-/* Envanter, altin magazasiyla ayni cekmece govdesini kullanir; yalnizca vurgu
-   rengi farklidir ki oyuncu satin alma ile takma arasinda karismasin. */
-.inventory { border-color: rgba(45, 212, 191, .45); }
-.inventory .gold-shop__actions { grid-template-columns: 1fr; }
 .inventory__empty { margin: 0; padding: 10px 4px; font-size: 11px; color: #94a3b8; text-align: center; }
 
 .tower-items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(148, 163, 184, .22); }
@@ -1328,13 +1324,6 @@ button.wave-report:active { transform: scale(0.99); }
   border-color: rgba(251, 191, 36, 0.72);
 }
 
-/* Gelismis isci karti kehribar; cekmecede hangi kademeyi aldigini yaziya
-   bakmadan gorunsun. */
-.game-controls .gold-shop__item--advanced-worker {
-  border-color: rgba(251, 191, 36, 0.58);
-  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
-}
-
 .game-controls__underworld-mode-button.is-active {
   color: #f8fafc;
   box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.22), 0 0 14px rgba(45, 212, 191, 0.18);
@@ -1735,14 +1724,207 @@ button.wave-report:active { transform: scale(0.99); }
   font-size: 9px;
 }
 
-.game-controls__worker-hire {
-  flex: 0 0 auto;
-  height: 18px;
-  padding: 0 6px;
+/*
+ * Isci cekmecesi: Yonetim · Ise Al · Agac.
+ *
+ * Bolum dugmeleri baslik satirinda, kapatma dugmesinin yaninda duruyor:
+ * cekmece 300 px'te kesiliyor ve ayri bir sekme satiri icerige kalan yeri
+ * yerdi. Cerceve, renk ve yazi oteki cekmecelerle ayni; kose yok, parilti yok.
+ * Butun dokunma hedefleri taban kuraldan 44 px.
+ */
+.worker-tabs {
+  display: grid;
+  flex: 1 1 auto;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+  margin-right: 4px;
+}
+
+.game-controls button.worker-tab {
+  padding: 4px 2px;
+  color: #9fb4cc;
+  font-size: clamp(11px, 3.1vw, 13px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-controls button.worker-tab.is-active {
+  border-color: rgba(56, 189, 248, 0.9);
+  color: #e0f2fe;
+  background: linear-gradient(180deg, rgba(14, 116, 144, 0.95), rgba(8, 47, 73, 0.98));
+}
+
+.worker-list__intro,
+.worker-hire__intro,
+.worker-hire__note {
+  margin: 2px 4px;
+  color: #9fb4cc;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/*
+ * Yonetim oteki cekmecelerden biraz uzun: temel dort isciye alinanlar eklenince
+ * liste 300 px'e sigmiyor. Haritayi kapatmasi sorun degil -- isci secilince
+ * cekmece seride iniyor.
+ */
+.game-controls__drawer--worker-manage {
+  max-height: min(54vh, 380px);
+}
+
+.worker-list {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/*
+ * Isci satiri: solda meslek ve is, sagda canli sayilar (yuk, kalan). Sayilar
+ * sabit genislikli rakamla: yerinde yazilirken satir oynamasin. `pan-y`:
+ * liste uzayinca parmak satirin ustunden cekmeceyi kaydirabilsin.
+ */
+.game-controls button.worker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 4px 8px;
+  border-left-width: 3px;
+  text-align: left;
+  touch-action: pan-y;
+}
+
+.game-controls button.worker-row--gatherer { border-left-color: rgba(56, 189, 248, 0.85); }
+.game-controls button.worker-row--carrier { border-left-color: rgba(251, 191, 36, 0.8); }
+.game-controls button.worker-row--repairer { border-left-color: rgba(45, 212, 191, 0.8); }
+
+.worker-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.worker-row__main > strong {
+  color: #e0f2fe;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.worker-row__main > small {
+  color: #9fb4cc;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.worker-row__live {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: #cbd5e1;
+  font: 400 11px/1.1 "Share Tech Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.worker-row__reserve { color: #7dd3fc; }
+.worker-row__reserve:empty { display: none; }
+.worker-row.is-depleted .worker-row__reserve { color: #fca5a5; }
+
+/*
+ * Hedef seridi: isci secilince cekmece buna iniyor. Harita gorunur ve
+ * dokunulur kalmali; serit tek satir (tasiyicida urun dugmeleriyle iki).
+ */
+.game-controls__drawer.worker-pick {
+  gap: 3px;
+  padding: 4px 6px;
+  overflow: visible;
+  border-color: rgba(56, 189, 248, 0.7);
+}
+
+.worker-pick__line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.worker-pick__hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.worker-pick__hint > strong {
+  color: #7dd3fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.game-controls button.worker-pick__cancel {
+  min-width: 64px;
+  padding: 4px 10px;
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #cbd5e1;
+}
+
+.worker-pick__products {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.game-controls button.worker-pick__product {
+  padding: 2px;
+  color: #9fb4cc;
+  font-size: clamp(10px, 2.9vw, 12px);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.game-controls button.worker-pick__product.is-active {
+  border-color: rgba(125, 211, 252, 0.85);
+  color: #f8fafc;
+  background: rgba(14, 116, 144, 0.35);
+}
+
+/* Ise Al: kademe secimi ve tek alim dugmesi. */
+.game-controls__drawer--worker .game-controls__worker-tier { margin-top: 0; }
+
+.game-controls__drawer--worker .game-controls__underworld-mode-button {
+  font-size: clamp(11px, 3vw, 13px);
+}
+
+.game-controls button.game-controls__worker-hire {
   color: #e0e7ff;
   border-color: rgba(129, 140, 248, 0.68);
-  background: rgba(30, 41, 120, 0.94);
-  font-size: 9px;
+  background: linear-gradient(180deg, rgba(30, 41, 120, 0.96), rgba(23, 28, 84, 0.98));
+  font-size: clamp(12px, 3.3vw, 14px);
+  letter-spacing: 0.04em;
+}
+
+.game-controls button.game-controls__worker-hire--advanced {
+  border-color: rgba(251, 191, 36, 0.72);
+  color: #fef3c7;
 }
 
 .game-controls__ultimate-power {
@@ -7329,14 +7511,3 @@ button.wave-report:active { transform: scale(0.99); }
   background: rgba(69, 217, 232, 0.08);
 }
 /* Veri bildirimi sonu */
-
-/* Non-modal worker assignment stays below one third of the mobile viewport. */
-.worker-roster { position: fixed; z-index: 40; left: max(8px, env(safe-area-inset-left)); bottom: calc(100px + env(safe-area-inset-bottom)); width: min(360px, calc(100vw - 16px)); pointer-events: none; font: 12px var(--mono); color: #e2e8f0; }
-.worker-roster button, .worker-roster select { pointer-events: auto; min-height: 44px; border: 1px solid #475569; border-radius: 6px; background: #101827; color: #e2e8f0; padding: 8px 10px; cursor: pointer; }
-.worker-roster__toggle { font-weight: 700; }
-.worker-roster__list { max-height: 26dvh; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; background: #0b1220f5; padding: 8px; border: 1px solid #475569; border-radius: 8px; }
-.worker-roster__list p { margin: 0 0 8px; line-height: 1.4; }
-.worker-roster__list button { display: block; text-align: left; width: 100%; margin: 4px 0; }
-.worker-roster__hint { pointer-events: auto; padding: 8px; background: #101827f5; border: 1px solid #22d3ee; border-radius: 8px; }
-.worker-roster__hint select { max-width: 100%; margin: 6px; }
-.worker-roster button:focus-visible, .worker-roster select:focus-visible { outline: 2px solid #22d3ee; }
