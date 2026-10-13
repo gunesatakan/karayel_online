@@ -51,7 +51,7 @@ import { Room } from "colyseus.js";
 import { CombatVfx, readTextureAccent } from "../vfx/combat-vfx";
 import { AtakanSignatureVfx, type SignatureFrame } from "../vfx/atakan-signatures";
 import { TAHT_COPY_ID, ZeynepReceiptTracker, ZeynepSignatureVfx, type CourtEventInput, type CourtFrame, type ReceiptContext } from "../vfx/zeynep-signatures";
-import { getTowerSpriteSize, getTowerTextureKey } from "../tower-art";
+import { getTowerSpriteSize, getTowerTextureKey, TOWER_VISUAL_SCALE } from "../tower-art";
 import { AttackVfx, findHomingMuzzleOrigin } from "../vfx/attack-vfx";
 import { BeamInterpolator, BeamRenderer, type BeamRenderOptions } from "../vfx/beam-renderer";
 import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
@@ -8125,12 +8125,18 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // duruyormus gibi de gorunmemeli: govde sonuyor ve ortasindan aciliyor.
     const broken = tower.disabled === true || (tower.hp !== undefined && tower.hp <= 0);
     const pulse = 0.72 + Math.sin(phase * Math.PI * 2) * 0.16;
-    const thickness = Math.max(5, this.getMapCellSize() * 0.16);
+    const thickness = Math.max(5, this.getMapCellSize() * 0.16) * TOWER_VISUAL_SCALE;
     const glowWidth = thickness * (selected ? 4.2 : 3.2);
     const coreWidth = Math.max(2, thickness * 0.42);
 
     for (const segment of segments) {
-      const rect = this.getAbartiEdgeSegmentRect(segment);
+      const bounds = this.getAbartiEdgeSegmentRect(segment);
+      const rect = {
+        left: tower.x + (bounds.left - tower.x) * TOWER_VISUAL_SCALE,
+        right: tower.x + (bounds.right - tower.x) * TOWER_VISUAL_SCALE,
+        top: tower.y + (bounds.top - tower.y) * TOWER_VISUAL_SCALE,
+        bottom: tower.y + (bounds.bottom - tower.y) * TOWER_VISUAL_SCALE
+      };
       const horizontal = segment.orientation !== "vertical";
       const x1 = horizontal ? rect.left : (rect.left + rect.right) / 2;
       const y1 = horizontal ? (rect.top + rect.bottom) / 2 : rect.top;

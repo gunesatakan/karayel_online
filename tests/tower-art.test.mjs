@@ -52,10 +52,10 @@ test("her kademe resmi pakette ve gercekten saydam", () => {
 });
 
 test("kademe resmi kareyi dolduruyor: cizim boyu kule izi, cikinti payi yok", () => {
-  assert.equal(art.getTowerSpriteSize("warrior-1", 34), 34);
-  assert.equal(art.getTowerSpriteSize("warrior-2", 34), 34);
-  assert.equal(art.getTowerSpriteSize("warrior-4", 34), 34);
-  assert.equal(art.getTowerSpriteSize("warrior-5", 34), 34);
-  assert.equal(art.getTowerSpriteSize("warrior-6", 68), 68);
-  assert.equal(art.getTowerSpriteSize("zeynep-7", 68), 68 / TOWER_ART_DISC_RATIO);
+  assert.equal(art.getTowerSpriteSize("warrior-1", 34), 34 * 0.9);
+  assert.equal(art.getTowerSpriteSize("warrior-2", 34), 34 * 0.9);
+  assert.equal(art.getTowerSpriteSize("warrior-4", 34), 34 * 0.9);
+  assert.equal(art.getTowerSpriteSize("warrior-5", 34), 34 * 0.9);
+  assert.equal(art.getTowerSpriteSize("warrior-6", 68), 68 * 0.9);
+  assert.equal(art.getTowerSpriteSize("zeynep-7", 68), (68 / TOWER_ART_DISC_RATIO) * 0.9);
 });

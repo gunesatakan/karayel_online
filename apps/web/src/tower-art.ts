@@ -76,6 +76,9 @@ export function listTieredTowerArt() {
  * Kule resminin cizim boyu: disk kule izine (`discSize`) tam otursun diye.
  * Kademe resimleri kareyi dolduruyor; digerleri cikinti payi birakiyor.
  */
+export const TOWER_VISUAL_SCALE = 0.9;
+
 export function getTowerSpriteSize(definitionId: string, discSize: number) {
-  return hasTieredTowerArt(definitionId) || getSupplyTowerArtPath(definitionId) ? discSize : discSize / TOWER_ART_DISC_RATIO;
+  const size = hasTieredTowerArt(definitionId) || getSupplyTowerArtPath(definitionId) ? discSize : discSize / TOWER_ART_DISC_RATIO;
+  return size * TOWER_VISUAL_SCALE;
 }
