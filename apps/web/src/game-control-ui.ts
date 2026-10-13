@@ -2131,16 +2131,23 @@ export function setupGameHudUi(game: Phaser.Game) {
       </div>
       <p class="game-hud__status" data-hud-status hidden></p>
       <div class="game-hud__actions">
-        <button data-hud="perf">i</button>
-        <button data-hud="stats">▤</button>
+        <details class="game-hud__details" data-hud-details>
+          <summary><span data-hud-details-label></span><span class="game-hud__details-ready" data-hud-details-ready hidden>★</span></summary>
+          <div class="game-hud__details-panel">
+    <div class="game-hud__strip" data-hud-strip>
+      <span class="game-hud__strip-group" data-hud-strip-dynamic></span>
+      <span class="game-hud__chip game-hud__chip--xp" data-hud-xp><i aria-hidden="true">★</i><span class="game-hud__detail-label" data-hud-xp-label></span><b data-hud-xp-value>0</b></span>
+      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping><i aria-hidden="true">●</i><span class="game-hud__detail-label" data-hud-ping-label></span><b data-hud-ping-value>--</b><small class="game-hud__ping-unit" data-hud-ping-unit>ms</small><small class="game-hud__ping-jitter" data-hud-ping-jitter hidden></small></span>
+    </div>
+            <div class="game-hud__details-tools">
+              <button data-hud="perf"></button>
+              <button data-hud="stats"></button>
+            </div>
+          </div>
+        </details>
         <button class="game-hud__menu-button" data-hud="menu"><svg class="game-hud__menu-glyph" viewBox="0 0 12 10" aria-hidden="true" focusable="false"><path d="M0 1h12M0 5h12M0 9h12"/></svg></button>
         <button class="game-hud__continue" data-hud="continue" hidden></button>
       </div>
-    </div>
-    <div class="game-hud__strip" data-hud-strip>
-      <span class="game-hud__strip-group" data-hud-strip-dynamic></span>
-      <span class="game-hud__chip game-hud__chip--xp" data-hud-xp><i aria-hidden="true">★</i><b data-hud-xp-value>0</b></span>
-      <span class="game-hud__chip game-hud__chip--ping game-hud__chip--warn" data-hud-ping><i aria-hidden="true">●</i><b data-hud-ping-value>--</b><small class="game-hud__ping-unit" data-hud-ping-unit>ms</small><small class="game-hud__ping-jitter" data-hud-ping-jitter hidden></small></span>
     </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
       <p class="game-hud__forecast-line"><b data-hud-forecast-count>0</b><em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
@@ -2208,7 +2215,20 @@ export function setupGameHudUi(game: Phaser.Game) {
    * Bir kez kurulan sablonun sabit metinleri ve ipuclari. Kurulumda ve dil
    * degisince cagriliyor; durumdan gelen metinler (`render`) ayrica yaziliyor.
    */
+  const detailsNode = root.querySelector<HTMLDetailsElement>("[data-hud-details]")!;
+  root.addEventListener("keydown", event => {
+    if (event.key === "Escape" && detailsNode.open) {
+      detailsNode.open = false;
+      detailsNode.querySelector("summary")?.focus();
+      event.stopPropagation();
+    }
+  });
   const applyStaticLabels = () => {
+    setText(root.querySelector<HTMLElement>("[data-hud-details-label]")!, getLocale() === "tr" ? "Detay" : "Details");
+    setText(actionsNode.querySelector<HTMLElement>('[data-hud="perf"]')!, t("hud.perfButton"));
+    setText(actionsNode.querySelector<HTMLElement>('[data-hud="stats"]')!, t("hud.statsButton"));
+    setText(root.querySelector<HTMLElement>("[data-hud-xp-label]")!, t("hud.experience"));
+    setText(root.querySelector<HTMLElement>("[data-hud-ping-label]")!, t("hud.latency"));
     goldVitalNode.title = t("hud.gold");
     root.querySelector<HTMLElement>(".game-hud__vital--health")!.title = t("hud.health");
     setText(root.querySelector<HTMLElement>(".game-hud__wave-word")!, t("hud.wave"));
@@ -2336,14 +2356,14 @@ export function setupGameHudUi(game: Phaser.Game) {
   const renderStrip = (stats: HudStats, ping: string, pingTone: HudState["pingTone"], pingDetail: string, upgradeReady: boolean) => {
     const chip = (icon: string, value: string, title: string, extraClass = "") =>
       `<span class="game-hud__chip ${extraClass}" title="${escapeHudText(title)}">`
-        + `<i aria-hidden="true">${escapeHudText(icon)}</i><b>${chipValue(value)}</b></span>`;
+        + `<i aria-hidden="true">${escapeHudText(icon)}</i><span class="game-hud__detail-label">${escapeHudText(title)}</span><b>${chipValue(value)}</b></span>`;
 
     const chips: string[] = [
       chip("☠", String(stats.enemiesLeft), t("hud.enemiesLeft")),
       ...stats.extras.map((extra) => chip(extra.icon, extra.value, extra.label)),
       chip("⚡", `${Math.floor(stats.energy)}/${Math.floor(stats.maxEnergy)}`, t("hud.energy")),
       `<span class="game-hud__chip game-hud__chip--ammo" title="${escapeHudText(t("hud.ammo"))}">`
-        + `<em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
+        + `<span class="game-hud__detail-label">${escapeHudText(t("hud.ammo"))}</span><em class="is-bullet" aria-hidden="true">▪</em><b>${Math.floor(stats.ammo.bullet)}</b>`
         + `<em class="is-aura" aria-hidden="true">◈</em><b>${Math.floor(stats.ammo.auraCrystal)}</b>`
         + `<em class="is-power" aria-hidden="true">✦</em><b>${Math.floor(stats.ammo.powerCrystal)}</b>`
         + `</span>`
@@ -2354,6 +2374,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       stripDynamicNode.innerHTML = key;
     }
 
+    setHidden(root.querySelector<HTMLElement>("[data-hud-details-ready]")!, !upgradeReady);
     setText(xpValueNode, formatXp(stats.experience));
     if (xpChipNode.classList.contains("is-ready") !== upgradeReady) xpChipNode.classList.toggle("is-ready", upgradeReady);
     setTitle(xpChipNode, upgradeReady ? t("hud.experienceReady") : t("hud.experience"));
@@ -2829,6 +2850,7 @@ export function setupGameHudUi(game: Phaser.Game) {
 
   let lastPopupKey = "";
   const renderPopups = (next: HudState) => {
+    if (next.perfOpen || next.statsOpen || next.audioOpen) detailsNode.open = false;
     const statsKey = next.statsOpen
       ? `stats:${next.statsTab}:${next.statsTowers.map((t) => `${t.id}:${Math.round(t.damage)}:${t.dps.toFixed(1)}`).join(",")}`
         + `:${next.statsEffects.map((e) => `${e.label}:${e.value.toFixed(1)}`).join(",")}`
@@ -2909,6 +2931,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   });
   game.events.on("game:hud-hide", () => {
     root.classList.add("game-hud--hidden");
+    detailsNode.open = false;
     resetRewardFeel();
   });
   game.events.on("game:hud-gold-gain", (amount: number) => showGoldGain(amount));

@@ -7511,3 +7511,31 @@ button.wave-report:active { transform: scale(0.99); }
   background: rgba(69, 217, 232, 0.08);
 }
 /* Veri bildirimi sonu */
+
+/* Secondary telemetry is disclosed on demand; opening it never resizes the arena. */
+.game-hud__details > summary {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 44px; min-height: 36px; padding: 0 7px; box-sizing: border-box;
+  border: 1px solid #334155; border-radius: 8px; background: #111c2f;
+  color: #cbd5e1; font-size: 12px; font-weight: 600; cursor: pointer; list-style: none;
+}
+.game-hud__details > summary::-webkit-details-marker { display: none; }
+.game-hud__details > summary::after { content: "⌄"; }
+.game-hud__details[open] > summary::after { content: "⌃"; }
+.game-hud__details > summary:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.game-hud__details-ready { color: #facc15; }
+.game-hud__details-ready[hidden] { display: none; }
+.game-hud__details-panel {
+  position: absolute; top: calc(100% + 6px); right: 8px; left: 8px; z-index: 5;
+  max-height: min(320px, 40dvh); overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px; border: 1px solid #334155; border-radius: 12px;
+  background: rgba(8, 15, 29, .98); box-shadow: 0 8px 24px #0008; pointer-events: auto;
+}
+.game-hud__details-panel .game-hud__strip { display: grid; grid-template-columns: 1fr; gap: 5px; overflow: visible; }
+.game-hud__details-panel .game-hud__chip {
+  min-height: 28px; border: 0; border-radius: 5px; padding: 5px 8px;
+  font-size: 12px; flex-wrap: nowrap; height: auto; overflow: visible; justify-content: flex-start;
+}
+.game-hud__detail-label { flex: 1; color: #94a3b8; white-space: normal; }
+.game-hud__details-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; border-top: 1px solid #334155; padding-top: 10px; }
+.game-hud__details-tools button { flex: 1; min-height: 36px; }

@@ -21,7 +21,7 @@ const read = (path) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "
 
 test("cubuk: ayarlar ve menu dugmesi SVG simge, ♪ yok", () => {
   const hud = read("apps/web/src/game-control-ui.ts");
-  const actions = hud.slice(hud.indexOf("<div class=\"game-hud__actions\">"), hud.indexOf("<div class=\"game-hud__strip\""));
+  const actions = hud.slice(hud.indexOf("<div class=\"game-hud__actions\">"), hud.indexOf("<div class=\"game-hud__forecast\""));
   assert.match(actions, /<button class="game-hud__menu-button" data-hud="menu"><svg class="game-hud__menu-glyph"[^>]*aria-hidden="true"/);
   assert.equal(actions.includes("♪"), false, "cubukta hala muzik notasi var");
   assert.equal(actions.includes("data-hud=\"audio\""), false);
