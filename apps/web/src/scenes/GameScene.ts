@@ -1006,6 +1006,8 @@ export class GameScene extends Phaser.Scene {
   private readonly hasarliIsciler = new Set<string>();
   private workerBanGraphics?: Phaser.GameObjects.Graphics;
   private mapGraphics?: Phaser.GameObjects.Graphics;
+  private terrainImage?: Phaser.GameObjects.Image;
+  private towerGroundGraphics?: Phaser.GameObjects.Graphics;
   private crystalGraphics?: Phaser.GameObjects.Graphics;
   private resourceAmountLabels = new Map<string, Phaser.GameObjects.Text>();
   private resourceSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -1548,6 +1550,7 @@ export class GameScene extends Phaser.Scene {
     this.runMapScale = this.selectedMapData.scale;
     this.creativeRequested = data.creative === true;
     this.selectedStage = getStage(data.stage).id;
+    this.roomStage = undefined;
   }
 
   private getMapCellSize() {
@@ -1816,25 +1819,19 @@ export class GameScene extends Phaser.Scene {
     const tileRows = this.selectedMapData.rows;
     const bounds = getMapWorldBounds(this.selectedMapData);
 
-    // Uzay arenanin disinda da suruyor.
-    //
-    // Yildizlar bir donem yalnizca harita dikdortgenine ciziliyordu. Ekran
-    // orani haritaninkiyle ayni oldugunda fark etmiyor -- arena zaten her yeri
-    // dolduruyor. Ama uzun ekranlarda arena genisligi doldurup dikeyde yer
-    // birakiyor (olculdu: 360x780'lik bir Android'de 113 piksel) ve o yer duz
-    // siyah kaliyordu: uzayin bittigi degil, cizimin bittigi yer gibi
-    // gorunuyordu. Arka plan artik kameranin gorebilecegi her yeri kapliyor.
-    const sky = this.getSkyBounds();
-    graphics.fillStyle(0x000000, 1);
-    graphics.fillRect(sky.left, sky.top, sky.width, sky.height);
+    const sky = this.getTerrainBackdropBounds();
+    const texture = `terrain-stage-${getStage(this.roomStage ?? this.selectedStage).id}`;
+    if (!this.terrainImage?.active) this.terrainImage = this.add.image(0, 0, texture).setDepth(0.9);
+    this.terrainImage.setTexture(texture).setPosition(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)
+      .setDisplaySize(bounds.width, bounds.height).setTint(0xb8b8b8);
+    // Cover only the outside of the arena; the opaque floor stays below gameplay.
+    graphics.fillStyle(0x06080c, 1);
+    graphics.fillRect(sky.left, sky.top, sky.width, Math.max(0, bounds.top - sky.top));
+    graphics.fillRect(sky.left, bounds.bottom, sky.width, Math.max(0, sky.top + sky.height - bounds.bottom));
+    graphics.fillRect(sky.left, bounds.top, Math.max(0, bounds.left - sky.left), bounds.height);
+    graphics.fillRect(bounds.right, bounds.top, Math.max(0, sky.left + sky.width - bounds.right), bounds.height);
 
-    this.drawNebula(graphics, sky);
-    this.drawStarField(graphics, sky);
-
-    // Kare izgarasi kaldirildi: dama tahtasi da hucre cizgileri de tumuyle
-    // sustu, hicbir oyun bilgisi tasimiyorlardi. Giris ve cikis ise tasiyor --
-    // dusmanin nereden gelip nereye gittigi -- o yuzden onlar kaldi, ama artik
-    // hucre hucre degil, tek bir yumusak serit olarak.
+    // Spawn and nexus bands retain their gameplay meaning over the dark floor.
     const bandHeight = cellSize;
     graphics.fillStyle(0x22d3ee, 0.09);
     graphics.fillRect(bounds.left, bounds.top, bounds.width, bandHeight);
@@ -1860,7 +1857,7 @@ export class GameScene extends Phaser.Scene {
    * `configureArenaCamera` ile ayni dikdortgen, ayni paylarla. Ikisi ayrisirsa
    * kameranin gidebildigi ama yildizin cizilmedigi bir serit kalir.
    */
-  private getSkyBounds() {
+  private getTerrainBackdropBounds() {
     const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
     const padding = TOWER_GRID_SIZE;
     return {
@@ -1869,67 +1866,6 @@ export class GameScene extends Phaser.Scene {
       width: view.width + padding * 2,
       height: view.height + padding * 2
     };
-  }
-
-  /**
-   * Deterministik rastgelelik.
-   *
-   * Yildizlar her harita cizimde yeniden uretiliyor; \`Math.random\` ile her
-   * anlik goruntude yer degistirir ve gokyuzu titrerdi. Ayni tohum ayni yildizi
-   * verdigi icin gokyuzu duruyor.
-   */
-  private spaceNoise(seed: number) {
-    const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
-    return value - Math.floor(value);
-  }
-
-  /**
-   * Bulutsu: ic ice, gitgide sonen daireler.
-   *
-   * Graphics radyal gecis cizemiyor, o yuzden yumusaklik katmanla elde ediliyor.
-   * Saydamliklar cok dusuk cunku istenen sey renk degil, siyahin icinde zar zor
-   * secilen bir derinlik.
-   */
-  private drawNebula(graphics: Phaser.GameObjects.Graphics, bounds: { left: number; top: number; width: number; height: number }) {
-    const clouds = [
-      { x: 0.2, y: 0.26, radius: Math.max(bounds.width, bounds.height) * 0.34, color: 0x3b1d7a },
-      { x: 0.84, y: 0.62, radius: Math.max(bounds.width, bounds.height) * 0.3, color: 0x0b4a63 },
-      { x: 0.46, y: 0.88, radius: Math.max(bounds.width, bounds.height) * 0.24, color: 0x5b1e4a }
-    ];
-
-    for (const cloud of clouds) {
-      const centerX = bounds.left + bounds.width * cloud.x;
-      const centerY = bounds.top + bounds.height * cloud.y;
-      for (let layer = 5; layer >= 1; layer -= 1) {
-        graphics.fillStyle(cloud.color, 0.02);
-        graphics.fillCircle(centerX, centerY, (cloud.radius * layer) / 5);
-      }
-    }
-  }
-
-  /** Uc parlaklik kademesinde dagilmis yildizlar; en parlak birkacinda hale var. */
-  private drawStarField(graphics: Phaser.GameObjects.Graphics, bounds: { left: number; top: number; width: number; height: number }) {
-    // Sayi alana bagli: sabit bir sayi buyuk haritada seyrek, kucukte kalabalik
-    // kalirdi.
-    const count = Math.round((bounds.width * bounds.height) / 900);
-    for (let index = 0; index < count; index += 1) {
-      const x = bounds.left + this.spaceNoise(index * 2 + 1) * bounds.width;
-      const y = bounds.top + this.spaceNoise(index * 2 + 2) * bounds.height;
-      const roll = this.spaceNoise(index * 2 + 3);
-
-      if (roll > 0.965) {
-        // Nadir parlak yildiz: kucuk bir hale ve serttin bir cekirdek.
-        graphics.fillStyle(0xbae6fd, 0.14);
-        graphics.fillCircle(x, y, 2.6);
-        graphics.fillStyle(0xffffff, 0.95);
-        graphics.fillCircle(x, y, 0.95);
-        continue;
-      }
-
-      const tint = roll > 0.9 ? 0x93c5fd : roll > 0.82 ? 0xfcd9b6 : 0xffffff;
-      graphics.fillStyle(tint, 0.2 + roll * 0.45);
-      graphics.fillCircle(x, y, roll > 0.6 ? 0.7 : 0.42);
-    }
   }
 
   private createPlacementGrid() {
@@ -4885,7 +4821,10 @@ export class GameScene extends Phaser.Scene {
     if (!snapshot.result) this.liveSnapshotSeen = true;
     // Bounty Board: canli mac oynaniyor (kopru yinelenen cagriyi yutuyor).
     if (!snapshot.result && !this.matchResultShown) arcade.gameplayStart();
-    if (snapshot.stage !== undefined) this.roomStage = snapshot.stage;
+    if (snapshot.stage !== undefined && snapshot.stage !== this.roomStage) {
+      this.roomStage = snapshot.stage;
+      this.drawMap();
+    }
     if (snapshot.result) {
       // Sonuc mesaji kacirildiysa (kopma, yeniden baglanma) ekran buradan
       // aciliyor; asama ve yaratici bayragi da ayni snapshot'tan gelmeli ki
@@ -7400,6 +7339,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.signatureTowers = towers;
     const cellSize = this.getMapCellSize();
     const linkRadius = Math.max(14, cellSize * 0.8);
+    if (!this.towerGroundGraphics?.active) this.towerGroundGraphics = this.add.graphics().setDepth(2);
+    const ground = this.towerGroundGraphics;
+    ground.clear();
+    for (const tower of towers) {
+      if (this.isEdgePlacedDefinition(tower.definitionId)) continue;
+      const size = getTowerSpriteSize(tower.definitionId, cellSize * getTowerGridSpan(tower.definitionId));
+      ground.fillStyle(0x000000, tower.disabled ? 0.2 : 0.38);
+      ground.fillEllipse(tower.x + size * 0.035, tower.y + size * 0.06, size * 1.04, size * 0.97);
+      ground.lineStyle(Math.max(0.5, cellSize * 0.018), 0x71685a, 0.22);
+      ground.strokeEllipse(tower.x, tower.y, size * 1.02, size * 0.98);
+    }
     this.selectedResourceGraphics?.clear().setVisible(false);
     this.selectedAmmoText?.setVisible(false);
     this.selectedEnergyText?.setVisible(false);
