@@ -576,7 +576,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       stats?.ec !== undefined ? t("sheet.perShot", { v: formatSmart(stats.ec) }) : undefined,
       stats?.oe !== undefined ? t("sheet.energy.upkeep", { v: formatNumber(realRate(stats.oe), 2) }) : undefined
     ].filter(Boolean);
-    bars.push({ key: "energy", label: live.resourceProvider === "energy" ? t("sheet.energyStore") : t("sheet.energy"), value: `${Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: energyParts.length > 0 ? energyParts.join(" · ") : undefined });
+    bars.push({ key: "energy", label: live.resourceProvider === "energy" ? t("sheet.energyStore") : t("sheet.energy"), value: `${input.definitionId === "repair-depot-1" ? formatNumber(live.energy ?? 0, 2) : Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: energyParts.length > 0 ? energyParts.join(" · ") : undefined });
   }
   if (relevance.operational) {
     resourceRows.push({ key: "fuel", label: t("sheet.fuel"), value: live.shotFuel === "energy" ? t("sheet.energy") : t("sheet.ammo"), detail: [] });

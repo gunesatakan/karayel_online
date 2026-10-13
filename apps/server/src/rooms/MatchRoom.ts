@@ -15090,7 +15090,8 @@ export class MatchRoom extends Room<MatchState> {
         disabled: tower.hp <= 0,
         ammo: Math.floor(tower.ammo),
         maxAmmo: tower.maxAmmo,
-        energy: Math.floor(tower.energy),
+        // Keep fractional repair fuel visible: zero must mean no production energy.
+        energy: isRepairDepotDefinition(tower.definition) ? Math.ceil(Math.max(0, tower.energy) * 100) / 100 : Math.floor(tower.energy),
         maxEnergy: tower.maxEnergy,
         productionAmmo: tower.productionAmmo,
         materials: tower.materials ? { ...tower.materials } : undefined,

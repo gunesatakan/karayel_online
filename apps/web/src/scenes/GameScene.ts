@@ -7450,7 +7450,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setFillStyle(tower.color, 0.13)
           .setStrokeStyle(2, tower.color, 0.7);
       }
-      rendered.range.setVisible(tower.id === this.selectedPlacedTowerId);
+      rendered.range.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId !== "repair-depot-1");
       rendered.deadZone.setVisible(tower.id === this.selectedPlacedTowerId && (tower.minimumRange ?? 0) > 0);
       rendered.isolation.setVisible(tower.id === this.selectedPlacedTowerId && tower.definitionId === "warrior-3");
       this.updateServerLinkHighlight(rendered.linkHighlight, tower);

@@ -47,6 +47,25 @@ test("iron plus energy produces parts; neither resource alone produces anything"
   assert.equal(depot.materials.iron, 9);
 });
 
+test("repair production stops at energy exhaustion, including fractional reserves", () => {
+  const room = createRoom("warrior");
+  const depot = build(room, "repair-depot-1");
+  depot.materials.iron = 10;
+  depot.energy = 0.25;
+  room.updateResourceFactories(2);
+  assert.equal(depot.repairParts, 0.25);
+  assert.equal(depot.energy, 0);
+  assert.equal(depot.materials.iron, 9.75);
+  for (let i = 0; i < 100; i++) room.updateResourceFactories(0.05);
+  assert.equal(depot.repairParts, 0.25);
+  assert.equal(depot.materials.iron, 9.75);
+  depot.energy = 1;
+  depot.materials.iron = 0;
+  room.updateResourceFactories(2);
+  assert.equal(depot.repairParts, 0.25);
+  assert.equal(depot.energy, 1);
+});
+
 test("repairer must collect parts and cannot repair past its carried supply", () => {
   const room = createRoom("warrior");
   const target = build(room, "warrior-1"); target.hp /= 2;
