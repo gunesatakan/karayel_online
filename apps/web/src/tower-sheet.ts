@@ -169,8 +169,8 @@ const PORTRAITS: Readonly<Record<string, string>> = {
   "zeynep-7": assetUrl("images/towers/tower-zeynep-7.webp")
 };
 
-function getPortrait(definitionId: string, level: number) {
-  const tiered = getTieredTowerArtPath(definitionId, level) ?? getSupplyTowerArtPath(definitionId, level);
+function getPortrait(definitionId: string, level: number, characterId: string) {
+  const tiered = getTieredTowerArtPath(definitionId, level) ?? getSupplyTowerArtPath(definitionId, level, characterId);
   return tiered ? assetUrl(tiered) : PORTRAITS[definitionId];
 }
 
@@ -638,7 +638,7 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     owner: input.ownerName,
     readOnly: Boolean(input.readOnly ?? stats?.ro),
     color: input.color,
-    portrait: getPortrait(input.definitionId, input.level),
+    portrait: getPortrait(input.definitionId, input.level, input.characterId),
     monogram: upper(input.name.trim().charAt(0)) || "?",
     dock: input.dock ?? "bottom",
     pending,

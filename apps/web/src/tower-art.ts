@@ -29,17 +29,22 @@ const SUPPLY_TOWER_ART: Readonly<Record<string, string>> = {
   "archer-8": "energy"
 };
 
-export function getSupplyTowerArtPath(definitionId: string, level = 1) {
+export function getSupplyTowerArtPath(definitionId: string, level = 1, characterId?: string) {
   if (definitionId === "warehouse-1") return "images/towers/tower-warehouse.svg";
+  if (definitionId === "repair-depot-1" && characterId === "warrior") return `images/towers/tower-attacklord-repair${level >= 5 ? "-level-5" : ""}.png`;
   const kind = SUPPLY_TOWER_ART[definitionId];
   return kind ? `images/towers/tower-supply-${kind}${level >= 5 ? "-level-5" : ""}.png` : undefined;
 }
 
 export function listSupplyTowerArt() {
-  return Object.keys(SUPPLY_TOWER_ART).flatMap((id) => [1, 5].map((level) => ({
+  const common = Object.keys(SUPPLY_TOWER_ART).flatMap((id) => [1, 5].map((level) => ({
     key: getTowerTextureKey(id, level),
     path: getSupplyTowerArtPath(id, level)!
   })));
+  return [...common, ...[1, 5].map(level => ({
+    key: getTowerTextureKey("repair-depot-1", level, "warrior"),
+    path: getSupplyTowerArtPath("repair-depot-1", level, "warrior")!
+  }))];
 }
 
 function hasTieredTowerArt(definitionId: string) {
@@ -47,7 +52,8 @@ function hasTieredTowerArt(definitionId: string) {
 }
 
 /** Kulenin doku anahtari; kademe resmi olan kulede seviyenin kademesi. */
-export function getTowerTextureKey(definitionId: string, level: number) {
+export function getTowerTextureKey(definitionId: string, level: number, characterId?: string) {
+  if (definitionId === "repair-depot-1" && characterId === "warrior") return `tower-attacklord-repair${level >= 5 ? "-level-5" : ""}`;
   if (definitionId in SUPPLY_TOWER_ART && level >= 5) return `tower-${definitionId}-level-5`;
   if (!hasTieredTowerArt(definitionId)) return `tower-${definitionId}`;
   return `tower-${definitionId}-${TIER_ART_SUFFIX[getTowerTier(level)]}`;

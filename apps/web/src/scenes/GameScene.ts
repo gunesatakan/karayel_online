@@ -2249,7 +2249,7 @@ export class GameScene extends Phaser.Scene {
     // Matches the placed sprite: disc on the tile, frame slightly larger to hold
     // whatever overhangs it.
     const ghost = this.getGhostSize(tower.id, this.getPlacementOrientation(tower.id, previewPoint.x, previewPoint.y));
-    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, getTowerTextureKey(tower.id, 1))
+    this.placementGhost = this.add.image(previewPoint.x, previewPoint.y, getTowerTextureKey(tower.id, 1, this.selectedCharacterId))
       .setDisplaySize(ghost.width, ghost.height)
       .setAlpha(0.78)
       .setDepth(28);
@@ -2407,7 +2407,7 @@ export class GameScene extends Phaser.Scene {
     this.pendingPlacement = { x, y, definitionId, until: performance.now() + LOCAL_ECHO_TIMEOUT_MS };
 
     const span = this.getGhostSize(definitionId, this.getPlacementOrientation(definitionId, x, y));
-    this.pendingPlacementGhost = this.add.image(x, y, getTowerTextureKey(definitionId, 1))
+    this.pendingPlacementGhost = this.add.image(x, y, getTowerTextureKey(definitionId, 1, this.selectedCharacterId))
       .setDisplaySize(span.width, span.height)
       .setAlpha(0.5)
       .setDepth(27);
@@ -7374,7 +7374,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           .setVisible(false)
           .setDepth(6);
         const healthBar = this.add.graphics().setDepth(16);
-        const base = this.add.image(tower.x, tower.y, getTowerTextureKey(tower.definitionId, tower.level))
+        const base = this.add.image(tower.x, tower.y, getTowerTextureKey(tower.definitionId, tower.level, tower.characterId))
           .setDisplaySize(52, 52)
           .setAlpha(tower.ownerId === this.localSessionId ? 1 : 0.78)
           .setDepth(12);
@@ -7399,7 +7399,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         this.playTowerLanding(tower, rendered, discSize, now);
       }
 
-      const texture = getTowerTextureKey(tower.definitionId, tower.level);
+      const texture = getTowerTextureKey(tower.definitionId, tower.level, tower.characterId);
       // Durum anahtarda yok: asagidaki blok onu okumuyor, "Isı freni %X" ise
       // savasta neredeyse her anlik goruntude degisip halkayi ve izgarayi
       // bosuna yeniden ciziyordu. Durumu okuyan gorseller blogun disinda.
