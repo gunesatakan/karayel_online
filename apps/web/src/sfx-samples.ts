@@ -33,8 +33,12 @@ import { assetUrl } from "./asset-url";
 export type KillPortalSize = "small" | "normal" | "large";
 /** Oldurme sesinin ailesi: boy basina bir aile, iki cesit (A ve D). */
 export type KillSoundFamily = "portalSmall" | "portalNormal" | "portalLarge";
-/** Odul seslerinden ornekli olanlar. */
-export type SfxSampleFamily = KillSoundFamily | "crit" | "execute";
+/**
+ * Odul seslerinden ornekli olanlar. "ball" (celik levha darbesi) asil olarak
+ * gulle vurusunun ailesi; Metal Kalkan'in yere oturusu ayni kayitli ornegi
+ * Efektler kanalindan caliyor (yeni dosya yok).
+ */
+export type SfxSampleFamily = KillSoundFamily | "crit" | "execute" | "ball";
 export type SampleFamilyId = HitVoiceId | SfxSampleFamily | "heft";
 
 /** Dosyalarin sunuldugu yer (vite `public/`). */

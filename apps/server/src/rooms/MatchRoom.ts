@@ -1,4 +1,6 @@
+import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
+import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
@@ -10,6 +12,27 @@ import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@
 // Istemciye giden sabit metinler: Turkcesi buradan, yaninda anahtari (`key`).
 import { PREVIEW_EQUIP_REJECTED_KEY, SERVER_TEXT, type ServerTextKey } from "@karayel/shared";
 import { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, isExecuteImmune, type ExecuteRejectReason, type SkillExecuteMessage, type SkillRejectedMessage } from "@karayel/shared";
+// Metal Kalkan (AttackLord, yuva 1) ve karsi atagin kalkanla yutulmasi.
+import {
+  ATAKAN_SHIELD_SLOT,
+  METAL_SHIELD_CLEARANCE_CELLS,
+  METAL_SHIELD_DURATION_MS,
+  METAL_SHIELD_MAX_ACTIVE,
+  addSurgeAbsorbedInterval,
+  clampMetalShieldSegment,
+  encodeSurgeCuts,
+  getMetalShieldMaxLength,
+  getMetalShieldMinLength,
+  getPointToSegment,
+  getSurgeObstacleContact,
+  getVerticalSurgeBand,
+  isSparedFromSurge,
+  segmentsTouch,
+  type MetalShieldRejectReason,
+  type MetalShieldSnapshot,
+  type SurgeAbsorbedInterval,
+  type SurgeBandGeometry
+} from "@karayel/shared";
 // Kule paneli: secili kulenin savasta okunan sayilari (`sendTowerStats`).
 import { closeTowerStatValue, getTowerBaseLevelFireIntervalMs, getTowerBaseLevelRange, groupTowerStatSources, roundTowerStat, towerFiresProjectiles, towerNeverAttacks, type TowerEffectWire, type TowerStatSource, type TowerStatsWire } from "@karayel/shared";
 // Zeynep atislarinin geometrisi paylasilan pakette: istemcinin imzalari ayni kurali cagiriyor.
@@ -590,6 +613,10 @@ const TOWER_INSIGHT_PHASE_STEP_MS = 67;
 /** Isci aramasinin komsu sirasi (`getGridNeighbors` ile ayni): asagi, sol, sag, yukari. */
 const WORKER_NEIGHBOR_COL_STEPS = [0, -1, 1, 0] as const;
 const WORKER_NEIGHBOR_ROW_STEPS = [1, 0, 0, -1] as const;
+/** Haritadaki dugumler, tele ciktiklari gruplarla (sira `MAP_RESOURCE_NODES` sirasi). */
+const CRYSTAL_NODE_DEFINITIONS = MAP_RESOURCE_NODES.filter((node) => node.kind === "energy");
+const MATERIAL_NODE_DEFINITIONS = MAP_RESOURCE_NODES.filter((node) => node.kind !== "energy");
+const AMMO_SOURCE_NODE_DEFINITIONS = MATERIAL_NODE_DEFINITIONS.filter((node) => node.id.startsWith("ammo-source-"));
 /**
  * Onbellekten donen, dondurulmus modifier listesi. Tipi de salt okunur:
  * cagiran yerinde degistirmeye kalkarsa derleyici durduruyor (dondurulmus
@@ -1033,6 +1060,9 @@ type UseSkillMessage = {
   slot?: number;
   x?: number;
   y?: number;
+  /** Metal Kalkan'in ucu (dunya koordinati); baslangici `x`/`y`. */
+  x2?: number;
+  y2?: number;
   towerId?: string;
   /** Execute'un hedefi: istemcinin dokundugu dusmanin kimligi. */
   enemyId?: string;
@@ -1130,6 +1160,13 @@ type EnemyModel = {
   navigator?: BlindNavigatorState;
   /** Bu hucre icin verilmis karar; hucre degisene kadar tekrarlanir. */
   navigatorStep?: { fromCol: number; fromRow: number; toCol: number; toRow: number };
+  /**
+   * Metal Kalkan bu dusmanin bir adimini kesti. Kalkan kalkinca gezinme
+   * hafizasi sifirlaniyor: kalkani dolasirken tutulan "duvar" artik yok.
+   */
+  shieldTouched?: boolean;
+  /** Kirma kilidi kalkan dururken alindi; kalkan kalkinca kilit dusuyor. */
+  shieldBreachLock?: boolean;
   pathDistance: number;
   /**
    * Herhangi bir yavaslatmanin bittigi en gec an ("yavaslamis mi" sorusu).
@@ -1307,6 +1344,7 @@ class SpecialRouteHeap {
 
 type SpecialEnemyState = {
   detonated?: boolean;
+  harvest?: { home: { x: number; y: number }; nodeId?: string; cargo: Record<string, number>; total: number; returning: boolean };
   kind: SpecialEnemyKind;
   budget?: { replaced: number; gold: number; exp: number; leakDamage: number; reputation: number };
   /** Enerji yiyici: su anda emilen bina; yalnizca emerken. */
@@ -1349,6 +1387,30 @@ type CounterSurgeModel = {
    */
   damageRatio: number;
   hitIds: Set<string>;
+  /**
+   * Metal Kalkan'in yuttugu parcalar: seridin genislik ekseninde (asagi inen
+   * seritte x) aralik ve on kenarin kesildigi ilerleme. Kalici: kalkan
+   * kalksa da o parca bu serit icin durmus kaliyor.
+   */
+  absorbed: SurgeAbsorbedInterval[];
+  /** On kenarin bir onceki tikteki ilerlemesi; kalkanin coktan gecilmis kismi sayilmasin diye. */
+  lastProgress: number;
+};
+
+/**
+ * Metal Kalkan (AttackLord, yuva 1): haritada duz bir parca. Yapi degil:
+ * cani yok, hedef alinamaz, kirilamaz; yalnizca yer dusmanlarinin gecisini
+ * ve karsi atagin degdigi kismini kesiyor.
+ */
+type MetalShieldModel = {
+  id: number;
+  ownerId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  /** Kalkanin kalktigi an (duvar saati). */
+  expiresAt: number;
 };
 
 /**
@@ -1675,7 +1737,8 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   equipShopItem: { phase: "match", fields: { itemId: "string", towerId: "string" } },
   // Beceri dokunusla gidiyor; sogumasi zaten saniyeler. Kova insan elinin
   // rahatca sigdigi kadar, dongude gonderen istemciyi kesiyor.
-  useSkill: { phase: "match", fields: { slot: "number", x: "number", y: "number", towerId: "string", enemyId: "string", commandTier: "string" }, rate: { burst: 10, perSecond: 4 } },
+  // `x2`/`y2`: Metal Kalkan'in ucu (AttackLord yuva 1; baslangic `x`/`y`).
+  useSkill: { phase: "match", fields: { slot: "number", x: "number", y: "number", x2: "number", y2: "number", towerId: "string", enemyId: "string", commandTier: "string" }, rate: { burst: 10, perSecond: 4 } },
   useUltimate: { phase: "match", fields: { mode: "string", column: "number" } },
   linkServer: { phase: "match", fields: { serverTowerId: "string", targetTowerId: "string" } },
   setTowerMode: { phase: "match", fields: { towerId: "string", mode: "string" } },
@@ -2113,6 +2176,25 @@ export class MatchRoom extends Room<MatchState> {
    * o yeniden kurmayi geciktiren tek sey.
    */
   private resourceNodeRemaining = new Map<string, number>();
+  /**
+   * Kaynak dugumlerinin bu mactaki kareleri.
+   *
+   * Mac baslarken arena kurulunca bir kez zarla dagitiliyor
+   * (`rollResourceLayout`) ve mac boyunca degismiyor: yeniden baglanan ya da
+   * sonradan giren istemci ayni kareleri snapshottan okuyor. Arena kurulmadan
+   * once (lobi, test duzenegi) alan bos ve eski sabit yerlesim gecerli.
+   */
+  private resourceLayout?: { cols: number; rows: number; cells: Record<string, ResourceLayoutCell>; source: ResourceLayoutSource; spacing: number };
+  /**
+   * Yerlesim tohumu: oda basina bir kez, mac baslarken `Math.random`dan tek
+   * cekim. Yerlesimin butun zarlari bu tohumdan tureyen ayri bir uretecten
+   * (`createResourceLayoutRandom`); dogum ve ozel dusman zarlarina dokunmuyor.
+   */
+  private resourceLayoutSeed?: number;
+  /** Istemcinin haritasinin acikca verdigi dugum konumlari (kendi izgara olcusuyle). */
+  private requestedResourceNodes?: { cols: number; rows: number; nodes: MapResourceNode[] };
+  /** Arena kurulmadan onceki sabit yerlesimin onbellegi (harita olcusune gore). */
+  private fixedResourceLayoutCache?: { cols: number; rows: number; cells: Record<string, ResourceLayoutCell> };
   private workerAssignments = new Map<string, WorkerAssignment>();
   private workerRespawnAt = new Map<string, number>();
   private crystalTrapUntil = new Map<string, number>();
@@ -2238,8 +2320,9 @@ export class MatchRoom extends Room<MatchState> {
   private lastChampionKillMs?: number;
   /**
    * Ozel dusman tohumu: oda basina bir kez, yalnizca 2. asama ve sonrasinda
-   * (ilk planda) cekiliyor. 1. asamada hic zar atilmiyor; dogum sirasi ve
-   * olcum parmak izi eskisiyle bire bir ayni kaliyor.
+   * (ilk planda) cekiliyor. 1. asamada ozel dusman icin hic zar atilmiyor.
+   * (Mac basindaki tek `Math.random` cekimi kaynak yerlesiminin tohumu:
+   * `resourceLayoutSeed`; bu tohumdan sonra, ayri bir uretecle.)
    */
   private specialSeed?: number;
   /** Dalganin ozel dusman plani ve dalga basina tohumlu zari. */
@@ -2251,10 +2334,13 @@ export class MatchRoom extends Room<MatchState> {
   private waveSurgeStarted = false;
   private counterSurge?: CounterSurgeModel;
   private nextCounterSurgeId = 1;
+  /** Sahadaki Metal Kalkanlar; cogu zaman bos (kalkan 3 sn yasiyor). */
+  private metalShields: MetalShieldModel[] = [];
+  private nextMetalShieldId = 1;
   /** Isiticinin tick ici tekrar onleyici listesi (tahsis yok). */
   private readonly heaterScratch: TowerModel[] = [];
   /** Ozel dusman yol alanlari; yapi degisince atiliyor. `null`: hedef yok. */
-  private specialRouteFields = new Map<"hunter" | "eater" | "bomber", SpecialRouteField | null>();
+  private specialRouteFields = new Map<string, SpecialRouteField | null>();
   private spawnCooldownMs = 500;
   private projectileGuidanceUntil = 0;
   private projectileGuidanceX = GAME_WORLD_WIDTH / 2;
@@ -2368,6 +2454,22 @@ export class MatchRoom extends Room<MatchState> {
     this.sealedCells.clear();
     // Cikmaz sokak hafizasi da ayni sebeple: yigilarak kuruldugu icin tek bir
     // hucreyi tek tek dogrulamak yetmez, tamami yeniden kesfedilmeli.
+    this.deadEndCells.clear();
+  }
+
+  /**
+   * Metal Kalkan belirdi ya da kalkti: gecilebilirlik degisti.
+   *
+   * `markNavigationDirty`nin dar hali. Kalkan yapi degil: kule yerlesimi
+   * (tick ici yerlesim onbellegi, hucre ve kenar indeksi) ayni kaliyor,
+   * onlari eskitmek bos is. Eskiyen yalnizca gecilebilirlikten turetilenler:
+   * ozel dusman yol alanlari, kapali cikis ve cikmaz sokak hafizasi. Ana kapi
+   * (`flow:shift`) da eskitilmiyor: 3 saniyelik kalkan surunun kapisini
+   * degistirmis sayilmaz, oyuncuya iki bos uyari giderdi (bkz. `updateEnemies`).
+   */
+  private markShieldNavigationDirty() {
+    if (this.specialRouteFields.size > 0) this.specialRouteFields.clear();
+    this.sealedCells.clear();
     this.deadEndCells.clear();
   }
 
@@ -2787,6 +2889,12 @@ export class MatchRoom extends Room<MatchState> {
     const baseMap = normalizeMapData(options.mapData);
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
+    // Haritanin acik dugum konumlari: arena mac baslarken yeniden uretiliyor
+    // (karolar tasinmiyor), o yuzden konumlar burada, kendi olcusuyle saklanip
+    // arenaya oranla tasiniyor (`rollResourceLayout`).
+    this.requestedResourceNodes = baseMap.resourceNodes && baseMap.resourceNodes.length > 0
+      ? { cols: baseMap.cols, rows: baseMap.rows, nodes: baseMap.resourceNodes }
+      : undefined;
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
     this.planWaveSpawns(this.wave);
@@ -3749,6 +3857,14 @@ export class MatchRoom extends Room<MatchState> {
     } else {
       this.spawnEnemy(champion);
     }
+    if (this.waveSpawned === 1) {
+      const count = getHarvesterRaidCount(this.wave);
+      for (let i = 0; i < count; i++) {
+        const row = 1 + (Math.floor(i / 2) * 3) % Math.max(1, this.activeMap.rows - 5);
+        this.spawnEnemy(undefined, { kind: "harvester", type: "brute", healthMultiplier: 1, armorMultiplier: 1,
+          start: gridToWorld(i % 2 === 0 ? 0 : this.activeMap.cols - 1, row, this.activeMap) });
+      }
+    }
     this.waveSpawned += 1;
     if (champion) {
       this.waveChampionSpawned = true;
@@ -3771,6 +3887,11 @@ export class MatchRoom extends Room<MatchState> {
   private spawnSpecialEnemy(spawn: WaveSpecialSpawn) {
     const random = this.specialRandom ?? Math.random;
     const plan = this.waveSpecialPlan;
+    if (spawn.kind === "harvester") {
+      this.spawnEnemy(undefined, { kind: "harvester", type: "brute",
+        ...getSpecialEnemyDurability("harvester"), start: this.pickSpecialSideSpawn(random) });
+      return;
+    }
     if (spawn.kind === "hunter" && plan?.hunter) {
       const budget = plan.hunter;
       this.spawnEnemy(undefined, {
@@ -4688,7 +4809,92 @@ export class MatchRoom extends Room<MatchState> {
     this.markNavigationDirty();
     // Arena yeniden kuruldu: eski haritanin seridi (sutunu, ilerlemesi) gecersiz.
     this.counterSurge = undefined;
+    this.metalShields = [];
     this.planWaveSpawns(this.wave);
+    // Dalga planindan sonra: ozel dusman tohumu (2. asama+) eskisiyle ayni
+    // sirada cekiliyor, yerlesim tohumu onun ardindan.
+    this.rollResourceLayout();
+  }
+
+  /**
+   * Kaynak dugumlerini bu macin arenasina dagitir (mac basina bir kez).
+   *
+   * Kurallar paylasilan pakette (`placeResourceNodes`): kenardan bir kare
+   * iceride, dogum ve nexus satirlarinin ve bitisiklerinin disinda, dugumler
+   * arasi en az iki bos kare (sigmazsa bir), bir enerji kristali ve barut
+   * yatagi haritanin alt %60'inda. Haritanin acikca verdigi konumlar aynen
+   * kaliyor. Zar bir yerlesim cikaramazsa eski sabit yerlesime donuluyor.
+   *
+   * Tohum yalnizca gerekirse cekiliyor: butun dugumleri acikca verilmis
+   * harita `Math.random`a hic dokunmuyor.
+   */
+  private rollResourceLayout() {
+    const map = this.activeMap;
+    const fixed: Record<string, ResourceLayoutCell> = {};
+    const requested = this.requestedResourceNodes;
+    if (requested) {
+      for (const node of projectMapResourceNodes(requested.nodes, requested, map)) {
+        fixed[node.id] = { col: node.col, row: node.row };
+      }
+    }
+    const blockedCells: ResourceLayoutCell[] = [];
+    for (const [key, tower] of this.getTowerCellIndex()) {
+      if (tower.hp <= 0) continue;
+      const [col, row] = key.split(":").map(Number);
+      blockedCells.push({ col, row });
+    }
+    let random: (() => number) | undefined;
+    const result = placeResourceNodes({
+      cols: map.cols,
+      rows: map.rows,
+      nodes: MAP_RESOURCE_NODES,
+      spawnCells: getMapPoints(map, "spawn"),
+      nexusCells: getMapPoints(map, "nexus"),
+      forbiddenCells: getMapPoints(map, "empty"),
+      blockedCells,
+      fixed,
+      random: () => {
+        if (!random) {
+          this.resourceLayoutSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+          random = createResourceLayoutRandom(this.resourceLayoutSeed);
+        }
+        return random();
+      }
+    });
+    this.resourceLayout = { cols: map.cols, rows: map.rows, cells: result.cells, source: result.source, spacing: result.spacing };
+  }
+
+  /**
+   * Dugumlerin kareleri: mac basinda dagitilan yerlesim; arena kurulmadiysa
+   * (ya da harita olcusu degistiyse) eski sabit yerlesim.
+   */
+  private getResourceNodeCells(): Record<string, ResourceLayoutCell> {
+    const { cols, rows } = this.activeMap;
+    const layout = this.resourceLayout;
+    if (layout && layout.cols === cols && layout.rows === rows) return layout.cells;
+    const cached = this.fixedResourceLayoutCache;
+    if (cached && cached.cols === cols && cached.rows === rows) return cached.cells;
+    const cells = getFixedResourceLayout(cols, rows);
+    this.fixedResourceLayoutCache = { cols, rows, cells };
+    return cells;
+  }
+
+  /**
+   * Baslangic toplayicisinin varsayilan dugumu: turunun usse en yakini.
+   *
+   * Konumlar rastgele oldugu icin "1 numarali dugum" artik yakin olan demek
+   * degil; eskiden sabit `crystal-1` / `ammo-source-1` idi. Us, nexus
+   * kareleri; esitlikte iscinin dogdugu kareye yakin olan.
+   */
+  private getDefaultGatherNodeId(kind: ResourceKind, spawnX: number, spawnY: number) {
+    const nexusCells = getMapPoints(this.activeMap, "nexus");
+    return getNearestResourceNodeId({
+      nodes: MAP_RESOURCE_NODES,
+      cells: this.getResourceNodeCells(),
+      kind,
+      baseCells: nexusCells.length > 0 ? nexusCells : [{ col: Math.floor(this.activeMap.cols / 2), row: this.activeMap.rows - 1 }],
+      from: worldToGrid(spawnX, spawnY, this.activeMap)
+    }) ?? (kind === "energy" ? "crystal-1" : "ammo-source-1");
   }
 
   private markSetupReady(client: Client) {
@@ -4835,6 +5041,7 @@ export class MatchRoom extends Room<MatchState> {
     this.matchResult = result;
     // Sonuctan sonra serit yapilari vurmasin ve telde kalmasin.
     this.counterSurge = undefined;
+    this.metalShields = [];
     // Oda listeden hemen dussun; bir sonraki lobi yayinini beklemesin.
     this.syncRoomRegistry();
     if (result === "defeat") {
@@ -4926,7 +5133,7 @@ export class MatchRoom extends Room<MatchState> {
     const championMultiplier = champion?.hpMultiple ?? special?.healthMultiplier ?? 1;
     const multiplayerHealth = 1 + Math.max(0, this.getActivePlayerCount() - 1) * 0.45;
     const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier * championMultiplier) * multiplayerHealth;
-    const maxShield = Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
+    const maxShield = special?.kind === "harvester" ? maxHp : Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
     const start = special?.start ?? this.pickNormalSpawnPoint();
@@ -5006,7 +5213,7 @@ export class MatchRoom extends Room<MatchState> {
           spawnedAt: Date.now()
         }
       } : {}),
-      ...(special ? { special: { kind: special.kind, ...(special.budget ? { budget: special.budget } : {}) } } : {})
+      ...(special ? { special: { kind: special.kind, ...(special.kind === "harvester" ? { harvest: { home: { ...start }, cargo: {}, total: 0, returning: false } } : {}), ...(special.budget ? { budget: special.budget } : {}) } } : {})
     });
     this.broadcastEnemySpawn(this.enemies.get(id)!);
   }
@@ -7750,9 +7957,13 @@ export class MatchRoom extends Room<MatchState> {
 
   private updateEnemies(seconds: number) {
     const deepFreezeTowers = this.collectDeepFreezeTowers();
+    // Metal Kalkan: suresi dolan kalkiyor ve gezinme tazeleniyor. Kalkan
+    // yokken (macin neredeyse tamami) tek bir uzunluk karsilastirmasi.
+    if (this.metalShields.length > 0) this.updateMetalShields(Date.now());
     // Yapi degistiyse ana kapiyi bir kez yeniden olc: yonlendirme artik alani
-    // sormadigi icin bunu tetikleyecek baska bir yer kalmadi.
-    if (this.mainGateDirty) {
+    // sormadigi icin bunu tetikleyecek baska bir yer kalmadi. Kalkan dururken
+    // olcum bekliyor: 3 saniyelik engel surunun kapisi sayilmaz.
+    if (this.mainGateDirty && this.metalShields.length === 0) {
       this.announceFlowShift();
     }
     const now = Date.now();
@@ -7863,6 +8074,10 @@ export class MatchRoom extends Room<MatchState> {
       enemy.towerAttackCooldownMs = Math.max(0, enemy.towerAttackCooldownMs - seconds * 1000);
       // Avci ve yiyici kendi yol alanindan; hedef kalmadiysa normal yola dusuyor.
       const special = enemy.special;
+      if (special?.kind === "harvester") {
+        this.updateHarvester(enemy, seconds, isFeared ? 0 : speedMultiplier);
+        continue;
+      }
       const specialRoute = special && special.kind !== "heater" ? this.findSpecialEnemyRoute(enemy, special.kind) : undefined;
       const route = specialRoute ?? this.findEnemyRoute(enemy);
       if (route.reachedBottom) {
@@ -7919,9 +8134,17 @@ export class MatchRoom extends Room<MatchState> {
         const dy = point.y - enemy.y;
         const distance = Math.max(0.001, Math.hypot(dx, dy));
         const movement = Math.min(distance, enemy.speed * speedMultiplier * seconds);
-        enemy.x += dx / distance * movement;
-        enemy.y += dy / distance * movement;
-        enemy.pathDistance += movement;
+        // Surekli uzayda son kapi: adim bir Metal Kalkan'i kesiyorsa atilmaz.
+        // Yonlendirme zaten kalkani dolasiyor; burasi hucre kararinin
+        // goremedigi egik gecisleri (kose kesme, cikis satiri) tutuyor.
+        if (this.metalShields.length > 0 && enemy.movementKind !== "air"
+          && this.isShieldBlockingSegment(enemy.x, enemy.y, enemy.x + dx / distance * movement, enemy.y + dy / distance * movement)) {
+          enemy.shieldTouched = true;
+        } else {
+          enemy.x += dx / distance * movement;
+          enemy.y += dy / distance * movement;
+          enemy.pathDistance += movement;
+        }
       }
 
       if (bomberContact && Math.hypot(bomberContact.x - enemy.x, bomberContact.y - enemy.y) <= getMapGridSize(this.activeMap) * 1.1) {
@@ -7942,6 +8165,62 @@ export class MatchRoom extends Room<MatchState> {
           this.strikeStructure(enemy, target);
         }
       }
+    }
+  }
+
+  /** Resource raids share cached navigation fields and still respect walls and control effects. */
+  private updateHarvester(enemy: EnemyModel, seconds: number, speedMultiplier: number) {
+    const harvest = enemy.special?.harvest;
+    if (!harvest) return;
+    const nodes = this.getMaterialNodes();
+    let node = nodes.find((entry) => entry.id === harvest.nodeId && entry.remaining > 0);
+    if (!harvest.returning && !node) {
+      node = nodes.filter((entry) => entry.remaining > 0)
+        .sort((a, b) => distanceSq(enemy.x, enemy.y, a.x, a.y) - distanceSq(enemy.x, enemy.y, b.x, b.y))[0];
+      harvest.nodeId = node?.id;
+      if (!node) harvest.returning = true;
+    }
+    const goal = harvest.returning ? harvest.home : node!;
+    const cell = worldToGrid(goal.x, goal.y, this.activeMap);
+    const key = `harvest:${cell.col}:${cell.row}`;
+    let field = this.specialRouteFields.get(key);
+    if (!field) {
+      field = this.buildSpecialRouteField("hunter", [cell]);
+      if (field) this.specialRouteFields.set(key, field);
+    }
+    if (!field || speedMultiplier <= 0) return;
+    const standing = this.getTowerAtCell(cell.col, cell.row);
+    const close = Math.hypot(enemy.x - goal.x, enemy.y - goal.y) <= getMapGridSize(this.activeMap) * 0.15;
+    if (close && (!standing || standing.hp <= 0)) {
+      if (harvest.returning) {
+        // Side escapes steal cargo, but do not damage the nexus or grant kill rewards.
+        this.enemies.delete(enemy.id);
+        return;
+      }
+      const amount = this.extractNodeResource(node!.id, Math.min(HARVESTER_QUOTA - harvest.total, HARVESTER_GATHER_PER_SECOND * seconds));
+      harvest.cargo[node!.id] = (harvest.cargo[node!.id] ?? 0) + amount;
+      harvest.total += amount;
+      if (harvest.total >= HARVESTER_QUOTA - 0.001) harvest.returning = true;
+      return;
+    }
+    const route = this.findSpecialEnemyRoute(enemy, "hunter", field);
+    if (route?.targetTower && route.cells.length <= 1) {
+      if (enemy.towerAttackCooldownMs <= 0) this.strikeStructure(enemy, route.targetTower);
+      return;
+    }
+    const next = route?.cells[1];
+    const point = next ? gridToWorld(next.col, next.row, this.activeMap) : goal;
+    const dx = point.x - enemy.x, dy = point.y - enemy.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance > 0) {
+      const step = Math.min(distance, enemy.speed * speedMultiplier * seconds);
+      // Metal Kalkan toplayicilari da durdurur (yer dusmani).
+      if (this.metalShields.length > 0 && enemy.movementKind !== "air"
+        && this.isShieldBlockingSegment(enemy.x, enemy.y, enemy.x + dx / distance * step, enemy.y + dy / distance * step)) {
+        enemy.shieldTouched = true;
+        return;
+      }
+      enemy.x += dx / distance * step; enemy.y += dy / distance * step; enemy.pathDistance += step;
     }
   }
 
@@ -8027,7 +8306,7 @@ export class MatchRoom extends Room<MatchState> {
    * yoldan. Kirilacak duvar o yolun uzerindeki ilk engel, yani en yakin
    * hedefe giden yolun duvari. Harita en fazla 24x36: kurulum mikro saniye.
    */
-  private buildSpecialRouteField(kind: "hunter" | "eater" | "bomber"): SpecialRouteField | undefined {
+  private buildSpecialRouteField(kind: "hunter" | "eater" | "bomber", goals?: Array<{ col: number; row: number }>): SpecialRouteField | undefined {
     const cols = this.activeMap.cols;
     const rows = this.activeMap.rows;
     const size = cols * rows;
@@ -8038,7 +8317,7 @@ export class MatchRoom extends Room<MatchState> {
     const heap = new SpecialRouteHeap();
     for (const tower of this.towers.values()) {
       if (tower.hp <= 0 || tower.definition.engine?.placement?.requiresEdge) continue;
-      const isTarget = this.isSpecialRouteTarget(kind, tower);
+      const isTarget = !goals && this.isSpecialRouteTarget(kind, tower);
       for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) {
         if (cell.col < 0 || cell.col >= cols || cell.row < 0 || cell.row >= rows) continue;
         const index = cell.row * cols + cell.col;
@@ -8050,12 +8329,18 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
     }
+    for (const cell of goals ?? []) {
+      if (!isInsideMap(this.activeMap, cell.col, cell.row)) continue;
+      const index = cell.row * cols + cell.col;
+      target[index] = 1; cost[index] = 0; heap.push(index, 0);
+    }
     if (heap.size === 0) return undefined;
 
     // Kenar yapilari dizi halinden: `getEdgeStructure` her komsuda dizgi
     // anahtar kuruyordu (24x36 haritada kurulum basina binlerce).
     const edges = this.getEdgeStructureGrid();
     const stride = edges.stride;
+    const shielded = this.metalShields.length > 0;
     while (heap.size > 0) {
       const current = heap.pop();
       const base = cost[current];
@@ -8075,6 +8360,9 @@ export class MatchRoom extends Room<MatchState> {
         if (neighborCol < 0 || neighborCol >= cols || neighborRow < 0 || neighborRow >= rows) continue;
         const neighbor = neighborRow * cols + neighborCol;
         if (target[neighbor]) continue;
+        // Metal Kalkan'in kestigi gecis yok hukmunde: kirilamaz, bedeli yok,
+        // alan onu hicbir zaman "kirilacak engel" olarak secemez.
+        if (shielded && this.isShieldBetweenCells(neighborCol, neighborRow, col, row)) continue;
         // `getEdgeStructure` ile ayni kural: yatay komsuda dikey kenar
         // (buyuk sutun), dikey komsuda yatay kenar (buyuk satir).
         const edge = neighborRow === row
@@ -8096,8 +8384,8 @@ export class MatchRoom extends Room<MatchState> {
    * hedefe varmak (avci vurur, yiyici emer). Alan hucre basina bir sonraki
    * adimi tutuyor; burada yalnizca canli kontrol var, arama yok.
    */
-  private findSpecialEnemyRoute(enemy: EnemyModel, kind: "hunter" | "eater" | "bomber"): SpecialEnemyRoute | undefined {
-    const field = this.getSpecialRouteField(kind);
+  private findSpecialEnemyRoute(enemy: EnemyModel, kind: "hunter" | "eater" | "bomber", override?: SpecialRouteField): SpecialEnemyRoute | undefined {
+    const field = override ?? this.getSpecialRouteField(kind);
     if (!field) return undefined;
     const start = worldToGrid(enemy.x, enemy.y, this.activeMap);
     if (!isInsideMap(this.activeMap, start.col, start.row)) return undefined;
@@ -8122,6 +8410,17 @@ export class MatchRoom extends Room<MatchState> {
         return { cells: [start], reachedBottom: false, targetTower: undefined, exitPoint: undefined, drainTower: occupant };
       }
       return { cells: [start], reachedBottom: false, targetTower: occupant, exitPoint: undefined };
+    }
+    // Alan hucre merkezinden merkeze kuruluyor; dusman ise hucrenin
+    // herhangi bir yerinde. Duz yolu bir Metal Kalkan'i kesiyorsa once kendi
+    // hucresinin merkezine donuyor (oradan sonraki adim acik); merkeze de
+    // gidemiyorsa hareket kapisi onu kalkan kalkana kadar tutuyor.
+    if (this.metalShields.length > 0 && enemy.movementKind !== "air") {
+      const target = gridToWorld(nextCell.col, nextCell.row, this.activeMap);
+      if (this.isShieldBlockingSegment(enemy.x, enemy.y, target.x, target.y)) {
+        enemy.shieldTouched = true;
+        return { cells: [start, start], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
+      }
     }
     return { cells: [start, nextCell], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
   }
@@ -8241,8 +8540,37 @@ export class MatchRoom extends Room<MatchState> {
       launchAt: now + scaleGameDuration(COUNTER_SURGE_TELEGRAPH_MS),
       crossMs: scaleGameDuration(COUNTER_SURGE_CROSS_MS),
       damageRatio: getCounterSurgeDamageRatio(this.wave),
-      hitIds: new Set()
+      hitIds: new Set(),
+      absorbed: [],
+      lastProgress: 0
     };
+  }
+
+  /**
+   * Seridin yone bagimsiz geometrisi (yol yonu, orta hat, genislik). Bugun
+   * tek cesit var: ust kenardan asagi. Yutulma ve korunma hesabi yalnizca bu
+   * geometriyi okuyor; baska yonden gelen serit kendi geometrisini verir.
+   */
+  private getCounterSurgeBand(surge: CounterSurgeModel): SurgeBandGeometry {
+    return getVerticalSurgeBand(getMapOrigin(this.activeMap), getMapGridSize(this.activeMap), surge.col, surge.width, this.activeMap.rows);
+  }
+
+  /**
+   * Metal Kalkan seridi kesiyor: on cizgi bu tikte bir kalkana ulastiysa
+   * kalkanin seridin genislik eksenindeki izdusumu (seride kirpilmis) o
+   * serit icin kalici olarak duruyor; genisligin geri kalani ilerliyor.
+   * Kalkan harcanmiyor, kendi 3 saniyesini yasiyor. Serit kalkmadan (uyari
+   * evresi) ve kalkanin coktan gecilmis kisminda yutulma yok.
+   */
+  private absorbCounterSurgeAtShields(surge: CounterSurgeModel, band: SurgeBandGeometry, progress: number, now: number) {
+    const previousAlong = surge.lastProgress * band.length;
+    const frontAlong = progress * band.length;
+    for (const shield of this.metalShields) {
+      if (shield.expiresAt <= now) continue;
+      const contact = getSurgeObstacleContact(band, shield.x1, shield.y1, shield.x2, shield.y2, previousAlong, frontAlong);
+      if (!contact) continue;
+      addSurgeAbsorbedInterval(surge.absorbed, contact.from, contact.to, band.length > 0 ? contact.along / band.length : progress);
+    }
   }
 
   private getCounterSurgeProgress(surge: CounterSurgeModel, now: number) {
@@ -8265,9 +8593,17 @@ export class MatchRoom extends Room<MatchState> {
     const left = origin.x + surge.col * gridSize;
     const right = left + surge.width * gridSize;
     const hits: CounterSurgeHitMessage["hits"] = [];
+    // Kalkan ya da onceden yutulmus bir parca yoksa (macin neredeyse tamami)
+    // geometri hic kurulmuyor ve dongu eskisiyle bire bir ayni.
+    const band = this.metalShields.length > 0 || surge.absorbed.length > 0 ? this.getCounterSurgeBand(surge) : undefined;
+    if (band && this.metalShields.length > 0) this.absorbCounterSurgeAtShields(surge, band, progress, now);
+    surge.lastProgress = progress;
     for (const tower of this.towers.values()) {
       if (tower.hp <= 0 || tower.y > frontY || surge.hitIds.has(tower.id)) continue;
       if (!this.isInCounterSurgeBand(tower, left, right, gridSize)) continue;
+      // Yutulan parcanin arkasinda kalan yapi bu seritten korunuyor: serit
+      // oraya hic varmadi. Isaretlenmiyor; korunma araliktan okunuyor.
+      if (band && isSparedFromSurge(band, surge.absorbed, tower.x, tower.y)) continue;
       surge.hitIds.add(tower.id);
       const before = tower.hp;
       this.damageTower(tower, tower.maxHp * surge.damageRatio, { pierceArmor: true });
@@ -8298,8 +8634,157 @@ export class MatchRoom extends Room<MatchState> {
       col: surge.col,
       w: surge.width,
       p: Math.round(this.getCounterSurgeProgress(surge, now) * 1000) / 1000,
-      ...(now < surge.launchAt ? { warn: true as const } : {})
+      ...(now < surge.launchAt ? { warn: true as const } : {}),
+      // Yalnizca kesik varken: seritsiz ve kalkansiz karede anahtar yok.
+      ...(surge.absorbed.length > 0 ? { cut: encodeSurgeCuts(this.getCounterSurgeBand(surge), surge.absorbed, getMapGridSize(this.activeMap)) } : {})
     };
+  }
+
+  // --- Metal Kalkan (AttackLord, yuva 1) -------------------------------------------
+
+  /**
+   * Metal Kalkan: basis noktasindan birakis noktasina duz, yikilmaz bir parca.
+   *
+   * Dogrulama burada (istemciye guvenilmiyor): iki nokta sonlu ve harita
+   * icinde, boy en az `METAL_SHIELD_MIN_LENGTH_CELLS` hucre; uzun gelen uc
+   * yonu korunarak azami boya (karsi atak seridinin genisligi) kirpiliyor.
+   * Red `skill:rejected` ile ve `useSkill` bekleme suresini geri aliyor.
+   * Operator, yuva ve bekleme `useSkill`de soruldu.
+   *
+   * Kalkan belirirken cizgiye deyen yer dusmanlari bulunduklari tarafa
+   * itiliyor ve gezinme hafizasi tazeleniyor. Yeni zar yok.
+   */
+  private castMetalShield(client: Client, message: UseSkillMessage, now: number) {
+    const reject = (reason: MetalShieldRejectReason) => {
+      this.rejectSkill(client, ATAKAN_SHIELD_SLOT, reason);
+      return false;
+    };
+    if (this.matchResult) return reject("invalid");
+    const { x, y, x2, y2 } = message;
+    if (!isFiniteNumber(x) || !isFiniteNumber(y) || !isFiniteNumber(x2) || !isFiniteNumber(y2)) return reject("invalid");
+    const origin = getMapOrigin(this.activeMap);
+    const gridSize = getMapGridSize(this.activeMap);
+    const right = origin.x + this.activeMap.cols * gridSize;
+    const bottom = origin.y + this.activeMap.rows * gridSize;
+    const inside = (px: number, py: number) => px >= origin.x && px <= right && py >= origin.y && py <= bottom;
+    if (!inside(x, y) || !inside(x2, y2)) return reject("bounds");
+    const segment = clampMetalShieldSegment(x, y, x2, y2, getMetalShieldMaxLength(gridSize));
+    // Kucuk pay: istemcinin esigi tam sinirda yuvarlamayla reddedilmesin.
+    if (!(segment.length >= getMetalShieldMinLength(gridSize) - 0.01)) return reject("short");
+    if (this.metalShields.length >= METAL_SHIELD_MAX_ACTIVE) return reject("invalid");
+
+    const shield: MetalShieldModel = {
+      id: this.nextMetalShieldId++,
+      ownerId: client.sessionId,
+      x1: roundNetworkNumber(segment.x1),
+      y1: roundNetworkNumber(segment.y1),
+      x2: roundNetworkNumber(segment.x2),
+      y2: roundNetworkNumber(segment.y2),
+      expiresAt: now + scaleGameDuration(METAL_SHIELD_DURATION_MS)
+    };
+    this.metalShields.push(shield);
+    this.pushEnemiesOffShield(shield, gridSize, now);
+    this.markShieldNavigationDirty();
+    return true;
+  }
+
+  /**
+   * Kalkan belirdigi an cizgiye deyen yer dusmanlari bulunduklari tarafa
+   * itilir (tam cizgideki dusman kalkanin normalinin arti yanina). Itis
+   * kisa (`METAL_SHIELD_CLEARANCE_CELLS`); dusmani baska bir hucreye
+   * tasiyacaksa ve o gecis bir yapiyla kapaliysa itilmez: kalkan kimseyi
+   * duvarin obur yanina gecirmemeli. Ucanlar ve takimin tarafindaki
+   * (hukmedilmis, olumsuz, cevrilmis) dusmanlar haric.
+   */
+  private pushEnemiesOffShield(shield: MetalShieldModel, gridSize: number, now: number) {
+    const clearance = gridSize * METAL_SHIELD_CLEARANCE_CELLS;
+    const dx = shield.x2 - shield.x1;
+    const dy = shield.y2 - shield.y1;
+    const length = Math.hypot(dx, dy);
+    if (!(length > 0)) return;
+    // Normal: `getPointToSegment`in `side` isaretiyle ayni yon.
+    const normalX = -dy / length;
+    const normalY = dx / length;
+    for (const enemy of this.enemies.values()) {
+      if (enemy.movementKind === "air" || enemy.hp <= 0) continue;
+      if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now) continue;
+      const near = getPointToSegment(enemy.x, enemy.y, shield);
+      if (near.distance >= clearance) continue;
+      // Cizgiye dik uzaklik: govdenin karsilik gelen noktasindan olculuyor.
+      const offset = (enemy.x - near.nearX) * normalX + (enemy.y - near.nearY) * normalY;
+      const push = near.side * clearance - offset;
+      const targetX = enemy.x + normalX * push;
+      const targetY = enemy.y + normalY * push;
+      const from = worldToGrid(enemy.x, enemy.y, this.activeMap);
+      const to = worldToGrid(targetX, targetY, this.activeMap);
+      if ((from.col !== to.col || from.row !== to.row)
+        && (Math.abs(from.col - to.col) + Math.abs(from.row - to.row) !== 1 || !this.isStructurePassable(from, to.col, to.row))) {
+        continue;
+      }
+      enemy.x = targetX;
+      enemy.y = targetY;
+      enemy.shieldTouched = true;
+    }
+  }
+
+  /** Suresi dolan kalkanlari kaldirir; kalkan kalktiysa gezinme tazelenir. */
+  private updateMetalShields(now: number) {
+    let expired = false;
+    for (let index = this.metalShields.length - 1; index >= 0; index -= 1) {
+      if (this.metalShields[index].expiresAt > now) continue;
+      this.metalShields.splice(index, 1);
+      expired = true;
+    }
+    if (expired) this.releaseShieldNavigation();
+  }
+
+  /**
+   * Kalkan kalkti: gezinme eski haline donuyor.
+   *
+   * Hafizalar (kapali cikis, cikmaz sokak, ozel yol alani) atiliyor. Kalkanin
+   * adimini kestigi dusmanlarin kor gezinme durumu da sifirlaniyor: kalkani
+   * "duvar" diye tutup dolasan dusman artik olmayan bir duvari izlemesin,
+   * cikisa dogru yuruyusune donsun. Kalkan dururken alinan kirma kilidi de
+   * dusuyor; yol acildiysa dusman duvari dovmeyi birakiyor.
+   */
+  private releaseShieldNavigation() {
+    this.markShieldNavigationDirty();
+    for (const enemy of this.enemies.values()) {
+      if (!enemy.shieldTouched) continue;
+      enemy.shieldTouched = undefined;
+      enemy.navigator = undefined;
+      enemy.navigatorStep = undefined;
+      if (enemy.shieldBreachLock) {
+        enemy.shieldBreachLock = undefined;
+        enemy.structureTargetId = undefined;
+      }
+    }
+  }
+
+  /** Verilen dunya parcasi sahadaki bir Metal Kalkan'i kesiyor mu. */
+  private isShieldBlockingSegment(ax: number, ay: number, bx: number, by: number) {
+    for (const shield of this.metalShields) {
+      if (segmentsTouch(ax, ay, bx, by, shield.x1, shield.y1, shield.x2, shield.y2)) return true;
+    }
+    return false;
+  }
+
+  /** Iki hucrenin merkezleri arasindaki gecisi bir Metal Kalkan kesiyor mu. */
+  private isShieldBetweenCells(fromCol: number, fromRow: number, toCol: number, toRow: number) {
+    const from = gridToWorld(fromCol, fromRow, this.activeMap);
+    const to = gridToWorld(toCol, toRow, this.activeMap);
+    return this.isShieldBlockingSegment(from.x, from.y, to.x, to.y);
+  }
+
+  private getMetalShieldsWire(now: number): MetalShieldSnapshot[] {
+    return this.metalShields.map((shield) => ({
+      id: shield.id,
+      x1: shield.x1,
+      y1: shield.y1,
+      x2: shield.x2,
+      y2: shield.y2,
+      ms: Math.max(0, Math.round(shield.expiresAt - now))
+    }));
   }
 
   /**
@@ -8351,15 +8836,19 @@ export class MatchRoom extends Room<MatchState> {
     return extracted;
   }
 
-  private getMaterialNodes() {
-    const kinds: ResourceKind[] = ["gunpowder", "mystic", "plasma", "iron"];
+  /** Dugumun dunya konumu: yerlesimdeki karesinin merkezi. */
+  private getResourceNodePoint(id: string, cells = this.getResourceNodeCells()) {
     const origin = getMapOrigin(this.activeMap);
     const grid = getMapGridSize(this.activeMap);
-    return kinds.map((kind, index) => {
-      const existing = this.getAmmoNodes()[index];
-      return { id: existing?.id ?? "iron-1", kind, remaining: this.getNodeRemaining(existing?.id ?? "iron-1"),
-        x: existing?.x ?? origin.x + Math.max(1, Math.floor(this.activeMap.cols * 0.32)) * grid + grid / 2,
-        y: existing?.y ?? origin.y + Math.max(2, Math.floor(this.activeMap.rows * 0.48)) * grid + grid / 2 };
+    const cell = cells[id] ?? { col: 1, row: 2 };
+    return { x: origin.x + cell.col * grid + grid / 2, y: origin.y + cell.row * grid + grid / 2 };
+  }
+
+  private getMaterialNodes() {
+    const cells = this.getResourceNodeCells();
+    return MATERIAL_NODE_DEFINITIONS.map((node) => {
+      const point = this.getResourceNodePoint(node.id, cells);
+      return { id: node.id, kind: node.kind, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
     });
   }
 
@@ -8581,15 +9070,11 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getCrystalNodes() {
-    const origin = getMapOrigin(this.activeMap);
-    const { gridSize } = getMapMetrics(this.activeMap);
-    const columns = [0.2, 0.5, 0.8];
-    return columns.map((ratio, index) => ({
-      id: `crystal-${index + 1}`,
-      remaining: this.getNodeRemaining(`crystal-${index + 1}`),
-      x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
-      y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.35 : 0.62)))) * gridSize + gridSize / 2
-    }));
+    const cells = this.getResourceNodeCells();
+    return CRYSTAL_NODE_DEFINITIONS.map((node) => {
+      const point = this.getResourceNodePoint(node.id, cells);
+      return { id: node.id, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
+    });
   }
 
   private getCrystalTrapMultiplier(enemy: EnemyModel, now: number) {
@@ -8612,16 +9097,13 @@ export class MatchRoom extends Room<MatchState> {
     return multiplier;
   }
 
+  /** Uc muhimmat hammaddesi yatagi (`ammo-source-N`); demir bunlarin disinda. */
   private getAmmoNodes() {
-    const origin = getMapOrigin(this.activeMap);
-    const { gridSize } = getMapMetrics(this.activeMap);
-    const columns = [0.14, 0.56, 0.86];
-    return columns.map((ratio, index) => ({
-      id: `ammo-source-${index + 1}`,
-      remaining: this.getNodeRemaining(`ammo-source-${index + 1}`),
-      x: origin.x + Math.max(1, Math.min(this.activeMap.cols - 2, Math.round((this.activeMap.cols - 1) * ratio))) * gridSize + gridSize / 2,
-      y: origin.y + Math.max(2, Math.min(this.activeMap.rows - 3, Math.round((this.activeMap.rows - 1) * (index % 2 === 0 ? 0.68 : 0.28)))) * gridSize + gridSize / 2
-    }));
+    const cells = this.getResourceNodeCells();
+    return AMMO_SOURCE_NODE_DEFINITIONS.map((node) => {
+      const point = this.getResourceNodePoint(node.id, cells);
+      return { id: node.id, remaining: this.getNodeRemaining(node.id), x: point.x, y: point.y };
+    });
   }
 
   private ensureLogisticsWorkers() {
@@ -8668,14 +9150,21 @@ export class MatchRoom extends Room<MatchState> {
           if (respawnAt > now) continue;
           this.workerRespawnAt.delete(id);
         }
+        const spawnX = origin.x + gridSize * (1.5 + index);
+        const spawnY = origin.y + gridSize * (this.activeMap.rows - 1.5);
         this.drones.set(id, {
           id,
-          assignment: this.workerAssignments.get(id) ?? (mode === "crystalCollector" ? { nodeId: "crystal-1" } : mode === "ammoCollector" ? { nodeId: "ammo-source-1" } : { product: mode === "ammoTransport" ? "bullet" : "energy" }),
+          // Toplayicinin varsayilani turunun usse en yakin dugumu (enerji
+          // kristali ya da barut): dugumler rastgele yerlestigi icin sabit
+          // "1 numara" uzakta kalabilirdi.
+          assignment: this.workerAssignments.get(id) ?? (mode === "crystalCollector" ? { nodeId: this.getDefaultGatherNodeId("energy", spawnX, spawnY) }
+            : mode === "ammoCollector" ? { nodeId: this.getDefaultGatherNodeId("gunpowder", spawnX, spawnY) }
+            : { product: mode === "ammoTransport" ? "bullet" : "energy" }),
           hiredWorkerId: worker.id,
           ownerId,
           mode: mode === "ammoCollector" ? "crystalCollector" : mode === "ammoTransport" ? "energyTransport" : mode,
-          x: origin.x + gridSize * (1.5 + index),
-          y: origin.y + gridSize * (this.activeMap.rows - 1.5),
+          x: spawnX,
+          y: spawnY,
           vx: 0,
           vy: 0,
           damage: 0,
@@ -10064,7 +10553,9 @@ export class MatchRoom extends Room<MatchState> {
 
     // Kilitli hedef hala ayaktaysa ve komsuysa, karar yenilenmez.
     const locked = enemy.structureTargetId ? this.towers.get(enemy.structureTargetId) : undefined;
-    if (locked && locked.hp > 0 && this.isStructureAdjacent(start, locked)) {
+    // Araya Metal Kalkan girdiyse kilit dusuyor: kalkanin arkasindaki yapiya vurulamaz.
+    if (locked && locked.hp > 0 && this.isStructureAdjacent(start, locked)
+      && (this.metalShields.length === 0 || !this.isShieldBlockingSegment(enemy.x, enemy.y, locked.x, locked.y))) {
       return { cells: [start], reachedBottom: false, targetTower: locked };
     }
     enemy.structureTargetId = undefined;
@@ -10079,10 +10570,10 @@ export class MatchRoom extends Room<MatchState> {
     // bir adim varsayiyor; karari saklamak o varsayimi geri veriyor.
     const committed = enemy.navigatorStep;
     if (committed && committed.fromCol === start.col && committed.fromRow === start.row) {
-      if (this.isCellWalkable(start, committed.toCol, committed.toRow)) {
+      if (this.isEnemyStepOpen(enemy, start, committed.toCol, committed.toRow)) {
         return { cells: [start, { col: committed.toCol, row: committed.toRow }], reachedBottom: false, targetTower: undefined, exitPoint: undefined };
       }
-      // Oyuncu tam o araliga yapi kurmus: karar gecersiz.
+      // Oyuncu tam o araliga yapi kurmus (ya da kalkan cekmis): karar gecersiz.
       enemy.navigatorStep = undefined;
     }
 
@@ -10099,7 +10590,7 @@ export class MatchRoom extends Room<MatchState> {
     const result = stepBlindNavigator(
       start,
       enemy.navigator,
-      (col, row) => this.isCellWalkable(start, col, row),
+      (col, row) => this.isEnemyStepOpen(enemy, start, col, row),
       () => this.pickNavigatorHand()
     );
     enemy.navigator = result.state;
@@ -10123,12 +10614,41 @@ export class MatchRoom extends Room<MatchState> {
    * secim degisir ve dusman hicbir duvari bitiremezdi.
    */
   private breakThrough(enemy: EnemyModel, start: { col: number; row: number }, ahead: { col: number; row: number }) {
+    if (this.metalShields.length > 0) return this.breakThroughAroundShield(enemy, start, ahead);
     const blocker = this.getBlockingTowerBetween(start, ahead)
       ?? this.getTowerCellIndex().get(`${ahead.col}:${ahead.row}`)
       ?? this.findCheapestAdjacentStructure(start);
     const target = blocker && blocker.hp > 0 ? blocker : undefined;
     if (target) {
       enemy.structureTargetId = target.id;
+    }
+    return { cells: [start], reachedBottom: false, targetTower: target, exitPoint: undefined };
+  }
+
+  /**
+   * Kirma, sahada Metal Kalkan varken.
+   *
+   * Sira `breakThrough` ile ayni (onundeki, sonra komsular); tek fark aday
+   * dusmanin **ulasabildigi** bir yapi olmali: dusmanla yapi arasina kalkan
+   * giriyorsa o yapi aday degil. Kalkanin kendisi hic aday degil -- yapi
+   * degil, cani yok, kirilamaz. Ulasilabilen yapi yoksa dusman kalkan
+   * kalkana kadar bekler. Kilit, adimini kalkanin kestigi dusmanda isaretli:
+   * kalkan kalkinca dusuyor (`releaseShieldNavigation`).
+   */
+  private breakThroughAroundShield(enemy: EnemyModel, start: { col: number; row: number }, ahead: { col: number; row: number }) {
+    const reachable = (tower: TowerModel | undefined) => tower && tower.hp > 0
+      && !this.isShieldBlockingSegment(enemy.x, enemy.y, tower.x, tower.y) ? tower : undefined;
+    let target = reachable(this.getBlockingTowerBetween(start, ahead))
+      ?? reachable(this.getTowerCellIndex().get(`${ahead.col}:${ahead.row}`));
+    if (!target) {
+      for (const neighbor of this.getGridNeighbors(start.col, start.row)) {
+        target = reachable(this.getTowerCellIndex().get(`${neighbor.col}:${neighbor.row}`) ?? this.getBlockingTowerBetween(start, neighbor));
+        if (target) break;
+      }
+    }
+    if (target) {
+      enemy.structureTargetId = target.id;
+      if (enemy.shieldTouched) enemy.shieldBreachLock = true;
     }
     return { cells: [start], reachedBottom: false, targetTower: target, exitPoint: undefined };
   }
@@ -10173,8 +10693,41 @@ export class MatchRoom extends Room<MatchState> {
     return !this.isDeadEnd(col, row);
   }
 
-  /** Yapi ve harita siniri acisindan gecilebilirlik; cikmaz sokak hafizasi haric. */
+  /**
+   * Bu dusman bulundugu hucreden komsu hucreye yuruyebilir mi.
+   *
+   * Kalkan yokken `isCellWalkable`in kendisi. Kalkan varken hucre kuralina
+   * dusmanin **gercek konumu** biniyor: dusman hucre merkezinde durmuyor
+   * (koseleri keserek yuruyor, kalkan onu hucrenin icinde ikiye bolebiliyor),
+   * o yuzden soru "durdugum yerden o hucrenin merkezine duz yururken kalkani
+   * keser miyim". Hucre merkezleri arasindaki kural (`isCellPassable`)
+   * burada sorulmuyor: kalkanin obur yaninda kalmis dusman, merkezlere gore
+   * kapali gorunen ama kendisine acik olan komsuya yuruyebilmeli.
+   */
+  private isEnemyStepOpen(enemy: EnemyModel, from: { col: number; row: number }, col: number, row: number) {
+    if (this.metalShields.length === 0) return this.isCellWalkable(from, col, row);
+    if (!this.isStructurePassable(from, col, row)) return false;
+    const target = gridToWorld(col, row, this.activeMap);
+    if (this.isShieldBlockingSegment(enemy.x, enemy.y, target.x, target.y)) {
+      enemy.shieldTouched = true;
+      return false;
+    }
+    if (this.deadEndCells.has(`${from.col}:${from.row}`)) return true;
+    return !this.isDeadEnd(col, row);
+  }
+
+  /**
+   * Gecilebilirlik; cikmaz sokak hafizasi haric. Yapilar ve harita siniri,
+   * ustune Metal Kalkan: hucre merkezleri arasindaki gecisi kesen kalkan o
+   * gecisi kapatir (yer dusmanlari icin; isciler bu soruyu sormuyor).
+   */
   private isCellPassable(from: { col: number; row: number }, col: number, row: number) {
+    if (!this.isStructurePassable(from, col, row)) return false;
+    return this.metalShields.length === 0 || !this.isShieldBetweenCells(from.col, from.row, col, row);
+  }
+
+  /** Yapi ve harita siniri acisindan gecilebilirlik (kalkan haric). */
+  private isStructurePassable(from: { col: number; row: number }, col: number, row: number) {
     if (col < 0 || col >= this.activeMap.cols || row < 0 || row >= this.activeMap.rows) {
       return false;
     }
@@ -11874,27 +12427,6 @@ export class MatchRoom extends Room<MatchState> {
     this.refreshServerLinkIndex();
   }
 
-  private refactorTower(client: Client, message: UseSkillMessage) {
-    if (!message.towerId || !isFiniteNumber(message.x) || !isFiniteNumber(message.y)) {
-      return false;
-    }
-
-    const tower = this.towers.get(message.towerId);
-    const { x, y } = this.snapToTowerGrid(message.x, message.y, tower?.definition.id, tower?.orientation);
-    if (!tower || tower.ownerId !== client.sessionId || !this.canPlaceTower(x, y, tower.definition.id, tower.orientation, tower.id)) {
-      return false;
-    }
-
-    tower.x = x;
-    tower.y = y;
-    // Yapi yer degistirdi: hucre indeksi eski karede hayalet bir engel
-    // birakiyordu ve dusmanlar yeni karedeki kuleyi gormuyordu.
-    this.markNavigationDirty();
-    tower.cooldownMs = Math.min(tower.cooldownMs, 150);
-    this.broadcastTowerSpawn(tower);
-    return true;
-  }
-
   private linkServerTower(client: Client, message: LinkServerMessage) {
     if (!message.serverTowerId || !message.targetTowerId || message.serverTowerId === message.targetTowerId) {
       return;
@@ -12047,8 +12579,8 @@ export class MatchRoom extends Room<MatchState> {
       return true;
     }
 
-    if (slot === 1) {
-      return this.refactorTower(client, message);
+    if (slot === ATAKAN_SHIELD_SLOT) {
+      return this.castMetalShield(client, message, now);
     }
 
     if (slot === ATAKAN_EXECUTE_SLOT) {
@@ -12105,7 +12637,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Beceri reddi yalnizca atana: istemci gerekceyi yazip hedefleme kipini kapatiyor. */
-  private rejectSkill(client: Pick<Client, "send">, slot: number, reason: ExecuteRejectReason) {
+  private rejectSkill(client: Pick<Client, "send">, slot: number, reason: ExecuteRejectReason | MetalShieldRejectReason) {
     const payload: SkillRejectedMessage = { slot, reason };
     client.send("skill:rejected", payload);
   }
@@ -13412,6 +13944,13 @@ export class MatchRoom extends Room<MatchState> {
     // defter ve mermi dusurme sansi dusman basina.
     const killUnits = enemy.champion?.replaced ?? enemy.special?.budget?.replaced ?? 1;
     this.enemies.delete(enemy.id);
+    if (enemy.special?.harvest) {
+      for (const [nodeId, amount] of Object.entries(enemy.special.harvest.cargo)) {
+        this.resourceNodeRemaining.set(nodeId, this.getNodeRemaining(nodeId) + amount);
+      }
+      enemy.special.harvest.cargo = {};
+      enemy.special.harvest.total = 0;
+    }
     this.detonateBomber(enemy, true);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     let ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
@@ -15004,7 +15543,8 @@ export class MatchRoom extends Room<MatchState> {
       teamResources.ammunition[tower.ammoType] += tower.ammo;
       teamResources.maxAmmunition[tower.ammoType] += tower.maxAmmo;
     }
-    const waveAirMode = getWaveAirMode(this.wave);
+    const normalAirMode = getWaveAirMode(this.wave);
+    const waveAirMode = normalAirMode === "all" && getHarvesterRaidCount(this.wave) > 0 ? "mixed" : normalAirMode;
     // Hava uyarisi yalnizca kurulumda: oyuncunun kule kurup esya takarak
     // cevap verebildigi tek an o. Kurulumda `this.wave` siradaki dalga.
     const checkAirDefense = this.setupPhase && waveAirMode !== "none";
@@ -15086,7 +15626,8 @@ export class MatchRoom extends Room<MatchState> {
         isUnderworldLinked: underworldLinkedEnemyIds.has(enemy.id),
         isUndead: enemy.melisUndeadUntil > now,
         // Yalnizca emerken: anahtar normal dusmanda hic yazilmiyor.
-        ...(enemy.special?.drainId ? { drain: enemy.special.drainId } : {})
+        ...(enemy.special?.drainId ? { drain: enemy.special.drainId } : {}),
+        ...(enemy.special?.harvest ? { cargo: Math.round(enemy.special.harvest.total), escaping: enemy.special.harvest.returning } : {})
       })),
       towers: Array.from(this.towers.values()).map((tower) => stripWireDefaults({
         id: tower.id,
@@ -15250,6 +15791,8 @@ export class MatchRoom extends Room<MatchState> {
       stage: this.stage,
       // Yalnizca serit varken: 1. asamada ve seritsiz dalgada anahtar yok.
       ...(this.counterSurge ? { surges: [this.getCounterSurgeWire(now)!] } : {}),
+      // Yalnizca kalkan varken (3 sn): her karede tam, yeni katilan da ilk karede goruyor.
+      ...(this.metalShields.length > 0 ? { shields: this.getMetalShieldsWire(now) } : {}),
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,
@@ -15266,9 +15809,9 @@ export class MatchRoom extends Room<MatchState> {
         wave: this.wave,
         // Takim kaydi her karede tam gidiyor; ucansiz dalgada alanin yoklugu
         // bir sonraki karede eski degeri kendiliginden siliyor.
-        waveEnemyCount: this.waveTarget,
+        waveEnemyCount: this.waveTarget + getHarvesterRaidCount(this.wave),
         waveAirMode: waveAirMode === "none" ? undefined : waveAirMode,
-        enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size,
+        enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size + (this.waveSpawned <= 1 ? getHarvesterRaidCount(this.wave) : 0),
         kills: this.kills
       }
     };

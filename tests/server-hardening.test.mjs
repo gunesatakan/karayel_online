@@ -803,22 +803,18 @@ test("tikanan istemci tikanma gecince tam kare aliyor, digeri delta", () => {
   }
 });
 
-test("Atakan'in kule tasimasi gezinme indeksini tazeliyor", () => {
+test("kule satilinca gezinme indeksi tazeleniyor: eski karede hayalet engel kalmiyor", () => {
   const room = createRoom("warrior");
   room.broadcast = () => {};
   const first = findBuildableSpot(room, "warrior-1");
   room.placeTower({ sessionId: "p1" }, { x: first.x, y: first.y, definitionId: "warrior-1" });
   const tower = [...room.towers.values()][0];
-  const oldCell = worldToGrid(tower.x, tower.y, room.activeMap);
-  assert.equal(room.getTowerAtCell(oldCell.col, oldCell.row), tower);
+  const cell = worldToGrid(tower.x, tower.y, room.activeMap);
+  assert.equal(room.getTowerAtCell(cell.col, cell.row), tower);
 
-  const second = findBuildableSpot(room, "warrior-1");
-  assert.ok(second);
-  assert.equal(room.refactorTower({ sessionId: "p1" }, { towerId: tower.id, x: second.x, y: second.y }), true);
-  const newCell = worldToGrid(tower.x, tower.y, room.activeMap);
-  assert.notDeepEqual(newCell, oldCell);
-  assert.equal(room.getTowerAtCell(oldCell.col, oldCell.row), undefined, "eski karede hayalet engel kaldi");
-  assert.equal(room.getTowerAtCell(newCell.col, newCell.row), tower);
+  room.sellTower({ sessionId: "p1" }, { towerId: tower.id });
+  assert.equal(room.towers.size, 0);
+  assert.equal(room.getTowerAtCell(cell.col, cell.row), undefined, "satilan kulenin karesinde hayalet engel kaldi");
 });
 
 test("yaratici oda tek kisilik: listede yok, ikinci oyuncu giremiyor", async () => {

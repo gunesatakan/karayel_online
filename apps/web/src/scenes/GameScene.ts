@@ -1,3 +1,4 @@
+import { HARVESTER_QUOTA } from "@karayel/shared";
 import { buildWorkerRoster, getWorkerRosterRole, listResourceNodes, resolveWorkerMapTarget, type WorkerPick, type WorkerRosterState } from "../worker-roster";
 import { getTowerMaxLevel } from "@karayel/shared";
 import { ACTIVE_WORKER_ROLES, isTransportProduct } from "@karayel/shared";
@@ -202,6 +203,17 @@ import {
   SERVER_KNOWLEDGE_EFFECTS,
   SERVER_KNOWLEDGE_TYPES,
   ATAKAN_EXECUTE_SLOT,
+  ATAKAN_SHIELD_SLOT,
+  beginMetalShieldGesture,
+  endMetalShieldGesture,
+  getMetalShieldMaxLength,
+  getMetalShieldRejectText,
+  getMetalShieldWallDurationMs,
+  moveMetalShieldGesture,
+  type MetalShieldGesture,
+  type MetalShieldGestureContext,
+  type MetalShieldSegment,
+  type MetalShieldSnapshot,
   getExecuteRejectText,
   isExecuteImmune,
   isExecuteTeamSide,
@@ -300,6 +312,7 @@ import {
   sanitizeSurgeHitMessage,
   type CounterSurgeBand
 } from "../vfx/special-threats";
+import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
@@ -565,6 +578,17 @@ const EXECUTE_MARK_MS = 320;
 const EXECUTE_MARK_LOCK_FRACTION = 0.28;
 const EXECUTE_MARK_COLOR = 0xe2e8f0;
 const EXECUTE_MARK_CORNERS: ReadonlyArray<readonly [number, number]> = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+/**
+ * Metal Kalkan (AttackLord, yuva 1). Bariyer karsi atak seridinin sert
+ * kenarlarinin (12.7) ustunde, can cubugunun (16) altinda; surukleme
+ * onizlemesi Yonlendirme onizlemesiyle ayni katta (55).
+ */
+const METAL_SHIELD_DEPTH = 12.8;
+const METAL_SHIELD_PREVIEW_DEPTH = 55;
+/** Birakistan sonra sunucunun kalkani gelene kadar cizilen soluk yanki (ms). */
+const METAL_SHIELD_ECHO_MS = 1600;
+/** "N sn sonra hazir" bildirimi en fazla bu siklikta (ms): surukleme bildirim yagdirmasin. */
+const METAL_SHIELD_NOTICE_GAP_MS = 2500;
 /** Sunucu baginin rengi: reaktorun turkuazi. */
 const SERVER_LINK_JOIN_COLOR = 0x22d3ee;
 /** Kart perdesi kapanana kadar bekleyen bag anlari; birkac tane birikebiliyor. */
@@ -606,6 +630,7 @@ const CHAMPION_CROWN_DEPTH = 16.2;
 const CHAMPION_LABEL_LIFT_PX = 16;
 /** Ozel dusmanin ilk gorulme bildirimi (macta tur basina bir kez). */
 const SPECIAL_NOTICE_KEYS = {
+  harvester: "scene.special.harvester",
   bomber: "scene.special.bomber",
   hunter: "scene.special.hunter",
   heater: "scene.special.heater",
@@ -668,7 +693,6 @@ type ClientPerfSample = {
 
 type PendingAction =
   | { type: "guidance" }
-  | { type: "refactor"; towerId: string }
   /** AttackLord Execute: bir sonraki dokunus bir dusmani secer; bos zemin iptal. */
   | { type: "execute" }
   | undefined;
@@ -1299,6 +1323,17 @@ export class GameScene extends Phaser.Scene {
   private readonly surgeBand: CounterSurgeBand = { left: 0, right: 0, top: 0, bottom: 0, frontY: 0, columns: 0, warn: false };
   /** Son karede cizili serit vardi: yoksa yuzeyler her karede yeniden temizlenmiyor. */
   private surgeDrawn = false;
+  /** Metal Kalkan: sahadaki bariyerler (herkesin) ve yerel surukleme onizlemesi. */
+  private shieldGraphics?: Phaser.GameObjects.Graphics;
+  private shieldPreviewGraphics?: Phaser.GameObjects.Graphics;
+  private shieldDrawn = false;
+  /** Izlenen surukleme jesti (paylasilan durum makinesi); jest yokken `undefined`. */
+  private shieldGesture?: MetalShieldGesture;
+  /** Birakilan kalkanin yankisi: sunucunun kalkani kareye girene kadar soluk cizilir. */
+  private shieldEcho?: { segment: MetalShieldSegment; until: number };
+  /** Acilis sesi calinmis kalkanlar (kimlik); kalkan kalkinca siliniyor. */
+  private readonly shieldSeenIds = new Set<number>();
+  private shieldCooldownNoticeAt = 0;
   /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
   private cardDraftWave?: number;
   /**
@@ -1678,6 +1713,13 @@ export class GameScene extends Phaser.Scene {
     this.surgeFillGraphics = this.add.graphics().setDepth(7.25);
     this.surgeEdgeGraphics = this.add.graphics().setDepth(12.7);
     this.surgeDrawn = false;
+    this.shieldGraphics = this.add.graphics().setDepth(METAL_SHIELD_DEPTH);
+    this.shieldPreviewGraphics = this.add.graphics().setDepth(METAL_SHIELD_PREVIEW_DEPTH);
+    this.shieldDrawn = false;
+    this.shieldGesture = undefined;
+    this.shieldEcho = undefined;
+    this.shieldSeenIds.clear();
+    this.shieldCooldownNoticeAt = 0;
     this.cardDraftWave = undefined;
     this.ultimateReadyWatch.reset();
     this.ultimateReadyPulseAt = undefined;
@@ -1739,6 +1781,13 @@ export class GameScene extends Phaser.Scene {
       this.surgeEdgeGraphics?.destroy();
       this.surgeEdgeGraphics = undefined;
       this.surgeDrawn = false;
+      this.shieldGraphics?.destroy();
+      this.shieldGraphics = undefined;
+      this.shieldPreviewGraphics?.destroy();
+      this.shieldPreviewGraphics = undefined;
+      this.shieldDrawn = false;
+      this.shieldGesture = undefined;
+      this.shieldEcho = undefined;
       this.streakVoice?.audio.pause();
       this.streakVoice = undefined;
       this.hideAudioSettingsPanel();
@@ -2192,6 +2241,8 @@ export class GameScene extends Phaser.Scene {
 
   private startTowerDragAt(tower: TowerDefinition, previewPoint: { x: number; y: number }) {
     this.cancelExecuteTargeting();
+    // Kule yerlestirme kalkan jestinden once gelir: suren jest kapaniyor.
+    this.cancelShieldGesture();
     this.draggedTowerDefinition = tower;
     this.selectedTowerDefinition = tower;
     this.selectedPlacedTowerId = undefined;
@@ -3769,6 +3820,12 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedCharacterId === "warrior" && slot === ATAKAN_EXECUTE_SLOT) {
       this.showNotice(getExecuteRejectText(message.reason === "immune" ? "immune" : "invalid"));
     }
+    if (this.selectedCharacterId === "warrior" && slot === ATAKAN_SHIELD_SLOT) {
+      // Kalkan cekilmedi: soluk yanki kalksin, gerekce yazilsin.
+      this.shieldEcho = undefined;
+      this.drawShieldPreview();
+      this.showNotice(getMetalShieldRejectText(message.reason === "short" || message.reason === "bounds" ? message.reason : "invalid"));
+    }
     this.emitControlState();
   }
 
@@ -4044,6 +4101,11 @@ export class GameScene extends Phaser.Scene {
     options.reducedMotion = this.feedback?.reducedMotion ?? false;
     const cellSize = this.getMapCellSize();
     drawSpecialEnemyMarker(graphics, kind, enemy.x, enemy.y, displayedSize, getHeaterRadius(cellSize), options);
+    if (kind === "harvester") {
+      const width = displayedSize * 0.7;
+      graphics.fillStyle(0x111827, 0.9).fillRect(enemy.x - width / 2, enemy.y + displayedSize * 0.6, width, 3);
+      graphics.fillStyle(enemy.escaping ? 0xff725e : 0xe0ad52, 1).fillRect(enemy.x - width / 2, enemy.y + displayedSize * 0.6, width * Math.min(1, (enemy.cargo ?? 0) / HARVESTER_QUOTA), 3);
+    }
     if (kind === "eater" && typeof enemy.drain === "string") {
       const target = this.towerSnapshots.get(enemy.drain);
       if (target) {
@@ -4091,6 +4153,203 @@ export class GameScene extends Phaser.Scene {
       this.pulseAlertMarker((band.left + band.right) / 2, band.top + cellSize * 0.5, SURGE_COLOR);
       this.playAlertSound("breach");
     }
+  }
+
+  // --- Metal Kalkan (AttackLord, yuva 1) -------------------------------------------
+
+  /**
+   * Sahadaki Metal Kalkanlar, her karede oynatma saatinde (dusmanlarla ayni
+   * an: kalkan onlari durdurdugu karede beliriyor). Herkes goruyor. Kalkan
+   * snapshot'tan dustugunde yuzey bir kez temizleniyor. Kimlik ilk
+   * goruldugunde yere oturus sesi; atanin yankisi da o an kalkiyor.
+   */
+  private renderMetalShields(shields: readonly MetalShieldSnapshot[] | undefined, now: number) {
+    const graphics = this.shieldGraphics;
+    if (!graphics) return;
+    this.tickShieldGesture();
+    if (!Array.isArray(shields) || shields.length === 0) {
+      if (this.shieldDrawn) {
+        graphics.clear();
+        this.shieldDrawn = false;
+      }
+      if (this.shieldSeenIds.size > 0) this.shieldSeenIds.clear();
+      return;
+    }
+    graphics.clear();
+    this.shieldDrawn = true;
+    const cellSize = this.getMapCellSize();
+    const total = getMetalShieldWallDurationMs();
+    const options = this.specialDrawOptions;
+    options.now = now;
+    options.reducedMotion = this.feedback?.reducedMotion ?? false;
+    for (const shield of shields) {
+      if (!isMetalShieldSnapshot(shield)) continue;
+      if (!this.shieldSeenIds.has(shield.id)) {
+        this.shieldSeenIds.add(shield.id);
+        this.announceShieldDeploy(shield);
+      }
+      drawMetalShield(graphics, shield, cellSize, getMetalShieldExtent(shield.ms, total), options);
+    }
+  }
+
+  /**
+   * Kalkan sahada ilk kez goruldu: yere oturus sesi (kayitli celik levha
+   * darbesi). Atanin ekraninda tam, takim arkadasinda kisik. Bekleyen yanki
+   * bu kalkaninsa kalkiyor: gercegi geldi.
+   */
+  private announceShieldDeploy(shield: MetalShieldSnapshot) {
+    const echo = this.shieldEcho;
+    const reach = this.getMapCellSize() * 0.5;
+    const own = Boolean(echo) && Math.hypot(echo!.segment.x1 - shield.x1, echo!.segment.y1 - shield.y1) <= reach;
+    if (own) {
+      this.shieldEcho = undefined;
+      this.drawShieldPreview();
+    }
+    if (this.matchResultShown) return;
+    this.feedback?.emit("metalShield", { own, x: (shield.x1 + shield.x2) / 2, y: (shield.y1 + shield.y2) / 2 });
+  }
+
+  /**
+   * Metal Kalkan jestinin o anki kosullari: paylasilan durum makinesinin
+   * (`metal-shield.ts`) girdisi. `pressBusy`: bu basis surukleme ya da dokunma
+   * anlami olan bir seyin ustunde basladi.
+   */
+  private getShieldGestureContext(pointer: Phaser.Input.Pointer, pressBusy = false): MetalShieldGestureContext {
+    const rect = this.lastUsableCanvasRect;
+    const canvasPerCssPx = rect && rect.width > 0 ? this.game.canvas.width / rect.width : 1;
+    const cooldowns = this.resolveSkillEcho(this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0]);
+    return {
+      available: Boolean(this.room) && !this.matchResultShown
+        && (this.localPlayerSnapshot?.characterId ?? this.selectedCharacterId) === "warrior",
+      busy: pressBusy || this.isShieldGestureBlocked(),
+      cooldownSeconds: cooldowns[ATAKAN_SHIELD_SLOT] ?? 0,
+      inside: this.isBattlePointer(pointer),
+      gridSize: this.getMapCellSize(),
+      worldPerScreenPx: canvasPerCssPx / Math.max(0.0001, this.cameras.main.zoom)
+    };
+  }
+
+  /**
+   * Haritada baska bir eylem bekliyor ya da suruyor mu. Bunlarin her birinin
+   * harita dokunusunda kendi anlami var ve hepsi kalkan jestinden once gelir:
+   * cekmeceden kule surukleme, Yonlendirme / Execute hedeflemesi, isci hedefi,
+   * ulti sutunu, esya yerlestirme, isci yasagi, performans kolu, kart perdesi.
+   */
+  private isShieldGestureBlocked() {
+    return Boolean(
+      this.pendingAction || this.isGuidanceDragging || this.draggedTowerDefinition || this.workerPick
+      || this.pendingUltimateColumn || this.pendingShopPlacement || this.workerBanMode
+      || this.performanceSliderDragging || this.cardChoiceRoot
+    ) || performance.now() < this.ignoreMapPointerUntil;
+  }
+
+  /**
+   * Basis, sahnenin tuvale cizdigi bir kontrolun ustunde mi: secili kulenin
+   * sat dugmesi, performans kolu, bilgi dugmesi, ses paneli. Onlarin basma ve
+   * surukleme anlami kalkan jestinden once gelir.
+   */
+  private isShieldPressOnControl(pointer: Phaser.Input.Pointer) {
+    if (this.hitSellButton(pointer)) return true;
+    try {
+      return this.input.hitTestPointer(pointer).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private toShieldPointer(pointer: Phaser.Input.Pointer) {
+    const event = (pointer as unknown as { domEvent?: PointerEvent }).domEvent;
+    return { pointerId: pointer.id, pointerType: event?.pointerType, button: event?.button, x: pointer.worldX, y: pointer.worldY };
+  }
+
+  /**
+   * Haritaya basildi: kalkan jesti yalnizca izlenmeye baslar. Esik asilana
+   * kadar hicbir sey gorunmez ve hicbir sey gitmez; duz dokunus eskisi gibi
+   * isler. Izlenen bir jest varken gelen ikinci parmak jesti oldurur.
+   */
+  private beginShieldGesture(pointer: Phaser.Input.Pointer, pressBusy: boolean) {
+    const context = this.getShieldGestureContext(pointer, pressBusy);
+    if (!this.shieldGesture && context.available && !context.busy && context.inside && this.isShieldPressOnControl(pointer)) {
+      context.busy = true;
+    }
+    this.shieldGesture = beginMetalShieldGesture(this.shieldGesture, this.toShieldPointer(pointer), context);
+    this.drawShieldPreview();
+  }
+
+  private moveShieldGesture(pointer: Phaser.Input.Pointer) {
+    if (!this.shieldGesture) return;
+    const moved = moveMetalShieldGesture(this.shieldGesture, this.toShieldPointer(pointer), this.getShieldGestureContext(pointer));
+    this.shieldGesture = moved.gesture;
+    if (moved.cooldownNotice !== undefined) this.showShieldCooldownNotice(moved.cooldownNotice);
+    this.drawShieldPreview();
+  }
+
+  /**
+   * Birakis. Onizleme gorunuyorsa kalkan istegi gider (baslangic = basis
+   * noktasi, uc = birakis noktasi; sunucu yeniden dogruluyor). `true`:
+   * birakis bir kalkan suruklemesiydi, siradan harita dokunusu olarak
+   * islenmemeli.
+   */
+  private finishShieldGesture(pointer: Phaser.Input.Pointer) {
+    if (!this.shieldGesture) return false;
+    const ended = endMetalShieldGesture(this.shieldGesture, this.toShieldPointer(pointer), this.getShieldGestureContext(pointer));
+    this.shieldGesture = ended.gesture;
+    if (ended.cooldownNotice !== undefined) this.showShieldCooldownNotice(ended.cooldownNotice);
+    const cast = ended.cast;
+    if (cast && this.room) {
+      this.room.send("useSkill", { slot: ATAKAN_SHIELD_SLOT, x: cast.x1, y: cast.y1, x2: cast.x2, y2: cast.y2 });
+      this.echoSkillUse(ATAKAN_SHIELD_SLOT);
+      // Istek yolda: sunucunun kalkani kareye girene kadar yerinde soluk bir iz.
+      this.shieldEcho = { segment: cast, until: performance.now() + METAL_SHIELD_ECHO_MS };
+    }
+    this.drawShieldPreview();
+    return ended.consumed;
+  }
+
+  /** Jesti sessizce kapatir: pointercancel, yakalama kaybi, baska bir surukleme basladi. */
+  private cancelShieldGesture() {
+    if (!this.shieldGesture) return;
+    this.shieldGesture = undefined;
+    this.drawShieldPreview();
+  }
+
+  /**
+   * Kare basina: suren yankinin suresi doldu mu, onizleme gorunurken araya
+   * baska bir eylem girdi mi (parmak kimildamadan da onizleme kalksin).
+   */
+  private tickShieldGesture() {
+    if (this.shieldEcho && performance.now() >= this.shieldEcho.until) {
+      this.shieldEcho = undefined;
+      this.drawShieldPreview();
+    }
+    const gesture = this.shieldGesture;
+    if (gesture?.preview && (this.isShieldGestureBlocked() || this.matchResultShown)) {
+      this.shieldGesture = { ...gesture, preview: undefined, dead: true };
+      this.drawShieldPreview();
+    }
+  }
+
+  /** Surukleme onizlemesi; jest yokken birakilan kalkanin soluk yankisi. */
+  private drawShieldPreview() {
+    const graphics = this.shieldPreviewGraphics;
+    if (!graphics) return;
+    graphics.clear();
+    const cellSize = this.getMapCellSize();
+    const preview = this.shieldGesture?.preview;
+    if (preview) {
+      const maxed = Math.hypot(preview.x2 - preview.x1, preview.y2 - preview.y1) >= getMetalShieldMaxLength(cellSize) - 0.01;
+      drawMetalShieldPreview(graphics, preview, cellSize, { maxed });
+      return;
+    }
+    if (this.shieldEcho) drawMetalShieldPreview(graphics, this.shieldEcho.segment, cellSize, { alpha: 0.45 });
+  }
+
+  /** "N sn sonra hazir": beklemedeki surukleme icin, seyrek (bildirim yagmasin). */
+  private showShieldCooldownNotice(seconds: number) {
+    const now = performance.now();
+    if (now - this.shieldCooldownNoticeAt < METAL_SHIELD_NOTICE_GAP_MS) return;
+    this.shieldCooldownNoticeAt = now;
+    this.showNotice(t("scene.skill.shieldCooldown", { seconds }), 1800);
   }
 
   /**
@@ -4298,7 +4557,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
+    // Acik kalmis bir kule suruklemesini kapatan basis kalkan jesti baslatmaz.
+    const strandedDrag = Boolean(this.draggedTowerDefinition);
     this.releaseStrandedTowerDrag();
+    // Metal Kalkan: jest burada yalnizca izlenmeye baslar (bkz. `beginShieldGesture`).
+    this.beginShieldGesture(pointer, strandedDrag);
     // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
     // yanlis yere dusuyorsa koordinatlar bunu gosterir.
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
@@ -4333,6 +4596,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
+    this.moveShieldGesture(pointer);
     if (this.pendingUltimateColumn) {
       this.drawUltimateColumnPreview(pointer.worldX);
     }
@@ -4479,6 +4743,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    // Metal Kalkan suruklemesinin birakisi (kalkan cekildi ya da vazgecildi)
+    // siradan bir harita dokunusu degil: kule secmez, secimi kaldirmaz.
+    // Esigi asmamis jest burada hicbir sey yapmaz; dokunus eskisi gibi isler.
+    if (this.finishShieldGesture(pointer)) {
+      this.logTap(pointer, "metal kalkan");
+      return;
+    }
     this.logTap(pointer, this.describeTapOutcome(pointer));
     // Hedef bekleyen isci varken haritaya dokunus atamadir: kule secmez,
     // satmaz, yerlestirmez.
@@ -4550,19 +4821,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (this.pendingAction?.type === "refactor") {
-      this.room?.send("useSkill", {
-        slot: 1,
-        towerId: this.pendingAction.towerId,
-        x: pointer.worldX,
-        y: pointer.worldY
-      });
-      this.pendingAction = undefined;
-      this.clearPlacedTowerSelection();
-      this.showNotice(t("scene.skill.refactorSent"));
-      return;
-    }
-
     const tower = this.findTowerAt(pointer.worldX, pointer.worldY);
     if (tower) {
       if (this.tryLinkServerTower(tower)) {
@@ -4631,15 +4889,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (index === 1) {
-      const towerId = this.selectedPlacedTowerId;
-      if (!towerId) {
-        this.showNotice(t("scene.skill.refactorNeedsTower"));
-        return;
-      }
-      this.pendingAction = { type: "refactor", towerId };
-      this.clearPlacedTowerSelection();
-      this.showNotice(t("scene.skill.refactorPickSpot"));
+    if (index === ATAKAN_SHIELD_SLOT) {
+      // Metal Kalkan sekmeden silahlandirilmiyor: haritada basili tutup
+      // suruklenerek cekiliyor. Sekmedeki satir bilgi; dokunus ipucunu gosterir.
+      this.hideZeynepTierChoices();
+      this.showNotice(t("scene.skill.shieldHint"));
       return;
     }
 
@@ -5013,7 +5267,7 @@ export class GameScene extends Phaser.Scene {
    * mermileri kendi dilinde, dokunulmuyor. Ek tel yok.
    *
    * Kuleler mermiyle ayni (gelen) snapshot'tan: oynatilan snapshot ~500 ms
-   * geride, yeni kurulan ya da Refactor ile tasinan kule orada yok/eski yerde.
+   * geride, yeni kurulan kule orada henuz yok.
    */
   private emitHomingMuzzle(projectile: ProjectileSnapshot, own: boolean, towers: readonly TowerSnapshot[]) {
     const origin = findHomingMuzzleOrigin(projectile, towers, this.getMapCellSize() * 2);
@@ -5136,6 +5390,7 @@ export class GameScene extends Phaser.Scene {
     this.vfxFrameCost += beamsMs;
     this.renderTowerOverlays();
     this.renderCounterSurge(frame.snapshot.surges, now);
+    this.renderMetalShields(frame.snapshot.shields, now);
     sectionStart = performance.now();
     this.renderAtakanSignatures(frame.snapshot.enemies, now);
     this.renderZeynepSignatures(frame.snapshot.enemies, now);
@@ -5257,6 +5512,8 @@ export class GameScene extends Phaser.Scene {
       projectiles,
       // Karsi atagin on kenari snapshotlar arasinda yumusak ilerlesin.
       surges: interpolateCounterSurges(previous.surges, next.surges, alpha),
+      // Metal Kalkan'in acilisi ve kapanisi da snapshot adimiyla basamaklanmasin.
+      shields: interpolateMetalShields(previous.shields, next.shields, alpha),
       beams: this.beamInterpolator.interpolate(previous.beams, next.beams, alpha, next.serverTime - previous.serverTime)
     };
   }
@@ -5459,8 +5716,7 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => {
       this.staticTowerSnapshots.set(tower.id, tower);
       // Sunucunun yerlestirme onayi: kule oynatmada belirince inecek. Zaten
-      // cizili kule (Refactor ile tasima, yeniden baglananin kuleleri)
-      // yeniden kurulmadi; o inmez.
+      // cizili kule (yeniden baglananin kuleleri) yeniden kurulmadi; o inmez.
       if (!this.towers.has(tower.id)) {
         this.freshTowerSpawns.note(tower.id, performance.now());
       }
@@ -10069,11 +10325,21 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         const zeynepCommand = this.localPlayerSnapshot?.characterId === "zeynep" ? getZeynepCommandButtonState(authorityChain) : undefined;
         // Execute hedeflemesi acikken dugme ikinci basisin iptal ettigini soyluyor.
         const executeArmed = index === ATAKAN_EXECUTE_SLOT && this.selectedCharacterId === "warrior" && this.pendingAction?.type === "execute";
+        // Metal Kalkan sekmeden atilmiyor (haritada basili tutup surukle):
+        // satiri bilgi olarak gidiyor -- ad, nasil kullanildigi, bekleme durumu.
+        const shieldGesture = index === ATAKAN_SHIELD_SLOT && this.selectedCharacterId === "warrior";
         return {
           slot: index,
           name: skill.name,
           label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : executeArmed ? `${skill.name}\n${t("scene.skill.cancel")}` : skill.name,
-          disabled: cooldown > 0
+          disabled: cooldown > 0,
+          ...(shieldGesture ? {
+            gesture: {
+              hint: t("scene.skill.shieldGesture"),
+              status: cooldown > 0 ? t("scene.skill.gestureCooldown", { seconds: cooldown }) : t("scene.skill.gestureReady"),
+              ready: cooldown <= 0
+            }
+          } : {})
         };
       }),
       zeynepTier: this.pendingZeynepCommandSlot === undefined ? undefined : {
@@ -10675,6 +10941,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * dokunuslar kule secmek yerine beceri gonderiyor.
    */
   private abandonMapGesture() {
+    // Metal Kalkan jesti de ayni yoldan kapaniyor: birakma gelmeyecek.
+    this.cancelShieldGesture();
     if (!this.isGuidanceDragging) {
       return;
     }
@@ -11097,6 +11365,7 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {
+  if (enemy.special === "harvester") return "enemy-harvester";
   if (enemy.special === "bomber") return `enemy-${enemy.race}-bomber`;
   // Kusatma kocunun kendi gorseli henuz yok; brute silueti en yakin duran.
   // Boyut ve renk ayri veriliyor, yani sahada ikisi karistirilmiyor.

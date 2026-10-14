@@ -78,7 +78,7 @@ function baselineReward(overrides) {
 
 test("Execute yuva 3'te Sessiz Mod'un yerinde: ad, Turkce aciklama, 32 sn", () => {
   const names = characters.find((character) => character.id === "warrior").skills.map((skill) => skill.name);
-  assert.deepEqual(names, ["Yönlendirme", "Refactor", "Execute"]);
+  assert.deepEqual(names, ["Yönlendirme", "Metal Kalkan", "Execute"]);
   assert.equal(ATAKAN_EXECUTE_SLOT, 2);
   assert.equal(executeSkill.cooldownMs, 32000);
   assert.equal(executeSkill.description, "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere, şampiyonlara ve kule avcılarına etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.");

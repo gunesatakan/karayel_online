@@ -36,6 +36,28 @@ Assets: `apps/web/public/images/towers/tower-supply-repair.png`, `tower-supply-r
 
 Original generated images remain in the Codex generated-images directory for this chat. Runtime assets are included in Git; no runtime dependency on the image generation service.
 
+## Node placement
+
+The map always has the same seven nodes with the same ids and kinds: `crystal-1..3` (energy), `ammo-source-1` (gunpowder), `ammo-source-2` (mystic essence), `ammo-source-3` (power crystal) and `iron-1`. Their **positions are rolled once per match on the server**, when the arena is built at match start (`rollResourceLayout` in `MatchRoom.ts`), and never change during the match. Nodes are shared by the whole team at every map scale; there are no per-player or mirrored copies.
+
+The rules live in a pure shared function, `placeResourceNodes` (`packages/shared/src/resource-layout.ts`):
+
+- at least one cell away from every map edge;
+- never on or next to a spawn cell or a nexus cell (in the arena: rows 2 to `rows - 3`, columns 1 to `cols - 2`);
+- any two nodes at Chebyshev distance 3 or more (two free cells between them); a map too small for that relaxes to 2, and a map too small for 2 falls back to the old fixed layout after 24 attempts per spacing step;
+- fair start: at least one energy crystal and the gunpowder deposit sit in the lower 60% of the rows;
+- never under a standing structure, and never in a region workers cannot reach from the base.
+
+Nodes do not block movement (enemies and workers walk over a node's cell) and do not change tower placement, so the spawn-to-nexus route check only runs if a caller declares that nodes block.
+
+Randomness: one `Math.random()` draw per room gives `resourceLayoutSeed`; every placement roll comes from a separate generator derived from it (`createResourceLayoutRandom`), so spawn and special-enemy rolls are not shifted by the layout. A fixed `Math.random` seed gives the same layout and the same match.
+
+Clients have no layout constants. Every snapshot (full and delta frames alike) carries `crystalNodes` and `ammoNodes` with world coordinates, so a reconnecting or late-joining client draws the same positions. Before the arena exists (lobby, bare test rooms) the old fixed ratio layout is used.
+
+A map may pin positions with the optional `resourceNodes: [{ id, col, row }]` field of `EditableMapData`. Pinned nodes stay exactly where the map says (projected proportionally if the map's grid differs from the arena's) and the rest are rolled around them; a map that pins all seven consumes no randomness. The map editor does not write this field today.
+
+Starting gatherers default to the node of their kind nearest to the base (distance to the nearest nexus cell, ties broken by distance to the worker's spawn cell) instead of the fixed `crystal-1` / `ammo-source-1`.
+
 ## Finite deposits
 
 Each map resource node starts with 2,000 shared units. Extraction deducts only the loaded amount, clamps the last partial load to the reserve and never regenerates on a new wave or worker respawn. A new match starts with fresh reserves. Exhausted nodes remain visible at reduced opacity with a zero count; assigned gatherers deliver their remaining cargo and wait for reassignment. Node labels and the worker roster show the remaining amount. Resource sprites are 25% smaller than the original size (0.7125 of one cell).

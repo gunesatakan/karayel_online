@@ -1,10 +1,15 @@
 import { makeSkills } from "../../common/factory.js";
 import type { EnemyType } from "../../../index.js";
 import { lt } from "../../../i18n/index.js";
+import type { MetalShieldRejectReason } from "./metal-shield.js";
+
+export * from "./metal-shield.js";
 
 export const atakanSkills = makeSkills("warrior", [
   ["Yönlendirme", "Basılı tutup sürükleyerek haritada bir alan işaretler. 3 saniye boyunca mermi vuruşlu kuleler menzil sınırını yok sayıp o alandaki düşmanlara ateş eder ve alandaki düşmanlar %30 fazla hasar alır. Hattın uzağında açılan sızıntıyı kapatmak için kullanılır.", 16000],
-  ["Refactor", "Seçili kuleyi altın kaybetmeden başka bir uygun kareye taşır. Seviyesi ve birikmiş bonusları korunur; yanlış yerleşimi satıp yeniden kurmak yerine düzeltmeyi sağlar.", 24000],
+  // Metal Kalkan (yuva 1): sekmeden silahlandirilmiyor, haritada basili tutup
+  // surukleyerek cekiliyor. Kural ve jest `metal-shield.ts`te.
+  ["Metal Kalkan", "Haritada basılı tutup sürükleyerek 3 saniyeliğine yıkılmaz bir metal kalkan çeker. Yer düşmanları içinden geçemez; karşı atağın kalkana denk gelen kısmını durdurur. Bekleme süresi 30 sn.", 30000],
   ["Execute", "Seçtiğin tek bir düşmanı anında infaz eder. Ezicilere, şampiyonlara ve kule avcılarına etkisizdir; etkisiz ya da geçersiz hedefte bekleme süresi harcanmaz.", 32000]
 ]);
 
@@ -25,8 +30,12 @@ export const ATAKAN_EXECUTE_SOURCE_ID = "warrior-skill-execute";
  */
 export type ExecuteRejectReason = "immune" | "invalid";
 
-/** `skill:rejected`: beceri reddedildi, bekleme suresi harcanmadi. Yalnizca atana. */
-export type SkillRejectedMessage = { slot: number; reason: ExecuteRejectReason };
+/**
+ * `skill:rejected`: beceri reddedildi, bekleme suresi harcanmadi. Yalnizca
+ * atana. Gerekce yuvaya gore okunur: Execute `ExecuteRejectReason`, Metal
+ * Kalkan `MetalShieldRejectReason`.
+ */
+export type SkillRejectedMessage = { slot: number; reason: ExecuteRejectReason | MetalShieldRejectReason };
 
 /** `skill:execute`: infaz gerceklesti. Herkese; atan kendi gorselini tam goruyor. */
 export type SkillExecuteMessage = { casterId: string; enemyId: string; x: number; y: number };

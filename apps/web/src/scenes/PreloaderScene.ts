@@ -35,6 +35,7 @@ export class PreloaderScene extends Phaser.Scene {
   }
 
   preload() {
+    this.load.image("enemy-harvester", assetUrl("images/enemies/enemy-harvester.png"));
     for (let stage = 1; stage <= 5; stage++) this.load.image(`terrain-stage-${stage}`, assetUrl(`images/terrain/stage-${stage}.jpg`));
     for (const kind of ["energy", "gunpowder", "mystic", "plasma", "iron"]) this.load.image(`resource-${kind}`, assetUrl(`images/resources/resource-${kind}.png`));
     this.load.image("zeynep-puppet-hands", assetUrl("images/zeynep-puppet-hands.png"));

@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import type { CounterSurgeHitMessage, CounterSurgeSnapshot, SpecialEnemyKind } from "@karayel/shared";
+import { decodeSurgeCuts, getSurgeFrontSegments, type CounterSurgeHitMessage, type CounterSurgeSnapshot, type SpecialEnemyKind } from "@karayel/shared";
 
 /**
  * Ozel dusmanlar (kule avcisi, isitici, enerji yiyici) ve karsi atak:
@@ -28,6 +28,7 @@ export const SURGE_COLOR = 0xd0603e;
 export const SURGE_EDGE_COLOR = 0xfff0e6;
 
 export const SPECIAL_MARK_COLORS: Readonly<Record<SpecialEnemyKind, number>> = {
+  harvester: 0xe0ad52,
   bomber: 0xff782e,
   hunter: HUNTER_MARK_COLOR,
   heater: HEATER_MARK_COLOR,
@@ -39,7 +40,7 @@ export const SURGE_HIT_MAX_ENTRIES = 96;
 const MAX_ID_LENGTH = 64;
 
 export function isSpecialEnemyKind(value: unknown): value is SpecialEnemyKind {
-  return value === "bomber" || value === "hunter" || value === "heater" || value === "eater";
+  return value === "harvester" || value === "bomber" || value === "hunter" || value === "heater" || value === "eater";
 }
 
 /**
@@ -120,7 +121,15 @@ export type CounterSurgeBand = {
   /** Seridin sutun genisligi (haritaya sigdirilmis). */
   columns: number;
   warn: boolean;
+  /**
+   * Metal Kalkan seridin bir kismini durdurduysa genisligin dilimleri: her
+   * dilimin kendi on kenari; `cut` dilim kalkanda durmus. Kesik yoksa
+   * `undefined` (serit tek parca, eski cizim).
+   */
+  segments?: CounterSurgeBandSegment[];
 };
+
+export type CounterSurgeBandSegment = { left: number; right: number; frontY: number; cut: boolean };
 
 /**
  * Seridin dunya geometrisi: sutunlar `origin.x + col * grid`den
@@ -129,7 +138,7 @@ export type CounterSurgeBand = {
  * ayni nesne dolduruluyor (karede nesne acilmasin).
  */
 export function getCounterSurgeBand(
-  surge: Pick<CounterSurgeSnapshot, "col" | "w" | "p" | "warn">,
+  surge: Pick<CounterSurgeSnapshot, "col" | "w" | "p" | "warn" | "cut">,
   origin: { x: number; y: number },
   gridSize: number,
   cols: number,
@@ -149,6 +158,16 @@ export function getCounterSurgeBand(
   band.frontY = band.top + progress * (band.bottom - band.top);
   band.columns = columns;
   band.warn = warn;
+  // Kesik yalnizca kalkan seridi durdurduysa telde: yoksa dizi hic kurulmuyor.
+  const cuts = warn || surge.cut === undefined ? undefined : decodeSurgeCuts(surge.cut, columns);
+  band.segments = cuts && cuts.length > 0
+    ? getSurgeFrontSegments(columns, progress, cuts).map((segment) => ({
+        left: band.left + segment.from * gridSize,
+        right: band.left + segment.to * gridSize,
+        frontY: band.top + segment.p * (band.bottom - band.top),
+        cut: segment.cut
+      }))
+    : undefined;
   return band;
 }
 
@@ -199,6 +218,7 @@ export function drawSpecialEnemyMarker(
   heaterRadius: number,
   options: DrawOptions
 ) {
+  if (kind === "harvester") return;
   if (kind === "bomber") {
     graphics.lineStyle(2, SPECIAL_MARK_COLORS.bomber, 0.85);
     graphics.strokeCircle(x, y, Math.max(8, size * 0.55));
@@ -358,6 +378,11 @@ export function drawCounterSurge(
     return;
   }
 
+  if (band.segments) {
+    drawCutCounterSurge(fill, edge, band, band.segments, gridSize);
+    return;
+  }
+
   const depth = band.frontY - band.top;
   if (depth > 0) {
     fill.fillStyle(SURGE_COLOR, 0.08);
@@ -383,4 +408,69 @@ export function drawCounterSurge(
   edge.lineStyle(2, SURGE_EDGE_COLOR, 0.8);
   edge.lineBetween(band.left, band.frontY, band.left, band.frontY + gridSize * 0.25);
   edge.lineBetween(band.right, band.frontY, band.right, band.frontY + gridSize * 0.25);
+}
+
+/**
+ * Metal Kalkan'in kismen durdurdugu serit: genislik dilimlere bolunmus, her
+ * dilim kendi on kenarina kadar ciziliyor. Ilerleyen dilim tek parca seritle
+ * ayni dilde (dolgu, tarama cizgileri, beyaz-sicak on cizgi); durmus dilim
+ * kalkanda kesiliyor: on cizgisi sonuk ve kalin, tarama ve ileri bakan uc
+ * yok. Dilimler arasindaki basamak dik bir kenarla kapaniyor.
+ */
+function drawCutCounterSurge(
+  fill: Phaser.GameObjects.Graphics,
+  edge: Phaser.GameObjects.Graphics,
+  band: CounterSurgeBand,
+  segments: readonly CounterSurgeBandSegment[],
+  gridSize: number
+) {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const width = segment.right - segment.left;
+    const depth = segment.frontY - band.top;
+    if (depth > 0) {
+      fill.fillStyle(SURGE_COLOR, segment.cut ? 0.06 : 0.08);
+      fill.fillRect(segment.left, band.top, width, depth);
+      if (!segment.cut) {
+        const strip = Math.min(depth, gridSize * 0.9);
+        fill.fillStyle(SURGE_COLOR, 0.14);
+        fill.fillRect(segment.left, segment.frontY - strip, width, strip);
+        for (let line = 1; line <= 3; line += 1) {
+          const ly = segment.frontY - line * gridSize * 0.32;
+          if (ly <= band.top) break;
+          edge.lineStyle(1, SURGE_COLOR, 0.42 - line * 0.1);
+          edge.lineBetween(segment.left, ly, segment.right, ly);
+        }
+      }
+    }
+    if (segment.cut) {
+      // Durmus on kenar: kalkana yaslanmis, sonuk ve duz.
+      edge.lineStyle(3, SURGE_COLOR, 0.5);
+      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
+    } else {
+      edge.lineStyle(5, SURGE_COLOR, 0.35);
+      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
+      edge.lineStyle(2, SURGE_EDGE_COLOR, 0.95);
+      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
+    }
+    // Sol kenar: seridin dis rayi ya da onceki dilimle arasindaki basamak.
+    const previous = segments[index - 1];
+    const railTop = previous ? Math.min(previous.frontY, segment.frontY) : band.top;
+    const railBottom = previous ? Math.max(previous.frontY, segment.frontY) : segment.frontY;
+    if (railBottom > railTop) {
+      edge.lineStyle(1.5, SURGE_COLOR, 0.55);
+      edge.lineBetween(segment.left, railTop, segment.left, railBottom);
+    }
+    if (!segment.cut) {
+      edge.lineStyle(2, SURGE_EDGE_COLOR, 0.8);
+      if (!previous || previous.frontY < segment.frontY) edge.lineBetween(segment.left, segment.frontY, segment.left, segment.frontY + gridSize * 0.25);
+      const next = segments[index + 1];
+      if (!next || next.frontY < segment.frontY) edge.lineBetween(segment.right, segment.frontY, segment.right, segment.frontY + gridSize * 0.25);
+    }
+  }
+  const last = segments[segments.length - 1];
+  if (last && last.frontY > band.top) {
+    edge.lineStyle(1.5, SURGE_COLOR, 0.55);
+    edge.lineBetween(last.right, band.top, last.right, last.frontY);
+  }
 }

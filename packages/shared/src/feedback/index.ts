@@ -49,6 +49,7 @@ export type FeedbackKind =
   | "reportRecord"
   | "synergy"
   | "execute"
+  | "metalShield"
   | "linkJoined"
   | "combo"
   | "assist"
@@ -161,6 +162,12 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   // goruyor (sahada ne oldugunu bilsin), sesi duymuyor. Sarsinti hafif ve
   // yalnizca atanin ekraninda: kendi sectigi bir an.
   execute: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 260, soundGapMs: 120, teammateSound: false, shakePx: 2, vibrateMs: 12, defaultWeight: 1 },
+  // Metal Kalkan (AttackLord): haritaya cekilen bariyerin yere oturusu.
+  // Gorsel kalkanin kendisi (sahne ciziyor, butceye girmiyor); ses tek, kuru
+  // bir celik levha darbesi -- kayitli ornek ("ball" ailesi), nota ya da
+  // parilti yok. Takim arkadasi da duyuyor ama kisik (P3): sahada yeni bir
+  // engel belirdi, bilmesi gerek. Sarsinti yok; atanin elinde kisa titresim.
+  metalShield: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: true, soundMs: 240, soundGapMs: 150, teammateSound: true, shakePx: 0, vibrateMs: 10, defaultWeight: 0.5 },
   // Takim arkadasinin Sunucusu kulene baglandi: yalnizca kulenin sahibine
   // gidiyor, yani hep "senin". Bildirim yiginda, kulede nabiz. Arasi uzun:
   // bag dokunusla acilip kapaniyor, ac-kapa ekrani bildirime bogmasin.

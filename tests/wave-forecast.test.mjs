@@ -1,3 +1,4 @@
+import { getHarvesterRaidCount } from "../packages/shared/dist/index.js";
 /**
  * Dalga ongorusu ve hava duyurusu.
  *
@@ -106,16 +107,16 @@ test("sunucu dusmani ayni kurala gore doguruyor", () => {
 });
 
 test("kurulumda takim kaydi siradaki dalganin sayisini ve hava kipini tasiyor", () => {
-  for (const [wave, mode] of [[5, "all"], [15, "mixed"]]) {
+  for (const [wave, mode] of [[5, "mixed"], [15, "mixed"]]) {
     const room = oda();
     kurulumaGec(room, wave);
     const team = tel(room).team;
     assert.equal(team.wave, wave);
     assert.equal(team.waveAirMode, mode, `${wave}. dalganin kipi`);
-    assert.equal(team.waveEnemyCount, room.waveTarget);
+    assert.equal(team.waveEnemyCount, room.waveTarget + getHarvesterRaidCount(wave));
     // Sampiyon (15. dalga) yerine gectigi dogumlari dusuruyor ve bir dusman
     // sayiliyor; tam hava dalgasinda (5) sampiyon yok, sayi aynen.
-    assert.equal(team.waveEnemyCount, getWaveSpawnCount(wave, getArenaWaveEnemyCount(wave, room.mapScale, 1)));
+    assert.equal(team.waveEnemyCount, getWaveSpawnCount(wave, getArenaWaveEnemyCount(wave, room.mapScale, 1)) + getHarvesterRaidCount(wave));
     // Kurulumda henuz dusman dogmadi: kalan sayaci da ayni sayiyi soyluyor.
     assert.equal(team.enemiesLeft, team.waveEnemyCount);
   }
@@ -126,7 +127,7 @@ test("ucansiz dalgada kip alani yok, dalga sirasinda kip su anki dalgayi anlatiy
   kurulumaGec(karada, 6);
   const team = tel(karada).team;
   assert.equal("waveAirMode" in team, false, "ucansiz dalga hava kipi tasiyor");
-  assert.equal(team.waveEnemyCount, karada.waveTarget);
+  assert.equal(team.waveEnemyCount, karada.waveTarget + getHarvesterRaidCount(6));
 
   const havada = oda();
   kurulumaGec(havada, 15);
@@ -136,8 +137,8 @@ test("ucansiz dalgada kip alani yok, dalga sirasinda kip su anki dalgayi anlatiy
   const suren = tel(havada).team;
   assert.equal(suren.wave, 15);
   assert.equal(suren.waveAirMode, "mixed");
-  assert.equal(suren.waveEnemyCount, havada.waveTarget);
-  assert.equal(suren.enemiesLeft, havada.waveTarget, "dogan dusman kalan sayacindan dustu");
+  assert.equal(suren.waveEnemyCount, havada.waveTarget + getHarvesterRaidCount(15));
+  assert.equal(suren.enemiesLeft, havada.waveTarget + getHarvesterRaidCount(15), "dogan dusman kalan sayacindan dustu");
 });
 
 test("havayi vuramayan oyuncu kurulumda uyariliyor; Ucaksavar Kiti uyariyi kaldiriyor", () => {

@@ -85,7 +85,9 @@ type HitVoiceHandle = {
  */
 const SFX_SAMPLE_FAMILY: Partial<Record<FeedbackKind, SfxSampleFamily>> = {
   crit: "crit",
-  execute: "execute"
+  execute: "execute",
+  // Metal Kalkan: agir celik levha darbesi (Kenney impactPlate_heavy; gulle ailesi).
+  metalShield: "ball"
 };
 
 /** Oldurmenin sesi bilinmiyorsa (onizleme, eski cagiran): siradan dusman, kucuk portal. */
@@ -302,6 +304,14 @@ const SFX_RECIPES: Partial<Record<FeedbackKind, (r: number) => Tone[]>> = {
     { wave: "square", from: 1500, to: 900, at: 0.03, dur: 0.02, gain: 0.035 },
     { wave: "sawtooth", from: 420, to: 60, at: 0.05, dur: 0.12, gain: 0.05 },
     { wave: "sine", from: 150, to: 38, at: 0.05, dur: 0.22, gain: 0.32 }
+  ],
+  // Metal Kalkan: asil ses kayitli ornek ("ball" ailesi: agir celik levha).
+  // Bu tarif yalnizca ornek yokken caliyor: kuru bir metal tik ve kisa, inen
+  // bir govde. Nota, akor ya da parilti yok.
+  metalShield: () => [
+    { wave: "square", from: 1900, to: 1200, at: 0, dur: 0.02, gain: 0.04 },
+    { wave: "sawtooth", from: 520, to: 140, at: 0.01, dur: 0.07, gain: 0.05 },
+    { wave: "sine", from: 190, to: 60, at: 0.01, dur: 0.16, gain: 0.26 }
   ],
   // Kulene bag kuruldu: iki kisa dijital tik (kod), sonra baglanti notasi.
   linkJoined: () => [

@@ -15,7 +15,7 @@ import { TOWER_GRID_SIZE } from "../index.js";
  * 1. asama hic degismiyor: oyuncu once temel dili ogreniyor. Butun sayilar
  * burada; sunucu ve testler ayni tablodan okuyor.
  */
-export type SpecialEnemyKind = "hunter" | "heater" | "eater" | "bomber";
+export type SpecialEnemyKind = "hunter" | "heater" | "eater" | "bomber" | "harvester";
 
 export const SPECIAL_ENEMY_KINDS: readonly SpecialEnemyKind[] = ["hunter", "heater", "eater", "bomber"];
 
@@ -33,6 +33,7 @@ export const SPECIAL_KIND_FIRST_WAVE: Readonly<Record<SpecialEnemyKind, Readonly
   heater: { 2: 1, 3: 1, 4: 1, 5: 1 },
   eater: { 2: 3, 3: 2, 4: 1, 5: 1 },
   hunter: { 2: 6, 3: 4, 4: 3, 5: 2 },
+  harvester: {},
   bomber: { 2: 8, 3: 6, 4: 4, 5: 3 }
 };
 
@@ -40,7 +41,14 @@ export const SPECIAL_KIND_FIRST_WAVE: Readonly<Record<SpecialEnemyKind, Readonly
  * Turun secilme agirligi. Avci sampiyon canli oldugu icin en seyrek;
  * isitici en sik (tek basina en az tehlikeli olan).
  */
-export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = { heater: 3, eater: 2, hunter: 1, bomber: 1 };
+export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = { heater: 3, eater: 2, hunter: 1, bomber: 1, harvester: 0 };
+
+/** Side raids are additional packs; independent of ordinary special-slot budgets. */
+export const HARVESTER_QUOTA = 20;
+export const HARVESTER_GATHER_PER_SECOND = 4;
+export function getHarvesterRaidCount(wave: number) {
+  return Number.isFinite(wave) && wave >= 3 ? Math.min(24, 6 + 2 * Math.floor(wave / 3)) : 0;
+}
 
 export const BOMBER_RADIUS_CELLS = 1.5;
 export const BOMBER_HP_MULTIPLIER = 6;
@@ -202,6 +210,7 @@ export type SpecialEnemyDurability = {
  * (`TowerHunterBudget.hpMultiple`). Karsi atak dusman degil: cani da zirhi da yok.
  */
 export function getSpecialEnemyDurability(kind: SpecialEnemyKind, championHpMultiple = 1): SpecialEnemyDurability {
+  if (kind === "harvester") return { healthMultiplier: 1, armorMultiplier: 1 };
   if (kind === "bomber") return { healthMultiplier: BOMBER_HP_MULTIPLIER, armorMultiplier: BOMBER_ARMOR_MULTIPLIER };
   if (kind === "hunter") {
     return { healthMultiplier: championHpMultiple * TOWER_HUNTER_HP_MULTIPLIER, armorMultiplier: TOWER_HUNTER_ARMOR_MULTIPLIER };
@@ -270,6 +279,13 @@ export type CounterSurgeSnapshot = {
   p: number;
   /** Uyari evresi: serit henuz kalkmadi. */
   warn?: true;
+  /**
+   * Metal Kalkan'in yuttugu parcalar; yalnizca kesik varken telde. Duz uclu
+   * dizi `[from, to, p, ...]`: seridin genislik ekseninde dusuk kenardan
+   * hucre cinsinden aralik ve on kenarin kesildigi ilerleme (bkz.
+   * `surge-absorption.ts`, `encodeSurgeCuts`). Eski istemci alani yok sayar.
+   */
+  cut?: number[];
 };
 
 /** `surge:hit`: serit bu yapilari vurdu (tek mesaj, satir basina). */

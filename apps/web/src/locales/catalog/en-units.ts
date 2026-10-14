@@ -246,8 +246,8 @@ export const enSkills: Readonly<Record<string, { name: string; description: stri
     description: "Hold and drag to mark an area on the map. For 3 seconds, projectile towers ignore their range limit and fire at enemies in that area, and enemies in the area take 30% more damage. Used to plug a leak opening far from the line."
   },
   "warrior-skill-2": {
-    name: "Refactor",
-    description: "Moves the selected tower to another valid tile without losing gold. Its level and accumulated bonuses are kept; it fixes a bad placement instead of selling and rebuilding."
+    name: "Metal Shield",
+    description: "Press and drag on the map to draw an indestructible metal shield for 3 seconds. Ground enemies cannot pass through it; it stops the part of the Counter-surge that meets it. Cooldown 30 s."
   },
   "warrior-skill-3": {
     name: "Execute",

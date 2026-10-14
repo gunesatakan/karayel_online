@@ -12,7 +12,7 @@
  *   yukselmez, kiymik yok.
  * - Inis 150 ms, 1.25'ten 1'e Back.easeOut (Phaser'in egrisiyle ayni).
  * - Inis yalnizca sunucunun kabul ettigi yerlestirmede: reddedilen istek
- *   `tower:spawn` yollamiyor; tasima (Refactor) zaten cizili kuleyi indirmiyor.
+ *   `tower:spawn` yollamiyor; zaten cizili kulenin yeniden gelen onayi indirmiyor.
  * - Kendi kademen butce doluyken de gorunur ve telefonu kisa titretir;
  *   takim arkadasininki kamerana dokunmaz. Tok ses yalnizca kendi kulende.
  */
@@ -225,7 +225,7 @@ test("kendi kademen butce doluyken de gorunur; takim arkadasininki kamerana doku
   assert.equal(FEEDBACK_KIND_RULES.place.shakePx, 0, "yerlestirme kamerayi oynatmaz");
 });
 
-test("inis yalnizca sunucunun kabul ettigi yerlestirmede; tasima yeniden indirmez", () => {
+test("inis yalnizca sunucunun kabul ettigi yerlestirmede; cizili kulenin yeniden gelen onayi indirmez", () => {
   const room = createRoom("warrior");
   const broadcasts = [];
   room.broadcast = (type, message) => broadcasts.push({ type, message });
@@ -279,14 +279,12 @@ test("inis yalnizca sunucunun kabul ettigi yerlestirmede; tasima yeniden indirme
   assert.equal(spawnsOf().length, 0, "altin yetmeyince onay yok");
   assert.equal(room.towers.size, 1);
 
-  // Refactor kuleyi tasiyor ve ayni kimlikle yine `tower:spawn` yolluyor;
-  // kule zaten cizili oldugu icin istemci onu not etmiyor.
-  const target = findBuildableSpot(room, definition.id);
-  assert.ok(target);
-  assert.equal(room.refactorTower(client, { towerId: placed[0], x: target.x, y: target.y }), true);
+  // Ayni kimlikle yeniden gelen `tower:spawn` (yeniden baglanan oyuncunun
+  // kuleleri): kule zaten cizili oldugu icin istemci onu not etmiyor.
+  room.broadcastTowerSpawn(room.towers.get(placed[0]));
   assert.equal(spawnsOf().length, 1);
   deliver();
-  assert.equal(fresh.size, 0, "tasima yeni kule degil");
+  assert.equal(fresh.size, 0, "cizili kulenin onayi yeni kule degil");
   assert.deepEqual(render(), []);
 });
 

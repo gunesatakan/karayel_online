@@ -103,7 +103,17 @@ type ControlState = {
   showOrientationToggle?: boolean;
   orientation?: "horizontal" | "vertical";
   towers?: Array<{ id: string; name: string; cost: number; color: string; selected: boolean }>;
-  skills?: Array<{ slot: number; name: string; label: string; disabled: boolean }>;
+  skills?: Array<{
+    slot: number;
+    name: string;
+    label: string;
+    disabled: boolean;
+    /**
+     * Beceri sekmeden atilmiyor, haritada bir jestle kullaniliyor (AttackLord
+     * Metal Kalkan): satir bilgi -- nasil kullanildigi ve bekleme durumu.
+     */
+    gesture?: { hint: string; status: string; ready: boolean };
+  }>;
   zeynepTier?: { slot: number; reputation: number; chainReady?: boolean };
   zeynepChain?: { value: number; ready: boolean };
   melisSpectrum?: { approval: number; stress: number; ratio: number; zone: "approval" | "balanced" | "stress"; intensity: number };
@@ -688,6 +698,23 @@ export function setupGameControlUi(game: Phaser.Game) {
     const skills = (state.skills ?? []).map((skill) => {
       const button = document.createElement("button");
       button.type = "button";
+      if (skill.gesture) {
+        // Jestle kullanilan beceri: silahlandirma dugmesi degil, bilgi satiri.
+        // Dokunus yalnizca ipucunu gosterir; beklemede de okunur kalir.
+        button.className = `game-controls__skill game-controls__skill--gesture${skill.gesture.ready ? "" : " game-controls__skill--gesture-cooldown"}`;
+        const name = document.createElement("span");
+        name.className = "game-controls__skill-name";
+        name.textContent = skill.name;
+        const hint = document.createElement("span");
+        hint.className = "game-controls__skill-hint";
+        hint.textContent = skill.gesture.hint;
+        const status = document.createElement("span");
+        status.className = "game-controls__skill-status";
+        status.textContent = skill.gesture.status;
+        button.append(name, hint, status);
+        button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
+        return button;
+      }
       button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}`;
       button.disabled = skill.disabled;
       button.textContent = skill.label;

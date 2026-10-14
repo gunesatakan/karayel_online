@@ -540,6 +540,8 @@ export type EnemySnapshot = {
   special?: import("./waves/special-enemies.js").SpecialEnemyKind;
   /** Enerji yiyici su anda bu yapiyi emiyor (yapi kimligi); yalnizca emerken. */
   drain?: string;
+  cargo?: number;
+  escaping?: boolean;
 };
 
 export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
@@ -777,6 +779,7 @@ export type ProjectileHitSnapshot = { id: string; x: number; y: number; tier?: T
 export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: string; angle: number; r?: number };
 
 export * from "./resource-economy.js";
+export * from "./resource-layout.js";
 
 export type DroneSnapshot = {
   /**
@@ -1027,6 +1030,12 @@ export type GameSnapshot = {
    * varken telde; dalgada en fazla bir tane.
    */
   surges?: import("./waves/special-enemies.js").CounterSurgeSnapshot[];
+  /**
+   * Sahadaki Metal Kalkanlar (AttackLord, yuva 1). Yalnizca kalkan varken
+   * telde; her karede tam gidiyor, yani yeni katilan ve yeniden baglanan da
+   * ilk karede goruyor.
+   */
+  shields?: import("./characters/atakan/skills/metal-shield.js").MetalShieldSnapshot[];
   perf?: ServerPerfSnapshot;
 };
 
@@ -1588,6 +1597,8 @@ export type { RunProgressSummary } from "./progress/run-progress.js";
 export type { CharacterDefinition, SkillDefinition, TowerDefinition } from "./characters/index.js";
 export { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, getExecuteRejectText, isExecuteImmune, isExecuteTeamSide, pickExecuteTapTarget } from "./characters/atakan/skills/index.js";
 export type { ExecuteRejectReason, ExecuteTapCandidate, SkillExecuteMessage, SkillRejectedMessage } from "./characters/atakan/skills/index.js";
+export * from "./characters/atakan/skills/metal-shield.js";
+export * from "./waves/surge-absorption.js";
 export type {
   AmmoType,
   TowerAxis,
@@ -2037,12 +2048,16 @@ export {
   isInsideMap,
   isWalkableTile,
   normalizeMapData,
+  normalizeMapResourceNodes,
   pathToWorldPoints,
+  projectMapResourceNodes,
   scaleEditableMap,
   setTile,
   worldToGrid,
+  MAX_MAP_RESOURCE_NODES,
   type EditableMapData,
   type GridPoint,
+  type MapResourceNode,
   type MapScale,
   type MapTileKind,
   type RuntimePath,
@@ -2223,3 +2238,5 @@ export * from "./tower-panel/index.js";
 export * from "./server-knowledge/index.js";
 export * from "./i18n/index.js";
 export * from "./i18n/server-text.js";
+
+export { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "./waves/special-enemies.js";

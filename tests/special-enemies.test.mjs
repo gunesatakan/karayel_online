@@ -1,3 +1,4 @@
+import { getHarvesterRaidCount } from "../packages/shared/dist/index.js";
 /**
  * Ozel dusmanlar ve karsi atak (2. asamadan itibaren).
  *
@@ -863,7 +864,7 @@ test("ısıtıcının ısısı kilit kuralına uyuyor ve normal yolda yürüyor"
 
 // --- Dogum plani ----------------------------------------------------------------------
 
-test("1. aşamada özel düşman yok ve zar hiç atılmıyor", () => {
+test("1. aşamada baskın işçileri dışında özel düşman yok ve plan zarı atılmıyor", () => {
   const room = oda(1);
   const gercek = Math.random;
   let calls = 0;
@@ -881,7 +882,7 @@ test("1. aşamada özel düşman yok ve zar hiç atılmıyor", () => {
   for (let wave = 1; wave <= 20; wave += 1) {
     assert.equal(getSpecialEnemyTotal(1, wave), 0);
     const spawned = dalgayiDogur(room, wave);
-    assert.ok(spawned.every((enemy) => !enemy.special), `${wave}. dalgada ozel dusman`);
+    assert.ok(spawned.every((enemy) => !enemy.special || enemy.special.kind === "harvester"), `${wave}. dalgada ozel dusman`);
   }
 });
 
@@ -893,10 +894,10 @@ test("2. aşamadan itibaren özel düşmanlar dalganın içinde doğuyor ve say�
       const spawned = dalgayiDogur(room, wave);
       const plan = room.waveSpecialPlan;
       assert.ok(plan, `${stage}/${wave}: plan yok`);
-      const specials = spawned.filter((enemy) => enemy.special);
+      const specials = spawned.filter((enemy) => enemy.special && enemy.special.kind !== "harvester");
       assert.equal(specials.length, plan.spawns.length, `${stage}/${wave}: dogan ozel sayisi plandan farkli`);
       assert.ok(specials.length >= 1, `${stage}/${wave}: hic ozel yok`);
-      assert.equal(spawned.length, room.waveTarget);
+      assert.equal(spawned.length, room.waveTarget + getHarvesterRaidCount(wave));
       for (const kind of ["hunter", "heater", "eater"]) {
         assert.equal(specials.filter((enemy) => enemy.special.kind === kind).length, plan.spawns.filter((spawn) => spawn.kind === kind).length);
       }

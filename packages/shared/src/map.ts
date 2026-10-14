@@ -1,12 +1,30 @@
 export type MapTileKind = "empty" | "road" | "tower" | "spawn" | "nexus";
 
+/** Haritanin acikca verdigi kaynak dugumu konumu (izgara karesi). */
+export type MapResourceNode = {
+  id: string;
+  col: number;
+  row: number;
+};
+
 export type EditableMapData = {
   version: 1;
   scale: MapScale;
   cols: number;
   rows: number;
   tiles: MapTileKind[];
+  /**
+   * Kaynak dugumlerinin acik konumlari; istege bagli.
+   *
+   * Verilen dugum sunucuda zarla dagitilmaz, haritanin dedigi karede kalir
+   * (bkz. `resource-layout.ts`). Verilmeyenler mac basinda rastgele yerlesir.
+   * Bugun harita duzenleyicisi bu alani yazmiyor.
+   */
+  resourceNodes?: MapResourceNode[];
 };
+
+/** Bir haritanin tasiyabilecegi en fazla acik dugum konumu (gecersiz/siskin veri kirpilir). */
+export const MAX_MAP_RESOURCE_NODES = 32;
 
 export type MapScale = 1 | 2 | 3 | 4;
 
@@ -168,13 +186,64 @@ export function normalizeMapData(map: unknown, fallbackScale: MapScale = DEFAULT
   }
 
   const validKinds = new Set<MapTileKind>(["empty", "road", "tower", "spawn", "nexus"]);
+  const resourceNodes = normalizeMapResourceNodes(candidate.resourceNodes, cols, rows);
   return {
     version: 1,
     scale,
     cols,
     rows,
-    tiles: candidate.tiles.map((tile) => validKinds.has(tile as MapTileKind) ? tile as MapTileKind : "tower")
+    tiles: candidate.tiles.map((tile) => validKinds.has(tile as MapTileKind) ? tile as MapTileKind : "tower"),
+    // Anahtar yalnizca gecerli bir konum varken: konumsuz haritalar eskisiyle ayni kaliyor.
+    ...(resourceNodes.length > 0 ? { resourceNodes } : {})
   };
+}
+
+/**
+ * Acik dugum konumlarini dogrular: kimlik metin, kare tam sayi ve haritanin
+ * icinde; ayni kimligin ilki gecerli. Gecersiz kayit sessizce atilir.
+ */
+export function normalizeMapResourceNodes(nodes: unknown, cols: number, rows: number): MapResourceNode[] {
+  if (!Array.isArray(nodes)) {
+    return [];
+  }
+  const result: MapResourceNode[] = [];
+  const seen = new Set<string>();
+  for (const entry of nodes) {
+    if (result.length >= MAX_MAP_RESOURCE_NODES) {
+      break;
+    }
+    const node = entry as Partial<MapResourceNode> | null;
+    if (!node || typeof node.id !== "string" || node.id.length === 0 || node.id.length > 32 || seen.has(node.id)) {
+      continue;
+    }
+    if (!Number.isInteger(node.col) || !Number.isInteger(node.row)) {
+      continue;
+    }
+    const col = Number(node.col);
+    const row = Number(node.row);
+    if (col < 0 || col >= cols || row < 0 || row >= rows) {
+      continue;
+    }
+    seen.add(node.id);
+    result.push({ id: node.id, col, row });
+  }
+  return result;
+}
+
+/**
+ * Acik dugum konumlarini baska olcude bir izgaraya tasir (kare merkezinin
+ * orani korunur). Olculer ayniysa konumlar aynen kalir.
+ */
+export function projectMapResourceNodes(
+  nodes: readonly MapResourceNode[] | undefined,
+  from: { cols: number; rows: number },
+  to: { cols: number; rows: number }
+): MapResourceNode[] {
+  return (nodes ?? []).map((node) => ({
+    id: node.id,
+    col: Math.max(0, Math.min(to.cols - 1, Math.floor(((node.col + 0.5) * to.cols) / Math.max(1, from.cols)))),
+    row: Math.max(0, Math.min(to.rows - 1, Math.floor(((node.row + 0.5) * to.rows) / Math.max(1, from.rows))))
+  }));
 }
 
 export function scaleEditableMap(map: EditableMapData, targetScale: MapScale): EditableMapData {
@@ -205,6 +274,10 @@ export function scaleEditableMap(map: EditableMapData, targetScale: MapScale): E
     const targetCol = Math.min(scaledMap.cols - 1, Math.floor(nexus.col * scaleRatio + scaleRatio / 2));
     const targetRow = Math.min(scaledMap.rows - 1, Math.floor(nexus.row * scaleRatio + scaleRatio / 2));
     setTile(scaledMap, targetCol, targetRow, "nexus");
+  }
+
+  if (source.resourceNodes && source.resourceNodes.length > 0) {
+    scaledMap.resourceNodes = projectMapResourceNodes(source.resourceNodes, source, scaledMap);
   }
 
   return scaledMap;

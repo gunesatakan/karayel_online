@@ -239,7 +239,10 @@ function setupRoom() {
   room.state = { players: new Map() };
   room.broadcastPatch = () => false;
   room.mapScale = Number(option("scale", 2));
-  // Asama: 1 (varsayilan) ozel dusmansiz; parmak izi eskisiyle ayni kaliyor.
+  // Asama: 1 (varsayilan) ozel dusmansiz. Kaynak dugumleri mac basinda tohumlu
+  // zarla yerlestigi icin (`rollResourceLayout`, `Math.random`dan tek cekim)
+  // parmak izi rastgele yerlesimden onceki derlemelerle ayni degil; ayni
+  // derlemenin ayni `--seed` ile iki kosusu yine birebir ayni.
   room.stage = Number(option("stage", 1));
   const clients = ROSTER.map((entry) => createClient(entry.sessionId, sink));
   room.clients = clients;

@@ -606,7 +606,7 @@ test("İzolasyon: yalnızken kapatma alanı ve mühürlü kare, komşu varken ih
 test("güdümlü atışın namlusu: gelen snapshot'taki kendi kulesinden, yalnızca güdümlü profilde", async () => {
   const { findHomingMuzzleOrigin } = await importWebModule("apps/web/src/vfx/attack-vfx.ts");
   const shot = { id: "p1", source: "tower", definitionId: "warrior-3", x: 112, y: 100 };
-  // Yeni (gelen) snapshot: kule Refactor ile (100, 100)'e tasindi; eski yeri (300, 300).
+  // Yeni (gelen) snapshot'ta kule (100, 100)'de; eski karede (300, 300) gorunuyor.
   const fresh = [
     { id: "i1", definitionId: "warrior-3", x: 100, y: 100 },
     { id: "i2", definitionId: "warrior-3", x: 180, y: 100 },

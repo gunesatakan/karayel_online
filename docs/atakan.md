@@ -339,18 +339,44 @@ Oyuncu haritada basili tutup surukleyerek bir alan secer. Bu sure boyunca mermi 
 - Alandaki dusmanlar tum hasar kaynaklarindan `x1.3` hasar alir.
 - Kulelerin menzil disi hedeflere de uptime kazanmasini saglar.
 
-### 2. Refactor
+### 2. Metal Kalkan
 
-**Cooldown:** 24 saniye
+**Cooldown:** 30 saniye (oyun suresi; bekleme kartlariyla kisalir)  
+**Sure:** 3 saniye (oyun suresi; duvar saatinde `/ GAME_SPEED_MULTIPLIER` = 3,75 sn)
 
-Secili kuleyi cezasiz sekilde baska bir uygun kareye tasir.
+Haritada basili tutup surukleyerek, basis noktasindan birakis noktasina, herhangi bir acida duz ve yikilmaz bir metal kalkan ceker. Yer dusmanlari icinden gecemez; karsi atagin kalkana denk gelen kismi orada durur. Refactor'un (kule tasima) yerine geldi; kule tasima artik yok.
 
-**Mevcut uygulama:**
+Bu beceri yeni kullanim dilinin ilki: Beceriler sekmesinden silahlandirilmiyor. Sekmedeki satir bilgi (ad, "Haritada basılı tutup sürükle", bekleme durumu); dokunmak yalnizca ipucunu gosterir. Diger beceriler simdilik sekmede, eskisi gibi.
 
-- Oyuncu once kendi kulesini secer.
-- Sonra yeni konuma dokunur.
-- Yeni konum uygunsa kule oraya tasinir.
-- Kule cooldown'u en fazla 150 ms olacak sekilde dengelenir.
+**Jest (istemci; kural `packages/shared/src/characters/atakan/skills/metal-shield.ts`):**
+
+- Esik: isaretci basis noktasindan en az 0,6 hucre (ve ekranda en az 14 piksel) uzaklasmadan hicbir sey gorunmez, hicbir sey gitmez. Duz dokunus ve kucuk el titremesi eskisi gibi isler (kule secimi, yerlestirme vb.).
+- Esigin disinda onizleme: basis noktasindan isaretciye ince bir top metali levha hatti, bir kenarinda soguk camgobegi cizgi. Birakinca kalkan cekilir.
+- Azami boy karsi atak seridinin genisligi (`COUNTER_SURGE_WIDTH_COLUMNS` x hucre). Daha uzaga surukleme yonu korur, ucu kirpar.
+- Isaretci esigin icine donerse onizleme kalkar; orada birakmak hicbir sey yapmaz. Ikinci parmak, `pointercancel`, yakalama kaybi ve harita disina cikmak jesti iptal eder.
+- Fare ve dokunmatik ayni kural (farede yalnizca ana tus).
+- Bekleme suresinde onizleme hic cikmaz; esik asildiginda en fazla 2,5 saniyede bir "Metal Kalkan N sn sonra hazır" yazar.
+- Oncelik: haritada baska bir eylem bekliyor ya da suruyorsa kalkan jesti kapali -- cekmeceden kule surukleme, Yonlendirme / Execute hedeflemesi, isci hedefi, ulti sutunu, esya yerlestirme, isci yasagi, kart perdesi. Basis secili kulenin sat dugmesinde, performans kolunda ya da sahnenin tuvale cizdigi baska bir kontrolde basladiysa o kontrol onceliklidir.
+
+**Sunucu:**
+
+- Istek: `useSkill { slot: 1, x, y, x2, y2 }` (dunya koordinati; baslangic ve uc).
+- Dogrulama: operator AttackLord, bekleme dolmus, iki nokta sonlu ve harita icinde, boy en az 0,5 hucre. Uzun gelen uc yonu korunarak azami boya kirpilir. Red `skill:rejected { slot: 1, reason: "bounds" | "short" | "invalid" }`; bekleme harcanmaz.
+- Kalkan yapi degil: cani yok, hedef alinamaz, kirilamaz, kule listesine girmez.
+- Yer dusmanlari: hucre merkezleri arasindaki gecisi kesen kalkan o gecisi kapatir; dusmanin kendi adimi ise gercek konumundan sorulur ("durdugum yerden o hucrenin merkezine duz yururken kalkani keser miyim"). Hareket adiminda son bir kapi var: kalkani kesen adim atilmaz. Kalkan belirirken cizgiye deyen dusman bulundugu tarafa itilir.
+- Dusmanlar kalkani kor gezinmenin duvar kuraliyla dolasir. Yol tumden kapaliysa yapilara (duvar/kule) vururlar; kalkan hicbir zaman kirma adayi degildir ve kalkanin arkasinda kalan yapiya vurulamaz. Ulasilabilen yapi yoksa kalkan kalkana kadar beklerler.
+- Kule avcisi, enerji yiyici, bombaci ve toplayici da durur: ozel yol alani kalkanin kestigi gecisi yok sayar (kirilacak engel degil, gecis yok).
+- Ucan dusmanlar, isciler ve dusman mermileri engellenmez. Takimin tarafina gecmis dusmanlar (hukmedilmis, olumsuz, cevrilmis) etkilenmez.
+- Kalkan belirince ve kalkinca gezinme tazelenir (`markShieldNavigationDirty`: kapali cikis ve cikmaz sokak hafizasi, ozel yol alanlari). Kule yerlesim onbellekleri ve ana kapi uyarisi (`flow:shift`) eskitilmez. Kalkan kalkinca, adimini kalkanin kestigi dusmanlarin gezinme durumu sifirlanir ve kalkan dururken aldiklari kirma kilidi duser.
+- Karsi atak: on cizgi kalkana ulastiginda kalkanin seridin genislik eksenine izdusumu (seride kirpilmis) o serit icin kalici olarak durur; genisligin geri kalani ilerler. Yutulan parcanin arkasindaki yapilar o seritten hasar almaz. Kalkan harcanmaz. Hesap yone bagimsiz (`packages/shared/src/waves/surge-absorption.ts`).
+- Yeni zar yok; kalkan cekilmeyen kosu eskisiyle bire bir ayni.
+
+**Tel:**
+
+- Snapshot `shields: [{ id, x1, y1, x2, y2, ms }]` (yalnizca kalkan varken; `ms` kalan omur). Her karede tam gittigi icin yeni katilan ve yeniden baglanan ilk karede gorur.
+- Karsi atak kaydi `surges[].cut: [from, to, p, ...]` (yalnizca kesik varken): seridin genisliginde dusuk kenardan hucre cinsinden aralik ve on kenarin kesildigi ilerleme.
+
+**Gorsel ve ses:** top metali levhalar, koyu derzler, uclarda dikme, iki uzun kenarda ince camgobegi enerji hatti; acilis ve kapanis hizli ve dogrusal. Serit, yutulan kisminda kalkanda kesik cizilir. Yere oturus sesi kayitli celik levha darbesi (CC0, Kenney Impact Sounds; `ball` ailesi, yeni dosya yok).
 
 ### 3. Execute
 

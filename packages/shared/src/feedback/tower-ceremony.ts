@@ -182,9 +182,9 @@ export function getTowerLandingScale(elapsedMs: number, still = false) {
  * Inis ancak sunucu yerlestirmeyi kabul edince oynuyor: reddedilen istek
  * `tower:spawn` yollamiyor, hayalet de zaman asiminda sessizce kalkiyor.
  * Onay oynatmadan once geliyor; kule oynatmada ilk kez cizildiginde onay
- * burada bekliyorsa kule iniyor. `tower:spawn` kuleyi tasimada (Refactor) ve
- * yeniden baglanan oyuncunun kulelerinde de geliyor; o kuleler istemcide
- * zaten cizili oldugu icin cagiran onlari hic yazmiyor.
+ * burada bekliyorsa kule iniyor. `tower:spawn` yeniden baglanan oyuncunun
+ * kulelerinde de geliyor; o kuleler istemcide zaten cizili oldugu icin
+ * cagiran onlari hic yazmiyor.
  */
 export class FreshTowerSpawns {
   private readonly spawns = new Map<string, number>();

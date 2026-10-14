@@ -51,15 +51,10 @@ test("enemy:spawn doğan düşman başına bir kez tam sabit veri yollar", () =>
   assert.equal(typeof spawns[0].payload.movementKind, "string");
 });
 
-test("kule kurulunca ve taşınınca sabit veri, satılınca remove mesajı gider", () => {
+test("kule kurulunca sabit veri, satılınca remove mesajı gider", () => {
   const { room, events } = setupRoom();
   const tower = placeFirstTower(room);
   assert.equal(events.filter((event) => event.type === "tower:spawn").length, 1);
-  const nextSpot = findBuildableSpot(room, tower.definition.id);
-  assert.ok(nextSpot);
-  const moved = room.refactorTower({ sessionId: "p1" }, { towerId: tower.id, ...nextSpot });
-  assert.equal(moved, true);
-  assert.equal(events.filter((event) => event.type === "tower:spawn").length, 2);
   room.sellTower({ sessionId: "p1" }, { towerId: tower.id });
   assert.equal(events.filter((event) => event.type === "tower:remove").length, 1);
 });
