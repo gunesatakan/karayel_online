@@ -381,3 +381,42 @@ Ek, küçük düzeltmeler: Namlu Yatağı ve Zırh Plakası fiyatı ya düşmeli
 - Dirençler testte sıfır; tür bonusu eşyaları (Ağır Avcısı vb.) ve ırk eşyaları analitik.
 - Lojistik eşyaları sonsuz kaynakla ölçülmedi; tavan kuruluş karşılaştırmasındaki bekleme payından.
 - Taht Mührü, Kin Kulesi, İzolasyon Kulesi, Saray Arşivi ve Abartı'nın eşya değerleri analitik.
+
+## Yeniden tasarım (2026-10-15)
+
+Denetimin bulgularına göre tuzak eşyalar yeniden tasarlandı, ısı bedelleri yarıya indi ve ısı/atış hızı için yeni içerik eklendi. Testler: `tests/heat-aim-redesign.test.mjs`.
+
+### Yeniden tasarlanan eşyalar
+
+| Eşya | Yeni rol |
+|---|---|
+| Nişan Dürbünü, Nişangâh, Gez ve Arpacık, Hassas Namlu | Isabet ailesi: ateş konisini daraltmıyor (ceza yok); hedefin gideceği yere önceden nişan alıyor (merminin uçuş süresiyle hedefin yürüyüşünün kesişimi) |
+| Hafif Taret Kabuğu, Atalet Dengeleyici | Koşucu ve uçan hedefe fazla hasar; piyadeye değil |
+| Taret Motoru | Hedef değiştirdikten sonraki ilk mermiye hasar ekler, aynı hedefe ikinciye eklemez |
+| İnfilak Başlığı | Kritik vuruş çevreye patlar; kritiksiz vuruş patlamaz |
+| Lazer Telemetre | Menzilin dış yarısındaki hedefe kritik şansı ekler |
+| Ek Bıçak Yuvası | Debug Lazer vuruşunu en yakın komşuya sıçratır |
+| Kriyojen Hat, Lanet Fitili | Kontrol kulesinin yavaşlattığı düşmana biner; oynanabilir kontrol kulelerine takılır |
+| Yörünge Rulmanı | Nişan alan kuleye takılır |
+| Atış Denetleyicisi | Isı cezası kalktı (ölçüm: −%12 → +%29) |
+
+### Yeni soğutma ve atış hızı içeriği
+
+Ölçüm: tek kule (Takipçi), tükenmeyen hedefe 120 sn sürekli ateş, ikinci yarının saniye başı hasarı; mühimmat ve enerji dolu, tek sınır ısı. Taban: 483.
+
+| Eşya | Mekanik | Sürekli hasar | Fark |
+|---|---|---|---|
+| Peltier Plakası | Çarpanlardan sonra düz derece soğutma | 663 | +%37 |
+| Fren Soğutucusu | Yalnızca ısı freni devredeyken soğuma | 703 | +%46 |
+| Emniyet Ventili | 70 dereceyi aşan atışta dereceyi atar; bekleme süresi var | 685 | +%42 |
+| Senkron Tetik | Atış hızı artar, atış ısısı düşer | 591 | +%23 |
+| Isıl Eşik Rölesi | Atış hızı yalnız 50 derecenin altında; ısı indirimi her zaman | 580 | +%20 |
+| Takip Ritmi | Aynı hedefe art arda atışta hız ve ısı indirimi biriktirir | 697 | +%44 |
+| Rejeneratif Fren | Isı freninin kestiği atış hızını hasara çevirir | 783 | +%62 |
+| Termal Şok Halkası | 80 dereceyi geçen atışta dalga ve tahliye | 812 | +%68 |
+| Kriyo Şok Kartuşu | Öldürmeden sonra kısa süre soğumayı büyütür | ölçülmedi (öldürme gerekir) | |
+| Isı Köprüsü | Isıyı bitişik daha soğuk kuleye aktarır | ölçülmedi (komşu gerekir) | |
+
+Kart ve eşya mekanikleri: Yeniden Ateşleme Bobini, Isı Dönüştürücü, Aşırı Hız, Soğuk Salvo, Termodinamik Denge. Bunlar kart olduğu için tek kule ölçümüne girmedi; her birinin mekanik testi var. Isı bedeli taşıyan kart ve eşyaların ısı cezası yarıya indi (test: "isi bedeli olan kart ve esyalarin isi cezasi yariya indi").
+
+Kademe: yukarıdaki yeni ısı/hız eşyaları değere göre B–A aralığında; Rejeneratif Fren ve Termal Şok Halkası A'nın üstünde, fiyatları gözden geçirilmeli.
