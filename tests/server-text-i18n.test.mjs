@@ -44,6 +44,8 @@ const FORMER_TURKISH = {
   "card.rerollUsed": "Bu seçimde yenileme hakkın kalmadı.",
   // Yeni metin (isci atama reddi, `worker:rejected`); eskisi yok.
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
+  // Yeni metin (kurulum yasak bolge reddi, `placement:rejected`); eskisi yok.
+  "placement.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
   "preview.tooSoon": "Biraz sonra tekrar dene.",
   "preview.invalidTarget": "Geçersiz hedef.",
   "preview.cardRejected": "Bu kule kartı alamıyor.",

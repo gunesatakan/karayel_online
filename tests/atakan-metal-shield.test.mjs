@@ -51,7 +51,7 @@ import {
   worldToGrid
 } from "../packages/shared/dist/index.js";
 import { MESSAGE_RULES, sanitizeMessagePayload } from "../apps/server/dist/rooms/MatchRoom.js";
-import { createRoom } from "./helpers/match-room-harness.mjs";
+import { clearBuildZones, createRoom } from "./helpers/match-room-harness.mjs";
 import { createRecorder, importWebModule } from "./helpers/web-module.mjs";
 
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -74,6 +74,8 @@ function oda(characterId = "warrior", stage = 2) {
   room.clients = [client];
   room.mapScale = 1;
   room.configureArenaForScale();
+  // Sabit karelere yapi kuruluyor; yasak bolgeler ayri testte.
+  clearBuildZones(room);
   room.stage = stage;
   room.sent = sent;
   room.client = client;

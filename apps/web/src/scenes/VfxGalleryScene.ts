@@ -31,6 +31,7 @@ import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type 
 import { GALLERY_KILL_CUES } from "../sfx-samples";
 import { COUNTER_SURGE_KIND_CODES, COUNTER_SURGE_TRAVEL_CODES, type CounterSurgeKind, type CounterSurgeSnapshot, type CounterSurgeTravel } from "@karayel/shared";
 import { AegisImpacts, COUNTER_SURGE_STYLES, createCounterSurgeBand, drawCounterSurge, getCounterSurgeBand } from "../vfx/counter-surge";
+import { RACE_GALLERY_COLS, RACE_GALLERY_ROWS, RaceGalleryPage } from "../vfx/race-gallery";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -79,6 +80,10 @@ import { AegisImpacts, COUNTER_SURGE_STYLES, createCounterSurgeBand, drawCounter
  * katman derinlikleri). Uyari ve gecis galeride kisaltilmis bir dongude;
  * yapilar on cizgi gecince cesidin renginde flaslaniyor, siperde atislar
  * on cizgide duruyor.
+ *
+ * "Irklar" kipi: alti irk mekanigi (Taslasma, kalkan atici, kazici, ruh
+ * cekici, faz, katlanma), sayfa basina bir mekanik, ayni kucuk haritada ve
+ * oyundaki cizicilerle (race-traits).
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
@@ -144,7 +149,7 @@ const MECHANIC_LABELS: Record<VfxMechanic, string> = {
   "stack-gauge": "yığın göstergesi"
 };
 
-type Mode = "grid" | "stress" | "surge";
+type Mode = "grid" | "stress" | "surge" | "races";
 
 /** Karsi atak sayfalari: cesit, yon, serit ve galerideki dongu (ms). */
 type SurgePage = { kind: CounterSurgeKind; travel: CounterSurgeTravel; lane: number; width: number; crossMs: number; label: string; cut?: boolean };
@@ -237,6 +242,10 @@ export class VfxGalleryScene extends Phaser.Scene {
   private surgeStatus?: Phaser.GameObjects.Text;
   private readonly surgeWire: CounterSurgeSnapshot = { id: 1, col: 0, w: 1, p: 0 };
   private surgeGrid = 24;
+  /** Irklar kipi: sayfa ve sayfanin cizicisi (oyunun race-traits'i). */
+  private racePage = 0;
+  private raceGallery?: RaceGalleryPage;
+  private raceStatus?: Phaser.GameObjects.Text;
   private readonly surgeOrigin = { x: 0, y: 0 };
 
   constructor() {
@@ -294,6 +303,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeFill = this.add.graphics().setDepth(7.25);
     this.surgeEdge = this.add.graphics().setDepth(12.7);
     this.surgeFlash = this.add.graphics().setDepth(24);
+    // Irklar kipinin yuzeyleri: zemin (catlak, katlanma isareti) dusmanin altinda, kalkan ve izler kulelerin ustunde.
+    this.raceGallery = new RaceGalleryPage(this, this.add.graphics().setDepth(7), this.add.graphics().setDepth(7.3), this.add.graphics().setDepth(8.12), this.add.graphics().setDepth(12.75));
     // Galeri oyunun seviyelerini kullaniyor; biri sifirsa dinleme sayfasi
     // sessiz kalmasin diye varsayilan.
     this.feedback = new FeedbackDirector({
@@ -332,6 +343,10 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.lastFrameAt = time;
     if (this.mode === "surge") {
       this.renderSurgePage();
+      return;
+    }
+    if (this.mode === "races") {
+      this.raceStatus?.setText(this.raceGallery?.render(this.now) ?? "");
       return;
     }
     const scenario = this.scenario;
@@ -419,6 +434,17 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.drawSoloMarker();
     for (const surface of [this.surgeBoard, this.surgeFill, this.surgeEdge, this.surgeFlash]) surface?.clear();
     this.surgeStatus = undefined;
+    this.raceGallery?.clear();
+    this.raceStatus = undefined;
+    if (this.mode === "races") {
+      this.scenario = undefined;
+      for (const surface of this.surfaces) surface.clear();
+      this.lod.force(0);
+      this.perfText?.setVisible(false);
+      this.buildRacePage();
+      this.refreshControls();
+      return;
+    }
     if (this.mode === "surge") {
       this.scenario = undefined;
       // Izgaranin isin ve imza yuzeyleri karede yeniden cizilmiyor: son kareleri kalmasin.
@@ -865,6 +891,10 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.mode = this.mode === "surge" ? "grid" : "surge";
       this.buildScene();
     }, "surge");
+    button("Irklar", () => {
+      this.mode = this.mode === "races" ? "grid" : "races";
+      this.buildScene();
+    }, "races");
     button("Ses açık", () => {
       this.muted = !this.muted;
       if (!this.muted) this.feedback?.unlockAudio();
@@ -903,6 +933,12 @@ export class VfxGalleryScene extends Phaser.Scene {
   }
 
   private changePage(delta: number) {
+    if (this.mode === "races") {
+      const count = this.raceGallery?.pageCount ?? 1;
+      this.racePage = (this.racePage + delta + count) % count;
+      this.buildScene();
+      return;
+    }
     if (this.mode === "surge") {
       this.surgePage = (this.surgePage + delta + SURGE_PAGES.length) % SURGE_PAGES.length;
       this.buildScene();
@@ -952,6 +988,18 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.labels.push(this.add.text(6, 6, page.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
     this.surgeStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
     this.labels.push(this.surgeStatus);
+  }
+
+  /** Irklar sayfasi: karsi atak sayfasiyla ayni harita olcusu (375 px'te hucre ~26 birim). */
+  private buildRacePage() {
+    const gallery = this.raceGallery;
+    if (!gallery) return;
+    const width = this.cameras.main.width / this.cameras.main.zoom;
+    const grid = Math.max(12, Math.floor(Math.min((width - 16) / RACE_GALLERY_COLS, (this.worldHeight - HEADER - FOOTER - 8) / RACE_GALLERY_ROWS)));
+    gallery.build(this.racePage, { x: Math.round((width - RACE_GALLERY_COLS * grid) / 2), y: HEADER + 4 }, grid);
+    this.labels.push(this.add.text(6, 6, gallery.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
+    this.raceStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
+    this.labels.push(this.raceStatus);
   }
 
   /** Karsi atak sayfasinin karesi: dongudeki ilerleme, oyundaki cizici, yapi flaslari ve siper carpmalari. */
@@ -1022,12 +1070,13 @@ export class VfxGalleryScene extends Phaser.Scene {
       element.style.background = active ? "#0e7490" : "#0f172a";
     };
     const page = bar.querySelector<HTMLElement>('[data-vfx="page"]');
-    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : "—";
+    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : this.mode === "races" ? `${this.racePage + 1} / ${this.raceGallery?.pageCount ?? 1}` : "—";
     set("slow", this.slow);
     set("pause", this.paused, this.paused ? "Oynat" : "Duraklat");
     set("mate", this.teammate);
     set("stress", this.mode === "stress");
     set("surge", this.mode === "surge");
+    set("races", this.mode === "races");
     set("mute", this.muted, this.muted ? "Sessiz" : "Ses açık");
   }
 }

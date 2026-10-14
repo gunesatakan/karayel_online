@@ -34,6 +34,7 @@ export const trServer = {
   "server.card.towerCannotTake": "Seçilen kule bu kartı alamıyor. Başka bir kule seç.",
   "server.card.rerollUsed": "Bu seçimde yenileme hakkın kalmadı.",
   "server.worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
+  "server.placement.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
 
   // ------------------------------------------------------------ Kule onizlemesi
   "server.preview.tooSoon": "Biraz sonra tekrar dene.",
@@ -140,6 +141,7 @@ export const enServer: Readonly<Record<keyof typeof trServer, string>> = {
   "server.card.towerCannotTake": "The selected tower cannot take this card. Pick another tower.",
   "server.card.rerollUsed": "No rerolls left for this draft.",
   "server.worker.nodeDepleted": "This resource is depleted. Pick another one.",
+  "server.placement.forbiddenZone": "Can't build in a no-build zone",
 
   "server.preview.tooSoon": "Try again in a moment.",
   "server.preview.invalidTarget": "Invalid target.",

@@ -1,4 +1,5 @@
 import type { EditableMapData, MapScale } from "./map.js";
+import type { BuildZoneMap } from "./build-zones.js";
 import { getMapWorldBounds } from "./map.js";
 import type { EnemyRace, HitType, MovementKind } from "./combat.js";
 import type { TowerTier } from "./tower-stats/index.js";
@@ -542,6 +543,20 @@ export type EnemySnapshot = {
   drain?: string;
   cargo?: number;
   escaping?: boolean;
+  /**
+   * Irk mekanikleri (`races/race-mechanics`). Hepsi kisa anahtarli ve yalnizca
+   * dolu iken telde; delta yolunda degismeyen alan kare basina gitmiyor.
+   * `rt`: ozellik kodu (`RACE_TRAIT_CODES`). `ga`: golem Taslasma yigini
+   * (zirh `armor` alaninda zaten). `bu`: yer altinda: cikis sutunu, satiri ve
+   * sunucu saatinde cikis ani. `ds`: ruh cekici yigini. `ph`: fazda
+   * (hedeflenemez). `fj`: katlanma uyarisi: hedef x, y ve sicrama ani.
+   */
+  rt?: number;
+  ga?: number;
+  bu?: [number, number, number];
+  ds?: number;
+  ph?: true;
+  fj?: [number, number, number];
 };
 
 export type StaticEnemySnapshot = Required<Pick<EnemySnapshot,
@@ -754,6 +769,12 @@ export type StaticSnapshot = {
    * istemcinin kendi istedigi an geldigi icin yaris barindirmaz.
    */
   map?: EditableMapData;
+  /**
+   * Kurulum yasak bolgeler: mac basinda bir kez uretiliyor, yalnizca tam
+   * statik anlik goruntude gidiyor (her karede degil). Kare indeksleri
+   * (`row * cols + col`); `cols`/`rows` haritayla tutmazsa yok sayiliyor.
+   */
+  buildZones?: BuildZoneMap;
 };
 
 export type ProjectileSnapshot = {
@@ -786,6 +807,7 @@ export type ProjectileContactSnapshot = ProjectileHitSnapshot & { definitionId: 
 
 export * from "./resource-economy.js";
 export * from "./resource-layout.js";
+export * from "./build-zones.js";
 
 export type DroneSnapshot = {
   /**
@@ -1047,6 +1069,8 @@ export type GameSnapshot = {
    * ilk karede goruyor.
    */
   shields?: import("./characters/atakan/skills/metal-shield.js").MetalShieldSnapshot[];
+  /** Meka kalkan aticilarinin kalkanlari (ucan ve inmis). Yalnizca varken; her karede tam. */
+  mshields?: import("./races/race-mechanics.js").MekaShieldSnapshot[];
   perf?: ServerPerfSnapshot;
 };
 
@@ -1985,6 +2009,7 @@ export {
 } from "./balance/champion.js";
 export type { WaveChampionPlan, WaveChampionOptions, ChampionDownMessage } from "./balance/champion.js";
 export * from "./waves/special-enemies.js";
+export * from "./races/race-mechanics.js";
 export {
   GAME_SPEED_MULTIPLIER,
   GLOBAL_TOWER_RANGE_MULTIPLIER,

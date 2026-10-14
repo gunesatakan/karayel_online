@@ -64,6 +64,9 @@ function dusmanKoy(room, tower, offset = 8) {
   // bittigi icin daha cok hasar veriyor ve fark kartin sanilirdi.
   enemy.shield = 0;
   enemy.maxShield = 0;
+  // Golem Taslasma'si (her vurus +1 zirh) pes pese iki vurusu karsilastiran
+  // olcumu bozardi; bu testin konusu degil.
+  enemy.golemStacks = undefined;
   return enemy;
 }
 

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createRoom } from "./helpers/match-room-harness.mjs";
+import { clearBuildZones, createRoom } from "./helpers/match-room-harness.mjs";
 import { gridToWorld, getBomberExplosionDamage, getSpecialEnemyDurability,
   getEnemySpawnHealth, getSpecialKindsForWave, planWaveSpecials, createSpecialRandom } from "../packages/shared/dist/index.js";
 
@@ -13,6 +13,8 @@ function roomAt(wave = 1) {
   room.clients = [client];
   room.mapScale = 1;
   room.configureArenaForScale();
+  // Sabit karelere yapi kuruluyor; yasak bolgeler ayri testte.
+  clearBuildZones(room);
   room.stage = 2;
   room.wave = wave;
   return room;

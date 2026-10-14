@@ -33,6 +33,7 @@ export const trScene = {
 
   // ------------------------------------------------------------ Yerlestirme, onizleme, uyarilar
   "scene.place.blocked": "Bu kareye kule yerleştirilemez",
+  "scene.place.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
   "scene.place.strandedCancelled": "Yarım kalan yerleştirme iptal edildi",
   "scene.defense.title": "Dalga {wave} · Savunma özeti",
   "scene.workerBan.on": "İşçilere kapatılacak kareye bas",
@@ -58,6 +59,13 @@ export const trScene = {
   "scene.special.surge.sweep": "Yandan süpürme!",
   "scene.special.surge.slash": "Çapraz kesme!",
   "scene.special.surge.aegis": "Siper dalgası: atışlarımız geçmiyor",
+  // Irk mekanikleri: ilk gorulme bildirimi (macta mekanik basina bir kez).
+  "scene.race.petrify": "Taşlaşma: golemler her vuruşta sertleşiyor; az ve ağır vuruşlar işler",
+  "scene.race.thrower": "Kalkan atıcı mekalar: kalkan atışlarımızı kesiyor",
+  "scene.race.burrower": "Kazıcı böcekler yer altından ilerliyor",
+  "scene.race.drawer": "Ruh çekici: yanında ölen düşmüşlerle büyüyor; önce onu öldür",
+  "scene.race.phaser": "Faz kayması: bazı düşmanlar kısa süre vurulamıyor",
+  "scene.race.folder": "Katlanma: işaretli kareye sıçrayacaklar",
   "scene.air.warningMixed": "Kulelerin havadaki düşmanı vuramıyor! Sonraki dalganın yarısı uçuyor.",
   "scene.air.warningAll": "Kulelerin havadaki düşmanı vuramıyor! Sonraki dalganın tamamı uçuyor.",
   "scene.shop.pickBarrierTile": "Bariyer için bir yol karesi seç",
@@ -237,6 +245,7 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.teammate": "Your teammate",
 
   "scene.place.blocked": "A tower can't be placed on this tile",
+  "scene.place.forbiddenZone": "Can't build in a no-build zone",
   "scene.place.strandedCancelled": "Unfinished placement cancelled",
   "scene.defense.title": "Wave {wave} · Defense summary",
   "scene.workerBan.on": "Tap a tile to close it to workers",
@@ -262,6 +271,12 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.special.surge.sweep": "Side sweep!",
   "scene.special.surge.slash": "Diagonal slash!",
   "scene.special.surge.aegis": "Aegis wave: our shots are blocked",
+  "scene.race.petrify": "Petrify: golems harden with every hit; few heavy hits work best",
+  "scene.race.thrower": "Shield-thrower mechs: their shields block our shots",
+  "scene.race.burrower": "Burrowers tunnel under your maze",
+  "scene.race.drawer": "Soul drawer: grows as nearby Fallen die; kill it first",
+  "scene.race.phaser": "Phase shift: some enemies briefly can't be hit",
+  "scene.race.folder": "Fold jump: they will leap to the marked cell",
   "scene.air.warningMixed": "Your towers can't hit air enemies! Half of the next wave flies.",
   "scene.air.warningAll": "Your towers can't hit air enemies! The whole next wave flies.",
   "scene.shop.pickBarrierTile": "Pick a path tile for the Barrier",

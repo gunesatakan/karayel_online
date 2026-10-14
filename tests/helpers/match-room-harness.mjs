@@ -62,6 +62,19 @@ export function createRoom(characterId) {
   return room;
 }
 
+/**
+ * Arenanin kurulum yasak bolgelerini kaldirir.
+ *
+ * Bolgeler arena kurulunca tohumla rastgele dagitiliyor; yapilari sabit
+ * karelere kuran (duvar hatti, serit, bomba menzili) testler bolgeyle
+ * ilgilenmiyor ve bolge o kareye dusunce kurulamiyordu. Bolgenin kendi
+ * kurallari tests/build-zones.test.mjs ve tests/build-zone-placement.test.mjs'te.
+ */
+export function clearBuildZones(room) {
+  room.buildZones = undefined;
+  return room;
+}
+
 /** Yolun ortasina en yakin insa edilebilir kareyi bulur. */
 export function findBuildableSpot(room, definitionId) {
   const points = room.activePaths[0].points;

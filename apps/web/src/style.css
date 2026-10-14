@@ -3499,6 +3499,14 @@ button.wave-report:active { transform: scale(0.99); }
   text-transform: uppercase;
 }
 
+/* Irk mekanigi: satirin basliginin altinda kisa aciklama. */
+.bestiary-race-trait {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
 .bestiary-race-row > div {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

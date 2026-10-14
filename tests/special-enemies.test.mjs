@@ -55,7 +55,7 @@ import {
   worldToGrid
 } from "../packages/shared/dist/index.js";
 import { createStaticEnemySnapshot } from "../apps/server/dist/snapshot/static-data.js";
-import { createRoom } from "./helpers/match-room-harness.mjs";
+import { clearBuildZones, createRoom } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
 
@@ -67,6 +67,8 @@ function oda(stage = 2) {
   room.clients = [client];
   room.mapScale = 1;
   room.configureArenaForScale();
+  // Sabit karelere yapi kuruluyor; yasak bolgeler ayri testte.
+  clearBuildZones(room);
   room.stage = stage;
   room.sent = sent;
   return room;

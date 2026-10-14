@@ -47,35 +47,35 @@ export const stageCatalog: StageDefinition[] = [
     name: "Taş Kuşatma",
     race: "golem",
     raceName: "Golem",
-    description: "Ağır ve yavaş. Fiziksel hasara açık, hücresele kapalı."
+    description: "Ağır ve yavaş; her vuruşta taşlaşır. Fiziksel hasara açık, hücresele kapalı."
   },
   {
     id: 2,
     name: "Çelik Hat",
     race: "meka",
     raceName: "Meka",
-    description: "Makine hattı. Elektriğe açık, psişiğe kapalı."
+    description: "Makine hattı; kalkan atıcılar atışları keser. Elektriğe açık, psişiğe kapalı."
   },
   {
     id: 3,
     name: "Sürü",
     race: "spaceBug",
     raceName: "Uzay Böceği",
-    description: "Kalabalık gelir. Hücresele açık, ateşe kapalı."
+    description: "Kalabalık gelir; kazıcılar yer altından geçer. Hücresele açık, ateşe kapalı."
   },
   {
     id: 4,
     name: "Düşüş",
     race: "fallen",
     raceName: "Düşmüş",
-    description: "Bozulmuş muhafızlar. Işığa açık, elektriğe kapalı."
+    description: "Bozulmuş muhafızlar; ruh çekiciler ölülerle büyür. Işığa açık, elektriğe kapalı."
   },
   {
     id: 5,
     name: "Katlanma",
     race: "fourthDimensional",
     raceName: "Dördüncü Boyut",
-    description: "Fiziksel hasarı yutar. Yalnızca psişik gerçekten işler."
+    description: "Faz kayar, katlanıp sıçrar. Fiziksel hasarı yutar; yalnızca psişik gerçekten işler."
   }
 ];
 

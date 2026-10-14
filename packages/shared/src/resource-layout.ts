@@ -413,7 +413,17 @@ export function placeResourceNodes(input: ResourceLayoutInput): ResourceLayoutRe
   const fallback = new Map<string, ResourceLayoutCell>();
   const legacy = input.fallback ?? getFixedResourceLayout(grid.cols, grid.rows);
   for (const node of input.nodes) {
-    const cell = fixed.get(node.id) ?? legacy[node.id];
+    let cell = fixed.get(node.id) ?? legacy[node.id];
+    // Sabit yerlesimin karesi yasaksa (kurulum yasak bolge, yapi) en yakin
+    // bos adaya kaydiriliyor: dugum yasak kareye hicbir yoldan dusmuyor.
+    if (isCell(cell) && !fixed.has(node.id) && grid.forbidden.has(cell.row * grid.cols + cell.col)) {
+      const from = cell;
+      const used = new Set([...fallback.values()].map((entry) => entry.row * grid.cols + entry.col));
+      const nearest = candidates
+        .filter((entry) => !used.has(entry.row * grid.cols + entry.col))
+        .sort((a, b) => chebyshev(a, from) - chebyshev(b, from) || (a.row - b.row) || (a.col - b.col))[0];
+      if (nearest) cell = nearest;
+    }
     if (isCell(cell)) fallback.set(node.id, cell);
   }
   return { cells: toRecord(fallback), source: "fallback", spacing: 0, attempts };

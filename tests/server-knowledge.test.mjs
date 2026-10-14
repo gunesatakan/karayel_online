@@ -44,6 +44,8 @@ function spawn(room, tower, type, overrides = {}) {
   const enemy = [...room.enemies.values()].at(-1);
   Object.assign(enemy, {
     type, x: tower.x + 30, y: tower.y, hp: 1_000_000, maxHp: 1_000_000, shield: 0, maxShield: 0, armor: 0,
+    // Golem Taslasma'si (her vurus +1 zirh) zirh olcumlerini kaydirirdi; konu degil.
+    golemStacks: undefined,
     damageResistances: {}, hitTypeResistances: {}, statusResistances: {}, ...overrides
   });
   return enemy;

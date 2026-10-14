@@ -42,7 +42,7 @@ import {
   planCounterSurges,
   planWaveSpecials
 } from "../packages/shared/dist/index.js";
-import { createRoom } from "./helpers/match-room-harness.mjs";
+import { clearBuildZones, createRoom } from "./helpers/match-room-harness.mjs";
 
 const oyun = (ms) => ms / GAME_SPEED_MULTIPLIER;
 
@@ -60,6 +60,8 @@ function oda(stage = 3) {
   room.clients = [client];
   room.mapScale = 1;
   room.configureArenaForScale();
+  // Sabit karelere yapi kuruluyor; yasak bolgeler ayri testte.
+  clearBuildZones(room);
   room.stage = stage;
   room.wave = 8;
   room.sent = sent;

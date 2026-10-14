@@ -1,4 +1,5 @@
 import type {
+  BuildZoneMap,
   EditableMapData,
   StaticEnemySnapshot,
   StaticSnapshot,
@@ -76,11 +77,18 @@ export function createStaticTowerSnapshot(tower: TowerStaticSource, coolingRate 
 export function createFullStaticSnapshot(
   enemies: Iterable<EnemyStaticModel>,
   towers: Iterable<TowerStaticSource>,
-  map?: EditableMapData
+  map?: EditableMapData,
+  buildZones?: BuildZoneMap
 ): StaticSnapshot {
-  return {
+  const snapshot: StaticSnapshot = {
     enemies: Array.from(enemies, createStaticEnemySnapshot),
     towers: Array.from(towers, (tower) => createStaticTowerSnapshot(tower)),
     map
   };
+  // Kurulum yasak bolgeler yalnizca burada gidiyor (mac basina sabit). Bos
+  // ya da arena kurulmadan once anahtar hic yazilmiyor.
+  if (buildZones && buildZones.cells.length > 0) {
+    snapshot.buildZones = { cols: buildZones.cols, rows: buildZones.rows, cells: [...buildZones.cells] };
+  }
+  return snapshot;
 }

@@ -160,6 +160,42 @@ export function getTutorialCopy(id: TutorialStepId, open: boolean, section = tru
   }
 }
 
+/** Kart adiminda kutunun ortmemesi gereken satir: Yenile dugmesi (kart perdesi, GameScene). */
+export const TUTORIAL_CARD_AVOID_SELECTOR = ".card-draft__actions";
+
+export type TutorialSpan = { top: number; bottom: number };
+
+/**
+ * Kutunun dikey yeri, kacinilacak satirlara gore.
+ *
+ * Sira: tercih edilen yer (alt kenar), kacinilan satirin hemen alti (sigarsa),
+ * ekranin ust kenari. Hicbir aday ortusmesiz degilse en az ortusen. Saf:
+ * testler ve kutu ayni fonksiyonu kullaniyor.
+ */
+export function pickTutorialBoxTop(options: { viewportHeight: number; boxHeight: number; preferred: number; avoid: readonly TutorialSpan[]; margin?: number }) {
+  const margin = options.margin ?? 8;
+  const { viewportHeight, boxHeight } = options;
+  const clamp = (top: number) => Math.max(margin, Math.min(viewportHeight - boxHeight - margin, top));
+  const avoid = options.avoid.filter((span) => span.bottom > span.top && span.bottom > 0 && span.top < viewportHeight);
+  const overlap = (top: number) => avoid.reduce((sum, span) => sum + Math.max(0, Math.min(top + boxHeight, span.bottom + 6) - Math.max(top, span.top - 6)), 0);
+  const candidates = [clamp(options.preferred)];
+  for (const span of avoid) {
+    if (span.bottom + 10 + boxHeight + margin <= viewportHeight) candidates.push(clamp(span.bottom + 10));
+  }
+  candidates.push(margin);
+  let best = candidates[0];
+  let bestOverlap = overlap(best);
+  for (const top of candidates) {
+    const value = overlap(top);
+    if (value === 0) return top;
+    if (value < bestOverlap) {
+      best = top;
+      bestOverlap = value;
+    }
+  }
+  return best;
+}
+
 export function readTutorialProgress(): TutorialProgress {
   try {
     const raw = window.localStorage.getItem(TUTORIAL_STORAGE_KEY);
@@ -303,8 +339,10 @@ export function setupTutorial(game: Phaser.Game) {
    * - Kart perdesi ekrani kapliyor, ust kismi karne ve ilk kart: kutu alt
    *   kenarda, cerceve yok. Magazada alt kenarda Mağazayı Kapat duruyor; kutu
    *   o satiri cerceveleyip ustune geciyor.
+   * - Kart perdesinin altinda Yenile dugmesi var: kutu alt kenarda onu
+   *   ortuyorsa (375 px'te ortuyor) ust kenara kaciyor (`avoid`).
    */
-  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; open: boolean; section?: boolean } => {
+  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; open: boolean; section?: boolean; avoid?: Element | null } => {
     const launchOpen = (drawer: string) => document.querySelector<HTMLElement>(`[data-launch="${drawer}"].game-controls__launch--open`) !== null;
     const drawer = () => document.querySelector<HTMLElement>(".game-controls__drawer") ?? undefined;
     switch (id) {
@@ -316,6 +354,9 @@ export function setupTutorial(game: Phaser.Game) {
         return { open: false, element: document.querySelector<HTMLElement>(".game-hud__continue:not([hidden])"), anchor: "hud" };
       case "logistics":
         return { open: false, element: document.querySelector<HTMLElement>(".game-hud__strip"), anchor: "hud" };
+      case "card":
+        // Cerceve yok, kutu alt kenarda; Yenile satirini ortmuyor.
+        return { open: false, element: null, anchor: "bottom", avoid: document.querySelector(TUTORIAL_CARD_AVOID_SELECTOR) };
       case "shop":
         // Yenile / Mağazayı Kapat satiri; kutu onun ustunde, son teklifin uzerinde.
         return { open: false, element: document.querySelector<HTMLElement>(".gold-shop:not(.inventory) .gold-shop__actions") };
@@ -353,7 +394,7 @@ export function setupTutorial(game: Phaser.Game) {
     return bottom || 64;
   };
 
-  const place = (target: HTMLElement | null, anchor: HTMLElement | "hud" | "bottom" | undefined) => {
+  const place = (target: HTMLElement | null, anchor: HTMLElement | "hud" | "bottom" | undefined, avoid?: Element | null) => {
     const viewport = { width: window.innerWidth, height: window.visualViewport?.height ?? window.innerHeight };
     const rect = anchor === "hud" || anchor === "bottom" ? undefined : measure(anchor) ?? measure(target);
     const framed = measure(target);
@@ -376,6 +417,10 @@ export function setupTutorial(game: Phaser.Game) {
       top = Math.max(8, rect.top - boxHeight - 14);
     } else {
       top = Math.min(viewport.height - boxHeight - 8, rect.bottom + 14);
+    }
+    const avoidRect = avoid ? measure(avoid) : undefined;
+    if (avoidRect) {
+      top = pickTutorialBoxTop({ viewportHeight: viewport.height, boxHeight, preferred: top, avoid: [avoidRect] });
     }
     box.style.transform = `translateY(${Math.round(top)}px)`;
   };
@@ -422,10 +467,10 @@ export function setupTutorial(game: Phaser.Game) {
       return;
     }
     const target = findTarget(id);
-    render(`${id}:${target.open}:${target.section !== false}`, getTutorialCopy(id, target.open, target.section), run.step + 1, target.element, target.anchor);
+    render(`${id}:${target.open}:${target.section !== false}`, getTutorialCopy(id, target.open, target.section), run.step + 1, target.element, target.anchor, target.avoid);
   };
 
-  const render = (key: string, copy: { title: string; body: string; ack?: string }, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom") => {
+  const render = (key: string, copy: { title: string; body: string; ack?: string }, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom", avoid?: Element | null) => {
     if (renderedKey !== key) {
       renderedKey = key;
       tag.textContent = t("tutorial.tag");
@@ -443,7 +488,7 @@ export function setupTutorial(game: Phaser.Game) {
       void box.offsetWidth;
       box.classList.add("tutorial__box--enter");
     }
-    place(target, anchor);
+    place(target, anchor, avoid);
   };
 
   window.setInterval(tick, TICK_MS);

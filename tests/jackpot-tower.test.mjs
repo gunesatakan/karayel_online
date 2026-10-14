@@ -68,6 +68,8 @@ test("Jackpot gains exactly twenty-five percent critical chance against bleeding
   enemy.armor = 0;
   enemy.damageResistances = {};
   enemy.hitTypeResistances = {};
+  // Golem Taslasma'si (her vurus +1 zirh) pes pese vuruslari kaydirirdi; konu degil.
+  enemy.golemStacks = undefined;
 
   room.towerCriticalRandom = () => 0.24;
   room.damageEnemy(enemy, 10, 0, definition.id, tower.ownerId, "physical", 0, 1, tower.id, "projectile");
@@ -100,6 +102,8 @@ test("every tower has one percent base crit chance and double base crit damage",
   enemy.armor = 0;
   enemy.damageResistances = {};
   enemy.hitTypeResistances = {};
+  // Golem Taslasma'si (her vurus +1 zirh) pes pese vuruslari kaydirirdi; konu degil.
+  enemy.golemStacks = undefined;
 
   assert.equal(TOWER_BASE_CRITICAL_CHANCE, 0.01);
   assert.equal(TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER, 2);
@@ -123,6 +127,8 @@ test("crit modifiers add on top of base chance and double damage", () => {
   enemy.armor = 0;
   enemy.damageResistances = {};
   enemy.hitTypeResistances = {};
+  // Golem Taslasma'si (her vurus +1 zirh) pes pese vuruslari kaydirirdi; konu degil.
+  enemy.golemStacks = undefined;
   tower.runModifiers.push(
     { source: "test", scope: "tower", stat: "critChance", add: 0.12 },
     { source: "test", scope: "tower", stat: "critDamage", add: 1 }

@@ -63,6 +63,7 @@ import { drawServerReactorArcs, type ServerReactorInput } from "../vfx/server-re
 import { VfxLod } from "../vfx/lod";
 import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
+import type { MekaShieldSnapshot, RaceMechanicId } from "@karayel/shared";
 import {
   AssistToastGate,
   decodeKillAssists,
@@ -307,6 +308,32 @@ import {
   sanitizeSurgeHitMessage
 } from "../vfx/special-threats";
 import {
+  MekaShieldImpacts,
+  RACE_MECHANIC_NOTICE_KEYS,
+  RACE_TRANSIENT,
+  RaceMechanicNotices,
+  RaceTransientEffects,
+  drawBurrowCracks,
+  drawBurrowFurrow,
+  drawFoldWarning,
+  drawMekaShield,
+  drawPetrifyPlating,
+  drawPhaseGhost,
+  drawSoulDrawerMark,
+  getBurrowTelegraphProgress,
+  getFoldWarningProgress,
+  getMekaShieldFlightProgress,
+  getRaceBodyScale,
+  getRaceMaxHpScale,
+  getVisibleRaceMechanic,
+  raceSeed,
+  readMekaShields,
+  readRaceTraitView,
+  sanitizeMekaBlockMessage,
+  sanitizeSoulDrawMessage,
+  type RaceTraitView
+} from "../vfx/race-traits";
+import {
   AEGIS_BLOCK_SOUND_CUE,
   AegisImpacts,
   COUNTER_SURGE_NOTICE_KEYS,
@@ -323,6 +350,8 @@ import {
 import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { PlacementRangePreview } from "../vfx/placement-range";
+import { drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
+import type { BuildZoneMap } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
 import { assetUrl } from "../asset-url";
@@ -522,6 +551,18 @@ type RenderMover = {
   specialKind?: SpecialEnemyKind;
   /** Son karede takimin tarafinda mi (hukmedilmis, olumsuz, cevrilmis); Execute bunlari secmiyor. */
   teamSide?: boolean;
+  /** Irk mekanigi yuzeyi (tas levhalar, faz hayaleti, yigin kertikleri); yalnizca gereken dusmanda aciliyor. */
+  raceEffect?: Phaser.GameObjects.Graphics;
+  /** Son karede yer altinda mi (kazma tozu ve cikis patlamasi gecisten). */
+  raceBurrowed?: boolean;
+  /** Son karede hedeflenemez mi (yer alti ya da faz); Execute dokunusu atliyor. */
+  raceUntargetable?: boolean;
+  /** Son karedeki katlanma uyarisi (hedef); kalkinca sicrama mi oldu iptal mi, konumdan. */
+  raceFoldX?: number;
+  raceFoldY?: number;
+  /** Uyari evresinde son gorulen konum: kirisigin kalkis ucu. */
+  raceFoldFromX?: number;
+  raceFoldFromY?: number;
 };
 
 /** Kaldirilan dusmanin izi: oldurme olayi patlamayi buradan ciziyor. */
@@ -1068,6 +1109,11 @@ export class GameScene extends Phaser.Scene {
   private pendingPerformanceTimer?: number;
   private melisNightmareMapGraphics?: Phaser.GameObjects.Graphics;
   private renderedMapKey = "";
+  /**
+   * Kurulum yasak bolgeler: tam statik anlik goruntuden (mac basina sabit).
+   * Olcusu haritayla tutmazsa sorgu bos sayiliyor.
+   */
+  private buildZones?: BuildZoneMap;
   private beamGraphics?: Phaser.GameObjects.Graphics;
   private projectileTrailGraphics?: Phaser.GameObjects.Graphics;
   /** Isinlarin ADD karisimli dusumu (ve lazerin omuzlari); govde `beamGraphics`te. */
@@ -1328,6 +1374,21 @@ export class GameScene extends Phaser.Scene {
   private readonly comboStamps = new ComboStampGate();
   /** Dogus etiketi gosterilmis sampiyonlar: etiket dusman basina bir kez. */
   private readonly announcedChampionIds = new Set<string>();
+  /** Irk mekanikleri: ilk gorulme bildirimi (mekanik basina macta bir kez), gecici efektler ve kalkan isaretleri. */
+  private readonly raceNotices = new RaceMechanicNotices();
+  private readonly raceTransients = new RaceTransientEffects();
+  private readonly mekaImpacts = new MekaShieldImpacts();
+  /** Meka kalkanlarinin sahne yuzeyi (kalkanlar, catlaklar, katlanma isaretleri, gecici efektler). */
+  private raceGraphics?: Phaser.GameObjects.Graphics;
+  private raceGraphicsDrawn = false;
+  /** Bu karede cizilecek yer isaretleri (catlak, katlanma); dusman dongusu dolduruyor. */
+  private readonly raceGroundMarks: Array<{ kind: 0 | 1; x: number; y: number; progress: number; seed: number }> = [];
+  private readonly mekaShieldScratch: MekaShieldSnapshot[] = [];
+  /** Son gorulen meka kalkanlari (`race:block` noktasi icin) ve ucusun yerel saati. */
+  private readonly mekaShieldsById = new Map<number, MekaShieldSnapshot>();
+  private readonly mekaShieldFlights = new Map<number, { seenAt: number; remaining: number }>();
+  /** Karenin oynatma ani (sunucu saati): catlak ve katlanma uyarilari buradan. */
+  private racePlaybackServerTime = 0;
   /** Ozel dusman turu ve karsi atak bildirimleri: tur basina macta bir kez, serit basina bir kez. */
   private readonly specialNotices = new SpecialThreatNotices();
   /** Karsi atak seridi: dolgu dusmanlarin altinda, sert kenarlar kulelerin ustunde. */
@@ -1729,6 +1790,14 @@ export class GameScene extends Phaser.Scene {
     this.announcedChampionIds.clear();
     // Ozel dusman bildirimleri macta bir kez: yeni macta yeniden.
     this.specialNotices.reset();
+    // Irk mekanikleri: bildirimler macta bir kez; kalkanlar ve gecici efektler yeni macta bos.
+    this.raceNotices.reset();
+    this.raceTransients.clear();
+    this.mekaShieldsById.clear();
+    this.mekaShieldFlights.clear();
+    // Meka kalkani ve catlaklar kule govdesinin (12) ustunde, Metal Kalkan'in (12.8) altinda.
+    this.raceGraphics = this.add.graphics().setDepth(12.75);
+    this.raceGraphicsDrawn = false;
     // Serit dolgusu dusmanlarin (8) altinda, zeminin ustunde; kenarlar kule
     // govdesinin (12) ve seviye halkasinin (12.6) ustunde, can cubugunun (16) altinda.
     this.surgeFillGraphics = this.add.graphics().setDepth(7.25);
@@ -1884,7 +1953,7 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.mapGraphics ?? this.add.graphics().setDepth(1);
     this.mapGraphics = graphics;
     graphics.clear();
-    this.renderedMapKey = `${this.selectedMapData.cols}x${this.selectedMapData.rows}:${this.selectedMapData.tiles.join("")}`;
+    this.renderedMapKey = this.getMapRenderKey(this.selectedMapData);
     const cellSize = this.getMapCellSize();
     const origin = getMapOrigin(this.selectedMapData);
     const tileColumns = this.selectedMapData.cols;
@@ -1903,6 +1972,9 @@ export class GameScene extends Phaser.Scene {
     graphics.fillRect(sky.left, bounds.top, Math.max(0, bounds.left - sky.left), bounds.height);
     graphics.fillRect(bounds.right, bounds.top, Math.max(0, sky.left + sky.width - bounds.right), bounds.height);
 
+    // Kurulum yasak bolgeler: zeminin ustunde, oyun ogelerinin altinda.
+    drawBuildZones(graphics, this.getActiveBuildZones(), { originX: origin.x, originY: origin.y, cellSize });
+
     // Arenanin siniri: izgara gidince oyun alaninin nerede bittigi baska hicbir
     // seyden okunmuyor. Uzay artik arenanin disinda da surdugu icin sinir
     // biraz daha belirgin: oyun alaninin nerede bittigini soyleyen tek sey bu.
@@ -1917,6 +1989,36 @@ export class GameScene extends Phaser.Scene {
     graphics.lineBetween(origin.x, origin.y, origin.x + arenaWidth, origin.y);
     graphics.lineStyle(2, 0xf9a8d4, 0.75);
     graphics.lineBetween(origin.x, origin.y + arenaHeight, origin.x + arenaWidth, origin.y + arenaHeight);
+  }
+
+  /** Haritanin cizim anahtari: kareler ve yasak bolgeler; ayniysa yeniden cizilmiyor. */
+  private getMapRenderKey(map: EditableMapData) {
+    const zones = this.buildZones && this.buildZones.cols === map.cols && this.buildZones.rows === map.rows ? this.buildZones : undefined;
+    return `${map.cols}x${map.rows}:${map.tiles.join("")}|${getBuildZoneRenderKey(zones)}`;
+  }
+
+  /** Secili haritaya ait yasak bolgeler; olcu tutmuyorsa (eski arena) yok. */
+  private getActiveBuildZones() {
+    const zones = this.buildZones;
+    const map = this.selectedMapData;
+    return zones && zones.cols === map.cols && zones.rows === map.rows ? zones : undefined;
+  }
+
+  /**
+   * Hayaletin yerlestirmesi yasak bolgeye mi degiyor (sunucudaki kuralla
+   * ayni): kulenin herhangi bir karesi bolgede ya da kenar yapisinin bir
+   * segmenti bolge karesine degiyor.
+   */
+  private isPreviewInBuildZone(x: number, y: number) {
+    const zones = this.getActiveBuildZones();
+    if (!zones) return false;
+    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
+    const board = { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows };
+    if (this.isEdgePlacedDefinition(definitionId)) {
+      const segments = this.getAbartiEdgeSegments(x, y, this.getPlacementOrientation(definitionId, x, y), this.getEdgeLength(definitionId));
+      return isPlacementBlockedByBuildZone(zones, board, { segments });
+    }
+    return isPlacementBlockedByBuildZone(zones, board, { footprint: this.getTowerPreviewFootprintCells(x, y) });
   }
 
   /**
@@ -2371,7 +2473,8 @@ export class GameScene extends Phaser.Scene {
       });
       this.echoPlacement(cell.x, cell.y, tower.id);
     } else {
-      this.showNotice(t("scene.place.blocked"));
+      // Yasak bolgede neden kurulamadigi ayrica soyleniyor.
+      this.showNotice(t(this.isPreviewInBuildZone(cell.x, cell.y) ? "scene.place.forbiddenZone" : "scene.place.blocked"));
     }
 
     this.draggedTowerDefinition = undefined;
@@ -2976,6 +3079,11 @@ export class GameScene extends Phaser.Scene {
     // Duvar kontenjandan yer kapmadigi icin sinir dolu olsa da kurulabilir.
     const placedDefinition = towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === definitionId);
     if (!ignoreTowerId && placedDefinition && occupiesTowerSlot(placedDefinition) && (this.localPlayerSnapshot?.towersBuilt ?? 0) >= towerLimit) {
+      return false;
+    }
+
+    // Kurulum yasak bolge: kule karesi bolgede ya da kenar bolge karesine degiyor.
+    if (this.isPreviewInBuildZone(x, y)) {
       return false;
     }
 
@@ -3922,7 +4030,8 @@ export class GameScene extends Phaser.Scene {
   private findEnemyAt(x: number, y: number) {
     const candidates: ExecuteTapCandidate[] = [];
     for (const [id, mover] of this.enemies) {
-      if (!mover.sprite.active || !mover.sprite.visible) continue;
+      // Yer altindaki (gizli) ve fazdaki dusman hedeflenemiyor: sunucu reddederdi.
+      if (!mover.sprite.active || !mover.sprite.visible || mover.raceUntargetable) continue;
       candidates.push({
         id,
         x: mover.sprite.x,
@@ -4119,6 +4228,179 @@ export class GameScene extends Phaser.Scene {
    * hatti; yuzey dusmanla birlikte kuruluyor ve yikiliyor. Tur macta ilk kez
    * goruldugunde HUD bildirimi ve konumunda kisa bir uyari halkasi.
    */
+  // --- Irk mekanikleri (races/race-mechanics) -------------------------------------------
+
+  /**
+   * Dusmanin irk mekanigi: Taslasma levhalari, yer alti (govde gizli, yer
+   * izi ve cikis catlaklari), ruh cekici halkasi ve yigin kertikleri, faz
+   * hayaleti ve katlanma uyarisi. Yuzey ilk gereken karede aciliyor; irk
+   * alani kalkinca bir kez temizleniyor.
+   */
+  private renderEnemyRaceTrait(mover: RenderMover, enemy: EnemySnapshot, view: RaceTraitView | undefined, size: number, now: number) {
+    const reducedMotion = this.feedback?.reducedMotion ?? false;
+    const cellSize = this.getMapCellSize();
+    const burrowed = Boolean(view?.burrow);
+    const phased = Boolean(view?.phased);
+    // Yer altina giris ve cikis: gorulen gecisten (toz halkasi, cikis patlamasi).
+    if (burrowed !== Boolean(mover.raceBurrowed)) {
+      this.raceTransients.add(burrowed ? RACE_TRANSIENT.dig : RACE_TRANSIENT.emerge, enemy.x, enemy.y, now);
+    }
+    mover.raceBurrowed = burrowed;
+    mover.raceUntargetable = burrowed || phased;
+    if (mover.sprite.visible === burrowed) mover.sprite.setVisible(!burrowed);
+    if (burrowed) {
+      mover.healthBar?.clear();
+      mover.shieldHalo?.setVisible(false);
+      mover.bleedEffect?.setVisible(false);
+      mover.frostEffect?.setVisible(false);
+    } else if (phased) {
+      mover.sprite.setAlpha(0.32);
+    }
+
+    // Katlanma: uyari kalkti ve dusman hedefte -> iki uca kirisik (iptalde yok).
+    const fold = view?.fold;
+    if (!fold && mover.raceFoldX !== undefined && mover.raceFoldY !== undefined) {
+      if (Math.hypot(enemy.x - mover.raceFoldX, enemy.y - mover.raceFoldY) <= cellSize * 0.6) {
+        const fromX = mover.raceFoldFromX ?? enemy.x;
+        const fromY = mover.raceFoldFromY ?? enemy.y;
+        this.raceTransients.add(RACE_TRANSIENT.fold, fromX, fromY, now, enemy.x - fromX, enemy.y - fromY);
+        this.raceTransients.add(RACE_TRANSIENT.fold, enemy.x, enemy.y, now, enemy.x - fromX, enemy.y - fromY);
+      }
+      mover.raceFoldX = undefined;
+      mover.raceFoldY = undefined;
+    }
+    if (fold) {
+      mover.raceFoldX = fold.x;
+      mover.raceFoldY = fold.y;
+      mover.raceFoldFromX = enemy.x;
+      mover.raceFoldFromY = enemy.y;
+      this.raceGroundMarks.push({ kind: 1, x: fold.x, y: fold.y, progress: getFoldWarningProgress(fold.at, this.racePlaybackServerTime), seed: 0 });
+    }
+
+    const seed = raceSeed(enemy.id);
+    if (view?.burrow) {
+      const progress = getBurrowTelegraphProgress(view.burrow.emergeAt, this.racePlaybackServerTime);
+      if (progress !== undefined) {
+        const cell = gridToWorld(view.burrow.col, view.burrow.row, this.selectedMapData);
+        this.raceGroundMarks.push({ kind: 0, x: cell.x, y: cell.y, progress, seed });
+      }
+    }
+
+    const mechanic = view ? getVisibleRaceMechanic(view) : undefined;
+    if (mechanic) this.noteRaceMechanic(mechanic);
+
+    const needsSurface = Boolean(view && (view.petrify > 0 || view.trait === "drawer" || phased || (burrowed && this.vfxLod.decals)));
+    if (!needsSurface) {
+      if (mover.raceEffect?.visible) mover.raceEffect.clear().setVisible(false);
+      return;
+    }
+    if (!mover.raceEffect) mover.raceEffect = this.add.graphics();
+    const graphics = mover.raceEffect;
+    setDepthIfChanged(graphics, enemy.movementKind === "air" ? 9.12 : 8.12);
+    graphics.clear().setVisible(true);
+    const options = { now, reducedMotion };
+    if (burrowed) {
+      drawBurrowFurrow(graphics, enemy.x, enemy.y, size, seed, options);
+      return;
+    }
+    if (view!.petrify > 0) drawPetrifyPlating(graphics, enemy.x, enemy.y, size, view!.petrify, seed);
+    if (view!.trait === "drawer") drawSoulDrawerMark(graphics, enemy.x, enemy.y, size, view!.drawer);
+    if (phased) drawPhaseGhost(graphics, enemy.x, enemy.y, size, seed, options);
+  }
+
+  /** Mekanigin ilk gorulme bildirimi (macta bir kez; sonuc ekraninda yok). */
+  private noteRaceMechanic(mechanic: RaceMechanicId) {
+    if (this.matchResultShown || !this.raceNotices.note(mechanic)) return;
+    this.showNotice(t(RACE_MECHANIC_NOTICE_KEYS[mechanic] as Parameters<typeof t>[0]), 4200);
+  }
+
+  /**
+   * Sahne yuzeyi: meka kalkanlari (ucus yerel saatte akiyor), durdurulan
+   * atislarin parlamalari, cikis catlaklari, katlanma uyarilari ve gecici
+   * efektler. Hicbiri yokken yuzey bir kez temizlenip birakiliyor.
+   */
+  private renderRaceScene(rawShields: unknown, now: number) {
+    const graphics = this.raceGraphics;
+    if (!graphics) return;
+    const shields = readMekaShields(rawShields, this.mekaShieldScratch);
+    const transients = this.raceTransients.active(now);
+    const impacts = this.mekaImpacts.active(now);
+    if (shields.length === 0 && this.raceGroundMarks.length === 0 && !transients && !impacts) {
+      if (this.raceGraphicsDrawn) {
+        graphics.clear();
+        this.raceGraphicsDrawn = false;
+      }
+      if (this.mekaShieldsById.size > 0) this.mekaShieldsById.clear();
+      if (this.mekaShieldFlights.size > 0) this.mekaShieldFlights.clear();
+      return;
+    }
+    graphics.clear();
+    this.raceGraphicsDrawn = true;
+    const cellSize = this.getMapCellSize();
+    const reducedMotion = this.feedback?.reducedMotion ?? false;
+    for (const mark of this.raceGroundMarks) {
+      if (mark.kind === 0) drawBurrowCracks(graphics, mark.x, mark.y, cellSize, mark.progress, mark.seed);
+      else drawFoldWarning(graphics, mark.x, mark.y, cellSize, mark.progress);
+    }
+    this.raceGroundMarks.length = 0;
+    // Kimligi artik telde olmayan kalkanin ucus kaydi siliniyor.
+    if (this.mekaShieldsById.size > shields.length) this.mekaShieldsById.clear();
+    for (const shield of shields) {
+      if (!this.mekaShieldsById.has(shield.id)) this.noteRaceMechanic("thrower");
+      this.mekaShieldsById.set(shield.id, shield);
+      let flight: number | undefined;
+      if (typeof shield.f === "number" && shield.f > 0) {
+        let record = this.mekaShieldFlights.get(shield.id);
+        if (!record) {
+          record = { seenAt: now, remaining: shield.f };
+          this.mekaShieldFlights.set(shield.id, record);
+        }
+        flight = getMekaShieldFlightProgress(record.remaining - (now - record.seenAt));
+      } else if (this.mekaShieldFlights.has(shield.id)) {
+        this.mekaShieldFlights.delete(shield.id);
+      }
+      drawMekaShield(graphics, shield, flight, cellSize, { now, reducedMotion });
+    }
+    if (impacts) this.mekaImpacts.draw(graphics, cellSize, now, reducedMotion);
+    if (transients) {
+      this.raceTransients.draw(graphics, cellSize, now, {
+        reducedMotion,
+        resolve: (id) => {
+          const mover = this.enemies.get(id);
+          return mover ? { x: mover.sprite.x, y: mover.sprite.y } : undefined;
+        }
+      });
+    }
+  }
+
+  /** `race:block`: meka kalkaninin durdurdugu atislar (siperin isaretiyle ayni dil). */
+  private receiveMekaShieldBlock(raw: unknown) {
+    const message = sanitizeMekaBlockMessage(raw);
+    if (!message || this.matchResultShown) return;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown) return;
+      const shield = this.mekaShieldsById.get(message.id);
+      if (!shield) return;
+      const now = performance.now();
+      for (const along of message.a) this.mekaImpacts.add(shield, along, now);
+      if (now - this.aegisBlockSoundAt >= 320) {
+        this.aegisBlockSoundAt = now;
+        this.feedback?.playSampleCue(AEGIS_BLOCK_SOUND_CUE.family, AEGIS_BLOCK_SOUND_CUE.rate, AEGIS_BLOCK_SOUND_CUE.gain, `mblock:${message.id}`);
+      }
+    });
+  }
+
+  /** `race:soul`: olen dusmustan ruh cekiciye ince soluk iz (cekici yururken onu izliyor). */
+  private receiveSoulDraw(raw: unknown) {
+    const message = sanitizeSoulDrawMessage(raw);
+    if (!message || this.matchResultShown) return;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown) return;
+      const mover = this.enemies.get(message.to);
+      this.raceTransients.add(RACE_TRANSIENT.wisp, message.x, message.y, performance.now(), mover?.sprite.x ?? message.x, mover?.sprite.y ?? message.y, message.to);
+    });
+  }
+
   private renderSpecialEnemy(mover: RenderMover, enemy: EnemySnapshot, kind: SpecialEnemyKind, displayedSize: number, now: number) {
     if (!isSpecialEnemyKind(kind)) return;
     mover.specialKind = kind;
@@ -5415,8 +5697,13 @@ export class GameScene extends Phaser.Scene {
     // cikabildigi icin tek basina guvenilir degil. Yanlis haritayla oynayan
     // istemci kareleri baska yere cizer, dokunuslari baska hucreye yazar ve
     // sunucunun kullandigi sutunlari hic bilmez.
+    // Kurulum yasak bolgeler de yalnizca burada geliyor (mac basina sabit);
+    // haritadan once yaziliyor ki cizim anahtari ikisini birlikte gorsun.
+    this.buildZones = snapshot.buildZones;
     if (snapshot.map) {
       this.syncMap(snapshot.map);
+    } else if (this.getMapRenderKey(this.selectedMapData) !== this.renderedMapKey) {
+      this.drawMap();
     }
   }
 
@@ -5467,6 +5754,10 @@ export class GameScene extends Phaser.Scene {
     this.renderCounterSurge(frame.snapshot.surges, now);
     this.vfxFrameCost += performance.now() - sectionStart;
     this.renderMetalShields(frame.snapshot.shields, now);
+    // Irk mekanikleri: meka kalkanlari, catlaklar, katlanma uyarilari, gecici efektler.
+    sectionStart = performance.now();
+    this.renderRaceScene(frame.snapshot.mshields, now);
+    this.vfxFrameCost += performance.now() - sectionStart;
     sectionStart = performance.now();
     this.renderAtakanSignatures(frame.snapshot.enemies, now);
     this.renderZeynepSignatures(frame.snapshot.enemies, now);
@@ -5488,6 +5779,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     const targetServerTime = this.playbackClock.getTargetServerTime(now);
+    // Irk uyarilari (catlak, katlanma) sunucu saatindeki anlara bagli: oynatma ani.
+    this.racePlaybackServerTime = targetServerTime;
     this.pruneSnapshotBuffer(targetServerTime);
 
     let previous = this.snapshotBuffer[0];
@@ -5539,11 +5832,15 @@ export class GameScene extends Phaser.Scene {
       const pathDistance = oldEnemy
         ? Phaser.Math.Linear(oldEnemy.pathDistance, enemy.pathDistance, alpha)
         : enemy.pathDistance;
+      // Katlanma sicramasi ve kazicinin cikisi isinlanma: iki kare arasinda
+      // kaydirilmiyor, yeni yerde beliriyor.
+      const teleported = Boolean(oldEnemy && ((oldEnemy.fj && !enemy.fj) || (oldEnemy.bu && !enemy.bu)));
+      const lerpPosition = oldEnemy && !teleported;
 
       return {
         ...enemy,
-        x: oldEnemy ? Phaser.Math.Linear(oldEnemy.x, enemy.x, alpha) : enemy.x,
-        y: oldEnemy ? Phaser.Math.Linear(oldEnemy.y, enemy.y, alpha) : enemy.y,
+        x: lerpPosition ? Phaser.Math.Linear(oldEnemy!.x, enemy.x, alpha) : enemy.x,
+        y: lerpPosition ? Phaser.Math.Linear(oldEnemy!.y, enemy.y, alpha) : enemy.y,
         pathDistance,
         hp: oldEnemy ? Phaser.Math.Linear(oldEnemy.hp, enemy.hp, alpha) : enemy.hp,
         shield: oldEnemy ? Phaser.Math.Linear(oldEnemy.shield, enemy.shield, alpha) : enemy.shield
@@ -5958,6 +6255,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("worker:rejected", (message: { reason?: string; key?: string }) => {
       this.showNotice(localizeServerText(message?.reason, message?.key) ?? t("server.worker.nodeDepleted"));
     });
+    // Sunucunun yerlestirme reddi (kurulum yasak bolge): onizleme atlatildiysa.
+    room.onMessage("placement:rejected", (message: { message?: string; key?: string }) => {
+      this.showNotice(localizeServerText(message?.message, message?.key) ?? t("scene.place.forbiddenZone"));
+    });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
       this.cancelExecuteTargeting();
@@ -5993,6 +6294,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("champion:down", (message: ChampionDownMessage) => this.receiveChampionDown(message));
     // Karsi atak yapilari vurdu: yapi basina bir kez, mesaj temizlenerek okunuyor.
     room.onMessage("surge:hit", (message: unknown) => this.receiveSurgeHit(message));
+    // Irk mekanikleri: meka kalkaninin durdurdugu atislar ve ruh cekicinin izi.
+    room.onMessage("race:block", (message: unknown) => this.receiveMekaShieldBlock(message));
+    room.onMessage("race:soul", (message: unknown) => this.receiveSoulDraw(message));
     // Siper dalgasi atislari durdurdu: seyrek mesaj, carpma isaretleri on cizgide.
     room.onMessage("surge:block", (message: unknown) => this.receiveSurgeBlock(message));
     room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
@@ -7199,7 +7503,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   private syncMap(mapData: EditableMapData) {
     const map = normalizeMapData(mapData);
-    const mapKey = `${map.cols}x${map.rows}:${map.tiles.join("")}`;
+    const mapKey = this.getMapRenderKey(map);
     if (mapKey === this.renderedMapKey) {
       return;
     }
@@ -7423,6 +7727,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         mover.frostEffect?.destroy();
         mover.crown?.destroy();
         mover.specialEffect?.destroy();
+        mover.raceEffect?.destroy();
         this.announcedChampionIds.delete(id);
         this.enemies.delete(id);
       }
@@ -7431,6 +7736,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     for (const enemy of enemies) {
       let mover = this.enemies.get(enemy.id);
       const texture = getEnemyTextureKey(enemy);
+      // Irk alanlari: cogu dusmanda yok (tek karsilastirma, nesne yok).
+      const raceView = readRaceTraitView(enemy);
 
       if (!mover) {
         let sprite = this.enemyGroup?.get(enemy.x, enemy.y, texture) as Phaser.Physics.Arcade.Sprite | undefined;
@@ -7507,8 +7814,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       setDepthIfChanged(mover.sprite, enemy.movementKind === "air" ? 9 : 8);
       mover.sprite.setRotation(this.getEnemySpriteRotation(enemy, previousX, previousY, mover.sprite.rotation));
       const slowPulse = slowTierLevel > 0 ? Math.sin(performance.now() / 120) * 0.05 : 0;
-      // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin.
-      const championScale = enemy.champion ? CHAMPION_SPRITE_SCALE : 1;
+      // Sampiyon govdesi ceyrek buyuk: kalabalikta ilk bakista secilsin. Ruh
+      // cekici yiginla buyuyor (+%6 / yigin): govde, halo ve cubuk birlikte.
+      const championScale = (enemy.champion ? CHAMPION_SPRITE_SCALE : 1) * getRaceBodyScale(raceView);
       const baseSpriteScale = getEnemySpriteDisplaySize(enemy, this.getMapCellSize()) * championScale / 512;
       const artScale = enemy.special === "bomber" ? BOMBER_ART_SCALE[enemy.race] : 1;
       mover.sprite.setScale(baseSpriteScale * artScale * ((enemy.movementKind === "air" ? 1.28 : 1) + slowPulse));
@@ -7561,6 +7869,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       }
       if (enemy.special) {
         this.renderSpecialEnemy(mover, enemy, enemy.special, displayedEnemySize, now);
+      }
+      if (raceView || mover.raceEffect || mover.raceBurrowed || mover.raceUntargetable) {
+        this.renderEnemyRaceTrait(mover, enemy, raceView, displayedEnemySize, now);
       }
       mover.marker?.setPosition(enemy.x, enemy.y - 22);
       const curseLoad = enemy.curseLoad ?? 0;
@@ -9379,7 +9690,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const height = champion ? 3 : 2;
     const x = enemy.x - width / 2;
     const y = enemy.y + displayedSize * 0.5 + 5;
-    const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+    // Ruh cekicinin azami cani yiginla buyuyor; statik kayit dogumdaki degeri tasiyor.
+    const maxHp = enemy.maxHp * getRaceMaxHpScale(readRaceTraitView(enemy));
+    const hpRatio = Phaser.Math.Clamp(enemy.hp / Math.max(1, maxHp), 0, 1);
     graphics.clear();
     graphics.fillStyle(0x020617, 0.92).fillRoundedRect(x - 1, y - 1, width + 2, height + 2, 2);
     if (champion) graphics.lineStyle(1, CHAMPION_BAR_FRAME, 0.95).strokeRoundedRect(x - 1.5, y - 1.5, width + 3, height + 3, 2);

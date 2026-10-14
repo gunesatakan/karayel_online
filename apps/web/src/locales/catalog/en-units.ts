@@ -305,9 +305,9 @@ export const enUcubePerks: Readonly<Record<string, { name: string; description: 
 };
 
 export const enStages: Readonly<Record<number, { name: string; raceName: string; description: string }>> = {
-  1: { name: "Stone Siege", raceName: "Golem", description: "Heavy and slow. Weak to physical damage, resistant to cellular." },
-  2: { name: "Steel Line", raceName: "Mech", description: "A machine line. Weak to electric, resistant to psychic." },
-  3: { name: "Swarm", raceName: "Space Bug", description: "Comes in crowds. Weak to cellular, resistant to fire." },
-  4: { name: "The Fall", raceName: "The Fallen", description: "Corrupted guardians. Weak to light, resistant to electric." },
-  5: { name: "Folding", raceName: "Fourth Dimension", description: "Absorbs physical damage. Only psychic truly works." }
+  1: { name: "Stone Siege", raceName: "Golem", description: "Heavy and slow; petrifies with every hit. Weak to physical damage, resistant to cellular." },
+  2: { name: "Steel Line", raceName: "Mech", description: "A machine line; shield throwers block your shots. Weak to electric, resistant to psychic." },
+  3: { name: "Swarm", raceName: "Space Bug", description: "Comes in crowds; burrowers tunnel under your maze. Weak to cellular, resistant to fire." },
+  4: { name: "The Fall", raceName: "The Fallen", description: "Corrupted guardians; soul drawers grow as others die. Weak to light, resistant to electric." },
+  5: { name: "Folding", raceName: "Fourth Dimension", description: "Phases out and fold-jumps. Absorbs physical damage; only psychic truly works." }
 };

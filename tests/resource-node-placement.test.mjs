@@ -211,11 +211,15 @@ test("tohum mac basinda Math.random'dan tek cekim; tohumlu Math.random ile mac b
     return { room, calls: random.calls };
   };
   // 1. asama: iki cekim: dalga paterni tohumu (ilk dalga planinda), sonra
-  // yerlesim tohumu. Ozel dusman tohumu hic cekilmiyor.
+  // yerlesim tohumu. Ozel dusman tohumu hic cekilmiyor. Yerlesim tohumu
+  // kurulum yasak bolgeleri de belirliyor (ayri tuzlu bir akis): bolgeler
+  // ek bir `Math.random` cekimi istemiyor.
   const a = roll(9001, 1);
   const b = roll(9001, 1);
   const c = roll(9002, 1);
   assert.equal(a.calls, 2);
+  assert.deepEqual(b.room.buildZones, a.room.buildZones, "ayni tohum ayni yasak bolge");
+  assert.notDeepEqual(c.room.buildZones.cells, a.room.buildZones.cells);
   assert.equal(a.room.specialSeed, undefined);
   const first = seededRandom(9001);
   assert.equal(a.room.wavePatternSeed, Math.floor(first() * 0x1_0000_0000));
@@ -475,7 +479,7 @@ test("dugum ayakta bir yapinin altina dagitilmiyor", () => {
   }
 });
 
-test("haritanin acikca verdigi dugum konumlari aynen kaliyor ve zar atilmiyor", async () => {
+test("haritanin acikca verdigi dugum konumlari aynen kaliyor ve dugum zari atilmiyor", async () => {
   const explicit = [
     { id: "crystal-1", col: 1, row: 3 },
     { id: "crystal-2", col: 5, row: 3 },
@@ -492,9 +496,14 @@ test("haritanin acikca verdigi dugum konumlari aynen kaliyor ve zar atilmiyor", 
   try {
     const random = seededRandom(1);
     withMathRandom(random, () => joinClient(room, "p", { characterId: "warrior" }));
-    assert.equal(random.calls, 0, "acik yerlesim zar atti");
+    // Tek cekim: kurulum yasak bolgelerin tohumu (bolge her haritada var).
+    // Dugum zari bu tohumdan turuyor ama acik yerlesim onu hic kullanmiyor.
+    assert.equal(random.calls, 1, "acik yerlesim zar atti");
     assert.equal(room.resourceLayout.source, "explicit");
-    assert.equal(room.resourceLayoutSeed, undefined);
+    assert.equal(room.resourceLayoutSeed, Math.floor(seededRandom(1)() * 0x1_0000_0000));
+    assert.ok(room.buildZones.cells.length > 0);
+    // Acik dugum konumlari bolgeye girmiyor.
+    for (const node of explicit) assert.equal(room.buildZones.cells.includes(node.row * 12 + node.col), false, `${node.id} bolgede`);
     assert.deepEqual(cellsOf(room), Object.fromEntries(explicit.map((node) => [node.id, { col: node.col, row: node.row }])));
     assert.deepEqual(snapshotNodes(room.getSnapshot()).map((node) => worldToGrid(node.x, node.y, room.activeMap)), explicit.map((node) => ({ col: node.col, row: node.row })));
 

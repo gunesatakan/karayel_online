@@ -1545,6 +1545,7 @@ function renderBestiary() {
           ${enemyRaceOrder.map((race) => `
             <article class="bestiary-race-row">
               <strong>${escapeHtml(formatEnemyRace(race))}</strong>
+              ${race === "holyGuardian" ? "" : `<p class="bestiary-race-trait">${escapeHtml(t(`menu.bestiary.raceTrait.${race}`))}</p>`}
               <div>
                 ${enemyTypeOrder.map((type) => `
                   <figure style="--enemy: ${enemyColor(type)}">

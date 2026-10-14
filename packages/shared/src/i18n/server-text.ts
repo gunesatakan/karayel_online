@@ -39,6 +39,8 @@ export const SERVER_TEXT = {
   "card.rerollUsed": "Bu seçimde yenileme hakkın kalmadı.",
   // `worker:rejected`
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
+  // `placement:rejected`
+  "placement.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
   // `tower:preview` redleri (`errorKey`)
   "preview.tooSoon": "Biraz sonra tekrar dene.",
   "preview.invalidTarget": "Geçersiz hedef.",

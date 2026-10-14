@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createRoom } from "./helpers/match-room-harness.mjs";
+import { clearBuildZones, createRoom } from "./helpers/match-room-harness.mjs";
 import { gridToWorld, getHarvesterRaidCount, HARVESTER_QUOTA } from "../packages/shared/dist/index.js";
 
 function setup(wave = 3) {
   const room = createRoom("warrior");
   room.mapScale = 1;
   room.configureArenaForScale();
+  // Sabit karelere yapi kuruluyor; yasak bolgeler ayri testte.
+  clearBuildZones(room);
   room.wave = wave;
   return room;
 }
