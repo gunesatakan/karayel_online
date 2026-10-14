@@ -549,7 +549,8 @@ const TOWER_BASE_HP = 100;
 const TOWER_BASE_ARMOR = 3;
 const TOWER_BASE_AMMO = 20;
 const TOWER_BASE_ENERGY = 100;
-const LOGISTICS_WORKER_SPEED = 82;
+// Sahibinin istegiyle yarilandi (once 82): tum iscilerin yurume hizi.
+const LOGISTICS_WORKER_SPEED = 41;
 /**
  * Iscinin "temas" mesafesi.
  *
