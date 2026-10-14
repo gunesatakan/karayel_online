@@ -88,7 +88,7 @@ export const enWorkerSkills: Readonly<Record<WorkerSkillId | HirableWorkerRole, 
   "repair-thermal-welder": { name: "Thermal Welder", description: "A repaired tower cannot enter heat lock and cools 30% faster per second." },
   "repair-fortification-seal": { name: "Fortification Seal", description: "When the repair completes, the tower gains a barrier that absorbs 30 damage or lasts 10 s." },
   "repair-emergency-rebuild": { name: "Emergency Rebuild", description: "Once per wave, a destroyed structure can be rebuilt within 5 s at 20% HP." },
-  "repair-nexus-watch": { name: "Nexus Watch", description: "When team HP drops below 40%, the repairer leaves the towers and repairs the nexus for 2 HP per second." },
+  "repair-nexus-watch": { name: "Nexus Watch", description: "When team HP drops below 40%, the repairer leaves the towers and repairs the nexus for 3 HP per second." },
   "repair-breach-engineer": { name: "Breach Engineer", description: "Saving a tower below 20% HP creates an enemy slow field around it for 5 s." },
 
   // --- Enerji tasiyici: yon / derinlestirme (WORKER_DEVELOPMENT_ROWS) --------

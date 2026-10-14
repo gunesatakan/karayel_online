@@ -200,6 +200,7 @@ import {
   HIRABLE_WORKER_ROLES,
   WORKER_MAX_HP,
   WORKER_REPAIR_PER_SECOND,
+  WORKER_NEXUS_REPAIR_PER_SECOND,
   WORKER_RESPAWN_MS,
   getWorkerHireCostWithModifiers,
   isHirableWorkerRole,
@@ -455,7 +456,7 @@ import {
  * kesesi karakter dengesinin ayari olmaktan cikti, herkes ayni parayla ayni
  * kararlari veriyor.
  */
-const PLAYER_START_GOLD = 550;
+const PLAYER_START_GOLD = 750;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 /** Tek komutta gonderilebilecek en fazla dusman; yaratici mod da olsa oda kilitlenmemeli. */
@@ -10300,7 +10301,7 @@ export class MatchRoom extends Room<MatchState> {
     if (this.hasWorkerSkill(worker, "repair-nexus-watch") && this.teamHealth <= MAX_TEAM_HEALTH * 0.4) {
       const nexus = this.activePaths[0]?.points.at(-1);
       if (nexus && this.moveLogisticsWorker(worker, nexus.x, nexus.y, seconds)) {
-        const healed = Math.min(MAX_TEAM_HEALTH - this.teamHealth, 2 * seconds, (worker.cargo ?? 0) * REPAIR_HP_PER_PART);
+        const healed = Math.min(MAX_TEAM_HEALTH - this.teamHealth, WORKER_NEXUS_REPAIR_PER_SECOND * seconds, (worker.cargo ?? 0) * REPAIR_HP_PER_PART);
         this.teamHealth += healed;
         worker.cargo = Math.max(0, (worker.cargo ?? 0) - healed / REPAIR_HP_PER_PART);
         worker.repairing = true;

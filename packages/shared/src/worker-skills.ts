@@ -155,7 +155,7 @@ export const REPAIR_WORKER_SKILL_TIERS: readonly WorkerSkillPair[] = [
     { id: "repair-emergency-rebuild", name: "Acil Yeniden Kurulum", description: "Merkezde yeterli parça varsa dalga başına bir kez yıkılmış yapı 5 sn içinde %20 canla yeniden kurulur. Her 10 can için 1 parça tüketir." }
   ],
   [
-    { id: "repair-nexus-watch", name: "Nexus Nöbeti", description: "Takım canı %40'ın altına inince tamirci kuleleri bırakıp nexus'u saniyede 2 can onarır." },
+    { id: "repair-nexus-watch", name: "Nexus Nöbeti", description: "Takım canı %40'ın altına inince tamirci kuleleri bırakıp nexus'u saniyede 3 can onarır." },
     { id: "repair-breach-engineer", name: "Gedik Mühendisi", description: "%20 canın altındaki bir kuleyi kurtardığında çevresinde 5 sn düşman yavaşlatma alanı oluşturur." }
   ]
 ];

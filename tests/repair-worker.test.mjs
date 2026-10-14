@@ -83,7 +83,7 @@ test("gelişmiş tamirci iki kat hızlı onarır", () => {
     Math.abs(duvar.hp - (1 + WORKER_REPAIR_PER_SECOND * ADVANCED_WORKER_REPAIR_MULTIPLIER * 0.5)) < 1e-6,
     `yarim saniyede ${duvar.hp} oldu`
   );
-  // Sahibinin sayisi: onarim hizi 2 kat (once 3), yani saniyede 9 can.
+  // Sahibinin sayisi: onarim hizi 2 kat (once 3), yani saniyede 13,5 can.
   assert.equal(ADVANCED_WORKER_REPAIR_MULTIPLIER, 2);
   assert.equal(room.getWorkerRepairPerSecond(tamirci), WORKER_REPAIR_PER_SECOND * 2);
 });
