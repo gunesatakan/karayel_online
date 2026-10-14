@@ -56,9 +56,9 @@ export type SurgeStyle = {
  * sweep kehribar, slash beyaz-mavi, aegis koyu levha ve soguk kenar.
  */
 export const COUNTER_SURGE_STYLES: Readonly<Record<CounterSurgeKind, Readonly<SurgeStyle>>> = {
-  band: { body: 0x3aa3c2, deep: 0x1d5f73, edge: 0xe8f7fb, rim: 0x6fb9cc, wakeCells: 3, bodyCells: 1, scanGapCells: 0.34, scanCellsPerSecond: 0.5, streaks: 5 },
+  band: { body: 0x3aa3c2, deep: 0x1d5f73, edge: 0xe8f7fb, rim: 0x6fb9cc, wakeCells: 3.5, bodyCells: 1.6, scanGapCells: 0.34, scanCellsPerSecond: 0.5, streaks: 5 },
   lance: { body: 0xc23a4a, deep: 0x6e1a26, edge: 0xfff0ee, rim: 0xd0707a, wakeCells: 6.5, bodyCells: 0.5, scanGapCells: 0.5, scanCellsPerSecond: 2.4, streaks: 4 },
-  wall: { body: 0x6a55c0, deep: 0x2e2466, edge: 0xefeaff, rim: 0x9a8ad6, wakeCells: 1.6, bodyCells: 2.4, scanGapCells: 0.6, scanCellsPerSecond: 0.15, streaks: 0 },
+  wall: { body: 0x6a55c0, deep: 0x2e2466, edge: 0xefeaff, rim: 0x9a8ad6, wakeCells: 2, bodyCells: 3, scanGapCells: 0.6, scanCellsPerSecond: 0.15, streaks: 0 },
   sweep: { body: 0xc8973a, deep: 0x6b4d1e, edge: 0xfff4dc, rim: 0xd9b56c, wakeCells: 3.8, bodyCells: 0.45, scanGapCells: 0.45, scanCellsPerSecond: 0.7, streaks: 3 },
   slash: { body: 0x7fa8d0, deep: 0x34506e, edge: 0xf2f8ff, rim: 0xb4c6d8, wakeCells: 2.4, bodyCells: 1.5, scanGapCells: 0.4, scanCellsPerSecond: 0.9, streaks: 5 },
   aegis: { body: 0x1c2a3a, deep: 0x33485e, edge: 0xe9f3f8, rim: 0xa9bfcc, wakeCells: 1.2, bodyCells: 0.9, scanGapCells: 0, scanCellsPerSecond: 0, streaks: 0 }
@@ -345,8 +345,8 @@ export type SurgeDrawOptions = {
  * Izin ve govdenin saydamligi. Koyu sahnede okunacak kadar yogun, yine de
  * tahta (hucre cizgileri, yapilar) govdenin altindan gorunuyor.
  */
-const WAKE_ALPHAS = [0.12, 0.085, 0.055, 0.028];
-const BODY_ALPHAS = [0.15, 0.24, 0.34];
+const WAKE_ALPHAS = [0.2, 0.15, 0.1, 0.05];
+const BODY_ALPHAS = [0.22, 0.3, 0.35];
 
 /**
  * Seridi iki katmanda ciziyor: \`fill\` dusmanlarin altinda (yari saydam iz ve
@@ -443,9 +443,9 @@ function drawLiveSlice(
   if (kind === "slash") {
     const d0 = slashDepth(band, a0, gridSize);
     const d1 = slashDepth(band, a1, gridSize);
-    fill.fillStyle(style.body, 0.12);
+    fill.fillStyle(style.body, 0.2);
     fillBandQuad(fill, band, a0, Math.max(sMin, front - d0), a1, Math.max(sMin, front - d1), a1, front, a0, front);
-    fill.fillStyle(style.body, 0.12);
+    fill.fillStyle(style.body, 0.3);
     fillBandQuad(fill, band, a0, Math.max(sMin, front - d0 * 0.45), a1, Math.max(sMin, front - d1 * 0.45), a1, front, a0, front);
     // Bicagin egik arka kenari: sert ve ince.
     edge.lineStyle(1.4, style.rim, 0.75);
@@ -530,11 +530,11 @@ function drawLiveSlice(
 
   // On kenar: genis sonuk omuz, dar ic omuz, ince beyaz-sicak cekirdek.
   const heavy = kind === "wall";
-  edge.lineStyle(heavy ? 9 : kind === "lance" ? 5 : 9, heavy ? style.deep : style.body, heavy ? 0.6 : 0.36);
+  edge.lineStyle(heavy ? 12 : kind === "lance" ? 7 : 12, heavy ? style.deep : style.body, heavy ? 0.65 : 0.45);
   bandLine(edge, band, a0, front, a1, front);
-  edge.lineStyle(heavy ? 5 : 4, heavy ? style.body : style.rim, 0.5);
+  edge.lineStyle(heavy ? 6 : 5, heavy ? style.body : style.rim, 0.65);
   bandLine(edge, band, a0, front, a1, front);
-  edge.lineStyle(heavy ? 2.6 : kind === "sweep" ? 1.6 : 2, style.edge, 0.95);
+  edge.lineStyle(heavy ? 3 : kind === "sweep" ? 2 : 2.6, style.edge, 1);
   bandLine(edge, band, a0, front, a1, front);
 
   if (kind === "lance" && whole) {
