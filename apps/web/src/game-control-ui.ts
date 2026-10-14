@@ -1940,7 +1940,13 @@ export function setupGameControlUi(game: Phaser.Game) {
     button.type = "button";
     button.className = `game-controls__tower${tower.selected ? " game-controls__tower--selected" : ""}`;
     button.style.setProperty("--tower-color", tower.color);
-    button.innerHTML = `<span>${tower.name}</span><strong>${tower.cost}g</strong>`;
+    button.setAttribute("aria-pressed", String(Boolean(tower.selected)));
+    button.title = tower.name;
+    const name = document.createElement("span");
+    name.textContent = tower.name;
+    const price = document.createElement("strong");
+    price.textContent = `${tower.cost}g`;
+    button.append(name, price);
     button.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       clearActiveTowerDrag();

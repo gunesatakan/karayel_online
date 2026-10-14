@@ -12320,7 +12320,9 @@ const BOMBER_ART_SCALE: Readonly<Record<EnemySnapshot["race"], number>> = {
   golem: 476 / 487
 };
 
-function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, cellSize: number) {
+function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type" | "special">, cellSize: number) {
+  // Workers retain brute durability but use the ordinary enemy visual size.
+  if (enemy.special === "harvester") return ENEMY_DISPLAY_SIZE.grunt * ENEMY_SIZE_SCALE * (cellSize / TOWER_GRID_SIZE);
   const base = ENEMY_DISPLAY_SIZE[enemy.type] ?? 34;
   const raceMultiplier = enemy.race === "spaceBug" && enemy.type === "brute" ? 1.3 : enemy.race === "fallen" && enemy.type === "brute" ? 1.1 : 1;
   // Isabet kutusuyla ayni olcek (`ENEMY_SIZE_SCALE`): gorsel ve carpisma birlikte kuculuyor.

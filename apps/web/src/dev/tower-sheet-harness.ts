@@ -12,7 +12,7 @@
  * `expanded=1|0` (panelin boyunu yerel depoya yazar).
  */
 import type Phaser from "phaser";
-import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, type TowerStatsWire } from "@karayel/shared";
+import { towerCatalog, MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, type TowerStatsWire } from "@karayel/shared";
 import { setupGameControlUi } from "../game-control-ui";
 import type { TowerSheetInput } from "../tower-sheet";
 
@@ -76,6 +76,15 @@ let damage = 18_420;
 let tick = 0;
 
 function stateFor(): Record<string, unknown> {
+  if (params.get("mode") === "build") {
+    return {
+      visible: true,
+      towers: towerCatalog.warrior.map((tower, index) => ({
+        id: tower.id, name: tower.name, cost: 120 + index * 25, color: typeof tower.color === "number" ? `#${tower.color.toString(16).padStart(6, "0")}` : tower.color, selected: index === 0
+      })),
+      skills: []
+    };
+  }
   const block = BLOCKS[towerId];
   const meta = NAMES[towerId];
   const operational = true;
@@ -83,7 +92,7 @@ function stateFor(): Record<string, unknown> {
     towerId: "t1",
     definitionId: towerId,
     characterId: "warrior",
-    name: meta.name,
+    name: params.get("name") ?? meta.name,
     level: meta.level,
     color: "#22c55e",
     ownerName: readOnly ? "Melis" : undefined,

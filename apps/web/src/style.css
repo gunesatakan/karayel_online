@@ -1159,7 +1159,7 @@ button.wave-report:active { transform: scale(0.99); }
 /* Cekmecede yer bol: kuleler kendi genisliginde, tasarsa alt satira gecer. */
 .game-controls__tower-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
   gap: 3px;
 }
 
@@ -7653,3 +7653,78 @@ button.wave-report:active { transform: scale(0.99); }
 .game-hud__detail-label { flex: 1; color: #94a3b8; white-space: normal; }
 .game-hud__details-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; border-top: 1px solid #334155; padding-top: 10px; }
 .game-hud__details-tools button { flex: 1; min-height: 36px; }
+
+/* Readable tower cards: full names, separate prices, stable touch targets. */
+.game-controls__tower-grid {
+  gap: 8px;
+  align-items: stretch;
+}
+.game-controls button.game-controls__tower {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: start;
+  align-content: stretch;
+  justify-content: stretch;
+  justify-items: start;
+  min-height: 78px;
+  padding: 11px 12px 9px;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, .25);
+  border-left: 3px solid var(--tower-color, #60a5fa);
+  border-radius: 8px;
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+.game-controls__tower span {
+  width: 100%;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.game-controls__tower strong {
+  justify-self: end;
+  color: #f3cf7a;
+  font: 600 12px/1.2 "Share Tech Mono", monospace;
+}
+.game-controls button.game-controls__tower--selected {
+  border-color: var(--tower-color, #60a5fa);
+  box-shadow: inset 0 0 0 1px var(--tower-color, #60a5fa);
+}
+.game-controls button.game-controls__tower:focus-visible {
+  outline: 2px solid #e2e8f0;
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .game-controls button.game-controls__tower:hover {
+    border-color: var(--tower-color, #60a5fa);
+    background-color: #1c2c44;
+  }
+}
+.tower-sheet {
+  border-radius: 10px;
+}
+.tower-sheet__head {
+  padding: 10px 6px 9px 10px;
+  column-gap: 8px;
+}
+.tower-sheet__title,
+.tower-sheet__subtitle {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+@media (max-width: 380px) {
+  .tower-sheet__head {
+    grid-template-columns: 30px minmax(0, 1fr) 44px 44px;
+    column-gap: 4px;
+  }
+  .tower-sheet__portrait { width: 30px; height: 30px; }
+  .tower-sheet__title { font-size: 16px; }
+}

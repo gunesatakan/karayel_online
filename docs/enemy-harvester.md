@@ -33,7 +33,7 @@ Each race has a separately generated overhead, nonhumanoid worker sprite:
 - `apps/web/public/images/enemies/enemy-holyGuardian-harvester.png`: ivory/gold scarab.
 - `apps/web/public/images/enemies/enemy-fallen-harvester.png`: corrupted obsidian arachnid.
 
-All assets use transparent 512 × 512 canvases and the existing brute display-size
+All assets use transparent 512 × 512 canvases and the ordinary grunt display-size
 calculation. Alpha bounds are normalized to a 450-pixel maximum extent so the
 painted bodies have a consistent apparent size. The old generic sprite is retained
 as an unused source asset. Client texture selection now uses the enemy's race.
