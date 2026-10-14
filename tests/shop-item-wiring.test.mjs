@@ -67,7 +67,8 @@ test("Ganimet Kesesi düşman altınını gerçekten artırır", () => {
   const esyali = olc(true);
   assert.ok(esyasiz > 0, "esyasiz olcum altin vermedi");
   assert.ok(esyali > esyasiz, `esya altini artirmadi: ${esyasiz} -> ${esyali}`);
-  assert.ok(Math.abs(esyali / esyasiz - 2.6) < 0.01, `beklenen x2.6, olculen x${(esyali / esyasiz).toFixed(2)}`);
+  // Ganimet Kesesi +%80 (S kademesindeki altin esyalari yariya indi).
+  assert.ok(Math.abs(esyali / esyasiz - 1.8) < 0.01, `beklenen x1.8, olculen x${(esyali / esyasiz).toFixed(2)}`);
 });
 
 test("Komuta Modülü takıldığı kulenin işaret gücünü artırır", () => {
@@ -218,7 +219,12 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   "accuracyVsAir", "projectileSpeedIsolated",
   // Altin primleri: olduren / hasari veren kulenin listesinden.
   "airKillGold", "damageGold", "multiKillGold", "overkillGold",
-  "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold"
+  "hotKillGold", "slowedKillGold", "deliveryGold", "longRangeKillGold",
+  // Isi, atis hizi ve nisan, ikinci tur: hepsi kulenin listesinden okunuyor ve
+  // davranislari tests/heat-aim-redesign.test.mjs'te gercek odada olculuyor.
+  "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",
+  "slowBleed", "slowVulnerability", "coolingFlat", "brakeCooling", "ventHeat", "killCooling",
+  "neighborCooling", "heatBleed", "coldFireRate", "trackRhythm", "brakeDamage", "restartShots", "heatShock"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

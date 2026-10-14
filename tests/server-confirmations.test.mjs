@@ -221,8 +221,12 @@ test("takma: esya ve kule adi, guclu atim o kuleye; reddedilen esya envanterde k
   const rejected = rejectClient.sent.find((entry) => entry.type === "inventory:equip-rejected");
   assert.equal(rejected.payload.reason, "incompatibleTower");
   assert.ok(player.inventoryItemIds.includes("zirh-plakasi"), "toast 'envanterde kaldi' diyor; gercekten kalmali");
+  // Ret kisa sebebi de tasiyor: esyanin istedigi kule yetenegi ve anahtarli sunucu metni.
+  assert.equal(rejected.payload.need, "class");
+  assert.equal(rejected.payload.key, "equip.incompatible.class");
+  assert.equal(rejected.payload.message, "Bu eşya bu kuleye takılamaz: bu kulenin sınıfına uymaz.");
   const rejectCue = getInventoryEquipRejectedCue(rejected.payload);
-  assert.equal(rejectCue.text, "Zırh Plakası bu kuleye takılamaz · envanterde kaldı");
+  assert.equal(rejectCue.text, "Zırh Plakası bu kuleye takılamaz · bu kulenin sınıfına uymaz · envanterde kaldı");
   assert.equal(rejectCue.sfx, undefined, "ret bir odul degil, ses yok");
   assert.equal(rejectCue.pulse, undefined);
   // Yaratici modda envanter yok: esya listeden dogrudan takiliyor.

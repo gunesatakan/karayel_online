@@ -112,9 +112,11 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.target.siege": "Siege",
   "sheet.target.slowed": "Slowed",
   "sheet.target.marked": "Marked (on top of mark)",
+  "sheet.target.fast": "Fast (runner, air)",
   "sheet.cond.frozen": "vs frozen",
   "sheet.cond.marked": "vs marked",
   "sheet.cond.air": "vs air",
+  "sheet.cond.far": "vs outer half of range",
   "sheet.cond.status": "vs {status}",
 
   // ------------------------------------------------------------ Tower panel: header and figures

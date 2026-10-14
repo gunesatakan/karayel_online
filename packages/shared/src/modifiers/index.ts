@@ -97,10 +97,10 @@ export type ModifierStat =
    * Dusman direncinin ne kadarinin yok sayilacagi (0-1).
    *
    * Her dusman irkinin bir hasar tipine karsi direnci, bir digerine karsi
-   * zaafi var ve dalga ilerledikce irk degisiyor. Oyuncunun elindeki kule
-   * dizilimi ise dalga arasinda degistirilemiyor, yani yanlis hasar tipiyle
-   * yakalanmak bir karar degil bir kazaydi. Bu stat o kazaya karsi
-   * oynanabilir bir cevap veriyor.
+   * zaafi var. Irk asama boyunca sabit (`getStageRace`), mac icinde
+   * degismiyor: yanlis hasar tipiyle kurulmus bir dizilim butun mac boyunca
+   * dirence carpiyor. Bu stat o duruma karsi oynanabilir bir cevap veriyor;
+   * direncli asamada tam degerli, otekilerde neredeyse sifir.
    */
   | "resistancePierce"
   /**
@@ -171,7 +171,70 @@ export type ModifierStat =
   | "hotKillGold"
   | "slowedKillGold"
   | "deliveryGold"
-  | "longRangeKillGold";
+  | "longRangeKillGold"
+  /**
+   * Isi, atis hizi ve nisan, ikinci tur (sabitler `heat-mechanics`te).
+   * Olcum kulelerin isiyla sinirli oldugunu ve iskanin ucus suresinden
+   * geldigini gosterdi; bu statlar o iki bulguya cevap veriyor. Hepsi kulenin
+   * kendi listesinden okunuyor; kilit yerine stat, cunku sayi tasiyorlar ve
+   * kilit maskesinde yer az.
+   *
+   * Nisan ve vurus:
+   * - `leadTargeting`: namlu hedefin ucus suresi kadar ilerisine doner (0-1).
+   * - `damageVsFast`: kosucu ve ucan hedefe hasar (vurus havuzu).
+   * - `retargetDamage`: hedef degistikten sonraki ilk mermiye hasar.
+   * - `critSplash`: kritik vurusun bu payi hedefin cevresine patlar.
+   * - `farCritChance`: menzilin dis yarisindaki hedefe kritik sansi.
+   * - `hitSplash`: her vurusun bu payi en yakin komsu dusmana sicrar.
+   * Kontrol kulesi:
+   * - `slowBleed`: kulenin yavaslattigi dusman saniyede azami caninin bu
+   *   payi kadar kanar.
+   * - `slowVulnerability`: kulenin yavaslattigi dusman herkesten bu kadar
+   *   fazla hasar alir.
+   * Soguma:
+   * - `coolingFlat`: carpanlardan sonra eklenen duz derece/sn.
+   * - `brakeCooling`: isi freni devredeyken (50 derece ustu) soguma payi.
+   * - `ventHeat`: isi freni devreye girdigi atista bir kez atilan derece (bekleme var).
+   * - `killCooling`: oldurmeden sonra kisa sure soguma payi.
+   * - `neighborCooling`: bitisik dost kulelerin sogumasina eklenen pay.
+   * - `heatBleed`: bitisik daha soguk kulelere saniyede aktarilan derece.
+   * - `fireRateHeatRelief`: kulenin atis hizi bonusunun bu orani atis isisini
+   *   indiriyor (`HEAT_RELIEF_CAP` tavanli).
+   * Atis hizi:
+   * - `coldFireRate`: kule 50 derecenin altindayken atis hizi.
+   * - `trackRhythm`: ayni hedefe art arda atis basina atis hizi ve isi
+   *   indirimi (yigin tavani `TRACK_RHYTHM_MAX_STACKS`).
+   * - `brakeDamage`: isi freninin kestigi atis hizinin bu payi hasara doner.
+   * - `overclock`: fren yerine 50 derece ustunde artan atis hizi (100'de ek).
+   * - `coldSalvo`: 0 dereceye inen kulenin isisiz ve iki kat hizli atis sayisi.
+   * - `restartShots`: isi freninden cikan kulenin isisiz ve hizli atis sayisi.
+   * Isi olaylari:
+   * - `heatToDamage`: son atisin isisinin her derecesi kulenin vuruslarina hasar.
+   * - `heatShock`: 80 dereceyi gecen kule cevresine vurus hasarinin bu kati.
+   */
+  | "leadTargeting"
+  | "damageVsFast"
+  | "retargetDamage"
+  | "critSplash"
+  | "farCritChance"
+  | "hitSplash"
+  | "slowBleed"
+  | "slowVulnerability"
+  | "coolingFlat"
+  | "brakeCooling"
+  | "ventHeat"
+  | "killCooling"
+  | "neighborCooling"
+  | "heatBleed"
+  | "fireRateHeatRelief"
+  | "coldFireRate"
+  | "trackRhythm"
+  | "brakeDamage"
+  | "overclock"
+  | "coldSalvo"
+  | "restartShots"
+  | "heatToDamage"
+  | "heatShock";
 
 export type Modifier = {
   source: string;

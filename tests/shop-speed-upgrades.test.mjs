@@ -23,7 +23,8 @@ test("namlu geliştirmeleri tek seferlik ve güçlü kalır", () => {
   // balistik-itici) buyuk kardeslerinin kopyasiydi; katalogdan cikarildilar.
   const strongFor = (id) => shopCatalog.find((candidate) => candidate.id === id);
   assert.equal(strongFor("namlu-yatagi").effects[0].stat, "turnRate");
-  assert.equal(strongFor("nisangah").effects[0].stat, "accuracy");
+  // Nisangah isabet yerine oncul nisan veriyor: iskayi isabet degil ucus suresi uretiyordu.
+  assert.equal(strongFor("nisangah").effects[0].stat, "leadTargeting");
   assert.equal(strongFor("hafif-muhimmat").effects[0].stat, "projectileSpeed");
   assert.equal(shopCatalog.filter((item) => item.id === "hassas-servo").length, 0);
 });

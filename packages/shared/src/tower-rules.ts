@@ -261,7 +261,8 @@ export function getTowerEnergyState(energy: number, depletedAt: number, now: num
  *
  * Yavaslatmanin `magnitude` degeri hiza **islemiyor**: gucunu tanimda
  * `slowByLevel` ile bildirmeyen her yavaslatma hizi duz olarak buraya
- * indiriyor. Sabit burada duruyor ki arayuz de ayni sayiyi okusun -- kule
+ * indiriyor. Kulenin durum etkisi gucu ise kesri carpiyor
+ * (`scaleSlowFraction`). Sabit burada duruyor ki arayuz de ayni sayiyi okusun -- kule
  * panelinde bir donem `magnitude` yaziyordu ve "-%100 yavaslatma" gibi
  * gercekte olmayan bir sey gosteriyordu.
  */
@@ -329,6 +330,33 @@ export function getStatusSlowFraction(definition: Pick<TowerStatusEffectDefiniti
 /** Kritik yavaslatmanin kesri: 1,5 kat, %90 tavanla. */
 export function getCriticalSlowFraction(fraction: number) {
   return Math.min(SLOW_CRIT_MAX_FRACTION, Math.max(0, fraction) * SLOW_CRIT_MULTIPLIER);
+}
+
+/**
+ * Durum etkisi gucunun (`statusMagnitude`) yavaslatmaya islemesi.
+ *
+ * Yavaslatmanin hizi `magnitude`dan degil kesirden geliyor; esyalarin "durum
+ * etkisi gucu +%X" sozu (Yanki Odasi, Buz Cekirdegi, Koni Yayici, Agir
+ * Metabolizma'nin -%25'i) bu yuzden kesri carpiyor. Sonuc kritikle ayni
+ * tavanda (%90): carpim hizi sifira indirip dusmani durduramaz. Etki
+ * anahtari degismiyor, yani olceklenmis yavaslatma da kendi etkisinde
+ * en guclusuyle yarisiyor ve farkli etkilerle carpiliyor.
+ */
+export function scaleSlowFraction(fraction: number, magnitudeMultiplier: number) {
+  return Math.min(SLOW_CRIT_MAX_FRACTION, Math.max(0, fraction) * Math.max(0, magnitudeMultiplier));
+}
+
+/**
+ * Yavaslatma aurasinin suresi yok: dusman aurada oldugu surece yavas,
+ * ciktigi an hizlaniyor. Sure esyalari (Uzun Fitil, Kalici Iz, Agir
+ * Metabolizma) auraya bu yuzden **arta kalan** bir yavaslatma olarak
+ * isliyor: sure bonusunun her %1'i dusman auradan ciktiktan sonra 10 ms
+ * daha yavas yurumesi demek (+%35 -> 350 ms). Bonus yoksa iz de yok.
+ */
+export const AURA_SLOW_LINGER_MS_PER_DURATION = 1000;
+
+export function getAuraSlowLingerMs(statusDurationMultiplier: number) {
+  return Math.max(0, statusDurationMultiplier - 1) * AURA_SLOW_LINGER_MS_PER_DURATION;
 }
 
 /**

@@ -48,6 +48,19 @@ export function getZoneSet(room) {
   return set;
 }
 
+/**
+ * Ilk satirin `col` sutununda dogan ucanin inecegi nexus karesi (odanin kendi
+ * kurali: en yakin nexus karesi). `single`: haritada tek nexus karesi var.
+ */
+function airLandingCell(room, geometry, col) {
+  const single = room.activeMap.tiles.filter((tile) => tile === "nexus").length === 1;
+  const spawn = geometry.cellCenter(col, 0);
+  const point = typeof room.getNearestNexusPoint === "function"
+    ? room.getNearestNexusPoint(spawn.x, spawn.y)
+    : room.activePaths[0]?.points.at(-1) ?? geometry.cellCenter(col, geometry.rows - 1);
+  return { ...geometry.toCell(point.x, point.y), single };
+}
+
 /** Yapilarin kapladigi kareler ve kapattigi kenarlar (yikik yapi engel degil). */
 export function getBlockers(room) {
   const geometry = getGeometry(room);
@@ -140,11 +153,13 @@ export function planLayout(room, { walls = true, spacing = "isolated", reach = 2
   const nodeCells = Object.values(room.resourceLayout?.cells ?? {});
   const isZone = (col, row) => zones.has(row * cols + col);
   const centerCol = Math.floor(cols / 2);
-  // Ucanlarin indigi nexus noktasi (`activePaths[0]`in sonu). Gecit ve
+  // Ucanlar en yakin nexus karesine iniyor (`MatchRoom.getNearestNexusPoint`):
+  // acik arenada dogduklari sutunun altina, yani tek bir inis noktasi yok.
+  // Yalnizca tek nexus kareli haritada hepsi ayni yere iner; gecit ve
   // koridor ona yakin acilirsa kara ve hava ayni oldurme bolgesinden gecer.
-  const airTarget = room.activePaths[0]?.points.at(-1);
-  const airCol = airTarget ? geometry.toCell(airTarget.x, airTarget.y).col : centerCol;
-  const preferredGap = converge ? Math.max(1, Math.min(cols - 2, airCol + (airCol < cols / 2 ? 2 : -2))) : centerCol;
+  const airTarget = airLandingCell(room, geometry, centerCol);
+  const airCol = airTarget.single ? airTarget.col : centerCol;
+  const preferredGap = converge && airTarget.single ? Math.max(1, Math.min(cols - 2, airCol + (airCol < cols / 2 ? 2 : -2))) : centerCol;
 
   // Hat: satir `line-1` ile `line` arasindaki cizgi. Yasak bolgeye degen
   // (kurulamayan) duvar parcasi en agir ceza: delik ikinci bir gecit olur.
@@ -196,19 +211,16 @@ export function planLayout(room, { walls = true, spacing = "isolated", reach = 2
     corridor.add((line - 2) * cols + gap);
   }
 
-  // Ucanlar akis alanini yok sayip tek bir nexus noktasina ucuyor: dogum
-  // satirinin her sutunundan o noktaya duz cizgiler.
+  // Ucanlar akis alanini yok sayip en yakin nexus karesine ucuyor: dogum
+  // satirinin her sutunundan kendi inis karesine duz cizgiler.
   const airWeights = new Map();
-  const nexusPoint = room.activePaths[0]?.points.at(-1);
-  if (nexusPoint) {
-    const target = geometry.toCell(nexusPoint.x, nexusPoint.y);
-    for (let col = 0; col < cols; col += 1) {
-      const steps = rows * 2;
-      for (let step = 0; step <= steps; step += 1) {
-        const t = step / steps;
-        const key = Math.round(t * target.row) * cols + Math.round(col + (target.col - col) * t);
-        airWeights.set(key, (airWeights.get(key) ?? 0) + 1 / (cols * 2));
-      }
+  for (let col = 0; col < cols; col += 1) {
+    const target = airLandingCell(room, geometry, col);
+    const steps = rows * 2;
+    for (let step = 0; step <= steps; step += 1) {
+      const t = step / steps;
+      const key = Math.round(t * target.row) * cols + Math.round(col + (target.col - col) * t);
+      airWeights.set(key, (airWeights.get(key) ?? 0) + 1 / (cols * 2));
     }
   }
 

@@ -231,26 +231,31 @@ export const FAST_TARGET_TURN_RATE = 1;
 export const COLD_ACCURACY_TEMPERATURE = 40;
 export const COLD_ACCURACY_BONUS = 0.5;
 /**
- * `goldInterest` (Faiz Hesabi): dalga sonunda oyuncunun altininin bu payi,
- * en fazla `GOLD_INTEREST_CAP`. Tavan faizi duz bir prime ceviriyor:
- * biriktirdikce kendini buyuten dongu tavanda duruyor.
+ * `goldInterest` (Faiz Hesabi): dalga sonunda oyuncunun altininin bu payi.
+ * Tavan yok: `GOLD_INTEREST_CAP` eski tavanin sabiti, sunucu onu okumuyor
+ * (dalga basina altin tavanlarini sahibi kaldirdi).
  */
 export const GOLD_INTEREST_RATE = 0.16;
 export const GOLD_INTEREST_CAP = 120;
-/** `gold:cleanWave`: sizintisiz biten dalganin sonunda oyuncuya odenen altin. */
+/**
+ * `gold:cleanWave`: sizintisiz biten dalganin sonunda Temiz Sicil kartinin
+ * odedigi altin. Ayni kilidi veren Sigorta Policesi esyasinin tutari ayri
+ * (`INSURANCE_CLEAN_WAVE_GOLD`, shop modulu); ikisi birden varsa kartinki.
+ */
 export const CLEAN_WAVE_GOLD = 360;
 /**
- * `gold:critKill`: kritik vurusla gelen her oldurmenin altini ve oyuncu
- * basina dalga tavani. Tavan kart ve esya icin ortak: ikisi ayni kilidi
- * veriyor, ikisini birden almak tavani iki katina cikarmiyor.
+ * `gold:critKill`: kritik vurusla gelen her oldurmenin altini. Kart ve esya
+ * ayni kilidi veriyor; ikisini birden almak primi iki katina cikarmiyor.
+ * `CRIT_KILL_GOLD_WAVE_CAP` eski dalga tavaninin sabiti; sunucu okumuyor.
  */
 export const CRIT_KILL_GOLD = 24;
 export const CRIT_KILL_GOLD_WAVE_CAP = 90;
 
 /**
- * Altin primlerinin dalga tavanlari (statlar `modifiers` modulunde). Tavan
- * oyuncunun ya da kulenin o dalgada o primden kazanabilecegi en fazla
- * altin; oldurme ve hasarla buyuyen her prim burada duruyor.
+ * Altin primlerinin eski dalga tavanlari (statlar `modifiers` modulunde).
+ * Sunucu bu `*_WAVE_CAP` sabitlerinin hicbirini okumuyor: dalga basina altin
+ * tavanini sahibi kaldirdi, primler tavansiz. Sabitler yalnizca gecmis ve
+ * olasi bir geri donus icin duruyor; yeni kod bunlara dayanmamali.
  */
 export const CHAMPION_GOLD_WAVE_CAP = 150;
 export const AIR_KILL_GOLD_WAVE_CAP = 80;
@@ -262,7 +267,7 @@ export const MULTI_KILL_GOLD_COUNT = 3;
 export const MULTI_KILL_GOLD_WINDOW_MS = 2000;
 export const MULTI_KILL_GOLD_WAVE_CAP = 75;
 export const OVERKILL_GOLD_WAVE_CAP = 50;
-/** Ikinci tur altin primlerinin dalga tavanlari; kartlarinki oyuncu, esyalarinki kule basina. */
+/** Ikinci tur altin primlerinin eski dalga tavanlari; yukaridakiler gibi sunucu okumuyor. */
 export const GARRISON_GOLD_WAVE_CAP = 40;
 export const UPGRADE_GOLD_WAVE_CAP = 40;
 export const HEAVY_KILL_GOLD_WAVE_CAP = 60;
@@ -374,7 +379,7 @@ export const cardCatalog: CardDefinition[] = [
   // --- Temel kartlar ---
   // Sayilari buyuturler. Bilerek az ve birbirinden ayrik tutuldular: ayni stata
   // dokunan iki kart varsa oyuncu ikisini de gorunce hicbir sey secmemis olur.
-  { id: "namlu-asinmasi", name: "Namlu Aşınması", description: "Hasar +%25, ısı +%20.", axes: ["dps"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("namlu-asinmasi", "damage", 0.25), effect("namlu-asinmasi", "heat", 0.2)] },
+  { id: "namlu-asinmasi", name: "Namlu Aşınması", description: "Hasar +%25, ısı +%10.", axes: ["dps"], scope: { kind: "global" }, stackable: true, rarity: "common", effects: [effect("namlu-asinmasi", "damage", 0.25), effect("namlu-asinmasi", "heat", 0.1)] },
   { id: "kalibre-artisi", name: "Kalibre Artışı", description: "Bir kulenin hasarı +%40, atış hızı -%15.", axes: ["dps"], scope: { kind: "targeted" }, stackable: true, rarity: "common", effects: [effect("kalibre-artisi", "damage", 0.4, "tower"), effect("kalibre-artisi", "fireRate", -0.15, "tower")] },
   { id: "seri-atis", name: "Seri Atış", description: "Bir kulenin atış hızı +%20, yakıt tüketimi +%35.", axes: ["dps"], scope: { kind: "targeted" }, stackable: true, rarity: "common", effects: [effect("seri-atis", "fireRate", 0.2, "tower"), effect("seri-atis", "shotFuelCost", 0.35, "tower")] },
   // Ana etkisi soguma olan kartlar "dps" de tasiyor: 50 derecenin ustunde isi
@@ -447,7 +452,7 @@ export const cardCatalog: CardDefinition[] = [
   // --- Kimlik kartlari ---
   // Dar kapsamli ama guclu: dogru kuleyi kurmus oyuncuyu odullendirirler.
   { id: "hat-kalibresi", name: "Hat Kalibresi", description: "Hat saldıran kulelerin hasarı +%50.", axes: ["dps"], scope: { kind: "tagged", shapes: ["line"] }, stackable: false, rarity: "rare", effects: [effect("hat-kalibresi", "damage", 0.5)] },
-  { id: "isin-odagi", name: "Işın Odağı", description: "Işın kulelerinin hasarı +%50, soğuması -%20.", axes: ["dps"], scope: { kind: "tagged", shapes: ["beam"] }, stackable: false, rarity: "rare", effects: [effect("isin-odagi", "damage", 0.5), effect("isin-odagi", "cooling", -0.2)] },
+  { id: "isin-odagi", name: "Işın Odağı", description: "Işın kulelerinin hasarı +%50, soğuması -%10.", axes: ["dps"], scope: { kind: "tagged", shapes: ["beam"] }, stackable: false, rarity: "rare", effects: [effect("isin-odagi", "damage", 0.5), effect("isin-odagi", "cooling", -0.1)] },
   { id: "yanici-karisim", name: "Yanıcı Karışım", description: "Ateş kulelerinin hasarı +%45.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["fire"] }, stackable: false, effects: [effect("yanici-karisim", "damage", 0.45)] },
   { id: "iletken-cekirdek", name: "İletken Çekirdek", description: "Elektrik kulelerinin hasarı +%45.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["electric"] }, stackable: false, effects: [effect("iletken-cekirdek", "damage", 0.45)] },
   { id: "prizma-kesiti", name: "Prizma Kesiti", description: "Işık kulelerinin hasarı +%45.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["light"] }, stackable: false, effects: [effect("prizma-kesiti", "damage", 0.45)] },
@@ -526,11 +531,10 @@ export const cardCatalog: CardDefinition[] = [
   { id: "karsi-batarya", name: "Karşı Batarya", description: "Nişancı ve kuşatma düşmanlarına hasar +%55 ama menzil -%10.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("karsi-batarya", "damageVsShooter", 0.55), effect("karsi-batarya", "damageVsSiege", 0.55), effect("karsi-batarya", "range", -0.1)] },
 
   // --- Dusman direnci ekseni ---
-  // Her irkin bir hasar tipine direnci, bir digerine zaafi var ve dalga
-  // ilerledikce irk degisiyor. Ama kule dizilimi dalga arasinda
-  // degistirilemedigi icin yanlis hasar tipiyle yakalanmak bir karar degil
-  // kazaydi: kurulu sistem vardi, oyuncunun ona karsi oynayabilecegi hicbir
-  // kol yoktu. Iki kart iki cevap veriyor -- biri dalgayi okumayi gereksiz
+  // Her irkin bir hasar tipine direnci, bir digerine zaafi var; irk asama
+  // boyunca sabit (`getStageRace`), mac icinde degismiyor. Yanlis hasar
+  // tipiyle kurulmus dizilim butun mac dirence carpiyordu: kurulu sistem
+  // vardi, oyuncunun ona karsi oynayabilecegi hicbir kol yoktu. Iki kart iki cevap veriyor -- biri dalgayi okumayi gereksiz
   // kiliyor, obru okumayi daha degerli yapiyor.
   { id: "evrensel-kalibrasyon", name: "Evrensel Kalibrasyon", description: "Düşman dirençlerinin %50’si yok sayılır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("evrensel-kalibrasyon", "resistancePierce", 0.5)] },
   { id: "zaaf-okumasi", name: "Zaaf Okuması", description: "Düşmanın zayıf olduğu hasar tipinden %40 daha çok yararlanılır.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "uncommon", effects: [effect("zaaf-okumasi", "weaknessBonus", 0.4)] },
@@ -574,7 +578,7 @@ export const cardCatalog: CardDefinition[] = [
   // kapsaminin varlik sebebi de bu.
   { id: "sertlestirilmis-celik", name: "Sertleştirilmiş Çelik", description: "Fiziksel kulelerin hasarı +%45.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["physical"] }, stackable: false, effects: [effect("sertlestirilmis-celik", "damage", 0.45)] },
   { id: "hucre-cozucu", name: "Hücre Çözücü", description: "Hücresel kulelerin hasarı +%50.", axes: ["dps"], scope: { kind: "tagged", damageTypes: ["cellular"] }, stackable: false, rarity: "rare", effects: [effect("hucre-cozucu", "damage", 0.5)] },
-  { id: "bileme-tasi", name: "Bileme Taşı", description: "Kesme kulelerinin hasarı +%40, ısısı +%15.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["slash"] }, stackable: false, effects: [effect("bileme-tasi", "damage", 0.4), effect("bileme-tasi", "heat", 0.15)] },
+  { id: "bileme-tasi", name: "Bileme Taşı", description: "Kesme kulelerinin hasarı +%40, ısısı +%7.", axes: ["dps"], scope: { kind: "tagged", hitTypes: ["slash"] }, stackable: false, effects: [effect("bileme-tasi", "damage", 0.4), effect("bileme-tasi", "heat", 0.07)] },
   { id: "yuvarlak-temel", name: "Yuvarlak Temel", description: "Dairesel yapıların canı +%60.", axes: ["barricade"], scope: { kind: "tagged", shapes: ["circle"] }, stackable: false, effects: [effect("yuvarlak-temel", "towerHealth", 0.6)] },
   { id: "aura-damitimi", name: "Aura Damıtımı", description: "Aura kristali kullanan kulelerin mühimmat tüketimi -%45.", axes: ["economy"], scope: { kind: "tagged", ammoTypes: ["auraCrystal"] }, stackable: false, rarity: "rare", effects: [effect("aura-damitimi", "ammoCost", -0.45)] },
 
@@ -585,7 +589,7 @@ export const cardCatalog: CardDefinition[] = [
   // kotu bir karardir.
   { id: "kizgin-namlu", name: "Kızgın Namlu", description: "Her sıcaklık derecesi için hasar +%0,6 ama kule 80 derecede kilitlenir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:runHot"] },
   { id: "soguk-celik", name: "Soğuk Çelik", description: "Sıcaklığı 20'nin altındaki kulelerin kritik şansı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:coldCrit"] },
-  { id: "termal-kutle", name: "Termal Kütle", description: "50 derece üstünde atış hızı düşmez ama soğuma -%60.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-kutle", "cooling", -0.6)], unlocks: ["heat:thermalMass"] },
+  { id: "termal-kutle", name: "Termal Kütle", description: "50 derece üstünde atış hızı düşmez ama soğuma -%30.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-kutle", "cooling", -0.3)], unlocks: ["heat:thermalMass"] },
   { id: "asiri-isinma-patlamasi", name: "Aşırı Isınma Patlaması", description: "Kilitlenen kule çevresindeki düşmanlara 40 hasar verir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:overheatBurst"] },
   { id: "yedek-hat", name: "Yedek Hat", description: "Enerjisi biten kule 4 saniye boyunca mühimmatla ateş etmeyi sürdürür.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["energy:backupLine"] },
   { id: "bosalan-sarjor", name: "Boşalan Şarjör", description: "Mühimmatı biten kule menzilindeki düşmanları 5 saniye kanatır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["ammo:emptyBleed"] },
@@ -596,7 +600,7 @@ export const cardCatalog: CardDefinition[] = [
   // ayni cumlenin uc cesitlemesi olurdu, o yuzden yalnizca ilki sayi buyutuyor.
   { id: "isi-perdesi", name: "Isı Perdesi", description: "Tüm kulelerin soğuması +%40 ama menzili -%10.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("isi-perdesi", "cooling", 0.4), effect("isi-perdesi", "range", -0.1)] },
   { id: "radyator", name: "Radyatör", description: "Tüm kuleler ne kadar sıcaksa o kadar hızlı soğur: 50 derecede soğuma %50 artar, 100 derecede iki katına çıkar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:radiator"] },
-  { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%15.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.15)], unlocks: ["heat:quickRelease"] },
+  { id: "soguk-dus", name: "Soğuk Duş", description: "Kilitlenen kule 30 derece yerine 60 derecede açılır ama soğuması -%7.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("soguk-dus", "cooling", -0.07)], unlocks: ["heat:quickRelease"] },
 
   // --- Sogumayi baska kollara baglayanlar ---
   // Buraya kadarki isi kartlari kendi iclerinde pazarlik ediyordu: daha cok
@@ -608,6 +612,15 @@ export const cardCatalog: CardDefinition[] = [
   { id: "isi-degisimi", name: "Isı Değişimi", description: "Bitişik kuleler ısılarını paylaşır: saniyede 8 dereceye kadar sıcak olandan soğuk olana akar.", axes: ["amplify"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:exchange"] },
   { id: "buz-akusu", name: "Buz Aküsü", description: "Enerjisi %70'in üzerinde olan kule +%50 hızlı soğur.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [], unlocks: ["heat:chargedCooling"] },
   { id: "namlu-molasi", name: "Namlu Molası", description: "Mühimmatı biten kule 3 kat hızlı soğur.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["heat:emptyVent"] },
+  // --- Isi ve atis hizi, ikinci tur ---
+  // Olcum: kuleler isiyla sinirli, surekli atis `soguma / atis isisi`. Bu
+  // kartlar isiyi bir kaynak olarak okuyor: hasara ceviriyor (Isi
+  // Donusturucu), freni hizlanmaya ceviriyor (Asiri Hiz, risk: kilit) ya da
+  // soguk namluyu bir salvo hakkina ceviriyor (Soguk Salvo). Hepsi "dps":
+  // iki oynanabilir operatorun ekseninde. Sabitler `heat-mechanics`te.
+  { id: "isi-donusturucu", name: "Isı Dönüştürücü", description: "Her atış, ürettiği ısının her derecesi için +%1,5 hasar verir: ısı hasara dönüşür. Isıyı azaltan eşyalar bu kazancı da azaltır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("isi-donusturucu", "heatToDamage", 0.015)] },
+  { id: "asiri-hiz", name: "Aşırı Hız", description: "50 derecenin üstünde ısı freni atış hızını düşürmez; tersine sıcaklıkla artırır: 100 derecede +%50. Kule yine 100 derecede kilitlenir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("asiri-hiz", "overclock", 0.5)] },
+  { id: "soguk-salvo", name: "Soğuk Salvo", description: "0 dereceye kadar soğuyan kulenin sonraki 3 atışı ısı üretmez ve iki kat hızlı gelir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("soguk-salvo", "coldSalvo", 3)] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -664,7 +677,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "doner-kaide", name: "Döner Kaide", description: "Nişan alan kulelerin dönüş hızı +%45, atış hızı -%5.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("doner-kaide", "turnRate", 0.45), effect("doner-kaide", "fireRate", -0.05)] },
   { id: "nisan-kertigi", name: "Nişan Kertiği", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%30, dönüş hızı -%15.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "uncommon", effects: [effect("nisan-kertigi", "accuracy", 0.3), effect("nisan-kertigi", "turnRate", -0.15)] },
   { id: "av-refleksi", name: "Av Refleksi", description: "Nişan alan kuleler düşman öldürdükten sonra 2 saniye boyunca dönüş hızı +%150 kazanır.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:killSnap"] },
-  { id: "sicak-tetik", name: "Sıcak Tetik", description: "Tüm kulelerin kritik şansı +%12, ısısı +%15.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sicak-tetik", "critChance", 0.12), effect("sicak-tetik", "heat", 0.15)] },
+  { id: "sicak-tetik", name: "Sıcak Tetik", description: "Tüm kulelerin kritik şansı +%12, ısısı +%7.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("sicak-tetik", "critChance", 0.12), effect("sicak-tetik", "heat", 0.07)] },
   { id: "agir-funye", name: "Ağır Fünye", description: "Tüm kulelerin kritik hasarı +%150, kritik şansı -%5.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("agir-funye", "critDamage", 1.5), effect("agir-funye", "critChance", -0.05)] },
   { id: "ince-uc", name: "İnce Uç", description: "Tek hedefe saldıran kulelerin kritik hasarı +%70.", axes: ["dps"], scope: { kind: "tagged", shapes: ["single"] }, stackable: false, rarity: "uncommon", effects: [effect("ince-uc", "critDamage", 0.7)] },
   { id: "keskin-nisanci-durbunu", name: "Keskin Nişancı Dürbünü", description: "Bir kulenin kritik şansı +%25, menzili +%10, atış hızı -%20.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("keskin-nisanci-durbunu", "critChance", 0.25, "tower"), effect("keskin-nisanci-durbunu", "range", 0.1, "tower"), effect("keskin-nisanci-durbunu", "fireRate", -0.2, "tower")] },
@@ -684,7 +697,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "ongorulu-takip", name: "Öngörülü Takip", description: "Nişan alan kuleler koşucu ve hava hedeflerine dönerken dönüş hızı +%100 kazanır.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:fastTargets"] },
   { id: "titresim-sonumleyici", name: "Titreşim Sönümleyici", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%25, atış hızı -%5.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("titresim-sonumleyici", "accuracy", 0.25), effect("titresim-sonumleyici", "fireRate", -0.05)] },
   { id: "isil-kalibrasyon", name: "Isıl Kalibrasyon", description: "Sıcaklığı 40 derecenin altındaki nişan alan mermi ve çarpma kulelerinin isabeti +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["aim:coldAccuracy"] },
-  { id: "basincli-hazne", name: "Basınçlı Hazne", description: "Mermi atan kulelerin mermi hızı +%50, ısısı +%10.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("basincli-hazne", "projectileSpeed", 0.5), effect("basincli-hazne", "heat", 0.1)] },
+  { id: "basincli-hazne", name: "Basınçlı Hazne", description: "Mermi atan kulelerin mermi hızı +%50, ısısı +%5.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("basincli-hazne", "projectileSpeed", 0.5), effect("basincli-hazne", "heat", 0.05)] },
   { id: "hizlandirici-bobin", name: "Hızlandırıcı Bobin", description: "Mermi atan kulelerin mermi hızı +%100, menzili -%8.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "uncommon", effects: [effect("hizlandirici-bobin", "projectileSpeed", 1), effect("hizlandirici-bobin", "range", -0.08)] },
 
   // --- Altin kazanimi ---
@@ -728,6 +741,13 @@ export const cardCatalog: CardDefinition[] = [
   { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
   { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5, cap: 0.5 }] },
   { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
+  // Isi dengesi: atis hizi bonusunun yarisi atis isisini indiriyor. Atis
+  // hizi isiya carpip bosa gidiyordu; bu kartla her atis hizi bonusu kendi
+  // isi butcesini de getiriyor. Cevrim (`conversions`) degil, stat
+  // (`fireRateHeatRelief`): atis hizi Tork Aktarimi'nin cevrim hedefi ve
+  // cevrimler zincirlenmiyor. Okunan kulenin gercek atis hizi bonusu (Tork
+  // dahil); tavan `HEAT_RELIEF_CAP`.
+  { id: "termodinamik-denge", name: "Termodinamik Denge", description: "Tüm kulelerin atış hızı +%15. Atış hızı bonusunun her %10'u atış başına ısıyı %5 azaltır; en fazla %40.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("termodinamik-denge", "fireRate", 0.15), effect("termodinamik-denge", "fireRateHeatRelief", 0.5)] },
   { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15, cap: 0.3 }] }
 ];
 
@@ -862,7 +882,16 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // Altin primleri kulenin yaptigi bir seyi degistirmiyor, yalnizca oyuncunun altinini.
   championGold: "none", airKillGold: "none", damageGold: "none", multiKillGold: "none", overkillGold: "none",
   garrisonGold: "none", upgradeGold: "none", heavyKillGold: "none", statusKillGold: "none",
-  hotKillGold: "none", slowedKillGold: "none", deliveryGold: "none", longRangeKillGold: "none"
+  hotKillGold: "none", slowedKillGold: "none", deliveryGold: "none", longRangeKillGold: "none",
+  // Isi, atis hizi ve nisan, ikinci tur: hepsi kulenin vurusuna ya da isisine
+  // isliyor. Bitisik kulelerin sogumasi ve isi aktarimi ates etmeyen bir
+  // yapiya takilsa da komsusunda is goruyor; erisimi o yuzden yapi.
+  leadTargeting: "combat", damageVsFast: "combat", retargetDamage: "combat", critSplash: "combat",
+  farCritChance: "combat", hitSplash: "combat", slowBleed: "combat", slowVulnerability: "combat",
+  coolingFlat: "combat", brakeCooling: "combat", ventHeat: "combat", killCooling: "combat",
+  neighborCooling: "structure", heatBleed: "combat", fireRateHeatRelief: "combat",
+  coldFireRate: "combat", trackRhythm: "combat", brakeDamage: "combat", overclock: "combat",
+  coldSalvo: "combat", restartShots: "combat", heatToDamage: "combat", heatShock: "combat"
 };
 
 /**

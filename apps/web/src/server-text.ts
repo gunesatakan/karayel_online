@@ -6,6 +6,7 @@ import {
   getShopItem,
   type DefenseSummary,
   type EquipShopItemFailure,
+  type ShopItemNeed,
   type RunSummary,
   type RunTowerSummary,
   type TowerPreview
@@ -122,7 +123,8 @@ export function localizeTowerPreview(preview: TowerPreview): LocalizedTowerPrevi
       const params = toParams(preview.errorParams);
       const itemId = typeof params?.itemId === "string" ? params.itemId : undefined;
       const reason = typeof params?.reason === "string" ? params.reason as EquipShopItemFailure : undefined;
-      return { title, error: getInventoryEquipRejectedCue({ itemId, reason }, { creative: true })?.text ?? error };
+      const need = typeof params?.need === "string" ? params.need as ShopItemNeed : undefined;
+      return { title, error: getInventoryEquipRejectedCue({ itemId, reason, need }, { creative: true })?.text ?? error };
     }
     return { title, error: localizeServerText(error, preview.errorKey, preview.errorParams) ?? error };
   }

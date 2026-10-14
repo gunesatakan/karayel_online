@@ -226,8 +226,8 @@ const realSeconds = (gameMs: number) => gameMs / GAME_SPEED_MULTIPLIER / 1000;
 
 // ------------------------------------------------------------------ Kaynak adlari
 
-/** Kosullu paylar (donus, isabet, mermi hizi) ayni ad altinda. */
-const CONDITIONAL_SOURCES: ReadonlySet<string> = new Set(["cond:turnRate", "cond:accuracy", "cond:projectileSpeed"]);
+/** Kosullu paylar (donus, isabet, mermi hizi, atis hizi) ayni ad altinda. */
+const CONDITIONAL_SOURCES: ReadonlySet<string> = new Set(["cond:turnRate", "cond:accuracy", "cond:projectileSpeed", "cond:fireRate"]);
 
 /** Dokum kaynaklarinin adi (`sheet.source.*`). */
 function sourceLabel(source: string) {
@@ -262,6 +262,7 @@ function conditionLabel(condition: string) {
   if (condition === "frozen") return t("sheet.cond.frozen");
   if (condition === "marked") return t("sheet.cond.marked");
   if (condition === "air") return t("sheet.cond.air");
+  if (condition === "far") return t("sheet.cond.far");
   if (condition.startsWith("st:")) return t("sheet.cond.status", { status: statusLabel(condition.slice(3)) });
   return condition;
 }

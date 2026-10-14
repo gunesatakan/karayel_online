@@ -3,6 +3,7 @@ import type { CardTowerProfile } from "../cards/index.js";
 import { enPlural, lt } from "../i18n/index.js";
 import { HIRABLE_WORKER_ROLES, WORKER_ROLE_LABELS, type HirableWorkerRole } from "../logistics/index.js";
 import { MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER, canEquipShopItem, getExclusiveShopItemId, getShopItem, getShopItemTowerLimit, type EquipShopItemFailure, type ShopItem } from "../shop/index.js";
+import { SHOP_ITEM_NEEDS, describeShopItemNeed, type ShopItemNeed } from "../shop/compatibility.js";
 import { WORKER_DEVELOPMENT_CELLS } from "../worker-skills.js";
 import type { FeedbackKind } from "./index.js";
 
@@ -29,7 +30,16 @@ export type ShopPurchasedMessage = { itemId?: string; price?: number; toInventor
 /** `inventory:equipped` (MatchRoom `equipShopItem`). */
 export type InventoryEquippedMessage = { itemId?: string; towerId?: string };
 /** `inventory:equip-rejected` (MatchRoom `equipShopItem`, `creativeToggleItem`). */
-export type InventoryEquipRejectedMessage = { itemId?: string; towerId?: string; reason?: EquipShopItemFailure };
+export type InventoryEquipRejectedMessage = {
+  itemId?: string;
+  towerId?: string;
+  reason?: EquipShopItemFailure;
+  /** `incompatibleTower` icin esyanin istedigi kule yetenegi; kisa sebep buradan. */
+  need?: ShopItemNeed;
+  /** Sunucu metninin anahtari (`equip.incompatible.<ihtiyac>`) ve Turkcesi. */
+  key?: string;
+  message?: string;
+};
 /** `structure:repaired` (MatchRoom `repairStructure`). */
 export type StructureRepairedMessage = { towerId?: string; cost?: number };
 /** `ultimate:upgraded` (MatchRoom `upgradeUltimatePower`). */
@@ -156,7 +166,9 @@ export function getInventoryEquipRejectedCue(
   const text = message.reason === "towerFull"
     ? lt(`Bu kulede boş yuva yok · en fazla ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} eşya`, `No free slot on this tower · max ${MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER} items`)
     : message.reason === "incompatibleTower"
-      ? lt(`${item.name} bu kuleye takılamaz${kept}`, `${item.name} cannot go on this tower${kept}`)
+      ? message.need && (SHOP_ITEM_NEEDS as readonly string[]).includes(message.need)
+        ? lt(`${item.name} bu kuleye takılamaz · ${describeShopItemNeed(message.need)}${kept}`, `${item.name} cannot go on this tower · ${describeShopItemNeed(message.need)}${kept}`)
+        : lt(`${item.name} bu kuleye takılamaz${kept}`, `${item.name} cannot go on this tower${kept}`)
       : message.reason === "itemLimit"
         ? lt(`${item.name} bir kuleye en fazla ${getShopItemTowerLimit(item)} kez takılır${kept}`, `${item.name}: max ${getShopItemTowerLimit(item)} per tower${kept}`)
         : message.reason === "itemConflict"

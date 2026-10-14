@@ -150,6 +150,7 @@ import {
   isRepairDepotDefinition,
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
+  isAbartiEdgeAnchored,
   ATAKAN_ISOLATION_MULTIPLIER,
   ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER,
   TRACKING_MARK_DAMAGE_PER_STACK,
@@ -271,6 +272,9 @@ import {
   COLD_ACCURACY_TEMPERATURE,
   COLD_ACCURACY_BONUS,
   CLEAN_WAVE_GOLD,
+  INSURANCE_CLEAN_WAVE_GOLD,
+  BLOOD_BANK_NEXUS_COST,
+  getShopItemTowerEffects,
   GOLD_INTEREST_RATE,
   RISKY_INVESTMENT_GOLD,
   RISKY_INVESTMENT_NEXUS_COST,
@@ -294,6 +298,8 @@ import {
   resolveTowerEngine,
   canAcceptTargetedCard,
   canEquipShopItem,
+  type EquipShopItemFailure,
+  type ShopItemNeed,
   getInventoryEquipRejectedCue,
   isGlobalShopItem,
   canTowerHoldTargetedCard,
@@ -374,6 +380,8 @@ import {
   SLOW_STATUS_FRACTION,
   KIN_SLOW_FAR_FRACTION,
   getCriticalSlowFraction,
+  scaleSlowFraction,
+  getAuraSlowLingerMs,
   SLOW_CRIT_MAX_FRACTION,
   getStatusSlowFraction,
   canRefundTowerPurchase,
@@ -449,6 +457,31 @@ import {
   type TowerEngineConfig,
   type TowerGrant,
   type Unlock
+} from "@karayel/shared";
+// Isi, atis hizi ve nisan, ikinci tur: esya ve kart mekaniklerinin sabitleri.
+import {
+  AURA_SLOW_RIDER_MS,
+  COLD_SALVO_FIRE_RATE,
+  COLD_SALVO_TEMPERATURE,
+  CRIT_SPLASH_RADIUS_CELLS,
+  FAR_CRIT_RANGE_FRACTION,
+  HEAT_RELIEF_CAP,
+  HIT_SPLASH_RADIUS_CELLS,
+  KILL_COOLING_DURATION_MS,
+  LEAD_TARGETING_MAX,
+  HEAT_SHOCK_COOLDOWN_MS,
+  HEAT_SHOCK_RANGE_FRACTION,
+  HEAT_SHOCK_TEMPERATURE,
+  HEAT_SHOCK_VENT,
+  VENT_TRIGGER_TEMPERATURE,
+  RESTART_COOLDOWN_MS,
+  RESTART_FIRE_RATE,
+  TRACK_RHYTHM_MAX_STACKS,
+  VENT_COOLDOWN_MS,
+  getBrakeDamageAdd,
+  getOverclockFireRateAdd,
+  isFastEnemy,
+  towerFiresAlongFacing
 } from "@karayel/shared";
 // Ozel dusmanlar ve karsi atak (2. asamadan itibaren): tablo ve sayilar paylasilan pakette.
 import {
@@ -659,6 +692,14 @@ const HEAT_EXCHANGE_PER_SECOND = 8;
 const FOCUS_AIM_TARGET_LOCK_MS = 1500;
 const ENEMY_TOWER_ATTACK_INTERVAL_MS = 850;
 /**
+ * Takilma bekcisi: yurumesi gereken bir kara dusmani bu kadar oyun saniyesi
+ * boyunca `ENEMY_STALL_DISTANCE_CELLS` hucreden fazla ilerlemezse gezinmesi
+ * sifirlanir. Donma, sersemleme, korku, yapiya saldiri ve Metal Kalkan
+ * bekleyisi sayilmaz (sure o sirada durur).
+ */
+export const ENEMY_STALL_RESET_SECONDS = 6;
+export const ENEMY_STALL_DISTANCE_CELLS = 0.35;
+/**
  * Menzilli dusman vurusunun izi.
  *
  * Isin kimliginin kule kimligi olmadigi tek yer: istemci bunu gorunce
@@ -854,6 +895,21 @@ const EXPECTED_ROOM_REJECTIONS = new Set<string>([SERVER_TEXT["room.full"], SERV
 function serverTextMessage(key: ServerTextKey) {
   return { message: SERVER_TEXT[key], key };
 }
+/**
+ * `inventory:equip-rejected` yuku. Uyumsuz kulede esyanin istedigi kule
+ * yetenegi (`need`) ve anahtarli sunucu metni (`equip.incompatible.<ihtiyac>`)
+ * de gidiyor; istemci kisa sebebi kendi dilinde yaziyor.
+ */
+function getEquipRejectedPayload(itemId: string, towerId: string, check: { reason: EquipShopItemFailure; need?: ShopItemNeed }) {
+  const key = check.need ? `equip.incompatible.${check.need}` as ServerTextKey : undefined;
+  return {
+    itemId,
+    towerId,
+    reason: check.reason,
+    ...(check.need ? { need: check.need } : {}),
+    ...(key && SERVER_TEXT[key] ? { key, message: SERVER_TEXT[key] } : {})
+  };
+}
 /** Ayni yerden gelen hata gunlugu en fazla bu siklikta yaziliyor. */
 const ROOM_ERROR_LOG_INTERVAL_MS = 10_000;
 const PERF_SEND_INTERVAL_MS = 1000;
@@ -864,6 +920,9 @@ const SNAPSHOT_SIZE_SAMPLE_INTERVAL_MS = 1000;
  * dolunca kalkiyor; hicbir kulenin vurusu onu tuketmiyor.
  */
 const TRACKING_MARK_DURATION_MS = 6500;
+/** Termal Funye (`status:burn`): saniyede azami canin bu payi, bu kadar sure. */
+const THERMAL_FUSE_BURN_RATIO = 0.015;
+const THERMAL_FUSE_BURN_MS = 4000;
 const DEBUG_LASER_OVERDRIVE_DURATION_MS = 2000;
 /**
  * 10. seviyenin asiri yuklemesi: iki kiris ortadaki dusmandan sola ve saga
@@ -1238,6 +1297,18 @@ type EnemyModel = {
   /** Bu hucre icin verilmis karar; hucre degisene kadar tekrarlanir. */
   navigatorStep?: { fromCol: number; fromRow: number; toCol: number; toRow: number };
   /**
+   * Zorla yeniden yonlendirmede secilen el. Bir sonraki ilk temasta zar
+   * yerine bu kullaniliyor (bkz. `forceEnemyReroute`); oda zarina dokunmuyor.
+   */
+  navigatorHandHint?: BlindHand;
+  /**
+   * Takilma bekcisi: dusmanin son anlamli konumu ve o konumdan beri
+   * kimildamadan gecen oyun saniyesi (bkz. `watchEnemyStall`).
+   */
+  stallAnchorX?: number;
+  stallAnchorY?: number;
+  stallSeconds?: number;
+  /**
    * Metal Kalkan bu dusmanin bir adimini kesti. Kalkan kalkinca gezinme
    * hafizasi sifirlaniyor: kalkani dolasirken tutulan "duvar" artik yok.
    */
@@ -1295,6 +1366,19 @@ type EnemyModel = {
   auraSlowKinds?: Record<string, number>;
   /** Hareket hesabinin son tikte yazdigi yavaslatma carpani (hizlanma ve durdurma haric); Soguk Av Kaydi okuyor. */
   movementSlowMultiplier?: number;
+  /**
+   * Bu tikin yuruyus hizi (dunya birimi / oyun saniyesi). Oncul nisan
+   * (`leadTargeting`) hedefin ucus suresi boyunca nereye gidecegini buradan
+   * okuyor; yurumeyen (donmus, durmus, ozel dal) dusmanda sifir.
+   */
+  moveVx?: number;
+  moveVy?: number;
+  /**
+   * Kriyojen Hat (`slowVulnerability`): o kulenin yavaslattigi dusman bu ana
+   * kadar herkesten `slowVulnerableAdd` kadar fazla hasar aliyor (duvar saati).
+   */
+  slowVulnerableUntil?: number;
+  slowVulnerableAdd?: number;
   trackingSourceTowerId?: string;
   fearUntil: number;
   armorBrokenUntil: number;
@@ -1766,6 +1850,36 @@ type TowerModel = EconomyStock & {
   recentKillTimes?: number[];
   /** `aim:killSnap`: son oldurmeden sonraki donus hizi penceresinin sonu. */
   killSnapUntil?: number;
+  /**
+   * Isi ve atis hizi, ikinci tur (`heat-mechanics`). Hepsi istege bagli:
+   * stati olmayan kulede hic yazilmiyor.
+   * - `lastShotTargetId`: son merminin hedefi (`retargetDamage`).
+   * - `rhythmTargetId` / `rhythmStacks`: ayni hedefe art arda atis (`trackRhythm`).
+   * - `ventReadyAt` / `shockReadyAt` / `restartReadyAt`: Emniyet Ventili,
+   *   Termal Sok Halkasi ve Yeniden Atesleme Bobini'nin yeniden acilabilecegi
+   *   an (duvar saati).
+   * - `brakeEngaged`: kule son tikte frendeydi (Yeniden Atesleme Bobini
+   *   frenden cikisi buradan goruyor).
+   * - `killCoolingUntil`: Kriyo Sok Kartusu'nun soguma penceresi (duvar saati).
+   * - `coldSalvoShots` / `coldSalvoSpent`: Soguk Salvo'nun kalan atisi ve
+   *   salvonun bu soguma icin harcanip harcanmadigi (kule isininca sifirlanir).
+   * - `restartShots`: frenden cikan kulenin kalan isisiz atislari.
+   * - `lastShotHeat`: son atisin urettigi isi (`heatToDamage`).
+   */
+  lastShotTargetId?: string;
+  /** Oncul nisan biriktiricisi: payin kesirli kismi atistan atisa tasiniyor. */
+  leadCharge?: number;
+  rhythmTargetId?: string;
+  rhythmStacks?: number;
+  ventReadyAt?: number;
+  shockReadyAt?: number;
+  restartReadyAt?: number;
+  brakeEngaged?: boolean;
+  killCoolingUntil?: number;
+  coldSalvoShots?: number;
+  coldSalvoSpent?: boolean;
+  restartShots?: number;
+  lastShotHeat?: number;
   /** Bu kosuda oldurdugu dusman (kule paneli); yalnizca sayac, hicbir kural okumuyor. */
   killCount?: number;
   zeynepFormationSize: number;
@@ -1786,6 +1900,11 @@ type TowerModel = EconomyStock & {
   targetedCardIds: string[];
   /** Bu kuleye takilmis magaza esyalari. Takilan esya sokulemez. */
   equippedShopItemIds: string[];
+  /**
+   * Kan Bankasi bedelinin odenemedigi dalga: nexus bedeli kaldiramayacak
+   * kadar dusukken kopya o dalga odenmiyor ve bonusu islemiyor.
+   */
+  bloodBankIdleWave?: number;
   targetingMode: TowerTargetingMode;
   shopKillStacks: number;
   shopWaveStacks: number;
@@ -2549,6 +2668,10 @@ export class MatchRoom extends Room<MatchState> {
   private nextMetalShieldId = 1;
   /** Isiticinin tick ici tekrar onleyici listesi (tahsis yok). */
   private readonly heaterScratch: TowerModel[] = [];
+  /** Rezonans Odasi takili yapilar; `updateTowers` tik basina bir kez topluyor. */
+  private readonly neighborCoolingSources: TowerModel[] = [];
+  /** Sicrama vurusu suruyor (`applyTowerHitSplashes`): yeniden sicrama ve kritik yok. */
+  private hitSplashActive = false;
   /** Ozel dusman yol alanlari; yapi degisince atiliyor. `null`: hedef yok. */
   private specialRouteFields = new Map<string, SpecialRouteField | null>();
   private spawnCooldownMs = 500;
@@ -2659,6 +2782,8 @@ export class MatchRoom extends Room<MatchState> {
     this.mainGateDirty = true;
     this.towerCellIndexDirty = true;
     this.edgeStructureIndexDirty = true;
+    // Harita karesi degismis olabilir (Bariyer): ucanlarin nexus hedefleri yeniden.
+    this.nexusPointCache = undefined;
     // Ozel dusmanlarin yol alani da yerlesimden; bir sonraki soruda yeniden kuruluyor.
     if (this.specialRouteFields.size > 0) this.specialRouteFields.clear();
     // Yapi degisti: kapali sanilan bir cikis acilmis olabilir. Hafizayi
@@ -4284,7 +4409,7 @@ export class MatchRoom extends Room<MatchState> {
         }
         bonus += standing * perTower;
       }
-      if (clean && this.playerHasUnlock(playerId, "gold:cleanWave")) bonus += CLEAN_WAVE_GOLD;
+      if (clean) bonus += this.getCleanWaveGold(player);
       const deposits = player.goldDeposits ?? [];
       const due = deposits.filter((deposit) => deposit.dueWave <= completedWave);
       if (due.length > 0) {
@@ -4304,6 +4429,18 @@ export class MatchRoom extends Room<MatchState> {
         this.state.players.get(tower.ownerId)!.gold += amount;
       }
     }
+  }
+
+  /**
+   * Temiz dalga primi (`gold:cleanWave`). Kilit kart (Temiz Sicil) ve esya
+   * (Sigorta Policesi) icin ayni, tutar ayri: kartinki `CLEAN_WAVE_GOLD`,
+   * esyaninki yariya inmis `INSURANCE_CLEAN_WAVE_GOLD`. Ikisi birden varsa
+   * kartin primi -- ayni kilit iki kez odenmiyor.
+   */
+  private getCleanWaveGold(player: Player) {
+    if (player.ownedCardIds.some((cardId) => getCardDefinition(cardId)?.unlocks?.includes("gold:cleanWave"))) return CLEAN_WAVE_GOLD;
+    if (player.ownedShopItemIds.some((itemId) => getShopItem(itemId)?.unlocks?.includes("gold:cleanWave"))) return INSURANCE_CLEAN_WAVE_GOLD;
+    return 0;
   }
 
   /** Vadeli altin: bu dalga dahil `waves` dalga tamamlaninca `payout`. */
@@ -4613,6 +4750,7 @@ export class MatchRoom extends Room<MatchState> {
     this.updateTowers(gameDeltaTime);
     this.updateSympathy();
     this.updateHeatExchange(gameDeltaTime / 1000);
+    this.updateHeatBleed(gameDeltaTime / 1000);
     timings.towersMs = performance.now() - sectionStart;
 
     sectionStart = performance.now();
@@ -4992,6 +5130,9 @@ export class MatchRoom extends Room<MatchState> {
       const waveRecord = this.closeRunWave(false);
       this.advanceWaveGrowth();
       this.resetTowerHeatAfterWave();
+      // Nexus Kalkani "bu dalgadaki" sizintilari tutuyor: kullanilmayan
+      // haklar dalgayla birlikte bitiyor, sonraki dalgaya tasinmiyor.
+      for (const player of this.state.players.values()) player.nexusShieldCharges = 0;
       if (this.wave >= FINAL_WAVE) {
         this.finishMatch("victory");
         return;
@@ -5399,13 +5540,48 @@ export class MatchRoom extends Room<MatchState> {
       this.setupPhase = false;
       this.setupReadyPlayerIds.clear();
       this.spawnCooldownMs = 350;
+      this.chargeBloodBanks();
       for (const playerId of this.state.players.keys()) {
-        if (this.ownerHasTowerUnlock(playerId, "bloodBank") && this.teamHealth > 5) this.teamHealth -= 5;
         if (this.playerHasUnlock(playerId, "nexus:mend")) {
           this.teamHealth = Math.min(MAX_TEAM_HEALTH, this.teamHealth + NEXUS_MEND_HEAL);
         }
       }
     }
+  }
+
+  /**
+   * Kan Bankasi bedeli dalga basinda, takili **her kopya** icin ayri.
+   *
+   * Bir donem bedel oyuncu basina bir kezdi: on kuleye takilan on kopya da
+   * dalgada toplam 5 can aliyordu, yani her ek kopya bedava +%20'ydi. Nexus
+   * bedeli kaldiramiyorsa (can bedelden fazla degilse) kopya o dalga
+   * odenmiyor ve bonusu da islemiyor: esya kendi takimini oldurmuyor.
+   */
+  private chargeBloodBanks() {
+    for (const tower of this.towers.values()) {
+      if (!this.state.players.has(tower.ownerId)) continue;
+      const copies = this.countBloodBankCopies(tower);
+      if (copies > 0) this.payBloodBank(tower, copies);
+    }
+  }
+
+  private countBloodBankCopies(tower: TowerModel) {
+    return (tower.equippedShopItemIds ?? []).filter((itemId) => getShopItem(itemId)?.unlocks?.includes("bloodBank")).length;
+  }
+
+  private payBloodBank(tower: TowerModel, copies: number) {
+    const cost = copies * BLOOD_BANK_NEXUS_COST;
+    if (this.teamHealth > cost) {
+      this.teamHealth -= cost;
+      tower.bloodBankIdleWave = undefined;
+    } else {
+      tower.bloodBankIdleWave = this.wave;
+    }
+  }
+
+  /** Kan Bankasi bu dalga odenmedigi icin bonus vermiyor mu (hazirlikta hep veriyor). */
+  private isBloodBankIdle(tower: TowerModel) {
+    return !this.setupPhase && tower.bloodBankIdleWave === this.wave;
   }
 
   private resetTowerHeatAfterWave() {
@@ -5723,8 +5899,20 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.ammoPayloadShots === 0) tower.ammoPayloadUntil = 0;
     }
     this.spendWorkerBoostShot(tower, "damageShots", now);
-    const heat = this.getTowerShotHeat(tower);
+    // Soguk Salvo ve Yeniden Atesleme Bobini: hakki olan atis isi uretmiyor.
+    // Hak burada harcaniyor, yani Cifte Namlu'nun ikinci mermisi de bir hak.
+    let heat = this.getTowerShotHeat(tower);
+    if ((tower.coldSalvoShots ?? 0) > 0) {
+      tower.coldSalvoShots = (tower.coldSalvoShots ?? 0) - 1;
+      heat = 0;
+    } else if ((tower.restartShots ?? 0) > 0) {
+      tower.restartShots = (tower.restartShots ?? 0) - 1;
+      heat = 0;
+    }
+    tower.lastShotHeat = heat;
+    const heatBefore = tower.temperature;
     tower.temperature = Math.min(100, tower.temperature + heat);
+    if (heat > 0) this.applyShotHeatItems(tower, heatBefore, now);
     if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) {
       tower.heatLocked = true;
     }
@@ -5732,9 +5920,61 @@ export class MatchRoom extends Room<MatchState> {
       this.runTowerTriggers(tower, "ammoEmpty");
       if (this.towerHasUnlock(tower, "ammo:emptyBleed")) this.applyAmmoEmptyBleed(tower, now);
     }
-    if (!wasHeatLocked && tower.heatLocked) {
-      this.runTowerTriggers(tower, "overheat");
-      if (this.towerHasUnlock(tower, "heat:overheatBurst")) this.applyOverheatBurst(tower, now);
+    if (!wasHeatLocked && tower.heatLocked) this.onTowerHeatLocked(tower, now);
+  }
+
+  /**
+   * Kule kilide girdi: tetikler, Asiri Isinma Patlamasi, Termal Sok Halkasi
+   * ve Yeniden Atesleme Bobini'nin bekleyen hakki. Atis isisi ve disaridan
+   * gelen isi (isitici dusman) ayni yoldan geciyor.
+   */
+  private onTowerHeatLocked(tower: TowerModel, now: number) {
+    this.runTowerTriggers(tower, "overheat");
+    if (this.towerHasUnlock(tower, "heat:overheatBurst")) this.applyOverheatBurst(tower, now);
+    // Termal Sok Halkasi kilitte bekleme suresine bakmadan patliyor.
+    const shock = getModifierAdd(this.getTowerRunModifiers(tower), "heatShock");
+    if (shock > 0) this.applyHeatShock(tower, shock, now);
+  }
+
+  /**
+   * Atisin isisina bakan esyalar, isi eklendikten hemen sonra:
+   *
+   * - Emniyet Ventili (`ventHeat`): bu atis kuleyi 70 derecenin ustune
+   *   cikardiysa derece bir anda atiliyor.
+   * - Termal Sok Halkasi (`heatShock`): bu atis kuleyi 80 derecenin ustune
+   *   cikardiysa sok dalgasi ve tahliye.
+   *
+   * Ikisinin de bekleme suresi var; kilitlenen kule yine kilitlenmis kaliyor
+   * (kilit esigi altina inse de acilma esigi ayri).
+   */
+  private applyShotHeatItems(tower: TowerModel, heatBefore: number, now: number) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    const vent = getModifierAdd(modifiers, "ventHeat");
+    if (vent > 0 && tower.temperature >= VENT_TRIGGER_TEMPERATURE && (tower.ventReadyAt ?? 0) <= now) {
+      tower.temperature = Math.max(0, tower.temperature - vent);
+      tower.ventReadyAt = now + scaleGameDuration(VENT_COOLDOWN_MS);
+    }
+    const shock = getModifierAdd(modifiers, "heatShock");
+    if (shock > 0 && tower.temperature >= HEAT_SHOCK_TEMPERATURE && (tower.shockReadyAt ?? 0) <= now) {
+      this.applyHeatShock(tower, shock, now);
+    }
+  }
+
+  /**
+   * Termal Sok Halkasi: kilitlenen kule menzilinin bir payi icindeki
+   * dusmanlara vurus hasarinin `multiplier` katini verir. Hasar kulenin
+   * seviyesiyle ve kartlarla buyuyen vurus hasari; Asiri Isinma
+   * Patlamasi'nin duz 40'i gibi gec oyunda erimiyor.
+   */
+  private applyHeatShock(tower: TowerModel, multiplier: number, now: number) {
+    tower.shockReadyAt = now + scaleGameDuration(HEAT_SHOCK_COOLDOWN_MS);
+    tower.temperature = Math.max(0, tower.temperature - HEAT_SHOCK_VENT);
+    if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) tower.heatLocked = false;
+    const radius = this.getTowerRange(tower) * HEAT_SHOCK_RANGE_FRACTION;
+    const damage = this.getTowerDamage(tower) * multiplier;
+    for (const enemy of this.getEnemiesNear(tower.x, tower.y, radius)) {
+      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > radius * radius) continue;
+      this.damageEnemy(enemy, damage, 0, "item:termal-sok", tower.ownerId, tower.definition.damageType ?? "physical", 0, tower.level, tower.id, "impact");
     }
   }
 
@@ -5760,12 +6000,19 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerShotHeat(tower: TowerModel) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    // Termodinamik Denge (`fireRateHeatRelief`): kulenin gercek atis hizi
+    // bonusunun orani kadar indirim, tavanli. Takip Ritmi'nin yigini o anki
+    // hedefe bagli.
+    const reliefRatio = getModifierAdd(modifiers, "fireRateHeatRelief");
+    const relief = reliefRatio > 0 ? Math.min(HEAT_RELIEF_CAP, reliefRatio * Math.max(0, this.getTowerStatBonus(tower, "fireRate", modifiers))) : 0;
+    const rhythm = Math.min(1, getModifierAdd(modifiers, "trackRhythm") * (tower.rhythmStacks ?? 0));
     return calculateTowerShotHeat(
       tower.definition,
       tower.performance,
       this.getTowerSpecialHeatMultiplier(tower),
       this.getTowerPerformanceCostMultiplier(tower)
-    ) * getModifierMultiplier(this.getTowerRunModifiers(tower), "heat");
+    ) * getModifierMultiplier(modifiers, "heat") * (1 - relief) * Math.max(0, 1 - rhythm);
   }
 
   private getTowerSpecialHeatMultiplier(tower: TowerModel) {
@@ -5790,9 +6037,11 @@ export class MatchRoom extends Room<MatchState> {
    */
   private getTowerHeatFireRateMultiplier(tower: TowerModel) {
     // Termal Kutle yumusak tavani kaldirir: 50 derecenin ustunde atis hizi
-    // dusmez. Karsiliginda kart sogumayi %60 kirptigi icin kule kilide daha
+    // dusmez. Karsiliginda kart sogumayi %30 kirptigi icin kule kilide daha
     // hizli kosar; takas gercek.
     if (this.towerHasUnlock(tower, "heat:thermalMass")) return 1;
+    // Asiri Hiz: fren yerine hizlanma (`getTowerConditionalFireRateAdd`).
+    if (getModifierAdd(this.getTowerRunModifiers(tower), "overclock") > 0) return 1;
     return tower.temperature <= TOWER_HEAT_BRAKE_TEMPERATURE
       ? 1
       : Math.max(0, (100 - tower.temperature) / (100 - TOWER_HEAT_BRAKE_TEMPERATURE));
@@ -5869,7 +6118,103 @@ export class MatchRoom extends Room<MatchState> {
       cooling *= 1 + CHILL_VENT_COOLING_BONUS;
     }
 
+    // Isi ve atis hizi, ikinci tur. Fren Sogutucusu frende (50 derece
+    // ustu) isliyor; surekli ates hesabinda kule hep frende oturdugu icin
+    // orada kosulsuz. Kriyo Sok Kartusu olaya bagli, surekli hiza girmiyor.
+    // Rezonans Odasi bitisikteki yapidan geliyor. Peltier Plakasi en sonda,
+    // carpanlarin disinda: duz derece.
+    const modifiers = this.getTowerRunModifiers(tower);
+    const brakeCooling = getModifierAdd(modifiers, "brakeCooling");
+    if (brakeCooling > 0 && (options.sustained || temperature > TOWER_HEAT_BRAKE_TEMPERATURE)) cooling *= 1 + brakeCooling;
+    const killCooling = getModifierAdd(modifiers, "killCooling");
+    if (!options.sustained && killCooling > 0 && (tower.killCoolingUntil ?? 0) > Date.now()) cooling *= 1 + killCooling;
+    const neighborCooling = this.getNeighborCoolingAdd(tower);
+    if (neighborCooling > 0) cooling *= 1 + neighborCooling;
+    cooling += Math.max(0, getModifierAdd(modifiers, "coolingFlat"));
+
     return cooling;
+  }
+
+  /**
+   * Rezonans Odasi (`neighborCooling`): bitisikteki dost yapilarin
+   * esyalarindan bu kuleye gelen soguma payi. Kaynak listesi tik basina
+   * bir kez toplaniyor (`collectNeighborCoolingSources`); sahada boyle esya
+   * yokken (maclarin cogu) tek bir uzunluk karsilastirmasi.
+   */
+  private getNeighborCoolingAdd(tower: TowerModel) {
+    if (this.neighborCoolingSources.length === 0) return 0;
+    let add = 0;
+    for (const source of this.neighborCoolingSources) {
+      if (source === tower || source.hp <= 0) continue;
+      if (!this.getAdjacentFriendlyTowers(source).includes(tower)) continue;
+      add += getModifierAdd(this.getTowerRunModifiers(source), "neighborCooling");
+    }
+    return add;
+  }
+
+  private collectNeighborCoolingSources() {
+    this.neighborCoolingSources.length = 0;
+    for (const tower of this.towers.values()) {
+      if (getModifierAdd(this.getTowerRunModifiers(tower), "neighborCooling") > 0) this.neighborCoolingSources.push(tower);
+    }
+  }
+
+  /**
+   * Kule basina tikte bir kez: Emniyet Ventili, Soguk Salvo'nun ve Yeniden
+   * Atesleme Bobini'nin haklari. Sogumadan hemen sonra calisiyor.
+   */
+  private updateTowerHeatItems(tower: TowerModel, now: number) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    const salvo = getModifierAdd(modifiers, "coldSalvo");
+    if (salvo > 0) {
+      // Salvo bir soguma basina bir kez: isisiz atislar namluyu isitmadigi
+      // icin kule 0'da kaliyor; hak ancak kule gercekten isinip yeniden
+      // sogudugunda geri geliyor.
+      if (tower.temperature <= COLD_SALVO_TEMPERATURE) {
+        if (!tower.coldSalvoSpent) {
+          tower.coldSalvoShots = Math.round(salvo);
+          tower.coldSalvoSpent = true;
+        }
+      } else if (tower.temperature >= 10 && (tower.coldSalvoShots ?? 0) === 0) {
+        tower.coldSalvoSpent = false;
+      }
+    }
+    // Yeniden Atesleme Bobini: frenden cikis (50 derecenin altina inis).
+    const restart = getModifierAdd(modifiers, "restartShots");
+    if (restart > 0) {
+      const braking = tower.temperature >= TOWER_HEAT_BRAKE_TEMPERATURE;
+      if (tower.brakeEngaged && !braking && !tower.heatLocked && (tower.restartReadyAt ?? 0) <= now) {
+        tower.restartShots = Math.round(restart);
+        tower.restartReadyAt = now + scaleGameDuration(RESTART_COOLDOWN_MS);
+      }
+      tower.brakeEngaged = braking;
+    }
+  }
+
+  /**
+   * Isi Koprusu (`heatBleed`): kule isisini bitisikteki daha soguk dost
+   * kulelere saniyede en fazla `heatBleed` derece aktariyor. Tek yonlu (yalnizca
+   * disari) ve fark kapanana kadar: bir adimda farkin en fazla yarisi.
+   */
+  private updateHeatBleed(deltaSeconds: number) {
+    for (const tower of this.towers.values()) {
+      if (tower.definition.resourceProvider || tower.temperature <= 0) continue;
+      const rate = getModifierAdd(this.getTowerRunModifiers(tower), "heatBleed");
+      if (!(rate > 0)) continue;
+      let budget = rate * Math.max(0, deltaSeconds);
+      for (const other of this.getAdjacentFriendlyTowers(tower)) {
+        if (budget <= 0) break;
+        if (other.definition.resourceProvider) continue;
+        const gap = tower.temperature - other.temperature;
+        if (gap <= 0) continue;
+        const moved = Math.min(budget, gap / 2);
+        tower.temperature -= moved;
+        // Alan kule kilide girebilir; disaridan gelen isiyla ayni yol.
+        this.addExternalTowerHeat(other, moved);
+        budget -= moved;
+      }
+      if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) tower.heatLocked = false;
+    }
   }
 
   private hasSlowedEnemyInRange(tower: TowerModel) {
@@ -5963,7 +6308,13 @@ export class MatchRoom extends Room<MatchState> {
       : this.getTowerShotHeat(tower) * this.getTowerShotsPerTrigger(tower);
     if (!(heatPerAttack > 0)) return undefined;
     const nominal = 1000 / Math.max(1, this.getTowerEffectInterval(tower, false));
-    return { nominal, sustained: Math.min(nominal, this.getTowerHeatSettleCooling(tower, nominal, heatPerAttack) / heatPerAttack) };
+    // Emniyet Ventili ve Termal Sok Halkasi'nin tahliyesi surekli ateste her
+    // bekleme suresinde bir kez aciliyor (kule 60-90 derece arasinda
+    // oturuyor): ortalama derece/sn olarak tavan tahmini.
+    const heatModifiers = this.getTowerRunModifiers(tower);
+    const vent = getModifierAdd(heatModifiers, "ventHeat") / (VENT_COOLDOWN_MS / 1000)
+      + (getModifierAdd(heatModifiers, "heatShock") > 0 ? HEAT_SHOCK_VENT / (HEAT_SHOCK_COOLDOWN_MS / 1000) : 0);
+    return { nominal, sustained: Math.min(nominal, (this.getTowerHeatSettleCooling(tower, nominal, heatPerAttack) + Math.max(0, vent)) / heatPerAttack) };
   }
 
   /**
@@ -5982,7 +6333,8 @@ export class MatchRoom extends Room<MatchState> {
     const base = this.getTowerCoolingPerSecond(tower, { temperature: 0, sustained: true });
     const lock = this.getTowerHeatLockThreshold(tower);
     let settle: number;
-    if (this.towerHasUnlock(tower, "heat:thermalMass") || tower.definition.engine?.fixedFireInterval) {
+    if (this.towerHasUnlock(tower, "heat:thermalMass") || tower.definition.engine?.fixedFireInterval
+      || getModifierAdd(this.getTowerRunModifiers(tower), "overclock") > 0) {
       settle = (this.getTowerHeatReleaseThreshold(tower) + lock) / 2;
     } else {
       const k = nominal * heatPerAttack / (100 - TOWER_HEAT_BRAKE_TEMPERATURE);
@@ -6009,9 +6361,11 @@ export class MatchRoom extends Room<MatchState> {
     this.settleDebugSweepRuns(now);
     this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
+    this.collectNeighborCoolingSources();
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
         tower.temperature = Math.max(0, tower.temperature - this.getTowerCoolingPerSecond(tower) * (deltaTime / 1000));
+        this.updateTowerHeatItems(tower, now);
         if (tower.luckyWindowUntil > 0 && tower.luckyWindowUntil <= now) {
           tower.luckyWindowUntil = 0;
           tower.misfortune = 0;
@@ -6177,6 +6531,7 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
+      this.updateTowerRhythm(tower, target.id);
       this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
       // Cifte Namlu: ikinci mermi de ayni tetikten cikiyor ama kaynagi
@@ -6278,8 +6633,12 @@ export class MatchRoom extends Room<MatchState> {
     const energyState = getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now());
     if (energyState === "tracking-off" || energyState === "offline") return false;
 
-    const dx = target.x - tower.x;
-    const dy = target.y - tower.y;
+    // Oncul nisan: namlu hedefin kendisine degil, merminin ona varacagi ana
+    // kadar gidecegi yere doner. Iskayi ucus suresi uretiyor (ates konisi
+    // degil); bu onu kapatiyor. Mermi namlu yonunde ucmuyorsa anlamsiz.
+    const aimPoint = this.towerNextShotLeads(tower) ? this.getTowerLeadAimPoint(tower, target) : target;
+    const dx = aimPoint.x - tower.x;
+    const dy = aimPoint.y - tower.y;
     if (dx === 0 && dy === 0) {
       return true;
     }
@@ -6296,6 +6655,70 @@ export class MatchRoom extends Room<MatchState> {
     return isTowerAligned(tower.facing, targetAngle, getTowerFireAlignmentTolerance(accuracyBonus));
   }
 
+  /**
+   * Duz balistik merminin hizi (dunya birimi / oyun saniyesi);
+   * `spawnTowerProjectile` ve oncul nisan ayni sayiyi okuyor.
+   */
+  private getTowerBallisticSpeed(tower: TowerModel) {
+    const hitType = tower.definition.hitType ?? "projectile";
+    return this.scaleWorldSpeed(getBallisticMovementSpeed(
+      (tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower),
+      hitType
+    )) * this.getTowerProjectileSpeedMultiplier(tower);
+  }
+
+  /**
+   * Oncul nisanin nisan noktasi (`leadTargeting`, 0-1).
+   *
+   * Hedefin bu tikteki yuruyus hiziyla (`moveVx/moveVy`) mermiyle
+   * bulusacagi nokta, pay kadar: `|D + V t| = s t` denkleminin en kucuk
+   * pozitif koku (D hedefe uzaklik, V hedefin hizi, s merminin hizi). Hedef
+   * mermiden hizli kaciyorsa kok yok; o zaman duz ucus suresi. Pay 1'de duz
+   * cizgide yuruyen hedef tam tutturuluyor; kosede donen hedef yine
+   * iskalanabilir. Mermi namlu yonunde ucmayan kulede ya da yurumeyen
+   * hedefte nokta hedefin kendisi.
+   */
+  private getTowerLeadAimPoint(tower: TowerModel, target: { x: number; y: number; id?: string }) {
+    const enemy = target.id ? this.enemies.get(target.id) : undefined;
+    if (!enemy || !(enemy.moveVx || enemy.moveVy)) return target;
+    const speed = this.getTowerBallisticSpeed(tower);
+    if (!(speed > 0)) return target;
+    const vx = enemy.moveVx ?? 0;
+    const vy = enemy.moveVy ?? 0;
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    const a = vx * vx + vy * vy - speed * speed;
+    const b = 2 * (dx * vx + dy * vy);
+    const c = dx * dx + dy * dy;
+    let flight = Math.sqrt(c) / speed;
+    if (Math.abs(a) < 1e-9) {
+      if (b < 0) flight = -c / b;
+    } else {
+      const discriminant = b * b - 4 * a * c;
+      if (discriminant >= 0) {
+        const root = Math.sqrt(discriminant);
+        const roots = [(-b - root) / (2 * a), (-b + root) / (2 * a)].filter((t) => t > 0);
+        if (roots.length > 0) flight = Math.min(...roots);
+      }
+    }
+    return { x: target.x + vx * flight, y: target.y + vy * flight };
+  }
+
+  /**
+   * Siradaki atis ongorulu mu: biriktirici ve pay birlikte 1'e ulasiyorsa.
+   * Namlu da ona gore donuyor; ongorusuz atista hedefin kendisine.
+   */
+  private towerNextShotLeads(tower: TowerModel) {
+    const lead = this.getTowerLeadTargeting(tower);
+    return lead > 0 && (tower.leadCharge ?? 0) + lead >= 1 - 1e-9;
+  }
+
+  /** Kulenin oncul nisan payi (0-1); mermisi namlu yonunde ucmayan kulede 0. */
+  private getTowerLeadTargeting(tower: TowerModel) {
+    if (!towerFiresAlongFacing(tower.definition)) return 0;
+    return Math.max(0, Math.min(LEAD_TARGETING_MAX, getModifierAdd(this.getTowerRunModifiers(tower), "leadTargeting")));
+  }
+
   private spawnTowerProjectile(tower: TowerModel, target: EnemyModel) {
     this.prepareTowerShot(tower, target);
     switch (tower.definition.engine?.attack.executor ?? "ballistic") {
@@ -6310,14 +6733,24 @@ export class MatchRoom extends Room<MatchState> {
     const dx = target.x - tower.x;
     const dy = target.y - tower.y;
     const length = Math.max(1, Math.hypot(dx, dy));
-    const launchAngle = towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
+    // Oncul nisan atis bilgisayari: namlu ates konisine girince mermi konideki
+    // sapmayla degil, hesaplanan bulusma noktasina firlatiliyor. Kosulsuz
+    // namlu yine koninin kenarindan atiyor (isabetin daralttigi sapma).
+    const leadShare = towerAims(tower.definition.id) ? this.getTowerLeadTargeting(tower) : 0;
+    const leadAim = leadShare > 0 && this.towerNextShotLeads(tower) ? this.getTowerLeadAimPoint(tower, target) : undefined;
+    if (leadShare > 0) tower.leadCharge = (tower.leadCharge ?? 0) + leadShare - (leadAim ? 1 : 0);
+    const launchAngle = leadAim
+      ? Math.atan2(leadAim.y - tower.y, leadAim.x - tower.x)
+      : towerAims(tower.definition.id) ? tower.facing : Math.atan2(dy, dx);
     const hitType = tower.definition.hitType ?? "projectile";
-    const speed = this.scaleWorldSpeed(getBallisticMovementSpeed(
-      (tower.definition.projectileSpeed + tower.level * 22) * this.getMelisFocusProjectileSpeedMultiplier(tower),
-      hitType
-    )) * this.getTowerProjectileSpeedMultiplier(tower);
+    const speed = this.getTowerBallisticSpeed(tower);
     const id = `p${this.nextProjectileId++}`;
     const muzzle = this.getTowerMuzzlePoint(tower, launchAngle, target, getEnemyCollisionRadius(target) + getBallisticCollisionRadius(hitType));
+    // Taret Motoru (`retargetDamage`): hedef degistikten sonraki ilk mermi.
+    // Ilk atis da sayiliyor: kule yeni bir hedefe donmus.
+    const retarget = getModifierAdd(this.getTowerRunModifiers(tower), "retargetDamage");
+    const firstOnTarget = tower.lastShotTargetId !== target.id;
+    if (retarget > 0) tower.lastShotTargetId = target.id;
 
     this.projectiles.set(id, {
       id,
@@ -6332,7 +6765,7 @@ export class MatchRoom extends Room<MatchState> {
       y: muzzle.y,
       vx: usesLinearBallistics(hitType) ? Math.cos(launchAngle) * speed : (dx / length) * speed,
       vy: usesLinearBallistics(hitType) ? Math.sin(launchAngle) * speed : (dy / length) * speed,
-      damage: this.getTowerDamage(tower),
+      damage: this.getTowerDamage(tower) * (firstOnTarget && retarget > 0 ? 1 + retarget : 1),
       maxHealthDamageRatio: 0,
       // Seviye buyumesi yalnizca **zaten alani olan** kuleye isliyor.
       //
@@ -6940,8 +7373,10 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio, slowFraction, slowFloorKey, slowKind: KIN_SLOW_KIND })) return;
     // Taht'in Kin mermisi (zeynep-3) tanimda yavaslatma bildirmiyor: ayni
-    // kural, tanim yerine burada. Sure eskisi gibi kart carpansiz.
+    // kural, tanim yerine burada. Sure ve guc kulenin durum etkisi
+    // carpanlarindan ("butun durum etkileri"); guc `rollTowerSlowFraction`ta.
     this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 1, durationMs: slowMs, stacking: "refresh" }, now, {
+      durationMs: slowMs * this.getTowerGrantState(tower).statusDurationMultiplier,
       slowFraction: this.rollTowerSlowFraction(tower, undefined, tower.level, enemy, slowFraction),
       slowFloorKey,
       slowKind: KIN_SLOW_KIND,
@@ -7001,6 +7436,9 @@ export class MatchRoom extends Room<MatchState> {
           overrides.sourceOwnerId,
           overrides.slowKind
         );
+        if (overrides.sourceTowerId) {
+          this.applyTowerSlowRiders(enemy, this.towers.get(overrides.sourceTowerId), now, overrides.durationMs ?? definition.durationMs);
+        }
       }
     } else if (definition.type === "fear") {
       enemy.fearUntil = Math.max(enemy.fearUntil, state.expiresAt);
@@ -7121,14 +7559,24 @@ export class MatchRoom extends Room<MatchState> {
    * Kesir tanimdan (`slowByLevel` varsa seviyeden, yoksa duz %52). Kritik
    * gelirse 1,5 kat, %90 tavanla; oyuncu gorsun diye `slow:critical`
    * yayiniyor. Butun kule vurus yavaslatmalari bu kapidan geciyor.
+   *
+   * Kulenin durum etkisi gucu (Yanki Odasi, Buz Cekirdegi, Koni Yayici,
+   * Agir Metabolizma'nin -%25'i) kesri burada carpiyor; kritik olceklenmis
+   * kesrin ustune geliyor. Etki anahtari ayni kaliyor.
    */
   private rollTowerSlowFraction(tower: TowerModel | undefined, definition: TowerStatusEffectDefinition | undefined, level: number, enemy: EnemyModel, baseFraction?: number) {
-    const fraction = baseFraction ?? getStatusSlowFraction(definition, level);
+    const fraction = this.scaleTowerSlowFraction(tower, baseFraction ?? getStatusSlowFraction(definition, level));
     // Sifir yavaslatma kritik gelemez: 0 x 1,5 hala sifir ve "kritik"
     // patlamasi yavaslamayan bir dusmanin uzerinde yalan olurdu.
     if (!tower || fraction <= 0 || !this.rollSlowCrit(tower)) return fraction;
     this.broadcastSlowCritical(tower, enemy);
     return getCriticalSlowFraction(fraction);
+  }
+
+  /** Kulenin durum etkisi gucunun yavaslatma kesrine islemesi (`scaleSlowFraction`). */
+  private scaleTowerSlowFraction(tower: TowerModel | undefined, fraction: number) {
+    if (!tower) return fraction;
+    return scaleSlowFraction(fraction, this.getTowerGrantState(tower).statusMagnitudeMultiplier);
   }
 
   /**
@@ -8492,6 +8940,8 @@ export class MatchRoom extends Room<MatchState> {
     // Meka kalkanlari: inen kalkan atis kesmeye basliyor, suresi dolan kalkiyor.
     if (this.mekaShields.length > 0) this.updateMekaShields(now);
     for (const [id, enemy] of this.enemies) {
+      // Hiz her tik yeniden yaziliyor; yurumeyen dal sifir birakiyor.
+      if (enemy.moveVx || enemy.moveVy) enemy.moveVx = enemy.moveVy = 0;
       if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
         continue;
       }
@@ -8683,7 +9133,21 @@ export class MatchRoom extends Room<MatchState> {
           enemy.x += dx / distance * movement;
           enemy.y += dy / distance * movement;
           enemy.pathDistance += movement;
+          if (seconds > 0) {
+            enemy.moveVx = dx / distance * movement / seconds;
+            enemy.moveVy = dy / distance * movement / seconds;
+          }
         }
+      }
+
+      // Takilma bekcisi: yalnizca kor gezinen kara dusmani (ozel dusmanin
+      // kendi yol alani var, ucan zaten takilmiyor). Mesru bekleyis sureyi
+      // durdurur: donma/sersemleme (hiz 0), korku, yapiya saldiri, Metal
+      // Kalkan, hedeflenemezlik (faz kaymasi).
+      if (!specialRoute && enemy.movementKind !== "air") {
+        const held = speedMultiplier <= 0 || isFeared || Boolean(route.targetTower)
+          || (this.metalShields.length > 0 && Boolean(enemy.shieldTouched)) || Boolean(enemy.untargetable);
+        this.watchEnemyStall(enemy, seconds, held);
       }
 
       if (bomberContact && Math.hypot(bomberContact.x - enemy.x, bomberContact.y - enemy.y) <= getMapGridSize(this.activeMap) * 1.1) {
@@ -9041,10 +9505,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) {
       tower.heatLocked = true;
     }
-    if (!wasHeatLocked && tower.heatLocked) {
-      this.runTowerTriggers(tower, "overheat");
-      if (this.towerHasUnlock(tower, "heat:overheatBurst")) this.applyOverheatBurst(tower, Date.now());
-    }
+    if (!wasHeatLocked && tower.heatLocked) this.onTowerHeatLocked(tower, Date.now());
   }
 
   /**
@@ -10546,6 +11007,15 @@ export class MatchRoom extends Room<MatchState> {
     };
   }
 
+  /**
+   * Oyuncunun kurabilecegi yapilar: operatorun kadrosu ve ortak yapilar
+   * (`towerCatalog`), arti sahadaki kuleleri. Vitrin kule esyasini ancak
+   * bunlardan birinde is goruyorsa sunuyor.
+   */
+  private getPlayerBuildableTowerDefinitions(playerId: string, player: Player): TowerDefinition[] {
+    return [...(towerCatalog[player.characterId as CharacterId] ?? []), ...this.getPlayerTowerDefinitions(playerId)];
+  }
+
   private getPlayerTowerDefinitions(playerId: string) {
     return Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId).map((tower) => tower.definition);
   }
@@ -10571,7 +11041,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private openPlayerSetupShop(playerId: string, player: Player) {
     player.shopRerolls = 0;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(playerId, player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), buildableTowers: this.getPlayerBuildableTowerDefinitions(playerId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(playerId, player) });
   }
 
   /**
@@ -10599,7 +11069,7 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.shopRerolls += 1;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(client.sessionId, player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), buildableTowers: this.getPlayerBuildableTowerDefinitions(client.sessionId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(client.sessionId, player) });
   }
 
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
@@ -10669,7 +11139,7 @@ export class MatchRoom extends Room<MatchState> {
 
     const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
     if (!check.ok) {
-      client.send("inventory:equip-rejected", { itemId: item.id, towerId: tower.id, reason: check.reason });
+      client.send("inventory:equip-rejected", getEquipRejectedPayload(item.id, tower.id, check));
       return;
     }
 
@@ -10677,11 +11147,15 @@ export class MatchRoom extends Room<MatchState> {
     tower.equippedShopItemIds.push(item.id);
     this.invalidateTowerGrants();
 
-    const healthRatio = this.getTowerHealthRescaleRatio(tower, item.effects);
+    const effects = getShopItemTowerEffects(item, tower.definition);
+    const healthRatio = this.getTowerHealthRescaleRatio(tower, effects);
     tower.maxHp *= healthRatio;
     tower.hp *= healthRatio;
 
-    tower.runModifiers.push(...item.effects);
+    tower.runModifiers.push(...effects);
+    // Dalga ortasinda takilan Kan Bankasi bu dalganin bedelini hemen oduyor;
+    // hazirlikta takilan bedeli dalga basinda oduyor (`chargeBloodBanks`).
+    if (!this.setupPhase && item.unlocks?.includes("bloodBank")) this.payBloodBank(tower, 1);
     client.send("inventory:equipped", { itemId: item.id, towerId: tower.id });
   }
 
@@ -11611,14 +12085,18 @@ export class MatchRoom extends Room<MatchState> {
     // Ucanlar akis alanini tumden yok sayar ve nexusa dogru ucar. Duvar
     // meta'sinin ana karsi-oyunu bu: yerde ne kadar kalin ordu olursa olsun
     // havadan gelen dusman onu gormez. Yapiya saldirmazlar da.
+    //
+    // Hedef en yakin nexus karesi. Eskiden `activePaths[0]`in son noktasiydi:
+    // acik arenada bu ilk dogum noktasindan en yakin nexus karesi, yani sol
+    // alt kose -- butun hava dalgalari tek koseye akiyordu. En yakin kare
+    // acik arenada dusmanin tam altindaki nexus karesi: hava dogumlari ust
+    // satira nasil yayiliyorsa nexusa da oyle iniyor.
     if (enemy.movementKind === "air") {
-      const nexus = this.activePaths[0]?.points.at(-1);
-      const bounds = this.getActiveWorldBounds();
       return {
         cells: [start],
         reachedBottom: false,
         targetTower: undefined,
-        exitPoint: nexus ?? { x: bounds.left + bounds.width / 2, y: bounds.bottom }
+        exitPoint: this.getNearestNexusPoint(enemy.x, enemy.y)
       };
     }
 
@@ -11669,7 +12147,7 @@ export class MatchRoom extends Room<MatchState> {
       start,
       enemy.navigator,
       (col, row) => this.isEnemyStepOpen(enemy, start, col, row),
-      () => this.pickNavigatorHand()
+      () => this.takeNavigatorHand(enemy)
     );
     enemy.navigator = result.state;
 
@@ -11680,8 +12158,14 @@ export class MatchRoom extends Room<MatchState> {
 
     // Cevrim kapandi ya da dort yan da kapali: bu yoldan cikis yok.
     enemy.navigatorStep = undefined;
-    this.rememberSealedCell(enemy.navigator);
-    return this.breakThrough(enemy, start, { col: result.col, row: result.row });
+    const closedTour = enemy.navigator;
+    const broken = this.breakThrough(enemy, start, { col: result.col, row: result.row });
+    // Kapali cikis yalnizca kirilacak bir yapi bulununca hatirlaniyor: yapi
+    // yoksa cevrim karari bayat (takip edilen duvar yikildi ya da satildi) ve
+    // girisi kapali isaretlemek arkadan gelenleri bos zemine kilitlerdi.
+    // Kalkan dururken eski davranis: dusman kalkanin kalkmasini bekler.
+    if (broken.targetTower || this.metalShields.length > 0) this.rememberSealedCell(closedTour);
+    return broken;
   }
 
   /**
@@ -11699,6 +12183,12 @@ export class MatchRoom extends Room<MatchState> {
     const target = blocker && blocker.hp > 0 ? blocker : undefined;
     if (target) {
       enemy.structureTargetId = target.id;
+    } else {
+      // Kiracak yapi yok: "kir" karari takip edilen yapi yikildiktan ya da
+      // satildiktan sonra kalmis bir cevrim hafizasindan geliyor. Gezgin
+      // sifirlanmazsa her tick ayni karari verir ve dusman o karede sonsuza
+      // kadar durur (dalga bitmez). Arama kipine donup yeniden yurusun.
+      this.forceEnemyReroute(enemy, start);
     }
     return { cells: [start], reachedBottom: false, targetTower: target, exitPoint: undefined };
   }
@@ -11858,6 +12348,64 @@ export class MatchRoom extends Room<MatchState> {
     return Math.random() < 0.5 ? "left" : "right";
   }
 
+  /** Ilk temasin eli: zorla yonlendirmenin biraktigi el varsa o (zar yok), yoksa zar. */
+  private takeNavigatorHand(enemy: EnemyModel): BlindHand {
+    const hint = enemy.navigatorHandHint;
+    if (hint) {
+      enemy.navigatorHandHint = undefined;
+      return hint;
+    }
+    return this.pickNavigatorHand();
+  }
+
+  /**
+   * Takilan dusmani yeniden yola sokar.
+   *
+   * Gezgin arama kipine doner, hucrenin karari ve kilidi duser, bulundugu
+   * hucre kapali cikis hafizasindan silinir (yoksa bir sonraki tick ayni
+   * "kir" karari geri gelirdi). Bir sonraki temasta obur el denenir: ayni
+   * el ayni turu tekrar ederdi. Oda zarina dokunmuyor -- belirlenimlilik ve
+   * tohumlu tekrar oynatma bunu sart kosuyor.
+   */
+  private forceEnemyReroute(enemy: EnemyModel, cell = worldToGrid(enemy.x, enemy.y, this.activeMap)) {
+    const hand = enemy.navigator?.hand;
+    this.sealedCells.delete(`${cell.col}:${cell.row}`);
+    this.resetEnemyNavigation(enemy);
+    if (hand) enemy.navigatorHandHint = hand === "left" ? "right" : "left";
+    enemy.stallAnchorX = enemy.x;
+    enemy.stallAnchorY = enemy.y;
+    enemy.stallSeconds = 0;
+  }
+
+  /**
+   * Takilma bekcisi (genel emniyet agi).
+   *
+   * Yurumesi gereken bir kara dusmani `ENEMY_STALL_RESET_SECONDS` oyun
+   * saniyesi boyunca `ENEMY_STALL_DISTANCE_CELLS` hucreden fazla
+   * ilerlemezse gezinmesi zorla sifirlanir. Mesru bekleyisler (`held`:
+   * donma, sersemleme, korku, yapiya saldiri, Metal Kalkan, hedeflenemezlik)
+   * sureyi durdurur ama sifirlamaz: aralikli sersemletilen takili dusman da
+   * sonunda yakalanir. Zar cekmez; yalnizca konum ve tik suresi okur.
+   */
+  private watchEnemyStall(enemy: EnemyModel, seconds: number, held: boolean) {
+    if (enemy.stallAnchorX === undefined || enemy.stallAnchorY === undefined) {
+      enemy.stallAnchorX = enemy.x;
+      enemy.stallAnchorY = enemy.y;
+      enemy.stallSeconds = 0;
+      return;
+    }
+    const limit = getMapGridSize(this.activeMap) * ENEMY_STALL_DISTANCE_CELLS;
+    if (Math.hypot(enemy.x - enemy.stallAnchorX, enemy.y - enemy.stallAnchorY) > limit) {
+      enemy.stallAnchorX = enemy.x;
+      enemy.stallAnchorY = enemy.y;
+      enemy.stallSeconds = 0;
+      return;
+    }
+    if (held) return;
+    enemy.stallSeconds = (enemy.stallSeconds ?? 0) + seconds;
+    if (enemy.stallSeconds >= ENEMY_STALL_RESET_SECONDS) this.forceEnemyReroute(enemy);
+  }
+
   /**
    * Kapali cikis hafizasi.
    *
@@ -11956,6 +12504,35 @@ export class MatchRoom extends Room<MatchState> {
 
   private getMapCellRadius() {
     return getMapGridSize(this.activeMap) / 2;
+  }
+
+  /** Haritanin nexus karelerinin dunya merkezleri; harita degisince yeniden. */
+  private nexusPointCache?: { map: EditableMapData; points: Array<{ x: number; y: number }> };
+
+  /**
+   * Verilen noktaya en yakin nexus karesinin merkezi (ucanlarin hedefi).
+   * Esitlikte haritadaki ilk kare (belirlenimli). Nexus karesi yoksa eski
+   * hedef: ana yolun sonu, o da yoksa alt kenarin ortasi.
+   */
+  private getNearestNexusPoint(x: number, y: number) {
+    if (this.nexusPointCache?.map !== this.activeMap) {
+      this.nexusPointCache = {
+        map: this.activeMap,
+        points: getMapPoints(this.activeMap, "nexus").map((cell) => gridToWorld(cell.col, cell.row, this.activeMap))
+      };
+    }
+    let best: { x: number; y: number } | undefined;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const point of this.nexusPointCache.points) {
+      const distance = distanceSq(x, y, point.x, point.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = point;
+      }
+    }
+    if (best) return best;
+    const bounds = this.getActiveWorldBounds();
+    return this.activePaths[0]?.points.at(-1) ?? { x: bounds.left + bounds.width / 2, y: bounds.bottom };
   }
 
   private getArenaBottom() {
@@ -12357,16 +12934,17 @@ export class MatchRoom extends Room<MatchState> {
       // Takmayla ayni ret metni; ek ("envanterde kaldi") onizlemede yanlis olurdu.
       const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
       if (!check.ok) {
-        const text = getInventoryEquipRejectedCue({ itemId: item.id, reason: check.reason }, { creative: true })?.text;
-        return text ? reject(PREVIEW_EQUIP_REJECTED_KEY, text, { itemId: item.id, reason: check.reason }) : reject("preview.itemRejected");
+        const text = getInventoryEquipRejectedCue({ itemId: item.id, reason: check.reason, need: check.need }, { creative: true })?.text;
+        return text ? reject(PREVIEW_EQUIP_REJECTED_KEY, text, { itemId: item.id, reason: check.reason, ...(check.need ? { need: check.need } : {}) }) : reject("preview.itemRejected");
       }
     }
     const change = card ?? item;
     if (!change) return reject("preview.optionGone");
-    const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...change.effects],
+    const changeEffects = item ? getShopItemTowerEffects(item, tower.definition) : change.effects;
+    const after: TowerModel = { ...tower, grantCache: undefined, runModifiers: [...tower.runModifiers, ...changeEffects],
       targetedCardIds: card ? [...tower.targetedCardIds, card.id] : [...tower.targetedCardIds],
       equippedShopItemIds: item ? [...tower.equippedShopItemIds, item.id] : [...tower.equippedShopItemIds] };
-    after.maxHp *= this.getTowerHealthRescaleRatio(tower, change.effects);
+    after.maxHp *= this.getTowerHealthRescaleRatio(tower, changeEffects);
     // Etiketin anahtari `preview.stat.<anahtar>`; Turkce metni `SERVER_TEXT`te.
     type PreviewStat = [key: string, get: (value: TowerModel) => number];
     // Cifte Namlu: bedel tetikleme basina, yani mermi sayisiyla carpiliyor.
@@ -12506,7 +13084,8 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
     if (!effectInterval && !fixedPath) {
-      rateSources.push(...sourcesOf("fireRate"), ["engine:stack", 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1]);
+      rateSources.push(...sourcesOf("fireRate"), ["engine:stack", 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1],
+        ["cond:fireRate", this.getTowerConditionalFireRateAdd(tower, modifiers)]);
     }
     const rate = 1000 / Math.max(1, interval);
     // Sunucu saldirmiyor: tanimdaki aralik kimligin parcasi, gosterilecek bir ritim degil.
@@ -12543,6 +13122,8 @@ export class MatchRoom extends Room<MatchState> {
       if (this.towerHasUnlock(tower, "crit:vsFrozen")) conditional.push(["frozen", FROZEN_CRIT_CHANCE]);
       if (this.towerHasUnlock(tower, "crit:vsMarked")) conditional.push(["marked", MARKED_CRIT_CHANCE]);
       if (ownAir - ownGround > 0.0005) conditional.push(["air", roundTowerStat(ownAir - ownGround)]);
+      const farCrit = getModifierAdd(modifiers, "farCritChance");
+      if (farCrit > 0) conditional.push(["far", roundTowerStat(farCrit)]);
       if (conditional.length > 0) block.ccx = conditional;
       const definitionCritDamage = definition.engine?.critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER;
       const engineCritDamage = critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER;
@@ -12557,6 +13138,7 @@ export class MatchRoom extends Room<MatchState> {
         ["brute", getModifierAdd(modifiers, "damageVsBrute")],
         ["grunt", getModifierAdd(modifiers, "damageVsGrunt")],
         ["runner", getModifierAdd(modifiers, "damageVsRunner")],
+        ["fast", getModifierAdd(modifiers, "damageVsFast")],
         ["shooter", getModifierAdd(modifiers, "damageVsShooter")],
         ["siege", getModifierAdd(modifiers, "damageVsSiege")],
         ["slowed", this.towerHasUnlock(tower, "status:chill") ? 0.2 : 0],
@@ -12642,13 +13224,13 @@ export class MatchRoom extends Room<MatchState> {
       if (stacks > 0) entry.push(stacks);
       effects.push(entry);
     }
-    if (this.towerHasUnlock(tower, "status:burn") && definition.damageType === "fire") effects.push(["burn", 0.015, 4000]);
+    if (this.towerHasUnlock(tower, "status:burn") && definition.damageType === "fire") effects.push(["burn", roundTowerStat(THERMAL_FUSE_BURN_RATIO * magnitudeMultiplier), Math.round(THERMAL_FUSE_BURN_MS * durationMultiplier)]);
     if (this.towerHasUnlock(tower, "status:coolantSlow")) {
       const coolant = Math.min(COOLANT_SLOW_MAX, this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING * magnitudeMultiplier);
       if (coolant > 0) effects.push(["coolant", roundTowerStat(coolant), Math.round(COOLANT_SLOW_DURATION_MS * durationMultiplier)]);
     }
     // Takipci'nin isareti dusmani seviyeye gore %30/%60/%90 fazla hasar alir yapiyor.
-    if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * TRACKING_MARK_DAMAGE_PER_STACK), 6500]);
+    if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * TRACKING_MARK_DAMAGE_PER_STACK), Math.round(TRACKING_MARK_DURATION_MS * durationMultiplier)]);
     const armorBreak = getModifierAdd(modifiers, "armorBreak");
     if (armorBreak > 0) effects.push(["armor", roundTowerStat(armorBreak)]);
     if (definition.id === "zeynep-8") effects.push(["armorAura", roundTowerStat(getAbartiArmorBreak(tower.level))]);
@@ -12660,7 +13242,7 @@ export class MatchRoom extends Room<MatchState> {
       block.hc = roundTowerStat(this.getTowerCoolingPerSecond(tower));
       block.hl = this.getTowerHeatLockThreshold(tower);
       block.hr = this.getTowerHeatReleaseThreshold(tower);
-      if (this.towerHasUnlock(tower, "heat:thermalMass") || definition.engine?.fixedFireInterval) block.nb = 1;
+      if (this.towerHasUnlock(tower, "heat:thermalMass") || definition.engine?.fixedFireInterval || getModifierAdd(modifiers, "overclock") > 0) block.nb = 1;
     }
     const energyCost = this.getTowerEnergyCost(tower) * shots;
     if (energyCost > 0) block.ec = roundTowerStat(energyCost);
@@ -13261,7 +13843,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       for (const itemId of tower.equippedShopItemIds) {
         const item = getShopItem(itemId);
-        if (item) towerModifiers.push(...item.effects);
+        if (item) towerModifiers.push(...getShopItemTowerEffects(item, tower.definition));
       }
       tower.runModifiers = towerModifiers;
 
@@ -13414,7 +13996,7 @@ export class MatchRoom extends Room<MatchState> {
       if (equipped >= 0) return;
       const check = canEquipShopItem(item, tower.definition, tower.equippedShopItemIds);
       if (!check.ok) {
-        client.send("inventory:equip-rejected", { itemId: item.id, towerId: tower.id, reason: check.reason });
+        client.send("inventory:equip-rejected", getEquipRejectedPayload(item.id, tower.id, check));
         return;
       }
       tower.equippedShopItemIds.push(item.id);
@@ -14438,6 +15020,20 @@ export class MatchRoom extends Room<MatchState> {
     if (!edgeValidation.valid || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment, definitionId))) {
       return false;
     }
+    // Abarti bir kulenin yanina (ya da insa alaninin kenarina) dayanir; duvar
+    // dusmanin zemininde serbest. Kural paylasilan pakette, istemci onizlemesi de
+    // ayni fonksiyonu soruyor.
+    if (definitionId !== WALL_TOWER_ID && !isAbartiEdgeAnchored(
+      segments,
+      { cols: this.activeMap.cols, rows: this.activeMap.rows },
+      (col, row) => this.isTowerTile(col, row),
+      (col, row) => {
+        const standing = this.getTowerCellIndex().get(`${col}:${row}`);
+        return Boolean(standing && standing.hp > 0 && standing.id !== ignoreTowerId);
+      }
+    )) {
+      return false;
+    }
     // Kurulum yasak bolge: bolge karesine degen kenara duvar da Abarti da yok.
     const zones = this.getBuildZoneLookup();
     if (segments.some((segment) => isEdgeTouchingBuildZone(zones, segment))) {
@@ -14483,25 +15079,16 @@ export class MatchRoom extends Room<MatchState> {
 
 
   /**
-   * Kenar segmenti gecerli mi.
+   * Kenar segmenti tahtanin icinde mi.
    *
-   * Abarti dost atislarini degistirdigi icin insa alaninin kenarina oturmak
-   * zorunda: en az bir yani `tower` karesi olmali. Duvarin isi ise dusmani
-   * yonlendirmek, yani onun dogal yeri dusmanin yurudugu zemin. Ayni sarti ona
-   * uygulamak, hic `tower` karesi olmayan arena haritasinda duvari tumden
-   * kurulamaz yapiyordu -- oyuncunun gordugu "her yer kirmizi" buydu.
+   * Abarti'nin dayanak sarti burada degil, butun yapi icin bir kez
+   * (`isAbartiEdgeAnchored`): segment basina `tower` karesi istemek acik
+   * arenada Abarti'yi tumden kurulamaz yapiyordu (494 kenarin 0'i), tipki
+   * duvarin bir donem "her yer kirmizi" olmasi gibi. Duvarin dayanak sarti yok:
+   * isi dusmani yonlendirmek, dogal yeri dusmanin yurudugu zemin.
    */
-  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, definitionId = "zeynep-8") {
-    if (!isEdgeSegmentInsideBoard(segment, { cols: this.activeMap.cols, rows: this.activeMap.rows })) {
-      return false;
-    }
-    if (definitionId === WALL_TOWER_ID) {
-      return true;
-    }
-
-    return segment.orientation === "vertical"
-      ? this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row)
-      : this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, _definitionId = "zeynep-8") {
+    return isEdgeSegmentInsideBoard(segment, { cols: this.activeMap.cols, rows: this.activeMap.rows });
   }
 
   private isTowerTile(col: number, row: number) {
@@ -14739,7 +15326,7 @@ export class MatchRoom extends Room<MatchState> {
     let add = 0;
     if ((tower.ammoPayloadShots ?? 0) > 0 && (tower.ammoPayloadUntil ?? 0) > now) add += 0.25;
     add += this.getWorkerBoostDamageAdd(tower, now);
-    if (this.towerHasUnlock(tower, "bloodBank")) add += 0.2;
+    if (this.towerHasUnlock(tower, "bloodBank") && !this.isBloodBankIdle(tower)) add += 0.2;
     // Rolanti odulu: kolu asagida tutmak da bir karar olsun. Kolun ust
     // yarisi zaten atis hizi veriyor; alt yarinin tek karsiligi dusuk isi
     // ve enerjiydi, yani secim degil fedakarlikti.
@@ -14766,6 +15353,14 @@ export class MatchRoom extends Room<MatchState> {
     if (this.towerHasUnlock(tower, "logistics:selfSufficient") && !tower.ammoLogisticsEnabled) {
       add += SELF_SUFFICIENT_DAMAGE;
     }
+    // Rejeneratif Fren: frenin kestigi atis hizinin bir payi hasara donuyor.
+    // Fren yoksa (soguk namlu, Termal Kutle, Asiri Hiz) ek yok.
+    const modifiers = this.getTowerRunModifiers(tower);
+    const brakeDamage = getModifierAdd(modifiers, "brakeDamage");
+    if (brakeDamage > 0) add += getBrakeDamageAdd(this.getTowerHeatFireRateMultiplier(tower), brakeDamage);
+    // Isi Donusturucu: son atisin urettigi isinin her derecesi.
+    const heatToDamage = getModifierAdd(modifiers, "heatToDamage");
+    if (heatToDamage > 0) add += heatToDamage * Math.max(0, tower.lastShotHeat ?? 0);
     return add;
   }
 
@@ -14830,6 +15425,11 @@ export class MatchRoom extends Room<MatchState> {
     if (enemy.type === "runner") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsRunner");
     if (enemy.type === "shooter") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsShooter");
     if (enemy.type === "siege") shopDamageAdd += getModifierAdd(damageModifiers, "damageVsSiege");
+    // Hafif Taret Kabugu ve Atalet Dengeleyici: kosucu ve ucan hedef.
+    if (isFastEnemy(enemy)) shopDamageAdd += getModifierAdd(damageModifiers, "damageVsFast");
+    // Kriyojen Hat: o kulenin yavaslattigi dusman herkesten fazla hasar
+    // aliyor; durum tikleri dahil (yanma ve kanama da vurus sayiliyor).
+    if ((enemy.slowVulnerableUntil ?? 0) > now) shopDamageAdd += enemy.slowVulnerableAdd ?? 0;
     if (this.towerHasUnlock(damageSourceTower, "status:chill") && getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier < 1) shopDamageAdd += 0.2;
     if (damageSourceTower) shopDamageAdd += this.getTowerHitDamageAdd(damageSourceTower, now);
     // Sunucu bilgisi: bagli kulenin bu ture karsi oransal artisi. Suru ve
@@ -14852,7 +15452,9 @@ export class MatchRoom extends Room<MatchState> {
     const conditionalCritChance = conditionalCritical && isStatusEffectActive(enemy.statusEffects[conditionalCritical.type], now)
       ? conditionalCritical.chance
       : 0;
-    const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:"));
+    // Sicrama ve patlama vuruslari (Ek Bicak Yuvasi, Infilak Basligi) kritik
+    // gelmiyor: kritik zaten ana vurusta atildi.
+    const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:")) && !this.hitSplashActive;
     // Kirilgan Buz: donmus hedefe nisan almak kolay.
     //
     // Yalnizca gercekten donmus olana bakiyor -- sersemleme, korku ve
@@ -14967,8 +15569,11 @@ export class MatchRoom extends Room<MatchState> {
       ? this.resolveEnemyKillAssists(enemy, sourceOwnerId, sourceTowerId, sourceDefinitionId, now)
       : undefined;
     const markSourceTower = sourceTowerId ? this.towers.get(sourceTowerId) : undefined;
+    // Takip isareti de bir durum etkisi: sure esyalari (Uzun Fitil, Kalici
+    // Iz, Agir Metabolizma) onu da uzatiyor.
+    const markDurationMultiplier = markSourceTower ? this.getTowerGrantState(markSourceTower).statusDurationMultiplier : 1;
     if (sourceDefinitionId === "warrior-1") {
-      const duration = applyStatusResistance(TRACKING_MARK_DURATION_MS, enemy.statusResistances.tracking);
+      const duration = applyStatusResistance(TRACKING_MARK_DURATION_MS * markDurationMultiplier, enemy.statusResistances.tracking);
       this.applyTrackingStacks(enemy, now + scaleGameDuration(duration), this.getTrackingStackLimit(sourceTowerLevel));
       enemy.trackingSourceTowerId = sourceTowerId;
     }
@@ -14976,6 +15581,7 @@ export class MatchRoom extends Room<MatchState> {
     if (mark) {
       // Kaynak yalnizca co-op asisti icin yaziliyor; isaretin gucunu degistirmiyor.
       this.applyEnemyStatusEffect(enemy, { type: "mark", magnitude: mark.damageMultiplier, durationMs: mark.durationMs, stacking: "refresh" }, now, {
+        durationMs: mark.durationMs * markDurationMultiplier,
         sourceTowerId: markSourceTower?.id,
         sourceOwnerId: markSourceTower?.ownerId
       });
@@ -15019,7 +15625,14 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
       if (sourceTower && this.towerHasUnlock(sourceTower, "status:burn") && damageType === "fire") {
-        this.applyEnemyStatusEffect(enemy, { type: "burn", magnitude: 0.015, durationMs: 4000, stacking: "refresh" }, now, { sourceTowerId, sourceOwnerId });
+        // Termal Funye yanmasi da kulenin durum etkisi carpanlarini aliyor.
+        const grant = this.getTowerGrantState(sourceTower);
+        this.applyEnemyStatusEffect(enemy, { type: "burn", magnitude: THERMAL_FUSE_BURN_RATIO, durationMs: THERMAL_FUSE_BURN_MS, stacking: "refresh" }, now, {
+          durationMs: THERMAL_FUSE_BURN_MS * grant.statusDurationMultiplier,
+          magnitude: THERMAL_FUSE_BURN_RATIO * grant.statusMagnitudeMultiplier,
+          sourceTowerId,
+          sourceOwnerId
+        });
       }
       // Vurus yapan kule icin burasi: patlamanin ve delmenin degdigi her
       // dusman ayri ayri buradan geciyor, yani kart "vuruslarin ve varsa
@@ -15027,6 +15640,12 @@ export class MatchRoom extends Room<MatchState> {
       if (sourceTower && this.towerHasUnlock(sourceTower, "status:coolantSlow")) {
         this.applyCoolantSlow(sourceTower, enemy, now);
       }
+    }
+
+    // Ek Bicak Yuvasi ve Infilak Basligi: vurus komsulara sicriyor. Sicrama
+    // kendisi yeniden sicramiyor ve kritik atmiyor (`hitSplashActive`).
+    if (damageSourceTower && damage > 0 && !this.hitSplashActive && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId)) {
+      this.applyTowerHitSplashes(damageSourceTower, enemy, damage, critAdd, { sourceDefinitionId, sourceOwnerId, damageType, sourceTowerLevel, hitType });
     }
 
     if (this.openUltimateReports.length > 0) {
@@ -15135,6 +15754,10 @@ export class MatchRoom extends Room<MatchState> {
         if (sourceTower.heatLocked && sourceTower.temperature <= this.getTowerHeatReleaseThreshold(sourceTower)) {
           sourceTower.heatLocked = false;
         }
+      }
+      // Kriyo Sok Kartusu: oldurme kisa bir soguma penceresi aciyor.
+      if (getModifierAdd(this.getTowerRunModifiers(sourceTower), "killCooling") > 0) {
+        sourceTower.killCoolingUntil = now + scaleGameDuration(KILL_COOLING_DURATION_MS);
       }
     }
     if (sourceOwnerId) {
@@ -17147,8 +17770,45 @@ export class MatchRoom extends Room<MatchState> {
     // Kart/esya ve yigin hiz bonuslari ayni toplamsal havuzdur. Karaktere
     // ozel atis dallarindan sonra uygulanir; hicbir dal bonusu atlayamaz.
     const stackSpeedAdd = 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1;
-    return interval / Math.max(0.01, 1 + getModifierAdd(this.getTowerRunModifiers(tower), "fireRate") + stackSpeedAdd)
+    const modifiers = this.getTowerRunModifiers(tower);
+    return interval / Math.max(0.01, 1 + getModifierAdd(modifiers, "fireRate") + stackSpeedAdd + this.getTowerConditionalFireRateAdd(tower, modifiers))
       * this.getAmmoAssaultIntervalMultiplier(tower);
+  }
+
+  /**
+   * Kosullu atis hizi paylari; ayni toplamsal havuza giriyor. Isil Esik
+   * Rolesi (soguk namlu), Takip Ritmi (ayni hedefe art arda), Asiri Hiz
+   * (frenin yerine sicaklikla artan), Soguk Salvo ve Yeniden Atesleme
+   * Bobini'nin haklari. `modifiers` disaridan: cevrim cozumlemesi de bunu
+   * okuyor (`getTowerConditionalStatAdd`) ve `getTowerRunModifiers`i burada
+   * cagirmak kendi kendini cagirmak olurdu.
+   */
+  private getTowerConditionalFireRateAdd(tower: TowerModel, modifiers: readonly Modifier[]) {
+    let add = 0;
+    const cold = getModifierAdd(modifiers, "coldFireRate");
+    if (cold !== 0 && tower.temperature < TOWER_HEAT_BRAKE_TEMPERATURE) add += cold;
+    const rhythm = getModifierAdd(modifiers, "trackRhythm");
+    if (rhythm !== 0 && (tower.rhythmStacks ?? 0) > 0) add += rhythm * (tower.rhythmStacks ?? 0);
+    const overclock = getModifierAdd(modifiers, "overclock");
+    if (overclock > 0) add += getOverclockFireRateAdd(tower.temperature, TOWER_HEAT_BRAKE_TEMPERATURE, overclock);
+    if ((tower.coldSalvoShots ?? 0) > 0) add += COLD_SALVO_FIRE_RATE;
+    else if ((tower.restartShots ?? 0) > 0) add += RESTART_FIRE_RATE;
+    return add;
+  }
+
+  /**
+   * Takip Ritmi: atis oncesi, ayni hedefe art arda atis yigini. Her
+   * sonraki atis bir yigin (tavan `TRACK_RHYTHM_MAX_STACKS`); hedef degisince
+   * yigin yariya iner. Bu atisin isisi ve sonraki araligi yigini okuyor.
+   */
+  private updateTowerRhythm(tower: TowerModel, targetId: string) {
+    if (!(getModifierAdd(this.getTowerRunModifiers(tower), "trackRhythm") > 0)) return;
+    if (tower.rhythmTargetId === targetId) {
+      tower.rhythmStacks = Math.min(TRACK_RHYTHM_MAX_STACKS, (tower.rhythmStacks ?? 0) + 1);
+    } else {
+      tower.rhythmTargetId = targetId;
+      tower.rhythmStacks = Math.floor((tower.rhythmStacks ?? 0) / 2);
+    }
   }
 
   /** Saldiri Kervani ve isci agacinin atis hizi etkisi (Hizli/Serit Besleme). */
@@ -17382,6 +18042,9 @@ export class MatchRoom extends Room<MatchState> {
       const isolated = getModifierAdd(modifiers, "projectileSpeedIsolated");
       return isolated !== 0 && this.isTowerIsolated(tower) ? isolated : 0;
     }
+    // Atis hizinin kosullu paylari (Isil Esik Rolesi, Takip Ritmi, Asiri Hiz,
+    // salvolar): panel ve Termodinamik Denge'nin cevrimi ayni sayiyi gorsun.
+    if (stat === "fireRate") return this.getTowerConditionalFireRateAdd(tower, modifiers);
     return 0;
   }
 
@@ -18147,14 +18810,25 @@ export class MatchRoom extends Room<MatchState> {
     // Yavaslatma aurasi kritik gelmiyor (Buz Kirigi): aura her 220 ms'de bir
     // tazeleniyor ve her tikte zar atsaydik yavaslatma tikten tike titrerdi.
     // Izolasyon'da kart vurus yavaslatmasindan isliyor; aura sabit egride.
+    //
+    // Durum etkisi gucu aurada da kesri carpiyor. Auranin suresi yok; sure
+    // esyalari ona dusman auradan ciktiktan sonra kalan bir iz olarak
+    // isliyor (`getAuraSlowLingerMs`): ayni etki anahtariyla bir taban kaydi,
+    // dusman aurada kaldikca her karede yenileniyor.
     const range = this.getTowerRange(tower);
     const affected = new Set<string>();
+    const now = Date.now();
+    const lingerMs = getAuraSlowLingerMs(this.getTowerGrantState(tower).statusDurationMultiplier);
+    const slowKind = this.getTowerSlowKind(tower.id);
+    // Kriyojen Hat ve Lanet Fitili aura yavaslatmasina da biniyor.
+    const riderModifiers = this.getTowerRunModifiers(tower);
+    const riders = getModifierAdd(riderModifiers, "slowVulnerability") > 0 || getModifierAdd(riderModifiers, "slowBleed") > 0;
     for (const definition of activeAuras) {
       if (definition.affects !== "enemies" || definition.stat !== "slow") continue;
       const runtimeDefinition: TowerAuraDefinition = {
         ...definition,
         radius: range,
-        multiplier: getTowerAuraLevelMultiplier(definition, tower.level)
+        multiplier: this.getTowerAuraSlowSpeedMultiplier(tower, definition)
       };
       for (const enemy of this.enemies.values()) {
         this.perfCounters.aoeChecks += 1;
@@ -18170,8 +18844,13 @@ export class MatchRoom extends Room<MatchState> {
           const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
           // Aura kulesinin vurus yavaslatmasiyla ayni etki (Izolasyon'un
           // aurasi ve vurusu ayni egride): ikisi carpilmiyor, guclusu sayiliyor.
-          this.applyEnemyAuraSlow(enemy, this.getTowerSlowKind(tower.id), resistedMultiplier);
+          this.applyEnemyAuraSlow(enemy, slowKind, resistedMultiplier);
           if (resistedMultiplier < 1) affected.add(enemy.id);
+          if (riders && resistedMultiplier < 1) this.applyTowerSlowRiders(enemy, tower, now, AURA_SLOW_RIDER_MS);
+          if (lingerMs > 0 && resistedMultiplier < 1) {
+            const until = now + scaleGameDuration(applyStatusResistance(lingerMs, enemy.statusResistances.slow));
+            this.addEnemySlowFloor(enemy, resistedMultiplier, until, tower.id, now, `${tower.id}:aura`, tower.ownerId, slowKind);
+          }
         }
       }
     }
@@ -18276,7 +18955,83 @@ export class MatchRoom extends Room<MatchState> {
       chance += getAccuracyCritChance(accuracy);
     }
     if (this.towerHasUnlock(tower, "crit:isolated") && this.isTowerIsolated(tower)) chance += ISOLATED_CRIT_CHANCE;
+    // Lazer Telemetre: menzilin dis yarisindaki hedef. Konumu olmayan
+    // sorgu (panel, yavaslatma zari) saymiyor; panelde kosul listesinde.
+    if (hitEnemy && Number.isFinite(hitEnemy.x) && Number.isFinite(hitEnemy.y)) {
+      const far = getModifierAdd(this.getTowerRunModifiers(tower), "farCritChance");
+      if (far > 0) {
+        const threshold = this.getTowerRange(tower) * FAR_CRIT_RANGE_FRACTION;
+        if (distanceSq(tower.x, tower.y, hitEnemy.x, hitEnemy.y) > threshold * threshold) chance += far;
+      }
+    }
     return chance;
+  }
+
+  /**
+   * Vurusun komsulara sicramasi.
+   *
+   * - Ek Bicak Yuvasi (`hitSplash`): her vurusun payi en yakin bir komsuya.
+   * - Infilak Basligi (`critSplash`): kritik vurusun payi cevredeki herkese.
+   *
+   * Pay ana vurusun ham hasarindan (kritik dahil, zirh ve direnc oncesi);
+   * komsunun kendi zirhi ve direnci sicramada ayrica isliyor. Sicrama
+   * yeniden sicramiyor ve kritik atmiyor.
+   */
+  private applyTowerHitSplashes(tower: TowerModel, enemy: EnemyModel, damage: number, critAdd: number, hit: { sourceDefinitionId: string; sourceOwnerId: string; damageType: DamageType; sourceTowerLevel: number; hitType?: HitType }) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    const hitSplash = getModifierAdd(modifiers, "hitSplash");
+    const critSplash = critAdd > 0 ? getModifierAdd(modifiers, "critSplash") : 0;
+    if (!(hitSplash > 0) && !(critSplash > 0)) return;
+    const cell = getMapGridSize(this.activeMap);
+    this.hitSplashActive = true;
+    try {
+      if (hitSplash > 0) {
+        const radius = cell * HIT_SPLASH_RADIUS_CELLS;
+        let nearest: EnemyModel | undefined;
+        let best = radius * radius;
+        for (const other of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
+          if (other === enemy || other.hp <= 0 || other.untargetable) continue;
+          const distance = distanceSq(enemy.x, enemy.y, other.x, other.y);
+          if (distance <= best) { best = distance; nearest = other; }
+        }
+        if (nearest) this.damageEnemy(nearest, damage * hitSplash, 0, hit.sourceDefinitionId, hit.sourceOwnerId, hit.damageType, 0, hit.sourceTowerLevel, tower.id, hit.hitType);
+      }
+      if (critSplash > 0) {
+        const radius = cell * CRIT_SPLASH_RADIUS_CELLS;
+        const amount = damage * (1 + critAdd) * critSplash;
+        for (const other of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
+          if (other === enemy || other.hp <= 0) continue;
+          if (distanceSq(enemy.x, enemy.y, other.x, other.y) > radius * radius) continue;
+          this.damageEnemy(other, amount, 0, hit.sourceDefinitionId, hit.sourceOwnerId, hit.damageType, 0, hit.sourceTowerLevel, tower.id, hit.hitType);
+        }
+      }
+    } finally {
+      this.hitSplashActive = false;
+    }
+  }
+
+  /**
+   * Kontrol kulesinin yavaslatmasina binen esyalar: Kriyojen Hat
+   * (`slowVulnerability`) ve Lanet Fitili (`slowBleed`). Vurus
+   * yavaslatmasi da aura da buradan geciyor; `gameDurationMs` yavaslatmanin
+   * oyun suresi (kanama o kadar suruyor).
+   */
+  private applyTowerSlowRiders(enemy: EnemyModel, tower: TowerModel | undefined, now: number, gameDurationMs: number) {
+    if (!tower || !(gameDurationMs > 0)) return;
+    const modifiers = this.getTowerRunModifiers(tower);
+    const vulnerability = getModifierAdd(modifiers, "slowVulnerability");
+    if (vulnerability > 0) {
+      const active = (enemy.slowVulnerableUntil ?? 0) > now;
+      enemy.slowVulnerableAdd = active ? Math.max(enemy.slowVulnerableAdd ?? 0, vulnerability) : vulnerability;
+      enemy.slowVulnerableUntil = Math.max(enemy.slowVulnerableUntil ?? 0, now + scaleGameDuration(gameDurationMs));
+    }
+    const bleed = getModifierAdd(modifiers, "slowBleed");
+    if (bleed > 0) {
+      this.applyEnemyStatusEffect(enemy, { type: "bleed", magnitude: bleed, durationMs: gameDurationMs, stacking: "refresh" }, now, {
+        sourceTowerId: tower.id,
+        sourceOwnerId: tower.ownerId
+      });
+    }
   }
 
   /**
@@ -18362,7 +19117,12 @@ export class MatchRoom extends Room<MatchState> {
     const aura = this.getActiveTowerAuras(tower)
       .find((definition) => definition.affects === "enemies" && definition.stat === "slow");
     if (!aura) return undefined;
-    return Math.round(getTowerAuraLevelMultiplier(aura, tower.level) * 1000) / 1000;
+    return Math.round(this.getTowerAuraSlowSpeedMultiplier(tower, aura) * 1000) / 1000;
+  }
+
+  /** Yavaslatma aurasinin hiz carpani: seviye egrisi, durum etkisi gucuyle olceklenmis kesir. */
+  private getTowerAuraSlowSpeedMultiplier(tower: TowerModel, aura: TowerAuraDefinition) {
+    return 1 - this.scaleTowerSlowFraction(tower, 1 - getTowerAuraLevelMultiplier(aura, tower.level));
   }
 
   /**
@@ -18377,10 +19137,12 @@ export class MatchRoom extends Room<MatchState> {
     const definition = this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === "slow");
     if (!definition) return undefined;
     const durationMs = Math.round(definition.durationMs * this.getTowerGrantState(tower).statusDurationMultiplier);
+    // Durum etkisi gucu kesri carpiyor (`rollTowerSlowFraction` ile ayni).
+    const speed = (fraction: number) => Math.round((1 - this.scaleTowerSlowFraction(tower, fraction)) * 1000) / 1000;
     if (definition.scaling === "distance") {
-      return { speedMultiplier: KIN_SLOW_NEAR_MULTIPLIER, farSpeedMultiplier: KIN_SLOW_FAR_MULTIPLIER, durationMs };
+      return { speedMultiplier: speed(1 - KIN_SLOW_NEAR_MULTIPLIER), farSpeedMultiplier: speed(1 - KIN_SLOW_FAR_MULTIPLIER), durationMs };
     }
-    return { speedMultiplier: Math.round((1 - getStatusSlowFraction(definition, tower.level)) * 1000) / 1000, durationMs };
+    return { speedMultiplier: speed(getStatusSlowFraction(definition, tower.level)), durationMs };
   }
 
   private addEffectStat(key: string, amount: number) {

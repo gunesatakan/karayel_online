@@ -1,6 +1,7 @@
 import type { CardDrawOwnedUnlocks, CardScope, CardTowerProfile, Unlock } from "../cards/index.js";
-import { cardAppliesToTower, getCardDefinition, ownedCardAppliesToTower } from "../cards/index.js";
+import { getCardDefinition, ownedCardAppliesToTower } from "../cards/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
+import { getShopItemTowerMismatch, isShopItemUsefulOnTower, type ShopItemNeed } from "./compatibility.js";
 import type { TowerAxis } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
 import type { Modifier } from "../modifiers/index.js";
@@ -96,15 +97,47 @@ export const SHOP_OFFER_COUNT = 5;
 /** Riskli Yatirim: her alimda nexustan giden can ve karsiliginda verilen altin. */
 export const RISKY_INVESTMENT_NEXUS_COST = 10;
 export const RISKY_INVESTMENT_GOLD = 400;
+/**
+ * Kan Bankasi: takili her kopya dalga basinda nexustan bu kadar can aliyor.
+ * Odeme nexusu oldurecek ya da 1'in altina indirecekse kopya o dalga
+ * odenmiyor ve bonusu da islemiyor -- esya kendi takimini oldurmuyor.
+ */
+export const BLOOD_BANK_NEXUS_COST = 5;
 export const SHOP_REROLL_BASE_PRICE = 40;
 export const SHOP_REROLL_PRICE_STEP = 20;
 export const DEFAULT_SHOP_PRICE_GROWTH = 1.6;
 
+/**
+ * Esya bu kuleye takilabilir mi: kapsam ve esyanin istedigi kule yetenegi
+ * (`isShopItemUsefulOnTower`). Fiyat, vitrin, takma ve onay sayaci hep
+ * buradan geciyor, yani "takilabilir" her yerde ayni sey.
+ */
 export function shopItemAppliesToTower(item: ShopItem, tower: CardTowerProfile) {
-  const profile = tower.resourceProvider && item.scope.kind === "tagged" && item.scope.axes?.includes("economy")
-    ? { ...tower, resourceProvider: undefined }
-    : tower;
-  return cardAppliesToTower({ ...item, stackable: item.repeatable }, profile);
+  return isShopItemUsefulOnTower(item, tower);
+}
+
+/**
+ * `gold:cleanWave` esyadan (Sigorta Policesi) geldiginde odenen altin. Temiz
+ * Sicil kartinin primi (`CLEAN_WAVE_GOLD`) ayri: altin esyalari yariya
+ * indiginde kart oldugu gibi kaldi. Ikisi birden aliniyorsa kartin primi
+ * odeniyor -- ayni kilit iki kez odenmiyor.
+ */
+export const INSURANCE_CLEAN_WAVE_GOLD = 180;
+
+/**
+ * Esyanin bu kuleye yazdigi modifierlar.
+ *
+ * Ucaksavar Kiti'nin iki yuzu var: havayi vurmayan kuleye hava atisini
+ * acar ve hava hasarini yariya indirir; havayi zaten vuran kulede atis
+ * acmanin bir anlami yok, orada ceza yerine hava hasarina ayni buyuklukte
+ * bir bonus veriyor. Takma, onizleme ve yaratici modun yeniden kurulumu
+ * etkileri buradan okuyor.
+ */
+export function getShopItemTowerEffects(item: ShopItem, tower: CardTowerProfile): Modifier[] {
+  if (item.unlocks?.includes("canHitAir") && tower.engine?.canHitAir) {
+    return item.effects.map((modifier) => modifier.stat === "airDamage" ? { ...modifier, add: Math.abs(modifier.add) } : modifier);
+  }
+  return item.effects;
 }
 
 export function getShopItemCount(ownedItemIds: readonly string[], itemId: string) {
@@ -234,7 +267,7 @@ const rawShopCatalog: ShopItem[] = [
   // alir. Bu yuzden "tagged economy" olmalari sart, aksi halde kaynak binalari
   // takilabilir hedef sayilmaz.
   defineItem("madenci-eldiveni", "Madenci Eldiveni", "Takıldığı binanın kaynak çıkarma hızı +%20; bir binaya en fazla 5 kez takılır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("madenci-eldiveni", "workerGatherSpeed", 0.2)] }),
-  defineItem("seri-cephane-hatti", "Seri Cephane Hattı", "Takıldığı binanın cephane üretim hızı +%25; bir binaya en fazla 5 kez takılır.", "utility", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("seri-cephane-hatti", "ammoProduction", 0.25)] }),
+  defineItem("seri-cephane-hatti", "Seri Cephane Hattı", "Takıldığı binanın cephane üretim hızı +%25; bir binaya en fazla 5 kez takılır; yalnızca cephane fabrikalarına takılır.", "utility", 33, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("seri-cephane-hatti", "ammoProduction", 0.25)] }),
   defineItem("vardiya-amiri", "Vardiya Amiri", "Tüm işçilerin toplama hızı +%20 ve yürüme hızı +%20; en fazla 3 kez alınır.", "utility", 120, { repeatable: true, maxStacks: 3, priceGrowth: 1.35, axes: ["economy"], effects: [effect("vardiya-amiri", "workerGatherSpeed", 0.2), effect("vardiya-amiri", "workerSpeed", 0.2)] }),
   defineItem("seyyar-depo", "Seyyar Depo", "Tüm işçilerin taşıma kapasitesi +%40; en fazla 2 kez alınır.", "utility", 135, { repeatable: true, maxStacks: 2, priceGrowth: 1.4, axes: ["economy"], effects: [effect("seyyar-depo", "workerCapacity", 0.4)] }),
   // Can esyalari: biri merdiven, biri tek buyuk adim. Merdiven ucuz basliyor
@@ -248,7 +281,7 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("yedek-parca-sandigi", "Yedek Parça Sandığı", "Tüm tamircilerin onarım hızı +%110 ama taşıma kapasitesi -%20.", "utility", 130, { axes: ["economy"], effects: [effect("yedek-parca-sandigi", "workerRepairRate", 1.1), effect("yedek-parca-sandigi", "workerCapacity", -0.2)] }),
   defineItem("isci-botlari", "İşçi Botları", "Takıldığı binaya hizmet eden işçilerin hareket hızı +%15; bir binaya en fazla 5 kez takılır.", "utility", 28, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("isci-botlari", "workerSpeed", 0.15)] }),
   defineItem("namlu-yatagi", "Namlu Yatağı", "Takıldığı kulenin dönüş hızı +%35; bir kuleye en fazla 2 kez takılır.", "power", 100, { repeatable: true, maxStacks: 2, effects: [effect("namlu-yatagi", "turnRate", 0.35)] }),
-  defineItem("nisangah", "Nişangâh", "Takıldığı kulenin isabeti +%30; bir kuleye en fazla 2 kez takılır.", "power", 60, { repeatable: true, maxStacks: 2, effects: [effect("nisangah", "accuracy", 0.3)] }),
+  defineItem("nisangah", "Nişangâh", "Takıldığı kulenin öncül nişanı +%20: atışların %20'si hedefin, mermi ona varana kadar gideceği noktaya ateşlenir; bir kuleye en fazla 2 kez takılır; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "power", 60, { repeatable: true, maxStacks: 2, scope: { kind: "tagged", alongFacing: true }, effects: [effect("nisangah", "leadTargeting", 0.2)] }),
   defineItem("hafif-muhimmat", "Hafif Mühimmat", "Takıldığı kulenin mermi hızı +%40; bir kuleye en fazla 2 kez takılır.", "power", 50, { repeatable: true, maxStacks: 2, effects: [effect("hafif-muhimmat", "projectileSpeed", 0.4)] }),
   defineItem("isi-emici", "Isı Emici", "Takıldığı kulenin atış başına ısısı -%25; bir kuleye en fazla 2 kez takılır.", "power", 105, { repeatable: true, maxStacks: 2, effects: [effect("isi-emici", "heat", -0.25)] }),
   defineItem("kritik-sistem", "Kritik Sistem", "Takıldığı kulenin kritik şansı +%12, kritik hasarı +%50.", "power", 150, { scope: { kind: "tagged", combat: true }, effects: [effect("kritik-sistem", "critChance", 0.12), effect("kritik-sistem", "critDamage", 0.5)] }),
@@ -262,7 +295,7 @@ const rawShopCatalog: ShopItem[] = [
   // odeyen olan daha buyuk, cunku isi performans koluyla zaten pazarlik
   // konusu -- kolu asagi cekmeyi bilen oyuncu bedeli kucultebilir.
   defineItem("agir-cekirdek", "Ağır Çekirdek", "Takıldığı kulenin kritik hasarı +%60; bir kuleye en fazla 2 kez takılır.", "power", 105, { scope: { kind: "tagged", combat: true }, repeatable: true, maxStacks: 2, priceGrowth: 1.3, effects: [effect("agir-cekirdek", "critDamage", 0.6)] }),
-  defineItem("infilak-basligi", "İnfilak Başlığı", "Takıldığı kulenin kritik hasarı +%90 ama ısısı +%30.", "power", 130, { scope: { kind: "tagged", combat: true }, effects: [effect("infilak-basligi", "critDamage", 0.9), effect("infilak-basligi", "heat", 0.3)] }),
+  defineItem("infilak-basligi", "İnfilak Başlığı", "Takıldığı kulenin kritik şansı +%8, kritik hasarı +%60; kritik vuruşları hedefin çevresine vuruşun %50'si kadar patlama yayar.", "power", 130, { scope: { kind: "tagged", combat: true }, effects: [effect("infilak-basligi", "critChance", 0.08), effect("infilak-basligi", "critDamage", 0.6), effect("infilak-basligi", "critSplash", 0.5)] }),
 
   defineItem("delici-cekirdek", "Delici Çekirdek", "Takıldığı kulenin hasarı +%20; yalnızca projectile kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["projectile"] }, effects: [effect("delici-cekirdek", "damage", 0.2)] }),
   defineItem("odak-mercegi", "Odak Merceği", "Takıldığı kulenin hasarı +%25; yalnızca focus kulelerine takılır.", "class", 90, { scope: { kind: "tagged", hitTypes: ["focus"] }, effects: [effect("odak-mercegi", "damage", 0.25)] }),
@@ -288,16 +321,16 @@ const rawShopCatalog: ShopItem[] = [
   // Can ve onarim bedeli ayni esyada: ikisi de "bu kule ayakta kalsin"
   // sorusunun cevabi ve Tamirci iscisiyle ayni yone bakiyorlar.
   defineItem("tampon-katman", "Tampon Katman", "Takıldığı kulenin canı +%90 ve onarım bedeli -%35.", "utility", 110, { effects: [effect("tampon-katman", "towerHealth", 0.9), effect("tampon-katman", "repairCost", -0.35)] }),
-  defineItem("verim-hatti", "Verim Hattı", "Takıldığı binanın üretim hızı +%35; yalnızca economy binalarına takılır.", "class", 100, { axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("verim-hatti", "resourceProduction", 0.35)] }),
+  defineItem("verim-hatti", "Verim Hattı", "Takıldığı binanın üretim hızı +%35; yalnızca cephane fabrikalarına takılır.", "class", 100, { axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("verim-hatti", "resourceProduction", 0.35)] }),
 
   defineItem("termal-funye", "Termal Fünye", "Takıldığı kule 4 saniye boyunca saniyede %1,5 yakar; yalnızca fire kulelerine takılır.", "class", 120, { scope: { kind: "tagged", damageTypes: ["fire"] }, unlocks: ["status:burn"] }),
-  defineItem("kriyojen-hat", "Kriyojen Hat", "Takıldığı kule yavaşlatılmış hedeflere %20 fazla hasar verir; yalnızca CC kulelerine takılır.", "class", 115, { axes: ["cc"], scope: { kind: "tagged", axes: ["cc"] }, unlocks: ["status:chill"] }),
+  defineItem("kriyojen-hat", "Kriyojen Hat", "Takıldığı kontrol kulesinin yavaşlattığı düşmanlar, yavaşlama sürerken bütün kulelerden %15 fazla hasar alır; yalnızca CC kulelerine takılır.", "class", 115, { axes: ["cc"], scope: { kind: "tagged", axes: ["cc"] }, effects: [effect("kriyojen-hat", "slowVulnerability", 0.15)] }),
 
-  defineItem("hedef-kilidi", "Hedef Kilidi", "Takıldığı kule hedefini 2 saniye daha uzun korur.", "utility", 90, { effects: [effect("hedef-kilidi", "targetLockMs", 2000)] }),
+  defineItem("hedef-kilidi", "Hedef Kilidi", "Takıldığı kule hedefini 2 saniye daha uzun korur; yalnızca nişan alan kulelere takılır.", "utility", 90, { effects: [effect("hedef-kilidi", "targetLockMs", 2000)] }),
   defineItem("avci-protokolu", "Avcı Protokolü", "Takıldığı kuleye 2 hedefleme modu açar: en zayıf ve rastgele.", "utility", 60, { unlocks: ["targeting:weakest", "targeting:random"] }),
   defineItem("nobetci-protokolu", "Nöbetçi Protokolü", "Takıldığı kuleye 2 hedefleme modu açar: en yakın ve son.", "utility", 60, { unlocks: ["targeting:closest", "targeting:last"] }),
 
-  defineItem("ucaksavar-kiti", "Uçaksavar Kiti", "Takıldığı kule hava hedeflerine ateş açar, hava hasarı -%50.", "utility", 160, { effects: [effect("ucaksavar-kiti", "airDamage", -0.5)], unlocks: ["canHitAir"] }),
+  defineItem("ucaksavar-kiti", "Uçaksavar Kiti", "Takıldığı kule havayı vurmuyorsa hava hedeflerine ateş açar, hava hasarı -%50; havayı zaten vuruyorsa hava hasarı +%50.", "utility", 160, { effects: [effect("ucaksavar-kiti", "airDamage", -0.5)], unlocks: ["canHitAir"] }),
   defineItem("kalkan-delici", "Kalkan Delici", "Takıldığı kulenin kalkanlı düşmanlara hasarı +%35.", "power", 105, { scope: { kind: "tagged", combat: true }, effects: [effect("kalkan-delici", "damageVsShielded", 0.35)] }),
   defineItem("agir-avcisi", "Ağır Avcısı", "Takıldığı kulenin brute düşmanlara hasarı +%40.", "power", 100, { scope: { kind: "tagged", combat: true }, effects: [effect("agir-avcisi", "damageVsBrute", 0.4)] }),
 
@@ -315,7 +348,7 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("ek-yuva-magaza", "Ek Yuva", "Kule kapasitesi +1; 5. dalgadan sonra en fazla 2 kez.", "utility", 210, { repeatable: true, maxStacks: 2, priceGrowth: 1.5, unlockWave: 5, effects: [effect("ek-yuva-magaza", "towerCapacity", 1)] }),
   defineItem("bariyer", "Bariyer", "Seçilen 1 yol karesini kapatır; en fazla 3 kez.", "map", 180, { repeatable: true, maxStacks: 3 }),
   defineItem("ziftli-zemin", "Ziftli Zemin", "Seçilen 1 karede düşmanları %25 yavaşlatır; en fazla 4 kez.", "map", 75, { repeatable: true, maxStacks: 4 }),
-  defineItem("nexus-kalkani", "Nexus Kalkanı", "Bu dalgadaki ilk 3 sızıntıyı engelleyen 1 kullanım sağlar.", "utility", 65, { repeatable: true, unlocks: ["nexusShield"] }),
+  defineItem("nexus-kalkani", "Nexus Kalkanı", "Bu dalgadaki ilk 3 sızıntıyı engelleyen 1 kullanım sağlar; kullanılmayan haklar dalga sonunda silinir.", "utility", 65, { repeatable: true, unlocks: ["nexusShield"] }),
   defineItem("faiz-hesabi", "Faiz Hesabı", "Dalga sonunda altının %16'sını kazandırır.", "utility", 140, { unlocks: ["goldInterest"] }),
   defineItem("ganimet-avcisi", "Ganimet Avcısı", "Takıldığı kulenin öldürdüğü düşmanlar %20 ihtimalle 4 mühimmat düşürür.", "utility", 90, { scope: { kind: "tagged", combat: true }, unlocks: ["ammoDrop"] }),
 
@@ -324,10 +357,10 @@ const rawShopCatalog: ShopItem[] = [
   // tanimsiz, o yuzden dar kapsamlar sekil uzerinden kuruluyor.
   defineItem("koni-yayici", "Koni Yayıcı", "Takıldığı kulenin durum etkisi gücü +%45; yalnızca koni saldıran kulelere takılır.", "class", 95, { axes: ["cc"], scope: { kind: "tagged", shapes: ["cone"] }, effects: [effect("koni-yayici", "statusMagnitude", 0.45)] }),
   defineItem("hat-namlusu", "Hat Namlusu", "Takıldığı kulenin hasarı +%40; yalnızca hat saldıran kulelere takılır.", "class", 100, { scope: { kind: "tagged", shapes: ["line"] }, effects: [effect("hat-namlusu", "damage", 0.4)] }),
-  defineItem("yorunge-rulmani", "Yörünge Rulmanı", "Takıldığı kulenin hasarı +%40, ısısı +%20; yalnızca yörünge kulelerine takılır.", "class", 95, { scope: { kind: "tagged", shapes: ["orbit"] }, effects: [effect("yorunge-rulmani", "damage", 0.4), effect("yorunge-rulmani", "heat", 0.2)] }),
-  defineItem("isin-prizmasi", "Işın Prizması", "Takıldığı kulenin hasarı +%45, soğuması -%15; yalnızca ışın kulelerine takılır.", "class", 105, { scope: { kind: "tagged", shapes: ["beam"] }, effects: [effect("isin-prizmasi", "damage", 0.45), effect("isin-prizmasi", "cooling", -0.15)] }),
+  defineItem("yorunge-rulmani", "Yörünge Rulmanı", "Takıldığı kulenin dönüş hızı +%50, atış başına ısısı -%15; yalnızca nişan alan kulelere takılır.", "class", 95, { scope: { kind: "tagged", aims: true }, effects: [effect("yorunge-rulmani", "turnRate", 0.5), effect("yorunge-rulmani", "heat", -0.15)] }),
+  defineItem("isin-prizmasi", "Işın Prizması", "Takıldığı kulenin hasarı +%45, soğuması -%7; yalnızca ışın kulelerine takılır.", "class", 105, { scope: { kind: "tagged", shapes: ["beam"] }, effects: [effect("isin-prizmasi", "damage", 0.45), effect("isin-prizmasi", "cooling", -0.07)] }),
 
-  defineItem("ganimet-kesesi", "Ganimet Kesesi", "Düşman altını +%160.", "utility", 110, { effects: [effect("ganimet-kesesi", "goldGain", 1.6)] }),
+  defineItem("ganimet-kesesi", "Ganimet Kesesi", "Düşman altını +%80.", "utility", 110, { effects: [effect("ganimet-kesesi", "goldGain", 0.8)] }),
   defineItem("ikmal-hatti", "İkmal Hattı", "Takıldığı kulenin atış yakıtı tüketimi -%30.", "utility", 95, { effects: [effect("ikmal-hatti", "shotFuelCost", -0.3)] }),
 
   // Motor esyalari. Esya tek bir kuleye kalici olarak takildigi icin grant
@@ -336,15 +369,11 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sabir-modulu", "Sabır Modülü", "Takıldığı kule aynı hedefe her vuruşta +%5 hasar kazanır; hedef değişince sıfırlanır.", "power", 130, { scope: { kind: "tagged", combat: true },
     grants: { stacks: [{ id: "shop-sabir", trigger: "sameTarget", stat: "damage", perStack: 0.05, max: 10, resetOn: "targetChange" }] }
   }),
-  defineItem("delici-uc", "Delici Uç", "Takıldığı kule 1 düşman daha deler; yalnızca tek hedef ve hat saldıran kulelere takılır.", "class", 120, {
+  defineItem("delici-uc", "Delici Uç", "Takıldığı kule 1 düşman daha deler; yalnızca mermisi düşman delebilen tek hedef ve hat kulelerine takılır.", "class", 120, {
     scope: { kind: "tagged", shapes: ["single", "line"] },
     grants: { attack: { pierceCount: 1 } }
   }),
-  defineItem("ek-bicak-yuvasi", "Ek Bıçak Yuvası", "Takıldığı kuleye 1 bıçak ekler, yakıt tüketimi +%35; yalnızca yörünge kulelerine takılır.", "class", 135, {
-    scope: { kind: "tagged", shapes: ["orbit"] },
-    effects: [effect("ek-bicak-yuvasi", "shotFuelCost", 0.35)],
-    grants: { attack: { bladeCount: 1 } }
-  }),
+  defineItem("ek-bicak-yuvasi", "Ek Bıçak Yuvası", "Takıldığı ışın kulesinin her vuruşu, hedefin 2 kare yakınındaki en yakın düşmana vuruşun %50'si kadar sıçrar; yalnızca ışın kulelerine takılır.", "class", 135, { scope: { kind: "tagged", shapes: ["beam"] }, effects: [effect("ek-bicak-yuvasi", "hitSplash", 0.5)] }),
   defineItem("buz-serpintisi", "Buz Serpintisi", "Takıldığı kulenin vuruşları 1,5 saniye %20 yavaşlatır.", "class", 125, {
     axes: ["cc"],
     grants: { statusEffects: [{ type: "chill", magnitude: 0.2, durationMs: 1500, stacking: "strongest", effectKey: "item:buz-serpintisi" }] }
@@ -365,6 +394,31 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("sogutma-sivisi", "Soğutma Sıvısı", "Takıldığı kulenin soğuması +%35; bir kuleye en fazla 3 kez takılır.", "utility", 45, { repeatable: true, maxStacks: 3, priceGrowth: 1.25, effects: [effect("sogutma-sivisi", "cooling", 0.35)] }),
   defineItem("dokme-radyator", "Dökme Radyatör", "Takıldığı kule ne kadar sıcaksa o kadar hızlı soğur: 50 derecede soğuması %50 artar, 100 derecede iki katına çıkar.", "power", 130, { unlocks: ["heat:radiator"] }),
   defineItem("buhar-tahliyesi", "Buhar Tahliyesi", "Takıldığı kule öldürdüğü her düşman için 4 derece soğur.", "power", 120, { scope: { kind: "tagged", combat: true }, unlocks: ["heat:killVent"] }),
+
+  // Isi ve atis hizi, ikinci tur (docs/esya-guc-siniflandirmasi.md, "Yeniden
+  // tasarim"). Olcum kulelerin isiyla sinirli oldugunu gosterdi: surekli atis
+  // `soguma / atis isisi`, atis hizi bonusu yalnizca isiyi daha cabuk
+  // dolduruyor. Asagidaki esyalarin hepsi o dengeye bir yerden dokunuyor --
+  // sogumayi buyutuyor, atis isisini indiriyor ya da freni hasara ceviriyor --
+  // yani surekli ateste de is goruyorlar. Sabitler `heat-mechanics`te.
+  // Uyumluluk: hepsi "heat" (atesle isinan kule) istiyor; hasar okuyanlar
+  // ayrica "damage" (bkz. `shop/compatibility.ts` STAT_NEEDS).
+  // Sogutma: dort ayri sekil -- duz, fren, vent ve oldurme.
+  defineItem("peltier-plakasi", "Peltier Plakası", "Takıldığı kule, soğuma çarpanlarından sonra saniyede 1,5 derece daha soğur.", "utility", 100, { axes: ["dps"], effects: [effect("peltier-plakasi", "coolingFlat", 1.5)] }),
+  defineItem("fren-sogutucusu", "Fren Soğutucusu", "Takıldığı kulenin ısı freni devredeyken (50 derecenin üstünde) soğuması +%60.", "utility", 100, { axes: ["dps"], effects: [effect("fren-sogutucusu", "brakeCooling", 0.6)] }),
+  defineItem("emniyet-ventili", "Emniyet Ventili", "Takıldığı kulenin sıcaklığı 70 dereceyi geçince 20 derece bir anda atılır; 10 saniyede bir.", "utility", 105, { axes: ["dps"], effects: [effect("emniyet-ventili", "ventHeat", 20)] }),
+  defineItem("kriyo-sok-kartusu", "Kriyo Şok Kartuşu", "Takıldığı kule bir düşman öldürünce 2 saniye boyunca 3 kat hızlı soğur.", "utility", 110, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("kriyo-sok-kartusu", "killCooling", 2)] }),
+  // Atis hizi: her biri hizini isi butcesinden de aliyor, yani isi tavanina
+  // carpip bosa gitmiyor.
+  defineItem("senkron-tetik", "Senkron Tetik", "Takıldığı kulenin atış hızı +%25, atış başına ısısı -%25: daha hızlı ateş eder ama daha hızlı ısınmaz.", "power", 120, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("senkron-tetik", "fireRate", 0.25), effect("senkron-tetik", "heat", -0.25)] }),
+  defineItem("isil-esik-rolesi", "Isıl Eşik Rölesi", "Takıldığı kulenin atış başına ısısı -%20; sıcaklığı 50 derecenin altındayken atış hızı +%40.", "power", 100, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("isil-esik-rolesi", "heat", -0.2), effect("isil-esik-rolesi", "coldFireRate", 0.4)] }),
+  defineItem("takip-ritmi", "Takip Ritmi", "Takıldığı kule aynı hedefe art arda her atışta atış hızı +%8 ve atış başına ısı -%8 kazanır; en fazla 5 kez (+%40 / -%40). Hedef değişince birikimin yarısı düşer.", "power", 110, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("takip-ritmi", "trackRhythm", 0.08)] }),
+  defineItem("rejeneratif-fren", "Rejeneratif Fren", "Takıldığı kulede ısı freninin kestiği atış hızının %80'i hasara döner: fren atış hızını yarıya indirdiğinde hasar +%40.", "power", 130, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("rejeneratif-fren", "brakeDamage", 0.8)] }),
+  // Isi olaylari: isiyi baska bir seye ceviren mekanikler. Isi Koprusu
+  // komsu istiyor; AttackLord'un yalnizlik pasifiyle bilerek ters dusuyor.
+  defineItem("isi-koprusu", "Isı Köprüsü", "Takıldığı kule ısısını bitişikteki daha soğuk dost kulelere saniyede 6 dereceye kadar aktarır; komşusuz kulede bir şey yapmaz.", "utility", 90, { axes: ["dps"], effects: [effect("isi-koprusu", "heatBleed", 6)] }),
+  defineItem("termal-sok-halkasi", "Termal Şok Halkası", "Takıldığı kulenin sıcaklığı 80 dereceyi geçince biriken ısı şok dalgasına dönüşür: kule 10 derece soğur, menzilinin %60'ı içindeki düşmanlar vuruş hasarının 2 katını alır; 12 saniyede bir, ısı kilidinde beklemeden.", "power", 115, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("termal-sok-halkasi", "heatShock", 2)] }),
+  defineItem("yeniden-atesleme-bobini", "Yeniden Ateşleme Bobini", "Takıldığı kule ısı freninden çıkınca (sıcaklık 50 derecenin altına inince) sonraki 3 atışı ısı üretmez ve %50 hızlı gelir; 8 saniyede bir.", "power", 100, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("yeniden-atesleme-bobini", "restartShots", 3)] }),
   defineItem("sarj-kondansatoru", "Şarj Kondansatörü", "Ulti şarj hızı +%20.", "utility", 145, { effects: [effect("sarj-kondansatoru", "ultimateCharge", 0.2)] }),
 
   defineItem("riskli-yatirim", "Riskli Yatırım", "Dalga başına takımda 1 kez alınabilir: 10 nexus canı karşılığı 400 altın verir.", "risk", 0, { repeatable: true, maxStacks: 20 }),
@@ -372,23 +426,23 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("kaynak-makinesi", "Kaynak Makinesi", "Takıldığı yapının onarım bedeli -%60.", "utility", 85, { axes: ["barricade"], effects: [effect("kaynak-makinesi", "repairCost", -0.6)] }),
   defineItem("karsi-ates-modulu", "Karşı Ateş Modülü", "Takıldığı kulenin nişancı düşmanlara hasarı +%50.", "power", 100, { scope: { kind: "tagged", combat: true }, axes: ["dps"], effects: [effect("karsi-ates-modulu", "damageVsShooter", 0.5)] }),
   defineItem("tuzak-agi", "Tuzak Ağı", "Takıldığı kulenin koşucu düşmanlara hasarı +%45.", "power", 95, { scope: { kind: "tagged", combat: true }, axes: ["dps"], effects: [effect("tuzak-agi", "damageVsRunner", 0.45)] }),
-  defineItem("lanet-fitili", "Lanet Fitili", "Takıldığı kulenin durum etkisi süresi +%50; yalnızca lanet kulelerine takılır.", "class", 105, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["curse"] }, effects: [effect("lanet-fitili", "statusDuration", 0.5)] }),
-  defineItem("rezonans-odasi", "Rezonans Odası", "Takıldığı kulenin menzili +%25; yalnızca dalga kulelerine takılır.", "class", 100, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["wave"] }, effects: [effect("rezonans-odasi", "range", 0.25)] }),
-  defineItem("atis-denetleyicisi", "Atış Denetleyicisi", "Takıldığı kulenin atış hızı +%25, ısısı +%20; yalnızca dps kulelerine takılır.", "class", 115, { axes: ["dps"], scope: { kind: "tagged", axes: ["dps"] }, effects: [effect("atis-denetleyicisi", "fireRate", 0.25), effect("atis-denetleyicisi", "heat", 0.2)] }),
+  defineItem("lanet-fitili", "Lanet Fitili", "Takıldığı kontrol kulesinin yavaşlattığı düşmanlar, yavaşlama sürerken her saniye azami canlarının %1'i kadar kanar; kulenin durum etkilerinin süresi +%25; yalnızca aura, dalga ve lanet kulelerine takılır.", "class", 105, { axes: ["cc"], scope: { kind: "tagged", hitTypes: ["aura", "wave", "curse"] }, effects: [effect("lanet-fitili", "slowBleed", 0.01), effect("lanet-fitili", "statusDuration", 0.25)] }),
+  defineItem("rezonans-odasi", "Rezonans Odası", "Takıldığı yapının bitişiğindeki her dost kulenin soğuması +%25; ateş etmeyen yapılara da takılır (Saray Arşivi, Abartı, Sunucu, duvar).", "utility", 100, { axes: ["amplify"], effects: [effect("rezonans-odasi", "neighborCooling", 0.25)] }),
+  defineItem("atis-denetleyicisi", "Atış Denetleyicisi", "Takıldığı kulenin atış hızı +%20, soğuması +%40; yalnızca dps kulelerine takılır.", "class", 115, { axes: ["dps"], scope: { kind: "tagged", axes: ["dps"] }, effects: [effect("atis-denetleyicisi", "fireRate", 0.2), effect("atis-denetleyicisi", "cooling", 0.4)] }),
   defineItem("direnc-sokucu", "Direnç Sökücü", "Takıldığı kulenin vuruşlarında düşman dirençlerinin %40’ı yok sayılır.", "power", 125, { scope: { kind: "tagged", combat: true }, axes: ["dps"], effects: [effect("direnc-sokucu", "resistancePierce", 0.4)] }),
   defineItem("zaaf-mercegi", "Zaaf Merceği", "Takıldığı kule düşmanın zayıf olduğu hasar tipinden %50 daha çok yararlanır.", "power", 115, { scope: { kind: "tagged", combat: true }, axes: ["dps"], effects: [effect("zaaf-mercegi", "weaknessBonus", 0.5)] }),
   defineItem("asiri-surucu", "Aşırı Sürücü", "Takıldığı kulenin performans kolu yarısı üstündeki ısı ve enerji bedeli -%50.", "power", 130, { axes: ["dps"], effects: [effect("asiri-surucu", "performanceCost", -0.5)] }),
-  defineItem("kan-bankasi", "Kan Bankası", "Takıldığı kulenin hasarı +%20 olur; karşılığında her dalga 5 nexus canı gider.", "risk", 75, { scope: { kind: "tagged", combat: true }, unlocks: ["bloodBank"] }),
+  defineItem("kan-bankasi", "Kan Bankası", `Takıldığı kulenin hasarı +%20 olur; karşılığında her dalga başında takılı her Kan Bankası için ${BLOOD_BANK_NEXUS_COST} nexus canı gider. Nexus canı ${BLOOD_BANK_NEXUS_COST} ya da altındaysa bedel alınmaz ve o dalga bonus işlemez.`, "risk", 75, { scope: { kind: "tagged", combat: true }, unlocks: ["bloodBank"] }),
 
   // Nisan ve kritik, ikinci tur. Kart karsiliklarinin tek kuleye baglanan
   // halleri; ikisi kapsamla sinirli cunku vaatleri yalnizca nisan alan
   // kulede bir sey yapiyor. Nisan almayan kuleye takilabilseler oyuncu
   // altinini bir hicligin uzerine harcardi -- esya geri sokulemiyor.
   defineItem("jiroskop", "Jiroskop", "Takıldığı kule düşman öldürdükten sonra 2 saniye boyunca dönüş hızı +%150 kazanır; yalnızca nişan alan kulelere takılır.", "class", 85, { scope: { kind: "tagged", aims: true }, unlocks: ["aim:killSnap"] }),
-  defineItem("nisan-durbunu", "Nişan Dürbünü", "Takıldığı kulenin isabeti +%45; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 90, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("nisan-durbunu", "accuracy", 0.45)] }),
+  defineItem("nisan-durbunu", "Nişan Dürbünü", "Takıldığı kulenin öncül nişanı +%60: atışların %60'ı hedefin, mermi ona varana kadar gideceği noktaya ateşlenir; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 120, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("nisan-durbunu", "leadTargeting", 0.6)] }),
   defineItem("iz-okuyucu", "İz Okuyucu", "Takıldığı kulenin işaretli düşmanlara kritik şansı +%20; kendi koyduğu takip işareti sayılmaz.", "power", 110, { scope: { kind: "tagged", combat: true }, axes: ["amplify"], unlocks: ["crit:vsMarked"] }),
   defineItem("mesafe-olcer", "Mesafe Ölçer", "Takıldığı kulede isabet bonusunun her %10'u kritik şansına +%3 ekler; en fazla +%30.", "power", 100, { scope: { kind: "tagged", combat: true }, unlocks: ["crit:fromAccuracy"] }),
-  defineItem("atesleme-pimi", "Ateşleme Pimi", "Takıldığı kulenin kritik şansı +%20, ısısı +%25.", "power", 95, { scope: { kind: "tagged", combat: true }, effects: [effect("atesleme-pimi", "critChance", 0.2), effect("atesleme-pimi", "heat", 0.25)] }),
+  defineItem("atesleme-pimi", "Ateşleme Pimi", "Takıldığı kulenin kritik şansı +%20, ısısı +%10.", "power", 95, { scope: { kind: "tagged", combat: true }, effects: [effect("atesleme-pimi", "critChance", 0.2), effect("atesleme-pimi", "heat", 0.1)] }),
   defineItem("yarik-mermi", "Yarık Mermi", "Takıldığı kulenin kritik hasarı +%125, kritik şansı -%6.", "power", 110, { scope: { kind: "tagged", combat: true }, effects: [effect("yarik-mermi", "critDamage", 1.25), effect("yarik-mermi", "critChance", -0.06)] }),
 
   // Donus hizi, isabet ve mermi hizi, ucuncu tur. Her eksende dort esya ve
@@ -397,14 +451,14 @@ const rawShopCatalog: ShopItem[] = [
   // bedelleri dorduncu turda kaldirildi. Hepsi kapsamli, cunku esya geri sokulemiyor:
   // statin is gormedigi kuleye takilabilseler oyuncu altinini bosa harcardi.
   defineItem("bilyali-yatak", "Bilyalı Yatak", "Takıldığı kulenin dönüş hızı +%20; bir kuleye en fazla 4 kez takılır; yalnızca nişan alan kulelere takılır.", "class", 40, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, scope: { kind: "tagged", aims: true }, effects: [effect("bilyali-yatak", "turnRate", 0.2)] }),
-  defineItem("hafif-taret-kabugu", "Hafif Taret Kabuğu", "Takıldığı kulenin dönüş hızı +%70, canı -%20; yalnızca nişan alan kulelere takılır.", "class", 80, { scope: { kind: "tagged", aims: true }, effects: [effect("hafif-taret-kabugu", "turnRate", 0.7), effect("hafif-taret-kabugu", "towerHealth", -0.2)] }),
-  defineItem("taret-motoru", "Taret Motoru", "Takıldığı kulenin dönüş hızı +%120, ısısı +%20; yalnızca nişan alan kulelere takılır.", "class", 110, { scope: { kind: "tagged", aims: true }, effects: [effect("taret-motoru", "turnRate", 1.2), effect("taret-motoru", "heat", 0.2)] }),
+  defineItem("hafif-taret-kabugu", "Hafif Taret Kabuğu", "Takıldığı kulenin dönüş hızı +%70, koşucu ve uçan düşmanlara hasarı +%25; yalnızca nişan alan kulelere takılır.", "class", 80, { scope: { kind: "tagged", aims: true }, effects: [effect("hafif-taret-kabugu", "turnRate", 0.7), effect("hafif-taret-kabugu", "damageVsFast", 0.25)] }),
+  defineItem("taret-motoru", "Taret Motoru", "Takıldığı kulenin dönüş hızı +%120; hedef değiştirdikten sonraki ilk mermisi +%35 hasar verir; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 110, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("taret-motoru", "turnRate", 1.2), effect("taret-motoru", "retargetDamage", 0.35)] }),
   defineItem("hareket-ongorucu", "Hareket Öngörücü", "Takıldığı kule koşucu ve hava hedeflerine dönerken dönüş hızı +%100 kazanır; yalnızca nişan alan kulelere takılır.", "class", 75, { scope: { kind: "tagged", aims: true }, unlocks: ["aim:fastTargets"] }),
 
-  defineItem("gez-arpacik", "Gez ve Arpacık", "Takıldığı kulenin isabeti +%15; bir kuleye en fazla 4 kez takılır; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 35, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, scope: { kind: "tagged", alongFacing: true }, effects: [effect("gez-arpacik", "accuracy", 0.15)] }),
-  defineItem("lazer-telemetre", "Lazer Telemetre", "Takıldığı kulenin isabeti +%50, menzili +%10; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 110, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("lazer-telemetre", "accuracy", 0.5), effect("lazer-telemetre", "range", 0.1)] }),
+  defineItem("gez-arpacik", "Gez ve Arpacık", "Takıldığı kulenin öncül nişanı +%15: atışların %15'i hedefin, mermi ona varana kadar gideceği noktaya ateşlenir; bir kuleye en fazla 4 kez takılır; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 35, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, scope: { kind: "tagged", alongFacing: true }, effects: [effect("gez-arpacik", "leadTargeting", 0.15)] }),
+  defineItem("lazer-telemetre", "Lazer Telemetre", "Takıldığı kulenin menzili +%10, menzilinin dış yarısındaki düşmanlara kritik şansı +%20; menzili haritayı kaplayan kulelere takılmaz.", "class", 110, { scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("lazer-telemetre", "range", 0.1), effect("lazer-telemetre", "farCritChance", 0.2)] }),
   defineItem("termal-kilif", "Termal Kılıf", "Takıldığı kulenin sıcaklığı 40 derecenin altındayken isabeti +%50; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 70, { scope: { kind: "tagged", alongFacing: true }, unlocks: ["aim:coldAccuracy"] }),
-  defineItem("hassas-namlu", "Hassas Namlu", "Takıldığı kulenin isabeti +%35, kritik hasarı +%25; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 105, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("hassas-namlu", "accuracy", 0.35), effect("hassas-namlu", "critDamage", 0.25)] }),
+  defineItem("hassas-namlu", "Hassas Namlu", "Takıldığı kulenin öncül nişanı +%50 (atışların yarısı hedefin gideceği noktaya), kritik hasarı +%40; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 105, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("hassas-namlu", "leadTargeting", 0.5), effect("hassas-namlu", "critDamage", 0.4)] }),
 
   defineItem("sabot-fisegi", "Sabot Fişeği", "Takıldığı kulenin mermi hızı +%25; bir kuleye en fazla 4 kez takılır; yalnızca mermi atan kulelere takılır.", "class", 40, { repeatable: true, maxStacks: 4, priceGrowth: 1.25, scope: { kind: "tagged", projectiles: true }, effects: [effect("sabot-fisegi", "projectileSpeed", 0.25)] }),
   defineItem("manyetik-ray", "Manyetik Ray", "Takıldığı kulenin mermi hızı +%90; yalnızca mermi atan kulelere takılır.", "class", 90, { scope: { kind: "tagged", projectiles: true }, effects: [effect("manyetik-ray", "projectileSpeed", 0.9)] }),
@@ -423,7 +477,7 @@ const rawShopCatalog: ShopItem[] = [
   // isabet verdigi icin (Nisan Takimi, Sabit Kundak, Titresim Sonumleyici,
   // Nisan Kertigi, Uzun Namlu, Atis Kontrol Birimi) karta yatirim yapmis bir
   // destede daha az esya yetiyor.
-  defineItem("atalet-dengeleyici", "Atalet Dengeleyici", "Takıldığı kulenin isabeti +%60; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 120, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("atalet-dengeleyici", "accuracy", 0.6)] }),
+  defineItem("atalet-dengeleyici", "Atalet Dengeleyici", "Takıldığı kulenin mermi hızı +%40, koşucu ve uçan düşmanlara hasarı +%30; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 120, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("atalet-dengeleyici", "projectileSpeed", 0.4), effect("atalet-dengeleyici", "damageVsFast", 0.3)] }),
   defineItem("optik-hedefleyici", "Optik Hedefleyici", "Takıldığı kulenin isabeti +%30, kritik şansı +%8; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 100, { scope: { kind: "tagged", alongFacing: true }, effects: [effect("optik-hedefleyici", "accuracy", 0.3), effect("optik-hedefleyici", "critChance", 0.08)] }),
   defineItem("irtifa-olcer", "İrtifa Ölçer", "Takıldığı kulenin hava hedeflerine isabeti +%60; bir kuleye en fazla 2 kez takılır; yalnızca nişan alan mermi ve çarpma kulelerine takılır.", "class", 65, { repeatable: true, maxStacks: 2, priceGrowth: 1.3, scope: { kind: "tagged", alongFacing: true }, effects: [effect("irtifa-olcer", "accuracyVsAir", 0.6)] }),
   defineItem("tungsten-cekirdek", "Tungsten Çekirdek", "Takıldığı kulenin mermi hızı +%50, kritik hasarı +%20; yalnızca mermi atan kulelere takılır.", "class", 105, { scope: { kind: "tagged", projectiles: true }, effects: [effect("tungsten-cekirdek", "projectileSpeed", 0.5), effect("tungsten-cekirdek", "critDamage", 0.2)] }),
@@ -435,9 +489,10 @@ const rawShopCatalog: ShopItem[] = [
   // ve vadeli altin. Dalga basina altin tavani yok (sahibi kaldirdi). Darphane ve Kelle Defteri
   // kuleye takiliyor ve ikisi de kule katmanindan okunuyor (oldurenin
   // kulesi, binanin kendisi); obur ucu oyuncunun.
-  defineItem("altin-elek", "Altın Elek", "Düşman altını +%96; en fazla 3 kez alınır.", "utility", 85, { repeatable: true, maxStacks: 3, priceGrowth: 1.5, axes: ["economy"], effects: [effect("altin-elek", "goldGain", 0.96)] }),
-  defineItem("sigorta-policesi", "Sigorta Poliçesi", "Sızıntısız biten her dalga sonunda +360 altın.", "utility", 120, { axes: ["economy"], unlocks: ["gold:cleanWave"] }),
-  defineItem("darphane-modulu", "Darphane Modülü", "Takıldığı bina dalga sonunda ayaktaysa +160 altın verir; bir binaya en fazla 3 kez takılır; yalnızca ekonomi binalarına takılır.", "utility", 80, { repeatable: true, maxStacks: 3, priceGrowth: 1.3, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("darphane-modulu", "waveIncome", 160)] }),
+  defineItem("altin-elek", "Altın Elek", "Düşman altını +%48; en fazla 3 kez alınır.", "utility", 85, { repeatable: true, maxStacks: 3, priceGrowth: 1.5, axes: ["economy"], effects: [effect("altin-elek", "goldGain", 0.48)] }),
+  // Prim `INSURANCE_CLEAN_WAVE_GOLD`: Temiz Sicil kartinin primiyle ayni kilit, ayri tutar.
+  defineItem("sigorta-policesi", "Sigorta Poliçesi", `Sızıntısız biten her dalga sonunda +${INSURANCE_CLEAN_WAVE_GOLD} altın.`, "utility", 120, { axes: ["economy"], unlocks: ["gold:cleanWave"] }),
+  defineItem("darphane-modulu", "Darphane Modülü", "Takıldığı bina dalga sonunda ayaktaysa +80 altın verir; bir binaya en fazla 3 kez takılır; yalnızca ekonomi binalarına takılır.", "utility", 80, { repeatable: true, maxStacks: 3, priceGrowth: 1.3, axes: ["economy"], scope: { kind: "tagged", axes: ["economy"] }, effects: [effect("darphane-modulu", "waveIncome", 80)] }),
   defineItem("kelle-defteri", "Kelle Defteri", "Takıldığı kulenin kritik vuruşla öldürdüğü her düşman +24 altın verir.", "utility", 70, { scope: { kind: "tagged", combat: true }, axes: ["economy"], unlocks: ["gold:critKill"] }),
   defineItem("vadeli-mevduat", "Vadeli Mevduat", "Satın alındıktan sonra 4 dalga tamamlanınca 440 altın öder; en fazla 2 kez alınır; 16. dalgadan sonra çıkmaz.", "utility", 150, { repeatable: true, maxStacks: 2, priceGrowth: 1, axes: ["economy"], deposit: { payout: 440, waves: 4 } }),
 
@@ -448,11 +503,11 @@ const rawShopCatalog: ShopItem[] = [
   // Sampiyon primi oyuncunun (kuresel); otekiler kuleye takiliyor ve
   // oldurenin ya da hasari verenin kulesinden okunuyor -- hangi kuleye
   // takilacagi bir karar.
-  defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +600 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 600)] }),
+  defineItem("odul-fermani", "Ödül Fermanı", "Bir şampiyon düşman öldüğünde (kim öldürürse öldürsün) +300 altın.", "utility", 120, { axes: ["economy"], effects: [effect("odul-fermani", "championGold", 300)] }),
   defineItem("dusurme-primi", "Düşürme Primi", "Takıldığı kulenin öldürdüğü her uçan düşman +32 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("dusurme-primi", "airKillGold", 32)] }),
-  defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +40 altın kazandırır.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 40)] }),
+  defineItem("savas-tazminati", "Savaş Tazminatı", "Takıldığı kule dalga sonunda o dalga verdiği her 1000 hasar için +20 altın kazandırır.", "utility", 90, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("savas-tazminati", "damageGold", 20)] }),
   defineItem("toplu-imha-primi", "Toplu İmha Primi", "Takıldığı kule 2 saniye içinde 3 düşman öldürdüğünde +60 altın verir.", "utility", 85, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("toplu-imha-primi", "multiKillGold", 60)] }),
-  defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %20'si altına dönüşür.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.2)] }),
+  defineItem("artik-enerji-toplayici", "Artık Enerji Toplayıcı", "Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %10'u altına dönüşür.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("artik-enerji-toplayici", "overkillGold", 0.1)] }),
   // Ikinci tur kule primleri: kulenin sicakligi, hedefin yavasligi, ikmal
   // ve mesafe. Hepsi takildigi kulenin listesinden okunuyor ve kulenin
   // sahibine oduyor; tavan yok.
@@ -509,10 +564,13 @@ export function canEquipShopItem(
   item: ShopItem,
   tower: CardTowerProfile,
   equippedItemIds: readonly string[]
-): { ok: true } | { ok: false; reason: EquipShopItemFailure } {
+): { ok: true } | { ok: false; reason: EquipShopItemFailure; need?: ShopItemNeed } {
   if (item.target === "global") return { ok: false, reason: "globalItem" };
+  // Uyumsuzluk tavandan once: dolu bir kulede de asil sebep "bu esya buraya
+  // hic uymaz" ise oyuncu onu duymali.
+  const need = getShopItemTowerMismatch(item, tower);
+  if (need) return { ok: false, reason: "incompatibleTower", need };
   if (equippedItemIds.length >= MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER) return { ok: false, reason: "towerFull" };
-  if (!shopItemAppliesToTower(item, tower)) return { ok: false, reason: "incompatibleTower" };
   if (getShopItemCount(equippedItemIds, item.id) >= getShopItemTowerLimit(item)) return { ok: false, reason: "itemLimit" };
   const rival = getExclusiveShopItemId(item.id);
   if (rival && equippedItemIds.includes(rival)) return { ok: false, reason: "itemConflict" };
@@ -611,10 +669,20 @@ export function isShopItemAlreadyUnlocked(item: ShopItem, ownedCardIds: readonly
  * kalaninda (yenilemeler dahil, takimin hepsine) buradan disarida tutuyor.
  * `loadout`: kule esyalarinin kule basina sinirlari icin; bkz. `isShopItemAvailable`.
  */
-export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedItemIds: string[]; ownedCardIds?: readonly string[]; marksAvailable?: boolean; excludeItemIds?: readonly string[]; loadout?: ShopItemLoadout; count?: number; random?: () => number }) {
+/*
+ * `buildableTowers`: oyuncunun kurabilecegi yapilar (operatorun kadrosu ve
+ * ortak yapilar). Verilirse kule esyasi ancak bunlardan en az birinde is
+ * goruyorsa vitrine girer (`isShopItemUsefulOnTower`); oynanabilir
+ * operatorlerde hicbir kulede is gormeyen esya hic cikmiyor. Suzgec cekilisten
+ * once ve katalog sirasini koruyarak isliyor: ayni zar ayni teklifi verir.
+ */
+export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; buildableTowers?: readonly CardTowerProfile[]; ownedItemIds: string[]; ownedCardIds?: readonly string[]; marksAvailable?: boolean; excludeItemIds?: readonly string[]; loadout?: ShopItemLoadout; count?: number; random?: () => number }) {
   const random = options.random ?? Math.random;
   const excluded = new Set(options.excludeItemIds ?? []);
-  const pool = shopCatalog.filter((item) => !excluded.has(item.id) && isShopItemAvailable(item, options.wave, options.ownedItemIds, options.loadout));
+  const buildable = options.buildableTowers;
+  const pool = shopCatalog.filter((item) => !excluded.has(item.id)
+    && isShopItemAvailable(item, options.wave, options.ownedItemIds, options.loadout)
+    && (item.target === "global" || !buildable || buildable.some((tower) => isShopItemUsefulOnTower(item, tower))));
   const result: ShopItem[] = [];
   while (result.length < (options.count ?? SHOP_OFFER_COUNT) && pool.length > 0) {
     const weights = pool.map((item) => {

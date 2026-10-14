@@ -173,8 +173,11 @@ test("surekli atis gercek savasla ayni: sade, sogutmali ve Termal Kütle'li", ()
   const beklenenTermal = termal.room.getTowerHeatBudget(termal.tower);
   assert.ok(beklenenTermal.sustained < beklenenTermal.nominal * 0.5, "Termal Kutle'de isi baglamiyor gorunuyor");
   assert.ok(termal.room.getTowerStatsBlock(termal.tower, "p1").su, "Termal Kutle'li kulede panel surekli atisi gostermeli");
-  const olculenTermal = olculenTetiklemeHizi(termal.room, termal.tower);
-  assert.ok(Math.abs(olculenTermal / beklenenTermal.sustained - 1) < 0.15, `beklenen ${beklenenTermal.sustained.toFixed(3)}/sn, olculen ${olculenTermal.toFixed(3)}/sn`);
+  // Kilit-acilma dongusu uzun (soguma cezasi yariya inince ~30 sn): olcum
+  // penceresi birkac dongu kapsamali, yoksa sonuc dongunun evresine bagli.
+  // 100 derecede kirpilan isi bedava oldugu icin olculen biraz ustte kalir.
+  const olculenTermal = olculenTetiklemeHizi(termal.room, termal.tower, 600);
+  assert.ok(Math.abs(olculenTermal / beklenenTermal.sustained - 1) < 0.2, `beklenen ${beklenenTermal.sustained.toFixed(3)}/sn, olculen ${olculenTermal.toFixed(3)}/sn`);
 });
 
 test("surekli atis anlik goruntude yok, panel blogunda var", () => {

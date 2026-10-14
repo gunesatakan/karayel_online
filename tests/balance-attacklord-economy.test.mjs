@@ -138,9 +138,11 @@ test("kritik hasar veren her esya yariya indi; fiyat ve oteki statlar ayni; TR v
   const beklenen = {
     "kritik-sistem": [0.5, 150, "kritik hasarı +%50", "crit damage +50%"],
     "agir-cekirdek": [0.6, 105, "kritik hasarı +%60", "crit damage +60%"],
-    "infilak-basligi": [0.9, 130, "kritik hasarı +%90", "crit damage +90%"],
+    // Yeniden tasarim (isi cezasi kalkti, kritik patlamasi eklendi): +%60.
+    "infilak-basligi": [0.6, 130, "kritik hasarı +%60", "crit damage +60%"],
     "yarik-mermi": [1.25, 110, "kritik hasarı +%125", "crit damage +125%"],
-    "hassas-namlu": [0.25, 105, "kritik hasarı +%25", "crit damage +25%"],
+    // Yeniden tasarim (isabet yerine oncul nisan): +%40.
+    "hassas-namlu": [0.4, 105, "kritik hasarı +%40", "crit damage +40%"],
     "tungsten-cekirdek": [0.2, 105, "kritik hasarı +%20", "crit damage +20%"]
   };
   const kritikHasarli = shopCatalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === "critDamage")).map((entry) => entry.id).sort();
@@ -155,8 +157,9 @@ test("kritik hasar veren her esya yariya indi; fiyat ve oteki statlar ayni; TR v
   // Oteki statlar dokunulmadi.
   close(getModifierAdd(getShopItem("kritik-sistem").effects, "critChance"), 0.12);
   close(getModifierAdd(getShopItem("yarik-mermi").effects, "critChance"), -0.06);
-  close(getModifierAdd(getShopItem("infilak-basligi").effects, "heat"), 0.3);
-  close(getModifierAdd(getShopItem("hassas-namlu").effects, "accuracy"), 0.35);
+  close(getModifierAdd(getShopItem("infilak-basligi").effects, "heat"), 0);
+  close(getModifierAdd(getShopItem("infilak-basligi").effects, "critSplash"), 0.5);
+  close(getModifierAdd(getShopItem("hassas-namlu").effects, "leadTargeting"), 0.5);
   close(getModifierAdd(getShopItem("tungsten-cekirdek").effects, "projectileSpeed"), 0.5);
   assert.equal(getShopItem("agir-cekirdek").maxStacks, 2);
 });

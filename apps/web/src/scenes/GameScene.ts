@@ -88,6 +88,7 @@ import {
   getMapGridSize as getSharedMapGridSize,
   getMapOrigin,
   getEdgeSegments,
+  isAbartiEdgeAnchored,
   isEdgeSegmentInsideBoard,
   occupiesTowerSlot,
   DEFAULT_ARENA_CHROME,
@@ -165,6 +166,7 @@ import {
   countEquippableTowers,
   getInventoryEquipCue,
   getInventoryEquipRejectedCue,
+  canEquipShopItem,
   getShopPurchaseCue,
   getStructureRepairCue,
   getUltimateUpgradeCue,
@@ -2926,8 +2928,9 @@ export class GameScene extends Phaser.Scene {
   /**
    * Envanterden bir esya secildikten sonra dokunulan kule hedef olur.
    *
-   * Sunucu ayni kurallari yeniden dogruladigi icin burada engellemeye
-   * calismiyoruz; istek gonderilir, reddedilirse esya envanterde kalir.
+   * Esyanin is gormedigi kule (`canEquipShopItem`, sunucunun kurali) burada
+   * reddediliyor: onizleme acilmiyor, kisa sebep yaziliyor ve esya secili
+   * kaliyor -- oyuncu baska bir kuleye dokunabilir. Sunucu yine dogruluyor.
    */
   private tryEquipPendingItem(towerId: string) {
     if (!this.pendingEquipItemId) {
@@ -2935,6 +2938,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     const itemId = this.pendingEquipItemId;
+    const snapshot = this.latestPerfSnapshot?.towers.find((entry) => entry.id === towerId);
+    const rejection = snapshot ? this.getPendingEquipRejection(itemId, snapshot) : undefined;
+    if (rejection) {
+      const text = getInventoryEquipRejectedCue({ itemId, reason: rejection.reason, need: rejection.need }, { creative: true })?.text;
+      if (text) this.showNotice(text, 4200);
+      return true;
+    }
     // Takma engellenmiyor (sunucu da engellemiyor); yalnizca soyleniyor:
     // kartin ya da baska bir esyanin zaten actigi kilidi ikinci kez vermek
     // hicbir sey eklemiyor.
@@ -2948,6 +2958,27 @@ export class GameScene extends Phaser.Scene {
       this.pendingEquipItemId = undefined;
     });
     return true;
+  }
+
+  /**
+   * Secili esya bu kuleye takilamiyorsa sebebi; takilabiliyorsa yok. Yalnizca
+   * yerel oyuncunun kuleleri: baskasinin kulesini sunucu zaten reddediyor.
+   * Kule haritada da soluk ciziliyor (`getTowerEquipAlpha`).
+   */
+  private getPendingEquipRejection(itemId: string, tower: TowerSnapshot) {
+    if (tower.ownerId !== this.localSessionId) return undefined;
+    const item = getShopItem(itemId);
+    const definition = towerCatalog[tower.characterId]?.find((entry) => entry.id === tower.definitionId);
+    if (!item || !definition) return undefined;
+    const check = canEquipShopItem(item, definition, tower.equippedShopItemIds ?? []);
+    return check.ok ? undefined : check;
+  }
+
+  /** Esya secilmisken takilamayacagi yerel kuleler soluk. */
+  private getTowerEquipAlpha(tower: TowerSnapshot) {
+    const itemId = this.pendingEquipItemId;
+    if (!itemId || tower.ownerId !== this.localSessionId) return 1;
+    return this.getPendingEquipRejection(itemId, tower) ? 0.35 : 1;
   }
 
   private previewTowerChange(change: { towerId: string; cardId?: string; itemId?: string }, apply: () => void) {
@@ -3154,6 +3185,16 @@ export class GameScene extends Phaser.Scene {
     if (segments.length !== length || !segments.every((segment) => this.isValidAbartiEdgeSegment(segment, definitionId))) {
       return false;
     }
+    // Sunucudaki kuralla ayni: Abarti bir kulenin yanina (ya da insa alaninin
+    // kenarina) dayanir, duvar serbest.
+    if (definitionId !== WALL_TOWER_ID && !isAbartiEdgeAnchored(
+      segments,
+      { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows },
+      (col, row) => this.isTowerTile(col, row),
+      (col, row) => this.isStandingStructureCell(col, row, ignoreTowerId)
+    )) {
+      return false;
+    }
 
     for (const tower of this.towerSnapshots.values()) {
       // Kenara oturan her yapi yeri kapatir, yalnizca Abarti degil.
@@ -3192,18 +3233,19 @@ export class GameScene extends Phaser.Scene {
   }
 
 
-  /** Sunucudaki kuralla ayni: duvar zemine, Abarti insa alaninin kenarina oturur. */
-  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, definitionId = "zeynep-8") {
-    if (!isEdgeSegmentInsideBoard(segment, { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows })) {
-      return false;
-    }
-    if (definitionId === WALL_TOWER_ID) {
-      return true;
-    }
+  /** Sunucudaki kuralla ayni: segment tahtanin icinde (Abarti dayanagi `isAbartiEdgeAnchored`ta). */
+  private isValidAbartiEdgeSegment(segment: { orientation: TowerOrientation; col: number; row: number }, _definitionId = "zeynep-8") {
+    return isEdgeSegmentInsideBoard(segment, { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows });
+  }
 
-    return segment.orientation === "vertical"
-      ? this.isTowerTile(segment.col - 1, segment.row) || this.isTowerTile(segment.col, segment.row)
-      : this.isTowerTile(segment.col, segment.row - 1) || this.isTowerTile(segment.col, segment.row);
+  /** Hucreyi kaplayan, ayakta bir yapi var mi (kenar yapilari kare kaplamaz). */
+  private isStandingStructureCell(col: number, row: number, ignoreTowerId = "") {
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.id === ignoreTowerId || (tower.hp !== undefined && tower.hp <= 0)) continue;
+      if (this.getTowerFootprintCells(tower.x, tower.y, tower.definitionId, tower.orientation)
+        .some((cell) => cell.col === col && cell.row === row)) return true;
+    }
+    return false;
   }
 
   private isTowerTile(col: number, row: number) {
@@ -8178,7 +8220,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       const edgePlaced = this.isEdgePlacedDefinition(tower.definitionId);
       rendered.base.setVisible(!edgePlaced);
       rendered.base.setTint(this.getTowerTint(tower));
-      rendered.base.setAlpha(tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78);
+      rendered.base.setAlpha((tower.status === "Tukenmis" || tower.disabled ? 0.42 : tower.ownerId === this.localSessionId ? 1 : 0.78) * this.getTowerEquipAlpha(tower));
       rendered.halo.setVisible(!edgePlaced && tower.status !== "Tukenmis" && tower.status !== "Hararet" && !tower.disabled);
       this.drawTowerHealthBar(rendered.healthBar, tower, discSize);
       if (tower.id === this.selectedPlacedTowerId) {

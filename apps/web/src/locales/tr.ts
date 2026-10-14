@@ -112,9 +112,11 @@ export const trCore = {
   "sheet.target.siege": "Kuşatma",
   "sheet.target.slowed": "Yavaşlamış",
   "sheet.target.marked": "İşaretli (işarete ek)",
+  "sheet.target.fast": "Hızlı (koşucu, hava)",
   "sheet.cond.frozen": "Donmuş hedefe",
   "sheet.cond.marked": "İşaretli hedefe",
   "sheet.cond.air": "Hava hedefine",
+  "sheet.cond.far": "Menzilin dış yarısına",
   "sheet.cond.status": "{status} altındaki hedefe",
 
   // ------------------------------------------------------------ Kule paneli: baslik ve sayilar

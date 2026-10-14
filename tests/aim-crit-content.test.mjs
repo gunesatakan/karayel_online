@@ -255,8 +255,9 @@ test("Ince Uc yalnizca tek hedefe saldiran kulelere ulasiyor", () => {
 test("kapsamli esya uymayan kuleye takilamiyor", () => {
   const sunucu = allTowers.find((tower) => tower.id === "warrior-2");
   const takipci = allTowers.find((tower) => tower.id === "warrior-1");
-  assert.deepEqual(canEquipShopItem(getShopItem("jiroskop"), sunucu, []), { ok: false, reason: "incompatibleTower" });
-  assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), sunucu, []), { ok: false, reason: "incompatibleTower" });
+  // Ret, esyanin istedigi kule yetenegini de soyluyor (`need`).
+  assert.deepEqual(canEquipShopItem(getShopItem("jiroskop"), sunucu, []), { ok: false, reason: "incompatibleTower", need: "aims" });
+  assert.equal(canEquipShopItem(getShopItem("nisan-durbunu"), sunucu, []).reason, "incompatibleTower");
   assert.deepEqual(canEquipShopItem(getShopItem("jiroskop"), takipci, []), { ok: true });
   assert.deepEqual(canEquipShopItem(getShopItem("nisan-durbunu"), takipci, []), { ok: true });
   // Kritik esyalari hasar veren her kuleye takilir; duvara, hasarsiz aura
@@ -265,10 +266,10 @@ test("kapsamli esya uymayan kuleye takilamiyor", () => {
   const izolasyon = allTowers.find((tower) => tower.id === "warrior-3");
   for (const id of ["iz-okuyucu", "mesafe-olcer", "atesleme-pimi", "yarik-mermi"]) {
     assert.deepEqual(getShopItem(id).scope, { kind: "tagged", combat: true }, id);
-    assert.deepEqual(canEquipShopItem(getShopItem(id), sunucu, []), { ok: false, reason: "incompatibleTower" }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), sunucu, []), { ok: false, reason: "incompatibleTower", need: "damage" }, id);
     assert.deepEqual(canEquipShopItem(getShopItem(id), takipci, []), { ok: true }, id);
-    assert.deepEqual(canEquipShopItem(getShopItem(id), duvar, []), { ok: false, reason: "incompatibleTower" }, id);
-    assert.deepEqual(canEquipShopItem(getShopItem(id), izolasyon, []), { ok: false, reason: "incompatibleTower" }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), duvar, []), { ok: false, reason: "incompatibleTower", need: "damage" }, id);
+    assert.deepEqual(canEquipShopItem(getShopItem(id), izolasyon, []), { ok: false, reason: "incompatibleTower", need: "damage" }, id);
   }
 });
 
@@ -417,15 +418,27 @@ test("Nisan Kertigi ates konisini 20 dereceden 14 dereceye daraltiyor ve donusu 
   assert.ok(Math.abs(kartli - sade * 0.85) < 1e-9, `donus ${kartli}`);
 });
 
-test("Nisan Durbunu takildigi kulede koniyi 11 dereceye daraltiyor, bedelsiz", () => {
+test("Nisan Durbunu takildigi kulede her atisi ongorulu yapiyor; koniyi daraltmiyor, bedelsiz", () => {
+  // Yeniden tasarim: isabet iskayi azaltmiyordu (iska ucus suresinden). Durbun
+  // artik oncul nisan veriyor; koni ayni kaliyor (davranis testi
+  // tests/heat-aim-redesign.test.mjs).
   const room = oda();
   const tower = kur(room, "warrior-1");
   const derece = (value) => value * Math.PI / 180;
   const sadeAralik = room.getTowerFireInterval(tower);
+  const sadeKoni = nisanAl(room, tower, derece(19), 0).hizali;
   assert.ok(esyaTak(room, tower, "nisan-durbunu"));
-  assert.equal(nisanAl(room, tower, derece(12), 0).hizali, false);
-  assert.equal(nisanAl(room, tower, derece(10.5), 0).hizali, true);
-  // Bedeli kaldirildi: atis hizi ayni.
+  assert.equal(nisanAl(room, tower, derece(19), 0).hizali, sadeKoni, "koni degisti");
+  // Ongorulu atislarin orani Durbun'un payi: on atisin payi kadari.
+  // (Biriktirici `spawnTowerProjectile`in yaptigi gibi ilerletiliyor.)
+  const share = getModifierAdd(getShopItem("nisan-durbunu").effects, "leadTargeting");
+  let leads = 0;
+  for (let shot = 0; shot < 10; shot += 1) {
+    const lead = room.towerNextShotLeads(tower);
+    if (lead) leads += 1;
+    tower.leadCharge = (tower.leadCharge ?? 0) + share - (lead ? 1 : 0);
+  }
+  assert.equal(leads, Math.floor(10 * share + 1e-9), `on atista ${leads} ongorulu`);
   assert.ok(Math.abs(room.getTowerFireInterval(tower) - sadeAralik) < 1e-6, "atis hizi cezasi geri geldi");
 });
 
@@ -438,14 +451,14 @@ test("Nisan Durbunu nisan almayan kuleye takilamiyor", () => {
 
 // --------------------------------------------------- 4. Sunucu: kritik
 
-test("Sicak Tetik kritik sansini %12 artiriyor ve isiyi %15 buyutuyor", () => {
+test("Sicak Tetik kritik sansini %12 artiriyor ve isiyi %7 buyutuyor (isi bedeli yariya indi)", () => {
   const room = oda();
   const tower = kur(room, "warrior-4");
   assert.equal(kritikMi(room, tower, 0.1), false, "kartsiz kritik geldi");
   kartAl(room, "sicak-tetik");
   assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.12)) < 1e-9);
   assert.equal(kritikMi(room, tower, 0.1), true, "kartla kritik gelmedi");
-  assert.ok(Math.abs(getModifierAdd(room.getTowerRunModifiers(tower), "heat") - 0.15) < 1e-9, "isi cezasi kuleye ulasmadi");
+  assert.ok(Math.abs(getModifierAdd(room.getTowerRunModifiers(tower), "heat") - 0.07) < 1e-9, "isi cezasi kuleye ulasmadi");
 });
 
 test("Agir Funye kritigi kurmamis kulede kritigi siliyor, kurmus kulede buyutuyor", () => {
@@ -529,7 +542,8 @@ for (const [ad, ver] of [
     const tower = kur(room, "warrior-4");
     ver(room, tower);
     assert.ok(Math.abs(room.getTowerCritChance(tower) - TOWER_BASE_CRITICAL_CHANCE) < 1e-9, "isabetsiz kulede kritik verdi");
-    assert.ok(esyaTak(room, tower, "nisangah"), "nisangah takilamadi");
+    // Isabet kaynagi: Nisan Kertigi karti (+%30). Nisangah artik oncul nisan veriyor.
+    kartAl(room, "nisan-kertigi");
     assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.09)) < 1e-9, `%30 isabet: ${room.getTowerCritChance(tower)}`);
     assert.equal(kritikMi(room, tower, 0.08), true, "hasar yolunda kritik gelmedi");
     assert.equal(kritikMi(room, tower, 0.11), false);
@@ -571,7 +585,7 @@ test("Atesleme Pimi ve Yarik Mermi takildigi kulenin kritik zarini degistiriyor"
   const sadeKritik = vurus(room, tower, 0) / vurus(room, tower, 1);
   assert.ok(esyaTak(room, tower, "atesleme-pimi"));
   assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.2)) < 1e-9);
-  assert.ok(Math.abs(getModifierAdd(room.getTowerRunModifiers(tower), "heat") - 0.25) < 1e-9);
+  assert.ok(Math.abs(getModifierAdd(room.getTowerRunModifiers(tower), "heat") - 0.1) < 1e-9);
   assert.ok(esyaTak(room, tower, "yarik-mermi"));
   assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.2 - 0.06)) < 1e-9);
   const kritik = vurus(room, tower, 0) / vurus(room, tower, 1);

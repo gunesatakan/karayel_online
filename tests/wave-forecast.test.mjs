@@ -215,7 +215,11 @@ test("ates etmeyen yapiya takilan Ucaksavar Kiti uyariyi kaldirmiyor", () => {
   const duvar = kur(room, "wall-1");
   room.state.players.get("p1").inventoryItemIds.push("ucaksavar-kiti");
   room.equipShopItem(client, { itemId: "ucaksavar-kiti", towerId: duvar.id });
-  assert.ok(duvar.equippedShopItemIds.includes("ucaksavar-kiti"), "olcum bos: kit duvara takilamadi");
+  // Kit artik ates etmeyen yapiya takilamiyor; eski kayitlardaki takili kit ise
+  // yerinde kaliyor. O durum elle kuruluyor.
+  assert.equal(duvar.equippedShopItemIds.includes("ucaksavar-kiti"), false, "kit duvara takildi");
+  duvar.equippedShopItemIds.push("ucaksavar-kiti");
+  room.invalidateTowerGrants();
   assert.equal(oyuncu(tel(room)).noAirDefense, true, "duvara takili kit havayi karsiliyor sayildi");
 });
 

@@ -192,3 +192,43 @@ export function isEdgeSegmentInsideBoard(segment: EdgeSegment, board: PlacementB
     ? segment.col >= 0 && segment.col <= board.cols && segment.row >= 0 && segment.row < board.rows
     : segment.col >= 0 && segment.col < board.cols && segment.row >= 0 && segment.row <= board.rows;
 }
+
+/**
+ * Kenar segmentinin iki yanindaki hucreler (tahta disinda kalan yan yok).
+ * Dikey segment `col-1` ile `col` sutunlarini, yatay segment `row-1` ile
+ * `row` satirlarini ayirir.
+ */
+export function getEdgeSegmentSideCells(segment: EdgeSegment, board: PlacementBoard): PlacementCell[] {
+  const sides = segment.orientation === "vertical"
+    ? [{ col: segment.col - 1, row: segment.row }, { col: segment.col, row: segment.row }]
+    : [{ col: segment.col, row: segment.row - 1 }, { col: segment.col, row: segment.row }];
+  return sides.filter((cell) => cell.col >= 0 && cell.col < board.cols && cell.row >= 0 && cell.row < board.rows);
+}
+
+/**
+ * Abarti kenari bir yere dayaniyor mu.
+ *
+ * Abarti dost atislarini degistiriyor; anlamli oldugu yer bir kulenin ates
+ * hattinin dibi. Kural iki yoldan saglaniyor:
+ *
+ *   1. Bir segmentin yaninda kare kaplayan, ayakta bir oyuncu yapisi var
+ *      (`isStructureCell`). Acik arenanin kurali bu: arenada hic `tower`
+ *      harita karesi yok ve eski kural Abarti'yi 494 kenarin hicbirine
+ *      kurdurmuyordu.
+ *   2. Eski kural: her segmentin bir yani insa alani (`tower` karesi) --
+ *      yolu ve insa alani ayrik haritalarda insa alaninin kenari.
+ *
+ * Kurulum yasak bolgesi ve dolu kenar ayrica soruluyor (bu kural onlari
+ * gevsetmez).
+ */
+export function isAbartiEdgeAnchored(
+  segments: EdgeSegment[],
+  board: PlacementBoard,
+  isBuildTile: (col: number, row: number) => boolean,
+  isStructureCell: (col: number, row: number) => boolean
+) {
+  if (segments.length === 0) return false;
+  const sides = segments.map((segment) => getEdgeSegmentSideCells(segment, board));
+  if (sides.some((cells) => cells.some((cell) => isStructureCell(cell.col, cell.row)))) return true;
+  return sides.every((cells) => cells.some((cell) => isBuildTile(cell.col, cell.row)));
+}

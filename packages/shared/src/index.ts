@@ -1716,6 +1716,9 @@ export {
   getIsolationSlowFraction,
   getStatusSlowFraction,
   getCriticalSlowFraction,
+  scaleSlowFraction,
+  AURA_SLOW_LINGER_MS_PER_DURATION,
+  getAuraSlowLingerMs,
   getTowerHitSlowFraction,
   calculateTowerScaledBaseDamage,
   inferTowerAmmoType
@@ -1824,9 +1827,22 @@ export {
   getOwnedItemUnlocks,
   isShopItemAlreadyUnlocked,
   isShopItemUnlockRedundant,
-  shopCatalog
+  shopCatalog,
+  INSURANCE_CLEAN_WAVE_GOLD,
+  BLOOD_BANK_NEXUS_COST,
+  getShopItemTowerEffects
 } from "./shop/index.js";
 export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemLoadout, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
+export {
+  SHOP_ITEM_NEEDS,
+  getShopItemNeeds,
+  getShopItemTowerMismatch,
+  getTowerItemCapabilities,
+  isShopItemUsefulOnTower,
+  describeShopItemNeed,
+  getShopItemNeedTurkish
+} from "./shop/compatibility.js";
+export type { ShopItemCapabilityNeed, ShopItemNeed, ShopItemScopeNeed, TowerItemCapabilities, TowerResourceKind } from "./shop/compatibility.js";
 export { applyEnemyMark, getMarkDamageMultiplier, isMarkOnlyChoice } from "./marks/index.js";
 export type { ActiveMark } from "./marks/index.js";
 export {
@@ -1841,6 +1857,7 @@ export {
   towerAims,
   towerFiresAlongFacing
 } from "./aiming/index.js";
+export * from "./heat-mechanics/index.js";
 export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles, towerNeverAttacks } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {
@@ -2070,7 +2087,7 @@ export { getOrbitRotationSpeedForInterval, getOrbitTargetHitCooldownMs, selectOr
 export type { OrbitSweepContact, OrbitSweepQuery } from "./attacks/orbit.js";
 export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
-export { getEdgeSegments, getEdgeSegmentsCenter, isEdgeSegmentInsideBoard, getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
+export { getEdgeSegments, getEdgeSegmentsCenter, getEdgeSegmentSideCells, isAbartiEdgeAnchored, isEdgeSegmentInsideBoard, getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
 export type { EdgeOrientation, EdgeSegment, PlacementBoard, PlacementCell, PlacementFailureReason, PlacementValidation } from "./placement/index.js";
 export {
   MAP_GRID_COLS,

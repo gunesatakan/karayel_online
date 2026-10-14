@@ -20,6 +20,9 @@ import { readFile } from "node:fs/promises";
 import {
   CARD_RARITY_WEIGHT,
   CLEAN_WAVE_GOLD,
+  INSURANCE_CLEAN_WAVE_GOLD,
+  getShopItemNeeds,
+  getTowerItemCapabilities,
   COLD_ACCURACY_BONUS,
   COLD_ACCURACY_TEMPERATURE,
   CRIT_KILL_GOLD,
@@ -86,9 +89,15 @@ const item = (id) => {
 };
 const near = (actual, expected, label = "") => assert.ok(Math.abs(actual - expected) < 1e-6, `${label} ${actual} != ${expected}`);
 
+// Yeniden tasarim (docs/esya-guc-siniflandirmasi.md): Hafif Taret Kabugu ve
+// Taret Motoru donus esyasi olmaktan cikip hizli hedef ve ilk atis hasari
+// tasiyor; Gez ve Arpacik, Lazer Telemetre ve Hassas Namlu isabet yerine
+// oncul nisan ve uzak kritik veriyor. Davranislari ve metinleri
+// tests/heat-aim-redesign.test.mjs'te; buradaki tema listeleri artik yalnizca
+// statlarini koruyan esyalari sayiyor.
 const THEMES = {
-  turn: { items: ["bilyali-yatak", "hafif-taret-kabugu", "taret-motoru", "hareket-ongorucu"], cards: ["servo-takviyesi", "ongorulu-takip"], epic: "tork-aktarimi" },
-  accuracy: { items: ["gez-arpacik", "lazer-telemetre", "termal-kilif", "hassas-namlu"], cards: ["titresim-sonumleyici", "isil-kalibrasyon"], epic: "balistik-hesaplayici" },
+  turn: { items: ["bilyali-yatak", "hareket-ongorucu"], cards: ["servo-takviyesi", "ongorulu-takip"], epic: "tork-aktarimi" },
+  accuracy: { items: ["termal-kilif"], cards: ["titresim-sonumleyici", "isil-kalibrasyon"], epic: "balistik-hesaplayici" },
   speed: { items: ["sabot-fisegi", "manyetik-ray", "genlesme-odasi", "hafif-cekirdek"], cards: ["basincli-hazne", "hizlandirici-bobin"], epic: "kinetik-erim" },
   gold: { items: ["altin-elek", "sigorta-policesi", "darphane-modulu", "kelle-defteri", "vadeli-mevduat"], cards: ["parali-asker", "muharebe-odenegi", "temiz-sicil", "kelle-parasi"], epic: "savas-hazinesi" }
 };
@@ -222,17 +231,19 @@ function sizdir(room) {
 
 // ------------------------------------------------------- 1. Katalog ve metin
 
-test("istenen sayilar: her eksende 4 esya 2 kart, altinda 5 esya 4 kart, eksen basina bir epik", () => {
+test("istenen sayilar: eksen basina esya ve kart, altinda 5 esya 4 kart, eksen basina bir epik", () => {
+  const counts = { turn: [2, 2], accuracy: [1, 2], speed: [4, 2], gold: [5, 4] };
   for (const [name, theme] of Object.entries(THEMES)) {
-    const expected = name === "gold" ? [5, 4] : [4, 2];
+    const expected = counts[name];
     assert.equal(theme.items.length, expected[0], name);
     assert.equal(theme.cards.length, expected[1], name);
     for (const id of theme.items) item(id);
     for (const id of theme.cards) assert.notEqual(getCardRarity(card(id)), "epic", id);
     assert.equal(getCardRarity(card(theme.epic)), "epic", theme.epic);
   }
-  assert.equal(new Set([...NEW_CARD_IDS, ...NEW_ITEM_IDS]).size, 31);
-  assert.equal(cardCatalog.filter((entry) => getCardRarity(entry) === "epic").length, 4, "baska epik yok");
+  assert.equal(new Set([...NEW_CARD_IDS, ...NEW_ITEM_IDS]).size, 26);
+  // Besinci epik Termodinamik Denge (isi ekseni, cevrimsiz: kendi testinde).
+  assert.equal(cardCatalog.filter((entry) => getCardRarity(entry) === "epic").length, 5, "baska epik yok");
   // Yeni adlar benzersiz: ne birbiriyle ne de eski icerikle cakisiyor.
   const fresh = [...NEW_CARD_IDS.map(card), ...NEW_ITEM_IDS.map(item)];
   const freshIds = new Set(fresh.map((entry) => entry.id));
@@ -262,7 +273,8 @@ const STAT_LABEL = {
   turnRate: "dönüş hızı", accuracy: "isabet", fireRate: "atış hızı", heat: "ısı", range: "menzil",
   projectileSpeed: "mermi hızı", operatingEnergyCost: "çalışma enerjisi tüketimi", shotFuelCost: "yakıt tüketimi",
   towerHealth: "can", damage: "hasar", critDamage: "kritik hasarı", goldGain: "Düşman altın", experienceGain: "tecrübe kazancı",
-  critChance: "kritik şansı", accuracyVsAir: "hava hedeflerine isabet", projectileSpeedIsolated: "komşusuzken mermi hızı"
+  critChance: "kritik şansı", accuracyVsAir: "hava hedeflerine isabet", projectileSpeedIsolated: "komşusuzken mermi hızı",
+  damageVsFast: "koşucu ve uçan düşmanlara hasar"
 };
 const yuzde = (value) => String(Math.round(Math.abs(value) * 100));
 const isaret = (value) => (value < 0 ? "-" : "\\+");
@@ -295,10 +307,12 @@ test("kilit veren yeni icerigin sayilari sunucunun sabitleriyle ayni", () => {
     assert.ok(entry.description.includes(`${COLD_ACCURACY_TEMPERATURE} derecenin altında`), entry.id);
     assert.match(entry.description, new RegExp(`isabeti \\+%${yuzde(COLD_ACCURACY_BONUS)}[;.]`), entry.id);
   }
-  for (const entry of [card("temiz-sicil"), item("sigorta-policesi")]) {
+  // Ayni kilit, ayri tutar: Sigorta Policesi altin esyalari yariya inince yariya indi, kart ayni kaldi.
+  for (const [entry, gold] of [[card("temiz-sicil"), CLEAN_WAVE_GOLD], [item("sigorta-policesi"), INSURANCE_CLEAN_WAVE_GOLD]]) {
     assert.deepEqual(entry.unlocks, ["gold:cleanWave"]);
-    assert.equal(entry.description, `Sızıntısız biten her dalga sonunda +${CLEAN_WAVE_GOLD} altın.`);
+    assert.equal(entry.description, `Sızıntısız biten her dalga sonunda +${gold} altın.`);
   }
+  assert.equal(INSURANCE_CLEAN_WAVE_GOLD * 2, CLEAN_WAVE_GOLD);
   for (const entry of [card("kelle-parasi"), item("kelle-defteri")]) {
     assert.deepEqual(entry.unlocks, ["gold:critKill"]);
     assert.ok(entry.description.endsWith(`her düşman +${CRIT_KILL_GOLD} altın verir.`), entry.id);
@@ -414,8 +428,16 @@ test("hasar veren kule: duvar, onarim ussu, hasarsiz auralar ve Sunucu disarida;
   // Kritik ve oldurme esyalari bu kurala bagli; hicbiri olu kalmiyor.
   const combatItems = shopCatalog.filter((entry) => entry.scope.kind === "tagged" && entry.scope.combat);
   assert.ok(combatItems.length >= 20, `yalnizca ${combatItems.length}`);
+  // Kapsamin ustune esyanin kendi istedigi kule yetenekleri de bakiliyor
+  // (Son Mermi muhimmatla ates eden kule istiyor): hasar kurali gerekli, yeterli
+  // olmayabilir.
   for (const entry of combatItems) {
-    for (const tower of allTowers) assert.equal(shopItemAppliesToTower(entry, tower), towerDealsDamage(tower) && (!entry.scope.boundedRange || towerHasBoundedRange(tower)), `${entry.id} / ${tower.id}`);
+    const extra = getShopItemNeeds(entry).filter((need) => need !== "damage");
+    for (const tower of allTowers) {
+      const caps = getTowerItemCapabilities(tower);
+      const want = towerDealsDamage(tower) && (!entry.scope.boundedRange || towerHasBoundedRange(tower)) && extra.every((need) => caps[need]);
+      assert.equal(shopItemAppliesToTower(entry, tower), want, `${entry.id} / ${tower.id}`);
+    }
   }
   assert.equal(canEquipShopItem(item("kelle-defteri"), kule("wall-1"), []).ok, false);
   assert.equal(canEquipShopItem(item("kelle-defteri"), kule("zeynep-7"), []).ok, false);
@@ -436,7 +458,7 @@ test("altin icerigi: kuresel esyalar oyuncuya, Darphane ekonomi binasina, Kelle 
   assert.equal(canEquipShopItem(item("darphane-modulu"), kule("warrior-7"), []).ok, true, "Cephane Merkezi");
   assert.equal(canEquipShopItem(item("kelle-defteri"), kule("warrior-4"), []).ok, true);
   assert.equal(canEquipShopItem(item("kelle-defteri"), kule("warrior-7"), []).ok, false, "kaynak binasi oldurmuyor");
-  assert.ok(item("darphane-modulu").description.startsWith("Takıldığı bina dalga sonunda ayaktaysa +160 altın verir;"));
+  assert.ok(item("darphane-modulu").description.startsWith("Takıldığı bina dalga sonunda ayaktaysa +80 altın verir;"));
 });
 
 test("secim ekrani: altin kartlari 'Genel', nisan kartlari yalnizca nisan alan kuleye sayiliyor", () => {
@@ -474,9 +496,9 @@ test("yeni kartlarin nadirligi ve yigin siniri cekiliste tutuyor", () => {
 
 test("yeni esyalar: tekrar sayisi, fiyat buyumesi ve kategori", () => {
   const expected = {
-    "bilyali-yatak": [4, 40, "class"], "gez-arpacik": [4, 35, "class"], "sabot-fisegi": [4, 40, "class"],
-    "hafif-taret-kabugu": [1, 80, "class"], "taret-motoru": [1, 110, "class"], "hareket-ongorucu": [1, 75, "class"],
-    "lazer-telemetre": [1, 110, "class"], "termal-kilif": [1, 70, "class"], "hassas-namlu": [1, 105, "class"],
+    "bilyali-yatak": [4, 40, "class"], "sabot-fisegi": [4, 40, "class"],
+    "hareket-ongorucu": [1, 75, "class"],
+    "termal-kilif": [1, 70, "class"],
     "manyetik-ray": [1, 90, "class"], "genlesme-odasi": [1, 105, "class"], "hafif-cekirdek": [1, 150, "class"],
     "altin-elek": [3, 85, "utility"], "sigorta-policesi": [1, 120, "utility"], "darphane-modulu": [3, 80, "utility"],
     "kelle-defteri": [1, 70, "utility"], "vadeli-mevduat": [2, 150, "utility"]
@@ -643,18 +665,19 @@ test("Bilyali Yatak dort kez takiliyor ve toplaniyor; Taret Motoru ve Hafif Tare
   for (let index = 0; index < 4; index += 1) assert.ok(esyaTak(room, tower, "bilyali-yatak"));
   near(donus(room, tower), sade * 1.8, "dort yatak");
 
+  // Yeniden tasarim: bedelleri kalkti (isi ve can), donus ayni.
   const motorlu = kur(room, "warrior-4");
   const motorsuz = donus(room, motorlu);
   assert.ok(esyaTak(room, motorlu, "taret-motoru"));
   near(donus(room, motorlu), motorsuz * 2.2);
-  near(getModifierAdd(room.getTowerRunModifiers(motorlu), "heat"), 0.2);
+  near(getModifierAdd(room.getTowerRunModifiers(motorlu), "heat"), 0);
 
   const hafif = kur(room, "warrior-6");
   const hafifSade = donus(room, hafif);
   const maxHp = hafif.maxHp;
   assert.ok(esyaTak(room, hafif, "hafif-taret-kabugu"));
   near(donus(room, hafif), hafifSade * 1.7);
-  near(hafif.maxHp, maxHp * 0.8, "can tavani");
+  near(hafif.maxHp, maxHp, "can cezasi geri geldi");
 
   const sunucu = kur(room, "warrior-2");
   for (const id of THEMES.turn.items) assert.equal(esyaTak(room, sunucu, id), false, `${id} Sunucu'ya takildi`);
@@ -703,33 +726,34 @@ test("soguk namlunun isabeti Goz Karari'nin kritik cevrimine de giriyor", () => 
   near(soguk - sicak, COLD_ACCURACY_BONUS * 0.3, "kritik farki");
 });
 
-test("Gez ve Arpacik, Lazer Telemetre ve Hassas Namlu takildigi kulede koniyi daraltiyor, bedelsiz", () => {
+test("Gez ve Arpacik, Lazer Telemetre ve Hassas Namlu: koni ayni, yeni statlar kuleye ulasiyor, bedelsiz", () => {
+  // Yeniden tasarim: isabet iskayi azaltmiyordu. Gez ve Hassas Namlu oncul
+  // nisan, Lazer Telemetre menzil ve uzak kritik veriyor; koni daralmiyor.
   const room = oda();
   const tower = kur(room, "warrior-1");
+  const koni = koniIcinde(room, tower, 19);
   for (let index = 0; index < 4; index += 1) assert.ok(esyaTak(room, tower, "gez-arpacik"));
-  // 4 x %15 = %60: 20 derece -> 8 derece.
-  assert.equal(koniIcinde(room, tower, 8.5), false);
-  assert.equal(koniIcinde(room, tower, 7.5), true);
+  assert.equal(koniIcinde(room, tower, 19), koni, "koni degisti");
+  near(getModifierAdd(room.getTowerRunModifiers(tower), "leadTargeting"), 4 * getModifierAdd(item("gez-arpacik").effects, "leadTargeting"), "dort kopya toplaniyor");
 
   const lazerli = kur(room, "warrior-4");
   const menzil = room.getTowerRange(lazerli);
   const sade = donus(room, lazerli);
   assert.ok(esyaTak(room, lazerli, "lazer-telemetre"));
-  assert.equal(koniIcinde(room, lazerli, 10.5), false);
-  assert.equal(koniIcinde(room, lazerli, 9.5), true);
   near(room.getTowerRange(lazerli), menzil * 1.1, "menzil");
   near(donus(room, lazerli), sade, "donus cezasi geri geldi");
 
   const hassas = kur(room, "warrior-6");
   const aralik = room.getTowerFireInterval(hassas);
   assert.ok(esyaTak(room, hassas, "hassas-namlu"));
-  // Kritik hasar esyalari yariya indi: Hassas Namlu +%50 -> +%25.
-  near(getModifierAdd(room.getTowerRunModifiers(hassas), "critDamage"), 0.25);
+  near(getModifierAdd(room.getTowerRunModifiers(hassas), "critDamage"), getModifierAdd(item("hassas-namlu").effects, "critDamage"));
   near(room.getTowerFireInterval(hassas), aralik, "atis hizi cezasi geri geldi");
 
-  // Isin kulesi nisan aliyor ama isabet orada yalnizca tetigi geciktiriyor.
+  // Mermisi namlu yonunde ucmayan Debug Lazer'e oncul nisan takilmiyor;
+  // uzak kritik ise her hasar veren kulede isliyor.
   const lazer = kur(room, "warrior-5");
-  for (const id of THEMES.accuracy.items) assert.equal(esyaTak(room, lazer, id), false, `${id} Debug Lazer'e takildi`);
+  for (const id of ["gez-arpacik", "hassas-namlu", ...THEMES.accuracy.items]) assert.equal(esyaTak(room, lazer, id), false, `${id} Debug Lazer'e takildi`);
+  assert.equal(esyaTak(room, lazer, "lazer-telemetre"), true);
 });
 
 // ---------------------------------------------------- 4. Sunucu: mermi hizi
@@ -914,7 +938,7 @@ test("Savas Hazinesi gercek altin kartlarini okuyor ve kendi bonusu oldurme alti
   // +%60 (kart) + %100 = %160 -> hasar +%24 (her %20'si +%3).
   near(room.getTowerDamage(tower) / sade, 1 + 1.6 * 0.15, "iki kart");
   assert.ok(satinAl(room, "altin-elek"));
-  // +%96 daha: %256 -> tavan +%30.
+  // +%48 daha: %208 -> tavan +%30.
   near(room.getTowerDamage(tower) / sade, 1.3, "kart + esya (tavan)");
   const player = room.state.players.get("p1");
   player.gold = 0;
@@ -923,7 +947,7 @@ test("Savas Hazinesi gercek altin kartlarini okuyor ve kendi bonusu oldurme alti
   enemy.reward = 100;
   enemy.champion = undefined;
   room.damageEnemy(enemy, 1e9, 0, "warrior-1", "p1");
-  near(player.gold, Math.round(100 * 1.5) * (1 + 0.6 + 1 + 0.96), "oldurme altini yalnizca kartlarin carpaniyla");
+  near(player.gold, Math.round(100 * 1.5) * (1 + 0.6 + 1 + 0.48), "oldurme altini yalnizca kartlarin carpaniyla");
 });
 
 test("cevrim tavanlari ayri: iki hasar cevrimi toplaniyor ama birbirini beslemiyor", () => {
@@ -987,20 +1011,20 @@ test("Muharebe Odenegi oyuncu basina bir kez sayiliyor, kule sayisi kadar degil"
   assert.equal(room.getPlayerWaveIncome("p1"), 160);
 });
 
-test("Darphane Modulu: takildigi bina ayaktayken her dalga sonu +160, uc kopya +480, yikik bina 0", () => {
+test("Darphane Modulu: takildigi bina ayaktayken her dalga sonu +80, uc kopya +240, yikik bina 0", () => {
   const room = oda();
   const bina = kur(room, "warrior-7");
   const savas = kur(room, "warrior-1");
   assert.equal(esyaTak(room, savas, "darphane-modulu"), false, "savas kulesine takildi");
   assert.ok(esyaTak(room, bina, "darphane-modulu"));
-  assert.equal(room.getPlayerWaveIncome("p1"), 160);
+  assert.equal(room.getPlayerWaveIncome("p1"), 80);
   assert.ok(esyaTak(room, bina, "darphane-modulu"));
   assert.ok(esyaTak(room, bina, "darphane-modulu"));
-  assert.equal(room.getPlayerWaveIncome("p1"), 480);
+  assert.equal(room.getPlayerWaveIncome("p1"), 240);
   const player = room.state.players.get("p1");
   const once = player.gold;
   room.awardWaveEndBonusGold(room.wave, false);
-  assert.equal(player.gold - once, 480);
+  assert.equal(player.gold - once, 240);
   bina.hp = 0;
   assert.equal(room.getPlayerWaveIncome("p1"), 0, "yikik bina gelir getirdi");
   // Dorduncu kopya vitrine cikmiyor.
@@ -1026,8 +1050,10 @@ test("Temiz Sicil gercek dalga kapanisinda sizintisiz dalgaya primini veriyor, s
   const faizli = tabanli + Math.floor(tabanli * GOLD_INTEREST_RATE);
   assert.equal(kapanis({}), faizli, "kartsiz");
   assert.equal(kapanis({ kart: true }), faizli + CLEAN_WAVE_GOLD, "prim faizin tabanina girmedi");
-  assert.equal(kapanis({ esya: true }), faizli + CLEAN_WAVE_GOLD, "Sigorta Policesi");
+  assert.equal(kapanis({ esya: true }), faizli + INSURANCE_CLEAN_WAVE_GOLD, "Sigorta Policesi");
+  // Ikisi birden: kartin primi, bir kez.
   assert.equal(kapanis({ kart: true, esya: true }), faizli + CLEAN_WAVE_GOLD, "ayni kilit iki kez odendi");
+  assert.equal(kapanis({ esya: true, sizinti: true }), faizli, "sizintili dalgada Sigorta primi");
   assert.equal(kapanis({ kart: true, sizinti: true }), faizli, "sizintili dalgada prim");
 });
 
@@ -1326,7 +1352,7 @@ test("altin kazanimini artiran her kart ve esya (kartlar dort kattan yariya, esy
   // Altin yuzdesi veren kartlar yariya indi (+%120 -> +%60); esyalar ayni.
   const goldGain = {
     "ganimet-payi": 0.6, "kanli-kazanc": 1.4, "parali-asker": 1, "savas-hazinesi": 0.6,
-    "ganimet-kesesi": 1.6, "altin-elek": 0.96
+    "ganimet-kesesi": 0.8, "altin-elek": 0.48
   };
   for (const [id, add] of Object.entries(goldGain)) {
     const entry = cardCatalog.find((candidate) => candidate.id === id) ?? item(id);
@@ -1337,7 +1363,7 @@ test("altin kazanimini artiran her kart ve esya (kartlar dort kattan yariya, esy
   near(getModifierAdd(card("kanli-kazanc").effects, "towerHealth"), -0.2);
   near(getModifierAdd(card("parali-asker").effects, "experienceGain"), -0.2);
   for (const id of ["muharebe-odenegi"]) near(getModifierAdd(card(id).effects, "waveIncome"), 160, id);
-  near(getModifierAdd(item("darphane-modulu").effects, "waveIncome"), 160);
+  near(getModifierAdd(item("darphane-modulu").effects, "waveIncome"), 80);
   assert.equal(CLEAN_WAVE_GOLD, 360);
   assert.equal(CRIT_KILL_GOLD, 24);
   assert.equal(GOLD_INTEREST_RATE, 0.16);
@@ -1464,16 +1490,15 @@ const AIM_SPEED_STATS = new Set(["accuracy", "projectileSpeed", "accuracyVsAir",
 
 test("isabet ya da mermi hizi veren hicbir esya bir bedel tasimiyor", () => {
   const aimSpeedItems = shopCatalog.filter((entry) => entry.effects.some((modifier) => AIM_SPEED_STATS.has(modifier.stat) && modifier.add > 0));
-  assert.ok(aimSpeedItems.length >= 16, `yalnizca ${aimSpeedItems.length}`);
+  assert.ok(aimSpeedItems.length >= 10, `yalnizca ${aimSpeedItems.length}`);
   for (const entry of aimSpeedItems) {
     for (const modifier of entry.effects) assert.ok(modifier.add > 0, `${entry.id}: ${modifier.stat} ${modifier.add}`);
     assert.doesNotMatch(entry.description, /-%/, entry.id);
   }
   // Bedeli kaldirilan alti esya: yalnizca olumlu etkiler, fiyat ve kapsam ayni.
+  // Nisan Durbunu, Lazer Telemetre ve Hassas Namlu yeniden tasarlandi (oncul
+  // nisan, uzak kritik); bedelsizlikleri tests/heat-aim-redesign.test.mjs'te.
   const expected = {
-    "nisan-durbunu": [["accuracy", 0.45]],
-    "lazer-telemetre": [["accuracy", 0.5], ["range", 0.1]],
-    "hassas-namlu": [["accuracy", 0.35], ["critDamage", 0.25]],
     "manyetik-ray": [["projectileSpeed", 0.9]],
     "genlesme-odasi": [["projectileSpeed", 0.6], ["range", 0.08]],
     "hafif-cekirdek": [["projectileSpeed", 1.5]]
@@ -1481,11 +1506,12 @@ test("isabet ya da mermi hizi veren hicbir esya bir bedel tasimiyor", () => {
   for (const [id, effects] of Object.entries(expected)) {
     assert.deepEqual(item(id).effects.map((modifier) => [modifier.stat, modifier.add]), effects, id);
   }
-  // Tema sayilari: isabet 9 esya (Termal Kilif kosullu, kilitle), mermi hizi 8.
+  // Tema sayilari: isabet 3 esya (Termal Kilif kosullu, kilitle; altisi oncul
+  // nisana ve baska rollere tasindi), mermi hizi 9 (Atalet Dengeleyici dahil).
   const aimItems = shopCatalog.filter((entry) => entry.id === "termal-kilif" || entry.effects.some((modifier) => (modifier.stat === "accuracy" || modifier.stat === "accuracyVsAir") && modifier.add > 0));
   const speedItems = shopCatalog.filter((entry) => entry.effects.some((modifier) => (modifier.stat === "projectileSpeed" || modifier.stat === "projectileSpeedIsolated") && modifier.add > 0));
-  assert.equal(aimItems.length, 9, aimItems.map((entry) => entry.id).join(", "));
-  assert.equal(speedItems.length, 8, speedItems.map((entry) => entry.id).join(", "));
+  assert.equal(aimItems.length, 3, aimItems.map((entry) => entry.id).join(", "));
+  assert.equal(speedItems.length, 9, speedItems.map((entry) => entry.id).join(", "));
 });
 
 test("yeni isabet ve mermi hizi esyalari: kapsam butun katalogda, yigin, fiyat, metin", () => {
@@ -1517,13 +1543,14 @@ test("yeni isabet ve mermi hizi esyalari: kapsam butun katalogda, yigin, fiyat, 
   for (const id of [...NEW_AIM_ITEMS, ...NEW_SPEED_ITEMS]) assert.equal(canEquipShopItem(item(id), kule("warrior-5"), []).ok, false, id);
 });
 
-test("Atalet Dengeleyici ve Optik Hedefleyici koniyi daraltiyor, ikincil stat kuleye ulasiyor", () => {
+test("Atalet Dengeleyici mermiyi hizlandiriyor (koni ayni); Optik Hedefleyici koniyi daraltiyor, ikincil stat kuleye ulasiyor", () => {
   const room = oda();
   const tower = kur(room, "warrior-1");
+  const sadeHiz = mermiHizi(room, tower);
+  const koni = koniIcinde(room, tower, 19);
   assert.ok(esyaTak(room, tower, "atalet-dengeleyici"));
-  // %60: 20 derece -> 8 derece.
-  assert.equal(koniIcinde(room, tower, 8.5), false);
-  assert.equal(koniIcinde(room, tower, 7.5), true);
+  assert.equal(koniIcinde(room, tower, 19), koni, "koni degisti");
+  near(mermiHizi(room, tower) / sadeHiz, 1 + getModifierAdd(item("atalet-dengeleyici").effects, "projectileSpeed"), "mermi hizi");
   const optikli = kur(room, "warrior-4");
   const kritik = room.getTowerCritChance(optikli);
   assert.ok(esyaTak(room, optikli, "optik-hedefleyici"));
@@ -1613,16 +1640,16 @@ test("Sessiz Mevzi gercek yerlesimde komsuluk kuralini kullaniyor", () => {
   near(mermiHizi(room, tower), sade * 2.2);
 });
 
-test("yalnizca esyalarla en yuksek isabet: Balistik tavani esyayla uc pahali yuva istiyor (kartlar haric)", () => {
+test("yalnizca esyalarla en yuksek isabet: isabet esyalari oncul nisana tasindi, Balistik tavani kartlarla", () => {
+  // Isabet esyalarinin cogu yeniden tasarlandi (oncul nisan): kosulsuz isabet
+  // veren tek esya Optik Hedefleyici. Balistik Hesaplayici'nin tavani (1,5)
+  // artik kartlarla (Nisan Takimi, Sabit Kundak, Nisan Kertigi...) kuruluyor.
   const facingItems = shopCatalog.filter((entry) => entry.target === "tower" && entry.effects.some((modifier) => modifier.stat === "accuracy"));
-  // Kule basina 5 yuva; kosulsuz isabetin en buyuk bes esyasi (kopyalar dahil).
   const slots = facingItems.flatMap((entry) => Array.from({ length: entry.repeatable ? entry.maxStacks : 1 }, () => getModifierAdd(entry.effects, "accuracy"))).sort((a, b) => b - a);
   const best = (count) => slots.slice(0, count).reduce((sum, value) => sum + value, 0);
-  near(best(5), 2.2, "bes yuvada kosulsuz isabet");
-  assert.ok(best(2) < 1.5, "kartsiz iki esya Balistik tavanina ulasmamali");
-  assert.ok(best(3) >= 1.5, "kartsiz uc esyayla ulasilabilmeli");
-  // Kartlar da isabet veriyor: esya yuku buradaki sayidan az olabilir. Iddia
-  // yalnizca esya tarafi icin.
+  near(best(5), 0.3, "bes yuvada kosulsuz isabet");
+  const cardAccuracy = cardCatalog.filter((entry) => entry.scope.kind !== "targeted").reduce((sum, entry) => sum + Math.max(0, getModifierAdd(entry.effects, "accuracy")) * (entry.stackable ? entry.maxStacks ?? 1 : 1), 0);
+  assert.ok(cardAccuracy >= 1.5, `kartlarla Balistik tavanina ulasilamiyor: ${cardAccuracy}`);
 });
 
 test("isabetten kritik ucan hedef payini vurulan dusmandan okuyor, namlunun o anki yonunden degil", () => {
@@ -1744,8 +1771,12 @@ function baskinCiftler(items, etkili) {
 test("isabet ve mermi hizi ailelerinde hicbir esya bir digerince baskilanmiyor", () => {
   const aim = shopCatalog.filter((entry) => entry.id === "termal-kilif" || entry.effects.some((modifier) => (modifier.stat === "accuracy" || modifier.stat === "accuracyVsAir") && modifier.add > 0));
   const speed = shopCatalog.filter((entry) => entry.effects.some((modifier) => (modifier.stat === "projectileSpeed" || modifier.stat === "projectileSpeedIsolated") && modifier.add > 0));
-  assert.equal(aim.length, 9);
-  assert.equal(speed.length, 8);
+  assert.equal(aim.length, 3);
+  assert.equal(speed.length, 9);
+  // Oncul nisan ailesi de baskisiz: merdiven, iki kademe ve kritikli adim.
+  const lead = shopCatalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === "leadTargeting"));
+  assert.equal(lead.length, 4, lead.map((entry) => entry.id).join(", "));
+  assert.deepEqual(baskinCiftler(lead, (tower) => towerFiresAlongFacing(tower) && !tower.resourceProvider), []);
   assert.deepEqual(baskinCiftler(aim, (tower) => towerFiresAlongFacing(tower) && !tower.resourceProvider), []);
   assert.deepEqual(baskinCiftler(speed, (tower) => towerFiresProjectiles(tower)), []);
   // Kontrol: eski fiyatlarla bulunan iki baskin cift gercekten yakalaniyor.
@@ -1764,7 +1795,7 @@ test("altin primleri: metin = etki, tavan yok, bedelsiz, kapsam", () => {
     "dusurme-primi": `Takıldığı kulenin öldürdüğü her uçan düşman +${getModifierAdd(item("dusurme-primi").effects, "airKillGold")} altın verir.`,
     "savas-tazminati": `Takıldığı kule dalga sonunda o dalga verdiği her ${DAMAGE_GOLD_PER_DAMAGE} hasar için +${getModifierAdd(item("savas-tazminati").effects, "damageGold")} altın kazandırır.`,
     "toplu-imha-primi": `Takıldığı kule ${MULTI_KILL_GOLD_WINDOW_MS / 1000} saniye içinde ${MULTI_KILL_GOLD_COUNT} düşman öldürdüğünde +${getModifierAdd(item("toplu-imha-primi").effects, "multiKillGold")} altın verir.`,
-    "artik-enerji-toplayici": `Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %${Math.round(getModifierAdd(item("artik-enerji-toplayici").effects, "overkillGold") * 100)}'si altına dönüşür.`
+    "artik-enerji-toplayici": `Takıldığı kulenin öldürücü vuruşlarında hedefin canını aşan hasarın %${Math.round(getModifierAdd(item("artik-enerji-toplayici").effects, "overkillGold") * 100)}'u altına dönüşür.`
   };
   const prices = { "odul-fermani": 120, "dusurme-primi": 75, "savas-tazminati": 90, "toplu-imha-primi": 85, "artik-enerji-toplayici": 70 };
   for (const id of BOUNTY_ITEMS) {
@@ -1808,7 +1839,7 @@ function sampiyon(room, tower) {
   return enemy;
 }
 
-test("Odul Fermani: her sampiyon olunce +600, tavan yok; co-op'ta yalnizca sahibine", () => {
+test("Odul Fermani: her sampiyon olunce +300, tavan yok; co-op'ta yalnizca sahibine", () => {
   const room = oda();
   const p2 = ikinciOyuncu(room);
   const tower = kur(room, "warrior-4");
@@ -1822,19 +1853,19 @@ test("Odul Fermani: her sampiyon olunce +600, tavan yok; co-op'ta yalnizca sahib
     return [p1.gold - a, p2.gold - b];
   };
   const [ilk, arkadas] = oldurSampiyon();
-  assert.equal(ilk - arkadas, 600, "sahibi takim arkadasindan 600 fazla almadi");
+  assert.equal(ilk - arkadas, 300, "sahibi takim arkadasindan 300 fazla almadi");
   const [ikinci, arkadas2] = oldurSampiyon();
-  assert.equal(ikinci - arkadas2, 600, "ayni dalgadaki ikinci sampiyon da oduyor (tavan yok)");
+  assert.equal(ikinci - arkadas2, 300, "ayni dalgadaki ikinci sampiyon da oduyor (tavan yok)");
   room.wave += 1;
   const [yeni, arkadas3] = oldurSampiyon();
-  assert.equal(yeni - arkadas3, 600, "yeni dalgada prim yok");
+  assert.equal(yeni - arkadas3, 300, "yeni dalgada prim yok");
   // Sampiyonu takim arkadasinin kulesi oldurse de sahibi aliyor.
   room.wave += 1;
   const ikinciKule = kur(room, "warrior-6", { sessionId: "p2", send() {} });
   const once = p1.gold;
   const enemy = sampiyon(room, ikinciKule);
   room.damageEnemy(enemy, 1e6, 0, ikinciKule.definition.id, "p2", "true", 0, ikinciKule.level, ikinciKule.id);
-  assert.equal(p1.gold - once, 600 + 50, "takim arkadasinin oldurdugu sampiyonda prim yok");
+  assert.equal(p1.gold - once, 300 + 50, "takim arkadasinin oldurdugu sampiyonda prim yok");
 });
 
 test("Dusurme Primi: her ucan oldurme +32, tavan yok, yalnizca takildigi kule", () => {
@@ -1858,7 +1889,7 @@ test("Dusurme Primi: her ucan oldurme +32, tavan yok, yalnizca takildigi kule", 
   assert.equal(toplam, 32 * 31, "eski 80 tavani kalkti");
 });
 
-test("Savas Tazminati: dalga sonunda her 1000 hasara +40, tavan yok, sayac sifirlaniyor", () => {
+test("Savas Tazminati: dalga sonunda her 1000 hasara +20, tavan yok, sayac sifirlaniyor", () => {
   const room = oda();
   const tower = kur(room, "warrior-1");
   const oteki = kur(room, "warrior-4");
@@ -1876,12 +1907,12 @@ test("Savas Tazminati: dalga sonunda her 1000 hasara +40, tavan yok, sayac sifir
   };
   vur(tower, 2500);
   vur(oteki, 9000);
-  assert.equal(kapanis(), 80, "2500 hasar -> 2 x 40; oteki kule odenmemeli");
+  assert.equal(kapanis(), 40, "2500 hasar -> 2 x 20; oteki kule odenmemeli");
   assert.equal(tower.waveDamageDealt, 0);
   assert.equal(oteki.waveDamageDealt, 0, "primsiz kulenin sayaci da sifirlanmali");
   assert.equal(kapanis(), 0, "sayac sifirlanmadi");
   vur(tower, 50_000);
-  assert.equal(kapanis(), 2000, "eski 60 tavani kalkti");
+  assert.equal(kapanis(), 1000, "eski 60 tavani kalkti");
 });
 
 test("Toplu Imha Primi: 2 saniyede 3 oldurme +60, iki oldurme hicbir sey, tavan yok", () => {
@@ -1922,7 +1953,7 @@ test("Toplu Imha Primi: 2 saniyede 3 oldurme +60, iki oldurme hicbir sey, tavan 
   }
 });
 
-test("Artik Enerji Toplayici: tasan hasarin %20'si, tavan yok; oldurmeyen vurus hicbir sey", () => {
+test("Artik Enerji Toplayici: tasan hasarin %10'u, tavan yok; oldurmeyen vurus hicbir sey", () => {
   const room = oda();
   const tower = kur(room, "warrior-1");
   assert.ok(esyaTak(room, tower, "artik-enerji-toplayici"));
@@ -1937,11 +1968,11 @@ test("Artik Enerji Toplayici: tasan hasarin %20'si, tavan yok; oldurmeyen vurus 
   const tam = vur(100, 100);
   assert.equal(tam.oldu, true);
   const tasan = vur(400, 600);
-  near(tasan.altin - tam.altin, 200 * 0.2, "200 tasan hasar");
+  near(tasan.altin - tam.altin, 200 * 0.1, "200 tasan hasar");
   assert.equal(vur(1000, 300).altin, 0, "oldurmeyen vurus");
-  let toplam = 40;
+  let toplam = 20;
   for (let index = 0; index < 10; index += 1) toplam += vur(1000, 2000).altin - tam.altin;
-  near(toplam, 40 + 10 * 200, "eski 50 tavani kalkti");
+  near(toplam, 20 + 10 * 100, "eski 50 tavani kalkti");
 });
 
 test("Artik Enerji Toplayici: tasan hasar vurus basina azami canla sinirli; infaz sayilmiyor", () => {
@@ -1958,7 +1989,7 @@ test("Artik Enerji Toplayici: tasan hasar vurus basina azami canla sinirli; infa
   };
   const tam = vur(100, 100);
   // Zayif hedefe dev vurus: tasan hasar 100 (azami can) sayiliyor, 999.900 degil.
-  near(vur(100, 1_000_000) - tam, 100 * 0.2, "vurus basina sinir");
+  near(vur(100, 1_000_000) - tam, 100 * 0.1, "vurus basina sinir");
   // Oluler Bagi'nin infazi: yapay hasar, prim yok.
   const infaz = room.state.players.get("p1").gold;
   room.towerCriticalRandom = () => 1;

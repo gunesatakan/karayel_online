@@ -173,8 +173,9 @@ test("duvar tower karesi olmayan haritada da kurulabilir", () => {
   assert.ok(placeable > 100, `arena haritasinda yalnizca ${placeable} nokta gecerli`);
 });
 
-test("Abartı hâlâ inşa alanının kenarını ister", () => {
-  // Duvarin kurali gevsedi diye Abarti'nin kurali gevsememeli.
+test("Abartı hâlâ bir dayanak ister (boş arenada kurulamaz)", () => {
+  // Duvarin kurali gevsedi diye Abarti'nin kurali gevsememeli: kulesi olmayan
+  // arenada dayanak yok. Kule yanina kurulum tests/abarti-arena-placement.test.mjs'te.
   const room = createRoom("zeynep");
   room.activeMap = createOpenArenaMap(11, 18);
   const gridSize = getMapGridSize(room.activeMap);
