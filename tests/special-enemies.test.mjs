@@ -216,8 +216,8 @@ test("avcının yapı vuruşu dalgayla sertleşiyor (taban 14 × dalga çarpanı
   // 20. dalgada 35 ham / 32 net (kule zirhi 3).
   const tablo = [
     [1, 100, 10], [1, 160, 15],
-    [10, 100, 5], [10, 160, 8],
-    [20, 100, 4], [20, 160, 5]
+    [10, 100, 6], [10, 160, 10],
+    [20, 100, 4], [20, 160, 7]
   ];
   for (const [wave, can, beklenenVurus] of tablo) {
     const { vurus, saniye, zirh } = avciKuleyiYikar(wave, can);

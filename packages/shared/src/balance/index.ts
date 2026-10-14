@@ -275,7 +275,7 @@ export function isFlyingWaveSpawn(wave: number, spawnIndex: number) {
  * sert vursun ve bu dalgayla buyusun. Tek carpan, tek yer: sunucudaki
  * `strikeStructure` her vurusu (bitisik, menzilli, kusatma, kule avcisi,
  * sampiyon) zirhtan once bununla carpiyor. 1. dalgada x1 (sahibin istegiyle; once 1,25), son dalgada
- * (`FINAL_WAVE`) x2,5; arasi dogrusal.
+ * (`FINAL_WAVE`) x2 (sahibin istegiyle; once x2,5); arasi dogrusal.
  *
  * Kapsam disi: nexusa sizinti hasari, isciye temas hasari (o `attack`i kendi
  * yolundan okuyor), karsi atak (kendi orani var) ve enerji yiyicinin yikimi.
@@ -284,7 +284,7 @@ export function isFlyingWaveSpawn(wave: number, spawnIndex: number) {
  */
 export const ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE = 1;
 export const ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER = 1;
-export const ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER = 2.5;
+export const ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER = 2;
 
 export function getEnemyStructureDamageMultiplier(wave: number) {
   const safeWave = Number.isFinite(wave)

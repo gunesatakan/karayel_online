@@ -92,7 +92,7 @@ export const SPECIAL_BASE_TYPE: EnemyType = "grunt";
  * Kadans normal yapi vurusuyla ayni (`TOWER_HUNTER_ATTACK_INTERVAL_MS`).
  *
  * Uzerine butun dusman -> yapi hasarinin ortak dalga carpani biniyor
- * (`getEnemyStructureDamageMultiplier`: 1. dalga x1, 20. dalga x2,5).
+ * (`getEnemyStructureDamageMultiplier`: 1. dalga x1, 20. dalga x2).
  * Olcu: kule cani seviyeyle degil kart ve esyayla buyuyor (taban 100, zirh 3).
  * 10. dalgada 14 x 1,84 = 25,8 ham, 22,8 net: 100 canli kule 5 vurusta,
  * 160 canli (kartli) kule 8 vurusta devriliyor; 20. dalgada 35 ham, 32 net:
