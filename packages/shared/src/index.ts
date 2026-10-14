@@ -2089,6 +2089,8 @@ export { selectTowerTarget } from "./targeting/index.js";
 export type { TowerTargetCandidate, TowerTargetingQuery } from "./targeting/index.js";
 export { getEdgeSegments, getEdgeSegmentsCenter, getEdgeSegmentSideCells, isAbartiEdgeAnchored, isEdgeSegmentInsideBoard, getPlacementFootprint, hasOpenGridRoute, validateEdgePlacement, validateTowerPlacement } from "./placement/index.js";
 export type { EdgeOrientation, EdgeSegment, PlacementBoard, PlacementCell, PlacementFailureReason, PlacementValidation } from "./placement/index.js";
+export { WALL_LINE_DWELL_MS, WALL_LINE_DWELL_TOLERANCE_PX, WALL_LINE_HANDLE_DRAG_PX, WALL_LINE_HANDLE_TOUCH_PX, WALL_LINE_HANDLE_VISIBLE_MS, WALL_LINE_SERVER_MAX_PIECES, advanceWallDwell, constrainWallHandleFinger, getAffordableWallPieces, getWallDwellProgress, getWallLine, getWallLineCost, getWallLineMaxLength, getWallRunEnds, getWallSegmentCenter, pickAffordableWallPieces, pickWallLineAxis, startWallDwell } from "./placement/index.js";
+export type { WallDwellState, WallLine, WallLineAxis, WallLineGeometry } from "./placement/index.js";
 export {
   MAP_GRID_COLS,
   MAP_GRID_ROWS,

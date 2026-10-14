@@ -256,6 +256,22 @@ import {
   DEBUG_LASER_TWIN_OVERDRIVE_LEVEL,
   getStructureRepairCostWithModifiers,
   WALL_TOWER_ID,
+  WALL_LINE_HANDLE_DRAG_PX,
+  WALL_LINE_HANDLE_TOUCH_PX,
+  WALL_LINE_HANDLE_VISIBLE_MS,
+  advanceWallDwell,
+  constrainWallHandleFinger,
+  getAffordableWallPieces,
+  getWallDwellProgress,
+  getWallLine,
+  getWallRunEnds,
+  getWallSegmentCenter,
+  pickAffordableWallPieces,
+  startWallDwell,
+  wallTower,
+  type EdgeSegment,
+  type WallDwellState,
+  type WallLineAxis,
   isOperationalTower,
   type StaticEnemySnapshot,
   type StaticSnapshot,
@@ -352,6 +368,7 @@ import {
 import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { PlacementRangePreview } from "../vfx/placement-range";
+import { WallLineView, type WallHandleMark } from "../vfx/wall-line";
 import { drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
 import type { BuildZoneMap } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
@@ -1024,6 +1041,9 @@ const DEFAULT_SFX_VOLUME = 0.6;
  */
 const DEFAULT_HIT_VOLUME = 0.5;
 
+/** Uzatma tutamaci: ilk bos kenarin merkezi, tutamacin baktigi eksen ve yon. */
+type WallHandleTarget = { x: number; y: number; axis: WallLineAxis; direction: 1 | -1 };
+
 export class GameScene extends Phaser.Scene {
   private room?: Room;
   private localSessionId = "";
@@ -1202,6 +1222,27 @@ export class GameScene extends Phaser.Scene {
   /** Yalnizlik ve dizilim: surukleme onizlemesi, kalici isaret ve damga verisi. */
   private synergyMarks?: SynergyMarks;
   private placementRange?: PlacementRangePreview;
+  /** Duvar cizgisi isaretleri (halka, capa, tutamaclar, bedel etiketi). */
+  private wallLineView?: WallLineView;
+  /** Cekmeceden suruklenen duvarin cizgi jesti; yalnizca duvar surukleniyorken var. */
+  private wallGesture?: {
+    dwell: WallDwellState;
+    /** Parmagin ekran konumu (CSS px): bekleme toleransi piksel cinsinden. */
+    client: { x: number; y: number };
+    /** Hayaletin onizleme noktasi (dunya). */
+    finger: { x: number; y: number };
+    /** Sabitlenmis capa (kenar merkezi, dunya); yoksa jest hala bekleme asamasinda. */
+    anchor?: { x: number; y: number };
+  };
+  /** Gorunen uzatma tutamaclari: dizinin bir duvari ve gorunurluk bitisi. */
+  private wallHandles?: { segment: EdgeSegment; until: number };
+  /** Az once gonderilen duvar: sunucu onaylayinca tutamaclar acilir. */
+  private wallHandlePending?: { segment: EdgeSegment; until: number };
+  private wallHandleTargets: WallHandleTarget[] = [];
+  private wallHandleDrag?: { target: WallHandleTarget; startClient: { x: number; y: number }; moved: boolean; finger: { x: number; y: number } };
+  private wallMarksActive = false;
+  /** Cizginin ilk parcasinin merkezi (capa isaretinin yeri). */
+  private wallLineStart?: { x: number; y: number };
   /** Takim arkadasi bildiriminin son ani; ust uste kurulumlar bildirimi bogmasin. */
   private synergyNoticeAt = Number.NEGATIVE_INFINITY;
   /** Sunucunun onayladigi (`tower:spawn`) ama oynatmada henuz cizilmemis kuleler. */
@@ -1768,6 +1809,15 @@ export class GameScene extends Phaser.Scene {
     this.synergyMarks = new SynergyMarks(this, { glyph: 12.8, preview: 29 });
     // Menzil halkasi yerlestirme izgarasinin (24) ustunde, hayaletin (28) altinda.
     this.placementRange = new PlacementRangePreview(this, 26);
+    // Cizgi isaretleri izgara (24) ve menzil halkasinin (26) ustunde, hayaletin (28) altinda.
+    this.wallLineView?.destroy();
+    this.wallLineView = new WallLineView(this, 27);
+    this.wallGesture = undefined;
+    this.wallHandles = undefined;
+    this.wallHandlePending = undefined;
+    this.wallHandleTargets = [];
+    this.wallHandleDrag = undefined;
+    this.wallMarksActive = false;
     this.synergyNoticeAt = Number.NEGATIVE_INFINITY;
     // Onceki macin bekleyen bag anlari ve infaz hedeflemesi yeni maca tasinmasin.
     this.pendingLinkMoments = [];
@@ -1914,6 +1964,8 @@ export class GameScene extends Phaser.Scene {
       this.synergyMarks = undefined;
       this.placementRange?.destroy();
       this.placementRange = undefined;
+      this.wallLineView?.destroy();
+      this.wallLineView = undefined;
       this.animatedTowers.clear();
       this.freshTowerSpawns.clear();
       for (const marker of this.upgradeReadyMarkers) marker.destroy();
@@ -1949,6 +2001,7 @@ export class GameScene extends Phaser.Scene {
     this.updateUpgradeReadyMarkers(now);
     this.renderStreakGlows(now);
     this.resolvePendingPlacement();
+    this.tickWallLine(now);
   }
 
   private drawMap() {
@@ -2011,10 +2064,9 @@ export class GameScene extends Phaser.Scene {
    * ayni): kulenin herhangi bir karesi bolgede ya da kenar yapisinin bir
    * segmenti bolge karesine degiyor.
    */
-  private isPreviewInBuildZone(x: number, y: number) {
+  private isPreviewInBuildZone(x: number, y: number, definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id) {
     const zones = this.getActiveBuildZones();
     if (!zones) return false;
-    const definitionId = this.draggedTowerDefinition?.id ?? this.selectedTowerDefinition.id;
     const board = { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows };
     if (this.isEdgePlacedDefinition(definitionId)) {
       const segments = this.getAbartiEdgeSegments(x, y, this.getPlacementOrientation(definitionId, x, y), this.getEdgeLength(definitionId));
@@ -2358,12 +2410,362 @@ export class GameScene extends Phaser.Scene {
     // yaziliyordu -- listeye eklenmedigi icin ayarlardan kisilamiyordu.
   }
 
+  // ------------------------------------------------------------ Duvar cizgisi
+
+  /** CSS pikselinin dunya birimi karsiligi (kamera yakinlastirmasi dahil). */
+  private getWorldPerCssPx() {
+    const rect = this.lastUsableCanvasRect;
+    const canvasPerCssPx = rect && rect.width > 0 ? this.game.canvas.width / rect.width : 1;
+    return canvasPerCssPx / Math.max(0.0001, this.cameras.main.zoom);
+  }
+
+  private getWallUnitCost() {
+    const definition = towerCatalog[this.selectedCharacter.id].find((tower) => tower.id === WALL_TOWER_ID) ?? wallTower;
+    return getTowerBuildCost(definition.cost);
+  }
+
+  private getWallLineGeometry() {
+    return {
+      gridSize: this.getMapCellSize(),
+      origin: getMapOrigin(this.selectedMapData),
+      board: { cols: this.selectedMapData.cols, rows: this.selectedMapData.rows }
+    };
+  }
+
+  /**
+   * Cizginin parcalari ve her birinin durumu. Sunucu ayni cizgiyi
+   * `getWallLine` ile cozuyor; gecerlilik tekli yerlestirmenin kuraliyla
+   * (yasak bolge, dolu kenar) soruluyor.
+   */
+  private computeWallLinePreview(anchor: { x: number; y: number }, finger: { x: number; y: number }, axis?: WallLineAxis) {
+    const geometry = this.getWallLineGeometry();
+    const line = getWallLine({ ...geometry, anchor, finger, axis });
+    let zoneBlocked = 0;
+    const pieces = line.segments.map((segment) => {
+      const center = getWallSegmentCenter(segment, geometry);
+      const inZone = this.isPreviewInBuildZone(center.x, center.y, WALL_TOWER_ID);
+      if (inZone) zoneBlocked += 1;
+      const valid = !inZone && this.canPlaceEdgePreview(center.x, center.y, segment.orientation, "", WALL_TOWER_ID);
+      return { segment, center, valid, funded: false };
+    });
+    const unit = this.getWallUnitCost();
+    const affordable = getAffordableWallPieces(this.currentTeamGold, unit);
+    const picked = pickAffordableWallPieces(pieces, affordable);
+    for (const piece of picked.placed) piece.funded = true;
+    const validCount = pieces.filter((piece) => piece.valid).length;
+    return { line, pieces, validCount, placed: picked.placed, unit, zoneBlocked, affordable };
+  }
+
+  private drawWallLineGrid() {
+    const grid = this.placementGrid;
+    if (!grid) return;
+    const cellSize = this.getMapCellSize();
+    const origin = getMapOrigin(this.selectedMapData);
+    const arenaRight = origin.x + this.selectedMapData.cols * cellSize;
+    const arenaBottom = origin.y + this.selectedMapData.rows * cellSize;
+    grid.clear();
+    grid.lineStyle(1, 0xe2e8f0, 0.16);
+    for (let x = origin.x; x <= arenaRight + 0.01; x += cellSize) grid.lineBetween(x, origin.y, x, arenaBottom);
+    for (let y = origin.y; y <= arenaBottom + 0.01; y += cellSize) grid.lineBetween(origin.x, y, arenaRight, y);
+  }
+
+  /**
+   * Cizgi onizlemesi: her parca yesil (kurulur), kehribar (gecerli ama altin
+   * yetmiyor) ya da kirmizi (gecersiz); parmagin yaninda parca sayisi ve bedel.
+   */
+  private renderWallLinePreview(anchor: { x: number; y: number }, finger: { x: number; y: number }, axis?: WallLineAxis) {
+    const grid = this.placementGrid;
+    const view = this.wallLineView;
+    if (!grid || !view) return undefined;
+    const preview = this.computeWallLinePreview(anchor, finger, axis);
+    grid.setVisible(true);
+    this.drawWallLineGrid();
+    for (const piece of preview.pieces) {
+      const rect = this.getAbartiEdgeSegmentRect(piece.segment);
+      const fill = !piece.valid ? 0xef4444 : piece.funded ? 0x22c55e : 0xf59e0b;
+      const stroke = !piece.valid ? 0xfca5a5 : piece.funded ? 0x86efac : 0xfcd34d;
+      grid.fillStyle(fill, 0.42);
+      grid.lineStyle(2, stroke, 0.95);
+      grid.fillRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+      grid.strokeRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+    }
+
+    // Capa isareti cizginin gercek ilk parcasinda: hayalet baska yonde olabilir.
+    this.wallLineStart = preview.pieces[0]?.center;
+    const placeable = preview.placed.length;
+    let text: string;
+    let warn = false;
+    if (preview.validCount === 0) {
+      text = t("scene.line.none");
+      warn = true;
+    } else if (placeable === 0) {
+      text = t("scene.line.noGold");
+      warn = true;
+    } else if (placeable < preview.validCount) {
+      text = t("scene.line.costShort", { n: placeable, total: preview.validCount, cost: placeable * preview.unit });
+      warn = true;
+    } else {
+      text = t("scene.line.cost", { n: placeable, cost: placeable * preview.unit });
+    }
+    const wpp = this.getWorldPerCssPx();
+    const origin = getMapOrigin(this.selectedMapData);
+    const arenaWidth = this.selectedMapData.cols * this.getMapCellSize();
+    const x = Math.max(origin.x + 70 * wpp, Math.min(origin.x + arenaWidth - 70 * wpp, finger.x));
+    view.setLabel(text, x, finger.y - 22 * wpp, warn);
+    return preview;
+  }
+
+  /** Bekleme doldu: hayaletin kenari cizginin basi olur. */
+  private lockWallAnchor(gesture: NonNullable<GameScene["wallGesture"]>) {
+    const cell = this.snapToTowerGrid(gesture.finger.x, gesture.finger.y, WALL_TOWER_ID);
+    gesture.anchor = { x: cell.x, y: cell.y };
+    this.placementGhost?.setVisible(false);
+    this.synergyMarks?.clearPreview();
+    this.placementRange?.clear();
+    // Titresim ayari kapaliysa yonetmen zaten titretmiyor.
+    this.feedback?.vibrate(18);
+  }
+
+  private clearWallGesture() {
+    this.wallGesture = undefined;
+    this.wallLineStart = undefined;
+    this.wallLineView?.clear();
+    this.wallMarksActive = false;
+  }
+
+  /**
+   * Cizgiyi sunucuya yollar. Hicbir parca kurulamiyorsa istek gitmez ve neden
+   * soylenir; sunucu zaten ayni kurali yeniden soruyor.
+   */
+  private sendWallLine(anchor: { x: number; y: number }, finger: { x: number; y: number }, axis?: WallLineAxis) {
+    const preview = this.computeWallLinePreview(anchor, finger, axis);
+    if (preview.validCount === 0) {
+      this.showNotice(t(preview.zoneBlocked === preview.pieces.length ? "scene.place.forbiddenZone" : "scene.line.none"));
+      return false;
+    }
+    if (preview.placed.length === 0) {
+      this.showNotice(t("scene.line.noGold"));
+      return false;
+    }
+    this.room?.send("wall:line", {
+      definitionId: WALL_TOWER_ID,
+      x1: anchor.x,
+      y1: anchor.y,
+      x2: finger.x,
+      y2: finger.y,
+      ...(axis ? { axis } : {})
+    });
+    // Capadan en uzaktaki kurulacak parca: tutamaclar onaydan sonra oradan acilir.
+    const last = preview.placed[preview.placed.length - 1];
+    if (last) this.queueWallHandles(last.segment);
+    return true;
+  }
+
+  // ---- Uzatma tutamaclari
+
+  /** Baska bir eylem bekliyorken ya da suruyorken tutamac gorunmez ve basilamaz. */
+  private isWallHandleBlocked() {
+    return !this.room || this.creativeMode || this.matchResultShown || Boolean(
+      this.pendingAction || this.isGuidanceDragging || this.draggedTowerDefinition || this.workerPick
+      || this.pendingUltimateColumn || this.pendingShopPlacement || this.workerBanMode
+      || this.performanceSliderDragging || this.cardChoiceRoot
+    );
+  }
+
+  /** Kurulan duvarin dizisinde tutamaclar acilsin; sunucu onaylayinca gorunur. */
+  private queueWallHandles(segment: EdgeSegment) {
+    this.wallHandles = undefined;
+    this.wallHandleTargets = [];
+    this.wallHandlePending = { segment, until: performance.now() + 3000 };
+  }
+
+  private hideWallHandles() {
+    if (!this.wallHandles && !this.wallHandlePending) return;
+    this.wallHandles = undefined;
+    this.wallHandlePending = undefined;
+    this.wallHandleTargets = [];
+    if (this.wallMarksActive && !this.wallGesture) {
+      this.wallLineView?.clearMarks();
+      this.wallMarksActive = false;
+    }
+  }
+
+  /**
+   * Dizinin serbest uclari. Duvar henuz yoksa (sunucu onaylamadi) `undefined`,
+   * dizi her yonden kapaliysa bos dizi. Yalnizca oyuncunun kendi duvarlari
+   * diziyi surer; baskasinin duvari bir uc'u kapatir ama diziye girmez.
+   */
+  private computeWallHandleTargets(segment: EdgeSegment): WallHandleTarget[] | undefined {
+    const key = (entry: EdgeSegment) => `${entry.orientation}:${entry.col}:${entry.row}`;
+    const own = new Set<string>();
+    const all = new Set<string>();
+    for (const tower of this.towerSnapshots.values()) {
+      if (tower.definitionId !== WALL_TOWER_ID || (tower.hp !== undefined && tower.hp <= 0)) continue;
+      const [edge] = this.getAbartiEdgeSegments(tower.x, tower.y, tower.orientation ?? "horizontal", 1);
+      if (!edge) continue;
+      all.add(key(edge));
+      if (tower.ownerId === this.localSessionId) own.add(key(edge));
+    }
+    if (!own.has(key(segment))) return undefined;
+    const geometry = this.getWallLineGeometry();
+    return getWallRunEnds(segment, own, geometry.board)
+      .filter((end) => !all.has(key(end.next)))
+      .map((end) => ({ end, center: getWallSegmentCenter(end.next, geometry) }))
+      // Yasak bolgeye ya da kurulamayan kenara giden uc tutamac gostermez.
+      .filter(({ end, center }) => !this.isPreviewInBuildZone(center.x, center.y, WALL_TOWER_ID)
+        && this.canPlaceEdgePreview(center.x, center.y, end.next.orientation, "", WALL_TOWER_ID))
+      .map(({ end, center }) => ({ x: center.x, y: center.y, axis: end.next.orientation, direction: end.direction }));
+  }
+
+  /** Kare basina: bekleyen duvari cozer, tutamaclari cizer ya da kapatir, bekleme halkasini surer. */
+  private tickWallLine(now: number) {
+    const view = this.wallLineView;
+    if (!view) return;
+
+    const gesture = this.wallGesture;
+    if (gesture && this.draggedTowerDefinition) {
+      view.clearMarks();
+      this.wallMarksActive = true;
+      const radius = this.getMapCellSize() * 0.5;
+      if (!gesture.anchor) {
+        gesture.dwell = advanceWallDwell(gesture.dwell, gesture.client.x, gesture.client.y, now);
+        if (gesture.dwell.locked) {
+          this.lockWallAnchor(gesture);
+          if (gesture.anchor) this.renderWallLinePreview(gesture.anchor, gesture.finger);
+        } else {
+          const progress = getWallDwellProgress(gesture.dwell, now);
+          const ghost = this.placementGhost;
+          if (progress >= 0.1 && ghost) view.drawDwellRing(ghost.x, ghost.y, progress, radius * 1.1);
+        }
+      }
+      if (gesture.anchor) {
+        const start = this.wallLineStart ?? gesture.anchor;
+        view.drawAnchor(start.x, start.y, radius, now);
+      }
+      return;
+    }
+
+    const pending = this.wallHandlePending;
+    if (pending) {
+      const targets = this.computeWallHandleTargets(pending.segment);
+      if (targets !== undefined) {
+        this.wallHandlePending = undefined;
+        this.wallHandles = { segment: pending.segment, until: now + WALL_LINE_HANDLE_VISIBLE_MS };
+      } else if (now >= pending.until) {
+        this.wallHandlePending = undefined;
+      }
+    }
+
+    const handles = this.wallHandles;
+    if (!handles) {
+      if (this.wallMarksActive) {
+        view.clearMarks();
+        this.wallMarksActive = false;
+      }
+      return;
+    }
+    // Basili tutamac suren surukleme sirasinda sure dolmaz: parmak havada.
+    if ((now >= handles.until && !this.wallHandleDrag) || this.isWallHandleBlocked()) {
+      this.hideWallHandles();
+      return;
+    }
+    if (this.wallHandleDrag?.moved) {
+      view.clearMarks();
+      return;
+    }
+    const targets = this.computeWallHandleTargets(handles.segment);
+    if (!targets || targets.length === 0) {
+      this.hideWallHandles();
+      return;
+    }
+    this.wallHandleTargets = targets;
+    const marks: WallHandleMark[] = targets;
+    // Son 600 ms'de solarak kapanir.
+    const alpha = Math.max(0.25, Math.min(1, (handles.until - now) / 600));
+    view.clearMarks();
+    view.drawHandles(marks, this.getMapCellSize() * 0.3, now, alpha);
+    this.wallMarksActive = true;
+  }
+
+  private tryBeginWallHandleDrag(pointer: Phaser.Input.Pointer) {
+    if (!this.wallHandles || this.wallHandleTargets.length === 0 || this.isWallHandleBlocked()) return false;
+    const radius = (WALL_LINE_HANDLE_TOUCH_PX / 2) * this.getWorldPerCssPx();
+    let best: { target: WallHandleTarget; distance: number } | undefined;
+    for (const target of this.wallHandleTargets) {
+      const distance = Math.hypot(pointer.worldX - target.x, pointer.worldY - target.y);
+      if (distance <= radius && (!best || distance < best.distance)) best = { target, distance };
+    }
+    if (!best) return false;
+    const event = (pointer as unknown as { domEvent?: PointerEvent }).domEvent;
+    this.wallHandleDrag = {
+      target: best.target,
+      startClient: { x: event?.clientX ?? 0, y: event?.clientY ?? 0 },
+      moved: false,
+      finger: { x: pointer.worldX, y: pointer.worldY }
+    };
+    return true;
+  }
+
+  private moveWallHandleDrag(pointer: Phaser.Input.Pointer) {
+    const drag = this.wallHandleDrag;
+    if (!drag) return false;
+    const event = (pointer as unknown as { domEvent?: PointerEvent }).domEvent;
+    if (!drag.moved && event
+      && Math.hypot(event.clientX - drag.startClient.x, event.clientY - drag.startClient.y) > WALL_LINE_HANDLE_DRAG_PX) {
+      drag.moved = true;
+      // Suruklemeye gecince tutamaclar kapanir; cizgi onizlemesi devralir.
+      this.wallLineView?.clearMarks();
+      this.wallMarksActive = false;
+    }
+    drag.finger = { x: pointer.worldX, y: pointer.worldY };
+    if (drag.moved) this.renderWallHandlePreview(drag);
+    return true;
+  }
+
+  private renderWallHandlePreview(drag: NonNullable<GameScene["wallHandleDrag"]>) {
+    const anchor = { x: drag.target.x, y: drag.target.y };
+    const finger = constrainWallHandleFinger(anchor, drag.finger, drag.target.axis, drag.target.direction);
+    this.renderWallLinePreview(anchor, finger, drag.target.axis);
+    // Etiket parmagin gercek konumunda (cizgi eksenine indirilmis noktada degil).
+    const wpp = this.getWorldPerCssPx();
+    this.wallLineView?.setLabelPosition(drag.finger.x, drag.finger.y - 30 * wpp);
+  }
+
+  /** Birakis. Dokunus (kayma yok) ise `false`: normal harita dokunusu islesin. */
+  private finishWallHandleDrag(pointer: Phaser.Input.Pointer) {
+    const drag = this.wallHandleDrag;
+    if (!drag) return false;
+    this.wallHandleDrag = undefined;
+    if (!drag.moved) return false;
+    this.ignoreMapPointerUntil = performance.now() + 180;
+    this.placementGrid?.clear().setVisible(false);
+    this.wallLineView?.hideLabel();
+    const anchor = { x: drag.target.x, y: drag.target.y };
+    const finger = constrainWallHandleFinger(anchor, { x: pointer.worldX, y: pointer.worldY }, drag.target.axis, drag.target.direction);
+    this.feedback?.unlockAudio();
+    this.sendWallLine(anchor, finger, drag.target.axis);
+    return true;
+  }
+
+  private cancelWallHandleDrag() {
+    if (!this.wallHandleDrag) return;
+    const moved = this.wallHandleDrag.moved;
+    this.wallHandleDrag = undefined;
+    if (moved) {
+      this.placementGrid?.clear().setVisible(false);
+      this.wallLineView?.hideLabel();
+    }
+  }
+
   private startTowerDrag(tower: TowerDefinition, pointer: Phaser.Input.Pointer) {
     this.startTowerDragAt(tower, this.getTowerDragPreviewPoint(pointer));
   }
 
-  private startTowerDragAt(tower: TowerDefinition, previewPoint: { x: number; y: number }) {
+  private startTowerDragAt(tower: TowerDefinition, previewPoint: { x: number; y: number }, client?: { x: number; y: number }) {
     this.cancelExecuteTargeting();
+    this.cancelWallHandleDrag();
+    this.hideWallHandles();
+    this.clearWallGesture();
     // Kule yerlestirme kalkan jestinden once gelir: suren jest kapaniyor.
     this.cancelShieldGesture();
     this.draggedTowerDefinition = tower;
@@ -2378,6 +2780,11 @@ export class GameScene extends Phaser.Scene {
       .setDisplaySize(ghost.width, ghost.height)
       .setAlpha(0.78)
       .setDepth(28);
+    // Duvar surukleniyorsa parmak 450 ms durursa cizgi basi sabitlenir. Yaratici
+    // modda duvar bedelsiz ve ayri kanaldan gidiyor; cizgi mesaji bedelli, o yuzden kapali.
+    if (tower.id === WALL_TOWER_ID && client && !this.creativeMode) {
+      this.wallGesture = { dwell: startWallDwell(client.x, client.y, performance.now()), client, finger: previewPoint };
+    }
     this.updateTowerDragAt(previewPoint);
     this.updateSelectionUi();
   }
@@ -2406,9 +2813,24 @@ export class GameScene extends Phaser.Scene {
     this.updateTowerDragAt(this.getTowerDragPreviewPoint(pointer));
   }
 
-  private updateTowerDragAt(previewPoint: { x: number; y: number }) {
+  private updateTowerDragAt(previewPoint: { x: number; y: number }, client?: { x: number; y: number }) {
     if (!this.draggedTowerDefinition) {
       return;
+    }
+
+    const gesture = this.wallGesture;
+    if (gesture) {
+      gesture.finger = previewPoint;
+      if (client) gesture.client = client;
+      if (!gesture.anchor) {
+        gesture.dwell = advanceWallDwell(gesture.dwell, gesture.client.x, gesture.client.y, performance.now());
+        if (gesture.dwell.locked) this.lockWallAnchor(gesture);
+      }
+      if (gesture.anchor) {
+        // Capadan sonra tek hayalet yok, cizgi var.
+        this.renderWallLinePreview(gesture.anchor, previewPoint);
+        return;
+      }
     }
 
     const definitionId = this.draggedTowerDefinition.id;
@@ -2459,7 +2881,14 @@ export class GameScene extends Phaser.Scene {
     const orientation = this.getPlacementOrientation(tower.id, previewPoint.x, previewPoint.y);
     const cell = this.snapToTowerGrid(previewPoint.x, previewPoint.y, tower.id, orientation);
     const canPlace = this.canPlaceTowerPreview(cell.x, cell.y);
-    if (this.room && canPlace) {
+    const lineAnchor = this.wallGesture?.anchor;
+    if (lineAnchor) {
+      // Capa atilmis: birakis tek duvar degil cizgi. Capaya donen parmak tek parca birakir.
+      if (this.room) {
+        this.feedback?.unlockAudio();
+        this.sendWallLine(lineAnchor, previewPoint);
+      }
+    } else if (this.room && canPlace) {
       // Inisin tok sesi onay donunce caliyor; birakis bir kullanici hareketi,
       // oyuncu tuvale hic dokunmadan (kule tepsisinden) surukleyebiliyor.
       this.feedback?.unlockAudio();
@@ -2474,11 +2903,17 @@ export class GameScene extends Phaser.Scene {
       
       });
       this.echoPlacement(cell.x, cell.y, tower.id);
+      // Tek duvar kuruldu: dizinin uclarinda uzatma tutamaclari acilacak.
+      if (tower.id === WALL_TOWER_ID && !this.creativeMode) {
+        const [placed] = this.getAbartiEdgeSegments(cell.x, cell.y, orientation, 1);
+        if (placed) this.queueWallHandles(placed);
+      }
     } else {
       // Yasak bolgede neden kurulamadigi ayrica soyleniyor.
       this.showNotice(t(this.isPreviewInBuildZone(cell.x, cell.y) ? "scene.place.forbiddenZone" : "scene.place.blocked"));
     }
 
+    this.clearWallGesture();
     this.draggedTowerDefinition = undefined;
     this.ignoreMapPointerUntil = performance.now() + 180;
     this.synergyMarks?.clearPreview();
@@ -2502,6 +2937,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.draggedTowerDefinition) {
       return;
     }
+    this.clearWallGesture();
     this.draggedTowerDefinition = undefined;
     this.synergyMarks?.clearPreview();
     this.placementRange?.clear();
@@ -2632,6 +3068,9 @@ export class GameScene extends Phaser.Scene {
       }
       return this.getTowerDragPreviewPointFromClient(detail.clientX, detail.clientY);
     };
+    const getClientPoint = () => detail.clientX === undefined || detail.clientY === undefined
+      ? undefined
+      : { x: detail.clientX, y: detail.clientY };
 
     switch (detail.action) {
       case "continueWave":
@@ -2694,13 +3133,13 @@ export class GameScene extends Phaser.Scene {
         if (!tower || !point) {
           return;
         }
-        this.startTowerDragAt(tower, point);
+        this.startTowerDragAt(tower, point, getClientPoint());
         break;
       }
       case "towerDragMove": {
         const point = previewPoint();
         if (point) {
-          this.updateTowerDragAt(point);
+          this.updateTowerDragAt(point, getClientPoint());
         }
         break;
       }
@@ -4954,6 +5393,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerDown(pointer: Phaser.Input.Pointer) {
+    // Ikinci temas: suren tutamac surukleme geri alinir, temas yutulur.
+    if (this.wallHandleDrag) {
+      this.cancelWallHandleDrag();
+      return;
+    }
+    // Uzatma tutamacina basis: kalkan jesti ve kule secimi baslamaz.
+    if (this.tryBeginWallHandleDrag(pointer)) {
+      return;
+    }
     // Acik kalmis bir kule suruklemesini kapatan basis kalkan jesti baslatmaz.
     const strandedDrag = Boolean(this.draggedTowerDefinition);
     this.releaseStrandedTowerDrag();
@@ -4993,6 +5441,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointerMove(pointer: Phaser.Input.Pointer) {
+    if (this.moveWallHandleDrag(pointer)) {
+      return;
+    }
     this.moveShieldGesture(pointer);
     if (this.pendingUltimateColumn) {
       this.drawUltimateColumnPreview(pointer.worldX);
@@ -5140,6 +5591,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleMapPointer(pointer: Phaser.Input.Pointer) {
+    // Tutamac suruklemesinin birakisi cizgiyi kurar. Kayma esigini asmayan
+    // basis dokunustur: normal akisa dusuyor (altindaki kule secilebilsin).
+    if (this.finishWallHandleDrag(pointer)) {
+      this.logTap(pointer, "duvar cizgisi");
+      return;
+    }
+    // Tutamacin disindaki her dokunus tutamaclari kapatir.
+    this.hideWallHandles();
     // Metal Kalkan suruklemesinin birakisi (kalkan cekildi ya da vazgecildi)
     // siradan bir harita dokunusu degil: kule secmez, secimi kaldirmaz.
     // Esigi asmamis jest burada hicbir sey yapmaz; dokunus eskisi gibi isler.
@@ -6300,6 +6759,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Sunucunun yerlestirme reddi (kurulum yasak bolge): onizleme atlatildiysa.
     room.onMessage("placement:rejected", (message: { message?: string; key?: string }) => {
       this.showNotice(localizeServerText(message?.message, message?.key) ?? t("scene.place.forbiddenZone"));
+    });
+    // Duvar cizgisi ozeti: parca atlandiysa neden kisaca soyleniyor. Hicbiri
+    // kurulamadiysa sunucu `placement:rejected` yolluyor, burada susuyoruz.
+    room.onMessage("wall:line-result", (message: { placed?: number; skipped?: number }) => {
+      const placed = Number(message?.placed);
+      const skipped = Number(message?.skipped);
+      if (Number.isFinite(placed) && Number.isFinite(skipped) && placed > 0 && skipped > 0) {
+        this.showNotice(t("scene.line.result", { placed, skipped }));
+      }
     });
     room.onMessage("shop:placement-required", (message: { itemId?: "bariyer" | "ziftli-zemin" }) => {
       this.pendingShopPlacement = message.itemId;
@@ -11437,6 +11905,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private abandonMapGesture() {
     // Metal Kalkan jesti de ayni yoldan kapaniyor: birakma gelmeyecek.
     this.cancelShieldGesture();
+    this.cancelWallHandleDrag();
     if (!this.isGuidanceDragging) {
       return;
     }

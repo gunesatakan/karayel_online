@@ -46,6 +46,9 @@ const FORMER_TURKISH = {
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
   // Yeni metin (kurulum yasak bolge reddi, `placement:rejected`); eskisi yok.
   "placement.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
+  // Yeni metinler (duvar cizgisi reddi, `placement:rejected`); eskisi yok.
+  "placement.lineNothing": "Bu hatta duvar kurulamadı",
+  "placement.lineNoGold": "Altın yetmedi: duvar kurulamadı",
   // Yeni metinler (uyumsuz kuleye esya takma reddi, `inventory:equip-rejected`); eskisi yok.
 "equip.incompatible.attacks": "Bu eşya bu kuleye takılamaz: yalnızca düşmana etki eden kulelere takılır.",
   "equip.incompatible.damage": "Bu eşya bu kuleye takılamaz: yalnızca hasar veren kulelere takılır.",

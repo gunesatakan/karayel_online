@@ -169,6 +169,9 @@ import {
   getStructureHealthMultiplier,
   isWallDefinition,
   WALL_TOWER_ID,
+  WALL_LINE_SERVER_MAX_PIECES,
+  getWallLine,
+  getWallSegmentCenter,
   WALL_EDGE_LENGTH,
   validateEdgePlacement,
   validateTowerPlacement,
@@ -1958,6 +1961,9 @@ type PlaceShopMapItemMessage = { itemId?: "bariyer" | "ziftli-zemin"; x?: number
  * Hepsi bedelsiz ve dogrulamasi gevsek; bu yuzden `getCreativePlayer`
  * kapisindan gecmeyen hicbiri is yapmiyor.
  */
+/** `placeTower` sonucu: cizgi yerlestirmesi nedenine gore sayiyor. */
+type PlaceTowerResult = "placed" | "invalid" | "limit" | "gold" | "zone" | "blocked";
+type WallLineMessage = { definitionId?: string; x1?: number; y1?: number; x2?: number; y2?: number; axis?: string };
 type CreativeTowerMessage = { definitionId?: string; x?: number; y?: number; orientation?: TowerOrientation };
 type CreativeLevelMessage = { towerId?: string; level?: number };
 type CreativeCardMessage = { cardId?: string; towerId?: string; on?: boolean };
@@ -2016,6 +2022,11 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "lobby:setReady": { phase: "lobby", fields: { ready: "boolean" } },
   "lobby:start": { phase: "lobby", fields: {} },
   placeTower: { phase: "match", fields: { definitionId: "string", x: "number", y: "number", orientation: "string" } },
+  // Duvar cizgisi: (x1,y1) capa kenari, (x2,y2) parmagin onizleme noktasi;
+  // `axis` (istege bagli) tutamacla baslayan cizgide ekseni zorlar.
+  // Tek mesaj en fazla WALL_LINE_SERVER_MAX_PIECES parca kurar; kova tekli
+  // yerlestirmeden dar: bir cizgi onlarca tekli mesajin yerine geciyor.
+  "wall:line": { phase: "match", fields: { definitionId: "string", x1: "number", y1: "number", x2: "number", y2: "number", axis: "string" }, rate: { burst: 6, perSecond: 3 } },
   upgradeTower: { phase: "match", fields: { towerId: "string" } },
   sellTower: { phase: "match", fields: { towerId: "string" } },
   equipShopItem: { phase: "match", fields: { itemId: "string", towerId: "string" } },
@@ -3265,6 +3276,10 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.placeTower(client, message);
+    });
+
+    this.onMessage("wall:line", (client, message: WallLineMessage) => {
+      this.placeWallLine(client, message);
     });
 
     this.onMessage("upgradeTower", (client, message: UpgradeTowerMessage) => {
@@ -13466,10 +13481,10 @@ export class MatchRoom extends Room<MatchState> {
     return PLAYER_TOWER_LIMIT + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
   }
 
-  private placeTower(client: Client, message: PlaceTowerMessage, options: { free?: boolean; ignoreLimit?: boolean } = {}) {
+  private placeTower(client: Client, message: PlaceTowerMessage, options: { free?: boolean; ignoreLimit?: boolean; quiet?: boolean } = {}): PlaceTowerResult {
     const player = this.state.players.get(client.sessionId);
     if (!player || !isFiniteNumber(message.x) || !isFiniteNumber(message.y) || typeof message.definitionId !== "string") {
-      return;
+      return "invalid";
     }
 
     const towerLimit = this.getPlayerTowerLimit(player);
@@ -13480,7 +13495,7 @@ export class MatchRoom extends Room<MatchState> {
         .filter((tower) => tower.ownerId === client.sessionId && occupiesTowerSlot(tower.definition))
         .length;
       if (currentTowerCount >= towerLimit) {
-        return;
+        return "limit";
       }
     }
 
@@ -13495,10 +13510,14 @@ export class MatchRoom extends Room<MatchState> {
     if (!definition || player.gold < buildCost || !this.canPlaceTower(placement.x, placement.y, definition.id, orientation)) {
       // Yasak bolge reddi sessiz degil: istemci onizlemesi atlatilmissa
       // (eski istemci, yaris) oyuncu nedenini gorsun.
-      if (definition && this.isPlacementInBuildZone(placement.x, placement.y, definition.id, orientation)) {
+      // `quiet`: duvar cizgisi parca basina mesaj yollamaz, ozeti kendisi yollar.
+      const inZone = Boolean(definition) && this.isPlacementInBuildZone(placement.x, placement.y, definition!.id, orientation);
+      if (inZone && !options.quiet) {
         client.send("placement:rejected", serverTextMessage("placement.forbiddenZone"));
       }
-      return;
+      if (!definition) return "invalid";
+      if (player.gold < buildCost) return "gold";
+      return inZone ? "zone" : "blocked";
     }
 
     const applicableHealthModifiers = this.getStructureHealthModifiers(player, definition);
@@ -13651,6 +13670,66 @@ export class MatchRoom extends Room<MatchState> {
     if (occupiesTowerSlot(definition)) {
       player.towersBuilt += 1;
     }
+    return "placed";
+  }
+
+  /**
+   * `wall:line`: ardisik duvar parcalarini tek mesajla kurar.
+   *
+   * Kural burada yok: cizgi `getWallLine` ile (istemcinin onizlemesiyle ayni
+   * fonksiyon) kenarlara cevriliyor ve her kenar tekli `placeTower`dan geciyor;
+   * bolge, dolu kenar, sahiplik ve altin kurali tek yerde kaliyor. Parcalar
+   * capadan disari dogru sirayla kuruluyor; gecersiz olan atlaniyor ama
+   * ardindakiler denenmeye devam ediyor. Altin bitince cizgi orada kesiliyor.
+   */
+  private placeWallLine(client: Client, message: WallLineMessage) {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !this.gameStarted) return;
+    if (message.definitionId !== undefined && typeof message.definitionId !== "string") return;
+    const definitionId = message.definitionId ?? WALL_TOWER_ID;
+    if (![message.x1, message.y1, message.x2, message.y2].every(isFiniteNumber)) return;
+    const definition = this.findTowerDefinition(player.characterId, definitionId);
+    // Yalnizca tek cizgilik duvar; Abarti iki cizgi kaplar ve dayanak ister.
+    if (!definition || definition.id !== WALL_TOWER_ID) return;
+
+    const gridSize = getMapGridSize(this.activeMap);
+    const origin = getMapOrigin(this.activeMap);
+    const board = { cols: this.activeMap.cols, rows: this.activeMap.rows };
+    const anchorOrientation = this.getEdgeOrientationAt(message.x1!, message.y1!);
+    const [anchorSegment] = this.getAbartiEdgeSegments(message.x1!, message.y1!, anchorOrientation, 1);
+    if (!anchorSegment) return;
+    const anchor = getWallSegmentCenter(anchorSegment, { gridSize, origin });
+    const line = getWallLine({
+      anchor,
+      finger: { x: message.x2!, y: message.y2! },
+      gridSize,
+      origin,
+      board,
+      maxPieces: WALL_LINE_SERVER_MAX_PIECES,
+      axis: message.axis === "horizontal" || message.axis === "vertical" ? message.axis : undefined
+    });
+
+    let placed = 0;
+    let skippedZone = 0;
+    let skippedBlocked = 0;
+    let skippedGold = 0;
+    for (const segment of line.segments) {
+      const center = getWallSegmentCenter(segment, { gridSize, origin });
+      const result = this.placeTower(client, { definitionId: definition.id, x: center.x, y: center.y }, { quiet: true });
+      if (result === "placed") placed += 1;
+      else if (result === "gold") skippedGold += 1;
+      else if (result === "zone") skippedZone += 1;
+      else skippedBlocked += 1;
+    }
+
+    const skipped = skippedZone + skippedBlocked + skippedGold;
+    if (placed === 0) {
+      const key = skippedGold > 0 && skippedGold >= skippedZone + skippedBlocked
+        ? "placement.lineNoGold"
+        : skippedZone > 0 && skippedBlocked === 0 ? "placement.forbiddenZone" : "placement.lineNothing";
+      client.send("placement:rejected", serverTextMessage(key));
+    }
+    client.send("wall:line-result", { requested: line.segments.length, placed, skipped, skippedZone, skippedBlocked, skippedGold });
   }
 
   private updateProviderCapacity(tower: TowerModel) {

@@ -41,6 +41,9 @@ export const SERVER_TEXT = {
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
   // `placement:rejected`
   "placement.forbiddenZone": "Bu bölgeye kurulum yapılamaz",
+  // `wall:line` hicbir duvar kuramadiginda (`placement:rejected`)
+  "placement.lineNothing": "Bu hatta duvar kurulamadı",
+  "placement.lineNoGold": "Altın yetmedi: duvar kurulamadı",
   // `inventory:equip-rejected` (uyumsuz kule): esyanin istedigi kule yetenegi (`ShopItemNeed`)
 "equip.incompatible.attacks": "Bu eşya bu kuleye takılamaz: yalnızca düşmana etki eden kulelere takılır.",
   "equip.incompatible.damage": "Bu eşya bu kuleye takılamaz: yalnızca hasar veren kulelere takılır.",

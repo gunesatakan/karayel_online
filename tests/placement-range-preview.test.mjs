@@ -192,6 +192,6 @@ test("sahne: cekmece suruklemesi halkayi ciziyor, birakma ve vazgecme siliyor", 
   assert.match(body("finishTowerDragAt"), /this\.placementRange\?\.clear\(\)/);
   assert.match(body("cancelTowerDrag"), /this\.placementRange\?\.clear\(\)/);
   // Cekmeceden gelen olaylar ayni yoldan geciyor.
-  assert.match(source, /case "towerDragMove": \{[\s\S]*?this\.updateTowerDragAt\(point\)/);
+  assert.match(source, /case "towerDragMove": \{[\s\S]*?this\.updateTowerDragAt\(point(, getClientPoint\(\))?\)/);
   assert.match(source, /new PlacementRangePreview\(this, 26\)/);
 });

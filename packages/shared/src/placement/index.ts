@@ -232,3 +232,5 @@ export function isAbartiEdgeAnchored(
   if (sides.some((cells) => cells.some((cell) => isStructureCell(cell.col, cell.row)))) return true;
   return sides.every((cells) => cells.some((cell) => isBuildTile(cell.col, cell.row)));
 }
+
+export * from "./wall-line.js";
