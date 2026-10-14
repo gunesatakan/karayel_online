@@ -1893,24 +1893,20 @@ export class GameScene extends Phaser.Scene {
     graphics.fillRect(sky.left, bounds.top, Math.max(0, bounds.left - sky.left), bounds.height);
     graphics.fillRect(bounds.right, bounds.top, Math.max(0, sky.left + sky.width - bounds.right), bounds.height);
 
-    // Spawn and nexus bands retain their gameplay meaning over the dark floor.
-    const bandHeight = cellSize;
-    graphics.fillStyle(0x22d3ee, 0.09);
-    graphics.fillRect(bounds.left, bounds.top, bounds.width, bandHeight);
-    graphics.lineStyle(1, 0x67e8f9, 0.34);
-    graphics.lineBetween(bounds.left, bounds.top + bandHeight, bounds.right, bounds.top + bandHeight);
-
-    graphics.fillStyle(0xf472b6, 0.09);
-    graphics.fillRect(bounds.left, bounds.bottom - bandHeight, bounds.width, bandHeight);
-    graphics.lineStyle(1, 0xf9a8d4, 0.34);
-    graphics.lineBetween(bounds.left, bounds.bottom - bandHeight, bounds.right, bounds.bottom - bandHeight);
-
     // Arenanin siniri: izgara gidince oyun alaninin nerede bittigi baska hicbir
-    // seyden okunmuyor.
-    // Uzay artik arenanin disinda da surdugu icin sinir biraz daha belirgin:
-    // oyun alaninin nerede bittigini soyleyen tek sey bu.
+    // seyden okunmuyor. Uzay artik arenanin disinda da surdugu icin sinir
+    // biraz daha belirgin: oyun alaninin nerede bittigini soyleyen tek sey bu.
+    const arenaWidth = tileColumns * cellSize;
+    const arenaHeight = tileRows * cellSize;
     graphics.lineStyle(1, 0x38bdf8, 0.34);
-    graphics.strokeRect(origin.x, origin.y, tileColumns * cellSize, tileRows * cellSize);
+    graphics.lineBetween(origin.x, origin.y, origin.x, origin.y + arenaHeight);
+    graphics.lineBetween(origin.x + arenaWidth, origin.y, origin.x + arenaWidth, origin.y + arenaHeight);
+    // Dogum ve nexus satirlari boyanmiyor (sahibin istegi): yalnizca en ust ve
+    // en alt kenar kendi renginde, kareler zeminle ayni kaliyor.
+    graphics.lineStyle(2, 0x67e8f9, 0.75);
+    graphics.lineBetween(origin.x, origin.y, origin.x + arenaWidth, origin.y);
+    graphics.lineStyle(2, 0xf9a8d4, 0.75);
+    graphics.lineBetween(origin.x, origin.y + arenaHeight, origin.x + arenaWidth, origin.y + arenaHeight);
   }
 
   /**

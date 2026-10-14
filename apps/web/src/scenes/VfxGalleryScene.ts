@@ -932,11 +932,11 @@ export class VfxGalleryScene extends Phaser.Scene {
       board.lineStyle(1, 0x1e293b, 0.9);
       for (let col = 0; col <= SURGE_COLS; col += 1) board.lineBetween(x + col * grid, y, x + col * grid, y + SURGE_ROWS * grid);
       for (let row = 0; row <= SURGE_ROWS; row += 1) board.lineBetween(x, y + row * grid, x + SURGE_COLS * grid, y + row * grid);
-      // Dogum (ust) ve nexus (alt) satirlari.
-      board.fillStyle(0x3f1d1d, 0.5);
-      board.fillRect(x, y, SURGE_COLS * grid, grid);
-      board.fillStyle(0x1d3f2c, 0.5);
-      board.fillRect(x, y + (SURGE_ROWS - 1) * grid, SURGE_COLS * grid, grid);
+      // Dogum (ust) ve nexus (alt) kenarlari: satir boyanmiyor, yalnizca kenar.
+      board.lineStyle(2, 0xb45454, 0.85);
+      board.lineBetween(x, y, x + SURGE_COLS * grid, y);
+      board.lineStyle(2, 0x4f9a6c, 0.85);
+      board.lineBetween(x, y + SURGE_ROWS * grid, x + SURGE_COLS * grid, y + SURGE_ROWS * grid);
       for (const [col, row] of SURGE_TOWERS) {
         board.fillStyle(0x334155, 1);
         board.fillRect(x + col * grid + 3, y + row * grid + 3, grid - 6, grid - 6);
