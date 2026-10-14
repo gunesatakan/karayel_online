@@ -1,5 +1,5 @@
 import type { TowerDefinition, TowerEngineConfig } from "./types.js";
-import { ISOLATION_SLOW_CURVE, PASSIVE_AURA_TICK_INTERVAL_MS, getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
+import { ISOLATION_SLOW_CURVE, PASSIVE_AURA_TICK_INTERVAL_MS, TRACKING_MARK_DAMAGE_PER_STACK, getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
   "wall-1": ["barricade"],
@@ -101,13 +101,13 @@ const profiles: Record<string, EngineProfile> = {
     fixedFireInterval: true,
     critical: { damageMultiplier: 2, bonusChanceAgainstStatus: { type: "bleed", chance: 0.25 } }
   },
-  "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1.1, durationMs: 6500 } },
+  "warrior-1": { targeting: "first", attack: { shape: "single", pierceCount: 1 }, canHitAir: true, appliesMark: { id: "tracking", damageMultiplier: 1 + TRACKING_MARK_DAMAGE_PER_STACK, durationMs: 6500 } },
   "warrior-2": { targeting: "first", attack: { shape: "circle", radius: 18 }, canHitAir: false },
   // Izolasyon: vurus yavaslatmasi da yalniz kalinca acilan aura da ayni
   // seviye egrisinde (%10 -> %50). Ikisi ayri egride olsaydi biri otekini
   // `min` icinde hep ezerdi. `multiplier` 1. seviyenin degeri; seviye olcegi
   // `slowByLevel`den.
-  "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh", slowByLevel: ISOLATION_SLOW_CURVE }], auras: [{ affects: "enemies", shape: "circle", radius: 104, stat: "slow", multiplier: 1 - ISOLATION_SLOW_CURVE.level1, slowByLevel: ISOLATION_SLOW_CURVE, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated" }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
+  "warrior-3": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 850, stacking: "refresh", slowByLevel: ISOLATION_SLOW_CURVE }], auras: [{ affects: "enemies", shape: "circle", radius: 52, stat: "slow", multiplier: 1 - ISOLATION_SLOW_CURVE.level1, slowByLevel: ISOLATION_SLOW_CURVE, stacking: "strongest", tickIntervalMs: 220, refreshDurationMultiplier: 2, activation: "isolated" }], placement: { minDistanceFromTowers: 1 }, resources: { ammoType: "auraCrystal" } },
   // Obsesyon: mercek namlusu boyali resimde diskin kenarinda (tower-warrior-4-*.webp).
   "warrior-4": { targeting: "strongest", attack: { shape: "single", pierceCount: 1, muzzleOffset: 0.97 }, canHitAir: true, stacks: [{ id: "obsession", trigger: "sameTarget", stat: "damage", perStack: 0.2, max: 10, resetOn: "targetChange" }] },
   // Debug Lazer: nozul ucu boyali resimde (tower-warrior-5-*.webp) yari cercevenin

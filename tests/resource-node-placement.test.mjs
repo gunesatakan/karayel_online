@@ -210,21 +210,27 @@ test("tohum mac basinda Math.random'dan tek cekim; tohumlu Math.random ile mac b
     withMathRandom(random, () => room.configureArenaForScale());
     return { room, calls: random.calls };
   };
-  // 1. asama: tek cekim, o da yerlesim tohumu. Ozel dusman tohumu hic cekilmiyor.
+  // 1. asama: iki cekim: dalga paterni tohumu (ilk dalga planinda), sonra
+  // yerlesim tohumu. Ozel dusman tohumu hic cekilmiyor.
   const a = roll(9001, 1);
   const b = roll(9001, 1);
   const c = roll(9002, 1);
-  assert.equal(a.calls, 1);
+  assert.equal(a.calls, 2);
   assert.equal(a.room.specialSeed, undefined);
-  assert.equal(a.room.resourceLayoutSeed, Math.floor(seededRandom(9001)() * 0x1_0000_0000));
+  const first = seededRandom(9001);
+  assert.equal(a.room.wavePatternSeed, Math.floor(first() * 0x1_0000_0000));
+  assert.equal(a.room.resourceLayoutSeed, Math.floor(first() * 0x1_0000_0000));
   assert.deepEqual(b.room.getEconomyNodes(), a.room.getEconomyNodes());
+  assert.deepEqual(b.room.wavePatternPlan, a.room.wavePatternPlan, "ayni tohum ayni dalga paterni");
   assert.notDeepEqual(cellsOf(c.room), cellsOf(a.room));
 
-  // 2. asama: ozel dusman tohumu eskisi gibi ilk cekim, yerlesim tohumu onun ardindan.
+  // 2. asama: ozel dusman tohumu eskisi gibi ilk cekim, patern tohumu ve
+  // yerlesim tohumu onun ardindan.
   const stageTwo = roll(9001, 2);
   const sequence = seededRandom(9001);
-  assert.equal(stageTwo.calls, 2);
+  assert.equal(stageTwo.calls, 3);
   assert.equal(stageTwo.room.specialSeed, Math.floor(sequence() * 0x1_0000_0000));
+  assert.equal(stageTwo.room.wavePatternSeed, Math.floor(sequence() * 0x1_0000_0000));
   assert.equal(stageTwo.room.resourceLayoutSeed, Math.floor(sequence() * 0x1_0000_0000));
 
   // Sonraki dalga planlari ve okumalar yerlesim icin bir daha zar atmiyor.

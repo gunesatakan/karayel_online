@@ -25,6 +25,16 @@ export const ORBIT_CONTINUOUS_ENERGY_PER_SECOND = 1;
 export const ORBIT_CONTINUOUS_HEAT_PER_SECOND = 9;
 export const ENERGY_OUTAGE_TRACKING_DELAY_MS = 1000;
 export const ENERGY_OUTAGE_AURA_DELAY_MS = 2000;
+/**
+ * Takipci'nin Takip isaretinin yigin basina hasar eki.
+ *
+ * Isaretli dusman tum takimdan `1 + yigin x bu` kat hasar aliyor; yigin
+ * tavani kulenin seviyesinden (1-4: 1, 5-9: 2, 10: 3). Yani 1. seviyede
+ * %30, 5. seviyede %60, 10. seviyede %90 -- isaret toplami
+ * `getMarkDamageMultiplier`in +%100 tavanina takiliyor. Motor tanimindaki
+ * `appliesMark.damageMultiplier` da bu sayidan: tek yigin.
+ */
+export const TRACKING_MARK_DAMAGE_PER_STACK = 0.3;
 export const TOWER_OPERATING_ENERGY_BY_HIT_TYPE: Record<HitType, number> = {
   none: 0,
   projectile: 0.6,

@@ -253,7 +253,8 @@ test("yalniz Atakan kulesi carpani alir; duvar yalnizligi bozmaz", () => {
   const all = [kule, duvar(3, 4, "warrior"), yapi("warrior-4", 7, 8)];
   ayniSonuc(all, "yalniz");
   assert.equal(getAtakanIsolationMultiplier(kule, all, map), ATAKAN_ISOLATION_MULTIPLIER);
-  assert.equal(getAtakanIsolationDpsMultiplier(), ATAKAN_ISOLATION_MULTIPLIER ** 2);
+  // Atis hizi bonusu yok: DPS kazanci hasar carpaninin kendisi.
+  assert.equal(getAtakanIsolationDpsMultiplier(), ATAKAN_ISOLATION_MULTIPLIER);
 });
 
 test("bitisik reaktor yalnizligi bozar", () => {
@@ -392,7 +393,7 @@ test("onizleme metni kisa ve sayilari kuraldan aliyor", () => {
   const ad = (structure) => structure.definition.name;
   const takipci = yapi("warrior-1", 3, 4);
   const yalniz = describeSynergyPreview(previewSynergyPlacement(yapi("warrior-4", 7, 8), [takipci], map, gridSize), ad);
-  assert.deepEqual(yalniz, { headline: { text: "Yalnız ×2,25 DPS", tone: "gain" } });
+  assert.deepEqual(yalniz, { headline: { text: "Yalnız ×1,50 DPS", tone: "gain" } });
 
   const bitisik = describeSynergyPreview(previewSynergyPlacement(yapi("warrior-4", 4, 4), [takipci], map, gridSize), ad);
   assert.deepEqual(bitisik, { headline: { text: "Yalnızlık yok", tone: "blocked" }, warning: "Bozar: Takipçi" });
@@ -411,7 +412,7 @@ test("onizleme metni kisa ve sayilari kuraldan aliyor", () => {
 });
 
 test("damga metinleri ve yonetmen kurali", () => {
-  assert.equal(getSynergyStampText("isolationGained"), "Yalnız ×2,25");
+  assert.equal(getSynergyStampText("isolationGained"), "Yalnız ×1,50");
   assert.equal(getSynergyStampText("isolationLost"), "Yalnızlık bozuldu");
   assert.equal(getSynergyStampText("formationFormed"), "Dizilim kuruldu");
   assert.equal(getSynergyStampText("formationBroken"), "Dizilim bozuldu");

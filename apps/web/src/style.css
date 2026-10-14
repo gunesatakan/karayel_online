@@ -225,6 +225,66 @@ canvas {
   border-radius: 50%;
 }
 
+/*
+ * Eli yenile: elde bir kez. Sert cizgili bir konsol dugmesi -- parilti yok,
+ * kartlarla yarismasin. 44 px dokunus hedefi; hak bitince sonuk ve kapali,
+ * sayac "0" gosteriyor (oyuncu neden basamadigini gorsun).
+ */
+.card-draft__actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.card-draft__reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 152px;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  color: #e0f2fe;
+  cursor: pointer;
+  background: rgba(2, 6, 23, .72);
+  border: 1px solid rgba(125, 211, 252, .46);
+  border-radius: 4px;
+  font: 700 13px/1 "Share Tech Mono", monospace;
+  letter-spacing: .18em;
+  transition: border-color 120ms linear, background-color 120ms linear;
+}
+
+.card-draft__reroll:hover,
+.card-draft__reroll:focus-visible {
+  background: rgba(14, 116, 144, .22);
+  border-color: #67e8f9;
+  outline: none;
+}
+
+.card-draft__reroll:active { background: rgba(14, 116, 144, .34); }
+.card-draft__reroll-glyph { color: #67e8f9; font-size: 18px; letter-spacing: 0; }
+.card-draft__reroll-label { flex: 1; text-align: left; }
+
+.card-draft__reroll-count {
+  min-width: 26px;
+  padding: 5px 0 4px;
+  color: #67e8f9;
+  border: 1px solid rgba(103, 232, 249, .5);
+  border-radius: 2px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.card-draft__reroll:disabled {
+  cursor: default;
+  opacity: .46;
+}
+
+.card-draft__reroll.is-spent .card-draft__reroll-glyph,
+.card-draft__reroll.is-spent .card-draft__reroll-count {
+  color: #64748b;
+  border-color: rgba(100, 116, 139, .5);
+}
+
 .tower-choice-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .tower-choice-empty { margin: 0; padding: 14px 12px; color: #94a3b8; font-size: 12px; line-height: 1.5; text-align: center; }
 .tower-choice { display: grid; grid-template-columns: 42px 1fr 24px; gap: 12px; align-items: center; min-height: 68px; padding: 10px 14px; color: #f8fafc; text-align: left; cursor: pointer; background: rgba(15, 27, 52, .76); border: 1px solid rgba(100, 116, 139, .34); border-radius: 14px; transition: 150ms ease; }
@@ -5053,6 +5113,9 @@ button.wave-report:active { transform: scale(0.99); }
  */
 .game-hud__forecast:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 38px); }
 .game-hud__forecast--danger:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 54px); }
+/* Patern satiri bir satir daha (~15 px). */
+.game-hud__forecast--pattern:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 54px); }
+.game-hud__forecast--pattern.game-hud__forecast--danger:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 70px); }
 
 /*
  * Ulti karnesi: seridin %56'si, ortada; seri afisinin (%17) ve dalga
@@ -5229,6 +5292,10 @@ button.wave-report:active { transform: scale(0.99); }
 /* Agir dalga: kirmizi-turuncu, hava etiketinin yaninda okunacak kadar ayri ama uyari kutusu kadar bagirmiyor. */
 .game-hud__forecast-line .game-hud__heavy { margin-left: 6px; color: #fdba74; font-style: normal; font-weight: 800; white-space: nowrap; }
 .game-hud__forecast-warning { color: #fca5a5; font-weight: 800; }
+/* Dalga paterni: ad mor-acik ve kalin, ipucu soluk; dar ekranda ipucu kirpiliyor (ellipsis). */
+.game-hud__forecast-pattern { color: #94a3b8; }
+.game-hud__forecast-pattern b { color: #c4b5fd; font-weight: 800; }
+.game-hud__forecast-pattern span::before { content: " · "; }
 
 /*
  * Ikincil serit: tasarsa kayar, sarmaz, ust satirin uzerine binmez.

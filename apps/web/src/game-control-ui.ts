@@ -1,9 +1,10 @@
 import { type AmmoType, ACTIVE_WORKER_ROLES } from "@karayel/shared";
+import type { WavePatternId } from "@karayel/shared";
 import type Phaser from "phaser";
 import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
-import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper } from "./i18n";
+import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
 import { describeWorkerRow, formatTransportProduct, formatWorkerCargo, formatWorkerReserve, formatWorkerRole, getWorkerPickHint, getWorkerProductOptions, getWorkerRosterStructureKey, type WorkerRosterState } from "./worker-roster";
@@ -26,6 +27,20 @@ type ZeynepTier = "small" | "medium" | "big";
 function formatShopCategory(category: string) {
   return SHOP_CATEGORY_LABELS[category as ShopItemCategory] ?? category;
 }
+
+/** Ongoru kutusunun patern satiri: paternin adi ve kisa ipucu (TR/EN). */
+const WAVE_PATTERN_LABEL_KEYS: Record<WavePatternId, { name: MessageKey; hint: MessageKey }> = {
+  balanced: { name: "hud.forecast.pattern.balanced", hint: "hud.forecast.patternHint.balanced" },
+  trickle: { name: "hud.forecast.pattern.trickle", hint: "hud.forecast.patternHint.trickle" },
+  swarm: { name: "hud.forecast.pattern.swarm", hint: "hud.forecast.patternHint.swarm" },
+  ranged: { name: "hud.forecast.pattern.ranged", hint: "hud.forecast.patternHint.ranged" },
+  rush: { name: "hud.forecast.pattern.rush", hint: "hud.forecast.patternHint.rush" },
+  armored: { name: "hud.forecast.pattern.armored", hint: "hud.forecast.patternHint.armored" },
+  pincer: { name: "hud.forecast.pattern.pincer", hint: "hud.forecast.patternHint.pincer" },
+  burst: { name: "hud.forecast.pattern.burst", hint: "hud.forecast.patternHint.burst" },
+  airRaid: { name: "hud.forecast.pattern.airRaid", hint: "hud.forecast.patternHint.airRaid" },
+  airMixed: { name: "hud.forecast.pattern.airMixed", hint: "hud.forecast.patternHint.airMixed" }
+};
 
 /**
  * Kilidi kartlardan zaten gelen esyanin etiketi (vitrin ve envanter).
@@ -2093,6 +2108,11 @@ export type HudState = {
    * 6-9. ve 11. dalgada can bir bucuk katina sicriyor ve sayi bunu soylemiyordu.
    */
   forecastHpStep?: number;
+  /**
+   * Siradaki dalganin paterni (`WavePatternId`); kutunun ikinci satiri adini
+   * ve kisa ipucunu yaziyor. Yoksa satir gizli.
+   */
+  forecastPattern?: WavePatternId;
   /** Siradaki dalgada ucan var ve oyuncunun hicbir kulesi havayi vuramiyor. */
   airWarning: boolean;
   /**
@@ -2178,6 +2198,7 @@ export function setupGameHudUi(game: Phaser.Game) {
     </div>
     <div class="game-hud__forecast" data-hud-forecast hidden>
       <p class="game-hud__forecast-line"><b data-hud-forecast-count>0</b><em class="game-hud__heavy" data-hud-forecast-heavy hidden></em><em class="game-hud__air" data-hud-forecast-air hidden></em></p>
+      <p class="game-hud__forecast-pattern" data-hud-forecast-pattern hidden><b data-hud-forecast-pattern-name></b><span data-hud-forecast-pattern-hint></span></p>
       <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden></p>
     </div>
     <div data-hud-popups></div>
@@ -2206,6 +2227,9 @@ export function setupGameHudUi(game: Phaser.Game) {
   const forecastAirNode = root.querySelector<HTMLElement>("[data-hud-forecast-air]")!;
   const forecastHeavyNode = root.querySelector<HTMLElement>("[data-hud-forecast-heavy]")!;
   const forecastWarningNode = root.querySelector<HTMLElement>("[data-hud-forecast-warning]")!;
+  const forecastPatternNode = root.querySelector<HTMLElement>("[data-hud-forecast-pattern]")!;
+  const forecastPatternNameNode = root.querySelector<HTMLElement>("[data-hud-forecast-pattern-name]")!;
+  const forecastPatternHintNode = root.querySelector<HTMLElement>("[data-hud-forecast-pattern-hint]")!;
   const stripDynamicNode = root.querySelector<HTMLElement>("[data-hud-strip-dynamic]")!;
   const xpChipNode = root.querySelector<HTMLElement>("[data-hud-xp]")!;
   const xpValueNode = root.querySelector<HTMLElement>("[data-hud-xp-value]")!;
@@ -2301,8 +2325,16 @@ export function setupGameHudUi(game: Phaser.Game) {
 
     setHidden(forecastNode, !forecastVisible);
     if (!forecastVisible) return;
-    setClass(forecastNode, `game-hud__forecast${next.airWarning ? " game-hud__forecast--danger" : ""}`);
+    const pattern = next.forecastPattern;
+    setClass(forecastNode, `game-hud__forecast${next.airWarning ? " game-hud__forecast--danger" : ""}${pattern ? " game-hud__forecast--pattern" : ""}`);
     setText(forecastCountNode, String(next.forecastEnemyCount));
+    // Dalga paterni: ikinci satirda adi ve kisa ipucu ("Sürü · çok sayıda hızlı koşucu").
+    setHidden(forecastPatternNode, !pattern);
+    if (pattern) {
+      const keys = WAVE_PATTERN_LABEL_KEYS[pattern];
+      setText(forecastPatternNameNode, t(keys.name));
+      setText(forecastPatternHintNode, t(keys.hint));
+    }
     // Agir dalga: sayinin hemen yaninda, hava etiketinden once. Ayni kisa
     // satirda kaliyor; kutu yuksekligi ve cubugun olcusu degismiyor.
     const heavy = next.forecastHpStep;

@@ -186,6 +186,7 @@ export const trCore = {
   "sheet.next": "Sonraki seviye",
   "sheet.maxLevel": "En üst seviye",
   "sheet.pool": "havuz {xp} XP · {gold}g",
+  "sheet.upgradePrice": "{xp} XP + {gold}g",
   "sheet.refund.undo": "Kurulum iadesi",
   "sheet.refund.sell": "Satış değeri",
   "sheet.totalDamage": "Toplam hasar",

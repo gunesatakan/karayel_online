@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cardCatalog, deliveryScore } from "../packages/shared/dist/index.js";
+import { TRACKING_MARK_DAMAGE_PER_STACK, cardCatalog, deliveryScore } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -210,7 +210,8 @@ test("tracking assist is a subset of damage and excludes overkill", () => {
     const before = room.getDefenseRow(tracker).markAssistDamage;
     room.damageEnemy(enemy, 100, 0, "warrior-4", "p1", "true", 0, 1, attacker.id);
     const assist = room.getDefenseRow(tracker).markAssistDamage - before;
-    assert.ok(Math.abs(assist - (hp === 5 ? 0 : 20)) < 0.0001);
+    // Tek takip yigini +%30: 100 hasar 130 iner, 30'u isaretin payi.
+    assert.ok(Math.abs(assist - (hp === 5 ? 0 : 100 * TRACKING_MARK_DAMAGE_PER_STACK)) < 0.0001);
     assert.equal(room.getDefenseRow(tracker).damage, 0);
   }
 });

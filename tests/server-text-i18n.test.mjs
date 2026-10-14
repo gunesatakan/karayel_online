@@ -40,6 +40,8 @@ const FORMER_TURKISH = {
   "card.noPendingChoice": "Bekleyen kart seçimi bulunamadı. Bağlantı yenileniyor olabilir.",
   "card.invalidChoice": "Bu kart artık geçerli bir seçenek değil.",
   "card.towerCannotTake": "Seçilen kule bu kartı alamıyor. Başka bir kule seç.",
+  // Yeni metin (kart yenileme reddi); eskisi yok.
+  "card.rerollUsed": "Bu seçimde yenileme hakkın kalmadı.",
   // Yeni metin (isci atama reddi, `worker:rejected`); eskisi yok.
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
   "preview.tooSoon": "Biraz sonra tekrar dene.",

@@ -143,20 +143,85 @@ export function getCounterSurgeWidthCells(kind: CounterSurgeKind, cols: number, 
 }
 
 /**
- * Seridin kalkabilecegi ilk ve son serit indeksi (sutun ya da satir).
- * Yandan gelen serit ust (dogum) ve alt (nexus) satira tasmiyor: oralarda
- * yapi yok, serit bosa gecerdi. Caprazda tek serit (0).
+ * Seridin vurabilecegi hucre araligi (dahil), genislik ekseninde: ustten
+ * gelende sutunlar, yandan gelende satirlar. Yandan gelen serit ust (dogum)
+ * ve alt (nexus) satira tasmiyor: oralarda yapi yok, serit bosa gecerdi.
+ * Caprazda `undefined` (kaydirma `getCounterSurgeDiagonalOffsetLimit`ten).
  */
-export function getCounterSurgeLaneRange(kind: CounterSurgeKind, cols: number, rows: number, width: number) {
+export function getCounterSurgeCellRange(kind: CounterSurgeKind, cols: number, rows: number, width: number) {
   const route = COUNTER_SURGE_KIND_TABLE[kind].route;
-  if (route === "diagonal") return { min: 0, max: 0 };
+  if (route === "diagonal") return undefined;
   if (route === "side") {
     const r = Math.max(1, Math.floor(rows));
-    const min = r - width >= 2 ? 1 : 0;
-    const max = Math.max(min, r - width - (r - width >= 2 ? 1 : 0));
-    return { min, max };
+    const inner = r - width >= 2;
+    return { lo: inner ? 1 : 0, hi: inner ? r - 2 : r - 1 };
   }
-  return { min: 0, max: Math.max(0, Math.floor(cols) - width) };
+  return { lo: 0, hi: Math.max(0, Math.floor(cols) - 1) };
+}
+
+/**
+ * Seridin kalkabilecegi ilk ve son serit indeksi (sutun ya da satir),
+ * kirpilmadan once.
+ *
+ * Adil serit: baslangic, seridin hucre araligindan genisligin bir eksigi
+ * kadar disari tasabiliyor ve sonra haritaya kirpiliyor
+ * (`clipCounterSurgeLane`). Boylece her sutun (yandan gelende her satir)
+ * tam `genislik` baslangic tarafindan ortuluyor: kenar sutunu ortadaki
+ * kadar sik vuruluyor, yalnizca kenarda gorunen serit daha dar. Eskiden
+ * baslangic yalnizca tam sigan konumlardan seciliyordu ve ortadaki sutun
+ * kenardakinin uc-alti kati sik vuruluyordu.
+ *
+ * Caprazda indeks, ana kosegene gore kaydirma (hucre; eksi de olabilir).
+ */
+export function getCounterSurgeLaneRange(kind: CounterSurgeKind, cols: number, rows: number, width: number) {
+  const range = getCounterSurgeCellRange(kind, cols, rows, width);
+  if (!range) {
+    const limit = getCounterSurgeDiagonalOffsetLimit(cols, rows, width);
+    return { min: -limit, max: limit };
+  }
+  return { min: range.lo - (Math.max(1, Math.floor(width)) - 1), max: range.hi };
+}
+
+/**
+ * Kirpilmamis baslangictan haritadaki serit: sol (ust) indeks ve gorunen
+ * genislik. Caprazda kaydirma aynen, genislik aynen (cizim ve vurus
+ * haritanin disini zaten gormuyor).
+ */
+export function clipCounterSurgeLane(kind: CounterSurgeKind, cols: number, rows: number, start: number, width: number) {
+  const w = Math.max(1, Math.floor(width));
+  const range = getCounterSurgeCellRange(kind, cols, rows, w);
+  if (!range) {
+    const limit = getCounterSurgeDiagonalOffsetLimit(cols, rows, w);
+    return { lane: Math.max(-limit, Math.min(limit, quantizeDiagonalOffset(start))), width: w };
+  }
+  const from = Math.max(range.lo, Math.floor(start));
+  const to = Math.min(range.hi, Math.floor(start) + w - 1);
+  if (to < from) return { lane: Math.max(range.lo, Math.min(range.hi, Math.floor(start))), width: 1 };
+  return { lane: from, width: to - from + 1 };
+}
+
+/** Capraz kaydirmanin cozunurlugu: hucre basina bu kadar adim (ceyrek hucre). */
+export const COUNTER_SURGE_DIAGONAL_OFFSET_STEPS = 4;
+
+function quantizeDiagonalOffset(value: number) {
+  return Number.isFinite(value) ? Math.round(value * COUNTER_SURGE_DIAGONAL_OFFSET_STEPS) / COUNTER_SURGE_DIAGONAL_OFFSET_STEPS : 0;
+}
+
+/**
+ * Capraz seridin ana kosegene gore en buyuk kaydirmasi (hucre, iki yone).
+ *
+ * Kosegene dik eksende hucre merkezlerinin en uzagi kose hucresi:
+ * `R = (c*r - (c+r)/2) / hypot(c, r)`; sinir `K = R + genislik/2`.
+ * Kaydirma `[-K, K]` icinde esit (ceyrek hucre adimiyla) secilince her
+ * hucre merkezi `genislik / 2K` olasilikla seridin icinde kaliyor: ana
+ * kosegen eskisi gibi her seferinde vurulmuyor, karsi koselerdeki hucreler
+ * artik vurulabiliyor.
+ */
+export function getCounterSurgeDiagonalOffsetLimit(cols: number, rows: number, width: number) {
+  const c = Math.max(1, Math.floor(cols));
+  const r = Math.max(1, Math.floor(rows));
+  const reach = (c * r - (c + r) / 2) / Math.hypot(c, r);
+  return Math.max(0, Math.ceil((reach + Math.max(1, width) / 2) * COUNTER_SURGE_DIAGONAL_OFFSET_STEPS) / COUNTER_SURGE_DIAGONAL_OFFSET_STEPS);
 }
 
 export type PlannedCounterSurge = {
@@ -164,9 +229,12 @@ export type PlannedCounterSurge = {
   atSpawn: number;
   kind: CounterSurgeKind;
   travel: CounterSurgeTravel;
-  /** Serit indeksi: ustten gelende sol sutun, yandan gelende ust satir; caprazda 0. */
+  /**
+   * Serit indeksi: ustten gelende sol sutun, yandan gelende ust satir;
+   * caprazda ana kosegene gore kaydirma (hucre, eksi olabilir).
+   */
   lane: number;
-  /** Genislik, hucre (haritaya sigdirilmis). */
+  /** Genislik, hucre: haritaya sigdirilmis ve kenarda kirpilmis (gorunen genislik). */
   width: number;
 };
 
@@ -232,16 +300,24 @@ export function planCounterSurges(input: CounterSurgePlanInput): PlannedCounterS
     const kind = pickWeighted(pool, random);
     const travelRoll = random();
     const travel = first && first.kind === kind ? OPPOSITE_TRAVEL[first.travel] : pickTravel(kind, travelRoll);
-    const width = getCounterSurgeWidthCells(kind, cols, rows);
-    const range = getCounterSurgeLaneRange(kind, cols, rows, width);
-    const lane = range.min + Math.floor(random() * (range.max - range.min + 1));
+    const fullWidth = getCounterSurgeWidthCells(kind, cols, rows);
+    const range = getCounterSurgeLaneRange(kind, cols, rows, fullWidth);
+    // Adil serit: kenara tasan baslangic kirpiliyor (bkz. `getCounterSurgeLaneRange`).
+    // Caprazda kaydirma surekli (ceyrek hucreye yuvarli), digerlerinde tam sayi baslangic.
+    const laneRoll = random();
+    const start = COUNTER_SURGE_KIND_TABLE[kind].route === "diagonal"
+      ? range.min + laneRoll * (range.max - range.min)
+      : range.min + Math.floor(laneRoll * (range.max - range.min + 1));
+    const clipped = clipCounterSurgeLane(kind, cols, rows, start, fullWidth);
+    const lane = clipped.lane;
+    const width = clipped.width;
     const [minShare, spanShare] = count === 1
       ? [COUNTER_SURGE_START_MIN_SHARE, COUNTER_SURGE_START_SPAN_SHARE]
       : COUNTER_SURGE_PAIR_WINDOWS[index];
     let atSpawn = Math.max(0, Math.min(spawnCount - 1, Math.floor(spawnCount * (minShare + spanShare * random()))));
     if (first && atSpawn <= first.atSpawn) atSpawn = Math.min(spawnCount - 1, first.atSpawn + 1);
     if (first && atSpawn <= first.atSpawn) break;
-    planned.push({ atSpawn, kind, travel, lane: Math.min(range.max, Math.max(range.min, lane)), width });
+    planned.push({ atSpawn, kind, travel, lane, width });
   }
   return planned;
 }
@@ -251,7 +327,9 @@ export function planCounterSurges(input: CounterSurgePlanInput): PlannedCounterS
  * genislik). Ustten gelen bugunku seritle bire bir ayni (`getVerticalSurgeBand`).
  * Yandan gelen: `lane` ust satir, harita boyunca. Capraz: kose kosegeni
  * boyunca, on cizgi yola dik; ilerleme 0'da on cizgi kalkis kosesinden,
- * 1'de karsi koseden geciyor.
+ * 1'de karsi koseden geciyor. Caprazda `lane` orta hattin ana kosegenden
+ * kaydirmasi (hucre, `getCounterSurgeDiagonalOffsetLimit` icinde); serit
+ * kismen haritanin disinda kalabiliyor, disarisi hicbir seyi vurmuyor.
  */
 export function getCounterSurgeGeometry(
   travel: CounterSurgeTravel,
@@ -281,10 +359,14 @@ export function getCounterSurgeGeometry(
   }
   if (travel === "downRight" || travel === "downLeft") {
     const length = Math.hypot(mapWidth, mapHeight);
-    band.originX = travel === "downRight" ? origin.x : origin.x + mapWidth;
-    band.originY = origin.y;
     band.dirX = (travel === "downRight" ? mapWidth : -mapWidth) / length;
     band.dirY = mapHeight / length;
+    // Kaydirma genislik ekseninde (dirY, -dirX): orta hat ana kosegene paralel
+    // kayiyor, on cizgi ayni (haritanin yol eksenindeki izdusumu degismiyor).
+    const limit = getCounterSurgeDiagonalOffsetLimit(c, r, widthCells);
+    const offset = Number.isFinite(lane) ? Math.max(-limit, Math.min(limit, quantizeDiagonalOffset(lane))) * gridSize : 0;
+    band.originX = (travel === "downRight" ? origin.x : origin.x + mapWidth) + band.dirY * offset;
+    band.originY = origin.y - band.dirX * offset;
     band.length = length;
     band.width = width;
     return band;

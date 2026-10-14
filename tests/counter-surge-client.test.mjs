@@ -219,6 +219,61 @@ test("çapraz kesme harita dışına taşmıyor: bütün çokgenler ve çizgiler
   }
 });
 
+test("adil şerit istemcide: kaydırılmış çapraz ve kenarda kırpılmış şerit haritada çiziliyor, uyarı girdiği yerden", () => {
+  const inside = (x, y) => x >= ORIGIN.x - 1e-6 && x <= ORIGIN.x + W + 1e-6 && y >= ORIGIN.y - 1e-6 && y <= ORIGIN.y + H + 1e-6;
+  // Ana kosegen: giris kosede (eski cizimle ayni).
+  assert.equal(band("slash", { d: 3 }).enter, 0);
+  for (const d of [3, 4]) {
+    for (const col of [-10.75, -5.5, 4.25, 10.75]) {
+      for (const warn of [false, true]) {
+        const frame = band("slash", { d, col, p: warn ? 0 : 0.5, ...(warn ? { warn: true } : {}) });
+        // Cerceve paylasilan geometriyle ayni (kaydirma dahil).
+        const shared = getCounterSurgeGeometry(d === 3 ? "downRight" : "downLeft", col, 3, ORIGIN, GRID, COLS, ROWS);
+        assert.ok(Math.abs(frame.baseX + frame.axX * frame.width / 2 - shared.originX) < 1e-6 && Math.abs(frame.baseY + frame.axY * frame.width / 2 - shared.originY) < 1e-6);
+        assert.ok(frame.enter > 0, `kaydirilmis seritte giris ${frame.enter}`);
+        // Giris hatti orta hat; orta hat haritayi kesmiyorsa haritaya en yakin kenar.
+        assert.ok(frame.enterA >= 0 && frame.enterA <= frame.width);
+        if (Math.abs(col) < 9) assert.equal(frame.enterA, frame.width / 2);
+        const entry = surgeVfx.getSurgeBandPoint(frame, frame.enterA, frame.enter);
+        assert.ok(inside(entry.x, entry.y), "giris noktasi haritanin kenarinda");
+        const onEdge = Math.min(Math.abs(entry.x - ORIGIN.x), Math.abs(entry.x - ORIGIN.x - W), Math.abs(entry.y - ORIGIN.y), Math.abs(entry.y - ORIGIN.y - H));
+        assert.ok(onEdge < 1e-6, `giris kenarda degil (${col})`);
+        const alert = surgeVfx.getCounterSurgeAlertPoint(frame, GRID);
+        assert.ok(inside(alert.x, alert.y));
+        assert.ok(Math.hypot(alert.x - entry.x, alert.y - entry.y) <= GRID * 3, `isaret girisin yaninda (${col})`);
+        const { fill, edge } = draw(frame);
+        for (const recorder of [fill, edge]) {
+          for (const [name, ...args] of recorder.calls) {
+            if (name === "fillTriangle") for (let i = 0; i < 6; i += 2) assert.ok(inside(args[i], args[i + 1]), `ucgen disarida (${col})`);
+            if (name === "lineBetween") assert.ok(inside(args[0], args[1]) && inside(args[2], args[3]), `cizgi disarida (${col})`);
+          }
+        }
+        if (warn && Math.abs(col) < 9) {
+          // Giris bari haritada (gorunur) ve girisin hemen arkasinda (koseye
+          // yaslanan seritte bar koseyi asabiliyor; orada yalnizca isaret).
+          const style = surgeVfx.COUNTER_SURGE_STYLES.slash;
+          const along = (x, y) => (x - frame.baseX) * frame.dirX + (y - frame.baseY) * frame.dirY;
+          const bar = lines(edge).find((line) => line[5] === style.edge && Math.abs(along(line[0], line[1]) - along(line[2], line[3])) < 1e-6);
+          assert.ok(bar, `giris bari yok (${col})`);
+          assert.ok(along(bar[0], bar[1]) >= frame.enter && along(bar[0], bar[1]) <= frame.enter + GRID * 2, `bar girisin yaninda degil (${col})`);
+        }
+      }
+    }
+  }
+  // Kenarda kirpilmis serit (tam genislik 3, gorunen 2): cerceve iki sutun, haritanin icinde.
+  for (const col of [0, 10]) {
+    const frame = band("band", { col, w: 2 });
+    assert.equal(frame.width, 2 * GRID);
+    const { fill } = draw(frame);
+    const rects = fill.calls.filter(([name]) => name === "fillRect");
+    assert.ok(rects.length > 0);
+    for (const [, x, y, w, h] of rects) {
+      assert.ok(x >= ORIGIN.x + col * GRID - 1e-6 && x + w <= ORIGIN.x + (col + 2) * GRID + 1e-6, `dolgu seridin disinda ${x}..${x + w}`);
+      assert.ok(inside(x, y) && inside(x + w, y + h));
+    }
+  }
+});
+
 test("uyarı: çeşidin giriş kenarında kendi renginde bar ve yol yönüne bakan sivri oklar; tehlike şeridi baştan sona", () => {
   for (const [kind, wire] of [["band", { col: 4 }], ["sweep", { col: 6, d: 2 }], ["slash", { d: 4 }], ["wall", { col: 3, w: 6 }], ["aegis", { col: 3, w: 6 }], ["lance", { col: 5, w: 1 }]]) {
     const frame = band(kind, { ...wire, warn: true });

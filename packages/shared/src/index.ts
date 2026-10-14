@@ -14,7 +14,7 @@ export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
 export type EnemyType = "grunt" | "brute" | "runner" | "shooter" | "siege";
 export type ProjectileKind = "arrow" | "bolt" | "orb" | "light" | "chain" | "enemy" | "tower";
 export type { DamageType, EnemyRace, HitType, MovementKind, StatusEffectId } from "./combat.js";
-export { SHIELD_DAMAGE_TAKEN_MULTIPLIER, applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances, shapeEnemyResistance } from "./combat.js";
+export { RACE_DAMAGE_AFFINITY, SHIELD_DAMAGE_TAKEN_MULTIPLIER, applyStatusResistance, calculateArmorDamageMultiplier, calculateDamageTaken, enemyCombatDefinitions, enemyRaceDefinitions, getEnemyCombatDefinition, getEnemyDamageResistances, shapeEnemyResistance } from "./combat.js";
 
 export const GAME_WORLD_WIDTH = 390;
 export const GAME_WORLD_HEIGHT = 844;
@@ -570,6 +570,12 @@ export type TowerSnapshot = import("./resource-economy.js").EconomyStock & {
    */
   buildGold?: number;
   /**
+   * Seviye atlamalarina odenen altinin toplami. Ayni kurulum arasinda geri
+   * alinan kule bunu da iade ediyor (`resolveTowerRefund`). Yalnizca buyudugu
+   * icin delta kaydindan hic dusmuyor; sifirken yazilmiyor.
+   */
+  upgradeGold?: number;
+  /**
    * Onarim bedelinin kart ve esya carpani.
    *
    * Carpani doguran degistirici listesi tele hic cikmiyor, yani istemci
@@ -952,6 +958,11 @@ export type TeamSnapshot = {
   waveEnemyCount?: number;
   /** `wave` dalgasindaki ucanlar (`getWaveAirMode`); hic ucan yoksa alan yok. */
   waveAirMode?: Exclude<import("./balance/index.js").WaveAirMode, "none">;
+  /**
+   * `wave` dalgasinin paterni (`waves/wave-patterns`): ongoru kutusu "Sürü",
+   * "Zırhlı kol" yaziyor. Plan yoksa (eski sunucu, test duzenegi) alan yok.
+   */
+  wavePattern?: import("./waves/wave-patterns.js").WavePatternId;
   enemiesLeft: number;
   kills: number;
   energy: number;
@@ -1600,6 +1611,7 @@ export type { ExecuteRejectReason, ExecuteTapCandidate, SkillExecuteMessage, Ski
 export * from "./characters/atakan/skills/metal-shield.js";
 export * from "./waves/surge-absorption.js";
 export * from "./waves/counter-surge.js";
+export * from "./waves/wave-patterns.js";
 export type {
   AmmoType,
   TowerAxis,
@@ -1640,6 +1652,7 @@ export {
   ORBIT_CONTINUOUS_HEAT_PER_SECOND,
   ENERGY_OUTAGE_TRACKING_DELAY_MS,
   ENERGY_OUTAGE_AURA_DELAY_MS,
+  TRACKING_MARK_DAMAGE_PER_STACK,
   TOWER_OPERATING_ENERGY_BY_HIT_TYPE,
   getTowerFuelCostMultiplier,
   getTowerShotFuel,
@@ -1687,13 +1700,17 @@ export {
   DEEP_FREEZE_COOLDOWN_MS,
   DEEP_FREEZE_DURATION_MS,
   DEEP_FREEZE_SPEED_THRESHOLD,
+  MIN_SLOWED_SPEED_MULTIPLIER,
   STATUS_EFFECTS,
   applyTowerStatusEffect,
+  combineSlowKinds,
+  getActiveStatusKindMagnitudes,
   getActiveStatusMagnitude,
   getTowerStatusOutcomes,
-  isStatusEffectActive
+  isStatusEffectActive,
+  noteSlowKind
 } from "./statuses/index.js";
-export type { ApplyStatusEffectOptions, StatusEffectRuntimeState } from "./statuses/index.js";
+export type { ApplyStatusEffectOptions, StatusEffectLevel, StatusEffectRuntimeState } from "./statuses/index.js";
 export { applyTowerStack, getTowerStackMultiplier, resetTowerStack } from "./stacks/index.js";
 export type { ApplyTowerStackOptions, TowerStackRuntimeState } from "./stacks/index.js";
 export {
@@ -1903,6 +1920,7 @@ export {
   ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER,
   getEnemyStructureDamageMultiplier,
   ATAKAN_ISOLATION_MULTIPLIER,
+  ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER,
   SIEGE_STRUCTURE_DAMAGE_MULTIPLIER,
   SIEGE_FIRST_WAVE,
   SIEGE_SPAWN_RATIO,
@@ -2117,19 +2135,39 @@ export function getTowerLevelExpCost(towerCost: number, currentLevel: number) {
 }
 
 /**
- * Seviye atlamanin altin bedeli.
+ * Hedef seviyeye gore altin bedeli, insa bedelinin kati olarak.
  *
- * Seviyelerin cogu yalnizca deneyim istiyor; altin iki esikte devreye giriyor.
- * Bu iki esik artik gercek birer karar noktasi: besinci seviye kulenin insa
- * bedelinin on kati, onuncu seviye kirk kati. Yani bir kuleyi sonuna kadar
- * goturmek, yenilerini kurmaktan cok daha pahali -- derinlesmek ile yayilmak
- * arasindaki secim buradan cikiyor.
+ * 5 ve 10 eski buyuk esikler (x10, x40); otekiler her seviyede artan pay.
+ */
+export const TOWER_LEVEL_GOLD_COST_RATIOS: Readonly<Record<number, number>> = {
+  2: 0.5,
+  3: 0.7,
+  4: 0.9,
+  5: 10,
+  6: 1.2,
+  7: 1.5,
+  8: 1.9,
+  9: 2.4,
+  10: 40
+};
+
+/**
+ * Seviye atlamanin altin bedeli; deneyim bedeline ek olarak her seviyede.
+ *
+ * Her seviye atlama insa bedelinin bir payini istiyor ve pay seviyeyle
+ * buyuyor (`TOWER_LEVEL_GOLD_COST_RATIOS`: 2. seviye %50 ... 9. seviye
+ * %240). Iki esik ayrica gercek birer karar noktasi: besinci seviye kulenin
+ * insa bedelinin on kati, onuncu seviye kirk kati. Yani bir kuleyi sonuna
+ * kadar goturmek, yenilerini kurmaktan cok daha pahali -- derinlesmek ile
+ * yayilmak arasindaki secim buradan cikiyor.
+ *
+ * Sunucu odemeyi, istemci dugmeyi ve kodeksi bu tek fonksiyondan okuyor.
  */
 export function getTowerLevelGoldCost(towerCost: number, currentLevel: number) {
+  if (currentLevel < 1 || currentLevel >= 10) return 0;
   const nextLevel = Math.round(currentLevel) + 1;
-  if (nextLevel === 5) return getTowerBuildCost(towerCost) * 10;
-  if (nextLevel === 10) return getTowerBuildCost(towerCost) * 40;
-  return 0;
+  const ratio = TOWER_LEVEL_GOLD_COST_RATIOS[nextLevel] ?? 0;
+  return Math.round(getTowerBuildCost(towerCost) * ratio);
 }
 
 /**
@@ -2147,6 +2185,8 @@ export function resolveTowerRefund(
     level: number;
     definitionId?: string;
     buildGold?: number;
+    /** Seviye atlamalarina odenen altinin toplami (`getTowerLevelGoldCost`). */
+    upgradeGold?: number;
     builtInSetupSession?: number;
   },
   context: { setupPhase?: boolean; setupSession?: number; refundMultiplier?: number }
@@ -2154,7 +2194,12 @@ export function resolveTowerRefund(
   if (canRefundTowerPurchase(tower, context.setupPhase, context.setupSession)) {
     // Geri alima carpan **islemez**: isleseydi "Hurda Pazari" ile kur-sat
     // dongusu bedelin uzerine cikardi.
-    return { amount: Math.max(0, Math.round(tower.buildGold ?? 0)), undoable: true };
+    //
+    // Geri alim ayni ara icinde odenen gelistirme altinini da iade ediyor.
+    // Geri alinabilen kule bu arada kuruldugu icin butun gelistirmeleri de
+    // bu aradaydi: toplam tam olarak bu pencerede odenen altin.
+    const paid = Math.max(0, tower.buildGold ?? 0) + Math.max(0, tower.upgradeGold ?? 0);
+    return { amount: Math.round(paid), undoable: true };
   }
   return {
     amount: Math.floor(
@@ -2235,6 +2280,7 @@ export type { BlindHand, BlindHeading, BlindNavigatorState, BlindStepResult } fr
 export * from "./defense-insights.js";
 export * from "./worker-skills.js";
 export * from "./synergy/index.js";
+export * from "./placement-range/index.js";
 export * from "./zeynep-shots/index.js";
 export * from "./tower-panel/index.js";
 export * from "./server-knowledge/index.js";

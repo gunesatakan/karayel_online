@@ -192,8 +192,8 @@ test("nisan alan mermi kulesi: kart, esya ve Epik cevrimle blok savasin sayilari
 
   // DPS: `damageEnemy`in ortalama vurusu (kritik zari iki yoluyla) x tetik/sn.
   close(block.dps, ortalamaVurus(room, tower, block) * block.f.v, "DPS", 1e-3);
-  // Takipci isaretliyor: seviye 4'te tek yigin, +%20.
-  assert.deepEqual(block.fe?.find(([kind]) => kind === "mark"), ["mark", 0.2, 6500]);
+  // Takipci isaretliyor: seviye 4'te tek yigin, +%30.
+  assert.deepEqual(block.fe?.find(([kind]) => kind === "mark"), ["mark", 0.3, 6500]);
 });
 
 test("aura kulesi (Abarti): yalnizca etki ritmi ve etkisi; saldiri, kritik, nisan yok", () => {
@@ -272,7 +272,8 @@ test("dokumde kart paylari ham, karakter havuzu ayri carpan: hasar ve atis hizi 
   assert.deepEqual(block.d.s.find(([source]) => source === "card:serbest-yatak"), ["card:serbest-yatak", -0.1], "kart payi havuzla carpilmis gorunuyor");
   assert.ok(block.d.m.some(([source, value]) => source === "character:atakan-passive" && Math.abs(value - 1.5) < 1e-3), "pasif hasarda ayri carpan degil");
   assert.deepEqual(block.f.s.find(([source]) => source === "card:seri-atis"), ["card:seri-atis", 0.2]);
-  assert.ok(block.f.m.some(([source]) => source === "character:atakan-passive"), "pasif atis hizinda ayri carpan degil");
+  // Yalnizlik artik atis hizi vermiyor: atis hizi dokumunde pasif kalemi yok.
+  assert.equal((block.f.m ?? []).some(([source]) => source === "character:atakan-passive"), false, "pasif atis hizinda gorunuyor");
   assertRelativeBreakdown(block.d, "hasar");
   assertRelativeBreakdown(block.f, "atis hizi");
   close(block.d.v, room.getTowerDamage(tower), "hasar");

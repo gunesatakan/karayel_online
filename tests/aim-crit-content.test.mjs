@@ -575,7 +575,8 @@ test("Atesleme Pimi ve Yarik Mermi takildigi kulenin kritik zarini degistiriyor"
   assert.ok(esyaTak(room, tower, "yarik-mermi"));
   assert.ok(Math.abs(room.getTowerCritChance(tower) - (TOWER_BASE_CRITICAL_CHANCE + 0.2 - 0.06)) < 1e-9);
   const kritik = vurus(room, tower, 0) / vurus(room, tower, 1);
-  assert.ok(Math.abs(kritik - (sadeKritik + 2.5)) < 1e-6, `kritik carpani ${kritik}`);
+  // Yarik Mermi kritik hasari +%125 (yariya indirildi; eskiden +%250).
+  assert.ok(Math.abs(kritik - (sadeKritik + 1.25)) < 1e-6, `kritik carpani ${kritik}`);
 });
 
 test("Buz Kirigi'nin okudugu kule kritigi kulenin kendi kosullarini da iceriyor", () => {

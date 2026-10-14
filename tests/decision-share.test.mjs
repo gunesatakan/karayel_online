@@ -60,9 +60,10 @@ test("pay formulu: dealt × (1 − 1/DPS carpani); carpan yoksa sifir", () => {
 });
 
 test("yalnizlik: yalniz kulede hasar ve atis hizi birlikte, degilse sifir", () => {
-  const dps = ATAKAN_ISOLATION_MULTIPLIER * ATAKAN_ISOLATION_MULTIPLIER;
+  // Atis hizi bonusu yok: DPS carpani hasar carpaninin kendisi (x1,5).
+  const dps = ATAKAN_ISOLATION_MULTIPLIER;
   close(getAtakanIsolationShare(1000, true), 1000 * (1 - 1 / dps), "yalniz");
-  close(getAtakanIsolationShare(1000, true), 555.5555555555, "2,25 kat DPS");
+  close(getAtakanIsolationShare(1000, true), 333.3333333333, "1,5 kat DPS");
   assert.equal(getAtakanIsolationShare(1000, false), 0, "yalniz degil: pay yok");
 });
 

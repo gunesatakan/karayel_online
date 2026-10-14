@@ -2,6 +2,7 @@ import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } f
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
+import { clipCounterSurgeLane, getWavePatternDelayMs, getWavePatternEntryColumns, getWavePatternSlotType, planWavePattern, type WavePatternPlan } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -98,6 +99,9 @@ import {
   applyTowerStack,
   getTowerStackMultiplier,
   getTowerStatusOutcomes,
+  combineSlowKinds,
+  getActiveStatusKindMagnitudes,
+  noteSlowKind,
   applyTowerAuraModifier,
   dispatchTowerTriggers,
   evaluateTowerAuras,
@@ -118,6 +122,8 @@ import {
   occupiesTowerSlot,
   isEdgeSegmentInsideBoard,
   ATAKAN_ISOLATION_MULTIPLIER,
+  ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER,
+  TRACKING_MARK_DAMAGE_PER_STACK,
   collectZeynepSynthesisGroup,
   findIsolationBlockers,
   getZeynepFormationDamageMultiplier,
@@ -574,6 +580,27 @@ const COOLANT_SLOW_DURATION_MS = 1500;
 /** Ayni kulenin iki `slow:critical` yayini arasindaki en kisa sure (duvar saati). */
 const SLOW_CRIT_BROADCAST_INTERVAL_MS = 150;
 
+/**
+ * Yavaslatma etki anahtarlari ("ayni etki" kimligi). Ayni anahtarli
+ * yavaslatmalar en guclusune iner, farkli anahtarlilar carpimla birlesir
+ * (`combineSlowKinds`). Kule kaynakli yavaslatmalarin anahtari kule
+ * taniminin kimligi (`tower:<tanim>`, bkz. `getTowerSlowKind`); kart ve
+ * esya sogugu tanimdaki `effectKey` (`card:zincirleme-buz`,
+ * `item:buz-serpintisi`).
+ */
+const FLAT_SLOW_KIND = "flat";
+const KIN_SLOW_KIND = "kin";
+const MELIS_DOUBT_SLOW_KIND = "melis:doubt";
+const ZEYNEP_COMMAND_SLOW_KIND = "zeynep:command";
+const COOLANT_SLOW_KIND = "card:sogutma-kanali";
+const TAR_SLOW_KIND = "item:ziftli-zemin";
+const DEBRIS_SLOW_KIND = "terrain:debris";
+const CRYSTAL_TRAP_SLOW_KIND = "worker:crystal-trap";
+const REPAIR_BREACH_SLOW_KIND = "worker:repair-breach";
+const SYMPATHY_SLOW_KIND = "ultimate:sympathy";
+/** Elle yazilmis tek sayilik aura carpani (etkisiz kayit): eski yol ve testler. */
+const AURA_SLOW_KIND = "aura";
+
 /** Donmus hedefe nisan alma kolayligi. */
 const FROZEN_CRIT_CHANCE = 0.3;
 
@@ -582,6 +609,8 @@ const UCUBE_CHAIN_RADIUS = TOWER_GRID_SIZE * 3;
 const UCUBE_CHAIN_TARGETS = 2;
 /** Genis arama acikken gosterilen kart sayisi. */
 const WIDE_SEARCH_CARD_COUNT = 4;
+/** Dalga elinde ucretsiz yenileme hakki (`card:reroll`). */
+export const CARD_REROLLS_PER_DRAFT = 1;
 /** Soguk zincir: menzilde yavaslatilmis dusman varken sogumaya eklenen pay. */
 const CHILL_VENT_COOLING_BONUS = 0.5;
 /**
@@ -1158,6 +1187,11 @@ type EnemyModel = {
   abilities: string[];
   speed: number;
   reward: number;
+  /**
+   * Oldurme deneyiminin carpani: dalga paterninin odul butcesi
+   * (`WavePatternPlan.expScale`). Yoksa 1.
+   */
+  expScale?: number;
   attack: number;
   /** Sifirsa yalnizca bitisigine vurur. Dunya olceginde. */
   attackRange: number;
@@ -1188,15 +1222,23 @@ type EnemyModel = {
    */
   slowUntil: number;
   /**
-   * Aktif yavaslatmalarin hiz tabanlari; dusmanin hizi en gucluleri.
+   * Aktif yavaslatmalarin hiz tabanlari, her biri bir etki turune (`kind`)
+   * bagli. Ayni etkinin kayitlarindan en guclusu, farkli etkiler carpimla
+   * birlesiyor (bkz. `combineSlowKinds`).
    *
    * Tek bir sayi yetmiyordu: yavaslatmanin gucu artik kaynaktan kaynaga
    * degisiyor (Izolasyon seviyeyle %10 -> %50, kritik 1,5 kat) ve her
-   * birinin suresi ayri. Anahtar kaynak + guc, yani ayni kulenin yenilenen
-   * vurusu kendi kaydini tazeliyor; kritik vurus ayri kayit, bir sonraki
-   * kritiksiz vurus onu silmiyor -- kendi suresi bitene kadar en guclu o.
+   * birinin suresi ayri. Kayit anahtari etki + kaynak + guc, yani ayni
+   * kulenin yenilenen vurusu kendi kaydini tazeliyor; kritik vurus ayri
+   * kayit, bir sonraki kritiksiz vurus onu silmiyor -- kendi suresi bitene
+   * kadar etkisinin en guclusu o.
+   *
+   * Etki anahtari: kule yavaslatmasi kule taniminin kimligi
+   * (`tower:warrior-3`; iki Izolasyon ayni etki, Izolasyon + Agir Zincir iki
+   * etki), Kin `kin`, Melis'in suphesi `melis:doubt`, kulesiz kaynaklar
+   * kendi adlariyla (`worker:slowShots`, `ultimate:healer`, `skill`, ...).
    */
-  slowSpeedFloors?: Record<string, { speedMultiplier: number; expiresAt: number; ownerId?: string }>;
+  slowSpeedFloors?: Record<string, { speedMultiplier: number; expiresAt: number; kind: string; ownerId?: string }>;
   /**
    * Bu dusmanin yeniden donabilecegi an.
    *
@@ -1218,7 +1260,10 @@ type EnemyModel = {
    * (`resolveEnemyKillAssists`). Yalnizca taninma; yavaslatmayi etkilemiyor.
    */
   coolantSlowOwnerId?: string;
+  /** Bu tikin aura yavaslatmalarinin birlesik carpani (etki basina en guclu, etkiler arasi carpim). */
   auraSlowMultiplier: number;
+  /** Bu tikin aura yavaslatmalari etki basina; her tik `resetAuraSlows` siliyor. */
+  auraSlowKinds?: Record<string, number>;
   /** Hareket hesabinin son tikte yazdigi yavaslatma carpani (hizlanma ve durdurma haric); Soguk Av Kaydi okuyor. */
   movementSlowMultiplier?: number;
   trackingSourceTowerId?: string;
@@ -1624,6 +1669,8 @@ type TowerModel = EconomyStock & {
   deliveryGoldCarry?: number;
   /** Terfi Ikramiyesi: bu kulenin gelistirmelerinden odenen prim; ayni hazirlikta geri alinirsa geri aliniyor. */
   upgradeBonusGold?: number;
+  /** Seviye atlamalarina odenen altinin toplami; ayni hazirlikta geri alinirsa iade ediliyor. */
+  upgradeGold?: number;
   /** Toplu Imha Primi: son oldurmelerin zamani (pencere icinde). */
   recentKillTimes?: number[];
   /** `aim:killSnap`: son oldurmeden sonraki donus hizi penceresinin sonu. */
@@ -1783,6 +1830,8 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "latency:ping": { phase: "any", fields: { sentAt: "number" }, rate: { burst: 4, perSecond: 2 } },
   "wave:continue": { phase: "match", fields: {} },
   "card:choose": { phase: "match", fields: { cardId: "string", towerId: "string" } },
+  // Elde bir kez; isleyici acik el ve kalan hak soruyor. Kova cift dokunusa yer birakiyor.
+  "card:reroll": { phase: "match", fields: {}, rate: { burst: 3, perSecond: 1 } },
   // Tam statik kayit butun haritayi tasiyor; istemci kendisi saniyede birden sik istemiyor.
   "snapshot:requestFull": { phase: "any", fields: {}, rate: { burst: 3, perSecond: 1 } },
   "card:sync": { phase: "any", fields: {}, rate: { burst: 5, perSecond: 1 } },
@@ -2071,6 +2120,8 @@ type ZeynepSynthesisComposition = {
 export class MatchRoom extends Room<MatchState> {
   towerDamageRandom: () => number = Math.random;
   towerCriticalRandom: () => number = Math.random;
+  /** Kart elinin ve yenilemenin zari; testler sabit bir dizi veriyor. */
+  cardRandom: () => number = Math.random;
   /**
    * Bu surecteki odalar: yalnizca sayim (oda siniri) icin.
    *
@@ -2348,10 +2399,23 @@ export class MatchRoom extends Room<MatchState> {
   /**
    * Ozel dusman tohumu: oda basina bir kez, yalnizca 2. asama ve sonrasinda
    * (ilk planda) cekiliyor. 1. asamada ozel dusman icin hic zar atilmiyor.
-   * (Mac basindaki tek `Math.random` cekimi kaynak yerlesiminin tohumu:
-   * `resourceLayoutSeed`; bu tohumdan sonra, ayri bir uretecle.)
+   * (Mac basindaki cekim sirasi: ozel dusman tohumu (2. asama+), dalga
+   * paterni tohumu `wavePatternSeed`, kaynak yerlesimi tohumu
+   * `resourceLayoutSeed`; her biri ayri bir uretecle.)
    */
   private specialSeed?: number;
+  /**
+   * Dalga paterni tohumu: oda basina bir kez, ilk dalga planinda (ozel dusman
+   * tohumundan sonra) `Math.random`dan tek cekim. Patern dizisi, karisim ve
+   * ritim bundan, ayri bir uretecle (`createWavePatternRandom`).
+   */
+  private wavePatternSeed?: number;
+  /**
+   * Dalganin patern plani (`planWavePattern`): normal dogumlarin turu,
+   * araligi, giris sutunu ve odul carpanlari. Plan baska bir dalganinsa
+   * (testler sayaclari elle yaziyor) eski kural: zar, taban aralik, dagink giris.
+   */
+  private wavePatternPlan?: WavePatternPlan;
   /** Dalganin ozel dusman plani ve dalga basina tohumlu zari. */
   private waveSpecialPlan?: WaveSpecialPlan;
   private specialRandom?: () => number;
@@ -2400,6 +2464,8 @@ export class MatchRoom extends Room<MatchState> {
   private zeynepSlowTier: ZeynepCommandTier = "small";
   /** Kule basina son `slow:critical` yayini (duvar saati); bkz. `broadcastSlowCritical`. */
   private slowCritBroadcastAt = new Map<string, number>();
+  /** Hareket tikinin yavaslatma etki haritasi; dusman basina yeniden kurmamak icin tek nesne. */
+  private readonly slowKindScratch = new Map<string, number>();
   private melisGothicNightmareUntil = 0;
   private melisGothicNightmareOwnerUntil = new Map<string, number>();
   /** Sonucu henuz belli olmayan ultiler (drone, Kabus, Sempati); bitince raporlaniyor. */
@@ -2818,6 +2884,12 @@ export class MatchRoom extends Room<MatchState> {
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private pendingCardChoices = new Map<string, CardDefinition[]>();
+  /**
+   * Acik elde kullanilan yenileme sayisi, oyuncu basina. Yeni el acilinca
+   * siliniyor; elle birlikte yeni oturuma tasiniyor (yeniden baglanma ayni
+   * eli yeni hakla acmasin).
+   */
+  private cardRerollsUsed = new Map<string, number>();
   private shopPlacementCharges = new Map<string, { bariyer: number; "ziftli-zemin": number }>();
   private tarredCells = new Set<string>();
   private debrisCells = new Map<string, number>();
@@ -3035,6 +3107,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("card:choose", (client, message: ChooseCardMessage) => {
       this.chooseCard(client, message);
     });
+    this.onMessage("card:reroll", (client) => this.rerollCards(client));
     this.onMessage("snapshot:requestFull", (client) => {
       // Statikleri isteyen istemcinin dinamik tarafi da eksik olabilir. Tam
       // kayit yalnizca ona: isteyen herkese tam kare yollatamasin.
@@ -3533,6 +3606,7 @@ export class MatchRoom extends Room<MatchState> {
     this.transferMapKey(this.melisFavoriteTowerIds, previousSessionId, nextSessionId);
     this.transferMapKey(this.melisGothicNightmareOwnerUntil, previousSessionId, nextSessionId);
     this.transferMapKey(this.pendingCardChoices, previousSessionId, nextSessionId);
+    this.transferMapKey(this.cardRerollsUsed, previousSessionId, nextSessionId);
     this.transferMapKey(this.lastDefenseSummary, previousSessionId, nextSessionId);
     for (const row of this.defenseRows.values()) if (row.ownerId === previousSessionId) row.ownerId = nextSessionId;
     // Dalganin karar payi da yeni oturumun ozetine gitsin.
@@ -3584,7 +3658,21 @@ export class MatchRoom extends Room<MatchState> {
 
   private sendPendingCardChoices(client: Client) {
     const choices = this.pendingCardChoices.get(client.sessionId);
-    if (choices) client.send("card:choices", choices);
+    if (choices) this.sendCardChoices(client, choices);
+  }
+
+  /** Elde kalan yenileme hakki; el yoksa da bir sayi (0 degil, hak elle geliyor). */
+  private getCardRerollsRemaining(playerId: string) {
+    return Math.max(0, CARD_REROLLS_PER_DRAFT - (this.cardRerollsUsed.get(playerId) ?? 0));
+  }
+
+  /**
+   * Eli ve yenileme hakkini gonderir. Hak once gidiyor: istemci perdeyi
+   * `card:choices` ile kuruyor ve dugmeyi o an dogru sayiyla cizsin.
+   */
+  private sendCardChoices(client: Pick<Client, "send" | "sessionId">, choices: CardDefinition[]) {
+    client.send("card:rerollState", { remaining: this.getCardRerollsRemaining(client.sessionId) });
+    client.send("card:choices", choices);
   }
 
   /**
@@ -3816,15 +3904,40 @@ export class MatchRoom extends Room<MatchState> {
    * yerine gectigi dogumlar yok. Kurulum ongorusu ve "kalan" sayaci bunu
    * okuyor; orijinal sayiyi yazsalardi dalga hic gelmeyecek dusmanlari
    * sayardi.
+   *
+   * Orijinal sayi dalga paterninden (`planWavePattern`): bugunku sayi
+   * (`getScaledWaveEnemyCount`) butcenin olcusu, patern onu karisimina gore
+   * buyutuyor (suru) ya da kucultuyor (zirhli kol). Sampiyon ve ozel
+   * dusmanlar bu sayinin uzerine eskisi gibi oturuyor.
    */
   private planWaveSpawns(wave: number) {
-    const slotCount = this.getScaledWaveEnemyCount(wave);
+    const baseSlotCount = this.getScaledWaveEnemyCount(wave);
+    this.wavePatternPlan = planWavePattern({ stage: this.stage, wave, baseSlotCount, seed: this.getWavePatternSeed() });
+    const slotCount = this.wavePatternPlan.slotCount;
     this.waveChampionPlan = this.championsEnabled ? getWaveChampionPlan(wave, slotCount) : undefined;
     this.waveSlotOffset = 0;
     this.waveChampionSpawned = false;
-    this.planWaveSpecials(wave, slotCount);
+    this.planWaveSpecials(wave, slotCount, baseSlotCount);
     this.waveTarget = slotCount - (this.waveChampionPlan ? this.waveChampionPlan.replaced - 1 : 0)
       - getWaveSpecialSpawnReduction(this.waveSpecialPlan);
+  }
+
+  /**
+   * Patern tohumu (oda basina bir kez). 2. asama ve sonrasinda ozel dusman
+   * tohumu eskisi gibi ilk cekim; patern tohumu onun ardindan.
+   */
+  private getWavePatternSeed() {
+    if (this.wavePatternSeed === undefined) {
+      if (this.stage >= SPECIAL_ENEMIES_FIRST_STAGE) this.specialSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+      this.wavePatternSeed = Math.floor(Math.random() * 0x1_0000_0000);
+    }
+    return this.wavePatternSeed;
+  }
+
+  /** Su anki dalganin patern plani; plan baska bir dalganinsa yok (eski kural). */
+  private getActiveWavePattern() {
+    const plan = this.wavePatternPlan;
+    return plan && plan.wave === this.wave ? plan : undefined;
   }
 
   /**
@@ -3834,7 +3947,7 @@ export class MatchRoom extends Room<MatchState> {
    * eskisiyle bire bir ayni. Dalga basina ayri bir tohumlu zar: ozel
    * dusmanin kararlari normal dogumun zarini kaydirmiyor.
    */
-  private planWaveSpecials(wave: number, slotCount: number) {
+  private planWaveSpecials(wave: number, slotCount: number, crowdSlotCount = slotCount) {
     this.waveSpecialCursor = 0;
     this.waveSurgeCursor = 0;
     // Baslamis serit dalgayla bitmiyor: haritayi tamamen gecene kadar dalga
@@ -3851,6 +3964,7 @@ export class MatchRoom extends Room<MatchState> {
       stage: this.stage,
       wave,
       slotCount,
+      crowdSlotCount,
       champion: champion ? { replaced: champion.replaced, slot: champion.slot } : undefined,
       cols: this.activeMap.cols,
       rows: this.activeMap.rows,
@@ -4806,6 +4920,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     // Sampiyon orijinal sirada kendi dogumuna gelince doguyor.
+    const slot = this.waveSpawned + this.waveSlotOffset;
     const champion = this.spawnNextWaveEnemy();
     // Formul paylasilan pakette: istemcinin kombo penceresi ayni aralikla sayiyor.
     //
@@ -4814,7 +4929,10 @@ export class MatchRoom extends Room<MatchState> {
     // `leadSlots` kadari sampiyondan once, gerisi sonra.
     const next = champion ? undefined : this.getPendingChampion();
     const slots = champion ? champion.replaced - champion.leadSlots : next ? 1 + next.leadSlots : 1;
-    this.spawnCooldownMs = getWaveSpawnIntervalMs(this.wave) * slots;
+    // Dalga paterni ritmi verdiyse (aralik, yiginlar arasi sessizlik) onun
+    // beklemeleri; plan yoksa taban aralik.
+    const pattern = this.getActiveWavePattern();
+    this.spawnCooldownMs = pattern ? getWavePatternDelayMs(pattern, slot, slots) : getWaveSpawnIntervalMs(this.wave) * slots;
   }
 
   /**
@@ -4846,7 +4964,7 @@ export class MatchRoom extends Room<MatchState> {
     this.metalShields = [];
     this.planWaveSpawns(this.wave);
     // Dalga planindan sonra: ozel dusman tohumu (2. asama+) eskisiyle ayni
-    // sirada cekiliyor, yerlesim tohumu onun ardindan.
+    // sirada cekiliyor, patern tohumu onun, yerlesim tohumu ikisinin ardindan.
     this.rollResourceLayout();
   }
 
@@ -4945,34 +5063,77 @@ export class MatchRoom extends Room<MatchState> {
 
   private offerWaveCards() {
     for (const [playerId, player] of this.state.players.entries()) {
-      const ownedTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId);
-      const towers = ownedTowers.map((tower) => tower.definition);
-      const choices = drawCards({
-        preferredAxes: getCharacterCardAxes(player.characterId),
-        towers,
-        ownedCardIds: player.ownedCardIds,
-        marksAvailable: this.canTeamMarkEnemies(),
-        // Epik kart kaynagi kurulusta olmadan bos bir secenek: kart ve esya
-        // bonusu (kosullu paylar degil -- dalga sonunda gecici bir pencereye
-        // bakmak zari oynatirdi).
-        sourceBonuses: {
-          player: (stat) => getModifierAdd(player.runModifiers ?? [], stat),
-          towers: ownedTowers.map((tower) => {
-            const modifiers = this.getTowerStaticRunModifiers(tower);
-            return { tower: tower.definition, bonus: (stat: ModifierStat) => getModifierAdd(modifiers, stat) };
-          })
-        },
-        // Kilidi esyadan zaten gelen kart: magazanin "zaten acik" kurali.
-        ownedUnlocks: getOwnedItemUnlocks(player.ownedShopItemIds ?? [], ownedTowers),
-        count: this.playerHasUnlock(playerId, "card:wideSearch") ? WIDE_SEARCH_CARD_COUNT : undefined
-      });
+      // Yeni el, yeni hak: onceki elin yenilemesi buraya tasinmiyor.
+      this.cardRerollsUsed.delete(playerId);
+      const choices = this.drawWaveCards(playerId, player);
       if (choices.length === 0) {
         this.openPlayerSetupShop(playerId, player);
         continue;
       }
       this.pendingCardChoices.set(playerId, choices);
-      this.clients.find((client) => client.sessionId === playerId)?.send("card:choices", choices);
+      const client = this.clients.find((entry) => entry.sessionId === playerId);
+      if (client) this.sendCardChoices(client, choices);
     }
+  }
+
+  /**
+   * Oyuncunun dalga eli. Yenileme de buradan geciyor: ayni nadirlik
+   * agirliklari, ayni karakter eksenleri, ayni olu kart suzgeci.
+   */
+  private drawWaveCards(playerId: string, player: Player, excludeCardIds?: readonly string[]) {
+    const ownedTowers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === playerId);
+    const towers = ownedTowers.map((tower) => tower.definition);
+    return drawCards({
+      preferredAxes: getCharacterCardAxes(player.characterId),
+      towers,
+      ownedCardIds: player.ownedCardIds,
+      marksAvailable: this.canTeamMarkEnemies(),
+      // Epik kart kaynagi kurulusta olmadan bos bir secenek: kart ve esya
+      // bonusu (kosullu paylar degil -- dalga sonunda gecici bir pencereye
+      // bakmak zari oynatirdi).
+      sourceBonuses: {
+        player: (stat) => getModifierAdd(player.runModifiers ?? [], stat),
+        towers: ownedTowers.map((tower) => {
+          const modifiers = this.getTowerStaticRunModifiers(tower);
+          return { tower: tower.definition, bonus: (stat: ModifierStat) => getModifierAdd(modifiers, stat) };
+        })
+      },
+      // Kilidi esyadan zaten gelen kart: magazanin "zaten acik" kurali.
+      ownedUnlocks: getOwnedItemUnlocks(player.ownedShopItemIds ?? [], ownedTowers),
+      count: this.playerHasUnlock(playerId, "card:wideSearch") ? WIDE_SEARCH_CARD_COUNT : undefined,
+      random: this.cardRandom,
+      excludeCardIds
+    });
+  }
+
+  /**
+   * Kart yenileme: elde bir kez, ucretsiz.
+   *
+   * Butun el yeni bir cekilisle degisiyor; az once gosterilen kartlar
+   * havuz yetiyorsa disarida (`excludeCardIds`). Co-op'ta her oyuncunun eli
+   * ve hakki ayri. Hak bittiyse ya da el yoksa ret ve mevcut el yeniden
+   * gidiyor: istemcinin dugmesi sunucunun sayisina donsun.
+   */
+  private rerollCards(client: Client) {
+    const player = this.state.players.get(client.sessionId);
+    const choices = this.pendingCardChoices.get(client.sessionId);
+    if (!player || !choices) {
+      client.send("card:rejected", { reason: SERVER_TEXT["card.noPendingChoice"], key: "card.noPendingChoice" });
+      return;
+    }
+    if (this.getCardRerollsRemaining(client.sessionId) <= 0) {
+      client.send("card:rejected", { reason: SERVER_TEXT["card.rerollUsed"], key: "card.rerollUsed" });
+      this.sendCardChoices(client, choices);
+      return;
+    }
+    const next = this.drawWaveCards(client.sessionId, player, choices.map((card) => card.id));
+    if (next.length === 0) {
+      this.sendCardChoices(client, choices);
+      return;
+    }
+    this.cardRerollsUsed.set(client.sessionId, (this.cardRerollsUsed.get(client.sessionId) ?? 0) + 1);
+    this.pendingCardChoices.set(client.sessionId, next);
+    this.sendCardChoices(client, next);
   }
 
   private chooseCard(client: Client, message: ChooseCardMessage) {
@@ -5092,6 +5253,7 @@ export class MatchRoom extends Room<MatchState> {
     // Bagli bir oyuncu burada el tutamaz: yenilgi yalnizca dalgada gelir,
     // dalga da ancak bagli herkes secimini yapinca basliyor.
     this.pendingCardChoices.clear();
+    this.cardRerollsUsed.clear();
     // Sonuc mesaji kendi basina yetsin: istemci kaydi (asama, ileride rekor)
     // bu mesajdan yaziyor ve yaratici kosu hic yazmamali. Bayrak yalnizca
     // aciksa gidiyor: `creative: undefined` anahtari yine telde yaziyor
@@ -5151,12 +5313,16 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private spawnEnemy(champion?: WaveChampionPlan, special?: SpecialSpawnOptions) {
-    // Ozel dusman normal dogumun zarini tuketmiyor (tur ve yer kendi zarindan).
-    const roll = special ? 0 : Math.random();
+    // Normal dogumun turu dalga paterninden (orijinal siradaki yeri); plan
+    // yoksa eski zar. Ozel dusman ve paternli dogum normal zari tuketmiyor.
+    const slot = this.waveSpawned + this.waveSlotOffset;
+    const pattern = special ? undefined : this.getActiveWavePattern();
+    const patternType = pattern && !champion ? getWavePatternSlotType(pattern, slot) : undefined;
+    const roll = special || patternType ? 0 : Math.random();
     // Kusatma dusmani erken dalgalarda yok: duvar meta'si once kurulsun, cezasi
     // sonra gelsin. Karisim paylasilan pakette: sampiyon butcesi ayni
     // agirliklardan hesaplaniyor. Sampiyonun turu zardan degil plandan.
-    const type: EnemyType = special?.type ?? champion?.type ?? pickWaveEnemyType(this.wave, roll);
+    const type: EnemyType = special?.type ?? champion?.type ?? patternType ?? pickWaveEnemyType(this.wave, roll);
     const definition = getEnemyCombatDefinition(type);
     const race = getStageRace(this.stage);
     // Sampiyon her zaman karada; karisik dalgada da (bkz. `getWaveChampionPlan`).
@@ -5170,7 +5336,7 @@ export class MatchRoom extends Room<MatchState> {
     const maxShield = special?.kind === "harvester" ? maxHp : Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
     const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
     const pathId = 0;
-    const start = special?.start ?? this.pickNormalSpawnPoint();
+    const start = special?.start ?? this.pickNormalSpawnPoint(pattern, slot);
     const id = `e${this.nextEnemyId++}`;
 
     this.enemies.set(id, {
@@ -5197,7 +5363,9 @@ export class MatchRoom extends Room<MatchState> {
       stackStates: {},
       abilities: isFlyingEnemy ? [...(definition.abilities ?? []), "flying"] : [...(definition.abilities ?? [])],
       speed,
-      reward: definition.reward,
+      // Paternli dalgada odul butcesi: dalganin toplam altini bugunku beklenene esit.
+      reward: patternType ? definition.reward * pattern!.goldScale : definition.reward,
+      ...(patternType && pattern!.expScale !== 1 ? { expScale: pattern!.expScale } : {}),
       attack: definition.attack,
       attackRange: this.scaleWorldDistance(definition.attackRange ?? 0),
       towerAttackCooldownMs: 0,
@@ -5252,11 +5420,21 @@ export class MatchRoom extends Room<MatchState> {
     this.broadcastEnemySpawn(this.enemies.get(id)!);
   }
 
-  /** Normal dogum yeri: ust satirda bos bir sutun. */
-  private pickNormalSpawnPoint() {
+  /**
+   * Normal dogum yeri: ust satirda bos bir sutun. Dalga paterni giris
+   * sutunlarini daraltiyorsa (serit, kanat) once o araliktaki bos sutunlar;
+   * aralik tamamen doluysa butun satir.
+   */
+  private pickNormalSpawnPoint(pattern?: WavePatternPlan, slot = 0) {
     const openSpawnColumns = Array.from({ length: this.activeMap.cols }, (_, col) => col)
       .filter((col) => !this.getTowerAtCell(col, 0));
-    const spawnCol = openSpawnColumns[Math.floor(Math.random() * Math.max(1, openSpawnColumns.length))] ?? 0;
+    let columns = openSpawnColumns;
+    if (pattern && pattern.entry !== "spread") {
+      const range = getWavePatternEntryColumns(pattern, slot, this.activeMap.cols);
+      const preferred = openSpawnColumns.filter((col) => col >= range.from && col <= range.to);
+      if (preferred.length > 0) columns = preferred;
+    }
+    const spawnCol = columns[Math.floor(Math.random() * Math.max(1, columns.length))] ?? 0;
     return gridToWorld(spawnCol, 0, this.activeMap);
   }
 
@@ -6562,17 +6740,20 @@ export class MatchRoom extends Room<MatchState> {
     const slowFraction = 1 - multiplier;
     // Her temas yeniden hesaplaniyor (kartin sozu: "ust uste binmez"): kule
     // basina tek kayit, kritik de olsa bir sonraki temas onun yerine geciyor.
+    // Etki ise tek: Kin Kulesi ve Taht'in Kin mermisi ayni `kin` etkisi,
+    // birden cok Kin kaynagi birbirine eklenmiyor, en guclusu sayiliyor.
     const slowFloorKey = `${tower.id}:kin`;
     if (slowFraction <= 0) {
       this.removeEnemySlowFloor(enemy, slowFloorKey);
       return;
     }
-    if (this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio, slowFraction, slowFloorKey })) return;
+    if (this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: slowMs, scalingFactor: ratio, slowFraction, slowFloorKey, slowKind: KIN_SLOW_KIND })) return;
     // Taht'in Kin mermisi (zeynep-3) tanimda yavaslatma bildirmiyor: ayni
     // kural, tanim yerine burada. Sure eskisi gibi kart carpansiz.
     this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 1, durationMs: slowMs, stacking: "refresh" }, now, {
       slowFraction: this.rollTowerSlowFraction(tower, undefined, tower.level, enemy, slowFraction),
       slowFloorKey,
+      slowKind: KIN_SLOW_KIND,
       sourceTowerId: tower.id,
       sourceOwnerId: tower.ownerId
     });
@@ -6582,7 +6763,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy: EnemyModel,
     definition: TowerStatusEffectDefinition,
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceTowerId?: string; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string; slowKind?: string } = {}
   ) {
     const scaledDefinition = {
       ...definition,
@@ -6626,7 +6807,8 @@ export class MatchRoom extends Room<MatchState> {
           overrides.sourceTowerId ?? "flat",
           now,
           overrides.slowFloorKey,
-          overrides.sourceOwnerId
+          overrides.sourceOwnerId,
+          overrides.slowKind
         );
       }
     } else if (definition.type === "fear") {
@@ -6643,26 +6825,42 @@ export class MatchRoom extends Room<MatchState> {
    * Ayni kaynak ayni gucte yeniden vurursa kayit yalnizca uzuyor. Kayitlar
    * en fazla kule basina iki (kritikli/kritiksiz) ve sureleri bir saniye
    * mertebesinde, yani tablo kucuk kaliyor.
+   *
+   * `kind` kaydin etki turu: ayni etkinin kayitlari en guclusune iner,
+   * farkli etkiler carpimla birlesir. Verilmezse kule kaynagi icin kule
+   * taniminin kimligi (`tower:<tanim>`), kulesiz kaynak icin `flat`.
    */
-  private addEnemySlowFloor(enemy: EnemyModel, speedMultiplier: number, expiresAt: number, sourceKey: string, now: number, replaceKey?: string, ownerId?: string) {
+  private addEnemySlowFloor(enemy: EnemyModel, speedMultiplier: number, expiresAt: number, sourceKey: string, now: number, replaceKey?: string, ownerId?: string, kind?: string) {
     const floors = enemy.slowSpeedFloors ?? (enemy.slowSpeedFloors = {});
     for (const key in floors) {
       if (floors[key].expiresAt <= now) delete floors[key];
     }
     const safeMultiplier = Math.max(0, Math.min(1, speedMultiplier));
+    const effectKind = kind ?? (sourceKey === "flat" ? FLAT_SLOW_KIND : this.getTowerSlowKind(sourceKey));
     if (replaceKey) {
       // Yeniden hesaplanan yavaslatma (Kin): her temas kendi kaydinin
       // yerine geciyor, daha zayif ya da daha kisa olsa bile.
-      floors[replaceKey] = { speedMultiplier: safeMultiplier, expiresAt, ...(ownerId ? { ownerId } : {}) };
+      floors[replaceKey] = { speedMultiplier: safeMultiplier, expiresAt, kind: effectKind, ...(ownerId ? { ownerId } : {}) };
       this.syncEnemySlowUntil(enemy);
       return;
     }
     // Kulesiz (duz) kayit sahibine gore ayriliyor: iki oyuncunun ayni
     // guclu yetenegi tek kayda dussaydi son yazan oburunun asistini silerdi.
-    const key = `${sourceKey === "flat" && ownerId ? `flat@${ownerId}` : sourceKey}:${safeMultiplier.toFixed(3)}`;
+    // Etki de anahtarda: ayni guclu iki farkli kulesiz etki (isci mermisi ve
+    // ulti, ikisi de 0,48) tek kayda dusup birbirinin yerine gecmesin.
+    const key = `${effectKind}|${sourceKey === "flat" && ownerId ? `flat@${ownerId}` : sourceKey}:${safeMultiplier.toFixed(3)}`;
     const owner = ownerId ?? floors[key]?.ownerId;
-    floors[key] = { speedMultiplier: safeMultiplier, expiresAt: Math.max(floors[key]?.expiresAt ?? 0, expiresAt), ...(owner ? { ownerId: owner } : {}) };
+    floors[key] = { speedMultiplier: safeMultiplier, expiresAt: Math.max(floors[key]?.expiresAt ?? 0, expiresAt), kind: effectKind, ...(owner ? { ownerId: owner } : {}) };
     enemy.slowUntil = Math.max(enemy.slowUntil, expiresAt);
+  }
+
+  /**
+   * Bir kulenin yavaslatmasinin etki anahtari: kule taniminin kimligi.
+   * Ayni tanimdan iki kule (iki Izolasyon) ayni etki, birbirine eklenmiyor.
+   * Kule artik yoksa anahtar kimligin kendisi.
+   */
+  private getTowerSlowKind(towerId: string) {
+    return `tower:${this.towers.get(towerId)?.definition.id ?? towerId}`;
   }
 
   /** Bir kaydi siler (Kin'in dibinde yakalanan dusman: yavaslatma yok). */
@@ -6685,22 +6883,21 @@ export class MatchRoom extends Room<MatchState> {
 
   /**
    * Durum yolundan gecmeyen duz yavaslatmalar (isci mermisi, reaktor,
-   * ulti): eskisi gibi %52, ama kaydi ayni tabloda ki daha guclu ya da
-   * daha zayif bir kule yavaslatmasiyla `min` icinde dogru yarissin.
+   * ulti): eskisi gibi %52, kaydi ayni tabloda. Her kaynak kendi etkisi
+   * (`kind`): oteki yavaslatmalarla carpimla birlesiyor.
    */
-  private extendFlatSlow(enemy: EnemyModel, until: number, now: number) {
+  private extendFlatSlow(enemy: EnemyModel, until: number, now: number, kind = FLAT_SLOW_KIND) {
     if (until <= now) return;
-    this.addEnemySlowFloor(enemy, SLOW_STATUS_SPEED_MULTIPLIER, until, "flat", now);
+    this.addEnemySlowFloor(enemy, SLOW_STATUS_SPEED_MULTIPLIER, until, "flat", now, undefined, undefined, kind);
   }
 
   /**
-   * Yavaslatmalarin dusman hizina verdigi carpan: aktif olanlarin en
-   * guclusu. Kaydi olmayan bir `slowUntil` (eski kayitlar, testlerin elle
+   * Taban kayitlarini etki haritasina yazar: etki basina en guclu etkin
+   * kayit. Kaydi olmayan bir `slowUntil` (eski kayitlar, testlerin elle
    * yazdigi deger) duz yavaslatma sayiliyor.
    */
-  private getEnemySlowSpeedMultiplier(enemy: EnemyModel, now: number) {
-    if (enemy.slowUntil <= now) return 1;
-    let multiplier = 1;
+  private collectEnemyFloorSlowKinds(enemy: EnemyModel, now: number, kinds: Map<string, number>) {
+    if (enemy.slowUntil <= now) return;
     let active = false;
     const floors = enemy.slowSpeedFloors;
     if (floors) {
@@ -6708,10 +6905,23 @@ export class MatchRoom extends Room<MatchState> {
         const floor = floors[key];
         if (floor.expiresAt <= now) continue;
         active = true;
-        if (floor.speedMultiplier < multiplier) multiplier = floor.speedMultiplier;
+        noteSlowKind(kinds, floor.kind ?? FLAT_SLOW_KIND, floor.speedMultiplier);
       }
     }
-    return active ? multiplier : SLOW_STATUS_SPEED_MULTIPLIER;
+    if (!active) noteSlowKind(kinds, FLAT_SLOW_KIND, SLOW_STATUS_SPEED_MULTIPLIER);
+  }
+
+  /**
+   * Taban kayitlarinin (vurus, Kin, duz yavaslatmalar) dusman hizina
+   * verdigi carpan: etki basina en guclusu, farkli etkiler carpimla,
+   * `MIN_SLOWED_SPEED_MULTIPLIER` tabanla. Hareketin tam carpani bunun
+   * ustune soguk, aura ve oteki kanallari da katiyor (`updateEnemies`).
+   */
+  private getEnemySlowSpeedMultiplier(enemy: EnemyModel, now: number) {
+    if (enemy.slowUntil <= now) return 1;
+    const kinds = new Map<string, number>();
+    this.collectEnemyFloorSlowKinds(enemy, now, kinds);
+    return combineSlowKinds(kinds.values());
   }
 
   /**
@@ -6757,9 +6967,16 @@ export class MatchRoom extends Room<MatchState> {
     enemy: EnemyModel,
     type: TowerStatusEffectDefinition["type"],
     now: number,
-    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string } = {}
+    overrides: { durationMs?: number; magnitude?: number; scalingFactor?: number; sourceOwnerId?: string; slowFraction?: number; slowFloorKey?: string; slowKind?: string } = {},
+    /**
+     * Kulenin ayni turden birden cok durumu olabilir (Buz Serpintisi ve
+     * Zincirleme Buz ikisi de `chill`). Tanim verilmezse turun ilki; tanimlari
+     * tek tek dolasan cagiran kendi tanimini veriyor, yoksa ilki iki kez
+     * uygulanir ve ikincisi hic uygulanmazdi.
+     */
+    configured?: TowerStatusEffectDefinition
   ) {
-    const definition = this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === type);
+    const definition = configured ?? this.getTowerEngine(tower)?.statusEffects?.find((effect) => effect.type === type);
     if (!definition) return undefined;
     const modifiers = this.getTowerRunModifiers(tower);
     return this.applyEnemyStatusEffect(enemy, definition, now, {
@@ -6768,7 +6985,9 @@ export class MatchRoom extends Room<MatchState> {
       // Buz Kirigi yalnizca yavaslatmaya bakiyor: yanma ya da lanet kritik
       // gelseydi kart "durum etkileri kritik gelebilir" olurdu ve o baska
       // bir kart. Kritik `magnitude`a degil kesre isliyor -- hiz kesirden.
-      ...(definition.type === "slow" ? { slowFraction: this.rollTowerSlowFraction(tower, definition, tower.level, enemy, overrides.slowFraction), slowFloorKey: overrides.slowFloorKey } : {}),
+      // Kritik ayni etkinin daha guclu bir kaydi: etki anahtari degismiyor,
+      // yani kritik kendi kulesinin kritiksiz vurusuyla carpilmiyor.
+      ...(definition.type === "slow" ? { slowFraction: this.rollTowerSlowFraction(tower, definition, tower.level, enemy, overrides.slowFraction), slowFloorKey: overrides.slowFloorKey, slowKind: overrides.slowKind } : {}),
       scalingFactor: overrides.scalingFactor,
       sourceTowerId: tower.id,
       sourceOwnerId: overrides.sourceOwnerId ?? tower.ownerId
@@ -8126,7 +8345,6 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       const isFeared = enemy.fearUntil > now;
-      const slowStatusMultiplier = this.getEnemySlowSpeedMultiplier(enemy, now);
       const isHesitating = enemy.melisDoubtHesitateUntil > now;
       const zeynepSlowMultiplier = this.zeynepSlowUntil > now ? this.zeynepSlowMultiplier : 1;
       const doubtSlowMultiplier = enemy.melisDoubtUntil > now ? Math.max(0.1, 1 - Math.min(3, enemy.melisDoubtStacks) * MELIS_DOUBT_SLOW_PER_STACK) : 1;
@@ -8144,24 +8362,37 @@ export class MatchRoom extends Room<MatchState> {
       if (whisperBlocker) {
         this.damageMelisWhisperTurnedBlocker(whisperBlocker, enemy.maxHp * 0.18 * seconds);
       }
-      const statusSpeedMultiplier = getTowerStatusOutcomes(enemy.statusEffects, now).speedMultiplier;
+      const frozen = getTowerStatusOutcomes(enemy.statusEffects, now).frozen;
       const enemyCell = worldToGrid(enemy.x, enemy.y, this.activeMap);
       const tarMultiplier = this.tarredCells.has(`${enemyCell.col}:${enemyCell.row}`) ? 0.75 : 1;
       const debrisMultiplier = (this.debrisCells.get(`${enemyCell.col}:${enemyCell.row}`) ?? 0) > now ? 0.6 : 1;
       const crystalTrapMultiplier = this.getCrystalTrapMultiplier(enemy, now);
       const repairBreachMultiplier = this.getRepairBreachMultiplier(enemy, now);
-      const movementSlowMultiplier = Math.min(slowStatusMultiplier, statusSpeedMultiplier, enemy.auraSlowMultiplier, zeynepSlowMultiplier, doubtSlowMultiplier, tarMultiplier, debrisMultiplier, crystalTrapMultiplier, repairBreachMultiplier) * coolantSlowMultiplier;
+      // Yavaslatmalar etki basina toplaniyor: ayni etki (ayni kule tanimi,
+      // ayni kart, ayni esya) kendisiyle yiginlanmiyor, en guclusu sayiliyor;
+      // farkli etkiler carpimla birlesiyor ve sonuc %90 yavaslatmada
+      // kirpiliyor (`combineSlowKinds`). Sogutma da artik oteki etkilerle
+      // ayni kurala tabi -- eskiden yalniz o carpiliyordu, otekiler `min`
+      // icinde en guclusune birakiyordu. Donma yavaslatma degil, tam kesme.
+      const slowKinds = this.slowKindScratch;
+      slowKinds.clear();
+      this.collectEnemyFloorSlowKinds(enemy, now, slowKinds);
+      if (enemy.statusEffects.chill) {
+        for (const [kind, magnitude] of getActiveStatusKindMagnitudes(enemy.statusEffects.chill, now)) noteSlowKind(slowKinds, kind, 1 - magnitude);
+      }
+      this.collectEnemyAuraSlowKinds(enemy, slowKinds);
+      noteSlowKind(slowKinds, ZEYNEP_COMMAND_SLOW_KIND, zeynepSlowMultiplier);
+      noteSlowKind(slowKinds, MELIS_DOUBT_SLOW_KIND, doubtSlowMultiplier);
+      noteSlowKind(slowKinds, TAR_SLOW_KIND, tarMultiplier);
+      noteSlowKind(slowKinds, DEBRIS_SLOW_KIND, debrisMultiplier);
+      noteSlowKind(slowKinds, CRYSTAL_TRAP_SLOW_KIND, crystalTrapMultiplier);
+      noteSlowKind(slowKinds, REPAIR_BREACH_SLOW_KIND, repairBreachMultiplier);
+      noteSlowKind(slowKinds, COOLANT_SLOW_KIND, coolantSlowMultiplier);
+      const movementSlowMultiplier = frozen ? 0 : combineSlowKinds(slowKinds.values());
       // Soguk Av Kaydi okuyor: tikin yavaslatma carpani (hizlanma ve durdurma haric).
       enemy.movementSlowMultiplier = movementSlowMultiplier;
       const speedMultiplier = isHesitating || undeadBlocker || whisperBlocker
         ? 0
-        // Sogutma yavaslatmasi `min` icinde degil, sonucun **carpani**.
-        //
-        // Oyunun oteki yavaslatmalari birbiriyle yarisir ve en gucluse
-        // birakir; sogutma ise kartin kendi metninde yazdigi gibi
-        // ustlerine biner. Icerde olsaydi %9'luk bir yavaslatma, %52'lik
-        // bir yavaslatmanin yaninda hicbir sey yapmazdi -- olcup gorduk:
-        // 0,48 varken 0,91 hic gorunmuyordu.
         : movementSlowMultiplier * doubtHasteMultiplier;
       // Derin Dondurma burada bakiyor: karar dusmanin **su anki** hizina
       // gore veriliyor, yavaslatmayi kimin verdigine gore degil. Kartin
@@ -8661,7 +8892,8 @@ export class MatchRoom extends Room<MatchState> {
     const width = Math.max(1, Math.floor(planned.width));
     const band = getCounterSurgeGeometry(planned.travel, planned.lane, width, getMapOrigin(map), getMapGridSize(map), map.cols, map.rows);
     const route = spec.route;
-    const col = route === "diagonal" ? 0
+    // Caprazda indeks ana kosegene gore kaydirma (ceyrek hucre); geometri ayni sayiyi okuyor.
+    const col = route === "diagonal" ? clipCounterSurgeLane(planned.kind, map.cols, map.rows, planned.lane, width).lane
       : Math.max(0, Math.min((route === "side" ? map.rows : map.cols) - width, Math.floor(planned.lane)));
     const crossGameMs = spec.crossMs > 0 ? spec.crossMs : getAegisCrossMs(band.length, this.getAegisSpeed());
     const surge: CounterSurgeModel = {
@@ -9914,7 +10146,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const share = (enemy.champion?.exp ?? enemy.special?.budget?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind)) / players.length;
+    const share = (enemy.champion?.exp ?? enemy.special?.budget?.exp ?? getEnemyExp(this.wave, enemy.type, enemy.movementKind) * (enemy.expScale ?? 1)) / players.length;
     const killer = sourceTower ? this.state.players.get(sourceTower.ownerId) : undefined;
     for (const player of players) {
       // Kazanc oyuncu basina olceklenir: tecrube kartlari oyuncunun kendi
@@ -10164,7 +10396,7 @@ export class MatchRoom extends Room<MatchState> {
     const slow = this.getWorkerBoost(tower, "slowShots", now);
     if (slow) {
       this.spendWorkerBoostShot(tower, "slowShots", now);
-      this.extendFlatSlow(enemy, now + slow.value, now);
+      this.extendFlatSlow(enemy, now + slow.value, now, "worker:slowShots");
     }
   }
 
@@ -10354,7 +10586,7 @@ export class MatchRoom extends Room<MatchState> {
       reactor.crystalCriticalResonanceWave = this.wave;
       const radius = getMapGridSize(this.activeMap) * 3;
       for (const enemy of this.enemies.values()) {
-        if (distanceSq(enemy.x, enemy.y, reactor.x, reactor.y) <= radius * radius) this.extendFlatSlow(enemy, now + 3_000, now);
+        if (distanceSq(enemy.x, enemy.y, reactor.x, reactor.y) <= radius * radius) this.extendFlatSlow(enemy, now + 3_000, now, "worker:crystal-critical-resonance");
       }
       for (const tower of this.towers.values()) {
         if (tower.ownerId === reactor.ownerId && distanceSq(tower.x, tower.y, reactor.x, reactor.y) <= radius * radius) tower.heatLocked = false;
@@ -11650,7 +11882,10 @@ export class MatchRoom extends Room<MatchState> {
     if (!fixedPath) {
       rateMultipliers.push(["perf", this.getTowerPerformanceAttackMultiplier(tower, false)], ["heat", this.getTowerHeatFireRateMultiplier(tower)]);
       // Atakan'in yalnizlik pasifi kulenin kendi ritmine isliyor; aura tiki ondan gecmiyor.
-      if (auras.length === 0 && this.getAtakanPassiveMultiplier(tower) > 1) rateMultipliers.push(["character:atakan-passive", ATAKAN_ISOLATION_MULTIPLIER]);
+      // Atis hizi carpani bugun 1: satir yalnizca carpan 1'den farkliysa yaziliyor.
+      if (auras.length === 0 && ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER !== 1 && this.getAtakanPassiveMultiplier(tower) > 1) {
+        rateMultipliers.push(["character:atakan-passive", ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER]);
+      }
     }
     if (!effectInterval && !fixedPath) {
       rateSources.push(...sourcesOf("fireRate"), ["engine:stack", 1 / this.getEngineStackStatMultiplier(tower, "fireRate") - 1]);
@@ -11794,8 +12029,8 @@ export class MatchRoom extends Room<MatchState> {
       const coolant = Math.min(COOLANT_SLOW_MAX, this.getTowerCoolingPerSecond(tower) * COOLANT_SLOW_PER_COOLING * magnitudeMultiplier);
       if (coolant > 0) effects.push(["coolant", roundTowerStat(coolant), Math.round(COOLANT_SLOW_DURATION_MS * durationMultiplier)]);
     }
-    // Takipci'nin isareti dusmani seviyeye gore %20/%40/%60 fazla hasar alir yapiyor.
-    if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * 0.2), 6500]);
+    // Takipci'nin isareti dusmani seviyeye gore %30/%60/%90 fazla hasar alir yapiyor.
+    if (definition.id === "warrior-1") effects.push(["mark", roundTowerStat(this.getTrackingStackLimit(tower.level) * TRACKING_MARK_DAMAGE_PER_STACK), 6500]);
     const armorBreak = getModifierAdd(modifiers, "armorBreak");
     if (armorBreak > 0) effects.push(["armor", roundTowerStat(armorBreak)]);
     if (definition.id === "zeynep-8") effects.push(["armorAura", roundTowerStat(getAbartiArmorBreak(tower.level))]);
@@ -12151,6 +12386,7 @@ export class MatchRoom extends Room<MatchState> {
       waveDamageDealt: 0,
       deliveryGoldCarry: 0,
       upgradeBonusGold: 0,
+      upgradeGold: 0,
       recentKillTimes: [],
       aimTargetLockUntil: 0,
       aimTargetHasFired: false,
@@ -12255,6 +12491,8 @@ export class MatchRoom extends Room<MatchState> {
     player.experience = Math.max(0, player.experience - cost);
     player.gold -= goldCost;
     player.goldSpent += goldCost;
+    // Ayni hazirlikta geri alinirsa iade edilecek gelistirme altini.
+    tower.upgradeGold = (tower.upgradeGold ?? 0) + goldCost;
     tower.level += 1;
     this.updateProviderCapacity(tower);
     // Terfi Ikramiyesi: yalnizca kule kontenjani tutan hasar kulesinin
@@ -13101,7 +13339,7 @@ export class MatchRoom extends Room<MatchState> {
       report.heal = this.teamHealth - healthBefore;
       for (const enemy of this.enemies.values()) {
         const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
-        this.extendFlatSlow(enemy, Date.now() + scaleGameDuration(duration), Date.now());
+        this.extendFlatSlow(enemy, Date.now() + scaleGameDuration(duration), Date.now(), "ultimate:healer");
         report.hits += 1;
       }
       this.finishUltimateReport(report);
@@ -14107,6 +14345,11 @@ export class MatchRoom extends Room<MatchState> {
         durationMs: slowMs * getModifierMultiplier(modifiers, "statusDuration"),
         magnitude: 0.52 * getModifierMultiplier(modifiers, "statusMagnitude"),
         slowFraction,
+        // Etki: kule tanimi (satilmis kulenin mermisi de kendi taniminda),
+        // kulesiz kaynak kendi adiyla (`skill`, `ultimate`).
+        slowKind: sourceTower
+          ? this.getTowerSlowKind(sourceTower.id)
+          : sourceTowerId ? `tower:${sourceDefinitionId}` : sourceDefinitionId || FLAT_SLOW_KIND,
         // Kaynak co-op asisti ve yavaslatma kaydinin anahtari icin.
         sourceTowerId: sourceTower?.id,
         sourceOwnerId: sourceOwnerId || sourceTower?.ownerId
@@ -14118,7 +14361,7 @@ export class MatchRoom extends Room<MatchState> {
       if (sourceTower) {
         for (const definition of this.getTowerEngine(sourceTower)?.statusEffects ?? []) {
           if (definition.type === "burn" || definition.type === "bleed" || definition.type === "chill" || definition.type === "convert") {
-            this.applyConfiguredTowerStatus(sourceTower, enemy, definition.type, now, { sourceOwnerId: sourceOwnerId || sourceTower.ownerId });
+            this.applyConfiguredTowerStatus(sourceTower, enemy, definition.type, now, { sourceOwnerId: sourceOwnerId || sourceTower.ownerId }, definition);
           }
         }
       }
@@ -14540,7 +14783,7 @@ export class MatchRoom extends Room<MatchState> {
     for (let index = 0; index < stackLimit; index += 1) {
       enemy.trackingStackUntil[index] = Math.max(enemy.trackingStackUntil[index], expiresAt);
     }
-    this.setEnemyMark(enemy, "tracking", stackLimit * 0.2, expiresAt);
+    this.setEnemyMark(enemy, "tracking", stackLimit * TRACKING_MARK_DAMAGE_PER_STACK, expiresAt);
   }
 
   /**
@@ -14554,7 +14797,7 @@ export class MatchRoom extends Room<MatchState> {
     enemy.trackingStackUntil.forEach((until, index) => {
       if (until > now) enemy.trackingStackUntil[index] = Math.max(until, expiresAt);
     });
-    this.setEnemyMark(enemy, "tracking", count * 0.2, expiresAt);
+    this.setEnemyMark(enemy, "tracking", count * TRACKING_MARK_DAMAGE_PER_STACK, expiresAt);
   }
 
   private setEnemyMark(enemy: EnemyModel, id: string, add: number, until: number) {
@@ -14890,7 +15133,7 @@ export class MatchRoom extends Room<MatchState> {
   private slowAllEnemies(slowMs: number) {
     const now = Date.now();
     for (const enemy of this.enemies.values()) {
-      this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.52, durationMs: slowMs, stacking: "refresh" }, now);
+      this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.52, durationMs: slowMs, stacking: "refresh" }, now, { slowKind: "skill:healer" });
     }
   }
 
@@ -15094,7 +15337,8 @@ export class MatchRoom extends Room<MatchState> {
 
     enemy.melisDoubtStacks = Math.min(3, enemy.melisDoubtStacks + 1);
     enemy.melisDoubtUntil = Math.max(enemy.melisDoubtUntil, now + scaleGameDuration(this.getMelisDoubtDurationMs(tower)));
-    this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: this.getMelisDoubtDurationMs(tower) });
+    // Suphenin vurus yavaslatmasi ve yigin yavaslatmasi ayni etki: carpilmiyor.
+    this.applyConfiguredTowerStatus(tower, enemy, "slow", now, { durationMs: this.getMelisDoubtDurationMs(tower), slowKind: MELIS_DOUBT_SLOW_KIND });
     const doubtStackDefinition = tower.definition.engine?.stacks?.find((stack) => stack.id === "doubt");
     if (doubtStackDefinition) {
       const state = this.applyEngineStack(enemy.stackStates, doubtStackDefinition, { trigger: "hit", now, maxCount: 3 });
@@ -15373,7 +15617,7 @@ export class MatchRoom extends Room<MatchState> {
       const slowAmount = 0.1 * distanceMultiplier;
       const resistance = enemy.statusResistances.slow ?? 0;
       const resistedMultiplier = 1 - slowAmount * Math.max(0, 1 - resistance);
-      enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+      this.applyEnemyAuraSlow(enemy, this.getTowerSlowKind(tower.id), resistedMultiplier);
       return;
     }
 
@@ -15869,6 +16113,8 @@ export class MatchRoom extends Room<MatchState> {
         auraActive: tower.auraActive,
         repairCostMultiplier: this.getTowerRepairCostMultiplier(tower),
         sellRefundMultiplier: this.getTowerSellRefundMultiplier(tower),
+        // Geri alim dugmesi bu altini da iade edilecek sayiya katiyor.
+        upgradeGold: tower.upgradeGold ? tower.upgradeGold : undefined,
         effectIntervalMs: usesEffectInterval(tower.definition)
           ? Math.round(this.getTowerEffectInterval(tower))
           : undefined,
@@ -16043,6 +16289,8 @@ export class MatchRoom extends Room<MatchState> {
         // bir sonraki karede eski degeri kendiliginden siliyor.
         waveEnemyCount: this.waveTarget + getHarvesterRaidCount(this.wave),
         waveAirMode: waveAirMode === "none" ? undefined : waveAirMode,
+        // Ongoru kutusunun patern satiri ("Sürü", "Zırhlı kol").
+        wavePattern: this.getActiveWavePattern()?.pattern,
         enemiesLeft: Math.max(0, this.waveTarget - this.waveSpawned) + this.enemies.size + (this.waveSpawned <= 1 ? getHarvesterRaidCount(this.wave) : 0),
         kills: this.kills
       }
@@ -16274,10 +16522,9 @@ export class MatchRoom extends Room<MatchState> {
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
     const zeynepFormationMultiplier = getZeynepFormationFireIntervalMultiplier(tower);
-    // Atis araligi carpanin **tersi**: menzil ve hasar 1,5 kat buyurken
-    // aralik 1,5 kat kisaliyor. Ayri bir sayi olsaydi pasifin uc ekseni
-    // birbirinden habersiz kayardi -- bir donem tam bu olmustu (1,12 ve 0,9).
-    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_MULTIPLIER : 1;
+    // Yalnizligin atis hizi ekseni: aralik bu carpana boluniyor. Bugun 1
+    // (pasif yalnizca hasar ve menzil veriyor), yani aralik degismiyor.
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER : 1;
     const melisNightmareHasteMultiplier = this.isMelisGothicNightmareActiveForTower(tower, now) ? 1 / MELIS_GOTHIC_NIGHTMARE_HASTE_MULTIPLIER : 1;
     const melisFocusKillHasteMultiplier = tower.characterId === "archer" && tower.melisFocusKillHasteUntil > now ? 1 / MELIS_FOCUS_KILL_HASTE_MULTIPLIER : 1;
 
@@ -16775,10 +17022,8 @@ export class MatchRoom extends Room<MatchState> {
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
     const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks)) : 1;
     const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
-    // Atis araligi carpanin **tersi**: menzil ve hasar 1,5 kat buyurken
-    // aralik 1,5 kat kisaliyor. Ayri bir sayi olsaydi pasifin uc ekseni
-    // birbirinden habersiz kayardi -- bir donem tam bu olmustu (1,12 ve 0,9).
-    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_MULTIPLIER : 1;
+    // Yalnizligin atis hizi ekseni (bugun 1); `getTowerRawFireInterval` ile ayni.
+    const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER : 1;
     const previousLevelMultiplier = getTowerLevelIntervalMultiplier(tower.definition.id, tower.level);
     const previousInterval = Math.max(80, tower.definition.fireIntervalMs * previousLevelMultiplier * stackMultiplier * zeynepHasteMultiplier * passiveMultiplier);
     const currentInterval = Math.max(80, tower.definition.fireIntervalMs * stackMultiplier * zeynepHasteMultiplier * passiveMultiplier);
@@ -17264,7 +17509,9 @@ export class MatchRoom extends Room<MatchState> {
         if (modifier !== undefined) {
           const resistance = enemy.statusResistances.slow ?? 0;
           const resistedMultiplier = 1 - (1 - modifier) * Math.max(0, 1 - resistance);
-          enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+          // Aura kulesinin vurus yavaslatmasiyla ayni etki (Izolasyon'un
+          // aurasi ve vurusu ayni egride): ikisi carpilmiyor, guclusu sayiliyor.
+          this.applyEnemyAuraSlow(enemy, this.getTowerSlowKind(tower.id), resistedMultiplier);
           if (resistedMultiplier < 1) affected.add(enemy.id);
         }
       }
@@ -17511,7 +17758,32 @@ export class MatchRoom extends Room<MatchState> {
   private resetAuraSlows() {
     for (const enemy of this.enemies.values()) {
       enemy.auraSlowMultiplier = 1;
+      enemy.auraSlowKinds = undefined;
     }
+  }
+
+  /**
+   * Bu tikin bir aura yavaslatmasini etkisine yazar: ayni etki en guclusune
+   * iner, `auraSlowMultiplier` aura etkilerinin carpimla birlesimi.
+   */
+  private applyEnemyAuraSlow(enemy: EnemyModel, kind: string, multiplier: number) {
+    if (!(multiplier < 1)) return;
+    const kinds = enemy.auraSlowKinds ?? (enemy.auraSlowKinds = {});
+    kinds[kind] = Math.min(kinds[kind] ?? 1, Math.max(0, multiplier));
+    enemy.auraSlowMultiplier = combineSlowKinds(Object.values(kinds));
+  }
+
+  /**
+   * Aura yavaslatmalarini hareketin etki haritasina yazar. Etkisiz tek sayi
+   * (elle yazilmis `auraSlowMultiplier`) tek bir aura etkisi sayiliyor.
+   */
+  private collectEnemyAuraSlowKinds(enemy: EnemyModel, kinds: Map<string, number>) {
+    const auraKinds = enemy.auraSlowKinds;
+    if (auraKinds) {
+      for (const kind in auraKinds) noteSlowKind(kinds, kind, auraKinds[kind]);
+      return;
+    }
+    noteSlowKind(kinds, AURA_SLOW_KIND, enemy.auraSlowMultiplier);
   }
 
   private startSympathy(ownerId?: string) {
@@ -17572,7 +17844,7 @@ export class MatchRoom extends Room<MatchState> {
         1 - SYMPATHY_SLOW_MULTIPLIER,
         enemy.statusResistances.slow
       );
-      enemy.auraSlowMultiplier = Math.min(enemy.auraSlowMultiplier, resistedMultiplier);
+      this.applyEnemyAuraSlow(enemy, SYMPATHY_SLOW_KIND, resistedMultiplier);
 
       if (this.sympathyBledEnemyIds.has(enemy.id)) continue;
       this.sympathyBledEnemyIds.add(enemy.id);

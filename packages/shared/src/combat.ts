@@ -61,41 +61,48 @@ export type DamageResult = {
 
 export const SHIELD_DAMAGE_TAKEN_MULTIPLIER = 0.5;
 
+/**
+ * Irk zaafi ve direncinin buyuklugu: zayif oldugu hasar tipinden +%40 fazla,
+ * direncli oldugu tipten %40 az hasar alir. Alti irkin hepsi ayni buyuklukte;
+ * menu ve bestiyer yuzdeyi bu tablodan okuyor.
+ */
+export const RACE_DAMAGE_AFFINITY = 0.4;
+
 export const enemyRaceDefinitions = {
   meka: {
     damageResistances: {
-      electric: -0.2,
-      psychic: 0.2
+      electric: -RACE_DAMAGE_AFFINITY,
+      psychic: RACE_DAMAGE_AFFINITY
     }
   },
   spaceBug: {
     damageResistances: {
-      cellular: -0.2,
-      fire: 0.2
+      cellular: -RACE_DAMAGE_AFFINITY,
+      fire: RACE_DAMAGE_AFFINITY
     }
   },
   fourthDimensional: {
     damageResistances: {
-      psychic: -0.2,
-      physical: 0.2
+      psychic: -RACE_DAMAGE_AFFINITY,
+      physical: RACE_DAMAGE_AFFINITY
     }
   },
   holyGuardian: {
     damageResistances: {
-      fire: -0.2,
-      light: 0.2
+      fire: -RACE_DAMAGE_AFFINITY,
+      light: RACE_DAMAGE_AFFINITY
     }
   },
   fallen: {
     damageResistances: {
-      light: -0.2,
-      electric: 0.2
+      light: -RACE_DAMAGE_AFFINITY,
+      electric: RACE_DAMAGE_AFFINITY
     }
   },
   golem: {
     damageResistances: {
-      physical: -0.2,
-      cellular: 0.2
+      physical: -RACE_DAMAGE_AFFINITY,
+      cellular: RACE_DAMAGE_AFFINITY
     }
   }
 } as const satisfies Record<EnemyRace, EnemyRaceDefinition>;

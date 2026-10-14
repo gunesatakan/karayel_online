@@ -51,7 +51,7 @@ test("dusman XP'si multiplayer havuzlarina esit dagitilir", () => {
   assert.equal(second.experience, 12);
 });
 
-test("kule gelistirme XP harcar ve altini degistirmez", () => {
+test("kule gelistirme XP ile birlikte insa bedelinin yarisi kadar altin harcar (2. seviye)", () => {
   const room = new MatchRoom();
   const player = { experience: 500, gold: 300, goldSpent: 120 };
   const tower = {
@@ -67,8 +67,11 @@ test("kule gelistirme XP harcar ve altini degistirmez", () => {
 
   assert.equal(tower.level, 2);
   assert.equal(player.experience, 500 - getTowerLevelExpCost(80, 1));
-  assert.equal(player.gold, 300);
-  assert.equal(player.goldSpent, 120);
+  // Insa bedeli 160, 2. seviye %50: 80 altin.
+  assert.equal(getTowerLevelGoldCost(80, 1), 80);
+  assert.equal(player.gold, 300 - 80);
+  assert.equal(player.goldSpent, 120 + 80);
+  assert.equal(tower.upgradeGold, 80, "odenen gelistirme altini kulede yazilmadi");
 });
 
 test("yetersiz XP kule seviyesini degistirmez", () => {
@@ -98,8 +101,19 @@ test("yetersiz XP kule seviyesini degistirmez", () => {
  * derinlesmek ile yayilmak arasindaki secim buradan cikiyor. Sayilar burada
  * yaziyor cunku degistiklerinde bu secimin kendisi degisir.
  */
-test("5. ve 10. seviyeler XP yanında altın ister", () => {
-  assert.equal(getTowerLevelGoldCost(80, 3), 0);
+test("her seviye XP yanında altın ister; 5. ve 10. seviye büyük eşik", () => {
+  const build = getTowerBuildCost(80);
+  // Hedef seviye -> insa bedelinin payi.
+  const oranlar = { 2: 0.5, 3: 0.7, 4: 0.9, 5: 10, 6: 1.2, 7: 1.5, 8: 1.9, 9: 2.4, 10: 40 };
+  for (const [hedef, oran] of Object.entries(oranlar)) {
+    assert.equal(getTowerLevelGoldCost(80, Number(hedef) - 1), Math.round(build * oran), `${hedef}. seviye`);
+    assert.ok(getTowerLevelExpCost(80, Number(hedef) - 1) > 0, `${hedef}. seviye XP de istiyor`);
+  }
+  // Eşikler dışında pay her seviyede artıyor.
+  const ara = [2, 3, 4, 6, 7, 8, 9].map((hedef) => getTowerLevelGoldCost(80, hedef - 1));
+  for (let index = 1; index < ara.length; index += 1) assert.ok(ara[index] > ara[index - 1], "pay artmiyor");
+  // Tavanda bedel yok.
+  assert.equal(getTowerLevelGoldCost(80, 10), 0);
   assert.equal(getTowerLevelGoldCost(80, 4), getTowerBuildCost(80) * 10);
   assert.equal(getTowerLevelGoldCost(80, 9), getTowerBuildCost(80) * 40);
   // Onuncu, besincinin dort kati: son adim gercek bir yatirim karari.

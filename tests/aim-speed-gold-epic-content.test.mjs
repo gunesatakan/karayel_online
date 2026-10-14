@@ -318,10 +318,10 @@ test("epik aciklamalari once kendi kaynak bonusunu, sonra cevrim kuralini ve tav
     "tork-aktarimi": ["turnRate", 0.5, "Nişan alan kulelerin dönüş hızı +%50. "],
     "balistik-hesaplayici": ["accuracy", 0.5, "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. "],
     "kinetik-erim": ["projectileSpeed", 0.5, "Mermi atan kulelerin mermi hızı +%50. "],
-    "savas-hazinesi": ["goldGain", 1.2, "Düşman altını +%120. "]
+    "savas-hazinesi": ["goldGain", 0.6, "Düşman altını +%60. "]
   };
   const thresholdText = { 0.3: "%30'u aşan ", 1: "%100'ü aşan " };
-  const stepText = { "savas-hazinesi": [40, "'ı"] };
+  const stepText = { "savas-hazinesi": [20, "'si"] };
   for (const id of EPIC_IDS) {
     const entry = card(id);
     assert.equal(entry.conversions.length, 1, id);
@@ -329,7 +329,8 @@ test("epik aciklamalari once kendi kaynak bonusunu, sonra cevrim kuralini ve tav
     const [conversion] = entry.conversions;
     const [stat, add, lead] = base[id];
     // Cevrim adimi: Savas Hazinesi'nin altin cevrimi altin dort katina cikinca
-    // her %40'a gecti (oran dortte bir), oteki epikler her %10.
+    // her %40'a gecti (oran dortte bir); altin kartlari yariya inince her %20'ye
+    // dondu (oran iki kat). Oteki epikler her %10.
     const [step, stepSuffix] = stepText[id] ?? [10, "'u"];
     // Kendi kaynak bonusu: tek etki ve cevrimin kaynagi.
     assert.deepEqual(entry.effects.map((modifier) => [modifier.stat, modifier.add]), [[stat, add]], id);
@@ -722,7 +723,8 @@ test("Gez ve Arpacik, Lazer Telemetre ve Hassas Namlu takildigi kulede koniyi da
   const hassas = kur(room, "warrior-6");
   const aralik = room.getTowerFireInterval(hassas);
   assert.ok(esyaTak(room, hassas, "hassas-namlu"));
-  near(getModifierAdd(room.getTowerRunModifiers(hassas), "critDamage"), 0.5);
+  // Kritik hasar esyalari yariya indi: Hassas Namlu +%50 -> +%25.
+  near(getModifierAdd(room.getTowerRunModifiers(hassas), "critDamage"), 0.25);
   near(room.getTowerFireInterval(hassas), aralik, "atis hizi cezasi geri geldi");
 
   // Isin kulesi nisan aliyor ama isabet orada yalnizca tetigi geciktiriyor.
@@ -885,7 +887,7 @@ test("Kinetik Erim tek basina mermi hizi +%50 ve menzil +%10 veriyor; +%20'de du
   near(room.getTowerRange(bobinli) / (bobinSade / 1.1), 1 - 0.08 + 0.2, "bobin + cevrim");
 });
 
-test("Savas Hazinesi tek basina dusman altini +%120 ve hasar +%9 veriyor; +%30'da duruyor", () => {
+test("Savas Hazinesi tek basina dusman altini +%60 ve hasar +%9 veriyor; +%30'da duruyor", () => {
   const room = oda();
   const takipci = kur(room, "warrior-1");
   const aura = kur(room, "warrior-3");
@@ -893,8 +895,9 @@ test("Savas Hazinesi tek basina dusman altini +%120 ve hasar +%9 veriyor; +%30'd
   kartAl(room, "savas-hazinesi");
   near(room.getTowerDamage(takipci) / sade, 1.09, "tek basina");
   const player = room.state.players.get("p1");
-  near(getModifierAdd(player.runModifiers, "goldGain"), 1.2, "kendi altin bonusu");
-  for (const [gold, damage] of [[0, 0.09], [0.8, 0.15], [2.8, 0.3], [8, 0.3]]) {
+  near(getModifierAdd(player.runModifiers, "goldGain"), 0.6, "kendi altin bonusu");
+  // Her %20 altin bonusu +%3 hasar: 0,6 + ek -> (0,6 + ek) x 0,15, tavan +%30.
+  for (const [gold, damage] of [[0, 0.09], [0.8, 0.21], [1.4, 0.3], [8, 0.3]]) {
     player.runModifiers = player.runModifiers.filter((modifier) => modifier.source !== "test:seviye");
     player.runModifiers.push({ ...testMod("goldGain", gold), scope: "player" });
     near(room.getTowerDamage(takipci) / sade, 1 + damage, `altin +${gold}`);
@@ -908,10 +911,10 @@ test("Savas Hazinesi gercek altin kartlarini okuyor ve kendi bonusu oldurme alti
   const sade = room.getTowerDamage(tower);
   kartAl(room, "savas-hazinesi");
   kartAl(room, "parali-asker");
-  // +%120 (kart) + %200 = %320 -> hasar +%24 (her %40'i +%3).
-  near(room.getTowerDamage(tower) / sade, 1 + 3.2 * 0.075, "iki kart");
+  // +%60 (kart) + %100 = %160 -> hasar +%24 (her %20'si +%3).
+  near(room.getTowerDamage(tower) / sade, 1 + 1.6 * 0.15, "iki kart");
   assert.ok(satinAl(room, "altin-elek"));
-  // +%96 daha: %416 -> tavan +%30.
+  // +%96 daha: %256 -> tavan +%30.
   near(room.getTowerDamage(tower) / sade, 1.3, "kart + esya (tavan)");
   const player = room.state.players.get("p1");
   player.gold = 0;
@@ -920,7 +923,7 @@ test("Savas Hazinesi gercek altin kartlarini okuyor ve kendi bonusu oldurme alti
   enemy.reward = 100;
   enemy.champion = undefined;
   room.damageEnemy(enemy, 1e9, 0, "warrior-1", "p1");
-  near(player.gold, Math.round(100 * 1.5) * (1 + 1.2 + 2 + 0.96), "oldurme altini yalnizca kartlarin carpaniyla");
+  near(player.gold, Math.round(100 * 1.5) * (1 + 0.6 + 1 + 0.96), "oldurme altini yalnizca kartlarin carpaniyla");
 });
 
 test("cevrim tavanlari ayri: iki hasar cevrimi toplaniyor ama birbirini beslemiyor", () => {
@@ -943,7 +946,7 @@ function oldur(room, tower, { zar = 1, reward = 20 } = {}) {
   return room.damageEnemy(enemy, 1e9, 0, tower.definition.id, tower.ownerId, "true", 0, tower.level, tower.id);
 }
 
-test("Parali Asker dusman altinini %200 artiriyor, tecrubeyi %20 azaltiyor", () => {
+test("Parali Asker dusman altinini %100 artiriyor, tecrubeyi %20 azaltiyor", () => {
   const olc = (kartli) => {
     const room = oda();
     const tower = kur(room, "warrior-1");
@@ -956,7 +959,7 @@ test("Parali Asker dusman altinini %200 artiriyor, tecrubeyi %20 azaltiyor", () 
   };
   const sade = olc(false);
   const kartli = olc(true);
-  near(kartli.gold / sade.gold, 3, "altin");
+  near(kartli.gold / sade.gold, 2, "altin");
   near(kartli.experience / sade.experience, 0.8, "tecrube");
 });
 
@@ -970,7 +973,7 @@ test("co-op: altin kartlari yalnizca sahibinin kesesine isliyor", () => {
   p1.gold = 0;
   p2.gold = 0;
   oldur(room, tower, { reward: 100 });
-  near(p1.gold / p2.gold, 3, "oldurme altini takim arkadasina carpilmadi");
+  near(p1.gold / p2.gold, 2, "oldurme altini takim arkadasina carpilmadi");
   const [g1, g2] = [p1.gold, p2.gold];
   room.awardWaveEndBonusGold(room.wave, false);
   assert.equal(p1.gold - g1, 160);
@@ -1319,9 +1322,10 @@ test("sunucu kilitleri tek kez aciyor: kart ve esya birlikte primi ikiye katlami
 
 // ------------------------------------- 6. Altin kazanimi: iki kat, sonra dort kat
 
-test("altin kazanimini artiran her kart ve esya dort kat (oldurme ve dalga altini): deger, metin ve sabit ayni", () => {
+test("altin kazanimini artiran her kart ve esya (kartlar dort kattan yariya, esyalar dort kat): deger, metin ve sabit ayni", () => {
+  // Altin yuzdesi veren kartlar yariya indi (+%120 -> +%60); esyalar ayni.
   const goldGain = {
-    "ganimet-payi": 1.2, "kanli-kazanc": 2.8, "parali-asker": 2, "savas-hazinesi": 1.2,
+    "ganimet-payi": 0.6, "kanli-kazanc": 1.4, "parali-asker": 1, "savas-hazinesi": 0.6,
     "ganimet-kesesi": 1.6, "altin-elek": 0.96
   };
   for (const [id, add] of Object.entries(goldGain)) {
@@ -1469,7 +1473,7 @@ test("isabet ya da mermi hizi veren hicbir esya bir bedel tasimiyor", () => {
   const expected = {
     "nisan-durbunu": [["accuracy", 0.45]],
     "lazer-telemetre": [["accuracy", 0.5], ["range", 0.1]],
-    "hassas-namlu": [["accuracy", 0.35], ["critDamage", 0.5]],
+    "hassas-namlu": [["accuracy", 0.35], ["critDamage", 0.25]],
     "manyetik-ray": [["projectileSpeed", 0.9]],
     "genlesme-odasi": [["projectileSpeed", 0.6], ["range", 0.08]],
     "hafif-cekirdek": [["projectileSpeed", 1.5]]
@@ -1561,7 +1565,7 @@ test("Tungsten Cekirdek ve Gauss Bobini mermiyi hizlandiriyor, ikincil stat kule
   const sade = mermiHizi(room, tower);
   assert.ok(esyaTak(room, tower, "tungsten-cekirdek"));
   near(mermiHizi(room, tower), sade * 1.5);
-  near(getModifierAdd(room.getTowerRunModifiers(tower), "critDamage"), 0.4);
+  near(getModifierAdd(room.getTowerRunModifiers(tower), "critDamage"), 0.2);
   const bobinli = kur(room, "warrior-4");
   const bobinSade = mermiHizi(room, bobinli);
   const menzil = room.getTowerRange(bobinli);

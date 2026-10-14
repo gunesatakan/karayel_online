@@ -243,10 +243,11 @@ export type CounterSurgeSnapshot = {
   id: number;
   /**
    * Seridin indeksi: ustten gelende sol sutun, yandan gelende ust satir,
-   * caprazda 0 (bkz. `getCounterSurgeGeometry`).
+   * caprazda ana kosegene gore kaydirma (hucre, ceyrek adimli, eksi
+   * olabilir; eski kayitta 0 = ana kosegen). Bkz. `getCounterSurgeGeometry`.
    */
   col: number;
-  /** Genislik, hucre (yola dik). */
+  /** Genislik, hucre (yola dik); kenarda kirpilan seritte gorunen genislik. */
   w: number;
   /**
    * Cesit kodu (`COUNTER_SURGE_KIND_CODES`); `band` (0) yazilmiyor: eski
@@ -341,6 +342,12 @@ export type WaveSpecialPlanInput = {
   wave: number;
   /** Dalganin orijinal dogum sayisi (harita olcegi ve oyuncu sayisi dahil). */
   slotCount: number;
+  /**
+   * Ozel dusman sayisinin kalabalik olcusu: dalga paterni sayiyi degistirse
+   * de (suru kalabalik, zirhli kol seyrek) ozel dusman sayisi bugunku dogum
+   * sayisindan (`getArenaWaveEnemyCount`) gelsin. Verilmezse `slotCount`.
+   */
+  crowdSlotCount?: number;
   /** Sampiyon varsa yerine gectigi dogum ve orijinal sirasi. */
   champion?: { replaced: number; slot: number };
   /** Haritanin sutun sayisi (karsi atagin serit secimi icin). */
@@ -373,7 +380,8 @@ export function planWaveSpecials(input: WaveSpecialPlanInput): WaveSpecialPlan |
   const kinds = getSpecialKindsForWave(stage, wave);
   const hunter = kinds.includes("hunter") ? getTowerHunterBudget(wave, slots) : undefined;
   const hunterCap = hunter ? TOWER_HUNTER_MAX_PER_WAVE[Math.min(5, stage)] ?? 1 : 0;
-  const total = getWaveSpecialEnemyCount(stage, wave, slots);
+  const crowd = Math.floor(input.crowdSlotCount ?? slots);
+  const total = getWaveSpecialEnemyCount(stage, wave, crowd >= 1 ? crowd : slots);
 
   // Tur secimi: tablodaki sayi kadar agirlikli zar. Avci sinirina gelince
   // havuzdan cikiyor.

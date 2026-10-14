@@ -181,8 +181,11 @@ test("yukseltme hazir: en ucuz uc yerel kule, duvar ve takim arkadasi haric", ()
     tower("mate", "warrior-1", 1, "mate"),
     tower("max", "warrior-1", 10)
   ];
-  const ids = getUpgradeReadyTowerIds(towers, "me", { gold: 0, experience: 10_000 });
+  // Her seviye altin da istiyor: cuzdan altini bol, olcum XP siralamasi.
+  const ids = getUpgradeReadyTowerIds(towers, "me", { gold: 1e6, experience: 10_000 });
   assert.equal(ids.length, UPGRADE_READY_MARKER_LIMIT);
+  // Altin yoksa hicbir seviye atlanamiyor.
+  assert.deepEqual(getUpgradeReadyTowerIds(towers, "me", { gold: 0, experience: 10_000 }), []);
   const expOf = (entry) => getTowerLevelExpCost(cost(entry.definitionId), entry.level);
   const expected = towers
     .filter((entry) => ["t1", "t2", "t3", "t4", "t5"].includes(entry.id))
@@ -194,8 +197,8 @@ test("yukseltme hazir: en ucuz uc yerel kule, duvar ve takim arkadasi haric", ()
 
   // XP yetmiyorsa isaret yok; tek kuleye yetiyorsa yalnizca o.
   const cheapest = expOf(towers[2]);
-  assert.deepEqual(getUpgradeReadyTowerIds(towers, "me", { gold: 0, experience: cheapest - 0.01 }), []);
-  assert.deepEqual(getUpgradeReadyTowerIds(towers, "me", { gold: 0, experience: cheapest }), ["t3"]);
+  assert.deepEqual(getUpgradeReadyTowerIds(towers, "me", { gold: 1e6, experience: cheapest - 0.01 }), []);
+  assert.deepEqual(getUpgradeReadyTowerIds(towers, "me", { gold: 1e6, experience: cheapest }), ["t3"]);
   assert.deepEqual(getUpgradeReadyTowerIds(towers, undefined, { gold: 1e9, experience: 1e9 }), []);
 });
 

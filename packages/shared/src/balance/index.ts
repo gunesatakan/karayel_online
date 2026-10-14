@@ -345,20 +345,29 @@ export const STRUCTURE_BREACH_HEALTH_RATIO = 0.3;
 export const SIEGE_STRUCTURE_DAMAGE_MULTIPLIER = 4;
 
 /**
- * Atakan'in yalnizlik pasifinin carpani.
+ * Atakan'in yalnizlik pasifinin carpani: menzil ve hasar.
  *
- * Tek sayi, uc eksen: menzil ve hasar bununla carpiliyor, atis araligi
- * bunun tersine boluniyor. Yani "her sey 1,5 kat" cumlesi kodda da bir
- * cumle.
+ * Tek sayi, iki eksen: menzil ve hasar bununla carpiliyor. Atis hizi artik
+ * pasifin parcasi degil (`ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER`); eskiden
+ * aralik da bu sayiya boluniyordu ve yalniz kule x2,25 DPS aliyordu. Simdi
+ * DPS kazanci hasarin kendisi kadar: x1,5.
  *
- * Once iki ayri sayi vardi -- hasar icin 1,12 ve aralik icin 0,9 -- ve
- * birbirini tutmuyorlardi (1/0,9 = 1,111). Ikisi ayri ayri ayarlanmis, biri
- * digerinden habersiz kalmisti; tek sayi o ayrismayi imkansiz kiliyor.
+ * Once hasar ve aralik icin iki ayri sayi vardi (1,12 ve 0,9) ve birbirini
+ * tutmuyorlardi. Bugun ikinci eksen bilerek kapali ve kendi adiyla duruyor:
+ * DPS hesaplari (`getAtakanIsolationDpsMultiplier`) ikisini birden okuyor.
  *
  * Yalnizlik **kuleyle** olculur: duvar bozmaz (bkz. `countsAsTower`).
  * Duvarla cevrelemek pasifi kapatmaz, cunku duvar kule degil.
  */
 export const ATAKAN_ISOLATION_MULTIPLIER = 1.5;
+
+/**
+ * Yalnizligin atis hizi carpani: 1, yani atis hizi bonusu yok.
+ *
+ * Sunucu atis araligini bu sayiya boluyor; 1 oldugu surece aralik
+ * degismiyor. Sifirdan buyuk olmali.
+ */
+export const ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER = 1;
 
 /** Kusatma dusmaninin dalgalarda gorunmeye basladigi nokta ve orani. */
 export const SIEGE_FIRST_WAVE = 4;

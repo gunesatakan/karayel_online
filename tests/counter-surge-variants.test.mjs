@@ -19,12 +19,20 @@ import {
   COUNTER_SURGE_PAIR_WINDOWS,
   COUNTER_SURGE_SECOND_CHANCE_BY_STAGE,
   GAME_SPEED_MULTIPLIER,
+  addSurgeAbsorbedInterval,
+  clipCounterSurgeLane,
   createSpecialRandom,
   decodeCounterSurgeKind,
   decodeCounterSurgeTravel,
+  decodeSurgeCuts,
+  encodeSurgeCuts,
   getAegisCrossMs,
   getCounterSurgeDamageRatio,
+  getCounterSurgeDiagonalOffsetLimit,
   getCounterSurgeGeometry,
+  getSurgeObstacleContact,
+  isSparedFromSurge,
+  isStructureInSurgeWidth,
   getCounterSurgeKindsForStage,
   getCounterSurgeWidthCells,
   getMapGridSize,
@@ -209,13 +217,152 @@ test("plan: genişlik ve şerit haritaya sığıyor; perde ve siper küçük har
   assert.equal(getCounterSurgeWidthCells("wall", 24, 36), 6);
   assert.equal(getCounterSurgeWidthCells("lance", 12, 18), 1);
   assert.equal(getCounterSurgeWidthCells("sweep", 12, 18), 3);
+  // Kenarda kirpilan serit daha dar ama hep haritada; capraz ana kosegenden
+  // ceyrek hucre adimiyla kayiyor (12x18: |kaydirma| <= R + 1,5).
+  const diagonalLimit = getCounterSurgeDiagonalOffsetLimit(12, 18, 3);
+  assert.ok(diagonalLimit >= 10.75 && diagonalLimit <= 11, `capraz sinir ${diagonalLimit}`);
   for (let seed = 1; seed <= 400; seed += 1) {
     for (const surge of planOf(3 + (seed % 3), 10, seed)) {
+      const full = getCounterSurgeWidthCells(surge.kind, 12, 18);
+      assert.ok(surge.width >= 1 && surge.width <= full, `${surge.kind} genislik ${surge.width}`);
       if (surge.travel === "down") assert.ok(surge.lane >= 0 && surge.lane + surge.width <= 12);
       else if (surge.travel === "left" || surge.travel === "right") assert.ok(surge.lane >= 1 && surge.lane + surge.width <= 17, `satir ${surge.lane}`);
-      else assert.equal(surge.lane, 0);
+      else {
+        assert.equal(surge.width, full, "capraz genislik kirpilmiyor");
+        assert.ok(Math.abs(surge.lane) <= diagonalLimit && Number.isInteger(surge.lane * 4), `capraz kaydirma ${surge.lane}`);
+      }
+      // Kirpilmamis serit yalnizca tam genislikte: dar serit hep bir kenara yaslaniyor.
+      if (surge.width < full && surge.travel === "down") assert.ok(surge.lane === 0 || surge.lane + surge.width === 12, `dar serit kenarda degil ${surge.lane}+${surge.width}`);
+      if (surge.width < full && (surge.travel === "left" || surge.travel === "right")) assert.ok(surge.lane === 1 || surge.lane + surge.width === 17, `dar satir kenarda degil ${surge.lane}`);
     }
   }
+});
+
+/**
+ * Adil serit: kenar sutunu (yandan gelende kenar satiri) ortadaki kadar sik
+ * vuruluyor. Eskiden baslangic yalnizca tam sigan konumlardan seciliyordu;
+ * 4. asamada ortadaki sutunu vuran hasarli serit olasiligi kenardakinin
+ * dort katina yakindi, capraz ise hep ana kosegeni vuruyordu.
+ */
+test("adil serit: her cesitte hucre basina vurus olasiligi kenarda ve ortada ayni (±%20)", () => {
+  const cols = 12;
+  const rows = 18;
+  const grid = 32;
+  const perKind = new Map();
+  for (let seed = 1; seed <= 1500; seed += 1) {
+    for (const stage of [3, 5]) {
+      for (const surge of planCounterSurges({ stage, wave: 12, spawnCount: 60, cols, rows, random: createSpecialRandom(seed * 31 + stage, 12) })) {
+        const band = getCounterSurgeGeometry(surge.travel, surge.lane, surge.width, { x: 0, y: 0 }, grid, cols, rows);
+        let entry = perKind.get(surge.kind);
+        if (!entry) perKind.set(surge.kind, entry = { n: 0, hits: new Float64Array(cols * rows) });
+        entry.n += 1;
+        for (let row = 1; row < rows - 1; row += 1) {
+          for (let col = 0; col < cols; col += 1) {
+            if (isStructureInSurgeWidth(band, col * grid + grid / 2, row * grid + grid / 2, grid / 2, grid / 2)) entry.hits[row * cols + col] += 1;
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual([...perKind.keys()].sort(), [...COUNTER_SURGE_KINDS].sort(), "her cesit en az bir kez");
+  for (const [kind, entry] of perKind) {
+    const p = (col, row) => entry.hits[row * cols + col] / entry.n;
+    const line = (pick) => {
+      let sum = 0;
+      let count = 0;
+      for (let row = 1; row < rows - 1; row += 1) for (let col = 0; col < cols; col += 1) if (pick(col, row)) { sum += p(col, row); count += 1; }
+      return sum / count;
+    };
+    const side = COUNTER_SURGE_KIND_TABLE[kind].route === "side";
+    const edge = side ? line((col, row) => row === 1 || row === rows - 2) : line((col) => col === 0 || col === cols - 1);
+    const centre = side ? line((col, row) => row === rows / 2 - 1 || row === rows / 2) : line((col) => col === cols / 2 - 1 || col === cols / 2);
+    assert.ok(Math.abs(edge / centre - 1) <= 0.2, `${kind}: kenar ${(edge * 100).toFixed(1)}% orta ${(centre * 100).toFixed(1)}%`);
+  }
+});
+
+test("adil capraz: kaydirma esit dagilinca her hucre ayni olasilikla vuruluyor; ana kosegen ayricalikli degil", () => {
+  // Zar yerine katmanli ornek: planin kullandigi aralik ve kirpma, esit adimlarla.
+  for (const [cols, rows] of [[12, 18], [24, 36]]) {
+    const grid = 32;
+    const width = getCounterSurgeWidthCells("slash", cols, rows);
+    const limit = getCounterSurgeDiagonalOffsetLimit(cols, rows, width);
+    const samples = 4000;
+    const hits = new Float64Array(cols * rows);
+    for (let index = 0; index < samples; index += 1) {
+      const start = -limit + ((index + 0.5) / samples) * 2 * limit;
+      const { lane } = clipCounterSurgeLane("slash", cols, rows, start, width);
+      for (const travel of ["downRight", "downLeft"]) {
+        const band = getCounterSurgeGeometry(travel, lane, width, { x: 0, y: 0 }, grid, cols, rows);
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < cols; col += 1) {
+            if (isStructureInSurgeWidth(band, col * grid + grid / 2, row * grid + grid / 2, grid / 2, grid / 2)) hits[row * cols + col] += 1;
+          }
+        }
+      }
+    }
+    const all = Array.from(hits, (value) => value / (samples * 2));
+    const mean = all.reduce((a, b) => a + b, 0) / all.length;
+    assert.ok(Math.min(...all) >= mean * 0.85 && Math.max(...all) <= mean * 1.15, `${cols}x${rows}: hucre ${Math.min(...all).toFixed(3)}..${Math.max(...all).toFixed(3)} / ${mean.toFixed(3)}`);
+    // Beklenen: genislik / 2K.
+    assert.ok(Math.abs(mean - width / (2 * limit)) < 0.02, `${cols}x${rows}: ortalama ${mean}`);
+  }
+});
+
+test("kirpilan serit: Metal Kalkan yutmasi ve tel kesigi dar seritte de seridin kendi genisligi icinde", () => {
+  sahteSaat((saat) => {
+    const room = oda(3);
+    // Sol kenara yaslanan, iki sutuna kirpilmis serit (tam genislik 3).
+    const clipped = clipCounterSurgeLane("band", 12, 18, -1, 3);
+    assert.deepEqual(clipped, { lane: 0, width: 2 });
+    const surge = room.launchCounterSurge({ atSpawn: 0, kind: "band", travel: "down", lane: clipped.lane, width: clipped.width }, saat.now);
+    assert.equal(surge.col, 0);
+    assert.equal(surge.width, 2);
+    const wire = room.getCounterSurgeWire(surge, saat.now);
+    assert.equal(wire.col, 0);
+    assert.equal(wire.w, 2);
+    // Kalkan 1. sutunun ortasindan 3. sutuna uzaniyor: seritte yalnizca [0,5 .. 2] kismi.
+    const gridSize = getMapGridSize(room.activeMap);
+    const origin = getMapOrigin(room.activeMap);
+    const band = surge.band;
+    const contact = getSurgeObstacleContact(band, origin.x + gridSize * 0.5, origin.y + gridSize * 6, origin.x + gridSize * 3, origin.y + gridSize * 6, 0, gridSize * 10);
+    assert.ok(contact);
+    assert.ok(Math.abs(contact.from - (origin.x + gridSize * 0.5)) < 1e-6 && Math.abs(contact.to - (origin.x + gridSize * 2)) < 1e-6, `kesik ${contact.from}..${contact.to}`);
+    addSurgeAbsorbedInterval(surge.absorbed, contact.from, contact.to, contact.along / band.length);
+    const cut = encodeSurgeCuts(band, surge.absorbed, gridSize);
+    assert.deepEqual(cut.slice(0, 2), [0.5, 2], "tel kesigi dar seridin dusuk kenarindan");
+    const decoded = decodeSurgeCuts(cut, wire.w);
+    assert.deepEqual(decoded.map((entry) => [entry.from, entry.to]), [[0.5, 2]]);
+    // Kesigin arkasindaki yapi korunuyor, kesik disindaki vuruluyor.
+    assert.equal(isSparedFromSurge(band, surge.absorbed, origin.x + gridSize * 1.5, origin.y + gridSize * 12), true);
+    assert.equal(isSparedFromSurge(band, surge.absorbed, origin.x + gridSize * 0.25, origin.y + gridSize * 12), false);
+  });
+});
+
+test("kaydirilmis capraz serit: geometri ana kosegene paralel, haritanin disi vurulmuyor, tel kaydirmayi tasiyor", () => {
+  const cols = 12;
+  const rows = 18;
+  const grid = 32;
+  const main = getCounterSurgeGeometry("downRight", 0, 3, { x: 0, y: 0 }, grid, cols, rows);
+  const shifted = getCounterSurgeGeometry("downRight", 4.25, 3, { x: 0, y: 0 }, grid, cols, rows);
+  assert.equal(shifted.dirX, main.dirX);
+  assert.equal(shifted.dirY, main.dirY);
+  assert.equal(shifted.length, main.length);
+  // Genislik ekseninde tam 4,25 hucre kaydi; yol ekseninde kayma yok.
+  const across = (band) => band.originX * band.dirY - band.originY * band.dirX;
+  const along = (band) => band.originX * band.dirX + band.originY * band.dirY;
+  assert.ok(Math.abs(across(shifted) - across(main) - 4.25 * grid) < 1e-6);
+  assert.ok(Math.abs(along(shifted) - along(main)) < 1e-6);
+  // Sinirin disindaki kaydirma sinira kirpiliyor.
+  const limit = getCounterSurgeDiagonalOffsetLimit(cols, rows, 3);
+  const far = getCounterSurgeGeometry("downLeft", 99, 3, { x: 0, y: 0 }, grid, cols, rows);
+  const edge = getCounterSurgeGeometry("downLeft", limit, 3, { x: 0, y: 0 }, grid, cols, rows);
+  assert.deepEqual(far, edge);
+  sahteSaat((saat) => {
+    const room = oda(4);
+    const surge = room.launchCounterSurge({ atSpawn: 0, kind: "slash", travel: "downRight", lane: -3.5, width: 3 }, saat.now);
+    assert.equal(surge.col, -3.5);
+    assert.equal(room.getCounterSurgeWire(surge, saat.now).col, -3.5);
+  });
 });
 
 test("tel kodları: bilinmeyen kod bugünkü şerit (ustten) olarak okunuyor", () => {
@@ -466,6 +613,9 @@ test("siper: kule siperin ardındaki düşmanı hedefleyemiyor, aynı taraftakin
   sahteSaat((saat) => {
     const room = oda(3);
     const kule = kur(room, "warrior-1", 5, 13);
+    // AttackLord menzilleri yariya indi: 1. seviye Takipci iki kare oteye
+    // yetmiyor. Olcum siperin gorus kurali; menzil 10. seviyeyle saglaniyor.
+    kule.level = 10;
     const range = room.getTowerRange(kule) / getMapGridSize(room.activeMap);
     assert.ok(range >= 2.5, `kule menzili kisa: ${range}`);
     const ardinda = dusman(room, 5, 11);
@@ -478,6 +628,7 @@ test("siper: kule siperin ardındaki düşmanı hedefleyemiyor, aynı taraftakin
     room.enemies.delete(onunde.id);
     // Siperin genisligi disindaki kule (9. sutun genislikte degil) yandan atabiliyor.
     const yandaki = kur(room, "warrior-1", 10, 13);
+    yandaki.level = 10;
     const yandakiHedef = dusman(room, 10, 11);
     assert.equal(room.findTowerTarget(yandaki)?.id, yandakiHedef.id, "siperin disindaki hat engellendi");
     room.enemies.delete(yandakiHedef.id);

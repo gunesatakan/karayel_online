@@ -149,7 +149,7 @@ export const FEEDBACK_KIND_RULES: Readonly<Record<FeedbackKind, FeedbackKindRule
   reportWin: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 1100, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
   reportLoss: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 900, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
   reportRecord: { ownPriority: 1, channel: "none", visualMs: 0, visualGapMs: 0, teammateVisual: false, soundMs: 700, soundGapMs: 5000, teammateSound: false, shakePx: 0, vibrateMs: 0, defaultWeight: 0.5 },
-  // Yerlesim sinerjisi damgasi ("Yalnız ×2,25", "Dizilim bozuldu"): kurulum,
+  // Yerlesim sinerjisi damgasi ("Yalnız ×1,5", "Dizilim bozuldu"): kurulum,
   // satis ya da yukseltmeden sonra bir kez. P2 ve sessiz: yerlestirmenin tok
   // sesi zaten caliyor, ikinci bir ses ayni dokunusu iki kez anlatirdi. Takim
   // arkadasininki soluk; etiket butcesi kalabalik bir kurulum aninda dusuruyor.

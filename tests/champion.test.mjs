@@ -55,6 +55,8 @@ import {
   getWaveSlotExpectation,
   getWaveSpawnCount,
   getWaveSpawnIntervalMs,
+  getWavePatternDelayMs,
+  getWavePatternSlotDelayMs,
   hasWaveChampion,
   isFlyingWaveSpawn,
   pickWaveEnemyType,
@@ -250,7 +252,9 @@ test("sunucu: dalga planla doguyor, sampiyon ortada ve tek, sayac sampiyonu bir 
   for (const wave of [6, 15]) {
     const { room } = oda();
     const { dogumlar, araliklar } = withClock(1_800_000_000_000, () => dalgayiDogur(room, wave));
-    const slots = room.getScaledWaveEnemyCount(wave);
+    // Orijinal sayi dalga paterninden (bugunku sayi butcenin olcusu).
+    const pattern = room.wavePatternPlan;
+    const slots = pattern.slotCount;
     const plan = getWaveChampionPlan(wave, slots);
     assert.equal(room.waveTarget, slots - plan.replaced + 1, `${wave}. dalga hedefi`);
     assert.equal(dogumlar.length, room.waveTarget);
@@ -265,11 +269,28 @@ test("sunucu: dalga planla doguyor, sampiyon ortada ve tek, sayac sampiyonu bir 
       const slot = index < plan.slot ? index : index + plan.replaced - 1;
       assert.equal(enemy.movementKind === "air", isFlyingWaveSpawn(wave, slot), `${wave}. dalga ${index}. dogum`);
     });
-    // Sampiyondan sonra yerine gectigi dogumlar kadar bekleniyor: dalganin suresi ayni.
-    const interval = getWaveSpawnIntervalMs(wave);
-    assert.equal(araliklar[plan.slot], interval * plan.replaced);
-    assert.ok(araliklar.every((value, index) => index === plan.slot || value === interval));
+    // Sampiyondan sonra yerine gectigi dogumlar kadar bekleniyor: dalganin
+    // suresi ayni. Beklemeler paternin ritminden (aralik, yigin sessizligi).
+    dogumlar.forEach((enemy, index) => {
+      const slot = index <= plan.slot ? index : index + plan.replaced - 1;
+      const count = index === plan.slot ? plan.replaced : 1;
+      assert.equal(araliklar[index], getWavePatternDelayMs(pattern, slot, count), `${wave}. dalga ${index}. bekleme`);
+    });
+    const toplam = araliklar.reduce((sum, value) => sum + value, 0);
+    const tumu = Array.from({ length: slots }, (_, slot) => getWavePatternSlotDelayMs(pattern, slot)).reduce((sum, value) => sum + value, 0);
+    assert.equal(toplam, tumu, `${wave}. dalganin suresi sampiyonla ayni`);
   }
+});
+
+test("sunucu: plan baska dalganinsa (sayaclar elle) eski aralik", () => {
+  const { room } = oda();
+  room.wave = 6;
+  room.waveTarget = 20;
+  room.waveSpawned = 0;
+  room.spawnCooldownMs = 0;
+  room.updateSpawning(1);
+  assert.equal(room.waveSpawned, 1);
+  assert.equal(room.spawnCooldownMs, getWaveSpawnIntervalMs(6));
 });
 
 test("sunucu: sampiyon turunun kalin hali; direncler, zirh ve hiz turunden", () => {
@@ -280,7 +301,9 @@ test("sunucu: sampiyon turunun kalin hali; direncler, zirh ve hiz turunden", () 
   assert.equal(plan.type, "grunt");
   room.spawnEnemy(plan);
   const champion = [...room.enemies.values()].at(-1);
-  // Ayni dalganin normal grunt'u: zar 0.3 kusatma esiginin ustunde, nisancinin altinda.
+  // Ayni dalganin normal grunt'u: zar 0.3 kusatma esiginin ustunde, nisancinin
+  // altinda. Patern plani kaldiriliyor ki tur zardan gelsin (odul de duz).
+  room.wavePatternPlan = undefined;
   withRandom([0.3, 0.5], () => room.spawnEnemy());
   const normal = [...room.enemies.values()].at(-1);
   assert.equal(normal.type, "grunt");
@@ -460,14 +483,16 @@ test("1. ve 2. dalga aynen: sampiyon kurali kapali odayla bire bir ayni dogumlar
       try {
         const { room } = oda();
         room.championsEnabled = enabled;
-        return { target: (dalgayiDogur(room, wave), room.waveTarget), dogumlar: [...room.enemies.values()].map(ozet) };
+        const target = (dalgayiDogur(room, wave), room.waveTarget);
+        return { target, slots: room.wavePatternPlan.slotCount, dogumlar: [...room.enemies.values()].map(ozet) };
       } finally {
         Math.random = original;
       }
     };
     const acik = withClock(1_800_000_000_000, () => kosu(true));
     const kapali = withClock(1_800_000_000_000, () => kosu(false));
-    assert.equal(acik.target, getArenaWaveEnemyCount(wave, 1, 1), `${wave}. dalganin sayisi`);
+    // Sampiyonsuz dalgada hedef paternin orijinal sayisinin kendisi.
+    assert.equal(acik.target, acik.slots, `${wave}. dalganin sayisi`);
     assert.deepEqual(acik, kapali, `${wave}. dalga degisti`);
     assert.ok(acik.dogumlar.every((entry) => entry[6] === false));
   }
@@ -477,7 +502,7 @@ test("sampiyon kurali kapali oda eski davranisi aynen surduruyor (olcum dayanagi
   const { room } = oda();
   room.championsEnabled = false;
   const { dogumlar } = withClock(1_800_000_000_000, () => dalgayiDogur(room, 8));
-  assert.equal(dogumlar.length, getArenaWaveEnemyCount(8, 1, 1));
+  assert.equal(dogumlar.length, room.wavePatternPlan.slotCount);
   assert.ok(dogumlar.every((enemy) => !enemy.champion));
 });
 
@@ -537,15 +562,17 @@ test("iki oyuncu: sampiyonun cani ve kalkani oyuncu carpani x kalinlik", () => {
   room.wave = 8;
   room.planWaveSpawns(8);
   const plan = room.waveChampionPlan;
-  assert.equal(plan.slot, getWaveChampionPlan(8, room.getScaledWaveEnemyCount(8)).slot);
+  assert.equal(plan.slot, getWaveChampionPlan(8, room.wavePatternPlan.slotCount).slot);
   assert.equal(room.getScaledWaveEnemyCount(8), getArenaWaveEnemyCount(8, room.mapScale, 2));
+  assert.equal(room.wavePatternPlan.baseSlotCount, room.getScaledWaveEnemyCount(8), "patern butcesi iki oyunculu sayidan");
   room.spawnEnemy(plan);
   const champion = [...room.enemies.values()].at(-1);
   const definition = getEnemyCombatDefinition(plan.type);
   const multiplayer = 1.45;
   assert.ok(Math.abs(champion.maxHp - getWaveEnemyMaxHp(definition.maxHp, 8, plan.hpMultiple) * multiplayer) < 1e-9);
   assert.equal(champion.maxShield, Math.round(definition.shield * getWaveHpMultiplier(8) * plan.hpMultiple * multiplayer));
-  // Ayni turun normal dusmanina orani yine kalinlik.
+  // Ayni turun normal dusmanina orani yine kalinlik (tur zardan: plan kaldiriliyor).
+  room.wavePatternPlan = undefined;
   withRandom([0.3, 0.5], () => room.spawnEnemy());
   const normal = [...room.enemies.values()].at(-1);
   assert.equal(normal.type, plan.type);
@@ -640,7 +667,7 @@ test("yaratici patlama sampiyonun sirasini gecse de sampiyon bir kez doguyor", (
   room.creativeSetWave(client, { wave: 8 });
   const plan = room.waveChampionPlan;
   const target = room.waveTarget;
-  assert.equal(target, getWaveSpawnCount(8, room.getScaledWaveEnemyCount(8)));
+  assert.equal(target, getWaveSpawnCount(8, room.wavePatternPlan.slotCount));
   room.creativeSpawnEnemies(client, { count: plan.slot + 3 });
   const champions = () => [...room.enemies.values()].filter((enemy) => enemy.champion);
   assert.equal(champions().length, 1, "patlama sampiyonu atladi");

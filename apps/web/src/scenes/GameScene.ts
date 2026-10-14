@@ -322,6 +322,7 @@ import {
 } from "../vfx/counter-surge";
 import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
+import { PlacementRangePreview } from "../vfx/placement-range";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
 import { reportTelemetryError, runTelemetry } from "../telemetry";
 import { assetUrl } from "../asset-url";
@@ -1152,6 +1153,7 @@ export class GameScene extends Phaser.Scene {
   private levelLabels?: WorldLabelPool;
   /** Yalnizlik ve dizilim: surukleme onizlemesi, kalici isaret ve damga verisi. */
   private synergyMarks?: SynergyMarks;
+  private placementRange?: PlacementRangePreview;
   /** Takim arkadasi bildiriminin son ani; ust uste kurulumlar bildirimi bogmasin. */
   private synergyNoticeAt = Number.NEGATIVE_INFINITY;
   /** Sunucunun onayladigi (`tower:spawn`) ama oynatmada henuz cizilmemis kuleler. */
@@ -1298,6 +1300,10 @@ export class GameScene extends Phaser.Scene {
   private cardChoices: CardDefinition[] = [];
   private cardChoicePending = false;
   private cardChoiceTimeout?: number;
+  /** Acik elde kalan ucretsiz yenileme; sunucu `card:rerollState` ile her elden once yaziyor. */
+  private cardRerollsRemaining = 0;
+  /** Yenileme istendi, yeni el bekleniyor: gelen el ayni molanin eli (nisan satiri kalsin). */
+  private cardRerollRequested = false;
   /** Dalga temizlenmesini yakalayan saf kural; dalganin tabanini kurulumda aliyor. */
   private readonly waveClearWatch = new WaveClearWatch();
   /**
@@ -1697,6 +1703,8 @@ export class GameScene extends Phaser.Scene {
     // Isaretler kule govdesinin (12) ve seviye halkasinin (12.6) hemen ustunde,
     // can cubugunun (16) altinda; onizleme hayaletin (28) ustunde.
     this.synergyMarks = new SynergyMarks(this, { glyph: 12.8, preview: 29 });
+    // Menzil halkasi yerlestirme izgarasinin (24) ustunde, hayaletin (28) altinda.
+    this.placementRange = new PlacementRangePreview(this, 26);
     this.synergyNoticeAt = Number.NEGATIVE_INFINITY;
     // Onceki macin bekleyen bag anlari ve infaz hedeflemesi yeni maca tasinmasin.
     this.pendingLinkMoments = [];
@@ -1833,6 +1841,8 @@ export class GameScene extends Phaser.Scene {
       this.levelLabels = undefined;
       this.synergyMarks?.destroy();
       this.synergyMarks = undefined;
+      this.placementRange?.destroy();
+      this.placementRange = undefined;
       this.animatedTowers.clear();
       this.freshTowerSpawns.clear();
       for (const marker of this.upgradeReadyMarkers) marker.destroy();
@@ -2317,6 +2327,17 @@ export class GameScene extends Phaser.Scene {
       cellSize: this.getMapCellSize(),
       bounds: getMapWorldBounds(this.selectedMapData)
     });
+    // Hayaletin menzili, o karede alacagi haliyle (yalnizlik dahil). Ayni
+    // kare ve ayni sahada yeniden cizilmiyor.
+    this.placementRange?.update({
+      definition: this.draggedTowerDefinition,
+      characterId: this.selectedCharacter.id,
+      x: cell.x,
+      y: cell.y,
+      canPlace,
+      map: this.selectedMapData,
+      structures: this.synergyMarks?.getStructures() ?? []
+    });
   }
 
   private finishTowerDrag(pointer: Phaser.Input.Pointer) {
@@ -2356,6 +2377,7 @@ export class GameScene extends Phaser.Scene {
     this.draggedTowerDefinition = undefined;
     this.ignoreMapPointerUntil = performance.now() + 180;
     this.synergyMarks?.clearPreview();
+    this.placementRange?.clear();
     this.placementGrid?.clear().setVisible(false);
     this.placementGhost?.destroy();
     this.placementGhost = undefined;
@@ -2377,6 +2399,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.draggedTowerDefinition = undefined;
     this.synergyMarks?.clearPreview();
+    this.placementRange?.clear();
     this.placementGrid?.clear().setVisible(false);
     this.placementGhost?.destroy();
     this.placementGhost = undefined;
@@ -5898,6 +5921,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("match:victory", (message: MatchResultSummary) => this.handleMatchResult("victory", message));
     room.onMessage("match:defeat", (message: MatchResultSummary) => this.handleMatchResult("defeat", message));
     room.onMessage("card:choices", (cards: CardDefinition[]) => this.showCardChoices(cards));
+    // Elden once gelir; perde aciksa (ret sonrasi) dugme hemen tazelenir.
+    room.onMessage("card:rerollState", (message: { remaining?: number }) => {
+      this.cardRerollsRemaining = Math.max(0, Math.floor(Number(message?.remaining) || 0));
+      this.updateCardRerollButton();
+    });
     room.onMessage("tower:stats", (block: TowerStatsWire) => this.receiveTowerStats(block));
     room.onMessage("tower:preview", (preview: TowerPreview) => {
       const pending = this.pendingPreview;
@@ -5922,6 +5950,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("card:applied", (message: { cardId?: string; towerIds?: string[] }) => this.receiveCardApplied(message));
     room.onMessage("card:rejected", (message: { reason?: string; key?: string }) => {
       // Sunucunun gerekcesi Turkce; anahtari varsa secili dilde, yedek dile bakiyor.
+      this.cardRerollRequested = false;
       this.setCardChoicePending(false, localizeServerText(message.reason, message.key) ?? t("scene.card.rejected"));
     });
     // Atama reddi: istemci tukenmis kaynagi kendisi de reddediyor, buraya
@@ -6424,6 +6453,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.hideArenaHudOverlays();
     this.cardChoicePending = false;
     this.cardChoices = cards;
+    // Yenilenen el ayni molanin eli: nisan satiri yeniden okunmuyor.
+    const rerolled = this.cardRerollRequested;
+    this.cardRerollRequested = false;
     const root = document.querySelector<HTMLElement>("#card-root");
     if (!root) return;
     this.cardChoiceRoot = root;
@@ -6433,8 +6465,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.cardDealStartedAt = performance.now();
       // Dalga molasi: bu dalgada acilan nisan perdenin basliginda bir satir.
       // Ayni el yeniden cizilince satir kaliyor, yeni elde yeniden okunuyor.
-      const moment = getBadgeNoticeMoment({ over: this.matchResultShown, setupPhase: true, enemiesLeft: 0, draftOpen: true });
-      this.cardDraftBadgeNotice = formatBadgeNotice(this.badgeNotices.take(moment));
+      if (!rerolled) {
+        const moment = getBadgeNoticeMoment({ over: this.matchResultShown, setupPhase: true, enemiesLeft: 0, draftOpen: true });
+        this.cardDraftBadgeNotice = formatBadgeNotice(this.badgeNotices.take(moment));
+      }
     }
     const animate = deal && !reducedMotion;
     root.className = "card-draft card-draft--visible";
@@ -6448,8 +6482,17 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
           <span class="card-draft__status" role="status" aria-live="polite"></span>
         </header>
         <div class="card-draft__grid"></div>
+        <div class="card-draft__actions">
+          <button class="card-draft__reroll" type="button" data-card-reroll>
+            <span class="card-draft__reroll-glyph" aria-hidden="true">↻</span>
+            <span class="card-draft__reroll-label">${upper(t("scene.card.reroll"))}</span>
+            <span class="card-draft__reroll-count" aria-hidden="true"></span>
+          </button>
+        </div>
       </section>`;
     this.cardDraftWave = draftWave;
+    root.querySelector<HTMLButtonElement>("[data-card-reroll]")?.addEventListener("click", () => this.requestCardReroll());
+    this.updateCardRerollButton();
     const header = root.querySelector<HTMLElement>("[data-wave-report-slot]");
     if (header) this.mountWaveReportCard(header, animate);
     if (header && this.cardDraftBadgeNotice) {
@@ -6880,6 +6923,36 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
+   * Eli yenile: elde bir kez, ucretsiz. Sunucu yeni eli `card:choices` ile
+   * yolluyor ve perde yeni dagitimla yeniden kuruluyor; ret gelirse dugme
+   * sunucunun sayisina doner. Kartlarla ayni koruma: perde kendiliginden
+   * acildigi icin haritaya yapilan son dokunus eli yenilememeli.
+   */
+  private requestCardReroll() {
+    if (!this.room || this.cardChoicePending || this.cardRerollsRemaining <= 0) return;
+    if (performance.now() < this.cardDealStartedAt + CARD_PICKABLE_AFTER_MS) return;
+    this.cardRerollRequested = true;
+    this.setCardChoicePending(true, t("scene.card.rerolling"));
+    this.room.send("card:reroll");
+    this.cardChoiceTimeout = window.setTimeout(() => {
+      this.cardRerollRequested = false;
+      this.setCardChoicePending(false, t("scene.card.noResponse"));
+    }, 4500);
+  }
+
+  /** Yenile dugmesi: kalan hak, bekleme ve hak bitince kapali. */
+  private updateCardRerollButton() {
+    const button = this.cardChoiceRoot?.querySelector<HTMLButtonElement>("[data-card-reroll]");
+    if (!button) return;
+    const remaining = this.cardRerollsRemaining;
+    button.disabled = remaining <= 0 || this.cardChoicePending;
+    button.classList.toggle("is-spent", remaining <= 0);
+    button.setAttribute("aria-label", t("scene.card.rerollAria", { count: remaining }));
+    const count = button.querySelector<HTMLElement>(".card-draft__reroll-count");
+    if (count) count.textContent = String(remaining);
+  }
+
+  /**
    * Secim damgasi: secilen kart (hedefli kartta secilen kule) 150 ms'de bir
    * kez basiliyor, "SEÇİLDİ" iniyor ve damga sesi caliyor. Istek hemen
    * gidiyor; beklemeyi `receiveCardApplied` yapiyor, yani damga gecikme
@@ -6916,6 +6989,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       statusElement.textContent = status;
       statusElement.classList.toggle("card-draft__status--error", !pending && Boolean(status));
     }
+    this.updateCardRerollButton();
   }
 
   private clearCardChoiceTimeout() {
@@ -6976,6 +7050,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       forecastEnemyCount: forecastVisible ? snapshot.team.waveEnemyCount ?? 0 : 0,
       // Kurulumda `wave` siradaki dalga: adim onu bir onceki kara dalgasiyla kiyasliyor.
       forecastHpStep: forecastVisible ? getHeavyWaveHpStep(snapshot.team.wave) : undefined,
+      // Siradaki dalganin paterni (sunucunun plani): "Sürü", "Zırhlı kol".
+      forecastPattern: forecastVisible ? snapshot.team.wavePattern : undefined,
       airWarning
     };
     if (active) {
@@ -7816,6 +7892,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Ilk goruntu olay degil: katilan oyuncunun ekraninda butun yalnizliklar
     // birden "kuruldu" demesin.
     const synergyAnnouncements = this.synergyMarks?.sync(towers, this.selectedMapData, this.localSessionId, cellSize, this.towersPrimed) ?? [];
+    // Suren suruklemede saha degistiyse (takim arkadasi yanina kurdu) halka
+    // tazelenir; dizi ayniysa hicbir sey yapilmiyor.
+    if (this.draggedTowerDefinition && this.synergyMarks) {
+      this.placementRange?.refresh(this.synergyMarks.getStructures());
+    }
     for (const announcement of synergyAnnouncements) {
       this.showSynergyStamp(announcement);
     }
@@ -7823,7 +7904,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   /**
-   * Yerlesim sinerjisinin tek seferlik damgasi: "Yalnız ×2,25", "Yalnızlık
+   * Yerlesim sinerjisinin tek seferlik damgasi: "Yalnız ×1,5", "Yalnızlık
    * bozuldu", "Dizilim kuruldu", "Dizilim bozuldu".
    *
    * Seviye etiketiyle ayni havuz ve ayni dil: kendi kulen parlak, takim
@@ -10304,7 +10385,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const canUpgrade = Boolean(selectedTower && definition && selectedTower.ownerId === this.localSessionId && selectedTower.level < getTowerMaxLevel(definition)
       && (this.localPlayerSnapshot?.experience ?? 0) >= upgradeCost
       && (this.localPlayerSnapshot?.gold ?? 0) >= upgradeGoldCost);
-    const upgradePriceLabel = `${upgradeCost} XP${upgradeGoldCost > 0 ? ` + ${upgradeGoldCost}g` : ""}`;
+    // Her seviye atlama XP ve altin istiyor; ikisi yan yana (paylasilan `getTowerLevelGoldCost`).
+    const upgradePriceLabel = upgradeGoldCost > 0
+      ? t("scene.upgrade.price", { xp: upgradeCost, gold: upgradeGoldCost })
+      : `${upgradeCost} XP`;
     const canSell = Boolean(selectedTower && selectedTower.ownerId === this.localSessionId);
     // Onarim yalnizca hasarli ve ayakta duran yapilarda anlamli: yikilan yapi
     // geri gelmez, yeniden insa edilir. Bedel sunucudaki formulun aynisi.

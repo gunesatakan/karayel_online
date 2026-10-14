@@ -265,7 +265,8 @@ test("durum, birikim, aura, tetikleyici ve yerleşim sistemleri veriyle tanıml�
   assert.deepEqual(byId["warrior-3"].auras[0], {
     affects: "enemies",
     shape: "circle",
-    radius: 104,
+    // AttackLord menzilleri yariya indi: aura yaricapi taban menzille (52).
+    radius: 52,
     stat: "slow",
     multiplier: 0.9,
     slowByLevel: { level1: 0.1, level10: 0.5 },

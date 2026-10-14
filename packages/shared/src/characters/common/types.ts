@@ -33,7 +33,20 @@ export type TowerStatusEffectDefinition = {
   type: TowerStatusEffectType;
   magnitude: number;
   durationMs: number;
-  stacking?: "none" | "refresh" | "add";
+  /**
+   * `strongest`: ayni etki (`effectKey`) kendisiyle yiginlanmiyor -- her guc
+   * kendi suresiyle tutuluyor ve etkin olanlarin en guclusu gecerli. Zayif
+   * bir uygulama guclu olani ezmiyor, suresini de uzatmiyor. Farkli etkiler
+   * ise carpimla birlesiyor (bkz. `applyTowerStatusEffect`).
+   */
+  stacking?: "none" | "refresh" | "add" | "strongest";
+  /**
+   * Yalnizca `strongest` icin: "ayni etki"nin anahtari. Ayni anahtarli
+   * uygulamalar (ayni kart bircok kuleden) en guclusune iner; farkli
+   * anahtarlilar (Zincirleme Buz + Buz Serpintisi) carpimla birlesir.
+   * Yoksa durum turu (`type`), yani turun butun anahtarsizlari tek etki.
+   */
+  effectKey?: string;
   maxStacks?: number;
   scaling?: "none" | "distance";
   /**

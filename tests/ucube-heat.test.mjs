@@ -88,7 +88,9 @@ test("sürekli dalgada Ucube öteki hasar kuleleri kadar sık ateş ediyor", () 
       }
       shots[definitionId] = count;
     }
-    assert.ok(shots["warrior-6"] >= 15, `Ucube 120 sn'de ${shots["warrior-6"]} atis (eskiden 4)`);
+    // AttackLord menzilleri yariya inince dusman menzilde daha az kaliyor: iki
+    // kule de ~14 atista (eskiden ~20). Taban hatanin olcumunun (4) cok ustunde.
+    assert.ok(shots["warrior-6"] >= 10, `Ucube 120 sn'de ${shots["warrior-6"]} atis (eskiden 4)`);
     assert.ok(shots["warrior-6"] >= shots["warrior-1"] * 0.7, `Ucube ${shots["warrior-6"]}, Takipci ${shots["warrior-1"]}`);
   } finally {
     Date.now = originalNow;

@@ -118,6 +118,9 @@ export const trScene = {
   "scene.card.targetNone": "Bu kartı taşıyabilecek bir kulen yok. Duvarlar ve kaynak binaları savaş kartı alamaz, bir kule en fazla {max} hedefli kart taşır — geri dön ve başka bir kart seç.",
   "scene.card.towerChoiceMeta": "Seviye {level} • {damage} hasar",
   "scene.card.applying": "Kart uygulanıyor…",
+  "scene.card.reroll": "Yenile",
+  "scene.card.rerollAria": "Kartları yenile, kalan hak: {count}",
+  "scene.card.rerolling": "Kartlar yenileniyor…",
   "scene.card.noResponse": "Sunucudan yanıt alınamadı. Tekrar deneyebilirsin.",
   "scene.card.rejected": "Kart seçimi uygulanamadı. Tekrar dene.",
   "scene.card.applied": "{name} alındı",
@@ -184,6 +187,7 @@ export const trScene = {
   "scene.repair.action": "Onar {cost}g",
   "scene.upgrade.max": "Max",
   "scene.upgrade.action": "Gelistir {price}",
+  "scene.upgrade.price": "{xp} XP + {gold}g",
   "scene.upgrade.noTower": "Kule sec",
 
   // ------------------------------------------------------------ Kule paneli notlari
@@ -315,6 +319,9 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.card.targetNone": "None of your towers can hold this card. Walls and resource buildings can't take combat cards, and a tower holds at most {max} targeted cards — go back and pick another card.",
   "scene.card.towerChoiceMeta": "Level {level} • {damage} damage",
   "scene.card.applying": "Applying card…",
+  "scene.card.reroll": "Reroll",
+  "scene.card.rerollAria": "Reroll cards, {count} left",
+  "scene.card.rerolling": "Rerolling cards…",
   "scene.card.noResponse": "No response from the server. You can try again.",
   "scene.card.rejected": "Card choice could not be applied. Try again.",
   "scene.card.applied": "{name} acquired",
@@ -375,6 +382,7 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.repair.action": "Repair {cost}g",
   "scene.upgrade.max": "Max",
   "scene.upgrade.action": "Upgrade {price}",
+  "scene.upgrade.price": "{xp} XP + {gold}g",
   "scene.upgrade.noTower": "Select a tower",
 
   "scene.sheet.mood": "Mood — {zone}: {effect}",

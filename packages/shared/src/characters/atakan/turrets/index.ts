@@ -1,6 +1,9 @@
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
-import { ISOLATION_SLOW_FRACTION_LEVEL_1, ISOLATION_SLOW_FRACTION_LEVEL_10, NON_FIRING_INTERVAL_MS } from "../../../tower-rules.js";
+import { ISOLATION_SLOW_FRACTION_LEVEL_1, ISOLATION_SLOW_FRACTION_LEVEL_10, NON_FIRING_INTERVAL_MS, TRACKING_MARK_DAMAGE_PER_STACK } from "../../../tower-rules.js";
+
+/** Takip isaretinin yuzdesi: yigin sayisi kadar kat (1, 2, 3). */
+const trackingPercent = (stacks: number) => Math.round(TRACKING_MARK_DAMAGE_PER_STACK * stacks * 100);
 
 const color = 0x22c55e;
 
@@ -10,13 +13,13 @@ export const atakanTowers: TowerDefinition[] = ([
     characterId: "warrior",
     name: "Takipçi",
     role: "Hasar ve işaretleme",
-    description: "AttackLord'un takım hasarını açan temel kulesi. Dengeli tek hedef hasarı verir ve vurduğu düşmana Takipte işareti koyar. İşaretli düşman yalnızca AttackLord'dan değil, takımdaki tüm kulelerden daha fazla hasar alır; bu yüzden erken kurulup dalganın önünü işaretlemesi beklenir. Hava hedeflerini de vurabilir.",
+    description: `AttackLord'un takım hasarını açan temel kulesi. Dengeli tek hedef hasarı verir ve vurduğu düşmana Takipte işareti koyar. İşaretli düşman yalnızca AttackLord'dan değil, takımdaki tüm kulelerden %${trackingPercent(1)} fazla hasar alır (5. seviyede %${trackingPercent(2)}, 10. seviyede %${trackingPercent(3)}); bu yüzden erken kurulup dalganın önünü işaretlemesi beklenir. Hava hedeflerini de vurabilir.`,
     classType: "damage",
     damageType: "physical",
     hitType: "projectile",
     cost: 42,
     upgradeCost: 32,
-    range: 112,
+    range: 56,
     damage: 12,
     fireIntervalMs: 720,
     projectileSpeed: 340,
@@ -54,7 +57,7 @@ export const atakanTowers: TowerDefinition[] = ([
     hitType: "aura",
     cost: 58,
     upgradeCost: 42,
-    range: 104,
+    range: 52,
     damage: 0,
     fireIntervalMs: 620,
     projectileSpeed: 260,
@@ -73,7 +76,7 @@ export const atakanTowers: TowerDefinition[] = ([
     hitType: "impact",
     cost: 108,
     upgradeCost: 60,
-    range: 118,
+    range: 59,
     damage: 27,
     fireIntervalMs: 760,
     projectileSpeed: 330,
@@ -92,7 +95,7 @@ export const atakanTowers: TowerDefinition[] = ([
     hitType: "focus",
     cost: 75,
     upgradeCost: 78,
-    range: 134,
+    range: 67,
     damage: 5,
     fireIntervalMs: 160,
     projectileSpeed: 620,
@@ -111,7 +114,7 @@ export const atakanTowers: TowerDefinition[] = ([
     hitType: "impact",
     cost: 240,
     upgradeCost: 115,
-    range: 118,
+    range: 59,
     damage: 13.5,
     fireIntervalMs: 940,
     projectileSpeed: 370,

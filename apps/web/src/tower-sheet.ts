@@ -603,7 +603,9 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       : {
         key: "next",
         label: t("sheet.next"),
-        value: `${formatXp(progress.upgradeXp)} XP${progress.upgradeGold > 0 ? ` + ${progress.upgradeGold}g` : ""}`,
+        value: progress.upgradeGold > 0
+          ? t("sheet.upgradePrice", { xp: formatXp(progress.upgradeXp), gold: progress.upgradeGold })
+          : `${formatXp(progress.upgradeXp)} XP`,
         sub: t("sheet.pool", { xp: formatXp(progress.poolXp), gold: Math.floor(progress.poolGold) }),
         tone: progress.poolXp >= progress.upgradeXp && progress.poolGold >= progress.upgradeGold ? "up" : undefined,
         detail: []

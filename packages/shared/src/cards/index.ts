@@ -428,7 +428,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "nisan-takimi", name: "Nişan Takımı", description: "Tüm kulelerin isabeti +%15, dönüş hızı +%20, mermi hızı +%25.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("nisan-takimi", "accuracy", 0.15), effect("nisan-takimi", "turnRate", 0.2), effect("nisan-takimi", "projectileSpeed", 0.25)] },
   { id: "verimli-namlu", name: "Verimli Yakıt", description: "Tüm kulelerin atış yakıtı tüketimi -%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("verimli-namlu", "shotFuelCost", -0.3)] },
   { id: "uyku-modu", name: "Uyku Modu", description: "Kulelerin çalışma enerjisi tüketimi -%40.", axes: ["economy"], scope: { kind: "global" }, stackable: false, effects: [effect("uyku-modu", "operatingEnergyCost", -0.4)] },
-  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%120.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 1.2)] },
+  { id: "ganimet-payi", name: "Ganimet Payı", description: "Düşman altını +%60.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, effects: [effect("ganimet-payi", "goldGain", 0.6)] },
   { id: "vardiya-duzeni", name: "Vardiya Düzeni", description: "Tüm işçilerin toplama hızı +%25.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("vardiya-duzeni", "workerGatherSpeed", 0.25)] },
   { id: "celik-burun", name: "Çelik Burun", description: "Tüm işçilerin yürüme hızı +%20.", axes: ["economy"], scope: { kind: "global" }, stackable: true, maxStacks: 3, rarity: "common", effects: [effect("celik-burun", "workerSpeed", 0.2)] },
   { id: "lojistik-doktrini", name: "Lojistik Doktrini", description: "Tüm işçilerin toplama hızı +%30, yürüme hızı +%30.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("lojistik-doktrini", "workerGatherSpeed", 0.3), effect("lojistik-doktrini", "workerSpeed", 0.3)] },
@@ -441,7 +441,7 @@ export const cardCatalog: CardDefinition[] = [
   { id: "zirh-kirma", name: "Zırh Kırma", description: "Büyütme kuleleri vuruşta 3 zırh azaltır.", axes: ["amplify"], scope: { kind: "tagged", axes: ["amplify"] }, stackable: false, effects: [effect("zirh-kirma", "armorBreak", 3)] },
   { id: "takinti", name: "Takıntı", description: "Bir kule hedefini 3 saniye daha uzun korur ama menzili -%12 olur.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, effects: [effect("takinti", "targetLockMs", 3000, "tower"), effect("takinti", "range", -0.12, "tower")] },
   { id: "son-atis", name: "Son Atış", description: "Mühimmatı biten kulenin son atışı 3x hasar verir.", axes: ["dps"], scope: { kind: "targeted" }, stackable: false, rarity: "rare", effects: [effect("son-atis", "ammoEmptyDamage", 2, "tower")] },
-  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%280 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 2.8), effect("kanli-kazanc", "towerHealth", -0.2)] },
+  { id: "kanli-kazanc", name: "Kanlı Kazanç", description: "Düşman altını +%140 ama tüm kulelerin canı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kanli-kazanc", "goldGain", 1.4), effect("kanli-kazanc", "towerHealth", -0.2)] },
   { id: "ek-yuva-plani", name: "Ek Yuva Planı", description: "Kule kapasitesi +1.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("ek-yuva-plani", "towerCapacity", 1)] },
 
   // --- Kimlik kartlari ---
@@ -614,7 +614,7 @@ export const cardCatalog: CardDefinition[] = [
   // geometrisi ekler. Sunucuda karsilik gelen ozel bir dal yoktur.
   { id: "sabir", name: "Sabır", description: "Aynı hedefe her vuruşta hasar +%6; hedef değişince sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { stacks: [{ id: "card-sabir", trigger: "sameTarget", stat: "damage", perStack: 0.06, max: 10, resetOn: "targetChange" }] } },
   { id: "isinma-turu", name: "Isınma Turu", description: "Kesintisiz ateş edilen her saniye atış hızı +%3; hedefsiz kalınca sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { stacks: [{ id: "card-isinma-turu", trigger: "activeSecond", stat: "fireRate", perStack: 0.03, max: 10, resetOn: "noTarget" }] } },
-  { id: "zincirleme-buz", name: "Zincirleme Buz", description: "Tüm kulelerin vuruşları 2 saniye %15 yavaşlatır.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { statusEffects: [{ type: "chill", magnitude: 0.15, durationMs: 2000, stacking: "refresh" }] } },
+  { id: "zincirleme-buz", name: "Zincirleme Buz", description: "Tüm kulelerin vuruşları 2 saniye %15 yavaşlatır.", axes: ["cc"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { statusEffects: [{ type: "chill", magnitude: 0.15, durationMs: 2000, stacking: "strongest", effectKey: "card:zincirleme-buz" }] } },
   { id: "kanatan-namlu", name: "Kanatan Namlu", description: "Tüm kulelerin vuruşları 3 saniye boyunca saniyede %1 kanatır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], grants: { statusEffects: [{ type: "bleed", magnitude: 0.01, durationMs: 3000, stacking: "refresh" }] } },
   { id: "delici-cekirdek-plani", name: "Delici Çekirdek", description: "Tek hedef ve hat saldıran kuleler 1 düşman daha deler.", axes: ["dps"], scope: { kind: "tagged", shapes: ["single", "line"] }, stackable: false, rarity: "rare", effects: [], grants: { attack: { pierceCount: 1 } } },
   { id: "ikinci-bicak", name: "İkinci Bıçak", description: "Yörünge kulelerine 1 bıçak ekler, yakıt tüketimi +%40.", axes: ["dps"], scope: { kind: "tagged", shapes: ["orbit"] }, stackable: false, rarity: "rare", effects: [effect("ikinci-bicak", "shotFuelCost", 0.4)], grants: { attack: { bladeCount: 1 } } },
@@ -696,7 +696,7 @@ export const cardCatalog: CardDefinition[] = [
   // tavanli olduklari icin biriktikce kendini buyuten bir dongu kurmuyorlar.
   // Hepsi oyuncunun kendi kesesine: co-op'ta herkes kendi kartinin karsiligini
   // aliyor, takim arkadasinin payi degismiyor.
-  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%200 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 2), effect("parali-asker", "experienceGain", -0.2)] },
+  { id: "parali-asker", name: "Paralı Asker", description: "Düşman altını +%100 ama tecrübe kazancı -%20.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("parali-asker", "goldGain", 1), effect("parali-asker", "experienceGain", -0.2)] },
   { id: "muharebe-odenegi", name: "Muharebe Ödeneği", description: "Her dalga sonunda +160 altın.", axes: ["economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("muharebe-odenegi", "waveIncome", 160)] },
   { id: "temiz-sicil", name: "Temiz Sicil", description: "Sızıntısız biten her dalga sonunda +360 altın.", axes: ["economy", "barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [], unlocks: ["gold:cleanWave"] },
   // Ikinci tur altin kartlari: esyalarin bakmadigi olaylar -- dalga sonunda
@@ -722,12 +722,13 @@ export const cardCatalog: CardDefinition[] = [
   // doydugu 1,0'in ustundeki isabet de bosa gitmiyor. Altin cevrimi hasar veriyor,
   // altin degil -- altini buyuten bir altin karti co-op'ta kendini besleyen
   // bir dongu olurdu. Altin kartlari ve esyalari dort katina cikinca altin
-  // cevriminin orani dortte birine indi (her %40'i +%3): hasar egrisi ayni
-  // kaldi, kartin kendi +%120'si yine +%9 veriyor, tavan +%400 altinda.
+  // cevriminin orani dortte birine indi (her %40'i +%3). Sonra altin
+  // kartlari yariya indi ve oran yine ikiye katlandi (her %20'si +%3): kartin
+  // kendi +%60'i yine +%9 veriyor, tavan +%200 altinda.
   { id: "tork-aktarimi", name: "Tork Aktarımı", description: "Nişan alan kulelerin dönüş hızı +%50. Dönüş hızı bonusunun her %10'u atış hızına +%2 ekler; en fazla +%30.", axes: ["dps"], scope: { kind: "tagged", aims: true }, stackable: false, rarity: "epic", effects: [effect("tork-aktarimi", "turnRate", 0.5)], conversions: [{ from: "turnRate", to: "fireRate", ratio: 0.2, cap: 0.3 }] },
   { id: "balistik-hesaplayici", name: "Balistik Hesaplayıcı", description: "Nişan alan mermi ve çarpma kulelerinin isabeti +%50. %30'u aşan isabet bonusunun her %10'u hasara +%5 ekler; en fazla +%50.", axes: ["dps"], scope: { kind: "tagged", alongFacing: true }, stackable: false, rarity: "epic", effects: [effect("balistik-hesaplayici", "accuracy", 0.5)], conversions: [{ from: "accuracy", to: "damage", threshold: 0.3, ratio: 0.5, cap: 0.5 }] },
   { id: "kinetik-erim", name: "Kinetik Erim", description: "Mermi atan kulelerin mermi hızı +%50. Mermi hızı bonusunun her %10'u menzile +%2 ekler; en fazla +%20.", axes: ["dps"], scope: { kind: "tagged", projectiles: true }, stackable: false, rarity: "epic", effects: [effect("kinetik-erim", "projectileSpeed", 0.5)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.2, cap: 0.2 }] },
-  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%120. Düşman altını bonusunun her %40'ı tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 1.2)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.075, cap: 0.3 }] }
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15, cap: 0.3 }] }
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));
@@ -1008,14 +1009,22 @@ export function isConversionCardReady(card: CardDefinition, sources: CardDrawSou
  * esyalardan zaten gelen kart (`isCardUnlockAlreadyOwned`). Ikisi de
  * verilmezse kural uygulanmiyor (eski cagiranlar, simulator).
  */
-export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; marksAvailable?: boolean; sourceBonuses?: CardDrawSourceBonuses; ownedUnlocks?: CardDrawOwnedUnlocks; random?: () => number }) {
+/*
+ * `excludeCardIds` (kart yenileme): az once gosterilen kartlar once disarida
+ * kaliyor; havuz eli dolduramazsa eksik kalan yer onlardan, ayni kurallarla.
+ */
+export function drawCards(options: { count?: number; preferredAxes: TowerAxis[]; towers: CardTowerProfile[]; ownedCardIds: string[]; marksAvailable?: boolean; sourceBonuses?: CardDrawSourceBonuses; ownedUnlocks?: CardDrawOwnedUnlocks; random?: () => number; excludeCardIds?: readonly string[] }) {
   const count = options.count ?? 3;
   const random = options.random ?? Math.random;
   const ownedCounts = new Map<string, number>();
   for (const id of options.ownedCardIds) ownedCounts.set(id, (ownedCounts.get(id) ?? 0) + 1);
-  const pool = cardCatalog.filter((card) => card.stackable ? (ownedCounts.get(card.id) ?? 0) < (card.maxStacks ?? Infinity) : !ownedCounts.has(card.id));
+  const available = cardCatalog.filter((card) => card.stackable ? (ownedCounts.get(card.id) ?? 0) < (card.maxStacks ?? Infinity) : !ownedCounts.has(card.id));
+  const excluded = new Set(options.excludeCardIds ?? []);
+  const pool = excluded.size > 0 ? available.filter((card) => !excluded.has(card.id)) : available;
+  const reserve = excluded.size > 0 ? available.filter((card) => excluded.has(card.id)) : [];
   const result: CardDefinition[] = [];
-  while (result.length < count && pool.length > 0) {
+  while (result.length < count && (pool.length > 0 || reserve.length > 0)) {
+    if (pool.length === 0) pool.push(...reserve.splice(0));
     const weights = pool.map((card) => {
       const axisWeight = card.axes.some((axis) => options.preferredAxes.slice(0, 2).includes(axis)) ? 2 : 1;
       const deadWeight = (card.scope.kind === "tagged" && !options.towers.some((tower) => cardAppliesToTower(card, tower)))

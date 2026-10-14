@@ -128,6 +128,17 @@ export type CounterSurgeBand = {
   warn: boolean;
   /** Capraz serit: cizim harita dikdortgenine kirpiliyor. */
   diagonal: boolean;
+  /**
+   * Seridin haritaya girdigi yol (dunya birimi), `enterA` hattinda. Ana
+   * kosegenden kaydirilan capraz seritte 0'dan buyuk: uyari cubugu ve isaret
+   * noktasi oradan. Eksene paralel seritte hep 0.
+   */
+  enter: number;
+  /**
+   * Girisin olculdugu hat (genislik ekseninde, 0..width): orta hat; orta hat
+   * haritayi hic kesmiyorsa (koseye yaslanan serit) haritaya en yakin hat.
+   */
+  enterA: number;
   minX: number;
   minY: number;
   maxX: number;
@@ -139,8 +150,43 @@ export type CounterSurgeBand = {
 export function createCounterSurgeBand(): CounterSurgeBand {
   return {
     id: 0, kind: "band", travel: "down", baseX: 0, baseY: 0, dirX: 0, dirY: 1, axX: 1, axY: 0,
-    length: 0, width: 0, cells: 0, front: 0, progress: 0, warn: false, diagonal: false, minX: 0, minY: 0, maxX: 0, maxY: 0
+    length: 0, width: 0, cells: 0, front: 0, progress: 0, warn: false, diagonal: false, enter: 0, enterA: 0, minX: 0, minY: 0, maxX: 0, maxY: 0
   };
+}
+
+/**
+ * Giris hatti: haritanin merkezine genislik ekseninde en yakin hat, seride
+ * kirpilmis. Serit haritaya degiyorsa bu hat haritayi kesiyor (dikdortgen
+ * dis bukey); orta hat haritadaysa orta hat.
+ */
+function getBandEnterLane(band: CounterSurgeBand) {
+  const centreX = (band.minX + band.maxX) / 2;
+  const centreY = (band.minY + band.maxY) / 2;
+  const a = (centreX - band.baseX) * band.axX + (centreY - band.baseY) * band.axY;
+  const half = band.width / 2;
+  // Orta hat haritayi kesiyorsa o (ana kosegende kose: eski cizim).
+  return getBandEnterAlong(band, half) !== undefined ? half : Math.max(0, Math.min(band.width, a));
+}
+
+/**
+ * `a` hattinin harita dikdortgenine girdigi yol (Liang-Barsky); hat haritayi
+ * hic kesmiyorsa `undefined`.
+ */
+function getBandEnterAlong(band: CounterSurgeBand, a: number) {
+  const x0 = band.baseX + band.axX * a;
+  const y0 = band.baseY + band.axY * a;
+  let t0 = 0;
+  let t1 = band.length;
+  const step = (p: number, q: number) => {
+    if (p === 0) return q >= 0;
+    const r = q / p;
+    if (p < 0) t0 = Math.max(t0, r);
+    else t1 = Math.min(t1, r);
+    return t0 <= t1;
+  };
+  if (!step(-band.dirX, x0 - band.minX) || !step(band.dirX, band.maxX - x0)
+    || !step(-band.dirY, y0 - band.minY) || !step(band.dirY, band.maxY - y0)) return undefined;
+  return t0;
 }
 
 /** Cesidin yolu ile tel yonunun uyumu: bozuk ya da celisen yon cesidin varsayilanina doner. */
@@ -194,6 +240,8 @@ export function getCounterSurgeBand(
   band.minY = origin.y;
   band.maxX = origin.x + mapCols * gridSize;
   band.maxY = origin.y + mapRows * gridSize;
+  band.enterA = band.diagonal ? getBandEnterLane(band) : band.width / 2;
+  band.enter = band.diagonal ? getBandEnterAlong(band, band.enterA) ?? 0 : 0;
   // Kesik yalnizca kalkan seridi durdurduysa telde: yoksa dizi hic kurulmuyor.
   const cuts = warn || surge.cut === undefined ? undefined : decodeSurgeCuts(surge.cut, cells);
   band.segments = cuts && cuts.length > 0
@@ -215,9 +263,13 @@ export function getSurgeBandPoint(band: CounterSurgeBand, a: number, s: number) 
   return { x: band.baseX + band.axX * a + band.dirX * s, y: band.baseY + band.axY * a + band.dirY * s };
 }
 
-/** Uyarinin isaret noktasi: giris kenarinin ortasi, haritanin icinde. */
+/**
+ * Uyarinin isaret noktasi: giris kenarinin ortasi, haritanin icinde. Capraz
+ * seritte orta hattin haritaya girdigi yerden (kaydirilmis serit koseden
+ * degil bir kenardan giriyor).
+ */
 export function getCounterSurgeAlertPoint(band: CounterSurgeBand, gridSize: number) {
-  const point = getSurgeBandPoint(band, band.width / 2, band.diagonal ? gridSize * 2 : gridSize * 0.5);
+  const point = getSurgeBandPoint(band, band.enterA, band.diagonal ? band.enter + gridSize * 2 : gridSize * 0.5);
   return {
     x: Math.max(band.minX + gridSize * 0.5, Math.min(band.maxX - gridSize * 0.5, point.x)),
     y: Math.max(band.minY + gridSize * 0.5, Math.min(band.maxY - gridSize * 0.5, point.y))
@@ -639,7 +691,8 @@ function drawTelegraph(
   fillBandRect(fill, band, 0, band.width, sMin, end);
   // Kesik yan sinirlar bastan sona.
   drawRails(edge, band, style, sMin, sMin, gridSize, { now, reducedMotion, lod });
-  const entry = band.diagonal ? gridSize * 1.6 : 0;
+  // Capraz seritte giris cubugu orta hattin haritaya girdigi yerden (ana kosegende kose).
+  const entry = band.diagonal ? band.enter + gridSize * 1.6 : 0;
   // Giris kenari: yogun dolgu ve agir bar.
   fill.fillStyle(accent, 0.08 + 0.12 * pulse);
   fillBandRect(fill, band, 0, band.width, Math.max(sMin, entry - gridSize * 0.2), entry + gridSize * 1.2);
@@ -656,8 +709,8 @@ function drawTelegraph(
     edge.lineStyle(1, style.edge, 0.3 * pulse);
     bandLine(edge, band, band.width / 2, entry, band.width / 2, end);
   }
-  if (band.diagonal) {
-    // Kalkis kosesi: haritanin iki kenarinda koseli ayrac.
+  if (band.diagonal && band.enter < gridSize * 0.5) {
+    // Kalkis kosesi: haritanin iki kenarinda koseli ayrac (yalnizca koseden giren serit).
     const cornerX = band.travel === "downRight" ? band.minX : band.maxX;
     const sign = band.travel === "downRight" ? 1 : -1;
     const arm = gridSize * 2.2;

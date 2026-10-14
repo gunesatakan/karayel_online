@@ -11,7 +11,7 @@
  * kendi kule modelini, istemci anlik goruntudeki kuleleri katalog tanimiyla
  * eslestirip veriyor.
  */
-import { ATAKAN_ISOLATION_MULTIPLIER } from "../balance/index.js";
+import { ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER, ATAKAN_ISOLATION_MULTIPLIER } from "../balance/index.js";
 import { countsAsTower, occupiesTowerSlot } from "../characters/index.js";
 import type { TowerDefinition } from "../characters/common/types.js";
 import { lt, ltFixed } from "../i18n/index.js";
@@ -129,11 +129,12 @@ export function getAtakanIsolationMultiplier(
 /**
  * Yalnizligin DPS'e toplam etkisi.
  *
- * Carpan hasari carpiyor ve atis araligini boluyor; ikisi birlikte karesi.
- * Onizleme "x1,5" yazsaydi oyuncu odulun yarisini gorurdu.
+ * Hasar carpani ile atis hizi carpaninin carpimi. Atis hizi carpani bugun 1
+ * (yalnizlik yalnizca hasar ve menzil veriyor), yani DPS kazanci x1,5; atis
+ * hizi bonusu geri gelirse onizleme ve pay kendiliginden ona uyar.
  */
 export function getAtakanIsolationDpsMultiplier() {
-  return ATAKAN_ISOLATION_MULTIPLIER * ATAKAN_ISOLATION_MULTIPLIER;
+  return ATAKAN_ISOLATION_MULTIPLIER * ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -596,9 +597,9 @@ export function estimateSynergyShare(dealt: number, dpsMultiplier: number) {
 
 /**
  * Yalnizligin bir vurustaki payi. `isolated` vurus anindaki durum: bonus o an
- * kapaliysa pay yok. Hasar ve atis hizi eksenleri birlikte sayiliyor: atis
- * hizi carpanini atlayan bir ritim artik yok (Debug Lazer'in asiri yukleme
- * kirisi de normal araligiyla vuruyor).
+ * kapaliysa pay yok. Hasar ve atis hizi eksenleri birlikte sayiliyor (atis
+ * hizi ekseni bugun 1): atis hizi carpanini atlayan bir ritim yok (Debug
+ * Lazer'in asiri yukleme kirisi de normal araligiyla vuruyor).
  */
 export function getAtakanIsolationShare(dealt: number, isolated: boolean) {
   if (!isolated) return 0;

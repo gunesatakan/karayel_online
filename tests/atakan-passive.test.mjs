@@ -1,21 +1,19 @@
 /**
  * Atakan'in yalnizlik pasifi.
  *
- * Tek sayi, uc eksen: menzil ve hasar carpanla carpilir, atis araligi carpana
- * bolunur. Testler once o **tek**ligi tutuyor, sonra sayinin kendisini.
+ * Menzil ve hasar ayni carpanla (x1,5) carpilir; atis hizi ekseni ayri bir
+ * sabitte ve bugun 1 (atis hizi bonusu yok). Eskiden aralik da carpana
+ * boluniyordu ve yalniz kule x2,25 DPS aliyordu; simdi x1,5.
  *
- * Ayrilik gecmiste yasandi: hasar 1,12 ile, aralik 0,9 ile carpiliyordu ve
- * ikisi birbirini tutmuyordu (1/0,9 = 1,111). Iki ayri sabit, birbirinden
- * habersiz ayarlanmis. Bu yuzden testler sayiyi elle yazmiyor, sabitten
- * okuyor -- ama uc eksenin **ayni** sabitten geldigini dogruluyor.
+ * Testler sayiyi elle yazmiyor, sabitlerden okuyor -- ama iki eksenin **ayni**
+ * sabitten geldigini ve atis araliginin degismedigini dogruluyor.
  *
  * Bilesik sonuc ayrica olculuyor: bir eksen sessizce degistirilirse DPS carpani
- * kareyi tutmaz ve test duser. Yalnizca eksenlere teker teker baksaydi, ikisini
- * birden bozan bir degisiklik gecerdi.
+ * tutmaz ve test duser.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATAKAN_ISOLATION_MULTIPLIER, getMapGridSize } from "../packages/shared/dist/index.js";
+import { ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER, ATAKAN_ISOLATION_MULTIPLIER, getAtakanIsolationDpsMultiplier, getMapGridSize } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -62,7 +60,7 @@ function bitisigeKoy(room, kule, definitionId) {
   return undefined;
 }
 
-test("yalnızlık üç ekseni de aynı tek sayıdan alır", () => {
+test("yalnızlık menzil ve hasarı aynı sayıdan alır, atış hızına dokunmaz", () => {
   for (const id of ATIS_KULELERI) {
     const room = oda();
     const kule = kur(room, id);
@@ -81,18 +79,21 @@ test("yalnızlık üç ekseni de aynı tek sayıdan alır", () => {
       Math.abs(yalniz.hasar / komsulu.hasar - ATAKAN_ISOLATION_MULTIPLIER) < 1e-9,
       `${id}: hasar x${yalniz.hasar / komsulu.hasar}`
     );
-    // Aralik ters yonde: 1,5 kat hizli demek, 1,5 kat uzun degil.
+    // Atis hizi bonusu yok: aralik ayni kaliyor.
+    assert.equal(ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER, 1);
     assert.ok(
-      Math.abs(yalniz.aralik / komsulu.aralik - 1 / ATAKAN_ISOLATION_MULTIPLIER) < 1e-9,
+      Math.abs(yalniz.aralik / komsulu.aralik - 1) < 1e-9,
       `${id}: aralik x${yalniz.aralik / komsulu.aralik}`
     );
   }
 });
 
-test("bileşik kazanç carpanın karesi kadar DPS", () => {
-  // Hasar ve hiz carpimdan geciyor; atis hizi kazancini geri alan bir hasar
-  // telafisi yok. Tek eksen sessizce degisirse bu esitlik bozulur.
-  const beklenen = ATAKAN_ISOLATION_MULTIPLIER * ATAKAN_ISOLATION_MULTIPLIER;
+test("bileşik kazanç x1,5 DPS: hasar çarpanı kadar", () => {
+  // Hasar ve hiz carpimdan geciyor; hiz ekseni 1. Tek eksen sessizce
+  // degisirse bu esitlik bozulur.
+  const beklenen = ATAKAN_ISOLATION_MULTIPLIER * ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER;
+  assert.equal(beklenen, 1.5);
+  assert.equal(getAtakanIsolationDpsMultiplier(), beklenen);
   for (const id of ATIS_KULELERI) {
     const room = oda();
     const kule = kur(room, id);

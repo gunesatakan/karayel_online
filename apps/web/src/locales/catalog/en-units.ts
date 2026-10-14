@@ -2,8 +2,12 @@ import {
   ISOLATION_SLOW_FRACTION_LEVEL_1,
   ISOLATION_SLOW_FRACTION_LEVEL_10,
   KIN_SLOW_FAR_FRACTION,
+  TRACKING_MARK_DAMAGE_PER_STACK,
   getCriticalSlowFraction
 } from "@karayel/shared";
+
+/** Takip isaretinin yuzdesi; Turkce katalogla ayni hesap. */
+const trackingPercent = (stacks: number) => Math.round(TRACKING_MARK_DAMAGE_PER_STACK * stacks * 100);
 
 /**
  * Kulelerin, operatorlerin, becerilerin ve asamalarin Ingilizce metinleri
@@ -21,7 +25,7 @@ export const enTowers: Readonly<Record<string, { name: string; role: string; des
   "warrior-1": {
     name: "Tracker",
     role: "Damage and marking",
-    description: "AttackLord's core tower that unlocks team damage. Deals balanced single-target damage and puts a Tracked mark on the enemy it hits. A marked enemy takes more damage not only from AttackLord but from every tower on the team, so it is meant to be built early to mark the front of the wave. Can also hit air targets."
+    description: `AttackLord's core tower that unlocks team damage. Deals balanced single-target damage and puts a Tracked mark on the enemy it hits. A marked enemy takes ${trackingPercent(1)}% more damage not only from AttackLord but from every tower on the team (${trackingPercent(2)}% at level 5, ${trackingPercent(3)}% at level 10), so it is meant to be built early to mark the front of the wave. Can also hit air targets.`
   },
   "warrior-2": {
     name: "Server",
@@ -189,7 +193,7 @@ export const enCharacters: Readonly<Record<string, { role: string; theme?: strin
     role: "Modular Strategist",
     theme: "A synergy game built on isolating, marking and linking tower placements.",
     summary: "Its towers are not strong one by one; its power comes from placement. Its passive makes towers standing alone work more efficiently, enemies marked by Tracker take more damage from the whole team, and Server links two towers to share their range and cooling, learning from their kills to strengthen them against each enemy type. A well-built modular line multiplies raw power.",
-    passive: "Solitary Productivity: If all eight tiles around it are empty, an AttackLord tower works far more efficiently: range x1.5, damage x1.5, fire interval x0.67 — x2.25 DPS in total. Solitude is measured by tower adjacency: any tower on an adjacent tile breaks it, regardless of whose tower it is or whether it is a Server. Walls do not break it; a wall is not a tower, and walling a tower in does not turn the passive off. Server itself does not get this bonus. Rewards spreading towers along the line instead of stacking them in one spot.",
+    passive: "Solitary Productivity: If all eight tiles around it are empty, an AttackLord tower works more efficiently: range x1.5, damage x1.5, fire rate unchanged — x1.5 DPS in total. Solitude is measured by tower adjacency: any tower on an adjacent tile breaks it, regardless of whose tower it is or whether it is a Server. Walls do not break it; a wall is not a tower, and walling a tower in does not turn the passive off. Server itself does not get this bonus. Rewards spreading towers along the line instead of stacking them in one spot.",
     ultimate: "Full Automation: On press, choose Attack or Repair mode and the energy is spent at once. Every AttackLord tower launches a mini drone. In Attack mode the drone goes to the nearest enemy and deals 110 damage — enough to one-shot the toughest enemy of the first wave; a tower with no enemy in range launches no drone. In Repair mode each drone restores 3 health to the nexus. Damage does not scale with waves: to grow it you must upgrade ultimate power with gold, and each tier doubles the damage. In return, AttackLord's ultimate bar fills 3 times slower, and after the drones launch every AttackLord tower stays Exhausted for 3 seconds, meaning it cannot fire."
   },
   archer: {

@@ -36,6 +36,7 @@ export const SERVER_TEXT = {
   "card.noPendingChoice": "Bekleyen kart seçimi bulunamadı. Bağlantı yenileniyor olabilir.",
   "card.invalidChoice": "Bu kart artık geçerli bir seçenek değil.",
   "card.towerCannotTake": "Seçilen kule bu kartı alamıyor. Başka bir kule seç.",
+  "card.rerollUsed": "Bu seçimde yenileme hakkın kalmadı.",
   // `worker:rejected`
   "worker.nodeDepleted": "Bu kaynak tükendi. Başka bir kaynak seç.",
   // `tower:preview` redleri (`errorKey`)

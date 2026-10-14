@@ -186,6 +186,7 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.next": "Next level",
   "sheet.maxLevel": "Max level",
   "sheet.pool": "pool {xp} XP · {gold}g",
+  "sheet.upgradePrice": "{xp} XP + {gold}g",
   "sheet.refund.undo": "Build refund",
   "sheet.refund.sell": "Sell value",
   "sheet.totalDamage": "Total damage",

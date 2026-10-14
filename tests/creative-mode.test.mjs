@@ -215,8 +215,9 @@ test("dalga numarasi yazilir ve dusman gucu onunla gelir", () => {
   assert.equal(room.wave, 15);
   assert.equal(room.waveSpawned, 0);
   // Hedef gercekten dogacak sayi: 15. dalganin sampiyonu birkac dogumun
-  // yerine geciyor ve bir dusman sayiliyor.
-  assert.equal(room.waveTarget, getWaveSpawnCount(15, room.getScaledWaveEnemyCount(15)));
+  // yerine geciyor ve bir dusman sayiliyor. Orijinal sayi dalga paterninden.
+  assert.equal(room.wavePatternPlan.wave, 15);
+  assert.equal(room.waveTarget, getWaveSpawnCount(15, room.wavePatternPlan.slotCount));
 
   // Guc dalgadan turedigi icin ayni tur, 1. dalgada belirgin sekilde zayif
   // olmali. Tur rastgele seciliyor, o yuzden karsilastirma tur basina.

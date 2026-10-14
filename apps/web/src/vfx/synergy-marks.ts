@@ -236,6 +236,14 @@ export class SynergyMarks {
     this.hidePreview();
   }
 
+  /**
+   * Son anlik goruntunun yapilari. Dizi yalnizca saha degisince yenileniyor:
+   * kimligi degismediyse cagiran (menzil onizlemesi) yeniden hesaplamiyor.
+   */
+  getStructures(): readonly SceneSynergyStructure[] {
+    return this.structures;
+  }
+
   /** Yeni oda ya da harita: eski fotograf yeni sahada olay uretmesin. */
   reset() {
     this.structureKey = "";

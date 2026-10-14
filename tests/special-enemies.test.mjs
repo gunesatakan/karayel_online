@@ -916,7 +916,8 @@ test("2. aşamadan itibaren özel düşmanlar dalganın içinde doğuyor ve say�
       assert.ok(spawned.length - specials.length >= 1, "dalga yalnizca ozel dusman");
       assert.equal(spawned[0].special, undefined, `${stage}/${wave}: ilk dogum ozel dusman`);
       const normals = spawned.filter((enemy) => !enemy.special && !enemy.champion).length;
-      assert.ok(normals >= Math.ceil(room.getScaledWaveEnemyCount(wave) * SPECIAL_MIN_NORMAL_SHARE), `${stage}/${wave}: normal dogum ${normals}`);
+      // Pay dalga paterninin orijinal sayisindan (zirhli kolda bugunkunden az).
+      assert.ok(normals >= Math.ceil(room.wavePatternPlan.slotCount * SPECIAL_MIN_NORMAL_SHARE), `${stage}/${wave}: normal dogum ${normals}`);
     }
   }
 });

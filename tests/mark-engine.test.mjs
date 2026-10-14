@@ -49,9 +49,9 @@ test("İşaretleme Ağı: işaretsiz düşman bonus almaz, işaretli düşman +%
   assert.ok(Math.abs(hit({ withCard: true, mark: undefined }) - 100) < 1e-6, "isaretsiz dusmana kart bonusu islendi");
   assert.ok(Math.abs(hit({ withCard: false, mark: "test" }) - 100) < 1e-6);
   assert.ok(Math.abs(hit({ withCard: true, mark: "test" }) - 115) < 1e-6, "isaretli dusmana +%15 islemedi");
-  // Takip isaretinin kendi +%20'si ve kartin +%15'i toplanir.
-  assert.ok(Math.abs(hit({ withCard: false, mark: "tracking" }) - 120) < 1e-6);
-  assert.ok(Math.abs(hit({ withCard: true, mark: "tracking" }) - 135) < 1e-6);
+  // Takip isaretinin kendi +%30'u (1. seviye, tek yigin) ve kartin +%15'i toplanir.
+  assert.ok(Math.abs(hit({ withCard: false, mark: "tracking" }) - 130) < 1e-6);
+  assert.ok(Math.abs(hit({ withCard: true, mark: "tracking" }) - 145) < 1e-6);
 });
 
 test("izci kulesi kendi takip işaretinden katkı almaz ama kart bonusunu alır", () => {

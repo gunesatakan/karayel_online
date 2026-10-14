@@ -190,35 +190,35 @@ test("oteki kulelerin yavaslatmasi degismedi: duz 0,48", () => {
   yakin(getTowerHitSlowFraction(tower.definition, 10), 0.52, "kodeks");
 });
 
-test("ust uste binen yavaslatmalarda en guclusu kazaniyor", () => {
+test("iki Izolasyon ayni etki: en guclusu sayiliyor; baska bir etki carpiliyor", () => {
   const room = oda();
   const zayif = kur(room, "warrior-3", 2);
   const enemy = dusman(room);
   vur(room, zayif, enemy);
   yakin(room.getEnemySlowSpeedMultiplier(enemy, Date.now()), 1 - getIsolationSlowFraction(2), "tek kule");
 
-  // Ikinci, daha guclu bir Izolasyon (ayri kule, ayri kayit).
+  // Ikinci, daha guclu bir Izolasyon (ayri kule, ayri kayit, ayni etki).
   const guclu = kur(room, "warrior-3", 9);
   assert.notEqual(guclu.id, zayif.id);
   vur(room, guclu, enemy);
   vur(room, zayif, enemy);
-  yakin(room.getEnemySlowSpeedMultiplier(enemy, Date.now()), 1 - getIsolationSlowFraction(9), "guclu kazanmadi");
+  yakin(room.getEnemySlowSpeedMultiplier(enemy, Date.now()), 1 - getIsolationSlowFraction(9), "guclu kazanmadi ya da ikisi carpildi");
 
-  // Duz bir yavaslatma (isci mermisi, ulti) Izolasyon L9'dan guclu: o kazanir.
+  // Duz bir yavaslatma (isci mermisi, ulti) farkli etki: carpimla biniyor.
   room.extendFlatSlow(enemy, Date.now() + 2000, Date.now());
-  yakin(room.getEnemySlowSpeedMultiplier(enemy, Date.now()), 0.48, "duz yavaslatma ezildi");
+  yakin(room.getEnemySlowSpeedMultiplier(enemy, Date.now()), 0.48 * (1 - getIsolationSlowFraction(9)), "duz yavaslatma carpilmadi");
 });
 
-test("duz yavaslatmayi zayif bir Izolasyon ezemiyor", () => {
-  // Eski davranisin korunmasi: duz yavaslatma aktifken %10'luk bir vurus
-  // hizi 0,48'den 0,9'a cikarmamali.
+test("duz yavaslatmayi zayif bir Izolasyon ezemiyor, ustune carpiliyor", () => {
+  // Duz yavaslatma aktifken %10'luk bir vurus hizi 0,48'den 0,9'a
+  // cikarmamali; farkli etki oldugu icin 0,48 x 0,9.
   const room = oda();
   const tower = kur(room, "warrior-3", 1);
   const enemy = dusman(room);
   const now = Date.now();
   room.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.5, durationMs: 5000, stacking: "refresh" }, now);
   vur(room, tower, enemy);
-  yakin(room.getEnemySlowSpeedMultiplier(enemy, now), 0.48, "duz yavaslatma");
+  yakin(room.getEnemySlowSpeedMultiplier(enemy, now), 0.48 * 0.9, "duz yavaslatma");
 });
 
 // --------------------------------------------------------------- Buz Kirigi

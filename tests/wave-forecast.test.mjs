@@ -19,7 +19,7 @@ import { getHarvesterRaidCount } from "../packages/shared/dist/index.js";
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FINAL_WAVE, getArenaWaveEnemyCount, getWaveAirMode, getWaveSpawnCount, isFlyingWaveSpawn } from "../packages/shared/dist/index.js";
+import { FINAL_WAVE, WAVE_PATTERN_IDS, getArenaWaveEnemyCount, getWavePatternSequence, getWaveAirMode, getWaveSpawnCount, isFlyingWaveSpawn } from "../packages/shared/dist/index.js";
 import { createRoom, findBuildableSpot } from "./helpers/match-room-harness.mjs";
 
 const client = { sessionId: "p1", send() {} };
@@ -116,10 +116,32 @@ test("kurulumda takim kaydi siradaki dalganin sayisini ve hava kipini tasiyor", 
     assert.equal(team.waveEnemyCount, room.waveTarget + getHarvesterRaidCount(wave));
     // Sampiyon (15. dalga) yerine gectigi dogumlari dusuruyor ve bir dusman
     // sayiliyor; tam hava dalgasinda (5) sampiyon yok, sayi aynen.
-    assert.equal(team.waveEnemyCount, getWaveSpawnCount(wave, getArenaWaveEnemyCount(wave, room.mapScale, 1)) + getHarvesterRaidCount(wave));
+    // Orijinal sayi dalga paterninden; butcesi bugunku sayi.
+    assert.equal(room.wavePatternPlan.wave, wave);
+    assert.equal(room.wavePatternPlan.baseSlotCount, getArenaWaveEnemyCount(wave, room.mapScale, 1));
+    assert.equal(team.waveEnemyCount, getWaveSpawnCount(wave, room.wavePatternPlan.slotCount) + getHarvesterRaidCount(wave));
     // Kurulumda henuz dusman dogmadi: kalan sayaci da ayni sayiyi soyluyor.
     assert.equal(team.enemiesLeft, team.waveEnemyCount);
+    // Patern ongoruye gidiyor: hava dalgasinda hava paterni.
+    assert.equal(team.wavePattern, room.wavePatternPlan.pattern);
+    assert.equal(team.wavePattern, getWaveAirMode(wave) === "all" ? "airRaid" : "airMixed");
   }
+});
+
+test("kurulumda takim kaydi siradaki dalganin paternini tasiyor; plan yoksa alan yok", () => {
+  const room = oda();
+  for (let wave = 2; wave <= FINAL_WAVE; wave += 1) {
+    kurulumaGec(room, wave);
+    const team = tel(room).team;
+    assert.ok(WAVE_PATTERN_IDS.includes(team.wavePattern), `${wave}. dalga paterni ${team.wavePattern}`);
+    assert.equal(team.wavePattern, room.wavePatternPlan.pattern);
+    // Ayni oda tohumunun dizisi.
+    assert.equal(team.wavePattern, getWavePatternSequence(room.stage, room.wavePatternSeed)[wave - 1]);
+  }
+  // Sayaclar elle yazilmis (plan baska dalganin): alan yok.
+  room.wave = 3;
+  room.wavePatternPlan = undefined;
+  assert.equal("wavePattern" in tel(room).team, false);
 });
 
 test("ucansiz dalgada kip alani yok, dalga sirasinda kip su anki dalgayi anlatiyor", () => {
