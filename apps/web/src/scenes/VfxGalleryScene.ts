@@ -29,6 +29,8 @@ import { ZeynepSignatureVfx, type CourtFrame } from "../vfx/zeynep-signatures";
 import { FeedbackDirector } from "../feedback-director";
 import { BeamHitTracker, HIT_VOICE_IDS, HIT_VOICE_LABELS, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 import { GALLERY_KILL_CUES } from "../sfx-samples";
+import { COUNTER_SURGE_KIND_CODES, COUNTER_SURGE_TRAVEL_CODES, type CounterSurgeKind, type CounterSurgeSnapshot, type CounterSurgeTravel } from "@karayel/shared";
+import { AegisImpacts, COUNTER_SURGE_STYLES, createCounterSurgeBand, drawCounterSurge, getCounterSurgeBand } from "../vfx/counter-surge";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -71,6 +73,12 @@ import { GALLERY_KILL_CUES } from "../sfx-samples";
  * dogrudan caliyor. Seciciden oldurme portal sesleri de (kucuk, hava, agir,
  * sampiyon; her basista A ve D sirayla) dinlenebiliyor; onlarda seviye yok,
  * uc dugme de ayni boyu caliyor.
+ *
+ * "Karşı atak" kipi: alti karsi atak cesidi ve Metal Kalkan kesigi, sayfa
+ * basina bir cesit, 12x18'lik kucuk bir haritada (oyundaki cizici, oyundaki
+ * katman derinlikleri). Uyari ve gecis galeride kisaltilmis bir dongude;
+ * yapilar on cizgi gecince cesidin renginde flaslaniyor, siperde atislar
+ * on cizgide duruyor.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
@@ -136,7 +144,25 @@ const MECHANIC_LABELS: Record<VfxMechanic, string> = {
   "stack-gauge": "yığın göstergesi"
 };
 
-type Mode = "grid" | "stress";
+type Mode = "grid" | "stress" | "surge";
+
+/** Karsi atak sayfalari: cesit, yon, serit ve galerideki dongu (ms). */
+type SurgePage = { kind: CounterSurgeKind; travel: CounterSurgeTravel; lane: number; width: number; crossMs: number; label: string; cut?: boolean };
+const SURGE_PAGES: readonly SurgePage[] = [
+  { kind: "band", travel: "down", lane: 4, width: 3, crossMs: 6000, label: "band · plazma şeridi (32 sn)" },
+  { kind: "lance", travel: "down", lane: 7, width: 1, crossMs: 2200, label: "lance · mızrak (9 sn)" },
+  { kind: "wall", travel: "down", lane: 3, width: 6, crossMs: 11000, label: "wall · perde (60 sn)" },
+  { kind: "sweep", travel: "left", lane: 7, width: 3, crossMs: 5200, label: "sweep · yandan süpürme (26 sn)" },
+  { kind: "slash", travel: "downRight", lane: 0, width: 3, crossMs: 6000, label: "slash · çapraz kesme (30 sn)" },
+  { kind: "aegis", travel: "down", lane: 3, width: 6, crossMs: 9000, label: "aegis · siper dalgası (grunt hızı)" },
+  { kind: "sweep", travel: "right", lane: 7, width: 3, crossMs: 5200, label: "Metal Kalkan kesiği · süpürme", cut: true }
+];
+const SURGE_WARN_MS = 1600;
+const SURGE_HOLD_MS = 700;
+const SURGE_COLS = 12;
+const SURGE_ROWS = 18;
+/** Galeri haritasinin yapilari (sutun, satir). */
+const SURGE_TOWERS: ReadonlyArray<readonly [number, number]> = [[4, 3], [5, 6], [8, 4], [2, 9], [6, 10], [9, 12], [3, 14], [7, 15], [10, 8], [1, 5], [5, 13], [8, 2]];
 
 export class VfxGalleryScene extends Phaser.Scene {
   private mode: Mode = "grid";
@@ -199,6 +225,19 @@ export class VfxGalleryScene extends Phaser.Scene {
   private auditionVoice: string = HIT_VOICE_IDS[0];
   /** Galeri yuruyucularinin karedeki konumlari: alan isinlarinin sesi icin, yeniden kullaniliyor. */
   private readonly walkerSpots: Array<{ x: number; y: number }> = [];
+  /** Karsi atak kipi: sayfa, yuzeyler ve oyundaki cizicinin girdileri. */
+  private surgePage = 0;
+  private surgeBoard?: Phaser.GameObjects.Graphics;
+  private surgeFill?: Phaser.GameObjects.Graphics;
+  private surgeEdge?: Phaser.GameObjects.Graphics;
+  private surgeFlash?: Phaser.GameObjects.Graphics;
+  private readonly surgeBand = createCounterSurgeBand();
+  private readonly surgeImpacts = new AegisImpacts();
+  private surgeImpactAt = 0;
+  private surgeStatus?: Phaser.GameObjects.Text;
+  private readonly surgeWire: CounterSurgeSnapshot = { id: 1, col: 0, w: 1, p: 0 };
+  private surgeGrid = 24;
+  private readonly surgeOrigin = { x: 0, y: 0 };
 
   constructor() {
     super("vfx-gallery");
@@ -250,6 +289,11 @@ export class VfxGalleryScene extends Phaser.Scene {
       .setDepth(40)
       .setVisible(false);
     this.soloMarker = this.add.graphics().setDepth(13.5);
+    // Karsi atak kipinin yuzeyleri: GameScene ile ayni derinlikler (dolgu dusmanlarin altinda, kenar kulelerin ustunde).
+    this.surgeBoard = this.add.graphics().setDepth(7);
+    this.surgeFill = this.add.graphics().setDepth(7.25);
+    this.surgeEdge = this.add.graphics().setDepth(12.7);
+    this.surgeFlash = this.add.graphics().setDepth(24);
     // Galeri oyunun seviyelerini kullaniyor; biri sifirsa dinleme sayfasi
     // sessiz kalmasin diye varsayilan.
     this.feedback = new FeedbackDirector({
@@ -286,6 +330,10 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.now += step;
     const frameMs = this.lastFrameAt > 0 ? time - this.lastFrameAt : 16.7;
     this.lastFrameAt = time;
+    if (this.mode === "surge") {
+      this.renderSurgePage();
+      return;
+    }
     const scenario = this.scenario;
     if (!scenario || !this.attackVfx || !this.beamRenderer) return;
 
@@ -369,6 +417,18 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.beamHitTracker?.clear();
     this.soloTowerId = undefined;
     this.drawSoloMarker();
+    for (const surface of [this.surgeBoard, this.surgeFill, this.surgeEdge, this.surgeFlash]) surface?.clear();
+    this.surgeStatus = undefined;
+    if (this.mode === "surge") {
+      this.scenario = undefined;
+      // Izgaranin isin ve imza yuzeyleri karede yeniden cizilmiyor: son kareleri kalmasin.
+      for (const surface of this.surfaces) surface.clear();
+      this.lod.force(0);
+      this.perfText?.setVisible(false);
+      this.buildSurgePage();
+      this.refreshControls();
+      return;
+    }
     this.scenario = this.mode === "stress" ? createStressScenario(390, HEADER + 30, this.worldHeight - HEADER - FOOTER - 30) : this.createGridScenario();
     this.lod.force(this.mode === "stress" ? undefined : 0);
     this.towerOwn.clear();
@@ -801,6 +861,10 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.mode = this.mode === "stress" ? "grid" : "stress";
       this.buildScene();
     }, "stress");
+    button("Karşı atak", () => {
+      this.mode = this.mode === "surge" ? "grid" : "surge";
+      this.buildScene();
+    }, "surge");
     button("Ses açık", () => {
       this.muted = !this.muted;
       if (!this.muted) this.feedback?.unlockAudio();
@@ -839,9 +903,113 @@ export class VfxGalleryScene extends Phaser.Scene {
   }
 
   private changePage(delta: number) {
+    if (this.mode === "surge") {
+      this.surgePage = (this.surgePage + delta + SURGE_PAGES.length) % SURGE_PAGES.length;
+      this.buildScene();
+      return;
+    }
     if (this.mode !== "grid") return;
     this.page = (this.page + delta + this.pageCount) % this.pageCount;
     this.buildScene();
+  }
+
+  /**
+   * Karsi atak sayfasi: haritanin izgarasi, yapilar ve etiket. Harita
+   * ekrana sigiyor (375 px'te hucre ~26 birim).
+   */
+  private buildSurgePage() {
+    const page = SURGE_PAGES[this.surgePage];
+    const width = this.cameras.main.width / this.cameras.main.zoom;
+    const grid = Math.max(12, Math.floor(Math.min((width - 16) / SURGE_COLS, (this.worldHeight - HEADER - FOOTER - 8) / SURGE_ROWS)));
+    this.surgeGrid = grid;
+    this.surgeOrigin.x = Math.round((width - SURGE_COLS * grid) / 2);
+    this.surgeOrigin.y = HEADER + 4;
+    const board = this.surgeBoard;
+    if (board) {
+      const { x, y } = this.surgeOrigin;
+      board.fillStyle(0x0b1220, 1);
+      board.fillRect(x, y, SURGE_COLS * grid, SURGE_ROWS * grid);
+      board.lineStyle(1, 0x1e293b, 0.9);
+      for (let col = 0; col <= SURGE_COLS; col += 1) board.lineBetween(x + col * grid, y, x + col * grid, y + SURGE_ROWS * grid);
+      for (let row = 0; row <= SURGE_ROWS; row += 1) board.lineBetween(x, y + row * grid, x + SURGE_COLS * grid, y + row * grid);
+      // Dogum (ust) ve nexus (alt) satirlari.
+      board.fillStyle(0x3f1d1d, 0.5);
+      board.fillRect(x, y, SURGE_COLS * grid, grid);
+      board.fillStyle(0x1d3f2c, 0.5);
+      board.fillRect(x, y + (SURGE_ROWS - 1) * grid, SURGE_COLS * grid, grid);
+      for (const [col, row] of SURGE_TOWERS) {
+        board.fillStyle(0x334155, 1);
+        board.fillRect(x + col * grid + 3, y + row * grid + 3, grid - 6, grid - 6);
+        board.lineStyle(1.5, 0x94a3b8, 0.9);
+        board.strokeRect(x + col * grid + 3, y + row * grid + 3, grid - 6, grid - 6);
+      }
+      if (page.cut) {
+        // Metal Kalkan: 5. sutunun sol kenarinda, 7-8,5. satirlar.
+        board.lineStyle(4, 0x94a3b8, 1);
+        board.lineBetween(x + 5 * grid, y + 7 * grid, x + 5 * grid, y + 8.5 * grid);
+      }
+    }
+    this.labels.push(this.add.text(6, 6, page.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
+    this.surgeStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
+    this.labels.push(this.surgeStatus);
+  }
+
+  /** Karsi atak sayfasinin karesi: dongudeki ilerleme, oyundaki cizici, yapi flaslari ve siper carpmalari. */
+  private renderSurgePage() {
+    const fill = this.surgeFill;
+    const edge = this.surgeEdge;
+    const flash = this.surgeFlash;
+    if (!fill || !edge || !flash) return;
+    const page = SURGE_PAGES[this.surgePage];
+    const cycle = SURGE_WARN_MS + page.crossMs + SURGE_HOLD_MS;
+    const t = this.now % cycle;
+    const warn = t < SURGE_WARN_MS;
+    const progress = warn ? 0 : Math.min(1, (t - SURGE_WARN_MS) / page.crossMs);
+    const wire = this.surgeWire;
+    wire.id = 1 + this.surgePage;
+    wire.col = page.lane;
+    wire.w = page.width;
+    wire.p = progress;
+    wire.warn = warn ? true : undefined;
+    wire.k = COUNTER_SURGE_KIND_CODES[page.kind] || undefined;
+    wire.d = COUNTER_SURGE_TRAVEL_CODES[page.travel] || undefined;
+    // Kesik: kalkan 5. sutunda (sagdan giden seridin ilerlemesi 5/12), 7-8,5. satirlar.
+    // Genislik ekseni yandan gelen seritte asagidan yukari: 7-8,5 satirlar dusuk kenardan 1,5-3.
+    wire.cut = page.cut && progress >= 5 / SURGE_COLS ? [1.5, 3, Math.round((5 / SURGE_COLS) * 1000) / 1000] : undefined;
+    const grid = this.surgeGrid;
+    const band = getCounterSurgeBand(wire, this.surgeOrigin, grid, SURGE_COLS, SURGE_ROWS, this.surgeBand);
+    fill.clear();
+    edge.clear();
+    flash.clear();
+    const options = { now: this.now, reducedMotion: false, lod: this.lod.level };
+    drawCounterSurge(fill, edge, band, grid, options);
+    const style = COUNTER_SURGE_STYLES[page.kind];
+    if (page.kind === "aegis") {
+      if (!warn && this.now - this.surgeImpactAt > 380) {
+        this.surgeImpactAt = this.now;
+        this.surgeImpacts.add(wire.id, ((this.now / 380) * 1.37) % page.width, this.now);
+      }
+      this.surgeImpacts.draw(edge, band, grid, this.now, false);
+    } else if (!warn) {
+      // Yapi vurusu: on cizgi merkezi gectikten sonra ~420 ms cesidin renginde kare flas.
+      const span = (band.length / page.crossMs) * 420;
+      for (const [col, row] of SURGE_TOWERS) {
+        const x = this.surgeOrigin.x + (col + 0.5) * grid;
+        const y = this.surgeOrigin.y + (row + 0.5) * grid;
+        const along = (x - band.baseX) * band.dirX + (y - band.baseY) * band.dirY;
+        const across = (x - band.baseX) * band.axX + (y - band.baseY) * band.axY;
+        const inside = band.diagonal ? across >= 0 && across <= band.width : across > 0 && across < band.width;
+        const cutHere = band.segments?.find((segment) => segment.cut && across >= segment.from && across <= segment.to && along > segment.front);
+        const age = band.front - along;
+        if (!inside || cutHere || age < 0 || age > span) continue;
+        const life = 1 - age / span;
+        flash.fillStyle(style.body, 0.24 * life);
+        flash.fillRect(x - grid / 2, y - grid / 2, grid, grid);
+        flash.lineStyle(2, style.edge, 0.95 * life);
+        flash.strokeRect(x - grid / 2, y - grid / 2, grid, grid);
+      }
+    }
+    this.surgeStatus?.setText(warn ? "uyarı" : progress >= 1 ? "geçti" : `geçiş %${Math.round(progress * 100)}`);
   }
 
   private refreshControls() {
@@ -854,11 +1022,12 @@ export class VfxGalleryScene extends Phaser.Scene {
       element.style.background = active ? "#0e7490" : "#0f172a";
     };
     const page = bar.querySelector<HTMLElement>('[data-vfx="page"]');
-    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : "—";
+    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : "—";
     set("slow", this.slow);
     set("pause", this.paused, this.paused ? "Oynat" : "Duraklat");
     set("mate", this.teammate);
     set("stress", this.mode === "stress");
+    set("surge", this.mode === "surge");
     set("mute", this.muted, this.muted ? "Sessiz" : "Ses açık");
   }
 }

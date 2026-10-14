@@ -1154,9 +1154,10 @@ test("serit cizimi: yutulan dilim kalkanda duruyor, gerisi on kenara kadar; kesi
   const band = special.getCounterSurgeBand({ col: 2, w: 3, p: 0.5, cut: [0, 1.5, 0.25] }, origin, grid, 12, 20);
   const top = 40;
   const height = 20 * grid;
+  // Dilimler seridin genislik ekseninde (dusuk kenardan, dunya birimi) ve kendi on kenarlariyla.
   assert.deepEqual(band.segments, [
-    { left: 100 + 2 * grid, right: 100 + 3.5 * grid, frontY: top + 0.25 * height, cut: true },
-    { left: 100 + 3.5 * grid, right: 100 + 5 * grid, frontY: top + 0.5 * height, cut: false }
+    { from: 0, to: 1.5 * grid, front: 0.25 * height, cut: true },
+    { from: 1.5 * grid, to: 3 * grid, front: 0.5 * height, cut: false }
   ]);
   // Uyari evresinde kesik okunmuyor; bozuk kesik yok sayiliyor.
   assert.equal(special.getCounterSurgeBand({ col: 2, w: 3, p: 0, warn: true, cut: [0, 1.5, 0.25] }, origin, grid, 12, 20).segments, undefined);
@@ -1170,14 +1171,15 @@ test("serit cizimi: yutulan dilim kalkanda duruyor, gerisi on kenara kadar; kesi
   const edge = createRecorder();
   special.drawCounterSurge(fill, edge, band, grid, options);
   const rects = fill.calls.filter(([name]) => name === "fillRect").map(([, x, y, w, h]) => ({ x, y, w, h }));
-  // Yutulan dilimin dolgusu kesilme noktasinda bitiyor; ilerleyen dilimin dolgusu on kenarda.
-  const cutRect = rects.find((rect) => rect.x === 100 + 2 * grid && rect.y === top);
-  const liveRect = rects.find((rect) => rect.x === 100 + 3.5 * grid && rect.y === top);
-  assert.ok(cutRect && liveRect, "dilim dolgulari yok");
-  assert.equal(cutRect.w, 1.5 * grid);
-  assert.equal(cutRect.h, 0.25 * height, "yutulan dilim kalkanin otesine cizildi");
-  assert.equal(liveRect.h, 0.5 * height);
-  assert.ok(rects.every((rect) => !(rect.x < 100 + 3.5 * grid && rect.y + rect.h > top + 0.25 * height + 0.001)), "yutulan kismin arkasina dolgu tasti");
+  const cutLeft = 100 + 2 * grid;
+  const cutRight = 100 + 3.5 * grid;
+  const cutRects = rects.filter((rect) => rect.x >= cutLeft - 0.001 && rect.x + rect.w <= cutRight + 0.001);
+  const liveRects = rects.filter((rect) => rect.x >= cutRight - 0.001);
+  assert.ok(cutRects.length > 0 && liveRects.length > 0, "dilim dolgulari yok");
+  // Yutulan dilimin dolgusu kesilme noktasinda bitiyor; ilerleyen dilimin dolgusu on kenara kadar.
+  assert.ok(cutRects.every((rect) => rect.y + rect.h <= top + 0.25 * height + 0.001), "yutulan dilim kalkanin otesine cizildi");
+  assert.ok(Math.abs(Math.max(...liveRects.map((rect) => rect.y + rect.h)) - (top + 0.5 * height)) < 0.001, "ilerleyen dilim on kenara varmiyor");
+  assert.ok(rects.every((rect) => !(rect.x < cutRight - 0.001 && rect.y + rect.h > top + 0.25 * height + 0.001)), "yutulan kismin arkasina dolgu tasti");
   // Beyaz-sicak yatay on cizgi yalnizca ilerleyen dilimde.
   const hot = [];
   let style;
@@ -1185,10 +1187,10 @@ test("serit cizimi: yutulan dilim kalkanda duruyor, gerisi on kenara kadar; kesi
     if (name === "lineStyle") style = args;
     if (name === "lineBetween" && style[1] === special.SURGE_EDGE_COLOR && args[1] === args[3]) hot.push(args);
   }
-  assert.ok(hot.length > 0 && hot.every(([x1, y, x2]) => y === top + 0.5 * height && x1 >= 100 + 3.5 * grid && x2 <= 100 + 5 * grid), "durmus dilimde beyaz-sicak on cizgi var");
+  assert.ok(hot.length > 0 && hot.every(([x1, y, x2]) => y === top + 0.5 * height && x1 >= cutRight - 0.001 && x2 <= 100 + 5 * grid + 0.001), "durmus dilimde beyaz-sicak on cizgi var");
   for (const color of colorsOf(fill, edge)) assert.ok(grounded(color));
   const alphas = fill.calls.filter(([name]) => name === "fillStyle").map(([, , alpha]) => alpha);
-  assert.ok(alphas.every((alpha) => alpha <= 0.2), "serit dolgusu opak");
+  assert.ok(alphas.every((alpha) => alpha <= 0.35), "serit dolgusu opak");
 });
 
 test("geri bildirim: kalkanin sesi kayitli celik levha ornegi (yeni dosya yok), sentez yalnizca yedek", async () => {

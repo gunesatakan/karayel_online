@@ -27,6 +27,7 @@ import {
   KillSoundLimiter,
   getKillSoundCue,
   type KillSoundCue,
+  type SampleFamilyId,
   type SampleLoader,
   type SfxSampleFamily
 } from "./sfx-samples";
@@ -855,6 +856,39 @@ export class FeedbackDirector {
       reducedMotion: this.governor.isReducedMotion(),
       limits: FEEDBACK_LIMITS
     };
+  }
+
+  /**
+   * Kayitli bir ornegi kendi perdesi ve seviyesiyle calar: karsi atak
+   * cesitleri ayni CC0 dosyalardan farkli sesler cikariyor (yeni dosya yok).
+   * Uyari gibi seyrek; efekt butcesine girmiyor. Baglam kapali, ses kapali
+   * ya da ornek henuz yuklenmemisse sessizce `false`.
+   */
+  playSampleCue(id: SampleFamilyId, rate: number, gain: number, key?: string) {
+    if (this.sfxVolume <= 0 || !(rate > 0) || !(gain > 0)) {
+      return false;
+    }
+    const context = this.context;
+    if (!context || context.state !== "running" || !this.samples.has(id)) {
+      return false;
+    }
+    const buffer = this.samples.pick(id, key);
+    if (!buffer) {
+      return false;
+    }
+    const voiceGain = context.createGain();
+    voiceGain.gain.value = SAMPLE_FAMILIES[id].gain * gain;
+    voiceGain.connect(this.getSfxBus(context));
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    source.connect(voiceGain);
+    source.onended = () => {
+      source.disconnect();
+      voiceGain.disconnect();
+    };
+    source.start(context.currentTime, this.samples.lead(buffer));
+    return true;
   }
 
   /**

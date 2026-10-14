@@ -53,35 +53,41 @@ test("surge:hit temizligi: bozuk kayit atlaniyor, tutar yuvarlaniyor, yapi basin
   assert.equal(many.hits.length, special.SURGE_HIT_MAX_ENTRIES);
 });
 
-test("serit okunuyor: ilk gecerli kayit, yoksa gorsel kalkiyor", () => {
+test("serit okunuyor: ilk gecerli kayit (ve en fazla iki), yoksa gorsel kalkiyor", () => {
   assert.equal(special.readCounterSurge(undefined), undefined);
   assert.equal(special.readCounterSurge([]), undefined);
   assert.equal(special.readCounterSurge([{ id: 1, col: 2, w: 0, p: 0 }]), undefined);
   assert.equal(special.readCounterSurge([{ id: 1, col: "2", w: 3, p: 0 }]), undefined);
   const surge = { id: 2, col: 4, w: 3, p: 0.5 };
   assert.equal(special.readCounterSurge([null, surge]), surge);
+  const out = [];
+  const second = { id: 3, col: 6, w: 3, p: 0.1, k: 3, d: 2 };
+  assert.equal(special.readCounterSurges([surge, null, second, { id: 4, col: 0, w: 3, p: 0 }], out), out);
+  assert.deepEqual(out, [surge, second], "ikiden fazla ya da bozuk kayit okundu");
+  assert.deepEqual(special.readCounterSurges(undefined, out), []);
 });
 
-test("serit geometrisi: sutunlardan x, ilerlemeden on kenar; uyari ust kenarda; haritaya sigiyor", () => {
+test("serit geometrisi: sutunlardan genislik, ilerlemeden on kenar; uyari kalkis kenarinda; haritaya sigiyor", () => {
   const origin = { x: 100, y: 40 };
   const band = special.getCounterSurgeBand({ col: 2, w: 3, p: 0.5 }, origin, 32, 12, 20);
-  assert.equal(band.left, 100 + 2 * 32);
-  assert.equal(band.right, 100 + 5 * 32);
-  assert.equal(band.top, 40);
-  assert.equal(band.bottom, 40 + 20 * 32);
-  assert.equal(band.frontY, 40 + 0.5 * 20 * 32);
-  assert.equal(band.columns, 3);
+  assert.equal(band.kind, "band");
+  assert.equal(band.travel, "down");
+  assert.deepEqual([band.baseX, band.baseY, band.dirX, band.dirY, band.axX, band.axY], [100 + 2 * 32, 40, 0, 1, 1, -0]);
+  assert.equal(band.width, 3 * 32);
+  assert.equal(band.length, 20 * 32);
+  assert.equal(band.front, 0.5 * 20 * 32);
+  assert.equal(band.cells, 3);
   assert.equal(band.warn, false);
 
   const warn = special.getCounterSurgeBand({ col: 2, w: 3, p: 0.7, warn: true }, origin, 32, 12, 20);
-  assert.equal(warn.frontY, warn.top, "uyari evresinde serit kalkmadi");
+  assert.equal(warn.front, 0, "uyari evresinde serit kalkmadi");
   assert.equal(warn.warn, true);
 
   const clamped = special.getCounterSurgeBand({ col: 11, w: 3, p: 4 }, origin, 32, 12, 20);
-  assert.equal(clamped.right, 100 + 12 * 32, "sag kenari tasmiyor");
-  assert.equal(clamped.frontY, clamped.bottom, "ilerleme 1'de duruyor");
+  assert.equal(clamped.baseX + clamped.width, 100 + 12 * 32, "sag kenari tasmiyor");
+  assert.equal(clamped.front, clamped.length, "ilerleme 1'de duruyor");
 
-  const out = { left: 0, right: 0, top: 0, bottom: 0, frontY: 0, columns: 0, warn: false };
+  const out = special.createCounterSurgeBand();
   assert.equal(special.getCounterSurgeBand({ col: 0, w: 3, p: 0 }, origin, 32, 12, 20, out), out, "nesne yeniden kullaniliyor");
 });
 
@@ -112,7 +118,8 @@ test("bildirim kapisi: tur basina macta bir kez, serit basina bir kez, yeni mact
 });
 
 test("isaretler ve serit sert dilde: her renk yere indirilmis, parilti yok", () => {
-  for (const color of [special.HUNTER_MARK_COLOR, special.HEATER_MARK_COLOR, special.EATER_MARK_COLOR, special.EATER_CORE_COLOR, special.SURGE_COLOR, special.SURGE_EDGE_COLOR]) {
+  const surgeColors = Object.values(special.COUNTER_SURGE_STYLES).flatMap((style) => [style.body, style.deep, style.edge, style.rim]);
+  for (const color of [special.HUNTER_MARK_COLOR, special.HEATER_MARK_COLOR, special.EATER_MARK_COLOR, special.EATER_CORE_COLOR, special.SURGE_COLOR, special.SURGE_EDGE_COLOR, ...surgeColors]) {
     assert.ok(grounded(color), `sekerleme renk ${color.toString(16)}`);
   }
   const options = { now: 1234, reducedMotion: false };
@@ -125,9 +132,9 @@ test("isaretler ve serit sert dilde: her renk yere indirilmis, parilti yok", () 
   special.drawCounterSurge(fill, edge, special.getCounterSurgeBand({ col: 1, w: 3, p: 0, warn: true }, origin, 32, 10, 18), 32, options);
   special.drawCounterSurge(fill, edge, special.getCounterSurgeBand({ col: 1, w: 3, p: 0.4 }, origin, 32, 10, 18), 32, options);
   for (const color of colorsOf(marks, fill, edge)) assert.ok(grounded(color), `cizimde sekerleme renk ${color.toString(16)}`);
-  // Dolgu yari saydam: tahta okunur kaliyor.
+  // Dolgu yari saydam: tahta okunur kaliyor (govdenin on kenara en yakin basamagi en yogun).
   const fillAlphas = fill.calls.filter(([name]) => name === "fillStyle").map(([, , alpha]) => alpha);
-  assert.ok(fillAlphas.length > 0 && fillAlphas.every((alpha) => alpha <= 0.2), `serit dolgusu opak: ${fillAlphas.join(", ")}`);
+  assert.ok(fillAlphas.length > 0 && fillAlphas.every((alpha) => alpha <= 0.35), `serit dolgusu opak: ${fillAlphas.join(", ")}`);
   // Isaret cizimi Graphics'i temizlemiyor ve parilti yordamlari yok.
   const names = new Set([...marks.calls, ...fill.calls, ...edge.calls].map(([name]) => name));
   assert.ok(!names.has("clear"));

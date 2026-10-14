@@ -1,9 +1,30 @@
 import type Phaser from "phaser";
-import { decodeSurgeCuts, getSurgeFrontSegments, type CounterSurgeHitMessage, type CounterSurgeSnapshot, type SpecialEnemyKind } from "@karayel/shared";
+import type { CounterSurgeHitMessage, CounterSurgeSnapshot, SpecialEnemyKind } from "@karayel/shared";
+
+// Karsi atak seritlerinin cizimi ve geometrisi `counter-surge.ts`te; eski
+// cagiranlar (sahne, testler) buradan da okuyabiliyor.
+export {
+  AegisImpacts,
+  COUNTER_SURGE_NOTICE_KEYS,
+  COUNTER_SURGE_SOUND_CUES,
+  COUNTER_SURGE_STYLES,
+  createCounterSurgeBand,
+  drawCounterSurge,
+  getCounterSurgeAlertPoint,
+  getCounterSurgeBand,
+  getSurgeBandPoint,
+  readCounterSurges,
+  sanitizeSurgeBlockMessage,
+  SURGE_COLOR,
+  SURGE_EDGE_COLOR,
+  type CounterSurgeBand,
+  type CounterSurgeBandSegment
+} from "./counter-surge";
 
 /**
  * Ozel dusmanlar (kule avcisi, isitici, enerji yiyici) ve karsi atak:
- * istemcinin isaretleri, telin temizlenmesi ve seridin geometrisi.
+ * istemcinin isaretleri ve telin temizlenmesi. Seritlerin cizimi
+ * `counter-surge.ts`te.
  *
  * Govde normal irk cizimi; burasi yalnizca ustune binen isareti ciziyor.
  * Dil agir ve sert: kose ayraclari, kesik halka, altigen, duz kenarli serit.
@@ -11,7 +32,7 @@ import { decodeSurgeCuts, getSurgeFrontSegments, type CounterSurgeHitMessage, ty
  * sinirli), parlak olan yalnizca beyaz-sicak kenar cizgisi.
  *
  * Cizim fonksiyonlari Graphics'i temizlemiyor: cagiran temizliyor (dusmanin
- * kendi yuzeyi ya da seridin iki katmani). Karede nesne acilmiyor.
+ * kendi yuzeyi). Karede nesne acilmiyor.
  */
 
 /** Kule avcisi: kizil nisan ayraclari. */
@@ -22,11 +43,6 @@ export const HEATER_MARK_COLOR = 0xc8743e;
 export const EATER_MARK_COLOR = 0x3fa7b5;
 /** Emme hattinin cekirdegi: beyaz-sicak, hafif soguk. */
 export const EATER_CORE_COLOR = 0xe6f6f8;
-/** Karsi atak seridi: kizil-turuncu enerji. */
-export const SURGE_COLOR = 0xd0603e;
-/** Seridin on kenari: beyaz-sicak sert cizgi. */
-export const SURGE_EDGE_COLOR = 0xfff0e6;
-
 export const SPECIAL_MARK_COLORS: Readonly<Record<SpecialEnemyKind, number>> = {
   harvester: 0xe0ad52,
   bomber: 0xff782e,
@@ -109,68 +125,6 @@ export function interpolateCounterSurges(
   return changed ? result : next;
 }
 
-export type CounterSurgeBand = {
-  left: number;
-  right: number;
-  /** Ust (dogum) kenari. */
-  top: number;
-  /** Alt (nexus) kenari. */
-  bottom: number;
-  /** On kenarin y'si; uyari evresinde `top`. */
-  frontY: number;
-  /** Seridin sutun genisligi (haritaya sigdirilmis). */
-  columns: number;
-  warn: boolean;
-  /**
-   * Metal Kalkan seridin bir kismini durdurduysa genisligin dilimleri: her
-   * dilimin kendi on kenari; `cut` dilim kalkanda durmus. Kesik yoksa
-   * `undefined` (serit tek parca, eski cizim).
-   */
-  segments?: CounterSurgeBandSegment[];
-};
-
-export type CounterSurgeBandSegment = { left: number; right: number; frontY: number; cut: boolean };
-
-/**
- * Seridin dunya geometrisi: sutunlar `origin.x + col * grid`den
- * `origin.x + (col + w) * grid`ye, on kenar `origin.y + p * rows * grid`.
- * Serit haritaya sigdiriliyor (bozuk sutun disari tasmasin). `out` verilirse
- * ayni nesne dolduruluyor (karede nesne acilmasin).
- */
-export function getCounterSurgeBand(
-  surge: Pick<CounterSurgeSnapshot, "col" | "w" | "p" | "warn" | "cut">,
-  origin: { x: number; y: number },
-  gridSize: number,
-  cols: number,
-  rows: number,
-  out?: CounterSurgeBand
-): CounterSurgeBand {
-  const mapCols = Math.max(1, Math.floor(cols));
-  const columns = Math.max(1, Math.min(mapCols, Math.floor(surge.w)));
-  const col = Math.max(0, Math.min(mapCols - columns, Math.floor(surge.col)));
-  const warn = surge.warn === true;
-  const progress = warn ? 0 : Math.max(0, Math.min(1, Number.isFinite(surge.p) ? surge.p : 0));
-  const band = out ?? { left: 0, right: 0, top: 0, bottom: 0, frontY: 0, columns: 0, warn: false };
-  band.left = origin.x + col * gridSize;
-  band.right = band.left + columns * gridSize;
-  band.top = origin.y;
-  band.bottom = origin.y + Math.max(1, Math.floor(rows)) * gridSize;
-  band.frontY = band.top + progress * (band.bottom - band.top);
-  band.columns = columns;
-  band.warn = warn;
-  // Kesik yalnizca kalkan seridi durdurduysa telde: yoksa dizi hic kurulmuyor.
-  const cuts = warn || surge.cut === undefined ? undefined : decodeSurgeCuts(surge.cut, columns);
-  band.segments = cuts && cuts.length > 0
-    ? getSurgeFrontSegments(columns, progress, cuts).map((segment) => ({
-        left: band.left + segment.from * gridSize,
-        right: band.left + segment.to * gridSize,
-        frontY: band.top + segment.p * (band.bottom - band.top),
-        cut: segment.cut
-      }))
-    : undefined;
-  return band;
-}
-
 /**
  * Ilk gorulme bildirimleri: tur basina macta bir kez, karsi atak serit
  * basina bir kez. Yeni macta `reset`.
@@ -188,7 +142,7 @@ export class SpecialThreatNotices {
 
   noteSurge(id: number) {
     if (this.surges.has(id)) return false;
-    // Macta dalga basina en fazla bir serit; yine de sinirsiz buyumesin.
+    // Macta dalga basina en fazla iki serit; yine de sinirsiz buyumesin.
     if (this.surges.size > 128) this.surges.clear();
     this.surges.add(id);
     return true;
@@ -339,138 +293,3 @@ export function drawEaterDrain(
   }
 }
 
-/**
- * Karsi atak seridi iki katmanda: `fill` dusmanlarin altinda (yari saydam
- * dolgu, tahta gorunur kaliyor), `edge` kulelerin ustunde (sert kenarlar).
- *
- * Uyari evresi: ust kenarda seridin sutunlarini kapsayan sert bir cizgi, iki
- * ucta asagi inen ayrac ve sutun basina asagi bakan bir sivri ok; saydamlik
- * nabiz atiyor. Kalkinca: ust kenardan on kenara dolgu, on kenara yakin daha
- * yogun bir serit, yan raylar ve beyaz-sicak on cizgi.
- */
-export function drawCounterSurge(
-  fill: Phaser.GameObjects.Graphics,
-  edge: Phaser.GameObjects.Graphics,
-  band: CounterSurgeBand,
-  gridSize: number,
-  { now, reducedMotion }: DrawOptions
-) {
-  const width = band.right - band.left;
-  if (band.warn) {
-    const pulse = reducedMotion ? 0.8 : 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(now / 130));
-    fill.fillStyle(SURGE_COLOR, 0.05 + 0.1 * pulse);
-    fill.fillRect(band.left, band.top, width, gridSize * 1.2);
-    edge.lineStyle(2.5, SURGE_EDGE_COLOR, 0.9 * pulse);
-    edge.lineBetween(band.left, band.top + 1, band.right, band.top + 1);
-    edge.lineStyle(2, SURGE_COLOR, 0.95 * pulse);
-    edge.lineBetween(band.left, band.top, band.left, band.top + gridSize * 0.6);
-    edge.lineBetween(band.right, band.top, band.right, band.top + gridSize * 0.6);
-    const arm = gridSize * 0.22;
-    for (let column = 0; column < band.columns; column += 1) {
-      const cx = band.left + (column + 0.5) * gridSize;
-      const cy = band.top + gridSize * 0.5;
-      edge.beginPath();
-      edge.moveTo(cx - arm, cy - arm * 0.6);
-      edge.lineTo(cx, cy + arm * 0.4);
-      edge.lineTo(cx + arm, cy - arm * 0.6);
-      edge.strokePath();
-    }
-    return;
-  }
-
-  if (band.segments) {
-    drawCutCounterSurge(fill, edge, band, band.segments, gridSize);
-    return;
-  }
-
-  const depth = band.frontY - band.top;
-  if (depth > 0) {
-    fill.fillStyle(SURGE_COLOR, 0.08);
-    fill.fillRect(band.left, band.top, width, depth);
-    const strip = Math.min(depth, gridSize * 0.9);
-    fill.fillStyle(SURGE_COLOR, 0.14);
-    fill.fillRect(band.left, band.frontY - strip, width, strip);
-    // Arkada kalan tarama cizgileri: on kenara yaklastikca yogun.
-    for (let line = 1; line <= 3; line += 1) {
-      const ly = band.frontY - line * gridSize * 0.32;
-      if (ly <= band.top) break;
-      edge.lineStyle(1, SURGE_COLOR, 0.42 - line * 0.1);
-      edge.lineBetween(band.left, ly, band.right, ly);
-    }
-    edge.lineStyle(1.5, SURGE_COLOR, 0.55);
-    edge.lineBetween(band.left, band.top, band.left, band.frontY);
-    edge.lineBetween(band.right, band.top, band.right, band.frontY);
-  }
-  edge.lineStyle(5, SURGE_COLOR, 0.35);
-  edge.lineBetween(band.left, band.frontY, band.right, band.frontY);
-  edge.lineStyle(2, SURGE_EDGE_COLOR, 0.95);
-  edge.lineBetween(band.left, band.frontY, band.right, band.frontY);
-  edge.lineStyle(2, SURGE_EDGE_COLOR, 0.8);
-  edge.lineBetween(band.left, band.frontY, band.left, band.frontY + gridSize * 0.25);
-  edge.lineBetween(band.right, band.frontY, band.right, band.frontY + gridSize * 0.25);
-}
-
-/**
- * Metal Kalkan'in kismen durdurdugu serit: genislik dilimlere bolunmus, her
- * dilim kendi on kenarina kadar ciziliyor. Ilerleyen dilim tek parca seritle
- * ayni dilde (dolgu, tarama cizgileri, beyaz-sicak on cizgi); durmus dilim
- * kalkanda kesiliyor: on cizgisi sonuk ve kalin, tarama ve ileri bakan uc
- * yok. Dilimler arasindaki basamak dik bir kenarla kapaniyor.
- */
-function drawCutCounterSurge(
-  fill: Phaser.GameObjects.Graphics,
-  edge: Phaser.GameObjects.Graphics,
-  band: CounterSurgeBand,
-  segments: readonly CounterSurgeBandSegment[],
-  gridSize: number
-) {
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index];
-    const width = segment.right - segment.left;
-    const depth = segment.frontY - band.top;
-    if (depth > 0) {
-      fill.fillStyle(SURGE_COLOR, segment.cut ? 0.06 : 0.08);
-      fill.fillRect(segment.left, band.top, width, depth);
-      if (!segment.cut) {
-        const strip = Math.min(depth, gridSize * 0.9);
-        fill.fillStyle(SURGE_COLOR, 0.14);
-        fill.fillRect(segment.left, segment.frontY - strip, width, strip);
-        for (let line = 1; line <= 3; line += 1) {
-          const ly = segment.frontY - line * gridSize * 0.32;
-          if (ly <= band.top) break;
-          edge.lineStyle(1, SURGE_COLOR, 0.42 - line * 0.1);
-          edge.lineBetween(segment.left, ly, segment.right, ly);
-        }
-      }
-    }
-    if (segment.cut) {
-      // Durmus on kenar: kalkana yaslanmis, sonuk ve duz.
-      edge.lineStyle(3, SURGE_COLOR, 0.5);
-      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
-    } else {
-      edge.lineStyle(5, SURGE_COLOR, 0.35);
-      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
-      edge.lineStyle(2, SURGE_EDGE_COLOR, 0.95);
-      edge.lineBetween(segment.left, segment.frontY, segment.right, segment.frontY);
-    }
-    // Sol kenar: seridin dis rayi ya da onceki dilimle arasindaki basamak.
-    const previous = segments[index - 1];
-    const railTop = previous ? Math.min(previous.frontY, segment.frontY) : band.top;
-    const railBottom = previous ? Math.max(previous.frontY, segment.frontY) : segment.frontY;
-    if (railBottom > railTop) {
-      edge.lineStyle(1.5, SURGE_COLOR, 0.55);
-      edge.lineBetween(segment.left, railTop, segment.left, railBottom);
-    }
-    if (!segment.cut) {
-      edge.lineStyle(2, SURGE_EDGE_COLOR, 0.8);
-      if (!previous || previous.frontY < segment.frontY) edge.lineBetween(segment.left, segment.frontY, segment.left, segment.frontY + gridSize * 0.25);
-      const next = segments[index + 1];
-      if (!next || next.frontY < segment.frontY) edge.lineBetween(segment.right, segment.frontY, segment.right, segment.frontY + gridSize * 0.25);
-    }
-  }
-  const last = segments[segments.length - 1];
-  if (last && last.frontY > band.top) {
-    edge.lineStyle(1.5, SURGE_COLOR, 0.55);
-    edge.lineBetween(last.right, band.top, last.right, last.frontY);
-  }
-}

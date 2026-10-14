@@ -299,19 +299,27 @@ import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
 import { WorldLabelPool } from "../vfx/world-labels";
 import {
   SPECIAL_MARK_COLORS,
-  SURGE_COLOR,
-  SURGE_EDGE_COLOR,
   SpecialThreatNotices,
-  drawCounterSurge,
   drawEaterDrain,
   drawSpecialEnemyMarker,
-  getCounterSurgeBand,
   interpolateCounterSurges,
   isSpecialEnemyKind,
-  readCounterSurge,
-  sanitizeSurgeHitMessage,
-  type CounterSurgeBand
+  sanitizeSurgeHitMessage
 } from "../vfx/special-threats";
+import {
+  AEGIS_BLOCK_SOUND_CUE,
+  AegisImpacts,
+  COUNTER_SURGE_NOTICE_KEYS,
+  COUNTER_SURGE_SOUND_CUES,
+  COUNTER_SURGE_STYLES,
+  createCounterSurgeBand,
+  drawCounterSurge,
+  getCounterSurgeAlertPoint,
+  getCounterSurgeBand,
+  readCounterSurges,
+  sanitizeSurgeBlockMessage,
+  type CounterSurgeBand
+} from "../vfx/counter-surge";
 import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
@@ -1319,10 +1327,15 @@ export class GameScene extends Phaser.Scene {
   /** Karsi atak seridi: dolgu dusmanlarin altinda, sert kenarlar kulelerin ustunde. */
   private surgeFillGraphics?: Phaser.GameObjects.Graphics;
   private surgeEdgeGraphics?: Phaser.GameObjects.Graphics;
-  /** Seridin karedeki geometrisi; ayni nesne yeniden dolduruluyor. */
-  private readonly surgeBand: CounterSurgeBand = { left: 0, right: 0, top: 0, bottom: 0, frontY: 0, columns: 0, warn: false };
+  /** Seritlerin (en fazla iki) karedeki geometrisi; ayni nesneler yeniden dolduruluyor. */
+  private readonly surgeBands: CounterSurgeBand[] = [createCounterSurgeBand(), createCounterSurgeBand()];
+  private readonly surgeEntries: CounterSurgeSnapshot[] = [];
+  /** Siperde durdurulan atislarin isaretleri (sabit tampon). */
+  private readonly aegisImpacts = new AegisImpacts();
   /** Son karede cizili serit vardi: yoksa yuzeyler her karede yeniden temizlenmiyor. */
   private surgeDrawn = false;
+  /** Son siper carpma sesi (gercek saat): saniyede birkac kez. */
+  private aegisBlockSoundAt = 0;
   /** Metal Kalkan: sahadaki bariyerler (herkesin) ve yerel surukleme onizlemesi. */
   private shieldGraphics?: Phaser.GameObjects.Graphics;
   private shieldPreviewGraphics?: Phaser.GameObjects.Graphics;
@@ -4120,18 +4133,21 @@ export class GameScene extends Phaser.Scene {
 
   private readonly specialDrawOptions = { now: 0, reducedMotion: false };
 
+  private readonly surgeDrawOptions = { now: 0, reducedMotion: false, lod: 0 };
+
   /**
-   * Karsi atak seridi, her karede oynatma saatinde. Uyari evresinde ust
-   * kenarda isaret, kalkinca on kenara kadar yari saydam serit. Serit
-   * snapshot'tan dustugunde yuzeyler bir kez temizleniyor. Serit ilk
-   * goruldugunde (kimlik basina bir kez) HUD bildirimi ve uyari sesi.
+   * Karsi atak seritleri (en fazla iki), her karede oynatma saatinde: her
+   * cesit kendi yonunde, renginde ve silueti ile (\`vfx/counter-surge.ts\`).
+   * Seritler snapshot'tan dustugunde yuzeyler bir kez temizleniyor. Serit ilk
+   * goruldugunde (kimlik basina bir kez) cesidin bildirimi, giris kenarinda
+   * isaret, uyari tonu ve cesidin kayitli ornegi.
    */
   private renderCounterSurge(surges: readonly CounterSurgeSnapshot[] | undefined, now: number) {
     const fill = this.surgeFillGraphics;
     const edge = this.surgeEdgeGraphics;
     if (!fill || !edge) return;
-    const surge = readCounterSurge(surges);
-    if (!surge) {
+    const entries = readCounterSurges(surges, this.surgeEntries);
+    if (entries.length === 0) {
       if (this.surgeDrawn) {
         fill.clear();
         edge.clear();
@@ -4143,16 +4159,44 @@ export class GameScene extends Phaser.Scene {
     edge.clear();
     this.surgeDrawn = true;
     const cellSize = this.getMapCellSize();
-    const band = getCounterSurgeBand(surge, getMapOrigin(this.selectedMapData), cellSize, this.selectedMapData.cols, this.selectedMapData.rows, this.surgeBand);
-    const options = this.specialDrawOptions;
+    const origin = getMapOrigin(this.selectedMapData);
+    const options = this.surgeDrawOptions;
     options.now = now;
     options.reducedMotion = this.feedback?.reducedMotion ?? false;
-    drawCounterSurge(fill, edge, band, cellSize, options);
-    if (this.specialNotices.noteSurge(surge.id) && !this.matchResultShown) {
-      this.showNotice(t("scene.special.surge"), 4200);
-      this.pulseAlertMarker((band.left + band.right) / 2, band.top + cellSize * 0.5, SURGE_COLOR);
-      this.playAlertSound("breach");
+    options.lod = this.vfxLod.level;
+    for (let index = 0; index < entries.length; index += 1) {
+      const surge = entries[index];
+      const band = getCounterSurgeBand(surge, origin, cellSize, this.selectedMapData.cols, this.selectedMapData.rows, this.surgeBands[index]);
+      drawCounterSurge(fill, edge, band, cellSize, options);
+      if (band.kind === "aegis") this.aegisImpacts.draw(edge, band, cellSize, now, options.reducedMotion);
+      if (this.specialNotices.noteSurge(surge.id) && !this.matchResultShown) {
+        this.showNotice(t(COUNTER_SURGE_NOTICE_KEYS[band.kind]), 4200);
+        const point = getCounterSurgeAlertPoint(band, cellSize);
+        this.pulseAlertMarker(point.x, point.y, COUNTER_SURGE_STYLES[band.kind].rim);
+        this.playAlertSound("breach");
+        const cue = COUNTER_SURGE_SOUND_CUES[band.kind];
+        this.feedback?.playSampleCue(cue.family, cue.rate, cue.gain, `surge:${surge.id}`);
+      }
     }
+  }
+
+  /**
+   * Siper atislari durdurdu (seyrek mesaj): on cizgide carpma isaretleri,
+   * oynatma gecikmesi kadar sonra (mermi o an siperde kayboluyor). Ses en
+   * fazla ~3 kez/sn.
+   */
+  private receiveSurgeBlock(raw: unknown) {
+    const message = sanitizeSurgeBlockMessage(raw);
+    if (!message || this.matchResultShown) return;
+    this.time.delayedCall(this.playbackDelayMs, () => {
+      if (this.matchResultShown) return;
+      const now = performance.now();
+      for (const across of message.a) this.aegisImpacts.add(message.id, across, now);
+      if (now - this.aegisBlockSoundAt >= 320) {
+        this.aegisBlockSoundAt = now;
+        this.feedback?.playSampleCue(AEGIS_BLOCK_SOUND_CUE.family, AEGIS_BLOCK_SOUND_CUE.rate, AEGIS_BLOCK_SOUND_CUE.gain, `block:${message.id}`);
+      }
+    });
   }
 
   // --- Metal Kalkan (AttackLord, yuva 1) -------------------------------------------
@@ -4365,20 +4409,30 @@ export class GameScene extends Phaser.Scene {
       const now = performance.now();
       const cellSize = this.getMapCellSize();
       const reducedMotion = this.feedback?.reducedMotion ?? false;
+      const style = COUNTER_SURGE_STYLES[this.getSurgeKindById(message.id)];
       for (const hit of message.hits) {
         const tower = this.towerSnapshots.get(hit.towerId);
         if (!tower) continue;
         const size = cellSize * getTowerGridSpan(tower.definitionId);
-        this.flashStructureHit(tower.x, tower.y, size, reducedMotion);
+        this.flashStructureHit(tower.x, tower.y, size, reducedMotion, style.body, style.edge);
         if (!reducedMotion) this.punchTower(tower.id, true);
         this.showStructureDamage(hit.towerId, tower.x, tower.y - size * 0.3, hit.amount, now);
       }
     });
   }
 
-  private flashStructureHit(x: number, y: number, size: number, reducedMotion: boolean) {
-    const square = this.add.rectangle(x, y, size, size, SURGE_COLOR, 0.24)
-      .setStrokeStyle(2, SURGE_EDGE_COLOR, 0.95)
+  /** Vuran seridin cesidi: son karede cizilen seritlerden; bulunamazsa bugunku serit. */
+  private getSurgeKindById(id: number) {
+    for (let index = 0; index < this.surgeEntries.length; index += 1) {
+      if (this.surgeEntries[index].id === id) return this.surgeBands[index].kind;
+    }
+    return "band" as const;
+  }
+
+  /** Yapi vurusu: cesidin renginde sert kenarli kare flas. */
+  private flashStructureHit(x: number, y: number, size: number, reducedMotion: boolean, color = COUNTER_SURGE_STYLES.band.body, edgeColor = COUNTER_SURGE_STYLES.band.edge) {
+    const square = this.add.rectangle(x, y, size, size, color, 0.24)
+      .setStrokeStyle(2, edgeColor, 0.95)
       .setDepth(24);
     this.tweens.add({
       targets: square,
@@ -5389,7 +5443,10 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("beams", beamsMs);
     this.vfxFrameCost += beamsMs;
     this.renderTowerOverlays();
+    // Seritler de efekt butcesinde: LOD yuk altinda once onlarin ayrintisini kisiyor.
+    sectionStart = performance.now();
     this.renderCounterSurge(frame.snapshot.surges, now);
+    this.vfxFrameCost += performance.now() - sectionStart;
     this.renderMetalShields(frame.snapshot.shields, now);
     sectionStart = performance.now();
     this.renderAtakanSignatures(frame.snapshot.enemies, now);
@@ -5911,6 +5968,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     room.onMessage("champion:down", (message: ChampionDownMessage) => this.receiveChampionDown(message));
     // Karsi atak yapilari vurdu: yapi basina bir kez, mesaj temizlenerek okunuyor.
     room.onMessage("surge:hit", (message: unknown) => this.receiveSurgeHit(message));
+    // Siper dalgasi atislari durdurdu: seyrek mesaj, carpma isaretleri on cizgide.
+    room.onMessage("surge:block", (message: unknown) => this.receiveSurgeBlock(message));
     room.onMessage("worker:development-unlocked", (message: WorkerDevelopmentUnlockedMessage) => this.confirmServerAction(getWorkerDevelopmentCue(message)));
     room.onMessage("latency:pong", (message: { sentAt?: number; serverProcessingMs?: number; bufferedAmount?: number }) => this.updatePing(message));
     room.onMessage("perf:snapshot", (perf: ServerPerfSnapshot) => {

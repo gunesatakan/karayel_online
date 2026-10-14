@@ -1599,6 +1599,7 @@ export { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, getExecuteRejectText, is
 export type { ExecuteRejectReason, ExecuteTapCandidate, SkillExecuteMessage, SkillRejectedMessage } from "./characters/atakan/skills/index.js";
 export * from "./characters/atakan/skills/metal-shield.js";
 export * from "./waves/surge-absorption.js";
+export * from "./waves/counter-surge.js";
 export type {
   AmmoType,
   TowerAxis,

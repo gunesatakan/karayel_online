@@ -2,6 +2,7 @@ import type { EnemyType } from "../index.js";
 import { CHAMPION_MIN_REPLACED, getWaveChampionPlan } from "../balance/champion.js";
 import { getWaveEnemyCount } from "../balance/index.js";
 import { TOWER_GRID_SIZE } from "../index.js";
+import { COUNTER_SURGE_KIND_TABLE, planCounterSurges, type PlannedCounterSurge } from "./counter-surge.js";
 
 /**
  * Ozel dusmanlar ve karsi atak: 2. asamadan itibaren normal dalganin icinde.
@@ -10,7 +11,8 @@ import { TOWER_GRID_SIZE } from "../index.js";
  * - Kule avcisi: sampiyonun 1,5 kati canli, nexusa degil en yakin kuleye/binaya yuruyor.
  * - Isitici: normal yolda yuruyor, yanindan gectigi kuleyi isitiyor.
  * - Enerji yiyici: yandan (sol/sag kenar) giriyor, enerji binasini emip yikiyor.
- * - Karsi atak: dusman degil; ust kenardan inen, gectigi yapilari yakan enerji seridi.
+ * - Karsi atak: dusman degil; ustten, yandan ya da caprazdan gecen, yapilari yakan
+ *   (ya da siperde atislari durduran) enerji seridi; cesitleri `counter-surge.ts`te.
  *
  * 1. asama hic degismiyor: oyuncu once temel dili ogreniyor. Butun sayilar
  * burada; sunucu ve testler ayni tablodan okuyor.
@@ -221,49 +223,17 @@ export function getSpecialEnemyDurability(kind: SpecialEnemyKind, championHpMult
 
 // --- Karsi atak --------------------------------------------------------------------
 
-/** Karsi atagin gorunebildigi ilk dalga (2. asamadan itibaren). */
-export const COUNTER_SURGE_FIRST_WAVE = 4;
-/**
- * Dalga basina olasilik, asamaya gore. Dalgada en fazla bir tane; ayni anda
- * da en fazla bir serit. Sahibinin istegiyle iki kat (once 0,2/0,28/0,37/0,45);
- * `getCounterSurgeChance` 1'de kesiyor.
+/*
+ * Karsi atagin cesit tablosu, sayisi, plani ve geometrisi
+ * `counter-surge.ts`te. Asagidaki adlar bugunku seridin (`band`) sayilari;
+ * Metal Kalkan'in azami boyu ve eski cagiranlar bunlari okuyor.
  */
-export const COUNTER_SURGE_CHANCE_BY_STAGE: Readonly<Record<number, number>> = { 2: 0.4, 3: 0.56, 4: 0.74, 5: 0.9 };
-/** Seridin genisligi, sutun. */
-export const COUNTER_SURGE_WIDTH_COLUMNS = 3;
-/** Kalkistan once ust kenardaki uyari suresi (ms). */
-export const COUNTER_SURGE_TELEGRAPH_MS = 3000;
-/** Haritayi yukaridan asagi gecme suresi (ms); harita boyundan bagimsiz. */
-export const COUNTER_SURGE_CROSS_MS = 32_000;
-/**
- * Yapinin azami canina gore hasar; zirh delinir. Yapi basina bir kez.
- *
- * Sahibinin istegiyle sabit 0,35'ten dalgayla buyuyen bir paya: seridin
- * basladigi ilk dalgada (`COUNTER_SURGE_FIRST_WAVE`) taban, her dalgada bir
- * adim, tavanda kesiliyor. 4. dalga %45, 12. dalga %65, 20. dalga %85.
- */
-export const COUNTER_SURGE_DAMAGE_RATIO_BASE = 0.45;
-export const COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE = 0.025;
-export const COUNTER_SURGE_DAMAGE_RATIO_MAX = 0.9;
-/** Seridin dalganin hangi diliminde basladigi (gercek dogum sirasina gore). */
-export const COUNTER_SURGE_START_MIN_SHARE = 0.25;
-export const COUNTER_SURGE_START_SPAN_SHARE = 0.35;
-
-/**
- * Seridin basladigi dalgaya gore hasar payi. Serit bu payi kalkarken aliyor
- * ve bir sonraki dalgaya sarksa da onu koruyor (bkz. sunucuda
- * `startCounterSurge`). Ilk dalgadan once ve gecersiz girdide taban.
- */
-export function getCounterSurgeDamageRatio(wave: number) {
-  const steps = Number.isFinite(wave) ? wave - COUNTER_SURGE_FIRST_WAVE : 0;
-  const ratio = COUNTER_SURGE_DAMAGE_RATIO_BASE + COUNTER_SURGE_DAMAGE_RATIO_PER_WAVE * steps;
-  return Math.max(COUNTER_SURGE_DAMAGE_RATIO_BASE, Math.min(COUNTER_SURGE_DAMAGE_RATIO_MAX, ratio));
-}
-
-export function getCounterSurgeChance(stage: number, wave: number) {
-  if (stage < SPECIAL_ENEMIES_FIRST_STAGE || wave < COUNTER_SURGE_FIRST_WAVE) return 0;
-  return Math.min(1, COUNTER_SURGE_CHANCE_BY_STAGE[Math.min(5, Math.floor(stage))] ?? 0);
-}
+/** Bugunku seridin (`band`) genisligi, sutun. */
+export const COUNTER_SURGE_WIDTH_COLUMNS = COUNTER_SURGE_KIND_TABLE.band.widthCells;
+/** Bugunku seridin kalkistan once ust kenardaki uyari suresi (oyun ms). */
+export const COUNTER_SURGE_TELEGRAPH_MS = COUNTER_SURGE_KIND_TABLE.band.telegraphMs;
+/** Bugunku seridin haritayi gecme suresi (oyun ms); harita boyundan bagimsiz. */
+export const COUNTER_SURGE_CROSS_MS = COUNTER_SURGE_KIND_TABLE.band.crossMs;
 
 /**
  * Snapshot'taki karsi atak kaydi. Kucuk ve kisa adli: yalnizca serit varken
@@ -271,10 +241,20 @@ export function getCounterSurgeChance(stage: number, wave: number) {
  */
 export type CounterSurgeSnapshot = {
   id: number;
-  /** Seridin sol sutunu. */
+  /**
+   * Seridin indeksi: ustten gelende sol sutun, yandan gelende ust satir,
+   * caprazda 0 (bkz. `getCounterSurgeGeometry`).
+   */
   col: number;
-  /** Genislik, sutun. */
+  /** Genislik, hucre (yola dik). */
   w: number;
+  /**
+   * Cesit kodu (`COUNTER_SURGE_KIND_CODES`); `band` (0) yazilmiyor: eski
+   * kayit bugunku serit olarak okunuyor.
+   */
+  k?: number;
+  /** Yon kodu (`COUNTER_SURGE_TRAVEL_CODES`); `down` (0) yazilmiyor. */
+  d?: number;
   /** Ilerleme 0..1. */
   p: number;
   /** Uyari evresi: serit henuz kalkmadi. */
@@ -349,8 +329,11 @@ export type WaveSpecialPlan = {
   replaced: number;
   /** Avci varsa butcesi. */
   hunter?: TowerHunterBudget;
-  /** Karsi atak: gercek dogum sirasinda bu dogumla birlikte uyari basliyor. */
-  surge?: { atSpawn: number; col: number; width: number };
+  /**
+   * Karsi ataklar (0-2): gercek dogum sirasinda her biri kendi dogumuyla
+   * birlikte uyariya basliyor (bkz. `planCounterSurges`).
+   */
+  surges?: PlannedCounterSurge[];
 };
 
 export type WaveSpecialPlanInput = {
@@ -360,8 +343,10 @@ export type WaveSpecialPlanInput = {
   slotCount: number;
   /** Sampiyon varsa yerine gectigi dogum ve orijinal sirasi. */
   champion?: { replaced: number; slot: number };
-  /** Haritanin sutun sayisi (karsi atagin baslangic sutunu icin). */
+  /** Haritanin sutun sayisi (karsi atagin serit secimi icin). */
   cols: number;
+  /** Haritanin satir sayisi (yandan gelen serit icin); yoksa sutunun 1,5 kati. */
+  rows?: number;
   /** Tohumlu zar; plan bu sirayla tuketiyor. */
   random: () => number;
 };
@@ -470,15 +455,14 @@ export function planWaveSpecials(input: WaveSpecialPlanInput): WaveSpecialPlan |
   }
   spawns.sort((left, right) => left.index - right.index);
 
-  let surge: WaveSpecialPlan["surge"];
-  const chance = getCounterSurgeChance(stage, wave);
-  if (chance > 0 && random() < chance) {
-    const width = Math.max(1, Math.min(Math.floor(input.cols), COUNTER_SURGE_WIDTH_COLUMNS));
-    const atSpawn = Math.max(0, Math.min(spawnCount - 1,
-      Math.floor(spawnCount * (COUNTER_SURGE_START_MIN_SHARE + COUNTER_SURGE_START_SPAN_SHARE * random()))));
-    const col = Math.floor(random() * Math.max(1, Math.floor(input.cols) - width + 1));
-    surge = { atSpawn, col, width };
-  }
+  const surges = planCounterSurges({
+    stage,
+    wave,
+    spawnCount,
+    cols: input.cols,
+    rows: input.rows ?? Math.round(input.cols * 1.5),
+    random
+  });
 
   const usedReplaced = spawns.reduce((sum, spawn) => sum + spawn.replaced, 0);
   return {
@@ -487,7 +471,7 @@ export function planWaveSpecials(input: WaveSpecialPlanInput): WaveSpecialPlan |
     spawns,
     replaced: usedReplaced,
     ...(spawns.some((spawn) => spawn.kind === "hunter") && hunter ? { hunter } : {}),
-    ...(surge ? { surge } : {})
+    ...(surges.length > 0 ? { surges } : {})
   };
 }
 

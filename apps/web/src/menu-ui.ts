@@ -1578,7 +1578,14 @@ const specialThreats = [
   { id: "hunter", threat: "high", color: "#c8473a", glyph: '<path d="M10 22V10h12M42 10h12v12M54 42v12H42M22 54H10V42M32 4v10" />' },
   { id: "heater", threat: "medium", color: "#c8743e", glyph: '<circle cx="32" cy="32" r="26" stroke-dasharray="6 6" stroke-width="1.5" /><path d="M32 18a14 14 0 0 1 12 7M44 39a14 14 0 0 1-12 7M20 39a14 14 0 0 1 0-14" />' },
   { id: "eater", threat: "medium", color: "#3fa7b5", glyph: '<path d="M50 32 41 47.6H23L14 32l9-15.6h18Z" /><path d="M41 32h18" stroke-width="1.5" /><path d="M48 30h4v4h-4z" fill="currentColor" />' },
-  { id: "surge", threat: "high", color: "#d0603e", glyph: '<path d="M14 8h36M14 8v8M50 8v8M18 20l6 5 6-5M28 20l4 3 4-3M34 20l6 5 6-5" /><path d="M14 44h36" stroke-width="3" /><path d="M14 30h36" stroke-width="1" opacity=".5" />' }
+  { id: "surge", threat: "high", color: "#3aa3c2", glyph: '<path d="M14 8h36M14 8v8M50 8v8M18 20l6 5 6-5M28 20l4 3 4-3M34 20l6 5 6-5" /><path d="M14 44h36" stroke-width="3" /><path d="M14 30h36" stroke-width="1" opacity=".5" />' },
+  // Karsi atak cesitleri: oyundaki renk ve siluet (dar mizrak, agir perde,
+  // yatay tarayici, egik bicak, levhali siper).
+  { id: "surge-lance", threat: "high", color: "#c23a4a", glyph: '<path d="M32 6v36" stroke-width="1.5" /><path d="M27 10v28M37 10v28" opacity=".45" /><path d="M26 42h12l-6 14z" />' },
+  { id: "surge-wall", threat: "high", color: "#6a55c0", glyph: '<path d="M8 44h48" stroke-width="5" /><path d="M12 14v28M20 20v22M28 12v30M36 20v22M44 14v28M52 20v22" /><path d="M8 50h48" stroke-width="1" opacity=".5" />' },
+  { id: "surge-sweep", threat: "high", color: "#c8973a", glyph: '<path d="M44 10v44" stroke-width="3" /><path d="M44 14h5M44 22h7M44 30h5M44 38h7M44 46h5" /><path d="M14 18v28M24 18v28M34 18v28" opacity=".4" /><path d="M52 26l6 6-6 6" />' },
+  { id: "surge-slash", threat: "high", color: "#7fa8d0", stage: 3, glyph: '<path d="M10 10l44 44" stroke-width="1.5" opacity=".5" /><path d="M16 50l34-34" stroke-width="3" /><path d="M16 50l10-2M50 16l-2 10" /><path d="M8 24l16-16" opacity=".5" />' },
+  { id: "surge-aegis", threat: "medium", color: "#a9bfcc", stage: 3, glyph: '<path d="M8 20h48v16H8z" /><path d="M8 28h48M20 20v8M32 20v8M44 20v8M14 28v8M26 28v8M38 28v8M50 28v8" stroke-width="1.5" /><path d="M32 42v14M26 50l6 6 6-6" opacity=".5" />' }
 ] as const;
 
 function renderSpecialThreats() {
@@ -1602,8 +1609,8 @@ function renderSpecialThreats() {
             </div>
             <div class="bestiary-tags">
               <span>${escapeHtml(t("menu.bestiary.threat", { threat: t(`menu.enemy.threat.${entry.threat}`) }))}</span>
-              <span>${escapeHtml(t("menu.bestiary.fromStage", { n: SPECIAL_ENEMIES_FIRST_STAGE }))}</span>
-              ${entry.id === "surge" ? `<span>${escapeHtml(t("menu.bestiary.fromWave", { n: COUNTER_SURGE_FIRST_WAVE }))}</span>` : ""}
+              <span>${escapeHtml(t("menu.bestiary.fromStage", { n: "stage" in entry ? entry.stage : SPECIAL_ENEMIES_FIRST_STAGE }))}</span>
+              ${entry.id.startsWith("surge") ? `<span>${escapeHtml(t("menu.bestiary.fromWave", { n: COUNTER_SURGE_FIRST_WAVE }))}</span>` : ""}
             </div>
           </article>
         `).join("")}

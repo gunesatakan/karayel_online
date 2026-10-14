@@ -37,7 +37,7 @@ import {
   TOWER_HUNTER_MAX_PER_WAVE,
   createSpecialRandom,
   getArenaWaveEnemyCount,
-  getCounterSurgeChance,
+  getCounterSurgeCount,
   getCounterSurgeDamageRatio,
   getEnemyStructureDamageMultiplier,
   getEnemyCombatDefinition,
@@ -411,47 +411,58 @@ test("karşı atak önce uyarılıyor, sonra yavaşça iniyor", () => {
 test("karşı atağın başlangıç sütunu tohuma göre değişiyor", () => {
   const cols = new Set();
   for (let seed = 1; seed <= 60; seed += 1) {
-    const plan = planWaveSpecials({ stage: 5, wave: 12, slotCount: 40, cols: 12, random: createSpecialRandom(seed, 12) });
-    if (plan?.surge) {
-      cols.add(plan.surge.col);
-      assert.ok(plan.surge.col >= 0 && plan.surge.col + plan.surge.width <= 12);
+    const plan = planWaveSpecials({ stage: 5, wave: 12, slotCount: 40, cols: 12, rows: 18, random: createSpecialRandom(seed, 12) });
+    for (const surge of plan?.surges ?? []) {
+      if (surge.travel !== "down") continue;
+      cols.add(surge.lane);
+      assert.ok(surge.lane >= 0 && surge.lane + surge.width <= 12);
     }
   }
   assert.ok(cols.size >= 4, `yalnizca ${cols.size} farkli baslangic`);
   // Ayni tohum ayni plani veriyor.
-  const a = planWaveSpecials({ stage: 4, wave: 9, slotCount: 30, cols: 12, random: createSpecialRandom(77, 9) });
-  const b = planWaveSpecials({ stage: 4, wave: 9, slotCount: 30, cols: 12, random: createSpecialRandom(77, 9) });
+  const a = planWaveSpecials({ stage: 4, wave: 9, slotCount: 30, cols: 12, rows: 18, random: createSpecialRandom(77, 9) });
+  const b = planWaveSpecials({ stage: 4, wave: 9, slotCount: 30, cols: 12, rows: 18, random: createSpecialRandom(77, 9) });
   assert.deepEqual(a, b);
 });
 
-test("dalgada en fazla bir karşı atak; 4. dalgadan önce ve 1. aşamada hiç yok", () => {
+test("dalga başına karşı atak sayısı aşamaya göre (1 / 1+%35 / 1+%65 / 2); 4. dalgadan önce ve 1. aşamada hiç yok", () => {
   for (let stage = 1; stage <= 5; stage += 1) {
     for (let wave = 1; wave <= 20; wave += 1) {
-      const chance = getCounterSurgeChance(stage, wave);
-      if (stage === 1 || wave < 4) assert.equal(chance, 0, `${stage}/${wave}`);
-      else assert.equal(chance, { 2: 0.4, 3: 0.56, 4: 0.74, 5: 0.9 }[stage], `${stage}/${wave}: ${chance}`);
-      assert.ok(chance <= 1, "olasilik 1'i asti");
+      const low = getCounterSurgeCount(stage, wave, 0);
+      const high = getCounterSurgeCount(stage, wave, 0.999);
+      if (stage === 1 || wave < 4) {
+        assert.equal(low, 0, `${stage}/${wave}`);
+        assert.equal(high, 0, `${stage}/${wave}`);
+        continue;
+      }
+      assert.equal(high, stage === 5 ? 2 : 1, `${stage}/${wave}: zar yuksekken`);
+      assert.equal(low, stage === 2 ? 1 : 2, `${stage}/${wave}: zar dusukken`);
     }
   }
-  assert.ok(getCounterSurgeChance(5, 10) > getCounterSurgeChance(2, 10));
-  // 5. asamanin ustu 5. asamanin sayisi; 1'de kesik.
-  assert.equal(getCounterSurgeChance(9, 10), 0.9);
+  assert.equal(getCounterSurgeCount(3, 10, 0.34), 2);
+  assert.equal(getCounterSurgeCount(3, 10, 0.36), 1);
+  assert.equal(getCounterSurgeCount(4, 10, 0.64), 2);
+  assert.equal(getCounterSurgeCount(4, 10, 0.66), 1);
+  // 5. asamanin ustu 5. asamanin sayisi.
+  assert.equal(getCounterSurgeCount(9, 10, 0.999), 2);
 
-  // Gercek odada: seritli bir dalganin butun dogumlari tek serit baslatiyor.
+  // Gercek odada: iki seritli bir dalganin butun dogumlari plandaki iki seridi baslatiyor.
   let found = false;
   for (let seed = 1; seed <= 80 && !found; seed += 1) {
     const room = oda(5);
     room.specialSeed = seed;
     room.planWaveSpawns(12);
-    if (!room.waveSpecialPlan?.surge) continue;
+    const planned = room.waveSpecialPlan?.surges ?? [];
+    if (planned.length !== 2 || planned.some((surge) => surge.kind === "aegis")) continue;
     found = true;
     dalgayiDogur(room, 12);
-    assert.ok(room.counterSurge, "serit baslamadi");
-    assert.equal(room.nextCounterSurgeId, 2, "birden fazla serit basladi");
+    assert.equal(room.counterSurges.length, 2, "iki serit baslamadi");
+    assert.equal(room.nextCounterSurgeId, 3, "planlanandan fazla serit basladi");
+    assert.deepEqual(room.counterSurges.map((surge) => surge.kind), planned.map((surge) => surge.kind));
     room.maybeStartCounterSurge();
-    assert.equal(room.nextCounterSurgeId, 2);
+    assert.equal(room.nextCounterSurgeId, 3);
   }
-  assert.ok(found, "seritli dalga bulunamadi");
+  assert.ok(found, "iki seritli dalga bulunamadi");
 });
 
 test("karşı atak 1. aşamada snapshotta hiç yok; yeni dalga planı süren şeridi kaldırmıyor", () => {
@@ -608,8 +619,8 @@ for (const result of ["victory", "defeat"]) {
       assert.equal(alt.hp, alt.maxHp, "mac bittikten sonra serit yapi vurdu");
       assert.equal(room.sent.filter((entry) => entry.type === "surge:hit").length, sentBefore);
       // Mac bittikten sonra yeni serit de baslamiyor.
-      room.waveSpecialPlan = { stage: 4, wave: room.wave, spawns: [], replaced: 0, surge: { atSpawn: 0, col: 2, width: 3 } };
-      room.waveSurgeStarted = false;
+      room.waveSpecialPlan = { stage: 4, wave: room.wave, spawns: [], replaced: 0, surges: [{ atSpawn: 0, kind: "band", travel: "down", lane: 2, width: 3 }] };
+      room.waveSurgeCursor = 0;
       room.waveSpawned = 1;
       room.maybeStartCounterSurge();
       assert.equal(room.counterSurge, undefined);
@@ -617,35 +628,36 @@ for (const result of ["victory", "defeat"]) {
   });
 }
 
-test("karşı atak sürerken ikinci şerit başlamıyor; o dalganın şeridi atlanıyor", () => {
+test("haritada en fazla iki şerit: ikisi sürerken o dalganın şeritleri atlanıyor", () => {
   sahteSaat((saat) => {
     let found = false;
     for (let seed = 1; seed <= 80 && !found; seed += 1) {
       const room = oda(5);
       room.specialSeed = seed;
       room.planWaveSpawns(12);
-      if (!room.waveSpecialPlan?.surge) continue;
+      if ((room.waveSpecialPlan?.surges ?? []).length === 0) continue;
       found = true;
-      // Onceki dalgadan kalan, hala yolda olan serit.
+      // Onceki dalgalardan kalan, hala yolda olan iki serit.
       room.startCounterSurge(0, 3, saat.now);
-      const onceki = room.counterSurge;
+      room.startCounterSurge(6, 3, saat.now);
+      const onceki = [...room.counterSurges];
       const sonrakiId = room.nextCounterSurgeId;
       dalgayiDogur(room, 12);
-      assert.equal(room.counterSurge, onceki, "suren serit degisti");
-      assert.equal(room.nextCounterSurgeId, sonrakiId, "ikinci serit basladi");
-      // Onceki serit bitince de bu dalganin seridi sonradan kalkmiyor (atlandi).
+      assert.deepEqual(room.counterSurges, onceki, "suren seritler degisti");
+      assert.equal(room.nextCounterSurgeId, sonrakiId, "ucuncu serit basladi");
+      // Onceki seritler bitince de bu dalganin seritleri sonradan kalkmiyor (atlandi).
       saat.now += SURGE_UYARI_MS + SURGE_GECIS_MS + 100;
       room.updateEnemies(0.05);
-      assert.equal(room.counterSurge, undefined);
+      assert.equal(room.counterSurges.length, 0);
       room.maybeStartCounterSurge();
-      assert.equal(room.counterSurge, undefined, "atlanan serit sonradan basladi");
+      assert.equal(room.counterSurges.length, 0, "atlanan serit sonradan basladi");
       // Sonraki seritli dalga yeniden serit kaldirabiliyor.
-      for (let wave = 13; wave <= 20 && !room.counterSurge; wave += 1) {
+      for (let wave = 13; wave <= 20 && room.counterSurges.length === 0; wave += 1) {
         room.planWaveSpawns(wave);
-        if (room.waveSpecialPlan?.surge) dalgayiDogur(room, wave);
+        if ((room.waveSpecialPlan?.surges ?? []).length > 0) dalgayiDogur(room, wave);
       }
-      assert.ok(room.counterSurge, "serit bittikten sonra yeni serit baslamadi");
-      assert.equal(room.nextCounterSurgeId, sonrakiId + 1);
+      assert.ok(room.counterSurges.length > 0, "seritler bittikten sonra yeni serit baslamadi");
+      assert.ok(room.nextCounterSurgeId > sonrakiId);
     }
     assert.ok(found, "seritli dalga bulunamadi");
   });

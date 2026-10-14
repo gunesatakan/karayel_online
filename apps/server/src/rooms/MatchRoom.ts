@@ -25,7 +25,6 @@ import {
   getMetalShieldMinLength,
   getPointToSegment,
   getSurgeObstacleContact,
-  getVerticalSurgeBand,
   isSparedFromSurge,
   segmentsTouch,
   type MetalShieldRejectReason,
@@ -418,8 +417,23 @@ import {
 } from "@karayel/shared";
 // Ozel dusmanlar ve karsi atak (2. asamadan itibaren): tablo ve sayilar paylasilan pakette.
 import {
-  COUNTER_SURGE_CROSS_MS,
-  COUNTER_SURGE_TELEGRAPH_MS,
+  COUNTER_SURGE_KIND_CODES,
+  COUNTER_SURGE_KIND_TABLE,
+  COUNTER_SURGE_MAX_ACTIVE,
+  COUNTER_SURGE_MAX_ACTIVE_AEGIS,
+  COUNTER_SURGE_TRAVEL_CODES,
+  SURGE_BLOCK_MAX_POINTS,
+  SURGE_BLOCK_MESSAGE_INTERVAL_MS,
+  getAegisCrossMs,
+  getCounterSurgeGeometry,
+  getCounterSurgeKindDamageRatio,
+  getSurgeBandSpan,
+  getSurgeFrontCrossing,
+  isStructureInSurgeWidth,
+  type CounterSurgeBlockMessage,
+  type CounterSurgeKind,
+  type CounterSurgeTravel,
+  type PlannedCounterSurge,
   ENERGY_EATER_DRAIN_PER_SECOND,
   ENERGY_EATER_MIN_CONTACT_MS,
   ENERGY_EATER_SPAWN_BOTTOM_MARGIN_ROWS,
@@ -433,7 +447,6 @@ import {
   TOWER_HUNTER_ATTACK_INTERVAL_MS,
   TOWER_HUNTER_HIT_DAMAGE,
   createSpecialRandom,
-  getCounterSurgeDamageRatio,
   getSpecialEnemyDurability,
   getWaveSpecialSpawnReduction,
   planWaveSpecials,
@@ -1371,10 +1384,18 @@ type SpecialRouteField = {
   target: Uint8Array;
 };
 
-/** Karsi atak: ust kenardan inen, gectigi yapilari bir kez vuran serit. */
+/**
+ * Karsi atak: ustten, yandan ya da caprazdan gecen serit. Hasarli cesitler
+ * gectigi yapilari bir kez vuruyor; siper (`aegis`) vurmuyor, kulelerin
+ * atislarini on cizgisinde durduruyor (`isLineBlockedByAegis`).
+ */
 type CounterSurgeModel = {
   id: number;
+  kind: CounterSurgeKind;
+  travel: CounterSurgeTravel;
+  /** Serit indeksi: ustten gelende sol sutun, yandan gelende ust satir; caprazda 0. */
   col: number;
+  /** Genislik, hucre (yola dik). */
   width: number;
   /** Uyarinin basladigi ve seridin kalktigi an (duvar saati). */
   createdAt: number;
@@ -1383,8 +1404,8 @@ type CounterSurgeModel = {
   crossMs: number;
   /**
    * Yapinin azami canina gore hasar payi: seridin **basladigi** dalganin
-   * orani (`getCounterSurgeDamageRatio`). Serit bir sonraki dalgaya sarksa
-   * da bu pay degismiyor.
+   * orani x cesit carpani (`getCounterSurgeKindDamageRatio`); siperde 0.
+   * Serit bir sonraki dalgaya sarksa da bu pay degismiyor.
    */
   damageRatio: number;
   hitIds: Set<string>;
@@ -1396,6 +1417,11 @@ type CounterSurgeModel = {
   absorbed: SurgeAbsorbedInterval[];
   /** On kenarin bir onceki tikteki ilerlemesi; kalkanin coktan gecilmis kismi sayilmasin diye. */
   lastProgress: number;
+  /** Seridin dunya geometrisi; kalkista bir kez kuruluyor (harita degisirse serit kalkiyor). */
+  band: SurgeBandGeometry;
+  /** On cizginin bu ve onceki tikteki yolu (dunya birimi): siperin atis kapisi okuyor. */
+  frontAlong: number;
+  previousFrontAlong: number;
 };
 
 /**
@@ -2331,9 +2357,15 @@ export class MatchRoom extends Room<MatchState> {
   private specialRandom?: () => number;
   /** Plandaki siradaki ozel dogum. */
   private waveSpecialCursor = 0;
-  /** Bu dalganin karsi atagi basladi mi (dalgada en fazla bir). */
-  private waveSurgeStarted = false;
-  private counterSurge?: CounterSurgeModel;
+  /** Bu dalganin planindan sirasi gelen (baslayan ya da atlanan) karsi atak sayisi. */
+  private waveSurgeCursor = 0;
+  /** Haritadaki karsi ataklar (en fazla `COUNTER_SURGE_MAX_ACTIVE`; cogu zaman bos). */
+  private counterSurges: CounterSurgeModel[] = [];
+  /** Kalkmis siper (en fazla bir). Yokken atis kapisi tek bir karsilastirma. */
+  private activeAegis?: CounterSurgeModel;
+  /** Siperin durdurdugu atislar: seyrek `surge:block` icin bekleyen noktalar (hucre). */
+  private aegisBlockPending: number[] = [];
+  private aegisBlockSentAt = 0;
   private nextCounterSurgeId = 1;
   /** Sahadaki Metal Kalkanlar; cogu zaman bos (kalkan 3 sn yasiyor). */
   private metalShields: MetalShieldModel[] = [];
@@ -3804,7 +3836,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   private planWaveSpecials(wave: number, slotCount: number) {
     this.waveSpecialCursor = 0;
-    this.waveSurgeStarted = false;
+    this.waveSurgeCursor = 0;
     // Baslamis serit dalgayla bitmiyor: haritayi tamamen gecene kadar dalga
     // arasinda ve sonraki dalgada da suruyor (`updateCounterSurge`).
     if (this.stage < SPECIAL_ENEMIES_FIRST_STAGE) {
@@ -3821,6 +3853,7 @@ export class MatchRoom extends Room<MatchState> {
       slotCount,
       champion: champion ? { replaced: champion.replaced, slot: champion.slot } : undefined,
       cols: this.activeMap.cols,
+      rows: this.activeMap.rows,
       random
     });
     this.specialRandom = random;
@@ -4808,8 +4841,8 @@ export class MatchRoom extends Room<MatchState> {
     this.activeMap = createOpenArenaMap(dimensions.cols, dimensions.rows);
     this.activePaths = buildRuntimePaths(this.activeMap);
     this.markNavigationDirty();
-    // Arena yeniden kuruldu: eski haritanin seridi (sutunu, ilerlemesi) gecersiz.
-    this.counterSurge = undefined;
+    // Arena yeniden kuruldu: eski haritanin seritleri (geometri, ilerleme) gecersiz.
+    this.clearCounterSurges();
     this.metalShields = [];
     this.planWaveSpawns(this.wave);
     // Dalga planindan sonra: ozel dusman tohumu (2. asama+) eskisiyle ayni
@@ -5041,7 +5074,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     this.matchResult = result;
     // Sonuctan sonra serit yapilari vurmasin ve telde kalmasin.
-    this.counterSurge = undefined;
+    this.clearCounterSurges();
     this.metalShields = [];
     // Oda listeden hemen dussun; bir sonraki lobi yayinini beklemesin.
     this.syncRoomRegistry();
@@ -6154,6 +6187,16 @@ export class MatchRoom extends Room<MatchState> {
     // (namlu eski acisinda kaliyor), o yuzden ortadaki prizmadan cikiyorlar.
     // Yalnizca cizim: hasar hesabi kule merkezinden.
     const origin = overdrive ? { x: tower.x, y: tower.y } : this.getTowerMuzzlePoint(tower, tower.facing, { x: x2, y: y2 });
+    // Siper dalgasi: kiris siperde bitiyor (donen kirisin hasari zaten siperin onunde).
+    const clipped = this.activeAegis ? this.clipLineAtAegis(tower.x, tower.y, x2, y2) : undefined;
+    if (clipped) {
+      x2 = clipped.x;
+      y2 = clipped.y;
+      if (scanX !== undefined && scanY !== undefined && this.isLineBlockedByAegis(tower.x, tower.y, scanX, scanY)) {
+        scanX = clipped.x;
+        scanY = clipped.y;
+      }
+    }
     this.beams.set(id, {
       id,
       definitionId: tower.definition.id,
@@ -6196,6 +6239,12 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const damage = damageOverride ?? this.getTowerDamage(tower);
+    // Siper dalgasi: isin siperde bitiyor (cizimi de).
+    const clipped = this.activeAegis ? this.clipLineAtAegis(tower.x, tower.y, result.endX, result.endY) : undefined;
+    if (clipped) {
+      result.endX = clipped.x;
+      result.endY = clipped.y;
+    }
     for (const enemy of result.targets) {
       if (damageTypeOverride) {
         this.damageEnemyFromTowerAs(tower, enemy, damage, 0, damageTypeOverride);
@@ -6220,11 +6269,24 @@ export class MatchRoom extends Room<MatchState> {
     });
   }
 
+  /** Hat siperi kesiyorsa siperdeki nokta (atis durduruldu olarak sayiliyor). */
+  private clipLineAtAegis(x1: number, y1: number, x2: number, y2: number) {
+    const aegis = this.activeAegis;
+    if (!aegis) return undefined;
+    const t = getSurgeFrontCrossing(aegis.band, aegis.frontAlong, aegis.frontAlong, x1, y1, x2, y2);
+    if (t === undefined) return undefined;
+    const point = { x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t };
+    this.noteAegisBlock(point.x, point.y);
+    return point;
+  }
+
   private findBestZeynepShowcaseLine(tower: TowerModel, rangeMultiplier = 1) {
     const length = this.getTowerRange(tower) * rangeMultiplier;
     // Arama yaricapi hattin kendisinden genis: hedef menzilin ucunda dursa bile
     // hat onun uzerinden gecebilir.
-    const enemies = this.getEnemiesNear(tower.x, tower.y, length * 1.5).filter((enemy) => this.canTowerTargetEnemy(tower, enemy));
+    // Siper dalgasi: hat siperin ardindaki dusmana ulasmiyor.
+    const enemies = this.getEnemiesNear(tower.x, tower.y, length * 1.5)
+      .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && !this.isEnemyBehindAegis(tower, enemy));
     if (enemies.length === 0) {
       return undefined;
     }
@@ -7025,7 +7087,8 @@ export class MatchRoom extends Room<MatchState> {
   private fireZeynepSynthesisDualProjectiles(tower: TowerModel) {
     const range = this.getTowerRange(tower);
     const targets = this.getEnemiesNear(tower.x, tower.y, range)
-      .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= this.getTowerRange(tower) * this.getTowerRange(tower))
+      .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= this.getTowerRange(tower) * this.getTowerRange(tower)
+        && !this.isEnemyBehindAegis(tower, enemy))
       .sort((a, b) => b.pathDistance - a.pathDistance)
       .slice(0, 2);
     const damage = this.getTowerDamage(tower);
@@ -7122,6 +7185,8 @@ export class MatchRoom extends Room<MatchState> {
           deleteRay = true;
           break;
         }
+        const headX = ray.x;
+        const headY = ray.y;
 
         const distanceLeftOnSegment = segment.length - ray.distanceOnSegment;
         const step = Math.min(remainingDistance, distanceLeftOnSegment);
@@ -7131,6 +7196,15 @@ export class MatchRoom extends Room<MatchState> {
         const ratio = segment.length <= 0 ? 1 : Math.min(1, ray.distanceOnSegment / segment.length);
         ray.x = segment.x1 + (segment.x2 - segment.x1) * ratio;
         ray.y = segment.y1 + (segment.y2 - segment.y1) * ratio;
+        // Siper dalgasi: isinin basi siperi kesince isin orada bitiyor.
+        if (this.activeAegis) {
+          const aegisT = this.getAegisProjectileCrossing(headX, headY, ray.x, ray.y);
+          if (aegisT !== undefined) {
+            this.noteAegisBlock(headX + (ray.x - headX) * aegisT, headY + (ray.y - headY) * aegisT);
+            deleteRay = true;
+            break;
+          }
+        }
 
         const visibleSegment = this.getZeynepRayVisibleSegment(ray);
         this.damageEnemiesAlongZeynepRay(ray, visibleSegment.x1, visibleSegment.y1, visibleSegment.x2, visibleSegment.y2);
@@ -7179,6 +7253,10 @@ export class MatchRoom extends Room<MatchState> {
     for (const enemy of this.enemies.values()) {
       this.perfCounters.aoeChecks += 1;
       if (ray.hitEnemyIds.includes(enemy.id) || !this.canTowerTargetEnemy(tower, enemy)) {
+        continue;
+      }
+      const raySegment = this.activeAegis ? ray.segments[ray.segmentIndex] : undefined;
+      if (raySegment && this.isLineBlockedByAegis(raySegment.x1, raySegment.y1, enemy.x, enemy.y)) {
         continue;
       }
 
@@ -7449,6 +7527,8 @@ export class MatchRoom extends Room<MatchState> {
     const canHitAir = this.canTowerHitAir(tower);
     for (const enemy of this.enemies.values()) {
       if (hit.has(enemy) || (!canHitAir && enemy.movementKind === "air")) continue;
+      // Siper dalgasi: donen kiris siperin ardini taramiyor.
+      if (this.isEnemyBehindAegis(tower, enemy)) continue;
       if (didDebugLaserSweepHitEnemy(tower, enemy, from, to, end.x, end.y, beamRadius)) {
         hit.add(enemy);
       }
@@ -7647,6 +7727,10 @@ export class MatchRoom extends Room<MatchState> {
         this.updateProjectileAbartiModifier(projectile, previousX, previousY);
         const sourceTower = this.towers.get(projectile.towerId);
         const segmentLength = Math.hypot(projectile.x - previousX, projectile.y - previousY);
+        // Siper dalgasi: mermi on cizgiyi kesiyorsa carpisma yalnizca siperin onunde aranir.
+        const aegisT = this.activeAegis ? this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y) : undefined;
+        const reachX = aegisT === undefined ? projectile.x : previousX + (projectile.x - previousX) * aegisT;
+        const reachY = aegisT === undefined ? projectile.y : previousY + (projectile.y - previousY) * aegisT;
         const collisionCandidates = this.getEnemiesNear(
           (previousX + projectile.x) / 2,
           (previousY + projectile.y) / 2,
@@ -7654,7 +7738,7 @@ export class MatchRoom extends Room<MatchState> {
         );
         const collision = findFirstLinearCollision(
           { x: previousX, y: previousY },
-          { x: projectile.x, y: projectile.y },
+          { x: reachX, y: reachY },
           collisionCandidates
             .filter((enemy) => !sourceTower || this.canTowerTargetEnemy(sourceTower, enemy))
             .filter((enemy) => !sourceTower || distanceSq(sourceTower.x, sourceTower.y, enemy.x, enemy.y) >= this.getTowerMinimumRange(sourceTower) ** 2)
@@ -7667,8 +7751,8 @@ export class MatchRoom extends Room<MatchState> {
           // nesnesine uygulanmali; govdenin kendisine yazilan can ve kalkan
           // degisiklikleri kaybolur.
           const hitEnemy = this.enemies.get(collision.body.id);
-          projectile.x = previousX + (projectile.x - previousX) * collision.progress;
-          projectile.y = previousY + (projectile.y - previousY) * collision.progress;
+          projectile.x = previousX + (reachX - previousX) * collision.progress;
+          projectile.y = previousY + (reachY - previousY) * collision.progress;
           if (hitEnemy) {
             this.applyProjectileHit(projectile, hitEnemy);
           }
@@ -7676,6 +7760,10 @@ export class MatchRoom extends Room<MatchState> {
           if (projectile.piercedEnemyIds.length >= projectile.pierceLimit) {
             this.removeProjectile(id, projectile);
           }
+          continue;
+        }
+        if (aegisT !== undefined) {
+          this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
           continue;
         }
         if (this.isProjectileOutOfBounds(projectile)) {
@@ -7688,6 +7776,14 @@ export class MatchRoom extends Room<MatchState> {
         projectile.x += projectile.vx * seconds;
         projectile.y += projectile.vy * seconds;
         this.updateProjectileAbartiModifier(projectile, previousX, previousY);
+
+        if (this.activeAegis) {
+          const aegisT = this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y);
+          if (aegisT !== undefined) {
+            this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
+            continue;
+          }
+        }
 
         if (this.isProjectileOutOfBounds(projectile)) {
           this.removeProjectile(id, projectile);
@@ -7728,6 +7824,14 @@ export class MatchRoom extends Room<MatchState> {
         projectile.y += projectile.vy * seconds;
       }
       this.updateProjectileAbartiModifier(projectile, previousX, previousY);
+
+      if (this.activeAegis) {
+        const aegisT = this.getAegisProjectileCrossing(previousX, previousY, projectile.x, projectile.y);
+        if (aegisT !== undefined) {
+          this.stopProjectileAtAegis(id, projectile, previousX, previousY, aegisT);
+          continue;
+        }
+      }
 
       if (this.isProjectileOutOfBounds(projectile)) {
         this.removeProjectile(id, projectile);
@@ -7970,7 +8074,7 @@ export class MatchRoom extends Room<MatchState> {
     const now = Date.now();
     // Karsi atak dusman degil ama dusman tikinde ilerliyor; dalga bitse de
     // haritayi gecene kadar suruyor (mac bitince `finishMatch` kaldiriyor).
-    if (this.counterSurge && !this.matchResult) this.updateCounterSurge(now);
+    if (this.counterSurges.length > 0 && !this.matchResult) this.updateCounterSurge(now);
     for (const [id, enemy] of this.enemies) {
       if (!this.updateEnemyEngineStatusOutcomes(enemy, now)) {
         continue;
@@ -8510,50 +8614,80 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Planin karsi atagi, sirasi gelen dogumla birlikte uyariya basliyor.
-   * Ayni anda tek serit: onceki dalganin seridi hala geciyorsa bu dalganin
-   * seridi atlaniyor (ertelenmiyor).
+   * Planin karsi ataklari, sirasi gelen dogumla birlikte uyariya basliyor.
+   * Haritada en fazla iki serit ve bir siper: dolu iken sirasi gelen serit
+   * atlaniyor (ertelenmiyor).
    */
   private maybeStartCounterSurge() {
     const plan = this.waveSpecialPlan;
-    const surge = plan?.surge;
-    if (!plan || !surge || this.waveSurgeStarted || plan.wave !== this.wave || this.waveSpawned <= surge.atSpawn || this.matchResult) return;
-    if (this.counterSurge) {
-      this.waveSurgeStarted = true;
-      return;
+    const surges = plan?.surges;
+    if (!plan || !surges || plan.wave !== this.wave || this.matchResult) return;
+    while (this.waveSurgeCursor < surges.length && this.waveSpawned > surges[this.waveSurgeCursor].atSpawn) {
+      const planned = surges[this.waveSurgeCursor];
+      this.waveSurgeCursor += 1;
+      if (this.counterSurges.length >= COUNTER_SURGE_MAX_ACTIVE) continue;
+      if (planned.kind === "aegis"
+        && this.counterSurges.filter((surge) => surge.kind === "aegis").length >= COUNTER_SURGE_MAX_ACTIVE_AEGIS) continue;
+      this.launchCounterSurge(planned);
     }
-    this.startCounterSurge(surge.col, surge.width);
+  }
+
+  /** Ilk karsi atak (testler ve tek serit bekleyen eski cagiranlar icin). */
+  private get counterSurge(): CounterSurgeModel | undefined {
+    return this.counterSurges[0];
+  }
+
+  private clearCounterSurges() {
+    this.counterSurges = [];
+    this.activeAegis = undefined;
+    this.aegisBlockPending.length = 0;
+  }
+
+  /** Bugunku serit (`band`): ust kenardan, `col` sol sutun. */
+  private startCounterSurge(col: number, width: number, now = Date.now()) {
+    return this.launchCounterSurge({ atSpawn: 0, kind: "band", travel: "down", lane: col, width }, now);
   }
 
   /**
    * Seridi kaldirir. Sureler oyun suresi: oyun hizi carpani (`scaleGameDuration`)
    * oteki zamanlayicilar gibi seride de biniyor. Hasar payi burada, kalkilan
    * dalgadan aliniyor ve seritle birlikte tasiniyor: serit sonraki dalgaya
-   * sarkarsa o dalganin (daha yuksek) orani binmiyor.
+   * sarkarsa o dalganin (daha yuksek) orani binmiyor. Siperin gecis suresi
+   * dalganin grunt yurume hizindan.
    */
-  private startCounterSurge(col: number, width: number, now = Date.now()) {
-    this.waveSurgeStarted = true;
-    this.counterSurge = {
+  private launchCounterSurge(planned: PlannedCounterSurge, now = Date.now()) {
+    const spec = COUNTER_SURGE_KIND_TABLE[planned.kind];
+    const map = this.activeMap;
+    const width = Math.max(1, Math.floor(planned.width));
+    const band = getCounterSurgeGeometry(planned.travel, planned.lane, width, getMapOrigin(map), getMapGridSize(map), map.cols, map.rows);
+    const route = spec.route;
+    const col = route === "diagonal" ? 0
+      : Math.max(0, Math.min((route === "side" ? map.rows : map.cols) - width, Math.floor(planned.lane)));
+    const crossGameMs = spec.crossMs > 0 ? spec.crossMs : getAegisCrossMs(band.length, this.getAegisSpeed());
+    const surge: CounterSurgeModel = {
       id: this.nextCounterSurgeId++,
-      col: Math.max(0, Math.min(this.activeMap.cols - 1, Math.floor(col))),
-      width: Math.max(1, Math.floor(width)),
+      kind: planned.kind,
+      travel: planned.travel,
+      col,
+      width,
       createdAt: now,
-      launchAt: now + scaleGameDuration(COUNTER_SURGE_TELEGRAPH_MS),
-      crossMs: scaleGameDuration(COUNTER_SURGE_CROSS_MS),
-      damageRatio: getCounterSurgeDamageRatio(this.wave),
+      launchAt: now + scaleGameDuration(spec.telegraphMs),
+      crossMs: scaleGameDuration(crossGameMs),
+      damageRatio: getCounterSurgeKindDamageRatio(planned.kind, this.wave),
       hitIds: new Set(),
       absorbed: [],
-      lastProgress: 0
+      lastProgress: 0,
+      band,
+      frontAlong: 0,
+      previousFrontAlong: 0
     };
+    this.counterSurges.push(surge);
+    return surge;
   }
 
-  /**
-   * Seridin yone bagimsiz geometrisi (yol yonu, orta hat, genislik). Bugun
-   * tek cesit var: ust kenardan asagi. Yutulma ve korunma hesabi yalnizca bu
-   * geometriyi okuyor; baska yonden gelen serit kendi geometrisini verir.
-   */
-  private getCounterSurgeBand(surge: CounterSurgeModel): SurgeBandGeometry {
-    return getVerticalSurgeBand(getMapOrigin(this.activeMap), getMapGridSize(this.activeMap), surge.col, surge.width, this.activeMap.rows);
+  /** Siperin hizi: dalganin grunt'unun yurume hizi (dunya birimi / oyun saniyesi). */
+  private getAegisSpeed() {
+    return this.scaleWorldSpeed((getEnemyCombatDefinition("grunt").speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
   }
 
   /**
@@ -8579,32 +8713,51 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
-   * Seridin ilerlemesi ve vuruslari. On cizgisi yapinin merkezini gecince
-   * yapi bir kez, azami caninin `surge.damageRatio` payi kadar (seridin
-   * basladigi dalganin orani; zirh delinir) vuruluyor. Kuleler, kaynak
-   * binalari ve duvarlar; dusman, isci ve nexus degil. Serit tek; yapilar tick basina bir kez taraniyor.
+   * Seritlerin ilerlemesi (en fazla iki). Hasarli seritte vuruslar
+   * (`updateDamagingCounterSurge`); siperde yalnizca on cizgi (atis kapisi).
+   * Haritayi gecen serit kalkiyor.
    */
   private updateCounterSurge(now: number) {
-    const surge = this.counterSurge;
-    if (!surge || now < surge.launchAt) return;
-    const progress = this.getCounterSurgeProgress(surge, now);
-    const origin = getMapOrigin(this.activeMap);
+    if (this.counterSurges.length === 0) return;
+    let aegis: CounterSurgeModel | undefined;
+    for (let index = this.counterSurges.length - 1; index >= 0; index -= 1) {
+      const surge = this.counterSurges[index];
+      if (now < surge.launchAt) continue;
+      const progress = this.getCounterSurgeProgress(surge, now);
+      surge.previousFrontAlong = surge.frontAlong;
+      surge.frontAlong = progress * surge.band.length;
+      if (surge.kind === "aegis") {
+        surge.lastProgress = progress;
+        if (progress < 1) aegis = surge;
+      } else {
+        this.updateDamagingCounterSurge(surge, progress, now);
+      }
+      if (progress >= 1) this.counterSurges.splice(index, 1);
+    }
+    this.activeAegis = aegis;
+    if (this.aegisBlockPending.length > 0) this.flushAegisBlocks(now);
+  }
+
+  /**
+   * Hasarli seridin vuruslari. On cizgisi yapinin merkezine varinca yapi
+   * bir kez, azami caninin `surge.damageRatio` payi kadar (seridin basladigi
+   * dalganin orani x cesit carpani; zirh delinir) vuruluyor. Kuleler, kaynak
+   * binalari ve duvarlar; dusman, isci ve nexus degil.
+   */
+  private updateDamagingCounterSurge(surge: CounterSurgeModel, progress: number, now: number) {
+    const band = surge.band;
+    const frontAlong = surge.frontAlong;
     const gridSize = getMapGridSize(this.activeMap);
-    const frontY = origin.y + progress * this.activeMap.rows * gridSize;
-    const left = origin.x + surge.col * gridSize;
-    const right = left + surge.width * gridSize;
     const hits: CounterSurgeHitMessage["hits"] = [];
-    // Kalkan ya da onceden yutulmus bir parca yoksa (macin neredeyse tamami)
-    // geometri hic kurulmuyor ve dongu eskisiyle bire bir ayni.
-    const band = this.metalShields.length > 0 || surge.absorbed.length > 0 ? this.getCounterSurgeBand(surge) : undefined;
-    if (band && this.metalShields.length > 0) this.absorbCounterSurgeAtShields(surge, band, progress, now);
+    if (this.metalShields.length > 0) this.absorbCounterSurgeAtShields(surge, band, progress, now);
     surge.lastProgress = progress;
     for (const tower of this.towers.values()) {
-      if (tower.hp <= 0 || tower.y > frontY || surge.hitIds.has(tower.id)) continue;
-      if (!this.isInCounterSurgeBand(tower, left, right, gridSize)) continue;
+      if (tower.hp <= 0 || surge.hitIds.has(tower.id)) continue;
+      if ((tower.x - band.originX) * band.dirX + (tower.y - band.originY) * band.dirY > frontAlong) continue;
+      if (!this.isInCounterSurgeBand(tower, band, gridSize)) continue;
       // Yutulan parcanin arkasinda kalan yapi bu seritten korunuyor: serit
       // oraya hic varmadi. Isaretlenmiyor; korunma araliktan okunuyor.
-      if (band && isSparedFromSurge(band, surge.absorbed, tower.x, tower.y)) continue;
+      if (surge.absorbed.length > 0 && isSparedFromSurge(band, surge.absorbed, tower.x, tower.y)) continue;
       surge.hitIds.add(tower.id);
       const before = tower.hp;
       this.damageTower(tower, tower.maxHp * surge.damageRatio, { pierceArmor: true });
@@ -8614,31 +8767,105 @@ export class MatchRoom extends Room<MatchState> {
       const message: CounterSurgeHitMessage = { id: surge.id, hits };
       this.broadcast("surge:hit", message);
     }
-    if (progress >= 1) this.counterSurge = undefined;
   }
 
-  /** Yapi seridin sutunlarina biniyor mu (dikey kenar yapisi sinirda da sayiliyor). */
-  private isInCounterSurgeBand(tower: TowerModel, left: number, right: number, gridSize: number) {
+  /**
+   * Yapi seridin genisligine biniyor mu (`isStructureInSurgeWidth`): ayak izi
+   * genislik eksenine izdusuruluyor; ince kenar yapisi (duvar) sinirda da sayiliyor.
+   */
+  private isInCounterSurgeBand(tower: TowerModel, band: SurgeBandGeometry, gridSize: number) {
     const edge = tower.definition.engine?.placement?.requiresEdge;
-    if (edge && tower.orientation === "vertical") return tower.x >= left - 0.5 && tower.x <= right + 0.5;
-    const half = edge
-      ? (gridSize * this.getEdgeLength(tower.definition.id)) / 2
-      : (gridSize * this.getTowerPlacementSpan(tower.definition.id)) / 2;
-    return tower.x + half > left + 0.5 && tower.x - half < right - 0.5;
+    if (edge) {
+      const half = (gridSize * this.getEdgeLength(tower.definition.id)) / 2;
+      return tower.orientation === "vertical"
+        ? isStructureInSurgeWidth(band, tower.x, tower.y, 0, half)
+        : isStructureInSurgeWidth(band, tower.x, tower.y, half, 0);
+    }
+    const half = (gridSize * this.getTowerPlacementSpan(tower.definition.id)) / 2;
+    return isStructureInSurgeWidth(band, tower.x, tower.y, half, half);
   }
 
-  private getCounterSurgeWire(now: number): CounterSurgeSnapshot | undefined {
-    const surge = this.counterSurge;
-    if (!surge) return undefined;
+  /**
+   * Telde serit kaydi. Bugunku serit (`band`, ustten) eski kayitla bire bir
+   * ayni; diger cesitler cesit (`k`) ve yon (`d`) kodunu ekliyor.
+   */
+  private getCounterSurgeWire(surge: CounterSurgeModel, now: number): CounterSurgeSnapshot {
+    const kind = COUNTER_SURGE_KIND_CODES[surge.kind];
+    const travel = COUNTER_SURGE_TRAVEL_CODES[surge.travel];
     return {
       id: surge.id,
       col: surge.col,
       w: surge.width,
       p: Math.round(this.getCounterSurgeProgress(surge, now) * 1000) / 1000,
+      ...(kind !== 0 ? { k: kind } : {}),
+      ...(travel !== 0 ? { d: travel } : {}),
       ...(now < surge.launchAt ? { warn: true as const } : {}),
       // Yalnizca kesik varken: seritsiz ve kalkansiz karede anahtar yok.
-      ...(surge.absorbed.length > 0 ? { cut: encodeSurgeCuts(this.getCounterSurgeBand(surge), surge.absorbed, getMapGridSize(this.activeMap)) } : {})
+      ...(surge.absorbed.length > 0 ? { cut: encodeSurgeCuts(surge.band, surge.absorbed, getMapGridSize(this.activeMap)) } : {})
     };
+  }
+
+  // --- Siper dalgasi: atis kapisi ------------------------------------------------------
+
+  /**
+   * Duz hat (kuleden hedefe, isinin cikisindan dusmana) kalkmis siperin on
+   * cizgisini (seridin tam genisligi) kesiyor mu. Siper yokken tek
+   * karsilastirma; varken aday basina tek parca kesisimi.
+   */
+  private isLineBlockedByAegis(x1: number, y1: number, x2: number, y2: number) {
+    const aegis = this.activeAegis;
+    return aegis !== undefined && getSurgeFrontCrossing(aegis.band, aegis.frontAlong, aegis.frontAlong, x1, y1, x2, y2) !== undefined;
+  }
+
+  /** Kule bu dusmani siperin ardinda mi goruyor (atis hatti siperi kesiyor). */
+  private isEnemyBehindAegis(tower: TowerModel, enemy: EnemyModel) {
+    return this.activeAegis !== undefined && this.isLineBlockedByAegis(tower.x, tower.y, enemy.x, enemy.y);
+  }
+
+  /**
+   * Ucan atis bu tikte siperi kesti mi: siper de ilerliyor, merminin onceki
+   * yeri onceki on cizgiyle, simdiki yeri simdiki on cizgiyle olculuyor.
+   * Kestiyse kesisme parametresi (0..1).
+   */
+  private getAegisProjectileCrossing(previousX: number, previousY: number, x: number, y: number) {
+    const aegis = this.activeAegis;
+    if (!aegis) return undefined;
+    return getSurgeFrontCrossing(aegis.band, aegis.previousFrontAlong, aegis.frontAlong, previousX, previousY, x, y);
+  }
+
+  /** Mermi siperde duruyor: kesisme noktasinda kalkiyor, hasar ve alan yok. */
+  private stopProjectileAtAegis(id: string, projectile: ProjectileModel, previousX: number, previousY: number, t: number) {
+    projectile.x = previousX + (projectile.x - previousX) * t;
+    projectile.y = previousY + (projectile.y - previousY) * t;
+    this.noteAegisBlock(projectile.x, projectile.y);
+    this.removeProjectile(id, projectile);
+  }
+
+  /**
+   * Durdurulan atisin yeri, seyrek `surge:block` icin: seridin genislik
+   * ekseninde dusuk kenardan hucre. Mesaj basina en fazla birkac nokta,
+   * araya en az `SURGE_BLOCK_MESSAGE_INTERVAL_MS`; fazlasi atiliyor.
+   */
+  private noteAegisBlock(x: number, y: number) {
+    const aegis = this.activeAegis;
+    if (!aegis || this.aegisBlockPending.length >= SURGE_BLOCK_MAX_POINTS) return;
+    const gridSize = getMapGridSize(this.activeMap);
+    const across = x * aegis.band.dirY - y * aegis.band.dirX;
+    const offset = (across - getSurgeBandSpan(aegis.band).from) / gridSize;
+    this.aegisBlockPending.push(Math.round(Math.max(0, Math.min(aegis.width, offset)) * 10) / 10);
+  }
+
+  private flushAegisBlocks(now: number) {
+    const aegis = this.activeAegis;
+    if (!aegis) {
+      this.aegisBlockPending.length = 0;
+      return;
+    }
+    if (now - this.aegisBlockSentAt < SURGE_BLOCK_MESSAGE_INTERVAL_MS) return;
+    this.aegisBlockSentAt = now;
+    const message: CounterSurgeBlockMessage = { id: aegis.id, a: this.aegisBlockPending.slice() };
+    this.aegisBlockPending.length = 0;
+    this.broadcast("surge:block", message);
   }
 
   // --- Metal Kalkan (AttackLord, yuva 1) -------------------------------------------
@@ -11126,7 +11353,8 @@ export class MatchRoom extends Room<MatchState> {
     const minimum = this.getTowerMinimumRange(tower);
     const hasTarget = this.getEnemiesNear(tower.x, tower.y, range).some((enemy) => {
       const distance = distanceSq(tower.x, tower.y, enemy.x, enemy.y);
-      return enemy.hp > 0 && this.canTowerTargetEnemy(tower, enemy) && distance <= range * range && distance >= minimum * minimum;
+      return enemy.hp > 0 && this.canTowerTargetEnemy(tower, enemy) && distance <= range * range && distance >= minimum * minimum
+        && !this.isEnemyBehindAegis(tower, enemy);
     });
     if (!hasTarget) return "target";
     if (!this.isTowerOnBackupLine(tower, now)) {
@@ -13420,7 +13648,8 @@ export class MatchRoom extends Room<MatchState> {
       const targetIsValid = Boolean(
         lockedTarget &&
         this.canTowerTargetEnemy(tower, lockedTarget) &&
-        distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) ** 2
+        distanceSq(tower.x, tower.y, lockedTarget.x, lockedTarget.y) <= this.getTowerRange(tower) ** 2 &&
+        !this.isEnemyBehindAegis(tower, lockedTarget)
       );
       if (shouldRetainAimTargetLock({
         now,
@@ -13440,7 +13669,7 @@ export class MatchRoom extends Room<MatchState> {
     const isGuidedHit = this.projectileGuidanceUntil > now && (tower.definition.hitType === "projectile" || tower.definition.hitType === "impact");
     if (isGuidedHit) {
       const guidedTarget = Array.from(this.enemies.values())
-        .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && this.isEnemyInProjectileGuidance(enemy, now))
+        .filter((enemy) => this.canTowerTargetEnemy(tower, enemy) && this.isEnemyInProjectileGuidance(enemy, now) && !this.isEnemyBehindAegis(tower, enemy))
         .sort((a, b) => b.pathDistance - a.pathDistance)[0];
       if (guidedTarget) {
         return guidedTarget;
@@ -13448,7 +13677,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const melisFocusTarget = this.getMelisFocusSkillTarget(tower, now);
-    if (melisFocusTarget) {
+    if (melisFocusTarget && !this.isEnemyBehindAegis(tower, melisFocusTarget)) {
       return melisFocusTarget;
     }
 
@@ -13520,7 +13749,8 @@ export class MatchRoom extends Room<MatchState> {
       priorityScore: options.useTypePriority === false ? 0 : enemy.type === "brute" ? 1 : 0,
       inRange: distanceSq(tower.x, tower.y, enemy.x, enemy.y) <= options.range * options.range
         && distanceSq(tower.x, tower.y, enemy.x, enemy.y) >= this.getTowerMinimumRange(tower) ** 2,
-      eligible: this.canTowerTargetEnemy(tower, enemy),
+      // Siper dalgasi: atis hatti siperi kesen dusman secilemiyor.
+      eligible: this.canTowerTargetEnemy(tower, enemy) && !this.isEnemyBehindAegis(tower, enemy),
       movementKind: enemy.movementKind
     })));
     return selected ? byId.get(selected.id) : undefined;
@@ -15791,7 +16021,8 @@ export class MatchRoom extends Room<MatchState> {
       ...(this.creativeMode ? { creative: true as const } : {}),
       stage: this.stage,
       // Yalnizca serit varken: 1. asamada ve seritsiz dalgada anahtar yok.
-      ...(this.counterSurge ? { surges: [this.getCounterSurgeWire(now)!] } : {}),
+      // Her karede tam (en fazla iki kayit): yeni katilan ilk karede goruyor.
+      ...(this.counterSurges.length > 0 ? { surges: this.counterSurges.map((surge) => this.getCounterSurgeWire(surge, now)) } : {}),
       // Yalnizca kalkan varken (3 sn): her karede tam, yeni katilan da ilk karede goruyor.
       ...(this.metalShields.length > 0 ? { shields: this.getMetalShieldsWire(now) } : {}),
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),

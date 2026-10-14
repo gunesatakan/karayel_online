@@ -13,7 +13,8 @@
  *
  * Secenekler: --wave N (20), --seconds N (75), --seed N, --scale N (harita
  * olcegi, 2), --stage N (asama, 1; 2+ ozel dusman ve karsi atak), --burst N (dalga basinda N dusman birden), --breakdown (snapshot
- * bolum/alan baytlari), --slow (en yavas tickler).
+ * bolum/alan baytlari), --slow (en yavas tickler), --surges (2. asama+: olcum basinda iki karsi atak,
+ * siper ve capraz kesme; olcum boyunca haritada).
  *
  * Sabit adim ve dogrulama kipinde `Date.now`, `performance.now` ve
  * `Math.random` sanal/tohumlu: ayni kod iki kez ayni maci oynar. Tick suresi
@@ -354,6 +355,13 @@ function setupRoom() {
   if (burst > 0) {
     room.waveTarget = Math.max(room.waveTarget, room.waveSpawned + burst);
     for (let index = 0; index < burst; index += 1) room.spawnNextWaveEnemy();
+  }
+  // `--surges`: olcum basinda iki karsi atak haritada (siper atis kapisini ve
+  // capraz seridin yapi taramasini olcmek icin). Plan zarina dokunmuyor.
+  if (flag("surges") && room.stage >= 2) {
+    const { cols, rows } = room.activeMap;
+    room.launchCounterSurge({ atSpawn: 0, kind: "aegis", travel: "down", lane: Math.floor(cols / 4), width: shared.getCounterSurgeWidthCells("aegis", cols, rows) });
+    room.launchCounterSurge({ atSpawn: 0, kind: "slash", travel: "downRight", lane: 0, width: shared.getCounterSurgeWidthCells("slash", cols, rows) });
   }
   return { room, clients };
 }
