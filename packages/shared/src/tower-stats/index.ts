@@ -231,12 +231,17 @@ export function hasGlobalTowerRange(definitionId: string) {
 }
 
 /** World-unit attack radius on an unscaled map with no range auras. */
+/** Kulenin seviye basina menzil artisi: tanimdaki deger ya da ortak artis. */
+export function getTowerRangePerLevel(definition: Pick<TowerDefinition, "rangePerLevel">) {
+  return definition.rangePerLevel ?? TOWER_RANGE_PER_LEVEL;
+}
+
 export function getTowerBaseLevelRange(definition: TowerDefinition, level: number) {
   if (hasGlobalTowerRange(definition.id)) return Infinity;
 
   const scaledRange = definition.id === "zeynep-2"
     ? getZeynepShowcaseBeamLength(level) * GLOBAL_TOWER_RANGE_MULTIPLIER
-    : (definition.range + (level - 1) * TOWER_RANGE_PER_LEVEL) * GLOBAL_TOWER_RANGE_MULTIPLIER;
+    : (definition.range + (level - 1) * getTowerRangePerLevel(definition)) * GLOBAL_TOWER_RANGE_MULTIPLIER;
 
   if (!definition.engine?.attack.rangeStartsAtFootprint) return scaledRange;
 

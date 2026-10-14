@@ -1,4 +1,5 @@
 import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
+import { getTowerRangePerLevel } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
@@ -16420,7 +16421,7 @@ export class MatchRoom extends Room<MatchState> {
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (hasUcubePerk(tower, "range-hull")) {
-      return applyRangeAura(this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
+      return applyRangeAura(this.scaleWorldDistance((tower.definition.range * 2 + (tower.level - 1) * getTowerRangePerLevel(tower.definition)) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
     }
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
@@ -16436,11 +16437,11 @@ export class MatchRoom extends Room<MatchState> {
       const composition = this.getZeynepSynthesisComposition(tower);
       if (composition.mode) {
         const baseRange = this.getZeynepSynthesisBaseRange(composition);
-        return applyRangeAura(this.scaleWorldDistance((baseRange + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
+        return applyRangeAura(this.scaleWorldDistance((baseRange + (tower.level - 1) * getTowerRangePerLevel(tower.definition)) * passiveMultiplier * zeynepRangeMultiplier * GLOBAL_TOWER_RANGE_MULTIPLIER));
       }
     }
 
-    const scaledRange = this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * 11) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER);
+    const scaledRange = this.scaleWorldDistance((tower.definition.range + (tower.level - 1) * getTowerRangePerLevel(tower.definition)) * passiveMultiplier * zeynepRangeMultiplier * this.getMelisEvolutionRangeMultiplier(tower) * GLOBAL_TOWER_RANGE_MULTIPLIER);
     if (tower.definition.engine?.attack.rangeStartsAtFootprint) {
       const footprintRadius = this.scaleWorldDistance(TOWER_GRID_SIZE * getTowerGridSpan(tower.definition.id) / 2);
       return footprintRadius + applyRangeAura(scaledRange);

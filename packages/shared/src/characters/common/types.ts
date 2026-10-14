@@ -166,6 +166,8 @@ export type TowerDefinition = {
   cost: number;
   upgradeCost: number;
   range: number;
+  /** Seviye basina menzil artisi (dunya birimi); yoksa ortak TOWER_RANGE_PER_LEVEL. */
+  rangePerLevel?: number;
   damage: number;
   fireIntervalMs: number;
   projectileSpeed: number;

@@ -7,6 +7,13 @@ const trackingPercent = (stacks: number) => Math.round(TRACKING_MARK_DAMAGE_PER_
 
 const color = 0x22c55e;
 
+/**
+ * AttackLord kulelerinin seviye basina menzil artisi: ortak artisin (11) yarisi.
+ * Taban menzil yariya indirildi; artis da yarilaninca her seviyede menzil
+ * eski degerin tam yarisi oluyor (sahibin istegi).
+ */
+const ATAKAN_RANGE_PER_LEVEL = 5.5;
+
 export const atakanTowers: TowerDefinition[] = ([
   {
     id: "warrior-1",
@@ -134,4 +141,4 @@ export const atakanTowers: TowerDefinition[] = ([
     cost: 53, upgradeCost: 33, range: 0, damage: 0, fireIntervalMs: NON_FIRING_INTERVAL_MS,
     projectileSpeed: 0, aoeRadius: 0, slowMs: 0, color: 0x22d3ee, resourceProvider: "energy"
   }
-] satisfies Array<Omit<TowerDefinition, "engine">>).map(attachTowerEngine);
+] satisfies Array<Omit<TowerDefinition, "engine">>).map((tower) => attachTowerEngine({ ...tower, rangePerLevel: ATAKAN_RANGE_PER_LEVEL }));

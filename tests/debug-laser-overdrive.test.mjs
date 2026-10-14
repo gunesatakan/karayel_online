@@ -603,7 +603,8 @@ for (const level of [5, 10]) {
 
 test("10. seviye: ışınlar bitişte kalkar, namlu buluştukları yerden devam eder ve normal lazer döner; ateş edemeyince ve hararette kalkarlar", () => {
   withClock((advance) => {
-    const { room, tower } = overdriveScene(rowSpots([-60, 0, 60]), { level: 10 });
+    // Dusmanlar normal lazerin (yarilanmis) menzilinde: overdrive bitince normal lazer onlara donuyor.
+    const { room, tower } = overdriveScene(rowSpots([-60, 0, 60], -70), { level: 10 });
     const main = `beam-${tower.id}`;
     recordHits(room, tower, advance, TICK_MS);
     for (const id of sweepBeamIds(tower)) assert.ok(room.beams.has(id));
