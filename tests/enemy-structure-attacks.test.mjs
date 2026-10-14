@@ -157,24 +157,24 @@ test("kuşatma düşmanı yapı çarpanını bitişik vuruşta korur", () => {
 
 test("yapı hasarının dalga çarpanı: 1. dalga ×1,25, 20. dalga ×2,5, arası doğrusal, uçlarda kesik", () => {
   assert.equal(ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE, 1);
-  assert.equal(ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER, 1.25);
+  assert.equal(ENEMY_STRUCTURE_DAMAGE_FIRST_WAVE_MULTIPLIER, 1);
   assert.equal(ENEMY_STRUCTURE_DAMAGE_FINAL_WAVE_MULTIPLIER, 2.5);
   assert.equal(FINAL_WAVE, 20, "formulun paydasi (19) son dalgaya bagli");
-  assert.equal(getEnemyStructureDamageMultiplier(1), 1.25);
+  assert.equal(getEnemyStructureDamageMultiplier(1), 1);
   assert.equal(getEnemyStructureDamageMultiplier(20), 2.5);
   for (let wave = 1; wave <= 20; wave += 1) {
-    const beklenen = 1.25 + 1.25 * (wave - 1) / 19;
+    const beklenen = 1 + 1.5 * (wave - 1) / 19;
     assert.ok(Math.abs(getEnemyStructureDamageMultiplier(wave) - beklenen) < 1e-12, `${wave}. dalga`);
   }
-  assert.ok(Math.abs(getEnemyStructureDamageMultiplier(10) - 1.8421052631578947) < 1e-12);
+  assert.ok(Math.abs(getEnemyStructureDamageMultiplier(10) - 1.7105263157894737) < 1e-12);
   // Dalga 1'in alti 1'e, sonsuz dalga olmadigi icin 20'nin ustu 20'ye.
-  assert.equal(getEnemyStructureDamageMultiplier(0), 1.25);
-  assert.equal(getEnemyStructureDamageMultiplier(-5), 1.25);
-  assert.equal(getEnemyStructureDamageMultiplier(Number.NaN), 1.25);
+  assert.equal(getEnemyStructureDamageMultiplier(0), 1);
+  assert.equal(getEnemyStructureDamageMultiplier(-5), 1);
+  assert.equal(getEnemyStructureDamageMultiplier(Number.NaN), 1);
   assert.equal(getEnemyStructureDamageMultiplier(21), 2.5);
   assert.equal(getEnemyStructureDamageMultiplier(400), 2.5);
   // Simulatorun referansi ayni carpani okuyor.
-  assert.equal(getReferenceStructureBreakDps(1), REFERENCE_STRUCTURE_BREAK_DPS * 1.25);
+  assert.equal(getReferenceStructureBreakDps(1), REFERENCE_STRUCTURE_BREAK_DPS * 1);
   assert.equal(getReferenceStructureBreakDps(20), REFERENCE_STRUCTURE_BREAK_DPS * 2.5);
 });
 
@@ -255,7 +255,7 @@ test("çarpan dalgayla büyüyor ve düşmanın taban saldırısını, nexus sı
   const son = hasar(20);
   assert.ok(ilk.inen < orta.inen && orta.inen < son.inen, `${ilk.inen} / ${orta.inen} / ${son.inen}`);
   // Nisanci: 9 ham. 1. dalga 11,25 - 3 = 8,25; 20. dalga 22,5 - 3 = 19,5.
-  assert.ok(Math.abs(ilk.inen - (9 * 1.25 - ilk.zirh)) < 1e-9, `1. dalga ${ilk.inen}`);
+  assert.ok(Math.abs(ilk.inen - (9 * 1 - ilk.zirh)) < 1e-9, `1. dalga ${ilk.inen}`);
   assert.ok(Math.abs(son.inen - (9 * 2.5 - son.zirh)) < 1e-9, `20. dalga ${son.inen}`);
   // Sizinti hasari ayri tablo; dalga almiyor bile.
   assert.equal(getEnemyLeakDamage("grunt"), 8);

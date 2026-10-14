@@ -23,7 +23,7 @@ export type EnemyCombatDefinition = {
    * iscinin zirhi yok.
    *
    * Bu taban deger. Yapiya vurusta uzerine dalga carpani biniyor
-   * (`getEnemyStructureDamageMultiplier`: 1. dalga x1,25, 20. dalga x2,5);
+   * (`getEnemyStructureDamageMultiplier`: 1. dalga x1, 20. dalga x2,5);
    * isciye temas hasari tabanin kendisi.
    */
   attack: number;

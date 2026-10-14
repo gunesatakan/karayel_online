@@ -215,7 +215,7 @@ test("avcının yapı vuruşu dalgayla sertleşiyor (taban 14 × dalga çarpanı
   // [dalga, kule cani, beklenen vurus]: 10. dalgada 25,8 ham / 22,8 net,
   // 20. dalgada 35 ham / 32 net (kule zirhi 3).
   const tablo = [
-    [1, 100, 7], [1, 160, 12],
+    [1, 100, 10], [1, 160, 15],
     [10, 100, 5], [10, 160, 8],
     [20, 100, 4], [20, 160, 5]
   ];
