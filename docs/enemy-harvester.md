@@ -1,12 +1,14 @@
 # Enemy workers
 
-Workers raid from both map edges starting at wave 3. Each wave adds an even pack
-of `min(24, 6 + 2 * floor(wave / 3))` workers, split equally between left and right.
+Workers raid from both map edges starting at wave 3. Each wave adds a pack
+of `min(12, 3 + floor(wave / 3))` workers, alternating between left and right.
+This is half the former count at every wave: 4 at wave 3, 5 at wave 6,
+6 at wave 9, eventually capped at 12. Odd packs differ by one worker between sides.
 They use the same wave-scaled health and armor as a brute, with an additional shield
 equal to their maximum health. Their movement and status effects use the normal
 enemy combat pipeline.
 
-Each worker gathers 4 units per second, up to a 20-unit quota, from finite iron,
+Each worker gathers 8 units per second, up to a 20-unit quota, from finite iron,
 gunpowder, mystic or plasma deposits. Energy deposits are excluded. Empty deposits
 are retargeted; if no materials remain, the worker retreats with its partial load.
 Workers return to their entry position and leave without nexus damage or kill
@@ -22,19 +24,37 @@ units. The pack is additional to the existing champion and special-enemy budget.
 
 ## Sprite
 
-All stages currently use the same six-limbed armored mining crawler. This is a
-strict overhead sprite, not a humanoid or an isometric character. It uses a
-transparent 512 Ã— 512 canvas and the existing brute display-size calculation;
-the painted body has padding consistent with the other enemy assets.
+Each race has a separately generated overhead, nonhumanoid worker sprite:
 
-Saved asset: `apps/web/public/images/enemies/enemy-harvester.png`.
-Generated using the built-in ImageGen tool, then resized with System.Drawing,
-preserving alpha. The original generated image remains in Codex generated_images.
+- `apps/web/public/images/enemies/enemy-meka-harvester.png`: mechanical mining crab.
+- `apps/web/public/images/enemies/enemy-golem-harvester.png`: basalt stone scarab.
+- `apps/web/public/images/enemies/enemy-spaceBug-harvester.png`: purple chitin beetle.
+- `apps/web/public/images/enemies/enemy-fourthDimensional-harvester.png`: geometric crystal crawler.
+- `apps/web/public/images/enemies/enemy-holyGuardian-harvester.png`: ivory/gold scarab.
+- `apps/web/public/images/enemies/enemy-fallen-harvester.png`: corrupted obsidian arachnid.
 
-Final generation prompt:
+All assets use transparent 512 × 512 canvases and the existing brute display-size
+calculation. Alpha bounds are normalized to a 450-pixel maximum extent so the
+painted bodies have a consistent apparent size. The old generic sprite is retained
+as an unused source asset. Client texture selection now uses the enemy's race.
 
-> Use case: stylized-concept. Asset: single production game sprite for Nexhold enemy resource-stealing worker. Dark painted sci-fi fantasy style, textured gunmetal armored plates with small red hostile sensor accents and cool blue shield emitters, matching detailed dark tower-defense sprites. A low broad SIX-LEGGED scarab-like mechanical mining crawler, six short articulated radial legs, two compact mining pincers pointing DOWN toward bottom of image, stout central enclosed cargo hopper with iron and purple mineral pieces visible from above. STRICT orthographic TOP-DOWN 90 degree overhead view, only dorsal surfaces, absolutely no upright humanoid, no biped, no face portrait, no isometric or perspective side surfaces. One centered isolated whole unit, square composition, fills 85 percent canvas, all limbs inside margins. Clear bold silhouette legible at 45 pixels in game. No ground, no cast shadow, no floor, no text, no UI, no border. Genuinely transparent background. 1024 square.
+Generated with the built-in ImageGen tool; resized with System.Drawing preserving
+alpha. Each asset was generated separately with the common prompt plus its race
+prompt below.
 
-Verification: `tests/harvester-enemies.test.mjs` exercises paired spawning,
-durability, finite extraction, quota retreat, cargo recovery, exhaustion,
-concurrent extraction, blocking structures, immobilization and snapshots.
+Common prompt:
+
+> Use case stylized-concept. Nexhold production enemy worker sprite. ONE low squat nonhumanoid SIX-LEGGED resource harvesting creature with dorsal cargo receptacle and two small gathering mandibles pointing DOWN. Strict 90 degree orthographic overhead view showing back only, NO upright biped, NO human arms, NO isometric view. Dark detailed painted game art, strong readable silhouette at 45px. Whole body centered in square with generous consistent margin, transparent background, no ground, shadow, UI, text or frame.
+
+Race prompts:
+
+- meka: Mechanical mining crab, gunmetal plates, red seams and cyan shield coils, rectangular dorsal cargo bin containing ore, six compact hydraulic limbs.
+- golem: Living basalt stone scarab, six chunky rock limbs, violet rune cracks, hollow stone bowl in dorsal shell carrying crystals; organic stone silhouette, no metal machinery.
+- spaceBug: Biological alien harvester beetle, dark purple layered chitin, six hooked insect legs, green bioluminescent nodes, bulbous dorsal organic cargo sac with mineral fragments, mandibles. No machinery.
+- fourthDimensional: Alien geometric crystal crawler, six floating faceted obsidian-violet limbs arranged radially, central polygonal cargo aperture holding suspended ore, purple dimensional seams. No humanoid torso.
+- holyGuardian: Sacred white marble scarab automaton, six radial ivory-gold articulated limbs, gold inscriptions and warm light seams, open dorsal ivory reliquary holding minerals, broad shieldlike shell.
+- fallen: Corrupted black bone and cracked obsidian mining arachnid, six hooked crawling legs, dull crimson and purple fissures, thorn-edged dorsal cargo cage with ore, small chains close to body. No humanoid.
+
+Verification: `tests/harvester-enemies.test.mjs` exercises spawning, durability,
+finite extraction, quota retreat, cargo recovery, exhaustion, concurrent extraction,
+blocking structures, immobilization, snapshots and the halved count curve.

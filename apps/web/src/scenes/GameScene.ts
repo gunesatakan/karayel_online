@@ -11365,7 +11365,7 @@ function getEnemySpriteDisplaySize(enemy: Pick<EnemySnapshot, "race" | "type">, 
 }
 
 function getEnemyTextureKey(enemy: EnemySnapshot) {
-  if (enemy.special === "harvester") return "enemy-harvester";
+  if (enemy.special === "harvester") return `enemy-${enemy.race}-harvester`;
   if (enemy.special === "bomber") return `enemy-${enemy.race}-bomber`;
   // Kusatma kocunun kendi gorseli henuz yok; brute silueti en yakin duran.
   // Boyut ve renk ayri veriliyor, yani sahada ikisi karistirilmiyor.

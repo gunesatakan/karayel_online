@@ -45,9 +45,9 @@ export const SPECIAL_KIND_WEIGHTS: Readonly<Record<SpecialEnemyKind, number>> = 
 
 /** Side raids are additional packs; independent of ordinary special-slot budgets. */
 export const HARVESTER_QUOTA = 20;
-export const HARVESTER_GATHER_PER_SECOND = 4;
+export const HARVESTER_GATHER_PER_SECOND = 8;
 export function getHarvesterRaidCount(wave: number) {
-  return Number.isFinite(wave) && wave >= 3 ? Math.min(24, 6 + 2 * Math.floor(wave / 3)) : 0;
+  return Number.isFinite(wave) && wave >= 3 ? Math.min(12, 3 + Math.floor(wave / 3)) : 0;
 }
 
 export const BOMBER_RADIUS_CELLS = 1.5;

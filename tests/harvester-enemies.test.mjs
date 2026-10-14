@@ -21,18 +21,20 @@ function advanceUntil(room, condition, ticks = 5000) {
 
 test("raids arrive in large packs from both sides, once per wave after wave two", () => {
   assert.equal(getHarvesterRaidCount(2), 0);
-  const room = setup();
-  room.waveSpawned = 0;
-  room.spawnNextWaveEnemy();
-  room.spawnNextWaveEnemy();
-  const workers = [...room.enemies.values()].filter(e => e.special?.kind === "harvester");
-  assert.equal(workers.length, getHarvesterRaidCount(3));
-  const left = gridToWorld(0, 0, room.activeMap).x;
-  const right = gridToWorld(room.activeMap.cols - 1, 0, room.activeMap).x;
-  assert.equal(workers.filter(e => e.x === left).length, workers.length / 2);
-  assert.equal(workers.filter(e => e.x === right).length, workers.length / 2);
-  room.spawnNextWaveEnemy();
-  assert.equal([...room.enemies.values()].filter(e => e.special?.kind === "harvester").length, workers.length);
+  for (const wave of [3, 6, 9, 27]) {
+    const room = setup(wave);
+    room.waveSpawned = 0;
+    room.spawnNextWaveEnemy();
+    room.spawnNextWaveEnemy();
+    const workers = [...room.enemies.values()].filter(e => e.special?.kind === "harvester");
+    assert.equal(workers.length, getHarvesterRaidCount(wave));
+    const left = gridToWorld(0, 0, room.activeMap).x;
+    const right = gridToWorld(room.activeMap.cols - 1, 0, room.activeMap).x;
+    assert.equal(workers.filter(e => e.x === left).length, Math.ceil(workers.length / 2));
+    assert.equal(workers.filter(e => e.x === right).length, Math.floor(workers.length / 2));
+    room.spawnNextWaveEnemy();
+    assert.equal([...room.enemies.values()].filter(e => e.special?.kind === "harvester").length, workers.length);
+  }
 });
 
 test("worker health matches a brute at the same wave, shield equals its full health", () => {
@@ -116,7 +118,7 @@ test("workers respect blocking structures, and immobilization prevents gathering
   room.updateHarvester(worker, 1, 0);
   assert.equal(worker.special.harvest.total, 0);
   room.updateHarvester(worker, 1, 1);
-  assert.equal(worker.special.harvest.total, 4);
+  assert.equal(worker.special.harvest.total, 8);
   const client = { sessionId: "p1", send() {} };
   const home = worker.special.harvest.home = gridToWorld(5, 5, room.activeMap);
   room.placeTower(client, { ...home, definitionId: "warrior-1" });
@@ -128,3 +130,9 @@ test("workers respect blocking structures, and immobilization prevents gathering
   assert.ok(room.enemies.has(worker.id), "worker cannot leave through a blocking tower");
 });
 
+test("raid count is halved at every wave and grows gradually to twelve", () => {
+  for (let wave = 3; wave <= 60; wave++) {
+    assert.equal(getHarvesterRaidCount(wave), Math.min(24, 6 + 2 * Math.floor(wave / 3)) / 2);
+  }
+  assert.deepEqual([3, 6, 9, 12, 27].map(getHarvesterRaidCount), [4, 5, 6, 7, 12]);
+});
