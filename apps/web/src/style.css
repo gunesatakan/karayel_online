@@ -1116,6 +1116,11 @@ button.wave-report:active { transform: scale(0.99); }
   scrollbar-color: rgba(56, 189, 248, 0.55) rgba(15, 23, 42, 0.5);
 }
 
+/* Kule surukleniyor: cekmece haritanin altini acik birakiyor, birakista kapaniyor. */
+.game-controls__drawer.game-controls__drawer--hidden {
+  visibility: hidden;
+}
+
 .game-controls__drawer-header {
   display: flex;
   align-items: center;

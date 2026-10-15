@@ -311,12 +311,16 @@ export function setupGameControlUi(game: Phaser.Game) {
    * nokta bir kule dugmesi. Simdi cekmece kayabiliyorsa parmak once karar
    * veriyor: dikey kayma listeyi kaydirir, yana cekme ya da kisa bir basili
    * tutus kuleyi alir, dokunup birakmak yalnizca secer. Cekmece kaymiyorsa
-   * eski hiz korunuyor: ilk kipirtida surukleme.
+   * ilk kipirti hangi yone olursa olsun kuleyi alir.
+   *
+   * Kule alininca ya da secilince cekmece kapaniyor: acik kalsa haritanin
+   * alt kismi altinda kaliyor ve oraya hicbir sey yerlestirilemiyordu.
    */
   let towerGesture: {
     towerId: string;
     pointerId: number;
     mode: "pending" | "scroll";
+    scrollable: boolean;
     startX: number;
     startY: number;
     lastX: number;
@@ -614,9 +618,27 @@ export function setupGameControlUi(game: Phaser.Game) {
     towerGesture = undefined;
   };
 
+  /**
+   * Kule cekmecesini kapatir. Yeniden kurma parmak kalkana kadar erteleniyor
+   * (`pressedPointers`); olay bitmeden kurulmasin diye mikro gorevde.
+   */
+  const closeTowersDrawer = () => {
+    if (openDrawer !== "towers") return;
+    openDrawer = undefined;
+    queueMicrotask(() => {
+      if (!latestState) return;
+      latestKey = "";
+      render(latestState);
+    });
+  };
+
   /** Karar verildi: parmak kuleyi aldi, yerlestirme surukleme olarak suruyor. */
   const beginTowerDrag = (towerId: string, clientX: number, clientY: number) => {
     clearTowerGesture();
+    // Cekmece surukleme boyunca gorunmuyor: parmagi yakalayan dugme icinde,
+    // DOM'dan cikarsa parmak kaybedilir. Birakista gercekten kapaniyor.
+    getOpenDrawer()?.classList.add("game-controls__drawer--hidden");
+    closeTowersDrawer();
     dispatch({ action: "selectTower", towerId });
     dispatch({ action: "towerDragStart", towerId, clientX, clientY });
   };
@@ -680,8 +702,8 @@ export function setupGameControlUi(game: Phaser.Game) {
         if (Math.hypot(dx, dy) < TOWER_GESTURE_SLOP_PX) {
           return;
         }
-        if (Math.abs(dx) > Math.abs(dy)) {
-          // Yana cekme: kule alindi, cekmece kaymiyor.
+        if (!gesture.scrollable || Math.abs(dx) > Math.abs(dy)) {
+          // Yana cekme (ya da kaymayan cekmece): kule alindi.
           beginTowerDrag(activeTowerId, gesture.startX, gesture.startY);
           dispatch({ action: "towerDragMove", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
           return;
@@ -712,8 +734,9 @@ export function setupGameControlUi(game: Phaser.Game) {
     const gesture = towerGesture;
     if (gesture) {
       if (gesture.mode === "pending" && event.type === "pointerup") {
-        // Dokunup birakmak: yalnizca secim.
+        // Dokunup birakmak: yalnizca secim; harita acilsin diye cekmece kapaniyor.
         dispatch({ action: "selectTower", towerId: activeTowerId });
+        closeTowersDrawer();
       } else if (gesture.mode === "scroll" && performance.now() - gesture.lastAt < 80) {
         startTowerScrollMomentum(gesture.velocity);
       }
@@ -2092,23 +2115,21 @@ export function setupGameControlUi(game: Phaser.Game) {
       window.addEventListener("lostpointercapture", handleTowerDragLost, { passive: false });
       stopTowerScrollMomentum();
       const drawer = button.closest<HTMLElement>(".game-controls__drawer");
-      if (!drawer || drawer.scrollHeight - drawer.clientHeight <= 1) {
-        beginTowerDrag(tower.id, event.clientX, event.clientY);
-        return;
-      }
+      const scrollable = Boolean(drawer && drawer.scrollHeight - drawer.clientHeight > 1);
       const towerId = tower.id;
       const pointerId = event.pointerId;
       towerGesture = {
         towerId,
         pointerId,
         mode: "pending",
+        scrollable,
         startX: event.clientX,
         startY: event.clientY,
         lastX: event.clientX,
         lastY: event.clientY,
         lastAt: performance.now(),
         velocity: 0,
-        startScroll: drawer.scrollTop,
+        startScroll: drawer?.scrollTop ?? 0,
         holdTimer: window.setTimeout(() => {
           const gesture = towerGesture;
           if (!gesture || gesture.mode !== "pending" || gesture.pointerId !== pointerId) return;

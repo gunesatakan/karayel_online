@@ -55,9 +55,10 @@ test("kule dugmesi pointerdown'da parmagi yakaliyor; basili parmakta yeniden kur
   const button = source.slice(source.indexOf("const makeTowerButton = "), source.indexOf("const makeMelisSpectrum = "));
   const handler = button.slice(button.indexOf("button.addEventListener(\"pointerdown\""));
   assert.match(handler, /button\.setPointerCapture\(event\.pointerId\);/);
-  // Cekmece kaymiyorsa eski hiz: basista surukleme. Kayiyorsa parmak karar veriyor.
-  assert.match(handler, /if \(!drawer \|\| drawer\.scrollHeight - drawer\.clientHeight <= 1\) \{\n\s+beginTowerDrag\(tower\.id, event\.clientX, event\.clientY\);\n\s+return;/);
-  assert.match(handler, /mode: "pending"/);
+  // Basista surukleme yok: dokunus yalnizca secsin, cekmece kayabiliyorsa kaydirsin.
+  assert.match(handler, /const scrollable = Boolean\(drawer && drawer\.scrollHeight - drawer\.clientHeight > 1\);/);
+  assert.match(handler, /mode: "pending",\n\s+scrollable,/);
+  assert.doesNotMatch(handler.slice(0, handler.indexOf("towerGesture = {")), /beginTowerDrag\(/);
   assert.match(handler, /beginTowerDrag\(towerId, gesture\.lastX, gesture\.lastY\);\n\s+\}, TOWER_HOLD_MS\)/);
   const begin = source.slice(source.indexOf("const beginTowerDrag = "), source.indexOf("const clearActiveTowerDrag = "));
   assert.match(begin, /dispatch\(\{ action: "selectTower", towerId \}\);\n\s+dispatch\(\{ action: "towerDragStart", towerId, clientX, clientY \}\);/);
@@ -70,7 +71,7 @@ test("kule dugmesi pointerdown'da parmagi yakaliyor; basili parmakta yeniden kur
 test("kayan kule cekmecesinde dikey kayma kaydirir, yana cekme kuleyi alir, dokunus yalnizca secer", () => {
   const move = source.slice(source.indexOf("const handleTowerDragMove = "), source.indexOf("const handleTowerDragEnd = "));
   assert.match(move, /if \(Math\.hypot\(dx, dy\) < TOWER_GESTURE_SLOP_PX\) \{\n\s+return;/);
-  assert.match(move, /if \(Math\.abs\(dx\) > Math\.abs\(dy\)\) \{\n[^]*?beginTowerDrag\(activeTowerId, gesture\.startX, gesture\.startY\);/);
+  assert.match(move, /if \(!gesture\.scrollable \|\| Math\.abs\(dx\) > Math\.abs\(dy\)\) \{\n[^]*?beginTowerDrag\(activeTowerId, gesture\.startX, gesture\.startY\);/);
   assert.match(move, /gesture\.mode = "scroll";/);
   assert.match(move, /drawer\.scrollTop = gesture\.startScroll - \(event\.clientY - gesture\.startY\);/);
   // Kaydirma kararindan sonra sahneye surukleme gitmiyor.
@@ -83,4 +84,17 @@ test("kayan kule cekmecesinde dikey kayma kaydirir, yana cekme kuleyi alir, doku
   // Karar verilmeden kaybedilen parmak sahnede iptal gondermiyor (acik surukleme yok).
   const lost = source.slice(source.indexOf("const handleTowerDragLost = "), source.indexOf("window.addEventListener(\"blur\", handleTowerDragLost);"));
   assert.ok(lost.indexOf("if (towerGesture)") < lost.indexOf("towerDragCancel"));
+});
+
+test("kule secilince ya da alininca kule cekmecesi kapaniyor; surukleme boyunca gorunmuyor", () => {
+  const close = source.slice(source.indexOf("const closeTowersDrawer = "), source.indexOf("const beginTowerDrag = "));
+  assert.match(close, /if \(openDrawer !== "towers"\) return;\n\s+openDrawer = undefined;/);
+  // Olay bitmeden kurulmuyor: parmagi yakalayan dugme DOM'dan cikarsa parmak kaybedilir.
+  assert.match(close, /queueMicrotask\(/);
+  const begin = source.slice(source.indexOf("const beginTowerDrag = "), source.indexOf("const clearActiveTowerDrag = "));
+  assert.match(begin, /getOpenDrawer\(\)\?\.classList\.add\("game-controls__drawer--hidden"\);\n\s+closeTowersDrawer\(\);/);
+  const end = source.slice(source.indexOf("const handleTowerDragEnd = "), source.indexOf("const handleTowerDragEnd = ") + 1200);
+  assert.match(end, /dispatch\(\{ action: "selectTower", towerId: activeTowerId \}\);\n\s+closeTowersDrawer\(\);/);
+  const css = readFileSync(new URL("../apps/web/src/style.css", import.meta.url), "utf8");
+  assert.match(css, /\.game-controls__drawer\.game-controls__drawer--hidden \{\s+visibility: hidden;/);
 });
