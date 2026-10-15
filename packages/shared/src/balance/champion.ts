@@ -88,9 +88,9 @@ export const CHAMPION_HP_MULTIPLE = 5;
 /**
  * Butcenin ustune binen can carpani: sampiyon yerine gectigi dogumlarin
  * toplam canının bu kati. Odul (altin, deneyim, sizinti) butcede kaliyor;
- * yalnizca dayaniklilik artiyor. Sahibinin istegiyle 2 (once 1).
+ * yalnizca dayaniklilik artiyor. Sahibinin istegiyle 4 (once 2).
  */
-export const CHAMPION_HP_BONUS = 2;
+export const CHAMPION_HP_BONUS = 4;
 
 /** En az bu kadar dogumun yerine gecer; tek dogumun yerine gecen "sampiyon" olmazdi. */
 export const CHAMPION_MIN_REPLACED = 2;
