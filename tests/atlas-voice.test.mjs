@@ -21,6 +21,7 @@ const atlasModule = await importWebModule("apps/web/src/atlas-voice.ts");
 const {
   ATLAS_CATEGORIES,
   ATLAS_DUCK_GAIN,
+  ATLAS_VOICE_GAIN,
   ATLAS_LINE_COUNTS,
   ATLAS_PRIORITY,
   ATLAS_RULES,
@@ -317,10 +318,11 @@ test("torba: kategori icinde ayni dosya ust uste gelmiyor, her turda hepsi bir k
 test("seviye seslendirme kaydiricisindan; kaydirici calan satiri izliyor, sifirda susuyor; konusurken kisma", () => {
   const { audio, voice, speaking, setVolume } = setup({ volume: 0.4 });
   voice.towerDestroyed();
-  assert.equal(audio.last.volume, 0.4);
+  assert.ok(Math.abs(ATLAS_VOICE_GAIN - 0.8) < 1e-9, "ATLAS kaydiricidan %20 kisik");
+  assert.ok(Math.abs(audio.last.volume - 0.4 * 0.8) < 1e-9);
   assert.deepEqual(speaking, [true]);
   voice.setVolume(0.7);
-  assert.deepEqual(audio.last.volumes, [0.7]);
+  assert.ok(Math.abs(audio.last.volumes[0] - 0.7 * 0.8) < 1e-9);
   setVolume(0);
   voice.setVolume(0);
   assert.equal(audio.last.stoppedWith, 120);

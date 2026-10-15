@@ -92,6 +92,8 @@ export const ATLAS_RULES = Object.freeze({
   nexusLevel3At: 0.2
 });
 
+/** ATLAS'in seslendirme kaydiricisina gore kendi seviyesi (%20 kisik). */
+export const ATLAS_VOICE_GAIN = 0.8;
 /** ATLAS konusurken muzik ve efektlerin carpani (~%35 kisma). */
 export const ATLAS_DUCK_GAIN = 0.65;
 /** Kismanin rampasi (zaman sabiti, sn): yumusak iniyor ve kalkiyor. */
@@ -275,7 +277,7 @@ export class AtlasVoice {
       this.stopCurrent(ATLAS_RULES.interruptFadeMs);
       return;
     }
-    this.current.playback.setVolume(volume);
+    this.current.playback.setVolume(volume * ATLAS_VOICE_GAIN);
   }
 
   /** Macin basi: asama basina bir kez. Kilit kapaliysa 8 sn bekliyor. */
@@ -411,7 +413,7 @@ export class AtlasVoice {
     // Arka uc `onEnded`i daha `play` donmeden cagirirsa satir hic baslamamis sayiliyor.
     let endedEarly = false;
     try {
-      playback = this.audio.play(url, this.getVolume(), () => {
+      playback = this.audio.play(url, this.getVolume() * ATLAS_VOICE_GAIN, () => {
         if (entry) this.ended(entry);
         else endedEarly = true;
       });
