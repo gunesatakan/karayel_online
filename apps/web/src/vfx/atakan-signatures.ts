@@ -34,7 +34,7 @@ import {
   fillDisc,
   fnvHash,
   whiteHot,
-  strokeHex,
+  strokeRing,
   strokeHardBeam,
   type VfxGraphics,
   type VfxTier
@@ -324,8 +324,8 @@ export class AtakanSignatureVfx {
 
   /**
    * Yalnizken (`auraActive`) alan: gercek yaricapta (`range`) ince bir
-   * altigen sinir ve koyu bir dolgu; kademe siniri kalinlastiriyor, kademe 3'te
-   * beyaz-sicak cekirdek cizgisi. Donen tarama ve akan zerre yok.
+   * dairesel sinir ve hafif dolgu. Iki ince halka yavasca ice cekilir;
+   * hareket azaltmada ve dusuk ayrintida sabit alan korunur.
    *
    * Yalnizlik kosulu ayrica 3x3 karantina karesiyle: yalnizken tam ayraclar,
    * komsu varken soluk ve her komsuya uzanan kehribar ihlal cizgisiyle.
@@ -341,17 +341,23 @@ export class AtakanSignatureVfx {
     const lod = this.options.lod;
     const g = this.ground;
     const quarantine = cellSize * 1.5;
-    const spin = (fnvHash(tower.id) % 997) / 997 * (Math.PI / 3);
+    const phase = (fnvHash(tower.id) % 997) / 997;
 
     if (tower.auraActive) {
       const radius = Math.max(12, tower.range ?? 0);
-      g.fillStyle(darken(color, 0.7), 0.06 + tier * 0.012);
+      // Keep the field beneath combat, with no particles or additive bloom.
+      g.fillStyle(color, 0.018 * extra);
       fillDisc(g, tower.x, tower.y, radius);
-      g.lineStyle(Math.max(0.7, (0.6 + tier * 0.3) * scale), color, 0.5);
-      strokeHex(g, tower.x, tower.y, radius, spin);
-      if (tier >= 3 && lod.smoke) {
-        g.lineStyle(Math.max(0.5, 0.45 * scale), whiteHot(color, 1), 0.6 * extra);
-        strokeHex(g, tower.x, tower.y, radius, spin);
+      g.lineStyle(Math.max(0.6, (0.6 + tier * 0.15) * scale), color, 0.28 * extra);
+      strokeRing(g, tower.x, tower.y, radius);
+      if (lod.smoke) {
+        for (let i = 0; i < 2; i++) {
+          const progress = this.still ? 0.25 + i * 0.45 : (frame.now / 4800 + phase + i * 0.5) % 1;
+          const ringRadius = radius * (0.94 - progress * 0.58);
+          const opacity = this.still ? 0.08 : Math.sin(progress * Math.PI) * 0.14;
+          g.lineStyle(Math.max(0.5, 0.65 * scale), color, opacity * extra);
+          strokeRing(g, tower.x, tower.y, ringRadius);
+        }
       }
       // Karantina: yalnizlik saglandi.
       drawBracketCorners(this.marks, tower.x, tower.y, quarantine, quarantine, quarantine * 0.3, Math.max(0.7, (0.6 + tier * 0.2) * scale), color, 0.6);
