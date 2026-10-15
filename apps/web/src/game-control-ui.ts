@@ -59,6 +59,12 @@ function formatTargeting(mode: string) {
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
 const BUTTON_PRESS_FLASH_MS = 140;
+/** Kule dugmesinde kaydirma ile surukleme ayrimi: bu kadar kipirti karar sayilmiyor. */
+const TOWER_GESTURE_SLOP_PX = 8;
+/** Kipirdamadan bu kadar basili tutan parmak kuleyi aliyor. */
+const TOWER_HOLD_MS = 180;
+/** Birakistan sonraki kaymanin kare basina korunan hizi (60 fps'e gore). */
+const TOWER_SCROLL_FRICTION = 0.94;
 /**
  * Dalga damgasinin dikey yeri: cubukla alt panel arasindaki seridin bu orani.
  * Seri afisi %17'de; damga ondan asagida, haritanin ust yarisinda.
@@ -297,6 +303,30 @@ export function setupGameControlUi(game: Phaser.Game) {
   let latestKey = "";
   let activeTowerId = "";
   let activePointerId = -1;
+  /**
+   * Kule dugmesindeki parmak henuz karar vermedi ya da cekmeceyi kaydiriyor.
+   *
+   * Dugme eskiden basildigi anda yerlestirmeye basliyordu; kule cekmecesi
+   * tasinca mobilde asagi kaydirmanin yolu kalmiyordu, cunku cekmecedeki her
+   * nokta bir kule dugmesi. Simdi cekmece kayabiliyorsa parmak once karar
+   * veriyor: dikey kayma listeyi kaydirir, yana cekme ya da kisa bir basili
+   * tutus kuleyi alir, dokunup birakmak yalnizca secer. Cekmece kaymiyorsa
+   * eski hiz korunuyor: ilk kipirtida surukleme.
+   */
+  let towerGesture: {
+    towerId: string;
+    pointerId: number;
+    mode: "pending" | "scroll";
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    lastAt: number;
+    velocity: number;
+    startScroll: number;
+    holdTimer: number;
+  } | undefined;
+  let towerScrollMomentum = 0;
 
   const dispatch = (detail: ControlAction) => {
     window.dispatchEvent(new CustomEvent("karayel:control-action", { detail }));
@@ -544,7 +574,55 @@ export function setupGameControlUi(game: Phaser.Game) {
     queueMicrotask(syncCanvasBounds);
   };
 
+  const getOpenDrawer = () => root.querySelector<HTMLElement>(".game-controls__drawer");
+
+  const stopTowerScrollMomentum = () => {
+    if (towerScrollMomentum) cancelAnimationFrame(towerScrollMomentum);
+    towerScrollMomentum = 0;
+  };
+
+  /**
+   * Birakistan sonra kayma hizla sonumlenerek suruyor. Cekmece bu sirada
+   * yeniden kurulabildigi icin her karede guncel cekmece okunuyor.
+   */
+  const startTowerScrollMomentum = (velocity: number) => {
+    stopTowerScrollMomentum();
+    let speed = velocity;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(now - last, 48);
+      last = now;
+      speed *= Math.pow(TOWER_SCROLL_FRICTION, dt / 16.67);
+      const drawer = getOpenDrawer();
+      if (!drawer || Math.abs(speed) < 0.02) {
+        towerScrollMomentum = 0;
+        return;
+      }
+      const before = drawer.scrollTop;
+      drawer.scrollTop = before - speed * dt;
+      if (drawer.scrollTop === before) {
+        towerScrollMomentum = 0;
+        return;
+      }
+      towerScrollMomentum = requestAnimationFrame(step);
+    };
+    if (Math.abs(speed) >= 0.05) towerScrollMomentum = requestAnimationFrame(step);
+  };
+
+  const clearTowerGesture = () => {
+    if (towerGesture) window.clearTimeout(towerGesture.holdTimer);
+    towerGesture = undefined;
+  };
+
+  /** Karar verildi: parmak kuleyi aldi, yerlestirme surukleme olarak suruyor. */
+  const beginTowerDrag = (towerId: string, clientX: number, clientY: number) => {
+    clearTowerGesture();
+    dispatch({ action: "selectTower", towerId });
+    dispatch({ action: "towerDragStart", towerId, clientX, clientY });
+  };
+
   const clearActiveTowerDrag = () => {
+    clearTowerGesture();
     activeTowerId = "";
     activePointerId = -1;
     window.removeEventListener("pointermove", handleTowerDragMove);
@@ -570,6 +648,11 @@ export function setupGameControlUi(game: Phaser.Game) {
     if (!activeTowerId) {
       return;
     }
+    if (towerGesture) {
+      // Karar verilmeden kaybedilen parmak: sahnede acik surukleme yok.
+      clearActiveTowerDrag();
+      return;
+    }
     dispatch({ action: "towerDragCancel", towerId: activeTowerId });
     clearActiveTowerDrag();
   };
@@ -586,6 +669,38 @@ export function setupGameControlUi(game: Phaser.Game) {
       return;
     }
     event.preventDefault();
+    const gesture = towerGesture;
+    if (gesture) {
+      const now = performance.now();
+      if (gesture.mode === "pending") {
+        const dx = event.clientX - gesture.startX;
+        const dy = event.clientY - gesture.startY;
+        gesture.lastX = event.clientX;
+        gesture.lastY = event.clientY;
+        if (Math.hypot(dx, dy) < TOWER_GESTURE_SLOP_PX) {
+          return;
+        }
+        if (Math.abs(dx) > Math.abs(dy)) {
+          // Yana cekme: kule alindi, cekmece kaymiyor.
+          beginTowerDrag(activeTowerId, gesture.startX, gesture.startY);
+          dispatch({ action: "towerDragMove", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
+          return;
+        }
+        window.clearTimeout(gesture.holdTimer);
+        gesture.mode = "scroll";
+        gesture.lastAt = now;
+      }
+      const drawer = getOpenDrawer();
+      if (drawer) drawer.scrollTop = gesture.startScroll - (event.clientY - gesture.startY);
+      const dt = now - gesture.lastAt;
+      if (dt > 0) {
+        const instant = (event.clientY - gesture.lastY) / dt;
+        gesture.velocity = gesture.velocity * 0.6 + instant * 0.4;
+      }
+      gesture.lastY = event.clientY;
+      gesture.lastAt = now;
+      return;
+    }
     dispatch({ action: "towerDragMove", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
   };
 
@@ -594,6 +709,17 @@ export function setupGameControlUi(game: Phaser.Game) {
       return;
     }
     event.preventDefault();
+    const gesture = towerGesture;
+    if (gesture) {
+      if (gesture.mode === "pending" && event.type === "pointerup") {
+        // Dokunup birakmak: yalnizca secim.
+        dispatch({ action: "selectTower", towerId: activeTowerId });
+      } else if (gesture.mode === "scroll" && performance.now() - gesture.lastAt < 80) {
+        startTowerScrollMomentum(gesture.velocity);
+      }
+      clearActiveTowerDrag();
+      return;
+    }
     dispatch({ action: "towerDragEnd", towerId: activeTowerId, clientX: event.clientX, clientY: event.clientY });
     clearActiveTowerDrag();
   };
@@ -1964,8 +2090,32 @@ export function setupGameControlUi(game: Phaser.Game) {
       window.addEventListener("pointerup", handleTowerDragEnd, { passive: false });
       window.addEventListener("pointercancel", handleTowerDragEnd, { passive: false });
       window.addEventListener("lostpointercapture", handleTowerDragLost, { passive: false });
-      dispatch({ action: "selectTower", towerId: tower.id });
-      dispatch({ action: "towerDragStart", towerId: tower.id, clientX: event.clientX, clientY: event.clientY });
+      stopTowerScrollMomentum();
+      const drawer = button.closest<HTMLElement>(".game-controls__drawer");
+      if (!drawer || drawer.scrollHeight - drawer.clientHeight <= 1) {
+        beginTowerDrag(tower.id, event.clientX, event.clientY);
+        return;
+      }
+      const towerId = tower.id;
+      const pointerId = event.pointerId;
+      towerGesture = {
+        towerId,
+        pointerId,
+        mode: "pending",
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        lastAt: performance.now(),
+        velocity: 0,
+        startScroll: drawer.scrollTop,
+        holdTimer: window.setTimeout(() => {
+          const gesture = towerGesture;
+          if (!gesture || gesture.mode !== "pending" || gesture.pointerId !== pointerId) return;
+          // Kisa basili tutus: kule parmakta, oyuncu yukari surukleyip yerlestirir.
+          beginTowerDrag(towerId, gesture.lastX, gesture.lastY);
+        }, TOWER_HOLD_MS)
+      };
     });
     return button;
   };

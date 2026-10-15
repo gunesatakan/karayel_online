@@ -14,8 +14,10 @@
  *   1. Kokun `pointerdown` kaydi yakalama evresinde (dugmelerden once).
  *   2. Yeni birincil isaretci eski kayitlari siliyor: kaybolmus bir birakma
  *      paneli bir daha kilitleyemiyor.
- *   3. Kule dugmesi hala `pointerdown`da secim yolluyor (kaydin neden once
- *      olmasi gerektigi); yeniden kurma basili parmakta erteleniyor.
+ *   3. Kule dugmesi `pointerdown`da parmagi yakaliyor; yeniden kurma basili
+ *      parmakta erteleniyor.
+ *   4. Kayan cekmecede parmak karar veriyor: dikey kayma kaydirir, yana cekme
+ *      ya da kisa basili tutus kuleyi alir, dokunus yalnizca secer.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -49,13 +51,36 @@ test("yeni birincil isaretci kaybolmus birakmalari siliyor", () => {
   assert.ok(clear < call.indexOf("pressedPointers.add(event.pointerId);"), "silme eklemeden sonra: yeni parmak da silinir");
 });
 
-test("kule dugmesi pointerdown'da seciyor; basili parmakta yeniden kurma erteleniyor", () => {
+test("kule dugmesi pointerdown'da parmagi yakaliyor; basili parmakta yeniden kurma erteleniyor", () => {
   const button = source.slice(source.indexOf("const makeTowerButton = "), source.indexOf("const makeMelisSpectrum = "));
   const handler = button.slice(button.indexOf("button.addEventListener(\"pointerdown\""));
-  assert.match(handler, /dispatch\(\{ action: "selectTower", towerId: tower\.id \}\);/);
   assert.match(handler, /button\.setPointerCapture\(event\.pointerId\);/);
+  // Cekmece kaymiyorsa eski hiz: basista surukleme. Kayiyorsa parmak karar veriyor.
+  assert.match(handler, /if \(!drawer \|\| drawer\.scrollHeight - drawer\.clientHeight <= 1\) \{\n\s+beginTowerDrag\(tower\.id, event\.clientX, event\.clientY\);\n\s+return;/);
+  assert.match(handler, /mode: "pending"/);
+  assert.match(handler, /beginTowerDrag\(towerId, gesture\.lastX, gesture\.lastY\);\n\s+\}, TOWER_HOLD_MS\)/);
+  const begin = source.slice(source.indexOf("const beginTowerDrag = "), source.indexOf("const clearActiveTowerDrag = "));
+  assert.match(begin, /dispatch\(\{ action: "selectTower", towerId \}\);\n\s+dispatch\(\{ action: "towerDragStart", towerId, clientX, clientY \}\);/);
 
   const render = source.slice(source.indexOf("const render = (state: ControlState) => {"));
   assert.match(render.slice(0, render.indexOf("clearPanel();")), /if \(pressedPointers\.size > 0\) \{\n\s+rebuildDeferred = true;\n\s+return;\n\s+\}/);
 });
 
+
+test("kayan kule cekmecesinde dikey kayma kaydirir, yana cekme kuleyi alir, dokunus yalnizca secer", () => {
+  const move = source.slice(source.indexOf("const handleTowerDragMove = "), source.indexOf("const handleTowerDragEnd = "));
+  assert.match(move, /if \(Math\.hypot\(dx, dy\) < TOWER_GESTURE_SLOP_PX\) \{\n\s+return;/);
+  assert.match(move, /if \(Math\.abs\(dx\) > Math\.abs\(dy\)\) \{\n[^]*?beginTowerDrag\(activeTowerId, gesture\.startX, gesture\.startY\);/);
+  assert.match(move, /gesture\.mode = "scroll";/);
+  assert.match(move, /drawer\.scrollTop = gesture\.startScroll - \(event\.clientY - gesture\.startY\);/);
+  // Kaydirma kararindan sonra sahneye surukleme gitmiyor.
+  const scroll = move.slice(move.indexOf('gesture.mode = "scroll";'), move.lastIndexOf("dispatch("));
+  assert.match(scroll, /\n\s+return;\n\s+\}\n\s+$/);
+
+  const end = source.slice(source.indexOf("const handleTowerDragEnd = "), source.indexOf("const handleTowerDragEnd = ") + 1200);
+  assert.match(end, /if \(gesture\.mode === "pending" && event\.type === "pointerup"\) \{\n[^\n]*\n\s+dispatch\(\{ action: "selectTower", towerId: activeTowerId \}\);/);
+  assert.doesNotMatch(end.slice(0, end.indexOf("clearActiveTowerDrag();")), /towerDragEnd/, "karar verilmemis parmak yerlestirme denemesin");
+  // Karar verilmeden kaybedilen parmak sahnede iptal gondermiyor (acik surukleme yok).
+  const lost = source.slice(source.indexOf("const handleTowerDragLost = "), source.indexOf("window.addEventListener(\"blur\", handleTowerDragLost);"));
+  assert.ok(lost.indexOf("if (towerGesture)") < lost.indexOf("towerDragCancel"));
+});

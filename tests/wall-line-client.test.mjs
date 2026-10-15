@@ -47,7 +47,7 @@ test("surukleme yalnizca duvarda ve istemci koordinatiyla cizgi jesti baslatir",
   assert.match(scene, /this\.startTowerDragAt\(tower, point, getClientPoint\(\)\)/);
   assert.match(scene, /this\.updateTowerDragAt\(point, getClientPoint\(\)\)/);
   assert.match(controls, /dispatch\(\{ action: "towerDragMove", towerId: activeTowerId, clientX: event\.clientX, clientY: event\.clientY \}\)/);
-  assert.match(controls, /dispatch\(\{ action: "towerDragStart", towerId: tower\.id, clientX: event\.clientX, clientY: event\.clientY \}\)/);
+  assert.match(controls, /dispatch\(\{ action: "towerDragStart", towerId, clientX, clientY \}\)/);
 });
 
 test("hareket olayi beklemeyi ilerletir, capa atilinca onizleme cizgiye gecer ve tek hayalet guncellenmez", () => {
