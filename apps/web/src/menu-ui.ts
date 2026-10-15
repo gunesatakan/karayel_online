@@ -1178,26 +1178,23 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
       ${renderStageBoard(stageState)}
 
       <footer class="home-actions">
+        <button class="command command--ghost" data-start-game data-replay-tutorial>${t("menu.home.tutorial")}</button>
         <button class="command command--hero" data-start-game>
           <span>${t("menu.home.deploy")}</span>
           <small>${t("menu.home.stageLine", { n: stageState.selected, name: escapeHtml(getStage(stageState.selected).name) })}</small>
         </button>
         <div class="home-actions__grid">
-          ${creativeModeEnabled ? `<button class="command command--ghost" data-start-creative>${t("menu.home.creative")}</button>` : ""}
           <button class="command command--ghost" data-view="online">Online</button>
           <button class="command command--ghost" data-view="archive">${t("menu.home.operator")}</button>
-          <button class="command command--ghost" data-view="bestiary">${t("menu.home.enemies")}</button>
-          <button class="command command--ghost" data-view="map">${t("menu.home.map")}</button>
           <button class="command command--ghost command--count" data-view="cardArchive" aria-label="${t("menu.home.cardArchiveAria", { progress: cardProgress })}">
             <span>${t("menu.home.cardArchive")}</span>
             <small>${cardProgress}</small>
           </button>
-          <button class="command command--ghost" data-start-game data-replay-tutorial>${t("menu.home.tutorial")}</button>
           <button class="command command--ghost command--count" data-view="badges" aria-label="${t("menu.home.badgesAria", { earned: board.earned, total: board.total })}">
             <span>${t("menu.home.badges")}</span>
             <small>${board.earned}/${board.total}</small>
           </button>
-          <button class="command command--ghost${creativeModeEnabled ? "" : " command--wide"}" data-view="credits">${t("credits.menuButton")}</button>
+          <button class="command command--ghost command--wide" data-view="credits">${t("credits.menuButton")}</button>
         </div>
         <a class="home-bounty-board" href="https://www.bountyboard.gg/game/nexhold?ref=badge" target="_blank" rel="noopener noreferrer">
           <img src="https://www.bountyboard.gg/badges/bounty-board-icon-128.png" alt="Nexhold on Bounty Board" width="64" height="64" decoding="async" />

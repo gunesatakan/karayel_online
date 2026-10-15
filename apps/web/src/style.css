@@ -2928,12 +2928,7 @@ button.wave-report:active { transform: scale(0.99); }
   padding-top: 4px;
 }
 
-/*
- * Dokuz dugme, uc sira uc: son sira Egitim, Nisanlar, Emegi gecenler. Dort
- * sutunda Kart Arsivi ikinci siraya tek basina dusuyordu; uc sutun dugmeleri
- * biraz genisletiyor. `command--wide` tek dugmeyi iki sutuna yayar (su an
- * kullanilmiyor; sira tek kalirsa).
- */
+/* Bes ikincil dugme: uc sutun; son dugme iki sutunu kaplar. */
 .home-actions__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
