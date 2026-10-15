@@ -1048,7 +1048,7 @@ const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
 const SFX_VOLUME_STORAGE_KEY = "karayel.sfxVolume";
 const HIT_VOLUME_STORAGE_KEY = "karayel.hitVolume";
 const VIBRATION_STORAGE_KEY = "karayel.vibration";
-const DEFAULT_VOICE_VOLUME = 0.82;
+const DEFAULT_VOICE_VOLUME = 0.6;
 /**
  * Efekt sesleri seslendirmeden kisik basliyor: onlar saniyede birkac kez
  * caliyor, seri anonsu dalgada bir. Ayni seviyede baslasa muzigi boguyordu.
