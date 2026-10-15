@@ -143,6 +143,9 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "kalabalik-besleyici": { name: "Crowd Feeder", description: "Equipped tower's fire rate +6% for each enemy in its range; up to 8 enemies (+48%)." },
   "acil-sogutma-pompasi": { name: "Emergency Coolant Pump", description: "Equipped tower cools 3x faster while heat-locked (cooling +200%): the lock is much shorter." },
   "kriyo-kovan": { name: "Cryo Casing", description: "Shots the equipped tower fires at slowed or frozen targets generate 50% less heat." },
+  "teleskopik-namlu": { name: "Telescopic Barrel", description: "Adds +0.25 tiles to the equipped tower's base range: +25% on a 1-tile range, +10% on a 2.5-tile range; cannot be equipped on towers whose range covers the map." },
+  "atis-haritasi": { name: "Firing Chart", description: "Each enemy the equipped tower kills this wave adds +3% range; up to 5 kills (+15%). Resets each new wave." },
+  "gozcu-diregi": { name: "Lookout Mast", description: "Each friendly tower adjacent to the equipped structure gets +10% range; a tower benefits from at most two masts (+20%). Also fits non-firing structures." },
   ...enLegendaryItems
 };
 

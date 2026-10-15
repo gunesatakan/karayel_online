@@ -154,5 +154,8 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "av-ritmi": { name: "Hunting Rhythm", description: "All towers gain +40% fire rate while firing at a target below 50% health." },
   "rolanti-sogutmasi": { name: "Idle Cooling", description: "Cooling of towers that have not hit for 1 second +120%: barrels recover quickly between waves and while waiting for a target." },
   "kritik-tahliye": { name: "Crit Vent", description: "A tower that lands a critical hit vents 100% of the heat of the shot that hit." },
+  "kenetlenme": { name: "Lock-On", description: "A tower gains +5% range for every second it keeps firing at the same target; up to +20%. Resets when the target changes." },
+  "termal-mercek": { name: "Thermal Lens", description: "A tower's range grows as it heats past 50 degrees: +4% per 10 degrees, +20% at 100 degrees." },
+  "siper-gozcusu": { name: "Trench Lookout", description: "Towers with walls built on their edges gain +5% range per wall; up to 3 walls (+15%)." },
   ...enLegendaryCards
 };

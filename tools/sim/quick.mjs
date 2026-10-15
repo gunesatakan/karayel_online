@@ -681,7 +681,11 @@ const STAT_SCORE = {
   // Efsanevi ihtimaller (temas saniyesi basina): 0,1 ihtimal kabaca +%30
   // hasarlik bir kart. Dondurma ve cekim hasar vermiyor; yarisi.
   chainChance: 15, blastChance: 15, executeChance: 12, shatterChance: 12, chronoChance: 15, linkChance: 15,
-  freezeChance: 7, gravityChance: 7
+  freezeChance: 7, gravityChance: 7,
+  // Menzil turu: kosullu; ortalama payin menzil puaniyla karsiligi (Kenetlenme
+  // ~+%12, Termal Mercek ~+%6, iki duvar, ~3 oldurme, bir direk). Duz kare
+  // kisa menzilde orani buyuk: ortalama ~+%15.
+  focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2
 };
 
 /**

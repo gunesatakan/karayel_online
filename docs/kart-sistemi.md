@@ -175,6 +175,44 @@ patlama, dondurma, infaz, ölüm parçalanması, kronal iz, hasar bağı, kütle
 - Aynı kule aynı etkiyi 0,4 oyun sn'den sık uygulamaz (alan kulesinde ekran ve
   hasar taşmasın); bekleyen hak kaybolmaz.
 
+### Menzil turu
+
+Üç kart ve üç eşya (`packages/shared/src/range-mechanics`). Hiçbiri düz
+"+%X menzil" değil; mevcut menzil içeriği (Uzun Namlu, Keskin Nişancı
+Dürbünü, Kinetik Erim, Yalnız Nişancı / Yalnız Kurt, Lazer Telemetre, Genleşme
+Odası, Gauss Bobini; bedel olarak Isı Perdesi, Takıntı, Karşı Batarya, Şans
+Merceği) ya düz yüzde ya da komşusuzluk. Yeniler menzili başka bir şeye bağlıyor:
+
+- **Kenetlenme** (seyrek, `focusRange` 0,05): kule aynı hedefe ateş ettiği her
+  oyun saniyesi +%5, en fazla +%20 (4 sn). Hedef değişince, hedef ölünce ya da
+  son atıştan beri 2,5 oyun sn geçince sıfır. Menzil büyüdükçe hedef menzilde
+  daha uzun kalır (Takıntı ile uyumlu). Yalnızca hedefe ateş eden kulede.
+- **Termal Mercek** (nadir, `heatRange` 0,2): 50 derecede 0, 100 derecede +%20,
+  her 10 derece +%4 (basamaklı). Isı freninin bölgesine değer veriyor; Isı Perdesi'nin
+  (soğuma karşılığı menzil) tersi.
+- **Siper Gözcüsü** (yaygın, `wallRange` 0,05): kulenin kapladığı karelerin dış
+  kenarlarına örülmüş ayakta her duvar +%5, en fazla 3 duvar (+%15; bir kenar
+  ikmal için açık kalsın). Kimin duvarı olduğu fark etmez. Duvar komşu
+  sayılmadığı için yalnızlıkla çakışmaz.
+- **Teleskopik Namlu** (eşya, 95 g, `rangeFlat` 0,25): taban menzile +0,25 kare;
+  karakter çarpanlarından sonra, yüzdelerden önce eklenir. Kısa menzilli kulede
+  oranı büyük (1 karede +%25, 2,5 karede +%10), seviyeyle büyümez: AttackLord'un
+  yarıya inen seviye büyümesi (`getTowerRangePerLevel`) değişmiyor. Menzili sıfır
+  yapıya ve haritayı kaplayan menzile eklenmez (`boundedRange`).
+- **Atış Haritası** (eşya, 85 g, `killRange` 0,03): kulenin bu dalgadaki her
+  öldürmesi +%3, en fazla 5 öldürme (+%15); yeni dalgada sıfır.
+- **Gözcü Direği** (eşya, 110 g, `neighborRange` 0,1): takıldığı yapının
+  bitişiğindeki her dost kuleye +%10 (kendine değil); bir kule en fazla +%20
+  alır. Rezonans Odası gibi ateş etmeyen yapıya da takılır.
+
+Koşullu paylar (Teleskopik Namlu dışındakiler) kart ve eşyaların `range` payıyla
+aynı toplamsal havuza girer; toplamları `RANGE_CONDITIONAL_CAP` = +%35 ile
+sınırlı (tek tek tavanların toplamı +%90 olurdu). Sunucu `getTowerOwnRange`
+hedefleme, vuruş kontrolü, istemcinin menzil halkası (`range` teli) ve kule
+paneli aynı sayıyı okur; panelde koşullu paylar tek "Koşullu" kalemi, düz kare
+eşyanın çarpanı. Yerleştirme önizlemesi kart ve eşya menzilini zaten
+göstermiyor; bunlar da orada yok.
+
 Kataloğun yaklaşık yarısı düz stat, yarısı davranış olmalı. Düz stat tarafı
 şişerse oyuncu üç seçenek görürken kuruluşunu taşıyan kartı hiç göremez.
 

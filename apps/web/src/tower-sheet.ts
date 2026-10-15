@@ -228,8 +228,8 @@ const realSeconds = (gameMs: number) => gameMs / GAME_SPEED_MULTIPLIER / 1000;
 
 // ------------------------------------------------------------------ Kaynak adlari
 
-/** Kosullu paylar (donus, isabet, mermi hizi, atis hizi) ayni ad altinda. */
-const CONDITIONAL_SOURCES: ReadonlySet<string> = new Set(["cond:turnRate", "cond:accuracy", "cond:projectileSpeed", "cond:fireRate"]);
+/** Kosullu paylar (donus, isabet, mermi hizi, atis hizi, menzil) ayni ad altinda. */
+const CONDITIONAL_SOURCES: ReadonlySet<string> = new Set(["cond:turnRate", "cond:accuracy", "cond:projectileSpeed", "cond:fireRate", "cond:range"]);
 
 /** Dokum kaynaklarinin adi (`sheet.source.*`). */
 function sourceLabel(source: string) {

@@ -70,15 +70,15 @@ test("gorulme: yalnizca hic gorulmemis olan YENİ, sirayla ve bir kez; arsiv ger
   assert.deepEqual(findUnseenArchiveIds(esyali.archive, "items", [esya, shopCatalog[1].id]), [shopCatalog[1].id]);
 });
 
-test("sayac: katalogdan '64/156' ve '30/145'; bilinmeyen kimlik korunuyor ama sayilmiyor", () => {
-  assert.equal(cardCatalog.length, 156, "plan ve menu metni bu sayiyla yazildi");
-  assert.equal(shopCatalog.length, 145);
+test("sayac: katalogdan '64/159' ve '30/148'; bilinmeyen kimlik korunuyor ama sayilmiyor", () => {
+  assert.equal(cardCatalog.length, 159, "plan ve menu metni bu sayiyla yazildi");
+  assert.equal(shopCatalog.length, 148);
 
   let arsiv = markArchiveSeen(createEmptyCardArchive(), "cards", [...kartlar(64), "gelecekteki-kart"]).archive;
   arsiv = markArchiveSeen(arsiv, "items", shopCatalog.slice(0, 30).map((item) => item.id)).archive;
-  assert.deepEqual(getArchiveProgress(arsiv, "cards"), { seen: 64, total: 156 });
-  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "cards")), "64/156");
-  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "items")), "30/145");
+  assert.deepEqual(getArchiveProgress(arsiv, "cards"), { seen: 64, total: 159 });
+  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "cards")), "64/159");
+  assert.equal(formatArchiveProgress(getArchiveProgress(arsiv, "items")), "30/148");
   assert.ok(arsiv.cards.includes("gelecekteki-kart"), "eski bir sekme yeni surumun gordugunu silmesin");
 
   // Yuzde asagi yuvarlaniyor: son kart gorulmeden %100 yazmiyor.
@@ -88,8 +88,8 @@ test("sayac: katalogdan '64/156' ve '30/145'; bilinmeyen kimlik korunuyor ama sa
 
   // Butun katalog arsivlenebilir: her kart ve esya kimligi bicime uyuyor.
   const tam = markArchiveSeen(markArchiveSeen(createEmptyCardArchive(), "cards", cardCatalog.map((card) => card.id)).archive, "items", shopCatalog.map((item) => item.id)).archive;
-  assert.deepEqual(getArchiveProgress(tam, "cards"), { seen: 156, total: 156 });
-  assert.deepEqual(getArchiveProgress(tam, "items"), { seen: 145, total: 145 });
+  assert.deepEqual(getArchiveProgress(tam, "cards"), { seen: 159, total: 159 });
+  assert.deepEqual(getArchiveProgress(tam, "items"), { seen: 148, total: 148 });
 });
 
 test("gercek cekilis: sunulan her kart ve esya arsive giriyor, ikinci sunumda yeni degil", () => {
@@ -179,9 +179,9 @@ test("menu gorunumu: gorulmemis satirda ad yok, gruplar nadirlige ve kategoriye 
   assert.deepEqual(view.cards.groups.map((group) => group.key), ["common", "uncommon", "rare", "epic", "legendary"]);
   assert.deepEqual(view.cards.groups.map((group) => group.label), ["Yaygın", "Seyrek", "Nadir", "Epik", "Efsanevi"]);
   assert.deepEqual(view.items.groups.map((group) => group.key), ["power", "class", "utility", "map", "risk"]);
-  assert.equal(view.cards.total, 156);
-  assert.equal(view.items.total, 145);
-  assert.equal(view.cards.groups.reduce((sum, group) => sum + group.total, 0), 156, "her kart tam bir grupta");
+  assert.equal(view.cards.total, 159);
+  assert.equal(view.items.total, 148);
+  assert.equal(view.cards.groups.reduce((sum, group) => sum + group.total, 0), 159, "her kart tam bir grupta");
   // Efsanevi grup katalogun efsanevi kartlari kadar ve en sonda: en seyrek.
   assert.equal(view.cards.groups.at(-1).total, cardCatalog.filter((card) => getCardRarity(card) === "legendary").length);
   assert.equal(view.cards.groups.at(-2).total, cardCatalog.filter((card) => getCardRarity(card) === "epic").length);

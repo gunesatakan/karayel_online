@@ -228,7 +228,10 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   // Atis hizi, soguma ve isi, ucuncu tur; efsanevi vurus etkileri. Davranislari
   // tests/fire-rate-cooling-third-round.test.mjs ve tests/legendary-effects.test.mjs'te.
   "crowdFireRate", "lockCooling", "chilledHeatRelief",
-  "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance"
+  "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance",
+  // Menzil turu: `getTowerOwnRange` kulenin listesinden; davranislari
+  // tests/range-round.test.mjs'te gercek odada olculuyor.
+  "rangeFlat", "killRange", "neighborRange"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

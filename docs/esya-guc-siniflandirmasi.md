@@ -444,3 +444,15 @@ Kademe: yukarıdaki yeni ısı/hız eşyaları değere göre B–A aralığında
 Kartlar (efsanevi kartlar her hasar veren kuleye saniyede %20): Av Ritmi (+%1 / +%6), Rölanti Soğutması (+%15 / +%7), Kritik Tahliye (0: kritik şansı olmayan taban kulede). Karşılaştırma: Soğutma Sıvısı +%14 / +%5, Senkron Tetik +%34 / +%11, Kritik Sistem +%12 / +%10.
 
 Notlar: efsanevi etkilerin hasar ölçüsü "kule saniyesi" ısının izin verdiği sürekli hızdan (tanımlı hızdan değil); ilk ölçümde tanımlı hız kullanılıyordu ve patlama ile zincir +%170–260 veriyordu, düzeltildi. Hiçbiri tek başına koşuyu kıracak büyüklükte değil; en güçlüleri (patlama, bağ, parçalanma, çekim) alan ve kalabalık kurulumunda. Simülatör puanları `tools/sim/scoring.mjs` ve `quick.mjs`'te.
+
+## Menzil turu (2026-10-15)
+
+Üç eşya, üç kart; sabitler `packages/shared/src/range-mechanics`, testler `tests/range-round.test.mjs`. Tek kule ölçümüne **girmedi** (o ölçümde düşmanlar menzilde duruyor, menzil farkı görünmüyor); kademe mekanikten ve fiyattan kaba tahmin. Koşullu menzil payları (kart ve eşya) toplamda en fazla +%35.
+
+| Eşya | Fiyat | Mekanik | Kademe |
+|---|---|---|---|
+| Teleskopik Namlu | 95 | Taban menzile +0,25 kare (1 karede +%25, 2,5 karede +%10); seviyeyle büyümez | B (kısa menzilli AttackLord kulelerinde A'ya yakın; uzun menzilde Lazer Telemetre'nin altında) |
+| Atış Haritası | 85 | Dalgadaki her öldürme +%3 menzil, en fazla 5 (+%15); yeni dalgada sıfır | C (dalga başında boş; son vuruşu alan kulede değerli) |
+| Gözcü Direği | 110 | Bitişikteki her dost kuleye +%10 menzil; kule başına en fazla +%20 | B (kümede 3–4 kuleye birden; AttackLord'un yalnızlığıyla çelişir) |
+
+Kartlar: Kenetlenme (seyrek; aynı hedefe her sn +%5, en fazla +%20), Termal Mercek (nadir; 50→100 derece 0→+%20), Siper Gözcüsü (yaygın; kenardaki her duvar +%5, en fazla 3). Karşılaştırma: Uzun Namlu (mermi kuleleri +%10 menzil + isabet), Yalnız Nişancı (komşusuz +%15 menzil + %25 hasar).

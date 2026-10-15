@@ -192,7 +192,13 @@ const STAT_NEEDS: Readonly<Record<string, readonly ShopItemCapabilityNeed[]>> = 
   critVent: ["damage", "heat"], chilledHeatRelief: ["targeting", "heat"],
   // Efsanevi vurus etkileri dogrudan vurusla kuruluyor.
   chainChance: ["damage"], blastChance: ["damage"], freezeChance: ["damage"], executeChance: ["damage"],
-  shatterChance: ["damage"], chronoChance: ["damage"], linkChance: ["damage"], gravityChance: ["damage"]
+  shatterChance: ["damage"], chronoChance: ["damage"], linkChance: ["damage"], gravityChance: ["damage"],
+  // Menzil turu. Menzil dusmana etki eden her kulede okunuyor (aura yaricapi,
+  // yorunge bicagi dahil). Kenetlenme ateslenen hedefi sayiyor, Termal Mercek
+  // namlunun isisini, Atis Haritasi oldurmeyi. Gozcu Diregi komsuya isliyor:
+  // Rezonans Odasi gibi kuleye bir sey sormuyor (yazilmadi).
+  focusRange: ["targeting"], heatRange: ["attacks", "heat"], wallRange: ["attacks"],
+  rangeFlat: ["attacks"], killRange: ["damage"]
 };
 
 /** Kilidin is gordugu kule; yazilmayan kilit (altin, nexus, enkaz, onarim) bir sey sormuyor. Anahtar duz metin (bkz. `STAT_NEEDS`). */

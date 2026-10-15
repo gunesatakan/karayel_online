@@ -564,6 +564,13 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("acil-sogutma-pompasi", "Acil Soğutma Pompası", "Takıldığı kule ısı kilidindeyken 3 kat hızlı soğur (soğuma +%200): kilit çok daha kısa sürer.", "utility", 90, { axes: ["dps"], effects: [effect("acil-sogutma-pompasi", "lockCooling", 2)] }),
   defineItem("kriyo-kovan", "Kriyo Kovan", "Takıldığı kulenin yavaşlamış ya da donmuş hedefe attığı atışlar %50 daha az ısı üretir.", "power", 95, { axes: ["dps", "cc"], scope: { kind: "tagged", combat: true }, effects: [effect("kriyo-kovan", "chilledHeatRelief", 0.5)] }),
 
+  // Menzil turu: kulenin taban menziline, dalgadaki oldurmelerine ve
+  // bitisikteki destek yapisina baglanan uc esya (sabitler `range-mechanics`te).
+  // Teleskopik Namlu duz kare ekliyor: kisa menzilli kulede orani buyuk.
+  defineItem("teleskopik-namlu", "Teleskopik Namlu", "Takıldığı kulenin taban menziline +0,25 kare ekler: 1 karelik menzilde +%25, 2,5 karelik menzilde +%10; menzili haritayı kaplayan kulelere takılmaz.", "class", 95, { axes: ["dps"], scope: { kind: "tagged", boundedRange: true }, effects: [effect("teleskopik-namlu", "rangeFlat", 0.25)] }),
+  defineItem("atis-haritasi", "Atış Haritası", "Takıldığı kulenin bu dalgada öldürdüğü her düşman menziline +%3 ekler; en fazla 5 öldürme (+%15). Yeni dalgada sıfırlanır.", "power", 85, { axes: ["dps"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("atis-haritasi", "killRange", 0.03)] }),
+  defineItem("gozcu-diregi", "Gözcü Direği", "Takıldığı yapının bitişiğindeki her dost kulenin menzili +%10; bir kule en fazla iki direkten yararlanır (+%20). Ateş etmeyen yapılara da takılır.", "utility", 110, { axes: ["amplify"], effects: [effect("gozcu-diregi", "neighborRange", 0.1)] }),
+
   // Efsanevi: vurus etkileri (`legendary` modulu). Ayni etkinin kartindan
   // iki kat ihtimal, ama yalnizca takildigi kulede; kartla ayni kulede
   // toplaniyor (tavan `LEGENDARY_CHANCE_CAP`). Vitrinde seyrek ve pahali.

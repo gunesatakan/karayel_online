@@ -1,5 +1,6 @@
 import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
 import { getTowerRangePerLevel } from "@karayel/shared";
+import { FOCUS_RANGE_GRACE_MS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
@@ -1970,6 +1971,16 @@ type TowerModel = EconomyStock & {
   lastShotVented?: boolean;
   /** Son dogrudan vurus (duvar saati); Rolanti Sogutmasi (`idleCooling`) okuyor. */
   lastHitAt?: number;
+  /**
+   * Kenetlenme (`focusRange`): kulenin art arda ates ettigi hedef, o hedefe
+   * ilk atisin ve son atisin ani (duvar saati). Yalnizca karti olan kulede yaziliyor.
+   */
+  focusRangeTargetId?: string;
+  focusRangeSince?: number;
+  focusRangeLastShotAt?: number;
+  /** Atis Haritasi (`killRange`): oldurmelerin sayildigi dalga ve o dalgadaki oldurme. */
+  killRangeWave?: number;
+  killRangeKills?: number;
   /** Efsanevi etki basina kulenin yeniden uygulayabilecegi an (`LEGENDARY_TOWER_TRIGGER_GAP_MS`). */
   legendaryReadyAt?: number[];
   /** `getTowerLegendaryRhythm` onbellegi. */
@@ -2671,7 +2682,7 @@ export class MatchRoom extends Room<MatchState> {
    * yuzlerce kez soruluyor ve her biri butun kuleleri tariyor (grup aramasi
    * karesel). Yerlesim tick icinde degisirse (`markNavigationDirty`) atiliyor.
    */
-  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]> };
+  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]>; walls?: Map<TowerModel, number> };
   /**
    * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
    * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
@@ -2786,6 +2797,10 @@ export class MatchRoom extends Room<MatchState> {
   private readonly heaterScratch: TowerModel[] = [];
   /** Rezonans Odasi takili yapilar; `updateTowers` tik basina bir kez topluyor. */
   private readonly neighborCoolingSources: TowerModel[] = [];
+  /** Gozcu Diregi takili yapilar; Rezonans Odasi gibi `updateTowers` tik basina bir kez topluyor. */
+  private readonly neighborRangeSources: TowerModel[] = [];
+  /** Kule kimligi -> bitisigindeki direkler; ayni toplamada kuruluyor. */
+  private readonly neighborRangeReceivers = new Map<string, TowerModel[]>();
   /** Sicrama vurusu suruyor (`applyTowerHitSplashes`): yeniden sicrama ve kritik yok. */
   private hitSplashActive = false;
   /**
@@ -6483,6 +6498,41 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /**
+   * Gozcu Diregi (`neighborRange`): bitisikteki dost yapilarin esyalarindan
+   * bu kuleye gelen menzil payi, tavan `NEIGHBOR_RANGE_MAX`. Rezonans Odasi'nin
+   * kurali. Menzil tikte cok kez okundugu icin komsuluk tik basina bir kez
+   * kuruluyor (`collectNeighborRangeSources`); okuma kimlikle, ki onizlemenin
+   * kopya kulesi de (`sendTowerPreview`) ayni payi gorsun. Yikilan ya da
+   * satilan direk okumada eleniyor. Sahada direk yokken tek karsilastirma.
+   */
+  private getNeighborRangeAdd(tower: TowerModel) {
+    if (this.neighborRangeSources.length === 0) return 0;
+    const sources = this.neighborRangeReceivers.get(tower.id);
+    if (!sources) return 0;
+    let add = 0;
+    for (const source of sources) {
+      if (source.hp <= 0 || this.towers.get(source.id) !== source) continue;
+      add += getModifierAdd(this.getTowerRunModifiers(source), "neighborRange");
+    }
+    return Math.min(NEIGHBOR_RANGE_MAX, add);
+  }
+
+  private collectNeighborRangeSources() {
+    this.neighborRangeSources.length = 0;
+    this.neighborRangeReceivers.clear();
+    for (const tower of this.towers.values()) {
+      if (getModifierAdd(this.getTowerRunModifiers(tower), "neighborRange") > 0) this.neighborRangeSources.push(tower);
+    }
+    for (const source of this.neighborRangeSources) {
+      for (const neighbour of this.getAdjacentFriendlyTowers(source)) {
+        const list = this.neighborRangeReceivers.get(neighbour.id);
+        if (list) list.push(source);
+        else this.neighborRangeReceivers.set(neighbour.id, [source]);
+      }
+    }
+  }
+
+  /**
    * Kule basina tikte bir kez: Emniyet Ventili, Soguk Salvo'nun ve Yeniden
    * Atesleme Bobini'nin haklari. Sogumadan hemen sonra calisiyor.
    */
@@ -6685,6 +6735,7 @@ export class MatchRoom extends Room<MatchState> {
     this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
     this.collectNeighborCoolingSources();
+    this.collectNeighborRangeSources();
     for (const tower of this.towers.values()) {
       if (!tower.definition.resourceProvider) {
         tower.temperature = Math.max(0, tower.temperature - this.getTowerCoolingPerSecond(tower) * (deltaTime / 1000));
@@ -6855,6 +6906,7 @@ export class MatchRoom extends Room<MatchState> {
       }
 
       this.updateTowerRhythm(tower, target.id);
+      this.updateTowerFocusRange(tower, target.id, now);
       this.consumeTowerResources(tower);
       this.spawnTowerProjectile(tower, target);
       // Cifte Namlu: ikinci mermi de ayni tetikten cikiyor ama kaynagi
@@ -13377,8 +13429,16 @@ export class MatchRoom extends Room<MatchState> {
     if (definition.id === "warrior-2" || (definition.id === "warrior-5" && tower.debugOverdriveUntil > now)) {
       block.rg = 1;
     } else {
-      block.r = closeTowerStatValue(range, this.scaleWorldDistance(getTowerBaseLevelRange(definition, tower.level)), sourcesOf("range"),
-        [["character:atakan-passive", this.getAtakanPassiveMultiplier(tower)]]);
+      // Menzil turu: kosullu paylar tek kalem ("Koşullu"), atis hiziyla ayni
+      // dilde; Teleskopik Namlu'nun duz karesi yuzdelerden once eklendigi icin
+      // dokumde carpan karsiligiyla duruyor.
+      const flatRatio = getModifierAdd(modifiers, "rangeFlat") > 0
+        ? this.getTowerOwnRange(tower) / Math.max(1e-6, this.getTowerOwnRange(tower, false))
+        : 1;
+      const flatSources: TowerStatSource[] = modifiers.filter((modifier) => modifier.stat === "rangeFlat").slice(0, 1).map((modifier) => [modifier.source, flatRatio]);
+      block.r = closeTowerStatValue(range, this.scaleWorldDistance(getTowerBaseLevelRange(definition, tower.level)),
+        [...sourcesOf("range"), ["cond:range", this.getTowerConditionalRangeAdd(tower, modifiers)]],
+        [["character:atakan-passive", this.getAtakanPassiveMultiplier(tower)], ...flatSources]);
     }
 
     // Hasar: tabani seviyeli tanim, paylari dokumun kendisi. Vurus paylari
@@ -16168,7 +16228,10 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceOwnerId) ownerGold += this.awardPlayerKillBountyGold(sourceOwnerId, enemy, sourceDefinitionId);
     this.awardEnemyExperience(enemy, sourceTowerId ? this.towers.get(sourceTowerId) : undefined);
     this.kills += 1;
-    if (killerTower) killerTower.killCount = (killerTower.killCount ?? 0) + 1;
+    if (killerTower) {
+      killerTower.killCount = (killerTower.killCount ?? 0) + 1;
+      this.recordTowerKillRange(killerTower);
+    }
     this.recordServerKnowledge(killerTower, enemy);
     this.runLedger.recordKill(damagePlayer ? damagePlayer.slot ?? 0 : undefined);
     // Supurmenin kendi oldurmesi: suren supurmede o kulenin vurusu (durum tiki degil).
@@ -18133,15 +18196,26 @@ export class MatchRoom extends Room<MatchState> {
     return this.getServerSharedStat(tower, this.getTowerOwnRange(tower), "range");
   }
 
-  /** Kulenin kendi menzili; Sunucu paylasimi `getTowerRange`de. */
-  private getTowerOwnRange(tower: TowerModel) {
-    const applyRangeAura = (range: number) => applyTowerAuraModifier(range, this.getTowerAuraModifiers(tower), "range")
-      * getModifierMultiplier(this.getTowerRunModifiers(tower), "range")
+  /**
+   * Kulenin kendi menzili; Sunucu paylasimi `getTowerRange`de.
+   *
+   * Menzil turu: Teleskopik Namlu'nun duz karesi (`rangeFlat`) karakter
+   * carpanlarindan sonra, yuzdelerden once ekleniyor -- taban menzilin
+   * parcasi gibi; menzili sifir yapiya ve haritayi kaplayan menzile
+   * eklenmiyor. Kosullu paylar (`getTowerConditionalRangeAdd`) kart ve
+   * esyalarin `range` payiyla ayni toplamsal havuzda. `includeFlat` yalnizca
+   * panelin dokumu icin (duz karenin carpan karsiligi).
+   */
+  private getTowerOwnRange(tower: TowerModel, includeFlat = true) {
+    const modifiers = this.getTowerRunModifiers(tower);
+    const flat = includeFlat ? this.getTowerFlatRange(modifiers) : 0;
+    const applyRangeAura = (range: number, withFlat = true) => applyTowerAuraModifier(withFlat && range > 0 ? range + flat : range, this.getTowerAuraModifiers(tower), "range")
+      * Math.max(0, 1 + getModifierAdd(modifiers, "range") + this.getTowerConditionalRangeAdd(tower, modifiers))
       * (1 + (this.getWorkerBoost(tower, "range")?.value ?? 0))
       * (this.towerHasUnlock(tower, "isolationBonus") && this.isTowerIsolated(tower) ? 1.15 : 1);
     if (tower.definition.id === "warrior-2") {
       const bounds = this.getActiveWorldBounds();
-      return applyRangeAura(Math.hypot(bounds.width, bounds.height));
+      return applyRangeAura(Math.hypot(bounds.width, bounds.height), false);
     }
 
     const now = Date.now();
@@ -18153,7 +18227,7 @@ export class MatchRoom extends Room<MatchState> {
 
     if (tower.definition.id === "warrior-5" && tower.debugOverdriveUntil > now) {
       const bounds = this.getActiveWorldBounds();
-      return applyRangeAura(Math.hypot(bounds.width, bounds.height));
+      return applyRangeAura(Math.hypot(bounds.width, bounds.height), false);
     }
 
     if (tower.definition.id === "zeynep-2") {
@@ -18174,6 +18248,99 @@ export class MatchRoom extends Room<MatchState> {
       return footprintRadius + applyRangeAura(scaledRange);
     }
     return applyRangeAura(scaledRange);
+  }
+
+  /** Teleskopik Namlu (`rangeFlat`): kare cinsinden duz menzil, dunya biriminde. */
+  private getTowerFlatRange(modifiers: readonly Modifier[]) {
+    const tiles = getModifierAdd(modifiers, "rangeFlat");
+    return tiles > 0 ? this.scaleWorldDistance(tiles * TOWER_GRID_SIZE) : 0;
+  }
+
+  /**
+   * Menzil turunun kosullu paylari; kart ve esyalarin `range` payiyla ayni
+   * toplamsal havuza giriyor, toplam tavani `RANGE_CONDITIONAL_CAP`.
+   *
+   * - Kenetlenme: ayni hedefe ilk atistan beri gecen oyun suresi; son atistan
+   *   beri `FOCUS_RANGE_GRACE_MS` gectiyse ya da hedef olduyse sifir.
+   * - Termal Mercek: namlunun sicakligi.
+   * - Siper Gozcusu: kulenin kenarindaki duvarlar.
+   * - Atis Haritasi: bu dalgadaki oldurmeler.
+   * - Gozcu Diregi: bitisikteki direkler.
+   *
+   * Hicbiri menzili okumuyor: menzil hesabinin icinden cagriliyor.
+   */
+  private getTowerConditionalRangeAdd(tower: TowerModel, modifiers: readonly Modifier[]) {
+    let focus = 0;
+    let heat = 0;
+    let wall = 0;
+    let kill = 0;
+    for (const modifier of modifiers) {
+      if (modifier.stat === "focusRange") focus += modifier.add;
+      else if (modifier.stat === "heatRange") heat += modifier.add;
+      else if (modifier.stat === "wallRange") wall += modifier.add;
+      else if (modifier.stat === "killRange") kill += modifier.add;
+    }
+    let add = this.getNeighborRangeAdd(tower);
+    if (focus > 0 && tower.focusRangeTargetId && tower.focusRangeSince !== undefined) {
+      const now = Date.now();
+      const target = this.enemies.get(tower.focusRangeTargetId);
+      if (target && target.hp > 0 && now - (tower.focusRangeLastShotAt ?? 0) <= scaleGameDuration(FOCUS_RANGE_GRACE_MS)) {
+        add += getFocusRangeAdd(focus, (now - tower.focusRangeSince) * GAME_SPEED_MULTIPLIER);
+      }
+    }
+    if (heat > 0) add += getHeatRangeAdd(tower.temperature, heat);
+    if (wall > 0) add += getWallRangeAdd(wall, this.countTowerEdgeWalls(tower));
+    if (kill > 0 && tower.killRangeWave === this.wave) add += getKillRangeAdd(kill, tower.killRangeKills ?? 0);
+    return Math.min(RANGE_CONDITIONAL_CAP, add);
+  }
+
+  /**
+   * Siper Gozcusu: kulenin kapladigi karelerin dis kenarlarina orulmus ayakta
+   * duvar sayisi (kimin duvari oldugu fark etmiyor). Yerlesime bagli; tik ici
+   * yerlesim onbellegiyle tik basina kule basina bir kez.
+   */
+  private countTowerEdgeWalls(tower: TowerModel) {
+    const cache = this.tickLayoutCache;
+    const cached = cache?.walls?.get(tower);
+    if (cached !== undefined) return cached;
+    const cells = this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation);
+    const own = new Set(cells.map((cell) => `${cell.col}:${cell.row}`));
+    const walls = new Set<string>();
+    for (const cell of cells) {
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const next = { col: cell.col + dc, row: cell.row + dr };
+        if (own.has(`${next.col}:${next.row}`)) continue;
+        const structure = this.getEdgeStructure(cell, next);
+        if (structure && structure.hp > 0 && isWallDefinition(structure.definition)) walls.add(structure.id);
+      }
+    }
+    if (cache) (cache.walls ??= new Map()).set(tower, walls.size);
+    return walls.size;
+  }
+
+  /**
+   * Kenetlenme: atis oncesi, kulenin art arda ates ettigi hedef. Hedef
+   * degisince ya da son atistan beri `FOCUS_RANGE_GRACE_MS` gectiyse saat
+   * yeniden basliyor. Karti olmayan kulede hicbir sey yazilmiyor.
+   */
+  private updateTowerFocusRange(tower: TowerModel, targetId: string, now: number) {
+    if (!(getModifierAdd(this.getTowerRunModifiers(tower), "focusRange") > 0)) return;
+    const lapsed = now - (tower.focusRangeLastShotAt ?? 0) > scaleGameDuration(FOCUS_RANGE_GRACE_MS);
+    if (tower.focusRangeTargetId !== targetId || tower.focusRangeSince === undefined || lapsed) {
+      tower.focusRangeTargetId = targetId;
+      tower.focusRangeSince = now;
+    }
+    tower.focusRangeLastShotAt = now;
+  }
+
+  /** Atis Haritasi: olduren kulenin bu dalgadaki oldurmesi; yeni dalgada sayac sifirdan. */
+  private recordTowerKillRange(tower: TowerModel) {
+    if (!(getModifierAdd(this.getTowerRunModifiers(tower), "killRange") > 0)) return;
+    if (tower.killRangeWave !== this.wave) {
+      tower.killRangeWave = this.wave;
+      tower.killRangeKills = 0;
+    }
+    tower.killRangeKills = (tower.killRangeKills ?? 0) + 1;
   }
 
   private getTowerMinimumRange(tower: TowerModel) {
@@ -18500,6 +18667,9 @@ export class MatchRoom extends Room<MatchState> {
     // Atis hizinin kosullu paylari (Isil Esik Rolesi, Takip Ritmi, Asiri Hiz,
     // salvolar): panel ve Termodinamik Denge'nin cevrimi ayni sayiyi gorsun.
     if (stat === "fireRate") return this.getTowerConditionalFireRateAdd(tower, modifiers);
+    // Menzil turunun kosullu paylari (Kenetlenme, Termal Mercek, Siper
+    // Gozcusu, Atis Haritasi, Gozcu Diregi): panel ve cevrimler ayni sayiyi gorsun.
+    if (stat === "range") return this.getTowerConditionalRangeAdd(tower, modifiers);
     return 0;
   }
 

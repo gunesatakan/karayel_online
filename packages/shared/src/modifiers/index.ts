@@ -269,7 +269,31 @@ export type ModifierStat =
   | "shatterChance"
   | "chronoChance"
   | "linkChance"
-  | "gravityChance";
+  | "gravityChance"
+  /**
+   * Menzil turu (`range-mechanics` modulu). Hepsi kulenin listesinden
+   * okunuyor; kosullu olanlar ayni toplamsal menzil havuzuna giriyor ve
+   * toplamlari `RANGE_CONDITIONAL_CAP` ile sinirli.
+   *
+   * - `focusRange`: kule ayni hedefe ates ettigi her oyun saniyesi bu pay,
+   *   tavan `FOCUS_RANGE_MAX` (kart: Kenetlenme).
+   * - `heatRange`: 50 derecenin ustunde her 10 derece bir basamak, 100 derecede bu
+   *   pay (kart: Termal Mercek).
+   * - `wallRange`: kulenin kenarina orulmus her duvar icin bu pay, en fazla
+   *   `WALL_RANGE_MAX_WALLS` duvar (kart: Siper Gozcusu).
+   * - `rangeFlat`: taban menzile kare cinsinden duz ekleme; yuzdeler onun
+   *   ustune isliyor, kosullu tavana girmiyor (esya: Teleskopik Namlu).
+   * - `killRange`: kulenin bu dalgadaki her oldurmesi icin bu pay, en fazla
+   *   `KILL_RANGE_MAX_KILLS` oldurme (esya: Atis Haritasi).
+   * - `neighborRange`: takildigi yapinin bitisigindeki dost kulelere bu pay;
+   *   bir kule en fazla `NEIGHBOR_RANGE_MAX` alir (esya: Gozcu Diregi).
+   */
+  | "focusRange"
+  | "heatRange"
+  | "wallRange"
+  | "rangeFlat"
+  | "killRange"
+  | "neighborRange";
 
 export type Modifier = {
   source: string;

@@ -701,6 +701,12 @@ export const cardCatalog: CardDefinition[] = [
   { id: "av-ritmi", name: "Av Ritmi", description: "Tüm kuleler, canı %50'nin altına inmiş bir hedefe ateş ederken atış hızı +%40 kazanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("av-ritmi", "woundedFireRate", 0.4)] },
   { id: "rolanti-sogutmasi", name: "Rölanti Soğutması", description: "1 saniyedir vuruş yapmayan kulelerin soğuması +%120: dalga aralarında ve hedef beklerken namlu çabuk toparlanır.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("rolanti-sogutmasi", "idleCooling", 1.2)] },
   { id: "kritik-tahliye", name: "Kritik Tahliye", description: "Kritik vuruş yapan kule, o vuruşu getiren atışın ısısının %100'ünü geri atar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kritik-tahliye", "critVent", 1)] },
+  // Menzil turu: menzil duz bir yuzde degil; ayni hedefte kalma suresine,
+  // namlunun sicakligina ve kulenin kenarindaki duvarlara baglaniyor.
+  // Sabitler ve kosullu toplam tavani `range-mechanics`te.
+  { id: "kenetlenme", name: "Kenetlenme", description: "Bir kule aynı hedefe ateş ettiği her saniye +%5 menzil kazanır; en fazla +%20. Hedef değişince sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("kenetlenme", "focusRange", 0.05)] },
+  { id: "termal-mercek", name: "Termal Mercek", description: "Kulenin sıcaklığı 50 dereceyi aştıkça menzili artar: her 10 derece +%4, 100 derecede +%20.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-mercek", "heatRange", 0.2)] },
+  { id: "siper-gozcusu", name: "Siper Gözcüsü", description: "Kenarına duvar örülmüş kuleler her duvar için +%5 menzil kazanır; en fazla 3 duvar (+%15).", axes: ["barricade", "dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("siper-gozcusu", "wallRange", 0.05)] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -986,7 +992,11 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   woundedFireRate: "combat", idleCooling: "combat", critVent: "combat",
   crowdFireRate: "combat", lockCooling: "combat", chilledHeatRelief: "combat",
   chainChance: "combat", blastChance: "combat", freezeChance: "combat", executeChance: "combat",
-  shatterChance: "combat", chronoChance: "combat", linkChance: "combat", gravityChance: "combat"
+  shatterChance: "combat", chronoChance: "combat", linkChance: "combat", gravityChance: "combat",
+  // Menzil turu: hepsi kulenin menziline isliyor. Gozcu Diregi ates etmeyen
+  // bir yapiya takilsa da komsusunda is goruyor (Rezonans Odasi gibi).
+  focusRange: "combat", heatRange: "combat", wallRange: "combat", rangeFlat: "combat", killRange: "combat",
+  neighborRange: "structure"
 };
 
 /**
