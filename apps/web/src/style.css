@@ -49,6 +49,65 @@ canvas {
   touch-action: none;
 }
 
+/* Hedefli kartin kulesi haritadan seciliyor: perde secim bitene kadar gizli. */
+#card-root.card-draft--map-pick {
+  display: none;
+}
+
+.map-pick-banner {
+  position: fixed;
+  top: max(60px, calc(env(safe-area-inset-top) + 58px));
+  left: 50%;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 6px 6px 6px 12px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  border: 1px solid var(--pick-color, #38bdf8);
+  border-left-width: 3px;
+  background: rgba(2, 6, 23, 0.95);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.6);
+  color: #e2e8f0;
+  font-family: Rajdhani, "Exo 2", Arial, sans-serif;
+}
+
+.map-pick-banner__text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.map-pick-banner__text small {
+  overflow: hidden;
+  color: var(--pick-color, #38bdf8);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.map-pick-banner__text strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.map-pick-banner button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.96);
+  color: #e2e8f0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .card-draft__veil {
   position: absolute;
   inset: 0;

@@ -1081,6 +1081,12 @@ export class GameScene extends Phaser.Scene {
   private inventoryOpen = false;
   /** Envanterden secilmis, kule bekleyen esya. */
   private pendingEquipItemId?: string;
+  /**
+   * Hedefli kartin kulesi haritadan seciliyor: kart perdesi gizli, haritanin
+   * cevresinde secim cercevesi, ustte kartin adi ve geri donus.
+   */
+  private cardTargetPick?: { card: CardDefinition; color: number; banner: HTMLElement };
+  private mapPickFrame?: Phaser.GameObjects.Graphics;
   private latestDefenseSummary?: DefenseSummary;
   private pendingPreview?: { requestId: string; apply: () => void; dialog: HTMLDialogElement };
   private previewSequence = 0;
@@ -2108,6 +2114,7 @@ export class GameScene extends Phaser.Scene {
     this.renderStreakGlows(now);
     this.resolvePendingPlacement();
     this.tickWallLine(now);
+    this.renderMapPickFrame(now);
   }
 
   private drawMap() {
@@ -5818,6 +5825,11 @@ export class GameScene extends Phaser.Scene {
       this.resolveWorkerPickTap(pointer);
       return;
     }
+    // Hedefli kartin kulesi seciliyor: dokunus yalnizca hedef secer.
+    if (this.cardTargetPick && this.isBattlePointer(pointer)) {
+      this.resolveCardTargetTap(pointer);
+      return;
+    }
     if (this.hitSellButton(pointer)) {
       this.room?.send("sellTower", { towerId: this.selectedPlacedTowerId });
       this.selectedPlacedTowerId = undefined;
@@ -7757,7 +7769,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       button.addEventListener("click", () => {
         if (this.cardChoicePending) return;
         if (performance.now() < this.cardDealStartedAt + timing.pickableAtMs) return;
-        if (card.scope.kind === "targeted") this.showTargetedTowerChoices(card);
+        if (card.scope.kind === "targeted") this.startCardTargetPick(card);
         else this.submitCardChoice({ cardId: card.id });
       });
       grid?.append(button);
@@ -7888,6 +7900,109 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     return count > 0
       ? { text: t("scene.card.reachTowers", { count }), muted: false }
       : { text: t("scene.card.reachTowersNone"), muted: true };
+  }
+
+  /**
+   * Hedefli kartin kulesi haritadan seciliyor.
+   *
+   * Eskiden kuleler perdede bir liste olarak geliyordu; ayni turden kuleler
+   * yalnizca adlariyla birbirinden ayrilmiyordu. Simdi perde gizleniyor ve
+   * oyuncu kuleyi haritada, yerini gorerek seciyor. Secim kipinde oldugu
+   * haritanin cevresindeki cerceveden ve uygun kulelerin halkasindan
+   * okunuyor. Kartin tasiyabilecegi kule yoksa liste ekraninin bos mesaji
+   * kaliyor: oyuncu cikmaz sokakta kalmasin.
+   */
+  private startCardTargetPick(card: CardDefinition) {
+    const root = this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root");
+    const eligible = (this.latestPerfSnapshot?.towers ?? [])
+      .some((tower) => tower.ownerId === this.localSessionId && this.canTowerHoldCard(tower));
+    if (!root || !eligible) {
+      this.showTargetedTowerChoices(card);
+      return;
+    }
+    this.endCardTargetPick();
+    const accent = this.getCardAccent(card);
+    const banner = document.createElement("div");
+    banner.className = "map-pick-banner";
+    banner.style.setProperty("--pick-color", accent);
+    banner.setAttribute("role", "status");
+    banner.innerHTML = `
+      <span class="map-pick-banner__text">
+        <small>${upper(getCardText(card).name)}</small>
+        <strong>${t("scene.card.mapPickTitle")}</strong>
+      </span>
+      <button type="button">${t("scene.card.backToCards")}</button>`;
+    banner.querySelector("button")?.addEventListener("click", () => this.endCardTargetPick());
+    document.body.append(banner);
+    root.classList.add("card-draft--map-pick");
+    this.cardTargetPick = { card, color: Number.parseInt(accent.slice(1), 16), banner };
+    // Karta dokunan parmak haritaya da dusmesin.
+    this.ignoreMapPointerUntil = performance.now() + 250;
+  }
+
+  /** Haritadan secim biter; kart perdesi (hala aciksa) geri gelir. */
+  private endCardTargetPick() {
+    const pick = this.cardTargetPick;
+    if (!pick) return;
+    this.cardTargetPick = undefined;
+    pick.banner.remove();
+    (this.cardChoiceRoot ?? document.querySelector<HTMLElement>("#card-root"))?.classList.remove("card-draft--map-pick");
+    this.mapPickFrame?.clear().setVisible(false);
+  }
+
+  /**
+   * Secim kipinde haritaya dokunuldu. Kartin tasiyabilecegi kuleyse onizleme
+   * aciliyor ve "uygula" karti gonderiyor; tasiyamayacagi kulede kisa sebep,
+   * kip acik kaliyor. Bos kareye dokunus sessiz: cerceve ne beklendigini soyluyor.
+   */
+  private resolveCardTargetTap(pointer: Phaser.Input.Pointer) {
+    const pick = this.cardTargetPick;
+    if (!pick || performance.now() < this.ignoreMapPointerUntil) return;
+    const tower = this.findTowerAt(pointer.worldX, pointer.worldY);
+    if (!tower) return;
+    if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(tower)) {
+      this.showNotice(t("scene.card.mapPickInvalid"));
+      return;
+    }
+    const cardId = pick.card.id;
+    this.previewTowerChange({ cardId, towerId: tower.id }, () => {
+      this.endCardTargetPick();
+      this.submitCardChoice({ cardId, towerId: tower.id });
+    });
+  }
+
+  /**
+   * Secim kipinin isareti: haritanin cevresinde kartin renginde ince bir
+   * cerceve ve kose ayraclari, karti alabilecek kulelerde halka. Yavas bir
+   * nabiz; hareket azaltmada sabit.
+   */
+  private renderMapPickFrame(now: number) {
+    const pick = this.cardTargetPick;
+    if (!pick) return;
+    const frame = this.mapPickFrame ?? this.add.graphics().setDepth(57);
+    this.mapPickFrame = frame;
+    frame.clear().setVisible(true);
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const still = this.feedback?.reducedMotion ?? false;
+    const pulse = still ? 1 : 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now / 320));
+    const inset = 3;
+    const left = bounds.left + inset;
+    const top = bounds.top + inset;
+    const right = bounds.left + bounds.width - inset;
+    const bottom = bounds.top + bounds.height - inset;
+    frame.lineStyle(2, pick.color, 0.55 * pulse).strokeRect(left, top, right - left, bottom - top);
+    const arm = Math.min(right - left, bottom - top) * 0.09;
+    frame.lineStyle(4, pick.color, 0.95 * pulse);
+    for (const [x, y, dx, dy] of [[left, top, 1, 1], [right, top, -1, 1], [left, bottom, 1, -1], [right, bottom, -1, -1]]) {
+      frame.lineBetween(x, y, x + dx * arm, y);
+      frame.lineBetween(x, y, x, y + dy * arm);
+    }
+    const cellSize = this.getMapCellSize();
+    for (const tower of this.latestPerfSnapshot?.towers ?? []) {
+      if (tower.ownerId !== this.localSessionId || !this.canTowerHoldCard(tower)) continue;
+      const radius = cellSize * getTowerGridSpan(tower.definitionId) * 0.62;
+      frame.lineStyle(2, pick.color, 0.9 * pulse).strokeCircle(tower.x, tower.y, radius);
+    }
   }
 
   private showTargetedTowerChoices(card: CardDefinition) {
@@ -8120,6 +8235,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private hideCardChoices() {
+    this.endCardTargetPick();
     this.clearCardChoiceTimeout();
     this.clearCardDealTimers();
     this.cardChoicePending = false;
