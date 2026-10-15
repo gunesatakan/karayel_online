@@ -28,7 +28,7 @@ function hasAlphaChannel(bytes) {
 }
 
 test("kademe resmi seviyenin kademesine gore seciliyor; digerleri tek resim", () => {
-  for (const id of ["warrior-1", "warrior-2", "warrior-4", "warrior-5", "warrior-6"]) {
+  for (const id of ["warrior-1", "warrior-2", "warrior-3", "warrior-4", "warrior-5", "warrior-6"]) {
     assert.equal(art.getTowerTextureKey(id, 1), `tower-${id}-levels-1-4`);
     assert.equal(art.getTowerTextureKey(id, 4), `tower-${id}-levels-1-4`);
     assert.equal(art.getTowerTextureKey(id, 5), `tower-${id}-levels-5-9`);
@@ -43,7 +43,7 @@ test("kademe resmi seviyenin kademesine gore seciliyor; digerleri tek resim", ()
 
 test("her kademe resmi pakette ve gercekten saydam", () => {
   const resimler = art.listTieredTowerArt();
-  assert.equal(resimler.length, 15);
+  assert.equal(resimler.length, 18);
   for (const { path } of resimler) {
     const url = new URL(`../apps/web/public/${path}`, import.meta.url);
     assert.ok(existsSync(url), `pakette yok: ${path}`);
