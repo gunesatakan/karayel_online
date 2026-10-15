@@ -1155,11 +1155,6 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           <i>›</i>
           ${t("menu.home.dossier")}
         </button>
-        <dl class="hero__stats">
-          <div><dt>${t("menu.home.stat.hp")}</dt><dd>${selectedCharacter.maxHp}</dd></div>
-          <div><dt>${t("menu.home.stat.damage")}</dt><dd>${selectedCharacter.damage}</dd></div>
-          <div><dt>${t("menu.home.stat.towers")}</dt><dd>${selectedCharacter.towers.length}</dd></div>
-        </dl>
       </section>
 
       <section class="roster" aria-label="${t("menu.home.rosterAria")}">

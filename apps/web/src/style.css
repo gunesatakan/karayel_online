@@ -2685,45 +2685,6 @@ button.wave-report:active { transform: scale(0.99); }
   text-overflow: ellipsis;
 }
 
-.hero__stats {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin: 0;
-}
-
-.hero__stats div {
-  min-width: 0;
-  padding: 5px 7px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-}
-
-.hero__stats dt,
-.hero__stats dd {
-  margin: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.hero__stats dt {
-  color: var(--ink-3);
-  font-size: var(--fs-micro);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero__stats dd {
-  color: #efe7d9;
-  font-family: var(--mono);
-  font-size: var(--fs-small);
-}
-
 .hero__cta {
   position: relative;
   z-index: 1;
