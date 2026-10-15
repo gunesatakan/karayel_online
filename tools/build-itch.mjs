@@ -143,6 +143,8 @@ function main() {
   }
   const env = { ...process.env };
   if (server) env.VITE_GAME_SERVER_URL = server;
+  // itch paketinde Yaratici mod yok (`apps/web/src/config.ts`).
+  env.VITE_CREATIVE = "off";
 
   // Tek dizge + kabuk: Windows'ta npm bir .cmd, dogrudan calistirilamiyor.
   const built = spawnSync("npm run build:web", { cwd: root, env, stdio: "inherit", shell: true });

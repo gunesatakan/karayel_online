@@ -2,6 +2,12 @@ export const gameServerUrl =
   import.meta.env.VITE_GAME_SERVER_URL ??
   (import.meta.env.PROD ? "wss://karayel-online.fly.dev" : `ws://${window.location.hostname}:2567`);
 
+/**
+ * Yaratici mod derlemede kapatilabiliyor: itch paketi `VITE_CREATIVE=off` ile
+ * derleniyor ve menude Yaratici dugmesi hic cikmiyor (`tools/build-itch.mjs`).
+ */
+export const creativeModeEnabled = String(import.meta.env.VITE_CREATIVE ?? "on").toLowerCase() !== "off";
+
 export const healthUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/health";
 export const roomsUrl = gameServerUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:") + "/rooms";
 

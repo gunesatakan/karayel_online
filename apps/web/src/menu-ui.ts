@@ -82,7 +82,7 @@ import { getRecordBook, getStageRecord } from "./run-records";
 import { takeQuickStartIntent } from "./quick-start";
 import { readCardArchive } from "./card-archive";
 import { getCosmeticFacts, getOperatorMasteryPoints, isProgressStorageAvailable, readBadgeBook, readCosmeticSelection, readMasteryBook, saveCosmeticSelection } from "./progress-store";
-import { gameServerUrl, getPlayerName, roomsUrl } from "./config";
+import { creativeModeEnabled, gameServerUrl, getPlayerName, roomsUrl } from "./config";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { getLocale, onLocaleChange, setLocale, t, tMaybe, type Locale, type MessageKey, type MessageParams } from "./i18n";
 import {
@@ -888,7 +888,7 @@ export function setupMenuUi(game: Phaser.Game) {
     const launch = () => {
       root.removeEventListener("pointerdown", cancel, true);
       root.removeEventListener("keydown", cancel, true);
-      creativeRequested = quickStart.mode === "creative";
+      creativeRequested = creativeModeEnabled && quickStart.mode === "creative";
       startGame("solo");
     };
     if (phaserReady) launch();
@@ -1129,7 +1129,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
           <small>${t("menu.home.stageLine", { n: stageState.selected, name: escapeHtml(getStage(stageState.selected).name) })}</small>
         </button>
         <div class="home-actions__grid">
-          <button class="command command--ghost" data-start-creative>${t("menu.home.creative")}</button>
+          ${creativeModeEnabled ? `<button class="command command--ghost" data-start-creative>${t("menu.home.creative")}</button>` : ""}
           <button class="command command--ghost" data-view="online">Online</button>
           <button class="command command--ghost" data-view="archive">${t("menu.home.operator")}</button>
           <button class="command command--ghost" data-view="bestiary">${t("menu.home.enemies")}</button>
@@ -1143,7 +1143,7 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
             <span>${t("menu.home.badges")}</span>
             <small>${board.earned}/${board.total}</small>
           </button>
-          <button class="command command--ghost" data-view="credits">${t("credits.menuButton")}</button>
+          <button class="command command--ghost${creativeModeEnabled ? "" : " command--wide"}" data-view="credits">${t("credits.menuButton")}</button>
         </div>
         <a class="home-bounty-board" href="https://www.bountyboard.gg/game/nexhold?ref=badge" target="_blank" rel="noopener noreferrer">
           <img src="https://www.bountyboard.gg/badges/bounty-board-icon-128.png" alt="Nexhold on Bounty Board" width="64" height="64" decoding="async" />
