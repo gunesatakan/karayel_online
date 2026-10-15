@@ -59,14 +59,52 @@ export const TUTORIAL_OFFER_STORAGE_KEY = "uzay_tutorial_offer_v1";
 
 export type TutorialRun = { step: number; done: boolean };
 
-/** Motorun girdisi: sunucunun olcumu, ANLADIM ya da GEÇ. */
+/**
+ * Oyunun o anki hali (sahne snapshot'tan kuruyor, `tutorialFacts`). Hedefi
+ * zaten saglanmis adim (depo onceden kurulmus, tamirci zaten var...) etkin
+ * olur olmaz sessizce geciliyor: oyuncu ayni seyi ikinci kez yapmak zorunda
+ * kalmiyor. Yalnizca eylemle anlasilan adimlar (ayar, uretim, kart, alim,
+ * beceri, ulti) icin durum yok.
+ */
+export type TutorialFacts = {
+  /** Oyuncunun ayakta duran yapilarinin tanim kimlikleri. */
+  definitionIds: readonly string[];
+  /** Seviyesi 1'in ustunde bir yapisi var mi. */
+  upgraded: boolean;
+  /** Alinmis isci sayisi. */
+  hired: number;
+  /** Elle atanmis isci sayisi. */
+  manualAssignments: number;
+  /** Onarim (tamirci) iscisi sayisi. */
+  repairers: number;
+  /** Isci agacinda acilmis gelistirme sayisi. */
+  treeUnlocks: number;
+};
+
+/** Motorun girdisi: sunucunun olcumu, oyunun hali, ANLADIM ya da GEÇ. */
 export type TutorialSignal =
   | { kind: "progress"; progress: TutorialProgressMessage }
+  | { kind: "state"; facts: TutorialFacts }
   | { kind: "ack" }
   | { kind: "skip" };
 
 export function createTutorialRun(): TutorialRun {
   return { step: 0, done: false };
+}
+
+/** Yeniden yuklemede kaldigi adim: oda kimligiyle birlikte (cihazda). */
+export const TUTORIAL_RUN_STORAGE_KEY = "uzay_tutorial_run_v1";
+
+/**
+ * Kayitli adim ayni odanin kaydiysa oradan, degilse bastan. Menuden acilan
+ * her ogretici yeni bir oda, yani hep 1. adimdan basliyor. Saf.
+ */
+export function restoreTutorialRun(saved: unknown, roomId: string | undefined): TutorialRun {
+  if (!roomId || typeof saved !== "object" || saved === null) return createTutorialRun();
+  const record = saved as { roomId?: unknown; step?: unknown };
+  if (record.roomId !== roomId || !Number.isInteger(record.step)) return createTutorialRun();
+  const step = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, record.step as number));
+  return { step, done: false };
 }
 
 export type TutorialBuildKind = "tower" | "wall" | "energy" | "armory" | "depot" | "repairDepot";
@@ -129,6 +167,26 @@ export function isTutorialStepCompletedBy(id: TutorialStepId, progress: Tutorial
   }
 }
 
+/** Oyunun hali adimin hedefini zaten sagliyor mu. Saf. */
+export function isTutorialStepSatisfied(id: TutorialStepId, facts: TutorialFacts): boolean {
+  const build = BUILD_STEPS[id];
+  if (build) return facts.definitionIds.some((definitionId) => classifyTutorialBuild(definitionId) === build);
+  switch (id) {
+    case "hire":
+      return facts.hired > 0;
+    case "assign":
+      return facts.manualAssignments > 0;
+    case "repairer":
+      return facts.repairers > 0;
+    case "upgrade":
+      return facts.upgraded;
+    case "workerTree":
+      return facts.treeUnlocks > 0;
+    default:
+      return false;
+  }
+}
+
 /** Adimi ilerletir. Saf: ayni girdi ayni cikti. */
 export function advanceTutorial(run: TutorialRun, signal: TutorialSignal): TutorialRun {
   if (run.done) return run;
@@ -142,6 +200,8 @@ export function advanceTutorial(run: TutorialRun, signal: TutorialSignal): Tutor
       return TUTORIAL_ACK_STEPS.includes(id) ? next() : run;
     case "progress":
       return isTutorialStepCompletedBy(id, signal.progress) ? next() : run;
+    case "state":
+      return isTutorialStepSatisfied(id, signal.facts) ? next() : run;
     default:
       return run;
   }
@@ -276,15 +336,50 @@ export function dismissTutorialOffer() {
   }
 }
 
+function readSavedTutorialRun(): unknown {
+  try {
+    const raw = window.localStorage.getItem(TUTORIAL_RUN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeSavedTutorialRun(roomId: string, run: TutorialRun) {
+  try {
+    if (run.done) window.localStorage.removeItem(TUTORIAL_RUN_STORAGE_KEY);
+    else window.localStorage.setItem(TUTORIAL_RUN_STORAGE_KEY, JSON.stringify({ roomId, step: run.step }));
+  } catch {
+    // Depolama kapali: yeniden yuklemede ogretici 1. adimdan.
+  }
+}
+
 /** Sahneye giden istek (`game:tutorial-command`). */
 export type TutorialCommand =
   | { type: "prepare"; step: TutorialPrepareId }
   | { type: "continue" }
-  | { type: "complete" };
+  | { type: "complete" }
+  | { type: "closeShop" };
+
+/**
+ * Kart perdesi ya da magaza acikken, adim onlarin degilse kutu yine gorunuyor:
+ * cerceve yok (hedef perdenin altinda), kutu alt kenarda ve perdenin dugme
+ * satirini (Yenile / Mağazayı Kapat) ortmuyor. Saf.
+ */
+export function getTutorialOverlayAvoid(id: TutorialStepId, overlay: { cardOpen: boolean; shopOpen: boolean }): string | undefined {
+  if (overlay.cardOpen && id !== "card") return TUTORIAL_CARD_AVOID_SELECTOR;
+  if (overlay.shopOpen && id !== "shop") return TUTORIAL_SHOP_AVOID_SELECTOR;
+  return undefined;
+}
+
+/** Magazanin Yenile / Mağazayı Kapat satiri. */
+export const TUTORIAL_SHOP_AVOID_SELECTOR = ".gold-shop:not(.inventory) .gold-shop__actions";
 
 type ControlsStateLike = {
   visible?: boolean;
   tutorial?: unknown;
+  tutorialRoomId?: unknown;
+  tutorialFacts?: TutorialFacts;
   goldShop?: unknown;
 };
 
@@ -332,18 +427,30 @@ export function setupTutorial(game: Phaser.Game) {
   const command = (detail: TutorialCommand) => game.events.emit("game:tutorial-command", detail);
   const inTutorialMatch = () => Boolean(controls.visible) && controls.tutorial === true;
 
-  const apply = (signal: TutorialSignal) => {
-    if (!inTutorialMatch() || run.done) return;
+  const roomId = () => (typeof controls.tutorialRoomId === "string" ? controls.tutorialRoomId : undefined);
+
+  /** Sinyali uygular; adim degistiyse true. Tikten cagrilinca yeniden tik yok. */
+  const advance = (signal: TutorialSignal) => {
+    if (!inTutorialMatch() || run.done) return false;
     const before = run;
     run = advanceTutorial(run, signal);
-    if (run === before || run.step === before.step) return;
+    if (run === before || run.step === before.step) return false;
+    const leaving = TUTORIAL_STEPS[before.step];
     // Ilk kule: kurulum bitiyor, dusmanlar yavasca gelmeye basliyor.
-    if (TUTORIAL_STEPS[before.step] === TUTORIAL_COMBAT_STEP) command({ type: "continue" });
+    if (leaving === TUTORIAL_COMBAT_STEP) command({ type: "continue" });
+    // Magaza adimi gecildi ama vitrin acik: kapaniyor, sonraki adimin kutusu ortulmesin.
+    if (leaving === "shop" && controls.goldShop) command({ type: "closeShop" });
+    const id = roomId();
+    if (id) writeSavedTutorialRun(id, run);
     if (run.done) {
       doneBannerUntil = performance.now() + DONE_BANNER_MS;
       command({ type: "complete" });
     }
-    tick();
+    return true;
+  };
+
+  const apply = (signal: TutorialSignal) => {
+    if (advance(signal)) tick();
   };
 
   game.events.on("game:controls-state", (state: ControlsStateLike) => {
@@ -487,11 +594,14 @@ export function setupTutorial(game: Phaser.Game) {
     const inMatch = inTutorialMatch();
     const now = performance.now();
 
-    // Yeni ogretici maci: adim motoru bastan.
+    // Yeni ogretici maci: adim motoru bastan; ayni odaya donuste (yeniden
+    // yukleme) kaldigi adimdan.
     if (inMatch && !wasInMatch) {
-      run = createTutorialRun();
+      run = restoreTutorialRun(readSavedTutorialRun(), roomId());
       enteredStep = -1;
       doneBannerUntil = 0;
+      const id = roomId();
+      if (id) writeSavedTutorialRun(id, run);
     }
     wasInMatch = inMatch;
     if (!inMatch) {
@@ -508,6 +618,19 @@ export function setupTutorial(game: Phaser.Game) {
       return;
     }
 
+    // Hedefi oyunun halinde zaten saglanan adimlar sessizce geciliyor (kutu
+    // bir an bile cizilmiyor, hazirlik da istenmiyor).
+    const facts = controls.tutorialFacts;
+    if (facts) {
+      for (let guard = 0; guard < TUTORIAL_STEPS.length && advance({ kind: "state", facts }); guard += 1) {
+        // advance her turda bir adim geciyor.
+      }
+      if (run.done) {
+        tick();
+        return;
+      }
+    }
+
     const id = TUTORIAL_STEPS[run.step];
     // Adima giris: sunucudan hazirlik (kaynak tabani, kart eli, magaza, sarj).
     if (enteredStep !== run.step) {
@@ -515,15 +638,15 @@ export function setupTutorial(game: Phaser.Game) {
       command({ type: "prepare", step: getTutorialStepPrepare(id) });
     }
 
-    // Kart ve magaza perdesi yalnizca kendi adiminda kutuyu gosteriyor.
     const cardOpen = cardDraftOpen();
     const shopOpen = Boolean(controls.goldShop);
-    if ((cardOpen && id !== "card") || (shopOpen && id !== "shop")) {
-      hide();
-      return;
-    }
     const windowOpen = id === "card" ? cardOpen : id === "shop" ? shopOpen : true;
-    const target = findTarget(id);
+    // Baska adimda perde acik (kart adimi gecildi, el hala secim bekliyor):
+    // kutu kaybolmuyor, perdenin ustunde alt kenarda duruyor.
+    const overlayAvoid = getTutorialOverlayAvoid(id, { cardOpen, shopOpen });
+    const target = overlayAvoid
+      ? { element: null, anchor: "bottom" as const, avoid: document.querySelector(overlayAvoid) }
+      : findTarget(id);
     render(`${id}:${windowOpen}`, getTutorialCopy(id, windowOpen), run.step + 1, target.element, target.anchor, target.avoid);
   };
 

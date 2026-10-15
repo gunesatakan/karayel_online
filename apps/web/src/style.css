@@ -5592,6 +5592,12 @@ button.wave-report:active { transform: scale(0.99); }
   .game-hud__vital--wave.is-crowded .game-hud__wave-total { display: none; }
 }
 
+/* Ogretici: sayac yerinde "Eğitim"; toplam ve dalga sozcugu yok (her genislikte). */
+.game-hud__vital--wave.is-tutorial .game-hud__wave-total,
+.game-hud__vital--wave.is-tutorial .game-hud__wave-word {
+  display: none;
+}
+
 .game-hud button {
   min-width: 34px;
   min-height: 32px;

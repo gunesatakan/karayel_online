@@ -6,7 +6,7 @@ import Phaser from "phaser";
 import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
 import { isTutorialPrepareId, type TutorialProgressMessage } from "@karayel/shared";
-import type { TutorialCommand } from "../tutorial";
+import type { TutorialCommand, TutorialFacts } from "../tutorial";
 import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
 import type { TowerSheetReport } from "../game-control-ui";
 import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
@@ -1768,6 +1768,7 @@ export class GameScene extends Phaser.Scene {
     this.creativeRequested = data.creative === true;
     this.tutorialRequested = data.tutorial === true && !this.creativeRequested;
     this.tutorialMode = false;
+    this.hudState = { ...this.hudState, tutorial: false };
     this.selectedStage = getStage(data.stage).id;
     this.roomStage = undefined;
   }
@@ -3955,6 +3956,24 @@ export class GameScene extends Phaser.Scene {
     });
     this.towerCardsCache = { definitionId: definition.id, source: [...ownerCardIds], applied };
     return applied;
+  }
+
+  /**
+   * Ogretici adim motorunun okudugu oyun hali (tutorial.ts `TutorialFacts`):
+   * hedefi zaten saglanmis adim (depo onceden kurulmus, tamirci zaten var)
+   * etkin olur olmaz geciliyor. Yalnizca yerel oyuncunun ayakta duran yapilari.
+   */
+  private getTutorialFacts(): TutorialFacts {
+    const ownTowers = [...this.towerSnapshots.values()].filter((tower) => tower.ownerId === this.localSessionId && (tower.hp === undefined || tower.hp > 0));
+    const ownDrones = (this.workerRosterSource?.drones ?? []).filter((drone) => drone.ownerId === this.localSessionId);
+    return {
+      definitionIds: ownTowers.map((tower) => tower.definitionId),
+      upgraded: ownTowers.some((tower) => (tower.level ?? 1) > 1),
+      hired: this.localPlayerSnapshot?.hiredWorkers?.length ?? 0,
+      manualAssignments: ownDrones.filter((drone) => drone.assignment && !drone.autoAssigned).length,
+      repairers: ownDrones.filter((drone) => drone.mode === "repairer").length,
+      treeUnlocks: this.localPlayerSnapshot?.workerSkillIds?.length ?? 0
+    };
   }
 
   private getWorkerHireState() {
@@ -7374,6 +7393,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       case "complete":
         room.send("tutorial:complete", {});
         return;
+      case "closeShop":
+        // Magaza adimi gecildi: vitrin "Mağazayı Kapat" ile ayni yoldan kapaniyor.
+        this.shopDismissedWave = this.latestPerfSnapshot?.team.wave ?? 0;
+        this.emitControlState();
+        return;
       default:
         return;
     }
@@ -7475,7 +7499,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       onChoice: (choice) => this.chooseRunReportAction(choice),
       progress: this.buildRunReportProgress(report.creative),
       stamp: this.cosmetics.stamp,
-      onDefenseSummary: summary
+      // Ogreticide "son dalganin savunma ozeti" yok: dalga numarasi anlamsiz.
+      onDefenseSummary: summary && !report.tutorial
         ? () => openDefenseDialog(t("scene.defense.title", { wave: summary.wave }), defenseSummaryLines(summary))
         : undefined
     });
@@ -7634,7 +7659,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       <div class="card-draft__veil"></div>
       <section class="card-draft__panel" role="dialog" aria-modal="true" aria-label="${t("scene.card.draftAria")}">
         <header class="card-draft__header" data-wave-report-slot>
-          <span class="card-draft__eyebrow">${getCardDraftTitle(draftWave)}</span>
+          <span class="card-draft__eyebrow">${this.tutorialMode ? t("scene.card.tutorialEyebrow") : getCardDraftTitle(draftWave)}</span>
           <h2>${t("scene.card.draftTitle")}</h2>
           <p>${t("scene.card.draftSubtitle")}</p>
           <span class="card-draft__status" role="status" aria-live="polite"></span>
@@ -7735,6 +7760,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
   /** Kart perdesinin karnesi: acik perdenin dalgasi icin, elde ne varsa. */
   private buildWaveReportCard() {
+    // Ogreticide dalga karnesi yok: dalga sayaci ilerlemiyor, "Dalga 1" yaniltirdi.
+    if (this.tutorialMode) return undefined;
     const local = this.playerSnapshots.find((player) => player.id === this.localSessionId);
     const team = this.latestPerfSnapshot?.team;
     return this.waveReports.build({
@@ -11233,7 +11260,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       // ATLAS: dalga basina tek zar (%33); izci dalgayi bir kez veriyor.
       this.atlas?.waveCleared(summary.wave);
     }
-    if (!summary || this.cardChoiceRoot) {
+    // Ogreticide "DALGA 1 TEMİZLENDİ" damgasi yok: dongu ayni dalgayi yeniden doguruyor.
+    if (!summary || this.cardChoiceRoot || this.tutorialMode) {
       return;
     }
     this.feedback?.emit("waveClear", { own: true, lifetimeMs: WAVE_CLEAR_STAMP_MS });
@@ -11803,6 +11831,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       creative: this.getCreativeControlState(),
       // Ogretici adim motoru (tutorial.ts) yalnizca bu bayrak acikken calisiyor.
       tutorial: this.tutorialMode,
+      tutorialRoomId: this.tutorialMode ? this.room?.roomId : undefined,
+      tutorialFacts: this.tutorialMode ? this.getTutorialFacts() : undefined,
       upgrade: {
         label: selectedTower && definition && selectedTower.level >= getTowerMaxLevel(definition) ? t("scene.upgrade.max") : selectedTower ? t("scene.upgrade.action", { price: upgradePriceLabel }) : t("scene.upgrade.noTower"),
         enabled: canUpgrade
@@ -12175,6 +12205,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (Boolean(snapshot.tutorial) !== this.tutorialMode) {
       this.tutorialMode = Boolean(snapshot.tutorial);
       this.emitControlState();
+      this.emitHudState({ tutorial: this.tutorialMode });
     }
     this.snapshotCount += 1;
     this.renderMsSamples.push(renderMs);

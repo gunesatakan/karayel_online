@@ -24,7 +24,12 @@ const {
   getTutorialCopy,
   getTutorialStepPrepare,
   isFreshPlayer,
-  isTutorialStepCompletedBy
+  isTutorialStepCompletedBy,
+  isTutorialStepSatisfied,
+  restoreTutorialRun,
+  getTutorialOverlayAvoid,
+  TUTORIAL_CARD_AVOID_SELECTOR,
+  TUTORIAL_SHOP_AVOID_SELECTOR
 } = tutorial;
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
@@ -200,4 +205,90 @@ test("baglanti: menu Eğitim ve teklif karti ogretici macini baslatiyor; sahne b
   assert.match(scene, /return this\.creativeRequested \|\| this\.creativeMode \|\| this\.isTutorialRun\(\);/);
   assert.match(scene, /const creative = summary\.creative === true \|\| summary\.run\?\.creative === true \|\| this\.creativeMode \|\| tutorial;/);
   assert.match(scene, /const actions = report\.tutorial \? \{ primary: "retry" as const \} : planRunReportActions\(/);
+});
+
+const NO_FACTS = { definitionIds: [], upgraded: false, hired: 0, manualAssignments: 0, repairers: 0, treeUnlocks: 0 };
+
+/** Her durum adimini saglayan hal; eylemle anlasilan adimlarda yok. */
+const SATISFIED = {
+  tower: { definitionIds: ["zeynep-1"] },
+  wall: { definitionIds: ["wall-1"] },
+  energy: { definitionIds: ["zeynep-10"] },
+  hire: { hired: 1 },
+  assign: { manualAssignments: 1 },
+  depot: { definitionIds: ["warehouse-1"] },
+  armory: { definitionIds: ["zeynep-9"] },
+  repairDepot: { definitionIds: ["repair-depot-1"] },
+  repairer: { repairers: 1 },
+  upgrade: { upgraded: true },
+  workerTree: { treeUnlocks: 1 }
+};
+
+test("onceden yapilan is sayiliyor: hedefi oyunun halinde saglanan adim geciliyor", () => {
+  for (const id of TUTORIAL_STEPS) {
+    const run = at(id);
+    const facts = SATISFIED[id];
+    assert.deepEqual(advanceTutorial(run, { kind: "state", facts: NO_FACTS }), run, `${id} bos halde gecti`);
+    if (facts) {
+      assert.equal(isTutorialStepSatisfied(id, { ...NO_FACTS, ...facts }), true, id);
+      assert.equal(advanceTutorial(run, { kind: "state", facts: { ...NO_FACTS, ...facts } }).step, run.step + 1, `${id} saglanmis halde gecmedi`);
+    }
+  }
+  // Eylemle anlasilan adimlar: her sey kurulu olsa da hal yetmiyor.
+  const everything = { definitionIds: ["zeynep-1", "wall-1", "zeynep-10", "zeynep-9", "warehouse-1", "repair-depot-1"], upgraded: true, hired: 3, manualAssignments: 2, repairers: 1, treeUnlocks: 2 };
+  for (const id of ["settings", "workerTypes", "production", "xpGold", "card", "shop", "skill", "ultimate"]) {
+    assert.equal(isTutorialStepSatisfied(id, everything), false, `${id} halden gecti`);
+  }
+  // Bir hal birden cok adimi tek tikte gecirebilir (motor dongude uyguluyor).
+  let run = at("depot");
+  for (let index = 0; index < 4; index += 1) run = advanceTutorial(run, { kind: "state", facts: everything });
+  assert.equal(stepOf(run), "production", "depo, cephanelik gecildi; uretim eylem bekliyor");
+  // Duvar kule sayilmiyor, kaynak binasi da.
+  assert.equal(isTutorialStepSatisfied("tower", { ...NO_FACTS, definitionIds: ["wall-1", "zeynep-10"] }), false);
+});
+
+test("yeniden yukleme: ayni odada kaldigi adim, baska odada ya da bozuk kayitta 1. adim", () => {
+  assert.deepEqual(restoreTutorialRun({ roomId: "oda1", step: 7 }, "oda1"), { step: 7, done: false });
+  assert.deepEqual(restoreTutorialRun({ roomId: "oda1", step: 7 }, "oda2"), { step: 0, done: false }, "menuden yeni ogretici");
+  assert.deepEqual(restoreTutorialRun({ roomId: "oda1", step: 7 }, undefined), { step: 0, done: false });
+  assert.deepEqual(restoreTutorialRun(undefined, "oda1"), { step: 0, done: false });
+  assert.deepEqual(restoreTutorialRun("bozuk", "oda1"), { step: 0, done: false });
+  assert.deepEqual(restoreTutorialRun({ roomId: "oda1", step: 2.5 }, "oda1"), { step: 0, done: false });
+  assert.deepEqual(restoreTutorialRun({ roomId: "oda1", step: 99 }, "oda1"), { step: TUTORIAL_STEPS.length - 1, done: false });
+  const source = readSource("apps/web/src/tutorial.ts");
+  // Kayit try/catch icinde; motor maca giriste odayla geri yukluyor.
+  assert.match(source, /try \{\n\s*const raw = window\.localStorage\.getItem\(TUTORIAL_RUN_STORAGE_KEY\);/);
+  assert.match(source, /run = restoreTutorialRun\(readSavedTutorialRun\(\), roomId\(\)\);/);
+  assert.match(readSource("apps/web/src/scenes/GameScene.ts"), /tutorialRoomId: this\.tutorialMode \? this\.room\?\.roomId : undefined,/);
+});
+
+test("perde acikken baska adim: kutu kaybolmuyor, perdenin dugme satirindan kaciyor; magaza adimi gecilince vitrin kapaniyor", () => {
+  assert.equal(getTutorialOverlayAvoid("shop", { cardOpen: true, shopOpen: false }), TUTORIAL_CARD_AVOID_SELECTOR);
+  assert.equal(getTutorialOverlayAvoid("skill", { cardOpen: false, shopOpen: true }), TUTORIAL_SHOP_AVOID_SELECTOR);
+  assert.equal(getTutorialOverlayAvoid("card", { cardOpen: true, shopOpen: false }), undefined, "kendi adimi: normal hedef");
+  assert.equal(getTutorialOverlayAvoid("shop", { cardOpen: false, shopOpen: true }), undefined);
+  assert.equal(getTutorialOverlayAvoid("tower", { cardOpen: false, shopOpen: false }), undefined);
+  const source = readSource("apps/web/src/tutorial.ts");
+  assert.doesNotMatch(source, /\(cardOpen && id !== "card"\) \|\| \(shopOpen && id !== "shop"\)\) \{\n\s*hide\(\);/, "perde kutuyu gizliyor");
+  assert.match(source, /if \(leaving === "shop" && controls\.goldShop\) command\(\{ type: "closeShop" \}\);/);
+  const scene = readSource("apps/web/src/scenes/GameScene.ts");
+  assert.match(scene, /case "closeShop":\n[^\n]*\n\s*this\.shopDismissedWave = this\.latestPerfSnapshot\?\.team\.wave \?\? 0;/);
+});
+
+test("ogretici etiketleri: HUD'da sayac yerine Eğitim, kart perdesinde Eğitim ödülü, damga ve karne yok", () => {
+  const ui = readSource("apps/web/src/game-control-ui.ts");
+  assert.match(ui, /setText\(waveNode, state\.tutorial \? t\("hud\.tutorial"\) : `\$\{state\.stats\.wave\}`\);/);
+  assert.match(ui, /waveVitalNode\.classList\.toggle\("is-tutorial", Boolean\(state\.tutorial\)\);/);
+  assert.match(readSource("apps/web/src/style.css"), /\.game-hud__vital--wave\.is-tutorial \.game-hud__wave-total,\n\.game-hud__vital--wave\.is-tutorial \.game-hud__wave-word \{\n\s*display: none;/);
+  const scene = readSource("apps/web/src/scenes/GameScene.ts");
+  assert.match(scene, /this\.emitHudState\(\{ tutorial: this\.tutorialMode \}\);/);
+  assert.match(scene, /\$\{this\.tutorialMode \? t\("scene\.card\.tutorialEyebrow"\) : getCardDraftTitle\(draftWave\)\}/);
+  assert.match(scene, /private buildWaveReportCard\(\) \{\n[^\n]*\n\s*if \(this\.tutorialMode\) return undefined;/);
+  assert.match(scene, /if \(!summary \|\| this\.cardChoiceRoot \|\| this\.tutorialMode\) \{/);
+  const controls = readSource("apps/web/src/locales/areas/controls.ts");
+  assert.match(controls, /"hud\.tutorial": "Eğitim",/);
+  assert.match(controls, /"hud\.tutorial": "Training",/);
+  const sceneLocale = readSource("apps/web/src/locales/areas/scene.ts");
+  assert.match(sceneLocale, /"scene\.card\.tutorialEyebrow": "EĞİTİM ÖDÜLÜ",/);
+  assert.match(sceneLocale, /"scene\.card\.tutorialEyebrow": "TRAINING REWARD",/);
 });

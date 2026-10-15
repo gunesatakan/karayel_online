@@ -372,3 +372,29 @@ test("adim olcumu: yalnizca is yapan istek sayiliyor", async () => {
     cleanup(room);
   }
 });
+
+test("uretim secimi tur degismese de sayiliyor; baskasinin ya da gecersiz secim sayilmiyor", async () => {
+  const { room, client } = await tutorialRoom();
+  try {
+    const spot = findBuildableSpot(room, "zeynep-9");
+    send(room, client, "placeTower", { ...spot, definitionId: "zeynep-9" });
+    const armory = [...room.towers.values()].find((tower) => tower.definition.id === "zeynep-9");
+    assert.ok(armory, "cephanelik kurulamadi");
+    const current = armory.productionAmmo ?? "bullet";
+    const count = () => progressOf(client).filter((entry) => entry.action === "production").length;
+    send(room, client, "factory:production", { towerId: armory.id, ammoType: current });
+    assert.equal(count(), 1, "ayni tur secimi sayilmadi");
+    send(room, client, "factory:production", { towerId: armory.id, ammoType: "yok-boyle" });
+    assert.equal(count(), 1, "gecersiz tur sayildi");
+    const tower = [...room.towers.values()].find((entry) => entry.definition.id !== "zeynep-9");
+    if (tower) {
+      send(room, client, "factory:production", { towerId: tower.id, ammoType: "bullet" });
+      assert.equal(count(), 1, "cephanelik olmayan yapi sayildi");
+    }
+    armory.ownerId = "baska";
+    send(room, client, "factory:production", { towerId: armory.id, ammoType: current });
+    assert.equal(count(), 1, "baskasinin cephaneligi sayildi");
+  } finally {
+    cleanup(room);
+  }
+});

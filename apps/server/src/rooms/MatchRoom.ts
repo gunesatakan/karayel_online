@@ -3511,9 +3511,18 @@ export class MatchRoom extends Room<MatchState> {
     };
   }
 
+  /** `setFactoryProduction`in kabul ettigi istek mi (tur degismese de). */
+  private isValidProductionChoice(client: Client, message: Record<string, unknown>) {
+    const tower = typeof message.towerId === "string" ? this.towers.get(message.towerId) : undefined;
+    return Boolean(tower && tower.ownerId === client.sessionId && tower.hp > 0 && tower.definition.resourceProvider === "ammunition"
+      && typeof message.ammoType === "string" && ["bullet", "auraCrystal", "powerCrystal"].includes(message.ammoType));
+  }
+
   private reportTutorialProgress(client: Client, action: TutorialActionId, before: ReturnType<MatchRoom["captureTutorialState"]>, message: Record<string, unknown>) {
     const after = this.captureTutorialState(client.sessionId);
-    if (after.signature === before.signature) return;
+    // Uretim secimi zaten secili turdeyse durum degismiyor; adim icin yine de
+    // gecerli bir secim (kendi cephaneligi, bilinen tur) sayiliyor.
+    if (after.signature === before.signature && !(action === "production" && this.isValidProductionChoice(client, message))) return;
     const progress: TutorialProgressMessage = { action };
     if (action === "build") {
       const definitionIds = Array.from(after.towerIds)

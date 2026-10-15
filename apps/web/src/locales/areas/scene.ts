@@ -119,6 +119,7 @@ export const trScene = {
   // ------------------------------------------------------------ Kart secimi
   "scene.card.draftAria": "Kart seçimi",
   "scene.card.draftTitle": "Rotanı güçlendir",
+  "scene.card.tutorialEyebrow": "EĞİTİM ÖDÜLÜ",
   "scene.card.draftSubtitle": "Koşu boyunca kalacak bir kart seç",
   "scene.card.new": "YENİ",
   "scene.card.reachTargeted": "{count} kule taşıyabilir",
@@ -340,6 +341,7 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
 
   "scene.card.draftAria": "Card choice",
   "scene.card.draftTitle": "Strengthen your run",
+  "scene.card.tutorialEyebrow": "TRAINING REWARD",
   "scene.card.draftSubtitle": "Pick a card that lasts the whole run",
   "scene.card.new": "NEW",
   "scene.card.reachTargeted": "Towers that can hold it: {count}",

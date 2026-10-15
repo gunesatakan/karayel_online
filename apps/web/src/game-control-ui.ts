@@ -2277,6 +2277,11 @@ export type HudState = {
    */
   waveAirMode?: "all" | "mixed";
   /**
+   * Ogretici asamasi: dalga sayaci ilerlemiyor, "1/20" yaniltirdi. Sayacin
+   * yerinde "Eğitim" yaziyor (ayni kutu, ayni satir).
+   */
+  tutorial?: boolean;
+  /**
    * Kurulumdaki ongoru kutusunun dusman sayisi. 0 ise kutu cizilmiyor: dalga
    * suruyor ya da kart secimi acik.
    */
@@ -3153,8 +3158,10 @@ export function setupGameHudUi(game: Phaser.Game) {
       syncGold(state.stats.gold);
     }
     setText(healthNode, `${Math.max(0, Math.round(state.stats.health))}`);
-    setText(waveNode, `${state.stats.wave}`);
-    setTitle(waveVitalNode, t("hud.waveTitle", { wave: state.stats.wave, total: FINAL_WAVE }));
+    // Ogreticide sayac yerine "Eğitim"; toplam ("/20") ve kelime gizli.
+    setText(waveNode, state.tutorial ? t("hud.tutorial") : `${state.stats.wave}`);
+    waveVitalNode.classList.toggle("is-tutorial", Boolean(state.tutorial));
+    setTitle(waveVitalNode, state.tutorial ? t("hud.tutorial") : t("hud.waveTitle", { wave: state.stats.wave, total: FINAL_WAVE }));
     renderWaveAir(state);
     // Can azaldikca renk isinir; sayiya bakmadan da fark edilmeli.
     const healthRatio = state.stats.maxHealth > 0 ? state.stats.health / state.stats.maxHealth : 1;
