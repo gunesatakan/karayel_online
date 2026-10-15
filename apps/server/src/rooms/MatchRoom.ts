@@ -540,7 +540,7 @@ import {
  * kesesi karakter dengesinin ayari olmaktan cikti, herkes ayni parayla ayni
  * kararlari veriyor.
  */
-const PLAYER_START_GOLD = 850;
+const PLAYER_START_GOLD = 1000;
 const MAX_TEAM_HEALTH = 100;
 const MAX_TOWER_LEVEL = 10;
 /** Tek komutta gonderilebilecek en fazla dusman; yaratici mod da olsa oda kilitlenmemeli. */
