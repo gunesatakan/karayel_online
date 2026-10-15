@@ -32,6 +32,9 @@ import { GALLERY_KILL_CUES } from "../sfx-samples";
 import { COUNTER_SURGE_KIND_CODES, COUNTER_SURGE_TRAVEL_CODES, type CounterSurgeKind, type CounterSurgeSnapshot, type CounterSurgeTravel } from "@karayel/shared";
 import { AegisImpacts, COUNTER_SURGE_STYLES, createCounterSurgeBand, drawCounterSurge, getCounterSurgeBand } from "../vfx/counter-surge";
 import { RACE_GALLERY_COLS, RACE_GALLERY_ROWS, RaceGalleryPage } from "../vfx/race-gallery";
+import { MatchEndStage } from "../vfx/match-end-stage";
+import { MATCH_END_COLD, MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
+import { ATLAS_FINAL_LINE_SECONDS, type MatchEndKind, type MatchEndStructure } from "../match-end-sequence";
 
 /**
  * VFX galerisi (`?vfx-gallery`): her saldiran kule, sv 1 / 5 / 10, yan yana.
@@ -84,6 +87,12 @@ import { RACE_GALLERY_COLS, RACE_GALLERY_ROWS, RaceGalleryPage } from "../vfx/ra
  * "Irklar" kipi: alti irk mekanigi (Taslasma, kalkan atici, kazici, ruh
  * cekici, faz, katlanma), sayfa basina bir mekanik, ayni kucuk haritada ve
  * oyundaki cizicilerle (race-traits).
+ *
+ * "Maç sonu" kipi: yenilgi ve zafer sahneleri (match-end-stage, oyundaki
+ * sinif) ornek bir haritada; sayfa 1 yenilgi, sayfa 2 zafer. ATLAS satirinin
+ * suresi manifestteki bir satirdan (death-01, ending-03). Sahne bitince
+ * raporun yeri kisa bir yaziyla isaretleniyor, sonra sahne yeniden oynuyor.
+ * "Geç" cipi ve dokunus oyundaki gibi.
  */
 const COLUMN_LEVELS = [1, 5, 10] as const;
 /** Isinla vuran teslimler: sesleri isindan (oyundaki gibi), temas olayindan degil. */
@@ -149,7 +158,7 @@ const MECHANIC_LABELS: Record<VfxMechanic, string> = {
   "stack-gauge": "yığın göstergesi"
 };
 
-type Mode = "grid" | "stress" | "surge" | "races";
+type Mode = "grid" | "stress" | "surge" | "races" | "ending";
 
 /** Karsi atak sayfalari: cesit, yon, serit ve galerideki dongu (ms). */
 type SurgePage = { kind: CounterSurgeKind; travel: CounterSurgeTravel; lane: number; width: number; crossMs: number; label: string; cut?: boolean };
@@ -168,6 +177,13 @@ const SURGE_COLS = 12;
 const SURGE_ROWS = 18;
 /** Galeri haritasinin yapilari (sutun, satir). */
 const SURGE_TOWERS: ReadonlyArray<readonly [number, number]> = [[4, 3], [5, 6], [8, 4], [2, 9], [6, 10], [9, 12], [3, 14], [7, 15], [10, 8], [1, 5], [5, 13], [8, 2]];
+/** Mac sonu sayfasi: kuleler (sutun, satir), duvarlar (sutun, satir, yatay), dusmanlar ve nexus. */
+const ENDING_TOWERS: ReadonlyArray<readonly [number, number]> = [[4, 3], [5, 6], [8, 4], [2, 9], [6, 10], [9, 12], [3, 14], [7, 14], [10, 8], [1, 5], [5, 12], [8, 2], [2, 12], [9, 15], [4, 8], [7, 7], [10, 3], [1, 15]];
+const ENDING_WALLS: ReadonlyArray<readonly [number, number, boolean]> = [[3, 11, true], [4, 11, true], [7, 11, true], [8, 11, true], [5, 5, false], [6, 5, false]];
+const ENDING_ENEMIES: ReadonlyArray<readonly [number, number]> = [[5.5, 1.5], [3.5, 4.5], [6.5, 8.5], [8.5, 13.5], [2.5, 7.5]];
+const ENDING_NEXUS: readonly [number, number] = [6, 16.6];
+/** Sahne bitince raporun yeri bu kadar gorunup sahne yeniden basliyor. */
+const ENDING_REPORT_HOLD_MS = 1800;
 
 export class VfxGalleryScene extends Phaser.Scene {
   private mode: Mode = "grid";
@@ -247,6 +263,16 @@ export class VfxGalleryScene extends Phaser.Scene {
   private raceGallery?: RaceGalleryPage;
   private raceStatus?: Phaser.GameObjects.Text;
   private readonly surgeOrigin = { x: 0, y: 0 };
+  /** Mac sonu kipi: sayfa (0 yenilgi, 1 zafer), sahne ve sahnenin girdileri. */
+  private endingPage = 0;
+  private endingStage?: MatchEndStage;
+  private endingWalls?: Phaser.GameObjects.Graphics;
+  private endingStructures: MatchEndStructure[] = [];
+  private readonly endingTowerSprites = new Map<string, Phaser.GameObjects.Image>();
+  private readonly endingEnemySprites = new Map<string, Phaser.GameObjects.Image>();
+  private endingReportAt?: number;
+  private endingReportText?: Phaser.GameObjects.Text;
+  private endingStatus?: Phaser.GameObjects.Text;
 
   constructor() {
     super("vfx-gallery");
@@ -305,6 +331,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeFlash = this.add.graphics().setDepth(24);
     // Irklar kipinin yuzeyleri: zemin (catlak, katlanma isareti) dusmanin altinda, kalkan ve izler kulelerin ustunde.
     this.raceGallery = new RaceGalleryPage(this, this.add.graphics().setDepth(7), this.add.graphics().setDepth(7.3), this.add.graphics().setDepth(8.12), this.add.graphics().setDepth(12.75));
+    // Mac sonu kipi: duvar govdeleri kulelerin seviyesinde; sahne oyundaki sinif.
+    this.endingWalls = this.add.graphics().setDepth(11.9);
     // Galeri oyunun seviyelerini kullaniyor; biri sifirsa dinleme sayfasi
     // sessiz kalmasin diye varsayilan.
     this.feedback = new FeedbackDirector({
@@ -323,9 +351,20 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.feedback?.unlockAudio();
       this.toggleSolo(pointer.worldX, pointer.worldY);
     });
+    this.endingStage = new MatchEndStage(this, {
+      flash: this.flashPool,
+      lod: this.lod,
+      reducedMotion: () => this.feedback?.reducedMotion ?? false,
+      playSample: (cue, key) => {
+        if (!this.muted) this.feedback?.playSampleCue(cue.family, cue.rate, cue.gain, key);
+      },
+      shake: (px, durationMs) => this.feedback?.shakeCamera({ own: true, priority: 0, px, durationMs })
+    });
     this.createControls();
     this.buildScene();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.endingStage?.destroy();
+      document.documentElement.style.removeProperty("--match-end-skip-bottom");
       this.controls?.remove();
       this.flashPool?.destroy();
       this.stamps?.destroy();
@@ -347,6 +386,10 @@ export class VfxGalleryScene extends Phaser.Scene {
     }
     if (this.mode === "races") {
       this.raceStatus?.setText(this.raceGallery?.render(this.now) ?? "");
+      return;
+    }
+    if (this.mode === "ending") {
+      this.renderEndingPage();
       return;
     }
     const scenario = this.scenario;
@@ -436,6 +479,16 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeStatus = undefined;
     this.raceGallery?.clear();
     this.raceStatus = undefined;
+    this.clearEndingPage();
+    if (this.mode === "ending") {
+      this.scenario = undefined;
+      for (const surface of this.surfaces) surface.clear();
+      this.lod.force(0);
+      this.perfText?.setVisible(false);
+      this.buildEndingPage();
+      this.refreshControls();
+      return;
+    }
     if (this.mode === "races") {
       this.scenario = undefined;
       for (const surface of this.surfaces) surface.clear();
@@ -895,6 +948,10 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.mode = this.mode === "races" ? "grid" : "races";
       this.buildScene();
     }, "races");
+    button("Maç sonu", () => {
+      this.mode = this.mode === "ending" ? "grid" : "ending";
+      this.buildScene();
+    }, "ending");
     button("Ses açık", () => {
       this.muted = !this.muted;
       if (!this.muted) this.feedback?.unlockAudio();
@@ -933,6 +990,11 @@ export class VfxGalleryScene extends Phaser.Scene {
   }
 
   private changePage(delta: number) {
+    if (this.mode === "ending") {
+      this.endingPage = (this.endingPage + delta + 2) % 2;
+      this.buildScene();
+      return;
+    }
     if (this.mode === "races") {
       const count = this.raceGallery?.pageCount ?? 1;
       this.racePage = (this.racePage + delta + count) % count;
@@ -1060,6 +1122,151 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeStatus?.setText(warn ? "uyarı" : progress >= 1 ? "geçti" : `geçiş %${Math.round(progress * 100)}`);
   }
 
+  /** Mac sonu sayfasinin haritasi: karsi atak sayfasiyla ayni olcu (375 px'te hucre ~26 birim). */
+  private endingGrid() {
+    const width = this.cameras.main.width / this.cameras.main.zoom;
+    const grid = Math.max(12, Math.floor(Math.min((width - 16) / SURGE_COLS, (this.worldHeight - HEADER - FOOTER - 8) / SURGE_ROWS)));
+    return { grid, x: Math.round((width - SURGE_COLS * grid) / 2), y: HEADER + 4 };
+  }
+
+  /**
+   * Mac sonu sayfasi: harita, kuleler, duvarlar, nexus ve kalan dusmanlar;
+   * sahne hemen basliyor. Satirin suresi manifestten (galeride ATLAS yok).
+   */
+  private buildEndingPage() {
+    const stage = this.endingStage;
+    const board = this.surgeBoard;
+    if (!stage || !board) return;
+    const kind: MatchEndKind = this.endingPage === 0 ? "defeat" : "victory";
+    const { grid, x, y } = this.endingGrid();
+    this.surgeGrid = grid;
+    board.fillStyle(0x0b1220, 1);
+    board.fillRect(x, y, SURGE_COLS * grid, SURGE_ROWS * grid);
+    board.lineStyle(1, 0x1e293b, 0.9);
+    for (let col = 0; col <= SURGE_COLS; col += 1) board.lineBetween(x + col * grid, y, x + col * grid, y + SURGE_ROWS * grid);
+    for (let row = 0; row <= SURGE_ROWS; row += 1) board.lineBetween(x, y + row * grid, x + SURGE_COLS * grid, y + row * grid);
+    board.lineStyle(2, 0xb45454, 0.85);
+    board.lineBetween(x, y, x + SURGE_COLS * grid, y);
+    board.lineStyle(2, 0x4f9a6c, 0.85);
+    board.lineBetween(x, y + SURGE_ROWS * grid, x + SURGE_COLS * grid, y + SURGE_ROWS * grid);
+    const nexus = { x: x + ENDING_NEXUS[0] * grid, y: y + ENDING_NEXUS[1] * grid };
+    // Nexus: koyu govde, soguk kenar.
+    board.fillStyle(0x111827, 1);
+    board.fillCircle(nexus.x, nexus.y, grid * 0.95);
+    board.lineStyle(2, MATCH_END_COLD, 0.9);
+    board.strokeCircle(nexus.x, nexus.y, grid * 0.95);
+    board.lineStyle(1, 0x94a3b8, 0.6);
+    board.strokeCircle(nexus.x, nexus.y, grid * 0.55);
+
+    const ids = [...new Set(getGalleryRows().map((row) => row.definitionId))];
+    const structures: MatchEndStructure[] = [];
+    ENDING_TOWERS.forEach(([col, row], index) => {
+      const id = `end-t${index}`;
+      const definitionId = ids[index % ids.length];
+      const key = this.textures.exists(`tower-${definitionId}`) ? `tower-${definitionId}` : "projectile-tower";
+      const px = x + (col + 0.5) * grid;
+      const py = y + (row + 0.5) * grid;
+      const sprite = this.add.image(px, py, key).setDepth(12).setDisplaySize(grid * 1.05, grid * 1.05);
+      this.endingTowerSprites.set(id, sprite);
+      structures.push({ id, x: px, y: py, size: grid });
+    });
+    ENDING_WALLS.forEach(([col, row, horizontal], index) => {
+      const px = x + (col + (horizontal ? 0.5 : 0)) * grid;
+      const py = y + (row + (horizontal ? 0 : 0.5)) * grid;
+      structures.push({ id: `end-w${index}`, x: px, y: py, size: grid, wall: true });
+    });
+    this.endingStructures = structures;
+    const enemies = ENDING_ENEMIES.map(([col, row], index) => {
+      const id = `end-e${index}`;
+      const ex = x + col * grid;
+      const ey = y + row * grid;
+      this.endingEnemySprites.set(id, this.add.image(ex, ey, "enemy-grunt").setDepth(8).setDisplaySize(grid * 0.95, grid * 0.95));
+      return { id, x: ex, y: ey, size: grid * 0.95 };
+    });
+    const line = kind === "defeat" ? "audio/atlas/death/death-01.mp3" : "audio/atlas/ending/ending-03.mp3";
+    const seconds = ATLAS_FINAL_LINE_SECONDS[line];
+    const label = kind === "defeat" ? "Yenilgi · yapılar nexus'tan dışarı" : "Zafer · Sevkiyat kalkışı";
+    this.labels.push(this.add.text(6, 6, label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
+    this.endingStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
+    this.labels.push(this.endingStatus);
+    this.endingReportText = this.add.text(x + (SURGE_COLS * grid) / 2, y + (SURGE_ROWS * grid) / 2, "KOŞU RAPORU", {
+      fontFamily: "Rajdhani, sans-serif", fontSize: "18px", color: "#e2e8f0", fontStyle: "bold", backgroundColor: "#020617e6", padding: { x: 14, y: 8 }
+    }).setOrigin(0.5).setDepth(40).setVisible(false);
+    this.labels.push(this.endingReportText);
+    // Gec cipi alt cubugun ustunde; cubuk katmanin ustunde kalsin.
+    document.documentElement.style.setProperty("--match-end-skip-bottom", `${(this.controls?.offsetHeight || FOOTER) + 8}px`);
+    if (this.controls) this.controls.style.zIndex = "90";
+    this.endingReportAt = undefined;
+    stage.play({
+      kind,
+      structures,
+      nexus,
+      nexusSize: grid * 2,
+      enemies: kind === "victory" ? enemies : [],
+      skyY: y - grid * 4,
+      cameraEase: true,
+      now: this.now,
+      speak: () => seconds,
+      openReport: () => {
+        this.endingReportAt = this.now;
+      }
+    });
+  }
+
+  private clearEndingPage() {
+    this.endingStage?.reset();
+    for (const sprite of this.endingTowerSprites.values()) sprite.destroy();
+    for (const sprite of this.endingEnemySprites.values()) sprite.destroy();
+    this.endingTowerSprites.clear();
+    this.endingEnemySprites.clear();
+    this.endingStructures = [];
+    this.endingWalls?.clear();
+    this.endingReportAt = undefined;
+    this.endingReportText = undefined;
+    this.endingStatus = undefined;
+    if (this.controls) this.controls.style.zIndex = "50";
+  }
+
+  /** Mac sonu sayfasinin karesi: sahne, yapilarin hali, duvarlar ve rapor yeri; bitince yeniden. */
+  private renderEndingPage() {
+    const stage = this.endingStage;
+    if (!stage) return;
+    stage.update(this.now);
+    this.flashPool?.update(this.now);
+    for (const [id, sprite] of this.endingTowerSprites) {
+      const state = stage.structureState(id);
+      sprite.setTint(state === "husk" ? MATCH_END_HUSK_TINT : state === "dim" ? MATCH_END_POWERED_DOWN_TINT : 0xffffff);
+      sprite.setAlpha(state === "husk" ? 0.92 : state === "dim" ? 0.72 : 1);
+    }
+    for (const [id, sprite] of this.endingEnemySprites) sprite.setAlpha(stage.enemyAlpha(id));
+    const walls = this.endingWalls;
+    if (walls) {
+      walls.clear();
+      const grid = this.surgeGrid;
+      ENDING_WALLS.forEach(([, , horizontal], index) => {
+        const wall = this.endingStructures.find((entry) => entry.id === `end-w${index}`);
+        const state = stage.structureState(`end-w${index}`);
+        if (!wall || state === "husk") return;
+        const half = grid / 2;
+        const [x1, y1, x2, y2] = horizontal ? [wall.x - half, wall.y, wall.x + half, wall.y] : [wall.x, wall.y - half, wall.x, wall.y + half];
+        walls.lineStyle(5, 0x1f2937, 1);
+        walls.lineBetween(x1, y1, x2, y2);
+        walls.lineStyle(2, state === "dim" ? MATCH_END_POWERED_DOWN_TINT : 0x94a3b8, 1);
+        walls.lineBetween(x1, y1, x2, y2);
+      });
+    }
+    const sequence = stage.current;
+    const plan = sequence?.schedule;
+    if (plan && sequence) {
+      const elapsed = sequence.elapsed(this.now);
+      this.endingStatus?.setText(`${(Math.min(elapsed, plan.reportAtMs) / 1000).toFixed(1)} / ${(plan.reportAtMs / 1000).toFixed(1)} sn · satır ${(plan.durationMs / 1000).toFixed(1)} sn · aralık ${plan.gapMs} ms · ${plan.steps.length - 1} adım`);
+    }
+    if (this.endingReportAt !== undefined) {
+      this.endingReportText?.setVisible(true);
+      if (this.now - this.endingReportAt >= ENDING_REPORT_HOLD_MS) this.buildScene();
+    }
+  }
+
   private refreshControls() {
     const bar = this.controls;
     if (!bar) return;
@@ -1070,13 +1277,14 @@ export class VfxGalleryScene extends Phaser.Scene {
       element.style.background = active ? "#0e7490" : "#0f172a";
     };
     const page = bar.querySelector<HTMLElement>('[data-vfx="page"]');
-    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : this.mode === "races" ? `${this.racePage + 1} / ${this.raceGallery?.pageCount ?? 1}` : "—";
+    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : this.mode === "races" ? `${this.racePage + 1} / ${this.raceGallery?.pageCount ?? 1}` : this.mode === "ending" ? `${this.endingPage + 1} / 2` : "—";
     set("slow", this.slow);
     set("pause", this.paused, this.paused ? "Oynat" : "Duraklat");
     set("mate", this.teammate);
     set("stress", this.mode === "stress");
     set("surge", this.mode === "surge");
     set("races", this.mode === "races");
+    set("ending", this.mode === "ending");
     set("mute", this.muted, this.muted ? "Sessiz" : "Ses açık");
   }
 }

@@ -168,6 +168,10 @@ export const trScene = {
   "scene.report.stageLocked": "Bu aşama sende henüz açık değil: ilerleme kaydedilmez",
   "scene.report.notSaved": "Kayıt bu tarayıcıda saklanamadı",
 
+  // ------------------------------------------------------------ Mac sonu sahnesi (rapordan once)
+  "scene.matchEnd.skip": "Geç",
+  "scene.matchEnd.skipAria": "Geç: koşu raporuna atla",
+
   // ------------------------------------------------------------ Operator sayaclari (HUD ikincil serit)
   "scene.resource.prestige": "İtibar",
   "scene.resource.chain": "Zincir",
@@ -378,6 +382,9 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.report.joinedLate": "You joined this run after it ended: progress is not saved",
   "scene.report.stageLocked": "You haven't unlocked this stage yet: progress is not saved",
   "scene.report.notSaved": "The record could not be stored in this browser",
+
+  "scene.matchEnd.skip": "Skip",
+  "scene.matchEnd.skipAria": "Skip to the run report",
 
   "scene.resource.prestige": "Prestige",
   "scene.resource.chain": "Chain",

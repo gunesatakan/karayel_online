@@ -382,6 +382,9 @@ import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpol
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { PlacementRangePreview } from "../vfx/placement-range";
 import { WallLineView, type WallHandleMark } from "../vfx/wall-line";
+import { MatchEndStage } from "../vfx/match-end-stage";
+import { MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
+import { MATCH_END_TIMING, getAtlasLineSeconds, shouldPlayMatchEndSequence, type MatchEndStructure } from "../match-end-sequence";
 import { drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
 import type { BuildZoneMap } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
@@ -1371,6 +1374,17 @@ export class GameScene extends Phaser.Scene {
   private perfPopupItems: Phaser.GameObjects.GameObject[] = [];
   private matchResultShown = false;
   /**
+   * Mac sonu sahnesi (`match-end-sequence`): rapordan once yenilgide yapilar
+   * nexus'tan disari patliyor, zaferde sevkiyat isini yukseliyor. Sahne
+   * oynarken rapor bekliyor (`matchEndReport`); bitince ya da gecilince bir
+   * kez aciliyor. Kozmetik ve yerel: sunucuya hicbir sey gitmiyor.
+   */
+  private matchEndStage?: MatchEndStage;
+  private matchEndReport?: { result: "victory" | "defeat"; summary: MatchResultSummary };
+  private matchEndSafetyTimer?: number;
+  /** Bu baglantida sonucsuz snapshot goruldu mu: sonuctan sonra yeniden baglanan sahneyi gormuyor. */
+  private liveSinceBind = false;
+  /**
    * Kosunun rekor kaydinin sonucu; kosu raporu "YENİ REKOR" ve siradaki
    * hedef satirini buradan yaziyor. Kayit yalnizca raporlu mesajla yapiliyor.
    */
@@ -1973,6 +1987,12 @@ export class GameScene extends Phaser.Scene {
       window.clearTimeout(this.cardAppliedTimer);
       this.cardAppliedTimer = undefined;
       this.backgroundMusic?.pause();
+      // Mac sonu sahnesi: katman, govde sinifi ve zamanlayici kalmasin (rapor acilmiyor; sahne kapaniyor).
+      window.clearTimeout(this.matchEndSafetyTimer);
+      this.matchEndSafetyTimer = undefined;
+      this.matchEndReport = undefined;
+      this.matchEndStage?.destroy();
+      this.matchEndStage = undefined;
       // ATLAS baglami geri bildirimden aliyor: baglam kapanmadan once sussun.
       this.atlas?.destroy();
       this.atlas = undefined;
@@ -2028,6 +2048,7 @@ export class GameScene extends Phaser.Scene {
     const vfxStart = performance.now();
     this.combatVfx?.render(now, this.getTowerEffectScale());
     this.attackVfx?.render(now, this.getTowerEffectScale());
+    this.updateMatchEnd(now);
     this.flashPool?.update(now);
     const eventsMs = performance.now() - vfxStart;
     this.recordClientPerfSection("vfx", eventsMs);
@@ -6049,6 +6070,8 @@ export class GameScene extends Phaser.Scene {
     // zaten sonucu tasiyorsa istemci mac bittikten sonra girmis demek; o
     // kosunun kaydi ve ilerlemesi onun degil (`recordRunResult`).
     if (!snapshot.result) this.liveSnapshotSeen = true;
+    // Bu baglantida canli: sonuc gelince mac sonu sahnesi oynanabilir.
+    if (!snapshot.result) this.liveSinceBind = true;
     // Bounty Board: canli mac oynaniyor (kopru yinelenen cagriyi yutuyor).
     if (!snapshot.result && !this.matchResultShown) arcade.gameplayStart();
     if (snapshot.stage !== undefined && snapshot.stage !== this.roomStage) {
@@ -6691,6 +6714,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindRoomHandlers(room: Room) {
+    // Yeni baglanti: sonuc bu baglantinin ilk sonucsuz snapshot'indan once
+    // gelirse istemci sonuctan sonra dondu, mac sonu sahnesi oynanmiyor.
+    this.liveSinceBind = false;
     room.onMessage("bomber:explode", (message: { x: number; y: number; radius: number; killed: boolean }) => {
       if (!message || ![message.x, message.y, message.radius].every(Number.isFinite) || message.radius <= 0) return;
       const diameter = Math.min(1000, message.radius * 2);
@@ -7057,13 +7083,134 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
     if (step.open) {
-      this.openRunReport(result, summary);
+      this.beginMatchEnd(result, summary);
+    } else if (step.refresh && this.matchEndReport && summary.run) {
+      // Mac sonu sahnesi oynarken rapor geldi: bekleyen rapora yaziliyor,
+      // sahne bitince rapor onunla aciliyor.
+      const pending = this.matchEndReport;
+      pending.summary = { ...pending.summary, run: summary.run, creative: pending.summary.creative === true || summary.creative === true || summary.run.creative === true ? true : pending.summary.creative };
     } else if (step.refresh && this.matchReport && summary.run) {
       this.matchReport.run = summary.run;
       // Bayrak yalnizca acilabiliyor, kapanmiyor: rapor yaratici diyorsa
       // ekran da yildizsiz ve "kaydedilmez" satiriyla ciziliyor.
       if (summary.creative === true || summary.run.creative === true) this.matchReport.creative = true;
       this.renderMatchReport(false);
+    }
+  }
+
+  /**
+   * Mac sonu sahnesi, sonra rapor. Sahne yalnizca maci bu baglantida canli
+   * goren istemcide; sonuctan sonra giren ya da yeniden baglanan raporu hemen
+   * goruyor. ATLAS'in son satiri sahnenin basinda (yonetmenin kapisi satiri
+   * kosu basina bir kez caliyor; raporun acilisindaki cagri o zaman bos
+   * donuyor). Sunucuya mesaj yok: oynanis bitti. Kare dongusu durursa
+   * (gizli sekme) rapor bir guvenlik zamanlayicisiyla yine aciliyor.
+   */
+  private beginMatchEnd(result: "victory" | "defeat", summary: MatchResultSummary) {
+    if (this.matchResultShown || this.matchEndReport) return;
+    if (!shouldPlayMatchEndSequence({ liveSnapshotSeen: this.liveSnapshotSeen, liveSinceBind: this.liveSinceBind })) {
+      this.openRunReport(result, summary);
+      return;
+    }
+    this.matchEndReport = { result, summary };
+    this.hideArenaHudOverlays();
+    this.hideCardChoices();
+    this.cancelTowerDrag();
+    const stage = this.matchEndStage ?? new MatchEndStage(this, {
+      flash: this.flashPool,
+      lod: this.vfxLod,
+      reducedMotion: () => this.feedback?.reducedMotion ?? false,
+      playSample: (cue, key) => this.feedback?.playSampleCue(cue.family, cue.rate, cue.gain, key),
+      shake: (px, durationMs) => this.feedback?.shakeCamera({ own: true, priority: 0, px, durationMs })
+    });
+    this.matchEndStage = stage;
+    const cellSize = this.getMapCellSize();
+    const structures: MatchEndStructure[] = [];
+    for (const tower of this.towerSnapshots.values()) {
+      // Zaten yikik yapi patlamiyor, gucunu de devretmiyor.
+      if (tower.hp !== undefined && tower.hp <= 0) continue;
+      structures.push({
+        id: tower.id,
+        x: tower.x,
+        y: tower.y,
+        size: cellSize * getTowerGridSpan(tower.definitionId),
+        wall: this.isEdgePlacedDefinition(tower.definitionId)
+      });
+    }
+    const enemies = [...this.enemies.entries()].map(([id, enemy]) => ({ id, x: enemy.sprite.x, y: enemy.sprite.y, size: enemy.displaySize ?? 30 }));
+    const plan = stage.play({
+      kind: result,
+      structures,
+      nexus: this.getMatchEndNexus(),
+      nexusSize: cellSize * 2,
+      enemies,
+      skyY: getMapWorldBounds(this.selectedMapData).top - cellSize * 8,
+      cameraEase: true,
+      now: performance.now(),
+      speak: () => {
+        const atlas = this.atlas;
+        if (!atlas) return undefined;
+        atlas.matchEnded(result);
+        return atlas.playingCategory === (result === "victory" ? "ending" : "death") ? getAtlasLineSeconds(atlas.playingUrl) : undefined;
+      },
+      openReport: () => this.finishMatchEnd()
+    }).schedule;
+    window.clearTimeout(this.matchEndSafetyTimer);
+    this.matchEndSafetyTimer = window.setTimeout(() => this.matchEndStage?.current?.finish(), (plan?.reportAtMs ?? 0) + MATCH_END_TIMING.safetyMarginMs);
+  }
+
+  /** Sahnenin tek cikisi: bekleyen rapor bir kez aciliyor. */
+  private finishMatchEnd() {
+    window.clearTimeout(this.matchEndSafetyTimer);
+    this.matchEndSafetyTimer = undefined;
+    const pending = this.matchEndReport;
+    this.matchEndReport = undefined;
+    if (pending) this.openRunReport(pending.result, pending.summary);
+  }
+
+  /** Nexus kareleri ortasi; harita nexus'suzsa alt kenarin ortasi. */
+  private getMatchEndNexus() {
+    const points = getMapPoints(this.selectedMapData, "nexus");
+    if (points.length === 0) {
+      const bounds = getMapWorldBounds(this.selectedMapData);
+      return { x: bounds.left + bounds.width / 2, y: bounds.bottom - this.getMapCellSize() / 2 };
+    }
+    let x = 0;
+    let y = 0;
+    for (const point of points) {
+      const world = gridToWorld(point.col, point.row, this.selectedMapData);
+      x += world.x;
+      y += world.y;
+    }
+    return { x: x / points.length, y: y / points.length };
+  }
+
+  /**
+   * Mac sonu sahnesinin karesi: adimlar, cizim ve sahnenin yapilara ve
+   * dusmanlara yazdigi hal. Snapshot cizimi tonu ve alfayi her geliste
+   * yeniden yaziyor; bu cagri ondan sonra (ayni karede) geliyor.
+   */
+  private updateMatchEnd(now: number) {
+    const stage = this.matchEndStage;
+    if (!stage) return;
+    stage.update(now);
+    for (const [id, tower] of this.towers) {
+      const state = stage.structureState(id);
+      if (!state) continue;
+      tower.base.setTint(state === "husk" ? MATCH_END_HUSK_TINT : MATCH_END_POWERED_DOWN_TINT);
+      tower.base.setAlpha(state === "husk" ? 0.92 : 0.72);
+      tower.halo.setVisible(false);
+      tower.healthBar.setVisible(false);
+      // Kenar yapisinin govdesi bu yuzeyde: patlayan duvarin yerinde enkaz kaliyor.
+      if (state === "husk") tower.effect.setVisible(false);
+    }
+    for (const [id, enemy] of this.enemies) {
+      const alpha = stage.enemyAlpha(id);
+      if (alpha >= 1) continue;
+      enemy.sprite.setAlpha(alpha);
+      enemy.healthBar?.setVisible(false);
+      enemy.shieldHalo?.setVisible(false);
+      enemy.marker?.setVisible(false);
     }
   }
 

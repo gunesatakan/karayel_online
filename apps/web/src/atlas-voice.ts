@@ -139,7 +139,7 @@ export type AtlasVoiceOptions = {
   enabled?: boolean;
 };
 
-type Current = { category: AtlasCategory; playback: AtlasPlayback };
+type Current = { category: AtlasCategory; playback: AtlasPlayback; url: string };
 
 /**
  * Torba: kategori basina karistirilmis sira; bitince yeniden karistiriliyor
@@ -212,6 +212,11 @@ export class AtlasVoice {
 
   get playingCategory(): AtlasCategory | undefined {
     return this.current?.category;
+  }
+
+  /** Calan satirin dosyasi (goreli adres); mac sonu sahnesi suresini buradan okuyor. */
+  get playingUrl(): string | undefined {
+    return this.current?.url;
   }
 
   /**
@@ -414,7 +419,7 @@ export class AtlasVoice {
       playback = undefined;
     }
     if (!playback || endedEarly) return false;
-    entry = { category, playback };
+    entry = { category, playback, url };
     this.current = entry;
     this.setSpeaking(true);
     return true;
