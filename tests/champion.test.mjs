@@ -540,8 +540,8 @@ test("geri bildirim: sampiyon etiketleri P1, takimin ortak ani, sessiz ve sarsin
 
 test("ucan ve oldurme altini paylasilan sayilardan", () => {
   assert.equal(AIR_ENEMY_HEALTH_MULTIPLIER, 0.25);
-  assert.equal(getEnemyKillGold("grunt"), 22);
-  assert.equal(getEnemyKillGold("brute"), 32);
+  assert.equal(getEnemyKillGold("grunt"), 32);
+  assert.equal(getEnemyKillGold("brute"), 49);
 });
 
 test("ilk dalga secenegi sabitin altina da iniyor (olcum icin)", () => {

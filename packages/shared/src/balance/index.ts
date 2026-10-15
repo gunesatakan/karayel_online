@@ -72,10 +72,10 @@ export const PLAYER_POWER_COMPENSATION = 2.13;
 export const ENEMY_HP_BALANCE_MULTIPLIER = 1.1 * 4 / 3 * PLAYER_POWER_COMPENSATION;
 /**
  * Taban altin gelirinin carpani: oldurme ve dalga sonu altini. Sahibin
- * istegiyle %20 artirildi (gelir kazanmaya yetmiyordu). Kart ve esya primleri
+ * onceki 1.2 gelir carpani %50 artirildi. Kart ve esya primleri
  * kendi tutarlarinda.
  */
-export const GOLD_INCOME_MULTIPLIER = 1.2;
+export const GOLD_INCOME_MULTIPLIER = 1.8;
 /** Dusman oldurmenin altin odulu. Dalga sonu altini bundan bagimsizdir. */
 export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER;
 
