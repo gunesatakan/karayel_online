@@ -5,6 +5,8 @@ import { ACTIVE_WORKER_ROLES, isTransportProduct } from "@karayel/shared";
 import Phaser from "phaser";
 import { openChoiceDialog, openConfirmDialog, openDefenseDialog, defenseSummaryLines } from "../defense-ui";
 import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
+import { isTutorialPrepareId, type TutorialProgressMessage } from "@karayel/shared";
+import type { TutorialCommand } from "../tutorial";
 import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
 import type { TowerSheetReport } from "../game-control-ui";
 import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
@@ -401,6 +403,8 @@ type GameSceneData = {
   characterId?: CharacterId;
   mapData?: EditableMapData;
   creative?: boolean;
+  /** Ogretici asamasi (menudeki Eğitim); sunucu tek kisilik odada kabul ediyor. */
+  tutorial?: boolean;
   stage?: number;
 };
 
@@ -413,6 +417,8 @@ type MatchResultSummary = {
   kills: number;
   stage?: number;
   creative?: boolean;
+  /** Ogretici kosusu (`match:*` mesaji ya da snapshot bayragi). */
+  tutorial?: boolean;
   /** Kosu raporu; yalnizca `match:*` mesajinda var, snapshot'ta yok. */
   run?: RunSummary;
 };
@@ -427,6 +433,8 @@ type MatchReportState = {
   summary: MatchResultSummary;
   run?: RunSummary;
   creative: boolean;
+  /** Ogretici kosusu: rapor yalnizca "Ana Menü" ve "kaydedilmez" satiriyla. */
+  tutorial?: boolean;
   stage?: number;
   stageResult?: ReturnType<typeof markStageCleared>;
 };
@@ -1596,6 +1604,13 @@ export class GameScene extends Phaser.Scene {
   private selectedStage = 1;
   /** Sunucu bayragi acti mi; panel ve bedava yerlestirme buna bakiyor. */
   private creativeMode = false;
+  /** Menude Eğitim secildi mi; odayi kurarken sunucuya gidiyor. */
+  private tutorialRequested = false;
+  /**
+   * Sunucu ogretici bayragini acti mi (snapshot). Adim motoru (tutorial.ts)
+   * ve ilerleme kapilari buna bakiyor; magaza dalga icinde de aciliyor.
+   */
+  private tutorialMode = false;
   /**
    * Odanin gercek asamasi, her snapshot'ta sunucudan.
    *
@@ -1751,6 +1766,8 @@ export class GameScene extends Phaser.Scene {
     // tasimiyor (`createOpenArenaMap` hep 1 yaziyor).
     this.runMapScale = this.selectedMapData.scale;
     this.creativeRequested = data.creative === true;
+    this.tutorialRequested = data.tutorial === true && !this.creativeRequested;
+    this.tutorialMode = false;
     this.selectedStage = getStage(data.stage).id;
     this.roomStage = undefined;
   }
@@ -1931,6 +1948,9 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
     this.game.events.on("game:tower-sheet", this.applyTowerSheetReport, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tower-sheet", this.applyTowerSheetReport, this));
+    // Ogretici adim motorunun istekleri (tutorial.ts): hazirlik, Devam, bitis.
+    this.game.events.on("game:tutorial-command", this.handleTutorialCommand, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tutorial-command", this.handleTutorialCommand, this));
     // Cihaz donunce ya da arac cubugu acilip kapaninca tuvalin orani degisiyor;
     // kamera o anki olcuden kuruldugu icin yeniden kurulmasi gerekiyor.
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
@@ -6020,6 +6040,7 @@ export class GameScene extends Phaser.Scene {
           mapData: this.selectedMapData,
           autoStart: true,
           creative: this.creativeRequested,
+          tutorial: this.tutorialRequested,
           stage: this.selectedStage,
           ownerSecret
         })));
@@ -6033,7 +6054,8 @@ export class GameScene extends Phaser.Scene {
       runTelemetry.attach({
         roomId: this.room.roomId,
         online: this.startedFromLobby,
-        creative: this.creativeRequested,
+        // Ogretici kosusu da yaratici sayiliyor: kazanma oranlarina girmiyor.
+        creative: this.creativeRequested || this.tutorialRequested,
         resumed: Boolean(resumed),
         operator: this.selectedCharacterId
       });
@@ -6087,7 +6109,8 @@ export class GameScene extends Phaser.Scene {
         wave: snapshot.team.wave,
         kills: snapshot.team.kills,
         stage: snapshot.stage,
-        creative: snapshot.creative
+        creative: snapshot.creative,
+        tutorial: snapshot.tutorial
       });
       // Snapshot kosu raporunu tasimiyor; rekor yalnizca rapordan yaziliyor.
       // Mesaj kacirildiysa bir kez isteniyor, ayni kosu kimligiyle geliyor ve
@@ -6733,6 +6756,8 @@ export class GameScene extends Phaser.Scene {
       this.creativeLoadout = loadout;
       this.emitControlState();
     });
+    // Ogretici: sunucunun olctugu, gercekten yapilmis eylem; adim motoruna gidiyor.
+    room.onMessage("tutorial:progress", (progress: TutorialProgressMessage) => this.game.events.emit("game:tutorial-progress", progress));
     room.onMessage("enemy:spawn", (enemy: StaticEnemySnapshot) => this.staticEnemySnapshots.set(enemy.id, enemy));
     room.onMessage("tower:spawn", (tower: StaticTowerSnapshot) => {
       this.staticTowerSnapshots.set(tower.id, tower);
@@ -7239,14 +7264,15 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // surdurmesin; mac bitti, secim artik bir sey degistirmiyor.
     this.hideCardChoices();
     const stage = this.roomStage ?? summary.stage;
-    const creative = summary.creative === true || summary.run?.creative === true || this.creativeMode;
+    const tutorial = summary.tutorial === true || this.isTutorialRun();
+    const creative = summary.creative === true || summary.run?.creative === true || this.creativeMode || tutorial;
     // Bounty Board: oynanis bitti, skor bir kez. Yaratici kosu skor tasimiyor;
     // canli baslamamis kosuda kopru hicbir sey yollamiyor.
     arcade.gameOver(creative ? 0 : getArcadeRunScore({ stage, wave: summary.wave }));
     // Mac bittikten sonra giren istemci (ilk snapshot sonucu tasiyordu) bu
     // zaferi oynamadi: asama onun yolunda acilmamali.
     const stageResult = result === "victory" && this.liveSnapshotSeen ? markStageCleared({ creative, stage }) : undefined;
-    this.matchReport = { result, summary, run: summary.run, creative, stage, stageResult };
+    this.matchReport = { result, summary, run: summary.run, creative, tutorial, stage, stageResult };
     this.renderMatchReport(true);
   }
 
@@ -7264,7 +7290,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private recordRunResult(message: MatchResultSummary) {
     if (!message.run || this.runRecordOutcome || !this.liveSnapshotSeen) return;
     const run = message.run;
-    const creative = message.creative === true || run.creative === true || this.creativeMode;
+    const creative = message.creative === true || run.creative === true || this.creativeMode || this.isTutorialRun();
     const slot = this.getRunLocalSlot(run);
     this.runRecordOutcome = recordRun(
       run,
@@ -7314,7 +7340,43 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * Biri acik diyorsa acik; yanlislikla gorulmus yazilan kart geri alinamaz.
    */
   private isArchiveSandbox() {
-    return this.creativeRequested || this.creativeMode;
+    return this.creativeRequested || this.creativeMode || this.isTutorialRun();
+  }
+
+  /**
+   * Ogretici kosusu: menuden istendi ya da sunucu bayragi acik. Biri acik
+   * diyorsa acik; ogretici hicbir ilerleme (asama, rekor, arsiv, nisan,
+   * ustalik, Bounty Board skoru) yazmiyor.
+   */
+  private isTutorialRun() {
+    return this.tutorialRequested || this.tutorialMode;
+  }
+
+  /**
+   * Adim motorunun istegi (tutorial.ts, `game:tutorial-command`). Yalnizca
+   * sunucu ogretici bayragini actiktan sonra ve mac surerken; sunucu kapisi
+   * (`MESSAGE_RULES`) zaten ogretici disinda hicbir seyi kabul etmiyor.
+   */
+  private handleTutorialCommand(command: TutorialCommand) {
+    const room = this.room;
+    if (!room || !this.tutorialMode || this.matchResultShown || !command) return;
+    switch (command.type) {
+      case "prepare":
+        if (!isTutorialPrepareId(command.step)) return;
+        // Kapatilmis vitrin yeniden istenince gorunsun: kapatma dalgaya bagli
+        // ve ogreticide dalga sayaci ilerlemiyor.
+        if (command.step === "shop") this.shopDismissedWave = 0;
+        room.send("tutorial:prepare", { step: command.step });
+        return;
+      case "continue":
+        if (this.latestPerfSnapshot?.setupPhase) room.send("wave:continue", {});
+        return;
+      case "complete":
+        room.send("tutorial:complete", {});
+        return;
+      default:
+        return;
+    }
   }
 
   /** Raporda yerel oyuncunun yuvasi: snapshot'taki, yoksa operatorden. */
@@ -7358,7 +7420,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       finale: isFinaleClear({ result: report.result, stage: report.stage, creative: report.creative, clearedStageIds: cleared }),
       fallbackCardIds: this.localPlayerSnapshot?.ownedCardIds
     });
-    const actions = planRunReportActions({
+    if (report.tutorial) {
+      // Ogreticide asama ve dalga sayaci anlamsiz (sayac hic ilerlemiyor,
+      // zafer adimlarla geliyor): baslik ve kahraman egitimin, dalga seridi yok.
+      view.heading = { tone: view.heading.tone, eyebrow: t("scene.report.tutorialEyebrow"), title: view.heading.title };
+      view.hero = { kind: "wave", text: t("scene.report.tutorialHero") };
+      view.strip = [];
+    }
+    // Ogretici raporunda yalnizca "Ana Menü": Tekrar ve Sonraki aşama normal
+    // kosu baslatirdi, ogreticinin devami degil.
+    const actions = report.tutorial ? { primary: "retry" as const } : planRunReportActions({
       result: report.result,
       stage: report.stage,
       mode: this.getQuickStartMode(report.creative),
@@ -7373,7 +7444,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (report.stageResult?.unlockedStage) {
       notes.push({ tone: "unlock", text: t("scene.report.stageUnlocked", { stage: report.stageResult.unlockedStage }) });
     }
-    if (report.creative) {
+    if (report.tutorial) {
+      notes.push({ tone: "dim", text: t("scene.report.tutorialNoProgress") });
+    } else if (report.creative) {
       // Yaratici kosu sessizce kaydedilmiyor olsaydi oyuncu acilis ya da rekor
       // bekleyip bulamazdi; nedenini soluk bir satir soyluyor.
       notes.push({ tone: "dim", text: t("scene.report.creativeNoProgress") });
@@ -8168,7 +8241,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * kurali okuyor; ayri yazilsalar kutu acik magazanin ustune dusebilirdi.
    */
   private isGoldShopOpen(snapshot: Pick<GameSnapshot, "setupPhase" | "team"> | undefined, player: GameSnapshot["players"][number] | undefined) {
-    return Boolean(snapshot?.setupPhase && player && (player.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== snapshot.team.wave);
+    // Ogreticide kurulum yok: vitrin adim istedigi an dalga icinde aciliyor.
+    return Boolean((snapshot?.setupPhase || this.tutorialMode) && snapshot && player && (player.shopOffers?.length ?? 0) > 0 && this.shopDismissedWave !== snapshot.team.wave);
   }
 
   /**
@@ -11727,6 +11801,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         open: false
       },
       creative: this.getCreativeControlState(),
+      // Ogretici adim motoru (tutorial.ts) yalnizca bu bayrak acikken calisiyor.
+      tutorial: this.tutorialMode,
       upgrade: {
         label: selectedTower && definition && selectedTower.level >= getTowerMaxLevel(definition) ? t("scene.upgrade.max") : selectedTower ? t("scene.upgrade.action", { price: upgradePriceLabel }) : t("scene.upgrade.noTower"),
         enabled: canUpgrade
@@ -12093,6 +12169,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (Boolean(snapshot.creative) !== this.creativeMode) {
       this.creativeMode = Boolean(snapshot.creative);
       if (this.creativeMode) this.room?.send("creative:sync", {});
+      this.emitControlState();
+    }
+    // Ogretici bayragi da sunucudan: adim motoru kontrol durumundan okuyor.
+    if (Boolean(snapshot.tutorial) !== this.tutorialMode) {
+      this.tutorialMode = Boolean(snapshot.tutorial);
       this.emitControlState();
     }
     this.snapshotCount += 1;

@@ -31,7 +31,7 @@ test("Ingilizce sozluk eksiksiz; yer tutucular Turkceyle ayni, fazladan anahtar 
 test("t: varsayilan Turkce, parametre dolduruyor, bilinmeyen anahtar tMaybe'de undefined", () => {
   setLocaleForTest("tr");
   assert.equal(getLocale(), "tr");
-  assert.equal(t("tutorial.count", { n: 2, total: 6 }), "BRİFİNG 2/6");
+  assert.equal(t("tutorial.count", { n: 2, total: 6 }), "EĞİTİM 2/6");
   assert.equal(t("format.percent", { v: 15 }), "%15");
   assert.equal(tMaybe("sheet.status.burn"), "Yanma");
   assert.equal(tMaybe("sheet.status.yok-boyle"), undefined);
@@ -39,7 +39,7 @@ test("t: varsayilan Turkce, parametre dolduruyor, bilinmeyen anahtar tMaybe'de u
   assert.equal(lower("ISI"), "ısı");
 
   setLocaleForTest("en");
-  assert.equal(t("tutorial.count", { n: 2, total: 6 }), "BRIEFING 2/6");
+  assert.equal(t("tutorial.count", { n: 2, total: 6 }), "TRAINING 2/6");
   assert.equal(t("format.percent", { v: 15 }), "15%");
   assert.equal(upper("istasyon"), "ISTASYON");
   assert.equal(lower("HEAT"), "heat");
@@ -97,19 +97,25 @@ test("kule paneli Turkcede eskisi gibi: %15, virgul, kare", () => {
   assert.equal(crit.bonus, "+%10");
 });
 
-test("brifing metinleri iki dilde; Ingilizcede Turkce harf yok", () => {
+test("egitim metinleri iki dilde; Ingilizcede Turkce harf yok", () => {
   for (const locale of ["tr", "en"]) {
     setLocaleForTest(locale);
     for (const id of TUTORIAL_STEPS) {
       for (const open of [false, true]) {
         const copy = getTutorialCopy(id, open);
         assert.ok(copy.title && copy.body, `${locale}/${id}`);
-        if (locale === "en") assert.doesNotMatch(`${copy.title} ${copy.body} ${copy.ack ?? ""}`, /[ğüşıöçĞÜŞİÖÇ]/, `${id} Ingilizcede Turkce`);
+        if (locale === "en") assert.doesNotMatch(`${copy.title} ${copy.body} ${copy.ack ?? ""} ${copy.reopen ?? ""}`, /[ğüşıöçĞÜŞİÖÇ]/, `${id} Ingilizcede Turkce`);
       }
     }
   }
   setLocaleForTest("tr");
-  assert.equal(getTutorialCopy("logistics", false).ack, "ANLAŞILDI");
+  assert.equal(getTutorialCopy("xpGold").ack, "ANLADIM");
+  assert.equal(getTutorialCopy("shop", false).reopen, "MAĞAZAYI AÇ");
+  setLocaleForTest("en");
+  assert.equal(getTutorialCopy("xpGold").ack, "GOT IT");
+  assert.equal(t("tutorial.skip"), "SKIP");
+  setLocaleForTest("tr");
+  assert.equal(t("tutorial.skip"), "GEÇ");
 });
 
 /* ------------------------------------------------------------------ */

@@ -5,6 +5,8 @@ import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout,
 import { createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
 import { getTowerMaxLevel, getResourceProviderCapacity, getAmmoFactoryProductionRate } from "@karayel/shared";
 import { clipCounterSurgeLane, getWavePatternDelayMs, getWavePatternEntryColumns, getWavePatternSlotType, planWavePattern, type WavePatternPlan } from "@karayel/shared";
+// Ogretici asamasi (Eğitim): yavas, seyrek dusman; olmeyen nexus; adim olcumu.
+import { TUTORIAL_ENEMY_SPEED_MULTIPLIER, TUTORIAL_EXPERIENCE_FLOOR, TUTORIAL_GOLD_FLOOR, TUTORIAL_NEXUS_FLOOR, TUTORIAL_REPUTATION, TUTORIAL_SPAWN_INTERVAL_MS, TUTORIAL_TRACKED_MESSAGES, TUTORIAL_WAVE_ENEMY_COUNT, isTutorialPrepareId, type TutorialActionId, type TutorialProgressMessage } from "@karayel/shared";
 import { Client, Protocol, Room, ServerError, getMessageBytes, type AuthContext } from "colyseus";
 import { MapSchema, Schema, type } from "@colyseus/schema";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -1163,6 +1165,8 @@ type JoinOptions = {
   mapData?: EditableMapData;
   autoStart?: boolean;
   creative?: boolean;
+  /** Ogretici asamasi; yalnizca `autoStart` ile (tek kisilik oda) gecerli. */
+  tutorial?: boolean;
   stage?: number;
   /**
    * Istemcinin anladigi tel surumu (`WIRE_DELTA_PROTOCOL`). Yoksa eski
@@ -1993,6 +1997,8 @@ export type MessageRule = {
   phase: "lobby" | "match" | "any";
   /** Yalnizca yaratici odada; bayrak govde okunmadan once soruluyor. */
   creative?: boolean;
+  /** Yalnizca ogretici odasinda; bayrak govde okunmadan once soruluyor. */
+  tutorial?: boolean;
   fields: Readonly<Record<string, MessageFieldKind>>;
   /** Mesaj turu basina kova; verilmezse `MESSAGE_RATE_DEFAULT`. */
   rate?: MessageRate;
@@ -2080,7 +2086,11 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   "creative:item": { phase: "match", creative: true, fields: { itemId: "string", towerId: "string", on: "boolean" } },
   "creative:wave": { phase: "match", creative: true, fields: { wave: "number" } },
   // Her biri kirk dusmana kadar dogurabiliyor.
-  "creative:spawn": { phase: "match", creative: true, fields: { count: "number" }, rate: { burst: 10, perSecond: 4 } }
+  "creative:spawn": { phase: "match", creative: true, fields: { count: "number" }, rate: { burst: 10, perSecond: 4 } },
+  // Ogretici: adim basinda hazirlik (kart eli, magaza, beceri, ulti) ve son
+  // adimdan sonra zafer. Ogretici olmayan odada govde hic okunmuyor.
+  "tutorial:prepare": { phase: "match", tutorial: true, fields: { step: "string" }, rate: { burst: 4, perSecond: 1 } },
+  "tutorial:complete": { phase: "match", tutorial: true, fields: {} }
 };
 
 /**
@@ -3111,6 +3121,13 @@ export class MatchRoom extends Room<MatchState> {
    * oda `autoStart` almadigi icin bayragi hicbir zaman alamaz.
    */
   private creativeMode = false;
+  /**
+   * Ogretici asamasi (Eğitim). Yaratici bayragi gibi yalnizca dogrudan
+   * baslatilan tek kisilik odada: nexus olmuyor, dusman seyrek ve yavas,
+   * dalga sayaci ilerlemiyor, zafer yalnizca `tutorial:complete` ile.
+   * Kosu ilerleme yazmiyor (sonuc ve kosu raporu yaratici isaretli gidiyor).
+   */
+  private tutorialMode = false;
   /** Dogrudan baslatilan tek kisilik oda (`autoStart`): ozel, listede yok, yabanci giremiyor. */
   private soloRoom = false;
   /**
@@ -3229,6 +3246,10 @@ export class MatchRoom extends Room<MatchState> {
     this.soloRoom = options.autoStart === true;
     // Yaratici bayragi lobi yoluna sizmasin diye dogrudan baslatmaya bagli.
     this.creativeMode = options.creative === true && options.autoStart === true;
+    // Ogretici de ayni kapidan; yaratici istegiyle birlikte gelirse yaratici kazanir.
+    this.tutorialMode = options.tutorial === true && options.autoStart === true && !this.creativeMode;
+    // Ogreticide sampiyon yok (ozel dusman ve karsi atak 1. asamada zaten yok).
+    if (this.tutorialMode) this.championsEnabled = false;
     // Yaratici oda tek kisilik ve oyle kaliyor: ikinci oyuncu girseydi
     // `getCreativePlayer` kapisi sahibinin komutlarini da kapatirdi. Oda
     // listede gorunmuyor (`hasJoinableSeat`) ve tek koltuk sahibinin.
@@ -3239,8 +3260,8 @@ export class MatchRoom extends Room<MatchState> {
       this.soloOwnerSecretHash = hashOwnerSecret(options.ownerSecret);
     }
     // Gecersiz kimlik ilk asamaya duser; eksik veri odanin kurulmasini
-    // engellememeli.
-    this.stage = getStage(options.stage).id;
+    // engellememeli. Ogretici her zaman ilk asamada.
+    this.stage = getStage(this.tutorialMode ? 1 : options.stage).id;
     const baseMap = normalizeMapData(options.mapData);
     this.mapScale = this.getMapScaleChoice(options.mapScale ?? baseMap.scale);
     this.activeMap = scaleEditableMap(baseMap, this.mapScale);
@@ -3397,7 +3418,119 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("creative:wave", (client, message: CreativeWaveMessage) => this.creativeSetWave(client, message));
     this.onMessage("creative:spawn", (client, message: CreativeSpawnMessage) => this.creativeSpawnEnemies(client, message));
 
+    this.onMessage("tutorial:prepare", (client, message: { step?: string }) => this.prepareTutorialStep(client, message));
+    this.onMessage("tutorial:complete", () => this.completeTutorial());
+
     this.syncRoomRegistry();
+  }
+
+  /**
+   * Ogretici adiminin hazirligi. Altin ve tecrube her seferinde tabana
+   * cekiliyor (adimlar yapi kurduruyor, gelistirtiyor); adimin istedigi pencere
+   * ya da sarj aciliyor. Ogretici disinda kapi (`MESSAGE_RULES`) zaten kapali.
+   */
+  private prepareTutorialStep(client: Client, message: { step?: string }) {
+    if (!this.tutorialMode || this.matchResult || !isTutorialPrepareId(message?.step)) return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    player.gold = Math.max(player.gold, TUTORIAL_GOLD_FLOOR);
+    player.experience = Math.max(player.experience, TUTORIAL_EXPERIENCE_FLOOR);
+    switch (message.step) {
+      case "cards": {
+        const pending = this.pendingCardChoices.get(client.sessionId);
+        if (pending) {
+          this.sendCardChoices(client, pending);
+          return;
+        }
+        this.cardRerollsUsed.delete(client.sessionId);
+        const choices = this.drawWaveCards(client.sessionId, player);
+        if (choices.length === 0) {
+          this.openPlayerSetupShop(client.sessionId, player);
+          return;
+        }
+        this.pendingCardChoices.set(client.sessionId, choices);
+        this.sendCardChoices(client, choices);
+        return;
+      }
+      case "shop":
+        if (player.shopOffers.length === 0) this.openPlayerSetupShop(client.sessionId, player);
+        return;
+      case "skill":
+        player.reputation = Math.max(player.reputation, TUTORIAL_REPUTATION);
+        for (let slot = 0; slot < 3; slot += 1) this.setSkillCooldown(player, slot, 0);
+        return;
+      case "ultimate":
+        player.ultimateCharge = 100;
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** Istemcinin adim motoru bitti: kisa bir zafer, ilerleme yazilmadan. */
+  private completeTutorial() {
+    if (!this.tutorialMode || this.matchResult) return;
+    this.finishDefenseSummary();
+    this.closeRunWave(false);
+    this.finishMatch("victory");
+  }
+
+  /** Ogreticide bir dongu temizlendi: ayni dalga yeniden, nexus dolu. */
+  private restartTutorialWave() {
+    this.waveSpawned = 0;
+    this.planWaveSpawns(this.wave);
+    this.spawnCooldownMs = TUTORIAL_SPAWN_INTERVAL_MS;
+    this.teamHealth = MAX_TEAM_HEALTH;
+    this.resetTowerHeatAfterWave();
+  }
+
+  /**
+   * Oyuncunun izlenen durumu: kendi yapilari ve ayarlari, isci rolleri ve
+   * atamalari, kart, esya, gelisim, beceri ve ulti. Isleyiciden once ve sonra
+   * alinip karsilastiriliyor; fark varsa istek is yapmis demek.
+   */
+  private captureTutorialState(sessionId: string) {
+    const player = this.state.players.get(sessionId);
+    const towers = Array.from(this.towers.values()).filter((tower) => tower.ownerId === sessionId);
+    const assignments = Array.from(this.workerAssignments.entries())
+      .filter(([workerId]) => this.drones.get(workerId)?.ownerId === sessionId)
+      .map(([workerId, assignment]) => [workerId, assignment.nodeId ?? "", assignment.sourceTowerId ?? "", assignment.product ?? ""]);
+    return {
+      towerIds: new Set(towers.map((tower) => tower.id)),
+      signature: JSON.stringify([
+        player ? [
+          player.gold, player.experience, player.reputation, player.ultimateCharge,
+          player.skill1CooldownMs, player.skill2CooldownMs, player.skill3CooldownMs,
+          player.ownedCardIds?.length ?? 0, player.ownedShopItemIds?.length ?? 0, player.workerSkillIds?.length ?? 0,
+          Array.from(player.hiredWorkers ?? [], (worker) => worker.role ?? "")
+        ] : [],
+        towers.map((tower) => [tower.id, tower.level, tower.hp, tower.targetingMode ?? "", tower.performance, tower.ammoLogisticsEnabled,
+          tower.logisticsPriority ?? "", Boolean(tower.standby), tower.productionAmmo ?? ""]),
+        assignments
+      ])
+    };
+  }
+
+  private reportTutorialProgress(client: Client, action: TutorialActionId, before: ReturnType<MatchRoom["captureTutorialState"]>, message: Record<string, unknown>) {
+    const after = this.captureTutorialState(client.sessionId);
+    if (after.signature === before.signature) return;
+    const progress: TutorialProgressMessage = { action };
+    if (action === "build") {
+      const definitionIds = Array.from(after.towerIds)
+        .filter((id) => !before.towerIds.has(id))
+        .map((id) => this.towers.get(id)?.definition.id)
+        .filter((id): id is string => typeof id === "string");
+      if (definitionIds.length === 0) return;
+      progress.definitionIds = definitionIds;
+    }
+    if ((action === "hire" || action === "specialize") && typeof message.role === "string" && isHirableWorkerRole(message.role)) {
+      progress.role = message.role;
+    }
+    if (action === "assign" && typeof message.workerId === "string") {
+      const mode = this.drones.get(message.workerId)?.mode;
+      if (mode) progress.role = mode;
+    }
+    client.send("tutorial:progress", progress);
   }
 
   /**
@@ -3424,6 +3557,7 @@ export class MatchRoom extends Room<MatchState> {
         if (rule?.phase === "lobby" && this.gameStarted) return;
         if (rule?.phase === "match" && !this.gameStarted) return;
         if (rule?.creative && !this.creativeMode) return;
+        if (rule?.tutorial && !this.tutorialMode) return;
         // Kurali olmayan tur alan tasimiyor: yeni bir mesaj tabloya yazilmadan
         // govdesini okuyamaz. Test bunu her kayitli tur icin ayrica soruyor.
         const message = sanitizeMessagePayload(raw, rule?.fields ?? {});
@@ -3438,7 +3572,13 @@ export class MatchRoom extends Room<MatchState> {
             return;
           }
         }
+        // Ogretici: izlenen mesajin gercekten is yapip yapmadigi isleyicinin
+        // once ve sonrasindaki durumdan olculuyor (isleyici esanli, arada
+        // baska bir sey degismiyor). Reddedilen istek adimi gecirmiyor.
+        const tracked = this.tutorialMode ? TUTORIAL_TRACKED_MESSAGES[type] : undefined;
+        const before = tracked ? this.captureTutorialState(client.sessionId) : undefined;
         callback(client, message);
+        if (tracked && before) this.reportTutorialProgress(client, tracked, before, message);
       } catch (error) {
         this.reportRoomError(`onMessage:${type}`, error);
       }
@@ -3587,6 +3727,11 @@ export class MatchRoom extends Room<MatchState> {
     player.ready = false;
     player.connected = true;
     player.gold = getPlayerStartGold(player.characterId);
+    // Ogretici her mekanigi gosteriyor: kurulacak, gelistirilecek cok sey var.
+    if (this.tutorialMode) {
+      player.gold = Math.max(player.gold, TUTORIAL_GOLD_FLOOR);
+      player.experience = Math.max(player.experience, TUTORIAL_EXPERIENCE_FLOOR);
+    }
     player.slot = this.getFreePlayerSlot();
     this.initializeMelisSpectrum(player);
 
@@ -4165,6 +4310,19 @@ export class MatchRoom extends Room<MatchState> {
    * dusmanlar bu sayinin uzerine eskisi gibi oturuyor.
    */
   private planWaveSpawns(wave: number) {
+    if (this.tutorialMode) {
+      // Ogretici: paternsiz, sampiyonsuz, ozelsiz; birkac duz dusman.
+      this.wavePatternPlan = undefined;
+      this.waveChampionPlan = undefined;
+      this.waveSlotOffset = 0;
+      this.waveChampionSpawned = false;
+      this.waveSpecialPlan = undefined;
+      this.specialRandom = undefined;
+      this.waveSpecialCursor = 0;
+      this.waveSurgeCursor = 0;
+      this.waveTarget = TUTORIAL_WAVE_ENEMY_COUNT;
+      return;
+    }
     const baseSlotCount = this.getScaledWaveEnemyCount(wave);
     this.wavePatternPlan = planWavePattern({ stage: this.stage, wave, baseSlotCount, seed: this.getWavePatternSeed() });
     const slotCount = this.wavePatternPlan.slotCount;
@@ -5140,6 +5298,12 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.waveClearedAt = 0;
+      // Ogretici dalga kapatmiyor: karne, kart perdesi ve kurulum yok, sayac
+      // ilerlemiyor (son dalga zaferi hic gelmiyor). Ayni dalga yeniden doguyor.
+      if (this.tutorialMode) {
+        this.restartTutorialWave();
+        return;
+      }
 
       this.applyMelisWaveStress();
       this.finishDefenseSummary();
@@ -5204,7 +5368,9 @@ export class MatchRoom extends Room<MatchState> {
     // Dalga paterni ritmi verdiyse (aralik, yiginlar arasi sessizlik) onun
     // beklemeleri; plan yoksa taban aralik.
     const pattern = this.getActiveWavePattern();
-    this.spawnCooldownMs = pattern ? getWavePatternDelayMs(pattern, slot, slots) : getWaveSpawnIntervalMs(this.wave) * slots;
+    this.spawnCooldownMs = this.tutorialMode
+      ? TUTORIAL_SPAWN_INTERVAL_MS
+      : pattern ? getWavePatternDelayMs(pattern, slot, slots) : getWaveSpawnIntervalMs(this.wave) * slots;
   }
 
   /**
@@ -5642,7 +5808,10 @@ export class MatchRoom extends Room<MatchState> {
       wave: this.wave,
       kills: this.kills,
       stage: this.stage,
-      ...(this.creativeMode ? { creative: true } : {}),
+      // Ogretici de yaratici isaretli gidiyor: ilerleme kapilari (rekor,
+      // asama, arsiv, nisan, telemetri) yalnizca bu bayragi okuyor.
+      ...(this.creativeMode || this.tutorialMode ? { creative: true } : {}),
+      ...(this.tutorialMode ? { tutorial: true } : {}),
       run: this.buildRunSummary(result)
     };
     this.matchResultPayload = payload;
@@ -5668,7 +5837,7 @@ export class MatchRoom extends Room<MatchState> {
       result,
       stage: this.stage,
       wave: this.wave,
-      creative: this.creativeMode,
+      creative: this.creativeMode || this.tutorialMode,
       mapKey: getRunMapKey(this.mapScale),
       players: Array.from(this.state.players.values(), (player) => ({
         slot: player.slot ?? 0,
@@ -5713,7 +5882,8 @@ export class MatchRoom extends Room<MatchState> {
     const multiplayerHealth = 1 + Math.max(0, this.getActivePlayerCount() - 1) * 0.45;
     const maxHp = getWaveEnemyMaxHp(definition.maxHp, this.wave, airHealthMultiplier * championMultiplier) * multiplayerHealth;
     const maxShield = special?.kind === "harvester" ? maxHp : Math.round(definition.shield * waveScale * airHealthMultiplier * championMultiplier * multiplayerHealth);
-    const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER);
+    const speed = this.scaleWorldSpeed((definition.speed + this.wave * 2.4) * ENEMY_MOVEMENT_SPEED_MULTIPLIER)
+      * (this.tutorialMode ? TUTORIAL_ENEMY_SPEED_MULTIPLIER : 1);
     const pathId = 0;
     const start = special?.start ?? this.pickNormalSpawnPoint(pattern, slot);
     const id = `e${this.nextEnemyId++}`;
@@ -9109,7 +9279,8 @@ export class MatchRoom extends Room<MatchState> {
               shieldOwner.nexusShieldCharges -= 1;
               absorbedParts += 1;
             } else {
-              this.teamHealth = Math.max(0, this.teamHealth - part);
+              // Ogreticide nexus olmuyor: sizinti can aliyor ama tabanin altina inmiyor.
+              this.teamHealth = Math.max(this.tutorialMode ? TUTORIAL_NEXUS_FLOOR : 0, this.teamHealth - part);
             }
           }
           // Kalkanin tuttugu dusman da sizinti: temiz dalga ve yildiz candan
@@ -9121,7 +9292,7 @@ export class MatchRoom extends Room<MatchState> {
             absorbed: absorbedParts === leakParts.length,
             hpLost: healthBefore - this.teamHealth
           });
-          if (this.teamHealth === 0) {
+          if (this.teamHealth === 0 && !this.tutorialMode) {
             this.finishMatch("defeat");
           }
         }
@@ -11066,6 +11237,9 @@ export class MatchRoom extends Room<MatchState> {
    * geri getirebiliyordu ve ikinci alim bir +400 daha veriyordu.
    */
   private getShopOfferExclusions(_player: Player) {
+    // Ogretici vitrini sade: haritaya yerlestirilen esyalar kurulum ister,
+    // Riskli Yatirim nexus caniyla oynar; ikisi de bu asamada yok.
+    if (this.tutorialMode) return ["riskli-yatirim", "bariyer", "ziftli-zemin"];
     return this.riskyInvestmentWave === this.wave ? ["riskli-yatirim"] : [];
   }
 
@@ -11079,7 +11253,8 @@ export class MatchRoom extends Room<MatchState> {
 
   private rerollShop(client: Client) {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !this.setupPhase) return;
+    // Ogreticide magaza dalga icinde aciliyor (adim istedigi an); kurulum yok.
+    if (!player || !(this.setupPhase || this.tutorialMode)) return;
     const price = Math.ceil(getShopRerollPrice(player.shopRerolls) * getModifierMultiplier(player.runModifiers, "shopRerollCost"));
     if (player.gold < price) return;
     player.gold -= price;
@@ -11091,7 +11266,7 @@ export class MatchRoom extends Room<MatchState> {
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
     const player = this.state.players.get(client.sessionId);
     const item = message.itemId ? getShopItem(message.itemId) : undefined;
-    if (!player || !item || !this.setupPhase || !player.shopOffers.some(({ id }) => id === item.id)) return;
+    if (!player || !item || !(this.setupPhase || this.tutorialMode) || !player.shopOffers.some(({ id }) => id === item.id)) return;
     if (item.id === "riskli-yatirim" && (this.teamHealth <= RISKY_INVESTMENT_NEXUS_COST || this.riskyInvestmentWave === this.wave)) return;
     const price = getShopItemPrice(item, player.ownedShopItemIds, this.getPlayerShopLoadout(client.sessionId, player));
     if (player.gold < price) return;
@@ -11104,7 +11279,8 @@ export class MatchRoom extends Room<MatchState> {
     // etkisini ancak oyuncu bir kule sectiginde gosterir.
     if (!isGlobalShopItem(item)) {
       player.inventoryItemIds.push(item.id);
-      player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
+      // Ogretici: tek alim yeter, vitrin kapaniyor (dalga suruyor, magaza kalmasin).
+      player.shopOffers = this.tutorialMode ? [] : player.shopOffers.filter(({ id }) => id !== item.id);
       client.send("shop:purchased", { itemId: item.id, price, toInventory: true });
       return;
     }
@@ -11131,7 +11307,7 @@ export class MatchRoom extends Room<MatchState> {
       const notice: RiskyInvestmentMessage = { buyerId: client.sessionId, nexusCost: RISKY_INVESTMENT_NEXUS_COST, gold: RISKY_INVESTMENT_GOLD };
       this.broadcast("shop:risky-investment", notice);
     }
-    player.shopOffers = player.shopOffers.filter(({ id }) => id !== item.id);
+    player.shopOffers = this.tutorialMode ? [] : player.shopOffers.filter(({ id }) => id !== item.id);
     client.send("shop:purchased", { itemId: item.id, price });
   }
 
@@ -17625,6 +17801,7 @@ export class MatchRoom extends Room<MatchState> {
       // Yalnizca yaratici odada: `undefined` degerli anahtar msgpack'te yine
       // yaziliyor ve her snapshotta her istemciye ~12 bayt demek.
       ...(this.creativeMode ? { creative: true as const } : {}),
+      ...(this.tutorialMode ? { tutorial: true as const } : {}),
       stage: this.stage,
       // Yalnizca serit varken: 1. asamada ve seritsiz dalgada anahtar yok.
       // Her karede tam (en fazla iki kayit): yeni katilan ilk karede goruyor.

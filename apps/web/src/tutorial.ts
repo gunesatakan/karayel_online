@@ -1,163 +1,218 @@
 import type Phaser from "phaser";
+import {
+  REPAIR_DEPOT_TOWER_ID,
+  WALL_TOWER_ID,
+  towerCatalog,
+  type TutorialPrepareId,
+  type TutorialProgressMessage
+} from "@karayel/shared";
 import { onLocaleChange, t } from "./i18n";
 
 /**
- * Ilk mac brifingi: alti adimlik canli yonlendirme.
+ * Ogretici asamasi (Eğitim): butun mekanikleri sirayla gosteren adim motoru.
  *
- * Oyuncu oynarken ilgili dugme cerceveleniyor, yaninda kisa bir komuta
- * metni duruyor; oyuncu o isi yapinca (kule kurdu, Devam'a basti, kart
- * secti...) sonraki adima geciliyor. Her kutuda ATLA var.
+ * Ana menudeki "Eğitim" ayri bir mac aciyor (`tutorial` bayrakli tek kisilik
+ * oda, sabit operator ZentaX): nexus olmuyor, dusmanlar tek tuk ve cok yavas.
+ * Her adimda ilgili dugme cerceveleniyor, yaninda kisa bir komuta metni
+ * duruyor; oyuncu o isi yapinca sonraki adima geciliyor. Bilgi adimlarinda
+ * ANLADIM, her adimda GEÇ var. Son adimdan sonra sunucuya `tutorial:complete`
+ * gidiyor ve mac kisa bir zaferle kapaniyor (ilerleme yazilmiyor).
  *
- * Sahneye dokunmuyor: GameScene'in zaten yayinladigi durum olaylarini
- * (`game:controls-state`, `game:snapshot`) ve DOM'u okuyor. Anlik goruntu
- * bicimi degisebilir; yalnizca gereken alanlar savunmaci okunuyor.
- *
- * Ilerleme cihazda (`localStorage`); bitirilen ya da atlanan brifing bir daha
- * acilmiyor, yarim kalan bir sonraki macta kaldigi adimdan suruyor. Ana
- * menudeki "Eğitim" dugmesi ilerlemeyi sifirlayip maci baslatiyor.
+ * "Yapildi" bilgisi sunucudan geliyor (`tutorial:progress`): sunucu izlenen
+ * istegin gercekten is yapip yapmadigini olcuyor, reddedilen istek adimi
+ * gecirmiyor. Sahne mesaji `game:tutorial-progress` olarak yayinliyor;
+ * motorun istekleri (`prepare`, `continue`, `complete`) `game:tutorial-command`
+ * ile sahneye gidiyor. Normal maclarda motor hic gorunmuyor.
  */
 
-export const TUTORIAL_STEPS = ["tower", "wave", "logistics", "card", "shop", "workers"] as const;
+export const TUTORIAL_STEPS = [
+  "tower",
+  "wall",
+  "settings",
+  "energy",
+  "workerTypes",
+  "hire",
+  "assign",
+  "depot",
+  "armory",
+  "production",
+  "repairDepot",
+  "repairer",
+  "xpGold",
+  "upgrade",
+  "workerTree",
+  "card",
+  "shop",
+  "skill",
+  "ultimate"
+] as const;
 export type TutorialStepId = (typeof TUTORIAL_STEPS)[number];
 
-export const TUTORIAL_STORAGE_KEY = "uzay_tutorial_v1";
+/** Yalnizca okunup ANLADIM ile gecilen bilgi adimlari. */
+export const TUTORIAL_ACK_STEPS: readonly TutorialStepId[] = ["workerTypes", "xpGold"];
 
-export type TutorialProgress = { step: number; done: boolean };
+/** Ilk kule kurulunca kurulum bitiyor (Devam): dusmanlar yavasca gelmeye basliyor. */
+export const TUTORIAL_COMBAT_STEP: TutorialStepId = "tower";
 
-/** Bir anda oyunda gorulenler; her tikte olaylardan ve DOM'dan toplanir. */
-export type TutorialObservation = {
-  inMatch: boolean;
-  creative: boolean;
-  setupPhase: boolean;
-  ownTowers: number;
-  cardDraftOpen: boolean;
-  shopOpen: boolean;
-  workersHired: number;
-};
+/** Menudeki tek seferlik "Öğreticiyi oyna" kartinin cihazdaki kaydi. */
+export const TUTORIAL_OFFER_STORAGE_KEY = "uzay_tutorial_offer_v1";
 
-/**
- * Mac icindeki adim durumu. `seen*`: adimin bekledigi pencere bu adimdayken
- * acildi mi; kapanisi ancak acildiktan sonra "yapildi" sayiliyor.
- */
-export type TutorialRun = {
-  step: number;
-  done: boolean;
-  seenSetup: boolean;
-  seenOpen: boolean;
-  workersAtStep?: number;
-};
+export type TutorialRun = { step: number; done: boolean };
 
-export function createTutorialRun(progress: TutorialProgress): TutorialRun {
-  // Dalga adiminda kalan brifing yeni macta kuleden baslar: kulesiz bir
-  // haritada "Devam'a bas" demek yanlis, dalga adimi kule olmadan gizli.
-  const step = progress.step <= TUTORIAL_STEPS.indexOf("wave") ? 0 : progress.step;
-  return { step, done: progress.done, seenSetup: false, seenOpen: false };
+/** Motorun girdisi: sunucunun olcumu, ANLADIM ya da GEÇ. */
+export type TutorialSignal =
+  | { kind: "progress"; progress: TutorialProgressMessage }
+  | { kind: "ack" }
+  | { kind: "skip" };
+
+export function createTutorialRun(): TutorialRun {
+  return { step: 0, done: false };
 }
 
-function enterStep(run: TutorialRun, step: number): TutorialRun {
-  return { step, done: step >= TUTORIAL_STEPS.length, seenSetup: false, seenOpen: false };
+export type TutorialBuildKind = "tower" | "wall" | "energy" | "armory" | "depot" | "repairDepot";
+
+const definitionById = new Map(Object.values(towerCatalog).flat().map((definition) => [definition.id, definition]));
+
+/** Kurulan yapinin ogreticideki turu; bilinmeyen kimlik hasar kulesi sayiliyor. */
+export function classifyTutorialBuild(definitionId: string): TutorialBuildKind {
+  if (definitionId === WALL_TOWER_ID) return "wall";
+  if (definitionId === REPAIR_DEPOT_TOWER_ID) return "repairDepot";
+  if (definitionId === "warehouse-1") return "depot";
+  const provider = definitionById.get(definitionId)?.resourceProvider;
+  if (provider === "energy") return "energy";
+  if (provider === "ammunition") return "armory";
+  return "tower";
 }
 
-/**
- * Adimi ilerletir. Saf: ayni girdi ayni cikti. `acknowledged` kutudaki
- * ANLAŞILDI dugmesi (yalnizca dugmesi olan adimlarda anlamli).
- */
-export function advanceTutorial(run: TutorialRun, seen: TutorialObservation, acknowledged = false): TutorialRun {
-  if (run.done || !seen.inMatch || seen.creative) return run;
-  const id = TUTORIAL_STEPS[run.step];
-  const next = () => enterStep(run, run.step + 1);
-  switch (id) {
-    case "tower":
-      return seen.ownTowers > 0 ? next() : run;
-    case "wave":
-      // Devam'a basilip dalga baslayinca. Kurulum hic gorulmeden (yeniden
-      // baglanma, dalga ortasi) gelinirse de gecilir: Devam zaten basilmis.
-      if (seen.setupPhase) return run.seenSetup ? run : { ...run, seenSetup: true };
-      return next();
-    case "logistics":
-      // Bilgi adimi; okunmadan kart secimi acilirsa yerini ona birakir.
-      return acknowledged || seen.cardDraftOpen || seen.shopOpen ? next() : run;
-    case "card":
-      if (seen.cardDraftOpen) return run.seenOpen ? run : { ...run, seenOpen: true };
-      // Secim yapildi; ya da bu dalgada kart cikmadi ve magaza acildi, ya da
-      // kurulum bitti (kart penceresi hic gelmedi).
-      if (run.seenOpen || seen.shopOpen) return next();
-      if (seen.setupPhase) return run.seenSetup ? run : { ...run, seenSetup: true };
-      return run.seenSetup ? next() : run;
-    case "shop":
-      if (seen.shopOpen) return run.seenOpen ? run : { ...run, seenOpen: true };
-      if (run.seenOpen) return next();
-      if (seen.setupPhase) return run.seenSetup ? run : { ...run, seenSetup: true };
-      return run.seenSetup ? next() : run;
-    case "workers": {
-      const baseline = run.workersAtStep ?? seen.workersHired;
-      if (acknowledged || seen.workersHired > baseline) return next();
-      return run.workersAtStep === undefined ? { ...run, workersAtStep: baseline } : run;
-    }
-    default:
-      return { ...run, done: true };
+const BUILD_STEPS: Partial<Record<TutorialStepId, TutorialBuildKind>> = {
+  tower: "tower",
+  wall: "wall",
+  energy: "energy",
+  depot: "depot",
+  armory: "armory",
+  repairDepot: "repairDepot"
+};
+
+/** Sunucunun bu olcumu adimi tamamliyor mu. Saf. */
+export function isTutorialStepCompletedBy(id: TutorialStepId, progress: TutorialProgressMessage): boolean {
+  const build = BUILD_STEPS[id];
+  if (build) {
+    return progress.action === "build" && (progress.definitionIds ?? []).some((definitionId) => classifyTutorialBuild(definitionId) === build);
   }
-}
-
-/** Adimin kutusu su an ekranda mi; degilse adim arka planda bekliyor. */
-export function isTutorialStepVisible(run: TutorialRun, seen: TutorialObservation) {
-  if (run.done || !seen.inMatch || seen.creative) return false;
-  switch (TUTORIAL_STEPS[run.step]) {
-    case "tower":
-      return seen.setupPhase && !seen.cardDraftOpen && !seen.shopOpen;
-    case "wave":
-      return seen.setupPhase && !seen.cardDraftOpen && !seen.shopOpen && seen.ownTowers > 0;
-    case "logistics":
-      return !seen.setupPhase;
+  switch (id) {
+    case "settings":
+      return progress.action === "settings";
+    case "hire":
+      return progress.action === "hire" || progress.action === "specialize";
+    case "assign":
+      return progress.action === "assign";
+    case "production":
+      return progress.action === "production";
+    case "repairer":
+      // Onarim uzmani alindi ya da bir tamirci merkeze atandi; altinla onarim da gosteriyor.
+      return progress.action === "repair"
+        || ((progress.action === "hire" || progress.action === "specialize" || progress.action === "assign") && progress.role === "repairer");
+    case "upgrade":
+      return progress.action === "upgrade";
+    case "workerTree":
+      return progress.action === "workerTree";
     case "card":
-      return seen.cardDraftOpen;
+      return progress.action === "card";
     case "shop":
-      return seen.shopOpen;
-    case "workers":
-      return !seen.cardDraftOpen && !seen.shopOpen;
+      return progress.action === "shop";
+    case "skill":
+      return progress.action === "skill";
+    case "ultimate":
+      return progress.action === "ultimate";
     default:
       return false;
   }
 }
 
-/**
- * Isci adiminin hedefi: Isci cekmecesi (baslatici) -> "Ise Al" bolumu -> alim
- * dugmesi. Isci alimi bir donem Envanter'deydi; secicilerin sahipleri
- * `game-control-ui.ts` (`data-launch`, `data-worker-tab`, alim dugmesi).
- */
-export const TUTORIAL_WORKER_TARGETS = {
-  launcher: '[data-launch="worker"]',
-  hireTab: '[data-worker-tab="hire"]',
-  hireButton: ".game-controls__worker-hire"
-} as const;
+/** Adimi ilerletir. Saf: ayni girdi ayni cikti. */
+export function advanceTutorial(run: TutorialRun, signal: TutorialSignal): TutorialRun {
+  if (run.done) return run;
+  const id = TUTORIAL_STEPS[run.step];
+  const next = (): TutorialRun => ({ step: run.step + 1, done: run.step + 1 >= TUTORIAL_STEPS.length });
+  if (!id) return { ...run, done: true };
+  switch (signal.kind) {
+    case "skip":
+      return next();
+    case "ack":
+      return TUTORIAL_ACK_STEPS.includes(id) ? next() : run;
+    case "progress":
+      return isTutorialStepCompletedBy(id, signal.progress) ? next() : run;
+    default:
+      return run;
+  }
+}
 
-export type TutorialWorkerStage = keyof typeof TUTORIAL_WORKER_TARGETS;
-
-/** Isci adiminin o anki asamasi: cekmece kapali, baska bolum acik, "Ise Al" acik. */
-export function getTutorialWorkerStage(seen: { drawerOpen: boolean; hireVisible: boolean }): TutorialWorkerStage {
-  if (!seen.drawerOpen) return "launcher";
-  return seen.hireVisible ? "hireButton" : "hireTab";
+/** Adima girerken sunucudan istenen hazirlik; her adim en az kaynak tabani ister. */
+export function getTutorialStepPrepare(id: TutorialStepId): TutorialPrepareId {
+  switch (id) {
+    case "card":
+      return "cards";
+    case "shop":
+      return "shop";
+    case "skill":
+      return "skill";
+    case "ultimate":
+      return "ultimate";
+    default:
+      return "resources";
+  }
 }
 
 /**
- * Kutunun metni; `open` hedef cekmece acik mi (iki asamali adimlar).
- * `section`: cekmecenin dogru bolumu de acik mi (isci adimi: "Ise Al").
+ * Adimin cercevelenecek hedefleri, derinden yuzeye: ekranda gorunen ilki
+ * seciliyor. Cekmece kapaliysa baslatici, acik ama baska bolumdeyse bolum
+ * dugmesi, dogru bolumdeyse asil dugme. Saticilar `game-control-ui.ts`te
+ * (`data-launch`, `data-worker-tab`, sinif adlari).
  */
-export function getTutorialCopy(id: TutorialStepId, open: boolean, section = true): { title: string; body: string; ack?: string } {
-  switch (id) {
-    case "tower":
-      return { title: t("tutorial.tower.title"), body: t(open ? "tutorial.tower.open" : "tutorial.tower.closed") };
-    case "wave":
-      return { title: t("tutorial.wave.title"), body: t("tutorial.wave.body") };
-    case "logistics":
-      return { title: t("tutorial.logistics.title"), body: t("tutorial.logistics.body"), ack: t("tutorial.ack") };
-    case "card":
-      return { title: t("tutorial.card.title"), body: t("tutorial.card.body") };
-    case "shop":
-      return { title: t("tutorial.shop.title"), body: t("tutorial.shop.body") };
-    case "workers":
-      return { title: t("tutorial.workers.title"), body: t(!open ? "tutorial.workers.closed" : section ? "tutorial.workers.open" : "tutorial.workers.tab"), ack: t("tutorial.ack") };
+export const TUTORIAL_TARGETS: Readonly<Record<TutorialStepId, readonly string[]>> = {
+  tower: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  wall: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  // Ayarlar kule panelinin "Ayarlar" bolumunde; kaydirilmadiysa panelin kendisi.
+  settings: [".ts-section--controls", ".tower-sheet"],
+  energy: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  workerTypes: ['[data-launch="worker"]'],
+  hire: [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]'],
+  assign: [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]'],
+  depot: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  armory: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  production: [".ts-section--controls", ".tower-sheet"],
+  repairDepot: [".game-controls__tower-grid", '[data-launch="towers"]'],
+  repairer: [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]'],
+  // Tecrube Detay panelinde; panel kapaliysa ust seritteki altin.
+  xpGold: [".game-hud__chip--xp", ".game-hud__vital--gold"],
+  upgrade: [".game-controls__action--upgrade", ".tower-sheet"],
+  workerTree: [".worker-development__viewport", '[data-worker-tab="tree"]', '[data-launch="worker"]'],
+  card: [],
+  shop: [".gold-shop:not(.inventory) .gold-shop__actions"],
+  skill: [".game-controls__skills", '[data-launch="skills"]'],
+  ultimate: [".game-controls__action--ultimate", '[data-launch="skills"]']
+};
+
+/** Ilk gorunen hedef; hicbiri yoksa yok. Saf (gorunurluk disaridan). */
+export function pickTutorialTarget<T>(selectors: readonly string[], find: (selector: string) => T | undefined): { selector: string; element: T } | undefined {
+  for (const selector of selectors) {
+    const element = find(selector);
+    if (element !== undefined) return { selector, element };
   }
+  return undefined;
+}
+
+export type TutorialCopy = { title: string; body: string; ack?: string; reopen?: string };
+
+/**
+ * Kutunun metni. `windowOpen`: kart ve magaza adiminda pencere ekranda mi;
+ * kapaliysa kutu onu yeniden acan bir dugme gosteriyor.
+ */
+export function getTutorialCopy(id: TutorialStepId, windowOpen = true): TutorialCopy {
+  const copy: TutorialCopy = { title: t(`tutorial.${id}.title`), body: t(`tutorial.${id}.body`) };
+  if (TUTORIAL_ACK_STEPS.includes(id)) copy.ack = t("tutorial.ack");
+  if ((id === "card" || id === "shop") && !windowOpen) copy.reopen = t(id === "card" ? "tutorial.card.reopen" : "tutorial.shop.reopen");
+  return copy;
 }
 
 /** Kart adiminda kutunun ortmemesi gereken satir: Yenile dugmesi (kart perdesi, GameScene). */
@@ -196,47 +251,44 @@ export function pickTutorialBoxTop(options: { viewportHeight: number; boxHeight:
   return best;
 }
 
-export function readTutorialProgress(): TutorialProgress {
+/**
+ * Hic oynamamis oyuncu: asama acmamis, rekoru, arsivde karti/esyasi ve nisani
+ * yok. Biri bile varsa oyuncu oyunu taniyor; teklif gosterilmiyor. Saf.
+ */
+export function isFreshPlayer(facts: { clearedStages: number; records: number; archiveEntries: number; badgesEarned: number }) {
+  return facts.clearedStages === 0 && facts.records === 0 && facts.archiveEntries === 0 && facts.badgesEarned === 0;
+}
+
+/** Menudeki tek seferlik teklif: hic oynamamis oyuncuya, kapatilana dek. */
+export function readTutorialOfferDismissed(): boolean {
   try {
-    const raw = window.localStorage.getItem(TUTORIAL_STORAGE_KEY);
-    if (!raw) return { step: 0, done: false };
-    const parsed = JSON.parse(raw) as Partial<TutorialProgress>;
-    const step = Number.isInteger(parsed.step) ? Math.max(0, Math.min(TUTORIAL_STEPS.length, parsed.step as number)) : 0;
-    return { step, done: parsed.done === true || step >= TUTORIAL_STEPS.length };
+    return window.localStorage.getItem(TUTORIAL_OFFER_STORAGE_KEY) === "1";
   } catch {
-    return { step: 0, done: false };
+    return false;
   }
 }
 
-function writeTutorialProgress(progress: TutorialProgress) {
+export function dismissTutorialOffer() {
   try {
-    window.localStorage.setItem(TUTORIAL_STORAGE_KEY, JSON.stringify(progress));
+    window.localStorage.setItem(TUTORIAL_OFFER_STORAGE_KEY, "1");
   } catch {
-    // Depolama kapali (itch iframe'i, gizli pencere): brifing bu oturumda kalir.
+    // Depolama kapali (itch iframe'i, gizli pencere): teklif bu oturumda kalir.
   }
 }
 
-/** Ana menudeki "Eğitim": brifing bir sonraki macta bastan. */
-export function resetTutorialProgress() {
-  writeTutorialProgress({ step: 0, done: false });
-  window.dispatchEvent(new CustomEvent("karayel:tutorial-reset"));
-}
+/** Sahneye giden istek (`game:tutorial-command`). */
+export type TutorialCommand =
+  | { type: "prepare"; step: TutorialPrepareId }
+  | { type: "continue" }
+  | { type: "complete" };
 
 type ControlsStateLike = {
   visible?: boolean;
-  creative?: unknown;
+  tutorial?: unknown;
   goldShop?: unknown;
-  workerHire?: { hired?: number };
-};
-
-type SnapshotLike = {
-  setupPhase?: boolean;
-  towers?: ReadonlyArray<{ ownerId?: string }>;
 };
 
 const TICK_MS = 250;
-/** Bilgi adimi dalga baslar baslamaz degil, ilk temastan sonra. */
-const LOGISTICS_DELAY_MS = 2500;
 const DONE_BANNER_MS = 4200;
 
 export function setupTutorial(game: Phaser.Game) {
@@ -249,7 +301,7 @@ export function setupTutorial(game: Phaser.Game) {
     <section class="tutorial__box" role="dialog" aria-live="polite" hidden>
       <header class="tutorial__head">
         <span class="tutorial__tag"></span><span class="tutorial__count"></span>
-        <button type="button" class="tutorial__skip">ATLA</button>
+        <button type="button" class="tutorial__skip"></button>
       </header>
       <strong class="tutorial__title"></strong>
       <p class="tutorial__body"></p>
@@ -269,115 +321,53 @@ export function setupTutorial(game: Phaser.Game) {
   const ack = root.querySelector<HTMLButtonElement>(".tutorial__ack")!;
   const actions = root.querySelector<HTMLElement>(".tutorial__actions")!;
 
-  let progress = readTutorialProgress();
-  let run = createTutorialRun(progress);
+  let run = createTutorialRun();
   let controls: ControlsStateLike = { visible: false };
-  let snapshot: SnapshotLike | undefined;
-  let localId: string | undefined;
-  let acknowledged = false;
-  let stepShownAt = 0;
+  let wasInMatch = false;
+  let enteredStep = -1;
   let doneBannerUntil = 0;
   let renderedKey = "";
-  let wasInMatch = false;
+  let ackMode: "ack" | "reopen" | undefined;
+
+  const command = (detail: TutorialCommand) => game.events.emit("game:tutorial-command", detail);
+  const inTutorialMatch = () => Boolean(controls.visible) && controls.tutorial === true;
+
+  const apply = (signal: TutorialSignal) => {
+    if (!inTutorialMatch() || run.done) return;
+    const before = run;
+    run = advanceTutorial(run, signal);
+    if (run === before || run.step === before.step) return;
+    // Ilk kule: kurulum bitiyor, dusmanlar yavasca gelmeye basliyor.
+    if (TUTORIAL_STEPS[before.step] === TUTORIAL_COMBAT_STEP) command({ type: "continue" });
+    if (run.done) {
+      doneBannerUntil = performance.now() + DONE_BANNER_MS;
+      command({ type: "complete" });
+    }
+    tick();
+  };
 
   game.events.on("game:controls-state", (state: ControlsStateLike) => {
     controls = state ?? { visible: false };
-    // Mac bitti: onceki macin kuleleri yeni macta "kule kuruldu" sayilmasin.
-    if (!controls.visible) snapshot = undefined;
   });
-  game.events.on("game:snapshot", (next: SnapshotLike, sessionId?: string) => {
-    snapshot = next;
-    localId = sessionId;
-  });
-  window.addEventListener("karayel:tutorial-reset", () => {
-    progress = readTutorialProgress();
-    run = createTutorialRun(progress);
+  game.events.on("game:tutorial-progress", (progress: TutorialProgressMessage) => {
+    if (progress && typeof progress.action === "string") apply({ kind: "progress", progress });
   });
 
-  skip.addEventListener("click", () => {
-    run = { ...run, done: true };
-    save();
-    hide();
-  });
+  skip.addEventListener("click", () => apply({ kind: "skip" }));
   ack.addEventListener("click", () => {
-    acknowledged = true;
-    tick();
+    if (ackMode === "reopen") {
+      const id = TUTORIAL_STEPS[run.step];
+      if (id) command({ type: "prepare", step: getTutorialStepPrepare(id) });
+      return;
+    }
+    apply({ kind: "ack" });
   });
-
-  const save = () => {
-    progress = { step: Math.min(run.step, TUTORIAL_STEPS.length), done: run.done };
-    writeTutorialProgress(progress);
-  };
-
-  const observe = (): TutorialObservation => {
-    const towers = Array.isArray(snapshot?.towers) ? snapshot!.towers : [];
-    return {
-      inMatch: Boolean(controls.visible) && snapshot !== undefined,
-      creative: Boolean(controls.creative),
-      setupPhase: Boolean(snapshot?.setupPhase),
-      ownTowers: localId ? towers.filter((tower) => tower?.ownerId === localId).length : 0,
-      cardDraftOpen: Boolean(document.querySelector("#card-root.card-draft--visible")),
-      shopOpen: Boolean(controls.goldShop),
-      workersHired: Number(controls.workerHire?.hired) || 0
-    };
-  };
 
   const hide = () => {
     root.hidden = true;
     box.hidden = true;
     frame.hidden = true;
     renderedKey = "";
-  };
-
-  /**
-   * Adima gore cercevelenecek oge ve kutunun yeri.
-   *
-   * - Cekmece aciksa kutu cekmecenin tamamina yaslaniyor: icindeki dugmeye
-   *   yaslaninca cekmecenin basligini ve kapatma dugmesini ortuyordu.
-   * - HUD'daki hedefte (Devam, kaynak seridi) kutu HUD'un ve ongoru satirinin
-   *   altinda; hedefin hemen altinda seridi ortuyordu.
-   * - Kart perdesi ekrani kapliyor, ust kismi karne ve ilk kart: kutu alt
-   *   kenarda, cerceve yok. Magazada alt kenarda Mağazayı Kapat duruyor; kutu
-   *   o satiri cerceveleyip ustune geciyor.
-   * - Kart perdesinin altinda Yenile dugmesi var: kutu alt kenarda onu
-   *   ortuyorsa (375 px'te ortuyor) ust kenara kaciyor (`avoid`).
-   */
-  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; open: boolean; section?: boolean; avoid?: Element | null } => {
-    const launchOpen = (drawer: string) => document.querySelector<HTMLElement>(`[data-launch="${drawer}"].game-controls__launch--open`) !== null;
-    const drawer = () => document.querySelector<HTMLElement>(".game-controls__drawer") ?? undefined;
-    switch (id) {
-      case "tower": {
-        const open = launchOpen("towers");
-        return { open, element: open ? drawer() ?? null : document.querySelector<HTMLElement>('[data-launch="towers"]') };
-      }
-      case "wave":
-        return { open: false, element: document.querySelector<HTMLElement>(".game-hud__continue:not([hidden])"), anchor: "hud" };
-      case "logistics":
-        return { open: false, element: document.querySelector<HTMLElement>(".game-hud__strip"), anchor: "hud" };
-      case "card":
-        // Cerceve yok, kutu alt kenarda; Yenile satirini ortmuyor.
-        return { open: false, element: null, anchor: "bottom", avoid: document.querySelector(TUTORIAL_CARD_AVOID_SELECTOR) };
-      case "shop":
-        // Yenile / Mağazayı Kapat satiri; kutu onun ustunde, son teklifin uzerinde.
-        return { open: false, element: document.querySelector<HTMLElement>(".gold-shop:not(.inventory) .gold-shop__actions") };
-      case "workers": {
-        // Isci cekmecesi -> "Ise Al" bolumu -> alim dugmesi. Hedef haritada
-        // beklenirken (cekmece seride inmis) cerceve yok, kutu seridin ustunde.
-        const open = launchOpen("worker");
-        const stage = getTutorialWorkerStage({
-          drawerOpen: open,
-          hireVisible: document.querySelector(TUTORIAL_WORKER_TARGETS.hireButton) !== null
-        });
-        return {
-          open,
-          section: stage === "hireButton",
-          element: document.querySelector<HTMLElement>(TUTORIAL_WORKER_TARGETS[stage]),
-          anchor: open ? drawer() : undefined
-        };
-      }
-      default:
-        return { open: false, element: null, anchor: "bottom" };
-    }
   };
 
   const measure = (element: Element | null | undefined) => {
@@ -392,6 +382,52 @@ export function setupTutorial(game: Phaser.Game) {
       bottom = Math.max(bottom, measure(element)?.bottom ?? 0);
     }
     return bottom || 64;
+  };
+
+  /**
+   * Oge gercekten gorunuyor mu: ekranla ve kaydirilan her atasiyla kesisiyor.
+   * Kule panelinin ayar satirlari kaydirilan govdenin altinda kalabiliyor;
+   * orada olculebilir ama gorunmuyorlar, cerceve bos bir yere cizilirdi.
+   */
+  const isOnScreen = (element: HTMLElement) => {
+    const rect = measure(element);
+    if (!rect) return false;
+    // Kapali <details> icindeki oge olculebiliyor ama ekranda yok (HUD'in Detay paneli).
+    if (element.closest("details:not([open])") && !element.closest("summary")) return false;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    if (rect.bottom <= 0 || rect.top >= viewportHeight) return false;
+    for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+      const overflow = getComputedStyle(parent).overflowY;
+      if (overflow === "visible") continue;
+      const clip = parent.getBoundingClientRect();
+      if (rect.bottom <= clip.top || rect.top >= clip.bottom) return false;
+    }
+    return true;
+  };
+
+  const cardDraftOpen = () => Boolean(document.querySelector("#card-root.card-draft--visible"));
+
+  /**
+   * Adima gore cercevelenecek oge ve kutunun yeri.
+   *
+   * - Cekmece aciksa kutu cekmecenin tamamina yaslaniyor: icindeki dugmeye
+   *   yaslaninca cekmecenin basligini ve kapatma dugmesini ortuyordu.
+   * - HUD'daki hedefte kutu HUD'un ve ongoru satirinin altinda.
+   * - Kart perdesi ekrani kapliyor: kutu alt kenarda, cerceve yok; Yenile
+   *   satirini ortuyorsa ust kenara kaciyor (`avoid`).
+   */
+  const findTarget = (id: TutorialStepId): { element: HTMLElement | null; anchor?: HTMLElement | "hud" | "bottom"; avoid?: Element | null } => {
+    if (id === "card") {
+      // Cerceve yok, kutu alt kenarda; Yenile satirini ortmuyor.
+      return { element: null, anchor: "bottom", avoid: document.querySelector(TUTORIAL_CARD_AVOID_SELECTOR) };
+    }
+    const picked = pickTutorialTarget(TUTORIAL_TARGETS[id], (selector) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      return element && isOnScreen(element) ? element : undefined;
+    });
+    const drawer = document.querySelector<HTMLElement>(".game-controls__drawer") ?? undefined;
+    if (id === "xpGold") return { element: picked?.element ?? null, anchor: "hud" };
+    return { element: picked?.element ?? null, anchor: drawer && measure(drawer) ? drawer : undefined };
   };
 
   const place = (target: HTMLElement | null, anchor: HTMLElement | "hud" | "bottom" | undefined, avoid?: Element | null) => {
@@ -425,52 +461,7 @@ export function setupTutorial(game: Phaser.Game) {
     box.style.transform = `translateY(${Math.round(top)}px)`;
   };
 
-  const tick = () => {
-    const seen = observe();
-    const now = performance.now();
-
-    // Yeni mac: adim ici bayraklar sifirdan, ilerleme kayittan.
-    if (seen.inMatch && !wasInMatch) {
-      run = createTutorialRun(progress);
-      acknowledged = false;
-    }
-    wasInMatch = seen.inMatch;
-
-    const before = run.step;
-    const wasDone = run.done;
-    run = advanceTutorial(run, seen, acknowledged);
-    acknowledged = false;
-    if (run.step !== before || run.done !== wasDone) {
-      save();
-      stepShownAt = 0;
-      if (run.done && !wasDone) doneBannerUntil = now + DONE_BANNER_MS;
-    }
-
-    if (run.done) {
-      if (now < doneBannerUntil && seen.inMatch) {
-        render("done", { title: t("tutorial.done.title"), body: t("tutorial.done.body") }, undefined, null, "hud");
-      } else {
-        hide();
-      }
-      return;
-    }
-
-    if (!isTutorialStepVisible(run, seen)) {
-      stepShownAt = 0;
-      hide();
-      return;
-    }
-    if (stepShownAt === 0) stepShownAt = now;
-    const id = TUTORIAL_STEPS[run.step];
-    if (id === "logistics" && now - stepShownAt < LOGISTICS_DELAY_MS) {
-      hide();
-      return;
-    }
-    const target = findTarget(id);
-    render(`${id}:${target.open}:${target.section !== false}`, getTutorialCopy(id, target.open, target.section), run.step + 1, target.element, target.anchor, target.avoid);
-  };
-
-  const render = (key: string, copy: { title: string; body: string; ack?: string }, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom", avoid?: Element | null) => {
+  const render = (key: string, copy: TutorialCopy, stepNumber: number | undefined, target: HTMLElement | null, anchor?: HTMLElement | "hud" | "bottom", avoid?: Element | null) => {
     if (renderedKey !== key) {
       renderedKey = key;
       tag.textContent = t("tutorial.tag");
@@ -478,8 +469,9 @@ export function setupTutorial(game: Phaser.Game) {
       skip.textContent = t("tutorial.skip");
       title.textContent = copy.title;
       body.textContent = copy.body;
-      actions.hidden = !copy.ack;
-      ack.textContent = copy.ack ?? "";
+      ackMode = copy.ack ? "ack" : copy.reopen ? "reopen" : undefined;
+      actions.hidden = !ackMode;
+      ack.textContent = copy.ack ?? copy.reopen ?? "";
       skip.hidden = stepNumber === undefined;
       root.hidden = false;
       box.hidden = false;
@@ -491,6 +483,50 @@ export function setupTutorial(game: Phaser.Game) {
     place(target, anchor, avoid);
   };
 
+  const tick = () => {
+    const inMatch = inTutorialMatch();
+    const now = performance.now();
+
+    // Yeni ogretici maci: adim motoru bastan.
+    if (inMatch && !wasInMatch) {
+      run = createTutorialRun();
+      enteredStep = -1;
+      doneBannerUntil = 0;
+    }
+    wasInMatch = inMatch;
+    if (!inMatch) {
+      hide();
+      return;
+    }
+
+    if (run.done) {
+      if (now < doneBannerUntil) {
+        render("done", { title: t("tutorial.done.title"), body: t("tutorial.done.body") }, undefined, null, "hud");
+      } else {
+        hide();
+      }
+      return;
+    }
+
+    const id = TUTORIAL_STEPS[run.step];
+    // Adima giris: sunucudan hazirlik (kaynak tabani, kart eli, magaza, sarj).
+    if (enteredStep !== run.step) {
+      enteredStep = run.step;
+      command({ type: "prepare", step: getTutorialStepPrepare(id) });
+    }
+
+    // Kart ve magaza perdesi yalnizca kendi adiminda kutuyu gosteriyor.
+    const cardOpen = cardDraftOpen();
+    const shopOpen = Boolean(controls.goldShop);
+    if ((cardOpen && id !== "card") || (shopOpen && id !== "shop")) {
+      hide();
+      return;
+    }
+    const windowOpen = id === "card" ? cardOpen : id === "shop" ? shopOpen : true;
+    const target = findTarget(id);
+    render(`${id}:${windowOpen}`, getTutorialCopy(id, windowOpen), run.step + 1, target.element, target.anchor, target.avoid);
+  };
+
   window.setInterval(tick, TICK_MS);
   onLocaleChange(() => {
     renderedKey = "";
@@ -498,5 +534,9 @@ export function setupTutorial(game: Phaser.Game) {
   });
   // Dokunus cekmece acip kapatiyor: kutu bir sonraki tiki beklemeden
   // yeni hedefe gecsin, eski metin yeni cekmecenin ustunde kalmasin.
-  document.addEventListener("pointerup", () => window.setTimeout(tick, 30), { passive: true });
+  // Cekmece bir kare sonra yeniden kuruluyor; ikinci bakis cerceveyi yeni yerine oturtuyor.
+  document.addEventListener("pointerup", () => {
+    window.setTimeout(tick, 30);
+    window.setTimeout(tick, 160);
+  }, { passive: true });
 }

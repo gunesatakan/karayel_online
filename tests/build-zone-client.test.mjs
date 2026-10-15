@@ -170,7 +170,7 @@ test("brifing kutusu kart perdesinde Yenile dugmesini ortmuyor", () => {
 
   // Kaynak: kart adimi Yenile satirindan kaciniyor; kutu yerlesimi onu okuyor.
   const source = readSource("apps/web/src/tutorial.ts");
-  assert.match(source, /case "card":\n\s*\/\/[^\n]*\n\s*return \{ open: false, element: null, anchor: "bottom", avoid: document\.querySelector\(TUTORIAL_CARD_AVOID_SELECTOR\) \};/);
+  assert.match(source, /if \(id === "card"\) \{\n\s*\/\/[^\n]*\n\s*return \{ element: null, anchor: "bottom", avoid: document\.querySelector\(TUTORIAL_CARD_AVOID_SELECTOR\) \};/);
   assert.match(source, /top = pickTutorialBoxTop\(\{ viewportHeight: viewport\.height, boxHeight, preferred: top, avoid: \[avoidRect\] \}\)/);
   assert.match(source, /place\(target, anchor, avoid\)/);
   // Yenile satiri gercekten bu sinifta (kart perdesi).

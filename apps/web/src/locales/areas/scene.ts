@@ -164,6 +164,9 @@ export const trScene = {
   // ------------------------------------------------------------ Kosu raporu notlari
   "scene.report.stageUnlocked": "{stage}. aşama açıldı",
   "scene.report.creativeNoProgress": "Yaratıcı mod: ilerleme kaydedilmez",
+  "scene.report.tutorialNoProgress": "Eğitim bölümü: ilerleme kaydedilmez",
+  "scene.report.tutorialEyebrow": "EĞİTİM BÖLÜMÜ",
+  "scene.report.tutorialHero": "Eğitim tamamlandı",
   "scene.report.joinedLate": "Bu koşuya bitince katıldın: ilerleme kaydedilmez",
   "scene.report.stageLocked": "Bu aşama sende henüz açık değil: ilerleme kaydedilmez",
   "scene.report.notSaved": "Kayıt bu tarayıcıda saklanamadı",
@@ -379,6 +382,9 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
 
   "scene.report.stageUnlocked": "Stage {stage} unlocked",
   "scene.report.creativeNoProgress": "Creative mode: progress is not saved",
+  "scene.report.tutorialNoProgress": "Tutorial: progress is not saved",
+  "scene.report.tutorialEyebrow": "TRAINING STAGE",
+  "scene.report.tutorialHero": "Training complete",
   "scene.report.joinedLate": "You joined this run after it ended: progress is not saved",
   "scene.report.stageLocked": "You haven't unlocked this stage yet: progress is not saved",
   "scene.report.notSaved": "The record could not be stored in this browser",

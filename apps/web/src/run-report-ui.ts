@@ -269,7 +269,7 @@ export function renderRunReport(options: RunReportRenderOptions) {
           ${finale}
           ${renderHero(view)}
         </header>
-        ${renderStrip(view)}
+        ${view.strip.length > 0 ? renderStrip(view) : ""}
         <p class="run-report__totals">${escapeHtml(view.totals)}</p>
         ${renderFacts(view)}
         ${renderPlayers(view)}

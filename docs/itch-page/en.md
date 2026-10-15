@@ -29,7 +29,7 @@ The game is in closed testing, and your feedback helps a lot.
 - **Workers:** the **Worker** drawer. Assign jobs in **Manage**, hire in **Hire**, upgrade in **Tree**.
 - Works with a mouse too: click and drag.
 
-A short briefing walks you through your first match. Replay it any time with **Tutorial** on the main menu.
+**Tutorial** on the main menu opens a dedicated training stage that shows every mechanic step by step: the nexus cannot fall and enemies come slowly. First-time players are offered it once on the main menu.
 
 ## Privacy
 

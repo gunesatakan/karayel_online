@@ -439,6 +439,7 @@ export type RunSnapshotLike = {
   setupPhase?: boolean;
   stage?: number;
   creative?: boolean;
+  tutorial?: boolean;
   team: { wave: number; health: number; maxHealth: number };
   players: ReadonlyArray<{
     id: string;
@@ -652,7 +653,8 @@ export class RunTelemetry {
     this.hp = snapshot.team.health;
     this.maxHp = snapshot.team.maxHealth;
     if (typeof snapshot.stage === "number") this.stage = snapshot.stage;
-    if (snapshot.creative) this.mode = "creative";
+    // Ogretici kosusu yaratici gibi sayiliyor: kazanma oranlarina girmiyor.
+    if (snapshot.creative || snapshot.tutorial) this.mode = "creative";
     this.players = Math.max(1, snapshot.players.length);
     const local = localSessionId ? snapshot.players.find((player) => player.id === localSessionId) : undefined;
     if (local) {
@@ -801,7 +803,7 @@ export class RunTelemetry {
     const saved = this.readSavedRun(attachment.roomId);
     this.rid = saved?.rid ?? this.generateId();
     this.startedAt = saved?.startedAt ?? this.now();
-    this.mode = attachment.creative || snapshot.creative ? "creative" : attachment.online || snapshot.players.length > 1 ? "coop" : "solo";
+    this.mode = attachment.creative || snapshot.creative || snapshot.tutorial ? "creative" : attachment.online || snapshot.players.length > 1 ? "coop" : "solo";
     this.stage = snapshot.stage;
     this.players = Math.max(1, snapshot.players.length);
     this.wave = snapshot.team.wave;

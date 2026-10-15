@@ -32,7 +32,7 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
 
 ## 4. Bir maç (Türkçe, sonra İngilizce)
 
-- [ ] **Savaşa Gir:** maç açılıyor, brifing 1/6 görünüyor.
+- [ ] **Savaşa Gir:** maç açılıyor; normal maçta eğitim kutusu yok.
 - [ ] **Kule kurma:**
   - Kuleler'i aç ve bir kuleyi parmakla haritaya sürükle.
   - Kule doğru kareye konuyor; kötü bir kareye bırakınca uyarı çıkıyor.
@@ -52,7 +52,7 @@ Her maddenin sonuna ✅ / ❌ ve kısa bir not yaz. ❌ için cihaz modelini, ta
   - İşçi › Yönetim: işçiye dokununca çekmece tek satıra iniyor, harita görünüyor; kaynağa ya da binaya dokununca atanıyor, İptal geri dönüyor.
   - Dalga sürerken satırlara dokunuş kaçmıyor; yük ve kalan sayıları akıyor.
   - İşçi › Ağaç parmakla kaydırılabiliyor.
-- [ ] **Brifing:** altı adımın hepsi sırayla geliyor; ATLA çalışıyor.
+- [ ] **Eğitim (ana menü › Eğitim):** ZentaX ile ayrı bölüm açılıyor; 19 adım sırayla geliyor, her adım yapılınca geçiyor; GEÇ ve ANLADIM çalışıyor; nexus ölmüyor; son adımdan sonra kısa zafer ve yalnızca "Ana Menü" düğmeli rapor. İlk kez açan cihazda ana menüde "Öğreticiyi oyna / Şimdi değil" kartı bir kez çıkıyor.
 - [ ] **Maç sonu:** birkaç dalga sonra kaybet ya da kazan; maç raporu tam görünüyor. Ana menü, Tekrar ve Sonraki aşama düğmeleri çalışıyor.
 - [ ] **İngilizce maç:** aynı akışı EN ile tekrarla; kesilen ya da taşan yazı var mı?
 
@@ -70,7 +70,7 @@ Gizli bağlantıyla aç.
 - [ ] "Run game" düğmesi oyunu başlatıyor.
 - [ ] Oyun iframe'e sığıyor; kenarda kesik yok.
 - [ ] Mobilde itch'in tam ekranı çalışıyor.
-- [ ] İlerleme (aşama, nişan, dil, brifing) yenilemeden sonra duruyor.
+- [ ] İlerleme (aşama, nişan, dil, eğitim teklifi) yenilemeden sonra duruyor.
   - Safari'de ilerleme itch'e ayrı tutulabilir; Vercel sürümüyle paylaşılmaması normal.
 - [ ] **Gizli sekme (Safari gizli gezinme ya da Chrome gizli):** oyun açılıyor ve oynanıyor; ilerlemenin kaydedilmemesi normal.
 

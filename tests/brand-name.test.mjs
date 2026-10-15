@@ -81,7 +81,7 @@ test("oyuncuya gorunen dosyalarda eski adlar kalmadi; ic kimlikler yerinde", () 
     for (const old of OLD_NAMES) assert.doesNotMatch(text, old, path);
   }
   assert.ok(read("apps/web/src/i18n.ts").includes('LOCALE_STORAGE_KEY = "uzay_locale"'));
-  assert.ok(read("apps/web/src/tutorial.ts").includes('"uzay_tutorial_v1"'));
+  assert.ok(read("apps/web/src/tutorial.ts").includes('"uzay_tutorial_offer_v1"'));
   assert.ok(read("apps/web/src/telemetry.ts").includes('"karayel_install_id"'));
   assert.match(read("apps/server/fly.toml"), /^app = "karayel-online"/m);
 });

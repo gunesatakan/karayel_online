@@ -1,11 +1,12 @@
 /**
- * Ilk mac brifingi (apps/web/src/tutorial.ts): alti adim, oyuncunun
- * yaptigiyla ilerleyen saf durum makinesi.
+ * Ogretici asamasi (apps/web/src/tutorial.ts): oyuncunun yaptigiyla ilerleyen
+ * saf adim motoru.
  *
- * kule -> dalga -> lojistik -> kart -> magaza -> isci. Kart ve magaza
- * adimi pencere acilip kapaninca, dalga adimi kurulum bitince, lojistik ve
- * isci adimi ANLAŞILDI ile (isci alimi da sayilir) geciyor. Yaratici modda
- * ve mac disinda hicbir sey olmuyor.
+ * Her eylem adimi sunucunun olctugu kendi eylemiyle (`tutorial:progress`),
+ * bilgi adimlari ANLADIM ile, her adim GEÇ ile geciyor. Baska bir adimin
+ * eylemi adimi gecirmiyor. Son adimdan sonra motor bitiyor (sahne zaferi
+ * sunucudan istiyor). Menudeki Eğitim ve ilk kez gelen oyuncunun teklif
+ * karti ayri ogretici macini baslatiyor.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -13,114 +14,190 @@ import { readFileSync } from "node:fs";
 import { importWebModule } from "./helpers/web-module.mjs";
 
 const tutorial = await importWebModule("apps/web/src/tutorial.ts");
-const { TUTORIAL_STEPS, advanceTutorial, createTutorialRun, isTutorialStepVisible, getTutorialCopy } = tutorial;
+const {
+  TUTORIAL_STEPS,
+  TUTORIAL_ACK_STEPS,
+  TUTORIAL_TARGETS,
+  advanceTutorial,
+  classifyTutorialBuild,
+  createTutorialRun,
+  getTutorialCopy,
+  getTutorialStepPrepare,
+  isFreshPlayer,
+  isTutorialStepCompletedBy
+} = tutorial;
 const readSource = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
-const base = { inMatch: true, creative: false, setupPhase: true, ownTowers: 0, cardDraftOpen: false, shopOpen: false, workersHired: 0 };
-const fresh = () => createTutorialRun({ step: 0, done: false });
+const progress = (action, extra = {}) => ({ kind: "progress", progress: { action, ...extra } });
+const build = (...definitionIds) => progress("build", { definitionIds });
 const stepOf = (run) => TUTORIAL_STEPS[run.step];
+const at = (id) => ({ step: TUTORIAL_STEPS.indexOf(id), done: false });
 
-/** Gozlem dizisini sirayla uygular; `ack` olan adimda ANLAŞILDI basilmis. */
-function play(run, frames) {
-  for (const frame of frames) run = advanceTutorial(run, { ...base, ...frame }, Boolean(frame.ack));
-  return run;
-}
+/** Her adimi tamamlayan sinyal (ZentaX'in yapilariyla). */
+const COMPLETE = {
+  tower: build("zeynep-1"),
+  wall: build("wall-1"),
+  settings: progress("settings"),
+  energy: build("zeynep-10"),
+  workerTypes: { kind: "ack" },
+  hire: progress("hire"),
+  assign: progress("assign", { role: "crystalCollector" }),
+  depot: build("warehouse-1"),
+  armory: build("zeynep-9"),
+  production: progress("production"),
+  repairDepot: build("repair-depot-1"),
+  repairer: progress("specialize", { role: "repairer" }),
+  xpGold: { kind: "ack" },
+  upgrade: progress("upgrade"),
+  workerTree: progress("workerTree"),
+  card: progress("card"),
+  shop: progress("shop"),
+  skill: progress("skill"),
+  ultimate: progress("ultimate")
+};
 
-test("ilk mac bastan sona: alti adim oyuncunun eylemleriyle geciyor", () => {
-  let run = fresh();
-  assert.equal(stepOf(run), "tower");
-  assert.equal(isTutorialStepVisible(run, base), true);
-
-  run = play(run, [{ ownTowers: 1 }]);
-  assert.equal(stepOf(run), "wave");
-  assert.equal(isTutorialStepVisible(run, { ...base, ownTowers: 1 }), true);
-
-  run = play(run, [{ ownTowers: 1 }, { ownTowers: 1, setupPhase: false }]);
-  assert.equal(stepOf(run), "logistics", "Devam'a basildi, dalga basladi");
-  assert.equal(isTutorialStepVisible(run, { ...base, setupPhase: false }), true);
-
-  run = play(run, [{ setupPhase: false }, { setupPhase: false, ack: true }]);
-  assert.equal(stepOf(run), "card");
-  assert.equal(isTutorialStepVisible(run, { ...base, setupPhase: false }), false, "kart penceresini bekliyor");
-
-  run = play(run, [{ setupPhase: false }, { cardDraftOpen: true }, { cardDraftOpen: true }]);
-  assert.equal(stepOf(run), "card", "pencere acik, secim bekleniyor");
-  run = play(run, [{}]);
-  assert.equal(stepOf(run), "shop", "kart secildi");
-
-  run = play(run, [{ shopOpen: true }, { shopOpen: true }]);
-  assert.equal(stepOf(run), "shop");
-  run = play(run, [{}]);
-  assert.equal(stepOf(run), "workers", "magaza kapandi");
-
-  run = play(run, [{}, { workersHired: 1 }]);
-  assert.equal(run.done, true, "isci alindi");
+test("bastan sona: her adim kendi eylemiyle geciyor, motor bitiyor", () => {
+  assert.deepEqual(Object.keys(COMPLETE), [...TUTORIAL_STEPS], "her adimin bir tamamlayicisi olmali");
+  let run = createTutorialRun();
+  for (const id of TUTORIAL_STEPS) {
+    assert.equal(stepOf(run), id);
+    assert.equal(run.done, false);
+    run = advanceTutorial(run, COMPLETE[id]);
+  }
+  assert.equal(run.done, true);
+  assert.deepEqual(advanceTutorial(run, { kind: "skip" }), run, "bitmis motor ilerlemiyor");
+  assert.deepEqual(advanceTutorial(run, progress("ultimate")), run);
 });
 
-test("lojistik okunmadan kart penceresi acilirsa adim ona yer birakiyor", () => {
-  let run = createTutorialRun({ step: TUTORIAL_STEPS.indexOf("logistics"), done: false });
-  run = play(run, [{ setupPhase: false }, { cardDraftOpen: true }]);
-  assert.equal(stepOf(run), "card");
-  run = play(run, [{ cardDraftOpen: true }, {}]);
-  assert.equal(stepOf(run), "shop");
+test("baska adimin eylemi adimi gecirmiyor", () => {
+  for (const id of TUTORIAL_STEPS) {
+    const run = at(id);
+    for (const other of TUTORIAL_STEPS) {
+      if (other === id) continue;
+      const signal = COMPLETE[other];
+      // Ayni sinyal iki adimi tamamlayabilir (ack adimlari ve ayni eylem): onlari atla.
+      if (signal.kind === "ack" && TUTORIAL_ACK_STEPS.includes(id)) continue;
+      if (signal.kind === "progress" && isTutorialStepCompletedBy(id, signal.progress)) continue;
+      assert.deepEqual(advanceTutorial(run, signal), run, `${id} adimi ${other} eylemiyle gecti`);
+    }
+  }
+  // Ozellikle: kule adiminda duvar ve kaynak binasi sayilmiyor.
+  assert.equal(stepOf(advanceTutorial(at("tower"), build("wall-1"))), "tower");
+  assert.equal(stepOf(advanceTutorial(at("tower"), build("zeynep-10"))), "tower");
+  assert.equal(stepOf(advanceTutorial(at("tower"), build("wall-1", "zeynep-2"))), "wall", "duvar ile birlikte kule");
 });
 
-test("kart cikmayan dalga: magaza acilirsa ya da kurulum biterse kart adimi geciliyor", () => {
-  const card = createTutorialRun({ step: TUTORIAL_STEPS.indexOf("card"), done: false });
-  assert.equal(stepOf(play(card, [{ shopOpen: true }])), "shop");
-  assert.equal(stepOf(play(card, [{ setupPhase: false }])), "card", "dalga suruyor; kurulum gelmedi");
-  assert.equal(stepOf(play(card, [{}, { setupPhase: false }])), "shop", "kurulum geldi gitti, kart yok");
+test("GEÇ her adimi geciyor; ANLADIM yalnizca bilgi adiminda", () => {
+  for (const id of TUTORIAL_STEPS) {
+    const run = at(id);
+    assert.equal(advanceTutorial(run, { kind: "skip" }).step, run.step + 1, `${id} GEÇ ile gecmedi`);
+    const acked = advanceTutorial(run, { kind: "ack" });
+    assert.equal(acked.step, TUTORIAL_ACK_STEPS.includes(id) ? run.step + 1 : run.step, id);
+  }
+  assert.deepEqual([...TUTORIAL_ACK_STEPS], ["workerTypes", "xpGold"]);
+  const last = advanceTutorial(at("ultimate"), { kind: "skip" });
+  assert.equal(last.done, true, "son adimi gecmek motoru bitiriyor");
 });
 
-test("isci adimi: ANLAŞILDI ya da adim icinde yeni isci; onceden alinmis isci saymiyor", () => {
-  const workers = createTutorialRun({ step: TUTORIAL_STEPS.indexOf("workers"), done: false });
-  assert.equal(play(workers, [{ workersHired: 2 }, { workersHired: 2 }]).done, false);
-  assert.equal(play(workers, [{ workersHired: 2 }, { workersHired: 3 }]).done, true);
-  assert.equal(play(workers, [{ workersHired: 2, ack: true }]).done, true);
+test("yapi turu: kule, duvar, enerji, cephanelik, depo, tamir merkezi", () => {
+  assert.equal(classifyTutorialBuild("zeynep-1"), "tower");
+  assert.equal(classifyTutorialBuild("zeynep-8"), "tower");
+  assert.equal(classifyTutorialBuild("wall-1"), "wall");
+  assert.equal(classifyTutorialBuild("zeynep-10"), "energy");
+  assert.equal(classifyTutorialBuild("zeynep-9"), "armory");
+  assert.equal(classifyTutorialBuild("warrior-8"), "energy");
+  assert.equal(classifyTutorialBuild("warrior-7"), "armory");
+  assert.equal(classifyTutorialBuild("warehouse-1"), "depot");
+  assert.equal(classifyTutorialBuild("repair-depot-1"), "repairDepot");
 });
 
-test("yarim kalan brifing: kart ve sonrasi kaldigi yerden, dalga adimi kuleden yeniden", () => {
-  assert.equal(stepOf(createTutorialRun({ step: TUTORIAL_STEPS.indexOf("wave"), done: false })), "tower");
-  assert.equal(stepOf(createTutorialRun({ step: TUTORIAL_STEPS.indexOf("card"), done: false })), "card");
-  assert.equal(createTutorialRun({ step: 6, done: true }).done, true);
+test("isci adimlari: alim ya da uzmanlik; tamirci adimi yalnizca onarim rolu ya da altinla onarim", () => {
+  assert.equal(isTutorialStepCompletedBy("hire", { action: "hire" }), true);
+  assert.equal(isTutorialStepCompletedBy("hire", { action: "specialize", role: "energyTransport" }), true);
+  assert.equal(isTutorialStepCompletedBy("hire", { action: "assign" }), false);
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "specialize", role: "crystalCollector" }), false);
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire" }), false, "rolsuz alim tamirci degil");
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "hire", role: "repairer" }), true);
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "assign", role: "repairer" }), true);
+  assert.equal(isTutorialStepCompletedBy("repairer", { action: "repair" }), true);
+  assert.equal(isTutorialStepCompletedBy("settings", { action: "settings" }), true);
+  assert.equal(isTutorialStepCompletedBy("workerTypes", { action: "hire" }), false, "bilgi adimi eylemle gecmiyor");
 });
 
-test("mac disinda, yaratici modda ve bitmis brifingte hicbir sey ilerlemiyor ya da gorunmuyor", () => {
-  const run = fresh();
-  assert.deepEqual(advanceTutorial(run, { ...base, inMatch: false, ownTowers: 3 }), run);
-  assert.deepEqual(advanceTutorial(run, { ...base, creative: true, ownTowers: 3 }), run);
-  assert.equal(isTutorialStepVisible(run, { ...base, creative: true }), false);
-  const done = createTutorialRun({ step: 2, done: true });
-  assert.equal(isTutorialStepVisible(done, base), false);
-  assert.deepEqual(advanceTutorial(done, { ...base, setupPhase: false }), done);
+test("adim hazirligi: kart, magaza, beceri, ulti; digerleri kaynak tabani", () => {
+  assert.equal(getTutorialStepPrepare("card"), "cards");
+  assert.equal(getTutorialStepPrepare("shop"), "shop");
+  assert.equal(getTutorialStepPrepare("skill"), "skill");
+  assert.equal(getTutorialStepPrepare("ultimate"), "ultimate");
+  for (const id of ["tower", "wall", "upgrade", "workerTree", "hire"]) assert.equal(getTutorialStepPrepare(id), "resources");
 });
 
-test("kart ve magaza perdesi acikken kule ve dalga kutusu gizli", () => {
-  const run = fresh();
-  assert.equal(isTutorialStepVisible(run, { ...base, cardDraftOpen: true }), false);
-  assert.equal(isTutorialStepVisible(run, { ...base, shopOpen: true }), false);
-  assert.equal(isTutorialStepVisible(run, { ...base, setupPhase: false }), false);
+test("istenen her mekanik bir adimda", () => {
+  // Sahibin listesi: esya alma, kart secme, isci turleri, isci alma, isci
+  // yonetme, isci agaci, hammadde deposu, cephanelik, tamirci binasi ve
+  // calistirilmasi, enerji, deneyim/altin farki, kule ayarlari, duvar, beceri, ulti.
+  for (const id of ["shop", "card", "workerTypes", "hire", "assign", "workerTree", "depot", "armory", "production", "repairDepot", "repairer", "energy", "xpGold", "settings", "wall", "skill", "ultimate", "upgrade", "tower"]) {
+    assert.ok(TUTORIAL_STEPS.includes(id), `${id} adimi yok`);
+  }
 });
 
-test("metinler Turkce, kisa; bilgi adimlarinda ANLAŞILDI var", () => {
+test("metinler kisa; bilgi adiminda ANLADIM, kapali pencerede yeniden ac dugmesi", () => {
   for (const id of TUTORIAL_STEPS) {
     for (const open of [false, true]) {
       const copy = getTutorialCopy(id, open);
       assert.ok(copy.title.length > 0 && copy.body.length > 0, id);
       assert.ok(copy.body.length <= 170, `${id} kisa kalmali (${copy.body.length})`);
     }
+    assert.equal(Boolean(getTutorialCopy(id).ack), TUTORIAL_ACK_STEPS.includes(id), `${id} ANLADIM`);
+    assert.ok(Array.isArray(TUTORIAL_TARGETS[id]), `${id} hedef tablosunda yok`);
   }
-  assert.equal(getTutorialCopy("logistics", false).ack, "ANLAŞILDI");
-  assert.equal(getTutorialCopy("workers", false).ack, "ANLAŞILDI");
-  assert.equal(getTutorialCopy("tower", false).ack, undefined, "eylem adimi dugmeyle gecilmiyor");
+  assert.equal(getTutorialCopy("workerTypes").ack, "ANLADIM");
+  assert.equal(getTutorialCopy("card", false).reopen, "KARTLARI GÖSTER");
+  assert.equal(getTutorialCopy("card", true).reopen, undefined, "pencere acikken dugme yok");
+  assert.equal(getTutorialCopy("shop", false).reopen, "MAĞAZAYI AÇ");
+  assert.equal(getTutorialCopy("tower", false).reopen, undefined);
+  // Metinler sabit operatorun (ZentaX) gercek yapilarini aniyor.
+  assert.match(getTutorialCopy("tower").body, /Hiza Emri/);
+  assert.match(getTutorialCopy("energy").body, /Enerji Ocağı/);
+  assert.match(getTutorialCopy("armory").body, /Cephane Divanı/);
+  assert.match(getTutorialCopy("ultimate").body, /Kurucu Fermanı/);
 });
 
-test("baglanti: main kuruyor, launcher dugmeleri data-launch tasiyor, menude Eğitim var", () => {
+test("ilk kez gelen oyuncu: hicbir ilerleme yoksa", () => {
+  const none = { clearedStages: 0, records: 0, archiveEntries: 0, badgesEarned: 0 };
+  assert.equal(isFreshPlayer(none), true);
+  for (const key of Object.keys(none)) assert.equal(isFreshPlayer({ ...none, [key]: 1 }), false, key);
+});
+
+test("baglanti: menu Eğitim ve teklif karti ogretici macini baslatiyor; sahne bayragi tasiyor", () => {
   assert.match(readSource("apps/web/src/main.ts"), /setupTutorial\(game\);/);
-  assert.match(readSource("apps/web/src/game-control-ui.ts"), /button\.dataset\.launch = id;/);
   const menu = readSource("apps/web/src/menu-ui.ts");
-  // Dugme metni sozlukten (locales/areas/menu.ts); Turkcesi "Eğitim".
   assert.match(menu, /data-start-game data-replay-tutorial>\$\{t\("menu\.home\.tutorial"\)\}</);
   assert.match(readSource("apps/web/src/locales/areas/menu.ts"), /"menu\.home\.tutorial": "Eğitim"/);
-  assert.match(menu, /hasAttribute\("data-replay-tutorial"\)\) resetTutorialProgress\(\)/);
+  assert.match(menu, /if \(button\.hasAttribute\("data-replay-tutorial"\)\) \{\n\s*startTutorial\(\);/);
+  // Ogretici: varsayilan operator, asama 1, tutorial bayragi.
+  const start = menu.slice(menu.indexOf("const startTutorial = "), menu.indexOf("const startGame = "));
+  assert.match(start, /characterId: getDefaultOperator\(\)\.id,/);
+  assert.match(start, /tutorial: true,/);
+  assert.match(start, /stage: 1/);
+  assert.match(start, /dismissTutorialOffer\(\);/);
+  // Tek seferlik teklif: "Öğreticiyi oyna" / "Şimdi değil".
+  assert.match(menu, /data-tutorial-offer/);
+  assert.match(menu, /data-dismiss-tutorial-offer/);
+  assert.match(readSource("apps/web/src/locales/areas/menu.ts"), /"menu\.home\.tutorialOffer\.play": "Öğreticiyi oyna"/);
+  assert.match(readSource("apps/web/src/locales/areas/menu.ts"), /"menu\.home\.tutorialOffer\.later": "Şimdi değil"/);
+  // Teklifin kaydi try/catch icinde (itch iframe'i, gizli pencere).
+  const source = readSource("apps/web/src/tutorial.ts");
+  assert.match(source, /try \{\n\s*return window\.localStorage\.getItem\(TUTORIAL_OFFER_STORAGE_KEY\) === "1";/);
+  assert.match(source, /try \{\n\s*window\.localStorage\.setItem\(TUTORIAL_OFFER_STORAGE_KEY, "1"\);/);
+  // Sahne: oda kurarken bayrak, sunucu olcumunu motora, motorun istegini odaya.
+  const scene = readSource("apps/web/src/scenes/GameScene.ts");
+  assert.match(scene, /tutorial: this\.tutorialRequested,/);
+  assert.match(scene, /room\.onMessage\("tutorial:progress", \(progress: TutorialProgressMessage\) => this\.game\.events\.emit\("game:tutorial-progress", progress\)\);/);
+  assert.match(scene, /this\.game\.events\.on\("game:tutorial-command", this\.handleTutorialCommand, this\);/);
+  assert.match(scene, /room\.send\("tutorial:complete", \{\}\);/);
+  // Ilerleme kapilari: ogretici yaratici gibi hicbir sey yazmiyor.
+  assert.match(scene, /return this\.creativeRequested \|\| this\.creativeMode \|\| this\.isTutorialRun\(\);/);
+  assert.match(scene, /const creative = summary\.creative === true \|\| summary\.run\?\.creative === true \|\| this\.creativeMode \|\| tutorial;/);
+  assert.match(scene, /const actions = report\.tutorial \? \{ primary: "retry" as const \} : planRunReportActions\(/);
 });

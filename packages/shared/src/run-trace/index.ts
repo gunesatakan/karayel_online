@@ -181,6 +181,8 @@ export type MatchResultPayload = {
   kills: number;
   stage: number;
   creative?: boolean;
+  /** Ogretici kosusu; `creative` de acik gelir (ilerleme kapilari onu okuyor). */
+  tutorial?: boolean;
   run: RunSummary;
 };
 

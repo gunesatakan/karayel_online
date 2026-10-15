@@ -1056,6 +1056,8 @@ export type GameSnapshot = {
   setupReadyPlayerIds?: string[];
   /** Yaratici mod acik: istemci serbest kurulum panelini gosterir. */
   creative?: boolean;
+  /** Ogretici asamasi (Eğitim): istemcinin adim motoru ve ilerleme kapilari bunu okuyor. */
+  tutorial?: boolean;
   /** Odanin asamasi; dusman irki buradan cikiyor. */
   stage?: number;
   /**
@@ -2334,3 +2336,5 @@ export * from "./i18n/index.js";
 export * from "./i18n/server-text.js";
 
 export { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "./waves/special-enemies.js";
+
+export * from "./tutorial/index.js";

@@ -102,7 +102,7 @@ import {
 import { assetUrl } from "./asset-url";
 import { forwardStrayMenuWheel } from "./menu-scroll";
 import { describeServerError, localizeServerText } from "./server-text";
-import { resetTutorialProgress } from "./tutorial";
+import { dismissTutorialOffer, isFreshPlayer, readTutorialOfferDismissed } from "./tutorial";
 import { CREDIT_GROUPS, CREDITS_DEVELOPER, creditLinkLabel } from "./credits";
 import { installMenuMusic, readMenuMusicMuted } from "./menu-music";
 import {
@@ -398,6 +398,32 @@ export function setupMenuUi(game: Phaser.Game) {
     return selectedCharacter.id;
   };
 
+  /**
+   * Egitim: ayri ogretici asamasi (tutorial.ts). Operator hep varsayilan
+   * (ZentaX), asama 1, harita olcegi 1; menudeki secim degismiyor. Sunucu
+   * bayragi yalnizca dogrudan baslatilan tek kisilik odada kabul ediyor.
+   * Ogretici oynanan cihazda menudeki tek seferlik teklif bir daha cikmiyor.
+   */
+  const startTutorial = () => {
+    if (!phaserReady || onlineGameStarting) {
+      return;
+    }
+    dismissTutorialOffer();
+    onlineGameStarting = true;
+    menuMusic.stop();
+    root.classList.add("menu-root--hidden");
+    gameRoot.classList.remove("game-root--hidden");
+    game.scene.stop("preloader");
+    creativeRequested = false;
+    game.scene.start("game", {
+      characterId: getDefaultOperator().id,
+      mapData: selectedMap.scale === 1 ? selectedMap : scaleEditableMap(selectedMap, 1 as MapScale),
+      creative: false,
+      tutorial: true,
+      stage: 1
+    });
+  };
+
   const startGame = (mode: "solo" | "online" = "solo", resume?: MatchReconnectRecord) => {
     if (!phaserReady || onlineGameStarting) {
       return;
@@ -662,9 +688,20 @@ export function setupMenuUi(game: Phaser.Game) {
 
     root.querySelectorAll<HTMLElement>("[data-start-game]").forEach((button) => {
       button.addEventListener("click", () => {
-        // Egitim: brifing ilerlemesi sifirlanip normal solo mac.
-        if (button.hasAttribute("data-replay-tutorial")) resetTutorialProgress();
+        // Egitim (ve ilk kez gelen oyuncunun teklif karti): ayri ogretici asamasi.
+        if (button.hasAttribute("data-replay-tutorial")) {
+          startTutorial();
+          return;
+        }
         startGame("solo");
+      });
+    });
+
+    // Teklif karti "Şimdi değil": cihazda bir daha cikmiyor.
+    root.querySelectorAll<HTMLElement>("[data-dismiss-tutorial-offer]").forEach((button) => {
+      button.addEventListener("click", () => {
+        dismissTutorialOffer();
+        render(view);
       });
     });
 
@@ -1081,6 +1118,13 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
   const board = buildBadgeBoardView(progress.badges, {});
   const mastery = getMasteryProgress(getOperatorMasteryPoints(progress.mastery, progress.badges, selectedCharacter.id));
   const title = getSelectedTitle(progress);
+  // Hic oynamamis oyuncuya tek seferlik ogretici teklifi; kapatilinca cihazda bir daha yok.
+  const offerTutorial = !readTutorialOfferDismissed() && isFreshPlayer({
+    clearedStages: stageState.cleared.length,
+    records: Object.keys(stageState.allRecords ?? {}).length,
+    archiveEntries: cardArchive.cards.length + cardArchive.items.length + cardArchive.runs.length,
+    badgesEarned: board.earned
+  });
   return `
     <div class="screen screen--home">
       <header class="brand">
@@ -1088,6 +1132,16 @@ function renderHome(selectedCharacter: CharacterDefinition, stageState: StageSta
         <h1 class="brand__word">Nexhold</h1>
         <div class="brand__rule" aria-hidden="true"><i></i><span class="rule-dot"></span><i></i></div>
       </header>
+
+      ${offerTutorial ? `
+      <section class="tutorial-offer frame" data-tutorial-offer aria-label="${escapeHtml(t("menu.home.tutorialOffer.kicker"))}">
+        <p class="kicker">${t("menu.home.tutorialOffer.kicker")}</p>
+        <p class="tutorial-offer__body">${t("menu.home.tutorialOffer.body")}</p>
+        <div class="tutorial-offer__actions">
+          <button class="command command--primary" data-start-game data-replay-tutorial>${t("menu.home.tutorialOffer.play")}</button>
+          <button class="command command--ghost" data-dismiss-tutorial-offer>${t("menu.home.tutorialOffer.later")}</button>
+        </div>
+      </section>` : ""}
 
       <section class="hero frame" style="--accent: ${classColor[selectedCharacter.id]}">
         ${renderSigil(selectedCharacter.id, initials(selectedCharacter.displayName))}

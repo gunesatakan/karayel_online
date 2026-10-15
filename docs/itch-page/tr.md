@@ -29,7 +29,7 @@ Oyun kapalı testte. Geri bildirimin bize çok yardımcı olur.
 - **İşçiler:** **İşçi** çekmecesi. Atama **Yönetim**'de, alım **İşe Al**'da, gelişim **Ağaç**'ta.
 - Fare ile de oynanır; tıkla ve sürükle.
 
-İlk maçta kısa bir brifing adım adım yol gösterir. Brifingi ana menüdeki **Eğitim** ile yeniden oynatabilirsin.
+Ana menüdeki **Eğitim** ayrı bir eğitim bölümü açar ve bütün mekanikleri adım adım gösterir: nexus düşmez, düşmanlar yavaş gelir. İlk kez gelen oyuncuya ana menüde bir kez önerilir.
 
 ## Gizlilik
 

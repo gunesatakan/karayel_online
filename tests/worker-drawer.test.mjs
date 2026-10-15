@@ -54,7 +54,7 @@ const render = between(ui, "const render = (state: ControlState) => {", "const k
 const workerBuilders = drawerBuilder + manageBuilder + pickBuilder + hireBuilder;
 
 const web = await importWebModule("tests/fixtures/worker-roster-entry.ts");
-const { tr, en, setLocaleForTest, getTutorialCopy, getTutorialWorkerStage, TUTORIAL_WORKER_TARGETS } = web;
+const { tr, en, setLocaleForTest, getTutorialCopy, pickTutorialTarget, TUTORIAL_TARGETS } = web;
 
 test("baslatici: İşçi / Worker; eski İşçi Ağacı adi ve anahtari yok", () => {
   assert.equal(tr["controls.launch.worker"], "İşçi");
@@ -229,45 +229,47 @@ test("gorunum: oteki cekmecelerle ayni dil, 44 px dokunma hedefi", () => {
   assert.match(between(block, ".game-controls button.worker-row {", "}"), /touch-action: pan-y;/);
 });
 
-test("brifing: isci adimi Isci cekmecesi -> Ise Al -> alim dugmesi", () => {
+test("egitim: isci adimlari Isci cekmecesi -> bolum -> asil dugme", () => {
   const tutorial = read("apps/web/src/tutorial.ts");
-  assert.deepEqual({ ...TUTORIAL_WORKER_TARGETS }, {
-    launcher: '[data-launch="worker"]',
-    hireTab: '[data-worker-tab="hire"]',
-    hireButton: ".game-controls__worker-hire"
-  });
-  assert.equal(getTutorialWorkerStage({ drawerOpen: false, hireVisible: false }), "launcher");
-  assert.equal(getTutorialWorkerStage({ drawerOpen: true, hireVisible: false }), "hireTab");
-  assert.equal(getTutorialWorkerStage({ drawerOpen: true, hireVisible: true }), "hireButton");
+  assert.deepEqual([...TUTORIAL_TARGETS.hire], [".game-controls__worker-hire", '[data-worker-tab="hire"]', '[data-launch="worker"]']);
+  assert.deepEqual([...TUTORIAL_TARGETS.assign], [".game-controls__drawer.worker-pick", ".worker-list", '[data-worker-tab="manage"]', '[data-launch="worker"]']);
+  assert.deepEqual([...TUTORIAL_TARGETS.workerTree], [".worker-development__viewport", '[data-worker-tab="tree"]', '[data-launch="worker"]']);
+  // Derinden yuzeye: ekranda gorunen ilk hedef cerceveleniyor.
+  const visible = new Set(['[data-launch="worker"]']);
+  const find = (selector) => (visible.has(selector) ? selector : undefined);
+  assert.equal(pickTutorialTarget(TUTORIAL_TARGETS.hire, find)?.selector, '[data-launch="worker"]', "cekmece kapali: baslatici");
+  visible.add('[data-worker-tab="hire"]');
+  assert.equal(pickTutorialTarget(TUTORIAL_TARGETS.hire, find)?.selector, '[data-worker-tab="hire"]', "baska bolum acik: bolum dugmesi");
+  visible.add(".game-controls__worker-hire");
+  assert.equal(pickTutorialTarget(TUTORIAL_TARGETS.hire, find)?.selector, ".game-controls__worker-hire", "Ise Al acik: alim dugmesi");
+  assert.equal(pickTutorialTarget(TUTORIAL_TARGETS.card, find), undefined);
   // Hedeflerin sahipleri arayuzde gercekten var.
   assert.match(ui, /button\.dataset\.launch = id;/);
   assert.match(drawerBuilder, /button\.dataset\.workerTab = id;/);
   assert.match(hireBuilder, /`game-controls__worker-hire\$\{/);
-  // Envanter'e ve kalkan perdeye bakan secici kalmadi.
-  const step = between(tutorial.slice(tutorial.indexOf("const findTarget = ")), "case \"workers\": {", "default:");
-  assert.doesNotMatch(step, /inventory|gold-shop/);
-  assert.match(step, /const open = launchOpen\("worker"\);/);
-  assert.match(step, /TUTORIAL_WORKER_TARGETS\[stage\]/);
-  // Uc asamanin metni; hicbiri Envanter'i ya da eski adi anmiyor.
-  for (const [locale, word] of [["tr", /Envanter|İşçi Ağacı/], ["en", /Inventory|Worker Tree/]]) {
+  assert.match(manageBuilder, /list\.className = "worker-list";/);
+  assert.match(ui, /viewport\.className = "worker-development__viewport";/);
+  // Hedef secimi tabloyu okuyor; Envanter'e bakan isci hedefi yok.
+  assert.match(tutorial, /pickTutorialTarget\(TUTORIAL_TARGETS\[id\]/);
+  for (const id of ["hire", "assign", "workerTree", "repairer"]) {
+    assert.ok(TUTORIAL_TARGETS[id].every((selector) => !/inventory|gold-shop/.test(selector)), id);
+  }
+  // Isci adimlarinin metni iki dilde kisa; hicbiri Envanter'i anmiyor.
+  for (const [locale, word] of [["tr", /Envanter/], ["en", /Inventory/]]) {
     setLocaleForTest(locale);
     try {
-      const copies = [getTutorialCopy("workers", false), getTutorialCopy("workers", true, false), getTutorialCopy("workers", true, true)];
-      assert.equal(new Set(copies.map((copy) => copy.body)).size, 3, `${locale}: asamalar ayni metni yaziyor`);
-      for (const copy of copies) {
+      for (const id of ["workerTypes", "hire", "assign", "workerTree", "repairer"]) {
+        const copy = getTutorialCopy(id);
         assert.doesNotMatch(copy.body, word, `${locale}: ${copy.body}`);
-        assert.ok(copy.body.length <= 170);
-        assert.ok(copy.ack);
+        assert.ok(copy.body.length <= 170, `${locale}/${id}`);
       }
+      assert.ok(getTutorialCopy("workerTypes").ack, "isci turleri bilgi adimi");
+      assert.equal(getTutorialCopy("hire").ack, undefined, "alim eylemle geciyor");
     } finally {
       setLocaleForTest("tr");
     }
   }
-  assert.equal(getTutorialCopy("workers", false).body, "İşçi'yi aç. İşçiler enerji ve mühimmatı kulelere taşır.");
-  assert.equal(getTutorialCopy("workers", true, false).body, "İşe Al bölümüne geç.");
-  // Tamamlanma mantigi ayni: alinan isci sayisi sahnenin durumundan okunuyor.
-  assert.match(tutorial, /workersHired: Number\(controls\.workerHire\?\.hired\) \|\| 0/);
-  assert.match(scene, /private getWorkerHireState\(\) \{[\s\S]{0,900}hired: hired\.length,/);
+  assert.equal(getTutorialCopy("hire").body, "İşçi › İşe Al'da İşçi Al'a bas ve uzmanlığını seç. Her alım bir sonrakini pahalılaştırır.");
   // Uzmanlik secilmeden kapanan pencerenin bildirimi de yeni yeri soyluyor.
   assert.equal(tr["scene.worker.specializationSkipped"], "Uzmanlık seçilmedi. İşçi › İşe Al'dan seçebilirsin.");
   assert.equal(en["scene.worker.specializationSkipped"], "No specialization chosen. You can pick one from Worker › Hire.");
