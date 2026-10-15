@@ -10268,23 +10268,55 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * tusu duruyor -- haritada satmanin tek yeri orasi. Panel yuksekligi
    * sifira inince tus kulenin hemen altina oturuyor.
    */
-  private drawSelectedTowerResources(tower: TowerSnapshot, discSize: number) {
-    const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
-    this.selectedResourceGraphics = graphics;
-    graphics.clear().setVisible(true);
+  /**
+   * Secili yapinin haritadaki panelinin ve satis tusunun yeri.
+   *
+   * Cizim ve kule panelinin (`tower-sheet`) hangi kenara yaslanacagi ayni
+   * hesabi okuyor: panel yalnizca kulenin merkezine bakinca kulenin altindaki
+   * cubuklari ortebiliyordu.
+   *
+   * Panel kulenin altina; harita orada bitiyorsa ustune. Ustteyken satis tusu
+   * da panelin ustune cikiyor: eskiden panelin altinda kaliyor ve haritanin
+   * alt kisimdaki kulenin tam uzerine oturuyordu.
+   */
+  private getSelectedResourceLayout(tower: TowerSnapshot, discSize: number) {
     const showsResources = this.acceptsTowerOperation(tower) || Boolean(tower.resourceProvider);
     const panelWidth = Math.max(147, Math.min(169, discSize * 1.6));
     const panelHeight = showsResources ? 98 : 0;
     const bounds = getMapWorldBounds(this.selectedMapData);
     const panelCenterX = Phaser.Math.Clamp(tower.x, bounds.left + panelWidth / 2 + 4, bounds.right - panelWidth / 2 - 4);
     const panelX = panelCenterX - panelWidth / 2;
+    const canSell = this.canSellSelectedTower(tower);
+    const sellSpace = canSell ? SELL_BUTTON_HEIGHT + 4 : 0;
     const belowTowerY = tower.y + discSize / 2 + 7;
-    const aboveTowerY = tower.y - discSize / 2 - panelHeight - 7;
-    const panelY = Phaser.Math.Clamp(
-      belowTowerY + panelHeight <= bounds.bottom - 4 ? belowTowerY : aboveTowerY,
-      bounds.top + 4,
-      bounds.bottom - panelHeight - 4
-    );
+    const below = belowTowerY + panelHeight <= bounds.bottom - 4;
+    // Ustte can cubugu kulenin ustunde kaliyor; panel onu ortmesin.
+    const aboveTowerY = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX - 6 - panelHeight - 4;
+    const panelY = below
+      ? Phaser.Math.Clamp(belowTowerY, bounds.top + 4, bounds.bottom - panelHeight - 4)
+      : Phaser.Math.Clamp(aboveTowerY, bounds.top + 4 + sellSpace, bounds.bottom - panelHeight - 4);
+    const sell = canSell
+      ? { x: panelX + 10, y: below ? panelY + panelHeight + 4 : panelY - sellSpace, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
+      : undefined;
+    const towerTop = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX - 4;
+    const towerBottom = tower.y + discSize / 2;
+    return {
+      showsResources,
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      sell,
+      top: Math.min(towerTop, panelY, sell?.y ?? Infinity),
+      bottom: Math.max(towerBottom, panelY + panelHeight, sell ? sell.y + sell.height : -Infinity)
+    };
+  }
+
+  private drawSelectedTowerResources(tower: TowerSnapshot, discSize: number) {
+    const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
+    this.selectedResourceGraphics = graphics;
+    graphics.clear().setVisible(true);
+    const { showsResources, panelX, panelY, panelWidth, panelHeight, sell: sellRect } = this.getSelectedResourceLayout(tower, discSize);
     const barX = panelX + 10;
     const barWidth = panelWidth - 20;
     const barHeight = 6;
@@ -10294,9 +10326,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const performanceBarY = panelY + 82;
     // Satis kulenin oldugu yerde: alt bar tek satira indigi icin oradan cikti,
     // ve zaten dogru yer burasi -- oyuncu hangi kuleyi sattigini gorerek basiyor.
-    this.sellButtonRect = this.canSellSelectedTower(tower)
-      ? { x: panelX + 10, y: panelY + panelHeight + 4, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
-      : undefined;
+    this.sellButtonRect = sellRect;
     const hasPerformanceControl = this.acceptsTowerOperation(tower);
     const usesAmmo = tower.resourceProvider === "ammunition" || tower.shotFuel !== "energy";
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
@@ -11885,17 +11915,22 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private getTowerSheetDock(tower: TowerSnapshot): "top" | "bottom" {
     const view = this.cameras.main?.worldView;
     if (!view || view.height <= 0) return this.towerSheetDock;
-    const ratio = (tower.y - view.y) / view.height;
+    // Kulenin tamami: can cubugu, govde, haritadaki kaynak paneli ve satis tusu.
+    const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
+    const footprint = this.getSelectedResourceLayout(tower, discSize);
+    const top = (footprint.top - view.y) / view.height;
+    const bottom = (footprint.bottom - view.y) / view.height;
     const sheet = this.towerSheetReport.heightRatio;
-    const margin = 0.035;
+    const margin = 0.01;
     const bottomEdge = 1 - this.arenaChrome.bottomRatio - sheet - 0.01;
     const topEdge = this.arenaChrome.topRatio + sheet + 0.01;
-    const clearBottom = ratio < bottomEdge - margin;
-    const clearTop = ratio > topEdge + margin;
+    const clearBottom = bottom < bottomEdge - margin;
+    const clearTop = top > topEdge + margin;
     if (this.towerSheetDock === "bottom" ? clearBottom : clearTop) return this.towerSheetDock;
     if (clearBottom) this.towerSheetDock = "bottom";
     else if (clearTop) this.towerSheetDock = "top";
-    else this.towerSheetDock = bottomEdge - ratio >= ratio - topEdge ? "bottom" : "top";
+    // Iki taraf da bir kismini ortuyor: daha azini ortene.
+    else this.towerSheetDock = bottom - bottomEdge <= topEdge - top ? "bottom" : "top";
     return this.towerSheetDock;
   }
 
