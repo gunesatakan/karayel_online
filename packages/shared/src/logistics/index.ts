@@ -36,22 +36,14 @@ export const RESOURCE_PROVIDER_INITIAL_STOCK = 0;
 export const WORKER_MAX_HP = 60;
 
 /**
- * Tamircinin saniyede onardigi can.
- *
- * Bu isci hattin tek altin harcamayan onarim yolu, yani hizi bilerek yavas:
- * altinla onarim aninda biter, tamirci beklemek ister.
- *
- * Yarilandi (6 -> 3), sonra fazla dusuk bulunup 1,5 kat geri cekildi (3 ->
- * 4,5), sonra sahibin istegiyle 1,5 kat artti (4,5 -> 6,75): en ucuz duvar
- * (taban 40 civari can) yaklasik alti saniyede doluyor. Onarim hizi kartlari
- * ve gelismis kademe bu tabanin uzerine biniyor.
- *
+ * Tamircinin saniyede onardigi can; onceki 6.75 degerinin bes kati.
+ * Onarim hizi kartlari ve gelismis kademe bu tabanin uzerine biniyor.
  * Gelismis tamirci iki kati (`ADVANCED_WORKER_REPAIR_MULTIPLIER`).
  */
-export const WORKER_REPAIR_PER_SECOND = 6.75;
+export const WORKER_REPAIR_PER_SECOND = 33.75;
 
-/** Nexus Nobeti: tamircinin nexus onarim hizi (saniyede can; once 2, 1,5 kat). */
-export const WORKER_NEXUS_REPAIR_PER_SECOND = 3;
+/** Nexus Nobeti: tamircinin nexus onarim hizi; onceki 3 degerinin bes kati. */
+export const WORKER_NEXUS_REPAIR_PER_SECOND = 15;
 
 /**
  * Olen iscinin geri gelme suresi.
