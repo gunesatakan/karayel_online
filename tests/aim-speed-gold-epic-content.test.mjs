@@ -947,7 +947,7 @@ test("Savas Hazinesi gercek altin kartlarini okuyor ve kendi bonusu oldurme alti
   enemy.reward = 100;
   enemy.champion = undefined;
   room.damageEnemy(enemy, 1e9, 0, "warrior-1", "p1");
-  near(player.gold, Math.round(100 * 1.5) * (1 + 0.6 + 1 + 0.48), "oldurme altini yalnizca kartlarin carpaniyla");
+  near(player.gold, Math.round(100 * 1.8) * (1 + 0.6 + 1 + 0.48), "oldurme altini yalnizca kartlarin carpaniyla");
 });
 
 test("cevrim tavanlari ayri: iki hasar cevrimi toplaniyor ama birbirini beslemiyor", () => {
