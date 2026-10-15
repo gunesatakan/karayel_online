@@ -1,0 +1,1100 @@
+[
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_04_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_04_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 6.746,
+    "source_sha256": "452a21e713335742aeedaa2f00b305d2ecb6a573d5ce0b2c34171144e8a0d3f2",
+    "output_sha256": "2864c7798e759bb4ee508d9b5d3ae05121b8c272481e038aa52af596096ac686",
+    "reference_eq_db": [
+      1.927,
+      -0.487,
+      3.281,
+      0.545,
+      -2.064,
+      -2.834,
+      -2.508
+    ],
+    "decoded_peak_dbfs": -2.15
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_05_18_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_05_18_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 6.354,
+    "source_sha256": "fb6261c5679a835cdb410c496ba02a83cf8f41fe0ab4105037f15f882a74221d",
+    "output_sha256": "10339bee4ef3389ac35280eb82af3e9737ce5e63b6f05a204979ab8d7c70bb77",
+    "reference_eq_db": [
+      0.866,
+      1.29,
+      3.88,
+      -1.304,
+      -3.913,
+      -4.0,
+      -2.459
+    ],
+    "decoded_peak_dbfs": -1.92
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_06_12_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_06_12_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 6.668,
+    "source_sha256": "75b029966ad63b5c392d4837ae84e7a3e22991d634c5b3baadcf43ade62a4830",
+    "output_sha256": "1c9116621cbefeb840e9b40e2ce12b0a8cc9c2a232dce6e7f7e6ca549a1211ce",
+    "reference_eq_db": [
+      1.786,
+      0.822,
+      4.0,
+      -0.484,
+      -4.0,
+      -3.561,
+      -3.821
+    ],
+    "decoded_peak_dbfs": -3.1
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_06_37_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_06_37_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 7.321,
+    "source_sha256": "4c245781d5a6106cf0cd09f6e0b0d01847e7c154507a6dd0c449910d54317a01",
+    "output_sha256": "64f174d511ea4e984538f9f40414cfacc582f3619fe988b7c12cda4d4e76ca89",
+    "reference_eq_db": [
+      0.446,
+      0.239,
+      3.636,
+      0.955,
+      -2.664,
+      -3.829,
+      -2.232
+    ],
+    "decoded_peak_dbfs": -2.91
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_07_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_07_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 6.354,
+    "source_sha256": "e5c73a13b9820aeb055b1e61d5cf27fc98fef0a9dfd898ca3b42e9d13cf0f870",
+    "output_sha256": "6a52f26445c5e9957e4cbf700a107b7f84ed8f500d6aa133f908a77fa13d88bb",
+    "reference_eq_db": [
+      2.988,
+      -0.49,
+      3.399,
+      -1.362,
+      -2.503,
+      -1.354,
+      0.409
+    ],
+    "decoded_peak_dbfs": -3.58
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_08_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_08_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 10.508,
+    "source_sha256": "6496a9c4a6546de584bba2e74556cf8334a9fe7ab34afdd90c3c051579162d98",
+    "output_sha256": "701444865d2c8d0f811d516855405c90871251a21de63f73ad10826af34f1a23",
+    "reference_eq_db": [
+      2.394,
+      -0.356,
+      3.861,
+      -0.985,
+      -2.629,
+      -2.507,
+      -0.728
+    ],
+    "decoded_peak_dbfs": -3.1
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_09_26_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_09_26_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 8.914,
+    "source_sha256": "2fd25f95a64a6e1e9b8b50995c07a4abecc9d0a220fe4d61ac26ca1452807371",
+    "output_sha256": "5b472f4cd12f79aa53f81f2f3bb707b3dc337d8b1cdb55f8ed6620b6dd0414ac",
+    "reference_eq_db": [
+      2.538,
+      -0.315,
+      2.651,
+      0.39,
+      -2.652,
+      -4.0,
+      -1.599
+    ],
+    "decoded_peak_dbfs": -4.7
+  },
+  {
+    "source": "death/ElevenLabs_2026-10-15T10_10_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/death/ElevenLabs_2026-10-15T10_10_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "death",
+    "duration_seconds": 8.836,
+    "source_sha256": "241be92a57fbbd8b2be0937701130b401fc74972cc0f661e92d358be821cd01a",
+    "output_sha256": "0a4dfb337edd96cf2796ac8cb6ba081c1d4701763b6312f07cf45733878e0431",
+    "reference_eq_db": [
+      2.605,
+      -0.356,
+      3.082,
+      -0.615,
+      -2.451,
+      -3.42,
+      -1.616
+    ],
+    "decoded_peak_dbfs": -3.1
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_27_20_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_27_20_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 5.231,
+    "source_sha256": "9fa70d93d6b453679aadbe5b29a41e3929d4df09a5142f1e923dadc97fa1224a",
+    "output_sha256": "0e2f53432d314ec320fd4fad0877863e86fc83c267aedf4dc63451adb451cdfb",
+    "reference_eq_db": [
+      0.666,
+      0.419,
+      3.548,
+      -0.227,
+      -3.387,
+      -3.112,
+      -0.902
+    ],
+    "decoded_peak_dbfs": -2.88
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_45_59_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_45_59_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 5.466,
+    "source_sha256": "ee38037055061aaa4b082c69e5e9440d75e6daca9e3c7f79e7c36a4751970f42",
+    "output_sha256": "6ca87e95245bce584c93bf4d44f766701c63b258b8a2958a98310b906e3b2c1e",
+    "reference_eq_db": [
+      4.0,
+      -0.106,
+      0.062,
+      -1.66,
+      -2.478,
+      -3.688,
+      -1.113
+    ],
+    "decoded_peak_dbfs": -3.32
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_46_17_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_46_17_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 6.198,
+    "source_sha256": "ad61cd0798b554fb359d0a61e7b65fc2f880f559ecd0132db60d7081565d61b4",
+    "output_sha256": "968d1650d4c7870e822589587249a1c4f922479f2a82f5fe061ec0674ea85afe",
+    "reference_eq_db": [
+      3.039,
+      -0.092,
+      -0.469,
+      -1.605,
+      -2.287,
+      -1.817,
+      0.49
+    ],
+    "decoded_peak_dbfs": -4.84
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_46_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_46_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 5.806,
+    "source_sha256": "14374987dc502a0011125e5054b6697d0c153075b6da011c5e25af8c07dec911",
+    "output_sha256": "37ab6ee64d8cb36f8c58d991e1c5abb1336b72f6e28bdd0b40a7b1d290a2bcdc",
+    "reference_eq_db": [
+      1.291,
+      0.175,
+      2.997,
+      -0.071,
+      -3.028,
+      -4.0,
+      -1.824
+    ],
+    "decoded_peak_dbfs": -2.2
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_46_48_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_46_48_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 5.309,
+    "source_sha256": "4975dc2ecd947ec7ead4e28e59abdb682cb87e256df707ea74ae99d30af86260",
+    "output_sha256": "802ee49a32e06d6338fa2528451faeb19a62841938c1e0dbb67b55491b996753",
+    "reference_eq_db": [
+      4.0,
+      0.099,
+      2.106,
+      -1.009,
+      -3.565,
+      -4.0,
+      -3.188
+    ],
+    "decoded_peak_dbfs": -3.01
+  },
+  {
+    "source": "ending/ElevenLabs_2026-10-15T09_47_07_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/ending/ElevenLabs_2026-10-15T09_47_07_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "ending",
+    "duration_seconds": 6.929,
+    "source_sha256": "fdc4db0b56ce49cf5a7aea755b36069200fb9be90669798e88b90f79c0162573",
+    "output_sha256": "76d2b5e60eded20aa3c4914d1aa99d9d2e097b150589d7cbb71e1eaff372d9b1",
+    "reference_eq_db": [
+      0.214,
+      0.297,
+      1.995,
+      -0.023,
+      -1.821,
+      -3.658,
+      -1.699
+    ],
+    "decoded_peak_dbfs": -4.14
+  },
+  {
+    "source": "nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_01_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_01_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl1",
+    "duration_seconds": 5.466,
+    "source_sha256": "83c212e9bfbdfb66a744d44a93c742e846c9bbafc8ee345330ec5da67106bb3d",
+    "output_sha256": "acfbc5249c87396f4c17a1bedb2d88e83ae568e0f2cc1d228e8520e87efe7f90",
+    "reference_eq_db": [
+      2.109,
+      -0.251,
+      0.967,
+      -0.094,
+      -2.412,
+      -3.379,
+      -0.374
+    ],
+    "decoded_peak_dbfs": -4.21
+  },
+  {
+    "source": "nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_17_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_17_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl1",
+    "duration_seconds": 6.041,
+    "source_sha256": "06a4e90400319d6f14fd5c8b43d758d7c2b3de1e12fbbffa140edb03049ba7b2",
+    "output_sha256": "f51895de249a421e3bc9a4ae9099a8c63be5c6859f3a8e5a2b0ca0a4fa0ba86b",
+    "reference_eq_db": [
+      3.103,
+      0.49,
+      -0.85,
+      -2.329,
+      -1.893,
+      -3.724,
+      -1.95
+    ],
+    "decoded_peak_dbfs": -3.56
+  },
+  {
+    "source": "nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl1",
+    "duration_seconds": 5.466,
+    "source_sha256": "806f861046502b2cd8cf4067be50a7d7aa7b357e40036bf17b74ba208334f3e0",
+    "output_sha256": "5716c792f78800251d9042a82d6cd4e021bf82f8f11fec38ae2672c65210649e",
+    "reference_eq_db": [
+      0.553,
+      0.367,
+      0.828,
+      -0.48,
+      -2.341,
+      -3.32,
+      -0.659
+    ],
+    "decoded_peak_dbfs": -2.01
+  },
+  {
+    "source": "nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_58_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl1/ElevenLabs_2026-10-15T09_55_58_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl1",
+    "duration_seconds": 5.727,
+    "source_sha256": "e38dacdc842b00cefa4800b0f10f7cb75112868696e5c4b41f29637c8d08be6f",
+    "output_sha256": "440760fa9642462a55f6d417728cb2615ef8f47c512ac3b9bfa0e3ab186101c9",
+    "reference_eq_db": [
+      0.729,
+      1.119,
+      -0.171,
+      -0.277,
+      -2.528,
+      -4.0,
+      -3.442
+    ],
+    "decoded_peak_dbfs": -3.4
+  },
+  {
+    "source": "nexus-damage-lvl1/ElevenLabs_2026-10-15T09_56_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl1/ElevenLabs_2026-10-15T09_56_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl1",
+    "duration_seconds": 5.153,
+    "source_sha256": "2e7ada92e71c67de20cca91e221118a05ac888f1ecb9d1d4452c889da9bdeda3",
+    "output_sha256": "bd716aaebbbdbd1dc7343e62364982e57d601aad44fdb5f7f2ba4371759f11d4",
+    "reference_eq_db": [
+      1.527,
+      -0.249,
+      2.047,
+      0.024,
+      -2.836,
+      -1.791,
+      -0.02
+    ],
+    "decoded_peak_dbfs": -2.75
+  },
+  {
+    "source": "nexus-damage-lvl2/ElevenLabs_2026-10-15T09_56_51_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl2/ElevenLabs_2026-10-15T09_56_51_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl2",
+    "duration_seconds": 4.682,
+    "source_sha256": "e559f390f3d85390bb646301815d0efd0b675111bc2aeccd40826898a62e479c",
+    "output_sha256": "26f723b428f3f1f5c8f9fc0e81fa83bdc56ca5def03f3ed7a8977cd1909e21aa",
+    "reference_eq_db": [
+      0.214,
+      0.076,
+      1.498,
+      2.67,
+      -1.415,
+      -4.0,
+      -2.214
+    ],
+    "decoded_peak_dbfs": -4.42
+  },
+  {
+    "source": "nexus-damage-lvl2/ElevenLabs_2026-10-15T09_57_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl2/ElevenLabs_2026-10-15T09_57_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl2",
+    "duration_seconds": 5.962,
+    "source_sha256": "384804d2966863d82d5eb1d485ca425e95ca871b65afac14571c288c8457eae6",
+    "output_sha256": "f30dd6009517c5633948ca3483bfd77721683151c00ff147cabcd9cdfa92dde2",
+    "reference_eq_db": [
+      1.67,
+      0.342,
+      0.463,
+      -2.248,
+      -2.167,
+      -2.238,
+      -1.152
+    ],
+    "decoded_peak_dbfs": -2.71
+  },
+  {
+    "source": "nexus-damage-lvl2/ElevenLabs_2026-10-15T09_57_43_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl2/ElevenLabs_2026-10-15T09_57_43_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl2",
+    "duration_seconds": 6.276,
+    "source_sha256": "b92d12abd9609c32f117f8519edb35dddc3b5e176693bf15a02b1e1e1e40ee5d",
+    "output_sha256": "9b98c47c4d68a7aa244334aca57061f4b8b402a18ab2f4bdb55292b91803c41d",
+    "reference_eq_db": [
+      1.107,
+      -0.108,
+      0.53,
+      -0.942,
+      -0.704,
+      -3.146,
+      -0.657
+    ],
+    "decoded_peak_dbfs": -2.7
+  },
+  {
+    "source": "nexus-damage-lvl2/ElevenLabs_2026-10-15T09_58_25_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl2/ElevenLabs_2026-10-15T09_58_25_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl2",
+    "duration_seconds": 6.119,
+    "source_sha256": "2a0e2d801a717360bf9bab4c8c9469eab8f445c050faaaac566b4546e8f33d46",
+    "output_sha256": "67ae211ca17ab500638257d99377e74eb02b0972861e348be87d16835ba4b576",
+    "reference_eq_db": [
+      0.11,
+      -0.206,
+      3.452,
+      1.753,
+      -0.687,
+      -3.491,
+      -0.719
+    ],
+    "decoded_peak_dbfs": -3.38
+  },
+  {
+    "source": "nexus-damage-lvl2/ElevenLabs_2026-10-15T09_59_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl2/ElevenLabs_2026-10-15T09_59_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl2",
+    "duration_seconds": 6.433,
+    "source_sha256": "5b8ef4c2e3677d1b6ba8e57475a84864e7275a71c20b9c2a2248d2ed95ae012e",
+    "output_sha256": "19ac16f1777ed522d2b4a4a1a4b6a2db033f2b99ede4b207b8a338e54d9f8305",
+    "reference_eq_db": [
+      0.676,
+      -0.154,
+      2.532,
+      1.553,
+      -1.052,
+      -4.0,
+      -1.571
+    ],
+    "decoded_peak_dbfs": -4.13
+  },
+  {
+    "source": "nexus-damage-lvl3/ElevenLabs_2026-10-15T10_00_35_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl3/ElevenLabs_2026-10-15T10_00_35_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl3",
+    "duration_seconds": 4.526,
+    "source_sha256": "91a24d4bb8b9965732df9bd1feb29b72f9c364da957bc33a7256b9ef77b8a994",
+    "output_sha256": "74992212d3004107bc64cedbbad80f46b51f1abadfa40759f3bf4a2041386081",
+    "reference_eq_db": [
+      1.112,
+      -0.351,
+      -0.252,
+      -0.351,
+      0.056,
+      -1.26,
+      0.202
+    ],
+    "decoded_peak_dbfs": -4.33
+  },
+  {
+    "source": "nexus-damage-lvl3/ElevenLabs_2026-10-15T10_01_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl3/ElevenLabs_2026-10-15T10_01_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl3",
+    "duration_seconds": 4.604,
+    "source_sha256": "cb2f0b5fec1e5f226a7f198d96410dd5743cebbdd651e583fa29a24f236b0ab2",
+    "output_sha256": "76e7f30417761c0ef3dd64b842dc5e4f40abd2cc2b8b34ff8dd94433309879db",
+    "reference_eq_db": [
+      4.0,
+      0.118,
+      -1.115,
+      -2.41,
+      -1.949,
+      -2.565,
+      -0.623
+    ],
+    "decoded_peak_dbfs": -2.13
+  },
+  {
+    "source": "nexus-damage-lvl3/ElevenLabs_2026-10-15T10_01_56_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl3/ElevenLabs_2026-10-15T10_01_56_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl3",
+    "duration_seconds": 6.276,
+    "source_sha256": "8fcc23011aed13093dfa533defcb3ab49cdbabe0be7a131f3c8e037e15e39354",
+    "output_sha256": "eecaab4550996f093fb8784276a6cd309f7562fc4f486091341b58e104a82535",
+    "reference_eq_db": [
+      1.453,
+      -0.04,
+      -0.004,
+      -1.057,
+      -1.423,
+      -2.807,
+      -0.618
+    ],
+    "decoded_peak_dbfs": -4.52
+  },
+  {
+    "source": "nexus-damage-lvl3/ElevenLabs_2026-10-15T10_02_29_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl3/ElevenLabs_2026-10-15T10_02_29_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl3",
+    "duration_seconds": 5.806,
+    "source_sha256": "39a2ba2fd279c150541aaea82e058653e4f3b3939e31e487ddf71af0a0f21cf2",
+    "output_sha256": "c6a79265f4d251932300ea818d1d1a1939be77d82a879853f0e9ef10ae0aaac4",
+    "reference_eq_db": [
+      4.0,
+      1.062,
+      -1.128,
+      -4.0,
+      -1.201,
+      -1.288,
+      2.13
+    ],
+    "decoded_peak_dbfs": -3.57
+  },
+  {
+    "source": "nexus-damage-lvl3/ElevenLabs_2026-10-15T10_03_08_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/nexus-damage-lvl3/ElevenLabs_2026-10-15T10_03_08_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "nexus-damage-lvl3",
+    "duration_seconds": 6.198,
+    "source_sha256": "121c2ce6a64c67052f1f453e390c3e53f34fca7e930e8891a20700f147905bb3",
+    "output_sha256": "d4d940706cdc2b26b2f4f2af0541589cb67479f9a622a2fdd0987ed4ee6254ef",
+    "reference_eq_db": [
+      3.428,
+      -0.704,
+      0.057,
+      1.005,
+      -1.203,
+      -3.141,
+      -0.625
+    ],
+    "decoded_peak_dbfs": -4.87
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_50_19_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_50_19_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 4.108,
+    "source_sha256": "f501642186f33b8b4d7a7ec9424efd062c3c87c7754b6e4373e56de9424799a5",
+    "output_sha256": "90b9b40cf2b296cfe9947b369e6e51745abb2e190c91734d3ad5783cd127a35b",
+    "reference_eq_db": [
+      0.546,
+      0.964,
+      4.0,
+      0.704,
+      -4.0,
+      -4.0,
+      0.68
+    ],
+    "decoded_peak_dbfs": -3.52
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_50_45_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_50_45_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 3.873,
+    "source_sha256": "cac3d1059bab1318c47229488321a6f906385528bf22b70d93182a8924dcaeff",
+    "output_sha256": "9f8d01ca2b1f963ddfb59682b969ffa813ff32890da1cc643797a453d16dbb71",
+    "reference_eq_db": [
+      0.371,
+      0.004,
+      2.365,
+      -0.451,
+      -2.37,
+      -0.688,
+      3.522
+    ],
+    "decoded_peak_dbfs": -3.19
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_50_56_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_50_56_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 4.186,
+    "source_sha256": "822185e7869a341f8a67b7fcb99ff747c9e25a9ba3eb0c6fcdecaa4a6051a516",
+    "output_sha256": "be25029f86fc8a9b290ea07541af9864b7dc6baa7eb408e697ff1ce3a4d39f8a",
+    "reference_eq_db": [
+      3.452,
+      1.946,
+      2.878,
+      -2.047,
+      -4.0,
+      -3.926,
+      -4.0
+    ],
+    "decoded_peak_dbfs": -2.92
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_51_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_51_16_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 4.447,
+    "source_sha256": "2e85fdb481c5329483b3284bbf735428e112295a38456ee040851e8d020890cf",
+    "output_sha256": "625c7c2423b1adf6346256e2abcebcb65a92f686d7b32d6eae8ef18863350248",
+    "reference_eq_db": [
+      0.097,
+      -0.045,
+      1.007,
+      1.082,
+      -1.245,
+      -2.475,
+      1.06
+    ],
+    "decoded_peak_dbfs": -4.78
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_51_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_51_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 5.466,
+    "source_sha256": "3789f7067021f7730f4cf405c4d843c9a22c50afd0ee96a1eddbdb97c4d4ef47",
+    "output_sha256": "ccade0664f19b4b22bf734d82cc5003e510697e57f24f1a4bbf92f248f22e8c5",
+    "reference_eq_db": [
+      1.138,
+      -0.488,
+      2.069,
+      -0.02,
+      -1.736,
+      -0.576,
+      2.998
+    ],
+    "decoded_peak_dbfs": -3.97
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_51_46_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_51_46_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 5.571,
+    "source_sha256": "8a0ae0f49815b48acfa11722312d21a841f9487543a069727ee4a4e0027dc045",
+    "output_sha256": "47ca97dd6fb5a9dd1d71851256439f17a58d622bcbe0df430a26be24ede565cf",
+    "reference_eq_db": [
+      2.531,
+      -0.238,
+      0.417,
+      1.115,
+      -1.812,
+      -4.0,
+      -1.884
+    ],
+    "decoded_peak_dbfs": -4.88
+  },
+  {
+    "source": "praising/ElevenLabs_2026-10-15T09_52_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/praising/ElevenLabs_2026-10-15T09_52_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "praising",
+    "duration_seconds": 4.996,
+    "source_sha256": "4ab81b03fe435119e97f54c49bac906657a273ef99e6367c3a4a6133693bfd58",
+    "output_sha256": "9ad3f124d249287ed8f06bd45d509410aa3946629d33f627ece3c0fc3768527d",
+    "reference_eq_db": [
+      4.0,
+      2.304,
+      2.821,
+      -2.495,
+      -4.0,
+      -4.0,
+      -2.43
+    ],
+    "decoded_peak_dbfs": -2.83
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_24_41_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_24_41_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 4.761,
+    "source_sha256": "d42ba0f29c942c742e29c26c7d0b4d9d8e97f73773ae87bd36e29bb35ba50cc2",
+    "output_sha256": "0590425b3a4a46f4a95ac6d7bcc84d5da03b312208c42aed2ee3986f43461c4c",
+    "reference_eq_db": [
+      1.971,
+      -0.444,
+      3.377,
+      0.459,
+      -2.424,
+      -3.58,
+      0.734
+    ],
+    "decoded_peak_dbfs": -5.07
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_38_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_38_57_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 4.682,
+    "source_sha256": "edf8f2cae76992a948b2751f13cbd46427ead766fdc142d6bdf5da27f83e926c",
+    "output_sha256": "ab1c697d91ef16cdb18cf2a6d23b42a973b58442a83ce071422b83611eaae77e",
+    "reference_eq_db": [
+      1.841,
+      -0.2,
+      2.317,
+      -0.812,
+      -2.641,
+      -2.711,
+      0.073
+    ],
+    "decoded_peak_dbfs": -2.63
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_39_55_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_39_55_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 4.682,
+    "source_sha256": "5740ba4e290863679f29b3df25e4b79873cd095693a063cef9cf90fd32849857",
+    "output_sha256": "72b5483c8bbd549987931b9256499c787fd569c267e91d0be6eb5a4fe835d75e",
+    "reference_eq_db": [
+      2.999,
+      0.412,
+      1.915,
+      -1.569,
+      -3.905,
+      -3.101,
+      -1.217
+    ],
+    "decoded_peak_dbfs": -2.96
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_41_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_41_00_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 5.231,
+    "source_sha256": "52da25f5e797377f97f77da464cc775813576fbb2b28360ee8a5a607ee3cf402",
+    "output_sha256": "7cf85e9e7f31b1c8f09f2f27a4162f0af3adbfee3c986a54fe1cf5dae0f03915",
+    "reference_eq_db": [
+      1.677,
+      -0.006,
+      0.174,
+      0.764,
+      -1.198,
+      -4.0,
+      -0.522
+    ],
+    "decoded_peak_dbfs": -2.82
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_41_19_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_41_19_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 5.231,
+    "source_sha256": "c9577884f69e7018631edef5a2c5af4039fed761884cf1b8ca1d9fbb2de1a3c3",
+    "output_sha256": "39307a77dd8c9b31c2bde8d8eb29b027aebaa34010d57755e0c5e600fd5ee9cf",
+    "reference_eq_db": [
+      0.672,
+      0.661,
+      3.265,
+      -1.631,
+      -2.807,
+      -2.899,
+      -2.739
+    ],
+    "decoded_peak_dbfs": -3.0
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_42_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_42_10_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 4.682,
+    "source_sha256": "538936a19cba1659d5a28681b3a7e4ecd678cee8075b59d5d767d2adfa7b7d9d",
+    "output_sha256": "72002735c7211e2727b1d27af47d83d089b2f4fe0ed64f741eaa28e1435a3542",
+    "reference_eq_db": [
+      2.602,
+      0.04,
+      0.617,
+      -0.044,
+      -2.043,
+      -4.0,
+      -3.17
+    ],
+    "decoded_peak_dbfs": -2.83
+  },
+  {
+    "source": "tower-destroyed/ElevenLabs_2026-10-15T09_42_44_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/tower-destroyed/ElevenLabs_2026-10-15T09_42_44_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "tower-destroyed",
+    "duration_seconds": 5.388,
+    "source_sha256": "aa1e37af7645eab880f517cffbed08ec75e6300af2c8b3806abadaebf00532ba",
+    "output_sha256": "50cd9b18059f64d67bc75a104337239f03d89b33d8b6adec510c6b5b6337b6fd",
+    "reference_eq_db": [
+      1.351,
+      -0.035,
+      1.183,
+      -0.356,
+      -1.868,
+      -3.864,
+      -1.731
+    ],
+    "decoded_peak_dbfs": -4.6
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_26_04_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_26_04_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 4.369,
+    "source_sha256": "96d687548cfdcba300876539ecab9ef724d0037c6730206d7759f1630e6d825f",
+    "output_sha256": "070b67994d49f9e043f04f5f084385112ec0b89e090ac07665034844dcf564c0",
+    "reference_eq_db": [
+      1.43,
+      -0.216,
+      1.535,
+      1.479,
+      -3.145,
+      -2.444,
+      2.196
+    ],
+    "decoded_peak_dbfs": -4.45
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_47_36_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_47_36_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 4.839,
+    "source_sha256": "b7e3a4dd4bea8843dceb59c1d8c2ac07c7d43e5705711413a1a5e4d242702bf2",
+    "output_sha256": "48612b8e61d6d092aa4924c4bd64285ddbb7d46cf44741634457497ce967bd68",
+    "reference_eq_db": [
+      0.059,
+      0.474,
+      1.2,
+      -0.645,
+      -2.56,
+      -1.089,
+      0.27
+    ],
+    "decoded_peak_dbfs": -5.13
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_47_50_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_47_50_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 4.996,
+    "source_sha256": "b290236072c4c39646bb691f95a368a83b50125c9697c1685877c6de5def44af",
+    "output_sha256": "a56773ec21438cfff7326becd50b4c461f4dbdfbac4f3955bcab0ceb2399afce",
+    "reference_eq_db": [
+      0.93,
+      -0.047,
+      0.901,
+      -0.62,
+      -2.459,
+      -0.717,
+      2.647
+    ],
+    "decoded_peak_dbfs": -3.43
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_48_09_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_48_09_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 4.996,
+    "source_sha256": "3fc2d66de51c884f250dde9047f1ba3228715d416dde16bd4dc2a7f1f7c08db9",
+    "output_sha256": "4e17fd32f0fd85f3389a80db6cefb8a416fab056bf8573e27f799e97d6190957",
+    "reference_eq_db": [
+      1.836,
+      0.708,
+      1.868,
+      -0.628,
+      -4.0,
+      -2.978,
+      0.259
+    ],
+    "decoded_peak_dbfs": -3.29
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_48_23_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_48_23_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 4.604,
+    "source_sha256": "07a7e5f3791dbca57d31dfb1247a4f82671a598da8a6168fb42eb1963689d912",
+    "output_sha256": "90f2a5a0822d99900f973e35254d0ba22ed3c8269037c29c25e518ccf254a801",
+    "reference_eq_db": [
+      2.588,
+      -0.198,
+      -0.088,
+      -0.337,
+      -2.167,
+      -3.751,
+      0.579
+    ],
+    "decoded_peak_dbfs": -5.85
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_49_08_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_49_08_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 5.153,
+    "source_sha256": "6f7094021559a4299e8a9d645af7b77519cf2d11c81792841fe54c734fd9645e",
+    "output_sha256": "f5569784edc289ad57bd13dbea95731dae1e83a13f28f15b90406595d23e452e",
+    "reference_eq_db": [
+      1.21,
+      0.082,
+      0.662,
+      -0.719,
+      -2.194,
+      -3.048,
+      -1.082
+    ],
+    "decoded_peak_dbfs": -4.87
+  },
+  {
+    "source": "wave-clear/ElevenLabs_2026-10-15T09_49_27_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-clear/ElevenLabs_2026-10-15T09_49_27_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-clear",
+    "duration_seconds": 5.074,
+    "source_sha256": "14d309615b02af7a26e6686ee38f1b85ceccef7eb107eb73a267ce91f3520396",
+    "output_sha256": "91d35e9a59aee2dc06843445b24315493d43a310d4323625f6f3b59d7f7692e1",
+    "reference_eq_db": [
+      0.873,
+      0.168,
+      3.842,
+      -1.131,
+      -3.073,
+      -1.778,
+      1.255
+    ],
+    "decoded_peak_dbfs": -2.74
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_25_39_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_25_39_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.761,
+    "source_sha256": "30cbff22069e9229daed8dedf3e8b4af59226f4d0c434e01efa735dbde06fa42",
+    "output_sha256": "37f498090521b4a05cbf331dbd1a61aef2c6695c6e4afccc33a69a8a8abccd66",
+    "reference_eq_db": [
+      1.93,
+      0.142,
+      2.621,
+      -0.336,
+      -3.126,
+      -4.0,
+      -2.33
+    ],
+    "decoded_peak_dbfs": -2.85
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_34_07_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_34_07_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.996,
+    "source_sha256": "965ac77c59dfec66f4bd3a7145f75e721703893c76a96327bda11d3bc8418405",
+    "output_sha256": "4ec4abdaefaa5f12029d58b5310adcae9132b8d712e659d9701045105d0b0ae4",
+    "reference_eq_db": [
+      2.079,
+      -0.67,
+      1.145,
+      0.225,
+      -1.564,
+      -0.898,
+      0.808
+    ],
+    "decoded_peak_dbfs": -2.62
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_34_43_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_34_43_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.996,
+    "source_sha256": "ee02a3787550dfc4f5678b030c9557bc110afdbb2e423d808296931c4ba50e28",
+    "output_sha256": "00cbdbee5c8613db94d0f12bd95a76d4cbbeed406be1560332b98a4ffc0cb18a",
+    "reference_eq_db": [
+      1.746,
+      -0.233,
+      -0.651,
+      -0.765,
+      -0.851,
+      -2.426,
+      1.546
+    ],
+    "decoded_peak_dbfs": -4.71
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_35_02_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_35_02_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.682,
+    "source_sha256": "a58d65926ff386aaf12efb1d62864f3d128187b71b2d0a6db64248b97dabc065",
+    "output_sha256": "a0ccae7621cc7d2535d65d09fc4deff24476cf36bf22a5a4cbdb3323fa7260ba",
+    "reference_eq_db": [
+      1.83,
+      0.142,
+      3.33,
+      -0.802,
+      -3.388,
+      -3.664,
+      -0.034
+    ],
+    "decoded_peak_dbfs": -2.87
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_35_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_35_31_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.447,
+    "source_sha256": "18e63af511dcb52eb48edae812b03d2c3df4b0fd20313ba656c744856501c320",
+    "output_sha256": "247a72c88967f5af0f329767db0ae525749a42e710652c43b64f413863b8c8ee",
+    "reference_eq_db": [
+      0.722,
+      0.242,
+      1.985,
+      0.254,
+      -1.958,
+      -4.0,
+      -0.827
+    ],
+    "decoded_peak_dbfs": -3.07
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_35_52_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_35_52_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.761,
+    "source_sha256": "1d21d11df528ef9c48779689f4d5ad53627dde90760fa23318119c0a97e024ae",
+    "output_sha256": "45b8c5318f275a15158c8874816a263e2cf01c3b9e30f91c9ffce50c768e2e3b",
+    "reference_eq_db": [
+      1.543,
+      2.162,
+      3.475,
+      -2.431,
+      -4.0,
+      -3.498,
+      0.735
+    ],
+    "decoded_peak_dbfs": -2.9
+  },
+  {
+    "source": "wave-start/ElevenLabs_2026-10-15T09_36_52_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/wave-start/ElevenLabs_2026-10-15T09_36_52_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "wave-start",
+    "duration_seconds": 4.604,
+    "source_sha256": "17a9c0efbea730a4a8891a55cf5b4055f83f6d105814c33ed5f549b0421d32cc",
+    "output_sha256": "6abb34b115d2d8f06a702501d3fc6e4fee8a84d8769d3f01331d4730e0cb1de0",
+    "reference_eq_db": [
+      2.303,
+      -0.251,
+      -0.693,
+      -1.15,
+      -0.04,
+      -3.291,
+      0.005
+    ],
+    "decoded_peak_dbfs": -6.33
+  },
+  {
+    "source": "welcome/ElevenLabs_2026-10-15T09_43_32_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/welcome/ElevenLabs_2026-10-15T09_43_32_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "welcome",
+    "duration_seconds": 4.996,
+    "source_sha256": "55bfa04f3f5ac7a7c145d90070699ae20d65112f6902d8e0fa8c03ee780e14c0",
+    "output_sha256": "a58e08f5610d6494ce76f3d0016aeb88c0ba3b29cb79f3c04a0b86e5df80745e",
+    "reference_eq_db": [
+      2.59,
+      0.044,
+      -0.894,
+      -1.751,
+      -2.172,
+      -1.107,
+      1.518
+    ],
+    "decoded_peak_dbfs": -2.78
+  },
+  {
+    "source": "welcome/ElevenLabs_2026-10-15T09_43_54_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/welcome/ElevenLabs_2026-10-15T09_43_54_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "welcome",
+    "duration_seconds": 5.884,
+    "source_sha256": "4f2c7d7d6a6b96a77482227c1b655c97248ce54343da025869a9351362bbdb8f",
+    "output_sha256": "b98eaa2b41518106e664923bfd9e893f6be6ad1065f14f47921fbc36808545a2",
+    "reference_eq_db": [
+      1.907,
+      0.161,
+      1.953,
+      -1.208,
+      -3.52,
+      -1.888,
+      0.186
+    ],
+    "decoded_peak_dbfs": -3.07
+  },
+  {
+    "source": "welcome/ElevenLabs_2026-10-15T09_44_18_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/welcome/ElevenLabs_2026-10-15T09_44_18_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "welcome",
+    "duration_seconds": 5.884,
+    "source_sha256": "78ec1d602bf36ba7e075c09f89f276ef5bdeeca52c973ac6ebd14ce946e14a89",
+    "output_sha256": "f5c4534695ab4a09810bcbcec6a0106fb44402f3f8c1fbff279e095b34255f2c",
+    "reference_eq_db": [
+      2.395,
+      -0.813,
+      1.608,
+      1.059,
+      -1.082,
+      -2.316,
+      -0.013
+    ],
+    "decoded_peak_dbfs": -5.93
+  },
+  {
+    "source": "welcome/ElevenLabs_2026-10-15T09_45_12_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "url": "/audio/atlas/welcome/ElevenLabs_2026-10-15T09_45_12_MorbidAI_ivc_sp100_s50_sb75_v4.mp3",
+    "category": "welcome",
+    "duration_seconds": 5.153,
+    "source_sha256": "6a0b39afe1e36537b5da4f010c41dff10f79c01eda22c8b3f8d4e3996dfb91b0",
+    "output_sha256": "5917aceb208639f6cd32c6728485b7eb22898de990bf512e70f1747e64bfed4f",
+    "reference_eq_db": [
+      2.563,
+      -0.678,
+      -0.501,
+      -0.261,
+      -0.743,
+      1.245,
+      4.0
+    ],
+    "decoded_peak_dbfs": -2.97
+  }
+]

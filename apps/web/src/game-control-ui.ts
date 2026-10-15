@@ -2098,6 +2098,8 @@ export type HudState = {
   hitVolume: number;
   /** Titresim acik mi; kutu yalnizca destekleyen cihazda gorunuyor. */
   vibration: boolean;
+  /** ATLAS telsiz anonslari acik mi (seviyesi seslendirme kaydiricisindan). */
+  atlasVoice: boolean;
   /**
    * `stats.wave` dalgasindaki ucanlar; yoksa alan yok. Kurulumda o numara
    * siradaki dalga, yani etiket de onu anlatiyor.
@@ -2138,7 +2140,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   let state: HudState = {
     status: t("hud.status.checking"), stats: EMPTY_HUD_STATS, ping: "-- ms", pingTone: "warn", pingDetail: "",
     continueVisible: false, continueWaiting: false, perfOpen: false, perfText: "", audioOpen: false, musicVolume: 0.5, voiceVolume: 0.5,
-    sfxVolume: 0.5, hitVolume: 0.5, vibration: true,
+    sfxVolume: 0.5, hitVolume: 0.5, vibration: true, atlasVoice: true,
     statsOpen: false, statsTab: "damage", statsTowers: [], statsEffects: [], forecastEnemyCount: 0, airWarning: false,
     upgradeReady: false
   };
@@ -2207,6 +2209,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       <p class="game-hud__forecast-pattern" data-hud-forecast-pattern hidden><b data-hud-forecast-pattern-name></b><span data-hud-forecast-pattern-hint></span></p>
       <p class="game-hud__forecast-warning" data-hud-forecast-warning hidden></p>
     </div>
+    <div class="game-hud__atlas" data-hud-atlas role="img" hidden><span class="game-hud__atlas-level" aria-hidden="true"><i></i><i></i><i></i><i></i></span><b>ATLAS</b></div>
     <div data-hud-popups></div>
     <span class="game-hud__gain" data-hud-gold-gain aria-hidden="true" hidden></span>
     <div class="game-hud__wave-clear" data-hud-wave-clear role="status" aria-live="polite" hidden></div>
@@ -2227,6 +2230,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   const comboCountNode = root.querySelector<HTMLElement>("[data-hud-combo-count]")!;
   const comboMultiNode = root.querySelector<HTMLElement>("[data-hud-combo-multi]")!;
   const teamStreaksNode = root.querySelector<HTMLElement>("[data-hud-team-streaks]")!;
+  const atlasNode = root.querySelector<HTMLElement>("[data-hud-atlas]")!;
   const waveAirNode = root.querySelector<HTMLElement>("[data-hud-air]")!;
   const forecastNode = root.querySelector<HTMLElement>("[data-hud-forecast]")!;
   const forecastCountNode = root.querySelector<HTMLElement>("[data-hud-forecast-count]")!;
@@ -2300,8 +2304,14 @@ export function setupGameHudUi(game: Phaser.Game) {
     forecastPreNode.data = pre;
     forecastPostNode.data = post;
     setText(forecastWarningNode, t("hud.forecast.airWarning"));
+    atlasNode.setAttribute("aria-label", t("hud.atlas.speaking"));
   };
   applyStaticLabels();
+
+  /** ATLAS telsiz gostergesi: konustugu surece gorunur (sahne `game:hud-atlas`). */
+  const showAtlas = (speaking: boolean) => {
+    atlasNode.hidden = !speaking;
+  };
 
   /**
    * Dalganin hava etiketi ve kurulumdaki ongoru kutusu.
@@ -2906,6 +2916,8 @@ export function setupGameHudUi(game: Phaser.Game) {
       + (canVibrate
         ? `<label>${escapeHudText(t("hud.audio.vibration"))} <input data-toggle="vibration" type="checkbox"${next.vibration ? " checked" : ""}></label>`
         : "")
+      // ATLAS anonslari: seviye "Seslendirme" kaydiricisinda, burada yalnizca ac/kapat.
+      + `<label>${escapeHudText(t("hud.audio.atlas"))} <input data-toggle="atlas" type="checkbox"${next.atlasVoice ? " checked" : ""}></label>`
       // Gizlilik: oyuncu tercihi dogrudan depoya; sahneye gitmiyor.
       + `<label>${escapeHudText(t("menu.telemetry.label"))} <input data-toggle="telemetry" type="checkbox" aria-describedby="game-hud-telemetry-note"${readTelemetrySetting() ? " checked" : ""}></label>`
       + `<p id="game-hud-telemetry-note" class="game-hud__popup-note game-hud__popup-note--muted">${escapeHudText(t("menu.telemetry.note"))}</p>`
@@ -2920,7 +2932,7 @@ export function setupGameHudUi(game: Phaser.Game) {
       ? `stats:${next.statsTab}:${next.statsTowers.map((t) => `${t.id}:${Math.round(t.damage)}:${t.dps.toFixed(1)}`).join(",")}`
         + `:${next.statsEffects.map((e) => `${e.label}:${e.value.toFixed(1)}`).join(",")}`
       : "";
-    const audioKey = next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}:${next.sfxVolume}:${next.hitVolume}:${next.vibration}` : "";
+    const audioKey = next.audioOpen ? `audio:${next.musicVolume}:${next.voiceVolume}:${next.sfxVolume}:${next.hitVolume}:${next.vibration}:${next.atlasVoice}` : "";
     const key = `${next.perfOpen ? `perf:${next.perfText}` : ""}|${audioKey}|${statsKey}`;
     if (key === lastPopupKey) return;
     lastPopupKey = key;
@@ -2949,6 +2961,9 @@ export function setupGameHudUi(game: Phaser.Game) {
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"vibration\"]").forEach((input) => input.addEventListener("change", () => {
       dispatch("setVibration", input.checked ? 1 : 0);
+    }));
+    popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"atlas\"]").forEach((input) => input.addEventListener("change", () => {
+      dispatch("setAtlasVoice", input.checked ? 1 : 0);
     }));
     popupsNode.querySelectorAll<HTMLInputElement>("[data-toggle=\"telemetry\"]").forEach((input) => input.addEventListener("change", () => {
       setTelemetryEnabled(input.checked);
@@ -3013,6 +3028,7 @@ export function setupGameHudUi(game: Phaser.Game) {
   game.events.on("game:hud-team-ultimate", showTeamUltimate);
   game.events.on("game:hud-team-notice", showTeamNotice);
   game.events.on("game:hud-assist", showTeamAssist);
+  game.events.on("game:hud-atlas", showAtlas);
   // Dil degisince: sablonun sabit metinleri yerinde yeniden yaziliyor (dugum
   // ve dinleyiciler ayni), serit ve acik paneller anahtari bosaltilip son
   // durumla yeniden ciziliyor. Gecici damgalar (dalga, ulti, toast) kendi

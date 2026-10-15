@@ -60,13 +60,15 @@ SIL Open Font License 1.1: https://openfontlicense.org
 |---|---|---|---|
 | gpt-image | OpenAI | OpenAI Terms of Use | https://openai.com/policies/terms-of-use |
 | Suno | Suno, Inc. | Suno Terms of Service | https://suno.com |
+| ElevenLabs | ElevenLabs | ElevenLabs Terms of Service | https://elevenlabs.io |
 
 Kanıt: `apps/web/public/images/melis-creepy-unstoppable.png` içinde imzalı bir
 C2PA bildirimi var (üretici "OpenAI Media Service API", araç `gpt-image`,
 `digitalSourceType: trainedAlgorithmicMedia`, 2026-06-23). itch.io sayfasında
 "Generative AI disclosure" alanı, Steam'de içerik anketindeki yapay zekâ
 beyanı bu yüzden "evet, grafik" olarak doldurulmalı. Lobi müziği Suno ile
-üretildi (aşağıda "Müzik: Last Stand"); beyan "evet, grafik ve müzik" olur.
+üretildi (aşağıda "Müzik: Last Stand"), ATLAS telsiz anonsları ElevenLabs ile
+seslendirildi (aşağıda "Ses: ATLAS telsiz anonsları"); beyan "evet, grafik, müzik ve ses" olur.
 
 ### Yazılım
 
@@ -79,7 +81,7 @@ beyanı bu yüzden "evet, grafik" olarak doldurulmalı. Lobi müziği Suno ile
 ## Geliştirici yapımı varlıklar
 
 Aşağıdaki görsel, ses ve müzik varlıklarını geliştirici (gunesatakan) kendisi
-üretti. Bazı görseller ve lobi müziği üretken yapay zekâ araçlarıyla yapıldı. Üçüncü taraf lisans
+üretti. Bazı görseller, lobi müziği ve ATLAS seslendirmesi üretken yapay zekâ araçlarıyla yapıldı. Üçüncü taraf lisans
 gerektiren kaynaklar yukarıdaki bölümlerde ayrıca listelendi. Aşağıdaki liste
 kaydın eksiksiz olması için dosya yollarını gruplar hâlinde tutuyor.
 
@@ -88,9 +90,11 @@ kaydın eksiksiz olması için dosya yollarını gruplar hâlinde tutuyor.
 Oyunun bazı görselleri (düşman ve kule sprite'ları, menü ve operatör görselleri)
 üretken yapay zekâ araçlarıyla oluşturuldu; bunlardan biri yukarıda belirtilen
 OpenAI gpt-image. Lobi müziği "Last Stand" geliştirici tarafından Suno ile
-üretildi. Yapay zekâ artık grafikte **ve** müzikte kullanılıyor: mağaza
-sayfalarındaki yapay zekâ beyanı (itch.io "Generative AI disclosure", Steam
-içerik anketi) "evet, grafik ve müzik" olarak doldurulur.
+üretildi. Oyun içi yapay zekâ komutan ATLAS'ın telsiz anonsları geliştirici
+tarafından ElevenLabs ile seslendirildi (anlık ses klonu "MorbidAI"). Yapay zekâ
+artık grafikte, müzikte **ve** seste kullanılıyor: mağaza sayfalarındaki yapay
+zekâ beyanı (itch.io "Generative AI disclosure", Steam içerik anketi) "evet,
+grafik, müzik ve ses" olarak doldurulur.
 
 ### Müzik: Last Stand (lobi)
 
@@ -123,6 +127,27 @@ müziksiz; yalnızca menüde yukarıdaki lobi müziği çalıyor.
 |---|---|---|
 | `apps/web/public/audio/background-theme.mp3` | Ticari oyun müziği (ID3: Chipzel, "Courtesy"). | Kaldırıldı |
 | `apps/web/public/audio/zeynep-theme.mp3` | Ticari şarkı (ID3: Dynoro, "Zver"). | Kaldırıldı |
+
+### Ses: ATLAS telsiz anonsları
+
+Oyun içi yapay zekâ komutan ATLAS'ın Türkçe telsiz anonsları (karşılama, dalga
+başı ve sonu, nexus uyarıları, kule kaybı, övgü, yenilgi ve zafer; 10 kategori,
+61 satır). Geliştirici ElevenLabs ile üretti: anlık ses klonu (Instant Voice
+Clone) "MorbidAI", ücretli ElevenLabs planı. Telsiz efekt zinciri
+`tools/build-atlas-voices.py` ve `tools/atlas-voice-preset.json`'da. Çalma
+mantığı `apps/web/src/atlas-voice.ts`.
+
+| Eser | Yazar | Lisans | Bağlantı |
+|---|---|---|---|
+| ATLAS voice lines | gunesatakan (ElevenLabs Instant Voice Clone "MorbidAI") | ElevenLabs paid plan: commercial use allowed | https://elevenlabs.io |
+
+- Dosyalar: `apps/web/public/audio/atlas/<kategori>/<kategori>-NN.mp3` ve
+  `apps/web/public/audio/atlas/manifest.json` (mono, 64 kb/s MP3, ~-18 LUFS,
+  gerçek tepe ≤ -1,5 dBTP; `tools/build-atlas-voice.mjs` üretiyor).
+- Kaynak (pakete girmiyor): `assets-src/atlas/` (efekt zinciri uygulanmış
+  192 kb/s ustalar).
+- **Lisans:** satırlar ücretli bir ElevenLabs planıyla üretildi; ticari
+  kullanıma izin var.
 
 ### Seri anonsları
 
@@ -190,8 +215,9 @@ manifest.
 - Typefaces (loaded from Google Fonts): Cinzel (Natanael Gama), Rajdhani
   (Indian Type Foundry), Share Tech Mono (Carrois Apostrophe). All SIL OFL 1.1.
 - Generative AI: OpenAI gpt-image, under the OpenAI Terms of Use
-  (`melis-creepy-unstoppable.png` carries a C2PA manifest), and Suno, under
-  the Suno Terms of Service (the lobby music). Declare generative AI on
+  (`melis-creepy-unstoppable.png` carries a C2PA manifest), Suno, under
+  the Suno Terms of Service (the lobby music), and ElevenLabs, under the
+  ElevenLabs Terms of Service (the ATLAS voice lines). Declare generative AI on
   itch.io and Steam.
 - Software: Phaser (MIT), Colyseus (MIT), Bounty Board Arcade SDK (MIT).
 
@@ -199,7 +225,14 @@ manifest.
 enemy sprites, the tower sprites, the splash art, the Zeynep hands, the
 Melis portraits, the AttackLord operator icon (`attacklord-icon-*.webp`) and
 the lobby music were made by the developer. Some of the
-visuals and the lobby music were made with generative AI tools.
+visuals, the lobby music and the ATLAS voice were made with generative AI tools.
+
+**Voice:** the in-game AI commander ATLAS (Turkish radio lines: welcome, wave
+start and clear, nexus warnings, tower lost, praise, defeat and victory) was
+voiced by the developer (gunesatakan) with ElevenLabs, using an Instant Voice
+Clone ("MorbidAI"), on a paid ElevenLabs plan: commercial use is allowed.
+Shipped files: `apps/web/public/audio/atlas/` (built by
+`tools/build-atlas-voice.mjs` from `assets-src/atlas/`, which is not shipped).
 
 **Music:** "Last Stand" by gunesatakan (aliatakangunes), generated with Suno AI
 (`apps/web/public/audio/music/last-stand.mp3`). It plays as lobby music on the
@@ -216,6 +249,7 @@ above plays on the menu.
 
 **AI disclosure:** some of the game's artwork (enemy and tower sprites, menu
 and operator images) was created with generative AI tools, including OpenAI
-gpt-image, and the lobby music ("Last Stand") was generated with Suno AI. AI is
-used in graphics and music. Store-page AI disclosures (itch.io "Generative AI
-disclosure", Steam content survey) are answered "yes, graphics and music".
+gpt-image, the lobby music ("Last Stand") was generated with Suno AI, and the
+ATLAS radio voice lines were generated with ElevenLabs. AI is used in graphics,
+music and voice. Store-page AI disclosures (itch.io "Generative AI disclosure",
+Steam content survey) are answered "yes, graphics, music and voice".

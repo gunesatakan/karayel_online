@@ -312,6 +312,19 @@ import { ammoTypeLabels, attackShapeLabels, cardRarityLabels, damageTypeCodex, h
 import type { HudState, TeamAssistToast, TeamNoticeToast, TeamStreakToast, TeamUltimateChip, UltimateStampEvent } from "../game-control-ui";
 import { EMPTY_HUD_STATS } from "../game-control-ui";
 import { FeedbackDirector, type FeedbackKind } from "../feedback-director";
+import {
+  ATLAS_DUCK_GAIN,
+  ATLAS_DUCK_TIME_CONSTANT,
+  AtlasOnceSet,
+  AtlasTowerWatch,
+  AtlasVoice,
+  AtlasWaveWatch,
+  createAtlasWebAudio,
+  readAtlasEnabled,
+  readAtlasWelcomed,
+  writeAtlasEnabled,
+  writeAtlasWelcomed
+} from "../atlas-voice";
 import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 import { getKillSoundCue } from "../sfx-samples";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
@@ -475,6 +488,7 @@ type ControlActionDetail = {
     | "setSfxVolume"
     | "setHitVolume"
     | "setVibration"
+    | "setAtlasVoice"
     | "quitMatch"
     | "openInventory"
     | "closeInventory"
@@ -595,6 +609,8 @@ type RemovedEnemyTrace = {
   air: boolean;
   /** Olum sesi icin: sampiyon mu (sampiyon buyuk portalla dusuyor). */
   champion: boolean;
+  /** Ozel tehdit (Kule Avcisi, Enerji Yiyici...); ATLAS'in ovgusu icin. */
+  special?: SpecialEnemyKind;
 };
 
 /**
@@ -1336,6 +1352,19 @@ export class GameScene extends Phaser.Scene {
    * ekran butcesi. Sahneyle kuruluyor, sahneyle kapaniyor.
    */
   private feedback?: FeedbackDirector;
+  /**
+   * ATLAS telsiz anonslari (`atlas-voice.ts`): tek yonetmen, olaylar asagidaki
+   * kancalardan. Geri bildirim yonetmeninin baglamini kullaniyor.
+   */
+  private atlas?: AtlasVoice;
+  private atlasEnabled = readAtlasEnabled();
+  /** ATLAS'in bu macin anahtari (oda:asama); degisince izciler sifirlaniyor. */
+  private atlasMatchKey?: string;
+  private readonly atlasTowerWatch = new AtlasTowerWatch();
+  private readonly atlasWaveWatch = new AtlasWaveWatch();
+  private readonly atlasSurgeCuts = new AtlasOnceSet();
+  /** ATLAS konusurken muzigin carpani (mac muziksiz; muzik donerse hazir). */
+  private atlasMusicDuck = 1;
   private audioSettingsOpen = false;
   private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
   private perfPopupOpen = false;
@@ -1498,6 +1527,7 @@ export class GameScene extends Phaser.Scene {
     sfxVolume: DEFAULT_SFX_VOLUME,
     hitVolume: DEFAULT_HIT_VOLUME,
     vibration: true,
+    atlasVoice: true,
     statsOpen: false,
     statsTab: "damage",
     statsTowers: [],
@@ -1744,6 +1774,7 @@ export class GameScene extends Phaser.Scene {
       vibration: this.vibrationEnabled,
       getCamera: () => this.cameras.main
     });
+    this.createAtlasVoice();
     this.createHeader();
     window.addEventListener("karayel:control-action", this.handleControlAction);
     this.beamGraphics = this.add.graphics().setDepth(10);
@@ -1942,6 +1973,14 @@ export class GameScene extends Phaser.Scene {
       window.clearTimeout(this.cardAppliedTimer);
       this.cardAppliedTimer = undefined;
       this.backgroundMusic?.pause();
+      // ATLAS baglami geri bildirimden aliyor: baglam kapanmadan once sussun.
+      this.atlas?.destroy();
+      this.atlas = undefined;
+      this.atlasMatchKey = undefined;
+      this.atlasTowerWatch.reset();
+      this.atlasWaveWatch.reset();
+      this.atlasSurgeCuts.reset();
+      this.game.events.emit("game:hud-atlas", false);
       this.feedback?.destroy();
       this.feedback = undefined;
       this.beamHitTracker.clear();
@@ -2102,6 +2141,7 @@ export class GameScene extends Phaser.Scene {
     this.hudState.sfxVolume = this.sfxVolume;
     this.hudState.hitVolume = this.hitVolume;
     this.hudState.vibration = this.vibrationEnabled;
+    this.hudState.atlasVoice = this.atlasEnabled;
     this.emitHudState();
   }
 
@@ -2341,7 +2381,8 @@ export class GameScene extends Phaser.Scene {
       voiceVolume: this.voiceVolume,
       sfxVolume: this.sfxVolume,
       hitVolume: this.hitVolume,
-      vibration: this.vibrationEnabled
+      vibration: this.vibrationEnabled,
+      atlasVoice: this.atlasEnabled
     };
   }
 
@@ -2359,6 +2400,8 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.voiceVolume = volume;
       writeStoredVolume(VOICE_VOLUME_STORAGE_KEY, volume);
+      // ATLAS da seslendirme kanalinda: calan satir yeni seviyeye.
+      this.atlas?.setVolume(volume);
     }
     this.applyAudioVolumes();
     if (channel === "sfx") {
@@ -2393,9 +2436,79 @@ export class GameScene extends Phaser.Scene {
     this.emitHudState(this.getAudioHudPatch());
   }
 
+  /** "ATLAS sesi" kutusu: kapaliyken hicbir satir calmiyor, calan susuyor. */
+  private setAtlasVoiceEnabled(on: boolean) {
+    this.atlasEnabled = on;
+    writeAtlasEnabled(on);
+    this.atlas?.setEnabled(on);
+    this.emitHudState(this.getAudioHudPatch());
+  }
+
+  /**
+   * ATLAS yonetmeni. Ses geri bildirim yonetmeninin baglamindan (iOS kilidi
+   * tek yerde), seviye seslendirme kaydiricisindan. Konusurken efekt ve muzik
+   * ~%35 kisiliyor, ust bilgide telsiz gostergesi yaniyor ve calan seri anonsu
+   * susuyor (ATLAS oncelikli; konusurken yeni seri anonsu da baslamiyor).
+   */
+  private createAtlasVoice() {
+    const feedback = this.feedback;
+    this.atlas = new AtlasVoice({
+      audio: createAtlasWebAudio({ getContext: () => feedback?.getSharedAudioContext() }),
+      getVolume: () => this.voiceVolume,
+      enabled: this.atlasEnabled,
+      onSpeaking: (speaking) => this.handleAtlasSpeaking(speaking)
+    });
+  }
+
+  private handleAtlasSpeaking(speaking: boolean) {
+    this.feedback?.setDuck(speaking ? ATLAS_DUCK_GAIN : 1, ATLAS_DUCK_TIME_CONSTANT);
+    this.atlasMusicDuck = speaking ? ATLAS_DUCK_GAIN : 1;
+    if (this.backgroundMusic) this.backgroundMusic.volume = this.musicVolume * this.atlasMusicDuck;
+    if (speaking && this.streakVoice && !this.streakVoice.audio.paused) {
+      this.streakVoice.audio.pause();
+    }
+    this.game.events.emit("game:hud-atlas", speaking);
+  }
+
+  /**
+   * ATLAS'in snapshot kancalari (oynatilan snapshot basina bir kez): macin
+   * basi (karsilama), dalga basi, nexus cani, yerel kule yikilmasi ve Metal
+   * Kalkan'in bir karsi atagi yutmasi. Ayni olay snapshot'ta tekrar gelse de
+   * izciler bir kez sayiyor.
+   */
+  private observeAtlas(snapshot: HydratedGameSnapshot) {
+    const atlas = this.atlas;
+    if (!atlas || !this.room || snapshot.result || this.matchResultShown) return;
+    const key = `${this.room.roomId}:${snapshot.stage ?? this.roomStage ?? 0}`;
+    if (this.atlasMatchKey !== key) {
+      this.atlasMatchKey = key;
+      this.atlasTowerWatch.reset();
+      this.atlasWaveWatch.reset();
+      this.atlasSurgeCuts.reset();
+      atlas.startMatch(key, readAtlasWelcomed(key));
+    }
+    if (!atlas.hasWelcomed) {
+      atlas.welcome();
+      writeAtlasWelcomed(key);
+    }
+    const started = this.atlasWaveWatch.observe({ wave: snapshot.team.wave, setupPhase: Boolean(snapshot.setupPhase), over: false });
+    if (started !== undefined) {
+      atlas.waveStarted(started);
+      // Ilk dalga basladi: geri kalan kategoriler arka planda.
+      atlas.prefetchRest();
+    }
+    atlas.nexusHealth(snapshot.team.health, snapshot.team.maxHealth);
+    if (this.atlasTowerWatch.observe(snapshot.towers, this.localSessionId, (id) => id === WALL_TOWER_ID) > 0) {
+      atlas.towerDestroyed();
+    }
+    for (const surge of snapshot.surges ?? []) {
+      if (Array.isArray(surge.cut) && surge.cut.length > 0 && this.atlasSurgeCuts.first(surge.id)) atlas.praise();
+    }
+  }
+
   private applyAudioVolumes() {
     if (this.backgroundMusic) {
-      this.backgroundMusic.volume = this.musicVolume;
+      this.backgroundMusic.volume = this.musicVolume * this.atlasMusicDuck;
     }
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
@@ -3111,6 +3224,9 @@ export class GameScene extends Phaser.Scene {
         break;
       case "setVibration":
         this.setVibrationEnabled(detail.value === 1);
+        break;
+      case "setAtlasVoice":
+        this.setAtlasVoiceEnabled(detail.value === 1);
         break;
       case "quitMatch":
         this.confirmQuitMatch();
@@ -4162,6 +4278,8 @@ export class GameScene extends Phaser.Scene {
     // baglamini yalnizca gercek bir kullanici hareketi icinde baslatiyor,
     // sonra istedigi zaman calabiliyor.
     this.feedback?.unlockAudio();
+    // Kilit acilmadan gelen ATLAS karsilamasi (8 sn icindeyse) bu dokunusta.
+    this.atlas?.unlocked();
 
     // Bir kez yeter. Eskiden `input.once` ile baglanmisti; artik her dokunustan
     // cagriliyor cunku ilk gercek kullanici hareketini yakalamanin tek guvenilir
@@ -5259,6 +5377,8 @@ export class GameScene extends Phaser.Scene {
     if (!message || this.matchResultShown) return;
     this.badgeWatch.noteChampionDown(message);
     this.time.delayedCall(this.playbackDelayMs, () => {
+      // ATLAS ovgusu: sampiyon devrildi (60 sn'de en fazla bir ovgu).
+      if (!this.matchResultShown) this.atlas?.praise();
       const labels = this.levelLabels;
       if (!labels || this.matchResultShown || this.cardChoiceRoot) return;
       const y = message.y - CHAMPION_LABEL_LIFT_PX;
@@ -6522,6 +6642,7 @@ export class GameScene extends Phaser.Scene {
     sectionStart = performance.now();
     this.renderHud(snapshot);
     this.watchWaveClear(snapshot);
+    this.observeAtlas(snapshot);
     this.refreshUpgradeReady(snapshot);
     this.recordClientPerfSection("hud", performance.now() - sectionStart);
     if (now - this.lastShopEventAt > 250) {
@@ -6962,6 +7083,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       return;
     }
     this.matchResultShown = true;
+    // ATLAS'in son satiri: yalnizca maci canli oynayan istemcide (sonuctan
+    // sonra giren oyuncu bu yenilgiyi/zaferi yasamadi). Kapi kosu basina bir kez.
+    if (this.liveSnapshotSeen) this.atlas?.matchEnded(result);
     this.runReportOpenedAt = performance.now();
     this.hideArenaHudOverlays();
     // Acik bir kart perdesi raporun altinda kalip zamanlayicilarini
@@ -8220,7 +8344,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
             tint: mover.baseTint ?? 0xffffff,
             type: mover.type,
             air: Boolean(mover.air),
-            champion: Boolean(mover.crown)
+            champion: Boolean(mover.crown),
+            special: mover.specialKind
           }, now);
         }
         this.enemyGroup?.killAndHide(mover.sprite);
@@ -10677,6 +10802,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (!trace || stale) {
       return;
     }
+    // ATLAS ovgusu: ozel tehdit sayaci -- Kule Avcisi ya da Enerji Yiyici dustu.
+    if (trace.special === "hunter" || trace.special === "eater") {
+      this.atlas?.praise();
+    }
 
     const own = Boolean(event.ownerId) && event.ownerId === this.localSessionId;
     const shape = getDeathBurstShape(trace.type);
@@ -10850,6 +10979,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       });
       // Perde damgadan once acildiysa (ag gecikmesi) karne simdi tamamlaniyor.
       if (this.cardChoiceRoot) this.refreshWaveReportCard();
+      // ATLAS: dalga basina tek zar (%33); izci dalgayi bir kez veriyor.
+      this.atlas?.waveCleared(summary.wave);
     }
     if (!summary || this.cardChoiceRoot) {
       return;
@@ -10973,6 +11104,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   private playKillStreakAnnouncement(rule: KillStreakRule, own: boolean) {
     const sounds = this.killStreakSounds[rule.tier];
     if (sounds.length === 0 || this.voiceVolume <= 0) {
+      return;
+    }
+    // ATLAS konusurken seri anonsu yok: ikisi ust uste binmesin (afis kaliyor).
+    if (this.atlas?.isSpeaking) {
       return;
     }
     if (!own && !canSetMediaVolume()) {

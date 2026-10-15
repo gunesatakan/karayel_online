@@ -5126,6 +5126,60 @@ button.wave-report:active { transform: scale(0.99); }
 .game-hud__forecast--pattern.game-hud__forecast--danger:not([hidden]) ~ .game-hud__team-streaks { top: calc(100% + 70px); }
 
 /*
+ * ATLAS telsiz gostergesi: konusurken cubugun hemen altinda, ortada. Ince
+ * cerceve, dort cizgilik kucuk seviye gostergesi ve "ATLAS" etiketi; parilti
+ * yok, sert bilim kurgu. Dokunusu tutmuyor. Kurulumdaki ongoru kutusu ayni
+ * yerde: gorunurken gosterge onun altina iniyor (takim toast'lariyla ayni pay).
+ */
+.game-hud__atlas {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  border-radius: 2px;
+  color: #bae6fd;
+  background: rgba(2, 6, 23, 0.86);
+  font: 700 10px/1.4 "Share Tech Mono", Consolas, monospace;
+  letter-spacing: 0.18em;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.game-hud__atlas[hidden] { display: none; }
+.game-hud__atlas b { font-weight: 700; }
+.game-hud__atlas-level {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 9px;
+}
+.game-hud__atlas-level i {
+  width: 2px;
+  height: 100%;
+  background: #7dd3fc;
+  transform-origin: bottom;
+  animation: hud-atlas-level 560ms steps(4, end) infinite alternate;
+}
+.game-hud__atlas-level i:nth-child(2) { animation-delay: -140ms; }
+.game-hud__atlas-level i:nth-child(3) { animation-delay: -320ms; }
+.game-hud__atlas-level i:nth-child(4) { animation-delay: -460ms; }
+@keyframes hud-atlas-level {
+  from { transform: scaleY(0.25); }
+  to { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-hud__atlas-level i { animation: none; transform: scaleY(0.7); }
+}
+.game-hud__forecast:not([hidden]) ~ .game-hud__atlas { top: calc(100% + 38px); }
+.game-hud__forecast--danger:not([hidden]) ~ .game-hud__atlas { top: calc(100% + 54px); }
+.game-hud__forecast--pattern:not([hidden]) ~ .game-hud__atlas { top: calc(100% + 54px); }
+.game-hud__forecast--pattern.game-hud__forecast--danger:not([hidden]) ~ .game-hud__atlas { top: calc(100% + 70px); }
+
+/*
  * Ulti karnesi: seridin %56'si, ortada; seri afisinin (%17) ve dalga
  * damgasinin (%32) altinda. Kenar karakterin renginde (`--ult-color`, JS).
  * Baslik tek damga; sutunda altinda nisanin derecesi. Mukemmel nisan altin

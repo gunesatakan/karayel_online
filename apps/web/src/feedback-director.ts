@@ -354,6 +354,8 @@ export class FeedbackDirector {
   private sfxBus?: GainNode;
   private voices: Voice[] = [];
   private sfxVolume: number;
+  /** ATLAS kismasi (`setDuck`); efekt kanalinin seviyesine carpan. */
+  private duckGain = 1;
   private hitVolume: number;
   private hitBus?: GainNode;
   private noiseBuffer?: AudioBuffer;
@@ -620,8 +622,24 @@ export class FeedbackDirector {
     this.sfxVolume = clampVolume(value);
     if (this.context && this.sfxBus) {
       // Aniden atlayan seviye tik sesi cikariyor; kisa bir yumusatma yeterli.
-      this.sfxBus.gain.setTargetAtTime(this.sfxVolume, this.context.currentTime, 0.015);
+      this.sfxBus.gain.setTargetAtTime(this.sfxVolume * this.duckGain, this.context.currentTime, 0.015);
     }
+  }
+
+  /**
+   * ATLAS konusurken efekt (ve vurus) kanalinin carpani: 1 normal, ~0.65
+   * kisik. Yumusak rampa (`timeConstant` sn); kaydirici degeri degismiyor.
+   */
+  setDuck(gain: number, timeConstant = 0.12) {
+    this.duckGain = Math.min(1, Math.max(0, gain));
+    if (this.context && this.sfxBus) {
+      this.sfxBus.gain.setTargetAtTime(this.sfxVolume * this.duckGain, this.context.currentTime, timeConstant);
+    }
+  }
+
+  /** Tek ortak baglam: ATLAS seslendirmesi de bunu kullaniyor (iOS kilidi bir kez). */
+  getSharedAudioContext() {
+    return this.getAudioContext();
   }
 
   /** "Vurus sesleri" kaydiricisi; Efektler'in ustune carpan. */
@@ -1034,7 +1052,7 @@ export class FeedbackDirector {
       compressor.release.value = 0.12;
       compressor.connect(limiter);
       const bus = context.createGain();
-      bus.gain.value = this.sfxVolume;
+      bus.gain.value = this.sfxVolume * this.duckGain;
       bus.connect(compressor);
       this.sfxBus = bus;
     }

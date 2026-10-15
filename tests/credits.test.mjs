@@ -106,8 +106,8 @@ test("yapay zeka beyani CREDITS.md'de Turkce ve Ingilizce, ekran metinlerinde ik
   assert.match(credits.slice(0, credits.indexOf("## English summary")), /üretken yapay zekâ araçlarıyla/);
   assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*generative AI/);
   assert.match(english, /matches have no music/);
-  assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*Suno AI[\s\S]*graphics and music/);
-  assert.match(credits.slice(0, credits.indexOf("## English summary")), /### Yapay zekâ beyanı[\s\S]*Suno[\s\S]*"evet, grafik ve müzik"/);
+  assert.match(english, /\*\*AI disclosure:\*\*[\s\S]*Suno AI[\s\S]*ElevenLabs[\s\S]*graphics, music and voice/);
+  assert.match(credits.slice(0, credits.indexOf("## English summary")), /### Yapay zekâ beyanı[\s\S]*Suno[\s\S]*ElevenLabs[\s\S]*"evet,\s+grafik, müzik ve ses"/);
   assert.match(i18n.tr["credits.game.body"], /yapay zekâ/);
   assert.match(i18n.en["credits.game.body"], /generative AI/);
   assert.match(i18n.tr["credits.game.body"], /lobi müziği/);
@@ -135,7 +135,7 @@ test("lobi muzigi Last Stand: gelistiricinin Suno ile urettigi parca, modulde ve
 test("itch sayfasi beyani ve mobil test listesi lobi muzigini anlatiyor", () => {
   const page = read("docs/itch-page/README.md");
   const declarations = page.slice(page.indexOf("## Beyanlar"), page.indexOf("## Sayfa düzeni"));
-  assert.match(declarations, /AI disclosure: yes \(graphics and music\)/);
+  assert.match(declarations, /AI disclosure: yes \(graphics, music and voice\)/);
   assert.match(declarations, /yalnızca lobi müziği/);
   assert.doesNotMatch(declarations, /oyun şu an müziksiz/);
   const checklist = read("docs/mobile-test-checklist.md");
@@ -165,4 +165,31 @@ test("AttackLord ikonu: gelistirici yapimi, uretken yapay zekayla; modulde, CRED
   const menu = read("apps/web/src/menu-ui.ts");
   assert.match(menu, /assetUrl\("images\/attacklord-icon-256\.webp"\)/);
   assert.match(menu, /assetUrl\("images\/attacklord-icon-128\.webp"\)/);
+});
+
+test("ATLAS seslendirmesi: gelistiricinin ElevenLabs ile urettigi satirlar, ucretli plan; modulde ve CREDITS.md'de", () => {
+  const voice = CREDIT_GROUPS.find((group) => group.id === "voice");
+  assert.ok(voice, "seslendirme grubu yok");
+  const atlas = voice.sources.find((source) => source.id === "atlas-voice");
+  assert.ok(atlas, "ATLAS satiri yok");
+  assert.match(atlas.title, /ATLAS/);
+  assert.ok(atlas.author.includes(CREDITS_DEVELOPER), "yazar gelistirici degil");
+  assert.match(atlas.author, /ElevenLabs Instant Voice Clone "MorbidAI"/);
+  assert.equal(atlas.license, "ElevenLabs paid plan: commercial use allowed");
+  const ai = CREDIT_GROUPS.find((group) => group.id === "ai").sources;
+  assert.ok(ai.some((source) => source.title === "ElevenLabs"), "yapay zeka grubunda ElevenLabs yok");
+
+  const section = credits.slice(credits.indexOf("### Ses: ATLAS telsiz anonsları"), credits.indexOf("### Seri anonsları"));
+  assert.ok(section.startsWith("### Ses: ATLAS"), "CREDITS.md'de ATLAS bolumu yok");
+  assert.ok(section.includes("apps/web/public/audio/atlas/"), "dosya yolu yok");
+  assert.match(section, /MorbidAI/);
+  assert.match(section, /ücretli[\s\S]*ticari\s+kullanıma izin var/);
+  // Satirlar ucretli planla uretildi: "plana bagli" uyarisi yok.
+  assert.doesNotMatch(credits, /plana bağlı|depends? on the (subscription )?plan/i);
+  const english = credits.slice(credits.indexOf("## English summary"));
+  assert.match(english, /\*\*Voice:\*\*[\s\S]*ATLAS[\s\S]*ElevenLabs[\s\S]*MorbidAI[\s\S]*paid ElevenLabs plan: commercial use is allowed/);
+  assert.match(i18n.tr["credits.game.body"], /ATLAS seslendirmesi/);
+  assert.match(i18n.en["credits.game.body"], /ATLAS voice/);
+  assert.match(i18n.tr["credits.group.ai.note"], /ATLAS/);
+  assert.match(i18n.en["credits.group.ai.note"], /ATLAS/);
 });

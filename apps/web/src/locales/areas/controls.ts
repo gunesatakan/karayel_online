@@ -228,6 +228,9 @@ export const trControls = {
   "hud.audio.hit": "Vuruş sesleri",
   "hud.audio.hitNote": "Efektler kapalı: vuruş sesleri de duyulmaz (Efektler ile birlikte ölçeklenir).",
   "hud.audio.vibration": "Titreşim",
+  // ATLAS telsiz anonslari: ac/kapat kutusu ve konusurken ust bilgideki gostergenin ekran okuyucu adi.
+  "hud.audio.atlas": "ATLAS sesi",
+  "hud.atlas.speaking": "ATLAS telsizde konuşuyor",
   // Mac icinden menuye donus: menu panelinin en ustundeki dugme ve onayi.
   "hud.quit.button": "Menüye dön",
   "hud.quit.title": "Menüye dön",
@@ -460,6 +463,8 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.audio.hit": "Hit sounds",
   "hud.audio.hitNote": "Effects off: hit sounds are muted too (they scale with Effects).",
   "hud.audio.vibration": "Vibration",
+  "hud.audio.atlas": "ATLAS voice",
+  "hud.atlas.speaking": "ATLAS is speaking on the radio",
   "hud.quit.button": "Quit to menu",
   "hud.quit.title": "Quit to menu",
   "hud.quit.solo": "Quit the match? Progress will be lost.",

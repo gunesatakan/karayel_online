@@ -24,7 +24,7 @@ export type CreditSource = {
 };
 
 export type CreditGroup = {
-  id: "audio" | "music" | "fonts" | "ai" | "software";
+  id: "audio" | "music" | "voice" | "fonts" | "ai" | "software";
   titleKey: MessageKey;
   noteKey: MessageKey;
   sources: readonly CreditSource[];
@@ -32,7 +32,7 @@ export type CreditGroup = {
 
 /**
  * Oyunun tasarimi, gelistirmesi, gorselleri, sesleri ve lobi muzigi (git
- * yazari; bazi gorseller ve lobi muzigi uretken yapay zeka ile).
+ * yazari; bazi gorseller, lobi muzigi ve ATLAS seslendirmesi uretken yapay zeka ile).
  */
 export const CREDITS_DEVELOPER = "gunesatakan";
 
@@ -74,6 +74,16 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     ]
   },
   {
+    id: "voice",
+    titleKey: "credits.group.voice",
+    noteKey: "credits.group.voice.note",
+    sources: [
+      // ATLAS telsiz anonslari: gelistirici ElevenLabs ile, anlik ses klonu "MorbidAI", ucretli plan.
+      // Dosyalar apps/web/public/audio/atlas (tools/build-atlas-voice.mjs).
+      { id: "atlas-voice", title: "ATLAS voice lines", author: "gunesatakan (ElevenLabs Instant Voice Clone \"MorbidAI\")", license: "ElevenLabs paid plan: commercial use allowed", url: "https://elevenlabs.io" }
+    ]
+  },
+  {
     id: "fonts",
     titleKey: "credits.group.fonts",
     noteKey: "credits.group.fonts.note",
@@ -89,7 +99,8 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     noteKey: "credits.group.ai.note",
     sources: [
       { id: "openai-gpt-image", title: "gpt-image", author: "OpenAI", license: "OpenAI Terms of Use", url: "https://openai.com/policies/terms-of-use" },
-      { id: "suno", title: "Suno", author: "Suno, Inc.", license: "Suno Terms of Service", url: "https://suno.com" }
+      { id: "suno", title: "Suno", author: "Suno, Inc.", license: "Suno Terms of Service", url: "https://suno.com" },
+      { id: "elevenlabs", title: "ElevenLabs", author: "ElevenLabs", license: "ElevenLabs Terms of Service", url: "https://elevenlabs.io" }
     ]
   },
   {

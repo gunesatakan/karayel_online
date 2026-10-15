@@ -1,0 +1,44 @@
+{
+  "name": "ATLAS final approved",
+  "approved_date": "2026-10-15",
+  "sample_rate": 44100,
+  "phaser": {
+    "mix": 0.3,
+    "in_gain": 0.8,
+    "out_gain": 1,
+    "delay_ms": 2,
+    "decay": 0.3,
+    "speed_hz": 0.35,
+    "type": "sinusoidal"
+  },
+  "main_gain": 0.88,
+  "delay_taps": [
+    {
+      "ms": 350,
+      "level": 0.09,
+      "reverb_send": 0.35
+    },
+    {
+      "ms": 700,
+      "level": 0.01,
+      "reverb_send": 0.75
+    }
+  ],
+  "feedback": 0,
+  "main_reverb_send": 0.06,
+  "reverb": {
+    "rt60_seconds": 0.7,
+    "predelay_ms": 25,
+    "fade_in_ms": 25,
+    "ir_length_seconds": 0.9,
+    "seed": 42,
+    "noise_smoothing_samples": 9,
+    "normalization": "unit energy"
+  },
+  "peak_ceiling": 0.891,
+  "output": {
+    "wav": "mono PCM16",
+    "mp3": "192 kbps"
+  },
+  "note": "Reverb values are additive sends, not complementary wet/dry percentages. Uses reference-matched WAV inputs; reference EQ is source-dependent. No distortion, ring modulation or chorus in approved chain."
+}
