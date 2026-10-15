@@ -65,7 +65,13 @@ export const STAT_SCORE = {
   accuracyVsAir: 0.5, projectileSpeedIsolated: 0.25,
   championGold: 0.003, airKillGold: 0.04, damageGold: 0.04, multiKillGold: 0.025, overkillGold: 6,
   garrisonGold: 0.08, upgradeGold: 0.03, heavyKillGold: 0.05, statusKillGold: 0.06,
-  hotKillGold: 0.08, slowedKillGold: 0.08, deliveryGold: 0.15, longRangeKillGold: 0.06
+  hotKillGold: 0.08, slowedKillGold: 0.08, deliveryGold: 0.15, longRangeKillGold: 0.06,
+  // Atis hizi, soguma ve isi, ucuncu tur: kosullu, yaklasik yarisi kadar.
+  woundedFireRate: 1.5, idleCooling: 0.4, critVent: 0.8, crowdFireRate: 12, lockCooling: 0.3, chilledHeatRelief: 0.8,
+  // Efsanevi ihtimaller (temas saniyesi basina): 0,1 ihtimal kabaca +%30
+  // hasarlik bir kart. Dondurma ve cekim hasar vermiyor; yarisi.
+  chainChance: 15, blastChance: 15, executeChance: 12, shatterChance: 12, chronoChance: 15, linkChance: 15,
+  freezeChance: 7, gravityChance: 7
 };
 
 function grantDamageAdd(grant) {

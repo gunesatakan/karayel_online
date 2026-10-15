@@ -185,7 +185,14 @@ const STAT_NEEDS: Readonly<Record<string, readonly ShopItemCapabilityNeed[]>> = 
   killCooling: ["heat", "damage"],
   coldFireRate: ["attacks", "heat"], trackRhythm: ["attacks", "heat"], overclock: ["attacks", "heat"],
   coldSalvo: ["attacks", "heat"], restartShots: ["attacks", "heat"],
-  brakeDamage: ["damage", "heat"], heatToDamage: ["damage", "heat"], heatShock: ["damage", "heat"]
+  brakeDamage: ["damage", "heat"], heatToDamage: ["damage", "heat"], heatShock: ["damage", "heat"],
+  // Atis hizi, soguma ve isi, ucuncu tur. Kriyo Kovan hedefin yavasligina
+  // bakiyor: hedef secmeyen (yorunge) kulede hic islemez.
+  woundedFireRate: ["attacks"], crowdFireRate: ["attacks"], idleCooling: ["heat"], lockCooling: ["heat"],
+  critVent: ["damage", "heat"], chilledHeatRelief: ["targeting", "heat"],
+  // Efsanevi vurus etkileri dogrudan vurusla kuruluyor.
+  chainChance: ["damage"], blastChance: ["damage"], freezeChance: ["damage"], executeChance: ["damage"],
+  shatterChance: ["damage"], chronoChance: ["damage"], linkChance: ["damage"], gravityChance: ["damage"]
 };
 
 /** Kilidin is gordugu kule; yazilmayan kilit (altin, nexus, enkaz, onarim) bir sey sormuyor. Anahtar duz metin (bkz. `STAT_NEEDS`). */

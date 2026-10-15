@@ -234,7 +234,42 @@ export type ModifierStat =
   | "coldSalvo"
   | "restartShots"
   | "heatToDamage"
-  | "heatShock";
+  | "heatShock"
+  /**
+   * Atis hizi, soguma ve isi, ucuncu tur. Hepsi kulenin listesinden okunuyor.
+   *
+   * - `woundedFireRate`: kulenin hedefi azami caninin yarisinin altindayken
+   *   atis hizi (kart: Av Ritmi).
+   * - `idleCooling`: kule 1 oyun saniyesidir vurmuyorken soguma payi (kart:
+   *   Rolanti Sogutmasi).
+   * - `critVent`: kritik vurus, onu atan atisin isisinin bu payini geri
+   *   atiyor (kart: Kritik Tahliye).
+   * - `crowdFireRate`: menzildeki her dusman icin atis hizi, tavan
+   *   `CROWD_FIRE_RATE_MAX_ENEMIES` dusman (esya: Kalabalik Besleyici).
+   * - `lockCooling`: kule isi kilidindeyken soguma payi (esya: Acil Sogutma
+   *   Pompasi).
+   * - `chilledHeatRelief`: yavaslamis ya da donmus hedefe atisin isisi bu
+   *   pay kadar az (esya: Kriyo Kovan).
+   */
+  | "woundedFireRate"
+  | "idleCooling"
+  | "critVent"
+  | "crowdFireRate"
+  | "lockCooling"
+  | "chilledHeatRelief"
+  /**
+   * Efsanevi vurus etkilerinin temas saniyesi basina ihtimali (`legendary`
+   * modulu). Kart ve esya ayni stata yaziyor; kulede toplaniyor, tavan
+   * `LEGENDARY_CHANCE_CAP`.
+   */
+  | "chainChance"
+  | "blastChance"
+  | "freezeChance"
+  | "executeChance"
+  | "shatterChance"
+  | "chronoChance"
+  | "linkChance"
+  | "gravityChance";
 
 export type Modifier = {
   source: string;

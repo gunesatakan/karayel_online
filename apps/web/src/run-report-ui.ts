@@ -156,7 +156,7 @@ function renderPlayers(view: RunReportView) {
 function describeDeck(view: RunReportView) {
   const deck = view.deck;
   if (deck.total === 0) return t("report.run.deck.none");
-  const order: CardRarity[] = ["epic", "rare", "uncommon"];
+  const order: CardRarity[] = ["legendary", "epic", "rare", "uncommon"];
   // Tekil ayri anahtar: Ingilizcede "1 card"; Turkcede ikisi ayni.
   const parts = [t(deck.total === 1 ? "report.run.deck.countOne" : "report.run.deck.count", { n: deck.total })];
   for (const rarity of order) {

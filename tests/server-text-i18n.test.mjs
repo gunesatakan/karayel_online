@@ -82,7 +82,8 @@ const FORMER_TURKISH = {
   "preview.stat.energy": "Enerji / tetikleme",
   "preview.stat.heat": "Isı / tetikleme",
   "preview.stat.cooling": "Soğutma / sn",
-  "preview.stat.sustained": "Sürekli tetikleme / sn"
+  "preview.stat.sustained": "Sürekli tetikleme / sn",
+  "preview.stat.legendary": "Efsanevi ihtimal / sn"
 };
 
 test("sunucu metinleri eskisiyle birebir; istemcinin Turkce sozlugu ayni metni tasiyor", () => {

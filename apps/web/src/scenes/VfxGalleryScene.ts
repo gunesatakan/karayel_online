@@ -32,6 +32,7 @@ import { GALLERY_KILL_CUES } from "../sfx-samples";
 import { COUNTER_SURGE_KIND_CODES, COUNTER_SURGE_TRAVEL_CODES, type CounterSurgeKind, type CounterSurgeSnapshot, type CounterSurgeTravel } from "@karayel/shared";
 import { AegisImpacts, COUNTER_SURGE_STYLES, createCounterSurgeBand, drawCounterSurge, getCounterSurgeBand } from "../vfx/counter-surge";
 import { RACE_GALLERY_COLS, RACE_GALLERY_ROWS, RaceGalleryPage } from "../vfx/race-gallery";
+import { LegendaryGalleryPage } from "../vfx/legendary-gallery";
 import { MatchEndStage } from "../vfx/match-end-stage";
 import { MATCH_END_COLD, MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
 import { ATLAS_FINAL_LINE_SECONDS, type MatchEndKind, type MatchEndStructure } from "../match-end-sequence";
@@ -158,7 +159,7 @@ const MECHANIC_LABELS: Record<VfxMechanic, string> = {
   "stack-gauge": "yığın göstergesi"
 };
 
-type Mode = "grid" | "stress" | "surge" | "races" | "ending";
+type Mode = "grid" | "stress" | "surge" | "races" | "ending" | "legendary";
 
 /** Karsi atak sayfalari: cesit, yon, serit ve galerideki dongu (ms). */
 type SurgePage = { kind: CounterSurgeKind; travel: CounterSurgeTravel; lane: number; width: number; crossMs: number; label: string; cut?: boolean };
@@ -262,6 +263,10 @@ export class VfxGalleryScene extends Phaser.Scene {
   private racePage = 0;
   private raceGallery?: RaceGalleryPage;
   private raceStatus?: Phaser.GameObjects.Text;
+  /** Efsanevi kipi: sekiz vurus etkisi tek sayfada; sayfalar normal, LOD 2, azaltilmis hareket. */
+  private legendaryPage = 0;
+  private legendaryGallery?: LegendaryGalleryPage;
+  private legendaryStatus?: Phaser.GameObjects.Text;
   private readonly surgeOrigin = { x: 0, y: 0 };
   /** Mac sonu kipi: sayfa (0 yenilgi, 1 zafer), sahne ve sahnenin girdileri. */
   private endingPage = 0;
@@ -331,6 +336,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeFlash = this.add.graphics().setDepth(24);
     // Irklar kipinin yuzeyleri: zemin (catlak, katlanma isareti) dusmanin altinda, kalkan ve izler kulelerin ustunde.
     this.raceGallery = new RaceGalleryPage(this, this.add.graphics().setDepth(7), this.add.graphics().setDepth(7.3), this.add.graphics().setDepth(8.12), this.add.graphics().setDepth(12.75));
+    // Efsanevi kipi: GameScene ile ayni derinlikler (cekim halkalari 7.38, digerleri 13.3).
+    this.legendaryGallery = new LegendaryGalleryPage(this, this.add.graphics().setDepth(7), this.add.graphics().setDepth(13.3), this.add.graphics().setDepth(7.38), this.flashPool);
     // Mac sonu kipi: duvar govdeleri kulelerin seviyesinde; sahne oyundaki sinif.
     this.endingWalls = this.add.graphics().setDepth(11.9);
     // Galeri oyunun seviyelerini kullaniyor; biri sifirsa dinleme sayfasi
@@ -386,6 +393,11 @@ export class VfxGalleryScene extends Phaser.Scene {
     }
     if (this.mode === "races") {
       this.raceStatus?.setText(this.raceGallery?.render(this.now) ?? "");
+      return;
+    }
+    if (this.mode === "legendary") {
+      this.legendaryStatus?.setText(this.legendaryGallery?.render(this.now) ?? "");
+      this.flashPool?.update(this.now);
       return;
     }
     if (this.mode === "ending") {
@@ -479,6 +491,8 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.surgeStatus = undefined;
     this.raceGallery?.clear();
     this.raceStatus = undefined;
+    this.legendaryGallery?.clear();
+    this.legendaryStatus = undefined;
     this.clearEndingPage();
     if (this.mode === "ending") {
       this.scenario = undefined;
@@ -495,6 +509,15 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.lod.force(0);
       this.perfText?.setVisible(false);
       this.buildRacePage();
+      this.refreshControls();
+      return;
+    }
+    if (this.mode === "legendary") {
+      this.scenario = undefined;
+      for (const surface of this.surfaces) surface.clear();
+      this.lod.force(0);
+      this.perfText?.setVisible(false);
+      this.buildLegendaryPage();
       this.refreshControls();
       return;
     }
@@ -948,6 +971,10 @@ export class VfxGalleryScene extends Phaser.Scene {
       this.mode = this.mode === "races" ? "grid" : "races";
       this.buildScene();
     }, "races");
+    button("Efsanevi", () => {
+      this.mode = this.mode === "legendary" ? "grid" : "legendary";
+      this.buildScene();
+    }, "legendary");
     button("Maç sonu", () => {
       this.mode = this.mode === "ending" ? "grid" : "ending";
       this.buildScene();
@@ -998,6 +1025,12 @@ export class VfxGalleryScene extends Phaser.Scene {
     if (this.mode === "races") {
       const count = this.raceGallery?.pageCount ?? 1;
       this.racePage = (this.racePage + delta + count) % count;
+      this.buildScene();
+      return;
+    }
+    if (this.mode === "legendary") {
+      const count = this.legendaryGallery?.pageCount ?? 1;
+      this.legendaryPage = (this.legendaryPage + delta + count) % count;
       this.buildScene();
       return;
     }
@@ -1062,6 +1095,17 @@ export class VfxGalleryScene extends Phaser.Scene {
     this.labels.push(this.add.text(6, 6, gallery.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
     this.raceStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
     this.labels.push(this.raceStatus);
+  }
+
+  /** Efsanevi sayfasi: sekiz etki ikiye dort hucrede, galerinin tum alani. */
+  private buildLegendaryPage() {
+    const gallery = this.legendaryGallery;
+    if (!gallery) return;
+    const width = this.cameras.main.width / this.cameras.main.zoom;
+    gallery.build(this.legendaryPage, { x: 8, y: HEADER + 4, width: width - 16, height: this.worldHeight - HEADER - FOOTER - 8 });
+    this.labels.push(this.add.text(6, 6, gallery.label, { fontFamily: "Rajdhani, sans-serif", fontSize: "13px", color: "#f8fafc", fontStyle: "bold" }).setDepth(30));
+    this.legendaryStatus = this.add.text(6, 22, "", { fontFamily: "Rajdhani, sans-serif", fontSize: "11px", color: "#94a3b8" }).setDepth(30);
+    this.labels.push(this.legendaryStatus);
   }
 
   /** Karsi atak sayfasinin karesi: dongudeki ilerleme, oyundaki cizici, yapi flaslari ve siper carpmalari. */
@@ -1277,7 +1321,7 @@ export class VfxGalleryScene extends Phaser.Scene {
       element.style.background = active ? "#0e7490" : "#0f172a";
     };
     const page = bar.querySelector<HTMLElement>('[data-vfx="page"]');
-    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : this.mode === "races" ? `${this.racePage + 1} / ${this.raceGallery?.pageCount ?? 1}` : this.mode === "ending" ? `${this.endingPage + 1} / 2` : "—";
+    if (page) page.textContent = this.mode === "grid" ? `${this.page + 1} / ${this.pageCount}` : this.mode === "surge" ? `${this.surgePage + 1} / ${SURGE_PAGES.length}` : this.mode === "races" ? `${this.racePage + 1} / ${this.raceGallery?.pageCount ?? 1}` : this.mode === "ending" ? `${this.endingPage + 1} / 2` : this.mode === "legendary" ? `${this.legendaryPage + 1} / ${this.legendaryGallery?.pageCount ?? 1}` : "—";
     set("slow", this.slow);
     set("pause", this.paused, this.paused ? "Oynat" : "Duraklat");
     set("mate", this.teammate);
@@ -1285,6 +1329,7 @@ export class VfxGalleryScene extends Phaser.Scene {
     set("surge", this.mode === "surge");
     set("races", this.mode === "races");
     set("ending", this.mode === "ending");
+    set("legendary", this.mode === "legendary");
     set("mute", this.muted, this.muted ? "Sessiz" : "Ses açık");
   }
 }

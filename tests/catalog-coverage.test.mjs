@@ -44,7 +44,9 @@ const ALL_STATS = [
   "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",
   "slowBleed", "slowVulnerability", "coolingFlat", "brakeCooling", "ventHeat", "killCooling",
   "neighborCooling", "heatBleed", "fireRateHeatRelief", "coldFireRate", "trackRhythm", "brakeDamage",
-  "overclock", "coldSalvo", "restartShots", "heatToDamage", "heatShock"
+  "overclock", "coldSalvo", "restartShots", "heatToDamage", "heatShock",
+  "woundedFireRate", "idleCooling", "critVent", "crowdFireRate", "lockCooling", "chilledHeatRelief",
+  "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance"
 ];
 
 /**
@@ -64,7 +66,10 @@ const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "championGo
   // Termodinamik Denge kendi statlariyla).
   "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",
   "slowBleed", "slowVulnerability", "coolingFlat", "brakeCooling", "ventHeat", "killCooling",
-  "neighborCooling", "heatBleed", "coldFireRate", "trackRhythm", "brakeDamage", "restartShots", "heatShock"];
+  "neighborCooling", "heatBleed", "coldFireRate", "trackRhythm", "brakeDamage", "restartShots", "heatShock",
+  // Ucuncu tur: kalabaliga, isi kilidine ve hedefin yavasligina bakan esyalar.
+  // Kart tarafinda karsiliklari ayri (Av Ritmi, Rolanti Sogutmasi, Kritik Tahliye).
+  "crowdFireRate", "lockCooling", "chilledHeatRelief"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));
@@ -234,13 +239,15 @@ test("kart ve esya kimlikleri benzersiz", () => {
 
 test("nadirlik cekilis agirligini gercekten degistirir", () => {
   const rarities = new Set(cardCatalog.map((card) => getCardRarity(card)));
-  for (const rarity of ["common", "uncommon", "rare", "epic"]) {
+  for (const rarity of ["common", "uncommon", "rare", "epic", "legendary"]) {
     assert.ok(rarities.has(rarity), `${rarity} nadirlikte hic kart yok`);
   }
   assert.ok(CARD_RARITY_WEIGHT.common > CARD_RARITY_WEIGHT.uncommon);
   assert.ok(CARD_RARITY_WEIGHT.uncommon > CARD_RARITY_WEIGHT.rare);
   // Epik nadirle esit agirlikta; seyrekligi yatirimsiz kurulustaki olu agirliktan.
   assert.ok(CARD_RARITY_WEIGHT.rare >= CARD_RARITY_WEIGHT.epic);
+  // Efsanevi epigin ustunde ve cok seyrek.
+  assert.ok(CARD_RARITY_WEIGHT.epic > CARD_RARITY_WEIGHT.legendary && CARD_RARITY_WEIGHT.legendary > 0);
 
   // Buyuyen katalogda cekirdek guc kartlari hala sik gorunmeli: 46 kartlik
   // havuzdan 3 secenek cikarken common agirligi toplamin anlamli bir payi olmali.

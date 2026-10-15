@@ -263,7 +263,8 @@ export const enArchiveRarityLabels: Readonly<Record<CardRarity, string>> = {
   common: "Common",
   uncommon: "Uncommon",
   rare: "Rare",
-  epic: "Epic"
+  epic: "Epic",
+  legendary: "Legendary"
 };
 
 export const enShopCategoryLabels: Readonly<Record<ShopItemCategory, string>> = {
@@ -363,7 +364,8 @@ export const enCardRarityLabels: Readonly<Record<CardRarity, string>> = {
   common: "common",
   uncommon: "uncommon",
   rare: "rare",
-  epic: "epic"
+  epic: "epic",
+  legendary: "legendary"
 };
 
 export const enAttackShapeLabels: Readonly<Record<TowerAttackShape, string>> = {

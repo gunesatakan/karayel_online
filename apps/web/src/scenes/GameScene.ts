@@ -63,6 +63,7 @@ import { FlashPool, GlowStampPool } from "../vfx/flash-pool";
 import { fnvHash, hashNoise, TEAMMATE_EXTRA_ALPHA, toTier } from "../vfx/kit";
 import { drawServerReactorArcs, type ServerReactorInput } from "../vfx/server-reactor";
 import { VfxLod } from "../vfx/lod";
+import { LegendaryProcVfx, sanitizeLegendaryProc } from "../vfx/legendary-procs";
 import { getProfileDefinitionId, getVfxProfile, getVfxTier } from "../vfx/vfx-profiles";
 import type { ProjectileContactSnapshot } from "@karayel/shared";
 import type { MekaShieldSnapshot, RaceMechanicId } from "@karayel/shared";
@@ -1242,6 +1243,19 @@ export class GameScene extends Phaser.Scene {
   };
   private readonly projectileOwnResolver = (projectile: ProjectileSnapshot) => this.projectileOwnership.get(projectile.id) ?? true;
   private combatVfx?: CombatVfx;
+  /** Efsanevi vurus etkileri (`legendary:procs`): zincir, patlama, dondurma cercevesi, bag... */
+  private legendaryProcs?: LegendaryProcVfx;
+  /** Efsanevi etkilerin dusman konumu: cizilen sprite, karede yeniden kullanilan nesne. */
+  private readonly legendarySpot = { x: 0, y: 0, size: 0 };
+  private readonly legendaryLookup = (id: string) => {
+    const view = this.enemies.get(id);
+    if (!view || !view.sprite.active) return undefined;
+    const spot = this.legendarySpot;
+    spot.x = view.sprite.x;
+    spot.y = view.sprite.y;
+    spot.size = view.displaySize ?? 0;
+    return spot;
+  };
   /** Yuzen hasar sayilarinin sabit havuzu; kac tanesinin gorunecegini yonetmen soyluyor. */
   private damageNumbers?: DamageNumberPool;
   /** "SV 3", "SV 5 · KADEME 2" etiketlerinin havuzu; yonetmenin etiket butcesi kadar. */
@@ -1864,6 +1878,14 @@ export class GameScene extends Phaser.Scene {
     // Olumun yer izi (yanik, leke, toz) dusmanlarin altinda; govde, kirinti
     // ve duman ustlerinde. Kivilcim, duman ve iz efektlerin LOD'uyla dusuyor.
     this.combatVfx = new CombatVfx(this.add.graphics().setDepth(11.7), this.add.graphics().setDepth(7.35), this.vfxLod);
+    // Efsanevi etkiler: cekim halkalari dusmanlarin altinda (7.38), geri
+    // kalani dusman ve kule govdesinin ustunde, can cubugunun (16) altinda (13.3).
+    this.legendaryProcs = new LegendaryProcVfx(this.add.graphics().setDepth(13.3), this.add.graphics().setDepth(7.38), {
+      lod: this.vfxLod,
+      flash: this.flashPool,
+      reducedMotion: () => this.feedback?.reducedMotion ?? false,
+      fallbackEnemySize: this.getMapCellSize()
+    });
     this.damageNumbers = new DamageNumberPool(this, 30);
     // Sayilarin hemen ustunde: seviye etiketi seyrek ve oyuncunun satin aldigi an.
     this.levelLabels = new WorldLabelPool(this, 30.5);
@@ -2033,6 +2055,8 @@ export class GameScene extends Phaser.Scene {
       this.atakanSignatures?.clear();
       this.signatureTowers = [];
       this.zeynepSignatures?.clear();
+      this.legendaryProcs?.clear();
+      this.legendaryProcs = undefined;
       this.zeynepReceipt.clear();
       this.beamInterpolator.clear();
       this.projectileOwnership.clear();
@@ -2069,6 +2093,7 @@ export class GameScene extends Phaser.Scene {
     const vfxStart = performance.now();
     this.combatVfx?.render(now, this.getTowerEffectScale());
     this.attackVfx?.render(now, this.getTowerEffectScale());
+    this.legendaryProcs?.render(now, this.legendaryLookup);
     this.updateMatchEnd(now);
     this.flashPool?.update(now);
     const eventsMs = performance.now() - vfxStart;
@@ -6871,6 +6896,16 @@ export class GameScene extends Phaser.Scene {
     room.onMessage("snapshot", (snapshot: WireGameSnapshot) => this.queueSnapshot(snapshot));
     room.onMessage("structure:breach", (message: StructureBreachMessage) => this.showStructureBreach(message));
 room.onMessage("enemy:frozen", (message: { x: number; y: number }) => this.showFreezeBurst(message.x, message.y));
+    // Efsanevi vurus etkisi: ekrandaki dusman oynatma gecikmesi kadar geride, isaret de oyle.
+    // Sunucu bir tikin olaylarini tek dizide yolluyor (`legendary:procs`).
+    room.onMessage("legendary:procs", (messages: unknown) => {
+      if (!Array.isArray(messages) || this.matchResultShown) return;
+      const at = performance.now() + this.playbackDelayMs;
+      for (const message of messages.slice(0, 64)) {
+        const proc = sanitizeLegendaryProc(message);
+        if (proc) this.legendaryProcs?.emit(proc, at);
+      }
+    });
 room.onMessage("slow:critical", (message: { x: number; y: number }) => this.showSlowCritBurst(message.x, message.y));
     room.onMessage("flow:shift", (message: FlowShiftMessage) => this.showFlowShift(message));
     room.onMessage("ucube:choice", (message: { towerId: string; level: number }) => this.showUcubeChoice(message));

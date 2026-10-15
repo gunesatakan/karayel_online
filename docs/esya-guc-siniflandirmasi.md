@@ -420,3 +420,27 @@ Denetimin bulgularına göre tuzak eşyalar yeniden tasarlandı, ısı bedelleri
 Kart ve eşya mekanikleri: Yeniden Ateşleme Bobini, Isı Dönüştürücü, Aşırı Hız, Soğuk Salvo, Termodinamik Denge. Bunlar kart olduğu için tek kule ölçümüne girmedi; her birinin mekanik testi var. Isı bedeli taşıyan kart ve eşyaların ısı cezası yarıya indi (test: "isi bedeli olan kart ve esyalarin isi cezasi yariya indi").
 
 Kademe: yukarıdaki yeni ısı/hız eşyaları değere göre B–A aralığında; Rejeneratif Fren ve Termal Şok Halkası A'nın üstünde, fiyatları gözden geçirilmeli.
+
+## Üçüncü tur ve efsanevi eşyalar (2026-10-15)
+
+Ölçüm: tek kule (seviye 5), menzilinde duran 6 düşmanlık küme (ölen yerine 0,4 sn sonra yenisi), düşman canı kulenin sürekli (ısı sınırlı) saniyelik hasarının 15 katı, 180 sn, 6 tohum; mühimmat ve enerji dolu. Fark tabana göre toplam hasar. Küçük örnek (kosu basına 4–5 öldürme) ve tetik sonrası dağılan hedef seçimi yüzünden **±%20 gürültü** var; sayılar kademe için kaba yön, kesin değer değil. Testler: `tests/fire-rate-cooling-third-round.test.mjs`, `tests/legendary-effects.test.mjs`.
+
+| Eşya | Fiyat | Mekanik | Takipçi | Obsesyon | Kademe |
+|---|---|---|---|---|---|
+| Kalabalık Besleyici | 115 | Menzildeki her düşman için atış hızı +%6 (en fazla 8) | +%1 | +%7 | C (ısı sınırlı kulede atış hızı tavana çarpar; kalabalıkta ve soğutma eşyasıyla değerli) |
+| Acil Soğutma Pompası | 90 | Isı kilidindeyken soğuma +%200 | 0 | 0 | C (yalnızca kilide giren kulede: Termal Kütle, Kızgın Namlu, sabit aralık) |
+| Kriyo Kovan | 95 | Yavaşlamış / donmuş hedefe atış ısısı −%50 | 0 | 0 | B koşullu (yavaşlatma kuran takımda; ölçümde yavaşlatma yok) |
+| Şimşek Bobini (efsanevi) | 460 | Saniyede %35: sıradaki vuruş 3 düşmana sıçrar, her biri 0,65 kule saniyesi | −%18 | +%38 | A |
+| Patlayıcı Çekirdek (efsanevi) | 480 | Saniyede %35: 1,6 kare patlama, 1 kule saniyesi | +%38 | +%64 | A |
+| Durağan Bobin (efsanevi) | 380 | Saniyede %35: 0,4 sn donma (şampiyon 0,15), 3 sn bağışıklık | 0 | 0 | B (hasar değil kontrol; sızıntıyı geciktirir) |
+| Cellat Modülü (efsanevi) | 440 | Saniyede %35: %15 canın altında infaz; brute, şampiyon, avcı bağışık | +%25 | +%3 | B |
+| Kırılma Çekirdeği (efsanevi) | 420 | Saniyede %35: 3 sn çatlak, ölünce azami canın %14'ü şarapnel, zincirli | −%20 | −%3 | A (sürüde) |
+| Kronal Kapasitör (efsanevi) | 460 | Saniyede %35: 3 sn iz, alınan hasarın %30'u geri | +%3 | +%39 | B (odak ateşi ve co-op'ta büyür) |
+| Bağ Vericisi (efsanevi) | 440 | Saniyede %35: 4 sn bağ, hasarın %35'i ortağa | −%14 | −%15 | A |
+| Graviton Çekirdeği (efsanevi) | 400 | Saniyede %35: 2 sn çekim, 2,5 kare | −%20 | +%29 | B (alan kulesiyle A) |
+
+İkinci ayar (2026-10-15): ihtimaller %10 / %20 / %30'dan %20 / %35 / %50'ye çıktı, büyüklükler indi (zincir 1→0,65, patlama 1,5→1, donma 0,5→0,4 sn, parçalanma %20→%14, iz %40→%30, bağ %50→%35); infaz Atakan'ın infaz bağışıklığına uyuyor. Tablodaki sayılar ikinci ayarla; ilk ayarla aynı ölçüm: zincir +%28 / +%20, patlama +%104 / +%22, infaz +%23 / +%3, parçalanma −%8 / +%38, iz +%4 / +%1, bağ −%20 / +%71, çekim +%5 / +%67. Tetik sıklığı dakikada ~1–2,5'ten ~1,5–3,5'e çıktı: bu kümede düşman çoğu zaman kurulu hak uygulanmadan ölüyor. Gürültü (±%25) etki başına farkı yer yer aşıyor; ölçüm yön gösteriyor, ayar için çok kulelik gerçek dalga ölçümü gerekir.
+
+Kartlar (efsanevi kartlar her hasar veren kuleye saniyede %20): Av Ritmi (+%1 / +%6), Rölanti Soğutması (+%15 / +%7), Kritik Tahliye (0: kritik şansı olmayan taban kulede). Karşılaştırma: Soğutma Sıvısı +%14 / +%5, Senkron Tetik +%34 / +%11, Kritik Sistem +%12 / +%10.
+
+Notlar: efsanevi etkilerin hasar ölçüsü "kule saniyesi" ısının izin verdiği sürekli hızdan (tanımlı hızdan değil); ilk ölçümde tanımlı hız kullanılıyordu ve patlama ile zincir +%170–260 veriyordu, düzeltildi. Hiçbiri tek başına koşuyu kıracak büyüklükte değil; en güçlüleri (patlama, bağ, parçalanma, çekim) alan ve kalabalık kurulumunda. Simülatör puanları `tools/sim/scoring.mjs` ve `quick.mjs`'te.

@@ -1,6 +1,8 @@
 import { getWarehouseCapacity, RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
 import { getLocale } from "./i18n";
 import {
+  BLAST_RADIUS_CELLS,
+  CHAIN_JUMPS,
   GAME_SPEED_MULTIPLIER,
   TOWER_HEAT_BRAKE_TEMPERATURE,
   getCardDefinition,
@@ -253,6 +255,26 @@ function statusLabel(kind: string) {
   return tMaybe(`sheet.status.${kind}`) ?? kind;
 }
 
+/**
+ * Efsanevi etki satiri (`lg:<etki>`): "saniyede %20 · 3 sıçrama × 85 hasar".
+ * `extra` etkiye gore: zincir sicrama basina hasar, patlama hasari, infaz
+ * esigi, parcalanma / geri odeme / bag payi, cekim yaricapi (kare). Sure
+ * gercek saniyeyle, diger etkiler gibi.
+ */
+function formatLegendaryEffect(effect: string, chance: number, durationMs: number | undefined, extra: number | undefined) {
+  const parts = [t("sheet.fx.lg.chance", { v: formatPercent(chance) })];
+  const has = extra !== undefined && Number.isFinite(extra);
+  if (effect === "chain" && has) parts.push(t("sheet.fx.lg.chain", { n: CHAIN_JUMPS, d: formatSmart(extra) }));
+  else if (effect === "blast" && has) parts.push(t("sheet.fx.lg.blast", { d: formatSmart(extra), r: formatNumber(BLAST_RADIUS_CELLS, 1) }));
+  else if (effect === "execute" && has) parts.push(t("sheet.fx.lg.execute", { v: formatPercent(extra) }));
+  else if (effect === "shatter" && has) parts.push(t("sheet.fx.lg.shatter", { v: formatPercent(extra) }));
+  else if (effect === "chrono" && has) parts.push(t("sheet.fx.lg.chrono", { v: formatPercent(extra) }));
+  else if (effect === "link" && has) parts.push(t("sheet.fx.lg.link", { v: formatPercent(extra) }));
+  else if (effect === "gravity" && has) parts.push(t("sheet.fx.lg.gravity", { r: formatNumber(extra, 1) }));
+  if (durationMs) parts.push(t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs), 1) }));
+  return parts.join(" · ");
+}
+
 /** Hedefe bagli hasar paylarinin adi (`TowerStatsWire.dx`). */
 function targetDamageLabel(kind: string) {
   return tMaybe(`sheet.target.${kind}`) ?? kind;
@@ -483,6 +505,11 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     const duration = durationMs ? ` · ${t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs), 1) })}` : "";
     let value = "";
     let sub: string | undefined;
+    if (kind.startsWith("lg:")) {
+      // Efsanevi vurus etkisi: once saniyelik ihtimal, sonra etkinin buyuklugu.
+      effectRows.push({ key: `fx:${kind}`, label, value: formatLegendaryEffect(kind.slice(3), magnitude, durationMs, extra), sub: t("sheet.fx.lg.sub"), detail: [] });
+      continue;
+    }
     if (kind === "slow" || kind === "aslow" || kind === "coolant") {
       const far = kind === "slow" && extra !== undefined ? extra : undefined;
       value = far !== undefined && far !== magnitude

@@ -1799,7 +1799,10 @@ export {
   getCardDefinition,
   getCardRarity,
   getCardTowerReach,
-  ownedCardAppliesToTower
+  ownedCardAppliesToTower,
+  CARD_RARITY_ORDER,
+  LEGENDARY_CARD_NAMES,
+  describeLegendaryEffect
 } from "./cards/index.js";
 export type { CardDefinition, CardDrawOwnedUnlocks, CardDrawSourceBonuses, CardRarity, CardScope, CardTowerProfile, CardTowerReach, Unlock } from "./cards/index.js";
 export { NEUTRAL_ATTACK_MULTIPLIERS, isEmptyTowerGrant, resolveTowerAttackMultipliers, resolveTowerEngine } from "./grants/index.js";
@@ -1832,9 +1835,12 @@ export {
   shopCatalog,
   INSURANCE_CLEAN_WAVE_GOLD,
   BLOOD_BANK_NEXUS_COST,
-  getShopItemTowerEffects
+  getShopItemTowerEffects,
+  SHOP_LEGENDARY_OFFER_WEIGHT,
+  getShopItemOfferWeight,
+  LEGENDARY_ITEM_NAMES
 } from "./shop/index.js";
-export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemLoadout, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
+export type { EquipShopItemFailure, ShopItem, ShopItemCategory, ShopItemLoadout, ShopItemRarity, ShopItemTarget, ShopState, ShopUnlock } from "./shop/index.js";
 export {
   SHOP_ITEM_NEEDS,
   getShopItemNeeds,
@@ -2331,6 +2337,7 @@ export * from "./synergy/index.js";
 export * from "./placement-range/index.js";
 export * from "./zeynep-shots/index.js";
 export * from "./tower-panel/index.js";
+export * from "./legendary/index.js";
 export * from "./server-knowledge/index.js";
 export * from "./i18n/index.js";
 export * from "./i18n/server-text.js";

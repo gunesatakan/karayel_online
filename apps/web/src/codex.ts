@@ -58,7 +58,8 @@ export const cardRarityLabels: Record<CardRarity, string> = {
   common: "yaygın",
   uncommon: "seyrek",
   rare: "nadir",
-  epic: "epik"
+  epic: "epik",
+  legendary: "efsanevi"
 };
 
 export const attackShapeLabels: Record<TowerAttackShape, string> = {

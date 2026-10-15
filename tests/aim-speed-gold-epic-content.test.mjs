@@ -590,7 +590,7 @@ test("istemci epigi kart seciminde, Kart Arsivi'nde, destede ve raporda ayri ciz
   const sceneText = await read("../apps/web/src/locales/areas/scene.ts");
   assert.ok(sceneText.includes(`"scene.scope.projectiles": "Mermi atan kuleler"`));
   const report = await read("../apps/web/src/run-report-ui.ts");
-  assert.ok(report.includes(`["epic", "rare", "uncommon"]`));
+  assert.ok(report.includes(`["legendary", "epic", "rare", "uncommon"]`));
   const controls = await read("../apps/web/src/game-control-ui.ts");
   assert.ok(controls.includes("owned-cards__card--epic"));
 });

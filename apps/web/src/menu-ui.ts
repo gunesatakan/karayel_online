@@ -10,6 +10,8 @@ import {
   SPECIAL_ENEMIES_FIRST_STAGE,
   buildBadgeBoardView,
   buildCardArchiveView,
+  ARCHIVE_RARITY_LABELS,
+  getShopItem,
   buildCosmeticsView,
   createDefaultCosmetics,
   createEmptyCardArchive,
@@ -1748,12 +1750,15 @@ function renderArchiveTab(section: ArchiveSectionView, active: ArchiveKind) {
 function renderArchiveGroup(kind: ArchiveKind, group: ArchiveGroupView) {
   const lockedKey = kind === "cards" ? "menu.cardArchive.lockedCards" : "menu.cardArchive.lockedItems";
   const locked = group.total - group.seen;
+  // Esyalar kategoriye gore gruplu; efsanevi esya kendi grubunda degil,
+  // satirinda efsanevi kartin cercevesi ve etiketiyle ayriliyor.
+  const legendaryItem = (id: string) => kind === "items" && getShopItem(id)?.rarity === "legendary";
   const entries = group.entries.map((entry) => entry.seen
     ? `
-      <article class="card-archive__entry">
+      <article class="card-archive__entry${legendaryItem(entry.id) ? " card-archive__entry--legendary" : ""}">
         <header>
           <strong>${escapeHtml(entry.name)}</strong>
-          <span>${escapeHtml(entry.tag)}</span>
+          <span>${escapeHtml(legendaryItem(entry.id) ? `${entry.tag} · ${ARCHIVE_RARITY_LABELS.legendary}` : entry.tag)}</span>
         </header>
         <p>${escapeHtml(entry.description)}</p>
         ${entry.picks > 0 ? `<small>${t("menu.cardArchive.picked", { n: entry.picks })}</small>` : ""}

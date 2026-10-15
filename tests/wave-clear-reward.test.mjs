@@ -311,7 +311,7 @@ test("nadir tini: kendi olayin (P1), takim arkadasina calmaz, bir secimde ikinci
 });
 
 test("nadirlik: her kartin cercevesi var; nadir kart gercekten seyrek", () => {
-  const counts = { common: 0, uncommon: 0, rare: 0, epic: 0 };
+  const counts = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 };
   for (const card of cardCatalog) {
     const rarity = getCardRarity(card);
     assert.ok(rarity in counts, `${card.id}: ${rarity}`);
@@ -321,6 +321,8 @@ test("nadirlik: her kartin cercevesi var; nadir kart gercekten seyrek", () => {
   assert.ok(CARD_RARITY_WEIGHT.rare < CARD_RARITY_WEIGHT.uncommon && CARD_RARITY_WEIGHT.uncommon < CARD_RARITY_WEIGHT.common);
   assert.ok(counts.epic > 0, "katalogda epik kart var");
   assert.ok(CARD_RARITY_WEIGHT.epic <= CARD_RARITY_WEIGHT.rare, "epik nadirden sik degil");
+  assert.ok(counts.legendary > 0, "katalogda efsanevi kart var");
+  assert.ok(CARD_RARITY_WEIGHT.legendary < CARD_RARITY_WEIGHT.epic, "efsanevi epikten seyrek");
 });
 
 test("epik kart nadirin tinisini aliyor; elde ikisi varsa tini epikte", () => {
@@ -330,4 +332,7 @@ test("epik kart nadirin tinisini aliyor; elde ikisi varsa tini epikte", () => {
   assert.equal(rare[0].index, 2);
   assert.equal(rare[0].atMs, getCardDealTiming(2, false).faceUpMs);
   assert.deepEqual(getCardRevealCues(["epic"], true).map((cue) => cue.kind), ["cardFlip", "cardRare"]);
+  // Efsanevi kart epigin onunde: tini onun yuzunde.
+  const legendary = getCardRevealCues(["epic", "legendary", "rare"], false).filter((cue) => cue.kind === "cardRare");
+  assert.deepEqual(legendary.map((cue) => cue.index), [1]);
 });

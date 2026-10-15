@@ -236,11 +236,13 @@ export type CardRevealCue = { atMs: number; kind: "cardFlip" | "cardRare"; index
  * azaltmada donus yok, tek cevirme sesi ve (varsa) tini hemen.
  *
  * Epik kart da ayni tiniyi aliyor -- ayri bir ses yok, tini nadirligin
- * habercisi -- ve elde ikisi birden varsa tini epik kartin yuzunde.
+ * habercisi -- ve elde ikisi birden varsa tini epik kartin yuzunde. Efsanevi
+ * kart epigin onunde: elde varsa tini onun yuzunde.
  */
 export function getCardRevealCues(rarities: readonly CardRarity[], reducedMotion: boolean): CardRevealCue[] {
   const cues: CardRevealCue[] = [];
-  const epicIndex = rarities.indexOf("epic");
+  const legendaryIndex = rarities.indexOf("legendary");
+  const epicIndex = legendaryIndex >= 0 ? legendaryIndex : rarities.indexOf("epic");
   const rareIndex = epicIndex >= 0 ? epicIndex : rarities.indexOf("rare");
   if (reducedMotion) {
     if (rarities.length > 0) cues.push({ atMs: 0, kind: "cardFlip", index: 0 });

@@ -140,6 +140,41 @@ kartlar `common`, dar kapsamlılar `uncommon` sayılır. Geniş kapsamlı kart h
 kuruluşta işe yarar, o yüzden sık çıkmalı; dar kapsamlı olan ancak doğru kuleyle
 anlamlıdır, o yüzden daha seyrek ama daha güçlü.
 
+`legendary: 0,3` — efsanevi vuruş etkileri (aşağıda). Epiğin üstünde ve çok
+seyrek: 156 kartlık havuzda bir elde (3 kart) efsanevi görme ihtimali ~%1,5.
+Hepsi `tagged` (`combat: true`) ve kendi ağırlığıyla elle yazılır.
+
+### Efsanevi vuruş etkileri
+
+Sekiz etki (`packages/shared/src/legendary`): zincirleme şimşek, vuruşta
+patlama, dondurma, infaz, ölüm parçalanması, kronal iz, hasar bağı, kütle çekim
+çapası. Her birinin bir kartı ve bir eşyası var.
+
+- **İhtimal süre başına, vuruş başına değil.** Kule ile düşman temastayken her
+  tam oyun saniyesinde etki başına zar atılır; tutarsa etki o çift için kurulur
+  ve kulenin o düşmana **bir sonraki** vuruşunda uygulanır. Hızlı ve yavaş kule
+  saniye başına aynı sıklıkta tetikler. Bir çiftte en fazla 2 kurulu hak birikir.
+- **Temas:** kule düşmana doğrudan vuruyor (kendi vuruşu ve vuruşunun alanı;
+  sıçrama, durum tiki ve efsanevi hasar sayılmaz). İki vuruş arası süre kulenin
+  ısının izin verdiği sürekli tetik aralığının 1,5 katını (en az 1,5 oyun sn)
+  geçmiyorsa temas sürer; geçerse kopar ve saat sıfırlanır. İlk vuruş saati
+  başlatır. Saat düşmanın üzerinde kule başına bir kayıt; düşman ölünce silinir.
+- **Kart / eşya:** kart hasar veren bütün kulelere saniyede %20, eşya takıldığı
+  kuleye %35; aynı kulede toplanır, tavan %50. Etkinin büyüklüğü ikisinde aynı.
+  (İlk ayar %10 / %20 / %30'du; ısıyla sınırlı kuleler dakikada 1–3 kez
+  tetikliyordu. İhtimal yükseldi, büyüklükler indi.)
+- **Sayılar:** zincir 3 sıçrama × 0,65 kule saniyesi; patlama 1,6 kare × 1 kule
+  saniyesi; donma 0,4 sn (şampiyon 0,15), 3 sn bağışıklık; infaz %15 canın
+  altında, infaz bağışıklığı (`isExecuteImmune`: brute, şampiyon, avcı) korunur;
+  parçalanma 3 sn çatlak, azami canın %14'ü (şampiyon %6), zincir ×0,6, 2 halka;
+  kronal iz 3 sn, %30 geri; bağ 4 sn, %35; çekim 2 sn, 2,5 kare, 1 kare/sn.
+- **Olaylar:** istemciye tik başına tek `legendary:procs` dizisi (en fazla 48).
+- **Kule saniyesi:** hasar veren etkilerin ölçüsü, kulenin vuruş hasarı ×
+  ısının izin verdiği sürekli tetik hızı. Yavaş ve büyük vuran kule daha büyük
+  patlama almıyor.
+- Aynı kule aynı etkiyi 0,4 oyun sn'den sık uygulamaz (alan kulesinde ekran ve
+  hasar taşmasın); bekleyen hak kaybolmaz.
+
 Kataloğun yaklaşık yarısı düz stat, yarısı davranış olmalı. Düz stat tarafı
 şişerse oyuncu üç seçenek görürken kuruluşunu taşıyan kartı hiç göremez.
 
@@ -182,4 +217,7 @@ Yeni bir kart eklerken:
 - [ ] `tagged` ise uyduğu en az bir kule var mı?
 - [ ] Simülatörde karşılığı tanımlı mı?
 - [ ] Katalog sayısını sabitleyen testleri güncelledin mi?
+- [ ] Yeni nadirlik ya da nadirlik ağırlığı: `CARD_RARITY_ORDER`, istemcinin
+  nadirlik etiketleri ve çerçeveleri (kart seçimi, arşiv, deste, rapor), kart
+  açılış tınısı (`getCardRevealCues`) güncel mi?
 - [ ] `npm test` ve `npm run typecheck` temiz mi?

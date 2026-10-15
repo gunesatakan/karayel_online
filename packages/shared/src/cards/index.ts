@@ -5,6 +5,12 @@ import type { Modifier, ModifierStat, StatConversion } from "../modifiers/index.
 import { isMarkOnlyChoice } from "../marks/index.js";
 import { towerAims, towerFiresAlongFacing } from "../aiming/index.js";
 import { towerFiresProjectiles, towerNeverAttacks } from "../ballistics/index.js";
+import {
+  BLAST_DAMAGE_SECONDS, BLAST_RADIUS_CELLS, CHAIN_DAMAGE_SECONDS, CHAIN_JUMPS, CHRONO_PAYBACK_RATIO, CHRONO_SCAR_MS,
+  EXECUTE_THRESHOLD, FREEZE_CHAMPION_DURATION_MS, FREEZE_DURATION_MS, FREEZE_IMMUNITY_MS,
+  GRAVITY_DURATION_MS, GRAVITY_RADIUS_CELLS, LEGENDARY_CARD_CHANCE, LEGENDARY_CHANCE_STATS, LEGENDARY_EFFECTS, LINK_DURATION_MS, LINK_SHARE,
+  SHATTER_CHAMPION_MAX_HP_RATIO, SHATTER_FRACTURE_MS, SHATTER_MAX_HP_RATIO, type LegendaryEffect
+} from "../legendary/index.js";
 
 export type CardScope =
   | { kind: "global" }
@@ -317,14 +323,24 @@ export function getAccuracyCritChance(accuracyBonus: number) {
  * tasimayan bir cevrim karti eklenirse yatirimsiz kurulusta da
  * (`isConversionCardReady`). Her biri tek kopya.
  */
-export type CardRarity = "common" | "uncommon" | "rare" | "epic";
+/*
+ * `legendary`: efsanevi vurus etkileri (`legendary` modulu). Epigin ustunde
+ * ve cok seyrek: agirlik nadirin kucuk bir payi. Ucuncu bir kurulus
+ * eksenini degil, kulelerin vurusunun kendisini degistiriyorlar; oyuncu bir
+ * kosuda birini ya gorur ya gormez.
+ */
+export type CardRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export const CARD_RARITY_WEIGHT: Record<CardRarity, number> = {
   common: 6,
   uncommon: 3,
   rare: 1,
-  epic: 1
+  epic: 1,
+  legendary: 0.3
 };
+
+/** Nadirliklerin sirasi, en sikindan en seyregine (arayuz ve testler). */
+export const CARD_RARITY_ORDER: readonly CardRarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
 
 export type CardDefinition = {
   id: string;
@@ -364,6 +380,64 @@ export function getCardRarity(card: CardDefinition): CardRarity {
 }
 
 const effect = (source: string, stat: Modifier["stat"], add: number, scope: Modifier["scope"] = "player"): Modifier => ({ source: `card:${source}`, scope, stat, add });
+
+/**
+ * Efsanevi kartlar. Metindeki sayilar sabitlerden yaziliyor: denge ayari
+ * metni geride birakmasin.
+ */
+function legendaryCards(): CardDefinition[] {
+  const chance = `%${Math.round(LEGENDARY_CARD_CHANCE * 100)}`;
+  const lead = `Hasar veren kuleler bir düşmanla temasta geçen her saniye ${chance} ihtimalle`;
+  const card = (id: string, name: string, tail: string, stat: ModifierStat): CardDefinition => ({
+    id, name, description: `${lead} ${tail}`, axes: ["dps"], scope: { kind: "tagged", combat: true }, stackable: false, rarity: "legendary",
+    effects: [effect(id, stat, LEGENDARY_CARD_CHANCE)]
+  });
+  return LEGENDARY_EFFECTS.map((kind) => {
+    const [id, name] = LEGENDARY_CARD_NAMES[kind];
+    return card(id, name, describeLegendaryEffect(kind), LEGENDARY_CHANCE_STATS[kind]);
+  });
+}
+
+/** Efsanevi kartlarin kimligi ve adi, etki sirasiyla. */
+export const LEGENDARY_CARD_NAMES: Record<LegendaryEffect, [id: string, name: string]> = {
+  chain: ["zincirleme-simsek", "Zincirleme Şimşek"],
+  blast: ["vurusta-patlama", "Vuruşta Patlama"],
+  freeze: ["dondurucu-darbe", "Dondurucu Darbe"],
+  execute: ["infaz-protokolu", "İnfaz Protokolü"],
+  shatter: ["olum-parcalanmasi", "Ölüm Parçalanması"],
+  chrono: ["kronal-iz", "Kronal İz"],
+  link: ["hasar-bagi", "Hasar Bağı"],
+  gravity: ["kutle-cekim-capasi", "Kütle Çekim Çapası"]
+};
+
+const trNumber = (value: number) => String(Math.round(value * 100) / 100).replace(".", ",");
+const trPercent = (ratio: number) => `%${trNumber(ratio * 100)}`;
+const trSeconds = (ms: number) => `${trNumber(ms / 1000)} saniye`;
+
+/**
+ * Etkinin "ne yaptigi" yarisi; kart ve esya ayni cumleyi kullaniyor, ikisinin
+ * farki yalnizca ihtimal ve kapsam. Sayilar `legendary` sabitlerinden.
+ */
+export function describeLegendaryEffect(kind: LegendaryEffect) {
+  switch (kind) {
+    case "chain":
+      return `sıradaki vuruş yakındaki ${CHAIN_JUMPS} düşmana zincirleme sıçrar; her sıçrama kulenin ${trNumber(CHAIN_DAMAGE_SECONDS)} saniyelik hasarı kadar vurur.`;
+    case "blast":
+      return `sıradaki vuruş hedefin çevresinde patlar: ${trNumber(BLAST_RADIUS_CELLS)} kare içindeki düşmanlar kulenin ${trNumber(BLAST_DAMAGE_SECONDS)} saniyelik hasarını alır.`;
+    case "freeze":
+      return `sıradaki vuruş hedefi ${trSeconds(FREEZE_DURATION_MS)} dondurur (şampiyonu ${trSeconds(FREEZE_CHAMPION_DURATION_MS)}); aynı düşman ${trSeconds(FREEZE_IMMUNITY_MS)} bu etkiyle yeniden donmaz.`;
+    case "execute":
+      return `hedefi infaza işaretler: canı ${trPercent(EXECUTE_THRESHOLD)} eşiğinin altına indiği ilk vuruşta düşman bitirilir (brute, şampiyon ve avcı infaz edilmez).`;
+    case "shatter":
+      return `sıradaki vuruş hedefi ${trSeconds(SHATTER_FRACTURE_MS)} çatlatır: bu sürede ölürse çevresine azami canının ${trPercent(SHATTER_MAX_HP_RATIO)} oranında şarapnel saçar (şampiyonda ${trPercent(SHATTER_CHAMPION_MAX_HP_RATIO)}); şarapnelin öldürdüğü düşman da parçalanır.`;
+    case "chrono":
+      return `sıradaki vuruş hedefe ${trSeconds(CHRONO_SCAR_MS)} süren bir kronal iz bırakır: iz bitince düşman bu sürede aldığı bütün hasarın ${trPercent(CHRONO_PAYBACK_RATIO)} kadarını bir kez daha alır.`;
+    case "link":
+      return `sıradaki vuruş hedefi en yakın düşmana ${trSeconds(LINK_DURATION_MS)} bağlar: ikisinden birinin aldığı hasarın ${trPercent(LINK_SHARE)} kadarı ötekine de geçer.`;
+    case "gravity":
+      return `sıradaki vuruş hedefi ${trSeconds(GRAVITY_DURATION_MS)} bir çekim noktasına çevirir: ${trNumber(GRAVITY_RADIUS_CELLS)} kare içindeki düşmanlar ona doğru çekilir (şampiyonlar hariç).`;
+  }
+}
 
 /**
  * Katalog iki yariya ayrilir ve oran kasitlidir.
@@ -621,6 +695,12 @@ export const cardCatalog: CardDefinition[] = [
   { id: "isi-donusturucu", name: "Isı Dönüştürücü", description: "Her atış, ürettiği ısının her derecesi için +%1,5 hasar verir: ısı hasara dönüşür. Isıyı azaltan eşyalar bu kazancı da azaltır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("isi-donusturucu", "heatToDamage", 0.015)] },
   { id: "asiri-hiz", name: "Aşırı Hız", description: "50 derecenin üstünde ısı freni atış hızını düşürmez; tersine sıcaklıkla artırır: 100 derecede +%50. Kule yine 100 derecede kilitlenir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("asiri-hiz", "overclock", 0.5)] },
   { id: "soguk-salvo", name: "Soğuk Salvo", description: "0 dereceye kadar soğuyan kulenin sonraki 3 atışı ısı üretmez ve iki kat hızlı gelir.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("soguk-salvo", "coldSalvo", 3)] },
+  // Ucuncu tur: atis hizi, soguma ve isi baska bir seye -- hedefin canina,
+  // kulenin bos zamanina ve kritige -- baglaniyor. Hicbiri ust turlardaki
+  // bir statu buyutmuyor; sabitler `heat-mechanics`te.
+  { id: "av-ritmi", name: "Av Ritmi", description: "Tüm kuleler, canı %50'nin altına inmiş bir hedefe ateş ederken atış hızı +%40 kazanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("av-ritmi", "woundedFireRate", 0.4)] },
+  { id: "rolanti-sogutmasi", name: "Rölanti Soğutması", description: "1 saniyedir vuruş yapmayan kulelerin soğuması +%120: dalga aralarında ve hedef beklerken namlu çabuk toparlanır.", axes: ["dps", "economy"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("rolanti-sogutmasi", "idleCooling", 1.2)] },
+  { id: "kritik-tahliye", name: "Kritik Tahliye", description: "Kritik vuruş yapan kule, o vuruşu getiren atışın ısısının %100'ünü geri atar.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("kritik-tahliye", "critVent", 1)] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -748,7 +828,16 @@ export const cardCatalog: CardDefinition[] = [
   // cevrimler zincirlenmiyor. Okunan kulenin gercek atis hizi bonusu (Tork
   // dahil); tavan `HEAT_RELIEF_CAP`.
   { id: "termodinamik-denge", name: "Termodinamik Denge", description: "Tüm kulelerin atış hızı +%15. Atış hızı bonusunun her %10'u atış başına ısıyı %5 azaltır; en fazla %40.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("termodinamik-denge", "fireRate", 0.15), effect("termodinamik-denge", "fireRateHeatRelief", 0.5)] },
-  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15, cap: 0.3 }] }
+  { id: "savas-hazinesi", name: "Savaş Hazinesi", description: "Düşman altını +%60. Düşman altını bonusunun her %20'si tüm kulelerin hasarına +%3 ekler; en fazla +%30.", axes: ["economy", "dps"], scope: { kind: "global" }, stackable: false, rarity: "epic", effects: [effect("savas-hazinesi", "goldGain", 0.6)], conversions: [{ from: "goldGain", to: "damage", ratio: 0.15, cap: 0.3 }] },
+
+  // --- Efsanevi: vurus etkileri ---
+  //
+  // Her biri hasar veren butun kulelere bir etkinin dusuk ihtimalini veriyor
+  // (`LEGENDARY_CARD_CHANCE`, temas saniyesi basina); ayni etkinin esyasi tek
+  // kuleye iki katini. Ihtimal vurus degil sure basina: kule dusmanla
+  // temasta gecen her saniye zar atiyor, tutarsa sonraki vurus etkiyi
+  // tasiyor (`legendary` modulu). Sayilar oradaki sabitlerden.
+  ...legendaryCards()
 ];
 
 const cardsById = new Map(cardCatalog.map((card) => [card.id, card]));
@@ -891,7 +980,13 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   coolingFlat: "combat", brakeCooling: "combat", ventHeat: "combat", killCooling: "combat",
   neighborCooling: "structure", heatBleed: "combat", fireRateHeatRelief: "combat",
   coldFireRate: "combat", trackRhythm: "combat", brakeDamage: "combat", overclock: "combat",
-  coldSalvo: "combat", restartShots: "combat", heatToDamage: "combat", heatShock: "combat"
+  coldSalvo: "combat", restartShots: "combat", heatToDamage: "combat", heatShock: "combat",
+  // Atis hizi, soguma ve isi, ucuncu tur; efsanevi vurus etkileri. Hepsi
+  // kulenin vurusuna ya da isisine isliyor.
+  woundedFireRate: "combat", idleCooling: "combat", critVent: "combat",
+  crowdFireRate: "combat", lockCooling: "combat", chilledHeatRelief: "combat",
+  chainChance: "combat", blastChance: "combat", freezeChance: "combat", executeChance: "combat",
+  shatterChance: "combat", chronoChance: "combat", linkChance: "combat", gravityChance: "combat"
 };
 
 /**

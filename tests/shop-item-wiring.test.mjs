@@ -224,7 +224,11 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   // davranislari tests/heat-aim-redesign.test.mjs'te gercek odada olculuyor.
   "leadTargeting", "damageVsFast", "retargetDamage", "critSplash", "farCritChance", "hitSplash",
   "slowBleed", "slowVulnerability", "coolingFlat", "brakeCooling", "ventHeat", "killCooling",
-  "neighborCooling", "heatBleed", "coldFireRate", "trackRhythm", "brakeDamage", "restartShots", "heatShock"
+  "neighborCooling", "heatBleed", "coldFireRate", "trackRhythm", "brakeDamage", "restartShots", "heatShock",
+  // Atis hizi, soguma ve isi, ucuncu tur; efsanevi vurus etkileri. Davranislari
+  // tests/fire-rate-cooling-third-round.test.mjs ve tests/legendary-effects.test.mjs'te.
+  "crowdFireRate", "lockCooling", "chilledHeatRelief",
+  "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

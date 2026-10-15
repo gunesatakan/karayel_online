@@ -137,7 +137,9 @@ export function localizeTowerPreview(preview: TowerPreview): LocalizedTowerPrevi
     ? lines.map((line, index) => {
       const label = tMaybe(`server.${keys[index]}`);
       const colon = line.indexOf(":");
-      return label !== undefined && colon >= 0 ? `${label}${line.slice(colon)}` : line;
+      // Sunucu yuzdeyi Turkce yaziyor ("%35"); Ingilizcede "35%".
+      const value = keys[index] === "preview.stat.legendary" ? line.slice(colon).replace(/%(\d+)/g, "$1%") : line.slice(colon);
+      return label !== undefined && colon >= 0 ? `${label}${value}` : line;
     })
     : lines;
   return { title: localizedTitle ?? title, description: localizedDescription ?? description, lines: localizedLines, error };

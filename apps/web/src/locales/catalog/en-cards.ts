@@ -1,6 +1,9 @@
+import { enLegendaryCards } from "./en-legendary";
+
 /**
  * Kartlarin Ingilizce adi ve aciklamasi (`cardCatalog`, kimlige gore).
- * Kaynak Turkce katalog; sozluk docs/i18n-glossary.md.
+ * Kaynak Turkce katalog; sozluk docs/i18n-glossary.md. Efsanevi kartlar
+ * sabitlerden uretiliyor (en-legendary.ts).
  */
 export const enCards: Readonly<Record<string, { name: string; description: string }>> = {
   "namlu-asinmasi": { name: "Barrel Wear", description: "Damage +25%, heat +10%." },
@@ -147,5 +150,9 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "balistik-hesaplayici": { name: "Ballistic Computer", description: "Aiming projectile and impact towers' accuracy +50%. Each 10% of accuracy bonus above 30% adds +5% damage; up to +50%." },
   "kinetik-erim": { name: "Kinetic Reach", description: "Projectile-firing towers' projectile speed +50%. Each 10% of projectile speed bonus adds +2% range; up to +20%." },
   "termodinamik-denge": { name: "Thermodynamic Balance", description: "All towers' fire rate +15%. Every 10% of fire rate bonus cuts heat per shot by 5%; up to 40%." },
-  "savas-hazinesi": { name: "War Chest", description: "Enemy gold +60%. Each 20% of enemy gold bonus adds +3% to all towers' damage; up to +30%." }
+  "savas-hazinesi": { name: "War Chest", description: "Enemy gold +60%. Each 20% of enemy gold bonus adds +3% to all towers' damage; up to +30%." },
+  "av-ritmi": { name: "Hunting Rhythm", description: "All towers gain +40% fire rate while firing at a target below 50% health." },
+  "rolanti-sogutmasi": { name: "Idle Cooling", description: "Cooling of towers that have not hit for 1 second +120%: barrels recover quickly between waves and while waiting for a target." },
+  "kritik-tahliye": { name: "Crit Vent", description: "A tower that lands a critical hit vents 100% of the heat of the shot that hit." },
+  ...enLegendaryCards
 };

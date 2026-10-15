@@ -1,6 +1,9 @@
+import { enLegendaryItems } from "./en-legendary";
+
 /**
  * Magaza esyalarinin Ingilizce adi ve aciklamasi (`shopCatalog`, kimlige gore).
- * Kaynak Turkce katalog; sozluk docs/i18n-glossary.md.
+ * Kaynak Turkce katalog; sozluk docs/i18n-glossary.md. Efsanevi esyalar
+ * sabitlerden uretiliyor (en-legendary.ts).
  */
 export const enShopItems: Readonly<Record<string, { name: string; description: string }>> = {
   "sogutucu-kanatlar": { name: "Cooling Fins", description: "Equipped tower's cooling +25%; up to 5 per tower." },
@@ -136,7 +139,11 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "ates-hatti-primi": { name: "Firing Line Bonus", description: "+12 gold for each enemy the equipped tower kills while at 50 degrees or above (burn and bleed kills included)." },
   "soguk-av-kaydi": { name: "Cold Hunt Log", description: "Each slowed enemy the equipped tower kills (burn and bleed kills included) gives +12 gold." },
   "ikmal-senedi": { name: "Supply Voucher", description: "+2 gold for every 5 ammo or 15 energy delivered to the equipped tower." },
-  "uzak-menzil-primi": { name: "Long Range Bonus", description: "Each enemy the equipped tower kills with a hit in the outer quarter of its range gives +16 gold; cannot be equipped on towers whose range covers the map." }
+  "uzak-menzil-primi": { name: "Long Range Bonus", description: "Each enemy the equipped tower kills with a hit in the outer quarter of its range gives +16 gold; cannot be equipped on towers whose range covers the map." },
+  "kalabalik-besleyici": { name: "Crowd Feeder", description: "Equipped tower's fire rate +6% for each enemy in its range; up to 8 enemies (+48%)." },
+  "acil-sogutma-pompasi": { name: "Emergency Coolant Pump", description: "Equipped tower cools 3x faster while heat-locked (cooling +200%): the lock is much shorter." },
+  "kriyo-kovan": { name: "Cryo Casing", description: "Shots the equipped tower fires at slowed or frozen targets generate 50% less heat." },
+  ...enLegendaryItems
 };
 
 /** Esya kategorilerinin Ingilizce adi (kategori kimligine gore). */

@@ -2,7 +2,7 @@ import { type AmmoType, ACTIVE_WORKER_ROLES } from "@karayel/shared";
 import type { WavePatternId } from "@karayel/shared";
 import type Phaser from "phaser";
 import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
-import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
+import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, getShopItem, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
 import { cardRarityLabels, towerAxisLabels } from "./codex";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
@@ -48,6 +48,15 @@ const WAVE_PATTERN_LABEL_KEYS: Record<WavePatternId, { name: MessageKey; hint: M
  * Fonksiyon: metin cizim aninda secili dilden okunuyor.
  */
 const ALREADY_UNLOCKED_TAG = () => `<i class="gold-shop__new gold-shop__unlocked">${t("controls.alreadyUnlocked")}</i>`;
+
+/**
+ * Efsanevi esya: kart secimindeki efsanevi kartla ayni soguk cift kenar ve
+ * "EFSANEVİ" etiketi. Nadirligi olmayan esyalarda bos; cerceveleri eskisi gibi.
+ */
+const isLegendaryShopItem = (itemId: string) => getShopItem(itemId)?.rarity === "legendary";
+const LEGENDARY_ITEM_TAG = () => `<i class="gold-shop__new gold-shop__legendary">${upper(cardRarityLabels.legendary)}</i>`;
+const shopItemClass = (itemId: string, category: string) =>
+  `gold-shop__item gold-shop__item--${category}${isLegendaryShopItem(itemId) ? " gold-shop__item--legendary" : ""}`;
 
 /**
  * Hedefleme kipinin adi (`controls.targeting.<kip>`); Debug Lazer'in
@@ -1304,8 +1313,8 @@ export function setupGameControlUi(game: Phaser.Game) {
     for (const item of items) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `gold-shop__item gold-shop__item--${item.category}`;
-      button.innerHTML = `<span>${formatShopCategory(item.category)}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small>`
+      button.className = shopItemClass(item.id, item.category);
+      button.innerHTML = `<span>${formatShopCategory(item.category)}${isLegendaryShopItem(item.id) ? LEGENDARY_ITEM_TAG() : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small>`
         + (item.count > 1 ? `<b>x${item.count}</b>` : "");
       button.addEventListener("pointerup", () => dispatch({ action: "selectInventoryItem", itemId: item.id }));
       list.append(button);
@@ -1375,7 +1384,10 @@ export function setupGameControlUi(game: Phaser.Game) {
       const row = document.createElement("div");
       // Epik kartin satiri kendi cercevesiyle: destede cevrim kartini
       // digerlerinden ayirmanin tek isareti etiket olmasin.
-      row.className = card && getCardRarity(card) === "epic" ? "owned-cards__card owned-cards__card--epic" : "owned-cards__card";
+      const rarity = card ? getCardRarity(card) : undefined;
+      row.className = rarity === "epic" ? "owned-cards__card owned-cards__card--epic"
+        : rarity === "legendary" ? "owned-cards__card owned-cards__card--legendary"
+          : "owned-cards__card";
       const title = document.createElement("strong");
       title.textContent = count > 1 ? `${name} ×${count}` : name;
       row.append(title);
@@ -1416,15 +1428,15 @@ export function setupGameControlUi(game: Phaser.Game) {
     const section = panel.content;
     section.classList.add("tower-effects");
 
-    type Entry = { key: string; name: string; count: number; description: string };
+    type Entry = { key: string; name: string; count: number; description: string; legendary?: boolean };
     const cardEntries = (prefix: string, ids: readonly string[]): Entry[] => Array.from(countIds(ids), ([cardId, count]) => {
       const card = getCardDefinition(cardId);
-      return { key: `${prefix}:${cardId}`, name: card?.name ?? cardId, count, description: card?.description ?? "" };
+      return { key: `${prefix}:${cardId}`, name: card?.name ?? cardId, count, description: card?.description ?? "", legendary: card ? getCardRarity(card) === "legendary" : false };
     });
     const itemCounts = countIds(items.map((item) => item.id));
     const itemEntries: Entry[] = Array.from(itemCounts, ([itemId, count]) => {
       const item = items.find((candidate) => candidate.id === itemId);
-      return { key: `item:${itemId}`, name: item?.name ?? itemId, count, description: item?.description ?? "" };
+      return { key: `item:${itemId}`, name: item?.name ?? itemId, count, description: item?.description ?? "", legendary: isLegendaryShopItem(itemId) };
     });
 
     const shown: Entry[] = [];
@@ -1447,7 +1459,7 @@ export function setupGameControlUi(game: Phaser.Game) {
         const active = towerEffectFocus === entry.key;
         const chip = document.createElement("button");
         chip.type = "button";
-        chip.className = `tower-effects__chip${active ? " is-active" : ""}`;
+        chip.className = `tower-effects__chip${entry.legendary ? " tower-effects__chip--legendary" : ""}${active ? " is-active" : ""}`;
         chip.setAttribute("aria-pressed", String(active));
         chip.textContent = entry.count > 1 ? `${entry.name} ×${entry.count}` : entry.name;
         chip.addEventListener("pointerup", () => {
@@ -1724,7 +1736,7 @@ export function setupGameControlUi(game: Phaser.Game) {
         list.append(makeCreativeRow({
           name: item.name,
           detail: item.description,
-          badge: global ? t("controls.card.globalBadge") : t("controls.card.towerBadge"),
+          badge: `${global ? t("controls.card.globalBadge") : t("controls.card.towerBadge")}${item.rarity === "legendary" ? ` · ${cardRarityLabels.legendary}` : ""}`,
           count,
           disabled: needsTower,
           disabledHint: t("controls.creative.needsTower"),
@@ -1911,11 +1923,11 @@ export function setupGameControlUi(game: Phaser.Game) {
       for (const item of state.goldShop.offers) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = `gold-shop__item gold-shop__item--${item.category}`;
+        button.className = shopItemClass(item.id, item.category);
         button.disabled = !item.affordable;
         // "YENİ": bu tarayicida ilk kez gorulen esya (Kart Arsivi). Fiyat ve
         // cerceve ayni kaliyor; etiket sessiz, secimi one cekmesin.
-        button.innerHTML = `<span>${formatShopCategory(item.category)}${item.fresh ? `<i class="gold-shop__new">${t("controls.shop.new")}</i>` : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
+        button.innerHTML = `<span>${formatShopCategory(item.category)}${isLegendaryShopItem(item.id) ? LEGENDARY_ITEM_TAG() : ""}${item.fresh ? `<i class="gold-shop__new">${t("controls.shop.new")}</i>` : ""}${item.alreadyUnlocked ? ALREADY_UNLOCKED_TAG() : ""}</span><strong>${item.name}</strong><small>${item.description}</small><b>${item.price}g</b>`;
         button.addEventListener("pointerup", () => dispatch({ action: "buyShopItem", itemId: item.id }));
         offers?.append(button);
       }

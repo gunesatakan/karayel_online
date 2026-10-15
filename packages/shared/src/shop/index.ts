@@ -1,5 +1,6 @@
 import type { CardDrawOwnedUnlocks, CardScope, CardTowerProfile, Unlock } from "../cards/index.js";
-import { getCardDefinition, ownedCardAppliesToTower } from "../cards/index.js";
+import { describeLegendaryEffect, getCardDefinition, ownedCardAppliesToTower } from "../cards/index.js";
+import { LEGENDARY_CHANCE_STATS, LEGENDARY_EFFECTS, LEGENDARY_ITEM_CHANCE, type LegendaryEffect } from "../legendary/index.js";
 import { isMarkOnlyChoice } from "../marks/index.js";
 import { getShopItemTowerMismatch, isShopItemUsefulOnTower, type ShopItemNeed } from "./compatibility.js";
 import type { TowerAxis } from "../characters/common/types.js";
@@ -15,6 +16,22 @@ export type ShopItemCategory = "power" | "class" | "utility" | "map" | "risk";
  * ekonomisini veya harita karesini etkiliyor, bir kulenin statini degil.
  */
 export type ShopItemTarget = "tower" | "global";
+
+/**
+ * Esya nadirligi. Esyalarin cogu nadirliksiz ve vitrine esit agirlikla
+ * giriyor; bu hic degismedi. Yalnizca efsanevi esyalar (vurus etkileri,
+ * `legendary` modulu) isaretli: vitrinde `SHOP_LEGENDARY_OFFER_WEIGHT`
+ * agirligiyla seyrek cikiyorlar ve pahalilar.
+ */
+export type ShopItemRarity = "legendary";
+
+/** Efsanevi esyanin vitrin agirligi; nadirliksiz esyalarinki 1. */
+export const SHOP_LEGENDARY_OFFER_WEIGHT = 0.12;
+
+/** Esyanin vitrin agirligi carpani (eksen ve olu agirlik oncesi). */
+export function getShopItemOfferWeight(item: Pick<ShopItem, "rarity">) {
+  return item.rarity === "legendary" ? SHOP_LEGENDARY_OFFER_WEIGHT : 1;
+}
 
 export const GLOBAL_SHOP_ITEM_IDS = [
   "besinci-isci",
@@ -85,6 +102,8 @@ export type ShopItem = {
    * yetismeyecegi dalgadan sonra vitrine cikmiyor (`getShopItemLastOfferWave`).
    */
   deposit?: { payout: number; waves: number };
+  /** Yalnizca efsanevi esyalarda yazili; bkz. `ShopItemRarity`. */
+  rarity?: ShopItemRarity;
 };
 
 export type ShopState = {
@@ -260,6 +279,29 @@ const defineItem = (id: string, name: string, description: string, category: Sho
   effects: [],
   ...options
 });
+
+/** Efsanevi esyalar: kimlik, ad ve fiyat, etki sirasiyla. */
+export const LEGENDARY_ITEM_NAMES: Record<LegendaryEffect, [id: string, name: string, price: number]> = {
+  chain: ["simsek-bobini", "Şimşek Bobini", 460],
+  blast: ["patlayici-cekirdek", "Patlayıcı Çekirdek", 480],
+  freeze: ["duragan-bobin", "Durağan Bobin", 380],
+  execute: ["cellat-modulu", "Cellat Modülü", 440],
+  shatter: ["kirilma-cekirdegi", "Kırılma Çekirdeği", 420],
+  chrono: ["kronal-kapasitor", "Kronal Kapasitör", 460],
+  link: ["bag-vericisi", "Bağ Vericisi", 440],
+  gravity: ["graviton-cekirdegi", "Graviton Çekirdeği", 400]
+};
+
+function legendaryItems(): ShopItem[] {
+  const chance = `%${Math.round(LEGENDARY_ITEM_CHANCE * 100)}`;
+  return LEGENDARY_EFFECTS.map((kind) => {
+    const [id, name, price] = LEGENDARY_ITEM_NAMES[kind];
+    return defineItem(id, name, `Takıldığı kule bir düşmanla temasta geçen her saniye ${chance} ihtimalle ${describeLegendaryEffect(kind)}`, "power", price, {
+      axes: ["dps"], scope: { kind: "tagged", combat: true }, rarity: "legendary",
+      effects: [effect(id, LEGENDARY_CHANCE_STATS[kind], LEGENDARY_ITEM_CHANCE)]
+    });
+  });
+}
 
 const rawShopCatalog: ShopItem[] = [
   defineItem("sogutucu-kanatlar", "Soğutucu Kanatlar", "Takıldığı kulenin soğuması +%25; bir kuleye en fazla 5 kez takılır.", "utility", 30, { repeatable: true, maxStacks: 5, priceGrowth: 1.2, effects: [effect("sogutucu-kanatlar", "cooling", 0.25)] }),
@@ -514,7 +556,18 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("ates-hatti-primi", "Ateş Hattı Primi", "Takıldığı kule sıcaklığı 50 derece ya da üstündeyken öldürdüğü her düşman için (yanma ve kanamasıyla ölenler dahil) +12 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ates-hatti-primi", "hotKillGold", 12)] }),
   defineItem("soguk-av-kaydi", "Soğuk Av Kaydı", "Takıldığı kulenin öldürdüğü her yavaşlamış düşman (yanma ve kanamasıyla ölenler dahil) +12 altın verir.", "utility", 70, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("soguk-av-kaydi", "slowedKillGold", 12)] }),
   defineItem("ikmal-senedi", "İkmal Senedi", "Takıldığı kuleye teslim edilen her 5 mühimmat ya da 15 enerji için +2 altın verir.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true }, effects: [effect("ikmal-senedi", "deliveryGold", 2)] }),
-  defineItem("uzak-menzil-primi", "Uzak Menzil Primi", "Takıldığı kulenin menzilinin dış dörtte birinde vurarak öldürdüğü her düşman +16 altın verir; menzili haritayı kaplayan kulelere takılmaz.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("uzak-menzil-primi", "longRangeKillGold", 16)] })
+  defineItem("uzak-menzil-primi", "Uzak Menzil Primi", "Takıldığı kulenin menzilinin dış dörtte birinde vurarak öldürdüğü her düşman +16 altın verir; menzili haritayı kaplayan kulelere takılmaz.", "utility", 75, { axes: ["economy"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("uzak-menzil-primi", "longRangeKillGold", 16)] }),
+
+  // Atis hizi, soguma ve isi, ucuncu tur: kalabaliga, isi kilidine ve
+  // hedefin yavasligina baglanan uc esya (sabitler `heat-mechanics`te).
+  defineItem("kalabalik-besleyici", "Kalabalık Besleyici", "Takıldığı kulenin atış hızı menzilindeki her düşman için +%6; en fazla 8 düşman (+%48).", "power", 115, { axes: ["dps"], scope: { kind: "tagged", combat: true }, effects: [effect("kalabalik-besleyici", "crowdFireRate", 0.06)] }),
+  defineItem("acil-sogutma-pompasi", "Acil Soğutma Pompası", "Takıldığı kule ısı kilidindeyken 3 kat hızlı soğur (soğuma +%200): kilit çok daha kısa sürer.", "utility", 90, { axes: ["dps"], effects: [effect("acil-sogutma-pompasi", "lockCooling", 2)] }),
+  defineItem("kriyo-kovan", "Kriyo Kovan", "Takıldığı kulenin yavaşlamış ya da donmuş hedefe attığı atışlar %50 daha az ısı üretir.", "power", 95, { axes: ["dps", "cc"], scope: { kind: "tagged", combat: true }, effects: [effect("kriyo-kovan", "chilledHeatRelief", 0.5)] }),
+
+  // Efsanevi: vurus etkileri (`legendary` modulu). Ayni etkinin kartindan
+  // iki kat ihtimal, ama yalnizca takildigi kulede; kartla ayni kulede
+  // toplaniyor (tavan `LEGENDARY_CHANCE_CAP`). Vitrinde seyrek ve pahali.
+  ...legendaryItems()
 ];
 
 /**
@@ -690,7 +743,7 @@ export function drawShopOffers(options: { wave: number; preferredAxes: TowerAxis
       const deadWeight = (item.scope.kind === "tagged" && !options.towers.some((tower) => shopItemAppliesToTower(item, tower)))
         || (options.marksAvailable === false && isMarkOnlyChoice(item))
         || (options.ownedCardIds !== undefined && isShopItemAlreadyUnlocked(item, options.ownedCardIds, options.towers)) ? 0.15 : 1;
-      return axisWeight * deadWeight;
+      return axisWeight * deadWeight * getShopItemOfferWeight(item);
     });
     let roll = random() * weights.reduce((sum, value) => sum + value, 0);
     let index = 0;

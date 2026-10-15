@@ -114,3 +114,17 @@ export function getBrakeDamageAdd(brakeMultiplier: number, ratio: number) {
   if (!(ratio > 0)) return 0;
   return ratio * Math.max(0, 1 - Math.max(0, Math.min(1, brakeMultiplier)));
 }
+
+/**
+ * Atis hizi, soguma ve isi, ucuncu tur.
+ *
+ * - `woundedFireRate` (Av Ritmi): kulenin hedefi azami caninin bu payinin
+ *   altindayken atis hizi payi isliyor.
+ * - `idleCooling` (Rolanti Sogutmasi): kule bu kadar oyun suresidir dogrudan
+ *   vurmuyorsa bos sayiliyor ve soguma payi isliyor.
+ * - `crowdFireRate` (Kalabalik Besleyici): menzildeki en fazla bu kadar dusman
+ *   sayiliyor.
+ */
+export const WOUNDED_FIRE_RATE_HP_RATIO = 0.5;
+export const IDLE_COOLING_DELAY_MS = 1000;
+export const CROWD_FIRE_RATE_MAX_ENEMIES = 8;

@@ -488,6 +488,46 @@ import {
   isFastEnemy,
   towerFiresAlongFacing
 } from "@karayel/shared";
+// Atis hizi, soguma ve isi, ucuncu tur; efsanevi vurus etkileri (`legendary`).
+import {
+  BLAST_DAMAGE_SECONDS,
+  BLAST_RADIUS_CELLS,
+  CHAIN_DAMAGE_SECONDS,
+  CHAIN_JUMPS,
+  CHAIN_RANGE_CELLS,
+  CHRONO_PAYBACK_RATIO,
+  CHRONO_SCAR_MS,
+  CROWD_FIRE_RATE_MAX_ENEMIES,
+  EXECUTE_THRESHOLD,
+  FREEZE_DURATION_MS,
+  FREEZE_IMMUNITY_MS,
+  GRAVITY_DURATION_MS,
+  GRAVITY_HOLD_CELLS,
+  GRAVITY_PULL_CELLS_PER_SECOND,
+  GRAVITY_RADIUS_CELLS,
+  IDLE_COOLING_DELAY_MS,
+  LEGENDARY_CHANCE_STATS,
+  LEGENDARY_EFFECTS,
+  LEGENDARY_TOWER_TRIGGER_GAP_MS,
+  LINK_DURATION_MS,
+  LINK_RANGE_CELLS,
+  LINK_SHARE,
+  SHATTER_FRACTURE_MS,
+  SHATTER_MAX_DEPTH,
+  SHATTER_MAX_HP_RATIO,
+  SHATTER_RADIUS_CELLS,
+  WOUNDED_FIRE_RATE_HP_RATIO,
+  advanceLegendaryEngagement,
+  clampLegendaryChance,
+  createLegendaryPairState,
+  getEngageGapAllowanceMs,
+  getExecuteThreshold,
+  getLegendaryFreezeMs,
+  getShatterDamage,
+  type LegendaryEffect,
+  type LegendaryPairState,
+  type LegendaryProcMessage
+} from "@karayel/shared";
 // Ozel dusmanlar ve karsi atak (2. asamadan itibaren): tablo ve sayilar paylasilan pakette.
 import {
   COUNTER_SURGE_KIND_CODES,
@@ -1443,7 +1483,45 @@ type EnemyModel = {
    * tikinde yaziliyor; hedef secimi ve `damageEnemy` tek alan okuyor.
    */
   untargetable?: boolean;
+  /** Efsanevi vurus etkilerinin dusmandaki izi; hic etkilenmemis dusmanda yok. */
+  legendary?: EnemyLegendaryState;
 };
+
+/**
+ * Efsanevi vurus etkilerinin dusman uzerindeki durumu (`legendary` modulu).
+ * Butun anlar duvar saati (ms). Kayit dusmanla birlikte siliniyor: kule
+ * basina temas saatleri (`pairs`) ayrica temizlenmek zorunda degil. Sureli
+ * etkiler (iz, bag, cekim) odanin `legendaryTimedEnemyIds` kumesinden de
+ * izleniyor ki her tik butun dusmanlar taranmasin.
+ */
+type EnemyLegendaryState = {
+  /** Kule kimligi -> temas saati ve kurulu haklar. */
+  pairs?: Map<string, LegendaryPairState>;
+  /** Dondurmanin bu dusmani yeniden donduramayacagi son an. */
+  freezeImmuneUntil?: number;
+  /** Catlak: bu ana kadar olurse parcalaniyor. */
+  fractureUntil?: number;
+  fractureTowerId?: string;
+  fractureOwnerId?: string;
+  /** Kronal iz: bitis ani, biriken hasar ve izin sahibi. */
+  chronoUntil?: number;
+  chronoStored?: number;
+  chronoTowerId?: string;
+  chronoOwnerId?: string;
+  /** Hasar bagi: bitis ani ve ortak dusman. */
+  linkUntil?: number;
+  linkPartnerId?: string;
+  linkTowerId?: string;
+  linkOwnerId?: string;
+  /** Kutle cekim capasi: bitis ani. */
+  gravityUntil?: number;
+  gravityTowerId?: string;
+  /** Capa bu dusmani son cektigi andan kisa bir sure sonrasi (takilma bekcisi icin). */
+  pulledUntil?: number;
+};
+
+/** Efsanevi etkinin hasarina tasinan vurus bilgisi. */
+type LegendaryHitContext = { sourceOwnerId: string; damageType: DamageType; hitType?: HitType };
 
 /**
  * Irk ozelliginin durumu. Butun anlar duvar saati (ms); sureler oyun
@@ -1888,6 +1966,14 @@ type TowerModel = EconomyStock & {
   coldSalvoSpent?: boolean;
   restartShots?: number;
   lastShotHeat?: number;
+  /** Kritik Tahliye (`critVent`): son atisin isisi zaten geri atildi mi (atis basina bir kez). */
+  lastShotVented?: boolean;
+  /** Son dogrudan vurus (duvar saati); Rolanti Sogutmasi (`idleCooling`) okuyor. */
+  lastHitAt?: number;
+  /** Efsanevi etki basina kulenin yeniden uygulayabilecegi an (`LEGENDARY_TOWER_TRIGGER_GAP_MS`). */
+  legendaryReadyAt?: number[];
+  /** `getTowerLegendaryRhythm` onbellegi. */
+  legendaryRhythm?: { at: number; generation: number; intervalMs: number; power: number };
   /** Bu kosuda oldurdugu dusman (kule paneli); yalnizca sayac, hicbir kural okumuyor. */
   killCount?: number;
   zeynepFormationSize: number;
@@ -1930,6 +2016,12 @@ type TowerModel = EconomyStock & {
     unlocks: Set<Unlock>;
     /** Kuleye isleyen Epik kartlarin stat cevrimleri; kaynak modifier adi ile. */
     conversions: Array<StatConversion & { source: string }>;
+    /**
+     * Efsanevi etkilerin saniyelik ihtimalleri (`LEGENDARY_EFFECTS` sirasiyla,
+     * kart ve esya toplami, tavanli); hicbiri yoksa tanimsiz. Vurus basina
+     * okundugu icin burada: sekiz stat her vurusta listeden toplanmasin.
+     */
+    legendaryChances?: number[];
     /**
      * Motorda kulelere isleyen (`affects: "towers"`) bir aura var mi.
      * `getTowerAuraModifiers` her cagrida butun kuleleri tariyor; aurasi
@@ -2354,6 +2446,8 @@ export class MatchRoom extends Room<MatchState> {
   towerCriticalRandom: () => number = Math.random;
   /** Kart elinin ve yenilemenin zari; testler sabit bir dizi veriyor. */
   cardRandom: () => number = Math.random;
+  /** Efsanevi vurus etkilerinin temas zari (`legendary`); testler sabit veriyor. */
+  legendaryRandom: () => number = Math.random;
   /**
    * Bu surecteki odalar: yalnizca sayim (oda siniri) icin.
    *
@@ -2694,6 +2788,16 @@ export class MatchRoom extends Room<MatchState> {
   private readonly neighborCoolingSources: TowerModel[] = [];
   /** Sicrama vurusu suruyor (`applyTowerHitSplashes`): yeniden sicrama ve kritik yok. */
   private hitSplashActive = false;
+  /**
+   * Bu tikte uygulanan efsanevi etkilerin istemci olaylari; tik sonunda tek
+   * `legendary:procs` yayininda gidiyor (`flushLegendaryProcs`). Gec oyunda
+   * uygulama basina yayin saniyede yuzlerce mesaj olurdu.
+   */
+  readonly pendingLegendaryProcs: LegendaryProcMessage[] = [];
+  /** Suren parcalanmanin zincirdeki halkasi (0 ilk); sarapnelin oldurdugu dusman bir sonrakini aciyor. */
+  private legendaryShatterDepth = -1;
+  /** Sureli efsanevi etkisi (iz, bag, cekim) olan dusmanlar; tik yalnizca bunlari geziyor. */
+  private readonly legendaryTimedEnemyIds = new Set<string>();
   /** Ozel dusman yol alanlari; yapi degisince atiliyor. `null`: hedef yok. */
   private specialRouteFields = new Map<string, SpecialRouteField | null>();
   private spawnCooldownMs = 500;
@@ -4949,7 +5053,10 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateEnemies(seconds);
+    // Sureli efsanevi etkiler (iz, bag, cekim): dusmanlar yurudukten sonra.
+    if (this.legendaryTimedEnemyIds.size > 0) this.updateLegendaryEffects(seconds, Date.now());
     timings.enemiesMs = performance.now() - sectionStart;
+    this.flushLegendaryProcs();
 
     sectionStart = performance.now();
     this.updateSkillCooldowns(gameDeltaTime);
@@ -6105,6 +6212,7 @@ export class MatchRoom extends Room<MatchState> {
       heat = 0;
     }
     tower.lastShotHeat = heat;
+    tower.lastShotVented = false;
     const heatBefore = tower.temperature;
     tower.temperature = Math.min(100, tower.temperature + heat);
     if (heat > 0) this.applyShotHeatItems(tower, heatBefore, now);
@@ -6202,12 +6310,23 @@ export class MatchRoom extends Room<MatchState> {
     const reliefRatio = getModifierAdd(modifiers, "fireRateHeatRelief");
     const relief = reliefRatio > 0 ? Math.min(HEAT_RELIEF_CAP, reliefRatio * Math.max(0, this.getTowerStatBonus(tower, "fireRate", modifiers))) : 0;
     const rhythm = Math.min(1, getModifierAdd(modifiers, "trackRhythm") * (tower.rhythmStacks ?? 0));
+    // Kriyo Kovan: yavaslamis ya da donmus hedefe atis daha az isi.
+    const chilledRelief = getModifierAdd(modifiers, "chilledHeatRelief");
+    const chilled = chilledRelief > 0 && this.isTowerTargetChilled(tower) ? Math.min(1, chilledRelief) : 0;
     return calculateTowerShotHeat(
       tower.definition,
       tower.performance,
       this.getTowerSpecialHeatMultiplier(tower),
       this.getTowerPerformanceCostMultiplier(tower)
-    ) * getModifierMultiplier(modifiers, "heat") * (1 - relief) * Math.max(0, 1 - rhythm);
+    ) * getModifierMultiplier(modifiers, "heat") * (1 - relief) * Math.max(0, 1 - rhythm) * (1 - chilled);
+  }
+
+  /** Kulenin su anki hedefi yavaslamis ya da donmus mu (Kriyo Kovan). */
+  private isTowerTargetChilled(tower: TowerModel) {
+    const target = this.getTowerCurrentTarget(tower);
+    if (!target) return false;
+    const now = Date.now();
+    return target.slowUntil > now || getTowerStatusOutcomes(target.statusEffects, now).frozen;
   }
 
   private getTowerSpecialHeatMultiplier(tower: TowerModel) {
@@ -6325,6 +6444,15 @@ export class MatchRoom extends Room<MatchState> {
     if (!options.sustained && killCooling > 0 && (tower.killCoolingUntil ?? 0) > Date.now()) cooling *= 1 + killCooling;
     const neighborCooling = this.getNeighborCoolingAdd(tower);
     if (neighborCooling > 0) cooling *= 1 + neighborCooling;
+    // Rolanti Sogutmasi: kule bir suredir dogrudan vurmuyor. Acil Sogutma
+    // Pompasi: kule isi kilidinde. Ikisi de surekli ateste yok (kule ates
+    // ediyor ve frenli kule kilide neredeyse hic girmiyor).
+    if (!options.sustained) {
+      const idle = getModifierAdd(modifiers, "idleCooling");
+      if (idle > 0 && Date.now() - (tower.lastHitAt ?? 0) >= scaleGameDuration(IDLE_COOLING_DELAY_MS)) cooling *= 1 + idle;
+      const lock = getModifierAdd(modifiers, "lockCooling");
+      if (lock > 0 && tower.heatLocked) cooling *= 1 + lock;
+    }
     cooling += Math.max(0, getModifierAdd(modifiers, "coolingFlat"));
 
     return cooling;
@@ -9341,8 +9469,11 @@ export class MatchRoom extends Room<MatchState> {
       // durdurur: donma/sersemleme (hiz 0), korku, yapiya saldiri, Metal
       // Kalkan, hedeflenemezlik (faz kaymasi).
       if (!specialRoute && enemy.movementKind !== "air") {
+        // Kutle cekim capasinin cektigi dusman da mesru bekliyor: ileri yuruyup
+        // geri cekildigi icin yerinde sayiyor gorunur.
         const held = speedMultiplier <= 0 || isFeared || Boolean(route.targetTower)
-          || (this.metalShields.length > 0 && Boolean(enemy.shieldTouched)) || Boolean(enemy.untargetable);
+          || (this.metalShields.length > 0 && Boolean(enemy.shieldTouched)) || Boolean(enemy.untargetable)
+          || (enemy.legendary?.pulledUntil ?? 0) > now;
         this.watchEnemyStall(enemy, seconds, held);
       }
 
@@ -13160,6 +13291,12 @@ export class MatchRoom extends Room<MatchState> {
     const sustainedStats: PreviewStat[] = this.getTowerHeatBudget(tower)
       ? [["sustained", (value) => this.getTowerHeatBudget(value)?.sustained ?? 0]]
       : [];
+    // Efsanevi ihtimal: kulenin butun efsanevi etkilerinin saniyelik toplami.
+    // Satir yalnizca degisiklik bir efsanevi stat tasiyorsa; obur onizlemelerde gurultu.
+    const legendaryTotal = (value: TowerModel) => (this.getTowerGrantState(value).legendaryChances ?? []).reduce((sum, chance) => sum + chance, 0);
+    const legendaryStats: PreviewStat[] = changeEffects.some((modifier) => (Object.values(LEGENDARY_CHANCE_STATS) as string[]).includes(modifier.stat))
+      ? [["legendary", legendaryTotal]]
+      : [];
     const stats: PreviewStat[] = [
       // Vurus aninda eklenen kule bonuslari da sayiya dahil; yoksa Kan
       // Bankasi gibi her vurusa +%20 veren bir esya hicbir sey degistirmiyor
@@ -13172,9 +13309,12 @@ export class MatchRoom extends Room<MatchState> {
       ["energy", (value) => this.getTowerEnergyCost(value) * shots(value)],
       ["heat", (value) => this.getTowerShotHeat(value) * shots(value)],
       ["cooling", (value) => this.getTowerCoolingPerSecond(value)],
-      ...sustainedStats
+      ...sustainedStats,
+      ...legendaryStats
     ];
-    const values = stats.map(([key, get]) => ({ key: `preview.stat.${key}`, label: SERVER_TEXT[`preview.stat.${key}` as ServerTextKey], before: get(tower).toFixed(2), after: get(after).toFixed(2) }));
+    // Efsanevi ihtimal yuzde ("%35"); obur satirlar iki ondalik.
+    const format = (key: string, value: number) => key === "legendary" ? `%${Math.round(value * 100)}` : value.toFixed(2);
+    const values = stats.map(([key, get]) => ({ key: `preview.stat.${key}`, label: SERVER_TEXT[`preview.stat.${key}` as ServerTextKey], before: format(key, get(tower)), after: format(key, get(after)) }));
     const lines = values.map(({ label, before, after: next }) => `${label}: ${before} → ${next}`);
     // Istemci degisen satiri one cikarir; ayni kalanlar arasinda kaybolmasin.
     const changed = values.map(({ before, after: next }) => before !== next);
@@ -13435,6 +13575,14 @@ export class MatchRoom extends Room<MatchState> {
     const armorBreak = getModifierAdd(modifiers, "armorBreak");
     if (armorBreak > 0) effects.push(["armor", roundTowerStat(armorBreak)]);
     if (definition.id === "zeynep-8") effects.push(["armorAura", roundTowerStat(getAbartiArmorBreak(tower.level))]);
+    // Efsanevi vurus etkileri: saniyelik ihtimal ve buyukluk (`getLegendaryPanelEffect`).
+    const legendaryChances = this.getTowerGrantState(tower).legendaryChances;
+    if (legendaryChances && dealsDamage) {
+      const power = this.getTowerLegendaryPower(tower);
+      LEGENDARY_EFFECTS.forEach((kind, index) => {
+        if (legendaryChances[index] > 0) effects.push(this.getLegendaryPanelEffect(kind, legendaryChances[index], power));
+      });
+    }
     if (effects.length > 0) block.fe = effects;
 
     // Kaynak: tetik basina bedel ve soguma; anlik doluluk anlik goruntude zaten var.
@@ -15656,7 +15804,11 @@ export class MatchRoom extends Room<MatchState> {
     this.perfCounters.damageEvents += 1;
     this.landedHitCount += 1;
     const now = Date.now();
-    if (sourceTowerId && hitType) this.applyWorkerHitBoosts(sourceTowerId, enemy, now);
+    // Efsanevi etkinin kendi hasari (`legendary:*` kaynagi): temas saymiyor,
+    // kritik atmiyor, sicramiyor, durum ve isci vurus etkisi tasimiyor.
+    // Bayrak degil kaynak: oldurdugu dusmanin olum etkilerine sizmiyor.
+    const legendarySecondary = sourceDefinitionId.startsWith(LEGENDARY_SOURCE_PREFIX);
+    if (sourceTowerId && hitType && !legendarySecondary) this.applyWorkerHitBoosts(sourceTowerId, enemy, now);
     if (this.isEnemyInProjectileGuidance(enemy, now)) {
       this.setEnemyMark(enemy, "guidance", PROJECTILE_GUIDANCE_DAMAGE_MULTIPLIER - 1, now + 100);
     }
@@ -15719,7 +15871,7 @@ export class MatchRoom extends Room<MatchState> {
       : 0;
     // Sicrama ve patlama vuruslari (Ek Bicak Yuvasi, Infilak Basligi) kritik
     // gelmiyor: kritik zaten ana vurusta atildi.
-    const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:")) && !this.hitSplashActive;
+    const canCrit = Boolean(damageSourceTower && !sourceDefinitionId.startsWith("status:")) && !this.hitSplashActive && !legendarySecondary;
     // Kirilgan Buz: donmus hedefe nisan almak kolay.
     //
     // Yalnizca gercekten donmus olana bakiyor -- sersemleme, korku ve
@@ -15749,6 +15901,19 @@ export class MatchRoom extends Room<MatchState> {
       ? Math.max(0, (critical?.damageMultiplier ?? TOWER_BASE_CRITICAL_DAMAGE_MULTIPLIER) - 1 + getModifierAdd(damageModifiers, "critDamage"))
       : 0;
     const critAdd = critChance > 0 && this.towerCriticalRandom() < critChance ? critDamageAdd : 0;
+    // Kritik Tahliye: kritik vurus, onu getiren atisin isisini geri atiyor.
+    // Atis basina bir kez: alan mermisi bes dusmana kritik vursa da tek atis.
+    if (critAdd > 0 && damageSourceTower && !damageSourceTower.lastShotVented) {
+      const vent = getModifierAdd(damageModifiers, "critVent");
+      if (vent > 0) this.ventTowerShotHeat(damageSourceTower, vent);
+    }
+    // Dogrudan vurus: kulenin kendi vurusu ve vurusunun alani. Sicrama, durum
+    // tiki, yapay oldurme ve efsanevi etkilerin kendi hasari degil. Rolanti
+    // Sogutmasi ve efsanevi temas saati yalnizca bunu sayiyor.
+    const directHit = Boolean(damageSourceTower) && damage > 0 && !this.hitSplashActive && !legendarySecondary
+      && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId);
+    if (directHit) damageSourceTower!.lastHitAt = now;
+    const legendaryHit = directHit && Boolean(this.getTowerGrantState(damageSourceTower!).legendaryChances);
     const result = calculateDamageTaken(
       { amount: damage * markMultiplier * knowledgeDamage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
       {
@@ -15803,6 +15968,8 @@ export class MatchRoom extends Room<MatchState> {
     if (damageSourceTower && dealtAmount > 0) damageSourceTower.waveDamageDealt = (damageSourceTower.waveDamageDealt ?? 0) + dealtAmount;
     // Yanik ve kanama tikleri kulenin carpanlarini tasimiyor; pay yalnizca vuruslarda.
     if (!sourceDefinitionId.startsWith("status:")) this.recordSynergyShare(sourceTowerId, dealtAmount);
+    // Kronal iz ve hasar bagi her kaynaktan alinan hasari okuyor.
+    if (enemy.legendary && dealtAmount > 0) this.noteLegendaryDamageTaken(enemy, dealtAmount, now, sourceDefinitionId);
     // Oyuncunun kosu hasari yalnizca kuleler degil: yetenek ve ulti de onun.
     if (damagePlayer) this.runLedger.recordPlayerDamage(damagePlayer.slot ?? 0, dealtAmount);
     // Yapay oldurmede (infaz) hasar isaretten gelmiyor: isaretli hedefte bile
@@ -15880,7 +16047,7 @@ export class MatchRoom extends Room<MatchState> {
       });
     }
 
-    if (enemy.hp > 0 && sourceTowerId && !sourceDefinitionId.startsWith("status:")) {
+    if (enemy.hp > 0 && sourceTowerId && !sourceDefinitionId.startsWith("status:") && !legendarySecondary) {
       const sourceTower = this.towers.get(sourceTowerId);
       if (sourceTower) {
         for (const definition of this.getTowerEngine(sourceTower)?.statusEffects ?? []) {
@@ -15909,7 +16076,7 @@ export class MatchRoom extends Room<MatchState> {
 
     // Ek Bicak Yuvasi ve Infilak Basligi: vurus komsulara sicriyor. Sicrama
     // kendisi yeniden sicramiyor ve kritik atmiyor (`hitSplashActive`).
-    if (damageSourceTower && damage > 0 && !this.hitSplashActive && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId)) {
+    if (damageSourceTower && damage > 0 && !this.hitSplashActive && !legendarySecondary && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId)) {
       this.applyTowerHitSplashes(damageSourceTower, enemy, damage, critAdd, { sourceDefinitionId, sourceOwnerId, damageType, sourceTowerLevel, hitType });
     }
 
@@ -15918,7 +16085,15 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (enemy.hp > 0) {
-      return false;
+      if (!legendaryHit) return false;
+      this.resolveLegendaryHit(damageSourceTower!, enemy, false, now, sourceOwnerId, damageType, hitType);
+      // Etki (infaz, parcalanma zinciri) hedefi bu vurusta oldurmus olabilir.
+      return !this.enemies.has(enemy.id);
+    }
+    // Ic ice bir vurus (hasar bagi, parcalanma) dusmani bu cagri bitmeden
+    // oldurmus olabilir: oldurme bir kez sayiliyor.
+    if (!this.enemies.has(enemy.id)) {
+      return true;
     }
 
     if (sourceDefinitionId !== "archer-4-underworld-execute") {
@@ -15926,6 +16101,9 @@ export class MatchRoom extends Room<MatchState> {
     }
     this.triggerMelisCurseDeathBurst(enemy, now);
     this.finishEnemyKill(enemy, { sourceOwnerId, sourceTowerId, sourceDefinitionId, now, killAssists, critKill: critAdd > 0, overkill });
+    // Oldurucu vurus da temas: araligindaki zar tutmussa hedefin yerinden
+    // zincir ve patlama cikabiliyor (canli hedef isteyenler bekliyor).
+    if (legendaryHit) this.resolveLegendaryHit(damageSourceTower!, enemy, true, now, sourceOwnerId, damageType, hitType);
     return true;
   }
 
@@ -15965,6 +16143,8 @@ export class MatchRoom extends Room<MatchState> {
       enemy.special.harvest.total = 0;
     }
     this.detonateBomber(enemy, true);
+    // Olum Parcalanmasi: catlakliyken olen ya da sarapnelin oldurdugu dusman.
+    if (enemy.legendary || sourceDefinitionId === LEGENDARY_SHATTER_SOURCE) this.tryLegendaryShatter(enemy, sourceDefinitionId, sourceTowerId, sourceOwnerId, now);
     this.applyMelisFocusLastHitBuff(sourceTowerId, now);
     let ownerGold = this.awardEnemyGold(enemy, sourceOwnerId);
     // Kritik oldurme primi oldurme olayinin "+N"ine de giriyor: oyuncu
@@ -18059,6 +18239,15 @@ export class MatchRoom extends Room<MatchState> {
     if (overclock > 0) add += getOverclockFireRateAdd(tower.temperature, TOWER_HEAT_BRAKE_TEMPERATURE, overclock);
     if ((tower.coldSalvoShots ?? 0) > 0) add += COLD_SALVO_FIRE_RATE;
     else if ((tower.restartShots ?? 0) > 0) add += RESTART_FIRE_RATE;
+    // Av Ritmi: hedefin cani yarinin altinda. Kalabalik Besleyici: menzildeki
+    // dusman sayisi (tavanli); sorgu yalnizca esyasi olan kulede.
+    const wounded = getModifierAdd(modifiers, "woundedFireRate");
+    if (wounded !== 0) {
+      const target = this.getTowerCurrentTarget(tower);
+      if (target && target.hp > 0 && target.hp < target.maxHp * WOUNDED_FIRE_RATE_HP_RATIO) add += wounded;
+    }
+    const crowd = getModifierAdd(modifiers, "crowdFireRate");
+    if (crowd !== 0) add += crowd * this.countTowerCrowd(tower);
     return add;
   }
 
@@ -18453,7 +18642,10 @@ export class MatchRoom extends Room<MatchState> {
     // hedefi bu dort stattan biri degil (katalog testi).
     const goldModifiers = this.getTowerStaticRunModifiers(tower);
     const engine = resolveTowerEngine(tower.definition.engine, grants);
+    // Efsanevi ihtimaller de cevrimsiz listeden: hicbir cevrimin hedefi degiller.
+    const legendaryChances = LEGENDARY_EFFECTS.map((kind) => clampLegendaryChance(getModifierAdd(goldModifiers, LEGENDARY_CHANCE_STATS[kind])));
     return {
+      legendaryChances: legendaryChances.some((chance) => chance > 0) ? legendaryChances : undefined,
       generation: this.grantGeneration,
       engine,
       hasTowerAura: (engine?.auras ?? []).some((aura) => aura.affects === "towers"),
@@ -19273,6 +19465,474 @@ export class MatchRoom extends Room<MatchState> {
       }
     } finally {
       this.hitSplashActive = false;
+    }
+  }
+
+  /**
+   * Efsanevi vurus (`legendary` modulu): kule ile dusmanin temas saatini bu
+   * vurusla ilerletir ve kurulu haklari bu vurusta uygular.
+   *
+   * Temas: kulenin bu dusmana iki dogrudan vurusu arasindaki sure, kulenin
+   * isisiz etki araliginin 1,5 katini (en az 1,5 oyun sn) gecmiyorsa temas
+   * sayiliyor; geciyorsa temas kopmus, saat sifirdan. Ilk vurus saati
+   * baslatiyor. Saatin her tam oyun saniyesinde etki basina zar atiliyor;
+   * aradaki zar bu vurusta -- zarin tuttugu andan sonraki ilk vurusta --
+   * uygulaniyor. Canli hedef isteyen etki (dondurma, infaz, catlak, iz, bag,
+   * cekim) oldurucu vurusta uygulanmiyor; uygulanamayan hak bekliyor.
+   */
+  private resolveLegendaryHit(tower: TowerModel, enemy: EnemyModel, killed: boolean, now: number, sourceOwnerId: string, damageType: DamageType, hitType: HitType | undefined) {
+    const chances = this.getTowerGrantState(tower).legendaryChances;
+    if (!chances) return;
+    const state = enemy.legendary ??= {};
+    const pairs = state.pairs ??= new Map<string, LegendaryPairState>();
+    const pair = pairs.get(tower.id);
+    if (!pair) {
+      if (!killed) pairs.set(tower.id, createLegendaryPairState(now));
+      return;
+    }
+    const elapsed = Math.max(0, now - pair.lastAt) * GAME_SPEED_MULTIPLIER;
+    pair.lastAt = now;
+    advanceLegendaryEngagement(pair, elapsed, getEngageGapAllowanceMs(this.getTowerLegendaryRhythm(tower).intervalMs), chances, this.legendaryRandom);
+    if (killed) pairs.delete(tower.id);
+    if (!pair.armed.some((count) => count > 0)) return;
+    const readyAt = tower.legendaryReadyAt ??= LEGENDARY_EFFECTS.map(() => 0);
+    // Vurus bilgisi yalnizca kurulu bir hak varken: vurus basina tahsis yok.
+    const hit: LegendaryHitContext = { sourceOwnerId, damageType, hitType };
+    for (const index of LEGENDARY_APPLY_ORDER) {
+      if (!(pair.armed[index] > 0) || (readyAt[index] ?? 0) > now) continue;
+      if (!this.applyLegendaryEffect(LEGENDARY_EFFECTS[index], tower, enemy, killed, now, hit)) continue;
+      pair.armed[index] -= 1;
+      readyAt[index] = now + scaleGameDuration(LEGENDARY_TOWER_TRIGGER_GAP_MS);
+    }
+  }
+
+  /**
+   * Kule saniyesi: kulenin taban vurus hasarinin saniyelik karsiligi. Hasar
+   * veren efsanevi etkilerin olcusu: yavas ve buyuk vuran kule ayni
+   * ihtimalle daha buyuk patlama almasin.
+   */
+  private getTowerLegendaryPower(tower: TowerModel) {
+    return this.getTowerLegendaryRhythm(tower).power;
+  }
+
+  /**
+   * Kulenin efsanevi ritmi: isinin izin verdigi surekli tetik hizi (panelin
+   * "surekli" sayisi; isi baglamayan kulede tanimli hiz) ve ondan kule saniyesi
+   * ve tetik araligi. Anlik isi freni degil surekli hiz: olcumde kuleler
+   * isiyla sinirli (saniyede ~0,3-0,5 tetik) ve tanimli hizla olculen kule
+   * saniyesi gercek hasarin birkac kati cikiyordu; anlik frenle olculse ayni
+   * kule sicakken ve sogukken farkli patlama alirdi. Temasin kopma payi da bu
+   * araliktan: frende yavaslayan kule hedefle temasini kaybetmiyor. Kule
+   * basina kisa sure (ve kart/esya degisene kadar) onbellekte.
+   */
+  private getTowerLegendaryRhythm(tower: TowerModel) {
+    const now = Date.now();
+    const cached = tower.legendaryRhythm;
+    if (cached && cached.generation === this.grantGeneration && now >= cached.at && now - cached.at < LEGENDARY_RHYTHM_CACHE_MS) return cached;
+    const nominal = 1000 / Math.max(1, this.getTowerEffectInterval(tower, false));
+    const sustained = this.getTowerHeatBudget(tower)?.sustained;
+    const rate = Math.max(0.05, sustained !== undefined ? Math.min(nominal, sustained) : nominal);
+    const rhythm = {
+      at: now,
+      generation: this.grantGeneration,
+      intervalMs: 1000 / rate,
+      power: this.getTowerDamage(tower) * this.getTowerShotsPerTrigger(tower) * rate
+    };
+    tower.legendaryRhythm = rhythm;
+    return rhythm;
+  }
+
+  /** Kurulu hakki uygular; uygulanamadiysa (kosul yok, hedef yok) false ve hak bekler. */
+  private applyLegendaryEffect(kind: LegendaryEffect, tower: TowerModel, enemy: EnemyModel, killed: boolean, now: number, hit: LegendaryHitContext) {
+    const alive = !killed && enemy.hp > 0 && this.enemies.get(enemy.id) === enemy;
+    switch (kind) {
+      case "chain": return this.applyLegendaryChain(tower, enemy, hit);
+      case "blast": return this.applyLegendaryBlast(tower, enemy, hit);
+      case "freeze": return alive && this.applyLegendaryFreeze(tower, enemy, now);
+      case "execute": return alive && this.applyLegendaryExecute(tower, enemy, hit);
+      case "shatter": return alive && this.applyLegendaryFracture(tower, enemy, now, hit);
+      case "chrono": return alive && this.applyLegendaryChrono(tower, enemy, now, hit);
+      case "link": return alive && this.applyLegendaryLink(tower, enemy, now, hit);
+      case "gravity": return alive && this.applyLegendaryGravity(tower, enemy, now);
+    }
+  }
+
+  /** Istemci olayi tik sonuna; tik basina tavanli (gorsel, oyun kurali degil). */
+  private broadcastLegendaryProc(message: LegendaryProcMessage) {
+    if (this.pendingLegendaryProcs.length < LEGENDARY_PROCS_PER_TICK) this.pendingLegendaryProcs.push(message);
+  }
+
+  /** Tikin efsanevi olaylari tek yayinda (`legendary:procs`, dizi). */
+  private flushLegendaryProcs() {
+    if (this.pendingLegendaryProcs.length === 0) return;
+    this.broadcast("legendary:procs", this.pendingLegendaryProcs.splice(0));
+  }
+
+  /** Zincirleme Simsek: hedeften en yakina, oradan bir sonrakine; her halka kule saniyesi kadar. */
+  private applyLegendaryChain(tower: TowerModel, enemy: EnemyModel, hit: LegendaryHitContext) {
+    const range = getMapGridSize(this.activeMap) * CHAIN_RANGE_CELLS;
+    const visited = new Set<string>([enemy.id]);
+    const targets: EnemyModel[] = [];
+    const points = [roundNetworkNumber(enemy.x), roundNetworkNumber(enemy.y)];
+    let fromX = enemy.x;
+    let fromY = enemy.y;
+    for (let jump = 0; jump < CHAIN_JUMPS; jump += 1) {
+      let next: EnemyModel | undefined;
+      let best = range * range;
+      for (const other of this.getEnemiesNear(fromX, fromY, range)) {
+        if (visited.has(other.id) || other.hp <= 0 || !this.canTowerTargetEnemy(tower, other)) continue;
+        const distance = distanceSq(fromX, fromY, other.x, other.y);
+        if (distance <= best) {
+          best = distance;
+          next = other;
+        }
+      }
+      if (!next) break;
+      visited.add(next.id);
+      targets.push(next);
+      points.push(roundNetworkNumber(next.x), roundNetworkNumber(next.y));
+      fromX = next.x;
+      fromY = next.y;
+    }
+    if (targets.length === 0) return false;
+    const damage = this.getTowerLegendaryPower(tower) * CHAIN_DAMAGE_SECONDS;
+    this.broadcastLegendaryProc({ k: "chain", x: points[0], y: points[1], t: tower.id, p: points });
+    for (const target of targets) {
+      this.damageEnemy(target, damage, 0, LEGENDARY_SOURCE_IDS.chain, hit.sourceOwnerId || tower.ownerId, hit.damageType, 0, tower.level, tower.id, hit.hitType);
+    }
+    return true;
+  }
+
+  /** Vurusta Patlama: hedefin cevresi (hedef dahil), kule saniyesinin kati. */
+  private applyLegendaryBlast(tower: TowerModel, enemy: EnemyModel, hit: LegendaryHitContext) {
+    const radius = getMapGridSize(this.activeMap) * BLAST_RADIUS_CELLS;
+    const x = enemy.x;
+    const y = enemy.y;
+    const victims = this.getEnemiesNear(x, y, radius)
+      .filter((other) => other.hp > 0 && distanceSq(x, y, other.x, other.y) <= radius * radius && this.canTowerTargetEnemy(tower, other));
+    const damage = this.getTowerLegendaryPower(tower) * BLAST_DAMAGE_SECONDS;
+    this.broadcastLegendaryProc({ k: "blast", x: roundNetworkNumber(x), y: roundNetworkNumber(y), t: tower.id, r: Math.round(radius) });
+    for (const victim of victims) {
+      this.damageEnemy(victim, damage, 0, LEGENDARY_SOURCE_IDS.blast, hit.sourceOwnerId || tower.ownerId, hit.damageType, 0, tower.level, tower.id, hit.hitType);
+    }
+    return true;
+  }
+
+  /**
+   * Dondurma: cok kisa, sampiyonda daha kisa. Donmus ya da bagisik (yakin
+   * zamanda bu etkiyle donmus) dusman donmuyor; hak bekliyor.
+   */
+  private applyLegendaryFreeze(tower: TowerModel, enemy: EnemyModel, now: number) {
+    const state = enemy.legendary ??= {};
+    if ((state.freezeImmuneUntil ?? 0) > now || isStatusEffectActive(enemy.statusEffects.freeze, now)) return false;
+    const durationMs = getLegendaryFreezeMs(Boolean(enemy.champion));
+    this.applyEnemyStatusEffect(enemy, { type: "freeze", magnitude: 1, durationMs, stacking: "refresh" }, now, {
+      durationMs,
+      sourceTowerId: tower.id,
+      sourceOwnerId: tower.ownerId
+    });
+    state.freezeImmuneUntil = now + scaleGameDuration(durationMs + FREEZE_IMMUNITY_MS);
+    this.broadcastLegendaryProc({ k: "freeze", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, ms: durationMs });
+    return true;
+  }
+
+  /** Infaz: cani esigin altindaysa bitir; ustundeyse hak bekliyor. */
+  private applyLegendaryExecute(tower: TowerModel, enemy: EnemyModel, hit: LegendaryHitContext) {
+    // Atakan'in infazindaki bagisiklik (brute, sampiyon, avci) burada da:
+    // bagisik dusman bu etkiyle hic infaz edilmiyor; hak bekliyor.
+    if (isExecuteImmune({ type: enemy.type, champion: enemy.champion, special: enemy.special?.kind })) return false;
+    if (enemy.hp > enemy.maxHp * getExecuteThreshold(Boolean(enemy.champion))) return false;
+    this.broadcastLegendaryProc({ k: "execute", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, t: tower.id });
+    this.damageEnemy(enemy, enemy.hp + enemy.shield * 2 + enemy.maxHp + 1, 0, LEGENDARY_SOURCE_IDS.execute, hit.sourceOwnerId || tower.ownerId, "true", 0, tower.level, tower.id);
+    return true;
+  }
+
+  /** Olum Parcalanmasi, ilk evre: hedefe catlak. Yeniden vurus catlagi tazeliyor. */
+  private applyLegendaryFracture(tower: TowerModel, enemy: EnemyModel, now: number, hit: LegendaryHitContext) {
+    const state = enemy.legendary ??= {};
+    state.fractureUntil = now + scaleGameDuration(SHATTER_FRACTURE_MS);
+    state.fractureTowerId = tower.id;
+    state.fractureOwnerId = hit.sourceOwnerId || tower.ownerId;
+    this.broadcastLegendaryProc({ k: "shatter", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, ms: SHATTER_FRACTURE_MS });
+    return true;
+  }
+
+  /**
+   * Olum Parcalanmasi, ikinci evre (`finishEnemyKill`): catlakliyken olen
+   * dusman (halka 0) ya da sarapnelin oldurdugu dusman (bir sonraki halka,
+   * en fazla `SHATTER_MAX_DEPTH`) cevresine sarapnel sacar.
+   */
+  private tryLegendaryShatter(enemy: EnemyModel, sourceDefinitionId: string, sourceTowerId: string, sourceOwnerId: string, now: number) {
+    const state = enemy.legendary;
+    const fractured = (state?.fractureUntil ?? 0) > now;
+    const chained = sourceDefinitionId === LEGENDARY_SHATTER_SOURCE && this.legendaryShatterDepth >= 0 && this.legendaryShatterDepth < SHATTER_MAX_DEPTH;
+    if (!fractured && !chained) return;
+    const depth = fractured ? 0 : this.legendaryShatterDepth + 1;
+    const towerId = (fractured ? state?.fractureTowerId : undefined) ?? sourceTowerId;
+    const ownerId = (fractured ? state?.fractureOwnerId : undefined) ?? sourceOwnerId;
+    if (state) state.fractureUntil = 0;
+    const tower = towerId ? this.towers.get(towerId) : undefined;
+    const radius = getMapGridSize(this.activeMap) * SHATTER_RADIUS_CELLS;
+    const x = enemy.x;
+    const y = enemy.y;
+    const victims = this.getEnemiesNear(x, y, radius).filter((other) => other !== enemy && other.hp > 0
+      && distanceSq(x, y, other.x, other.y) <= radius * radius
+      && (tower ? this.canTowerTargetEnemy(tower, other) : !this.isEnemyOnTeamSide(other, now)));
+    const damage = getShatterDamage(enemy.maxHp, Boolean(enemy.champion), depth);
+    this.broadcastLegendaryProc({ k: "shatter", f: 1, x: roundNetworkNumber(x), y: roundNetworkNumber(y), r: Math.round(radius) });
+    if (!(damage > 0)) return;
+    const previousDepth = this.legendaryShatterDepth;
+    this.legendaryShatterDepth = depth;
+    try {
+      for (const victim of victims) {
+        this.damageEnemy(victim, damage, 0, LEGENDARY_SHATTER_SOURCE, ownerId, "physical", 0, tower?.level ?? 1, tower ? towerId : "", "impact");
+      }
+    } finally {
+      this.legendaryShatterDepth = previousDepth;
+    }
+  }
+
+  /** Takimin tarafindaki dusman (hukmedilmis, olumsuz, cevrilmis): efsanevi hasar ona gitmiyor. */
+  private isEnemyOnTeamSide(enemy: EnemyModel, now: number) {
+    return enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now;
+  }
+
+  /** Kronal Iz: iz suren dusmana yeni iz konmuyor; hak bekliyor. */
+  private applyLegendaryChrono(tower: TowerModel, enemy: EnemyModel, now: number, hit: LegendaryHitContext) {
+    const state = enemy.legendary ??= {};
+    if ((state.chronoUntil ?? 0) > now) return false;
+    state.chronoUntil = now + scaleGameDuration(CHRONO_SCAR_MS);
+    state.chronoStored = 0;
+    state.chronoTowerId = tower.id;
+    state.chronoOwnerId = hit.sourceOwnerId || tower.ownerId;
+    this.legendaryTimedEnemyIds.add(enemy.id);
+    this.broadcastLegendaryProc({ k: "chrono", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, ms: CHRONO_SCAR_MS });
+    return true;
+  }
+
+  /** Hasar Bagi: en yakin bagsiz dusmana; ikisi de bagli. Ortak yoksa hak bekliyor. */
+  private applyLegendaryLink(tower: TowerModel, enemy: EnemyModel, now: number, hit: LegendaryHitContext) {
+    const state = enemy.legendary ??= {};
+    if ((state.linkUntil ?? 0) > now) return false;
+    const range = getMapGridSize(this.activeMap) * LINK_RANGE_CELLS;
+    let partner: EnemyModel | undefined;
+    let best = range * range;
+    for (const other of this.getEnemiesNear(enemy.x, enemy.y, range)) {
+      if (other === enemy || other.hp <= 0 || (other.legendary?.linkUntil ?? 0) > now || !this.canTowerTargetEnemy(tower, other)) continue;
+      const distance = distanceSq(enemy.x, enemy.y, other.x, other.y);
+      if (distance <= best) {
+        best = distance;
+        partner = other;
+      }
+    }
+    if (!partner) return false;
+    const until = now + scaleGameDuration(LINK_DURATION_MS);
+    const ownerId = hit.sourceOwnerId || tower.ownerId;
+    for (const [self, other] of [[enemy, partner], [partner, enemy]] as const) {
+      const linked = self.legendary ??= {};
+      linked.linkUntil = until;
+      linked.linkPartnerId = other.id;
+      linked.linkTowerId = tower.id;
+      linked.linkOwnerId = ownerId;
+      this.legendaryTimedEnemyIds.add(self.id);
+    }
+    this.broadcastLegendaryProc({
+      k: "link", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, e2: partner.id,
+      ms: LINK_DURATION_MS, p: [roundNetworkNumber(partner.x), roundNetworkNumber(partner.y)]
+    });
+    return true;
+  }
+
+  /** Kutle Cekim Capasi: hedef bir sure cekim noktasi (`updateLegendaryEffects` cekiyor). */
+  private applyLegendaryGravity(tower: TowerModel, enemy: EnemyModel, now: number) {
+    const state = enemy.legendary ??= {};
+    if ((state.gravityUntil ?? 0) > now) return false;
+    state.gravityUntil = now + scaleGameDuration(GRAVITY_DURATION_MS);
+    state.gravityTowerId = tower.id;
+    this.legendaryTimedEnemyIds.add(enemy.id);
+    this.broadcastLegendaryProc({
+      k: "gravity", x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, t: tower.id,
+      ms: GRAVITY_DURATION_MS, r: Math.round(getMapGridSize(this.activeMap) * GRAVITY_RADIUS_CELLS)
+    });
+    return true;
+  }
+
+  /**
+   * Kronal iz ve hasar bagi dusmanin aldigi her hasari okuyor (`damageEnemy`).
+   * Bag hasari ortaga "gercek" hasar olarak gidiyor (zirh ve direnc zaten
+   * ilk vurusta islendi) ve kulesiz: kulenin vurus paylari ikinci kez
+   * binmesin. Aktarilan hasar geri aktarilmiyor.
+   */
+  private noteLegendaryDamageTaken(enemy: EnemyModel, dealtAmount: number, now: number, sourceDefinitionId: string) {
+    const state = enemy.legendary;
+    if (!state) return;
+    if ((state.chronoUntil ?? 0) > now) state.chronoStored = (state.chronoStored ?? 0) + dealtAmount;
+    // Bagdan gelen hasar geri aktarilmiyor (sonsuz dongu yok).
+    if ((state.linkUntil ?? 0) <= now || !state.linkPartnerId || sourceDefinitionId === LEGENDARY_SOURCE_IDS.link) return;
+    const partner = this.enemies.get(state.linkPartnerId);
+    if (!partner || partner.hp <= 0) return;
+    const share = dealtAmount * LINK_SHARE;
+    if (!(share > 0)) return;
+    this.damageEnemy(partner, share, 0, LEGENDARY_SOURCE_IDS.link, state.linkOwnerId ?? "", "true");
+  }
+
+  /**
+   * Sureli efsanevi etkiler, dusmanlar yurudukten sonra tik basina bir kez:
+   * biten kronal izin geri odemesi, biten ya da ortagi olen bag ve suren
+   * cekim. Yalnizca kaydi olan dusmanlar geziliyor.
+   */
+  private updateLegendaryEffects(seconds: number, now: number) {
+    for (const id of this.legendaryTimedEnemyIds) {
+      const enemy = this.enemies.get(id);
+      const state = enemy?.legendary;
+      if (!enemy || !state) {
+        this.legendaryTimedEnemyIds.delete(id);
+        continue;
+      }
+      if (state.chronoUntil && state.chronoUntil <= now) this.settleLegendaryChrono(enemy, state);
+      if (state.linkUntil && (state.linkUntil <= now || !state.linkPartnerId || !this.enemies.has(state.linkPartnerId))) {
+        state.linkUntil = 0;
+        state.linkPartnerId = undefined;
+      }
+      if (state.gravityUntil) {
+        if (state.gravityUntil <= now || enemy.hp <= 0 || !this.enemies.has(enemy.id)) state.gravityUntil = 0;
+        else this.pullTowardLegendaryAnchor(enemy, seconds, now);
+      }
+      if (!state.chronoUntil && !state.linkUntil && !state.gravityUntil) this.legendaryTimedEnemyIds.delete(id);
+    }
+  }
+
+  /** Kronal izin geri odemesi: izde biriken hasarin payi, bir kez, gercek hasar. */
+  private settleLegendaryChrono(enemy: EnemyModel, state: EnemyLegendaryState) {
+    const amount = (state.chronoStored ?? 0) * CHRONO_PAYBACK_RATIO;
+    state.chronoUntil = 0;
+    state.chronoStored = 0;
+    if (!(amount > 0) || enemy.hp <= 0) return;
+    this.broadcastLegendaryProc({ k: "chrono", f: 1, x: roundNetworkNumber(enemy.x), y: roundNetworkNumber(enemy.y), e: enemy.id, a: Math.round(amount) });
+    this.damageEnemy(enemy, amount, 0, LEGENDARY_SOURCE_IDS.chrono, state.chronoOwnerId ?? "", "true");
+  }
+
+  /**
+   * Capanin cekimi. Yapiya kilitli, sampiyon, ozel ve takimin tarafindaki
+   * dusman cekilmiyor; capaya `GRAVITY_HOLD_CELLS` kadar yaklasan da.
+   */
+  private pullTowardLegendaryAnchor(anchor: EnemyModel, seconds: number, now: number) {
+    const cell = getMapGridSize(this.activeMap);
+    const radius = cell * GRAVITY_RADIUS_CELLS;
+    const hold = cell * GRAVITY_HOLD_CELLS;
+    const step = cell * GRAVITY_PULL_CELLS_PER_SECOND * Math.max(0, seconds);
+    if (!(step > 0)) return;
+    for (const other of this.getEnemiesNear(anchor.x, anchor.y, radius)) {
+      if (other === anchor || other.hp <= 0 || other.champion || other.special || other.structureTargetId || this.isEnemyOnTeamSide(other, now)) continue;
+      const dx = anchor.x - other.x;
+      const dy = anchor.y - other.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance <= hold || distance > radius) continue;
+      const move = Math.min(step, distance - hold);
+      if (this.displaceEnemyPathSafe(other, dx / distance * move, dy / distance * move)) {
+        (other.legendary ??= {}).pulledUntil = now + scaleGameDuration(GRAVITY_PULL_HOLD_MS);
+      }
+    }
+  }
+
+  /**
+   * Dusmani yuruyus modelini bozmadan kaydirir.
+   *
+   * Ucan dusman serbest (akis alani yok). Kara dusmani hucre hucre yuruyor ve
+   * kor gezinmesi hucre basina karar veriyor: kayma ayni hucrede kaliyorsa
+   * serbest; yurunebilir bir dik komsuya gecerse (yapi, harita siniri, Metal
+   * Kalkan ve cikmaz sokak `isEnemyStepOpen`) gezinme yeni hucreden bastan
+   * basliyor; capraz ya da kapali komsuya dusecekse dusman kendi hucresinin
+   * icinde kaliyor. Izgaranin disindaki (dogum) dusman kaydirilmiyor, hedefi
+   * izgaranin disina dusen kayma (`worldToGrid` kenara kirptigi icin ayni
+   * hucre gorunurdu) yapilmiyor ve kara dusmaninin kaymasi bir Metal Kalkan'i
+   * kesiyorsa hic yapilmiyor (kalkanin icinden cekilmez).
+   */
+  private displaceEnemyPathSafe(enemy: EnemyModel, dx: number, dy: number) {
+    let nextX = enemy.x + dx;
+    let nextY = enemy.y + dy;
+    if (!this.isInsideMapGrid(nextX, nextY)) return false;
+    if (enemy.movementKind === "air") {
+      enemy.x = nextX;
+      enemy.y = nextY;
+      return true;
+    }
+    if (!this.isInsideMapGrid(enemy.x, enemy.y)) return false;
+    const cell = getMapGridSize(this.activeMap);
+    const from = worldToGrid(enemy.x, enemy.y, this.activeMap);
+    const center = gridToWorld(from.col, from.row, this.activeMap);
+    const to = worldToGrid(nextX, nextY, this.activeMap);
+    let changedCell = false;
+    if (to.col !== from.col || to.row !== from.row) {
+      if (Math.abs(to.col - from.col) + Math.abs(to.row - from.row) === 1 && this.isEnemyStepOpen(enemy, from, to.col, to.row)) {
+        changedCell = true;
+      } else {
+        // Capraz ya da kapali komsu: kendi hucresinin icinde kal.
+        const inset = cell / 2 - 0.5;
+        nextX = this.clamp(nextX, center.x - inset, center.x + inset);
+        nextY = this.clamp(nextY, center.y - inset, center.y + inset);
+      }
+    }
+    if (this.metalShields.length > 0 && this.isShieldBlockingSegment(enemy.x, enemy.y, nextX, nextY)) return false;
+    enemy.x = nextX;
+    enemy.y = nextY;
+    if (changedCell) this.resetEnemyNavigation(enemy);
+    return true;
+  }
+
+  /** Nokta haritanin izgarasinin icinde mi (kirpmasiz; `worldToGrid` kenara kirpiyor). */
+  private isInsideMapGrid(x: number, y: number) {
+    const origin = getMapOrigin(this.activeMap);
+    const size = getMapGridSize(this.activeMap);
+    return x >= origin.x && y >= origin.y
+      && x < origin.x + this.activeMap.cols * size && y < origin.y + this.activeMap.rows * size;
+  }
+
+  /** Kritik Tahliye: son atisin isisinin payi geri atiliyor; kilit esigi yeniden soruluyor. */
+  private ventTowerShotHeat(tower: TowerModel, ratio: number) {
+    tower.lastShotVented = true;
+    tower.temperature = Math.max(0, tower.temperature - Math.max(0, ratio) * Math.max(0, tower.lastShotHeat ?? 0));
+    if (tower.heatLocked && tower.temperature <= this.getTowerHeatReleaseThreshold(tower)) tower.heatLocked = false;
+  }
+
+  /** Kulenin su anki hedefi: namlunun dondugu, yoksa secim kilidi ya da odak. */
+  private getTowerCurrentTarget(tower: TowerModel) {
+    const id = tower.turnTargetId || tower.aimTargetId || tower.focusTargetId;
+    return id ? this.enemies.get(id) : undefined;
+  }
+
+  /**
+   * Kalabalik Besleyici (`crowdFireRate`): menzildeki dusman sayisi, tavanli.
+   * Hedeflenemeyen ve kulenin vuramayacagi (hava) dusman sayilmiyor.
+   */
+  private countTowerCrowd(tower: TowerModel) {
+    const range = this.getTowerRange(tower);
+    let count = 0;
+    for (const enemy of this.enemySpatialGrid.queryCircle(tower.x, tower.y, range)) {
+      if (this.enemies.get(enemy.id) !== enemy || enemy.hp <= 0 || !this.canTowerTargetEnemy(tower, enemy)) continue;
+      if (distanceSq(tower.x, tower.y, enemy.x, enemy.y) > range * range) continue;
+      count += 1;
+      if (count >= CROWD_FIRE_RATE_MAX_ENEMIES) break;
+    }
+    return count;
+  }
+
+  /**
+   * Kule panelinin efsanevi satiri: `[lg:<etki>, saniyelik ihtimal, sure
+   * (oyun ms, yoksa 0), buyukluk]`. Buyukluk zincirde halka basina, patlamada
+   * toplam hasar (kule saniyesinden), obur etkilerde sabit pay ya da yaricap.
+   */
+  private getLegendaryPanelEffect(kind: LegendaryEffect, chance: number, power: number): TowerEffectWire {
+    const c = roundTowerStat(chance);
+    switch (kind) {
+      case "chain": return ["lg:chain", c, 0, roundTowerStat(power * CHAIN_DAMAGE_SECONDS)];
+      case "blast": return ["lg:blast", c, 0, roundTowerStat(power * BLAST_DAMAGE_SECONDS)];
+      case "freeze": return ["lg:freeze", c, FREEZE_DURATION_MS];
+      case "execute": return ["lg:execute", c, 0, EXECUTE_THRESHOLD];
+      case "shatter": return ["lg:shatter", c, SHATTER_FRACTURE_MS, SHATTER_MAX_HP_RATIO];
+      case "chrono": return ["lg:chrono", c, CHRONO_SCAR_MS, CHRONO_PAYBACK_RATIO];
+      case "link": return ["lg:link", c, LINK_DURATION_MS, LINK_SHARE];
+      case "gravity": return ["lg:gravity", c, GRAVITY_DURATION_MS, GRAVITY_RADIUS_CELLS];
     }
   }
 
@@ -20224,7 +20884,37 @@ function getMelisApprovalGain(tier: KillStreakTier) {
  * saymiyor. Oluler Bagi'nin infazi hedefi yapay bir hasarla (can + kalkan +
  * azami can + 1) olduruyor; AttackLord'un Execute becerisi de oyle.
  */
-const SYNTHETIC_KILL_SOURCES: ReadonlySet<string> = new Set(["archer-4-underworld-execute", ATAKAN_EXECUTE_SOURCE_ID]);
+/**
+ * Efsanevi etkilerin hasar kaynaklari. `legendary:` on eki `damageEnemy`ye
+ * bunun efsanevi etkinin kendi hasari oldugunu soyluyor (temas, kritik,
+ * sicrama, durum ve isci vurus etkisi yok); parcalanma zinciri de kimlige bakiyor.
+ */
+const LEGENDARY_SOURCE_IDS: Record<LegendaryEffect, string> = {
+  chain: "legendary:chain",
+  blast: "legendary:blast",
+  freeze: "legendary:freeze",
+  execute: "legendary:execute",
+  shatter: "legendary:shatter",
+  chrono: "legendary:chrono",
+  link: "legendary:link",
+  gravity: "legendary:gravity"
+};
+const LEGENDARY_SHATTER_SOURCE = LEGENDARY_SOURCE_IDS.shatter;
+const LEGENDARY_SOURCE_PREFIX = "legendary:";
+/** Tik basina istemciye giden efsanevi olay tavani (yalnizca gorsel). */
+const LEGENDARY_PROCS_PER_TICK = 48;
+/**
+ * Ayni vurusta birden cok hak kuruluysa uygulanma sirasi: hedefi isaretleyenler
+ * once (catlak, iz, bag, cekim, dondurma), alana vuranlar sonra (zincir ve
+ * patlama catlagi gorur), infaz en son (hedefi bitirince obur haklar beklerdi).
+ */
+const LEGENDARY_APPLY_ORDER: readonly number[] = (["shatter", "chrono", "link", "gravity", "freeze", "chain", "blast", "execute"] as const)
+  .map((kind) => LEGENDARY_EFFECTS.indexOf(kind));
+/** Efsanevi ritmin (surekli tetik hizi, kule saniyesi) onbellek suresi, duvar saati ms. */
+const LEGENDARY_RHYTHM_CACHE_MS = 250;
+/** Capanin cektigi dusman bu kadar (oyun ms) takilma bekcisinde beklemede sayiliyor. */
+const GRAVITY_PULL_HOLD_MS = 250;
+const SYNTHETIC_KILL_SOURCES: ReadonlySet<string> = new Set(["archer-4-underworld-execute", ATAKAN_EXECUTE_SOURCE_ID, LEGENDARY_SOURCE_IDS.execute]);
 function isSyntheticKillSource(sourceDefinitionId: string) {
   return SYNTHETIC_KILL_SOURCES.has(sourceDefinitionId);
 }

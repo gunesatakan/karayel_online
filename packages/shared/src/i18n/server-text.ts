@@ -79,7 +79,8 @@ export const SERVER_TEXT = {
   "preview.stat.energy": "Enerji / tetikleme",
   "preview.stat.heat": "Isı / tetikleme",
   "preview.stat.cooling": "Soğutma / sn",
-  "preview.stat.sustained": "Sürekli tetikleme / sn"
+  "preview.stat.sustained": "Sürekli tetikleme / sn",
+  "preview.stat.legendary": "Efsanevi ihtimal / sn"
 } as const;
 
 export type ServerTextKey = keyof typeof SERVER_TEXT;
