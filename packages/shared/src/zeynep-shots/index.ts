@@ -14,8 +14,8 @@
  * Sunucunun carpisma, isin ve dalga hesabi bunu kullaniyor; istemci Gosteri
  * hattinin ve Kin dalgasinin kimi vurdugunu ayni yaricapla seciyor.
  *
- * Dusmanlar ekranda %25 kuculunce isabet kutulari da ayni oranda kuculdu
- * (`ENEMY_SIZE_SCALE`): 19 / 13 / 15 -> 14,25 / 9,75 / 11,25.
+ * Onceki %25 kuculmeye ek %10: gorsel ve isabet kutusu ayni olcekte
+ * (`ENEMY_SIZE_SCALE`): 19 / 13 / 15 -> 12,825 / 8,775 / 10,125.
  */
 export function getEnemyTypeCollisionRadius(type: string | undefined) {
   return (type === "brute" ? 19 : type === "runner" ? 13 : 15) * ENEMY_SIZE_SCALE;
@@ -25,7 +25,7 @@ export function getEnemyTypeCollisionRadius(type: string | undefined) {
  * Dusman boyutunun olcegi: ekrandaki cap ve carpisma yaricapi birlikte.
  * Istemci gorseli de bununla carpiyor, ikisi birbirinden kaymasin.
  */
-export const ENEMY_SIZE_SCALE = 0.75;
+export const ENEMY_SIZE_SCALE = 0.675;
 
 /**
  * Kin dalgasinin bandi (dunya birimi, olcekten once): on kenarin arkasinda

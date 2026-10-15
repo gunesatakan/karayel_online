@@ -97,7 +97,7 @@ test("istemcinin paylaşılan kuralları sunucunun kendisi: Abartı dikdörtgeni
   assert.deepEqual([0, 1, 4, 10, 12].map((level) => Math.round(getAbartiShowcaseRangeMultiplier(level) * 1000) / 1000), [1.1, 1.1, 1.4, 2, 2]);
   assert.deepEqual(["zeynep-1", "zeynep-3", "zeynep-3-kin-projectile", "zeynep-2", "warrior-1"].map(isAbartiArmorBreakProjectile), [true, true, true, false, false]);
   // Dusmanlar %25 kucultuldu: 19 / 13 / 15 -> x0,75.
-  assert.deepEqual(["brute", "runner", "grunt", undefined].map(getEnemyTypeCollisionRadius), [14.25, 9.75, 11.25, 11.25]);
+  assert.deepEqual(["brute", "runner", "grunt", undefined].map(getEnemyTypeCollisionRadius), [19 * 0.675, 13 * 0.675, 15 * 0.675, 15 * 0.675]);
 });
 
 test("sunucunun Kin dalgası Abartı rayını geçince menzili paylaşılan çarpanla uzatıyor", () => {
