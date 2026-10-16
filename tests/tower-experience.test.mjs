@@ -30,12 +30,12 @@ test("satis iadesi XP seviyelerinden etkilenmez", () => {
  * gibi ayri bir sabit: egrinin sekli tipte ve dalgada, seviyesi tek yerde.
  */
 test("dusman XP formulu tip, ucus ve genel carpani uygular", () => {
-  assert.equal(ENEMY_EXP_MULTIPLIER, 1.5);
-  assert.equal(getEnemyExp(6, "grunt"), 15);
-  assert.equal(getEnemyExp(6, "runner"), 15);
-  assert.equal(getEnemyExp(6, "shooter"), 24);
-  assert.equal(getEnemyExp(6, "brute"), 37.5);
-  assert.equal(getEnemyExp(6, "brute", "air"), 26.25);
+  assert.equal(ENEMY_EXP_MULTIPLIER, 1.875);
+  assert.equal(getEnemyExp(6, "grunt"), 18.75);
+  assert.equal(getEnemyExp(6, "runner"), 18.75);
+  assert.equal(getEnemyExp(6, "shooter"), 30);
+  assert.equal(getEnemyExp(6, "brute"), 46.88);
+  assert.equal(getEnemyExp(6, "brute", "air"), 32.81);
 });
 
 test("dusman XP'si multiplayer havuzlarina esit dagitilir", () => {
@@ -47,8 +47,8 @@ test("dusman XP'si multiplayer havuzlarina esit dagitilir", () => {
 
   room.awardEnemyExperience({ type: "shooter", movementKind: "ground" });
 
-  assert.equal(first.experience, 12);
-  assert.equal(second.experience, 12);
+  assert.equal(first.experience, 15);
+  assert.equal(second.experience, 15);
 });
 
 test("kule gelistirme XP ile birlikte insa bedelinin yarisi kadar altin harcar (2. seviye)", () => {

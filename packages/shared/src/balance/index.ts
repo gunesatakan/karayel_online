@@ -84,8 +84,9 @@ export const ENEMY_REWARD_MULTIPLIER = 1.5 * GOLD_INCOME_MULTIPLIER;
  *
  * Altin carpaninin deneyim tarafindaki karsiligi: egrinin sekli dusman tipinde
  * ve dalgada duruyor, bu sayi ise butun kazancin seviyesini tek yerden ceviriyor.
+ * Sahibin istegiyle %25 artirildi (1,5 -> 1,875).
  */
-export const ENEMY_EXP_MULTIPLIER = 1.5;
+export const ENEMY_EXP_MULTIPLIER = 1.875;
 
 export function getWaveEnemyCount(wave: number) {
   return Math.max(1, Math.round(BASE_WAVE_ENEMY_COUNT * ENEMY_COUNT_WAVE_MULTIPLIER ** Math.max(0, wave - 1)));
