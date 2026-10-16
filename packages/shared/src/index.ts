@@ -1728,7 +1728,9 @@ export {
   getAuraSlowLingerMs,
   getTowerHitSlowFraction,
   calculateTowerScaledBaseDamage,
-  inferTowerAmmoType
+  inferTowerAmmoType,
+  getTowerAmmoUsage,
+  type TowerAmmoUsage
 } from "./tower-rules.js";
 export {
   DEEP_FREEZE_COOLDOWN_MS,

@@ -25,6 +25,7 @@ import {
   type TowerStatsWire
 } from "@karayel/shared";
 import { damageTypeCodex, hitTypeCodex } from "./codex";
+import { describeTowerAmmo, makeAmmoMarker, type TowerAmmoKey } from "./tower-ammo";
 import { assetUrl } from "./asset-url";
 import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
 import { localizeTowerStatusText } from "./server-text";
@@ -113,6 +114,8 @@ export type TowerSheetRow = {
   detail: TowerSheetLine[];
   /** Stat satiri: dugme, dokumu var (blok gelmeden bos). */
   expandable?: boolean;
+  /** Mühimmat turu isareti (cekmece ve cephanelikle ayni renk). */
+  ammoMarker?: TowerAmmoKey;
 };
 
 export type TowerSheetBar = {
@@ -606,8 +609,13 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     ].filter(Boolean);
     bars.push({ key: "energy", label: live.resourceProvider === "energy" ? t("sheet.energyStore") : t("sheet.energy"), value: `${input.definitionId === "repair-depot-1" ? formatNumber(live.energy ?? 0, 2) : Math.floor(live.energy ?? 0)}/${live.maxEnergy ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: energyParts.length > 0 ? energyParts.join(" · ") : undefined });
   }
+  // Hangi mühimmat: sunucunun ikmal hattiyla ayni kaynaktan (`getTowerAmmoUsage`).
+  // Eski "Atis yakiti: Mühimmat" satiri turu soylemiyordu; bu satir onun yerinde.
+  if (definition) {
+    const ammo = describeTowerAmmo(definition);
+    resourceRows.push({ key: "ammoType", label: t("sheet.ammoType"), value: ammo.key === "none" ? t("sheet.ammoNone") : ammo.label, ammoMarker: ammo.key, detail: [] });
+  }
   if (relevance.operational) {
-    resourceRows.push({ key: "fuel", label: t("sheet.fuel"), value: live.shotFuel === "energy" ? t("sheet.energy") : t("sheet.ammo"), detail: [] });
     if (live.performance !== undefined) resourceRows.push({ key: "perf", label: t("sheet.performance"), value: t("format.percent", { v: Math.round(live.performance * 100) }), detail: [] });
   }
   const resourceNotes = notesFor("resources");
@@ -963,6 +971,7 @@ function buildRow(model: TowerSheetModel, row: TowerSheetRow, className: string,
   if (element instanceof HTMLButtonElement) element.type = "button";
   element.dataset.key = row.key;
   const label = el("span", `${className}__label`, row.label);
+  if (row.ammoMarker) label.prepend(makeAmmoMarker(row.ammoMarker));
   const value = keep(`v:${row.key}`, el("span", `${className}__value`, row.value));
   const bonus = keep(`b:${row.key}`, el("span", `${className}__bonus`, row.bonus ?? ""));
   bonus.hidden = !row.bonus;

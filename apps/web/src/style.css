@@ -7814,6 +7814,49 @@ button.wave-report:active { transform: scale(0.99); }
   color: #f3cf7a;
   font: 600 12px/1.2 "Share Tech Mono", monospace;
 }
+/* Alt satir: kulenin mühimmati solda, bedel sagda. Dar ekranda tur alta kirilir, bedel hep tam. */
+.game-controls__tower-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.game-controls__tower-ammo {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #94a3b8;
+  font: 500 11px/1.25 "Share Tech Mono", monospace;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+}
+.game-controls__tower-foot strong {
+  flex: none;
+  margin-left: auto;
+}
+
+/*
+ * Mühimmat turu isareti: cekmece, kule paneli ve cephaneligin uretim
+ * secenekleri ayni isareti tasiyor; renkler HUD'daki mühimmat rozetinden.
+ * Keskin kenar, parilti yok. Kristaller elmas, kursun kare, enerji bos
+ * cerceve, mühimmatsiz yapi yatay cizgi.
+ */
+.ammo-mark {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: #cbd5e1;
+}
+.ammo-mark--auraCrystal { background: #67e8f9; transform: rotate(45deg) scale(.86); }
+.ammo-mark--powerCrystal { background: #c4b5fd; transform: rotate(45deg) scale(.86); }
+.ammo-mark--energy { background: transparent; border: 1.5px solid #fcd34d; }
+.ammo-mark--none { height: 2px; background: #64748b; }
 .game-controls button.game-controls__tower--selected {
   border-color: var(--tower-color, #60a5fa);
   box-shadow: inset 0 0 0 1px var(--tower-color, #60a5fa);

@@ -1,9 +1,10 @@
 import { type AmmoType, ACTIVE_WORKER_ROLES } from "@karayel/shared";
 import type { WavePatternId } from "@karayel/shared";
 import type Phaser from "phaser";
-import { getTowerMaxLevel, towerCatalog } from "@karayel/shared";
+import { getTowerMaxLevel, towerCatalog, type TowerDefinition } from "@karayel/shared";
 import { CountUpValue, FINAL_WAVE, GOLD_COUNT_UP_MS, GOLD_GAIN_LABEL_MS, HIRABLE_WORKER_ROLES, SHOP_CATEGORY_LABELS, ULTIMATE_READY_PULSE_MS, ULTIMATE_STAMP_MS, WAVE_CLEAR_LINE_STAGGER_MS, WAVE_CLEAR_STAMP_MS, WORKER_DEVELOPMENT_CELLS, WORKER_DEVELOPMENT_XP_COSTS, WORKER_ROLE_LABELS, getWorkerSkill, isWorkerSkillForRole, type HirableWorkerRole, type WorkerSkillChoice, type WorkerSkillId, cardCatalog, getCardDefinition, getCardRarity, getShopItem, isGlobalShopItem, shopCatalog, type CardDefinition, type ShopItemCategory, type ComboHudState, type UltimateStampText, type WaveClearStampText } from "@karayel/shared";
-import { cardRarityLabels, towerAxisLabels } from "./codex";
+import { ammoTypeLabels, cardRarityLabels, towerAxisLabels } from "./codex";
+import { describeTowerAmmo, makeAmmoMarker } from "./tower-ammo";
 import { getLocale, numberLocale, onLocaleChange, t, tMaybe, upper, type MessageKey } from "./i18n";
 import { readTelemetrySetting, setTelemetryEnabled } from "./telemetry";
 import { clampTreePan, exceedsTreeDragThreshold, formatTreePanTransform, type TreePan, type TreePanBounds } from "./worker-tree-pan";
@@ -64,6 +65,13 @@ const shopItemClass = (itemId: string, category: string) =>
  */
 function formatTargeting(mode: string) {
   return tMaybe(`controls.targeting.${mode}`) ?? mode;
+}
+
+/** Cekmecedeki kimlikten tanim: duvar ve depo her karakterin listesinde, ayni tanim. */
+let towerDefinitionsById: Map<string, TowerDefinition> | undefined;
+function getTowerDefinitionById(id: string) {
+  towerDefinitionsById ??= new Map(Object.values(towerCatalog).flat().map((definition) => [definition.id, definition]));
+  return towerDefinitionsById.get(id);
 }
 
 /** Basili gorunumun en az ne kadar surdugu; altinda goz secmiyor. */
@@ -1582,6 +1590,10 @@ export function setupGameControlUi(game: Phaser.Game) {
         const button = makeActionButton((getLocale() === "tr" ? { bullet: "Projektil", auraCrystal: "Psişik / Aura", powerCrystal: "Plazma" } : { bullet: "Projectile", auraCrystal: "Psychic / Aura", powerCrystal: "Plasma" })[ammoType],
           `game-controls__underworld-mode-button ts-toggle${production.value === ammoType ? " is-active" : ""}`,
           production.canEdit, () => dispatch({ action: "setFactoryProduction", ammoType }));
+        // Kule cekmecesi ve paneli turu katalog adiyla ve bu isaretle yaziyor;
+        // oyuncu kuleyle cephaneligi isaretten eslestiriyor.
+        button.prepend(makeAmmoMarker(ammoType));
+        button.title = ammoTypeLabels[ammoType];
         button.setAttribute("aria-pressed", String(production.value === ammoType));
         return button;
       }), "game-controls__underworld-mode ts-segmented");
@@ -2118,12 +2130,24 @@ export function setupGameControlUi(game: Phaser.Game) {
     button.className = `game-controls__tower${tower.selected ? " game-controls__tower--selected" : ""}`;
     button.style.setProperty("--tower-color", tower.color);
     button.setAttribute("aria-pressed", String(Boolean(tower.selected)));
-    button.title = tower.name;
     const name = document.createElement("span");
     name.textContent = tower.name;
     const price = document.createElement("strong");
     price.textContent = `${tower.cost}g`;
-    button.append(name, price);
+    // Hangi mühimmati yaktigi: kurmadan once cephaneligin neyi uretmesi gerektigi.
+    const definition = getTowerDefinitionById(tower.id);
+    const ammo = definition ? describeTowerAmmo(definition) : undefined;
+    button.title = ammo ? `${tower.name} · ${ammo.label}` : tower.name;
+    const foot = document.createElement("div");
+    foot.className = "game-controls__tower-foot";
+    if (ammo) {
+      const tag = document.createElement("small");
+      tag.className = `game-controls__tower-ammo game-controls__tower-ammo--${ammo.key}`;
+      tag.append(makeAmmoMarker(ammo.key), ammo.label);
+      foot.append(tag);
+    }
+    foot.append(price);
+    button.append(name, foot);
     button.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       clearActiveTowerDrag();

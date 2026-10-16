@@ -223,7 +223,11 @@ export const trCore = {
   "sheet.energy": "Enerji",
   "sheet.energyStore": "Enerji deposu",
   "sheet.energy.upkeep": "çalışma {v}/sn",
-  "sheet.fuel": "Atış yakıtı",
+  "sheet.ammoType": "Mühimmat türü",
+  "sheet.ammoNone": "Kullanmaz",
+  // Kulenin mühimmati: cekmece, kule paneli ve kodeks ayni metni okuyor.
+  "ammo.energy": "Enerji ile ateşler",
+  "ammo.none": "Mühimmat kullanmaz",
   "sheet.performance": "Performans",
 
   // ------------------------------------------------------------ Kule paneli: gelisim

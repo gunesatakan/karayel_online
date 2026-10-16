@@ -1,6 +1,7 @@
 import type { DamageType, HitType } from "./combat.js";
 import type { AmmoType, TowerDefinition, TowerSlowCurve, TowerStatusEffectDefinition } from "./characters/common/types.js";
 import { getModifierAdd, type Modifier } from "./modifiers/index.js";
+import { towerNeverAttacks } from "./ballistics/index.js";
 
 export const TOWER_BASE_AMMO_COST = 1;
 export const TOWER_BASE_ENERGY_COST = 4.1;
@@ -388,4 +389,29 @@ export function inferTowerAmmoType(definition: TowerDefinition): AmmoType {
     return "auraCrystal";
   }
   return "bullet";
+}
+
+/**
+ * Kulenin oyuncuya soylenen mühimmati: ne yakiyor, depo ne getirmeli.
+ *
+ * Motorun `ammoType` alani her kulede dolu (duvar ve depolarda bile), ama
+ * yalnizca mühimmatla ates eden kulede anlami var. Uc durum:
+ *   - ates etmeyen yapi ya da kaynak binasi (duvar, Tamir Merkezi, depo,
+ *     cephanelik, reaktor) ve hic tetiklemeyen Sunucu: mühimmat kullanmaz;
+ *   - `shotFuel === "energy"` (focus, aura, Testere): enerjiyle ateslenir,
+ *     atis mühimmattan dusmez (`calculateTowerAmmoCost` 0);
+ *   - kalanlar: sunucunun ikmal hattinin kullandigi `inferTowerAmmoType`.
+ * Arayuzun uc yeri (cekmece, kule paneli, kodeks) bunu okuyor; sunucuyla
+ * ayni kaynaktan.
+ */
+export type TowerAmmoUsage = { kind: "ammo"; ammoType: AmmoType } | { kind: "energy" } | { kind: "none" };
+
+export function getTowerAmmoUsage(definition: TowerDefinition): TowerAmmoUsage {
+  if (definition.resourceProvider || definition.engine?.resourceProvider || !isOperationalTower(definition) || towerNeverAttacks(definition)) {
+    return { kind: "none" };
+  }
+  if (definition.engine?.resources.shotFuel === "energy") {
+    return { kind: "energy" };
+  }
+  return { kind: "ammo", ammoType: inferTowerAmmoType(definition) };
 }

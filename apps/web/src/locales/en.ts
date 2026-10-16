@@ -223,7 +223,11 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "sheet.energy": "Energy",
   "sheet.energyStore": "Energy store",
   "sheet.energy.upkeep": "upkeep {v}/s",
-  "sheet.fuel": "Shot fuel",
+  "sheet.ammoType": "Ammo type",
+  "sheet.ammoNone": "None",
+  // Tower ammunition: drawer, tower panel and codex read the same text.
+  "ammo.energy": "Fires on energy",
+  "ammo.none": "Uses no ammo",
   "sheet.performance": "Performance",
 
   // ------------------------------------------------------------ Tower panel: progress

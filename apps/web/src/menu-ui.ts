@@ -79,6 +79,7 @@ import {
 } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS } from "./character-colors";
 import { classTypeCodex, damageTypeCodex, hitTypeCodex } from "./codex";
+import { describeTowerAmmo } from "./tower-ammo";
 import { getClearedStages, getDefaultStage } from "./stage-progress";
 import { getRecordBook, getStageRecord } from "./run-records";
 import { takeQuickStartIntent } from "./quick-start";
@@ -2207,6 +2208,8 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
   const damageType = tower.damageType ?? "none";
   const hitType = tower.hitType ?? "impact";
   const blocks: DetailBlock[] = [{ kind: "brief", text: tower.description ?? tower.role }];
+  // Hangi mühimmat: cekmece ve kule paneliyle ayni kaynak (sunucunun ikmal hatti).
+  const ammo = describeTowerAmmo(tower);
 
   // Every number below comes from the shared tower-stats module, which is the
   // same code the server runs. Reading the definition fields directly would
@@ -2223,6 +2226,11 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
         { label: t("menu.tower.damageType"), value: damageTypeCodex[damageType]?.name ?? damageType, hint: damageTypeCodex[damageType]?.text },
         { label: t("menu.tower.hitType"), value: hitTypeCodex[hitType]?.name ?? hitType, hint: hitTypeCodex[hitType]?.text }
       ]),
+      {
+        label: t("menu.tower.ammo"),
+        value: ammo.label,
+        hint: ammo.key === "energy" ? t("menu.tower.ammoEnergyHint") : ammo.key === "none" ? undefined : t("menu.tower.ammoHint")
+      },
       {
         label: t("menu.tower.range"),
         value: level1.hasGlobalRange ? t("menu.tower.rangeGlobal") : `${level1.range.toFixed(0)} → ${level10.range.toFixed(0)}`,
