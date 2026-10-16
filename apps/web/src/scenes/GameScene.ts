@@ -220,6 +220,21 @@ import {
   type MetalShieldGestureContext,
   type MetalShieldSegment,
   type MetalShieldSnapshot,
+  SKILL_GESTURE_SLOT,
+  ZEYNEP_COMMAND_TIER_COST,
+  beginSkillGesture,
+  dropSkillGesturePointer,
+  endSkillGesture,
+  getSkillGestureHoldProgress,
+  getSkillGestureTargets,
+  getSkillGestureThresholds,
+  getSkillGestureTier,
+  getSkillGestureTierLabel,
+  moveSkillGesture,
+  tickSkillGesture,
+  type SkillGesture,
+  type SkillGestureCast,
+  type SkillGestureContext,
   getExecuteRejectText,
   isExecuteImmune,
   isExecuteTeamSide,
@@ -386,6 +401,7 @@ import { OPERATOR_BODY_DISPLAY_SIZE, OperatorBodyView, interpolateOperatorBodies
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { PlacementRangePreview } from "../vfx/placement-range";
 import { WallLineView, type WallHandleMark } from "../vfx/wall-line";
+import { SkillGestureView } from "../vfx/skill-gesture";
 import { MatchEndStage } from "../vfx/match-end-stage";
 import { MATCH_END_HUSK_TINT, MATCH_END_POWERED_DOWN_TINT } from "../vfx/match-end-vfx";
 import { MATCH_END_TIMING, getAtlasLineSeconds, shouldPlayMatchEndSequence, type MatchEndStructure } from "../match-end-sequence";
@@ -1531,6 +1547,16 @@ export class GameScene extends Phaser.Scene {
   /** Acilis sesi calinmis kalkanlar (kimlik); kalkan kalkinca siliniyor. */
   private readonly shieldSeenIds = new Set<number>();
   private shieldCooldownNoticeAt = 0;
+  /**
+   * Harita jestiyle beceri (bkz. `skill-gestures`): 1. beceri basili tut +
+   * surukle, 2. beceri surukle, 3. beceri iki parmakla surukle. Jest yokken
+   * `undefined`.
+   */
+  private skillGesture?: SkillGesture;
+  private skillGestureView?: SkillGestureView;
+  /** Yonlendirme onizlemesi jestten cizildi: jest bitince silinecek. */
+  private skillGestureGuidanceShown = false;
+  private skillGestureNoticeAt = 0;
   /** Acik kart perdesinin dalgasi; gec gelen veri karneyi bu dalga icin tazeliyor. */
   private cardDraftWave?: number;
   /**
@@ -1957,6 +1983,10 @@ export class GameScene extends Phaser.Scene {
     this.surgeDrawn = false;
     this.shieldGraphics = this.add.graphics().setDepth(METAL_SHIELD_DEPTH);
     this.shieldPreviewGraphics = this.add.graphics().setDepth(METAL_SHIELD_PREVIEW_DEPTH);
+    this.skillGestureView?.destroy();
+    this.skillGestureView = new SkillGestureView(this, METAL_SHIELD_PREVIEW_DEPTH + 0.5);
+    this.skillGesture = undefined;
+    this.skillGestureGuidanceShown = false;
     this.operatorBodyView?.destroy();
     this.operatorBodyView = new OperatorBodyView(this, {
       lod: this.vfxLod,
@@ -2041,6 +2071,10 @@ export class GameScene extends Phaser.Scene {
       this.shieldGraphics = undefined;
       this.shieldPreviewGraphics?.destroy();
       this.shieldPreviewGraphics = undefined;
+      this.skillGestureView?.destroy();
+      this.skillGestureView = undefined;
+      this.skillGesture = undefined;
+      this.skillGestureGuidanceShown = false;
       this.operatorBodyView?.destroy();
       this.operatorBodyView = undefined;
       this.clearPendingPlacement();
@@ -5252,6 +5286,7 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.shieldGraphics;
     if (!graphics) return;
     this.tickShieldGesture();
+    this.tickMapSkillGesture();
     if (!Array.isArray(shields) || shields.length === 0) {
       if (this.shieldDrawn) {
         graphics.clear();
@@ -5324,7 +5359,7 @@ export class GameScene extends Phaser.Scene {
     return Boolean(
       this.pendingAction || this.isGuidanceDragging || this.draggedTowerDefinition || this.workerPick
       || this.pendingUltimateColumn || this.pendingShopPlacement || this.workerBanMode
-      || this.performanceSliderDragging || this.cardChoiceRoot
+      || this.performanceSliderDragging || this.cardChoiceRoot || this.cardTargetPick
     ) || performance.now() < this.ignoreMapPointerUntil;
   }
 
@@ -5435,6 +5470,250 @@ export class GameScene extends Phaser.Scene {
     if (now - this.shieldCooldownNoticeAt < METAL_SHIELD_NOTICE_GAP_MS) return;
     this.shieldCooldownNoticeAt = now;
     this.showNotice(t("scene.skill.shieldCooldown", { seconds }), 1800);
+  }
+
+  // --- Harita jestiyle beceri (yuva sirasina sabit) ---------------------------------
+
+  /**
+   * Jestin o anki kosullari: paylasilan durum makinesinin girdisi. Yuvalarin
+   * jest hedefi operatorden (`getSkillGestureTargets`); Metal Kalkan yuvasi
+   * "external": onu kendi makinesi yurutuyor. `pointer` yoksa (kare basina)
+   * nokta harita icinde sayiliyor.
+   */
+  private getSkillGestureContext(pointer: Phaser.Input.Pointer | undefined, pressBusy = false): SkillGestureContext {
+    const rect = this.lastUsableCanvasRect;
+    const canvasPerCssPx = rect && rect.width > 0 ? this.game.canvas.width / rect.width : 1;
+    const cooldowns = this.resolveSkillEcho(this.localPlayerSnapshot?.skillCooldowns ?? [0, 0, 0]);
+    const targets = getSkillGestureTargets(this.getSkillGestureCharacterId());
+    return {
+      busy: pressBusy || !this.room || this.matchResultShown || this.isShieldGestureBlocked(),
+      inside: pointer ? this.isBattlePointer(pointer) : true,
+      gridSize: this.getMapCellSize(),
+      worldPerScreenPx: canvasPerCssPx / Math.max(0.0001, this.cameras.main.zoom),
+      slots: targets.map((target, slot) => ({ enabled: target !== "none", cooldownSeconds: cooldowns[slot] ?? 0, external: target === "shield" }))
+    };
+  }
+
+  /** Yuvanin harita jesti, tek satir. Farede iki parmak yok: 3. beceri sag tusla. */
+  private getSkillMapHint(slot: number) {
+    if (slot === SKILL_GESTURE_SLOT.hold) return t("scene.skill.mapHintHold");
+    if (slot === SKILL_GESTURE_SLOT.drag) return t("scene.skill.mapHintDrag");
+    const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    return t(coarse ? "scene.skill.mapHintTwo" : "scene.skill.mapHintTwoMouse");
+  }
+
+  private getSkillGestureCharacterId() {
+    return this.localPlayerSnapshot?.characterId ?? this.selectedCharacterId;
+  }
+
+  /**
+   * Haritaya basildi: jest izlenmeye baslar, hicbir sey gitmez. Ikinci parmak
+   * pencere icinde gelirse jest 3. beceriye doner ve Metal Kalkan izi kapanir.
+   */
+  private beginMapSkillGesture(pointer: Phaser.Input.Pointer, pressBusy: boolean) {
+    const context = this.getSkillGestureContext(pointer, pressBusy);
+    if (!this.skillGesture && !context.busy && context.inside && this.isShieldPressOnControl(pointer)) {
+      context.busy = true;
+    }
+    this.skillGesture = beginSkillGesture(this.skillGesture, this.toShieldPointer(pointer), performance.now(), context);
+    if (this.skillGesture && this.skillGesture.pointers.length > 1) this.cancelShieldGesture();
+    this.drawMapSkillGesture();
+  }
+
+  private moveMapSkillGesture(pointer: Phaser.Input.Pointer) {
+    if (!this.skillGesture) return;
+    this.skillGesture = moveSkillGesture(this.skillGesture, this.toShieldPointer(pointer), performance.now(), this.getSkillGestureContext(pointer));
+    this.claimHoldFromShield();
+    this.drawMapSkillGesture();
+  }
+
+  /** Kare basina: halka parmak kimildamasa da dolsun; araya giren eylem jesti oldursun. */
+  private tickMapSkillGesture() {
+    if (!this.skillGesture) return;
+    this.skillGesture = tickSkillGesture(this.skillGesture, performance.now(), this.getSkillGestureContext(undefined));
+    this.claimHoldFromShield();
+    this.drawMapSkillGesture();
+  }
+
+  /** Halka doldu: bu bir 1. beceri jesti, Metal Kalkan'in suruklemesi degil. */
+  private claimHoldFromShield() {
+    if (this.skillGesture?.phase === "hold" && this.shieldGesture) this.cancelShieldGesture();
+  }
+
+  /**
+   * Birakis. Esigi gecmis jest beceriyi atar (sekmedeki dugmeyle ayni
+   * `useSkill`); beklemedeyse bugunku bekleme bildirimi. `true`: birakis
+   * siradan bir harita dokunusu degil.
+   */
+  private finishMapSkillGesture(pointer: Phaser.Input.Pointer) {
+    if (!this.skillGesture) return false;
+    const ended = endSkillGesture(this.skillGesture, this.toShieldPointer(pointer), performance.now(), this.getSkillGestureContext(pointer));
+    this.skillGesture = ended.gesture;
+    if (ended.cooldownSlot !== undefined) this.showSkillGestureCooldownNotice(ended.cooldownSlot, ended.cooldownSeconds ?? 1);
+    if (ended.cast) this.castMapSkillGesture(ended.cast);
+    this.drawMapSkillGesture();
+    return ended.consumed;
+  }
+
+  /** Parmak birakilmadan dustu: jest atmadan kapanir. */
+  private dropMapSkillGesturePointer(pointerId: number) {
+    if (!this.skillGesture) return;
+    this.skillGesture = dropSkillGesturePointer(this.skillGesture, pointerId);
+    this.drawMapSkillGesture();
+  }
+
+  /**
+   * Jestin atisi: yuvanin hedefine gore sekmedeki yolun mesaji.
+   *   - "area": birakis noktasina alan (Yonlendirme / Zorba).
+   *   - "enemy": birakis noktasindaki dusman; yoksa ya da bagisiksa istek gitmez.
+   *   - "tier": kademe cekilen boydan; itibar yetmiyorsa istek gitmez.
+   *   - "cast": hedefsiz.
+   */
+  private castMapSkillGesture(cast: SkillGestureCast) {
+    if (!this.room) return;
+    const target = getSkillGestureTargets(this.getSkillGestureCharacterId())[cast.slot];
+    if (target === "area") {
+      const point = this.getClampedGuidancePoint({ worldX: cast.x, worldY: cast.y } as Phaser.Input.Pointer);
+      this.room.send("useSkill", { slot: cast.slot, x: point.x, y: point.y });
+      this.echoSkillUse(cast.slot);
+      this.clearPlacedTowerSelection();
+      if (this.getSkillGestureCharacterId() === "warrior") this.showNotice(t("scene.skill.redirectSent"));
+      return;
+    }
+    if (target === "enemy") {
+      const enemy = this.findEnemyAt(cast.x, cast.y);
+      if (!enemy) {
+        this.showNotice(t("scene.skill.gestureNoEnemy"));
+        return;
+      }
+      if (enemy.champion || (enemy.type && isExecuteImmune({ type: enemy.type, special: enemy.special }))) {
+        this.showNotice(getExecuteRejectText("immune"));
+        return;
+      }
+      this.room.send("useSkill", { slot: ATAKAN_EXECUTE_SLOT, enemyId: enemy.id });
+      this.echoSkillUse(ATAKAN_EXECUTE_SLOT);
+      return;
+    }
+    if (target === "tier") {
+      const context = this.getSkillGestureContext(undefined);
+      const tier = getSkillGestureTier(cast.length, getSkillGestureThresholds(context.gridSize, context.worldPerScreenPx));
+      if (!tier) return;
+      const cost = ZEYNEP_COMMAND_TIER_COST[tier];
+      if ((this.localPlayerSnapshot?.reputation ?? 0) < cost) {
+        this.showNotice(t("scene.skill.gestureNoReputation", { cost }));
+        return;
+      }
+      this.room.send("useSkill", { slot: cast.slot, commandTier: tier });
+      this.echoSkillUse(cast.slot);
+      this.hideZeynepTierChoicesIfOpen();
+      this.clearPlacedTowerSelection();
+      return;
+    }
+    if (target === "cast") {
+      this.room.send("useSkill", { slot: cast.slot });
+      this.echoSkillUse(cast.slot);
+      this.clearPlacedTowerSelection();
+    }
+  }
+
+  /** "Beceri N sn sonra hazir": seyrek, bildirim yagmasin. */
+  private showSkillGestureCooldownNotice(slot: number, seconds: number) {
+    const now = performance.now();
+    if (now - this.skillGestureNoticeAt < METAL_SHIELD_NOTICE_GAP_MS) return;
+    this.skillGestureNoticeAt = now;
+    const name = this.selectedCharacter.skills[slot]?.name ?? "";
+    this.showNotice(t("scene.skill.gestureCooldownNotice", { name, seconds }), 1800);
+  }
+
+  /**
+   * Jestin onizlemesi. Tutma halkasi (gecikmeli, her dokunusta yanip
+   * sonmesin); 1./3. becerinin izi ve hedefi (Yonlendirme alani, Execute
+   * nisangahi); ZentaX'ta kademe cubugu, kademe adi ve itibar bedeli.
+   * Beklemede gri, yetmeyen bedelde carpi.
+   */
+  private drawMapSkillGesture() {
+    const view = this.skillGestureView;
+    if (!view) return;
+    view.clear();
+    let guidance: { x: number; y: number } | undefined;
+    const gesture = this.skillGesture;
+    if (gesture && gesture.phase !== "dead") {
+      guidance = this.drawMapSkillGestureInto(view, gesture);
+    }
+    if (guidance) {
+      this.drawGuidancePreview(guidance.x, guidance.y);
+      this.skillGestureGuidanceShown = true;
+    } else if (this.skillGestureGuidanceShown) {
+      this.skillGestureGuidanceShown = false;
+      if (!this.isGuidanceDragging) this.clearGuidancePreview();
+    }
+  }
+
+  private drawMapSkillGestureInto(view: SkillGestureView, gesture: SkillGesture) {
+    const context = this.getSkillGestureContext(undefined);
+    const cell = this.getMapCellSize();
+    if (gesture.phase === "pending" || (gesture.phase === "hold" && !gesture.dragged)) {
+      const hold = context.slots[SKILL_GESTURE_SLOT.hold];
+      const progress = getSkillGestureHoldProgress(gesture, performance.now());
+      if (progress !== undefined && hold?.enabled) view.drawHoldRing(gesture.originX, gesture.originY, progress, cell * 0.75, hold.cooldownSeconds <= 0);
+      if (gesture.phase === "pending") return undefined;
+    }
+    if (gesture.phase === "dead") return undefined;
+    const slot = SKILL_GESTURE_SLOT[gesture.phase];
+    const state = context.slots[slot];
+    if (!state?.enabled || state.external) return undefined;
+    const target = getSkillGestureTargets(this.getSkillGestureCharacterId())[slot];
+    const ready = state.cooldownSeconds <= 0;
+    // Etiket parmagin ustunde; asagi cekilen cizgide ustu cubuk oldugu icin
+    // yana (haritanin ortasina dogru) kayiyor.
+    const downward = gesture.endY - gesture.startY > Math.abs(gesture.endX - gesture.startX);
+    const toCenter = gesture.endX > this.cameras.main.worldView.centerX ? -1 : 1;
+    const labelX = downward ? gesture.endX + toCenter * cell * 2.4 : gesture.endX;
+    const labelY = downward ? gesture.endY - cell * 0.3 : gesture.endY - cell * 1.1;
+    const name = this.selectedCharacter.skills[slot]?.name ?? "";
+    const cooldownText = `${name} · ${t("scene.skill.gestureCooldown", { seconds: Math.max(1, Math.ceil(state.cooldownSeconds)) })}`;
+    if (target === "tier") {
+      const thresholds = getSkillGestureThresholds(context.gridSize, context.worldPerScreenPx);
+      const tier = gesture.active ? getSkillGestureTier(gesture.length, thresholds) : undefined;
+      const cost = tier ? ZEYNEP_COMMAND_TIER_COST[tier] : 0;
+      const affordable = (this.localPlayerSnapshot?.reputation ?? 0) >= cost;
+      view.drawTierBar({ startX: gesture.startX, startY: gesture.startY, endX: gesture.endX, endY: gesture.endY, thresholds, tier, affordable, ready }, cell);
+      if (!ready) {
+        view.setLabel(cooldownText, labelX, labelY, { warn: true });
+      } else if (!tier) {
+        view.setLabel(`${name} · ${t("scene.skill.gestureCancelHint")}`, labelX, labelY);
+      } else {
+        const text = t("scene.skill.gestureTierCost", { tier: getSkillGestureTierLabel(tier), cost });
+        view.setLabel(affordable ? text : `${text} · ${t("scene.skill.gestureNotEnough")}`, labelX, labelY, affordable ? { tier } : { warn: true });
+      }
+      return undefined;
+    }
+    view.drawTrace(gesture.startX, gesture.startY, gesture.endX, gesture.endY, gesture.active, ready, cell);
+    if (!ready) {
+      if (gesture.active) view.setLabel(cooldownText, labelX, labelY, { warn: true });
+      return undefined;
+    }
+    if (!gesture.active) {
+      view.setLabel(`${name} · ${t("scene.skill.gestureCancelHint")}`, labelX, labelY);
+      return undefined;
+    }
+    if (target === "area") {
+      view.setLabel(name, labelX, labelY);
+      return this.getClampedGuidancePoint({ worldX: gesture.endX, worldY: gesture.endY } as Phaser.Input.Pointer);
+    }
+    if (target === "enemy") {
+      const enemy = this.findEnemyAt(gesture.endX, gesture.endY);
+      if (!enemy) {
+        view.setLabel(`${name} · ${t("scene.skill.gestureNoEnemy")}`, labelX, labelY);
+        return undefined;
+      }
+      const immune = Boolean(enemy.champion || (enemy.type && isExecuteImmune({ type: enemy.type, special: enemy.special })));
+      view.drawEnemyReticle(enemy.x, enemy.y, enemy.size || cell, immune, ready);
+      view.setLabel(immune ? getExecuteRejectText("immune") : name, labelX, labelY, immune ? { warn: true } : {});
+      return undefined;
+    }
+    view.setLabel(name, labelX, labelY);
+    return undefined;
   }
 
   /**
@@ -5668,6 +5947,8 @@ export class GameScene extends Phaser.Scene {
     this.releaseStrandedTowerDrag();
     // Metal Kalkan: jest burada yalnizca izlenmeye baslar (bkz. `beginShieldGesture`).
     this.beginShieldGesture(pointer, strandedDrag);
+    // Harita jestiyle beceri: o da yalnizca izlenmeye baslar (bkz. `beginMapSkillGesture`).
+    this.beginMapSkillGesture(pointer, strandedDrag);
     // Ilk temas: olay Phaser'a hic ulasmiyorsa kayit bos kalir, ulasiyor ama
     // yanlis yere dusuyorsa koordinatlar bunu gosterir.
     if (this.pendingAction?.type !== "guidance" || !this.isBattlePointer(pointer)) {
@@ -5706,6 +5987,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.moveShieldGesture(pointer);
+    this.moveMapSkillGesture(pointer);
     if (this.pendingUltimateColumn) {
       this.drawUltimateColumnPreview(pointer.worldX);
     }
@@ -5863,8 +6145,16 @@ export class GameScene extends Phaser.Scene {
     // Metal Kalkan suruklemesinin birakisi (kalkan cekildi ya da vazgecildi)
     // siradan bir harita dokunusu degil: kule secmez, secimi kaldirmaz.
     // Esigi asmamis jest burada hicbir sey yapmaz; dokunus eskisi gibi isler.
-    if (this.finishShieldGesture(pointer)) {
+    // Iki jest de her birakisi gormeli (biri yutsa bile oteki durumunu kapatsin).
+    const shieldConsumed = this.finishShieldGesture(pointer);
+    const skillGestureConsumed = this.finishMapSkillGesture(pointer);
+    if (shieldConsumed) {
       this.logTap(pointer, "metal kalkan");
+      return;
+    }
+    // Beceri jesti (atildi, iptal edildi ya da iki parmagin ikincisi) dokunus degil.
+    if (skillGestureConsumed) {
+      this.logTap(pointer, "beceri jesti");
       return;
     }
     this.logTap(pointer, this.describeTapOutcome(pointer));
@@ -11928,11 +12218,14 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         // Metal Kalkan sekmeden atilmiyor (haritada basili tutup surukle):
         // satiri bilgi olarak gidiyor -- ad, nasil kullanildigi, bekleme durumu.
         const shieldGesture = index === ATAKAN_SHIELD_SLOT && this.selectedCharacterId === "warrior";
+        // Haritadaki jest (yuva sirasina sabit): her dugmenin altinda tek satir.
+        const mapHint = getSkillGestureTargets(this.getSkillGestureCharacterId())[index] === "none" ? undefined : this.getSkillMapHint(index);
         return {
           slot: index,
           name: skill.name,
           label: cooldown > 0 ? `${cooldown}s` : zeynepCommand ? `${skill.name}\n${zeynepCommand.label}` : executeArmed ? `${skill.name}\n${t("scene.skill.cancel")}` : skill.name,
           disabled: cooldown > 0,
+          ...(mapHint && !shieldGesture ? { mapHint } : {}),
           ...(shieldGesture ? {
             gesture: {
               hint: t("scene.skill.shieldGesture"),
@@ -12543,9 +12836,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // iOS bir dokunusu kendi jestine devralabiliyor; o durumda birakma olayi
     // hic gelmiyor. Yakalamanin kaybi da ayni anlama geliyor. Ikisi de yarim
     // kalan suruklemeyi kapatmali, yoksa harita kalici olarak kilitleniyor.
-    const abandon = () => this.abandonMapGesture();
+    // Beceri jesti parmak bazinda kapaniyor: iki parmaktan biri dusunce
+    // kalaninin birakisi yine yutulmali (yakalama kaybi her birakistan sonra da geliyor).
+    const abandon = (event: PointerEvent) => {
+      this.dropMapSkillGesturePointer(event.pointerId);
+      this.abandonMapGesture();
+    };
     canvas.addEventListener("pointercancel", abandon);
     canvas.addEventListener("lostpointercapture", abandon);
+    // Farede sag tusla surukleme 3. beceri: tarayicinin menusu acilmasin.
+    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   }
 
   /**

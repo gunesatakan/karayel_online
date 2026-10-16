@@ -143,6 +143,11 @@ type ControlState = {
      * Metal Kalkan): satir bilgi -- nasil kullanildigi ve bekleme durumu.
      */
     gesture?: { hint: string; status: string; ready: boolean };
+    /**
+     * Haritadaki jestinin tek satirlik ipucu ("Haritada: basili tut +
+     * surukle"); dugme yine sekmeden atiyor. Jest yuva sirasina sabit.
+     */
+    mapHint?: string;
   }>;
   zeynepTier?: { slot: number; reputation: number; chainReady?: boolean };
   zeynepChain?: { value: number; ready: boolean };
@@ -888,9 +893,20 @@ export function setupGameControlUi(game: Phaser.Game) {
         button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
         return button;
       }
-      button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}`;
+      button.className = `game-controls__skill${state.zeynepChain?.ready && !skill.disabled ? " game-controls__skill--chain-ready" : ""}${skill.mapHint ? " game-controls__skill--map-hint" : ""}`;
       button.disabled = skill.disabled;
-      button.textContent = skill.label;
+      if (skill.mapHint) {
+        // Dugme etiketi ustte, haritadaki jest altta soluk tek satir.
+        const label = document.createElement("span");
+        label.className = "game-controls__skill-label";
+        label.textContent = skill.label;
+        const hint = document.createElement("span");
+        hint.className = "game-controls__skill-hint";
+        hint.textContent = skill.mapHint;
+        button.append(label, hint);
+      } else {
+        button.textContent = skill.label;
+      }
       button.addEventListener("pointerup", () => dispatch({ action: "useSkill", slot: skill.slot }));
       return button;
     });

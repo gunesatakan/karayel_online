@@ -22,6 +22,22 @@ export type WallHandleMark = {
   direction: 1 | -1;
 };
 
+/**
+ * Bekleme halkasinin kendisi: soluk tam halka + dolan parlak yay. Duvar
+ * cizgisi ve harita jestiyle beceri (basili tut + surukle) ayni halkayi
+ * ciziyor; `color` jest beklemedeyken soluk griye donuyor.
+ */
+export function strokeDwellRing(gfx: Phaser.GameObjects.Graphics, x: number, y: number, progress: number, radius: number, color = MARK_COLOR) {
+  const sweep = Math.max(0, Math.min(1, progress));
+  gfx.lineStyle(1.5, color, 0.28);
+  gfx.strokeCircle(x, y, radius);
+  if (sweep <= 0) return;
+  gfx.lineStyle(2.5, color, 0.95);
+  gfx.beginPath();
+  gfx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * sweep, false);
+  gfx.strokePath();
+}
+
 export class WallLineView {
   private readonly gfx: Phaser.GameObjects.Graphics;
   private readonly label: Phaser.GameObjects.Text;
@@ -53,14 +69,7 @@ export class WallLineView {
    * Soluk tam halka + parlak yay.
    */
   drawDwellRing(x: number, y: number, progress: number, radius: number) {
-    const sweep = Math.max(0, Math.min(1, progress));
-    this.gfx.lineStyle(1.5, MARK_COLOR, 0.28);
-    this.gfx.strokeCircle(x, y, radius);
-    if (sweep <= 0) return;
-    this.gfx.lineStyle(2.5, MARK_COLOR, 0.95);
-    this.gfx.beginPath();
-    this.gfx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * sweep, false);
-    this.gfx.strokePath();
+    strokeDwellRing(this.gfx, x, y, progress, radius);
   }
 
   /**

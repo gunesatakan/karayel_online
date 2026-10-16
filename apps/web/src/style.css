@@ -1319,6 +1319,18 @@ button.wave-report:active { transform: scale(0.99); }
   line-height: 1.1;
 }
 
+/* Sekmeden atilan beceri, altinda haritadaki jestinin ipucu (yuva sirasina sabit). */
+.game-controls button.game-controls__skill--map-hint {
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 4px;
+  white-space: normal;
+}
+
+.game-controls__skill-label {
+  white-space: pre-line;
+}
+
 .game-controls__skill-status {
   color: #6cc3d2;
   font-size: clamp(9px, 2.4vw, 10.5px);
