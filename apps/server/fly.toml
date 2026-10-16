@@ -17,6 +17,8 @@ primary_region = "fra"
 
 # Telemetri kalici diski (fly volumes create telemetry_data ...). Sunucu /data
 # varsa olaylari /data/telemetry altina yazar; yeniden yuklemede silinmez.
+# Mac kayitlari da ayni diskte, /data/debug altinda (30 gun, en fazla 600 MB;
+# telemetri en fazla 500 MB). Disk 2 GB. Butce: docs/debug-recorder.md.
 [mounts]
   source = "telemetry_data"
   destination = "/data"

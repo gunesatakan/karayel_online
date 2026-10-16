@@ -9,9 +9,9 @@ export const trConsent = {
   "consent.less": "Gizle",
   "consent.off": "Kapat",
   "consent.ok": "Tamam",
-  "consent.detail.collected": "Gidenler: hata mesajları, ulaşılan dalga, seçilen kart ve eşyalar, kule seviyeleri, FPS ve gecikme. Yalnızca oyunun kendi sunucusuna.",
+  "consent.detail.collected": "Gidenler: hata mesajları, ulaşılan dalga, seçilen kart ve eşyalar, kule seviyeleri, FPS ve gecikme; maç sırasında beş saniyede bir performans ölçümü (kare süresi, efekt seviyesi, kaba cihaz sınıfı). Yalnızca oyunun kendi sunucusuna.",
   "consent.detail.notCollected": "Gitmeyenler: ad, e-posta, hesap, konum, reklam kimliği. IP adresi kaydedilmez; kimlik bu tarayıcıda üretilen rastgele bir sayıdır.",
-  "consent.detail.retention": "Veriler 90 gün saklanır, satılmaz ve paylaşılmaz.",
+  "consent.detail.retention": "Veriler 90 gün, maç performans kayıtları 30 gün saklanır; satılmaz ve paylaşılmaz.",
   "consent.detail.optOut": "İstediğin zaman ana menüdeki \"Anonim veri\" kutusundan ya da oyun içi menü panelinden kapatabilirsin.",
   "consent.detail.contact": "Sorular ve silme talepleri: nobetportal@gmail.com"
 } as const;
@@ -23,9 +23,9 @@ export const enConsent: Readonly<Record<keyof typeof trConsent, string>> = {
   "consent.less": "Hide",
   "consent.off": "Turn off",
   "consent.ok": "OK",
-  "consent.detail.collected": "Sent: error messages, wave reached, cards and items picked, tower levels, FPS and latency. Only to the game's own server.",
+  "consent.detail.collected": "Sent: error messages, wave reached, cards and items picked, tower levels, FPS and latency; during a match, a performance sample every five seconds (frame times, effect level, rough device class). Only to the game's own server.",
   "consent.detail.notCollected": "Not sent: name, e-mail, account, location, advertising ID. IP addresses are not stored; the ID is a random number made in this browser.",
-  "consent.detail.retention": "Data is kept for 90 days, never sold or shared.",
+  "consent.detail.retention": "Data is kept for 90 days, match performance recordings for 30 days; never sold or shared.",
   "consent.detail.optOut": "Turn it off any time with the \"Anon data\" box on the main menu or in the in-game menu panel.",
   "consent.detail.contact": "Questions and deletion requests: nobetportal@gmail.com"
 };

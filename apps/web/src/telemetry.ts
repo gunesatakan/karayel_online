@@ -29,8 +29,8 @@ export const TELEMETRY_ERRORS_PER_MINUTE = 5;
 /** Ayarlardaki kisa aciklama; menude ve oyun ici ayarda ayni metin. */
 export const TELEMETRY_SETTING_LABEL = "Anonim kullanım verisi gönder";
 export const TELEMETRY_SETTING_NOTE =
-  "Yalnızca kendi sunucumuza gider: hata mesajları, dalga, seçilen kart ve eşyalar, kule seviyeleri, FPS ve gecikme. "
-  + "Ad, IP veya hesap bilgisi gönderilmez; kimlik bu tarayıcıda üretilen rastgele bir sayıdır. Veriler 90 gün saklanır.";
+  "Yalnızca kendi sunucumuza gider: hata mesajları, dalga, seçilen kart ve eşyalar, kule seviyeleri, FPS ve gecikme, maç sırasında performans ölçümleri. "
+  + "Ad, IP veya hesap bilgisi gönderilmez; kimlik bu tarayıcıda üretilen rastgele bir sayıdır. Veriler 90 gün, maç performans kayıtları 30 gün saklanır.";
 
 export type TelemetryEventType = "session_start" | "run_start" | "run_end" | "abandon" | "error" | "perf";
 export type TelemetryFields = Record<string, unknown>;

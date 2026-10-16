@@ -2356,3 +2356,4 @@ export * from "./tutorial/index.js";
 export * from "./operator-body/index.js";
 export * from "./skill-gestures/index.js";
 export { ZEYNEP_COMMAND_TIER_COST } from "./characters/zeynep/skills/index.js";
+export * from "./debug-sample.js";

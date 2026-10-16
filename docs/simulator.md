@@ -18,6 +18,8 @@ Denge simülatörü artık oyunun **gerçek sunucu odasını** (`MatchRoom`) oyn
 | `validate.mjs` | Doğrulama: kimlik, belirlenimcilik, snapshot, hızlı kip hatası, performans. |
 | `quick.mjs` | Eski soyut model (**yaklaşık**), `--mode quick`. |
 
+Üretimde oynanan gerçek maçların kaydı ve yeniden oynatılması (tohumlu oda, kayıttaki saat ve mesajlar, parmak izi doğrulaması, profil): `docs/debug-recorder.md`, araçlar `tools/debug/`.
+
 Değişen yalnızca dış dünya: saat sanal, zar tohumlu, ağ yayını kapalı (`broadcast` boş, snapshot/perf yayını tetiklenmiyor; bunun sonucu değiştirmediği ölçüldü, aşağıda). **Mermi ve enerji yapay olarak doldurulmaz**: işçiler, reaktör, fabrika, depo, taşıma gerçek oyundaki gibi çalışır. Tek kolaylık `--unsafe-free-logistics` bayrağıdır (varsayılan kapalı; açılırsa her tick mermi/enerji dolar ve rapor `unsafe: ["freeLogistics"]` ile işaretlenir). Yalnızca "lojistik olmasa ne olurdu" karşılaştırması içindir.
 
 ## Kullanım

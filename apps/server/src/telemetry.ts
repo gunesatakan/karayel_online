@@ -869,7 +869,8 @@ function readBody(request: Request, limit: number): Promise<Buffer | "too-large"
   });
 }
 
-function tokenMatches(header: string | undefined, token: string) {
+/** Yonetici jetonu: ozetler sabit zamanda karsilastiriliyor (`debug/admin.ts` de kullaniyor). */
+export function tokenMatches(header: string | undefined, token: string) {
   if (!header?.startsWith("Bearer ")) return false;
   const given = createHash("sha256").update(header.slice(7).trim()).digest();
   const expected = createHash("sha256").update(token).digest();

@@ -13,6 +13,9 @@ import { MapSchema, Schema, type } from "@colyseus/schema";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { FixedWindowRateLimiter, ipRateKey, readClientIp } from "../rate-limit.js";
+import { LIVE_ROOM_RUNTIME, type RoomRuntime } from "../debug/room-runtime.js";
+import type { MatchRecorderHooks } from "../debug/hooks.js";
+import { DEBUG_CLIENT_SAMPLE_FIELDS } from "@karayel/shared";
 import { activityLabels, createDefenseRow, deliveryScore, type DefenseRow, type DefenseSummary, type LogisticsPriority, type TowerActivity } from "@karayel/shared";
 import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@karayel/shared";
 // Istemciye giden sabit metinler: Turkcesi buradan, yaninda anahtari (`key`).
@@ -2215,6 +2218,12 @@ export type MessageRule = {
    * yalnizca son degeri anlamli olan mesajlar icin; birakis degeri kaybolmaz.
    */
   latestWinsBy?: string;
+  /**
+   * Oyunun disinda: kova, kayit ve saat yok (istemci olcum ornegi,
+   * `debug:client`). Oyun durumuna dokunmayan ve yeniden oynatmaya girmeyen
+   * mesajlar icin; kendi hiz siniri kaydedicide.
+   */
+  outOfBand?: boolean;
 };
 type MessageRate = { burst: number; perSecond: number };
 
@@ -2263,6 +2272,8 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   setTowerPerformance: { phase: "match", fields: { towerId: "string", performance: "number" }, rate: { burst: 120, perSecond: 120 }, latestWinsBy: "towerId" },
   // Istemci saniyede bir yolluyor.
   "latency:ping": { phase: "any", fields: { sentAt: "number" }, rate: { burst: 4, perSecond: 2 } },
+  // Izinli istemcinin bes saniyelik olcum ornegi (`debug/recorder.ts`).
+  "debug:client": { phase: "any", fields: DEBUG_CLIENT_SAMPLE_FIELDS, outOfBand: true },
   "wave:continue": { phase: "match", fields: {} },
   "card:choose": { phase: "match", fields: { cardId: "string", towerId: "string" } },
   // Elde bir kez; isleyici acik el ve kalan hak soruyor. Kova cift dokunusa yer birakiyor.
@@ -2516,6 +2527,43 @@ type ServerPerfCounters = {
   damageEvents: number;
 };
 
+/** Kaydedicinin saniyelik varlik sayimi (`getDebugCounts`). */
+export type DebugRoomCounts = {
+  wave: number;
+  phase: "lobby" | "setup" | "combat" | "cleared" | "over";
+  players: number;
+  clients: number;
+  enemies: number;
+  enemyKinds: Record<string, number>;
+  air: number;
+  champions: number;
+  specials: number;
+  towers: number;
+  structures: number;
+  projectiles: number;
+  beams: number;
+  drones: number;
+  bodies: number;
+  damageEvents: number;
+  killEvents: number;
+  zones: number;
+  shields: number;
+  surges: number;
+  teamHealth: number;
+  kills: number;
+};
+
+export type DebugRoomInfo = {
+  runId: string;
+  stage: number;
+  mapScale: number;
+  mode: "solo" | "coop" | "creative" | "tutorial";
+  operators: string[];
+  wave: number;
+  gameStarted: boolean;
+  result: string;
+};
+
 type ServerPerfFrame = ServerPerfCounters & {
   tickMs: number;
   spawnMs: number;
@@ -2557,12 +2605,27 @@ type ZeynepSynthesisComposition = {
 };
 
 export class MatchRoom extends Room<MatchState> {
-  towerDamageRandom: () => number = Math.random;
-  towerCriticalRandom: () => number = Math.random;
+  /**
+   * Odanin saat ve zar kaynagi (`debug/room-runtime.ts`). Uretim tohumlu
+   * kipi kuruyor (`installDebugRecorder`); testler ve simulator canli kipte,
+   * eskisi gibi surecin `Date.now`/`Math.random`ini okuyor. Ilk alan: diger
+   * alan ilklendiricileri (kosu kimligi, zar alanlari) onu kullaniyor.
+   */
+  static createRuntime?: () => RoomRuntime;
+  /** Mac kaydedicisi (`debug/recorder.ts`); kurulmazsa kayit yok. */
+  static createRecorder?: (room: MatchRoom, options: unknown) => MatchRecorderHooks | undefined;
+  readonly runtime: RoomRuntime = MatchRoom.createRuntime?.() ?? LIVE_ROOM_RUNTIME;
+  private recorder?: MatchRecorderHooks;
+  /** Kaydedicinin ek tick bolumleri (ms); her tick yeniden yaziliyor, ayirma yok. */
+  private readonly debugSections = { latestMs: 0, bodiesMs: 0, legendaryMs: 0, procsMs: 0, wireMs: 0, perfMs: 0 };
+  /** Bu tick'in snapshot gonderimi: cesit basina bayt ve kare, atlanan istemci. */
+  private readonly debugWire = { deltaBytes: 0, fullBytes: 0, legacyBytes: 0, deltaFrames: 0, fullFrames: 0, legacyFrames: 0, skipped: 0 };
+  towerDamageRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
+  towerCriticalRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
   /** Kart elinin ve yenilemenin zari; testler sabit bir dizi veriyor. */
-  cardRandom: () => number = Math.random;
+  cardRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
   /** Efsanevi vurus etkilerinin temas zari (`legendary`); testler sabit veriyor. */
-  legendaryRandom: () => number = Math.random;
+  legendaryRandom: () => number = this.runtime.seeded ? this.runtime.random : Math.random;
   /**
    * Bu surecteki odalar: yalnizca sayim (oda siniri) icin.
    *
@@ -2651,7 +2714,8 @@ export class MatchRoom extends Room<MatchState> {
 
   /** `evictAbandonedRoom` icin: kimsesiz ve kimsenin donmesini beklemeyen oda. */
   private isEvictable(now: number) {
-    if (this.abandonDisposing || this.clients.length > 0 || this.hasPendingSeats()) return false;
+    // Baska odanin kurulumundan soruluyor: bu odanin kaydina olay yazilmasin.
+    if (this.abandonDisposing || this.clients.length > 0 || this.hasPendingSeats(false)) return false;
     return this.everJoined || now - this.roomCreatedAt >= FRESH_ROOM_EVICTION_GRACE_MS;
   }
 
@@ -2806,7 +2870,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   private runLedger = new RunLedger();
   /** Kosunun kimligi; ayni rapor yeniden baglanmada gelince istemci ikinci kez kaydetmesin. */
-  private runId = createRunId();
+  private runId = createRunId(this.runtime.now(), this.runtime.random);
   /** Gonderilmis sonuc mesaji; yeniden baglanan oyuncu raporu buradan aliyor. */
   private matchResultPayload?: MatchResultPayload;
   private insightElapsed = 0;
@@ -3374,7 +3438,7 @@ export class MatchRoom extends Room<MatchState> {
   /** Odaya en az bir istemci kabul edildi mi; hic girilmemis yeni oda yerinden edilmiyor. */
   private everJoined = false;
   /** Odanin kuruldugu an (`onCreate`). */
-  private roomCreatedAt = Date.now();
+  private roomCreatedAt = this.runtime.now();
   private matchResult?: "victory" | "defeat";
   private setupReadyPlayerIds = new Set<string>();
   private pendingCardChoices = new Map<string, CardDefinition[]>();
@@ -3426,12 +3490,20 @@ export class MatchRoom extends Room<MatchState> {
     // Mobile networks and a waking/deploying Fly machine can take longer than
     // Colyseus' 15-second default between matchmaking and WebSocket upgrade.
     this.setSeatReservationTime(45);
-    this.roomCreatedAt = Date.now();
+    this.roomCreatedAt = this.runtime.now();
     try {
       MatchRoom.claimRoomSlot(this, this.roomCreatedAt);
     } catch (error) {
       this.releaseRejectedRoom();
       throw error;
+    }
+    // Kayit kurulumdan once: kurulum zar cekiyor, yeniden oynatma ayni
+    // seceneklerle ayni sirayi izlemeli.
+    try {
+      this.recorder = MatchRoom.createRecorder?.(this, options);
+    } catch (error) {
+      this.recorder = undefined;
+      this.reportRoomError("recorder", error);
     }
     try {
       this.setupRoom(options);
@@ -3439,6 +3511,8 @@ export class MatchRoom extends Room<MatchState> {
       // Kurulamayan oda sinirda yer tutmasin.
       MatchRoom.rooms.delete(this.roomId);
       MatchRoom.publicRooms.delete(this.roomId);
+      this.recorder?.discard();
+      this.recorder = undefined;
       this.releaseRejectedRoom();
       throw error;
     }
@@ -3502,7 +3576,7 @@ export class MatchRoom extends Room<MatchState> {
     this.markNavigationDirty();
     this.planWaveSpawns(this.wave);
     this.abandonCheckEnabled = true;
-    this.abandonedSince = Date.now();
+    this.abandonedSince = this.runtime.now();
     this.setSimulationInterval((deltaTime) => this.update(deltaTime));
 
     // Her kayit `onMessage` uzerinden geciyor ve orada sarmalaniyor: govde
@@ -3649,6 +3723,8 @@ export class MatchRoom extends Room<MatchState> {
 
     this.onMessage("tutorial:prepare", (client, message: { step?: string }) => this.prepareTutorialStep(client, message));
     this.onMessage("tutorial:complete", () => this.completeTutorial());
+    // Olcum ornegi oyunun disinda: kova, kayit ve saat yok (`outOfBand`).
+    this.onMessage("debug:client", (client, message: Record<string, unknown>) => this.recorder?.clientSample(client.sessionId, message));
 
     this.syncRoomRegistry();
   }
@@ -3790,8 +3866,26 @@ export class MatchRoom extends Room<MatchState> {
     const rule = MESSAGE_RULES[type];
     const guarded = (client: Client, raw: unknown) => {
       try {
+        if (rule?.outOfBand) {
+          // Kaydedici yoksa (kayit kapali, testler) govde hic okunmuyor.
+          if (this.recorder) callback(client, sanitizeMessagePayload(raw, rule.fields));
+          return;
+        }
+        // Saat mesaj basina bir kez okunuyor ve is bitene kadar sabit
+        // (`room-runtime.ts`). Kovanin reddettigi mesajin hicbir yan etkisi
+        // yok (kova yalnizca kabulde yaziliyor, saat geri aliniyor): kayda
+        // girmiyor, yalnizca sayiliyor. Boylece mesaj seli yeniden oynatma
+        // kaydini dolduramiyor; kabul edilen ya da bekletilen her mesaj
+        // govdesiyle kayitta ve yeniden oynatmada ayni kova kararini veriyor.
+        const previousNow = this.runtime.now();
+        const at = this.runtime.beginScope("msg", client.sessionId);
         const allowed = this.consumeMessageToken(client.sessionId, type, rule?.rate ?? MESSAGE_RATE_DEFAULT);
-        if (!allowed && !rule?.latestWinsBy) return;
+        if (!allowed && !rule?.latestWinsBy) {
+          this.runtime.restoreScope(previousNow);
+          this.recorder?.dropped(client.sessionId, type);
+          return;
+        }
+        if (this.recorder) this.recorder.message(client.sessionId, type, sanitizeMessagePayload(raw, rule?.fields ?? {}), at);
         if (rule?.phase === "lobby" && this.gameStarted) return;
         if (rule?.phase === "match" && !this.gameStarted) return;
         if (rule?.creative && !this.creativeMode) return;
@@ -3843,6 +3937,8 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Hata gunlugu; ayni yerden gelen hata en fazla on saniyede bir yaziliyor. */
   private reportRoomError(context: string, error: unknown) {
+    // Gunluk siniri oyun durumu degil: duvar saati (Colyseus'un yakaladigi
+    // hata odanin giris noktalarinin disindan gelebiliyor).
     const now = Date.now();
     const entry = this.roomErrorLog.get(context);
     if (entry && now - entry.at < ROOM_ERROR_LOG_INTERVAL_MS) {
@@ -3863,24 +3959,25 @@ export class MatchRoom extends Room<MatchState> {
    * bir tur digerlerinin payini yemesin.
    */
   private consumeMessageToken(sessionId: string, type: string, rate: MessageRate) {
-    const now = Date.now();
+    const now = this.runtime.now();
     let buckets = this.messageBuckets.get(sessionId);
     if (!buckets) {
       buckets = new Map();
       this.messageBuckets.set(sessionId, buckets);
     }
-    const refill = (key: string, limit: MessageRate) => {
-      const bucket = buckets!.get(key) ?? { tokens: limit.burst, at: now };
-      bucket.tokens = Math.min(limit.burst, bucket.tokens + Math.max(0, now - bucket.at) / 1000 * limit.perSecond);
-      bucket.at = now;
-      buckets!.set(key, bucket);
-      return bucket;
+    // Dolum tembel: kova yalnizca kabulde yaziliyor. Reddedilen mesajin
+    // yan etkisi yok (yeniden oynatma kaydinda yer almiyor). Dolum
+    // yola bagli degil -- min(tavan, x + a) + b ile min(tavan, x + a + b)
+    // ayni sonucu veriyor -- yani kararlar eskisiyle ayni.
+    const available = (key: string, limit: MessageRate) => {
+      const bucket = buckets!.get(key);
+      return bucket ? Math.min(limit.burst, bucket.tokens + Math.max(0, now - bucket.at) / 1000 * limit.perSecond) : limit.burst;
     };
-    const typed = refill(type, rate);
-    const total = refill("*", MESSAGE_RATE_TOTAL);
-    if (typed.tokens < 1 || total.tokens < 1) return false;
-    typed.tokens -= 1;
-    total.tokens -= 1;
+    const typed = available(type, rate);
+    const total = available("*", MESSAGE_RATE_TOTAL);
+    if (typed < 1 || total < 1) return false;
+    buckets.set(type, { tokens: typed - 1, at: now });
+    buckets.set("*", { tokens: total - 1, at: now });
     return true;
   }
 
@@ -3909,8 +4006,12 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Acik yeniden baglanma penceresi ya da ayrilmis koltuk var mi. */
-  private hasPendingSeats() {
-    return this.reconnectingSessionIds.size > 0 || Object.keys(this.reservedSeats ?? {}).length > 0;
+  private hasPendingSeats(record = true) {
+    if (this.reconnectingSessionIds.size > 0) return true;
+    const seats = Object.keys(this.reservedSeats ?? {}).length;
+    // Ayrilmis koltuklar Colyseus'un: oda kendi tick'inde okudugunda kayda
+    // giriyor ve yeniden oynatmada kayittan geliyor.
+    return (record ? this.runtime.observeSeats(seats) : seats) > 0;
   }
 
   /**
@@ -3944,7 +4045,15 @@ export class MatchRoom extends Room<MatchState> {
   onJoin(client: Client, rawOptions: JoinOptions) {
     // Katilim secenekleri de istemciden: sekli tutmayan alan yok sayiliyor.
     const options: JoinOptions = typeof rawOptions === "object" && rawOptions !== null ? rawOptions : {};
-    this.admitClient(client, options);
+    const at = this.runtime.beginScope("join", client.sessionId);
+    try {
+      this.admitClient(client, options);
+    } catch (error) {
+      // Red odaya dokunmadan firlatiyor: kayitta govdesiz iz.
+      this.recorder?.join(client, options, at, false);
+      throw error;
+    }
+    this.recorder?.join(client, options, at, true);
     // Buraya yalnizca kabul edilen giris geliyor; red firlatiyor ve oturum
     // hic kaydedilmiyor.
     this.everJoined = true;
@@ -3994,6 +4103,8 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   async onLeave(client: Client, consented = false) {
+    const leftAt = this.runtime.beginScope("leave", client.sessionId);
+    this.recorder?.leave(client.sessionId, consented, leftAt);
     // Kopan istemcinin elindeki kayit artik tabanla ayni degil; geri donerse
     // (ayni oturumla da olsa) tam kayit almali.
     this.wireSyncedSessionIds.delete(client.sessionId);
@@ -4014,6 +4125,9 @@ export class MatchRoom extends Room<MatchState> {
           const reconnection = this.allowReconnection(client, RECONNECT_WINDOW_SECONDS);
           this.pendingReconnections.set(client.sessionId, reconnection);
           const reconnectedClient = await reconnection;
+          // Yeniden baglanma ayri bir giris noktasi: saat ve kayit burada.
+          const reconnectedAt = this.runtime.beginScope("rc", client.sessionId);
+          this.recorder?.reconnect(reconnectedClient, true, reconnectedAt);
           this.pendingReconnections.delete(client.sessionId);
           this.reconnectingSessionIds.delete(client.sessionId);
           player.connected = true;
@@ -4023,6 +4137,8 @@ export class MatchRoom extends Room<MatchState> {
         } catch {
           // Pencere kapandi ya da yuva ayni oyuncunun yeni oturumuna verildi
           // (`reclaimReconnectingSlot`). Ilkinde yuva geri donuse acik.
+          const expiredAt = this.runtime.beginScope("rc", client.sessionId);
+          this.recorder?.reconnect(client, false, expiredAt);
           this.pendingReconnections.delete(client.sessionId);
           this.reconnectingSessionIds.delete(client.sessionId);
         }
@@ -4337,6 +4453,8 @@ export class MatchRoom extends Room<MatchState> {
   onDispose() {
     MatchRoom.rooms.delete(this.roomId);
     MatchRoom.publicRooms.delete(this.roomId);
+    this.recorder?.dispose();
+    this.recorder = undefined;
   }
 
   private setLobbyCharacter(client: Client, requestedCharacterId: CharacterId | undefined) {
@@ -4583,8 +4701,8 @@ export class MatchRoom extends Room<MatchState> {
    */
   private getWavePatternSeed() {
     if (this.wavePatternSeed === undefined) {
-      if (this.stage >= SPECIAL_ENEMIES_FIRST_STAGE) this.specialSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
-      this.wavePatternSeed = Math.floor(Math.random() * 0x1_0000_0000);
+      if (this.stage >= SPECIAL_ENEMIES_FIRST_STAGE) this.specialSeed ??= Math.floor(this.runtime.random() * 0x1_0000_0000);
+      this.wavePatternSeed = Math.floor(this.runtime.random() * 0x1_0000_0000);
     }
     return this.wavePatternSeed;
   }
@@ -4612,7 +4730,7 @@ export class MatchRoom extends Room<MatchState> {
       this.specialRandom = undefined;
       return;
     }
-    this.specialSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+    this.specialSeed ??= Math.floor(this.runtime.random() * 0x1_0000_0000);
     const random = createSpecialRandom(this.specialSeed, wave);
     const champion = this.waveChampionPlan;
     this.waveSpecialPlan = planWaveSpecials({
@@ -4688,7 +4806,7 @@ export class MatchRoom extends Room<MatchState> {
    * - Enerji yiyici: normalin 4,5 kati can, zirh ayni; sol ya da sag kenardan.
    */
   private spawnSpecialEnemy(spawn: WaveSpecialSpawn) {
-    const random = this.specialRandom ?? Math.random;
+    const random = this.specialRandom ?? this.runtime.random;
     const plan = this.waveSpecialPlan;
     if (spawn.kind === "harvester") {
       this.spawnEnemy(undefined, { kind: "harvester", type: "brute",
@@ -5030,13 +5148,48 @@ export class MatchRoom extends Room<MatchState> {
    * ara ara bir deneme.
    */
   private update(deltaTime: number) {
-    const now = Date.now();
+    // Tohumlu kipte deltaTime mikrosaniyeye yuvarlaniyor ve saat donuyor.
+    const tickDelta = this.runtime.beginTick(deltaTime);
+    const recorder = this.recorder;
+    if (!recorder) {
+      this.stepRoom(tickDelta);
+      return;
+    }
+    const startedAt = performance.now();
+    recorder.tickStart(this.runtime.lastDeltaUs, this.runtime.now());
+    this.debugLastFrame = undefined;
+    const sections = this.debugSections;
+    sections.latestMs = 0;
+    sections.bodiesMs = 0;
+    sections.legendaryMs = 0;
+    sections.procsMs = 0;
+    sections.wireMs = 0;
+    sections.perfMs = 0;
+    const wire = this.debugWire;
+    wire.deltaBytes = wire.fullBytes = wire.legacyBytes = 0;
+    wire.deltaFrames = wire.fullFrames = wire.legacyFrames = wire.skipped = 0;
+    try {
+      this.stepRoom(tickDelta);
+    } finally {
+      recorder.tickEnd(performance.now() - startedAt, this.debugLastFrame, sections, wire);
+    }
+  }
+
+  /** Kaydedicinin okudugu son tick karesi (`recordPerfFrame`e giden). */
+  private debugLastFrame?: ServerPerfFrame;
+
+  private stepRoom(deltaTime: number) {
+    const now = this.runtime.now();
     this.checkAbandoned(now);
     if (this.abandonDisposing || now < this.tickBackoffUntil) {
       return;
     }
     // Kovayi asan son degerler (performans kolu) tick'ten once uygulaniyor.
-    this.flushLatestMessages();
+    if (this.latestMessageStash.size > 0) {
+      const latestStart = performance.now();
+      this.flushLatestMessages();
+      this.debugSections.latestMs = performance.now() - latestStart;
+    }
     try {
       this.runTick(deltaTime);
       this.tickFailures = 0;
@@ -5124,6 +5277,9 @@ export class MatchRoom extends Room<MatchState> {
     MatchRoom.publicRooms.delete(this.roomId);
     try {
       void Promise.resolve(this.disconnect()).catch((error) => this.reportRoomError(context, error));
+      // Yerinden etme baska odanin kurulumundan geliyor (bu odanin giris
+      // noktasi degil): yeniden oynatma onu kayittan uyguluyor.
+      if (context === "evict") this.recorder?.evicted();
       return true;
     } catch (error) {
       // Oda henuz kurulurken kapatilamaz; bir sonraki tick yeniden denesin.
@@ -5185,11 +5341,17 @@ export class MatchRoom extends Room<MatchState> {
     this.updateEnemies(seconds);
     // Bedenler dusmanlar yurudukten sonra: temas bu tick'in konumlariyla.
     // Ucus duvar saatiyle, hasar ve onarim oyun saatiyle.
+    const bodiesStart = performance.now();
     this.updateOperatorBodies(deltaTime / 1000, seconds);
+    const legendaryStart = performance.now();
+    this.debugSections.bodiesMs = legendaryStart - bodiesStart;
     // Sureli efsanevi etkiler (iz, bag, cekim): dusmanlar yurudukten sonra.
-    if (this.legendaryTimedEnemyIds.size > 0) this.updateLegendaryEffects(seconds, Date.now());
+    if (this.legendaryTimedEnemyIds.size > 0) this.updateLegendaryEffects(seconds, this.runtime.now());
     timings.enemiesMs = performance.now() - sectionStart;
+    this.debugSections.legendaryMs = sectionStart + timings.enemiesMs - legendaryStart;
+    const procsStart = performance.now();
     this.flushLegendaryProcs();
+    this.debugSections.procsMs = performance.now() - procsStart;
 
     sectionStart = performance.now();
     this.updateSkillCooldowns(gameDeltaTime);
@@ -5200,7 +5362,8 @@ export class MatchRoom extends Room<MatchState> {
     this.settleUltimateReports();
     timings.ultimatesMs = performance.now() - sectionStart;
 
-    const now = performance.now();
+    // Yayin zamanlamasi odanin monoton saatiyle (tohumlu kipte tick toplami).
+    const now = this.runtime.mono();
     const shouldBroadcastSnapshot = now - this.lastSnapshotBroadcastAt >= SNAPSHOT_SEND_INTERVAL_MS;
     let snapshot: WireGameSnapshot | undefined;
     let snapshotBytes = 0;
@@ -5222,12 +5385,17 @@ export class MatchRoom extends Room<MatchState> {
     this.tickLayoutCache = undefined;
     const tickMs = performance.now() - frameStart;
 
-    this.recordPerfFrame({
+    const perfFrame: ServerPerfFrame = {
       ...this.perfCounters,
       ...timings,
       tickMs,
       snapshotBytes
-    });
+    };
+    const perfStart = performance.now();
+    this.recordPerfFrame(perfFrame);
+    this.debugLastFrame = perfFrame;
+    const wireStart = performance.now();
+    this.debugSections.perfMs = wireStart - perfStart;
 
     if (snapshot) {
       // Delta burada uygulaniyor, `getSnapshot` icinde degil: o yontem hem
@@ -5245,6 +5413,7 @@ export class MatchRoom extends Room<MatchState> {
       this.broadcast("perf:snapshot", this.latestPerfSnapshot);
       this.lastPerfBroadcastAt = now;
     }
+    this.debugSections.wireMs = performance.now() - wireStart;
   }
 
   /**
@@ -5414,6 +5583,8 @@ export class MatchRoom extends Room<MatchState> {
       if (getClientBufferedAmount(client) > SNAPSHOT_BACKPRESSURE_LIMIT_BYTES) {
         // Atlanan istemci bu deltayi kacirdi; bir daha yakalayamaz.
         this.wireSyncedSessionIds.delete(client.sessionId);
+        this.debugWire.skipped += 1;
+        this.recorder?.wireSkip(client.sessionId);
         continue;
       }
       const synced = !this.towerWireNeedsFullResend && this.wireSyncedSessionIds.has(client.sessionId);
@@ -5430,6 +5601,10 @@ export class MatchRoom extends Room<MatchState> {
             ? (legacyBytes ??= getMessageBytes.raw(Protocol.ROOM_DATA, "snapshot", payload))
             : (fullBytes ??= getMessageBytes.raw(Protocol.ROOM_DATA, "snapshot", payload));
         client.enqueueRaw(bytes);
+        const wire = this.debugWire;
+        if (variant === "delta") { wire.deltaBytes += bytes.length; wire.deltaFrames += 1; }
+        else if (variant === "legacy") { wire.legacyBytes += bytes.length; wire.legacyFrames += 1; }
+        else { wire.fullBytes += bytes.length; wire.fullFrames += 1; }
       } else {
         client.send("snapshot", payload);
       }
@@ -5473,7 +5648,7 @@ export class MatchRoom extends Room<MatchState> {
       vx: roundNetworkNumber(projectile.vx),
       vy: roundNetworkNumber(projectile.vy),
       tier: this.getProjectileTier(projectile),
-      spawnedAt: Date.now()
+      spawnedAt: this.runtime.now()
     };
     this.broadcast("projectile:spawn", payload);
   }
@@ -5538,9 +5713,9 @@ export class MatchRoom extends Room<MatchState> {
       // Bekleme burada, dalga kapanisinin hemen onunde duruyor: boylece hem kart
       // secimi hem de son dalgadaki zafer ekrani ayni gecikmeyi aliyor. Ikisi de
       // ayni ani paylasiyor -- oyuncunun son olumu gordugu an.
-      const clearedFor = Date.now() - this.waveClearedAt;
+      const clearedFor = this.runtime.now() - this.waveClearedAt;
       if (this.waveClearedAt === 0) {
-        this.waveClearedAt = Date.now();
+        this.waveClearedAt = this.runtime.now();
         return;
       }
       if (clearedFor < WAVE_CLEAR_PAUSE_MS) {
@@ -5597,7 +5772,7 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    if (this.melisGothicNightmareUntil > Date.now()) {
+    if (this.melisGothicNightmareUntil > this.runtime.now()) {
       return;
     }
 
@@ -5688,7 +5863,7 @@ export class MatchRoom extends Room<MatchState> {
     if (requested) {
       for (const node of projectMapResourceNodes(requested.nodes, requested, map)) blockedCells.push({ col: node.col, row: node.row });
     }
-    this.resourceLayoutSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+    this.resourceLayoutSeed ??= Math.floor(this.runtime.random() * 0x1_0000_0000);
     this.buildZones = generateBuildZones({
       cols: map.cols,
       rows: map.rows,
@@ -5767,7 +5942,7 @@ export class MatchRoom extends Room<MatchState> {
       fixed,
       random: () => {
         if (!random) {
-          this.resourceLayoutSeed ??= Math.floor(Math.random() * 0x1_0000_0000);
+          this.resourceLayoutSeed ??= Math.floor(this.runtime.random() * 0x1_0000_0000);
           random = createResourceLayoutRandom(this.resourceLayoutSeed);
         }
         return random();
@@ -6120,7 +6295,7 @@ export class MatchRoom extends Room<MatchState> {
     const slot = this.waveSpawned + this.waveSlotOffset;
     const pattern = special ? undefined : this.getActiveWavePattern();
     const patternType = pattern && !champion ? getWavePatternSlotType(pattern, slot) : undefined;
-    const roll = special || patternType ? 0 : Math.random();
+    const roll = special || patternType ? 0 : this.runtime.random();
     // Kusatma dusmani erken dalgalarda yok: duvar meta'si once kurulsun, cezasi
     // sonra gelsin. Karisim paylasilan pakette: sampiyon butcesi ayni
     // agirliklardan hesaplaniyor. Sampiyonun turu zardan degil plandan.
@@ -6215,7 +6390,7 @@ export class MatchRoom extends Room<MatchState> {
           exp: champion.exp,
           leakDamage: champion.leakDamage,
           reputation: champion.reputation,
-          spawnedAt: Date.now()
+          spawnedAt: this.runtime.now()
         }
       } : {}),
       ...(special ? { special: { kind: special.kind, ...(special.kind === "harvester" ? { harvest: { home: { ...start }, cargo: {}, total: 0, returning: false } } : {}), ...(special.budget ? { budget: special.budget } : {}) } } : {})
@@ -6238,7 +6413,7 @@ export class MatchRoom extends Room<MatchState> {
       const preferred = openSpawnColumns.filter((col) => col >= range.from && col <= range.to);
       if (preferred.length > 0) columns = preferred;
     }
-    const spawnCol = columns[Math.floor(Math.random() * Math.max(1, columns.length))] ?? 0;
+    const spawnCol = columns[Math.floor(this.runtime.random() * Math.max(1, columns.length))] ?? 0;
     return gridToWorld(spawnCol, 0, this.activeMap);
   }
 
@@ -6263,7 +6438,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private canTowerFire(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (tower.standby || tower.wakeReadyAt > now || tower.performance <= 0 || tower.heatLocked) return false;
     if (tower.energyShedUntil && tower.energyShedUntil > now) return false;
     if (tower.energyFrequencyUntil && tower.energyFrequencyUntil > now
@@ -6321,7 +6496,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private consumeTowerResources(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const hadAmmo = tower.ammo > 0;
     const wasHeatLocked = tower.heatLocked;
     const onBackupLine = this.isTowerOnBackupLine(tower, now);
@@ -6463,7 +6638,7 @@ export class MatchRoom extends Room<MatchState> {
   private isTowerTargetChilled(tower: TowerModel) {
     const target = this.getTowerCurrentTarget(tower);
     if (!target) return false;
-    const now = Date.now();
+    const now = this.runtime.now();
     return target.slowUntil > now || getTowerStatusOutcomes(target.statusEffects, now).frozen;
   }
 
@@ -6509,7 +6684,7 @@ export class MatchRoom extends Room<MatchState> {
    */
   /** Tamirci su anda bu kuleye dokunuyor mu; onarim odulleri buna bakiyor. */
   private isTowerUnderRepair(tower: TowerModel) {
-    return tower.repairedUntil > Date.now();
+    return tower.repairedUntil > this.runtime.now();
   }
 
   /**
@@ -6579,7 +6754,7 @@ export class MatchRoom extends Room<MatchState> {
     const brakeCooling = getModifierAdd(modifiers, "brakeCooling");
     if (brakeCooling > 0 && (options.sustained || temperature > TOWER_HEAT_BRAKE_TEMPERATURE)) cooling *= 1 + brakeCooling;
     const killCooling = getModifierAdd(modifiers, "killCooling");
-    if (!options.sustained && killCooling > 0 && (tower.killCoolingUntil ?? 0) > Date.now()) cooling *= 1 + killCooling;
+    if (!options.sustained && killCooling > 0 && (tower.killCoolingUntil ?? 0) > this.runtime.now()) cooling *= 1 + killCooling;
     const neighborCooling = this.getNeighborCoolingAdd(tower);
     if (neighborCooling > 0) cooling *= 1 + neighborCooling;
     // Rolanti Sogutmasi: kule bir suredir dogrudan vurmuyor. Acil Sogutma
@@ -6587,7 +6762,7 @@ export class MatchRoom extends Room<MatchState> {
     // ediyor ve frenli kule kilide neredeyse hic girmiyor).
     if (!options.sustained) {
       const idle = getModifierAdd(modifiers, "idleCooling");
-      if (idle > 0 && Date.now() - (tower.lastHitAt ?? 0) >= scaleGameDuration(IDLE_COOLING_DELAY_MS)) cooling *= 1 + idle;
+      if (idle > 0 && this.runtime.now() - (tower.lastHitAt ?? 0) >= scaleGameDuration(IDLE_COOLING_DELAY_MS)) cooling *= 1 + idle;
       const lock = getModifierAdd(modifiers, "lockCooling");
       if (lock > 0 && tower.heatLocked) cooling *= 1 + lock;
     }
@@ -6717,7 +6892,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private hasSlowedEnemyInRange(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const enemy of this.enemySpatialGrid.queryCircle(tower.x, tower.y, this.getTowerRange(tower))) {
       if (enemy.slowUntil > now) return true;
     }
@@ -6798,7 +6973,7 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerHeatBudget(tower: TowerModel) {
     const definition = tower.definition;
     if (definition.resourceProvider || !isOperationalTower(definition) || definition.id === "warrior-2") return undefined;
-    if (definition.id === "warrior-5" && tower.debugOverdriveUntil > Date.now()) return undefined;
+    if (definition.id === "warrior-5" && tower.debugOverdriveUntil > this.runtime.now()) return undefined;
     if (definition.id === "zeynep-3" && !this.getZeynepSynthesisComposition(tower).mode) return undefined;
     // Yorunge isiyi atis basina degil donus hizina gore uretiyor; tanimli
     // aralik basina dusen isi, tetikleme isisinin karsiligi.
@@ -6856,7 +7031,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateTowers(deltaTime: number) {
-    const now = Date.now();
+    const now = this.runtime.now();
     this.settleDebugSweepRuns(now);
     this.updateResourceFactories(deltaTime / 1000);
     this.refreshZeynepFormations();
@@ -7131,7 +7306,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!towerAims(tower.definition.id)) {
       return true;
     }
-    const energyState = getTowerEnergyState(tower.energy, tower.energyDepletedAt, Date.now());
+    const energyState = getTowerEnergyState(tower.energy, tower.energyDepletedAt, this.runtime.now());
     if (energyState === "tracking-off" || energyState === "offline") return false;
 
     // Oncul nisan: namlu hedefin kendisine degil, merminin ona varacagi ana
@@ -7384,7 +7559,7 @@ export class MatchRoom extends Room<MatchState> {
    * dolunca kalkiyor, hicbir kulenin vurusu onu silmiyor.
    */
   private fireDebugLaser(tower: TowerModel, target: EnemyModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const baseDamage = this.getTowerDamage(tower);
     const wasTracked = this.getTrackingStackCount(target, now) > 0;
     const killed = this.damageEnemyFromTower(tower, target, baseDamage, getTowerSlowDurationMs(tower.definition));
@@ -7855,7 +8030,7 @@ export class MatchRoom extends Room<MatchState> {
    * birakmiyor ve kayitsiz `slowUntil` duz 0,48'e dusecekti.
    */
   private applyKinSlow(enemy: EnemyModel, tower: TowerModel, distanceFromTower: number, range: number, slowMs: number) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const ratio = this.getKinDistanceRatio(distanceFromTower, range);
     const multiplier = this.clamp(
       KIN_SLOW_NEAR_MULTIPLIER + (KIN_SLOW_FAR_MULTIPLIER - KIN_SLOW_NEAR_MULTIPLIER) * ratio,
@@ -8089,7 +8264,7 @@ export class MatchRoom extends Room<MatchState> {
    * ayni patlamayla dolardi; biri yeterince soyluyor. Ayni vurusta olen
    * dusmana yayin yok -- yavaslatacak kimse kalmadi.
    */
-  private broadcastSlowCritical(tower: TowerModel, enemy: EnemyModel, now = Date.now()) {
+  private broadcastSlowCritical(tower: TowerModel, enemy: EnemyModel, now = this.runtime.now()) {
     if (enemy.hp <= 0 || !this.enemies.has(enemy.id)) return;
     const last = this.slowCritBroadcastAt.get(tower.id);
     if (last !== undefined && now - last < SLOW_CRIT_BROADCAST_INTERVAL_MS) return;
@@ -8195,12 +8370,12 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private getEngineStackMultiplier(tower: TowerModel, stackId: string, fallback: number, now = Date.now()) {
+  private getEngineStackMultiplier(tower: TowerModel, stackId: string, fallback: number, now = this.runtime.now()) {
     const definition = this.getTowerEngine(tower)?.stacks?.find((stack) => stack.id === stackId);
     return definition ? getTowerStackMultiplier(tower.stackStates[stackId], definition, now) : fallback;
   }
 
-  private getEngineStackStatMultiplier(tower: TowerModel, stat: TowerStackDefinition["stat"], now = Date.now()) {
+  private getEngineStackStatMultiplier(tower: TowerModel, stat: TowerStackDefinition["stat"], now = this.runtime.now()) {
     const definitions = (this.getTowerEngine(tower)?.stacks ?? [])
       .filter((definition) => definition.stat === stat);
     if (stat === "fireRate") {
@@ -8250,7 +8425,7 @@ export class MatchRoom extends Room<MatchState> {
    * kulelerin ozel davranislarini yanlislikla sifirlardi.
    */
   private updateGrantedSameTargetStacks(tower: TowerModel, target: EnemyModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (tower.grantTargetId === target.id) {
       this.applyGrantedStacks(tower, "sameTarget", now, target.id);
       return;
@@ -8272,7 +8447,7 @@ export class MatchRoom extends Room<MatchState> {
 
     tower.grantActiveMs = (tower.grantActiveMs ?? 0) + deltaTime;
     const desired = Math.floor(tower.grantActiveMs / 1000);
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const definition of stacks) {
       if (definition.trigger !== "activeSecond" || MatchRoom.MANUALLY_DRIVEN_STACK_IDS.has(definition.id)) continue;
       const limit = Math.min(desired, definition.max ?? desired);
@@ -8299,7 +8474,7 @@ export class MatchRoom extends Room<MatchState> {
     context: { target?: EnemyModel; conditions?: TowerTriggerCondition[]; areaDamageMultiplier?: number; now?: number } = {}
   ) {
     const result = dispatchTowerTriggers(this.getTowerEngine(tower)?.triggers ?? [], event, {
-      now: context.now ?? Date.now(),
+      now: context.now ?? this.runtime.now(),
       cooldowns: tower.triggerCooldowns,
       conditions: context.conditions
     });
@@ -8308,7 +8483,7 @@ export class MatchRoom extends Room<MatchState> {
       if (effect === "surge") {
         // Kart ve esyalarin trigger uzerinden verebildigi tek genel etki.
         // Ozel bir kule mekanigine baglanmadigi icin her olayla kullanilabilir.
-        tower.surgeUntil = (context.now ?? Date.now()) + SURGE_DURATION_MS;
+        tower.surgeUntil = (context.now ?? this.runtime.now()) + SURGE_DURATION_MS;
       } else if (effect === "disable") {
         tower.heatLocked = true;
       } else if (effect === "rage-wave") {
@@ -8317,8 +8492,8 @@ export class MatchRoom extends Room<MatchState> {
         this.triggerMelisRageWave(tower);
       } else if (effect === "marked-overdrive" && context.target && tower.level >= DEBUG_LASER_OVERDRIVE_UNLOCK_LEVEL) {
         // Asiri yukleme 5. seviyede aciliyor; altinda isaretli oldurme siradan bir oldurme.
-        this.startDebugLaserOverdrive(tower, context.target, context.now ?? Date.now());
-        this.noteMarkedOverdriveStarted(tower, context.now ?? Date.now());
+        this.startDebugLaserOverdrive(tower, context.target, context.now ?? this.runtime.now());
+        this.noteMarkedOverdriveStarted(tower, context.now ?? this.runtime.now());
       }
     }
     return result.effects;
@@ -8688,7 +8863,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private addZeynepBurnLine(tower: TowerModel, x1: number, y1: number, x2: number, y2: number, damage: number, durationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const id = `burn-${this.nextBurnZoneId++}`;
     this.burnZones.set(id, {
       id,
@@ -8754,7 +8929,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private updateBurnZones() {
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const [id, zone] of this.burnZones) {
       if (now >= zone.expiresAt) {
         this.burnZones.delete(id);
@@ -8791,7 +8966,7 @@ export class MatchRoom extends Room<MatchState> {
    * hicbir kirisle ucani vurmuyor.
    */
   private updateDebugLaserSweep(tower: TowerModel, firesThisTick = false) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (this.updateDebugLaserOverdriveHeat(tower, now)) {
       return;
     }
@@ -9289,7 +9464,7 @@ export class MatchRoom extends Room<MatchState> {
         this.perfCounters.aoeChecks += 1;
         const killed = this.damageEnemy(enemy, this.getProjectileDamage(projectile, 0.82), projectile.slowMs, projectile.definitionId, projectileOwnerId, projectile.damageType, projectile.maxHealthDamageRatio, projectileTowerLevel, projectile.towerId, projectile.hitType, projectile.luck);
         if (projectile.definitionId === "archer-6-whisper" && !killed && projectileTower) {
-          this.applyMelisDoubt(projectileTower, enemy, Date.now());
+          this.applyMelisDoubt(projectileTower, enemy, this.runtime.now());
         }
         this.applyKinProjectileSlow(projectile, enemy);
       }
@@ -9308,7 +9483,7 @@ export class MatchRoom extends Room<MatchState> {
     // Sunucu'nun Ezici bilgisi kulenin zirh kirmasini buyutuyor; vermiyor.
     if (enemy.type === "brute") amount *= 1 + this.getTowerServerKnowledgeBonus(sourceTower, "brute");
     enemy.armor = Math.max(-100, enemy.armor - amount);
-    enemy.armorBrokenUntil = Math.max(enemy.armorBrokenUntil, Date.now() + scaleGameDuration(ARMOR_BREAK_MARKER_MS));
+    enemy.armorBrokenUntil = Math.max(enemy.armorBrokenUntil, this.runtime.now() + scaleGameDuration(ARMOR_BREAK_MARKER_MS));
   }
 
   private applyKinProjectileSlow(projectile: ProjectileModel, target: EnemyModel) {
@@ -9427,14 +9602,14 @@ export class MatchRoom extends Room<MatchState> {
     const deepFreezeTowers = this.collectDeepFreezeTowers();
     // Metal Kalkan: suresi dolan kalkiyor ve gezinme tazeleniyor. Kalkan
     // yokken (macin neredeyse tamami) tek bir uzunluk karsilastirmasi.
-    if (this.metalShields.length > 0) this.updateMetalShields(Date.now());
+    if (this.metalShields.length > 0) this.updateMetalShields(this.runtime.now());
     // Yapi degistiyse ana kapiyi bir kez yeniden olc: yonlendirme artik alani
     // sormadigi icin bunu tetikleyecek baska bir yer kalmadi. Kalkan dururken
     // olcum bekliyor: 3 saniyelik engel surunun kapisi sayilmaz.
     if (this.mainGateDirty && this.metalShields.length === 0) {
       this.announceFlowShift();
     }
-    const now = Date.now();
+    const now = this.runtime.now();
     // Karsi atak dusman degil ama dusman tikinde ilerliyor; dalga bitse de
     // haritayi gecene kadar suruyor (mac bitince `finishMatch` kaldiriyor).
     if (this.counterSurges.length > 0 && !this.matchResult) this.updateCounterSurge(now);
@@ -10010,7 +10185,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.temperature >= this.getTowerHeatLockThreshold(tower)) {
       tower.heatLocked = true;
     }
-    if (!wasHeatLocked && tower.heatLocked) this.onTowerHeatLocked(tower, Date.now());
+    if (!wasHeatLocked && tower.heatLocked) this.onTowerHeatLocked(tower, this.runtime.now());
   }
 
   /**
@@ -10044,7 +10219,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Bugunku serit (`band`): ust kenardan, `col` sol sutun. */
-  private startCounterSurge(col: number, width: number, now = Date.now()) {
+  private startCounterSurge(col: number, width: number, now = this.runtime.now()) {
     return this.launchCounterSurge({ atSpawn: 0, kind: "band", travel: "down", lane: col, width }, now);
   }
 
@@ -10055,7 +10230,7 @@ export class MatchRoom extends Room<MatchState> {
    * sarkarsa o dalganin (daha yuksek) orani binmiyor. Siperin gecis suresi
    * dalganin grunt yurume hizindan.
    */
-  private launchCounterSurge(planned: PlannedCounterSurge, now = Date.now()) {
+  private launchCounterSurge(planned: PlannedCounterSurge, now = this.runtime.now()) {
     const spec = COUNTER_SURGE_KIND_TABLE[planned.kind];
     const map = this.activeMap;
     const width = Math.max(1, Math.floor(planned.width));
@@ -10308,7 +10483,7 @@ export class MatchRoom extends Room<MatchState> {
     const seed = hashRaceTraitSeed(this.wavePatternSeed ?? 0, serial);
     const trait = rollRaceTrait(enemy.race, { seed, champion, special, air: enemy.movementKind === "air" });
     if (!trait) return;
-    const now = Date.now();
+    const now = this.runtime.now();
     enemy.raceTrait = {
       trait,
       random: createRaceRandom(seed ^ 0x5bd1e995),
@@ -10584,7 +10759,7 @@ export class MatchRoom extends Room<MatchState> {
   private getMekaShieldCrossing(x1: number, y1: number, x2: number, y2: number) {
     this.lastLineBlocker = undefined;
     if (this.activeMekaShieldCount === 0) return undefined;
-    const now = Date.now();
+    const now = this.runtime.now();
     let best: number | undefined;
     for (const shield of this.mekaShields) {
       if (now < shield.landAt || now >= shield.expiresAt) continue;
@@ -11158,7 +11333,7 @@ export class MatchRoom extends Room<MatchState> {
         drone.hp = this.getWorkerMaxHp(drone);
       }
     }
-    const now = Date.now();
+    const now = this.runtime.now();
     const baseWorkerModes: Array<DroneSnapshot["mode"]> = ["crystalCollector", "energyTransport", "ammoCollector", "ammoTransport"];
     const origin = getMapOrigin(this.activeMap);
     const { gridSize } = getMapMetrics(this.activeMap);
@@ -11260,7 +11435,7 @@ export class MatchRoom extends Room<MatchState> {
       if (factory) factory.ammo = Math.min(factory.maxAmmo, factory.ammo + (worker.cargo ?? 0));
     }
     this.drones.delete(worker.id);
-    this.workerRespawnAt.set(worker.id, Date.now() + WORKER_RESPAWN_MS);
+    this.workerRespawnAt.set(worker.id, this.runtime.now() + WORKER_RESPAWN_MS);
     return true;
   }
 
@@ -11546,7 +11721,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private openPlayerSetupShop(playerId: string, player: Player) {
     player.shopRerolls = 0;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), buildableTowers: this.getPlayerBuildableTowerDefinitions(playerId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(playerId, player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(playerId), buildableTowers: this.getPlayerBuildableTowerDefinitions(playerId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(playerId, player), random: this.runtime.random });
   }
 
   /**
@@ -11578,7 +11753,7 @@ export class MatchRoom extends Room<MatchState> {
     player.gold -= price;
     player.goldSpent += price;
     player.shopRerolls += 1;
-    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), buildableTowers: this.getPlayerBuildableTowerDefinitions(client.sessionId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(client.sessionId, player) });
+    player.shopOffers = drawShopOffers({ wave: this.wave, preferredAxes: getCharacterCardAxes(player.characterId), towers: this.getPlayerTowerDefinitions(client.sessionId), buildableTowers: this.getPlayerBuildableTowerDefinitions(client.sessionId, player), ownedItemIds: player.ownedShopItemIds, ownedCardIds: player.ownedCardIds, marksAvailable: this.canTeamMarkEnemies(), excludeItemIds: this.getShopOfferExclusions(player), loadout: this.getPlayerShopLoadout(client.sessionId, player), random: this.runtime.random });
   }
 
   private buyShopItem(client: Client, message: BuyShopItemMessage) {
@@ -11899,7 +12074,7 @@ export class MatchRoom extends Room<MatchState> {
         const loaded = Math.min(capacity, factory.ammo, Math.max(0, target.maxAmmo - target.ammo - this.getReservedCargo(worker, target)));
         factory.ammo -= loaded;
         worker.cargo = loaded;
-        worker.cargoSpecial = Boolean(factory.ammoRefinerUntil && factory.ammoRefinerUntil > Date.now());
+        worker.cargoSpecial = Boolean(factory.ammoRefinerUntil && factory.ammoRefinerUntil > this.runtime.now());
         worker.cargoAmmoPayloadKind = worker.cargoSpecial ? "refined" : undefined;
         worker.cargoAmmoType = target.ammoType;
         worker.targetTowerId = target.id;
@@ -11940,7 +12115,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   /** Etkin bir isci agaci etkisi; suresi dolmus ya da atislari bitmisse yok. */
-  private getWorkerBoost(tower: TowerModel, kind: WorkerBoostKind, now = Date.now()) {
+  private getWorkerBoost(tower: TowerModel, kind: WorkerBoostKind, now = this.runtime.now()) {
     const boost = tower.workerBoosts?.[kind];
     if (!boost || boost.until <= now || (boost.shots !== undefined && boost.shots <= 0)) return undefined;
     return boost;
@@ -11967,7 +12142,7 @@ export class MatchRoom extends Room<MatchState> {
    * Etkiyi kuleye yazar. Ayni etki yeniden gelirse toplanmiyor: en guclu
    * deger ve en uzun sure kaliyor, atis sayisi da en buyugune tamamlaniyor.
    */
-  private grantWorkerBoost(tower: TowerModel, kind: WorkerBoostKind, value: number, durationMs: number, shots?: number, now = Date.now()) {
+  private grantWorkerBoost(tower: TowerModel, kind: WorkerBoostKind, value: number, durationMs: number, shots?: number, now = this.runtime.now()) {
     const boosts = tower.workerBoosts ??= {};
     const current = this.getWorkerBoost(tower, kind, now);
     boosts[kind] = {
@@ -12134,7 +12309,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyCrystalWorkerArrival(worker: DroneModel, reactor: TowerModel, becameFull: boolean) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (this.hasWorkerSkill(worker, "crystal-reserve")) {
       reactor.crystalReserve = Math.min(24, (reactor.crystalReserve ?? 0) + 12);
     }
@@ -12165,7 +12340,7 @@ export class MatchRoom extends Room<MatchState> {
     const key = `${worker.ownerId}:${nodeId}:${this.wave}`;
     if (this.crystalTrapKeys.has(key)) return;
     this.crystalTrapKeys.add(key);
-    this.crystalTrapUntil.set(`${worker.ownerId}:${nodeId}`, Date.now() + 5_000);
+    this.crystalTrapUntil.set(`${worker.ownerId}:${nodeId}`, this.runtime.now() + 5_000);
   }
 
   private applyCrystalReactorEmergency(reactor: TowerModel, now: number) {
@@ -12197,7 +12372,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyAmmoCollectorArrival(worker: DroneModel, factory: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (this.hasWorkerSkill(worker, "ammo-refiner")) factory.ammoRefinerUntil = now + 20_000;
     if (this.hasWorkerSkill(worker, "ammo-cast-shell")) factory.ammoFactoryShield = Math.min(40, (factory.ammoFactoryShield ?? 0) + 20);
     if (this.hasWorkerSkill(worker, "ammo-emergency-refinery") && factory.energy <= 0) {
@@ -12208,7 +12383,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyAmmoTransportArrival(worker: DroneModel, target: TowerModel, hadNoAmmo: boolean) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (worker.cargoSpecial || this.hasWorkerSkill(worker, "ammo-special-payload")) {
       target.ammoPayloadUntil = now + 20_000;
       target.ammoPayloadKind = worker.cargoAmmoPayloadKind ?? "special";
@@ -12255,7 +12430,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyEnergyWorkerArrival(worker: DroneModel, target: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (this.hasEnergyWorkerSkill(worker, "energy-relay")) {
       target.energyRelayUntil = now + 8_000;
       target.energyRelaySourceId = target.id;
@@ -12298,7 +12473,7 @@ export class MatchRoom extends Room<MatchState> {
     this.applyEnergyWorkerDevelopment(worker, target, now);
   }
 
-  private getEnergyRelaySource(tower: TowerModel, now = Date.now()) {
+  private getEnergyRelaySource(tower: TowerModel, now = this.runtime.now()) {
     if (tower.energyRelayUntil && tower.energyRelayUntil > now) {
       const source = this.towers.get(tower.energyRelaySourceId ?? "");
       if (source && source.hp > 0 && source.ownerId === tower.ownerId && source.id !== tower.id) {
@@ -12313,18 +12488,18 @@ export class MatchRoom extends Room<MatchState> {
     return undefined;
   }
 
-  private getTowerEnergySource(tower: TowerModel, now = Date.now()) {
+  private getTowerEnergySource(tower: TowerModel, now = this.runtime.now()) {
     const source = this.getEnergyRelaySource(tower, now) ?? tower;
     if (source.definition.resourceProvider === "energy") this.applyCrystalReactorEmergency(source, now);
     return source;
   }
 
-  private getTowerAvailableEnergy(tower: TowerModel, now = Date.now()) {
+  private getTowerAvailableEnergy(tower: TowerModel, now = this.runtime.now()) {
     const source = this.getTowerEnergySource(tower, now);
     return source.energy + (source === tower ? (tower.energyLocalReserve ?? 0) : 0);
   }
 
-  private consumeTowerEnergy(tower: TowerModel, amount: number, now = Date.now()) {
+  private consumeTowerEnergy(tower: TowerModel, amount: number, now = this.runtime.now()) {
     const source = this.getTowerEnergySource(tower, now);
     const fromSource = Math.min(source.energy, amount);
     source.energy = Math.max(0, source.energy - fromSource);
@@ -12404,7 +12579,7 @@ export class MatchRoom extends Room<MatchState> {
       this.runLedger.recordRepair(this.getPlayerSlot(worker.ownerId), target.hp - previousHp);
     }
     // Pencere burada aciliyor: Tamirci dokundugu surece acik kaliyor.
-    target.repairedUntil = Date.now() + REPAIR_WINDOW_LINGER_MS;
+    target.repairedUntil = this.runtime.now() + REPAIR_WINDOW_LINGER_MS;
     // Kalibrasyon Turu dokunmayla veriliyor ve dalga numarasiyla suruyor.
     if (this.towerHasUnlock(target, "repair:performanceCeiling")) {
       target.repairPerformanceWave = this.wave;
@@ -12413,13 +12588,13 @@ export class MatchRoom extends Room<MatchState> {
       target.breachAnnounced = false;
       if (this.hasWorkerSkill(worker, "repair-fortification-seal")) {
         target.repairFortificationHp = 30;
-        target.repairFortificationUntil = Date.now() + 10_000;
+        target.repairFortificationUntil = this.runtime.now() + 10_000;
       }
-      if (previousHp < target.maxHp) this.applyRepairWorkerDevelopment(worker, target, Date.now());
+      if (previousHp < target.maxHp) this.applyRepairWorkerDevelopment(worker, target, this.runtime.now());
       worker.targetTowerId = "";
     }
     if (wasCritical && target.hp / Math.max(1, target.maxHp) > 0.2 && this.hasWorkerSkill(worker, "repair-breach-engineer")) {
-      target.repairBreachUntil = Date.now() + 5_000;
+      target.repairBreachUntil = this.runtime.now() + 5_000;
     }
   }
 
@@ -12855,7 +13030,7 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Ilk temasta el secimi: yarisi saga, yarisi sola. */
   private pickNavigatorHand(): BlindHand {
-    return Math.random() < 0.5 ? "left" : "right";
+    return this.runtime.random() < 0.5 ? "left" : "right";
   }
 
   /** Ilk temasin eli: zorla yonlendirmenin biraktigi el varsa o (zar yok), yoksa zar. */
@@ -13280,7 +13455,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerActivity(tower: TowerModel): TowerActivity {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (tower.hp <= 0 || tower.standby || tower.performance <= 0 || tower.wakeReadyAt > now
       || tower.offlineUntil > now) return "disabled";
     if (tower.heatLocked || tower.overheatMs > 0) return "heat";
@@ -13338,7 +13513,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerInsight(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const cached = this.towerInsightCache.get(tower);
     if (cached && now - cached.at < TOWER_INSIGHT_REFRESH_MS) return cached.value;
     const reasons: string[] = [];
@@ -13430,7 +13605,7 @@ export class MatchRoom extends Room<MatchState> {
     // Ret metni Turkce; yaninda anahtari (`errorKey`) ve gerekirse parametreleri.
     const reject = (errorKey: ServerTextKey | typeof PREVIEW_EQUIP_REJECTED_KEY, error: string = SERVER_TEXT[errorKey as ServerTextKey], errorParams?: Record<string, string>) =>
       client.send("tower:preview", { requestId: message.requestId, error, errorKey, ...(errorParams ? { errorParams } : {}) });
-    const now = Date.now();
+    const now = this.runtime.now();
     if (now - (this.previewRequestTimes.get(client.sessionId) ?? 0) < 40) return reject("preview.tooSoon");
     this.previewRequestTimes.set(client.sessionId, now);
     const player = this.state.players.get(client.sessionId);
@@ -13536,7 +13711,7 @@ export class MatchRoom extends Room<MatchState> {
    * hedef olmadan bilinmiyor; onlar ayri bir listede kosul olarak gidiyor.
    */
   private getTowerStatsBlock(tower: TowerModel, viewerId: string, requestId?: number): TowerStatsWire {
-    const now = Date.now();
+    const now = this.runtime.now();
     const definition = tower.definition;
     const engine = this.getTowerEngine(tower);
     const modifiers = this.getTowerRunModifiers(tower);
@@ -13891,7 +14066,7 @@ export class MatchRoom extends Room<MatchState> {
     if (tower.hp <= 0) {
       return;
     }
-    if ((tower.repairFortificationHp ?? 0) > 0 && (tower.repairFortificationUntil ?? 0) > Date.now()) {
+    if ((tower.repairFortificationHp ?? 0) > 0 && (tower.repairFortificationUntil ?? 0) > this.runtime.now()) {
       const absorbed = Math.min(tower.repairFortificationHp ?? 0, Math.max(0, rawDamage));
       tower.repairFortificationHp = (tower.repairFortificationHp ?? 0) - absorbed;
       rawDamage -= absorbed;
@@ -13903,7 +14078,7 @@ export class MatchRoom extends Room<MatchState> {
       rawDamage -= absorbed;
       if (rawDamage <= 0) return;
     }
-    if ((tower.ammoEvacuationUntil ?? 0) > Date.now()) {
+    if ((tower.ammoEvacuationUntil ?? 0) > this.runtime.now()) {
       rawDamage *= 0.5;
       tower.ammoEvacuationUntil = 0;
     }
@@ -13937,7 +14112,7 @@ export class MatchRoom extends Room<MatchState> {
       this.runTowerTriggers(tower, "towerDeath");
       if (this.towerHasUnlock(tower, "trigger:debrisOnDeath")) {
         const cell = worldToGrid(tower.x, tower.y, this.activeMap);
-        this.debrisCells.set(`${cell.col}:${cell.row}`, Date.now() + 12000);
+        this.debrisCells.set(`${cell.col}:${cell.row}`, this.runtime.now() + 12000);
       }
     }
   }
@@ -13952,7 +14127,7 @@ export class MatchRoom extends Room<MatchState> {
     depot.repairParts! -= parts;
     tower.repairRebuildWave = this.wave;
     tower.hp = hp;
-    tower.offlineUntil = Date.now() + 5_000;
+    tower.offlineUntil = this.runtime.now() + 5_000;
     tower.heatLocked = false;
     tower.temperature = 0;
     tower.breachAnnounced = false;
@@ -13965,7 +14140,7 @@ export class MatchRoom extends Room<MatchState> {
       || !this.hasWorkerSkillForOwner(tower.ownerId, "ammoCollector", "ammo-black-box")) return false;
     tower.ammoBlackBoxWave = this.wave;
     tower.hp = 1;
-    tower.offlineUntil = Date.now() + 5_000;
+    tower.offlineUntil = this.runtime.now() + 5_000;
     tower.breachAnnounced = false;
     this.markNavigationDirty();
     return true;
@@ -13983,7 +14158,7 @@ export class MatchRoom extends Room<MatchState> {
     const damage = source.maxHp * 0.05 * MELIS_BULLY_DAMAGE_MULTIPLIER * seconds;
     const radius = this.scaleWorldDistance(MELIS_BULLY_DAMAGE_RADIUS);
     for (const enemy of Array.from(this.enemies.values())) {
-      if (enemy.id === source.id || enemy.dominatedUntil > Date.now()) {
+      if (enemy.id === source.id || enemy.dominatedUntil > this.runtime.now()) {
         continue;
       }
 
@@ -14442,7 +14617,7 @@ export class MatchRoom extends Room<MatchState> {
     let enemyId: string | undefined;
     if (slot === ATAKAN_EXECUTE_SLOT) {
       const enemy = message.enemyId ? this.enemies.get(message.enemyId) : undefined;
-      const reason = this.getExecuteRejectReason(enemy, Date.now());
+      const reason = this.getExecuteRejectReason(enemy, this.runtime.now());
       if (reason || !enemy) {
         this.rejectSkill(client, ATAKAN_EXECUTE_SLOT, reason ?? "invalid");
         return;
@@ -14688,7 +14863,7 @@ export class MatchRoom extends Room<MatchState> {
     if (this.matchResult) return;
     for (const sessionId of this.state.players.keys()) this.getOperatorBody(sessionId);
     if (this.operatorBodies.size === 0) return;
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const body of this.operatorBodies.values()) {
       if (body.dead) continue;
       if (this.damageOperatorBody(body, gameSeconds, now)) continue;
@@ -14757,7 +14932,7 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Bedene vurabilecek dusmanlar: takimin tarafina gecmis olanlar haric. */
   private getBodyThreats() {
-    const now = Date.now();
+    const now = this.runtime.now();
     return Array.from(this.enemies.values()).filter((enemy) => enemy.hp > 0 && !enemy.untargetable
       && enemy.dominatedUntil <= now && enemy.melisUndeadUntil <= now && enemy.melisWhisperTurnedUntil <= now);
   }
@@ -15397,7 +15572,7 @@ export class MatchRoom extends Room<MatchState> {
     if (message.mode === "standby") {
       if (!this.acceptsTowerOperation(tower)) return;
       tower.standby = !tower.standby;
-      tower.wakeReadyAt = tower.standby ? 0 : Date.now() + 3500;
+      tower.wakeReadyAt = tower.standby ? 0 : this.runtime.now() + 3500;
       return;
     }
 
@@ -15483,7 +15658,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!recipient) {
       return;
     }
-    const now = Date.now();
+    const now = this.runtime.now();
     const key = `${serverTower.id}>${targetTower.id}`;
     const last = this.serverLinkNoticeAt.get(key);
     if (last !== undefined && now - last < SERVER_LINK_NOTICE_COOLDOWN_MS) {
@@ -15575,7 +15750,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useAtakanSkill(client: Client, slot: number, message: UseSkillMessage) {
-    const now = Date.now();
+    const now = this.runtime.now();
 
     if (slot === 0) {
       if (!isFiniteNumber(message.x) || !isFiniteNumber(message.y)) {
@@ -15654,7 +15829,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useZeynepCommand(player: Player, slot: number, message: UseSkillMessage, ownerId = "") {
-    const now = Date.now();
+    const now = this.runtime.now();
     const commandType = getZeynepCommandType(slot);
     const isFinisher = player.authorityChain >= 2;
     const tier = getRequestedZeynepCommandTier(message.commandTier);
@@ -15712,13 +15887,13 @@ export class MatchRoom extends Room<MatchState> {
 
     const radius = this.scaleWorldDistance(MELIS_BULLY_RADIUS);
     const target = Array.from(this.enemies.values())
-      .filter((enemy) => enemy.type === "brute" && enemy.dominatedUntil <= Date.now() && distanceSq(enemy.x, enemy.y, message.x!, message.y!) <= radius * radius)
+      .filter((enemy) => enemy.type === "brute" && enemy.dominatedUntil <= this.runtime.now() && distanceSq(enemy.x, enemy.y, message.x!, message.y!) <= radius * radius)
       .sort((a, b) => b.maxHp - a.maxHp || b.pathDistance - a.pathDistance)[0];
     if (!target) {
       return false;
     }
 
-    target.dominatedUntil = Date.now() + scaleGameDuration(MELIS_BULLY_DURATION_MS);
+    target.dominatedUntil = this.runtime.now() + scaleGameDuration(MELIS_BULLY_DURATION_MS);
     target.dominatedOwnerId = ownerId;
     target.fearUntil = 0;
     target.slowUntil = 0;
@@ -15755,7 +15930,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private useMelisFocus(ownerId: string) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const until = now + scaleGameDuration(MELIS_FOCUS_DURATION_MS);
     let lockedCount = 0;
 
@@ -15883,7 +16058,7 @@ export class MatchRoom extends Room<MatchState> {
       report.heal = this.teamHealth - healthBefore;
       for (const enemy of this.enemies.values()) {
         const duration = applyStatusResistance(1800, enemy.statusResistances.slow);
-        this.extendFlatSlow(enemy, Date.now() + scaleGameDuration(duration), Date.now(), "ultimate:healer");
+        this.extendFlatSlow(enemy, this.runtime.now() + scaleGameDuration(duration), this.runtime.now(), "ultimate:healer");
         report.hits += 1;
       }
       this.finishUltimateReport(report);
@@ -15905,7 +16080,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     if (player.characterId === "archer") {
-      const until = Date.now() + scaleGameDuration(MELIS_GOTHIC_NIGHTMARE_MS);
+      const until = this.runtime.now() + scaleGameDuration(MELIS_GOTHIC_NIGHTMARE_MS);
       this.melisGothicNightmareUntil = Math.max(this.melisGothicNightmareUntil, until);
       this.melisGothicNightmareOwnerUntil.set(client.sessionId, Math.max(this.melisGothicNightmareOwnerUntil.get(client.sessionId) ?? 0, until));
       for (const tower of this.towers.values()) {
@@ -15998,7 +16173,7 @@ export class MatchRoom extends Room<MatchState> {
     if (this.openUltimateReports.length === 0) {
       return;
     }
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const report of [...this.openUltimateReports]) {
       const dronesDone = report.droneIds !== undefined && ![...report.droneIds].some((id) => this.drones.has(id));
       const timeUp = report.until !== undefined && now >= report.until;
@@ -16079,7 +16254,7 @@ export class MatchRoom extends Room<MatchState> {
     const right = left + gridSize;
     const damage = this.getZeynepColumnUltimateDamage(ownerId);
 
-    const now = Date.now();
+    const now = this.runtime.now();
     const reachable: number[] = [];
     // Nisan: secilen sutunda atis anindaki vurulabilir dusman, en iyi sutunla
     // ayni kural. Isabetle kiyaslamak zincir olumlerde (Melis lanet patlamasi
@@ -16147,7 +16322,7 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const tower of ownTowers) {
       tower.offlineUntil = Math.max(tower.offlineUntil, now + ATAKAN_ULTIMATE_EXHAUSTION_MS);
     }
@@ -16439,7 +16614,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private findTowerTarget(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (tower.definition.id === "zeynep-3") {
       const composition = this.getZeynepSynthesisComposition(tower);
       if (!composition.mode) {
@@ -16542,7 +16717,7 @@ export class MatchRoom extends Room<MatchState> {
       lockedTargetId: options.lockedTargetId,
       retainLockOutsideRange: options.retainLockOutsideRange,
       preferredTargetIds: options.preferredTargetIds,
-      random: options.random
+      random: options.random ?? this.runtime.random
     }, enemies.map((enemy) => ({
       id: enemy.id,
       progress: enemy.pathDistance,
@@ -16563,7 +16738,7 @@ export class MatchRoom extends Room<MatchState> {
   private canTowerTargetEnemy(tower: TowerModel, enemy: EnemyModel) {
     // Yer altindaki kazici ve fazdaki 4. boyut: hic bir kule secemiyor.
     if (enemy.untargetable) return false;
-    const now = Date.now();
+    const now = this.runtime.now();
     if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now) {
       return false;
     }
@@ -16665,7 +16840,7 @@ export class MatchRoom extends Room<MatchState> {
    * oysa her vurusa +%20 ekliyordu. Dusmana bagli olanlar (hava, kalkan, tur,
    * yavaslatilmis hedef) kosullu oldugu icin `damageEnemy` icinde kaliyor.
    */
-  private getTowerHitDamageAdd(tower: TowerModel, now = Date.now()) {
+  private getTowerHitDamageAdd(tower: TowerModel, now = this.runtime.now()) {
     let add = 0;
     if ((tower.ammoPayloadShots ?? 0) > 0 && (tower.ammoPayloadUntil ?? 0) > now) add += 0.25;
     add += this.getWorkerBoostDamageAdd(tower, now);
@@ -16727,13 +16902,13 @@ export class MatchRoom extends Room<MatchState> {
       return false;
     }
 
-    if (this.isEnemyDominatedAgainst(enemy, sourceDefinitionId, Date.now())) {
+    if (this.isEnemyDominatedAgainst(enemy, sourceDefinitionId, this.runtime.now())) {
       return false;
     }
 
     this.perfCounters.damageEvents += 1;
     this.landedHitCount += 1;
-    const now = Date.now();
+    const now = this.runtime.now();
     // Efsanevi etkinin kendi hasari (`legendary:*` kaynagi): temas saymiyor,
     // kritik atmiyor, sicramiyor, durum ve isci vurus etkisi tasimiyor.
     // Bayrak degil kaynak: oldurdugu dusmanin olum etkilerine sizmiyor.
@@ -17131,7 +17306,7 @@ export class MatchRoom extends Room<MatchState> {
     if (sourceTower) {
       for (let unit = 0; unit < killUnits; unit += 1) this.applyTowerStacksForTrigger(sourceTower, "kill", now, enemy.id);
       if (this.towerHasUnlock(sourceTower, "stack:kill")) sourceTower.shopKillStacks = Math.min(15, sourceTower.shopKillStacks + killUnits);
-      if (this.towerHasUnlock(sourceTower, "ammoDrop") && Math.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
+      if (this.towerHasUnlock(sourceTower, "ammoDrop") && this.runtime.random() < 0.2) sourceTower.ammo = Math.min(sourceTower.maxAmmo, sourceTower.ammo + 4);
       if (this.towerHasUnlock(sourceTower, "aim:killSnap")) sourceTower.killSnapUntil = now + KILL_SNAP_DURATION_MS;
       if (this.towerHasUnlock(sourceTower, "heat:killVent")) {
         // Oldurme isiyi atar. Kilitli bir kule de yanik hasariyla oldurebilir,
@@ -17195,7 +17370,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private damageEnemyFromTower(tower: TowerModel, enemy: EnemyModel, damage: number, slowMs: number) {
-    const damageType = this.isMelisGothicNightmareActiveForTower(tower, Date.now())
+    const damageType = this.isMelisGothicNightmareActiveForTower(tower, this.runtime.now())
       ? "true"
       : tower.definition.damageType ?? "physical";
     return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, 0, tower.level, tower.id, tower.definition.hitType);
@@ -17205,7 +17380,7 @@ export class MatchRoom extends Room<MatchState> {
     return this.damageEnemy(enemy, damage, slowMs, tower.definition.id, tower.ownerId, damageType, maxHealthDamageRatio ?? 0, tower.level, tower.id, tower.definition.hitType);
   }
 
-  private recordTowerDamage(towerId: string, amount: number, now = Date.now()) {
+  private recordTowerDamage(towerId: string, amount: number, now = this.runtime.now()) {
     if (!towerId || amount <= 0) {
       return;
     }
@@ -17377,7 +17552,7 @@ export class MatchRoom extends Room<MatchState> {
     const mode = tower.definition.engine?.targetingByState?.[state] ?? tower.definition.engine?.targeting ?? "strongest";
     return this.selectEnemyTarget(tower, Array.from(this.enemies.values()), mode, {
       range: Number.POSITIVE_INFINITY,
-      now: Date.now(),
+      now: this.runtime.now(),
       strength: getEnemyHealthRatio,
       useTypePriority: false
     });
@@ -17396,7 +17571,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyMelisBrokenMirrorEvolutionHaste(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const until = now + scaleGameDuration(MELIS_BROKEN_MIRROR_EVOLUTION_HASTE_MS);
     for (const candidate of this.towers.values()) {
       if (candidate.ownerId !== tower.ownerId || candidate.characterId !== "archer" || candidate.definition.hitType === "focus") {
@@ -17415,20 +17590,20 @@ export class MatchRoom extends Room<MatchState> {
     return MELIS_BROKEN_MIRROR_BASE_STORE_RATIO + (tower.melisEvolutionLevel >= 1 ? MELIS_BROKEN_MIRROR_EVOLUTION_STORE_BONUS : 0);
   }
 
-  private getTowerCurrentDps(tower: TowerModel, now = Date.now()) {
+  private getTowerCurrentDps(tower: TowerModel, now = this.runtime.now()) {
     this.pruneTowerDamageWindow(tower, now);
     const damage = tower.damageWindow.reduce((total, sample) => total + sample.amount, 0);
     return damage / (TOWER_DPS_WINDOW_MS / 1000);
   }
 
-  private pruneTowerDamageWindow(tower: TowerModel, now = Date.now()) {
+  private pruneTowerDamageWindow(tower: TowerModel, now = this.runtime.now()) {
     const keepAfter = now - TOWER_DPS_WINDOW_MS;
     while (tower.damageWindow.length > 0 && tower.damageWindow[0].dealtAt < keepAfter) {
       tower.damageWindow.shift();
     }
   }
 
-  private isEnemyInProjectileGuidance(enemy: EnemyModel, now = Date.now()) {
+  private isEnemyInProjectileGuidance(enemy: EnemyModel, now = this.runtime.now()) {
     const radius = this.scaleWorldDistance(PROJECTILE_GUIDANCE_RADIUS);
     return this.projectileGuidanceUntil > now && distanceSq(enemy.x, enemy.y, this.projectileGuidanceX, this.projectileGuidanceY) <= radius * radius;
   }
@@ -17439,7 +17614,7 @@ export class MatchRoom extends Room<MatchState> {
     player.reputation = Math.min(ZEYNEP_MAX_REPUTATION, player.reputation + gain);
   }
 
-  private getTrackingStackCount(enemy: EnemyModel, now = Date.now()) {
+  private getTrackingStackCount(enemy: EnemyModel, now = this.runtime.now()) {
     return enemy.trackingStackUntil.filter((until) => until > now).length;
   }
 
@@ -17554,7 +17729,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private addKillEvent(ownerId: string, enemyId: string, ownerGold = 0, assists: readonly KillAssist[] = [], kills = 1) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const streakRule = this.recordPlayerKillStreak(ownerId, now, kills);
     if (streakRule) this.runLedger.recordStreak(this.getPlayerSlot(ownerId), streakRule.tier, this.wave);
     const id = `k${this.nextKillEventId++}`;
@@ -17732,8 +17907,8 @@ export class MatchRoom extends Room<MatchState> {
     const shownAmount = Math.max(1, Math.floor(amount));
     const event: DamageEventModel = {
       id,
-      x: enemy.x + (Math.random() - 0.5) * 14,
-      y: enemy.y - 16 + (Math.random() - 0.5) * 8,
+      x: enemy.x + (this.runtime.random() - 0.5) * 14,
+      y: enemy.y - 16 + (this.runtime.random() - 0.5) * 8,
       amount: shownAmount,
       ttlMs: 900
     };
@@ -17795,14 +17970,14 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private slowAllEnemies(slowMs: number) {
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const enemy of this.enemies.values()) {
       this.applyEnemyStatusEffect(enemy, { type: "slow", magnitude: 0.52, durationMs: slowMs, stacking: "refresh" }, now, { slowKind: "skill:healer" });
     }
   }
 
   private fireMelisCurse(tower: TowerModel, target: EnemyModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const radius = this.getMelisCurseAreaRadius(tower);
     const burstDamage = this.getTowerDamage(tower);
     const expiresAt = now + scaleGameDuration(this.getMelisCurseDurationMs(tower));
@@ -17837,7 +18012,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private applyMelisCurseLoad(enemy: EnemyModel, ownerId: string, towerId: string, evolutionLevel: number, burstDamage: number, expiresAt: number) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const tower = this.towers.get(towerId);
     if (tower) this.applyConfiguredTowerStatus(tower, enemy, "curse", now, { durationMs: Math.max(0, expiresAt - now) });
     const stackDefinition = tower?.definition.engine?.stacks?.find((stack) => stack.id === "curse-pool");
@@ -17914,14 +18089,14 @@ export class MatchRoom extends Room<MatchState> {
       radius,
       burstDamage: Math.max(1, burstDamage),
       evolutionLevel,
-      expiresAt: Date.now() + scaleGameDuration(MELIS_CURSE_POOL_DURATION_MS),
+      expiresAt: this.runtime.now() + scaleGameDuration(MELIS_CURSE_POOL_DURATION_MS),
       affectedEnemyIds: new Set<string>(),
       lastAppliedAtByEnemyId: new Map<string, number>()
     });
   }
 
   private updateMelisCursePools() {
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const [id, pool] of Array.from(this.melisCursePools.entries())) {
       if (pool.expiresAt <= now) {
         this.melisCursePools.delete(id);
@@ -18139,7 +18314,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getBlockingMelisWhisperTurned(enemy: EnemyModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const radius = this.scaleWorldDistance(MELIS_WHISPER_TURN_BLOCK_RADIUS);
     const radiusSq = radius * radius;
     return this.getEnemiesNear(enemy.x, enemy.y, radius).find((candidate) => (
@@ -18178,7 +18353,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     const ownerId = this.state.players.has(enemy.melisWhisperTurnedOwnerId) ? enemy.melisWhisperTurnedOwnerId : "";
     const towerId = this.towers.has(enemy.melisWhisperTurnedSourceTowerId) ? enemy.melisWhisperTurnedSourceTowerId : "";
-    this.finishEnemyKill(enemy, { sourceOwnerId: ownerId, sourceTowerId: towerId, sourceDefinitionId: "archer-6-whisper-turned", now: Date.now() });
+    this.finishEnemyKill(enemy, { sourceOwnerId: ownerId, sourceTowerId: towerId, sourceDefinitionId: "archer-6-whisper-turned", now: this.runtime.now() });
   }
 
   private explodeMelisWhisperTurnedEnemy(enemy: EnemyModel) {
@@ -18192,8 +18367,8 @@ export class MatchRoom extends Room<MatchState> {
     for (const target of this.getEnemiesNear(enemy.x, enemy.y, radius)) {
       if (
         target.id === enemy.id ||
-        target.melisUndeadUntil > Date.now() ||
-        target.melisWhisperTurnedUntil > Date.now() ||
+        target.melisUndeadUntil > this.runtime.now() ||
+        target.melisWhisperTurnedUntil > this.runtime.now() ||
         distanceSq(enemy.x, enemy.y, target.x, target.y) > radiusSq
       ) {
         continue;
@@ -18294,7 +18469,7 @@ export class MatchRoom extends Room<MatchState> {
     const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_CHAIN_RADIUS);
     for (const enemy of Array.from(this.enemies.values())) {
       this.perfCounters.aoeChecks += 1;
-      if (enemy.id === linkedEnemy.id || enemy.melisUndeadUntil > Date.now() || enemy.dominatedUntil > Date.now() || enemy.melisWhisperTurnedUntil > Date.now()) {
+      if (enemy.id === linkedEnemy.id || enemy.melisUndeadUntil > this.runtime.now() || enemy.dominatedUntil > this.runtime.now() || enemy.melisWhisperTurnedUntil > this.runtime.now()) {
         continue;
       }
 
@@ -18503,7 +18678,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getBlockingMelisUndead(enemy: EnemyModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const radius = this.scaleWorldDistance(MELIS_UNDERWORLD_UNDEAD_BLOCK_RADIUS);
     const radiusSq = radius * radius;
     return this.getEnemiesNear(enemy.x, enemy.y, radius).find((candidate) => (
@@ -18561,7 +18736,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private triggerMelisRageWave(tower: TowerModel, areaDamageMultiplier = 0) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const radius = this.getTowerRange(tower);
     const targets = this.selectEnemiesForAttackShape({
       shape: tower.definition.engine?.attack.shape ?? "circle",
@@ -18655,7 +18830,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getSnapshot(): WireGameSnapshot {
-    const now = Date.now();
+    const now = this.runtime.now();
     const worldBounds = this.getActiveWorldBounds();
     const projectileMargin = this.scaleWorldDistance(80);
     this.refreshZeynepFormations();
@@ -19063,7 +19238,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private isTowerAuraPowered(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const periodicAura = isPeriodicTowerAura(tower.definition);
     const refreshActive = !periodicAura || tower.auraExpiresAt >= now;
     const energyStateActive = periodicAura || getTowerEnergyState(tower.energy, tower.energyDepletedAt, now) !== "offline";
@@ -19098,7 +19273,7 @@ export class MatchRoom extends Room<MatchState> {
       return applyRangeAura(Math.hypot(bounds.width, bounds.height), false);
     }
 
-    const now = Date.now();
+    const now = this.runtime.now();
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower);
     const zeynepRangeMultiplier = this.zeynepRangeUntil > now ? this.zeynepRangeMultiplier : 1;
     if (hasUcubePerk(tower, "range-hull")) {
@@ -19170,13 +19345,13 @@ export class MatchRoom extends Room<MatchState> {
     }
     let add = this.getNeighborRangeAdd(tower);
     if (ambush > 0 && towerDealsDamage(tower.definition)) {
-      const now = Date.now();
+      const now = this.runtime.now();
       const idle = now - (tower.lastHitAt ?? Number.NEGATIVE_INFINITY) >= scaleGameDuration(AMBUSH_RANGE_IDLE_MS);
       if (idle || (tower.ambushRangeUntil ?? 0) > now) add += ambush;
     }
     if (killLong > 0 && tower.killRangeWave === this.wave) add += getKillRangeAdd(killLong, tower.killRangeKills ?? 0, KILL_RANGE_LONG_MAX_KILLS);
     if (focus > 0 && tower.focusRangeTargetId && tower.focusRangeSince !== undefined) {
-      const now = Date.now();
+      const now = this.runtime.now();
       const target = this.enemies.get(tower.focusRangeTargetId);
       if (target && target.hp > 0 && now - (tower.focusRangeLastShotAt ?? 0) <= scaleGameDuration(FOCUS_RANGE_GRACE_MS)) {
         add += getFocusRangeAdd(focus, (now - tower.focusRangeSince) * GAME_SPEED_MULTIPLIER);
@@ -19330,7 +19505,7 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Saldiri Kervani ve isci agacinin atis hizi etkisi (Hizli/Serit Besleme). */
   private getAmmoAssaultIntervalMultiplier(tower: TowerModel) {
-    const assault = (tower.ammoAssaultUntil ?? 0) > Date.now() ? 0.65 : 1;
+    const assault = (tower.ammoAssaultUntil ?? 0) > this.runtime.now() ? 0.65 : 1;
     return assault / (1 + (this.getWorkerBoost(tower, "fireRate")?.value ?? 0));
   }
 
@@ -19353,7 +19528,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerRawFireInterval(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const stackMultiplier = this.getEngineStackStatMultiplier(tower, "fireIntervalReduction", now);
     const zeynepHasteMultiplier = this.zeynepHasteUntil > now ? 1 / this.zeynepHasteMultiplier : 1;
     const streakHasteMultiplier = this.getTowerStreakFireIntervalMultiplier(tower, now);
@@ -19405,7 +19580,7 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(minimumInterval, tower.definition.fireIntervalMs * levelMultiplier * stackMultiplier * zeynepHasteMultiplier * zeynepFormationMultiplier * streakHasteMultiplier * passiveMultiplier * melisNightmareHasteMultiplier * melisFocusKillHasteMultiplier);
   }
 
-  private isMelisGothicNightmareActiveForTower(tower: TowerModel, now = Date.now()) {
+  private isMelisGothicNightmareActiveForTower(tower: TowerModel, now = this.runtime.now()) {
     return tower.characterId === "archer" && (this.melisGothicNightmareOwnerUntil.get(tower.ownerId) ?? 0) > now;
   }
 
@@ -19415,7 +19590,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerDamageBreakdown(tower: TowerModel, debugOverdrive = false): ModifierBreakdown {
-    const now = Date.now();
+    const now = this.runtime.now();
     let breakdown: ModifierBreakdown = {
       base: calculateTowerScaledBaseDamage(tower.definition, tower.level),
       mods: []
@@ -19542,7 +19717,7 @@ export class MatchRoom extends Room<MatchState> {
    * namlunun `accuracyVsAir` payi (Irtifa Olcer); mermi hizina komsusuz
    * kulenin `projectileSpeedIsolated` payi (Sessiz Mevzi).
    */
-  private getTowerConditionalStatAdd(tower: TowerModel, stat: ModifierStat, modifiers: readonly Modifier[], now = Date.now()) {
+  private getTowerConditionalStatAdd(tower: TowerModel, stat: ModifierStat, modifiers: readonly Modifier[], now = this.runtime.now()) {
     if (stat === "turnRate") {
       let add = 0;
       if ((tower.killSnapUntil ?? 0) > now && this.towerHasUnlock(tower, "aim:killSnap")) add += KILL_SNAP_TURN_RATE;
@@ -19872,7 +20047,7 @@ export class MatchRoom extends Room<MatchState> {
 
   private getImpactFireRateDamageCompensation(tower: TowerModel) {
     const stackMultiplier = tower.definition.id === "warrior-6" ? this.getEngineStackMultiplier(tower, "ucube-fire-rate", getUcubeStackIntervalMultiplier(tower.focusStacks)) : 1;
-    const zeynepHasteMultiplier = this.zeynepHasteUntil > Date.now() ? 1 / this.zeynepHasteMultiplier : 1;
+    const zeynepHasteMultiplier = this.zeynepHasteUntil > this.runtime.now() ? 1 / this.zeynepHasteMultiplier : 1;
     // Yalnizligin atis hizi ekseni (bugun 1); `getTowerRawFireInterval` ile ayni.
     const passiveMultiplier = this.getAtakanPassiveMultiplier(tower) > 1 ? 1 / ATAKAN_ISOLATION_FIRE_RATE_MULTIPLIER : 1;
     const previousLevelMultiplier = getTowerLevelIntervalMultiplier(tower.definition.id, tower.level);
@@ -19937,7 +20112,7 @@ export class MatchRoom extends Room<MatchState> {
   private getServerSharedStat(tower: TowerModel, own: number, stat: "range" | "cooling", sustained?: boolean) {
     const servers = this.serverLinkIndex.get(tower.id);
     if (!servers) return own;
-    const now = Date.now();
+    const now = this.runtime.now();
     let best = own;
     for (const serverTower of servers) {
       if (!this.isServerLinkActive(serverTower, now)) continue;
@@ -19958,7 +20133,7 @@ export class MatchRoom extends Room<MatchState> {
   private getTowerServerKnowledgeBonus(tower: TowerModel | undefined, enemyType: EnemyType) {
     const servers = tower ? this.serverLinkIndex.get(tower.id) : undefined;
     if (!servers) return 0;
-    const now = Date.now();
+    const now = this.runtime.now();
     let best = 0;
     for (const serverTower of servers) {
       if (!this.isServerLinkActive(serverTower, now)) continue;
@@ -19972,7 +20147,7 @@ export class MatchRoom extends Room<MatchState> {
   private recordServerKnowledge(killerTower: TowerModel | undefined, enemy: EnemyModel) {
     const servers = killerTower ? this.serverLinkIndex.get(killerTower.id) : undefined;
     if (!servers) return;
-    const now = Date.now();
+    const now = this.runtime.now();
     for (const serverTower of servers) {
       if (!this.isServerLinkActive(serverTower, now)) continue;
       serverTower.serverKnowledge[enemy.type] = (serverTower.serverKnowledge[enemy.type] ?? 0) + 1;
@@ -19990,7 +20165,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getTowerStatus(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (tower.hp <= 0) {
       return "Devre Disi";
     }
@@ -20229,7 +20404,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private getMelisFocusProjectileSpeedMultiplier(tower: TowerModel) {
-    return tower.characterId === "archer" && tower.melisFocusUntil > Date.now()
+    return tower.characterId === "archer" && tower.melisFocusUntil > this.runtime.now()
       ? MELIS_FOCUS_PROJECTILE_SPEED_MULTIPLIER
       : 1;
   }
@@ -20240,7 +20415,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const target = this.enemies.get(tower.focusTargetId);
-    if (!target || target.melisDoubtUntil <= Date.now()) {
+    if (!target || target.melisDoubtUntil <= this.runtime.now()) {
       return 1;
     }
 
@@ -20280,7 +20455,7 @@ export class MatchRoom extends Room<MatchState> {
     if (definition) {
       let state: TowerStackRuntimeState | undefined = tower.stackStates[definition.id];
       while ((state?.count ?? 0) < desiredStacks) {
-        state = this.applyEngineStack(tower.stackStates, definition, { trigger: "activeSecond", now: Date.now(), maxCount: stackLimit });
+        state = this.applyEngineStack(tower.stackStates, definition, { trigger: "activeSecond", now: this.runtime.now(), maxCount: stackLimit });
       }
       tower.focusStacks = state?.count ?? 0;
     } else {
@@ -20346,7 +20521,7 @@ export class MatchRoom extends Room<MatchState> {
     // dusman aurada kaldikca her karede yenileniyor.
     const range = this.getTowerRange(tower);
     const affected = new Set<string>();
-    const now = Date.now();
+    const now = this.runtime.now();
     const lingerMs = getAuraSlowLingerMs(this.getTowerGrantState(tower).statusDurationMultiplier);
     const slowKind = this.getTowerSlowKind(tower.id);
     // Kriyojen Hat ve Lanet Fitili aura yavaslatmasina da biniyor.
@@ -20597,7 +20772,7 @@ export class MatchRoom extends Room<MatchState> {
    * basina kisa sure (ve kart/esya degisene kadar) onbellekte.
    */
   private getTowerLegendaryRhythm(tower: TowerModel) {
-    const now = Date.now();
+    const now = this.runtime.now();
     const cached = tower.legendaryRhythm;
     if (cached && cached.generation === this.grantGeneration && now >= cached.at && now - cached.at < LEGENDARY_RHYTHM_CACHE_MS) return cached;
     const nominal = 1000 / Math.max(1, this.getTowerEffectInterval(tower, false));
@@ -21205,7 +21380,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private startSympathy(ownerId?: string) {
-    this.sympathyUntil = Date.now() + scaleGameDuration(SYMPATHY_DURATION_MS);
+    this.sympathyUntil = this.runtime.now() + scaleGameDuration(SYMPATHY_DURATION_MS);
     this.sympathyBeamTier = ownerId ? this.getUltimateBeamTier(ownerId) : undefined;
     this.sympathyBledEnemyIds.clear();
     this.sympathyLinks = [];
@@ -21221,7 +21396,7 @@ export class MatchRoom extends Room<MatchState> {
    * ayrica bir sure takibi gerekmez.
    */
   private updateSympathy() {
-    const now = Date.now();
+    const now = this.runtime.now();
     if (this.sympathyUntil <= now) {
       if (this.sympathyLinks.length > 0) {
         this.sympathyLinks = [];
@@ -21284,7 +21459,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private advanceWaveGrowth() {
-    const now = Date.now();
+    const now = this.runtime.now();
     this.crystalTrapKeys.clear();
     for (const [key, until] of this.crystalTrapUntil) if (until <= now) this.crystalTrapUntil.delete(key);
     for (const tower of this.towers.values()) {
@@ -21330,7 +21505,7 @@ export class MatchRoom extends Room<MatchState> {
     }
     if (tower.focusTargetId === target.id) {
       const state = definition
-        ? this.applyEngineStack(tower.stackStates, definition, { trigger: "sameTarget", now: Date.now(), targetId: target.id })
+        ? this.applyEngineStack(tower.stackStates, definition, { trigger: "sameTarget", now: this.runtime.now(), targetId: target.id })
         : undefined;
       tower.focusStacks = state?.count ?? Math.min(10, tower.focusStacks + 1);
     } else {
@@ -21347,7 +21522,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!tower) {
       return;
     }
-    this.applyGrantedStacks(tower, "hit", Date.now(), target.id);
+    this.applyGrantedStacks(tower, "hit", this.runtime.now(), target.id);
 
     if (!this.enemies.has(target.id)) {
       this.runTowerTriggers(tower, "kill", { target });
@@ -21360,7 +21535,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.focusTargetId === target.id && tower.focusStacks >= 2 && this.enemies.has(target.id)) {
         if (tower.level >= 3) {
           const duration = applyStatusResistance(getObsessionFearDurationMs(tower.level), target.statusResistances.fear);
-          target.fearUntil = Math.max(target.fearUntil, Date.now() + scaleGameDuration(duration));
+          target.fearUntil = Math.max(target.fearUntil, this.runtime.now() + scaleGameDuration(duration));
         }
       }
       return;
@@ -21408,7 +21583,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.lastLuckMultiplier = 1;
       return;
     }
-    const now = Date.now();
+    const now = this.runtime.now();
     const windowWasOpen = tower.luckyWindowUntil > now;
     const result = resolveOnurGamblerShot(
       { misfortune: tower.misfortune, luckyWindowUntil: tower.luckyWindowUntil },
@@ -21490,7 +21665,7 @@ export class MatchRoom extends Room<MatchState> {
    * testlerde de calisiyor.
    */
   private sendComboStamp(kind: ComboStampKind, tower: TowerModel, options: { kills?: number; ownerOnly?: boolean } = {}) {
-    if (!this.comboStampThrottle.admit(kind, tower.ownerId, Date.now())) {
+    if (!this.comboStampThrottle.admit(kind, tower.ownerId, this.runtime.now())) {
       return false;
     }
     const message: ComboStampMessage = { kind, ownerId: tower.ownerId, towerId: tower.id, x: Math.round(tower.x), y: Math.round(tower.y) };
@@ -21563,6 +21738,89 @@ export class MatchRoom extends Room<MatchState> {
 
   private clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  /**
+   * Kaydedicinin saniyelik olcusu: varlik sayilari ve evre. Yalnizca boyut
+   * okuyor; dusman turleri icin dusmanlar bir kez geziliyor (saniyede bir).
+   */
+  getDebugCounts(): DebugRoomCounts {
+    const enemyKinds: Record<string, number> = {};
+    let air = 0;
+    let champions = 0;
+    let specials = 0;
+    for (const enemy of this.enemies.values()) {
+      enemyKinds[enemy.type] = (enemyKinds[enemy.type] ?? 0) + 1;
+      if (enemy.movementKind === "air") air += 1;
+      if (enemy.champion) champions += 1;
+      if (enemy.special) specials += 1;
+    }
+    let structures = 0;
+    for (const tower of this.towers.values()) if (!occupiesTowerSlot(tower.definition)) structures += 1;
+    return {
+      wave: this.wave,
+      phase: !this.gameStarted ? "lobby" : this.matchResult ? "over" : this.setupPhase ? "setup" : this.waveClearedAt !== 0 ? "cleared" : "combat",
+      players: this.state.players.size,
+      clients: this.clients.length,
+      enemies: this.enemies.size,
+      enemyKinds,
+      air,
+      champions,
+      specials,
+      towers: this.towers.size - structures,
+      structures,
+      projectiles: this.projectiles.size,
+      beams: this.beams.size,
+      drones: this.drones.size,
+      bodies: this.operatorBodies.size,
+      damageEvents: this.damageEvents.size,
+      killEvents: this.killEvents.size,
+      zones: this.zeynepRays.size + this.kinWaves.size + this.burnZones.size + this.melisCursePools.size,
+      shields: this.metalShields.length + this.mekaShields.length,
+      surges: this.counterSurges.length,
+      teamHealth: this.teamHealth,
+      kills: this.kills
+    };
+  }
+
+  /** Kaydin basligi ve ozeti: asama, kip, operatorler, sonuc. */
+  getDebugInfo(): DebugRoomInfo {
+    return {
+      runId: this.runId,
+      stage: this.stage,
+      mapScale: this.mapScale,
+      mode: this.creativeMode ? "creative" : this.tutorialMode ? "tutorial" : this.soloRoom ? "solo" : "coop",
+      operators: Array.from(this.state.players.values()).map((player) => player.characterId),
+      wave: this.wave,
+      gameStarted: this.gameStarted,
+      result: this.matchResult ?? ""
+    };
+  }
+
+  /**
+   * Belirlenimcilik parmak izi: oyun durumunun tam duyarlikli ozeti.
+   * Yeniden oynatma ayni tick'te ayni izi uretmeli (`tools/debug`). Adlar
+   * yok (kayitta takma ad); sayilar yuvarlanmiyor.
+   */
+  getDebugFingerprint(): string {
+    const parts: string[] = [`r=${this.matchResult ?? ""};w=${this.wave};h=${this.teamHealth};k=${this.kills};s=${this.setupPhase ? 1 : 0};c=${this.waveClearedAt}`];
+    for (const [id, player] of this.state.players) {
+      parts.push(`p${id}:${player.characterId}:${player.gold}:${player.goldSpent}:${player.experience}:${player.ownedCardIds.join(",")}:${player.ownedShopItemIds.join(",")}`);
+    }
+    for (const tower of this.towers.values()) {
+      parts.push(`t${tower.id}:${tower.definition.id}:${tower.level}:${tower.x},${tower.y}:${tower.hp}:${tower.ammo}:${tower.energy}:${tower.damageDealt}`);
+    }
+    for (const enemy of this.enemies.values()) {
+      parts.push(`e${enemy.id}:${enemy.type}:${enemy.hp}:${enemy.shield}:${enemy.x},${enemy.y}`);
+    }
+    for (const drone of this.drones.values()) {
+      parts.push(`d${drone.id}:${drone.x},${drone.y}:${drone.cargo ?? 0}`);
+    }
+    for (const body of this.operatorBodies.values()) {
+      parts.push(`b${body.ownerId}:${body.x},${body.y}:${body.hp}`);
+    }
+    parts.push(`n${this.projectiles.size}:${this.beams.size}:${this.damageEvents.size}`);
+    return parts.join("|");
   }
 
   private createPerfCounters(): ServerPerfCounters {

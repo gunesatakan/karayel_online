@@ -408,7 +408,8 @@ import { MATCH_END_TIMING, getAtlasLineSeconds, shouldPlayMatchEndSequence, type
 import { drawBuildZones, getBuildZoneRenderKey, isPlacementBlockedByBuildZone } from "../vfx/build-zones";
 import type { BuildZoneMap } from "@karayel/shared";
 import { CHARACTER_CLASS_COLORS, getCharacterColorCss, getCharacterColorValue } from "../character-colors";
-import { reportTelemetryError, runTelemetry } from "../telemetry";
+import { isTelemetryActive, reportTelemetryError, runTelemetry } from "../telemetry";
+import { MatchDebugSampler, browserFamily, osFamily } from "../match-debug";
 import { assetUrl } from "../asset-url";
 // Muzik kaydiricisinin deposu ve varsayilani menudeki lobi muzigiyle ortak.
 import { DEFAULT_MUSIC_VOLUME, MUSIC_VOLUME_STORAGE_KEY } from "../menu-music";
@@ -1778,6 +1779,8 @@ export class GameScene extends Phaser.Scene {
    * yavas.
    */
   private droppedSnapshotCount = 0;
+  /** Mac kaydedicisinin istemci ornegi (`match-debug.ts`); yalnizca izinli oyuncuda gonderiyor. */
+  private matchDebug?: MatchDebugSampler;
   private lastPlaybackAlpha = 0;
   private snapshotBuffer: BufferedSnapshot[] = [];
   private latestPerfSnapshot?: GameSnapshot;
@@ -2037,7 +2040,15 @@ export class GameScene extends Phaser.Scene {
     // kamera o anki olcuden kuruldugu icin yeniden kurulmasi gerekiyor.
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
     this.installMapPointerInput();
+    // Mac kaydedicisi: sekme gizlenmesi ve WebGL kaybi kare olcusunu acikliyor.
+    const onDebugVisibility = () => this.matchDebug?.noteVisibility(document.visibilityState === "hidden");
+    const onDebugContextLost = () => this.matchDebug?.noteContextLost();
+    document.addEventListener("visibilitychange", onDebugVisibility);
+    this.game.events.on("contextlost", onDebugContextLost);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.removeEventListener("visibilitychange", onDebugVisibility);
+      this.game.events.off("contextlost", onDebugContextLost);
+      this.matchDebug = undefined;
       // Bounty Board: menuye donus oynanisi durdurur; bekleyen kayit hemen gider.
       arcade.gameplayStop();
       arcade.flushStorage();
@@ -2154,6 +2165,7 @@ export class GameScene extends Phaser.Scene {
     const now = performance.now();
     const frameMs = this.lastVfxFrameAt > 0 ? now - this.lastVfxFrameAt : 16.7;
     this.lastVfxFrameAt = now;
+    this.matchDebug?.noteFrame(frameMs, now);
     this.vfxFrameCost = 0;
     this.renderPlaybackFrame(now);
     const vfxStart = performance.now();
@@ -2166,6 +2178,10 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("vfx", eventsMs);
     // LOD olcusu: isinlar + mermi efektleri + olaylar, ve kare araligi.
     this.vfxLod.note(this.vfxFrameCost + eventsMs, frameMs, now);
+    if (this.matchDebug) {
+      this.matchDebug.noteLod(this.vfxLod.level);
+      this.matchDebug.tick(now);
+    }
     this.damageNumbers?.update(now);
     this.levelLabels?.update(now);
     this.updateAnimatedTowers(now);
@@ -6558,6 +6574,7 @@ export class GameScene extends Phaser.Scene {
       this.droppedSnapshotCount += this.snapshotBuffer.length - 120;
       this.snapshotBuffer.splice(0, this.snapshotBuffer.length - 120);
     }
+    this.matchDebug?.noteSnapshot(this.snapshotBuffer.length, this.droppedSnapshotCount);
     this.recordClientPerfSection("snapshotRecv", performance.now() - receiveStart);
   }
 
@@ -6796,6 +6813,7 @@ export class GameScene extends Phaser.Scene {
     this.drainPendingEffects(now);
     const frame = this.getPlaybackFrame(now);
     if (!frame) {
+      this.matchDebug?.noteStarve();
       return;
     }
 
@@ -7156,6 +7174,7 @@ export class GameScene extends Phaser.Scene {
     // Yeni baglanti: sonuc bu baglantinin ilk sonucsuz snapshot'indan once
     // gelirse istemci sonuctan sonra dondu, mac sonu sahnesi oynanmiyor.
     this.liveSinceBind = false;
+    this.matchDebug = this.createMatchDebugSampler(room);
     room.onMessage("bomber:explode", (message: { x: number; y: number; radius: number; killed: boolean }) => {
       if (!message || ![message.x, message.y, message.radius].every(Number.isFinite) || message.radius <= 0) return;
       const diameter = Math.min(1000, message.radius * 2);
@@ -12950,6 +12969,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const ping = Math.max(0, Math.round(performance.now() - message.sentAt));
     runTelemetry.notePing(ping);
+    this.matchDebug?.notePing(ping, (message.bufferedAmount ?? 0) / 1024);
     this.pingSamples.push(ping);
     this.pingSamples = this.pingSamples.slice(-5);
     const averagePing = Math.round(this.pingSamples.reduce((total, sample) => total + sample, 0) / this.pingSamples.length);
@@ -12968,6 +12988,43 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       pingTone: averagePing < 90 && jitter < 35 ? "good" : averagePing < 180 && jitter < 80 ? "warn" : "bad",
       // Kuyruk nadir ama uzun; metinden cikip ipucunda duruyor.
       pingDetail: queueKb > 0 ? t("scene.ping.detailQueue", { ping: averagePing, jitter, queue: queueKb }) : t("scene.ping.detail", { ping: averagePing, jitter })
+    });
+  }
+
+  /**
+   * Mac kaydedicisinin istemci ornegi: bes saniyede bir, ayni oda
+   * baglantisindan (`debug:client`). Izin anonim veri ayarindan
+   * (`isTelemetryActive`): kapaliysa hicbir sey toplanmiyor ve gitmiyor.
+   */
+  private createMatchDebugSampler(room: Room) {
+    const game = this.game;
+    return new MatchDebugSampler({
+      now: () => performance.now(),
+      isEnabled: () => isTelemetryActive(),
+      send: (sample) => {
+        if (this.room === room) room.send("debug:client", sample);
+      },
+      device: () => {
+        const nav = navigator as Navigator & { deviceMemory?: number };
+        const userAgent = nav.userAgent ?? "";
+        const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+        const shortSide = Math.min(window.screen?.width ?? window.innerWidth, window.screen?.height ?? window.innerHeight);
+        return {
+          dpr: Math.round((window.devicePixelRatio ?? 1) * 100) / 100,
+          cw: game.canvas?.width,
+          ch: game.canvas?.height,
+          cores: typeof nav.hardwareConcurrency === "number" ? nav.hardwareConcurrency : undefined,
+          memGb: typeof nav.deviceMemory === "number" ? nav.deviceMemory : undefined,
+          device: coarse ? (shortSide >= 600 ? "tablet" : "mobile") : "desktop",
+          browser: browserFamily(userAgent),
+          os: osFamily(userAgent, nav.maxTouchPoints ?? 0),
+          renderer: game.renderer?.type === Phaser.WEBGL ? "webgl" : "canvas"
+        };
+      },
+      heap: () => {
+        const memory = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+        return memory ? { usedMb: memory.usedJSHeapSize / 1048576, limitMb: memory.jsHeapSizeLimit / 1048576 } : undefined;
+      }
     });
   }
 
@@ -13001,6 +13058,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
   }
 
   private recordClientPerfSection(section: string, ms: number) {
+    this.matchDebug?.noteSection(section, ms);
     const samples = this.clientPerfSectionSamples.get(section) ?? [];
     const now = performance.now();
     samples.push({ at: now, ms });
