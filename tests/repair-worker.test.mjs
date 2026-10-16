@@ -260,3 +260,48 @@ test("çevre temizse tamirci haritanın kalanına bakar", () => {
 
   assert.equal(room.getRepairWorkerTarget(tamirci).id, uzak.id, "cember disindaki yapi hic secilmedi");
 });
+
+// Uretim kaydi (2026-10-16, dalga 8-9): yuk, onarilan can geri bolunerek
+// dusuluyordu ve kayan nokta 2e-16 parcalik bir kirinti birakiyordu. Kirinti
+// sifirdan buyuk oldugu icin isci merkeze donmuyor, yazdigi 1e-15 can duvarin
+// canina eklenince kayboluyordu: isci duvarin ustunde sonsuza kadar bekledi.
+test("son parçayı harcayan tamircinin yükü tam sıfıra iner", () => {
+  const room = oda();
+  const duvar = kur(room, "wall-1");
+  // Eski formulde 8.7e-17 kirinti birakan gercek bir cift.
+  duvar.hp = 8.047899999999998;
+  const tamirci = tamirciTut(room);
+  tamirci.cargo = 0.0133;
+  onart(room, tamirci, duvar, 0.016);
+  assert.ok(duvar.hp > 8.0479, "onarim yapilmadi");
+  assert.equal(tamirci.cargo, 0, `yukte kirinti kaldi: ${tamirci.cargo}`);
+});
+
+test("kırıntı yüklü tamirci duvarda takılmaz, merkeze parça almaya gider", () => {
+  const room = oda();
+  const nokta = findBuildableSpot(room, REPAIR_DEPOT_TOWER_ID);
+  const merkez = merkezKur(room, nokta.x, nokta.y);
+  merkez.repairParts = 10;
+  const duvar = kur(room, "wall-1");
+  duvar.hp = 40;
+  const tamirci = tamirciTut(room);
+  tamirci.cargo = 2.1684043449710089e-16; // kayittaki deger
+  tamirci.targetTowerId = duvar.id;
+  tamirci.x = duvar.x;
+  tamirci.y = duvar.y;
+  for (let tick = 0; tick < 60 * 30 && (tamirci.cargo ?? 0) < 1; tick += 1) room.updateDrones(16, 0.016);
+  assert.ok(tamirci.cargo >= 1, `tamirci merkezden parca almadi (yuk ${tamirci.cargo})`);
+  for (let tick = 0; tick < 60 * 30 && duvar.hp < duvar.maxHp; tick += 1) room.updateDrones(16, 0.016);
+  assert.equal(duvar.hp, duvar.maxHp, "duvar onarilmadi");
+});
+
+test("boşta kalan tamirci dolmuş eski hedefini bırakır", () => {
+  const room = oda();
+  const duvar = kur(room, "wall-1");
+  duvar.hp = duvar.maxHp; // altinla onarilmis: tamirciye is kalmadi
+  const tamirci = tamirciTut(room);
+  tamirci.targetTowerId = duvar.id;
+  room.updateDrones(16, 0.016);
+  assert.equal(tamirci.targetTowerId, "");
+  assert.equal(tamirci.repairing, undefined);
+});

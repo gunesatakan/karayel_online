@@ -638,6 +638,16 @@ const WORKER_CONTACT_RADIUS = 16;
  * Tamirci ayrildiginda odul de hemen bitsin.
  */
 const REPAIR_WINDOW_LINGER_MS = 400;
+/**
+ * Tamircinin yukunde "bos" sayilan parca kirintisi.
+ *
+ * Yuk, onarilan can geri bolunerek dusuluyor (`(hp - onceki) / 10`); kayan
+ * nokta bu cikarmada 1e-16 mertebesinde bir artik birakabiliyor. Artik sifirdan
+ * buyuk oldugu icin isci merkeze parca almaya donmuyor, ama yaziyor oldugu can
+ * (1e-15) duvarin canina eklenince yuvarlanip kayboluyor: isci duvarin ustunde
+ * sonsuza kadar "onariyormus gibi" bekliyordu (uretim kaydi, 2026-10-16).
+ */
+const REPAIR_CARGO_EPSILON = 1e-6;
 /** Tamir Atesi: onarim suresince hasar. */
 const REPAIR_DAMAGE_BONUS = 0.45;
 /** Sogutmali Kaynak: onarim suresince soguma. */
@@ -12523,6 +12533,8 @@ export class MatchRoom extends Room<MatchState> {
    * sebep.
    */
   private updateRepairWorker(worker: DroneModel, seconds: number) {
+    // Kirinti bos yuk sayilir (bkz. `REPAIR_CARGO_EPSILON`).
+    if ((worker.cargo ?? 0) > 0 && (worker.cargo ?? 0) <= REPAIR_CARGO_EPSILON) worker.cargo = 0;
     if ((worker.cargo ?? 0) <= 0 && worker.pendingAssignment) { worker.assignment = worker.pendingAssignment; worker.pendingAssignment = undefined; }
     worker.repairing = undefined;
     if ((worker.cargo ?? 0) <= 0) {
@@ -12539,7 +12551,7 @@ export class MatchRoom extends Room<MatchState> {
       if (nexus && this.moveLogisticsWorker(worker, nexus.x, nexus.y, seconds)) {
         const healed = Math.min(MAX_TEAM_HEALTH - this.teamHealth, WORKER_NEXUS_REPAIR_PER_SECOND * seconds, (worker.cargo ?? 0) * REPAIR_HP_PER_PART);
         this.teamHealth += healed;
-        worker.cargo = Math.max(0, (worker.cargo ?? 0) - healed / REPAIR_HP_PER_PART);
+        this.spendRepairCargo(worker, healed);
         worker.repairing = true;
       }
       return;
@@ -12549,6 +12561,9 @@ export class MatchRoom extends Room<MatchState> {
       // Bosta: merkeze don. Merkez yoksa oldugu yerde bekler -- iscinin
       // haritanin ortasinda durdugu yer bir karar degil, sadece son isinin
       // bittigi yer; merkez o keyfiligi oyuncunun karari haline getiriyor.
+      // Baska bir yoldan (altinla onarim, yeniden insa) dolan eski hedef
+      // birakiliyor; yoksa isci bos dururken o duvara bagli gorunurdu.
+      worker.targetTowerId = "";
       const depot = this.getRepairDepot(worker);
       if (depot) {
         this.moveLogisticsWorker(worker, depot.x, depot.y, seconds);
@@ -12567,7 +12582,7 @@ export class MatchRoom extends Room<MatchState> {
     const previousHp = target.hp;
     const wasCritical = previousHp / Math.max(1, target.maxHp) <= 0.2;
     target.hp = Math.min(target.maxHp, target.hp + Math.min(this.getWorkerRepairPerSecond(worker) * seconds, (worker.cargo ?? 0) * REPAIR_HP_PER_PART));
-    worker.cargo = Math.max(0, (worker.cargo ?? 0) - (target.hp - previousHp) / REPAIR_HP_PER_PART);
+    this.spendRepairCargo(worker, target.hp - previousHp);
     worker.repairing = target.hp > previousHp || undefined;
     if (worker.repairing && this.hasWorkerSkill(worker, "repair-thermal-welder")) {
       target.heatLocked = false;
@@ -12596,6 +12611,12 @@ export class MatchRoom extends Room<MatchState> {
     if (wasCritical && target.hp / Math.max(1, target.maxHp) > 0.2 && this.hasWorkerSkill(worker, "repair-breach-engineer")) {
       target.repairBreachUntil = this.runtime.now() + 5_000;
     }
+  }
+
+  /** Yazilan can kadar parca yukten dusulur; kirinti kalirsa yuk bosalir. */
+  private spendRepairCargo(worker: DroneModel, repairedHp: number) {
+    const remaining = (worker.cargo ?? 0) - repairedHp / REPAIR_HP_PER_PART;
+    worker.cargo = remaining > REPAIR_CARGO_EPSILON ? remaining : 0;
   }
 
   /**
