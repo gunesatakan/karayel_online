@@ -354,3 +354,44 @@ test("kaynak: seri yalnizca sunucudan, kamera yonetmenden, HUD olaylari eslesiyo
   assert.ok(!announce.includes("this.playKillStreakAnnouncement(rule, true)"), "kendi klibin sira aninda calmiyor");
   assert.ok(body("showKillStreakAnnouncement").includes("this.playKillStreakAnnouncement(rule, true)"), "kendi klibin afisle birlikte");
 });
+
+test("kaynak: seri afisi kompakt ust plaka, temali hareket geri geldi, hareket azaltmada yerinde", async () => {
+  const client = await readFile(new URL("../apps/web/src/scenes/GameScene.ts", import.meta.url), "utf8");
+  const start = client.indexOf("private showKillStreakAnnouncement(");
+  assert.ok(start >= 0, "showKillStreakAnnouncement yok");
+  const show = client.slice(start, client.indexOf("\n  private ", start + 10));
+  const constant = (name) => Number(client.match(new RegExp(`const ${name} = (\\d+);`))?.[1]);
+
+  // Boyut: en fazla 280 CSS px genislik, 48-64 px yukseklik, HUD'un altinda.
+  assert.equal(constant("STREAK_PLATE_MAX_WIDTH_PX"), 280);
+  const height = constant("STREAK_PLATE_HEIGHT_PX");
+  assert.ok(height >= 48 && height <= 64, `plaka yuksekligi ${height}`);
+  // Olculer gercek CSS pikseli: yuksek DPR'de tuval CSS'ten genis (375 CSS = 780 oyun px).
+  assert.ok(show.includes("const gamePxPerCss = Math.max(0.01, this.scale.displayScale.x);"), "tuval/CSS orani");
+  assert.ok(show.includes("const cssPx = gamePxPerCss / zoom;"), "dunya birimi basina CSS pikseli");
+  assert.ok(show.includes("Math.min(STREAK_PLATE_MAX_WIDTH_PX, (view.width * zoom) / gamePxPerCss - 24)"), "plaka ekran genisligine kenar payiyla sigiyor");
+  assert.ok(show.includes("view.height * this.arenaChrome.topRatio + (8 + height / 2) * cssPx"), "plaka HUD'un hemen altinda");
+  assert.ok(show.includes("setScale(cssPx)"), "kapsayici CSS pikseline olcekli");
+  assert.ok(!/\/ zoom/.test(show.replace("gamePxPerCss / zoom", "")),"plaka icinde ham zoom bolmesi kalmadi");
+  assert.ok(show.includes("fontSize: \"11px\""), "buff satiri 11 CSS px");
+  assert.ok(show.includes("setResolution(Math.max(1, gamePxPerCss))"), "yazilar tuval cozunurlugunde");
+  assert.ok(!show.includes("zeynep-puppet-hands"), "kukla elleri resmi (390x260) afise donmedi");
+  assert.ok(!client.includes("fitStreakBannerToCamera") && !client.includes("getKillStreakAnchor"), "eski dev afis yerlesimi donmedi");
+
+  // Hareket: kayarak giris, titreme, parazit; sure siraya uyuyor.
+  assert.ok(show.includes("Back.easeOut"), "kayarak giris");
+  assert.ok(/angle: \{ from: -tilt, to: tilt \}/.test(show), "titreme");
+  assert.ok(show.includes("glitches") && show.includes("\"Stepped\""), "parazit seritleri");
+  const hold = constant("STREAK_PLATE_HOLD_MS");
+  assert.ok(hold + 4 * 60 + 220 <= 2000 && hold >= 1200, "toplam ekranda kalis ~1.5-2 sn");
+  assert.ok(show.includes("this.scheduleStreakBannerExit(container, y - 8 * cssPx, holdMs, 220)"), "cikis sira uzerinden");
+
+  // Hareket azaltma: once kontrol, yerinde sonen plaka, hareket tween'i yok.
+  const reduced = show.indexOf("if (this.feedback?.reducedMotion)");
+  assert.ok(reduced >= 0 && reduced < show.indexOf("this.tweens.add("), "hareket azaltma tween'lerden once");
+  assert.ok(/if \(this\.feedback\?\.reducedMotion\) \{[^}]*this\.settleStreakBannerStill\(container, y, STREAK_PLATE_HOLD_MS, 200\);\s*return;/.test(show), "yerinde belirip soner");
+
+  // Sarsinti/titresim yalnizca yonetmenden (2 px, kendi serin); kamera dogrudan sallanmiyor.
+  assert.ok(show.includes("this.feedback?.emit(\"streak\", { own: true })"));
+  assert.ok(!show.includes("shakeCamera("), "Melis'in uzun sarsintisi donmedi");
+});

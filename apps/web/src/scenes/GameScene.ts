@@ -871,8 +871,11 @@ function canSetMediaVolume() {
 const STREAK_GLOW_DEPTH = 4.6;
 /** Parlamanin nabzi (rad/ms): ~0.7 sn'de bir; hareket azaltmada sabit. */
 const STREAK_GLOW_PULSE_RATE = (Math.PI * 2) / 700;
-/** Melis afisinin kendi titremesi; genligi yonetmen 3 px ile sinirliyor. */
-const MELIS_STREAK_VIBRATE_MS = 15;
+/** Seri afisi: kompakt ust plaka (CSS px); ortadaki savas alanina inmiyor. */
+const STREAK_PLATE_MAX_WIDTH_PX = 280;
+const STREAK_PLATE_HEIGHT_PX = 56;
+/** Afisin ekranda kalisi (giristen cikisa); kademe basina +60 ms. */
+const STREAK_PLATE_HOLD_MS = 1500;
 
 type KillStreakVisualTheme = {
   style: "brutal" | "command" | "creepy" | "precision" | "arcane" | "sanctuary" | "bulwark" | "storm";
@@ -11927,37 +11930,286 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     });
   }
 
-  /** Compact announcement; sound and rewards keep their existing queue timing. */
+  /**
+   * Kendi serinin afisi: kompakt ust bildirim, ama karakter temasiyla.
+   *
+   * Eski afisler (titreyen, parazitli, kayarak gelen tema plakalari) ekranin
+   * ortasina kadar iniyordu; 703e911 onlari duz bir plakayla degistirdi. Tema
+   * ve hareket geri geldi, boyut gelmedi: plaka en fazla 280 CSS px genislik,
+   * `STREAK_PLATE_HEIGHT_PX` yukseklik, HUD'un hemen altinda; kapsayici
+   * CSS pikseline olcekli (`displayScale / zoom`), yani olculer her DPR'de
+   * gercek CSS pikseli. Hicbir tween plakayi seridin
+   * ortasina tasimiyor: giris 14 px yukaridan, cikis 8 px yukari.
+   *
+   * Sure eskisi gibi ~1.7-1.9 sn (`STREAK_PLATE_HOLD_MS` + kademe), sira
+   * (`StreakBannerQueue`, `hastenStreakBanner`) degismedi. Ses klibi burada,
+   * afis ekrana geldigi an; sarsinti ve titresim yonetmenden ("streak": 2 px,
+   * yalnizca kendi serin, hareket azaltmada yok). Hareket azaltmada ayni
+   * plaka yerinde belirip soner (`settleStreakBannerStill`).
+   *
+   * Zeynep'in kukla elleri bu boyda okunmuyor (390x260 bir resimdi); yerine
+   * plakaya inen ince kukla iplari. Melis'in yuzu kucuk bir amblem olarak
+   * solda kaliyor.
+   */
   private showKillStreakAnnouncement(item: StreakBannerItem) {
     const { characterId, rule } = item;
     this.playKillStreakAnnouncement(rule, true);
+    this.feedback?.emit("streak", { own: true });
     const theme = getKillStreakVisualTheme(characterId, rule);
+    const chaos = rule.chaos;
     const view = getArenaCameraView(this.selectedMapData, this.arenaChrome, this.getWorldSize());
     const zoom = Math.max(0.01, this.cameras.main.zoom);
-    const width = Math.min(280, view.width * zoom - 24);
-    const height = 48;
+    // Plaka icinde birim CSS pikseli: tuval yuksek DPR'de CSS'ten genis (375 CSS
+    // genislikte 780 oyun pikseli), olcu ve yazilar her ekranda ayni boyda.
+    const gamePxPerCss = Math.max(0.01, this.scale.displayScale.x);
+    const cssPx = gamePxPerCss / zoom;
+    const width = Math.min(STREAK_PLATE_MAX_WIDTH_PX, (view.width * zoom) / gamePxPerCss - 24);
+    const height = STREAK_PLATE_HEIGHT_PX;
+    const halfW = width / 2;
+    const halfH = height / 2;
     const x = view.left + view.width / 2;
-    const y = view.top + view.height * this.arenaChrome.topRatio + (8 + height / 2) / zoom;
-    const container = this.add.container(x, y).setDepth(80).setAlpha(0).setScale(1 / zoom);
+    const y = view.top + view.height * this.arenaChrome.topRatio + (8 + height / 2) * cssPx;
+    const container = this.add.container(x, y).setDepth(80).setAlpha(0).setScale(cssPx);
+
+    // Kirik koseli plaka; kademe yukseldikce kesik buyuyor.
+    const cut = 7 + chaos * 2;
+    const outline = [
+      new Phaser.Geom.Point(-halfW + cut, -halfH),
+      new Phaser.Geom.Point(halfW, -halfH),
+      new Phaser.Geom.Point(halfW, halfH - cut),
+      new Phaser.Geom.Point(halfW - cut, halfH),
+      new Phaser.Geom.Point(-halfW, halfH),
+      new Phaser.Geom.Point(-halfW, -halfH + cut)
+    ];
     const plate = this.add.graphics();
-    plate.fillStyle(0x0b1424, 0.92);
-    plate.fillRoundedRect(-width / 2, -height / 2, width, height, 8);
-    plate.lineStyle(1, theme.primary, 0.75);
-    plate.strokeRoundedRect(-width / 2, -height / 2, width, height, 8);
-    const name = characters.find(character => character.id === characterId)?.displayName ?? this.selectedCharacter.displayName;
-    const title = this.add.text(0, -9, `${name} · ${rule.label}`, {
-      fontFamily: "Arial, sans-serif", fontSize: "14px", fontStyle: "bold", color: theme.textColor
-    }).setOrigin(0.5);
-    const bonus = this.add.text(0, 10, formatBannerSecondLine(getKillStreakBuffText(rule.tier), this.cosmetics.title), {
-      fontFamily: "Arial, sans-serif", fontSize: "12px", color: "#fde68a"
-    }).setOrigin(0.5);
-    for (const text of [title, bonus]) {
-      if (text.width > width - 24) text.setScale((width - 24) / text.width);
+    plate.fillStyle(theme.fill, 0.94);
+    plate.fillPoints(outline, true);
+    plate.lineStyle(1.5 + chaos * 0.4, theme.primary, 0.92);
+    plate.strokePoints(outline, true);
+    plate.lineStyle(1.5, theme.secondary, 0.8);
+    plate.lineBetween(-halfW + 12, halfH - 3, -halfW + 26, -halfH + 3);
+    plate.lineBetween(halfW - 30, -halfH + 3, halfW - 16, halfH - 3);
+    plate.lineStyle(1.5, theme.accent, 0.7);
+    plate.lineBetween(-halfW + 4, halfH - cut - 4, -halfW + 14, halfH - 3);
+    if (chaos >= 3) {
+      plate.lineStyle(1, 0xffffff, 0.3);
+      plate.lineBetween(-halfW * 0.3, -halfH + 2, -halfW * 0.3 + 12, halfH - 2);
+      plate.lineBetween(halfW * 0.45, -halfH + 2, halfW * 0.45 + 12, halfH - 2);
     }
-    container.add([plate, title, bonus]);
+    if (theme.style === "command") {
+      // Kukla iplari: ustten plakaya inen ince cizgiler, uclarinda dugum.
+      // Ortadaki motif yazisinin iki yaninda, kenar cizgilerinin icinde.
+      plate.lineStyle(1.5, theme.secondary, 0.75);
+      for (const offset of [-0.72, -0.58, 0.58, 0.72]) {
+        const stringX = halfW * offset;
+        plate.lineBetween(stringX, -halfH, stringX, -halfH + 10);
+        plate.fillStyle(theme.accent, 0.85);
+        plate.fillRect(stringX - 1.5, -halfH + 10, 3, 3);
+      }
+    }
+
+    // Melis: yuz amblemi solda, iki renkli hayaletiyle (ADD, koyu plakada).
+    const imageObjects: Phaser.GameObjects.Image[] = [];
+    let contentX = 0;
+    // Kenar cizgileri (kenardan 12-26 px) yazinin altinda kalmasin.
+    let contentWidth = width - 44;
+    const imageKey = theme.style === "creepy" ? theme.imageKey ?? "melis-creepy" : undefined;
+    if (imageKey && this.textures.exists(imageKey)) {
+      const source = this.textures.get(imageKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+      const imageHeight = height * (imageKey === "melis-creepy-legend" ? 0.92 : 0.84);
+      const imageWidth = Math.min(48, imageHeight * (source.width / Math.max(1, source.height)));
+      const imageX = -halfW + 8 + imageWidth / 2;
+      const angle = getMelisKillStreakImageAngle(imageKey, chaos) * 0.6;
+      const make = (dx: number, dy: number) => this.add.image(imageX + dx, dy, imageKey)
+        .setOrigin(0.5)
+        .setDisplaySize(imageWidth, imageHeight)
+        .setAngle(angle)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      imageObjects.push(
+        make(2 + chaos * 0.5, -1).setTint(theme.secondary).setAlpha(0.22),
+        make(-2 - chaos * 0.5, 1).setTint(theme.primary).setAlpha(0.2),
+        make(0, 0).setAlpha(0.8)
+      );
+      contentX = (imageWidth + 8) / 2;
+      contentWidth = width - imageWidth - 30;
+    }
+
+    const name = characters.find(character => character.id === characterId)?.displayName ?? this.selectedCharacter.displayName;
+    const message = `${name}! ${rule.label}!`;
+    const titleY = -3;
+    const baseStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "Impact, Arial Black, Arial",
+      fontSize: "20px",
+      fontStyle: "bold",
+      color: theme.textColor,
+      stroke: theme.strokeColor,
+      strokeThickness: 4
+    };
+    const creepy = theme.style === "creepy";
+    const coldGhost = this.add.text(contentX + 1.5 + chaos * 0.5, titleY + 1, message, {
+      ...baseStyle,
+      color: toCssColor(theme.secondary),
+      stroke: "#020617",
+      strokeThickness: 2
+    }).setOrigin(0.5).setAngle(creepy ? 0 : -1 - chaos * 0.2).setAlpha(creepy ? 0.32 : 0.62 + chaos * 0.04);
+    const hotGhost = this.add.text(contentX - 1.5 - chaos * 0.5, titleY - 1, message, {
+      ...baseStyle,
+      color: toCssColor(theme.primary),
+      stroke: "#020617",
+      strokeThickness: 2
+    }).setOrigin(0.5).setAngle(creepy ? 0 : 0.8 + chaos * 0.2).setAlpha(creepy ? 0.34 : 0.66 + chaos * 0.04);
+    const mainText = this.add.text(contentX, titleY, message, {
+      ...baseStyle,
+      stroke: creepy ? "#02010a" : toCssColor(theme.fill)
+    }).setOrigin(0.5).setAngle(creepy ? -1 - chaos * 0.2 : chaos >= 4 ? -1.5 : -0.8);
+    const titleScale = Math.min(1, contentWidth / Math.max(1, mainText.width));
+    for (const text of [coldGhost, hotGhost, mainText]) {
+      text.setScale(titleScale);
+    }
+
+    const command = theme.style === "command";
+    const motifText = this.add.text(command ? contentX : contentX - contentWidth / 2 + (imageObjects.length > 0 ? 0 : 6), -halfH + 7, theme.motif, {
+      fontFamily: "Arial Black, Arial",
+      fontSize: "9px",
+      color: toCssColor(theme.accent),
+      stroke: "#020617",
+      strokeThickness: 2
+    }).setOrigin(command ? 0.5 : 0, 0.5).setAlpha(0.8);
+    if (motifText.width > contentWidth * 0.8) {
+      motifText.setScale((contentWidth * 0.8) / motifText.width);
+    }
+
+    // Parazit seritleri (Melis): yazinin ustunde kisa yanip sonen kesitler.
+    const glitches: Phaser.GameObjects.Rectangle[] = [];
+    if (creepy) {
+      const count = 5 + chaos * 2;
+      for (let index = 0; index < count; index += 1) {
+        const color = index % 3 === 0 ? theme.primary : index % 3 === 1 ? theme.secondary : theme.accent;
+        glitches.push(this.add.rectangle(
+          Phaser.Math.Between(-halfW + 12, halfW - 12),
+          Phaser.Math.Between(-halfH + 4, halfH - 4),
+          Phaser.Math.Between(8, 22 + chaos * 6),
+          Phaser.Math.Between(1, 2 + Math.ceil(chaos / 2)),
+          color,
+          0.2 + chaos * 0.04
+        ).setBlendMode(Phaser.BlendModes.ADD));
+      }
+    }
+
+    const parts: Phaser.GameObjects.GameObject[] = [plate, coldGhost, hotGhost, mainText, motifText, ...glitches, ...imageObjects];
+    // Ikinci satir en ustte: serinin gercek gucu, sigarsa bu tarayicinin unvani.
+    const buffLine = formatBannerSecondLine(getKillStreakBuffText(rule.tier), this.cosmetics.title);
+    if (buffLine) {
+      const bonus = this.add.text(contentX, halfH - 9, buffLine, {
+        fontFamily: "Arial Black, Arial",
+        fontSize: "11px",
+        color: "#fde68a",
+        stroke: "#020617",
+        strokeThickness: 3
+      }).setOrigin(0.5);
+      if (bonus.width > contentWidth) {
+        bonus.setScale(contentWidth / bonus.width);
+      }
+      parts.push(bonus);
+    }
+    // Yazilar CSS boyunda ama tuval cozunurlugunde: buyutulunce bulaniklasmasin.
+    for (const part of parts) {
+      if (part instanceof Phaser.GameObjects.Text) part.setResolution(Math.max(1, gamePxPerCss));
+    }
+    container.add(parts);
     this.rampageContainer = container;
-    // A stationary fade respects reduced motion and never crosses the battlefield.
-    this.settleStreakBannerStill(container, y, 1500, 200);
+    const holdMs = STREAK_PLATE_HOLD_MS + chaos * 60;
+    if (this.feedback?.reducedMotion) {
+      // Kayma, sallanma, parazit yok: yerinde belirip sonen ayni plaka.
+      this.settleStreakBannerStill(container, y, STREAK_PLATE_HOLD_MS, 200);
+      return;
+    }
+
+    // Giris: HUD'un altindan 14 px kayarak, hafif asarak.
+    container.setY(y - 14 * cssPx);
+    this.tweens.add({
+      targets: container,
+      y,
+      alpha: 1,
+      duration: Math.max(150, 240 - chaos * 20),
+      ease: "Back.easeOut"
+    });
+    // Titreme: en fazla ~1.7 derece (280 px plakada kenarlar ~4 px oynuyor).
+    const tilt = 0.5 + chaos * 0.3;
+    this.tweens.add({
+      targets: container,
+      angle: { from: -tilt, to: tilt },
+      yoyo: true,
+      // ~0.6-0.9 sn: plaka okunacak kadar erken duruyor.
+      repeat: 2 + Math.round(chaos * 1.5),
+      duration: Math.max(40, 80 - chaos * 8),
+      ease: "Sine.easeInOut",
+      onComplete: () => container.setAngle(0)
+    });
+    // Yatay kesik: kademe 2+ plaka girerken birkac kare yana atliyor.
+    if (chaos >= 2) {
+      this.tweens.add({
+        targets: container,
+        x: x + (1 + chaos) * cssPx,
+        yoyo: true,
+        repeat: 1 + chaos,
+        delay: 120,
+        duration: 40,
+        ease: "Stepped",
+        onComplete: () => container.setX(x)
+      });
+    }
+    if (creepy) {
+      this.tweens.add({
+        targets: [hotGhost, coldGhost],
+        alpha: { from: 0.12, to: 0.5 },
+        yoyo: true,
+        repeat: 6 + chaos * 3,
+        duration: Math.max(28, 58 - chaos * 4),
+        ease: "Stepped"
+      });
+      this.tweens.add({
+        targets: glitches,
+        alpha: { from: 0.06, to: 0.6 },
+        yoyo: true,
+        repeat: 8 + chaos * 3,
+        duration: Math.max(20, 48 - chaos * 5),
+        ease: "Stepped"
+      });
+    } else if (command || chaos >= 2) {
+      this.tweens.add({
+        targets: [coldGhost, hotGhost],
+        x: `+=${1 + chaos}`,
+        yoyo: true,
+        repeat: 6 + chaos * 2,
+        duration: 45,
+        ease: "Stepped"
+      });
+    }
+    if (command) {
+      this.tweens.add({
+        targets: motifText,
+        alpha: { from: 0.42, to: 0.95 },
+        yoyo: true,
+        repeat: 5 + chaos * 2,
+        duration: 72,
+        ease: "Sine.easeInOut"
+      });
+    }
+    if (creepy || chaos >= 4) {
+      // Efsane (ve Melis): yazi nabiz gibi esniyor, sonunda olcegine donuyor.
+      this.tweens.add({
+        targets: mainText,
+        scaleX: { from: titleScale * 0.98, to: titleScale * (1.06 + chaos * 0.01) },
+        scaleY: { from: titleScale * 1.03, to: titleScale * 0.95 },
+        yoyo: true,
+        repeat: creepy ? 4 + chaos * 2 : 9,
+        duration: creepy ? 66 : 56,
+        ease: "Sine.easeInOut",
+        onComplete: () => mainText.setScale(titleScale)
+      });
+    }
+    this.scheduleStreakBannerExit(container, y - 8 * cssPx, holdMs, 220);
   }
 
   /**
