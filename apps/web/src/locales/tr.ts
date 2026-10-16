@@ -65,7 +65,7 @@ export const trCore = {
   "tutorial.shop.body": "Altınla bir eşya al. Eşya envantere düşer; Envanter'den bir kuleye takarsın, kule başına en fazla 10.",
   "tutorial.shop.reopen": "MAĞAZAYI AÇ",
   "tutorial.skill.title": "BECERİ",
-  "tutorial.skill.body": "Beceriler'i aç, bir komuta bas ve kademesini seç. ZentaX'ın komutları öldürdükçe biriken İtibar'ı harcar.",
+  "tutorial.skill.body": "Komutlar İtibar harcar. Haritada: basılı tut+sürükle 1., sürükle 2., iki parmak 3. komut; uzunluk kademeyi seçer: mavi düşük, sarı orta, kırmızı yüksek.",
   "tutorial.ultimate.title": "ULTİ",
   "tutorial.ultimate.body": "Ulti dolu. Beceriler'de Ulti'ye bas, sonra haritada bir sütuna dokun: Kurucu Fermanı o sütunu baştan aşağı yakar.",
   "tutorial.done.title": "EĞİTİM TAMAM",

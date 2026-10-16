@@ -65,7 +65,7 @@ const enCore: Partial<Record<MessageKey, string>> = {
   "tutorial.shop.body": "Buy an item with gold. It goes to your inventory; equip it on a tower from Inventory, up to 10 per tower.",
   "tutorial.shop.reopen": "OPEN SHOP",
   "tutorial.skill.title": "SKILL",
-  "tutorial.skill.body": "Open Skills, press a command and pick its tier. ZentaX's commands spend the Prestige you earn from kills.",
+  "tutorial.skill.body": "Commands spend Prestige. On the map: hold+drag is command 1, drag is 2, two fingers is 3; length sets the tier: blue low, amber medium, red high.",
   "tutorial.ultimate.title": "ULTIMATE",
   "tutorial.ultimate.body": "Ultimate charged. Press Ultimate in Skills, then tap a column on the map: Founder's Decree burns that whole column top to bottom.",
   "tutorial.done.title": "TRAINING COMPLETE",
