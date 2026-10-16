@@ -1,9 +1,10 @@
 /**
  * Harita jestiyle beceri: becerinin sirasina sabit jest, her operatorde ayni.
  *
- *   - 1. beceri (yuva 0): basili tut (halka dolar), sonra surukle.
+ *   - 1. beceri (yuva 0): basili tut (halka dolar), sonra asagi disinda surukle.
  *   - 2. beceri (yuva 1): duz surukle (AttackLord'da Metal Kalkan'in kendi makinesi).
- *   - 3. beceri (yuva 2): iki parmakla surukle; farede sag tusla.
+ *   - 3. beceri (yuva 2): basili tut, sonra asagi surukle (dik asagidan <= 45 derece); farede sag tusla.
+ *   - Ikinci parmak hicbir beceri atmaz.
  *   - ZentaX: kademe cekilen boydan (DUSUK / ORTA / YUKSEK), esigin altinda iptal.
  *
  * Burasi saf durum makinesini (siniflandirma, esikler, kademe, iptal, mesgul
@@ -23,7 +24,6 @@ import {
   SKILL_GESTURE_MEDIUM_SCREEN_PX,
   SKILL_GESTURE_MIN_SCREEN_PX,
   SKILL_GESTURE_SLOT,
-  SKILL_GESTURE_TWO_FINGER_WINDOW_MS,
   WALL_LINE_DWELL_MS,
   ZEYNEP_COMMAND_TIER_COST,
   beginSkillGesture,
@@ -34,6 +34,7 @@ import {
   getSkillGestureThresholds,
   getSkillGestureTier,
   getSkillGestureTierLabel,
+  isSkillGestureDownward,
   moveSkillGesture,
   tickSkillGesture
 } from "../packages/shared/dist/index.js";
@@ -86,7 +87,7 @@ test("tutma suresi ve payi duvar cizgisinin halkasiyla ayni; jest -> yuva sabit"
   assert.equal(SKILL_GESTURE_HOLD_MS, WALL_LINE_DWELL_MS);
   assert.equal(SKILL_GESTURE_HOLD_MS, 450);
   assert.equal(SKILL_GESTURE_HOLD_SLOP_SCREEN_PX, 8);
-  assert.deepEqual({ ...SKILL_GESTURE_SLOT }, { hold: 0, drag: 1, two: 2 });
+  assert.deepEqual({ ...SKILL_GESTURE_SLOT }, { hold: 0, drag: 1, down: 2 });
 });
 
 // --- Siniflandirma ------------------------------------------------------------------
@@ -133,7 +134,7 @@ test("surukleme: esigi gecip geri donmek iptal (atmaz, dokunus da sayilmaz); hic
   assert.deepEqual([end.cast, end.consumed], [undefined, false]);
 });
 
-test("basili tut + surukle (1. beceri): halka dolunca cizgi tutulan noktadan baslar", () => {
+test("basili tut + yukari surukle (1. beceri): halka dolunca cizgi tutulan noktadan baslar", () => {
   let g = beginSkillGesture(undefined, touch(200, 300), T0, ctx());
   assert.equal(getSkillGestureHoldProgress(g, T0 + 50), undefined, "halka hemen cikti (her dokunusta yanip soner)");
   assert.ok(getSkillGestureHoldProgress(g, T0 + 225) > 0.4);
@@ -141,7 +142,7 @@ test("basili tut + surukle (1. beceri): halka dolunca cizgi tutulan noktadan bas
   g = tickSkillGesture(g, T0 + SKILL_GESTURE_HOLD_MS - 1, ctx());
   assert.equal(g.phase, "pending");
   g = tickSkillGesture(g, T0 + SKILL_GESTURE_HOLD_MS, ctx());
-  assert.equal(g.phase, "hold");
+  assert.equal(g.phase, "held", "halka doldu ama tutma asamasi yok");
   assert.equal(getSkillGestureHoldProgress(g, T0 + 600), 1);
   g = moveSkillGesture(g, touch(200, 300 - 4 * GRID), T0 + 700, ctx());
   assert.equal(g.active, true);
@@ -156,7 +157,7 @@ test("basili tut: kare gelmeden harekette de sure sayilir; suruklemeden birakmak
   let g = beginSkillGesture(undefined, touch(200, 300), T0, ctx());
   // Kare (tick) hic gelmedi; parmak sure dolduktan sonra kimildadi.
   g = moveSkillGesture(g, touch(200 + 3 * GRID, 300), T0 + SKILL_GESTURE_HOLD_MS + 10, ctx());
-  assert.equal(g.phase, "hold");
+  assert.equal(g.phase, "hold", "sure dolduktan sonraki yana hareket 1. beceri degil");
   // Suruklemeden birakis.
   g = beginSkillGesture(undefined, touch(200, 300), T0, ctx());
   g = tickSkillGesture(g, T0 + 600, ctx());
@@ -164,73 +165,104 @@ test("basili tut: kare gelmeden harekette de sure sayilir; suruklemeden birakmak
   assert.deepEqual([end.cast, end.consumed], [undefined, false]);
 });
 
-test("1. becerinin jesti yoksa tutma asamasi hic yok; uzun basip surukleme 2. beceri", () => {
-  const noHold = ctx({ slots: slots([{ enabled: false }]) });
-  let g = beginSkillGesture(undefined, touch(0, 0), T0, noHold);
-  g = tickSkillGesture(g, T0 + 900, noHold);
-  assert.equal(g.phase, "pending", "jestsiz 1. beceride tutma asamasina gecti");
-  g = moveSkillGesture(g, touch(2 * GRID, 0), T0 + 950, noHold);
+const held = (x, y, context = ctx()) => tickSkillGesture(beginSkillGesture(undefined, touch(x, y), T0, context), T0 + SKILL_GESTURE_HOLD_MS, context);
+
+test("basili tut + asagi (3. beceri): dik asagidan 45 dereceye kadar; olcu tutulan noktadan", () => {
+  for (const [dx, dy] of [[0, 4], [3.9, 4], [-4, 4], [1, 5]]) {
+    let g = held(200, 300);
+    assert.equal(g.phase, "held");
+    g = moveSkillGesture(g, touch(200 + dx * GRID, 300 + dy * GRID), T0 + 600, ctx());
+    assert.equal(g.phase, "down", `(${dx},${dy}) asagi sayilmadi`);
+    const end = endSkillGesture(g, touch(200 + dx * GRID, 300 + dy * GRID), T0 + 700, ctx());
+    assert.equal(end.consumed, true);
+    assert.deepEqual([end.cast.slot, end.cast.kind, end.cast.startX, end.cast.startY], [2, "down", 200, 300]);
+    assert.equal(end.cast.length, Math.hypot(dx * GRID, dy * GRID));
+  }
+});
+
+test("basili tut + diger yonler (1. beceri): yukari, yanlar, 45 dereceden yatik asagi", () => {
+  for (const [dx, dy] of [[0, -4], [4, 0], [-4, 0], [4.1, 4], [-5, 3], [3, -3]]) {
+    let g = held(200, 300);
+    g = moveSkillGesture(g, touch(200 + dx * GRID, 300 + dy * GRID), T0 + 600, ctx());
+    assert.equal(g.phase, "hold", `(${dx},${dy}) 1. beceri sayilmadi`);
+    assert.equal(endSkillGesture(g, touch(200 + dx * GRID, 300 + dy * GRID), T0 + 700, ctx()).cast.slot, 0);
+  }
+  assert.equal(isSkillGestureDownward(0, 1), true);
+  assert.equal(isSkillGestureDownward(1, 1), true);
+  assert.equal(isSkillGestureDownward(1.01, 1), false);
+  assert.equal(isSkillGestureDownward(0, -1), false);
+  assert.equal(isSkillGestureDownward(0, 0), false);
+});
+
+test("yon esigi ilk gectiginde secilir ve kilitlenir; esik altindaki kipirti yon secmez", () => {
+  const min = getSkillGestureThresholds(GRID, 1).min;
+  let g = held(200, 300);
+  // Esigin altinda yana kayip asagi donmek: yon henuz secilmedi.
+  g = moveSkillGesture(g, touch(200 + min * 0.6, 300), T0 + 520, ctx());
+  assert.equal(g.phase, "held");
+  g = moveSkillGesture(g, touch(200, 300 + 3 * GRID), T0 + 560, ctx());
+  assert.equal(g.phase, "down");
+  // Kilitli: sonradan yukari ya da yana gitmek 1. beceriye cevirmez.
+  g = moveSkillGesture(g, touch(200 + 5 * GRID, 300 - 2 * GRID), T0 + 600, ctx());
+  assert.equal(g.phase, "down");
+  assert.equal(endSkillGesture(g, touch(200 + 5 * GRID, 300 - 2 * GRID), T0 + 650, ctx()).cast.slot, 2);
+  // Tersi: once yana karar, sonra asagi kalsa da 1. beceri.
+  g = held(200, 300);
+  g = moveSkillGesture(g, touch(200 + 2 * GRID, 300), T0 + 520, ctx());
+  g = moveSkillGesture(g, touch(200, 300 + 5 * GRID), T0 + 600, ctx());
+  assert.equal(g.phase, "hold");
+});
+
+test("tutma: esigi gecip tutulan noktaya donmek iptal; hic suruklemeden birakis dokunustur", () => {
+  let g = held(200, 300);
+  g = moveSkillGesture(g, touch(200, 300 + 3 * GRID), T0 + 520, ctx());
+  g = moveSkillGesture(g, touch(201, 302), T0 + 600, ctx());
+  let end = endSkillGesture(g, touch(201, 302), T0 + 650, ctx());
+  assert.deepEqual([end.cast, end.consumed], [undefined, true]);
+  end = endSkillGesture(held(200, 300), touch(202, 301), T0 + 700, ctx());
+  assert.deepEqual([end.cast, end.consumed], [undefined, false]);
+});
+
+test("halka: 1. ya da 3. becerinin jesti varsa dolar; ikisi de yoksa uzun basip surukleme 2. beceri", () => {
+  const onlyDown = ctx({ slots: slots([{ enabled: false }]) });
+  let g = held(0, 0, onlyDown);
+  assert.equal(g.phase, "held", "yalnizca 3. becerinin jesti varken halka dolmadi");
+  // Asagi disi yon: 1. becerinin jesti yok, hicbir sey atilmaz ama dokunus da degil.
+  g = moveSkillGesture(g, touch(0, -3 * GRID), T0 + 600, onlyDown);
+  assert.deepEqual([endSkillGesture(g, touch(0, -3 * GRID), T0 + 650, onlyDown).cast, endSkillGesture(g, touch(0, -3 * GRID), T0 + 650, onlyDown).consumed], [undefined, true]);
+  const noHold = ctx({ slots: slots([{ enabled: false }, {}, { enabled: false }]) });
+  g = held(0, 0, noHold);
+  assert.equal(g.phase, "pending");
+  g = moveSkillGesture(g, touch(0, 3 * GRID), T0 + 950, noHold);
   assert.equal(g.phase, "drag");
 });
 
-test("iki parmak (3. beceri): pencere icinde ikinci parmak; olcu orta noktadan, ikinci birakis yutulur", () => {
+test("ikinci parmak hicbir beceri atmaz: suren jesti oldurur, kendisi izlenmez", () => {
+  // Bekleyen jeste ikinci parmak.
   let g = beginSkillGesture(undefined, touch(100, 100, 1), T0, ctx());
-  g = beginSkillGesture(g, touch(140, 100, 2), T0 + 120, ctx());
-  assert.equal(g.phase, "two");
-  assert.deepEqual([g.startX, g.startY], [120, 100]);
-  g = moveSkillGesture(g, touch(100, 100 + 4 * GRID, 1), T0 + 200, ctx());
-  g = moveSkillGesture(g, touch(140, 100 + 4 * GRID, 2), T0 + 220, ctx());
-  assert.deepEqual([g.endX, g.endY, g.active], [120, 100 + 4 * GRID, true]);
-  // Tutma suresi iki parmagi tutmaya cevirmez.
-  g = tickSkillGesture(g, T0 + 2000, ctx());
-  assert.equal(g.phase, "two");
-  const first = endSkillGesture(g, touch(140, 100 + 4 * GRID, 2), T0 + 300, ctx());
-  assert.equal(first.consumed, true);
-  assert.deepEqual(first.cast, { slot: 2, kind: "two", startX: 120, startY: 100, x: 120, y: 100 + 4 * GRID, length: 4 * GRID });
-  assert.equal(first.gesture.phase, "dead");
-  const second = endSkillGesture(first.gesture, touch(100, 100 + 4 * GRID, 1), T0 + 320, ctx());
-  assert.deepEqual([second.cast, second.consumed, second.gesture], [undefined, true, undefined], "ikinci parmagin birakisi dokunus sayildi");
+  g = beginSkillGesture(g, touch(140, 100, 2), T0 + 60, ctx());
+  assert.equal(g.phase, "dead");
+  assert.equal(g.pointerId, 1, "ikinci parmak izleniyor");
+  g = moveSkillGesture(g, touch(140, 100 + 4 * GRID, 2), T0 + 100, ctx());
+  assert.equal(g.phase, "dead");
+  // Ikinci parmagin birakisi bu jestin degil.
+  let end = endSkillGesture(g, touch(140, 100 + 4 * GRID, 2), T0 + 200, ctx());
+  assert.deepEqual([end.cast, end.consumed, end.gesture], [undefined, false, g]);
+  end = endSkillGesture(g, touch(100, 100, 1), T0 + 220, ctx());
+  assert.deepEqual([end.cast, end.consumed, end.gesture], [undefined, false, undefined]);
+  // Tutma ve asagi surukleme suruyorken ikinci parmak: atis yok.
+  g = held(100, 100);
+  g = moveSkillGesture(g, touch(100, 100 + 4 * GRID), T0 + 600, ctx());
+  g = beginSkillGesture(g, touch(300, 300, 2), T0 + 650, ctx());
+  end = endSkillGesture(g, touch(100, 100 + 4 * GRID), T0 + 700, ctx());
+  assert.equal(end.cast, undefined);
+  assert.equal(end.consumed, true, "suruklenmis jestin birakisi dokunus sayildi");
 });
 
-test("iki parmak: kimildamadan kalkan iki parmak hicbir sey atmaz ama dokunus da sayilmaz", () => {
-  let g = beginSkillGesture(undefined, touch(100, 100, 1), T0, ctx());
-  g = beginSkillGesture(g, touch(130, 100, 2), T0 + 40, ctx());
-  const first = endSkillGesture(g, touch(130, 100, 2), T0 + 100, ctx());
-  assert.deepEqual([first.cast, first.consumed], [undefined, true]);
-  assert.equal(endSkillGesture(first.gesture, touch(100, 100, 1), T0 + 110, ctx()).consumed, true);
-});
-
-test("iki parmak: gec gelen ya da surukleme baslamisken gelen ikinci parmak jesti oldurur", () => {
-  // Pencere disi.
-  let g = beginSkillGesture(undefined, touch(100, 100, 1), T0, ctx());
-  g = beginSkillGesture(g, touch(140, 100, 2), T0 + SKILL_GESTURE_TWO_FINGER_WINDOW_MS + 1, ctx());
-  assert.equal(g.phase, "dead");
-  let end = endSkillGesture(g, touch(140, 100, 2), T0 + 500, ctx());
-  assert.deepEqual([end.cast, end.consumed], [undefined, true]);
-  end = endSkillGesture(end.gesture, touch(100, 100, 1), T0 + 520, ctx());
-  assert.deepEqual([end.cast, end.consumed, end.gesture], [undefined, true, undefined]);
-  // Ilk parmak suruklemeye gecmisken.
-  g = beginSkillGesture(undefined, touch(100, 100, 1), T0, ctx());
-  g = moveSkillGesture(g, touch(100 + 2 * GRID, 100, 1), T0 + 60, ctx());
-  g = beginSkillGesture(g, touch(300, 300, 2), T0 + 100, ctx());
-  assert.equal(g.phase, "dead");
-  assert.equal(endSkillGesture(g, touch(100 + 2 * GRID, 100, 1), T0 + 200, ctx()).cast, undefined);
-  // 3. becerinin jesti yoksa ikinci parmak iki parmak jesti baslatmaz.
-  const noTwo = ctx({ slots: slots([{}, {}, { enabled: false }]) });
-  g = beginSkillGesture(undefined, touch(100, 100, 1), T0, noTwo);
-  g = beginSkillGesture(g, touch(140, 100, 2), T0 + 50, noTwo);
-  assert.equal(g.phase, "dead");
-  // Ucuncu parmak iki parmak jestini oldurur.
-  g = beginSkillGesture(undefined, touch(100, 100, 1), T0, ctx());
-  g = beginSkillGesture(g, touch(140, 100, 2), T0 + 50, ctx());
-  g = beginSkillGesture(g, touch(180, 100, 3), T0 + 80, ctx());
-  assert.equal(g.phase, "dead");
-});
-
-test("fare: ana tus tutma/surukleme, sag tus 3. beceri, orta tus hicbir sey", () => {
+test("fare: ana tus tutma/surukleme, sag tusla surukleme 3. beceri (yon serbest), orta tus hicbir sey", () => {
   const mouse = (x, y, button) => ({ pointerId: 1, pointerType: "mouse", button, x, y });
   let g = beginSkillGesture(undefined, mouse(50, 50, 2), T0, ctx());
-  assert.equal(g.phase, "two");
+  assert.equal(g.phase, "down");
   g = moveSkillGesture(g, mouse(50 + 5 * GRID, 50, 2), T0 + 100, ctx());
   const end = endSkillGesture(g, mouse(50 + 5 * GRID, 50, 2), T0 + 150, ctx());
   assert.equal(end.cast.slot, 2);
@@ -282,16 +314,11 @@ test("Metal Kalkan yuvasi 'external': surukleme siniflanir ama atis ve yutma Met
   assert.deepEqual([end.cast, end.consumed], [undefined, false]);
 });
 
-test("dusen parmak (pointercancel): jest atmadan kapanir, kalan parmagin birakisi yutulur", () => {
+test("dusen parmak (pointercancel): jest atmadan kapanir; baska parmagin dusmesi etkilemez", () => {
   let g = beginSkillGesture(undefined, touch(0, 0, 1), T0, ctx());
   g = moveSkillGesture(g, touch(3 * GRID, 0, 1), T0 + 50, ctx());
   assert.equal(dropSkillGesturePointer(g, 1), undefined);
   assert.equal(dropSkillGesturePointer(g, 9), g, "baska parmagin dusmesi jesti etkiledi");
-  g = beginSkillGesture(undefined, touch(0, 0, 1), T0, ctx());
-  g = beginSkillGesture(g, touch(40, 0, 2), T0 + 30, ctx());
-  g = dropSkillGesturePointer(g, 2);
-  assert.equal(g.phase, "dead");
-  assert.equal(endSkillGesture(g, touch(0, 0, 1), T0 + 90, ctx()).consumed, true);
 });
 
 // --- Operatorler ------------------------------------------------------------------------
@@ -359,12 +386,12 @@ test("sekme: her becerinin altinda haritadaki jesti; iki dilde", () => {
   assert.ok(scene.includes("...(mapHint && !shieldGesture ? { mapHint } : {}),"));
   assert.ok(hud.includes("mapHint?: string;") && hud.includes("hint.textContent = skill.mapHint;"));
   for (const line of [
-    `"scene.skill.mapHintHold": "Haritada: basılı tut + sürükle"`,
+    `"scene.skill.mapHintHold": "Haritada: basılı tut + sürükle (aşağı hariç)"`,
     `"scene.skill.mapHintDrag": "Haritada: sürükle"`,
-    `"scene.skill.mapHintTwo": "Haritada: iki parmakla sürükle"`,
-    `"scene.skill.mapHintHold": "On map: hold + drag"`,
+    `"scene.skill.mapHintDown": "Haritada: basılı tut + aşağı sürükle"`,
+    `"scene.skill.mapHintHold": "On map: hold + drag (not down)"`,
     `"scene.skill.mapHintDrag": "On map: drag"`,
-    `"scene.skill.mapHintTwo": "On map: two-finger drag"`,
+    `"scene.skill.mapHintDown": "On map: hold + drag down"`,
     `"scene.skill.gestureTierCost": "{tier} · {cost} İtibar"`,
     `"scene.skill.gestureTierCost": "{tier} · {cost} Prestige"`
   ]) {
@@ -444,4 +471,19 @@ test("kademe cubugu: yetmeyen bedelde uc kirmizi carpi; esigin altinda kademe re
   assert.ok(!denied.includes(SKILL_TIER_COLORS.big), "yetmeyen bedel kademe renginde");
   const cancel = draw({ tier: undefined, endX: 10 });
   for (const color of Object.values(SKILL_TIER_COLORS)) assert.ok(!cancel.includes(color), "esigin altinda kademe rengi");
+});
+
+test("iki parmak yolu tamamen gitti; tutma halkasi asagi ipucu veriyor; ogretici yeni jesti anlatiyor", () => {
+  const scene = readSource("apps/web/src/scenes/GameScene.ts");
+  const shared = readSource("packages/shared/src/skill-gestures/index.ts");
+  const locale = readSource("apps/web/src/locales/areas/scene.ts");
+  assert.ok(!/TWO_FINGER|centroid|"two"/.test(shared), "paylasilan makinede iki parmak kaldi");
+  assert.ok(!/mapHintTwo|skillGesture\.pointers/.test(scene + locale), "sahnede iki parmak kaldi");
+  const draw = scene.slice(scene.indexOf("private drawMapSkillGestureInto("), scene.indexOf("private drawMapSkillGestureInto(") + 4000);
+  assert.ok(draw.includes(`gesture.phase === "held" && down?.enabled`) && draw.includes("view.drawDownHint("), "halka asagi ipucu vermiyor");
+  const tr = readSource("apps/web/src/locales/tr.ts").match(/"tutorial\.skill\.body": "(.*?)",/)[1];
+  const en = readSource("apps/web/src/locales/en.ts").match(/"tutorial\.skill\.body": "(.*?)",/)[1];
+  assert.ok(tr.includes("basılı tut+aşağı 3.") && !tr.includes("iki parmak"), tr);
+  assert.ok(en.includes("hold+drag down is 3") && !en.includes("two fingers"), en);
+  assert.ok(tr.length <= 170 && en.length <= 170);
 });

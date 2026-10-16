@@ -7,17 +7,20 @@ import { lt } from "../i18n/index.js";
  * Harita jestiyle beceri: Beceriler sekmesine gitmeden, haritaya dokunarak.
  *
  * Jest becerinin SIRASINA bagli, karaktere degil; her operatorde ayni:
- *   - 1. beceri (yuva 0): basili tut, halka dolsun, sonra surukle ("hold").
- *   - 2. beceri (yuva 1): duz surukle ("drag"), bugunku Metal Kalkan gibi.
- *   - 3. beceri (yuva 2): iki parmakla surukle ("two"); farede sag tusla surukle.
+ *   - 1. beceri (yuva 0): basili tut (halka dolsun), sonra asagi DISINDA bir
+ *     yone surukle ("hold").
+ *   - 2. beceri (yuva 1): tutmadan duz surukle ("drag"), bugunku Metal Kalkan gibi.
+ *   - 3. beceri (yuva 2): basili tut, sonra ASAGI surukle ("down"); farede sag
+ *     tusla surukle (yon serbest).
  *
  * Ayrim kurali:
  *   - Esigi (`getSkillGestureThresholds().min`) gecmeyen her sey dokunustur ve
  *     bugunku gibi isler (kule secimi, yerlestirme, cift dokunus yakinlastirma).
  *   - Basis `SKILL_GESTURE_HOLD_MS` boyunca `SKILL_GESTURE_HOLD_SLOP_SCREEN_PX`
- *     icinde kalirsa 1. beceri; daha once kayarsa 2. beceri.
- *   - Ilk parmak esigi gecmeden ve `SKILL_GESTURE_TWO_FINGER_WINDOW_MS` icinde
- *     ikinci parmak gelirse 3. beceri; olcu iki parmagin orta noktasi.
+ *     icinde kalirsa tutma jesti; daha once kayarsa 2. beceri.
+ *   - Tutmadan sonra parmak esigi ilk gectiginde yon secilir ve kilitlenir:
+ *     ekranda dik asagidan en fazla 45 derece sapan yon 3. beceri, gerisi 1.
+ *   - Ikinci parmak hicbir beceri atmaz: suren jesti oldurur.
  *   - Haritada baska bir eylem bekliyor ya da suruyorsa (`busy`) jest hic
  *     baslamaz; suren jest olur.
  *
@@ -36,8 +39,6 @@ export const SKILL_GESTURE_HOLD_SLOP_SCREEN_PX = WALL_LINE_DWELL_TOLERANCE_PX;
  * Dolulugu yine basistan sayiliyor.
  */
 export const SKILL_GESTURE_HOLD_RING_DELAY_MS = 140;
-/** Ikinci parmak ilk parmaktan en fazla bu kadar (ms) sonra gelirse iki parmak jesti. */
-export const SKILL_GESTURE_TWO_FINGER_WINDOW_MS = 300;
 
 /**
  * Kademe mesafeleri (ZentaX): cekilen cizginin boyu, hucre cinsinden; her
@@ -59,11 +60,11 @@ export const SKILL_GESTURE_HIGH_SCREEN_PX = 120;
 /** Kademe cubugunun cizilen en uzun hali: YUKSEK esiginin bu kati. */
 export const SKILL_GESTURE_BAR_MAX_RATIO = 1.3;
 
-export type SkillGestureKind = "hold" | "drag" | "two";
+export type SkillGestureKind = "hold" | "drag" | "down";
 export type SkillGestureTier = "small" | "medium" | "big";
 
 /** Jest -> yuva: sira sabit, her operatorde ayni. */
-export const SKILL_GESTURE_SLOT: Readonly<Record<SkillGestureKind, number>> = { hold: 0, drag: 1, two: 2 };
+export const SKILL_GESTURE_SLOT: Readonly<Record<SkillGestureKind, number>> = { hold: 0, drag: 1, down: 2 };
 
 /**
  * Bir yuvanin jestle ne yaptigi:
@@ -162,21 +163,28 @@ export type SkillGestureContext = {
   slots: readonly SkillGestureSlotState[];
 };
 
-export type SkillGesturePhase = "pending" | SkillGestureKind | "dead";
+/**
+ * Asamalar:
+ *   - "pending": basildi, henuz karar yok (dokunus olabilir).
+ *   - "held": halka doldu, parmak henuz yon secmedi.
+ *   - "hold" / "drag" / "down": karar verildi, yuva kilitli.
+ *   - "dead": iptal (ikinci parmak, harita disi, araya giren eylem); birakisa kadar olu.
+ */
+export type SkillGesturePhase = "pending" | "held" | SkillGestureKind | "dead";
 
 export type SkillGesture = {
   phase: SkillGesturePhase;
-  /** Izlenen parmaklar ve son konumlari (dunya). Iki parmakta iki kayit. */
-  pointers: Array<{ pointerId: number; x: number; y: number }>;
-  /** Ilk basisin ani (ms). */
+  /** Izlenen tek parmak. Ikinci parmak jesti oldurur, kendisi izlenmez. */
+  pointerId: number;
+  /** Basisin ani (ms). */
   downAt: number;
-  /** Ilk basisin noktasi: tutma payi buradan olculuyor. */
+  /** Basisin noktasi: tutma payi buradan olculuyor. */
   originX: number;
   originY: number;
-  /** Cizginin basi: tutma/surukle icin basis, iki parmakta ikinci parmak geldigindeki orta nokta. */
+  /** Cizginin basi: surukle icin basis, tutma jestinde tutulan nokta. */
   startX: number;
   startY: number;
-  /** Cizginin ucu: parmak (iki parmakta orta nokta). */
+  /** Cizginin ucu: parmak. */
   endX: number;
   endY: number;
   length: number;
@@ -184,8 +192,6 @@ export type SkillGesture = {
   active: boolean;
   /** Esik en az bir kez gecildi: geri donup birakmak iptal, dokunus degil. */
   dragged: boolean;
-  /** Birden fazla parmak (ya da farenin sag tusu) karisti: birakislar hep yutulur. */
-  multi: boolean;
 };
 
 export type SkillGestureCast = {
@@ -200,44 +206,43 @@ export type SkillGestureCast = {
 
 const finite = (value: number) => Number.isFinite(value);
 
-function slotOf(context: SkillGestureContext, kind: SkillGestureKind) {
-  return context.slots[SKILL_GESTURE_SLOT[kind]];
+function isEnabled(context: Pick<SkillGestureContext, "slots">, kind: SkillGestureKind) {
+  return Boolean(context.slots[SKILL_GESTURE_SLOT[kind]]?.enabled);
 }
 
-function isEnabled(context: SkillGestureContext, kind: SkillGestureKind) {
-  return Boolean(slotOf(context, kind)?.enabled);
-}
-
-function centroid(pointers: SkillGesture["pointers"]) {
-  let x = 0;
-  let y = 0;
-  for (const pointer of pointers) {
-    x += pointer.x;
-    y += pointer.y;
-  }
-  const count = Math.max(1, pointers.length);
-  return { x: x / count, y: y / count };
+/** Tutma jesti var mi: 1. ya da 3. becerinin jesti varsa halka dolar. */
+function canHold(context: Pick<SkillGestureContext, "slots">) {
+  return isEnabled(context, "hold") || isEnabled(context, "down");
 }
 
 function kill(gesture: SkillGesture): SkillGesture {
   return { ...gesture, phase: "dead", active: false };
 }
 
-/** Cizginin ucunu ve boyunu parmaklardan yeniden hesaplar. */
-function measure(gesture: SkillGesture, context: SkillGestureContext): SkillGesture {
-  if (gesture.phase === "pending" || gesture.phase === "dead") return gesture;
-  const end = gesture.phase === "two" ? centroid(gesture.pointers) : gesture.pointers[0] ?? { x: gesture.endX, y: gesture.endY };
-  const length = Math.hypot(end.x - gesture.startX, end.y - gesture.startY);
-  const min = getSkillGestureThresholds(context.gridSize, context.worldPerScreenPx).min;
-  const active = length >= min;
-  return { ...gesture, endX: end.x, endY: end.y, length, active, dragged: gesture.dragged || active };
+/**
+ * Tutmadan sonraki ilk kararli hareketin yonu: ekranda dik asagidan en fazla
+ * 45 derece sapan (dy > 0 ve |dx| <= dy) cizgi 3. beceri, gerisi 1. beceri.
+ * Dunya y'si ekran gibi asagi buyuyor (kamera donmuyor).
+ */
+export function isSkillGestureDownward(dx: number, dy: number) {
+  return dy > 0 && Math.abs(dx) <= dy;
+}
+
+/** Cizginin ucunu ve boyunu parmaktan yeniden hesaplar. */
+function measure(gesture: SkillGesture, x: number, y: number, context: SkillGestureContext): SkillGesture {
+  const length = Math.hypot(x - gesture.startX, y - gesture.startY);
+  if (gesture.phase === "pending" || gesture.phase === "held" || gesture.phase === "dead") {
+    return { ...gesture, endX: x, endY: y, length };
+  }
+  const active = length >= getSkillGestureThresholds(context.gridSize, context.worldPerScreenPx).min;
+  return { ...gesture, endX: x, endY: y, length, active, dragged: gesture.dragged || active };
 }
 
 /**
- * Basis. Ilk parmak uygunsa jest izlenmeye baslar (henuz hicbir sey
- * gorunmez). Izlenen jest varken gelen ikinci parmak: ilki esigi gecmemis,
- * tutma dolmamis ve pencere icindeyse 3. beceri; degilse jest olur (iki
- * parmagin birakisi da yutulur). Ucuncu parmak her zaman oldurur.
+ * Basis. Uygunsa jest izlenmeye baslar (henuz hicbir sey gorunmez). Izlenen
+ * jest varken gelen ikinci parmak jesti oldurur ve hicbir beceri atmaz;
+ * ikinci parmagin kendisi izlenmez (birakisi eskisi gibi dokunustur).
+ * Farede sag tusla basis dogrudan 3. beceri (yon serbest).
  */
 export function beginSkillGesture(
   current: SkillGesture | undefined,
@@ -245,22 +250,16 @@ export function beginSkillGesture(
   now: number,
   context: SkillGestureContext
 ): SkillGesture | undefined {
-  if (!finite(pointer.x) || !finite(pointer.y)) return current ? kill(current) : undefined;
   if (current) {
-    if (current.pointers.some((entry) => entry.pointerId === pointer.pointerId)) return current;
-    const pointers = [...current.pointers, { pointerId: pointer.pointerId, x: pointer.x, y: pointer.y }];
-    const canPair = current.phase === "pending" && current.pointers.length === 1
-      && now - current.downAt <= SKILL_GESTURE_TWO_FINGER_WINDOW_MS
-      && !context.busy && context.inside && isEnabled(context, "two");
-    if (!canPair) return { ...kill(current), pointers, multi: true };
-    const middle = centroid(pointers);
-    return { ...current, phase: "two", pointers, startX: middle.x, startY: middle.y, endX: middle.x, endY: middle.y, length: 0, active: false, multi: true };
+    if (current.pointerId === pointer.pointerId) return current;
+    return kill(current);
   }
+  if (!finite(pointer.x) || !finite(pointer.y)) return undefined;
   if (context.busy || !context.inside) return undefined;
   if (!context.slots.some((slot) => slot?.enabled)) return undefined;
   const base: SkillGesture = {
     phase: "pending",
-    pointers: [{ pointerId: pointer.pointerId, x: pointer.x, y: pointer.y }],
+    pointerId: pointer.pointerId,
     downAt: now,
     originX: pointer.x,
     originY: pointer.y,
@@ -270,13 +269,11 @@ export function beginSkillGesture(
     endY: pointer.y,
     length: 0,
     active: false,
-    dragged: false,
-    multi: false
+    dragged: false
   };
   if (pointer.pointerType === "mouse" && pointer.button !== undefined && pointer.button !== 0) {
-    // Farede iki parmak yok: sag tusla surukleme 3. beceri.
-    if (pointer.button !== 2 || !isEnabled(context, "two")) return undefined;
-    return { ...base, phase: "two", multi: true };
+    if (pointer.button !== 2 || !isEnabled(context, "down")) return undefined;
+    return { ...base, phase: "down" };
   }
   return base;
 }
@@ -288,9 +285,10 @@ export function beginSkillGesture(
 export function tickSkillGesture(gesture: SkillGesture | undefined, now: number, context: Pick<SkillGestureContext, "busy" | "slots">): SkillGesture | undefined {
   if (!gesture || gesture.phase === "dead") return gesture;
   if (context.busy) return kill(gesture);
-  if (gesture.phase === "pending" && gesture.pointers.length === 1 && now - gesture.downAt >= SKILL_GESTURE_HOLD_MS && context.slots[SKILL_GESTURE_SLOT.hold]?.enabled) {
-    // Halka doldu: dokunus degil artik. Cizgi tutulan noktadan basliyor.
-    return { ...gesture, phase: "hold", startX: gesture.originX, startY: gesture.originY };
+  if (gesture.phase === "pending" && now - gesture.downAt >= SKILL_GESTURE_HOLD_MS && canHold(context)) {
+    // Halka doldu: dokunus degil artik. Cizgi tutulan noktadan basliyor; yon
+    // ilk kararli harekette seciliyor.
+    return { ...gesture, phase: "held", startX: gesture.originX, startY: gesture.originY, length: 0 };
   }
   return gesture;
 }
@@ -298,16 +296,17 @@ export function tickSkillGesture(gesture: SkillGesture | undefined, now: number,
 /** Tutma halkasinin dolulugu 0..1; tutma asamasinda degilse undefined. */
 export function getSkillGestureHoldProgress(gesture: SkillGesture | undefined, now: number) {
   if (!gesture) return undefined;
-  if (gesture.phase === "hold") return 1;
-  if (gesture.phase !== "pending" || gesture.pointers.length !== 1) return undefined;
+  if (gesture.phase === "held") return 1;
+  if (gesture.phase !== "pending") return undefined;
   const elapsed = now - gesture.downAt;
   if (elapsed < SKILL_GESTURE_HOLD_RING_DELAY_MS) return undefined;
   return Math.max(0, Math.min(1, elapsed / SKILL_GESTURE_HOLD_MS));
 }
 
 /**
- * Hareket. Tutma dolmadan payin disina kayan parmak 2. beceri olur; dolduysa
- * 1. beceri cizgisi uzar. Harita disi ya da araya giren eylem jesti oldurur.
+ * Hareket. Tutma dolmadan payin disina kayan parmak 2. beceri olur. Tutma
+ * dolduysa esigi ilk gecen hareket yonu secer (asagi 3., gerisi 1.) ve yuva
+ * kilitlenir. Harita disi ya da araya giren eylem jesti oldurur.
  */
 export function moveSkillGesture(
   gesture: SkillGesture | undefined,
@@ -315,25 +314,24 @@ export function moveSkillGesture(
   now: number,
   context: SkillGestureContext
 ): SkillGesture | undefined {
-  if (!gesture || gesture.phase === "dead") return gesture;
-  const index = gesture.pointers.findIndex((entry) => entry.pointerId === pointer.pointerId);
-  if (index < 0) return gesture;
+  if (!gesture || gesture.phase === "dead" || gesture.pointerId !== pointer.pointerId) return gesture;
   if (context.busy || !context.inside || !finite(pointer.x) || !finite(pointer.y)) return kill(gesture);
-  const pointers = gesture.pointers.map((entry, i) => (i === index ? { ...entry, x: pointer.x, y: pointer.y } : entry));
-  let next: SkillGesture = { ...gesture, pointers };
-  if (next.phase === "pending") {
-    next = tickSkillGesture(next, now, context) ?? next;
-  }
+  let next: SkillGesture = gesture;
+  if (next.phase === "pending") next = tickSkillGesture(next, now, context) ?? next;
   if (next.phase === "pending") {
     const slop = SKILL_GESTURE_HOLD_SLOP_SCREEN_PX * (context.worldPerScreenPx > 0 ? context.worldPerScreenPx : 1);
-    if (Math.hypot(pointer.x - next.originX, pointer.y - next.originY) <= slop) return next;
-    if (!isEnabled(context, "drag")) {
-      // 2. becerinin jesti yok: surukleme siradan surukleme, dokunus gibi biter.
-      return { ...next, phase: "drag" };
-    }
+    if (Math.hypot(pointer.x - next.originX, pointer.y - next.originY) <= slop) return { ...next, endX: pointer.x, endY: pointer.y };
     next = { ...next, phase: "drag" };
   }
-  return measure(next, context);
+  if (next.phase === "held") {
+    const dx = pointer.x - next.startX;
+    const dy = pointer.y - next.startY;
+    if (Math.hypot(dx, dy) < getSkillGestureThresholds(context.gridSize, context.worldPerScreenPx).min) {
+      return measure(next, pointer.x, pointer.y, context);
+    }
+    next = { ...next, phase: isSkillGestureDownward(dx, dy) ? "down" : "hold" };
+  }
+  return measure(next, pointer.x, pointer.y, context);
 }
 
 /**
@@ -352,44 +350,35 @@ export function endSkillGesture(
   now: number,
   context: SkillGestureContext
 ): { gesture: SkillGesture | undefined; consumed: boolean; cast?: SkillGestureCast; cooldownSlot?: number; cooldownSeconds?: number } {
-  if (!gesture || !gesture.pointers.some((entry) => entry.pointerId === pointer.pointerId)) {
-    return { gesture, consumed: false };
-  }
+  if (!gesture || gesture.pointerId !== pointer.pointerId) return { gesture, consumed: false };
   const moved = moveSkillGesture(gesture, pointer, now, context) ?? gesture;
-  const remaining = moved.pointers.filter((entry) => entry.pointerId !== pointer.pointerId);
-  // Iki parmaktan biri kalkti: jest burada biter, kalan parmagin birakisi yutulur.
-  const rest = remaining.length > 0 ? { ...kill(moved), pointers: remaining, multi: true } : undefined;
-  if (moved.phase === "dead" || moved.phase === "pending") {
-    return { gesture: rest, consumed: moved.multi || moved.dragged };
+  if (moved.phase === "dead" || moved.phase === "pending" || moved.phase === "held") {
+    return { gesture: undefined, consumed: moved.dragged };
   }
   const kind = moved.phase;
   const slot = SKILL_GESTURE_SLOT[kind];
   const slotState = context.slots[slot];
   if (!slotState?.enabled || slotState.external) {
     // Jesti yok ya da baska makinenin (Metal Kalkan): dokunusu yutma karari
-    // ona ya da siradan dokunusa kalir. Iki parmak her zaman yutulur.
-    return { gesture: rest, consumed: moved.multi };
+    // ona ya da siradan dokunusa kalir. Tutma jesti kendi kararidir: yutulur.
+    return { gesture: undefined, consumed: kind !== "drag" && moved.dragged };
   }
   if (!moved.active) {
     // Esigin altinda birakis: hic gecilmediyse dokunus, gecilip donulduyse iptal.
-    return { gesture: rest, consumed: moved.multi || moved.dragged };
+    return { gesture: undefined, consumed: moved.dragged };
   }
   if (slotState.cooldownSeconds > 0) {
-    return { gesture: rest, consumed: true, cooldownSlot: slot, cooldownSeconds: Math.max(1, Math.ceil(slotState.cooldownSeconds)) };
+    return { gesture: undefined, consumed: true, cooldownSlot: slot, cooldownSeconds: Math.max(1, Math.ceil(slotState.cooldownSeconds)) };
   }
   return {
-    gesture: rest,
+    gesture: undefined,
     consumed: true,
     cast: { slot, kind, startX: moved.startX, startY: moved.startY, x: moved.endX, y: moved.endY, length: moved.length }
   };
 }
 
-/**
- * Bir parmak birakilmadan dustu (pointercancel, yakalama kaybi): jest olur,
- * hicbir sey atilmaz. Kalan parmak varsa onun birakisi yine yutulur.
- */
+/** Parmak birakilmadan dustu (pointercancel, yakalama kaybi): jest atmadan kapanir. */
 export function dropSkillGesturePointer(gesture: SkillGesture | undefined, pointerId: number): SkillGesture | undefined {
-  if (!gesture || !gesture.pointers.some((entry) => entry.pointerId === pointerId)) return gesture;
-  const pointers = gesture.pointers.filter((entry) => entry.pointerId !== pointerId);
-  return pointers.length > 0 ? { ...kill(gesture), pointers, multi: true } : undefined;
+  if (!gesture || gesture.pointerId !== pointerId) return gesture;
+  return undefined;
 }

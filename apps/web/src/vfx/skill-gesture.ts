@@ -85,6 +85,19 @@ export class SkillGestureView {
     strokeDwellRing(this.gfx, x, y, progress, radius, ready ? undefined : SKILL_GESTURE_IDLE_COLOR);
   }
 
+  /**
+   * Tutma doldu, yon secilmedi: halkanin altinda soluk, ince asagi ok
+   * ("asagi surukle = 3. beceri"). Beklemedeyse gri.
+   */
+  drawDownHint(x: number, y: number, size: number, ready: boolean) {
+    this.drawn = true;
+    const color = ready ? 0x94a3b8 : SKILL_GESTURE_IDLE_COLOR;
+    this.gfx.lineStyle(1.5, color, 0.7);
+    this.gfx.lineBetween(x, y - size, x, y + size);
+    this.gfx.lineBetween(x - size * 0.7, y + size * 0.3, x, y + size);
+    this.gfx.lineBetween(x + size * 0.7, y + size * 0.3, x, y + size);
+  }
+
   /** Cizginin basi: kucuk dolgusuz halka ve koyu ic. */
   private drawStartNode(x: number, y: number, color: number, radius: number) {
     this.gfx.fillStyle(DIM, 0.7);

@@ -1552,8 +1552,8 @@ export class GameScene extends Phaser.Scene {
   private shieldCooldownNoticeAt = 0;
   /**
    * Harita jestiyle beceri (bkz. `skill-gestures`): 1. beceri basili tut +
-   * surukle, 2. beceri surukle, 3. beceri iki parmakla surukle. Jest yokken
-   * `undefined`.
+   * surukle (asagi haric), 2. beceri surukle, 3. beceri basili tut + asagi
+   * surukle. Jest yokken `undefined`.
    */
   private skillGesture?: SkillGesture;
   private skillGestureView?: SkillGestureView;
@@ -5497,12 +5497,11 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  /** Yuvanin harita jesti, tek satir. Farede iki parmak yok: 3. beceri sag tusla. */
+  /** Yuvanin harita jesti, tek satir (farede 3. beceri sag tusla da suruklenebiliyor). */
   private getSkillMapHint(slot: number) {
     if (slot === SKILL_GESTURE_SLOT.hold) return t("scene.skill.mapHintHold");
     if (slot === SKILL_GESTURE_SLOT.drag) return t("scene.skill.mapHintDrag");
-    const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
-    return t(coarse ? "scene.skill.mapHintTwo" : "scene.skill.mapHintTwoMouse");
+    return t("scene.skill.mapHintDown");
   }
 
   private getSkillGestureCharacterId() {
@@ -5511,7 +5510,7 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Haritaya basildi: jest izlenmeye baslar, hicbir sey gitmez. Ikinci parmak
-   * pencere icinde gelirse jest 3. beceriye doner ve Metal Kalkan izi kapanir.
+   * suren jesti oldurur, hicbir beceri atmaz.
    */
   private beginMapSkillGesture(pointer: Phaser.Input.Pointer, pressBusy: boolean) {
     const context = this.getSkillGestureContext(pointer, pressBusy);
@@ -5519,7 +5518,6 @@ export class GameScene extends Phaser.Scene {
       context.busy = true;
     }
     this.skillGesture = beginSkillGesture(this.skillGesture, this.toShieldPointer(pointer), performance.now(), context);
-    if (this.skillGesture && this.skillGesture.pointers.length > 1) this.cancelShieldGesture();
     this.drawMapSkillGesture();
   }
 
@@ -5538,9 +5536,10 @@ export class GameScene extends Phaser.Scene {
     this.drawMapSkillGesture();
   }
 
-  /** Halka doldu: bu bir 1. beceri jesti, Metal Kalkan'in suruklemesi degil. */
+  /** Halka doldu: bu bir tutma jesti (1. ya da 3. beceri), Metal Kalkan'in suruklemesi degil. */
   private claimHoldFromShield() {
-    if (this.skillGesture?.phase === "hold" && this.shieldGesture) this.cancelShieldGesture();
+    const phase = this.skillGesture?.phase;
+    if ((phase === "held" || phase === "hold" || phase === "down") && this.shieldGesture) this.cancelShieldGesture();
   }
 
   /**
@@ -5655,11 +5654,20 @@ export class GameScene extends Phaser.Scene {
   private drawMapSkillGestureInto(view: SkillGestureView, gesture: SkillGesture) {
     const context = this.getSkillGestureContext(undefined);
     const cell = this.getMapCellSize();
-    if (gesture.phase === "pending" || (gesture.phase === "hold" && !gesture.dragged)) {
+    if (gesture.phase === "pending" || gesture.phase === "held") {
       const hold = context.slots[SKILL_GESTURE_SLOT.hold];
+      const down = context.slots[SKILL_GESTURE_SLOT.down];
       const progress = getSkillGestureHoldProgress(gesture, performance.now());
-      if (progress !== undefined && hold?.enabled) view.drawHoldRing(gesture.originX, gesture.originY, progress, cell * 0.75, hold.cooldownSeconds <= 0);
-      if (gesture.phase === "pending") return undefined;
+      if (progress === undefined || !(hold?.enabled || down?.enabled)) return undefined;
+      const radius = cell * 0.75;
+      const ringReady = Boolean((hold?.enabled && hold.cooldownSeconds <= 0) || (down?.enabled && down.cooldownSeconds <= 0));
+      view.drawHoldRing(gesture.originX, gesture.originY, progress, radius, ringReady);
+      // Halka doldu, yon secilmedi: alttaki soluk ok "asagi = 3. beceri" diyor.
+      if (gesture.phase === "held" && down?.enabled) {
+        view.drawDownHint(gesture.originX, gesture.originY + radius * 1.45, radius * 0.4, down.cooldownSeconds <= 0);
+        view.setLabel(`↓ ${this.selectedCharacter.skills[SKILL_GESTURE_SLOT.down]?.name ?? ""}`, gesture.originX, gesture.originY - radius * 1.25);
+      }
+      return undefined;
     }
     if (gesture.phase === "dead") return undefined;
     const slot = SKILL_GESTURE_SLOT[gesture.phase];
@@ -5686,7 +5694,8 @@ export class GameScene extends Phaser.Scene {
       } else if (!tier) {
         view.setLabel(`${name} · ${t("scene.skill.gestureCancelHint")}`, labelX, labelY);
       } else {
-        const text = t("scene.skill.gestureTierCost", { tier: getSkillGestureTierLabel(tier), cost });
+        // Ad basta: 1. ve 3. komut ayni cubugu ciziyor, hangisinin secildigi buradan okunuyor.
+        const text = `${name} · ${t("scene.skill.gestureTierCost", { tier: getSkillGestureTierLabel(tier), cost })}`;
         view.setLabel(affordable ? text : `${text} · ${t("scene.skill.gestureNotEnough")}`, labelX, labelY, affordable ? { tier } : { warn: true });
       }
       return undefined;
@@ -7565,6 +7574,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.matchEndReport = { result, summary };
     this.hideArenaHudOverlays();
     this.hideCardChoices();
+    // Acik kademe secimi (ZentaX) ve halkasi sahnenin ustunde kalmasin.
+    this.hideZeynepTierChoicesIfOpen();
     this.cancelTowerDrag();
     const stage = this.matchEndStage ?? new MatchEndStage(this, {
       flash: this.flashPool,
@@ -13088,8 +13099,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // iOS bir dokunusu kendi jestine devralabiliyor; o durumda birakma olayi
     // hic gelmiyor. Yakalamanin kaybi da ayni anlama geliyor. Ikisi de yarim
     // kalan suruklemeyi kapatmali, yoksa harita kalici olarak kilitleniyor.
-    // Beceri jesti parmak bazinda kapaniyor: iki parmaktan biri dusunce
-    // kalaninin birakisi yine yutulmali (yakalama kaybi her birakistan sonra da geliyor).
+    // Beceri jesti parmak bazinda kapaniyor: yakalama kaybi her birakistan
+    // sonra da geliyor ve yalnizca o parmagin jestini kapatmali.
     const abandon = (event: PointerEvent) => {
       this.dropMapSkillGesturePointer(event.pointerId);
       this.abandonMapGesture();

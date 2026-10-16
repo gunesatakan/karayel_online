@@ -95,11 +95,11 @@ export const trScene = {
   "scene.skill.gestureReady": "Hazır",
   "scene.skill.gestureCooldown": "{seconds} sn",
   // Harita jestiyle beceri: jest becerinin sirasina sabit (1. basili tut +
-  // surukle, 2. surukle, 3. iki parmakla surukle; farede sag tusla).
-  "scene.skill.mapHintHold": "Haritada: basılı tut + sürükle",
+  // surukle (asagi haric), 2. surukle, 3. basili tut + asagi surukle; farede
+  // 3. beceri sag tusla da).
+  "scene.skill.mapHintHold": "Haritada: basılı tut + sürükle (aşağı hariç)",
   "scene.skill.mapHintDrag": "Haritada: sürükle",
-  "scene.skill.mapHintTwo": "Haritada: iki parmakla sürükle",
-  "scene.skill.mapHintTwoMouse": "Haritada: sağ tuşla sürükle",
+  "scene.skill.mapHintDown": "Haritada: basılı tut + aşağı sürükle",
   "scene.skill.gestureCooldownNotice": "{name} {seconds} sn sonra hazır",
   "scene.skill.gestureCancelHint": "bırakırsan iptal",
   "scene.skill.gestureTierCost": "{tier} · {cost} İtibar",
@@ -333,10 +333,9 @@ export const enScene: Readonly<Record<keyof typeof trScene, string>> = {
   "scene.skill.shieldCooldown": "Metal Shield ready in {seconds} s",
   "scene.skill.gestureReady": "Ready",
   "scene.skill.gestureCooldown": "{seconds} s",
-  "scene.skill.mapHintHold": "On map: hold + drag",
+  "scene.skill.mapHintHold": "On map: hold + drag (not down)",
   "scene.skill.mapHintDrag": "On map: drag",
-  "scene.skill.mapHintTwo": "On map: two-finger drag",
-  "scene.skill.mapHintTwoMouse": "On map: right-drag",
+  "scene.skill.mapHintDown": "On map: hold + drag down",
   "scene.skill.gestureCooldownNotice": "{name} ready in {seconds} s",
   "scene.skill.gestureCancelHint": "release to cancel",
   "scene.skill.gestureTierCost": "{tier} · {cost} Prestige",
