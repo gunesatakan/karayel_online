@@ -1,4 +1,4 @@
-import { FINAL_WAVE, type KillStreakTier } from "../balance/index.js";
+import { FINAL_WAVE, getKillStreakRule, type KillStreakTier } from "../balance/index.js";
 import { towerCatalog } from "../characters/index.js";
 import { getUltimateStampText, type UltimateResultMessage } from "../feedback/ultimate.js";
 import { lt } from "../i18n/index.js";
@@ -232,6 +232,18 @@ export function getStageOneClearOperators(records: RecordBook | undefined): Char
 const OPERATOR_COUNT = 7;
 
 /**
+ * Seri nisaninin esigi ("11 sn'de 20 öldürme"); sayilar kademe tablosundan,
+ * esik degisince nisan metni eski sayiyi anlatmasin. Kiyim RAMPAGE'e, Efsane
+ * LEGENDARY'ye bagli kaldi (dokuz kademeli merdivende ikisi de zorlasti).
+ */
+export function streakThresholdText(tier: KillStreakTier, english = false) {
+  const rule = getKillStreakRule(tier);
+  if (!rule) return "";
+  const seconds = rule.windowMs / 1000;
+  return english ? `${rule.kills} kills in ${seconds} s` : `${seconds} sn'de ${rule.kills} öldürme`;
+}
+
+/**
  * Nisan katalogu. Sira menudeki sira; grup icinde kolaydan zora.
  *
  * Her kosulun karsiliginda bir ulasilabilirlik notu var (test
@@ -270,7 +282,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
     id: "kiyim",
     wholeRun: true,
     name: "Kıyım",
-    condition: "Bir koşuda RAMPAGE serisine ulaş (8 sn'de 16 öldürme).",
+    condition: `Bir koşuda RAMPAGE serisine ulaş (${streakThresholdText("rampage")}).`,
     group: "defense",
     phase: "run",
     check: (facts) => getKillStreakTierRank(facts.player?.bestStreakTier) >= getKillStreakTierRank("rampage" satisfies KillStreakTier)
@@ -279,7 +291,7 @@ export const BADGE_CATALOG: readonly BadgeDefinition[] = [
     id: "efsane",
     wholeRun: true,
     name: "Efsane",
-    condition: "Bir koşuda LEGENDARY serisine ulaş (11 sn'de 22 öldürme).",
+    condition: `Bir koşuda LEGENDARY serisine ulaş (${streakThresholdText("legendary")}).`,
     group: "defense",
     longTerm: true,
     phase: "run",

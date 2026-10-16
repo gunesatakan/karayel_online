@@ -1196,6 +1196,9 @@ export {
   STREAK_GLOW_FADE_IN_MS,
   STREAK_GLOW_FADE_OUT_MS,
   StreakBannerQueue,
+  KILL_STREAK_VOICE_URLS,
+  STREAK_VOICE_HOLD_MAX_MS,
+  STREAK_BANNER_MAX_WAIT_MS,
   getComboHeat,
   getComboWindowMs,
   getKillStreakBuffRealMs,
@@ -1424,6 +1427,7 @@ export type {
 } from "./progress/records.js";
 export {
   KILL_STREAK_TIER_LABELS,
+  KILL_STREAK_MOMENT_SCORES,
   MatchResultLatch,
   QUICK_START_MAX_AGE_MS,
   QUICK_START_VERSION,
@@ -1529,6 +1533,7 @@ export {
   ARCHIVIST_CARD_TARGET,
   BADGE_BOOK_VERSION,
   BADGE_CATALOG,
+  streakThresholdText,
   BADGE_GROUP_LABELS,
   BadgeNoticeQueue,
   BadgeRunWatch,
@@ -2013,6 +2018,11 @@ export {
   KILL_STREAK_RULES,
   KILL_STREAK_BUFF_DURATION_MS,
   KILL_STREAK_RETRIGGER_LOCK_MS,
+  KILL_STREAK_MAX_WINDOW_MS,
+  KILL_STREAK_MIN_KILLS,
+  KILL_STREAK_MELIS_APPROVAL,
+  getKillStreakMelisApproval,
+  killStreakRuleGrantsBuff,
   getKillStreakRule
 } from "./balance/index.js";
 export type { KillStreakRule, KillStreakTier, WaveAirMode } from "./balance/index.js";

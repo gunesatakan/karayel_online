@@ -86,7 +86,6 @@ test("geliştirici yapımı varliklar CREDITS.md'de yollariyla listeli", () => {
   assert.ok(section.includes(CREDITS_DEVELOPER), "bolum gelistirici adini anmiyor");
   for (const path of [
     "apps/web/public/audio/streak-granted.mp3",
-    "apps/web/public/audio/kill-streak-deep.mp3",
     "apps/web/public/images/enemies/enemy-grunt.png",
     "apps/web/public/images/towers/tower-zeynep-1.webp",
     "apps/web/public/images/towers/tower-warrior-1-level-10.png",
@@ -192,4 +191,24 @@ test("ATLAS seslendirmesi: gelistiricinin ElevenLabs ile urettigi satirlar, ucre
   assert.match(i18n.en["credits.game.body"], /ATLAS voice/);
   assert.match(i18n.tr["credits.group.ai.note"], /ATLAS/);
   assert.match(i18n.en["credits.group.ai.note"], /ATLAS/);
+});
+
+test("seri anonslari: GRANTED gelistirici kaydi, oteki sekizi ATLAS'in sesi; CREDITS.md ve ekran notu bunu soyluyor", async () => {
+  const { KILL_STREAK_VOICE_URLS } = await import("../packages/shared/dist/index.js");
+  const atlasSection = credits.slice(credits.indexOf("### Ses: ATLAS telsiz anonsları"), credits.indexOf("### Seri anonsları"));
+  const developerSection = credits.slice(credits.indexOf("### Seri anonsları"), credits.indexOf("### Düşman sprite"));
+  for (const [tier, url] of Object.entries(KILL_STREAK_VOICE_URLS)) {
+    const file = url.slice(url.lastIndexOf("/") + 1);
+    assert.ok(existsSync(new URL(`../apps/web/public/${url}`, import.meta.url)), `${tier}: ${url} pakette yok`);
+    if (tier === "granted") {
+      assert.ok(developerSection.includes(`apps/web/public/${url}`), "GRANTED gelistirici bolumunde");
+    } else {
+      assert.ok(atlasSection.includes(file), `${file} ATLAS bolumunde yok`);
+    }
+  }
+  assert.ok(!credits.includes("kill-streak-deep.mp3") && !credits.includes("streak-unstopable.mp3"), "kaldirilan klipler listede kalmadi");
+  const english = credits.slice(credits.indexOf("## English summary"));
+  assert.match(english, /kill-streak announcer lines[\s\S]*ATLAS's voice/);
+  assert.match(i18n.tr["credits.group.voice.note"], /seri/);
+  assert.match(i18n.en["credits.group.voice.note"], /kill-streak/);
 });

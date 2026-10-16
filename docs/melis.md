@@ -55,10 +55,17 @@ Kill streak seviyesi Melis'e onay verir:
 
 | Streak | Kosul | Onay |
 |---|---:|---:|
-| Granted | 2 saniyede 5 kill | +1 |
-| Unstoppable | 5 saniyede 10 kill | +2 |
-| Rampage | 8 saniyede 16 kill | +3 |
-| Legendary | 11 saniyede 22 kill | +4 |
+| Not Bad | 1,5 saniyede 3 kill | 0 |
+| Good | 2 saniyede 5 kill | +1 |
+| Granted | 5 saniyede 10 kill | +2 |
+| Unstoppable | 8 saniyede 15 kill | +3 |
+| Rampage | 13 saniyede 24 kill | +4 |
+| Slaughter | 18 saniyede 32 kill | +5 |
+| Legendary | 22 saniyede 39 kill | +6 |
+| I Made You For This | 25 saniyede 44 kill | +7 |
+| What Are You | 29 saniyede 50 kill | +8 |
+
+Onay oldurme esigine bagli: eski tablodaki +1..+4 (5/2, 10/5, 16/8, 22/11) bugunku Good..Rampage basamaklarina kaydi. Not Bad guc ve onay vermiyor (yalnizca anons). Tablo `KILL_STREAK_MELIS_APPROVAL` (packages/shared/src/balance/index.ts).
 
 Her streak tetiklendikten sonra ayni dalgada 1 dakika boyunca tekrar tetiklenemez. Dalga degisirse kilit erken acilabilir.
 
@@ -433,7 +440,7 @@ Fısıltı Korosu dusmanlara fiziksel baski kurmaktan cok, karar verme mekanizma
 
 ## Streak Gorsel Dili
 
-Melis'in streak anonslari glitch neon ve korku fantezisi temalidir. Granted, Unstoppable, Rampage ve Legendary seviyelerinde tasarim giderek daha kaotik ve sarsintili hale gelir.
+Melis'in streak anonslari glitch neon ve korku fantezisi temalidir. Not Bad'dan What Are You'ya dokuz seviyede tasarim giderek daha kaotik ve sarsintili hale gelir.
 
 Gorsel dilin amaci, Melis'in onay arayisini "basari kutlamasi" gibi degil, rahatsiz edici bir psikolojik patlama gibi hissettirmektir.
 

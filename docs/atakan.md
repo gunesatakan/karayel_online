@@ -696,14 +696,19 @@ Bu tabloya gore:
 
 ### Kill Streak Bufflari
 
-Kill streak anonslari sadece ses/gorsel degildir; streak'i yapan oyuncunun mevcut tum turretlerine 3 saniyelik buff verir.
+Kill streak anonslari (NOT BAD haric) sadece ses/gorsel degildir; streak'i yapan oyuncunun mevcut tum turretlerine 3 saniyelik buff verir. Tablo `KILL_STREAK_RULES` (packages/shared/src/balance/index.ts).
 
 | Streak | Esik | Turret buff'i |
 |---|---|---|
-| Granted | 2 saniyede 5 kill | Tum turretlerde +%10 hasar |
-| Unstoppable | 5 saniyede 10 kill | Tum turretlerde +%20 hasar |
-| Rampage | 8 saniyede 16 kill | Tum turretlerde +%20 hasar ve odaklanma haric +%20 saldiri hizi |
-| Legendary | 11 saniyede 22 kill | Tum turretlerde +%20 hasar, odaklanma haric +%20 saldiri hizi, tum dusmanlara 2 saniye Korku |
+| Not Bad | 1,5 saniyede 3 kill | Yok (yalnizca anons) |
+| Good | 2 saniyede 5 kill | +%10 hasar |
+| Granted | 5 saniyede 10 kill | +%20 hasar |
+| Unstoppable | 8 saniyede 15 kill | +%20 hasar, odaklanma haric +%20 saldiri hizi |
+| Rampage | 13 saniyede 24 kill | +%20 hasar, +%20 saldiri hizi, tum dusmanlara 3 sn Korku |
+| Slaughter | 18 saniyede 32 kill | +%25 hasar, +%25 saldiri hizi, 3 sn Korku |
+| Legendary | 22 saniyede 39 kill | +%25 hasar, +%25 saldiri hizi, 3 sn Korku |
+| I Made You For This | 25 saniyede 44 kill | +%30 hasar, +%30 saldiri hizi, 3 sn Korku |
+| What Are You | 29 saniyede 50 kill | +%35 hasar, +%35 saldiri hizi, 3 sn Korku |
 
 Her streak tetiklendikten sonra ayni dalgada 60 saniye tekrar tetiklenemez. Dalga degisirse bu kilit acilir. Daha yuksek bir streak tetiklenirse alttaki streakler de ayni dalgada kilitlenir.
 

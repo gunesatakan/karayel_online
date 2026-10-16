@@ -163,6 +163,9 @@ test("defter: yaratici geri sarma raporu sisirmiyor, seri kademesi sirasi kurall
   assert.ok(getKillStreakTierRank("granted") < getKillStreakTierRank("unstoppable"));
   assert.ok(getKillStreakTierRank("unstoppable") < getKillStreakTierRank("rampage"));
   assert.ok(getKillStreakTierRank("rampage") < getKillStreakTierRank("legendary"));
+  // Dokuz kademe: NOT BAD en dusuk (1), WHAT ARE YOU en yuksek (9).
+  const ladder = ["notBad", "good", "granted", "unstoppable", "rampage", "slaughter", "legendary", "madeForThis", "whatAreYou"];
+  assert.deepEqual(ladder.map((tier) => getKillStreakTierRank(tier)), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 });
 
 test("sunucu: nexus'a ulasan her dusman sizinti; kalkan tutsa da, can degismese de", () => {
@@ -228,7 +231,7 @@ test("sunucu: zafer raporu kosunun tamamini tasiyor (MVP satilan kule dahil)", (
   player.gold = 1e12;
   savasaBasla(room);
 
-  // Oyuncunun yetenek oldurmeleri: 5 oldurme 2 sn icinde, ilk seri kademesi.
+  // Oyuncunun yetenek oldurmeleri: 5 oldurme 2 sn icinde, ilk guclu seri kademesi (GOOD; 3. oldurme NOT BAD).
   for (let index = 0; index < 5; index += 1) {
     room.damageEnemy(kirilganDusman(room), 50, 0, "skill", "p1", "true");
   }
@@ -289,7 +292,7 @@ test("sunucu: zafer raporu kosunun tamamini tasiyor (MVP satilan kule dahil)", (
   assert.equal(satir.kills, 5);
   assert.equal(satir.damage, Math.round(25 + kuleHasari), "yetenek ve kule hasari oyuncunun");
   assert.deepEqual(satir.cards, ["kart-a", "kart-b"], "deste secim sirasiyla");
-  assert.equal(satir.bestStreakTier, "granted");
+  assert.equal(satir.bestStreakTier, "good");
   assert.equal(satir.topTower.towerId, tower.id);
 
   assert.deepEqual(run.mvp, {
@@ -300,7 +303,7 @@ test("sunucu: zafer raporu kosunun tamamini tasiyor (MVP satilan kule dahil)", (
     damage: Math.round(kuleHasari),
     level: 1
   });
-  assert.deepEqual(run.bestStreak, { tier: "granted", slot: 0, wave: 1 });
+  assert.deepEqual(run.bestStreak, { tier: "good", slot: 0, wave: 1 });
   assert.deepEqual(run.firstLevel10, { wave: 1, slot: 0, towerId: ikinci.id, definitionId: definition.id, name: definition.name });
 
   // Rapor sonuc mesajinin icinde bir kez; dalga karnesi son dalgada da gitti.

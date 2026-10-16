@@ -489,7 +489,7 @@ test("sahne kancalari yonetmeni cagiriyor", () => {
   assert.match(speaking, /this\.backgroundMusic\.volume = this\.musicVolume \* this\.atlasMusicDuck/);
   assert.match(speaking, /this\.streakVoice\.audio\.pause\(\)/);
   assert.match(speaking, /this\.game\.events\.emit\("game:hud-atlas", speaking\)/);
-  assert.match(body("playKillStreakAnnouncement"), /if \(this\.atlas\?\.isSpeaking\) \{\s*return;/);
+  assert.match(body("playKillStreakAnnouncement"), /if \(this\.atlas\?\.isSpeaking\) \{\s*return(?: undefined)?;/);
   assert.match(body("applyAudioVolumes"), /this\.musicVolume \* this\.atlasMusicDuck/);
   // Ayar kutusu.
   assert.match(scene, /case "setAtlasVoice":\s*this\.setAtlasVoiceEnabled\(detail\.value === 1\);/);

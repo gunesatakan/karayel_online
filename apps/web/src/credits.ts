@@ -79,7 +79,8 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
     noteKey: "credits.group.voice.note",
     sources: [
       // ATLAS telsiz anonslari: gelistirici ElevenLabs ile, anlik ses klonu "MorbidAI", ucretli plan.
-      // Dosyalar apps/web/public/audio/atlas (tools/build-atlas-voice.mjs).
+      // Dosyalar apps/web/public/audio/atlas (tools/build-atlas-voice.mjs) ve seri anonslari
+      // apps/web/public/audio/streak-*.mp3 (GRANTED haric; tools/build-streak-voice.mjs).
       { id: "atlas-voice", title: "ATLAS voice lines", author: "gunesatakan (ElevenLabs Instant Voice Clone \"MorbidAI\")", license: "ElevenLabs paid plan: commercial use allowed", url: "https://elevenlabs.io" }
     ]
   },

@@ -31,6 +31,7 @@ import {
   FEEDBACK_KIND_RULES,
   FINAL_WAVE,
   KILL_STREAK_RULES,
+  KILL_STREAK_MOMENT_SCORES,
   MatchResultLatch,
   QUICK_START_MAX_AGE_MS,
   RUN_REPORT_ACTIONABLE_AFTER_MS,
@@ -206,10 +207,17 @@ test("en iyi an: once kendi, sonra ekip; onuncu seviye > seri > ulti derecesi", 
   const ekip = pickRunMoment({ players, bestStreak: { tier: "legendary", slot: 1, wave: 9 } }, { localSlot: 0 });
   assert.deepEqual(ekip, { kind: "streak", own: false, text: "Ece: LEGENDARY serisi · Dalga 9" });
 
-  // Kendi anlari arasinda: RAMPAGE mukemmel nisanin ustunde, UNSTOPPABLE altinda; L10 hepsinin ustunde.
+  // Kendi anlari arasinda: UNSTOPPABLE mukemmel nisanin ustunde, GRANTED altinda; L10 hepsinin (WHAT ARE YOU dahil) ustunde.
   const solo = (tier) => [{ slot: 0, name: "Ali", characterId: "zeynep", kills: 1, damage: 1, cards: [], bestStreakTier: tier }];
   assert.equal(pickRunMoment({ players: solo("rampage"), bestStreak: { tier: "rampage", slot: 0, wave: 8 } }, { localSlot: 0, ultimate: mukemmel }).text, "RAMPAGE serisi · Dalga 8");
-  assert.equal(pickRunMoment({ players: solo("unstoppable"), bestStreak: { tier: "unstoppable", slot: 0, wave: 8 } }, { localSlot: 0, ultimate: mukemmel }).kind, "ultimate");
+  assert.equal(pickRunMoment({ players: solo("unstoppable"), bestStreak: { tier: "unstoppable", slot: 0, wave: 8 } }, { localSlot: 0, ultimate: mukemmel }).text, "UNSTOPPABLE serisi · Dalga 8");
+  assert.equal(pickRunMoment({ players: solo("granted"), bestStreak: { tier: "granted", slot: 0, wave: 8 } }, { localSlot: 0, ultimate: mukemmel }).kind, "ultimate");
+  // NOT BAD (guc yok) oldurmeli ultinin ustunde, karar payinin altinda; en ust kademe onuncu seviyenin altinda.
+  assert.ok(KILL_STREAK_MOMENT_SCORES.notBad > 1 && KILL_STREAK_MOMENT_SCORES.notBad < 1.5);
+  assert.ok(KILL_STREAK_MOMENT_SCORES.whatAreYou < 6);
+  const ladder = [...KILL_STREAK_RULES].reverse().map((rule) => KILL_STREAK_MOMENT_SCORES[rule.tier]);
+  assert.deepEqual([...ladder].sort((a, b) => a - b), ladder, "agirlik kademeyle artiyor");
+  assert.equal(new Set(ladder).size, ladder.length, "her kademe ayri agirlikta");
   const l10 = pickRunMoment({
     players: solo("legendary"),
     bestStreak: { tier: "legendary", slot: 0, wave: 12 },
@@ -561,7 +569,7 @@ test("seri adlari arenadaki bannerla ayni ve her kademe icin var", async () => {
   const run = defterRaporu({ waves: 1, players: [{ slot: 0, name: "A", characterId: "zeynep" }], streak: { slot: 0, tier: "granted", wave: 1 } });
   for (const rule of KILL_STREAK_RULES) {
     const moment = pickRunMoment({ ...run, players: [{ ...run.players[0], bestStreakTier: rule.tier }], bestStreak: { tier: rule.tier, slot: 0, wave: 1 } }, { localSlot: 0 });
-    const label = moment.text.split(" ")[0];
+    const label = moment.text.slice(0, moment.text.indexOf(" serisi"));
     assert.ok(scene.includes(`label: "${label}"`), `${rule.tier} banner adi ${label} degil`);
   }
 });

@@ -1,4 +1,4 @@
-import { KILL_STREAK_BUFF_DURATION_MS, getKillStreakRule, getWaveSpawnIntervalMs, type KillStreakTier } from "../balance/index.js";
+import { KILL_STREAK_BUFF_DURATION_MS, getKillStreakRule, getWaveSpawnIntervalMs, killStreakRuleGrantsBuff, type KillStreakTier } from "../balance/index.js";
 import { countsAsTower, occupiesTowerSlot, towerCatalog } from "../characters/index.js";
 import { lt, ltFixed, ltPercent } from "../i18n/index.js";
 import type { TowerSnapshot } from "../index.js";
@@ -8,7 +8,7 @@ import { GAME_SPEED_MULTIPLIER } from "../tower-stats/index.js";
 /**
  * Canli kombo, gorunur seri gucu ve seri afisinin sirasi.
  *
- * Sunucu serisi (5 oldurme / 2 sn ve ustu) gercek bir guc veriyor ama dalga
+ * Sunucu serisi (5 oldurme / 2 sn ve ustu; altindaki NOT BAD yalnizca anons) gercek bir guc veriyor ama dalga
  * basina 0-3 kez cikiyor ve erken dalgalarda dogum temposu esige hic
  * yetismiyor: seri oyuncuya "birden oldu" gibi geliyor, kurulmus gibi degil.
  * Kombo bu boslugu kozmetik olarak dolduruyor -- oyuna hicbir etkisi yok,
@@ -199,6 +199,26 @@ export class KillComboWatch {
   }
 }
 
+/**
+ * Seri anonslarinin ses dosyalari (goreli: istemci `assetUrl` ile cozuyor).
+ *
+ * GRANTED eski gelistirici kaydi; geri kalani ATLAS'in sesi (ElevenLabs,
+ * ucretli plan), `tools/build-streak-voice.mjs` assets-src/streak/
+ * ustalarindan ATLAS telsiz satirlariyla ayni yukseklikte (-18 LUFS, mono
+ * 64 kb/s) uretiyor. ATLAS konusurken hicbiri calmiyor (GameScene).
+ */
+export const KILL_STREAK_VOICE_URLS: Readonly<Record<KillStreakTier, string>> = {
+  notBad: "audio/streak-notbad.mp3",
+  good: "audio/streak-good.mp3",
+  granted: "audio/streak-granted.mp3",
+  unstoppable: "audio/streak-unstoppable.mp3",
+  rampage: "audio/streak-rampage.mp3",
+  slaughter: "audio/streak-slaughter.mp3",
+  legendary: "audio/streak-legendary.mp3",
+  madeForThis: "audio/streak-made-for-this.mp3",
+  whatAreYou: "audio/streak-what-are-you.mp3"
+};
+
 /** Seri buff'inin gercek saatteki suresi: 3000 oyun-ms = 3750 ms. Kule parlamasi bu kadar suruyor. */
 export function getKillStreakBuffRealMs() {
   return KILL_STREAK_BUFF_DURATION_MS / GAME_SPEED_MULTIPLIER;
@@ -218,7 +238,8 @@ function formatSeconds(ms: number) {
  */
 export function getKillStreakBuffText(tier: KillStreakTier) {
   const rule = getKillStreakRule(tier);
-  if (!rule) {
+  // Gucsuz kademe (NOT BAD): satir yok; "3 sn" tek basina olmayan bir buff'i anlatirdi.
+  if (!rule || !killStreakRuleGrantsBuff(rule)) {
     return "";
   }
   const parts: string[] = [];
@@ -282,26 +303,53 @@ export const STREAK_BANNER_MIN_VISIBLE_MS = 1100;
 export const STREAK_BANNER_QUEUE_LIMIT = 2;
 /** Yer acan afisin hizli cikisi. */
 export const STREAK_BANNER_HANDOFF_MS = 260;
+/**
+ * Kendi seri klibin bitene kadar afis ekranda kaliyor ve siradaki bekliyor;
+ * en fazla bu kadar (en uzun klip ~5,1 sn). Sure bilinmiyorsa (metadata
+ * gelmedi) bu tavan bekleniyor, klip bitince (`pause` olayi) erken birakiliyor.
+ */
+export const STREAK_VOICE_HOLD_MAX_MS = 5500;
+/**
+ * Siradaki afisin en fazla bekleyebilecegi sure: ekrandakinin klip tavani ve
+ * hizli cikisi. Daha eskisi gosterilmiyor (o an artik "simdi" degil).
+ */
+export const STREAK_BANNER_MAX_WAIT_MS = STREAK_VOICE_HOLD_MAX_MS + STREAK_BANNER_HANDOFF_MS + 240;
 
 /**
  * Seri afislerinin sirasi.
  *
  * Yeni afis eskiden ekrandakini aninda siliyordu. Artik siraya giriyor ve
  * ekrandaki afis en az `STREAK_BANNER_MIN_VISIBLE_MS` kaldiktan sonra hizli
- * bir cikisla yer aciyor. Buff'in suresi gecmis bir afis gosterilmiyor:
- * "+%20 hasar · 3 sn" o an artik dogru degil, kuleler de sonmus olur.
+ * bir cikisla yer aciyor.
+ *
+ * Kendi seri klibin kesilmiyor: afis ekrana gelince klibin bitis ani
+ * `holdUntil` ile yaziliyor (en fazla `STREAK_VOICE_HOLD_MAX_MS`), siradaki
+ * afis -- ve klibi -- ancak o an yer aliyor. Bekleme uzayabildigi icin daha
+ * yuksek bir kademe gelince sirada bekleyen daha dusuk kademeler dusuyor
+ * (`rank` verildiyse): ikisini art arda calmak yerine yalnizca yuksegi.
+ * Buff'in suresi bekleme sirasinda dolabiliyor; afis yine geliyor, guc
+ * satirini cizen taraf (GameScene) onu o an hala dogruysa yaziyor.
  */
 export class StreakBannerQueue<T> {
   private activeSince?: number;
+  private holdEndsAt?: number;
   private waiting: Array<{ item: T; at: number }> = [];
 
-  constructor(private readonly maxWaitMs = getKillStreakBuffRealMs()) {}
+  constructor(
+    private readonly maxWaitMs = STREAK_BANNER_MAX_WAIT_MS,
+    private readonly rank?: (item: T) => number
+  ) {}
 
   /** "show": hemen goster; "queued": ekrandaki afis `handoffAt`te yer acmali. */
   offer(item: T, now: number): "show" | "queued" {
     if (this.activeSince === undefined) {
       this.activeSince = now;
+      this.holdEndsAt = undefined;
       return "show";
+    }
+    if (this.rank) {
+      const rank = this.rank(item);
+      this.waiting = this.waiting.filter((entry) => this.rank!(entry.item) >= rank);
     }
     this.waiting.push({ item, at: now });
     while (this.waiting.length > STREAK_BANNER_QUEUE_LIMIT) {
@@ -310,16 +358,34 @@ export class StreakBannerQueue<T> {
     return "queued";
   }
 
-  /** Bekleyen varsa ekrandaki afisin en erken cikabilecegi an. */
+  /**
+   * Ekrandaki afisin klibi bu ana kadar suruyor; tavan afisin gelisinden
+   * `STREAK_VOICE_HOLD_MAX_MS`. Klip bitince (ya da hic calmadiysa) `now` ile
+   * cagrilip birakiliyor.
+   */
+  holdUntil(at: number) {
+    if (this.activeSince === undefined || !Number.isFinite(at)) {
+      return;
+    }
+    this.holdEndsAt = Math.min(at, this.activeSince + STREAK_VOICE_HOLD_MAX_MS);
+  }
+
+  /** Ekrandaki afisin klip tutusu (yoksa gelisi): afis en az buna kadar kalmali. */
+  holdEnd() {
+    return this.activeSince === undefined ? undefined : Math.max(this.activeSince, this.holdEndsAt ?? this.activeSince);
+  }
+
+  /** Bekleyen varsa ekrandaki afisin en erken cikabilecegi an: okunma payi ve klibin sonu. */
   handoffAt() {
     return this.activeSince === undefined || this.waiting.length === 0
       ? undefined
-      : this.activeSince + STREAK_BANNER_MIN_VISIBLE_MS;
+      : Math.max(this.activeSince + STREAK_BANNER_MIN_VISIBLE_MS, this.holdEndsAt ?? 0);
   }
 
   /** Ekrandaki afis bitti; siradaki (bayatlamamis) varsa o gosterilmeli. */
   finish(now: number): T | undefined {
     this.activeSince = undefined;
+    this.holdEndsAt = undefined;
     while (this.waiting.length > 0) {
       const next = this.waiting.shift()!;
       if (now - next.at <= this.maxWaitMs) {
@@ -340,6 +406,7 @@ export class StreakBannerQueue<T> {
 
   clear() {
     this.activeSince = undefined;
+    this.holdEndsAt = undefined;
     this.waiting = [];
   }
 }

@@ -143,10 +143,15 @@ export function buildWaveStrip(input: {
  * oyuncu raporda gordugunu macta gordugune baglayabilsin.
  */
 export const KILL_STREAK_TIER_LABELS: Readonly<Record<KillStreakTier, string>> = {
+  notBad: "NOT BAD",
+  good: "GOOD",
   granted: "GRANTED",
   unstoppable: "UNSTOPPABLE",
   rampage: "RAMPAGE",
-  legendary: "LEGENDARY"
+  slaughter: "SLAUGHTER",
+  legendary: "LEGENDARY",
+  madeForThis: "I MADE YOU FOR THIS",
+  whatAreYou: "WHAT ARE YOU?"
 };
 
 /** Raporun hatirladigi ulti: sunucunun `ultimate:result` yukunun sayilari. */
@@ -198,13 +203,30 @@ export type RunMoment = {
  * tablo: "neden bu an" sorusunun cevabi okunabilir kalsin.
  */
 const MOMENT_SCORE_LEVEL10 = 6;
-/** Kademe sirasi (1-4) + 1: GRANTED 2, UNSTOPPABLE 3, RAMPAGE 4, LEGENDARY 5. */
+/**
+ * Seri kademelerinin agirligi. Hepsi onuncu seviyenin (6) altinda; sira
+ * kademe sirasi. Esige bagli: eski tablodaki GRANTED (5/2 sn) 2 idi, simdi
+ * ayni esik GOOD; mukemmel nisan (3.5) GRANTED'in (10/5 sn) ustunde,
+ * UNSTOPPABLE'in (15/8 sn) altinda. NOT BAD (3 oldurme, guc yok) oldurmeli
+ * ultinin (1) ustunde, karar payinin (1.5) altinda.
+ */
+export const KILL_STREAK_MOMENT_SCORES: Readonly<Record<KillStreakTier, number>> = {
+  notBad: 1.25,
+  good: 2,
+  granted: 3,
+  unstoppable: 4,
+  rampage: 4.5,
+  slaughter: 5,
+  legendary: 5.25,
+  madeForThis: 5.5,
+  whatAreYou: 5.75
+};
 function streakMomentScore(tier: KillStreakTier) {
-  return getKillStreakTierRank(tier) + 1;
+  return KILL_STREAK_MOMENT_SCORES[tier] ?? getKillStreakTierRank(tier);
 }
 /**
- * Karar payinin agirligi: oldurmeli bir ultinin (1) ustunde, ilk seri
- * kademesinin (GRANTED 2) altinda. Pay bir an degil kosu boyu bir karar; ancak
+ * Karar payinin agirligi: oldurmeli bir ultinin (1) ve NOT BAD'in (1.25)
+ * ustunde, ilk guclu seri kademesinin (GOOD 2) altinda. Pay bir an degil kosu boyu bir karar; ancak
  * raporda daha parlak bir an yoksa basligi aliyor.
  */
 const MOMENT_SCORE_SYNERGY = 1.5;
@@ -215,7 +237,7 @@ const MOMENT_SCORE_SYNERGY = 1.5;
  * Once kendi, sonra ekip: yerel oyuncunun herhangi bir ani takim arkadasinin
  * en buyuk anindan once geliyor -- baskasinin anı senin raporunun basligini
  * almasin. Kendi anlari arasinda: ilk onuncu seviye, seri kademesi, ulti
- * derecesi (sutunda mukemmel nisan UNSTOPPABLE'in ustunde, RAMPAGE'in altinda).
+ * derecesi (sutunda mukemmel nisan GRANTED'in ustunde, UNSTOPPABLE'in altinda).
  * Takim arkadasinin ultisi bu istemciye gelmiyor, o yuzden ekipte yalnizca
  * onuncu seviye ve seri var. Kendi karar payin (yalnizlik ya da dizilim,
  * kosu toplami `SYNERGY_SHARE_RUN_FLOOR` ustunde) en alttaki aday.

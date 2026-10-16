@@ -148,15 +148,23 @@ mantığı `apps/web/src/atlas-voice.ts`.
   192 kb/s ustalar).
 - **Lisans:** satırlar ücretli bir ElevenLabs planıyla üretildi; ticari
   kullanıma izin var.
+- **Seri anonsları (ATLAS):** öldürme serisi kademelerinin sekiz İngilizce
+  anonsu da ATLAS'ın sesi; aynı ses klonu, aynı ücretli plan, aynı yapay zekâ
+  beyanı. Dosyalar `apps/web/public/audio/streak-notbad.mp3`,
+  `streak-good.mp3`, `streak-unstoppable.mp3`, `streak-rampage.mp3`,
+  `streak-slaughter.mp3`, `streak-legendary.mp3`, `streak-made-for-this.mp3`,
+  `streak-what-are-you.mp3` (mono, 64 kb/s MP3, ~-18 LUFS;
+  `tools/build-streak-voice.mjs` üretiyor). Kaynak (pakete girmiyor):
+  `assets-src/streak/`.
 
 ### Seri anonsları
 
-Geliştirici yapımı ses kayıtları:
+Geliştirici yapımı ses kaydı (GRANTED kademesi; ATLAS satırlarıyla aynı
+yükseklikte yeniden kodlandı, ustası `assets-src/streak/streak-granted_developer.mp3`):
 
 - `apps/web/public/audio/streak-granted.mp3`
-- `apps/web/public/audio/streak-legendary.mp3`
-- `apps/web/public/audio/streak-unstopable.mp3`
-- `apps/web/public/audio/kill-streak-deep.mp3`
+
+Öteki seri kademelerinin anonsları ATLAS'ın sesi (yukarıda "Ses: ATLAS telsiz anonsları").
 
 ### Düşman sprite'ları
 
@@ -221,7 +229,7 @@ manifest.
   itch.io and Steam.
 - Software: Phaser (MIT), Colyseus (MIT), Bounty Board Arcade SDK (MIT).
 
-**Created by the developer (gunesatakan):** the streak/announcer clips, all 24
+**Created by the developer (gunesatakan):** the GRANTED streak clip, all 24
 enemy sprites, the tower sprites, the splash art, the Zeynep hands, the
 Melis portraits, the AttackLord operator icon (`attacklord-icon-*.webp`) and
 the lobby music were made by the developer. Some of the
@@ -233,6 +241,10 @@ voiced by the developer (gunesatakan) with ElevenLabs, using an Instant Voice
 Clone ("MorbidAI"), on a paid ElevenLabs plan: commercial use is allowed.
 Shipped files: `apps/web/public/audio/atlas/` (built by
 `tools/build-atlas-voice.mjs` from `assets-src/atlas/`, which is not shipped).
+The kill-streak announcer lines (NOT BAD, GOOD, UNSTOPPABLE, RAMPAGE,
+SLAUGHTER, LEGENDARY, I MADE YOU FOR THIS, WHAT ARE YOU) are ATLAS's voice too,
+made the same way under the same paid plan: `apps/web/public/audio/streak-*.mp3` except `streak-granted.mp3`
+(built by `tools/build-streak-voice.mjs` from `assets-src/streak/`).
 
 **Music:** "Last Stand" by gunesatakan (aliatakangunes), generated with Suno AI
 (`apps/web/public/audio/music/last-stand.mp3`). It plays as lobby music on the

@@ -12,6 +12,7 @@ import {
   TOWER_TIER_2_LEVEL,
   TOWER_TIER_3_LEVEL,
   UNBROKEN_CLEAN_STREAK,
+  streakThresholdText,
   WORKER_REPAIR_PER_SECOND,
   type AmmoType,
   type BadgeGroup,
@@ -194,8 +195,8 @@ export const enBadges: Readonly<Record<string, { name: string; condition: string
   "hava-sahasi": { name: "Airspace", condition: "Clear wave 10 (all air) without a leak." },
   kesintisiz: { name: "Unbroken", condition: `Clear ${UNBROKEN_CLEAN_STREAK} waves in a row without a leak in one run.` },
   kusursuz: { name: "Flawless", condition: `Clear a stage with ${FINAL_WAVE}/${FINAL_WAVE} clean waves (★★★).` },
-  kiyim: { name: "Carnage", condition: "Reach a RAMPAGE streak in one run (16 kills in 8 s)." },
-  efsane: { name: "Legend", condition: "Reach a LEGENDARY streak in one run (22 kills in 11 s)." },
+  kiyim: { name: "Carnage", condition: `Reach a RAMPAGE streak in one run (${streakThresholdText("rampage", true)}).` },
+  efsane: { name: "Legend", condition: `Reach a LEGENDARY streak in one run (${streakThresholdText("legendary", true)}).` },
   "sampiyon-avcisi": { name: "Champion Hunter", condition: "Take down a champion (they appear from wave 6)." },
   "hizlanan-av": { name: "Quickening Hunt", condition: "Take down a champion faster than the previous one." },
   "kademe-2": { name: "Tier 2", condition: `Raise one of your towers to level ${TOWER_TIER_2_LEVEL} (TIER 2).` },
@@ -284,10 +285,15 @@ export const enRoleTitleLabels: Readonly<Record<RoleTitleKind, string>> = {
 };
 
 export const enKillStreakTierLabels: Readonly<Record<KillStreakTier, string>> = {
+  notBad: "NOT BAD",
+  good: "GOOD",
   granted: "GRANTED",
   unstoppable: "UNSTOPPABLE",
   rampage: "RAMPAGE",
-  legendary: "LEGENDARY"
+  slaughter: "SLAUGHTER",
+  legendary: "LEGENDARY",
+  madeForThis: "I MADE YOU FOR THIS",
+  whatAreYou: "WHAT ARE YOU?"
 };
 
 export const enRunRoleTitles: Readonly<Record<keyof typeof RUN_ROLE_TITLES, string>> = {

@@ -219,8 +219,27 @@ export function getWaveSpawnIntervalMs(wave: number) {
  *
  * Esikleri dusurmek afisi sik yapmaz, gercek bir hasar ve hiz buff'ini sik
  * yapar -- degistirilecekse denge testiyle.
+ *
+ * Dokuz kademe (sahibin karari, 2026-10): en altta yalnizca anons olan
+ * NOT BAD (3 / 1,5 sn, guc yok), sonra eski dort kademenin sayilari bir
+ * basamak yukari kaydi (GOOD eski GRANTED, GRANTED eski UNSTOPPABLE, ...)
+ * ve ustune SLAUGHTER, LEGENDARY, I MADE YOU FOR THIS ve WHAT ARE YOU geldi.
+ * Pencere basamaklari (sahibin son karari) 3-5 sn: GRANTED 5, UNSTOPPABLE 8,
+ * RAMPAGE 13, SLAUGHTER 18, LEGENDARY 22, I MADE YOU FOR THIS 25, WHAT ARE YOU 29.
+ * Anons klipleri 1,5-5 sn suruyor; kendi klibin kesilmiyor, siradaki afis bekliyor (StreakBannerQueue).
+ * Esikler kesin artiyor, pencereler azalmiyor; en uzun pencere (29 sn)
+ * sunucunun tuttugu oldurme zamanlarinin ufku (`KILL_STREAK_MAX_WINDOW_MS`).
  */
-export type KillStreakTier = "granted" | "unstoppable" | "rampage" | "legendary";
+export type KillStreakTier =
+  | "notBad"
+  | "good"
+  | "granted"
+  | "unstoppable"
+  | "rampage"
+  | "slaughter"
+  | "legendary"
+  | "madeForThis"
+  | "whatAreYou";
 
 export type KillStreakRule = {
   tier: KillStreakTier;
@@ -232,11 +251,30 @@ export type KillStreakRule = {
 };
 
 export const KILL_STREAK_RULES: readonly KillStreakRule[] = [
-  { tier: "legendary", windowMs: 11000, kills: 22, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 3000 },
-  { tier: "rampage", windowMs: 8000, kills: 16, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
-  { tier: "unstoppable", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
-  { tier: "granted", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 }
+  { tier: "whatAreYou", windowMs: 29000, kills: 50, damageMultiplier: 1.35, hasteMultiplier: 1.35, fearAllMs: 3000 },
+  { tier: "madeForThis", windowMs: 25000, kills: 44, damageMultiplier: 1.3, hasteMultiplier: 1.3, fearAllMs: 3000 },
+  { tier: "legendary", windowMs: 22000, kills: 39, damageMultiplier: 1.25, hasteMultiplier: 1.25, fearAllMs: 3000 },
+  { tier: "slaughter", windowMs: 18000, kills: 32, damageMultiplier: 1.25, hasteMultiplier: 1.25, fearAllMs: 3000 },
+  { tier: "rampage", windowMs: 13000, kills: 24, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 3000 },
+  { tier: "unstoppable", windowMs: 8000, kills: 15, damageMultiplier: 1.2, hasteMultiplier: 1.2, fearAllMs: 0 },
+  { tier: "granted", windowMs: 5000, kills: 10, damageMultiplier: 1.2, hasteMultiplier: 1, fearAllMs: 0 },
+  { tier: "good", windowMs: 2000, kills: 5, damageMultiplier: 1.1, hasteMultiplier: 1, fearAllMs: 0 },
+  { tier: "notBad", windowMs: 1500, kills: 3, damageMultiplier: 1, hasteMultiplier: 1, fearAllMs: 0 }
 ];
+
+/** Sunucunun oyuncu basina tuttugu oldurme zamanlarinin ufku: en uzun kademe penceresi. */
+export const KILL_STREAK_MAX_WINDOW_MS = Math.max(...KILL_STREAK_RULES.map((rule) => rule.windowMs));
+/** En dusuk esik; bundan az oldurmeyle hicbir kademe aranmiyor. */
+export const KILL_STREAK_MIN_KILLS = Math.min(...KILL_STREAK_RULES.map((rule) => rule.kills));
+
+/**
+ * Kademe gercek bir guc veriyor mu. NOT BAD yalnizca anons: kuleye buff
+ * yazilmiyor (daha yuksek bir buff'in suresini de uzatmiyor), kuleler
+ * parlamiyor, afiste guc satiri yok.
+ */
+export function killStreakRuleGrantsBuff(rule: Pick<KillStreakRule, "damageMultiplier" | "hasteMultiplier" | "fearAllMs">) {
+  return rule.damageMultiplier > 1 || rule.hasteMultiplier > 1 || rule.fearAllMs > 0;
+}
 
 /** Seri buff'inin suresi (oyun zamani, ms); gercek saatte `/ GAME_SPEED_MULTIPLIER`. */
 export const KILL_STREAK_BUFF_DURATION_MS = 3000;
@@ -245,6 +283,32 @@ export const KILL_STREAK_RETRIGGER_LOCK_MS = 60000;
 
 export function getKillStreakRule(tier: KillStreakTier) {
   return KILL_STREAK_RULES.find((rule) => rule.tier === tier);
+}
+
+/**
+ * Melis'in seriden aldigi onay (ya da sectigi tarafa gore stres).
+ *
+ * Sayilar oldurme esigine bagli kaldi, kademe adina degil: eski tabloda
+ * 5/2 sn +1, 10/5 sn +2, 16/8 sn +3, 22/11 sn +4 idi; bu basamaklar artik
+ * GOOD, GRANTED, UNSTOPPABLE (15/8) ve RAMPAGE (24/13), yani asagi yukari ayni
+ * kazanci veriyorlar. Ustteki kademeler birer artiyor (+5..+8). NOT BAD guc vermiyor, onay da vermiyor:
+ * 3 oldurme cok sik geliyor, onay ekonomisini sessizce sisirirdi; "sessiz
+ * dalga" stresi de yalnizca NOT BAD ile atlatilamiyor.
+ */
+export const KILL_STREAK_MELIS_APPROVAL: Readonly<Record<KillStreakTier, number>> = {
+  notBad: 0,
+  good: 1,
+  granted: 2,
+  unstoppable: 3,
+  rampage: 4,
+  slaughter: 5,
+  legendary: 6,
+  madeForThis: 7,
+  whatAreYou: 8
+};
+
+export function getKillStreakMelisApproval(tier: KillStreakTier) {
+  return KILL_STREAK_MELIS_APPROVAL[tier] ?? 0;
 }
 
 /**

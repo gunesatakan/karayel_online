@@ -29,11 +29,18 @@ import {
   KILL_STREAK_BUFF_DURATION_MS,
   KILL_STREAK_RETRIGGER_LOCK_MS,
   KILL_STREAK_RULES,
+  KILL_STREAK_MAX_WINDOW_MS,
+  KILL_STREAK_MIN_KILLS,
+  KILL_STREAK_MELIS_APPROVAL,
+  KILL_STREAK_TIER_LABELS,
+  KILL_STREAK_VOICE_URLS,
   KillComboWatch,
   MULTI_KILL_LABEL_MS,
   MULTI_KILL_WINDOW_MS,
   STREAK_BANNER_MIN_VISIBLE_MS,
   STREAK_BANNER_QUEUE_LIMIT,
+  STREAK_BANNER_MAX_WAIT_MS,
+  STREAK_VOICE_HOLD_MAX_MS,
   STREAK_GLOW_FADE_IN_MS,
   STREAK_GLOW_FADE_OUT_MS,
   StreakBannerQueue,
@@ -43,6 +50,9 @@ import {
   getKillStreakBuffRealMs,
   getKillStreakBuffText,
   getKillStreakRule,
+  getKillStreakMelisApproval,
+  getKillStreakTierRank,
+  killStreakRuleGrantsBuff,
   getMultiKillLabel,
   getStreakBuffedTowerIds,
   getStreakGlowAlpha,
@@ -192,21 +202,82 @@ test("bayat oldurme olayi komboya sayilmiyor (yeniden baglanma)", () => {
   assert.equal(isStaleKillEvent(1000, 3200), true, "2.2 sn'lik olay listesinin sonu");
 });
 
-test("seri esikleri ve buff'i degismedi; afisin ikinci satiri tablodan", () => {
+test("seri esikleri ve buff'i sahibin dokuz kademeli tablosu; afisin ikinci satiri tablodan", () => {
   assert.deepEqual(KILL_STREAK_RULES.map((rule) => [rule.tier, rule.windowMs, rule.kills, rule.damageMultiplier, rule.hasteMultiplier, rule.fearAllMs]), [
-    ["legendary", 11000, 22, 1.2, 1.2, 3000],
-    ["rampage", 8000, 16, 1.2, 1.2, 0],
-    ["unstoppable", 5000, 10, 1.2, 1, 0],
-    ["granted", 2000, 5, 1.1, 1, 0]
+    ["whatAreYou", 29000, 50, 1.35, 1.35, 3000],
+    ["madeForThis", 25000, 44, 1.3, 1.3, 3000],
+    ["legendary", 22000, 39, 1.25, 1.25, 3000],
+    ["slaughter", 18000, 32, 1.25, 1.25, 3000],
+    ["rampage", 13000, 24, 1.2, 1.2, 3000],
+    ["unstoppable", 8000, 15, 1.2, 1.2, 0],
+    ["granted", 5000, 10, 1.2, 1, 0],
+    ["good", 2000, 5, 1.1, 1, 0],
+    ["notBad", 1500, 3, 1, 1, 0]
   ]);
+  assert.equal(KILL_STREAK_MAX_WINDOW_MS, 29000);
+  assert.equal(KILL_STREAK_MIN_KILLS, 3);
   assert.equal(KILL_STREAK_BUFF_DURATION_MS, 3000);
   assert.equal(KILL_STREAK_RETRIGGER_LOCK_MS, 60000);
   assert.equal(getKillStreakBuffRealMs(), 3750, "3000 oyun-ms gercek saatte 3.75 sn");
 
-  assert.equal(getKillStreakBuffText("granted"), "+%10 hasar · 3 sn");
-  assert.equal(getKillStreakBuffText("unstoppable"), "+%20 hasar · 3 sn");
-  assert.equal(getKillStreakBuffText("rampage"), "+%20 hasar · +%20 atış hızı · 3 sn");
-  assert.equal(getKillStreakBuffText("legendary"), "+%20 hasar · +%20 atış hızı · düşmanlar korkar · 3 sn");
+  assert.equal(getKillStreakBuffText("notBad"), "", "NOT BAD gucsuz: guc satiri yok");
+  assert.equal(getKillStreakBuffText("good"), "+%10 hasar · 3 sn");
+  assert.equal(getKillStreakBuffText("granted"), "+%20 hasar · 3 sn");
+  assert.equal(getKillStreakBuffText("unstoppable"), "+%20 hasar · +%20 atış hızı · 3 sn");
+  assert.equal(getKillStreakBuffText("rampage"), "+%20 hasar · +%20 atış hızı · düşmanlar korkar · 3 sn");
+  assert.equal(getKillStreakBuffText("whatAreYou"), "+%35 hasar · +%35 atış hızı · düşmanlar korkar · 3 sn");
+});
+
+test("dokuz kademe: sira, esikler kesin artiyor, pencereler azalmiyor, NOT BAD guc vermiyor", () => {
+  const ladder = [...KILL_STREAK_RULES].reverse();
+  assert.deepEqual(ladder.map((rule) => rule.tier), ["notBad", "good", "granted", "unstoppable", "rampage", "slaughter", "legendary", "madeForThis", "whatAreYou"]);
+  for (let index = 1; index < ladder.length; index += 1) {
+    const [lower, higher] = [ladder[index - 1], ladder[index]];
+    assert.ok(higher.kills > lower.kills, `${higher.tier} esigi ${lower.tier}'den yuksek`);
+    assert.ok(higher.windowMs >= lower.windowMs, `${higher.tier} penceresi azalmiyor`);
+    assert.ok(higher.damageMultiplier >= lower.damageMultiplier && higher.hasteMultiplier >= lower.hasteMultiplier, `${higher.tier} gucu azalmiyor`);
+    assert.ok(getKillStreakTierRank(higher.tier) > getKillStreakTierRank(lower.tier));
+  }
+  const notBad = getKillStreakRule("notBad");
+  assert.equal(killStreakRuleGrantsBuff(notBad), false);
+  assert.ok(ladder.slice(1).every((rule) => killStreakRuleGrantsBuff(rule)), "ustteki her kademe guc veriyor");
+
+  // Melis onayi: esige bagli; NOT BAD 0, sonra +1..+8 kesin artarak.
+  assert.deepEqual(ladder.map((rule) => getKillStreakMelisApproval(rule.tier)), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(Object.keys(KILL_STREAK_MELIS_APPROVAL).sort(), ladder.map((rule) => rule.tier).sort());
+});
+
+test("dokuz kademe: her kademenin diskte ses dosyasi, tr+en etiketi, afis temasi var", async () => {
+  const { existsSync } = await import("node:fs");
+  const scene = await readFile(new URL("../apps/web/src/scenes/GameScene.ts", import.meta.url), "utf8");
+  const enSource = await readFile(new URL("../apps/web/src/locales/catalog/en-progression.ts", import.meta.url), "utf8");
+  const enBlock = enSource.slice(enSource.indexOf("export const enKillStreakTierLabels"));
+  const english = Object.fromEntries([...enBlock.slice(0, enBlock.indexOf("};")).matchAll(/^\s+(\w+): "([^"]+)",?\r?$/gm)].map((match) => [match[1], match[2]]));
+  const urls = new Set();
+  for (const rule of KILL_STREAK_RULES) {
+    const url = KILL_STREAK_VOICE_URLS[rule.tier];
+    assert.match(url, /^audio\/streak-[a-z-]+\.mp3$/, `${rule.tier} ses adresi`);
+    assert.ok(existsSync(new URL(`../apps/web/public/${url}`, import.meta.url)), `${rule.tier}: ${url} diskte yok`);
+    urls.add(url);
+    assert.ok(KILL_STREAK_TIER_LABELS[rule.tier], `${rule.tier} tr etiketi`);
+    assert.ok(english[rule.tier], `${rule.tier} en etiketi`);
+    // Afis temasi: kademe basina renk ve kaos satiri, Zeynep'in kademe tablosu.
+    assert.ok(new RegExp(`\\n  ${rule.tier}: \\{\\r?\\n    label: "${KILL_STREAK_TIER_LABELS[rule.tier].replace("?", "\\?")}"`).test(scene), `${rule.tier} afis stili`);
+    assert.ok(new RegExp(`\\n      ${rule.tier}: \\[0x`).test(scene), `${rule.tier} Zeynep temasi`);
+  }
+  assert.equal(urls.size, KILL_STREAK_RULES.length, "her kademenin kendi klibi");
+  assert.equal(KILL_STREAK_VOICE_URLS.granted, "audio/streak-granted.mp3", "GRANTED eski klibini koruyor");
+  for (const removed of ["streak-unstopable.mp3", "kill-streak-deep.mp3"]) {
+    assert.ok(!existsSync(new URL(`../apps/web/public/audio/${removed}`, import.meta.url)), `eski klip kalkti: ${removed}`);
+    assert.ok(!scene.includes(removed), `sahne eski klibe bakmiyor: ${removed}`);
+  }
+  // Kaos 0-5 tamsayi: NOT BAD sakin, WHAT ARE YOU en kaotik.
+  const chaos = [...scene.matchAll(/\n  (\w+): \{\r?\n    label: "[^"]+",(?:\r?\n.*?){4}\r?\n    chaos: (\d+)\r?\n/g)].map((match) => [match[1], Number(match[2])]);
+  const chaosByTier = Object.fromEntries(chaos);
+  assert.equal(chaosByTier.notBad, 0);
+  assert.equal(chaosByTier.whatAreYou, 5);
+  const ordered = [...KILL_STREAK_RULES].reverse().map((rule) => chaosByTier[rule.tier]);
+  assert.deepEqual([...ordered].sort((a, b) => a - b), ordered, "kaos kademeyle azalmiyor");
 });
 
 test("sunucu: seri buff'i afisin yazdigi ve parlamanin surdugu kadar; parlayan kuleler gercekten guc aliyor", () => {
@@ -234,13 +305,18 @@ test("sunucu: seri buff'i afisin yazdigi ve parlamanin surdugu kadar; parlayan k
       Object.assign(enemy, { hp: 5, maxHp: 5, shield: 0, maxShield: 0, armor: 0, damageResistances: {}, hitTypeResistances: {}, statusResistances: {} });
       room.damageEnemy(enemy, 50, 0, "skill", "p1", "true");
       advance(100);
+      if (index === 2) {
+        // Ucuncu oldurme NOT BAD: yalnizca anons, hicbir kuleye buff yazilmiyor.
+        assert.ok(towers.every((tower) => tower.streakDamageUntil === 0 && tower.streakHasteUntil === 0), "NOT BAD buff vermiyor");
+      }
     }
     const events = [...room.killEvents.values()];
-    assert.deepEqual(events.map((event) => event.streakTier), [undefined, undefined, undefined, undefined, "granted"]);
-    assert.equal(toKillEventWire(events[4]).streakTier, "granted", "kademe tele gidiyor");
+    assert.deepEqual(events.map((event) => event.streakTier), [undefined, undefined, "notBad", undefined, "good"]);
+    assert.equal(toKillEventWire(events[2]).streakTier, "notBad", "gucsuz kademe de tele gidiyor (anons)");
+    assert.equal(toKillEventWire(events[4]).streakTier, "good", "kademe tele gidiyor");
 
     const grantedAt = events[4].serverTime;
-    const granted = getKillStreakRule("granted");
+    const granted = getKillStreakRule("good");
     const asSnapshot = towers.map((tower) => ({ id: tower.id, ownerId: tower.ownerId, characterId: tower.characterId, definitionId: tower.definition.id }));
     const glowing = getStreakBuffedTowerIds(asSnapshot, "p1");
 
@@ -296,12 +372,44 @@ test("afis sirasi: yeni afis eskisini silmez; eskisi en az 1.1 sn kalir, bayat a
   assert.equal(crowded.finish(1500), "c");
   assert.equal(crowded.finish(2000), "d");
 
-  // Buff'i coktan bitmis afis gosterilmiyor: "+%20 hasar · 3 sn" artik dogru degil.
+  // Cok eski bekleyen afis gosterilmiyor (klip tavani + cikis payi kadar bekleyebilir).
+  assert.ok(STREAK_BANNER_MAX_WAIT_MS >= STREAK_VOICE_HOLD_MAX_MS + 260, "bekleme klip tavanini kapsiyor");
   const stale = new StreakBannerQueue();
   stale.offer("a", 0);
   stale.offer("b", 100);
-  assert.equal(stale.finish(100 + getKillStreakBuffRealMs() + 1), undefined);
+  assert.equal(stale.finish(100 + STREAK_BANNER_MAX_WAIT_MS + 1), undefined);
   assert.equal(stale.active, false);
+});
+
+test("kendi klibin kesilmiyor: siradaki afis klip bitene kadar bekliyor, tavan 5.5 sn", () => {
+  const queue = new StreakBannerQueue();
+  assert.equal(queue.offer("good", 0), "show");
+  queue.holdUntil(4050);
+  assert.equal(queue.holdEnd(), 4050, "afis klibin sonuna kadar");
+  assert.equal(queue.offer("granted", 300), "queued");
+  assert.equal(queue.handoffAt(), 4050, "siradaki klip bitince yer aliyor, 1.1 sn'de degil");
+  // Klip erken durdu (bitti, ATLAS kesti): tutus birakiliyor, okunma payi kaliyor.
+  queue.holdUntil(800);
+  assert.equal(queue.handoffAt(), STREAK_BANNER_MIN_VISIBLE_MS);
+  // Bilinmeyen sure ya da uzun klip: tavan.
+  queue.holdUntil(60_000);
+  assert.equal(queue.handoffAt(), STREAK_VOICE_HOLD_MAX_MS);
+  assert.equal(STREAK_VOICE_HOLD_MAX_MS, 5500);
+  assert.equal(queue.finish(5760), "granted");
+  assert.equal(queue.holdEnd(), 5760, "yeni afisin tutusu sifirdan");
+
+  // Yuksek kademe sirada bekleyen dusugu dusuruyor; ikisi art arda calmiyor.
+  const rank = { notBad: 1, good: 2, granted: 3, unstoppable: 4 };
+  const ranked = new StreakBannerQueue(undefined, (tier) => rank[tier]);
+  ranked.offer("notBad", 0);
+  ranked.offer("good", 100);
+  ranked.offer("granted", 200);
+  assert.equal(ranked.pending, 1, "GOOD dustu");
+  ranked.offer("good", 300);
+  assert.equal(ranked.pending, 2, "dusuk kademe yuksegin arkasina girebilir");
+  ranked.offer("unstoppable", 400);
+  assert.equal(ranked.pending, 1);
+  assert.equal(ranked.finish(1500), "unstoppable");
 });
 
 test("takim arkadasinin serisi kamerani oynatmiyor ve telefonunu titretmiyor", () => {
@@ -383,13 +491,18 @@ test("kaynak: seri afisi kompakt ust plaka, temali hareket geri geldi, hareket a
   assert.ok(/angle: \{ from: -tilt, to: tilt \}/.test(show), "titreme");
   assert.ok(show.includes("glitches") && show.includes("\"Stepped\""), "parazit seritleri");
   const hold = constant("STREAK_PLATE_HOLD_MS");
-  assert.ok(hold + 4 * 60 + 220 <= 2000 && hold >= 1200, "toplam ekranda kalis ~1.5-2 sn");
+  assert.ok(hold + 5 * 60 + 220 <= 2100 && hold >= 1200, "toplam ekranda kalis ~1.5-2 sn (klipsiz)");
+  // Klip afisten uzunsa afis klibin sonuna kadar kaliyor; siradaki bekliyor.
+  assert.ok(show.includes("const voiceHoldMs = this.holdKillStreakVoice(this.playKillStreakAnnouncement(rule, true), performance.now());"), "klip tutusu");
+  assert.ok(show.includes("const holdMs = Math.max(STREAK_PLATE_HOLD_MS + chaos * 60, voiceTailMs);"), "afis klip kadar kaliyor");
+  assert.ok(show.includes("performance.now() < item.buffUntil ? getKillStreakBuffText(rule.tier) : \"\""), "bekleyen afis dolmus buff'i yazmiyor");
   assert.ok(show.includes("this.scheduleStreakBannerExit(container, y - 8 * cssPx, holdMs, 220)"), "cikis sira uzerinden");
 
   // Hareket azaltma: once kontrol, yerinde sonen plaka, hareket tween'i yok.
   const reduced = show.indexOf("if (this.feedback?.reducedMotion)");
   assert.ok(reduced >= 0 && reduced < show.indexOf("this.tweens.add("), "hareket azaltma tween'lerden once");
-  assert.ok(/if \(this\.feedback\?\.reducedMotion\) \{[^}]*this\.settleStreakBannerStill\(container, y, STREAK_PLATE_HOLD_MS, 200\);\s*return;/.test(show), "yerinde belirip soner");
+  assert.ok(/if \(this\.feedback\?\.reducedMotion\) \{[^}]*this\.settleStreakBannerStill\(container, y, stillHoldMs, 200\);\s*return;/.test(show), "yerinde belirip soner");
+  assert.ok(show.includes("const stillHoldMs = Math.max(STREAK_PLATE_HOLD_MS, voiceTailMs);"), "hareket azaltmada da klip kesilmiyor");
 
   // Sarsinti/titresim yalnizca yonetmenden (2 px, kendi serin); kamera dogrudan sallanmiyor.
   assert.ok(show.includes("this.feedback?.emit(\"streak\", { own: true })"));

@@ -360,6 +360,10 @@ import {
   KILL_STREAK_BUFF_DURATION_MS,
   KILL_STREAK_RETRIGGER_LOCK_MS,
   KILL_STREAK_RULES,
+  KILL_STREAK_MAX_WINDOW_MS,
+  KILL_STREAK_MIN_KILLS,
+  getKillStreakMelisApproval,
+  killStreakRuleGrantsBuff,
   type KillStreakRule,
   type KillStreakTier,
   getWaveEnemyCount,
@@ -17801,9 +17805,24 @@ export class MatchRoom extends Room<MatchState> {
 
   /** `kills`: bu andaki oldurme sayisi; sampiyon yerine gectigi dogumlar kadar sayiyor. */
   private recordPlayerKillStreak(ownerId: string, serverTime: number, kills = 1) {
-    const killTimes = [...(this.playerKillStreakTimes.get(ownerId) ?? []), ...Array.from({ length: Math.max(1, Math.floor(kills)) }, () => serverTime)]
-      .filter((time) => serverTime - time <= Math.max(...KILL_STREAK_RULES.map((rule) => rule.windowMs)));
-    this.playerKillStreakTimes.set(ownerId, killTimes);
+    // Pencere 29 sn'ye uzadi: yogun dalgada oyuncu basina yuzlerce zaman
+    // tutuluyor. Her oldurmede kopyalayip suzmek yerine dizi yerinde
+    // buyuyor ve bastan budaniyor (zamanlar artan sirada geliyor).
+    let killTimes = this.playerKillStreakTimes.get(ownerId);
+    if (!killTimes) {
+      killTimes = [];
+      this.playerKillStreakTimes.set(ownerId, killTimes);
+    }
+    for (let count = Math.max(1, Math.floor(kills)); count > 0; count -= 1) {
+      killTimes.push(serverTime);
+    }
+    const firstLive = killTimes.findIndex((time) => serverTime - time <= KILL_STREAK_MAX_WINDOW_MS);
+    if (firstLive > 0) {
+      killTimes.splice(0, firstLive);
+    }
+    if (killTimes.length < KILL_STREAK_MIN_KILLS) {
+      return undefined;
+    }
 
     const rule = this.getTriggeredKillStreakRule(ownerId, serverTime, killTimes);
     if (!rule) {
@@ -17820,8 +17839,14 @@ export class MatchRoom extends Room<MatchState> {
       }
     }
 
-    this.awardMelisSpectrum(ownerId, getMelisApprovalGain(rule.tier));
-    this.applyKillStreakBuff(ownerId, rule, serverTime);
+    const approval = getKillStreakMelisApproval(rule.tier);
+    if (approval > 0) {
+      this.awardMelisSpectrum(ownerId, approval);
+    }
+    // NOT BAD yalnizca anons: kuleye buff, sure uzatmasi ve korku yok.
+    if (killStreakRuleGrantsBuff(rule)) {
+      this.applyKillStreakBuff(ownerId, rule, serverTime);
+    }
     return rule;
   }
 
@@ -17833,7 +17858,7 @@ export class MatchRoom extends Room<MatchState> {
         return false;
       }
 
-      return killTimes.filter((time) => serverTime - time <= rule.windowMs).length >= rule.kills;
+      return countRecentKillTimes(killTimes, serverTime, rule.windowMs) >= rule.kills;
     });
   }
 
@@ -17914,11 +17939,13 @@ export class MatchRoom extends Room<MatchState> {
         continue;
       }
 
-      if (tower.streakDamageUntil <= serverTime || rule.damageMultiplier >= tower.streakDamageMultiplier) {
-        tower.streakDamageUntil = buffUntil;
-        tower.streakDamageMultiplier = rule.damageMultiplier;
-      } else {
-        tower.streakDamageUntil = Math.max(tower.streakDamageUntil, buffUntil);
+      if (rule.damageMultiplier > 1) {
+        if (tower.streakDamageUntil <= serverTime || rule.damageMultiplier >= tower.streakDamageMultiplier) {
+          tower.streakDamageUntil = buffUntil;
+          tower.streakDamageMultiplier = rule.damageMultiplier;
+        } else {
+          tower.streakDamageUntil = Math.max(tower.streakDamageUntil, buffUntil);
+        }
       }
       if (rule.hasteMultiplier > 1 && tower.definition.hitType !== "focus") {
         if (tower.streakHasteUntil <= serverTime || rule.hasteMultiplier >= tower.streakHasteMultiplier) {
@@ -22243,11 +22270,23 @@ function getEnemyHealthRatio(enemy: EnemyModel) {
   return (Math.max(0, enemy.hp) + Math.max(0, enemy.shield)) / Math.max(1, enemy.maxHp + enemy.maxShield);
 }
 
-function getMelisApprovalGain(tier: KillStreakTier) {
-  if (tier === "legendary") return 4;
-  if (tier === "rampage") return 3;
-  if (tier === "unstoppable") return 2;
-  return 1;
+/**
+ * Artan sirali oldurme zamanlarindan son `windowMs` icindekilerin sayisi.
+ * Ikili arama: 29 sn pencerede yogun dalgada yuzlerce zaman olabiliyor,
+ * kademe basina O(log n).
+ */
+function countRecentKillTimes(killTimes: readonly number[], serverTime: number, windowMs: number) {
+  let low = 0;
+  let high = killTimes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (serverTime - killTimes[middle] <= windowMs) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return killTimes.length - low;
 }
 
 /** Karakterden bagimsiz; imza cagri yerlerini bozmamak icin duruyor. */

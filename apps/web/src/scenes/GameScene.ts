@@ -176,7 +176,12 @@ import {
   getWorkerDevelopmentCue,
   KillComboWatch,
   STREAK_BANNER_HANDOFF_MS,
+  STREAK_VOICE_HOLD_MAX_MS,
   StreakBannerQueue,
+  KILL_STREAK_VOICE_URLS,
+  killStreakRuleGrantsBuff,
+  getKillStreakRule as getSharedKillStreakRule,
+  getKillStreakTierRank,
   getComboWindowMs,
   getKillStreakBuffRealMs,
   getKillStreakBuffText,
@@ -833,6 +838,8 @@ type KillStreakRule = {
 type StreakBannerItem = {
   characterId: CharacterId;
   rule: KillStreakRule;
+  /** Buff'in bittigi an (performance.now); afis beklerken dolduysa guc satiri yazilmiyor. */
+  buffUntil: number;
 };
 
 /** Seri buff'i suren sahibin kuleleri; gercek sure boyunca parliyor. */
@@ -1038,9 +1045,31 @@ type FlowShiftMessage = {
   y: number;
 };
 
-const KILL_STREAK_RULES: KillStreakRule[] = [
-  {
-    tier: "legendary",
+/**
+ * Kademe basina afis gorunumu; anahtar tipli: yeni kademe eklenince derleyici
+ * burada eksigi soyluyor. `chaos` 0-5 tamsayi (tween tekrarlari tamsayi
+ * istiyor): NOT BAD sakin bir plaka (0), en ustteki WHAT ARE YOU en kaotik (5).
+ * Ikili kademeler (GOOD/GRANTED, RAMPAGE/SLAUGHTER, LEGENDARY/I MADE YOU FOR
+ * THIS) ayni hareketi paylasiyor, renkleri ayiriyor.
+ */
+const KILL_STREAK_BANNER_STYLES: Record<KillStreakTier, Omit<KillStreakRule, "tier">> = {
+  whatAreYou: {
+    label: "WHAT ARE YOU?",
+    primary: 0xf0abfc,
+    secondary: 0xef4444,
+    accent: 0xf8fafc,
+    fill: 0x0a0010,
+    chaos: 5
+  },
+  madeForThis: {
+    label: "I MADE YOU FOR THIS",
+    primary: 0xf8fafc,
+    secondary: 0x22d3ee,
+    accent: 0xfacc15,
+    fill: 0x020617,
+    chaos: 4
+  },
+  legendary: {
     label: "LEGENDARY",
     primary: 0xfacc15,
     secondary: 0xff2d55,
@@ -1048,8 +1077,15 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
     fill: 0x13070a,
     chaos: 4
   },
-  {
-    tier: "rampage",
+  slaughter: {
+    label: "SLAUGHTER",
+    primary: 0xdc2626,
+    secondary: 0xf97316,
+    accent: 0xfde68a,
+    fill: 0x0c0303,
+    chaos: 3
+  },
+  rampage: {
     label: "RAMPAGE",
     primary: 0xef4444,
     secondary: 0x22d3ee,
@@ -1057,8 +1093,7 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
     fill: 0x050505,
     chaos: 3
   },
-  {
-    tier: "unstoppable",
+  unstoppable: {
     label: "UNSTOPPABLE",
     primary: 0x8b5cf6,
     secondary: 0x38bdf8,
@@ -1066,16 +1101,33 @@ const KILL_STREAK_RULES: KillStreakRule[] = [
     fill: 0x111027,
     chaos: 2
   },
-  {
-    tier: "granted",
+  granted: {
     label: "GRANTED",
     primary: 0x22c55e,
     secondary: 0xa7f3d0,
     accent: 0xf8fafc,
     fill: 0x052e16,
     chaos: 1
+  },
+  good: {
+    label: "GOOD",
+    primary: 0x14b8a6,
+    secondary: 0x99f6e4,
+    accent: 0xf8fafc,
+    fill: 0x042f2e,
+    chaos: 1
+  },
+  notBad: {
+    label: "NOT BAD",
+    primary: 0x94a3b8,
+    secondary: 0xcbd5e1,
+    accent: 0xf8fafc,
+    fill: 0x0b1220,
+    chaos: 0
   }
-];
+};
+const KILL_STREAK_RULES: KillStreakRule[] = (Object.keys(KILL_STREAK_BANNER_STYLES) as KillStreakTier[])
+  .map((tier) => ({ tier, ...KILL_STREAK_BANNER_STYLES[tier] }));
 const VOICE_VOLUME_STORAGE_KEY = "karayel.voiceVolume";
 const SFX_VOLUME_STORAGE_KEY = "karayel.sfxVolume";
 const HIT_VOLUME_STORAGE_KEY = "karayel.hitVolume";
@@ -1371,21 +1423,29 @@ export class GameScene extends Phaser.Scene {
   /** Co-op asist bildirimi: ayni iki oyuncu arasinda 5 sn'de bir. */
   private readonly assistToasts = new AssistToastGate();
   private killStreakSounds: Record<KillStreakTier, HTMLAudioElement[]> = {
+    notBad: [],
+    good: [],
     granted: [],
     unstoppable: [],
     rampage: [],
-    legendary: []
+    slaughter: [],
+    legendary: [],
+    madeForThis: [],
+    whatAreYou: []
   };
   /**
    * Su an calan seri klibi ve kimin serisi. Takim arkadasininki calan bir
    * klibi kesmiyor, yeniden baslatmiyor; seninki onunkini kesebiliyor.
    */
   private streakVoice?: { audio: HTMLAudioElement; own: boolean };
+  /** Ekrandaki kendi afisinin klibi; bitene kadar siradaki afis bekliyor. */
+  private streakVoiceHold?: HTMLAudioElement;
   private rampageContainer?: Phaser.GameObjects.Container;
   /** Ekrandaki afisin cikis tween'i; siradaki afis bekliyorsa one cekiliyor. */
   private rampageExit?: { tween: Phaser.Tweens.Tween; exitY: number; startsAt: number };
   /** Kendi seri afislerin: silinmiyor, sirayla geliyor. */
-  private readonly streakBanners = new StreakBannerQueue<StreakBannerItem>();
+  // Daha yuksek kademe sirada bekleyen dusugu dusuruyor (kendi klibin kesilmedigi icin bekleme uzayabiliyor).
+  private readonly streakBanners = new StreakBannerQueue<StreakBannerItem>(undefined, (item) => getKillStreakTierRank(item.rule.tier));
   private streakGlows: StreakGlow[] = [];
   private streakGlowGraphics?: Phaser.GameObjects.Graphics;
   private backgroundMusic?: HTMLAudioElement;
@@ -2020,6 +2080,7 @@ export class GameScene extends Phaser.Scene {
     this.streakBanners.clear();
     this.streakGlows = [];
     this.streakVoice = undefined;
+    this.streakVoiceHold = undefined;
     this.rampageExit = undefined;
     // Zemin katmani: kule govdesinin altinda, dusmanlarin altinda.
     this.streakGlowGraphics = this.add.graphics().setDepth(STREAK_GLOW_DEPTH);
@@ -2097,6 +2158,7 @@ export class GameScene extends Phaser.Scene {
       this.shieldEcho = undefined;
       this.streakVoice?.audio.pause();
       this.streakVoice = undefined;
+      this.streakVoiceHold = undefined;
       this.hideAudioSettingsPanel();
       this.hidePerfPopup();
       this.hideUltimateChoices();
@@ -4443,12 +4505,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createKillStreakAudio() {
-    this.killStreakSounds = {
-      granted: [new Audio(assetUrl("audio/streak-granted.mp3"))],
-      unstoppable: [new Audio(assetUrl("audio/streak-unstopable.mp3"))],
-      rampage: [new Audio(assetUrl("audio/kill-streak-deep.mp3"))],
-      legendary: [new Audio(assetUrl("audio/streak-legendary.mp3"))]
-    };
+    // Dosyalar paylasilan tablodan (KILL_STREAK_VOICE_URLS): dokuz kademe, kademe basina bir klip.
+    const sounds = {} as Record<KillStreakTier, HTMLAudioElement[]>;
+    for (const tier of Object.keys(KILL_STREAK_VOICE_URLS) as KillStreakTier[]) {
+      sounds[tier] = [new Audio(assetUrl(KILL_STREAK_VOICE_URLS[tier]))];
+    }
+    this.killStreakSounds = sounds;
 
     for (const audio of Object.values(this.killStreakSounds).flat()) {
       audio.preload = "auto";
@@ -11485,7 +11547,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * sure kadar. Kendi serin: temali afis siraya giriyor; ses klibi, sarsinti
    * ve titresim afis gercekten ekrana gelince (`showKillStreakAnnouncement`),
    * yoksa siradaki afisin klibi ekrandakinin klibini keser ve henuz
-   * gorunmeyen kademeyi soylerdi. Takim arkadasinin serisi: kendi renginde
+   * gorunmeyen kademeyi soylerdi. Siradaki afis ekrandakinin klibi bitene
+   * kadar bekliyor (`StreakBannerQueue.holdUntil`); kendi klibin kesilmiyor. Takim arkadasinin serisi: kendi renginde
    * kucuk bir yan toast, soluk parlama, kisik ses -- kamerana, afisine ve
    * calan klibe dokunmuyor. Kart/Ucube perdesi acikken ondan yalnizca soluk
    * parlama kaliyor.
@@ -11503,7 +11566,11 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const own = event.ownerId === this.localSessionId;
     const owner = snapshot.players.find((candidate) => candidate.id === event.ownerId);
-    this.startStreakGlow(snapshot, event.ownerId, own, remainingMs);
+    // NOT BAD gucsuz: kule parlamasi yok (ve suren daha yuksek bir parlamayi silmiyor).
+    const sharedRule = getSharedKillStreakRule(tier);
+    if (sharedRule && killStreakRuleGrantsBuff(sharedRule)) {
+      this.startStreakGlow(snapshot, event.ownerId, own, remainingMs);
+    }
 
     if (!own) {
       // Kart/Ucube perdesi acikken takim arkadasinin toast'u ve sesi yok: HUD
@@ -11526,8 +11593,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
 
     this.game.events.emit("game:hud-combo-hide");
-    const item: StreakBannerItem = { characterId: owner?.characterId ?? this.selectedCharacterId, rule };
-    if (this.streakBanners.offer(item, performance.now()) === "show") {
+    const now = performance.now();
+    const item: StreakBannerItem = { characterId: owner?.characterId ?? this.selectedCharacterId, rule, buffUntil: now + remainingMs };
+    if (this.streakBanners.offer(item, now) === "show") {
       this.showKillStreakAnnouncement(item);
     } else {
       this.hastenStreakBanner();
@@ -11920,31 +11988,36 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * Klipler paylasiliyor (kademe basina tek HTMLAudioElement) ve eskiden her
    * seri calan klibi durdurup bastan baslatiyordu: takim arkadasinin serisi
    * seninkini yarida kesiyordu. Artik takim arkadasininki yalnizca bir klip
-   * calmiyorken ve kisik caliyor; seninki gerekirse onunkini kesiyor.
+   * calmiyorken ve kisik caliyor; seninki gerekirse onunkini kesiyor. Kendi
+   * klibini ise hicbir sey kesmiyor: siradaki kendi afisin (ve klibi) bu
+   * klip bitene kadar sirada bekliyor (`holdKillStreakVoice`); kesme yalnizca
+   * `STREAK_VOICE_HOLD_MAX_MS` tavani asildiysa olabilir.
+   *
+   * Calan klibi donduruyor (calmadiysa `undefined`).
    *
    * Kisiklik yalnizca medya ogesinin `volume`u ile; iOS Safari onu yok
    * sayiyor. Orada takim arkadasinin klibi hic calmiyor (toast ve soluk
    * parlama kaliyor), yoksa tam sesle senin sesini ele gecirirdi. Ayni
    * nedenle seslendirme kaydiricisi sifirdayken hicbir klip baslamiyor.
    */
-  private playKillStreakAnnouncement(rule: KillStreakRule, own: boolean) {
+  private playKillStreakAnnouncement(rule: KillStreakRule, own: boolean): HTMLAudioElement | undefined {
     const sounds = this.killStreakSounds[rule.tier];
     if (sounds.length === 0 || this.voiceVolume <= 0) {
-      return;
+      return undefined;
     }
     // ATLAS konusurken seri anonsu yok: ikisi ust uste binmesin (afis kaliyor).
     if (this.atlas?.isSpeaking) {
-      return;
+      return undefined;
     }
     if (!own && !canSetMediaVolume()) {
-      return;
+      return undefined;
     }
 
     const playing = this.streakVoice && !this.streakVoice.audio.paused && !this.streakVoice.audio.ended
       ? this.streakVoice
       : undefined;
     if (!own && playing) {
-      return;
+      return undefined;
     }
 
     const audio = Phaser.Utils.Array.GetRandom(sounds);
@@ -11957,7 +12030,41 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     this.streakVoice = { audio, own };
     void audio.play().catch(() => {
       // Mobile browsers may block audio until the first real touch; the next streak can retry.
+      // Calmayan klip siradaki afisi bekletmesin.
+      if (own) this.releaseKillStreakVoiceHold(audio);
     });
+    return audio;
+  }
+
+  /**
+   * Kendi klibin bitene kadar afis ekranda, siradaki afis sirada: bitis ani
+   * klibin suresinden (metadata yoksa `STREAK_VOICE_HOLD_MAX_MS` tavani).
+   * Klip erken durursa (bitti, ATLAS kesti, tarayici calmadi) `pause` olayi
+   * tutusu birakiyor. Afisin kalacagi sure (ms) donuyor; klip yoksa 0.
+   */
+  private holdKillStreakVoice(voice: HTMLAudioElement | undefined, now: number) {
+    this.streakVoiceHold = voice;
+    if (!voice) {
+      return 0;
+    }
+    const remainingMs = Number.isFinite(voice.duration) && voice.duration > 0
+      ? Math.max(0, voice.duration - voice.currentTime) * 1000
+      : STREAK_VOICE_HOLD_MAX_MS;
+    const holdMs = Math.min(STREAK_VOICE_HOLD_MAX_MS, remainingMs);
+    this.streakBanners.holdUntil(now + holdMs);
+    voice.addEventListener("pause", () => this.releaseKillStreakVoiceHold(voice), { once: true });
+    return holdMs;
+  }
+
+  /** Klip durdu: ekrandaki afisin tutusu biter, bekleyen afis varsa hemen yer aliyor. */
+  private releaseKillStreakVoiceHold(voice: HTMLAudioElement) {
+    // play() oncesindeki pause() olayi gec gelebiliyor; klip calarken birakma.
+    if (this.streakVoiceHold !== voice || !voice.paused) {
+      return;
+    }
+    this.streakVoiceHold = undefined;
+    this.streakBanners.holdUntil(performance.now());
+    this.hastenStreakBanner();
   }
 
   /**
@@ -11983,7 +12090,8 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    */
   private showKillStreakAnnouncement(item: StreakBannerItem) {
     const { characterId, rule } = item;
-    this.playKillStreakAnnouncement(rule, true);
+    // Kendi klibin: afis klip bitene kadar kaliyor, siradaki bekliyor (tavan STREAK_VOICE_HOLD_MAX_MS).
+    const voiceHoldMs = this.holdKillStreakVoice(this.playKillStreakAnnouncement(rule, true), performance.now());
     this.feedback?.emit("streak", { own: true });
     const theme = getKillStreakVisualTheme(characterId, rule);
     const chaos = rule.chaos;
@@ -12128,7 +12236,9 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
 
     const parts: Phaser.GameObjects.GameObject[] = [plate, coldGhost, hotGhost, mainText, motifText, ...glitches, ...imageObjects];
     // Ikinci satir en ustte: serinin gercek gucu, sigarsa bu tarayicinin unvani.
-    const buffLine = formatBannerSecondLine(getKillStreakBuffText(rule.tier), this.cosmetics.title);
+    // Afis sirada beklerken buff dolduysa guc satiri yok (artik dogru degil); NOT BAD'in zaten yok.
+    const buffText = performance.now() < item.buffUntil ? getKillStreakBuffText(rule.tier) : "";
+    const buffLine = formatBannerSecondLine(buffText, this.cosmetics.title);
     if (buffLine) {
       const bonus = this.add.text(contentX, halfH - 9, buffLine, {
         fontFamily: "Arial Black, Arial",
@@ -12148,10 +12258,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     container.add(parts);
     this.rampageContainer = container;
-    const holdMs = STREAK_PLATE_HOLD_MS + chaos * 60;
+    // Klip afisten uzunsa afis klibin sonuna (+150 ms) kadar kaliyor.
+    const voiceTailMs = voiceHoldMs > 0 ? voiceHoldMs + 150 : 0;
+    const holdMs = Math.max(STREAK_PLATE_HOLD_MS + chaos * 60, voiceTailMs);
+    const stillHoldMs = Math.max(STREAK_PLATE_HOLD_MS, voiceTailMs);
     if (this.feedback?.reducedMotion) {
       // Kayma, sallanma, parazit yok: yerinde belirip sonen ayni plaka.
-      this.settleStreakBannerStill(container, y, STREAK_PLATE_HOLD_MS, 200);
+      this.settleStreakBannerStill(container, y, stillHoldMs, 200);
       return;
     }
 
@@ -12304,6 +12417,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }
     this.rampageContainer = undefined;
     this.rampageExit = undefined;
+    this.streakVoiceHold = undefined;
     const next = this.streakBanners.finish(performance.now());
     if (next) {
       this.showKillStreakAnnouncement(next);
@@ -13643,10 +13757,15 @@ function getKillStreakVisualTheme(characterId: CharacterId, rule: KillStreakRule
 
   if (characterId === "zeynep") {
     const tiers: Record<KillStreakTier, readonly [number, number, number, number, string]> = {
+      notBad: [0x93c5fd, 0xc4b5fd, 0xe2e8f0, 0x111827, "COMMAND NOTED"],
+      good: [0x7dd3fc, 0xd8b4fe, 0xfde68a, 0x150a2a, "COMMAND ACCEPTED"],
       granted: [0x7dd3fc, 0xf0abfc, 0xfacc15, 0x160a2d, "COMMAND GRANTED"],
       unstoppable: [0x38bdf8, 0xe879f9, 0xfde047, 0x14052c, "TEMPO CONTROL / RANGE UP"],
       rampage: [0x22d3ee, 0xffffff, 0xf0abfc, 0x10031f, "FIELD DIRECTIVE / OVERRIDE"],
-      legendary: [0xfdf2f8, 0x67e8f9, 0xfacc15, 0x0f0324, "GLOBAL COMMAND / EXECUTE"]
+      slaughter: [0x06b6d4, 0xfb7185, 0xffffff, 0x0d0219, "FIELD DIRECTIVE / PURGE"],
+      legendary: [0xfdf2f8, 0x67e8f9, 0xfacc15, 0x0f0324, "GLOBAL COMMAND / EXECUTE"],
+      madeForThis: [0xffffff, 0x22d3ee, 0xfacc15, 0x07021a, "PRIME DIRECTIVE / BUILT FOR THIS"],
+      whatAreYou: [0xf5d0fe, 0xef4444, 0xffffff, 0x0a0014, "UNKNOWN COMMAND / NO LIMIT"]
     };
     const [primary, secondary, accent, fill, motif] = tiers[rule.tier];
     return {

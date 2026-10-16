@@ -602,7 +602,7 @@ test("seri ve kule oldurme yiginlari sampiyonu yerine gectigi dogumlar kadar say
   assert.equal(room.playerKillStreakTimes.get("p1").length, plan.replaced, "seri penceresine birim birim");
   assert.equal(room.kills, 1, "oldurme sayaci dusman basina");
 
-  // Bir normal oldurme daha: 4 + 1 = 5 oldurme, 2 sn icinde -> ilk seri kademesi.
+  // Sampiyonun 4 oldurmesi NOT BAD'i (3 / 1.5 sn) acti; bir normal oldurme daha: 4 + 1 = 5 oldurme, 2 sn icinde -> GOOD.
   assert.equal(plan.replaced, 4);
   const events = [];
   withClock(1_800_000_000_500, () => {
@@ -610,7 +610,8 @@ test("seri ve kule oldurme yiginlari sampiyonu yerine gectigi dogumlar kadar say
     room.damageEnemy([...room.enemies.values()].at(-1), 1e9, 0, "test", "p1", "true");
     for (const event of room.killEvents.values()) events.push(event.streakTier);
   });
-  assert.ok(events.includes("granted"), "sampiyon ve bir oldurme seriyi acti");
+  assert.ok(events.includes("notBad"), "sampiyon tek basina NOT BAD acti");
+  assert.ok(events.includes("good"), "sampiyon ve bir oldurme ilk guclu kademeyi (GOOD) acti");
 });
 
 test("Melis'in cevirdigi sampiyon olurken butcesini oduyor; cevrilen normal dusman eskisi gibi odulsuz", () => {
