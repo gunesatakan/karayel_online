@@ -33,13 +33,38 @@ export const VFX_LOD_RAISE_AFTER_MS = 500;
 export const VFX_LOD_LOWER_AFTER_MS = 2000;
 /** Dort basamak: 1 kivilcim, 2 duman, 3 yer izi, 4 iz uzunlugu. */
 export const VFX_LOD_MAX = 4;
+/** Yenileme tahmininin penceresi (kare) ve kac karede bir yenilendigi. */
+export const VFX_REFRESH_WINDOW = 120;
+const VFX_REFRESH_RECALC_EVERY = 30;
+/** Pencerenin bu yuzdeligi yenileme araligi sayiliyor. */
+const VFX_REFRESH_PERCENTILE = 0.25;
+/** 144 Hz'den kisa aralik zamanlayici gurultusu: tahmine girmiyor. */
+const VFX_REFRESH_FLOOR_MS = 1000 / 144;
+/**
+ * Hedef hicbir zaman 60 FPS'ten hizli degil: 90/120 Hz ekranda 60 FPS iyi
+ * bir kare hizi, efektleri kisip 120'ye zorlamak gereksiz.
+ */
+const VFX_TARGET_FRAME_MIN_MS = 1000 / 60;
+/** Tahmin asagi hemen iniyor, yukari her yenilemede bu oranla (~10 sn). */
+const VFX_REFRESH_RELAX = 0.05;
 
 export class VfxLod {
   level = 0;
   private vfxEma = 0;
   private frameEma = 16.7;
-  /** Cihazin gozlenen yenileme araligi: en kisa kare, yavasca gevseyen. */
+  /**
+   * Cihazin gozlenen yenileme araligi: son karelerin alt ceyregi.
+   *
+   * Eskiden gorulen en kisa kareydi. Degisken ya da yuksek yenilemeli
+   * ekranda (90/120 Hz Android) arada gelen tek bir kisa kare tahmini 8-11
+   * ms'ye indiriyordu; sonra duzgun 60 FPS'lik her kare "yavas" sayiliyor ve
+   * LOD bütün mac 4'te kaliyordu (kayitta FPS 58, kare p95 17 ms, LOD 4).
+   * Yuzdelik tek bir kisa kareye bakmiyor.
+   */
   private refreshMs?: number;
+  private readonly recentFrames: number[] = [];
+  private recentCursor = 0;
+  private framesSinceRecalc = 0;
   private overSince?: number;
   private calmSince?: number;
   private forced?: number;
@@ -51,13 +76,10 @@ export class VfxLod {
     // Sekme arka plana gidip donunce gelen dev aralik olcu degil.
     const frame = Math.min(100, Math.max(0, frameMs));
     this.frameEma += (frame - this.frameEma) * 0.1;
-    // 4 ms'nin alti zamanlayici gurultusu; en kisa aralik hizla iniyor,
-    // cihaz kipi degisirse (dusuk guc acildi) yavasca yukseliyor.
-    if (frame >= 4) {
-      if (this.refreshMs === undefined || frame < this.refreshMs) this.refreshMs = frame;
-      else this.refreshMs += (frame - this.refreshMs) * 0.002;
-    }
-    const refresh = this.refreshMs ?? 16.7;
+    // Kayan pencere; cihaz kipi degisirse (dusuk guc acildi) tahmin pencere
+    // dolunca yeni araliga oturuyor.
+    if (frame >= VFX_REFRESH_FLOOR_MS) this.noteRefreshSample(frame);
+    const refresh = Math.max(VFX_TARGET_FRAME_MIN_MS, this.refreshMs ?? 16.7);
     const over = this.vfxEma > VFX_BUDGET_MS || this.frameEma > refresh * VFX_SLOW_FRAME_RATIO;
     const calm = this.vfxEma < VFX_BUDGET_MS * 0.6 && this.frameEma < refresh * VFX_CALM_FRAME_RATIO;
     if (over) {
@@ -80,6 +102,22 @@ export class VfxLod {
       }
     }
     return this.level;
+  }
+
+  private noteRefreshSample(frame: number) {
+    if (this.recentFrames.length < VFX_REFRESH_WINDOW) this.recentFrames.push(frame);
+    else this.recentFrames[this.recentCursor] = frame;
+    this.recentCursor = (this.recentCursor + 1) % VFX_REFRESH_WINDOW;
+    this.framesSinceRecalc += 1;
+    // Ilk tahmin hemen, sonrasi seyrek: 120 sayiyi her karede siralamaya gerek yok.
+    if (this.refreshMs !== undefined && this.framesSinceRecalc < VFX_REFRESH_RECALC_EVERY) return;
+    this.framesSinceRecalc = 0;
+    const sorted = [...this.recentFrames].sort((a, b) => a - b);
+    const estimate = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * VFX_REFRESH_PERCENTILE))];
+    // Uzun suren gercek yavaslama hemen "normal" sayilmasin: tahmin asagi
+    // hemen, yukari yavas (cihaz kipi degisirse yine de yeni araliga oturur).
+    if (this.refreshMs === undefined || estimate < this.refreshMs) this.refreshMs = estimate;
+    else this.refreshMs += (estimate - this.refreshMs) * VFX_REFRESH_RELAX;
   }
 
   /** Galeri ve olcum icin seviyeyi sabitle; `undefined` otomatige doner. */
