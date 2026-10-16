@@ -55,7 +55,11 @@ export function replayMatch({ operators, stage, seed, mapScale = 1, tickMs, tick
       room.clients.push(client);
       room.onJoin(client, { ...options, autoStart: solo, characterId: operators[index], playerName: `Bot${index + 1}` });
     }
-    const deliver = (client, type, message) => room._onMessage(client, encode(type, message));
+    // Canli bot maciyla ayni: bedenin kuyrugu mesajin hemen ardindan bitiyor (match.mjs).
+    const deliver = (client, type, message) => {
+      room._onMessage(client, encode(type, message));
+      room.settleOperatorBody?.(client.sessionId);
+    };
     if (!solo) {
       for (const client of clients) deliver(client, "lobby:setReady", { ready: true });
       deliver(clients[0], "lobby:start", {});

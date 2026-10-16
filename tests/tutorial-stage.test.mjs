@@ -68,6 +68,23 @@ function send(room, client, type, payload = {}) {
 
 const progressOf = (client) => client.sent.filter((entry) => entry.type === "tutorial:progress").map((entry) => entry.payload);
 
+/**
+ * Operator bedeninin kuyrugunu gercek tick yoluyla ucurarak bitirir. Kurulum,
+ * duvar, onarim, AttackLord becerisi ve ulti beden varinca oluyor; adim da o an.
+ */
+function arrive(room, client) {
+  const clock = withClock();
+  try {
+    for (let step = 0; step < 400 && (room.operatorBodies.get(client.sessionId)?.tasks.length ?? 0) > 0; step += 1) {
+      clock.advance(50);
+      room.updateOperatorBodies(0.05, 0.04);
+    }
+  } finally {
+    clock.restore();
+  }
+  assert.equal(room.operatorBodies.get(client.sessionId)?.tasks.length ?? 0, 0, "beden isini bitirmedi");
+}
+
 /** ZentaX ile baslamis ogretici odasi (kurulum evresinde). */
 async function tutorialRoom(extra = {}) {
   const { room, broadcasts } = await realRoom({ roomName: "Egitim", mapScale: 1, autoStart: true, tutorial: true, ...extra });
@@ -270,6 +287,7 @@ test("ogretici olmayan odada ogretici mesajlari is yapmiyor, govdeyi okumuyor", 
     // Izleme de yalnizca ogreticide: normal odada adim mesaji hic gitmiyor.
     const spot = findBuildableSpot(room, "zeynep-1");
     send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
+    arrive(room, client);
     assert.equal(room.towers.size, 1);
     assert.deepEqual(progressOf(client), []);
   } finally {
@@ -300,6 +318,7 @@ test("hazirlik: ulti sarji, beceri itibari, kart eli ve dalga icinde magaza", as
     // Kart: el aciliyor, secim ilerleme sayiliyor ve magazayi aciyor.
     const spot = findBuildableSpot(room, "zeynep-1");
     send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
+    arrive(room, client);
     send(room, client, "tutorial:prepare", { step: "cards" });
     const hand = client.sent.filter((entry) => entry.type === "card:choices").at(-1)?.payload;
     assert.ok(hand?.length > 0, "kart eli gelmedi");
@@ -329,9 +348,13 @@ test("adim olcumu: yalnizca is yapan istek sayiliyor", async () => {
   try {
     const spot = findBuildableSpot(room, "zeynep-1");
     send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
+    // Komut adimi gecirmiyor; beden varip kuleyi kurdugunda geciyor.
+    assert.deepEqual(progressOf(client), []);
+    arrive(room, client);
     assert.deepEqual(progressOf(client), [{ action: "build", definitionIds: ["zeynep-1"] }]);
     // Ayni kareye ikinci kule: reddediliyor, sayilmiyor.
     send(room, client, "placeTower", { ...spot, definitionId: "zeynep-1" });
+    arrive(room, client);
     assert.equal(progressOf(client).length, 1);
 
     const tower = [...room.towers.values()][0];
@@ -353,9 +376,12 @@ test("adim olcumu: yalnizca is yapan istek sayiliyor", async () => {
     // Ulti sarjsiz is yapmiyor; sarjla ve gecerli sutunla sayiliyor.
     startCombat(room, client);
     send(room, client, "useUltimate", { column: 2 });
+    arrive(room, client);
     assert.notEqual(progressOf(client).at(-1).action, "ultimate");
     send(room, client, "tutorial:prepare", { step: "ultimate" });
     send(room, client, "useUltimate", { column: 2 });
+    assert.notEqual(progressOf(client).at(-1).action, "ultimate", "ulti beden varmadan sayildi");
+    arrive(room, client);
     assert.equal(progressOf(client).at(-1).action, "ultimate");
 
     // Itibarsiz komut reddediliyor; hazirliktan sonra sayiliyor.
@@ -378,6 +404,7 @@ test("uretim secimi tur degismese de sayiliyor; baskasinin ya da gecersiz secim 
   try {
     const spot = findBuildableSpot(room, "zeynep-9");
     send(room, client, "placeTower", { ...spot, definitionId: "zeynep-9" });
+    arrive(room, client);
     const armory = [...room.towers.values()].find((tower) => tower.definition.id === "zeynep-9");
     assert.ok(armory, "cephanelik kurulamadi");
     const current = armory.productionAmmo ?? "bullet";

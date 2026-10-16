@@ -49,6 +49,11 @@ const FORMER_TURKISH = {
   // Yeni metinler (duvar cizgisi reddi, `placement:rejected`); eskisi yok.
   "placement.lineNothing": "Bu hatta duvar kurulamadı",
   "placement.lineNoGold": "Altın yetmedi: duvar kurulamadı",
+  "body.placeFailed": "Kare doldu: kule kurulamadı, altın iade edildi",
+  "body.repairFailed": "Onarım yapılamadı, altın iade edildi",
+  "body.queueFull": "Operatör meşgul: önce sıradaki işler bitsin",
+  "body.duplicate": "Bu kareye kurulum zaten sırada",
+  "body.retreated": "Beden geri çekildi: görevler iptal, altın iade edildi",
   // Yeni metinler (uyumsuz kuleye esya takma reddi, `inventory:equip-rejected`); eskisi yok.
 "equip.incompatible.attacks": "Bu eşya bu kuleye takılamaz: yalnızca düşmana etki eden kulelere takılır.",
   "equip.incompatible.damage": "Bu eşya bu kuleye takılamaz: yalnızca hasar veren kulelere takılır.",

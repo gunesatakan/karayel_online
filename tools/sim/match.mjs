@@ -70,6 +70,11 @@ export function openRoom({ operators, stage = 1, mapScale = 1, snapshots = false
     const handler = room.onMessageHandlers[type];
     if (!handler) throw new Error(`unknown message type ${type}`);
     handler.callback(client, message);
+    // Operator bedeni (ZentaX, AttackLord) isi varinca yapiyor; bot karari
+    // sonucu hemen gormeli. Ucus 1 sn'nin altinda, botun karar araligina
+    // gore onemsiz: kuyruk aninda bitiriliyor (`settleOperatorBody`). Beden
+    // hedefe isinlaniyor; temas hasari ve olum kurali tick'te aynen isliyor.
+    room.settleOperatorBody?.(client.sessionId);
   };
   if (!solo) {
     for (const client of clients) dispatch(client, "lobby:setReady", { ready: true });

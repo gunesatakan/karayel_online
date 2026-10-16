@@ -4,6 +4,7 @@ import { bakeFlashTextures } from "../vfx/flash-pool";
 import { darken, liftToWhite } from "../vfx/kit";
 import { assetUrl } from "../asset-url";
 import { listTieredTowerArt, listSupplyTowerArt } from "../tower-art";
+import { OPERATOR_BODY_TEXTURE_PATHS, getOperatorBodyTextureKey } from "../vfx/operator-bodies";
 
 const ENEMY_RACE_TEXTURES = ["spaceBug", "fourthDimensional", "holyGuardian", "fallen", "golem"] as const;
 const ENEMY_TYPE_TEXTURES = ["grunt", "brute", "runner", "shooter"] as const;
@@ -41,6 +42,10 @@ export class PreloaderScene extends Phaser.Scene {
     for (let stage = 1; stage <= 5; stage++) this.load.image(`terrain-stage-${stage}`, assetUrl(`images/terrain/stage-${stage}.jpg`));
     for (const kind of ["energy", "gunpowder", "mystic", "plasma", "iron"]) this.load.image(`resource-${kind}`, assetUrl(`images/resources/resource-${kind}.png`));
     this.load.image("zeynep-puppet-hands", assetUrl("images/zeynep-puppet-hands.png"));
+    // Operator bedenleri (ZentaX, AttackLord): tepeden bakis, saydam (tools/build-operator-bodies.mjs).
+    for (const [characterId, path] of Object.entries(OPERATOR_BODY_TEXTURE_PATHS)) {
+      if (path) this.load.image(getOperatorBodyTextureKey(characterId as keyof typeof OPERATOR_BODY_TEXTURE_PATHS), assetUrl(path));
+    }
     this.load.image("melis-creepy", assetUrl("images/melis-creepy.png"));
     this.load.image("melis-creepy-unstoppable", assetUrl("images/melis-creepy-unstoppable.png"));
     this.load.image("melis-creepy-legend", assetUrl("images/melis-creepy-legend.png"));

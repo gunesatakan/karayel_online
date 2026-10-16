@@ -183,6 +183,11 @@ export type MatchResultPayload = {
   creative?: boolean;
   /** Ogretici kosusu; `creative` de acik gelir (ilerleme kapilari onu okuyor). */
   tutorial?: boolean;
+  /**
+   * Yenilginin sebebi bir operator bedeninin dusmesiyse onun sahibi. Nexus
+   * dustuyse anahtar yok. Istemci sahneye bedenin patlamasini ekliyor.
+   */
+  bodyOwnerId?: string;
   run: RunSummary;
 };
 

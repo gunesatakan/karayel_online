@@ -135,7 +135,8 @@ test("sahne: onizleme bolgeyi reddediyor, birakista neden soyleniyor, cizim ve t
   const full = body("applyFullStaticSnapshot");
   assert.ok(full.indexOf("this.buildZones = snapshot.buildZones") >= 0);
   assert.ok(full.indexOf("this.buildZones = snapshot.buildZones") < full.indexOf("this.syncMap(snapshot.map)"));
-  assert.match(source, /room\.onMessage\("placement:rejected", \(message: \{ message\?: string; key\?: string \}\) => \{\n\s*this\.showNotice\(localizeServerText\(message\?\.message, message\?\.key\) \?\? t\("scene\.place\.forbiddenZone"\)\)/);
+  // Red konumu da tasiyabiliyor (operator bedeni varinca kare doluydu): o karenin hayaleti kalkiyor.
+  assert.match(source, /room\.onMessage\("placement:rejected", \(message: \{ message\?: string; key\?: string; x\?: number; y\?: number \}\) => \{\n(?:\s*\/\/.*\n)?\s*this\.dropPendingPlacementAt\(message\?\.x, message\?\.y\);\n\s*this\.showNotice\(localizeServerText\(message\?\.message, message\?\.key\) \?\? t\("scene\.place\.forbiddenZone"\)\)/);
 });
 
 test("metinler: TR ve EN, sunucu anahtari sozlukte", () => {

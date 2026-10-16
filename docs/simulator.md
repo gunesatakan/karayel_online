@@ -57,6 +57,7 @@ Bir bot her kurulum evresinde sırayla: kart seçer (elde bir yenileme), yıkık
 - **Kartlar:** `greedy` (kapsamı da sayan kaba puan; zayıf elde bir yenileme), `random`, `worst`, `focus:<eksen>`. Hedefli kart en çok hasar veren uygun kuleye.
 - **Mağaza:** `greedy` (puan/fiyat), `random`, `none`; bütçe altının %35'i. Kule eşyası en iyi uygun kuleye takılır.
 - **Beceriler:** Atakan: Execute en öndeki bağışık olmayan düşmana, Metal Kalkan nexus'a yaklaşan kara düşmanının önüne yatay, Yönlendirme en kalabalık noktaya; Zeynep: itibar yettikçe komutlar (hız/yavaşlatma/menzil); ultiler şarj dolunca (Zeynep: en kalabalık sütun).
+- **Operatör bedeni:** ZentaX ve AttackLord'un bedeni işi vardığında yapar (kurulum, duvar, onarım, AttackLord becerileri, ultiler). Sürücü her bot mesajından hemen sonra bedenin kuyruğunu bitirir (`settleOperatorBody`: beden hedefe ışınlanır, iş aynı kuralla yapılır); uçuş 1 sn'nin altında ve botun karar aralığına göre önemsiz. Bedenin temas hasarı ve düşerse yenilgi kuralı tick'te aynen işler (rapor `defeat`). Yeniden oynatma (`replay.mjs`) aynı kısayolu kullanır.
 - **Donmuş düşman:** 20 sn kımıldamayan düşmanın yanına en ucuz savaş kulesi (gerekirse uzaktaki ucuz kule satılarak).
 
 Adlı politikalar: `standard` (= `greedy`), `random-cards`, `worst-cards`, `no-shop`, `random-shop`, `no-skills`, `no-walls`, `cluster`, `passive`. Kuruluşlar: `node tools/simulate.mjs --help`.

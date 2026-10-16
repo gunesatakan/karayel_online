@@ -250,6 +250,26 @@ function handlerOf(room, type) {
   return (client, payload) => handler.callback(client, payload);
 }
 
+/**
+ * Operator bedenleri cizgiyi ucarak orer: bedel komutta ayriliyor, parcalar
+ * beden hat boyunca gectikce kuruluyor. Gercek tick yolu, saat ilerletiliyor.
+ */
+function arrive(room) {
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    const busy = () => [...room.operatorBodies.values()].some((body) => body.tasks.length > 0);
+    for (let step = 0; step < 2000 && busy(); step += 1) {
+      now += 50;
+      room.updateOperatorBodies(0.05, 0.04);
+    }
+    assert.equal(busy(), false, "beden isini bitirmedi");
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 async function startedRoom(characters = ["warrior", "zeynep"]) {
   const room = await realRoom();
   const clients = characters.map((characterId, index) => joinClient(room, `p${index + 1}`, { characterId }));
@@ -291,6 +311,11 @@ test("wall:line capadan disari tum gecerli parcalari kurar ve altini keser", asy
     const before = room.state.players.get("p1").gold;
     a.sent = [];
     handlerOf(room, "wall:line")(a, lineMessage(room, h(2, 9), h(7, 9)));
+    // Bedel komut aninda ayrildi; parcalar beden gectikce kuruluyor.
+    assert.equal(room.state.players.get("p1").gold, before - 6 * unit);
+    assert.equal(walls(room, "p1").length, 0, "beden varmadan duvar kuruldu");
+    assert.equal(types(a, "wall:line-result").length, 0);
+    arrive(room);
     assert.deepEqual(wallCols(room, "p1"), [2, 3, 4, 5, 6, 7]);
     assert.equal(room.state.players.get("p1").gold, before - 6 * unit);
     const [result] = types(a, "wall:line-result");
@@ -312,6 +337,7 @@ test("wall:line dolu kenari atlar, arkasini kurmaya devam eder", async () => {
     assert.deepEqual(wallCols(room, "p1"), [5]);
     a.sent = [];
     handlerOf(room, "wall:line")(a, lineMessage(room, h(3, 9), h(8, 9)));
+    arrive(room);
     assert.deepEqual(wallCols(room, "p1"), [3, 4, 5, 6, 7, 8]);
     assert.equal(walls(room, "p1").length, 6, "dolu kenara ikinci duvar kuruldu");
     assert.deepEqual(types(a, "wall:line-result")[0].payload, { requested: 6, placed: 5, skipped: 1, skippedZone: 0, skippedBlocked: 1, skippedGold: 0 });
@@ -327,6 +353,7 @@ test("wall:line yasak bolge parcasini atlar; hepsi bolgedeyse neden anahtariyla 
     const { cols, rows } = room.activeMap;
     room.buildZones = { cols, rows, cells: [9 * cols + 5] };
     handlerOf(room, "wall:line")(a, lineMessage(room, h(3, 9), h(7, 9)));
+    arrive(room);
     assert.deepEqual(wallCols(room, "p1"), [3, 4, 6, 7], "bolgeye degen parca (5,9) kuruldu");
     assert.deepEqual(types(a, "wall:line-result")[0].payload.skippedZone, 1);
     assert.equal(types(a, "placement:rejected").length, 0, "kismen kurulan cizgi ret gostermemeli");
@@ -348,6 +375,9 @@ test("wall:line altin bitince durur; hicbiri kurulamazsa altin anahtariyla redde
     const player = room.state.players.get("p1");
     player.gold = unit * 3 + unit - 1;
     handlerOf(room, "wall:line")(a, lineMessage(room, h(1, 5), h(8, 5)));
+    // Yalnizca yeten uc parcanin bedeli ayrildi: beden yoldayken harcanamaz.
+    assert.equal(player.gold, unit - 1);
+    arrive(room);
     assert.deepEqual(wallCols(room, "p1"), [1, 2, 3], "capadan disari ilk uc parca");
     assert.equal(player.gold, unit - 1);
     const result = types(a, "wall:line-result")[0].payload;
@@ -369,10 +399,12 @@ test("wall:line en fazla arena kenari kadar parca kurar (yatay 12, dikey 18)", a
     room.state.players.get("p1").gold = 100_000;
     const { cols, rows } = room.activeMap;
     handlerOf(room, "wall:line")(a, lineMessage(room, h(0, 4), h(cols, 4)));
+    arrive(room);
     assert.equal(walls(room, "p1").length, cols);
     const g = getMapGridSize(room.activeMap);
     const far = roomEdge(room, v(2, 0));
     handlerOf(room, "wall:line")(a, { definitionId: WALL_TOWER_ID, x1: far.x, y1: far.y, x2: far.x, y2: far.y + 500 * g });
+    arrive(room);
     assert.equal(walls(room, "p1").length, cols + rows);
   } finally {
     cleanup(room);
@@ -387,12 +419,14 @@ test("wall:line tutamac cizgisi: axis alani ekseni zorlar, gecersiz axis yok say
     // Kurulu duvar v(3,4); tutamac altindaki ilk bos kenar v(3,5). Parmak eksene indirilmis.
     const anchor = roomEdge(room, v(3, 5));
     handlerOf(room, "wall:line")(a, { definitionId: WALL_TOWER_ID, x1: anchor.x, y1: anchor.y, x2: anchor.x, y2: anchor.y + 2 * g, axis: "vertical" });
+    arrive(room);
     const spots = walls(room, "p1").map((t) => [t.orientation, Math.round((t.x - getMapOrigin(room.activeMap).x) / g), Math.round((t.y - getMapOrigin(room.activeMap).y) / g - 0.5)]);
     assert.deepEqual(spots.sort((x, y) => x[2] - y[2]), [["vertical", 3, 5], ["vertical", 3, 6], ["vertical", 3, 7]]);
     // Bozuk axis yok sayilir: parmak hareketsizken esitlikte yatay eksen secilir ve capa yeniden yorumlanir.
     const before = walls(room, "p1").length;
     const other = roomEdge(room, h(8, 12));
     handlerOf(room, "wall:line")(a, { definitionId: WALL_TOWER_ID, x1: other.x, y1: other.y, x2: other.x + g, y2: other.y, axis: "diagonal" });
+    arrive(room);
     assert.equal(walls(room, "p1").length, before + 2);
   } finally {
     cleanup(room);
@@ -409,9 +443,11 @@ test("wall:line yalnizca duvar kurar: kule ve Abarti kimligi reddedilir", async 
     handlerOf(room, "wall:line")(a, { ...message, definitionId: "zeynep-8" });
     handlerOf(room, "wall:line")(a, { ...message, definitionId: "yok-boyle-bir-sey" });
     handlerOf(room, "wall:line")(b, { ...message, definitionId: "zeynep-8" });
+    arrive(room);
     assert.equal(room.towers.size, 0);
     // Her karakter duvari kurabilir.
     handlerOf(room, "wall:line")(b, message);
+    arrive(room);
     assert.equal(walls(room, "p2").length, 5);
   } finally {
     cleanup(room);
@@ -468,12 +504,15 @@ test("wall:line hiz siniri: kova asilinca mesaj dusuyor", async () => {
     const send = handlerOf(room, "wall:line");
     const burst = MESSAGE_RULES["wall:line"].rate.burst;
     for (let row = 0; row < burst + 6; row += 1) send(a, lineMessage(room, h(0, row), h(0, row)));
+    arrive(room);
     assert.equal(walls(room, "p1").length, burst);
     // Kova istemci basina.
     send(b, lineMessage(room, h(0, 17), h(0, 17)));
+    arrive(room);
     assert.equal(walls(room, "p2").length, 1);
     now += 1000;
     send(a, lineMessage(room, h(1, 17), h(1, 17)));
+    arrive(room);
     assert.ok(walls(room, "p1").length > burst, "kova zamanla dolmadi");
   } finally {
     Date.now = realNow;

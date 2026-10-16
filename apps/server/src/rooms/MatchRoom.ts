@@ -18,6 +18,30 @@ import { RunLedger, createRunId, getRunMapKey, type MatchResultPayload } from "@
 // Istemciye giden sabit metinler: Turkcesi buradan, yaninda anahtari (`key`).
 import { PREVIEW_EQUIP_REJECTED_KEY, SERVER_TEXT, type ServerTextKey } from "@karayel/shared";
 import { ATAKAN_EXECUTE_SLOT, ATAKAN_EXECUTE_SOURCE_ID, isExecuteImmune, type ExecuteRejectReason, type SkillExecuteMessage, type SkillRejectedMessage } from "@karayel/shared";
+// Operator bedeni (ZentaX, AttackLord): isi varinca yapan govde.
+import {
+  OPERATOR_BODY_CONTACT_RADIUS,
+  OPERATOR_BODY_IDLE_SPEED_RATIO,
+  OPERATOR_BODY_LOW_HP_RATIO,
+  OPERATOR_BODY_MAX_HP,
+  OPERATOR_BODY_QUEUE_MAX,
+  OPERATOR_BODY_REGEN_DELAY_MS,
+  OPERATOR_BODY_REGEN_RATIO,
+  OPERATOR_BODY_REST_CHECK_MS,
+  OPERATOR_BODY_SAFE_MARGIN,
+  OPERATOR_BODY_WALL_PIECE_MS,
+  OPERATOR_BODY_WIRE_QUEUE_MAX,
+  OPERATOR_BODY_WORK_MS,
+  OPERATOR_BODY_WORK_REACH_CELLS,
+  findOperatorBodyRestSpot,
+  pickOperatorBodyStandPoint,
+  hasOperatorBody,
+  isOperatorBodyThreatened,
+  stepOperatorBody,
+  type OperatorBodySnapshot,
+  type OperatorBodyState,
+  type OperatorBodyTaskKind
+} from "@karayel/shared";
 // Irk mekanikleri: Taslasma, kalkan atici, kazici, ruh cekici, faz ve katlanma.
 import {
   BUG_BURROWER,
@@ -1253,6 +1277,71 @@ type UseUltimateMessage = {
   mode?: "attack" | "repair";
   /** Zeynep ultisinin patlayacagi sutun. */
   column?: number;
+  /** Zeynep: dokunusun dunya y'si; beden sutunun o hizasina ucuyor. */
+  y?: number;
+};
+
+/** Duvar cizgisinin ayrilmis tek parcasi (merkez ve ayrilan bedel). */
+type OperatorBodyWallSegment = { x: number; y: number; cost: number };
+
+/**
+ * Bedenin kuyrugundaki is. `x`/`y` isin yeri (kare, yapi, dusman, sutun);
+ * beden onun `standoffCells` kadar yaninda duruyor. `reservedGold` komut
+ * aninda ayrilan ve henuz harcanmamis altin; varista ya da iadede geri konuyor.
+ */
+type OperatorBodyTask = {
+  kind: OperatorBodyTaskKind;
+  x: number;
+  y: number;
+  standoffCells: number;
+  standX?: number;
+  standY?: number;
+  /** Duruş noktasinin ait oldugu duvar parcasi. */
+  standIndex?: number;
+  reservedGold: number;
+  /** Varista isleyiciye aynen giden mesaj. */
+  message: Record<string, unknown>;
+  tutorial?: TutorialActionId;
+  creative?: boolean;
+  /** Kule kontenjani tutan kurulum. */
+  slot?: boolean;
+  segments?: OperatorBodyWallSegment[];
+  segmentIndex?: number;
+  wallStats?: { requested: number; placed: number; skippedZone: number; skippedBlocked: number; skippedGold: number };
+  towerIdsBefore?: Set<string>;
+  towerId?: string;
+  skillSlot?: number;
+  enemyId?: string;
+  /** Ulti bulundugu yerde atiliyor (AttackLord). */
+  inPlace?: boolean;
+  /**
+   * Komutun verildigi kurulum arasi: kurulumda verilen ve dalga basladiktan
+   * sonra varan yapi da o kurulumun yapisi sayiliyor (iade kurali).
+   */
+  setupSession?: number;
+};
+
+type OperatorBodyModel = {
+  ownerId: string;
+  characterId: CharacterId;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  state: OperatorBodyState;
+  tasks: OperatorBodyTask[];
+  /** Is pozunun bitisi (duvar saati); o ana kadar sonraki goreve gecilmiyor. */
+  workUntil: number;
+  workX?: number;
+  workY?: number;
+  /** Son hasar ani (duvar saati); onarim gecikmesi buradan. */
+  lastDamageAt: number;
+  restX?: number;
+  restY?: number;
+  restAnchorX?: number;
+  restAnchorY?: number;
+  restCheckAt: number;
+  dead: boolean;
 };
 
 /**
@@ -2071,6 +2160,19 @@ type PlaceShopMapItemMessage = { itemId?: "bariyer" | "ziftli-zemin"; x?: number
  */
 /** `placeTower` sonucu: cizgi yerlestirmesi nedenine gore sayiyor. */
 type PlaceTowerResult = "placed" | "invalid" | "limit" | "gold" | "zone" | "blocked";
+type PlaceTowerOptions = {
+  free?: boolean;
+  ignoreLimit?: boolean;
+  quiet?: boolean;
+  /** Yalnizca dogrula, kurma ("placed" = kurulabilir). Operator bedeninin komut ani. */
+  validateOnly?: boolean;
+  /** Kuyrukta bekleyen, kontenjan tutan kule sayisi (dogrulamada). */
+  pendingSlots?: number;
+  /** Yapinin kuruldugu kurulum arasi (operator bedeni: komutun ani); yoksa simdiki. */
+  setupSession?: number;
+  /** Dogrulanan kurulumun yeri, bedeli ve boyu (yaziliyor). */
+  out?: { x?: number; y?: number; cost?: number; span?: number; slot?: boolean };
+};
 type WallLineMessage = { definitionId?: string; x1?: number; y1?: number; x2?: number; y2?: number; axis?: string };
 type CreativeTowerMessage = { definitionId?: string; x?: number; y?: number; orientation?: TowerOrientation };
 type CreativeLevelMessage = { towerId?: string; level?: number };
@@ -2144,7 +2246,7 @@ export const MESSAGE_RULES: Readonly<Record<string, MessageRule>> = {
   // rahatca sigdigi kadar, dongude gonderen istemciyi kesiyor.
   // `x2`/`y2`: Metal Kalkan'in ucu (AttackLord yuva 1; baslangic `x`/`y`).
   useSkill: { phase: "match", fields: { slot: "number", x: "number", y: "number", x2: "number", y2: "number", towerId: "string", enemyId: "string", commandTier: "string" }, rate: { burst: 10, perSecond: 4 } },
-  useUltimate: { phase: "match", fields: { mode: "string", column: "number" } },
+  useUltimate: { phase: "match", fields: { mode: "string", column: "number", y: "number" } },
   linkServer: { phase: "match", fields: { serverTowerId: "string", targetTowerId: "string" } },
   setTowerMode: { phase: "match", fields: { towerId: "string", mode: "string" } },
   toggleWallGate: { phase: "match", fields: { towerId: "string" } },
@@ -2793,6 +2895,10 @@ export class MatchRoom extends Room<MatchState> {
   /** Sahadaki Metal Kalkanlar; cogu zaman bos (kalkan 3 sn yasiyor). */
   private metalShields: MetalShieldModel[] = [];
   private nextMetalShieldId = 1;
+  /** Operator bedenleri, sahibinin oturumuyla. */
+  private readonly operatorBodies = new Map<string, OperatorBodyModel>();
+  /** Bu mesaj isini bedenin kuyruguna birakti: ogretici adimi varista olculecek. */
+  private bodyCommandDeferred = false;
   /** Isiticinin tick ici tekrar onleyici listesi (tahsis yok). */
   private readonly heaterScratch: TowerModel[] = [];
   /** Rezonans Odasi takili yapilar; `updateTowers` tik basina bir kez topluyor. */
@@ -3412,15 +3518,17 @@ export class MatchRoom extends Room<MatchState> {
       this.startLobbyMatch(client);
     });
 
+    // Kurulum, duvar, altinla onarim, beceri ve ulti operator bedeninden
+    // geciyor (`command*`): bedeni olan oyuncuda is varista, digerlerinde aninda.
     this.onMessage("placeTower", (client, message: PlaceTowerMessage) => {
       if (!this.gameStarted) {
         return;
       }
-      this.placeTower(client, message);
+      this.commandPlaceTower(client, message);
     });
 
     this.onMessage("wall:line", (client, message: WallLineMessage) => {
-      this.placeWallLine(client, message);
+      this.commandWallLine(client, message);
     });
 
     this.onMessage("upgradeTower", (client, message: UpgradeTowerMessage) => {
@@ -3448,14 +3556,14 @@ export class MatchRoom extends Room<MatchState> {
       if (!this.gameStarted) {
         return;
       }
-      this.useSkill(client, message);
+      this.commandSkill(client, message);
     });
 
     this.onMessage("useUltimate", (client, message: UseUltimateMessage) => {
       if (!this.gameStarted) {
         return;
       }
-      this.useUltimate(client, message);
+      this.commandUltimate(client, message);
     });
 
     this.onMessage("linkServer", (client, message: LinkServerMessage) => {
@@ -3512,7 +3620,7 @@ export class MatchRoom extends Room<MatchState> {
     this.onMessage("run:sync", (client) => this.sendRunState(client));
     this.onMessage("shop:buy", (client, message: BuyShopItemMessage) => this.buyShopItem(client, message));
     this.onMessage("shop:reroll", (client) => this.rerollShop(client));
-    this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.repairStructure(client, message));
+    this.onMessage("structure:repair", (client, message: RepairStructureMessage) => this.commandRepair(client, message));
     this.onMessage("factory:production", (client, message) => this.setFactoryProduction(client, message));
     this.onMessage("worker:assign", (client, message) => this.assignWorker(client, message));
     this.onMessage("worker:hire", (client, message: HireWorkerMessage) => this.hireWorker(client, message));
@@ -3530,7 +3638,7 @@ export class MatchRoom extends Room<MatchState> {
       if (!this.getCreativePlayer(client)) return;
       this.sendCreativeLoadout(client);
     });
-    this.onMessage("creative:tower", (client, message: CreativeTowerMessage) => this.creativePlaceTower(client, message));
+    this.onMessage("creative:tower", (client, message: CreativeTowerMessage) => this.commandPlaceTower(client, message, true));
     this.onMessage("creative:level", (client, message: CreativeLevelMessage) => this.creativeSetTowerLevel(client, message));
     this.onMessage("creative:card", (client, message: CreativeCardMessage) => this.creativeToggleCard(client, message));
     this.onMessage("creative:item", (client, message: CreativeItemMessage) => this.creativeToggleItem(client, message));
@@ -3705,8 +3813,10 @@ export class MatchRoom extends Room<MatchState> {
         // baska bir sey degismiyor). Reddedilen istek adimi gecirmiyor.
         const tracked = this.tutorialMode ? TUTORIAL_TRACKED_MESSAGES[type] : undefined;
         const before = tracked ? this.captureTutorialState(client.sessionId) : undefined;
+        this.bodyCommandDeferred = false;
         callback(client, message);
-        if (tracked && before) this.reportTutorialProgress(client, tracked, before, message);
+        // Is bedenin kuyruguna girdiyse adim varista (`reportBodyTutorialProgress`).
+        if (tracked && before && !this.bodyCommandDeferred) this.reportTutorialProgress(client, tracked, before, message);
       } catch (error) {
         this.reportRoomError(`onMessage:${type}`, error);
       }
@@ -3888,6 +3998,8 @@ export class MatchRoom extends Room<MatchState> {
     const player = this.state.players.get(client.sessionId);
     if (this.gameStarted && player) {
       player.connected = false;
+      // Kopan oyuncunun bedeni hasar almiyor; kuyrugu da yurumesin (iade).
+      this.releaseOperatorBodyFor(client.sessionId);
       // Oyuncu menuye dondu: herkes boyle ciktiysa oda beklemeden kapanacak
       // (`checkAbandoned`, `isLeftByEveryone`).
       if (consented) this.consentedLeaveSessionIds.add(client.sessionId);
@@ -4098,6 +4210,7 @@ export class MatchRoom extends Room<MatchState> {
       this.workerRespawnAt.set(`logistics-${nextSessionId}-${workerId.slice(previousWorkerPrefix.length)}`, respawnAt);
     }
     this.transferMapKey(this.workerBannedCells, previousSessionId, nextSessionId);
+    this.transferOperatorBody(previousSessionId, nextSessionId);
     // Acik Zeynep komutunun asisti yeni oturumun yuvasina yazilsin.
     if (this.zeynepHasteOwnerId === previousSessionId) this.zeynepHasteOwnerId = nextSessionId;
     if (this.zeynepRangeOwnerId === previousSessionId) this.zeynepRangeOwnerId = nextSessionId;
@@ -5068,6 +5181,9 @@ export class MatchRoom extends Room<MatchState> {
 
     sectionStart = performance.now();
     this.updateEnemies(seconds);
+    // Bedenler dusmanlar yurudukten sonra: temas bu tick'in konumlariyla.
+    // Ucus duvar saatiyle, hasar ve onarim oyun saatiyle.
+    this.updateOperatorBodies(deltaTime / 1000, seconds);
     // Sureli efsanevi etkiler (iz, bag, cekim): dusmanlar yurudukten sonra.
     if (this.legendaryTimedEnemyIds.size > 0) this.updateLegendaryEffects(seconds, Date.now());
     timings.enemiesMs = performance.now() - sectionStart;
@@ -5429,6 +5545,8 @@ export class MatchRoom extends Room<MatchState> {
         return;
       }
       this.waveClearedAt = 0;
+      // Dalga temiz: operator bedenleri tam cana (toparlanma kurali).
+      this.healOperatorBodies();
       // Ogretici dalga kapatmiyor: karne, kart perdesi ve kurulum yok, sayac
       // ilerlemiyor (son dalga zaferi hic gelmiyor). Ayni dalga yeniden doguyor.
       if (this.tutorialMode) {
@@ -5904,11 +6022,13 @@ export class MatchRoom extends Room<MatchState> {
     }
   }
 
-  private finishMatch(result: "victory" | "defeat") {
+  private finishMatch(result: "victory" | "defeat", cause: { bodyOwnerId?: string } = {}) {
     if (this.matchResult) {
       return;
     }
     this.matchResult = result;
+    // Yolda kalan bedenin bedeli iade; kuyruklar bos (beden artik is yapmiyor).
+    this.releaseOperatorBodies();
     // Sonuctan sonra serit yapilari vurmasin ve telde kalmasin.
     this.clearCounterSurges();
     this.metalShields = [];
@@ -5943,6 +6063,7 @@ export class MatchRoom extends Room<MatchState> {
       // asama, arsiv, nisan, telemetri) yalnizca bu bayragi okuyor.
       ...(this.creativeMode || this.tutorialMode ? { creative: true } : {}),
       ...(this.tutorialMode ? { tutorial: true } : {}),
+      ...(cause.bodyOwnerId ? { bodyOwnerId: cause.bodyOwnerId } : {}),
       run: this.buildRunSummary(result)
     };
     this.matchResultPayload = payload;
@@ -13743,12 +13864,7 @@ export class MatchRoom extends Room<MatchState> {
     if (!player || !tower || tower.ownerId !== client.sessionId) return;
     if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
 
-    const missingRatio = 1 - tower.hp / tower.maxHp;
-    const cost = getStructureRepairCostWithModifiers(
-      getTowerBuildCost(tower.definition.cost),
-      missingRatio,
-      this.getTowerRepairCostMultiplier(tower)
-    );
+    const cost = this.getStructureRepairCost(tower);
     if (cost <= 0 || player.gold < cost) return;
 
     player.gold -= cost;
@@ -13875,7 +13991,7 @@ export class MatchRoom extends Room<MatchState> {
     return PLAYER_TOWER_LIMIT + Math.floor(getModifierAdd(player.runModifiers, "towerCapacity"));
   }
 
-  private placeTower(client: Client, message: PlaceTowerMessage, options: { free?: boolean; ignoreLimit?: boolean; quiet?: boolean } = {}): PlaceTowerResult {
+  private placeTower(client: Client, message: PlaceTowerMessage, options: PlaceTowerOptions = {}): PlaceTowerResult {
     const player = this.state.players.get(client.sessionId);
     if (!player || !isFiniteNumber(message.x) || !isFiniteNumber(message.y) || typeof message.definitionId !== "string") {
       return "invalid";
@@ -13888,7 +14004,8 @@ export class MatchRoom extends Room<MatchState> {
       const currentTowerCount = Array.from(this.towers.values())
         .filter((tower) => tower.ownerId === client.sessionId && occupiesTowerSlot(tower.definition))
         .length;
-      if (currentTowerCount >= towerLimit) {
+      // Bedenin kuyrugunda bekleyen kuleler de kontenjandan yer tutuyor.
+      if (currentTowerCount + (options.pendingSlots ?? 0) >= towerLimit) {
         return "limit";
       }
     }
@@ -13913,6 +14030,15 @@ export class MatchRoom extends Room<MatchState> {
       if (player.gold < buildCost) return "gold";
       return inZone ? "zone" : "blocked";
     }
+    if (options.out) {
+      options.out.x = placement.x;
+      options.out.y = placement.y;
+      options.out.cost = buildCost;
+      options.out.span = this.getTowerPlacementSpan(definition.id);
+      options.out.slot = occupiesTowerSlot(definition);
+    }
+    // Operator bedeni: komut aninda yalnizca dogrulama; kurulum varista.
+    if (options.validateOnly) return "placed";
 
     const applicableHealthModifiers = this.getStructureHealthModifiers(player, definition);
     // Duvarin cani kule tabanindan yuksek ve kalinlastirmayla buyur; kart ve
@@ -13928,7 +14054,7 @@ export class MatchRoom extends Room<MatchState> {
       characterId: player.characterId,
       definition,
       buildGold: buildCost,
-      builtInSetupSession: this.setupPhase ? this.setupSession : undefined,
+      builtInSetupSession: options.setupSession ?? (this.setupPhase ? this.setupSession : undefined),
       x: placement.x,
       y: placement.y,
       orientation,
@@ -14078,20 +14204,755 @@ export class MatchRoom extends Room<MatchState> {
    */
   private placeWallLine(client: Client, message: WallLineMessage) {
     const player = this.state.players.get(client.sessionId);
-    if (!player || !this.gameStarted) return;
-    if (message.definitionId !== undefined && typeof message.definitionId !== "string") return;
+    const line = player ? this.resolveWallLine(player, message) : undefined;
+    if (!line) return;
+
+    const stats = { requested: line.points.length, placed: 0, skippedZone: 0, skippedBlocked: 0, skippedGold: 0 };
+    for (const center of line.points) {
+      const result = this.placeTower(client, { definitionId: line.definition.id, x: center.x, y: center.y }, { quiet: true });
+      if (result === "placed") stats.placed += 1;
+      else if (result === "gold") stats.skippedGold += 1;
+      else if (result === "zone") stats.skippedZone += 1;
+      else stats.skippedBlocked += 1;
+    }
+    this.sendWallLineResult(client, stats);
+  }
+
+  // ------------------------------------------------------------------
+  // Operator bedeni (ZentaX, AttackLord)
+  //
+  // Komut bugunku kapidan geliyor; bedeni olan oyuncuda is kuyruga giriyor
+  // ve beden vardiginda burada yapiliyor. Kural tek yerde kaliyor: varis
+  // aninda bugunku isleyici (`placeTower`, `repairStructure`, `useSkill`,
+  // `useUltimate`) aynen cagriliyor. Komut aninda ayrilan bedel varistan
+  // hemen once geri konuyor ve isleyici gercek bedeli kendisi aliyor;
+  // isleyici reddederse bedel oyuncuda kaliyor (iade). Yolda iken ayrilan
+  // bedel harcanamiyor: cift harcama ve bedava is yok.
+  //
+  // Bedeni olmayan oyuncu (diger operatorler, testlerin elle kurulan odasi)
+  // eskisi gibi aninda.
+  // ------------------------------------------------------------------
+
+  /** Oyuncunun bedeni; uygun oyuncuda yoksa kuruluyor (bagli, mac basladi, bedenli operator). */
+  private getOperatorBody(sessionId: string) {
+    const existing = this.operatorBodies.get(sessionId);
+    if (existing) return existing;
+    const player = this.state.players.get(sessionId);
+    if (!this.gameStarted || !player || player.connected !== true || !hasOperatorBody(player.characterId)
+      || this.departedSessionIds.has(sessionId)) return undefined;
+    const gridSize = getMapGridSize(this.activeMap);
+    const nexus = this.activePaths[0]?.points.at(-1);
+    const bounds = this.getActiveWorldBounds();
+    const slot = player.slot ?? this.operatorBodies.size;
+    const near = {
+      x: (nexus?.x ?? bounds.left + bounds.width / 2) + (slot - 1.5) * gridSize * 1.4,
+      y: (nexus?.y ?? bounds.bottom - gridSize / 2) - gridSize * 1.6
+    };
+    const rest = this.findOperatorBodyRest(near);
+    const maxHp = OPERATOR_BODY_MAX_HP;
+    const body: OperatorBodyModel = {
+      ownerId: sessionId,
+      characterId: player.characterId,
+      x: rest.x,
+      y: rest.y,
+      hp: maxHp,
+      maxHp,
+      state: "i",
+      tasks: [],
+      workUntil: 0,
+      lastDamageAt: 0,
+      restX: rest.x,
+      restY: rest.y,
+      restCheckAt: 0,
+      dead: false
+    };
+    this.operatorBodies.set(sessionId, body);
+    return body;
+  }
+
+  /** Bedeni olan ve dusmemis oyuncunun bedeni; komut kuyruga mi girecek. */
+  private getCommandBody(client: Client) {
+    const body = this.getOperatorBody(client.sessionId);
+    return body && !body.dead && !this.matchResult ? body : undefined;
+  }
+
+  /** Kuyruk dolu: oyuncuya kisa bir not, komut reddedildi. */
+  private isOperatorBodyQueueFull(client: Client, body: OperatorBodyModel) {
+    if (body.tasks.length < OPERATOR_BODY_QUEUE_MAX) return false;
+    client.send("body:task-failed", serverTextMessage("body.queueFull"));
+    return true;
+  }
+
+  private enqueueOperatorBodyTask(body: OperatorBodyModel, task: OperatorBodyTask) {
+    body.tasks.push(task);
+    // Ogretici: adim komutta degil, is gercekten yapildiginda geciyor.
+    this.bodyCommandDeferred = true;
+  }
+
+  private getPendingTowerSlots(body: OperatorBodyModel) {
+    return body.tasks.reduce((total, task) => total + (task.kind === "place" && task.slot ? 1 : 0), 0);
+  }
+
+  /** `placeTower` (ve yaratici `creative:tower`) kapisi. */
+  private commandPlaceTower(client: Client, message: PlaceTowerMessage, creative = false) {
+    const body = this.getCommandBody(client);
+    if (!body) {
+      if (creative) this.creativePlaceTower(client, message);
+      else this.placeTower(client, message);
+      return;
+    }
+    if (creative && !this.getCreativePlayer(client)) return;
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    const out: NonNullable<PlaceTowerOptions["out"]> = {};
+    const result = this.placeTower(client, message, creative
+      ? { free: true, ignoreLimit: true, validateOnly: true, out }
+      : { validateOnly: true, pendingSlots: this.getPendingTowerSlots(body), out });
+    if (result !== "placed" || out.x === undefined || out.y === undefined) return;
+    // Ayni kareye ikinci istek: ilki kuyrukta, ikincisi varista dolu kareye carpardi.
+    const duplicate = body.tasks.some((task) => task.kind === "place" && Math.abs(task.x - out.x!) < 0.5 && Math.abs(task.y - out.y!) < 0.5);
+    if (duplicate) {
+      // Konum yok: ilk istegin hayaleti istemcide kalmali.
+      client.send("body:task-failed", serverTextMessage("body.duplicate"));
+      return;
+    }
+    const cost = creative ? 0 : out.cost ?? 0;
+    player.gold -= cost;
+    this.enqueueOperatorBodyTask(body, {
+      kind: "place",
+      x: out.x,
+      y: out.y,
+      standoffCells: (out.span ?? 1) * 0.5 + OPERATOR_BODY_WORK_REACH_CELLS - 0.5,
+      reservedGold: cost,
+      message: { ...message },
+      creative,
+      slot: out.slot === true && !creative,
+      tutorial: "build",
+      setupSession: this.setupPhase ? this.setupSession : undefined
+    });
+  }
+
+  /** `wall:line` kapisi: parcalar komut aninda dogrulanip bedelleri ayriliyor. */
+  private commandWallLine(client: Client, message: WallLineMessage) {
+    const body = this.getCommandBody(client);
+    if (!body) {
+      this.placeWallLine(client, message);
+      return;
+    }
+    const player = this.state.players.get(client.sessionId);
+    const line = player ? this.resolveWallLine(player, message) : undefined;
+    if (!player || !line) return;
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    const segments: OperatorBodyWallSegment[] = [];
+    const stats = { requested: line.points.length, placed: 0, skippedZone: 0, skippedBlocked: 0, skippedGold: 0 };
+    let reserved = 0;
+    for (const point of line.points) {
+      const out: NonNullable<PlaceTowerOptions["out"]> = {};
+      const result = this.placeTower(client, { definitionId: line.definition.id, x: point.x, y: point.y }, { quiet: true, validateOnly: true, out });
+      if (result === "placed") {
+        const cost = out.cost ?? 0;
+        // Ayirma hemen: sonraki parcanin altin denetimi kalan altini gorsun.
+        player.gold -= cost;
+        reserved += cost;
+        segments.push({ x: point.x, y: point.y, cost });
+      } else if (result === "gold") stats.skippedGold += 1;
+      else if (result === "zone") stats.skippedZone += 1;
+      else stats.skippedBlocked += 1;
+    }
+    if (segments.length === 0) {
+      this.sendWallLineResult(client, stats);
+      return;
+    }
+    this.enqueueOperatorBodyTask(body, {
+      kind: "wall",
+      x: segments[0].x,
+      y: segments[0].y,
+      standoffCells: OPERATOR_BODY_WORK_REACH_CELLS,
+      reservedGold: reserved,
+      message: { ...message },
+      setupSession: this.setupPhase ? this.setupSession : undefined,
+      segments,
+      segmentIndex: 0,
+      wallStats: stats,
+      tutorial: "build"
+    });
+  }
+
+  /** `structure:repair` kapisi: bedel komut aninda ayriliyor, onarim varista aninda. */
+  private commandRepair(client: Client, message: RepairStructureMessage) {
+    const body = this.getCommandBody(client);
+    if (!body) {
+      this.repairStructure(client, message);
+      return;
+    }
+    const player = this.state.players.get(client.sessionId);
+    const tower = message.towerId ? this.towers.get(message.towerId) : undefined;
+    if (!player || !tower || tower.ownerId !== client.sessionId) return;
+    if (tower.hp <= 0 || tower.hp >= tower.maxHp) return;
+    if (body.tasks.some((task) => task.kind === "repair" && task.towerId === tower.id)) return;
+    const cost = this.getStructureRepairCost(tower);
+    if (cost <= 0 || player.gold < cost) return;
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    player.gold -= cost;
+    this.enqueueOperatorBodyTask(body, {
+      kind: "repair",
+      x: tower.x,
+      y: tower.y,
+      standoffCells: this.getTowerPlacementSpan(tower.definition.id) * 0.5 + OPERATOR_BODY_WORK_REACH_CELLS - 0.5,
+      reservedGold: cost,
+      message: { ...message },
+      towerId: tower.id,
+      tutorial: "repair"
+    });
+  }
+
+  /**
+   * `useSkill` kapisi. ZentaX'in komutlari bedeni yurutmuyor (aninda;
+   * beden yalnizca acilan kademeye gore isiniyor). AttackLord'un uc
+   * becerisi bedenle: Yonlendirme isaretlenen alana, Metal Kalkan cizginin
+   * ortasina, Execute hedef dusmana ucup varista. Bekleme suresi komut
+   * aninda baslar (ayrilan bedel); varista red olursa geri aliniyor.
+   */
+  private commandSkill(client: Client, message: UseSkillMessage) {
+    const body = this.getCommandBody(client);
+    const player = this.state.players.get(client.sessionId);
+    if (!body || !player || player.characterId !== "warrior") {
+      this.useSkill(client, message);
+      return;
+    }
+    const slot = isFiniteNumber(message.slot) ? Math.floor(message.slot) : -1;
+    if (slot < 0 || slot > 2 || this.getSkillCooldown(player, slot) > 0) return;
+    const skill = characters.find((character) => character.id === player.characterId)?.skills[slot];
+    if (!skill) return;
+    if (body.tasks.some((task) => task.kind === "skill" && task.skillSlot === slot)) return;
+    let target: { x: number; y: number } | undefined;
+    let standoffCells = 0;
+    let enemyId: string | undefined;
+    if (slot === ATAKAN_EXECUTE_SLOT) {
+      const enemy = message.enemyId ? this.enemies.get(message.enemyId) : undefined;
+      const reason = this.getExecuteRejectReason(enemy, Date.now());
+      if (reason || !enemy) {
+        this.rejectSkill(client, ATAKAN_EXECUTE_SLOT, reason ?? "invalid");
+        return;
+      }
+      target = { x: enemy.x, y: enemy.y };
+      // Isin menzili, temas degil: beden dusmanin yanina yapismiyor.
+      standoffCells = OPERATOR_BODY_WORK_REACH_CELLS;
+      enemyId = enemy.id;
+    } else if (slot === ATAKAN_SHIELD_SLOT) {
+      if (![message.x, message.y, message.x2, message.y2].every(isFiniteNumber)) {
+        this.rejectSkill(client, ATAKAN_SHIELD_SLOT, "invalid");
+        return;
+      }
+      target = { x: (message.x! + message.x2!) / 2, y: (message.y! + message.y2!) / 2 };
+      standoffCells = 0.4;
+    } else {
+      if (!isFiniteNumber(message.x) || !isFiniteNumber(message.y)) return;
+      const bounds = this.getActiveWorldBounds();
+      target = { x: this.clamp(message.x, bounds.left, bounds.right), y: this.clamp(message.y, bounds.top, bounds.bottom) };
+    }
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    this.setSkillCooldown(player, slot, skill.cooldownMs);
+    this.enqueueOperatorBodyTask(body, {
+      kind: "skill",
+      x: target.x,
+      y: target.y,
+      standoffCells,
+      reservedGold: 0,
+      message: { ...message },
+      skillSlot: slot,
+      enemyId,
+      tutorial: "skill"
+    });
+  }
+
+  /**
+   * `useUltimate` kapisi. ZentaX secilen sutunun ustune ucup ultiyi orada
+   * atiyor; AttackLord bulundugu yerde atiyor (drone'lar bedeninden cikip
+   * sahaya yayiliyor). Sarj komut aninda harcaniyor (ayrilan bedel).
+   */
+  private commandUltimate(client: Client, message: UseUltimateMessage) {
+    const body = this.getCommandBody(client);
+    const player = this.state.players.get(client.sessionId);
+    if (!body || !player) {
+      this.useUltimate(client, message);
+      return;
+    }
+    if (player.ultimateCharge < 100) return;
+    if (body.tasks.some((task) => task.kind === "ultimate")) return;
+    let target = { x: body.x, y: body.y };
+    let inPlace = true;
+    if (player.characterId === "zeynep") {
+      const column = this.resolveUltimateColumn(message.column);
+      if (column === undefined) return;
+      const gridSize = getMapGridSize(this.activeMap);
+      const origin = getMapOrigin(this.activeMap);
+      const bounds = this.getActiveWorldBounds();
+      const y = isFiniteNumber(message.y) ? message.y : body.y;
+      target = { x: origin.x + (column + 0.5) * gridSize, y: this.clamp(y, bounds.top + gridSize, bounds.bottom - gridSize) };
+      inPlace = false;
+    }
+    if (this.isOperatorBodyQueueFull(client, body)) return;
+    player.ultimateCharge = 0;
+    this.enqueueOperatorBodyTask(body, {
+      kind: "ultimate",
+      x: target.x,
+      y: target.y,
+      standoffCells: 0,
+      reservedGold: 0,
+      message: { ...message },
+      inPlace,
+      tutorial: "ultimate"
+    });
+  }
+
+  /** Onarim bedeli (`repairStructure` ile ayni hesap). */
+  private getStructureRepairCost(tower: TowerModel) {
+    const missingRatio = 1 - tower.hp / tower.maxHp;
+    return getStructureRepairCostWithModifiers(
+      getTowerBuildCost(tower.definition.cost),
+      missingRatio,
+      this.getTowerRepairCostMultiplier(tower)
+    );
+  }
+
+  /** Gorevin bu tick'teki ucus hedefi ve isinin ucu; `undefined`: hedef kalmadi. */
+  private getOperatorBodyTaskTarget(body: OperatorBodyModel, task: OperatorBodyTask) {
+    if (task.kind === "ultimate" && task.inPlace) {
+      return { x: body.x, y: body.y, workX: body.x, workY: body.y };
+    }
+    let work: { x: number; y: number } = task;
+    if (task.kind === "skill" && task.enemyId) {
+      const enemy = this.enemies.get(task.enemyId);
+      if (!enemy || enemy.hp <= 0) return undefined;
+      work = enemy;
+    } else if (task.kind === "wall" && task.segments) {
+      const segment = task.segments[task.segmentIndex ?? 0];
+      if (!segment) return undefined;
+      work = segment;
+    }
+    if (!(task.standoffCells > 0)) return { x: work.x, y: work.y, workX: work.x, workY: work.y };
+    // Is uzaktan, isinla: hedefin cevresinde dusmanlarin temas yaricapindan
+    // uzak bir nokta. Her tick yeniden soruluyor (dusmanlar yuruyor); su anki
+    // nokta hala iyiyse korunuyor, beden titremiyor.
+    const gridSize = getMapGridSize(this.activeMap);
+    const stand = pickOperatorBodyStandPoint({
+      from: body,
+      target: work,
+      distance: gridSize * task.standoffCells,
+      threats: this.getBodyThreats(),
+      safeRadius: this.scaleWorldDistance(OPERATOR_BODY_CONTACT_RADIUS + OPERATOR_BODY_SAFE_MARGIN),
+      bounds: this.getActiveWorldBounds(),
+      current: task.standX !== undefined && task.standY !== undefined && task.standIndex === (task.segmentIndex ?? 0) ? { x: task.standX, y: task.standY } : undefined
+    });
+    task.standX = stand.x;
+    task.standY = stand.y;
+    task.standIndex = task.segmentIndex ?? 0;
+    return { x: stand.x, y: stand.y, workX: work.x, workY: work.y };
+  }
+
+  /** Bedenin sahibine yazmak icin istemci; kopuksa susan bir yedek. */
+  private getBodyClient(sessionId: string): Client {
+    return this.clients.find((client) => client.sessionId === sessionId)
+      ?? ({ sessionId, send: () => undefined } as unknown as Client);
+  }
+
+  /**
+   * Varis: gorevin isi. `true` donerse gorev bitti (kuyruktan cikar). Duvar
+   * cizgisi parca parca: her varista bir parca, sonuncusunda biter.
+   */
+  private arriveOperatorBodyTask(body: OperatorBodyModel, task: OperatorBodyTask) {
+    const client = this.getBodyClient(body.ownerId);
+    const player = this.state.players.get(body.ownerId);
+    if (!player) return true;
+    const tracked = this.tutorialMode && task.tutorial && task.kind !== "wall" ? task.tutorial : undefined;
+
+    if (task.kind === "wall") return this.arriveWallSegment(body, task, client, player);
+
+    // Ayrilan bedel geri; isleyici gercek bedeli kendisi aliyor.
+    player.gold += task.reservedGold;
+    task.reservedGold = 0;
+    const towerIdsBefore = tracked ? new Set(this.towers.keys()) : undefined;
+    let succeeded = false;
+
+    if (task.kind === "place") {
+      const result = task.creative
+        ? this.placeTower(client, task.message as PlaceTowerMessage, { free: true, ignoreLimit: true, quiet: true })
+        : this.placeTower(client, task.message as PlaceTowerMessage, { quiet: true, setupSession: task.setupSession });
+      if (task.creative) this.sendCreativeLoadout(client);
+      succeeded = result === "placed";
+      if (result !== "placed") {
+        client.send("placement:rejected", { ...serverTextMessage(result === "zone" ? "placement.forbiddenZone" : "body.placeFailed"), x: task.x, y: task.y });
+      }
+    } else if (task.kind === "repair") {
+      const tower = task.towerId ? this.towers.get(task.towerId) : undefined;
+      const hpBefore = tower?.hp;
+      this.repairStructure(client, task.message as RepairStructureMessage);
+      succeeded = Boolean(tower && tower.hp !== hpBefore);
+      if (!tower || tower.hp === hpBefore) {
+        // Yapi yikildi, satildi ya da tam canda; altin oyuncuda kaldi.
+        if (!tower || tower.hp < tower.maxHp) client.send("body:task-failed", serverTextMessage("body.repairFailed"));
+      }
+    } else if (task.kind === "skill") {
+      const slot = task.skillSlot ?? 0;
+      // Komut aninda kurulan bekleme yalnizca bir kilit (yeniden komut ve
+      // arayuz). Tutan beceri beklemeyi varista bastan kuruyor (`useSkill`):
+      // uzun bir kuyruktan sonra bile beceri bekleme suresiz kalmiyor.
+      this.setSkillCooldown(player, slot, 0);
+      this.useSkill(client, task.message as UseSkillMessage);
+      succeeded = this.getSkillCooldown(player, slot) > 0;
+    } else if (task.kind === "ultimate") {
+      // Yolda dolan sarj kaybolmuyor; ulti tutarsa ona donuyor.
+      const transitCharge = player.ultimateCharge;
+      player.ultimateCharge = 100;
+      this.useUltimate(client, task.message as UseUltimateMessage);
+      succeeded = player.ultimateCharge < 100;
+      if (succeeded) player.ultimateCharge = transitCharge;
+    }
+
+    if (tracked && succeeded) this.reportBodyTutorialProgress(client, tracked, towerIdsBefore);
+    return true;
+  }
+
+  /** Duvar cizgisinin tek parcasi; son parcada ozet yollaniyor. */
+  private arriveWallSegment(body: OperatorBodyModel, task: OperatorBodyTask, client: Client, player: Player) {
+    const segments = task.segments ?? [];
+    const index = task.segmentIndex ?? 0;
+    const stats = task.wallStats!;
+    if (index === 0 && this.tutorialMode) task.towerIdsBefore = new Set(this.towers.keys());
+    const segment = segments[index];
+    if (segment) {
+      player.gold += segment.cost;
+      task.reservedGold = Math.max(0, task.reservedGold - segment.cost);
+      const result = this.placeTower(client, { definitionId: WALL_TOWER_ID, x: segment.x, y: segment.y }, { quiet: true, setupSession: task.setupSession });
+      if (result === "placed") stats.placed += 1;
+      else if (result === "gold") stats.skippedGold += 1;
+      else if (result === "zone") stats.skippedZone += 1;
+      else stats.skippedBlocked += 1;
+    }
+    task.segmentIndex = index + 1;
+    if (task.segmentIndex < segments.length) return false;
+    this.sendWallLineResult(client, stats);
+    if (task.towerIdsBefore && stats.placed > 0) this.reportBodyTutorialProgress(client, "build", task.towerIdsBefore);
+    return true;
+  }
+
+  /**
+   * Ogretici: bedenin yaptigi is adimi geciriyor (komut degil). Basari
+   * gorevin kendi sonucundan; `build`de bu varista kurulan yapilarin tanimlari.
+   */
+  private reportBodyTutorialProgress(client: Client, action: TutorialActionId, towerIdsBefore?: ReadonlySet<string>) {
+    const progress: TutorialProgressMessage = { action };
+    if (action === "build") {
+      const definitionIds = Array.from(this.towers.values())
+        .filter((tower) => tower.ownerId === client.sessionId && !towerIdsBefore?.has(tower.id))
+        .map((tower) => tower.definition.id);
+      if (definitionIds.length === 0) return;
+      progress.definitionIds = definitionIds;
+    }
+    client.send("tutorial:progress", progress);
+  }
+
+  /** Iade: gorev yapilmadan dustu (beden dustu, mac bitti, oyuncu ayrildi). */
+  private refundOperatorBodyTask(body: OperatorBodyModel, task: OperatorBodyTask) {
+    const player = this.state.players.get(body.ownerId);
+    if (!player) return;
+    player.gold += task.reservedGold;
+    task.reservedGold = 0;
+    if (task.kind === "skill" && task.skillSlot !== undefined) this.setSkillCooldown(player, task.skillSlot, 0);
+    if (task.kind === "ultimate") player.ultimateCharge = 100;
+  }
+
+  private clearOperatorBodyTasks(body: OperatorBodyModel) {
+    for (const task of body.tasks) this.refundOperatorBodyTask(body, task);
+    body.tasks = [];
+  }
+
+  /**
+   * Bedenlerin tick'i: hasar ve onarim (oyun saati), ucus (duvar saati:
+   * oyun hizi carpani bedeni yavaslatmiyor), varista is, bosta park.
+   */
+  private updateOperatorBodies(realSeconds: number, gameSeconds: number) {
+    if (this.matchResult) return;
+    for (const sessionId of this.state.players.keys()) this.getOperatorBody(sessionId);
+    if (this.operatorBodies.size === 0) return;
+    const now = Date.now();
+    for (const body of this.operatorBodies.values()) {
+      if (body.dead) continue;
+      if (this.damageOperatorBody(body, gameSeconds, now)) continue;
+      if (this.matchResult) return;
+      if (now < body.workUntil) {
+        body.state = "w";
+        continue;
+      }
+      body.workX = undefined;
+      body.workY = undefined;
+      this.advanceOperatorBody(body, realSeconds, now);
+    }
+  }
+
+  private advanceOperatorBody(body: OperatorBodyModel, realSeconds: number, now: number) {
+    const task = body.tasks[0];
+    if (!task) {
+      this.idleOperatorBody(body, realSeconds, now);
+      return;
+    }
+    const target = this.getOperatorBodyTaskTarget(body, task);
+    if (!target) {
+      // Hedef kalmadi (Execute'un dusmani oldu ya da kacti): isleyici
+      // bugunku kuralla reddediyor, bekleme suresi geri geliyor.
+      this.arriveOperatorBodyTask(body, task);
+      body.tasks.shift();
+      return;
+    }
+    const step = stepOperatorBody(body, target, realSeconds, this.getMapWorldScale());
+    body.x = step.x;
+    body.y = step.y;
+    body.state = "m";
+    if (!step.arrived) return;
+    const done = this.arriveOperatorBodyTask(body, task);
+    body.workX = target.workX;
+    body.workY = target.workY;
+    body.state = "w";
+    body.workUntil = now + (task.kind === "wall" && !done ? OPERATOR_BODY_WALL_PIECE_MS : OPERATOR_BODY_WORK_MS);
+    if (done) {
+      body.tasks.shift();
+      // Park yeri son isin yakininda, isin bitiminde yeniden seciliyor.
+      body.restAnchorX = target.workX;
+      body.restAnchorY = target.workY;
+      body.restX = undefined;
+      body.restY = undefined;
+      body.restCheckAt = 0;
+    }
+  }
+
+  /** Bosta: son isin yakininda, dusman seridinden uzak bir yerde suzuluyor. */
+  private idleOperatorBody(body: OperatorBodyModel, realSeconds: number, now: number) {
+    if (body.restX === undefined || body.restY === undefined || now >= body.restCheckAt) {
+      body.restCheckAt = now + OPERATOR_BODY_REST_CHECK_MS;
+      const gridSize = getMapGridSize(this.activeMap);
+      if (body.restX === undefined || body.restY === undefined || isOperatorBodyThreatened(body, this.getBodyThreats(), gridSize)) {
+        const rest = this.findOperatorBodyRest({ x: body.restAnchorX ?? body.x, y: body.restAnchorY ?? body.y }, body);
+        body.restX = rest.x;
+        body.restY = rest.y;
+      }
+    }
+    const step = stepOperatorBody(body, { x: body.restX!, y: body.restY! }, realSeconds, this.getMapWorldScale(), OPERATOR_BODY_IDLE_SPEED_RATIO);
+    body.x = step.x;
+    body.y = step.y;
+    body.state = step.arrived ? "i" : "m";
+  }
+
+  /** Bedene vurabilecek dusmanlar: takimin tarafina gecmis olanlar haric. */
+  private getBodyThreats() {
+    const now = Date.now();
+    return Array.from(this.enemies.values()).filter((enemy) => enemy.hp > 0 && !enemy.untargetable
+      && enemy.dominatedUntil <= now && enemy.melisUndeadUntil <= now && enemy.melisWhisperTurnedUntil <= now);
+  }
+
+  /** Dusman seridi (yol, dogum, nexus kareleri); harita degisince yeniden. */
+  private bodyLaneCache?: { map: EditableMapData; cells: Set<string> };
+
+  private findOperatorBodyRest(near: { x: number; y: number }, self?: OperatorBodyModel) {
+    if (this.bodyLaneCache?.map !== this.activeMap) {
+      const cells = new Set<string>();
+      for (const kind of ["road", "spawn", "nexus"] as const) {
+        for (const point of getMapPoints(this.activeMap, kind)) cells.add(`${point.col}:${point.row}`);
+      }
+      this.bodyLaneCache = { map: this.activeMap, cells };
+    }
+    const structureCells = new Set<string>();
+    for (const tower of this.towers.values()) {
+      if (tower.hp <= 0) continue;
+      for (const cell of this.getTowerFootprintCells(tower.x, tower.y, tower.definition.id, tower.orientation)) structureCells.add(`${cell.col}:${cell.row}`);
+    }
+    return findOperatorBodyRestSpot({
+      near,
+      cols: this.activeMap.cols,
+      rows: this.activeMap.rows,
+      cellCenter: (col, row) => gridToWorld(col, row, this.activeMap),
+      toCell: (x, y) => worldToGrid(x, y, this.activeMap),
+      gridSize: getMapGridSize(this.activeMap),
+      laneCells: this.bodyLaneCache.cells,
+      structureCells,
+      enemies: this.getBodyThreats(),
+      avoid: Array.from(this.operatorBodies.values(), (other) => other === self ? undefined : { x: other.restX ?? other.x, y: other.restY ?? other.y })
+        .filter((point): point is { x: number; y: number } => point !== undefined)
+    });
+  }
+
+  /**
+   * Temastaki dusmanlar bedene isciye vurdugu gibi vuruyor (saldiri gucu
+   * kadar saniyede). `true` donerse beden bu tick dustu.
+   */
+  private damageOperatorBody(body: OperatorBodyModel, gameSeconds: number, now: number) {
+    const player = this.state.players.get(body.ownerId);
+    // Yaratici: hasar yok. Kopan oyuncunun bedeni de hasar almiyor.
+    const immune = this.creativeMode || !player || player.connected !== true;
+    let damagePerSecond = 0;
+    if (!immune && gameSeconds > 0) {
+      const radius = this.scaleWorldDistance(OPERATOR_BODY_CONTACT_RADIUS);
+      for (const enemy of this.enemySpatialGrid.queryCircle(body.x, body.y, radius)) {
+        // Izgara tick basinda kuruldu: bu tick olen ya da kacan dusman sayilmiyor.
+        // Yer altindaki / fazdaki dusman da vurmuyor (`getBodyThreats` ve Execute ile ayni kural).
+        if (enemy.hp <= 0 || this.enemies.get(enemy.id) !== enemy || enemy.untargetable) continue;
+        if (enemy.dominatedUntil > now || enemy.melisUndeadUntil > now || enemy.melisWhisperTurnedUntil > now) continue;
+        damagePerSecond += Math.max(0, enemy.attack);
+      }
+    }
+    if (damagePerSecond > 0) {
+      body.lastDamageAt = now;
+      // Ogreticide beden 1 canin altina inmiyor (nexus tabani gibi).
+      body.hp = Math.max(this.tutorialMode ? 1 : 0, body.hp - damagePerSecond * gameSeconds);
+      // Kendini koruma: isteyken dusuk cana inen beden butun gorevleri
+      // birakip (bedel iade) guvenli bir yere cekiliyor. Ogreticide beden zaten olmuyor.
+      if (body.hp > 0 && !this.tutorialMode && body.tasks.length > 0 && body.hp < body.maxHp * OPERATOR_BODY_LOW_HP_RATIO) {
+        this.retreatOperatorBody(body);
+      }
+    } else if (body.hp < body.maxHp && now - body.lastDamageAt >= OPERATOR_BODY_REGEN_DELAY_MS) {
+      body.hp = Math.min(body.maxHp, body.hp + body.maxHp * OPERATOR_BODY_REGEN_RATIO * gameSeconds);
+    }
+    if (body.hp > 0) return false;
+    body.dead = true;
+    body.state = "d";
+    this.clearOperatorBodyTasks(body);
+    this.finishMatch("defeat", { bodyOwnerId: body.ownerId });
+    return true;
+  }
+
+  /**
+   * Geri cekilme: kuyruk iade edilip bosaltiliyor, beden tehditten uzak bir
+   * park yerine kaciyor; sahibine not. Yarim kalan duvar cizgisinin ozeti de
+   * gidiyor (kalan parcalar atlanmis sayiliyor).
+   */
+  private retreatOperatorBody(body: OperatorBodyModel) {
+    const client = this.getBodyClient(body.ownerId);
+    for (const task of body.tasks) {
+      if (task.kind === "wall" && task.wallStats && task.wallStats.placed > 0) {
+        task.wallStats.skippedBlocked += Math.max(0, (task.segments?.length ?? 0) - (task.segmentIndex ?? 0));
+        this.sendWallLineResult(client, task.wallStats);
+      }
+    }
+    this.clearOperatorBodyTasks(body);
+    body.workUntil = 0;
+    body.workX = undefined;
+    body.workY = undefined;
+    body.restAnchorX = body.x;
+    body.restAnchorY = body.y;
+    body.restX = undefined;
+    body.restY = undefined;
+    body.restCheckAt = 0;
+    client.send("body:task-failed", serverTextMessage("body.retreated"));
+  }
+
+  /** Oyuncu koptu ya da ayrildi: kuyruk iade, beden bosta (hasar almiyor). */
+  private releaseOperatorBodyFor(sessionId: string) {
+    const body = this.operatorBodies.get(sessionId);
+    if (!body) return;
+    this.clearOperatorBodyTasks(body);
+    body.workUntil = 0;
+    body.restAnchorX = body.x;
+    body.restAnchorY = body.y;
+    body.restX = undefined;
+    body.restY = undefined;
+  }
+
+  /** Dalga temizlendi: bedenler tam cana. */
+  private healOperatorBodies() {
+    for (const body of this.operatorBodies.values()) {
+      if (!body.dead) body.hp = body.maxHp;
+    }
+  }
+
+  /**
+   * Bedenin butun kuyrugunu aninda bitirir: her gorevin hedefine isinlanip
+   * varis isini yapar. Yalnizca bot simulatoru icin (tools/sim): adim
+   * araliginda ucus suresi onemsiz, botun karari ise sonucu hemen gormeli.
+   */
+  settleOperatorBody(sessionId: string) {
+    const body = this.operatorBodies.get(sessionId);
+    if (!body || body.dead) return;
+    let guard = 0;
+    while (body.tasks.length > 0 && guard < 64) {
+      guard += 1;
+      const task = body.tasks[0];
+      const target = this.getOperatorBodyTaskTarget(body, task);
+      if (target) {
+        body.x = target.x;
+        body.y = target.y;
+      }
+      if (this.arriveOperatorBodyTask(body, task) || !target) body.tasks.shift();
+      if (this.matchResult) break;
+    }
+    body.workUntil = 0;
+    body.restX = undefined;
+    body.restY = undefined;
+    body.restAnchorX = body.x;
+    body.restAnchorY = body.y;
+  }
+
+  /** Mac bitti: yolda bekleyen her bedel iade, kuyruklar bos. */
+  private releaseOperatorBodies() {
+    for (const body of this.operatorBodies.values()) this.clearOperatorBodyTasks(body);
+  }
+
+  private getOperatorBodiesWire(): OperatorBodySnapshot[] {
+    const bodies: OperatorBodySnapshot[] = [];
+    const invulnerable = this.creativeMode || this.tutorialMode;
+    for (const body of this.operatorBodies.values()) {
+      const record: OperatorBodySnapshot = {
+        id: body.ownerId,
+        c: body.characterId,
+        x: roundNetworkNumber(body.x),
+        y: roundNetworkNumber(body.y),
+        hp: Math.ceil(body.hp),
+        mhp: Math.round(body.maxHp),
+        s: body.dead ? "d" : body.state
+      };
+      if (body.state === "w" && body.workX !== undefined && body.workY !== undefined) {
+        record.wx = roundNetworkNumber(body.workX);
+        record.wy = roundNetworkNumber(body.workY);
+      }
+      if (body.tasks.length > 0) {
+        const queue: number[] = [];
+        for (const task of body.tasks.slice(0, OPERATOR_BODY_WIRE_QUEUE_MAX)) {
+          if (task.kind !== "place") continue;
+          queue.push(roundNetworkNumber(task.x), roundNetworkNumber(task.y));
+        }
+        if (queue.length > 0) record.q = queue;
+      }
+      if (invulnerable) record.inv = 1;
+      bodies.push(record);
+    }
+    return bodies;
+  }
+
+  /** Oturum el degistirdi: beden yeni oturuma gecti. */
+  private transferOperatorBody(previousSessionId: string, nextSessionId: string) {
+    const body = this.operatorBodies.get(previousSessionId);
+    if (!body) return;
+    this.operatorBodies.delete(previousSessionId);
+    body.ownerId = nextSessionId;
+    this.operatorBodies.set(nextSessionId, body);
+  }
+
+  /** `wall:line`in kenarlari: capa, cizgi ve parca merkezleri (`placeWallLine` ile ortak). */
+  private resolveWallLine(player: Player, message: WallLineMessage) {
+    if (!this.gameStarted) return undefined;
+    if (message.definitionId !== undefined && typeof message.definitionId !== "string") return undefined;
     const definitionId = message.definitionId ?? WALL_TOWER_ID;
-    if (![message.x1, message.y1, message.x2, message.y2].every(isFiniteNumber)) return;
+    if (![message.x1, message.y1, message.x2, message.y2].every(isFiniteNumber)) return undefined;
     const definition = this.findTowerDefinition(player.characterId, definitionId);
     // Yalnizca tek cizgilik duvar; Abarti iki cizgi kaplar ve dayanak ister.
-    if (!definition || definition.id !== WALL_TOWER_ID) return;
+    if (!definition || definition.id !== WALL_TOWER_ID) return undefined;
 
     const gridSize = getMapGridSize(this.activeMap);
     const origin = getMapOrigin(this.activeMap);
     const board = { cols: this.activeMap.cols, rows: this.activeMap.rows };
     const anchorOrientation = this.getEdgeOrientationAt(message.x1!, message.y1!);
     const [anchorSegment] = this.getAbartiEdgeSegments(message.x1!, message.y1!, anchorOrientation, 1);
-    if (!anchorSegment) return;
+    if (!anchorSegment) return undefined;
     const anchor = getWallSegmentCenter(anchorSegment, { gridSize, origin });
     const line = getWallLine({
       anchor,
@@ -14102,20 +14963,12 @@ export class MatchRoom extends Room<MatchState> {
       maxPieces: WALL_LINE_SERVER_MAX_PIECES,
       axis: message.axis === "horizontal" || message.axis === "vertical" ? message.axis : undefined
     });
+    return { definition, points: line.segments.map((segment) => getWallSegmentCenter(segment, { gridSize, origin })) };
+  }
 
-    let placed = 0;
-    let skippedZone = 0;
-    let skippedBlocked = 0;
-    let skippedGold = 0;
-    for (const segment of line.segments) {
-      const center = getWallSegmentCenter(segment, { gridSize, origin });
-      const result = this.placeTower(client, { definitionId: definition.id, x: center.x, y: center.y }, { quiet: true });
-      if (result === "placed") placed += 1;
-      else if (result === "gold") skippedGold += 1;
-      else if (result === "zone") skippedZone += 1;
-      else skippedBlocked += 1;
-    }
-
+  /** Duvar cizgisinin ozeti; hicbir parca kurulamadiysa red notu da. */
+  private sendWallLineResult(client: Client, stats: { requested: number; placed: number; skippedZone: number; skippedBlocked: number; skippedGold: number }) {
+    const { requested, placed, skippedZone, skippedBlocked, skippedGold } = stats;
     const skipped = skippedZone + skippedBlocked + skippedGold;
     if (placed === 0) {
       const key = skippedGold > 0 && skippedGold >= skippedZone + skippedBlocked
@@ -14123,7 +14976,7 @@ export class MatchRoom extends Room<MatchState> {
         : skippedZone > 0 && skippedBlocked === 0 ? "placement.forbiddenZone" : "placement.lineNothing";
       client.send("placement:rejected", serverTextMessage(key));
     }
-    client.send("wall:line-result", { requested: line.segments.length, placed, skipped, skippedZone, skippedBlocked, skippedGold });
+    client.send("wall:line-result", { requested, placed, skipped, skippedZone, skippedBlocked, skippedGold });
   }
 
   private updateProviderCapacity(tower: TowerModel) {
@@ -15271,9 +16124,13 @@ export class MatchRoom extends Room<MatchState> {
     const repairNexus = mode === "repair";
     const droneDamage = this.getAtakanDroneDamage(client.sessionId);
 
+    // Drone'lar AttackLord'un bedeninden cikip sahaya yayiliyor; hedefini
+    // yine kendi kulesinin yakinindan seciyor. Bedeni yoksa kuleden.
+    const body = this.operatorBodies.get(client.sessionId);
+    const origin = body && !body.dead ? { x: body.x, y: body.y } : undefined;
     const droneIds = new Set<string>();
     for (const tower of ownTowers) {
-      const droneId = this.spawnAtakanDrone(tower, repairNexus, droneDamage);
+      const droneId = this.spawnAtakanDrone(tower, repairNexus, droneDamage, origin);
       if (droneId) {
         droneIds.add(droneId);
       }
@@ -15295,7 +16152,7 @@ export class MatchRoom extends Room<MatchState> {
     this.openUltimateReports.push(report);
   }
 
-  private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number) {
+  private spawnAtakanDrone(tower: TowerModel, repairNexus: boolean, damage: number, origin?: { x: number; y: number }) {
     const target = repairNexus ? undefined : this.findNearestEnemy(tower.x, tower.y);
     if (!repairNexus && !target) {
       return undefined;
@@ -15306,8 +16163,10 @@ export class MatchRoom extends Room<MatchState> {
     const targetX = repairNexus ? nexus?.x ?? bounds.left + bounds.width / 2 : target?.x ?? tower.x;
     const targetY = repairNexus ? nexus?.y ?? bounds.bottom - getMapGridSize(this.activeMap) / 2 : target?.y ?? tower.y;
     const speed = this.scaleWorldSpeed(repairNexus ? ATAKAN_DRONE_REPAIR_SPEED : ATAKAN_DRONE_ATTACK_SPEED);
-    const dx = targetX - tower.x;
-    const dy = targetY - tower.y;
+    const startX = origin?.x ?? tower.x;
+    const startY = origin?.y ?? tower.y;
+    const dx = targetX - startX;
+    const dy = targetY - startY;
     const length = Math.max(1, Math.hypot(dx, dy));
 
     const id = `d${this.nextDroneId++}`;
@@ -15316,8 +16175,8 @@ export class MatchRoom extends Room<MatchState> {
       ownerId: tower.ownerId,
       targetId: target?.id,
       mode: repairNexus ? "repair" : "attack",
-      x: tower.x,
-      y: tower.y,
+      x: startX,
+      y: startY,
       vx: (dx / length) * speed,
       vy: (dy / length) * speed,
       damage,
@@ -18062,6 +18921,8 @@ export class MatchRoom extends Room<MatchState> {
       ...(this.metalShields.length > 0 ? { shields: this.getMetalShieldsWire(now) } : {}),
       // Meka kalkanlari da oyle: yalnizca varken, her karede tam (ucan ve inmis).
       ...(this.mekaShields.length > 0 ? { mshields: this.getMekaShieldsWire(now) } : {}),
+      // Operator bedenleri: yalnizca varken, her karede tam (en fazla dort).
+      ...(this.operatorBodies.size > 0 ? { bodies: this.getOperatorBodiesWire() } : {}),
       setupReadyPlayerIds: Array.from(this.setupReadyPlayerIds),
       team: {
         health: this.teamHealth,

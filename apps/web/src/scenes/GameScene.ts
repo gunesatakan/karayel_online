@@ -382,6 +382,7 @@ import {
   type CounterSurgeBand
 } from "../vfx/counter-surge";
 import { drawMetalShield, drawMetalShieldPreview, getMetalShieldExtent, interpolateMetalShields, isMetalShieldSnapshot } from "../vfx/metal-shield";
+import { OPERATOR_BODY_DISPLAY_SIZE, OperatorBodyView, interpolateOperatorBodies } from "../vfx/operator-bodies";
 import { SynergyMarks, type SynergyAnnouncement } from "../vfx/synergy-marks";
 import { PlacementRangePreview } from "../vfx/placement-range";
 import { WallLineView, type WallHandleMark } from "../vfx/wall-line";
@@ -422,6 +423,8 @@ type MatchResultSummary = {
   tutorial?: boolean;
   /** Kosu raporu; yalnizca `match:*` mesajinda var, snapshot'ta yok. */
   run?: RunSummary;
+  /** Yenilgi bir operator bedeninin dusmesiyle geldiyse sahibi. */
+  bodyOwnerId?: string;
 };
 
 /**
@@ -1659,8 +1662,14 @@ export class GameScene extends Phaser.Scene {
    * Kule ancak sunucu onaylayip `tower:spawn` gonderince beliriyordu; arada
    * harita bos kaliyor ve oyuncu ya bastigini saniyor ya da tekrar deniyor.
    */
-  private pendingPlacement?: { x: number; y: number; definitionId: string; until: number };
-  private pendingPlacementGhost?: Phaser.GameObjects.Image;
+  /**
+   * Operator bedeni kuleyi varinca kuruyor: ard arda birakilan kulelerin her
+   * biri kendi hayaletiyle bekliyor (beden sirayla geziyor). Hayalet, kendi
+   * bedenin kuyrugunda hedef durdukca kalkmiyor.
+   */
+  private pendingPlacements: Array<{ x: number; y: number; definitionId: string; until: number; ghost: Phaser.GameObjects.Image }> = [];
+  /** Operator bedenlerinin cizimi (ZentaX, AttackLord). */
+  private operatorBodyView?: OperatorBodyView;
   /** Yerelde baslatilan beceri sogumalari; sunucununki gelene kadar gecerli. */
   private skillEchoUntil: number[] = [0, 0, 0];
   private arenaPlayerCount = 1;
@@ -1948,6 +1957,17 @@ export class GameScene extends Phaser.Scene {
     this.surgeDrawn = false;
     this.shieldGraphics = this.add.graphics().setDepth(METAL_SHIELD_DEPTH);
     this.shieldPreviewGraphics = this.add.graphics().setDepth(METAL_SHIELD_PREVIEW_DEPTH);
+    this.operatorBodyView?.destroy();
+    this.operatorBodyView = new OperatorBodyView(this, {
+      lod: this.vfxLod,
+      reducedMotion: () => this.feedback?.reducedMotion ?? false,
+      flash: this.flashPool,
+      localSessionId: () => this.localSessionId,
+      onLowHp: (body) => {
+        // Uyari gorsel: kendi bedeninde bir not, takim arkadasinda yalnizca halka.
+        if (body.id === this.localSessionId && !this.matchResultShown) this.showNotice(t("scene.body.lowHp"));
+      }
+    });
     this.shieldDrawn = false;
     this.shieldGesture = undefined;
     this.shieldEcho = undefined;
@@ -2021,6 +2041,9 @@ export class GameScene extends Phaser.Scene {
       this.shieldGraphics = undefined;
       this.shieldPreviewGraphics?.destroy();
       this.shieldPreviewGraphics = undefined;
+      this.operatorBodyView?.destroy();
+      this.operatorBodyView = undefined;
+      this.clearPendingPlacement();
       this.shieldDrawn = false;
       this.shieldGesture = undefined;
       this.shieldEcho = undefined;
@@ -3165,53 +3188,79 @@ export class GameScene extends Phaser.Scene {
    * gosterilen sey "kuruldu" degil, "istek yolda".
    */
   private echoPlacement(x: number, y: number, definitionId: string) {
-    this.clearPendingPlacement();
-    this.pendingPlacement = { x, y, definitionId, until: performance.now() + LOCAL_ECHO_TIMEOUT_MS };
-
+    // Ayni karenin eski hayaleti yenisine yer birakiyor; digerleri kuyrukta bekliyor.
+    for (const entry of [...this.pendingPlacements]) {
+      if (Math.abs(entry.x - x) < 1 && Math.abs(entry.y - y) < 1) this.clearPendingPlacement(entry);
+    }
     const span = this.getGhostSize(definitionId, this.getPlacementOrientation(definitionId, x, y));
-    this.pendingPlacementGhost = this.add.image(x, y, getTowerTextureKey(definitionId, 1, this.selectedCharacterId))
+    const ghost = this.add.image(x, y, getTowerTextureKey(definitionId, 1, this.selectedCharacterId))
       .setDisplaySize(span.width, span.height)
       .setAlpha(0.5)
       .setDepth(27);
     this.tweens.add({
-      targets: this.pendingPlacementGhost,
+      targets: ghost,
       alpha: 0.24,
       duration: 420,
       yoyo: true,
       repeat: -1
     });
+    this.pendingPlacements.push({ x, y, definitionId, until: performance.now() + LOCAL_ECHO_TIMEOUT_MS, ghost });
+    // Kuyrukta ust uste binen istekler sinirsiz hayalet birakmasin.
+    while (this.pendingPlacements.length > 10) this.clearPendingPlacement(this.pendingPlacements[0]);
   }
 
-  private clearPendingPlacement() {
-    if (this.pendingPlacementGhost) {
-      this.tweens.killTweensOf(this.pendingPlacementGhost);
-      this.pendingPlacementGhost.destroy();
-      this.pendingPlacementGhost = undefined;
+  /** Tek hayaleti (verilmezse hepsini) kaldirir. */
+  private clearPendingPlacement(entry?: GameScene["pendingPlacements"][number]) {
+    const entries = entry ? [entry] : [...this.pendingPlacements];
+    for (const pending of entries) {
+      this.tweens.killTweensOf(pending.ghost);
+      pending.ghost.destroy();
+      const index = this.pendingPlacements.indexOf(pending);
+      if (index >= 0) this.pendingPlacements.splice(index, 1);
     }
-    this.pendingPlacement = undefined;
+  }
+
+  /** Sunucu bu karedeki yerlestirmeyi reddetti (beden varinca kare doluydu): hayalet gidiyor. */
+  private dropPendingPlacementAt(x: unknown, y: unknown) {
+    if (typeof x !== "number" || typeof y !== "number") return;
+    for (const entry of [...this.pendingPlacements]) {
+      if (Math.abs(entry.x - x) < 1 && Math.abs(entry.y - y) < 1) this.clearPendingPlacement(entry);
+    }
   }
 
   /**
    * Bekleyen yerlestirme gerceklestiyse ya da zaman asimina ugradiysa birakir.
    *
    * Gerceklesme olcutu, hedeflenen karede o oyuncuya ait bir kulenin belirmesi.
-   * Sunucu onay mesaji gondermedigi icin tek kanit bu.
+   * Sunucu onay mesaji gondermedigi icin tek kanit bu. Kendi bedeninin
+   * kuyrugunda (en son gelen snapshot) hedef durdukca sure dolmuyor.
    */
   private resolvePendingPlacement() {
-    const pending = this.pendingPlacement;
-    if (!pending) {
+    if (this.pendingPlacements.length === 0) {
       return;
     }
-    if (performance.now() >= pending.until) {
-      this.clearPendingPlacement();
-      return;
-    }
-    for (const tower of this.towerSnapshots.values()) {
-      if (tower.ownerId !== this.localSessionId) continue;
-      if (Math.abs(tower.x - pending.x) < 1 && Math.abs(tower.y - pending.y) < 1) {
-        this.clearPendingPlacement();
-        return;
+    const now = performance.now();
+    const queue = this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.bodies?.find((body) => body.id === this.localSessionId)?.q;
+    for (const pending of [...this.pendingPlacements]) {
+      let built = false;
+      for (const tower of this.towerSnapshots.values()) {
+        if (tower.ownerId !== this.localSessionId) continue;
+        if (Math.abs(tower.x - pending.x) < 1 && Math.abs(tower.y - pending.y) < 1) {
+          built = true;
+          break;
+        }
       }
+      if (built) {
+        this.clearPendingPlacement(pending);
+        continue;
+      }
+      let queued = false;
+      for (let index = 0; queue && index + 1 < queue.length; index += 2) {
+        if (Math.abs(queue[index] - pending.x) < 1 && Math.abs(queue[index + 1] - pending.y) < 1) queued = true;
+      }
+      // Beden hala yolda: hayalet kalsin; kurulduktan sonra oynatma gecikmesi kadar daha.
+      if (queued) pending.until = Math.max(pending.until, now + this.playbackDelayMs + 700);
+      else if (now >= pending.until) this.clearPendingPlacement(pending);
     }
   }
 
@@ -5839,7 +5888,8 @@ export class GameScene extends Phaser.Scene {
     if (this.pendingUltimateColumn && this.isBattlePointer(pointer)) {
       const column = this.getUltimateColumnAt(pointer.worldX);
       if (column !== undefined) {
-        this.room?.send("useUltimate", { column });
+        // `y`: ZentaX'in bedeni sutunun dokunulan hizasina ucuyor.
+        this.room?.send("useUltimate", { column, y: pointer.worldY });
         this.echoUltimateCast({ column, y: pointer.worldY });
         this.pendingUltimateColumn = false;
         this.clearUltimateColumnPreview();
@@ -6453,6 +6503,12 @@ export class GameScene extends Phaser.Scene {
     this.recordClientPerfSection("enemies", performance.now() - sectionStart);
     sectionStart = performance.now();
     this.renderDrones(frame.snapshot.drones ?? []);
+    // Operator bedenleri iscilerin ustunde; ZentaX'in halkasi acik emirlerden.
+    this.operatorBodyView?.render(frame.snapshot.bodies, {
+      now,
+      scale: this.getMapCellSize() / TOWER_GRID_SIZE,
+      zeynepCommands: frame.snapshot.zeynepCommands
+    });
     this.renderWorkerBannedCells();
     this.renderCrystalNodes(frame.snapshot.crystalNodes ?? []);
     this.renderAmmoNodes(frame.snapshot.ammoNodes ?? []);
@@ -6610,6 +6666,8 @@ export class GameScene extends Phaser.Scene {
       surges: interpolateCounterSurges(previous.surges, next.surges, alpha),
       // Metal Kalkan'in acilisi ve kapanisi da snapshot adimiyla basamaklanmasin.
       shields: interpolateMetalShields(previous.shields, next.shields, alpha),
+      // Bedenler hizli ucuyor: snapshot adimiyla sicramasinlar.
+      bodies: interpolateOperatorBodies(previous.bodies, next.bodies, alpha),
       beams: this.beamInterpolator.interpolate(previous.beams, next.beams, alpha, next.serverTime - previous.serverTime)
     };
   }
@@ -6995,8 +7053,16 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       this.showNotice(localizeServerText(message?.reason, message?.key) ?? t("server.worker.nodeDepleted"));
     });
     // Sunucunun yerlestirme reddi (kurulum yasak bolge): onizleme atlatildiysa.
-    room.onMessage("placement:rejected", (message: { message?: string; key?: string }) => {
+    room.onMessage("placement:rejected", (message: { message?: string; key?: string; x?: number; y?: number }) => {
+      // Beden varinca kare doluydu: o karenin hayaleti de gidiyor (altin iade edildi).
+      this.dropPendingPlacementAt(message?.x, message?.y);
       this.showNotice(localizeServerText(message?.message, message?.key) ?? t("scene.place.forbiddenZone"));
+    });
+    // Operator bedeninin isi varista gecersizdi ya da kuyruk dolu: kisa not.
+    room.onMessage("body:task-failed", (message: { message?: string; key?: string }) => {
+      // Geri cekilme butun kuyrugu iptal etti: bekleyen hayaletler de gidiyor.
+      if (message?.key === "body.retreated") this.clearPendingPlacement();
+      this.showNotice(localizeServerText(message?.message, message?.key) ?? t("server.body.repairFailed"));
     });
     // Duvar cizgisi ozeti: parca atlandiysa neden kisaca soyleniyor. Hicbiri
     // kurulamadiysa sunucu `placement:rejected` yolluyor, burada susuyoruz.
@@ -7248,6 +7314,13 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     }).schedule;
     window.clearTimeout(this.matchEndSafetyTimer);
     this.matchEndSafetyTimer = window.setTimeout(() => this.matchEndStage?.current?.finish(), (plan?.reportAtMs ?? 0) + MATCH_END_TIMING.safetyMarginMs);
+    // Yenilgiyi bir operator bedeni getirdi: beden sahnenin ilk patlamasi
+    // (yapilarla ayni dil), yeri sunucunun en son bildirdigi konum.
+    if (result === "defeat" && summary.bodyOwnerId) {
+      const body = this.snapshotBuffer[this.snapshotBuffer.length - 1]?.snapshot.bodies?.find((entry) => entry.id === summary.bodyOwnerId)
+        ?? this.operatorBodyView?.position(summary.bodyOwnerId);
+      if (body) stage.vfx.detonate(body.x, body.y, OPERATOR_BODY_DISPLAY_SIZE * (cellSize / TOWER_GRID_SIZE) * 1.6, "tower", performance.now(), 3);
+    }
   }
 
   /** Sahnenin tek cikisi: bekleyen rapor bir kez aciliyor. */

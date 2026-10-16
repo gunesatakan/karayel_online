@@ -1073,6 +1073,11 @@ export type GameSnapshot = {
   shields?: import("./characters/atakan/skills/metal-shield.js").MetalShieldSnapshot[];
   /** Meka kalkan aticilarinin kalkanlari (ucan ve inmis). Yalnizca varken; her karede tam. */
   mshields?: import("./races/race-mechanics.js").MekaShieldSnapshot[];
+  /**
+   * Operator bedenleri (ZentaX, AttackLord). Yalnizca beden varken; her
+   * karede tam (en fazla dort kayit), yeni katilan da ilk karede goruyor.
+   */
+  bodies?: import("./operator-body/index.js").OperatorBodySnapshot[];
   perf?: ServerPerfSnapshot;
 };
 
@@ -2346,3 +2351,4 @@ export * from "./i18n/server-text.js";
 export { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "./waves/special-enemies.js";
 
 export * from "./tutorial/index.js";
+export * from "./operator-body/index.js";
