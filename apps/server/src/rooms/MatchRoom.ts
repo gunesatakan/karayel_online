@@ -648,6 +648,13 @@ const REPAIR_WINDOW_LINGER_MS = 400;
  * sonsuza kadar "onariyormus gibi" bekliyordu (uretim kaydi, 2026-10-16).
  */
 const REPAIR_CARGO_EPSILON = 1e-6;
+/**
+ * Tamircinin merkezden yola cikmak icin bekledigi en az yuk (parca; 3 parca
+ * = 30 can). Merkezde kirinti kaldiginda tamirci 0,01 parca alip birkac can
+ * icin yola cikiyordu. Hedefin ihtiyaci bundan azsa ihtiyac kadari yeter;
+ * yuk kapasitesi kucukse kapasite.
+ */
+const REPAIR_MIN_LOAD_PARTS = 3;
 /** Tamir Atesi: onarim suresince hasar. */
 const REPAIR_DAMAGE_BONUS = 0.45;
 /** Sogutmali Kaynak: onarim suresince soguma. */
@@ -12532,6 +12539,15 @@ export class MatchRoom extends Room<MatchState> {
    * hicbirini bitiremezdi. Dusmanin kirma hedefini kilitlemesiyle ayni
    * sebep.
    */
+  /** Tamircinin siradaki isi icin gereken parca; is yoksa sinirsiz (en az yuk gecerli). */
+  private getRepairWorkerNeedParts(worker: DroneModel) {
+    if (this.hasWorkerSkill(worker, "repair-nexus-watch") && this.teamHealth <= MAX_TEAM_HEALTH * 0.4) {
+      return (MAX_TEAM_HEALTH - this.teamHealth) / REPAIR_HP_PER_PART;
+    }
+    const target = this.getRepairWorkerTarget(worker);
+    return target ? Math.max(0, target.maxHp - target.hp) / REPAIR_HP_PER_PART : Number.POSITIVE_INFINITY;
+  }
+
   private updateRepairWorker(worker: DroneModel, seconds: number) {
     // Kirinti bos yuk sayilir (bkz. `REPAIR_CARGO_EPSILON`).
     if ((worker.cargo ?? 0) > 0 && (worker.cargo ?? 0) <= REPAIR_CARGO_EPSILON) worker.cargo = 0;
@@ -12541,7 +12557,13 @@ export class MatchRoom extends Room<MatchState> {
       const depot = this.getRepairDepot(worker);
       worker.vx = worker.vy = 0;
       if (!depot || !this.moveLogisticsWorker(worker, depot.x, depot.y, seconds)) return;
-      const load = Math.min(this.getWorkerCapacity(worker), depot.repairParts ?? 0);
+      const capacity = this.getWorkerCapacity(worker);
+      const available = depot.repairParts ?? 0;
+      // Kirintiyla yola cikmiyor: yeterli parca birikene kadar merkezde bekler.
+      // Ihtiyac yalnizca merkez az parcadayken hesaplaniyor (yapilari tariyor).
+      const minimum = Math.min(capacity, REPAIR_MIN_LOAD_PARTS);
+      if (available < minimum && available < this.getRepairWorkerNeedParts(worker)) return;
+      const load = Math.min(capacity, available);
       depot.repairParts = Math.max(0, (depot.repairParts ?? 0) - load);
       worker.cargo = load;
       return;

@@ -305,3 +305,40 @@ test("boşta kalan tamirci dolmuş eski hedefini bırakır", () => {
   assert.equal(tamirci.targetTowerId, "");
   assert.equal(tamirci.repairing, undefined);
 });
+
+// Merkezde kirinti kaldiginda tamirci 0,01 parca alip birkac can icin yola
+// cikiyordu. En az yuk (3 parca) birikmeden cikmiyor; hedefin ihtiyaci daha
+// azsa ihtiyac kadari yetiyor.
+test("tamirci merkezde kırıntı varken yola çıkmaz, en az yükü bekler", () => {
+  const room = oda();
+  const nokta = findBuildableSpot(room, REPAIR_DEPOT_TOWER_ID);
+  const merkez = merkezKur(room, nokta.x, nokta.y);
+  merkez.repairParts = 0.5;
+  const duvar = kur(room, "wall-1");
+  duvar.hp = 40; // 8 parca lazim
+  const tamirci = tamirciTut(room);
+  tamirci.cargo = 0;
+  tamirci.x = merkez.x;
+  tamirci.y = merkez.y;
+  for (let tick = 0; tick < 60 * 3; tick += 1) room.updateDrones(16, 0.016);
+  assert.equal(tamirci.cargo ?? 0, 0, `tamirci kirintiyla yola cikti (yuk ${tamirci.cargo})`);
+  assert.ok((merkez.repairParts ?? 0) >= 0.5, "merkezdeki parca alinmamali");
+  merkez.repairParts = 4;
+  for (let tick = 0; tick < 60 * 3 && (tamirci.cargo ?? 0) <= 0; tick += 1) room.updateDrones(16, 0.016);
+  assert.ok((tamirci.cargo ?? 0) >= 3, `en az yuk birikince tamirci yuklenmeli (yuk ${tamirci.cargo})`);
+});
+
+test("hedefin ihtiyacı en az yükten azsa tamirci ihtiyaç kadarıyla çıkar", () => {
+  const room = oda();
+  const nokta = findBuildableSpot(room, REPAIR_DEPOT_TOWER_ID);
+  const merkez = merkezKur(room, nokta.x, nokta.y);
+  merkez.repairParts = 0.5;
+  const duvar = kur(room, "wall-1");
+  duvar.hp = duvar.maxHp - 2; // 0,2 parca yeter
+  const tamirci = tamirciTut(room);
+  tamirci.cargo = 0;
+  tamirci.x = merkez.x;
+  tamirci.y = merkez.y;
+  for (let tick = 0; tick < 60 * 3 && (tamirci.cargo ?? 0) <= 0; tick += 1) room.updateDrones(16, 0.016);
+  assert.ok((tamirci.cargo ?? 0) > 0, "kucuk onarim icin mevcut parca yetmeli");
+});

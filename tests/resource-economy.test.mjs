@@ -77,12 +77,17 @@ test("repairer must collect parts and cannot repair past its carried supply", ()
   const depot = build(room, "repair-depot-1");
   room.updateRepairWorker(unit, 1);
   assert.equal(target.hp, hp);
+  // Kirinti yetmiyor: en az yuk (3 parca) birikmeden tamirci yuklenmiyor.
   depot.repairParts = 0.5;
   room.updateRepairWorker(unit, 1);
-  assert.equal(unit.cargo, 0.5);
+  assert.equal(unit.cargo ?? 0, 0);
+  assert.equal(depot.repairParts, 0.5);
+  depot.repairParts = 4;
+  room.updateRepairWorker(unit, 1);
+  assert.equal(unit.cargo, 4);
   assert.equal(depot.repairParts, 0);
   room.updateRepairWorker(unit, 10);
-  assert.equal(target.hp, hp + 0.5 * REPAIR_HP_PER_PART);
+  assert.equal(target.hp, Math.min(target.maxHp, hp + 4 * REPAIR_HP_PER_PART));
   assert.equal(unit.cargo, 0);
 });
 
