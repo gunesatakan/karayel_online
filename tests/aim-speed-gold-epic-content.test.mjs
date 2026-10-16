@@ -1507,11 +1507,11 @@ test("isabet ya da mermi hizi veren hicbir esya bir bedel tasimiyor", () => {
     assert.deepEqual(item(id).effects.map((modifier) => [modifier.stat, modifier.add]), effects, id);
   }
   // Tema sayilari: isabet 3 esya (Termal Kilif kosullu, kilitle; altisi oncul
-  // nisana ve baska rollere tasindi), mermi hizi 9 (Atalet Dengeleyici dahil).
+  // nisana ve baska rollere tasindi), mermi hizi 10 (Atalet Dengeleyici ve Kinetik Uzatici dahil).
   const aimItems = shopCatalog.filter((entry) => entry.id === "termal-kilif" || entry.effects.some((modifier) => (modifier.stat === "accuracy" || modifier.stat === "accuracyVsAir") && modifier.add > 0));
   const speedItems = shopCatalog.filter((entry) => entry.effects.some((modifier) => (modifier.stat === "projectileSpeed" || modifier.stat === "projectileSpeedIsolated") && modifier.add > 0));
   assert.equal(aimItems.length, 3, aimItems.map((entry) => entry.id).join(", "));
-  assert.equal(speedItems.length, 9, speedItems.map((entry) => entry.id).join(", "));
+  assert.equal(speedItems.length, 10, speedItems.map((entry) => entry.id).join(", "));
 });
 
 test("yeni isabet ve mermi hizi esyalari: kapsam butun katalogda, yigin, fiyat, metin", () => {
@@ -1752,6 +1752,8 @@ function baskinCiftler(items, etkili) {
     for (const unlock of entry.unlocks ?? []) map.set(`unlock:${unlock}`, 1);
     // Vadeli altin etki listesinde degil, kendi alaninda.
     if (entry.deposit) map.set("deposit", entry.deposit.payout);
+    // Cevrim esyasinin asil degeri cevrim (Kinetik Uzatici): ayri bir eksen.
+    for (const conversion of entry.conversions ?? []) map.set(`conversion:${conversion.from}:${conversion.to}`, conversion.cap);
     return map;
   };
   const pairs = [];
@@ -1772,7 +1774,7 @@ test("isabet ve mermi hizi ailelerinde hicbir esya bir digerince baskilanmiyor",
   const aim = shopCatalog.filter((entry) => entry.id === "termal-kilif" || entry.effects.some((modifier) => (modifier.stat === "accuracy" || modifier.stat === "accuracyVsAir") && modifier.add > 0));
   const speed = shopCatalog.filter((entry) => entry.effects.some((modifier) => (modifier.stat === "projectileSpeed" || modifier.stat === "projectileSpeedIsolated") && modifier.add > 0));
   assert.equal(aim.length, 3);
-  assert.equal(speed.length, 9);
+  assert.equal(speed.length, 10);
   // Oncul nisan ailesi de baskisiz: merdiven, iki kademe ve kritikli adim.
   const lead = shopCatalog.filter((entry) => entry.effects.some((modifier) => modifier.stat === "leadTargeting"));
   assert.equal(lead.length, 4, lead.map((entry) => entry.id).join(", "));

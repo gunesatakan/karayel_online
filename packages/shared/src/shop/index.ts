@@ -5,7 +5,7 @@ import { isMarkOnlyChoice } from "../marks/index.js";
 import { getShopItemTowerMismatch, isShopItemUsefulOnTower, type ShopItemNeed } from "./compatibility.js";
 import type { TowerAxis } from "../characters/common/types.js";
 import type { TowerGrant } from "../grants/index.js";
-import type { Modifier } from "../modifiers/index.js";
+import type { Modifier, StatConversion } from "../modifiers/index.js";
 import { FINAL_WAVE } from "../balance/index.js";
 
 export type ShopItemCategory = "power" | "class" | "utility" | "map" | "risk";
@@ -104,6 +104,13 @@ export type ShopItem = {
   deposit?: { payout: number; waves: number };
   /** Yalnizca efsanevi esyalarda yazili; bkz. `ShopItemRarity`. */
   rarity?: ShopItemRarity;
+  /**
+   * Takildigi kulede bir statin bonusunu baska bir stata ceviren esyalar
+   * (Epik kartlarin `conversions`i ile ayni kural: kaynak cevrimlerden once
+   * okunuyor, zincir ve geri besleme yok). Sunucu ciktiyi `shop:<kimlik>`
+   * kaynagiyla yaziyor.
+   */
+  conversions?: StatConversion[];
 };
 
 export type ShopState = {
@@ -181,7 +188,15 @@ export function getShopItemTowerLimit(item: ShopItem) {
 /** Ayni kuleye birlikte takilamayan esya ciftleri. */
 const EXCLUSIVE_SHOP_ITEMS: Readonly<Record<string, string>> = {
   "bitisik-devre": "yalniz-kurt",
-  "yalniz-kurt": "bitisik-devre"
+  "yalniz-kurt": "bitisik-devre",
+  // Ayni oldurme sayacinin iki tavani: biri kisa ve hizli, obur uzun ve yavas.
+  "atis-haritasi": "av-kayit-defteri",
+  "av-kayit-defteri": "atis-haritasi",
+  // Menzil <-> mermi hizi cevrimleri: ayni kulede ikisi birbirini besler gibi
+  // gorunurdu (kaynaklar cevrimden once okundugu icin beslemiyor, ama oyuncu
+  // icin anlamsiz bir dongu); sahibin karari, birlikte takilmiyorlar.
+  "erim-pompasi": "kinetik-uzatici",
+  "kinetik-uzatici": "erim-pompasi"
 };
 
 export function getExclusiveShopItemId(itemId: string): string | undefined {
@@ -568,8 +583,21 @@ const rawShopCatalog: ShopItem[] = [
   // bitisikteki destek yapisina baglanan uc esya (sabitler `range-mechanics`te).
   // Teleskopik Namlu duz kare ekliyor: kisa menzilli kulede orani buyuk.
   defineItem("teleskopik-namlu", "Teleskopik Namlu", "Takıldığı kulenin taban menziline +0,25 kare ekler: 1 karelik menzilde +%25, 2,5 karelik menzilde +%10; menzili haritayı kaplayan kulelere takılmaz.", "class", 95, { axes: ["dps"], scope: { kind: "tagged", boundedRange: true }, effects: [effect("teleskopik-namlu", "rangeFlat", 0.25)] }),
-  defineItem("atis-haritasi", "Atış Haritası", "Takıldığı kulenin bu dalgada öldürdüğü her düşman menziline +%3 ekler; en fazla 5 öldürme (+%15). Yeni dalgada sıfırlanır.", "power", 85, { axes: ["dps"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("atis-haritasi", "killRange", 0.03)] }),
+  defineItem("atis-haritasi", "Atış Haritası", "Takıldığı kulenin bu dalgada öldürdüğü her düşman menziline +%3 ekler; en fazla 5 öldürme (+%15). Yeni dalgada sıfırlanır; Av Kayıt Defteri ile aynı kuleye takılmaz.", "power", 85, { axes: ["dps"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("atis-haritasi", "killRange", 0.03)] }),
   defineItem("gozcu-diregi", "Gözcü Direği", "Takıldığı yapının bitişiğindeki her dost kulenin menzili +%10; bir kule en fazla iki direkten yararlanır (+%20). Ateş etmeyen yapılara da takılır.", "utility", 110, { axes: ["amplify"], effects: [effect("gozcu-diregi", "neighborRange", 0.1)] }),
+
+  // Menzil turu, ikinci kisim. Av Kayit Defteri Atis Haritasi'nin uzun
+  // soluklu esi (ayni sayac, birlikte takilmiyorlar). Erim Pompasi ve
+  // Kinetik Uzatici menzil ile mermi hizi arasinda iki yonlu cevrim; ayni
+  // kulede birlikte takilmiyorlar ve kaynaklari cevrimlerden once okunuyor.
+  // Tork Radyatoru donus hizini sogumaya ceviriyor (Tork Aktarimi'nin esi).
+  // Uzatma Halkasi ve Uzun Erim Optigi sade menzil: ucuz yiginli ve pahali bedelli.
+  defineItem("av-kayit-defteri", "Av Kayıt Defteri", "Takıldığı kulenin menzili -%5; bu dalgada öldürdüğü her düşman menziline +%1,5 ekler, en fazla 16 öldürme (+%24). Yeni dalgada sıfırlanır; Atış Haritası ile aynı kuleye takılmaz.", "power", 130, { axes: ["dps"], scope: { kind: "tagged", combat: true, boundedRange: true }, effects: [effect("av-kayit-defteri", "range", -0.05), effect("av-kayit-defteri", "killRangeLong", 0.015)] }),
+  defineItem("erim-pompasi", "Erim Pompası", "Takıldığı kulenin menzili +%8. Menzil bonusunun her %10'u mermi hızına +%15 ekler; en fazla +%60. Yalnızca mermi atan kulelere takılır; Kinetik Uzatıcı ile aynı kuleye takılmaz.", "class", 100, { axes: ["dps"], scope: { kind: "tagged", projectiles: true, boundedRange: true }, effects: [effect("erim-pompasi", "range", 0.08)], conversions: [{ from: "range", to: "projectileSpeed", ratio: 1.5, cap: 0.6 }] }),
+  defineItem("kinetik-uzatici", "Kinetik Uzatıcı", "Takıldığı kulenin mermi hızı +%25. Mermi hızı bonusunun her %10'u menzile +%3 ekler; en fazla +%15. Yalnızca mermi atan kulelere takılır; Erim Pompası ile aynı kuleye takılmaz.", "class", 110, { axes: ["dps"], scope: { kind: "tagged", projectiles: true, boundedRange: true }, effects: [effect("kinetik-uzatici", "projectileSpeed", 0.25)], conversions: [{ from: "projectileSpeed", to: "range", ratio: 0.3, cap: 0.15 }] }),
+  defineItem("tork-radyatoru", "Tork Radyatörü", "Takıldığı kulenin dönüş hızı +%20. Dönüş hızı bonusunun her %10'u soğumaya +%6 ekler; en fazla +%30. Yalnızca nişan alan ve ısınan kulelere takılır.", "utility", 90, { axes: ["dps"], scope: { kind: "tagged", aims: true }, effects: [effect("tork-radyatoru", "turnRate", 0.2)], conversions: [{ from: "turnRate", to: "cooling", ratio: 0.6, cap: 0.3 }] }),
+  defineItem("uzatma-halkasi", "Uzatma Halkası", "Takıldığı kulenin menzili +%6; bir kuleye en fazla 3 kez takılır; menzili haritayı kaplayan kulelere takılmaz.", "class", 45, { axes: ["dps"], repeatable: true, maxStacks: 3, priceGrowth: 1.3, scope: { kind: "tagged", boundedRange: true }, effects: [effect("uzatma-halkasi", "range", 0.06)] }),
+  defineItem("uzun-erim-optigi", "Uzun Erim Optiği", "Takıldığı kulenin menzili +%18, atış hızı -%8; menzili haritayı kaplayan kulelere takılmaz.", "class", 120, { axes: ["dps"], scope: { kind: "tagged", boundedRange: true }, effects: [effect("uzun-erim-optigi", "range", 0.18), effect("uzun-erim-optigi", "fireRate", -0.08)] }),
 
   // Efsanevi: vurus etkileri (`legendary` modulu). Ayni etkinin kartindan
   // iki kat ihtimal, ama yalnizca takildigi kulede; kartla ayni kulede

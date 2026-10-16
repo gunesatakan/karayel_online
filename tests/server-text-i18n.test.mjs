@@ -88,6 +88,7 @@ const FORMER_TURKISH = {
   "preview.stat.heat": "Isı / tetikleme",
   "preview.stat.cooling": "Soğutma / sn",
   "preview.stat.sustained": "Sürekli tetikleme / sn",
+  "preview.stat.projectileSpeed": "Mermi hızı",
   "preview.stat.legendary": "Efsanevi ihtimal / sn"
 };
 

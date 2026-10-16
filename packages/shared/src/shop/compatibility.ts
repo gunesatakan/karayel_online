@@ -198,7 +198,9 @@ const STAT_NEEDS: Readonly<Record<string, readonly ShopItemCapabilityNeed[]>> = 
   // namlunun isisini, Atis Haritasi oldurmeyi. Gozcu Diregi komsuya isliyor:
   // Rezonans Odasi gibi kuleye bir sey sormuyor (yazilmadi).
   focusRange: ["targeting"], heatRange: ["attacks", "heat"], wallRange: ["attacks"],
-  rangeFlat: ["attacks"], killRange: ["damage"]
+  rangeFlat: ["attacks"], killRange: ["damage"],
+  // Menzil turu, ikinci kisim. Pusu Nobeti kulenin vurusuna bakiyor.
+  killRangeLong: ["damage"], ambushRange: ["damage"]
 };
 
 /** Kilidin is gordugu kule; yazilmayan kilit (altin, nexus, enkaz, onarim) bir sey sormuyor. Anahtar duz metin (bkz. `STAT_NEEDS`). */
@@ -225,6 +227,12 @@ export function getShopItemNeeds(item: ShopItem): ShopItemCapabilityNeed[] {
   const needs = new Set<ShopItemCapabilityNeed>();
   const add = (list: readonly ShopItemCapabilityNeed[] | undefined) => list?.forEach((need) => needs.add(need));
   for (const effect of item.effects) add(STAT_NEEDS[effect.stat]);
+  // Cevrim esyasi iki uca da bakiyor: kaynak kulede okunmali, hedef kulede
+  // bir sey degistirmeli (Tork Radyatoru: donus hizi ve isi).
+  for (const conversion of item.conversions ?? []) {
+    add(STAT_NEEDS[conversion.from]);
+    add(STAT_NEEDS[conversion.to]);
+  }
   for (const unlock of item.unlocks ?? []) add(UNLOCK_NEEDS[unlock]);
   const grants = item.grants;
   if (grants) {

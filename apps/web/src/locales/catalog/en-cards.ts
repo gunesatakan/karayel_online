@@ -157,5 +157,7 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "kenetlenme": { name: "Lock-On", description: "A tower gains +5% range for every second it keeps firing at the same target; up to +20%. Resets when the target changes." },
   "termal-mercek": { name: "Thermal Lens", description: "A tower's range grows as it heats past 50 degrees: +4% per 10 degrees, +20% at 100 degrees." },
   "siper-gozcusu": { name: "Trench Lookout", description: "Towers with walls built on their edges gain +5% range per wall; up to 3 walls (+15%)." },
+  "genis-ufuk": { name: "Wide Horizon", description: "All towers' range +8%." },
+  "pusu-nobeti": { name: "Ambush Watch", description: "Damage towers that have not hit for 3 seconds get +20% range; it lasts 2 more seconds after the first hit out of ambush." },
   ...enLegendaryCards
 };

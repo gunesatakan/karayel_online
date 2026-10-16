@@ -293,7 +293,18 @@ export type ModifierStat =
   | "wallRange"
   | "rangeFlat"
   | "killRange"
-  | "neighborRange";
+  | "neighborRange"
+  /**
+   * Menzil turu, ikinci kisim.
+   *
+   * - `killRangeLong`: `killRange`in uzun soluklu esi; oldurme basina bu pay,
+   *   en fazla `KILL_RANGE_LONG_MAX_KILLS` oldurme (esya: Av Kayit Defteri;
+   *   Atis Haritasi ile ayni kuleye takilmaz, sayac ortak).
+   * - `ambushRange`: bir suredir vurmayan kulenin menzil payi; ilk vurustan
+   *   sonra kisa bir sure daha suruyor (kart: Pusu Nobeti).
+   */
+  | "killRangeLong"
+  | "ambushRange";
 
 export type Modifier = {
   source: string;

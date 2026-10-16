@@ -1,6 +1,6 @@
 import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
 import { getTowerRangePerLevel } from "@karayel/shared";
-import { FOCUS_RANGE_GRACE_MS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
+import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
 import { createBuildZoneLookup, createBuildZoneRandom, generateBuildZones, isEdgeTouchingBuildZone, isFootprintInBuildZone, type BuildZoneLayout, type BuildZoneLookup } from "@karayel/shared";
@@ -2070,6 +2070,8 @@ type TowerModel = EconomyStock & {
   /** Atis Haritasi (`killRange`): oldurmelerin sayildigi dalga ve o dalgadaki oldurme. */
   killRangeWave?: number;
   killRangeKills?: number;
+  /** Pusu Nobeti (`ambushRange`): pusudan sonraki ilk vurusla acilan pencerenin sonu (duvar saati). */
+  ambushRangeUntil?: number;
   /** Efsanevi etki basina kulenin yeniden uygulayabilecegi an (`LEGENDARY_TOWER_TRIGGER_GAP_MS`). */
   legendaryReadyAt?: number[];
   /** `getTowerLegendaryRhythm` onbellegi. */
@@ -6633,7 +6635,10 @@ export class MatchRoom extends Room<MatchState> {
     let add = 0;
     for (const source of sources) {
       if (source.hp <= 0 || this.towers.get(source.id) !== source) continue;
-      add += getModifierAdd(this.getTowerRunModifiers(source), "neighborRange");
+      // Cevrimsiz liste: direk payi cevrim hedefi degil, ve tam liste burada
+      // menzilden okuyan bir cevrim (Erim Pompasi) uzerinden iki direk
+      // arasinda kendi kendini cagirirdi.
+      add += getModifierAdd(this.getTowerStaticRunModifiers(source), "neighborRange");
     }
     return Math.min(NEIGHBOR_RANGE_MAX, add);
   }
@@ -13470,6 +13475,11 @@ export class MatchRoom extends Room<MatchState> {
     const legendaryStats: PreviewStat[] = changeEffects.some((modifier) => (Object.values(LEGENDARY_CHANCE_STATS) as string[]).includes(modifier.stat))
       ? [["legendary", legendaryTotal]]
       : [];
+    // Mermi hizi satiri yalnizca degisiklik mermi hizina dokunuyorsa (Erim
+    // Pompasi'nin cevrimi, Kinetik Uzatici, Genlesme Odasi); obur onizlemelerde gurultu.
+    const touchesSpeed = changeEffects.some((modifier) => modifier.stat === "projectileSpeed")
+      || (item?.conversions ?? []).some((conversion) => conversion.to === "projectileSpeed" || conversion.from === "projectileSpeed");
+    const speedStats: PreviewStat[] = touchesSpeed ? [["projectileSpeed", (value) => this.getTowerProjectileSpeedMultiplier(value)]] : [];
     const stats: PreviewStat[] = [
       // Vurus aninda eklenen kule bonuslari da sayiya dahil; yoksa Kan
       // Bankasi gibi her vurusa +%20 veren bir esya hicbir sey degistirmiyor
@@ -13483,7 +13493,8 @@ export class MatchRoom extends Room<MatchState> {
       ["heat", (value) => this.getTowerShotHeat(value) * shots(value)],
       ["cooling", (value) => this.getTowerCoolingPerSecond(value)],
       ...sustainedStats,
-      ...legendaryStats
+      ...legendaryStats,
+      ...speedStats
     ];
     // Efsanevi ihtimal yuzde ("%35"); obur satirlar iki ondalik.
     const format = (key: string, value: number) => key === "legendary" ? `%${Math.round(value * 100)}` : value.toFixed(2);
@@ -16831,7 +16842,15 @@ export class MatchRoom extends Room<MatchState> {
     // Sogutmasi ve efsanevi temas saati yalnizca bunu sayiyor.
     const directHit = Boolean(damageSourceTower) && damage > 0 && !this.hitSplashActive && !legendarySecondary
       && !sourceDefinitionId.startsWith("status:") && !isSyntheticKillSource(sourceDefinitionId);
-    if (directHit) damageSourceTower!.lastHitAt = now;
+    if (directHit) {
+      // Pusu Nobeti: pusudan (bir suredir vurmamis) sonraki ilk vurus pencereyi
+      // aciyor; ayni atisin alanindaki obur vuruslar pencereyi uzatmiyor.
+      if (getModifierAdd(damageModifiers, "ambushRange") > 0
+        && now - (damageSourceTower!.lastHitAt ?? Number.NEGATIVE_INFINITY) >= scaleGameDuration(AMBUSH_RANGE_IDLE_MS)) {
+        damageSourceTower!.ambushRangeUntil = now + scaleGameDuration(AMBUSH_RANGE_HOLD_MS);
+      }
+      damageSourceTower!.lastHitAt = now;
+    }
     const legendaryHit = directHit && Boolean(this.getTowerGrantState(damageSourceTower!).legendaryChances);
     const result = calculateDamageTaken(
       { amount: damage * markMultiplier * knowledgeDamage * Math.max(0, 1 + shopDamageAdd + critAdd), damageType, hitType },
@@ -19127,6 +19146,10 @@ export class MatchRoom extends Room<MatchState> {
    * - Siper Gozcusu: kulenin kenarindaki duvarlar.
    * - Atis Haritasi: bu dalgadaki oldurmeler.
    * - Gozcu Diregi: bitisikteki direkler.
+   * - Av Kayit Defteri: Atis Haritasi'nin sayaci, uzun tavan (ikisi ayni
+   *   kuleye takilmiyor; olsaydi paylar ayri tavanlariyla toplanirdi).
+   * - Pusu Nobeti: hasar kulesi bir suredir vurmuyor ya da pusudan sonraki
+   *   ilk vurusun penceresi suruyor.
    *
    * Hicbiri menzili okumuyor: menzil hesabinin icinden cagriliyor.
    */
@@ -19135,13 +19158,23 @@ export class MatchRoom extends Room<MatchState> {
     let heat = 0;
     let wall = 0;
     let kill = 0;
+    let killLong = 0;
+    let ambush = 0;
     for (const modifier of modifiers) {
       if (modifier.stat === "focusRange") focus += modifier.add;
       else if (modifier.stat === "heatRange") heat += modifier.add;
       else if (modifier.stat === "wallRange") wall += modifier.add;
       else if (modifier.stat === "killRange") kill += modifier.add;
+      else if (modifier.stat === "killRangeLong") killLong += modifier.add;
+      else if (modifier.stat === "ambushRange") ambush += modifier.add;
     }
     let add = this.getNeighborRangeAdd(tower);
+    if (ambush > 0 && towerDealsDamage(tower.definition)) {
+      const now = Date.now();
+      const idle = now - (tower.lastHitAt ?? Number.NEGATIVE_INFINITY) >= scaleGameDuration(AMBUSH_RANGE_IDLE_MS);
+      if (idle || (tower.ambushRangeUntil ?? 0) > now) add += ambush;
+    }
+    if (killLong > 0 && tower.killRangeWave === this.wave) add += getKillRangeAdd(killLong, tower.killRangeKills ?? 0, KILL_RANGE_LONG_MAX_KILLS);
     if (focus > 0 && tower.focusRangeTargetId && tower.focusRangeSince !== undefined) {
       const now = Date.now();
       const target = this.enemies.get(tower.focusRangeTargetId);
@@ -19194,9 +19227,10 @@ export class MatchRoom extends Room<MatchState> {
     tower.focusRangeLastShotAt = now;
   }
 
-  /** Atis Haritasi: olduren kulenin bu dalgadaki oldurmesi; yeni dalgada sayac sifirdan. */
+  /** Atis Haritasi / Av Kayit Defteri: olduren kulenin bu dalgadaki oldurmesi; yeni dalgada sayac sifirdan. */
   private recordTowerKillRange(tower: TowerModel) {
-    if (!(getModifierAdd(this.getTowerRunModifiers(tower), "killRange") > 0)) return;
+    const modifiers = this.getTowerRunModifiers(tower);
+    if (!(getModifierAdd(modifiers, "killRange") > 0) && !(getModifierAdd(modifiers, "killRangeLong") > 0)) return;
     if (tower.killRangeWave !== this.wave) {
       tower.killRangeWave = this.wave;
       tower.killRangeKills = 0;
@@ -19639,6 +19673,12 @@ export class MatchRoom extends Room<MatchState> {
       if (!item) return;
       if (item.grants) grants.push(item.grants);
       for (const unlock of item.unlocks ?? []) unlocks.add(unlock);
+      // Cevrim esyalari (Erim Pompasi, Kinetik Uzatici, Tork Radyatoru): kartlarin
+      // cevrimiyle ayni yol; kaynak esyanin kendisi, panel adini oradan yaziyor.
+      (item.conversions ?? []).forEach((conversion, index) => {
+        const source = index === 0 ? `shop:${item.id}` : `shop:${item.id}:${index}`;
+        conversions.set(source, { ...conversion, source });
+      });
     };
     const takeCard = (card: CardDefinition | undefined) => {
       if (!card) return;

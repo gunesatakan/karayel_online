@@ -213,6 +213,39 @@ paneli aynı sayıyı okur; panelde koşullu paylar tek "Koşullu" kalemi, düz 
 eşyanın çarpanı. Yerleştirme önizlemesi kart ve eşya menzilini zaten
 göstermiyor; bunlar da orada yok.
 
+#### Menzil turu, ikinci kısım
+
+- **Geniş Ufuk** (yaygın, 2 kez, `range` 0,08): tüm kulelere +%8. Katalogda
+  bütün kulelere koşulsuz menzil veren tek kart (Uzun Namlu yalnız mermi).
+- **Pusu Nöbeti** (seyrek, `ambushRange` 0,2): 3 oyun sn'dir doğrudan vurmayan
+  hasar kulesine +%20; pusudan sonraki ilk vuruş 2 oyun sn'lik pencere açar,
+  ardından kule vurmaya devam ettikçe pay yok. Kenetlenme'nin tersi: ilk temas.
+  Koşullu tavana (+%35) girer.
+- **Av Kayıt Defteri** (eşya, 130 g): menzil −%5; dalgadaki her öldürme +%1,5,
+  en fazla 16 (+%24, net +%19). Atış Haritası'nın (85 g, +%3 × 5) uzun soluklu
+  eşi: aynı sayaç, **aynı kuleye takılmazlar** (`EXCLUSIVE_SHOP_ITEMS`). Ayrı
+  stat (`killRangeLong`) olduğu için takılsalardı tavanları ayrı toplanırdı;
+  karşıtlık bunu baştan kapatıyor. Koşullu tavana girer.
+- **Erim Pompası** (eşya, 100 g, mermi kuleleri): menzil +%8; menzil bonusunun
+  her %10'u mermi hızına +%15, en fazla +%60.
+- **Kinetik Uzatıcı** (eşya, 110 g, mermi kuleleri): mermi hızı +%25; mermi hızı
+  bonusunun her %10'u menzile +%3, en fazla +%15.
+  Erim Pompası ile Kinetik Uzatıcı **aynı kuleye takılmaz** (sahibin kararı).
+- **Tork Radyatörü** (eşya, 90 g, nişan alan ve ısınan kuleler): dönüş hızı +%20;
+  dönüş hızı bonusunun her %10'u soğumaya +%6, en fazla +%30 (Tork Aktarımı'nın
+  soğuma eşi).
+- **Uzatma Halkası** (eşya, 45 g, 3 kez, ×1,3 fiyat): menzil +%6 (üçü +%18).
+- **Uzun Erim Optiği** (eşya, 120 g): menzil +%18, atış hızı −%8.
+
+Eşya çevrimleri (`ShopItem.conversions`) kartlarınkiyle aynı yoldan
+(`collectTowerGrants` → `resolveStatConversions`) çözülür; çıktının kaynağı
+`shop:<kimlik>`, panelde eşyanın adıyla görünür. Kaynak her zaman çevrimlerden
+**önce** okunur (kart ve eşya toplamı + koşullu paylar): Kinetik Erim kartı ile
+Erim Pompası aynı kulede birbirinin çıktısını görmez, geri besleme yok. Çevrimden
+gelen menzil düz `range` payıdır; koşullu tavana girmez, kendi tavanı var.
+Uyumluluk çevrimin iki ucunun ihtiyacını da sorar (`getShopItemNeeds`).
+Önizleme mermi hızına dokunan değişiklikte "Mermi hızı" satırını ekler.
+
 Kataloğun yaklaşık yarısı düz stat, yarısı davranış olmalı. Düz stat tarafı
 şişerse oyuncu üç seçenek görürken kuruluşunu taşıyan kartı hiç göremez.
 

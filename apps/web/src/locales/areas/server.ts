@@ -78,6 +78,7 @@ export const trServer = {
   "server.preview.stat.heat": "Isı / tetikleme",
   "server.preview.stat.cooling": "Soğutma / sn",
   "server.preview.stat.sustained": "Sürekli tetikleme / sn",
+  "server.preview.stat.projectileSpeed": "Mermi hızı",
   "server.preview.stat.legendary": "Efsanevi ihtimal / sn",
 
   // ------------------------------------------------------------ Kule durumu (snapshot `status`, kalip)
@@ -209,6 +210,7 @@ export const enServer: Readonly<Record<keyof typeof trServer, string>> = {
   "server.preview.stat.heat": "Heat / trigger",
   "server.preview.stat.cooling": "Cooling / s",
   "server.preview.stat.sustained": "Sustained triggers / s",
+  "server.preview.stat.projectileSpeed": "Projectile speed",
   "server.preview.stat.legendary": "Legendary chance / s",
 
   "server.status.disabled": "Disabled",

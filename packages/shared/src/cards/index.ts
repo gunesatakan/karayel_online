@@ -707,6 +707,11 @@ export const cardCatalog: CardDefinition[] = [
   { id: "kenetlenme", name: "Kenetlenme", description: "Bir kule aynı hedefe ateş ettiği her saniye +%5 menzil kazanır; en fazla +%20. Hedef değişince sıfırlanır.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("kenetlenme", "focusRange", 0.05)] },
   { id: "termal-mercek", name: "Termal Mercek", description: "Kulenin sıcaklığı 50 dereceyi aştıkça menzili artar: her 10 derece +%4, 100 derecede +%20.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("termal-mercek", "heatRange", 0.2)] },
   { id: "siper-gozcusu", name: "Siper Gözcüsü", description: "Kenarına duvar örülmüş kuleler her duvar için +%5 menzil kazanır; en fazla 3 duvar (+%15).", axes: ["barricade", "dps"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("siper-gozcusu", "wallRange", 0.05)] },
+  // Menzil turu, ikinci kisim: herkese duz, kucuk bir menzil (katalogda tum
+  // kulelere kosulsuz menzil veren tek kart) ve Kenetlenme'nin tersi, bosta
+  // bekleyen kuleyi odullendiren pusu.
+  { id: "genis-ufuk", name: "Geniş Ufuk", description: "Tüm kulelerin menzili +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("genis-ufuk", "range", 0.08)] },
+  { id: "pusu-nobeti", name: "Pusu Nöbeti", description: "3 saniyedir vuruş yapmayan hasar kulelerinin menzili +%20; pusudan sonraki ilk vuruştan sonra 2 saniye daha sürer.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("pusu-nobeti", "ambushRange", 0.2)] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -996,7 +1001,8 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // Menzil turu: hepsi kulenin menziline isliyor. Gozcu Diregi ates etmeyen
   // bir yapiya takilsa da komsusunda is goruyor (Rezonans Odasi gibi).
   focusRange: "combat", heatRange: "combat", wallRange: "combat", rangeFlat: "combat", killRange: "combat",
-  neighborRange: "structure"
+  neighborRange: "structure",
+  killRangeLong: "combat", ambushRange: "combat"
 };
 
 /**

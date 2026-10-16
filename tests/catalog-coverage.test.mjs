@@ -47,7 +47,8 @@ const ALL_STATS = [
   "overclock", "coldSalvo", "restartShots", "heatToDamage", "heatShock",
   "woundedFireRate", "idleCooling", "critVent", "crowdFireRate", "lockCooling", "chilledHeatRelief",
   "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance",
-  "focusRange", "heatRange", "wallRange", "rangeFlat", "killRange", "neighborRange"
+  "focusRange", "heatRange", "wallRange", "rangeFlat", "killRange", "neighborRange",
+  "killRangeLong", "ambushRange"
 ];
 
 /**
@@ -74,7 +75,9 @@ const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "championGo
   // Menzil turu: taban menzile, dalgadaki oldurmelere ve bitisikteki direge
   // bakan esyalar. Kart tarafinda karsiliklari ayri (Kenetlenme, Termal
   // Mercek, Siper Gozcusu).
-  "rangeFlat", "killRange", "neighborRange"];
+  "rangeFlat", "killRange", "neighborRange",
+  // Ikinci kisim: Av Kayit Defteri (Atis Haritasi sayacinin uzun tavani).
+  "killRangeLong"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));

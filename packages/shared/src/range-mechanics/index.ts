@@ -28,9 +28,26 @@ export const HEAT_RANGE_FULL_TEMPERATURE = 100;
 export const WALL_RANGE_MAX_WALLS = 3;
 /** Atis Haritasi: dalga basina en fazla bu kadar oldurme sayilir. */
 export const KILL_RANGE_MAX_KILLS = 5;
+/**
+ * Av Kayit Defteri: ayni dalga sayaci, daha uzun tavan (oldurme basina daha
+ * kucuk pay). Atis Haritasi ile ayni kuleye takilmiyor (`EXCLUSIVE_SHOP_ITEMS`).
+ */
+export const KILL_RANGE_LONG_MAX_KILLS = 16;
+/**
+ * Pusu Nobeti: kule bu kadar oyun suresidir dogrudan vurmuyorsa pusuda;
+ * pusudan sonraki ilk vurustan sonra pay bu kadar daha suruyor (menzilin
+ * kenarinda vurulan hedef pay kalkar kalkmaz menzilden dusmesin).
+ */
+export const AMBUSH_RANGE_IDLE_MS = 3000;
+export const AMBUSH_RANGE_HOLD_MS = 2000;
 /** Gozcu Diregi: bir kulenin bitisikteki direklerden alabilecegi en fazla pay (iki direk). */
 export const NEIGHBOR_RANGE_MAX = 0.2;
-/** Kosullu menzil paylarinin toplam tavani (Kenetlenme + Termal Mercek + Siper + Atis Haritasi + Gozcu Diregi). */
+/**
+ * Kosullu menzil paylarinin toplam tavani (Kenetlenme, Termal Mercek, Siper
+ * Gozcusu, Atis Haritasi / Av Kayit Defteri, Gozcu Diregi, Pusu Nobeti).
+ * Cevrimlerden gelen menzil (Kinetik Erim, Kinetik Uzatici) duz `range`
+ * payi; tavana girmiyor, kendi cevrim tavanlari var.
+ */
 export const RANGE_CONDITIONAL_CAP = 0.35;
 
 /** Termal Mercek: kazanc bu kadar derecelik basamaklarla artiyor ("her 10 derece"). */
@@ -64,8 +81,8 @@ export function getWallRangeAdd(perWall: number, walls: number) {
   return perWall * Math.max(0, Math.min(WALL_RANGE_MAX_WALLS, Math.floor(walls)));
 }
 
-/** Atis Haritasi: bu dalgadaki oldurme sayisi, tavanli. */
-export function getKillRangeAdd(perKill: number, kills: number) {
+/** Atis Haritasi (ve `maxKills` ile Av Kayit Defteri): bu dalgadaki oldurme sayisi, tavanli. */
+export function getKillRangeAdd(perKill: number, kills: number, maxKills = KILL_RANGE_MAX_KILLS) {
   if (!(perKill > 0)) return 0;
-  return perKill * Math.max(0, Math.min(KILL_RANGE_MAX_KILLS, Math.floor(kills)));
+  return perKill * Math.max(0, Math.min(maxKills, Math.floor(kills)));
 }

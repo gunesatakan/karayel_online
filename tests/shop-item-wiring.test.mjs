@@ -231,7 +231,7 @@ const KULE_KATMANINDAN_OKUNANLAR = new Set([
   "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance",
   // Menzil turu: `getTowerOwnRange` kulenin listesinden; davranislari
   // tests/range-round.test.mjs'te gercek odada olculuyor.
-  "rangeFlat", "killRange", "neighborRange"
+  "rangeFlat", "killRange", "neighborRange", "killRangeLong"
 ]);
 
 test("kuleye takılan eşyanın her statı kule katmanından okunuyor", () => {

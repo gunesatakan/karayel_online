@@ -456,3 +456,18 @@ Notlar: efsanevi etkilerin hasar ölçüsü "kule saniyesi" ısının izin verdi
 | Gözcü Direği | 110 | Bitişikteki her dost kuleye +%10 menzil; kule başına en fazla +%20 | B (kümede 3–4 kuleye birden; AttackLord'un yalnızlığıyla çelişir) |
 
 Kartlar: Kenetlenme (seyrek; aynı hedefe her sn +%5, en fazla +%20), Termal Mercek (nadir; 50→100 derece 0→+%20), Siper Gözcüsü (yaygın; kenardaki her duvar +%5, en fazla 3). Karşılaştırma: Uzun Namlu (mermi kuleleri +%10 menzil + isabet), Yalnız Nişancı (komşusuz +%15 menzil + %25 hasar).
+
+### Menzil turu, ikinci kısım (2026-10-16)
+
+Tek kule ölçümüne girmedi (menzil farkı o kümede görünmüyor); kademe mekanikten ve fiyattan kaba tahmin. Testler: `tests/range-round-two.test.mjs`.
+
+| Eşya | Fiyat | Mekanik | Kademe |
+|---|---|---|---|
+| Av Kayıt Defteri | 130 | Menzil −%5; dalgadaki her öldürme +%1,5, en fazla 16 (+%24); Atış Haritası ile aynı kuleye takılmaz | C (dalga başında eksi; uzun dalgada ve son vuruşu alan kulede B) |
+| Erim Pompası | 100 | Menzil +%8; menzil bonusunun her %10'u mermi hızına +%15, en fazla +%60; Kinetik Uzatıcı ile takılmaz | C (tek başına +%12 mermi hızı; menzil yığan kurulumda B) |
+| Kinetik Uzatıcı | 110 | Mermi hızı +%25; mermi hızı bonusunun her %10'u menzile +%3, en fazla +%15 | B (Genleşme Odası / Gauss Bobini ile tavana çıkar) |
+| Tork Radyatörü | 90 | Dönüş hızı +%20; dönüş hızı bonusunun her %10'u soğumaya +%6, en fazla +%30 | B (dönüş eşyası yığan nişancıda; ısı sınırlı kulede soğuma = atış hızı) |
+| Uzatma Halkası | 45 (×1,3) | Menzil +%6, 3 kez | C (ucuz dolgu; üçü ~150 g'a +%18) |
+| Uzun Erim Optiği | 120 | Menzil +%18, atış hızı −%8 | B (menzil sınırlı haritada; ısı sınırlı kulede atış hızı cezası yarı hissedilir) |
+
+Kartlar: Geniş Ufuk (yaygın, 2 kez; tüm kuleler +%8), Pusu Nöbeti (seyrek; 3 sn vurmayan hasar kulesi +%20, ilk vuruştan sonra 2 sn).

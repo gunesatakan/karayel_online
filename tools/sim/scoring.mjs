@@ -75,7 +75,9 @@ export const STAT_SCORE = {
   // Menzil turu: kosullu; ortalama payin menzil puaniyla karsiligi (Kenetlenme
   // ~+%12, Termal Mercek ~+%6, iki duvar, ~3 oldurme, bir direk). Duz kare
   // kisa menzilde orani buyuk: ortalama ~+%15.
-  focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2
+  focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2,
+  // Ikinci kisim: uzun oldurme sayaci ~8 oldurmede; pusu yalnizca menzile ilk girista.
+  killRangeLong: 12, ambushRange: 0.5
 };
 
 function grantDamageAdd(grant) {
@@ -121,5 +123,7 @@ export function cardScore(card, axes, towerDefinitions) {
 
 export function shopItemScore(item) {
   const depositScore = item.deposit ? 1 : 0;
-  return effectScore(item.effects) + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage;
+  // Cevrim esyalari: hedef statin tavaninin yarisi kadar (kartlardaki gibi kaba).
+  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
+  return effectScore(item.effects) + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage + conversionScore;
 }

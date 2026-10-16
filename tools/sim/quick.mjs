@@ -641,7 +641,9 @@ function shopItemScore(item) {
   const effectScore = item.effects.reduce((sum, modifier) => sum + (STAT_SCORE[modifier.stat] ?? 0.3) * modifier.add, 0);
   // Vadeli altin: getirisi (150 -> 440, %193) kabaca iki hasar esyasi kadar puanlaniyor.
   const depositScore = item.deposit ? 1 : 0;
-  return effectScore + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage;
+  // Cevrim esyalari: hedef statin tavaninin yarisi kadar (kartlardaki gibi kaba).
+  const conversionScore = (item.conversions ?? []).reduce((sum, conversion) => sum + conversion.cap * 0.5 * (STAT_SCORE[conversion.to] ?? 0.3), 0);
+  return effectScore + depositScore + (behaviourDamageAdd(item) + goldUnlockScore(item)) * STAT_SCORE.damage + conversionScore;
 }
 
 function chooseCard(cards, preferredAxes, towers) {
@@ -685,7 +687,9 @@ const STAT_SCORE = {
   // Menzil turu: kosullu; ortalama payin menzil puaniyla karsiligi (Kenetlenme
   // ~+%12, Termal Mercek ~+%6, iki duvar, ~3 oldurme, bir direk). Duz kare
   // kisa menzilde orani buyuk: ortalama ~+%15.
-  focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2
+  focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2,
+  // Ikinci kisim: uzun oldurme sayaci ~8 oldurmede; pusu yalnizca menzile ilk girista.
+  killRangeLong: 12, ambushRange: 0.5
 };
 
 /**

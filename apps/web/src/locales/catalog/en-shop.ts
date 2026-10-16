@@ -144,8 +144,14 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "acil-sogutma-pompasi": { name: "Emergency Coolant Pump", description: "Equipped tower cools 3x faster while heat-locked (cooling +200%): the lock is much shorter." },
   "kriyo-kovan": { name: "Cryo Casing", description: "Shots the equipped tower fires at slowed or frozen targets generate 50% less heat." },
   "teleskopik-namlu": { name: "Telescopic Barrel", description: "Adds +0.25 tiles to the equipped tower's base range: +25% on a 1-tile range, +10% on a 2.5-tile range; cannot be equipped on towers whose range covers the map." },
-  "atis-haritasi": { name: "Firing Chart", description: "Each enemy the equipped tower kills this wave adds +3% range; up to 5 kills (+15%). Resets each new wave." },
+  "atis-haritasi": { name: "Firing Chart", description: "Each enemy the equipped tower kills this wave adds +3% range; up to 5 kills (+15%). Resets each new wave; cannot share a tower with Hunt Ledger." },
   "gozcu-diregi": { name: "Lookout Mast", description: "Each friendly tower adjacent to the equipped structure gets +10% range; a tower benefits from at most two masts (+20%). Also fits non-firing structures." },
+  "av-kayit-defteri": { name: "Hunt Ledger", description: "Equipped tower's range -5%; each enemy it kills this wave adds +1.5% range, up to 16 kills (+24%). Resets each new wave; cannot share a tower with Firing Chart." },
+  "erim-pompasi": { name: "Reach Pump", description: "Equipped tower's range +8%. Every 10% of range bonus adds +15% projectile speed; up to +60%. Only fits projectile towers; cannot share a tower with Kinetic Extender." },
+  "kinetik-uzatici": { name: "Kinetic Extender", description: "Equipped tower's projectile speed +25%. Every 10% of projectile speed bonus adds +3% range; up to +15%. Only fits projectile towers; cannot share a tower with Reach Pump." },
+  "tork-radyatoru": { name: "Torque Radiator", description: "Equipped tower's turn rate +20%. Every 10% of turn rate bonus adds +6% cooling; up to +30%. Only fits aiming towers that build heat." },
+  "uzatma-halkasi": { name: "Extension Ring", description: "Equipped tower's range +6%; up to 3 per tower; cannot be equipped on towers whose range covers the map." },
+  "uzun-erim-optigi": { name: "Long Reach Optic", description: "Equipped tower's range +18%, fire rate -8%; cannot be equipped on towers whose range covers the map." },
   ...enLegendaryItems
 };
 
