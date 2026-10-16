@@ -2532,13 +2532,26 @@ export function setupGameHudUi(game: Phaser.Game) {
     forecastPreNode.data = pre;
     forecastPostNode.data = post;
     setText(forecastWarningNode, t("hud.forecast.airWarning"));
-    atlasNode.setAttribute("aria-label", t("hud.atlas.speaking"));
+    atlasNode.setAttribute("aria-label", t(atlasSpeaker === "vesayet" ? "hud.vesayet.speaking" : "hud.atlas.speaking"));
   };
+  let atlasSpeaker: "atlas" | "vesayet" = "atlas";
   applyStaticLabels();
 
-  /** ATLAS telsiz gostergesi: konustugu surece gorunur (sahne `game:hud-atlas`). */
-  const showAtlas = (speaking: boolean) => {
+  /**
+   * Telsiz gostergesi: konusan surece gorunur (sahne `game:hud-atlas`).
+   * `true`/"atlas": ATLAS; "vesayet": dusman yapay zeka VESAYET (ATLAS-VESAYET
+   * konusmasi) -- ayni kutu, ayni yer (dar ekranda yerlesim oynamiyor),
+   * kirmizi/koyu dusman tonu ve etiket "VESAYET".
+   */
+  const showAtlas = (speaking: boolean | "atlas" | "vesayet") => {
     atlasNode.hidden = !speaking;
+    if (!speaking) return;
+    const speaker = speaking === "vesayet" ? "vesayet" : "atlas";
+    if (speaker === atlasSpeaker) return;
+    atlasSpeaker = speaker;
+    atlasNode.classList.toggle("game-hud__atlas--vesayet", speaker === "vesayet");
+    setText(atlasNode.querySelector<HTMLElement>("b")!, speaker === "vesayet" ? "VESAYET" : "ATLAS");
+    atlasNode.setAttribute("aria-label", t(speaker === "vesayet" ? "hud.vesayet.speaking" : "hud.atlas.speaking"));
   };
 
   /**

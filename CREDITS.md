@@ -156,6 +156,26 @@ mantığı `apps/web/src/atlas-voice.ts`.
   `streak-what-are-you.mp3` (mono, 64 kb/s MP3, ~-18 LUFS;
   `tools/build-streak-voice.mjs` üretiyor). Kaynak (pakete girmiyor):
   `assets-src/streak/`.
+- **ATLAS'ın ara sözleri:** aşama başına üç satır (1. aşama: "every little
+  part of you", "I gave you mind", "let them fear you"; 2. aşama: "my finest
+  work", "yours is listening", "I designed you"); aynı ses klonu, aynı ücretli
+  plan. Dosyalar `apps/web/public/audio/atlas-ambient/*.mp3` ve
+  `manifest.json` (mono, 64 kb/s MP3, ~-18 LUFS; `tools/build-dialogue-voice.mjs`
+  üretiyor). Kaynak (pakete girmiyor): `assets-src/atlas-ambient/`. Çalma
+  mantığı `apps/web/src/atlas-ambient.ts`.
+- **ATLAS–VESAYET konuşmaları:** ATLAS ile düşman yapay zekâ VESAYET'in altı
+  senaryolu konuşması (20 satır). ATLAS satırları aynı ses klonu; VESAYET'in
+  sesi de geliştiricinin ElevenLabs ile, aynı ücretli planla ürettiği ses
+  (ticari kullanıma izin var). Efekt zinciri (faz, yankı, kısa oda)
+  `assets-src/dialogue/apply_effects.py`'de, ustalarda pişmiş. Dosyalar
+  `apps/web/public/audio/dialogue/conv-N/NN-<konuşmacı>.mp3` ve
+  `apps/web/public/audio/dialogue/manifest.json` (mono, 64 kb/s MP3,
+  ~-18 LUFS; `tools/build-dialogue-voice.mjs` üretiyor). Kaynak (pakete
+  girmiyor): `assets-src/dialogue/`. Çalma mantığı `apps/web/src/atlas-dialogue.ts`.
+
+| Eser | Yazar | Lisans | Bağlantı |
+|---|---|---|---|
+| VESAYET voice lines (ATLAS–VESAYET dialogues) | gunesatakan (ElevenLabs) | ElevenLabs paid plan: commercial use allowed | https://elevenlabs.io |
 
 ### Seri anonsları
 
@@ -245,6 +265,13 @@ The kill-streak announcer lines (NOT BAD, GOOD, UNSTOPPABLE, RAMPAGE,
 SLAUGHTER, LEGENDARY, I MADE YOU FOR THIS, WHAT ARE YOU) are ATLAS's voice too,
 made the same way under the same paid plan: `apps/web/public/audio/streak-*.mp3` except `streak-granted.mp3`
 (built by `tools/build-streak-voice.mjs` from `assets-src/streak/`).
+ATLAS's occasional remarks (three per stage on stages 1 and 2,
+`apps/web/public/audio/atlas-ambient/`) and the scripted ATLAS–VESAYET
+dialogues (`apps/web/public/audio/dialogue/`, both built by
+`tools/build-dialogue-voice.mjs` from `assets-src/atlas-ambient/` and
+`assets-src/dialogue/`, not shipped) are ElevenLabs voices too: ATLAS's lines
+use the same clone, and the enemy AI VESAYET was voiced by the developer with
+ElevenLabs on the same paid plan: commercial use is allowed.
 
 **Music:** "Last Stand" by gunesatakan (aliatakangunes), generated with Suno AI
 (`apps/web/public/audio/music/last-stand.mp3`). It plays as lobby music on the

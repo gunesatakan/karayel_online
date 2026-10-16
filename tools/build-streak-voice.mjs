@@ -55,7 +55,7 @@ const LIMITER_CEILING_DB = -3;
  * hedefin 1-2 LU altinda kaliyor; o zaman sabit kazanc + tepe sinirlayici
  * (yalnizca tepeleri kirpiyor, yukseklik hedefte kaliyor).
  */
-function encode(ffmpeg, source, target) {
+export function encode(ffmpeg, source, target) {
   const { targetLufs, encodeTruePeakDb: truePeakDb, lra, sampleRate } = ATLAS_ENCODING;
   const log = run(ffmpeg, ["-i", source, "-af", `loudnorm=I=${targetLufs}:TP=${truePeakDb}:LRA=${lra}:print_format=json`, "-f", "null", "-"]);
   const m = JSON.parse(log.slice(log.lastIndexOf("{"), log.lastIndexOf("}") + 1));

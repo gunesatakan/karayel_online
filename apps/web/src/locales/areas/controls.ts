@@ -232,6 +232,8 @@ export const trControls = {
   // ATLAS telsiz anonslari: ac/kapat kutusu ve konusurken ust bilgideki gostergenin ekran okuyucu adi.
   "hud.audio.atlas": "ATLAS sesi",
   "hud.atlas.speaking": "ATLAS telsizde konuşuyor",
+  // ATLAS-VESAYET konusmasi: dusman yapay zekanin satirinda ayni gostergenin adi.
+  "hud.vesayet.speaking": "Düşman yapay zekâ VESAYET telsize sızdı",
   // Mac icinden menuye donus: menu panelinin en ustundeki dugme ve onayi.
   "hud.quit.button": "Menüye dön",
   "hud.quit.title": "Menüye dön",
@@ -467,6 +469,7 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "hud.audio.vibration": "Vibration",
   "hud.audio.atlas": "ATLAS voice",
   "hud.atlas.speaking": "ATLAS is speaking on the radio",
+  "hud.vesayet.speaking": "Enemy AI VESAYET has breached the radio",
   "hud.quit.button": "Quit to menu",
   "hud.quit.title": "Quit to menu",
   "hud.quit.solo": "Quit the match? Progress will be lost.",

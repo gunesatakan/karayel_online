@@ -81,7 +81,12 @@ export const CREDIT_GROUPS: readonly CreditGroup[] = [
       // ATLAS telsiz anonslari: gelistirici ElevenLabs ile, anlik ses klonu "MorbidAI", ucretli plan.
       // Dosyalar apps/web/public/audio/atlas (tools/build-atlas-voice.mjs) ve seri anonslari
       // apps/web/public/audio/streak-*.mp3 (GRANTED haric; tools/build-streak-voice.mjs).
-      { id: "atlas-voice", title: "ATLAS voice lines", author: "gunesatakan (ElevenLabs Instant Voice Clone \"MorbidAI\")", license: "ElevenLabs paid plan: commercial use allowed", url: "https://elevenlabs.io" }
+      { id: "atlas-voice", title: "ATLAS voice lines", author: "gunesatakan (ElevenLabs Instant Voice Clone \"MorbidAI\")", license: "ElevenLabs paid plan: commercial use allowed", url: "https://elevenlabs.io" },
+      // ATLAS-VESAYET konusmalari: ATLAS satirlari yukaridaki ses; dusman yapay zeka VESAYET'in
+      // sesi de gelistiricinin ElevenLabs ile ayni ucretli planla urettigi ses. Dosyalar
+      // apps/web/public/audio/dialogue (tools/build-dialogue-voice.mjs); ATLAS'in ara sozleri
+      // apps/web/public/audio/atlas-ambient (ATLAS satiri, ayni arac).
+      { id: "vesayet-voice", title: "VESAYET voice lines (ATLAS–VESAYET dialogues)", author: "gunesatakan (ElevenLabs)", license: "ElevenLabs paid plan: commercial use allowed", url: "https://elevenlabs.io" }
     ]
   },
   {

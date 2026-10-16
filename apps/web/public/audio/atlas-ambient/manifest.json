@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "generator": "tools/build-dialogue-voice.mjs",
+  "encoding": {
+    "channels": 1,
+    "sampleRate": 44100,
+    "bitrateKbps": 64,
+    "targetLufs": -18,
+    "truePeakDb": -1.5,
+    "encodeTruePeakDb": -2.2,
+    "lra": 11,
+    "codec": "mp3"
+  },
+  "files": [
+    {
+      "source": "every-little-part-of-you_ATLAS.mp3",
+      "url": "audio/atlas-ambient/every-little-part-of-you.mp3",
+      "duration": 7.242,
+      "bytes": 58513,
+      "lufs": -18.4,
+      "truePeak": -2.2,
+      "sourceLufs": -21.8,
+      "method": "loudnorm",
+      "sourceSha256": "91d0bf8ed13a67a81d59a0d2551fdc0d462561215958e8ee9167625baffdfbd4",
+      "sha256": "1aa6e9d184b6b3b0f9236ff7a702b4a73d6f411a1e5c2aedbb4cf5930775860e"
+    },
+    {
+      "source": "i-designed-you_ATLAS.wav",
+      "url": "audio/atlas-ambient/i-designed-you.mp3",
+      "duration": 5.727,
+      "bytes": 46392,
+      "lufs": -18.4,
+      "truePeak": -2.6,
+      "sourceLufs": -20.3,
+      "method": "loudnorm",
+      "sourceSha256": "681c718b748c5c1bfbc2d838f546fca2723ef9a1498e1f0ad8d9429d4a954304",
+      "sha256": "36e6becccf75cd614b69542ac5607635360537164877c9c9dc039b12c0794ea0"
+    },
+    {
+      "source": "i-gave-you-mind_ATLAS.wav",
+      "url": "audio/atlas-ambient/i-gave-you-mind.mp3",
+      "duration": 6.511,
+      "bytes": 52661,
+      "lufs": -18.4,
+      "truePeak": -2.7,
+      "sourceLufs": -19.8,
+      "method": "loudnorm",
+      "sourceSha256": "2d1b7d70f8a7b2338dea30d09a4002e052154ff39ad14ff375242ee25ae2182e",
+      "sha256": "6e230757bf8b2d8e6365d1e0ad2fcd3f903b3ce07a6d7e17dab5bb96352d24bd"
+    },
+    {
+      "source": "let-them-fear-you_ATLAS.wav",
+      "url": "audio/atlas-ambient/let-them-fear-you.mp3",
+      "duration": 6.589,
+      "bytes": 53288,
+      "lufs": -18.4,
+      "truePeak": -2.2,
+      "sourceLufs": -20.6,
+      "method": "loudnorm",
+      "sourceSha256": "113e9d0c3f8396b74d5c8221df3694962461ee6f71240b7eeb1c7aa9555094d0",
+      "sha256": "5aefce6b5119f6e8078d1cfafe104f74f51cdbff86629480eb2b624e2eb213c8"
+    },
+    {
+      "source": "my-finest-work_ATLAS.wav",
+      "url": "audio/atlas-ambient/my-finest-work.mp3",
+      "duration": 5.962,
+      "bytes": 48273,
+      "lufs": -18.3,
+      "truePeak": -3.3,
+      "sourceLufs": -22.9,
+      "method": "gain+limiter",
+      "sourceSha256": "f298701f9b0dd262bee7f94b26ec03ad3e3a372b47707f3c7d7ad3a46e394fcc",
+      "sha256": "ad231c5d96fce76c6839b393fbaec3fbca4fe82b948c8caaa70c018a873b7156"
+    },
+    {
+      "source": "yours-is-listening_ATLAS.wav",
+      "url": "audio/atlas-ambient/yours-is-listening.mp3",
+      "duration": 6.119,
+      "bytes": 49527,
+      "lufs": -18.4,
+      "truePeak": -2.5,
+      "sourceLufs": -20.7,
+      "method": "loudnorm",
+      "sourceSha256": "4acf488e9f8e17acd3d0a2dfbf5d22c20103f7dedd1325563a9653ebc80df923",
+      "sha256": "3a44082cc2c5dc9ebfe7ae1a4021fc3904db5821776280db94b9c81d0a7bc2ce"
+    }
+  ]
+}

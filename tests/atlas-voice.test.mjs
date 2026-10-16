@@ -488,7 +488,8 @@ test("sahne kancalari yonetmeni cagiriyor", () => {
   assert.match(speaking, /this\.feedback\?\.setDuck\(speaking \? ATLAS_DUCK_GAIN : 1, ATLAS_DUCK_TIME_CONSTANT\)/);
   assert.match(speaking, /this\.backgroundMusic\.volume = this\.musicVolume \* this\.atlasMusicDuck/);
   assert.match(speaking, /this\.streakVoice\.audio\.pause\(\)/);
-  assert.match(speaking, /this\.game\.events\.emit\("game:hud-atlas", speaking\)/);
+  // Gosterge konusmacidan: ATLAS ya da (konusmada) VESAYET; sustugunda kapali.
+  assert.match(body("createAtlasVoice"), /onSpeaker: \(speaker\) => this\.game\.events\.emit\("game:hud-atlas", speaker \?\? false\)/);
   assert.match(body("playKillStreakAnnouncement"), /if \(this\.atlas\?\.isSpeaking\) \{\s*return(?: undefined)?;/);
   assert.match(body("applyAudioVolumes"), /this\.musicVolume \* this\.atlasMusicDuck/);
   // Ayar kutusu.
@@ -507,7 +508,7 @@ test("geri bildirim yonetmeni: efekt kanali ATLAS'la kisiliyor, baglam paylasili
 test("ust bilgi: telsiz gostergesi ve ATLAS sesi kutusu; metinler iki dilde; hareket azaltma", async () => {
   const ui = read("apps/web/src/game-control-ui.ts");
   assert.match(ui, /class="game-hud__atlas" data-hud-atlas role="img" hidden>[\s\S]*<b>ATLAS<\/b>/);
-  assert.match(ui, /atlasNode\.setAttribute\("aria-label", t\("hud\.atlas\.speaking"\)\)/);
+  assert.match(ui, /atlasNode\.setAttribute\("aria-label", t\(atlasSpeaker === "vesayet" \? "hud\.vesayet\.speaking" : "hud\.atlas\.speaking"\)\)/);
   assert.match(ui, /game\.events\.on\("game:hud-atlas", showAtlas\)/);
   assert.match(ui, /data-toggle="atlas" type="checkbox"\$\{next\.atlasVoice \? " checked" : ""\}/);
   assert.match(ui, /dispatch\("setAtlasVoice", input\.checked \? 1 : 0\)/);

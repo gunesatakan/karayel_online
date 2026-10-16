@@ -348,6 +348,17 @@ import {
   writeAtlasEnabled,
   writeAtlasWelcomed
 } from "../atlas-voice";
+import {
+  AtlasNexusDropWatch,
+  AtlasSkillComboWatch,
+  findDueAtlasDialogues,
+  getAtlasDialogueUrls,
+  getStageDialogues,
+  isAtlasDialogueEvent,
+  readAtlasDialoguePlayed,
+  writeAtlasDialoguePlayed
+} from "../atlas-dialogue";
+import { AtlasAmbientScheduler, ATLAS_AMBIENT_LINES } from "../atlas-ambient";
 import { BLADE_TOWER_ID, BeamHitTracker, getBladeHitTier, isHitSoundFresh, resolveHitVoice, type HitVoiceId } from "../hit-sounds";
 import { getKillSoundCue } from "../sfx-samples";
 import { COIN_LIFT_RATIO, DamageNumberPool } from "../vfx/damage-numbers";
@@ -1479,6 +1490,11 @@ export class GameScene extends Phaser.Scene {
   private readonly atlasSurgeCuts = new AtlasOnceSet();
   /** ATLAS konusurken muzigin carpani (mac muziksiz; muzik donerse hazir). */
   private atlasMusicDuck = 1;
+  /** ATLAS-VESAYET konusmalarinin olay izcileri (`atlas-dialogue.ts`). */
+  private readonly atlasNexusDropWatch = new AtlasNexusDropWatch();
+  private readonly atlasComboWatch = new AtlasSkillComboWatch();
+  /** ATLAS'in ara sozleri (`atlas-ambient.ts`): kosu tohumlu plan, dalga icinde an. */
+  private readonly atlasAmbient = new AtlasAmbientScheduler();
   private audioSettingsOpen = false;
   private audioSettingsItems: Phaser.GameObjects.GameObject[] = [];
   private perfPopupOpen = false;
@@ -2182,6 +2198,9 @@ export class GameScene extends Phaser.Scene {
       this.atlasTowerWatch.reset();
       this.atlasWaveWatch.reset();
       this.atlasSurgeCuts.reset();
+      this.atlasNexusDropWatch.reset();
+      this.atlasComboWatch.reset();
+      this.atlasAmbient.reset();
       this.game.events.emit("game:hud-atlas", false);
       this.feedback?.destroy();
       this.feedback = undefined;
@@ -2668,7 +2687,10 @@ export class GameScene extends Phaser.Scene {
       audio: createAtlasWebAudio({ getContext: () => feedback?.getSharedAudioContext() }),
       getVolume: () => this.voiceVolume,
       enabled: this.atlasEnabled,
-      onSpeaking: (speaking) => this.handleAtlasSpeaking(speaking)
+      onSpeaking: (speaking) => this.handleAtlasSpeaking(speaking),
+      // Gosterge: ATLAS satirinda ve konusmanin ATLAS satirinda "ATLAS",
+      // VESAYET satirinda "VESAYET"; konusmanin bosluklarinda kapali.
+      onSpeaker: (speaker) => this.game.events.emit("game:hud-atlas", speaker ?? false)
     });
   }
 
@@ -2679,7 +2701,6 @@ export class GameScene extends Phaser.Scene {
     if (speaking && this.streakVoice && !this.streakVoice.audio.paused) {
       this.streakVoice.audio.pause();
     }
-    this.game.events.emit("game:hud-atlas", speaking);
   }
 
   /**
@@ -2697,7 +2718,14 @@ export class GameScene extends Phaser.Scene {
       this.atlasTowerWatch.reset();
       this.atlasWaveWatch.reset();
       this.atlasSurgeCuts.reset();
+      this.atlasNexusDropWatch.reset();
+      this.atlasComboWatch.reset();
       atlas.startMatch(key, readAtlasWelcomed(key));
+      // Bu asamanin konusmalari (birkac yuz KB): tetik aninda dosya hazir olsun.
+      atlas.prefetchUrls(getAtlasDialogueUrls(getStageDialogues(snapshot.stage ?? this.roomStage)));
+      // Ara sozlerin plani: tohum oda kimligi + asama (co-op'ta herkes ayni plan).
+      this.atlasAmbient.start(key, snapshot.stage ?? this.roomStage, { seed: key });
+      atlas.prefetchUrls(this.atlasAmbient.entries.map((entry) => entry.line.url));
     }
     if (!atlas.hasWelcomed) {
       atlas.welcome();
@@ -2709,12 +2737,69 @@ export class GameScene extends Phaser.Scene {
       // Ilk dalga basladi: geri kalan kategoriler arka planda.
       atlas.prefetchRest();
     }
+    // Konusmalar nexus uyarisindan once: ayni vurus konusmayi tetikliyorsa
+    // (conv-5) seviye-3 uyarisi konusmanin icinde kaliyor ve dusuyor.
+    this.observeAtlasDialogues(snapshot, key);
     atlas.nexusHealth(snapshot.team.health, snapshot.team.maxHealth);
     if (this.atlasTowerWatch.observe(snapshot.towers, this.localSessionId, (id) => id === WALL_TOWER_ID) > 0) {
       atlas.towerDestroyed();
     }
     for (const surge of snapshot.surges ?? []) {
       if (Array.isArray(surge.cut) && surge.cut.length > 0 && this.atlasSurgeCuts.first(surge.id)) atlas.praise();
+    }
+    // Ara soz en sonda: ayni snapshot'taki olaylar (ve konusmalar) once.
+    this.observeAtlasAmbient(snapshot);
+  }
+
+  /**
+   * ATLAS'in ara sozu: plan ve an `atlas-ambient.ts`'de. Hicbir sesi kesmiyor:
+   * ATLAS, konusma ya da seri anonsu caliyorsa bekliyor. Ogretici ve
+   * yaratici kosuda yok.
+   */
+  private observeAtlasAmbient(snapshot: HydratedGameSnapshot) {
+    const atlas = this.atlas;
+    if (!atlas || ATLAS_AMBIENT_LINES.length === 0) return;
+    if (snapshot.tutorial === true || this.isTutorialRun() || snapshot.creative === true || this.creativeMode) return;
+    const streakPlaying = Boolean(this.streakVoice && !this.streakVoice.audio.paused && !this.streakVoice.audio.ended);
+    const busy = atlas.isSpeaking || atlas.inDialogue || streakPlaying;
+    const line = this.atlasAmbient.due({
+      wave: snapshot.team.wave,
+      setupPhase: Boolean(snapshot.setupPhase),
+      waveEnemyCount: snapshot.team.waveEnemyCount,
+      enemiesLeft: snapshot.team.enemiesLeft
+    }, busy);
+    if (line && atlas.sayAmbient(line.url)) this.atlasAmbient.markPlayed(line.id, snapshot.team.wave);
+  }
+
+  /**
+   * ATLAS-VESAYET konusmalari (`atlas-dialogue.ts`): tablo, tetikler ve kosu
+   * basina bir kez kaydi orada; burada snapshot olgulari. Izciler her
+   * snapshot'ta ilerliyor (ogretici/yaratici kosuda da; tetik orada reddediliyor).
+   * Pencere tetigi (dalga ortasi) yalnizca basladiginda kaydediliyor ve
+   * baslayamazsa sonraki snapshot'ta yeniden deneniyor; olay tetigi (kombo,
+   * nexus) o an harcaniyor. Calan konusma varken yenisi siraya giriyor.
+   */
+  private observeAtlasDialogues(snapshot: HydratedGameSnapshot, runKey: string) {
+    const atlas = this.atlas;
+    if (!atlas) return;
+    const local = snapshot.players.find((player) => player.id === this.localSessionId);
+    const skillCombo = local ? this.atlasComboWatch.observe(local, snapshot.serverTime) : false;
+    const nexusDrop = this.atlasNexusDropWatch.observe(snapshot.team.health, snapshot.team.maxHealth);
+    const due = findDueAtlasDialogues({
+      stage: snapshot.stage ?? this.roomStage,
+      wave: snapshot.team.wave,
+      setupPhase: Boolean(snapshot.setupPhase),
+      tutorial: snapshot.tutorial === true || this.isTutorialRun(),
+      creative: snapshot.creative === true || this.creativeMode,
+      over: Boolean(snapshot.result) || this.matchResultShown,
+      waveEnemyCount: snapshot.team.waveEnemyCount,
+      enemiesLeft: snapshot.team.enemiesLeft,
+      skillCombo,
+      nexusDrop
+    }, (id) => readAtlasDialoguePlayed(runKey, id));
+    for (const dialogue of due) {
+      const started = atlas.playDialogue(dialogue, { queue: true });
+      if (started || isAtlasDialogueEvent(dialogue)) writeAtlasDialoguePlayed(runKey, dialogue.id);
     }
   }
 
@@ -4501,6 +4586,8 @@ export class GameScene extends Phaser.Scene {
   private playAlertSound(kind: "breach" | "flow") {
     // Tonlar geri bildirim yonetmeninde sentezleniyor; efekt sesleriyle ayni
     // tek baglami kullaniyor ama seviyesi seslendirme kanalindan geliyor.
+    // ATLAS-VESAYET konusmasi surerken uyari tonu yok (konusma her sesi susturuyor).
+    if (this.atlas?.inDialogue) return;
     this.feedback?.playAlert(kind, this.voiceVolume);
   }
 

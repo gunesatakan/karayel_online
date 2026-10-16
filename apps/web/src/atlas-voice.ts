@@ -16,8 +16,16 @@
  * - Kategori icinde torba: ayni dosya ust uste gelmiyor.
  * - Rastgelelik istemcide (ses kozmetik, her istemci kendi karar veriyor).
  * - Herkes ayni Turkce satirlari duyuyor; arayuz dili fark etmiyor.
+ * - Senaryolu konusma (ATLAS ile VESAYET, `atlas-dialogue.ts`,
+ *   `playDialogue`): ilk satirdan son satirin bitisine kadar (2 sn'lik
+ *   bosluklar dahil) yonetmen "konusuyor"; baska hicbir ATLAS satiri
+ *   calmiyor (oncelikliler dahil: kuyruga girmiyor, dusuyor). Calan satir
+ *   solarak kesiliyor. Yalnizca yenilgi/zafer konusmayi kesiyor. Konusma
+ *   surerken gelen ikinci konusma (olay tetikli) siraya giriyor ve ilki
+ *   bitince 2 sn sonra basliyor.
  */
 import { assetUrl } from "./asset-url";
+import { ATLAS_DIALOGUE_GAP_MS, type AtlasDialogueLine, type AtlasDialogueSpeaker } from "./atlas-dialogue";
 
 export type AtlasCategory =
   | "welcome"
@@ -138,10 +146,32 @@ export type AtlasVoiceOptions = {
   getVolume: () => number;
   /** ATLAS konusmaya basladi / sustu: kisma, gosterge, seri anonsu kapisi. */
   onSpeaking?: (speaking: boolean) => void;
+  /**
+   * Su an sesi duyulan konusmaci (gosterge): ATLAS satiri "atlas", konusmada
+   * satirin sahibi; bosluklarda ve sessizlikte `undefined`.
+   */
+  onSpeaker?: (speaker: AtlasDialogueSpeaker | undefined) => void;
+  /** Konusma bosluklari icin zamanlayici; varsayilan `setTimeout`. Testler sahte saat veriyor. */
+  setTimer?: (callback: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
   enabled?: boolean;
 };
 
-type Current = { category: AtlasCategory; playback: AtlasPlayback; url: string };
+/**
+ * Calan satirin turu: kategori ya da ara soz ("ambient", `atlas-ambient.ts`).
+ * Ara soz en dusuk oncelik: hicbir seyi kesmiyor, her kategori onu kesiyor.
+ */
+export type AtlasLineKind = AtlasCategory | "ambient";
+
+const priorityOf = (kind: AtlasLineKind) => (kind === "ambient" ? -1 : ATLAS_PRIORITY[kind]);
+
+type Current = { category: AtlasLineKind; playback: AtlasPlayback; url: string };
+
+/** `playDialogue`in istedigi: kimlik ve sirali satirlar (`AtlasDialogue` uyuyor). */
+export type AtlasDialogueScript = { id: string; lines: readonly AtlasDialogueLine[] };
+
+type DialogueLinePlayback = { playback: AtlasPlayback; index: number };
+type DialogueState = { id: string; lines: readonly AtlasDialogueLine[]; line?: DialogueLinePlayback; timer?: unknown };
 
 /**
  * Torba: kategori basina karistirilmis sira; bitince yeniden karistiriliyor
@@ -179,6 +209,13 @@ export class AtlasVoice {
   private readonly random: () => number;
   private readonly getVolume: () => number;
   private readonly onSpeaking?: (speaking: boolean) => void;
+  private readonly onSpeaker?: (speaker: AtlasDialogueSpeaker | undefined) => void;
+  private readonly setTimer: (callback: () => void, ms: number) => unknown;
+  private readonly clearTimer: (handle: unknown) => void;
+  private dialogue?: DialogueState;
+  /** Calan konusma bitince baslayacak konusma (en fazla bir). */
+  private queuedDialogue?: AtlasDialogueScript;
+  private speaker?: AtlasDialogueSpeaker;
   private readonly bags = new Map<AtlasCategory, AtlasLineBag>();
   private enabled: boolean;
   private current?: Current;
@@ -204,6 +241,9 @@ export class AtlasVoice {
     this.random = options.random ?? Math.random;
     this.getVolume = options.getVolume;
     this.onSpeaking = options.onSpeaking;
+    this.onSpeaker = options.onSpeaker;
+    this.setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
+    this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
     this.enabled = options.enabled ?? true;
     this.audio.onReady(() => this.unlocked());
   }
@@ -212,7 +252,26 @@ export class AtlasVoice {
     return this.speaking;
   }
 
-  get playingCategory(): AtlasCategory | undefined {
+  /** Senaryolu konusma suruyor (ilk satirdan son satirin bitisine kadar). */
+  get inDialogue() {
+    return this.dialogue !== undefined;
+  }
+
+  get dialogueId(): string | undefined {
+    return this.dialogue?.id;
+  }
+
+  /** Siradaki konusma (calan bitince). */
+  get queuedDialogueId(): string | undefined {
+    return this.queuedDialogue?.id;
+  }
+
+  /** Su an sesi duyulan konusmaci (gosterge). */
+  get currentSpeaker(): AtlasDialogueSpeaker | undefined {
+    return this.speaker;
+  }
+
+  get playingCategory(): AtlasLineKind | undefined {
     return this.current?.category;
   }
 
@@ -229,6 +288,7 @@ export class AtlasVoice {
   startMatch(key: string, alreadyWelcomed = false) {
     if (this.matchKey === key) return;
     this.matchKey = key;
+    this.abortDialogue(0);
     this.stopCurrent(0);
     this.queuedFinal = undefined;
     this.welcomed = alreadyWelcomed;
@@ -250,6 +310,16 @@ export class AtlasVoice {
     this.prefetch(["wave-clear", "tower-destroyed", "praising", "death", "ending"]);
   }
 
+  /** Konusma dosyalarini onceden indir (asamanin konusmalari, macin basinda). */
+  prefetchUrls(urls: readonly string[]) {
+    if (!this.enabled || urls.length === 0) return;
+    try {
+      this.audio.prefetch(urls);
+    } catch {
+      // Indirme kozmetik.
+    }
+  }
+
   private prefetch(categories: readonly AtlasCategory[]) {
     if (!this.enabled) return;
     for (const category of categories) {
@@ -266,12 +336,20 @@ export class AtlasVoice {
     if (!on) {
       this.queuedFinal = undefined;
       this.pendingWelcomeAt = undefined;
+      this.abortDialogue(ATLAS_RULES.interruptFadeMs);
       this.stopCurrent(ATLAS_RULES.interruptFadeMs);
     }
   }
 
   /** Kaydirici degisti: calan satir yeni seviyeye. Sifirda susuyor. */
   setVolume(volume: number) {
+    if (this.dialogue) {
+      if (volume <= 0) {
+        this.abortDialogue(ATLAS_RULES.interruptFadeMs);
+      } else {
+        this.dialogue.line?.playback.setVolume(volume * ATLAS_VOICE_GAIN);
+      }
+    }
     if (!this.current) return;
     if (volume <= 0) {
       this.stopCurrent(ATLAS_RULES.interruptFadeMs);
@@ -369,7 +447,121 @@ export class AtlasVoice {
   destroy() {
     this.destroyed = true;
     this.queuedFinal = undefined;
+    this.abortDialogue(0);
     this.stopCurrent(0);
+  }
+
+  /**
+   * Senaryolu konusma: satir, 2 sn sessizlik, satir... Baslarken calan ATLAS
+   * satiri ~120 ms'de soluyor; konusma bitene kadar `say` (yenilgi/zafer
+   * haric) hicbir satir baslatmiyor, gelen olaylar dusuyor. Baska bir konusma
+   * suruyorsa `queue` ile siraya giriyor (en fazla bir; ilki bitince 2 sn
+   * sonra), yoksa reddediliyor. ATLAS kapali, seslendirme sifir, kilit
+   * kapali ya da mac bitmisse baslamiyor (`false`; cagiran sonra yeniden
+   * deneyebilir). Siraya girmek de `true`.
+   */
+  playDialogue(script: AtlasDialogueScript, options: { queue?: boolean } = {}): boolean {
+    if (!this.enabled || this.over || this.destroyed) return false;
+    if (script.lines.length === 0 || this.getVolume() <= 0 || !this.audio.isReady()) return false;
+    if (this.dialogue) {
+      if (!options.queue || this.queuedDialogue || this.dialogue.id === script.id) return false;
+      this.queuedDialogue = script;
+      return true;
+    }
+    const previous = this.current;
+    this.current = undefined;
+    this.queuedFinal = undefined;
+    this.pendingWelcomeAt = undefined;
+    // Once konusma: kesilen satirin `onEnded`i konusmayi gorup kismayi kapatmasin.
+    this.dialogue = { id: script.id, lines: script.lines };
+    this.setSpeaking(true);
+    this.setSpeaker(undefined);
+    previous?.playback.stop(ATLAS_RULES.interruptFadeMs);
+    this.playDialogueLine(0);
+    return true;
+  }
+
+  private playDialogueLine(index: number) {
+    const state = this.dialogue;
+    if (!state) return;
+    if (index >= state.lines.length) {
+      this.finishDialogue();
+      return;
+    }
+    const line = state.lines[index];
+    let entry: DialogueLinePlayback | undefined;
+    let endedEarly = false;
+    let playback: AtlasPlayback | undefined;
+    try {
+      playback = this.audio.play(line.url, this.getVolume() * ATLAS_VOICE_GAIN, () => {
+        if (entry) this.dialogueLineEnded(entry);
+        else endedEarly = true;
+      });
+    } catch {
+      playback = undefined;
+    }
+    if (!playback || endedEarly) {
+      // Satir calamadi: sira bozulmasin, bosluktan sonra siradaki.
+      this.scheduleDialogueLine(index + 1);
+      return;
+    }
+    entry = { playback, index };
+    state.line = entry;
+    this.setSpeaker(line.speaker);
+  }
+
+  private dialogueLineEnded(entry: DialogueLinePlayback) {
+    const state = this.dialogue;
+    if (!state || state.line !== entry) return;
+    state.line = undefined;
+    this.setSpeaker(undefined);
+    this.scheduleDialogueLine(entry.index + 1);
+  }
+
+  private scheduleDialogueLine(index: number) {
+    const state = this.dialogue;
+    if (!state) return;
+    if (index >= state.lines.length) {
+      this.finishDialogue();
+      return;
+    }
+    state.timer = this.setTimer(() => {
+      if (this.dialogue !== state) return;
+      state.timer = undefined;
+      this.playDialogueLine(index);
+    }, ATLAS_DIALOGUE_GAP_MS);
+  }
+
+  private finishDialogue() {
+    const state = this.dialogue;
+    if (!state) return;
+    if (state.timer !== undefined) this.clearTimer(state.timer);
+    const next = this.queuedDialogue;
+    this.queuedDialogue = undefined;
+    if (next && this.enabled && !this.over && !this.destroyed && this.getVolume() > 0) {
+      // Siradaki konusma: ayni kisma suruyor, 2 sn sessizlikten sonra ilk satiri.
+      this.dialogue = { id: next.id, lines: next.lines };
+      this.setSpeaker(undefined);
+      this.scheduleDialogueLine(0);
+      return;
+    }
+    this.dialogue = undefined;
+    this.setSpeaker(undefined);
+    if (!this.current) this.setSpeaking(false);
+  }
+
+  /** Konusmayi (ve siradakini) kes: mac sonu, ATLAS kapandi, kaydirici sifir, yeni mac. */
+  private abortDialogue(fadeMs: number, keepSpeaking = false) {
+    this.queuedDialogue = undefined;
+    const state = this.dialogue;
+    if (!state) return;
+    if (state.timer !== undefined) this.clearTimer(state.timer);
+    this.dialogue = undefined;
+    const line = state.line;
+    state.line = undefined;
+    line?.playback.stop(fadeMs);
+    this.setSpeaker(undefined);
+    if (!keepSpeaking && !this.current) this.setSpeaking(false);
   }
 
   /**
@@ -381,10 +573,18 @@ export class AtlasVoice {
   say(category: AtlasCategory): boolean {
     if (!this.enabled || this.over || this.destroyed) return false;
     if (this.getVolume() <= 0) return false;
+    if (this.dialogue) {
+      // Konusma surerken yalnizca yenilgi/zafer: konusma kesiliyor, son satir caliyor.
+      if (category !== "death" && category !== "ending") return false;
+      this.abortDialogue(ATLAS_RULES.interruptFadeMs, true);
+      if (this.start(category)) return true;
+      if (!this.current) this.setSpeaking(false);
+      return false;
+    }
     const current = this.current;
     if (current) {
       const final = category === "death" || category === "ending";
-      if (ATLAS_PRIORITY[category] > ATLAS_PRIORITY[current.category]) {
+      if (ATLAS_PRIORITY[category] > priorityOf(current.category)) {
         // Once yenisi: kesilen satirin `onEnded`i yeni satiri gorup konusmayi
         // (kisma, gosterge) kapatmasin. Yenisi baslayamazsa eskisi suruyor.
         if (!this.start(category)) return false;
@@ -400,6 +600,17 @@ export class AtlasVoice {
     return this.start(category);
   }
 
+  /**
+   * ATLAS'in ara sozu (`atlas-ambient.ts`): en dusuk oncelik. Calan bir satir,
+   * konusma, mac sonu varsa ya da ses calamiyorsa baslamiyor (`false`;
+   * zamanlayici sonra yeniden deniyor). Calarken her olay onu kesebiliyor.
+   */
+  sayAmbient(url: string): boolean {
+    if (!this.enabled || this.over || this.destroyed || this.dialogue || this.current || this.queuedFinal) return false;
+    if (this.getVolume() <= 0 || !this.audio.isReady()) return false;
+    return this.startUrl("ambient", url);
+  }
+
   private start(category: AtlasCategory): boolean {
     const urls = getAtlasLineUrls(category);
     let bag = this.bags.get(category);
@@ -407,7 +618,10 @@ export class AtlasVoice {
       bag = new AtlasLineBag(urls.length, this.random);
       this.bags.set(category, bag);
     }
-    const url = urls[bag.next()];
+    return this.startUrl(category, urls[bag.next()]);
+  }
+
+  private startUrl(category: AtlasLineKind, url: string): boolean {
     let playback: AtlasPlayback | undefined;
     let entry: Current | undefined;
     // Arka uc `onEnded`i daha `play` donmeden cagirirsa satir hic baslamamis sayiliyor.
@@ -424,19 +638,21 @@ export class AtlasVoice {
     entry = { category, playback, url };
     this.current = entry;
     this.setSpeaking(true);
+    this.setSpeaker("atlas");
     return true;
   }
 
   private ended(entry: Current | undefined) {
     if (!entry || this.current !== entry) {
-      // Kesilen ya da hic baslamayan satir: konusma suruyorsa dokunma.
-      if (!this.current && !this.queuedFinal) this.setSpeaking(false);
+      // Kesilen ya da hic baslamayan satir: konusma (ya da senaryolu konusma) suruyorsa dokunma.
+      if (!this.current && !this.queuedFinal && !this.dialogue) this.setSpeaking(false);
       return;
     }
     this.current = undefined;
     const final = this.queuedFinal;
     this.queuedFinal = undefined;
     if (final && this.enabled && !this.destroyed && this.getVolume() > 0 && this.start(final)) return;
+    if (this.dialogue) return;
     this.setSpeaking(false);
   }
 
@@ -444,16 +660,28 @@ export class AtlasVoice {
     const current = this.current;
     this.current = undefined;
     current?.playback.stop(fadeMs);
+    if (this.dialogue) return;
     this.setSpeaking(false);
   }
 
   private setSpeaking(speaking: boolean) {
+    if (!speaking) this.setSpeaker(undefined);
     if (this.speaking === speaking) return;
     this.speaking = speaking;
     try {
       this.onSpeaking?.(speaking);
     } catch {
       // Gosterge ve kisma kozmetik.
+    }
+  }
+
+  private setSpeaker(speaker: AtlasDialogueSpeaker | undefined) {
+    if (this.speaker === speaker) return;
+    this.speaker = speaker;
+    try {
+      this.onSpeaker?.(speaker);
+    } catch {
+      // Gosterge kozmetik.
     }
   }
 }
