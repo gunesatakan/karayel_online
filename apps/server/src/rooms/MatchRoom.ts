@@ -20937,7 +20937,7 @@ export class MatchRoom extends Room<MatchState> {
       tower.focusStacks = desiredStacks;
     }
 
-    if (!hasUcubePerk(tower, "endurance") && tower.activeMs >= 20000) {
+    if (!hasUcubePerk(tower, "endurance") && tower.activeMs >= getUcubeForcedShutdownMs(tower)) {
       tower.overheatMs = 10000;
       tower.activeMs = 0;
       tower.focusStacks = 0;
@@ -22569,6 +22569,21 @@ function hasUcubePerk(tower: TowerModel, perkId: UcubePerkId) {
 const UCUBE_DEFAULT_STACK_LIMIT = 10;
 function getUcubeStackLimit(tower: TowerModel) {
   return hasUcubePerk(tower, "stacks-20") ? 20 : hasUcubePerk(tower, "stacks-15") ? 15 : UCUBE_DEFAULT_STACK_LIMIT;
+}
+
+/**
+ * Zorunlu kapanmanin geldigi aktif sure (ms).
+ *
+ * Yigin her aktif saniye bir artiyor ve kapanma eskiden hep 20. saniyedeydi:
+ * Derin Sarj'in 20 yigin tavani tam kapanma anina denk geliyor, 20. yigin hic
+ * kullanilamiyordu. Kapanma artik tavana ulastiktan en az
+ * `UCUBE_FULL_STACK_HOLD_MS` sonra: 10 ve 15 tavaninda yine 20 sn, 20
+ * tavaninda 25 sn (Genis Sarj ile ayni, tavanda 5 sn).
+ */
+const UCUBE_FORCED_SHUTDOWN_MS = 20000;
+const UCUBE_FULL_STACK_HOLD_MS = 5000;
+function getUcubeForcedShutdownMs(tower: TowerModel) {
+  return Math.max(UCUBE_FORCED_SHUTDOWN_MS, getUcubeStackLimit(tower) * 1000 + UCUBE_FULL_STACK_HOLD_MS);
 }
 
 function getUcubeStackIntervalMultiplier(stacks: number) {

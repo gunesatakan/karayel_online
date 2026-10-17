@@ -87,7 +87,7 @@ export const UCUBE_PERK_TIERS: UcubePerkTier[] = [
     level: 10,
     options: [
       { id: "damage-double", name: "Asiri Yuk", description: "Hasar iki katina cikar." },
-      { id: "stacks-20", name: "Derin Sarj", description: "Atis hizi yigin tavani 20'ye cikar." }
+      { id: "stacks-20", name: "Derin Sarj", description: "Atis hizi yigin tavani 20'ye cikar; zorunlu kapanma 25. saniyeye kayar, tavanda 5 saniye ates eder." }
     ]
   }
 ];

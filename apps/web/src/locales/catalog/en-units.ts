@@ -309,7 +309,7 @@ export const enUcubePerks: Readonly<Record<string, { name: string; description: 
   "range-hull": { name: "Wide Hull", description: "Range doubles, max health doubles and health refills." },
   endurance: { name: "Composure", description: "Removes the 20-second forced shutdown and gains an extra damage multiplier at high levels." },
   "damage-double": { name: "Overload", description: "Damage doubles." },
-  "stacks-20": { name: "Deep Charge", description: "Fire rate stack cap rises to 20." }
+  "stacks-20": { name: "Deep Charge", description: "Fire rate stack cap rises to 20; the forced shutdown moves to 25 s, so it fires 5 s at the cap." }
 };
 
 export const enStages: Readonly<Record<number, { name: string; raceName: string; description: string }>> = {

@@ -239,6 +239,25 @@ test("Derin Sarj: yigin tavani 20; 15'lik tavanla birlikte de 20", () => {
   assert.equal(plain.tower.focusStacks, 10);
 });
 
+// Eskiden zorunlu kapanma hep 20. saniyedeydi ve 20. yigin tam o an geliyordu:
+// Sogukkanlilik olmadan Derin Sarj 19'da kaliyordu. Kapanma artik tavandan
+// 5 sn sonra (20 tavaninda 25 sn); 15 tavaninda yine 20 sn.
+test("Derin Sarj Sogukkanlilik olmadan da 20 yigine ulasip tavanda 5 sn ates ediyor", () => {
+  const deep = ucube(10, { 8: "range-hull", 10: "stacks-20" });
+  runRhythm(deep.room, deep.tower, 20.5);
+  assert.equal(deep.tower.focusStacks, 20, `20. saniyede yigin ${deep.tower.focusStacks}`);
+  assert.equal(deep.tower.overheatMs ?? 0, 0, "20. saniyede kapandi");
+  runRhythm(deep.room, deep.tower, 4);
+  assert.equal(deep.tower.focusStacks, 20, "tavanda kalmadi");
+  runRhythm(deep.room, deep.tower, 1);
+  assert.ok((deep.tower.overheatMs ?? 0) > 0, "25. saniyede zorunlu kapanma gelmedi");
+  assert.equal(deep.tower.focusStacks, 0);
+
+  const wide = ucube(10, { 6: "stacks-15", 8: "range-hull", 10: "damage-double" });
+  runRhythm(wide.room, wide.tower, 20.05);
+  assert.ok((wide.tower.overheatMs ?? 0) > 0, "15 tavaninda kapanma 20. saniyede kalmali");
+});
+
 /* ------------------------------------------------------------------ */
 /* Istemci                                                              */
 /* ------------------------------------------------------------------ */
