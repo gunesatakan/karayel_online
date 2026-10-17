@@ -576,14 +576,6 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       value = `${t("sheet.fx.mark", { v: formatPercent(magnitude) })}${duration}`;
     } else if (kind === "armor" || kind === "armorAura") {
       value = t("sheet.fx.armor", { v: formatSmart(magnitude) });
-    } else if (kind.startsWith("arc:")) {
-      // Saray Arsivi: alandaki kule sayisi ve seviyenin etkileri.
-      value = kind === "arc:cover" ? t("sheet.fx.arc.cover", { n: magnitude })
-        : kind === "arc:cooling" || kind === "arc:range" ? `+${formatPercent(magnitude)}`
-        : kind === "arc:burn" ? `+${t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs ?? 0), 1) })}`
-        : `+${formatNumber(magnitude, 0)}`;
-      effectRows.push({ key: `fx:${kind}`, label, value, detail: [] });
-      continue;
     } else {
       value = durationMs ? t("sheet.unit.seconds", { v: formatNumber(realSeconds(durationMs), 1) }) : t("sheet.fx.onHit");
     }
@@ -620,8 +612,6 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     const heatParts = [
       stats?.hs !== undefined ? t("sheet.heat.perShot", { v: formatSmart(stats.hs) }) : undefined,
       stats?.hc !== undefined ? t("sheet.heat.cooling", { v: formatSmart(realRate(stats.hc)) }) : undefined,
-      // Sogumanin kaynaklari (Saray Arsivi aurasi): "Saray Arşivi +%40".
-      ...(stats?.hcs ?? []).map(([source, add]) => `${sourceLabel(source)} +${formatPercent(add)}`),
       stats?.hl !== undefined && stats.hl < 100 ? t("sheet.heat.lock", { v: stats.hl }) : undefined
     ].filter(Boolean);
     bars.push({
