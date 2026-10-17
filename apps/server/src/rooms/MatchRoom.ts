@@ -8062,7 +8062,12 @@ export class MatchRoom extends Room<MatchState> {
       return;
     }
 
-    const pushedDistance = getClosestPathDistance(path, enemy.x + pushX, enemy.y + pushY);
+    // Yer dusmani akis alaniyla yuruyor; konumu ilerleme sayacindan okunmuyor.
+    // Eskiden yalnizca sayac geri aliniyordu ve dusman yerinde kaliyordu
+    // (Ucube'nin Geri Itme'sindeki hatanin aynisi). Simdi gercekten itiliyor;
+    // yapiya, harita disina ya da Metal Kalkan'in obur yanina degil.
+    if (this.tryDisplaceEnemy(enemy, pushX, pushY) <= 0) return;
+    const pushedDistance = getClosestPathDistance(path, enemy.x, enemy.y);
     enemy.pathDistance = this.clamp(pushedDistance, 0, path?.totalLength ?? pushedDistance);
   }
 
@@ -22072,22 +22077,34 @@ export class MatchRoom extends Room<MatchState> {
     const length = Math.hypot(dx, dy);
     if (length < 0.001) return;
     const distance = this.scaleWorldDistance(UCUBE_PUSHBACK_DISTANCE);
+    const share = this.tryDisplaceEnemy(target, (dx / length) * distance, (dy / length) * distance);
+    if (share > 0) target.pathDistance = Math.max(0, target.pathDistance - distance * share);
+  }
+
+  /**
+   * Dusmani (dx, dy) kadar guvenle iter; uygulanan payi doner (1, 0,5 ya da 0).
+   *
+   * Hedef nokta harita disina, yer dusmani icin bir yapinin karesine ya da
+   * Metal Kalkan'in obur yanina dusuyorsa yarim mesafe deneniyor; o da
+   * olmuyorsa itme yok. Ucube'nin Geri Itme'si ve Kin dalgasi paylasiyor.
+   */
+  private tryDisplaceEnemy(enemy: EnemyModel, dx: number, dy: number) {
     const bounds = this.getActiveWorldBounds();
-    const from = worldToGrid(target.x, target.y, this.activeMap);
+    const from = worldToGrid(enemy.x, enemy.y, this.activeMap);
     for (const share of [1, 0.5]) {
-      const x = target.x + (dx / length) * distance * share;
-      const y = target.y + (dy / length) * distance * share;
+      const x = enemy.x + dx * share;
+      const y = enemy.y + dy * share;
       if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) continue;
-      if (target.movementKind !== "air") {
+      if (enemy.movementKind !== "air") {
         const to = worldToGrid(x, y, this.activeMap);
         if ((to.col !== from.col || to.row !== from.row) && !this.isStructurePassable(from, to.col, to.row)) continue;
-        if (this.metalShields.length > 0 && this.isShieldBlockingSegment(target.x, target.y, x, y)) continue;
+        if (this.metalShields.length > 0 && this.isShieldBlockingSegment(enemy.x, enemy.y, x, y)) continue;
       }
-      target.x = x;
-      target.y = y;
-      target.pathDistance = Math.max(0, target.pathDistance - distance * share);
-      return;
+      enemy.x = x;
+      enemy.y = y;
+      return share;
     }
+    return 0;
   }
 
   private prepareOnurGamblerShot(tower: TowerModel) {
