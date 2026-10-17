@@ -665,8 +665,9 @@ test("İzolasyon ihlal işareti sunucunun kuralıyla aynı: kenar ve 2x2 yapı y
     { id: "iso", definitionId: "warrior-3", ...center, level: 5, auraActive: false },
     // Gercek komsu: kosegendeki kare.
     { id: "near", definitionId: "warrior-1", ...cell(6, 6), level: 1 },
-    // 2x2 yapi: merkezi kare kosesinde, bir kare otede (merkez mesafesi 1.5 kare).
-    { id: "big", definitionId: "zeynep-7", x: center.x + size * 1.5, y: center.y + size * 1.5, level: 1 },
+    // 2x2 yapi: merkezi kare kosesinde; kareleri (7..8, 6..7), arada bir bos
+    // sutun. Komsulugu kapladigi karelerden olculuyor, merkezden degil.
+    { id: "big", definitionId: "zeynep-7", x: center.x + size * 2.5, y: center.y + size * 1.5, level: 1 },
     // Kenar yapisi: dikey kenarda, bir kare otede (merkez mesafesi 1.5 kare).
     { id: "edge", definitionId: "zeynep-8", x: center.x + size * 1.5, y: center.y, level: 1 },
     // Duvar sayilmiyor.

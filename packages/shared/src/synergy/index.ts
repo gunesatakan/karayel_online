@@ -64,27 +64,47 @@ export function receivesAtakanIsolationBonus(structure: Pick<SynergyStructure, "
     && structure.definition.id !== "warrior-2";
 }
 
+type FootprintBox = { col0: number; col1: number; row0: number; row1: number };
+
+/**
+ * Yapinin kapladigi kareler (dikdortgen). 2x2 yapinin (Ucube, Saray Arsivi)
+ * merkezi dort karesinin ortak kosesinde; `worldToGrid` orada sag alt kareyi
+ * veriyor. Eskiden komsuluk yalnizca o kareden olculuyordu: 2x2 kulenin sol
+ * ya da ust yanina kurulan kule yalnizligi bozmuyordu.
+ */
+function getSynergyFootprintBox(structure: { x: number; y: number; definition?: Pick<TowerDefinition, "engine"> }, map: SynergyMap): FootprintBox {
+  const cell = worldToGrid(structure.x, structure.y, map);
+  const span = Math.max(1, Math.floor(structure.definition?.engine?.placement?.footprintSpan ?? 1));
+  return { col0: cell.col - (span - 1), col1: cell.col, row0: cell.row - (span - 1), row1: cell.row };
+}
+
+/** Iki yapinin kareleri arasinda bir kareden fazla bosluk yok (kosegen dahil). */
+function areFootprintsTouching(a: FootprintBox, b: FootprintBox) {
+  const colGap = Math.max(0, b.col0 - a.col1, a.col0 - b.col1);
+  const rowGap = Math.max(0, b.row0 - a.row1, a.row0 - b.row1);
+  return colGap <= 1 && rowGap <= 1;
+}
+
 /**
  * Kulenin yalnizligini bozan komsular.
  *
- * Bir kare cevresinde (kosegenler dahil) duran, kule sayilan her yapi --
+ * Kapladigi karelerin bir kare cevresinde (kosegenler dahil) duran, kule sayilan her yapi --
  * sahibi kim olursa olsun; reaktor ve fabrika da. Duvar sayilmaz: duvar bir
  * kule degil, bir cizgi. Sayilsaydi Izolasyon Kulesi'nin onune cekilen bir
  * duvar hatti kulenin kendi yetenegini kapatirdi.
  */
 export function findIsolationBlockers<T extends Pick<SynergyStructure, "id" | "x" | "y" | "definition">>(
-  structure: Pick<SynergyStructure, "id" | "x" | "y">,
+  structure: Pick<SynergyStructure, "id" | "x" | "y"> & { definition?: SynergyStructure["definition"] },
   structures: Iterable<T>,
   map: SynergyMap
 ): T[] {
-  const cell = worldToGrid(structure.x, structure.y, map);
+  const box = getSynergyFootprintBox(structure, map);
   const blockers: T[] = [];
   for (const other of structures) {
     if (other.id === structure.id || !countsAsTower(other.definition)) {
       continue;
     }
-    const otherCell = worldToGrid(other.x, other.y, map);
-    if (Math.abs(otherCell.col - cell.col) <= 1 && Math.abs(otherCell.row - cell.row) <= 1) {
+    if (areFootprintsTouching(box, getSynergyFootprintBox(other, map))) {
       blockers.push(other);
     }
   }
@@ -98,17 +118,16 @@ export function findIsolationBlockers<T extends Pick<SynergyStructure, "id" | "x
  * her atis araliginda soruyor, liste kurmaya gerek yok.
  */
 export function isStructureIsolated(
-  structure: Pick<SynergyStructure, "id" | "x" | "y">,
+  structure: Pick<SynergyStructure, "id" | "x" | "y"> & { definition?: SynergyStructure["definition"] },
   structures: Iterable<Pick<SynergyStructure, "id" | "x" | "y" | "definition">>,
   map: SynergyMap
 ) {
-  const cell = worldToGrid(structure.x, structure.y, map);
+  const box = getSynergyFootprintBox(structure, map);
   for (const other of structures) {
     if (other.id === structure.id || !countsAsTower(other.definition)) {
       continue;
     }
-    const otherCell = worldToGrid(other.x, other.y, map);
-    if (Math.abs(otherCell.col - cell.col) <= 1 && Math.abs(otherCell.row - cell.row) <= 1) {
+    if (areFootprintsTouching(box, getSynergyFootprintBox(other, map))) {
       return false;
     }
   }

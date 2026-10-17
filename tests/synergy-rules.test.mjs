@@ -305,7 +305,9 @@ test("dizilim carpanlari eski sayilarla ayni", () => {
 });
 
 test("rastgele yerlesimlerde paylasilan kural eskisiyle ayni", () => {
-  const ids = ["zeynep-1", "zeynep-2", "zeynep-3", "zeynep-6", "zeynep-7", "zeynep-9", "warrior-1", "warrior-2", "warrior-3", "warrior-8", "repair-depot-1"];
+  // 2x2 yapilar (Saray Arsivi) disarida: eski kural yalnizligi tek kareden
+  // olcuyordu ve 2x2'de yanlisti; dogrusu asagidaki "2x2 kule" testinde.
+  const ids = ["zeynep-1", "zeynep-2", "zeynep-3", "zeynep-6", "zeynep-9", "warrior-1", "warrior-2", "warrior-3", "warrior-8", "repair-depot-1"];
   let seed = 12345;
   const random = () => {
     seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -462,3 +464,26 @@ function eskiDizilimOda(towers, size) {
   for (const [id, entry] of eskiDizilim(towers, size)) result.set(id, [entry.size, entry.level]);
   return result;
 }
+
+/** 2x2 yapi: merkezi dort karesinin ortak kosesinde; kareler (col-1..col, row-1..row). */
+function iriYapi(definitionId, col, row, options) {
+  const tower = yapi(definitionId, col, row, options);
+  tower.x -= gridSize / 2;
+  tower.y -= gridSize / 2;
+  return tower;
+}
+
+test("2x2 kule: dort karesinin her yanindaki komsu yalnizligi bozuyor", () => {
+  // Ucube (warrior-6) 4..5 x 6..7 karelerinde.
+  const ucube = iriYapi("warrior-6", 5, 7);
+  assert.equal(isStructureIsolated(ucube, [ucube], map), true);
+  for (const [col, row] of [[3, 6], [3, 8], [4, 5], [6, 5], [6, 8], [5, 8], [6, 6]]) {
+    const komsu = yapi("warrior-1", col, row);
+    assert.equal(isStructureIsolated(ucube, [ucube, komsu], map), false, `${col},${row} komsusu yalnizligi bozmadi`);
+    assert.equal(isStructureIsolated(komsu, [ucube, komsu], map), false, `${col},${row}: Ucube komsuyu bozmadi`);
+  }
+  for (const [col, row] of [[2, 6], [7, 7], [4, 4], [5, 9]]) {
+    const uzak = yapi("warrior-1", col, row);
+    assert.equal(isStructureIsolated(ucube, [ucube, uzak], map), true, `${col},${row} bir kare otede ama yalnizligi bozdu`);
+  }
+});
