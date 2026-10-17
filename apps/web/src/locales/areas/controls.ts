@@ -125,6 +125,12 @@ export const trControls = {
   "controls.tower.priorityNormal": "Normal",
   "controls.tower.priorityLow": "Düşük",
   "controls.tower.priority": "Sevkiyat önceliği",
+  // Cephaneligin uretim secicisi (panelin en ustu). Guc kristali hammaddenin
+  // adi; ondan uretilen mühimmat "Güç çekirdeği".
+  "controls.tower.production": "Üretilecek mühimmat",
+  "controls.tower.production.bullet": "Projektil",
+  "controls.tower.production.auraCrystal": "Psişik / Aura",
+  "controls.tower.production.powerCrystal": "Güç çekirdeği",
   "controls.tower.standby": "Beklemede",
   "controls.tower.warming": "Isınıyor",
   "controls.tower.running": "Çalışıyor",
@@ -365,6 +371,10 @@ export const enControls: Readonly<Record<keyof typeof trControls, string>> = {
   "controls.tower.priorityNormal": "Normal",
   "controls.tower.priorityLow": "Low",
   "controls.tower.priority": "Supply priority",
+  "controls.tower.production": "Ammunition production",
+  "controls.tower.production.bullet": "Projectile",
+  "controls.tower.production.auraCrystal": "Psychic / Aura",
+  "controls.tower.production.powerCrystal": "Power core",
   "controls.tower.standby": "Standby",
   "controls.tower.warming": "Warming up",
   "controls.tower.running": "Running",

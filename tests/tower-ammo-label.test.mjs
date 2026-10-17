@@ -119,7 +119,10 @@ test("cekmece dugmesi, cephanelik secicisi ve kunye etiketi okuyor; isaretin her
   assert.match(button, /describeTowerAmmo\(definition\)/);
   assert.match(button, /game-controls__tower-ammo/);
   assert.match(button, /makeAmmoMarker\(ammo\.key\)/);
-  const armory = ui.slice(ui.indexOf("if (state.productionAmmo) {"), ui.indexOf("if (state.logisticsPriority) {"));
+  // Uretim secicisi panelin en ustunde, kendi bloklarinda (buildProductionPicker).
+  const pickerStart = ui.indexOf("const buildProductionPicker = ");
+  assert.ok(pickerStart > 0, "uretim secicisi yok");
+  const armory = ui.slice(pickerStart, ui.indexOf("return block;", pickerStart));
   assert.match(armory, /button\.prepend\(makeAmmoMarker\(ammoType\)\)/, "cephanelik secenegi isaretsiz: kuleyle eslesmiyor");
   assert.match(armory, /button\.title = ammoTypeLabels\[ammoType\]/);
   const menu = read("apps/web/src/menu-ui.ts");

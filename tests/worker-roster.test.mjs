@@ -211,9 +211,9 @@ test("urun secimi yalnizca tasiyicida; yonerge role ve urune gore", () => {
   assert.deepEqual([...getWorkerProductOptions("carrier")], ["materials", "energy", "bullet", "auraCrystal", "powerCrystal"]);
   assert.deepEqual([...getWorkerProductOptions("gatherer")], []);
   assert.deepEqual([...getWorkerProductOptions("repairer")], []);
-  assert.deepEqual(getWorkerProductOptions("carrier").map(formatTransportProduct), ["Hammadde", "Enerji", "Kurşun", "Aura kristali", "Güç kristali"]);
+  assert.deepEqual(getWorkerProductOptions("carrier").map(formatTransportProduct), ["Hammadde", "Enerji", "Kurşun", "Aura kristali", "Güç çekirdeği"]);
   inLocale("en", () => {
-    assert.deepEqual(getWorkerProductOptions("carrier").map(formatTransportProduct), ["Raw material", "Energy", "Bullet", "Aura crystal", "Power crystal"]);
+    assert.deepEqual(getWorkerProductOptions("carrier").map(formatTransportProduct), ["Raw material", "Energy", "Bullet", "Aura crystal", "Power core"]);
   });
   const hints = new Set([
     getWorkerPickHint("gatherer", "energy"), getWorkerPickHint("repairer", "energy"),

@@ -386,5 +386,5 @@ export const enAttackShapeLabels: Readonly<Record<TowerAttackShape, string>> = {
 export const enAmmoTypeLabels: Readonly<Record<AmmoType, string>> = {
   bullet: "Bullet",
   auraCrystal: "Aura crystal",
-  powerCrystal: "Power crystal"
+  powerCrystal: "Power core"
 };

@@ -7067,8 +7067,8 @@ button.wave-report:active { transform: scale(0.99); }
 .ts-fig__label {
   max-width: 100%;
   overflow: hidden;
-  color: var(--ts-ink-3);
-  font: 700 10px/1.1 Rajdhani, sans-serif;
+  color: var(--ts-ink-2);
+  font: 700 11px/1.1 Rajdhani, sans-serif;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -7079,7 +7079,7 @@ button.wave-report:active { transform: scale(0.99); }
   max-width: 100%;
   overflow: hidden;
   color: #f8fafc;
-  font: 400 15px/1.1 var(--ts-mono);
+  font: 400 18px/1.1 var(--ts-mono);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -7087,8 +7087,10 @@ button.wave-report:active { transform: scale(0.99); }
 /* Ingilizce birimler uzun ("1.5 tiles", "0.80/s"): 375 px'te dort hucreye
    sigsin diye bir piksel kucuk. Turkce ayni kaliyor. */
 :root[lang="en"] .ts-fig__value {
-  font-size: 14px;
+  font-size: 17px;
 }
+.ts-figures[data-count="4"] .ts-fig__value { font-size: 16px; }
+:root[lang="en"] .ts-figures[data-count="4"] .ts-fig__value { font-size: 14px; }
 
 .ts-fig__bonus,
 .ts-row__bonus {
@@ -7105,8 +7107,8 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-figures__note {
   margin: 4px 0 0;
-  color: var(--ts-ink-3);
-  font-size: 11px;
+  color: var(--ts-ink-2);
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -7114,8 +7116,8 @@ button.wave-report:active { transform: scale(0.99); }
 
 /* Bolumler */
 .ts-section {
-  margin-top: 6px;
-  border-top: 1px solid var(--ts-line);
+  margin-top: 8px;
+  border-top: 1px solid var(--ts-line-strong);
 }
 
 .ts-section__heading {
@@ -7140,7 +7142,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-section__title {
   color: var(--ts-accent);
-  font: 700 12px/1 Rajdhani, sans-serif;
+  font: 700 13px/1 Rajdhani, sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -7149,7 +7151,7 @@ button.wave-report:active { transform: scale(0.99); }
   min-width: 0;
   overflow: hidden;
   color: var(--ts-ink-2);
-  font: 400 11px/1.2 var(--ts-mono);
+  font: 400 12px/1.2 var(--ts-mono);
   text-align: right;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -7194,7 +7196,7 @@ button.wave-report:active { transform: scale(0.99); }
 .ts-row__label {
   min-width: 0;
   color: var(--ts-ink-2);
-  font: 600 13px/1.2 Rajdhani, sans-serif;
+  font: 600 14px/1.2 Rajdhani, sans-serif;
 }
 
 .is-expandable > .ts-row__label,
@@ -7205,7 +7207,8 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-row__value {
   color: #f1f5f9;
-  font: 400 14px/1.2 var(--ts-mono);
+  font: 400 15px/1.2 var(--ts-mono);
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -7213,7 +7216,7 @@ button.wave-report:active { transform: scale(0.99); }
   grid-column: 1 / -1;
   margin-top: 2px;
   color: var(--ts-ink-3);
-  font: 500 11px/1.3 Rajdhani, sans-serif;
+  font: 500 12px/1.3 Rajdhani, sans-serif;
 }
 
 .ts-row__bonus[hidden],
@@ -7294,17 +7297,17 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-bar__label {
   color: var(--ts-ink-2);
-  font: 600 13px/1.2 Rajdhani, sans-serif;
+  font: 600 14px/1.2 Rajdhani, sans-serif;
 }
 
 .ts-bar__value {
   color: #f1f5f9;
-  font: 400 13px/1.2 var(--ts-mono);
+  font: 400 15px/1.2 var(--ts-mono);
 }
 
 .ts-bar__track {
   position: relative;
-  height: 6px;
+  height: 8px;
   background: rgba(148, 163, 184, 0.14);
 }
 
@@ -7332,7 +7335,7 @@ button.wave-report:active { transform: scale(0.99); }
   display: block;
   margin-top: 3px;
   color: var(--ts-ink-3);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -7340,8 +7343,8 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-note {
   margin: 4px 4px 2px;
-  color: var(--ts-ink-3);
-  font-size: 11px;
+  color: var(--ts-ink-2);
+  font-size: 12px;
   line-height: 1.35;
 }
 
@@ -7389,7 +7392,7 @@ button.wave-report:active { transform: scale(0.99); }
 
 .ts-control__label {
   color: var(--ts-ink-2);
-  font: 600 13px/1.2 Rajdhani, sans-serif;
+  font: 600 14px/1.2 Rajdhani, sans-serif;
 }
 
 .tower-sheet .game-controls__targeting {
@@ -7434,6 +7437,178 @@ button.wave-report:active { transform: scale(0.99); }
   padding: 6px 8px;
   border-top: 1px solid var(--ts-line);
   background: rgba(2, 6, 18, 0.96);
+}
+
+/*
+ * Cephaneligin uretim secicisi: basligin hemen altinda, katlanmayan tek
+ * satir. Uc esit dugme, 44 px; secili olan kule paneli dilindeki camgobegi.
+ */
+.ts-production {
+  margin: 8px 0 0;
+}
+
+.ts-production__label {
+  display: block;
+  margin: 0 0 6px 2px;
+  color: var(--ts-accent);
+  font: 700 13px/1 Rajdhani, sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tower-sheet .ts-production__options {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+}
+
+.game-controls .tower-sheet .ts-production__options .game-controls__underworld-mode-button {
+  min-height: 44px;
+  padding: 2px 6px;
+  font-size: 14px;
+  line-height: 1.1;
+  white-space: normal;
+}
+
+/*
+ * Bina stoku: Hammadde Deposu, cephanelik, Tamir Merkezi, enerji binasi.
+ * Buyuk sabit genislikli sayi, kucuk kapasite, kalin cubuk. Secili uretim ve
+ * onun hammaddesi sol kenarda kule renginde bir cizgiyle; renk yalnizca
+ * anlam tasiyor (bos girdi kirmizi, azalan amber).
+ */
+.ts-stock {
+  margin-top: 8px;
+}
+
+.ts-stock__group + .ts-stock__group { margin-top: 8px; }
+
+.ts-stock__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 2px 5px;
+}
+
+.ts-stock__title {
+  flex: none;
+  margin: 0;
+  color: var(--ts-accent);
+  font: 700 13px/1 Rajdhani, sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ts-stock__summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ts-ink-2);
+  font: 400 12px/1.2 var(--ts-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-stock__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--ts-line);
+  background: var(--ts-line);
+}
+
+.ts-stock__grid[data-cols="1"] { --cols: 1; }
+.ts-stock__grid[data-cols="2"] { --cols: 2; }
+.ts-stock__grid[data-cols="3"] { --cols: 3; }
+.ts-stock__grid[data-cols="4"] { --cols: 4; }
+
+.ts-tile {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 8px 8px;
+  box-sizing: border-box;
+  border-left: 2px solid transparent;
+  background: var(--ts-surface);
+}
+
+.ts-tile[data-active="true"] {
+  border-left-color: var(--tower-color, var(--ts-accent));
+  background: rgba(20, 34, 58, 0.96);
+}
+
+.ts-tile__label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--ts-ink-2);
+  font: 700 12px/1.15 Rajdhani, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.ts-tile__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ts-tile[data-active="true"] .ts-tile__label { color: #f1f5f9; }
+
+.ts-tile__value {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ts-tile__number {
+  color: #f8fafc;
+  font: 400 22px/1 var(--ts-mono);
+}
+
+.ts-stock__grid[data-cols="4"] .ts-tile__number { font-size: 19px; }
+.ts-stock__grid[data-cols="1"] .ts-tile__number { font-size: 26px; }
+
+.ts-tile__max {
+  color: var(--ts-ink-3);
+  font: 400 12px/1 var(--ts-mono);
+}
+
+.ts-tile__track {
+  position: relative;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.ts-tile__fill {
+  position: absolute;
+  inset: 0;
+  background: #4fa3c7;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
+  transition: transform 180ms linear;
+}
+
+.ts-tile__fill[data-tone="warn"] { background: var(--ts-warn); }
+.ts-tile__fill[data-tone="hot"] { background: var(--ts-hot); }
+
+.ts-tile__sub {
+  color: var(--ts-ink-2);
+  font: 600 12px/1.2 Rajdhani, sans-serif;
+}
+
+.ts-tile__sub[hidden] { display: none; }
+
+/* 375 px'te dort sutun dar: etiket iki satira inebilir, sayi kuculmuyor. */
+@media (max-width: 380px) {
+  .ts-stock__grid[data-cols="4"] .ts-tile { padding: 6px 6px 7px; }
+  .ts-stock__grid[data-cols="4"] .ts-tile__name { white-space: normal; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7915,6 +8090,22 @@ button.wave-report:active { transform: scale(0.99); }
 .ammo-mark--powerCrystal { background: #c4b5fd; transform: rotate(45deg) scale(.86); }
 .ammo-mark--energy { background: transparent; border: 1.5px solid #fcd34d; }
 .ammo-mark--none { height: 2px; background: #64748b; }
+/* Hammadde isareti: yuvarlak, rengi ondan uretilen mühimmatla ayni. */
+.res-mark {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+.res-mark--mystic { background: #67e8f9; }
+.res-mark--plasma { background: #c4b5fd; }
+.res-mark--iron { background: #a8a29e; }
+.res-mark--parts { border-radius: 0; background: #5eead4; }
 .game-controls button.game-controls__tower--selected {
   border-color: var(--tower-color, #60a5fa);
   box-shadow: inset 0 0 0 1px var(--tower-color, #60a5fa);

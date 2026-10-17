@@ -74,5 +74,5 @@ export const attackShapeLabels: Record<TowerAttackShape, string> = {
 export const ammoTypeLabels: Record<AmmoType, string> = {
   bullet: "Kurşun",
   auraCrystal: "Aura kristali",
-  powerCrystal: "Güç kristali"
+  powerCrystal: "Güç çekirdeği"
 };

@@ -18,6 +18,13 @@ import { buildTowerSheetModel, createTowerSheetPanel, getTowerSheetStructureKey,
  */
 export type TowerSheetReport = { visible: boolean; heightRatio: number; expanded: boolean };
 
+/**
+ * Kule panelinin (ya da onune gecen cekmecenin) ekrandaki gercek
+ * dikdortgeni, tuvale gore oran (0..1). Sahne haritadaki kaynak panelini
+ * bununla ortusmeyecek yere koyuyor (`selected-panel-placement.ts`).
+ */
+export type TowerSheetRect = { visible: boolean; left: number; top: number; right: number; bottom: number };
+
 type ZeynepTier = "small" | "medium" | "big";
 
 /**
@@ -376,6 +383,8 @@ export function setupGameControlUi(game: Phaser.Game) {
     const panelHeight = root.querySelector<HTMLElement>(".game-controls__panel")?.getBoundingClientRect().height ?? 48;
     root.style.setProperty("--tower-sheet-room", `${Math.max(160, Math.round(rect.height - Math.max(0, hudBottom) - panelHeight - 16))}px`);
     reportChrome(game, rect.height);
+    // Tuval boyu degisti: panelin orani da degisti.
+    reportTowerSheetRect();
   };
 
   /**
@@ -424,9 +433,47 @@ export function setupGameControlUi(game: Phaser.Game) {
     const heightRatio = rootHeight > 0 && Number.isFinite(cap) ? cap / rootHeight : 0;
     const report: TowerSheetReport = { visible, heightRatio: Math.round(heightRatio * 100) / 100, expanded: isTowerSheetExpanded() };
     const key = `${report.visible}|${report.heightRatio}|${report.expanded}`;
+    reportTowerSheetRect();
     if (key === lastSheetReport) return;
     lastSheetReport = key;
     game.events.emit("game:tower-sheet", report);
+  };
+
+  let lastSheetRect = "";
+  let observedSheetTarget: HTMLElement | undefined;
+  const sheetRectObserver = typeof ResizeObserver === "function" ? new ResizeObserver(() => reportTowerSheetRect()) : undefined;
+
+  /**
+   * Kule panelinin ekrandaki gercek dikdortgenini sahneye bildirir: tavan
+   * degil olculen kutu (genis panel, katlanan bolum, uzayan baslik). Panel
+   * yoksa onune gecen cekmece; ikisi de yoksa gorunmez. Boy degisimini
+   * `ResizeObserver` yakaliyor, kenar degisimini yeniden kurulus.
+   */
+  const reportTowerSheetRect = () => {
+    const target = sheetElement?.isConnected ? sheetElement : getOpenDrawer() ?? undefined;
+    if (target !== observedSheetTarget) {
+      if (observedSheetTarget) sheetRectObserver?.unobserve(observedSheetTarget);
+      if (target) sheetRectObserver?.observe(target);
+      observedSheetTarget = target;
+    }
+    const bounds = root.getBoundingClientRect();
+    let rect: TowerSheetRect = { visible: false, left: 0, top: 0, right: 0, bottom: 0 };
+    if (target && bounds.width > 0 && bounds.height > 0) {
+      const box = target.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) {
+        rect = {
+          visible: true,
+          left: (box.left - bounds.left) / bounds.width,
+          top: (box.top - bounds.top) / bounds.height,
+          right: (box.right - bounds.left) / bounds.width,
+          bottom: (box.bottom - bounds.top) / bounds.height
+        };
+      }
+    }
+    const key = rect.visible ? [rect.left, rect.top, rect.right, rect.bottom].map((value) => value.toFixed(4)).join("|") : "hidden";
+    if (key === lastSheetRect) return;
+    lastSheetRect = key;
+    game.events.emit("game:tower-sheet-rect", rect);
   };
 
   /** Yalnizca kule panelinin degisen sayilarini yazar; panelin geri kalanina dokunmaz. */
@@ -1584,21 +1631,6 @@ export function setupGameControlUi(game: Phaser.Game) {
       logistics.setAttribute("aria-label", t("controls.tower.ammoFlowState", { state: onOff }));
       rows.push(makeControlRow(t("controls.tower.ammoFlow"), logistics));
     }
-    if (state.productionAmmo) {
-      const production = state.productionAmmo;
-      const group = makeRow((["bullet", "auraCrystal", "powerCrystal"] as const).map(ammoType => {
-        const button = makeActionButton((getLocale() === "tr" ? { bullet: "Projektil", auraCrystal: "Psişik / Aura", powerCrystal: "Plazma" } : { bullet: "Projectile", auraCrystal: "Psychic / Aura", powerCrystal: "Plasma" })[ammoType],
-          `game-controls__underworld-mode-button ts-toggle${production.value === ammoType ? " is-active" : ""}`,
-          production.canEdit, () => dispatch({ action: "setFactoryProduction", ammoType }));
-        // Kule cekmecesi ve paneli turu katalog adiyla ve bu isaretle yaziyor;
-        // oyuncu kuleyle cephaneligi isaretten eslestiriyor.
-        button.prepend(makeAmmoMarker(ammoType));
-        button.title = ammoTypeLabels[ammoType];
-        button.setAttribute("aria-pressed", String(production.value === ammoType));
-        return button;
-      }), "game-controls__underworld-mode ts-segmented");
-      rows.push(makeControlRow(getLocale() === "tr" ? "Üretilecek mühimmat" : "Ammunition production", group));
-    }
     if (state.logisticsPriority) {
       const priority = state.logisticsPriority;
       const group = makeRow((["critical", "normal", "low"] as const).map((value) => {
@@ -1636,6 +1668,38 @@ export function setupGameControlUi(game: Phaser.Game) {
   };
 
   /**
+   * Cephaneligin uretim secicisi. Ayarlar bolumunun en altindaydi: oyuncu
+   * binaya ilk dokundugunda en cok degistirdigi sey bu, ve kaydirmadan
+   * gorunmuyordu. Simdi basligin hemen altinda, katlanmayan tek satir.
+   * Secenekler kule cekmecesi ve panelinin okudugu isaretle eslesiyor.
+   */
+  const buildProductionPicker = (state: ControlState) => {
+    if (!state.productionAmmo) return undefined;
+    const production = state.productionAmmo;
+    const block = document.createElement("div");
+    block.className = "ts-production";
+    const label = document.createElement("span");
+    label.className = "ts-production__label";
+    label.id = `ts-production-${state.selectedTowerId ?? ""}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+    label.textContent = t("controls.tower.production");
+    const group = makeRow((["bullet", "auraCrystal", "powerCrystal"] as const).map(ammoType => {
+      const button = makeActionButton(t(`controls.tower.production.${ammoType}`),
+        `game-controls__underworld-mode-button ts-toggle${production.value === ammoType ? " is-active" : ""}`,
+        production.canEdit, () => dispatch({ action: "setFactoryProduction", ammoType }));
+      // Kule cekmecesi ve paneli turu katalog adiyla ve bu isaretle yaziyor;
+      // oyuncu kuleyle cephaneligi isaretten eslestiriyor.
+      button.prepend(makeAmmoMarker(ammoType));
+      button.title = ammoTypeLabels[ammoType];
+      button.setAttribute("aria-pressed", String(production.value === ammoType));
+      return button;
+    }), "game-controls__underworld-mode ts-segmented ts-production__options");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-labelledby", label.id);
+    block.append(label, group);
+    return block;
+  };
+
+  /**
    * Secili kulenin paneli.
    *
    * Eskiden tek satira " | " ile dizilmis bir metin ("Toplam hasar: 412 |
@@ -1664,6 +1728,9 @@ export function setupGameControlUi(game: Phaser.Game) {
       }
       lead.push(levels);
     }
+    // Cephaneligin uretim secimi en ustte: basligin hemen altinda, stoktan once.
+    const production = buildProductionPicker(state);
+    if (production) lead.unshift(production);
 
     // Takili esyalar da burada: takilan esya sokulemedigi icin liste salt
     // okunur, yalnizca aciklamasi acilir.

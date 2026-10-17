@@ -8,7 +8,8 @@ import { TOWER_STATS_REFRESH_MS, type TowerStatsWire } from "@karayel/shared";
 import { isTutorialPrepareId, type TutorialProgressMessage } from "@karayel/shared";
 import type { TutorialCommand, TutorialFacts } from "../tutorial";
 import type { TowerSheetInput, TowerSheetNote } from "../tower-sheet";
-import type { TowerSheetReport } from "../game-control-ui";
+import type { TowerSheetRect, TowerSheetReport } from "../game-control-ui";
+import { placeSelectedPanel, screenRatioRectToWorld, type PlacementSide } from "../selected-panel-placement";
 import type { DefenseSummary, TowerPreview, LogisticsPriority, MapScale, QuickStartMode, RunSummary, RunUltimateMoment } from "@karayel/shared";
 import {
   ArchiveOfferLatch,
@@ -1192,6 +1193,13 @@ export class GameScene extends Phaser.Scene {
    * olabilir) ve tavan boyu tuvalin ne kadari. Yer karari bundan.
    */
   private towerSheetReport: TowerSheetReport = { visible: true, heightRatio: 0.41, expanded: false };
+  /**
+   * Kule panelinin (ya da onune gecen cekmecenin) ekrandaki gercek yeri,
+   * tuvale gore oranla. Harita paneli bununla ortusmeyen yere cizilir.
+   */
+  private towerSheetRect?: TowerSheetRect;
+  /** Harita panelinin son tarafi; sigdikca degismiyor (titremesin). */
+  private selectedResourceSide?: { towerId: string; side: PlacementSide };
   private selectedMapData: EditableMapData = createDefaultEditableMap();
   private selectedPlacedTowerId?: string;
   private enemies = new Map<string, RenderMover>();
@@ -2110,6 +2118,8 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on("game:chrome", this.applyArenaChrome, this);
     this.game.events.on("game:tower-sheet", this.applyTowerSheetReport, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tower-sheet", this.applyTowerSheetReport, this));
+    this.game.events.on("game:tower-sheet-rect", this.applyTowerSheetRect, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tower-sheet-rect", this.applyTowerSheetRect, this));
     // Ogretici adim motorunun istekleri (tutorial.ts): hazirlik, Devam, bitis.
     this.game.events.on("game:tutorial-command", this.handleTutorialCommand, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off("game:tutorial-command", this.handleTutorialCommand, this));
@@ -11076,36 +11086,68 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
    * da panelin ustune cikiyor: eskiden panelin altinda kaliyor ve haritanin
    * alt kisimdaki kulenin tam uzerine oturuyordu.
    */
-  private getSelectedResourceLayout(tower: TowerSnapshot, discSize: number) {
+  private getSelectedResourceLayout(tower: TowerSnapshot, discSize: number, options: { ignoreSheet?: boolean } = {}) {
     const showsResources = this.acceptsTowerOperation(tower) || Boolean(tower.resourceProvider);
     const panelWidth = Math.max(147, Math.min(169, discSize * 1.6));
     const panelHeight = showsResources ? 98 : 0;
-    const bounds = getMapWorldBounds(this.selectedMapData);
-    const panelCenterX = Phaser.Math.Clamp(tower.x, bounds.left + panelWidth / 2 + 4, bounds.right - panelWidth / 2 - 4);
-    const panelX = panelCenterX - panelWidth / 2;
     const canSell = this.canSellSelectedTower(tower);
     const sellSpace = canSell ? SELL_BUTTON_HEIGHT + 4 : 0;
-    const belowTowerY = tower.y + discSize / 2 + 7;
-    const below = belowTowerY + panelHeight <= bounds.bottom - 4;
-    // Ustte can cubugu kulenin ustunde kaliyor; panel onu ortmesin.
-    const aboveTowerY = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX - 6 - panelHeight - 4;
-    const panelY = below
-      ? Phaser.Math.Clamp(belowTowerY, bounds.top + 4, bounds.bottom - panelHeight - 4)
-      : Phaser.Math.Clamp(aboveTowerY, bounds.top + 4 + sellSpace, bounds.bottom - panelHeight - 4);
-    const sell = canSell
-      ? { x: panelX + 10, y: below ? panelY + panelHeight + 4 : panelY - sellSpace, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
-      : undefined;
+    // Kulenin govdesi ve ustundeki can cubugu: panel bunlari da ortmuyor.
     const towerTop = tower.y - discSize / 2 - TOWER_HEALTH_BAR_LIFT_PX - 4;
-    const towerBottom = tower.y + discSize / 2;
+    const towerBottom = tower.y + discSize / 2 + 1;
+    const towerHalfWidth = Math.max(12, discSize / 2) + 1;
+    const towerRect = { left: tower.x - towerHalfWidth, right: tower.x + towerHalfWidth, top: towerTop, bottom: towerBottom };
+    // Cizilebilen alan: harita ile ekranda gorunen bandin (ust cubugun alti,
+    // alt barin ustu) kesisimi.
+    const bounds = getMapWorldBounds(this.selectedMapData);
+    const view = this.cameras.main?.worldView;
+    const visible = Boolean(view && view.height > 0 && view.width > 0);
+    const area = view && visible
+      ? {
+        left: Math.max(bounds.left, view.x),
+        right: Math.min(bounds.right, view.right),
+        top: Math.max(bounds.top, view.y + view.height * this.arenaChrome.topRatio),
+        bottom: Math.min(bounds.bottom, view.y + view.height * (1 - this.arenaChrome.bottomRatio))
+      }
+      : { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+    // Kule paneli (DOM) ekranda nerede: dunyaya cevrilip engel. Panelin
+    // kenarini secen hesap (`getTowerSheetDock`) engelsiz yeri okuyor; yoksa
+    // panelin kenari kendi yerine bagli kalirdi.
+    const sheet = this.towerSheetRect;
+    const blockers = !options.ignoreSheet && sheet?.visible && view && visible ? [screenRatioRectToWorld(sheet, view)] : [];
+    const placement = placeSelectedPanel({
+      tower: towerRect,
+      width: panelWidth,
+      height: panelHeight + sellSpace,
+      area,
+      blockers,
+      gap: 6,
+      margin: 4,
+      previous: this.selectedResourceSide?.towerId === tower.id ? this.selectedResourceSide.side : undefined
+    });
+    if (placement.side === "hidden") {
+      return {
+        showsResources: false, hidden: true, side: undefined, panelX: 0, panelY: 0, panelWidth, panelHeight: 0,
+        sell: undefined, top: towerTop, bottom: towerBottom
+      };
+    }
+    // Ustte satis tusu panelin ustunde (kuleden uzakta); diger yerlerde altinda.
+    const panelX = placement.left;
+    const panelY = placement.side === "above" ? placement.top + sellSpace : placement.top;
+    const sell = canSell
+      ? { x: panelX + 10, y: placement.side === "above" ? placement.top : panelY + panelHeight + 4, width: panelWidth - 20, height: SELL_BUTTON_HEIGHT }
+      : undefined;
     return {
       showsResources,
+      hidden: false,
+      side: placement.side,
       panelX,
       panelY,
       panelWidth,
       panelHeight,
       sell,
-      top: Math.min(towerTop, panelY, sell?.y ?? Infinity),
-      bottom: Math.max(towerBottom, panelY + panelHeight, sell ? sell.y + sell.height : -Infinity)
+      top: Math.min(towerTop, placement.top),
+      bottom: Math.max(towerBottom, placement.top + placement.height)
     };
   }
 
@@ -11113,7 +11155,10 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     const graphics = this.selectedResourceGraphics ?? this.add.graphics().setDepth(66);
     this.selectedResourceGraphics = graphics;
     graphics.clear().setVisible(true);
-    const { showsResources, panelX, panelY, panelWidth, panelHeight, sell: sellRect } = this.getSelectedResourceLayout(tower, discSize);
+    const { showsResources, hidden, side, panelX, panelY, panelWidth, panelHeight, sell: sellRect } = this.getSelectedResourceLayout(tower, discSize);
+    // Kule paneliyle ortusmeyen bir yer yoksa harita paneli cizilmiyor; ayni
+    // sayilar kule panelinde (stok ve Kaynak bolumu), satis alt seridinde.
+    this.selectedResourceSide = side ? { towerId: tower.id, side } : undefined;
     const barX = panelX + 10;
     const barWidth = panelWidth - 20;
     const barHeight = 6;
@@ -11124,7 +11169,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     // Satis kulenin oldugu yerde: alt bar tek satira indigi icin oradan cikti,
     // ve zaten dogru yer burasi -- oyuncu hangi kuleyi sattigini gorerek basiyor.
     this.sellButtonRect = sellRect;
-    const hasPerformanceControl = this.acceptsTowerOperation(tower);
+    const hasPerformanceControl = !hidden && this.acceptsTowerOperation(tower);
     const usesAmmo = tower.resourceProvider === "ammunition" || tower.shotFuel !== "energy";
     const ammoRatio = Phaser.Math.Clamp((tower.ammo ?? 0) / Math.max(1, tower.maxAmmo ?? 1), 0, 1);
     const energyRatio = Phaser.Math.Clamp((tower.energy ?? 0) / Math.max(1, tower.maxEnergy ?? 1), 0, 1);
@@ -11206,7 +11251,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
         ? t("scene.tower.lucky", { s: (tower.luckyWindowRemainingMs! / 1000).toFixed(1) })
         : t("scene.tower.luck", { v: t("format.percent", { v: Math.round(tower.misfortune ?? 0) }) }))
       .setPosition(barX + splitBarWidth + 4 + splitBarWidth / 2, panelY + 46)
-      .setVisible(hasMisfortune);
+      .setVisible(showsResources && hasMisfortune);
     this.selectedPerformanceText.setText(t("scene.tower.performance", { v: t("format.percent", { v: Math.round(performanceRatio * 100) }) })).setPosition(labelCenterX, panelY + 68).setVisible(hasPerformanceControl);
 
     const refundState = this.getTowerRefundState(tower);
@@ -12977,6 +13022,19 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (resized && report.visible && this.selectedPlacedTowerId) this.emitControlState();
   }
 
+  /**
+   * Kule panelinin ekrandaki yeri degisti (acildi, kapandi, genisledi, kenar
+   * degistirdi): harita panelini sonraki anlik goruntuyu beklemeden yerlestir.
+   */
+  private applyTowerSheetRect(rect: TowerSheetRect) {
+    if (!rect || ![rect.left, rect.top, rect.right, rect.bottom].every(Number.isFinite)) return;
+    this.towerSheetRect = rect;
+    const tower = this.selectedPlacedTowerId ? this.towerSnapshots.get(this.selectedPlacedTowerId) : undefined;
+    if (tower && this.selectedResourceGraphics?.visible) {
+      this.drawSelectedTowerResources(tower, this.getMapCellSize() * getTowerGridSpan(tower.definitionId));
+    }
+  }
+
   private requestTowerStats(towerId: string) {
     this.towerStatsSequence = (this.towerStatsSequence + 1) % 1_000_000_000;
     this.room?.send("tower:stats", { towerId, q: this.towerStatsSequence });
@@ -13023,7 +13081,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
     if (!view || view.height <= 0) return this.towerSheetDock;
     // Kulenin tamami: can cubugu, govde, haritadaki kaynak paneli ve satis tusu.
     const discSize = this.getMapCellSize() * getTowerGridSpan(tower.definitionId);
-    const footprint = this.getSelectedResourceLayout(tower, discSize);
+    const footprint = this.getSelectedResourceLayout(tower, discSize, { ignoreSheet: true });
     const top = (footprint.top - view.y) / view.height;
     const bottom = (footprint.bottom - view.y) / view.height;
     const sheet = this.towerSheetReport.heightRatio;

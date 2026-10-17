@@ -1,4 +1,4 @@
-import { getWarehouseCapacity, RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
+import { getWarehouseCapacity, RESOURCE_NAMES, RESOURCE_NAMES_EN, AMMO_RECIPES, getResourceProviderCapacity, getAmmoFactoryProductionRate, getRepairPartRate, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, type EconomyStock, type ResourceKind, type AmmoType } from "@karayel/shared";
 import { getLocale } from "./i18n";
 import {
   BLAST_RADIUS_CELLS,
@@ -24,7 +24,7 @@ import {
   type TowerStatValue,
   type TowerStatsWire
 } from "@karayel/shared";
-import { damageTypeCodex, hitTypeCodex } from "./codex";
+import { ammoTypeLabels, damageTypeCodex, hitTypeCodex } from "./codex";
 import { describeTowerAmmo, makeAmmoMarker, type TowerAmmoKey } from "./tower-ammo";
 import { assetUrl } from "./asset-url";
 import { lower, numberLocale, t, tMaybe, upper } from "./i18n";
@@ -139,6 +139,44 @@ export type TowerSheetSection = {
   notes: string[];
 };
 
+/**
+ * Uretim ve depo binalarinin stoku: panelin en ustunde, buyuk sayilarla.
+ * Hammadde Deposu, cephanelik, Tamir Merkezi ve enerji binasi; oyuncu binaya
+ * dokundugu anda ne kadar tuttugunu gormeli. Eskiden ayni sayilar varsayilan
+ * kapali Kaynak bolumunde ince cubuklardi.
+ */
+export type TowerSheetStockKind = "warehouse" | "armory" | "repair" | "energy";
+
+/** Isaret: mühimmat turu (cekmeceyle ayni), hammadde, onarim parcasi. */
+export type TowerSheetStockMarker = TowerAmmoKey | ResourceKind | "parts";
+
+export type TowerSheetStockItem = {
+  key: string;
+  label: string;
+  /** Buyuk sayi ("128"). */
+  value: string;
+  /** Kapasite ("/200"); ortak kapasitede bos, grup ozetinde. */
+  max: string;
+  /** 0..1 */
+  ratio: number;
+  marker: TowerSheetStockMarker;
+  tone?: "ok" | "warn" | "hot";
+  /** Secili uretim ya da onun hammaddesi. */
+  active?: boolean;
+  sub?: string;
+};
+
+export type TowerSheetStockGroup = {
+  key: string;
+  title: string;
+  summary: string;
+  /** Izgara sutunu; sayinin genisligine gore. */
+  columns: 1 | 2 | 3 | 4;
+  items: TowerSheetStockItem[];
+};
+
+export type TowerSheetStock = { kind: TowerSheetStockKind; groups: TowerSheetStockGroup[] };
+
 export type TowerSheetModel = {
   towerId: string;
   title: string;
@@ -155,6 +193,8 @@ export type TowerSheetModel = {
   status: string;
   /** Savunma okumasi; kendi satirinda, kesilmeden. */
   insight: string;
+  /** Uretim/depo binasinin stoku; panelin en ustunde. */
+  stock?: TowerSheetStock;
   figures: TowerSheetRow[];
   sections: TowerSheetSection[];
 };
@@ -584,24 +624,17 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
       sub: heatParts.length > 0 ? heatParts.join(" · ") : undefined
     });
   }
-  if (live.resourceProvider === "ammunition") {
+  // Uretim/depo binasinda stok, enerji ve hammadde en ustteki stok blogunda;
+  // Kaynak bolumu ayni sayilari ikinci kez yazmiyor (yalnizca govde).
+  const stock = buildStock(input, definition, stats);
+  if (!stock && live.resourceProvider === "ammunition") {
     bars.push({ key: "ammo", label: t("sheet.product"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio: ratioOf(live.ammo, live.maxAmmo), tone: "ok" });
     if (!live.materials) bars.push({ key: "raw", label: t("sheet.raw"), value: `${Math.floor(live.rawAmmo ?? 0)}/${live.maxRawAmmo ?? 0}`, ratio: ratioOf(live.rawAmmo, live.maxRawAmmo), tone: "ok" });
   } else if (relevance.operational && live.shotFuel !== "energy" && (live.maxAmmo ?? 0) > 0) {
     const ratio = ratioOf(live.ammo, live.maxAmmo);
     bars.push({ key: "ammo", label: t("sheet.ammo"), value: `${Math.floor(live.ammo ?? 0)}/${live.maxAmmo ?? 0}`, ratio, tone: ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok", sub: stats?.am !== undefined ? t("sheet.perShot", { v: formatSmart(stats.am) }) : undefined });
   }
-  const resourceNames = getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN;
-  const capacity = input.definitionId === "warehouse-1" ? getWarehouseCapacity(input.level) : getResourceProviderCapacity(input.level);
-  for (const kind of (input.definitionId === "warehouse-1" ? ["gunpowder", "mystic", "plasma", "iron"] : live.resourceProvider === "ammunition" ? ["gunpowder", "mystic", "plasma"] : live.repairParts !== undefined ? ["iron"] : []) as ResourceKind[]) {
-    const amount = live.materials?.[kind] ?? 0;
-    bars.push({ key: `material-${kind}`, label: resourceNames[kind], value: `${Math.floor(amount)}/${capacity}`, ratio: amount / capacity });
-  }
-  for (const type of (live.ammoStock ? Object.keys(AMMO_RECIPES) : []) as AmmoType[]) {
-    resourceRows.push({ key: `stock-${type}`, label: `${resourceNames[AMMO_RECIPES[type]]} → ${getLocale() === "tr" ? "mühimmat" : "ammo"}`, value: formatNumber(live.ammoStock![type] ?? 0, 1), detail: [] });
-  }
-  if (live.repairParts !== undefined) bars.push({ key: "parts", label: getLocale() === "tr" ? "Onarım parçaları" : "Repair parts", value: `${Math.floor(live.repairParts)}/${capacity}`, ratio: live.repairParts / capacity });
-  if ((live.maxEnergy ?? 0) > 0) {
+  if (!stock && (live.maxEnergy ?? 0) > 0) {
     const ratio = ratioOf(live.energy, live.maxEnergy);
     const energyParts = [
       stats?.ec !== undefined ? t("sheet.perShot", { v: formatSmart(stats.ec) }) : undefined,
@@ -611,7 +644,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   }
   // Hangi mühimmat: sunucunun ikmal hattiyla ayni kaynaktan (`getTowerAmmoUsage`).
   // Eski "Atis yakiti: Mühimmat" satiri turu soylemiyordu; bu satir onun yerinde.
-  if (definition) {
+  // Uretim binasinda "Mühimmat türü: Kullanmaz" gurultu; urunu stokta yaziyor.
+  if (definition && !stock) {
     const ammo = describeTowerAmmo(definition);
     resourceRows.push({ key: "ammoType", label: t("sheet.ammoType"), value: ammo.key === "none" ? t("sheet.ammoNone") : ammo.label, ammoMarker: ammo.key, detail: [] });
   }
@@ -620,7 +654,8 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
   }
   const resourceNotes = notesFor("resources");
   if (bars.length > 0 || resourceNotes.length > 0) {
-    sections.push({
+    // Ana sayilarin hemen altinda: isi, mühimmat ve enerji ayrintidan once okunuyor.
+    sections.unshift({
       id: "resources",
       title: t("sheet.section.resources"),
       summary: bars.filter((bar) => bar.key !== "hp" || bars.length === 1).slice(0, 3).map((bar) => `${lower(bar.label)} ${bar.value}`).join(" · "),
@@ -682,8 +717,158 @@ export function buildTowerSheetModel(input: TowerSheetInput): TowerSheetModel {
     pending,
     status,
     insight,
+    stock,
     figures,
     sections
+  };
+}
+
+// ------------------------------------------------------------------ Stok
+
+const REPAIR_DEPOT_ID = "repair-depot-1";
+const WAREHOUSE_ID = "warehouse-1";
+const AMMO_TYPES: readonly AmmoType[] = ["bullet", "auraCrystal", "powerCrystal"];
+
+function stockKindOf(input: TowerSheetInput, definition: TowerDefinition | undefined): TowerSheetStockKind | undefined {
+  if (input.definitionId === WAREHOUSE_ID) return "warehouse";
+  if (input.definitionId === REPAIR_DEPOT_ID) return "repair";
+  const provider = definition?.resourceProvider ?? input.live.resourceProvider;
+  if (provider === "ammunition") return "armory";
+  if (provider === "energy") return "energy";
+  return undefined;
+}
+
+/** Girdi azaldikca: bos kirmizi, azsa amber. */
+function inputTone(ratio: number): TowerSheetStockItem["tone"] {
+  return ratio <= 0 ? "hot" : ratio < 0.2 ? "warn" : "ok";
+}
+
+/** Tamir Merkezi'nin enerjisi kesirli: sifir "uretim enerjisi yok" demek, 0,4 yuvarlanip kaybolmasin. */
+function formatStockAmount(value: number, fractional = false) {
+  const amount = Math.max(0, value);
+  if (!fractional || amount >= 10 || amount === 0) return formatNumber(Math.floor(amount), 0);
+  return formatNumber(Math.floor(amount * 100) / 100, amount < 1 ? 2 : 1);
+}
+
+/**
+ * Binanin stok blogu. Sayilar anlik goruntuden (`materials`, `ammoStock`,
+ * `repairParts`, `energy`); kapasiteler sunucunun kullandigi paylasilan
+ * egriden (`getWarehouseCapacity`, `getResourceProviderCapacity`), uretim hizi
+ * sunucunun blogundan (`pp`, kart ve esya carpanlari dahil), blok gelmeden
+ * taban egriden.
+ */
+function buildStock(input: TowerSheetInput, definition: TowerDefinition | undefined, stats: TowerStatsWire | undefined): TowerSheetStock | undefined {
+  const kind = stockKindOf(input, definition);
+  if (!kind) return undefined;
+  const live = input.live;
+  const names = getLocale() === "tr" ? RESOURCE_NAMES : RESOURCE_NAMES_EN;
+  const material = (resource: ResourceKind) => Math.max(0, live.materials?.[resource] ?? 0);
+  const per = (value: number) => t("sheet.unit.perSecond", { v: formatNumber(realRate(value), realRate(value) >= 10 ? 0 : 1) });
+  const energyItem = (capacity: number, tone: (ratio: number) => TowerSheetStockItem["tone"], fractional = false): TowerSheetStockItem => {
+    const max = (live.maxEnergy ?? 0) > 0 ? live.maxEnergy! : capacity;
+    const ratio = ratioOf(live.energy, max);
+    return { key: "energy", label: t("sheet.energy"), value: formatStockAmount(live.energy ?? 0, fractional), max: `/${max}`, ratio, marker: "energy", tone: tone(ratio) };
+  };
+
+  if (kind === "warehouse") {
+    const capacity = getWarehouseCapacity(input.level);
+    const kinds: ResourceKind[] = ["gunpowder", "mystic", "plasma", "iron"];
+    const total = kinds.reduce((sum, resource) => sum + material(resource), 0);
+    return {
+      kind,
+      groups: [{
+        key: "materials",
+        title: t("sheet.stock.materials"),
+        summary: t("sheet.stock.perKind", { total: formatNumber(Math.floor(total), 0), n: capacity }),
+        columns: 2,
+        items: kinds.map((resource) => ({
+          key: `m-${resource}`, label: names[resource], value: formatStockAmount(material(resource)), max: `/${capacity}`,
+          ratio: Math.min(1, material(resource) / capacity), marker: resource, tone: material(resource) >= capacity ? "warn" : "ok"
+        }))
+      }]
+    };
+  }
+
+  const capacity = getResourceProviderCapacity(input.level);
+  if (kind === "armory") {
+    const production = live.productionAmmo ?? "bullet";
+    const rate = stats?.pp ?? getAmmoFactoryProductionRate(input.level);
+    const stockOf = (type: AmmoType) => Math.max(0, live.ammoStock?.[type] ?? (live.ammoStock ? 0 : type === production ? live.ammo ?? 0 : 0));
+    const total = AMMO_TYPES.reduce((sum, type) => sum + stockOf(type), 0);
+    const recipe = AMMO_RECIPES[production];
+    return {
+      kind,
+      groups: [
+        {
+          key: "ammo",
+          title: t("sheet.stock.ammo"),
+          summary: `${formatNumber(Math.floor(total), 0)}/${capacity}`,
+          columns: 3,
+          items: AMMO_TYPES.map((type) => ({
+            key: `a-${type}`, label: ammoTypeLabels[type], value: formatStockAmount(stockOf(type)), max: "",
+            ratio: Math.min(1, stockOf(type) / capacity), marker: type, tone: "ok",
+            active: type === production,
+            sub: type === production ? t("sheet.stock.producing", { v: per(rate) }) : undefined
+          }))
+        },
+        {
+          key: "input",
+          title: t("sheet.stock.input"),
+          summary: t("sheet.stock.recipe", { raw: names[recipe], ammo: lower(ammoTypeLabels[production]) }),
+          columns: 2,
+          items: [
+            ...(["gunpowder", "mystic", "plasma"] as ResourceKind[]).map((resource): TowerSheetStockItem => {
+              const ratio = Math.min(1, material(resource) / capacity);
+              const needed = resource === recipe;
+              return {
+                key: `m-${resource}`, label: names[resource], value: formatStockAmount(material(resource)), max: `/${capacity}`,
+                ratio, marker: resource, tone: needed ? inputTone(ratio) : "ok", active: needed
+              };
+            }),
+            energyItem(capacity, inputTone)
+          ]
+        }
+      ]
+    };
+  }
+
+  if (kind === "repair") {
+    const parts = Math.max(0, live.repairParts ?? 0);
+    const rate = stats?.pp ?? getRepairPartRate(input.level);
+    return {
+      kind,
+      groups: [
+        {
+          key: "parts",
+          title: t("sheet.stock.parts"),
+          summary: t("sheet.stock.partsRate", { v: per(rate) }),
+          columns: 1,
+          items: [{ key: "parts", label: t("sheet.stock.partsLabel"), value: formatStockAmount(parts), max: `/${capacity}`, ratio: Math.min(1, parts / capacity), marker: "parts", tone: "ok" }]
+        },
+        {
+          key: "input",
+          title: t("sheet.stock.input"),
+          summary: t("sheet.stock.repairRecipe", { iron: REPAIR_PART_IRON_COST, energy: REPAIR_PART_ENERGY_COST }),
+          columns: 2,
+          items: [
+            { key: "m-iron", label: names.iron, value: formatStockAmount(material("iron")), max: `/${capacity}`, ratio: Math.min(1, material("iron") / capacity), marker: "iron", tone: inputTone(material("iron") / capacity), active: true },
+            { ...energyItem(capacity, inputTone, true), active: true }
+          ]
+        }
+      ]
+    };
+  }
+
+  // Enerji binasi: toplayicilarin getirdigi kristal enerji olarak burada.
+  return {
+    kind,
+    groups: [{
+      key: "energy",
+      title: t("sheet.stock.energy"),
+      summary: t("sheet.stock.energyFlow"),
+      columns: 1,
+      items: [energyItem(capacity, (ratio) => (ratio < 0.15 ? "hot" : ratio < 0.35 ? "warn" : "ok"))]
+    }]
   };
 }
 
@@ -712,6 +897,8 @@ export function getTowerSheetStructureKey(model: TowerSheetModel) {
     model.readOnly ? "ro" : "rw",
     model.portrait ?? model.monogram,
     model.owner ?? "",
+    // Stok: tur ve kalemler; sayi, secili uretim ve aciklama yerinde yaziliyor.
+    model.stock ? `${model.stock.kind}{${model.stock.groups.map((group) => `${group.key}:${group.items.map((item) => item.key).join(",")}`).join(";")}}` : "",
     model.figures.map(rowKey).join(";"),
     model.sections.map((section) => `${section.id}[${section.rows.map(rowKey).join(";")}|${section.bars.map((bar) => `${bar.key}${bar.marker === undefined ? "" : "^"}`).join(",")}|${section.notes.length}]`).join("")
   ].join("|");
@@ -720,7 +907,10 @@ export function getTowerSheetStructureKey(model: TowerSheetModel) {
 // ------------------------------------------------------------------ Bolum durumu
 
 const SECTION_STORAGE_KEY = "uzay_tower_sheet_sections_v1";
-const DEFAULT_OPEN: Readonly<Record<string, boolean>> = { attack: true, aim: true, effects: true, resources: false, progress: false, cards: false, controls: true };
+// Kaynak (isi, mühimmat, enerji) varsayilan acik: harita paneli kule
+// paneliyle ortusecekken gizleniyor ve ayni sayilar burada okunuyor. Nisan
+// ayrinti: varsayilan kapali, ozeti basliginda.
+const DEFAULT_OPEN: Readonly<Record<string, boolean>> = { attack: true, aim: false, effects: true, resources: true, progress: false, cards: false, controls: true };
 let sectionState: Record<string, boolean> | undefined;
 
 /** Bolumlerin acik/kapali durumu; depo yoksa (gizli pencere) varsayilan. */
@@ -909,6 +1099,8 @@ export function renderTowerSheet(sheet: HTMLElement, model: TowerSheetModel, han
   // Govde
   const body = el("div", "tower-sheet__body");
   body.append(...(slots.lead ?? []));
+  // Binanin stoku: basligin (ve cephanelikte uretim secicisinin) hemen altinda.
+  if (model.stock) body.append(buildStockBlock(model, model.stock, keep));
   // Canli bolge degil: sayilar saniyede birkac kez degisiyor ve ekran
   // okuyucu her birini okurdu. Oyuncu baktiginda okunuyor.
   const status = keep("status", el("p", "tower-sheet__status", model.status));
@@ -1043,12 +1235,14 @@ export function createTowerSheetPanel(towerId: string, id: string, title: string
 function buildSection(model: TowerSheetModel, section: TowerSheetSection, keep: (key: string, element: HTMLElement) => HTMLElement) {
   const { wrapper, content, summary } = createTowerSheetPanel(model.towerId, section.id, section.title, section.summary);
   keep(`sum:${section.id}`, summary);
+  // Kaynak bolumunde cubuklar (govde, isi, mühimmat, enerji) once: satirlar ayrinti.
+  if (section.id === "resources") for (const bar of section.bars) content.append(buildBar(bar, keep));
   for (const row of section.rows) {
     const built = buildRow(model, row, "ts-row", keep);
     content.append(built.row);
     if (built.detail) content.append(built.detail);
   }
-  for (const bar of section.bars) content.append(buildBar(bar, keep));
+  if (section.id !== "resources") for (const bar of section.bars) content.append(buildBar(bar, keep));
   section.notes.forEach((note, index) => content.append(keep(`n:${section.id}:${index}`, el("p", "ts-note", note))));
   return wrapper;
 }
@@ -1080,6 +1274,80 @@ function buildBar(bar: TowerSheetBar, keep: (key: string, element: HTMLElement) 
   return wrapper;
 }
 
+/** Hammadde, mühimmat, enerji ve parca isareti; anlam metinde. */
+function makeStockMarker(marker: TowerSheetStockMarker) {
+  if (marker === "bullet" || marker === "auraCrystal" || marker === "powerCrystal" || marker === "energy" || marker === "none") return makeAmmoMarker(marker);
+  const element = el("i", `res-mark res-mark--${marker}`);
+  element.setAttribute("aria-hidden", "true");
+  return element;
+}
+
+function buildStockBlock(model: TowerSheetModel, stock: TowerSheetStock, keep: (key: string, element: HTMLElement) => HTMLElement) {
+  const block = el("section", `ts-stock ts-stock--${stock.kind}`);
+  block.setAttribute("aria-label", t("sheet.stock.aria"));
+  for (const group of stock.groups) {
+    const wrapper = el("div", "ts-stock__group");
+    const head = el("div", "ts-stock__head");
+    const title = el("h3", "ts-stock__title", group.title);
+    title.id = domId(model, `stock-${group.key}`);
+    head.append(title, keep(`sg:${group.key}`, el("span", "ts-stock__summary", group.summary)));
+    const grid = el("div", "ts-stock__grid");
+    grid.dataset.cols = String(group.columns);
+    grid.setAttribute("role", "list");
+    grid.setAttribute("aria-labelledby", title.id);
+    for (const item of group.items) {
+      const tile = keep(`st:${item.key}`, el("div", "ts-tile"));
+      tile.setAttribute("role", "listitem");
+      tile.dataset.key = item.key;
+      tile.dataset.active = item.active ? "true" : "false";
+      const label = el("span", "ts-tile__label");
+      label.append(makeStockMarker(item.marker), el("span", "ts-tile__name", item.label));
+      const value = el("span", "ts-tile__value");
+      value.append(keep(`sv:${item.key}`, el("b", "ts-tile__number", item.value)), keep(`sm:${item.key}`, el("small", "ts-tile__max", item.max)));
+      const track = keep(`str:${item.key}`, el("span", "ts-tile__track"));
+      track.setAttribute("role", "meter");
+      track.setAttribute("aria-label", item.label);
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      track.setAttribute("aria-valuenow", String(Math.round(item.ratio * 100)));
+      const fill = keep(`sf:${item.key}`, el("span", "ts-tile__fill"));
+      fill.style.setProperty("--fill", item.ratio.toFixed(3));
+      setTone(fill, item.tone);
+      track.append(fill);
+      const sub = keep(`ss:${item.key}`, el("small", "ts-tile__sub", item.sub ?? ""));
+      sub.hidden = !item.sub;
+      tile.append(label, value, track, sub);
+      grid.append(tile);
+    }
+    wrapper.append(head, grid);
+    block.append(wrapper);
+  }
+  return block;
+}
+
+function patchStock(registry: Map<string, HTMLElement>, stock: TowerSheetStock | undefined) {
+  for (const group of stock?.groups ?? []) {
+    setText(registry.get(`sg:${group.key}`), group.summary);
+    for (const item of group.items) {
+      const tile = registry.get(`st:${item.key}`);
+      const active = item.active ? "true" : "false";
+      if (tile && tile.dataset.active !== active) tile.dataset.active = active;
+      setText(registry.get(`sv:${item.key}`), item.value);
+      setText(registry.get(`sm:${item.key}`), item.max);
+      const fill = registry.get(`sf:${item.key}`);
+      const ratio = item.ratio.toFixed(3);
+      if (fill && fill.style.getPropertyValue("--fill") !== ratio) fill.style.setProperty("--fill", ratio);
+      setTone(fill, item.tone);
+      const track = registry.get(`str:${item.key}`);
+      const now = String(Math.round(item.ratio * 100));
+      if (track && track.getAttribute("aria-valuenow") !== now) track.setAttribute("aria-valuenow", now);
+      const sub = registry.get(`ss:${item.key}`);
+      setText(sub, item.sub ?? "");
+      setHidden(sub, !item.sub);
+    }
+  }
+}
+
 /** Yalnizca degisen metni, dokumu ve cubugu yazar; yapi ayni varsayiliyor. */
 export function patchTowerSheet(sheet: HTMLElement, model: TowerSheetModel) {
   const registry = registries.get(sheet);
@@ -1091,6 +1359,7 @@ export function patchTowerSheet(sheet: HTMLElement, model: TowerSheetModel) {
   const insight = registry.get("insight");
   setText(insight, model.insight);
   setHidden(insight, !model.insight);
+  patchStock(registry, model.stock);
   const patchRow = (row: TowerSheetRow) => {
     setText(registry.get(`v:${row.key}`), row.value);
     const bonus = registry.get(`b:${row.key}`);

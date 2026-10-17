@@ -7,7 +7,8 @@
  * bir durum yollaniyor: sunucu bloklari test odasindan alinmis sayilar.
  * Phaser yok, yani tarayici bolmesi gizliyken de calisiyor.
  *
- * Adres parametreleri: `?tower=warrior-1|warrior-3|warrior-5`,
+ * Adres parametreleri: `?tower=warrior-1|warrior-3|warrior-5` ya da bina
+ * (`warehouse-1`, `warrior-7` cephanelik, `repair-depot-1`, `warrior-8` enerji),
  * `dock=top|bottom`, `ro=1` (takim arkadasinin kulesi), `pending=1`,
  * `expanded=1|0` (panelin boyunu yerel depoya yazar).
  */
@@ -39,14 +40,25 @@ function createFakeGame(canvas: HTMLElement) {
 const BLOCKS: Record<string, TowerStatsWire> = {
   "warrior-1": {"id":"t1","c":34,"k":37,"it":["kritik-sistem","hafif-muhimmat","atis-denetleyicisi"],"tc":["serbest-yatak"],"tm":"first","dt":"physical","ht":"projectile","r":{"v":145,"b":96.667,"m":[["character:atakan-passive",1.5]]},"d":{"v":81,"b":60,"s":[["character:atakan-passive",0.5],["card:serbest-yatak",-0.15]]},"f":{"v":3.934,"b":1.692,"s":[["shop:atis-denetleyicisi",0.25],["conversion:tork-aktarimi:0",0.3]],"m":[["character:atakan-passive",1.5]]},"su":0.25,"cc":{"v":0.13,"b":0.01,"s":[["shop:kritik-sistem",0.12]]},"cm":{"v":3,"b":2,"s":[["shop:kritik-sistem",1]]},"dps":401.5,"tr":{"v":199.4,"b":68.755,"s":[["card:nisan-takimi",0.2],["card:tork-aktarimi",0.5],["card:serbest-yatak",1.2]]},"ac":{"v":17,"b":20,"s":[["card:nisan-takimi",0.15]]},"ps":{"v":156.9,"b":95.111,"s":[["card:nisan-takimi",0.25],["shop:hafif-muhimmat",0.4]]},"dx":[["air",0.35],["shielded",0.3],["brute",0.3]],"fe":[["mark",0.2,6500]],"hs":12,"hc":3,"hl":100,"hr":30,"am":1.021,"oe":0.6},
   "warrior-3": {"id":"t1","c":34,"tm":"first","dt":"none","ht":"aura","r":{"v":159,"b":106,"m":[["character:atakan-passive",1.5]]},"f":{"v":4.545},"e":1,"fe":[["slow",0.322,850],["aslow",0.322]],"hs":1,"hc":3,"hl":100,"hr":30,"ec":3.743},
+  "warehouse-1": { "id": "t1", "c": 34 },
+  "warrior-7": { "id": "t1", "c": 34, "pp": 1.75 },
+  "repair-depot-1": { "id": "t1", "c": 34, "pp": 1.75 },
+  "warrior-8": { "id": "t1", "c": 34 },
   "warrior-5": {"id":"t1","c":34,"tm":"marked","dt":"fire","ht":"focus","r":{"v":200,"b":133.3,"m":[["character:atakan-passive",1.5]]},"d":{"v":119.5,"b":40,"s":[["character:atakan-passive",0.5],["tower:warrior-5:debug",1.487]]},"f":{"v":12.5,"b":8.681,"m":[["character:atakan-passive",1.5],["etc",0.96]]},"e":1,"su":1.875,"cc":{"v":0.01},"cm":{"v":2},"dps":1508.2,"tr":{"v":116.9,"b":68.755,"s":[["card:nisan-takimi",0.2],["card:tork-aktarimi",0.5]]},"ac":{"v":17,"b":20,"s":[["card:nisan-takimi",0.15]]},"hs":1.6,"hc":3,"hl":100,"hr":30,"ec":1.355}
 };
 
 const NAMES: Record<string, { name: string; level: number }> = {
   "warrior-1": { name: "Takipçi", level: 4 },
   "warrior-3": { name: "İzolasyon Kulesi", level: 6 },
-  "warrior-5": { name: "Debug Lazer", level: 7 }
+  "warrior-5": { name: "Debug Lazer", level: 7 },
+  "warehouse-1": { name: "Hammadde Deposu", level: 2 },
+  "warrior-7": { name: "Cephane Merkezi", level: 3 },
+  "repair-depot-1": { name: "Tamir Merkezi", level: 3 },
+  "warrior-8": { name: "Enerji Reaktörü", level: 3 }
 };
+
+/** Bina mi: stok blogu, savas sayisi yok. */
+const BUILDINGS = new Set(["warehouse-1", "warrior-7", "repair-depot-1", "warrior-8"]);
 
 const params = new URLSearchParams(location.search);
 const towerId = BLOCKS[params.get("tower") ?? ""] ? params.get("tower")! : "warrior-1";
@@ -87,7 +99,9 @@ function stateFor(): Record<string, unknown> {
   }
   const block = BLOCKS[towerId];
   const meta = NAMES[towerId];
-  const operational = true;
+  const building = BUILDINGS.has(towerId);
+  const operational = !building;
+  const production = (params.get("production") ?? "bullet") as "bullet" | "auraCrystal" | "powerCrystal";
   const sheet: TowerSheetInput = {
     towerId: "t1",
     definitionId: towerId,
@@ -99,7 +113,24 @@ function stateFor(): Record<string, unknown> {
     readOnly,
     dock,
     stats: pending ? undefined : block,
-    live: {
+    live: building ? {
+      hp: 182,
+      maxHp: 240,
+      armor: 0,
+      ammo: ammo + 9,
+      maxAmmo: 110,
+      energy: towerId === "repair-depot-1" ? energy / 40 : energy,
+      maxEnergy: towerId === "warehouse-1" ? 0 : 110,
+      resourceProvider: towerId === "warrior-7" ? "ammunition" : towerId === "warrior-8" ? "energy" : undefined,
+      productionAmmo: towerId === "warrior-7" ? production : undefined,
+      ammoStock: towerId === "warrior-7" ? { bullet: ammo, auraCrystal: 9, powerCrystal: 0 } : undefined,
+      materials: towerId === "warehouse-1"
+        ? { gunpowder: 120 + tick, mystic: 48, plasma: 0, iron: 400 }
+        : towerId === "warrior-7" ? { gunpowder: 62 - (tick % 40), mystic: 0, plasma: 14 }
+          : towerId === "repair-depot-1" ? { iron: 31 } : undefined,
+      repairParts: towerId === "repair-depot-1" ? 18 + (tick % 7) : undefined,
+      status: undefined
+    } : {
       hp: 182,
       maxHp: 240,
       armor: 4,
@@ -116,7 +147,7 @@ function stateFor(): Record<string, unknown> {
       insight: towerId === "warrior-1" && temperature > 60 ? "Soğuyor: ısı kilidine yaklaşıyor." : undefined
     },
     notes: [
-      { section: "resources", text: "Isı freni: sıcaklık %50 üstünde atış hızı düşer (çubuktaki çizgi)" },
+      ...(building ? [] : [{ section: "resources" as const, text: "Isı freni: sıcaklık %50 üstünde atış hızı düşer (çubuktaki çizgi)" }]),
       ...(towerId === "warrior-5" ? [{ section: "effects" as const, text: "Overdrive: açık (zincir ışını); 10. seviyede sola ve sağa süpüren iki ışın" }] : [])
     ],
     progress: { maxed: false, upgradeXp: 46, upgradeGold: 30, poolXp: 52.5, poolGold: 210, refund: readOnly ? undefined : { amount: 84, undoable: false } }
@@ -130,10 +161,11 @@ function stateFor(): Record<string, unknown> {
     sell: { label: readOnly ? "Sat" : "Sat 84g", enabled: !readOnly },
     repair: { label: "Onar 12g", enabled: !readOnly },
     performance: operational ? { percent: 50, canEdit: !readOnly } : undefined,
-    targeting: { current: block.tm ?? "first", modes: towerId === "warrior-5" ? ["marked", "first", "strongest"] : ["first", "strongest", "weakest", "closest"] },
-    ammoLogistics: { enabled: true, canEdit: !readOnly },
+    targeting: building ? undefined : { current: block.tm ?? "first", modes: towerId === "warrior-5" ? ["marked", "first", "strongest"] : ["first", "strongest", "weakest", "closest"] },
+    ammoLogistics: building ? undefined : { enabled: true, canEdit: !readOnly },
+    productionAmmo: towerId === "warrior-7" ? { value: production, canEdit: !readOnly } : undefined,
     logisticsPriority: { value: "normal", canEdit: !readOnly },
-    standby: { active: false, waking: false, canEdit: !readOnly },
+    standby: building ? undefined : { active: false, waking: false, canEdit: !readOnly },
     equippedItems: (block.it ?? []).map((id) => ({ id, name: id, description: "" })),
     equippedCapacity: MAX_EQUIPPED_SHOP_ITEMS_PER_TOWER,
     towerCards: { targetedCardIds: block.tc ?? [], ownerCardIds: towerId === "warrior-1" ? ["nisan-takimi", "tork-aktarimi"] : ["nisan-takimi"] },
