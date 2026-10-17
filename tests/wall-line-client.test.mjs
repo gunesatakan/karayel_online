@@ -159,7 +159,8 @@ test("tutamac suruklemesi: esik alti dokunus normal harita dokunusuna duser, esi
   assert.ok(tap.indexOf("hideWallHandles") < tap.indexOf("finishShieldGesture"), "kalkan jestinden sonra: kalkan birakisi tutamaclari kapatmiyor");
   assert.match(method("handleMapPointerMove"), /if \(this\.moveWallHandleDrag\(pointer\)\) \{\n\s+return;\n\s+\}/);
   // Satma dugmesi ve kule secimi tutamac yokken eskisi gibi: dokunus yollari yerinde.
-  assert.match(tap, /this\.room\?\.send\("sellTower"/);
+  // Satis onay istiyor (requestSellSelectedTower); harita tusu o yolu cagiriyor.
+  assert.match(tap, /if \(this\.hitSellButton\(pointer\)\) \{\n\s+this\.requestSellSelectedTower\(\);/);
   assert.match(tap, /this\.selectedPlacedTowerId = tower\.id;/);
 });
 
