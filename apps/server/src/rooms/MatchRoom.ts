@@ -2915,7 +2915,18 @@ export class MatchRoom extends Room<MatchState> {
    * yuzlerce kez soruluyor ve her biri butun kuleleri tariyor (grup aramasi
    * karesel). Yerlesim tick icinde degisirse (`markNavigationDirty`) atiliyor.
    */
-  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]>; walls?: Map<TowerModel, number>; palaces?: TowerModel[] };
+  private tickLayoutCache?: {
+    isolated: Map<TowerModel, boolean>;
+    synthesisGroups: Map<TowerModel, TowerModel[]>;
+    walls?: Map<TowerModel, number>;
+    palaces?: TowerModel[];
+    /** Kulelere isleyen auralarin kaynaklari; tik basina bir kez (`getTowerAuraSources`). */
+    auraSources?: TowerAuraSource[];
+    /** Kulenin aura carpanlari (`getTowerAuraModifiers`). */
+    auraModifiers?: Map<TowerModel, ReturnType<typeof evaluateTowerAuras>>;
+    /** Kapsayan Saray Arsivi'nin etkileri (`getZeynepPalaceEffectsFor`). */
+    palaceEffects?: Map<TowerModel, ReturnType<typeof getZeynepPalaceEffects>>;
+  };
   /**
    * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
    * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
@@ -9037,7 +9048,12 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Kapsayan arsivin etkileri (`getZeynepPalaceEffects`); kapsama yoksa hepsi sifir. */
   private getZeynepPalaceEffectsFor(tower: TowerModel) {
-    return getZeynepPalaceEffects(this.getZeynepPalaceCoverLevel(tower));
+    const cache = this.tickLayoutCache;
+    const cached = cache?.palaceEffects?.get(tower);
+    if (cached) return cached;
+    const effects = getZeynepPalaceEffects(this.getZeynepPalaceCoverLevel(tower));
+    if (cache) (cache.palaceEffects ??= new Map()).set(tower, effects);
+    return effects;
   }
 
   /** Bu arsivin alanindaki (sahibin, arsiv olmayan) kuleler; panelin kapsama sayisi. */
@@ -19691,7 +19707,24 @@ export class MatchRoom extends Room<MatchState> {
     return Math.max(1, this.findTowerDefinitionById(definitionId)?.engine?.placement?.footprintSpan ?? 1);
   }
 
+  /**
+   * Kulenin aura carpanlari. Menzil hesabi bunu tik icinde kule basina defalarca
+   * soruyor (hedef arama, isi, panel) ve her soru butun kuleleri tarayip aura
+   * kaynaklarini bastan kuruyordu: kule sayisinin karesi. Kaynaklar ve sonuc
+   * tik basina bir kez (2026-10 uretim profili: tik suresinin ~%17'si).
+   */
   private getTowerAuraModifiers(target: TowerModel) {
+    const cache = this.tickLayoutCache;
+    const cached = cache?.auraModifiers?.get(target);
+    if (cached) return cached;
+    const result = evaluateTowerAuras(this.getTowerAuraSources(), { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+    if (cache) (cache.auraModifiers ??= new Map()).set(target, result);
+    return result;
+  }
+
+  private getTowerAuraSources() {
+    const cache = this.tickLayoutCache;
+    if (cache?.auraSources) return cache.auraSources;
     const sources: TowerAuraSource[] = [];
     for (const source of this.towers.values()) {
       // Kulelere isleyen aurasi olmayan kaynak hicbir sey eklemez; aktif aura
@@ -19724,7 +19757,8 @@ export class MatchRoom extends Room<MatchState> {
         }
       }
     }
-    return evaluateTowerAuras(sources, { x: target.x, y: target.y, kind: "tower", ownerId: target.ownerId });
+    if (cache) cache.auraSources = sources;
+    return sources;
   }
 
   private getActiveTowerAuras(tower: TowerModel) {
