@@ -58,6 +58,12 @@ export type SynergyPreviewArgs = {
   map: EditableMapData;
   cellSize: number;
   bounds: { left: number; right: number; top: number; bottom: number };
+  /**
+   * Yolda olan kendi kurulumlarin (beden kareye yuruyor, sunucu henuz
+   * kurmadi). Sahada sayiliyor: yoksa bedenin yurudugu sure boyunca yaninda
+   * surukelenen kule "Yalnız" diyor ve "Bozar" uyarisi cikmiyordu.
+   */
+  pending?: ReadonlyArray<{ x: number; y: number; definitionId: string }>;
 };
 
 const DEFINITIONS_BY_ID = new Map<string, TowerDefinition>(
@@ -66,6 +72,8 @@ const DEFINITIONS_BY_ID = new Map<string, TowerDefinition>(
 
 /** Onizleme adayinin kimligi; anlik goruntudeki hicbir kimlikle karismaz. */
 const PREVIEW_ID = "__synergy-preview__";
+/** Yolda olan kurulumlarin onizlemedeki kimligi. */
+const PENDING_ID_PREFIX = "__synergy-pending__";
 
 /** Yazi doku boyu; dunyadaki boyut olcekle (bkz. world-labels.ts). */
 const BASE_FONT_PX = 30;
@@ -177,14 +185,18 @@ export class SynergyMarks {
    */
   preview(args: SynergyPreviewArgs) {
     this.lastPreview = args;
-    const key = `${args.definition.id}|${args.x}|${args.y}|${args.canPlace}`;
+    let pendingKey = "";
+    for (const entry of args.pending ?? []) pendingKey += `${entry.definitionId}:${entry.x}:${entry.y};`;
+    const key = `${args.definition.id}|${args.x}|${args.y}|${args.canPlace}|${pendingKey}`;
     if (key === this.previewKey) {
       return;
     }
     this.previewKey = key;
     this.previewGraphics.clear();
 
-    if (!args.canPlace || !this.state) {
+    // Durum yoksa (saha bos: ilk `sync` anahtari bos buldu) asagida bos sahadan
+    // hesaplaniyor; eskiden onizleme tumden gizleniyordu.
+    if (!args.canPlace) {
       this.hidePreview();
       return;
     }
@@ -199,7 +211,24 @@ export class SynergyMarks {
       ownerName: "",
       name: args.definition.name
     };
-    const result = previewSynergyPlacement(candidate, this.structures, args.map, getMapGridSize(args.map), this.state);
+    const pending = (args.pending ?? []).map((entry, index): SceneSynergyStructure => {
+      const definition = DEFINITIONS_BY_ID.get(entry.definitionId) ?? ({ id: entry.definitionId, name: entry.definitionId } as TowerDefinition);
+      return {
+        id: `${PENDING_ID_PREFIX}${index}`,
+        x: entry.x,
+        y: entry.y,
+        level: 1,
+        characterId: args.characterId,
+        definition,
+        ownerId: args.localSessionId,
+        ownerName: "",
+        name: definition.name
+      };
+    });
+    const gridSize = getMapGridSize(args.map);
+    const structures = pending.length > 0 ? [...this.structures, ...pending] : this.structures;
+    const state = pending.length > 0 || !this.state ? computeSynergyState(structures, args.map, gridSize) : this.state;
+    const result = previewSynergyPlacement(candidate, structures, args.map, gridSize, state);
     const text = describeSynergyPreview(result, (structure) => structure.name);
     if (!text.headline && !text.warning) {
       this.hidePreview();
