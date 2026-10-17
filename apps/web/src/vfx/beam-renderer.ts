@@ -2,6 +2,7 @@ import { GAME_SPEED_MULTIPLIER, ZEYNEP_SYNTHESIS_BURN_TICK_MS, type BeamSnapshot
 import { getAtakanShotHue } from "./atakan-shots";
 import { drawPressureWave, getTierEdge } from "./combat-vfx";
 import { fillRayPath } from "./zeynep-signatures";
+import { TAHT_BURN_BEAM_WIDTH_SCALE, getTahtBurnBeamColor, getTahtRayBeamColor } from "./taht-tiers";
 import {
   LASER_CORONA,
   LASER_GLINTS,
@@ -81,26 +82,11 @@ const CRACKS = 5;
 const grounded = groundHueCached;
 
 /**
- * Taht Muhru'nun iki Gosteri sentezinin vurdugu isin (`zeynep-3-burn`).
- *
- * Kalinlik yalnizca gorselde yarida: sunucunun isabet bandi
- * (`ZEYNEP_SHOWCASE_BEAM_RADIUS`) degismedi, kulenin gucu ayni. Renk
- * kulenin kademesinden: 1-4 mavi, 5-9 lacivert, 10 koyu mor.
+ * Taht Muhru'nun iki Gosteri sentezinin vurdugu isin (`zeynep-3-burn`) ve
+ * Gosteri + Hiza'nin seken isini (`zeynep-3-ray`): renk kulenin kademesinden
+ * (`taht-tiers`). Yanik isininin kalinligi yalnizca gorselde yarida.
  */
-export const TAHT_BURN_BEAM_WIDTH_SCALE = 0.5;
-export const TAHT_BURN_BEAM_TIER_COLORS: Readonly<Record<1 | 2 | 3, number>> = { 1: 0x3a86d6, 2: 0x2f45a8, 3: 0x5b2a9e };
-/** Sunucunun taban rengi; Abarti'dan gecen isin bunun koyulasmis hali geliyor. */
-const TAHT_BURN_BASE_COLOR = 0x22d3ee;
-
-export function getTahtBurnBeamColor(beam: { tier?: number; color: number }) {
-  const tier = beam.tier === 3 ? 3 : beam.tier === 2 ? 2 : 1;
-  const color = TAHT_BURN_BEAM_TIER_COLORS[tier];
-  if (beam.color === TAHT_BURN_BASE_COLOR) return color;
-  // Abarti koyulastirmasi: sunucunun oranini kademe rengine tasi.
-  const factor = Math.max(0.3, Math.min(1, ((beam.color >> 8) & 0xff) / ((TAHT_BURN_BASE_COLOR >> 8) & 0xff)));
-  const channel = (shift: number) => Math.round(((color >> shift) & 0xff) * factor);
-  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
-}
+export { TAHT_BURN_BEAM_TIER_COLORS, TAHT_BURN_BEAM_WIDTH_SCALE, getTahtBurnBeamColor } from "./taht-tiers";
 
 export type BeamRenderOptions = {
   /** Efekt saati (ms). */
@@ -281,7 +267,11 @@ export class BeamRenderer {
     } else if (beam.definitionId === "archer-5-mirror") {
       this.drawMelisBrokenMirrorBurst(beam, grounded(color));
       this.drawBeamTierHeat(beam, grounded(color));
-    } else if (beam.definitionId === "zeynep-3" || beam.definitionId === "zeynep-3-ray") {
+    } else if (beam.definitionId === "zeynep-3-ray") {
+      const rayColor = getTahtRayBeamColor(beam);
+      this.drawMirrorSpear(beam, rayColor);
+      this.drawTahtRayCore(beam, grounded(rayColor));
+    } else if (beam.definitionId === "zeynep-3") {
       this.drawMirrorSpear(beam, color);
     } else if (beam.definitionId === "zeynep-3-burn") {
       // Taht Muhru (iki Gosteri): isin yari kalinlikta, renk kademeden.
@@ -791,6 +781,36 @@ export class BeamRenderer {
     const half = width * 0.38;
     g.fillStyle(whiteHot(color, TIER_HEAT[tier - 1]), 0.95);
     g.fillTriangle(head.x + ux * tip, head.y + uy * tip, head.x - uy * half, head.y + ux * half, head.x + uy * half, head.y - ux * half);
+  }
+
+  /**
+   * Gosteri + Hiza isininin 5. ve 10. seviyesi: 5'te govdenin ortasinda ince,
+   * acik tonlu sert bir cekirdek; 10'da govdenin iki yaninda titresen ince
+   * bir kilif. Parlama yok (ADD degil); hareket azaltmada kilif titremiyor.
+   */
+  private drawTahtRayCore(beam: BeamSnapshot, color: number) {
+    const g = this.beamGraphics;
+    const tier = beam.tier ?? 1;
+    if (!g || tier < 2) return;
+    const count = fillRayPath(beam, RAY_POINTS);
+    const width = Math.max(4, beam.width);
+    g.lineStyle(Math.max(1, width * 0.1), liftToWhite(color, 0.45), 0.92);
+    for (let index = 0; index + 1 < count; index += 1) {
+      g.lineBetween(RAY_POINTS[index].x, RAY_POINTS[index].y, RAY_POINTS[index + 1].x, RAY_POINTS[index + 1].y);
+    }
+    if (tier < 3) return;
+    const pulse = this.still ? 0.5 : 0.42 + Math.sin(this.now / 70) * 0.2;
+    const offset = width * 0.62;
+    g.lineStyle(Math.max(0.8, width * 0.06), liftToWhite(color, 0.2), pulse);
+    for (let index = 0; index + 1 < count; index += 1) {
+      const a = RAY_POINTS[index];
+      const b = RAY_POINTS[index + 1];
+      const length = Math.max(0.001, Math.hypot(b.x - a.x, b.y - a.y));
+      const nx = (-(b.y - a.y) / length) * offset;
+      const ny = ((b.x - a.x) / length) * offset;
+      g.lineBetween(a.x + nx, a.y + ny, b.x + nx, b.y + ny);
+      g.lineBetween(a.x - nx, a.y - ny, b.x - nx, b.y - ny);
+    }
   }
 
   /**

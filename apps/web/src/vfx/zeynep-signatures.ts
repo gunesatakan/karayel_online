@@ -55,6 +55,7 @@ import { PRESSURE_WAVE_GAIN, gainColor, getTierEdge } from "./combat-vfx";
 import { getMarkReticleHalf } from "./atakan-signatures";
 import { TEAMMATE_EXTRA_ALPHA, clamp01, darken, drawSlug, fillDisc, fnvHash, groundHue, whiteHot, type VfxGraphics, type VfxTier } from "./kit";
 import { VfxLod } from "./lod";
+import { getTahtDualLanceColor, getTahtRayBeamColor, TAHT_DUAL_LANCE_GOLD } from "./taht-tiers";
 import { TIER_HEAT, TIER_WEIGHT } from "./vfx-profiles";
 
 /**
@@ -148,8 +149,10 @@ export function getLanceSigil(mode: LanceMode) {
   return LANCE_SIGILS[mode];
 }
 
-/** Mermi ya da temas kimliginden govde tonu (kip); Zeynep mermisi degilse `fallback`. */
-export function getZeynepBodyColor(definitionId: string | undefined, fallback: number) {
+/** Mermi ya da temas kimliginden govde tonu (kip; cift mizrakta kademe); Zeynep mermisi degilse `fallback`. */
+export function getZeynepBodyColor(definitionId: string | undefined, fallback: number, tier?: number) {
+  // Iki Hiza (cift mizrak) kademe tonunda: bronz, celik, siyah.
+  if (definitionId === "zeynep-3") return getTahtDualLanceColor(tier);
   if (definitionId === "zeynep-1" || definitionId === "zeynep-3" || definitionId === "zeynep-3-kin-projectile" || definitionId === TAHT_COPY_ID) {
     return LANCE_BODY[getLanceMode(definitionId)];
   }
@@ -226,6 +229,10 @@ export type LanceDrawOptions = {
   /** Siluetin yari boyu (dunya birimi, olcekli). */
   radius: number;
   scale: number;
+  /** Cift mizragin 10. seviye kilifinin titresmesi icin (oyun saati). */
+  now?: number;
+  /** Hareket azaltma: kilif titremiyor. */
+  still?: boolean;
 };
 
 /** Mizragin secenekleri; attack-vfx karede yerinde yaziyor. */
@@ -237,8 +244,9 @@ export const LANCE_OPTIONS: LanceDrawOptions = { mode: "hiza", tier: 1, heat: TI
  * kuyrukta dizilimin uc kertigi (uyelerin tonunda; kip bilgisi).
  */
 export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: number, options: LanceDrawOptions) {
-  const { mode, radius: r, weight, heat } = options;
-  const color = LANCE_BODY[mode];
+  const { mode, radius: r, weight, heat, tier } = options;
+  const dual = mode === "dual";
+  const color = dual ? getTahtDualLanceColor(tier) : LANCE_BODY[mode];
   const ux = Math.cos(angle);
   const uy = Math.sin(angle);
   const nx = -uy;
@@ -249,6 +257,7 @@ export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: num
   const half = r * 0.3 * weight;
   g.fillStyle(whiteHot(color, heat), 0.97);
   g.fillTriangle(x + ux * tip, y + uy * tip, x - ux * r * 0.15 + nx * half, y - uy * r * 0.15 + ny * half, x - ux * r * 0.15 - nx * half, y - uy * r * 0.15 - ny * half);
+  if (dual && tier >= 2) drawDualLanceCore(g, x, y, ux, uy, nx, ny, r, weight, tier, color, options);
 
   const sigil = LANCE_SIGILS[mode];
   if (!sigil) return;
@@ -262,6 +271,23 @@ export function drawZeynepLance(g: VfxGraphics, x: number, y: number, angle: num
   g.fillRect(sx - nx * r * 0.45 - pip / 2, sy - ny * r * 0.45 - pip / 2, pip, pip);
   g.fillStyle(sigil[2], 0.95);
   g.fillRect(sx + ux * r * 0.5 - pip * 0.65, sy + uy * r * 0.5 - pip * 0.65, pip * 1.3, pip * 1.3);
+}
+
+/**
+ * Cift mizragin 5. ve 10. seviyesi: 5'te govdenin ortasinda ince acik
+ * tonlu sert cekirdek; 10'da siyah govdeye altin kenar ve govdenin iki
+ * yaninda titresen ince altin kilif. Parlama yok.
+ */
+function drawDualLanceCore(g: VfxGraphics, x: number, y: number, ux: number, uy: number, nx: number, ny: number, r: number, weight: number, tier: VfxTier, color: number, options: LanceDrawOptions) {
+  const coreColor = tier >= 3 ? TAHT_DUAL_LANCE_GOLD : whiteHot(color, 0.55);
+  g.lineStyle(Math.max(0.8, r * 0.09 * weight), coreColor, 0.95);
+  g.lineBetween(x - ux * r * 0.9, y - uy * r * 0.9, x + ux * r * 0.8, y + uy * r * 0.8);
+  if (tier < 3) return;
+  const pulse = options.still || options.now === undefined ? 0.6 : 0.5 + Math.sin(options.now / 70) * 0.25;
+  const side = Math.max(1.2, r * 0.3 * weight);
+  g.lineStyle(Math.max(0.7, r * 0.06), TAHT_DUAL_LANCE_GOLD, clamp01(pulse));
+  g.lineBetween(x - ux * r * 1.1 + nx * side, y - uy * r * 1.1 + ny * side, x + ux * r * 0.6 + nx * side, y + uy * r * 0.6 + ny * side);
+  g.lineBetween(x - ux * r * 1.1 - nx * side, y - uy * r * 1.1 - ny * side, x + ux * r * 0.6 - nx * side, y + uy * r * 0.6 - ny * side);
 }
 
 /* ------------------------------------------------------------------ */
@@ -455,7 +481,7 @@ export class ZeynepSignatureVfx {
     // Ayni mermi: noktaya ekle (delip gecti); yoksa yeni cizgi.
     let event = this.find("pierce", input.key);
     if (!event) {
-      event = this.push("pierce", input.key, bornAt, input.tier, input.own, getZeynepBodyColor(input.definitionId, ZEYNEP_MEMBER_COLORS.hiza));
+      event = this.push("pierce", input.key, bornAt, input.tier, input.own, getZeynepBodyColor(input.definitionId, ZEYNEP_MEMBER_COLORS.hiza, input.tier));
       event.count = 0;
     }
     if (event.count < PIERCE_POINTS) {
@@ -802,6 +828,18 @@ export class ZeynepSignatureVfx {
     this.links.lineBetween(x - wx * reach, y - wy * reach, x + wx * reach, y + wy * reach);
     this.marks.fillStyle(whiteHot(event.color, event.heat), clamp01(0.9 * Math.pow(fade, 2) * extra));
     fillDisc(this.marks, x, y, (still ? 2.4 : 1.8 + 1.2 * fade) * scale);
+    // 5. ve 10. seviye: duvardan geri sacilan kisa metal kivilcimlari (normalin
+    // tersinde yelpaze, duvardan disa; 10'da daha cok ve uzun). Hareket azaltmada yok.
+    if (event.tier < 2 || still || !this.options.lod.sparks) return;
+    const sparks = event.tier >= 3 ? 6 : 3;
+    const length = (event.tier >= 3 ? 9 : 6) * scale * (0.35 + 0.65 * Math.sqrt(age));
+    this.links.lineStyle(Math.max(0.7, 0.9 * scale), whiteHot(event.edge, 0.35), clamp01(0.9 * fade * extra));
+    for (let index = 0; index < sparks; index += 1) {
+      const spread = ((((event.seed >> (index * 3)) & 7) / 7) - 0.5) * 1.6;
+      const angle = event.angle + Math.PI + spread;
+      const start = length * 0.35;
+      this.links.lineBetween(x + Math.cos(angle) * start, y + Math.sin(angle) * start, x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    }
   }
 
   /**
@@ -1175,7 +1213,7 @@ export class ZeynepReceiptTracker {
       const normalX = (x - px) / inLength - (nx - x) / outLength;
       const normalY = (y - py) / inLength - (ny - y) / outLength;
       const angle = Math.abs(normalX) + Math.abs(normalY) > 0.001 ? Math.atan2(normalY, normalX) : 0;
-      this.sink({ kind: "bounce", key: `${beam.id}@${key}`, x, y, angle, color: beam.color, tier: beam.tier, own }, 0);
+      this.sink({ kind: "bounce", key: `${beam.id}@${key}`, x, y, angle, color: getTahtRayBeamColor(beam), tier: beam.tier, own }, 0);
     }
   }
 

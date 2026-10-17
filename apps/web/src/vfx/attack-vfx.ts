@@ -57,6 +57,7 @@ import type { FlashSink, GlowStampSink } from "./flash-pool";
 import { VfxLod } from "./lod";
 import { getVfxProfile, getVfxTier, type VfxProfile, type VfxTierRecipe } from "./vfx-profiles";
 import { COURT_FLASH_GAP_MS, LANCE_OPTIONS, drawDecreeTick, drawZeynepLance, getLanceMode, getZeynepBodyColor } from "./zeynep-signatures";
+import { TAHT_DUAL_LANCE_GOLD } from "./taht-tiers";
 import { PROJECTILE_VISUAL_SCALE } from "../visual-scale";
 
 /** Takim arkadasinin kademe 3 eklentileri (tek kaynak kit'te). */
@@ -263,7 +264,7 @@ export class AttackVfx {
       // Zeynep: govde ve iz mizragin kipinin tonunda.
       // Obsesyon ve Ucube: kademe boyu degil tonu degistiriyor (atakan-shots).
       const hue = profile.court
-        ? getZeynepBodyColor(projectile.definitionId, recipe.color)
+        ? getZeynepBodyColor(projectile.definitionId, recipe.color, tier)
         : profile.silhouette === "gaze" || profile.silhouette === "arc"
           ? getAtakanShotHue(profile.silhouette, tier, recipe.color)
           : recipe.color;
@@ -272,10 +273,12 @@ export class AttackVfx {
       // Ucube kendi izlerini ciziyor (bakis kamasi, simsek); kayit yine tutuluyor.
       const entry = this.trails.record(projectile.id, projectile.x, projectile.y);
       if (entry && moving && profile.silhouette !== "sprite" && profile.silhouette !== "gaze" && profile.silhouette !== "arc") {
-        RIBBON.color = darken(hue, 0.2);
+        // Cift Hiza mizragi: iz kademeyle uzuyor (5'te 1,5, 10'da 2 kat), 10'da altin.
+        const dualTrail = projectile.definitionId === "zeynep-3" ? (tier >= 3 ? 2 : tier >= 2 ? 1.5 : 1) : 1;
+        RIBBON.color = dualTrail > 1 && tier >= 3 ? darken(TAHT_DUAL_LANCE_GOLD, 0.25) : darken(hue, 0.2);
         RIBBON.width = recipe.trail.width * scale;
         RIBBON.alpha = 0.5;
-        RIBBON.maxPoints = Math.max(2, Math.round(recipe.trail.points * lod.trailScale));
+        RIBBON.maxPoints = Math.max(2, Math.round(recipe.trail.points * dualTrail * lod.trailScale));
         RIBBON_CORE.color = whiteHot(hue, recipe.heat);
         RIBBON.core = RIBBON_CORE;
         drawTaperedRibbon(this.body, entry, this.trails.bufferCapacity, projectile.x, projectile.y, RIBBON);
@@ -290,6 +293,8 @@ export class AttackVfx {
         LANCE_OPTIONS.weight = recipe.weight;
         LANCE_OPTIONS.radius = radius;
         LANCE_OPTIONS.scale = scale;
+        LANCE_OPTIONS.now = now;
+        LANCE_OPTIONS.still = still;
         drawZeynepLance(this.body, projectile.x, projectile.y, angle, LANCE_OPTIONS);
       } else if (profile.silhouette === "combat") {
         drawCombatProjectile(this.body, projectile, scale * 1.4, hue, recipe.heat);
@@ -597,7 +602,7 @@ export class AttackVfx {
     event.flash = false;
     // Obsesyon ve Ucube'nin namlusu ve carpmasi da merminin kademe tonunda.
     event.body = profile.court
-      ? getZeynepBodyColor(input.definitionId, recipe.color)
+      ? getZeynepBodyColor(input.definitionId, recipe.color, recipe.tier)
       : profile.silhouette === "gaze" || profile.silhouette === "arc"
         ? getAtakanShotHue(profile.silhouette, recipe.tier, recipe.color)
         : recipe.color;

@@ -32,3 +32,33 @@ test("isin gorselde yari kalinlikta ve kademe rengiyle ciziliyor", () => {
   assert.equal(TAHT_BURN_BEAM_WIDTH_SCALE, 0.5);
   assert.match(source, /beam\.definitionId === "zeynep-3-burn"\) \{\n[^\n]*\n\s+this\.drawShowcaseBeam\(\{ \.\.\.beam, width: beam\.width \* TAHT_BURN_BEAM_WIDTH_SCALE \}, grounded\(getTahtBurnBeamColor\(beam\)\)\);/);
 });
+
+const tiers = await importWebModule("apps/web/src/vfx/taht-tiers.ts");
+const signatures = await importWebModule("apps/web/src/vfx/zeynep-signatures.ts");
+
+test("Gosteri + Hiza isini: leylak, erguvan, kan kirmizisi; sekme sonrasi acik, Abarti koyu", () => {
+  const { getTahtRayBeamColor, TAHT_RAY_TIER_COLORS } = tiers;
+  assert.deepEqual([1, 2, 3].map((tier) => getTahtRayBeamColor({ tier, color: 0xe879f9 })), [0xe879f9, 0xa21caf, 0x9f1239]);
+  assert.equal(TAHT_RAY_TIER_COLORS[3], 0x9f1239);
+  const bounced = getTahtRayBeamColor({ tier: 2, color: 0xf0abfc });
+  assert.ok((bounced & 0xff) > (0xa21caf & 0xff), "sekmeden sonraki parca acilmadi");
+  const darkened = getTahtRayBeamColor({ tier: 3, color: 0xb55ec2 });
+  assert.ok(((darkened >> 16) & 0xff) < 0x9f, "Abarti koyulasmasi kayboldu");
+  assert.ok(getTahtRayBeamColor({ tier: 3, color: 0xbb85c4 }) !== getTahtRayBeamColor({ tier: 3, color: 0xb55ec2 }), "koyulasmis sekme parcasi ilk parcayla ayni");
+});
+
+test("Hiza + Hiza mizragi: bronz, celik, siyah-altin", () => {
+  assert.deepEqual([1, 2, 3].map((tier) => tiers.getTahtDualLanceColor(tier)), [0xb87333, 0x8a9bb0, 0x2b2b2b]);
+  assert.equal(signatures.getZeynepBodyColor("zeynep-3", 0, 2), 0x8a9bb0);
+  assert.equal(signatures.getZeynepBodyColor("zeynep-3", 0, undefined), 0xb87333);
+});
+
+test("ek efektler kademeye bagli: cekirdek/kilif, sekme kivilcimi, uzun iz", () => {
+  const signatureSource = readFileSync(new URL("../apps/web/src/vfx/zeynep-signatures.ts", import.meta.url), "utf8");
+  const attackSource = readFileSync(new URL("../apps/web/src/vfx/attack-vfx.ts", import.meta.url), "utf8");
+  assert.match(source, /this\.drawTahtRayCore\(beam, grounded\(rayColor\)\)/);
+  assert.match(source, /if \(!g \|\| tier < 2\) return;/);
+  assert.match(signatureSource, /if \(dual && tier >= 2\) drawDualLanceCore/);
+  assert.match(signatureSource, /if \(event\.tier < 2 \|\| still \|\| !this\.options\.lod\.sparks\) return;/);
+  assert.match(attackSource, /tier >= 3 \? 2 : tier >= 2 \? 1\.5 : 1/);
+});
