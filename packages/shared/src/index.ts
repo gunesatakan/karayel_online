@@ -9,6 +9,7 @@ import { ENEMY_EXP_MULTIPLIER, getStructureRepairCost } from "./balance/index.js
 import { lt } from "./i18n/index.js";
 // getTowerGridSpan kule izini motor tanimindan okuyor.
 import { towerCatalog } from "./characters/index.js";
+import { ZEYNEP_PALACE_ID, getZeynepPalaceUpgradeGold } from "./zeynep-palace/index.js";
 
 export type CharacterId = "zeynep" | "warrior" | "archer" | "mage" | "healer" | "tank" | "onur";
 export type UpgradeId = "damage" | "fireRate" | "projectileSpeed" | "heal";
@@ -2235,8 +2236,11 @@ export const TOWER_LEVEL_GOLD_COST_RATIOS: Readonly<Record<number, number>> = {
  * yayilmak arasindaki secim buradan cikiyor.
  *
  * Sunucu odemeyi, istemci dugmeyi ve kodeksi bu tek fonksiyondan okuyor.
+ * `definitionId` kendi tablosu olan kule icin (Saray Arsivi).
  */
-export function getTowerLevelGoldCost(towerCost: number, currentLevel: number) {
+export function getTowerLevelGoldCost(towerCost: number, currentLevel: number, definitionId?: string) {
+  // Saray Arsivi kendi tablosunu tasiyor (5 seviye, sabit pahali bedeller).
+  if (definitionId === ZEYNEP_PALACE_ID) return getZeynepPalaceUpgradeGold(currentLevel);
   if (currentLevel < 1 || currentLevel >= 10) return 0;
   const nextLevel = Math.round(currentLevel) + 1;
   const ratio = TOWER_LEVEL_GOLD_COST_RATIOS[nextLevel] ?? 0;
@@ -2355,6 +2359,7 @@ export * from "./worker-skills.js";
 export * from "./synergy/index.js";
 export * from "./placement-range/index.js";
 export * from "./zeynep-shots/index.js";
+export * from "./zeynep-palace/index.js";
 export * from "./tower-panel/index.js";
 export * from "./legendary/index.js";
 export * from "./server-knowledge/index.js";

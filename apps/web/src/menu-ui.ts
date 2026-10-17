@@ -2269,7 +2269,7 @@ function towerToDetail(tower: TowerDefinition): DetailItem {
       // Her seviye XP ve altin istiyor; altin bedeli sunucunun odettigi sayi.
       ...[2, 3, 4, 5, 6, 7, 8, 9, 10].filter((level) => level <= getTowerMaxLevel(tower)).map((level) => ({
         label: t("menu.common.level", { n: level }),
-        value: t("menu.tower.xpGold", { xp: getTowerLevelExpCost(tower.cost, level - 1), gold: getTowerLevelGoldCost(tower.cost, level - 1) })
+        value: t("menu.tower.xpGold", { xp: getTowerLevelExpCost(tower.cost, level - 1), gold: getTowerLevelGoldCost(tower.cost, level - 1, tower.id) })
       }))
     ]
   });

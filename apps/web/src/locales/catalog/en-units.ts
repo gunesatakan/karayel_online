@@ -3,6 +3,14 @@ import {
   ISOLATION_SLOW_FRACTION_LEVEL_10,
   KIN_SLOW_FAR_FRACTION,
   TRACKING_MARK_DAMAGE_PER_STACK,
+  ZEYNEP_PALACE_AURA_RADIUS_CELLS,
+  ZEYNEP_PALACE_BOUNCE_BONUS,
+  ZEYNEP_PALACE_BURN_BONUS_MS,
+  ZEYNEP_PALACE_COOLING_BONUS,
+  ZEYNEP_PALACE_MAX_LEVEL,
+  ZEYNEP_PALACE_PIERCE_BONUS,
+  ZEYNEP_PALACE_RANGE_BONUS,
+  ZEYNEP_PALACE_UPGRADE_GOLD,
   getCriticalSlowFraction
 } from "@karayel/shared";
 
@@ -112,8 +120,8 @@ export const enTowers: Readonly<Record<string, { name: string; role: string; des
   },
   "zeynep-7": {
     name: "Palace Archive",
-    role: "Synthesis amplifier",
-    description: "Never fires and is useless on its own. Its job is to permanently strengthen Throne Seal synthesis combinations: at level 2 it adds +1 pierce to double Alignment synthesis, at level 3 +1 second to the burn duration of double Spectacle synthesis, and at level 6 +1 ricochet to the mixed synthesis beam. Expensive; worth it only with more than one Throne Seal on the field."
+    role: "Aura tower",
+    description: `AURA tower: never fires; strengthens your own towers within ${ZEYNEP_PALACE_AURA_RADIUS_CELLS} tiles of its centre. Level 1: towers in the field get +${Math.round(ZEYNEP_PALACE_COOLING_BONUS * 100)}% cooling; level 2: +${Math.round(ZEYNEP_PALACE_RANGE_BONUS * 100)}% range (counts toward the conditional range cap). Levels 3-5 strengthen Throne Seal synthesis inside the field: level 3 adds +${ZEYNEP_PALACE_PIERCE_BONUS} pierce to double Alignment synthesis, level 4 +${ZEYNEP_PALACE_BURN_BONUS_MS / 1000} second to the double Spectacle burn line, level 5 +${ZEYNEP_PALACE_BOUNCE_BONUS} ricochet to the mixed synthesis beam. Several archives do not stack; a tower takes the highest-level archive covering it. Max level ${ZEYNEP_PALACE_MAX_LEVEL}; upgrades are expensive (${[2, 3, 4, 5].map((level) => ZEYNEP_PALACE_UPGRADE_GOLD[level]).join(" / ")} gold).`
   },
   "zeynep-8": {
     name: "Hyperbole",

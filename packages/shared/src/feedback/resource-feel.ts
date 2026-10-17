@@ -189,7 +189,7 @@ export function getUpgradeReadyTowerIds(
       continue;
     }
     const exp = getTowerLevelExpCost(definition.cost, tower.level);
-    const gold = getTowerLevelGoldCost(definition.cost, tower.level);
+    const gold = getTowerLevelGoldCost(definition.cost, tower.level, definition.id);
     if (wallet.experience >= exp && wallet.gold >= gold) {
       ready.push({ id: tower.id, exp, gold });
     }

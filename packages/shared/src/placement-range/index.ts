@@ -24,10 +24,12 @@ import { getMapGridSize } from "../map.js";
 import { isStructureIsolated, receivesAtakanIsolationBonus, type SynergyMap, type SynergyStructure } from "../synergy/index.js";
 import { getOrbitBladeLength } from "../tower-rules.js";
 import { getTowerBaseLevelRange, hasGlobalTowerRange } from "../tower-stats/index.js";
+import { ZEYNEP_PALACE_ID } from "../zeynep-palace/index.js";
 
 /**
  * - `attack`: kulenin vurus menzili (yorunge kulesinde bicak boyu).
- * - `aura`: saldirmayan yapinin etki ya da hizmet cemberi (Tamir Merkezi).
+ * - `aura`: saldirmayan yapinin etki ya da hizmet cemberi (Tamir Merkezi,
+ *   Saray Arsivi).
  * - `none`: cizilecek bir yaricap yok (kaynak binasi, duvar, Sunucu'nun
  *   butun arenayi kaplayan bagi).
  */
@@ -75,12 +77,14 @@ const NO_RANGE: PlacementPreviewRange = {
 
 /**
  * Saldirmayan ama cemberi olabilen yapi: Tamir Merkezi'nin iscileri yalnizca
- * menzilindeki yapilari onariyor (sunucu `findWorstStructure`).
+ * menzilindeki yapilari onariyor (sunucu `findWorstStructure`); Saray
+ * Arsivi'nin cemberi aura alani.
  */
 function isNonAttackingStructure(definition: TowerDefinition) {
   return Boolean(definition.resourceProvider || definition.engine?.resourceProvider)
     || !countsAsTower(definition)
-    || definition.id === "repair-depot-1";
+    || definition.id === "repair-depot-1"
+    || definition.id === ZEYNEP_PALACE_ID;
 }
 
 /**

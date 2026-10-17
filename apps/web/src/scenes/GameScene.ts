@@ -12686,7 +12686,7 @@ room.onMessage("slow:critical", (message: { x: number; y: number }) => this.show
       ? towerCatalog[selectedTower.characterId].find((tower) => tower.id === selectedTower.definitionId)
       : undefined;
     const upgradeCost = definition ? getTowerLevelExpCost(definition.cost, selectedTower?.level ?? 1) : 0;
-    const upgradeGoldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower?.level ?? 1) : 0;
+    const upgradeGoldCost = definition ? getTowerLevelGoldCost(definition.cost, selectedTower?.level ?? 1, definition.id) : 0;
     const refundState = selectedTower ? this.getTowerRefundState(selectedTower) : undefined;
     const sellRefund = refundState?.amount ?? 0;
     const canUpgrade = Boolean(selectedTower && definition && selectedTower.ownerId === this.localSessionId && selectedTower.level < getTowerMaxLevel(definition)

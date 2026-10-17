@@ -421,7 +421,7 @@ function spendExperience({ towers, config, experienceRef, goldRef }) {
       .filter((tower) => tower.level < getTowerMaxLevel(tower.definition))
       .map((tower) => {
         const cost = getTowerLevelExpCost(tower.definition.cost, tower.level);
-        const gold = getTowerLevelGoldCost(tower.definition.cost, tower.level);
+        const gold = getTowerLevelGoldCost(tower.definition.cost, tower.level, tower.definition.id);
         return { tower, cost, gold, score: tower.definition.damage / Math.max(1, tower.definition.fireIntervalMs) / Math.max(1, cost + gold) * config.upgradeBias };
       })
       .filter(({ cost, gold }) => cost <= experienceRef.value && gold <= goldRef.value)

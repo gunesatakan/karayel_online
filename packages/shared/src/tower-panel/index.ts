@@ -47,6 +47,8 @@ export type TowerStatValue = {
  * yavaslatmasi), `coolant` (Sogutma Kanali), `burn` / `bleed` (azami canin
  * saniyelik kesri), `armor` (zirh kirma, puan), `armorAura` (Abarti'nin
  * gecen mermilere verdigi zirh kirma), `mark` (isaretin hasar payi),
+ * Saray Arsivi'nin `arc:cover` (alandaki kule sayisi), `arc:cooling` /
+ * `arc:range` (pay), `arc:pierce` / `arc:bounce` (adet), `arc:burn` (sure),
  * ve motorun diger durumlari (`stun`, `fear`, `bind`, `convert`, `chill`,
  * `curse`, `freeze`). `extra`: mesafeyle degisen yavaslatmada uzak uctaki
  * kesir, ust uste binen durumda en fazla yigin.
@@ -128,6 +130,8 @@ export type TowerStatsWire = {
   hs?: number;
   /** Saniyelik soguma. */
   hc?: number;
+  /** Sogumanin carpan paylari: [kaynak, pay] (bugun yalnizca `tower:zeynep-7`, Saray Arsivi aurasi). */
+  hcs?: TowerStatSource[];
   /** Kilit esigi ve acilma esigi (sicaklik). */
   hl?: number;
   hr?: number;

@@ -1,5 +1,6 @@
 import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
 import { getTowerRangePerLevel } from "@karayel/shared";
+import { ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_ID, getZeynepPalaceEffects } from "@karayel/shared";
 import { DAMAGE_SHARE_CAP, IDLE_REGEN_DELAY_MS, LAST_STAND_HP, getVeteranHealthMultiplier, getWoundedDamageMultiplier } from "@karayel/shared";
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
@@ -2879,7 +2880,7 @@ export class MatchRoom extends Room<MatchState> {
    * yuzlerce kez soruluyor ve her biri butun kuleleri tariyor (grup aramasi
    * karesel). Yerlesim tick icinde degisirse (`markNavigationDirty`) atiliyor.
    */
-  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]>; walls?: Map<TowerModel, number> };
+  private tickLayoutCache?: { isolated: Map<TowerModel, boolean>; synthesisGroups: Map<TowerModel, TowerModel[]>; walls?: Map<TowerModel, number>; palaces?: TowerModel[] };
   /**
    * Suren Debug Lazer supurmeleri: kule -> sahibi ve supurmenin oldurdugu
    * dusman. Supurme bitince "Tarama: N öldü" damgasi buradan; kayit yalnizca
@@ -6786,6 +6787,9 @@ export class MatchRoom extends Room<MatchState> {
     if (!options.sustained && killCooling > 0 && (tower.killCoolingUntil ?? 0) > this.runtime.now()) cooling *= 1 + killCooling;
     const neighborCooling = this.getNeighborCoolingAdd(tower);
     if (neighborCooling > 0) cooling *= 1 + neighborCooling;
+    // Saray Arsivi aurasi (1. seviye): alandaki kulenin sogumasi.
+    const palaceCooling = this.getZeynepPalaceEffectsFor(tower).cooling;
+    if (palaceCooling > 0) cooling *= 1 + palaceCooling;
     // Rolanti Sogutmasi: kule bir suredir dogrudan vurmuyor. Acil Sogutma
     // Pompasi: kule isi kilidinde. Ikisi de surekli ateste yok (kule ates
     // ediyor ve frenli kule kilide neredeyse hic girmiyor).
@@ -8657,7 +8661,7 @@ export class MatchRoom extends Room<MatchState> {
       .slice(0, 2);
     const damage = this.getTowerDamage(tower);
     const speed = Math.max(1, tower.definition.projectileSpeed + tower.level * 22);
-    const pierceLimit = 2 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-1") + this.getWorkerPierceBonus(tower);
+    const pierceLimit = 2 + this.getZeynepPalaceEffectsFor(tower).pierce + this.getWorkerPierceBonus(tower);
 
     for (const target of targets) {
       this.spawnZeynepSynthesisProjectile(tower, target, damage, speed, getTowerModeDamageType(tower.definition, "dual-projectile"), pierceLimit);
@@ -8670,7 +8674,7 @@ export class MatchRoom extends Room<MatchState> {
     const endY = result?.endY ?? target.y;
     const targets = result?.targets ?? [target];
     const damage = this.getTowerDamage(tower);
-    const burnDurationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "2-2") * 1000;
+    const burnDurationMs = ZEYNEP_SYNTHESIS_BURN_DURATION_MS + this.getZeynepPalaceEffectsFor(tower).burnMs;
     for (const enemy of targets) {
       this.damageEnemyFromTowerAs(tower, enemy, damage, 0, getTowerModeDamageType(tower.definition, "burn-impact"));
     }
@@ -8710,7 +8714,7 @@ export class MatchRoom extends Room<MatchState> {
   }
 
   private fireZeynepSynthesisMirrorBeam(tower: TowerModel, target: EnemyModel) {
-    const bounces = 1 + this.getZeynepSynthesisAmplifierBonus(tower.ownerId, "1-2");
+    const bounces = 1 + this.getZeynepPalaceEffectsFor(tower).bounces;
     const segments = getMirrorBeamSegments(tower.x, tower.y, target.x, target.y, bounces, this.getActiveWorldBounds());
     const abartiLevel = this.getAbartiPassThroughLevelForSegments(tower.ownerId, segments);
     const firstSegment = segments[0];
@@ -8946,16 +8950,69 @@ export class MatchRoom extends Room<MatchState> {
     return (r << 16) | (g << 8) | b;
   }
 
-  private getZeynepSynthesisAmplifierBonus(ownerId: string, combo: "1-1" | "2-2" | "1-2") {
-    const requiredLevel = combo === "1-1" ? 2 : combo === "2-2" ? 3 : 6;
-    let bonus = 0;
-    for (const tower of this.towers.values()) {
-      const providesSynthesisAura = tower.definition.engine?.auras?.some((aura) => aura.affects === "towers" && aura.stat === "synthesis");
-      if (tower.ownerId === ownerId && providesSynthesisAura && tower.level >= requiredLevel && tower.hp > 0) {
-        bonus += 1;
-      }
+  /**
+   * Saray Arsivi aurasi: bu kuleyi kapsayan arsivin seviyesi, yoksa 0.
+   *
+   * Kapsama: sahibin kulesi (Abarti ve destek esyalari gibi), merkezi
+   * arsivin merkezinden aura yaricapi (`ZEYNEP_PALACE_AURA_RADIUS`) icinde.
+   * Yigilma yok: kapsayan en yuksek seviyeli arsiv sayiliyor. Arsivler
+   * birbirini etkilemiyor. Eskiden sentez paylari sahadaki butun arsivlerden
+   * dogrusal toplaniyordu; artik yalnizca alandaki Taht Muhru aliyor.
+   */
+  private getZeynepPalaceCoverLevel(tower: TowerModel) {
+    if (tower.definition.id === ZEYNEP_PALACE_ID) return 0;
+    const palaces = this.getZeynepPalaces();
+    if (palaces.length === 0) return 0;
+    const radius = this.scaleWorldDistance(ZEYNEP_PALACE_AURA_RADIUS);
+    const radiusSq = radius * radius + 1e-6;
+    let best = 0;
+    for (const palace of palaces) {
+      if (palace.ownerId !== tower.ownerId || palace.level <= best) continue;
+      if (distanceSq(palace.x, palace.y, tower.x, tower.y) > radiusSq) continue;
+      if (!this.isZeynepPalaceActive(palace)) continue;
+      best = palace.level;
     }
-    return bonus;
+    return best;
+  }
+
+  /** Kapsayan arsivin etkileri (`getZeynepPalaceEffects`); kapsama yoksa hepsi sifir. */
+  private getZeynepPalaceEffectsFor(tower: TowerModel) {
+    return getZeynepPalaceEffects(this.getZeynepPalaceCoverLevel(tower));
+  }
+
+  /** Bu arsivin alanindaki (sahibin, arsiv olmayan) kuleler; panelin kapsama sayisi. */
+  private getZeynepPalaceCoveredTowers(palace: TowerModel) {
+    const radius = this.scaleWorldDistance(ZEYNEP_PALACE_AURA_RADIUS);
+    const radiusSq = radius * radius + 1e-6;
+    const covered: TowerModel[] = [];
+    for (const tower of this.towers.values()) {
+      if (tower === palace || tower.definition.id === ZEYNEP_PALACE_ID || tower.ownerId !== palace.ownerId || tower.hp <= 0) continue;
+      if (distanceSq(palace.x, palace.y, tower.x, tower.y) <= radiusSq) covered.push(tower);
+    }
+    return covered;
+  }
+
+  /** Sahadaki arsivler; tik ici yerlesim onbellegiyle tik basina bir kez toplaniyor. */
+  private getZeynepPalaces() {
+    const cache = this.tickLayoutCache;
+    if (cache?.palaces) return cache.palaces;
+    const palaces: TowerModel[] = [];
+    for (const tower of this.towers.values()) {
+      if (tower.definition.id === ZEYNEP_PALACE_ID) palaces.push(tower);
+    }
+    if (cache) cache.palaces = palaces;
+    return palaces;
+  }
+
+  /**
+   * Arsiv calisiyor mu: oteki aura kuleleri gibi tazelenmis, ayakta ve devrede
+   * (`isTowerAuraPowered`). Hazirlikta aura tiklemiyor; orada yalnizca ayakta
+   * ve devrede olmasi yetiyor ki panel kurulan dizilimin etkisini gostersin.
+   */
+  private isZeynepPalaceActive(palace: TowerModel) {
+    if (palace.hp <= 0) return false;
+    if (this.setupPhase) return !palace.standby && palace.offlineUntil <= this.runtime.now();
+    return this.isTowerAuraPowered(palace);
   }
 
   private updateBurnZones() {
@@ -13809,8 +13866,11 @@ export class MatchRoom extends Room<MatchState> {
         ? this.getTowerOwnRange(tower) / Math.max(1e-6, this.getTowerOwnRange(tower, false))
         : 1;
       const flatSources: TowerStatSource[] = modifiers.filter((modifier) => modifier.stat === "rangeFlat").slice(0, 1).map((modifier) => [modifier.source, flatRatio]);
+      // Saray Arsivi'nin payi kosullu havuzda ama dokumde kendi adiyla.
+      const conditionalRange = this.getTowerConditionalRangeAdd(tower, modifiers);
+      const palaceRange = Math.min(conditionalRange, this.getZeynepPalaceEffectsFor(tower).range);
       block.r = closeTowerStatValue(range, this.scaleWorldDistance(getTowerBaseLevelRange(definition, tower.level)),
-        [...sourcesOf("range"), ["cond:range", this.getTowerConditionalRangeAdd(tower, modifiers)]],
+        [...sourcesOf("range"), [`tower:${ZEYNEP_PALACE_ID}`, palaceRange], ["cond:range", conditionalRange - palaceRange]],
         [["character:atakan-passive", this.getAtakanPassiveMultiplier(tower)], ...flatSources]);
     }
 
@@ -14008,6 +14068,16 @@ export class MatchRoom extends Room<MatchState> {
     const armorBreak = getModifierAdd(modifiers, "armorBreak");
     if (armorBreak > 0) effects.push(["armor", roundTowerStat(armorBreak)]);
     if (definition.id === "zeynep-8") effects.push(["armorAura", roundTowerStat(getAbartiArmorBreak(tower.level))]);
+    // Saray Arsivi: alandaki kule sayisi ve bu seviyede verdigi etkiler.
+    if (definition.id === ZEYNEP_PALACE_ID) {
+      const palace = getZeynepPalaceEffects(tower.level);
+      effects.push(["arc:cover", this.getZeynepPalaceCoveredTowers(tower).length]);
+      if (palace.cooling > 0) effects.push(["arc:cooling", roundTowerStat(palace.cooling)]);
+      if (palace.range > 0) effects.push(["arc:range", roundTowerStat(palace.range)]);
+      if (palace.pierce > 0) effects.push(["arc:pierce", palace.pierce]);
+      if (palace.burnMs > 0) effects.push(["arc:burn", 0, palace.burnMs]);
+      if (palace.bounces > 0) effects.push(["arc:bounce", palace.bounces]);
+    }
     // Efsanevi vurus etkileri: saniyelik ihtimal ve buyukluk (`getLegendaryPanelEffect`).
     const legendaryChances = this.getTowerGrantState(tower).legendaryChances;
     if (legendaryChances && dealsDamage) {
@@ -14022,6 +14092,9 @@ export class MatchRoom extends Room<MatchState> {
     if (definition.id !== "warrior-2") {
       block.hs = roundTowerStat(this.getTowerShotHeat(tower) * shots);
       block.hc = roundTowerStat(this.getTowerCoolingPerSecond(tower));
+      // Soguma kaynaklari: bugun yalnizca Saray Arsivi aurasi.
+      const palaceCooling = this.getZeynepPalaceEffectsFor(tower).cooling;
+      if (palaceCooling > 0) block.hcs = [[`tower:${ZEYNEP_PALACE_ID}`, roundTowerStat(palaceCooling)]];
       block.hl = this.getTowerHeatLockThreshold(tower);
       block.hr = this.getTowerHeatReleaseThreshold(tower);
       if (this.towerHasUnlock(tower, "heat:thermalMass") || definition.engine?.fixedFireInterval || getModifierAdd(modifiers, "overclock") > 0) block.nb = 1;
@@ -15367,7 +15440,7 @@ export class MatchRoom extends Room<MatchState> {
     }
 
     const cost = getTowerLevelExpCost(tower.definition.cost, tower.level);
-    const goldCost = getTowerLevelGoldCost(tower.definition.cost, tower.level);
+    const goldCost = getTowerLevelGoldCost(tower.definition.cost, tower.level, tower.definition.id);
     if (player.experience < cost || player.gold < goldCost) {
       return;
     }
@@ -19455,6 +19528,8 @@ export class MatchRoom extends Room<MatchState> {
    * panelin dokumu icin (duz karenin carpan karsiligi).
    */
   private getTowerOwnRange(tower: TowerModel, includeFlat = true) {
+    // Saray Arsivi: menzil aura yaricapi; kart, esya ve seviye islemiyor.
+    if (tower.definition.id === ZEYNEP_PALACE_ID) return this.scaleWorldDistance(ZEYNEP_PALACE_AURA_RADIUS);
     const modifiers = this.getTowerRunModifiers(tower);
     const flat = includeFlat ? this.getTowerFlatRange(modifiers) : 0;
     const applyRangeAura = (range: number, withFlat = true) => applyTowerAuraModifier(withFlat && range > 0 ? range + flat : range, this.getTowerAuraModifiers(tower), "range")
@@ -19518,6 +19593,7 @@ export class MatchRoom extends Room<MatchState> {
    *   kuleye takilmiyor; olsaydi paylar ayri tavanlariyla toplanirdi).
    * - Pusu Nobeti: hasar kulesi bir suredir vurmuyor ya da pusudan sonraki
    *   ilk vurusun penceresi suruyor.
+   * - Saray Arsivi: 2. seviyeden itibaren alanindaki sahibin kulesine pay.
    *
    * Hicbiri menzili okumuyor: menzil hesabinin icinden cagriliyor.
    */
@@ -19553,6 +19629,8 @@ export class MatchRoom extends Room<MatchState> {
     if (heat > 0) add += getHeatRangeAdd(tower.temperature, heat);
     if (wall > 0) add += getWallRangeAdd(wall, this.countTowerEdgeWalls(tower));
     if (kill > 0 && tower.killRangeWave === this.wave) add += getKillRangeAdd(kill, tower.killRangeKills ?? 0);
+    // Saray Arsivi (2. seviye): alandaki kulenin menzili, ayni tavanin altinda.
+    add += this.getZeynepPalaceEffectsFor(tower).range;
     return Math.min(RANGE_CONDITIONAL_CAP, add);
   }
 

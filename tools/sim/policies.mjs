@@ -560,7 +560,7 @@ export function createBot(ctx, rawOptions = {}) {
 
   function upgradeProvider(tower) {
     const xp = getTowerLevelExpCost(tower.definition.cost, tower.level);
-    const gold = getTowerLevelGoldCost(tower.definition.cost, tower.level);
+    const gold = getTowerLevelGoldCost(tower.definition.cost, tower.level, tower.definition.id);
     if (player().experience < xp || player().gold < gold + 20) return false;
     const changed = attempt("upgradeTower", { towerId: tower.id }, () => tower.level);
     if (changed) decisions.push(`w${room.wave}:up:${tower.definition.id}->L${tower.level}`);
@@ -684,7 +684,7 @@ export function createBot(ctx, rawOptions = {}) {
       .map((tower) => ({
         tower,
         xp: getTowerLevelExpCost(tower.definition.cost, tower.level),
-        gold: getTowerLevelGoldCost(tower.definition.cost, tower.level)
+        gold: getTowerLevelGoldCost(tower.definition.cost, tower.level, tower.definition.id)
       }))
       .filter((entry) => entry.xp <= xp && entry.gold <= goldBudget)
       // Ucuz seviyeler once (tier esikleri 20 kat pahali), esitlikte cok hasar veren.

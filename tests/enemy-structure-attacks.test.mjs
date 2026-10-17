@@ -80,8 +80,9 @@ test("menzil yalnızca nişancıda var ve kule menzilinin altında kalır", () =
 
   // Duello kulenin lehine acik kalmali: nisanci kuleyi vurabilmeli ama kule
   // once vurmali. Karsilastirma atis yapan kulelerin ortancasina karsi.
+  // Saray Arsivi'nin menzili aura yaricapi, atis menzili degil.
   const kuleMenzilleri = Object.values(towerCatalog).flat()
-    .filter((tanim) => tanim.range > 0 && tanim.range < 400)
+    .filter((tanim) => tanim.range > 0 && tanim.range < 400 && tanim.id !== "zeynep-7")
     .map((tanim) => tanim.range)
     .sort((a, b) => a - b);
   const ortanca = kuleMenzilleri[Math.floor(kuleMenzilleri.length / 2)];

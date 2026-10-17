@@ -1,6 +1,7 @@
 import { makeTowers } from "../../common/factory.js";
 import type { TowerDefinition } from "../../common/types.js";
 import { attachTowerEngine } from "../../common/engine.js";
+import { ZEYNEP_PALACE_AURA_RADIUS_CELLS, ZEYNEP_PALACE_BOUNCE_BONUS, ZEYNEP_PALACE_BUILD_GOLD, ZEYNEP_PALACE_BURN_BONUS_MS, ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_COOLING_BONUS, ZEYNEP_PALACE_MAX_LEVEL, ZEYNEP_PALACE_PIERCE_BONUS, ZEYNEP_PALACE_RANGE_BONUS, ZEYNEP_PALACE_UPGRADE_GOLD } from "../../../zeynep-palace/index.js";
 import { KIN_SLOW_FAR_FRACTION, NON_FIRING_INTERVAL_MS, PASSIVE_AURA_TICK_INTERVAL_MS, getCriticalSlowFraction } from "../../../tower-rules.js";
 
 export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
@@ -10,7 +11,7 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   ["Zirve Oku", "Uzun menzil"],
   ["Emir Kulesi", "Yavaşlatma"],
   ["Kin Kulesi", "Mesafeye bağlı yavaşlatma"],
-  ["Saray Arşivi", "Sentez güçlendirici"],
+  ["Saray Arşivi", "Aura kulesi"],
   ["Abartı", "Pasif vuruş modülatörü"],
   ["Cephane Divanı", "Mühimmat ikmali"],
   ["Enerji Ocağı", "Enerji ikmali"]
@@ -83,16 +84,16 @@ export const zeynepTowers = makeTowers("zeynep", 0xec4899, [
   if (tower.id === "zeynep-7") {
     return {
       ...tower,
-      description: "Hiç ateş etmez ve tek başına hiçbir işe yaramaz. Görevi Taht Mührü'nün sentez kombinasyonlarını kalıcı olarak güçlendirmektir: 2. seviyede çift Hiza sentezine +1 delme, 3. seviyede çift Gösteri sentezinin yanık süresine +1 saniye, 6. seviyede karışık sentez ışınına +1 sekme ekler. Pahalıdır; ancak sahada birden fazla Taht Mührü varsa değer.",
+      description: `AURA kulesi: hiç ateş etmez; merkezinden ${String(ZEYNEP_PALACE_AURA_RADIUS_CELLS).replace(".", ",")} kare içindeki kendi kulelerini güçlendirir. 1. seviyede alandaki kulelerin soğuması +%${Math.round(ZEYNEP_PALACE_COOLING_BONUS * 100)}, 2. seviyede menzilleri +%${Math.round(ZEYNEP_PALACE_RANGE_BONUS * 100)} (koşullu menzil tavanına sayılır). 3.-5. seviyeler alandaki Taht Mührü'nün sentezlerini güçlendirir: 3. seviyede çift Hiza sentezine +${ZEYNEP_PALACE_PIERCE_BONUS} delme, 4. seviyede çift Gösteri sentezinin yanık hattına +${ZEYNEP_PALACE_BURN_BONUS_MS / 1000} saniye, 5. seviyede karışık sentez ışınına +${ZEYNEP_PALACE_BOUNCE_BONUS} sekme. Birden çok arşiv üst üste binmez; kule en yüksek seviyeli arşivin etkisini alır. En fazla ${ZEYNEP_PALACE_MAX_LEVEL}. seviye; geliştirmesi pahalıdır (${[2, 3, 4, 5].map((level) => ZEYNEP_PALACE_UPGRADE_GOLD[level]).join(" / ")} altın).`,
       classType: "support",
       damageType: "none",
       hitType: "aura",
-      // 400 altin, 10 kule kapasitesinde neredeyse hic alinamayacak bir fiyatti:
-      // kendisi ateS etmeyen ve yalnizca baska bir kulenin sentezini guclendiren
-      // bir yatirim icin iki hasar kulesinden vazgecmek gerekiyordu.
-      cost: 220,
-      upgradeCost: 150,
-      range: 0,
+      // Kurulum 500 altin (insa bedeli `cost` x 2). AURA kulesi oldu: alanindaki
+      // kulelere soguma ve menzil veriyor, pahali bir yatirim.
+      cost: ZEYNEP_PALACE_BUILD_GOLD / 2,
+      upgradeCost: ZEYNEP_PALACE_UPGRADE_GOLD[2],
+      // Menzil aura yaricapi (`getTowerBaseLevelRange` seviyeyle buyutmuyor).
+      range: ZEYNEP_PALACE_AURA_RADIUS,
       damage: 0,
       fireIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS,
       projectileSpeed: 0,

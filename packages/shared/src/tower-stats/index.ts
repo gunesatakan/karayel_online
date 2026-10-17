@@ -1,6 +1,7 @@
 import { TOWER_GRID_SIZE, getTowerGridSpan } from "../index.js";
 import type { TowerDefinition } from "../characters/common/types.js";
 import { calculateTowerScaledBaseDamage } from "../tower-rules.js";
+import { ZEYNEP_PALACE_AURA_RADIUS, ZEYNEP_PALACE_ID } from "../zeynep-palace/index.js";
 
 /**
  * Single source of truth for what a tower is worth at a given level.
@@ -238,6 +239,9 @@ export function getTowerRangePerLevel(definition: Pick<TowerDefinition, "rangePe
 
 export function getTowerBaseLevelRange(definition: TowerDefinition, level: number) {
   if (hasGlobalTowerRange(definition.id)) return Infinity;
+  // Saray Arsivi'nin menzili aura yaricapi: seviyeyle buyumuyor, global
+  // menzil carpani islemiyor (2,5 kare sabit).
+  if (definition.id === ZEYNEP_PALACE_ID) return ZEYNEP_PALACE_AURA_RADIUS;
 
   const scaledRange = definition.id === "zeynep-2"
     ? getZeynepShowcaseBeamLength(level) * GLOBAL_TOWER_RANGE_MULTIPLIER

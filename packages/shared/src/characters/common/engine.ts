@@ -1,4 +1,5 @@
 import type { TowerDefinition, TowerEngineConfig } from "./types.js";
+import { ZEYNEP_PALACE_AURA_RADIUS } from "../../zeynep-palace/index.js";
 import { ISOLATION_SLOW_CURVE, PASSIVE_AURA_TICK_INTERVAL_MS, TRACKING_MARK_DAMAGE_PER_STACK, getTowerFuelCostMultiplier, getTowerOperatingEnergyPerSecond, getTowerShotFuel } from "../../tower-rules.js";
 
 const towerAxes: Record<string, NonNullable<TowerDefinition["axes"]>> = {
@@ -129,7 +130,7 @@ const profiles: Record<string, EngineProfile> = {
     resources: { ammoType: "powerCrystal" }
   },
   "zeynep-6": { targeting: "first", attack: { shape: "cone", angle: 60, executor: "kin-wave" }, canHitAir: true, statusEffects: [{ type: "slow", magnitude: 1, durationMs: 1150, stacking: "refresh", scaling: "distance" }], resources: { ammoType: "auraCrystal" } },
-  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: 0, stat: "synthesis", multiplier: 1, tickIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS, refreshDurationMultiplier: 2, activation: "always" }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
+  "zeynep-7": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, auras: [{ affects: "towers", shape: "circle", radius: ZEYNEP_PALACE_AURA_RADIUS, stat: "synthesis", multiplier: 1, scope: "owner", tickIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS, refreshDurationMultiplier: 2, activation: "always" }], placement: { footprintSpan: 2 }, resources: { ammoType: "auraCrystal" } },
   "zeynep-8": { targeting: "first", attack: { shape: "line" }, canHitAir: false, placement: { requiresEdge: true }, auras: [{ affects: "towers", shape: "line", radius: 0, stat: "damage", multiplier: 1, tickIntervalMs: PASSIVE_AURA_TICK_INTERVAL_MS, refreshDurationMultiplier: 2, activation: "always" }] , resources: { ammoType: "auraCrystal" } },
   "zeynep-9": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "ammunition", resources: { ammoType: "auraCrystal" } },
   "zeynep-10": { targeting: "first", attack: { shape: "circle" }, canHitAir: false, resourceProvider: "energy", resources: { ammoType: "auraCrystal" } },

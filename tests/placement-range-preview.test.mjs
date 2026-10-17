@@ -70,9 +70,14 @@ test("yalnizlik yalnizca AttackLord'a: baska operatorun kulesi ve Sunucu buyumuy
 
 test("menzili olmayan yapi halka cizmiyor; Tamir Merkezi cemberini, Jackpot olu bolgesini gosteriyor", () => {
   const spot = at(6, 6);
-  for (const id of ["wall-1", "warrior-7", "warrior-8", "warehouse-1", "zeynep-7"]) {
+  for (const id of ["wall-1", "warrior-7", "warrior-8", "warehouse-1"]) {
     assert.equal(getPlacementPreviewRange({ definition: def(id), characterId: def(id).characterId, ...spot, structures: [], map }).kind, "none", id);
   }
+  // Saray Arsivi AURA kulesi: halka aura alani (2,5 kare), seviyeyle buyumuyor.
+  const palace = getPlacementPreviewRange({ definition: def("zeynep-7"), characterId: "zeynep", ...spot, structures: [], map });
+  assert.equal(palace.kind, "aura");
+  near(palace.radius, 2.5 * getMapGridSize(map), "Saray Arsivi aura halkasi");
+  near(getPlacementPreviewRange({ definition: def("zeynep-7"), characterId: "zeynep", ...spot, structures: [], map, level: 5 }).radius, palace.radius, "5. seviye ayni halka");
   const depot = getPlacementPreviewRange({ definition: def("repair-depot-1"), characterId: "archer", ...spot, structures: [], map });
   assert.equal(depot.kind, "aura");
   assert.ok(depot.radius > 0);
