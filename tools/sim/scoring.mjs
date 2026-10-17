@@ -77,7 +77,15 @@ export const STAT_SCORE = {
   // kisa menzilde orani buyuk: ortalama ~+%15.
   focusRange: 3.6, heatRange: 0.45, wallRange: 3, rangeFlat: 0.9, killRange: 5, neighborRange: 2,
   // Ikinci kisim: uzun oldurme sayaci ~8 oldurmede; pusu yalnizca menzile ilk girista.
-  killRangeLong: 12, ambushRange: 0.5
+  killRangeLong: 12, ambushRange: 0.5,
+  // Dayaniklilik turu, can puaniyla (+%100 can = 1) karsiligi: Sertlesen
+  // Govde kosu ortalamasinda ~+%32 (dalga basina 0,08 -> 4), Inatci Siper
+  // alt yarida 1/0,6 omur ~+%33 etkin can (0,4 -> 0,8), Son Nefes dalga
+  // basina bir vurus ve 3 sn ~+%20 (3 sn -> 0,07), Kiris komsuya ~+%35
+  // (0,35 -> 1), Oz Onarim dalga ortasi molalarinda ~+%45 (0,03 -> 15),
+  // Percinli Kaplama erken piyadede ~+%40, kusatmada ~%5: ortalama ~+%24 (4 -> 0,06).
+  veteranHealth: 4, woundedDamageReduction: 0.8, lastStand: 0.07,
+  damageShare: 1, idleRegen: 15, armorFlat: 0.06
 };
 
 function grantDamageAdd(grant) {

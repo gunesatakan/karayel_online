@@ -138,6 +138,12 @@ export type TowerStatsWire = {
   am?: number;
   /** Saniyelik calisma enerjisi (kart carpani dahil, oyun saniyesi). */
   oe?: number;
+  /**
+   * Uretim binasinin en fazla saniyelik uretimi (oyun saniyesi): cephanelikte
+   * mühimmat (kart ve esya carpanlari dahil), Tamir Merkezi'nde onarim parcasi.
+   * Girdi (enerji, hammadde) ya da yer bitince fiili uretim bunun altinda.
+   */
+  pp?: number;
 
   // --- Ilerleme ve donanim
   /** Bu kosuda oldurme. */

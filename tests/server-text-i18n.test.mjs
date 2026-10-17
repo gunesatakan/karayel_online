@@ -89,6 +89,7 @@ const FORMER_TURKISH = {
   "preview.stat.cooling": "Soğutma / sn",
   "preview.stat.sustained": "Sürekli tetikleme / sn",
   "preview.stat.projectileSpeed": "Mermi hızı",
+  "preview.stat.armor": "Zırh",
   "preview.stat.legendary": "Efsanevi ihtimal / sn"
 };
 

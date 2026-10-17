@@ -471,3 +471,15 @@ Tek kule ölçümüne girmedi (menzil farkı o kümede görünmüyor); kademe me
 | Uzun Erim Optiği | 120 | Menzil +%18, atış hızı −%8 | B (menzil sınırlı haritada; ısı sınırlı kulede atış hızı cezası yarı hissedilir) |
 
 Kartlar: Geniş Ufuk (yaygın, 2 kez; tüm kuleler +%8), Pusu Nöbeti (seyrek; 3 sn vurmayan hasar kulesi +%20, ilk vuruştan sonra 2 sn).
+
+## Dayanıklılık turu (2026-10-17)
+
+Üç eşya, üç kart; sabitler `packages/shared/src/durability-mechanics`, testler `tests/durability-round.test.mjs`. Tek kule hasar ölçümüne **girmez** (can ve zırh); kademe "etkin can" kaba tahmini ve fiyattan. Simülatör puanı can ölçeğinde (+%100 can = 1): Çelik Döküm 0,55 / 50 g, Tampon Katman 0,80 / 110 g, Zırh Plakası 0,80 / 95 g.
+
+| Eşya | Fiyat | Mekanik | Puan | Kademe |
+|---|---|---|---|---|
+| Yük Dağıtıcı Kiriş | 110 | Bitişikteki dost yapıların hasarının %35'i kirişe, zırhsız; vuruş başına bir kiriş | 0,35 | B (yüksek canlı duvar ya da kalın kule ile kırılgan kuleyi korur; tek başına bir şey yapmaz) |
+| Öz Onarım Çekirdeği | 120 | 4 sn hasarsız yapı saniyede azami canın %3'ü; yalnızca dalgada | 0,45 | B (dalgalı baskıda, arka hattaki yapıda; sürekli vurulan ön duvarda C) |
+| Perçinli Kaplama | 75 | Zırh +4 (3 → 7) | 0,24 | B erken ve kalabalık dalgada (piyade vuruşu −%44), kuşatma ve geç dalgada C |
+
+Kartlar: Sertleşen Gövde (seyrek; dalga sonu ayakta +%8 azami can, en fazla 8 dalga), İnatçı Siper (yaygın; can %50 altında %40 az hasar), Son Nefes (nadir; dalga başına yapı başına öldürücü vuruşta 1 can + 3 sn hasarsız). Puanlar 0,32 / 0,32 / 0,21; karşılaştırma Kalın Zırh 0,80, Takviyeli Temel 0,38. Düz can kartlarından düşük puan bilerek: üçü de koşula bağlı ve bedelsiz (Takviyeli Temel menzil öder).

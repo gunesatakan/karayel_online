@@ -246,6 +246,49 @@ gelen menzil düz `range` payıdır; koşullu tavana girmez, kendi tavanı var.
 Uyumluluk çevrimin iki ucunun ihtiyacını da sorar (`getShopItemNeeds`).
 Önizleme mermi hızına dokunan değişiklikte "Mermi hızı" satırını ekler.
 
+#### Dayanıklılık turu
+
+Katalogda can uzun süre tek sayıydı (`towerHealth`, +%X azami can; Kalın Zırh,
+Takviyeli Temel, Zırhlı Gövde, Çelik Döküm, Tampon Katman, Zırh Plakası). Bu
+tur ona bir yüzde daha eklemiyor; her biri yapının ayakta kalmasını sahadaki
+başka bir şeye bağlıyor. Sabitler `packages/shared/src/durability-mechanics`,
+sunucuda `damageTower`, dalga sonu (`advanceWaveGrowth`) ve `updateTowers`;
+testler `tests/durability-round.test.mjs`.
+
+- **Sertleşen Gövde** (seyrek, `veteranHealth` 0,08): dalga sonunda ayakta
+  duran her yapının azami canı +%8, en fazla 8 dalga (+%64). Sayaç yapıya ait
+  (`veteranWaves`) ve kart alındıktan sonra işler; sonradan kurulan yapı
+  sıfırdan başlar. Çarpan `towerHealth` toplamından **ayrı** çarpılır, can
+  oranlı büyür (yarım canlı yapı yarım canlı kalır); esya takma, seviye ve
+  yaratıcı yeniden kurulum çarpanı korur.
+- **İnatçı Siper** (yaygın, `woundedDamageReduction` 0,4): canı %50'nin altındaki
+  yapı %40 az hasar alır. Vuruştan önceki cana bakar, zırhtan önce uygulanır;
+  tavan %60.
+- **Son Nefes** (nadir, `lastStand` 3): dalga başına yapı başına bir kez öldürücü
+  vuruş yapıyı 1 canla bırakır, ardından 3 oyun sn hasar almaz. Kara Kutu ve
+  acil yeniden inşadan önce çalışır; enerji yiyicinin yıkımı (`destroyStructure`)
+  onu atlar.
+- **Yük Dağıtıcı Kiriş** (eşya, 110 g, `damageShare` 0,35): takılı yapı
+  bitişiğindeki (merkezler arası yarım kare + iki yapının yarı boyu, köşegen
+  dahil) dost yapıların (kule, duvar, kaynak binası) aldığı hasarın %35'ini
+  üstlenir. Bir vuruşu en çok bir kiriş (en yüksek paylı) paylaşır; pay kirişe
+  zırhsız gider (zırh hedefte bir kez düşülür) ve yeniden paylaşılmaz; Son
+  Nefes penceresindeki kiriş paylaşmaz. Tavan %50.
+- **Öz Onarım Çekirdeği** (eşya, 120 g, `idleRegen` 0,03): 4 oyun sn hasar
+  almayan yapı saniyede azami canının %3'ünü yeniler; yalnızca dalga sırasında
+  (hazırlıkta altınla ya da tamirciyle onarılıyor).
+- **Perçinli Kaplama** (eşya, 75 g, `armorFlat` 4): yapının zırhı 3 → 7. Zırh
+  her vuruştan düşülür (vuruş en az 1): 12'lik piyade vuruşu 9 → 5, 96'lık
+  kuşatma vuruşu 93 → 89. Karşı atak ve yıkım zırhı deler. Snapshot'taki `armor`
+  ve önizlemenin "Zırh" satırı (`preview.stat.armor`) bu sayıyı okur.
+
+Can kurallarıyla birlikte: altınla onarım bedeli eksik canın **oranına** bakar
+(`getStructureRepairCost`), azami can büyüyünce onarım pahalılaşmaz; tamirci
+parça başına sabit can yazar, büyük can daha çok parça ister. Üç eşya da can
+eşyaları gibi kapsamsız: her kuleye ve duvara takılır, kaynak binasına takılmaz
+(kaynak binası yalnız ekonomi eşyası alıyor). Kartlar genel; her yapıya, duvara
+ve kaynak binasına işler (`structure` erişimi).
+
 Kataloğun yaklaşık yarısı düz stat, yarısı davranış olmalı. Düz stat tarafı
 şişerse oyuncu üç seçenek görürken kuruluşunu taşıyan kartı hiç göremez.
 

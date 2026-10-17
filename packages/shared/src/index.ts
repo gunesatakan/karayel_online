@@ -1879,6 +1879,7 @@ export {
 } from "./aiming/index.js";
 export * from "./heat-mechanics/index.js";
 export * from "./range-mechanics/index.js";
+export * from "./durability-mechanics/index.js";
 export { LINEAR_BALLISTIC_HIT_TYPES, LINEAR_BALLISTIC_SPEED_MULTIPLIER, LINEAR_BALLISTIC_COLLISION_RADIUS, getBallisticMovementSpeed, getBallisticCollisionRadius, usesLinearBallistics, findFirstLinearCollision, towerFiresProjectiles, towerNeverAttacks } from "./ballistics/index.js";
 export type { BallisticCollisionBody } from "./ballistics/index.js";
 export {

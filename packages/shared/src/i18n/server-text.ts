@@ -87,6 +87,7 @@ export const SERVER_TEXT = {
   "preview.stat.cooling": "Soğutma / sn",
   "preview.stat.sustained": "Sürekli tetikleme / sn",
   "preview.stat.projectileSpeed": "Mermi hızı",
+  "preview.stat.armor": "Zırh",
   "preview.stat.legendary": "Efsanevi ihtimal / sn"
 } as const;
 

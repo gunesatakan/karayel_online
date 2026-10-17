@@ -712,6 +712,13 @@ export const cardCatalog: CardDefinition[] = [
   // bekleyen kuleyi odullendiren pusu.
   { id: "genis-ufuk", name: "Geniş Ufuk", description: "Tüm kulelerin menzili +%8.", axes: ["dps"], scope: { kind: "global" }, stackable: true, maxStacks: 2, rarity: "common", effects: [effect("genis-ufuk", "range", 0.08)] },
   { id: "pusu-nobeti", name: "Pusu Nöbeti", description: "3 saniyedir vuruş yapmayan hasar kulelerinin menzili +%20; pusudan sonraki ilk vuruştan sonra 2 saniye daha sürer.", axes: ["dps"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("pusu-nobeti", "ambushRange", 0.2)] },
+  // Dayaniklilik turu (`durability-mechanics`): duz "+%X can" degil. Biri
+  // canini hayatta kalinan dalgaya, biri yapinin o anki canina, biri
+  // oldurucu vurusa bagliyor. Uc karti da her yapi aliyor: duvar ve kaynak
+  // binasi da.
+  { id: "sertlesen-govde", name: "Sertleşen Gövde", description: "Dalga sonunda ayakta kalan her yapının azami canı +%8 artar; en fazla 8 dalga (+%64). Sayaç yapıya ait ve kart alındıktan sonra işler.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "uncommon", effects: [effect("sertlesen-govde", "veteranHealth", 0.08)] },
+  { id: "inatci-siper", name: "İnatçı Siper", description: "Canı %50'nin altına inmiş yapılar %40 daha az hasar alır.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "common", effects: [effect("inatci-siper", "woundedDamageReduction", 0.4)] },
+  { id: "son-nefes", name: "Son Nefes", description: "Bir yapıyı yıkacak vuruş, dalga başına yapı başına bir kez, onu 1 canla bırakır; yapı ardından 3 saniye hasar almaz.", axes: ["barricade"], scope: { kind: "global" }, stackable: false, rarity: "rare", effects: [effect("son-nefes", "lastStand", 3)] },
 
   // --- Motor kartlari ---
   // Kulenin motoruna dogrudan stack, durum etkisi, trigger veya saldiri
@@ -1002,7 +1009,11 @@ const MODIFIER_STAT_REACH: Record<ModifierStat, CardTowerReach> = {
   // bir yapiya takilsa da komsusunda is goruyor (Rezonans Odasi gibi).
   focusRange: "combat", heatRange: "combat", wallRange: "combat", rangeFlat: "combat", killRange: "combat",
   neighborRange: "structure",
-  killRangeLong: "combat", ambushRange: "combat"
+  killRangeLong: "combat", ambushRange: "combat",
+  // Dayaniklilik turu: hepsi yapinin canina ya da aldigi hasara isliyor;
+  // duvarda ve kaynak binasinda da.
+  veteranHealth: "structure", woundedDamageReduction: "structure", lastStand: "structure",
+  damageShare: "structure", idleRegen: "structure", armorFlat: "structure"
 };
 
 /**

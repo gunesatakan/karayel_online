@@ -599,6 +599,16 @@ const rawShopCatalog: ShopItem[] = [
   defineItem("uzatma-halkasi", "Uzatma Halkası", "Takıldığı kulenin menzili +%6; bir kuleye en fazla 3 kez takılır; menzili haritayı kaplayan kulelere takılmaz.", "class", 45, { axes: ["dps"], repeatable: true, maxStacks: 3, priceGrowth: 1.3, scope: { kind: "tagged", boundedRange: true }, effects: [effect("uzatma-halkasi", "range", 0.06)] }),
   defineItem("uzun-erim-optigi", "Uzun Erim Optiği", "Takıldığı kulenin menzili +%18, atış hızı -%8; menzili haritayı kaplayan kulelere takılmaz.", "class", 120, { axes: ["dps"], scope: { kind: "tagged", boundedRange: true }, effects: [effect("uzun-erim-optigi", "range", 0.18), effect("uzun-erim-optigi", "fireRate", -0.08)] }),
 
+  // Dayaniklilik turu (`durability-mechanics`). Ucu de can esyalari gibi
+  // kapsamsiz: her kuleye ve duvara takiliyor, kaynak binasina degil (kaynak
+  // binasi yalnizca ekonomi esyasi aliyor). Kiris bitisikteki yapilarin
+  // hasarini paylasiyor (duvar hattinda duvardan duvara da), cekirdek hasar
+  // almayan yapiyi dalgada yeniliyor, kaplama her vurustan duz puan dusuyor:
+  // kalabalik ve kucuk vuruslara karsi guclu, kusatmaya karsi zayif.
+  defineItem("yuk-dagitici-kiris", "Yük Dağıtıcı Kiriş", "Takıldığı yapı, bitişiğindeki dost yapıların (kule, duvar, kaynak binası) aldığı hasarın %35'ini kendi üstüne alır; bir vuruşu en fazla bir kiriş paylaşır.", "utility", 110, { axes: ["barricade"], effects: [effect("yuk-dagitici-kiris", "damageShare", 0.35)] }),
+  defineItem("oz-onarim-cekirdegi", "Öz Onarım Çekirdeği", "Takıldığı yapı 4 saniye hasar almazsa saniyede azami canının %3'ünü yeniler; yalnızca dalga sırasında.", "utility", 120, { axes: ["barricade"], effects: [effect("oz-onarim-cekirdegi", "idleRegen", 0.03)] }),
+  defineItem("percinli-kaplama", "Perçinli Kaplama", "Takıldığı yapının zırhı +4: her vuruştan 4 hasar daha düşülür (vuruş en az 1). Küçük ve sık vuruşlara karşı güçlü, kuşatmaya karşı zayıf.", "class", 75, { axes: ["barricade"], effects: [effect("percinli-kaplama", "armorFlat", 4)] }),
+
   // Efsanevi: vurus etkileri (`legendary` modulu). Ayni etkinin kartindan
   // iki kat ihtimal, ama yalnizca takildigi kulede; kartla ayni kulede
   // toplaniyor (tavan `LEGENDARY_CHANCE_CAP`). Vitrinde seyrek ve pahali.

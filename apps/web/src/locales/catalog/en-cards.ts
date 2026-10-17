@@ -159,5 +159,8 @@ export const enCards: Readonly<Record<string, { name: string; description: strin
   "siper-gozcusu": { name: "Trench Lookout", description: "Towers with walls built on their edges gain +5% range per wall; up to 3 walls (+15%)." },
   "genis-ufuk": { name: "Wide Horizon", description: "All towers' range +8%." },
   "pusu-nobeti": { name: "Ambush Watch", description: "Damage towers that have not hit for 3 seconds get +20% range; it lasts 2 more seconds after the first hit out of ambush." },
+  "sertlesen-govde": { name: "Hardened Hull", description: "Each structure still standing at the end of a wave gains +8% max HP; up to 8 waves (+64%). The count belongs to the structure and starts once you take the card." },
+  "inatci-siper": { name: "Stubborn Bulwark", description: "Structures below 50% HP take 40% less damage." },
+  "son-nefes": { name: "Last Breath", description: "Once per wave per structure, a hit that would destroy it leaves it at 1 HP instead; it then takes no damage for 3 seconds." },
   ...enLegendaryCards
 };

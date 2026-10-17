@@ -152,6 +152,9 @@ export const enShopItems: Readonly<Record<string, { name: string; description: s
   "tork-radyatoru": { name: "Torque Radiator", description: "Equipped tower's turn rate +20%. Every 10% of turn rate bonus adds +6% cooling; up to +30%. Only fits aiming towers that build heat." },
   "uzatma-halkasi": { name: "Extension Ring", description: "Equipped tower's range +6%; up to 3 per tower; cannot be equipped on towers whose range covers the map." },
   "uzun-erim-optigi": { name: "Long Reach Optic", description: "Equipped tower's range +18%, fire rate -8%; cannot be equipped on towers whose range covers the map." },
+  "yuk-dagitici-kiris": { name: "Load-Spreading Beam", description: "The equipped structure takes 35% of the damage dealt to adjacent friendly structures (towers, walls, resource buildings) onto itself; at most one beam shares a hit." },
+  "oz-onarim-cekirdegi": { name: "Self-Repair Core", description: "If the equipped structure takes no damage for 4 seconds, it regenerates 3% of its max HP per second; during waves only." },
+  "percinli-kaplama": { name: "Riveted Plating", description: "Equipped structure's armor +4: every hit deals 4 less damage (at least 1). Strong against small, frequent hits, weak against siege." },
   ...enLegendaryItems
 };
 

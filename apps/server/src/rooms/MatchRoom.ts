@@ -1,5 +1,6 @@
 import { HARVESTER_QUOTA, HARVESTER_GATHER_PER_SECOND, getHarvesterRaidCount } from "@karayel/shared";
 import { getTowerRangePerLevel } from "@karayel/shared";
+import { DAMAGE_SHARE_CAP, IDLE_REGEN_DELAY_MS, LAST_STAND_HP, getVeteranHealthMultiplier, getWoundedDamageMultiplier } from "@karayel/shared";
 import { AMBUSH_RANGE_HOLD_MS, AMBUSH_RANGE_IDLE_MS, FOCUS_RANGE_GRACE_MS, KILL_RANGE_LONG_MAX_KILLS, NEIGHBOR_RANGE_MAX, RANGE_CONDITIONAL_CAP, getFocusRangeAdd, getHeatRangeAdd, getKillRangeAdd, getWallRangeAdd } from "@karayel/shared";
 import { getWarehouseCapacity, RESOURCE_NODE_INITIAL_AMOUNT, RESOURCE_KINDS, AMMO_RECIPES, ACTIVE_WORKER_ROLES, isResourceKind, isTransportProduct, REPAIR_HP_PER_PART, REPAIR_PART_ENERGY_COST, REPAIR_PART_IRON_COST, getRepairPartRate, type ResourceKind, type TransportProduct, type WorkerAssignment, type EconomyStock } from "@karayel/shared";
 import { MAP_RESOURCE_NODES, createResourceLayoutRandom, getFixedResourceLayout, getNearestResourceNodeId, placeResourceNodes, projectMapResourceNodes, type MapResourceNode, type ResourceLayoutCell, type ResourceLayoutSource } from "@karayel/shared";
@@ -2096,6 +2097,13 @@ type TowerModel = EconomyStock & {
   killRangeKills?: number;
   /** Pusu Nobeti (`ambushRange`): pusudan sonraki ilk vurusla acilan pencerenin sonu (duvar saati). */
   ambushRangeUntil?: number;
+  /** Yapinin cani son dustugu an (duvar saati); Oz Onarim Cekirdegi (`idleRegen`) okuyor. */
+  lastStruckAt?: number;
+  /** Son Nefes (`lastStand`): hakkin kullanildigi dalga ve hasarsiz pencerenin sonu (duvar saati). */
+  lastStandWave?: number;
+  lastStandUntil?: number;
+  /** Sertlesen Govde (`veteranHealth`): kart varken yapinin ayakta bitirdigi dalga sayisi. */
+  veteranWaves?: number;
   /** Efsanevi etki basina kulenin yeniden uygulayabilecegi an (`LEGENDARY_TOWER_TRIGGER_GAP_MS`). */
   legendaryReadyAt?: number[];
   /** `getTowerLegendaryRhythm` onbellegi. */
@@ -7077,6 +7085,7 @@ export class MatchRoom extends Room<MatchState> {
       if (tower.hp <= 0) {
         continue;
       }
+      this.updateTowerIdleRegen(tower, now, deltaTime);
       if (tower.standby) {
         continue;
       }
@@ -10162,7 +10171,7 @@ export class MatchRoom extends Room<MatchState> {
 
   /** Yapiyi yikar; yikimin yan etkileri (`damageTower`) aynen isliyor. */
   private destroyStructure(tower: TowerModel) {
-    this.damageTower(tower, 1e12, { pierceArmor: true });
+    this.damageTower(tower, 1e12, { pierceArmor: true, destroy: true });
   }
 
   /**
@@ -13702,6 +13711,8 @@ export class MatchRoom extends Room<MatchState> {
     const touchesSpeed = changeEffects.some((modifier) => modifier.stat === "projectileSpeed")
       || (item?.conversions ?? []).some((conversion) => conversion.to === "projectileSpeed" || conversion.from === "projectileSpeed");
     const speedStats: PreviewStat[] = touchesSpeed ? [["projectileSpeed", (value) => this.getTowerProjectileSpeedMultiplier(value)]] : [];
+    // Zirh satiri yalnizca degisiklik duz zirh tasiyorsa (Percinli Kaplama).
+    const armorStats: PreviewStat[] = changeEffects.some((modifier) => modifier.stat === "armorFlat") ? [["armor", (value) => this.getTowerArmor(value)]] : [];
     const stats: PreviewStat[] = [
       // Vurus aninda eklenen kule bonuslari da sayiya dahil; yoksa Kan
       // Bankasi gibi her vurusa +%20 veren bir esya hicbir sey degistirmiyor
@@ -13716,7 +13727,8 @@ export class MatchRoom extends Room<MatchState> {
       ["cooling", (value) => this.getTowerCoolingPerSecond(value)],
       ...sustainedStats,
       ...legendaryStats,
-      ...speedStats
+      ...speedStats,
+      ...armorStats
     ];
     // Efsanevi ihtimal yuzde ("%35"); obur satirlar iki ondalik.
     const format = (key: string, value: number) => key === "legendary" ? `%${Math.round(value * 100)}` : value.toFixed(2);
@@ -13769,6 +13781,13 @@ export class MatchRoom extends Room<MatchState> {
     if ((tower.killCount ?? 0) > 0) block.k = tower.killCount;
     if (tower.equippedShopItemIds.length > 0) block.it = [...tower.equippedShopItemIds];
     if (tower.targetedCardIds.length > 0) block.tc = [...tower.targetedCardIds];
+    // Uretim hizi: panelin stok satiri "en fazla X/sn" yaziyor (produceFactoryResources ile ayni carpanlar).
+    if (definition.resourceProvider === "ammunition") {
+      block.pp = roundTowerStat(getAmmoFactoryProductionRate(tower.level)
+        * getModifierMultiplier(modifiers, "resourceProduction") * getModifierMultiplier(modifiers, "ammoProduction"));
+    } else if (isRepairDepotDefinition(definition)) {
+      block.pp = roundTowerStat(getRepairPartRate(tower.level));
+    }
     // Kaynak binasi ve ates etmeyen yapi (duvar, Tamir Merkezi): savas sayisi yok.
     if (definition.resourceProvider || !isOperationalTower(definition)) return block;
 
@@ -14109,10 +14128,21 @@ export class MatchRoom extends Room<MatchState> {
     client.send("structure:repaired", { towerId: tower.id, cost });
   }
 
-  private damageTower(tower: TowerModel, rawDamage: number, options: { pierceArmor?: boolean } = {}) {
+  /**
+   * Yapiya hasar. `destroy`: yikim (enerji yiyici) -- Son Nefes ve Yuk
+   * Dagitici Kiris onu atliyor. `shared`: kirisin ustlendigi pay; yeniden
+   * paylasilmiyor.
+   */
+  private damageTower(tower: TowerModel, rawDamage: number, options: { pierceArmor?: boolean; destroy?: boolean; shared?: boolean } = {}) {
     if (tower.hp <= 0) {
       return;
     }
+    const now = this.runtime.now();
+    // Son Nefes'in hasarsiz penceresi: yikimdan baska hicbir sey islemiyor.
+    if (!options.destroy && (tower.lastStandUntil ?? 0) > now) return;
+    // Yuk Dagitici Kiris: bitisikteki kiris payini kendi uzerine aliyor,
+    // hedefin kalkanlarindan ve indirimlerinden once.
+    if (!options.destroy && !options.shared) rawDamage = this.shareStructureDamage(tower, rawDamage, now);
     if ((tower.repairFortificationHp ?? 0) > 0 && (tower.repairFortificationUntil ?? 0) > this.runtime.now()) {
       const absorbed = Math.min(tower.repairFortificationHp ?? 0, Math.max(0, rawDamage));
       tower.repairFortificationHp = (tower.repairFortificationHp ?? 0) - absorbed;
@@ -14133,9 +14163,16 @@ export class MatchRoom extends Room<MatchState> {
       rawDamage *= 0.7;
     }
     rawDamage *= this.getWorkerBoostReduction(tower, "damageTaken");
+    const modifiers = this.getTowerRunModifiers(tower);
+    // Inatci Siper: vurustan onceki cana bakiyor, zirhtan once.
+    rawDamage *= getWoundedDamageMultiplier(getModifierAdd(modifiers, "woundedDamageReduction"), tower.hp, tower.maxHp);
     // Karsi atak ve yikim zirhi deliyor: oransal hasar zirhla kirpilmasin.
-    const effectiveArmor = options.pierceArmor ? 0 : applyTowerAuraModifier(tower.armor, this.getTowerAuraModifiers(tower), "armor");
-    tower.hp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
+    // Percinli Kaplama'nin duz puani kulenin zirhina ekleniyor (`getTowerArmor`).
+    const effectiveArmor = options.pierceArmor ? 0 : applyTowerAuraModifier(this.getTowerArmor(tower), this.getTowerAuraModifiers(tower), "armor");
+    const nextHp = Math.max(0, tower.hp - Math.max(1, rawDamage - effectiveArmor));
+    tower.lastStruckAt = now;
+    if (nextHp <= 0 && !options.destroy && this.tryLastStand(tower, modifiers, now)) return;
+    tower.hp = nextHp;
     this.announceStructureBreach(tower);
     if (tower.hp <= 0) {
       if (this.tryAmmoFactoryBlackBox(tower)) return;
@@ -14162,6 +14199,89 @@ export class MatchRoom extends Room<MatchState> {
         this.debrisCells.set(`${cell.col}:${cell.row}`, this.runtime.now() + 12000);
       }
     }
+  }
+
+  /**
+   * Son Nefes: dalga basina yapi basina bir kez oldurucu vurus yapiyi
+   * `LAST_STAND_HP` canla birakiyor ve kartin degeri kadar oyun saniyesi
+   * hasarsiz tutuyor. Kara Kutu ve acil yeniden insadan once: onlar ancak
+   * bu hak kullanildiktan sonraki oldurucu vurusta isliyor.
+   */
+  private tryLastStand(tower: TowerModel, modifiers: readonly Modifier[], now: number) {
+    const seconds = getModifierAdd(modifiers, "lastStand");
+    if (!(seconds > 0) || tower.lastStandWave === this.wave) return false;
+    tower.lastStandWave = this.wave;
+    tower.hp = Math.min(tower.maxHp, LAST_STAND_HP);
+    tower.lastStandUntil = now + scaleGameDuration(seconds * 1000);
+    this.announceStructureBreach(tower);
+    return true;
+  }
+
+  /**
+   * Yuk Dagitici Kiris: hedefin bitisigindeki (merkezler arasi, yapi
+   * boylarina gore) ayni oyuncunun ayakta duran kirisli yapilarindan en
+   * yuksek paylisi vurusun payini ustleniyor. Pay kirise zirhsiz gidiyor
+   * (zirh hedefte bir kez dusuluyor) ve yeniden paylasilmiyor. Donen deger
+   * hedefte kalan ham hasar.
+   */
+  private shareStructureDamage(tower: TowerModel, rawDamage: number, now: number) {
+    if (!(rawDamage > 0)) return rawDamage;
+    let carrier: TowerModel | undefined;
+    let best = 0;
+    for (const other of this.towers.values()) {
+      if (other === tower || other.ownerId !== tower.ownerId || other.hp <= 0 || other.equippedShopItemIds.length === 0) continue;
+      if ((other.lastStandUntil ?? 0) > now) continue;
+      const share = Math.min(DAMAGE_SHARE_CAP, getModifierAdd(other.runModifiers, "damageShare"));
+      if (share <= best || !this.areStructuresAdjacent(tower, other)) continue;
+      carrier = other;
+      best = share;
+    }
+    if (!carrier) return rawDamage;
+    const shared = rawDamage * best;
+    this.damageTower(carrier, shared, { pierceArmor: true, shared: true });
+    return rawDamage - shared;
+  }
+
+  /** Iki yapi bitisik mi: merkezler arasi uzaklik, iki yapinin yari boyu arti yarim kare (kosegen dahil). */
+  private areStructuresAdjacent(a: TowerModel, b: TowerModel) {
+    const grid = getMapGridSize(this.activeMap);
+    const reach = grid * ((this.getTowerPlacementSpan(a.definition.id) + this.getTowerPlacementSpan(b.definition.id)) / 2 + 0.55);
+    return Math.hypot(a.x - b.x, a.y - b.y) <= reach;
+  }
+
+  /** Yapinin zirhi: taban arti Percinli Kaplama'nin duz puani (aura carpani haric). */
+  private getTowerArmor(tower: TowerModel) {
+    return tower.armor + Math.max(0, getModifierAdd(this.getTowerRunModifiers(tower), "armorFlat"));
+  }
+
+  /**
+   * Oz Onarim Cekirdegi: yalnizca dalga sirasinda, `IDLE_REGEN_DELAY_MS` oyun
+   * suresi hasar almamis yapi saniyede azami caninin `idleRegen` payini yeniliyor.
+   */
+  private updateTowerIdleRegen(tower: TowerModel, now: number, deltaTime: number) {
+    if (this.setupPhase || tower.hp >= tower.maxHp) return;
+    const regen = getModifierAdd(this.getTowerRunModifiers(tower), "idleRegen");
+    if (!(regen > 0)) return;
+    if (now - (tower.lastStruckAt ?? Number.NEGATIVE_INFINITY) < scaleGameDuration(IDLE_REGEN_DELAY_MS)) return;
+    tower.hp = Math.min(tower.maxHp, tower.hp + tower.maxHp * regen * (deltaTime / 1000));
+    this.announceStructureBreach(tower);
+  }
+
+  /**
+   * Sertlesen Govde: dalga sonunda ayakta duran yapinin sayaci bir artiyor
+   * ve azami can (cani da oranli) buyuyor. Carpan `towerHealth`ten ayri:
+   * seviye, esya ve kart oranlari kendi carpanlariyla calismaya devam ediyor.
+   */
+  private growVeteranHealth(tower: TowerModel) {
+    if (tower.hp <= 0) return;
+    const perWave = getModifierAdd(this.getTowerRunModifiers(tower), "veteranHealth");
+    if (!(perWave > 0)) return;
+    const waves = tower.veteranWaves ?? 0;
+    const ratio = getVeteranHealthMultiplier(perWave, waves + 1) / getVeteranHealthMultiplier(perWave, waves);
+    tower.veteranWaves = waves + 1;
+    if (ratio === 1) return;
+    tower.maxHp *= ratio;
+    tower.hp *= ratio;
   }
 
   private tryEmergencyRebuild(tower: TowerModel) {
@@ -15409,9 +15529,11 @@ export class MatchRoom extends Room<MatchState> {
       // Hasar orani korunuyor: yarim canla duran bir kule kart eklenince tam
       // cana donmemeli.
       const damageRatio = tower.maxHp > 0 ? Math.min(1, tower.hp / tower.maxHp) : 1;
+      const healthModifiers = [...this.getStructureHealthModifiers(player, tower.definition), ...towerModifiers];
       tower.maxHp = TOWER_BASE_HP
         * getStructureHealthMultiplier(tower.definition, tower.level)
-        * getModifierMultiplier([...this.getStructureHealthModifiers(player, tower.definition), ...towerModifiers], "towerHealth");
+        * getModifierMultiplier(healthModifiers, "towerHealth")
+        * getVeteranHealthMultiplier(getModifierAdd(healthModifiers, "veteranHealth"), tower.veteranWaves ?? 0);
       tower.hp = tower.maxHp * damageRatio;
     }
 
@@ -19033,7 +19155,8 @@ export class MatchRoom extends Room<MatchState> {
         minimumRange: roundNetworkNumber(this.getTowerMinimumRange(tower)),
         hp: Math.round(tower.hp),
         maxHp: Math.round(tower.maxHp),
-        armor: tower.armor,
+        // Percinli Kaplama dahil: panelin "Zirh" satiri savasin dustugu sayi.
+        armor: this.getTowerArmor(tower),
         disabled: tower.hp <= 0,
         ammo: Math.floor(tower.ammo),
         maxAmmo: tower.maxAmmo,
@@ -21539,6 +21662,7 @@ export class MatchRoom extends Room<MatchState> {
       }
       tower.shopKillStacks = 0;
       if (this.towerHasUnlock(tower, "stack:wave")) tower.shopWaveStacks += 1;
+      this.growVeteranHealth(tower);
       for (const definition of this.getTowerEngine(tower)?.stacks ?? []) {
         this.resetEngineStack(tower.stackStates, definition, "waveEnd");
       }

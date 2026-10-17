@@ -48,7 +48,8 @@ const ALL_STATS = [
   "woundedFireRate", "idleCooling", "critVent", "crowdFireRate", "lockCooling", "chilledHeatRelief",
   "chainChance", "blastChance", "freezeChance", "executeChance", "shatterChance", "chronoChance", "linkChance", "gravityChance",
   "focusRange", "heatRange", "wallRange", "rangeFlat", "killRange", "neighborRange",
-  "killRangeLong", "ambushRange"
+  "killRangeLong", "ambushRange",
+  "veteranHealth", "woundedDamageReduction", "lastStand", "damageShare", "idleRegen", "armorFlat"
 ];
 
 /**
@@ -77,7 +78,11 @@ const ITEM_ONLY_STATS = ["accuracyVsAir", "projectileSpeedIsolated", "championGo
   // Mercek, Siper Gozcusu).
   "rangeFlat", "killRange", "neighborRange",
   // Ikinci kisim: Av Kayit Defteri (Atis Haritasi sayacinin uzun tavani).
-  "killRangeLong"];
+  "killRangeLong",
+  // Dayaniklilik turu: bitisikteki yapilara, hasarsiz gecen sureye ve duz
+  // zirha bakan esyalar. Kart tarafinda karsiliklari ayri (Sertlesen Govde,
+  // Inatci Siper, Son Nefes).
+  "damageShare", "idleRegen", "armorFlat"];
 
 const allTowers = Object.values(towerCatalog).flat();
 const statsUsedBy = (entries) => new Set(entries.flatMap((entry) => (entry.effects ?? []).map((modifier) => modifier.stat)));

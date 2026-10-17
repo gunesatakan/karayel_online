@@ -304,7 +304,32 @@ export type ModifierStat =
    *   sonra kisa bir sure daha suruyor (kart: Pusu Nobeti).
    */
   | "killRangeLong"
-  | "ambushRange";
+  | "ambushRange"
+  /**
+   * Dayaniklilik turu (`durability-mechanics` modulu). `towerHealth`in
+   * yaninda: hicbiri duz azami can degil.
+   *
+   * - `veteranHealth`: dalga sonunda ayakta duran yapinin azami canina dalga
+   *   basina bu pay, en fazla `VETERAN_HEALTH_MAX_WAVES` dalga; carpan
+   *   `towerHealth` toplamindan ayri carpiliyor (kart: Sertlesen Govde).
+   * - `woundedDamageReduction`: cani yarinin altindaki yapinin aldigi hasar
+   *   bu kadar azaliyor (kart: Inatci Siper).
+   * - `lastStand`: dalga basina bir kez oldurucu vurus yapiyi 1 canla
+   *   birakiyor; deger, ardindan hasar almadigi oyun saniyesi (kart: Son Nefes).
+   * - `damageShare`: takildigi yapi bitisikteki dost yapilarin hasarinin bu
+   *   payini ustleniyor (esya: Yuk Dagitici Kiris).
+   * - `idleRegen`: hasar almadan `IDLE_REGEN_DELAY_MS` gecen yapi saniyede
+   *   azami caninin bu payini yeniliyor, yalnizca dalgada (esya: Oz Onarim
+   *   Cekirdegi).
+   * - `armorFlat`: yapinin zirhina duz puan; zirh her vurustan dusuluyor
+   *   (esya: Percinli Kaplama).
+   */
+  | "veteranHealth"
+  | "woundedDamageReduction"
+  | "lastStand"
+  | "damageShare"
+  | "idleRegen"
+  | "armorFlat";
 
 export type Modifier = {
   source: string;
